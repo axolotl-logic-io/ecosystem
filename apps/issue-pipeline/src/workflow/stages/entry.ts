@@ -29,6 +29,7 @@ type Reply = Readonly<Record<string, unknown>>;
 const SWEEP_MINUTES = 20;
 const CLAIM_MINUTES = 15;
 const NO_STATE = "the claim reply had no valid state and paths for the issue";
+const WAITING = "waiting for an answer to the pipeline's questions";
 const BRANCH_MOVED = "the PR branch changed outside the pipeline";
 
 // The sweep op, for every candidate or only issue `only`.
@@ -102,15 +103,26 @@ function headStop(st: IssueState, remoteHead: unknown): StageStop | null {
 
 // What candidate `n`'s claim reply means for the sweep.
 function claimStep(n: number, reply: Reply): ClaimStep {
-  const { ok, lost, error, state, paths, remoteHead } = reply;
+  const { ok, lost, waiting, error, state, paths, remoteHead } = reply;
   if (ok !== true) {
-    return { kind: "failed", reason: textOf(error) };
+    return {
+      kind: "unclaimed",
+      outcome: "claim-failed",
+      reason: textOf(error),
+    };
+  }
+  if (waiting === "answer") {
+    return {
+      kind: "unclaimed",
+      outcome: "waiting-for-answer",
+      reason: WAITING,
+    };
   }
   if (lost === true) {
     return { kind: "lost", abandoned: abandonedOf(n, reply) };
   }
   if (!(isIssueState(state) && isItemPaths(paths))) {
-    return { kind: "failed", reason: NO_STATE };
+    return { kind: "unclaimed", outcome: "claim-failed", reason: NO_STATE };
   }
   const stop = headStop(state, remoteHead);
   return { kind: "claimed", st: state, paths, stop };

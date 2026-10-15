@@ -5,6 +5,7 @@
 import { z } from "zod";
 import type { LaneRequest } from "../claims.ts";
 import { leaseLane } from "../claims.ts";
+import type { IssueComment } from "../comments.ts";
 import {
   AFTER_MARK,
   listComments,
@@ -107,12 +108,14 @@ function liveLease(
   return null;
 }
 
-// True when an allowed user commented after the pipeline asked its questions.
-// It judges by the signature, not the author: the pipeline's account may be
-// the person answering.
-function answered(cfg: Config, n: number): boolean {
-  const comments = listComments(cfg, n);
-  const { state } = readState(cfg, n, comments);
+// True when an allowed user commented after the pipeline asked its questions
+// (the saved state's questionsAt). It judges by the signature, not the
+// author: the pipeline's account may be the person answering.
+function answeredSince(
+  cfg: Config,
+  comments: readonly IssueComment[],
+  state: State | null,
+): boolean {
   const { questionsAt } = state ?? {};
   const asked = QUESTIONS_AT.safeParse(questionsAt).data;
   let askedAt = 0;
@@ -125,6 +128,13 @@ function answered(cfg: Config, n: number): boolean {
       Date.parse(item.created_at) > askedAt &&
       isAllowedUser(cfg, item.user?.login),
   );
+}
+
+// True when the issue's questions have an answer, read from GitHub.
+function answered(cfg: Config, n: number): boolean {
+  const comments = listComments(cfg, n);
+  const { state } = readState(cfg, n, comments);
+  return answeredSince(cfg, comments, state);
 }
 
 function candidate(issue: IssueRow, kind: Kind): Verdict {
@@ -212,4 +222,4 @@ function classify(ctx: SweepContext, issue: IssueRow): Verdict {
 }
 
 export type { Candidate, IssueRow, Kind, SweepContext, Verdict };
-export { classify, ISSUE_ROW, issueDepth, liveLease, PRIORITY };
+export { answeredSince, classify, ISSUE_ROW, issueDepth, liveLease, PRIORITY };

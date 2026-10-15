@@ -180,6 +180,37 @@ test("a failed claim is the sweep's item, with no state", async () => {
   );
 });
 
+test("a claim waiting for an answer is the sweep's item and launches nothing", async ({
+  assert: { snapshot },
+}) => {
+  const { trace, summary } = await runWorkflow({
+    args: WORKFLOW_ARGS,
+    ops: {
+      sweep: sweepReply({ items: [LOST_ISSUE] }),
+      claim: { ok: true, waiting: "answer" },
+      cleanup: ROUTINE_OPS.cleanup,
+    },
+  });
+  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "cleanup-3"]);
+  assert.deepEqual(
+    summary,
+    sweepSummary({
+      items: [
+        {
+          issue: 7,
+          pr: null,
+          stage: null,
+          outcome: "waiting-for-answer",
+          reason: "waiting for an answer to the pipeline's questions",
+          allocatedTokens: null,
+          rebaseAllocatedTokens: null,
+        },
+      ],
+    }),
+  );
+  snapshot(trace);
+});
+
 test("a PR branch that moved outside the pipeline stops the claimed issue", async () => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,

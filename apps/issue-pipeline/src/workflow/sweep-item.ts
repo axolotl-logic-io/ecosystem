@@ -21,6 +21,7 @@ import type {
   StageStop,
   Step,
   SweepReply,
+  UnclaimedOutcome,
 } from "./stages/types.ts";
 import type { SweepSettings } from "./sweep-config.ts";
 import { STAGE_SPAWNS } from "./sweep-config.ts";
@@ -48,14 +49,16 @@ interface ClaimedItem {
   outbox: Outbox;
 }
 
-// A candidate whose claim failed: the sweep does nothing more with it.
-interface FailedItem {
-  kind: "claim-failed";
+// A candidate the sweep didn't claim, because the claim failed or the issue
+// waits for an answer: the sweep does nothing more with it.
+interface UnclaimedItem {
+  kind: "unclaimed";
   n: number;
+  outcome: UnclaimedOutcome;
   reason: string | null;
 }
 
-type SweepItem = ClaimedItem | FailedItem;
+type SweepItem = ClaimedItem | UnclaimedItem;
 
 // How many launches have taken a key, and how many the sweep has spawned.
 interface SweepCounts {
@@ -267,19 +270,14 @@ function summarySource(item: SweepItem | null): SummarySource | null {
   if (item === null) {
     return null;
   }
-  if (item.kind === "claim-failed") {
-    return {
-      n: item.n,
-      st: null,
-      outcome: "claim-failed",
-      reason: item.reason,
-    };
+  if (item.kind === "unclaimed") {
+    return { n: item.n, st: null, outcome: item.outcome, reason: item.reason };
   }
   const { n, st, outcome, reason } = item;
   return { n, st, outcome, reason };
 }
 
-export type { ClaimedItem, FailedItem, SweepCounts, SweepItem, SweepRun };
+export type { ClaimedItem, SweepCounts, SweepItem, SweepRun, UnclaimedItem };
 export {
   applyStep,
   closingOf,

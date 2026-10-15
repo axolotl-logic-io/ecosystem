@@ -12,6 +12,7 @@ import {
   calls,
   commentsReply,
   configWith,
+  ghCalls,
   issueComment,
   labelsReply,
   publicConfigOf,
@@ -73,10 +74,6 @@ function listComments(n) {
     "--jq",
     ".[] | @json",
   ];
-}
-
-function collaborator(login) {
-  return ["api", `repos/o/r/collaborators/${login}`, "--silent"];
 }
 
 function sweepReplies(rows, more = []) {
@@ -203,7 +200,7 @@ test("a sweep sorts its candidates and skips, parks or reserves the rest", () =>
   );
   assert.deepEqual(calls(), [
     ...SWEEP_HEAD,
-    collaborator(ALLOWED),
+    ghCalls.collaborator(ALLOWED),
     listComments(7),
     listComments(8),
     listComments(9),
@@ -228,7 +225,7 @@ test("a sweep with takeNewWork false skips new issues", () => {
     askOps({ op: "sweep", config, ...LANE }),
     sweepReply({ config: publicConfigOf(config), items: [], skipped: 1 }),
   );
-  assert.deepEqual(calls(), [...SWEEP_HEAD, collaborator(ALLOWED)]);
+  assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED)]);
 });
 
 test("a sweep returns the oldest claimCandidates and counts the rest as waiting", () => {
@@ -242,7 +239,7 @@ test("a sweep returns the oldest claimCandidates and counts the rest as waiting"
       waiting: 1,
     }),
   );
-  assert.deepEqual(calls(), [...SWEEP_HEAD, collaborator(ALLOWED)]);
+  assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED)]);
 });
 
 test("a sweep for one named issue takes it even when stopped", () => {
@@ -257,7 +254,7 @@ test("a sweep for one named issue takes it even when stopped", () => {
   );
   assert.deepEqual(calls(), [
     ...SWEEP_HEAD,
-    collaborator(ALLOWED),
+    ghCalls.collaborator(ALLOWED),
     listComments(30),
   ]);
 });
@@ -294,7 +291,7 @@ test("a sweep for one named issue refuses an issue another live lane holds", () 
   });
   assert.deepEqual(calls(), [
     ...SWEEP_HEAD,
-    collaborator(ALLOWED),
+    ghCalls.collaborator(ALLOWED),
     listComments(33),
   ]);
 });

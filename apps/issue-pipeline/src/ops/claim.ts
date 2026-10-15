@@ -2,7 +2,8 @@
 // this lane wins, leases the issue to it and readies its worktree. A start
 // (new work, a removed agent:stopped-* label, or answered questions) restarts
 // the state from the issue's branch; a lane picking up a lapsed lease carries
-// on at the saved stage.
+// on at the saved stage. A claim of an agent:needs-info issue that no allowed
+// user has answered changes nothing and replies that it waits for an answer.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +28,7 @@ import { adoptPush, readState, startState, writeState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import { ensureWiki } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
-import { issueDepth } from "./sweep-verdict.ts";
+import { answeredSince, issueDepth } from "./sweep-verdict.ts";
 
 const MS_PER_MINUTE = 60_000;
 
@@ -78,6 +79,11 @@ interface ClaimWon {
   };
 }
 
+// The reply for an issue whose questions no allowed user has answered.
+interface ClaimWaiting {
+  waiting: "answer";
+}
+
 // The open PR from the issue's branch, and whether the branch holds work.
 function branchWork(
   cfg: Config,
@@ -91,15 +97,55 @@ function branchWork(
   return { pr, hasWork: pr !== null && branchHasWork(cfg, n, remote) };
 }
 
-// Puts an existing worktree back at the branch head on GitHub.
+// Moves a worktree with no commits past the base to the base's head on
+// GitHub, dropping its edits. A worktree with commits of its own is kept.
+function resetToBase(cfg: Config, wt: string): void {
+  const base = cfg.baseBranch;
+  fetchIn(cfg, wt, `+refs/heads/${base}:refs/remotes/origin/${base}`);
+  const ahead = run("git", [
+    "-C",
+    wt,
+    "rev-list",
+    "--count",
+    `origin/${base}..HEAD`,
+  ]);
+  if (Number(ahead.stdout) !== 0) {
+    return;
+  }
+  run("git", ["-C", wt, "reset", "--hard", `origin/${base}`]);
+  run("git", ["-C", wt, "clean", "-fd"]);
+}
+
+// Puts an existing worktree back at the branch head on GitHub or, when the
+// issue has no branch there, at the base unless it holds commits of its own.
 function resetWorktree(cfg: Config, n: number, remote: string | null): void {
   const wt = paths.worktree(cfg, n);
-  if (remote === null || !fs.existsSync(path.join(wt, ".git"))) {
+  if (!fs.existsSync(path.join(wt, ".git"))) {
+    return;
+  }
+  if (remote === null) {
+    resetToBase(cfg, wt);
     return;
   }
   fetchIn(cfg, wt, paths.branch(n));
   run("git", ["-C", wt, "reset", "--hard", remote]);
   run("git", ["-C", wt, "clean", "-fd"]);
+}
+
+// True when the issue has questions open (agent:needs-info).
+function hasNeedsInfo(issue: ClaimedIssue): boolean {
+  return issue.labels.some((label) => label.name === LABELS.needsInfo.name);
+}
+
+// True when the issue's questions are open and no allowed user has answered.
+function awaitsAnswer(
+  cfg: Config,
+  n: number,
+  issue: ClaimedIssue,
+  comments: readonly IssueComment[],
+): boolean {
+  const { state } = readState(cfg, n, comments);
+  return hasNeedsInfo(issue) && !answeredSince(cfg, comments, state);
 }
 
 // The state this claim carries on from, the saved one mid-stage or a restart
@@ -112,9 +158,7 @@ function claimedState(
 ): { state: State; remote: string | null } {
   const { state: saved } = readState(cfg, n, comments);
   const remote = remoteHead(cfg, n);
-  const answered = issue.labels.some(
-    (label) => label.name === LABELS.needsInfo.name,
-  );
+  const answered = hasNeedsInfo(issue) && answeredSince(cfg, comments, saved);
   const ended = saved?.stage === "stopped" || saved?.stage === "done";
   if (saved !== null && !ended && !answered) {
     const adopted = adoptPush(saved, remote, lastPush(cfg, n), new Date());
@@ -189,13 +233,19 @@ function take(
   return { state, remote, wt, wiki };
 }
 
-function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
+function claim(
+  cfg: Config,
+  request: unknown,
+): ClaimLost | ClaimWon | ClaimWaiting {
   const req = CLAIM_REQUEST.parse(request);
   const n = req.number;
   const context = writeIssueContext(cfg, n);
   const issue = CLAIMED_ISSUE.parse(context.issue);
   if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
+  }
+  if (awaitsAnswer(cfg, n, issue, context.comments)) {
+    return { waiting: "answer" };
   }
   const race = raceForClaim(cfg, n, req, context.comments);
   const { posted, waited } = race;

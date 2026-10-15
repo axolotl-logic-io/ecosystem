@@ -77,15 +77,27 @@ test("a lost claim gives the abandoned entry, so the next candidate is claimed",
 
 test("a failed claim, or one with no state, is a failed claim with its reason", () => {
   assert.deepEqual(claimStep(ISSUE, { ok: false, error: "locked" }), {
-    kind: "failed",
+    kind: "unclaimed",
+    outcome: "claim-failed",
     reason: "locked",
   });
   assert.deepEqual(claimStep(ISSUE, { ok: true }), {
-    kind: "failed",
+    kind: "unclaimed",
+    outcome: "claim-failed",
     reason: "the claim reply had no valid state and paths for the issue",
   });
   const { state } = claimAt("review");
-  assert.equal(claimStep(ISSUE, { ok: true, state }).kind, "failed");
+  const step = claimStep(ISSUE, { ok: true, state });
+  assert.equal(step.kind, "unclaimed");
+  assert.equal(step.outcome, "claim-failed");
+});
+
+test("a claim waiting for an answer leaves the issue unclaimed", () => {
+  assert.deepEqual(claimStep(ISSUE, { ok: true, waiting: "answer" }), {
+    kind: "unclaimed",
+    outcome: "waiting-for-answer",
+    reason: "waiting for an answer to the pipeline's questions",
+  });
 });
 
 test("a head that moved stops the claimed issue with both heads", () => {

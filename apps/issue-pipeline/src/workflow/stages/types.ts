@@ -212,12 +212,17 @@ interface AbandonedClaim {
   commented: boolean;
 }
 
+// Why a candidate the sweep didn't lose is still not its to work on: the
+// claim failed, or the issue waits for an answer to the pipeline's questions.
+type UnclaimedOutcome = "claim-failed" | "waiting-for-answer";
+
 // What a claim reply means for the sweep: the candidate was lost to another
-// lane, the claim failed (with the reason, if the reply gave one), or the
-// sweep holds the issue, with the stop to queue if its PR branch moved.
+// lane, it stays unclaimed (with the outcome and the reason, if there is
+// one), or the sweep holds the issue, with the stop to queue if its PR branch
+// moved.
 type ClaimStep =
   | { kind: "lost"; abandoned: AbandonedClaim }
-  | { kind: "failed"; reason: string | null }
+  | { kind: "unclaimed"; outcome: UnclaimedOutcome; reason: string | null }
   | {
       kind: "claimed";
       st: IssueState;
@@ -289,4 +294,5 @@ export type {
   SweepConfig,
   SweepReply,
   SweepSummary,
+  UnclaimedOutcome,
 };

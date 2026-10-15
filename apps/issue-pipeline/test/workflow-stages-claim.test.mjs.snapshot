@@ -1,3 +1,43 @@
+exports[`a claim waiting for an answer is the sweep's item and launches nothing 1`] = `
+[
+  {
+    "key": "sweep-1",
+    "agent": "issue-pipeline-ops",
+    "label": "Run sweep operation",
+    "request": {
+      "op": "sweep",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a"
+    }
+  },
+  {
+    "key": "i7-claim-2",
+    "agent": "issue-pipeline-ops",
+    "label": "Run claim operation",
+    "request": {
+      "op": "claim",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "cleanup-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
+  }
+]
+`;
+
 exports[`a lost claim is recorded as abandoned, with no item 1`] = `
 [
   {

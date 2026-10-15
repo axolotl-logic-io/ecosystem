@@ -19,12 +19,14 @@ import {
   postState,
 } from "./ops-claim-test-kit.mjs";
 import {
+  ALLOWED,
   askOps,
   calls,
   claimComment,
   commentsReply,
   configWith,
   ghCalls,
+  issueComment,
   reply,
   root,
   runDir,
@@ -35,6 +37,7 @@ import {
 } from "./ops-cli-test-kit.mjs";
 
 const SETUP_MARK = "setup-ran";
+const BEFORE_LAPSED = "2019-01-01T00:00:00Z";
 
 // A claim runs after a sweep, which made the clone.
 sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
@@ -124,6 +127,7 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
       lease: null,
       pr: 50,
     }),
+    issueComment(16, "answer", ALLOWED, LIVE),
   ];
   reply([
     issueReply(43, {
@@ -146,6 +150,7 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
   assert.deepEqual(calls(), [
     getIssue(43),
     ghCalls.listComments(43),
+    ghCalls.collaborator(ALLOWED),
     listOpenPrs(43),
     ghCalls.unlabel(43, "agent:needs-info"),
     ghCalls.unlabel(43, "agent:stopped-budget"),
@@ -155,6 +160,29 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
     ghCalls.listComments(43),
     patchState(43, 11, state),
   ]);
+});
+
+test("a claim of a needs-info issue with no answer waits and changes nothing", () => {
+  const comments = [
+    stateComment(17, { stage: "triage", questionsAt: LAPSED, pr: null }),
+    issueComment(18, "too early", ALLOWED, BEFORE_LAPSED),
+  ];
+  reply([
+    issueReply(47, { labels: [{ name: "agent:needs-info" }] }),
+    commentsReply(47, comments),
+  ]);
+  assert.deepEqual(askOps({ op: "claim", number: 47, ...LANE }), {
+    ok: true,
+    op: "claim",
+    posted: 0,
+    waiting: "answer",
+  });
+  assert.deepEqual(calls(), [
+    getIssue(47),
+    ghCalls.listComments(47),
+    ghCalls.collaborator(ALLOWED),
+  ]);
+  assert.ok(!fs.existsSync(worktree(47)));
 });
 
 test("a claim that resumes a lapsed lease keeps its stage and its worktree", () => {

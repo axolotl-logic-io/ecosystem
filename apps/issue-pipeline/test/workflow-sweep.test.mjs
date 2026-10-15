@@ -197,12 +197,16 @@ test("the driver never asks for an empty batch, and ends with none", () => {
     drive({ ops: { sweep: sweepReply() } }),
     drive({ ops: opsFor({ ok: false, error: "locked" }) }),
     drive({ ops: opsFor(claimAt("triage"), { maxSpawnsPerRun: 10 }) }),
+    drive({ ops: opsFor({ ok: true, waiting: "answer" }) }),
   ];
   for (const { batches } of runs) {
     assert.ok(batches.every((batch) => batch.length > 0));
   }
-  assert.deepEqual(runs[1].keys, ["sweep-1", "i7-claim-2", "cleanup-3"]);
+  const unclaimed = ["sweep-1", "i7-claim-2", "cleanup-3"];
+  assert.deepEqual(runs[1].keys, unclaimed);
   assert.equal(runs[1].summary.items[0].outcome, "claim-failed");
+  assert.deepEqual(runs[3].keys, unclaimed);
+  assert.equal(runs[3].summary.items[0].outcome, "waiting-for-answer");
 });
 
 test("the summary is ready only once the sweep is finished", () => {

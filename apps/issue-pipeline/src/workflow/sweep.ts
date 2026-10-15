@@ -140,8 +140,8 @@ function claimedItem(run: SweepRun, n: number, raw: unknown): SweepItem | null {
     run.abandoned.push(step.abandoned);
     return null;
   }
-  if (step.kind === "failed") {
-    return { kind: "claim-failed", n, reason: step.reason };
+  if (step.kind === "unclaimed") {
+    return { ...step, n };
   }
   const { st, paths, stop } = step;
   const item: SweepItem = {

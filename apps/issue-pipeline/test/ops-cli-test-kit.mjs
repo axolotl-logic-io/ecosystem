@@ -132,6 +132,7 @@ const labelsReply = {
  *   patch: (id: number, body: string) => string[],
  *   label: (n: number, name: string) => string[],
  *   unlabel: (n: number, name: string) => string[],
+ *   collaborator: (login: string) => string[],
  * }}
  */
 const ghCalls = {
@@ -174,6 +175,11 @@ const ghCalls = {
     "-X",
     "DELETE",
     `repos/o/r/issues/${n}/labels/${encodeURIComponent(name)}`,
+    "--silent",
+  ],
+  collaborator: (login) => [
+    "api",
+    `repos/o/r/collaborators/${login}`,
     "--silent",
   ],
 };
