@@ -10,13 +10,7 @@ import type { Signature } from "../signing.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
 import type { AcceptReply } from "./replies.ts";
 import { acceptReplyOf } from "./replies.ts";
-import {
-  codedStopStep,
-  doneStep,
-  launchStep,
-  onlyChild,
-  stopStep,
-} from "./step.ts";
+import { doneStep, launchStep, onlyChild, stopStep } from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
@@ -88,30 +82,32 @@ function acceptLaunch(
   };
 }
 
-// Charges the verifier's session, then prepares the final diff.
-function begin(state: StageState, ctx: StageContext): Step {
+// Prepares the final diff.
+function begin(state: StageState): Step {
+  return launchStep({ ...state, phase: "review" }, [
+    finalDiffLaunch(state, "final"),
+  ]);
+}
+
+// Charges the verifier's session once the diff is ready, then launches it.
+function review(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
+  const failure = "could not prepare the final diff";
+  const diff = finalDiffOf(state, ctx, results, failure);
+  if (!diff.ok) {
+    return diff.step;
+  }
   const st = { ...state.st };
   const charged = { ...state, st };
   const charge = chargeSession(ctx.budgets, st, "verifier");
   if (!charge.charged) {
     return stopStep(charged, "issue token budget exhausted", charge.detail);
   }
-  return launchStep({ ...charged, phase: "review" }, [
-    finalDiffLaunch(charged, "final"),
-  ]);
-}
-
-function review(
-  state: StageState,
-  ctx: StageContext,
-  results: readonly LaunchResult[],
-): Step {
-  const diff = finalDiffOf(state, results, "could not prepare the final diff");
-  if (!diff.ok) {
-    return codedStopStep(state, diff.stop);
-  }
-  return launchStep({ ...state, phase: "decide" }, [
-    acceptLaunch(state, ctx, diff.path),
+  return launchStep({ ...charged, phase: "decide" }, [
+    acceptLaunch(charged, ctx, diff.path),
   ]);
 }
 
@@ -167,7 +163,7 @@ function next(
   const phase = phaseOf(state);
   switch (phase) {
     case "begin":
-      return begin(state, ctx);
+      return begin(state);
     case "review":
       return review(state, ctx, results);
     case "decide":

@@ -4,6 +4,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { z } from "zod";
 import type { Config } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
 import { git } from "./github.ts";
@@ -25,6 +26,15 @@ const TEARDOWN_TIMEOUT_MS = 300_000;
 const STATUS_LINES = 20;
 const WHITESPACE = /\s+/u;
 const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
+const PUSHED_FILE = "pushed.json";
+// The part of the push record a claim reads.
+const PUSHED = z.object({ sha: z.string(), op: z.string() });
+
+// A head the pipeline pushed for an issue, and the op that pushed it.
+interface PushRecord {
+  sha: string;
+  op: string;
+}
 
 function gitIn(dir: string, args: readonly string[]): string {
   return run("git", ["-C", dir, ...args]).stdout;
@@ -232,12 +242,36 @@ function unsavedWork(cfg: Config, n: number, pr: number | null): string | null {
   return `${count} local commits are not on GitHub`;
 }
 
-// Pushes the issue's branch and returns its head. allowEmpty lets start-pr push
-// the branch's empty first commit. Every other push must change files, since
-// that commit alone puts the branch ahead of the base.
+// Records in the issue's run directory that `op` is pushing `sha` as the
+// branch's head, replacing the last record, so a later claim on this machine
+// knows that head as the pipeline's own push.
+function recordPush(cfg: Config, n: number, sha: string, op: string): void {
+  const dir = paths.runDir(cfg, n);
+  fs.mkdirSync(dir, { recursive: true });
+  const record = { sha, op, at: new Date().toISOString() };
+  fs.writeFileSync(path.join(dir, PUSHED_FILE), `${JSON.stringify(record)}\n`);
+}
+
+// The head this machine last recorded pushing for the issue and the op that
+// pushed it, or null when it has no readable record.
+function lastPush(cfg: Config, n: number): PushRecord | null {
+  const file = path.join(paths.runDir(cfg, n), PUSHED_FILE);
+  try {
+    const { sha, op } = PUSHED.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+    return { sha, op };
+  } catch {
+    return null;
+  }
+}
+
+// Pushes the issue's branch for `op`, recording the push first, and returns
+// its head. allowEmpty lets start-pr push the branch's empty first commit.
+// Every other push must change files, since that commit alone puts the branch
+// ahead of the base.
 function push(
   cfg: Config,
   number: number,
+  op: string,
   { allowEmpty = false }: { allowEmpty?: boolean } = {},
 ): string {
   const wt = paths.worktree(cfg, number);
@@ -258,6 +292,7 @@ function push(
     throw new OpsError("branch changes no files against the base branch");
   }
   const target = `HEAD:refs/heads/${paths.branch(number)}`;
+  recordPush(cfg, number, head(wt), op);
   git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
   return head(wt);
 }
@@ -282,6 +317,7 @@ function branchHasWork(cfg: Config, n: number, remote: string): boolean {
   return result.code === 1;
 }
 
+export type { PushRecord };
 export {
   assertClean,
   branchHasWork,
@@ -292,7 +328,9 @@ export {
   GH_HELPER,
   head,
   issueWorktrees,
+  lastPush,
   push,
+  recordPush,
   remoteHead,
   removeWorktree,
   uncommitted,

@@ -5,7 +5,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { assertClean, fetchIn, head, remoteHead } from "../checkouts.ts";
+import {
+  assertClean,
+  fetchIn,
+  head,
+  recordPush,
+  remoteHead,
+} from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { git } from "../github.ts";
@@ -166,8 +172,11 @@ function resetToRemote(cfg: Config, n: number): void {
   run("git", ["-C", wt, "clean", "-fd"]);
 }
 
-function pushBranch(cfg: Config, n: number, wt: string): void {
+// Pushes the worktree's head as the issue's branch for `op`, recording the
+// push first.
+function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
   const target = `HEAD:refs/heads/${paths.branch(n)}`;
+  recordPush(cfg, n, head(wt), op);
   git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", target]);
 }
 
@@ -203,10 +212,18 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   if (gitSucceeds(wt, ["merge-base", "--is-ancestor", base, "HEAD"])) {
     return { changed: false, conflict: false, headSha: head(wt) };
   }
+  const before = head(wt);
   if (!gitSucceeds(wt, ["rebase", base])) {
     return conflictReply(wt, base, req.keepConflict === true);
   }
-  pushBranch(cfg, n, wt);
+  try {
+    pushBranch(cfg, n, wt, "sync-base");
+  } catch (error: unknown) {
+    // A deferred sync then retries from the head it pushed last, not from an
+    // unpushed rebase.
+    run("git", ["-C", wt, "reset", "--hard", before]);
+    throw error;
+  }
   return { changed: true, conflict: false, headSha: head(wt) };
 }
 
@@ -263,7 +280,7 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
     resetToRemote(cfg, n);
     return { resolved: false, reason };
   }
-  pushBranch(cfg, n, wt);
+  pushBranch(cfg, n, wt, "finish-sync");
   return { resolved: true, headSha: head(wt) };
 }
 

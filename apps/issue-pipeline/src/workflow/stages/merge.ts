@@ -5,6 +5,7 @@
 import { noteEvent } from "../event-log.ts";
 import { findingsStop, openFindings } from "../findings.ts";
 import { acceptanceSummary } from "../summary.ts";
+import { opFailedStep } from "./network.ts";
 import { textOrNull } from "./replies.ts";
 import {
   codedStopStep,
@@ -100,7 +101,9 @@ function decide(
   const reply = onlyReply(results);
   const { ok, error, merged, reason } = reply;
   if (ok !== true) {
-    return stopStep(state, "the merge step failed", textOrNull(error));
+    const why = "the merge step failed";
+    const failed = { op: "merge", reason: why, error: textOrNull(error) };
+    return opFailedStep(state, failed, ctx.now());
   }
   if (merged === true) {
     return doneStep({ ...state, closed: true, outcome: "merged" });

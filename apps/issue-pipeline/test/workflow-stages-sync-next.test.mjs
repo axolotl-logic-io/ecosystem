@@ -6,6 +6,11 @@ import { test } from "node:test";
 import { CIFIX_SCHEMA } from "../src/workflow/schemas.ts";
 import { next } from "../src/workflow/stages/sync.ts";
 import {
+  deferral,
+  deferredFrom,
+  NETWORK_FAILURE,
+} from "./deferral-test-kit.mjs";
+import {
   after,
   CTX,
   MODELS,
@@ -201,6 +206,17 @@ test("a resolver that can't fix the conflicts leaves the issue at sync", () => {
     step.comments[0].body,
     "I couldn't resolve the conflicts with integration: Both sides rewrote a.ts.",
   );
+});
+
+test("a rebase that failed on the network defers; another failure stops", () => {
+  const failed = synced({ ok: false, error: NETWORK_FAILURE });
+  const given = stateAt("sync");
+  assert.deepEqual(deferral(failed), deferredFrom(given, "sync-base", STAMP));
+  assert.deepEqual(synced({ ok: false, error: "bad ref" }).stop, {
+    reason: "could not sync with integration",
+    detail: "bad ref",
+    code: null,
+  });
 });
 
 test("a failed resolver session aborts the rebase and stops", () => {

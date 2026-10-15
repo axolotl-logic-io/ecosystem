@@ -5,6 +5,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { next } from "../src/workflow/stages/merge.ts";
 import {
+  deferral,
+  deferredFrom,
+  NETWORK_FAILURE,
+} from "./deferral-test-kit.mjs";
+import {
   CTX,
   replied,
   STAMP,
@@ -129,6 +134,14 @@ for (const reason of ["behind", "conflict"]) {
     ]);
   });
 }
+
+test("a merge step that failed on the network defers to the next sweep", () => {
+  const step = answered({ ok: false, error: "gh exited 1: HTTP 502" });
+  const given = stateWith("merge");
+  assert.deepEqual(deferral(step), deferredFrom(given, "merge", STAMP));
+  const unreachable = answered({ ok: false, error: NETWORK_FAILURE });
+  assert.equal(unreachable.stop, null);
+});
 
 test("a failed merge step or a refused merge stops", () => {
   assert.deepEqual(answered({ ok: false, error: "gh failed" }).stop, {

@@ -10,6 +10,7 @@ import type { IssueState } from "../types.ts";
 import type { Check } from "./checks-reply.ts";
 import { ciReplyOf, isRecord, verifyReplyOf } from "./checks-reply.ts";
 import { fixed, prepared, pushed, reviewed, startFix } from "./ci-fix.ts";
+import { opFailedStep } from "./network.ts";
 import { doneStep, launchStep, onlyReply, stopStep } from "./step.ts";
 import type {
   LaunchResult,
@@ -147,7 +148,9 @@ function verified(
 ): Step {
   const reply = verifyReplyOf(onlyReply(results));
   if (reply.kind === "failed") {
-    return stopStep(state, "local verification could not run", reply.error);
+    const reason = "local verification could not run";
+    const failed = { op: "verify", reason, error: reply.error };
+    return opFailedStep(state, failed, ctx.now());
   }
   const { headSha, checks } = reply;
   if (headSha !== state.st.headSha) {
@@ -195,8 +198,11 @@ function ci(
 ): Step {
   const reply = ciReplyOf(onlyReply(results));
   switch (reply.kind) {
-    case "failed":
-      return stopStep(state, "could not read CI status", reply.error);
+    case "failed": {
+      const reason = "could not read CI status";
+      const failed = { op: "ci-status", reason, error: reply.error };
+      return opFailedStep(state, failed, ctx.now());
+    }
     case "pass":
       return passed(state, ctx);
     case "pending": {

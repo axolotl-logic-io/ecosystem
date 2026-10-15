@@ -8,6 +8,11 @@ import { REVIEW_SCHEMA } from "../src/workflow/review-schemas.ts";
 import { CIFIX_SCHEMA } from "../src/workflow/schemas.ts";
 import { next } from "../src/workflow/stages/checks.ts";
 import {
+  deferral,
+  deferredFrom,
+  NETWORK_FAILURE,
+} from "./deferral-test-kit.mjs";
+import {
   after,
   CTX,
   contextWith,
@@ -227,6 +232,32 @@ test("pending CI ends the stage until next sweep without a stop", () => {
   assert.deepEqual(step.state.st.log, [
     `${STAMP} CI still running; will check next sweep`,
   ]);
+});
+
+// Checks' step after its first ops request, from `state`, fails with `error`.
+function failing(state, error) {
+  return replied(next, next(state, CTX, []), { ok: false, error });
+}
+
+test("verify or CI that failed on the network defers; another failure stops", () => {
+  const given = stateAt("checks");
+  const atCi = stateAt("checks", { verifiedSha: HEAD });
+  const verify = failing(given, NETWORK_FAILURE);
+  assert.deepEqual(deferral(verify), deferredFrom(given, "verify", STAMP));
+  const ci = failing(atCi, "gh exited 1: error connecting to api.github.com");
+  assert.deepEqual(deferral(ci), deferredFrom(atCi, "ci-status", STAMP));
+  const stops = [failing(given, "no such command"), failing(atCi, "HTTP 500")];
+  assert.deepEqual(
+    stops.map((step) => step.stop),
+    [
+      {
+        reason: "local verification could not run",
+        detail: "no such command",
+        code: null,
+      },
+      { reason: "could not read CI status", detail: "HTTP 500", code: null },
+    ],
+  );
 });
 
 test("failing CI with its CI fixes used up stops with the failure", () => {

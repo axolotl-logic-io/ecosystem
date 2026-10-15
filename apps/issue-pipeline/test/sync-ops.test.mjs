@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { okLine, opsFixture, opsSourceDefines } from "./ops-fixture.mjs";
+import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("sync-ops");
 const { fakeGh, originRef, sh, worktree } = fx;
@@ -128,6 +129,24 @@ test("sync-base rebases onto a moved base and pushes", () => {
   assert.notEqual(headSha, before);
   assert.equal(out, syncLine({ changed: true, conflict: false, headSha }));
   assert.equal(originRef(`${headSha}^`), base);
+  const record = { sha: headSha, op: "sync-base", dated: true };
+  assert.deepEqual(pushRecord(fx.root, 32), record);
+});
+
+test("sync-base whose push origin refuses goes back to its old head", () => {
+  const before = fx.startBranch(33, "g", "one");
+  fx.advanceBase("b33", "base");
+  const hook = path.join(fx.root, "origin.git", "hooks", "pre-receive");
+  fs.writeFileSync(hook, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  let out = "";
+  try {
+    out = ask({ op: "sync-base", number: 33 });
+  } finally {
+    fs.rmSync(hook);
+  }
+  assert.equal(JSON.parse(out).ok, false);
+  assert.equal(originRef("agent/issue-33"), before);
+  assert.deepEqual(fx.worktreeState(33), { head: before, status: "" });
 });
 
 // A branch whose file `c<n>` conflicts with the same file added on the base.
@@ -235,4 +254,6 @@ test("finish-sync pushes a finished rebase", () => {
   assert.equal(out, finishLine({ resolved: true, headSha }));
   assert.equal(gitIn(wt, "rev-parse HEAD"), headSha);
   assert.equal(originRef(`${headSha}^`), originRef("integration"));
+  const record = { sha: headSha, op: "finish-sync", dated: true };
+  assert.deepEqual(pushRecord(fx.root, 48), record);
 });

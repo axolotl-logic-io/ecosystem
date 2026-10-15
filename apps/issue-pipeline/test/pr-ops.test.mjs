@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { okLine, opsFixture, opsSourceDefines } from "./ops-fixture.mjs";
+import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("pr-ops");
 const { signed } = await import("../src/comments.ts");
@@ -60,6 +61,8 @@ test("start-pr on a new branch with no open PR opens a draft", () => {
   const out = startPr(1, 51);
   const headSha = originRef("agent/issue-1");
   assert.equal(out, okLine("start-pr", { pr: 51, headSha }));
+  const record = { sha: headSha, op: "start-pr", dated: true };
+  assert.deepEqual(pushRecord(fx.root, 1), record);
   assert.equal(
     fx.sh(`git --git-dir ${fx.root}/origin.git log -1 --format=%B ${headSha}`),
     "Start work on #1\n\nPipeline-Agent: coordinator",
@@ -113,6 +116,8 @@ test("open-pr fills in the draft and marks it ready", () => {
   const headSha = originRef("agent/issue-4");
   assert.equal(headSha, fx.sh(`git -C ${fx.worktree(4)} rev-parse HEAD`));
   assert.equal(out, okLine("open-pr", { pr: 54, headSha }));
+  const record = { sha: headSha, op: "open-pr", dated: true };
+  assert.deepEqual(pushRecord(fx.root, 4), record);
   const body = signed({ role: "implementer" }, "Closes #4\n\n");
   assert.deepEqual(fakeGh.calls(), [
     listCall(4),
@@ -194,6 +199,7 @@ test("push pushes the branch after a real commit", () => {
   const out = ask({ op: "push", number: 7 });
   assert.equal(out, okLine("push", { headSha: sha }));
   assert.equal(originRef("agent/issue-7"), sha);
+  assert.deepEqual(pushRecord(fx.root, 7), { sha, op: "push", dated: true });
   assert.deepEqual(fakeGh.calls(), []);
 });
 

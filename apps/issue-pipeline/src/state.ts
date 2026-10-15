@@ -2,6 +2,7 @@
 // pipeline's account writes, and where a start or restart picks up from.
 
 import { z } from "zod";
+import type { PushRecord } from "./checkouts.ts";
 import type { IssueComment } from "./comments.ts";
 import { listComments, rawComment, STATE_MARK } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -14,12 +15,15 @@ const ESCAPED_MARK_END = "--\\u003e";
 // Leaves room under GitHub's comment limit for the header and footer.
 const MAX_STATE_LENGTH = 60_000;
 const STAMP_LENGTH = 16;
+// How much of a head the log names.
+const LOG_SHA_LENGTH = 8;
 
 // The fields the ops modules read; the workflow owns the rest, which pass
 // through unchanged.
 const STATE = z.looseObject({
   depth: z.number().optional(),
   findings: z.array(z.looseObject({ status: z.unknown() })).nullish(),
+  headSha: z.string().nullish(),
   log: z.array(z.unknown()).nullish(),
   implemented: z.unknown().optional(),
   pr: z.unknown().optional(),
@@ -230,5 +234,67 @@ function startState(state: State | null, start: StartContext): State {
   };
 }
 
+// The ops whose pushes are adopted: the syncs with the base branch, which push
+// a head made from one the reviews already passed. Every other push (start-pr,
+// open-pr, a fix's or a CI fix's push) is followed by a review that adoption
+// would skip.
+const ADOPTABLE_OPS: ReadonlySet<string> = new Set([
+  "sync-base",
+  "finish-sync",
+]);
+
+// The stages after review, from which an adopted head can go back to sync
+// without skipping the code review.
+const ADOPTABLE_STAGES: ReadonlySet<unknown> = new Set([
+  "sync",
+  "checks",
+  "accept",
+  "security",
+  "merge",
+]);
+
+// The saved state with the branch head the pipeline pushed itself adopted, for
+// when the push landed but the state save after it failed: the saved head is
+// set, and `remote` differs from it but is the head this machine recorded
+// pushing (`pushed`). The adopted head goes back through sync and every check
+// after it. Only a sync's push, from a state saved at sync or later, is
+// adopted: any other push sent to sync would skip the review that follows it,
+// so it still stops with branch-changed. Null when there is nothing to adopt
+// or the head isn't the pipeline's own sync.
+function adoptPush(
+  saved: State,
+  remote: string | null,
+  pushed: PushRecord | null,
+  now: Date,
+): State | null {
+  const { headSha, stage } = saved;
+  const known = headSha !== undefined && headSha !== null;
+  if (!known || remote === null || remote === headSha || pushed === null) {
+    return null;
+  }
+  if (remote !== pushed.sha || !ADOPTABLE_OPS.has(pushed.op)) {
+    return null;
+  }
+  if (!ADOPTABLE_STAGES.has(stage)) {
+    return null;
+  }
+  const entry = `${stamp(now)} adopted the pipeline's own push ${remote.slice(0, LOG_SHA_LENGTH)}; its state save had failed`;
+  return {
+    ...saved,
+    headSha: remote,
+    passedSha: null,
+    stage: "sync",
+    log: [...(saved.log ?? []), entry],
+  };
+}
+
 export type { StartContext, State, StoredState };
-export { newState, parseStateBody, readState, STATE, startState, writeState };
+export {
+  adoptPush,
+  newState,
+  parseStateBody,
+  readState,
+  STATE,
+  startState,
+  writeState,
+};

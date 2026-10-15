@@ -7,6 +7,7 @@ import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import { syncReplyOf } from "./checks-reply.ts";
+import { opFailedStep } from "./network.ts";
 import { doneStep, launchStep, onlyReply, stopStep } from "./step.ts";
 import {
   conflicted,
@@ -117,7 +118,9 @@ function synced(
   const reply = syncReplyOf(onlyReply(results));
   const base = ctx.cfg.baseBranch;
   if (reply.kind === "failed") {
-    return stopStep(state, `could not sync with ${base}`, reply.error);
+    const reason = `could not sync with ${base}`;
+    const failed = { op: "sync-base", reason, error: reply.error };
+    return opFailedStep(state, failed, ctx.now());
   }
   if (reply.kind === "clean") {
     return clean(state, ctx, reply.changed, reply.headSha);

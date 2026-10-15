@@ -119,7 +119,7 @@ function startBranch(cfg: Config, n: number): string {
   assertClean(wt);
   const message = `Start work on #${n}\n\nPipeline-Agent: coordinator`;
   run("git", ["-C", wt, "commit", "--allow-empty", "-m", message]);
-  return push(cfg, n, { allowEmpty: true });
+  return push(cfg, n, "start-pr", { allowEmpty: true });
 }
 
 // Open the issue's PR as a draft as soon as triage says ready, before any code is
@@ -148,7 +148,7 @@ function startPr(cfg: Config, request: unknown): PrReply {
 function openPr(cfg: Config, request: unknown): PrReply {
   const req = parsed(OPEN_REQUEST, "open-pr request", request);
   const n = req.number;
-  const headSha = push(cfg, n);
+  const headSha = push(cfg, n, "open-pr");
   const title = titleFor(n, textOr(req.title, `Fix #${n}`));
   const body = signed(
     req.by ?? IMPLEMENTER,
@@ -170,7 +170,7 @@ function openPr(cfg: Config, request: unknown): PrReply {
 
 function pushOp(cfg: Config, request: unknown): PushReply {
   const { number } = parsed(PUSH_REQUEST, "push request", request);
-  return { headSha: push(cfg, number) };
+  return { headSha: push(cfg, number, "push") };
 }
 
 const prOps: Readonly<Record<string, Op>> = {

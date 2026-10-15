@@ -8,6 +8,11 @@ import { SECURITY_RULES } from "../src/workflow/lenses.ts";
 import { SECURITY_SCHEMA } from "../src/workflow/review-schemas.ts";
 import { next } from "../src/workflow/stages/security.ts";
 import {
+  deferral,
+  deferredFrom,
+  NETWORK_FAILURE,
+} from "./deferral-test-kit.mjs";
+import {
   CTX,
   contextWith,
   DIFF,
@@ -65,7 +70,7 @@ function reviewed(findings, fields = {}) {
   return decided(next, stateWith("security", fields), { findings });
 }
 
-test("the security review charges the reviewer and tags its diff by round", () => {
+test("the security review tags its diff by round before charging the reviewer", () => {
   const given = stateWith("security");
   const step = next(given, CTX, []);
   assert.deepEqual(step.launches, [
@@ -76,14 +81,15 @@ test("the security review charges the reviewer and tags its diff by round", () =
       payload: { number: 7, tag: "security-1" },
     },
   ]);
-  assert.equal(step.state.st.allocated, ROLES.reviewer);
-  assert.deepEqual(step.state.st.sessions, ["reviewer"]);
+  assert.equal(step.state.st.allocated, 0);
   assert.equal(prepTag({ securityRounds: 2 }), "security-3");
   assert.deepEqual(given, stateWith("security"));
 });
 
-test("the reviewer reads the full diff with the security rules", () => {
+test("the reviewer is charged, then reads the full diff with the security rules", () => {
   const step = prepared(next, stateWith("security"));
+  assert.equal(step.state.st.allocated, ROLES.reviewer);
+  assert.deepEqual(step.state.st.sessions, ["reviewer"]);
   assert.deepEqual(step.launches, [
     {
       kind: "child",
@@ -190,6 +196,16 @@ test("a failed or moved diff stops before the session", () => {
   });
 });
 
+test("a diff that failed on the network defers to the next sweep", () => {
+  const given = stateWith("security");
+  const failed = prepared(next, given, { ok: false, error: NETWORK_FAILURE });
+  assert.deepEqual(
+    deferral(failed),
+    deferredFrom(given, "prepare-review", STAMP),
+  );
+  assert.deepEqual(failed.comments, []);
+});
+
 test("a failed session or a malformed reply stops", () => {
   const step = prepared(next, stateWith("security"));
   const failed = sessionEnded(next, step, {
@@ -210,8 +226,11 @@ test("a failed session or a malformed reply stops", () => {
   });
 });
 
-test("a reviewer that doesn't fit the budget stops", () => {
-  const step = next(stateWith("security"), contextWith(SMALL_BUDGET), []);
+test("a reviewer that doesn't fit the budget stops once the diff is ready", () => {
+  const small = contextWith(SMALL_BUDGET);
+  const begun = next(stateWith("security"), small, []);
+  assert.equal(begun.stop, null);
+  const step = next(begun.state, small, [{ kind: "op", reply: DIFF }]);
   assert.deepEqual(step.stop, {
     reason: "issue token budget exhausted",
     detail:

@@ -107,6 +107,30 @@ test("after a lost claim, the next candidate resumes from its saved lease", asyn
   snapshot(trace);
 });
 
+test("a claimed branch whose head isn't the saved one stops as changed", async () => {
+  const saved = { number: RESUMED_ISSUE, pr: 48, headSha: "8888888" };
+  const claim = { ...claimAt("merge", saved), remoteHead: "9999999" };
+  const { trace, summary } = await runWorkflow({
+    args: WORKFLOW_ARGS,
+    ops: {
+      ...ROUTINE_OPS,
+      sweep: sweepReply({ items: [RESUMED_ISSUE] }),
+      claim,
+    },
+  });
+  assert.deepEqual(launchKeys(trace), [
+    "sweep-1",
+    "i8-claim-2",
+    "i8-stop-3",
+    "cleanup-4",
+  ]);
+  const [item] = summary.items;
+  assert.deepEqual(
+    [item.outcome, item.reason],
+    ["stopped", "the PR branch changed outside the pipeline"],
+  );
+});
+
 test("a sweep closes the parents it is given", async ({
   assert: { snapshot },
 }) => {

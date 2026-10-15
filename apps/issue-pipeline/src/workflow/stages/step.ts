@@ -1,6 +1,7 @@
 // The steps a stage returns: launch more, finish, or finish by stopping work
 // on the issue.
 
+import { noteEvent } from "../event-log.ts";
 import type { Signature } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import type {
@@ -76,6 +77,18 @@ function doneStep(
   return { done: true, again: false, state, comments, stop: null };
 }
 
+// The stage is finished for this sweep because `op` hit a network error: the
+// issue stays at its stage, and the next sweep runs the stage again.
+function deferStep(state: StageState, op: string, now: Date): Step {
+  const st = copyState(state.st);
+  noteEvent(
+    st,
+    `deferred: network error during ${op}; will retry next sweep`,
+    now,
+  );
+  return doneStep({ ...state, st });
+}
+
 // This round of the stage is finished, after posting `comments`: the sweep
 // begins the stage again if the issue is still at it and it fits.
 function againStep(
@@ -146,6 +159,7 @@ export {
   againStep,
   codedStopStep,
   copyState,
+  deferStep,
   doneStep,
   launchEach,
   launchStep,

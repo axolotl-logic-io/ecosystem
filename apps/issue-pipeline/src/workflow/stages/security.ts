@@ -78,31 +78,32 @@ function roundOf(st: IssueState): number {
   return (st.securityRounds ?? 0) + 1;
 }
 
-// Charges the reviewer's session, then prepares the diff for this round.
-function begin(state: StageState, ctx: StageContext): Step {
-  const st = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "reviewer");
-  if (!charge.charged) {
-    return stopStep(charged, "issue token budget exhausted", charge.detail);
-  }
-  return launchStep({ ...charged, phase: "review" }, [
-    finalDiffLaunch(charged, `security-${roundOf(st)}`),
+// Prepares the diff for this round.
+function begin(state: StageState): Step {
+  return launchStep({ ...state, phase: "review" }, [
+    finalDiffLaunch(state, `security-${roundOf(state.st)}`),
   ]);
 }
 
+// Charges the reviewer's session once the diff is ready, then launches it.
 function review(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
   const failure = "could not prepare the security review diff";
-  const diff = finalDiffOf(state, results, failure);
+  const diff = finalDiffOf(state, ctx, results, failure);
   if (!diff.ok) {
-    return codedStopStep(state, diff.stop);
+    return diff.step;
   }
-  return launchStep({ ...state, phase: "decide" }, [
-    securityLaunch(state, ctx, diff),
+  const st = { ...state.st };
+  const charged = { ...state, st };
+  const charge = chargeSession(ctx.budgets, st, "reviewer");
+  if (!charge.charged) {
+    return stopStep(charged, "issue token budget exhausted", charge.detail);
+  }
+  return launchStep({ ...charged, phase: "decide" }, [
+    securityLaunch(charged, ctx, diff),
   ]);
 }
 
@@ -200,7 +201,7 @@ function next(
   const phase = phaseOf(state);
   switch (phase) {
     case "begin":
-      return begin(state, ctx);
+      return begin(state);
     case "review":
       return review(state, ctx, results);
     case "decide":

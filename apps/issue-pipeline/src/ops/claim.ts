@@ -11,6 +11,7 @@ import {
   branchHasWork,
   ensureWorktree,
   fetchIn,
+  lastPush,
   remoteHead,
 } from "../checkouts.ts";
 import type { LaneRequest } from "../claims.ts";
@@ -22,7 +23,7 @@ import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError, run, shell } from "../process.ts";
 import type { State } from "../state.ts";
-import { readState, startState, writeState } from "../state.ts";
+import { adoptPush, readState, startState, writeState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import { ensureWiki } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
@@ -116,7 +117,12 @@ function claimedState(
   );
   const ended = saved?.stage === "stopped" || saved?.stage === "done";
   if (saved !== null && !ended && !answered) {
-    return { state: saved, remote };
+    const adopted = adoptPush(saved, remote, lastPush(cfg, n), new Date());
+    if (adopted === null) {
+      return { state: saved, remote };
+    }
+    resetWorktree(cfg, n, remote);
+    return { state: adopted, remote };
   }
   const { pr, hasWork } = branchWork(cfg, n, remote);
   const depth = issueDepth(issue.body);
