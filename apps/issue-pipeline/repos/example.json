@@ -1,0 +1,61 @@
+{
+  "repo": "OWNER/REPO",
+  "baseBranch": "main",
+  "account": "axolotl-logic",
+  "allowedUsers": ["axolotl-logic"],
+  "tokenFile": "~/.pi/agent/issue-pipeline/secrets/OWNER__REPO.token",
+  "mergeAdmin": false,
+  "leaseHours": 3,
+  "claimWaitSeconds": [5, 20],
+  "claimCandidates": 5,
+  "issueTokenBudget": 1000000,
+  "sessionTokenCap": 150000,
+  "maxFixRounds": 2,
+  "maxCiFixes": 2,
+  "maxSyncs": 3,
+  "maxTriages": 3,
+  "requireCi": true,
+  "requireNewTests": true,
+  "ciWaitMinutes": 30,
+  "commandTimeoutMinutes": 20,
+  "commands": {
+    "setup": "npm ci",
+    "test": "npm test",
+    "lint": "npm run lint",
+    "typecheck": "npx tsc --noEmit",
+    "teardown": "echo nothing to free"
+  },
+  "testPathGlobs": [
+    "test/**",
+    "tests/**",
+    "**/__tests__/**",
+    "**/*.test.*",
+    "**/*.spec.*"
+  ],
+  "nonCodePathGlobs": [
+    "**/*.md",
+    "docs/**"
+  ],
+  "lockfiles": [
+    {
+      "path": "package-lock.json",
+      "regenerate": "npm install --package-lock-only --ignore-scripts"
+    }
+  ],
+  "migrations": {
+    "pathGlobs": [
+      "migrations/**"
+    ],
+    "setup": "docker rm -f pipeline-scratch-db >/dev/null 2>&1; docker run -d --name pipeline-scratch-db -e POSTGRES_PASSWORD=x -p 55432:5432 postgres:16 && sleep 5",
+    "up": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:up",
+    "down": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:down"
+  },
+  "models": {
+    "scope": "anthropic/claude-sonnet-5-5"
+  },
+  "roleBudgets": {},
+  "wiki": {
+    "dir": "wiki",
+    "branch": "master"
+  }
+}

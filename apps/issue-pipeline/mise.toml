@@ -1,2 +1,15 @@
-# The issue pipeline has no tasks here yet. Its code still lives outside the
-# repo; see README.md in this folder.
+# The issue pipeline's tasks. Each runs in this folder and uses the node version
+# from the root mise.toml. Run them from anywhere with
+# `mise //apps/issue-pipeline:<task>`.
+
+[tasks.check]
+description = "Run the pipeline's tests"
+run = "node --check ops.mjs && node --check install.mjs && node --test 'test/*.test.mjs'"
+
+[tasks.install]
+description = "Install this checkout's pipeline where pi reads it"
+run = "node install.mjs"
+
+[tasks."install:dry-run"]
+description = "List what install would change, writing nothing"
+run = "node install.mjs --dry-run"

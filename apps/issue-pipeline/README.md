@@ -1,7 +1,38 @@
 # Issue pipeline
 
-The issue pipeline turns GitHub issues into pull requests. Its code, agents and docs still live outside this repo, in `$ISSUE_PIPELINE_ROOT` (by default `~/.pi/agent/issue-pipeline`), and move into this folder in a later issue.
+The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents workflow that triages each issue, opens a PR, writes a spec, implements, reviews, fixes, verifies and merges. See the wiki's [Issue pipeline](https://github.com/axolotl-logic/project-buddy/wiki/Issue-Pipeline) page for its goal, rules and design, [Running the issue pipeline](https://github.com/axolotl-logic/project-buddy/wiki/Running-the-Issue-Pipeline) for the operating manual, and [Agent labels](https://github.com/axolotl-logic/project-buddy/wiki/Agent-Labels) for its labels.
 
-When they move, the pipeline's per-repo configs stay outside the repo (`per-repo-config-kept-local`).
+## Files
 
-See the wiki's [Issue pipeline](https://github.com/axolotl-logic/project-buddy/wiki/Issue-Pipeline) page for how it works.
+| Path | What it is |
+|---|---|
+| `workflow.js` | The sweep. Runs in the pi-subagents sandbox and uses no model tokens itself. |
+| `ops.mjs` | The only code that runs `git` and `gh` or reads tokens, called through the `issue-pipeline-ops` agent. |
+| `agents/` | The four agents: `issue-pipeline-ops` (command runner), `-reader` (read-only), `-specifier` (read-only plus web search) and `-writer`. |
+| `prompts/` | `/pipeline-start` and `/pipeline-pause`, which start and pause a lane in a pi session. |
+| `repos/example.json` | Every field of a per-repo config. |
+| `install.mjs` | Installs this folder where pi reads it. |
+| `test/` | Tests for `ops.mjs`, `workflow.js` and `install.mjs`. |
+
+`{{ISSUE_PIPELINE_ROOT}}` and `{{PI_CODING_AGENT_DIR}}` in the agents and prompts are filled in by the install.
+
+## Install
+
+The pipeline runs from an installed copy, not from this folder:
+
+```bash
+mise //apps/issue-pipeline:install:dry-run  # list what would change
+mise //apps/issue-pipeline:install          # install
+```
+
+It copies `workflow.js`, `ops.mjs` and `repos/example.json` to `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`), the agents to `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` and the prompts to `$PI_CODING_AGENT_DIR/prompts/` (default `~/.pi/agent`). It backs up each file it replaces to `$ISSUE_PIPELINE_ROOT-backups/<timestamp>-install/` and records the commit in `INSTALLED.json`. It refuses a checkout with uncommitted changes in this folder unless given `--allow-dirty`, and refuses to install from the pipeline's own worktrees.
+
+Merging a PR changes nothing that runs: only the operator's install does. That way an agent's PR can't change the code that checks its own work. Install from a checkout of a merged commit, between sweeps or with the lanes paused (`/pipeline-pause`). Every op reads `ops.mjs` fresh, but a schedule keeps the `workflow.js` text it was created with, so recreate the lanes after a change to it.
+
+Each repo's config, its setup and teardown scripts and its token stay local in `$ISSUE_PIPELINE_ROOT/repos/` and `secrets/` (`per-repo-config-kept-local`), as do `clones/`, `work/` and `runs/`. The install never touches them.
+
+## Tests
+
+```bash
+mise //apps/issue-pipeline:check
+```
