@@ -715,9 +715,13 @@ ops.release = (cfg, req) => {
 
 // ---------- entry point ----------
 
+// The request runs to the last END marker, not the first: the JSON can carry the
+// marker words inside a string, such as a plan or spec about this protocol (#176).
+const OPS_REQUEST = /BEGIN_OPS_REQUEST\s*([\s\S]*)END_OPS_REQUEST/u;
+
 function main() {
   const raw = fs.readFileSync(0, "utf8");
-  const m = raw.match(/BEGIN_OPS_REQUEST\s*([\s\S]*?)\s*END_OPS_REQUEST/);
+  const m = raw.match(OPS_REQUEST);
   let reply;
   try {
     if (!m) throw new OpsError("no BEGIN_OPS_REQUEST ... END_OPS_REQUEST block on stdin");
