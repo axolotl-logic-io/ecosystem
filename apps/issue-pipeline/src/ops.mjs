@@ -63,257 +63,32 @@ import { OpsError, run, shell, tail } from "./process.ts";
 import { readState, startState, writeState } from "./state.ts";
 import { isStopLabel, STOPS, stopFor } from "./stops.ts";
 import { ensureWiki, pushWiki, wikiDiff } from "./wiki.ts";
+import { ask } from "./ops/ask.ts";
+import { claim } from "./ops/claim.ts";
+import { openPrFor } from "./ops/prs.ts";
+import { saveState } from "./ops/save-state.ts";
+import { split } from "./ops/split.ts";
+import { stop } from "./ops/stop.ts";
+import { sweep } from "./ops/sweep.ts";
 
 // ---------- operations ----------
 
 const ops = {};
 
-ops.sweep = (cfg, req) => {
-  // Every signature and trust check assumes gh acts as `account`.
-  const login = gh(cfg, ["api", "user", "--jq", ".login"]).stdout.trim();
-  if (login !== cfg.account) throw new OpsError(`gh is logged in as ${login}, but the config's account is ${cfg.account}`);
-  ensureLabels(cfg);
-  ensureClone(cfg);
-  const now = Date.now();
-  const leaseMs = cfg.leaseHours * 3600 * 1000;
-  const issues = ghJson(cfg, [
-    "issue", "list", "-R", cfg.repo, "--state", "open", "--limit", "300",
-    "--json", "number,title,author,labels,createdAt,body",
-  ]) || [];
-  const openNumbers = new Set(issues.map((i) => i.number));
-  const candidates = [];
-  const parents = [];
-  let liveElsewhere = 0;
-  const skipped = [];
-  if (req.only) return sweepOne(cfg, req, issues, now, leaseMs);
-  for (const issue of issues) {
-    const labels = new Set(issue.labels.map((l) => l.name));
-    if ([...labels].some(isStopLabel) || labels.has(LABELS.merged.name)) continue;
-    const skipLabel = (cfg.skipLabels || []).find((l) => labels.has(l));
-    if (skipLabel) {
-      skipped.push({ number: issue.number, reason: "labelled " + skipLabel + " (skipLabels)" });
-      continue;
-    }
-    const parentMatch = (issue.body || "").match(PARENT_MARK);
-    const author = issue.author?.login;
-    // The pipeline's account is always allowed, so its sub-issues pass this check too.
-    if (!isAllowedUser(cfg, author)) {
-      skipped.push({ number: issue.number, reason: "author is not on allowedUsers, or not a collaborator" });
-      continue;
-    }
-    if (labels.has(LABELS.split.name)) {
-      parents.push(issue.number);
-      continue;
-    }
-    const depth = parentMatch ? Number(parentMatch[2]) : 0;
-    const after = (issue.body || "").match(AFTER_MARK);
-    if (after && after[1].split(",").some((d) => openNumbers.has(Number(d)))) continue; // An earlier sub-issue must merge first.
-    if (labels.has(LABELS.working.name)) {
-      const { state } = readState(cfg, issue.number);
-      const leaseAt = state?.lease?.at ? Date.parse(state.lease.at) : 0;
-      const live = state && state.lease && now - leaseAt < leaseMs;
-      if (live && leaseLane(state.lease) !== laneOf(req)) {
-        liveElsewhere++;
-        continue;
-      }
-      // A lane finishes its own issue before it takes another.
-      candidates.push({ number: issue.number, title: issue.title, kind: live ? "mine" : "resume", priority: live ? -1 : 0, createdAt: issue.createdAt, depth });
-    } else if (labels.has(LABELS.needsInfo.name)) {
-      const comments = listComments(cfg, issue.number);
-      const { state } = readState(cfg, issue.number, comments);
-      const askedAt = state?.questionsAt ? Date.parse(state.questionsAt) : 0;
-      // Judge by the signature, not the author: the pipeline's account may be the person answering.
-      const answered = comments.some(
-        (c) => !pipelineRole(cfg, c) && Date.parse(c.created_at) > askedAt && isAllowedUser(cfg, c.user?.login),
-      );
-      if (answered) candidates.push({ number: issue.number, title: issue.title, kind: "answered", priority: 1, createdAt: issue.createdAt, depth });
-    } else if (!issue.labels.some((l) => isPipelineLabel(l.name))) {
-      if (cfg.takeNewWork === false) {
-        skipped.push({ number: issue.number, reason: "new work is paused (takeNewWork: false)" });
-        continue;
-      }
-      candidates.push({ number: issue.number, title: issue.title, kind: "new", priority: 2, createdAt: issue.createdAt, depth });
-    }
-  }
-  candidates.sort((a, b) => a.priority - b.priority || Date.parse(a.createdAt) - Date.parse(b.createdAt));
-  // Each sweep works on one issue. Several lanes of one repo can run at once, on
-  // one machine or several, so the number of issues in progress is the number of
-  // lanes. The sweep returns a few candidates in order; the workflow claims them
-  // one at a time (see raceForClaim) until a claim wins.
-  const items = candidates.slice(0, cfg.claimCandidates);
-  // Parents are closed by whichever sweep gets there; a local reservation keeps two
-  // sweeps on this machine from closing the same parent at once.
-  return withRepoLock(cfg, "sweep", () => {
-    const file = path.join(ROOT, "runs", cfg.slug, "reservations.json");
-    let held = {};
-    try {
-      held = JSON.parse(fs.readFileSync(file, "utf8"));
-    } catch {}
-    const others = {};
-    for (const [key, r] of Object.entries(held)) {
-      if (key.startsWith("parent-") && r.sweepId !== req.sweepId && now - Date.parse(r.at) < RESERVATION_MS) others[key] = r;
-    }
-    const myParents = parents.filter((n) => !others["parent-" + n]);
-    const mine = {};
-    for (const n of myParents) mine["parent-" + n] = { sweepId: req.sweepId, at: new Date(now).toISOString() };
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ ...others, ...mine }, null, 2));
-    return {
-      config: publicConfig(cfg),
-      items,
-      waiting: candidates.length - items.length,
-      parents: myParents,
-      liveElsewhere,
-      skipped: skipped.length,
-    };
-  });
-};
+ops.sweep = sweep;
 
-// A run launched for one named issue (workflow args.issue). It takes the issue
-// even with an agent:stopped-* label on it: a human chose it.
-// It still refuses an issue another live lane holds, and its claim races like any other.
-function sweepOne(cfg, req, issues, now, leaseMs) {
-  const n = Number(req.only);
-  const issue = issues.find((i) => i.number === n);
-  if (!issue) throw new OpsError(`#${n} is not an open issue`);
-  if (!isAllowedUser(cfg, issue.author?.login)) throw new OpsError(`#${n} was opened by @${issue.author?.login}, who is not on allowedUsers or not a collaborator`);
-  const labels = new Set(issue.labels.map((l) => l.name));
-  const { state } = readState(cfg, n);
-  const leaseAt = state?.lease?.at ? Date.parse(state.lease.at) : 0;
-  if (labels.has(LABELS.working.name) && state?.lease && now - leaseAt < leaseMs && leaseLane(state.lease) !== laneOf(req)) {
-    throw new OpsError(`#${n} is held by live lane ${leaseLane(state.lease)}`);
-  }
-  const parentMatch = (issue.body || "").match(PARENT_MARK);
-  return {
-    config: publicConfig(cfg),
-    items: [{ number: n, title: issue.title, kind: "named", priority: 0, createdAt: issue.createdAt, depth: parentMatch ? Number(parentMatch[2]) : 0 }],
-    waiting: 0,
-    parents: [],
-    liveElsewhere: 0,
-    skipped: 0,
-  };
-}
-
-ops.claim = (cfg, req) => {
-  const n = req.number;
-  const { file, issue, comments } = writeIssueContext(cfg, n);
-  if (issue.state !== "open") throw new OpsError(`#${n} is not open`);
-  const race = raceForClaim(cfg, n, req, comments);
-  if (!race.won) return { lost: true, holder: race.holder, posted: race.posted, waited: race.waited };
-  let { state } = readState(cfg, n, comments);
-  const parentMatch = (issue.body || "").match(PARENT_MARK);
-  const remote = remoteHead(cfg, n);
-  const depth = parentMatch ? Number(parentMatch[2]) : 0;
-  const wasNeedsInfo = issue.labels.some((l) => l.name === LABELS.needsInfo.name);
-  // A start: new work, a removed agent:stopped-* label, or answered questions. A lane
-  // picking up a lapsed lease is not a start; it carries on at the saved stage.
-  const starting = !state || state.stage === "stopped" || state.stage === "done" || wasNeedsInfo;
-  if (starting) {
-    const pr = remote ? openPrFor(cfg, n) || null : null;
-    state = startState(state, { n, depth, remote, pr, hasWork: !!pr && branchHasWork(cfg, n, remote), answered: wasNeedsInfo, now: new Date() });
-    if (remote && fs.existsSync(path.join(paths.worktree(cfg, n), ".git"))) {
-      const wt = paths.worktree(cfg, n);
-      fetchIn(cfg, wt, paths.branch(n));
-      run("git", ["-C", wt, "reset", "--hard", remote]);
-      run("git", ["-C", wt, "clean", "-fd"]);
-    }
-  }
-  state.lease = { lane: laneOf(req), sweepId: req.sweepId, at: new Date().toISOString() };
-  const newWorktree = !fs.existsSync(path.join(paths.worktree(cfg, n), ".git"));
-  const wt = ensureWorktree(cfg, n);
-  const wiki = ensureWiki(cfg, n);
-  // Set up a new worktree now, not only at verify, so the writer's own test runs
-  // get this issue's database and ports instead of copying the shared defaults.
-  // A failure here is only logged: verify runs setup again and reports it.
-  if (newWorktree && cfg.commands.setup) {
-    shell(cfg.commands.setup, wt, path.join(paths.runDir(cfg, n), "setup-at-claim.log"), cfg.commandTimeoutMinutes * 60000);
-  }
-  setLabels(cfg, n, [LABELS.working.name], [LABELS.needsInfo.name, ...issue.labels.map((l) => l.name).filter(isStopLabel)]);
-  if (state.pr) {
-    setLabels(cfg, state.pr, [LABELS.working.name]);
-    clearStopLabels(cfg, state.pr);
-  }
-  writeState(cfg, n, state);
-  const runDir = paths.runDir(cfg, n);
-  return {
-    state,
-    claim: { id: race.claimId, posted: race.posted, waited: race.waited },
-    remoteHead: remote,
-    paths: {
-      worktree: wt,
-      runDir,
-      issueFile: file,
-      handoffFile: path.join(runDir, "handoff.md"),
-      wiki,
-    },
-  };
-};
+ops.claim = claim;
 
 // Writes state and nothing else; queued comments ride along on every op (see main).
-ops["save-state"] = (cfg, req) => {
-  if (req.state) writeState(cfg, req.number, req.state);
-  return {};
-};
+ops["save-state"] = saveState;
 
-ops.ask = (cfg, req) => {
-  const n = req.number;
-  const qs = (req.questions || []).map((q, i) => `${i + 1}. ${q}`).join("\n");
-  comment(cfg, n, req.by || { role: "triage" }, `I need answers before the pipeline can work on this issue:\n\n${qs}\n\nReply in a comment. A reply from a user on the pipeline's allow list puts the issue back in the queue.`);
-  const state = { ...req.state, stage: "triage", questionsAt: new Date().toISOString(), lease: null };
-  writeState(cfg, n, state);
-  setLabels(cfg, n, [LABELS.needsInfo.name], [LABELS.working.name]);
-  closeClaims(cfg, n, "the pipeline asked questions; an answer puts the issue back in the queue.");
-  return {};
-};
+ops.ask = ask;
 
-ops.split = (cfg, req) => {
-  const n = req.number;
-  const depth = (req.state?.depth || 0) + 1;
-  const created = [];
-  for (const sub of req.subIssues || []) {
-    const deps = (sub.after || []).map((j) => created[j]).filter(Boolean);
-    const afterLine = deps.length ? `\nAfter ${deps.map((d) => `#${d}`).join(", ")} merges.\n<!-- agent-pipeline:after ${deps.join(",")} -->` : "";
-    const body = signed(req.by || { role: "triage" }, `${sub.body}\n\nPart of #${n}.${afterLine}\n\n<!-- agent-pipeline:parent ${n} depth ${depth} -->`);
-    const issue = ghJson(cfg, ["api", "-X", "POST", `repos/${cfg.repo}/issues`, "-f", `title=${sub.title}`, "-f", `body=${body}`]);
-    gh(cfg, ["api", "-X", "POST", `repos/${cfg.repo}/issues/${n}/sub_issues`, "-F", `sub_issue_id=${issue.id}`, "--silent"], { allowFail: true });
-    created.push(issue.number);
-  }
-  comment(cfg, n, req.by || { role: "triage" }, `I split this issue into ${created.map((c) => `#${c}`).join(", ")}. The pipeline closes it when they have all merged.`);
-  writeState(cfg, n, { ...req.state, stage: "split", lease: null, subIssues: created });
-  setLabels(cfg, n, [LABELS.split.name], [LABELS.working.name]);
-  closeClaims(cfg, n, "the issue was split into sub-issues.");
-  removeWorktree(cfg, n);
-  return { created };
-};
+ops.split = split;
 
 // Stop an issue at a failed control: label it agent:stopped-<code>, and explain
 // on the issue and its PR which control stopped it, why, and how to resume.
-ops.stop = (cfg, req) => {
-  const n = req.number;
-  const stop = (req.code && STOPS.find((x) => x.code === req.code)) || stopFor(req.reason);
-  const state = { ...req.state, stage: "stopped", lease: null, stopCode: stop.code, stopReason: req.reason };
-  const body = [
-    `**🛑 Stopped by a control: ${stop.control}** (\`${stop.label.name}\`)`,
-    "",
-    stop.explain,
-    "",
-    `Reason: ${req.reason}`,
-    req.detail ? `\n${req.detail}` : "",
-    "",
-    req.nextStep ||
-      `To resume, fix what this names (push to the branch if you like), then remove \`${stop.label.name}\`. The next sweep continues from the PR's branch at review, with every limit reset, the token budget included.`,
-  ].join("\n");
-  const by = { role: "coordinator" };
-  comment(cfg, n, by, body);
-  if (state.pr) comment(cfg, state.pr, by, body);
-  writeState(cfg, n, state);
-  for (const target of [n, state.pr].filter(Boolean)) {
-    clearStopLabels(cfg, target);
-    setLabels(cfg, target, [stop.label.name], [LABELS.working.name]);
-  }
-  closeClaims(cfg, n, `the issue stopped (\`${stop.label.name}\`); removing the label puts it back in the queue.`);
-  return { code: stop.code, label: stop.label.name };
-};
+ops.stop = stop;
 
 // PRs link to their issue twice: the body starts with "Closes #N", which links the
 // PR under the issue's Development section and closes it on merge, and the title
@@ -321,7 +96,6 @@ ops.stop = (cfg, req) => {
 const titleFor = (n, title) => (new RegExp(`#${n}\\b`).test(title) ? title : `${title} (#${n})`);
 const closesBody = (n, text) =>
   new RegExp(`\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #${n}\\b`, "i").test(text) ? text : `Closes #${n}\n\n${text}`;
-const openPrFor = (cfg, n) => (ghJson(cfg, ["pr", "list", "-R", cfg.repo, "--head", paths.branch(n), "--state", "open", "--json", "number"]) || [])[0]?.number;
 
 // Open the issue's PR as a draft as soon as triage says ready, before any code is
 // written. GitHub refuses a PR with no commits, so the branch starts with an empty

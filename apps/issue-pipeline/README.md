@@ -8,6 +8,7 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 |---|---|
 | `src/workflow.js` | The sweep. Runs in the pi-subagents sandbox and uses no model tokens itself. |
 | `src/ops.mjs` | The only code that runs `git` and `gh` or reads tokens, called through the `issue-pipeline-ops` agent. |
+| `src/ops/` | The ops moved out of `src/ops.mjs` into strict TypeScript, one module per op (`sweep`, `claim`, `save-state`, `ask`, `split`, `stop`), which `src/ops.mjs` imports and registers (#183). |
 | `build.ts` | Builds `src/` into `dist/` with esbuild: the workflow is transformed alone, keeping its top-level `await` and `return`; ops is bundled into one Node ES module. |
 | `dist/` | The build's output, `workflow.js` and `ops.mjs`, which the install copies. Ignored by git and Biome. |
 | `agents/` | The four agents: `issue-pipeline-ops` (command runner), `-reader` (read-only), `-specifier` (read-only plus web search) and `-writer`. |

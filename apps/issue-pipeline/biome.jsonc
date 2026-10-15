@@ -17,8 +17,10 @@
     // process (its arguments and environment), the files and the terminal.
     // The ops CLI's own modules are part of that boundary: they run git, gh
     // and the configured commands, and keep the clones, worktrees, locks and
-    // logs on disk (#166). The pure modules (globs, stops, labels, comments,
-    // claims, state) get no exception.
+    // logs on disk (#166), as do the ops that keep files themselves: the
+    // sweep's reservations and the claim's worktree checks and setup log
+    // (#183). The pure modules (globs, stops, labels, comments, claims, state,
+    // and the ops in src/ops/ not listed here) get no exception.
     {
       "includes": [
         "install.mjs",
@@ -31,7 +33,9 @@
         "src/locks.ts",
         "src/checkouts.ts",
         "src/wiki.ts",
-        "src/issue-context.ts"
+        "src/issue-context.ts",
+        "src/ops/sweep.ts",
+        "src/ops/claim.ts"
       ],
       "linter": {
         "rules": {
