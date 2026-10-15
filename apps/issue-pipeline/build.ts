@@ -11,7 +11,8 @@
 // an IIFE that defines `workflowModules`, placed ahead of the body; the body
 // itself is transformed alone, never bundled: it keeps its top-level `await`
 // and `return`, its globals and gains no imports.
-// The ops CLI is bundled for Node into one ES module that keeps its `#!` line.
+// The ops CLI's entry, src/ops.ts, is bundled with the strict-TS modules it
+// imports for Node into one ES module, ops.mjs, that keeps its `#!` line.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -25,7 +26,7 @@ const WORKFLOW_SOURCE = path.join(SOURCE_DIR, "workflow.js");
 const WORKFLOW_HELPERS_SOURCE = path.join(SOURCE_DIR, "workflow", "index.ts");
 // The variable the helpers' bundle defines, which the body reads them from.
 const WORKFLOW_HELPERS_GLOBAL = "workflowModules";
-const OPS_SOURCE = path.join(SOURCE_DIR, "ops.mjs");
+const OPS_SOURCE = path.join(SOURCE_DIR, "ops.ts");
 const WORKFLOW_OUTPUT = "workflow.js";
 const OPS_OUTPUT = "ops.mjs";
 

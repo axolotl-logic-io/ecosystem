@@ -143,7 +143,19 @@ test("release renews the lease's time, keeps its lane and touches the claim", ()
   );
 });
 
-test("the built ops merges and releases as src/ops.mjs does", () => {
+test("merge without expectedSha answers ok:false and merges nothing", () => {
+  const w = world();
+  fakeGh.reply([]);
+  const reply = JSON.parse(
+    ask(w, { op: "merge", number: 7, state: { pr: 50, stage: "merge" } }),
+  );
+  assert.equal(reply.ok, false);
+  assert.match(reply.error, /expectedSha/u);
+  const merges = calls().filter((args) => args.join(" ").includes("pr merge"));
+  assert.deepEqual(merges, []);
+});
+
+test("the built ops merges and releases as src/ops.ts does", () => {
   const out = fs.mkdtempSync("/tmp/issue-pipeline-built-ops-");
   process.on("exit", () => fs.rmSync(out, { recursive: true, force: true }));
   const build = new URL("../build.ts", import.meta.url).pathname;

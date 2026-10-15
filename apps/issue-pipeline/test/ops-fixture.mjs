@@ -7,7 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { installFakeGh } from "./fake-gh.mjs";
 
-const OPS = new URL("../src/ops.mjs", import.meta.url).pathname;
+const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
 const BASE = "integration";
 
 // Runs a bash command and returns its trimmed stdout; a failure throws.
@@ -161,11 +161,14 @@ function okLine(op, reply) {
   return `${JSON.stringify({ ok: true, op, posted: 0, ...reply })}\n`;
 }
 
-// True when src/ops.mjs still assigns the handler, as `ops["x"] =` or `ops.x =`.
+// True when src/ops.ts still defines the handler itself: names the op as a
+// string literal, as a Map entry does, or assigns it as `ops["x"] =` or
+// `ops.x =`.
 function opsSourceDefines(name) {
   const source = fs.readFileSync(OPS, "utf8");
   return (
-    source.includes(`ops["${name}"] =`) || source.includes(`ops.${name} =`)
+    source.includes(`"${name}"`) ||
+    source.includes(`ops.${name} =`)
   );
 }
 

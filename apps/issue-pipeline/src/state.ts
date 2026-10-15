@@ -231,4 +231,4 @@ function startState(state: State | null, start: StartContext): State {
 }
 
 export type { StartContext, State, StoredState };
-export { newState, parseStateBody, readState, startState, writeState };
+export { newState, parseStateBody, readState, STATE, startState, writeState };

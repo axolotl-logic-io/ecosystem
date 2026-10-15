@@ -1,7 +1,7 @@
 // The harness for the ops CLI tests (test/ops-*.test.mjs): a temporary
 // pipeline root with a bare origin on `integration`, a config pointing at it,
 // a fake gh first on PATH, and askOps(), which sends one request to
-// src/ops.mjs as the workflow frames it. Times in replies and gh calls are
+// src/ops.ts as the workflow frames it. Times in replies and gh calls are
 // replaced with TIME, so no assertion depends on the clock.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,7 +9,7 @@ import path from "node:path";
 import process from "node:process";
 import { commentLines, installFakeGh } from "./fake-gh.mjs";
 
-const OPS = new URL("../src/ops.mjs", import.meta.url).pathname;
+const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
 const ACCOUNT = "bot";
 const ALLOWED = "alice";
 const TIME = "<time>";

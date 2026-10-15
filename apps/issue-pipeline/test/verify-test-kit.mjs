@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 
-const OPS = new URL("../src/ops.mjs", import.meta.url).pathname;
+const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
 // The folder that holds the repo's own `typescript` package.
 const MODULES = path.dirname(
   path.dirname(

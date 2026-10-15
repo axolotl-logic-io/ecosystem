@@ -9,7 +9,7 @@ import path from "node:path";
 import process from "node:process";
 import { installFakeGh } from "./fake-gh.mjs";
 
-const OPS = new URL("../src/ops.mjs", import.meta.url).pathname;
+const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
 const ACCOUNT = "bot";
 const REPO = "o/r";
 const LANE = "L";
@@ -71,7 +71,7 @@ function advanceBase(w) {
   );
 }
 
-// Runs one request through the ops CLI, src/ops.mjs unless `ops` names another
+// Runs one request through the ops CLI, src/ops.ts unless `ops` names another
 // (a built one), and returns its stdout.
 function ask(w, request, ops = OPS) {
   const body = JSON.stringify({ config: w.config, ...request });

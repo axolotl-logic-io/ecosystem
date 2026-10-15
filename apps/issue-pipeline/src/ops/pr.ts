@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { assertClean, ensureWorktree, push, remoteHead } from "../checkouts.ts";
 import type { Author } from "../comments.ts";
-import { signed } from "../comments.ts";
+import { AUTHOR, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
@@ -28,17 +28,6 @@ const DRAFT_TEXT =
   "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.";
 const IMPLEMENTER: Author = { role: "implementer" };
 
-// The workflow sends null for an author field it doesn't know.
-const AUTHOR_FIELD = z
-  .string()
-  .nullish()
-  .transform((value) => value ?? undefined);
-const AUTHOR = z.looseObject({
-  role: AUTHOR_FIELD,
-  agent: AUTHOR_FIELD,
-  model: AUTHOR_FIELD,
-  run: AUTHOR_FIELD,
-});
 const START_REQUEST = z.looseObject({
   number: z.number().int(),
   plan: z.string().nullish(),

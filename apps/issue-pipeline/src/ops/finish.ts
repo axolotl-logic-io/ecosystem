@@ -4,15 +4,15 @@
 
 import { z } from "zod";
 import { removeWorktree } from "../checkouts.ts";
-import type { LaneRequest } from "../claims.ts";
 import { closeClaims, touchClaim } from "../claims.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
+import { parseRequest } from "../process.ts";
 import type { State } from "../state.ts";
-import { writeState } from "../state.ts";
+import { STATE, writeState } from "../state.ts";
 import { pushWiki } from "../wiki.ts";
 
 const SHORT_SHA_LENGTH = 12;
@@ -24,14 +24,14 @@ const SUB_ISSUES = z
   .array(z.looseObject({ number: z.number(), state: z.unknown() }))
   .nullable();
 
-interface IssueRequest {
-  number: number;
-}
-
-interface ReleaseRequest extends LaneRequest {
-  number: number;
-  state: State;
-}
+const ISSUE_REQUEST = z.looseObject({ number: z.number().int() });
+// The lane fields are whatever the workflow sent (LaneRequest in claims.ts).
+const RELEASE_REQUEST = z.looseObject({
+  lane: z.unknown().optional(),
+  number: z.number().int(),
+  state: STATE,
+  sweepId: z.unknown().optional(),
+});
 
 type CloseParentReply =
   | { closed: false; reason: string }
@@ -127,8 +127,8 @@ function finishMerged(cfg: Config, n: number, pr: number, state: State): void {
 }
 
 // Closes a split issue once every sub-issue is closed.
-function closeParent(cfg: Config, req: IssueRequest): CloseParentReply {
-  const n = req.number;
+function closeParent(cfg: Config, request: unknown): CloseParentReply {
+  const { number: n } = parseRequest(ISSUE_REQUEST, "close-parent", request);
   const subs =
     SUB_ISSUES.parse(
       ghJson(cfg, [
@@ -173,12 +173,12 @@ function renewed(lease: unknown): { at: string } | null {
 // The sweep ends with the issue unfinished. Its lane keeps the lease and its
 // claim, and its next sweep continues the issue. If the lane never comes back,
 // the lease and claim expire after leaseHours and another lane may take it.
-function release(cfg: Config, req: ReleaseRequest): EmptyReply {
+function release(cfg: Config, request: unknown): EmptyReply {
+  const req = parseRequest(RELEASE_REQUEST, "release", request);
   const { lease } = req.state;
   writeState(cfg, req.number, { ...req.state, lease: renewed(lease) });
   touchClaim(cfg, req.number, req);
   return {};
 }
 
-export type { CloseParentReply, EmptyReply, IssueRequest, ReleaseRequest };
 export { closeParent, finishMerged, post, release };

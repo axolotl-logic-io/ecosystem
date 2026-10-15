@@ -13,8 +13,9 @@
   "overrides": [
     // The only exception to the policy (`best-practice-over-lint`): the
     // pipeline's CLI entry points, the install, the build it runs and the ops
-    // CLI. Each is a command run from the terminal, so it must read the
-    // process (its arguments and environment), the files and the terminal.
+    // CLI, whose entry is src/ops.ts. Each is a command run from the terminal,
+    // so it must read the process (its arguments, environment and stdin), the
+    // files and the terminal.
     // The ops CLI's own modules are part of that boundary: they run git, gh
     // and the configured commands, and keep the clones, worktrees, locks and
     // logs on disk (#166), as do the ops that keep files themselves: the
@@ -28,7 +29,7 @@
       "includes": [
         "install.mjs",
         "build.ts",
-        "src/ops.mjs",
+        "src/ops.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
         "src/config.ts",

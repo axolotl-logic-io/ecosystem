@@ -9,7 +9,7 @@ import { assertClean, fetchIn, head, remoteHead } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { git } from "../github.ts";
-import { OpsError, run, tail } from "../process.ts";
+import { parseRequest, run, tail } from "../process.ts";
 import { wikiDiff } from "../wiki.ts";
 
 interface ReviewReply {
@@ -62,15 +62,6 @@ const FINISH_REQUEST = z.looseObject({
   abort: z.boolean().nullish(),
   reason: z.string().nullish(),
 });
-
-// The value `schema` parses from `request`, or an OpsError naming the op.
-function parsed<T>(schema: z.ZodType<T>, op: string, request: unknown): T {
-  const result = schema.safeParse(request);
-  if (!result.success) {
-    throw new OpsError(`bad ${op} request: ${z.prettifyError(result.error)}`);
-  }
-  return result.data;
-}
 
 function present(text: string | null | undefined): text is string {
   return text !== undefined && text !== null && text !== "";
@@ -130,7 +121,7 @@ function withWiki(
 }
 
 function prepareReview(cfg: Config, request: unknown): ReviewReply {
-  const req = parsed(REVIEW_REQUEST, "prepare-review", request);
+  const req = parseRequest(REVIEW_REQUEST, "prepare-review", request);
   const n = req.number;
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);
@@ -200,7 +191,7 @@ function conflictReply(wt: string, base: string, keep: boolean): SyncConflict {
 // With keepConflict, a conflicting rebase is left stopped in the worktree for a
 // writer to resolve; finish-sync then checks the result and pushes it.
 function syncBase(cfg: Config, request: unknown): SyncReply {
-  const req = parsed(SYNC_REQUEST, "sync-base", request);
+  const req = parseRequest(SYNC_REQUEST, "sync-base", request);
   const n = req.number;
   const wt = paths.worktree(cfg, n);
   if (rebaseInProgress(wt)) {
@@ -259,7 +250,7 @@ function syncProblem(cfg: Config, wt: string): string | undefined {
 // Anything else (or abort: true) resets the worktree to the pushed branch and
 // reports why.
 function finishSync(cfg: Config, request: unknown): FinishReply {
-  const req = parsed(FINISH_REQUEST, "finish-sync", request);
+  const req = parseRequest(FINISH_REQUEST, "finish-sync", request);
   const n = req.number;
   const wt = paths.worktree(cfg, n);
   let reason: string | undefined;

@@ -1,5 +1,5 @@
 // build.ts into a temporary folder: the built workflow is still an async
-// function body with no imports, and the built ops CLI answers as src/ops.mjs
+// function body with no imports, and the built ops CLI answers as src/ops.ts
 // does. It builds into its own folder, so it never races install.test.mjs,
 // which builds dist/.
 import assert from "node:assert/strict";
@@ -40,7 +40,7 @@ function runOps(file, input) {
 }
 
 const script = new URL("../build.ts", import.meta.url).pathname;
-const srcOps = new URL("../src/ops.mjs", import.meta.url).pathname;
+const srcOps = new URL("../src/ops.ts", import.meta.url).pathname;
 const tmp = fs.mkdtempSync("/tmp/issue-pipeline-build-");
 process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
 const built = spawnSync(process.execPath, [script, tmp], { encoding: "utf8" });
@@ -77,7 +77,7 @@ for (const [name, input] of [
   ["no request", "nothing"],
   ["an unknown op", 'BEGIN_OPS_REQUEST {"op":"nope"} END_OPS_REQUEST'],
 ]) {
-  test(`the built ops answers ${name} as src/ops.mjs does`, () => {
+  test(`the built ops answers ${name} as src/ops.ts does`, () => {
     const want = runOps(srcOps, input);
     const got = runOps(builtOps, input);
     assert.equal(want.status, 0, want.stderr);

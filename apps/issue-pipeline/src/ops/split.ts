@@ -5,17 +5,11 @@ import { z } from "zod";
 import { removeWorktree } from "../checkouts.ts";
 import { closeClaims } from "../claims.ts";
 import type { Author } from "../comments.ts";
-import { comment, signed } from "../comments.ts";
+import { AUTHOR, comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
 import { LABELS, setLabels } from "../labels.ts";
 import { writeState } from "../state.ts";
-
-// A signature field the workflow sends as null when it has no value.
-const SIGNATURE_TEXT = z
-  .string()
-  .nullish()
-  .transform((text) => text ?? undefined);
 
 const SUB_ISSUE = z.looseObject({
   // Indexes of earlier sub-issues in this split that must merge first.
@@ -25,14 +19,7 @@ const SUB_ISSUE = z.looseObject({
 });
 
 const SPLIT_REQUEST = z.looseObject({
-  by: z
-    .looseObject({
-      agent: SIGNATURE_TEXT,
-      model: SIGNATURE_TEXT,
-      role: SIGNATURE_TEXT,
-      run: SIGNATURE_TEXT,
-    })
-    .nullish(),
+  by: AUTHOR.nullish(),
   number: z.number(),
   state: z.record(z.string(), z.unknown()).nullish(),
   subIssues: z.array(SUB_ISSUE).nullish(),

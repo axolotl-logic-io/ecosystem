@@ -1,11 +1,14 @@
 // Runs commands for the ops CLI. `run` executes one program with arguments and
 // throws an OpsError naming it when it fails; `shell` runs a configured
 // command line through bash, logs everything it printed and never throws.
+// `parseRequest` reads an op's request, throwing an OpsError when it is
+// malformed.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { z } from "zod";
 import { ROOT } from "./pipeline-root.ts";
 
 // A failure the ops CLI reports as {"ok":false,...} rather than a crash.
@@ -135,6 +138,20 @@ function shell(
   };
 }
 
+// The value `schema` parses from an op's `request`, or an OpsError naming the
+// op and what is wrong with the request.
+function parseRequest<T>(
+  schema: z.ZodType<T>,
+  op: string,
+  request: unknown,
+): T {
+  const result = schema.safeParse(request);
+  if (!result.success) {
+    throw new OpsError(`bad ${op} request: ${z.prettifyError(result.error)}`);
+  }
+  return result.data;
+}
+
 // Blocks the whole process: the ops CLI runs one request and has nothing else
 // to do while it waits.
 function sleepMs(ms: number): void {
@@ -145,4 +162,4 @@ function sleepMs(ms: number): void {
 }
 
 export type { RunOptions, RunResult, ShellResult };
-export { OpsError, run, runFailure, shell, sleepMs, tail };
+export { OpsError, parseRequest, run, runFailure, shell, sleepMs, tail };

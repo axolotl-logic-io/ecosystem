@@ -10,9 +10,8 @@ import { paths } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
 import { LABELS } from "../labels.ts";
 import type { RunResult } from "../process.ts";
-import { run, tail } from "../process.ts";
-import type { State } from "../state.ts";
-import { readState } from "../state.ts";
+import { parseRequest, run, tail } from "../process.ts";
+import { readState, STATE } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import { finishMerged } from "./finish.ts";
 
@@ -58,15 +57,16 @@ const READY_STATE = z.looseObject({
   stage: z.string(),
 });
 
-type PrView = z.infer<typeof PR_VIEW>;
+const MERGE_REQUEST = z.looseObject({
+  expectedSha: z.string(),
+  mergeOrder: z.boolean().nullish(),
+  number: z.number().int(),
+  state: STATE.extend({ pr: z.number() }),
+  summary: z.string().nullish(),
+});
 
-interface MergeRequest {
-  number: number;
-  state: State & { pr: number };
-  expectedSha: string;
-  mergeOrder?: boolean;
-  summary?: string;
-}
+type PrView = z.infer<typeof PR_VIEW>;
+type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
 // The merge waits for issue #waitingFor, whose PR #waitingForPr is older.
 interface Queued {
@@ -206,9 +206,12 @@ function mergeRefusal(result: RunResult): MergeReply {
 }
 
 // Squash-merges the issue's PR at the verified commit, or says why not.
-function merge(cfg: Config, req: MergeRequest): MergeReply {
-  const n = req.number;
-  const { pr } = req.state;
+function merge(cfg: Config, request: unknown): MergeReply {
+  const req = parseRequest(MERGE_REQUEST, "merge", request);
+  const {
+    number: n,
+    state: { pr },
+  } = req;
   const view = PR_VIEW.parse(
     ghJson(cfg, [
       "pr",
@@ -256,5 +259,4 @@ function merge(cfg: Config, req: MergeRequest): MergeReply {
   return { merged: true };
 }
 
-export type { MergeReply, MergeRequest };
 export { merge };

@@ -43,6 +43,19 @@ interface Author {
   run?: string | undefined;
 }
 
+// An Author as a request carries it: the workflow sends null for a field it
+// has no value for, which parses as undefined.
+const AUTHOR_FIELD = z
+  .string()
+  .nullish()
+  .transform((text) => text ?? undefined);
+const AUTHOR = z.looseObject({
+  agent: AUTHOR_FIELD,
+  model: AUTHOR_FIELD,
+  role: AUTHOR_FIELD,
+  run: AUTHOR_FIELD,
+});
+
 function listComments(cfg: Config, number: number): IssueComment[] {
   const lines = ghLines(cfg, [
     "api",
@@ -149,6 +162,7 @@ function pipelineRole(cfg: Config, item: IssueComment): string | null {
 export type { Author, IssueComment };
 export {
   AFTER_MARK,
+  AUTHOR,
   CLAIM_MARK,
   COMMENT,
   comment,

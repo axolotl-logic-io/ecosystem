@@ -1,5 +1,5 @@
 // The save-state op: writes an issue's state and nothing else. The comments
-// the workflow queued ride along on every op (see main in ops.mjs).
+// the workflow queued ride along on every op (see main in ops.ts).
 
 import { z } from "zod";
 import type { Config } from "../config.ts";

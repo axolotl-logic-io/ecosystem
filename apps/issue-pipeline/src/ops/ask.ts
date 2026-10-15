@@ -4,26 +4,13 @@
 import { z } from "zod";
 import { closeClaims } from "../claims.ts";
 import type { Author } from "../comments.ts";
-import { comment } from "../comments.ts";
+import { AUTHOR, comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { LABELS, setLabels } from "../labels.ts";
 import { writeState } from "../state.ts";
 
-// A signature field the workflow sends as null when it has no value.
-const SIGNATURE_TEXT = z
-  .string()
-  .nullish()
-  .transform((text) => text ?? undefined);
-
 const ASK_REQUEST = z.looseObject({
-  by: z
-    .looseObject({
-      agent: SIGNATURE_TEXT,
-      model: SIGNATURE_TEXT,
-      role: SIGNATURE_TEXT,
-      run: SIGNATURE_TEXT,
-    })
-    .nullish(),
+  by: AUTHOR.nullish(),
   number: z.number(),
   questions: z.array(z.string()).nullish(),
   state: z.record(z.string(), z.unknown()).nullish(),

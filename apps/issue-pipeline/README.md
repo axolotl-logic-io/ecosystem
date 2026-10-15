@@ -8,17 +8,17 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 |---|---|
 | `src/workflow.js` | The sweep. Runs in the pi-subagents sandbox and uses no model tokens itself. |
 | `src/workflow/` | The sweep's helpers that need no sweep state (prompts, schemas, findings, signing, the token budget, the event log), as strict TypeScript. `index.ts` exports the one `helpers` object the sweep reads them from. `stages/` holds the stages ported onto the step machine: each is a sync `next` that takes the issue's JSON-safe state and its last launches' results and returns its next launches or `done`, and a top-level loop in `workflow.js` runs them through the stage dispatch (`stages/index.ts`), once after the claim for triage (#178), spec, implement and open-pr (#188), once more for review and the fix rounds (#179), and once after fix for sync and checks (#180). The other stages are still labelled blocks in `workflow.js` until their ports. |
-| `src/ops.mjs` | The only code that runs `git` and `gh` or reads tokens, called through the `issue-pipeline-ops` agent. It dispatches each op; its helpers live in `src/*.ts`. |
-| `src/ops/` | The ops moved out of `src/ops.mjs` into strict TypeScript, one module per op (`sweep`, `claim`, `save-state`, `ask`, `split`, `stop` (#183); `pr` and `sync` (#184); `verify`, with `fails-before-fix`, and `ci-status` (#185)), which `src/ops.mjs` imports and registers. |
+| `src/ops.ts` | The ops CLI's entry: the only code that runs `git` and `gh` or reads tokens, called through the `issue-pipeline-ops` agent. It parses the request's envelope and dispatches each op; its helpers live in `src/*.ts`. |
+| `src/ops/` | The ops in strict TypeScript, one module per op (`sweep`, `claim`, `save-state`, `ask`, `split`, `stop` (#183); `pr` and `sync` (#184); `verify`, with `fails-before-fix`, and `ci-status` (#185); `merge` and `finish` (#186)), which `src/ops.ts` imports and registers. Each op parses its own request. |
 | `build.ts` | Builds `src/` into `dist/` with esbuild: the workflow's helpers are bundled into an IIFE placed ahead of the sweep's body, which is transformed alone, keeping its top-level `await` and `return`; ops is bundled into one Node ES module. |
 | `dist/` | The build's output, `workflow.js` and `ops.mjs`, which the install copies. Ignored by git and Biome. |
 | `agents/` | The four agents: `issue-pipeline-ops` (command runner), `-reader` (read-only), `-specifier` (read-only plus web search) and `-writer`. |
 | `prompts/` | `/pipeline-start` and `/pipeline-pause`, which start and pause a lane in a pi session. |
 | `repos/example.json` | Every field of a per-repo config. |
 | `install.mjs` | Builds, then installs this folder where pi reads it. |
-| `test/` | Tests for `src/ops.mjs`, `src/workflow.js`, `build.ts` and `install.mjs`, and the harness that runs the built workflow with scripted replies. |
+| `test/` | Tests for `src/ops.ts`, `src/workflow.js`, `build.ts` and `install.mjs`, and the harness that runs the built workflow with scripted replies. |
 
-`build.ts` is strict TypeScript, run by Node's type stripping and checked by `tsc` (`tsconfig.json`, which also covers `src/**/*.ts`). The workflow's helpers in `src/workflow/` and the ops CLI's modules in `src/*.ts` and `src/ops/` are typed too. `src/workflow.js` and `src/ops.mjs` are still untyped JavaScript, outside `tsc` because `allowJs` is off: they don't meet the coding practices yet, which #162 tracks.
+`build.ts` is strict TypeScript, run by Node's type stripping and checked by `tsc` (`tsconfig.json`, which also covers `src/**/*.ts`). The workflow's helpers in `src/workflow/` and the ops CLI, `src/ops.ts` with its modules in `src/*.ts` and `src/ops/`, are typed too. Only `src/workflow.js` is still untyped JavaScript, outside `tsc` because `allowJs` is off: it doesn't meet the coding practices yet, which #162 tracks.
 
 `{{ISSUE_PIPELINE_ROOT}}` and `{{PI_CODING_AGENT_DIR}}` in the agents and prompts are filled in by the install.
 
