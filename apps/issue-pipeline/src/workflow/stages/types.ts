@@ -233,6 +233,12 @@ interface SummaryItem {
 }
 
 // What a sweep returns.
+// What the end-of-sweep cleanup did: ops' list of worktrees, or its error.
+interface CleanupLog {
+  worktrees: readonly unknown[];
+  error: string | null;
+}
+
 interface SweepSummary {
   sweep: string;
   lane: string;
@@ -241,6 +247,7 @@ interface SweepSummary {
   abandoned: readonly AbandonedClaim[];
   items: readonly SummaryItem[];
   parentsClosed: number;
+  cleanup: CleanupLog;
 }
 
 interface StageMachine {
@@ -256,6 +263,7 @@ export type {
   ChildLaunch,
   ChildResult,
   ClaimStep,
+  CleanupLog,
   Launch,
   LaunchResult,
   LaunchStep,

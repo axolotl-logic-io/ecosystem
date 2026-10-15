@@ -38,9 +38,9 @@ function issueRun({ claim, ops, agents, config }) {
   });
 }
 
-// The state the run's last ops request carried.
+// The state the run's last ops request before the cleanup carried.
 function lastState(trace) {
-  return trace.at(-1).request.state;
+  return trace.at(-2).request.state;
 }
 
 test("an issue claimed at open-pr is opened and reviewed in the same sweep", async () => {
@@ -56,7 +56,7 @@ test("an issue claimed at open-pr is opened and reviewed in the same sweep", asy
       "i7-review-tests": NO_FINDINGS,
       "i7-review-scope": NO_FINDINGS,
     },
-    config: { maxSpawnsPerRun: 15 },
+    config: { maxSpawnsPerRun: 16 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -69,6 +69,7 @@ test("an issue claimed at open-pr is opened and reviewed in the same sweep", asy
     "i7-review-scope-8",
     "i7-save-9",
     "i7-release-10",
+    "cleanup-11",
   ]);
   assert.equal(summary.items[0].stage, "sync");
   assert.equal(lastState(trace).reviewedSha, "bbbbbbb");
@@ -105,7 +106,7 @@ test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix",
         newFindings: [],
       }),
     },
-    config: { maxSpawnsPerRun: 14 },
+    config: { maxSpawnsPerRun: 15 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -116,6 +117,7 @@ test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix",
     "i7-rereview-correctness-r1-6",
     "i7-save-7",
     "i7-release-8",
+    "cleanup-9",
   ]);
   const [item] = summary.items;
   assert.deepEqual(

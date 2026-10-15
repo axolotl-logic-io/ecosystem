@@ -16,6 +16,7 @@ import { closeParentLaunches } from "./parents.ts";
 import type {
   AbandonedClaim,
   ClaimStep,
+  CleanupLog,
   OpLaunch,
   StageStop,
   SummaryItem,
@@ -164,6 +165,7 @@ interface SummaryInput {
   abandoned: readonly AbandonedClaim[];
   item: SummarySource | null;
   parentsClosed: number;
+  cleanup: CleanupLog;
 }
 
 // The state's PR, undefined when the state has no `pr`, or null with no state.
@@ -186,7 +188,8 @@ function summaryItem({ n, st, outcome, reason }: SummarySource): SummaryItem {
 }
 
 function buildSummary(input: SummaryInput): SweepSummary {
-  const { sweepId, lane, reply, abandoned, item, parentsClosed } = input;
+  const { sweepId, lane, reply, abandoned, item, parentsClosed, cleanup } =
+    input;
   let items: SummaryItem[] = [];
   if (item !== null) {
     items = [summaryItem(item)];
@@ -199,6 +202,7 @@ function buildSummary(input: SummaryInput): SweepSummary {
     abandoned,
     items,
     parentsClosed,
+    cleanup,
   };
 }
 

@@ -49,7 +49,7 @@ test("a spec is written, implemented and its PR opened, then held at review", as
     args: WORKFLOW_ARGS,
     ops: {
       ...ROUTINE_OPS,
-      sweep: sweepReply({ items: [ISSUE], config: { maxSpawnsPerRun: 18 } }),
+      sweep: sweepReply({ items: [ISSUE], config: { maxSpawnsPerRun: 19 } }),
       claim: claimAt("spec", TRIAGED),
       "open-pr": { ok: true, pr: 42, headSha: "bbbbbbb" },
     },
@@ -65,6 +65,7 @@ test("a spec is written, implemented and its PR opened, then held at review", as
     "i7-openpr-7",
     "i7-save-8",
     "i7-release-9",
+    "cleanup-10",
   ]);
   assert.deepEqual(
     summary,

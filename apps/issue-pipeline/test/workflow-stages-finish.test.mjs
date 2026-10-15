@@ -70,7 +70,7 @@ test("passing acceptance moves to security, held by the spawn cap", async ({
     agents: {
       "i7-accept": replyWith({ verdict: "pass", reason: "Does what #7 asks." }),
     },
-    config: { maxSpawnsPerRun: 10 },
+    config: { maxSpawnsPerRun: 11 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -78,6 +78,7 @@ test("passing acceptance moves to security, held by the spawn cap", async ({
     "i7-prep-3",
     "i7-accept-4",
     "i7-release-5",
+    "cleanup-6",
   ]);
   assert.deepEqual(
     summary,
@@ -101,6 +102,7 @@ test("failing acceptance stops the issue", async ({ assert: { snapshot } }) => {
     "i7-prep-3",
     "i7-accept-4",
     "i7-stop-5",
+    "cleanup-6",
   ]);
   assert.deepEqual(
     summary,
@@ -123,7 +125,7 @@ test("a security review with no findings moves to merge, held by the spawn cap",
     fields: ACCEPTED,
     ops: PREPARED,
     agents: { "i7-security": replyWith({ findings: [] }) },
-    config: { maxSpawnsPerRun: 10 },
+    config: { maxSpawnsPerRun: 11 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -132,6 +134,7 @@ test("a security review with no findings moves to merge, held by the spawn cap",
     "i7-security-4",
     "i7-save-5",
     "i7-release-6",
+    "cleanup-7",
   ]);
   assert.deepEqual(
     summary,
@@ -157,7 +160,7 @@ test("a security finding sends the issue back to fix, held by the spawn cap", as
     fields: ACCEPTED,
     ops: PREPARED,
     agents: { "i7-security": replyWith({ findings: [finding] }) },
-    config: { maxSpawnsPerRun: 16 },
+    config: { maxSpawnsPerRun: 17 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -166,6 +169,7 @@ test("a security finding sends the issue back to fix, held by the spawn cap", as
     "i7-security-4",
     "i7-save-5",
     "i7-release-6",
+    "cleanup-7",
   ]);
   assert.deepEqual(
     summary,
@@ -180,7 +184,14 @@ test("an issue at merge is merged", async ({ assert: { snapshot } }) => {
     fields: SECURED,
     ops: { merge: { ok: true, merged: true } },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "i7-merge-3"]);
+  assert.deepEqual(launchKeys(trace), [
+    "sweep-1",
+    "i7-claim-2",
+    "i7-merge-3",
+    "cleanup-4",
+  ]);
+  // The cleanup leaves the sweep's own issue alone.
+  assert.equal(trace.at(-1).request.skip, 7);
   assert.deepEqual(
     summary,
     issueSummary({
@@ -213,8 +224,9 @@ test("a merge queued behind an older PR notes it and stays at merge", async ({
     "i7-claim-2",
     "i7-merge-3",
     "i7-release-4",
+    "cleanup-5",
   ]);
-  assert.deepEqual(trace.at(-1).request.state.log, [
+  assert.deepEqual(trace.at(-2).request.state.log, [
     "2026-10-15T12:00Z merge waits for #5 (older PR #40)",
   ]);
   assert.deepEqual(

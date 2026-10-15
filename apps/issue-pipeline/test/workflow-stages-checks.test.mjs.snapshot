@@ -92,6 +92,18 @@ exports[`CI still failing after the last CI fix stops the issue 1`] = `
         }
       ]
     }
+  },
+  {
+    "key": "cleanup-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -187,6 +199,18 @@ exports[`a clean rebase moves to checks, held by the spawn cap 1`] = `
           "body": "Rebased onto integration without conflicts; the head is now ddddddd. Rebases aren't re-reviewed; the checks run again."
         }
       ]
+    }
+  },
+  {
+    "key": "cleanup-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]
@@ -315,6 +339,18 @@ exports[`a conflicting rebase is resolved by a writer, then held at checks 1`] =
           "body": "Rebased onto integration after resolving conflicts in \`src/a.ts\`; the head is now ddddddd. Every check runs again on it."
         }
       ]
+    }
+  },
+  {
+    "key": "cleanup-7",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]
@@ -689,6 +725,18 @@ exports[`failing checks get a reviewed CI fix, then pass and go on to merge 1`] 
       "expectedSha": "fffffff",
       "mergeOrder": true,
       "summary": "Checks: test: passed\\n\\nAcceptance: Does what #7 asks."
+    }
+  },
+  {
+    "key": "cleanup-18",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]

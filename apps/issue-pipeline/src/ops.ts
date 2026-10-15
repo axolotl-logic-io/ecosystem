@@ -25,6 +25,7 @@ import { loadConfig } from "./config.ts";
 import { ask } from "./ops/ask.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
+import { cleanup } from "./ops/cleanup.ts";
 import { closeParent, post, release } from "./ops/finish.ts";
 import { merge } from "./ops/merge.ts";
 import { prOps } from "./ops/pr.ts";
@@ -71,6 +72,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["close-parent", closeParent],
   ["post", post],
   ["release", release],
+  // Frees closed issues' worktrees once nothing local is unsaved (#174).
+  ["cleanup", cleanup],
 ]);
 
 // The request runs to the last END marker, not the first: the JSON can carry the

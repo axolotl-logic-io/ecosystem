@@ -396,6 +396,18 @@ exports[`a blocking finding is fixed and re-reviewed clean, then synced and held
         "passedSha": null
       }
     }
+  },
+  {
+    "key": "cleanup-17",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -482,6 +494,18 @@ exports[`a finding still open after the last fix round stops the issue 1`] = `
       "detail": "- f1 [src/a.ts:3] Off by one\\n  Evidence: The loop stops one item early.\\n  Suggestion: Use <= in the loop bound.",
       "nextStep": null,
       "code": null
+    }
+  },
+  {
+    "key": "cleanup-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]
@@ -690,6 +714,18 @@ exports[`a review with no blocking findings moves to sync, held by the spawn cap
         ],
         "implemented": true
       }
+    }
+  },
+  {
+    "key": "cleanup-10",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]

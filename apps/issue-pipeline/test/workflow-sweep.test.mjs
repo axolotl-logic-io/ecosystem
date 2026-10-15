@@ -108,25 +108,30 @@ test("a failed sweep reply rejects the run", () => {
 
 test("a stage is held when it and the reserve pass the cap, logged once", () => {
   // Triage needs 4 spawns: 2 launched + 4 + a reserve of 3 for the issue and
-  // 1 passes 9.
+  // 2 (one of them the cleanup) passes 10.
   const { keys, batches } = drive({
-    ops: opsFor(claimAt("triage"), { maxSpawnsPerRun: 9 }),
+    ops: opsFor(claimAt("triage"), { maxSpawnsPerRun: 10 }),
   });
-  assert.deepEqual(keys, ["sweep-1", "i7-claim-2", "i7-release-3"]);
+  assert.deepEqual(keys, [
+    "sweep-1",
+    "i7-claim-2",
+    "i7-release-3",
+    "cleanup-4",
+  ]);
   assert.deepEqual(heldLines(batches), [
     "2026-10-15T12:00Z held at triage by the per-run spawn cap; continues next sweep",
   ]);
 });
 
 test("the reserve keeps a spawn for each parent to close", () => {
-  // With no parent, triage fits under 10 and begins.
+  // With no parent, triage fits under 11 and begins.
   const fitting = drive({
-    ops: opsFor(claimAt("triage"), { maxSpawnsPerRun: 10 }),
+    ops: opsFor(claimAt("triage"), { maxSpawnsPerRun: 11 }),
   });
   assert.notEqual(fitting.keys[2], "i7-release-3");
   const { keys } = drive({
     ops: {
-      ...opsFor(claimAt("triage"), { maxSpawnsPerRun: 10 }, [PARENT]),
+      ...opsFor(claimAt("triage"), { maxSpawnsPerRun: 11 }, [PARENT]),
       "close-parent": { ok: true },
     },
   });
@@ -135,19 +140,21 @@ test("the reserve keeps a spawn for each parent to close", () => {
     "i7-claim-2",
     "p5-close-3",
     "i7-release-4",
+    "cleanup-5",
   ]);
 });
 
 test("review's state is saved before it first begins, even when held", () => {
   const claim = claimAt("review", { pr: 42, headSha: "aaaaaaa" });
   const { keys, batches } = drive({
-    ops: opsFor(claim, { maxSpawnsPerRun: 13 }),
+    ops: opsFor(claim, { maxSpawnsPerRun: 14 }),
   });
   assert.deepEqual(keys, [
     "sweep-1",
     "i7-claim-2",
     "i7-save-3",
     "i7-release-4",
+    "cleanup-5",
   ]);
   assert.equal(requestOf(batches[2][0]).state.stage, "review");
   assert.equal(heldLines(batches).length, 1);
@@ -172,8 +179,9 @@ test("an implementer still unfinished after both passes is stopped", () => {
     "i7-implement-4",
     "i7-implement-5",
     "i7-stop-6",
+    "cleanup-7",
   ]);
-  const stop = requestOf(batches.at(-1)[0]);
+  const stop = requestOf(batches.at(-2)[0]);
   assert.equal(
     stop.reason,
     "implementation did not finish within its sessions",
@@ -188,12 +196,12 @@ test("the driver never asks for an empty batch, and ends with none", () => {
   const runs = [
     drive({ ops: { sweep: sweepReply() } }),
     drive({ ops: opsFor({ ok: false, error: "locked" }) }),
-    drive({ ops: opsFor(claimAt("triage"), { maxSpawnsPerRun: 9 }) }),
+    drive({ ops: opsFor(claimAt("triage"), { maxSpawnsPerRun: 10 }) }),
   ];
   for (const { batches } of runs) {
     assert.ok(batches.every((batch) => batch.length > 0));
   }
-  assert.deepEqual(runs[1].keys, ["sweep-1", "i7-claim-2"]);
+  assert.deepEqual(runs[1].keys, ["sweep-1", "i7-claim-2", "cleanup-3"]);
   assert.equal(runs[1].summary.items[0].outcome, "claim-failed");
 });
 

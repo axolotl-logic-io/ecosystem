@@ -72,7 +72,7 @@ test("a review with no blocking findings moves to sync, held by the spawn cap", 
       }),
       "i7-review-scope": NO_FINDINGS,
     },
-    config: { maxSpawnsPerRun: 14 },
+    config: { maxSpawnsPerRun: 15 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -84,6 +84,7 @@ test("a review with no blocking findings moves to sync, held by the spawn cap", 
     "i7-review-scope-7",
     "i7-save-8",
     "i7-release-9",
+    "cleanup-10",
   ]);
   assert.deepEqual(summary, issueSummary({ allocatedTokens: 460_000 }));
   snapshot(trace);
@@ -123,7 +124,7 @@ test("a blocking finding is fixed and re-reviewed clean, then synced and held at
       "sync-base": { ok: true, conflict: false, headSha: "ccccccc" },
     },
     agents: FIX_AGENTS,
-    config: { maxSpawnsPerRun: 28 },
+    config: { maxSpawnsPerRun: 29 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -142,6 +143,7 @@ test("a blocking finding is fixed and re-reviewed clean, then synced and held at
     "i7-save-14",
     "i7-sync-15",
     "i7-release-16",
+    "cleanup-17",
   ]);
   assert.deepEqual(
     summary,
@@ -172,7 +174,12 @@ test("a finding still open after the last fix round stops the issue", async ({
       ],
     }),
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "i7-stop-3"]);
+  assert.deepEqual(launchKeys(trace), [
+    "sweep-1",
+    "i7-claim-2",
+    "i7-stop-3",
+    "cleanup-4",
+  ]);
   assert.deepEqual(
     summary,
     issueSummary({

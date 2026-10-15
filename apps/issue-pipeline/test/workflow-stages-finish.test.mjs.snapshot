@@ -107,6 +107,18 @@ exports[`a merge queued behind an older PR notes it and stays at merge 1`] = `
         "acceptReason": "Does what #7 asks."
       }
     }
+  },
+  {
+    "key": "cleanup-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -287,6 +299,18 @@ exports[`a security finding sends the issue back to fix, held by the spawn cap 1
         "nextFindingId": 1
       }
     }
+  },
+  {
+    "key": "cleanup-7",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -434,6 +458,18 @@ exports[`a security review with no findings moves to merge, held by the spawn ca
         "acceptReason": "Does what #7 asks."
       }
     }
+  },
+  {
+    "key": "cleanup-7",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -504,6 +540,18 @@ exports[`an issue at merge is merged 1`] = `
       "expectedSha": "fffffff",
       "mergeOrder": true,
       "summary": "Checks: test: passed\\n\\nAcceptance: Does what #7 asks."
+    }
+  },
+  {
+    "key": "cleanup-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]
@@ -611,6 +659,18 @@ exports[`failing acceptance stops the issue 1`] = `
         }
       ]
     }
+  },
+  {
+    "key": "cleanup-6",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -713,6 +773,18 @@ exports[`passing acceptance moves to security, held by the spawn cap 1`] = `
           "body": "✅ The change does what the issue asks. Does what #7 asks."
         }
       ]
+    }
+  },
+  {
+    "key": "cleanup-6",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]

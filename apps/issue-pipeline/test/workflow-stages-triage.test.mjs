@@ -51,7 +51,7 @@ test("a ready issue gets a draft PR and is held at spec by the spawn cap", async
       plan: "Change src/a.ts and test it.",
     }),
     { "start-pr": { ok: true, pr: 42, headSha: "aaaaaaa" } },
-    { maxSpawnsPerRun: 11 },
+    { maxSpawnsPerRun: 12 },
   );
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -60,6 +60,7 @@ test("a ready issue gets a draft PR and is held at spec by the spawn cap", async
     "i7-startpr-4",
     "i7-save-5",
     "i7-release-6",
+    "cleanup-7",
   ]);
   assert.deepEqual(
     summary,
@@ -90,6 +91,7 @@ test("a rejected issue is stopped with the reason", async ({
     "i7-claim-2",
     "i7-triage-3",
     "i7-stop-4",
+    "cleanup-5",
   ]);
   assert.deepEqual(
     summary,
@@ -125,6 +127,7 @@ test("a large issue at depth 0 is split into its sub-issues", async ({
     "i7-claim-2",
     "i7-triage-3",
     "i7-split-4",
+    "cleanup-5",
   ]);
   assert.deepEqual(
     summary,

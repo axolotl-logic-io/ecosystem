@@ -11,6 +11,7 @@ import type { LaunchMeta } from "./signing.ts";
 import type { ClosingItem, SummarySource } from "./stages/entry.ts";
 import type {
   AbandonedClaim,
+  CleanupLog,
   Launch,
   OpLaunch,
   StageComment,
@@ -76,6 +77,7 @@ interface SweepRun {
   // The agent and model of each session launched, by key.
   meta: Record<string, LaunchMeta>;
   parentsClosed: number;
+  cleanup: CleanupLog;
 }
 
 // The ops spec for `launch`. The queued comments of the claimed issue ride
@@ -187,9 +189,10 @@ function withoutStage(
 }
 
 // Whether `stage` fits under the spawn cap, keeping room for the release or
-// stop op and a final comment post, plus closing the parents.
+// stop op and a final comment post, plus closing the parents and the
+// end-of-sweep cleanup.
 function hasRoom(run: SweepRun, stage: StageName): boolean {
-  let reserve = run.reply.parents.length + 1;
+  let reserve = run.reply.parents.length + 2;
   if (run.item !== null) {
     reserve += ITEM_RESERVE;
   }

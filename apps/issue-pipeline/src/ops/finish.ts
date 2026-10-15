@@ -8,7 +8,7 @@ import { closeClaims, touchClaim } from "../claims.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { gh, ghJson } from "../github.ts";
+import { gh, ghJson, issueState } from "../github.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { parseRequest } from "../process.ts";
 import type { State } from "../state.ts";
@@ -18,8 +18,7 @@ import { pushWiki } from "../wiki.ts";
 const SHORT_SHA_LENGTH = 12;
 const SUB_ISSUES_PER_PAGE = 100;
 
-// gh's answers, or null when it printed nothing.
-const ISSUE_STATE = z.looseObject({ state: z.unknown() }).nullable();
+// gh's answer, or null when it printed nothing.
 const SUB_ISSUES = z
   .array(z.looseObject({ number: z.number(), state: z.unknown() }))
   .nullable();
@@ -75,12 +74,7 @@ function pushIssueWiki(cfg: Config, n: number): boolean {
 // GitHub closes an issue from "Closes #N" only when the PR merges into the
 // default branch. A base like integration leaves it open, so close it here.
 function closeIssue(cfg: Config, n: number, pr: number): void {
-  const issue = ISSUE_STATE.parse(
-    ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${n}`, "--jq", "{state}"], {
-      allowFail: true,
-    }),
-  );
-  if (issue?.state !== "open") {
+  if (issueState(cfg, n) !== "open") {
     return;
   }
   gh(

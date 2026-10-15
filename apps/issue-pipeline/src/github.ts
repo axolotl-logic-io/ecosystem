@@ -2,6 +2,7 @@
 // GitHub can safely repeat are retried through its transient failures; writes
 // run once, with this machine's paths taken out of the text they post.
 
+import { z } from "zod";
 import type { Config } from "./config.ts";
 import { tokenEnv } from "./config.ts";
 import { redactLocalPaths } from "./pipeline-root.ts";
@@ -115,6 +116,21 @@ function ghLines(
     .map((line): unknown => JSON.parse(line));
 }
 
+// gh's answer to an issue's state, or null when it printed nothing.
+const ISSUE_STATE = z.looseObject({ state: z.unknown() }).nullable();
+
+// The issue's state on GitHub ("open" or "closed"), or null when GitHub's
+// answer can't be read.
+function issueState(cfg: Config, n: number): string | null {
+  const args = ["api", `repos/${cfg.repo}/issues/${n}`, "--jq", "{state}"];
+  const parsed = ISSUE_STATE.safeParse(ghJson(cfg, args, { allowFail: true }));
+  const state = parsed.data?.state;
+  if (typeof state !== "string") {
+    return null;
+  }
+  return state;
+}
+
 function git(
   cfg: Config,
   args: readonly string[],
@@ -152,4 +168,13 @@ function isAllowedUser(cfg: Config, login: string | null | undefined): boolean {
   return allowed.has(login.toLowerCase()) && isCollaborator(cfg, login);
 }
 
-export { gh, ghIsRead, ghJson, ghLines, git, isAllowedUser, redactGhArgs };
+export {
+  gh,
+  ghIsRead,
+  ghJson,
+  ghLines,
+  git,
+  isAllowedUser,
+  issueState,
+  redactGhArgs,
+};

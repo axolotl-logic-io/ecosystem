@@ -82,8 +82,9 @@ test("a security finding past the fix rounds stops with its harm as the code", a
     "i7-prep-3",
     "i7-security-4",
     "i7-stop-5",
+    "cleanup-6",
   ]);
-  assert.equal(trace.at(-1).request.code, "user-harm");
+  assert.equal(trace.at(-2).request.code, "user-harm");
   assert.deepEqual(summary, leakStopped("security"));
 });
 
@@ -97,7 +98,12 @@ test("an open security finding stops the merge with its harm as the code", async
       findings: [{ ...open, disputed: false }],
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "i7-stop-3"]);
-  assert.equal(trace.at(-1).request.code, "user-harm");
+  assert.deepEqual(launchKeys(trace), [
+    "sweep-1",
+    "i7-claim-2",
+    "i7-stop-3",
+    "cleanup-4",
+  ]);
+  assert.equal(trace.at(-2).request.code, "user-harm");
   assert.deepEqual(summary, leakStopped("merge"));
 });

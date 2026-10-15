@@ -7,7 +7,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { configureClone, GH_HELPER, head } from "./checkouts.ts";
+import { configureClone, GH_HELPER, head, uncommitted } from "./checkouts.ts";
 import { comment } from "./comments.ts";
 import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
@@ -159,5 +159,29 @@ function pushWiki(cfg: Config, n: number): WikiPush | null {
   });
 }
 
+// Why the issue's wiki checkout holds work the wiki lacks (uncommitted changes,
+// or commits not on the wiki's branch, such as a saved unpushed patch's), or
+// null when it holds none or there is no checkout.
+function unsavedWiki(cfg: Config, n: number): string | null {
+  const wiki = wikiCfg(cfg);
+  const dir = paths.wiki(cfg, n);
+  if (wiki === null || !fs.existsSync(path.join(dir, ".git"))) {
+    return null;
+  }
+  return withWikiLock(cfg, () => {
+    const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
+    git(cfg, ["-C", dir, "fetch", "origin", refspec]);
+    const dirty = uncommitted(dir, "the wiki checkout");
+    if (dirty !== null) {
+      return dirty;
+    }
+    const ahead = wikiAhead(cfg, n);
+    if (ahead > 0) {
+      return `the wiki checkout has ${ahead} commit(s) not on the wiki`;
+    }
+    return null;
+  });
+}
+
 export type { WikiDiff, WikiPush };
-export { ensureWiki, pushWiki, wikiAhead, wikiDiff };
+export { ensureWiki, pushWiki, unsavedWiki, wikiAhead, wikiDiff };

@@ -87,6 +87,18 @@ exports[`a large issue at depth 0 is split into its sub-issues 1`] = `
         "run": "i7-triage-3"
       }
     }
+  },
+  {
+    "key": "cleanup-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -230,6 +242,18 @@ exports[`a ready issue gets a draft PR and is held at spec by the spawn cap 1`] 
         "implemented": false
       }
     }
+  },
+  {
+    "key": "cleanup-7",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;
@@ -319,6 +343,18 @@ exports[`a rejected issue is stopped with the reason 1`] = `
           "body": "This issue isn't one the pipeline should take on: A design debate."
         }
       ]
+    }
+  },
+  {
+    "key": "cleanup-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
     }
   }
 ]

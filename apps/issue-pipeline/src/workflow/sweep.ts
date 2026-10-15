@@ -1,8 +1,8 @@
-// The sweep's driver. One sweep claims one issue and moves it as far as it
-// can, through the stage groups in order (build, review and fix, sync and
-// checks, then accept, security and merge), then closes the parents of split
-// issues and releases the issue for the next sweep. The driver owns all of
-// the sweep's state; its caller only awaits the launches it asks for:
+// The sweep's driver. One sweep claims one issue and moves it through the
+// stage groups (build, review and fix, sync and checks, accept, security and
+// merge), closes the parents of split issues, releases the issue, and ends
+// with the cleanup of closed issues' worktrees. The driver owns all of the
+// sweep's state; its caller only awaits the launches it asks for:
 //
 //   let specs = sweep.next([]);
 //   while (specs.length > 0) specs = sweep.next(await runs.all(specs));
@@ -15,6 +15,7 @@
 import { parseOps } from "./launch-results.ts";
 import type { LaunchSpec, OpsFrame } from "./launches.ts";
 import { opsSpec } from "./launches.ts";
+import { cleanupLaunch, cleanupLog } from "./stages/cleanup.ts";
 import {
   buildSummary,
   claimLaunch,
@@ -38,13 +39,14 @@ import type { StageBatch, StagePhase } from "./sweep-stages.ts";
 import { afterClaim, stageResults } from "./sweep-stages.ts";
 
 // What the sweep awaits: the sweep op's reply, a candidate's claim, a stage
-// group's batch, or the closing launches; or nothing, once it is finished.
+// group's batch, the closing launches or the cleanup; or nothing, once done.
 type Phase =
   | { kind: "start" }
   | { kind: "sweep" }
   | { kind: "claim"; run: SweepRun; index: number }
   | { kind: "stages"; run: SweepRun; stages: StagePhase }
   | { kind: "finish"; run: SweepRun; parents: number }
+  | { kind: "cleanup"; run: SweepRun }
   | { kind: "done"; run: SweepRun };
 
 // The run's args as pi-subagents passes them: the repo config's path, the
@@ -117,6 +119,7 @@ function runOf(driver: Driver, raw: unknown): SweepRun {
     through: driver.through,
     meta: {},
     parentsClosed: 0,
+    cleanup: { worktrees: [], error: null },
   };
   return run;
 }
@@ -196,15 +199,21 @@ function stagesBatch(
 }
 
 // The parents to close, then the release of the open issue or the post of
-// its last comments.
+// its last comments; with none of those, straight to the cleanup.
 function finishBatch(driver: Driver, run: SweepRun): LaunchSpec[] {
   const launches = finishLaunches(run.reply.parents, closingOf(run.item));
   const parents = run.reply.parents.length;
-  driver.phase = { kind: "finish", run, parents };
   if (launches.length === 0) {
-    driver.phase = { kind: "done", run };
+    return cleanupBatch(driver, run);
   }
+  driver.phase = { kind: "finish", run, parents };
   return launches.map((launch) => opsLaunchSpec(run, launch));
+}
+
+// The end-of-sweep cleanup, which leaves the sweep's own issue alone (#174).
+function cleanupBatch(driver: Driver, run: SweepRun): LaunchSpec[] {
+  driver.phase = { kind: "cleanup", run };
+  return [opsLaunchSpec(run, cleanupLaunch(run.item))];
 }
 
 function advance(driver: Driver, raw: readonly unknown[]): LaunchSpec[] {
@@ -229,9 +238,12 @@ function advance(driver: Driver, raw: readonly unknown[]): LaunchSpec[] {
     case "finish": {
       const replies = raw.slice(0, phase.parents).map(parseOps);
       phase.run.parentsClosed = parentsClosed(replies);
+      return cleanupBatch(driver, phase.run);
+    }
+    case "cleanup":
+      phase.run.cleanup = cleanupLog(parseOps(raw[0]));
       driver.phase = { kind: "done", run: phase.run };
       return [];
-    }
     case "done":
       return [];
     default:
@@ -254,6 +266,7 @@ function summaryOf(driver: Driver): SweepSummary {
     abandoned: run.abandoned,
     item: summarySource(run.item),
     parentsClosed: run.parentsClosed,
+    cleanup: run.cleanup,
   });
 }
 

@@ -48,13 +48,14 @@ function implementRun(config = {}) {
 test("the spawn cap holds the continuation until the next sweep", async () => {
   // A second implement session needs 1 spawn: 4 launched + 1 + a reserve of
   // 4 passes 8.
-  const { trace, summary } = await implementRun({ maxSpawnsPerRun: 8 });
+  const { trace, summary } = await implementRun({ maxSpawnsPerRun: 9 });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
     "i7-claim-2",
     "i7-save-3",
     "i7-implement-4",
     "i7-release-5",
+    "cleanup-6",
   ]);
   assert.deepEqual(
     summary,
@@ -82,6 +83,7 @@ test("a continuation runs in the same sweep, and a second handoff stops", async 
     "i7-implement-4",
     "i7-implement-5",
     "i7-stop-6",
+    "cleanup-7",
   ]);
   const [entry] = summary.items;
   assert.equal(entry.outcome, "stopped");

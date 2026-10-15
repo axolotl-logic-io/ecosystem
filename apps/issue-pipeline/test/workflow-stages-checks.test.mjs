@@ -80,13 +80,14 @@ test("a clean rebase moves to checks, held by the spawn cap", async ({
         headSha: "ddddddd",
       },
     },
-    config: { maxSpawnsPerRun: 17 },
+    config: { maxSpawnsPerRun: 18 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
     "i7-claim-2",
     "i7-sync-3",
     "i7-release-4",
+    "cleanup-5",
   ]);
   assert.deepEqual(summary, issueSummary({}));
   snapshot(trace);
@@ -113,7 +114,7 @@ test("a conflicting rebase is resolved by a writer, then held at checks", async 
         summary: "Kept both changes to src/a.ts.",
       }),
     },
-    config: { maxSpawnsPerRun: 19 },
+    config: { maxSpawnsPerRun: 20 },
   });
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
@@ -122,6 +123,7 @@ test("a conflicting rebase is resolved by a writer, then held at checks", async 
     "i7-conflicts-1-4",
     "i7-finish-sync-5",
     "i7-release-6",
+    "cleanup-7",
   ]);
   assert.deepEqual(summary, issueSummary({ allocatedTokens: 720_000 }));
   snapshot(trace);
@@ -181,6 +183,7 @@ test("failing checks get a reviewed CI fix, then pass and go on to merge", async
     "i7-security-15",
     "i7-save-16",
     "i7-merge-17",
+    "cleanup-18",
   ]);
   assert.deepEqual(
     summary,
@@ -216,6 +219,7 @@ test("CI still failing after the last CI fix stops the issue", async ({
     "i7-claim-2",
     "i7-ci-3",
     "i7-stop-4",
+    "cleanup-5",
   ]);
   assert.deepEqual(
     summary,

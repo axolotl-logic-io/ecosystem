@@ -152,6 +152,7 @@ function summaryOf(item) {
     abandoned: [],
     item,
     parentsClosed: 0,
+    cleanup: { worktrees: [], error: null },
   });
 }
 
@@ -164,6 +165,7 @@ test("the summary of a sweep with no issue lists no items", () => {
     abandoned: [],
     items: [],
     parentsClosed: 0,
+    cleanup: { worktrees: [], error: null },
   });
 });
 

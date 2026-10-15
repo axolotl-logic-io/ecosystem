@@ -56,6 +56,7 @@ test("through spec: the spec is written, then the issue is released at implement
     "i7-save-3",
     "i7-spec-4",
     "i7-release-5",
+    "cleanup-6",
   ]);
   const released = releasedState(trace);
   assert.equal(released.stage, "implement");
@@ -80,6 +81,7 @@ test("through spec: an issue already at review begins no stage and is released",
     "sweep-1",
     "i7-claim-2",
     "i7-release-3",
+    "cleanup-4",
   ]);
 });
 

@@ -250,6 +250,18 @@ exports[`a spec is written, implemented and its PR opened, then held at review 1
         }
       }
     }
+  },
+  {
+    "key": "cleanup-10",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 7
+    }
   }
 ]
 `;

@@ -32,6 +32,7 @@ const ROUTINE_OPS = {
   stop: { ok: true },
   release: { ok: true },
   post: { ok: true },
+  cleanup: { ok: true, worktrees: [] },
 };
 
 // The sweep reply: candidate issue numbers, parents to close, and config
@@ -106,6 +107,7 @@ function sweepSummary(fields = {}) {
     abandoned: [],
     items: [],
     parentsClosed: 0,
+    cleanup: { worktrees: [], error: null },
     ...fields,
   };
 }

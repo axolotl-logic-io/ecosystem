@@ -22,6 +22,18 @@ exports[`a lost claim is recorded as abandoned, with no item 1`] = `
       "lane": "lane-a",
       "number": 7
     }
+  },
+  {
+    "key": "cleanup-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": null
+    }
   }
 ]
 `;
@@ -50,11 +62,23 @@ exports[`a sweep closes the parents it is given 1`] = `
       "lane": "lane-a",
       "number": 5
     }
+  },
+  {
+    "key": "cleanup-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": null
+    }
   }
 ]
 `;
 
-exports[`a sweep with nothing to do launches only the sweep 1`] = `
+exports[`a sweep with nothing to do launches the sweep and the cleanup 1`] = `
 [
   {
     "key": "sweep-1",
@@ -65,6 +89,18 @@ exports[`a sweep with nothing to do launches only the sweep 1`] = `
       "config": "/w/repos/o__r.json",
       "sweepId": "smv9hl6o0",
       "lane": "lane-a"
+    }
+  },
+  {
+    "key": "cleanup-2",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": null
     }
   }
 ]
@@ -150,6 +186,18 @@ exports[`after a lost claim, the next candidate resumes from its saved lease 1`]
       "expectedSha": "8888888",
       "mergeOrder": true,
       "summary": "Checks: test: passed\\n\\nAcceptance: Does what #8 asks."
+    }
+  },
+  {
+    "key": "cleanup-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run cleanup operation",
+    "request": {
+      "op": "cleanup",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "skip": 8
     }
   }
 ]

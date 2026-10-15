@@ -24,6 +24,7 @@ const HOOK_MODE = 0o755;
 const TEARDOWN_TIMEOUT_MS = 300_000;
 const STATUS_LINES = 20;
 const WHITESPACE = /\s+/u;
+const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
 
 function gitIn(dir: string, args: readonly string[]): string {
   return run("git", ["-C", dir, ...args]).stdout;
@@ -146,13 +147,89 @@ function head(wt: string): string {
   return gitIn(wt, ["rev-parse", "HEAD"]).trim();
 }
 
-function assertClean(dir: string, what = "worktree"): void {
-  const status = gitIn(dir, ["status", "--porcelain"]).trim();
-  if (status !== "") {
-    throw new OpsError(
-      `${what} has uncommitted changes:\n${tail(status, STATUS_LINES)}`,
-    );
+// The issues that have a worktree on this machine, in number order.
+function issueWorktrees(cfg: Config): number[] {
+  const dir = path.dirname(paths.worktree(cfg, 0));
+  if (!fs.existsSync(dir)) {
+    return [];
   }
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .flatMap((entry) => {
+      const { n } = ISSUE_DIR.exec(entry.name)?.groups ?? {};
+      return n ?? [];
+    })
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+// Why the checkout at `dir` (named `what`) isn't clean, or null when it is.
+function uncommitted(dir: string, what: string): string | null {
+  const status = gitIn(dir, ["status", "--porcelain"]).trim();
+  if (status === "") {
+    return null;
+  }
+  return `${what} has uncommitted changes:\n${tail(status, STATUS_LINES)}`;
+}
+
+function assertClean(dir: string, what = "worktree"): void {
+  const reason = uncommitted(dir, what);
+  if (reason !== null) {
+    throw new OpsError(reason);
+  }
+}
+
+function refExists(dir: string, ref: string): boolean {
+  const args = ["-C", dir, "rev-parse", "--verify", "--quiet", ref];
+  return run("git", args, { allowFail: true }).code === 0;
+}
+
+// How many of the issue's local commits GitHub has nowhere: not on the base,
+// the issue's branch, or its PR's head, which keeps a squash-merged PR's
+// commits after the branch is deleted.
+function commitsOffGitHub(cfg: Config, n: number, pr: number | null): number {
+  const clone = paths.clone(cfg);
+  const branch = paths.branch(n);
+  const base = cfg.baseBranch;
+  const refspecs = [`+refs/heads/${base}:refs/remotes/origin/${base}`];
+  if (remoteHead(cfg, n) !== null) {
+    refspecs.push(`+refs/heads/${branch}:refs/remotes/origin/${branch}`);
+  }
+  if (pr !== null) {
+    refspecs.push(`+refs/pull/${pr}/head:refs/remotes/origin/pr/${pr}`);
+  }
+  const fetched = refspecs.map((refspec) => refspec.split(":")[1] ?? "");
+  fetchIn(cfg, clone, ...refspecs);
+  const heads = [head(paths.worktree(cfg, n))];
+  if (refExists(clone, `refs/heads/${branch}`)) {
+    heads.push(`refs/heads/${branch}`);
+  }
+  const known = fetched.filter((ref) => refExists(clone, ref));
+  const args = ["rev-list", "--count", ...heads, "--not", ...known];
+  return Number(gitIn(clone, args).trim());
+}
+
+// Why the issue's worktree holds work that GitHub lacks (uncommitted changes,
+// or commits on no branch or PR there), or null when it holds none. `pr` is
+// the issue's PR, or null when it has none.
+function unsavedWork(cfg: Config, n: number, pr: number | null): string | null {
+  const wt = paths.worktree(cfg, n);
+  if (!fs.existsSync(path.join(wt, ".git"))) {
+    return "not a git worktree";
+  }
+  const dirty = uncommitted(wt, "the worktree");
+  if (dirty !== null) {
+    return dirty;
+  }
+  const count = withCloneLock(cfg, () => commitsOffGitHub(cfg, n, pr));
+  if (count === 0) {
+    return null;
+  }
+  if (count === 1) {
+    return "1 local commit is not on GitHub";
+  }
+  return `${count} local commits are not on GitHub`;
 }
 
 // Pushes the issue's branch and returns its head. allowEmpty lets start-pr push
@@ -214,7 +291,10 @@ export {
   fetchIn,
   GH_HELPER,
   head,
+  issueWorktrees,
   push,
   remoteHead,
   removeWorktree,
+  uncommitted,
+  unsavedWork,
 };

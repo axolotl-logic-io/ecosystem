@@ -35,14 +35,15 @@ const CRASHED_LEASE = {
   allocated: 400_000,
 };
 
-test("a sweep with nothing to do launches only the sweep", async ({
+test("a sweep with nothing to do launches the sweep and the cleanup", async ({
   assert: { snapshot },
 }) => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
-    ops: { sweep: sweepReply() },
+    ops: { sweep: sweepReply(), cleanup: ROUTINE_OPS.cleanup },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1"]);
+  assert.deepEqual(launchKeys(trace), ["sweep-1", "cleanup-2"]);
+  assert.equal(trace[1].request.skip, null);
   assert.deepEqual(summary, sweepSummary({ items: [] }));
   snapshot(trace);
 });
@@ -52,9 +53,13 @@ test("a lost claim is recorded as abandoned, with no item", async ({
 }) => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
-    ops: { sweep: sweepReply({ items: [LOST_ISSUE] }), claim: LOST_CLAIM },
+    ops: {
+      sweep: sweepReply({ items: [LOST_ISSUE] }),
+      claim: LOST_CLAIM,
+      cleanup: ROUTINE_OPS.cleanup,
+    },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2"]);
+  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "cleanup-3"]);
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -81,6 +86,7 @@ test("after a lost claim, the next candidate resumes from its saved lease", asyn
     "i7-claim-2",
     "i8-claim-3",
     "i8-merge-4",
+    "cleanup-5",
   ]);
   assert.deepEqual(
     summary,
@@ -108,10 +114,11 @@ test("a sweep closes the parents it is given", async ({
     args: WORKFLOW_ARGS,
     ops: {
       sweep: sweepReply({ parents: [PARENT_ISSUE] }),
+      cleanup: ROUTINE_OPS.cleanup,
       "close-parent": { ok: true, closed: true },
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "p5-close-2"]);
+  assert.deepEqual(launchKeys(trace), ["sweep-1", "p5-close-2", "cleanup-3"]);
   assert.deepEqual(summary, sweepSummary({ parentsClosed: 1 }));
   snapshot(trace);
 });
@@ -122,9 +129,10 @@ test("a failed claim is the sweep's item, with no state", async () => {
     ops: {
       sweep: sweepReply({ items: [LOST_ISSUE] }),
       claim: { ok: false, error: "the issue is locked" },
+      cleanup: ROUTINE_OPS.cleanup,
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2"]);
+  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "cleanup-3"]);
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -154,8 +162,13 @@ test("a PR branch that moved outside the pipeline stops the claimed issue", asyn
       },
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "i7-stop-3"]);
-  const { request } = trace.at(-1);
+  assert.deepEqual(launchKeys(trace), [
+    "sweep-1",
+    "i7-claim-2",
+    "i7-stop-3",
+    "cleanup-4",
+  ]);
+  const { request } = trace.at(-2);
   assert.equal(request.detail, "Expected aaaaaaa, found bbbbbbb.");
   assert.deepEqual(
     summary,
@@ -171,6 +184,35 @@ test("a PR branch that moved outside the pipeline stops the claimed issue", asyn
         },
       ],
     }),
+  );
+});
+
+// A sweep with nothing to do whose cleanup answers `cleanup`.
+function cleanupRun(cleanup) {
+  return runWorkflow({
+    args: WORKFLOW_ARGS,
+    ops: { sweep: sweepReply(), cleanup },
+  });
+}
+
+test("the cleanup's list of worktrees is the summary's cleanup log", async () => {
+  const worktrees = [
+    { issue: 3, outcome: "removed" },
+    { issue: 4, outcome: "kept", why: "the issue is open" },
+  ];
+  const { summary } = await cleanupRun({ ok: true, worktrees });
+  assert.deepEqual(
+    summary,
+    sweepSummary({ cleanup: { worktrees, error: null } }),
+  );
+});
+
+test("a failed cleanup is reported in the summary, not thrown", async () => {
+  const error = "timed out waiting for the clone lock";
+  const { summary } = await cleanupRun({ ok: false, error });
+  assert.deepEqual(
+    summary,
+    sweepSummary({ cleanup: { worktrees: [], error } }),
   );
 });
 
