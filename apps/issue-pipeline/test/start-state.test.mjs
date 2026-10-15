@@ -1,17 +1,16 @@
-// startState and branchHasWork from ops.mjs: where a stopped, answered or
-// restarted issue starts again ("start from branch"). ops.mjs runs its request on
-// import, so the functions are lifted from its source.
+// startState and branchHasWork: where a stopped, answered or restarted issue
+// starts again ("start from branch").
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { test } from "node:test";
 
-const src = fs.readFileSync(new URL("../src/ops.mjs", import.meta.url), "utf8");
-const grab = (re) => src.match(re)[0];
-const newStateSrc = grab(/function newState\([\s\S]*?\n\}\n/);
-const startSrc = grab(/function startState\([\s\S]*?\n\}\n/);
-const hasWorkSrc = grab(/function branchHasWork\([\s\S]*?\n\}\n/);
-const startState = new Function(newStateSrc + startSrc + "return startState;")();
+const d = fs.mkdtempSync("/tmp/issue-pipeline-test-");
+process.on("exit", () => fs.rmSync(d, { recursive: true, force: true }));
+// The pipeline root is read once, on import, so it is set first.
+process.env.ISSUE_PIPELINE_ROOT = d;
+const { startState } = await import("../src/state.ts");
+const { branchHasWork } = await import("../src/checkouts.ts");
 const t = (name, got, want) => test(name, () => assert.deepEqual(got, want));
 const now = new Date("2026-10-15T03:00:00Z");
 const base = { version: 1, number: 7, depth: 1, pr: 50, headSha: "h1", reviewedSha: "h0", verifiedSha: "h1", plan: "P", spec: "S", allocated: 990000, round: 2, ciFixes: 2, syncs: 9, triages: 2, findings: [{ status: "resolved" }], resolvedHistory: ["r"], log: ["a"] };
@@ -50,20 +49,14 @@ t("mid-stage unchanged", startState(mid, ctx) === mid, true);
 
 // branchHasWork against real repos
 const sh = (c) => { const r = spawnSync("bash", ["-c", c], { encoding: "utf8" }); if (r.status) throw new Error(c + "\n" + r.stderr); return r.stdout.trim(); };
-const d = fs.mkdtempSync("/tmp/issue-pipeline-test-");
-process.on("exit", () => fs.rmSync(d, { recursive: true, force: true }));
 sh(`cd ${d} && git init -q --bare -b integration origin.git && git clone -q origin.git seed 2>/dev/null; cd seed && git config user.email a@b && git config user.name a && echo 1 > f && git add f && git commit -qm base && git push -q origin HEAD:integration`);
 sh(`cd ${d}/seed && git checkout -qb agent/issue-7 && git commit -q --allow-empty -m start && git push -q origin agent/issue-7`);
 const emptySha = sh(`cd ${d}/seed && git rev-parse HEAD`);
 sh(`cd ${d}/seed && git checkout -qb agent/issue-8 integration && echo 2 > g && git add g && git commit -qm work && git push -q origin agent/issue-8`);
 const workSha = sh(`cd ${d}/seed && git rev-parse HEAD`);
 // rebased (non-ff) branch: rewrite issue-8 after clone has fetched it once
-sh(`git clone -q ${d}/origin.git ${d}/clone`);
-const cfg = { baseBranch: "integration" };
-const paths = { clone: () => d + "/clone", branch: (n) => `agent/issue-${n}` };
-const run = (cmd, args, opts = {}) => { const r = spawnSync(cmd, args, { encoding: "utf8" }); const out = { code: r.status, stdout: r.stdout, stderr: r.stderr }; if (!opts.allowFail && out.code) throw new Error(args.join(" ") + out.stderr); return out; };
-const fetchIn = (cfg, dir, ...refs) => run("git", ["-C", dir, "fetch", "origin", ...refs]);
-const branchHasWork = new Function("paths", "fetchIn", "run", "OpsError", "runFailure", hasWorkSrc + "return branchHasWork;")(paths, fetchIn, run, Error, (c, a, o) => o.stderr);
+sh(`mkdir -p ${d}/clones && git clone -q ${d}/origin.git ${d}/clones/o__r`);
+const cfg = { baseBranch: "integration", slug: "o__r" };
 t("empty start commit -> no work", branchHasWork(cfg, 7, emptySha), false);
 t("real change -> work", branchHasWork(cfg, 8, workSha), true);
 sh(`cd ${d}/seed && git checkout -q agent/issue-8 && git commit -q --amend -m reworked && git push -qf origin agent/issue-8`);

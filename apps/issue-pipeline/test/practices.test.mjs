@@ -1,17 +1,18 @@
 // The spec writer, the code writers and the first reviewers read the configured
 // coding practices in full (config `practices`), and the config refuses entries
-// outside the worktree. Both files
-// run on load, so the functions are lifted from their source.
+// outside the worktree. workflow.js runs on load, so its functions are lifted
+// from its source.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { loadConfig } from "../src/config.ts";
+import { OpsError } from "../src/process.ts";
 
 const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
 const grab = (src, name) => src.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}\\n`))[0];
 const workflow = read("src/workflow.js");
-const ops = read("src/ops.mjs");
 
 const practicesUse = workflow.match(/const PRACTICES_USE = \{[\s\S]*?\n\};\n/)[0];
 const practicesNote = (cfg) => new Function("cfg", `${practicesUse}${grab(workflow, "practicesNote")}return practicesNote;`)(cfg);
@@ -50,15 +51,6 @@ test("the spec, implement, fix and first-review tasks carry the note", () => {
   assert.match(taskOf("Review "), /practicesNote\(it, "reviewer"\)/);
 });
 
-const defaults = new Function(`${ops.match(/const DEFAULTS = \{[\s\S]*?\n\};\n/)[0]}return DEFAULTS;`)();
-class OpsError extends Error {}
-const loadConfig = new Function("fs", "path", "OpsError", "expand", "DEFAULTS", `${grab(ops, "loadConfig")}return loadConfig;`)(
-  fs,
-  path,
-  OpsError,
-  (p) => p,
-  defaults,
-);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-practices-"));
 process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
 const configWith = (extra) => {

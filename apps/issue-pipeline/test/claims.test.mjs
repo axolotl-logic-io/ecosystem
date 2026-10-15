@@ -1,20 +1,7 @@
 // liveClaims from ops.mjs: which comments count as a lane's claim on an issue.
-// ops.mjs runs its request on import, so the functions are lifted from its source.
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { test } from "node:test";
-
-const src = fs.readFileSync(new URL("../src/ops.mjs", import.meta.url), "utf8");
-const grab = (re) => src.match(re)[0];
-const liveClaims = new Function(
-  [
-    grab(/const PIPELINE_MARK = .*\n/),
-    grab(/const CLAIM_MARK = .*\n/),
-    grab(/function isClaimComment\([\s\S]*?\n\}\n/),
-    grab(/function liveClaims\([\s\S]*?\n\}\n/),
-    "return liveClaims;",
-  ].join(""),
-)();
+import { liveClaims } from "../src/claims.ts";
 
 const cfg = { account: "bot", leaseHours: 3 };
 const now = new Date().toISOString();

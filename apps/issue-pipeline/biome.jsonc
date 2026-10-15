@@ -15,8 +15,24 @@
     // pipeline's CLI entry points, the install, the build it runs and the ops
     // CLI. Each is a command run from the terminal, so it must read the
     // process (its arguments and environment), the files and the terminal.
+    // The ops CLI's own modules are part of that boundary: they run git, gh
+    // and the configured commands, and keep the clones, worktrees, locks and
+    // logs on disk (#166). The pure modules (globs, stops, labels, comments,
+    // claims, state) get no exception.
     {
-      "includes": ["install.mjs", "build.ts", "src/ops.mjs"],
+      "includes": [
+        "install.mjs",
+        "build.ts",
+        "src/ops.mjs",
+        "src/pipeline-root.ts",
+        "src/process.ts",
+        "src/config.ts",
+        "src/comment-only.ts",
+        "src/locks.ts",
+        "src/checkouts.ts",
+        "src/wiki.ts",
+        "src/issue-context.ts"
+      ],
       "linter": {
         "rules": {
           "correctness": {
@@ -28,6 +44,18 @@
           },
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    // GitHub's REST API names a comment's times in snake_case (`created_at`,
+    // `updated_at`), and comments.ts declares its comment schema with them.
+    {
+      "includes": ["src/comments.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": "off"
           }
         }
       }
