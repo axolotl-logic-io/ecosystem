@@ -1,3 +1,4 @@
+// @ts-check
 // The built workflow's security stops, run through workflow-harness.mjs: a
 // stop for an open security finding carries the finding's harm as its code.
 // Each test pins the launch keys, the stop request's code and the summary by
@@ -15,6 +16,9 @@ import {
   sweepSummary,
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
+
+/** @import { OpLaunch } from "../src/workflow/stages/types.ts" */
+/** @import { Scripted } from "./workflow-harness.mjs" */
 
 // Issue #7 with acceptance passed at fffffff.
 const ACCEPTED = {
@@ -39,6 +43,14 @@ const LEAK = {
 };
 
 // A run of issue #7 claimed at `stage` with `fields`, with ops and agents.
+/**
+ * @param {object} run
+ * @param {string} run.stage
+ * @param {object} run.fields
+ * @param {Record<string, Scripted>} [run.ops]
+ * @param {Record<string, Scripted>} [run.agents]
+ * @returns {ReturnType<typeof runWorkflow>}
+ */
 function codesRun({ stage, fields, ops = {}, agents = {} }) {
   return runWorkflow({
     args: WORKFLOW_ARGS,
@@ -53,6 +65,7 @@ function codesRun({ stage, fields, ops = {}, agents = {} }) {
 }
 
 // The summary of issue #7 stopped at `stage` by LEAK past its fix rounds.
+/** @param {string} stage @returns {object} */
 function leakStopped(stage) {
   return sweepSummary({
     items: [
@@ -85,7 +98,10 @@ test("a security finding past the fix rounds stops with its harm as the code", a
     "i7-stop-5",
     "cleanup-6",
   ]);
-  assert.equal(trace.at(-2).request.code, "user-harm");
+  const { code } = /** @type {OpLaunch["payload"]} */ (
+    trace.at(-2)?.request ?? {}
+  );
+  assert.equal(code, "user-harm");
   assert.deepEqual(summary, leakStopped("security"));
 });
 
@@ -105,6 +121,9 @@ test("an open security finding stops the merge with its harm as the code", async
     "i7-stop-3",
     "cleanup-4",
   ]);
-  assert.equal(trace.at(-2).request.code, "user-harm");
+  const { code } = /** @type {OpLaunch["payload"]} */ (
+    trace.at(-2)?.request ?? {}
+  );
+  assert.equal(code, "user-harm");
   assert.deepEqual(summary, leakStopped("merge"));
 });

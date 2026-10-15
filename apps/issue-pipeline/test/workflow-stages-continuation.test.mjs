@@ -1,3 +1,4 @@
+// @ts-check
 // The built workflow's second implement pass, run through
 // workflow-harness.mjs: an implementer that hands off gets one continuation
 // in the same sweep, unless the spawn cap holds it. The tests pin the launch
@@ -15,6 +16,8 @@ import {
   sweepSummary,
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
+
+/** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
 
 const IMPL_TOKENS = 150_000;
 
@@ -86,11 +89,11 @@ test("a continuation runs in the same sweep, and a second handoff stops", async 
     "i7-stop-6",
     "cleanup-7",
   ]);
-  const [entry] = summary.items;
-  assert.equal(entry.outcome, "stopped");
+  const [entry] = /** @type {SweepSummary} */ (summary).items;
+  assert.equal(entry?.outcome, "stopped");
   assert.equal(
-    entry.reason,
+    entry?.reason,
     "the implementer ran out of room twice; the issue needs splitting",
   );
-  assert.equal(entry.stage, "implement");
+  assert.equal(entry?.stage, "implement");
 });

@@ -1,7 +1,14 @@
+// @ts-check
 // Charging an issue's sessions against its token budgets.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chargeCheck, chargeSession } from "../src/workflow/budget.ts";
+
+/** @import { Budgets } from "../src/workflow/budget.ts" */
+/**
+ * The part of an issue's state the charges read and write.
+ * @typedef {Parameters<typeof chargeSession>[1]} BudgetState
+ */
 
 const KEPT_SESSIONS = 40;
 const TRIAGE = 50_000;
@@ -12,8 +19,11 @@ const ISSUE_BUDGET = 1_000_000;
 const REBASE_BUDGET = 500_000;
 const REVIEWERS = 3;
 const NEAR_FULL = 980_000;
+// The budget of the roles these tests never charge.
+const UNCHARGED = 0;
 const at = new Date("2026-10-15T12:00:00Z");
 
+/** @type {Budgets} */
 const budgets = {
   // The ciFixer's budget is over the session cap.
   roles: {
@@ -21,6 +31,11 @@ const budgets = {
     reviewer: REVIEWER,
     fixer: FIXER,
     ciFixer: SESSION_CAP + 1,
+    spec: UNCHARGED,
+    implementer: UNCHARGED,
+    aggregator: UNCHARGED,
+    rereviewer: UNCHARGED,
+    verifier: UNCHARGED,
   },
   sessionCap: SESSION_CAP,
   issueBudget: ISSUE_BUDGET,
@@ -28,6 +43,7 @@ const budgets = {
 };
 
 test("a session costs its role's budget, capped per session", () => {
+  /** @type {BudgetState} */
   const st = { allocated: 0 };
   assert.deepEqual(chargeSession(budgets, st, "triage", { at }), {
     charged: true,
@@ -42,6 +58,7 @@ test("a session costs its role's budget, capped per session", () => {
 });
 
 test("several sessions cost the role's budget each, and record the role once", () => {
+  /** @type {BudgetState} */
   const st = { allocated: 0, sessions: [] };
   chargeSession(budgets, st, "reviewer", { at, count: REVIEWERS });
   assert.equal(st.allocated, REVIEWER * REVIEWERS);
@@ -52,6 +69,7 @@ test("several sessions cost the role's budget each, and record the role once", (
 });
 
 test("a zero count charges one session", () => {
+  /** @type {BudgetState} */
   const st = { allocated: 0 };
   chargeSession(budgets, st, "reviewer", { at, count: 0 });
   assert.equal(st.allocated, REVIEWER);
@@ -59,6 +77,7 @@ test("a zero count charges one session", () => {
 
 test("a session that would pass the issue budget by one token is refused", () => {
   const allocated = ISSUE_BUDGET - REVIEWER + 1;
+  /** @type {BudgetState} */
   const st = { allocated, sessions: ["spec"] };
   assert.deepEqual(chargeSession(budgets, st, "reviewer", { at }), {
     charged: false,
@@ -71,6 +90,7 @@ test("a session that would pass the issue budget by one token is refused", () =>
 });
 
 test("a session that reaches the budget exactly is charged", () => {
+  /** @type {BudgetState} */
   const st = { allocated: ISSUE_BUDGET - REVIEWER };
   assert.deepEqual(chargeSession(budgets, st, "reviewer", { at }), {
     charged: true,
@@ -89,6 +109,7 @@ test("only the latest 40 sessions are kept", () => {
 });
 
 test("a rebase-pool charge adds only to the rebase allowance and logs it", () => {
+  /** @type {BudgetState} */
   const st = { allocated: NEAR_FULL, rebaseAllocated: 0 };
   assert.deepEqual(
     chargeSession(budgets, st, "fixer", { at, pool: "rebase" }),
@@ -102,12 +123,14 @@ test("a rebase-pool charge adds only to the rebase allowance and logs it", () =>
 });
 
 test("a state saved without a rebase allowance reads it as 0", () => {
+  /** @type {BudgetState} */
   const st = { allocated: 0 };
   chargeSession(budgets, st, "fixer", { at, pool: "rebase" });
   assert.equal(st.rebaseAllocated, FIXER);
 });
 
 test("a re-check charges the rebase pool when no pool is named", () => {
+  /** @type {BudgetState} */
   const rechecking = { allocated: 0, rebaseAllocated: 0, rechecking: true };
   assert.equal(
     chargeSession(budgets, rechecking, "reviewer", { at }).pool,
@@ -116,6 +139,7 @@ test("a re-check charges the rebase pool when no pool is named", () => {
   assert.equal(rechecking.rebaseAllocated, REVIEWER);
   assert.equal(rechecking.allocated, 0);
 
+  /** @type {BudgetState} */
   const firstPass = { allocated: 0, rebaseAllocated: 0, rechecking: false };
   assert.equal(
     chargeSession(budgets, firstPass, "reviewer", { at }).pool,
@@ -126,6 +150,7 @@ test("a re-check charges the rebase pool when no pool is named", () => {
 });
 
 test("a refused rebase-pool charge names the rebase allowance and leaves the state alone", () => {
+  /** @type {BudgetState} */
   const st = { allocated: 0, rebaseAllocated: 450_000, sessions: ["spec"] };
   assert.deepEqual(
     chargeSession(budgets, st, "fixer", { at, pool: "rebase" }),
@@ -145,6 +170,7 @@ test("a refused rebase-pool charge names the rebase allowance and leaves the sta
 });
 
 test("checking a charge never changes the state", () => {
+  /** @type {BudgetState} */
   const st = { allocated: 0, rebaseAllocated: 0, sessions: ["spec"] };
   assert.deepEqual(chargeCheck(budgets, st, "fixer", "rebase"), {
     charged: true,
@@ -160,6 +186,7 @@ test("checking a charge never changes the state", () => {
     sessions: ["spec"],
   });
 
+  /** @type {BudgetState} */
   const full = { allocated: ISSUE_BUDGET, rebaseAllocated: REBASE_BUDGET };
   assert.equal(chargeCheck(budgets, full, "fixer", "rebase").charged, false);
   assert.deepEqual(full, {

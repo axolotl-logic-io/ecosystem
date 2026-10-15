@@ -1,8 +1,11 @@
+// @ts-check
 // How the workflow cuts text and lists findings in comments and prompts.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clip } from "../src/workflow/clip.ts";
 import { findingLines, findingsText } from "../src/workflow/findings.ts";
+
+/** @import { Finding } from "../src/workflow/types.ts" */
 
 const LIMIT = 5;
 const NUMBER = 1_234_567;
@@ -14,6 +17,7 @@ const reported = {
   evidence: "The loop stops early.",
   suggestion: "Use <=.",
 };
+/** @type {Finding} */
 const numbered = {
   ...reported,
   id: "f3",
@@ -63,6 +67,7 @@ test("a prompt lists a finding with its evidence and suggestion", () => {
 });
 
 test("a prompt lists a security finding's category and the fixer's dispute", () => {
+  /** @type {Finding} */
   const disputed = { ...numbered, category: "rights", dispute: "It is <." };
   assert.equal(
     findingsText([disputed, numbered]),

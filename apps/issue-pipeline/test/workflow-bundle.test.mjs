@@ -1,3 +1,4 @@
+// @ts-check
 // The built workflow opens with the helpers' bundle, and the bundle doesn't
 // change how the sweep's body runs. It builds into its own folder, so it never
 // races install.test.mjs, which builds dist/.

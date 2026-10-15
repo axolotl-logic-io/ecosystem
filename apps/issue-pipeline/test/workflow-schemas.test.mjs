@@ -1,3 +1,4 @@
+// @ts-check
 // The re-review schemas, and the lenses the review rounds run.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -11,6 +12,8 @@ import {
   REREVIEW_SEC_SCHEMA,
 } from "../src/workflow/review-schemas.ts";
 
+/** @import { JsonSchema } from "../src/workflow/schemas.ts" */
+
 const NEW_FINDING_REQUIRED = [
   "file",
   "line",
@@ -21,22 +24,53 @@ const NEW_FINDING_REQUIRED = [
 ];
 
 // A plain copy, so a comparison sees only the schema's JSON.
+/** @param {JsonSchema} schema @returns {unknown} */
 function plain(schema) {
   return JSON.parse(JSON.stringify(schema));
 }
 
+// The schema of one new finding in re-review schema `schema`.
+/** @param {JsonSchema} schema @returns {JsonSchema} */
+function newFindingSchema(schema) {
+  const { properties = {} } = schema;
+  const { newFindings } = properties;
+  if (newFindings?.items === undefined) {
+    throw new Error("the schema has no new findings");
+  }
+  return newFindings.items;
+}
+
+// `schema` with a required harm category added last to its new findings.
+/** @param {JsonSchema} schema @returns {JsonSchema} */
+function withHarmCategory(schema) {
+  const { properties = {} } = schema;
+  const { newFindings } = properties;
+  const items = newFindingSchema(schema);
+  const { properties: fields = {}, required = [] } = items;
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      newFindings: {
+        ...newFindings,
+        items: {
+          ...items,
+          properties: { ...fields, category: { enum: [...HARM_CATEGORIES] } },
+          required: [...required, "category"],
+        },
+      },
+    },
+  };
+}
+
 test("the re-review schema's new findings carry no category", () => {
-  const { items } = REREVIEW_SCHEMA.properties.newFindings;
+  const items = newFindingSchema(REREVIEW_SCHEMA);
   assert.deepEqual(items.required, NEW_FINDING_REQUIRED);
-  assert.equal(Object.hasOwn(items.properties, "category"), false);
+  assert.equal(Object.hasOwn(items.properties ?? {}, "category"), false);
 });
 
 test("the security re-review schema adds a required harm category last", () => {
-  const want = plain(REREVIEW_SCHEMA);
-  want.properties.newFindings.items.properties.category = {
-    enum: [...HARM_CATEGORIES],
-  };
-  want.properties.newFindings.items.required.push("category");
+  const want = plain(withHarmCategory(REREVIEW_SCHEMA));
   assert.deepEqual(plain(REREVIEW_SEC_SCHEMA), want);
 });
 

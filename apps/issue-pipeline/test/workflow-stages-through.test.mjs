@@ -1,3 +1,4 @@
+// @ts-check
 // The built workflow with args.through, run through workflow-harness.mjs: the
 // sweep begins no stage after the named one and releases the issue at its next
 // stage.
@@ -13,6 +14,10 @@ import {
   sweepReply,
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
+
+/** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
+/** @import { TraceEntry } from "./workflow-harness.mjs" */
 
 // Issue #7 after triage: its plan and draft PR.
 const TRIAGED = {
@@ -32,12 +37,18 @@ const SPEC_READY = replyWith({
 // The error a run with an unknown args.through fails with.
 const UNKNOWN_STAGE = /args\.through must be one of: triage, spec, implement/u;
 
+// The state the run's first release request carried.
+/** @param {readonly TraceEntry[]} trace @returns {IssueState} */
 function releasedState(trace) {
-  const release = trace.find((entry) => entry.request?.op === "release");
-  if (!release) {
-    throw new Error("the sweep released no issue");
+  for (const { request } of trace) {
+    const { op, state } = /** @type {{ op: string, state: IssueState }} */ (
+      request ?? {}
+    );
+    if (op === "release") {
+      return state;
+    }
   }
-  return release.request.state;
+  throw new Error("the sweep released no issue");
 }
 
 test("through spec: the spec is written, then the issue is released at implement", async () => {
@@ -62,7 +73,10 @@ test("through spec: the spec is written, then the issue is released at implement
   assert.equal(released.stage, "implement");
   assert.equal(released.spec, "## Behaviour\n\n1. src/a.ts does the thing.");
   assert.deepEqual(
-    summary.items.map(({ stage, outcome }) => ({ stage, outcome })),
+    /** @type {SweepSummary} */ (summary).items.map(({ stage, outcome }) => ({
+      stage,
+      outcome,
+    })),
     [{ stage: "implement", outcome: "in-progress" }],
   );
 });

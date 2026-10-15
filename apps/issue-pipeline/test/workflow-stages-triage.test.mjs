@@ -1,3 +1,4 @@
+// @ts-check
 // The built workflow's triage paths, run through workflow-harness.mjs. Each
 // test pins the launch keys and the summary by hand, and the whole trace in
 // workflow-stages-triage.test.mjs.snapshot.
@@ -15,7 +16,10 @@ import {
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
 
+/** @import { Scripted } from "./workflow-harness.mjs" */
+
 // The triage reply, with `fields` replacing the empty decision's.
+/** @param {object} fields @returns {object} */
 function triageReply(fields) {
   return replyWith({
     decision: "ready",
@@ -28,6 +32,12 @@ function triageReply(fields) {
 }
 
 // A run of issue #7 at triage, with the triage agent's reply and extra ops.
+/**
+ * @param {Scripted} triage
+ * @param {Record<string, Scripted>} [ops]
+ * @param {object} [config]
+ * @returns {ReturnType<typeof runWorkflow>}
+ */
 function triageRun(triage, ops = {}, config = {}) {
   return runWorkflow({
     args: WORKFLOW_ARGS,

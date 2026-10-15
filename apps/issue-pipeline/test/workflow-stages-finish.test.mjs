@@ -1,3 +1,4 @@
+// @ts-check
 // The built workflow's acceptance, security review and merge paths, run
 // through workflow-harness.mjs. Each test pins the launch keys and the summary
 // by hand, and the whole trace in workflow-stages-finish.test.mjs.snapshot.
@@ -10,7 +11,10 @@ import {
   issueSummary,
   SECURED,
 } from "./workflow-finish-run-kit.mjs";
-import { launchKeys, replyWith } from "./workflow-stages-fixtures.mjs";
+import { ISSUE, launchKeys, replyWith } from "./workflow-stages-fixtures.mjs";
+
+/** @import { OpLaunch } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
 
 const PREPARED = { "prepare-review": { ok: true, headSha: "fffffff" } };
 
@@ -147,7 +151,10 @@ test("an issue at merge is merged", async ({ assert: { snapshot } }) => {
     "cleanup-4",
   ]);
   // The cleanup leaves the sweep's own issue alone.
-  assert.equal(trace.at(-1).request.skip, 7);
+  const { skip } = /** @type {OpLaunch["payload"]} */ (
+    trace.at(-1)?.request ?? {}
+  );
+  assert.equal(skip, ISSUE);
   assert.deepEqual(
     summary,
     issueSummary({
@@ -183,7 +190,10 @@ test("a merge queued behind an older PR notes it and stays at merge", async ({
     "i7-release-4",
     "cleanup-5",
   ]);
-  assert.deepEqual(trace.at(-2).request.state.log, [
+  const { state } = /** @type {{ state: IssueState }} */ (
+    trace.at(-2)?.request ?? {}
+  );
+  assert.deepEqual(state.log, [
     "2026-10-15T12:00Z merge waits for #5 (older PR #40)",
   ]);
   assert.deepEqual(

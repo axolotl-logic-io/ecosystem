@@ -1,3 +1,4 @@
+// @ts-check
 // The sweep's driver for the review and fix stages, run through
 // workflow-harness.mjs: an issue moved to review in a sweep is reviewed in it,
 // and each fix round is held to the per-run spawn cap.
@@ -14,6 +15,10 @@ import {
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
 
+/** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
+/** @import { Scripted, TraceEntry } from "./workflow-harness.mjs" */
+
 const NO_FINDINGS = replyWith({ findings: [] });
 const OFF_BY_ONE = {
   file: "src/a.ts",
@@ -25,6 +30,43 @@ const OFF_BY_ONE = {
 const HELD_AT_FIX =
   "2026-10-15T12:00Z held at fix by the per-run spawn cap; continues next sweep";
 
+// Issue #7 claimed at fix with one open finding, after its review at
+// bbbbbbb.
+const OPEN_FINDING_CLAIM = claimAt("fix", {
+  pr: 42,
+  headSha: "bbbbbbb",
+  reviewedSha: "bbbbbbb",
+  nextFindingId: 1,
+  findings: [
+    {
+      id: "f1",
+      ...OFF_BY_ONE,
+      lenses: ["correctness"],
+      category: null,
+      status: "open",
+      disputed: false,
+    },
+  ],
+});
+// A fix round 1 that fixes nothing, whose re-review finds f1 unresolved.
+const UNRESOLVED_ROUND = {
+  "i7-fix-r1": replyWith({ fixed: [], disputed: [], summary: "Tried." }),
+  "i7-rereview-correctness-r1": replyWith({
+    results: [{ id: "f1", status: "unresolved", note: "" }],
+    newFindings: [],
+  }),
+};
+
+// A run of issue #7 claimed with `claim`, with the given ops, agents and
+// config.
+/**
+ * @param {object} run
+ * @param {object} run.claim
+ * @param {Record<string, Scripted>} run.ops
+ * @param {Record<string, Scripted>} run.agents
+ * @param {object} run.config
+ * @returns {ReturnType<typeof runWorkflow>}
+ */
 function issueRun({ claim, ops, agents, config }) {
   return runWorkflow({
     args: WORKFLOW_ARGS,
@@ -39,8 +81,12 @@ function issueRun({ claim, ops, agents, config }) {
 }
 
 // The state the run's last ops request before the cleanup carried.
+/** @param {readonly TraceEntry[]} trace @returns {IssueState} */
 function lastState(trace) {
-  return trace.at(-2).request.state;
+  const { state } = /** @type {{ state: IssueState }} */ (
+    trace.at(-2)?.request ?? {}
+  );
+  return state;
 }
 
 test("an issue claimed at open-pr is opened and reviewed in the same sweep", async () => {
@@ -71,7 +117,8 @@ test("an issue claimed at open-pr is opened and reviewed in the same sweep", asy
     "i7-release-10",
     "cleanup-11",
   ]);
-  assert.equal(summary.items[0].stage, "sync");
+  const [item] = /** @type {SweepSummary} */ (summary).items;
+  assert.equal(item?.stage, "sync");
   assert.equal(lastState(trace).reviewedSha, "bbbbbbb");
 });
 
@@ -79,33 +126,12 @@ test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix",
   // Round 1 fits: 2 launched + 8 + a reserve of 4 is 14. Round 2 doesn't:
   // 7 launched + 8 + 4 is 19.
   const { trace, summary } = await issueRun({
-    claim: claimAt("fix", {
-      pr: 42,
-      headSha: "bbbbbbb",
-      reviewedSha: "bbbbbbb",
-      nextFindingId: 1,
-      findings: [
-        {
-          id: "f1",
-          ...OFF_BY_ONE,
-          lenses: ["correctness"],
-          category: null,
-          status: "open",
-          disputed: false,
-        },
-      ],
-    }),
+    claim: OPEN_FINDING_CLAIM,
     ops: {
       push: { ok: true, headSha: "ccccccc" },
       "prepare-review": { ok: true, diffPath: "/runs/r1.diff" },
     },
-    agents: {
-      "i7-fix-r1": replyWith({ fixed: [], disputed: [], summary: "Tried." }),
-      "i7-rereview-correctness-r1": replyWith({
-        results: [{ id: "f1", status: "unresolved", note: "" }],
-        newFindings: [],
-      }),
-    },
+    agents: UNRESOLVED_ROUND,
     config: { maxSpawnsPerRun: 15 },
   });
   assert.deepEqual(launchKeys(trace), [
@@ -119,10 +145,10 @@ test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix",
     "i7-release-8",
     "cleanup-9",
   ]);
-  const [item] = summary.items;
+  const [item] = /** @type {SweepSummary} */ (summary).items;
   assert.deepEqual(
-    [item.stage, item.outcome, item.reason],
+    [item?.stage, item?.outcome, item?.reason],
     ["fix", "in-progress", null],
   );
-  assert.equal(lastState(trace).log.at(-1), HELD_AT_FIX);
+  assert.equal(lastState(trace).log?.at(-1), HELD_AT_FIX);
 });

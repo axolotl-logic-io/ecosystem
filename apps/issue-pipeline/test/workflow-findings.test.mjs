@@ -1,3 +1,4 @@
+// @ts-check
 // The findings an issue carries through its fix rounds.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -26,6 +27,12 @@ const reported = {
   suggestion: "Use <=.",
 };
 
+/**
+ * An issue's findings as addFinding reads and writes them.
+ * @typedef {Parameters<typeof addFinding>[0]} FindingsItem
+ */
+
+/** @returns {FindingsItem} */
 function emptyItem() {
   return { st: { findings: [] } };
 }
@@ -54,7 +61,8 @@ test("the stored finding is the one returned", () => {
   const item = emptyItem();
   const finding = addFinding(item, reported, ["tests"]);
   finding.status = "resolved";
-  assert.equal(item.st.findings[0].status, "resolved");
+  const [stored] = item.st.findings;
+  assert.equal(stored?.status, "resolved");
 });
 
 test("numbering continues from the state", () => {

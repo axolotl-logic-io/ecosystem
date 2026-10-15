@@ -1,3 +1,4 @@
+// @ts-check
 // The opening lines of every child's task, and how comments are signed. No
 // trace snapshot records a prompt, so these pin the text.
 import assert from "node:assert/strict";
@@ -8,13 +9,22 @@ import { by, byStep } from "../src/workflow/signing.ts";
 const cfg = { repo: "o/r", baseBranch: "integration" };
 const CAP = 60_000;
 
+// Issue #7, with its wiki checked out at `wiki`, or none.
+/** @param {string | null} wiki @returns {Parameters<typeof preamble>[1]} */
 function itemWith(wiki) {
   return {
     n: 7,
-    paths: { worktree: "/w/issue-7", issueFile: "/runs/issue.md", wiki },
+    paths: {
+      worktree: "/w/issue-7",
+      issueFile: "/runs/issue.md",
+      wiki,
+      handoffFile: "/runs/issue-7/handoff.md",
+    },
   };
 }
 
+// The preamble's lines for a fixer, with `wikiLine` as its wiki line.
+/** @param {string} wikiLine @returns {string[]} */
 function expectedLines(wikiLine) {
   return [
     "You are one step of an automated issue pipeline for the GitHub repo o/r. Your role: fixer",

@@ -1,3 +1,4 @@
+// @ts-check
 // build.ts into a temporary folder: the built workflow is still an async
 // function body with no imports, and the built ops CLI answers as src/ops.ts
 // does. It builds into its own folder, so it never races install.test.mjs,
@@ -24,6 +25,7 @@ const BAD_STAGE = /--stage must be one of/u;
 // The variable that points ops at a pipeline root, here the temporary folder.
 const ROOT_VAR = "ISSUE_PIPELINE_ROOT";
 
+/** @param {string} file @returns {string} */
 function readIfExists(file) {
   if (!fs.existsSync(file)) {
     return "";
@@ -33,6 +35,11 @@ function readIfExists(file) {
 
 // Runs an ops CLI on `input` with only the pipeline root in its environment,
 // so the source and the built CLI see the same environment.
+/**
+ * @param {string} file
+ * @param {string} input
+ * @returns {import("node:child_process").SpawnSyncReturns<string>}
+ */
 function runOps(file, input) {
   return spawnSync(process.execPath, [file], {
     input,
@@ -75,10 +82,14 @@ test("the built ops parses and keeps its #! line", () => {
   );
 });
 
-for (const [name, input] of [
+// Inputs the ops CLI answers without running an op, by name.
+/** @type {[name: string, input: string][]} */
+const ANSWERED_INPUTS = [
   ["no request", "nothing"],
   ["an unknown op", 'BEGIN_OPS_REQUEST {"op":"nope"} END_OPS_REQUEST'],
-]) {
+];
+
+for (const [name, input] of ANSWERED_INPUTS) {
   test(`the built ops answers ${name} as src/ops.ts does`, () => {
     const want = runOps(srcOps, input);
     const got = runOps(builtOps, input);
