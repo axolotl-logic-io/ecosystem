@@ -36,4 +36,5 @@ const LENSES: Readonly<Record<Lens, string>> = {
 const LENS_NAMES: readonly ReviewLens[] = ["correctness", "tests", "scope"];
 const ALL_LENSES: readonly Lens[] = [...LENS_NAMES, "security"];
 
+export type { Lens, ReviewLens };
 export { ALL_LENSES, HARM_CATEGORIES, LENS_NAMES, LENSES, SECURITY_RULES };

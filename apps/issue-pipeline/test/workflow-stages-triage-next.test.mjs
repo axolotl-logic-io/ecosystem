@@ -127,7 +127,11 @@ test("a rejected issue gets the reason, then a stop", () => {
       where: "issue",
     },
   ]);
-  assert.deepEqual(step.stop, { reason: REJECTED, detail: "A debate." });
+  assert.deepEqual(step.stop, {
+    reason: REJECTED,
+    detail: "A debate.",
+    code: null,
+  });
 });
 
 test("a large issue at depth 0 is split, and closed for the sweep", () => {
@@ -194,6 +198,7 @@ test("a session with no structured output stops triage", () => {
   assert.deepEqual(failed.stop, {
     reason: "triage failed",
     detail: "timed out",
+    code: null,
   });
   assert.equal(decided({ decision: "maybe" }).stop.reason, "triage failed");
 });
@@ -205,6 +210,7 @@ test("a run past maxTriages stops without a launch", () => {
     reason:
       "triage ran 2 times without reaching a decision the pipeline can act on",
     detail: null,
+    code: null,
   });
   assert.equal(step.state.st.allocated, 0);
 });
@@ -215,5 +221,6 @@ test("a session the issue's budget can't fit stops triage", () => {
   assert.deepEqual(step.stop, {
     reason: "issue token budget exhausted",
     detail: "Allocated 0 of 40000 tokens; the next step (triage) needs 50000.",
+    code: null,
   });
 });

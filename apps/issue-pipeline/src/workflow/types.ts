@@ -65,6 +65,14 @@ interface IssueState {
   findings: Finding[];
   nextFindingId?: number;
   acceptReason?: string;
+  // The fix rounds run since the first review.
+  round?: number;
+  // The head the last review or re-review saw.
+  reviewedSha?: string | null;
+  // The findings resolved so far, as "<id>: <title>", the last 30.
+  resolvedHistory?: string[];
+  // The security reviews run on the issue.
+  securityRounds?: number;
   // Tokens allocated to the issue's sessions so far.
   allocated: number;
   // The roles of the issue's latest sessions, oldest first.

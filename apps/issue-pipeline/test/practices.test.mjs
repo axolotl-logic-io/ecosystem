@@ -9,6 +9,9 @@ import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { OpsError } from "../src/process.ts";
 import { practicesNote } from "../src/workflow/prompts.ts";
+import { next as nextFix } from "../src/workflow/stages/fix.ts";
+import { next as nextReview } from "../src/workflow/stages/review.ts";
+import { CFG, CTX, ITEM, openFinding, opReply, stateWith } from "./workflow-review-test-kit.mjs";
 
 const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
 const workflow = read("src/workflow.js");
@@ -39,12 +42,27 @@ const taskOf = (label) => {
   return workflow.slice(at, workflow.indexOf(".join(", at));
 };
 
-test("the spec, implement, fix and first-review tasks carry the note", () => {
+test("the spec, implement and check-fix tasks carry the note", () => {
   assert.match(taskOf("Write the spec"), /practicesNote\(cfg, it, "spec"\)/);
   assert.match(taskOf("Implement issue"), /practicesNote\(cfg, it, "writer"\)/);
-  assert.match(taskOf("Fix review findings"), /practicesNote\(cfg, it, "writer"\)/);
   assert.match(taskOf("Fix failing checks"), /practicesNote\(cfg, it, "writer"\)/);
-  assert.match(taskOf("Review "), /practicesNote\(cfg, it, "reviewer"\)/);
+});
+
+test("the first-review tasks carry the reviewer's note", () => {
+  const begun = nextReview(stateWith("review"), CTX, []);
+  const prepared = { ok: true, headSha: "ccccccc", diffPath: "/d.diff", diffLines: 1 };
+  const step = nextReview(begun.state, CTX, [opReply(prepared)]);
+  assert.equal(step.launches.length, 3);
+  for (const launch of step.launches) {
+    assert.ok(launch.task.includes(practicesNote(CFG, ITEM, "reviewer")), launch.name);
+  }
+});
+
+test("the fix task carries the writer's note", () => {
+  const given = stateWith("fix", { findings: [openFinding("f1", ["correctness"])] });
+  const [launch] = nextFix(given, CTX, []).launches;
+  assert.equal(launch.name, "fix-r1");
+  assert.ok(launch.task.includes(practicesNote(CFG, ITEM, "writer")));
 });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-practices-"));

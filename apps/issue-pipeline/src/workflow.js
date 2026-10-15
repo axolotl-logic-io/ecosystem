@@ -21,9 +21,10 @@
 // The build bundles them ahead of this body as `workflowModules`, and
 // src/workflow/index.ts lists every name this destructure may read.
 // The stages are moving onto a step machine: a ported stage is a sync `next`
-// in src/workflow/stages/, run by the one loop after the claim, which does all
-// its awaiting. Triage is ported (#178); the later stages are still labelled
-// blocks after that loop until their ports fill in the stage dispatch.
+// in src/workflow/stages/, run by a loop that does all its awaiting. The loop
+// runs twice: after the claim for triage (#178), and after open-pr for review
+// and the fix rounds (#179). The other stages are still labelled blocks until
+// their ports fill in the stage dispatch.
 
 const {
   acceptanceSummary,
@@ -40,21 +41,14 @@ const {
   openFindings,
   practicesNote,
   preamble,
-  allLenses: ALL_LENSES,
-  lensNames: LENS_NAMES,
   lenses: LENSES,
   securityRules: SECURITY_RULES,
   acceptSchema: ACCEPT_SCHEMA,
-  aggSchema: AGG_SCHEMA,
   cifixSchema: CIFIX_SCHEMA,
-  fixSchema: FIX_SCHEMA,
   implSchema: IMPL_SCHEMA,
-  rereviewSchema: REREVIEW_SCHEMA,
-  rereviewSecSchema: REREVIEW_SEC_SCHEMA,
   reviewSchema: REVIEW_SCHEMA,
   securitySchema: SECURITY_SCHEMA,
   specSchema: SPEC_SCHEMA,
-  triageSchema: TRIAGE_SCHEMA,
   stages: STAGES,
 } = workflowModules.helpers;
 
@@ -285,8 +279,9 @@ const STAGE_CONTEXT = {
 };
 const stagesRun = {};
 
-// The issue as its stage sees it, read fresh from `item`.
-function stageState(phase) {
+// The issue as its stage sees it, read fresh from `item`, with what the stage
+// carries to its next step.
+function stageState(phase, carry) {
   return {
     n: item.n,
     paths: item.paths,
@@ -294,6 +289,7 @@ function stageState(phase) {
     closed: item.closed,
     outcome: item.outcome,
     phase,
+    carry,
   };
 }
 
@@ -306,7 +302,8 @@ function launchSpec(launch) {
 }
 
 // Applies a step to the issue: its state, then its comments, then its stop,
-// so a comment rides on the next ops request. Returns its launches' specs.
+// so a comment rides on the next ops request. A done step with `again` lets
+// its stage begin again. Returns its launches' specs.
 function applyStep(step) {
   item.st = step.state.st;
   item.closed = step.state.closed;
@@ -315,9 +312,12 @@ function applyStep(step) {
     say(item, comment.by, comment.body, comment.where);
   }
   if (step.stop) {
-    stopIssue(item, step.stop.reason, step.stop.detail);
+    stopIssue(item, step.stop.reason, step.stop.detail, null, step.stop.code);
   }
   if (step.done) {
+    if (step.again) {
+      delete stagesRun[item.st.stage];
+    }
     return [];
   }
   return step.launches.map(launchSpec);
@@ -341,14 +341,15 @@ function launchResults(launches, raw) {
   });
 }
 
-// The issue's stage machine and its first step, if the stage is on the step
-// machine, hasn't run this sweep and fits under the spawn cap.
-function beginStage() {
+// The issue's stage machine and its first step, if the stage is one of
+// `stages`, is on the step machine, hasn't run this sweep (or asked to go
+// again) and fits under the spawn cap.
+function beginStage(stages) {
   if (!item || item.closed) {
     return null;
   }
   const { stage } = item.st;
-  if (!Object.hasOwn(STAGES, stage) || Object.hasOwn(stagesRun, stage)) {
+  if (!stages.includes(stage) || !Object.hasOwn(STAGES, stage) || Object.hasOwn(stagesRun, stage)) {
     return null;
   }
   const { [stage]: machine } = STAGES;
@@ -356,19 +357,19 @@ function beginStage() {
     return null;
   }
   stagesRun[stage] = true;
-  const step = machine.next(stageState("begin"), STAGE_CONTEXT, []);
+  const step = machine.next(stageState("begin", null), STAGE_CONTEXT, []);
   return { machine, step };
 }
 
-let stageRun = beginStage();
+let stageRun = beginStage(["triage"]);
 while (stageRun) {
   const specs = applyStep(stageRun.step);
   if (stageRun.step.done) {
-    stageRun = beginStage();
+    stageRun = beginStage(["triage"]);
   } else {
     const { machine, step } = stageRun;
     const results = launchResults(step.launches, await spawnAll(specs));
-    const state = stageState(step.state.phase);
+    const state = stageState(step.state.phase, step.state.carry);
     stageRun.step = machine.next(state, STAGE_CONTEXT, results);
   }
 }
@@ -525,257 +526,23 @@ await flushStops();
 await flushStops();
 await opsAll(saveAt("review"));
 
-// ---------- first review: three lenses, then aggregate ----------
+// ---------- review and fix rounds, on the step machine ----------
+// The same loop as after the claim, for the review and fix stages, so an issue
+// open-pr moved to review is reviewed in this sweep. A fix round that leaves
+// findings open ends with an again step, and fix begins again only if it
+// still fits under the spawn cap.
 
-let reviewed = null;
-review: {
-  const it = take("review");
-  if (!it || !charge(it, "reviewer", 3)) break review;
-  const p = (await opsAll([opsSpec("i" + it.n + "-prep", "prepare-review", { number: it.n, tag: "r0" })]))[0];
-  if (!p.ok) {
-    stopIssue(it, "could not prepare the review diff", p.error);
-    break review;
+stageRun = beginStage(["review", "fix"]);
+while (stageRun) {
+  const specs = applyStep(stageRun.step);
+  if (stageRun.step.done) {
+    stageRun = beginStage(["review", "fix"]);
+  } else {
+    const { machine, step } = stageRun;
+    const results = launchResults(step.launches, await spawnAll(specs));
+    const state = stageState(step.state.phase, step.state.carry);
+    stageRun.step = machine.next(state, STAGE_CONTEXT, results);
   }
-  it.prep = p;
-  it.st.headSha = p.headSha;
-  it.st.findings = [];
-  it.st.round = 0;
-  reviewed = it;
-  const reviews = await spawnAll(
-    LENS_NAMES.map((lens) =>
-      child(it, "review-" + lens, {
-        label: "Review " + lens + " of issue " + it.n,
-        agent: "issue-pipeline-reader",
-        model: MODEL[lens],
-        schema: REVIEW_SCHEMA,
-        minutes: 25,
-        task: preamble(cfg, it, "reviewer (" + lens + ")", ROLE.reviewer)
-          .concat([
-            "Review only this concern: " + LENSES[lens],
-            practicesNote(cfg, it, "reviewer"),
-            "The diff against " + cfg.baseBranch + " is at " + it.prep.diffPath + " (" + it.prep.diffLines + " lines). Read it, then read surrounding code only where needed.",
-            "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
-            "Return an empty list if you find nothing. Do not edit files.",
-          ])
-          .join("\n"),
-      }),
-    ),
-  );
-  const raw = [];
-  let failed = null;
-  LENS_NAMES.forEach((lens, j) => {
-    const r = reviews[j];
-    noteUsage(it, r);
-    const o = out(r);
-    if (!o) {
-      failed = failed || lens + " reviewer failed: " + (r.error || "no output");
-      return;
-    }
-    const blocking = o.findings.filter((f) => f.severity === "blocking");
-    const nits = o.findings.filter((f) => f.severity !== "blocking");
-    blocking.forEach((f) => raw.push(Object.assign({ lens: lens }, f)));
-    // Each reviewer signs its own comment, so the PR shows which lens said what.
-    say(
-      it,
-      by(SPEC_META, r, "reviewer (" + lens + ")"),
-      "Review of " + it.st.headSha.slice(0, 12) + " for " + lens + ".\n\n" +
-        (blocking.length ? "**Blocking**\n\n" + findingLines(blocking) + "\n\n" : "No blocking findings.\n\n") +
-        (nits.length ? "**Non-blocking** (the pipeline won't act on these)\n\n" + findingLines(nits) : ""),
-    );
-  });
-  if (failed) {
-    stopIssue(it, "a reviewer failed", failed);
-    break review;
-  }
-  it.st.reviewedSha = it.st.headSha;
-  if (!raw.length) {
-    it.st.stage = "sync";
-    logEvent(it, "review: no blocking findings");
-    break review;
-  }
-  if (!charge(it, "aggregator")) break review;
-  const r = (
-    await spawnAll([
-      child(it, "aggregate", {
-        label: "Merge review findings for issue " + it.n,
-        agent: "issue-pipeline-reader",
-        model: MODEL.aggregator,
-        schema: AGG_SCHEMA,
-        minutes: 10,
-        task: preamble(cfg, it, "review aggregator", ROLE.aggregator)
-          .concat([
-            "Three reviewers reported these blocking findings. Merge duplicates (same defect at the same place) into one entry listing every lens that raised it. Keep every distinct finding; do not drop or downgrade any. Do not edit files.",
-            "",
-            JSON.stringify(raw, null, 1),
-          ])
-          .join("\n"),
-      }),
-    ])
-  )[0];
-  noteUsage(it, r);
-  const o = out(r);
-  // If aggregation fails, fall back to the raw findings rather than stopping.
-  const list = o ? o.blocking : raw.map((f) => Object.assign({ lenses: [f.lens] }, f));
-  const added = list.map((f) => addFinding(it, f, f.lenses && f.lenses.length ? f.lenses : ["correctness"]));
-  say(
-    it,
-    o ? by(SPEC_META, r, "aggregator") : byStep("aggregator (fallback: raw findings)"),
-    "Blocking findings for the fixer, with duplicates merged. Later comments refer to these ids.\n\n" +
-      added.map((f) => "- **" + f.id + "** `" + f.file + ":" + f.line + "` " + f.title + " (raised by " + f.lenses.join(", ") + ")").join("\n"),
-  );
-  it.st.stage = "fix";
-  logEvent(it, "review: " + list.length + " blocking finding(s)");
-}
-await flushStops();
-await opsAll(saveOf(reviewed));
-
-// ---------- fix rounds ----------
-
-for (let iter = 0; iter < cfg.maxFixRounds; iter++) {
-  const it = take("fix");
-  if (!it) break;
-  if (it.st.round >= cfg.maxFixRounds) {
-    stopIssue(it, findingsStopReason(cfg, it, "blocking findings remain after " + cfg.maxFixRounds + " fix rounds"), findingsText(openFindings(it)), null, findingsStopCode(it));
-    break;
-  }
-  if (!charge(it, "fixer")) break;
-  it.st.round += 1;
-  let rereviewed = null;
-  round: {
-    const r = (
-      await spawnAll([
-        child(it, "fix-r" + it.st.round, {
-          label: "Fix review findings for issue " + it.n,
-          agent: "issue-pipeline-writer",
-          model: MODEL.fixer,
-          schema: FIX_SCHEMA,
-          writer: true,
-          minutes: 60,
-          task: preamble(cfg, it, "fixer, round " + it.st.round + " of " + cfg.maxFixRounds, ROLE.fixer)
-            .concat([
-              practicesNote(cfg, it, "writer"),
-              "Resolve these blocking review findings:",
-              findingsText(openFindings(it)),
-              "",
-              "For each finding, either fix it (list its id in `fixed`) or, if you have concrete evidence it is wrong, dispute it (list it in `disputed` with the evidence). Findings already disputed once cannot be disputed again: " +
-                (openFindings(it).filter((f) => f.disputed).map((f) => f.id).join(", ") || "none") +
-                ".",
-              "Make only the changes the findings need. Run the tests, then commit (`git add -A && git commit`, ending each message with the trailer line `Pipeline-Agent: fixer round " + it.st.round + "`) and leave the worktree clean.",
-            ])
-            .join("\n"),
-        }),
-      ])
-    )[0];
-    noteUsage(it, r);
-    const o = out(r);
-    if (!o) {
-      stopIssue(it, "the fixer session failed", r.error);
-      break round;
-    }
-    o.disputed.forEach((d) => {
-      const f = it.st.findings.find((x) => x.id === d.id && x.status === "open");
-      if (f && !f.disputed) {
-        f.disputed = true;
-        f.dispute = clip(d.evidence, 600);
-      }
-    });
-    logEvent(it, "fix round " + it.st.round + ": " + o.summary);
-    say(
-      it,
-      by(SPEC_META, r, "fixer (round " + it.st.round + ")"),
-      o.summary +
-        "\n\nFixed: " + (o.fixed.length ? o.fixed.join(", ") : "none") +
-        (o.disputed.length ? "\n\nDisputed:\n" + o.disputed.map((d) => "- **" + d.id + "**: " + d.evidence).join("\n") : ""),
-    );
-    await flushStops();
-    const pushed = (await opsAll([opsSpec("i" + it.n + "-push", "push", { number: it.n })]))[0];
-    if (!pushed.ok) {
-      stopIssue(it, "could not push the fix", pushed.error);
-      break round;
-    }
-    it.st.headSha = pushed.headSha;
-    rereviewed = it;
-    const p = (await opsAll([opsSpec("i" + it.n + "-prep", "prepare-review", { number: it.n, sinceSha: it.st.reviewedSha, tag: (it.st.securityRounds ? "s" + it.st.securityRounds + "-" : "") + "r" + it.st.round })]))[0];
-    if (!p.ok) {
-      stopIssue(it, "could not prepare the re-review diff", p.error);
-      break round;
-    }
-    // Re-review: only lenses with open findings, only the fix diff.
-    const lenses = ALL_LENSES.filter((lens) => openFindings(it).some((f) => f.lenses.indexOf(lens) >= 0));
-    if (!charge(it, "rereviewer", lenses.length)) break round;
-    const rrSpecs = lenses.map((lens) => {
-      const mine = openFindings(it).filter((f) => f.lenses.indexOf(lens) >= 0);
-      return child(it, "rereview-" + lens + "-r" + it.st.round, {
-        label: "Re-review " + lens + " fixes for issue " + it.n,
-        agent: "issue-pipeline-reader",
-        model: MODEL[lens],
-        schema: lens === "security" ? REREVIEW_SEC_SCHEMA : REREVIEW_SCHEMA,
-        minutes: 20,
-        task: preamble(cfg, it, "re-reviewer (" + lens + ")", ROLE.rereviewer)
-          .concat([
-            "Concern: " + LENSES[lens],
-            "The fixer's changes since the last review are at " + p.diffPath + ".",
-            "For each finding below, report `resolved` or `unresolved`. Where the fixer disputed a finding, report `dispute-accepted` if the evidence holds or `dispute-rejected` if not.",
-            findingsText(mine),
-            "",
-            "Report a new finding only if this fix diff introduced it. Do not raise issues you could have raised before.",
-            "If a new finding is the same defect as one already resolved earlier, set `recursId` to that id; otherwise use an empty string. Previously resolved: " +
-              (it.st.resolvedHistory.length ? it.st.resolvedHistory.join("; ") : "none") +
-              ".",
-            "Do not edit files.",
-          ])
-          .join("\n"),
-      });
-    });
-    const rr = rrSpecs.length ? await spawnAll(rrSpecs) : [];
-    const verdicts = {};
-    rr.forEach((r, i) => {
-      const lens = lenses[i];
-      noteUsage(it, r);
-      if (it.closed) return;
-      const o = out(r);
-      if (!o) return stopIssue(it, "a re-reviewer failed", r.error);
-      o.results.forEach((x) => {
-        verdicts[x.id] = verdicts[x.id] || [];
-        verdicts[x.id].push(x.status);
-      });
-      const added = [];
-      const recurring = [];
-      o.newFindings.forEach((f) => {
-        if (f.recursId) recurring.push(f);
-        else added.push(addFinding(it, f, [lens]));
-      });
-      say(
-        it,
-        by(SPEC_META, r, "re-reviewer (" + lens + ", round " + it.st.round + ")"),
-        "Re-review of the fix in " + it.st.headSha.slice(0, 12) + ".\n\n" +
-          o.results.map((x) => "- **" + x.id + "**: " + x.status + (x.note ? " — " + x.note : "")).join("\n") +
-          (added.length ? "\n\n**New blocking findings the fix introduced**\n\n" + findingLines(added) : "") +
-          (recurring.length ? "\n\n**Findings that came back after being resolved**\n\n" + recurring.map((f) => "- was " + f.recursId + ": `" + f.file + ":" + f.line + "` " + f.title).join("\n") : ""),
-      );
-      recurring.forEach((f) => stopIssue(it, "a fix reintroduced finding " + f.recursId + "; fixes are undoing each other", f.title + "\n" + f.evidence));
-    });
-    if (it.closed) break round;
-    it.st.findings.forEach((f) => {
-      const v = verdicts[f.id];
-      if (f.status !== "open" || !v) return;
-      const closed = v.every((s) => s === "resolved" || s === "dispute-accepted");
-      if (closed) {
-        f.status = "resolved";
-        it.st.resolvedHistory = it.st.resolvedHistory.concat([f.id + ": " + f.title]).slice(-30);
-      }
-    });
-    it.st.reviewedSha = it.st.headSha;
-    if (!openFindings(it).length) {
-      it.st.stage = "sync";
-      logEvent(it, "fix round " + it.st.round + ": all findings resolved");
-    }
-  }
-  await flushStops();
-  await opsAll(saveOf(rereviewed));
-}
-if (at("fix") && !item.held) {
-  stopIssue(item, findingsStopReason(cfg, item, "blocking findings remain after " + cfg.maxFixRounds + " fix rounds"), findingsText(openFindings(item)), null, findingsStopCode(item));
 }
 await flushStops();
 

@@ -73,6 +73,7 @@ function stateWith(fields = {}) {
     closed: false,
     outcome: null,
     phase: "begin",
+    carry: null,
   };
 }
 

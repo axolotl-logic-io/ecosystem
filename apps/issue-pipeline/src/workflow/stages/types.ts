@@ -7,7 +7,13 @@
 import type { Budgets } from "../budget.ts";
 import type { JsonSchema } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
-import type { IssueState, ItemPaths, RepoConfig } from "../types.ts";
+import type {
+  FixRoundsConfig,
+  IssueState,
+  ItemPaths,
+  PracticesConfig,
+  RepoConfig,
+} from "../types.ts";
 
 // The stages, in the order an issue moves through them.
 type StageName =
@@ -33,6 +39,9 @@ interface StageState {
   // Why the issue is closed for this sweep, such as "split", or null.
   outcome: string | null;
   phase: string;
+  // JSON-safe data the stage passes to its own next step within one sweep,
+  // null at "begin". It is never saved.
+  carry: unknown;
 }
 
 // A model session. The sweep keys it "i<n>-<name>-<seq>".
@@ -45,6 +54,8 @@ interface ChildLaunch {
   schema: JsonSchema;
   minutes: number;
   task: string;
+  // A session that changes the code, which the sweep's own checks verify.
+  writer?: true;
 }
 
 // An ops request, carrying the comments queued for the issue. The sweep keys
@@ -84,10 +95,12 @@ interface StageComment {
   where: "issue" | "pr";
 }
 
-// Stops work on the issue, with the reason and an optional detail.
+// Stops work on the issue, with the reason, an optional detail and the stop
+// code that names its label, or null for the generic one.
 interface StageStop {
   reason: string;
   detail: string | null;
+  code: string | null;
 }
 
 interface StepEffects {
@@ -103,6 +116,9 @@ interface LaunchStep extends StepEffects {
 
 interface DoneStep extends StepEffects {
   done: true;
+  // This round of the stage is finished, and the sweep begins the stage again
+  // if the issue is still at it and it fits under the spawn cap.
+  again: boolean;
 }
 
 // What the sweep does next: apply the effects, then launch or move on.
@@ -121,7 +137,7 @@ type ModelRole =
   | "verifier"
   | "security";
 
-interface StageConfig extends RepoConfig {
+interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
   maxTriages: number;
 }
 
