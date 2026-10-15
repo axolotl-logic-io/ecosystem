@@ -9,6 +9,7 @@ run = [
   "npm run build",
   "node --check install.mjs",
   "node --check dist/ops.mjs",
+  "node --check dist/job.mjs",
   "node --test 'test/*.test.mjs'",
 ]
 

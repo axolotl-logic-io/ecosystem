@@ -225,6 +225,9 @@ const paths = {
   clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
   runDir: (cfg: Config, n: number): string =>
     path.join(ROOT, "runs", cfg.slug, `issue-${n}`),
+  // A stage job's model session for launch `key` on issue `n`, as JSONL.
+  session: (cfg: Config, n: number, key: string): string =>
+    path.join(paths.runDir(cfg, n), "sessions", `${key}.jsonl`),
   wiki: (cfg: Config, n: number): string =>
     path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki"),
   wikiClone: (cfg: Config): string =>

@@ -81,19 +81,28 @@ const STAGE_GROUPS: readonly (readonly StageName[])[] = [
 // Every stage, in the order an issue moves through them.
 const STAGE_ORDER: readonly StageName[] = STAGE_GROUPS.flat();
 
-// The last stage a run may begin, from args.through: null for every stage.
-// An unknown stage name throws before the sweep launches anything.
-function throughOf(through: unknown): StageName | null {
-  if (through === undefined || through === null || through === "") {
+// The stage a run's stage arg names: args.through, the last stage a run may
+// begin, or args.stage, the only one. Null when the arg is unset. An unknown
+// stage name throws before the sweep launches anything, naming the arg.
+function stageArgOf(name: string, value: unknown): StageName | null {
+  if (value === undefined || value === null || value === "") {
     return null;
   }
-  const stage = STAGE_ORDER.find((name) => name === String(through));
+  const stage = STAGE_ORDER.find((entry) => entry === String(value));
   if (stage === undefined) {
-    throw new Error(
-      `args.through must be one of: ${STAGE_ORDER.join(", ")}`,
-    );
+    throw new Error(`args.${name} must be one of: ${STAGE_ORDER.join(", ")}`);
   }
   return stage;
+}
+
+// The issue a human launched the run for (args.issue), or null for every
+// candidate.
+function onlyOf(issue: unknown): number | null {
+  const only = Number(issue);
+  if (Number.isNaN(only) || only === 0) {
+    return null;
+  }
+  return only;
 }
 
 // Whether a run that may begin stages up to `through` may begin `stage`.
@@ -145,12 +154,15 @@ function passesOf(stage: StageName): number {
 
 export type { SweepSettings };
 export {
+  onlyOf,
   PASSES_USED,
   passesOf,
   SAVE_BEFORE,
   STAGE_GROUPS,
+  STAGE_ORDER,
   STAGE_SPAWNS,
+  spawnLimitOf,
+  stageArgOf,
   sweepSettings,
-  throughOf,
   within,
 };

@@ -27,6 +27,11 @@
     // src/ops/ not listed here) get no exception.
     // The tests and their kits, like the install, run commands and keep
     // files, so they need node:test, node:fs, child_process and process (#219).
+    // The stage job (#232) is part of it too: its entry src/job.ts reads its
+    // arguments and writes its summary, src/job/launch.ts spawns ops.mjs and
+    // pi, src/job/agent-definition.ts reads the installed agent files, and the
+    // pi extension src/job/structured-output.ts reads its schema file. The
+    // job's pure modules (raw-results, pool) get no exception.
     {
       "includes": [
         "install.mjs",
@@ -47,7 +52,11 @@
         "src/ops/sync.ts",
         "src/ops/verify.ts",
         "src/ops/fails-before-fix.ts",
-        "src/ops/ci-status.ts"
+        "src/ops/ci-status.ts",
+        "src/job.ts",
+        "src/job/launch.ts",
+        "src/job/agent-definition.ts",
+        "src/job/structured-output.ts"
       ],
       "linter": {
         "rules": {
@@ -60,6 +69,19 @@
           },
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    // pi loads an extension from its default export, so the stage job's pi
+    // extension keeps one (`best-practice-over-lint`: default exports are
+    // fine where they are the platform's setup).
+    {
+      "includes": ["src/job/structured-output.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
           }
         }
       }

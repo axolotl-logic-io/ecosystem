@@ -38,10 +38,10 @@ test("installs the pipeline with local paths filled in", () => {
     fs.existsSync(path.join(dist, "workflow.js")),
     "the install rebuilt dist/",
   );
-  for (const f of ["workflow.js", "ops.mjs", "repos/example.json", "README.md", "INSTALLED.json"]) {
+  for (const f of ["workflow.js", "ops.mjs", "job.mjs", "structured-output.mjs", "repos/example.json", "README.md", "INSTALLED.json"]) {
     assert.ok(fs.existsSync(path.join(root, f)), f);
   }
-  for (const f of ["workflow.js", "ops.mjs"]) {
+  for (const f of ["workflow.js", "ops.mjs", "job.mjs", "structured-output.mjs"]) {
     assert.equal(
       fs.readFileSync(path.join(root, f), "utf8"),
       fs.readFileSync(path.join(dist, f), "utf8"),

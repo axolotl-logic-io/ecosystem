@@ -4,6 +4,7 @@
 // `npm ci` at the repo root first), then installs it where pi reads it:
 //
 //   dist/workflow.js, dist/ops.mjs            -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
+//   dist/job.mjs, dist/structured-output.mjs  -> $ISSUE_PIPELINE_ROOT (the stage job and its pi extension)
 //   repos/example.json                        -> $ISSUE_PIPELINE_ROOT/repos/
 //   agents/*.md                               -> $PI_CODING_AGENT_DIR/agents/issue-pipeline/ (default ~/.pi/agent)
 //   prompts/*.md                              -> $PI_CODING_AGENT_DIR/prompts/
@@ -112,6 +113,12 @@ function sources() {
       fill: false,
     },
     { from: "dist/ops.mjs", to: path.join(ROOT, "ops.mjs"), fill: false },
+    { from: "dist/job.mjs", to: path.join(ROOT, "job.mjs"), fill: false },
+    {
+      from: "dist/structured-output.mjs",
+      to: path.join(ROOT, "structured-output.mjs"),
+      fill: false,
+    },
     {
       from: "repos/example.json",
       to: path.join(ROOT, "repos/example.json"),

@@ -52,7 +52,8 @@ interface StageBatch {
 }
 
 // The open issue, its stage and how often that stage has begun this sweep,
-// if the stage is one of the group's and within the run's args.through.
+// if the stage is one of the group's, within the run's args.through and, when
+// the run names one, its args.stage.
 interface CurrentStage {
   item: ClaimedItem;
   stage: StageName;
@@ -67,6 +68,9 @@ function currentStage(run: SweepRun, group: number): CurrentStage | null {
   const stages = STAGE_GROUPS[group] ?? [];
   const stage = stages.find((name) => name === item.st.stage);
   if (stage === undefined || !within(run.through, stage)) {
+    return null;
+  }
+  if (run.stage !== null && stage !== run.stage) {
     return null;
   }
   const { [stage]: runs = 0 } = run.stagesRun;

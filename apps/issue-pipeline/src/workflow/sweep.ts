@@ -25,11 +25,12 @@ import {
 } from "./stages/entry.ts";
 import { parentsClosed } from "./stages/parents.ts";
 import type { StageName, SweepSummary } from "./stages/types.ts";
-import { sweepSettings, throughOf } from "./sweep-config.ts";
+import { onlyOf, stageArgOf, sweepSettings } from "./sweep-config.ts";
 import type { SweepCounts, SweepItem, SweepRun } from "./sweep-item.ts";
 import {
   closingOf,
   hasRoom,
+  markWrongStage,
   opsLaunchSpec,
   stopIssue,
   summarySource,
@@ -48,13 +49,15 @@ type Phase =
   | { kind: "cleanup"; run: SweepRun }
   | { kind: "done"; run: SweepRun };
 
-// The run's args as pi-subagents passes them: the repo config's path, the
-// lane, and the one issue a human launched the run for, if any.
+// The run's args as pi-subagents or the stage job passes them: the repo
+// config's path, the lane, the one issue a human launched the run for, if
+// any, and the last stage (through) or only stage (stage) it may begin.
 interface SweepArgs {
   config: string;
   lane?: unknown;
   issue?: unknown;
   through?: unknown;
+  stage?: unknown;
 }
 
 // The sweep's id and its clock.
@@ -73,6 +76,7 @@ interface Driver {
   now: () => Date;
   only: number | null;
   through: StageName | null;
+  stage: StageName | null;
   counts: SweepCounts;
   phase: Phase;
 }
@@ -84,15 +88,6 @@ function laneOf(args: SweepArgs, sweepId: string): string {
     return String(lane);
   }
   return sweepId;
-}
-
-// The issue a human launched the run for, or null for every candidate.
-function onlyOf(args: SweepArgs): number | null {
-  const only = Number(args.issue);
-  if (Number.isNaN(only) || only === 0) {
-    return null;
-  }
-  return only;
 }
 
 // The sweep's run, once the sweep op has answered.
@@ -116,6 +111,7 @@ function runOf(driver: Driver, raw: unknown): SweepRun {
     stopQueue: [],
     stagesRun: {},
     through: driver.through,
+    stage: driver.stage,
     meta: {},
     parentsClosed: 0,
     cleanup: { worktrees: [], error: null },
@@ -182,6 +178,7 @@ function claimed(
     return claimBatch(driver, run, index + 1);
   }
   run.item = item;
+  markWrongStage(item, run.stage);
   return stagesBatch(driver, run, afterClaim(run));
 }
 
@@ -281,8 +278,9 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
   const driver: Driver = {
     frame: { config: args.config, sweepId, lane },
     now,
-    only: onlyOf(args),
-    through: throughOf(args.through),
+    only: onlyOf(args.issue),
+    through: stageArgOf("through", args.through),
+    stage: stageArgOf("stage", args.stage),
     counts: { seq: 0, spawned: 0 },
     phase: { kind: "start" },
   };

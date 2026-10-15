@@ -2,8 +2,8 @@
 //
 //   node build.ts [outdir]   (outdir defaults to dist/ in this folder)
 //
-// writes <outdir>/workflow.js and <outdir>/ops.mjs, the two files the install
-// copies. It prints nothing on success; on failure it prints esbuild's error to
+// writes <outdir>/workflow.js, <outdir>/ops.mjs, <outdir>/job.mjs and
+// <outdir>/structured-output.mjs, the files the install copies. It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
 //
 // The workflow is the body of an async function that pi-subagents runs with
@@ -12,7 +12,10 @@
 // itself is transformed alone, never bundled: it keeps its top-level `await`
 // and `return`, its globals and gains no imports.
 // The ops CLI's entry, src/ops.ts, is bundled with the strict-TS modules it
-// imports for Node into one ES module, ops.mjs, that keeps its `#!` line.
+// imports for Node into one ES module, ops.mjs, that keeps its `#!` line. The
+// stage job's entry, src/job.ts, and its pi extension,
+// src/job/structured-output.ts, are bundled the same way, into job.mjs and
+// structured-output.mjs.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -29,6 +32,16 @@ const WORKFLOW_HELPERS_GLOBAL = "workflowModules";
 const OPS_SOURCE = path.join(SOURCE_DIR, "ops.ts");
 const WORKFLOW_OUTPUT = "workflow.js";
 const OPS_OUTPUT = "ops.mjs";
+// The Node ES modules built from one entry each: the ops CLI, the stage job
+// and the job's pi extension.
+const NODE_MODULES: ReadonlyMap<string, string> = new Map([
+  [OPS_SOURCE, OPS_OUTPUT],
+  [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],
+  [
+    path.join(SOURCE_DIR, "job", "structured-output.ts"),
+    "structured-output.mjs",
+  ],
+]);
 
 // esbuild's loader for each source extension the pipeline uses.
 const LOADERS: ReadonlyMap<string, Loader> = new Map<string, Loader>([
@@ -99,14 +112,14 @@ async function buildWorkflow(outDir: string): Promise<void> {
   );
 }
 
-async function buildOps(outDir: string): Promise<void> {
+async function buildNodeModule(source: string, outfile: string): Promise<void> {
   await build({
     bundle: true,
     charset: "utf8",
-    entryPoints: [OPS_SOURCE],
+    entryPoints: [source],
     format: "esm",
     logLevel: "silent",
-    outfile: path.join(outDir, OPS_OUTPUT),
+    outfile,
     platform: "node",
     target: "node24",
   });
@@ -124,7 +137,10 @@ async function main(): Promise<void> {
   const outDir = path.resolve(outArg ?? DEFAULT_OUT_DIR);
   try {
     await mkdir(outDir, { recursive: true });
-    await Promise.all([buildWorkflow(outDir), buildOps(outDir)]);
+    const modules = [...NODE_MODULES].map(([source, output]) =>
+      buildNodeModule(source, path.join(outDir, output)),
+    );
+    await Promise.all([buildWorkflow(outDir), ...modules]);
   } catch (error: unknown) {
     console.error(messageOf(error));
     process.exitCode = 1;

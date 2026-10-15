@@ -80,6 +80,8 @@ interface SweepRun {
   resyncRan?: true;
   // The last stage this run may begin (args.through), or null for every stage.
   through: StageName | null;
+  // The only stage this run may begin (args.stage), or null for every stage.
+  stage: StageName | null;
   // The agent and model of each session launched, by key.
   meta: Record<string, LaunchMeta>;
   parentsClosed: number;
@@ -247,6 +249,19 @@ function closingOf(item: SweepItem | null): ClosingItem | null {
   return { n, openState, queued: outbox.comments.length };
 }
 
+// Marks an open claimed issue saved at a stage other than `stage`, the only
+// one the run may begin, as "wrong-stage": the sweep begins nothing and
+// releases it with its state unchanged.
+function markWrongStage(item: SweepItem, stage: StageName | null): void {
+  if (item.kind !== "claimed" || item.closed || stage === null) {
+    return;
+  }
+  if (item.st.stage !== stage) {
+    item.outcome = "wrong-stage";
+    item.reason = `the issue is at ${item.st.stage}, not the requested stage ${stage}`;
+  }
+}
+
 // The issue as the summary reports it.
 function summarySource(item: SweepItem | null): SummarySource | null {
   if (item === null) {
@@ -270,6 +285,7 @@ export {
   closingOf,
   fits,
   hasRoom,
+  markWrongStage,
   opsLaunchSpec,
   stageState,
   stopIssue,
