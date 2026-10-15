@@ -7,7 +7,7 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 | Path | What it is |
 |---|---|
 | `src/workflow.js` | The sweep. Runs in the pi-subagents sandbox and uses no model tokens itself. |
-| `src/workflow/` | The sweep's helpers that need no sweep state (prompts, schemas, findings, signing, the token budget), as strict TypeScript. `index.ts` exports the one `helpers` object the sweep reads them from. |
+| `src/workflow/` | The sweep's helpers that need no sweep state (prompts, schemas, findings, signing, the token budget, the event log), as strict TypeScript. `index.ts` exports the one `helpers` object the sweep reads them from. `stages/` holds the stages ported onto the step machine: each is a sync `next` that takes the issue's JSON-safe state and its last launches' results and returns its next launches or `done`, and one top-level loop in `workflow.js` runs them through the stage dispatch (`stages/index.ts`). Triage is ported (#178); the other stages are still labelled blocks in `workflow.js` until their ports. |
 | `src/ops.mjs` | The only code that runs `git` and `gh` or reads tokens, called through the `issue-pipeline-ops` agent. |
 | `src/ops/` | The ops moved out of `src/ops.mjs` into strict TypeScript, one module per op (`sweep`, `claim`, `save-state`, `ask`, `split`, `stop`), which `src/ops.mjs` imports and registers (#183). |
 | `build.ts` | Builds `src/` into `dist/` with esbuild: the workflow's helpers are bundled into an IIFE placed ahead of the sweep's body, which is transformed alone, keeping its top-level `await` and `return`; ops is bundled into one Node ES module. |

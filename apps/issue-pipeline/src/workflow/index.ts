@@ -6,6 +6,7 @@
 
 import { chargeSession } from "./budget.ts";
 import { clip } from "./clip.ts";
+import { noteEvent } from "./event-log.ts";
 import {
   addFinding,
   findingLines,
@@ -33,6 +34,8 @@ import {
   TRIAGE_SCHEMA,
 } from "./schemas.ts";
 import { by, byStep } from "./signing.ts";
+import type { StageDispatch } from "./stages/index.ts";
+import { STAGES } from "./stages/index.ts";
 import { acceptanceSummary } from "./summary.ts";
 
 interface WorkflowHelpers {
@@ -46,6 +49,7 @@ interface WorkflowHelpers {
   readonly findingsStopCode: typeof findingsStopCode;
   readonly findingsStopReason: typeof findingsStopReason;
   readonly findingsText: typeof findingsText;
+  readonly noteEvent: typeof noteEvent;
   readonly openFindings: typeof openFindings;
   readonly practicesNote: typeof practicesNote;
   readonly preamble: typeof preamble;
@@ -64,6 +68,7 @@ interface WorkflowHelpers {
   readonly securitySchema: JsonSchema;
   readonly specSchema: JsonSchema;
   readonly triageSchema: JsonSchema;
+  readonly stages: StageDispatch;
 }
 
 const helpers: WorkflowHelpers = {
@@ -77,6 +82,7 @@ const helpers: WorkflowHelpers = {
   findingsStopCode,
   findingsStopReason,
   findingsText,
+  noteEvent,
   openFindings,
   practicesNote,
   preamble,
@@ -95,6 +101,7 @@ const helpers: WorkflowHelpers = {
   securitySchema: SECURITY_SCHEMA,
   specSchema: SPEC_SCHEMA,
   triageSchema: TRIAGE_SCHEMA,
+  stages: STAGES,
 };
 
 export type { WorkflowHelpers };

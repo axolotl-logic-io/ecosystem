@@ -20,6 +20,10 @@
 // The helpers that need no sweep state are strict TypeScript in src/workflow/.
 // The build bundles them ahead of this body as `workflowModules`, and
 // src/workflow/index.ts lists every name this destructure may read.
+// The stages are moving onto a step machine: a ported stage is a sync `next`
+// in src/workflow/stages/, run by the one loop after the claim, which does all
+// its awaiting. Triage is ported (#178); the later stages are still labelled
+// blocks after that loop until their ports fill in the stage dispatch.
 
 const {
   acceptanceSummary,
@@ -32,6 +36,7 @@ const {
   findingsStopCode,
   findingsStopReason,
   findingsText,
+  noteEvent,
   openFindings,
   practicesNote,
   preamble,
@@ -50,6 +55,7 @@ const {
   securitySchema: SECURITY_SCHEMA,
   specSchema: SPEC_SCHEMA,
   triageSchema: TRIAGE_SCHEMA,
+  stages: STAGES,
 } = workflowModules.helpers;
 
 const CONFIG = args.config;
@@ -151,7 +157,7 @@ const stopQueue = [];
 const SPEC_META = {};
 
 function logEvent(item, text) {
-  item.st.log = (item.st.log || []).concat([new Date().toISOString().slice(0, 16) + "Z " + clip(text, 200)]).slice(-30);
+  noteEvent(item.st, text, new Date());
 }
 
 function stopIssue(item, reason, detail, nextStep, code) {
@@ -266,83 +272,104 @@ for (const c of sweep.items) {
 }
 await flushStops();
 
-// ---------- triage ----------
+// ---------- stages on the step machine ----------
+// A ported stage is a sync step machine (src/workflow/stages/): its `next`
+// takes the issue's state and the results of its last launches, and returns
+// the next step. This loop does all their launching and awaiting.
 
-triage: {
-  const it = take("triage");
-  if (!it) break triage;
-  it.st.triages = (it.st.triages || 0) + 1;
-  if (it.st.triages > cfg.maxTriages) {
-    stopIssue(it, "triage ran " + cfg.maxTriages + " times without reaching a decision the pipeline can act on");
-    break triage;
+const STAGE_CONTEXT = {
+  cfg,
+  budgets: BUDGETS,
+  models: MODEL,
+  now: () => new Date(),
+};
+const stagesRun = {};
+
+// The issue as its stage sees it, read fresh from `item`.
+function stageState(phase) {
+  return {
+    n: item.n,
+    paths: item.paths,
+    st: item.st,
+    closed: item.closed,
+    outcome: item.outcome,
+    phase,
+  };
+}
+
+function launchSpec(launch) {
+  if (launch.kind === "op") {
+    const name = `i${item.n}-${launch.name}`;
+    return opsSpec(name, launch.op, launch.payload, launch.minutes);
   }
-  if (!charge(it, "triage")) break triage;
-  const r = (
-    await spawnAll([
-      child(it, "triage", {
-        label: "Triage issue " + it.n,
-        agent: "issue-pipeline-reader",
-        model: MODEL.triage,
-        schema: TRIAGE_SCHEMA,
-        minutes: 20,
-        task: preamble(cfg, it, "triage", ROLE.triage)
-          .concat([
-            "Read the issue and as much of the code as you need to decide one of:",
-            "- ready: one implementer session (at most " + CAP + " tokens of context) can implement and test it. Write `plan`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.",
-            "- needs-info: a competent engineer could not start without answers. Ask at most 5 specific questions. If earlier questions were answered in the comments, use the answers.",
-            it.st.depth >= 1
-              ? "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so."
-              : "- split: too big for one session. Give 2 to 5 sub-issues, each a complete, independently testable change with its own acceptance criteria. Use `after` to list the 0-based indexes of earlier sub-issues that must merge first.",
-            "- reject: not suitable for an agent (design debate, production incident, needs production access, not a code change). Explain in `reason`. Issues that change CI workflows, auth, dependencies or migrations are suitable.",
-            "Leave unused fields as empty strings or arrays.",
-          ])
-          .join("\n"),
-      }),
-    ])
-  )[0];
-  noteUsage(it, r);
-  const t = out(r);
-  if (!t) {
-    stopIssue(it, "triage failed", r.error);
-    break triage;
+  return child(item, launch.name, launch);
+}
+
+// Applies a step to the issue: its state, then its comments, then its stop,
+// so a comment rides on the next ops request. Returns its launches' specs.
+function applyStep(step) {
+  item.st = step.state.st;
+  item.closed = step.state.closed;
+  item.outcome = step.state.outcome;
+  for (const comment of step.comments) {
+    say(item, comment.by, comment.body, comment.where);
   }
-  logEvent(it, "triage: " + t.decision + " - " + t.reason);
-  const who = by(SPEC_META, r, "triage");
-  let followUp = null;
-  let startPr = false;
-  if (t.decision === "ready") {
-    it.st.plan = clip(t.plan, 4000);
-    it.st.stage = "spec";
-    startPr = !it.st.pr;
-    say(it, who, "Taking this issue. " + t.reason + " A spec follows.", "issue");
-  } else if (t.decision === "needs-info" && t.questions.length) {
-    it.closed = true;
-    it.outcome = "needs-info";
-    followUp = opsSpec("i" + it.n + "-ask", "ask", { number: it.n, state: it.st, questions: t.questions, by: who });
-  } else if (t.decision === "split" && it.st.depth < 1 && t.subIssues.length >= 2) {
-    it.closed = true;
-    it.outcome = "split";
-    followUp = opsSpec("i" + it.n + "-split", "split", { number: it.n, state: it.st, subIssues: t.subIssues, by: who });
-  } else {
-    say(it, who, "This issue isn't one the pipeline should take on: " + t.reason, "issue");
-    stopIssue(it, "triage rejected the issue for the agent pipeline", t.reason);
+  if (step.stop) {
+    stopIssue(item, step.stop.reason, step.stop.detail);
   }
-  if (followUp) {
-    const fr = (await opsAll([followUp]))[0];
-    if (!fr.ok) throw new Error("triage follow-up failed: " + fr.error);
+  if (step.done) {
+    return [];
   }
-  // Open the draft PR now, so the issue links to its branch and PR while work is
-  // under way. A failure is only logged: open-pr creates the PR after implementation.
-  if (startPr) {
-    const sr = (await opsAll([opsSpec("i" + it.n + "-startpr", "start-pr", { number: it.n, plan: it.st.plan })]))[0];
-    if (!sr.ok) {
-      logEvent(it, "could not open the draft PR yet: " + clip(String(sr.error), 300));
-    } else {
-      it.st.pr = sr.pr;
-      it.st.headSha = sr.headSha;
-      it.st.implemented = false;
-      logEvent(it, "opened draft PR #" + sr.pr);
+  return step.launches.map(launchSpec);
+}
+
+// The launches' results as a stage reads them, each session's tokens counted.
+function launchResults(launches, raw) {
+  return launches.map((launch, index) => {
+    const result = raw[index];
+    if (launch.kind === "op") {
+      return { kind: "op", reply: parseOps(result) };
     }
+    noteUsage(item, result);
+    return {
+      kind: "child",
+      ok: result.ok === true,
+      structuredOutput: result.structuredOutput ?? null,
+      error: result.error || null,
+      by: by(SPEC_META, result, launch.name),
+    };
+  });
+}
+
+// The issue's stage machine and its first step, if the stage is on the step
+// machine, hasn't run this sweep and fits under the spawn cap.
+function beginStage() {
+  if (!item || item.closed) {
+    return null;
+  }
+  const { stage } = item.st;
+  if (!Object.hasOwn(STAGES, stage) || Object.hasOwn(stagesRun, stage)) {
+    return null;
+  }
+  const { [stage]: machine } = STAGES;
+  if (!(machine && take(stage))) {
+    return null;
+  }
+  stagesRun[stage] = true;
+  const step = machine.next(stageState("begin"), STAGE_CONTEXT, []);
+  return { machine, step };
+}
+
+let stageRun = beginStage();
+while (stageRun) {
+  const specs = applyStep(stageRun.step);
+  if (stageRun.step.done) {
+    stageRun = beginStage();
+  } else {
+    const { machine, step } = stageRun;
+    const results = launchResults(step.launches, await spawnAll(specs));
+    const state = stageState(step.state.phase);
+    stageRun.step = machine.next(state, STAGE_CONTEXT, results);
   }
 }
 await flushStops();

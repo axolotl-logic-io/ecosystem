@@ -43,8 +43,25 @@ interface ListedFinding {
   suggestion: string;
 }
 
-// The part of an issue's saved state (its hidden state comment) the helpers use.
+// The part of an issue's saved state (its hidden state comment) the helpers
+// and the ported stages use.
 interface IssueState {
+  // The stage the issue is at, such as "triage" or "spec".
+  stage: string;
+  // 0 for an issue, 1 for a sub-issue of a split.
+  depth: number;
+  // How many times triage has run on the issue.
+  triages?: number;
+  // Triage's plan for the spec writer.
+  plan?: string | null;
+  pr?: number | null;
+  // The PR branch's head as the pipeline last pushed or saw it.
+  headSha?: string | null;
+  implemented?: boolean;
+  // The issue's event log, oldest first (event-log.ts).
+  log?: string[];
+  // Tokens the issue's sessions reported using.
+  reportedTokens?: number;
   findings: Finding[];
   nextFindingId?: number;
   acceptReason?: string;
