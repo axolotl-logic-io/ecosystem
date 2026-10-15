@@ -7,12 +7,12 @@ import { test } from "node:test";
 
 test("workflow.js compiles as an async function body", () => {
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-  const body = fs.readFileSync(new URL("../workflow.js", import.meta.url), "utf8");
+  const body = fs.readFileSync(new URL("../src/workflow.js", import.meta.url), "utf8");
   assert.doesNotThrow(() => new AsyncFunction("args", body));
 });
 
 // The merge summary's Acceptance line, lifted from workflow.js with `cfg` in scope.
-const wf = fs.readFileSync(new URL("../workflow.js", import.meta.url), "utf8");
+const wf = fs.readFileSync(new URL("../src/workflow.js", import.meta.url), "utf8");
 const acceptanceSummary = new Function("cfg", wf.match(/function acceptanceSummary\([\s\S]*?\n\}\n/)[0] + "return acceptanceSummary;")({ baseBranch: "integration" });
 
 test("the Acceptance line comes from the state, so a merge in a later sweep keeps it", () => {

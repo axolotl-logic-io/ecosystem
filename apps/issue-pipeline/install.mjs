@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Installs the issue pipeline from this folder into the places pi reads it:
+// Builds the issue pipeline from this folder's src/ into dist/ (build.ts; run
+// `npm ci` at the repo root first), then installs it where pi reads it:
 //
-//   workflow.js, ops.mjs, repos/example.json  -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
+//   dist/workflow.js, dist/ops.mjs            -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
+//   repos/example.json                        -> $ISSUE_PIPELINE_ROOT/repos/
 //   agents/*.md                               -> $PI_CODING_AGENT_DIR/agents/issue-pipeline/ (default ~/.pi/agent)
 //   prompts/*.md                              -> $PI_CODING_AGENT_DIR/prompts/
 //
@@ -50,14 +52,16 @@ const commit = git("rev-parse", "HEAD");
 if (!commit) fail(`${SRC} is not in a git checkout`);
 const dirty = git("status", "--porcelain", "--", ".");
 if (dirty && !allowDirty) fail(`uncommitted changes in ${SRC}:\n${dirty}\nCommit them, or pass --allow-dirty`);
+const built = spawnSync(process.execPath, [path.join(SRC, "build.ts")], { cwd: SRC, stdio: "inherit" });
+if (built.status !== 0) fail("build failed");
 const repo = (git("remote", "get-url", "origin") || "").replace(/^.*github\.com[:/]/, "").replace(/\.git$/, "");
 
 const fill = (text) => text.replaceAll("{{ISSUE_PIPELINE_ROOT}}", ROOT).replaceAll("{{PI_CODING_AGENT_DIR}}", AGENT_DIR);
 const mdIn = (dir) => fs.readdirSync(path.join(SRC, dir)).filter((f) => f.endsWith(".md")).sort();
 
 const files = [
-  { from: "workflow.js", to: path.join(ROOT, "workflow.js") },
-  { from: "ops.mjs", to: path.join(ROOT, "ops.mjs") },
+  { from: "dist/workflow.js", to: path.join(ROOT, "workflow.js") },
+  { from: "dist/ops.mjs", to: path.join(ROOT, "ops.mjs") },
   { from: "repos/example.json", to: path.join(ROOT, "repos/example.json") },
   ...mdIn("agents").map((f) => ({ from: `agents/${f}`, to: path.join(AGENT_DIR, "agents/issue-pipeline", f), fill: true })),
   ...mdIn("prompts").map((f) => ({ from: `prompts/${f}`, to: path.join(AGENT_DIR, "prompts", f), fill: true })),

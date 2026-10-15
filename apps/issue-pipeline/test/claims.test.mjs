@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 
-const src = fs.readFileSync(new URL("../ops.mjs", import.meta.url), "utf8");
+const src = fs.readFileSync(new URL("../src/ops.mjs", import.meta.url), "utf8");
 const grab = (re) => src.match(re)[0];
 const liveClaims = new Function(
   [

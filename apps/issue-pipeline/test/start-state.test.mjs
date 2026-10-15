@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { test } from "node:test";
 
-const src = fs.readFileSync(new URL("../ops.mjs", import.meta.url), "utf8");
+const src = fs.readFileSync(new URL("../src/ops.mjs", import.meta.url), "utf8");
 const grab = (re) => src.match(re)[0];
 const newStateSrc = grab(/function newState\([\s\S]*?\n\}\n/);
 const startSrc = grab(/function startState\([\s\S]*?\n\}\n/);

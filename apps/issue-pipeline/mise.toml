@@ -1,10 +1,24 @@
 # The issue pipeline's tasks. Each runs in this folder and uses the node version
 # from the root mise.toml. Run them from anywhere with
-# `mise //apps/issue-pipeline:<task>`.
+# `mise //apps/issue-pipeline:<task>`. Run `npm ci` at the repo root first.
 
 [tasks.check]
-description = "Run the pipeline's tests"
-run = "node --check ops.mjs && node --check install.mjs && node --test 'test/*.test.mjs'"
+description = "Typecheck, build and run the pipeline's tests"
+run = [
+  "npm run typecheck",
+  "npm run build",
+  "node --check install.mjs",
+  "node --check dist/ops.mjs",
+  "node --test 'test/*.test.mjs'",
+]
+
+[tasks.build]
+description = "Build src/ into dist/ with esbuild (build.ts)"
+run = "npm run build"
+
+[tasks.typecheck]
+description = "Typecheck the pipeline's TypeScript with tsc"
+run = "npm run typecheck"
 
 [tasks.lint]
 description = "Biome with the repo's lint policy; not yet part of check (#162)"

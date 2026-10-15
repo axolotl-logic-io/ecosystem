@@ -10,8 +10,8 @@ import { test } from "node:test";
 
 const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
 const grab = (src, name) => src.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}\\n`))[0];
-const workflow = read("workflow.js");
-const ops = read("ops.mjs");
+const workflow = read("src/workflow.js");
+const ops = read("src/ops.mjs");
 
 const practicesUse = workflow.match(/const PRACTICES_USE = \{[\s\S]*?\n\};\n/)[0];
 const practicesNote = (cfg) => new Function("cfg", `${practicesUse}${grab(workflow, "practicesNote")}return practicesNote;`)(cfg);

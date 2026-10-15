@@ -1,8 +1,36 @@
 // The issue pipeline's Biome config. It extends the root biome.jsonc, which
 // holds the lint policy for all of the repo's code (`practices-cover-all-code`
 // in the wiki). The pipeline doesn't pass it yet: `mise //apps/issue-pipeline:lint`
-// lists what is left, and joins `check` once it passes (#162).
+// lists what is left, and joins `check` once it passes (#162). Globs here
+// resolve from this folder.
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
-  "extends": "//"
+  "extends": "//",
+  "files": {
+    // dist/ is build.ts's output, rebuilt from src/ on every build and install.
+    "includes": ["**", "!AGENTS.md", "!dist"]
+  },
+  "overrides": [
+    // The only exception to the policy (`best-practice-over-lint`): the
+    // pipeline's CLI entry points, the install, the build it runs and the ops
+    // CLI. Each is a command run from the terminal, so it must read the
+    // process (its arguments and environment), the files and the terminal.
+    {
+      "includes": ["install.mjs", "build.ts", "src/ops.mjs"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": "off",
+            "noProcessGlobal": "off"
+          },
+          "style": {
+            "noProcessEnv": "off"
+          },
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
 }
