@@ -54,7 +54,7 @@ function phaseOf(state: StageState): TriagePhase {
 
 // The line on splitting: a sub-issue may not split again.
 const SPLIT_ALLOWED: string =
-  "- split: too big for one session. Give 2 to 5 sub-issues, each a complete, independently testable change with its own acceptance criteria. Use `after` to list the 0-based indexes of earlier sub-issues that must merge first.";
+  "- split: too big for one session. Give 2 to 5 sub-issues, each a complete, independently testable change with its own acceptance criteria. Use `after` to list the 0-based indexes of earlier sub-issues that must merge first. Sub-issues without `after` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one sub-issue where you can, and name each one's files in its body. Where two must edit the same file, such as a shared index, registry or wiki page, put one `after` the other so they run in turn. Prefer fewer sub-issues to many that share files.";
 const SPLIT_FORBIDDEN: string =
   "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so.";
 
