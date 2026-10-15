@@ -14,7 +14,7 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 | `prompts/` | `/pipeline-start` and `/pipeline-pause`, which start and pause a lane in a pi session. |
 | `repos/example.json` | Every field of a per-repo config. |
 | `install.mjs` | Builds, then installs this folder where pi reads it. |
-| `test/` | Tests for `src/ops.mjs`, `src/workflow.js`, `build.ts` and `install.mjs`. |
+| `test/` | Tests for `src/ops.mjs`, `src/workflow.js`, `build.ts` and `install.mjs`, and the harness that runs the built workflow with scripted replies. |
 
 `build.ts` is strict TypeScript, run by Node's type stripping and checked by `tsc` (`tsconfig.json`, which also covers `src/**/*.ts`). The sources in `src/` are still untyped JavaScript, outside `tsc` because `allowJs` is off: they don't meet the coding practices yet, which #162 tracks.
 
@@ -43,3 +43,5 @@ mise //apps/issue-pipeline:check      # typecheck, build, then the tests
 mise //apps/issue-pipeline:build      # build src/ into dist/
 mise //apps/issue-pipeline:typecheck  # tsc on build.ts
 ```
+
+The `test/workflow-stages-*.test.mjs` scenarios run the built workflow through `test/workflow-harness.mjs` with scripted replies, and pin each stage's launches in `.snapshot` files beside them: each launch's key, agent and label, and an ops launch's request. After an intended change to the workflow, refresh them from this folder with `node --test --test-update-snapshots 'test/workflow-stages-*.test.mjs'`, and review the snapshot diff before committing it.

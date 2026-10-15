@@ -1,0 +1,695 @@
+exports[`CI still failing after the last CI fix stops the issue 1`] = `
+[
+  {
+    "key": "sweep-1",
+    "agent": "issue-pipeline-ops",
+    "label": "Run sweep operation",
+    "request": {
+      "op": "sweep",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a"
+    }
+  },
+  {
+    "key": "i7-claim-2",
+    "agent": "issue-pipeline-ops",
+    "label": "Run claim operation",
+    "request": {
+      "op": "claim",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-ci-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run ci-status operation",
+    "request": {
+      "op": "ci-status",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "pr": 42,
+      "expectedSha": "ddddddd"
+    }
+  },
+  {
+    "key": "i7-stop-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run stop operation",
+    "request": {
+      "op": "stop",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "state": {
+        "version": 1,
+        "number": 7,
+        "depth": 0,
+        "stage": "checks",
+        "lease": null,
+        "pr": 42,
+        "headSha": "ddddddd",
+        "reviewedSha": "ccccccc",
+        "verifiedSha": "ddddddd",
+        "plan": null,
+        "allocated": 620000,
+        "reportedTokens": 0,
+        "sessions": [],
+        "triages": 0,
+        "continuations": 0,
+        "round": 0,
+        "ciFixes": 1,
+        "syncs": 0,
+        "findings": [],
+        "resolvedHistory": [],
+        "questionsAt": null,
+        "log": [
+          "2026-10-15T12:00Z stopped: checks still fail after 1 CI-fix attempts"
+        ],
+        "implemented": true,
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing."
+      },
+      "reason": "checks still fail after 1 CI-fix attempts",
+      "detail": "CI checks failed: build\\nFailed-job logs: /w/runs/o__r/issue-7/ci.log",
+      "nextStep": null,
+      "code": null,
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "CI",
+            "agent": null,
+            "model": null,
+            "run": null
+          },
+          "body": "Required checks failed on ddddddd: build."
+        }
+      ]
+    }
+  }
+]
+`;
+
+exports[`a clean rebase moves to checks, held by the spawn cap 1`] = `
+[
+  {
+    "key": "sweep-1",
+    "agent": "issue-pipeline-ops",
+    "label": "Run sweep operation",
+    "request": {
+      "op": "sweep",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a"
+    }
+  },
+  {
+    "key": "i7-claim-2",
+    "agent": "issue-pipeline-ops",
+    "label": "Run claim operation",
+    "request": {
+      "op": "claim",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-sync-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run sync-base operation",
+    "request": {
+      "op": "sync-base",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "keepConflict": true
+    }
+  },
+  {
+    "key": "i7-release-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run release operation",
+    "request": {
+      "op": "release",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "state": {
+        "version": 1,
+        "number": 7,
+        "depth": 0,
+        "stage": "checks",
+        "lease": null,
+        "pr": 42,
+        "headSha": "ddddddd",
+        "reviewedSha": "ccccccc",
+        "verifiedSha": null,
+        "plan": null,
+        "allocated": 620000,
+        "reportedTokens": 0,
+        "sessions": [],
+        "triages": 0,
+        "continuations": 0,
+        "round": 0,
+        "ciFixes": 0,
+        "syncs": 1,
+        "findings": [],
+        "resolvedHistory": [],
+        "questionsAt": null,
+        "log": [
+          "2026-10-15T12:00Z rebased onto integration",
+          "2026-10-15T12:00Z held at checks by the per-run spawn cap; continues next sweep"
+        ],
+        "implemented": true,
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "testsOnly": false,
+        "passedSha": null
+      },
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "sync",
+            "agent": null,
+            "model": null,
+            "run": null
+          },
+          "body": "Rebased onto integration without conflicts; the head is now ddddddd. Rebases aren't re-reviewed; the checks run again."
+        }
+      ]
+    }
+  }
+]
+`;
+
+exports[`a conflicting rebase is resolved by a writer, then held at checks 1`] = `
+[
+  {
+    "key": "sweep-1",
+    "agent": "issue-pipeline-ops",
+    "label": "Run sweep operation",
+    "request": {
+      "op": "sweep",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a"
+    }
+  },
+  {
+    "key": "i7-claim-2",
+    "agent": "issue-pipeline-ops",
+    "label": "Run claim operation",
+    "request": {
+      "op": "claim",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-sync-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run sync-base operation",
+    "request": {
+      "op": "sync-base",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "keepConflict": true
+    }
+  },
+  {
+    "key": "i7-conflicts-1-4",
+    "agent": "issue-pipeline-writer",
+    "label": "Resolve rebase conflicts for issue 7"
+  },
+  {
+    "key": "i7-finish-sync-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run finish-sync operation",
+    "request": {
+      "op": "finish-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "abort": false,
+      "reason": "Kept both changes to src/a.ts."
+    }
+  },
+  {
+    "key": "i7-release-6",
+    "agent": "issue-pipeline-ops",
+    "label": "Run release operation",
+    "request": {
+      "op": "release",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "state": {
+        "version": 1,
+        "number": 7,
+        "depth": 0,
+        "stage": "checks",
+        "lease": null,
+        "pr": 42,
+        "headSha": "ddddddd",
+        "reviewedSha": "ccccccc",
+        "verifiedSha": null,
+        "plan": null,
+        "allocated": 720000,
+        "reportedTokens": 0,
+        "sessions": [
+          "fixer"
+        ],
+        "triages": 0,
+        "continuations": 0,
+        "round": 0,
+        "ciFixes": 0,
+        "syncs": 1,
+        "findings": [],
+        "resolvedHistory": [],
+        "questionsAt": null,
+        "log": [
+          "2026-10-15T12:00Z resolved conflicts with integration and rebased",
+          "2026-10-15T12:00Z held at checks by the per-run spawn cap; continues next sweep"
+        ],
+        "implemented": true,
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "testsOnly": false,
+        "passedSha": null,
+        "conflictFixes": 1
+      },
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "conflict resolver (attempt 1)",
+            "agent": "issue-pipeline-writer",
+            "model": "claude-opus-5-5",
+            "run": "i7-conflicts-1-4"
+          },
+          "body": "Kept both changes to src/a.ts."
+        },
+        {
+          "number": 42,
+          "by": {
+            "role": "sync",
+            "agent": null,
+            "model": null,
+            "run": null
+          },
+          "body": "Rebased onto integration after resolving conflicts in \`src/a.ts\`; the head is now ddddddd. Every check runs again on it."
+        }
+      ]
+    }
+  }
+]
+`;
+
+exports[`failing checks get a reviewed CI fix, then pass and go on to merge 1`] = `
+[
+  {
+    "key": "sweep-1",
+    "agent": "issue-pipeline-ops",
+    "label": "Run sweep operation",
+    "request": {
+      "op": "sweep",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a"
+    }
+  },
+  {
+    "key": "i7-claim-2",
+    "agent": "issue-pipeline-ops",
+    "label": "Run claim operation",
+    "request": {
+      "op": "claim",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-verify-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run verify operation",
+    "request": {
+      "op": "verify",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "testsOnly": false
+    }
+  },
+  {
+    "key": "i7-cifix-1-4",
+    "agent": "issue-pipeline-writer",
+    "label": "Fix failing checks for issue 7"
+  },
+  {
+    "key": "i7-push-5",
+    "agent": "issue-pipeline-ops",
+    "label": "Run push operation",
+    "request": {
+      "op": "push",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "local checks",
+            "agent": null,
+            "model": null,
+            "run": null
+          },
+          "body": "Ran the repo's commands on ddddddd.\\n\\n- ❌ test: 1 failed"
+        },
+        {
+          "number": 42,
+          "by": {
+            "role": "check fixer (attempt 1)",
+            "agent": "issue-pipeline-writer",
+            "model": "claude-opus-5-5",
+            "run": "i7-cifix-1-4"
+          },
+          "body": "Fixed the test."
+        }
+      ]
+    }
+  },
+  {
+    "key": "i7-prep-6",
+    "agent": "issue-pipeline-ops",
+    "label": "Run prepare-review operation",
+    "request": {
+      "op": "prepare-review",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "sinceSha": "ccccccc",
+      "tag": "cifix1"
+    }
+  },
+  {
+    "key": "i7-cifix-review-correctness-1-7",
+    "agent": "issue-pipeline-reader",
+    "label": "Review correctness of check fix for issue 7"
+  },
+  {
+    "key": "i7-cifix-review-scope-1-8",
+    "agent": "issue-pipeline-reader",
+    "label": "Review scope of check fix for issue 7"
+  },
+  {
+    "key": "i7-save-9",
+    "agent": "issue-pipeline-ops",
+    "label": "Run save-state operation",
+    "request": {
+      "op": "save-state",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "state": {
+        "version": 1,
+        "number": 7,
+        "depth": 0,
+        "stage": "checks",
+        "lease": null,
+        "pr": 42,
+        "headSha": "fffffff",
+        "reviewedSha": "fffffff",
+        "verifiedSha": null,
+        "plan": null,
+        "allocated": 800000,
+        "reportedTokens": 0,
+        "sessions": [
+          "ciFixer",
+          "rereviewer"
+        ],
+        "triages": 0,
+        "continuations": 0,
+        "round": 0,
+        "ciFixes": 1,
+        "syncs": 0,
+        "findings": [],
+        "resolvedHistory": [],
+        "questionsAt": null,
+        "log": [
+          "2026-10-15T12:00Z check fix 1: Fixed the test."
+        ],
+        "implemented": true,
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "testsOnly": false
+      },
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "check-fix reviewer (correctness)",
+            "agent": "issue-pipeline-reader",
+            "model": "claude-opus-5-5",
+            "run": "i7-cifix-review-correctness-1-7"
+          },
+          "body": "Review of the check fix in fffffff.\\n\\nNo blocking findings."
+        },
+        {
+          "number": 42,
+          "by": {
+            "role": "check-fix reviewer (scope)",
+            "agent": "issue-pipeline-reader",
+            "model": "claude-sonnet-5-5",
+            "run": "i7-cifix-review-scope-1-8"
+          },
+          "body": "Review of the check fix in fffffff.\\n\\nNo blocking findings."
+        }
+      ]
+    }
+  },
+  {
+    "key": "i7-verify-10",
+    "agent": "issue-pipeline-ops",
+    "label": "Run verify operation",
+    "request": {
+      "op": "verify",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "testsOnly": false
+    }
+  },
+  {
+    "key": "i7-ci-11",
+    "agent": "issue-pipeline-ops",
+    "label": "Run ci-status operation",
+    "request": {
+      "op": "ci-status",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "pr": 42,
+      "expectedSha": "fffffff",
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "local checks",
+            "agent": null,
+            "model": null,
+            "run": null
+          },
+          "body": "Ran the repo's commands on fffffff.\\n\\n- ✅ test: passed"
+        }
+      ]
+    }
+  },
+  {
+    "key": "i7-prep-12",
+    "agent": "issue-pipeline-ops",
+    "label": "Run prepare-review operation",
+    "request": {
+      "op": "prepare-review",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "tag": "final"
+    }
+  },
+  {
+    "key": "i7-accept-13",
+    "agent": "issue-pipeline-reader",
+    "label": "Check issue 7 is resolved"
+  },
+  {
+    "key": "i7-prep-14",
+    "agent": "issue-pipeline-ops",
+    "label": "Run prepare-review operation",
+    "request": {
+      "op": "prepare-review",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "tag": "security-1",
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "acceptance verifier",
+            "agent": "issue-pipeline-reader",
+            "model": "claude-sonnet-5-5",
+            "run": "i7-accept-13"
+          },
+          "body": "✅ The change does what the issue asks. Does what #7 asks."
+        }
+      ]
+    }
+  },
+  {
+    "key": "i7-security-15",
+    "agent": "issue-pipeline-reader",
+    "label": "Security review of issue 7"
+  },
+  {
+    "key": "i7-save-16",
+    "agent": "issue-pipeline-ops",
+    "label": "Run save-state operation",
+    "request": {
+      "op": "save-state",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "state": {
+        "version": 1,
+        "number": 7,
+        "depth": 0,
+        "stage": "merge",
+        "lease": null,
+        "pr": 42,
+        "headSha": "fffffff",
+        "reviewedSha": "fffffff",
+        "verifiedSha": "fffffff",
+        "plan": null,
+        "allocated": 920000,
+        "reportedTokens": 0,
+        "sessions": [
+          "ciFixer",
+          "rereviewer",
+          "verifier",
+          "reviewer"
+        ],
+        "triages": 0,
+        "continuations": 0,
+        "round": 0,
+        "ciFixes": 1,
+        "syncs": 0,
+        "findings": [],
+        "resolvedHistory": [],
+        "questionsAt": null,
+        "log": [
+          "2026-10-15T12:00Z check fix 1: Fixed the test.",
+          "2026-10-15T12:00Z checks passed at fffffff",
+          "2026-10-15T12:00Z acceptance: pass - Does what #7 asks.",
+          "2026-10-15T12:00Z security review: no findings"
+        ],
+        "implemented": true,
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "testsOnly": false,
+        "verifySummary": "test: passed",
+        "acceptReason": "Does what #7 asks."
+      },
+      "comments": [
+        {
+          "number": 42,
+          "by": {
+            "role": "security reviewer",
+            "agent": "issue-pipeline-reader",
+            "model": "claude-opus-5-5",
+            "run": "i7-security-15"
+          },
+          "body": "🛡️ Security review of fffffff: no harm to users, their rights or money, and no new abuse risk."
+        }
+      ]
+    }
+  },
+  {
+    "key": "i7-merge-17",
+    "agent": "issue-pipeline-ops",
+    "label": "Run merge operation",
+    "request": {
+      "op": "merge",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "state": {
+        "version": 1,
+        "number": 7,
+        "depth": 0,
+        "stage": "merge",
+        "lease": null,
+        "pr": 42,
+        "headSha": "fffffff",
+        "reviewedSha": "fffffff",
+        "verifiedSha": "fffffff",
+        "plan": null,
+        "allocated": 920000,
+        "reportedTokens": 0,
+        "sessions": [
+          "ciFixer",
+          "rereviewer",
+          "verifier",
+          "reviewer"
+        ],
+        "triages": 0,
+        "continuations": 0,
+        "round": 0,
+        "ciFixes": 1,
+        "syncs": 0,
+        "findings": [],
+        "resolvedHistory": [],
+        "questionsAt": null,
+        "log": [
+          "2026-10-15T12:00Z check fix 1: Fixed the test.",
+          "2026-10-15T12:00Z checks passed at fffffff",
+          "2026-10-15T12:00Z acceptance: pass - Does what #7 asks.",
+          "2026-10-15T12:00Z security review: no findings"
+        ],
+        "implemented": true,
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "testsOnly": false,
+        "verifySummary": "test: passed",
+        "acceptReason": "Does what #7 asks."
+      },
+      "expectedSha": "fffffff",
+      "mergeOrder": true,
+      "summary": "Checks: test: passed\\n\\nAcceptance: Does what #7 asks."
+    }
+  }
+]
+`;
