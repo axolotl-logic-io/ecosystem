@@ -20,34 +20,26 @@
 // The helpers that need no sweep state are strict TypeScript in src/workflow/.
 // The build bundles them ahead of this body as `workflowModules`, and
 // src/workflow/index.ts lists every name this destructure may read.
-// The stages are moving onto a step machine: a ported stage is a sync `next`
-// in src/workflow/stages/, run by a loop that does all its awaiting. The loop
-// runs three times: after the claim for triage (#178) and spec, implement and
-// open-pr (#188), after that for review and the fix rounds (#179), and after
-// fix for sync and checks (#180). The
-// other stages are still labelled blocks until their ports fill in the stage
-// dispatch.
+// Every stage runs on a step machine: a stage is a sync `next` in
+// src/workflow/stages/, run through the stage dispatch by a loop that does all
+// its awaiting. The loop runs four times: after the claim for triage (#178) and
+// spec, implement and open-pr (#188), after open-pr for review and the fix
+// rounds (#179), after fix for sync and checks (#180), and after checks for
+// accept, security and merge (#189).
 
 const {
-  acceptanceSummary,
-  addFinding,
   by,
   byStep,
   chargeSession,
   clip,
+  closeParentLaunches,
   findingLines,
-  findingsStopCode,
-  findingsStopReason,
-  findingsText,
   noteEvent,
-  openFindings,
+  parentsClosed,
   practicesNote,
   preamble,
   lenses: LENSES,
-  securityRules: SECURITY_RULES,
-  acceptSchema: ACCEPT_SCHEMA,
   reviewSchema: REVIEW_SCHEMA,
-  securitySchema: SECURITY_SCHEMA,
   stages: STAGES,
 } = workflowModules.helpers;
 
@@ -460,170 +452,27 @@ while (stageRun) {
 }
 await flushStops();
 
-// ---------- acceptance: does the result do what the issue asked? ----------
+// ---------- acceptance, the security review and merge ----------
+// All three run on the step machine (stages/accept.ts, stages/security.ts,
+// stages/merge.ts).
 
-accept: {
-  const it = take("accept");
-  if (!it || !charge(it, "verifier")) break accept;
-  const p = (await opsAll([opsSpec("i" + it.n + "-prep", "prepare-review", { number: it.n, tag: "final" })]))[0];
-  if (!p.ok) {
-    stopIssue(it, "could not prepare the final diff", p.error);
-    break accept;
-  }
-  if (p.headSha !== it.st.verifiedSha) {
-    stopIssue(it, "the branch changed after verification");
-    break accept;
-  }
-  const r = (
-    await spawnAll([
-      child(it, "accept", {
-        label: "Check issue " + it.n + " is resolved",
-        agent: "issue-pipeline-reader",
-        model: MODEL.verifier,
-        schema: ACCEPT_SCHEMA,
-        minutes: 25,
-        task: preamble(cfg, it, "acceptance verifier", ROLE.verifier)
-          .concat([
-            "Decide whether the change, as a whole, does what the issue asks. Tests, lint, and CI already pass (" + (it.st.verifySummary || "") + "); do not re-run them.",
-            it.st.spec ? "The spec it was built to (also on the issue):\n" + it.st.spec + "\n" : "",
-            "Full diff against " + cfg.baseBranch + ": " + p.diffPath + ".",
-            "Return `pass` only if every requirement in the issue" + (it.st.spec ? " and every Behaviour and Wiki update in the spec" : "") + " is met and nothing in the diff works against the issue. Otherwise `fail` with the unmet requirement. Do not edit files.",
-          ])
-          .join("\n"),
-      }),
-    ])
-  )[0];
-  noteUsage(it, r);
-  const o = out(r);
-  if (!o) {
-    stopIssue(it, "the acceptance verifier failed", r.error);
-    break accept;
-  }
-  logEvent(it, "acceptance: " + o.verdict + " - " + o.reason);
-  say(it, by(SPEC_META, r, "acceptance verifier"), (o.verdict === "pass" ? "✅ The change does what the issue asks. " : "❌ The change doesn't fully resolve the issue. ") + o.reason);
-  if (o.verdict !== "pass") {
-    stopIssue(it, "the acceptance verifier found the issue is not fully resolved", o.reason);
-    break accept;
-  }
-  // Kept in the state: a merge queued behind an older PR runs in a later sweep.
-  it.st.acceptReason = o.reason;
-  it.st.stage = "security";
-}
-await flushStops();
-
-// ---------- security review: the last review round before merge ----------
-
-let securityReviewed = null;
-security: {
-  const it = take("security");
-  if (!it || !charge(it, "reviewer")) break security;
-  const p = (await opsAll([opsSpec("i" + it.n + "-prep", "prepare-review", { number: it.n, tag: "security-" + ((it.st.securityRounds || 0) + 1) })]))[0];
-  if (!p.ok) {
-    stopIssue(it, "could not prepare the security review diff", p.error);
-    break security;
-  }
-  if (p.headSha !== it.st.verifiedSha) {
-    stopIssue(it, "the branch changed after verification");
-    break security;
-  }
-  securityReviewed = it;
-  const r = (
-    await spawnAll([
-      child(it, "security", {
-        label: "Security review of issue " + it.n,
-        agent: "issue-pipeline-reader",
-        model: MODEL.security,
-        schema: SECURITY_SCHEMA,
-        minutes: 25,
-        task: preamble(cfg, it, "security reviewer", ROLE.reviewer)
-          .concat([
-            "You are the last review before this PR merges. Review the full diff against " + cfg.baseBranch + " at " + p.diffPath + " (" + p.diffLines + " lines), reading surrounding code where needed, for harm to the app's users and the operator.",
-          ])
-          .concat(SECURITY_RULES)
-          .concat(["Cite file, line and concrete evidence for each finding. Return an empty list if you find nothing. Do not edit files."])
-          .join("\n"),
-      }),
-    ])
-  )[0];
-  noteUsage(it, r);
-  const o = out(r);
-  if (!o) {
-    stopIssue(it, "the security reviewer failed", r.error);
-    break security;
-  }
-  const who = by(SPEC_META, r, "security reviewer");
-  if (!o.findings.length) {
-    logEvent(it, "security review: no findings");
-    say(it, who, "🛡️ Security review of " + it.st.verifiedSha.slice(0, 12) + ": no harm to users, their rights or money, and no new abuse risk.");
-    it.st.stage = "merge";
-    break security;
-  }
-  it.st.securityRounds = (it.st.securityRounds || 0) + 1;
-  const added = o.findings.map((f) => addFinding(it, f, ["security"]));
-  say(
-    it,
-    who,
-    "🛡️ Security review of " + it.st.verifiedSha.slice(0, 12) + " found " + added.length + " blocking finding(s). Later comments refer to these ids.\n\n" +
-      added.map((f) => "- **" + f.id + "** (" + f.category + ") `" + f.file + ":" + f.line + "` " + f.title + "\n  " + f.evidence).join("\n"),
-  );
-  logEvent(it, "security review " + it.st.securityRounds + ": " + added.length + " finding(s)");
-  if (it.st.securityRounds > cfg.maxFixRounds) {
-    stopIssue(it, findingsStopReason(cfg, it, "security findings remain"), findingsText(openFindings(it)), null, findingsStopCode(it));
-    break security;
-  }
-  // Fix with fresh fix rounds; the fixed branch then goes back through sync,
-  // checks, acceptance and this review.
-  it.st.reviewedSha = it.st.verifiedSha;
-  it.st.round = 0;
-  it.st.stage = "fix";
-}
-await flushStops();
-await opsAll(saveOf(securityReviewed));
-
-// ---------- merge ----------
-
-merge: {
-  const it = take("merge");
-  if (!it) break merge;
-  if (openFindings(it).length) {
-    stopIssue(it, findingsStopReason(cfg, it, "open blocking findings remain at merge time"), findingsText(openFindings(it)), null, findingsStopCode(it));
-    break merge;
-  }
-  const r = (
-    await opsAll([
-      opsSpec("i" + it.n + "-merge", "merge", {
-        number: it.n,
-        state: it.st,
-        expectedSha: it.st.verifiedSha,
-        mergeOrder: true,
-        summary: "Checks: " + (it.st.verifySummary || "") + "\n\nAcceptance: " + acceptanceSummary(cfg, it),
-      }),
-    ])
-  )[0];
-  if (!r.ok) {
-    stopIssue(it, "the merge step failed", r.error);
-  } else if (r.merged) {
-    it.closed = true;
-    it.outcome = "merged";
-  } else if (r.reason === "queued") {
-    // An older PR is ready too and merges first (decision merge-order). Stay at merge;
-    // if it lands first, the next merge attempt reports "behind" and this one rebases.
-    const note = "merge waits for #" + r.waitingFor + " (older PR #" + r.waitingForPr + ")";
-    if (((it.st.log || []).slice(-1)[0] || "").indexOf(note) < 0) logEvent(it, note);
-  } else if (r.reason === "behind" || r.reason === "conflict") {
-    // This head passed every check, acceptance and the security review.
-    it.st.passedSha = it.st.verifiedSha;
-    it.st.stage = "sync";
-    logEvent(it, "merge deferred: " + r.reason + "; will rebase next sweep");
+stageRun = beginStage(["accept", "security", "merge"]);
+while (stageRun) {
+  const specs = applyStep(stageRun.step);
+  if (stageRun.step.done) {
+    stageRun = beginStage(["accept", "security", "merge"]);
   } else {
-    stopIssue(it, "GitHub refused the merge", r.reason);
+    const { machine, step } = stageRun;
+    const results = launchResults(step.launches, await spawnAll(specs));
+    const state = stageState(step.state.phase, step.state.carry);
+    stageRun.step = machine.next(state, STAGE_CONTEXT, results);
   }
 }
 await flushStops();
 
 // ---------- parents of split issues ----------
 
-const parentResults = await opsAll(sweep.parents.map((n) => opsSpec("p" + n + "-close", "close-parent", { number: n })));
+const parentResults = await opsAll(closeParentLaunches(sweep.parents).map((l) => opsSpec(l.name, l.op, l.payload)));
 
 // ---------- release an unfinished issue for the next sweep ----------
 
@@ -649,5 +498,5 @@ return {
         },
       ]
     : [],
-  parentsClosed: parentResults.filter((r) => r.ok && r.closed).length,
+  parentsClosed: parentsClosed(parentResults),
 };

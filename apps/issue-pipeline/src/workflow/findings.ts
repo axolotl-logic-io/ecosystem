@@ -30,6 +30,14 @@ function categoryOf(reported: ReportedFinding): string | null {
   return null;
 }
 
+// The stop that open findings give: the reason, the findings, and the stop
+// code that names the harm, or null for the generic one.
+interface FindingsStop {
+  reason: string;
+  detail: string;
+  code: string | null;
+}
+
 interface FindingsItem {
   st: Pick<IssueState, "findings" | "nextFindingId">;
 }
@@ -87,6 +95,20 @@ function findingsStopReason(
   return `security review (${security.category}): ${security.title} is still open after ${cfg.maxFixRounds} fix rounds`;
 }
 
+// The stop for open findings: their reason with `base` as the fallback, the
+// findings as text, and the security category as the stop code, or null.
+function findingsStop(
+  cfg: FixRoundsConfig,
+  item: FindingsItem,
+  base: string,
+): FindingsStop {
+  return {
+    reason: findingsStopReason(cfg, item, base),
+    detail: findingsText(openFindings(item)),
+    code: findingsStopCode(item),
+  };
+}
+
 function listedId(finding: ListedFinding): string {
   if (typeof finding.id === "string" && finding.id !== "") {
     return `**${finding.id}** `;
@@ -128,9 +150,11 @@ function findingsText(list: readonly Finding[]): string {
     .join("\n");
 }
 
+export type { FindingsStop };
 export {
   addFinding,
   findingLines,
+  findingsStop,
   findingsStopCode,
   findingsStopReason,
   findingsText,
