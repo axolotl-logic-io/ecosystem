@@ -22,8 +22,9 @@
 // src/workflow/index.ts lists every name this destructure may read.
 // The stages are moving onto a step machine: a ported stage is a sync `next`
 // in src/workflow/stages/, run by a loop that does all its awaiting. The loop
-// runs three times: after the claim for triage (#178), after open-pr for review
-// and the fix rounds (#179), and after fix for sync and checks (#180). The
+// runs three times: after the claim for triage (#178) and spec, implement and
+// open-pr (#188), after that for review and the fix rounds (#179), and after
+// fix for sync and checks (#180). The
 // other stages are still labelled blocks until their ports fill in the stage
 // dispatch.
 
@@ -45,10 +46,8 @@ const {
   lenses: LENSES,
   securityRules: SECURITY_RULES,
   acceptSchema: ACCEPT_SCHEMA,
-  implSchema: IMPL_SCHEMA,
   reviewSchema: REVIEW_SCHEMA,
   securitySchema: SECURITY_SCHEMA,
-  specSchema: SPEC_SCHEMA,
   stages: STAGES,
 } = workflowModules.helpers;
 
@@ -144,6 +143,11 @@ const MODEL = Object.assign(
 const WRITER_ACCEPTANCE = { level: "none", reason: "The pipeline verifies changes with its own commands and reviewers." };
 const SPAWN_LIMIT = cfg.maxSpawnsPerRun || 64;
 const STAGE_SPAWNS = { triage: 4, spec: 3, implement: 1, "open-pr": 2, review: 7, fix: 8, sync: 3, checks: 11, accept: 2, security: 3, merge: 2 };
+// How many times a sweep may begin a stage on the step machine (default 1):
+// implement runs once more to continue from a handoff.
+const STAGE_PASSES = { implement: 2 };
+// The stages the sweep saves the issue's state before it first begins.
+const SAVE_BEFORE = ["spec", "implement"];
 
 // ---------- item helpers ----------
 
@@ -346,36 +350,67 @@ function launchResults(launches, raw) {
       ok: result.ok === true,
       structuredOutput: result.structuredOutput ?? null,
       error: result.error || null,
-      by: by(SPEC_META, result, launch.name),
+      by: by(SPEC_META, result, launch.role || launch.name),
     };
   });
 }
 
-// The issue's stage machine and its first step, if the stage is one of
-// `stages`, is on the step machine, hasn't run this sweep (or asked to go
-// again) and fits under the spawn cap.
-function beginStage(stages) {
+// The open issue's stage, its machine and how often it has begun this sweep,
+// or null if the stage isn't one of `stages` or isn't on the step machine.
+function stageMachine(stages) {
   if (!item || item.closed) {
     return null;
   }
   const { stage } = item.st;
-  if (!stages.includes(stage) || !Object.hasOwn(STAGES, stage) || Object.hasOwn(stagesRun, stage)) {
+  if (!stages.includes(stage) || !Object.hasOwn(STAGES, stage)) {
     return null;
   }
   const { [stage]: machine } = STAGES;
-  if (!(machine && take(stage))) {
+  if (!machine) {
     return null;
   }
-  stagesRun[stage] = true;
+  const { [stage]: runs = 0 } = stagesRun;
+  return { stage, machine, runs };
+}
+
+function passesOf(stage) {
+  const { [stage]: passes = 1 } = STAGE_PASSES;
+  return passes;
+}
+
+// The save of the issue's state before its stage first begins, if the stage
+// is one the sweep saves before. It comes before the spawn-cap check, so a
+// held issue is saved too.
+function savesBeforeStage(stages) {
+  const current = stageMachine(stages);
+  if (!(current && current.runs === 0 && SAVE_BEFORE.includes(current.stage))) {
+    return [];
+  }
+  return saveOf(item);
+}
+
+// The issue's stage machine and its first step, if the stage is one of
+// `stages`, is on the step machine, hasn't used its passes this sweep (or
+// asked to go again) and fits under the spawn cap.
+function beginStage(stages) {
+  const current = stageMachine(stages);
+  if (!(current && current.runs < passesOf(current.stage) && take(current.stage))) {
+    return null;
+  }
+  const { stage, machine, runs } = current;
+  stagesRun[stage] = runs + 1;
   const step = machine.next(stageState("begin", null), STAGE_CONTEXT, []);
   return { machine, step };
 }
 
-let stageRun = beginStage(["triage"]);
+const BUILD_STAGES = ["triage", "spec", "implement", "open-pr"];
+await opsAll(savesBeforeStage(BUILD_STAGES));
+let stageRun = beginStage(BUILD_STAGES);
 while (stageRun) {
   const specs = applyStep(stageRun.step);
   if (stageRun.step.done) {
-    stageRun = beginStage(["triage"]);
+    await opsAll(savesBeforeStage(BUILD_STAGES));
+    stageRun = beginStage(BUILD_STAGES);
   } else {
     const { machine, step } = stageRun;
     const results = launchResults(step.launches, await spawnAll(specs));
@@ -383,156 +418,8 @@ while (stageRun) {
     stageRun.step = machine.next(state, STAGE_CONTEXT, results);
   }
 }
-await flushStops();
-await opsAll(saveAt("spec"));
-
-// ---------- spec: what exactly to build, from the issue, wiki, code and web ----------
-// Autumn (2026-10-13): every issue gets a spec before implementation. It is posted
-// on the issue, and the implementer and the acceptance check work from it.
-
-spec: {
-  const it = take("spec");
-  if (!it || !charge(it, "spec")) break spec;
-  const r = (
-    await spawnAll([
-      child(it, "spec", {
-        label: "Write the spec for issue " + it.n,
-        agent: "issue-pipeline-specifier",
-        model: MODEL.spec,
-        schema: SPEC_SCHEMA,
-        minutes: 30,
-        task: preamble(cfg, it, "spec writer", ROLE.spec)
-          .concat([
-            "Triage found this issue ready. Its notes:\n" + (it.st.plan || "(none)"),
-            "",
-            "Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the project's coding practices (below); the wiki pages that bear on it" + (it.paths.wiki ? " (start from " + it.paths.wiki + "/Home.md)" : "") + "; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.",
-            practicesNote(cfg, it, "spec"),
-            "`spec` is GitHub markdown with these sections:",
-            "- **Behaviour**: what is true when the issue is done, as checkable statements.",
-            "- **Out of scope**: what this issue does not change.",
-            "- **Design**: the approach, the files to change with `file:line` anchors, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
-            "- **Tests**: the tests to add or change, each naming the behaviour it pins down and why it fails today.",
-            "- **Wiki updates**: wiki pages to add or change, or \"None\".",
-            "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
-            "Keep it under about 150 lines. Set `decision` to ready, with `questions` empty.",
-            "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
-          ])
-          .join("\n"),
-      }),
-    ])
-  )[0];
-  noteUsage(it, r);
-  const o = out(r);
-  if (!o) {
-    stopIssue(it, "the spec writer failed", r.error);
-    break spec;
-  }
-  const who = by(SPEC_META, r, "spec writer");
-  logEvent(it, "spec: " + o.decision);
-  if (o.decision === "needs-info" && o.questions.length) {
-    it.closed = true;
-    it.outcome = "needs-info";
-    say(it, who, "## Spec so far\n\n" + o.spec, "issue");
-    const ar = (await opsAll([opsSpec("i" + it.n + "-ask", "ask", { number: it.n, state: Object.assign({}, it.st, { stage: "triage" }), questions: o.questions, by: who })]))[0];
-    if (!ar.ok) throw new Error("spec follow-up failed: " + ar.error);
-    break spec;
-  }
-  it.st.spec = clip(o.spec, 12000);
-  it.st.stage = "implement";
-  say(it, who, "## Spec\n\nThe implementer builds to this spec, and the acceptance check judges the result against it.\n\n" + o.spec, "issue");
-}
-await flushStops();
-await opsAll(saveAt("implement"));
-
-// ---------- implement (one continuation allowed) ----------
-
-for (let pass = 0; pass < 2; pass++) {
-  const it = take("implement");
-  if (!it || !charge(it, "implementer")) break;
-  const r = (
-    await spawnAll([
-      child(it, "implement", {
-        label: "Implement issue " + it.n,
-        agent: "issue-pipeline-writer",
-        model: MODEL.implementer,
-        schema: IMPL_SCHEMA,
-        writer: true,
-        minutes: 90,
-        task: preamble(cfg, it, "implementer", CAP)
-          .concat([
-            practicesNote(cfg, it, "writer"),
-            it.st.continuations > 0
-              ? "A previous session ran out of room. Read its handoff first: " + it.paths.handoffFile + ". Continue from the current branch state."
-              : it.st.spec
-                ? "Spec (also posted on the issue):\n" + it.st.spec
-                : "Triage plan:\n" + it.st.plan,
-            "",
-            "Do this:",
-            "1. Write or update tests that specify the fix. They must fail without your change.",
-            "2. Implement the smallest change that resolves the issue. Do not refactor unrelated code.",
-            "3. Run the tests" + (cfg.commands.test ? " (`" + cfg.commands.test + "`)" : "") + (cfg.commands.lint ? ", lint (`" + cfg.commands.lint + "`)" : "") + (cfg.commands.typecheck ? ", and typecheck (`" + cfg.commands.typecheck + "`)" : "") + " and fix failures.",
-            "4. Commit everything with clear messages (`git add -A && git commit`), ending each message with the trailer line `Pipeline-Agent: implementer`. Leave the worktree clean.",
-            it.paths.wiki
-              ? "5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (`git -C " + it.paths.wiki + " add -A && git -C " + it.paths.wiki + " commit`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges."
-              : "",
-            "Change lockfiles only through the package manager, never by hand.",
-            "",
-            "If the work is bigger than this session can finish within budget (for example, you have read more than about 15 files or made more than about 30 substantial tool calls and are not close), stop: commit what builds, write " +
-              it.paths.handoffFile +
-              " (what is done, what is left, current branch state), and return status `handoff`.",
-            "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
-            "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
-          ])
-          .join("\n"),
-      }),
-    ])
-  )[0];
-  noteUsage(it, r);
-  const o = out(r);
-  if (!o) {
-    stopIssue(it, "the implementer session failed", r.error);
-  } else {
-    logEvent(it, "implement: " + o.status + " - " + o.summary);
-    const who = by(SPEC_META, r, "implementer");
-    if (o.status === "done") {
-      it.st.prTitle = clip(o.prTitle, 200);
-      it.st.prBody = clip(o.prBody, 6000);
-      it.st.prBy = who;
-      it.st.stage = "open-pr";
-    } else if (o.status === "handoff" && it.st.continuations < 1) {
-      it.st.continuations += 1;
-      say(it, who, "This session ran out of room before finishing. A second implementer session continues from its handoff.\n\n" + o.summary, "issue");
-    } else if (o.status === "handoff") {
-      say(it, who, o.summary, "issue");
-      stopIssue(it, "the implementer ran out of room twice; the issue needs splitting", "Latest handoff: " + it.paths.handoffFile + "\n\n" + o.summary);
-    } else {
-      say(it, who, o.summary, "issue");
-      stopIssue(it, "the implementer could not do the issue as written", o.summary);
-    }
-  }
-  await flushStops();
-}
 // Still in implement after both passes, and not held: it has used its continuation.
 if (at("implement") && !item.held) stopIssue(item, "implementation did not finish within its sessions");
-await flushStops();
-
-// ---------- open PR ----------
-
-{
-  const it = take("open-pr");
-  if (it) {
-    const r = (await opsAll([opsSpec("i" + it.n + "-openpr", "open-pr", { number: it.n, title: it.st.prTitle, body: it.st.prBody, by: it.st.prBy })]))[0];
-    if (!r.ok) {
-      stopIssue(it, "could not open the PR", r.error);
-    } else {
-      it.st.pr = r.pr;
-      it.st.headSha = r.headSha;
-      it.st.implemented = true;
-      it.st.stage = "review";
-      logEvent(it, "PR #" + r.pr + " is ready for review");
-    }
-  }
-}
 await flushStops();
 await opsAll(saveAt("review"));
 

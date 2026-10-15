@@ -2,6 +2,8 @@
 // Checked by hand rather than with zod: this module runs in the pi-subagents
 // sandbox, which rejects the async functions any zod bundle contains (#178).
 
+import { isRecord, isStrings } from "./reply-guards.ts";
+
 type TriageDecision = "ready" | "needs-info" | "split" | "reject";
 
 interface SubIssue {
@@ -25,16 +27,6 @@ const DECISIONS: readonly TriageDecision[] = [
   "split",
   "reject",
 ];
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isStrings(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) && value.every((entry) => typeof entry === "string")
-  );
-}
 
 function isSubIssue(value: unknown): value is SubIssue {
   if (!isRecord(value)) {

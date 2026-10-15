@@ -3,6 +3,8 @@
 // sweep holds for its issue, and the slices of the repo config each helper
 // needs.
 
+import type { Signature } from "./signing.ts";
+
 // A finding is open until a re-review resolves it.
 type FindingStatus = "open" | "resolved";
 
@@ -54,6 +56,14 @@ interface IssueState {
   triages?: number;
   // Triage's plan for the spec writer.
   plan?: string | null;
+  // The spec the implementer builds to.
+  spec?: string | null;
+  // How many continuation sessions the implementer has had.
+  continuations?: number;
+  // The PR the implementer described, and its signature.
+  prTitle?: string;
+  prBody?: string;
+  prBy?: Signature;
   pr?: number | null;
   // The PR branch's head as the pipeline last pushed or saw it.
   headSha?: string | null;
@@ -98,6 +108,8 @@ interface ItemPaths {
   issueFile: string;
   // The wiki checkout, or null when the repo's wiki is off.
   wiki: string | null;
+  // Where an implementer that runs out of room writes its handoff.
+  handoffFile: string;
 }
 
 // The issue the sweep works on.

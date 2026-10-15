@@ -50,10 +50,12 @@ interface StageState {
   carry: unknown;
 }
 
-// A model session. The sweep keys it "i<n>-<name>-<seq>".
+// A model session. The sweep keys it "i<n>-<name>-<seq>", and signs its
+// result with `role`, or with `name` when there is no role.
 interface ChildLaunch {
   kind: "child";
   name: string;
+  role?: string;
   label: string;
   agent: string;
   model: string;
@@ -76,7 +78,7 @@ interface OpLaunch {
 
 type Launch = ChildLaunch | OpLaunch;
 
-// A finished session, signed with its launch's name as the role.
+// A finished session, signed with its launch's role.
 interface ChildResult {
   kind: "child";
   ok: boolean;
@@ -143,6 +145,13 @@ type ModelRole =
   | "verifier"
   | "security";
 
+// The commands the implementer runs before it finishes, each only if set.
+interface StageCommands {
+  test?: string;
+  lint?: string;
+  typecheck?: string;
+}
+
 interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
   maxTriages: number;
   maxSyncs: number;
@@ -150,6 +159,7 @@ interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
   ciWaitMinutes: number;
   // Missing or null means 2.
   maxConflictFixes?: number | null;
+  commands: StageCommands;
 }
 
 // What every stage reads besides the issue: the repo config, the token
@@ -178,6 +188,7 @@ export type {
   LaunchResult,
   OpLaunch,
   OpResult,
+  StageCommands,
   StageComment,
   StageContext,
   StageMachine,

@@ -4,7 +4,10 @@
 
 import { next as nextChecks } from "./checks.ts";
 import { next as nextFix } from "./fix.ts";
+import { next as nextImplement } from "./implement.ts";
+import { next as nextOpenPr } from "./open-pr.ts";
 import { next as nextReview } from "./review.ts";
+import { next as nextSpec } from "./spec.ts";
 import { next as nextSync } from "./sync.ts";
 import { next as nextTriage } from "./triage.ts";
 import type { StageMachine, StageName } from "./types.ts";
@@ -13,9 +16,9 @@ type StageDispatch = Readonly<Record<StageName, StageMachine | null>>;
 
 const STAGES: StageDispatch = {
   triage: { next: nextTriage },
-  spec: null,
-  implement: null,
-  "open-pr": null,
+  spec: { next: nextSpec },
+  implement: { next: nextImplement },
+  "open-pr": { next: nextOpenPr },
   review: { next: nextReview },
   fix: { next: nextFix },
   sync: { next: nextSync },

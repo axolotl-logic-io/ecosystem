@@ -10,11 +10,12 @@ import { loadConfig } from "../src/config.ts";
 import { OpsError } from "../src/process.ts";
 import { practicesNote } from "../src/workflow/prompts.ts";
 import { next as nextFix } from "../src/workflow/stages/fix.ts";
+import { next as nextImplement } from "../src/workflow/stages/implement.ts";
 import { next as nextReview } from "../src/workflow/stages/review.ts";
+import { next as nextSpec } from "../src/workflow/stages/spec.ts";
+import { BUILD_CTX, buildState } from "./workflow-build-test-kit.mjs";
 import { CFG, CTX, ITEM, openFinding, opReply, stateWith } from "./workflow-review-test-kit.mjs";
 
-const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
-const workflow = read("src/workflow.js");
 const item = { paths: { worktree: "/w/issue-7" } };
 
 test("the spec task names every practices file under the worktree", () => {
@@ -36,15 +37,17 @@ test("each role is told what to do with them", () => {
   assert.match(practicesNote(cfg, item, "reviewer"), /mark it `blocking`, quote the rule/);
 });
 
-const taskOf = (label) => {
-  const at = workflow.indexOf(`label: "${label}`);
-  assert.ok(at > 0, label);
-  return workflow.slice(at, workflow.indexOf(".join(", at));
+// The task of the session a stage machine launches first.
+const stageTask = (next, stage) => {
+  const [launch] = next(buildState(stage), BUILD_CTX, []).launches;
+  return launch.task;
 };
 
-test("the spec and implement tasks carry the note", () => {
-  assert.match(taskOf("Write the spec"), /practicesNote\(cfg, it, "spec"\)/);
-  assert.match(taskOf("Implement issue"), /practicesNote\(cfg, it, "writer"\)/);
+test("the spec and implement sessions' tasks carry the note", () => {
+  const state = buildState("spec");
+  const { cfg } = BUILD_CTX;
+  assert.ok(stageTask(nextSpec, "spec").includes(practicesNote(cfg, state, "spec")));
+  assert.ok(stageTask(nextImplement, "implement").includes(practicesNote(cfg, state, "writer")));
 });
 
 test("the first-review tasks carry the reviewer's note", () => {
