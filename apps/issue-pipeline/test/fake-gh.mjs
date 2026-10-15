@@ -1,8 +1,9 @@
 // A fake `gh` for tests of the modules that call GitHub. installFakeGh() puts a
 // `gh` script first on PATH, which the ops modules' run() passes on. The script
 // records each call's arguments, then answers with the first queued reply whose
-// `when` text appears in its arguments, and removes that reply. A call that
-// matches no reply prints nothing and succeeds.
+// `when` text appears in its arguments, and removes that reply. A reply may
+// also give `stderr` to print and `code` to exit with, as a refused command
+// does. A call that matches no reply prints nothing and succeeds.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,14 +21,18 @@ const replies = JSON.parse(fs.readFileSync(file, "utf8"));
 const text = args.join(" ");
 const at = replies.findIndex((reply) => text.includes(reply.when));
 if (at >= 0) {
-  process.stdout.write(replies[at].stdout);
+  const reply = replies[at];
+  process.stdout.write(reply.stdout ?? "");
+  process.stderr.write(reply.stderr ?? "");
+  process.exitCode = reply.code ?? 0;
   replies.splice(at, 1);
   fs.writeFileSync(file, JSON.stringify(replies));
 }
 `;
 }
 
-// Returns { reply, calls }: reply(replies) queues [{ when, stdout }] and
+// Returns { reply, calls }: reply(replies) queues [{ when, stdout, stderr?,
+// code? }] and
 // forgets earlier calls; calls() lists each call's arguments, in order.
 function installFakeGh() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-gh-"));
