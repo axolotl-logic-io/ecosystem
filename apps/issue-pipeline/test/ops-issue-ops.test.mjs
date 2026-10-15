@@ -1,3 +1,4 @@
+// @ts-check
 // The save-state, ask, split and stop ops through the ops CLI, pinned to the
 // replies and gh calls they made before they moved to src/ops/ (#183).
 import assert from "node:assert/strict";
@@ -26,46 +27,61 @@ const TRIAGER_SIGNATURE =
 const STEP_SIGNATURE = "<sub>deterministic step, no model</sub>";
 const RESUME_TEXT =
   "The next sweep continues from the PR's branch at review, with every limit reset, the token budget included.";
+// Each test's issue, and the comments, PRs and sub-issues it meets.
+const SAVED = { n: 50 };
+const SAVE_REPLY = { ok: true, op: "save-state", posted: 0 };
+const ASKED = { n: 51, state: 5, claim: 6 };
+const SPLIT = { n: 52, claim: 7, depth: 1, first: { id: 900, number: 60 }, second: { id: 901, number: 61 } };
+const STOPPED = { n: 53, pr: 70, claim: 8 };
+const STOPPED_BY_REASON = { n: 54 };
 
 sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
 
+/** @param {number} id @returns {object} */
 function myClaim(id) {
   return claimComment(id, "me", "s1", LIVE);
 }
 
+/** @param {string} text @returns {string} */
 function coordinator(text) {
   return `**🤖 issue-pipeline · coordinator**\n${STEP_SIGNATURE}\n<!-- agent-pipeline:comment role=coordinator -->\n\n${text}`;
 }
 
+// Joins a comment's paragraphs.
+/** @param {readonly string[]} texts @returns {string} */
+function paragraphs(texts) {
+  return texts.join("\n\n");
+}
+
+// A config setting named in a stop's explanation, as src/stops.ts names it.
+/** @param {string} setting @returns {string} */
+function settingRef(setting) {
+  return `(\`${setting}\`)`;
+}
+
 test("save-state writes the state it is given, and nothing without one", () => {
+  const { n } = SAVED;
   const state = { stage: "plan", pr: null };
   reply([]);
-  assert.deepEqual(askOps({ op: "save-state", number: 50, state }), {
-    ok: true,
-    op: "save-state",
-    posted: 0,
-  });
+  assert.deepEqual(askOps({ op: "save-state", number: n, state }), SAVE_REPLY);
   assert.deepEqual(calls(), [
-    ghCalls.listComments(50),
-    ghCalls.post(50, stateBody(50, state)),
+    ghCalls.listComments(n),
+    ghCalls.post(n, stateBody(n, state)),
   ]);
   reply([]);
-  assert.deepEqual(askOps({ op: "save-state", number: 50 }), {
-    ok: true,
-    op: "save-state",
-    posted: 0,
-  });
+  assert.deepEqual(askOps({ op: "save-state", number: n }), SAVE_REPLY);
   assert.deepEqual(calls(), []);
 });
 
 test("ask posts numbered questions, parks the issue and closes its claims", () => {
+  const { n, state, claim } = ASKED;
   reply([
-    commentsReply(51, [stateComment(5, { stage: "plan" })]),
-    commentsReply(51, [myClaim(6)]),
+    commentsReply(n, [stateComment(state, { stage: "plan" })]),
+    commentsReply(n, [myClaim(claim)]),
   ]);
   const request = {
     op: "ask",
-    number: 51,
+    number: n,
     questions: ["Which X?", "Why Y?"],
     state: { stage: "plan", pr: null },
     by: null,
@@ -73,66 +89,79 @@ test("ask posts numbered questions, parks the issue and closes its claims", () =
   assert.deepEqual(askOps(request), { ok: true, op: "ask", posted: 0 });
   const questions = `**🤖 issue-pipeline · triage**\n${STEP_SIGNATURE}\n<!-- agent-pipeline:comment role=triage -->\n\nI need answers before the pipeline can work on this issue:\n\n1. Which X?\n2. Why Y?\n\nReply in a comment. A reply from a user on the pipeline's allow list puts the issue back in the queue.`;
   assert.deepEqual(calls(), [
-    ghCalls.post(51, questions),
-    ghCalls.listComments(51),
+    ghCalls.post(n, questions),
+    ghCalls.listComments(n),
     ghCalls.patch(
-      5,
-      stateBody(51, {
+      state,
+      stateBody(n, {
         stage: "triage",
         pr: null,
         questionsAt: TIME,
         lease: null,
       }),
     ),
-    ghCalls.unlabel(51, "agent:working"),
-    ghCalls.label(51, "agent:needs-info"),
-    ghCalls.listComments(51),
+    ghCalls.unlabel(n, "agent:working"),
+    ghCalls.label(n, "agent:needs-info"),
+    ghCalls.listComments(n),
     closedClaim(
-      6,
+      claim,
       "the pipeline asked questions; an answer puts the issue back in the queue.",
     ),
   ]);
 });
 
-// The calls that open split's two sub-issues of #52, the second after the first.
+// The gh call that opens one of split's sub-issues of SPLIT.
+/** @param {string} title @param {string} body @param {string} [afterLine] @returns {string[]} */
+function openCall(title, body, afterLine = "") {
+  const parent = `\n\n<!-- agent-pipeline:parent ${SPLIT.n} depth 2 -->`;
+  const text = `${TRIAGER_SIGNATURE}\n\n${body}\n\nPart of #${SPLIT.n}.${afterLine}${parent}`;
+  return ["api", "-X", "POST", "repos/o/r/issues", "-f", `title=${title}`, "-f", `body=${text}`];
+}
+
+// The gh call that links a sub-issue to SPLIT.
+/** @param {number} id @returns {string[]} */
+function linkCall(id) {
+  const endpoint = `repos/o/r/issues/${SPLIT.n}/sub_issues`;
+  return ["api", "-X", "POST", endpoint, "-F", `sub_issue_id=${id}`, "--silent"];
+}
+
+// The calls that open split's two sub-issues of SPLIT, the second after the first.
+/** @returns {string[][]} */
 function subIssueCalls() {
-  const parent = "\n\n<!-- agent-pipeline:parent 52 depth 2 -->";
-  const after = "\nAfter #60 merges.\n<!-- agent-pipeline:after 60 -->";
-  function open(title, body, afterLine = "") {
-    return [
-      "api",
-      "-X",
-      "POST",
-      "repos/o/r/issues",
-      "-f",
-      `title=${title}`,
-      "-f",
-      `body=${TRIAGER_SIGNATURE}\n\n${body}\n\nPart of #52.${afterLine}${parent}`,
-    ];
-  }
-  function link(id) {
-    return [
-      "api",
-      "-X",
-      "POST",
-      "repos/o/r/issues/52/sub_issues",
-      "-F",
-      `sub_issue_id=${id}`,
-      "--silent",
-    ];
-  }
-  return [open("A", "a"), link(900), open("B", "b", after), link(901)];
+  const { first, second } = SPLIT;
+  const after = `\nAfter #${first.number} merges.\n<!-- agent-pipeline:after ${first.number} -->`;
+  return [openCall("A", "a"), linkCall(first.id), openCall("B", "b", after), linkCall(second.id)];
+}
+
+// Every gh call split makes for SPLIT, after it opens the sub-issues.
+/** @returns {string[][]} */
+function splitCalls() {
+  const { n, claim, depth, first, second } = SPLIT;
+  const created = `#${first.number}, #${second.number}`;
+  const note = `I split this issue into ${created}. The pipeline closes it when they have all merged.`;
+  const subIssues = [first.number, second.number];
+  return [
+    ...subIssueCalls(),
+    ghCalls.post(n, `${TRIAGER_SIGNATURE}\n\n${note}`),
+    ghCalls.listComments(n),
+    ghCalls.post(n, stateBody(n, { stage: "split", depth, lease: null, subIssues })),
+    ghCalls.unlabel(n, "agent:working"),
+    ghCalls.label(n, "agent:split"),
+    ghCalls.listComments(n),
+    closedClaim(claim, "the issue was split into sub-issues."),
+  ];
 }
 
 test("split opens ordered sub-issues under the parent and parks it", () => {
+  const { n, claim, depth, first, second } = SPLIT;
   sh(
-    `git -C ${root}/clones/o__r worktree add -q -B agent/issue-52 ${worktree(52)} origin/integration`,
+    `git -C ${root}/clones/o__r worktree add -q -B agent/issue-${n} ${worktree(n)} origin/integration`,
   );
   reply([
-    { when: "title=A", stdout: JSON.stringify({ id: 900, number: 60 }) },
-    { when: "title=B", stdout: JSON.stringify({ id: 901, number: 61 }) },
-    commentsReply(52, []),
-    commentsReply(52, [myClaim(7)]),
+    { when: "title=A", stdout: JSON.stringify(first) },
+    { when: "title=B", stdout: JSON.stringify(second) },
+    commentsReply(n, []),
+    commentsReply(n, [myClaim(claim)]),
   ]);
   const subIssues = [
     { title: "A", body: "a" },
@@ -140,8 +169,8 @@ test("split opens ordered sub-issues under the parent and parks it", () => {
   ];
   const request = {
     op: "split",
-    number: 52,
-    state: { stage: "triage", depth: 1 },
+    number: n,
+    state: { stage: "triage", depth },
     subIssues,
     by: TRIAGER,
   };
@@ -149,49 +178,70 @@ test("split opens ordered sub-issues under the parent and parks it", () => {
     ok: true,
     op: "split",
     posted: 0,
-    created: [60, 61],
+    created: [first.number, second.number],
   });
-  assert.deepEqual(calls(), [
-    ...subIssueCalls(),
-    ghCalls.post(
-      52,
-      `${TRIAGER_SIGNATURE}\n\nI split this issue into #60, #61. The pipeline closes it when they have all merged.`,
-    ),
-    ghCalls.listComments(52),
-    ghCalls.post(
-      52,
-      stateBody(52, {
-        stage: "split",
-        depth: 1,
-        lease: null,
-        subIssues: [60, 61],
-      }),
-    ),
-    ghCalls.unlabel(52, "agent:working"),
-    ghCalls.label(52, "agent:split"),
-    ghCalls.listComments(52),
-    closedClaim(7, "the issue was split into sub-issues."),
-  ]);
-  assert.equal(fs.existsSync(worktree(52)), false);
+  assert.deepEqual(calls(), splitCalls());
+  assert.equal(fs.existsSync(worktree(n)), false);
 });
 
+// The comment stop posts for STOPPED, on the issue and its PR.
+/** @returns {string} */
+function budgetStopBody() {
+  return coordinator(
+    paragraphs([
+      "**🛑 Stopped by a control: token budget** (`agent:stopped-budget`)",
+      `The next session would take the issue past its token budget ${settingRef("issueTokenBudget")}, or a re-check or conflict fix after a rebase past the rebase allowance ${settingRef("rebaseTokenBudget")}.`,
+      "Reason: over budget",
+      "d",
+      "next",
+    ]),
+  );
+}
+
+// Every gh call stop makes for STOPPED.
+/** @returns {string[][]} */
+function budgetStopCalls() {
+  const { n, pr, claim } = STOPPED;
+  const body = budgetStopBody();
+  const stopState = { stage: "stopped", pr, lease: null, stopCode: "budget", stopReason: "over budget" };
+  return [
+    ghCalls.post(n, body),
+    ghCalls.post(pr, body),
+    ghCalls.listComments(n),
+    ghCalls.post(n, stateBody(n, stopState)),
+    ["api", `repos/o/r/issues/${n}/labels`],
+    ghCalls.unlabel(n, "agent:stopped-error"),
+    ghCalls.unlabel(n, "agent:working"),
+    ghCalls.label(n, "agent:stopped-budget"),
+    ["api", `repos/o/r/issues/${pr}/labels`],
+    ghCalls.unlabel(pr, "agent:working"),
+    ghCalls.label(pr, "agent:stopped-budget"),
+    ghCalls.listComments(n),
+    closedClaim(
+      claim,
+      "the issue stopped (`agent:stopped-budget`); removing the label puts it back in the queue.",
+    ),
+  ];
+}
+
 test("stop by code explains the control on the issue and its PR and swaps labels", () => {
+  const { n, pr, claim } = STOPPED;
   reply([
     {
-      when: "issues/53/labels",
+      when: `issues/${n}/labels`,
       stdout: JSON.stringify([{ name: "agent:stopped-error" }]),
     },
-    commentsReply(53, []),
-    commentsReply(53, [myClaim(8)]),
+    commentsReply(n, []),
+    commentsReply(n, [myClaim(claim)]),
   ]);
   const request = {
     op: "stop",
-    number: 53,
+    number: n,
     code: "budget",
     reason: "over budget",
     detail: "d",
     nextStep: "next",
-    state: { stage: "review", pr: 70 },
+    state: { stage: "review", pr },
   };
   assert.deepEqual(askOps(request), {
     ok: true,
@@ -200,43 +250,15 @@ test("stop by code explains the control on the issue and its PR and swaps labels
     code: "budget",
     label: "agent:stopped-budget",
   });
-  const body = coordinator(
-    "**🛑 Stopped by a control: token budget** (`agent:stopped-budget`)\n\nThe next session would take the issue past its token budget (`issueTokenBudget`), or a re-check or conflict fix after a rebase past the rebase allowance (`rebaseTokenBudget`).\n\nReason: over budget\n\nd\n\nnext",
-  );
-  assert.deepEqual(calls(), [
-    ghCalls.post(53, body),
-    ghCalls.post(70, body),
-    ghCalls.listComments(53),
-    ghCalls.post(
-      53,
-      stateBody(53, {
-        stage: "stopped",
-        pr: 70,
-        lease: null,
-        stopCode: "budget",
-        stopReason: "over budget",
-      }),
-    ),
-    ["api", "repos/o/r/issues/53/labels"],
-    ghCalls.unlabel(53, "agent:stopped-error"),
-    ghCalls.unlabel(53, "agent:working"),
-    ghCalls.label(53, "agent:stopped-budget"),
-    ["api", "repos/o/r/issues/70/labels"],
-    ghCalls.unlabel(70, "agent:working"),
-    ghCalls.label(70, "agent:stopped-budget"),
-    ghCalls.listComments(53),
-    closedClaim(
-      8,
-      "the issue stopped (`agent:stopped-budget`); removing the label puts it back in the queue.",
-    ),
-  ]);
+  assert.deepEqual(calls(), budgetStopCalls());
 });
 
 test("stop by reason, with no detail, next step or PR, says how to resume", () => {
+  const { n } = STOPPED_BY_REASON;
   reply([]);
   const request = {
     op: "stop",
-    number: 54,
+    number: n,
     code: null,
     reason: "could not push",
     detail: "",
@@ -255,20 +277,20 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     `**🛑 Stopped by a control: push** (\`${label}\`)\n\nGitHub rejected a push of the PR branch.\n\nReason: could not push\n\n\nTo resume, fix what this names (push to the branch if you like), then remove \`${label}\`. ${RESUME_TEXT}`,
   );
   assert.deepEqual(calls(), [
-    ghCalls.post(54, body),
-    ghCalls.listComments(54),
+    ghCalls.post(n, body),
+    ghCalls.listComments(n),
     ghCalls.post(
-      54,
-      stateBody(54, {
+      n,
+      stateBody(n, {
         stage: "stopped",
         lease: null,
         stopCode: "push-rejected",
         stopReason: "could not push",
       }),
     ),
-    ["api", "repos/o/r/issues/54/labels"],
-    ghCalls.unlabel(54, "agent:working"),
-    ghCalls.label(54, label),
-    ghCalls.listComments(54),
+    ["api", `repos/o/r/issues/${n}/labels`],
+    ghCalls.unlabel(n, "agent:working"),
+    ghCalls.label(n, label),
+    ghCalls.listComments(n),
   ]);
 });

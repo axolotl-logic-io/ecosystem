@@ -1,3 +1,4 @@
+// @ts-check
 // The verify op: its reply, check by check, for setup, the configured
 // commands, lockfiles and migrations, against local git repos. Every case
 // leaves the worktree clean and no temp worktree behind.
@@ -6,6 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { z } from "zod";
+import { setEnv } from "./ops-run-test-kit.mjs";
 import {
   ask,
   askRaw,
@@ -14,12 +17,19 @@ import {
   writeConfig,
 } from "./verify-test-kit.mjs";
 
+/** @import { Files } from "./verify-test-kit.mjs" */
+
 const root = fs.mkdtempSync("/tmp/issue-pipeline-verify-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-process.env.ISSUE_PIPELINE_ROOT = root;
+setEnv("ISSUE_PIPELINE_ROOT", root);
 const kit = verifyKit(root);
 const FIXED = { "src/a.js": "fixed\n" };
 const LOCKFILE = "package-lock.json";
+// Verify's reply, read as far as the tests take it apart.
+const VERIFY_REPLY = z.looseObject({
+  pass: z.boolean(),
+  checks: z.array(z.unknown()),
+});
 const NO_NEW_TESTS = {
   id: "fails-before-fix",
   pass: true,
@@ -29,19 +39,23 @@ const NO_NEW_TESTS = {
 // Runs verify on a branch with `files` changed, and returns the reply, the
 // branch's head, where verify keeps its logs, what it left behind and the
 // worktree it ran in.
+/** @typedef {{ raw: string, reply: z.infer<typeof VERIFY_REPLY>, sha: string, log: (id: string) => string, leftovers: { status: string, temps: string[] }, worktree: string }} VerifyCase */
+/** @param {Files} files @param {object} commands @param {object} [extra] @returns {VerifyCase} */
 function verifyCase(files, commands, extra = {}) {
   const { n, sha } = kit.branch(files);
   const config = writeConfig(root, n, commands, extra);
   const raw = askRaw(root, { op: "verify", config, number: n });
   const logs = kit.logs(n, sha);
+  /** @param {string} id @returns {string} */
   function log(id) {
     return path.join(logs, `${id}.log`);
   }
   const leftovers = kit.leftovers(n);
   const worktree = kit.worktree(n);
-  return { raw, reply: JSON.parse(raw), sha, log, leftovers, worktree };
+  return { raw, reply: VERIFY_REPLY.parse(JSON.parse(raw)), sha, log, leftovers, worktree };
 }
 
+/** @param {string} id @param {string} log @returns {object} */
 function passed(id, log) {
   return { id, pass: true, detail: "exit 0", log };
 }
@@ -191,6 +205,7 @@ const MIGRATION = { "migrations/1.sql": "create table t (x int);\n" };
 
 // Verify's reply on a change to a migration, with the migration checks
 // apart, and what the reply should hold besides them.
+/** @param {object} migrations @returns {{ got: object, want: object, log: (id: string) => string }} */
 function migrationCase(migrations) {
   const { reply, sha, log, leftovers } = verifyCase(
     MIGRATION,

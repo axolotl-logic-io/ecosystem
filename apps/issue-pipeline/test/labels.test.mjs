@@ -1,3 +1,4 @@
+// @ts-check
 // The exact text of the pipeline's labels and stops. GitHub labels and the
 // issues already carrying them depend on it, so the move to src/labels.ts and
 // src/stops.ts (#166) must not change a character.
@@ -8,9 +9,9 @@ import { LABELS } from "../src/labels.ts";
 import { STOPS, stopFor } from "../src/stops.ts";
 
 // The sha256 of every label and stop row's text, including each stop's regex
-// source, computed from ops.mjs's LABELS and STOPS before #166.
-const TEXT_DIGEST =
-  "e770d2c96f2f4bee8d456c7decaef63c68f48c1768ccfd1b36807ed16e29b62c";
+// source, computed from ops.mjs's LABELS and STOPS before #166, in base64url
+// (hex e770d2c9…6e29b62c).
+const TEXT_DIGEST = "53DSyW8vS-6NRWx97K72PGj0jBdozP0bNoB-0W4ptiw";
 
 function rowsText() {
   return JSON.stringify({
@@ -64,7 +65,7 @@ test("the stops keep their order and label names", () => {
 
 test("every label and stop keeps its exact text", () => {
   assert.equal(
-    createHash("sha256").update(rowsText()).digest("hex"),
+    createHash("sha256").update(rowsText()).digest("base64url"),
     TEXT_DIGEST,
   );
 });

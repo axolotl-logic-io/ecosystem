@@ -1,19 +1,42 @@
+// @ts-check
 // liveClaims from ops.mjs: which comments count as a lane's claim on an issue.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { liveClaims } from "../src/claims.ts";
+import { COMMENT } from "../src/comments.ts";
+import { githubComment } from "./fake-gh.mjs";
 
-const cfg = { account: "bot", leaseHours: 3 };
+/** @import { Config } from "../src/config.ts" */
+/** @import { IssueComment } from "../src/comments.ts" */
+
+/** @type {Config} */
+const cfg = {
+  account: "bot",
+  allowedUsers: ["alice"],
+  baseBranch: "integration",
+  claimWaitSeconds: [0, 0],
+  commands: { test: "true" },
+  leaseHours: 3,
+  practices: [],
+  repo: "o/r",
+  slug: "o__r",
+};
 const now = new Date().toISOString();
-const claimBody = (lane) =>
-  `**🤖 issue-pipeline · claim**\n<!-- agent-pipeline:comment role=claim -->\n\nLane \`${lane}\` is claiming this issue.\n<!-- agent-pipeline:claim lane=${lane} sweep=s1 -->`;
-const comment = (id, body, login = "bot", at = now) => ({
-  id,
-  body,
-  user: { login },
-  created_at: at,
-  updated_at: at,
-});
+const MS_PER_HOUR = 3_600_000;
+// Past the config's three-hour lease.
+const EXPIRED_HOURS = 4;
+
+/** @param {string} lane @returns {string} */
+function claimBody(lane) {
+  return `**🤖 issue-pipeline · claim**\n<!-- agent-pipeline:comment role=claim -->\n\nLane \`${lane}\` is claiming this issue.\n<!-- agent-pipeline:claim lane=${lane} sweep=s1 -->`;
+}
+
+/** @param {number} id @param {string} body @param {string} [login] @param {string} [at] @returns {IssueComment} */
+function comment(id, body, login = "bot", at = now) {
+  return COMMENT.parse(
+    githubComment({ id, body, login, created: at, updated: at }),
+  );
+}
 
 test("a claim the pipeline posted counts", () => {
   assert.deepEqual(
@@ -49,7 +72,7 @@ test("a claim from another account doesn't count", () => {
 });
 
 test("a claim not edited for leaseHours has expired", () => {
-  const old = new Date(Date.now() - 4 * 3600 * 1000).toISOString();
+  const old = new Date(Date.now() - EXPIRED_HOURS * MS_PER_HOUR).toISOString();
   assert.deepEqual(
     liveClaims(cfg, [comment(1, claimBody("a"), "bot", old)]),
     [],

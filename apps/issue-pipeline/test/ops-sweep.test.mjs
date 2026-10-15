@@ -1,3 +1,4 @@
+// @ts-check
 // The sweep op through the ops CLI, pinned to the replies and gh calls it
 // made before it moved to src/ops/sweep.ts (#183).
 import assert from "node:assert/strict";
@@ -22,6 +23,8 @@ import {
   TIME,
 } from "./ops-cli-test-kit.mjs";
 
+/** @import { GhReply } from "./fake-gh.mjs" */
+
 const TIME_PATTERN = /\d{4}-\d\d-\d\dT[\d:.]+Z/gu;
 const LIVE = new Date().toISOString();
 const LAPSED = "2020-01-01T00:00:00Z";
@@ -30,52 +33,46 @@ const ANSWERED = "2026-02-01T00:00:00Z";
 const RESERVATIONS = path.join(root, "runs", "o__r", "reservations.json");
 const LANE = { lane: "me", sweepId: "s1" };
 const USER = ["api", "user", "--jq", ".login"];
-const LABEL_LIST = [
-  "label",
-  "list",
-  "-R",
-  "o/r",
-  "--limit",
-  "500",
-  "--json",
-  "name",
-];
-const ISSUE_LIST = [
-  "issue",
-  "list",
-  "-R",
-  "o/r",
-  "--state",
-  "open",
-  "--limit",
-  "300",
-  "--json",
-  "number,title,author,labels,createdAt,body",
-];
+const LABEL_LIST = ["label", "list", "-R", "o/r", "--limit", "500", "--json", "name"];
+const ISSUE_LIST = ["issue", "list", "-R", "o/r", "--state", "open", "--limit", "300"]
+  .concat(["--json", "number,title,author,labels,createdAt,body"]);
 const STATE_EXTRA = { pr: null };
+// A candidate's priority by its kind; the sweep takes the lowest first.
+const PRIORITY = { mine: -1, resume: 0, named: 0, answered: 1, new: 2 };
+const DAY_DIGITS = 2;
+const CHILD_DEPTH = 2;
+const CLAIM_CANDIDATES = 2;
+// The mixed sweep's issues, one for each path through the sweep. Issue 5 and
+// 14 are the parents named in the reservations file.
+const MIXED = {
+  stopped: 1, merged: 2, skipLabel: 3, stranger: 4, reservedParent: 5, blocked: 6, mine: 7, lapsed: 8,
+  liveElsewhere: 9, answered: 10, unanswered: 11, child: 12, blocker: 13, ownParent: 14,
+};
+// The comments the mixed sweep reads: the asked state, leases and answers.
+const COMMENT = { asked: 1, mine: 2, lapsed: 3, live: 4, answer: 5, notAnswer: 6, held: 7 };
+// The other tests' issues.
+const NEW = 20;
+const QUEUED = { oldest: 21, middle: 22, newest: 23 };
+const NAMED = { stopped: 30, closed: 31, stranger: 32, held: 33 };
 
+/** @param {number} number @returns {string} */
+function createdAt(number) {
+  return `2026-10-${String(number).padStart(DAY_DIGITS, "0")}`;
+}
+
+/** @param {number} number @param {string[]} labels @param {object} [extra] @returns {object} */
 function row(number, labels, extra = {}) {
-  return {
-    number,
-    title: `Issue ${number}`,
-    author: { login: ALLOWED },
-    labels: labels.map((name) => ({ name })),
-    createdAt: `2026-10-${String(number).padStart(2, "0")}`,
-    body: "",
-    ...extra,
-  };
+  const named = labels.map((name) => ({ name }));
+  const fields = { title: `Issue ${number}`, author: { login: ALLOWED } };
+  return { number, ...fields, labels: named, createdAt: createdAt(number), body: "", ...extra };
 }
 
+/** @param {number} n @returns {string[]} */
 function listComments(n) {
-  return [
-    "api",
-    "--paginate",
-    `repos/o/r/issues/${n}/comments?per_page=100`,
-    "--jq",
-    ".[] | @json",
-  ];
+  return ["api", "--paginate", `repos/o/r/issues/${n}/comments?per_page=100`, "--jq", ".[] | @json"];
 }
 
+/** @param {readonly object[]} rows @param {readonly GhReply[]} [more] @returns {GhReply[]} */
 function sweepReplies(rows, more = []) {
   return [
     { when: "api user", stdout: `${ACCOUNT}\n` },
@@ -85,6 +82,7 @@ function sweepReplies(rows, more = []) {
   ];
 }
 
+/** @param {number} id @param {string} lane @param {string} at @returns {object} */
 function leased(id, lane, at) {
   return stateComment(id, {
     stage: "implement",
@@ -95,28 +93,16 @@ function leased(id, lane, at) {
 
 const SWEEP_HEAD = [USER, LABEL_LIST, ISSUE_LIST];
 
-function candidate(number, kind, priority, depth = 0) {
-  return {
-    number,
-    title: `Issue ${number}`,
-    kind,
-    priority,
-    createdAt: `2026-10-${String(number).padStart(2, "0")}`,
-    depth,
-  };
+/** @param {number} number @param {keyof typeof PRIORITY} kind @param {number} [depth] @returns {object} */
+function candidate(number, kind, depth = 0) {
+  const priority = PRIORITY[kind];
+  return { number, title: `Issue ${number}`, kind, priority, createdAt: createdAt(number), depth };
 }
 
+/** @param {object} extra @returns {object} */
 function sweepReply(extra) {
-  return {
-    ok: true,
-    op: "sweep",
-    posted: 0,
-    waiting: 0,
-    parents: [],
-    liveElsewhere: 0,
-    skipped: 0,
-    ...extra,
-  };
+  const counts = { posted: 0, waiting: 0, parents: [], liveElsewhere: 0, skipped: 0 };
+  return { ok: true, op: "sweep", ...counts, ...extra };
 }
 
 test("a sweep refuses to run when gh is logged in as another account", () => {
@@ -143,74 +129,60 @@ function writeReservations() {
 
 // One open issue for each path through the sweep.
 const MIXED_ROWS = [
-  row(1, ["agent:stopped-error"]),
-  row(2, ["agent:merged"]),
-  row(3, ["deploy"]),
-  row(4, [], { author: { login: "eve" } }),
-  row(5, ["agent:split"]),
-  row(6, [], { body: "<!-- agent-pipeline:after 13 -->" }),
-  row(7, ["agent:working"]),
-  row(8, ["agent:working"]),
-  row(9, ["agent:working"]),
-  row(10, ["agent:needs-info"]),
-  row(11, ["agent:needs-info"]),
-  row(12, [], { body: "<!-- agent-pipeline:parent 5 depth 2 -->" }),
-  row(13, []),
-  row(14, ["agent:split"]),
+  row(MIXED.stopped, ["agent:stopped-error"]),
+  row(MIXED.merged, ["agent:merged"]),
+  row(MIXED.skipLabel, ["deploy"]),
+  row(MIXED.stranger, [], { author: { login: "eve" } }),
+  row(MIXED.reservedParent, ["agent:split"]),
+  row(MIXED.blocked, [], { body: `<!-- agent-pipeline:after ${MIXED.blocker} -->` }),
+  row(MIXED.mine, ["agent:working"]),
+  row(MIXED.lapsed, ["agent:working"]),
+  row(MIXED.liveElsewhere, ["agent:working"]),
+  row(MIXED.answered, ["agent:needs-info"]),
+  row(MIXED.unanswered, ["agent:needs-info"]),
+  row(MIXED.child, [], { body: `<!-- agent-pipeline:parent ${MIXED.reservedParent} depth ${CHILD_DEPTH} -->` }),
+  row(MIXED.blocker, []),
+  row(MIXED.ownParent, ["agent:split"]),
 ];
 
 // gh's replies to a sweep of MIXED_ROWS: the leases and answers it reads.
+/** @returns {GhReply[]} */
 function mixedReplies() {
-  const asked = stateComment(1, {
-    stage: "triage",
-    questionsAt: ASKED,
-    lease: null,
-  });
+  const asked = stateComment(COMMENT.asked, { stage: "triage", questionsAt: ASKED, lease: null });
+  const notAnswer = issueComment(COMMENT.notAnswer, "Hm.", ALLOWED, "2025-12-01T00:00:00Z");
   return sweepReplies(MIXED_ROWS, [
-    commentsReply(7, [leased(2, "me", LIVE)]),
-    commentsReply(8, [leased(3, "other", LAPSED)]),
-    commentsReply(9, [leased(4, "other", LIVE)]),
-    commentsReply(10, [asked, issueComment(5, "Use X.", ALLOWED, ANSWERED)]),
-    commentsReply(11, [
-      asked,
-      issueComment(6, "Hm.", ALLOWED, "2025-12-01T00:00:00Z"),
-    ]),
+    commentsReply(MIXED.mine, [leased(COMMENT.mine, "me", LIVE)]),
+    commentsReply(MIXED.lapsed, [leased(COMMENT.lapsed, "other", LAPSED)]),
+    commentsReply(MIXED.liveElsewhere, [leased(COMMENT.live, "other", LIVE)]),
+    commentsReply(MIXED.answered, [asked, issueComment(COMMENT.answer, "Use X.", ALLOWED, ANSWERED)]),
+    commentsReply(MIXED.unanswered, [asked, notAnswer]),
   ]);
+}
+
+// What a sweep of MIXED_ROWS should reply under `config`.
+/** @param {string} config @returns {object} */
+function mixedSweepReply(config) {
+  const items = [
+    candidate(MIXED.mine, "mine"),
+    candidate(MIXED.lapsed, "resume"),
+    candidate(MIXED.answered, "answered"),
+    candidate(MIXED.child, "new", CHILD_DEPTH),
+    candidate(MIXED.blocker, "new"),
+  ];
+  // Issues the sweep counts as skipped: one by skipLabels, one by its author.
+  const skipped = [MIXED.skipLabel, MIXED.stranger].length;
+  return sweepReply({ config: publicConfigOf(config), items, parents: [MIXED.ownParent], liveElsewhere: 1, skipped });
 }
 
 test("a sweep sorts its candidates and skips, parks or reserves the rest", () => {
   const config = configWith({ skipLabels: ["deploy"] });
   writeReservations();
   reply(mixedReplies());
+  assert.deepEqual(askOps({ op: "sweep", config, ...LANE }), mixedSweepReply(config));
+  const read = [MIXED.mine, MIXED.lapsed, MIXED.liveElsewhere, MIXED.answered, MIXED.unanswered];
+  assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED), ...read.map(listComments)]);
   assert.deepEqual(
-    askOps({ op: "sweep", config, ...LANE }),
-    sweepReply({
-      config: publicConfigOf(config),
-      items: [
-        candidate(7, "mine", -1),
-        candidate(8, "resume", 0),
-        candidate(10, "answered", 1),
-        candidate(12, "new", 2, 2),
-        candidate(13, "new", 2),
-      ],
-      parents: [14],
-      liveElsewhere: 1,
-      skipped: 2,
-    }),
-  );
-  assert.deepEqual(calls(), [
-    ...SWEEP_HEAD,
-    ghCalls.collaborator(ALLOWED),
-    listComments(7),
-    listComments(8),
-    listComments(9),
-    listComments(10),
-    listComments(11),
-  ]);
-  assert.deepEqual(
-    JSON.parse(
-      fs.readFileSync(RESERVATIONS, "utf8").replace(TIME_PATTERN, TIME),
-    ),
+    JSON.parse(fs.readFileSync(RESERVATIONS, "utf8").replace(TIME_PATTERN, TIME)),
     {
       "parent-5": { sweepId: "other", at: TIME },
       "parent-14": { sweepId: "s1", at: TIME },
@@ -220,7 +192,7 @@ test("a sweep sorts its candidates and skips, parks or reserves the rest", () =>
 
 test("a sweep with takeNewWork false skips new issues", () => {
   const config = configWith({ takeNewWork: false });
-  reply(sweepReplies([row(20, [])]));
+  reply(sweepReplies([row(NEW, [])]));
   assert.deepEqual(
     askOps({ op: "sweep", config, ...LANE }),
     sweepReply({ config: publicConfigOf(config), items: [], skipped: 1 }),
@@ -229,13 +201,14 @@ test("a sweep with takeNewWork false skips new issues", () => {
 });
 
 test("a sweep returns the oldest claimCandidates and counts the rest as waiting", () => {
-  const config = configWith({ claimCandidates: 2 });
-  reply(sweepReplies([row(23, []), row(21, []), row(22, [])]));
+  const { oldest, middle, newest } = QUEUED;
+  const config = configWith({ claimCandidates: CLAIM_CANDIDATES });
+  reply(sweepReplies([row(newest, []), row(oldest, []), row(middle, [])]));
   assert.deepEqual(
     askOps({ op: "sweep", config, ...LANE }),
     sweepReply({
       config: publicConfigOf(config),
-      items: [candidate(21, "new", 2), candidate(22, "new", 2)],
+      items: [candidate(oldest, "new"), candidate(middle, "new")],
       waiting: 1,
     }),
   );
@@ -244,54 +217,45 @@ test("a sweep returns the oldest claimCandidates and counts the rest as waiting"
 
 test("a sweep for one named issue takes it even when stopped", () => {
   const body = "<!-- agent-pipeline:parent 5 depth 1 -->";
-  reply(sweepReplies([row(30, ["agent:stopped-error"], { body })]));
+  reply(sweepReplies([row(NAMED.stopped, ["agent:stopped-error"], { body })]));
   assert.deepEqual(
-    askOps({ op: "sweep", only: 30, ...LANE }),
+    askOps({ op: "sweep", only: NAMED.stopped, ...LANE }),
     sweepReply({
       config: publicConfigOf(CONFIG),
-      items: [candidate(30, "named", 0, 1)],
+      items: [candidate(NAMED.stopped, "named", 1)],
     }),
   );
   assert.deepEqual(calls(), [
     ...SWEEP_HEAD,
     ghCalls.collaborator(ALLOWED),
-    listComments(30),
+    listComments(NAMED.stopped),
   ]);
 });
 
 test("a sweep for one named issue refuses an issue that isn't open", () => {
   reply(sweepReplies([]));
-  assert.deepEqual(askOps({ op: "sweep", only: 31, ...LANE }), {
+  assert.deepEqual(askOps({ op: "sweep", only: NAMED.closed, ...LANE }), {
     ok: false,
-    error: "#31 is not an open issue",
+    error: `#${NAMED.closed} is not an open issue`,
   });
   assert.deepEqual(calls(), SWEEP_HEAD);
 });
 
 test("a sweep for one named issue refuses an author not allowed", () => {
-  reply(sweepReplies([row(32, [], { author: { login: "eve" } })]));
-  assert.deepEqual(askOps({ op: "sweep", only: 32, ...LANE }), {
+  reply(sweepReplies([row(NAMED.stranger, [], { author: { login: "eve" } })]));
+  assert.deepEqual(askOps({ op: "sweep", only: NAMED.stranger, ...LANE }), {
     ok: false,
-    error:
-      "#32 was opened by @eve, who is not on allowedUsers or not a collaborator",
+    error: `#${NAMED.stranger} was opened by @eve, who is not on allowedUsers or not a collaborator`,
   });
   assert.deepEqual(calls(), SWEEP_HEAD);
 });
 
 test("a sweep for one named issue refuses an issue another live lane holds", () => {
-  reply(
-    sweepReplies(
-      [row(33, ["agent:working"])],
-      [commentsReply(33, [leased(7, "other", LIVE)])],
-    ),
-  );
-  assert.deepEqual(askOps({ op: "sweep", only: 33, ...LANE }), {
+  const n = NAMED.held;
+  reply(sweepReplies([row(n, ["agent:working"])], [commentsReply(n, [leased(COMMENT.held, "other", LIVE)])]));
+  assert.deepEqual(askOps({ op: "sweep", only: n, ...LANE }), {
     ok: false,
-    error: "#33 is held by live lane other",
+    error: `#${n} is held by live lane other`,
   });
-  assert.deepEqual(calls(), [
-    ...SWEEP_HEAD,
-    ghCalls.collaborator(ALLOWED),
-    listComments(33),
-  ]);
+  assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED), listComments(n)]);
 });

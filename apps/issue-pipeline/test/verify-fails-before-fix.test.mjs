@@ -1,3 +1,4 @@
+// @ts-check
 // verify's fails-before-fix check: the change's tests must fail once its code
 // changes are reverted, in a temp worktree that verify removes afterwards.
 import assert from "node:assert/strict";
@@ -5,18 +6,30 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { z } from "zod";
+import { setEnv } from "./ops-run-test-kit.mjs";
 import { ask, CLEAN, verifyKit, writeConfig } from "./verify-test-kit.mjs";
+
+/** @import { Files } from "./verify-test-kit.mjs" */
 
 const root = fs.mkdtempSync("/tmp/issue-pipeline-reverted-fix-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-process.env.ISSUE_PIPELINE_ROOT = root;
+setEnv("ISSUE_PIPELINE_ROOT", root);
 const kit = verifyKit(root);
 const FIX_AND_TEST = { "src/a.js": "fixed\n", "test/a.test.js": "t\n" };
 const FIXED_TEST = "grep -q fixed src/a.js";
+// Verify's reply, read as far as these tests take it apart.
+const VERIFY_REPLY = z.looseObject({
+  ok: z.boolean(),
+  pass: z.boolean().optional(),
+  checks: z.array(z.looseObject({ id: z.string() })).optional(),
+});
+/** @typedef {{ commands?: object, extra?: object, request?: object, comments?: boolean }} CaseOptions */
 
 // Runs verify on a branch with `files` changed and returns its
 // fails-before-fix check with what verify left behind, the reply, and where
 // verify keeps its logs.
+/** @param {Files} files @param {CaseOptions} [options] @returns {{ got: object, reply: z.infer<typeof VERIFY_REPLY>, logs: string }} */
 function failsBeforeFix(files, options = {}) {
   const { commands = {}, extra = {}, request = {}, comments = false } = options;
   const { n, sha } = kit.branch(files);
@@ -24,7 +37,9 @@ function failsBeforeFix(files, options = {}) {
     kit.linkTypeScript(n);
   }
   const config = writeConfig(root, n, commands, extra);
-  const reply = ask(root, { op: "verify", config, number: n, ...request });
+  const reply = VERIFY_REPLY.parse(
+    ask(root, { op: "verify", config, number: n, ...request }),
+  );
   const check = reply.checks?.find((c) => c.id === "fails-before-fix");
   return {
     got: { ok: reply.ok, check, leftovers: kit.leftovers(n) },
@@ -34,6 +49,7 @@ function failsBeforeFix(files, options = {}) {
 }
 
 // What a case should get: a reply, the check, and no leftovers.
+/** @param {boolean} pass @param {string} detail @param {object} [more] @returns {object} */
 function wanted(pass, detail, more = {}) {
   return {
     ok: true,

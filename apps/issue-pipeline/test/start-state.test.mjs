@@ -1,54 +1,109 @@
+// @ts-check
 // startState and branchHasWork: where a stopped, answered or restarted issue
 // starts again ("start from branch").
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { test } from "node:test";
+import { z } from "zod";
+import { setEnv } from "./ops-run-test-kit.mjs";
+
+/** @import { Config } from "../src/config.ts" */
+/** @import { State } from "../src/state.ts" */
 
 const d = fs.mkdtempSync("/tmp/issue-pipeline-test-");
 process.on("exit", () => fs.rmSync(d, { recursive: true, force: true }));
 // The pipeline root is read once, on import, so it is set first.
-process.env.ISSUE_PIPELINE_ROOT = d;
+setEnv("ISSUE_PIPELINE_ROOT", d);
 const { startState } = await import("../src/state.ts");
 const { branchHasWork } = await import("../src/checkouts.ts");
-const t = (name, got, want) => test(name, () => assert.deepEqual(got, want));
 const now = new Date("2026-10-15T03:00:00Z");
-const base = { version: 1, number: 7, depth: 1, pr: 50, headSha: "h1", reviewedSha: "h0", verifiedSha: "h1", plan: "P", spec: "S", allocated: 990000, round: 2, ciFixes: 2, syncs: 9, triages: 2, findings: [{ status: "resolved" }], resolvedHistory: ["r"], log: ["a"] };
-const ctx = { n: 7, depth: 1, remote: "h1", pr: 50, hasWork: true, answered: false, now };
+const PR = 50;
+const ALLOCATED = 990_000;
+const base = { version: 1, number: 7, depth: 1, pr: PR, headSha: "h1", reviewedSha: "h0", verifiedSha: "h1", plan: "P", spec: "S", allocated: ALLOCATED, round: 2, ciFixes: 2, syncs: 9, triages: 2, findings: [{ status: "resolved" }], resolvedHistory: ["r"], log: ["a"] };
+const ctx = { n: 7, depth: 1, remote: "h1", pr: PR, hasWork: true, answered: false, now };
+
+// The last line of a state's log.
+/** @param {State} state @returns {string} */
+function lastLogLine({ log }) {
+  return z.string().parse(log?.at(-1));
+}
+
 // budget stop at security, branch has work -> review, limits reset, plan/spec kept
-let s = startState({ ...base, stage: "stopped", stopCode: "budget" }, ctx);
-t("budget stop -> review", [s.stage, s.allocated, s.round, s.ciFixes, s.syncs, s.triages, s.plan, s.spec, s.pr, s.implemented, s.verifiedSha, s.headSha], ["review", 0, 0, 0, 0, 0, "P", "S", 50, true, null, "h1"]);
-t("log entry", s.log.at(-1), "2026-10-15T03:00Z restarted on the existing branch (PR #50) at review after the budget stop; limits reset");
-t("stopCode dropped", "stopCode" in s, false);
+/** @returns {State} */
+function budgetRestart() {
+  return startState({ ...base, stage: "stopped", stopCode: "budget" }, ctx);
+}
+
+test("budget stop -> review", () => {
+  const { stage, allocated, round, ciFixes, syncs, triages, plan, spec, pr, implemented, verifiedSha, headSha } = budgetRestart();
+  assert.deepEqual([stage, allocated, round, ciFixes, syncs, triages, plan, spec, pr, implemented, verifiedSha, headSha], ["review", 0, 0, 0, 0, 0, "P", "S", PR, true, null, "h1"]);
+});
+test("log entry", () => {
+  assert.deepEqual(budgetRestart().log?.at(-1), "2026-10-15T03:00Z restarted on the existing branch (PR #50) at review after the budget stop; limits reset");
+});
+test("stopCode dropped", () => {
+  assert.deepEqual("stopCode" in budgetRestart(), false);
+});
 // review stands -> sync
-s = startState({ ...base, stage: "stopped", stopCode: "acceptance", reviewedSha: "h1" }, ctx);
-t("review stands -> sync", [s.stage, s.reviewedSha, s.allocated], ["sync", "h1", 0]);
-s = startState({ ...base, stage: "stopped", stopCode: "acceptance", reviewedSha: "h1", findings: [{ status: "open" }] }, ctx);
-t("open finding -> review", s.stage, "review");
+test("review stands -> sync", () => {
+  const { stage, reviewedSha, allocated } = startState({ ...base, stage: "stopped", stopCode: "acceptance", reviewedSha: "h1" }, ctx);
+  assert.deepEqual([stage, reviewedSha, allocated], ["sync", "h1", 0]);
+});
+test("open finding -> review", () => {
+  const s = startState({ ...base, stage: "stopped", stopCode: "acceptance", reviewedSha: "h1", findings: [{ status: "open" }] }, ctx);
+  assert.deepEqual(s.stage, "review");
+});
 // answered questions with work -> review, plan/spec dropped
-s = startState({ ...base, stage: "triage", questionsAt: "x", reviewedSha: "h1" }, { ...ctx, answered: true });
-t("answered with work -> review, no plan/spec", [s.stage, s.plan, "spec" in s, s.triages, s.log.at(-1).includes("answered questions")], ["review", null, false, 0, true]);
+test("answered with work -> review, no plan/spec", () => {
+  const s = startState({ ...base, stage: "triage", questionsAt: "x", reviewedSha: "h1" }, { ...ctx, answered: true });
+  const { stage, plan, triages } = s;
+  assert.deepEqual([stage, plan, "spec" in s, triages, lastLogLine(s).includes("answered questions")], ["review", null, false, 0, true]);
+});
 // answered, no work -> triage, counters kept
-s = startState({ ...base, stage: "triage", triages: 2, pr: 50 }, { ...ctx, answered: true, hasWork: false });
-t("answered no work -> triage keeps triages", [s.stage, s.triages, s.allocated], ["triage", 2, 990000]);
+test("answered no work -> triage keeps triages", () => {
+  const { stage, triages, allocated } = startState({ ...base, stage: "triage", triages: 2, pr: PR }, { ...ctx, answered: true, hasWork: false });
+  assert.deepEqual([stage, triages, allocated], ["triage", 2, ALLOCATED]);
+});
 // stopped, no work (empty start-pr branch) -> triage fresh
-s = startState({ ...base, stage: "stopped", stopCode: "error", implemented: false }, { ...ctx, hasWork: false });
-t("stopped no work -> triage fresh", [s.stage, s.allocated, s.pr, s.implemented], ["triage", 0, 50, false]);
+test("stopped no work -> triage fresh", () => {
+  const { stage, allocated, pr, implemented } = startState({ ...base, stage: "stopped", stopCode: "error", implemented: false }, { ...ctx, hasWork: false });
+  assert.deepEqual([stage, allocated, pr, implemented], ["triage", 0, PR, false]);
+});
 // stopped, PR closed (pr null), branch exists -> triage, state.pr kept
-s = startState({ ...base, stage: "stopped", stopCode: "error" }, { ...ctx, pr: null, hasWork: false });
-t("no open PR -> triage", [s.stage, s.pr], ["triage", 50]);
+test("no open PR -> triage", () => {
+  const { stage, pr } = startState({ ...base, stage: "stopped", stopCode: "error" }, { ...ctx, pr: null, hasWork: false });
+  assert.deepEqual([stage, pr], ["triage", PR]);
+});
 // lost state, PR + work exist -> review
-s = startState(null, ctx);
-t("no state, work -> review", [s.stage, s.pr, s.depth, s.plan, s.log.at(-1).includes("a lost state")], ["review", 50, 1, null, true]);
+test("no state, work -> review", () => {
+  const s = startState(null, ctx);
+  const { stage, pr, depth, plan } = s;
+  assert.deepEqual([stage, pr, depth, plan, lastLogLine(s).includes("a lost state")], ["review", PR, 1, null, true]);
+});
 // new issue, nothing exists -> triage
-s = startState(null, { ...ctx, remote: null, pr: null, hasWork: false });
-t("new issue -> triage", [s.stage, s.pr, s.headSha, s.depth], ["triage", null, null, 1]);
+test("new issue -> triage", () => {
+  const { stage, pr, headSha, depth } = startState(null, { ...ctx, remote: null, pr: null, hasWork: false });
+  assert.deepEqual([stage, pr, headSha, depth], ["triage", null, null, 1]);
+});
 // lapsed lease mid-stage is not a start
-const mid = { ...base, stage: "verify" };
-t("mid-stage unchanged", startState(mid, ctx) === mid, true);
+test("mid-stage unchanged", () => {
+  const mid = { ...base, stage: "verify" };
+  assert.deepEqual(startState(mid, ctx) === mid, true);
+});
 
 // branchHasWork against real repos
-const sh = (c) => { const r = spawnSync("bash", ["-c", c], { encoding: "utf8" }); if (r.status) throw new Error(c + "\n" + r.stderr); return r.stdout.trim(); };
+/** @param {string} c @returns {string} */
+function sh(c) {
+  const r = spawnSync("bash", ["-c", c], { encoding: "utf8" });
+  if (r.status) {
+    throw new Error(`${c}\n${r.stderr}`);
+  }
+  return r.stdout.trim();
+}
+// Issue 7's branch holds only the empty start commit; issue 8's holds work.
+const EMPTY_ISSUE = 7;
+const WORK_ISSUE = 8;
 sh(`cd ${d} && git init -q --bare -b integration origin.git && git clone -q origin.git seed 2>/dev/null; cd seed && git config user.email a@b && git config user.name a && echo 1 > f && git add f && git commit -qm base && git push -q origin HEAD:integration`);
 sh(`cd ${d}/seed && git checkout -qb agent/issue-7 && git commit -q --allow-empty -m start && git push -q origin agent/issue-7`);
 const emptySha = sh(`cd ${d}/seed && git rev-parse HEAD`);
@@ -56,12 +111,35 @@ sh(`cd ${d}/seed && git checkout -qb agent/issue-8 integration && echo 2 > g && 
 const workSha = sh(`cd ${d}/seed && git rev-parse HEAD`);
 // rebased (non-ff) branch: rewrite issue-8 after clone has fetched it once
 sh(`mkdir -p ${d}/clones && git clone -q ${d}/origin.git ${d}/clones/o__r`);
-const cfg = { baseBranch: "integration", slug: "o__r" };
-t("empty start commit -> no work", branchHasWork(cfg, 7, emptySha), false);
-t("real change -> work", branchHasWork(cfg, 8, workSha), true);
+/** @type {Config} */
+const cfg = {
+  account: "bot",
+  allowedUsers: ["alice"],
+  baseBranch: "integration",
+  claimWaitSeconds: [0, 0],
+  commands: { test: "true" },
+  leaseHours: 3,
+  practices: [],
+  repo: "o/r",
+  slug: "o__r",
+};
+const emptyHasWork = branchHasWork(cfg, EMPTY_ISSUE, emptySha);
+const workHasWork = branchHasWork(cfg, WORK_ISSUE, workSha);
 sh(`cd ${d}/seed && git checkout -q agent/issue-8 && git commit -q --amend -m reworked && git push -qf origin agent/issue-8`);
 const amended = sh(`cd ${d}/seed && git rev-parse HEAD`);
-t("non-ff rewritten branch -> work", branchHasWork(cfg, 8, amended), true);
+const amendedHasWork = branchHasWork(cfg, WORK_ISSUE, amended);
 // base gained the same change: three-dot diff is from the merge base, still work
 sh(`cd ${d}/seed && git checkout -q integration && echo 3 > h && git add h && git commit -qm more && git push -q origin integration`);
-t("base moved ahead -> start-only branch still no work", branchHasWork(cfg, 7, emptySha), false);
+const movedBaseHasWork = branchHasWork(cfg, EMPTY_ISSUE, emptySha);
+test("empty start commit -> no work", () => {
+  assert.deepEqual(emptyHasWork, false);
+});
+test("real change -> work", () => {
+  assert.deepEqual(workHasWork, true);
+});
+test("non-ff rewritten branch -> work", () => {
+  assert.deepEqual(amendedHasWork, true);
+});
+test("base moved ahead -> start-only branch still no work", () => {
+  assert.deepEqual(movedBaseHasWork, false);
+});

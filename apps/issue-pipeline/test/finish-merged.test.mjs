@@ -1,3 +1,4 @@
+// @ts-check
 // The bookkeeping after a PR merges, run here through merge on a PR merged by
 // hand: pushing the issue's wiki commits, saying so or why not on the issue,
 // keeping the worktree when the push fails, and leaving a closed issue alone.
@@ -5,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
 import {
   ask,
   assertReply,
@@ -22,6 +24,9 @@ import {
   signedBy,
   world,
 } from "./ops-test-kit.mjs";
+
+/** @import { GhReply } from "./fake-gh.mjs" */
+/** @import { World } from "./ops-test-kit.mjs" */
 
 const ISSUE = 7;
 const SHORT_SHA_LENGTH = 12;
@@ -51,11 +56,12 @@ const MERGED_VIEW = {
 // Turns the wiki on and sets it up as ensureWiki does: a bare wiki origin, the
 // shared wiki clone, and #7's wiki checkout one commit ahead. A rejecting
 // origin refuses every push. Returns the wiki origin and the issue's commit.
+/** @param {World} w @param {{ rejectPushes?: boolean }} [options] @returns {{ origin: string, sha: string }} */
 function withWiki(w, { rejectPushes = false } = {}) {
   const origin = path.join(w.root, "wiki.git");
   const clone = path.join(w.root, "clones/o__r.wiki");
   const dir = path.join(w.worktree, "wiki");
-  const config = JSON.parse(fs.readFileSync(w.config, "utf8"));
+  const config = z.looseObject({}).parse(JSON.parse(fs.readFileSync(w.config, "utf8")));
   fs.writeFileSync(w.config, JSON.stringify({ ...config, wiki: true }));
   sh(
     `cd ${w.root} && git init -q --bare -b master wiki.git && git clone -q wiki.git ${clone} 2>/dev/null && git -C ${clone} ${GIT_USER} commit -q --allow-empty -m home && git -C ${clone} push -q origin HEAD:master`,
@@ -75,6 +81,7 @@ function withWiki(w, { rejectPushes = false } = {}) {
   return { origin, sha: sh(`git -C ${dir} rev-parse HEAD`) };
 }
 
+/** @param {World} w @param {GhReply[]} replies @returns {string} */
 function mergedByHand(w, replies) {
   fakeGh.reply([MERGED_VIEW, ...replies]);
   return ask(w, {
@@ -87,6 +94,7 @@ function mergedByHand(w, replies) {
 }
 
 // calls() after merge's PR view, which merge-op.test.mjs pins.
+/** @returns {string[][]} */
 function finishingCalls() {
   return calls().slice(1);
 }
@@ -124,7 +132,7 @@ test("an issue already closed is not closed again", () => {
   const replies = [claimListing(), claimListing(), closed];
   assertReply(mergedByHand(w, replies), BY_HAND);
   const open = finishCalls(STATE);
-  assert.equal(open.at(-1)[0], "issue");
+  assert.equal(open.at(-1)?.[0], "issue");
   assert.deepEqual(finishingCalls(), open.slice(0, -1));
   assert.equal(fs.existsSync(w.worktree), false);
 });

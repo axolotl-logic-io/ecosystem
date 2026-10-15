@@ -1,3 +1,4 @@
+// @ts-check
 // The ci-status op: the PR's required checks, read through a fake gh. Through
 // the CLI it pins each gh call and reply; imported with a fake clock it pins the
 // waits, with no real time passing.
@@ -7,12 +8,17 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { installFakeGh } from "./fake-gh.mjs";
+import { setEnv } from "./ops-run-test-kit.mjs";
 import { askRaw } from "./verify-test-kit.mjs";
+
+/** @import { Config } from "../src/config.ts" */
+/** @import { Clock } from "../src/ops/ci-status.ts" */
+/** @import { GhReply } from "./fake-gh.mjs" */
 
 const root = fs.mkdtempSync("/tmp/issue-pipeline-ci-status-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
 // The pipeline root is read once, on import, so it is set first.
-process.env.ISSUE_PIPELINE_ROOT = root;
+setEnv("ISSUE_PIPELINE_ROOT", root);
 const { ciStatus } = await import("../src/ops/ci-status.ts");
 const fakeGh = installFakeGh();
 
@@ -26,9 +32,16 @@ fs.writeFileSync(
     commands: { test: "true" },
   }),
 );
+/** @type {Config} */
 const cfg = {
   repo: "o/r",
   account: "a",
+  allowedUsers: ["a"],
+  baseBranch: "integration",
+  claimWaitSeconds: [0, 0],
+  commands: { test: "true" },
+  leaseHours: 3,
+  practices: [],
   requireCi: true,
   ciWaitMinutes: 30,
   slug: "o__r",
@@ -55,15 +68,18 @@ const POLL_MS = 30_000;
 
 const LOG_NAME = /^ci-\d+\.log$/u;
 
+/** @param {object[]} checks @returns {GhReply} */
 function checksReply(checks) {
   return { when: "pr checks", stdout: JSON.stringify(checks) };
 }
 
+/** @param {object} extra @returns {object} */
 function request(extra) {
   return { op: "ci-status", config, number: ISSUE, pr: PR, ...extra };
 }
 
 // The reply as the ops CLI prints it, keys in order.
+/** @param {object} extra @returns {string} */
 function reply(extra) {
   return JSON.stringify({ ok: true, op: "ci-status", posted: 0, ...extra });
 }
@@ -123,13 +139,15 @@ test("failing checks fail, with each one's failed log in one file", () => {
 });
 
 // A clock where each sleep moves the time on by its length.
+/** @returns {Clock & { sleeps: number[] }} */
 function fakeClock() {
+  /** @type {number[]} */
   const sleeps = [];
   let time = 0;
   return {
     sleeps,
     now: () => time,
-    sleep: (ms) => {
+    sleep: (/** @type {number} */ ms) => {
       sleeps.push(ms);
       time += ms;
     },
@@ -142,16 +160,19 @@ const GRACE_POLLS = 8;
 const DEADLINE_POLLS = 4;
 const WAIT_MINUTES = 2;
 
+/** @param {number} rounds @returns {string[][]} */
 function pollCalls(rounds) {
   return Array.from({ length: rounds }, () => [VIEW, CHECKS]).flat();
 }
 
-for (const [output, label] of [
+/** @type {[string, string][]} */
+const NO_CHECKS_OUTPUTS = [
   ["", "nothing"],
   ["not json", "not JSON"],
   ['{"name":"x"}', "not an array"],
   ["[]", "no checks"],
-]) {
+];
+for (const [output, label] of NO_CHECKS_OUTPUTS) {
   test(`checks that print ${label} for 3 minutes give no-checks when CI is required`, () => {
     fakeGh.reply(
       Array.from({ length: GRACE_POLLS }, () => ({
