@@ -258,4 +258,5 @@ function verify(cfg: Config, request: unknown): VerifyReply {
   return { pass, headSha: sha, changedFiles: changed, checks: v.checks };
 }
 
+export type { Check };
 export { verify };

@@ -35,6 +35,7 @@ import { stop } from "./ops/stop.ts";
 import { sweep } from "./ops/sweep.ts";
 import { syncOps } from "./ops/sync.ts";
 import { verify } from "./ops/verify.ts";
+import { wikiCheck } from "./ops/wiki-check.ts";
 import { ROOT } from "./pipeline-root.ts";
 import { OpsError, parseRequest } from "./process.ts";
 
@@ -67,6 +68,7 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   // on the issue and its PR which control stopped it, why, and how to resume.
   ["stop", stop],
   ["verify", verify],
+  ["wiki-check", wikiCheck],
   ["ci-status", ciStatus],
   ["merge", merge],
   ["close-parent", closeParent],
