@@ -1,5 +1,6 @@
-// The spec writer reads the configured coding practices in full (config
-// `practices`), and the config refuses entries outside the worktree. Both files
+// The spec writer, the code writers and the first reviewers read the configured
+// coding practices in full (config `practices`), and the config refuses entries
+// outside the worktree. Both files
 // run on load, so the functions are lifted from their source.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -12,7 +13,8 @@ const grab = (src, name) => src.match(new RegExp(`function ${name}\\([\\s\\S]*?\
 const workflow = read("workflow.js");
 const ops = read("ops.mjs");
 
-const practicesNote = (cfg) => new Function("cfg", `${grab(workflow, "practicesNote")}return practicesNote;`)(cfg);
+const practicesUse = workflow.match(/const PRACTICES_USE = \{[\s\S]*?\n\};\n/)[0];
+const practicesNote = (cfg) => new Function("cfg", `${practicesUse}${grab(workflow, "practicesNote")}return practicesNote;`)(cfg);
 const item = { paths: { worktree: "/w/issue-7" } };
 
 test("the spec task names every practices file under the worktree", () => {
@@ -27,9 +29,25 @@ test("the spec task says when no practices are configured", () => {
   assert.match(practicesNote({ practices: [] })(item), /\(none configured\)/);
 });
 
-test("the spec step uses the note", () => {
-  const spec = workflow.slice(workflow.indexOf("\nspec: {"), workflow.indexOf("\n// ---------- implement"));
-  assert.match(spec, /practicesNote\(it\)/);
+test("each role is told what to do with them", () => {
+  const note = practicesNote({ practices: ["CONTRIBUTING.md"] });
+  assert.match(note(item, "spec"), /The spec must follow them/);
+  assert.match(note(item, "writer"), /Every change you make must follow them/);
+  assert.match(note(item, "reviewer"), /mark it `blocking`, quote the rule/);
+});
+
+const taskOf = (label) => {
+  const at = workflow.indexOf(`label: "${label}`);
+  assert.ok(at > 0, label);
+  return workflow.slice(at, workflow.indexOf(".join(", at));
+};
+
+test("the spec, implement, fix and first-review tasks carry the note", () => {
+  assert.match(taskOf("Write the spec"), /practicesNote\(it, "spec"\)/);
+  assert.match(taskOf("Implement issue"), /practicesNote\(it, "writer"\)/);
+  assert.match(taskOf("Fix review findings"), /practicesNote\(it, "writer"\)/);
+  assert.match(taskOf("Fix failing checks"), /practicesNote\(it, "writer"\)/);
+  assert.match(taskOf("Review "), /practicesNote\(it, "reviewer"\)/);
 });
 
 const defaults = new Function(`${ops.match(/const DEFAULTS = \{[\s\S]*?\n\};\n/)[0]}return DEFAULTS;`)();

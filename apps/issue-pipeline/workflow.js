@@ -225,14 +225,22 @@ function preamble(item, role, cap) {
   ];
 }
 
-// The coding practices the spec writer must read in full (config `practices`,
-// Autumn, 2026-10-15). They cover all of the repo's code, not only the app an
-// issue names, so a spec can't skip them by reading only the pages that look relevant.
-function practicesNote(item) {
+// The coding practices that the spec writer, every session that writes code and
+// the first reviewers read in full (config `practices`, Autumn, 2026-10-15). They
+// cover all of the repo's code, not only the app an issue names, so no step may
+// skip them by reading only the pages that look relevant. `use` says what the
+// role does with them.
+const PRACTICES_USE = {
+  spec: "The spec must follow them: its Design names the practices that bear on the work, and its Tests meet their test rules. If the work can't follow one, say which rule and why in Design. If following the issue needs an exception only the maintainer can grant, set `decision` to needs-info and ask for it.",
+  writer: "Every change you make must follow them, tests included. If the task can't be done within one, don't work around it: say which rule and why in your summary.",
+  reviewer: "A change that breaks a written rule in them is a defect: mark it `blocking`, quote the rule, and cite the file and line. Preferences they don't settle stay `nit`.",
+};
+
+function practicesNote(item, use) {
   const files = (cfg.practices || []).map((p) => item.paths.worktree + "/" + p);
   return [
     "Coding practices: before the code, read each of these in full, skipping any that don't exist: " + (files.length ? files.join(", ") : "(none configured)") + ". Also read any contributor rules they point to. They apply to all of the repo's code, not only the part the issue names.",
-    "The spec must follow them: its Design names the practices that bear on the work, and its Tests meet their test rules. If the work can't follow one, say which rule and why in Design. If following the issue needs an exception only the maintainer can grant, set `decision` to needs-info and ask for it.",
+    PRACTICES_USE[use || "spec"],
   ].join("\n");
 }
 
@@ -584,7 +592,7 @@ spec: {
             "Triage found this issue ready. Its notes:\n" + (it.st.plan || "(none)"),
             "",
             "Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the project's coding practices (below); the wiki pages that bear on it" + (it.paths.wiki ? " (start from " + it.paths.wiki + "/Home.md)" : "") + "; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.",
-            practicesNote(it),
+            practicesNote(it, "spec"),
             "`spec` is GitHub markdown with these sections:",
             "- **Behaviour**: what is true when the issue is done, as checkable statements.",
             "- **Out of scope**: what this issue does not change.",
@@ -638,6 +646,7 @@ for (let pass = 0; pass < 2; pass++) {
         minutes: 90,
         task: preamble(it, "implementer", CAP)
           .concat([
+            practicesNote(it, "writer"),
             it.st.continuations > 0
               ? "A previous session ran out of room. Read its handoff first: " + it.paths.handoffFile + ". Continue from the current branch state."
               : it.st.spec
@@ -740,6 +749,7 @@ review: {
         task: preamble(it, "reviewer (" + lens + ")", ROLE.reviewer)
           .concat([
             "Review only this concern: " + LENSES[lens],
+            practicesNote(it, "reviewer"),
             "The diff against " + cfg.baseBranch + " is at " + it.prep.diffPath + " (" + it.prep.diffLines + " lines). Read it, then read surrounding code only where needed.",
             "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
             "Return an empty list if you find nothing. Do not edit files.",
@@ -840,6 +850,7 @@ for (let iter = 0; iter < cfg.maxFixRounds; iter++) {
           minutes: 60,
           task: preamble(it, "fixer, round " + it.st.round + " of " + cfg.maxFixRounds, ROLE.fixer)
             .concat([
+              practicesNote(it, "writer"),
               "Resolve these blocking review findings:",
               findingsText(openFindings(it)),
               "",
@@ -1137,6 +1148,7 @@ for (let iter = 0; iter <= cfg.maxCiFixes; iter++) {
           minutes: 60,
           task: preamble(it, "check fixer, attempt " + it.st.ciFixes + " of " + cfg.maxCiFixes, ROLE.ciFixer)
             .concat([
+              practicesNote(it, "writer"),
               "These checks failed:",
               failure,
               "",
