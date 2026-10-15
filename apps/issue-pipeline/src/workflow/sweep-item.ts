@@ -42,6 +42,9 @@ interface ClaimedItem {
   reason: string | null;
   held: boolean;
   rebasedOnly: boolean;
+  // Set when merge sent the issue back to sync to rebase in this sweep; never
+  // saved.
+  resynced: boolean;
   outbox: Outbox;
 }
 
@@ -72,6 +75,9 @@ interface SweepRun {
   stopQueue: OpsSpec[];
   // How many times each stage has begun this sweep.
   stagesRun: Partial<Record<StageName, number>>;
+  // Set once the sync-to-merge groups have run again this sweep after a merge
+  // refused as behind (#205), which they do at most once; unset before.
+  resyncRan?: true;
   // The last stage this run may begin (args.through), or null for every stage.
   through: StageName | null;
   // The agent and model of each session launched, by key.
@@ -150,8 +156,19 @@ function stageState(
   phase: string,
   carry: unknown,
 ): StageState {
-  const { n, paths, st, closed, outcome, held, rebasedOnly } = item;
-  return { n, paths, st, closed, outcome, held, rebasedOnly, phase, carry };
+  const { n, paths, st, closed, outcome, held, rebasedOnly, resynced } = item;
+  return {
+    n,
+    paths,
+    st,
+    closed,
+    outcome,
+    held,
+    rebasedOnly,
+    resynced,
+    phase,
+    carry,
+  };
 }
 
 // Applies a step to the issue: its state, then its comments, then its stop,
@@ -164,6 +181,7 @@ function applyStep(run: SweepRun, item: ClaimedItem, step: Step): LaunchSpec[] {
   item.outcome = state.outcome;
   item.held = state.held;
   item.rebasedOnly = state.rebasedOnly;
+  item.resynced = state.resynced;
   for (const comment of step.comments) {
     say(item, comment);
   }

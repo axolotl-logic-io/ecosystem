@@ -3,61 +3,16 @@
 // by hand, and the whole trace in workflow-stages-finish.test.mjs.snapshot.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runWorkflow } from "./workflow-harness.mjs";
 import {
-  claimAt,
-  ISSUE,
-  launchKeys,
-  ROUTINE_OPS,
-  replyWith,
-  sweepReply,
-  sweepSummary,
-  WORKFLOW_ARGS,
-} from "./workflow-stages-fixtures.mjs";
+  ACCEPTED,
+  CHECKED,
+  finishRun,
+  issueSummary,
+  SECURED,
+} from "./workflow-finish-run-kit.mjs";
+import { launchKeys, replyWith } from "./workflow-stages-fixtures.mjs";
 
-// Issue #7 with its checks passed at fffffff.
-const CHECKED = {
-  pr: 42,
-  headSha: "fffffff",
-  reviewedSha: "fffffff",
-  verifiedSha: "fffffff",
-  verifySummary: "test: passed",
-  implemented: true,
-  spec: "## Behaviour\n\n1. src/a.ts does the thing.",
-  allocated: 820_000,
-};
-// Issue #7 with acceptance passed.
-const ACCEPTED = {
-  ...CHECKED,
-  acceptReason: "Does what #7 asks.",
-  allocated: 880_000,
-};
-// Issue #7 with the security review passed.
-const SECURED = { ...ACCEPTED, allocated: 940_000 };
 const PREPARED = { "prepare-review": { ok: true, headSha: "fffffff" } };
-
-// A run of issue #7 claimed at `stage` with `fields`, with ops and agents.
-function finishRun({ stage, fields, ops = {}, agents = {}, config = {} }) {
-  return runWorkflow({
-    args: WORKFLOW_ARGS,
-    ops: {
-      ...ROUTINE_OPS,
-      sweep: sweepReply({ items: [ISSUE], config }),
-      claim: claimAt(stage, fields),
-      ...ops,
-    },
-    agents,
-  });
-}
-
-// The one summary item of issue #7, with `fields` replacing the defaults.
-function issueSummary(fields) {
-  return sweepSummary({
-    items: [
-      { issue: 7, pr: 42, outcome: "in-progress", reason: null, ...fields },
-    ],
-  });
-}
 
 test("passing acceptance moves to security, held by the spawn cap", async ({
   assert: { snapshot },

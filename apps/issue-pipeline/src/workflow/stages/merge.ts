@@ -1,10 +1,13 @@
 // Merge: merges the verified head through ops, in merge order, once no
 // blocking finding is open. A merge that waits for an older PR stays at merge;
-// one that must rebase first goes back to sync with its passed head kept.
+// one that must rebase first goes back to sync with its passed head kept. A
+// branch behind its base rebases in this sweep, once; after that, and on a
+// conflict, it rebases next sweep.
 
 import { noteEvent } from "../event-log.ts";
 import { findingsStop, openFindings } from "../findings.ts";
 import { acceptanceSummary } from "../summary.ts";
+import type { IssueState } from "../types.ts";
 import { opFailedStep } from "./network.ts";
 import { textOrNull } from "./replies.ts";
 import {
@@ -81,14 +84,29 @@ function queued(
   return doneStep({ ...state, st });
 }
 
-// This head passed every check, acceptance and the security review, so sync
-// rebases it next sweep.
-function deferred(state: StageState, ctx: StageContext, reason: string): Step {
-  const st = {
+// The issue's saved state sent back to sync, with its passed head kept.
+function backToSync(state: StageState): IssueState {
+  return {
     ...state.st,
     passedSha: state.st.verifiedSha ?? null,
     stage: "sync",
   };
+}
+
+// This head passed every check, acceptance and the security review, and is
+// only behind its base, so sync rebases it in this sweep. A behind branch
+// rebases this way once per sweep.
+function resyncNow(state: StageState, ctx: StageContext): Step {
+  const st = backToSync(state);
+  noteEvent(st, "merge deferred: behind; rebasing now", ctx.now());
+  return doneStep({ ...state, st, resynced: true });
+}
+
+// This head passed every check, acceptance and the security review, so sync
+// rebases it next sweep: on a conflict, or when it is behind again after this
+// sweep's one rebase.
+function deferred(state: StageState, ctx: StageContext, reason: string): Step {
+  const st = backToSync(state);
   noteEvent(st, `merge deferred: ${reason}; will rebase next sweep`, ctx.now());
   return doneStep({ ...state, st });
 }
@@ -110,6 +128,9 @@ function decide(
   }
   if (reason === "queued") {
     return queued(state, ctx, reply);
+  }
+  if (reason === "behind" && !state.resynced) {
+    return resyncNow(state, ctx);
   }
   if (reason === "behind" || reason === "conflict") {
     return deferred(state, ctx, reason);

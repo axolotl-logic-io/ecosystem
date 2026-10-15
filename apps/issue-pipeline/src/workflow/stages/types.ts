@@ -45,6 +45,9 @@ interface StageState {
   // Set when checks pass on a clean rebase of a head that passed acceptance
   // and the security review before it.
   rebasedOnly: boolean;
+  // Set when merge sent the issue back to sync to rebase in this sweep; never
+  // saved.
+  resynced: boolean;
   phase: string;
   // JSON-safe data the stage passes to its own next step within one sweep,
   // null at "begin". It is never saved. Each stage reads it through its own

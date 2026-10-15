@@ -134,15 +134,48 @@ function stopUnfinished(run: SweepRun, group: number): void {
   }
 }
 
+// The group sync runs in: a merge refused as behind sends the issue back to it.
+const SYNC_GROUP = STAGE_GROUPS.findIndex((stages) => stages.includes("sync"));
+// The stages that may begin once more when the issue rebases in this sweep.
+const RESYNC_STAGES: readonly string[] = ["sync", "checks", "merge"];
+
+// Whether the issue goes back through sync, checks and merge in this sweep: a
+// merge refused as behind set `resynced` and left it at sync, and the groups
+// have not yet run again this sweep (#205). If so, those stages may begin
+// once more.
+function resyncs(run: SweepRun): boolean {
+  const { item } = run;
+  if (
+    run.resyncRan === true ||
+    item?.kind !== "claimed" ||
+    item.closed ||
+    !item.resynced ||
+    item.st.stage !== "sync"
+  ) {
+    return false;
+  }
+  run.resyncRan = true;
+  run.stagesRun = Object.fromEntries(
+    Object.entries(run.stagesRun).filter(
+      ([name]) => !RESYNC_STAGES.includes(name),
+    ),
+  );
+  return true;
+}
+
 // The next batch from group `group` on, the first time through if `saved`
 // is false: each group runs until no stage begins, then posts its stops.
-// Null once every group has ended.
+// Past the last group, the sync-to-merge groups run once more if merge sent
+// the issue back to sync to rebase now. Null once every group has ended.
 function groupsFrom(
   run: SweepRun,
   group: number,
   saved: boolean,
 ): StageBatch | null {
   if (group >= STAGE_GROUPS.length) {
+    if (resyncs(run)) {
+      return groupsFrom(run, SYNC_GROUP, false);
+    }
     return null;
   }
   const batch = groupBatch(run, group, saved);

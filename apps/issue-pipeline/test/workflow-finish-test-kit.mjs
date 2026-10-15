@@ -82,6 +82,7 @@ function stateWith(stage, fields = {}, item = {}) {
     closed: false,
     outcome: null,
     rebasedOnly: false,
+    resynced: false,
     phase: "begin",
     ...item,
   };

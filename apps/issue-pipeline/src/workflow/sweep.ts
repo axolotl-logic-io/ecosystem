@@ -13,8 +13,7 @@
 // it returns counts against the per-run spawn cap.
 
 import { parseOps } from "./launch-results.ts";
-import type { LaunchSpec, OpsFrame } from "./launches.ts";
-import { opsSpec } from "./launches.ts";
+import { type LaunchSpec, type OpsFrame, opsSpec } from "./launches.ts";
 import { cleanupLaunch, cleanupLog } from "./stages/cleanup.ts";
 import {
   buildSummary,
@@ -159,6 +158,7 @@ function claimedItem(run: SweepRun, n: number, raw: unknown): SweepItem | null {
     reason: null,
     held: false,
     rebasedOnly: false,
+    resynced: false,
     outbox: { number: n, comments: [] },
   };
   run.item = item;

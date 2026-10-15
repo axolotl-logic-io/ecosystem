@@ -44,8 +44,8 @@ function mergeState(fields = {}, item = {}) {
 }
 
 // The merge's step after ops answers `reply`.
-function answered(reply, fields = {}) {
-  return replied(next, next(mergeState(fields), CTX, []), reply);
+function answered(reply, fields = {}, item = {}) {
+  return replied(next, next(mergeState(fields, item), CTX, []), reply);
 }
 
 test("an open finding stops the merge before any launch", () => {
@@ -120,20 +120,42 @@ test("a queued merge notes the wait once and stays at merge", () => {
   assert.equal(again.stop, null);
 });
 
-for (const reason of ["behind", "conflict"]) {
-  test(`a merge refused as ${reason} goes back to sync`, () => {
-    const step = answered({ ok: true, merged: false, reason });
-    assert.equal(step.done, true);
-    assert.equal(step.stop, null);
-    assert.deepEqual(
-      [step.state.st.passedSha, step.state.st.stage],
-      [VERIFIED, "sync"],
-    );
-    assert.deepEqual(step.state.st.log, [
-      `${STAMP} merge deferred: ${reason}; will rebase next sweep`,
-    ]);
-  });
-}
+const BEHIND = { ok: true, merged: false, reason: "behind" };
+
+test("a merge refused as behind goes back to sync to rebase now", () => {
+  const step = answered(BEHIND);
+  assert.equal(step.done, true);
+  assert.equal(step.stop, null);
+  assert.deepEqual(
+    [step.state.st.passedSha, step.state.st.stage],
+    [VERIFIED, "sync"],
+  );
+  assert.equal(step.state.resynced, true);
+  assert.deepEqual(step.state.st.log, [
+    `${STAMP} merge deferred: behind; rebasing now`,
+  ]);
+});
+
+test("a second behind in one sweep waits for the next sweep", () => {
+  const step = answered(BEHIND, {}, { resynced: true });
+  assert.equal(step.state.resynced, true);
+  assert.equal(step.state.st.stage, "sync");
+  assert.deepEqual(step.state.st.log, [
+    `${STAMP} merge deferred: behind; will rebase next sweep`,
+  ]);
+});
+
+test("a merge refused as conflict waits for the next sweep", () => {
+  const step = answered({ ok: true, merged: false, reason: "conflict" });
+  assert.equal(step.state.resynced, false);
+  assert.deepEqual(
+    [step.state.st.passedSha, step.state.st.stage],
+    [VERIFIED, "sync"],
+  );
+  assert.deepEqual(step.state.st.log, [
+    `${STAMP} merge deferred: conflict; will rebase next sweep`,
+  ]);
+});
 
 test("a merge step that failed on the network defers to the next sweep", () => {
   const step = answered({ ok: false, error: "gh exited 1: HTTP 502" });
