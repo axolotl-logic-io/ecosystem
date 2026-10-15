@@ -38,9 +38,15 @@ interface StageState {
   closed: boolean;
   // Why the issue is closed for this sweep, such as "split", or null.
   outcome: string | null;
+  // Set when the spawn cap holds the issue at its stage until next sweep.
+  held: boolean;
+  // Set when checks pass on a clean rebase of a head that passed acceptance
+  // and the security review before it.
+  rebasedOnly: boolean;
   phase: string;
   // JSON-safe data the stage passes to its own next step within one sweep,
-  // null at "begin". It is never saved.
+  // null at "begin". It is never saved. Each stage reads it through its own
+  // guard.
   carry: unknown;
 }
 
@@ -139,15 +145,22 @@ type ModelRole =
 
 interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
   maxTriages: number;
+  maxSyncs: number;
+  maxCiFixes: number;
+  ciWaitMinutes: number;
+  // Missing or null means 2.
+  maxConflictFixes?: number | null;
 }
 
 // What every stage reads besides the issue: the repo config, the token
-// budgets, the models and the clock.
+// budgets, the models, the clock, and whether the sweep's spawn cap leaves
+// room for another run of a stage.
 interface StageContext {
   cfg: StageConfig;
   budgets: Budgets;
   models: Readonly<Record<ModelRole, string>>;
   now: () => Date;
+  hasRoom: (stage: StageName) => boolean;
 }
 
 interface StageMachine {

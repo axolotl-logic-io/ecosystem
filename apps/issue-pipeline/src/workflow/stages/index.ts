@@ -2,8 +2,10 @@
 // still runs as its own block in workflow.js. The sweep's loop runs an issue's
 // stage through its machine while the entry is filled.
 
+import { next as nextChecks } from "./checks.ts";
 import { next as nextFix } from "./fix.ts";
 import { next as nextReview } from "./review.ts";
+import { next as nextSync } from "./sync.ts";
 import { next as nextTriage } from "./triage.ts";
 import type { StageMachine, StageName } from "./types.ts";
 
@@ -16,8 +18,8 @@ const STAGES: StageDispatch = {
   "open-pr": null,
   review: { next: nextReview },
   fix: { next: nextFix },
-  sync: null,
-  checks: null,
+  sync: { next: nextSync },
+  checks: { next: nextChecks },
   accept: null,
   security: null,
   merge: null,

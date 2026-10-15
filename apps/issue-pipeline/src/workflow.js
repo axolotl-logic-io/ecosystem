@@ -22,9 +22,10 @@
 // src/workflow/index.ts lists every name this destructure may read.
 // The stages are moving onto a step machine: a ported stage is a sync `next`
 // in src/workflow/stages/, run by a loop that does all its awaiting. The loop
-// runs twice: after the claim for triage (#178), and after open-pr for review
-// and the fix rounds (#179). The other stages are still labelled blocks until
-// their ports fill in the stage dispatch.
+// runs three times: after the claim for triage (#178), after open-pr for review
+// and the fix rounds (#179), and after fix for sync and checks (#180). The
+// other stages are still labelled blocks until their ports fill in the stage
+// dispatch.
 
 const {
   acceptanceSummary,
@@ -44,7 +45,6 @@ const {
   lenses: LENSES,
   securityRules: SECURITY_RULES,
   acceptSchema: ACCEPT_SCHEMA,
-  cifixSchema: CIFIX_SCHEMA,
   implSchema: IMPL_SCHEMA,
   reviewSchema: REVIEW_SCHEMA,
   securitySchema: SECURITY_SCHEMA,
@@ -184,11 +184,16 @@ function at(stage) {
   return item && !item.closed && item.st.stage === stage ? item : null;
 }
 
-// Whether the issue's next stage fits under the spawn cap. If not, it is held.
-function fits(stage) {
+// Whether the issue's next stage fits under the spawn cap.
+function hasRoom(stage) {
   // Keep room for a release or stop op and a final comment post, plus parent closing.
   const reserve = 3 * (item ? 1 : 0) + sweep.parents.length + 1;
-  if (spawned + STAGE_SPAWNS[stage] + reserve <= SPAWN_LIMIT) return true;
+  return spawned + STAGE_SPAWNS[stage] + reserve <= SPAWN_LIMIT;
+}
+
+// Whether the issue's next stage fits under the spawn cap. If not, it is held.
+function fits(stage) {
+  if (hasRoom(stage)) return true;
   if (!item.held) {
     item.held = true;
     logEvent(item, "held at " + stage + " by the per-run spawn cap; continues next sweep");
@@ -276,6 +281,7 @@ const STAGE_CONTEXT = {
   budgets: BUDGETS,
   models: MODEL,
   now: () => new Date(),
+  hasRoom,
 };
 const stagesRun = {};
 
@@ -288,6 +294,8 @@ function stageState(phase, carry) {
     st: item.st,
     closed: item.closed,
     outcome: item.outcome,
+    held: item.held === true,
+    rebasedOnly: item.rebasedOnly === true,
     phase,
     carry,
   };
@@ -308,6 +316,8 @@ function applyStep(step) {
   item.st = step.state.st;
   item.closed = step.state.closed;
   item.outcome = step.state.outcome;
+  item.held = step.state.held;
+  item.rebasedOnly = step.state.rebasedOnly;
   for (const comment of step.comments) {
     say(item, comment.by, comment.body, comment.where);
   }
@@ -546,257 +556,21 @@ while (stageRun) {
 }
 await flushStops();
 
-// ---------- sync with base ----------
+// ---------- sync with base, then checks (local verify + CI, CI-fix rounds) ----------
+// Both run on the step machine (stages/sync.ts, stages/checks.ts).
 
-sync: {
-  const it = take("sync");
-  if (!it) break sync;
-  // A conflicting rebase is left stopped for a writer to resolve, while the
-  // issue has conflict attempts and budget left. The resolution then goes
-  // through every check again, like any rebase.
-  const maxConflictFixes = cfg.maxConflictFixes == null ? 2 : cfg.maxConflictFixes;
-  const canResolve = (it.st.conflictFixes || 0) < maxConflictFixes && it.st.allocated + Math.min(ROLE.fixer, CAP) <= BUDGET;
-  const r = (await opsAll([opsSpec("i" + it.n + "-sync", "sync-base", { number: it.n, keepConflict: canResolve })]))[0];
-  if (!r.ok) {
-    stopIssue(it, "could not sync with " + cfg.baseBranch, r.error);
-    break sync;
+stageRun = beginStage(["sync", "checks"]);
+while (stageRun) {
+  const specs = applyStep(stageRun.step);
+  if (stageRun.step.done) {
+    stageRun = beginStage(["sync", "checks"]);
+  } else {
+    const { machine, step } = stageRun;
+    const results = launchResults(step.launches, await spawnAll(specs));
+    const state = stageState(step.state.phase, step.state.carry);
+    stageRun.step = machine.next(state, STAGE_CONTEXT, results);
   }
-  if (r.conflict && !r.inRebase) {
-    const why = (it.st.conflictFixes || 0) >= maxConflictFixes ? " again after " + maxConflictFixes + " resolutions" : "";
-    stopIssue(it, "rebasing onto " + cfg.baseBranch + " conflicts" + why, "Conflicting files:\n" + (r.conflicts || []).join("\n"));
-    break sync;
-  }
-  if (!r.conflict) {
-    if (r.changed) {
-      it.st.syncs = (it.st.syncs || 0) + 1;
-      if (it.st.syncs > cfg.maxSyncs) {
-        stopIssue(it, cfg.baseBranch + " kept moving; rebased " + cfg.maxSyncs + " times without merging");
-        break sync;
-      }
-    }
-    // A clean rebase of a head that passed every check, acceptance and the security
-    // review only re-runs the tests (Autumn, 2026-10-14): the change itself is the same.
-    it.st.testsOnly = !!it.st.passedSha && it.st.passedSha === it.st.headSha;
-    it.st.passedSha = null;
-    if (r.changed) {
-      logEvent(it, "rebased onto " + cfg.baseBranch + (it.st.testsOnly ? "; re-running only the tests" : ""));
-      say(it, byStep("sync"), "Rebased onto " + cfg.baseBranch + " without conflicts; the head is now " + r.headSha.slice(0, 12) + ". " + (it.st.testsOnly ? "This head already passed every check before the rebase, so only the tests run again before merge." : "Rebases aren't re-reviewed; the checks run again."));
-    }
-    it.st.headSha = r.headSha;
-    it.st.stage = "checks";
-    break sync;
-  }
-
-  // The rebase stopped on conflicts; a writer finishes it. Its resolution changes
-  // the code, so every check runs again.
-  it.st.testsOnly = false;
-  it.st.passedSha = null;
-  const files = r.conflicts || [];
-  it.st.conflictFixes = (it.st.conflictFixes || 0) + 1;
-  charge(it, "fixer");
-  const res = (
-    await spawnAll([
-      child(it, "conflicts-" + it.st.conflictFixes, {
-        label: "Resolve rebase conflicts for issue " + it.n,
-        agent: "issue-pipeline-writer",
-        model: MODEL.fixer,
-        schema: CIFIX_SCHEMA,
-        writer: true,
-        minutes: 45,
-        task: preamble(cfg, it, "conflict resolver, attempt " + it.st.conflictFixes + " of " + maxConflictFixes, ROLE.fixer)
-          .concat([
-            "The pipeline is rebasing this branch onto origin/" + cfg.baseBranch + " (" + String(r.baseSha).slice(0, 12) + "), and the rebase stopped on conflicts in:",
-            files.map((f) => "- " + f).join("\n"),
-            "",
-            "Finish the rebase. For each stopped commit, read what " + cfg.baseBranch + " changed in the conflicting files (`git log -p ORIG_HEAD..origin/" + cfg.baseBranch + " -- <file>` or `git diff <merge-base> origin/" + cfg.baseBranch + " -- <file>`) and what this branch changed, and write a resolution that keeps the intent of both. Then `git add` the files and run `GIT_EDITOR=true git rebase --continue`; repeat if a later commit stops too.",
-            "Code that merged without a textual conflict can still break: " + cfg.baseBranch + " may use a name or field this branch renamed or removed. After the rebase finishes, run the repo's type check and the unit tests for the touched areas, and fix what broke in a new commit ending with the trailer line `Pipeline-Agent: conflict resolver`. The pipeline runs the full checks afterwards.",
-            "Never run `git rebase --abort`, `git reset` to another commit, or `git push`. Leave the rebase finished and the worktree clean. No human resolves conflicts, so decide them yourself. When the two sides contradict each other, keep what " + cfg.baseBranch + " now does and re-apply this branch's change on top of it as far as it still makes sense, and say in your summary what you chose. Return `cannot-fix` only if you could not finish the rebase at all; a fresh resolver then tries again next sweep.",
-          ])
-          .join("\n"),
-      }),
-    ])
-  )[0];
-  noteUsage(it, res);
-  const o = out(res);
-  const abort = !o || o.status === "cannot-fix";
-  const f = (await opsAll([opsSpec("i" + it.n + "-finish-sync", "finish-sync", { number: it.n, abort: abort, reason: o ? o.summary : "the conflict resolver failed" })]))[0];
-  const fileList = "Conflicting files:\n" + files.join("\n");
-  if (!o) {
-    stopIssue(it, "the conflict-resolver session failed", fileList + "\n\n" + String(res.error || ""));
-    break sync;
-  }
-  say(it, by(SPEC_META, res, "conflict resolver (attempt " + it.st.conflictFixes + ")"), (o.status === "cannot-fix" ? "I couldn't resolve the conflicts with " + cfg.baseBranch + ": " : "") + o.summary);
-  if (o.status === "cannot-fix") {
-    // Conflicts never wait for a human (Autumn, 2026-10-13): a fresh resolver tries again
-    // next sweep, against a base that may have moved, until the budget runs out.
-    logEvent(it, "conflict resolver found no resolution: " + o.summary + "; will retry next sweep");
-    break sync; // stays at sync
-  }
-  if (!f.ok) {
-    stopIssue(it, "could not finish the rebase after resolving conflicts", f.error);
-    break sync;
-  }
-  if (!f.resolved) {
-    if (it.st.conflictFixes >= maxConflictFixes) stopIssue(it, "the conflict resolution was rejected", fileList + "\n\n" + f.reason);
-    else logEvent(it, "conflict resolution rejected: " + f.reason + "; will retry next sweep"); // stays at sync; the next sweep rebases again
-    break sync;
-  }
-  it.st.syncs = (it.st.syncs || 0) + 1;
-  logEvent(it, "resolved conflicts with " + cfg.baseBranch + " and rebased");
-  say(it, byStep("sync"), "Rebased onto " + cfg.baseBranch + " after resolving conflicts in " + files.map((x) => "`" + x + "`").join(", ") + "; the head is now " + f.headSha.slice(0, 12) + ". Every check runs again on it.");
-  it.st.headSha = f.headSha;
-  it.st.stage = "checks";
 }
-await flushStops();
-
-// ---------- checks: local verification, then CI; CI-fix attempts ----------
-
-for (let iter = 0; iter <= cfg.maxCiFixes; iter++) {
-  const waiting = at("checks");
-  const it = waiting && !waiting.pendingCi && fits("checks") ? waiting : null;
-  if (!it) break;
-  let failure = null;
-  // A head that already passed local verification (e.g. waiting on CI last sweep) skips straight to CI.
-  let toCi = !!(it.st.verifiedSha && it.st.verifiedSha === it.st.headSha);
-  if (!toCi) {
-    const v = (await opsAll([opsSpec("i" + it.n + "-verify", "verify", { number: it.n, testsOnly: !!it.st.testsOnly }, 120)]))[0];
-    if (!v.ok) stopIssue(it, "local verification could not run", v.error);
-    else if (v.headSha !== it.st.headSha) stopIssue(it, "the branch changed during verification");
-    else {
-      const table = v.checks.map((c) => "- " + (c.pass ? "✅" : "❌") + " " + c.id + ": " + c.detail).join("\n");
-      say(it, byStep("local checks"), "Ran the repo's commands on " + v.headSha.slice(0, 12) + ".\n\n" + table);
-      if (!v.pass) {
-        const bad = v.checks.filter((c) => !c.pass);
-        failure = bad.map((c) => "- " + c.id + ": " + c.detail + (c.log ? " (log: " + c.log + ")" : "") + (c.tail ? "\n" + c.tail : "")).join("\n");
-      } else {
-        it.st.verifiedSha = v.headSha;
-        it.st.verifySummary = clip(v.checks.map((c) => c.id + ": " + c.detail).join("; "), 1500);
-        toCi = true;
-      }
-    }
-  }
-  if (toCi) {
-    const c = (await opsAll([opsSpec("i" + it.n + "-ci", "ci-status", { number: it.n, pr: it.st.pr, expectedSha: it.st.headSha }, cfg.ciWaitMinutes + 10)]))[0];
-    if (!c.ok) stopIssue(it, "could not read CI status", c.error);
-    else if (c.status === "pass") {
-      it.rebasedOnly = !!it.st.testsOnly;
-      it.st.stage = it.st.testsOnly ? "merge" : "accept";
-      it.st.testsOnly = false;
-      logEvent(it, "checks passed at " + it.st.headSha.slice(0, 8) + (it.rebasedOnly ? "; acceptance and security passed before the rebase" : ""));
-    } else if (c.status === "pending") {
-      it.pendingCi = true;
-      logEvent(it, "CI still running; will check next sweep");
-    } else if (c.status === "fail") {
-      say(it, byStep("CI"), "Required checks failed on " + it.st.headSha.slice(0, 12) + ": " + c.failing.join(", ") + ".");
-      failure = "CI checks failed: " + c.failing.join(", ") + "\nFailed-job logs: " + c.logPath;
-    } else if (c.status === "no-checks") {
-      stopIssue(it, "the PR has no required CI checks, and this repo's config requires them");
-    } else {
-      stopIssue(it, "the branch changed outside the pipeline while CI ran", c.headSha);
-    }
-  }
-  await flushStops();
-  if (failure && it.st.ciFixes >= cfg.maxCiFixes) {
-    stopIssue(it, "checks still fail after " + cfg.maxCiFixes + " CI-fix attempts", failure);
-    failure = null;
-  }
-  const fixable = failure && charge(it, "ciFixer");
-  await flushStops();
-  // Without a fix to try, the item has passed, is waiting on CI, or has stopped.
-  if (!fixable) continue;
-  it.st.ciFixes += 1;
-  let scoped = null;
-  ciFix: {
-    const r = (
-      await spawnAll([
-        child(it, "cifix-" + it.st.ciFixes, {
-          label: "Fix failing checks for issue " + it.n,
-          agent: "issue-pipeline-writer",
-          model: MODEL.fixer,
-          schema: CIFIX_SCHEMA,
-          writer: true,
-          minutes: 60,
-          task: preamble(cfg, it, "check fixer, attempt " + it.st.ciFixes + " of " + cfg.maxCiFixes, ROLE.ciFixer)
-            .concat([
-              practicesNote(cfg, it, "writer"),
-              "These checks failed:",
-              failure,
-              "",
-              "Find the cause and fix it with the smallest change. If `fails-before-fix` failed, the tests do not prove the change: strengthen them so they fail without the fix. If a lockfile check failed, regenerate the lockfile with the package manager.",
-              "Run the failing check locally, then commit (`git add -A && git commit`, ending each message with the trailer line `Pipeline-Agent: check fixer`) and leave the worktree clean. Return `cannot-fix` if the failure is unrelated to this change (for example, a flaky or broken check on " + cfg.baseBranch + ").",
-            ])
-            .join("\n"),
-        }),
-      ])
-    )[0];
-    noteUsage(it, r);
-    const o = out(r);
-    if (!o) {
-      stopIssue(it, "the check-fixer session failed", r.error);
-      break ciFix;
-    }
-    say(it, by(SPEC_META, r, "check fixer (attempt " + it.st.ciFixes + ")"), (o.status === "cannot-fix" ? "I can't fix this from the branch: " : "") + o.summary);
-    if (o.status === "cannot-fix") {
-      stopIssue(it, "the failing checks look unrelated to this change", o.summary);
-      break ciFix;
-    }
-    logEvent(it, "check fix " + it.st.ciFixes + ": " + o.summary);
-    await flushStops();
-    const pushed = (await opsAll([opsSpec("i" + it.n + "-push", "push", { number: it.n })]))[0];
-    if (!pushed.ok) {
-      stopIssue(it, "could not push the check fix", pushed.error);
-      break ciFix;
-    }
-    it.st.headSha = pushed.headSha;
-    // A check fix changes code, so acceptance and the security review run again.
-    it.st.testsOnly = false;
-    scoped = it;
-    // A check fix changes reviewed code, so the correctness and scope lenses look at just that diff.
-    const p = (await opsAll([opsSpec("i" + it.n + "-prep", "prepare-review", { number: it.n, sinceSha: it.st.reviewedSha, tag: "cifix" + it.st.ciFixes })]))[0];
-    if (!p.ok) {
-      stopIssue(it, "could not prepare the check-fix diff", p.error);
-      break ciFix;
-    }
-    if (!charge(it, "rereviewer", 2)) break ciFix;
-    const lenses = ["correctness", "scope"];
-    const sr = await spawnAll(
-      lenses.map((lens) =>
-        child(it, "cifix-review-" + lens + "-" + it.st.ciFixes, {
-          label: "Review " + lens + " of check fix for issue " + it.n,
-          agent: "issue-pipeline-reader",
-          model: MODEL[lens],
-          schema: REVIEW_SCHEMA,
-          minutes: 20,
-          task: preamble(cfg, it, "check-fix reviewer (" + lens + ")", ROLE.rereviewer)
-            .concat([
-              "Concern: " + LENSES[lens],
-              "Review only the diff at " + p.diffPath + ", which fixed failing checks after the PR passed review. Report only blocking defects this diff introduced. Do not edit files.",
-            ])
-            .join("\n"),
-        }),
-      ),
-    );
-    // Post every lens's comment before stopping, so none is lost.
-    const srStops = [];
-    sr.forEach((r, i) => {
-      noteUsage(it, r);
-      const o = out(r);
-      if (!o) return srStops.push(["a check-fix reviewer failed", r.error]);
-      const blocking = o.findings.filter((f) => f.severity === "blocking");
-      say(
-        it,
-        by(SPEC_META, r, "check-fix reviewer (" + lenses[i] + ")"),
-        "Review of the check fix in " + it.st.headSha.slice(0, 12) + ".\n\n" + (blocking.length ? "**Blocking**\n\n" + findingLines(blocking) : "No blocking findings."),
-      );
-      if (blocking.length) srStops.push(["the check fix introduced a blocking problem", blocking.map((f) => f.file + ":" + f.line + " " + f.title + " - " + f.evidence).join("\n")]);
-    });
-    srStops.forEach((s) => stopIssue(it, s[0], s[1]));
-    if (!it.closed) it.st.reviewedSha = it.st.headSha;
-  }
-  await flushStops();
-  await opsAll(saveOf(scoped));
-}
-if (at("checks") && !item.pendingCi && !item.held) stopIssue(item, "checks did not pass within the CI-fix limit");
 await flushStops();
 
 // ---------- acceptance: does the result do what the issue asked? ----------

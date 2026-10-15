@@ -19,12 +19,7 @@ import { LENSES, SECURITY_RULES } from "./lenses.ts";
 import { practicesNote, preamble } from "./prompts.ts";
 import { REVIEW_SCHEMA, SECURITY_SCHEMA } from "./review-schemas.ts";
 import type { JsonSchema } from "./schemas.ts";
-import {
-  ACCEPT_SCHEMA,
-  CIFIX_SCHEMA,
-  IMPL_SCHEMA,
-  SPEC_SCHEMA,
-} from "./schemas.ts";
+import { ACCEPT_SCHEMA, IMPL_SCHEMA, SPEC_SCHEMA } from "./schemas.ts";
 import { by, byStep } from "./signing.ts";
 import type { StageDispatch } from "./stages/index.ts";
 import { STAGES } from "./stages/index.ts";
@@ -48,7 +43,6 @@ interface WorkflowHelpers {
   readonly lenses: typeof LENSES;
   readonly securityRules: typeof SECURITY_RULES;
   readonly acceptSchema: JsonSchema;
-  readonly cifixSchema: JsonSchema;
   readonly implSchema: JsonSchema;
   readonly reviewSchema: JsonSchema;
   readonly securitySchema: JsonSchema;
@@ -74,7 +68,6 @@ const helpers: WorkflowHelpers = {
   lenses: LENSES,
   securityRules: SECURITY_RULES,
   acceptSchema: ACCEPT_SCHEMA,
-  cifixSchema: CIFIX_SCHEMA,
   implSchema: IMPL_SCHEMA,
   reviewSchema: REVIEW_SCHEMA,
   securitySchema: SECURITY_SCHEMA,

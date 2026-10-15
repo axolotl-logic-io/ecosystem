@@ -42,10 +42,9 @@ const taskOf = (label) => {
   return workflow.slice(at, workflow.indexOf(".join(", at));
 };
 
-test("the spec, implement and check-fix tasks carry the note", () => {
+test("the spec and implement tasks carry the note", () => {
   assert.match(taskOf("Write the spec"), /practicesNote\(cfg, it, "spec"\)/);
   assert.match(taskOf("Implement issue"), /practicesNote\(cfg, it, "writer"\)/);
-  assert.match(taskOf("Fix failing checks"), /practicesNote\(cfg, it, "writer"\)/);
 });
 
 test("the first-review tasks carry the reviewer's note", () => {

@@ -58,6 +58,19 @@ interface IssueState {
   // The PR branch's head as the pipeline last pushed or saw it.
   headSha?: string | null;
   implemented?: boolean;
+  // The head that last passed local verification, and its checks' results.
+  verifiedSha?: string | null;
+  verifySummary?: string;
+  // Set when a clean rebase leaves a head that passed every check, so only
+  // the tests run again.
+  testsOnly?: boolean;
+  // The head that passed every check, acceptance and the security review.
+  passedSha?: string | null;
+  // How many times the issue was rebased, its conflicts resolved, and its
+  // failing checks fixed.
+  syncs?: number;
+  conflictFixes?: number;
+  ciFixes?: number;
   // The issue's event log, oldest first (event-log.ts).
   log?: string[];
   // Tokens the issue's sessions reported using.
