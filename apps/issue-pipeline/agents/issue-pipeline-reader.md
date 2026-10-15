@@ -1,7 +1,7 @@
 ---
 name: issue-pipeline-reader
 description: Read-only step of the issue pipeline (triage, review, re-review, aggregation, acceptance). Cannot edit files or run commands.
-tools: read, grep, find, ls
+tools: read, grep, find, ls, codemode
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true

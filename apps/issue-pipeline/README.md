@@ -12,7 +12,7 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 | `src/ops/` | The ops in strict TypeScript, one module per op (`sweep`, `claim`, `save-state`, `ask`, `split`, `stop` (#183); `pr` and `sync` (#184); `verify`, with `fails-before-fix`, and `ci-status` (#185); `merge` and `finish` (#186)), which `src/ops.ts` imports and registers. Each op parses its own request. |
 | `build.ts` | Builds `src/` into `dist/` with esbuild: the workflow's helpers are bundled into an IIFE placed ahead of the sweep's body, which is transformed alone, keeping its top-level `await` and `return`; ops is bundled into one Node ES module. |
 | `dist/` | The build's output, `workflow.js` and `ops.mjs`, which the install copies. Ignored by git and Biome. |
-| `agents/` | The four agents: `issue-pipeline-ops` (command runner), `-reader` (read-only), `-specifier` (read-only plus web search) and `-writer`. |
+| `agents/` | The four agents: `issue-pipeline-ops` (command runner), `-reader` (read-only), `-specifier` (read-only plus web search) and `-writer`. The three model agents also get `codemode`, which scripts calls to their own tools only, so it grants nothing new. |
 | `prompts/` | `/pipeline-start` and `/pipeline-pause`, which start and pause a lane in a pi session. |
 | `repos/example.json` | Every field of a per-repo config. |
 | `install.mjs` | Builds, then installs this folder where pi reads it. |

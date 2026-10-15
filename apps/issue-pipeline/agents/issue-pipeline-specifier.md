@@ -1,7 +1,7 @@
 ---
 name: issue-pipeline-specifier
 description: Spec step of the issue pipeline. Reads the issue, the repo's wiki and code, and the web when it helps, then writes the spec the implementer builds to. Cannot edit files or run commands.
-tools: read, grep, find, ls, web_search, fetch_content, get_search_content
+tools: read, grep, find, ls, web_search, fetch_content, get_search_content, codemode
 subagentOnlyExtensions: {{PI_CODING_AGENT_DIR}}/npm/node_modules/pi-web-access
 thinking: high
 systemPromptMode: replace

@@ -1,7 +1,7 @@
 ---
 name: issue-pipeline-writer
 description: Writing step of the issue pipeline (implement, fix review findings, fix failing checks) inside a per-issue git worktree.
-tools: read, grep, find, ls, bash, edit, write
+tools: read, grep, find, ls, bash, edit, write, codemode
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
