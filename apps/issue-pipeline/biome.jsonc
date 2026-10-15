@@ -19,9 +19,11 @@
     // and the configured commands, and keep the clones, worktrees, locks and
     // logs on disk (#166), as do the ops that keep files themselves: the
     // sweep's reservations and the claim's worktree checks and setup log
-    // (#183), and the PR and sync ops, which run git in the worktree and write
-    // the review diff (#184). The pure modules (globs, stops, labels, comments,
-    // claims, state, and the ops in src/ops/ not listed here) get no exception.
+    // (#183), the PR and sync ops, which run git in the worktree and write
+    // the review diff (#184), and the ops that run git, gh and the configured
+    // shell commands: verify, fails-before-fix and ci-status (#185). The pure
+    // modules (globs, stops, labels, comments, claims, state, and the ops in
+    // src/ops/ not listed here) get no exception.
     {
       "includes": [
         "install.mjs",
@@ -38,7 +40,10 @@
         "src/ops/sweep.ts",
         "src/ops/claim.ts",
         "src/ops/pr.ts",
-        "src/ops/sync.ts"
+        "src/ops/sync.ts",
+        "src/ops/verify.ts",
+        "src/ops/fails-before-fix.ts",
+        "src/ops/ci-status.ts"
       ],
       "linter": {
         "rules": {
