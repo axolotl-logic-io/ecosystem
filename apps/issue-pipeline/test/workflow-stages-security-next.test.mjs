@@ -110,6 +110,7 @@ test("no findings moves the issue to merge, then saves it", () => {
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "merge");
   assert.deepEqual(step.state.st.log, [
+    `${STAMP} charged reviewer 60000 to issueTokenBudget`,
     `${STAMP} security review: no findings`,
   ]);
   assert.deepEqual(step.comments, [
@@ -163,6 +164,22 @@ test("the last round's finding still goes back to fix", () => {
   const step = reviewed([LEAK], { securityRounds: LAST_ROUND });
   assert.equal(step.state.st.stage, "fix");
   assert.equal(step.stop, null);
+});
+
+test("a finding ends a re-check, since the fix is new code", () => {
+  const step = reviewed([LEAK], { rechecking: true });
+  assert.equal(step.state.st.stage, "fix");
+  assert.equal(step.state.st.rechecking, false);
+});
+
+test("a re-check charges the reviewer to the rebase pool", () => {
+  const given = stateWith("security", { rechecking: true, allocated: 0 });
+  const begun = next(given, CTX, []);
+  const step = next(begun.state, CTX, [{ kind: "op", reply: DIFF }]);
+  assert.deepEqual(
+    [step.state.st.allocated, step.state.st.rebaseAllocated],
+    [0, ROLES.reviewer],
+  );
 });
 
 test("a finding past the fix rounds stops with its harm as the code", () => {
@@ -234,7 +251,7 @@ test("a reviewer that doesn't fit the budget stops once the diff is ready", () =
   assert.deepEqual(step.stop, {
     reason: "issue token budget exhausted",
     detail:
-      "Allocated 0 of 40000 tokens; the next step (reviewer) needs 60000.",
+      "Allocated 0 of 40000 tokens (issueTokenBudget); the next step (reviewer) needs 60000.",
     code: null,
   });
 });

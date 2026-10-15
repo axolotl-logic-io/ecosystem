@@ -40,10 +40,18 @@ const SUB_ISSUES = [
   { title: "Second part", body: "Do the second part.", after: [0] },
 ];
 
+// Every kit's rebase pool (`rebaseTokenBudget`).
+const REBASE_BUDGET = 500_000;
+
 function contextWith(issueBudget) {
   return {
     cfg: CFG,
-    budgets: { roles: ROLES, sessionCap: 150_000, issueBudget },
+    budgets: {
+      roles: ROLES,
+      sessionCap: 150_000,
+      issueBudget,
+      rebaseBudget: REBASE_BUDGET,
+    },
     models: { triage: MODEL },
     now: () => NOW,
   };

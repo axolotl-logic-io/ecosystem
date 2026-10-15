@@ -76,7 +76,7 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
       "sweepId": "smv9hl6o0",
       "lane": "lane-a",
       "number": 7,
-      "keepConflict": false
+      "keepConflict": true
     }
   },
   {
@@ -172,6 +172,7 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
         "acceptReason": "Does what #7 asks.",
         "passedSha": null,
+        "rechecking": true,
         "testsOnly": false
       },
       "expectedSha": "ddddddd",
@@ -398,7 +399,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
       "sweepId": "smv9hl6o0",
       "lane": "lane-a",
       "number": 7,
-      "keepConflict": false
+      "keepConflict": true
     }
   },
   {
@@ -494,6 +495,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
         "acceptReason": "Does what #7 asks.",
         "passedSha": null,
+        "rechecking": true,
         "testsOnly": false
       },
       "expectedSha": "ddddddd",
@@ -544,6 +546,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
         "acceptReason": "Does what #7 asks.",
         "passedSha": "ddddddd",
+        "rechecking": true,
         "testsOnly": false
       }
     }

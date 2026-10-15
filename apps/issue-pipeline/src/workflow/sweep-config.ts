@@ -130,6 +130,7 @@ function sweepSettings(cfg: SweepConfig): SweepSettings {
       roles: { ...ROLE_BUDGETS, ...cfg.roleBudgets },
       sessionCap: cfg.sessionTokenCap,
       issueBudget: cfg.issueTokenBudget,
+      rebaseBudget: cfg.rebaseTokenBudget,
     },
     models: { ...MODELS, ...cfg.models },
     spawnLimit: spawnLimitOf(cfg.maxSpawnsPerRun),

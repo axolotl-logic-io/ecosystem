@@ -99,6 +99,7 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
     { by: IMPL_BY, body: `${CONTINUED}\n\nHalf done.`, where: "issue" },
   ]);
   assert.deepEqual(first.state.st.log, [
+    `${STAMP} charged implementer 150000 to issueTokenBudget`,
     `${STAMP} implement: handoff - Half done.`,
   ]);
   const again = begunAgain(first);

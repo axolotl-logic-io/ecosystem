@@ -93,14 +93,11 @@ function startFix(
     );
   }
   const st: IssueState = { ...state.st };
-  const charge = chargeSession(ctx.budgets, st, "ciFixer");
+  const charge = chargeSession(ctx.budgets, st, "ciFixer", {
+    at: ctx.now(),
+  });
   if (!charge.charged) {
-    return stopStep(
-      state,
-      "issue token budget exhausted",
-      charge.detail,
-      comments,
-    );
+    return stopStep(state, charge.reason, charge.detail, comments);
   }
   st.ciFixes = (st.ciFixes ?? 0) + 1;
   const counted = { ...state, st };
@@ -208,14 +205,12 @@ function prepared(
   }
   const st: IssueState = { ...state.st };
   const charged = { ...state, st };
-  const charge = chargeSession(
-    ctx.budgets,
-    st,
-    "rereviewer",
-    FIX_LENSES.length,
-  );
+  const charge = chargeSession(ctx.budgets, st, "rereviewer", {
+    at: ctx.now(),
+    count: FIX_LENSES.length,
+  });
   if (!charge.charged) {
-    return stopStep(state, "issue token budget exhausted", charge.detail);
+    return stopStep(state, charge.reason, charge.detail);
   }
   return launchStep({ ...charged, phase: "reviewed" }, [
     lensLaunch(charged, ctx, "correctness", reply.value),

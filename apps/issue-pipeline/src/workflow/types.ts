@@ -97,6 +97,13 @@ interface IssueState {
   securityRounds?: number;
   // Tokens allocated to the issue's sessions so far.
   allocated: number;
+  // Tokens allocated to the rebase pool (`rebaseTokenBudget`): conflict
+  // resolvers, and re-checks after a rebase the merge stage asked for. Reset at
+  // merge and restart; missing in states saved before #201, read as 0.
+  rebaseAllocated?: number;
+  // Whether the issue is re-checking after a rebase the merge stage asked for,
+  // so its sessions are charged to the rebase pool. Missing reads as false.
+  rechecking?: boolean;
   // The roles of the issue's latest sessions, oldest first.
   sessions?: string[];
 }

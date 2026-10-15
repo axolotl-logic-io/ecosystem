@@ -201,7 +201,7 @@ test("stop by code explains the control on the issue and its PR and swaps labels
     label: "agent:stopped-budget",
   });
   const body = coordinator(
-    "**🛑 Stopped by a control: token budget** (`agent:stopped-budget`)\n\nThe next session would take the issue past its token budget (`issueTokenBudget`).\n\nReason: over budget\n\nd\n\nnext",
+    "**🛑 Stopped by a control: token budget** (`agent:stopped-budget`)\n\nThe next session would take the issue past its token budget (`issueTokenBudget`), or a re-check or conflict fix after a rebase past the rebase allowance (`rebaseTokenBudget`).\n\nReason: over budget\n\nd\n\nnext",
   );
   assert.deepEqual(calls(), [
     ghCalls.post(53, body),

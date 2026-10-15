@@ -102,9 +102,11 @@ function review(
   }
   const st = { ...state.st };
   const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "verifier");
+  const charge = chargeSession(ctx.budgets, st, "verifier", {
+    at: ctx.now(),
+  });
   if (!charge.charged) {
-    return stopStep(charged, "issue token budget exhausted", charge.detail);
+    return stopStep(charged, charge.reason, charge.detail);
   }
   return launchStep({ ...charged, phase: "decide" }, [
     acceptLaunch(charged, ctx, diff.path),

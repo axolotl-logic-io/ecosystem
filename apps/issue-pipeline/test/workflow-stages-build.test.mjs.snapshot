@@ -100,6 +100,7 @@ exports[`a spec is written, implemented and its PR opened, then held at review 1
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged spec 80000 to issueTokenBudget",
           "2026-10-15T12:00Z spec: ready"
         ],
         "implemented": false,
@@ -180,7 +181,9 @@ exports[`a spec is written, implemented and its PR opened, then held at review 1
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged spec 80000 to issueTokenBudget",
           "2026-10-15T12:00Z spec: ready",
+          "2026-10-15T12:00Z charged implementer 150000 to issueTokenBudget",
           "2026-10-15T12:00Z implement: done - Did the thing.",
           "2026-10-15T12:00Z PR #42 is ready for review"
         ],
@@ -233,7 +236,9 @@ exports[`a spec is written, implemented and its PR opened, then held at review 1
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged spec 80000 to issueTokenBudget",
           "2026-10-15T12:00Z spec: ready",
+          "2026-10-15T12:00Z charged implementer 150000 to issueTokenBudget",
           "2026-10-15T12:00Z implement: done - Did the thing.",
           "2026-10-15T12:00Z PR #42 is ready for review",
           "2026-10-15T12:00Z held at review by the per-run spawn cap; continues next sweep"

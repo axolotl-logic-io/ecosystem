@@ -101,9 +101,11 @@ function begin(state: StageState, ctx: StageContext): Step {
       null,
     );
   }
-  const charge = chargeSession(ctx.budgets, counted.st, "triage");
+  const charge = chargeSession(ctx.budgets, counted.st, "triage", {
+    at: ctx.now(),
+  });
   if (!charge.charged) {
-    return stopStep(counted, "issue token budget exhausted", charge.detail);
+    return stopStep(counted, charge.reason, charge.detail);
   }
   return launchStep({ ...counted, phase: "decide" }, [
     triageLaunch(counted, ctx),

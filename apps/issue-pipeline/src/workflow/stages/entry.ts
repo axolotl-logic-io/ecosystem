@@ -184,6 +184,7 @@ function summaryItem({ n, st, outcome, reason }: SummarySource): SummaryItem {
     outcome: textOf(outcome) ?? "in-progress",
     reason: textOf(reason),
     allocatedTokens: st?.allocated ?? null,
+    rebaseAllocatedTokens: st ? (st.rebaseAllocated ?? 0) : null,
   };
 }
 

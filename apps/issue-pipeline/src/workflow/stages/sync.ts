@@ -1,7 +1,9 @@
 // Sync: rebases the PR branch onto the base branch. A clean rebase moves to
 // checks; a conflicting one is resolved by a writer while the issue has
-// conflict attempts and budget left, and then goes through every check again.
+// conflict attempts and rebase budget left, and then goes through every check
+// again.
 
+import { chargeCheck } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
@@ -49,15 +51,19 @@ function prComment(by: Signature, body: string): StageComment {
 }
 
 // Rebases, leaving a conflicting rebase stopped for a resolver while the issue
-// has conflict attempts and budget for one left.
+// has conflict attempts and rebase budget for one left. An issue the merge
+// stage sent back is re-checking from here on, so its sessions are charged to
+// the rebase pool.
 function begin(state: StageState, ctx: StageContext): Step {
-  const { st } = state;
-  const { roles, sessionCap, issueBudget } = ctx.budgets;
+  const st: IssueState = { ...state.st };
+  if (typeof st.passedSha === "string" && st.passedSha !== "") {
+    st.rechecking = true;
+  }
   const keepConflict =
     (st.conflictFixes ?? 0) < maxConflictFixes(ctx) &&
-    st.allocated + Math.min(roles.fixer, sessionCap) <= issueBudget;
+    chargeCheck(ctx.budgets, st, "fixer", "rebase").charged;
   const payload = { number: state.n, keepConflict };
-  return launchStep({ ...state, phase: "synced" }, [
+  return launchStep({ ...state, st, phase: "synced" }, [
     { kind: "op", name: "sync", op: "sync-base", payload },
   ]);
 }
@@ -128,16 +134,22 @@ function synced(
   if (reply.inRebase) {
     return conflicted(state, ctx, reply.conflicts, reply.baseSha);
   }
+  const files = `Conflicting files:\n${reply.conflicts.join("\n")}`;
   const max = maxConflictFixes(ctx);
-  let again = "";
   if ((state.st.conflictFixes ?? 0) >= max) {
-    again = ` again after ${max} resolutions`;
+    return stopStep(
+      state,
+      `rebasing onto ${base} conflicts again after ${max} resolutions`,
+      files,
+    );
   }
-  return stopStep(
-    state,
-    `rebasing onto ${base} conflicts${again}`,
-    `Conflicting files:\n${reply.conflicts.join("\n")}`,
-  );
+  // Attempts were left, so sync-base gave up the rebase because the resolver
+  // didn't fit the rebase pool: a budget stop, not a resolver failure.
+  const fixer = chargeCheck(ctx.budgets, state.st, "fixer", "rebase");
+  if (!fixer.charged) {
+    return stopStep(state, fixer.reason, `${fixer.detail}\n\n${files}`);
+  }
+  return stopStep(state, `rebasing onto ${base} conflicts`, files);
 }
 // Sync's next step, from its state and the results of its last launches.
 function next(

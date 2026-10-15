@@ -40,10 +40,18 @@ const PLAN = "Change src/a.ts and test it.";
 const TRIAGE_TOKENS = 50_000;
 const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
 
+// Every kit's rebase pool (`rebaseTokenBudget`).
+const REBASE_BUDGET = 500_000;
+
 function contextWith(issueBudget) {
   return {
     cfg: CFG,
-    budgets: { roles: ROLES, sessionCap: SESSION_CAP, issueBudget },
+    budgets: {
+      roles: ROLES,
+      sessionCap: SESSION_CAP,
+      issueBudget,
+      rebaseBudget: REBASE_BUDGET,
+    },
     models: { spec: SPEC_MODEL, implementer: IMPL_MODEL },
     now: () => NOW,
   };

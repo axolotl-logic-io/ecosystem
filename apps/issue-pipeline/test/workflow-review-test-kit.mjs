@@ -54,10 +54,18 @@ const OFF_BY_ONE = {
   suggestion: "Use <= in the loop bound.",
 };
 
+// Every kit's rebase pool (`rebaseTokenBudget`).
+const REBASE_BUDGET = 500_000;
+
 function contextWith(issueBudget) {
   return {
     cfg: CFG,
-    budgets: { roles: ROLES, sessionCap: 150_000, issueBudget },
+    budgets: {
+      roles: ROLES,
+      sessionCap: 150_000,
+      issueBudget,
+      rebaseBudget: REBASE_BUDGET,
+    },
     models: MODELS,
     now: () => NOW,
   };

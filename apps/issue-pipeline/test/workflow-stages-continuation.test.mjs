@@ -68,6 +68,7 @@ test("the spawn cap holds the continuation until the next sweep", async () => {
           outcome: "in-progress",
           reason: null,
           allocatedTokens: IMPL_TOKENS,
+          rebaseAllocatedTokens: 0,
         },
       ],
     }),

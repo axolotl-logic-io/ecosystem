@@ -144,6 +144,8 @@ exports[`a blocking finding is fixed and re-reviewed clean, then synced and held
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 180000 to issueTokenBudget",
+          "2026-10-15T12:00Z charged aggregator 20000 to issueTokenBudget",
           "2026-10-15T12:00Z review: 1 blocking finding(s)"
         ],
         "implemented": true,
@@ -296,8 +298,12 @@ exports[`a blocking finding is fixed and re-reviewed clean, then synced and held
         ],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 180000 to issueTokenBudget",
+          "2026-10-15T12:00Z charged aggregator 20000 to issueTokenBudget",
           "2026-10-15T12:00Z review: 1 blocking finding(s)",
+          "2026-10-15T12:00Z charged fixer 100000 to issueTokenBudget",
           "2026-10-15T12:00Z fix round 1: Fixed the loop bound.",
+          "2026-10-15T12:00Z charged rereviewer 40000 to issueTokenBudget",
           "2026-10-15T12:00Z fix round 1: all findings resolved"
         ],
         "implemented": true,
@@ -385,8 +391,12 @@ exports[`a blocking finding is fixed and re-reviewed clean, then synced and held
         ],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 180000 to issueTokenBudget",
+          "2026-10-15T12:00Z charged aggregator 20000 to issueTokenBudget",
           "2026-10-15T12:00Z review: 1 blocking finding(s)",
+          "2026-10-15T12:00Z charged fixer 100000 to issueTokenBudget",
           "2026-10-15T12:00Z fix round 1: Fixed the loop bound.",
+          "2026-10-15T12:00Z charged rereviewer 40000 to issueTokenBudget",
           "2026-10-15T12:00Z fix round 1: all findings resolved",
           "2026-10-15T12:00Z held at checks by the per-run spawn cap; continues next sweep"
         ],
@@ -636,6 +646,7 @@ exports[`a review with no blocking findings moves to sync, held by the spawn cap
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 180000 to issueTokenBudget",
           "2026-10-15T12:00Z review: no blocking findings"
         ],
         "implemented": true
@@ -709,6 +720,7 @@ exports[`a review with no blocking findings moves to sync, held by the spawn cap
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 180000 to issueTokenBudget",
           "2026-10-15T12:00Z review: no blocking findings",
           "2026-10-15T12:00Z held at sync by the per-run spawn cap; continues next sweep"
         ],

@@ -58,5 +58,5 @@ test("a state comment's body gives its state, or null", () => {
   assert.deepEqual(parseStateBody(body), state);
   assert.equal(parseStateBody("no mark"), null);
   assert.equal(parseStateBody("<!-- agent-pipeline:state {bad -->"), null);
-  assert.deepEqual(Object.keys(state), ["version", "number", "depth", "stage", "lease", "pr", "headSha", "reviewedSha", "verifiedSha", "plan", "allocated", "reportedTokens", "sessions", "triages", "continuations", "round", "ciFixes", "syncs", "findings", "resolvedHistory", "questionsAt", "log"]);
+  assert.deepEqual(Object.keys(state), ["version", "number", "depth", "stage", "lease", "pr", "headSha", "reviewedSha", "verifiedSha", "plan", "allocated", "rebaseAllocated", "rechecking", "reportedTokens", "sessions", "triages", "continuations", "round", "ciFixes", "syncs", "findings", "resolvedHistory", "questionsAt", "log"]);
 });

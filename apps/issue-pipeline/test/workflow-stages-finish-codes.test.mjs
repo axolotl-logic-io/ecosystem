@@ -64,6 +64,7 @@ function leakStopped(stage) {
         reason:
           "security review (user-harm): Logs the user's email is still open after 2 fix rounds",
         allocatedTokens: 940_000,
+        rebaseAllocatedTokens: 0,
       },
     ],
   });

@@ -67,7 +67,10 @@ test("a ready issue moves to spec, is taken, and opens its draft PR", () => {
   const step = decided(replyOf({ reason: "Small.", plan: "Change a.ts." }));
   assert.equal(step.state.st.stage, "spec");
   assert.equal(step.state.st.plan, "Change a.ts.");
-  assert.deepEqual(step.state.st.log, [`${STAMP} triage: ready - Small.`]);
+  assert.deepEqual(step.state.st.log, [
+    `${STAMP} charged triage 50000 to issueTokenBudget`,
+    `${STAMP} triage: ready - Small.`,
+  ]);
   assert.deepEqual(step.comments, [
     {
       by: SIGNATURE,
@@ -220,7 +223,8 @@ test("a session the issue's budget can't fit stops triage", () => {
   assert.equal(step.done, true);
   assert.deepEqual(step.stop, {
     reason: "issue token budget exhausted",
-    detail: "Allocated 0 of 40000 tokens; the next step (triage) needs 50000.",
+    detail:
+      "Allocated 0 of 40000 tokens (issueTokenBudget); the next step (triage) needs 50000.",
     code: null,
   });
 });

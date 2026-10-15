@@ -183,6 +183,7 @@ interface StageContext {
 interface SweepConfig extends StageConfig {
   sessionTokenCap: number;
   issueTokenBudget: number;
+  rebaseTokenBudget: number;
   roleBudgets?: Readonly<Partial<Record<Role, number>>> | null;
   models?: Readonly<Partial<Record<ModelRole, string>>> | null;
   maxSpawnsPerRun?: number | null;
@@ -233,6 +234,7 @@ interface SummaryItem {
   outcome: string;
   reason: string | null;
   allocatedTokens: number | null;
+  rebaseAllocatedTokens: number | null;
 }
 
 // What a sweep returns.

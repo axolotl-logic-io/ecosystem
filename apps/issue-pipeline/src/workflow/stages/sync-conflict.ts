@@ -151,9 +151,12 @@ function conflicted(
   st.passedSha = null;
   st.conflictFixes = (st.conflictFixes ?? 0) + 1;
   const counted = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "fixer");
+  const charge = chargeSession(ctx.budgets, st, "fixer", {
+    at: ctx.now(),
+    pool: "rebase",
+  });
   if (!charge.charged) {
-    return stopStep(counted, "issue token budget exhausted", charge.detail);
+    return stopStep(counted, charge.reason, charge.detail);
   }
   return launchStep({ ...counted, phase: "resolved", carry: { files } }, [
     resolverLaunch(counted, ctx, files, baseSha),

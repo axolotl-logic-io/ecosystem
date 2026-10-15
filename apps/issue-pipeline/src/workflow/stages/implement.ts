@@ -121,9 +121,11 @@ function implementLaunch(state: StageState, ctx: StageContext): ChildLaunch {
 // Charges the session, then launches it.
 function begin(state: StageState, ctx: StageContext): Step {
   const st = { ...state.st };
-  const charge = chargeSession(ctx.budgets, st, "implementer");
+  const charge = chargeSession(ctx.budgets, st, "implementer", {
+    at: ctx.now(),
+  });
   if (!charge.charged) {
-    return stopStep(state, "issue token budget exhausted", charge.detail);
+    return stopStep(state, charge.reason, charge.detail);
   }
   const charged = { ...state, st };
   return launchStep({ ...charged, phase: "decide" }, [

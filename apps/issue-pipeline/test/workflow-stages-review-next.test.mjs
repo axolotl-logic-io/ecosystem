@@ -115,6 +115,7 @@ describe("a clean review", () => {
     assert.equal(step.state.st.stage, "sync");
     assert.equal(step.state.st.reviewedSha, HEAD);
     assert.deepEqual(step.state.st.log, [
+      `${STAMP} charged reviewer 180000 to issueTokenBudget`,
       `${STAMP} review: no blocking findings`,
     ]);
     assert.deepEqual(step.launches, saveOf(step));
@@ -272,7 +273,7 @@ describe("a review that stops", () => {
     assert.deepEqual(step.stop, {
       reason: "issue token budget exhausted",
       detail:
-        "Allocated 0 of 100000 tokens; the next step (reviewer) needs 180000.",
+        "Allocated 0 of 100000 tokens (issueTokenBudget); the next step (reviewer) needs 180000.",
       code: null,
     });
   });

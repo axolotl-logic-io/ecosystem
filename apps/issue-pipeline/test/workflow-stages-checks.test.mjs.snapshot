@@ -294,7 +294,7 @@ exports[`a conflicting rebase is resolved by a writer, then held at checks 1`] =
         "reviewedSha": "ccccccc",
         "verifiedSha": null,
         "plan": null,
-        "allocated": 720000,
+        "allocated": 620000,
         "reportedTokens": 0,
         "sessions": [
           "fixer"
@@ -308,6 +308,7 @@ exports[`a conflicting rebase is resolved by a writer, then held at checks 1`] =
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged fixer 100000 to rebaseTokenBudget",
           "2026-10-15T12:00Z resolved conflicts with integration and rebased",
           "2026-10-15T12:00Z held at checks by the per-run spawn cap; continues next sweep"
         ],
@@ -315,7 +316,8 @@ exports[`a conflicting rebase is resolved by a writer, then held at checks 1`] =
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
         "testsOnly": false,
         "passedSha": null,
-        "conflictFixes": 1
+        "conflictFixes": 1,
+        "rebaseAllocated": 100000
       },
       "comments": [
         {
@@ -493,7 +495,9 @@ exports[`failing checks get a reviewed CI fix, then pass and go on to merge 1`] 
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
-          "2026-10-15T12:00Z check fix 1: Fixed the test."
+          "2026-10-15T12:00Z charged ciFixer 100000 to issueTokenBudget",
+          "2026-10-15T12:00Z check fix 1: Fixed the test.",
+          "2026-10-15T12:00Z charged rereviewer 80000 to issueTokenBudget"
         ],
         "implemented": true,
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
@@ -648,9 +652,13 @@ exports[`failing checks get a reviewed CI fix, then pass and go on to merge 1`] 
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged ciFixer 100000 to issueTokenBudget",
           "2026-10-15T12:00Z check fix 1: Fixed the test.",
+          "2026-10-15T12:00Z charged rereviewer 80000 to issueTokenBudget",
           "2026-10-15T12:00Z checks passed at fffffff",
+          "2026-10-15T12:00Z charged verifier 60000 to issueTokenBudget",
           "2026-10-15T12:00Z acceptance: pass - Does what #7 asks.",
+          "2026-10-15T12:00Z charged reviewer 60000 to issueTokenBudget",
           "2026-10-15T12:00Z security review: no findings"
         ],
         "implemented": true,
@@ -711,9 +719,13 @@ exports[`failing checks get a reviewed CI fix, then pass and go on to merge 1`] 
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged ciFixer 100000 to issueTokenBudget",
           "2026-10-15T12:00Z check fix 1: Fixed the test.",
+          "2026-10-15T12:00Z charged rereviewer 80000 to issueTokenBudget",
           "2026-10-15T12:00Z checks passed at fffffff",
+          "2026-10-15T12:00Z charged verifier 60000 to issueTokenBudget",
           "2026-10-15T12:00Z acceptance: pass - Does what #7 asks.",
+          "2026-10-15T12:00Z charged reviewer 60000 to issueTokenBudget",
           "2026-10-15T12:00Z security review: no findings"
         ],
         "implemented": true,

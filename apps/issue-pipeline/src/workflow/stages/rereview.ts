@@ -138,13 +138,12 @@ function launchRereviews(
   }
   const lenses = openLenses(state);
   const st = copyState(state.st);
-  const charge = chargeSession(ctx.budgets, st, "rereviewer", lenses.length);
+  const charge = chargeSession(ctx.budgets, st, "rereviewer", {
+    at: ctx.now(),
+    count: lenses.length,
+  });
   if (!charge.charged) {
-    return stopStep(
-      { ...state, st },
-      "issue token budget exhausted",
-      charge.detail,
-    );
+    return stopStep({ ...state, st }, charge.reason, charge.detail);
   }
   if (lenses.length === 0) {
     return settle(state, ctx, {

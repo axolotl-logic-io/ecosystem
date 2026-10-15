@@ -38,10 +38,18 @@ const MODELS = {
 const ISSUE_BUDGET = 1_000_000;
 
 // A context with a fixed clock, with `fields` replacing its defaults.
+// Every kit's rebase pool (`rebaseTokenBudget`).
+const REBASE_BUDGET = 500_000;
+
 function contextWith(fields = {}) {
   return {
     cfg: CFG,
-    budgets: { roles: ROLES, sessionCap: 150_000, issueBudget: ISSUE_BUDGET },
+    budgets: {
+      roles: ROLES,
+      sessionCap: 150_000,
+      issueBudget: ISSUE_BUDGET,
+      rebaseBudget: REBASE_BUDGET,
+    },
     models: MODELS,
     now: () => NOW,
     hasRoom: () => true,

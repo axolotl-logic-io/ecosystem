@@ -64,6 +64,8 @@ const NEW_STATE = {
   verifiedSha: null,
   plan: null,
   allocated: 0,
+  rebaseAllocated: 0,
+  rechecking: false,
   reportedTokens: 0,
   sessions: [],
   triages: 0,

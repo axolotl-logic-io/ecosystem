@@ -17,6 +17,7 @@ const DEFAULT_CONFIG = {
   baseBranch: "integration",
   sessionTokenCap: 150_000,
   issueTokenBudget: 1_000_000,
+  rebaseTokenBudget: 500_000,
   maxTriages: 2,
   maxFixRounds: 2,
   maxCiFixes: 1,

@@ -49,7 +49,14 @@ function finishRun({ stage, fields, ops = {}, agents = {}, config = {} }) {
 function issueSummary(fields) {
   return sweepSummary({
     items: [
-      { issue: 7, pr: 42, outcome: "in-progress", reason: null, ...fields },
+      {
+        issue: 7,
+        pr: 42,
+        outcome: "in-progress",
+        reason: null,
+        rebaseAllocatedTokens: 0,
+        ...fields,
+      },
     ],
   });
 }

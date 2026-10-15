@@ -10,6 +10,7 @@
   "claimWaitSeconds": [5, 20],
   "claimCandidates": 5,
   "issueTokenBudget": 1000000,
+  "rebaseTokenBudget": 500000,
   "sessionTokenCap": 150000,
   "maxFixRounds": 2,
   "maxCiFixes": 2,

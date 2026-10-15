@@ -24,6 +24,9 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
   issueTokenBudget: 1_000_000,
+  // The rebase pool per issue: conflict resolvers, and re-checks after a rebase
+  // the merge stage asked for (#201). Reset at merge and restart.
+  rebaseTokenBudget: 500_000,
   sessionTokenCap: 150_000,
   maxFixRounds: 2,
   maxCiFixes: 2,

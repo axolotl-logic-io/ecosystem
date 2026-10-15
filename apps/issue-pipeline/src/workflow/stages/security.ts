@@ -98,9 +98,11 @@ function review(
   }
   const st = { ...state.st };
   const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "reviewer");
+  const charge = chargeSession(ctx.budgets, st, "reviewer", {
+    at: ctx.now(),
+  });
   if (!charge.charged) {
-    return stopStep(charged, "issue token budget exhausted", charge.detail);
+    return stopStep(charged, charge.reason, charge.detail);
   }
   return launchStep({ ...charged, phase: "decide" }, [
     securityLaunch(charged, ctx, diff),
@@ -167,6 +169,8 @@ function found(
   }
   st.reviewedSha = st.verifiedSha ?? null;
   st.round = 0;
+  // The fix brings new code, which is not a re-check after a rebase.
+  st.rechecking = false;
   st.stage = "fix";
   return saved({ ...state, st }, by, body);
 }

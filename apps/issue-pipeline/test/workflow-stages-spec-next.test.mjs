@@ -63,7 +63,7 @@ test("a budget too small for the session stops", () => {
   assert.deepEqual(step.stop, {
     reason: "issue token budget exhausted",
     detail:
-      "Allocated 50000 of 100000 tokens; the next step (spec) needs 80000.",
+      "Allocated 50000 of 100000 tokens (issueTokenBudget); the next step (spec) needs 80000.",
     code: null,
   });
   assert.equal(step.state.st.allocated, TRIAGE_TOKENS);
@@ -76,7 +76,10 @@ test("a ready spec is kept, posted, and moves the issue to implement", () => {
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "implement");
   assert.equal(step.state.st.spec, `${long.slice(0, SPEC_LIMIT)}…`);
-  assert.deepEqual(step.state.st.log, [`${STAMP} spec: ready`]);
+  assert.deepEqual(step.state.st.log, [
+    `${STAMP} charged spec 80000 to issueTokenBudget`,
+    `${STAMP} spec: ready`,
+  ]);
   assert.deepEqual(step.comments, [
     {
       by: SPEC_BY,
@@ -108,7 +111,10 @@ test("questions close the issue and go back to triage with the spec so far", () 
     },
   });
   assert.equal(step.state.st.stage, "spec");
-  assert.deepEqual(step.state.st.log, [`${STAMP} spec: needs-info`]);
+  assert.deepEqual(step.state.st.log, [
+    `${STAMP} charged spec 80000 to issueTokenBudget`,
+    `${STAMP} spec: needs-info`,
+  ]);
 });
 
 test("posted questions finish the stage", () => {

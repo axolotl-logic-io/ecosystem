@@ -51,6 +51,7 @@ function issueSummary(fields) {
         outcome: "in-progress",
         reason: null,
         allocatedTokens: 0,
+        rebaseAllocatedTokens: 0,
         ...fields,
       },
     ],
@@ -187,6 +188,7 @@ test("a finding still open after the last fix round stops the issue", async ({
       outcome: "stopped",
       reason: "blocking findings remain after 2 fix rounds",
       allocatedTokens: 620_000,
+      rebaseAllocatedTokens: 0,
     }),
   );
   snapshot(trace);

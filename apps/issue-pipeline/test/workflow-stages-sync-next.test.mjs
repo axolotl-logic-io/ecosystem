@@ -30,6 +30,9 @@ const CONFLICT = {
   inRebase: true,
   conflicts: ["src/a.ts"],
 };
+const REBASE_BUDGET = 500_000;
+const NEAR_REBASE_BUDGET = 450_000;
+const PASSED = "cccccccccccccccc";
 const FILE_LIST = "Conflicting files:\nsrc/a.ts";
 const KEPT_BOTH = { status: "fixed", summary: "Kept both changes." };
 const TESTS_ONLY_NOTE = /only the tests run again before merge/u;
@@ -122,7 +125,8 @@ test("a conflict is resolved by a writer, then the rebase is finished", () => {
   );
   assert.match(launch.task, ATTEMPT_LINE);
   assert.match(launch.task, NO_BASE_SHA);
-  assert.equal(conflicted.state.st.allocated, FIXER_TOKENS);
+  assert.equal(conflicted.state.st.allocated, 0);
+  assert.equal(conflicted.state.st.rebaseAllocated, FIXER_TOKENS);
   assert.deepEqual(conflicted.state.st.sessions, ["fixer"]);
   assert.equal(conflicted.state.st.conflictFixes, 1);
   const resolver = sessionResult("conflicts-1", KEPT_BOTH);
@@ -167,6 +171,37 @@ test("used-up conflict fixes leave the rebase aborted and stop on conflicts", ()
   });
 });
 
+test("sync begins a re-check only for an issue the merge stage sent back", () => {
+  const sentBack = next(stateAt("sync", { passedSha: PASSED }), CTX, []);
+  assert.equal(sentBack.state.st.rechecking, true);
+  const firstPass = next(stateAt("sync", { passedSha: null }), CTX, []);
+  assert.equal(firstPass.state.st.rechecking, undefined);
+  const empty = next(stateAt("sync", { passedSha: "" }), CTX, []);
+  assert.equal(empty.state.st.rechecking, undefined);
+});
+
+test("a resolver the rebase pool can't fit is a budget stop", () => {
+  const fields = { allocated: 0, rebaseAllocated: NEAR_REBASE_BUDGET };
+  const begun = next(stateAt("sync", fields), CTX, []);
+  assert.equal(begun.launches[0].payload.keepConflict, false);
+  const step = replied(next, begun, { ...CONFLICT, inRebase: false });
+  assert.deepEqual(step.stop, {
+    reason: "rebase token budget exhausted",
+    detail: `Allocated ${NEAR_REBASE_BUDGET} of ${REBASE_BUDGET} rebase tokens (rebaseTokenBudget); the next step (fixer) needs ${FIXER_TOKENS}.\n\n${FILE_LIST}`,
+    code: null,
+  });
+});
+
+test("an issue near its issue budget still gets the resolver", () => {
+  const nearlySpent = { allocated: 980_000, passedSha: PASSED };
+  const begun = next(stateAt("sync", nearlySpent), CTX, []);
+  assert.equal(begun.launches[0].payload.keepConflict, true);
+  const conflicted = replied(next, begun, CONFLICT);
+  assert.equal(conflicted.launches[0].name, "conflicts-1");
+  assert.equal(conflicted.state.st.allocated, nearlySpent.allocated);
+  assert.equal(conflicted.state.st.rebaseAllocated, FIXER_TOKENS);
+});
+
 test("a rejected resolution stops on the last attempt and retries before it", () => {
   const resolver = sessionResult("conflicts-2", KEPT_BOTH);
   const rejection = { ok: true, resolved: false, reason: "Tests fail." };
@@ -184,6 +219,7 @@ test("a rejected resolution stops on the last attempt and retries before it", ()
   const first = replied(next, resolvedWith(resolver), rejection);
   assert.deepEqual([first.stop, first.state.st.stage], [null, "sync"]);
   assert.deepEqual(first.state.st.log, [
+    `${STAMP} charged fixer 100000 to rebaseTokenBudget`,
     `${STAMP} conflict resolution rejected: Tests fail.; will retry next sweep`,
   ]);
 });

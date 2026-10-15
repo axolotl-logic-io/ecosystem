@@ -10,7 +10,7 @@ import { STOPS, stopFor } from "../src/stops.ts";
 // The sha256 of every label and stop row's text, including each stop's regex
 // source, computed from ops.mjs's LABELS and STOPS before #166.
 const TEXT_DIGEST =
-  "055e52c73a7ac08ab1b00f4e7455821e29fd7d905da2a38b72759bb7090ff05f";
+  "e770d2c96f2f4bee8d456c7decaef63c68f48c1768ccfd1b36807ed16e29b62c";
 
 function rowsText() {
   return JSON.stringify({
@@ -73,5 +73,7 @@ test("a reason maps to its stop, and any other reason to error", () => {
   assert.equal(stopFor("security review (rights) failed")?.code, "rights");
   assert.equal(stopFor("Security Check (user-harm)")?.code, "user-harm");
   assert.equal(stopFor("the push was rejected")?.code, "push-rejected");
+  assert.equal(stopFor("issue token budget exhausted")?.code, "budget");
+  assert.equal(stopFor("rebase token budget exhausted")?.code, "budget");
   assert.equal(stopFor("something else")?.code, "error");
 });

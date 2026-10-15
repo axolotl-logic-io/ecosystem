@@ -216,6 +216,7 @@ exports[`a security finding sends the issue back to fix, held by the spawn cap 1
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 60000 to issueTokenBudget",
           "2026-10-15T12:00Z security review 1: 1 finding(s)"
         ],
         "verifySummary": "test: passed",
@@ -223,7 +224,8 @@ exports[`a security finding sends the issue back to fix, held by the spawn cap 1
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
         "acceptReason": "Does what #7 asks.",
         "securityRounds": 1,
-        "nextFindingId": 1
+        "nextFindingId": 1,
+        "rechecking": false
       },
       "comments": [
         {
@@ -289,6 +291,7 @@ exports[`a security finding sends the issue back to fix, held by the spawn cap 1
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 60000 to issueTokenBudget",
           "2026-10-15T12:00Z security review 1: 1 finding(s)"
         ],
         "verifySummary": "test: passed",
@@ -296,7 +299,8 @@ exports[`a security finding sends the issue back to fix, held by the spawn cap 1
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
         "acceptReason": "Does what #7 asks.",
         "securityRounds": 1,
-        "nextFindingId": 1
+        "nextFindingId": 1,
+        "rechecking": false
       }
     }
   },
@@ -393,6 +397,7 @@ exports[`a security review with no findings moves to merge, held by the spawn ca
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 60000 to issueTokenBudget",
           "2026-10-15T12:00Z security review: no findings"
         ],
         "verifySummary": "test: passed",
@@ -449,6 +454,7 @@ exports[`a security review with no findings moves to merge, held by the spawn ca
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged reviewer 60000 to issueTokenBudget",
           "2026-10-15T12:00Z security review: no findings",
           "2026-10-15T12:00Z held at merge by the per-run spawn cap; continues next sweep"
         ],
@@ -635,6 +641,7 @@ exports[`failing acceptance stops the issue 1`] = `
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged verifier 60000 to issueTokenBudget",
           "2026-10-15T12:00Z acceptance: fail - Misses item 1.",
           "2026-10-15T12:00Z stopped: the acceptance verifier found the issue is not fully resolved"
         ],
@@ -753,6 +760,7 @@ exports[`passing acceptance moves to security, held by the spawn cap 1`] = `
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
+          "2026-10-15T12:00Z charged verifier 60000 to issueTokenBudget",
           "2026-10-15T12:00Z acceptance: pass - Does what #7 asks.",
           "2026-10-15T12:00Z held at security by the per-run spawn cap; continues next sweep"
         ],

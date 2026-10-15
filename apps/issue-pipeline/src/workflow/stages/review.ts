@@ -65,7 +65,6 @@ const PHASES: readonly ReviewPhase[] = [
 
 const REVIEW_MINUTES = 25;
 const AGGREGATE_MINUTES = 10;
-const BUDGET_EXHAUSTED = "issue token budget exhausted";
 
 function phaseOf(state: StageState): ReviewPhase {
   const phase = PHASES.find((entry) => entry === state.phase);
@@ -79,9 +78,12 @@ function phaseOf(state: StageState): ReviewPhase {
 function begin(state: StageState, ctx: StageContext): Step {
   const st = copyState(state.st);
   const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "reviewer", LENS_NAMES.length);
+  const charge = chargeSession(ctx.budgets, st, "reviewer", {
+    at: ctx.now(),
+    count: LENS_NAMES.length,
+  });
   if (!charge.charged) {
-    return stopStep(charged, BUDGET_EXHAUSTED, charge.detail);
+    return stopStep(charged, charge.reason, charge.detail);
   }
   const payload = { number: state.n, tag: "r0" };
   return launchStep({ ...charged, phase: "prepared" }, [
@@ -215,14 +217,11 @@ function reviewed(
     noteEvent(st, "review: no blocking findings", ctx.now());
     return saveStep({ ...state, st, phase: "saved" }, comments);
   }
-  const charge = chargeSession(ctx.budgets, st, "aggregator");
+  const charge = chargeSession(ctx.budgets, st, "aggregator", {
+    at: ctx.now(),
+  });
   if (!charge.charged) {
-    return stopStep(
-      { ...state, st },
-      BUDGET_EXHAUSTED,
-      charge.detail,
-      comments,
-    );
+    return stopStep({ ...state, st }, charge.reason, charge.detail, comments);
   }
   const charged = { ...state, st, phase: "aggregated", carry: raw };
   return launchStep(charged, [aggregateLaunch(ctx, charged, raw)], comments);

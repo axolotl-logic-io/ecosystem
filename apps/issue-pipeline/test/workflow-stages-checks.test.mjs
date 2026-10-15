@@ -60,6 +60,7 @@ function issueSummary(fields) {
         outcome: "in-progress",
         reason: null,
         allocatedTokens: 620_000,
+        rebaseAllocatedTokens: 0,
         ...fields,
       },
     ],
@@ -125,7 +126,11 @@ test("a conflicting rebase is resolved by a writer, then held at checks", async 
     "i7-release-6",
     "cleanup-7",
   ]);
-  assert.deepEqual(summary, issueSummary({ allocatedTokens: 720_000 }));
+  // The resolver is charged to the rebase pool, not the issue budget.
+  assert.deepEqual(
+    summary,
+    issueSummary({ allocatedTokens: 620_000, rebaseAllocatedTokens: 100_000 }),
+  );
   snapshot(trace);
 });
 
@@ -191,6 +196,7 @@ test("failing checks get a reviewed CI fix, then pass and go on to merge", async
       stage: "merge",
       outcome: "merged",
       allocatedTokens: 920_000,
+      rebaseAllocatedTokens: 0,
     }),
   );
   snapshot(trace);

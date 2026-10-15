@@ -124,7 +124,8 @@ function decide(
     return opFailedStep(state, failed, ctx.now());
   }
   if (merged === true) {
-    return doneStep({ ...state, closed: true, outcome: "merged" });
+    const st = { ...state.st, rebaseAllocated: 0, rechecking: false };
+    return doneStep({ ...state, st, closed: true, outcome: "merged" });
   }
   if (reason === "queued") {
     return queued(state, ctx, reply);

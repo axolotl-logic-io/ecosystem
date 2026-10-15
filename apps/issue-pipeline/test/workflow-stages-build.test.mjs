@@ -78,6 +78,7 @@ test("a spec is written, implemented and its PR opened, then held at review", as
           outcome: "in-progress",
           reason: null,
           allocatedTokens: 280_000,
+          rebaseAllocatedTokens: 0,
         },
       ],
     }),

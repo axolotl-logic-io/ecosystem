@@ -98,13 +98,11 @@ function begin(state: StageState, ctx: StageContext): Step {
     });
   }
   const st = copyState(state.st);
-  const charge = chargeSession(ctx.budgets, st, "fixer");
+  const charge = chargeSession(ctx.budgets, st, "fixer", {
+    at: ctx.now(),
+  });
   if (!charge.charged) {
-    return stopStep(
-      { ...state, st },
-      "issue token budget exhausted",
-      charge.detail,
-    );
+    return stopStep({ ...state, st }, charge.reason, charge.detail);
   }
   st.round = round + 1;
   const begun = { ...state, st, phase: "fixed" };

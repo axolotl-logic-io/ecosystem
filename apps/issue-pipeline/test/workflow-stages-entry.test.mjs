@@ -179,6 +179,7 @@ test("the summary of a failed claim has no state", () => {
       outcome: "claim-failed",
       reason: "x",
       allocatedTokens: null,
+      rebaseAllocatedTokens: null,
     },
   ]);
 });

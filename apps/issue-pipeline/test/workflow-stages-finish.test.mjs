@@ -66,6 +66,7 @@ test("failing acceptance stops the issue", async ({ assert: { snapshot } }) => {
       outcome: "stopped",
       reason: "the acceptance verifier found the issue is not fully resolved",
       allocatedTokens: 880_000,
+      rebaseAllocatedTokens: 0,
     }),
   );
   snapshot(trace);
@@ -153,6 +154,7 @@ test("an issue at merge is merged", async ({ assert: { snapshot } }) => {
       stage: "merge",
       outcome: "merged",
       allocatedTokens: 940_000,
+      rebaseAllocatedTokens: 0,
     }),
   );
   snapshot(trace);
