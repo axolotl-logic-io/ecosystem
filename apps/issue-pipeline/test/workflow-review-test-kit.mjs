@@ -139,12 +139,27 @@ function opReply(reply) {
 
 const ITEM = { n: 7, paths: PATHS };
 
-// The first reviewer's whole task for `lens`, as the sweep has always written it.
-function lensTask(lens) {
+const SPEC_HEADING =
+  "Spec (the acceptance check judges the result against it):";
+const REVIEW_RULE = "A finding must not ask for a change the spec forbids.";
+const FIX_RULE =
+  "Fix each finding in a way the spec allows. If a finding can only be met by breaking the spec, dispute it and quote the spec line.";
+
+// The spec's lines in a task, followed by `rule`; none without a spec.
+function specLines(spec, rule) {
+  if (spec === null) {
+    return [];
+  }
+  return [SPEC_HEADING, spec, rule];
+}
+
+// The first reviewer's whole task for `lens`, with `spec` if the issue has one.
+function lensTask(lens, spec = null) {
   return preamble(CFG, ITEM, `reviewer (${lens})`, ROLES.reviewer)
     .concat([
       `Review only this concern: ${LENSES[lens]}`,
       practicesNote(CFG, ITEM, "reviewer"),
+      ...specLines(spec, REVIEW_RULE),
       `The diff against integration is at ${DIFF.path} (${DIFF.lines} lines). Read it, then read surrounding code only where needed.`,
       "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
       "Return an empty list if you find nothing. Do not edit files.",
@@ -163,11 +178,13 @@ function aggregateTask(raw) {
     .join("\n");
 }
 
-// The fixer's whole task for `round` over the `open` findings.
-function fixTask(round, open, disputed = "none") {
+// The fixer's whole task for `round` over the `open` findings, with `spec`
+// if the issue has one.
+function fixTask(round, open, disputed = "none", spec = null) {
   return preamble(CFG, ITEM, `fixer, round ${round} of 2`, ROLES.fixer)
     .concat([
       practicesNote(CFG, ITEM, "writer"),
+      ...specLines(spec, FIX_RULE),
       "Resolve these blocking review findings:",
       findingsText(open),
       "",
@@ -177,11 +194,18 @@ function fixTask(round, open, disputed = "none") {
     .join("\n");
 }
 
-// The re-reviewer's whole task for `lens` over `mine`.
-function rereviewTask(lens, diffPath, mine, resolved = "none") {
+// The re-reviewer's whole task for `lens` over `mine`, with the findings
+// `resolved` before, and `spec` if the issue has one.
+function rereviewTask(
+  lens,
+  diffPath,
+  mine,
+  { resolved = "none", spec = null } = {},
+) {
   return preamble(CFG, ITEM, `re-reviewer (${lens})`, ROLES.rereviewer)
     .concat([
       `Concern: ${LENSES[lens]}`,
+      ...specLines(spec, REVIEW_RULE),
       `The fixer's changes since the last review are at ${diffPath}.`,
       "For each finding below, report `resolved` or `unresolved`. Where the fixer disputed a finding, report `dispute-accepted` if the evidence holds or `dispute-rejected` if not.",
       findingsText(mine),
@@ -208,6 +232,7 @@ export {
   opReply,
   replied,
   rereviewTask,
+  SPEC_HEADING,
   STAMP,
   signatureOf,
   stateWith,

@@ -25,6 +25,26 @@ interface ReviewDiff {
   lines: string;
 }
 
+// What a reviewer or re-reviewer does with the spec.
+const SPEC_RULE_REVIEW = "A finding must not ask for a change the spec forbids.";
+// What the fixer does with the spec.
+const SPEC_RULE_FIX =
+  "Fix each finding in a way the spec allows. If a finding can only be met by breaking the spec, dispute it and quote the spec line.";
+
+// The issue's spec as lines of a task, followed by `rule`, which says what
+// the role does with it. No lines when no spec stage ran.
+function specSection(state: StageState, rule: string): string[] {
+  const { spec } = state.st;
+  if (typeof spec !== "string" || spec === "") {
+    return [];
+  }
+  return [
+    "Spec (the acceptance check judges the result against it):",
+    spec,
+    rule,
+  ];
+}
+
 // The first reviewer's task for `lens`.
 function lensTask(
   ctx: StageContext,
@@ -38,6 +58,7 @@ function lensTask(
     .concat([
       `Review only this concern: ${LENSES[lens]}`,
       practicesNote(cfg, state, "reviewer"),
+      ...specSection(state, SPEC_RULE_REVIEW),
       `The diff against ${cfg.baseBranch} is at ${diff.path} (${diff.lines} lines). Read it, then read surrounding code only where needed.`,
       "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
       "Return an empty list if you find nothing. Do not edit files.",
@@ -114,6 +135,7 @@ function fixTask(
   return preamble(cfg, state, role, budgets.roles.fixer)
     .concat([
       practicesNote(cfg, state, "writer"),
+      ...specSection(state, SPEC_RULE_FIX),
       "Resolve these blocking review findings:",
       findingsText(open),
       "",
@@ -168,6 +190,7 @@ function rereviewTask(
   return preamble(cfg, state, role, budgets.roles.rereviewer)
     .concat([
       `Concern: ${LENSES[lens]}`,
+      ...specSection(state, SPEC_RULE_REVIEW),
       `The fixer's changes since the last review are at ${diffPath}.`,
       "For each finding below, report `resolved` or `unresolved`. Where the fixer disputed a finding, report `dispute-accepted` if the evidence holds or `dispute-rejected` if not.",
       findingsText(findings),

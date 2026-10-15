@@ -17,6 +17,7 @@ import {
   openFinding,
   opReply,
   replied,
+  SPEC_HEADING,
   STAMP,
   signatureOf,
   stateWith,
@@ -36,6 +37,7 @@ const BLOCKING = { severity: "blocking", ...OFF_BY_ONE };
 const RAW = [{ lens: "correctness", ...BLOCKING }];
 const IDS_COMMENT =
   "Blocking findings for the fixer, with duplicates merged. Later comments refer to these ids.\n\n- **f1** `src/a.ts:3` Off by one (raised by correctness)";
+const SPEC = "## Behaviour\n\n1. The loop visits every item.";
 const NIT_SECTION =
   /\*\*Non-blocking\*\* \(the pipeline won't act on these\)\n\n- `src\/a.ts:3` Name it/u;
 const BLOCKING_SECTION = /\*\*Blocking\*\*\n\n- `src\/a.ts:3` Off by one/u;
@@ -142,6 +144,33 @@ test("a review launches the three lenses on the prepared head", () => {
     { headSha, findings, round },
     { headSha: HEAD, findings: [], round: 0 },
   );
+});
+
+describe("the lenses' tasks", () => {
+  // The tasks of the lenses launched on the prepared head of `given`.
+  function lensTasks(given) {
+    const begun = next(given, CTX, []);
+    const step = next(begun.state, CTX, [opReply(PREPARED)]);
+    return step.launches.map(({ task }) => task);
+  }
+
+  test("carry the spec and its rule when the issue has one", () => {
+    const tasks = lensTasks(stateWith("review", { spec: SPEC }));
+    assert.deepEqual(
+      tasks,
+      LENS_NAMES.map((lens) => lensTask(lens, SPEC)),
+    );
+    assert.ok(tasks.every((task) => task.includes(SPEC)));
+  });
+
+  test("leave the spec out when no spec stage ran", () => {
+    const tasks = lensTasks(stateWith("review", { spec: null }));
+    assert.deepEqual(
+      tasks,
+      LENS_NAMES.map((lens) => lensTask(lens)),
+    );
+    assert.ok(tasks.every((task) => !task.includes(SPEC_HEADING)));
+  });
 });
 
 describe("a blocking finding", () => {
