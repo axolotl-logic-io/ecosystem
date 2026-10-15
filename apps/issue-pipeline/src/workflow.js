@@ -15,6 +15,9 @@
 //   Without it, the run is its own lane.
 //   Optional, for a run a human launches for one issue:
 //   issue: N               work only on #N, even with an agent:stopped-* label on it
+//   through: "<stage>"     begin no stage after this one, then release the issue
+//                          at its next stage; { issue: N, through: "spec" }
+//                          triages and specs #N and goes no further
 // Design and decisions: the "Issue pipeline" page of the project-buddy wiki.
 //
 // Everything but this loop is strict TypeScript in src/workflow/. The build

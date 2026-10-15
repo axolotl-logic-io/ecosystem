@@ -21,6 +21,7 @@ import {
   passesOf,
   SAVE_BEFORE,
   STAGE_GROUPS,
+  within,
 } from "./sweep-config.ts";
 import type { ClaimedItem, SweepRun } from "./sweep-item.ts";
 import {
@@ -51,7 +52,7 @@ interface StageBatch {
 }
 
 // The open issue, its stage and how often that stage has begun this sweep,
-// if the stage is one of the group's.
+// if the stage is one of the group's and within the run's args.through.
 interface CurrentStage {
   item: ClaimedItem;
   stage: StageName;
@@ -65,7 +66,7 @@ function currentStage(run: SweepRun, group: number): CurrentStage | null {
   }
   const stages = STAGE_GROUPS[group] ?? [];
   const stage = stages.find((name) => name === item.st.stage);
-  if (stage === undefined) {
+  if (stage === undefined || !within(run.through, stage)) {
     return null;
   }
   const { [stage]: runs = 0 } = run.stagesRun;

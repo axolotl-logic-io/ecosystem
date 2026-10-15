@@ -71,6 +71,8 @@ interface SweepRun {
   stopQueue: OpsSpec[];
   // How many times each stage has begun this sweep.
   stagesRun: Partial<Record<StageName, number>>;
+  // The last stage this run may begin (args.through), or null for every stage.
+  through: StageName | null;
   // The agent and model of each session launched, by key.
   meta: Record<string, LaunchMeta>;
   parentsClosed: number;

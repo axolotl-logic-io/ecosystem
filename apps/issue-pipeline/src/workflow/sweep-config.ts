@@ -78,6 +78,32 @@ const STAGE_GROUPS: readonly (readonly StageName[])[] = [
   ["accept", "security", "merge"],
 ];
 
+// Every stage, in the order an issue moves through them.
+const STAGE_ORDER: readonly StageName[] = STAGE_GROUPS.flat();
+
+// The last stage a run may begin, from args.through: null for every stage.
+// An unknown stage name throws before the sweep launches anything.
+function throughOf(through: unknown): StageName | null {
+  if (through === undefined || through === null || through === "") {
+    return null;
+  }
+  const stage = STAGE_ORDER.find((name) => name === String(through));
+  if (stage === undefined) {
+    throw new Error(
+      `args.through must be one of: ${STAGE_ORDER.join(", ")}`,
+    );
+  }
+  return stage;
+}
+
+// Whether a run that may begin stages up to `through` may begin `stage`.
+function within(through: StageName | null, stage: StageName): boolean {
+  return (
+    through === null ||
+    STAGE_ORDER.indexOf(stage) <= STAGE_ORDER.indexOf(through)
+  );
+}
+
 // The settings the config gives the sweep, the defaults first.
 interface SweepSettings {
   budgets: Budgets;
@@ -124,4 +150,6 @@ export {
   STAGE_GROUPS,
   STAGE_SPAWNS,
   sweepSettings,
+  throughOf,
+  within,
 };

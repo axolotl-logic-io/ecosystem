@@ -25,7 +25,7 @@ import {
 } from "./stages/entry.ts";
 import { parentsClosed } from "./stages/parents.ts";
 import type { StageName, SweepSummary } from "./stages/types.ts";
-import { sweepSettings } from "./sweep-config.ts";
+import { sweepSettings, throughOf } from "./sweep-config.ts";
 import type { SweepCounts, SweepItem, SweepRun } from "./sweep-item.ts";
 import {
   closingOf,
@@ -53,6 +53,7 @@ interface SweepArgs {
   config: string;
   lane?: unknown;
   issue?: unknown;
+  through?: unknown;
 }
 
 // The sweep's id and its clock.
@@ -70,6 +71,7 @@ interface Driver {
   frame: OpsFrame;
   now: () => Date;
   only: number | null;
+  through: StageName | null;
   counts: SweepCounts;
   phase: Phase;
 }
@@ -112,6 +114,7 @@ function runOf(driver: Driver, raw: unknown): SweepRun {
     item: null,
     stopQueue: [],
     stagesRun: {},
+    through: driver.through,
     meta: {},
     parentsClosed: 0,
   };
@@ -266,6 +269,7 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
     frame: { config: args.config, sweepId, lane },
     now,
     only: onlyOf(args),
+    through: throughOf(args.through),
     counts: { seq: 0, spawned: 0 },
     phase: { kind: "start" },
   };
