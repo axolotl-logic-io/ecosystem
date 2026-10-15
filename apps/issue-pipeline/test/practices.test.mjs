@@ -1,7 +1,6 @@
 // The spec writer, the code writers and the first reviewers read the configured
 // coding practices in full (config `practices`), and the config refuses entries
-// outside the worktree. workflow.js runs on load, so its functions are lifted
-// from its source.
+// outside the worktree.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -9,17 +8,14 @@ import path from "node:path";
 import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { OpsError } from "../src/process.ts";
+import { practicesNote } from "../src/workflow/prompts.ts";
 
 const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
-const grab = (src, name) => src.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}\\n`))[0];
 const workflow = read("src/workflow.js");
-
-const practicesUse = workflow.match(/const PRACTICES_USE = \{[\s\S]*?\n\};\n/)[0];
-const practicesNote = (cfg) => new Function("cfg", `${practicesUse}${grab(workflow, "practicesNote")}return practicesNote;`)(cfg);
 const item = { paths: { worktree: "/w/issue-7" } };
 
 test("the spec task names every practices file under the worktree", () => {
-  const note = practicesNote({ practices: ["CONTRIBUTING.md", "wiki/Decisions.md"] })(item);
+  const note = practicesNote({ practices: ["CONTRIBUTING.md", "wiki/Decisions.md"] }, item);
   assert.match(note, /read each of these in full/);
   assert.match(note, /\/w\/issue-7\/CONTRIBUTING\.md, \/w\/issue-7\/wiki\/Decisions\.md\./);
   assert.match(note, /all of the repo's code/);
@@ -27,14 +23,14 @@ test("the spec task names every practices file under the worktree", () => {
 });
 
 test("the spec task says when no practices are configured", () => {
-  assert.match(practicesNote({ practices: [] })(item), /\(none configured\)/);
+  assert.match(practicesNote({ practices: [] }, item), /\(none configured\)/);
 });
 
 test("each role is told what to do with them", () => {
-  const note = practicesNote({ practices: ["CONTRIBUTING.md"] });
-  assert.match(note(item, "spec"), /The spec must follow them/);
-  assert.match(note(item, "writer"), /Every change you make must follow them/);
-  assert.match(note(item, "reviewer"), /mark it `blocking`, quote the rule/);
+  const cfg = { practices: ["CONTRIBUTING.md"] };
+  assert.match(practicesNote(cfg, item, "spec"), /The spec must follow them/);
+  assert.match(practicesNote(cfg, item, "writer"), /Every change you make must follow them/);
+  assert.match(practicesNote(cfg, item, "reviewer"), /mark it `blocking`, quote the rule/);
 });
 
 const taskOf = (label) => {
@@ -44,11 +40,11 @@ const taskOf = (label) => {
 };
 
 test("the spec, implement, fix and first-review tasks carry the note", () => {
-  assert.match(taskOf("Write the spec"), /practicesNote\(it, "spec"\)/);
-  assert.match(taskOf("Implement issue"), /practicesNote\(it, "writer"\)/);
-  assert.match(taskOf("Fix review findings"), /practicesNote\(it, "writer"\)/);
-  assert.match(taskOf("Fix failing checks"), /practicesNote\(it, "writer"\)/);
-  assert.match(taskOf("Review "), /practicesNote\(it, "reviewer"\)/);
+  assert.match(taskOf("Write the spec"), /practicesNote\(cfg, it, "spec"\)/);
+  assert.match(taskOf("Implement issue"), /practicesNote\(cfg, it, "writer"\)/);
+  assert.match(taskOf("Fix review findings"), /practicesNote\(cfg, it, "writer"\)/);
+  assert.match(taskOf("Fix failing checks"), /practicesNote\(cfg, it, "writer"\)/);
+  assert.match(taskOf("Review "), /practicesNote\(cfg, it, "reviewer"\)/);
 });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-practices-"));

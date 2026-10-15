@@ -7,8 +7,10 @@
 // stderr and exits non-zero.
 //
 // The workflow is the body of an async function that pi-subagents runs with
-// `args` and its tools in scope, so it is transformed alone, never bundled: it
-// keeps its top-level `await` and `return`, its globals and gains no imports.
+// `args` and its tools in scope. Its helpers (src/workflow/) are bundled into
+// an IIFE that defines `workflowModules`, placed ahead of the body; the body
+// itself is transformed alone, never bundled: it keeps its top-level `await`
+// and `return`, its globals and gains no imports.
 // The ops CLI is bundled for Node into one ES module that keeps its `#!` line.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -20,6 +22,9 @@ import { build, transform } from "esbuild";
 const SOURCE_DIR = path.join(import.meta.dirname, "src");
 const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
 const WORKFLOW_SOURCE = path.join(SOURCE_DIR, "workflow.js");
+const WORKFLOW_HELPERS_SOURCE = path.join(SOURCE_DIR, "workflow", "index.ts");
+// The variable the helpers' bundle defines, which the body reads them from.
+const WORKFLOW_HELPERS_GLOBAL = "workflowModules";
 const OPS_SOURCE = path.join(SOURCE_DIR, "ops.mjs");
 const WORKFLOW_OUTPUT = "workflow.js";
 const OPS_OUTPUT = "ops.mjs";
@@ -54,7 +59,31 @@ function unwrap(code: string): string {
   return code.slice(WRAPPER_START.length, code.length - WRAPPER_END.length);
 }
 
+// The helpers as one IIFE script: `var workflowModules = (() => {…})();`.
+async function bundleWorkflowHelpers(): Promise<string> {
+  const { outputFiles } = await build({
+    bundle: true,
+    charset: "utf8",
+    entryPoints: [WORKFLOW_HELPERS_SOURCE],
+    format: "iife",
+    globalName: WORKFLOW_HELPERS_GLOBAL,
+    logLevel: "silent",
+    platform: "neutral",
+    target: "esnext",
+    // Not tsconfig.json: its `strict` would make esbuild open the bundle with
+    // "use strict", which, ahead of the body, would make the whole sweep strict.
+    tsconfigRaw: {},
+    write: false,
+  });
+  const [bundle] = outputFiles;
+  if (bundle === undefined) {
+    throw new Error("build: esbuild wrote no bundle of the workflow's helpers");
+  }
+  return bundle.text;
+}
+
 async function buildWorkflow(outDir: string): Promise<void> {
+  const helpers = await bundleWorkflowHelpers();
   const source = await readFile(WORKFLOW_SOURCE, "utf8");
   const result = await transform(`${WRAPPER_START}${source}\n${WRAPPER_END}`, {
     charset: "utf8",
@@ -63,7 +92,10 @@ async function buildWorkflow(outDir: string): Promise<void> {
     sourcefile: WORKFLOW_SOURCE,
     target: "esnext",
   });
-  await writeFile(path.join(outDir, WORKFLOW_OUTPUT), unwrap(result.code));
+  await writeFile(
+    path.join(outDir, WORKFLOW_OUTPUT),
+    `${helpers}${unwrap(result.code)}`,
+  );
 }
 
 async function buildOps(outDir: string): Promise<void> {

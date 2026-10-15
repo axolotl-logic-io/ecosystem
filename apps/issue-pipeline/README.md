@@ -7,9 +7,10 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 | Path | What it is |
 |---|---|
 | `src/workflow.js` | The sweep. Runs in the pi-subagents sandbox and uses no model tokens itself. |
+| `src/workflow/` | The sweep's helpers that need no sweep state (prompts, schemas, findings, signing, the token budget), as strict TypeScript. `index.ts` exports the one `helpers` object the sweep reads them from. |
 | `src/ops.mjs` | The only code that runs `git` and `gh` or reads tokens, called through the `issue-pipeline-ops` agent. |
 | `src/ops/` | The ops moved out of `src/ops.mjs` into strict TypeScript, one module per op (`sweep`, `claim`, `save-state`, `ask`, `split`, `stop`), which `src/ops.mjs` imports and registers (#183). |
-| `build.ts` | Builds `src/` into `dist/` with esbuild: the workflow is transformed alone, keeping its top-level `await` and `return`; ops is bundled into one Node ES module. |
+| `build.ts` | Builds `src/` into `dist/` with esbuild: the workflow's helpers are bundled into an IIFE placed ahead of the sweep's body, which is transformed alone, keeping its top-level `await` and `return`; ops is bundled into one Node ES module. |
 | `dist/` | The build's output, `workflow.js` and `ops.mjs`, which the install copies. Ignored by git and Biome. |
 | `agents/` | The four agents: `issue-pipeline-ops` (command runner), `-reader` (read-only), `-specifier` (read-only plus web search) and `-writer`. |
 | `prompts/` | `/pipeline-start` and `/pipeline-pause`, which start and pause a lane in a pi session. |
@@ -17,7 +18,7 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 | `install.mjs` | Builds, then installs this folder where pi reads it. |
 | `test/` | Tests for `src/ops.mjs`, `src/workflow.js`, `build.ts` and `install.mjs`, and the harness that runs the built workflow with scripted replies. |
 
-`build.ts` is strict TypeScript, run by Node's type stripping and checked by `tsc` (`tsconfig.json`, which also covers `src/**/*.ts`). The sources in `src/` are still untyped JavaScript, outside `tsc` because `allowJs` is off: they don't meet the coding practices yet, which #162 tracks.
+`build.ts` is strict TypeScript, run by Node's type stripping and checked by `tsc` (`tsconfig.json`, which also covers `src/**/*.ts`). The workflow's helpers in `src/workflow/` and the ops CLI's modules in `src/*.ts` and `src/ops/` are typed too. `src/workflow.js` and `src/ops.mjs` are still untyped JavaScript, outside `tsc` because `allowJs` is off: they don't meet the coding practices yet, which #162 tracks.
 
 `{{ISSUE_PIPELINE_ROOT}}` and `{{PI_CODING_AGENT_DIR}}` in the agents and prompts are filled in by the install.
 
@@ -42,7 +43,7 @@ Each repo's config, its setup and teardown scripts and its token stay local in `
 ```bash
 mise //apps/issue-pipeline:check      # typecheck, build, then the tests
 mise //apps/issue-pipeline:build      # build src/ into dist/
-mise //apps/issue-pipeline:typecheck  # tsc on build.ts
+mise //apps/issue-pipeline:typecheck  # tsc on build.ts and src/**/*.ts
 ```
 
 The `test/workflow-stages-*.test.mjs` scenarios run the built workflow through `test/workflow-harness.mjs` with scripted replies, and pin each stage's launches in `.snapshot` files beside them: each launch's key, agent and label, and an ops launch's request. After an intended change to the workflow, refresh them from this folder with `node --test --test-update-snapshots 'test/workflow-stages-*.test.mjs'`, and review the snapshot diff before committing it.
