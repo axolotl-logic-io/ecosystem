@@ -1,7 +1,6 @@
-// The shapes the workflow's helpers read and write. workflow.js is untyped, so
-// these describe what it passes in: the issue's saved state, the work item the
-// sweep holds for its issue, and the slices of the repo config each helper
-// needs.
+// The shapes the workflow's modules read and write: the issue's saved state,
+// the work item a helper reads for its issue, and the slices of the repo
+// config each helper needs.
 
 import type { Signature } from "./signing.ts";
 

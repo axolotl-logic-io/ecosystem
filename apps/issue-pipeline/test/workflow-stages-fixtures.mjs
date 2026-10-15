@@ -50,7 +50,8 @@ function sweepReply({ items = [], parents = [], config = {} } = {}) {
 
 // A won claim of an issue saved at `stage`. The state copies ops.mjs's
 // newState, which can't be imported because ops.mjs runs as a CLI; `fields`
-// replace its fields (`number` defaults to ISSUE).
+// replace its fields (`number` defaults to ISSUE). The paths are the ones
+// ops' claim gives.
 function claimAt(stage, fields = {}) {
   const state = {
     version: 1,
@@ -85,6 +86,7 @@ function claimAt(stage, fields = {}) {
       worktree,
       issueFile: `/w/runs/o__r/issue-${state.number}/issue.md`,
       wiki: `${worktree}/wiki`,
+      handoffFile: `/w/runs/o__r/issue-${state.number}/handoff.md`,
     },
   };
 }

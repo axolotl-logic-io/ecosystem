@@ -116,6 +116,64 @@ test("a sweep closes the parents it is given", async ({
   snapshot(trace);
 });
 
+test("a failed claim is the sweep's item, with no state", async () => {
+  const { trace, summary } = await runWorkflow({
+    args: WORKFLOW_ARGS,
+    ops: {
+      sweep: sweepReply({ items: [LOST_ISSUE] }),
+      claim: { ok: false, error: "the issue is locked" },
+    },
+  });
+  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2"]);
+  assert.deepEqual(
+    summary,
+    sweepSummary({
+      items: [
+        {
+          issue: 7,
+          pr: null,
+          stage: null,
+          outcome: "claim-failed",
+          reason: "the issue is locked",
+          allocatedTokens: null,
+        },
+      ],
+    }),
+  );
+});
+
+test("a PR branch that moved outside the pipeline stops the claimed issue", async () => {
+  const { trace, summary } = await runWorkflow({
+    args: WORKFLOW_ARGS,
+    ops: {
+      ...ROUTINE_OPS,
+      sweep: sweepReply({ items: [LOST_ISSUE] }),
+      claim: {
+        ...claimAt("merge", { pr: 42, headSha: "aaaaaaa", allocated: 9 }),
+        remoteHead: "bbbbbbb",
+      },
+    },
+  });
+  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "i7-stop-3"]);
+  const { request } = trace.at(-1);
+  assert.equal(request.detail, "Expected aaaaaaa, found bbbbbbb.");
+  assert.deepEqual(
+    summary,
+    sweepSummary({
+      items: [
+        {
+          issue: 7,
+          pr: 42,
+          stage: "merge",
+          outcome: "stopped",
+          reason: "the PR branch changed outside the pipeline",
+          allocatedTokens: 9,
+        },
+      ],
+    }),
+  );
+});
+
 test("a launch with no scripted reply rejects the run, naming its key", async () => {
   await assert.rejects(
     runWorkflow({

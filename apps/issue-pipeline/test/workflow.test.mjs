@@ -13,6 +13,10 @@ const HELPERS_DESTRUCTURE =
   /const \{(?<list>[^}]*)\} = workflowModules\.helpers;/u;
 // One destructured name, with or without a local rename.
 const DESTRUCTURED_NAME = /^\s*(?<name>\w+)\s*(?::\s*\w+\s*)?$/u;
+// The loop, a function declaration and a labelled section of the old body.
+const WHILE_LOOP = /\bwhile\s*\(/gu;
+const FUNCTION_DECLARATION = /\bfunction\b/u;
+const SECTION_BLOCK = /\/\/ -{10}/u;
 
 const body = fs.readFileSync(
   new URL("../src/workflow.js", import.meta.url),
@@ -42,6 +46,17 @@ test("every helper workflow.js reads is one the helpers' module exports", () => 
     assert.ok(Object.hasOwn(helpers, name), name);
     assert.notEqual(helpers[name], undefined, name);
   }
+});
+
+test("workflow.js is only the top-level loop", () => {
+  assert.equal(body.match(WHILE_LOOP)?.length, 1);
+  assert.doesNotMatch(body, FUNCTION_DECLARATION);
+  assert.doesNotMatch(body, SECTION_BLOCK);
+});
+
+test("workflow.js reads every helper the helpers' module lists", () => {
+  const read = new Set(destructuredNames(body));
+  assert.deepEqual(read, new Set(Object.keys(helpers)));
 });
 
 test("the Acceptance line comes from the state, so a merge in a later sweep keeps it", () => {

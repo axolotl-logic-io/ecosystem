@@ -69,5 +69,5 @@ function byStep(role: string): Signature {
   return { role, agent: null, model: null, run: null };
 }
 
-export type { Signature, SpecMeta };
+export type { LaunchMeta, Signature, SpecMeta };
 export { by, byStep };

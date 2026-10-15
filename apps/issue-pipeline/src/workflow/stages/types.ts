@@ -1,8 +1,9 @@
 // The step machine the sweep runs its stages on. A stage is a sync `next`
 // that takes the issue's JSON-safe state and the results of the launches it
 // asked for last, and returns its next step: more launches, or done. The
-// sweep's top-level loop does the launching, and applies the comments and the
-// stop each step carries, so no stage awaits anything.
+// sweep's driver (../sweep.ts) applies the comments and the stop each step
+// carries and hands its launches to the loop that awaits them, so no stage
+// awaits anything. The sweep's entry (entry.ts) has its own steps here too.
 
 import type { Budgets } from "../budget.ts";
 import type { JsonSchema } from "../schemas.ts";
@@ -13,6 +14,7 @@ import type {
   ItemPaths,
   PracticesConfig,
   RepoConfig,
+  Role,
 } from "../types.ts";
 
 // The stages, in the order an issue moves through them.
@@ -173,6 +175,74 @@ interface StageContext {
   hasRoom: (stage: StageName) => boolean;
 }
 
+// The repo config as the sweep reply carries it: what the stages read, the
+// token budgets, and the config's overrides of the sweep's defaults.
+interface SweepConfig extends StageConfig {
+  sessionTokenCap: number;
+  issueTokenBudget: number;
+  roleBudgets?: Readonly<Partial<Record<Role, number>>> | null;
+  models?: Readonly<Partial<Record<ModelRole, string>>> | null;
+  maxSpawnsPerRun?: number | null;
+}
+
+// An issue the sweep may claim.
+interface SweepCandidate {
+  number: number;
+}
+
+// The sweep op's reply: the config, the candidates in the order to claim
+// them, how many issues wait for an answer, and the parents to close.
+interface SweepReply {
+  ok: true;
+  config: SweepConfig;
+  items: readonly SweepCandidate[];
+  waiting: number;
+  parents: readonly number[];
+}
+
+// A candidate another lane claimed first: the lane that holds it, and
+// whether ops noted on the issue that this lane abandoned it.
+interface AbandonedClaim {
+  issue: number;
+  holder: string | null;
+  commented: boolean;
+}
+
+// What a claim reply means for the sweep: the candidate was lost to another
+// lane, the claim failed (with the reason, if the reply gave one), or the
+// sweep holds the issue, with the stop to queue if its PR branch moved.
+type ClaimStep =
+  | { kind: "lost"; abandoned: AbandonedClaim }
+  | { kind: "failed"; reason: string | null }
+  | {
+      kind: "claimed";
+      st: IssueState;
+      paths: ItemPaths;
+      stop: StageStop | null;
+    };
+
+// The sweep's issue in its summary. `pr` is undefined when the state has no
+// `pr` field.
+interface SummaryItem {
+  issue: number;
+  pr: number | null | undefined;
+  stage: string | null;
+  outcome: string;
+  reason: string | null;
+  allocatedTokens: number | null;
+}
+
+// What a sweep returns.
+interface SweepSummary {
+  sweep: string;
+  lane: string;
+  repo: string;
+  waiting: number;
+  abandoned: readonly AbandonedClaim[];
+  items: readonly SummaryItem[];
+  parentsClosed: number;
+}
+
 interface StageMachine {
   next: (
     state: StageState,
@@ -182,10 +252,14 @@ interface StageMachine {
 }
 
 export type {
+  AbandonedClaim,
   ChildLaunch,
   ChildResult,
+  ClaimStep,
   Launch,
   LaunchResult,
+  LaunchStep,
+  ModelRole,
   OpLaunch,
   OpResult,
   StageCommands,
@@ -196,4 +270,10 @@ export type {
   StageState,
   StageStop,
   Step,
+  StepEffects,
+  SummaryItem,
+  SweepCandidate,
+  SweepConfig,
+  SweepReply,
+  SweepSummary,
 };
