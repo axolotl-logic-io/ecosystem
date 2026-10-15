@@ -451,10 +451,17 @@ function pipelineRole(cfg, c) {
 const laneOf = (req) => String(req.lane || req.sweepId);
 const leaseLane = (lease) => lease && (lease.lane || lease.sweepId);
 
+// A claim is a comment the pipeline posted as role `claim`. The claim marker alone
+// isn't enough: a person writing from the same account may quote it, as #120 did.
+function isClaimComment(cfg, c) {
+  const body = c.body || "";
+  return c.user?.login === cfg.account && body.match(PIPELINE_MARK)?.[1] === "claim" && CLAIM_MARK.test(body);
+}
+
 function liveClaims(cfg, comments) {
   const maxAge = cfg.leaseHours * 3600 * 1000;
   return comments
-    .filter((c) => c.user?.login === cfg.account && CLAIM_MARK.test(c.body || "") && Date.now() - Date.parse(c.updated_at || c.created_at) < maxAge)
+    .filter((c) => isClaimComment(cfg, c) && Date.now() - Date.parse(c.updated_at || c.created_at) < maxAge)
     .map((c) => {
       const m = c.body.match(CLAIM_MARK);
       return { id: c.id, lane: m[1], sweep: m[2], body: c.body };

@@ -10,3 +10,20 @@ test("workflow.js compiles as an async function body", () => {
   const body = fs.readFileSync(new URL("../workflow.js", import.meta.url), "utf8");
   assert.doesNotThrow(() => new AsyncFunction("args", body));
 });
+
+// The merge summary's Acceptance line, lifted from workflow.js with `cfg` in scope.
+const wf = fs.readFileSync(new URL("../workflow.js", import.meta.url), "utf8");
+const acceptanceSummary = new Function("cfg", wf.match(/function acceptanceSummary\([\s\S]*?\n\}\n/)[0] + "return acceptanceSummary;")({ baseBranch: "integration" });
+
+test("the Acceptance line comes from the state, so a merge in a later sweep keeps it", () => {
+  assert.equal(acceptanceSummary({ st: { acceptReason: "Does what #7 asks." } }), "Does what #7 asks.");
+});
+
+test("the Acceptance line notes a verdict given before a clean rebase", () => {
+  assert.equal(
+    acceptanceSummary({ st: { acceptReason: "Does what #7 asks." }, rebasedOnly: true }),
+    "Does what #7 asks. (passed before a clean rebase onto integration)",
+  );
+  assert.equal(acceptanceSummary({ st: {}, rebasedOnly: true }), "passed before a clean rebase onto integration");
+  assert.equal(acceptanceSummary({ st: {} }), "");
+});

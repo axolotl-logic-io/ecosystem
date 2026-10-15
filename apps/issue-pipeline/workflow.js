@@ -465,6 +465,13 @@ function findingsStopReason(item, base) {
 function openFindings(item) {
   return item.st.findings.filter((f) => f.status === "open");
 }
+// The merge summary's Acceptance line: the verifier's reason, and whether that
+// verdict was given before a clean rebase that only re-ran the tests.
+function acceptanceSummary(item) {
+  const reason = item.st.acceptReason || "";
+  const rebased = item.rebasedOnly ? "passed before a clean rebase onto " + cfg.baseBranch : "";
+  return reason && rebased ? reason + " (" + rebased + ")" : reason || rebased;
+}
 
 // ---------- claim ----------
 
@@ -1274,7 +1281,8 @@ accept: {
     stopIssue(it, "the acceptance verifier found the issue is not fully resolved", o.reason);
     break accept;
   }
-  it.acceptReason = o.reason;
+  // Kept in the state: a merge queued behind an older PR runs in a later sweep.
+  it.st.acceptReason = o.reason;
   it.st.stage = "security";
 }
 await flushStops();
@@ -1364,7 +1372,7 @@ merge: {
         state: it.st,
         expectedSha: it.st.verifiedSha,
         mergeOrder: true,
-        summary: "Checks: " + (it.st.verifySummary || "") + "\n\nAcceptance: " + (it.acceptReason || (it.rebasedOnly ? "passed before a clean rebase onto " + cfg.baseBranch : "")),
+        summary: "Checks: " + (it.st.verifySummary || "") + "\n\nAcceptance: " + acceptanceSummary(it),
       }),
     ])
   )[0];
