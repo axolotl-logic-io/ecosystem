@@ -3,6 +3,7 @@
   "baseBranch": "main",
   "account": "axolotl-logic",
   "allowedUsers": ["axolotl-logic"],
+  "practices": ["AGENTS.md", "CONTRIBUTING.md", "wiki/Decisions.md"],
   "tokenFile": "~/.pi/agent/issue-pipeline/secrets/OWNER__REPO.token",
   "mergeAdmin": false,
   "leaseHours": 3,

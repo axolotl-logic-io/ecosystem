@@ -6,6 +6,10 @@
 description = "Run the pipeline's tests"
 run = "node --check ops.mjs && node --check install.mjs && node --test 'test/*.test.mjs'"
 
+[tasks.lint]
+description = "Biome with the repo's lint policy; not yet part of check (#162)"
+run = "biome check --error-on-warnings"
+
 [tasks.install]
 description = "Install this checkout's pipeline where pi reads it"
 run = "node install.mjs"

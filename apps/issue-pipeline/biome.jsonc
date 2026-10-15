@@ -1,0 +1,8 @@
+// The issue pipeline's Biome config. It extends the root biome.jsonc, which
+// holds the lint policy for all of the repo's code (`practices-cover-all-code`
+// in the wiki). The pipeline doesn't pass it yet: `mise //apps/issue-pipeline:lint`
+// lists what is left, and joins `check` once it passes (#162).
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "extends": "//"
+}

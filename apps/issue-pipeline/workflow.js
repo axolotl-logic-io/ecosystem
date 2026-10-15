@@ -225,6 +225,17 @@ function preamble(item, role, cap) {
   ];
 }
 
+// The coding practices the spec writer must read in full (config `practices`,
+// Autumn, 2026-10-15). They cover all of the repo's code, not only the app an
+// issue names, so a spec can't skip them by reading only the pages that look relevant.
+function practicesNote(item) {
+  const files = (cfg.practices || []).map((p) => item.paths.worktree + "/" + p);
+  return [
+    "Coding practices: before the code, read each of these in full, skipping any that don't exist: " + (files.length ? files.join(", ") : "(none configured)") + ". Also read any contributor rules they point to. They apply to all of the repo's code, not only the part the issue names.",
+    "The spec must follow them: its Design names the practices that bear on the work, and its Tests meet their test rules. If the work can't follow one, say which rule and why in Design. If following the issue needs an exception only the maintainer can grant, set `decision` to needs-info and ask for it.",
+  ].join("\n");
+}
+
 function child(item, name, opts) {
   seq++;
   const spec = {
@@ -572,11 +583,12 @@ spec: {
           .concat([
             "Triage found this issue ready. Its notes:\n" + (it.st.plan || "(none)"),
             "",
-            "Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the wiki pages that bear on it" + (it.paths.wiki ? " (start from " + it.paths.wiki + "/Home.md)" : "") + "; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.",
+            "Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the project's coding practices (below); the wiki pages that bear on it" + (it.paths.wiki ? " (start from " + it.paths.wiki + "/Home.md)" : "") + "; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.",
+            practicesNote(it),
             "`spec` is GitHub markdown with these sections:",
             "- **Behaviour**: what is true when the issue is done, as checkable statements.",
             "- **Out of scope**: what this issue does not change.",
-            "- **Design**: the approach, the files to change with `file:line` anchors, and the wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
+            "- **Design**: the approach, the files to change with `file:line` anchors, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
             "- **Tests**: the tests to add or change, each naming the behaviour it pins down and why it fails today.",
             "- **Wiki updates**: wiki pages to add or change, or \"None\".",
             "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",

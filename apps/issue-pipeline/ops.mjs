@@ -216,6 +216,10 @@ const DEFAULTS = {
   takeNewWork: true,
   // Issues with any of these labels are never pipeline work, such as deploy tickets.
   skipLabels: [],
+  // The files that hold the project's coding practices, relative to the worktree
+  // (wiki pages under the wiki's dir, such as "wiki/Decisions.md"). The spec writer
+  // reads each in full and specs to them (Autumn, 2026-10-15). Missing files are skipped.
+  practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
   issueTokenBudget: 1000000,
   sessionTokenCap: 150000,
@@ -256,6 +260,12 @@ function loadConfig(configPath) {
   }
   for (const u of cfg.allowedUsers) {
     if (typeof u !== "string" || !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(u)) throw new OpsError(`bad GitHub username in allowedUsers: ${JSON.stringify(u)}`);
+  }
+  if (!Array.isArray(cfg.practices)) throw new OpsError(`config ${configPath}: practices must be a list of paths`);
+  for (const p of cfg.practices) {
+    if (typeof p !== "string" || !p || path.isAbsolute(p) || p.split(/[\\/]/).includes("..")) {
+      throw new OpsError(`config ${configPath}: practices entry ${JSON.stringify(p)} must be a path inside the worktree`);
+    }
   }
   cfg.slug = cfg.repo.replace("/", "__");
   return cfg;
