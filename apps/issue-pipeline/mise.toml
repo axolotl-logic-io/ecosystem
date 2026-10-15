@@ -17,7 +17,7 @@ description = "Build src/ into dist/ with esbuild (build.ts)"
 run = "npm run build"
 
 [tasks.typecheck]
-description = "Typecheck the pipeline's TypeScript with tsc"
+description = "Typecheck the pipeline's TypeScript, install.mjs and the @ts-check test kits (tsconfig.test.json) with tsc"
 run = "npm run typecheck"
 
 [tasks.lint]

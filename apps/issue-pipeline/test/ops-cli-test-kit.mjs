@@ -1,3 +1,4 @@
+// @ts-check
 // The harness for the ops CLI tests (test/ops-*.test.mjs): a temporary
 // pipeline root with a bare origin on `integration`, a config pointing at it,
 // a fake gh first on PATH, and askOps(), which sends one request to
@@ -7,9 +8,11 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { commentLines, installFakeGh } from "./fake-gh.mjs";
+import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
+import { runOps } from "./ops-run-test-kit.mjs";
 
-const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
+/** @import { GhReply } from "./fake-gh.mjs" */
+
 const ACCOUNT = "bot";
 const ALLOWED = "alice";
 const TIME = "<time>";
@@ -25,6 +28,7 @@ const ALL_LABELS = [
 const root = fs.mkdtempSync("/tmp/issue-pipeline-ops-cli-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
 
+/** @param {string} command @returns {string} */
 function sh(command) {
   const r = spawnSync("bash", ["-c", command], { encoding: "utf8" });
   if (r.status !== 0) {
@@ -44,6 +48,7 @@ const { loadConfig, publicConfig } = await import("../src/config.ts");
 const labelNames = [...ALL_LABELS, ...STOPS.map((stop) => stop.label.name)];
 
 // Writes a config with `extra` over the base settings and returns its path.
+/** @param {object} extra @returns {string} */
 function configWith(extra) {
   const file = path.join(root, `config-${fs.readdirSync(root).length}.json`);
   const base = {
@@ -61,42 +66,41 @@ function configWith(extra) {
 
 const CONFIG = configWith({});
 
+/** @param {string} file @returns {object} */
 function publicConfigOf(file) {
   return publicConfig(loadConfig(file));
 }
 
-function normalise(value) {
-  return JSON.parse(JSON.stringify(value).replace(ISO_TIME, TIME));
+/** @param {string} text @returns {string} */
+function timeless(text) {
+  return text.replace(ISO_TIME, TIME);
 }
 
 // The reply to `request`, sent with the base config unless it names one.
+/** @param {object} request @returns {unknown} */
 function askOps(request) {
-  const input = `Issue pipeline ops request follows.\n\nBEGIN_OPS_REQUEST\n${JSON.stringify({ config: CONFIG, ...request })}\nEND_OPS_REQUEST`;
-  const r = spawnSync(process.execPath, [OPS], {
-    input,
-    encoding: "utf8",
-    env: { ISSUE_PIPELINE_ROOT: root, PATH: process.env.PATH, HOME: root },
-  });
-  if (r.status !== 0) {
-    throw new Error(`ops exited ${r.status}: ${r.stderr}`);
-  }
-  return normalise(JSON.parse(r.stdout));
+  const stdout = runOps({ config: CONFIG, request, root, home: root });
+  return JSON.parse(timeless(JSON.stringify(JSON.parse(stdout))));
 }
 
 // Queues gh's replies, and forgets earlier calls.
+/** @param {readonly GhReply[]} replies @returns {void} */
 function reply(replies) {
   fakeGh.reply(replies);
 }
 
+/** @returns {string[][]} */
 function calls() {
-  return normalise(fakeGh.calls());
+  return fakeGh.calls().map((args) => args.map(timeless));
 }
 
 // A comment as listComments reads it.
+/** @param {number} id @param {string} body @param {string} [login] @param {string} [at] @returns {object} */
 function issueComment(id, body, login = ACCOUNT, at = "2026-10-15T01:00:00Z") {
-  return { id, body, user: { login }, created_at: at, updated_at: at };
+  return githubComment({ id, body, login, created: at, updated: at });
 }
 
+/** @param {number} id @param {object} state @returns {object} */
 function stateComment(id, state) {
   return issueComment(
     id,
@@ -105,6 +109,7 @@ function stateComment(id, state) {
 }
 
 // gh's reply to listComments for issue `n`.
+/** @param {number} n @param {readonly unknown[]} comments @returns {GhReply} */
 function commentsReply(n, comments) {
   return {
     when: `issues/${n}/comments?per_page`,
@@ -112,12 +117,23 @@ function commentsReply(n, comments) {
   };
 }
 
+/** @type {GhReply} */
 const labelsReply = {
   when: "label list",
   stdout: JSON.stringify(labelNames.map((name) => ({ name }))),
 };
 
-// gh's calls, as fake-gh's calls() lists them.
+/**
+ * gh's calls, as fake-gh's calls() lists them.
+ * @type {{
+ *   listComments: (n: number) => string[],
+ *   post: (n: number, body: string) => string[],
+ *   postRaw: (n: number, body: string) => string[],
+ *   patch: (id: number, body: string) => string[],
+ *   label: (n: number, name: string) => string[],
+ *   unlabel: (n: number, name: string) => string[],
+ * }}
+ */
 const ghCalls = {
   listComments: (n) => [
     "api",
@@ -162,6 +178,7 @@ const ghCalls = {
   ],
 };
 
+/** @param {number} n @param {object} state @returns {string} */
 function stateBody(n, state) {
   return `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->\n<sub>Machine state for #${n}. The pipeline rewrites this comment; do not edit it.</sub>`;
 }
@@ -170,6 +187,7 @@ const CLAIM_HEAD =
   "**🤖 issue-pipeline · claim**\n<!-- agent-pipeline:comment role=claim -->\n\n";
 
 // A claim comment by `lane` of sweep `sweep`, last edited `at`.
+/** @param {number} id @param {string} lane @param {string} sweep @param {string} at @returns {object} */
 function claimComment(id, lane, sweep, at) {
   return issueComment(
     id,
@@ -180,6 +198,7 @@ function claimComment(id, lane, sweep, at) {
 }
 
 // The edit that closes claimComment(id, "me", "s1", …) with `why`.
+/** @param {number} id @param {string} why @returns {string[]} */
 function closedClaim(id, why) {
   return ghCalls.patch(
     id,
@@ -187,10 +206,12 @@ function closedClaim(id, why) {
   );
 }
 
+/** @param {number} n @returns {string} */
 function worktree(n) {
   return path.join(root, "work", "o__r", `issue-${n}`);
 }
 
+/** @param {number} n @returns {string} */
 function runDir(n) {
   return path.join(root, "runs", "o__r", `issue-${n}`);
 }

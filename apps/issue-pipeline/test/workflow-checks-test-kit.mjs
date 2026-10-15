@@ -1,23 +1,34 @@
+// @ts-check
 // Fixtures for driving the sync and checks step machines directly: a context
 // with a fixed clock, issue #7's state at a stage, and builders for the
 // results a step's launches return.
 import { byStep } from "../src/workflow/signing.ts";
+import { hasRoom, modelsWith } from "./workflow-context-test-kit.mjs";
+
+/** @import { Signature } from "../src/workflow/signing.ts" */
+/** @import { ChildResult, LaunchResult, OpResult, StageComment, StageContext, StageMachine, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState, ItemPaths } from "../src/workflow/types.ts" */
 
 const NOW = new Date("2026-10-15T12:00:30Z");
 const STAMP = "2026-10-15T12:00Z";
+/** @type {ItemPaths} */
 const PATHS = {
   worktree: "/w/issue-7",
   issueFile: "/runs/issue.md",
   wiki: null,
+  handoffFile: "/runs/issue-7/handoff.md",
 };
+/** @type {StageContext["cfg"]} */
 const CFG = {
   repo: "o/r",
   baseBranch: "integration",
   maxTriages: 2,
+  maxFixRounds: 2,
   maxSyncs: 3,
   maxCiFixes: 1,
   ciWaitMinutes: 30,
   practices: ["AGENTS.md"],
+  commands: {},
 };
 const ROLES = {
   triage: 50_000,
@@ -41,6 +52,7 @@ const ISSUE_BUDGET = 1_000_000;
 // Every kit's rebase pool (`rebaseTokenBudget`).
 const REBASE_BUDGET = 500_000;
 
+/** @param {Partial<StageContext>} [fields] @returns {StageContext} */
 function contextWith(fields = {}) {
   return {
     cfg: CFG,
@@ -50,9 +62,9 @@ function contextWith(fields = {}) {
       issueBudget: ISSUE_BUDGET,
       rebaseBudget: REBASE_BUDGET,
     },
-    models: MODELS,
+    models: modelsWith(MODELS),
     now: () => NOW,
-    hasRoom: () => true,
+    hasRoom,
     ...fields,
   };
 }
@@ -61,6 +73,7 @@ const CTX = contextWith();
 
 // Issue #7 at `stage`'s first call, with `fields` replacing its saved
 // state's.
+/** @param {string} stage @param {Partial<IssueState>} [fields] @returns {StageState} */
 function stateAt(stage, fields = {}) {
   return {
     n: 7,
@@ -91,6 +104,7 @@ function stateAt(stage, fields = {}) {
 }
 
 // The signature the sweep gives a session launched as `name`.
+/** @param {string} name @returns {Signature} */
 function signedAs(name) {
   return {
     role: name,
@@ -101,6 +115,7 @@ function signedAs(name) {
 }
 
 // A session's result, signed as its launch `name`.
+/** @param {string} name @param {unknown} structuredOutput @returns {ChildResult} */
 function sessionResult(name, structuredOutput) {
   return {
     kind: "child",
@@ -111,6 +126,7 @@ function sessionResult(name, structuredOutput) {
   };
 }
 
+/** @param {string} name @param {string} error @returns {ChildResult} */
 function failedSession(name, error) {
   return {
     kind: "child",
@@ -122,16 +138,27 @@ function failedSession(name, error) {
 }
 
 // The step after `step`'s launches return `results`, by `next`.
+/**
+ * @param {StageMachine["next"]} next @param {Step} step @param {StageContext} ctx
+ * @param {...LaunchResult} results
+ * @returns {Step}
+ */
 function after(next, step, ctx, ...results) {
   return next(step.state, ctx, results);
 }
 
 // The step after `step`'s one ops request gets `reply`.
+/**
+ * @param {StageMachine["next"]} next @param {Step} step
+ * @param {OpResult["reply"]} reply @param {StageContext} [ctx]
+ * @returns {Step}
+ */
 function replied(next, step, reply, ctx = CTX) {
   return after(next, step, ctx, { kind: "op", reply });
 }
 
 // A comment a deterministic step posts on the PR.
+/** @param {string} role @param {string} body @returns {StageComment} */
 function stepComment(role, body) {
   return { by: byStep(role), body, where: "pr" };
 }

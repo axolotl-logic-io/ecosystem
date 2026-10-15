@@ -1,3 +1,4 @@
+// @ts-check
 // Runs the built workflow as pi-subagents does, with scripted replies, and
 // records every launch. One call: runWorkflow({ args, ops, agents }) resolves
 // to { trace, summary }.
@@ -22,6 +23,38 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { z } from "zod";
+
+/**
+ * A scripted reply: one object, or an array of them used up in order.
+ * @typedef {object | object[]} Scripted
+ */
+/**
+ * A run's inputs: the workflow's args and the replies by op or launch name.
+ * @typedef {object} Scenario
+ * @property {unknown} args
+ * @property {Readonly<Record<string, Scripted>>} [ops]
+ * @property {Readonly<Record<string, Scripted>>} [agents]
+ */
+/**
+ * A launch as the workflow asks pi-subagents for it.
+ * @typedef {{ key: string, agent: string, label: string, task: string }} LaunchSpec
+ */
+/**
+ * One launch in the trace; `request` is an ops launch's parsed request.
+ * @typedef {{ key: string, agent: string, label: string, request?: unknown }} TraceEntry
+ */
+/** @typedef {{ ops: Map<string, Scripted>, agents: Map<string, Scripted> }} Scripts */
+/**
+ * What the workflow's body gets as `runs`.
+ * @typedef {object} Runs
+ * @property {(specs: LaunchSpec[]) => Promise<object[]>} all
+ * @property {(spec: LaunchSpec) => Promise<object>} run
+ */
+/**
+ * The AsyncFunction constructor, which compiles the workflow's body.
+ * @typedef {new (...source: string[]) => (args: unknown, runs: Runs, date: typeof FixedDate) => Promise<unknown>} AsyncFunctionConstructor
+ */
 
 const OPS_AGENT = "issue-pipeline-ops";
 // The JSON request between the markers of an ops launch's task.
@@ -30,9 +63,15 @@ const OPS_REQUEST = /BEGIN_OPS_REQUEST\n(?<json>.*)\nEND_OPS_REQUEST/u;
 const LAUNCH_SEQUENCE = /-\d+$/u;
 // The one instant the workflow's clock reads.
 const FIXED_INSTANT = Date.parse("2026-10-15T12:00:00.000Z");
+// The one field of an ops request the harness reads.
+const OP_FIELD = z.object({ op: z.string() });
+/** @type {Readonly<Record<string, string>>} */
+const NO_GROUPS = {};
 
 // A Date whose `now()`, and `new Date()` with no arguments, are FIXED_INSTANT.
+// The workflow builds a Date from nothing or from one value.
 class FixedDate extends Date {
+  /** @param {[] | [value: number | string | Date]} parts */
   constructor(...parts) {
     if (parts.length === 0) {
       super(FIXED_INSTANT);
@@ -41,15 +80,19 @@ class FixedDate extends Date {
     }
   }
 
+  /** @override @returns {number} */
   static now() {
     return FIXED_INSTANT;
   }
 }
 
+/** @type {AsyncFunctionConstructor} */
 const AsyncFunction = Object.getPrototypeOf(async () => null).constructor;
+/** @type {string | null} */
 let builtBody = null;
 
 // The built workflow's body, built on first use.
+/** @returns {string} */
 function workflowBody() {
   if (builtBody !== null) {
     return builtBody;
@@ -70,7 +113,9 @@ function workflowBody() {
 }
 
 // A scenario's replies, as a Map whose arrays are the run's own copies.
+/** @param {Readonly<Record<string, Scripted>> | undefined} replies @returns {Map<string, Scripted>} */
 function scriptOf(replies) {
+  /** @type {Map<string, Scripted>} */
   const script = new Map();
   for (const [name, reply] of Object.entries(replies ?? {})) {
     if (Array.isArray(reply)) {
@@ -82,13 +127,15 @@ function scriptOf(replies) {
   return script;
 }
 
+/** @param {Map<string, Scripted>} script @param {string} name @param {string} key @returns {object} */
 function nextReply(script, name, key) {
   const reply = script.get(name);
   if (Array.isArray(reply)) {
-    if (reply.length === 0) {
+    const first = reply.shift();
+    if (first === undefined) {
       throw new Error(`workflow harness: the replies for ${key} are used up`);
     }
-    return reply.shift();
+    return first;
   }
   if (reply === undefined) {
     throw new Error(`workflow harness: no scripted reply for ${key}`);
@@ -96,13 +143,24 @@ function nextReply(script, name, key) {
   return reply;
 }
 
+// An ops launch's request, parsed from between the markers of its task.
+/** @param {string} key @param {string} task @returns {unknown} */
+function opsRequest(key, task) {
+  const { json } = OPS_REQUEST.exec(task)?.groups ?? NO_GROUPS;
+  if (json === undefined) {
+    throw new Error(`workflow harness: no ops request in ${key}`);
+  }
+  return JSON.parse(json);
+}
+
+/** @param {LaunchSpec} spec @param {Scripts} scripts @param {TraceEntry[]} trace @returns {object} */
 function launch(spec, scripts, trace) {
   const { key, agent, label } = spec;
   if (agent === OPS_AGENT) {
-    const { json } = OPS_REQUEST.exec(spec.task).groups;
-    const request = JSON.parse(json);
+    const request = opsRequest(key, spec.task);
     trace.push({ key, agent, label, request });
-    const reply = nextReply(scripts.ops, request.op, key);
+    const { op } = OP_FIELD.parse(request);
+    const reply = nextReply(scripts.ops, op, key);
     return { ok: true, key, agent, output: JSON.stringify(reply) };
   }
   trace.push({ key, agent, label });
@@ -110,12 +168,16 @@ function launch(spec, scripts, trace) {
   return { ...nextReply(scripts.agents, name, key), key, agent };
 }
 
+/** @param {Scenario} scenario @returns {Promise<{ trace: TraceEntry[], summary: unknown }>} */
 async function runWorkflow(scenario) {
+  /** @type {Scripts} */
   const scripts = {
     ops: scriptOf(scenario.ops),
     agents: scriptOf(scenario.agents),
   };
+  /** @type {TraceEntry[]} */
   const trace = [];
+  /** @type {Runs} */
   // Each launch answers as a promise, so a missing reply rejects the run.
   const runs = {
     all: (specs) =>

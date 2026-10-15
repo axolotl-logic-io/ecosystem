@@ -1,21 +1,35 @@
+// @ts-check
 // Fixtures for driving the finishing stages' step machines (accept, security
 // and merge) directly: a context with a fixed clock, issue #7's verified
 // state, the sessions' signature, and helpers that feed a machine its
 // recorded results.
 import { preamble } from "../src/workflow/prompts.ts";
+import { hasRoom, modelsWith } from "./workflow-context-test-kit.mjs";
+
+/** @import { Signature } from "../src/workflow/signing.ts" */
+/** @import { OpResult, StageContext, StageMachine, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState, ItemPaths } from "../src/workflow/types.ts" */
+/** @import { Ended } from "./workflow-context-test-kit.mjs" */
 
 const NOW = new Date("2026-10-15T12:00:30Z");
 const STAMP = "2026-10-15T12:00Z";
+/** @type {ItemPaths} */
 const PATHS = {
   worktree: "/w/issue-7",
   issueFile: "/runs/issue.md",
   wiki: null,
+  handoffFile: "/runs/issue-7/handoff.md",
 };
+/** @type {StageContext["cfg"]} */
 const CFG = {
   repo: "o/r",
   baseBranch: "integration",
   maxTriages: 2,
   maxFixRounds: 2,
+  maxSyncs: 3,
+  maxCiFixes: 1,
+  ciWaitMinutes: 30,
+  commands: {},
 };
 const ROLES = {
   triage: 50_000,
@@ -42,6 +56,7 @@ const DIFF = {
   diffPath: "/d.diff",
   diffLines: 12,
 };
+/** @type {Signature} */
 const SIGNATURE = {
   role: "accept",
   agent: "issue-pipeline-reader",
@@ -52,6 +67,7 @@ const SIGNATURE = {
 // Every kit's rebase pool (`rebaseTokenBudget`).
 const REBASE_BUDGET = 500_000;
 
+/** @param {number} issueBudget @returns {StageContext} */
 function contextWith(issueBudget) {
   return {
     cfg: CFG,
@@ -61,8 +77,9 @@ function contextWith(issueBudget) {
       issueBudget,
       rebaseBudget: REBASE_BUDGET,
     },
-    models: MODELS,
+    models: modelsWith(MODELS),
     now: () => NOW,
+    hasRoom,
   };
 }
 
@@ -70,6 +87,11 @@ const CTX = contextWith(ISSUE_BUDGET);
 
 // Issue #7, verified and at `stage`'s first call, with `fields` replacing its
 // saved state's and `item` the stage state's.
+/**
+ * @param {string} stage @param {Partial<IssueState>} [fields]
+ * @param {Partial<StageState>} [item]
+ * @returns {StageState}
+ */
 function stateWith(stage, fields = {}, item = {}) {
   return {
     n: 7,
@@ -89,19 +111,23 @@ function stateWith(stage, fields = {}, item = {}) {
     },
     closed: false,
     outcome: null,
+    held: false,
     rebasedOnly: false,
     resynced: false,
     phase: "begin",
+    carry: null,
     ...item,
   };
 }
 
 // The step after `step`'s one ops request gets `reply`.
+/** @param {StageMachine["next"]} next @param {Step} step @param {OpResult["reply"]} reply @returns {Step} */
 function replied(next, step, reply) {
   return next(step.state, CTX, [{ kind: "op", reply }]);
 }
 
 // The step after `step`'s one session ends with `result`.
+/** @param {StageMachine["next"]} next @param {Step} step @param {Ended} result @returns {Step} */
 function sessionEnded(next, step, result) {
   return next(step.state, CTX, [
     { kind: "child", error: null, by: SIGNATURE, ...result },
@@ -109,17 +135,20 @@ function sessionEnded(next, step, result) {
 }
 
 // The step after the stage prepared its diff with `diff`.
+/** @param {StageMachine["next"]} next @param {StageState} given @param {OpResult["reply"]} [diff] @returns {Step} */
 function prepared(next, given, diff = DIFF) {
   return replied(next, next(given, CTX, []), diff);
 }
 
 // The step after the stage's session replied with `output`.
+/** @param {StageMachine["next"]} next @param {StageState} given @param {unknown} output @returns {Step} */
 function decided(next, given, output) {
   const step = prepared(next, given);
   return sessionEnded(next, step, { ok: true, structuredOutput: output });
 }
 
 // A child's whole task: the preamble for `role` and `cap`, then `lines`.
+/** @param {string} role @param {number} cap @param {readonly string[]} lines @returns {string} */
 function taskOf(role, cap, lines) {
   return preamble(CFG, { n: 7, paths: PATHS }, role, cap)
     .concat(lines)

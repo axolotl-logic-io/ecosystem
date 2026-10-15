@@ -1,23 +1,38 @@
+// @ts-check
 // Fixtures for driving the review and fix step machines directly: a context
 // with a fixed clock, issue #7's state with its PR open, signed results, a
 // finding, and the tasks the sweep has always written for each session.
 import { findingsText } from "../src/workflow/findings.ts";
 import { LENSES } from "../src/workflow/lenses.ts";
 import { practicesNote, preamble } from "../src/workflow/prompts.ts";
+import { hasRoom } from "./workflow-context-test-kit.mjs";
+
+/** @import { Lens } from "../src/workflow/lenses.ts" */
+/** @import { ChildResult, OpResult, StageContext, StageState } from "../src/workflow/stages/types.ts" */
+/** @import { Finding, IssueState, ItemPaths } from "../src/workflow/types.ts" */
+/** @import { Signature } from "../src/workflow/signing.ts" */
+/** @import { Models } from "./workflow-context-test-kit.mjs" */
 
 const NOW = new Date("2026-10-15T12:00:30Z");
 const STAMP = "2026-10-15T12:00Z";
+/** @type {ItemPaths} */
 const PATHS = {
   worktree: "/w/issue-7",
   issueFile: "/runs/issue.md",
   wiki: null,
+  handoffFile: "/runs/issue-7/handoff.md",
 };
+/** @type {StageContext["cfg"]} */
 const CFG = {
   repo: "o/r",
   baseBranch: "integration",
   maxTriages: 2,
   maxFixRounds: 2,
+  maxSyncs: 3,
+  maxCiFixes: 1,
+  ciWaitMinutes: 30,
   practices: ["CONTRIBUTING.md"],
+  commands: {},
 };
 const ROLES = {
   triage: 50_000,
@@ -32,6 +47,7 @@ const ROLES = {
 };
 const OPUS = "anthropic/claude-opus-5-5";
 const SONNET = "anthropic/claude-sonnet-5-5";
+/** @type {Models} */
 const MODELS = {
   triage: OPUS,
   spec: OPUS,
@@ -57,6 +73,7 @@ const OFF_BY_ONE = {
 // Every kit's rebase pool (`rebaseTokenBudget`).
 const REBASE_BUDGET = 500_000;
 
+/** @param {number} issueBudget @returns {StageContext} */
 function contextWith(issueBudget) {
   return {
     cfg: CFG,
@@ -68,6 +85,7 @@ function contextWith(issueBudget) {
     },
     models: MODELS,
     now: () => NOW,
+    hasRoom,
   };
 }
 
@@ -75,6 +93,7 @@ const CTX = contextWith(ISSUE_BUDGET);
 
 // Issue #7 at `stage` with its PR open, with `fields` replacing its saved
 // state's.
+/** @param {string} stage @param {Partial<IssueState>} [fields] @returns {StageState} */
 function stateWith(stage, fields = {}) {
   return {
     n: 7,
@@ -96,12 +115,16 @@ function stateWith(stage, fields = {}) {
     },
     closed: false,
     outcome: null,
+    held: false,
+    rebasedOnly: false,
+    resynced: false,
     phase: "begin",
     carry: null,
   };
 }
 
 // An open finding numbered `id`, raised by `lenses`.
+/** @param {string} id @param {string[]} lenses @param {Partial<Finding>} [fields] @returns {Finding} */
 function openFinding(id, lenses, fields = {}) {
   return {
     id,
@@ -115,11 +138,13 @@ function openFinding(id, lenses, fields = {}) {
 }
 
 // The signature the sweep gives a session launched as `name`.
+/** @param {string} name @returns {Signature} */
 function signatureOf(name) {
   return { role: name, agent: "issue-pipeline-reader", model: "m", run: name };
 }
 
 // A session launched as `name` that replied with `output`.
+/** @param {string} name @param {unknown} output @returns {ChildResult} */
 function replied(name, output) {
   return {
     kind: "child",
@@ -131,6 +156,7 @@ function replied(name, output) {
 }
 
 // A session launched as `name` that failed with `error`.
+/** @param {string} name @param {string} error @returns {ChildResult} */
 function failed(name, error) {
   return {
     kind: "child",
@@ -141,6 +167,7 @@ function failed(name, error) {
   };
 }
 
+/** @param {OpResult["reply"]} reply @returns {OpResult} */
 function opReply(reply) {
   return { kind: "op", reply };
 }
@@ -154,6 +181,7 @@ const FIX_RULE =
   "Fix each finding in a way the spec allows. If a finding can only be met by breaking the spec, dispute it and quote the spec line.";
 
 // The spec's lines in a task, followed by `rule`; none without a spec.
+/** @param {string | null} spec @param {string} rule @returns {string[]} */
 function specLines(spec, rule) {
   if (spec === null) {
     return [];
@@ -162,6 +190,7 @@ function specLines(spec, rule) {
 }
 
 // The first reviewer's whole task for `lens`, with `spec` if the issue has one.
+/** @param {Lens} lens @param {string | null} [spec] @returns {string} */
 function lensTask(lens, spec = null) {
   return preamble(CFG, ITEM, `reviewer (${lens})`, ROLES.reviewer)
     .concat([
@@ -176,6 +205,7 @@ function lensTask(lens, spec = null) {
 }
 
 // The aggregator's whole task over `raw`.
+/** @param {unknown} raw @returns {string} */
 function aggregateTask(raw) {
   return preamble(CFG, ITEM, "review aggregator", ROLES.aggregator)
     .concat([
@@ -188,6 +218,11 @@ function aggregateTask(raw) {
 
 // The fixer's whole task for `round` over the `open` findings, with `spec`
 // if the issue has one.
+/**
+ * @param {number} round @param {readonly Finding[]} open @param {string} [disputed]
+ * @param {string | null} [spec]
+ * @returns {string}
+ */
 function fixTask(round, open, disputed = "none", spec = null) {
   return preamble(CFG, ITEM, `fixer, round ${round} of 2`, ROLES.fixer)
     .concat([
@@ -204,6 +239,11 @@ function fixTask(round, open, disputed = "none", spec = null) {
 
 // The re-reviewer's whole task for `lens` over `mine`, with the findings
 // `resolved` before, and `spec` if the issue has one.
+/**
+ * @param {Lens} lens @param {string} diffPath @param {readonly Finding[]} mine
+ * @param {{ resolved?: string, spec?: string | null }} [options]
+ * @returns {string}
+ */
 function rereviewTask(
   lens,
   diffPath,

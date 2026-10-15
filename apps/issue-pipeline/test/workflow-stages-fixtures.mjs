@@ -1,6 +1,9 @@
+// @ts-check
 // Fixtures for the workflow stage scenarios run through workflow-harness.mjs:
 // the run's args, the ops replies every scenario needs, and builders for the
 // sweep and claim replies and for the summary the workflow returns.
+
+/** @import { TraceEntry } from "./workflow-harness.mjs" */
 
 // The run's args. The workflow reads its settings from the sweep reply.
 const WORKFLOW_ARGS = { config: "/w/repos/o__r.json", lane: "lane-a" };
@@ -38,6 +41,7 @@ const ROUTINE_OPS = {
 
 // The sweep reply: candidate issue numbers, parents to close, and config
 // fields that replace the defaults (such as `maxSpawnsPerRun`).
+/** @param {{ items?: number[], parents?: unknown[], config?: object }} [reply] @returns {object} */
 function sweepReply({ items = [], parents = [], config = {} } = {}) {
   return {
     ok: true,
@@ -54,6 +58,7 @@ function sweepReply({ items = [], parents = [], config = {} } = {}) {
 // newState, which can't be imported because ops.mjs runs as a CLI; `fields`
 // replace its fields (`number` defaults to ISSUE). The paths are the ones
 // ops' claim gives.
+/** @param {string} stage @param {object} [fields] @returns {object} */
 function claimAt(stage, fields = {}) {
   const state = {
     version: 1,
@@ -94,11 +99,13 @@ function claimAt(stage, fields = {}) {
 }
 
 // An agent's reply with its structured output.
+/** @param {unknown} structuredOutput @returns {object} */
 function replyWith(structuredOutput) {
   return { ok: true, structuredOutput };
 }
 
 // The summary the workflow returns, with `fields` replacing the empty sweep's.
+/** @param {object} [fields] @returns {object} */
 function sweepSummary(fields = {}) {
   return {
     sweep: SWEEP_ID,
@@ -114,6 +121,7 @@ function sweepSummary(fields = {}) {
 }
 
 // The launch keys of a trace, in order.
+/** @param {readonly TraceEntry[]} trace @returns {string[]} */
 function launchKeys(trace) {
   return trace.map(({ key }) => key);
 }

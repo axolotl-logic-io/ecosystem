@@ -1,3 +1,4 @@
+// @ts-check
 // The claim op's requests, gh replies, gh calls and replies, as
 // ops-claim.test.mjs pins them.
 import path from "node:path";
@@ -10,12 +11,15 @@ import {
   worktree,
 } from "./ops-cli-test-kit.mjs";
 
+/** @import { GhReply } from "./fake-gh.mjs" */
+
 const LIVE = new Date().toISOString();
 const LAPSED = "2020-01-01T00:00:00Z";
 const LANE = { lane: "me", sweepId: "s1" };
 
 // gh's reply to getIssue for issue `n`, open and unlabelled unless `extra`
 // says otherwise.
+/** @param {number} n @param {object} [extra] @returns {GhReply} */
 function issueReply(n, extra = {}) {
   const issue = {
     number: n,
@@ -29,11 +33,13 @@ function issueReply(n, extra = {}) {
   return { when: `api repos/o/r/issues/${n}`, stdout: JSON.stringify(issue) };
 }
 
+/** @param {number} n @returns {string[]} */
 function getIssue(n) {
   return ["api", `repos/o/r/issues/${n}`];
 }
 
 // The gh call that looks for an open PR from issue `n`'s branch.
+/** @param {number} n @returns {string[]} */
 function listOpenPrs(n) {
   return [
     "pr",
@@ -79,6 +85,7 @@ const NEW_STATE = {
   log: [],
 };
 
+/** @param {number} n @returns {string[]} */
 function postClaim(n) {
   return ghCalls.postRaw(
     n,
@@ -86,14 +93,17 @@ function postClaim(n) {
   );
 }
 
+/** @param {number} n @param {object} state @returns {string[]} */
 function postState(n, state) {
   return ghCalls.post(n, stateBody(n, state));
 }
 
+/** @param {number} n @param {number} id @param {object} state @returns {string[]} */
 function patchState(n, id, state) {
   return ghCalls.patch(id, stateBody(n, state));
 }
 
+/** @param {number} n @param {string | null} [wiki] @returns {object} */
 function claimPaths(n, wiki = null) {
   return {
     worktree: worktree(n),
@@ -105,6 +115,7 @@ function claimPaths(n, wiki = null) {
 }
 
 // A won claim's reply for issue `n`, with `extra` over the defaults.
+/** @param {number} n @param {object} [extra] @returns {object} */
 function claimReply(n, extra) {
   return {
     ok: true,

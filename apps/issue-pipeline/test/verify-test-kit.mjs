@@ -1,3 +1,4 @@
+// @ts-check
 // Local git repos and an ops CLI caller for the tests of the check ops (verify,
 // ci-status). verifyKit(root) builds a bare `origin.git` whose `integration`
 // branch holds src/a.js ("old"), .gitignore (node_modules) and README.md, and a
@@ -23,6 +24,19 @@ const SHORT_SHA_LENGTH = 8;
 const CLEAN = { status: "", temps: [] };
 const TEMP_WORKTREE = /\/fails-before-[0-9a-f]{8} /u;
 
+/**
+ * The repos verifyKit builds, and helpers for an issue `n`'s worktree.
+ * @typedef {object} VerifyKit
+ * @property {(n: number) => string} worktree
+ * @property {(n: number) => string} runDir
+ * @property {(n: number, sha: string) => string} logs
+ * @property {(files: Files) => { n: number, sha: string }} branch
+ * @property {(n: number) => void} linkTypeScript
+ * @property {(n: number) => { status: string, temps: string[] }} leftovers
+ */
+/** @typedef {Readonly<Record<string, string | null>>} Files */
+
+/** @param {string} command @returns {string} */
 function sh(command) {
   const r = spawnSync("bash", ["-c", command], { encoding: "utf8" });
   if (r.status !== 0) {
@@ -31,14 +45,24 @@ function sh(command) {
   return r.stdout.trim();
 }
 
+// This process's environment with ISSUE_PIPELINE_ROOT set to `root`.
+// Environment variables are named by strings, as src/process.ts takes them.
+/** @param {string} root @returns {NodeJS.ProcessEnv} */
+function withRoot(root) {
+  const env = new Map(Object.entries(process.env));
+  env.set("ISSUE_PIPELINE_ROOT", root);
+  return Object.fromEntries(env);
+}
+
 // The reply line the ops CLI printed for `request`, framed as the workflow
 // frames it (opsSpec in src/workflow.js).
+/** @param {string} root @param {object} request @returns {string} */
 function askRaw(root, request) {
   const input = `Issue pipeline ops request follows.\n\nBEGIN_OPS_REQUEST\n${JSON.stringify(request)}\nEND_OPS_REQUEST`;
   const r = spawnSync(process.execPath, [OPS], {
     input,
     encoding: "utf8",
-    env: { ...process.env, ISSUE_PIPELINE_ROOT: root },
+    env: withRoot(root),
   });
   if (r.status !== 0) {
     throw new Error(`ops exited ${r.status}: ${r.stderr}`);
@@ -46,11 +70,13 @@ function askRaw(root, request) {
   return r.stdout;
 }
 
+/** @param {string} root @param {object} request @returns {unknown} */
 function ask(root, request) {
   return JSON.parse(askRaw(root, request));
 }
 
 // Writes each file of `files` (path -> text) under `dir`; null deletes one.
+/** @param {string} dir @param {Files} files @returns {void} */
 function writeFiles(dir, files) {
   for (const [file, text] of Object.entries(files)) {
     const at = path.join(dir, file);
@@ -65,6 +91,7 @@ function writeFiles(dir, files) {
 
 // The bare origin, a seed checkout that pushes to it, and the ops CLI's clone.
 // Returns the base commit.
+/** @param {string} root @param {string} seed @param {string} clone @returns {string} */
 function seedRepo(root, seed, clone) {
   sh(
     `git init -q --bare -b integration ${root}/origin.git && git clone -q ${root}/origin.git ${seed} 2>/dev/null`,
@@ -86,6 +113,7 @@ function seedRepo(root, seed, clone) {
 
 // Writes a config for repo o/r under `root`, with `extra` keys and the given
 // commands (test defaults to `true`), and returns its path.
+/** @param {string} root @param {number | string} n @param {object} commands @param {object} [extra] @returns {string} */
 function writeConfig(root, n, commands, extra = {}) {
   const file = path.join(root, `config-${n}.json`);
   const cfg = {
@@ -100,10 +128,12 @@ function writeConfig(root, n, commands, extra = {}) {
   return file;
 }
 
+/** @param {string} root @returns {VerifyKit} */
 function verifyKit(root) {
   const seed = path.join(root, "seed");
   const clone = path.join(root, "clones", "o__r");
   const base = seedRepo(root, seed, clone);
+  /** @param {number} n @returns {string} */
   function worktree(n) {
     return path.join(root, "work", "o__r", `issue-${n}`);
   }

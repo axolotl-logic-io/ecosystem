@@ -1,17 +1,35 @@
+// @ts-check
 // Fixtures for driving triage's step machine directly: a context with a fixed
 // clock, issue #7's state at triage, the reply, and the launch and task the
 // sweep has always used.
 import { preamble } from "../src/workflow/prompts.ts";
 import { TRIAGE_SCHEMA } from "../src/workflow/schemas.ts";
+import { hasRoom, modelsWith } from "./workflow-context-test-kit.mjs";
+
+/** @import { Signature } from "../src/workflow/signing.ts" */
+/** @import { ChildLaunch, StageContext, StageState } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState, ItemPaths } from "../src/workflow/types.ts" */
 
 const NOW = new Date("2026-10-15T12:00:30Z");
 const STAMP = "2026-10-15T12:00Z";
+/** @type {ItemPaths} */
 const PATHS = {
   worktree: "/w/issue-7",
   issueFile: "/runs/issue.md",
   wiki: null,
+  handoffFile: "/runs/issue-7/handoff.md",
 };
-const CFG = { repo: "o/r", baseBranch: "integration", maxTriages: 2 };
+/** @type {StageContext["cfg"]} */
+const CFG = {
+  repo: "o/r",
+  baseBranch: "integration",
+  maxTriages: 2,
+  maxFixRounds: 2,
+  maxSyncs: 3,
+  maxCiFixes: 1,
+  ciWaitMinutes: 30,
+  commands: {},
+};
 const ROLES = {
   triage: 50_000,
   spec: 80_000,
@@ -24,6 +42,7 @@ const ROLES = {
   verifier: 60_000,
 };
 const MODEL = "anthropic/claude-opus-5-5";
+/** @type {Signature} */
 const SIGNATURE = {
   role: "triage",
   agent: "issue-pipeline-reader",
@@ -43,6 +62,7 @@ const SUB_ISSUES = [
 // Every kit's rebase pool (`rebaseTokenBudget`).
 const REBASE_BUDGET = 500_000;
 
+/** @param {number} issueBudget @returns {StageContext} */
 function contextWith(issueBudget) {
   return {
     cfg: CFG,
@@ -52,8 +72,9 @@ function contextWith(issueBudget) {
       issueBudget,
       rebaseBudget: REBASE_BUDGET,
     },
-    models: { triage: MODEL },
+    models: modelsWith({ triage: MODEL }),
     now: () => NOW,
+    hasRoom,
   };
 }
 
@@ -61,6 +82,7 @@ const ISSUE_BUDGET = 1_000_000;
 const CTX = contextWith(ISSUE_BUDGET);
 
 // Issue #7 at triage's first call, with `fields` replacing its saved state's.
+/** @param {Partial<IssueState>} [fields] @returns {StageState} */
 function stateWith(fields = {}) {
   return {
     n: 7,
@@ -80,12 +102,16 @@ function stateWith(fields = {}) {
     },
     closed: false,
     outcome: null,
+    held: false,
+    rebasedOnly: false,
+    resynced: false,
     phase: "begin",
     carry: null,
   };
 }
 
 // The triage reply, with `fields` replacing the empty decision's.
+/** @param {object} fields @returns {object} */
 function replyOf(fields) {
   return {
     decision: "ready",
@@ -98,6 +124,7 @@ function replyOf(fields) {
 }
 
 // The session's whole task, as the sweep has always written it.
+/** @param {string} splitLine @returns {string} */
 function expectedTask(splitLine) {
   return preamble(CFG, { n: 7, paths: PATHS }, "triage", ROLES.triage)
     .concat([
@@ -111,6 +138,7 @@ function expectedTask(splitLine) {
     .join("\n");
 }
 
+/** @param {string} task @returns {ChildLaunch} */
 function sessionLaunch(task) {
   return {
     kind: "child",

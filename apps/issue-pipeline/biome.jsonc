@@ -25,9 +25,12 @@
     // shell commands: verify, fails-before-fix and ci-status (#185). The pure
     // modules (globs, stops, labels, comments, claims, state, and the ops in
     // src/ops/ not listed here) get no exception.
+    // The tests and their kits, like the install, run commands and keep
+    // files, so they need node:test, node:fs, child_process and process (#219).
     {
       "includes": [
         "install.mjs",
+        "test/**",
         "build.ts",
         "src/ops.ts",
         "src/pipeline-root.ts",
@@ -62,9 +65,11 @@
       }
     },
     // GitHub's REST API names a comment's times in snake_case (`created_at`,
-    // `updated_at`), and comments.ts declares its comment schema with them.
+    // `updated_at`). comments.ts declares its comment schema with them, and
+    // test/fake-gh.mjs, the fake gh, answers with comments in that wire format
+    // (#219).
     {
-      "includes": ["src/comments.ts"],
+      "includes": ["src/comments.ts", "test/fake-gh.mjs"],
       "linter": {
         "rules": {
           "style": {

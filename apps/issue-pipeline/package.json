@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.ts",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p . && tsc -p tsconfig.test.json"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

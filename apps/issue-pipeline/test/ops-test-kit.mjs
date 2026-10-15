@@ -1,3 +1,4 @@
+// @ts-check
 // Shared setup for the tests that run an op through the ops CLI as the
 // workflow does: a pipeline root with a config, local git repos holding issue
 // #7's worktree, the fake gh, and the exact gh calls and comment texts the
@@ -7,9 +8,11 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { installFakeGh } from "./fake-gh.mjs";
+import { githubComment, installFakeGh } from "./fake-gh.mjs";
+import { runOps } from "./ops-run-test-kit.mjs";
 
-const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
+/** @import { GhReply } from "./fake-gh.mjs" */
+/** @typedef {{ config: string, root: string, sha: string, worktree: string }} World */
 const ACCOUNT = "bot";
 const REPO = "o/r";
 const LANE = "L";
@@ -31,6 +34,7 @@ const GIT_USER = "-c user.email=a@b -c user.name=a";
 
 const fakeGh = installFakeGh();
 
+/** @param {string} command @returns {string} */
 function sh(command) {
   const r = spawnSync("bash", ["-c", command], { encoding: "utf8" });
   if (r.status !== 0) {
@@ -40,6 +44,7 @@ function sh(command) {
 }
 
 // An ISO time `hours` from now; negative is in the past.
+/** @param {number} hours @returns {string} */
 function hoursFromNow(hours) {
   return new Date(Date.now() + hours * MS_PER_HOUR).toISOString();
 }
@@ -47,6 +52,7 @@ function hoursFromNow(hours) {
 // A fresh pipeline root with a config, a bare origin whose `integration` has
 // one commit, the clone, and issue #7's worktree on agent/issue-7 one commit
 // ahead. Returns the root, the config path, the worktree and its head.
+/** @returns {World} */
 function world() {
   const root = fs.mkdtempSync("/tmp/issue-pipeline-ops-");
   process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
@@ -65,49 +71,55 @@ function world() {
 }
 
 // Origin's integration gains a commit the worktree's head lacks.
+/** @param {World} w @returns {void} */
 function advanceBase(w) {
   sh(
     `cd ${w.root}/seed && git ${GIT_USER} commit -q --allow-empty -m later && git push -q origin HEAD:integration`,
   );
 }
 
-// Runs one request through the ops CLI, src/ops.ts unless `ops` names another
-// (a built one), and returns its stdout.
-function ask(w, request, ops = OPS) {
-  const body = JSON.stringify({ config: w.config, ...request });
-  const input = `Issue pipeline ops request follows.\n\nBEGIN_OPS_REQUEST\n${body}\nEND_OPS_REQUEST`;
-  const r = spawnSync(process.execPath, [ops], {
-    input,
-    encoding: "utf8",
-    env: { ISSUE_PIPELINE_ROOT: w.root, PATH: process.env.PATH },
-  });
-  if (r.status !== 0) {
-    throw new Error(`ops exited ${r.status}: ${r.stderr}`);
+/**
+ * Runs one request through the ops CLI, src/ops.ts unless `ops` names another
+ * (a built one), and returns its stdout.
+ * @param {World} w
+ * @param {object} request
+ * @param {string} [ops]
+ * @returns {string}
+ */
+function ask(w, request, ops) {
+  const where = { config: w.config, request, root: w.root };
+  if (ops === undefined) {
+    return runOps(where);
   }
-  return r.stdout;
+  return runOps({ ...where, ops });
 }
 
 // The reply, both parsed and as the exact line, which pins the key order.
+/** @param {string} stdout @param {unknown} want @returns {void} */
 function assertReply(stdout, want) {
   assert.deepEqual(JSON.parse(stdout), want);
   assert.equal(stdout, `${JSON.stringify(want)}\n`);
 }
 
 // The gh calls since the last reply(), with minute stamps made constant.
+/** @returns {string[][]} */
 function calls() {
   return fakeGh
     .calls()
     .map((args) => args.map((arg) => arg.replace(MINUTE_STAMP, "<minute>")));
 }
 
+/** @param {string} role @param {string} text @returns {string} */
 function signedBy(role, text) {
   return `**🤖 issue-pipeline · ${role}**\n<sub>deterministic step, no model</sub>\n<!-- agent-pipeline:comment role=${role} -->\n\n${text}`;
 }
 
+/** @param {number} n @param {object} state @returns {string} */
 function stateBody(n, state) {
   return `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->\n<sub>Machine state for #${n}. The pipeline rewrites this comment; do not edit it.</sub>`;
 }
 
+/** @param {number} n @param {string} body @returns {string[]} */
 function commentPost(n, body) {
   return [
     "api",
@@ -120,6 +132,7 @@ function commentPost(n, body) {
   ];
 }
 
+/** @param {number} n @returns {string[]} */
 function listCall(n) {
   return [
     "api",
@@ -130,6 +143,7 @@ function listCall(n) {
   ];
 }
 
+/** @param {number} id @param {string} body @returns {string[]} */
 function patchComment(id, body) {
   return [
     "api",
@@ -144,33 +158,42 @@ function patchComment(id, body) {
 
 const CLAIM_BODY = `${signedBy("claim", `Lane \`${LANE}\` is claiming this issue.`)}\n<!-- agent-pipeline:claim lane=${LANE} sweep=${SWEEP} -->`;
 
-// gh's answer to listing #7's comments: this lane's live claim.
+/**
+ * gh's answer to listing #7's comments: this lane's live claim.
+ * @returns {GhReply}
+ */
 function claimListing() {
   const at = new Date().toISOString();
-  const claim = {
+  const claim = githubComment({
     id: CLAIM_ID,
     body: CLAIM_BODY,
-    user: { login: ACCOUNT },
-    created_at: at,
-    updated_at: at,
-  };
+    login: ACCOUNT,
+    created: at,
+    updated: at,
+  });
   return { when: "issues/7/comments?per_page", stdout: JSON.stringify(claim) };
 }
 
-// gh's answer to listing #n's comments: one state comment holding `state`.
+/**
+ * gh's answer to listing #n's comments: one state comment holding `state`.
+ * @param {number} n
+ * @param {object} state
+ * @returns {GhReply}
+ */
 function stateListing(n, state) {
-  const item = {
+  const item = githubComment({
     id: n,
     body: stateBody(n, state),
-    user: { login: ACCOUNT },
-    created_at: new Date().toISOString(),
-  };
+    login: ACCOUNT,
+    created: new Date().toISOString(),
+  });
   return {
     when: `issues/${n}/comments?per_page`,
     stdout: JSON.stringify(item),
   };
 }
 
+/** @param {number} n @param {string} add @param {string} remove @returns {string[][]} */
 function relabel(n, add, remove) {
   return [
     [
@@ -194,6 +217,7 @@ function relabel(n, add, remove) {
 
 // The replies finishMerged reads: #7's comments (for the state write and the
 // claims) and #7's open state.
+/** @returns {GhReply[]} */
 function finishReplies() {
   return [
     claimListing(),
@@ -203,6 +227,7 @@ function finishReplies() {
 }
 
 // The gh calls finishMerged makes for issue #7 and PR #50.
+/** @param {object} state @returns {string[][]} */
 function finishCalls(state) {
   const closed = CLAIM_BODY.replace(
     `agent-pipeline:claim lane=${LANE}`,
