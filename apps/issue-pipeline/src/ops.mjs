@@ -26,7 +26,6 @@ import {
   ensureWorktree,
   fetchIn,
   head,
-  push,
   remoteHead,
   removeWorktree,
 } from "./checkouts.ts";
@@ -46,8 +45,8 @@ import {
   pipelineRole,
   signed,
 } from "./comments.ts";
-import { loadConfig, paths, publicConfig, wikiCfg } from "./config.ts";
-import { gh, ghJson, git, isAllowedUser } from "./github.ts";
+import { loadConfig, paths, publicConfig } from "./config.ts";
+import { gh, ghJson, isAllowedUser } from "./github.ts";
 import { matchAny } from "./globs.ts";
 import { writeIssueContext } from "./issue-context.ts";
 import {
@@ -58,14 +57,15 @@ import {
   setLabels,
 } from "./labels.ts";
 import { RESERVATION_MS, withCloneLock, withRepoLock } from "./locks.ts";
+import { prOps } from "./ops/pr.ts";
+import { syncOps } from "./ops/sync.ts";
 import { ROOT } from "./pipeline-root.ts";
 import { OpsError, run, shell, tail } from "./process.ts";
 import { readState, startState, writeState } from "./state.ts";
 import { isStopLabel, STOPS, stopFor } from "./stops.ts";
-import { ensureWiki, pushWiki, wikiDiff } from "./wiki.ts";
+import { ensureWiki, pushWiki } from "./wiki.ts";
 import { ask } from "./ops/ask.ts";
 import { claim } from "./ops/claim.ts";
-import { openPrFor } from "./ops/prs.ts";
 import { saveState } from "./ops/save-state.ts";
 import { split } from "./ops/split.ts";
 import { stop } from "./ops/stop.ts";
@@ -74,6 +74,7 @@ import { sweep } from "./ops/sweep.ts";
 // ---------- operations ----------
 
 const ops = {};
+Object.assign(ops, prOps, syncOps);
 
 ops.sweep = sweep;
 
@@ -89,159 +90,6 @@ ops.split = split;
 // Stop an issue at a failed control: label it agent:stopped-<code>, and explain
 // on the issue and its PR which control stopped it, why, and how to resume.
 ops.stop = stop;
-
-// PRs link to their issue twice: the body starts with "Closes #N", which links the
-// PR under the issue's Development section and closes it on merge, and the title
-// ends with "(#N)", so the squash commit on the base branch names the issue too.
-const titleFor = (n, title) => (new RegExp(`#${n}\\b`).test(title) ? title : `${title} (#${n})`);
-const closesBody = (n, text) =>
-  new RegExp(`\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #${n}\\b`, "i").test(text) ? text : `Closes #${n}\n\n${text}`;
-
-// Open the issue's PR as a draft as soon as triage says ready, before any code is
-// written. GitHub refuses a PR with no commits, so the branch starts with an empty
-// commit; the squash merge drops it. open-pr later fills in the PR and marks it ready.
-ops["start-pr"] = (cfg, req) => {
-  const n = req.number;
-  const issue = ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${n}`]);
-  const wt = ensureWorktree(cfg, n);
-  let sha = remoteHead(cfg, n);
-  if (!sha) {
-    assertClean(wt);
-    run("git", ["-C", wt, "commit", "--allow-empty", "-m", `Start work on #${n}\n\nPipeline-Agent: coordinator`]);
-    sha = push(cfg, n, { allowEmpty: true });
-  }
-  let pr = openPrFor(cfg, n);
-  if (!pr) {
-    const text = [
-      "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.",
-      req.plan ? `\n<details><summary>Plan</summary>\n\n${req.plan}\n\n</details>` : "",
-    ].join("\n");
-    const url = gh(cfg, ["pr", "create", "-R", cfg.repo, "--draft", "--base", cfg.baseBranch, "--head", paths.branch(n), "--title", titleFor(n, issue.title), "--body", signed({ role: "coordinator" }, closesBody(n, text))]).stdout.trim();
-    pr = Number(url.split("/").pop());
-  }
-  setLabels(cfg, pr, [LABELS.working.name], []);
-  return { pr, headSha: sha };
-};
-
-ops["open-pr"] = (cfg, req) => {
-  const n = req.number;
-  const sha = push(cfg, n);
-  const branch = paths.branch(n);
-  const title = titleFor(n, req.title || `Fix #${n}`);
-  const body = signed(req.by || { role: "implementer" }, closesBody(n, req.body || ""));
-  let pr = openPrFor(cfg, n);
-  if (pr) {
-    // The draft from start-pr: fill it in and mark it ready for review.
-    gh(cfg, ["pr", "edit", String(pr), "-R", cfg.repo, "--title", title, "--body", body]);
-    gh(cfg, ["pr", "ready", String(pr), "-R", cfg.repo], { allowFail: true });
-  } else {
-    const url = gh(cfg, ["pr", "create", "-R", cfg.repo, "--base", cfg.baseBranch, "--head", branch, "--title", title, "--body", body]).stdout.trim();
-    pr = Number(url.split("/").pop());
-  }
-  setLabels(cfg, pr, [LABELS.working.name], []);
-  return { pr, headSha: sha };
-};
-
-ops.push = (cfg, req) => ({ headSha: push(cfg, req.number) });
-
-ops["prepare-review"] = (cfg, req) => {
-  const n = req.number;
-  const wt = paths.worktree(cfg, n);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const sha = head(wt);
-  const base = run("git", ["-C", wt, "merge-base", `origin/${cfg.baseBranch}`, "HEAD"]).stdout.trim();
-  // A sync rebases the branch, so an earlier reviewed commit may no longer be in its
-  // history. Diffing from it would then show everything the base gained since, so
-  // review the whole branch instead.
-  const sinceInBranch =
-    req.sinceSha && run("git", ["-C", wt, "merge-base", "--is-ancestor", req.sinceSha, sha], { allowFail: true }).code === 0;
-  const from = sinceInBranch ? req.sinceSha : base;
-  const diff = run("git", ["-C", wt, "diff", "--stat", "--patch", `${from}..${sha}`]).stdout;
-  const allChanged = run("git", ["-C", wt, "diff", "--name-only", `${base}..${sha}`]).stdout.split("\n").filter(Boolean);
-  const dir = path.join(paths.runDir(cfg, n), `review-${req.tag || "r0"}`);
-  fs.mkdirSync(dir, { recursive: true });
-  const diffPath = path.join(dir, "diff.patch");
-  // Wiki commits come after the code diff. They are always the whole wiki change so
-  // far, even in a re-review that shows only the code since the last review.
-  const w = wikiDiff(cfg, n);
-  const full = w.diff ? `${diff}\n\n# Wiki changes (paths under ${wikiCfg(cfg).dir}/; pushed to the wiki when the PR merges)\n\n${w.diff}` : diff;
-  fs.writeFileSync(diffPath, full);
-  return {
-    headSha: sha,
-    baseSha: base,
-    diffPath,
-    diffLines: full.split("\n").length,
-    changedFiles: allChanged.concat(w.files),
-  };
-};
-
-function rebaseInProgress(wt) {
-  return ["rebase-merge", "rebase-apply"].some((d) =>
-    fs.existsSync(path.resolve(wt, run("git", ["-C", wt, "rev-parse", "--git-path", d]).stdout.trim())),
-  );
-}
-
-// Puts the worktree back on the pushed branch, dropping a half-done rebase.
-function resetToRemote(cfg, n) {
-  const wt = paths.worktree(cfg, n);
-  if (rebaseInProgress(wt)) run("git", ["-C", wt, "rebase", "--abort"], { allowFail: true });
-  const remote = remoteHead(cfg, n);
-  if (remote) run("git", ["-C", wt, "reset", "--hard", remote]);
-  run("git", ["-C", wt, "clean", "-fd"]);
-}
-
-// With keepConflict, a conflicting rebase is left stopped in the worktree for a
-// writer to resolve; finish-sync then checks the result and pushes it.
-ops["sync-base"] = (cfg, req) => {
-  const n = req.number;
-  const wt = paths.worktree(cfg, n);
-  if (rebaseInProgress(wt)) resetToRemote(cfg, n); // left over from a crashed run
-  assertClean(wt);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const upToDate = run("git", ["-C", wt, "merge-base", "--is-ancestor", `origin/${cfg.baseBranch}`, "HEAD"], { allowFail: true }).code === 0;
-  if (upToDate) return { changed: false, conflict: false, headSha: head(wt) };
-  const r = run("git", ["-C", wt, "rebase", `origin/${cfg.baseBranch}`], { allowFail: true });
-  if (r.code !== 0) {
-    const conflicts = run("git", ["-C", wt, "diff", "--name-only", "--diff-filter=U"], { allowFail: true }).stdout.trim();
-    const kept = !!req.keepConflict && rebaseInProgress(wt);
-    if (!kept) run("git", ["-C", wt, "rebase", "--abort"], { allowFail: true });
-    return {
-      changed: false,
-      conflict: true,
-      inRebase: kept,
-      conflicts: conflicts.split("\n").filter(Boolean),
-      baseSha: run("git", ["-C", wt, "rev-parse", `origin/${cfg.baseBranch}`]).stdout.trim(),
-    };
-  }
-  git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", `HEAD:refs/heads/${paths.branch(n)}`]);
-  return { changed: true, conflict: false, headSha: head(wt) };
-};
-
-// After a writer resolved a kept rebase: check that the rebase finished on the
-// current base with no markers left, then push. Anything else (or abort: true)
-// resets the worktree to the pushed branch and reports why.
-ops["finish-sync"] = (cfg, req) => {
-  const n = req.number;
-  const wt = paths.worktree(cfg, n);
-  const fail = (reason) => {
-    resetToRemote(cfg, n);
-    return { resolved: false, reason };
-  };
-  if (req.abort) return fail(req.reason || "aborted");
-  if (rebaseInProgress(wt)) return fail("the rebase was not finished");
-  const dirty = run("git", ["-C", wt, "status", "--porcelain"]).stdout.trim();
-  if (dirty) return fail(`the worktree has uncommitted changes:\n${tail(dirty, 20)}`);
-  const base = `origin/${cfg.baseBranch}`;
-  if (run("git", ["-C", wt, "merge-base", "--is-ancestor", base, "HEAD"], { allowFail: true }).code !== 0) return fail(`HEAD is not based on ${base}`);
-  const ahead = Number(run("git", ["-C", wt, "rev-list", "--count", `${base}..HEAD`]).stdout.trim());
-  if (!ahead) return fail("the branch has no commits left after the rebase");
-  const markers = run("git", ["-C", wt, "diff", `${base}...HEAD`, "-U0"]).stdout
-    .split("\n")
-    .filter((l) => /^\+(<{7}|>{7})( |$)/.test(l) || l === "+=======");
-  if (markers.length) return fail(`conflict markers remain:\n${markers.slice(0, 10).join("\n")}`);
-  git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", `HEAD:refs/heads/${paths.branch(n)}`]);
-  return { resolved: true, headSha: head(wt) };
-};
 
 ops.verify = (cfg, req) => {
   const n = req.number;

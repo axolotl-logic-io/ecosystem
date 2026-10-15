@@ -1,0 +1,193 @@
+// The issue's pull request: start-pr opens it as a draft before any code is
+// written, open-pr fills it in and marks it ready, and push pushes the branch.
+// How a PR links to its issue lives here.
+
+import { z } from "zod";
+import { assertClean, ensureWorktree, push, remoteHead } from "../checkouts.ts";
+import type { Author } from "../comments.ts";
+import { signed } from "../comments.ts";
+import type { Config } from "../config.ts";
+import { paths } from "../config.ts";
+import { gh, ghJson } from "../github.ts";
+import { LABELS, setLabels } from "../labels.ts";
+import { OpsError, run } from "../process.ts";
+import { openPrFor } from "./prs.ts";
+
+interface PrReply {
+  pr: number;
+  headSha: string;
+}
+
+interface PushReply {
+  headSha: string;
+}
+
+type Op = (cfg: Config, request: unknown) => PrReply | PushReply;
+
+const DRAFT_TEXT =
+  "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.";
+const IMPLEMENTER: Author = { role: "implementer" };
+
+// The workflow sends null for an author field it doesn't know.
+const AUTHOR_FIELD = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? undefined);
+const AUTHOR = z.looseObject({
+  role: AUTHOR_FIELD,
+  agent: AUTHOR_FIELD,
+  model: AUTHOR_FIELD,
+  run: AUTHOR_FIELD,
+});
+const START_REQUEST = z.looseObject({
+  number: z.number().int(),
+  plan: z.string().nullish(),
+});
+const OPEN_REQUEST = z.looseObject({
+  number: z.number().int(),
+  title: z.string().nullish(),
+  body: z.string().nullish(),
+  by: AUTHOR.nullish(),
+});
+const PUSH_REQUEST = z.looseObject({ number: z.number().int() });
+const ISSUE = z.looseObject({ title: z.string() });
+
+// The value `schema` parses from `value`, or an OpsError naming `what`.
+function parsed<T>(schema: z.ZodType<T>, what: string, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (!result.success) {
+    throw new OpsError(`bad ${what}: ${z.prettifyError(result.error)}`);
+  }
+  return result.data;
+}
+
+// `text`, or `fallback` when it is missing or empty.
+function textOr(text: string | null | undefined, fallback: string): string {
+  if (text === undefined || text === null || text === "") {
+    return fallback;
+  }
+  return text;
+}
+
+// PRs link to their issue twice: the body starts with "Closes #N", which links the
+// PR under the issue's Development section and closes it on merge, and the title
+// ends with "(#N)", so the squash commit on the base branch names the issue too.
+function titleFor(n: number, title: string): string {
+  if (new RegExp(`#${n}\\b`, "u").test(title)) {
+    return title;
+  }
+  return `${title} (#${n})`;
+}
+
+function closesBody(n: number, text: string): string {
+  const links = new RegExp(
+    `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #${n}\\b`,
+    "iu",
+  );
+  if (links.test(text)) {
+    return text;
+  }
+  return `Closes #${n}\n\n${text}`;
+}
+
+// Opens a PR for the issue's branch and returns its number.
+function createPr(
+  cfg: Config,
+  n: number,
+  flags: readonly string[],
+  text: { title: string; body: string },
+): number {
+  const args = ["pr", "create", "-R", cfg.repo, ...flags];
+  const url = gh(cfg, [
+    ...args,
+    "--base",
+    cfg.baseBranch,
+    "--head",
+    paths.branch(n),
+    "--title",
+    text.title,
+    "--body",
+    text.body,
+  ]).stdout.trim();
+  return Number(url.split("/").pop());
+}
+
+function planDetails(plan: string | null | undefined): string {
+  if (plan === undefined || plan === null || plan === "") {
+    return "";
+  }
+  return `\n<details><summary>Plan</summary>\n\n${plan}\n\n</details>`;
+}
+
+// The branch's head on origin. A new branch starts with an empty commit, since
+// GitHub refuses a PR with no commits; the squash merge drops it.
+function startBranch(cfg: Config, n: number): string {
+  const wt = ensureWorktree(cfg, n);
+  const remote = remoteHead(cfg, n);
+  if (remote !== null) {
+    return remote;
+  }
+  assertClean(wt);
+  const message = `Start work on #${n}\n\nPipeline-Agent: coordinator`;
+  run("git", ["-C", wt, "commit", "--allow-empty", "-m", message]);
+  return push(cfg, n, { allowEmpty: true });
+}
+
+// Open the issue's PR as a draft as soon as triage says ready, before any code is
+// written. open-pr later fills in the PR and marks it ready.
+function startPr(cfg: Config, request: unknown): PrReply {
+  const { number: n, plan } = parsed(
+    START_REQUEST,
+    "start-pr request",
+    request,
+  );
+  const reply = ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${n}`]);
+  const issue = parsed(ISSUE, "gh issue reply", reply);
+  const headSha = startBranch(cfg, n);
+  let pr = openPrFor(cfg, n);
+  if (pr === undefined) {
+    const text = [DRAFT_TEXT, planDetails(plan)].join("\n");
+    pr = createPr(cfg, n, ["--draft"], {
+      title: titleFor(n, issue.title),
+      body: signed({ role: "coordinator" }, closesBody(n, text)),
+    });
+  }
+  setLabels(cfg, pr, [LABELS.working.name], []);
+  return { pr, headSha };
+}
+
+function openPr(cfg: Config, request: unknown): PrReply {
+  const req = parsed(OPEN_REQUEST, "open-pr request", request);
+  const n = req.number;
+  const headSha = push(cfg, n);
+  const title = titleFor(n, textOr(req.title, `Fix #${n}`));
+  const body = signed(
+    req.by ?? IMPLEMENTER,
+    closesBody(n, textOr(req.body, "")),
+  );
+  let pr = openPrFor(cfg, n);
+  if (pr === undefined) {
+    pr = createPr(cfg, n, [], { title, body });
+  } else {
+    // The draft from start-pr: fill it in and mark it ready for review.
+    const number = String(pr);
+    const edit = ["--title", title, "--body", body];
+    gh(cfg, ["pr", "edit", number, "-R", cfg.repo, ...edit]);
+    gh(cfg, ["pr", "ready", number, "-R", cfg.repo], { allowFail: true });
+  }
+  setLabels(cfg, pr, [LABELS.working.name], []);
+  return { pr, headSha };
+}
+
+function pushOp(cfg: Config, request: unknown): PushReply {
+  const { number } = parsed(PUSH_REQUEST, "push request", request);
+  return { headSha: push(cfg, number) };
+}
+
+const prOps: Readonly<Record<string, Op>> = {
+  "start-pr": startPr,
+  "open-pr": openPr,
+  push: pushOp,
+};
+
+export { prOps };

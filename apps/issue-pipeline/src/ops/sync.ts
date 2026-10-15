@@ -1,0 +1,285 @@
+// The issue branch against its base: prepare-review writes the diff a review
+// reads, sync-base rebases the branch onto the moved base, and finish-sync
+// checks and pushes a rebase a writer resolved. None of them calls gh.
+
+import fs from "node:fs";
+import path from "node:path";
+import { z } from "zod";
+import { assertClean, fetchIn, head, remoteHead } from "../checkouts.ts";
+import type { Config } from "../config.ts";
+import { paths, wikiCfg } from "../config.ts";
+import { git } from "../github.ts";
+import { OpsError, run, tail } from "../process.ts";
+import { wikiDiff } from "../wiki.ts";
+
+interface ReviewReply {
+  headSha: string;
+  baseSha: string;
+  diffPath: string;
+  diffLines: number;
+  changedFiles: string[];
+}
+
+type SyncReply =
+  | { changed: false; conflict: false; headSha: string }
+  | { changed: true; conflict: false; headSha: string }
+  | SyncConflict;
+
+interface SyncConflict {
+  changed: false;
+  conflict: true;
+  inRebase: boolean;
+  conflicts: string[];
+  baseSha: string;
+}
+
+type FinishReply =
+  | { resolved: false; reason: string }
+  | { resolved: true; headSha: string };
+
+type Op = (
+  cfg: Config,
+  request: unknown,
+) => ReviewReply | SyncReply | FinishReply;
+
+const REBASE_DIRS: readonly string[] = ["rebase-merge", "rebase-apply"];
+const DIRTY_LINES = 20;
+const MARKER_LINES = 10;
+const CONFLICT_MARKER = /^\+(?:<{7}|>{7})(?: |$)/u;
+const MIDDLE_MARKER = "+=======";
+
+const REVIEW_REQUEST = z.looseObject({
+  number: z.number().int(),
+  sinceSha: z.string().nullish(),
+  tag: z.string().nullish(),
+});
+const SYNC_REQUEST = z.looseObject({
+  number: z.number().int(),
+  keepConflict: z.boolean().nullish(),
+});
+const FINISH_REQUEST = z.looseObject({
+  number: z.number().int(),
+  abort: z.boolean().nullish(),
+  reason: z.string().nullish(),
+});
+
+// The value `schema` parses from `request`, or an OpsError naming the op.
+function parsed<T>(schema: z.ZodType<T>, op: string, request: unknown): T {
+  const result = schema.safeParse(request);
+  if (!result.success) {
+    throw new OpsError(`bad ${op} request: ${z.prettifyError(result.error)}`);
+  }
+  return result.data;
+}
+
+function present(text: string | null | undefined): text is string {
+  return text !== undefined && text !== null && text !== "";
+}
+
+// `text`, or `fallback` when it is missing or empty.
+function textOr(text: string | null | undefined, fallback: string): string {
+  if (present(text)) {
+    return text;
+  }
+  return fallback;
+}
+
+function gitOut(wt: string, args: readonly string[]): string {
+  return run("git", ["-C", wt, ...args]).stdout;
+}
+
+function gitSucceeds(wt: string, args: readonly string[]): boolean {
+  return run("git", ["-C", wt, ...args], { allowFail: true }).code === 0;
+}
+
+function nonEmptyLines(text: string): string[] {
+  return text.split("\n").filter((line) => line !== "");
+}
+
+// A sync rebases the branch, so an earlier reviewed commit may no longer be in its
+// history. Diffing from it would then show everything the base gained since, so
+// review the whole branch instead.
+function reviewFrom(
+  wt: string,
+  sinceSha: string | null | undefined,
+  { headSha, baseSha }: { headSha: string; baseSha: string },
+): string {
+  if (!present(sinceSha)) {
+    return baseSha;
+  }
+  if (gitSucceeds(wt, ["merge-base", "--is-ancestor", sinceSha, headSha])) {
+    return sinceSha;
+  }
+  return baseSha;
+}
+
+// Wiki commits come after the code diff. They are always the whole wiki change so
+// far, even in a re-review that shows only the code since the last review.
+function withWiki(
+  cfg: Config,
+  n: number,
+  diff: string,
+): { text: string; files: string[] } {
+  const wiki = wikiDiff(cfg, n);
+  const settings = wikiCfg(cfg);
+  if (wiki.diff === "" || settings === null) {
+    return { text: diff, files: wiki.files };
+  }
+  const heading = `# Wiki changes (paths under ${settings.dir}/; pushed to the wiki when the PR merges)`;
+  return { text: `${diff}\n\n${heading}\n\n${wiki.diff}`, files: wiki.files };
+}
+
+function prepareReview(cfg: Config, request: unknown): ReviewReply {
+  const req = parsed(REVIEW_REQUEST, "prepare-review", request);
+  const n = req.number;
+  const wt = paths.worktree(cfg, n);
+  fetchIn(cfg, wt, cfg.baseBranch);
+  const headSha = head(wt);
+  const baseArgs = ["merge-base", `origin/${cfg.baseBranch}`, "HEAD"];
+  const baseSha = gitOut(wt, baseArgs).trim();
+  const from = reviewFrom(wt, req.sinceSha, { headSha, baseSha });
+  const diff = gitOut(wt, ["diff", "--stat", "--patch", `${from}..${headSha}`]);
+  const names = gitOut(wt, ["diff", "--name-only", `${baseSha}..${headSha}`]);
+  const tag = `review-${textOr(req.tag, "r0")}`;
+  const dir = path.join(paths.runDir(cfg, n), tag);
+  fs.mkdirSync(dir, { recursive: true });
+  const diffPath = path.join(dir, "diff.patch");
+  const full = withWiki(cfg, n, diff);
+  fs.writeFileSync(diffPath, full.text);
+  return {
+    headSha,
+    baseSha,
+    diffPath,
+    diffLines: full.text.split("\n").length,
+    changedFiles: nonEmptyLines(names).concat(full.files),
+  };
+}
+
+function rebaseInProgress(wt: string): boolean {
+  return REBASE_DIRS.some((dir) => {
+    const where = gitOut(wt, ["rev-parse", "--git-path", dir]).trim();
+    return fs.existsSync(path.resolve(wt, where));
+  });
+}
+
+// Puts the worktree back on the pushed branch, dropping a half-done rebase.
+function resetToRemote(cfg: Config, n: number): void {
+  const wt = paths.worktree(cfg, n);
+  if (rebaseInProgress(wt)) {
+    run("git", ["-C", wt, "rebase", "--abort"], { allowFail: true });
+  }
+  const remote = remoteHead(cfg, n);
+  if (remote !== null) {
+    run("git", ["-C", wt, "reset", "--hard", remote]);
+  }
+  run("git", ["-C", wt, "clean", "-fd"]);
+}
+
+function pushBranch(cfg: Config, n: number, wt: string): void {
+  const target = `HEAD:refs/heads/${paths.branch(n)}`;
+  git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", target]);
+}
+
+// The conflicting rebase's files. Unless kept, the rebase is aborted.
+function conflictReply(wt: string, base: string, keep: boolean): SyncConflict {
+  const unmerged = ["-C", wt, "diff", "--name-only", "--diff-filter=U"];
+  const conflicts = run("git", unmerged, { allowFail: true }).stdout.trim();
+  const inRebase = keep && rebaseInProgress(wt);
+  if (!inRebase) {
+    run("git", ["-C", wt, "rebase", "--abort"], { allowFail: true });
+  }
+  return {
+    changed: false,
+    conflict: true,
+    inRebase,
+    conflicts: nonEmptyLines(conflicts),
+    baseSha: gitOut(wt, ["rev-parse", base]).trim(),
+  };
+}
+
+// With keepConflict, a conflicting rebase is left stopped in the worktree for a
+// writer to resolve; finish-sync then checks the result and pushes it.
+function syncBase(cfg: Config, request: unknown): SyncReply {
+  const req = parsed(SYNC_REQUEST, "sync-base", request);
+  const n = req.number;
+  const wt = paths.worktree(cfg, n);
+  if (rebaseInProgress(wt)) {
+    resetToRemote(cfg, n); // left over from a crashed run
+  }
+  assertClean(wt);
+  fetchIn(cfg, wt, cfg.baseBranch);
+  const base = `origin/${cfg.baseBranch}`;
+  if (gitSucceeds(wt, ["merge-base", "--is-ancestor", base, "HEAD"])) {
+    return { changed: false, conflict: false, headSha: head(wt) };
+  }
+  if (!gitSucceeds(wt, ["rebase", base])) {
+    return conflictReply(wt, base, req.keepConflict === true);
+  }
+  pushBranch(cfg, n, wt);
+  return { changed: true, conflict: false, headSha: head(wt) };
+}
+
+function isMarker(line: string): boolean {
+  return CONFLICT_MARKER.test(line) || line === MIDDLE_MARKER;
+}
+
+// Why the branch's commits can't be pushed as the rebased branch, if they can't.
+function commitsProblem(wt: string, base: string): string | undefined {
+  if (!gitSucceeds(wt, ["merge-base", "--is-ancestor", base, "HEAD"])) {
+    return `HEAD is not based on ${base}`;
+  }
+  const count = gitOut(wt, ["rev-list", "--count", `${base}..HEAD`]);
+  if (!(Number(count.trim()) > 0)) {
+    return "the branch has no commits left after the rebase";
+  }
+  const diff = gitOut(wt, ["diff", `${base}...HEAD`, "-U0"]);
+  const markers = diff.split("\n").filter(isMarker);
+  if (markers.length > 0) {
+    const shown = markers.slice(0, MARKER_LINES).join("\n");
+    return `conflict markers remain:\n${shown}`;
+  }
+  return undefined;
+}
+
+// Why a writer's resolved rebase can't be pushed, or undefined when it can: the
+// rebase must have finished on the current base with no markers left.
+function syncProblem(cfg: Config, wt: string): string | undefined {
+  if (rebaseInProgress(wt)) {
+    return "the rebase was not finished";
+  }
+  const dirty = gitOut(wt, ["status", "--porcelain"]).trim();
+  if (dirty !== "") {
+    const shown = tail(dirty, DIRTY_LINES);
+    return `the worktree has uncommitted changes:\n${shown}`;
+  }
+  return commitsProblem(wt, `origin/${cfg.baseBranch}`);
+}
+
+// After a writer resolved a kept rebase: push it if it passes the checks.
+// Anything else (or abort: true) resets the worktree to the pushed branch and
+// reports why.
+function finishSync(cfg: Config, request: unknown): FinishReply {
+  const req = parsed(FINISH_REQUEST, "finish-sync", request);
+  const n = req.number;
+  const wt = paths.worktree(cfg, n);
+  let reason: string | undefined;
+  if (req.abort === true) {
+    reason = textOr(req.reason, "aborted");
+  } else {
+    reason = syncProblem(cfg, wt);
+  }
+  if (reason !== undefined) {
+    resetToRemote(cfg, n);
+    return { resolved: false, reason };
+  }
+  pushBranch(cfg, n, wt);
+  return { resolved: true, headSha: head(wt) };
+}
+
+const syncOps: Readonly<Record<string, Op>> = {
+  "prepare-review": prepareReview,
+  "sync-base": syncBase,
+  "finish-sync": finishSync,
+};
+
+export { syncOps };
