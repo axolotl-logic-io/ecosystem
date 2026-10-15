@@ -1,3 +1,4 @@
+// @ts-check
 // Implement's step machine (src/workflow/stages/implement.ts), driven directly
 // with recorded results and a fixed clock. The trace tests run it through the
 // sweep; these pin the prompt, the continuation and each status's step.
@@ -19,6 +20,9 @@ import {
   TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
+/** @import { Launch, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @typedef {Readonly<Record<string, unknown>>} Reply */
+
 const IMPL_TOKENS = 150_000;
 const TITLE_LIMIT = 200;
 // An issue budget with room for triage but not for an implementer session.
@@ -28,6 +32,7 @@ const CONTINUED =
   "This session ran out of room before finishing. A second implementer session continues from its handoff.";
 
 // The implementer's reply, with `fields` replacing a finished one's.
+/** @param {Reply} fields @returns {Reply} */
 function replyOf(fields) {
   return {
     status: "done",
@@ -40,6 +45,7 @@ function replyOf(fields) {
 }
 
 // Implement's step after a session from `state` replies with `fields`.
+/** @param {StageState} state @param {Reply} fields @returns {Step} */
 function replied(state, fields) {
   const begun = next(state, BUILD_CTX, []);
   const output = replyOf(fields);
@@ -50,17 +56,28 @@ function replied(state, fields) {
 }
 
 // The step's state as the sweep begins the stage again.
+/** @param {Step} step @returns {Step} */
 function begunAgain(step) {
   return next({ ...step.state, phase: "begin" }, BUILD_CTX, []);
+}
+
+/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
+function launchesOf(step) {
+  if (step.done) {
+    throw new Error("the step ended instead of launching");
+  }
+  return step.launches;
 }
 
 test("the first call charges the implementer and launches a writer from the spec", () => {
   const given = buildState("implement", { spec: SPEC });
   const step = next(given, BUILD_CTX, []);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     implementLaunch(implementTask(`Spec (also posted on the issue):\n${SPEC}`)),
   ]);
-  assert.equal(step.launches[0].writer, true);
+  const [launch] = launchesOf(step);
+  assert.ok(launch.kind === "child");
+  assert.equal(launch.writer, true);
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.allocated, TRIAGE_TOKENS + IMPL_TOKENS);
   assert.deepEqual(step.state.st.sessions, ["triage", "implementer"]);
@@ -69,13 +86,15 @@ test("the first call charges the implementer and launches a writer from the spec
 
 test("without a spec the session works from triage's plan", () => {
   const step = next(buildState("implement"), BUILD_CTX, []);
-  assert.equal(step.launches[0].task, implementTask(`Triage plan:\n${PLAN}`));
+  const [launch] = launchesOf(step);
+  assert.ok(launch.kind === "child");
+  assert.equal(launch.task, implementTask(`Triage plan:\n${PLAN}`));
 });
 
 test("a continuation's task names the handoff file", () => {
   const state = buildState("implement", { spec: SPEC, continuations: 1 });
   const step = next(state, BUILD_CTX, []);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     implementLaunch(implementTask(HANDOFF_LINE)),
   ]);
 });
@@ -83,7 +102,7 @@ test("a continuation's task names the handoff file", () => {
 test("a budget too small for the session stops", () => {
   const step = next(buildState("implement"), contextWith(SMALL_BUDGET), []);
   assert.equal(step.done, true);
-  assert.equal(step.stop.reason, "issue token budget exhausted");
+  assert.equal(step.stop?.reason, "issue token budget exhausted");
 });
 
 test("a handoff, then a continuation, then done moves the issue to open-pr", () => {
@@ -103,7 +122,7 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
     `${STAMP} implement: handoff - Half done.`,
   ]);
   const again = begunAgain(first);
-  assert.deepEqual(again.launches, [
+  assert.deepEqual(launchesOf(again), [
     implementLaunch(implementTask(HANDOFF_LINE)),
   ]);
   const done = afterSession(next, again, IMPL_BY, {
@@ -168,5 +187,5 @@ test("a failed session or a malformed reply stops", () => {
     ok: true,
     structuredOutput: { status: "done" },
   });
-  assert.equal(malformed.stop.reason, "the implementer session failed");
+  assert.equal(malformed.stop?.reason, "the implementer session failed");
 });

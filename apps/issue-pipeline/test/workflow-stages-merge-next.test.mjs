@@ -1,3 +1,4 @@
+// @ts-check
 // The merge's step machine (src/workflow/stages/merge.ts), driven directly
 // with recorded replies and a fixed clock. The trace tests run it through the
 // sweep; these pin the merge request and each answer's step.
@@ -17,6 +18,12 @@ import {
   VERIFIED,
 } from "./workflow-finish-test-kit.mjs";
 
+/** @import { OpResult, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { Finding } from "../src/workflow/types.ts" */
+/** @typedef {Parameters<typeof stateWith>[1]} Fields */
+/** @typedef {Parameters<typeof stateWith>[2]} Item */
+
+/** @type {Finding} */
 const OPEN = {
   id: "f1",
   file: "a.ts",
@@ -39,11 +46,13 @@ const QUEUED = {
 };
 const WAIT_NOTE = "merge waits for #3 (older PR #30)";
 
+/** @param {Fields} [fields] @param {Item} [item] @returns {StageState} */
 function mergeState(fields = {}, item = {}) {
   return stateWith("merge", { ...ACCEPTED, ...fields }, item);
 }
 
 // The merge's step after ops answers `reply`.
+/** @param {OpResult["reply"]} reply @param {Fields} [fields] @param {Item} [item] @returns {Step} */
 function answered(reply, fields = {}, item = {}) {
   return replied(next, next(mergeState(fields, item), CTX, []), reply);
 }
@@ -62,6 +71,7 @@ test("an open finding stops the merge before any launch", () => {
 });
 
 test("an open finding from another lens stops with no code", () => {
+  /** @type {Finding} */
   const finding = { ...OPEN, lenses: ["tests"], category: null };
   const step = next(mergeState({ findings: [finding] }), CTX, []);
   assert.deepEqual(step.stop, {
@@ -76,6 +86,7 @@ test("the merge request carries the state and the summary", () => {
   const given = mergeState();
   const step = next(given, CTX, []);
   assert.equal(step.state.phase, "decide");
+  assert.equal(step.done, false);
   assert.deepEqual(step.launches, [
     {
       kind: "op",
@@ -95,8 +106,12 @@ test("the merge request carries the state and the summary", () => {
 
 test("the summary notes a verdict given before a clean rebase", () => {
   const step = next(mergeState({}, { rebasedOnly: true }), CTX, []);
+  assert.equal(step.done, false);
+  const [launch] = step.launches;
+  assert.ok(launch.kind === "op");
+  const { summary } = launch.payload;
   assert.equal(
-    step.launches[0].payload.summary,
+    summary,
     "Checks: test: ok\n\nAcceptance: Does it. (passed before a clean rebase onto integration)",
   );
 });

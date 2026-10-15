@@ -1,3 +1,4 @@
+// @ts-check
 // Triage's step machine (src/workflow/stages/triage.ts), driven directly with
 // recorded results and a fixed clock. The trace tests run it through the
 // sweep; these pin the prompt and each decision's step.
@@ -19,6 +20,10 @@ import {
   stateWith,
 } from "./workflow-triage-test-kit.mjs";
 
+/** @import { ChildResult, Launch, OpResult, Step } from "../src/workflow/stages/types.ts" */
+/** @typedef {Parameters<typeof stateWith>[0]} Fields */
+/** @typedef {Pick<ChildResult, "ok" | "structuredOutput"> & Partial<Pick<ChildResult, "error">>} Ended */
+
 const TRIAGE_TOKENS = 50_000;
 const PR = 42;
 const PLAN_LIMIT = 4000;
@@ -26,6 +31,7 @@ const PLAN_LIMIT = 4000;
 const SMALL_BUDGET = 40_000;
 
 // Triage's step after its session ends with `result`.
+/** @param {Ended} result @param {Fields} [fields] @returns {Step} */
 function afterSession(result, fields = {}) {
   const begun = next(stateWith(fields), CTX, []);
   return next(begun.state, CTX, [
@@ -34,19 +40,31 @@ function afterSession(result, fields = {}) {
 }
 
 // Triage's step after its session replies with `output`.
+/** @param {unknown} output @param {Fields} [fields] @returns {Step} */
 function decided(output, fields = {}) {
   return afterSession({ ok: true, structuredOutput: output }, fields);
 }
 
 // The step after `step`'s one ops request gets `reply`.
+/** @param {Step} step @param {OpResult["reply"]} reply @returns {Step} */
 function replied(step, reply) {
   return next(step.state, CTX, [{ kind: "op", reply }]);
+}
+
+/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
+function launchesOf(step) {
+  if (step.done) {
+    throw new Error("the step ended instead of launching");
+  }
+  return step.launches;
 }
 
 test("the first call counts the run, charges it and launches the session", () => {
   const given = stateWith();
   const step = next(given, CTX, []);
-  assert.deepEqual(step.launches, [sessionLaunch(expectedTask(SPLIT_ALLOWED))]);
+  assert.deepEqual(launchesOf(step), [
+    sessionLaunch(expectedTask(SPLIT_ALLOWED)),
+  ]);
   assert.equal(step.done, false);
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.triages, 1);
@@ -58,7 +76,7 @@ test("the first call counts the run, charges it and launches the session", () =>
 
 test("a sub-issue's session is told it may not split", () => {
   const step = next(stateWith({ depth: 1 }), CTX, []);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     sessionLaunch(expectedTask(SPLIT_FORBIDDEN)),
   ]);
 });
@@ -78,7 +96,7 @@ test("a ready issue moves to spec, is taken, and opens its draft PR", () => {
       where: "issue",
     },
   ]);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     {
       kind: "op",
       name: "startpr",
@@ -92,7 +110,7 @@ test("a ready issue moves to spec, is taken, and opens its draft PR", () => {
     [opened.state.st.pr, opened.state.st.headSha, opened.state.st.implemented],
     [PR, "aaaaaaa", false],
   );
-  assert.equal(opened.state.st.log.at(-1), `${STAMP} opened draft PR #42`);
+  assert.equal(opened.state.st.log?.at(-1), `${STAMP} opened draft PR #42`);
   assert.deepEqual([opened.comments, opened.stop], [[], null]);
 });
 
@@ -115,7 +133,7 @@ test("a failed draft PR is only logged", () => {
   assert.equal(step.stop, null);
   assert.equal(step.state.st.pr, null);
   assert.equal(
-    step.state.st.log.at(-1),
+    step.state.st.log?.at(-1),
     `${STAMP} could not open the draft PR yet: gh failed`,
   );
 });
@@ -144,7 +162,7 @@ test("a large issue at depth 0 is split, and closed for the sweep", () => {
     subIssues: SUB_ISSUES,
   });
   const step = decided(split);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     {
       kind: "op",
       name: "split",
@@ -159,13 +177,13 @@ test("a large issue at depth 0 is split, and closed for the sweep", () => {
   ]);
   assert.deepEqual([step.state.closed, step.state.outcome], [true, "split"]);
   assert.equal(replied(step, { ok: true }).done, true);
-  assert.equal(decided(split, { depth: 1 }).stop.reason, REJECTED);
+  assert.equal(decided(split, { depth: 1 }).stop?.reason, REJECTED);
 });
 
 test("questions are asked, and no questions read as a reject", () => {
   const questions = ["Which page?"];
   const step = decided(replyOf({ decision: "needs-info", questions }));
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     {
       kind: "op",
       name: "ask",
@@ -178,7 +196,7 @@ test("questions are asked, and no questions read as a reject", () => {
     [true, "needs-info"],
   );
   assert.equal(
-    decided(replyOf({ decision: "needs-info" })).stop.reason,
+    decided(replyOf({ decision: "needs-info" })).stop?.reason,
     REJECTED,
   );
 });
@@ -203,7 +221,7 @@ test("a session with no structured output stops triage", () => {
     detail: "timed out",
     code: null,
   });
-  assert.equal(decided({ decision: "maybe" }).stop.reason, "triage failed");
+  assert.equal(decided({ decision: "maybe" }).stop?.reason, "triage failed");
 });
 
 test("a run past maxTriages stops without a launch", () => {

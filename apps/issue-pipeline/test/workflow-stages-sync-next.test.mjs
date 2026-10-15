@@ -1,3 +1,4 @@
+// @ts-check
 // Sync's step machine (src/workflow/stages/sync.ts), driven directly with
 // recorded replies and a fixed clock. The trace tests run it through the
 // sweep; these pin each outcome's step.
@@ -22,6 +23,8 @@ import {
   stepComment,
 } from "./workflow-checks-test-kit.mjs";
 
+/** @import { Launch, LaunchResult, OpResult, Step } from "../src/workflow/stages/types.ts" */
+/** @typedef {Parameters<typeof stateAt>[1]} Fields */
 const HEAD = "dddddddddddddddd";
 const FIXER_TOKENS = 100_000;
 const CONFLICT = {
@@ -35,24 +38,50 @@ const NEAR_REBASE_BUDGET = 450_000;
 const PASSED = "cccccccccccccccc";
 const FILE_LIST = "Conflicting files:\nsrc/a.ts";
 const KEPT_BOTH = { status: "fixed", summary: "Kept both changes." };
+const CANNOT_FIX = {
+  status: "cannot-fix",
+  summary: "Both sides rewrote a.ts.",
+};
+const RESOLVED = { ok: true, resolved: true, headSha: HEAD };
+const ABORTED = { ok: true, resolved: false, reason: "aborted" };
 const TESTS_ONLY_NOTE = /only the tests run again before merge/u;
 const ATTEMPT_LINE = /conflict resolver, attempt 1 of 2/u;
 // The conflict reply has no baseSha, so the task names none.
 const NO_BASE_SHA = /\(undefined\), and the rebase stopped/u;
 
 // Sync's step after its rebase replies with `reply`.
+/** @param {OpResult["reply"]} reply @param {Fields} [fields] @returns {Step} */
 function synced(reply, fields = {}) {
   return replied(next, next(stateAt("sync", fields), CTX, []), reply);
 }
 
 // Sync's step after the resolver of a conflicting rebase returns `result`.
+/** @param {LaunchResult} result @param {Fields} [fields] @returns {Step} */
 function resolvedWith(result, fields = {}) {
   return after(next, synced(CONFLICT, fields), CTX, result);
 }
 
+/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
+function launchesOf(step) {
+  if (step.done) {
+    throw new Error("the step ended instead of launching");
+  }
+  return step.launches;
+}
+
+// The payload of the ops request `step` launches first.
+/** @param {Step} step @returns {Readonly<Record<string, unknown>>} */
+function firstPayload(step) {
+  const [launch] = launchesOf(step);
+  if (launch.kind !== "op") {
+    throw new Error(`${launch.name} is not an ops request`);
+  }
+  return launch.payload;
+}
+
 test("a clean rebase launches sync-base, then moves to checks", () => {
   const begun = next(stateAt("sync"), CTX, []);
-  assert.deepEqual(begun.launches, [
+  assert.deepEqual(launchesOf(begun), [
     {
       kind: "op",
       name: "sync",
@@ -60,7 +89,7 @@ test("a clean rebase launches sync-base, then moves to checks", () => {
       payload: { number: 7, keepConflict: true },
     },
   ]);
-  assert.deepEqual(Object.keys(begun.launches[0].payload), [
+  assert.deepEqual(Object.keys(firstPayload(begun)), [
     "number",
     "keepConflict",
   ]);
@@ -88,7 +117,7 @@ test("a clean rebase of a head that passed everything re-runs only the tests", (
   );
   assert.equal(step.state.st.testsOnly, true);
   assert.equal(step.state.st.passedSha, null);
-  assert.match(step.comments[0].body, TESTS_ONLY_NOTE);
+  assert.match(step.comments[0]?.body ?? "", TESTS_ONLY_NOTE);
 });
 
 test("an unchanged head moves to checks without a comment", () => {
@@ -108,7 +137,8 @@ test("a base that kept moving stops after the last sync", () => {
 
 test("a conflict is resolved by a writer, then the rebase is finished", () => {
   const conflicted = synced(CONFLICT);
-  const [launch] = conflicted.launches;
+  const [launch] = launchesOf(conflicted);
+  assert.ok(launch.kind === "child");
   assert.deepEqual(
     { ...launch, task: "" },
     {
@@ -131,7 +161,7 @@ test("a conflict is resolved by a writer, then the rebase is finished", () => {
   assert.equal(conflicted.state.st.conflictFixes, 1);
   const resolver = sessionResult("conflicts-1", KEPT_BOTH);
   const finishing = after(next, conflicted, CTX, resolver);
-  assert.deepEqual(finishing.launches, [
+  assert.deepEqual(launchesOf(finishing), [
     {
       kind: "op",
       name: "finish-sync",
@@ -140,11 +170,7 @@ test("a conflict is resolved by a writer, then the rebase is finished", () => {
     },
   ]);
   assert.deepEqual(finishing.comments, []);
-  const step = replied(next, finishing, {
-    ok: true,
-    resolved: true,
-    headSha: HEAD,
-  });
+  const step = replied(next, finishing, RESOLVED);
   assert.deepEqual([step.done, step.stop], [true, null]);
   assert.deepEqual([step.state.st.stage, step.state.st.syncs], ["checks", 1]);
   assert.deepEqual(step.comments, [
@@ -162,7 +188,8 @@ test("a conflict is resolved by a writer, then the rebase is finished", () => {
 
 test("used-up conflict fixes leave the rebase aborted and stop on conflicts", () => {
   const begun = next(stateAt("sync", { conflictFixes: 2 }), CTX, []);
-  assert.equal(begun.launches[0].payload.keepConflict, false);
+  const { keepConflict } = firstPayload(begun);
+  assert.equal(keepConflict, false);
   const step = replied(next, begun, { ...CONFLICT, inRebase: false });
   assert.deepEqual(step.stop, {
     reason: "rebasing onto integration conflicts again after 2 resolutions",
@@ -183,7 +210,8 @@ test("sync begins a re-check only for an issue the merge stage sent back", () =>
 test("a resolver the rebase pool can't fit is a budget stop", () => {
   const fields = { allocated: 0, rebaseAllocated: NEAR_REBASE_BUDGET };
   const begun = next(stateAt("sync", fields), CTX, []);
-  assert.equal(begun.launches[0].payload.keepConflict, false);
+  const { keepConflict } = firstPayload(begun);
+  assert.equal(keepConflict, false);
   const step = replied(next, begun, { ...CONFLICT, inRebase: false });
   assert.deepEqual(step.stop, {
     reason: "rebase token budget exhausted",
@@ -195,9 +223,10 @@ test("a resolver the rebase pool can't fit is a budget stop", () => {
 test("an issue near its issue budget still gets the resolver", () => {
   const nearlySpent = { allocated: 980_000, passedSha: PASSED };
   const begun = next(stateAt("sync", nearlySpent), CTX, []);
-  assert.equal(begun.launches[0].payload.keepConflict, true);
+  const { keepConflict } = firstPayload(begun);
+  assert.equal(keepConflict, true);
   const conflicted = replied(next, begun, CONFLICT);
-  assert.equal(conflicted.launches[0].name, "conflicts-1");
+  assert.equal(launchesOf(conflicted)[0].name, "conflicts-1");
   assert.equal(conflicted.state.st.allocated, nearlySpent.allocated);
   assert.equal(conflicted.state.st.rebaseAllocated, FIXER_TOKENS);
 });
@@ -225,21 +254,15 @@ test("a rejected resolution stops on the last attempt and retries before it", ()
 });
 
 test("a resolver that can't fix the conflicts leaves the issue at sync", () => {
-  const resolver = sessionResult("conflicts-1", {
-    status: "cannot-fix",
-    summary: "Both sides rewrote a.ts.",
-  });
+  const resolver = sessionResult("conflicts-1", CANNOT_FIX);
   const finishing = resolvedWith(resolver);
-  assert.equal(finishing.launches[0].payload.abort, true);
-  const step = replied(next, finishing, {
-    ok: true,
-    resolved: false,
-    reason: "aborted",
-  });
+  const { abort } = firstPayload(finishing);
+  assert.equal(abort, true);
+  const step = replied(next, finishing, ABORTED);
   assert.deepEqual([step.done, step.stop], [true, null]);
   assert.equal(step.state.st.stage, "sync");
   assert.equal(
-    step.comments[0].body,
+    step.comments[0]?.body,
     "I couldn't resolve the conflicts with integration: Both sides rewrote a.ts.",
   );
 });
@@ -261,7 +284,7 @@ test("a failed resolver session aborts the rebase and stops", () => {
     ok: false,
     error: "timed out",
   });
-  assert.deepEqual(finishing.launches[0].payload, {
+  assert.deepEqual(firstPayload(finishing), {
     number: 7,
     abort: true,
     reason: "the conflict resolver failed",

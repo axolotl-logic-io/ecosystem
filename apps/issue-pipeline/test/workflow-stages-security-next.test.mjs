@@ -1,3 +1,4 @@
+// @ts-check
 // The security review's step machine (src/workflow/stages/security.ts),
 // driven directly with recorded results and a fixed clock. The trace tests
 // run it through the sweep; these pin the prompt, the findings' rounds, the
@@ -30,6 +31,10 @@ import {
   VERIFIED,
 } from "./workflow-finish-test-kit.mjs";
 
+/** @import { Launch, Step } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
+/** @typedef {Parameters<typeof stateWith>[1]} Fields */
+
 const BY = { ...SIGNATURE, role: "security reviewer" };
 const LEAK = {
   file: "a.ts",
@@ -44,6 +49,7 @@ const LAST_ROUND = 1;
 const PAST_ROUNDS = 2;
 const SMALL_BUDGET = 40_000;
 
+/** @returns {string} */
 function securityTask() {
   return taskOf("security reviewer", ROLES.reviewer, [
     "You are the last review before this PR merges. Review the full diff against integration at /d.diff (12 lines), reading surrounding code where needed, for harm to the app's users and the operator.",
@@ -52,6 +58,7 @@ function securityTask() {
   ]);
 }
 
+/** @param {IssueState} st @returns {Launch} */
 function saveLaunch(st) {
   return {
     kind: "op",
@@ -61,11 +68,25 @@ function saveLaunch(st) {
   };
 }
 
-function prepTag(fields) {
-  const [launch] = next(stateWith("security", fields), CTX, []).launches;
-  return launch.payload.tag;
+/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
+function launchesOf(step) {
+  if (step.done) {
+    throw new Error("the step ended instead of launching");
+  }
+  return step.launches;
 }
 
+/** @param {Fields} fields @returns {unknown} */
+function prepTag(fields) {
+  const [launch] = launchesOf(next(stateWith("security", fields), CTX, []));
+  if (launch.kind !== "op") {
+    throw new Error(`${launch.name} is not an ops request`);
+  }
+  const { tag } = launch.payload;
+  return tag;
+}
+
+/** @param {unknown[]} findings @param {Fields} [fields] @returns {Step} */
 function reviewed(findings, fields = {}) {
   return decided(next, stateWith("security", fields), { findings });
 }
@@ -73,7 +94,7 @@ function reviewed(findings, fields = {}) {
 test("the security review tags its diff by round before charging the reviewer", () => {
   const given = stateWith("security");
   const step = next(given, CTX, []);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     {
       kind: "op",
       name: "prep",
@@ -90,7 +111,7 @@ test("the reviewer is charged, then reads the full diff with the security rules"
   const step = prepared(next, stateWith("security"));
   assert.equal(step.state.st.allocated, ROLES.reviewer);
   assert.deepEqual(step.state.st.sessions, ["reviewer"]);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(launchesOf(step), [
     {
       kind: "child",
       name: "security",
@@ -120,7 +141,7 @@ test("no findings moves the issue to merge, then saves it", () => {
       where: "pr",
     },
   ]);
-  assert.deepEqual(step.launches, [saveLaunch(step.state.st)]);
+  assert.deepEqual(launchesOf(step), [saveLaunch(step.state.st)]);
   const saved = replied(next, step, { ok: true });
   assert.deepEqual([saved.done, saved.comments, saved.stop], [true, [], null]);
   assert.equal(saved.state.st, step.state.st);
@@ -148,7 +169,7 @@ test("a finding within the rounds is stored and sent back to fix", () => {
     [st.securityRounds, st.reviewedSha, st.round, st.stage],
     [1, VERIFIED, 0, "fix"],
   );
-  assert.equal(st.log.at(-1), `${STAMP} security review 1: 1 finding(s)`);
+  assert.equal(st.log?.at(-1), `${STAMP} security review 1: 1 finding(s)`);
   assert.deepEqual(step.comments, [
     {
       by: BY,
@@ -156,7 +177,7 @@ test("a finding within the rounds is stored and sent back to fix", () => {
       where: "pr",
     },
   ]);
-  assert.deepEqual(step.launches, [saveLaunch(st)]);
+  assert.deepEqual(launchesOf(step), [saveLaunch(st)]);
   assert.deepEqual(given, stateWith("security"));
 });
 

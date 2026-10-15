@@ -1,3 +1,4 @@
+// @ts-check
 // Acceptance's step machine (src/workflow/stages/accept.ts) and the parents'
 // close requests (stages/parents.ts), driven directly with recorded results
 // and a fixed clock. The trace tests run them through the sweep; these pin
@@ -30,6 +31,8 @@ import {
   taskOf,
 } from "./workflow-finish-test-kit.mjs";
 
+/** @import { ChildLaunch, Step } from "../src/workflow/stages/types.ts" */
+
 const SPEC = "## Behaviour\n\n- It works.";
 // An issue budget smaller than one verifier session.
 const SMALL_BUDGET = 40_000;
@@ -40,6 +43,7 @@ const PARENTS = [FIRST_PARENT, SECOND_PARENT];
 const EXPECTED_REPLY = /expected the reply to one ops request/u;
 
 // The verifier's whole task, with or without a spec.
+/** @param {string} spec @returns {string} */
 function acceptTask(spec) {
   let specLine = "";
   let specNote = "";
@@ -55,6 +59,7 @@ function acceptTask(spec) {
   ]);
 }
 
+/** @param {string} task @returns {ChildLaunch} */
 function sessionLaunch(task) {
   return {
     kind: "child",
@@ -68,6 +73,7 @@ function sessionLaunch(task) {
   };
 }
 
+/** @param {unknown} output @returns {Step} */
 function accepted(output) {
   return decided(next, stateWith("accept"), output);
 }
@@ -75,6 +81,7 @@ function accepted(output) {
 test("acceptance prepares the final diff before charging the verifier", () => {
   const given = stateWith("accept");
   const step = next(given, CTX, []);
+  assert.equal(step.done, false);
   assert.deepEqual(step.launches, [
     {
       kind: "op",
@@ -100,6 +107,7 @@ test("the verifier is charged, then reads the final diff and the checks' summary
 
 test("the verifier also judges the spec when the issue has one", () => {
   const step = prepared(next, stateWith("accept", { spec: SPEC }));
+  assert.equal(step.done, false);
   assert.deepEqual(step.launches, [sessionLaunch(acceptTask(SPEC))]);
 });
 
@@ -203,6 +211,7 @@ test("a verifier that doesn't fit the budget stops once the diff is ready", () =
 });
 
 // Issue #7 at accept with `fields`, its diff ready for the verifier.
+/** @param {Parameters<typeof stateWith>[1]} fields @returns {Step} */
 function diffReady(fields) {
   const begun = next(stateWith("accept", fields), CTX, []);
   return next(begun.state, CTX, [{ kind: "op", reply: DIFF }]);

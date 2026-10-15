@@ -1,3 +1,4 @@
+// @ts-check
 // Checks' step machine (src/workflow/stages/checks.ts and its CI fix in
 // ci-fix.ts), driven directly with recorded replies and a fixed clock. The
 // trace tests run it through the sweep; these pin each outcome's step.
@@ -25,6 +26,7 @@ import {
   stepComment,
 } from "./workflow-checks-test-kit.mjs";
 
+/** @import { Launch, LaunchResult, StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
 const HEAD = "cccccccccccccccc";
 const FIXED_HEAD = "ffffffffffffffff";
 const CI_FIXER_TOKENS = 100_000;
@@ -35,12 +37,17 @@ const VERIFY_MINUTES = 120;
 const REVIEW_MINUTES = 20;
 const FAILED = { id: "test", pass: false, detail: "1 failed", tail: "3 != 2" };
 const PASSED = { id: "test", pass: true, detail: "passed" };
+const FAILING = { ok: true, headSha: HEAD, pass: false, checks: [FAILED] };
+const FIX = { status: "fixed", summary: "Fixed." };
+const PREPARED = { ok: true, diffPath: "/w/d.diff" };
+const PASSING = { ok: true, headSha: FIXED_HEAD, pass: true, checks: [PASSED] };
 const CI_FAIL = {
   ok: true,
   status: "fail",
   failing: ["build"],
   logPath: "/w/ci.log",
 };
+const CI_PASS = { ok: true, status: "pass" };
 const NO_FINDINGS = { findings: [] };
 const BLOCKING = {
   severity: "blocking",
@@ -55,15 +62,11 @@ const NO_BLOCKING =
 const REBASED_NOTE = /acceptance and security passed before the rebase$/u;
 const BLOCKING_HEADING = /\*\*Blocking\*\*/u;
 
+/** @param {string} expectedSha @returns {Launch} */
 function ciLaunch(expectedSha) {
   const payload = { number: 7, pr: 42, expectedSha };
-  return {
-    kind: "op",
-    name: "ci",
-    op: "ci-status",
-    payload,
-    minutes: CI_MINUTES,
-  };
+  const minutes = CI_MINUTES;
+  return { kind: "op", name: "ci", op: "ci-status", payload, minutes };
 }
 
 const VERIFY_LAUNCH = {
@@ -74,6 +77,7 @@ const VERIFY_LAUNCH = {
   minutes: VERIFY_MINUTES,
 };
 
+/** @param {unknown} correctness @param {unknown} scope @returns {LaunchResult[]} */
 function lensResults(correctness, scope) {
   return [
     sessionResult("cifix-review-correctness-1", correctness),
@@ -81,38 +85,39 @@ function lensResults(correctness, scope) {
   ];
 }
 
-// Every step of a CI fix, from a failing verify up to the save's reply, with
-// the lenses replying `lenses` and the save's reply read under `ctx`.
+/**
+ * Every step of a CI fix, from a failing verify up to the save's reply, with
+ * the lenses replying `lenses` and the save's reply read under `ctx`
+ * (`resumed` is `saving` when the stage ends before the save).
+ * @param {StageContext} [ctx] @param {LaunchResult[]} [lenses] @returns {Readonly<Record<"begun" | "fixing" | "pushing" | "preparing" | "reviewing" | "saving" | "resumed", Step>>}
+ */
 function ciFixRun(ctx = CTX, lenses = lensResults(NO_FINDINGS, NO_FINDINGS)) {
   const begun = next(stateAt("checks"), CTX, []);
-  const fixing = replied(next, begun, {
-    ok: true,
-    headSha: HEAD,
-    pass: false,
-    checks: [FAILED],
-  });
-  const fixed = sessionResult("cifix-1", {
-    status: "fixed",
-    summary: "Fixed.",
-  });
-  const pushing = after(next, fixing, CTX, fixed);
+  const fixing = replied(next, begun, FAILING);
+  const pushing = after(next, fixing, CTX, sessionResult("cifix-1", FIX));
   const preparing = replied(next, pushing, { ok: true, headSha: FIXED_HEAD });
-  const reviewing = replied(next, preparing, {
-    ok: true,
-    diffPath: "/w/d.diff",
-  });
+  const reviewing = replied(next, preparing, PREPARED);
   const saving = after(next, reviewing, CTX, ...lenses);
-  let resumed = null;
+  let resumed = saving;
   if (!saving.done) {
     resumed = replied(next, saving, { ok: true }, ctx);
   }
   return { begun, fixing, pushing, preparing, reviewing, saving, resumed };
 }
 
+/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
+function launchesOf(step) {
+  if (step.done) {
+    throw new Error("the step ended instead of launching");
+  }
+  return step.launches;
+}
+
 test("failing verification launches a charged CI fixer after the checks' table", () => {
   const { begun, fixing } = ciFixRun();
-  assert.deepEqual(begun.launches, [VERIFY_LAUNCH]);
-  const [launch] = fixing.launches;
+  assert.deepEqual(launchesOf(begun), [VERIFY_LAUNCH]);
+  const [launch] = launchesOf(fixing);
+  assert.ok(launch.kind === "child");
   assert.deepEqual(
     { ...launch, task: "" },
     {
@@ -144,19 +149,23 @@ test("failing verification launches a charged CI fixer after the checks' table",
 
 test("a CI fix is pushed, its diff prepared, and reviewed by two lenses", () => {
   const { pushing, preparing, reviewing } = ciFixRun();
-  assert.deepEqual(pushing.launches, [
+  assert.deepEqual(launchesOf(pushing), [
     { kind: "op", name: "push", op: "push", payload: { number: 7 } },
   ]);
-  assert.equal(pushing.comments[0].by.role, "check fixer (attempt 1)");
+  assert.equal(pushing.comments[0]?.by.role, "check fixer (attempt 1)");
   assert.equal(preparing.state.st.headSha, FIXED_HEAD);
-  assert.deepEqual(preparing.launches[0].payload, {
+  const [prepare] = launchesOf(preparing);
+  assert.ok(prepare.kind === "op");
+  assert.deepEqual(prepare.payload, {
     number: 7,
     sinceSha: HEAD,
     tag: "cifix1",
   });
-  const launched = reviewing.launches.map(
-    ({ name, model, schema, minutes }) => [name, model, schema, minutes],
-  );
+  const launched = launchesOf(reviewing).map((launch) => {
+    assert.ok(launch.kind === "child");
+    const { name, model, schema, minutes } = launch;
+    return [name, model, schema, minutes];
+  });
   assert.deepEqual(launched, [
     [
       "cifix-review-correctness-1",
@@ -172,7 +181,7 @@ test("a CI fix is pushed, its diff prepared, and reviewed by two lenses", () => 
 test("a reviewed CI fix is saved, then verified and passed to accept", () => {
   const { saving, resumed } = ciFixRun();
   assert.equal(saving.state.st.reviewedSha, FIXED_HEAD);
-  assert.deepEqual(saving.launches, [
+  assert.deepEqual(launchesOf(saving), [
     {
       kind: "op",
       name: "save",
@@ -187,38 +196,30 @@ test("a reviewed CI fix is saved, then verified and passed to accept", () => {
       ["check-fix reviewer (scope)", NO_BLOCKING],
     ],
   );
-  assert.deepEqual(resumed.launches, [VERIFY_LAUNCH]);
-  const toCi = replied(next, resumed, {
-    ok: true,
-    headSha: FIXED_HEAD,
-    pass: true,
-    checks: [PASSED],
-  });
-  assert.deepEqual(toCi.launches, [ciLaunch(FIXED_HEAD)]);
+  assert.deepEqual(launchesOf(resumed), [VERIFY_LAUNCH]);
+  const toCi = replied(next, resumed, PASSING);
+  assert.deepEqual(launchesOf(toCi), [ciLaunch(FIXED_HEAD)]);
   assert.equal(toCi.state.st.verifiedSha, FIXED_HEAD);
   assert.equal(toCi.state.st.verifySummary, "test: passed");
   const step = replied(next, toCi, { ok: true, status: "pass" });
   assert.deepEqual([step.done, step.stop], [true, null]);
   assert.equal(step.state.st.stage, "accept");
   assert.equal(step.state.rebasedOnly, false);
-  assert.equal(step.state.st.log.at(-1), `${STAMP} checks passed at ffffffff`);
+  assert.equal(step.state.st.log?.at(-1), `${STAMP} checks passed at ffffffff`);
 });
 
 test("a head that already passed verification goes straight to CI", () => {
   const step = next(stateAt("checks", { verifiedSha: HEAD }), CTX, []);
-  assert.deepEqual(step.launches, [ciLaunch(HEAD)]);
+  assert.deepEqual(launchesOf(step), [ciLaunch(HEAD)]);
 });
 
 test("passing CI after a clean rebase that only re-ran the tests goes to merge", () => {
   const given = stateAt("checks", { verifiedSha: HEAD, testsOnly: true });
-  const step = replied(next, next(given, CTX, []), {
-    ok: true,
-    status: "pass",
-  });
+  const step = replied(next, next(given, CTX, []), CI_PASS);
   assert.equal(step.state.st.stage, "merge");
   assert.equal(step.state.rebasedOnly, true);
   assert.equal(step.state.st.testsOnly, false);
-  assert.match(step.state.st.log.at(-1), REBASED_NOTE);
+  assert.match(step.state.st.log?.at(-1) ?? "", REBASED_NOTE);
 });
 
 test("pending CI ends the stage until next sweep without a stop", () => {
@@ -235,6 +236,7 @@ test("pending CI ends the stage until next sweep without a stop", () => {
 });
 
 // Checks' step after its first ops request, from `state`, fails with `error`.
+/** @param {StageState} state @param {string} error @returns {Step} */
 function failing(state, error) {
   return replied(next, next(state, CTX, []), { ok: false, error });
 }
@@ -278,7 +280,7 @@ test("no room under the spawn cap after a CI fix holds the issue at checks", () 
   assert.deepEqual([resumed.done, resumed.stop], [true, null]);
   assert.equal(resumed.state.held, true);
   assert.equal(
-    resumed.state.st.log.at(-1),
+    resumed.state.st.log?.at(-1),
     `${STAMP} held at checks by the per-run spawn cap; continues next sweep`,
   );
 });
@@ -293,5 +295,5 @@ test("a blocking finding in the CI fix stops before the save", () => {
   });
   assert.equal(saving.done, true);
   assert.equal(saving.comments.length, 2);
-  assert.match(saving.comments[0].body, BLOCKING_HEADING);
+  assert.match(saving.comments[0]?.body ?? "", BLOCKING_HEADING);
 });

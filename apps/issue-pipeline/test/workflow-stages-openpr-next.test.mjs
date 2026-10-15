@@ -1,3 +1,4 @@
+// @ts-check
 // Open-pr's step machine (src/workflow/stages/open-pr.ts), driven directly
 // with recorded replies and a fixed clock.
 import assert from "node:assert/strict";
@@ -11,12 +12,15 @@ import {
   STAMP,
 } from "./workflow-build-test-kit.mjs";
 
+/** @import { Step } from "../src/workflow/stages/types.ts" */
+
 const IMPLEMENTED = {
   prTitle: "Do the thing",
   prBody: "Does the thing.",
   prBy: IMPL_BY,
 };
 
+/** @returns {Step} */
 function begun() {
   return next(buildState("open-pr", IMPLEMENTED), BUILD_CTX, []);
 }

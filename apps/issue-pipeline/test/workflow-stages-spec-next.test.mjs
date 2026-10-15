@@ -1,3 +1,4 @@
+// @ts-check
 // Spec's step machine (src/workflow/stages/spec.ts), driven directly with
 // recorded results and a fixed clock. The trace tests run it through the
 // sweep; these pin the prompt and each decision's step.
@@ -19,6 +20,8 @@ import {
   TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
+/** @import { Step } from "../src/workflow/stages/types.ts" */
+
 const SPEC_TOKENS = 80_000;
 const SPEC_LIMIT = 12_000;
 // An issue budget with room for triage but not for a spec session.
@@ -27,12 +30,14 @@ const START_FROM = /start from/u;
 const QUESTIONS = ["Which file holds the thing?"];
 
 // Spec's step after its session ends with `result`.
+/** @param {Parameters<typeof afterSession>[3]} result @returns {Step} */
 function decided(result) {
   const begun = next(buildState("spec"), BUILD_CTX, []);
   return afterSession(next, begun, SPEC_BY, result);
 }
 
 // Spec's step after its session replies with `fields` over a ready spec.
+/** @param {Readonly<Record<string, unknown>>} fields @returns {Step} */
 function replied(fields) {
   const output = { decision: "ready", spec: SPEC, questions: [], ...fields };
   return decided({ ok: true, structuredOutput: output });
@@ -41,8 +46,8 @@ function replied(fields) {
 test("the first call charges the spec writer and launches its session", () => {
   const given = buildState("spec");
   const step = next(given, BUILD_CTX, []);
-  assert.deepEqual(step.launches, [specLaunch(specTask())]);
   assert.equal(step.done, false);
+  assert.deepEqual(step.launches, [specLaunch(specTask())]);
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.allocated, TRIAGE_TOKENS + SPEC_TOKENS);
   assert.deepEqual(step.state.st.sessions, ["triage", "spec"]);
@@ -53,8 +58,11 @@ test("the first call charges the spec writer and launches its session", () => {
 test("without a wiki the task names no wiki start page", () => {
   const paths = { ...PATHS, wiki: null };
   const step = next(buildState("spec", {}, paths), BUILD_CTX, []);
+  assert.equal(step.done, false);
   assert.deepEqual(step.launches, [specLaunch(specTask(paths))]);
-  assert.doesNotMatch(step.launches[0].task, START_FROM);
+  const [launch] = step.launches;
+  assert.ok(launch.kind === "child");
+  assert.doesNotMatch(launch.task, START_FROM);
 });
 
 test("a budget too small for the session stops", () => {
