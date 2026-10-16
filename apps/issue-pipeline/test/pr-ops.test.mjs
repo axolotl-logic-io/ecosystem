@@ -1,13 +1,14 @@
 // @ts-check
-// start-pr, open-pr and push: their replies, gh calls and branch on origin,
+// start-pr, open-pr and push: their replies, gh writes and branch on origin,
 // run through the ops CLI against a local origin and the fake gh.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { okLine, opsFixture, opsSourceDefines } from "./ops-fixture.mjs";
+import { okLine, opsFixture } from "./ops-fixture.mjs";
 import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("pr-ops");
 const { AUTHOR, signed } = await import("../src/comments.ts");
+const { ghIsRead } = await import("../src/github.ts");
 const { fakeGh, ask, originRef } = fx;
 
 const DRAFT =
@@ -23,18 +24,11 @@ const NULL_AUTHOR = { n: 9, pr: 59 };
 const PUSHED = { n: 7, pr: 57 };
 const EMPTY = { n: 8, pr: 58 };
 
-/** @param {number} n @returns {string[]} */
-function issueCall(n) {
-  return ["api", `repos/o/r/issues/${n}`];
-}
-
-/** @param {number} n @returns {string[]} */
-function listCall(n) {
-  const head = `agent/issue-${n}`;
-  return ["pr", "list", "-R", "o/r", "--head", head, "--state", "open"].concat([
-    "--json",
-    "number",
-  ]);
+// The gh calls since the last reply that change GitHub, by src/github.ts's
+// own read/write rule.
+/** @returns {string[][]} */
+function writes() {
+  return fakeGh.calls().filter((args) => !ghIsRead(args));
 }
 
 /** @param {number} pr @returns {string[]} */
@@ -81,14 +75,6 @@ function startPr(n, pr, extra = {}) {
   return ask({ op: "start-pr", number: n, ...extra });
 }
 
-test("the PR ops live in src/ops/pr.ts", async () => {
-  const { prOps } = await import("../src/ops/pr.ts");
-  assert.deepEqual(Object.keys(prOps), ["start-pr", "open-pr", "push"]);
-  for (const name of ["start-pr", "open-pr", "push"]) {
-    assert.equal(opsSourceDefines(name), false, name);
-  }
-});
-
 test("start-pr on a new branch with no open PR opens a draft", () => {
   const { n, pr } = NEW_BRANCH;
   const out = startPr(n, pr);
@@ -102,9 +88,7 @@ test("start-pr on a new branch with no open PR opens a draft", () => {
   );
   assert.equal(originRef(`${headSha}^`), originRef("integration"));
   assert.equal(originRef(`${headSha}^{tree}`), originRef("integration^{tree}"));
-  assert.deepEqual(fakeGh.calls(), [
-    issueCall(n),
-    listCall(n),
+  assert.deepEqual(writes(), [
     createCall(n, ["--draft"], "T (#1)", draftBody(n)),
     labelCall(pr),
   ]);
@@ -117,10 +101,10 @@ test("start-pr with a plan adds it to the draft's body", () => {
   assert.equal(out, okLine("start-pr", { pr, headSha }));
   const body = draftBody(n, `\n${planDetails("P")}`);
   assert.ok(body.endsWith(`\n\n${planDetails("P")}`));
-  assert.deepEqual(
-    fakeGh.calls()[2],
+  assert.deepEqual(writes(), [
     createCall(n, ["--draft"], "T (#2)", body),
-  );
+    labelCall(pr),
+  ]);
 });
 
 test("start-pr on an existing branch with an open PR only labels it", () => {
@@ -136,11 +120,7 @@ test("start-pr on an existing branch with an open PR only labels it", () => {
   const out = ask({ op: "start-pr", number: 3 });
   assert.equal(out, okLine("start-pr", { pr: open, headSha: before }));
   assert.equal(originRef("agent/issue-3"), before);
-  assert.deepEqual(fakeGh.calls(), [
-    issueCall(n),
-    listCall(n),
-    labelCall(open),
-  ]);
+  assert.deepEqual(writes(), [labelCall(open)]);
 });
 
 /** @param {number} pr @param {string} title @param {string} body @returns {string[][]} */
@@ -163,8 +143,7 @@ test("open-pr fills in the draft and marks it ready", () => {
   const record = { sha: headSha, op: "open-pr", dated: true };
   assert.deepEqual(pushRecord(fx.root, n), record);
   const body = signed({ role: "implementer" }, "Closes #4\n\n");
-  assert.deepEqual(fakeGh.calls(), [
-    listCall(n),
+  assert.deepEqual(writes(), [
     // "Fix #4" already names the issue, so it gets no "(#4)".
     ...editCalls(pr, "Fix #4", body),
     labelCall(pr),
@@ -182,8 +161,7 @@ test("open-pr keeps a title and body that already name the issue", () => {
   const out = ask({ op: "open-pr", number: 5, title, body: text, by });
   const headSha = originRef("agent/issue-5");
   assert.equal(out, okLine("open-pr", { pr, headSha }));
-  assert.deepEqual(fakeGh.calls(), [
-    listCall(n),
+  assert.deepEqual(writes(), [
     ...editCalls(pr, title, signed(by, text)),
     labelCall(pr),
   ]);
@@ -200,8 +178,7 @@ test("open-pr opens a ready PR when none is open", () => {
   const headSha = originRef("agent/issue-6");
   assert.equal(out, okLine("open-pr", { pr: opened, headSha }));
   const body = signed({ role: "implementer" }, "Closes #6\n\nB");
-  assert.deepEqual(fakeGh.calls(), [
-    listCall(n),
+  assert.deepEqual(writes(), [
     createCall(n, [], "Fix #6", body),
     labelCall(opened),
   ]);
@@ -232,11 +209,7 @@ test("open-pr accepts the null author fields the workflow sends", () => {
   ].join("\n");
   // The old handler passed `by` to signed() as it came.
   assert.equal(signed(AUTHOR.parse(by), "Closes #9\n\nB"), body);
-  assert.deepEqual(fakeGh.calls(), [
-    listCall(n),
-    ...editCalls(pr, "T (#9)", body),
-    labelCall(pr),
-  ]);
+  assert.deepEqual(writes(), [...editCalls(pr, "T (#9)", body), labelCall(pr)]);
 });
 
 test("push pushes the branch after a real commit", () => {

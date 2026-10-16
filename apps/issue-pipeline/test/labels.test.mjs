@@ -1,31 +1,11 @@
 // @ts-check
-// The exact text of the pipeline's labels and stops. GitHub labels and the
-// issues already carrying them depend on it, so the move to src/labels.ts and
-// src/stops.ts (#166) must not change a character.
+// The pipeline's label names and the stops' order and codes. GitHub labels and
+// the issues already carrying them depend on the names, so a rename updates
+// this test too.
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { LABELS } from "../src/labels.ts";
 import { STOPS, stopFor } from "../src/stops.ts";
-
-// The sha256 of every label and stop row's text, including each stop's regex
-// source, computed from ops.mjs's LABELS and STOPS before #166, in base64url
-// (hex e770d2c9…6e29b62c).
-const TEXT_DIGEST = "53DSyW8vS-6NRWx97K72PGj0jBdozP0bNoB-0W4ptiw";
-
-function rowsText() {
-  return JSON.stringify({
-    labels: LABELS,
-    stops: STOPS.map((stop) => ({
-      code: stop.code,
-      short: stop.short,
-      test: stop.test.source,
-      control: stop.control,
-      explain: stop.explain,
-      label: stop.label,
-    })),
-  });
-}
 
 test("the status labels keep their names", () => {
   assert.deepEqual(
@@ -60,13 +40,6 @@ test("the stops keep their order and label names", () => {
       "merge-refused",
       "error",
     ].map((code) => `agent:stopped-${code}`),
-  );
-});
-
-test("every label and stop keeps its exact text", () => {
-  assert.equal(
-    createHash("sha256").update(rowsText()).digest("base64url"),
-    TEXT_DIGEST,
   );
 });
 

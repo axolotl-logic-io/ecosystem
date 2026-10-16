@@ -1,12 +1,13 @@
 // @ts-check
 // Shared setup for the tests that run an op through the ops CLI as the
 // workflow does: a pipeline root with a config, local git repos holding issue
-// #7's worktree, the fake gh, and the exact gh calls and comment texts the
+// #7's worktree, the fake gh, and the exact gh writes and comment texts the
 // finishing ops make.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { ghIsRead } from "../src/github.ts";
 import { githubComment, installFakeGh } from "./fake-gh.mjs";
 import { runOps } from "./ops-run-test-kit.mjs";
 
@@ -105,6 +106,13 @@ function calls() {
   return fakeGh
     .calls()
     .map((args) => args.map((arg) => arg.replace(MINUTE_STAMP, "<minute>")));
+}
+
+// The calls since the last reply() that change GitHub, by src/github.ts's own
+// read/write rule; reads are how an op finds things out, not what it does.
+/** @returns {string[][]} */
+function writes() {
+  return calls().filter((args) => !ghIsRead(args));
 }
 
 /** @param {string} role @param {string} text @returns {string} */
@@ -224,9 +232,9 @@ function finishReplies() {
   ];
 }
 
-// The gh calls finishMerged makes for issue #7 and PR #50.
+// The gh writes finishMerged makes for issue #7 and PR #50, in order.
 /** @param {object} state @returns {string[][]} */
-function finishCalls(state) {
+function finishWrites(state) {
   const closed = CLAIM_BODY.replace(
     `agent-pipeline:claim lane=${LANE}`,
     `agent-pipeline:claim-closed lane=${LANE}`,
@@ -239,18 +247,13 @@ function finishCalls(state) {
       `repos/${REPO}/git/refs/heads/agent/issue-7`,
       "--silent",
     ],
-    listCall(ISSUE),
     commentPost(
       ISSUE,
       stateBody(ISSUE, { ...state, stage: "done", lease: null }),
     ),
     ...relabel(ISSUE, "agent:merged", "agent:working"),
-    ["api", `repos/${REPO}/issues/${ISSUE}/labels`],
     ...relabel(PR, "agent:merged", "agent:working"),
-    ["api", `repos/${REPO}/issues/${PR}/labels`],
-    listCall(ISSUE),
     patchComment(CLAIM_ID, `${closed}\n\nClosed <minute>: PR #50 merged.`),
-    ["api", `repos/${REPO}/issues/7`, "--jq", "{state}"],
     [
       "issue",
       "close",
@@ -272,8 +275,8 @@ export {
   claimListing,
   commentPost,
   fakeGh,
-  finishCalls,
   finishReplies,
+  finishWrites,
   GIT_USER,
   hoursFromNow,
   LANE,
@@ -286,4 +289,5 @@ export {
   stateBody,
   stateListing,
   world,
+  writes,
 };

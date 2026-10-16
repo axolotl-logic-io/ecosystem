@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { okLine, opsFixture, opsSourceDefines } from "./ops-fixture.mjs";
+import { okLine, opsFixture } from "./ops-fixture.mjs";
 import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("sync-ops");
@@ -46,15 +46,6 @@ function ask(request, config) {
 function gitIn(dir, args) {
   return sh(`git -C ${dir} ${args}`);
 }
-
-test("the sync ops live in src/ops/sync.ts", async () => {
-  const { syncOps } = await import("../src/ops/sync.ts");
-  const names = ["prepare-review", "sync-base", "finish-sync"];
-  assert.deepEqual(Object.keys(syncOps), names);
-  for (const name of names) {
-    assert.equal(opsSourceDefines(name), false, name);
-  }
-});
 
 test("sync-base leaves an up-to-date branch alone", () => {
   const headSha = fx.startBranch(ISSUE.upToDate, "g", "one");

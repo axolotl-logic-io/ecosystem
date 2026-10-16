@@ -9,12 +9,11 @@ import { test } from "node:test";
 import { z } from "zod";
 import {
   ask,
-  calls,
   claimListing,
   commentPost,
   fakeGh,
-  finishCalls,
   finishReplies,
+  finishWrites,
   GIT_USER,
   hoursFromNow,
   LANE,
@@ -23,6 +22,7 @@ import {
   sh,
   signedBy,
   world,
+  writes,
 } from "./ops-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
@@ -95,19 +95,13 @@ function mergedByHand(w, replies) {
   });
 }
 
-// calls() after merge's PR view, which merge-op.test.mjs pins.
-/** @returns {string[][]} */
-function finishingCalls() {
-  return calls().slice(1);
-}
-
 test("a pushed wiki commit is named on the issue and the worktree goes", () => {
   const w = world();
   const wiki = withWiki(w);
   assert.equal(mergedByHand(w, finishReplies()), replyLine(BY_HAND));
   const pushed = `Pushed this issue's wiki changes as wiki commit ${wiki.sha.slice(0, SHORT_SHA_LENGTH)} (history: https://github.com/o/r/wiki/_history).`;
-  assert.deepEqual(finishingCalls(), [
-    ...finishCalls(STATE),
+  assert.deepEqual(writes(), [
+    ...finishWrites(STATE),
     commentPost(ISSUE, signedBy("merger", pushed)),
   ]);
   assert.equal(sh(`git -C ${wiki.origin} rev-parse master`), wiki.sha);
@@ -120,8 +114,8 @@ test("a wiki push that fails is reported and the worktree stays", () => {
   assert.equal(mergedByHand(w, finishReplies()), replyLine(BY_HAND));
   const failed =
     "The wiki changes from this issue were not pushed: could not push the wiki changes after 3 attempts";
-  assert.deepEqual(finishingCalls(), [
-    ...finishCalls(STATE),
+  assert.deepEqual(writes(), [
+    ...finishWrites(STATE),
     commentPost(ISSUE, signedBy("merger", failed)),
   ]);
   assert.notEqual(sh(`git -C ${wiki.origin} rev-parse master`), wiki.sha);
@@ -133,8 +127,8 @@ test("an issue already closed is not closed again", () => {
   const closed = { when: "--jq {state}", stdout: '{"state":"closed"}' };
   const replies = [claimListing(), claimListing(), closed];
   assert.equal(mergedByHand(w, replies), replyLine(BY_HAND));
-  const open = finishCalls(STATE);
-  assert.equal(open.at(-1)?.[0], "issue");
-  assert.deepEqual(finishingCalls(), open.slice(0, -1));
+  const open = finishWrites(STATE);
+  assert.equal(open.at(-1)?.[1], "close");
+  assert.deepEqual(writes(), open.slice(0, -1));
   assert.equal(fs.existsSync(w.worktree), false);
 });
