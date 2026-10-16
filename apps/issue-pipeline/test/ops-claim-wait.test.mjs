@@ -4,19 +4,18 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { getIssue, issueReply, LANE, LAPSED } from "./ops-claim-test-kit.mjs";
+import { issueReply, LANE, LAPSED } from "./ops-claim-test-kit.mjs";
 import {
   ALLOWED,
   askOps,
-  calls,
   commentsReply,
-  ghCalls,
   issueComment,
   reply,
   root,
   sh,
   stateComment,
   worktree,
+  writes,
 } from "./ops-cli-test-kit.mjs";
 
 const BEFORE_LAPSED = "2019-01-01T00:00:00Z";
@@ -48,10 +47,6 @@ test("a claim of a needs-info issue with no answer waits and changes nothing", (
     posted: 0,
     waiting: "answer",
   });
-  assert.deepEqual(calls(), [
-    getIssue(WAITING_ISSUE),
-    ghCalls.listComments(WAITING_ISSUE),
-    ghCalls.collaborator(ALLOWED),
-  ]);
+  assert.deepEqual(writes(), []);
   assert.ok(!fs.existsSync(worktree(WAITING_ISSUE)));
 });

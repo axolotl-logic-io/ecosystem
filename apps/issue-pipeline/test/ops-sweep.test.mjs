@@ -1,6 +1,6 @@
 // @ts-check
-// The sweep op through the ops CLI, pinned to the replies and gh calls it
-// made before it moved to src/ops/sweep.ts (#183).
+// The sweep op through the ops CLI: its replies, its reservations, and that
+// it changes nothing on GitHub when every label exists.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,27 +8,23 @@ import { test } from "node:test";
 import {
   ALLOWED,
   askOps,
-  calls,
   commentsReply,
   configWith,
-  ghCalls,
   issueComment,
   publicConfigOf,
   reply,
   root,
   stateComment,
   TIME,
+  writes,
 } from "./ops-cli-test-kit.mjs";
 import {
   candidate,
   LANE,
   leased,
-  listComments,
   row,
-  SWEEP_HEAD,
   sweepReplies,
   sweepReply,
-  USER,
 } from "./ops-sweep-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
@@ -80,7 +76,7 @@ test("a sweep refuses to run when gh is logged in as another account", () => {
     ok: false,
     error: "gh is logged in as mallory, but the config's account is bot",
   });
-  assert.deepEqual(calls(), [USER]);
+  assert.deepEqual(writes(), []);
 });
 
 // Another sweep's live and lapsed reservations, and one of this sweep's own.
@@ -173,18 +169,7 @@ test("a sweep sorts its candidates and skips, parks or reserves the rest", () =>
     askOps({ op: "sweep", config, ...LANE }),
     mixedSweepReply(config),
   );
-  const read = [
-    MIXED.mine,
-    MIXED.lapsed,
-    MIXED.liveElsewhere,
-    MIXED.answered,
-    MIXED.unanswered,
-  ];
-  assert.deepEqual(calls(), [
-    ...SWEEP_HEAD,
-    ghCalls.collaborator(ALLOWED),
-    ...read.map(listComments),
-  ]);
+  assert.deepEqual(writes(), []);
   assert.deepEqual(
     JSON.parse(
       fs.readFileSync(RESERVATIONS, "utf8").replace(TIME_PATTERN, TIME),
@@ -203,7 +188,7 @@ test("a sweep with takeNewWork false skips new issues", () => {
     askOps({ op: "sweep", config, ...LANE }),
     sweepReply({ config: publicConfigOf(config), items: [], skipped: 1 }),
   );
-  assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED)]);
+  assert.deepEqual(writes(), []);
 });
 
 test("a sweep returns the oldest claimCandidates and counts the rest as waiting", () => {
@@ -218,7 +203,7 @@ test("a sweep returns the oldest claimCandidates and counts the rest as waiting"
       waiting: 1,
     }),
   );
-  assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED)]);
+  assert.deepEqual(writes(), []);
 });
 
 test("a sweep for one named issue refuses an issue that isn't open", () => {
@@ -227,7 +212,7 @@ test("a sweep for one named issue refuses an issue that isn't open", () => {
     ok: false,
     error: `#${NAMED.closed} is not an open issue`,
   });
-  assert.deepEqual(calls(), SWEEP_HEAD);
+  assert.deepEqual(writes(), []);
 });
 
 test("a sweep for one named issue refuses an author not allowed", () => {
@@ -236,7 +221,7 @@ test("a sweep for one named issue refuses an author not allowed", () => {
     ok: false,
     error: `#${NAMED.stranger} was opened by @eve, who is not on allowedUsers or not a collaborator`,
   });
-  assert.deepEqual(calls(), SWEEP_HEAD);
+  assert.deepEqual(writes(), []);
 });
 
 test("a sweep for one named issue refuses an issue another live lane holds", () => {
@@ -251,9 +236,5 @@ test("a sweep for one named issue refuses an issue another live lane holds", () 
     ok: false,
     error: `#${n} is held by live lane other`,
   });
-  assert.deepEqual(calls(), [
-    ...SWEEP_HEAD,
-    ghCalls.collaborator(ALLOWED),
-    listComments(n),
-  ]);
+  assert.deepEqual(writes(), []);
 });

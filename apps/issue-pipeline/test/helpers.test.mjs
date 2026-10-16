@@ -96,32 +96,22 @@ test("a state comment's body gives its state, or null", () => {
   assert.deepEqual(parseStateBody(body), state);
   assert.equal(parseStateBody("no mark"), null);
   assert.equal(parseStateBody("<!-- agent-pipeline:state {bad -->"), null);
-  assert.deepEqual(Object.keys(state), [
-    "version",
-    "number",
-    "depth",
+  // What the wiki says the state comment holds, in any order.
+  const promised = [
     "stage",
     "lease",
     "pr",
     "headSha",
     "reviewedSha",
     "verifiedSha",
-    "plan",
-    "allocated",
-    "rebaseAllocated",
-    "rechecking",
-    "reportedTokens",
-    "sessions",
-    "triages",
-    "continuations",
-    "round",
-    "ciFixes",
-    "syncs",
     "findings",
-    "resolvedHistory",
-    "questionsAt",
-    "log",
-  ]);
+    "round",
+    "allocated",
+  ];
+  assert.deepEqual(
+    promised.filter((key) => !(key in state)),
+    [],
+  );
 });
 
 test("a job checkout stands in for its own issue's worktree and wiki only", () => {

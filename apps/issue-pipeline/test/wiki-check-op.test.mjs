@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { okLine, opsFixture } from "./ops-fixture.mjs";
+import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("wiki-check");
 const { wikiCheck } = await import("../src/ops/wiki-check.ts");
@@ -28,7 +28,6 @@ const CFG = {
 /** @type {import("../src/config.ts").Config} */
 const WIKI_CFG = { ...CFG, wiki: true };
 const BAD_REQUEST = /bad wiki-check request/u;
-// The keys in the order the ops CLI prints them.
 const CLEAN = { checks: [], pass: true };
 
 // A bare wiki origin on master with Home and _Sidebar, cloned as issue #7's
@@ -63,24 +62,36 @@ function commitPages(dir, pages) {
   fx.sh(`git -C ${dir} add -A && git -C ${dir} ${GIT_USER} commit -qm pages`);
 }
 
+// Each check as { id, pass }, and whether its detail names every word given
+// for it in `names`.
+/**
+ * @param {{ pass: boolean, checks: { id: string, pass: boolean, detail: string }[] }} reply
+ * @param {Record<string, string[]>} names
+ * @returns {{ pass: boolean, checks: { id: string, pass: boolean, named: boolean }[] }}
+ */
+function checked({ pass, checks }, names) {
+  return {
+    pass,
+    checks: checks.map(({ id, pass: ok, detail }) => ({
+      id,
+      pass: ok,
+      named: (names[id] ?? []).every((name) => detail.includes(name)),
+    })),
+  };
+}
+
 test("a new orphan page and a broken link fail until they are fixed", () => {
   const dir = wikiCheckout();
   commitPages(dir, { "New-Page.md": "See [[Missing Page]] and [[Home]]." });
-  assert.deepEqual(wikiCheck(WIKI_CFG, { number: ISSUE }), {
+  const names = {
+    "wiki-link:New-Page:Missing Page": ["New-Page", "Missing Page"],
+    "wiki-orphan:New-Page": ["New-Page", "_Sidebar"],
+  };
+  assert.deepEqual(checked(wikiCheck(WIKI_CFG, { number: ISSUE }), names), {
     pass: false,
     checks: [
-      {
-        id: "wiki-link:New-Page:Missing Page",
-        pass: false,
-        detail:
-          "New-Page links to Missing Page, which is not a page on the wiki branch",
-      },
-      {
-        id: "wiki-orphan:New-Page",
-        pass: false,
-        detail:
-          "new page New-Page is not linked from _Sidebar or any other wiki page",
-      },
+      { id: "wiki-link:New-Page:Missing Page", pass: false, named: true },
+      { id: "wiki-orphan:New-Page", pass: false, named: true },
     ],
   });
   commitPages(dir, {
@@ -93,16 +104,10 @@ test("a new orphan page and a broken link fail until they are fixed", () => {
 test("a committed change to an existing page is checked", () => {
   const dir = wikiCheckout();
   commitPages(dir, { "Home.md": "Welcome. See [[Missing Page]]." });
-  assert.deepEqual(wikiCheck(WIKI_CFG, { number: ISSUE }), {
+  const names = { "wiki-link:Home:Missing Page": ["Home", "Missing Page"] };
+  assert.deepEqual(checked(wikiCheck(WIKI_CFG, { number: ISSUE }), names), {
     pass: false,
-    checks: [
-      {
-        id: "wiki-link:Home:Missing Page",
-        pass: false,
-        detail:
-          "Home links to Missing Page, which is not a page on the wiki branch",
-      },
-    ],
+    checks: [{ id: "wiki-link:Home:Missing Page", pass: false, named: true }],
   });
 });
 
@@ -123,10 +128,12 @@ test("no wiki, or no commits ahead of it, is nothing to check", () => {
 });
 
 test("the ops CLI runs wiki-check and rejects a request with no number", () => {
-  assert.equal(
-    fx.ask({ op: "wiki-check", number: ISSUE }),
-    okLine("wiki-check", CLEAN),
-  );
+  assert.deepEqual(JSON.parse(fx.ask({ op: "wiki-check", number: ISSUE })), {
+    ok: true,
+    op: "wiki-check",
+    posted: 0,
+    ...CLEAN,
+  });
   const bad = JSON.parse(fx.ask({ op: "wiki-check" }));
   assert.equal(bad.ok, false);
   assert.match(bad.error, BAD_REQUEST);

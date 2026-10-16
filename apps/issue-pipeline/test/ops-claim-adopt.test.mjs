@@ -43,6 +43,10 @@ const CLAIM_IDS = 10;
  * @typedef {{ stage: string, lease: null, pr: null, headSha: string, passedSha: string | null, log: string[] }} Saved
  */
 
+const ADOPTED_LOG = /adopted/u;
+// The state's log, which records an adopted push.
+const LOGGED = z.looseObject({ log: z.array(z.string()) });
+
 // The part of a claim's reply these tests read.
 const CLAIM_REPLY = z.looseObject({
   state: z.unknown(),
@@ -109,18 +113,22 @@ function head(n) {
 test("a claim adopts the head this machine recorded pushing", () => {
   const { saved, remote } = movedBranch(ADOPTED);
   recordPush(ADOPTED, remote);
-  const line = `${TIME} adopted the pipeline's own push ${remote.slice(0, SHORT_SHA)}; its state save had failed`;
+  const got = claimSaved(ADOPTED, saved);
+  const { log } = LOGGED.parse(got.state);
+  assert.equal(log.length, 1);
+  assert.match(log.join(""), ADOPTED_LOG);
+  assert.ok(log.join("").includes(remote.slice(0, SHORT_SHA)));
   const state = {
     ...saved,
     headSha: remote,
     passedSha: null,
     stage: "sync",
-    log: [line],
+    log,
     lease: LEASE,
   };
   const claim = { id: ADOPTED * CLAIM_IDS, posted: false };
   const want = claimReply(ADOPTED, { state, claim, remoteHead: remote });
-  assert.deepEqual(claimSaved(ADOPTED, saved), want);
+  assert.deepEqual(got, want);
   assert.equal(head(ADOPTED), remote);
 });
 

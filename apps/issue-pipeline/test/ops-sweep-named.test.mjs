@@ -4,20 +4,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  ALLOWED,
   askOps,
   CONFIG,
-  calls,
-  ghCalls,
   publicConfigOf,
   reply,
+  writes,
 } from "./ops-cli-test-kit.mjs";
 import {
   candidate,
   LANE,
-  listComments,
   row,
-  SWEEP_HEAD,
   sweepReplies,
   sweepReply,
 } from "./ops-sweep-test-kit.mjs";
@@ -38,7 +34,7 @@ test("a sweep for one named issue leaves a stopped issue alone", () => {
       stopped: { issue: n, label },
     }),
   );
-  assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED)]);
+  assert.deepEqual(writes(), []);
 });
 
 test("takeStopped takes a stopped named issue", () => {
@@ -52,11 +48,7 @@ test("takeStopped takes a stopped named issue", () => {
       items: [candidate(n, "named", 1)],
     }),
   );
-  assert.deepEqual(calls(), [
-    ...SWEEP_HEAD,
-    ghCalls.collaborator(ALLOWED),
-    listComments(n),
-  ]);
+  assert.deepEqual(writes(), []);
 });
 
 test("a named issue without a stop label is taken", () => {
@@ -69,9 +61,5 @@ test("a named issue without a stop label is taken", () => {
       items: [candidate(n, "named")],
     }),
   );
-  assert.deepEqual(calls(), [
-    ...SWEEP_HEAD,
-    ghCalls.collaborator(ALLOWED),
-    listComments(n),
-  ]);
+  assert.deepEqual(writes(), []);
 });

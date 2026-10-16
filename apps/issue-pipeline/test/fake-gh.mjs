@@ -4,7 +4,9 @@
 // records each call's arguments, then answers with the first queued reply whose
 // `when` text appears in its arguments, and removes that reply. A reply may
 // also give `stderr` to print and `code` to exit with, as a refused command
-// does. A call that matches no reply prints nothing and succeeds.
+// does, and `keep` to answer every matching call rather than only the first,
+// so a test needn't know how often a read is made. A call that matches no
+// reply prints nothing and succeeds.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -23,14 +25,19 @@ const CALL_ARGS = z.array(z.string());
  * @property {string} [stdout]
  * @property {string} [stderr]
  * @property {number} [code]
+ * @property {boolean} [keep] answer every matching call, not only the first
  */
 
 /**
  * The fake gh: reply() queues answers and forgets earlier calls; calls() lists
- * each call's arguments, in order.
+ * each call's arguments, in order; writes(isRead) lists only the calls that
+ * change GitHub, so a test can check what GitHub would show without pinning
+ * the reads. A test passes src/github.ts's ghIsRead as `isRead`: this file
+ * imports no src module, since tests set the pipeline root before src loads.
  * @typedef {object} FakeGh
  * @property {(replies: readonly GhReply[]) => void} reply
  * @property {() => string[][]} calls
+ * @property {(isRead: (args: readonly string[]) => boolean) => string[][]} writes
  */
 
 /**
@@ -53,8 +60,10 @@ if (at >= 0) {
   process.stdout.write(reply.stdout ?? "");
   process.stderr.write(reply.stderr ?? "");
   process.exitCode = reply.code ?? 0;
-  replies.splice(at, 1);
-  fs.writeFileSync(file, JSON.stringify(replies));
+  if (reply.keep !== true) {
+    replies.splice(at, 1);
+    fs.writeFileSync(file, JSON.stringify(replies));
+  }
 }
 `;
 }
@@ -69,17 +78,22 @@ function installFakeGh() {
   const { PATH: searchPath } = process.env;
   Object.assign(process.env, { PATH: `${dir}${path.delimiter}${searchPath}` });
   const callsFile = path.join(dir, "calls.jsonl");
+  /** @returns {string[][]} */
+  function calls() {
+    return fs
+      .readFileSync(callsFile, "utf8")
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line) => CALL_ARGS.parse(JSON.parse(line)));
+  }
   return {
     reply(replies) {
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));
       fs.writeFileSync(callsFile, "");
     },
-    calls() {
-      return fs
-        .readFileSync(callsFile, "utf8")
-        .split("\n")
-        .filter((line) => line !== "")
-        .map((line) => CALL_ARGS.parse(JSON.parse(line)));
+    calls,
+    writes(isRead) {
+      return calls().filter((args) => !isRead(args));
     },
   };
 }

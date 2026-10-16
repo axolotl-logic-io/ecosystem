@@ -19,6 +19,7 @@ const fakeGh = installFakeGh();
 const { openPrFor } = await import("../src/ops/prs.ts");
 const { stop } = await import("../src/ops/stop.ts");
 const { saveState } = await import("../src/ops/save-state.ts");
+const { ghIsRead } = await import("../src/github.ts");
 
 /** @type {Config} */
 const cfg = {
@@ -37,29 +38,15 @@ const ISSUE = 7;
 const PR = 12;
 const STOPPED_ISSUE = 8;
 const SAVED_ISSUE = 9;
-const PR_LIST = [
-  "pr",
-  "list",
-  "-R",
-  "o/r",
-  "--head",
-  "agent/issue-7",
-  "--state",
-  "open",
-  "--json",
-  "number",
-];
-
+// gh answers only a lookup that names the issue's branch, agent/issue-<n>.
 test("openPrFor reads the issue branch's open PR", () => {
-  fakeGh.reply([{ when: "pr list", stdout: '[{"number":12}]' }]);
+  fakeGh.reply([{ when: "agent/issue-7 ", stdout: '[{"number":12}]' }]);
   assert.equal(openPrFor(cfg, ISSUE), PR);
-  assert.deepEqual(fakeGh.calls(), [PR_LIST]);
 });
 
 test("openPrFor finds no PR when gh lists none", () => {
   fakeGh.reply([]);
   assert.equal(openPrFor(cfg, ISSUE), undefined);
-  assert.deepEqual(fakeGh.calls(), [PR_LIST]);
 });
 
 test("stop with an empty reason and no code is the error stop", () => {
@@ -78,5 +65,5 @@ test("stop with an empty reason and no code is the error stop", () => {
 test("save-state with no state writes nothing", () => {
   fakeGh.reply([]);
   assert.deepEqual(saveState(cfg, { number: SAVED_ISSUE }), {});
-  assert.deepEqual(fakeGh.calls(), []);
+  assert.deepEqual(fakeGh.writes(ghIsRead), []);
 });

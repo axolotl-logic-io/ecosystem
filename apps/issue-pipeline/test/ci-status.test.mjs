@@ -1,12 +1,14 @@
 // @ts-check
 // The ci-status op: the PR's required checks, read through a fake gh. Through
-// the CLI it pins each gh call and reply; imported with a fake clock it pins the
-// waits, with no real time passing.
+// the CLI it checks each reply and the failed-log file; imported with a fake
+// clock it checks the 3-minute no-checks grace and the wait's deadline, with
+// no real time passing.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { z } from "zod";
 import { installFakeGh } from "./fake-gh.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 import { askRaw } from "./verify-test-kit.mjs";
@@ -50,23 +52,15 @@ const ISSUE = 3;
 const PR = 9;
 const DIRECT = { number: ISSUE, pr: PR };
 const runDir = path.join(root, "runs", "o__r", `issue-${ISSUE}`);
-const VIEW = ["pr", "view", String(PR), "-R", "o/r", "--json", "headRefOid"];
-const CHECKS = [
-  "pr",
-  "checks",
-  String(PR),
-  "-R",
-  "o/r",
-  "--required",
-  "--json",
-  "name,state,bucket,link",
-];
 const HEAD = { when: "pr view", stdout: JSON.stringify({ headRefOid: "abc" }) };
 const RUN_LINK = "https://github.com/o/r/actions/runs/555/job/7";
 const MS_PER_MINUTE = 60_000;
-const POLL_MS = 30_000;
+const GRACE_MINUTES = 3;
+const GRACE_MS = GRACE_MINUTES * MS_PER_MINUTE;
 
 const LOG_NAME = /^ci-\d+\.log$/u;
+// The part of a failing reply that names its log file.
+const LOGGED = z.looseObject({ logPath: z.string() });
 
 /** @param {object[]} checks @returns {GhReply} */
 function checksReply(checks) {
@@ -78,21 +72,24 @@ function request(extra) {
   return { op: "ci-status", config, number: ISSUE, pr: PR, ...extra };
 }
 
-// The reply as the ops CLI prints it, keys in order.
-/** @param {object} extra @returns {string} */
+/** @param {object} extra @returns {object} */
 function reply(extra) {
-  return JSON.stringify({ ok: true, op: "ci-status", posted: 0, ...extra });
+  return { ok: true, op: "ci-status", posted: 0, ...extra };
+}
+
+/** @param {object} body @returns {unknown} */
+function askCi(body) {
+  return JSON.parse(askRaw(root, request(body)));
 }
 
 test("a head that moved stops the wait", () => {
   fakeGh.reply([
     { when: "pr view", stdout: JSON.stringify({ headRefOid: "def" }) },
   ]);
-  assert.equal(
-    askRaw(root, request({ expectedSha: "abc" })),
-    `${reply({ status: "head-changed", headSha: "def" })}\n`,
+  assert.deepEqual(
+    askCi({ expectedSha: "abc" }),
+    reply({ status: "head-changed", headSha: "def" }),
   );
-  assert.deepEqual(fakeGh.calls(), [VIEW]);
 });
 
 test("required checks that all pass pass, by name", () => {
@@ -101,11 +98,10 @@ test("required checks that all pass pass, by name", () => {
     { name: "e2e", state: "SKIPPED", bucket: "skipping", link: "l2" },
   ];
   fakeGh.reply([HEAD, checksReply(checks)]);
-  assert.equal(
-    askRaw(root, request({ expectedSha: "abc" })),
-    `${reply({ status: "pass", checks: ["build", "e2e"] })}\n`,
+  assert.deepEqual(
+    askCi({ expectedSha: "abc" }),
+    reply({ status: "pass", checks: ["build", "e2e"] }),
   );
-  assert.deepEqual(fakeGh.calls(), [VIEW, CHECKS]);
 });
 
 test("failing checks fail, with each one's failed log in one file", () => {
@@ -119,51 +115,39 @@ test("failing checks fail, with each one's failed log in one file", () => {
     checksReply(checks),
     { when: "run view 555", stdout: "step 1\nboom\n" },
   ]);
-  const raw = askRaw(root, request({}));
-  const got = JSON.parse(raw);
-  assert.equal(
-    raw,
-    `${reply({ status: "fail", failing: ["build", "deploy"], logPath: got.logPath })}\n`,
+  const got = LOGGED.parse(askCi({}));
+  assert.deepEqual(
+    got,
+    reply({
+      status: "fail",
+      failing: ["build", "deploy"],
+      logPath: got.logPath,
+    }),
   );
   assert.equal(path.dirname(got.logPath), runDir);
   assert.match(path.basename(got.logPath), LOG_NAME);
-  assert.equal(
-    fs.readFileSync(got.logPath, "utf8"),
-    `===== build (${RUN_LINK}) =====\nstep 1\nboom\n\n===== deploy (undefined) =====`,
-  );
-  assert.deepEqual(fakeGh.calls(), [
-    VIEW,
-    CHECKS,
-    ["run", "view", "555", "-R", "o/r", "--log-failed"],
-  ]);
+  const log = fs.readFileSync(got.logPath, "utf8");
+  for (const fact of ["build", RUN_LINK, "boom", "deploy"]) {
+    assert.ok(log.includes(fact), fact);
+  }
 });
 
 // A clock where each sleep moves the time on by its length.
-/** @returns {Clock & { sleeps: number[] }} */
+/** @returns {Clock} */
 function fakeClock() {
-  /** @type {number[]} */
-  const sleeps = [];
   let time = 0;
   return {
-    sleeps,
     now: () => time,
     sleep: (/** @type {number} */ ms) => {
-      sleeps.push(ms);
       time += ms;
     },
   };
 }
 
-// Polls ending 3 minutes and one poll in, every 30 s, with no checks.
+// Enough replies for the polls of a 3-minute grace, and of a 1-minute wait.
 const GRACE_POLLS = 8;
-// Polls up to the deadline of a 1-minute wait: at 0, 30, 60 and 90 s.
 const DEADLINE_POLLS = 4;
 const WAIT_MINUTES = 2;
-
-/** @param {number} rounds @returns {string[][]} */
-function pollCalls(rounds) {
-  return Array.from({ length: rounds }, () => [VIEW, CHECKS]).flat();
-}
 
 /** @type {[string, string][]} */
 const NO_CHECKS_OUTPUTS = [
@@ -185,11 +169,8 @@ for (const [output, label] of NO_CHECKS_OUTPUTS) {
       status: "no-checks",
       checks: [],
     });
-    assert.deepEqual(
-      clock.sleeps,
-      Array.from({ length: GRACE_POLLS - 1 }, () => POLL_MS),
-    );
-    assert.deepEqual(fakeGh.calls(), pollCalls(GRACE_POLLS));
+    assert.ok(clock.now() >= GRACE_MS, "waits out the grace");
+    assert.ok(clock.now() < GRACE_MS + MS_PER_MINUTE, "and no longer");
   });
 }
 
@@ -200,7 +181,7 @@ test("no checks for 3 minutes pass when CI isn't required", () => {
     status: "pass",
     checks: [],
   });
-  assert.deepEqual(clock.sleeps.length, GRACE_POLLS - 1);
+  assert.ok(clock.now() >= GRACE_MS, "waits out the grace");
 });
 
 test("checks still pending at the deadline give pending", () => {
@@ -212,9 +193,9 @@ test("checks still pending at the deadline give pending", () => {
   assert.deepEqual(ciStatus(cfg, { ...DIRECT, waitMinutes: 1 }, clock), {
     status: "pending",
   });
-  // At 0, 30 and 60 s the deadline (60 s) hasn't passed; at 90 s it has.
-  assert.deepEqual(clock.sleeps, [POLL_MS, POLL_MS, POLL_MS]);
-  assert.deepEqual(fakeGh.calls(), pollCalls(DEADLINE_POLLS));
+  // The wait gives up once its 1-minute deadline has passed.
+  assert.ok(clock.now() >= MS_PER_MINUTE, "waits to the deadline");
+  assert.ok(clock.now() < MS_PER_MINUTE + MS_PER_MINUTE, "and no longer");
 });
 
 test("the config's wait applies when the request names none", () => {
@@ -223,7 +204,8 @@ test("the config's wait applies when the request names none", () => {
   const got = ciStatus({ ...cfg, ciWaitMinutes: WAIT_MINUTES }, DIRECT, clock);
   // With no checks the 3-minute grace outlasts a 2-minute wait.
   assert.deepEqual(got, { status: "pending" });
-  assert.equal(clock.now(), WAIT_MINUTES * MS_PER_MINUTE + POLL_MS);
+  assert.ok(clock.now() >= WAIT_MINUTES * MS_PER_MINUTE, "waits 2 minutes");
+  assert.ok(clock.now() < GRACE_MS, "not the grace's 3");
 });
 
 test("a failing check's log is named by the clock's time", () => {
@@ -239,5 +221,5 @@ test("a failing check's log is named by the clock's time", () => {
     failing: ["build"],
     logPath: path.join(runDir, "ci-0.log"),
   });
-  assert.equal(fs.readFileSync(got.logPath, "utf8"), "===== build (l) =====");
+  assert.ok(fs.readFileSync(got.logPath, "utf8").includes("build"));
 });

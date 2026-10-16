@@ -49,6 +49,8 @@ const ctx = {
   now,
 };
 
+const RESTART_AT_REVIEW = /restarted .*at review/u;
+
 // The last line of a state's log.
 /** @param {State} state @returns {string} */
 function lastLogLine({ log }) {
@@ -94,11 +96,11 @@ test("budget stop -> review", () => {
     ["review", 0, 0, 0, 0, 0, "P", "S", PR, true, null, "h1"],
   );
 });
+// The log records the restart, the stage it restarts at and the stop.
 test("log entry", () => {
-  assert.deepEqual(
-    budgetRestart().log?.at(-1),
-    "2026-10-15T03:00Z restarted on the existing branch (PR #50) at review after the budget stop; limits reset",
-  );
+  const line = lastLogLine(budgetRestart());
+  assert.match(line, RESTART_AT_REVIEW);
+  assert.ok(line.includes("budget"));
 });
 test("stopCode dropped", () => {
   assert.deepEqual("stopCode" in budgetRestart(), false);
@@ -218,7 +220,7 @@ test("new issue -> triage", () => {
 // lapsed lease mid-stage is not a start
 test("mid-stage unchanged", () => {
   const mid = { ...base, stage: "verify" };
-  assert.deepEqual(startState(mid, ctx) === mid, true);
+  assert.deepEqual(startState(mid, ctx), mid);
 });
 
 // branchHasWork against real repos

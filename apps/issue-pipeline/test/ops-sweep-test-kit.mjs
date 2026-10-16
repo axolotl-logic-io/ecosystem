@@ -1,7 +1,7 @@
 // @ts-check
-// The sweep op's gh calls and replies for the ops CLI tests: the calls every
-// sweep begins with, gh's replies to them, and builders for the issue rows,
-// leases, candidates and the sweep's reply.
+// The sweep op's gh replies for the ops CLI tests: gh's replies to the reads
+// every sweep begins with, and builders for the issue rows, leases,
+// candidates and the sweep's reply.
 import {
   ACCOUNT,
   ALLOWED,
@@ -13,33 +13,10 @@ import {
 
 // The sweep's lane and id.
 const LANE = { lane: "me", sweepId: "s1" };
-const USER = ["api", "user", "--jq", ".login"];
-const LABEL_LIST = [
-  "label",
-  "list",
-  "-R",
-  "o/r",
-  "--limit",
-  "500",
-  "--json",
-  "name",
-];
-const ISSUE_LIST = [
-  "issue",
-  "list",
-  "-R",
-  "o/r",
-  "--state",
-  "open",
-  "--limit",
-  "300",
-].concat(["--json", "number,title,author,labels,createdAt,body"]);
 const STATE_EXTRA = { pr: null };
 // A candidate's priority by its kind; the sweep takes the lowest first.
 const PRIORITY = { mine: -1, resume: 0, named: 0, answered: 1, new: 2 };
 const DAY_DIGITS = 2;
-// The calls every sweep begins with: the account, the labels and the issues.
-const SWEEP_HEAD = [USER, LABEL_LIST, ISSUE_LIST];
 
 /** @param {number} number @returns {string} */
 function createdAt(number) {
@@ -58,17 +35,6 @@ function row(number, labels, extra = {}) {
     body: "",
     ...extra,
   };
-}
-
-/** @param {number} n @returns {string[]} */
-function listComments(n) {
-  return [
-    "api",
-    "--paginate",
-    `repos/o/r/issues/${n}/comments?per_page=100`,
-    "--jq",
-    ".[] | @json",
-  ];
 }
 
 /** @param {readonly object[]} rows @param {readonly GhReply[]} [more] @returns {GhReply[]} */
@@ -115,14 +81,4 @@ function sweepReply(extra) {
   return { ok: true, op: "sweep", ...counts, ...extra };
 }
 
-export {
-  candidate,
-  LANE,
-  leased,
-  listComments,
-  row,
-  SWEEP_HEAD,
-  sweepReplies,
-  sweepReply,
-  USER,
-};
+export { candidate, LANE, leased, row, sweepReplies, sweepReply };

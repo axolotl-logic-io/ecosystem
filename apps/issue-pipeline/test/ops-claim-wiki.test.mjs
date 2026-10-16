@@ -4,20 +4,14 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import {
-  getIssue,
-  issueReply,
-  LANE,
-  LIVE,
-  patchState,
-} from "./ops-claim-test-kit.mjs";
+import { effectNames, stateOf } from "./gh-effects.mjs";
+import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
   askOps,
-  calls,
   claimComment,
   commentsReply,
   configWith,
-  ghCalls,
+  effects,
   reply,
   root,
   sh,
@@ -83,14 +77,15 @@ test("a claim restarts a stopped issue with only wiki work at review", () => {
   const wiki = path.join(worktree(ISSUE), "wiki");
   assert.equal(out.paths.wiki, wiki);
   assert.equal(sh(`git -C ${wiki} rev-parse HEAD`), sha);
-  // No listOpenPrs call: the issue has no code branch.
-  assert.deepEqual(calls(), [
-    getIssue(ISSUE),
-    ghCalls.listComments(ISSUE),
-    ghCalls.unlabel(ISSUE, "agent:needs-info"),
-    ghCalls.unlabel(ISSUE, "agent:stopped-budget"),
-    ghCalls.label(ISSUE, "agent:working"),
-    ghCalls.listComments(ISSUE),
-    patchState(ISSUE, STATE_ID, out.state),
+  const claimed = effects();
+  assert.deepEqual(effectNames(claimed), [
+    `edit comment ${STATE_ID} state`,
+    `label #${ISSUE} agent:working`,
+    `unlabel #${ISSUE} agent:needs-info`,
+    `unlabel #${ISSUE} agent:stopped-budget`,
   ]);
+  assert.deepEqual(
+    stateOf(claimed, `edit comment ${STATE_ID} state`),
+    out.state,
+  );
 });

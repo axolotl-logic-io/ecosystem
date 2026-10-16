@@ -1,7 +1,7 @@
 // @ts-check
 // The claim helpers that talk to GitHub (raceForClaim, touchClaim and
-// closeClaims), run against a fake gh and pinned to the comments, edits and
-// labels ops.mjs made before they moved to src/claims.ts (#166).
+// closeClaims), run against a fake gh: which claims they post, edit, close
+// and label, and the markers and notes the wiki promises on them.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -9,9 +9,11 @@ import path from "node:path";
 import { test } from "node:test";
 import { COMMENT } from "../src/comments.ts";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
+import { bodyOf, effectNames, effectsOf } from "./gh-effects.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 
 /** @import { Config } from "../src/config.ts" */
+/** @import { GhEffect } from "./gh-effects.mjs" */
 
 setEnv(
   "ISSUE_PIPELINE_ROOT",
@@ -21,6 +23,7 @@ const fakeGh = installFakeGh();
 const { closeClaims, raceForClaim, touchClaim } = await import(
   "../src/claims.ts"
 );
+const { ghIsRead } = await import("../src/github.ts");
 
 /** @type {Config} */
 const cfg = {
@@ -53,15 +56,17 @@ function claimBody(lane) {
 function comment(id, body, login = "bot", at = now) {
   return githubComment({ id, body, login, created: at, updated: at });
 }
-const BODY_FIELD = /^body=/u;
-const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/gu;
-const STAMP = "\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\dZ";
+const STAMP = /\d{4}-\d\d-\d\dT\d\d:\d\dZ/gu;
+const EARLIER_STAMP = "2026-01-01T00:00Z";
+const ABANDONED = /Abandoned .*This lane takes another issue/u;
 const LIST = "comments?per_page=100";
 const POST_CLAIM = "POST repos/o/r/issues/5/comments";
 const POSTED_CLAIM = signedClaim(
   "Lane `me` is claiming this issue. If another lane claimed it first, this lane abandons it and takes another issue.",
 );
-const POSTED_BODY = `${POSTED_CLAIM}\n<!-- agent-pipeline:claim lane=me sweep=s9 -->`;
+const CLAIM_MARK = "<!-- agent-pipeline:claim lane=me sweep=s9 -->";
+const CLOSED_MARK = "<!-- agent-pipeline:claim-closed lane=me sweep=s9 -->";
+const POSTED_BODY = `${POSTED_CLAIM}\n${CLAIM_MARK}`;
 // gh's answer to the claim's POST: the comment it made.
 const POSTED = {
   when: POST_CLAIM,
@@ -81,22 +86,19 @@ function signedClaim(text) {
   return `**🤖 issue-pipeline · claim**\n<sub>deterministic step, no model · run \`s9\`</sub>\n<!-- agent-pipeline:comment role=claim -->\n\n${text}`;
 }
 
-// `text` as a regex source that matches it literally.
-/** @param {string} text @returns {string} */
-function literal(text) {
-  return text.replace(REGEX_SPECIAL, "\\$&");
+// What gh's writes show on GitHub.
+/** @returns {GhEffect[]} */
+function effects() {
+  return effectsOf(fakeGh.writes(ghIsRead));
 }
 
-// The comment edits gh was asked for, as { id, body }.
-/** @returns {{ id: string | undefined, body: string }[]} */
+// The comment edits gh was asked for, as { id, body }, with times replaced.
+/** @returns {{ id: string, body: string }[]} */
 function edits() {
-  return fakeGh
-    .calls()
-    .filter(([, , method]) => method === "PATCH")
-    .map(([, , , url = "", , field = ""]) => ({
-      id: url.split("/").pop(),
-      body: field.replace(BODY_FIELD, ""),
-    }));
+  return effects().map(({ effect, body }) => ({
+    id: effect.replace("edit comment ", "").replace(" role=claim", ""),
+    body: body.replace(STAMP, "<time>"),
+  }));
 }
 
 test("a lane whose claim is the earliest live one wins, and labels the issue working", () => {
@@ -110,26 +112,12 @@ test("a lane whose claim is the earliest live one wins, and labels the issue wor
     posted: true,
     waited: 0,
   });
-  const [post, label, list, ...rest] = fakeGh.calls();
-  assert.deepEqual(post, [
-    "api",
-    "-X",
-    "POST",
-    "repos/o/r/issues/5/comments",
-    "-f",
-    `body=${POSTED_BODY}`,
+  const won = effects();
+  assert.deepEqual(effectNames(won), [
+    "comment #5 role=claim",
+    "label #5 agent:working",
   ]);
-  assert.deepEqual(label, [
-    "api",
-    "-X",
-    "POST",
-    "repos/o/r/issues/5/labels",
-    "--silent",
-    "-f",
-    "labels[]=agent:working",
-  ]);
-  assert.equal(list?.[2], "repos/o/r/issues/5/comments?per_page=100");
-  assert.deepEqual(rest, []);
+  assert.ok(bodyOf(won, "comment #5 role=claim").includes(CLAIM_MARK));
 });
 
 test("a lane that sees an earlier claim after posting abandons its own", () => {
@@ -149,17 +137,16 @@ test("a lane that sees an earlier claim after posting abandons its own", () => {
     posted: true,
     waited: 0,
   });
-  const [edit, ...more] = edits();
-  assert.deepEqual(more, []);
-  assert.ok(edit);
-  assert.equal(edit.id, "7");
-  assert.match(
-    edit.body,
-    new RegExp(
-      `^${literal(`${POSTED_CLAIM}\n<!-- agent-pipeline:claim-closed lane=me sweep=s9 -->\n\nAbandoned `)}${STAMP}: lane \`a\` claimed this issue first\\. This lane takes another issue\\.$`,
-      "u",
-    ),
-  );
+  const abandoned = effects();
+  assert.deepEqual(effectNames(abandoned), [
+    "comment #5 role=claim",
+    "edit comment 7 role=claim",
+    "label #5 agent:working",
+  ]);
+  const edit = bodyOf(abandoned, "edit comment 7 role=claim");
+  assert.ok(edit.includes(CLOSED_MARK));
+  assert.match(edit, ABANDONED);
+  assert.ok(edit.includes("lane `a` claimed this issue first"));
 });
 
 test("a lane that can't see its own claim after posting abandons it", () => {
@@ -170,15 +157,9 @@ test("a lane that can't see its own claim after posting abandons it", () => {
     posted: true,
     waited: 0,
   });
-  const [edit] = edits();
-  assert.ok(edit);
-  assert.match(
-    edit.body,
-    new RegExp(
-      `\n\nAbandoned ${STAMP}: this lane couldn't confirm its claim was first\\. This lane takes another issue\\.$`,
-      "u",
-    ),
-  );
+  const edit = bodyOf(effects(), "edit comment 7 role=claim");
+  assert.ok(edit.includes(CLOSED_MARK));
+  assert.match(edit, ABANDONED);
 });
 
 test("a lane doesn't claim an issue another lane holds, nor one it holds", () => {
@@ -197,11 +178,11 @@ test("a lane doesn't claim an issue another lane holds, nor one it holds", () =>
       posted: false,
     },
   );
-  assert.deepEqual(fakeGh.calls(), []);
+  assert.deepEqual(fakeGh.writes(ghIsRead), []);
 });
 
 test("touching a claim stamps it once, replacing an earlier stamp", () => {
-  const stamped = `${claimBody("me")}\n<sub>Lane still working at 2026-01-01T00:00Z.</sub>`;
+  const stamped = `${claimBody("me")}\n<sub>Lane still working at ${EARLIER_STAMP}.</sub>`;
   fakeGh.reply([
     { when: LIST, stdout: commentLines([comment(OWN_CLAIM, claimBody("me"))]) },
     {
@@ -214,17 +195,14 @@ test("touching a claim stamps it once, replacing an earlier stamp", () => {
   ]);
   touchClaim(cfg, ISSUE, req);
   touchClaim(cfg, ISSUE, req);
-  const stamp = new RegExp(
-    `^${literal(`${claimBody("me")}\n<sub>Lane still working at `)}${STAMP}\\.</sub>$`,
-    "u",
-  );
   const [first, second, ...more] = edits();
   assert.deepEqual(more, []);
   assert.ok(first && second);
-  assert.equal(first.id, "7");
-  assert.match(first.body, stamp);
-  assert.equal(second.id, "7");
-  assert.match(second.body, stamp);
+  assert.deepEqual([first.id, second.id], ["7", "7"]);
+  assert.ok(first.body.startsWith(claimBody("me")), "keeps the claim live");
+  assert.notEqual(first.body, claimBody("me"), "stamps it");
+  // Touching a stamped claim replaces the stamp rather than adding one.
+  assert.equal(second.body, first.body);
 });
 
 test("touching names the lane by its sweep when it has no lane name", () => {
@@ -262,13 +240,7 @@ test("closing an issue's claims closes each live claim with the reason", () => {
   const lanes = ["a", "b"];
   for (const [at, edit] of closed.entries()) {
     const lane = lanes[at];
-    assert.ok(lane);
-    assert.match(
-      edit.body,
-      new RegExp(
-        `^${literal(claimBody(lane).replace("agent-pipeline:claim lane", "agent-pipeline:claim-closed lane"))}\n\nClosed ${STAMP}: merged$`,
-        "u",
-      ),
-    );
+    assert.ok(edit.body.includes(`claim-closed lane=${lane} sweep=s1`));
+    assert.ok(edit.body.endsWith(": merged"), "gives the reason");
   }
 });

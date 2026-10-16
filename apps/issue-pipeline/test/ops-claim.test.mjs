@@ -1,32 +1,29 @@
 // @ts-check
-// The claim op through the ops CLI, pinned to the replies, gh calls and
-// worktrees it made before it moved to src/ops/claim.ts (#183).
+// The claim op through the ops CLI: its replies, the worktrees it makes, and
+// what it shows on GitHub (the claim and state comments and the labels).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
+import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
 import {
+  CLAIM_MARK,
   claimReply,
-  getIssue,
   issueReply,
   LANE,
   LAPSED,
   LEASE,
   LIVE,
-  listOpenPrs,
   NEW_STATE,
-  patchState,
-  postClaim,
-  postState,
 } from "./ops-claim-test-kit.mjs";
 import {
   ALLOWED,
   askOps,
-  calls,
   claimComment,
   commentsReply,
   configWith,
-  ghCalls,
+  effects,
   issueComment,
   reply,
   root,
@@ -35,6 +32,7 @@ import {
   stateComment,
   TIME,
   worktree,
+  writes,
 } from "./ops-cli-test-kit.mjs";
 
 const SETUP_MARK = "setup-ran";
@@ -56,6 +54,11 @@ const STOPPED_ISSUE = 45;
 const STOPPED_CLAIM = 14;
 const STOPPED_STATE = 15;
 const ANSWER = 16;
+const RESTART_LOG = /restarted .*at review/u;
+// The part of a claim's reply that holds the state's log.
+const LOGGED_REPLY = z.looseObject({
+  state: z.looseObject({ log: z.array(z.string()) }),
+});
 
 // A claim runs after a sweep, which made the clone.
 sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
@@ -72,10 +75,7 @@ test("a claim loses to another lane's live claim", () => {
     lost: true,
     holder: "other",
   });
-  assert.deepEqual(calls(), [
-    getIssue(LOST_ISSUE),
-    ghCalls.listComments(LOST_ISSUE),
-  ]);
+  assert.deepEqual(writes(), []);
 });
 
 test("a claim refuses an issue that isn't open", () => {
@@ -84,10 +84,7 @@ test("a claim refuses an issue that isn't open", () => {
     ok: false,
     error: "#41 is not open",
   });
-  assert.deepEqual(calls(), [
-    getIssue(CLOSED_ISSUE),
-    ghCalls.listComments(CLOSED_ISSUE),
-  ]);
+  assert.deepEqual(writes(), []);
 });
 
 test("a claim of new work posts its claim, makes the worktree and runs setup", () => {
@@ -109,17 +106,15 @@ test("a claim of new work posts its claim, makes the worktree and runs setup", (
       claim: { id: 100, posted: true, waited: 0 },
     }),
   );
-  assert.deepEqual(calls(), [
-    getIssue(NEW_ISSUE),
-    ghCalls.listComments(NEW_ISSUE),
-    postClaim(NEW_ISSUE),
-    ghCalls.label(NEW_ISSUE, "agent:working"),
-    ghCalls.listComments(NEW_ISSUE),
-    ghCalls.unlabel(NEW_ISSUE, "agent:needs-info"),
-    ghCalls.label(NEW_ISSUE, "agent:working"),
-    ghCalls.listComments(NEW_ISSUE),
-    postState(NEW_ISSUE, state),
+  const claimed = effects();
+  assert.deepEqual(effectNames(claimed), [
+    "comment #42 role=claim",
+    "comment #42 state",
+    "label #42 agent:working",
+    "unlabel #42 agent:needs-info",
   ]);
+  assert.ok(bodyOf(claimed, "comment #42 role=claim").includes(CLAIM_MARK));
+  assert.deepEqual(stateOf(claimed, "comment #42 state"), state);
   assert.ok(fs.existsSync(path.join(worktree(NEW_ISSUE), SETUP_MARK)));
   assert.ok(fs.existsSync(path.join(runDir(NEW_ISSUE), "setup-at-claim.log")));
 });
@@ -133,9 +128,6 @@ function answeredState(sha) {
     stage: "review",
     pr: 50,
     headSha: sha,
-    log: [
-      `${TIME} restarted on the existing branch (PR #50) at review after answered questions; limits reset`,
-    ],
     implemented: true,
   };
 }
@@ -163,28 +155,31 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
     commentsReply(ANSWERED_ISSUE, comments),
   ]);
   const sha = sh(`git -C ${root}/seed rev-parse HEAD`);
-  const state = answeredState(sha);
+  const got = askOps({ op: "claim", number: 43, ...LANE });
+  const { log } = LOGGED_REPLY.parse(got).state;
+  assert.equal(log.length, 1);
+  assert.match(log.join(""), RESTART_LOG);
+  const state = { ...answeredState(sha), log };
   assert.deepEqual(
-    askOps({ op: "claim", number: 43, ...LANE }),
+    got,
     claimReply(ANSWERED_ISSUE, {
       state,
       claim: { id: 10, posted: false },
       remoteHead: sha,
     }),
   );
-  assert.deepEqual(calls(), [
-    getIssue(ANSWERED_ISSUE),
-    ghCalls.listComments(ANSWERED_ISSUE),
-    ghCalls.collaborator(ALLOWED),
-    listOpenPrs(ANSWERED_ISSUE),
-    ghCalls.unlabel(ANSWERED_ISSUE, "agent:needs-info"),
-    ghCalls.unlabel(ANSWERED_ISSUE, "agent:stopped-budget"),
-    ghCalls.label(ANSWERED_ISSUE, "agent:working"),
-    ghCalls.label(ANSWERED_PR, "agent:working"),
-    ["api", "repos/o/r/issues/50/labels"],
-    ghCalls.listComments(ANSWERED_ISSUE),
-    patchState(ANSWERED_ISSUE, ANSWERED_STATE, state),
+  const claimed = effects();
+  assert.deepEqual(effectNames(claimed), [
+    `edit comment ${ANSWERED_STATE} state`,
+    `label #${ANSWERED_ISSUE} agent:working`,
+    `label #${ANSWERED_PR} agent:working`,
+    `unlabel #${ANSWERED_ISSUE} agent:needs-info`,
+    `unlabel #${ANSWERED_ISSUE} agent:stopped-budget`,
   ]);
+  assert.deepEqual(
+    stateOf(claimed, `edit comment ${ANSWERED_STATE} state`),
+    state,
+  );
 });
 
 test("a claim that resumes a lapsed lease keeps its stage and its worktree", () => {
@@ -215,17 +210,17 @@ test("a claim that resumes a lapsed lease keeps its stage and its worktree", () 
       claim: { id: 101, posted: true, waited: 0 },
     }),
   );
-  assert.deepEqual(calls(), [
-    getIssue(LAPSED_ISSUE),
-    ghCalls.listComments(LAPSED_ISSUE),
-    postClaim(LAPSED_ISSUE),
-    ghCalls.label(LAPSED_ISSUE, "agent:working"),
-    ghCalls.listComments(LAPSED_ISSUE),
-    ghCalls.unlabel(LAPSED_ISSUE, "agent:needs-info"),
-    ghCalls.label(LAPSED_ISSUE, "agent:working"),
-    ghCalls.listComments(LAPSED_ISSUE),
-    patchState(LAPSED_ISSUE, LAPSED_STATE, kept),
+  const claimed = effects();
+  assert.deepEqual(effectNames(claimed), [
+    `comment #${LAPSED_ISSUE} role=claim`,
+    `edit comment ${LAPSED_STATE} state`,
+    `label #${LAPSED_ISSUE} agent:working`,
+    `unlabel #${LAPSED_ISSUE} agent:needs-info`,
   ]);
+  assert.deepEqual(
+    stateOf(claimed, `edit comment ${LAPSED_STATE} state`),
+    kept,
+  );
   assert.ok(fs.existsSync(path.join(worktree(LAPSED_ISSUE), "wip")));
 });
 
@@ -269,16 +264,17 @@ test("a claim restarts a stopped issue and resets its worktree to the branch", (
       remoteHead: sha,
     }),
   );
-  assert.deepEqual(calls(), [
-    getIssue(STOPPED_ISSUE),
-    ghCalls.listComments(STOPPED_ISSUE),
-    listOpenPrs(STOPPED_ISSUE),
-    ghCalls.unlabel(STOPPED_ISSUE, "agent:needs-info"),
-    ghCalls.unlabel(STOPPED_ISSUE, "agent:stopped-budget"),
-    ghCalls.label(STOPPED_ISSUE, "agent:working"),
-    ghCalls.listComments(STOPPED_ISSUE),
-    patchState(STOPPED_ISSUE, STOPPED_STATE, state),
+  const claimed = effects();
+  assert.deepEqual(effectNames(claimed), [
+    `edit comment ${STOPPED_STATE} state`,
+    `label #${STOPPED_ISSUE} agent:working`,
+    `unlabel #${STOPPED_ISSUE} agent:needs-info`,
+    `unlabel #${STOPPED_ISSUE} agent:stopped-budget`,
   ]);
+  assert.deepEqual(
+    stateOf(claimed, `edit comment ${STOPPED_STATE} state`),
+    state,
+  );
   assert.equal(sh(`git -C ${worktree(STOPPED_ISSUE)} rev-parse HEAD`), sha);
   assert.equal(sh(`git -C ${worktree(STOPPED_ISSUE)} status --porcelain`), "");
 });

@@ -1,28 +1,25 @@
 // @ts-check
-// The split op through the ops CLI, pinned to the reply and gh calls it made
-// before it moved to src/ops/ (#183): it opens ordered sub-issues under the
-// parent, links them, and parks the parent.
+// The split op through the ops CLI: it opens ordered sub-issues under the
+// parent, links them, and parks the parent, as its reply and its GitHub
+// writes show.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
+import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
 import {
   askOps,
-  calls,
   claimComment,
-  closedClaim,
   commentsReply,
-  ghCalls,
+  effects,
   reply,
   root,
   sh,
-  stateBody,
   worktree,
 } from "./ops-cli-test-kit.mjs";
 
 const LIVE = new Date().toISOString();
 const TRIAGER = { role: "triage", agent: "triager" };
-const TRIAGER_SIGNATURE =
-  "**🤖 issue-pipeline · triage**\n<sub>agent `triager`</sub>\n<!-- agent-pipeline:comment role=triage -->";
+const CLAIM_CLOSED = "<!-- agent-pipeline:claim-closed lane=me sweep=s1 -->";
 // The issue split, its claim, and the sub-issues it opens.
 const SPLIT = {
   n: 52,
@@ -39,72 +36,25 @@ function myClaim(id) {
   return claimComment(id, "me", "s1", LIVE);
 }
 
-// The gh call that opens one of split's sub-issues of SPLIT.
-/** @param {string} title @param {string} body @param {string} [afterLine] @returns {string[]} */
-function openCall(title, body, afterLine = "") {
-  const parent = `\n\n<!-- agent-pipeline:parent ${SPLIT.n} depth 2 -->`;
-  const text = `${TRIAGER_SIGNATURE}\n\n${body}\n\nPart of #${SPLIT.n}.${afterLine}${parent}`;
+// What split shows on GitHub for SPLIT, as effectNames names it.
+/** @returns {string[]} */
+function splitEffects() {
+  const { n, claim, first, second } = SPLIT;
   return [
-    "api",
-    "-X",
-    "POST",
-    "repos/o/r/issues",
-    "-f",
-    `title=${title}`,
-    "-f",
-    `body=${text}`,
+    `comment #${n} role=triage`,
+    `comment #${n} state`,
+    `edit comment ${claim} role=claim`,
+    "issue A",
+    "issue B",
+    `label #${n} agent:split`,
+    `sub-issue #${n} id ${first.id}`,
+    `sub-issue #${n} id ${second.id}`,
+    `unlabel #${n} agent:working`,
   ];
 }
 
-// The gh call that links a sub-issue to SPLIT.
-/** @param {number} id @returns {string[]} */
-function linkCall(id) {
-  const endpoint = `repos/o/r/issues/${SPLIT.n}/sub_issues`;
-  return [
-    "api",
-    "-X",
-    "POST",
-    endpoint,
-    "-F",
-    `sub_issue_id=${id}`,
-    "--silent",
-  ];
-}
-
-// The calls that open split's two sub-issues of SPLIT, the second after the first.
-/** @returns {string[][]} */
-function subIssueCalls() {
-  const { first, second } = SPLIT;
-  const after = `\nAfter #${first.number} merges.\n<!-- agent-pipeline:after ${first.number} -->`;
-  return [
-    openCall("A", "a"),
-    linkCall(first.id),
-    openCall("B", "b", after),
-    linkCall(second.id),
-  ];
-}
-
-// Every gh call split makes for SPLIT, after it opens the sub-issues.
-/** @returns {string[][]} */
-function splitCalls() {
-  const { n, claim, depth, first, second } = SPLIT;
-  const created = `#${first.number}, #${second.number}`;
-  const note = `I split this issue into ${created}. The pipeline closes it when they have all merged.`;
-  const subIssues = [first.number, second.number];
-  return [
-    ...subIssueCalls(),
-    ghCalls.post(n, `${TRIAGER_SIGNATURE}\n\n${note}`),
-    ghCalls.listComments(n),
-    ghCalls.post(
-      n,
-      stateBody(n, { stage: "split", depth, lease: null, subIssues }),
-    ),
-    ghCalls.unlabel(n, "agent:working"),
-    ghCalls.label(n, "agent:split"),
-    ghCalls.listComments(n),
-    closedClaim(claim, "the issue was split into sub-issues."),
-  ];
-}
+const BODY_A = "Body of sub-issue A";
+const BODY_B = "Body of sub-issue B";
 
 test("split opens ordered sub-issues under the parent and parks it", () => {
   const { n, claim, depth, first, second } = SPLIT;
@@ -114,12 +64,11 @@ test("split opens ordered sub-issues under the parent and parks it", () => {
   reply([
     { when: "title=A", stdout: JSON.stringify(first) },
     { when: "title=B", stdout: JSON.stringify(second) },
-    commentsReply(n, []),
-    commentsReply(n, [myClaim(claim)]),
+    { ...commentsReply(n, [myClaim(claim)]), keep: true },
   ]);
   const subIssues = [
-    { title: "A", body: "a" },
-    { title: "B", body: "b", after: [0] },
+    { title: "A", body: BODY_A },
+    { title: "B", body: BODY_B, after: [0] },
   ];
   const request = {
     op: "split",
@@ -134,6 +83,25 @@ test("split opens ordered sub-issues under the parent and parks it", () => {
     posted: 0,
     created: [first.number, second.number],
   });
-  assert.deepEqual(calls(), splitCalls());
+  const split = effects();
+  assert.deepEqual(effectNames(split), splitEffects());
+  const parentMark = `<!-- agent-pipeline:parent ${n} depth 2 -->`;
+  const afterFirst = `<!-- agent-pipeline:after ${first.number} -->`;
+  const [a, b] = [bodyOf(split, "issue A"), bodyOf(split, "issue B")];
+  assert.ok(a.includes(BODY_A) && !a.includes(BODY_B));
+  assert.ok(a.includes(parentMark) && !a.includes(afterFirst));
+  assert.ok(b.includes(BODY_B) && !b.includes(BODY_A));
+  assert.ok(b.includes(parentMark) && b.includes(afterFirst));
+  const note = bodyOf(split, `comment #${n} role=triage`);
+  assert.ok(note.includes(`#${first.number}, #${second.number}`));
+  assert.deepEqual(stateOf(split, `comment #${n} state`), {
+    stage: "split",
+    depth,
+    lease: null,
+    subIssues: [first.number, second.number],
+  });
+  assert.ok(
+    bodyOf(split, `edit comment ${claim} role=claim`).includes(CLAIM_CLOSED),
+  );
   assert.equal(fs.existsSync(worktree(n)), false);
 });

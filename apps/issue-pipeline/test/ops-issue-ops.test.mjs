@@ -1,28 +1,28 @@
 // @ts-check
-// The save-state, ask and stop ops through the ops CLI, pinned to the replies
-// and gh calls they made before they moved to src/ops/ (#183). The split op is
-// in ops-split.test.mjs.
+// The save-state, ask and stop ops through the ops CLI: their replies, and
+// what each shows on GitHub (comments, the state comment, labels, closed
+// claims). The split op is in ops-split.test.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { STOPS } from "../src/stops.ts";
+import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
 import {
   askOps,
-  calls,
   claimComment,
-  closedClaim,
   commentsReply,
-  ghCalls,
+  effects,
   reply,
   root,
   sh,
-  stateBody,
   stateComment,
   TIME,
+  writes,
 } from "./ops-cli-test-kit.mjs";
 
+/** @import { Stop } from "../src/stops.ts" */
+
 const LIVE = new Date().toISOString();
-const STEP_SIGNATURE = "<sub>deterministic step, no model</sub>";
-const RESUME_TEXT =
-  "The next sweep continues from the PR's branch at review, with every limit reset, the token budget included.";
+const CLAIM_MARK = "<!-- agent-pipeline:claim-closed lane=me sweep=s1 -->";
 // Each test's issue, and the comments and PRs it meets.
 const SAVED = { n: 50 };
 const SAVE_REPLY = { ok: true, op: "save-state", posted: 0 };
@@ -37,21 +37,35 @@ function myClaim(id) {
   return claimComment(id, "me", "s1", LIVE);
 }
 
-/** @param {string} text @returns {string} */
-function coordinator(text) {
-  return `**🤖 issue-pipeline · coordinator**\n${STEP_SIGNATURE}\n<!-- agent-pipeline:comment role=coordinator -->\n\n${text}`;
+/** @param {string} code @returns {Stop} */
+function stopOf(code) {
+  const stop = STOPS.find((item) => item.code === code);
+  if (stop === undefined) {
+    throw new Error(`no stop ${code}`);
+  }
+  return stop;
 }
 
-// Joins a comment's paragraphs.
-/** @param {readonly string[]} texts @returns {string} */
-function paragraphs(texts) {
-  return texts.join("\n\n");
-}
-
-// A config setting named in a stop's explanation, as src/stops.ts names it.
-/** @param {string} setting @returns {string} */
-function settingRef(setting) {
-  return `(\`${setting}\`)`;
+// What a stop comment leaves out of what `stop-labels` promises it names:
+// the control (beside its label), what it checks and the reason.
+/** @param {string} body @param {string} code @param {string} reason @returns {string[]} */
+function missingStopFacts(body, code, reason) {
+  const { control, explain, label } = stopOf(code);
+  const named = `\`${label.name}\``;
+  const facts = {
+    marker: "<!-- agent-pipeline:comment role=coordinator -->",
+    label: named,
+    checks: explain,
+    reason: `Reason: ${reason}`,
+  };
+  const missing = Object.entries(facts)
+    .filter(([, text]) => !body.includes(text))
+    .map(([fact]) => fact);
+  const lines = body.split("\n");
+  if (!lines.some((line) => line.includes(control) && line.includes(named))) {
+    missing.push("control");
+  }
+  return missing;
 }
 
 test("save-state writes the state it is given, and nothing without one", () => {
@@ -59,21 +73,18 @@ test("save-state writes the state it is given, and nothing without one", () => {
   const state = { stage: "plan", pr: null };
   reply([]);
   assert.deepEqual(askOps({ op: "save-state", number: n, state }), SAVE_REPLY);
-  assert.deepEqual(calls(), [
-    ghCalls.listComments(n),
-    ghCalls.post(n, stateBody(n, state)),
-  ]);
+  const saved = effects();
+  assert.deepEqual(effectNames(saved), [`comment #${n} state`]);
+  assert.deepEqual(stateOf(saved, `comment #${n} state`), state);
   reply([]);
   assert.deepEqual(askOps({ op: "save-state", number: n }), SAVE_REPLY);
-  assert.deepEqual(calls(), []);
+  assert.deepEqual(writes(), []);
 });
 
 test("ask posts numbered questions, parks the issue and closes its claims", () => {
   const { n, state, claim } = ASKED;
-  reply([
-    commentsReply(n, [stateComment(state, { stage: "plan" })]),
-    commentsReply(n, [myClaim(claim)]),
-  ]);
+  const comments = [stateComment(state, { stage: "plan" }), myClaim(claim)];
+  reply([{ ...commentsReply(n, comments), keep: true }]);
   const request = {
     op: "ask",
     number: n,
@@ -82,74 +93,26 @@ test("ask posts numbered questions, parks the issue and closes its claims", () =
     by: null,
   };
   assert.deepEqual(askOps(request), { ok: true, op: "ask", posted: 0 });
-  const questions = `**🤖 issue-pipeline · triage**\n${STEP_SIGNATURE}\n<!-- agent-pipeline:comment role=triage -->\n\nI need answers before the pipeline can work on this issue:\n\n1. Which X?\n2. Why Y?\n\nReply in a comment. A reply from a user on the pipeline's allow list puts the issue back in the queue.`;
-  assert.deepEqual(calls(), [
-    ghCalls.post(n, questions),
-    ghCalls.listComments(n),
-    ghCalls.patch(
-      state,
-      stateBody(n, {
-        stage: "triage",
-        pr: null,
-        questionsAt: TIME,
-        lease: null,
-      }),
-    ),
-    ghCalls.unlabel(n, "agent:working"),
-    ghCalls.label(n, "agent:needs-info"),
-    ghCalls.listComments(n),
-    closedClaim(
-      claim,
-      "the pipeline asked questions; an answer puts the issue back in the queue.",
-    ),
+  const asked = effects();
+  assert.deepEqual(effectNames(asked), [
+    `comment #${n} role=triage`,
+    `edit comment ${state} state`,
+    `edit comment ${claim} role=claim`,
+    `label #${n} agent:needs-info`,
+    `unlabel #${n} agent:working`,
   ]);
-});
-
-// The comment stop posts for STOPPED, on the issue and its PR.
-/** @returns {string} */
-function budgetStopBody() {
-  return coordinator(
-    paragraphs([
-      "**🛑 Stopped by a control: token budget** (`agent:stopped-budget`)",
-      `The next session would take the issue past its token budget ${settingRef("issueTokenBudget")}, or a re-check or conflict fix after a rebase past the rebase allowance ${settingRef("rebaseTokenBudget")}.`,
-      "Reason: over budget",
-      "d",
-      "next",
-    ]),
-  );
-}
-
-// Every gh call stop makes for STOPPED.
-/** @returns {string[][]} */
-function budgetStopCalls() {
-  const { n, pr, claim } = STOPPED;
-  const body = budgetStopBody();
-  const stopState = {
-    stage: "stopped",
-    pr,
+  const questions = bodyOf(asked, `comment #${n} role=triage`);
+  assert.ok(questions.includes("1. Which X?\n2. Why Y?"));
+  assert.deepEqual(stateOf(asked, `edit comment ${state} state`), {
+    stage: "triage",
+    pr: null,
+    questionsAt: TIME,
     lease: null,
-    stopCode: "budget",
-    stopReason: "over budget",
-  };
-  return [
-    ghCalls.post(n, body),
-    ghCalls.post(pr, body),
-    ghCalls.listComments(n),
-    ghCalls.post(n, stateBody(n, stopState)),
-    ["api", `repos/o/r/issues/${n}/labels`],
-    ghCalls.unlabel(n, "agent:stopped-error"),
-    ghCalls.unlabel(n, "agent:working"),
-    ghCalls.label(n, "agent:stopped-budget"),
-    ["api", `repos/o/r/issues/${pr}/labels`],
-    ghCalls.unlabel(pr, "agent:working"),
-    ghCalls.label(pr, "agent:stopped-budget"),
-    ghCalls.listComments(n),
-    closedClaim(
-      claim,
-      "the issue stopped (`agent:stopped-budget`); removing the label puts it back in the queue.",
-    ),
-  ];
-}
+  });
+  assert.ok(
+    bodyOf(asked, `edit comment ${claim} role=claim`).includes(CLAIM_MARK),
+  );
+});
 
 test("stop by code explains the control on the issue and its PR and swaps labels", () => {
   const { n, pr, claim } = STOPPED;
@@ -158,26 +121,52 @@ test("stop by code explains the control on the issue and its PR and swaps labels
       when: `issues/${n}/labels`,
       stdout: JSON.stringify([{ name: "agent:stopped-error" }]),
     },
-    commentsReply(n, []),
-    commentsReply(n, [myClaim(claim)]),
+    { ...commentsReply(n, [myClaim(claim)]), keep: true },
   ]);
   const request = {
     op: "stop",
     number: n,
     code: "budget",
     reason: "over budget",
-    detail: "d",
-    nextStep: "next",
+    detail: "the details",
+    nextStep: "the next step",
     state: { stage: "review", pr },
   };
+  const label = "agent:stopped-budget";
   assert.deepEqual(askOps(request), {
     ok: true,
     op: "stop",
     posted: 0,
     code: "budget",
-    label: "agent:stopped-budget",
+    label,
   });
-  assert.deepEqual(calls(), budgetStopCalls());
+  const stopped = effects();
+  assert.deepEqual(effectNames(stopped), [
+    `comment #${n} role=coordinator`,
+    `comment #${n} state`,
+    `comment #${pr} role=coordinator`,
+    `edit comment ${claim} role=claim`,
+    `label #${n} ${label}`,
+    `label #${pr} ${label}`,
+    `unlabel #${n} agent:stopped-error`,
+    `unlabel #${n} agent:working`,
+    `unlabel #${pr} agent:working`,
+  ]);
+  for (const target of [n, pr]) {
+    const body = bodyOf(stopped, `comment #${target} role=coordinator`);
+    assert.deepEqual(missingStopFacts(body, "budget", "over budget"), []);
+    assert.ok(body.includes("the details") && body.includes("the next step"));
+  }
+  assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
+    stage: "stopped",
+    pr,
+    lease: null,
+    stopCode: "budget",
+    stopReason: "over budget",
+  });
+  assert.ok(
+    bodyOf(stopped, `edit comment ${claim} role=claim`).includes(CLAIM_MARK),
+  );
 });
 
 test("stop by reason, with no detail, next step or PR, says how to resume", () => {
@@ -192,32 +181,31 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     nextStep: null,
     state: { stage: "implement" },
   };
+  const label = "agent:stopped-push-rejected";
   assert.deepEqual(askOps(request), {
     ok: true,
     op: "stop",
     posted: 0,
     code: "push-rejected",
-    label: "agent:stopped-push-rejected",
+    label,
   });
-  const label = "agent:stopped-push-rejected";
-  const body = coordinator(
-    `**🛑 Stopped by a control: push** (\`${label}\`)\n\nGitHub rejected a push of the PR branch.\n\nReason: could not push\n\n\nTo resume, fix what this names (push to the branch if you like), then remove \`${label}\`. ${RESUME_TEXT}`,
-  );
-  assert.deepEqual(calls(), [
-    ghCalls.post(n, body),
-    ghCalls.listComments(n),
-    ghCalls.post(
-      n,
-      stateBody(n, {
-        stage: "stopped",
-        lease: null,
-        stopCode: "push-rejected",
-        stopReason: "could not push",
-      }),
-    ),
-    ["api", `repos/o/r/issues/${n}/labels`],
-    ghCalls.unlabel(n, "agent:working"),
-    ghCalls.label(n, label),
-    ghCalls.listComments(n),
+  const stopped = effects();
+  assert.deepEqual(effectNames(stopped), [
+    `comment #${n} role=coordinator`,
+    `comment #${n} state`,
+    `label #${n} ${label}`,
+    `unlabel #${n} agent:working`,
   ]);
+  const body = bodyOf(stopped, `comment #${n} role=coordinator`);
+  assert.deepEqual(
+    missingStopFacts(body, "push-rejected", "could not push"),
+    [],
+  );
+  assert.ok(body.includes("To resume") && body.includes(`remove \`${label}\``));
+  assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
+    stage: "stopped",
+    lease: null,
+    stopCode: "push-rejected",
+    stopReason: "could not push",
+  });
 });

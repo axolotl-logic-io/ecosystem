@@ -1,15 +1,8 @@
 // @ts-check
-// The claim op's requests, gh replies, gh calls and replies, as
-// ops-claim.test.mjs pins them.
+// The claim op's requests, gh replies and replies, as the ops-claim tests
+// use them.
 import path from "node:path";
-import {
-  ACCOUNT,
-  ghCalls,
-  runDir,
-  stateBody,
-  TIME,
-  worktree,
-} from "./ops-cli-test-kit.mjs";
+import { ACCOUNT, runDir, TIME, worktree } from "./ops-cli-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
 
@@ -33,30 +26,8 @@ function issueReply(n, extra = {}) {
   return { when: `api repos/o/r/issues/${n}`, stdout: JSON.stringify(issue) };
 }
 
-/** @param {number} n @returns {string[]} */
-function getIssue(n) {
-  return ["api", `repos/o/r/issues/${n}`];
-}
-
-// The gh call that looks for an open PR from issue `n`'s branch.
-/** @param {number} n @returns {string[]} */
-function listOpenPrs(n) {
-  return [
-    "pr",
-    "list",
-    "-R",
-    "o/r",
-    "--head",
-    `agent/issue-${n}`,
-    "--state",
-    "open",
-    "--json",
-    "number",
-  ];
-}
-
-const CLAIM_TEXT =
-  "Lane `me` is claiming this issue. If another lane claimed it first, this lane abandons it and takes another issue.";
+// The marker the wiki promises on a live claim by lane `me` of sweep `s1`.
+const CLAIM_MARK = "<!-- agent-pipeline:claim lane=me sweep=s1 -->";
 const LEASE = { lane: "me", sweepId: "s1", at: TIME };
 const NEW_STATE = {
   version: 1,
@@ -85,24 +56,6 @@ const NEW_STATE = {
   log: [],
 };
 
-/** @param {number} n @returns {string[]} */
-function postClaim(n) {
-  return ghCalls.postRaw(
-    n,
-    `**🤖 issue-pipeline · claim**\n<sub>deterministic step, no model · run \`s1\`</sub>\n<!-- agent-pipeline:comment role=claim -->\n\n${CLAIM_TEXT}\n<!-- agent-pipeline:claim lane=me sweep=s1 -->`,
-  );
-}
-
-/** @param {number} n @param {object} state @returns {string[]} */
-function postState(n, state) {
-  return ghCalls.post(n, stateBody(n, state));
-}
-
-/** @param {number} n @param {number} id @param {object} state @returns {string[]} */
-function patchState(n, id, state) {
-  return ghCalls.patch(id, stateBody(n, state));
-}
-
 /** @param {number} n @param {string | null} [wiki] @returns {object} */
 function claimPaths(n, wiki = null) {
   return {
@@ -128,16 +81,12 @@ function claimReply(n, extra) {
 }
 
 export {
+  CLAIM_MARK,
   claimReply,
-  getIssue,
   issueReply,
   LANE,
   LAPSED,
   LEASE,
   LIVE,
-  listOpenPrs,
   NEW_STATE,
-  patchState,
-  postClaim,
-  postState,
 };
