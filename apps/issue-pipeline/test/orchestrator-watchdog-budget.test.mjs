@@ -3,8 +3,9 @@
 // job.json files: a live job whose session's context (`contextTokens`) passes
 // its token budget gets SIGTERM once, and once it has exited its issue and PR
 // are stopped with agent:stopped-budget and it is never restarted. A launch at
-// its budget, one with no budget, an ops launch, a launch that ended and a
-// large cumulative usage are never stopped.
+// its budget, one with no budget, an ops launch, a launch that ended, a
+// session stopped at the hard context limit while its retry runs (#272) and
+// a large cumulative usage are never stopped.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,6 +16,7 @@ import {
   cfg,
   deadPid,
   fakeGh,
+  NOW,
   OTHERS_PID,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
@@ -32,6 +34,7 @@ const ISSUE = {
   ops: 94,
   unended: 95,
   launchEnded: 96,
+  retrying: 97,
 };
 const PR_OF_OVER = 19;
 const BUDGET = 60_000;
@@ -166,6 +169,38 @@ test("a session launch that has ended is never stopped, whatever its context", (
   assert.deepEqual([ticked.terminated, ticked.spawned], [[], []]);
   assert.deepEqual(fakeGh.writes(ghIsRead), []);
   assert.deepEqual(loggedFor(ISSUE.launchEnded), []);
+});
+
+// A long-silent session's minutes, past both the silence steer and SIGTERM.
+const LONG_SILENT_MINUTES = 120;
+
+test("a session stopped at the hard context limit, past its budget and silent, is left alone while its retry runs", () => {
+  const status = writeJob({
+    issue: ISSUE.retrying,
+    stage: "review",
+    pid: OTHERS_PID,
+    silentMinutes: LONG_SILENT_MINUTES,
+    tokenBudget: BUDGET,
+    contextTokens: OVER_BUDGET,
+  });
+  const now = NOW.toISOString();
+  const contextStop = { context: OVER_BUDGET, result: "error" };
+  const launches = status.launches.flatMap((launch) => [
+    { ...launch, contextStop },
+    {
+      ...launch,
+      key: `${launch.key}.retry`,
+      startedAt: now,
+      lastEventAt: now,
+      contextTokens: 0,
+    },
+  ]);
+  const file = path.join(paths.runDir(cfg, ISSUE.retrying), "job.json");
+  fs.writeFileSync(file, JSON.stringify({ ...status, launches }));
+  const ticked = tickOver([openIssue(ISSUE.retrying, "review")]);
+  assert.deepEqual([ticked.terminated, ticked.spawned], [[], []]);
+  assert.deepEqual(fakeGh.writes(ghIsRead), []);
+  assert.deepEqual(loggedFor(ISSUE.retrying), []);
 });
 
 test("a job that ends with no outcome after its budget SIGTERM is stopped, not resumed", () => {

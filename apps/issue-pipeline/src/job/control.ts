@@ -38,7 +38,8 @@ interface LiveLaunch extends RpcProcess {
 interface Control {
   // The steer socket's path.
   socket: string;
-  // Keeps `launch` live, for steers and the stop, until it exits.
+  // Keeps `launch` live, for steers and the stop, until it exits. A launch
+  // registered once the stop began, such as a retry (launch.ts), is stopped.
   register: (launch: LiveLaunch) => void;
   // The signal that began the stop, or null while the job runs on.
   stopping: () => StopSignal | null;
@@ -153,6 +154,9 @@ async function openControl(runDir: string): Promise<Control> {
     socket,
     register: (launch: LiveLaunch): void => {
       launches.set(launch.key, launch);
+      if (signal !== null) {
+        stopLaunch(launch).catch(() => null);
+      }
       launch.exited
         .then((): boolean => launches.delete(launch.key))
         .catch(() => null);

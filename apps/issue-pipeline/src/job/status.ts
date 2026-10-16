@@ -3,11 +3,11 @@
 // socket, and a record of every launch it started: its pid, session file,
 // last event, consecutive failures of one tool and the last one's error,
 // token usage, token budget, context size, peak turn context, stop at the
-// hard context limit and outcome. On exit it
-// holds the job's outcome, and the uncommitted paths its checkout dropped
-// (lostChanges). Each change rewrites the whole file atomically, so
-// a reader never sees part of one; a write that fails is reported on stderr
-// and the job goes on. This module alone knows the file's name and layout.
+// hard context limit and outcome. On exit it holds the job's outcome, and the
+// uncommitted paths its checkout dropped (lostChanges). Each change rewrites
+// the whole file atomically, so a reader never sees part of one; a write that
+// fails is reported on stderr and the job goes on. This module alone knows
+// the file's name and layout.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -90,9 +90,8 @@ interface JobInfo {
   socket: string;
 }
 
-// A launch as it starts: a pi session with its file, or an ops child, and
-// the usage it starts from (a resumed session's earlier usage), and its token
-// budget (null for an ops child).
+// A launch as it starts: a pi session with its file, or an ops child, the
+// usage it starts from (a resumed session's) and its token budget (or null).
 interface LaunchStart {
   key: string;
   kind: "session" | "ops";
@@ -119,7 +118,8 @@ interface JobStatus {
   ended: (key: string) => void;
   // Session `key` was stopped at the hard context limit.
   contextStopped: (key: string, stop: ContextStop) => void;
-  // Launch `key`'s result went back to the sweep.
+  // Launch `key`'s result went back to the sweep: sets `outcome` on it and
+  // on every session it ran, keyed `${key}.<part>`.
   settled: (key: string, outcome: LaunchOutcome) => void;
   // The job ended.
   finish: (outcome: JobOutcome) => void;
@@ -214,18 +214,18 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     outcome: null,
     launches: [],
   };
+  // Changes launch `key`, and with `parts` every session it ran too.
   function update(
     key: string,
     change: (l: LaunchRecord) => LaunchRecord,
+    parts = false,
   ): void {
-    status.launches = status.launches.map(
-      (launch: LaunchRecord): LaunchRecord => {
-        if (launch.key === key) {
-          return change(launch);
-        }
-        return launch;
-      },
-    );
+    status.launches = status.launches.map((l: LaunchRecord): LaunchRecord => {
+      if (l.key === key || (parts && l.key.startsWith(`${key}.`))) {
+        return change(l);
+      }
+      return l;
+    });
     writeStatus(file, status);
   }
   writeStatus(file, status);
@@ -250,7 +250,7 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     contextStopped: (key: string, contextStop: ContextStop): void =>
       update(key, (launch) => ({ ...launch, contextStop })),
     settled: (key: string, outcome: LaunchOutcome): void =>
-      update(key, (launch) => ({ ...launch, outcome })),
+      update(key, (launch) => ({ ...launch, outcome }), true),
     finish: (outcome: JobOutcome): void => {
       status.outcome = outcome;
       status.endedAt = new Date().toISOString();
@@ -264,8 +264,8 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
 }
 
 // Where the earlier job in `runDir` left each interrupted session: a session
-// launch with no outcome whose file is still on disk. Nothing, when there is
-// no earlier file or it is malformed.
+// launch with no outcome and no stop at the hard context limit whose file is
+// still on disk. Nothing, when there is no earlier file or it is malformed.
 function resumePoints(runDir: string): (key: string) => ResumePoint | null {
   const earlier = readStatus(runDir);
   return (key: string): ResumePoint | null => {
@@ -273,6 +273,7 @@ function resumePoints(runDir: string): (key: string) => ResumePoint | null {
     if (
       launch?.kind !== "session" ||
       launch.outcome !== null ||
+      launch.contextStop !== null ||
       launch.session === null ||
       !fs.existsSync(launch.session)
     ) {

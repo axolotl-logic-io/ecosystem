@@ -4,7 +4,9 @@
 // issue is stopped with the budget stop and never restarted. The SIGTERM
 // comes first because a job saves the issue's state on SIGTERM, which would
 // overwrite the stop's. Ops launches, launches with no budget and launches
-// that ended are never stopped. Pure: the tick carries out its actions.
+// that ended are never stopped. Pure: the tick carries out its actions. A
+// session the job stopped at the hard context limit has ended though its
+// outcome waits for its retry (#272), so no live-session check counts it.
 
 import type { StatusFile } from "../job/status.ts";
 import type { WatchAction, WatchedJob } from "./watchdog.ts";
@@ -16,10 +18,19 @@ function jobId(status: StatusFile): string {
   return `${status.issue} ${status.startedAt}`;
 }
 
-function isOver(launch: Launch): launch is Launch & { tokenBudget: number } {
+// Whether `launch` is a session still running: no outcome yet and not
+// stopped at the hard context limit.
+function isLiveSession(launch: Launch): boolean {
   return (
     launch.kind === "session" &&
     launch.outcome === null &&
+    launch.contextStop === null
+  );
+}
+
+function isOver(launch: Launch): launch is Launch & { tokenBudget: number } {
+  return (
+    isLiveSession(launch) &&
     launch.tokenBudget !== null &&
     launch.contextTokens > launch.tokenBudget
   );
@@ -71,4 +82,4 @@ function budgetStopped(memory: WatchMemory, status: StatusFile): boolean {
   return memory.overBudget[jobId(status)]?.stopped === true;
 }
 
-export { budgetActions, budgetStopped };
+export { budgetActions, budgetStopped, isLiveSession };

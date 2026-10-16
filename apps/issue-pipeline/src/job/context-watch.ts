@@ -3,15 +3,17 @@
 // assistant message's usage (output tokens and earlier turns don't count). A
 // writer session past `soft` gets one steer to hand off; any session past
 // `hard` is stopped. A stopped writer's result is a `handoff` reply that fits
-// its launch's output schema, and any other session's is an error. This
-// module alone knows that rule, the limits' meaning, the steer's text and
-// the stopped session's result.
+// its launch's output schema; any other session is retried once, fresh, with
+// its task plus the read-in-parts line (retryTask), and its error stands only
+// if the retry passes `hard` too (retryResult). This module alone knows that
+// rule, the limits' meaning, the steer's and the retry's texts and the
+// stopped session's result.
 
 import type { JsonSchema } from "../workflow/schemas.ts";
 import type { LiveLaunch } from "./control.ts";
 import { stopLaunch } from "./control.ts";
 import type { SessionLaunch, SessionRaw, Usage } from "./raw-results.ts";
-import { recordFacts } from "./raw-results.ts";
+import { addUsage, recordFacts } from "./raw-results.ts";
 import { sessionRoleOf } from "./roles.ts";
 
 // The context a session may pass once, to be steered (`soft`), and the one
@@ -38,6 +40,13 @@ interface ContextWatch {
   stopped: () => ContextStop | null;
 }
 
+// How a watched session ended: the result its records give, and its stop,
+// null when the watch didn't stop it.
+interface WatchedEnd {
+  raw: SessionRaw;
+  stop: ContextStop | null;
+}
+
 // The launch a stopped session ran for, with its reply's schema.
 interface StoppedLaunch extends SessionLaunch {
   outputSchema: JsonSchema;
@@ -55,6 +64,10 @@ function stopResultOf(agent: string): StopResult {
   }
   return "error";
 }
+
+// The line a retried session's task gains (#272).
+const READ_IN_PARTS =
+  "Your earlier session on this task passed the context limit and was stopped: read the diff in parts, one file or line range at a time, and keep your context small.";
 
 function steerText(context: number): string {
   return `Context is at ${context}. Stop now. Commit what builds, write the handoff file, and return \`handoff\`.`;
@@ -139,5 +152,37 @@ function contextStopped(
   }
 }
 
-export type { ContextLimits, ContextStop, ContextWatch, StopResult };
-export { contextStopped, turnContext, watchContext };
+// The task of the retry of a session stopped with result `error`, whose task
+// was `task`.
+function retryTask(task: string): string {
+  return `${task}\n\n${READ_IN_PARTS}`;
+}
+
+// The result of `launch` once its retry ended as `retry`, its first session
+// having spent `before`: the retry's own, or, if the retry passed `hard`
+// too, an error naming the overflow; either way with both sessions' usage.
+function retryResult(
+  launch: SessionLaunch,
+  retry: WatchedEnd,
+  before: Usage,
+): SessionRaw {
+  const results: SessionRaw["results"] = [
+    { usage: addUsage(before, retry.raw.results[0].usage) },
+  ];
+  const { stop } = retry;
+  if (stop === null) {
+    return { ...retry.raw, results };
+  }
+  const { key, agent } = launch;
+  const error = `context passed the hard limit (${stop.context}) twice`;
+  return { ok: false, structuredOutput: null, error, key, agent, results };
+}
+
+export type {
+  ContextLimits,
+  ContextStop,
+  ContextWatch,
+  StopResult,
+  WatchedEnd,
+};
+export { contextStopped, retryResult, retryTask, turnContext, watchContext };

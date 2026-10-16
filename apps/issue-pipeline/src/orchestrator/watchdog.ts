@@ -15,7 +15,7 @@
 
 import type { StatusFile } from "../job/status.ts";
 import type { StartGate } from "./schedule.ts";
-import { budgetActions } from "./watchdog-budget.ts";
+import { budgetActions, isLiveSession } from "./watchdog-budget.ts";
 import type { WatchMemory } from "./watchdog-memory.ts";
 
 const MS_PER_MINUTE = 60_000;
@@ -203,9 +203,7 @@ function silenceActions(
   now: Date,
 ): WatchAction[] {
   const actions: WatchAction[] = [];
-  const sessions = job.status.launches.filter(
-    (launch) => launch.kind === "session" && launch.outcome === null,
-  );
+  const sessions = job.status.launches.filter(isLiveSession);
   for (const launch of sessions) {
     const action = silenceAction(job, launch, memory, now);
     if (action !== null) {

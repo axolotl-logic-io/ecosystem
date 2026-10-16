@@ -27,7 +27,10 @@ process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(replies[reque
 // a response. On "prompt" it plays pi-script.json's events, writing each to
 // stdout and the session file as pi does, up to a "wait" mark, where it
 // pauses until "abort" (which settles it, aborted) or "steer" (which plays
-// the rest). With ignoreAbort it never answers an abort. A rejectPrompt
+// the rest). A script with `launches`, a list of event lists, plays
+// launches[n] on the n-th prompt across every pi process, counted in
+// prompts.count under FAKE_PI_ROOT, its last entry repeating once the list
+// runs out. With ignoreAbort it never answers an abort. A rejectPrompt
 // script rejects the prompt with that error. On the prompt, a `commit`
 // script first commits that file, relative to its cwd, in the repo holding
 // it, logging the commit's sha; an `untracked` script leaves that file
@@ -64,6 +67,15 @@ const work = () => {
     fs.writeFileSync(path.join(process.cwd(), script.untracked), "left\\n");
   }
 };
+const promptEvents = () => {
+  if (!script.launches) {
+    return script.events;
+  }
+  const counter = root + "/prompts.count";
+  const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8")) : 0;
+  fs.writeFileSync(counter, String(n + 1));
+  return script.launches[Math.min(n, script.launches.length - 1)];
+};
 let rest = null;
 const play = (events) => {
   const at = events.indexOf("wait");
@@ -84,7 +96,7 @@ const handle = (command) => {
   } else if (command.type === "prompt") {
     respond(command, { success: true, data: { disposition: "started" } });
     work();
-    play(script.events);
+    play(promptEvents());
   } else if (command.type === "abort" && !script.ignoreAbort) {
     respond(command, { success: true });
     if (rest !== null) {
@@ -175,4 +187,12 @@ function outputEnd(details) {
   };
 }
 
-export { FAKE_OPS, FAKE_PI, messageEnd, outputEnd, toolEnd, turns };
+export {
+  FAKE_OPS,
+  FAKE_PI,
+  messageEnd,
+  outputEnd,
+  TURN_OUTPUT,
+  toolEnd,
+  turns,
+};

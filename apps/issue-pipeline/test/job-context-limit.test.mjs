@@ -2,7 +2,8 @@
 // (#271): a writer whose turn context passes `soft` is steered once to hand
 // off, any session past `hard` is stopped, and job.json records each
 // session's peak turn context and its stop. A stopped writer hands off; any
-// other session fails. Each async test has a timeout so a session the job
+// other session is retried once (#272), and fails if the retry is stopped
+// too. Each async test has a timeout so a session the job
 // never stops fails the test instead of hanging at the fake pi's "wait".
 import assert from "node:assert/strict";
 import { test } from "node:test";
