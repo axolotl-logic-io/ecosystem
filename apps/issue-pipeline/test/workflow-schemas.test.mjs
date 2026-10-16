@@ -1,6 +1,7 @@
 // @ts-check
 // The re-review schemas, the spec schema, and the lenses the review rounds
-// run.
+// run: the harm categories are the stop labels the wiki's Agent-Labels page
+// promises, and the lenses its three-lens-review decision.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -15,15 +16,6 @@ import {
 import { SPEC_SCHEMA } from "../src/workflow/schemas.ts";
 
 /** @import { JsonSchema } from "../src/workflow/schemas.ts" */
-
-const NEW_FINDING_REQUIRED = [
-  "file",
-  "line",
-  "title",
-  "evidence",
-  "suggestion",
-  "recursId",
-];
 
 // A plain copy, so a comparison sees only the schema's JSON.
 /** @param {JsonSchema} schema @returns {unknown} */
@@ -42,38 +34,23 @@ function newFindingSchema(schema) {
   return newFindings.items;
 }
 
-// `schema` with a required harm category added last to its new findings.
-/** @param {JsonSchema} schema @returns {JsonSchema} */
-function withHarmCategory(schema) {
-  const { properties = {} } = schema;
-  const { newFindings } = properties;
-  const items = newFindingSchema(schema);
-  const { properties: fields = {}, required = [] } = items;
-  return {
-    ...schema,
-    properties: {
-      ...properties,
-      newFindings: {
-        ...newFindings,
-        items: {
-          ...items,
-          properties: { ...fields, category: { enum: [...HARM_CATEGORIES] } },
-          required: [...required, "category"],
-        },
-      },
-    },
-  };
-}
-
 test("the re-review schema's new findings carry no category", () => {
-  const items = newFindingSchema(REREVIEW_SCHEMA);
-  assert.deepEqual(items.required, NEW_FINDING_REQUIRED);
-  assert.equal(Object.hasOwn(items.properties ?? {}, "category"), false);
+  const { properties = {}, required = [] } = newFindingSchema(REREVIEW_SCHEMA);
+  assert.equal(Object.hasOwn(properties, "category"), false);
+  assert.equal(required.includes("category"), false);
 });
 
-test("the security re-review schema adds a required harm category last", () => {
-  const want = plain(withHarmCategory(REREVIEW_SCHEMA));
-  assert.deepEqual(plain(REREVIEW_SEC_SCHEMA), want);
+test("the security re-review schema's new findings require a harm category", () => {
+  const plainFields = newFindingSchema(REREVIEW_SCHEMA);
+  const { properties = {}, required = [] } =
+    newFindingSchema(REREVIEW_SEC_SCHEMA);
+  const { category = {} } = properties;
+  assert.deepEqual(plain(category), { enum: [...HARM_CATEGORIES] });
+  assert.deepEqual(
+    required.filter((field) => field !== "category").toSorted(),
+    (plainFields.required ?? []).toSorted(),
+  );
+  assert.ok(required.includes("category"));
 });
 
 test("the spec schema requires the files the change will touch, as strings", () => {

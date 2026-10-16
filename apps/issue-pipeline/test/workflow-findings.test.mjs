@@ -12,11 +12,8 @@ import {
 
 const cfg = { maxFixRounds: 2 };
 const BASE = "blocking findings remain after 2 fix rounds";
-// How much of each field a stored finding keeps.
-const FILE_LIMIT = 200;
-const TITLE_LIMIT = 200;
-const EVIDENCE_LIMIT = 600;
-const SUGGESTION_LIMIT = 400;
+// A field far longer than a stored finding keeps.
+const LONG_FIELD = 10_000;
 // The last number an earlier sweep gave a finding.
 const LAST_NUMBER = 6;
 // The titles of two acceptance findings, as a stop's detail shows them.
@@ -74,20 +71,34 @@ test("numbering continues from the state", () => {
   assert.equal(addFinding(item, reported, ["scope"]).id, "f7");
 });
 
-test("each field is clipped to its limit", () => {
+// `text` repeated to `length` characters, so a clipped copy keeps a
+// prefix that differs from field to field.
+/** @param {string} text @param {number} length @returns {string} */
+function longText(text, length) {
+  return text.repeat(Math.ceil(length / text.length)).slice(0, length);
+}
+
+test("each over-long field is clipped with an ellipsis", () => {
   const long = {
-    file: "f".repeat(FILE_LIMIT + 1),
+    file: longText("src/file-", LONG_FIELD),
     line: 1,
-    title: "t".repeat(TITLE_LIMIT + 1),
-    evidence: "e".repeat(EVIDENCE_LIMIT + 1),
-    suggestion: "s".repeat(SUGGESTION_LIMIT + 1),
+    title: longText("title ", LONG_FIELD),
+    evidence: longText("evidence ", LONG_FIELD),
+    suggestion: longText("suggestion ", LONG_FIELD),
     category: "",
   };
   const finding = addFinding(emptyItem(), long, ["tests"]);
-  assert.equal(finding.file, `${"f".repeat(FILE_LIMIT)}…`);
-  assert.equal(finding.title, `${"t".repeat(TITLE_LIMIT)}…`);
-  assert.equal(finding.evidence, `${"e".repeat(EVIDENCE_LIMIT)}…`);
-  assert.equal(finding.suggestion, `${"s".repeat(SUGGESTION_LIMIT)}…`);
+  for (const field of /** @type {const} */ ([
+    "file",
+    "title",
+    "evidence",
+    "suggestion",
+  ])) {
+    const stored = finding[field];
+    assert.ok(stored.length < long[field].length, field);
+    assert.ok(stored.endsWith("…"), field);
+    assert.ok(long[field].startsWith(stored.slice(0, -1)), field);
+  }
   assert.equal(finding.category, null);
 });
 

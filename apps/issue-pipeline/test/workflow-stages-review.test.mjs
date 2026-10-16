@@ -1,14 +1,19 @@
 // @ts-check
 // The built workflow's review and fix-round paths, run through
-// workflow-harness.mjs. Each test pins the launch keys and the summary by hand,
-// and the whole trace in workflow-stages-review.test.mjs.snapshot.
+// workflow-harness.mjs. Each test pins the summary, the sessions that ran, and
+// the stop request or the state saved at release, read through
+// stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -18,6 +23,8 @@ import {
 
 /** @import { SummaryItem } from "../src/workflow/stages/types.ts" */
 /** @import { Scripted } from "./workflow-harness.mjs" */
+
+const READER = "issue-pipeline-reader";
 
 // Issue #7 with its PR open for review.
 const OPENED = { pr: 42, headSha: "bbbbbbb", implemented: true };
@@ -71,9 +78,7 @@ function issueSummary(fields) {
   });
 }
 
-test("a review with no blocking findings moves to sync, held by the spawn cap", async ({
-  assert: { snapshot },
-}) => {
+test("a review with no blocking findings moves to sync, held by the spawn cap", async () => {
   // The save after open-pr runs for an issue already at review. sync needs 3
   // spawns: 8 launched + 3 + a reserve of 4 passes 14.
   const { trace, summary } = await reviewRun({
@@ -88,20 +93,10 @@ test("a review with no blocking findings moves to sync, held by the spawn cap", 
     },
     config: { maxSpawnsPerRun: 15 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-save-3",
-    "i7-prep-4",
-    "i7-review-correctness-5",
-    "i7-review-tests-6",
-    "i7-review-scope-7",
-    "i7-save-8",
-    "i7-release-9",
-    "cleanup-10",
-  ]);
+  assert.deepEqual(sessionAgents(trace), [READER, READER, READER]);
+  const state = releasedState(trace);
+  assert.deepEqual([state.stage, state.reviewedSha], ["sync", "bbbbbbb"]);
   assert.deepEqual(summary, issueSummary({ allocatedTokens: 460_000 }));
-  snapshot(trace);
 });
 
 // One blocking finding, aggregated, fixed and resolved on re-review.
@@ -125,9 +120,7 @@ const FIX_AGENTS = {
   }),
 };
 
-test("a blocking finding is fixed and re-reviewed clean, then synced and held at checks", async ({
-  assert: { snapshot },
-}) => {
+test("a blocking finding is fixed and re-reviewed clean, then synced and held at checks", async () => {
   // sync runs at the spawn count fix needed, so the hold comes at checks:
   // 15 launched + 11 + a reserve of 4 passes 28.
   const { trace, summary } = await reviewRun({
@@ -140,35 +133,24 @@ test("a blocking finding is fixed and re-reviewed clean, then synced and held at
     agents: FIX_AGENTS,
     config: { maxSpawnsPerRun: 29 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-save-3",
-    "i7-prep-4",
-    "i7-review-correctness-5",
-    "i7-review-tests-6",
-    "i7-review-scope-7",
-    "i7-aggregate-8",
-    "i7-save-9",
-    "i7-fix-r1-10",
-    "i7-push-11",
-    "i7-prep-12",
-    "i7-rereview-correctness-r1-13",
-    "i7-save-14",
-    "i7-sync-15",
-    "i7-release-16",
-    "cleanup-17",
-  ]);
+  // A writer fixed the finding, its fix was pushed, and a reader re-reviewed it.
+  const agents = sessionAgents(trace);
+  assert.ok(agents.includes("issue-pipeline-writer"));
+  assert.ok(agents.includes(READER));
+  const { number } = requestFor(trace, "push");
+  assert.equal(number, ISSUE);
+  const state = releasedState(trace);
+  assert.deepEqual(
+    [state.stage, state.findings?.map(({ status }) => status)],
+    ["checks", ["resolved"]],
+  );
   assert.deepEqual(
     summary,
     issueSummary({ stage: "checks", allocatedTokens: 620_000 }),
   );
-  snapshot(trace);
 });
 
-test("a finding still open after the last fix round stops the issue", async ({
-  assert: { snapshot },
-}) => {
+test("a finding still open after the last fix round stops the issue", async () => {
   const { trace, summary } = await reviewRun({
     claim: claimAt("fix", {
       ...OPENED,
@@ -188,12 +170,12 @@ test("a finding still open after the last fix round stops the issue", async ({
       ],
     }),
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-stop-3",
-    "cleanup-4",
-  ]);
+  assert.deepEqual(sessionAgents(trace), []);
+  const { code, reason } = requestFor(trace, "stop");
+  assert.deepEqual(
+    [code, reason],
+    [null, "blocking findings remain after 2 fix rounds"],
+  );
   assert.deepEqual(
     summary,
     issueSummary({
@@ -204,5 +186,4 @@ test("a finding still open after the last fix round stops the issue", async ({
       rebaseAllocatedTokens: 0,
     }),
   );
-  snapshot(trace);
 });

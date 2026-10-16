@@ -3,7 +3,6 @@
 // the run's args, the ops replies every scenario needs, and builders for the
 // sweep and claim replies and for the summary the workflow returns.
 
-/** @import { TraceEntry } from "./workflow-harness.mjs" */
 /** @import { IssueState, ItemPaths } from "../src/workflow/types.ts" */
 
 // The run's args. The workflow reads its settings from the sweep reply.
@@ -124,16 +123,9 @@ function sweepSummary(fields = {}) {
   };
 }
 
-// The launch keys of a trace, in order.
-/** @param {readonly TraceEntry[]} trace @returns {string[]} */
-function launchKeys(trace) {
-  return trace.map(({ key }) => key);
-}
-
 export {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,

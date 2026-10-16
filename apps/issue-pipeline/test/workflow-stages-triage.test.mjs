@@ -1,14 +1,18 @@
 // @ts-check
 // The built workflow's triage paths, run through workflow-harness.mjs. Each
-// test pins the launch keys and the summary by hand, and the whole trace in
-// workflow-stages-triage.test.mjs.snapshot.
+// test pins the summary and the ops requests and saved state the triage
+// decision goes through, read through stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -17,6 +21,9 @@ import {
 } from "./workflow-stages-fixtures.mjs";
 
 /** @import { Scripted } from "./workflow-harness.mjs" */
+
+// The plan triage gives a ready issue.
+const PLAN = "Change src/a.ts and test it.";
 
 // The triage reply, with `fields` replacing the empty decision's.
 /** @param {object} fields @returns {object} */
@@ -51,27 +58,24 @@ function triageRun(triage, ops = {}, config = {}) {
   });
 }
 
-test("a ready issue gets a draft PR and is held at spec by the spawn cap", async ({
-  assert: { snapshot },
-}) => {
+test("a ready issue gets a draft PR and is held at spec by the spawn cap", async () => {
   // spec needs 3 spawns: 5 launched + 3 + a reserve of 4 passes 11.
   const { trace, summary } = await triageRun(
     triageReply({
       reason: "Small and clear.",
-      plan: "Change src/a.ts and test it.",
+      plan: PLAN,
     }),
     { "start-pr": { ok: true, pr: 42, headSha: "aaaaaaa" } },
     { maxSpawnsPerRun: 12 },
   );
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-triage-3",
-    "i7-startpr-4",
-    "i7-save-5",
-    "i7-release-6",
-    "cleanup-7",
-  ]);
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-reader"]);
+  const { plan } = requestFor(trace, "start-pr");
+  assert.equal(plan, PLAN);
+  const state = releasedState(trace);
+  assert.deepEqual(
+    { stage: state.stage, pr: state.pr, plan: state.plan },
+    { stage: "spec", pr: 42, plan: PLAN },
+  );
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -88,22 +92,21 @@ test("a ready issue gets a draft PR and is held at spec by the spawn cap", async
       ],
     }),
   );
-  snapshot(trace);
 });
 
-test("a rejected issue is stopped with the reason", async ({
-  assert: { snapshot },
-}) => {
+test("a rejected issue is stopped with the reason", async () => {
   const { trace, summary } = await triageRun(
     triageReply({ decision: "reject", reason: "A design debate." }),
   );
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-triage-3",
-    "i7-stop-4",
-    "cleanup-5",
-  ]);
+  const { code, reason, detail } = requestFor(trace, "stop");
+  assert.deepEqual(
+    [code, reason, detail],
+    [
+      null,
+      "triage rejected the issue for the agent pipeline",
+      "A design debate.",
+    ],
+  );
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -120,12 +123,9 @@ test("a rejected issue is stopped with the reason", async ({
       ],
     }),
   );
-  snapshot(trace);
 });
 
-test("a large issue at depth 0 is split into its sub-issues", async ({
-  assert: { snapshot },
-}) => {
+test("a large issue at depth 0 is split into its sub-issues", async () => {
   const subIssues = [
     { title: "First part", body: "Do the first part.", after: [] },
     { title: "Second part", body: "Do the second part.", after: [0] },
@@ -134,13 +134,9 @@ test("a large issue at depth 0 is split into its sub-issues", async ({
     triageReply({ decision: "split", reason: "Too big.", subIssues }),
     { split: { ok: true } },
   );
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-triage-3",
-    "i7-split-4",
-    "cleanup-5",
-  ]);
+  const { subIssues: requested } = requestFor(trace, "split");
+  assert.deepEqual(requested, subIssues);
+  assert.throws(() => releasedState(trace));
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -157,5 +153,4 @@ test("a large issue at depth 0 is split into its sub-issues", async ({
       ],
     }),
   );
-  snapshot(trace);
 });

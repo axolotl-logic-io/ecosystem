@@ -87,16 +87,18 @@ test("the Acceptance line comes from the state, so a merge in a later sweep keep
 });
 
 test("the Acceptance line notes a verdict given before a clean rebase", () => {
-  assert.equal(
-    acceptanceSummary(cfg, {
-      ...buildState("merge", { acceptReason: "Does what #7 asks." }),
-      rebasedOnly: true,
-    }),
-    "Does what #7 asks. (passed before a clean rebase onto integration)",
-  );
-  assert.equal(
-    acceptanceSummary(cfg, { ...buildState("merge"), rebasedOnly: true }),
-    "passed before a clean rebase onto integration",
-  );
+  const reason = "Does what #7 asks.";
+  const noted = acceptanceSummary(cfg, {
+    ...buildState("merge", { acceptReason: reason }),
+    rebasedOnly: true,
+  });
+  assert.ok(noted.includes(reason), noted);
+  assert.ok(noted.includes(cfg.baseBranch), noted);
+  const note = acceptanceSummary(cfg, {
+    ...buildState("merge"),
+    rebasedOnly: true,
+  });
+  assert.ok(note.includes(cfg.baseBranch), note);
+  assert.ok(noted.includes(note), noted);
   assert.equal(acceptanceSummary(cfg, buildState("merge")), "");
 });

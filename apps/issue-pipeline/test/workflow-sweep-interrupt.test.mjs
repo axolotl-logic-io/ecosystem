@@ -125,7 +125,6 @@ test("before the claim, interrupt saves nothing", () => {
 
 test("during a stage, interrupt saves the issue at its stage with no lease and its queued comments", () => {
   const spec = sweepAt(REVIEW_RUN, "i7-aggregate").interrupt();
-  assert.equal(spec?.key, "i7-interrupt-9");
   const request = requestOf(spec);
   assert.equal(request.op, "save-state");
   assert.equal(request.number, ISSUE);

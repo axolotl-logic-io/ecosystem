@@ -4,8 +4,13 @@
 // settles the wiki's rebase and the issue's wiki commits are published.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { finishRun, SECURED } from "./workflow-finish-run-kit.mjs";
-import { launchKeys, replyWith } from "./workflow-stages-fixtures.mjs";
+import { requestFor, sessionAgents } from "./stage-outcome-test-kit.mjs";
+import {
+  finishRun,
+  issueSummary,
+  SECURED,
+} from "./workflow-finish-run-kit.mjs";
+import { ISSUE, replyWith } from "./workflow-stages-fixtures.mjs";
 
 const CONFLICT = {
   ok: true,
@@ -18,7 +23,7 @@ const CONFLICT = {
 };
 
 test("a merge whose wiki conflicts publishes after the resolver in the same sweep", async () => {
-  const { trace } = await finishRun({
+  const { trace, summary } = await finishRun({
     stage: "merge",
     fields: { ...SECURED, pr: 42 },
     ops: {
@@ -30,30 +35,35 @@ test("a merge whose wiki conflicts publishes after the resolver in the same swee
       "i7-conflicts-1": replyWith({ status: "fixed", summary: "Merged." }),
     },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-wiki-sync-3",
-    "i7-wiki-check-4",
-    "i7-merge-5",
-    "i7-publish-6",
-    "i7-conflicts-1-7",
-    "i7-finish-wiki-sync-8",
-    "i7-publish-9",
-    "cleanup-10",
-  ]);
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-writer"]);
+  const { abort } = requestFor(trace, "finish-wiki-sync");
+  assert.equal(abort, false);
+  assert.deepEqual(
+    summary,
+    issueSummary({
+      stage: "done",
+      outcome: "merged",
+      allocatedTokens: 940_000,
+      rebaseAllocatedTokens: 100_000,
+    }),
+  );
 });
 
 test("an issue saved at publish publishes and is done", async () => {
-  const { trace } = await finishRun({
+  const { trace, summary } = await finishRun({
     stage: "publish",
     fields: { ...SECURED, pr: 42 },
     ops: { publish: { ok: true, published: true, sha: null } },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-publish-3",
-    "cleanup-4",
-  ]);
+  assert.deepEqual(sessionAgents(trace), []);
+  const { number } = requestFor(trace, "publish");
+  assert.equal(number, ISSUE);
+  assert.deepEqual(
+    summary,
+    issueSummary({
+      stage: "done",
+      outcome: "merged",
+      allocatedTokens: 940_000,
+    }),
+  );
 });

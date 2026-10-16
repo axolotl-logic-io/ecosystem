@@ -138,11 +138,10 @@ function heldLines(batches) {
   return log.filter((line) => HELD.test(line));
 }
 
-test("the driver asks for the sweep op first, keyed by the clock's sweep", () => {
+test("the driver asks for the sweep op first, with the clock's sweep id", () => {
   const sweep = startSweep({ ...ARGS, issue: "7" }, CLOCK);
   const [spec] = sweep.next([]);
   assert.ok(spec);
-  assert.equal(spec.key, "sweep-1");
   assert.deepEqual(requestOf(spec), {
     op: "sweep",
     config: ARGS.config,

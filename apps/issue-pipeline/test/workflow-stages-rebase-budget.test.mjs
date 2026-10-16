@@ -1,16 +1,21 @@
 // The rebase pool (`rebaseTokenBudget`) through the built workflow, run with
 // workflow-harness.mjs: conflict resolvers, and the re-checks after a rebase
 // the merge stage asked for, are charged to it rather than to the issue's
-// budget. Each test pins the launch keys and the summary by hand, and the
-// whole trace in workflow-stages-rebase-budget.test.mjs.snapshot.
+// budget. Each test pins the summary, the sessions that ran, and the ops
+// requests and saved state the outcome goes through, read through
+// stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { stopFor } from "../src/stops.ts";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -55,7 +60,6 @@ const CONFLICT = {
 
 /** @import { FinishRun } from "./workflow-finish-run-kit.mjs" */
 /** @import { TraceEntry } from "./workflow-harness.mjs" */
-/** @typedef {{ op?: string, keepConflict?: boolean, reason?: string, detail?: string }} TracedRequest */
 
 // A run of issue #7 claimed at `stage` with `fields`, with ops and agents.
 /** @param {FinishRun} run @returns {Promise<{ trace: TraceEntry[], summary: unknown }>} */
@@ -89,23 +93,7 @@ function issueSummary(fields) {
   });
 }
 
-// The ops requests of the run's launches, {} for a session.
-/** @param {readonly TraceEntry[]} trace @returns {TracedRequest[]} */
-function requestsOf(trace) {
-  return trace.map(
-    (entry) => /** @type {TracedRequest} */ (entry.request ?? {}),
-  );
-}
-
-// The request of the run's stop launch.
-/** @param {readonly TraceEntry[]} trace @returns {TracedRequest} */
-function stopRequest(trace) {
-  return requestsOf(trace).find(({ op }) => op === "stop") ?? {};
-}
-
-test("an issue near its budget still gets the resolver after a merge sent it back", async ({
-  assert: { snapshot },
-}) => {
+test("an issue near its budget still gets the resolver after a merge sent it back", async () => {
   // checks needs 11 spawns: 5 launched + 11 + a reserve of 4 passes 19.
   const { trace, summary } = await rebaseRun({
     stage: "sync",
@@ -122,26 +110,17 @@ test("an issue near its budget still gets the resolver after a merge sent it bac
     },
     config: { maxSpawnsPerRun: 19 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-sync-3",
-    "i7-conflicts-1-4",
-    "i7-finish-sync-5",
-    "i7-release-6",
-    "cleanup-7",
-  ]);
-  assert.equal(requestsOf(trace)[2]?.keepConflict, true);
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-writer"]);
+  assert.equal(releasedState(trace).stage, "checks");
+  const { keepConflict } = requestFor(trace, "sync-base");
+  assert.equal(keepConflict, true);
   assert.deepEqual(
     summary,
     issueSummary({ stage: "checks", rebaseAllocatedTokens: RESOLVER }),
   );
-  snapshot(trace);
 });
 
-test("a re-check's verifier and security reviewer are charged to the rebase pool", async ({
-  assert: { snapshot },
-}) => {
+test("a re-check's verifier and security reviewer are charged to the rebase pool", async () => {
   // security needs 3 spawns: 4 launched + 3 + a reserve of 4 fits 12; merge
   // then needs 2: 7 launched + 2 + a reserve of 4 passes 12.
   const { trace, summary } = await rebaseRun({
@@ -154,17 +133,11 @@ test("a re-check's verifier and security reviewer are charged to the rebase pool
     },
     config: { maxSpawnsPerRun: 12 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-prep-3",
-    "i7-accept-4",
-    "i7-prep-5",
-    "i7-security-6",
-    "i7-save-7",
-    "i7-release-8",
-    "cleanup-9",
+  assert.deepEqual(sessionAgents(trace), [
+    "issue-pipeline-reader",
+    "issue-pipeline-reader",
   ]);
+  assert.equal(releasedState(trace).stage, "merge");
   assert.deepEqual(
     summary,
     issueSummary({
@@ -172,27 +145,18 @@ test("a re-check's verifier and security reviewer are charged to the rebase pool
       rebaseAllocatedTokens: RESOLVER + VERIFIER + REVIEWER,
     }),
   );
-  snapshot(trace);
 });
 
-test("a re-check stops when the rebase allowance runs out", async ({
-  assert: { snapshot },
-}) => {
+test("a re-check stops when the rebase allowance runs out", async () => {
   const spent = { ...RECHECKED, rebaseAllocated: 460_000 };
   const { trace, summary } = await rebaseRun({
     stage: "accept",
     fields: spent,
     ops: PREPARED,
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-prep-3",
-    "i7-stop-4",
-    "cleanup-5",
-  ]);
-  const { reason, detail } = stopRequest(trace);
-  assert.equal(reason, "rebase token budget exhausted");
+  assert.deepEqual(sessionAgents(trace), []);
+  const { code, reason, detail } = requestFor(trace, "stop");
+  assert.deepEqual([code, reason], [null, "rebase token budget exhausted"]);
   assert.equal(
     detail,
     "Allocated 460000 of 500000 rebase tokens (rebaseTokenBudget); the next step (verifier) needs 60000.",
@@ -206,29 +170,21 @@ test("a re-check stops when the rebase allowance runs out", async ({
       rebaseAllocatedTokens: spent.rebaseAllocated,
     }),
   );
-  snapshot(trace);
 });
 
-test("a conflict the rebase pool can't pay a resolver for is a budget stop", async ({
-  assert: { snapshot },
-}) => {
+test("a conflict the rebase pool can't pay a resolver for is a budget stop", async () => {
   const spent = { ...SENT_BACK, rebaseAllocated: 450_000, conflictFixes: 0 };
   const { trace, summary } = await rebaseRun({
     stage: "sync",
     fields: spent,
     ops: { "sync-base": { ...CONFLICT, inRebase: false } },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-sync-3",
-    "i7-stop-4",
-    "cleanup-5",
-  ]);
-  assert.equal(requestsOf(trace)[2]?.keepConflict, false);
-  const { reason, detail } = stopRequest(trace);
-  assert.equal(reason, "rebase token budget exhausted");
-  assert.equal(stopFor(reason)?.code, "budget");
+  assert.deepEqual(sessionAgents(trace), []);
+  const { keepConflict } = requestFor(trace, "sync-base");
+  assert.equal(keepConflict, false);
+  const { code, reason, detail } = requestFor(trace, "stop");
+  assert.deepEqual([code, reason], [null, "rebase token budget exhausted"]);
+  assert.equal(stopFor(String(reason))?.code, "budget");
   assert.equal(
     detail,
     "Allocated 450000 of 500000 rebase tokens (rebaseTokenBudget); the next step (fixer) needs 100000.\n\nConflicting files:\nsrc/a.ts",
@@ -242,5 +198,4 @@ test("a conflict the rebase pool can't pay a resolver for is a budget stop", asy
       rebaseAllocatedTokens: spent.rebaseAllocated,
     }),
   );
-  snapshot(trace);
 });

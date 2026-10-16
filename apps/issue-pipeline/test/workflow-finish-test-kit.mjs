@@ -157,7 +157,6 @@ function taskOf(role, cap, lines) {
 }
 
 export {
-  CFG,
   CTX,
   contextWith,
   DIFF,

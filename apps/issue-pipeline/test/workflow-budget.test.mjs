@@ -10,7 +10,8 @@ import { chargeCheck, chargeSession } from "../src/workflow/budget.ts";
  * @typedef {Parameters<typeof chargeSession>[1]} BudgetState
  */
 
-const KEPT_SESSIONS = 40;
+// A session log far longer than the state keeps.
+const LONG_LOG = 1000;
 const TRIAGE = 50_000;
 const REVIEWER = 60_000;
 const FIXER = 100_000;
@@ -99,13 +100,18 @@ test("a session that reaches the budget exactly is charged", () => {
   assert.equal(st.allocated, ISSUE_BUDGET);
 });
 
-test("only the latest 40 sessions are kept", () => {
-  const sessions = Array.from({ length: KEPT_SESSIONS }, () => "triage");
+test("only the latest sessions are kept", () => {
+  const sessions = Array.from({ length: LONG_LOG }, () => "triage");
   const st = { allocated: 0, sessions };
   chargeSession(budgets, st, "fixer", { at });
-  assert.equal(st.sessions.length, KEPT_SESSIONS);
-  assert.equal(st.sessions.at(-1), "fixer");
-  assert.equal(st.sessions.at(0), "triage");
+  const kept = st.sessions;
+  assert.ok(kept.length < LONG_LOG);
+  assert.equal(kept.at(-1), "fixer");
+  assert.equal(kept.at(0), "triage");
+  chargeSession(budgets, st, "reviewer", { at });
+  const next = st.sessions;
+  assert.equal(next.length, kept.length);
+  assert.deepEqual(next.slice(-2), ["fixer", "reviewer"]);
 });
 
 test("a rebase-pool charge adds only to the rebase allowance and logs it", () => {

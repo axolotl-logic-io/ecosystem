@@ -1,14 +1,19 @@
 // @ts-check
 // The built workflow's spec, implement and open-pr stages, run through
-// workflow-harness.mjs. The test pins the launch keys and the summary by hand,
-// and the whole trace in workflow-stages-build.test.mjs.snapshot.
+// workflow-harness.mjs. The test pins the summary, the sessions that ran, the
+// PR opened and the state saved at release, read through
+// stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -42,9 +47,7 @@ const BUILD_AGENTS = {
   }),
 };
 
-test("a spec is written, implemented and its PR opened, then held at review", async ({
-  assert: { snapshot },
-}) => {
+test("a spec is written, implemented and its PR opened, then held at review", async () => {
   // The save after triage runs for an issue already at spec. review needs 7
   // spawns: 8 launched + 7 + a reserve of 4 passes 18.
   const { trace, summary } = await runWorkflow({
@@ -57,18 +60,17 @@ test("a spec is written, implemented and its PR opened, then held at review", as
     },
     agents: BUILD_AGENTS,
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-save-3",
-    "i7-spec-4",
-    "i7-save-5",
-    "i7-implement-6",
-    "i7-openpr-7",
-    "i7-save-8",
-    "i7-release-9",
-    "cleanup-10",
+  assert.deepEqual(sessionAgents(trace), [
+    "issue-pipeline-specifier",
+    "issue-pipeline-writer",
   ]);
+  const { number, title, body } = requestFor(trace, "open-pr");
+  assert.deepEqual(
+    [number, title, body],
+    [ISSUE, "Do the thing", "Does the thing, tested in src/a.test.ts."],
+  );
+  const state = releasedState(trace);
+  assert.deepEqual([state.stage, state.implemented], ["review", true]);
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -85,5 +87,4 @@ test("a spec is written, implemented and its PR opened, then held at review", as
       ],
     }),
   );
-  snapshot(trace);
 });

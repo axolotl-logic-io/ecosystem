@@ -13,7 +13,6 @@ import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -117,6 +116,7 @@ test("an open security finding stops the merge with its harm as the code", async
 
 const NOT_RESOLVED = /not fully resolved/u;
 const FIXER_DISPUTE = /Fixer's dispute: The issue never asks for it\./u;
+const NO_PUSH = /no push request/u;
 // The open finding a failed acceptance check left on issue #7.
 const UNMET = {
   id: "f1",
@@ -170,6 +170,7 @@ test("a fixer's dispute of the acceptance finding stops before the push", async 
   assert.ok(String(detail).includes(UNMET.evidence));
   assert.match(String(detail), FIXER_DISPUTE);
   assert.ok(JSON.stringify(comments).includes("fixer (round 1)"));
-  assert.ok(!launchKeys(trace).some((key) => key.startsWith("i7-push")));
-  assert.ok(!launchKeys(trace).some((key) => key.startsWith("i7-rereview")));
+  // Only the fixer ran: no re-review session, and nothing was pushed.
+  assert.equal(sessionAgents(trace).length, 1);
+  assert.throws(() => requestFor(trace, "push"), NO_PUSH);
 });

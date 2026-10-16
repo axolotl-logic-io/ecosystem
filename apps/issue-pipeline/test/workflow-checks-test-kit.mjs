@@ -127,17 +127,6 @@ function sessionResult(name, structuredOutput) {
   };
 }
 
-/** @param {string} name @param {string} error @returns {ChildResult} */
-function failedSession(name, error) {
-  return {
-    kind: "child",
-    ok: false,
-    structuredOutput: null,
-    error,
-    by: signedAs(name),
-  };
-}
-
 // The step after `step`'s launches return `results`, by `next`.
 /**
  * @param {StageMachine["next"]} next @param {Step} step @param {StageContext} ctx
@@ -168,10 +157,8 @@ export {
   after,
   CTX,
   contextWith,
-  failedSession,
   MODELS,
   PATHS,
-  ROLES,
   replied,
   STAMP,
   sessionResult,
