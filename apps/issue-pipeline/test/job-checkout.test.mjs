@@ -30,6 +30,8 @@ import {
 
 const STOPPED_BY_SIGTERM = 143;
 const ISSUE = 7;
+// The issue a stacked #7's branch starts on.
+const PREREQ = 5;
 const PUSH_FAILED = /job: exit push: /u;
 const EXIT_STEP_FAILED = /job: exit: /u;
 const BRANCH = "refs/heads/agent/issue-7";
@@ -84,6 +86,39 @@ test("the checkout of an issue with a branch on origin starts at its head", () =
   assert.equal(r.status, 0, r.stderr);
   const [start] = piStarts(place);
   assert.equal(start.head, earlier);
+});
+
+test("a checkout made with --stack-on starts at the prerequisite's head, and the claim asks to stack", () => {
+  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  const prereqHead = branchOnOrigin(place.origin, PREREQ);
+  const r = runJob(place, ["--stage", "spec", "--stack-on", String(PREREQ)]);
+  assert.equal(r.status, 0, r.stderr);
+  const [start] = piStarts(place);
+  assert.equal(start.head, prereqHead);
+  const claims = logOf(place, "ops.log").filter(({ op }) => op === "claim");
+  assert.deepEqual(
+    claims.map(({ stackOn }) => stackOn),
+    [PREREQ],
+  );
+});
+
+test("a checkout made with --stack-on of an issue with its own branch starts on that branch", () => {
+  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  branchOnOrigin(place.origin, PREREQ);
+  const own = branchOnOrigin(place.origin);
+  const r = runJob(place, ["--stage", "spec", "--stack-on", String(PREREQ)]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(piStarts(place)[0].head, own);
+});
+
+test("a writer's stacked checkout with no commits of its own pushes nothing", () => {
+  const place = setUp(pushingRepliesAt("implement"), SPEC_SESSION);
+  branchOnOrigin(place.origin, PREREQ);
+  const args = ["--stage", "implement", "--stack-on", String(PREREQ)];
+  const r = runJob(place, args);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(pushes(place), []);
+  assert.equal(refOf(place.origin, BRANCH), "");
 });
 
 test("a job stopped by SIGTERM exits 143 and removes its checkout", async () => {

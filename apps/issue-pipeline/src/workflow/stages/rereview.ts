@@ -14,6 +14,7 @@ import type { Finding, IssueState } from "../types.ts";
 import type { NewFinding, RereviewReply } from "./review-replies.ts";
 import { rereviewReplyOf } from "./review-replies.ts";
 import { rereviewComment, rereviewTask } from "./review-text.ts";
+import { prepareLaunch } from "./stacked.ts";
 import {
   codedStopStep,
   copyState,
@@ -60,13 +61,9 @@ function prepTag(st: IssueState, round: number): string {
 // Prepares the diff since the last review for the fix round's re-reviewers.
 function prepareRereview(state: StageState): Step {
   const { st } = state;
-  const payload = {
-    number: state.n,
-    sinceSha: st.reviewedSha,
-    tag: prepTag(st, roundOf(state)),
-  };
+  const fields = { sinceSha: st.reviewedSha, tag: prepTag(st, roundOf(state)) };
   return launchStep({ ...state, phase: "prepared" }, [
-    { kind: "op", name: "prep", op: "prepare-review", payload },
+    prepareLaunch(state, fields),
   ]);
 }
 

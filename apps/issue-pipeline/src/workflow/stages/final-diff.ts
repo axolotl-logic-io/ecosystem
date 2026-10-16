@@ -4,6 +4,7 @@
 
 import { opFailedStep } from "./network.ts";
 import { textOrNull } from "./replies.ts";
+import { prepareLaunch } from "./stacked.ts";
 import { onlyReply, stopStep } from "./step.ts";
 import type {
   LaunchResult,
@@ -21,12 +22,7 @@ type FinalDiff =
 
 // The ops request that prepares the diff, its files tagged `tag`.
 function finalDiffLaunch(state: StageState, tag: string): OpLaunch {
-  return {
-    kind: "op",
-    name: "prep",
-    op: "prepare-review",
-    payload: { number: state.n, tag },
-  };
+  return prepareLaunch(state, { tag });
 }
 
 // The diff from the reply to finalDiffLaunch. A request that failed on the

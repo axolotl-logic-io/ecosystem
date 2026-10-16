@@ -1,17 +1,24 @@
 // What a rebase that stopped on conflicts is rebasing: the issue's code onto
-// the base branch, or its wiki commits onto the wiki's branch. The conflict
+// the base branch or the branch it is stacked on (stacked.ts), or its wiki
+// commits onto the wiki's branch. The conflict
 // resolution (sync-conflict.ts) is the same for both; this module holds what
 // differs: the resolver's instructions, the request that finishes the
 // rebase, and the words the comments use.
 
 import { isRecord } from "./checks-reply.ts";
+import type { StackedOn } from "./stacked.ts";
+import { stackedOnOf, stackFields, syncOnto } from "./stacked.ts";
 import type { StageState } from "./types.ts";
 
 const SHORT_SHA = 12;
 
-// The code worktree's branch onto the repo's base branch, or the wiki
-// checkout's commits onto the wiki's `branch`.
-type ConflictTarget = { kind: "code" } | { kind: "wiki"; branch: string };
+// The code worktree's branch onto the repo's base branch, or for a stacked
+// issue onto what `stackedOn` says the sync targeted (null: the base, as its
+// prerequisite merged), or the wiki checkout's commits onto the wiki's
+// `branch`.
+type ConflictTarget =
+  | { kind: "code"; stackedOn?: StackedOn | null }
+  | { kind: "wiki"; branch: string };
 
 const CODE_TARGET: ConflictTarget = { kind: "code" };
 
@@ -20,6 +27,10 @@ const CODE_TARGET: ConflictTarget = { kind: "code" };
 function targetOf(value: unknown): ConflictTarget {
   if (isRecord(value)) {
     const { kind, branch } = value;
+    const stackedOn = stackedOnOf(value);
+    if (kind === "code" && stackedOn !== undefined) {
+      return { kind, stackedOn };
+    }
     if (kind === "code") {
       return CODE_TARGET;
     }
@@ -34,7 +45,7 @@ function targetOf(value: unknown): ConflictTarget {
 function ontoText(target: ConflictTarget, baseBranch: string): string {
   switch (target.kind) {
     case "code":
-      return baseBranch;
+      return syncOnto(target.stackedOn, baseBranch);
     case "wiki":
       return `the wiki's ${target.branch}`;
     default: {
@@ -52,9 +63,10 @@ interface Finish {
   baseSha: unknown;
 }
 
-// The ops request that finishes, or aborts, the resolved rebase. A code
-// rebase's is checked against the base it stopped on, `baseSha`, when it
-// is known (#279).
+// The ops request that finishes, or aborts, the resolved rebase. A stacked
+// issue's code rebase is checked against what its sync targeted, its
+// `stackedOn`; any other code rebase's against the base it stopped on,
+// `baseSha`, when it is known (#279).
 function finishRequest(
   target: ConflictTarget,
   { number, abort, reason, baseSha }: Finish,
@@ -62,10 +74,10 @@ function finishRequest(
   const payload = { number, abort, reason };
   switch (target.kind) {
     case "code":
-      if (typeof baseSha === "string" && baseSha !== "") {
-        return { op: "finish-sync", payload: { ...payload, baseSha } };
-      }
-      return { op: "finish-sync", payload };
+      return {
+        op: "finish-sync",
+        payload: codeFinish(target, payload, baseSha),
+      };
     case "wiki":
       return { op: "finish-wiki-sync", payload };
     default: {
@@ -73,6 +85,22 @@ function finishRequest(
       return unhandled;
     }
   }
+}
+
+// finish-sync's payload: `payload` and what the rebase is checked against.
+function codeFinish(
+  target: ConflictTarget & { kind: "code" },
+  payload: Readonly<Record<string, unknown>>,
+  baseSha: unknown,
+): Readonly<Record<string, unknown>> {
+  const { stackedOn } = target;
+  if (stackedOn !== null && stackedOn !== undefined) {
+    return { ...payload, ...stackFields(stackedOn) };
+  }
+  if (typeof baseSha === "string" && baseSha !== "") {
+    return { ...payload, baseSha };
+  }
+  return payload;
 }
 
 function codeTask(base: string, short: string, files: string): string[] {

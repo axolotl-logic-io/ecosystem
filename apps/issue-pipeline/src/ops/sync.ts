@@ -1,7 +1,9 @@
 // The issue branch against its base: prepare-review writes the diff a review
 // reads, sync-base rebases the branch onto the moved base, and finish-sync
 // checks a rebase a writer resolved against the base sync-base rebased onto
-// and pushes it. None of them calls gh.
+// and pushes it. A stacked branch (stack.ts) is measured against, and rebased
+// onto, its prerequisite's branch instead; only a stacked sync-base reads
+// GitHub, to learn whether that has merged.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -13,13 +15,11 @@ import { paths, wikiCfg } from "../config.ts";
 import { assertClean, fetchIn, head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
 import { parseRequest, run } from "../process.ts";
-import {
-  abortRebase,
-  rebaseInProgress,
-  rebaseProblem,
-  unmergedFiles,
-} from "../rebase.ts";
+import { abortRebase, rebaseInProgress, unmergedFiles } from "../rebase.ts";
+import type { StackedOn, SyncTarget } from "../stack.ts";
+import { measureFrom, STACKED_ON, syncTarget } from "../stack.ts";
 import { wikiDiff } from "../wiki.ts";
+import { finishProblem } from "./sync-finish.ts";
 
 interface ReviewReply {
   headSha: string;
@@ -29,12 +29,18 @@ interface ReviewReply {
   changedFiles: string[];
 }
 
+// A stacked sync's reply names what the branch is stacked on after it; an
+// unstacked one has no stackedOn.
+interface Stacked {
+  stackedOn?: StackedOn | null;
+}
+
 type SyncReply =
-  | ({ changed: false; conflict: false; headSha: string } & BranchChanges)
-  | ({ changed: true; conflict: false; headSha: string } & BranchChanges)
+  | ({ changed: boolean; conflict: false; headSha: string } & BranchChanges &
+      Stacked)
   | SyncConflict;
 
-interface SyncConflict {
+interface SyncConflict extends Stacked {
   changed: false;
   conflict: true;
   inRebase: boolean;
@@ -57,10 +63,12 @@ const REVIEW_REQUEST = z.looseObject({
   number: z.number().int(),
   sinceSha: z.string().nullish(),
   tag: z.string().nullish(),
+  stackedOn: STACKED_ON.nullish(),
 });
 const SYNC_REQUEST = z.looseObject({
   number: z.number().int(),
   keepConflict: z.boolean().nullish(),
+  stackedOn: STACKED_ON.nullish(),
 });
 const FINISH_REQUEST = z.looseObject({
   number: z.number().int(),
@@ -68,9 +76,8 @@ const FINISH_REQUEST = z.looseObject({
   reason: z.string().nullish(),
   // The commit sync-base rebased onto (its reply's baseSha), #279.
   baseSha: z.string().regex(COMMIT_SHA).nullish(),
+  stackedOn: STACKED_ON.nullish(),
 });
-
-type FinishRequest = z.infer<typeof FINISH_REQUEST>;
 
 function present(text: string | null | undefined): text is string {
   return text !== undefined && text !== null && text !== "";
@@ -135,7 +142,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);
   const headSha = head(wt);
-  const baseArgs = ["merge-base", `origin/${cfg.baseBranch}`, "HEAD"];
+  const baseArgs = ["merge-base", measureFrom(req.stackedOn, cfg), "HEAD"];
   const baseSha = gitOut(wt, baseArgs).trim();
   const from = reviewFrom(wt, req.sinceSha, { headSha, baseSha });
   const diff = gitOut(wt, ["diff", "--stat", "--patch", `${from}..${headSha}`]);
@@ -174,8 +181,24 @@ function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
   git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", target]);
 }
 
+// The reply's stackedOn for a sync of a branch that was stacked when the
+// request came; nothing for one that wasn't.
+function stackedReply(
+  stacked: StackedOn | null | undefined,
+  target: SyncTarget,
+): Stacked {
+  if (stacked === null || stacked === undefined) {
+    return {};
+  }
+  return { stackedOn: target.stackedOn };
+}
+
 // The conflicting rebase's files. Unless kept, the rebase is aborted.
-function conflictReply(wt: string, base: string, keep: boolean): SyncConflict {
+function conflictReply(
+  wt: string,
+  onto: string,
+  keep: boolean,
+): Omit<SyncConflict, "stackedOn"> {
   const conflicts = unmergedFiles(wt);
   const inRebase = keep && rebaseInProgress(wt);
   if (!inRebase) {
@@ -186,7 +209,7 @@ function conflictReply(wt: string, base: string, keep: boolean): SyncConflict {
     conflict: true,
     inRebase,
     conflicts,
-    baseSha: gitOut(wt, ["rev-parse", base]).trim(),
+    baseSha: gitOut(wt, ["rev-parse", onto]).trim(),
   };
 }
 
@@ -200,15 +223,18 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     resetToRemote(cfg, n); // left over from a crashed run
   }
   assertClean(wt);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const base = `origin/${cfg.baseBranch}`;
-  if (gitSucceeds(wt, ["merge-base", "--is-ancestor", base, "HEAD"])) {
+  const target = syncTarget(cfg, wt, req.stackedOn);
+  const stacked = stackedReply(req.stackedOn, target);
+  const { onto, upstream } = target;
+  if (gitSucceeds(wt, ["merge-base", "--is-ancestor", onto, "HEAD"])) {
     const changes = branchChanges(cfg, n);
-    return { changed: false, conflict: false, headSha: head(wt), ...changes };
+    const headSha = head(wt);
+    return { changed: false, conflict: false, headSha, ...changes, ...stacked };
   }
   const before = head(wt);
-  if (!gitSucceeds(wt, ["rebase", base])) {
-    return conflictReply(wt, base, req.keepConflict === true);
+  if (!gitSucceeds(wt, ["rebase", "--onto", onto, upstream])) {
+    const keep = req.keepConflict === true;
+    return { ...conflictReply(wt, onto, keep), ...stacked };
   }
   try {
     pushBranch(cfg, n, wt, "sync-base");
@@ -219,26 +245,13 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     throw error;
   }
   const changes = branchChanges(cfg, n);
-  return { changed: true, conflict: false, headSha: head(wt), ...changes };
-}
-
-// Why the resolved rebase can't be pushed, or undefined when it can. With a
-// baseSha it is checked against that commit, which must be on the base, so a
-// base that moved during the fix doesn't throw the resolution away.
-function finishProblem(
-  cfg: Config,
-  wt: string,
-  req: FinishRequest,
-): string | undefined {
-  const base = `origin/${cfg.baseBranch}`;
-  const { baseSha } = req;
-  if (!present(baseSha)) {
-    return rebaseProblem(wt, base);
-  }
-  if (!gitSucceeds(wt, ["merge-base", "--is-ancestor", baseSha, base])) {
-    return `${baseSha} is not on ${base}`;
-  }
-  return rebaseProblem(wt, baseSha);
+  return {
+    changed: true,
+    conflict: false,
+    headSha: head(wt),
+    ...changes,
+    ...stacked,
+  };
 }
 
 // After a writer resolved a kept rebase: push it if it passes the checks

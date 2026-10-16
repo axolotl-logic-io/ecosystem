@@ -221,7 +221,8 @@ function settle(
 }
 
 // Sync's code rebase is finished: its flows are acted on (flow-step.ts, sync's
-// "flowed" phase), and every check runs again on the new head.
+// "flowed" phase), and every check runs again on the new head. A stacked
+// issue is stacked on what the rebase targeted from then on.
 function finished(
   state: StageState,
   ctx: StageContext,
@@ -233,8 +234,12 @@ function finished(
   }
   const { comment, files } = settled.outcome;
   const { headSha } = settled;
-  const base = ctx.cfg.baseBranch;
+  const { target } = memoOf(state);
+  const base = ontoText(target, ctx.cfg.baseBranch);
   const { st } = settled.state;
+  if (target.kind === "code" && target.stackedOn !== undefined) {
+    st.stackedOn = target.stackedOn;
+  }
   st.syncs = (st.syncs ?? 0) + 1;
   noteEvent(st, `resolved conflicts with ${base} and rebased`, ctx.now());
   const named = files.map((file) => `\`${file}\``).join(", ");

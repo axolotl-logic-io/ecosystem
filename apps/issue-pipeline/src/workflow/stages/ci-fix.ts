@@ -11,6 +11,7 @@ import { REVIEW_SCHEMA } from "../review-schemas.ts";
 import type { IssueState, ListedFinding } from "../types.ts";
 import { blockingOf, fixOutputOf, preparedOf } from "./checks-reply.ts";
 import { attemptOf, handedOff } from "./ci-fixer.ts";
+import { prepareLaunch } from "./stacked.ts";
 import { launchStep, onlyChild, onlyReply, stopStep } from "./step.ts";
 import type {
   ChildLaunch,
@@ -88,13 +89,9 @@ function fixed(
 // so acceptance and the security review run again.
 function prepareFix(state: StageState): Step {
   const st = { ...state.st, testsOnly: false };
-  const payload = {
-    number: state.n,
-    sinceSha: st.reviewedSha,
-    tag: `cifix${attemptOf(state)}`,
-  };
+  const fields = { sinceSha: st.reviewedSha, tag: `cifix${attemptOf(state)}` };
   return launchStep({ ...state, st, phase: "prepared" }, [
-    { kind: "op", name: "prep", op: "prepare-review", payload },
+    prepareLaunch(state, fields),
   ]);
 }
 

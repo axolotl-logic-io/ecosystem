@@ -53,6 +53,7 @@ const NEW_STATE = {
   findings: [],
   resolvedHistory: [],
   questionsAt: null,
+  stackedOn: null,
   log: [],
 };
 

@@ -8,9 +8,9 @@ import { ghJson } from "../github.ts";
 // `gh pr list --json number`'s rows, or null when gh printed nothing.
 const PR_ROWS = z.array(z.looseObject({ number: z.number() })).nullable();
 
-// The number of the open PR from issue `n`'s branch, or undefined when it has
-// none.
-function openPrFor(cfg: Config, n: number): number | undefined {
+// The number of the first PR from issue `n`'s branch in `state`, or
+// undefined when it has none.
+function prFor(cfg: Config, n: number, state: string): number | undefined {
   const listed = ghJson(cfg, [
     "pr",
     "list",
@@ -19,7 +19,7 @@ function openPrFor(cfg: Config, n: number): number | undefined {
     "--head",
     paths.branch(n),
     "--state",
-    "open",
+    state,
     "--json",
     "number",
   ]);
@@ -27,4 +27,16 @@ function openPrFor(cfg: Config, n: number): number | undefined {
   return first?.number;
 }
 
-export { openPrFor };
+// The number of the open PR from issue `n`'s branch, or undefined when it has
+// none.
+function openPrFor(cfg: Config, n: number): number | undefined {
+  return prFor(cfg, n, "open");
+}
+
+// The number of a merged PR from issue `n`'s branch, or undefined when it has
+// none.
+function mergedPrFor(cfg: Config, n: number): number | undefined {
+  return prFor(cfg, n, "merged");
+}
+
+export { mergedPrFor, openPrFor };

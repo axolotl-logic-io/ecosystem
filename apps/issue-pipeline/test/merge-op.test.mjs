@@ -142,6 +142,17 @@ test("a head that lacks the base's latest commit is behind, with no merge", () =
   assert.deepEqual(writes(), []);
 });
 
+// #288: its reviews never saw the prerequisite's commits it would squash in.
+test("a PR still stacked on its prerequisite is behind, with no merge", () => {
+  const w = world();
+  const stackedOn = { issue: AHEAD, headSha: w.sha };
+  const out = runMerge(w, [viewReply(w.sha)], {
+    state: { ...STATE, stackedOn },
+  });
+  assert.equal(out, refusal("behind"));
+  assert.deepEqual(writes(), []);
+});
+
 test("with merge order, an older ready PR holding the line queues the merge", () => {
   const w = world();
   const ahead = { pr: 40, stage: "accept", lease: { at: hoursFromNow(0) } };

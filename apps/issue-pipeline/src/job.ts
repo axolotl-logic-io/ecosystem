@@ -2,7 +2,7 @@
 // The stage job: one sweep pinned to one issue that begins only one stage.
 //
 //   node job.mjs --config <path> --issue N --stage <stage> [--lane L] [--resume]
-//     [--merge-queue n1,n2,…]
+//     [--merge-queue n1,n2,…] [--stack-on P]
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //   node job.mjs --config <path> --issue N --stage <stage> --print-boundary
 //
@@ -21,7 +21,8 @@
 // issue at its stage with no lease, and exits 128 + the signal's number with
 // nothing on stdout. --resume carries on the sessions an earlier stopped job
 // left in job.json. --steer sends a message to a live session of the job
-// running for #N, exiting 0 once pi accepted it and 1 otherwise.
+// running for #N, exiting 0 once pi accepted it and 1 otherwise. --stack-on P
+// starts an issue with no branch of its own on #P's branch (#268).
 //
 // Each pi session runs with the env of its role (src/job/roles.ts): no gh
 // token but its role's own; ops keep the job's env. --print-boundary prints
@@ -157,8 +158,9 @@ async function drive(
 async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const { maxSpawnsPerRun } = cfg;
   const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
-  const { issue, stage, lane = null } = args;
-  const checkout = { issue, dir: openJobCheckout(cfg, issue, stage) };
+  const { issue, stage, lane = null, stackOn = null } = args;
+  const dir = openJobCheckout(cfg, issue, { stage, stackOn });
+  const checkout = { issue, dir };
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const sweep = startSweep({ ...args, checkout }, { sweepId, now });
   const runDir = paths.runDir(cfg, args.issue);

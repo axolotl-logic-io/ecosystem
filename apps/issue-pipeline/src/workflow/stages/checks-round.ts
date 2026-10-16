@@ -10,6 +10,7 @@ import { checksOf } from "./checks-reply.ts";
 import { startFix } from "./ci-fixer.ts";
 import { opFailedStep } from "./network.ts";
 import { textOrNull } from "./replies.ts";
+import { branchPayload } from "./stacked.ts";
 import { launchStep, onlyReply } from "./step.ts";
 import type {
   LaunchResult,
@@ -66,7 +67,7 @@ function verifyRound(state: StageState, ctx: StageContext): Step {
   ) {
     return ciLaunch(state, ctx, []);
   }
-  const payload = { number: state.n, testsOnly: testsOnly === true };
+  const payload = branchPayload(state, { testsOnly: testsOnly === true });
   return launchStep({ ...state, phase: "verified" }, [
     {
       kind: "op",

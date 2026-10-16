@@ -77,19 +77,21 @@ function refOf(bare, ref) {
 }
 
 /**
- * Pushes a commit to the issue's branch on `origin`, as an earlier job's
- * push would have; returns its sha.
+ * Pushes a commit to issue `issue`'s branch on `origin` (#7's unless
+ * given), as an earlier job's push would have; returns its sha.
  * @param {string} origin
+ * @param {number} [issue]
  * @returns {string}
  */
-function branchOnOrigin(origin) {
+function branchOnOrigin(origin, issue = 7) {
   const seed = `${origin}-seed`;
-  fs.writeFileSync(path.join(seed, "earlier.txt"), "earlier\n");
-  git(["-C", seed, "add", "earlier.txt"]);
+  const ref = `refs/heads/agent/issue-${issue}`;
+  fs.writeFileSync(path.join(seed, `earlier-${issue}.txt`), "earlier\n");
+  git(["-C", seed, "add", `earlier-${issue}.txt`]);
   git(["-C", seed, "commit", "--quiet", "-m", "earlier"]);
-  git(["-C", seed, "push", "--quiet", origin, "HEAD:refs/heads/agent/issue-7"]);
+  git(["-C", seed, "push", "--quiet", origin, `HEAD:${ref}`]);
   git(["-C", seed, "reset", "--quiet", "--hard", "HEAD~1"]);
-  return refOf(origin, "refs/heads/agent/issue-7");
+  return refOf(origin, ref);
 }
 
 /**

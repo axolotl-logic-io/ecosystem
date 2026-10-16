@@ -66,6 +66,9 @@ interface IssueState {
   specFile?: string | null;
   // The repo paths or globs the spec says the change will touch.
   files?: string[] | null;
+  // The prerequisite issue this one's branch is stacked on, and the head of
+  // its branch the branch was last put on (#268); null when it isn't.
+  stackedOn?: { issue: number; headSha: string } | null;
   // How many continuation sessions each writer stage has had. Read only
   // through stages/continuation.ts: a number is the older form, the
   // implementer's count.

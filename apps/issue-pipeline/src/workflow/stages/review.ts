@@ -28,6 +28,7 @@ import {
   lensComment,
   lensTask,
 } from "./review-text.ts";
+import { prepareLaunch } from "./stacked.ts";
 import {
   copyState,
   doneStep,
@@ -85,9 +86,8 @@ function begin(state: StageState, ctx: StageContext): Step {
   if (!charge.charged) {
     return stopStep(charged, charge.reason, charge.detail);
   }
-  const payload = { number: state.n, tag: "r0" };
   return launchStep({ ...charged, phase: "prepared" }, [
-    { kind: "op", name: "prep", op: "prepare-review", payload },
+    prepareLaunch(charged, { tag: "r0" }),
   ]);
 }
 

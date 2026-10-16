@@ -76,13 +76,18 @@ function sweepReplyOf(reply: Reply): SweepReply {
   return parsed;
 }
 
-// The claim of candidate `n`.
-function claimLaunch(n: number): OpLaunch {
+// The claim of candidate `n`, starting it on issue `stackOn`'s branch if it
+// has none of its own (#268).
+function claimLaunch(n: number, stackOn: number | null = null): OpLaunch {
+  let payload: Readonly<Record<string, unknown>> = { number: n };
+  if (stackOn !== null) {
+    payload = { number: n, stackOn };
+  }
   return {
     kind: "op",
     name: `i${n}-claim`,
     op: "claim",
-    payload: { number: n },
+    payload,
     minutes: CLAIM_MINUTES,
   };
 }

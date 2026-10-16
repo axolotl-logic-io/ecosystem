@@ -10,9 +10,10 @@ import { byStep } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import { syncReplyOf } from "./checks-reply.ts";
 import { conflicted, maxConflictFixes } from "./conflict-resolver.ts";
-import { CODE_TARGET } from "./conflict-target.ts";
+import type { ConflictTarget } from "./conflict-target.ts";
 import { flowEnd, prFlowed } from "./flow-step.ts";
 import { opFailedStep } from "./network.ts";
+import { branchPayload, stackedOnOf, syncOnto } from "./stacked.ts";
 import { launchStep, onlyReply, stopStep } from "./step.ts";
 import { finished, resolved } from "./sync-conflict.ts";
 import type {
@@ -53,7 +54,8 @@ function prComment(by: Signature, body: string): StageComment {
 // Rebases, leaving a conflicting rebase stopped for a resolver while the issue
 // has conflict attempts and rebase budget for one left. An issue the merge
 // stage sent back is re-checking from here on, so its sessions are charged to
-// the rebase pool.
+// the rebase pool. A stacked issue rebases onto its prerequisite's branch, or
+// onto the base once that has merged (sync-base decides).
 function begin(state: StageState, ctx: StageContext): Step {
   const st: IssueState = { ...state.st };
   if (typeof st.passedSha === "string" && st.passedSha !== "") {
@@ -62,7 +64,7 @@ function begin(state: StageState, ctx: StageContext): Step {
   const keepConflict =
     (st.conflictFixes ?? 0) < maxConflictFixes(ctx) &&
     chargeCheck(ctx.budgets, st, "fixer", "rebase").charged;
-  const payload = { number: state.n, keepConflict };
+  const payload = branchPayload(state, { keepConflict });
   return launchStep({ ...state, st, phase: "synced" }, [
     { kind: "op", name: "sync", op: "sync-base", payload },
   ]);
@@ -70,7 +72,8 @@ function begin(state: StageState, ctx: StageContext): Step {
 
 // A clean rebase moves to checks. A clean rebase of a head that passed every
 // check, acceptance and the security review only re-runs the tests (Autumn,
-// 2026-10-14): the change itself is the same.
+// 2026-10-14): the change itself is the same. A stacked issue's reply says
+// what it is stacked on now.
 function clean(
   state: StageState,
   ctx: StageContext,
@@ -79,6 +82,11 @@ function clean(
 ): Step {
   const { baseBranch, maxSyncs } = ctx.cfg;
   const st: IssueState = { ...state.st };
+  const stackedOn = stackedOnOf(reply);
+  if (stackedOn !== undefined) {
+    st.stackedOn = stackedOn;
+  }
+  const onto = syncOnto(stackedOn, baseBranch);
   if (changed) {
     st.syncs = (st.syncs ?? 0) + 1;
     if (st.syncs > maxSyncs) {
@@ -104,11 +112,11 @@ function clean(
       then =
         "This head already passed every check before the rebase, so only the tests run again before merge.";
     }
-    noteEvent(st, `rebased onto ${baseBranch}${note}`, ctx.now());
+    noteEvent(st, `rebased onto ${onto}${note}`, ctx.now());
     comments.push(
       prComment(
         byStep("sync"),
-        `Rebased onto ${baseBranch} without conflicts; the head is now ${headSha.slice(0, SHORT_SHA)}. ${then}`,
+        `Rebased onto ${onto} without conflicts; the head is now ${headSha.slice(0, SHORT_SHA)}. ${then}`,
       ),
     );
   }
@@ -135,7 +143,12 @@ function synced(
   }
   if (reply.inRebase) {
     const { conflicts: files, baseSha } = reply;
-    return conflicted(state, ctx, { files, baseSha, target: CODE_TARGET });
+    const stackedOn = stackedOnOf(raw);
+    let target: ConflictTarget = { kind: "code" };
+    if (stackedOn !== undefined) {
+      target = { kind: "code", stackedOn };
+    }
+    return conflicted(state, ctx, { files, baseSha, target });
   }
   const files = `Conflicting files:\n${reply.conflicts.join("\n")}`;
   const max = maxConflictFixes(ctx);

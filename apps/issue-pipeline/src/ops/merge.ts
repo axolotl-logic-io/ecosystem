@@ -1,6 +1,6 @@
 // The decision to merge an issue's PR or refuse it: the checks that the
-// verified commit is still the PR's head and contains the current base, the
-// merge order between issues, the squash merge itself and what a refusal means.
+// verified commit is still the PR's head, contains the current base and isn't
+// stacked on another issue's branch, the merge order between issues, the squash merge itself and what a refusal means.
 
 import { z } from "zod";
 import { comment } from "../comments.ts";
@@ -61,6 +61,13 @@ function precheck(
 ): MergeReply | undefined {
   if (view.state !== "OPEN") {
     return { merged: false, reason: `PR is ${view.state}` };
+  }
+  // A stacked branch (stack.ts) still holds its prerequisite's commits, which
+  // its reviews never measured. Like a branch behind its base, it waits for
+  // the sync that moves it onto the base once the prerequisite merges.
+  const { stackedOn } = req.state;
+  if (stackedOn !== null && stackedOn !== undefined) {
+    return { merged: false, reason: "behind" };
   }
   if (view.headRefOid !== req.expectedSha) {
     return { merged: false, reason: "head-changed", headSha: view.headRefOid };

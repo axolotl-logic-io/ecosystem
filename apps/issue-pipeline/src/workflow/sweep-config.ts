@@ -98,8 +98,9 @@ function stageArgOf(name: string, value: unknown): StageName | null {
 // config's path, the lane, the one issue a human launched the run for, if
 // any, whether to take it even when stopped (takeStopped), the last stage
 // (through) or only stage (stage) it may begin, a stage job's checkout,
-// which every request then names, and the merge order the orchestrator
-// ranked (mergeQueue).
+// which every request then names, the merge order the orchestrator ranked
+// (mergeQueue), and the issue whose branch a claimed issue with none starts
+// on (stackOn, #268).
 interface SweepArgs {
   config: string;
   checkout?: JobCheckout;
@@ -109,6 +110,7 @@ interface SweepArgs {
   through?: unknown;
   stage?: unknown;
   mergeQueue?: unknown;
+  stackOn?: unknown;
 }
 
 // The issues a run may take: the one a human launched it for, or null for
@@ -146,14 +148,30 @@ function mergeQueueOf(value: unknown): readonly number[] | null {
   return queue;
 }
 
+// The issue a claimed issue's branch is stacked on (args.stackOn, #268), or
+// null when unset; anything but a positive integer throws before the sweep
+// launches anything.
+function stackOnOf(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const issue = Number(value);
+  if (!(Number.isInteger(issue) && issue > 0)) {
+    throw new Error("args.stackOn must be an issue number");
+  }
+  return issue;
+}
+
 // What a run's args pin: the issues it may take (args.issue and
 // args.takeStopped), the last stage it may begin (args.through), the only one
-// (args.stage) and the merge order (args.mergeQueue).
+// (args.stage), the merge order (args.mergeQueue) and the prerequisite
+// (args.stackOn).
 interface RunPins {
   target: SweepTarget;
   through: StageName | null;
   stage: StageName | null;
   mergeQueue: readonly number[] | null;
+  stackOn: number | null;
 }
 
 function runPinsOf(args: SweepArgs): RunPins {
@@ -162,6 +180,7 @@ function runPinsOf(args: SweepArgs): RunPins {
     through: stageArgOf("through", args.through),
     stage: stageArgOf("stage", args.stage),
     mergeQueue: mergeQueueOf(args.mergeQueue),
+    stackOn: stackOnOf(args.stackOn),
   };
 }
 

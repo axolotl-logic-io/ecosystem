@@ -8,6 +8,7 @@ import { listComments, rawComment, STATE_MARK } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { gh } from "./github.ts";
 import { OpsError } from "./process.ts";
+import { STACKED_ON } from "./stack.ts";
 
 const MARK_END = "-->";
 const MARK_END_PATTERN = /-->/gu;
@@ -26,6 +27,9 @@ const STATE = z.looseObject({
   implemented: z.unknown().optional(),
   pr: z.unknown().optional(),
   reviewedSha: z.unknown().optional(),
+  // The prerequisite this issue's branch is stacked on (#268); null or
+  // missing when it isn't stacked, and null when it is unreadable.
+  stackedOn: STACKED_ON.nullish().catch(null),
   stage: z.string().optional(),
 });
 
@@ -125,6 +129,7 @@ function newState(number: number, depth: number): State {
     findings: [],
     resolvedHistory: [],
     questionsAt: null,
+    stackedOn: null,
     log: [],
   };
 }
