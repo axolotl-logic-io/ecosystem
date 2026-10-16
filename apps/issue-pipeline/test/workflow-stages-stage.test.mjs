@@ -15,6 +15,11 @@ import {
 } from "./workflow-stages-fixtures.mjs";
 
 // Issue #7 after triage: its plan and draft PR.
+/** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
+/** @import { TraceEntry } from "./workflow-harness.mjs" */
+/** @typedef {{ op?: string, state: IssueState }} TracedRequest */
+
 const TRIAGED = {
   plan: "Change src/a.ts and test it.",
   pr: 42,
@@ -34,12 +39,16 @@ const UNKNOWN_STAGE = /args\.stage must be one of: triage, spec, implement/u;
 const NAMES_TRIAGE = /triage/u;
 const NAMES_SPEC = /spec/u;
 
+/** @param {readonly TraceEntry[]} trace @returns {IssueState} */
 function releasedState(trace) {
-  const release = trace.find((entry) => entry.request?.op === "release");
-  if (!release) {
+  const requests = trace.map(
+    (entry) => /** @type {TracedRequest} */ (entry.request ?? {}),
+  );
+  const release = requests.find((request) => request.op === "release");
+  if (release === undefined) {
     throw new Error("the sweep released no issue");
   }
-  return release.request.state;
+  return release.state;
 }
 
 test("stage spec: the spec is written, then the issue is released at implement", async () => {
@@ -62,7 +71,10 @@ test("stage spec: the spec is written, then the issue is released at implement",
   ]);
   assert.equal(releasedState(trace).stage, "implement");
   assert.deepEqual(
-    summary.items.map(({ stage, outcome }) => ({ stage, outcome })),
+    /** @type {SweepSummary} */ (summary).items.map(({ stage, outcome }) => ({
+      stage,
+      outcome,
+    })),
     [{ stage: "implement", outcome: "in-progress" }],
   );
 });
@@ -84,10 +96,11 @@ test("stage spec: an issue saved at triage begins no stage and is released as wr
     "cleanup-4",
   ]);
   assert.equal(releasedState(trace).stage, "triage");
-  const [item] = summary.items;
-  assert.equal(item.outcome, "wrong-stage");
-  assert.match(item.reason, NAMES_TRIAGE);
-  assert.match(item.reason, NAMES_SPEC);
+  const [item] = /** @type {SweepSummary} */ (summary).items;
+  assert.equal(item?.outcome, "wrong-stage");
+  const reason = item?.reason ?? "";
+  assert.match(reason, NAMES_TRIAGE);
+  assert.match(reason, NAMES_SPEC);
 });
 
 test("stage names an unknown stage: the run fails before the sweep", async () => {

@@ -10,6 +10,7 @@ import {
   repliesAt,
   runJob,
   SPEC_SESSION,
+  sessionOf,
   setUp,
   startJob,
   statusOf,
@@ -20,10 +21,7 @@ import {
 const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
 const MESSAGE = "Look at src/b.ts too.";
 
-function sessionOf(status) {
-  return status?.launches.find(({ kind }) => kind === "session") ?? null;
-}
-
+/** @param {import("./job-test-kit.mjs").Place} place @param {string} key */
 function steer(place, key) {
   return runJob(place, ["--steer", key, "--message", MESSAGE]);
 }

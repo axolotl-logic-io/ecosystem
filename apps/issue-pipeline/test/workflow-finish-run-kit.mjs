@@ -11,6 +11,18 @@ import {
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
 
+/** @import { Scripted, TraceEntry } from "./workflow-harness.mjs" */
+/**
+ * A finishing run's inputs: the stage issue #7 is claimed at, its state's
+ * fields, and the replies and sweep config that replace the routine ones.
+ * @typedef {object} FinishRun
+ * @property {string} stage
+ * @property {object} fields
+ * @property {Readonly<Record<string, Scripted>>} [ops]
+ * @property {Readonly<Record<string, Scripted>>} [agents]
+ * @property {object} [config]
+ */
+
 // Issue #7 with its checks passed at fffffff.
 const CHECKED = {
   pr: 42,
@@ -32,6 +44,7 @@ const ACCEPTED = {
 const SECURED = { ...ACCEPTED, allocated: 940_000 };
 
 // A run of issue #7 claimed at `stage` with `fields`, with ops and agents.
+/** @param {FinishRun} run @returns {Promise<{ trace: TraceEntry[], summary: unknown }>} */
 function finishRun({ stage, fields, ops = {}, agents = {}, config = {} }) {
   return runWorkflow({
     args: WORKFLOW_ARGS,
@@ -46,6 +59,7 @@ function finishRun({ stage, fields, ops = {}, agents = {}, config = {} }) {
 }
 
 // The one summary item of issue #7, with `fields` replacing the defaults.
+/** @param {object} fields @returns {object} */
 function issueSummary(fields) {
   return sweepSummary({
     items: [

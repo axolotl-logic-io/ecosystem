@@ -7,10 +7,11 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { configureClone, GH_HELPER, head, uncommitted } from "./checkouts.ts";
+import { configureClone, GH_HELPER } from "./checkouts.ts";
 import { comment } from "./comments.ts";
 import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
+import { head, uncommitted } from "./git-state.ts";
 import { git } from "./github.ts";
 import { withWikiLock } from "./locks.ts";
 import { OpsError, run } from "./process.ts";

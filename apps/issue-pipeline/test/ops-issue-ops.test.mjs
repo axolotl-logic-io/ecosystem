@@ -1,8 +1,8 @@
 // @ts-check
-// The save-state, ask, split and stop ops through the ops CLI, pinned to the
-// replies and gh calls they made before they moved to src/ops/ (#183).
+// The save-state, ask and stop ops through the ops CLI, pinned to the replies
+// and gh calls they made before they moved to src/ops/ (#183). The split op is
+// in ops-split.test.mjs.
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { test } from "node:test";
 import {
   askOps,
@@ -17,21 +17,16 @@ import {
   stateBody,
   stateComment,
   TIME,
-  worktree,
 } from "./ops-cli-test-kit.mjs";
 
 const LIVE = new Date().toISOString();
-const TRIAGER = { role: "triage", agent: "triager" };
-const TRIAGER_SIGNATURE =
-  "**🤖 issue-pipeline · triage**\n<sub>agent `triager`</sub>\n<!-- agent-pipeline:comment role=triage -->";
 const STEP_SIGNATURE = "<sub>deterministic step, no model</sub>";
 const RESUME_TEXT =
   "The next sweep continues from the PR's branch at review, with every limit reset, the token budget included.";
-// Each test's issue, and the comments, PRs and sub-issues it meets.
+// Each test's issue, and the comments and PRs it meets.
 const SAVED = { n: 50 };
 const SAVE_REPLY = { ok: true, op: "save-state", posted: 0 };
 const ASKED = { n: 51, state: 5, claim: 6 };
-const SPLIT = { n: 52, claim: 7, depth: 1, first: { id: 900, number: 60 }, second: { id: 901, number: 61 } };
 const STOPPED = { n: 53, pr: 70, claim: 8 };
 const STOPPED_BY_REASON = { n: 54 };
 
@@ -110,80 +105,6 @@ test("ask posts numbered questions, parks the issue and closes its claims", () =
   ]);
 });
 
-// The gh call that opens one of split's sub-issues of SPLIT.
-/** @param {string} title @param {string} body @param {string} [afterLine] @returns {string[]} */
-function openCall(title, body, afterLine = "") {
-  const parent = `\n\n<!-- agent-pipeline:parent ${SPLIT.n} depth 2 -->`;
-  const text = `${TRIAGER_SIGNATURE}\n\n${body}\n\nPart of #${SPLIT.n}.${afterLine}${parent}`;
-  return ["api", "-X", "POST", "repos/o/r/issues", "-f", `title=${title}`, "-f", `body=${text}`];
-}
-
-// The gh call that links a sub-issue to SPLIT.
-/** @param {number} id @returns {string[]} */
-function linkCall(id) {
-  const endpoint = `repos/o/r/issues/${SPLIT.n}/sub_issues`;
-  return ["api", "-X", "POST", endpoint, "-F", `sub_issue_id=${id}`, "--silent"];
-}
-
-// The calls that open split's two sub-issues of SPLIT, the second after the first.
-/** @returns {string[][]} */
-function subIssueCalls() {
-  const { first, second } = SPLIT;
-  const after = `\nAfter #${first.number} merges.\n<!-- agent-pipeline:after ${first.number} -->`;
-  return [openCall("A", "a"), linkCall(first.id), openCall("B", "b", after), linkCall(second.id)];
-}
-
-// Every gh call split makes for SPLIT, after it opens the sub-issues.
-/** @returns {string[][]} */
-function splitCalls() {
-  const { n, claim, depth, first, second } = SPLIT;
-  const created = `#${first.number}, #${second.number}`;
-  const note = `I split this issue into ${created}. The pipeline closes it when they have all merged.`;
-  const subIssues = [first.number, second.number];
-  return [
-    ...subIssueCalls(),
-    ghCalls.post(n, `${TRIAGER_SIGNATURE}\n\n${note}`),
-    ghCalls.listComments(n),
-    ghCalls.post(n, stateBody(n, { stage: "split", depth, lease: null, subIssues })),
-    ghCalls.unlabel(n, "agent:working"),
-    ghCalls.label(n, "agent:split"),
-    ghCalls.listComments(n),
-    closedClaim(claim, "the issue was split into sub-issues."),
-  ];
-}
-
-test("split opens ordered sub-issues under the parent and parks it", () => {
-  const { n, claim, depth, first, second } = SPLIT;
-  sh(
-    `git -C ${root}/clones/o__r worktree add -q -B agent/issue-${n} ${worktree(n)} origin/integration`,
-  );
-  reply([
-    { when: "title=A", stdout: JSON.stringify(first) },
-    { when: "title=B", stdout: JSON.stringify(second) },
-    commentsReply(n, []),
-    commentsReply(n, [myClaim(claim)]),
-  ]);
-  const subIssues = [
-    { title: "A", body: "a" },
-    { title: "B", body: "b", after: [0] },
-  ];
-  const request = {
-    op: "split",
-    number: n,
-    state: { stage: "triage", depth },
-    subIssues,
-    by: TRIAGER,
-  };
-  assert.deepEqual(askOps(request), {
-    ok: true,
-    op: "split",
-    posted: 0,
-    created: [first.number, second.number],
-  });
-  assert.deepEqual(calls(), splitCalls());
-  assert.equal(fs.existsSync(worktree(n)), false);
-});
-
 // The comment stop posts for STOPPED, on the issue and its PR.
 /** @returns {string} */
 function budgetStopBody() {
@@ -203,7 +124,13 @@ function budgetStopBody() {
 function budgetStopCalls() {
   const { n, pr, claim } = STOPPED;
   const body = budgetStopBody();
-  const stopState = { stage: "stopped", pr, lease: null, stopCode: "budget", stopReason: "over budget" };
+  const stopState = {
+    stage: "stopped",
+    pr,
+    lease: null,
+    stopCode: "budget",
+    stopReason: "over budget",
+  };
   return [
     ghCalls.post(n, body),
     ghCalls.post(pr, body),

@@ -7,15 +7,22 @@ import { test } from "node:test";
 import { launchResults, parseOps } from "../src/workflow/launch-results.ts";
 import { childSpec, opsSpec } from "../src/workflow/launches.ts";
 
+/** @import { OpsSpec } from "../src/workflow/launches.ts" */
+/** @import { LaunchMeta } from "../src/workflow/signing.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
+/** @import { ChildLaunch, OpLaunch } from "../src/workflow/stages/types.ts" */
+
 const FRAME = { config: "/w/repos/o__r.json", sweepId: "s1", lane: "lane-a" };
 const OPS_REQUEST = /^BEGIN_OPS_REQUEST\n(?<json>.*)\nEND_OPS_REQUEST$/u;
 const SIGNED = { role: "triage", agent: null, model: null, run: null };
+/** @type {OpLaunch} */
 const SAVE = {
   kind: "op",
   name: "i7-save",
   op: "save-state",
   payload: { number: 7, state: { stage: "spec" } },
 };
+/** @type {ChildLaunch} */
 const CHILD = {
   kind: "child",
   name: "triage",
@@ -40,8 +47,20 @@ const TOKENS_AFTER = 20;
 const USAGE = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 };
 const WHERE = { n: 7, worktree: "/w/work/o__r/issue-7" };
 
+/**
+ * The JSON request an ops spec's task frames.
+ * @param {OpsSpec} spec
+ * @returns {{ comments?: unknown }}
+ */
 function requestOf(spec) {
-  return JSON.parse(OPS_REQUEST.exec(spec.task).groups.json);
+  const { json = "" } = OPS_REQUEST.exec(spec.task)?.groups ?? {};
+  return JSON.parse(json);
+}
+
+// An issue at triage with no tokens reported yet.
+/** @returns {IssueState} */
+function triageState() {
+  return { stage: "triage", depth: 0, findings: [], allocated: 0 };
 }
 
 test("a failed ops child is an error with its detail", () => {
@@ -70,11 +89,8 @@ test("a broken last JSON line ends the scan", () => {
 
 test("output with no JSON keeps its last 500 characters", () => {
   const output = "ab".repeat(OUTPUT_TAIL);
-  const reply = parseOps({ ok: true, output });
-  assert.equal(
-    reply.error,
-    `ops reply was not JSON: ${output.slice(-OUTPUT_TAIL)}`,
-  );
+  const { error } = parseOps({ ok: true, output });
+  assert.equal(error, `ops reply was not JSON: ${output.slice(-OUTPUT_TAIL)}`);
 });
 
 test("the ops request keeps its key order, the frame first", () => {
@@ -95,6 +111,7 @@ test("the ops request keeps its key order, the frame first", () => {
 test("queued comments ride along only on a request for their issue", () => {
   const comment = { number: 42, by: SIGNED, body: "Hi." };
   const outbox = { number: 7, comments: [comment] };
+  /** @type {OpLaunch} */
   const other = { ...SAVE, payload: { number: 5 } };
   assert.equal(requestOf(opsSpec(FRAME, 1, other, outbox)).comments, undefined);
   assert.deepEqual(outbox.comments, [comment]);
@@ -118,6 +135,7 @@ test("an ops request has 10 minutes unless it asks for more, and no silence aler
 });
 
 test("a session runs in the worktree with the bridge off, keyed by its issue", () => {
+  /** @type {Record<string, LaunchMeta>} */
   const meta = {};
   const spec = childSpec(SEQ, WHERE, CHILD, meta);
   assert.deepEqual(spec, {
@@ -155,9 +173,10 @@ test("only a writer's session waives pi-subagents' acceptance", () => {
 });
 
 test("a session's reported tokens add to the state, and its result is signed", () => {
+  /** @type {Record<string, LaunchMeta>} */
   const meta = {};
   const spec = childSpec(SEQ, WHERE, CHILD, meta);
-  const st = { reportedTokens: TOKENS_BEFORE };
+  const st = { ...triageState(), reportedTokens: TOKENS_BEFORE };
   const raw = {
     ok: true,
     key: spec.key,
@@ -185,7 +204,7 @@ test("a session's reported tokens add to the state, and its result is signed", (
 });
 
 test("a session that reports no usage leaves the state's tokens alone", () => {
-  const st = {};
+  const st = triageState();
   launchResults([CHILD], [{ ok: false, error: "boom" }], st, {});
   assert.equal(Object.hasOwn(st, "reportedTokens"), false);
 });

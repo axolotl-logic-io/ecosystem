@@ -11,7 +11,6 @@ import { test } from "node:test";
 import { z } from "zod";
 import {
   ask,
-  assertReply,
   calls,
   claimListing,
   commentPost,
@@ -21,6 +20,7 @@ import {
   LANE,
   listCall,
   relabel,
+  replyLine,
   SWEEP,
   signedBy,
   world,
@@ -47,12 +47,6 @@ const LEASED = z.looseObject({ lease: z.looseObject({ at: z.string() }) });
 const FAILED_REPLY = z.object({ ok: z.boolean(), error: z.string() });
 const RELEASED = { ok: true, op: "release", posted: 0 };
 
-// The reply as the ops CLI prints it, which pins the key order too.
-/** @param {unknown} want @returns {string} */
-function replyLine(want) {
-  return `${JSON.stringify(want)}\n`;
-}
-
 /** @param {World} w @param {string} subs @returns {string} */
 function closeParent(w, subs) {
   fakeGh.reply([{ when: "sub_issues", stdout: subs }]);
@@ -63,8 +57,18 @@ test("the moved ops live in src/ops/merge.ts and src/ops/finish.ts", async () =>
   const { merge } = await import("../src/ops/merge.ts");
   const finish = await import("../src/ops/finish.ts");
   assert.equal(typeof merge, "function");
-  const { finishMerged, closeParent: closeParentOp, post, release: releaseOp } = finish;
-  const ops = { finishMerged, closeParent: closeParentOp, post, release: releaseOp };
+  const {
+    finishMerged,
+    closeParent: closeParentOp,
+    post,
+    release: releaseOp,
+  } = finish;
+  const ops = {
+    finishMerged,
+    closeParent: closeParentOp,
+    post,
+    release: releaseOp,
+  };
   for (const [name, op] of Object.entries(ops)) {
     assert.equal(typeof op, "function", name);
   }
@@ -74,13 +78,16 @@ test("the moved ops live in src/ops/merge.ts and src/ops/finish.ts", async () =>
 test("close-parent with no sub-issues closes nothing", () => {
   const w = world();
   for (const subs of ["[]", ""]) {
-    assertReply(closeParent(w, subs), {
-      ok: true,
-      op: "close-parent",
-      posted: 0,
-      closed: false,
-      reason: "no sub-issues found",
-    });
+    assert.equal(
+      closeParent(w, subs),
+      replyLine({
+        ok: true,
+        op: "close-parent",
+        posted: 0,
+        closed: false,
+        reason: "no sub-issues found",
+      }),
+    );
   }
   assert.deepEqual(calls(), [
     ["api", "repos/o/r/issues/7/sub_issues?per_page=100"],
@@ -110,12 +117,15 @@ test("close-parent closes a parent whose sub-issues are all closed", () => {
     { number: 3, state: "closed" },
     { number: 4, state: "closed" },
   ];
-  assertReply(closeParent(w, JSON.stringify(subs)), {
-    ok: true,
-    op: "close-parent",
-    posted: 0,
-    closed: true,
-  });
+  assert.equal(
+    closeParent(w, JSON.stringify(subs)),
+    replyLine({
+      ok: true,
+      op: "close-parent",
+      posted: 0,
+      closed: true,
+    }),
+  );
   assert.deepEqual(calls(), [
     ["api", "repos/o/r/issues/7/sub_issues?per_page=100"],
     commentPost(
@@ -134,7 +144,7 @@ test("post only posts the queued comments", () => {
     op: "post",
     comments: [{ number: ISSUE, by: { role: "x" }, body: "b" }],
   });
-  assertReply(out, { ok: true, op: "post", posted: 1 });
+  assert.equal(out, replyLine({ ok: true, op: "post", posted: 1 }));
   assert.deepEqual(calls(), [commentPost(ISSUE, signedBy("x", "b"))]);
 });
 
@@ -152,14 +162,25 @@ function release(w, state) {
   });
   const made = calls();
   const [, stateCall = [], , touchCall = []] = made;
-  const { json } = STATE_GROUPS.parse(STATE_JSON.exec(stateCall.at(-2) ?? "")?.groups);
-  return { out, made, touched: touchCall.at(-2) ?? "", written: JSON.parse(json) };
+  const { json } = STATE_GROUPS.parse(
+    STATE_JSON.exec(stateCall.at(-2) ?? "")?.groups,
+  );
+  return {
+    out,
+    made,
+    touched: touchCall.at(-2) ?? "",
+    written: JSON.parse(json),
+  };
 }
 
 test("release renews the lease's time, keeps its lane and touches the claim", () => {
   const w = world();
   const before = Date.now();
-  const lease = { lane: LANE, sweepId: SWEEP, at: hoursFromNow(-LEASE_AGE_HOURS) };
+  const lease = {
+    lane: LANE,
+    sweepId: SWEEP,
+    at: hoursFromNow(-LEASE_AGE_HOURS),
+  };
   const state = { pr: 50, stage: "review", lease };
   const { out, made, touched, written } = release(w, state);
   assert.equal(out, replyLine(RELEASED));
@@ -220,7 +241,11 @@ test("the built ops merges and releases as src/ops.ts does", () => {
     );
     fakeGh.reply([claimListing(), claimListing()]);
     const unleased = { ...state, lease: null };
-    const released = ask(w, { op: "release", number: ISSUE, state: unleased }, ops);
+    const released = ask(
+      w,
+      { op: "release", number: ISSUE, state: unleased },
+      ops,
+    );
     answers.push({ merged, mergeCalls, released, releaseCalls: calls() });
   }
   const [first, second] = answers;

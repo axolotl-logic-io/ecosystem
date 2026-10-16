@@ -26,7 +26,8 @@ interface ReviewDiff {
 }
 
 // What a reviewer or re-reviewer does with the spec.
-const SPEC_RULE_REVIEW = "A finding must not ask for a change the spec forbids.";
+const SPEC_RULE_REVIEW =
+  "A finding must not ask for a change the spec forbids.";
 // What the fixer does with the spec.
 const SPEC_RULE_FIX =
   "Fix each finding in a way the spec allows. If a finding can only be met by breaking the spec, dispute it and quote the spec line.";

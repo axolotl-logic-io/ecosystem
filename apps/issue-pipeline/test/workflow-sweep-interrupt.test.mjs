@@ -5,6 +5,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { startSweep } from "../src/workflow/sweep.ts";
+
+/** @import { LaunchSpec } from "../src/workflow/launches.ts" */
+/** @import { Sweep } from "../src/workflow/sweep.ts" */
+/**
+ * @typedef {object} Run
+ * @property {string} stage
+ * @property {Record<string, unknown>} ops
+ * @property {Record<string, object>} agents
+ */
 import {
   claimAt,
   ISSUE,
@@ -71,15 +80,17 @@ const NEEDS_INFO_RUN = {
   },
 };
 
+/** @param {LaunchSpec | null} spec @returns {any} its ops request, or null */
 function requestOf(spec) {
-  const match = OPS_REQUEST.exec(spec.task);
-  if (match === null) {
+  const { json } = OPS_REQUEST.exec(spec?.task ?? "")?.groups ?? {};
+  if (json === undefined) {
     return null;
   }
-  return JSON.parse(match.groups.json);
+  return JSON.parse(json);
 }
 
 // The raw result for `spec`: the scripted reply for its op or session key.
+/** @param {LaunchSpec} spec @param {Run} run */
 function rawResult(spec, run) {
   const request = requestOf(spec);
   if (request !== null) {
@@ -92,6 +103,7 @@ function rawResult(spec, run) {
 
 // Starts `run`'s sweep and answers its batches until one has a launch named
 // `name` in flight. Returns the sweep, ready to be interrupted.
+/** @param {Run} run @param {string} name @returns {Sweep} */
 function sweepAt(run, name) {
   const sweep = startSweep({ ...ARGS, stage: run.stage }, CLOCK);
   let specs = sweep.next([]);
@@ -112,7 +124,7 @@ test("before the claim, interrupt saves nothing", () => {
 
 test("during a stage, interrupt saves the issue at its stage with no lease and its queued comments", () => {
   const spec = sweepAt(REVIEW_RUN, "i7-aggregate").interrupt();
-  assert.equal(spec.key, "i7-interrupt-9");
+  assert.equal(spec?.key, "i7-interrupt-9");
   const request = requestOf(spec);
   assert.equal(request.op, "save-state");
   assert.equal(request.number, ISSUE);
@@ -120,10 +132,16 @@ test("during a stage, interrupt saves the issue at its stage with no lease and i
   assert.equal(request.state.lease, null);
   // Each reviewer's comment, on the PR.
   assert.deepEqual(
-    request.comments.map(({ number }) => number),
+    request.comments.map(
+      (/** @type {{ number: number }} */ { number }) => number,
+    ),
     [PR, PR, PR],
   );
-  assert.ok(request.comments.some(({ body }) => REVIEW_COMMENT.test(body)));
+  assert.ok(
+    request.comments.some((/** @type {{ body: string }} */ { body }) =>
+      REVIEW_COMMENT.test(body),
+    ),
+  );
 });
 
 test("once the finish phase has started, interrupt saves nothing", () => {

@@ -14,6 +14,7 @@ import {
   repliesAt,
   runJob,
   SPEC_SESSION,
+  sessionOf,
   setScript,
   setUp,
   startJob,
@@ -28,10 +29,6 @@ const INTERRUPTED = /interrupted/u;
 // SIGTERM's exit code: 128 + 15.
 const STOPPED_BY_SIGTERM = 143;
 
-function sessionOf(status) {
-  return status?.launches.find(({ kind }) => kind === "session") ?? null;
-}
-
 // A spec job stopped while its session waits, after it spent USAGE.
 async function stoppedJob() {
   const place = setUp(repliesAt("spec"), {
@@ -45,6 +42,7 @@ async function stoppedJob() {
   return { place, end };
 }
 
+/** @param {import("./job-test-kit.mjs").Place} place */
 function releaseOf(place) {
   return logOf(place, "ops.log").find(({ op }) => op === "release");
 }

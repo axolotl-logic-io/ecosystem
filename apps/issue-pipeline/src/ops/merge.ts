@@ -3,10 +3,10 @@
 // merge order between issues, the squash merge itself and what a refusal means.
 
 import { z } from "zod";
-import { fetchIn } from "../checkouts.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import { fetchIn } from "../git-state.ts";
 import { gh, ghJson } from "../github.ts";
 import { LABELS } from "../labels.ts";
 import type { RunResult } from "../process.ts";

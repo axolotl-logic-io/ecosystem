@@ -15,9 +15,16 @@ const HELPERS_DESTRUCTURE =
   /const \{(?<list>[^}]*)\} = workflowModules\.helpers;/u;
 // One destructured name, with or without a local rename.
 const DESTRUCTURED_NAME = /^\s*(?<name>\w+)\s*(?::\s*\w+\s*)?$/u;
-// The loop, a function declaration and a labelled section of the old body.
-const WHILE_LOOP = /\bwhile\s*\(/gu;
-const FUNCTION_DECLARATION = /\bfunction\b/u;
+// A loop, a function, an async function and a labelled section of the old
+// body: the body has none of them. The helpers' driveBatches chains the
+// batches.
+const LOOP = /\b(?:while|for)\s*\(/u;
+const FUNCTION_KEYWORD = /\bfunction\b/u;
+const ASYNC_KEYWORD = /\basync\b/u;
+// The one call that runs a batch of launches.
+const RUNS_ALL_CALL = /\bruns\.all\(/gu;
+// The driver's variable, whose summary build.ts's wrapper returns.
+const SWEEP_DECLARATION = /\bconst sweep =/u;
 const SECTION_BLOCK = /\/\/ -{10}/u;
 
 const body = fs.readFileSync(
@@ -55,9 +62,12 @@ test("every helper workflow.js reads is one the helpers' module exports", () => 
   }
 });
 
-test("workflow.js is only the top-level loop", () => {
-  assert.equal(body.match(WHILE_LOOP)?.length, 1);
-  assert.doesNotMatch(body, FUNCTION_DECLARATION);
+test("workflow.js only drives the batches, with no loop and no async", () => {
+  assert.doesNotMatch(body, LOOP);
+  assert.doesNotMatch(body, FUNCTION_KEYWORD);
+  assert.doesNotMatch(body, ASYNC_KEYWORD);
+  assert.equal(body.match(RUNS_ALL_CALL)?.length, 1);
+  assert.match(body, SWEEP_DECLARATION);
   assert.doesNotMatch(body, SECTION_BLOCK);
 });
 

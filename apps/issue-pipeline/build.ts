@@ -10,7 +10,8 @@
 // `args` and its tools in scope. Its helpers (src/workflow/) are bundled into
 // an IIFE that defines `workflowModules`, placed ahead of the body; the body
 // itself is transformed alone, never bundled: it keeps its top-level `await`
-// and `return`, its globals and gains no imports.
+// and its globals and gains no imports. The build adds the body's `return`,
+// since Biome, which lints the source, can't parse a top-level one.
 // The ops CLI's entry, src/ops.ts, is bundled with the strict-TS modules it
 // imports for Node into one ES module, ops.mjs, that keeps its `#!` line. The
 // stage job's entry, src/job.ts, and its pi extension,
@@ -29,6 +30,9 @@ const WORKFLOW_SOURCE = path.join(SOURCE_DIR, "workflow.js");
 const WORKFLOW_HELPERS_SOURCE = path.join(SOURCE_DIR, "workflow", "index.ts");
 // The variable the helpers' bundle defines, which the body reads them from.
 const WORKFLOW_HELPERS_GLOBAL = "workflowModules";
+// What the body returns: the body keeps its sweep's driver in `sweep`, and
+// the wrapper ends it with this, so the run resolves to the sweep's summary.
+const WORKFLOW_RESULT = "sweep.summary()";
 const OPS_SOURCE = path.join(SOURCE_DIR, "ops.ts");
 const WORKFLOW_OUTPUT = "workflow.js";
 const OPS_OUTPUT = "ops.mjs";
@@ -62,8 +66,11 @@ function loaderFor(file: string): Loader {
 // esbuild reads top-level `await` as a sign of an ES module, where a top-level
 // `return` is an error (evanw/esbuild#1814). So the body is transformed inside
 // this wrapper, which takes no parameters so that `args` and the tools stay
-// globals, and the wrapper's first and last lines are cut from the output.
+// globals, and the wrapper's first line and closing brace are cut from the
+// output. The wrapper adds the body's `return`, which stays as its last
+// statement: the source has none, since Biome can't parse a top-level one.
 const WRAPPER_START = "async function issue_pipeline_workflow_body() {\n";
+const WRAPPER_RETURN = `return ${WORKFLOW_RESULT};\n`;
 const WRAPPER_END = "}\n";
 
 function unwrap(code: string): string {
@@ -99,13 +106,16 @@ async function bundleWorkflowHelpers(): Promise<string> {
 async function buildWorkflow(outDir: string): Promise<void> {
   const helpers = await bundleWorkflowHelpers();
   const source = await readFile(WORKFLOW_SOURCE, "utf8");
-  const result = await transform(`${WRAPPER_START}${source}\n${WRAPPER_END}`, {
-    charset: "utf8",
-    loader: loaderFor(WORKFLOW_SOURCE),
-    logLevel: "silent",
-    sourcefile: WORKFLOW_SOURCE,
-    target: "esnext",
-  });
+  const result = await transform(
+    `${WRAPPER_START}${source}\n${WRAPPER_RETURN}${WRAPPER_END}`,
+    {
+      charset: "utf8",
+      loader: loaderFor(WORKFLOW_SOURCE),
+      logLevel: "silent",
+      sourcefile: WORKFLOW_SOURCE,
+      target: "esnext",
+    },
+  );
   await writeFile(
     path.join(outDir, WORKFLOW_OUTPUT),
     `${helpers}${unwrap(result.code)}`,

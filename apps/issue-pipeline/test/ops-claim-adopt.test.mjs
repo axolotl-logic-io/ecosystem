@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
 import {
   claimReply,
   issueReply,
@@ -37,12 +38,24 @@ const CI_FIX = 65;
 // Each issue's claim comment id; its state comment follows it.
 const CLAIM_IDS = 10;
 
+/**
+ * A state saved at checks, as movedBranch saves it.
+ * @typedef {{ stage: string, lease: null, pr: null, headSha: string, passedSha: string | null, log: string[] }} Saved
+ */
+
+// The part of a claim's reply these tests read.
+const CLAIM_REPLY = z.looseObject({
+  state: z.unknown(),
+  remoteHead: z.unknown(),
+});
+
 // A claim runs after a sweep, which made the clone.
 sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
 
 // Issue `n`, saved at checks with its worktree on the base, and a branch on
 // GitHub one commit past the saved head. Returns the saved state and the
 // branch's head.
+/** @param {number} n @returns {{ saved: Saved, remote: string }} */
 function movedBranch(n) {
   const wt = worktree(n);
   sh(
@@ -53,6 +66,7 @@ function movedBranch(n) {
     `cd ${root}/seed && git checkout -qb agent/issue-${n} integration && echo ${n} > a${n} && git add a${n} && git commit -qm work && git push -q origin agent/issue-${n}`,
   );
   const remote = sh(`git -C ${root}/seed rev-parse HEAD`);
+  /** @type {Saved} */
   const saved = {
     stage: "checks",
     lease: null,
@@ -65,6 +79,7 @@ function movedBranch(n) {
 }
 
 // Records, as the ops would before a push, that `sha` was pushed for `n`.
+/** @param {number} n @param {string} sha @param {string} [op] @returns {void} */
 function recordPush(n, sha, op = "finish-sync") {
   fs.mkdirSync(runDir(n), { recursive: true });
   const record = JSON.stringify({ sha, op, at: TIME });
@@ -72,6 +87,7 @@ function recordPush(n, sha, op = "finish-sync") {
 }
 
 // Claims `n`, which this lane already holds, from the saved state `saved`.
+/** @param {number} n @param {Saved} saved @returns {z.infer<typeof CLAIM_REPLY>} */
 function claimSaved(n, saved) {
   const comments = [
     claimComment(n * CLAIM_IDS, "me", "s0", LIVE),
@@ -82,9 +98,10 @@ function claimSaved(n, saved) {
     commentsReply(n, comments),
     commentsReply(n, comments),
   ]);
-  return askOps({ op: "claim", number: n, ...LANE });
+  return CLAIM_REPLY.parse(askOps({ op: "claim", number: n, ...LANE }));
 }
 
+/** @param {number} n @returns {string} */
 function head(n) {
   return sh(`git -C ${worktree(n)} rev-parse HEAD`);
 }

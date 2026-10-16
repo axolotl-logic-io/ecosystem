@@ -9,6 +9,7 @@ import {
   READY_SPEC,
   repliesAt,
   runJob,
+  sessionOf,
   setUp,
   startJob,
   statusOf,
@@ -18,10 +19,6 @@ import {
 import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
 const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
-
-function sessionOf(status) {
-  return status?.launches.find(({ kind }) => kind === "session") ?? null;
-}
 
 test("while a session waits, job.json shows its pid, session, last event and tool failures", async () => {
   const place = setUp(repliesAt("spec"), {
@@ -67,7 +64,9 @@ test("a finished job's file counts only the last tool failures and records each 
   assert.equal(launch.toolFailures, 1);
   assert.equal(launch.outcome, "ok");
   assert.deepEqual(launch.usage, USAGE);
-  const ops = status.launches.filter(({ kind }) => kind === "ops");
+  const ops = status.launches.filter(
+    (/** @type {{ kind: string }} */ { kind }) => kind === "ops",
+  );
   assert.ok(ops.length > 0);
   for (const op of ops) {
     assert.equal(op.session, null);

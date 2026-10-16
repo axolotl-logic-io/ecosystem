@@ -5,15 +5,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import {
-  assertClean,
-  fetchIn,
-  head,
-  recordPush,
-  remoteHead,
-} from "../checkouts.ts";
+import { recordPush } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
+import { assertClean, fetchIn, head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
 import { parseRequest, run, tail } from "../process.ts";
 import { wikiDiff } from "../wiki.ts";

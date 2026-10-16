@@ -9,6 +9,11 @@ import process from "node:process";
 import { test } from "node:test";
 import structuredOutput from "../src/job/structured-output.ts";
 
+/** @typedef {Parameters<typeof structuredOutput>[0]} ExtensionApi */
+/** @typedef {Parameters<ExtensionApi["registerTool"]>[0]} OutputTool */
+/** @typedef {{ name: string, options: Parameters<ExtensionApi["registerFlag"]>[1] }} Flag */
+/** @typedef {{ flags: Flag[], events: string[], tools: OutputTool[] }} Loaded */
+
 const SCHEMA = {
   type: "object",
   properties: { decision: { type: "string" } },
@@ -17,8 +22,11 @@ const SCHEMA = {
 
 // Loads the extension into a fake pi whose --output-schema flag is `flag`,
 // starts the session, and returns what the extension registered.
+/** @param {string | undefined} flag @returns {Loaded} */
 function load(flag) {
+  /** @type {Loaded} */
   const loaded = { flags: [], events: [], tools: [] };
+  /** @type {(() => void)[]} */
   const handlers = [];
   const flags = new Map([["output-schema", flag]]);
   structuredOutput({
@@ -36,6 +44,7 @@ function load(flag) {
   return loaded;
 }
 
+/** @param {string} content @returns {string} */
 function schemaFile(content) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "job-output-schema-"));
   process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
@@ -47,15 +56,17 @@ function schemaFile(content) {
 test("the output extension registers a string --output-schema flag and waits for the session to start", () => {
   const { flags, events } = load(schemaFile(JSON.stringify(SCHEMA)));
   assert.deepEqual(events, ["session_start"]);
-  assert.equal(flags.length, 1);
-  assert.equal(flags[0].name, "output-schema");
-  assert.equal(flags[0].options.type, "string");
+  assert.deepEqual(
+    flags.map(({ name, options }) => [name, options.type]),
+    [["output-schema", "string"]],
+  );
 });
 
 test("the output tool takes the schema file's JSON Schema as its parameters and ends the session with its arguments as details", async () => {
   const { tools } = load(schemaFile(JSON.stringify(SCHEMA)));
   assert.equal(tools.length, 1);
   const [tool] = tools;
+  assert.ok(tool);
   assert.equal(tool.name, "structured_output");
   assert.deepEqual(tool.parameters, SCHEMA);
   const args = { decision: "ready" };

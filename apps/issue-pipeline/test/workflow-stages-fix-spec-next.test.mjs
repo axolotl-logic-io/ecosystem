@@ -12,19 +12,39 @@ import {
   SPEC_HEADING,
 } from "./workflow-review-test-kit.mjs";
 
+/** @import { Step } from "../src/workflow/stages/types.ts" */
+
 const SPEC = "## Behaviour\n\n1. The loop visits every item.";
+/** @type {[name: string, spec: string | null][]} */
+const NO_SPECS = [
+  ["no spec", null],
+  ["an empty spec", ""],
+];
+
+// The task of the child `step` launches first.
+/** @param {Step} step @returns {string} */
+function firstTask(step) {
+  if (step.done) {
+    throw new Error("the fix round finished before its launch");
+  }
+  const [launch] = step.launches;
+  if (launch.kind !== "child") {
+    throw new Error(`the fix round launched ${launch.kind} first`);
+  }
+  return launch.task;
+}
 
 describe("a fix round on an issue with a spec", () => {
   const { begun, prepared } = round(fixState([F1], { spec: SPEC }));
 
   test("gives the fixer the spec and the rule for disputing against it", () => {
-    const { task } = begun.launches[0];
+    const task = firstTask(begun);
     assert.equal(task, fixTask(1, [F1], "none", SPEC));
     assert.ok(task.includes(SPEC));
   });
 
   test("gives the re-reviewer the spec and its rule", () => {
-    const { task } = prepared.launches[0];
+    const task = firstTask(prepared);
     assert.equal(
       task,
       rereviewTask("correctness", DIFF_PATH, [F1], { spec: SPEC }),
@@ -33,21 +53,18 @@ describe("a fix round on an issue with a spec", () => {
   });
 });
 
-for (const [name, spec] of [
-  ["no spec", null],
-  ["an empty spec", ""],
-]) {
+for (const [name, spec] of NO_SPECS) {
   describe(`a fix round on an issue with ${name}`, () => {
     const { begun, prepared } = round(fixState([F1], { spec }));
 
     test("gives the fixer its task without a spec", () => {
-      const { task } = begun.launches[0];
+      const task = firstTask(begun);
       assert.equal(task, fixTask(1, [F1]));
       assert.ok(!task.includes(SPEC_HEADING));
     });
 
     test("gives the re-reviewer its task without a spec", () => {
-      const { task } = prepared.launches[0];
+      const task = firstTask(prepared);
       assert.equal(task, rereviewTask("correctness", DIFF_PATH, [F1]));
       assert.ok(!task.includes(SPEC_HEADING));
     });

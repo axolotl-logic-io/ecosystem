@@ -10,6 +10,13 @@ import {
 } from "./workflow-finish-run-kit.mjs";
 import { launchKeys } from "./workflow-stages-fixtures.mjs";
 
+/** @import { IssueState } from "../src/workflow/types.ts" */
+/** @import { TraceEntry } from "./workflow-harness.mjs" */
+/** @typedef {{ testsOnly?: boolean, state: IssueState }} TracedRequest */
+
+// The merge, the release and the cleanup, which end a sweep that merges.
+const FINISHING_LAUNCHES = 3;
+
 const BEHIND = { ok: true, merged: false, reason: "behind" };
 // A clean rebase onto a moved base, then passing tests and CI on its head.
 const REBASED_OPS = {
@@ -23,9 +30,11 @@ const REBASED_OPS = {
   "ci-status": { ok: true, status: "pass" },
 };
 
-// The launch keyed `key` in `trace`.
-function launchOf(trace, key) {
-  return trace.find((entry) => entry.key === key);
+// The request of the ops launch keyed `key` in `trace`.
+/** @param {readonly TraceEntry[]} trace @param {string} key @returns {TracedRequest} */
+function requestOf(trace, key) {
+  const entry = trace.find((traced) => traced.key === key);
+  return /** @type {TracedRequest} */ (entry?.request ?? {});
 }
 
 test("a merge refused as behind rebases, re-runs the tests and merges", async ({
@@ -46,7 +55,7 @@ test("a merge refused as behind rebases, re-runs the tests and merges", async ({
     "i7-merge-7",
     "cleanup-8",
   ]);
-  assert.equal(launchOf(trace, "i7-verify-5").request.testsOnly, true);
+  assert.equal(requestOf(trace, "i7-verify-5").testsOnly, true);
   assert.deepEqual(
     summary,
     issueSummary({
@@ -66,14 +75,16 @@ test("a second behind in one sweep waits at sync for the next sweep", async ({
     fields: SECURED,
     ops: { ...REBASED_OPS, merge: [BEHIND, BEHIND] },
   });
-  assert.deepEqual(launchKeys(trace).slice(-3), [
+  assert.deepEqual(launchKeys(trace).slice(-FINISHING_LAUNCHES), [
     "i7-merge-7",
     "i7-release-8",
     "cleanup-9",
   ]);
-  const { state } = launchOf(trace, "i7-release-8").request;
+  const { state } = requestOf(trace, "i7-release-8");
   assert.deepEqual([state.stage, state.passedSha], ["sync", "ddddddd"]);
-  const notes = state.log.map((line) => line.slice(line.indexOf(" ") + 1));
+  const notes = (state.log ?? []).map((line) =>
+    line.slice(line.indexOf(" ") + 1),
+  );
   const now = notes.indexOf("merge deferred: behind; rebasing now");
   const later = notes.indexOf("merge deferred: behind; will rebase next sweep");
   assert.ok(now >= 0 && later > now, notes.join("\n"));
@@ -99,7 +110,7 @@ test("a merge refused as conflict waits at sync for the next sweep", async ({
     "i7-release-4",
     "cleanup-5",
   ]);
-  assert.equal(launchOf(trace, "i7-release-4").request.state.stage, "sync");
+  assert.equal(requestOf(trace, "i7-release-4").state.stage, "sync");
   assert.deepEqual(
     summary,
     issueSummary({ stage: "sync", allocatedTokens: 940_000 }),

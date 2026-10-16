@@ -20,18 +20,30 @@
 //                          triages and specs #N and goes no further
 // Design and decisions: the "Issue pipeline" page of the project-buddy wiki.
 //
-// Everything but this loop is strict TypeScript in src/workflow/. The build
+// Everything but this body is strict TypeScript in src/workflow/. The build
 // bundles it ahead of this body as `workflowModules`, and
 // src/workflow/index.ts lists every name this destructure reads. The sweep's
 // driver (src/workflow/sweep.ts) owns the sweep: the sweep op, the claim, the
 // stage groups on their step machines, closing parents, the release and the
-// summary. This body is the one loop that awaits the launches it asks for,
-// since only the body may await.
+// summary. This body only awaits the batches of launches the driver asks for,
+// since only the body may await; driveBatches (src/workflow/batches.ts) chains
+// them, each on the last one's results. It keeps the driver in `sweep`, and the
+// build adds its last statement, `return sweep.summary();` (build.ts).
 
-const { startSweep } = workflowModules.helpers;
+const { startSweep, driveBatches } = workflowModules.helpers;
 
-if (!args.config) throw new Error("args.config must be the absolute path of a repo config file");
-const sweep = startSweep(args, { sweepId: "s" + Date.now().toString(36), now: () => new Date() });
-let specs = sweep.next([]);
-while (specs.length > 0) specs = sweep.next(await runs.all(specs));
-return sweep.summary();
+// A sweep's id is "s" and the start time in base 36, as src/job.ts makes it.
+const SWEEP_ID_RADIX = 36;
+
+if (!args.config) {
+  throw new Error(
+    "args.config must be the absolute path of a repo config file",
+  );
+}
+const sweep = startSweep(args, {
+  sweepId: `s${Date.now().toString(SWEEP_ID_RADIX)}`,
+  now: () => new Date(),
+});
+// Runs each batch the driver asks for, feeding its results back, until it asks
+// for none.
+await driveBatches(sweep, (specs) => runs.all(specs));

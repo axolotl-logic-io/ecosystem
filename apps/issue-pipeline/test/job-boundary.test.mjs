@@ -46,7 +46,7 @@ const EXPECTED = {
 
 /** @param {readonly string[]} names @returns {boolean} */
 function isSorted(names) {
-  return names.every((name, at) => at === 0 || names[at - 1] < name);
+  return names.every((name, at) => at === 0 || (names[at - 1] ?? "") < name);
 }
 
 /** @param {object} jobRoles @param {string} stage */
@@ -101,7 +101,11 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     assert.equal(boundary.checkout, path.join(place.root, "work/o__r/issue-7"));
     assert.deepEqual(boundary.network, expected.network);
     assert.ok(isSorted(boundary.env));
-    assert.ok(boundary.env.every((name) => typeof name === "string"));
+    assert.ok(
+      boundary.env.every(
+        (/** @type {unknown} */ name) => typeof name === "string",
+      ),
+    );
     assert.equal(boundary.env.includes("GH_TOKEN"), expected.token);
     assert.ok(!boundary.env.includes("W_TOKEN"));
     assert.ok(!boundary.env.includes("M_TOKEN"));

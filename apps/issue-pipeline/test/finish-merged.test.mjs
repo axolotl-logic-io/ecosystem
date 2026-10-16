@@ -9,7 +9,6 @@ import { test } from "node:test";
 import { z } from "zod";
 import {
   ask,
-  assertReply,
   calls,
   claimListing,
   commentPost,
@@ -19,6 +18,7 @@ import {
   GIT_USER,
   hoursFromNow,
   LANE,
+  replyLine,
   SWEEP,
   sh,
   signedBy,
@@ -61,7 +61,9 @@ function withWiki(w, { rejectPushes = false } = {}) {
   const origin = path.join(w.root, "wiki.git");
   const clone = path.join(w.root, "clones/o__r.wiki");
   const dir = path.join(w.worktree, "wiki");
-  const config = z.looseObject({}).parse(JSON.parse(fs.readFileSync(w.config, "utf8")));
+  const config = z
+    .looseObject({})
+    .parse(JSON.parse(fs.readFileSync(w.config, "utf8")));
   fs.writeFileSync(w.config, JSON.stringify({ ...config, wiki: true }));
   sh(
     `cd ${w.root} && git init -q --bare -b master wiki.git && git clone -q wiki.git ${clone} 2>/dev/null && git -C ${clone} ${GIT_USER} commit -q --allow-empty -m home && git -C ${clone} push -q origin HEAD:master`,
@@ -102,7 +104,7 @@ function finishingCalls() {
 test("a pushed wiki commit is named on the issue and the worktree goes", () => {
   const w = world();
   const wiki = withWiki(w);
-  assertReply(mergedByHand(w, finishReplies()), BY_HAND);
+  assert.equal(mergedByHand(w, finishReplies()), replyLine(BY_HAND));
   const pushed = `Pushed this issue's wiki changes as wiki commit ${wiki.sha.slice(0, SHORT_SHA_LENGTH)} (history: https://github.com/o/r/wiki/_history).`;
   assert.deepEqual(finishingCalls(), [
     ...finishCalls(STATE),
@@ -115,7 +117,7 @@ test("a pushed wiki commit is named on the issue and the worktree goes", () => {
 test("a wiki push that fails is reported and the worktree stays", () => {
   const w = world();
   const wiki = withWiki(w, { rejectPushes: true });
-  assertReply(mergedByHand(w, finishReplies()), BY_HAND);
+  assert.equal(mergedByHand(w, finishReplies()), replyLine(BY_HAND));
   const failed =
     "The wiki changes from this issue were not pushed: could not push the wiki changes after 3 attempts";
   assert.deepEqual(finishingCalls(), [
@@ -130,7 +132,7 @@ test("an issue already closed is not closed again", () => {
   const w = world();
   const closed = { when: "--jq {state}", stdout: '{"state":"closed"}' };
   const replies = [claimListing(), claimListing(), closed];
-  assertReply(mergedByHand(w, replies), BY_HAND);
+  assert.equal(mergedByHand(w, replies), replyLine(BY_HAND));
   const open = finishCalls(STATE);
   assert.equal(open.at(-1)?.[0], "issue");
   assert.deepEqual(finishingCalls(), open.slice(0, -1));

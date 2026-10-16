@@ -52,7 +52,14 @@ function verifyCase(files, commands, extra = {}) {
   }
   const leftovers = kit.leftovers(n);
   const worktree = kit.worktree(n);
-  return { raw, reply: VERIFY_REPLY.parse(JSON.parse(raw)), sha, log, leftovers, worktree };
+  return {
+    raw,
+    reply: VERIFY_REPLY.parse(JSON.parse(raw)),
+    sha,
+    log,
+    leftovers,
+    worktree,
+  };
 }
 
 /** @param {string} id @param {string} log @returns {object} */

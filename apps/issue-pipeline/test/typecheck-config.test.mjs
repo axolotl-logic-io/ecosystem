@@ -1,6 +1,7 @@
 // @ts-check
-// npm run typecheck type-checks a file under test/ that opts in with
-// `// @ts-check`: a fixture with a type error fails with that error, and the
+// npm run typecheck type-checks every file under test/ (tsconfig.test.json
+// turns on `checkJs`, and check-task.test.mjs checks a file without
+// `// @ts-check`): a fixture with a type error fails with that error, and the
 // same fixture without it passes.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

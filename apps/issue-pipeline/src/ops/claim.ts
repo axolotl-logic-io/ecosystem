@@ -8,23 +8,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import {
-  branchHasWork,
-  ensureWorktree,
-  fetchIn,
-  lastPush,
-  remoteHead,
-} from "../checkouts.ts";
+import { ensureWorktree, lastPush } from "../checkouts.ts";
 import type { LaneRequest } from "../claims.ts";
 import { laneOf, raceForClaim } from "../claims.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import { branchHasWork, fetchIn, remoteHead } from "../git-state.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError, run, shell } from "../process.ts";
+import { adoptPush, startState } from "../start-state.ts";
 import type { State } from "../state.ts";
-import { adoptPush, readState, startState, writeState } from "../state.ts";
+import { readState, writeState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import { ensureWiki } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";

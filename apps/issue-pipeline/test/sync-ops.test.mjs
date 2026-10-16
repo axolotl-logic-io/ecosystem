@@ -14,9 +14,19 @@ const { fakeGh, originRef, sh, worktree } = fx;
 const BASE = "origin/integration";
 // Each test's issue. Two tests share 33, as they always have.
 const ISSUE = {
-  upToDate: 31, movedBase: 32, refusedPush: 33,
-  conflict: 33, keptConflict: 34, unfinished: 41, aborted: 42, abortedWithReason: 43, uncommitted: 44,
-  offBase: 45, noCommits: 46, markers: 47, finished: 48,
+  upToDate: 31,
+  movedBase: 32,
+  refusedPush: 33,
+  conflict: 33,
+  keptConflict: 34,
+  unfinished: 41,
+  aborted: 42,
+  abortedWithReason: 43,
+  uncommitted: 44,
+  offBase: 45,
+  noCommits: 46,
+  markers: 47,
+  finished: 48,
 };
 const UNCOMMITTED_FILES = 21;
 const NAME_DIGITS = 2;
@@ -50,7 +60,10 @@ test("sync-base leaves an up-to-date branch alone", () => {
   const headSha = fx.startBranch(ISSUE.upToDate, "g", "one");
   const { out, calls } = ask({ op: "sync-base", number: ISSUE.upToDate });
   assert.deepEqual(calls, []);
-  assert.equal(out, okLine("sync-base", { changed: false, conflict: false, headSha }));
+  assert.equal(
+    out,
+    okLine("sync-base", { changed: false, conflict: false, headSha }),
+  );
   assert.equal(originRef("agent/issue-31"), headSha);
 });
 
@@ -61,7 +74,10 @@ test("sync-base rebases onto a moved base and pushes", () => {
   assert.deepEqual(calls, []);
   const headSha = originRef("agent/issue-32");
   assert.notEqual(headSha, before);
-  assert.equal(out, okLine("sync-base", { changed: true, conflict: false, headSha }));
+  assert.equal(
+    out,
+    okLine("sync-base", { changed: true, conflict: false, headSha }),
+  );
   assert.equal(originRef(`${headSha}^`), base);
   const record = { sha: headSha, op: "sync-base", dated: true };
   assert.deepEqual(pushRecord(fx.root, ISSUE.movedBase), record);
@@ -98,7 +114,13 @@ function conflicting(n) {
 /** @param {number} n @param {boolean} inRebase @param {string} baseSha @returns {string} */
 function conflictLine(n, inRebase, baseSha) {
   const conflicts = [`c${n}`];
-  return okLine("sync-base", { changed: false, conflict: true, inRebase, conflicts, baseSha });
+  return okLine("sync-base", {
+    changed: false,
+    conflict: true,
+    inRebase,
+    conflicts,
+    baseSha,
+  });
 }
 
 test("sync-base reports a conflict and aborts the rebase", () => {
@@ -140,28 +162,57 @@ function keptConflict(n) {
 /** @param {number} n @param {object} request @param {string} reason @param {string} [headSha] @returns {{ got: object, expected: object }} */
 function failure(n, request, reason, headSha = originRef(`agent/issue-${n}`)) {
   const { out, calls } = ask({ op: "finish-sync", number: n, ...request });
-  const state = { calls: [], inRebase: false, worktree: { head: headSha, status: "" }, origin: headSha };
-  const got = { out, calls, inRebase: fx.inRebase(n), worktree: fx.worktreeState(n), origin: originRef(`agent/issue-${n}`) };
-  return { got, expected: { out: okLine("finish-sync", { resolved: false, reason }), ...state } };
+  const state = {
+    calls: [],
+    inRebase: false,
+    worktree: { head: headSha, status: "" },
+    origin: headSha,
+  };
+  const got = {
+    out,
+    calls,
+    inRebase: fx.inRebase(n),
+    worktree: fx.worktreeState(n),
+    origin: originRef(`agent/issue-${n}`),
+  };
+  return {
+    got,
+    expected: {
+      out: okLine("finish-sync", { resolved: false, reason }),
+      ...state,
+    },
+  };
 }
 
 test("finish-sync resets the worktree on an abort or an unfinished rebase", () => {
   const unfinishedConflict = keptConflict(ISSUE.unfinished);
   assert.deepEqual(unfinishedConflict.calls, []);
-  const unfinished = failure(ISSUE.unfinished, {}, "the rebase was not finished", unfinishedConflict.headSha);
+  const unfinished = failure(
+    ISSUE.unfinished,
+    {},
+    "the rebase was not finished",
+    unfinishedConflict.headSha,
+  );
   assert.deepEqual(unfinished.got, unfinished.expected);
   const { headSha: head, calls } = keptConflict(ISSUE.aborted);
   assert.deepEqual(calls, []);
   const aborted = failure(ISSUE.aborted, { abort: true }, "aborted", head);
   assert.deepEqual(aborted.got, aborted.expected);
   assert.deepEqual(keptConflict(ISSUE.abortedWithReason).calls, []);
-  const withReason = failure(ISSUE.abortedWithReason, { abort: true, reason: "no time left" }, "no time left");
+  const withReason = failure(
+    ISSUE.abortedWithReason,
+    { abort: true, reason: "no time left" },
+    "no time left",
+  );
   assert.deepEqual(withReason.got, withReason.expected);
 });
 
 test("finish-sync refuses a worktree with uncommitted changes", () => {
   fx.startBranch(ISSUE.uncommitted, "g", "one");
-  const names = Array.from({ length: UNCOMMITTED_FILES }, (_, at) => `u${String(at + 1).padStart(NAME_DIGITS, "0")}`);
+  const names = Array.from(
+    { length: UNCOMMITTED_FILES },
+    (_, at) => `u${String(at + 1).padStart(NAME_DIGITS, "0")}`,
+  );
   for (const name of names) {
     fs.writeFileSync(path.join(worktree(ISSUE.uncommitted), name), "x\n");
   }
@@ -175,7 +226,11 @@ test("finish-sync refuses a branch not on the base", () => {
   fx.startBranch(ISSUE.offBase, "g", "one");
   fx.advanceBase("b45", "base");
   fx.fetchClone();
-  const { got, expected } = failure(ISSUE.offBase, {}, `HEAD is not based on ${BASE}`);
+  const { got, expected } = failure(
+    ISSUE.offBase,
+    {},
+    `HEAD is not based on ${BASE}`,
+  );
   assert.deepEqual(got, expected);
 });
 
@@ -183,16 +238,28 @@ test("finish-sync refuses a branch with no commits left", () => {
   assert.deepEqual(keptConflict(ISSUE.noCommits).calls, []);
   gitIn(worktree(ISSUE.noCommits), "rebase --abort");
   gitIn(worktree(ISSUE.noCommits), `reset -q --hard ${BASE}`);
-  const { got, expected } = failure(ISSUE.noCommits, {}, "the branch has no commits left after the rebase");
+  const { got, expected } = failure(
+    ISSUE.noCommits,
+    {},
+    "the branch has no commits left after the rebase",
+  );
   assert.deepEqual(got, expected);
 });
 
 test("finish-sync refuses conflict markers", () => {
   const round = ["<<<<<<< ours", "=======", ">>>>>>> theirs"];
   const markers = Array.from({ length: MARKER_ROUNDS }, () => round).flat();
-  fx.startBranch(ISSUE.markers, "m", ["<<<<<<<x", ...markers, "======= no"].join("\n"));
+  fx.startBranch(
+    ISSUE.markers,
+    "m",
+    ["<<<<<<<x", ...markers, "======= no"].join("\n"),
+  );
   const shown = markers.slice(0, MARKERS_SHOWN).map((line) => `+${line}`);
-  const { got, expected } = failure(ISSUE.markers, {}, `conflict markers remain:\n${shown.join("\n")}`);
+  const { got, expected } = failure(
+    ISSUE.markers,
+    {},
+    `conflict markers remain:\n${shown.join("\n")}`,
+  );
   assert.deepEqual(got, expected);
 });
 

@@ -3,7 +3,6 @@
 // workflow does: a pipeline root with a config, local git repos holding issue
 // #7's worktree, the fake gh, and the exact gh calls and comment texts the
 // finishing ops make.
-import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -94,11 +93,10 @@ function ask(w, request, ops) {
   return runOps({ ...where, ops });
 }
 
-// The reply, both parsed and as the exact line, which pins the key order.
-/** @param {string} stdout @param {unknown} want @returns {void} */
-function assertReply(stdout, want) {
-  assert.deepEqual(JSON.parse(stdout), want);
-  assert.equal(stdout, `${JSON.stringify(want)}\n`);
+// The exact line an op prints for the reply `want`, which pins the key order.
+/** @param {unknown} want @returns {string} */
+function replyLine(want) {
+  return `${JSON.stringify(want)}\n`;
 }
 
 // The gh calls since the last reply(), with minute stamps made constant.
@@ -270,7 +268,6 @@ function finishCalls(state) {
 export {
   advanceBase,
   ask,
-  assertReply,
   calls,
   claimListing,
   commentPost,
@@ -282,6 +279,7 @@ export {
   LANE,
   listCall,
   relabel,
+  replyLine,
   SWEEP,
   sh,
   signedBy,

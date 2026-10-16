@@ -6,9 +6,9 @@
 
 import path from "node:path";
 import { z } from "zod";
-import { assertClean, fetchIn, head } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import { assertClean, fetchIn, head } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";

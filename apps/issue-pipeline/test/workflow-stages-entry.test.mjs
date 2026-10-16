@@ -13,6 +13,10 @@ import {
 } from "../src/workflow/stages/entry.ts";
 import { claimAt, sweepReply } from "./workflow-stages-fixtures.mjs";
 
+/** @import { SummarySource } from "../src/workflow/stages/entry.ts" */
+/** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
+
 const ISSUE = 7;
 const PARENT = 5;
 const SWEEP_FAILED = /^Error: sweep failed: gh is down$/u;
@@ -21,6 +25,7 @@ const ALLOCATED = 5;
 const BRANCH_MOVED = "the PR branch changed outside the pipeline";
 
 // The state of a won claim at review, its head last seen at `headSha`.
+/** @param {string} headSha @returns {IssueState} */
 function stateAt(headSha) {
   return claimAt("review", { pr: 42, headSha }).state;
 }
@@ -114,13 +119,16 @@ test("a head that moved stops the claimed issue with both heads", () => {
 
 test("an equal or missing head gives no stop", () => {
   const won = { ...claimAt("review"), state: stateAt("aaaaaaa") };
-  assert.equal(claimStep(ISSUE, { ...won, remoteHead: "aaaaaaa" }).stop, null);
-  assert.equal(claimStep(ISSUE, { ...won, remoteHead: null }).stop, null);
-  const fresh = claimAt("triage");
-  assert.equal(
-    claimStep(ISSUE, { ...fresh, remoteHead: "bbbbbbb" }).stop,
-    null,
-  );
+  const replies = [
+    { ...won, remoteHead: "aaaaaaa" },
+    { ...won, remoteHead: null },
+    { ...claimAt("triage"), remoteHead: "bbbbbbb" },
+  ];
+  for (const reply of replies) {
+    const step = claimStep(ISSUE, reply);
+    assert.equal(step.kind, "claimed");
+    assert.equal(step.stop, null);
+  }
 });
 
 test("an open issue closes its parents, then is released with its state", () => {
@@ -156,6 +164,7 @@ test("a closed issue posts its queued comments, or launches nothing", () => {
 });
 
 // The summary of a sweep of `item`.
+/** @param {SummarySource | null} item @returns {SweepSummary} */
 function summaryOf(item) {
   return buildSummary({
     sweepId: "s1",
@@ -205,6 +214,7 @@ test("the summary keeps a missing pr undefined and an unset outcome in progress"
     outcome: null,
     reason: null,
   }).items;
+  assert.ok(summary);
   assert.ok(Object.hasOwn(summary, "pr"));
   assert.equal(summary.pr, undefined);
   assert.equal(summary.stage, "spec");

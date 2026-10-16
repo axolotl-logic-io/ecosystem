@@ -5,23 +5,42 @@ import { test } from "node:test";
 import { opsRaw, sessionRaw } from "../src/job/raw-results.ts";
 import { launchResults, parseOps } from "../src/workflow/launch-results.ts";
 
+/** @import { ProcessExit } from "../src/job/raw-results.ts" */
+/** @import { ChildLaunch, ChildResult, LaunchResult } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
+/** @typedef {{ input: number, output: number, cacheRead: number, cacheWrite: number }} Usage */
+
 const LAUNCH = { key: "i7-spec-4", agent: "issue-pipeline-specifier" };
+/** @type {ChildLaunch} */
 const SPEC_LAUNCH = {
   kind: "child",
   name: "spec",
   role: "specifier",
+  label: "spec #7",
   agent: LAUNCH.agent,
   model: "anthropic/claude-opus-5-5",
+  schema: { type: "object" },
+  minutes: 30,
+  task: "Write the spec.",
 };
 
+/**
+ * @param {number | null} code
+ * @param {string} stdout
+ * @param {string} [stderr]
+ * @param {boolean} [timedOut]
+ * @returns {ProcessExit}
+ */
 function exited(code, stdout, stderr = "", timedOut = false) {
   return { code, stdout, stderr, timedOut };
 }
 
+/** @param {object[]} events @returns {string} */
 function jsonl(events) {
   return `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
 }
 
+/** @param {Usage} usage @param {object} [extra] @returns {object} */
 function assistantEnd(usage, extra = {}) {
   return {
     type: "message_end",
@@ -29,6 +48,7 @@ function assistantEnd(usage, extra = {}) {
   };
 }
 
+/** @param {object} details @param {boolean} [isError] @returns {object} */
 function outputEnd(details, isError = false) {
   return {
     type: "tool_execution_end",
@@ -47,8 +67,30 @@ const EARLIER_TOKENS = 10;
 const CONFIG_NOT_FOUND = /boom: config not found/u;
 const TIMED_OUT = /timed out/u;
 
+/** @param {Usage} usage @returns {number} */
 function tokensOf(usage) {
   return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+}
+
+// An issue at spec that had reported `reportedTokens` before the session.
+/** @param {number} reportedTokens @returns {IssueState} */
+function specState(reportedTokens) {
+  return {
+    stage: "spec",
+    depth: 0,
+    findings: [],
+    allocated: 0,
+    reportedTokens,
+  };
+}
+
+// The one result, a session's.
+/** @param {LaunchResult[]} results @returns {ChildResult} */
+function childResult([result]) {
+  if (result?.kind !== "child") {
+    throw new Error("expected one session's result");
+  }
+  return result;
 }
 
 test("an ops child that exits 0 with a JSON line gives its reply", () => {
@@ -60,7 +102,8 @@ test("an ops child that exits 1 fails with the end of its stderr", () => {
   const raw = opsRaw(exited(1, "", "boom: config not found\n"));
   assert.equal(raw.ok, false);
   assert.equal(raw.error, "boom: config not found");
-  assert.match(parseOps(raw).error, CONFIG_NOT_FOUND);
+  const { error } = parseOps(raw);
+  assert.match(String(error), CONFIG_NOT_FOUND);
 });
 
 test("an ops child stopped by its timeout fails with a timeout message", () => {
@@ -86,8 +129,8 @@ test("a session with structured output sums its usage and counts it as reported 
   assert.equal(raw.key, LAUNCH.key);
   assert.equal(raw.agent, LAUNCH.agent);
   assert.deepEqual(raw.results, [{ usage: SUM_AB }]);
-  const st = { reportedTokens: EARLIER_TOKENS };
-  const [result] = launchResults([SPEC_LAUNCH], [raw], st, {});
+  const st = specState(EARLIER_TOKENS);
+  const result = childResult(launchResults([SPEC_LAUNCH], [raw], st, {}));
   assert.equal(result.ok, true);
   assert.deepEqual(result.structuredOutput, details);
   assert.equal(st.reportedTokens, EARLIER_TOKENS + tokensOf(SUM_AB));
@@ -106,8 +149,8 @@ test("a failed session reports its error and usage, with no structured output", 
   assert.equal(raw.error, "overloaded_error");
   assert.equal(raw.structuredOutput, null);
   assert.deepEqual(raw.results, [{ usage: USAGE_A }]);
-  const st = { reportedTokens: 0 };
-  const [result] = launchResults([SPEC_LAUNCH], [raw], st, {});
+  const st = specState(0);
+  const result = childResult(launchResults([SPEC_LAUNCH], [raw], st, {}));
   assert.equal(result.ok, false);
   assert.equal(result.error, "overloaded_error");
   assert.equal(st.reportedTokens, tokensOf(USAGE_A));

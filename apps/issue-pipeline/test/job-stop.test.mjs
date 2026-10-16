@@ -11,6 +11,7 @@ import {
   piStarts,
   READY_SPEC,
   repliesAt,
+  sessionOf,
   setUp,
   startJob,
   statusOf,
@@ -22,14 +23,11 @@ const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
 // 128 + each signal's number.
 const STOPPED_BY_SIGTERM = 143;
 const STOPPED_BY_SIGINT = 130;
+/** @type {[NodeJS.Signals, number][]} */
 const SIGNAL_CODES = [
   ["SIGTERM", STOPPED_BY_SIGTERM],
   ["SIGINT", STOPPED_BY_SIGINT],
 ];
-
-function sessionOf(status) {
-  return status?.launches.find(({ kind }) => kind === "session") ?? null;
-}
 
 for (const [signal, code] of SIGNAL_CODES) {
   test(`${signal} aborts the session, saves the issue at its stage with no lease and exits ${code}`, async () => {

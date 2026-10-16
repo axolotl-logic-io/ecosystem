@@ -14,6 +14,7 @@ import {
   repliesAt,
   runJob,
   SPEC_SESSION,
+  sessionOf,
   setUp,
   statusOf,
   USAGE_TOTAL,
@@ -64,7 +65,7 @@ test("a stage job runs the spec stage, releases the issue at implement and print
   assert.ok(fs.existsSync(flagValue(argv, "--output-schema")));
   const lines = r.stdout.trim().split("\n");
   assert.equal(lines.length, 1);
-  const summary = JSON.parse(lines[0]);
+  const summary = JSON.parse(lines[0] ?? "");
   assert.equal(summary.lane, "L");
   assert.equal(summary.items[0].issue, ISSUE);
   assert.equal(summary.items[0].stage, "implement");
@@ -77,7 +78,9 @@ test("a second stage job for the same stage starts a fresh pi session and keeps 
   }
   const calls = piStarts(place);
   assert.equal(calls.length, 2);
-  const [first, second] = calls.map(({ argv }) => flagValue(argv, "--session"));
+  const [first = "", second] = calls.map(({ argv }) =>
+    flagValue(argv, "--session"),
+  );
   assert.equal(second, first);
   assert.deepEqual(
     calls.map(({ fresh }) => fresh),
@@ -88,7 +91,7 @@ test("a second stage job for the same stage starts a fresh pi session and keeps 
     .filter((name) => SET_ASIDE_SESSION.test(name));
   assert.equal(aside.length, 1);
   assert.equal(
-    fs.readFileSync(path.join(path.dirname(first), aside[0]), "utf8"),
+    fs.readFileSync(path.join(path.dirname(first), aside[0] ?? ""), "utf8"),
     fs.readFileSync(first, "utf8"),
   );
 });
@@ -134,8 +137,6 @@ test("a rejected prompt ends pi's session, and its error fails the launch", () =
     ["sweep", "claim", "save-state", "stop", "cleanup"],
   );
   assert.equal(ops[3].detail, MODEL_NOT_FOUND);
-  const session = statusOf(place).launches.find(
-    ({ kind }) => kind === "session",
-  );
+  const session = sessionOf(statusOf(place));
   assert.equal(session.outcome, "failed");
 });

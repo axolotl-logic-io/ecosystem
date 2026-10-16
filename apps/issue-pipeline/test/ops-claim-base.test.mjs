@@ -3,6 +3,7 @@
 // one with commits past the base is kept (#243).
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { z } from "zod";
 import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
   askOps,
@@ -38,6 +39,9 @@ function worktreeBehindBase(n) {
   return sh(`git -C ${root}/seed rev-parse HEAD`);
 }
 
+// The part of a claim's reply these tests read.
+const CLAIM_REPLY = z.looseObject({ ok: z.unknown() });
+
 // Claims the unlabelled, unclaimed issue `n` as new work.
 /** @param {number} n @param {number} claimId @returns {{ ok?: unknown }} */
 function claimNew(n, claimId) {
@@ -48,7 +52,7 @@ function claimNew(n, claimId) {
     { when: `issues/${n}/comments -f`, stdout: JSON.stringify(mine) },
     commentsReply(n, [mine]),
   ]);
-  return askOps({ op: "claim", number: n, ...LANE });
+  return CLAIM_REPLY.parse(askOps({ op: "claim", number: n, ...LANE }));
 }
 
 test("a claim resets a worktree with no work of its own to the moved base", () => {

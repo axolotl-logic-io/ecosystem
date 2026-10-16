@@ -204,6 +204,15 @@ function prOf(st: IssueState | null): number | null | undefined {
   return st.pr;
 }
 
+// The tokens the state's rebases were given, 0 before any, or null with no
+// state.
+function rebaseAllocatedOf(st: IssueState | null): number | null {
+  if (st === null) {
+    return null;
+  }
+  return st.rebaseAllocated ?? 0;
+}
+
 function summaryItem({ n, st, outcome, reason }: SummarySource): SummaryItem {
   return {
     issue: n,
@@ -212,7 +221,7 @@ function summaryItem({ n, st, outcome, reason }: SummarySource): SummaryItem {
     outcome: textOf(outcome) ?? "in-progress",
     reason: textOf(reason),
     allocatedTokens: st?.allocated ?? null,
-    rebaseAllocatedTokens: st ? (st.rebaseAllocated ?? 0) : null,
+    rebaseAllocatedTokens: rebaseAllocatedOf(st),
   };
 }
 

@@ -4,6 +4,7 @@
 // sweep and claim replies and for the summary the workflow returns.
 
 /** @import { TraceEntry } from "./workflow-harness.mjs" */
+/** @import { IssueState, ItemPaths } from "../src/workflow/types.ts" */
 
 // The run's args. The workflow reads its settings from the sweep reply.
 const WORKFLOW_ARGS = { config: "/w/repos/o__r.json", lane: "lane-a" };
@@ -41,7 +42,7 @@ const ROUTINE_OPS = {
 
 // The sweep reply: candidate issue numbers, parents to close, and config
 // fields that replace the defaults (such as `maxSpawnsPerRun`).
-/** @param {{ items?: number[], parents?: unknown[], config?: object }} [reply] @returns {object} */
+/** @param {{ items?: number[], parents?: unknown[], config?: object }} [reply] @returns {{ ok: true, config: Record<string, unknown>, items: { number: number, depth: number }[], waiting: number, parents: unknown[], liveElsewhere: number, skipped: number }} */
 function sweepReply({ items = [], parents = [], config = {} } = {}) {
   return {
     ok: true,
@@ -58,7 +59,7 @@ function sweepReply({ items = [], parents = [], config = {} } = {}) {
 // newState, which can't be imported because ops.mjs runs as a CLI; `fields`
 // replace its fields (`number` defaults to ISSUE). The paths are the ones
 // ops' claim gives.
-/** @param {string} stage @param {object} [fields] @returns {object} */
+/** @param {string} stage @param {object} [fields] @returns {{ ok: true, state: IssueState, paths: ItemPaths }} */
 function claimAt(stage, fields = {}) {
   const state = {
     version: 1,

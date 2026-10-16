@@ -53,7 +53,12 @@ const CONFLICT = {
   conflicts: ["src/a.ts"],
 };
 
+/** @import { FinishRun } from "./workflow-finish-run-kit.mjs" */
+/** @import { TraceEntry } from "./workflow-harness.mjs" */
+/** @typedef {{ op?: string, keepConflict?: boolean, reason?: string, detail?: string }} TracedRequest */
+
 // A run of issue #7 claimed at `stage` with `fields`, with ops and agents.
+/** @param {FinishRun} run @returns {Promise<{ trace: TraceEntry[], summary: unknown }>} */
 function rebaseRun({ stage, fields, ops = {}, agents = {}, config = {} }) {
   return runWorkflow({
     args: WORKFLOW_ARGS,
@@ -68,6 +73,7 @@ function rebaseRun({ stage, fields, ops = {}, agents = {}, config = {} }) {
 }
 
 // The one summary item of issue #7, with `fields` replacing the defaults.
+/** @param {object} fields @returns {object} */
 function issueSummary(fields) {
   return sweepSummary({
     items: [
@@ -83,9 +89,18 @@ function issueSummary(fields) {
   });
 }
 
+// The ops requests of the run's launches, {} for a session.
+/** @param {readonly TraceEntry[]} trace @returns {TracedRequest[]} */
+function requestsOf(trace) {
+  return trace.map(
+    (entry) => /** @type {TracedRequest} */ (entry.request ?? {}),
+  );
+}
+
 // The request of the run's stop launch.
+/** @param {readonly TraceEntry[]} trace @returns {TracedRequest} */
 function stopRequest(trace) {
-  return trace.find(({ request }) => request?.op === "stop")?.request;
+  return requestsOf(trace).find(({ op }) => op === "stop") ?? {};
 }
 
 test("an issue near its budget still gets the resolver after a merge sent it back", async ({
@@ -116,7 +131,7 @@ test("an issue near its budget still gets the resolver after a merge sent it bac
     "i7-release-6",
     "cleanup-7",
   ]);
-  assert.equal(trace[2].request.keepConflict, true);
+  assert.equal(requestsOf(trace)[2]?.keepConflict, true);
   assert.deepEqual(
     summary,
     issueSummary({ stage: "checks", rebaseAllocatedTokens: RESOLVER }),
@@ -210,7 +225,7 @@ test("a conflict the rebase pool can't pay a resolver for is a budget stop", asy
     "i7-stop-4",
     "cleanup-5",
   ]);
-  assert.equal(trace[2].request.keepConflict, false);
+  assert.equal(requestsOf(trace)[2]?.keepConflict, false);
   const { reason, detail } = stopRequest(trace);
   assert.equal(reason, "rebase token budget exhausted");
   assert.equal(stopFor(reason)?.code, "budget");

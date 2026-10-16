@@ -7,11 +7,20 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 
+/** @import { AgentDefinition } from "../src/job/agent-definition.ts" */
+/** @import { LaunchHooks } from "../src/job/launch.ts" */
+/** @import { OpsRaw, SessionRaw } from "../src/job/raw-results.ts" */
+/** @import { ChildSpec } from "../src/workflow/launches.ts" */
+
 // The job reads definitions from $PI_CODING_AGENT_DIR, fixed when its
-// modules load, so the variable is set before they are imported.
+// modules load, so the variable is set before they are imported. Environment
+// variables are named by strings, as install.test.mjs names them.
 const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "job-agents-"));
 process.on("exit", () => fs.rmSync(agentDir, { recursive: true, force: true }));
-process.env.PI_CODING_AGENT_DIR = agentDir;
+Object.assign(
+  process.env,
+  Object.fromEntries([["PI_CODING_AGENT_DIR", agentDir]]),
+);
 const { parseDefinition, piArgs } = await import(
   "../src/job/agent-definition.ts"
 );
@@ -23,12 +32,35 @@ const LEADING_FLAGS = 4;
 const FRONTMATTER_FENCE = /^---/u;
 const NOBODY = /issue-pipeline-nobody/u;
 
+// Launch hooks that put fresh sessions in `sessions` and record nothing.
+/** @param {string} sessions @returns {LaunchHooks} */
+function hooksIn(sessions) {
+  return {
+    sessionFile: (key) => path.join(sessions, `${key}.jsonl`),
+    resumePoint: () => null,
+    started: () => undefined,
+    record: () => undefined,
+    ended: () => undefined,
+    env: () => ({}),
+  };
+}
+
 const FILES = {
   session: "/r/runs/o__r/issue-7/sessions/i7-spec-4.jsonl",
   extension: "/r/structured-output.mjs",
   schema: "/r/runs/o__r/issue-7/sessions/i7-spec-4.schema.json",
 };
 
+// A session's raw result, which a child launch always gives.
+/** @param {OpsRaw | SessionRaw} raw @returns {SessionRaw} */
+function sessionRawOf(raw) {
+  if (!("key" in raw)) {
+    throw new Error("a child launch gave an ops result");
+  }
+  return raw;
+}
+
+/** @param {string} agent @returns {ChildSpec} */
 function specFor(agent) {
   return {
     key: "i7-spec-4",
@@ -43,13 +75,26 @@ function specFor(agent) {
   };
 }
 
+/** @param {string} agent @returns {AgentDefinition} */
 function definitionOf(agent) {
   const file = new URL(`../agents/${agent}.md`, import.meta.url);
-  return parseDefinition(fs.readFileSync(file, "utf8"));
+  return parsed(fs.readFileSync(file, "utf8"));
 }
 
+// The definition in `text`, which must parse.
+/** @param {string} text @returns {AgentDefinition} */
+function parsed(text) {
+  const definition = parseDefinition(text);
+  if (definition === null) {
+    throw new Error("the agent definition didn't parse");
+  }
+  return definition;
+}
+
+// The value after `flag` in `args`, or "" when there is none.
+/** @param {string[]} args @param {string} flag @returns {string} */
 function flagValue(args, flag) {
-  return args[args.indexOf(flag) + 1];
+  return args[args.indexOf(flag) + 1] ?? "";
 }
 
 test("the reader runs pi in RPC mode with its tools, thinking and prompt", () => {
@@ -95,7 +140,7 @@ test("the specifier loads its subagent-only extension, without skills, with proj
 });
 
 test("a definition without project context or a tools list runs with -nc and pi's default tools", () => {
-  const definition = parseDefinition(
+  const definition = parsed(
     "---\nname: x\ninheritProjectContext: false\ninheritSkills: true\n---\nBe brief.\n",
   );
   const args = piArgs(definition, specFor("x"), FILES);
@@ -108,11 +153,11 @@ test("a definition without project context or a tools list runs with -nc and pi'
 
 test("a missing agent definition fails its launch with an error naming the agent", async () => {
   const sessions = path.join(agentDir, "sessions");
-  const raw = await runLaunch(specFor("issue-pipeline-nobody"), (key) =>
-    path.join(sessions, `${key}.jsonl`),
+  const raw = sessionRawOf(
+    await runLaunch(specFor("issue-pipeline-nobody"), hooksIn(sessions)),
   );
   assert.equal(raw.ok, false);
   assert.equal(raw.structuredOutput, null);
-  assert.match(raw.error, NOBODY);
+  assert.match(raw.error ?? "", NOBODY);
   assert.equal(raw.key, "i7-spec-4");
 });

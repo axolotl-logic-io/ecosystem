@@ -2,11 +2,9 @@
 // stage groups (build, review and fix, sync and checks, accept, security and
 // merge), closes the parents of split issues, releases the issue, and ends
 // with the cleanup of closed issues' worktrees. The driver owns all of the
-// sweep's state; its caller only awaits the launches it asks for:
-//
-//   let specs = sweep.next([]);
-//   while (specs.length > 0) specs = sweep.next(await runs.all(specs));
-//   return sweep.summary();
+// sweep's state; its caller (workflow.js, through driveBatches in batches.ts)
+// only runs the launches it asks for, feeding each batch's results back until
+// it asks for none, then returns `sweep.summary()`.
 //
 // `next` takes the raw results of the last batch, in its order, and returns
 // the next batch, which is empty only once the sweep is finished. Every spec

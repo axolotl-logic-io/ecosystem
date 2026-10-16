@@ -64,7 +64,11 @@ test("openPrFor finds no PR when gh lists none", () => {
 
 test("stop with an empty reason and no code is the error stop", () => {
   fakeGh.reply([]);
-  const request = { number: STOPPED_ISSUE, reason: "", state: { stage: "plan" } };
+  const request = {
+    number: STOPPED_ISSUE,
+    reason: "",
+    state: { stage: "plan" },
+  };
   assert.deepEqual(stop(cfg, request), {
     code: "error",
     label: "agent:stopped-error",

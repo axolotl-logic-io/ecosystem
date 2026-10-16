@@ -31,22 +31,32 @@ function issueCall(n) {
 /** @param {number} n @returns {string[]} */
 function listCall(n) {
   const head = `agent/issue-${n}`;
-  return ["pr", "list", "-R", "o/r", "--head", head, "--state", "open"]
-    .concat(["--json", "number"]);
+  return ["pr", "list", "-R", "o/r", "--head", head, "--state", "open"].concat([
+    "--json",
+    "number",
+  ]);
 }
 
 /** @param {number} pr @returns {string[]} */
 function labelCall(pr) {
   const endpoint = `repos/o/r/issues/${pr}/labels`;
-  return ["api", "-X", "POST", endpoint, "--silent", "-f"]
-    .concat(["labels[]=agent:working"]);
+  return ["api", "-X", "POST", endpoint, "--silent", "-f"].concat([
+    "labels[]=agent:working",
+  ]);
 }
 
 /** @param {number} n @param {string[]} flags @param {string} title @param {string} body @returns {string[]} */
 function createCall(n, flags, title, body) {
   const head = `agent/issue-${n}`;
-  return ["pr", "create", "-R", "o/r", ...flags, "--base", "integration"]
-    .concat(["--head", head, "--title", title, "--body", body]);
+  return [
+    "pr",
+    "create",
+    "-R",
+    "o/r",
+    ...flags,
+    "--base",
+    "integration",
+  ].concat(["--head", head, "--title", title, "--body", body]);
 }
 
 /** @param {number} n @param {string} [tail] @returns {string} */
@@ -107,7 +117,10 @@ test("start-pr with a plan adds it to the draft's body", () => {
   assert.equal(out, okLine("start-pr", { pr, headSha }));
   const body = draftBody(n, `\n${planDetails("P")}`);
   assert.ok(body.endsWith(`\n\n${planDetails("P")}`));
-  assert.deepEqual(fakeGh.calls()[2], createCall(n, ["--draft"], "T (#2)", body));
+  assert.deepEqual(
+    fakeGh.calls()[2],
+    createCall(n, ["--draft"], "T (#2)", body),
+  );
 });
 
 test("start-pr on an existing branch with an open PR only labels it", () => {
@@ -123,7 +136,11 @@ test("start-pr on an existing branch with an open PR only labels it", () => {
   const out = ask({ op: "start-pr", number: 3 });
   assert.equal(out, okLine("start-pr", { pr: open, headSha: before }));
   assert.equal(originRef("agent/issue-3"), before);
-  assert.deepEqual(fakeGh.calls(), [issueCall(n), listCall(n), labelCall(open)]);
+  assert.deepEqual(fakeGh.calls(), [
+    issueCall(n),
+    listCall(n),
+    labelCall(open),
+  ]);
 });
 
 /** @param {number} pr @param {string} title @param {string} body @returns {string[][]} */

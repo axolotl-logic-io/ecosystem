@@ -8,7 +8,6 @@ import { z } from "zod";
 import {
   advanceBase,
   ask,
-  assertReply,
   calls,
   commentPost,
   fakeGh,
@@ -17,6 +16,7 @@ import {
   hoursFromNow,
   LANE,
   listCall,
+  replyLine,
   SWEEP,
   signedBy,
   stateListing,
@@ -85,10 +85,10 @@ function runMerge(w, replies, extra = {}) {
   });
 }
 
-// The reply as the ops CLI prints it, which pins the key order too.
-/** @param {unknown} want @returns {string} */
-function replyLine(want) {
-  return `${JSON.stringify(want)}\n`;
+// The line merge prints for a reply with `fields` after its envelope.
+/** @param {object} fields @returns {string} */
+function mergeLine(fields) {
+  return replyLine({ ok: true, op: "merge", posted: 0, ...fields });
 }
 
 // Merge's reply when the PR view shows `fields`.
@@ -100,7 +100,7 @@ function viewedMerge(w, fields) {
 // The reply of a merge refused for `reason`.
 /** @param {string} reason @returns {string} */
 function refusal(reason) {
-  return replyLine({ ok: true, op: "merge", posted: 0, merged: false, reason });
+  return mergeLine({ merged: false, reason });
 }
 
 test("a PR merged by hand gets the merge bookkeeping and no merge", () => {
@@ -109,13 +109,7 @@ test("a PR merged by hand gets the merge bookkeeping and no merge", () => {
     viewReply(w.sha, { state: "MERGED" }),
     ...finishReplies(),
   ]);
-  assertReply(out, {
-    ok: true,
-    op: "merge",
-    posted: 0,
-    merged: true,
-    byHand: true,
-  });
+  assert.equal(out, mergeLine({ merged: true, byHand: true }));
   assert.deepEqual(calls(), [VIEW_ARGS, ...finishCalls(STATE)]);
   assert.equal(fs.existsSync(w.worktree), false);
 });
@@ -130,14 +124,7 @@ test("a PR whose head moved is refused with the new head", () => {
   const w = world();
   assert.equal(
     runMerge(w, [viewReply("f00d")]),
-    replyLine({
-    ok: true,
-    op: "merge",
-    posted: 0,
-    merged: false,
-    reason: "head-changed",
-    headSha: "f00d",
-  }),
+    mergeLine({ merged: false, reason: "head-changed", headSha: "f00d" }),
   );
 });
 
@@ -176,15 +163,15 @@ test("with merge order, an older ready PR holding the line queues the merge", ()
     ],
     { mergeOrder: true },
   );
-  assertReply(out, {
-    ok: true,
-    op: "merge",
-    posted: 0,
-    merged: false,
-    reason: "queued",
-    waitingFor: 9,
-    waitingForPr: 40,
-  });
+  assert.equal(
+    out,
+    mergeLine({
+      merged: false,
+      reason: "queued",
+      waitingFor: 9,
+      waitingForPr: 40,
+    }),
+  );
   assert.deepEqual(calls().slice(0, 2), [VIEW_ARGS, WORKING_ARGS]);
 });
 
@@ -219,7 +206,7 @@ test("stopped, newer, unreviewed and expired issues don't hold the line", () => 
     ],
     { mergeOrder: true },
   );
-  assertReply(out, { ok: true, op: "merge", posted: 0, merged: true });
+  assert.equal(out, mergeLine({ merged: true }));
   // Neither #7 itself nor the stopped #10 has its state read.
   assert.deepEqual(calls().slice(0, ORDER_CALLS), [
     VIEW_ARGS,
@@ -242,7 +229,9 @@ test("a draft PR is marked ready before the merge", () => {
 
 test("mergeAdmin merges with --admin", () => {
   const w = world();
-  const cfg = z.looseObject({}).parse(JSON.parse(fs.readFileSync(w.config, "utf8")));
+  const cfg = z
+    .looseObject({})
+    .parse(JSON.parse(fs.readFileSync(w.config, "utf8")));
   fs.writeFileSync(w.config, JSON.stringify({ ...cfg, mergeAdmin: true }));
   runMerge(w, [viewReply(w.sha), ...finishReplies()]);
   assert.deepEqual(calls()[1], [...mergeArgs(w.sha), "--admin"]);
@@ -255,13 +244,13 @@ test("a merge refused for want of approval says so and how to fix it", () => {
     viewReply(w.sha),
     { when: "pr merge", stderr: `${why}\n`, code: 1 },
   ]);
-  assertReply(out, {
-    ok: true,
-    op: "merge",
-    posted: 0,
-    merged: false,
-    reason: `merge refused: ${why}${APPROVAL_HINT}`,
-  });
+  assert.equal(
+    out,
+    mergeLine({
+      merged: false,
+      reason: `merge refused: ${why}${APPROVAL_HINT}`,
+    }),
+  );
   assert.deepEqual(calls(), [VIEW_ARGS, mergeArgs(w.sha)]);
 });
 
@@ -287,7 +276,7 @@ test("a merge refused because the base branch was modified is behind", () => {
 test("a merge squashes, records the verdict and finishes the issue", () => {
   const w = world();
   const out = runMerge(w, [viewReply(w.sha), ...finishReplies()]);
-  assertReply(out, { ok: true, op: "merge", posted: 0, merged: true });
+  assert.equal(out, mergeLine({ merged: true }));
   const verdict = `Merged ${w.sha.slice(0, SHORT_SHA)}: every blocking review finding is resolved and every check passed on this commit.\n\nAll good.`;
   assert.deepEqual(calls(), [
     VIEW_ARGS,

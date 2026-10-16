@@ -66,7 +66,12 @@ const POSTED_BODY = `${POSTED_CLAIM}\n<!-- agent-pipeline:claim lane=me sweep=s9
 const POSTED = {
   when: POST_CLAIM,
   stdout: JSON.stringify(
-    githubComment({ id: OWN_CLAIM, body: POSTED_BODY, login: "bot", created: now }),
+    githubComment({
+      id: OWN_CLAIM,
+      body: POSTED_BODY,
+      login: "bot",
+      created: now,
+    }),
   ),
 };
 
@@ -158,9 +163,7 @@ test("a lane that sees an earlier claim after posting abandons its own", () => {
 });
 
 test("a lane that can't see its own claim after posting abandons it", () => {
-  fakeGh.reply([
-    POSTED,
-  ]);
+  fakeGh.reply([POSTED]);
   assert.deepEqual(raceForClaim(cfg, ISSUE, req, []), {
     won: false,
     holder: null,
@@ -186,11 +189,14 @@ test("a lane doesn't claim an issue another lane holds, nor one it holds", () =>
     holder: "a",
     posted: false,
   });
-  assert.deepEqual(raceForClaim(cfg, ISSUE, { lane: "a", sweepId: "s9" }, held), {
-    won: true,
-    claimId: 3,
-    posted: false,
-  });
+  assert.deepEqual(
+    raceForClaim(cfg, ISSUE, { lane: "a", sweepId: "s9" }, held),
+    {
+      won: true,
+      claimId: 3,
+      posted: false,
+    },
+  );
   assert.deepEqual(fakeGh.calls(), []);
 });
 
@@ -200,7 +206,10 @@ test("touching a claim stamps it once, replacing an earlier stamp", () => {
     { when: LIST, stdout: commentLines([comment(OWN_CLAIM, claimBody("me"))]) },
     {
       when: LIST,
-      stdout: commentLines([comment(2, claimBody("a")), comment(OWN_CLAIM, stamped)]),
+      stdout: commentLines([
+        comment(2, claimBody("a")),
+        comment(OWN_CLAIM, stamped),
+      ]),
     },
   ]);
   touchClaim(cfg, ISSUE, req);

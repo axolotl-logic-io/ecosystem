@@ -1,8 +1,7 @@
 // The issue pipeline's Biome config. It extends the root biome.jsonc, which
 // holds the lint policy for all of the repo's code (`practices-cover-all-code`
-// in the wiki). The pipeline doesn't pass it yet: `mise //apps/issue-pipeline:lint`
-// lists what is left, and joins `check` once it passes (#162). Globs here
-// resolve from this folder.
+// in the wiki). The pipeline passes it, and `mise //apps/issue-pipeline:check`
+// runs it (#223). Globs here resolve from this folder.
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "extends": "//",
@@ -11,6 +10,16 @@
     "includes": ["**", "!AGENTS.md", "!dist"]
   },
   "overrides": [
+    // src/workflow.js runs as a function body in the pi-subagents sandbox,
+    // which provides `args` and `runs`, after the build's helpers bundle,
+    // which defines `workflowModules` (build.ts). This declares those globals
+    // for that one file; it turns no rule off.
+    {
+      "includes": ["src/workflow.js"],
+      "javascript": {
+        "globals": ["args", "runs", "workflowModules"]
+      }
+    },
     // The only exception to the policy (`best-practice-over-lint`): the
     // pipeline's CLI entry points, the install, the build it runs and the ops
     // CLI, whose entry is src/ops.ts. Each is a command run from the terminal,
@@ -23,8 +32,8 @@
     // (#183), the PR and sync ops, which run git in the worktree and write
     // the review diff (#184), and the ops that run git, gh and the configured
     // shell commands: verify, fails-before-fix and ci-status (#185). The pure
-    // modules (globs, stops, labels, comments, claims, state, and the ops in
-    // src/ops/ not listed here) get no exception.
+    // modules (globs, stops, labels, comments, claims, state, start-state,
+    // git-state, and the ops in src/ops/ not listed here) get no exception.
     // The tests and their kits, like the install, run commands and keep
     // files, so they need node:test, node:fs, child_process and process (#219).
     // The stage job (#232) is part of it too: its entry src/job.ts reads its

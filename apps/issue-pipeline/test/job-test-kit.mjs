@@ -237,6 +237,18 @@ async function waitFor(check) {
   await waitFor(check);
 }
 
+/**
+ * @param {any} status a job.json, or null
+ * @returns {any} its session's launch, or null
+ */
+function sessionOf(status) {
+  return (
+    status?.launches.find(
+      (/** @type {{ kind: string }} */ { kind }) => kind === "session",
+    ) ?? null
+  );
+}
+
 /** @param {readonly string[]} argv @param {string} flag @returns {string} */
 function flagValue(argv, flag) {
   return String(argv[argv.indexOf(flag) + 1]);
@@ -262,6 +274,7 @@ export {
   repliesAt,
   runJob,
   SPEC_SESSION,
+  sessionOf,
   setScript,
   setUp,
   startJob,

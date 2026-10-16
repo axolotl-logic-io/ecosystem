@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.ts",
+    "lint": "biome check --error-on-warnings",
     "typecheck": "tsc -p . && tsc -p tsconfig.test.json"
   },
   "devDependencies": {

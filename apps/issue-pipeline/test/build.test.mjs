@@ -20,6 +20,8 @@ const BANNED_IN_WORKFLOW = [
 ];
 // The error the workflow throws when it is run without args.config.
 const MISSING_CONFIG = /args\.config must be/u;
+// The statement build.ts's wrapper adds as the body's last.
+const RETURN_SUMMARY = "return sweep.summary();";
 // The error the stage job exits with for an unknown --stage.
 const BAD_STAGE = /--stage must be one of/u;
 // The variable that points ops at a pipeline root, here the temporary folder.
@@ -66,6 +68,10 @@ test("the built workflow stays a sandboxed body with no imports", () => {
   for (const banned of BANNED_IN_WORKFLOW) {
     assert.doesNotMatch(workflow, banned);
   }
+});
+
+test("the built workflow ends by returning the driver's summary", () => {
+  assert.ok(workflow.trimEnd().endsWith(RETURN_SUMMARY));
 });
 
 test("the built workflow rejects a missing config as the source does", async () => {
