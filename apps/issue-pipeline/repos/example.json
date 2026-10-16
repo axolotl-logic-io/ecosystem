@@ -35,6 +35,10 @@
   "maxResumes": 2,
   "silentMinutes": 30,
   "failureStreak": 3,
+  "escalationAgent": null,
+  "escalationAgentActs": false,
+  "escalationAgentTimeoutSeconds": 300,
+  "escalationAgentModel": "anthropic/claude-sonnet-5-5",
   "commands": {
     "setup": "npm ci",
     "test": "npm test",

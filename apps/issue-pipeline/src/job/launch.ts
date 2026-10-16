@@ -254,4 +254,4 @@ async function runLaunch(
 }
 
 export type { LaunchHooks };
-export { runLaunch };
+export { OUTPUT_EXTENSION, runLaunch };

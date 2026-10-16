@@ -50,4 +50,5 @@ function logEscalations(cfg: Config, escalations: readonly Escalation[]): void {
   appendLines(cfg, ESCALATIONS_FILE, lines);
 }
 
+export type { LogEntry };
 export { logDecisions, logEscalations };

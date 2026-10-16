@@ -66,8 +66,12 @@ const QUEUE = [
   },
 ];
 
-// The watchdog's steer and SIGTERM, which no job in these tests is due.
+// The watchdog's steer and SIGTERM, which no job in these tests is due, and
+// the escalation agent, which no config here sets (#282).
 const UNWATCHED = {
+  runAgent: () => {
+    throw new Error("unexpected escalation agent run");
+  },
   steer: () => {
     throw new Error("unexpected steer");
   },

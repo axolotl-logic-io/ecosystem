@@ -1,8 +1,8 @@
 // One orchestrator tick (#234): read the queue, add what the jobs spent to
 // the ledger, let the watchdog act on the jobs and write the escalations
-// (#235), decide with the scheduler, start the jobs it chose and log every
-// action and decision. The
-// processes, the steers and the clock come from the caller.
+// (#235), ask the escalation agent about them (#282), decide with the
+// scheduler, start the jobs it chose and log every action and decision. The
+// processes, the steers, the agent's run and the clock come from the caller.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -10,11 +10,14 @@ import { paths } from "../config.ts";
 import { stop } from "../ops/stop.ts";
 import type { State } from "../state.ts";
 import { escalate } from "./escalate.ts";
+import type { AdviceContext } from "./escalation-agent.ts";
+import { adviseOnEscalations } from "./escalation-agent.ts";
+import type { RunAgent } from "./escalation-consult.ts";
 import type { Ledger } from "./ledger.ts";
 import { openLedger } from "./ledger.ts";
 import { logDecisions, logEscalations } from "./log.ts";
 import type { SnapshotIssue } from "./queue.ts";
-import type { Decision } from "./schedule.ts";
+import type { Decision, StartGate } from "./schedule.ts";
 import { schedule, startGate } from "./schedule.ts";
 import { LANE, readQueue } from "./snapshot.ts";
 import type { WatchAction } from "./watchdog.ts";
@@ -51,6 +54,8 @@ interface TickDeps {
   steer: (socket: string, key: string, message: string) => void;
   // Sends SIGTERM to job process `pid`.
   terminate: (pid: number) => void;
+  // Runs the escalation agent's `pi` to its end or its timeout.
+  runAgent: RunAgent;
 }
 
 interface Start {
@@ -163,6 +168,48 @@ function act(
   }
 }
 
+// What the escalation agent reads, and the watchdog's commands its
+// recommendations go through: the steer, a restart behind the start gate,
+// and the stop op.
+function adviceOf(
+  run: TickRun,
+  issues: readonly SnapshotIssue[],
+  view: Omit<AdviceContext, "act" | "runAgent"> & { admit: StartGate },
+): AdviceContext {
+  function rowOf(n: number): SnapshotIssue | undefined {
+    return issues.find((issue) => issue.number === n);
+  }
+  const { admit, ...seen } = view;
+  const commands: AdviceContext["act"] = {
+    steer: run.deps.steer,
+    resume: (issue: number, stage: string): string | null => {
+      const row = rowOf(issue);
+      if (row?.job?.live === true) {
+        return "live";
+      }
+      const held = admit(issue, stage);
+      if (held !== null) {
+        return held;
+      }
+      const at = view.now.toISOString();
+      startJob(run, { issue, stage, at, mergeQueue: null, resume: true });
+      if (row !== undefined) {
+        row.job = { live: true, stage };
+      }
+      return null;
+    },
+    stop: (issue: number, code: string, reason: string): void => {
+      const state = { ...view.states.get(issue) };
+      stop(run.cfg, { code, reason, number: issue, state });
+      const row = rowOf(issue);
+      if (row !== undefined) {
+        row.stopped = true;
+      }
+    },
+  };
+  return { ...seen, runAgent: run.deps.runAgent, act: commands };
+}
+
 // The scheduler's decisions less those for issues whose restart the watchdog
 // held: such an issue waits for its restart rather than starting anew.
 function withoutHeld(
@@ -187,10 +234,11 @@ function tick(cfg: Config, deps: TickDeps): Decision[] {
   );
   ledger.record(jobs, now);
   const spentLastHour = ledger.spentLastHour(now);
+  const admit = startGate({ issues, spentLastHour }, settings);
   const watchdog = watch(watched, readWatchMemory(cfg), {
     ...WATCH_SETTINGS.parse(cfg),
     now,
-    admit: startGate({ issues, spentLastHour }, settings),
+    admit,
   });
   const run: TickRun = { cfg, deps, ledger };
   const done: WatchAction[] = [];
@@ -216,6 +264,8 @@ function tick(cfg: Config, deps: TickDeps): Decision[] {
     });
     const raised = escalate(flagged, watchdog.memory.escalated, now);
     logEscalations(cfg, raised.escalations);
+    const view = { watched, states, admit, now };
+    adviseOnEscalations(cfg, raised.escalations, adviceOf(run, issues, view));
     // Kept only once every action is done, so a failed one is tried again.
     saveWatchMemory(cfg, { ...watchdog.memory, escalated: raised.escalated });
     decisions = withoutHeld(

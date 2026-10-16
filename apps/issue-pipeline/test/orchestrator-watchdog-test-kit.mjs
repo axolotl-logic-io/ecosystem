@@ -1,6 +1,8 @@
 // @ts-check
 // The watchdog tests' ticks (#235): one tick over recorded job.json files
 // with every spawn, steer and SIGTERM recorded, and the log lines it wrote.
+// The escalation agent's run (#282) is the test's to give; by default it
+// throws, which the tick logs as the agent failing.
 import fs from "node:fs";
 import { z } from "zod";
 import {
@@ -17,6 +19,12 @@ const { tick } = await import("../src/orchestrator/tick.ts");
 
 /** @import { OpenIssue } from "./orchestrator-world-test-kit.mjs" */
 /** @import { Config } from "../src/config.ts" */
+/** @import { RunAgent } from "../src/orchestrator/escalation-consult.ts" */
+
+/** @type {RunAgent} */
+function noAgent() {
+  throw new Error("unexpected escalation agent run");
+}
 
 const LOG_LINE = z.object({
   issue: z.number(),
@@ -29,13 +37,13 @@ const LOG_LINE = z.object({
  * One tick at `minutes` after NOW over `issues`, with every spawn, steer and
  * SIGTERM recorded, under `config` (the kit's by default). Spawned jobs die
  * at once, as a crashing job would, unless `spawnPid` gives the live pid they
- * run as.
+ * run as. `runAgent` runs the escalation agent's pi.
  * @param {readonly OpenIssue[]} issues
  * @param {number} [minutes]
- * @param {{ config?: Config, spawnPid?: number }} [options]
+ * @param {{ config?: Config, spawnPid?: number, runAgent?: RunAgent }} [options]
  */
 function tickOver(issues, minutes = 0, options = {}) {
-  const { config = cfg, spawnPid } = options;
+  const { config = cfg, spawnPid, runAgent = noAgent } = options;
   openWith(issues);
   /** @type {string[][]} */
   const spawned = [];
@@ -52,6 +60,7 @@ function tickOver(issues, minutes = 0, options = {}) {
     },
     steer: (socket, key, message) => steered.push([socket, key, message]),
     terminate: (pid) => terminated.push(pid),
+    runAgent,
   });
   return { spawned, steered, terminated };
 }

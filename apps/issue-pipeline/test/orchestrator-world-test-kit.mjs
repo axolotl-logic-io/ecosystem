@@ -2,7 +2,8 @@
 // Shared setup for the tests that run the orchestrator's queue and tick
 // in-process (#234): a pipeline root with a bare origin and a config, the fake
 // gh answering the sweep's calls, and the issue rows, state comments and
-// job.json files the queue reads.
+// job.json files the queue reads, and the repo's agent definitions installed
+// where the escalation agent (#282) reads them.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -31,8 +32,21 @@ const PIPELINE_LABELS = [
 
 const root = fs.mkdtempSync("/tmp/issue-pipeline-orchestrator-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
+const agentDir = path.join(root, "agent");
+const installed = path.join(agentDir, "agents", "issue-pipeline");
+const AGENTS = new URL("../agents/", import.meta.url).pathname;
+fs.mkdirSync(installed, { recursive: true });
+for (const file of fs.readdirSync(AGENTS)) {
+  fs.copyFileSync(path.join(AGENTS, file), path.join(installed, file));
+}
 // Environment variables are named by strings, as src/process.ts takes them.
-Object.assign(process.env, Object.fromEntries([["ISSUE_PIPELINE_ROOT", root]]));
+Object.assign(
+  process.env,
+  Object.fromEntries([
+    ["ISSUE_PIPELINE_ROOT", root],
+    ["PI_CODING_AGENT_DIR", agentDir],
+  ]),
+);
 
 /** @param {string} command @returns {string} */
 function sh(command) {
