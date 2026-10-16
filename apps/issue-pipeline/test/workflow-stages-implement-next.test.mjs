@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { next } from "../src/workflow/stages/implement.ts";
+import { asSessions, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   afterSession,
   BUILD_CTX,
@@ -20,7 +21,7 @@ import {
   TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
-/** @import { Launch, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { StageState, Step } from "../src/workflow/stages/types.ts" */
 /** @typedef {Readonly<Record<string, unknown>>} Reply */
 
 const IMPL_TOKENS = 150_000;
@@ -61,23 +62,20 @@ function begunAgain(step) {
   return next({ ...step.state, phase: "begin" }, BUILD_CTX, []);
 }
 
-/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
-function launchesOf(step) {
-  if (step.done) {
-    throw new Error("the step ended instead of launching");
-  }
-  return step.launches;
+// The implementer session that works on `task`, as a writer.
+/** @param {string} task @returns {ReturnType<typeof asSessions>} */
+function implementer(task) {
+  return asSessions([implementLaunch(task)]);
 }
 
 test("the first call charges the implementer and launches a writer from the spec", () => {
   const given = buildState("implement", { spec: SPEC });
   const step = next(given, BUILD_CTX, []);
-  assert.deepEqual(launchesOf(step), [
-    implementLaunch(implementTask(`Spec (also posted on the issue):\n${SPEC}`)),
-  ]);
-  const [launch] = launchesOf(step);
-  assert.ok(launch.kind === "child");
-  assert.equal(launch.writer, true);
+  assert.deepEqual(
+    sessions(step),
+    implementer(implementTask(`Spec (also posted on the issue):\n${SPEC}`)),
+  );
+  assert.equal(sessions(step)[0]?.agent, "issue-pipeline-writer");
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.allocated, TRIAGE_TOKENS + IMPL_TOKENS);
   assert.deepEqual(step.state.st.sessions, ["triage", "implementer"]);
@@ -86,17 +84,10 @@ test("the first call charges the implementer and launches a writer from the spec
 
 test("without a spec the session works from triage's plan", () => {
   const step = next(buildState("implement"), BUILD_CTX, []);
-  const [launch] = launchesOf(step);
-  assert.ok(launch.kind === "child");
-  assert.equal(launch.task, implementTask(`Triage plan:\n${PLAN}`));
-});
-
-test("a continuation's task names the handoff file", () => {
-  const state = buildState("implement", { spec: SPEC, continuations: 1 });
-  const step = next(state, BUILD_CTX, []);
-  assert.deepEqual(launchesOf(step), [
-    implementLaunch(implementTask(HANDOFF_LINE)),
-  ]);
+  assert.deepEqual(
+    sessions(step),
+    implementer(implementTask(`Triage plan:\n${PLAN}`)),
+  );
 });
 
 test("a budget too small for the session stops", () => {
@@ -122,9 +113,7 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
     `${STAMP} implement: handoff - Half done.`,
   ]);
   const again = begunAgain(first);
-  assert.deepEqual(launchesOf(again), [
-    implementLaunch(implementTask(HANDOFF_LINE)),
-  ]);
+  assert.deepEqual(sessions(again), implementer(implementTask(HANDOFF_LINE)));
   const done = afterSession(next, again, IMPL_BY, {
     ok: true,
     structuredOutput: replyOf({ prTitle: "t".repeat(TITLE_LIMIT + 1) }),

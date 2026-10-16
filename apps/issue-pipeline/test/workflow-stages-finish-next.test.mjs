@@ -17,6 +17,11 @@ import {
   NETWORK_FAILURE,
 } from "./deferral-test-kit.mjs";
 import {
+  asRequests,
+  opsRequests,
+  sessions,
+} from "./stage-outcome-test-kit.mjs";
+import {
   CTX,
   contextWith,
   DIFF,
@@ -31,7 +36,8 @@ import {
   taskOf,
 } from "./workflow-finish-test-kit.mjs";
 
-/** @import { ChildLaunch, Step } from "../src/workflow/stages/types.ts" */
+/** @import { Step } from "../src/workflow/stages/types.ts" */
+/** @import { Session } from "./stage-outcome-test-kit.mjs" */
 
 const SPEC = "## Behaviour\n\n- It works.";
 // An issue budget smaller than one verifier session.
@@ -59,16 +65,12 @@ function acceptTask(spec) {
   ]);
 }
 
-/** @param {string} task @returns {ChildLaunch} */
-function sessionLaunch(task) {
+/** @param {string} task @returns {Session} */
+function verifierSession(task) {
   return {
-    kind: "child",
-    name: "accept",
-    label: "Check issue 7 is resolved",
     agent: "issue-pipeline-reader",
     model: MODELS.verifier,
     schema: ACCEPT_SCHEMA,
-    minutes: 25,
     task,
   };
 }
@@ -82,13 +84,8 @@ test("acceptance prepares the final diff before charging the verifier", () => {
   const given = stateWith("accept");
   const step = next(given, CTX, []);
   assert.equal(step.done, false);
-  assert.deepEqual(step.launches, [
-    {
-      kind: "op",
-      name: "prep",
-      op: "prepare-review",
-      payload: { number: 7, tag: "final" },
-    },
+  assert.deepEqual(opsRequests(step), [
+    { op: "prepare-review", payload: { number: 7, tag: "final" } },
   ]);
   assert.equal(step.state.phase, "review");
   assert.equal(step.state.st.allocated, 0);
@@ -102,13 +99,13 @@ test("the verifier is charged, then reads the final diff and the checks' summary
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.allocated, ROLES.verifier);
   assert.deepEqual(step.state.st.sessions, ["verifier"]);
-  assert.deepEqual(step.launches, [sessionLaunch(acceptTask(""))]);
+  assert.deepEqual(sessions(step), [verifierSession(acceptTask(""))]);
 });
 
 test("the verifier also judges the spec when the issue has one", () => {
   const step = prepared(next, stateWith("accept", { spec: SPEC }));
   assert.equal(step.done, false);
-  assert.deepEqual(step.launches, [sessionLaunch(acceptTask(SPEC))]);
+  assert.deepEqual(sessions(step), [verifierSession(acceptTask(SPEC))]);
 });
 
 test("a pass keeps the reason and moves the issue to security", () => {
@@ -234,20 +231,10 @@ test("a re-check's verifier is charged to the rebase pool, and stops when it is 
   });
 });
 
-test("each parent gets a close request keyed by its number", () => {
-  assert.deepEqual(closeParentLaunches(PARENTS), [
-    {
-      kind: "op",
-      name: "p5-close",
-      op: "close-parent",
-      payload: { number: 5 },
-    },
-    {
-      kind: "op",
-      name: "p9-close",
-      op: "close-parent",
-      payload: { number: 9 },
-    },
+test("each parent gets a close request for its number", () => {
+  assert.deepEqual(asRequests(closeParentLaunches(PARENTS)), [
+    { op: "close-parent", payload: { number: FIRST_PARENT } },
+    { op: "close-parent", payload: { number: SECOND_PARENT } },
   ]);
   assert.deepEqual(closeParentLaunches([]), []);
 });

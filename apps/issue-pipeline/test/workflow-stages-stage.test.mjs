@@ -3,11 +3,11 @@
 // leaves it, and releases an issue saved at another stage untouched.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { releasedState, sessionAgents } from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -16,9 +16,6 @@ import {
 
 // Issue #7 after triage: its plan and draft PR.
 /** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
-/** @import { IssueState } from "../src/workflow/types.ts" */
-/** @import { TraceEntry } from "./workflow-harness.mjs" */
-/** @typedef {{ op?: string, state: IssueState }} TracedRequest */
 
 const TRIAGED = {
   plan: "Change src/a.ts and test it.",
@@ -40,18 +37,6 @@ const UNKNOWN_STAGE = /args\.stage must be one of: triage, spec, implement/u;
 const NAMES_TRIAGE = /triage/u;
 const NAMES_SPEC = /spec/u;
 
-/** @param {readonly TraceEntry[]} trace @returns {IssueState} */
-function releasedState(trace) {
-  const requests = trace.map(
-    (entry) => /** @type {TracedRequest} */ (entry.request ?? {}),
-  );
-  const release = requests.find((request) => request.op === "release");
-  if (release === undefined) {
-    throw new Error("the sweep released no issue");
-  }
-  return release.state;
-}
-
 test("stage spec: the spec is written, then the issue is released at implement", async () => {
   const { trace, summary } = await runWorkflow({
     args: { ...WORKFLOW_ARGS, stage: "spec" },
@@ -62,14 +47,7 @@ test("stage spec: the spec is written, then the issue is released at implement",
     },
     agents: { "i7-spec": SPEC_READY },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-save-3",
-    "i7-spec-4",
-    "i7-release-5",
-    "cleanup-6",
-  ]);
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-specifier"]);
   assert.equal(releasedState(trace).stage, "implement");
   assert.deepEqual(
     /** @type {SweepSummary} */ (summary).items.map(({ stage, outcome }) => ({
@@ -90,12 +68,7 @@ test("stage spec: an issue saved at triage begins no stage and is released as wr
     },
     agents: {},
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-release-3",
-    "cleanup-4",
-  ]);
+  assert.deepEqual(sessionAgents(trace), []);
   assert.equal(releasedState(trace).stage, "triage");
   const [item] = /** @type {SweepSummary} */ (summary).items;
   assert.equal(item?.outcome, "wrong-stage");

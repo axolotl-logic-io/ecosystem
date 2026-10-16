@@ -6,6 +6,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { next } from "../src/workflow/stages/triage.ts";
 import {
+  asSessions,
+  opsRequests,
+  sessions,
+} from "./stage-outcome-test-kit.mjs";
+import {
   CTX,
   contextWith,
   expectedTask,
@@ -20,7 +25,7 @@ import {
   stateWith,
 } from "./workflow-triage-test-kit.mjs";
 
-/** @import { ChildResult, Launch, OpResult, Step } from "../src/workflow/stages/types.ts" */
+/** @import { ChildResult, OpResult, Step } from "../src/workflow/stages/types.ts" */
 /** @typedef {Parameters<typeof stateWith>[0]} Fields */
 /** @typedef {Pick<ChildResult, "ok" | "structuredOutput"> & Partial<Pick<ChildResult, "error">>} Ended */
 
@@ -51,20 +56,16 @@ function replied(step, reply) {
   return next(step.state, CTX, [{ kind: "op", reply }]);
 }
 
-/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
-function launchesOf(step) {
-  if (step.done) {
-    throw new Error("the step ended instead of launching");
-  }
-  return step.launches;
+// The triage session that works on `task`.
+/** @param {string} task @returns {ReturnType<typeof asSessions>} */
+function triager(task) {
+  return asSessions([sessionLaunch(task)]);
 }
 
 test("the first call counts the run, charges it and launches the session", () => {
   const given = stateWith();
   const step = next(given, CTX, []);
-  assert.deepEqual(launchesOf(step), [
-    sessionLaunch(expectedTask(SPLIT_ALLOWED)),
-  ]);
+  assert.deepEqual(sessions(step), triager(expectedTask(SPLIT_ALLOWED)));
   assert.equal(step.done, false);
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.triages, 1);
@@ -76,9 +77,7 @@ test("the first call counts the run, charges it and launches the session", () =>
 
 test("a sub-issue's session is told it may not split", () => {
   const step = next(stateWith({ depth: 1 }), CTX, []);
-  assert.deepEqual(launchesOf(step), [
-    sessionLaunch(expectedTask(SPLIT_FORBIDDEN)),
-  ]);
+  assert.deepEqual(sessions(step), triager(expectedTask(SPLIT_FORBIDDEN)));
 });
 
 test("a ready issue moves to spec, is taken, and opens its draft PR", () => {
@@ -96,13 +95,8 @@ test("a ready issue moves to spec, is taken, and opens its draft PR", () => {
       where: "issue",
     },
   ]);
-  assert.deepEqual(launchesOf(step), [
-    {
-      kind: "op",
-      name: "startpr",
-      op: "start-pr",
-      payload: { number: 7, plan: "Change a.ts." },
-    },
+  assert.deepEqual(opsRequests(step), [
+    { op: "start-pr", payload: { number: 7, plan: "Change a.ts." } },
   ]);
   const opened = replied(step, { ok: true, pr: PR, headSha: "aaaaaaa" });
   assert.equal(opened.done, true);
@@ -162,10 +156,8 @@ test("a large issue at depth 0 is split, and closed for the sweep", () => {
     subIssues: SUB_ISSUES,
   });
   const step = decided(split);
-  assert.deepEqual(launchesOf(step), [
+  assert.deepEqual(opsRequests(step), [
     {
-      kind: "op",
-      name: "split",
       op: "split",
       payload: {
         number: 7,
@@ -183,10 +175,8 @@ test("a large issue at depth 0 is split, and closed for the sweep", () => {
 test("questions are asked, and no questions read as a reject", () => {
   const questions = ["Which page?"];
   const step = decided(replyOf({ decision: "needs-info", questions }));
-  assert.deepEqual(launchesOf(step), [
+  assert.deepEqual(opsRequests(step), [
     {
-      kind: "op",
-      name: "ask",
       op: "ask",
       payload: { number: 7, state: step.state.st, questions, by: SIGNATURE },
     },

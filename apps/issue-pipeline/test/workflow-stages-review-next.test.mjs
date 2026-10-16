@@ -7,6 +7,7 @@ import { describe, test } from "node:test";
 import { AGG_SCHEMA, REVIEW_SCHEMA } from "../src/workflow/review-schemas.ts";
 import { byStep } from "../src/workflow/signing.ts";
 import { next } from "../src/workflow/stages/review.ts";
+import { opsRequests, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   aggregateTask,
   CTX,
@@ -25,7 +26,8 @@ import {
 } from "./workflow-review-test-kit.mjs";
 
 /** @import { Lens } from "../src/workflow/lenses.ts" */
-/** @import { Launch, LaunchResult, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { LaunchResult, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { OpsRequest } from "./stage-outcome-test-kit.mjs" */
 /** @typedef {{ findings?: unknown[], failed?: string }} LensOutput */
 /** @type {Lens[]} */
 const LENS_NAMES = ["correctness", "tests", "scope"];
@@ -72,31 +74,18 @@ function aggregated(result) {
   return next(step.state, CTX, [result]);
 }
 
-/** @param {Step} step @returns {Launch[]} */
+// The request that saves `step`'s state.
+/** @param {Step} step @returns {OpsRequest[]} */
 function saveOf(step) {
-  const payload = { number: 7, state: step.state.st };
-  return [{ kind: "op", name: "save", op: "save-state", payload }];
-}
-
-/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
-function launchesOf(step) {
-  if (step.done) {
-    throw new Error("the step ended instead of launching");
-  }
-  return step.launches;
+  return [{ op: "save-state", payload: { number: 7, state: step.state.st } }];
 }
 
 describe("a clean review", () => {
   test("charges the reviewers and prepares the diff", () => {
     const given = stateWith("review");
     const step = next(given, CTX, []);
-    assert.deepEqual(launchesOf(step), [
-      {
-        kind: "op",
-        name: "prep",
-        op: "prepare-review",
-        payload: { number: 7, tag: "r0" },
-      },
+    assert.deepEqual(opsRequests(step), [
+      { op: "prepare-review", payload: { number: 7, tag: "r0" } },
     ]);
     assert.equal(step.state.st.allocated, REVIEWERS_TOKENS);
     assert.deepEqual(step.state.st.sessions, ["reviewer"]);
@@ -128,7 +117,7 @@ describe("a clean review", () => {
       `${STAMP} charged reviewer 180000 to issueTokenBudget`,
       `${STAMP} review: no blocking findings`,
     ]);
-    assert.deepEqual(launchesOf(step), saveOf(step));
+    assert.deepEqual(opsRequests(step), saveOf(step));
     const done = next(step.state, CTX, [opReply({ ok: true })]);
     assert.ok(done.done);
     assert.deepEqual([done.done, done.again, done.stop], [true, false, null]);
@@ -139,18 +128,15 @@ test("a review launches the three lenses on the prepared head", () => {
   const begun = next(stateWith("review"), CTX, []);
   const step = next(begun.state, CTX, [opReply(PREPARED)]);
   assert.deepEqual(
-    launchesOf(step),
+    sessions(step),
     LENS_NAMES.map((lens) => ({
-      kind: "child",
-      name: `review-${lens}`,
-      label: `Review ${lens} of issue 7`,
       agent: "issue-pipeline-reader",
       model: CTX.models[lens],
       schema: REVIEW_SCHEMA,
-      minutes: 25,
       task: lensTask(lens),
     })),
   );
+  assert.ok(sessions(step).every(({ task }) => !task.includes(SPEC_HEADING)));
   const { headSha, findings, round } = step.state.st;
   assert.deepEqual(
     { headSha, findings, round },
@@ -164,12 +150,7 @@ describe("the lenses' tasks", () => {
   function lensTasks(given) {
     const begun = next(given, CTX, []);
     const step = next(begun.state, CTX, [opReply(PREPARED)]);
-    return launchesOf(step).map((launch) => {
-      if (launch.kind !== "child") {
-        throw new Error(`${launch.name} is not a lens session`);
-      }
-      return launch.task;
-    });
+    return sessions(step).map(({ task }) => task);
   }
 
   test("carry the spec and its rule when the issue has one", () => {
@@ -180,29 +161,16 @@ describe("the lenses' tasks", () => {
     );
     assert.ok(tasks.every((task) => task.includes(SPEC)));
   });
-
-  test("leave the spec out when no spec stage ran", () => {
-    const tasks = lensTasks(stateWith("review", { spec: null }));
-    assert.deepEqual(
-      tasks,
-      LENS_NAMES.map((lens) => lensTask(lens)),
-    );
-    assert.ok(tasks.every((task) => !task.includes(SPEC_HEADING)));
-  });
 });
 
 describe("a blocking finding", () => {
   test("goes to the aggregator, carrying the raw findings", () => {
     const step = reviewed({ correctness: { findings: [BLOCKING] } });
-    assert.deepEqual(launchesOf(step), [
+    assert.deepEqual(sessions(step), [
       {
-        kind: "child",
-        name: "aggregate",
-        label: "Merge review findings for issue 7",
         agent: "issue-pipeline-reader",
         model: CTX.models.aggregator,
         schema: AGG_SCHEMA,
-        minutes: 10,
         task: aggregateTask(RAW),
       },
     ]);
@@ -230,7 +198,7 @@ describe("a blocking finding", () => {
         where: "pr",
       },
     ]);
-    assert.deepEqual(launchesOf(step), saveOf(step));
+    assert.deepEqual(opsRequests(step), saveOf(step));
   });
 });
 

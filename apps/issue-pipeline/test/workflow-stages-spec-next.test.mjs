@@ -6,6 +6,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { next } from "../src/workflow/stages/spec.ts";
 import {
+  asSessions,
+  opsRequests,
+  sessions,
+} from "./stage-outcome-test-kit.mjs";
+import {
   afterReply,
   afterSession,
   BUILD_CTX,
@@ -54,7 +59,7 @@ test("the first call charges the spec writer and launches its session", () => {
   const given = buildState("spec");
   const step = next(given, BUILD_CTX, []);
   assert.equal(step.done, false);
-  assert.deepEqual(step.launches, [specLaunch(specTask())]);
+  assert.deepEqual(sessions(step), asSessions([specLaunch(specTask())]));
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.allocated, TRIAGE_TOKENS + SPEC_TOKENS);
   assert.deepEqual(step.state.st.sessions, ["triage", "spec"]);
@@ -66,10 +71,9 @@ test("without a wiki the task names no wiki start page", () => {
   const paths = { ...PATHS, wiki: null };
   const step = next(buildState("spec", {}, paths), BUILD_CTX, []);
   assert.equal(step.done, false);
-  assert.deepEqual(step.launches, [specLaunch(specTask(paths))]);
-  const [launch] = step.launches;
-  assert.ok(launch.kind === "child");
-  assert.doesNotMatch(launch.task, START_FROM);
+  const [session] = sessions(step);
+  assert.deepEqual([session], asSessions([specLaunch(specTask(paths))]));
+  assert.doesNotMatch(session?.task ?? "", START_FROM);
 });
 
 test("a budget too small for the session stops", () => {
@@ -114,18 +118,17 @@ test("questions close the issue and go back to triage with the spec so far", () 
   assert.deepEqual(step.comments, [
     { by: SPEC_BY, body: `## Spec so far\n\n${SPEC}`, where: "issue" },
   ]);
-  const [launch] = step.launches;
-  assert.deepEqual(launch, {
-    kind: "op",
-    name: "ask",
-    op: "ask",
-    payload: {
-      number: 7,
-      state: { ...step.state.st, stage: "triage" },
-      questions: QUESTIONS,
-      by: SPEC_BY,
+  assert.deepEqual(opsRequests(step), [
+    {
+      op: "ask",
+      payload: {
+        number: 7,
+        state: { ...step.state.st, stage: "triage" },
+        questions: QUESTIONS,
+        by: SPEC_BY,
+      },
     },
-  });
+  ]);
   assert.equal(step.state.st.stage, "spec");
   assert.deepEqual(step.state.st.log, [
     `${STAMP} charged spec 80000 to issueTokenBudget`,

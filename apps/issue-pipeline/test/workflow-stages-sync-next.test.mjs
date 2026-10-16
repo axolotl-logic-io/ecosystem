@@ -11,6 +11,7 @@ import {
   deferredFrom,
   NETWORK_FAILURE,
 } from "./deferral-test-kit.mjs";
+import { opsRequests, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   after,
   CTX,
@@ -23,7 +24,7 @@ import {
   stepComment,
 } from "./workflow-checks-test-kit.mjs";
 
-/** @import { Launch, LaunchResult, OpResult, Step } from "../src/workflow/stages/types.ts" */
+/** @import { LaunchResult, OpResult, Step } from "../src/workflow/stages/types.ts" */
 /** @typedef {Parameters<typeof stateAt>[1]} Fields */
 const HEAD = "dddddddddddddddd";
 const FIXER_TOKENS = 100_000;
@@ -61,37 +62,20 @@ function resolvedWith(result, fields = {}) {
   return after(next, synced(CONFLICT, fields), CTX, result);
 }
 
-/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
-function launchesOf(step) {
-  if (step.done) {
-    throw new Error("the step ended instead of launching");
-  }
-  return step.launches;
-}
-
-// The payload of the ops request `step` launches first.
+// The payload of the ops request `step` makes first.
 /** @param {Step} step @returns {Readonly<Record<string, unknown>>} */
 function firstPayload(step) {
-  const [launch] = launchesOf(step);
-  if (launch.kind !== "op") {
-    throw new Error(`${launch.name} is not an ops request`);
+  const [request] = opsRequests(step);
+  if (request === undefined) {
+    throw new Error("the step made no ops request");
   }
-  return launch.payload;
+  return request.payload;
 }
 
 test("a clean rebase launches sync-base, then moves to checks", () => {
   const begun = next(stateAt("sync"), CTX, []);
-  assert.deepEqual(launchesOf(begun), [
-    {
-      kind: "op",
-      name: "sync",
-      op: "sync-base",
-      payload: { number: 7, keepConflict: true },
-    },
-  ]);
-  assert.deepEqual(Object.keys(firstPayload(begun)), [
-    "number",
-    "keepConflict",
+  assert.deepEqual(opsRequests(begun), [
+    { op: "sync-base", payload: { number: 7, keepConflict: true } },
   ]);
   const step = replied(next, begun, { ok: true, changed: true, headSha: HEAD });
   assert.equal(step.done, true);
@@ -137,19 +121,14 @@ test("a base that kept moving stops after the last sync", () => {
 
 test("a conflict is resolved by a writer, then the rebase is finished", () => {
   const conflicted = synced(CONFLICT);
-  const [launch] = launchesOf(conflicted);
-  assert.ok(launch.kind === "child");
+  const [launch] = sessions(conflicted);
+  assert.ok(launch);
   assert.deepEqual(
     { ...launch, task: "" },
     {
-      kind: "child",
-      name: "conflicts-1",
-      label: "Resolve rebase conflicts for issue 7",
       agent: "issue-pipeline-writer",
       model: MODELS.fixer,
       schema: CIFIX_SCHEMA,
-      writer: true,
-      minutes: 45,
       task: "",
     },
   );
@@ -161,10 +140,8 @@ test("a conflict is resolved by a writer, then the rebase is finished", () => {
   assert.equal(conflicted.state.st.conflictFixes, 1);
   const resolver = sessionResult("conflicts-1", KEPT_BOTH);
   const finishing = after(next, conflicted, CTX, resolver);
-  assert.deepEqual(launchesOf(finishing), [
+  assert.deepEqual(opsRequests(finishing), [
     {
-      kind: "op",
-      name: "finish-sync",
       op: "finish-sync",
       payload: { number: 7, abort: false, reason: "Kept both changes." },
     },
@@ -226,7 +203,7 @@ test("an issue near its issue budget still gets the resolver", () => {
   const { keepConflict } = firstPayload(begun);
   assert.equal(keepConflict, true);
   const conflicted = replied(next, begun, CONFLICT);
-  assert.equal(launchesOf(conflicted)[0].name, "conflicts-1");
+  assert.equal(sessions(conflicted)[0]?.agent, "issue-pipeline-writer");
   assert.equal(conflicted.state.st.allocated, nearlySpent.allocated);
   assert.equal(conflicted.state.st.rebaseAllocated, FIXER_TOKENS);
 });

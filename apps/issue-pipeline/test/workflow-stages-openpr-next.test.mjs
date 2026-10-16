@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { next } from "../src/workflow/stages/open-pr.ts";
+import { opsRequests } from "./stage-outcome-test-kit.mjs";
 import {
   afterReply,
   BUILD_CTX,
@@ -29,10 +30,8 @@ test("the first call asks ops to open the PR with the implementer's text", () =>
   const step = begun();
   assert.equal(step.done, false);
   assert.equal(step.state.phase, "opened");
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(opsRequests(step), [
     {
-      kind: "op",
-      name: "openpr",
       op: "open-pr",
       payload: {
         number: 7,

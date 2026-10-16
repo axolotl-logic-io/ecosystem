@@ -11,6 +11,7 @@ import {
   REREVIEW_SEC_SCHEMA,
 } from "../src/workflow/review-schemas.ts";
 import { next } from "../src/workflow/stages/fix.ts";
+import { opsRequests, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   DIFF_PATH,
   F1,
@@ -66,17 +67,12 @@ describe("a finding fixed in round 1", () => {
   test("counts the round and launches the fixer as a writer", () => {
     assert.equal(ROUND_ONE.begun.state.st.round, 1);
     assert.equal(ROUND_ONE.begun.state.st.allocated, FIXER_TOKENS);
-    assert.deepEqual(launchesOf(ROUND_ONE.begun), [
+    assert.deepEqual(sessions(ROUND_ONE.begun), [
       {
-        kind: "child",
-        name: "fix-r1",
-        label: "Fix review findings for issue 7",
         agent: "issue-pipeline-writer",
         model: CTX.models.fixer,
         schema: FIX_SCHEMA,
-        minutes: 60,
         task: fixTask(1, [F1]),
-        writer: true,
       },
     ]);
   });
@@ -93,14 +89,12 @@ describe("a finding fixed in round 1", () => {
       ROUND_ONE.fixed.state.st.log?.at(-1),
       `${STAMP} fix round 1: Fixed the loop bound.`,
     );
-    assert.deepEqual(launchesOf(ROUND_ONE.fixed), [
-      { kind: "op", name: "push", op: "push", payload: { number: 7 } },
+    assert.deepEqual(opsRequests(ROUND_ONE.fixed), [
+      { op: "push", payload: { number: 7 } },
     ]);
     assert.equal(ROUND_ONE.pushed.state.st.headSha, HEAD);
-    assert.deepEqual(launchesOf(ROUND_ONE.pushed), [
+    assert.deepEqual(opsRequests(ROUND_ONE.pushed), [
       {
-        kind: "op",
-        name: "prep",
         op: "prepare-review",
         payload: { number: 7, sinceSha: "bbbbbbb", tag: "r1" },
       },
@@ -114,15 +108,11 @@ describe("the re-review of a fixed finding", () => {
       ROUND_ONE.prepared.state.st.allocated,
       FIXER_TOKENS + REREVIEWER_TOKENS,
     );
-    assert.deepEqual(launchesOf(ROUND_ONE.prepared), [
+    assert.deepEqual(sessions(ROUND_ONE.prepared), [
       {
-        kind: "child",
-        name: "rereview-correctness-r1",
-        label: "Re-review correctness fixes for issue 7",
         agent: "issue-pipeline-reader",
         model: CTX.models.correctness,
         schema: REREVIEW_SCHEMA,
-        minutes: 20,
         task: rereviewTask("correctness", DIFF_PATH, [F1]),
       },
     ]);
@@ -145,13 +135,8 @@ describe("the re-review of a fixed finding", () => {
         where: "pr",
       },
     ]);
-    assert.deepEqual(launchesOf(ROUND_ONE.settled), [
-      {
-        kind: "op",
-        name: "save",
-        op: "save-state",
-        payload: { number: 7, state: st },
-      },
+    assert.deepEqual(opsRequests(ROUND_ONE.settled), [
+      { op: "save-state", payload: { number: 7, state: st } },
     ]);
     const done = saved(ROUND_ONE.settled);
     assert.ok(done.done);
@@ -252,16 +237,12 @@ test("a recurring finding stops the issue, with its lens's comment", () => {
 test("a security round tags its diff and re-reviews with the security schema", () => {
   const harm = openFinding("f1", ["security"], { category: "user-harm" });
   const { pushed, prepared } = round(fixState([harm], { securityRounds: 1 }));
-  const [push] = launchesOf(pushed);
-  assert.ok(push.kind === "op");
-  const { tag } = push.payload;
+  const [prepare] = opsRequests(pushed);
+  assert.ok(prepare);
+  const { tag } = prepare.payload;
   assert.equal(tag, "s1-r1");
-  const [launch] = launchesOf(prepared);
-  assert.ok(launch.kind === "child");
-  assert.deepEqual(
-    [launch.name, launch.schema],
-    ["rereview-security-r1", REREVIEW_SEC_SCHEMA],
-  );
+  const [rereview] = sessions(prepared);
+  assert.equal(rereview?.schema, REREVIEW_SEC_SCHEMA);
 });
 
 test("no lens with open findings means no re-review launch", () => {

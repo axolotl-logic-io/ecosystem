@@ -10,6 +10,7 @@ import {
   deferredFrom,
   NETWORK_FAILURE,
 } from "./deferral-test-kit.mjs";
+import { opsRequests } from "./stage-outcome-test-kit.mjs";
 import {
   CTX,
   replied,
@@ -91,10 +92,8 @@ test("the merge request carries the state and the summary", () => {
   const step = next(given, CTX, []);
   assert.equal(step.state.phase, "decide");
   assert.equal(step.done, false);
-  assert.deepEqual(step.launches, [
+  assert.deepEqual(opsRequests(step), [
     {
-      kind: "op",
-      name: "merge",
       op: "merge",
       payload: {
         number: 7,

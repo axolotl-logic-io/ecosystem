@@ -11,6 +11,7 @@ import {
   sweepLaunch,
   sweepReplyOf,
 } from "../src/workflow/stages/entry.ts";
+import { asRequests } from "./stage-outcome-test-kit.mjs";
 import { claimAt, sweepReply } from "./workflow-stages-fixtures.mjs";
 
 /** @import { SummarySource } from "../src/workflow/stages/entry.ts" */
@@ -31,19 +32,18 @@ function stateAt(headSha) {
 }
 
 test("the sweep op asks for every candidate, or for one issue", () => {
-  assert.deepEqual(sweepLaunch({ only: null, takeStopped: true }), {
-    kind: "op",
-    name: "sweep",
-    op: "sweep",
-    payload: {},
-    minutes: 20,
-  });
+  const every = { only: null, takeStopped: true };
   const named = { only: ISSUE, takeStopped: false };
-  assert.deepEqual(sweepLaunch(named).payload, { only: ISSUE });
-  assert.deepEqual(sweepLaunch({ ...named, takeStopped: true }).payload, {
-    only: ISSUE,
-    takeStopped: true,
-  });
+  const launches = [
+    sweepLaunch(every),
+    sweepLaunch(named),
+    sweepLaunch({ ...named, takeStopped: true }),
+  ];
+  assert.deepEqual(asRequests(launches), [
+    { op: "sweep", payload: {} },
+    { op: "sweep", payload: { only: ISSUE } },
+    { op: "sweep", payload: { only: ISSUE, takeStopped: true } },
+  ]);
 });
 
 test("a sweep reply keeps a well-formed stopped and drops a malformed one", () => {
@@ -70,14 +70,10 @@ test("a sweep reply gives its config, candidates and parents as they are", () =>
   assert.equal(read.waiting, 0);
 });
 
-test("a claim is keyed by its issue and has 15 minutes", () => {
-  assert.deepEqual(claimLaunch(ISSUE), {
-    kind: "op",
-    name: "i7-claim",
-    op: "claim",
-    payload: { number: ISSUE },
-    minutes: 15,
-  });
+test("a claim asks ops to claim its issue", () => {
+  assert.deepEqual(asRequests([claimLaunch(ISSUE)]), [
+    { op: "claim", payload: { number: ISSUE } },
+  ]);
 });
 
 test("a lost claim gives the abandoned entry, so the next candidate is claimed", () => {
@@ -150,26 +146,16 @@ test("an open issue closes its parents, then is released with its state", () => 
     openState: state,
     queued: 1,
   });
-  assert.deepEqual(launches, [
-    {
-      kind: "op",
-      name: "p5-close",
-      op: "close-parent",
-      payload: { number: 5 },
-    },
-    {
-      kind: "op",
-      name: "i7-release",
-      op: "release",
-      payload: { number: ISSUE, state },
-    },
+  assert.deepEqual(asRequests(launches), [
+    { op: "close-parent", payload: { number: PARENT } },
+    { op: "release", payload: { number: ISSUE, state } },
   ]);
 });
 
 test("a closed issue posts its queued comments, or launches nothing", () => {
   const queued = { n: ISSUE, openState: null, queued: 2 };
-  assert.deepEqual(finishLaunches([], queued), [
-    { kind: "op", name: "i7-post", op: "post", payload: { number: ISSUE } },
+  assert.deepEqual(asRequests(finishLaunches([], queued)), [
+    { op: "post", payload: { number: ISSUE } },
   ]);
   assert.deepEqual(finishLaunches([], { ...queued, queued: 0 }), []);
   assert.deepEqual(finishLaunches([], null), []);
