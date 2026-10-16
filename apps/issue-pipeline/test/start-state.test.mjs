@@ -169,6 +169,33 @@ test("no open PR -> triage", () => {
   );
   assert.deepEqual([stage, pr], ["triage", PR]);
 });
+// wiki-only work, no PR (with or without a code branch) -> review, pr null
+for (const remote of ["h1", null]) {
+  test(`wiki-only work, no PR -> review (remote ${remote})`, () => {
+    const s = startState(
+      { ...base, stage: "stopped", stopCode: "budget" },
+      { ...ctx, pr: null, hasWork: true, remote },
+    );
+    const { stage, pr, implemented } = s;
+    assert.deepEqual(
+      [stage, pr, implemented, lastLogLine(s)],
+      [
+        "review",
+        null,
+        true,
+        "2026-10-15T03:00Z restarted on the existing branch (no PR) at review after the budget stop; limits reset",
+      ],
+    );
+  });
+}
+// never reviewed, wiki-only work with no code branch: no review stands -> review
+test("never reviewed, no code branch -> review", () => {
+  const { stage, reviewedSha } = startState(
+    { ...base, stage: "stopped", stopCode: "budget", reviewedSha: null },
+    { ...ctx, pr: null, hasWork: true, remote: null },
+  );
+  assert.deepEqual([stage, reviewedSha], ["review", null]);
+});
 // lost state, PR + work exist -> review
 test("no state, work -> review", () => {
   const s = startState(null, ctx);

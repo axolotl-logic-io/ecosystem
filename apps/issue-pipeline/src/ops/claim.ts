@@ -22,7 +22,7 @@ import { adoptPush, startState } from "../start-state.ts";
 import type { State } from "../state.ts";
 import { readState, writeState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
-import { ensureWiki } from "../wiki.ts";
+import { ensureWiki, wikiBranchHasWork } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
 import { answeredSince, issueDepth } from "./sweep-verdict.ts";
 
@@ -80,17 +80,21 @@ interface ClaimWaiting {
   waiting: "answer";
 }
 
-// The open PR from the issue's branch, and whether the branch holds work.
+// The open (or draft) PR from the issue's branch, and whether the issue holds
+// work: code changes on a branch with an open PR, or commits on the wiki's
+// agent/issue-<n> that the wiki lacks, with or without a PR or code branch.
 function branchWork(
   cfg: Config,
   n: number,
   remote: string | null,
 ): { pr: number | null; hasWork: boolean } {
-  if (remote === null) {
-    return { pr: null, hasWork: false };
+  let pr: number | null = null;
+  let codeWork = false;
+  if (remote !== null) {
+    pr = openPrFor(cfg, n) ?? null;
+    codeWork = pr !== null && branchHasWork(cfg, n, remote);
   }
-  const pr = openPrFor(cfg, n) ?? null;
-  return { pr, hasWork: pr !== null && branchHasWork(cfg, n, remote) };
+  return { pr, hasWork: codeWork || wikiBranchHasWork(cfg, n) };
 }
 
 // Moves a worktree with no commits past the base to the base's head on

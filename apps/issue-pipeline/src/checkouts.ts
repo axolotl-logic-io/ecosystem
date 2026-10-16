@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { configureClone, GH_HELPER } from "./clone-setup.ts";
 import type { Config } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
 import {
@@ -19,17 +20,8 @@ import {
 import { git } from "./github.ts";
 import { withCloneLock, withWikiLock } from "./locks.ts";
 import { OpsError, run, shell } from "./process.ts";
+import { pushWikiBranch } from "./wiki.ts";
 
-const CREDENTIAL_HELPER = "credential.https://github.com.helper";
-const GH_HELPER: readonly string[] = [
-  "-c",
-  `${CREDENTIAL_HELPER}=`,
-  "-c",
-  `${CREDENTIAL_HELPER}=!gh auth git-credential`,
-];
-const PRE_PUSH_HOOK =
-  '#!/bin/sh\n[ "$ISSUE_PIPELINE_OPS" = 1 ] || { echo "Only the issue pipeline ops tool may push from this clone." >&2; exit 1; }\n';
-const HOOK_MODE = 0o755;
 const TEARDOWN_TIMEOUT_MS = 300_000;
 const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
 const PUSHED_FILE = "pushed.json";
@@ -40,28 +32,6 @@ const PUSHED = z.object({ sha: z.string(), op: z.string() });
 interface PushRecord {
   sha: string;
   op: string;
-}
-
-// Authenticates git through gh, using the token from the ops environment when
-// there is one, and stops agents pushing by accident: only this tool pushes.
-// (--no-verify bypasses the hook, so it is a guard, not a boundary.)
-function configureClone(cfg: Config, clone: string): void {
-  run("git", ["-C", clone, "config", "--unset-all", CREDENTIAL_HELPER], {
-    allowFail: true,
-  });
-  gitIn(clone, ["config", "--add", CREDENTIAL_HELPER, ""]);
-  gitIn(clone, [
-    "config",
-    "--add",
-    CREDENTIAL_HELPER,
-    "!gh auth git-credential",
-  ]);
-  gitIn(clone, ["config", "user.name", cfg.gitName || cfg.account]);
-  const email = cfg.gitEmail || `${cfg.account}@users.noreply.github.com`;
-  gitIn(clone, ["config", "user.email", email]);
-  const hook = path.join(clone, ".git", "hooks", "pre-push");
-  fs.writeFileSync(hook, PRE_PUSH_HOOK);
-  fs.chmodSync(hook, HOOK_MODE);
 }
 
 function ensureClone(cfg: Config): string {
@@ -200,10 +170,11 @@ function lastPush(cfg: Config, n: number): PushRecord | null {
   }
 }
 
-// Pushes the issue's branch for `op`, recording the push first, and returns
-// its head. allowEmpty lets start-pr push the branch's empty first commit.
-// Every other push must change files, since that commit alone puts the branch
-// ahead of the base.
+// Pushes the issue's branch for `op`, recording the push first, and its wiki
+// checkout's own commits to the wiki's branch of the same name, and returns
+// the code head. allowEmpty lets start-pr push the branch's empty first
+// commit. Every other push must change files, since that commit alone puts the
+// branch ahead of the base.
 function push(
   cfg: Config,
   number: number,
@@ -230,15 +201,14 @@ function push(
   const target = `HEAD:refs/heads/${paths.branch(number)}`;
   recordPush(cfg, number, head(wt), op);
   git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
+  pushWikiBranch(cfg, number);
   return head(wt);
 }
 
 export type { PushRecord };
 export {
-  configureClone,
   ensureClone,
   ensureWorktree,
-  GH_HELPER,
   issueWorktrees,
   lastPush,
   push,

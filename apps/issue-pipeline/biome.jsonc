@@ -27,8 +27,8 @@
     // files and the terminal.
     // The ops CLI's own modules are part of that boundary: they run git, gh
     // and the configured commands, and keep the clones, worktrees, locks and
-    // logs on disk (#166), as do the ops that keep files themselves: the
-    // sweep's reservations and the claim's worktree checks and setup log
+    // logs on disk (#166), clone-setup among them (#213), as do the ops that
+    // keep files themselves: the sweep's reservations and the claim's worktree checks and setup log
     // (#183), the PR and sync ops, which run git in the worktree and write
     // the review diff (#184), and the ops that run git, gh and the configured
     // shell commands: verify, fails-before-fix and ci-status (#185). The pure
@@ -54,6 +54,7 @@
         "src/config.ts",
         "src/comment-only.ts",
         "src/locks.ts",
+        "src/clone-setup.ts",
         "src/checkouts.ts",
         "src/wiki.ts",
         "src/issue-context.ts",
