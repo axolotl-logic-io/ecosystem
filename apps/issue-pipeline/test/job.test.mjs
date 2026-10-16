@@ -117,13 +117,18 @@ test("a rejected prompt ends pi's session, and its error fails the launch", () =
   const place = setUp(repliesAt("spec"), { rejectPrompt: MODEL_NOT_FOUND });
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
+  // One prompt per session: the spec stage tries a failed session once more
+  // (#280).
   assert.deepEqual(
     piCommands(place).map(({ type }) => type),
-    ["prompt"],
+    ["prompt", "prompt"],
   );
   // The fake pi exits only once its stdin closes.
-  const [start] = piStarts(place);
-  assert.equal(alive(start.pid), false);
+  const starts = piStarts(place);
+  assert.deepEqual(
+    starts.map(({ pid }) => alive(pid)),
+    [false, false],
+  );
   const stop = logOf(place, "ops.log").find(({ op }) => op === "stop");
   assert.equal(stop?.detail, MODEL_NOT_FOUND);
   const session = sessionOf(statusOf(place));

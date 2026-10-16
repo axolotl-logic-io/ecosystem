@@ -42,6 +42,10 @@ import {
 /** @import { Session } from "./stage-outcome-test-kit.mjs" */
 
 const SPEC = "## Behaviour\n\n- It works.";
+// A spec clipped in the saved state, and where its full text is (#280).
+const CLIPPED = "## Behaviour\n\n1. The clipped copy…";
+const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
+const READ_WHOLE = /Read the whole spec there/u;
 // An issue budget smaller than one verifier session.
 const SMALL_BUDGET = 40_000;
 const BY = { ...SIGNATURE, role: "acceptance verifier" };
@@ -108,6 +112,15 @@ test("the verifier also judges the spec when the issue has one", () => {
   const step = prepared(next, stateWith("accept", { spec: SPEC }));
   assert.equal(step.done, false);
   assert.deepEqual(sessions(step), [verifierSession(acceptTask(SPEC))]);
+});
+
+test("a clipped spec reaches the verifier by its full text's path", () => {
+  const given = stateWith("accept", { spec: CLIPPED, specFile: SPEC_FILE });
+  const [session] = sessions(prepared(next, given));
+  const task = session?.task ?? "";
+  assert.ok(task.includes(SPEC_FILE));
+  assert.match(task, READ_WHOLE);
+  assert.ok(!task.includes(CLIPPED));
 });
 
 test("a pass keeps the reason and moves the issue to security", () => {

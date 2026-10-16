@@ -52,6 +52,9 @@ const PLAN = "Change src/a.ts and test it.";
 // The tokens triage was charged.
 const TRIAGE_TOKENS = 50_000;
 const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
+// The line a whole spec ends with (#280), and SPEC as the spec writer writes it.
+const SPEC_END = "<!-- end of spec -->";
+const SPEC_REPLY = `${SPEC}\n\n${SPEC_END}`;
 
 // Every kit's rebase pool (`rebaseTokenBudget`).
 const REBASE_BUDGET = 500_000;
@@ -152,6 +155,7 @@ function specTask(paths = PATHS) {
       "`files` lists the repo paths or globs the change will touch, relative to the repo root, without wiki pages (such as `src/a.ts` or `src/orchestrator/**`). The orchestrator holds back other changes that touch them.",
       "Keep it under about 150 lines. Set `decision` to ready, with `questions` empty.",
       "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
+      `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
     ])
     .join("\n");
 }
@@ -244,6 +248,8 @@ export {
   PLAN,
   SPEC,
   SPEC_BY,
+  SPEC_END,
+  SPEC_REPLY,
   STAMP,
   specLaunch,
   specTask,

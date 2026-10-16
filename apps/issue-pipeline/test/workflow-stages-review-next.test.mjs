@@ -45,6 +45,10 @@ const RAW = [{ lens: "correctness", ...BLOCKING }];
 const IDS_COMMENT =
   "Blocking findings for the fixer, with duplicates merged. Later comments refer to these ids.\n\n- **f1** `src/a.ts:3` Off by one (raised by correctness)";
 const SPEC = "## Behaviour\n\n1. The loop visits every item.";
+// A spec clipped in the saved state, and where its full text is (#280).
+const CLIPPED = "## Behaviour\n\n1. The clipped copy…";
+const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
+const READ_WHOLE = /Read the whole spec there/u;
 const NIT_SECTION =
   /\*\*Non-blocking\*\* \(the pipeline won't act on these\)\n\n- `src\/a.ts:3` Name it/u;
 const BLOCKING_SECTION = /\*\*Blocking\*\*\n\n- `src\/a.ts:3` Off by one/u;
@@ -160,6 +164,14 @@ describe("the lenses' tasks", () => {
       LENS_NAMES.map((lens) => lensTask(lens, SPEC)),
     );
     assert.ok(tasks.every((task) => task.includes(SPEC)));
+  });
+
+  test("name a clipped spec's full text by its path", () => {
+    const given = { spec: CLIPPED, specFile: SPEC_FILE };
+    const tasks = lensTasks(stateWith("review", given));
+    assert.ok(tasks.every((task) => task.includes(SPEC_FILE)));
+    assert.ok(tasks.every((task) => READ_WHOLE.test(task)));
+    assert.ok(tasks.every((task) => !task.includes(CLIPPED)));
   });
 });
 

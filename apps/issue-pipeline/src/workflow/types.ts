@@ -55,8 +55,11 @@ interface IssueState {
   triages?: number;
   // Triage's plan for the spec writer.
   plan?: string | null;
-  // The spec the implementer builds to.
+  // The spec the implementer builds to, clipped to the spec stage's limit.
   spec?: string | null;
+  // Where the full spec is (spec.md in the run dir), set only when `spec` was
+  // clipped (#280).
+  specFile?: string | null;
   // The repo paths or globs the spec says the change will touch.
   files?: string[] | null;
   // How many continuation sessions the implementer has had.

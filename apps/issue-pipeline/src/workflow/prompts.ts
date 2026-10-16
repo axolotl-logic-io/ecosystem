@@ -2,6 +2,7 @@
 // works, its context budget, its limits, and the coding practices it reads.
 
 import type {
+  IssueState,
   PracticesConfig,
   PracticesUse,
   RepoConfig,
@@ -78,4 +79,17 @@ function practicesNote(
   ].join("\n");
 }
 
-export { practicesNote, preamble };
+// How a task shows the issue's spec: "" when it has none, the spec itself, or,
+// when the saved copy was clipped, where the full spec is (#280).
+function specText(st: Pick<IssueState, "spec" | "specFile">): string {
+  const { spec, specFile } = st;
+  if (typeof specFile === "string" && specFile !== "") {
+    return `The full spec is in ${specFile}. Read the whole spec there; it is too long to include here.`;
+  }
+  if (typeof spec !== "string") {
+    return "";
+  }
+  return spec;
+}
+
+export { practicesNote, preamble, specText };

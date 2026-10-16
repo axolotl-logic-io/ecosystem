@@ -25,11 +25,20 @@ interface ImplReply {
   testsAdded: string[];
 }
 
+// A spec writer's reply that fits the schema: complete when its spec ends with
+// SPEC_END, which is then stripped, or cut short when it doesn't (#280).
+type SpecRead = { complete: true; reply: SpecReply } | { complete: false };
+
+// The line the spec writer writes last in `spec`, after every section, so a
+// spec that stops partway can be told from a whole one (#280). An HTML comment,
+// so it would not show even if it were posted.
+const SPEC_END = "<!-- end of spec -->";
+
 const SPEC_DECISIONS: readonly SpecDecision[] = ["ready", "needs-info"];
 const IMPL_STATUSES: readonly ImplStatus[] = ["done", "handoff", "blocked"];
 
 // The spec writer's reply, or null when the output doesn't fit the schema.
-function specReplyOf(output: unknown): SpecReply | null {
+function specReplyOf(output: unknown): SpecRead | null {
   if (!isRecord(output)) {
     return null;
   }
@@ -43,7 +52,15 @@ function specReplyOf(output: unknown): SpecReply | null {
   ) {
     return null;
   }
-  return { decision: known, spec, questions, files };
+  const text = spec.trimEnd();
+  if (!text.endsWith(SPEC_END)) {
+    return { complete: false };
+  }
+  const whole = text.slice(0, -SPEC_END.length).trimEnd();
+  return {
+    complete: true,
+    reply: { decision: known, spec: whole, questions, files },
+  };
 }
 
 // The implementer's reply, or null when the output doesn't fit the schema.
@@ -65,5 +82,5 @@ function implReplyOf(output: unknown): ImplReply | null {
   return { status: known, summary, prTitle, prBody, testsAdded };
 }
 
-export type { ImplReply, SpecReply };
-export { implReplyOf, specReplyOf };
+export type { ImplReply, SpecRead, SpecReply };
+export { implReplyOf, SPEC_END, specReplyOf };

@@ -32,6 +32,11 @@ const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first
 const CONTINUED =
   "This session ran out of room before finishing. A second implementer session continues from its handoff.";
 
+// A spec clipped in the saved state, and where its full text is (#280).
+const CLIPPED = "## Behaviour\n\n1. The clipped copy…";
+const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
+const READ_WHOLE = /Read the whole spec there/u;
+
 // The implementer's reply, with `fields` replacing a finished one's.
 /** @param {Reply} fields @returns {Reply} */
 function replyOf(fields) {
@@ -67,6 +72,15 @@ function begunAgain(step) {
 function implementer(task) {
   return asSessions([implementLaunch(task)]);
 }
+
+test("a clipped spec reaches the implementer by its full text's path", () => {
+  const given = buildState("implement", { spec: CLIPPED, specFile: SPEC_FILE });
+  const [session] = sessions(next(given, BUILD_CTX, []));
+  const task = session?.task ?? "";
+  assert.ok(task.includes(SPEC_FILE));
+  assert.match(task, READ_WHOLE);
+  assert.ok(!task.includes(CLIPPED));
+});
 
 test("the first call charges the implementer and launches a writer from the spec", () => {
   const given = buildState("implement", { spec: SPEC });

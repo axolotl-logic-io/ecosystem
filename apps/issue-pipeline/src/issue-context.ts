@@ -1,5 +1,6 @@
 // The issue as its agents read it: issue.md in the run dir holds the issue and
-// the comments of the pipeline and of allowed users only (Autumn, 2026-10-14).
+// the comments of the pipeline and of allowed users only (Autumn, 2026-10-14),
+// and spec.md beside it holds a spec too long for the saved state (#280).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -98,5 +99,14 @@ function writeIssueContext(cfg: Config, number: number): IssueContext {
   return { comments, file, issue };
 }
 
+// Writes issue `number`'s full spec to spec.md in its run dir and returns the
+// file's absolute path.
+function writeSpecFile(cfg: Config, number: number, spec: string): string {
+  const file = path.resolve(paths.runDir(cfg, number), "spec.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, spec);
+  return file;
+}
+
 export type { Issue, IssueContext };
-export { writeIssueContext };
+export { writeIssueContext, writeSpecFile };

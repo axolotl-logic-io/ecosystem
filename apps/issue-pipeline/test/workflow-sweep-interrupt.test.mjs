@@ -74,7 +74,7 @@ const NEEDS_INFO_RUN = {
   agents: {
     "i7-spec": replyWith({
       decision: "needs-info",
-      spec: "So far.",
+      spec: "So far.\n<!-- end of spec -->",
       questions: ["Which file?"],
       files: [],
     }),

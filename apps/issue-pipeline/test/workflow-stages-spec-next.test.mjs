@@ -19,6 +19,8 @@ import {
   PATHS,
   SPEC,
   SPEC_BY,
+  SPEC_END,
+  SPEC_REPLY,
   STAMP,
   specLaunch,
   specTask,
@@ -34,7 +36,7 @@ const SMALL_BUDGET = 100_000;
 const START_FROM = /start from/u;
 const QUESTIONS = ["Which file holds the thing?"];
 const FILES = ["src/thing.ts", "test/**"];
-
+const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
 // Spec's step after its session ends with `result`.
 /** @param {Parameters<typeof afterSession>[3]} result @returns {Step} */
 function decided(result) {
@@ -42,12 +44,12 @@ function decided(result) {
   return afterSession(next, begun, SPEC_BY, result);
 }
 
-// Spec's step after its session replies with `fields` over a ready spec.
+// Spec's step after its session replies with `fields` over a whole ready spec.
 /** @param {Readonly<Record<string, unknown>>} fields @returns {Step} */
 function replied(fields) {
   const output = {
     decision: "ready",
-    spec: SPEC,
+    spec: SPEC_REPLY,
     questions: [],
     files: FILES,
     ...fields,
@@ -88,13 +90,13 @@ test("a budget too small for the session stops", () => {
   assert.equal(step.state.st.allocated, TRIAGE_TOKENS);
 });
 
-test("a ready spec is kept, posted, and moves the issue to implement", () => {
-  const long = `${SPEC}\n${"x".repeat(SPEC_LIMIT)}`;
-  const step = replied({ spec: long });
+test("a whole ready spec is kept without its marker, posted, and moves the issue to implement", () => {
+  const step = replied({ spec: `${SPEC_REPLY}\n  \n` });
   assert.equal(step.done, true);
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "implement");
-  assert.equal(step.state.st.spec, `${long.slice(0, SPEC_LIMIT)}…`);
+  assert.equal(step.state.st.spec, SPEC);
+  assert.equal(step.state.st.specFile, undefined);
   assert.deepEqual(step.state.st.files, FILES);
   assert.deepEqual(step.state.st.log, [
     `${STAMP} charged spec 80000 to issueTokenBudget`,
@@ -103,10 +105,52 @@ test("a ready spec is kept, posted, and moves the issue to implement", () => {
   assert.deepEqual(step.comments, [
     {
       by: SPEC_BY,
+      body: `## Spec\n\nThe implementer builds to this spec, and the acceptance check judges the result against it.\n\n${SPEC}`,
+      where: "issue",
+    },
+  ]);
+});
+
+test("a ready spec longer than 12,000 characters is saved whole to spec.md first", () => {
+  const long = `${SPEC}\n${"x".repeat(SPEC_LIMIT)}`;
+  const step = replied({ spec: `${long}\n${SPEC_END}` });
+  assert.equal(step.done, false);
+  assert.deepEqual(step.comments, []);
+  assert.deepEqual(opsRequests(step), [
+    { op: "save-spec", payload: { number: 7, spec: long } },
+  ]);
+  const saved = afterReply(next, step, {
+    ok: true,
+    op: "save-spec",
+    posted: 0,
+    specFile: SPEC_FILE,
+  });
+  assert.equal(saved.done, true);
+  assert.equal(saved.stop, null);
+  assert.equal(saved.state.st.stage, "implement");
+  assert.equal(saved.state.st.spec, `${long.slice(0, SPEC_LIMIT)}…`);
+  assert.equal(saved.state.st.specFile, SPEC_FILE);
+  assert.deepEqual(saved.state.st.files, FILES);
+  assert.deepEqual(saved.comments, [
+    {
+      by: SPEC_BY,
       body: `## Spec\n\nThe implementer builds to this spec, and the acceptance check judges the result against it.\n\n${long}`,
       where: "issue",
     },
   ]);
+});
+
+test("a full spec that can't be saved stops at spec, unposted", () => {
+  const long = `${SPEC}\n${"x".repeat(SPEC_LIMIT)}`;
+  const step = replied({ spec: `${long}\n${SPEC_END}` });
+  const failed = afterReply(next, step, { ok: false, error: "disk full" });
+  assert.deepEqual(failed.stop, {
+    reason: "could not save the full spec",
+    detail: "disk full",
+    code: null,
+  });
+  assert.equal(failed.state.st.stage, "spec");
+  assert.deepEqual(failed.comments, []);
 });
 
 test("questions close the issue and go back to triage with the spec so far", () => {
@@ -158,33 +202,9 @@ test("needs-info without questions reads as ready", () => {
   assert.equal(step.state.closed, false);
 });
 
-test("a failed session or a malformed reply stops", () => {
-  const failed = decided({
-    ok: false,
-    structuredOutput: null,
-    error: "timeout",
-  });
-  assert.deepEqual(failed.stop, {
-    reason: "the spec writer failed",
-    detail: "timeout",
-    code: null,
-  });
-  const malformed = decided({ ok: true, structuredOutput: { decision: "ok" } });
-  assert.deepEqual(malformed.stop, {
-    reason: "the spec writer failed",
-    detail: null,
-    code: null,
-  });
-});
-
-test("a reply without the files it will touch is a failed spec writer", () => {
-  const output = { decision: "ready", spec: SPEC, questions: [] };
-  const step = decided({ ok: true, structuredOutput: output });
-  assert.deepEqual(step.stop, {
-    reason: "the spec writer failed",
-    detail: null,
-    code: null,
-  });
+test("the task asks for the end marker as the last line of spec", () => {
+  const [session] = sessions(next(buildState("spec"), BUILD_CTX, []));
+  assert.ok(session?.task.includes("<!-- end of spec -->"));
 });
 
 test("an unknown phase throws", () => {

@@ -5,7 +5,7 @@
 import { chargeSession } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
-import { practicesNote, preamble } from "../prompts.ts";
+import { practicesNote, preamble, specText } from "../prompts.ts";
 import { IMPL_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import type { ImplReply } from "./build-replies.ts";
@@ -51,8 +51,9 @@ function sourceLine(state: StageState): string {
   if ((st.continuations ?? 0) > 0) {
     return `A previous session ran out of room. Read its handoff first: ${paths.handoffFile}. Continue from the current branch state.`;
   }
-  if (isSet(st.spec)) {
-    return `Spec (also posted on the issue):\n${st.spec}`;
+  const spec = specText(st);
+  if (spec !== "") {
+    return `Spec (also posted on the issue):\n${spec}`;
   }
   return `Triage plan:\n${String(st.plan)}`;
 }

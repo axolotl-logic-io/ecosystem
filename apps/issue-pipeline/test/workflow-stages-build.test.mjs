@@ -34,7 +34,7 @@ const TRIAGED = {
 const BUILD_AGENTS = {
   "i7-spec": replyWith({
     decision: "ready",
-    spec: "## Behaviour\n\n1. src/a.ts does the thing.",
+    spec: "## Behaviour\n\n1. src/a.ts does the thing.\n\n<!-- end of spec -->",
     questions: [],
     files: ["src/a.ts"],
   }),

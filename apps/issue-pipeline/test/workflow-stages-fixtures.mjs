@@ -34,6 +34,7 @@ const DEFAULT_CONFIG = {
 // merge's wiki steps for an issue whose wiki changes rebase and check clean.
 const ROUTINE_OPS = {
   "save-state": { ok: true },
+  "save-spec": { ok: true, specFile: "/w/runs/o__r/issue-7/spec.md" },
   "wiki-sync": { ok: true, conflict: false, changed: false, headSha: "" },
   "wiki-check": { ok: true, pass: true, checks: [] },
   stop: { ok: true },

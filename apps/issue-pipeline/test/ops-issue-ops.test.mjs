@@ -1,8 +1,10 @@
 // @ts-check
-// The save-state, ask and stop ops through the ops CLI: their replies, and
+// The save-state, save-spec, ask and stop ops through the ops CLI: their replies, and
 // what each shows on GitHub (comments, the state comment, labels, closed
 // claims). The split op is in ops-split.test.mjs.
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { STOPS } from "../src/stops.ts";
 import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
@@ -13,6 +15,7 @@ import {
   effects,
   reply,
   root,
+  runDir,
   sh,
   stateComment,
   TIME,
@@ -26,6 +29,7 @@ const CLAIM_MARK = "<!-- agent-pipeline:claim-closed lane=me sweep=s1 -->";
 // Each test's issue, and the comments and PRs it meets.
 const SAVED = { n: 50 };
 const SAVE_REPLY = { ok: true, op: "save-state", posted: 0 };
+const SPEC_SAVED = { n: 55 };
 const ASKED = { n: 51, state: 5, claim: 6 };
 const STOPPED = { n: 53, pr: 70, claim: 8 };
 const STOPPED_BY_REASON = { n: 54 };
@@ -78,6 +82,22 @@ test("save-state writes the state it is given, and nothing without one", () => {
   assert.deepEqual(stateOf(saved, `comment #${n} state`), state);
   reply([]);
   assert.deepEqual(askOps({ op: "save-state", number: n }), SAVE_REPLY);
+  assert.deepEqual(writes(), []);
+});
+
+test("save-spec writes the full spec to spec.md in the run dir and replies with its path", () => {
+  const { n } = SPEC_SAVED;
+  const spec = "## Behaviour\n\n1. Every rule.\n";
+  reply([]);
+  const specFile = path.join(runDir(n), "spec.md");
+  assert.deepEqual(askOps({ op: "save-spec", number: n, spec }), {
+    ok: true,
+    op: "save-spec",
+    posted: 0,
+    specFile,
+  });
+  assert.ok(path.isAbsolute(specFile));
+  assert.equal(fs.readFileSync(specFile, "utf8"), spec);
   assert.deepEqual(writes(), []);
 });
 

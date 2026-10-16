@@ -5,7 +5,7 @@
 import { findingLines, findingsText } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
-import { practicesNote, preamble } from "../prompts.ts";
+import { practicesNote, preamble, specText } from "../prompts.ts";
 import type { Finding, ListedFinding } from "../types.ts";
 import type {
   FixReply,
@@ -35,8 +35,8 @@ const SPEC_RULE_FIX =
 // The issue's spec as lines of a task, followed by `rule`, which says what
 // the role does with it. No lines when no spec stage ran.
 function specSection(state: StageState, rule: string): string[] {
-  const { spec } = state.st;
-  if (typeof spec !== "string" || spec === "") {
+  const spec = specText(state.st);
+  if (spec === "") {
     return [];
   }
   return [

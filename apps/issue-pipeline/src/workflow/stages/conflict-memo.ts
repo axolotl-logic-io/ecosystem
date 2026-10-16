@@ -8,6 +8,7 @@ import type { FixOutput } from "./checks-reply.ts";
 import { fixOf, isRecord, isStrings } from "./checks-reply.ts";
 import type { ConflictTarget } from "./conflict-target.ts";
 import { targetOf } from "./conflict-target.ts";
+import { nullableText, signatureOf } from "./reply-guards.ts";
 import type { StageState } from "./types.ts";
 
 // A rebase stopped on conflicts in `files`, onto `baseSha`.
@@ -26,26 +27,6 @@ interface ConflictMemo {
   fix: FixOutput | null;
   by: Signature;
   error: string | null;
-}
-
-function nullableText(value: unknown): value is string | null {
-  return value === null || typeof value === "string";
-}
-
-function signatureOf(value: unknown): Signature | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const { role, agent, model, run } = value;
-  if (
-    typeof role !== "string" ||
-    !nullableText(agent) ||
-    !nullableText(model) ||
-    !nullableText(run)
-  ) {
-    return null;
-  }
-  return { role, agent, model, run };
 }
 
 // The files and target carried between the steps; anything else is a bug in

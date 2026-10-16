@@ -31,6 +31,7 @@ import { closeParent, post, release } from "./ops/finish.ts";
 import { merge } from "./ops/merge.ts";
 import { prOps } from "./ops/pr.ts";
 import { publishOps } from "./ops/publish.ts";
+import { saveSpec } from "./ops/save-spec.ts";
 import { saveState } from "./ops/save-state.ts";
 import { split } from "./ops/split.ts";
 import { stop } from "./ops/stop.ts";
@@ -64,6 +65,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["claim", claim],
   // Writes state and nothing else; queued comments ride along on every op (see main).
   ["save-state", saveState],
+  // Writes a spec too long for the saved state to spec.md in the run dir (#280).
+  ["save-spec", saveSpec],
   ["ask", ask],
   ["split", split],
   // Stop an issue at a failed control: label it agent:stopped-<code>, and explain

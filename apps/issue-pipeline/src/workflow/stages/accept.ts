@@ -5,7 +5,7 @@
 import { chargeSession } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding } from "../findings.ts";
-import { preamble } from "../prompts.ts";
+import { preamble, specText } from "../prompts.ts";
 import { ACCEPT_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
@@ -68,7 +68,7 @@ function acceptLaunch(
   diffPath: string,
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
-  const spec = state.st.spec ?? "";
+  const spec = specText(state.st);
   const lines = [
     `Decide whether the change, as a whole, does what the issue asks. Tests, lint, and CI already pass (${state.st.verifySummary ?? ""}); do not re-run them.`,
     specLine(spec),
