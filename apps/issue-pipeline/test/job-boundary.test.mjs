@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { checkoutOf } from "./job-git-test-kit.mjs";
 import {
   piStarts,
   repliesAt,
@@ -98,7 +99,8 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
       "network",
     ]);
     assert.equal(boundary.role, expected.role);
-    assert.equal(boundary.checkout, path.join(place.root, "work/o__r/issue-7"));
+    assert.equal(boundary.checkout, checkoutOf(place.root, stage));
+    assert.ok(!fs.existsSync(boundary.checkout));
     assert.deepEqual(boundary.network, expected.network);
     assert.ok(isSorted(boundary.env));
     assert.ok(

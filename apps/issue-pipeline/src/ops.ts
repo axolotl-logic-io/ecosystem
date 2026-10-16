@@ -21,7 +21,7 @@ import process from "node:process";
 import { z } from "zod";
 import { AUTHOR, comment } from "./comments.ts";
 import type { Config } from "./config.ts";
-import { loadConfig } from "./config.ts";
+import { loadConfig, withCheckout } from "./config.ts";
 import { ask } from "./ops/ask.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
@@ -84,7 +84,8 @@ const OPS_REQUEST = /BEGIN_OPS_REQUEST\s*(?<json>[\s\S]*)END_OPS_REQUEST/u;
 const MAX_ERROR_LENGTH = 4000;
 
 // The fields every request carries, whatever its op: the op, the config's
-// path and the signed comments the workflow queued for the issue.
+// path, the signed comments the workflow queued for the issue and, from a
+// stage job, its checkout.
 const ENVELOPE = z.looseObject({
   comments: z
     .array(
@@ -97,6 +98,10 @@ const ENVELOPE = z.looseObject({
     .nullish(),
   config: z.string().nullish(),
   op: z.string(),
+  // A stage job's own checkout, which stands in for its issue's worktree.
+  checkout: z
+    .object({ issue: z.number().int(), dir: z.string().min(1) })
+    .nullish(),
 });
 
 // The JSON request framed on stdin.
@@ -114,12 +119,16 @@ function readRequest(): unknown {
 
 // Runs a parsed request: its queued comments, then its op.
 function runRequest(request: unknown): OpsReply {
-  const { comments, config, op } = parseRequest(ENVELOPE, "ops", request);
+  const { checkout, comments, config, op } = parseRequest(
+    ENVELOPE,
+    "ops",
+    request,
+  );
   const handler = OPS.get(op);
   if (handler === undefined) {
     throw new OpsError(`unknown op "${op}"`);
   }
-  const cfg = loadConfig(config ?? undefined);
+  const cfg = withCheckout(loadConfig(config ?? undefined), checkout);
   fs.mkdirSync(ROOT, { recursive: true });
   // Post the signed comments the workflow queued for this issue before running the op,
   // so they land in order and aren't lost if the op fails.

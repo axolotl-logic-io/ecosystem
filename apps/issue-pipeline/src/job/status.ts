@@ -2,7 +2,8 @@
 // job runs it holds the job's pid, issue, stage, lane, start time and steer
 // socket, and a record of every launch it started: its pid, session file,
 // last event, consecutive tool failures, token usage and outcome. On exit it
-// holds the job's outcome. Each change rewrites the whole file atomically, so
+// holds the job's outcome, and the uncommitted paths its checkout dropped
+// (lostChanges). Each change rewrites the whole file atomically, so
 // a reader never sees part of one; a write that fails is reported on stderr
 // and the job goes on. This module alone knows the file's name and layout.
 
@@ -44,6 +45,7 @@ const STATUS = z.object({
   outcome: JOB_OUTCOME.nullable(),
   endedAt: z.string().optional(),
   launches: z.array(LAUNCH),
+  lostChanges: z.array(z.string()).optional(),
 });
 
 type StopSignal = z.infer<typeof SIGNAL>;
@@ -89,6 +91,8 @@ interface JobStatus {
   settled: (key: string, outcome: LaunchOutcome) => void;
   // The job ended.
   finish: (outcome: JobOutcome) => void;
+  // The uncommitted paths the job's checkout held at exit, which it dropped.
+  lostChanges: (paths: readonly string[]) => void;
 }
 
 function statusFileOf(runDir: string): string {
@@ -187,6 +191,10 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     finish: (outcome: JobOutcome): void => {
       status.outcome = outcome;
       status.endedAt = new Date().toISOString();
+      writeStatus(file, status);
+    },
+    lostChanges: (paths: readonly string[]): void => {
+      status.lostChanges = [...paths];
       writeStatus(file, status);
     },
   };

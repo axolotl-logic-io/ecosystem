@@ -2,6 +2,7 @@
 // for the ops agent, with the issue's queued comments riding along; a model
 // session runs in the issue's worktree with no way to ask a question.
 
+import type { JobCheckout } from "../config.ts";
 import type { JsonSchema } from "./schemas.ts";
 import type { LaunchMeta, Signature } from "./signing.ts";
 import type { ChildLaunch, OpLaunch } from "./stages/types.ts";
@@ -16,11 +17,12 @@ const WRITER_ACCEPTANCE: WriterAcceptance = {
 };
 
 // What every ops request names besides its op: the repo config, the sweep
-// and its lane.
+// and its lane, and a stage job's own checkout (#250).
 interface OpsFrame {
   config: string;
   sweepId: string;
   lane: string;
+  checkout?: JobCheckout;
 }
 
 // A signed comment waiting to ride on the next ops request for its issue.
@@ -90,6 +92,20 @@ function ridingComments(
   return { comments: outbox.comments.splice(0, outbox.comments.length) };
 }
 
+// The frame of a sweep's requests. It names a checkout only when `args`
+// carries one, so workflow.js's requests stay as they were.
+function opsFrame(
+  args: { config: string; checkout?: JobCheckout | undefined },
+  sweepId: string,
+  lane: string,
+): OpsFrame {
+  const frame: OpsFrame = { config: args.config, sweepId, lane };
+  if (args.checkout !== undefined) {
+    frame.checkout = args.checkout;
+  }
+  return frame;
+}
+
 // The ops request for `launch`, keyed "<name>-<seq>". The comments queued for
 // the issue it names ride along, and leave the outbox.
 function opsSpec(
@@ -147,4 +163,4 @@ function childSpec(
 }
 
 export type { ChildSpec, LaunchSpec, OpsFrame, OpsSpec, Outbox, QueuedComment };
-export { childSpec, opsSpec };
+export { childSpec, opsFrame, opsSpec };

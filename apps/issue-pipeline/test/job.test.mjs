@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { checkoutOf } from "./job-git-test-kit.mjs";
 import {
   alive,
   flagValue,
@@ -47,7 +48,7 @@ test("a stage job runs the spec stage, releases the issue at implement and print
   const calls = piStarts(place);
   assert.equal(calls.length, 1);
   const [{ argv, cwd }] = calls;
-  assert.equal(cwd, fs.realpathSync(place.worktree));
+  assert.equal(cwd, checkoutOf(fs.realpathSync(place.root), "spec"));
   assert.equal(flagValue(argv, "--mode"), "rpc");
   const [prompt, ...others] = piCommands(place);
   assert.equal(prompt.type, "prompt");

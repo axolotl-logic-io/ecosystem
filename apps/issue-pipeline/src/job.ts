@@ -26,6 +26,13 @@
 // token but its role's own; ops keep the job's env. --print-boundary prints
 // the stage job's boundary (role, checkout, env names, network) as one JSON
 // line and starts nothing.
+//
+// The job works in its own checkout, cloned from a bare mirror of the repo
+// (src/job/checkout.ts): every pi session runs there and every ops request
+// names it. On every exit, after a stop's save too, the job records and drops
+// what the checkout left uncommitted (job.json's lostChanges), a writer runs
+// the push op on commits the remote lacks (src/job/exit-push.ts), and the
+// checkout is removed.
 
 import os from "node:os";
 import process from "node:process";
@@ -34,8 +41,10 @@ import type { Config } from "./config.ts";
 import { loadConfig, paths } from "./config.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
+import { closeJobCheckout, openJobCheckout } from "./job/checkout.ts";
 import type { Control, LiveLaunch } from "./job/control.ts";
 import { openControl, steerJob } from "./job/control.ts";
+import { exitPushOf } from "./job/exit-push.ts";
 import type { LaunchHooks } from "./job/launch.ts";
 import { runLaunch } from "./job/launch.ts";
 import { runAll } from "./job/pool.ts";
@@ -49,10 +58,11 @@ import type {
 } from "./job/status.ts";
 import { openStatus, resumePoints, socketOf } from "./job/status.ts";
 import type { LaunchSpec } from "./workflow/launches.ts";
+import { opsFrame } from "./workflow/launches.ts";
 import type { SweepSummary } from "./workflow/stages/types.ts";
 import type { Sweep } from "./workflow/sweep.ts";
 import { startSweep } from "./workflow/sweep.ts";
-import { spawnLimitOf } from "./workflow/sweep-config.ts";
+import { laneOf, spawnLimitOf } from "./workflow/sweep-config.ts";
 
 // A sweep's id is "s" and the start time in base 36, as workflow.js makes it.
 const SWEEP_ID_RADIX = 36;
@@ -67,6 +77,10 @@ type RunEnd =
   | { kind: "finished"; summary: SweepSummary }
   | { kind: "stopped"; signal: StopSignal };
 
+function now(): Date {
+  return new Date();
+}
+
 function noResume(): null {
   return null;
 }
@@ -76,6 +90,7 @@ function hooksOf(
   cfg: Config,
   args: RunArgs,
   watch: { status: JobStatus; control: Control; resumePoint: Resume },
+  cwd: string,
 ): LaunchHooks {
   const { status, control, resumePoint } = watch;
   const roles = rolesOf(cfg.jobRoles);
@@ -92,6 +107,7 @@ function hooksOf(
     ended: status.ended,
     env: (agent: string): Readonly<Record<string, string>> =>
       agentEnvOf(sessionRoleOf(agent), roles, process.env),
+    cwd,
   };
 }
 
@@ -138,10 +154,10 @@ async function drive(
 async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const { maxSpawnsPerRun } = cfg;
   const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
-  const sweep = startSweep(args, {
-    sweepId: `s${Date.now().toString(SWEEP_ID_RADIX)}`,
-    now: (): Date => new Date(),
-  });
+  const { issue, stage, lane = null } = args;
+  const checkout = { issue, dir: openJobCheckout(cfg, issue, stage) };
+  const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
+  const sweep = startSweep({ ...args, checkout }, { sweepId, now });
   const runDir = paths.runDir(cfg, args.issue);
   // Read before openStatus replaces the earlier job's file.
   let resumePoint: Resume = noResume;
@@ -149,10 +165,12 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     resumePoint = resumePoints(runDir);
   }
   const control = await openControl(runDir);
-  const { issue, stage, lane = null } = args;
   const job = { issue, stage, lane, socket: control.socket };
   const status = openStatus(runDir, job);
-  const hooks = hooksOf(cfg, args, { status, control, resumePoint });
+  const watch = { status, control, resumePoint };
+  const hooks = hooksOf(cfg, args, watch, checkout.dir);
+  const frame = opsFrame({ ...args, checkout }, sweepId, laneOf(args, sweepId));
+  const push = exitPushOf(args, frame, hooks);
   const ending = runDriven(sweep, limit, { hooks, status, control });
   try {
     const end = await ending;
@@ -162,7 +180,12 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     status.finish({ kind: "failed", error: messageOf(error) });
     throw error;
   } finally {
-    control.close();
+    try {
+      const lost = await closeJobCheckout(cfg, issue, checkout.dir, push);
+      status.lostChanges(lost);
+    } finally {
+      control.close();
+    }
   }
 }
 

@@ -45,6 +45,8 @@ interface LaunchHooks {
   ended: (key: string) => void;
   // The whole environment a session of installed agent `agent` runs with.
   env: (agent: string) => Readonly<Record<string, string>>;
+  // Where every model session runs: the job's own checkout.
+  cwd: string;
 }
 
 // An ops command to run: its arguments, stdin and time limit, and the hook
@@ -150,7 +152,7 @@ async function runSession(
   }
   const exit = await runRpc({
     args: piArgs(read.definition, spec, files),
-    cwd: spec.cwd,
+    cwd: hooks.cwd,
     env: hooks.env(spec.agent),
     prompt,
     timeoutMs: spec.timeoutMs,

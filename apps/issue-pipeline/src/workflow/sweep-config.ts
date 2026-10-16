@@ -3,6 +3,7 @@
 // plans with (how many spawns a run of it can take, how often it may begin in
 // one sweep, which stages save first, and the order the stages run in).
 
+import type { JobCheckout } from "../config.ts";
 import type { Budgets } from "./budget.ts";
 import type { ModelRole, StageName, SweepConfig } from "./stages/types.ts";
 import type { Role } from "./types.ts";
@@ -97,10 +98,12 @@ function stageArgOf(name: string, value: unknown): StageName | null {
 
 // The run's args as pi-subagents or the stage job passes them: the repo
 // config's path, the lane, the one issue a human launched the run for, if
-// any, whether to take it even when stopped (takeStopped), and the last stage
-// (through) or only stage (stage) it may begin.
+// any, whether to take it even when stopped (takeStopped), the last stage
+// (through) or only stage (stage) it may begin, and a stage job's checkout,
+// which every request then names.
 interface SweepArgs {
   config: string;
+  checkout?: JobCheckout;
   lane?: unknown;
   issue?: unknown;
   takeStopped?: unknown;

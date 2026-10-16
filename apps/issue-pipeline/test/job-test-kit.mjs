@@ -9,6 +9,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { FAKE_OPS, FAKE_PI, messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
+import { seedOrigins } from "./job-git-test-kit.mjs";
 import {
   claimAt,
   ISSUE,
@@ -57,16 +58,20 @@ function repliesAt(stage) {
  * @property {string} config
  * @property {string} worktree
  * @property {string} runDir
+ * @property {string} origin the repo's bare origin
+ * @property {string | null} wikiOrigin the wiki's bare origin, if any
  */
 
 /**
- * A fresh pipeline root, agent dir, worktree and fake bin for one job.
+ * A fresh pipeline root, agent dir, worktree, fake bin and bare origin
+ * seeded with a base commit for one job; with `wiki`, a wiki origin too.
  * @param {{ claim: { paths?: object } }} replies
  * @param {object} script
  * @param {Record<string, unknown>} [extraConfig] more config keys
+ * @param {{ wiki?: boolean }} [options]
  * @returns {Place}
  */
-function setUp(replies, script, extraConfig = {}) {
+function setUp(replies, script, extraConfig = {}, options = {}) {
   const tmp = fs.mkdtempSync("/tmp/issue-pipeline-job-");
   process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
   const root = path.join(tmp, "root");
@@ -81,6 +86,7 @@ function setUp(replies, script, extraConfig = {}) {
   }
   fs.writeFileSync(path.join(root, "ops.mjs"), FAKE_OPS);
   fs.writeFileSync(path.join(bin, "pi"), FAKE_PI, { mode: 0o755 });
+  const origins = seedOrigins(tmp, options.wiki === true);
   const config = path.join(root, "o__r.json");
   fs.writeFileSync(
     config,
@@ -89,6 +95,7 @@ function setUp(replies, script, extraConfig = {}) {
       account: "bot",
       allowedUsers: ["alice"],
       commands: { test: "true" },
+      ...origins.config,
       ...extraConfig,
     }),
   );
@@ -101,7 +108,17 @@ function setUp(replies, script, extraConfig = {}) {
     JSON.stringify({ ...replies, claim }),
   );
   const runDir = path.join(root, "runs", "o__r", "issue-7");
-  const place = { tmp, root, bin, config, worktree, runDir };
+  const { origin, wikiOrigin } = origins;
+  const place = {
+    tmp,
+    root,
+    bin,
+    config,
+    worktree,
+    runDir,
+    origin,
+    wikiOrigin,
+  };
   setScript(place, script);
   return place;
 }

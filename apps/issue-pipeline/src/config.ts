@@ -100,7 +100,18 @@ const CONFIG_SCHEMA = z.looseObject({
     .nullish(),
 });
 
-type Config = z.infer<typeof CONFIG_SCHEMA> & { slug: string };
+// A stage job's own checkout of issue `issue` (#250). While an ops request
+// that names it runs, the issue's worktree is `dir`; it never comes from the
+// config file.
+interface JobCheckout {
+  issue: number;
+  dir: string;
+}
+
+type Config = z.infer<typeof CONFIG_SCHEMA> & {
+  slug: string;
+  checkout?: JobCheckout;
+};
 type JobRolesConfig = z.infer<typeof JOB_ROLES>;
 
 interface WikiSettings {
@@ -197,7 +208,8 @@ function loadConfig(configPath: string | undefined): Config {
       `config ${String(configPath)}: ${z.prettifyError(parsed.error)}`,
     );
   }
-  return { ...parsed.data, slug: parsed.data.repo.replace("/", "__") };
+  const { checkout: _fromFile, ...data } = parsed.data;
+  return { ...data, slug: data.repo.replace("/", "__") };
 }
 
 // The config without its token file's path, for replies the workflow logs.
@@ -236,9 +248,27 @@ function wikiCfg(cfg: Config): WikiSettings | null {
   };
 }
 
+// `cfg` for one ops request: with a checkout, issue `checkout.issue` works
+// in `checkout.dir`; other issues keep their worktrees.
+function withCheckout(
+  cfg: Config,
+  checkout: JobCheckout | null | undefined,
+): Config {
+  if (checkout === null || checkout === undefined) {
+    return cfg;
+  }
+  return { ...cfg, checkout };
+}
+
 const paths = {
   branch: (n: number): string => `agent/issue-${n}`,
   clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
+  // Stage job `stage`'s own checkout of issue `n`, cloned from the mirror.
+  jobCheckout: (cfg: Config, n: number, stage: string): string =>
+    path.join(ROOT, "work", cfg.slug, "jobs", `issue-${n}-${stage}`),
+  // The bare mirrors of the repo and its wiki that job checkouts clone.
+  mirror: (cfg: Config): string =>
+    path.join(ROOT, "work", cfg.slug, "mirror.git"),
   runDir: (cfg: Config, n: number): string =>
     path.join(ROOT, "runs", cfg.slug, `issue-${n}`),
   // A stage job's model session for launch `key` on issue `n`, as JSONL.
@@ -248,9 +278,15 @@ const paths = {
     path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki"),
   wikiClone: (cfg: Config): string =>
     path.join(ROOT, "clones", `${cfg.slug}.wiki`),
-  worktree: (cfg: Config, n: number): string =>
-    path.join(ROOT, "work", cfg.slug, `issue-${n}`),
+  wikiMirror: (cfg: Config): string =>
+    path.join(ROOT, "work", cfg.slug, "wiki-mirror.git"),
+  worktree: (cfg: Config, n: number): string => {
+    if (cfg.checkout?.issue === n) {
+      return cfg.checkout.dir;
+    }
+    return path.join(ROOT, "work", cfg.slug, `issue-${n}`);
+  },
 };
 
-export type { Config, JobRolesConfig, WikiSettings };
-export { loadConfig, paths, publicConfig, tokenEnv, wikiCfg };
+export type { Config, JobCheckout, JobRolesConfig, WikiSettings };
+export { loadConfig, paths, publicConfig, tokenEnv, wikiCfg, withCheckout };

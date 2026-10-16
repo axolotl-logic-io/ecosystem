@@ -42,6 +42,7 @@ function hooksIn(sessions) {
     record: () => undefined,
     ended: () => undefined,
     env: () => ({}),
+    cwd: sessions,
   };
 }
 

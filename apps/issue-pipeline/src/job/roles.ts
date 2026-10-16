@@ -169,7 +169,7 @@ function boundaryOf(
   const roles = rolesOf(cfg.jobRoles);
   return {
     role,
-    checkout: paths.worktree(cfg, issue),
+    checkout: paths.jobCheckout(cfg, issue, stage),
     env: Object.keys(agentEnvOf(role, roles, from)).sort(byName),
     network: roles[role].network,
   };

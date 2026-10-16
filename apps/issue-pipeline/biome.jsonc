@@ -42,7 +42,10 @@
     // pi extension src/job/structured-output.ts reads its schema file (#232).
     // src/job/args.ts reads the job's arguments, src/job/rpc.ts spawns pi in RPC mode, src/job/status.ts writes job.json
     // and src/job/control.ts keeps the steer socket and the stop signals
-    // (#233). The job's pure modules (raw-results, pool, roles) get no exception.
+    // (#233). src/job/checkout.ts makes, closes and removes the job's own
+    // checkout and the bare mirrors it comes from with git, and
+    // src/job/exit-push.ts reports a failed exit push on stderr (#250). The
+    // job's pure modules (raw-results, pool, roles) get no exception.
     {
       "includes": [
         "install.mjs",
@@ -72,7 +75,9 @@
         "src/job/args.ts",
         "src/job/rpc.ts",
         "src/job/status.ts",
-        "src/job/control.ts"
+        "src/job/control.ts",
+        "src/job/checkout.ts",
+        "src/job/exit-push.ts"
       ],
       "linter": {
         "rules": {

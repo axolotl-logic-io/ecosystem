@@ -11,7 +11,12 @@
 // it returns counts against the per-run spawn cap.
 
 import { parseOps } from "./launch-results.ts";
-import { type LaunchSpec, type OpsFrame, opsSpec } from "./launches.ts";
+import {
+  type LaunchSpec,
+  type OpsFrame,
+  opsFrame,
+  opsSpec,
+} from "./launches.ts";
 import { cleanupLaunch, cleanupLog } from "./stages/cleanup.ts";
 import {
   buildSummary,
@@ -260,7 +265,7 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
   const { sweepId, now } = clock;
   const lane = laneOf(args, sweepId);
   const driver: Driver = {
-    frame: { config: args.config, sweepId, lane },
+    frame: opsFrame(args, sweepId, lane),
     now,
     target: sweepTargetOf(args.issue, args.takeStopped),
     through: stageArgOf("through", args.through),

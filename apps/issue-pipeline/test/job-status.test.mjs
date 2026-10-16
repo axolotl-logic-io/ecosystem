@@ -2,6 +2,8 @@
 // while a session runs and once the job has finished.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
 import { test } from "node:test";
 import { messageEnd, outputEnd, toolEnd } from "./fake-rpc-pi.mjs";
 import {
@@ -76,4 +78,19 @@ test("a finished job's file counts only the last tool failures and records each 
     "job.json",
     "sessions",
   ]);
+});
+
+test("job.json's lostChanges round-trips through its schema", async () => {
+  const { openStatus, socketOf } = await import("../src/job/status.ts");
+  const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
+  process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
+  const job = { issue: ISSUE, stage: "implement", lane: null, socket: "/s" };
+  const status = openStatus(runDir, job);
+  status.lostChanges(["a.txt", "wiki/B.md"]);
+  const file = path.join(runDir, "job.json");
+  const written = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(written.lostChanges, ["a.txt", "wiki/B.md"]);
+  assert.equal(socketOf(runDir), "/s");
+  fs.writeFileSync(file, JSON.stringify({ ...written, lostChanges: "a.txt" }));
+  assert.equal(socketOf(runDir), null);
 });
