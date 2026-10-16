@@ -26,14 +26,16 @@
 //
 // Each pi session runs with the env of its role (src/job/roles.ts): no gh
 // token but its role's own; ops keep the job's env. --print-boundary prints
-// the stage job's boundary (role, checkout, env names, network) as one JSON
-// line and starts nothing.
+// the stage job's boundary as one JSON line and starts nothing.
+//
+// A stage registered with a role (src/roles/registry.ts) runs that role on
+// the role runner instead of the sweep (src/job/role-run.ts) and prints
+// { issue, stage, end }; --resume is refused for it.
 //
 // The job works in its own checkout, cloned from a bare mirror of the repo
-// (src/job/checkout.ts): every pi session runs there and every ops request
-// names it. On every exit, after a stop's save too, the job records and drops
-// what the checkout left uncommitted (job.json's lostChanges), a writer runs
-// the push op on commits the remote lacks (src/job/exit-push.ts), and the
+// (src/job/checkout.ts), where every pi session runs. On every exit it
+// records and drops what the checkout left uncommitted (lostChanges), a
+// writer pushes what the remote lacks (src/job/exit-push.ts), and the
 // checkout is removed.
 
 import os from "node:os";
@@ -51,6 +53,8 @@ import type { LaunchHooks } from "./job/launch.ts";
 import { runLaunch } from "./job/launch.ts";
 import { runAll } from "./job/pool.ts";
 import type { OpsRaw, SessionRaw } from "./job/raw-results.ts";
+import type { RoleLine } from "./job/role-run.ts";
+import { runRoleStage } from "./job/role-run.ts";
 import { agentEnvOf, boundaryOf, rolesOf, sessionRoleOf } from "./job/roles.ts";
 import type {
   JobOutcome,
@@ -59,6 +63,7 @@ import type {
   StopSignal,
 } from "./job/status.ts";
 import { openStatus, resumePoints, socketOf } from "./job/status.ts";
+import { roleOf } from "./roles/registry.ts";
 import type { LaunchSpec } from "./workflow/launches.ts";
 import { opsFrame } from "./workflow/launches.ts";
 import type { SweepSummary } from "./workflow/stages/types.ts";
@@ -71,21 +76,16 @@ const SWEEP_ID_RADIX = 36;
 // A process a signal ended exits with 128 + the signal's number.
 const SIGNAL_EXIT_BASE = 128;
 const SPAWN_CAP = z.number().nullish().catch(null);
+// A stage that runs a role always restarts from what is done (#301).
+const RESUME_REFUSED = "--resume doesn't apply to stage";
 
 type Resume = LaunchHooks["resumePoint"];
 
-// How a run ended: finished with the sweep's summary, or stopped by a signal.
+// How a run ended: finished with the sweep's summary (or a role stage's
+// line), or stopped by a signal.
 type RunEnd =
-  | { kind: "finished"; summary: SweepSummary }
+  | { kind: "finished"; summary: SweepSummary | RoleLine }
   | { kind: "stopped"; signal: StopSignal };
-
-function now(): Date {
-  return new Date();
-}
-
-function noResume(): null {
-  return null;
-}
 
 // What the job's launches tell its status file and its control.
 function hooksOf(
@@ -156,16 +156,19 @@ async function drive(
 }
 
 async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
-  const { maxSpawnsPerRun } = cfg;
-  const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
   const { issue, stage, lane = null, stackOn = null } = args;
+  const role = roleOf(stage);
+  if (role !== undefined && args.resume === true) {
+    throw new Error(
+      `${RESUME_REFUSED} ${stage}; it restarts from what is done`,
+    );
+  }
   const dir = openJobCheckout(cfg, issue, { stage, stackOn });
   const checkout = { issue, dir };
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
-  const sweep = startSweep({ ...args, checkout }, { sweepId, now });
   const runDir = paths.runDir(cfg, args.issue);
   // Read before openStatus replaces the earlier job's file.
-  let resumePoint: Resume = noResume;
+  let resumePoint: Resume = (): null => null;
   if (args.resume === true) {
     resumePoint = resumePoints(runDir);
   }
@@ -176,7 +179,20 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const hooks = hooksOf(cfg, args, watch, checkout.dir);
   const frame = opsFrame({ ...args, checkout }, sweepId, laneOf(args, sweepId));
   const push = exitPushOf(args, frame, hooks);
-  const ending = runDriven(sweep, limit, { hooks, status, control });
+  const watched = { hooks, status, control };
+  let ending: Promise<RunEnd>;
+  if (role === undefined) {
+    const sweep = startSweep(
+      { ...args, checkout },
+      { sweepId, now: (): Date => new Date() },
+    );
+    const { maxSpawnsPerRun } = cfg;
+    const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
+    ending = runDriven(sweep, limit, watched);
+  } else {
+    const roleJob = { role, issue, stage, stackOn, frame, dir, ...watched };
+    ending = runRoleStage(roleJob);
+  }
   try {
     const end = await ending;
     status.finish(outcomeOf(end));

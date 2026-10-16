@@ -16,6 +16,11 @@ const ESCAPED_MARK_END = "--\\u003e";
 // Leaves room under GitHub's comment limit for the header and footer.
 const MAX_STATE_LENGTH = 60_000;
 
+const CHECKPOINTS = z.record(
+  z.string(),
+  z.union([z.number(), z.string(), z.null()]),
+);
+
 // The fields the ops modules read; the workflow owns the rest, which pass
 // through unchanged.
 const STATE = z.looseObject({
@@ -31,6 +36,10 @@ const STATE = z.looseObject({
   // missing when it isn't stacked, and null when it is unreadable.
   stackedOn: STACKED_ON.nullish().catch(null),
   stage: z.string().optional(),
+  // The values a role's run saved because a later start needs them and
+  // GitHub and git can't give them back, such as the counts that bound its
+  // loops (#301). A malformed record reads as missing.
+  checkpoints: CHECKPOINTS.optional().catch(undefined),
 });
 
 type State = z.infer<typeof STATE>;
