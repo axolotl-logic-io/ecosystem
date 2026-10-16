@@ -231,6 +231,23 @@ test("push pushes the branch after a real commit", () => {
   assert.deepEqual(fakeGh.calls(), []);
 });
 
+// A stage job's exit push records itself as "exit-push", which a claim may
+// adopt (#315).
+test("exit-push pushes the branch and records the push as exit-push", () => {
+  const { n } = PUSHED;
+  const sha = fx.commitIn(n, "h", "more work");
+  fakeGh.reply([]);
+  const out = ask({ op: "exit-push", number: 7 });
+  assert.equal(out, okLine("exit-push", { headSha: sha, ...CODE }));
+  assert.equal(originRef("agent/issue-7"), sha);
+  assert.deepEqual(pushRecord(fx.root, n), {
+    sha,
+    op: "exit-push",
+    dated: true,
+  });
+  assert.deepEqual(fakeGh.calls(), []);
+});
+
 test("push with no code change and no wiki commits pushes nothing and says so", () => {
   const { n, pr } = EMPTY;
   startPr(n, pr);

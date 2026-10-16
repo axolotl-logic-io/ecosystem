@@ -8,6 +8,7 @@ import { stopFor } from "../src/stops.ts";
 import { next } from "../src/workflow/stages/implement.ts";
 import { asSessions, sessions } from "./stage-outcome-test-kit.mjs";
 import {
+  afterReply,
   afterSession,
   BUILD_CTX,
   buildState,
@@ -103,7 +104,7 @@ test("without a spec the session works from triage's plan", () => {
   );
 });
 
-test("a handoff, then a continuation, then done moves the issue to open-pr", () => {
+test("a handoff, then a continuation, then done and its push moves the issue to open-pr", () => {
   const first = replied(buildState("implement", { spec: SPEC }), {
     status: "handoff",
     summary: "Half done.",
@@ -120,11 +121,13 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
   ]);
   const again = begunAgain(first);
   assert.deepEqual(sessions(again), implementer(implementTask(HANDOFF_LINE)));
-  const done = afterSession(next, again, IMPL_BY, {
+  const pushing = afterSession(next, again, IMPL_BY, {
     ok: true,
     structuredOutput: replyOf({ prTitle: "t".repeat(TITLE_LIMIT + 1) }),
   });
+  const done = afterReply(next, pushing, { ok: true, headSha: "bbbbbbb" });
   assert.equal(done.done, true);
+  assert.equal(done.state.st.headSha, "bbbbbbb");
   assert.equal(done.stop, null);
   assert.equal(done.state.st.stage, "open-pr");
   assert.equal(done.state.st.prTitle, `${"t".repeat(TITLE_LIMIT)}…`);

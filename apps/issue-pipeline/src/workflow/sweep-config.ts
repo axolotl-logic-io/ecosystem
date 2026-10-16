@@ -47,7 +47,7 @@ const DEFAULT_SPAWN_LIMIT = 64;
 const STAGE_SPAWNS: Readonly<Record<StageName, number>> = {
   triage: 4,
   spec: 3,
-  implement: 1,
+  implement: 2,
   "open-pr": 3,
   review: 7,
   fix: 9,

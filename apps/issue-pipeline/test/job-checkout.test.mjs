@@ -35,8 +35,8 @@ const PREREQ = 5;
 const PUSH_FAILED = /job: exit push: /u;
 const EXIT_STEP_FAILED = /job: exit: /u;
 const BRANCH = "refs/heads/agent/issue-7";
-// The push the fake ops makes for real from the request's checkout.
-const PUSHING = { push: { ok: true, git: true } };
+// The exit push the fake ops makes for real from the request's checkout.
+const PUSHING = { "exit-push": { ok: true, git: true } };
 // A session that commits a file, then waits until it is stopped.
 const COMMIT_AND_WAIT = {
   commit: "work.txt",
@@ -56,9 +56,9 @@ function committed(place) {
   return entries.at(-1)?.committed ?? "";
 }
 
-/** @param {Place} place @returns {any[]} the push requests */
+/** @param {Place} place @returns {any[]} the exit-push requests */
 function pushes(place) {
-  return logOf(place, "ops.log").filter(({ op }) => op === "push");
+  return logOf(place, "ops.log").filter(({ op }) => op === "exit-push");
 }
 
 /** @param {Place} place @returns {boolean} whether a launch spent tokens */
@@ -134,7 +134,7 @@ test("a job stopped by SIGTERM exits 143 and removes its checkout", async () => 
   assert.equal(fs.existsSync(checkoutOf(place.root, "spec")), false);
 });
 
-test("a writer's commit reaches the issue's branch through the push op before its checkout goes", () => {
+test("a writer's commit reaches the issue's branch through the exit-push op before its checkout goes", () => {
   const place = setUp(pushingRepliesAt("implement"), {
     ...SPEC_SESSION,
     commit: "work.txt",
@@ -193,7 +193,7 @@ test("a writer stopped by SIGTERM still pushes its commit before its checkout go
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
   assert.equal(refOf(place.origin, BRANCH), committed(place));
   const ops = logOf(place, "ops.log").map(({ op }) => op);
-  assert.deepEqual(ops.slice(-2), ["save-state", "push"]);
+  assert.deepEqual(ops.slice(-2), ["save-state", "exit-push"]);
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
 });
 

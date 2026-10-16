@@ -29,12 +29,15 @@ import {
 const SHORT_SHA = 8;
 // The issues: one with a matching push record, one whose record names another
 // head, one with no record and then an unreadable one, one saved before the
-// review, and one whose record is a CI fix's push.
+// review, one whose record is a CI fix's push, one whose record is a stage
+// job's exit push from open-pr, and one with an exit push after the review.
 const ADOPTED = 61;
 const OTHER_RECORD = 62;
 const NO_RECORD = 63;
 const BEFORE_REVIEW = 64;
 const CI_FIX = 65;
+const EXIT_PUSHED = 66;
+const EXIT_PUSHED_LATE = 67;
 // Each issue's claim comment id; its state comment follows it.
 const CLAIM_IDS = 10;
 
@@ -174,4 +177,33 @@ test("a claim keeps the saved head when the record is a CI fix's push", () => {
   assert.deepEqual(kept.state, { ...saved, lease: LEASE });
   assert.equal(kept.remoteHead, remote);
   assert.equal(head(CI_FIX), saved.headSha);
+});
+
+// A stage job pushes, as it exits, the commits its checkout holds past its
+// last state save (#315). From a state saved at open-pr the review that
+// follows reads every commit, so the claim adopts the head at that stage.
+test("a claim adopts a job's exit push at open-pr, keeping the stage", () => {
+  const moved = movedBranch(EXIT_PUSHED);
+  const saved = { ...moved.saved, stage: "open-pr", passedSha: null };
+  recordPush(EXIT_PUSHED, moved.remote, "exit-push");
+  const got = claimSaved(EXIT_PUSHED, saved);
+  const { log } = LOGGED.parse(got.state);
+  assert.equal(log.length, 1);
+  assert.match(log.join(""), ADOPTED_LOG);
+  const state = { ...saved, headSha: moved.remote, log, lease: LEASE };
+  const claim = { id: EXIT_PUSHED * CLAIM_IDS, posted: false };
+  const remoteHead = moved.remote;
+  assert.deepEqual(got, claimReply(EXIT_PUSHED, { state, claim, remoteHead }));
+  assert.equal(head(EXIT_PUSHED), moved.remote);
+});
+
+// At checks the review is behind it: adopting the exit push would merge
+// commits no reviewer read.
+test("a claim keeps the saved head for an exit push after the review", () => {
+  const { saved, remote } = movedBranch(EXIT_PUSHED_LATE);
+  recordPush(EXIT_PUSHED_LATE, remote, "exit-push");
+  const kept = claimSaved(EXIT_PUSHED_LATE, saved);
+  assert.deepEqual(kept.state, { ...saved, lease: LEASE });
+  assert.equal(kept.remoteHead, remote);
+  assert.equal(head(EXIT_PUSHED_LATE), saved.headSha);
 });

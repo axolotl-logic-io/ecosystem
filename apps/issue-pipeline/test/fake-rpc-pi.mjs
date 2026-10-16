@@ -5,8 +5,8 @@
 // context, so a script's context can rise turn by turn.
 
 // Answers each op from replies.json and logs the request to ops.log. A push
-// whose reply sets `git` pushes the request's checkout's HEAD to the
-// issue's branch on origin first, as the real push op would.
+// or exit-push whose reply sets `git` pushes the request's checkout's HEAD to
+// the issue's branch on origin first, as the real op would.
 const FAKE_OPS = `import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 const dir = import.meta.dirname;
@@ -14,7 +14,7 @@ const input = fs.readFileSync(0, "utf8");
 const request = JSON.parse(input.split("BEGIN_OPS_REQUEST")[1].split("END_OPS_REQUEST")[0]);
 fs.appendFileSync(dir + "/ops.log", JSON.stringify(request) + "\\n");
 const replies = JSON.parse(fs.readFileSync(dir + "/replies.json", "utf8"));
-if (request.op === "push" && replies.push?.git) {
+if ((request.op === "push" || request.op === "exit-push") && replies[request.op]?.git) {
   execFileSync("git", ["-C", request.checkout.dir, "push", "--quiet", "origin", "HEAD:refs/heads/agent/issue-7"], {
     env: { ...process.env, ISSUE_PIPELINE_OPS: "1" },
   });

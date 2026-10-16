@@ -1,7 +1,10 @@
 // Implement: one writer session builds the issue to its spec, tests and
 // commits it. A session that runs out of room hands off to a continuation, up
 // to config maxContinuations; the sweep begins the stage again for each. A
-// done issue moves to open-pr.
+// done issue's commits are pushed, and the pushed head saved as its headSha,
+// before it moves to open-pr: the stage job's checkout is removed when the job
+// exits, and the next job's claim stops an issue whose branch moved past the
+// saved head (#315).
 
 import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
@@ -24,7 +27,15 @@ import {
   mayContinue,
   outOfRoomReason,
 } from "./continuation.ts";
-import { doneStep, launchStep, onlyChild, stopStep } from "./step.ts";
+import {
+  doneStep,
+  launchStep,
+  onlyChild,
+  onlyReply,
+  pushFailedStep,
+  replyError,
+  stopStep,
+} from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
@@ -35,10 +46,17 @@ import type {
   Step,
 } from "./types.ts";
 
-// Where implement is: about to launch the session, or reading its reply.
-type ImplementPhase = "begin" | "decide";
+// Where implement is: about to launch the session, reading its reply, or
+// reading the reply of the push of a done session's commits (or of its one
+// retry).
+type ImplementPhase = "begin" | "decide" | "pushed" | "repushed";
 
-const PHASES: readonly ImplementPhase[] = ["begin", "decide"];
+const PHASES: readonly ImplementPhase[] = [
+  "begin",
+  "decide",
+  "pushed",
+  "repushed",
+];
 
 const ROLE = "implementer";
 const IMPLEMENT_MINUTES = 90;
@@ -150,16 +168,31 @@ function issueComment(by: Signature, body: string): StageComment[] {
   return [{ by, body, where: "issue" }];
 }
 
-// Keeps the PR the implementer described and moves the issue to open-pr.
+// Keeps the PR the implementer described and pushes its commits.
 function finished(state: StageState, reply: ImplReply, by: Signature): Step {
   const st = {
     ...state.st,
     prTitle: clip(reply.prTitle, TITLE_LIMIT),
     prBody: clip(reply.prBody, BODY_LIMIT),
     prBy: by,
-    stage: "open-pr",
   };
-  return doneStep({ ...state, st });
+  return launchStep({ ...state, st, phase: "pushed" }, [
+    { kind: "op", name: "push", op: "push", payload: { number: state.n } },
+  ]);
+}
+
+// Saves the pushed head and moves the issue to open-pr. A failed push is
+// retried once unless git's push was rejected.
+function pushed(state: StageState, results: readonly LaunchResult[]): Step {
+  const { ok, error, headSha } = onlyReply(results);
+  if (ok !== true || typeof headSha !== "string") {
+    return pushFailedStep(
+      state,
+      "could not push the implementation",
+      replyError(error),
+    );
+  }
+  return doneStep({ ...state, st: { ...state.st, headSha, stage: "open-pr" } });
 }
 
 // Counts a handoff below the cap, so the next session continues from it. A
@@ -236,6 +269,9 @@ function next(
       return begin(state, ctx);
     case "decide":
       return decide(state, ctx, results);
+    case "pushed":
+    case "repushed":
+      return pushed(state, results);
     default: {
       const unhandled: never = phase;
       return unhandled;

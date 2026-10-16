@@ -51,9 +51,9 @@ function implementRun(config = {}) {
 }
 
 test("the spawn cap holds the continuation until the next sweep", async () => {
-  // A second implement session needs 1 spawn: 4 launched + 1 + a reserve of
-  // 4 passes 8.
-  const { trace, summary } = await implementRun({ maxSpawnsPerRun: 9 });
+  // A second implement session needs 2 spawns, its session and its push: 4
+  // launched + 2 + a reserve of 4 passes 9.
+  const { trace, summary } = await implementRun({ maxSpawnsPerRun: 10 });
   assert.deepEqual(sessionAgents(trace), [WRITER]);
   assert.deepEqual(
     summary,

@@ -235,11 +235,20 @@ function pushOp(cfg: Config, request: unknown): PushReply {
   return push(cfg, number, "push");
 }
 
+// The push a writer's stage job makes as it exits, of commits its checkout
+// holds past the last state save (src/job/exit-push.ts). It is recorded as
+// "exit-push", which the next claim may adopt (src/start-state.ts).
+function exitPushOp(cfg: Config, request: unknown): PushReply {
+  const { number } = parsed(PUSH_REQUEST, "exit-push request", request);
+  return push(cfg, number, "exit-push");
+}
+
 const prOps: Readonly<Record<string, Op>> = {
   "start-pr": startPr,
   "open-pr": openPr,
   "close-pr": closePr,
   push: pushOp,
+  "exit-push": exitPushOp,
 };
 
 export { prOps };

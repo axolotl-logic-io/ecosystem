@@ -49,13 +49,14 @@ const BUILD_AGENTS = {
 
 test("a spec is written, implemented and its PR opened, then held at review", async () => {
   // The save after triage runs for an issue already at spec. review needs 7
-  // spawns: 8 launched + 7 + a reserve of 4 passes 18.
+  // spawns: 9 launched + 7 + a reserve of 4 passes 19.
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
     ops: {
       ...ROUTINE_OPS,
       sweep: sweepReply({ items: [ISSUE], config: { maxSpawnsPerRun: 19 } }),
       claim: claimAt("spec", TRIAGED),
+      push: { ok: true, headSha: "bbbbbbb" },
       "open-pr": { ok: true, pr: 42, headSha: "bbbbbbb" },
     },
     agents: BUILD_AGENTS,
