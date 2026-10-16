@@ -51,7 +51,8 @@
     // The orchestrator (#234) too: its entry src/orchestrate.ts spawns the
     // jobs and handles the stop signals, src/orchestrator/args.ts reads its
     // arguments, snapshot.ts checks the jobs' pids, and ledger.ts and log.ts
-    // keep its files. Its pure modules (queue, schedule, tick) get none.
+    // keep its files, as watchdog-memory.ts keeps the watchdog's (#235). Its
+    // pure modules (queue, schedule, tick, watchdog) get none.
     {
       "includes": [
         "install.mjs",
@@ -90,7 +91,8 @@
         "src/orchestrator/args.ts",
         "src/orchestrator/snapshot.ts",
         "src/orchestrator/ledger.ts",
-        "src/orchestrator/log.ts"
+        "src/orchestrator/log.ts",
+        "src/orchestrator/watchdog-memory.ts"
       ],
       "linter": {
         "rules": {

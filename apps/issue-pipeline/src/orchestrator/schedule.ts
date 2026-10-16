@@ -261,5 +261,25 @@ function schedule(
     .flatMap((issue) => decide(count, issue, at) ?? []);
 }
 
-export type { Decision };
-export { schedule };
+// Why a restart of `stage` for issue `number` is held now, or null once it
+// is admitted: a restart passes the same caps, file overlaps, merge order
+// and rate limit as a start, and counts against them for the later ones.
+type StartGate = (number: number, stage: string) => string | null;
+
+function startGate(snapshot: Snapshot, settings: ScheduleSettings): StartGate {
+  const count = countOf(snapshot, settings);
+  return (number: number, stage: string): string | null => {
+    const issue = snapshot.issues.find((open) => open.number === number);
+    if (issue === undefined) {
+      return "not-open";
+    }
+    const reason = holdReason(count, issue, stage);
+    if (reason === null) {
+      countStart(count, issue, stage);
+    }
+    return reason;
+  };
+}
+
+export type { Decision, StartGate };
+export { schedule, startGate };

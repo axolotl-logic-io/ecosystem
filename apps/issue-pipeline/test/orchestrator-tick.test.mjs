@@ -60,10 +60,21 @@ const QUEUE = [
   { number: ISSUE.fresh },
   {
     number: ISSUE.stopped,
-    labels: ["agent:stopped-error"],
+    // A stop the watchdog's rules end in, so it raises no escalation (#235).
+    labels: ["agent:stopped-job"],
     state: { stage: "fix" },
   },
 ];
+
+// The watchdog's steer and SIGTERM, which no job in these tests is due.
+const UNWATCHED = {
+  steer: () => {
+    throw new Error("unexpected steer");
+  },
+  terminate: () => {
+    throw new Error("unexpected SIGTERM");
+  },
+};
 
 /**
  * A spawn that records each call and answers with `pid`.
@@ -117,7 +128,12 @@ function jobLogOf(issue) {
 test("a tick spawns each start in the orchestrator lane, logs every decision and records the starts", () => {
   openWith(QUEUE);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(cfg, { configPath: CONFIG, now: () => NOW, spawn });
+  const decisions = tick(cfg, {
+    configPath: CONFIG,
+    now: () => NOW,
+    spawn,
+    ...UNWATCHED,
+  });
   const queue = `${ISSUE.merging},${ISSUE.accepting}`;
   assert.deepEqual(spawned, [
     {
@@ -172,7 +188,7 @@ test("the next tick starts nothing for a spawned job that still runs but has wri
   const { spawned, spawn } = recordingSpawn(process.pid);
   const before = logLines().length;
   assert.deepEqual(
-    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn }),
+    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn, ...UNWATCHED }),
     [],
   );
   assert.deepEqual(spawned, []);
@@ -193,7 +209,12 @@ test("once the jobs' tokens in the last hour reach tokensPerHour every start is 
     { number: RATED.waiting },
   ]);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(rated, { configPath: CONFIG, now: () => NOW, spawn });
+  const decisions = tick(rated, {
+    configPath: CONFIG,
+    now: () => NOW,
+    spawn,
+    ...UNWATCHED,
+  });
   assert.deepEqual(spawned, []);
   assert.deepEqual(
     decisions.map(({ issue, action, reason }) => ({ issue, action, reason })),

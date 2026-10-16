@@ -218,6 +218,17 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     explain: "GitHub refused the merge.",
   },
   {
+    code: "job",
+    short:
+      "Stopped: the stage job kept dying and was restarted too often. See the stop comment.",
+    test: /stage job kept dying/iu,
+    control: "stage job restarts",
+    explain: limitText(
+      "The issue's stage job died with no outcome after the orchestrator had already restarted it the most times it may",
+      "maxResumes",
+    ),
+  },
+  {
     code: "error",
     short:
       "Stopped: a pipeline step or agent session failed. See the stop comment.",

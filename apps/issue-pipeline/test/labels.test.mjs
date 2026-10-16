@@ -39,6 +39,7 @@ test("the stops keep their order and label names", () => {
       "sync-limit",
       "push-rejected",
       "merge-refused",
+      "job",
       "error",
     ].map((code) => `agent:stopped-${code}`),
   );
@@ -58,5 +59,6 @@ test("a reason maps to its stop, and any other reason to error", () => {
     stopFor("rebasing the wiki onto master conflicts again")?.code,
     "conflict",
   );
+  assert.equal(stopFor("the stage job kept dying: review")?.code, "job");
   assert.equal(stopFor("something else")?.code, "error");
 });

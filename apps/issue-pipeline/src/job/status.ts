@@ -1,7 +1,8 @@
 // A stage job's status file, `job.json` in the issue's run folder. While the
 // job runs it holds the job's pid, issue, stage, lane, start time and steer
 // socket, and a record of every launch it started: its pid, session file,
-// last event, consecutive tool failures, token usage and outcome. On exit it
+// last event, consecutive failures of one tool and the last one's error,
+// token usage and outcome. On exit it
 // holds the job's outcome, and the uncommitted paths its checkout dropped
 // (lostChanges). Each change rewrites the whole file atomically, so
 // a reader never sees part of one; a write that fails is reported on stderr
@@ -11,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
-import type { Usage } from "./raw-results.ts";
+import type { ToolFailure, Usage } from "./raw-results.ts";
 import { addUsage, recordFacts, USAGE, ZERO_USAGE } from "./raw-results.ts";
 
 const STATUS_FILE = "job.json";
@@ -24,7 +25,13 @@ const LAUNCH = z.object({
   session: z.string().nullable(),
   startedAt: z.string(),
   lastEventAt: z.string().nullable(),
+  // Consecutive failed calls of the tool that failed last; a success or
+  // another tool's failure starts the count again.
   toolFailures: z.number(),
+  lastToolFailure: z
+    .object({ tool: z.string(), error: z.string() })
+    .nullable()
+    .default(null),
   usage: USAGE,
   resumed: z.boolean(),
   outcome: LAUNCH_OUTCOME.nullable(),
@@ -133,19 +140,34 @@ function readStatus(runDir: string): StatusFile | null {
   }
 }
 
-function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
-  const { usage, toolFailed } = recordFacts(record);
-  let { toolFailures } = launch;
-  if (toolFailed !== null) {
-    toolFailures = 0;
+// The launch's count of consecutive failures of one tool after a call ends
+// with `failure`, or with success when it is null.
+function failuresAfter(
+  launch: LaunchRecord,
+  failure: ToolFailure | null,
+): number {
+  if (failure === null) {
+    return 0;
   }
-  if (toolFailed === true) {
-    toolFailures = launch.toolFailures + 1;
+  const { toolFailures, lastToolFailure } = launch;
+  if (failure.tool === lastToolFailure?.tool) {
+    return toolFailures + 1;
+  }
+  return 1;
+}
+
+function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
+  const { usage, toolEnd } = recordFacts(record);
+  let { toolFailures, lastToolFailure } = launch;
+  if (toolEnd !== null) {
+    toolFailures = failuresAfter(launch, toolEnd.failure);
+    lastToolFailure = toolEnd.failure;
   }
   return {
     ...launch,
     lastEventAt: new Date().toISOString(),
     toolFailures,
+    lastToolFailure,
     usage: addUsage(launch.usage, usage ?? ZERO_USAGE),
   };
 }
@@ -179,7 +201,12 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
   return {
     started: (launch: LaunchStart): void => {
       const startedAt = new Date().toISOString();
-      const fields = { startedAt, lastEventAt: null, toolFailures: 0 };
+      const fields = {
+        startedAt,
+        lastEventAt: null,
+        toolFailures: 0,
+        lastToolFailure: null,
+      };
       status.launches.push({ ...launch, ...fields, outcome: null });
       writeStatus(file, status);
     },

@@ -151,11 +151,26 @@ function leaseOf(lane) {
   return { lane, sweepId: "x", at: NOW.toISOString() };
 }
 
-// Writes issue `issue`'s job.json: a `stage` job run by `pid`, ended or not,
-// whose one session spent `tokens` input tokens by the tick.
-/** @param {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number }} job @returns {StatusFile} */
-function writeJob({ issue, stage, pid, ended = false, tokens = 0 }) {
-  const at = NOW.toISOString();
+// Writes issue `issue`'s job.json: a `stage` job run by `pid`, ended or not
+// (`outcome` overrides `ended`), whose one launch, a session unless `kind`
+// says ops, spent `tokens` input tokens by the tick and was last heard from
+// `silentMinutes` before it, and whose last `failures.count` calls of
+// `failures.tool` failed, the last with `failures.error`.
+/** @typedef {{ count: number, tool: string, error: string }} Failures */
+/** @typedef {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number, outcome?: StatusFile["outcome"], kind?: "session" | "ops", silentMinutes?: number, failures?: Failures }} JobFacts */
+/** @param {JobFacts} job @returns {StatusFile} */
+function writeJob({
+  issue,
+  stage,
+  pid,
+  ended = false,
+  tokens = 0,
+  outcome,
+  kind = "session",
+  silentMinutes = 0,
+  failures = { count: 0, tool: "", error: "" },
+}) {
+  const at = new Date(NOW.getTime() - silentMinutes * MINUTE_MS).toISOString();
   /** @type {StatusFile} */
   const status = {
     version: 1,
@@ -169,12 +184,13 @@ function writeJob({ issue, stage, pid, ended = false, tokens = 0 }) {
     launches: [
       {
         key: `i${issue}-${stage}-1`,
-        kind: "session",
+        kind,
         pid,
         session: null,
         startedAt: at,
         lastEventAt: at,
-        toolFailures: 0,
+        toolFailures: failures.count,
+        lastToolFailure: lastFailure(failures),
         usage: { input: tokens, output: 0, cacheRead: 0, cacheWrite: 0 },
         resumed: false,
         outcome: null,
@@ -184,10 +200,21 @@ function writeJob({ issue, stage, pid, ended = false, tokens = 0 }) {
   if (ended) {
     status.outcome = { kind: "finished" };
   }
+  if (outcome !== undefined) {
+    status.outcome = outcome;
+  }
   const dir = paths.runDir(cfg, issue);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "job.json"), JSON.stringify(status));
   return status;
+}
+
+/** @param {Failures} failures @returns {{ tool: string, error: string } | null} */
+function lastFailure({ count, tool, error }) {
+  if (count === 0) {
+    return null;
+  }
+  return { tool, error };
 }
 
 // A pid whose process has exited and been reaped.
@@ -211,7 +238,9 @@ export {
   cfg,
   configWith,
   deadPid,
+  fakeGh,
   leaseOf,
+  MINUTE_MS,
   NOW,
   OTHERS_PID,
   openWith,

@@ -30,6 +30,9 @@
   },
   "tokensPerHour": 2000000,
   "orchestratorIntervalSeconds": 60,
+  "maxResumes": 2,
+  "silentMinutes": 30,
+  "failureStreak": 3,
   "commands": {
     "setup": "npm ci",
     "test": "npm test",

@@ -2,7 +2,8 @@
 // op judges it (the same openIssues and classify, with stop labels,
 // skipLabels, allowedUsers and after marks), its saved state, and its stage
 // job, read from job.json or from the orchestrator's own start records. A job
-// is live while its process is.
+// is live while its process is. Each job.json is also given to the watchdog
+// (#235), with the issue's saved state for a stop.
 
 import process from "node:process";
 import { z } from "zod";
@@ -19,6 +20,7 @@ import { readState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import type { StartRecord } from "./ledger.ts";
 import type { IssueJob, IssueVerdict, SnapshotIssue } from "./queue.ts";
+import type { WatchedJob } from "./watchdog.ts";
 
 // The lane every orchestrator job runs in, so the next job for the same
 // issue passes the sweep's lease check.
@@ -29,10 +31,14 @@ const QUEUE_SETTINGS = z.looseObject({
   takeNewWork: z.unknown().optional(),
 });
 
-// The open issues, and the job.json of each that has one.
+// The open issues, the job.json of each that has one, as the watchdog sees
+// it, and each issue's saved state and label names.
 interface Queue {
   issues: SnapshotIssue[];
   jobs: StatusFile[];
+  watched: WatchedJob[];
+  states: Map<number, State | null>;
+  labels: Map<number, string[]>;
 }
 
 // True while process `pid` runs: signal 0 checks without sending.
@@ -78,9 +84,10 @@ function verdictOf(
 // the orchestrator started for it while that process runs.
 function jobOf(
   status: StatusFile | null,
+  running: boolean,
   start: StartRecord | undefined,
 ): IssueJob | null {
-  if (status !== null && status.outcome === null && isAlive(status.pid)) {
+  if (status !== null && running) {
     return { live: true, stage: status.stage };
   }
   if (start !== undefined && isAlive(start.pid)) {
@@ -103,10 +110,12 @@ function issueOf(
   ctx: SweepContext,
   row: IssueRow,
   started: readonly StartRecord[],
-): { issue: SnapshotIssue; status: StatusFile | null } {
+): { issue: SnapshotIssue; watched: WatchedJob | null; state: State | null } {
   const { state } = readState(ctx.cfg, row.number);
   const status = readStatus(paths.runDir(ctx.cfg, row.number));
   const start = started.findLast((s) => s.issue === row.number);
+  const running =
+    status !== null && status.outcome === null && isAlive(status.pid);
   const issue: SnapshotIssue = {
     number: row.number,
     createdAt: row.createdAt,
@@ -116,9 +125,18 @@ function issueOf(
     pr: numberOr(state?.pr),
     after: afterDeps(row.body).filter((n) => ctx.openNumbers.has(n)),
     stopped: row.labels.some((label) => isStopLabel(label.name)),
-    job: jobOf(status, start),
+    job: jobOf(status, running, start),
   };
-  return { issue, status };
+  if (status === null) {
+    return { issue, watched: null, state };
+  }
+  const stopped = issue.stopped || issue.stage === "stopped";
+  const live = issue.job?.live === true;
+  return {
+    issue,
+    watched: { issue: row.number, stopped, live, running, status },
+    state,
+  };
 }
 
 // The open issues and their jobs, as of `now`.
@@ -138,12 +156,24 @@ function readQueue(
     now: now.getTime(),
     leaseMs: cfg.leaseHours * MS_PER_HOUR,
   };
-  const queue: Queue = { issues: [], jobs: [] };
+  const queue: Queue = {
+    issues: [],
+    jobs: [],
+    watched: [],
+    states: new Map(),
+    labels: new Map(),
+  };
   for (const row of rows) {
-    const { issue, status } = issueOf(ctx, row, started);
+    const { issue, watched, state } = issueOf(ctx, row, started);
     queue.issues.push(issue);
-    if (status !== null) {
-      queue.jobs.push(status);
+    queue.states.set(row.number, state);
+    queue.labels.set(
+      row.number,
+      row.labels.map((label) => label.name),
+    );
+    if (watched !== null) {
+      queue.jobs.push(watched.status);
+      queue.watched.push(watched);
     }
   }
   return queue;

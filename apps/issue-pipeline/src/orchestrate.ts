@@ -19,6 +19,7 @@ import process from "node:process";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { loadConfig } from "./config.ts";
+import { steerJob } from "./job/control.ts";
 import { orchestratorArgsOf } from "./orchestrator/args.ts";
 import type { TickDeps } from "./orchestrator/tick.ts";
 import { tick } from "./orchestrator/tick.ts";
@@ -55,6 +56,29 @@ function spawnJob(argv: readonly string[], log: string): number {
     return child.pid;
   } finally {
     fs.closeSync(out);
+  }
+}
+
+// Steers a silent session; a steer pi refuses is reported on stderr.
+function steerSession(socket: string, key: string, message: string): void {
+  steerJob(socket, key, message).then(
+    (error: string | null): void => {
+      if (error !== null) {
+        process.stderr.write(`orchestrate: steer ${key}: ${error}\n`);
+      }
+    },
+    (error: unknown): void => {
+      process.stderr.write(`orchestrate: steer ${key}: ${messageOf(error)}\n`);
+    },
+  );
+}
+
+// Asks job `pid` to stop; one already gone is left alone.
+function terminateJob(pid: number): void {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (error: unknown) {
+    process.stderr.write(`orchestrate: SIGTERM ${pid}: ${messageOf(error)}\n`);
   }
 }
 
@@ -99,7 +123,13 @@ function main(argv: readonly string[]): number {
     process.stderr.write(`orchestrate: ${messageOf(error)}\n`);
     return 1;
   }
-  const deps: TickDeps = { configPath, now: () => new Date(), spawn: spawnJob };
+  const deps: TickDeps = {
+    configPath,
+    now: () => new Date(),
+    spawn: spawnJob,
+    steer: steerSession,
+    terminate: terminateJob,
+  };
   if (once) {
     return Number(!tickOnce(cfg, deps));
   }

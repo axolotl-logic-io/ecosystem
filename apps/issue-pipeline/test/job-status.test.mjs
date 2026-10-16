@@ -47,6 +47,29 @@ test("while a session waits, job.json shows its pid, session, last event and too
   await job.end;
 });
 
+test("job.json counts consecutive failures of the same tool and keeps the last one's tool and error (#235)", async () => {
+  const place = setUp(repliesAt("spec"), {
+    events: [
+      toolEnd(true, "bash", "exit 1"),
+      toolEnd(true, "read", "ENOENT: a.ts"),
+      toolEnd(true, "read", "ENOENT: b.ts"),
+      "wait",
+    ],
+  });
+  const job = startJob(place, STAGE_ARGS);
+  await waitFor(
+    () => sessionOf(statusOf(place))?.lastToolFailure?.error === "ENOENT: b.ts",
+  );
+  const launch = sessionOf(statusOf(place));
+  assert.equal(launch.toolFailures, 2);
+  assert.deepEqual(launch.lastToolFailure, {
+    tool: "read",
+    error: "ENOENT: b.ts",
+  });
+  job.child.kill("SIGTERM");
+  await job.end;
+});
+
 test("a finished job's file counts only the last tool failures and records each outcome", () => {
   const place = setUp(repliesAt("spec"), {
     events: [

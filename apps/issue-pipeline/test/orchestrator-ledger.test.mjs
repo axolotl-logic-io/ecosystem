@@ -63,6 +63,7 @@ function jobWith(input, minute = 0) {
         startedAt: at(minute).toISOString(),
         lastEventAt: null,
         toolFailures: 0,
+        lastToolFailure: null,
         usage: { input, output: input, cacheRead: 0, cacheWrite: 0 },
         resumed: false,
         outcome: null,

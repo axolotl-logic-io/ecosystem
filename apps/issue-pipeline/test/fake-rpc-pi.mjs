@@ -118,13 +118,18 @@ function messageEnd(usage) {
   };
 }
 
-/** @param {boolean} isError @returns {object} */
-function toolEnd(isError) {
+/**
+ * A call of tool `toolName` ending, failed with `error` as its text when
+ * `isError`.
+ * @param {boolean} isError @param {string} [toolName] @param {string} [error]
+ * @returns {object}
+ */
+function toolEnd(isError, toolName = "bash", error = "") {
   return {
     type: "tool_execution_end",
     toolCallId: "t",
-    toolName: "bash",
-    result: { content: [] },
+    toolName,
+    result: { content: [{ type: "text", text: error }] },
     isError,
   };
 }
