@@ -12,6 +12,8 @@
   "issueTokenBudget": 1000000,
   "rebaseTokenBudget": 500000,
   "sessionTokenCap": 150000,
+  "contextLimits": { "soft": 150000, "hard": 175000 },
+  "maxContinuations": 1,
   "maxFixRounds": 2,
   "maxCiFixes": 2,
   "maxSyncs": 3,

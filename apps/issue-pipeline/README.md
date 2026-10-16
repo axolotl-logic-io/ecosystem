@@ -16,7 +16,7 @@ The issue pipeline turns GitHub issues into merged pull requests: a pi-subagents
 | `dist/` | The build's output, `workflow.js`, `ops.mjs`, `job.mjs`, `structured-output.mjs` and `orchestrate.mjs`, which the install copies. Ignored by git and Biome. |
 | `agents/` | The four agents: `issue-pipeline-ops` (command runner), `-reader` (read-only), `-specifier` (read-only plus web search) and `-writer`. The three model agents also get `codemode`, which scripts calls to their own tools only, so it grants nothing new. |
 | `prompts/` | `/pipeline-start` and `/pipeline-pause`, which start and pause a lane in a pi session. |
-| `repos/example.json` | Every field of a per-repo config. |
+| `repos/example.json` | Every field of a per-repo config, such as `contextLimits` (`soft` 150000 and `hard` 175000 tokens; writer prompts state `hard`, and `soft` must be below it) and `maxContinuations` (1), the continuations each writer stage may have from a handoff before the issue stops as too large (#269). |
 | `install.mjs` | Builds, then installs this folder where pi reads it. |
 | `test/` | Tests for `src/ops.ts`, `src/workflow.js`, `build.ts` and `install.mjs`, and the harness that runs the built workflow with scripted replies. |
 

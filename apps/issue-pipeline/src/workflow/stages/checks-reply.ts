@@ -54,7 +54,7 @@ type Done = Failed | { kind: "done"; value: string };
 
 // A fixer's reply (CIFIX_SCHEMA).
 interface FixOutput {
-  status: "fixed" | "cannot-fix";
+  status: "fixed" | "cannot-fix" | "handoff";
   summary: string;
 }
 
@@ -205,7 +205,7 @@ function fixOf(output: unknown): FixOutput | null {
   }
   const { status, summary } = output;
   if (
-    (status !== "fixed" && status !== "cannot-fix") ||
+    (status !== "fixed" && status !== "cannot-fix" && status !== "handoff") ||
     typeof summary !== "string"
   ) {
     return null;
@@ -273,7 +273,7 @@ function blockingOf(result: ChildResult): ListedFinding[] | null {
   return blocking;
 }
 
-export type { Check, FixOutput };
+export type { Check, FinishReply, FixOutput };
 export {
   blockingOf,
   ciReplyOf,

@@ -110,6 +110,7 @@ const FIX_AGENTS = {
     blocking: [{ ...OFF_BY_ONE, lenses: ["correctness"] }],
   }),
   "i7-fix-r1": replyWith({
+    status: "done",
     fixed: ["f1"],
     disputed: [],
     summary: "Fixed the loop bound.",

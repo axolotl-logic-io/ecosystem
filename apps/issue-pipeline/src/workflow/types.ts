@@ -62,8 +62,10 @@ interface IssueState {
   specFile?: string | null;
   // The repo paths or globs the spec says the change will touch.
   files?: string[] | null;
-  // How many continuation sessions the implementer has had.
-  continuations?: number;
+  // How many continuation sessions each writer stage has had. Read only
+  // through stages/continuation.ts: a number is the older form, the
+  // implementer's count.
+  continuations?: Continuations | number;
   // The PR the implementer described, and its signature.
   prTitle?: string;
   prBody?: string;
@@ -132,6 +134,14 @@ interface WorkItem {
   rebasedOnly?: boolean;
 }
 
+// The continuation sessions each writer stage has had, missing meaning none.
+interface Continuations {
+  implement?: number;
+  fix?: number;
+  ciFix?: number;
+  conflicts?: number;
+}
+
 // The slices of the repo config the helpers read.
 interface RepoConfig {
   repo: string;
@@ -164,6 +174,7 @@ type Role =
 type PracticesUse = "spec" | "writer" | "reviewer";
 
 export type {
+  Continuations,
   Finding,
   FindingStatus,
   FixRoundsConfig,

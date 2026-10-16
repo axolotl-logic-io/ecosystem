@@ -114,7 +114,7 @@ function next(
     case "published":
       return published(state, ctx, results);
     case "resolved":
-      return resolved(state, results);
+      return resolved(state, ctx, results);
     case "finished":
       return finishedWiki(state, ctx, results, republish);
     default: {

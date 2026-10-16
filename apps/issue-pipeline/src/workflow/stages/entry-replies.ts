@@ -30,10 +30,24 @@ function isOverrides(
 }
 
 function hasStageCounts(cfg: Fields): boolean {
-  const { maxTriages, maxSyncs, maxCiFixes, maxFixRounds, ciWaitMinutes } = cfg;
-  return [maxTriages, maxSyncs, maxCiFixes, maxFixRounds, ciWaitMinutes].every(
-    isNumber,
-  );
+  const { maxTriages, maxSyncs, maxCiFixes, maxFixRounds } = cfg;
+  const { ciWaitMinutes, maxContinuations } = cfg;
+  return [
+    maxTriages,
+    maxSyncs,
+    maxCiFixes,
+    maxFixRounds,
+    ciWaitMinutes,
+    maxContinuations,
+  ].every(isNumber);
+}
+
+function isContextLimits(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const { soft, hard } = value;
+  return isNumber(soft) && isNumber(hard);
 }
 
 function hasOptionalFields(cfg: Fields): boolean {
@@ -51,11 +65,12 @@ function isSweepConfig(value: unknown): value is SweepConfig {
     return false;
   }
   const { repo, baseBranch, sessionTokenCap, issueTokenBudget } = value;
-  const { commands, roleBudgets, models } = value;
+  const { commands, roleBudgets, models, contextLimits } = value;
   return (
     isString(repo) &&
     isString(baseBranch) &&
     isNumber(sessionTokenCap) &&
+    isContextLimits(contextLimits) &&
     isNumber(issueTokenBudget) &&
     isRecord(commands) &&
     hasStageCounts(value) &&

@@ -1,15 +1,28 @@
 // Implement: one writer session builds the issue to its spec, tests and
-// commits it. A session that runs out of room hands off to one continuation;
-// the sweep begins the stage again for it. A done issue moves to open-pr.
+// commits it. A session that runs out of room hands off to a continuation, up
+// to config maxContinuations; the sweep begins the stage again for each. A
+// done issue moves to open-pr.
 
 import { chargeSession } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
-import { practicesNote, preamble, specText } from "../prompts.ts";
+import {
+  handoffLead,
+  handoffRule,
+  practicesNote,
+  preamble,
+  specText,
+} from "../prompts.ts";
 import { IMPL_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import type { ImplReply } from "./build-replies.ts";
 import { implReplyOf } from "./build-replies.ts";
+import {
+  continuationsOf,
+  continued,
+  mayContinue,
+  outOfRoomReason,
+} from "./continuation.ts";
 import { doneStep, launchStep, onlyChild, stopStep } from "./step.ts";
 import type {
   ChildLaunch,
@@ -30,8 +43,6 @@ const ROLE = "implementer";
 const IMPLEMENT_MINUTES = 90;
 const TITLE_LIMIT = 200;
 const BODY_LIMIT = 6000;
-// The continuation sessions an issue may have.
-const MAX_CONTINUATIONS = 1;
 
 function phaseOf(state: StageState): ImplementPhase {
   const phase = PHASES.find((entry) => entry === state.phase);
@@ -48,8 +59,8 @@ function isSet(text: string | null | undefined): text is string {
 // What the session works from: the handoff, the spec, or triage's plan.
 function sourceLine(state: StageState): string {
   const { st, paths } = state;
-  if ((st.continuations ?? 0) > 0) {
-    return `A previous session ran out of room. Read its handoff first: ${paths.handoffFile}. Continue from the current branch state.`;
+  if (continuationsOf(st, "implement") > 0) {
+    return handoffLead(paths.handoffFile);
   }
   const spec = specText(st);
   if (spec !== "") {
@@ -95,7 +106,11 @@ function implementTask(state: StageState, ctx: StageContext): string {
     wikiStep(state.paths.wiki),
     "Change lockfiles only through the package manager, never by hand.",
     "",
-    `If the work is bigger than this session can finish within budget (for example, you have read more than about 15 files or made more than about 30 substantial tool calls and are not close), stop: commit what builds, write ${state.paths.handoffFile} (what is done, what is left, current branch state), and return status \`handoff\`.`,
+    handoffRule(
+      budgets.hardLimit,
+      state.paths.handoffFile,
+      "commit what builds",
+    ),
     "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
     "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
   ];
@@ -150,23 +165,26 @@ function finished(state: StageState, reply: ImplReply, by: Signature): Step {
   return doneStep({ ...state, st });
 }
 
-// Counts the first handoff, so the next session continues from it. A second
-// handoff stops: the issue is too big for its sessions.
-function handedOff(state: StageState, reply: ImplReply, by: Signature): Step {
-  const continuations = state.st.continuations ?? 0;
-  if (continuations < MAX_CONTINUATIONS) {
-    const st = { ...state.st, continuations: continuations + 1 };
+// Counts a handoff below the cap, so the next session continues from it. A
+// handoff past the cap stops: the issue is too big for its sessions.
+function handedOff(
+  state: StageState,
+  ctx: StageContext,
+  reply: ImplReply,
+  by: Signature,
+): Step {
+  if (mayContinue(state.st, ctx.cfg, "implement")) {
     return doneStep(
-      { ...state, st },
+      { ...state, st: continued(state.st, "implement") },
       issueComment(
         by,
-        `This session ran out of room before finishing. A second implementer session continues from its handoff.\n\n${reply.summary}`,
+        `This session ran out of room before finishing. Another implementer session continues from its handoff.\n\n${reply.summary}`,
       ),
     );
   }
   return stopStep(
     state,
-    "the implementer ran out of room twice; the issue needs splitting",
+    outOfRoomReason(ROLE, ctx.cfg.maxContinuations),
     `Latest handoff: ${state.paths.handoffFile}\n\n${reply.summary}`,
     issueComment(by, reply.summary),
   );
@@ -194,7 +212,7 @@ function decide(
     case "done":
       return finished(decided, reply, result.by);
     case "handoff":
-      return handedOff(decided, reply, result.by);
+      return handedOff(decided, ctx, reply, result.by);
     case "blocked":
       return stopStep(
         decided,

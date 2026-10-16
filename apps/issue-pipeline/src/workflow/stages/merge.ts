@@ -214,7 +214,7 @@ function next(
     case "wiki-synced":
       return wikiSynced(state, ctx, results);
     case "resolved":
-      return resolved(state, results);
+      return resolved(state, ctx, results);
     case "finished":
       return finishedWiki(state, ctx, results, checkWiki);
     case "wiki-checked":

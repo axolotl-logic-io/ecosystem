@@ -4,6 +4,7 @@
 // sweep; these pin the prompt, the continuation and each status's step.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { stopFor } from "../src/stops.ts";
 import { next } from "../src/workflow/stages/implement.ts";
 import { asSessions, sessions } from "./stage-outcome-test-kit.mjs";
 import {
@@ -21,7 +22,7 @@ import {
   TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
-/** @import { StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
 /** @typedef {Readonly<Record<string, unknown>>} Reply */
 
 const IMPL_TOKENS = 150_000;
@@ -30,7 +31,7 @@ const TITLE_LIMIT = 200;
 const SMALL_BUDGET = 150_000;
 const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first: ${HANDOFF}. Continue from the current branch state.`;
 const CONTINUED =
-  "This session ran out of room before finishing. A second implementer session continues from its handoff.";
+  "This session ran out of room before finishing. Another implementer session continues from its handoff.";
 
 // A spec clipped in the saved state, and where its full text is (#280).
 const CLIPPED = "## Behaviour\n\n1. The clipped copy…";
@@ -51,14 +52,19 @@ function replyOf(fields) {
 }
 
 // Implement's step after a session from `state` replies with `fields`.
-/** @param {StageState} state @param {Reply} fields @returns {Step} */
-function replied(state, fields) {
-  const begun = next(state, BUILD_CTX, []);
+/** @param {StageState} state @param {Reply} fields @param {StageContext} [ctx] @returns {Step} */
+function replied(state, fields, ctx = BUILD_CTX) {
+  const begun = next(state, ctx, []);
   const output = replyOf(fields);
-  return afterSession(next, begun, IMPL_BY, {
-    ok: true,
-    structuredOutput: output,
-  });
+  return next(begun.state, ctx, [
+    {
+      kind: "child",
+      ok: true,
+      error: null,
+      by: IMPL_BY,
+      structuredOutput: output,
+    },
+  ]);
 }
 
 // The step's state as the sweep begins the stage again.
@@ -118,7 +124,7 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
   assert.equal(first.done, true);
   assert.equal(first.stop, null);
   assert.equal(first.state.st.stage, "implement");
-  assert.equal(first.state.st.continuations, 1);
+  assert.deepEqual(first.state.st.continuations, { implement: 1 });
   assert.deepEqual(first.comments, [
     { by: IMPL_BY, body: `${CONTINUED}\n\nHalf done.`, where: "issue" },
   ]);
@@ -144,19 +150,43 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
   assert.deepEqual(done.comments, []);
 });
 
+// A state saved before #269 counted the implementer's continuations as a
+// number; it still reads as the implementer's count.
 test("a second handoff stops: the issue needs splitting", () => {
   const step = replied(buildState("implement", { continuations: 1 }), {
     status: "handoff",
     summary: "Still not done.",
   });
-  assert.deepEqual(step.stop, {
-    reason: "the implementer ran out of room twice; the issue needs splitting",
-    detail: `Latest handoff: ${HANDOFF}\n\nStill not done.`,
-    code: null,
-  });
+  assert.equal(step.done, true);
+  assert.equal(stopFor(step.stop?.reason)?.code, "too-large");
+  assert.equal(
+    step.stop?.detail,
+    `Latest handoff: ${HANDOFF}\n\nStill not done.`,
+  );
   assert.deepEqual(step.comments, [
     { by: IMPL_BY, body: "Still not done.", where: "issue" },
   ]);
+});
+
+test("maxContinuations 2 lets a second handoff continue and stops a third", () => {
+  const ctx = { ...BUILD_CTX, cfg: { ...BUILD_CTX.cfg, maxContinuations: 2 } };
+  const handoff = { status: "handoff", summary: "Not done." };
+  const second = replied(
+    buildState("implement", { continuations: { implement: 1 } }),
+    handoff,
+    ctx,
+  );
+  assert.equal(second.stop, null);
+  assert.deepEqual(second.state.st.continuations, { implement: 2 });
+  const third = replied({ ...second.state, phase: "begin" }, handoff, ctx);
+  assert.equal(stopFor(third.stop?.reason)?.code, "too-large");
+});
+
+test("maxContinuations 0 stops the first handoff", () => {
+  const ctx = { ...BUILD_CTX, cfg: { ...BUILD_CTX.cfg, maxContinuations: 0 } };
+  const handoff = { status: "handoff", summary: "Not done." };
+  const stopped = replied(buildState("implement"), handoff, ctx);
+  assert.equal(stopFor(stopped.stop?.reason)?.code, "too-large");
 });
 
 test("a blocked implementer stops with its summary", () => {

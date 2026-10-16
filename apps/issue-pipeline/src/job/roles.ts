@@ -4,8 +4,9 @@
 // only the one its config names, as GH_TOKEN. No session runs as merger, so
 // no model holds merge credentials. The networks are recorded, not enforced.
 
-import type { Config, JobRolesConfig } from "../config.ts";
+import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import type { JobRolesConfig } from "../config-schema.ts";
 import type { StageName } from "../workflow/stages/types.ts";
 
 type JobRole = "reader" | "writer" | "merger";

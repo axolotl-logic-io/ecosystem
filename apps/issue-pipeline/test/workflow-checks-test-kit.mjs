@@ -27,6 +27,7 @@ const CFG = {
   maxSyncs: 3,
   maxCiFixes: 1,
   ciWaitMinutes: 30,
+  maxContinuations: 1,
   practices: ["AGENTS.md"],
   commands: {},
 };
@@ -59,6 +60,7 @@ function contextWith(fields = {}) {
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
+      hardLimit: 175_000,
       issueBudget: ISSUE_BUDGET,
       rebaseBudget: REBASE_BUDGET,
     },

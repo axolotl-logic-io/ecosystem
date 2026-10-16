@@ -161,6 +161,7 @@ interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
   maxTriages: number;
   maxSyncs: number;
   maxCiFixes: number;
+  maxContinuations: number;
   ciWaitMinutes: number;
   // Missing or null means 2.
   maxConflictFixes?: number | null;
@@ -183,6 +184,7 @@ interface StageContext {
 // token budgets, and the config's overrides of the sweep's defaults.
 interface SweepConfig extends StageConfig {
   sessionTokenCap: number;
+  contextLimits: { soft: number; hard: number };
   issueTokenBudget: number;
   rebaseTokenBudget: number;
   roleBudgets?: Readonly<Partial<Record<Role, number>>> | null;
@@ -220,9 +222,8 @@ interface AbandonedClaim {
 type UnclaimedOutcome = "claim-failed" | "waiting-for-answer";
 
 // What a claim reply means for the sweep: the candidate was lost to another
-// lane, it stays unclaimed (with the outcome and the reason, if there is
-// one), or the sweep holds the issue, with the stop to queue if its PR branch
-// moved.
+// lane, it stays unclaimed (with its outcome and reason, if any), or the
+// sweep holds the issue, with the stop to queue if its PR branch moved.
 type ClaimStep =
   | { kind: "lost"; abandoned: AbandonedClaim }
   | { kind: "unclaimed"; outcome: UnclaimedOutcome; reason: string | null }
@@ -233,8 +234,7 @@ type ClaimStep =
       stop: StageStop | null;
     };
 
-// The sweep's issue in its summary. `pr` is undefined when the state has no
-// `pr` field.
+// The sweep's issue in its summary; `pr` is undefined if the state has none.
 interface SummaryItem {
   issue: number;
   pr: number | null | undefined;

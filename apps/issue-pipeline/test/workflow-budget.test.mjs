@@ -39,6 +39,7 @@ const budgets = {
     verifier: UNCHARGED,
   },
   sessionCap: SESSION_CAP,
+  hardLimit: 175_000,
   issueBudget: ISSUE_BUDGET,
   rebaseBudget: REBASE_BUDGET,
 };

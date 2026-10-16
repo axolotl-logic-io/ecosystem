@@ -10,10 +10,11 @@ import {
   LENS_NAMES,
 } from "../src/workflow/lenses.ts";
 import {
+  FIX_SCHEMA,
   REREVIEW_SCHEMA,
   REREVIEW_SEC_SCHEMA,
 } from "../src/workflow/review-schemas.ts";
-import { SPEC_SCHEMA } from "../src/workflow/schemas.ts";
+import { CIFIX_SCHEMA, SPEC_SCHEMA } from "../src/workflow/schemas.ts";
 
 /** @import { JsonSchema } from "../src/workflow/schemas.ts" */
 
@@ -60,6 +61,28 @@ test("the spec schema requires the files the change will touch, as strings", () 
   assert.deepEqual(plain(files), {
     type: "array",
     items: { type: "string" },
+  });
+});
+
+// Reply schema `schema`'s status: whether it is required, and its values.
+/** @param {JsonSchema} schema @returns {unknown} */
+function statusOf(schema) {
+  const { properties = {}, required = [] } = schema;
+  const { status = {} } = properties;
+  return { required: required.includes("status"), status: plain(status) };
+}
+
+test("a CI fixer or conflict resolver may reply that it handed off (#269)", () => {
+  assert.deepEqual(statusOf(CIFIX_SCHEMA), {
+    required: true,
+    status: { enum: ["fixed", "cannot-fix", "handoff"] },
+  });
+});
+
+test("a review fixer replies done or that it handed off (#269)", () => {
+  assert.deepEqual(statusOf(FIX_SCHEMA), {
+    required: true,
+    status: { enum: ["done", "handoff"] },
   });
 });
 

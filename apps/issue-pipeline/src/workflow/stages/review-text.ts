@@ -5,7 +5,13 @@
 import { findingLines, findingsText } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
-import { practicesNote, preamble, specText } from "../prompts.ts";
+import {
+  handoffLead,
+  handoffRule,
+  practicesNote,
+  preamble,
+  specText,
+} from "../prompts.ts";
 import type { Finding, ListedFinding } from "../types.ts";
 import type {
   FixReply,
@@ -124,24 +130,35 @@ function disputedIds(open: readonly Finding[]): string {
   return ids.join(", ");
 }
 
-// The fixer's task for `round`, over the findings still open.
-function fixTask(
-  ctx: StageContext,
-  state: StageState,
-  round: number,
-  open: readonly Finding[],
-): string {
+// What a fixer works on: its round, the findings still open, and whether it
+// continues from a predecessor's handoff in the same round.
+interface FixJob {
+  round: number;
+  open: readonly Finding[];
+  continuation: boolean;
+}
+
+// The fixer's task for its job; a continuation starts from the handoff.
+function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
   const { cfg, budgets } = ctx;
+  const { round, open } = job;
+  const { handoffFile } = state.paths;
   const role = `fixer, round ${round} of ${cfg.maxFixRounds}`;
+  const lead: string[] = [];
+  if (job.continuation) {
+    lead.push(handoffLead(handoffFile));
+  }
   return preamble(cfg, state, role, budgets.roles.fixer)
     .concat([
+      ...lead,
       practicesNote(cfg, state, "writer"),
       ...specSection(state, SPEC_RULE_FIX),
       "Resolve these blocking review findings:",
       findingsText(open),
       "",
       `For each finding, either fix it (list its id in \`fixed\`) or, if you have concrete evidence it is wrong, dispute it (list it in \`disputed\` with the evidence). Findings already disputed once cannot be disputed again: ${disputedIds(open)}.`,
-      `Make only the changes the findings need. Run the tests, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`) and leave the worktree clean.`,
+      `Make only the changes the findings need. Run the tests, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`) and leave the worktree clean. Return status \`done\` when you finish.`,
+      handoffRule(budgets.hardLimit, handoffFile, "commit what builds"),
     ])
     .join("\n");
 }
@@ -240,7 +257,7 @@ function rereviewComment(
   return `Re-review of the fix in ${headSha.slice(0, SHORT_SHA)}.\n\n${verdicts.join("\n")}${addedSection(added)}${recurringSection(recurring)}`;
 }
 
-export type { RereviewScope, ReviewDiff };
+export type { FixJob, RereviewScope, ReviewDiff };
 export {
   aggregateTask,
   findingIdsComment,

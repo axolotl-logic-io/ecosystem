@@ -50,7 +50,12 @@ const OPEN_FINDING_CLAIM = claimAt("fix", {
 });
 // A fix round 1 that fixes nothing, whose re-review finds f1 unresolved.
 const UNRESOLVED_ROUND = {
-  "i7-fix-r1": replyWith({ fixed: [], disputed: [], summary: "Tried." }),
+  "i7-fix-r1": replyWith({
+    status: "done",
+    fixed: [],
+    disputed: [],
+    summary: "Tried.",
+  }),
   "i7-rereview-correctness-r1": replyWith({
     results: [{ id: "f1", status: "unresolved", note: "" }],
     newFindings: [],

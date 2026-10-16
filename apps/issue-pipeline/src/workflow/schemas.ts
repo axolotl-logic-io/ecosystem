@@ -83,7 +83,10 @@ const IMPL_SCHEMA: JsonSchema = {
 const CIFIX_SCHEMA: JsonSchema = {
   type: "object",
   additionalProperties: false,
-  properties: { status: { enum: ["fixed", "cannot-fix"] }, summary: STR },
+  properties: {
+    status: { enum: ["fixed", "cannot-fix", "handoff"] },
+    summary: STR,
+  },
   required: ["status", "summary"],
 };
 

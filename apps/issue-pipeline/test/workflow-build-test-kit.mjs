@@ -31,6 +31,7 @@ const CFG = {
   maxSyncs: 3,
   maxCiFixes: 1,
   ciWaitMinutes: 30,
+  maxContinuations: 1,
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   commands: { test: "npm test", lint: "npm run lint" },
 };
@@ -66,6 +67,7 @@ function contextWith(issueBudget) {
     budgets: {
       roles: ROLES,
       sessionCap: SESSION_CAP,
+      hardLimit: 175_000,
       issueBudget,
       rebaseBudget: REBASE_BUDGET,
     },
@@ -99,7 +101,7 @@ function buildState(stage, fields = {}, paths = PATHS) {
       plan: PLAN,
       allocated: TRIAGE_TOKENS,
       sessions: ["triage"],
-      continuations: 0,
+      continuations: {},
       findings: [],
       log: [],
       ...fields,
@@ -193,7 +195,7 @@ function implementTask(source) {
       `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${WIKI} add -A && git -C ${WIKI} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`,
       "Change lockfiles only through the package manager, never by hand.",
       "",
-      `If the work is bigger than this session can finish within budget (for example, you have read more than about 15 files or made more than about 30 substantial tool calls and are not close), stop: commit what builds, write ${HANDOFF} (what is done, what is left, current branch state), and return status \`handoff\`.`,
+      `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${HANDOFF} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
       "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
       "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
     ])

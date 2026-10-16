@@ -13,6 +13,8 @@ const KEPT_SESSIONS = 40;
 interface Budgets {
   roles: Readonly<Record<Role, number>>;
   sessionCap: number;
+  // The context no writer session may pass, in tokens (contextLimits.hard).
+  hardLimit: number;
   issueBudget: number;
   rebaseBudget: number;
 }

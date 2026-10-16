@@ -158,6 +158,7 @@ test("a fixer's dispute of the acceptance finding stops before the push", async 
     fields: { ...AT_FIX, round: 0 },
     agents: {
       "i7-fix-r1": replyWith({
+        status: "done",
         fixed: [],
         disputed: [{ id: "f1", evidence: "The issue never asks for it." }],
         summary: "Disputed f1.",

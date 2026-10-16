@@ -153,11 +153,13 @@ const ROWS: readonly Omit<Stop, "label">[] = [
   {
     code: "too-large",
     short:
-      "Stopped: too large for the implementer; split it. See the stop comment.",
+      "Stopped: too large for its writer sessions; split it. See the stop comment.",
     test: /ran out of room|did not finish within its sessions/iu,
-    control: "implementer sessions",
-    explain:
-      "The implementer ran out of room in its session and its one continuation; the issue needs splitting.",
+    control: "writer sessions",
+    explain: limitText(
+      "A writer session (the implementer, fixer, CI fixer or conflict resolver) ran out of room, and so did each continuation its stage was allowed; the issue needs splitting",
+      "maxContinuations",
+    ),
   },
   {
     code: "acceptance",

@@ -2,21 +2,25 @@
 // the rebase is finished or aborted, and the resolver's reply decides whether
 // the issue moves on, retries next sweep or stops. Sync resolves its code
 // rebase this way and moves to checks; merge and publish resolve the wiki's
-// rebase and then carry on with their own next step (conflict-target.ts).
+// rebase and then carry on with their own next step (conflict-target.ts). A
+// resolver that runs out of room hands off to a continuation on the rebase
+// still in progress (conflict-resolver.ts), up to config maxContinuations.
 
-import { chargeSession } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
-import { preamble } from "../prompts.ts";
-import { CIFIX_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
-import type { IssueState } from "../types.ts";
 import type { FixOutput } from "./checks-reply.ts";
 import { finishReplyOf, fixOutputOf } from "./checks-reply.ts";
-import type { Conflict, ConflictMemo } from "./conflict-memo.ts";
+import type { ConflictMemo } from "./conflict-memo.ts";
 import { carriedOf, memoOf } from "./conflict-memo.ts";
+import {
+  conflicted,
+  continueResolver,
+  maxConflictFixes,
+} from "./conflict-resolver.ts";
 import type { ConflictTarget } from "./conflict-target.ts";
-import { finishOp, ontoText, resolverTask } from "./conflict-target.ts";
+import { finishOp, ontoText } from "./conflict-target.ts";
+import { mayContinue, outOfRoomReason } from "./continuation.ts";
 import {
   doneStep,
   launchStep,
@@ -25,7 +29,6 @@ import {
   stopStep,
 } from "./step.ts";
 import type {
-  ChildLaunch,
   LaunchResult,
   StageComment,
   StageContext,
@@ -33,8 +36,6 @@ import type {
   Step,
 } from "./types.ts";
 
-const DEFAULT_CONFLICT_FIXES = 2;
-const RESOLVER_MINUTES = 45;
 const SHORT_SHA = 12;
 
 // The resolver's comment and the conflicting files, as the outcome reads them.
@@ -52,71 +53,11 @@ type Settled =
   | { kind: "step"; step: Step }
   | { kind: "rebased"; state: StageState; headSha: string; outcome: Outcome };
 
-function maxConflictFixes(ctx: StageContext): number {
-  return ctx.cfg.maxConflictFixes ?? DEFAULT_CONFLICT_FIXES;
-}
 function prComment(by: Signature, body: string): StageComment {
   return { by, body, where: "pr" };
 }
 function fileListOf(files: readonly string[]): string {
   return `Conflicting files:\n${files.join("\n")}`;
-}
-
-function resolverLaunch(
-  state: StageState,
-  ctx: StageContext,
-  conflict: Conflict,
-): ChildLaunch {
-  const { cfg, budgets, models } = ctx;
-  const attempt = state.st.conflictFixes ?? 0;
-  const role = `conflict resolver, attempt ${attempt} of ${maxConflictFixes(ctx)}`;
-  const lines = resolverTask(state, conflict.target, {
-    base: cfg.baseBranch,
-    files: conflict.files,
-    baseSha: conflict.baseSha,
-  });
-  return {
-    kind: "child",
-    name: `conflicts-${attempt}`,
-    label: `Resolve rebase conflicts for issue ${state.n}`,
-    agent: "issue-pipeline-writer",
-    model: models.fixer,
-    schema: CIFIX_SCHEMA,
-    writer: true,
-    minutes: RESOLVER_MINUTES,
-    task: preamble(cfg, state, role, budgets.roles.fixer)
-      .concat(lines)
-      .join("\n"),
-  };
-}
-
-// The rebase stopped on conflicts; a writer finishes it. A resolution of the
-// code changes it, so every check runs again; one of the wiki leaves the
-// code's checks standing.
-function conflicted(
-  state: StageState,
-  ctx: StageContext,
-  conflict: Conflict,
-): Step {
-  const st: IssueState = { ...state.st };
-  if (conflict.target.kind === "code") {
-    st.testsOnly = false;
-    st.passedSha = null;
-  }
-  st.conflictFixes = (st.conflictFixes ?? 0) + 1;
-  const counted = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "fixer", {
-    at: ctx.now(),
-    pool: "rebase",
-  });
-  if (!charge.charged) {
-    return stopStep(counted, charge.reason, charge.detail);
-  }
-  const { files, target } = conflict;
-  const carry = { files, target };
-  return launchStep({ ...counted, phase: "resolved", carry }, [
-    resolverLaunch(counted, ctx, conflict),
-  ]);
 }
 
 // The wiki's rebase onto its `branch` stopped on conflicts: a writer resolves
@@ -140,14 +81,18 @@ function wikiConflicted(
   return conflicted(state, ctx, { files, baseSha, target });
 }
 
-// Finishes the rebase, or aborts it when the resolver couldn't. The
+// Finishes the rebase, or aborts it when the resolver couldn't or ran out of
+// room with no continuation left. A resolver that handed off below the cap
+// gets a continuation on the rebase still in progress. Otherwise the
 // resolver's comment waits for the next step, after the finish.
-function resolved(state: StageState, results: readonly LaunchResult[]): Step {
+function resolved(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
   const result = onlyChild(results);
   const { files, target } = carriedOf(state);
   const fix = fixOutputOf(result);
-  const abort = fix === null || fix.status === "cannot-fix";
-  const reason = fix?.summary ?? "the conflict resolver failed";
   const memo: ConflictMemo = {
     files,
     target,
@@ -155,10 +100,35 @@ function resolved(state: StageState, results: readonly LaunchResult[]): Step {
     by: result.by,
     error: result.error,
   };
+  if (
+    fix?.status === "handoff" &&
+    mayContinue(state.st, ctx.cfg, "conflicts")
+  ) {
+    return continueResolver(state, ctx, resolverComment(state, ctx, memo, fix));
+  }
+  const abort = fix === null || fix.status !== "fixed";
+  const reason = fix?.summary ?? "the conflict resolver failed";
   const op = finishOp(target);
   return launchStep({ ...state, phase: "finished", carry: memo }, [
     { kind: "op", name: op, op, payload: { number: state.n, abort, reason } },
   ]);
+}
+
+// How the resolver's comment begins, by its status.
+function leadOf(ctx: StageContext, memo: ConflictMemo, fix: FixOutput): string {
+  const { status } = fix;
+  switch (status) {
+    case "fixed":
+      return "";
+    case "cannot-fix":
+      return `I couldn't resolve the conflicts with ${ontoText(memo.target, ctx.cfg.baseBranch)}: `;
+    case "handoff":
+      return "I ran out of room before finishing the rebase: ";
+    default: {
+      const unhandled: never = status;
+      return unhandled;
+    }
+  }
 }
 
 function resolverComment(
@@ -168,11 +138,7 @@ function resolverComment(
   fix: FixOutput,
 ): StageComment {
   const role = `conflict resolver (attempt ${state.st.conflictFixes ?? 0})`;
-  let lead = "";
-  if (fix.status === "cannot-fix") {
-    lead = `I couldn't resolve the conflicts with ${ontoText(memo.target, ctx.cfg.baseBranch)}: `;
-  }
-  return prComment({ ...memo.by, role }, lead + fix.summary);
+  return prComment({ ...memo.by, role }, leadOf(ctx, memo, fix) + fix.summary);
 }
 
 // A rejected resolution stops the issue on its last attempt; otherwise the
@@ -203,7 +169,9 @@ function rejected(
 
 // Acts on the resolver's reply and the finished rebase. Conflicts never wait
 // for a human (Autumn, 2026-10-13): a fresh resolver tries again next sweep,
-// against a base that may have moved, until the budget runs out.
+// against a base that may have moved, until the budget runs out. The one
+// exception is a resolver that ran out of room with no continuation left: the
+// rebase was aborted, and the issue stops as too large.
 function settle(
   state: StageState,
   ctx: StageContext,
@@ -227,6 +195,15 @@ function settle(
       ctx.now(),
     );
     return { kind: "step", step: doneStep(copied, [comment]) };
+  }
+  if (fix.status === "handoff") {
+    const step = stopStep(
+      state,
+      outOfRoomReason("conflict resolver", ctx.cfg.maxContinuations),
+      `${fileListOf(files)}\n\nLatest handoff: ${state.paths.handoffFile}\n\n${fix.summary}`,
+      [comment],
+    );
+    return { kind: "step", step };
   }
   if (reply.kind === "failed") {
     const why = "could not finish the rebase after resolving conflicts";
@@ -286,11 +263,4 @@ function finishedWiki(
 }
 
 export type { Resume };
-export {
-  conflicted,
-  finished,
-  finishedWiki,
-  maxConflictFixes,
-  resolved,
-  wikiConflicted,
-};
+export { finished, finishedWiki, resolved, wikiConflicted };

@@ -9,15 +9,11 @@ import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import { syncReplyOf } from "./checks-reply.ts";
+import { conflicted, maxConflictFixes } from "./conflict-resolver.ts";
 import { CODE_TARGET } from "./conflict-target.ts";
 import { opFailedStep } from "./network.ts";
 import { doneStep, launchStep, onlyReply, stopStep } from "./step.ts";
-import {
-  conflicted,
-  finished,
-  maxConflictFixes,
-  resolved,
-} from "./sync-conflict.ts";
+import { finished, resolved } from "./sync-conflict.ts";
 import type {
   LaunchResult,
   StageComment,
@@ -166,7 +162,7 @@ function next(
     case "synced":
       return synced(state, ctx, results);
     case "resolved":
-      return resolved(state, results);
+      return resolved(state, ctx, results);
     case "finished":
       return finished(state, ctx, results);
     default: {

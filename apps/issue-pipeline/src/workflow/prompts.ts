@@ -92,4 +92,16 @@ function specText(st: Pick<IssueState, "spec" | "specFile">): string {
   return spec;
 }
 
-export { practicesNote, preamble, specText };
+// What a writer session does that has reached the hard context limit `limit`
+// (config contextLimits.hard): `keep` says what it keeps of its work, then it
+// writes the handoff file and returns `handoff` for a continuation (#269).
+function handoffRule(limit: number, handoffFile: string, keep: string): string {
+  return `Hard limit: ${limit} tokens of context. If this session passes it before the work is done, stop: ${keep}, write ${handoffFile} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`;
+}
+
+// The first line of a continuation's task: where its predecessor's handoff is.
+function handoffLead(handoffFile: string): string {
+  return `A previous session ran out of room. Read its handoff first: ${handoffFile}. Continue from the current branch state.`;
+}
+
+export { handoffLead, handoffRule, practicesNote, preamble, specText };

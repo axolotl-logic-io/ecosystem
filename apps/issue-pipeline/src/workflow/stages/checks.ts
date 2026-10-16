@@ -9,7 +9,8 @@ import { byStep } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import type { Check } from "./checks-reply.ts";
 import { ciReplyOf, isRecord, verifyReplyOf } from "./checks-reply.ts";
-import { fixed, prepared, pushed, reviewed, startFix } from "./ci-fix.ts";
+import { fixed, prepared, pushed, reviewed } from "./ci-fix.ts";
+import { startFix } from "./ci-fixer.ts";
 import { opFailedStep } from "./network.ts";
 import { doneStep, launchStep, onlyReply, phaseOf, stopStep } from "./step.ts";
 import type {

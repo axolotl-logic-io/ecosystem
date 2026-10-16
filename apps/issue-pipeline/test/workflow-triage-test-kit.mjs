@@ -28,6 +28,7 @@ const CFG = {
   maxSyncs: 3,
   maxCiFixes: 1,
   ciWaitMinutes: 30,
+  maxContinuations: 1,
   commands: {},
 };
 const ROLES = {
@@ -69,6 +70,7 @@ function contextWith(issueBudget) {
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
+      hardLimit: 175_000,
       issueBudget,
       rebaseBudget: REBASE_BUDGET,
     },

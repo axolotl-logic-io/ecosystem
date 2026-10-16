@@ -56,12 +56,6 @@ const STAGE_SPAWNS: Readonly<Record<StageName, number>> = {
   publish: 4,
 };
 
-// How many times a sweep may begin a stage (default 1): implement runs once
-// more to continue from a handoff.
-const STAGE_PASSES: Readonly<Partial<Record<StageName, number>>> = {
-  implement: 2,
-};
-
 // Why the sweep stops an issue still at a stage once its stage group ends and
 // the issue isn't held: it has used every pass.
 const PASSES_USED: Readonly<Partial<Record<StageName, string>>> = {
@@ -202,6 +196,7 @@ function sweepSettings(cfg: SweepConfig): SweepSettings {
     budgets: {
       roles: { ...ROLE_BUDGETS, ...cfg.roleBudgets },
       sessionCap: cfg.sessionTokenCap,
+      hardLimit: cfg.contextLimits.hard,
       issueBudget: cfg.issueTokenBudget,
       rebaseBudget: cfg.rebaseTokenBudget,
     },
@@ -210,10 +205,13 @@ function sweepSettings(cfg: SweepConfig): SweepSettings {
   };
 }
 
-// How many times a sweep may begin `stage`.
-function passesOf(stage: StageName): number {
-  const { [stage]: passes = 1 } = STAGE_PASSES;
-  return passes;
+// How many times a sweep may begin `stage`: once, and implement once more for
+// each continuation from a handoff the config allows.
+function passesOf(stage: StageName, maxContinuations: number): number {
+  if (stage === "implement") {
+    return 1 + maxContinuations;
+  }
+  return 1;
 }
 
 // The run's lane: the one its args name, or else the sweep's id.

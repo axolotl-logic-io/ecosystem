@@ -22,7 +22,12 @@ import {
 const HEAD = "ccccccc";
 const DIFF_PATH = "/runs/issue-7/r1.diff";
 const F1 = openFinding("f1", ["correctness"]);
-const FIXED = { fixed: ["f1"], disputed: [], summary: "Fixed the loop bound." };
+const FIXED = {
+  status: "done",
+  fixed: ["f1"],
+  disputed: [],
+  summary: "Fixed the loop bound.",
+};
 // The push op's reply when the remote rejects git's push, in runFailure's
 // words (src/process.ts).
 const REJECTED_PUSH = opReply({

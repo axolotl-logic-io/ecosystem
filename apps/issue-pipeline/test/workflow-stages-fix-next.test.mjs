@@ -201,6 +201,7 @@ test("a dispute is recorded once, clipped", () => {
   });
   const evidence = "x".repeat(EVIDENCE_LIMIT + 1);
   const fix = {
+    status: "done",
     fixed: [],
     disputed: [
       { id: "f1", evidence },
