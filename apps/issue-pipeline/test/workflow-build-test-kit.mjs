@@ -173,6 +173,7 @@ function specLaunch(task) {
     model: SPEC_MODEL,
     schema: SPEC_SCHEMA,
     minutes: 30,
+    tokenBudget: ROLES.spec,
     task,
   };
 }
@@ -214,6 +215,7 @@ function implementLaunch(task) {
     schema: IMPL_SCHEMA,
     writer: true,
     minutes: 90,
+    tokenBudget: SESSION_CAP,
     task,
   };
 }

@@ -2,7 +2,7 @@
 // the failing checks, the fix is pushed, and the correctness and scope lenses
 // review just its diff before the state is saved for the next round.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { findingLines } from "../findings.ts";
 import { LENSES } from "../lenses.ts";
@@ -105,6 +105,7 @@ function lensLaunch(
   diffPath: string,
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
+  const budget = sessionBudget(budgets, "rereviewer");
   const role = `check-fix reviewer (${lens})`;
   const lines = [
     `Concern: ${LENSES[lens]}`,
@@ -118,9 +119,8 @@ function lensLaunch(
     model: models[lens],
     schema: REVIEW_SCHEMA,
     minutes: REVIEW_MINUTES,
-    task: preamble(cfg, state, role, budgets.roles.rereviewer)
-      .concat(lines)
-      .join("\n"),
+    tokenBudget: budget,
+    task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
   };
 }
 

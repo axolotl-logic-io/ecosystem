@@ -78,14 +78,19 @@ function poolTerms(budgets: Budgets, st: BudgetState, pool: Pool): PoolTerms {
   }
 }
 
+// The token budget of one `role` session: its role's budget, capped by the
+// per-session cap. Its preamble shows it, and the stage job's watchdog stops
+// the session once its context passes it.
+function sessionBudget(budgets: Budgets, role: Role): number {
+  return Math.min(budgets.roles[role], budgets.sessionCap);
+}
+
 function sessionCost(
   budgets: Budgets,
   role: Role,
   count: number | undefined,
 ): number {
-  return (
-    Math.min(budgets.roles[role], budgets.sessionCap) * sessionCount(count)
-  );
+  return sessionBudget(budgets, role) * sessionCount(count);
 }
 
 // Whether `need.cost` more tokens fit `need.pool`, and if not, why.
@@ -155,4 +160,4 @@ function chargeSession(
 }
 
 export type { Budgets, Charge, Pool };
-export { chargeCheck, chargeSession };
+export { chargeCheck, chargeSession, sessionBudget };

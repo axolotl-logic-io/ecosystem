@@ -5,7 +5,7 @@
 // questions. A failed spec session, including one whose spec stops partway, is
 // tried once more within the spec budget (#280).
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import { SPEC_SCHEMA } from "../schemas.ts";
@@ -67,6 +67,7 @@ interface ReadySpec {
 }
 
 function specLaunch(state: StageState, ctx: StageContext): ChildLaunch {
+  const budget = sessionBudget(ctx.budgets, "spec");
   return {
     kind: "child",
     name: "spec",
@@ -76,7 +77,8 @@ function specLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     model: ctx.models.spec,
     schema: SPEC_SCHEMA,
     minutes: SPEC_MINUTES,
-    task: specTask(state, ctx),
+    tokenBudget: budget,
+    task: specTask(state, ctx, budget),
   };
 }
 

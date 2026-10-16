@@ -2,7 +2,7 @@
 // job runs it holds the job's pid, issue, stage, lane, start time and steer
 // socket, and a record of every launch it started: its pid, session file,
 // last event, consecutive failures of one tool and the last one's error,
-// token usage and outcome. On exit it
+// token usage, token budget, context size and outcome. On exit it
 // holds the job's outcome, and the uncommitted paths its checkout dropped
 // (lostChanges). Each change rewrites the whole file atomically, so
 // a reader never sees part of one; a write that fails is reported on stderr
@@ -13,7 +13,13 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { ToolFailure, Usage } from "./raw-results.ts";
-import { addUsage, recordFacts, USAGE, ZERO_USAGE } from "./raw-results.ts";
+import {
+  addUsage,
+  recordFacts,
+  USAGE,
+  usageTotal,
+  ZERO_USAGE,
+} from "./raw-results.ts";
 
 const STATUS_FILE = "job.json";
 const SIGNAL = z.enum(["SIGTERM", "SIGINT"]);
@@ -33,6 +39,11 @@ const LAUNCH = z.object({
     .nullable()
     .default(null),
   usage: USAGE,
+  // A session's token budget; null for an ops launch.
+  tokenBudget: z.number().nullable().default(null),
+  // The token total of the latest message that reported usage: the session's
+  // live context size, 0 before the first one.
+  contextTokens: z.number().default(0),
   resumed: z.boolean(),
   outcome: LAUNCH_OUTCOME.nullable(),
 });
@@ -70,7 +81,8 @@ interface JobInfo {
 }
 
 // A launch as it starts: a pi session with its file, or an ops child, and
-// the usage it starts from (a resumed session's earlier usage).
+// the usage it starts from (a resumed session's earlier usage), and its token
+// budget (null for an ops child).
 interface LaunchStart {
   key: string;
   kind: "session" | "ops";
@@ -78,6 +90,7 @@ interface LaunchStart {
   session: string | null;
   resumed: boolean;
   usage: Usage;
+  tokenBudget: number | null;
 }
 
 // Where an interrupted session can carry on: its file and what it spent.
@@ -158,16 +171,20 @@ function failuresAfter(
 
 function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
   const { usage, toolEnd } = recordFacts(record);
-  let { toolFailures, lastToolFailure } = launch;
+  let { toolFailures, lastToolFailure, contextTokens } = launch;
   if (toolEnd !== null) {
     toolFailures = failuresAfter(launch, toolEnd.failure);
     lastToolFailure = toolEnd.failure;
+  }
+  if (usage !== null) {
+    contextTokens = usageTotal(usage);
   }
   return {
     ...launch,
     lastEventAt: new Date().toISOString(),
     toolFailures,
     lastToolFailure,
+    contextTokens,
     usage: addUsage(launch.usage, usage ?? ZERO_USAGE),
   };
 }
@@ -206,6 +223,7 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
         lastEventAt: null,
         toolFailures: 0,
         lastToolFailure: null,
+        contextTokens: 0,
       };
       status.launches.push({ ...launch, ...fields, outcome: null });
       writeStatus(file, status);

@@ -2,14 +2,20 @@
 // The orchestrator's escalations (#235): an open issue with a stop the
 // watchdog's rules didn't expect, an acceptance fail or agent:needs-info is
 // written to runs/<slug>/escalations.jsonl and logged, once while it carries
-// the label; the job stop the rules end in is not escalated, and a budget
-// stop, which no rule settles, is.
+// the label; the job stop the rules end in and the watchdog's own budget
+// stop (#281) are not escalated, and any other budget stop, which no rule
+// settles, is.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { z } from "zod";
 import { loggedFor, tickOver } from "./orchestrator-watchdog-test-kit.mjs";
-import { runFile } from "./orchestrator-world-test-kit.mjs";
+import {
+  deadPid,
+  OTHERS_PID,
+  runFile,
+  writeJob,
+} from "./orchestrator-world-test-kit.mjs";
 
 const ISSUE = {
   acceptance: 80,
@@ -18,6 +24,7 @@ const ISSUE = {
   job: 83,
   budget: 84,
   again: 85,
+  watchdogBudget: 86,
 };
 const ESCALATION = z.object({
   at: z.string(),
@@ -95,4 +102,32 @@ test("a label that is removed and comes back is escalated again", () => {
     "needs-info agent:needs-info",
     "needs-info agent:needs-info",
   ]);
+});
+
+test("the budget stop the watchdog made for the issue's current job is not escalated (#281)", () => {
+  const job = { issue: ISSUE.watchdogBudget, stage: "review", pid: OTHERS_PID };
+  const facts = { tokenBudget: 1000, contextTokens: 1001 };
+  writeJob({ ...job, ...facts });
+  const open = [{ number: ISSUE.watchdogBudget, state: { stage: "review" } }];
+  tickOver(open);
+  writeJob({
+    ...job,
+    ...facts,
+    pid: deadPid(),
+    outcome: { kind: "stopped", signal: "SIGTERM" },
+  });
+  tickOver(open, 1);
+  const labelled = [
+    {
+      number: ISSUE.watchdogBudget,
+      labels: ["agent:stopped-budget"],
+      state: STOPPED,
+    },
+  ];
+  tickOver(labelled, 2);
+  assert.deepEqual(reasonsOf(ISSUE.watchdogBudget), []);
+  assert.deepEqual(
+    loggedFor(ISSUE.watchdogBudget).map(({ action }) => action),
+    ["killed", "stopped"],
+  );
 });

@@ -166,6 +166,7 @@ async function runSession(
         session,
         resumed,
         usage,
+        tokenBudget: spec.tokenBudget,
       };
       hooks.started(start, { key, ...rpc });
     },
@@ -198,6 +199,7 @@ async function runLaunch(
         session: null,
         resumed: false,
         usage: ZERO_USAGE,
+        tokenBudget: null,
       };
       hooks.started(start, null);
     },

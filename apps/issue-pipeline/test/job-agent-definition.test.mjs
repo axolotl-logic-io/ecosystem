@@ -69,6 +69,7 @@ function specFor(agent) {
     task: "Write the spec.",
     outputSchema: { type: "object" },
     timeoutMs: 60_000,
+    tokenBudget: 80_000,
     intercomBridge: { mode: "off" },
   };
 }

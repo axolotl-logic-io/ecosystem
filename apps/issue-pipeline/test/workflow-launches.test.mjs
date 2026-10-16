@@ -22,6 +22,7 @@ const SAVE = {
   op: "save-state",
   payload: { number: 7, state: { stage: "spec" } },
 };
+const TOKEN_BUDGET = 50_000;
 /** @type {ChildLaunch} */
 const CHILD = {
   kind: "child",
@@ -31,6 +32,7 @@ const CHILD = {
   model: "anthropic/claude-opus-5-5",
   schema: { type: "object" },
   minutes: 0,
+  tokenBudget: TOKEN_BUDGET,
   task: "Triage.",
 };
 const SEQ = 4;
@@ -132,6 +134,7 @@ test("a session runs in the worktree with the bridge off, keyed by its issue", (
     cwd: "/w/work/o__r/issue-7",
     task: "Triage.",
     outputSchema: { type: "object" },
+    tokenBudget: TOKEN_BUDGET,
     intercomBridge: { mode: "off" },
   });
   assert.deepEqual(meta, {

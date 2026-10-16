@@ -61,6 +61,8 @@ interface ChildSpec {
   task: string;
   outputSchema: JsonSchema;
   timeoutMs: number;
+  // The session's token budget; the stage job records it in job.json.
+  tokenBudget: number;
   intercomBridge: { mode: "off" };
   acceptance?: WriterAcceptance;
 }
@@ -151,6 +153,7 @@ function childSpec(
     task: launch.task,
     outputSchema: launch.schema,
     timeoutMs: timeoutOf(launch.minutes, CHILD_MINUTES),
+    tokenBudget: launch.tokenBudget,
     // pi-subagents gives every child contact_supervisor unless the bridge is
     // off. No one answers an unattended sweep, so a question would hang.
     intercomBridge: { mode: "off" },

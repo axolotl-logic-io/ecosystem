@@ -2,7 +2,7 @@
 // to spec and gets its draft PR; one that needs answers gets its questions; a
 // large one is split into sub-issues; anything else is rejected with a stop.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import { preamble } from "../prompts.ts";
@@ -67,6 +67,7 @@ function splitLine(depth: number): string {
 
 function triageLaunch(state: StageState, ctx: StageContext): ChildLaunch {
   const { cfg, budgets, models } = ctx;
+  const budget = sessionBudget(budgets, "triage");
   const lines = [
     "Read the issue and as much of the code as you need to decide one of:",
     `- ready: one implementer session (at most ${budgets.sessionCap} tokens of context) can implement and test it. Write \`plan\`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.`,
@@ -83,9 +84,8 @@ function triageLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     model: models.triage,
     schema: TRIAGE_SCHEMA,
     minutes: TRIAGE_MINUTES,
-    task: preamble(cfg, state, "triage", budgets.roles.triage)
-      .concat(lines)
-      .join("\n"),
+    tokenBudget: budget,
+    task: preamble(cfg, state, "triage", budget).concat(lines).join("\n"),
   };
 }
 

@@ -3,7 +3,7 @@
 // to config maxContinuations; the sweep begins the stage again for each. A
 // done issue moves to open-pr.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import {
@@ -92,7 +92,11 @@ function wikiStep(wiki: string | null): string {
   return `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${wiki} add -A && git -C ${wiki} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`;
 }
 
-function implementTask(state: StageState, ctx: StageContext): string {
+function implementTask(
+  state: StageState,
+  ctx: StageContext,
+  budget: number,
+): string {
   const { cfg, budgets } = ctx;
   const lines = [
     practicesNote(cfg, state, "writer"),
@@ -114,12 +118,11 @@ function implementTask(state: StageState, ctx: StageContext): string {
     "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
     "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
   ];
-  return preamble(cfg, state, ROLE, budgets.sessionCap)
-    .concat(lines)
-    .join("\n");
+  return preamble(cfg, state, ROLE, budget).concat(lines).join("\n");
 }
 
 function implementLaunch(state: StageState, ctx: StageContext): ChildLaunch {
+  const budget = sessionBudget(ctx.budgets, "implementer");
   return {
     kind: "child",
     name: "implement",
@@ -130,7 +133,8 @@ function implementLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     schema: IMPL_SCHEMA,
     writer: true,
     minutes: IMPLEMENT_MINUTES,
-    task: implementTask(state, ctx),
+    tokenBudget: budget,
+    task: implementTask(state, ctx, budget),
   };
 }
 

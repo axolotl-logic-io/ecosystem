@@ -275,3 +275,25 @@ describe("a review that stops", () => {
     });
   });
 });
+
+test("a reviewer whose role budget is above the session cap gets the cap as its launch's token budget and in its preamble (#281)", () => {
+  const cap = CTX.budgets.sessionCap;
+  const roles = { ...CTX.budgets.roles, reviewer: cap * 2 };
+  const ctx = { ...CTX, budgets: { ...CTX.budgets, roles } };
+  const begun = next(stateWith("review"), ctx, []);
+  const step = next(begun.state, ctx, [opReply(PREPARED)]);
+  if (step.done) {
+    throw new Error("the review ended instead of launching its lenses");
+  }
+  const budgets = step.launches.map((launch) => {
+    if (launch.kind !== "child") {
+      throw new Error(`expected a session, got ops request ${launch.op}`);
+    }
+    const shown = launch.task.includes(`well under ${cap} tokens`);
+    return [launch.tokenBudget, shown];
+  });
+  assert.deepEqual(
+    budgets,
+    LENS_NAMES.map(() => [cap, true]),
+  );
+});

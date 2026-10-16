@@ -2,7 +2,7 @@
 // (and its spec) asks. A pass moves the issue to the security review; a fail
 // becomes a blocking finding in the acceptance lens and sends the issue to fix.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding } from "../findings.ts";
 import { preamble, specText } from "../prompts.ts";
@@ -68,6 +68,7 @@ function acceptLaunch(
   diffPath: string,
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
+  const budget = sessionBudget(budgets, "verifier");
   const spec = specText(state.st);
   const lines = [
     `Decide whether the change, as a whole, does what the issue asks. Tests, lint, and CI already pass (${state.st.verifySummary ?? ""}); do not re-run them.`,
@@ -83,7 +84,8 @@ function acceptLaunch(
     model: models.verifier,
     schema: ACCEPT_SCHEMA,
     minutes: ACCEPT_MINUTES,
-    task: preamble(cfg, state, "acceptance verifier", budgets.roles.verifier)
+    tokenBudget: budget,
+    task: preamble(cfg, state, "acceptance verifier", budget)
       .concat(lines)
       .join("\n"),
   };

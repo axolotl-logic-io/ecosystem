@@ -67,6 +67,8 @@ function jobWith(input, minute = 0) {
         toolFailures: 0,
         lastToolFailure: null,
         usage: { input, output: input, cacheRead: 0, cacheWrite: 0 },
+        tokenBudget: null,
+        contextTokens: 0,
         resumed: false,
         outcome: null,
       },

@@ -56,10 +56,15 @@ function tickOver(issues, minutes = 0, options = {}) {
   return { spawned, steered, terminated };
 }
 
+// What the ticks logged for `issue`; nothing before the first line is logged.
 /** @param {number} issue @returns {z.infer<typeof LOG_LINE>[]} */
 function loggedFor(issue) {
+  const file = runFile("orchestrator.log");
+  if (!fs.existsSync(file)) {
+    return [];
+  }
   return fs
-    .readFileSync(runFile("orchestrator.log"), "utf8")
+    .readFileSync(file, "utf8")
     .split("\n")
     .filter((line) => line !== "")
     .map((line) => LOG_LINE.parse(JSON.parse(line)))

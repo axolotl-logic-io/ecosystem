@@ -77,7 +77,7 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     short: "Stopped: the issue's token budget ran out. See the stop comment.",
     test: /token budget/iu,
     control: "token budget",
-    explain: `The next session would take the issue past its token budget ${settingRef("issueTokenBudget")}, or a re-check or conflict fix after a rebase past the rebase allowance ${settingRef("rebaseTokenBudget")}.`,
+    explain: `The next session would take the issue past its token budget ${settingRef("issueTokenBudget")}, or a re-check or conflict fix after a rebase past the rebase allowance ${settingRef("rebaseTokenBudget")}. Or a session's context went past its role's budget ${settingRef("roleBudgets")}, capped by ${settingRef("sessionTokenCap")}, and the orchestrator's watchdog stopped its job.`,
   },
   {
     code: "fix-loop",

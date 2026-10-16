@@ -19,6 +19,7 @@ import { schedule, startGate } from "./schedule.ts";
 import { LANE, readQueue } from "./snapshot.ts";
 import type { WatchAction } from "./watchdog.ts";
 import { watch } from "./watchdog.ts";
+import { budgetStopped } from "./watchdog-budget.ts";
 import { readWatchMemory, saveWatchMemory } from "./watchdog-memory.ts";
 
 // The config keys only the orchestrator reads; loadConfig applied their
@@ -95,6 +96,26 @@ function startJob(
   ledger.launched({ issue, stage, pid, at });
 }
 
+// The stop code and the comment's reason for a watchdog stop.
+function stopOf(action: WatchAction & { action: "stopped" }): {
+  code: "job" | "budget";
+  reason: string;
+} {
+  switch (action.reason) {
+    case "max-resumes":
+      return {
+        code: "job",
+        reason: `the stage job kept dying: its ${action.stage} job died with no outcome after the most restarts allowed`,
+      };
+    case "budget":
+      return { code: "budget", reason: action.detail };
+    default: {
+      const unknown: never = action;
+      throw new Error(`unknown watchdog stop ${JSON.stringify(unknown)}`);
+    }
+  }
+}
+
 // Carries out one watchdog action, and notes its effect on `issue`: a
 // restarted job is live, a stopped issue is stopped. A held restart does
 // nothing; the tick leaves its issue to a later tick.
@@ -117,11 +138,9 @@ function act(
       return;
     }
     case "stopped": {
-      const reason = `the stage job kept dying: its ${action.stage} job died with no outcome after the most restarts allowed`;
       stop(run.cfg, {
-        code: "job",
+        ...stopOf(action),
         number: action.issue,
-        reason,
         state: { ...issue.state },
       });
       if (issue.row !== undefined) {
@@ -185,11 +204,16 @@ function tick(cfg: Config, deps: TickDeps): Decision[] {
       });
       done.push(action);
     }
-    const flagged = issues.map(({ number, stage }) => ({
-      issue: number,
-      stage,
-      labels: labels.get(number) ?? [],
-    }));
+    const flagged = issues.map(({ number, stage }) => {
+      const job = watched.find((w) => w.issue === number);
+      return {
+        issue: number,
+        stage,
+        labels: labels.get(number) ?? [],
+        budgetStopped:
+          job !== undefined && budgetStopped(watchdog.memory, job.status),
+      };
+    });
     const raised = escalate(flagged, watchdog.memory.escalated, now);
     logEscalations(cfg, raised.escalations);
     // Kept only once every action is done, so a failed one is tried again.

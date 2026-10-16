@@ -24,8 +24,12 @@ function wikiStart(state: StageState): string {
 }
 
 // The spec writer's whole task.
-function specTask(state: StageState, ctx: StageContext): string {
-  const { cfg, budgets } = ctx;
+function specTask(
+  state: StageState,
+  ctx: StageContext,
+  budget: number,
+): string {
+  const { cfg } = ctx;
   const lines = [
     `Triage found this issue ready. Its notes:\n${planText(state.st.plan)}`,
     "",
@@ -43,9 +47,7 @@ function specTask(state: StageState, ctx: StageContext): string {
     "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
     `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
   ];
-  return preamble(cfg, state, ROLE, budgets.roles.spec)
-    .concat(lines)
-    .join("\n");
+  return preamble(cfg, state, ROLE, budget).concat(lines).join("\n");
 }
 
 export { ROLE, specTask };

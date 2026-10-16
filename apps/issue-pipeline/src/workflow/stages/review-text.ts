@@ -2,6 +2,7 @@
 // aggregator, the fixer and the re-reviewers, and the comments the review and
 // fix rounds post on the PR.
 
+import { sessionBudget } from "../budget.ts";
 import { findingLines, findingsText } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
@@ -61,7 +62,7 @@ function lensTask(
 ): string {
   const { cfg, budgets } = ctx;
   const role = `reviewer (${lens})`;
-  return preamble(cfg, state, role, budgets.roles.reviewer)
+  return preamble(cfg, state, role, sessionBudget(budgets, "reviewer"))
     .concat([
       `Review only this concern: ${LENSES[lens]}`,
       practicesNote(cfg, state, "reviewer"),
@@ -104,7 +105,12 @@ function aggregateTask(
   raw: readonly RawFinding[],
 ): string {
   const { cfg, budgets } = ctx;
-  return preamble(cfg, state, "review aggregator", budgets.roles.aggregator)
+  return preamble(
+    cfg,
+    state,
+    "review aggregator",
+    sessionBudget(budgets, "aggregator"),
+  )
     .concat([
       "Three reviewers reported these blocking findings. Merge duplicates (same defect at the same place) into one entry listing every lens that raised it. Keep every distinct finding; do not drop or downgrade any. Do not edit files.",
       "",
@@ -148,7 +154,7 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
   if (job.continuation) {
     lead.push(handoffLead(handoffFile));
   }
-  return preamble(cfg, state, role, budgets.roles.fixer)
+  return preamble(cfg, state, role, sessionBudget(budgets, "fixer"))
     .concat([
       ...lead,
       practicesNote(cfg, state, "writer"),
@@ -205,7 +211,7 @@ function rereviewTask(
 ): string {
   const { cfg, budgets } = ctx;
   const role = `re-reviewer (${lens})`;
-  return preamble(cfg, state, role, budgets.roles.rereviewer)
+  return preamble(cfg, state, role, sessionBudget(budgets, "rereviewer"))
     .concat([
       `Concern: ${LENSES[lens]}`,
       ...specSection(state, SPEC_RULE_REVIEW),

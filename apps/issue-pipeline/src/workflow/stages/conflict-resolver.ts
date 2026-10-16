@@ -4,7 +4,7 @@
 // to config maxContinuations (#269). The rebase stays in progress between
 // them, and a continuation is not a conflict-fix attempt.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { handoffLead, handoffRule, preamble } from "../prompts.ts";
 import { CIFIX_SCHEMA } from "../schemas.ts";
 import type { IssueState } from "../types.ts";
@@ -53,6 +53,7 @@ function resolverLaunch(
   continuation: boolean,
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
+  const budget = sessionBudget(budgets, "fixer");
   const { handoffFile } = state.paths;
   const attempt = state.st.conflictFixes ?? 0;
   const role = `conflict resolver, attempt ${attempt} of ${maxConflictFixes(ctx)}`;
@@ -76,9 +77,8 @@ function resolverLaunch(
     schema: CIFIX_SCHEMA,
     writer: true,
     minutes: RESOLVER_MINUTES,
-    task: preamble(cfg, state, role, budgets.roles.fixer)
-      .concat(lines)
-      .join("\n"),
+    tokenBudget: budget,
+    task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
   };
 }
 

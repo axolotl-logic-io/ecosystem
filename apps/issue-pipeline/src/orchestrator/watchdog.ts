@@ -7,12 +7,16 @@
 // silent for silentMinutes is steered once, and its job stopped (SIGTERM)
 // when it stays silent as long again. A session whose calls of one tool
 // failed failureStreak times in a row is steered once per streak with the
-// last error, quoted as data. It is a pure function of the jobs, its memory,
+// last error, quoted as data. A job whose session's context went past its
+// token budget is stopped (watchdog-budget.ts). It is a pure function of the
+// jobs, its memory,
 // the clock and the gate; the tick carries out its actions and keeps the
 // memory (watchdog-memory.ts).
 
 import type { StatusFile } from "../job/status.ts";
 import type { StartGate } from "./schedule.ts";
+import { budgetActions } from "./watchdog-budget.ts";
+import type { WatchMemory } from "./watchdog-memory.ts";
 
 const MS_PER_MINUTE = 60_000;
 const SILENT_STEER = "You have been silent; report status and carry on.";
@@ -37,21 +41,6 @@ interface WatchSettings {
   failureStreak: number;
 }
 
-// What the watchdog remembers between ticks.
-interface WatchMemory {
-  // Restarts so far, by `<issue> <stage>`.
-  resumes: Record<string, number>;
-  // When each silent session was steered, by `<job startedAt> <launch key>`.
-  steers: Record<string, string>;
-  // The jobs it sent SIGTERM for silence, as `<issue> <job startedAt>`.
-  killed: string[];
-  // The failure count each streak was steered at, by `<job startedAt>
-  // <launch key>`.
-  failureSteers: Record<string, number>;
-  // What is escalated (escalate.ts), as `<issue> <label>`.
-  escalated: string[];
-}
-
 interface ActionBase {
   at: string;
   issue: number;
@@ -62,6 +51,8 @@ type WatchAction =
   | (ActionBase & { action: "resumed"; reason: "dead" })
   | (ActionBase & { action: "held"; reason: string })
   | (ActionBase & { action: "stopped"; reason: "max-resumes" })
+  // `detail` is the stop comment's reason.
+  | (ActionBase & { action: "stopped"; reason: "budget"; detail: string })
   | (ActionBase & {
       action: "steered";
       reason: `silent:${string}` | `failures:${string}`;
@@ -71,7 +62,7 @@ type WatchAction =
     })
   | (ActionBase & {
       action: "killed";
-      reason: `silent:${string}`;
+      reason: `silent:${string}` | `budget:${string}`;
       pid: number;
     });
 
@@ -237,15 +228,15 @@ function actionsFor(job: WatchedJob, memory: Working, at: Date): WatchAction[] {
   if (job.stopped) {
     return [];
   }
+  const killed = memory.killed.includes(jobId(job.status));
+  const budget = budgetActions(job, memory, at.toISOString());
+  if (budget !== null) {
+    return budget;
+  }
   if (isDead(job, memory.killed)) {
     return [revive(job, memory, at.toISOString())];
   }
-  const { outcome } = job.status;
-  if (
-    !job.running ||
-    outcome !== null ||
-    memory.killed.includes(jobId(job.status))
-  ) {
+  if (!job.running || job.status.outcome !== null || killed) {
     return [];
   }
   return silenceActions(job, memory, at);
@@ -272,6 +263,9 @@ function pruned(memory: WatchMemory, jobs: readonly WatchedJob[]): WatchMemory {
     steers: ofJobs(memory.steers, starts),
     killed: memory.killed.filter((id) => current.has(id)),
     failureSteers: ofJobs(memory.failureSteers, starts),
+    overBudget: Object.fromEntries(
+      Object.entries(memory.overBudget).filter(([id]) => current.has(id)),
+    ),
     escalated: [...memory.escalated],
   };
 }
@@ -285,12 +279,13 @@ function watch(
   const { now, ...rest } = run;
   const working: Working = { ...pruned(memory, jobs), ...rest };
   const actions = jobs.flatMap((job) => actionsFor(job, working, now));
-  const { resumes, steers, killed, failureSteers, escalated } = working;
+  const { resumes, steers, killed, failureSteers, overBudget, escalated } =
+    working;
   return {
     actions,
-    memory: { resumes, steers, killed, failureSteers, escalated },
+    memory: { resumes, steers, killed, failureSteers, overBudget, escalated },
   };
 }
 
-export type { WatchAction, WatchedJob, WatchMemory, WatchSettings };
+export type { WatchAction, WatchedJob, WatchSettings };
 export { watch };

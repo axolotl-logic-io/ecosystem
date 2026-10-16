@@ -3,7 +3,7 @@
 // when a fixer runs out of room and hands off, up to config maxContinuations
 // (#269). A continuation is not a CI-fix attempt.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import {
   handoffLead,
   handoffRule,
@@ -56,6 +56,7 @@ function fixerLaunch(
   job: FixerJob,
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
+  const budget = sessionBudget(budgets, "ciFixer");
   const attempt = attemptOf(state);
   const role = `check fixer, attempt ${attempt} of ${cfg.maxCiFixes}`;
   const { handoffFile } = state.paths;
@@ -80,9 +81,8 @@ function fixerLaunch(
     schema: CIFIX_SCHEMA,
     writer: true,
     minutes: FIXER_MINUTES,
-    task: preamble(cfg, state, role, budgets.roles.ciFixer)
-      .concat(lines)
-      .join("\n"),
+    tokenBudget: budget,
+    task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
   };
 }
 

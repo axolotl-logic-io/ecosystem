@@ -21,6 +21,7 @@ const SPEC_LAUNCH = {
   model: "anthropic/claude-opus-5-5",
   schema: { type: "object" },
   minutes: 30,
+  tokenBudget: 80_000,
   task: "Write the spec.",
 };
 

@@ -32,8 +32,7 @@ type StageName =
   | "merge"
   | "publish";
 
-// The issue as a stage sees it. `phase` is the stage's own position, "begin"
-// on its first call.
+// The issue as a stage sees it. `phase` is its own position, "begin" at first.
 interface StageState {
   n: number;
   paths: ItemPaths;
@@ -54,8 +53,8 @@ interface StageState {
   carry: unknown;
 }
 
-// A model session. The sweep keys it "i<n>-<name>-<seq>", and signs its
-// result with `role`, or with `name` when there is no role.
+// A model session. The sweep keys it "i<n>-<name>-<seq>" and signs its result
+// with `role`, or `name` with no role. Its preamble shows `tokenBudget`.
 interface ChildLaunch {
   kind: "child";
   name: string;
@@ -66,6 +65,7 @@ interface ChildLaunch {
   schema: JsonSchema;
   minutes: number;
   task: string;
+  tokenBudget: number;
   // A session that changes the code, which the sweep's own checks verify.
   writer?: true;
 }

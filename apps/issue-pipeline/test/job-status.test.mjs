@@ -16,11 +16,15 @@ import {
   startJob,
   statusOf,
   USAGE,
+  USAGE_TOTAL,
   waitFor,
 } from "./job-test-kit.mjs";
 import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
 const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
+const SPEC_BUDGET = 80_000;
+const FIRST_CONTEXT = 50_000;
+const LAST_CONTEXT = 51_000;
 
 test("while a session waits, job.json shows its pid, session, last event and tool failures", async () => {
   const place = setUp(repliesAt("spec"), {
@@ -89,6 +93,9 @@ test("a finished job's file counts only the last tool failures and records each 
   assert.equal(launch.toolFailures, 1);
   assert.equal(launch.outcome, "ok");
   assert.deepEqual(launch.usage, USAGE);
+  // The spec writer's default budget, under the fixtures' session cap (#281).
+  assert.equal(launch.tokenBudget, SPEC_BUDGET);
+  assert.equal(launch.contextTokens, USAGE_TOTAL);
   const ops = status.launches.filter(
     (/** @type {{ kind: string }} */ { kind }) => kind === "ops",
   );
@@ -96,6 +103,7 @@ test("a finished job's file counts only the last tool failures and records each 
   for (const op of ops) {
     assert.equal(op.session, null);
     assert.equal(op.outcome, "ok");
+    assert.equal(op.tokenBudget, null);
   }
   assert.deepEqual(fs.readdirSync(place.runDir).sort(), [
     "job.json",
@@ -116,4 +124,70 @@ test("job.json's lostChanges round-trips through its schema", async () => {
   assert.equal(socketOf(runDir), "/s");
   fs.writeFileSync(file, JSON.stringify({ ...written, lostChanges: "a.txt" }));
   assert.equal(socketOf(runDir), null);
+});
+
+/** @param {number} input @returns {{ input: number, output: number, cacheRead: number, cacheWrite: number }} */
+function usageOf(input) {
+  return { input, output: 0, cacheRead: 0, cacheWrite: 0 };
+}
+
+test("a launch records its token budget, and its context is the latest message's total, not the sum (#281)", async () => {
+  const { openStatus, readStatus } = await import("../src/job/status.ts");
+  const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
+  process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
+  const job = { issue: ISSUE, stage: "review", lane: null, socket: "/s" };
+  const status = openStatus(runDir, job);
+  const start = { pid: 1, session: "/s.jsonl", resumed: false };
+  const key = "i1-review-1";
+  const zero = usageOf(0);
+  status.started({
+    ...start,
+    key,
+    kind: "session",
+    usage: zero,
+    tokenBudget: SPEC_BUDGET,
+  });
+  assert.equal(readStatus(runDir)?.launches[0]?.contextTokens, 0);
+  // Each turn re-reads the context, so the sum passes the budget long before
+  // the context does.
+  status.record(key, messageEnd(usageOf(FIRST_CONTEXT)));
+  status.record(key, toolEnd(false, "read"));
+  status.record(key, messageEnd(usageOf(LAST_CONTEXT)));
+  const launch = readStatus(runDir)?.launches[0];
+  assert.equal(launch?.tokenBudget, SPEC_BUDGET);
+  assert.equal(launch?.contextTokens, LAST_CONTEXT);
+  assert.equal(launch?.usage.input, FIRST_CONTEXT + LAST_CONTEXT);
+});
+
+test("an older job.json without a token budget or context size still parses, as null and 0 (#281)", async () => {
+  const { readStatus } = await import("../src/job/status.ts");
+  const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
+  process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
+  const launch = {
+    key: "i1-spec-1",
+    kind: "session",
+    pid: 1,
+    session: null,
+    startedAt: "2026-10-15T10:00:00.000Z",
+    lastEventAt: null,
+    toolFailures: 0,
+    usage: USAGE,
+    resumed: false,
+    outcome: null,
+  };
+  const old = {
+    version: 1,
+    pid: 1,
+    issue: ISSUE,
+    stage: "spec",
+    lane: null,
+    startedAt: "2026-10-15T10:00:00.000Z",
+    socket: "/s",
+    outcome: null,
+    launches: [launch],
+  };
+  fs.writeFileSync(path.join(runDir, "job.json"), JSON.stringify(old));
+  const parsed = readStatus(runDir)?.launches[0];
+  assert.equal(parsed?.tokenBudget, null);
+  assert.equal(parsed?.contextTokens, 0);
 });
