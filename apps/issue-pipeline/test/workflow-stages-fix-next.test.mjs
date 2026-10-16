@@ -18,6 +18,7 @@ import {
   FIXED,
   fixState,
   HEAD,
+  REJECTED_PUSH,
   round,
   saved,
   verdict,
@@ -256,15 +257,14 @@ test("no lens with open findings means no re-review launch", () => {
 });
 
 test("each failure in the round stops with its reason", () => {
-  const begun = next(fixState(), CTX, []);
+  const { begun, fixed, pushed, prepared } = round(fixState());
   assert.equal(
     next(begun.state, CTX, [failed("fix-r1", "timed out")]).stop?.reason,
     "the fixer session failed",
   );
-  const { fixed, pushed, prepared } = round(fixState());
   const refused = opReply({ ok: false, error: "refused" });
   assert.equal(
-    next(fixed.state, CTX, [refused]).stop?.reason,
+    next(fixed.state, CTX, [REJECTED_PUSH]).stop?.reason,
     "could not push the fix",
   );
   assert.equal(

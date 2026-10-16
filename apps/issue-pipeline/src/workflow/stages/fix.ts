@@ -26,7 +26,9 @@ import {
   launchStep,
   onlyChild,
   onlyReply,
+  phaseOf,
   prComment,
+  pushFailedStep,
   replyError,
   stopStep,
 } from "./step.ts";
@@ -39,11 +41,13 @@ import type {
 } from "./types.ts";
 
 // Where the round is: about to launch the fixer, reading its reply, waiting
-// for the push, the re-review diff, the re-reviewers, or the save.
+// for the push or its one retry, the re-review diff, the re-reviewers, or the
+// save.
 type FixPhase =
   | "begin"
   | "fixed"
   | "pushed"
+  | "repushed"
   | "prepared"
   | "rereviewed"
   | "saved";
@@ -52,6 +56,7 @@ const PHASES: readonly FixPhase[] = [
   "begin",
   "fixed",
   "pushed",
+  "repushed",
   "prepared",
   "rereviewed",
   "saved",
@@ -60,14 +65,6 @@ const PHASES: readonly FixPhase[] = [
 const FIX_MINUTES = 60;
 // The longest dispute evidence a finding keeps.
 const DISPUTE_LIMIT = 600;
-
-function phaseOf(state: StageState): FixPhase {
-  const phase = PHASES.find((entry) => entry === state.phase);
-  if (phase === undefined) {
-    throw new Error(`fix: unknown phase ${state.phase}`);
-  }
-  return phase;
-}
 
 function fixerLaunch(ctx: StageContext, state: StageState): ChildLaunch {
   const round = roundOf(state);
@@ -157,11 +154,12 @@ function prepTag(st: IssueState, round: number): string {
   return `s${securityRounds}-r${round}`;
 }
 
-// Records the pushed head, then prepares the diff since the last review.
+// Records the pushed head, then prepares the diff since the last review. A
+// failed push is retried once unless git's push was rejected.
 function pushed(state: StageState, results: readonly LaunchResult[]): Step {
   const { ok, error, headSha } = onlyReply(results);
   if (ok !== true || typeof headSha !== "string") {
-    return stopStep(state, "could not push the fix", replyError(error));
+    return pushFailedStep(state, "could not push the fix", replyError(error));
   }
   const st = { ...state.st, headSha };
   const payload = {
@@ -190,13 +188,14 @@ function next(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const phase = phaseOf(state);
+  const phase = phaseOf("fix", PHASES, state);
   switch (phase) {
     case "begin":
       return begin(state, ctx);
     case "fixed":
       return fixed(state, ctx, results);
     case "pushed":
+    case "repushed":
       return pushed(state, results);
     case "prepared":
       return launchRereviews(state, ctx, results);

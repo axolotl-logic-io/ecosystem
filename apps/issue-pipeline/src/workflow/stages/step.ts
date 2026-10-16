@@ -14,6 +14,11 @@ import type {
   Step,
 } from "./types.ts";
 
+// A failed `git … push …` command, as runFailure (src/process.ts) words it:
+// the command line, then "exited <code>:" and git's output. A push that timed
+// out reads "timed out after" instead, and doesn't match.
+const GIT_PUSH_FAILED = /^git .* push .* exited \d+:/u;
+
 // A copy of the issue's saved state that a stage may change, findings
 // included, leaving the state it was given as it was.
 function copyState(st: IssueState): IssueState {
@@ -118,6 +123,49 @@ function stopStep(
   return codedStopStep(state, { reason, detail, code: null }, comments);
 }
 
+// The stage's phase, one of `phases`. Anything else is a bug in the sweep.
+function phaseOf<Phase extends string>(
+  stage: string,
+  phases: readonly Phase[],
+  state: StageState,
+): Phase {
+  const phase = phases.find((entry) => entry === state.phase);
+  if (phase === undefined) {
+    throw new Error(`${stage}: unknown phase ${state.phase}`);
+  }
+  return phase;
+}
+
+// Whether a failed push op's `error` says git pushed and the remote rejected
+// it, rather than that the op failed before or around git's push.
+function isPushRejection(error: string | null): boolean {
+  return error !== null && GIT_PUSH_FAILED.test(error);
+}
+
+// The step after the push op failed with `error`. A rejection stops with
+// `rejected` as its reason. Any other failure, such as ops failing to read its
+// request, launches the push once more; a second such failure stops as a step
+// failure (#263).
+function pushFailedStep(
+  state: StageState,
+  rejected: string,
+  error: string | null,
+): Step {
+  if (isPushRejection(error)) {
+    return stopStep(state, rejected, error);
+  }
+  if (state.phase === "repushed") {
+    return codedStopStep(state, {
+      reason: "the push op failed again after a retry",
+      detail: error,
+      code: "error",
+    });
+  }
+  return launchStep({ ...state, phase: "repushed" }, [
+    { kind: "op", name: "push", op: "push", payload: { number: state.n } },
+  ]);
+}
+
 // The result of the session a step launched alone. Anything else is a bug in
 // the sweep's loop.
 function onlyChild(results: readonly LaunchResult[]): ChildResult {
@@ -165,7 +213,9 @@ export {
   launchStep,
   onlyChild,
   onlyReply,
+  phaseOf,
   prComment,
+  pushFailedStep,
   replyError,
   saveStep,
   sessionsOf,

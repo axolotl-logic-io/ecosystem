@@ -16,7 +16,13 @@ import {
   preparedOf,
   pushedOf,
 } from "./checks-reply.ts";
-import { launchStep, onlyChild, onlyReply, stopStep } from "./step.ts";
+import {
+  launchStep,
+  onlyChild,
+  onlyReply,
+  pushFailedStep,
+  stopStep,
+} from "./step.ts";
 import type {
   ChildLaunch,
   ChildResult,
@@ -147,11 +153,12 @@ function fixed(
 }
 
 // Records the pushed head, then prepares the fix's diff for review. A check
-// fix changes code, so acceptance and the security review run again.
+// fix changes code, so acceptance and the security review run again. A failed
+// push is retried once unless git's push was rejected.
 function pushed(state: StageState, results: readonly LaunchResult[]): Step {
   const reply = pushedOf(onlyReply(results));
   if (reply.kind === "failed") {
-    return stopStep(state, "could not push the check fix", reply.error);
+    return pushFailedStep(state, "could not push the check fix", reply.error);
   }
   const st: IssueState = { ...state.st };
   st.headSha = reply.value;

@@ -11,7 +11,7 @@ import type { Check } from "./checks-reply.ts";
 import { ciReplyOf, isRecord, verifyReplyOf } from "./checks-reply.ts";
 import { fixed, prepared, pushed, reviewed, startFix } from "./ci-fix.ts";
 import { opFailedStep } from "./network.ts";
-import { doneStep, launchStep, onlyReply, stopStep } from "./step.ts";
+import { doneStep, launchStep, onlyReply, phaseOf, stopStep } from "./step.ts";
 import type {
   LaunchResult,
   StageComment,
@@ -21,13 +21,15 @@ import type {
 } from "./types.ts";
 
 // Where checks is: about to start, reading verification, reading CI, in a CI
-// fix (ci-fix.ts), or after a CI fix's state was saved.
+// fix (ci-fix.ts, whose push may be retried once), or after a CI fix's state
+// was saved.
 type ChecksPhase =
   | "begin"
   | "verified"
   | "ci"
   | "fixed"
   | "pushed"
+  | "repushed"
   | "prepared"
   | "reviewed"
   | "saved";
@@ -38,6 +40,7 @@ const PHASES: readonly ChecksPhase[] = [
   "ci",
   "fixed",
   "pushed",
+  "repushed",
   "prepared",
   "reviewed",
   "saved",
@@ -49,14 +52,6 @@ const CI_MARGIN_MINUTES = 10;
 const SUMMARY_LIMIT = 1500;
 const SHORT_SHA = 12;
 const LOG_SHA = 8;
-
-function phaseOf(state: StageState): ChecksPhase {
-  const phase = PHASES.find((entry) => entry === state.phase);
-  if (phase === undefined) {
-    throw new Error(`checks: unknown phase ${state.phase}`);
-  }
-  return phase;
-}
 
 // How many rounds checks has started this sweep (what it carries).
 function roundsOf(state: StageState): number {
@@ -271,7 +266,7 @@ function next(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const phase = phaseOf(state);
+  const phase = phaseOf("checks", PHASES, state);
   switch (phase) {
     case "begin":
       return startRound(state, ctx, 1);
@@ -282,6 +277,7 @@ function next(
     case "fixed":
       return fixed(state, ctx, results);
     case "pushed":
+    case "repushed":
       return pushed(state, results);
     case "prepared":
       return prepared(state, ctx, results);
