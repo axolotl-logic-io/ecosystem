@@ -115,14 +115,15 @@ function toolsFlag(tools: readonly string[]): string {
   return [...tools, OUTPUT_TOOL].join(",");
 }
 
-// The `pi` arguments that run `spec` as `definition`, in JSON mode, writing
-// its session to `files.session` and ending on the structured_output tool.
+// The `pi` arguments that run `spec` as `definition` in RPC mode, which
+// takes its prompt as a command on stdin, writing its session to
+// `files.session` and ending on the structured_output tool.
 function piArgs(
   definition: AgentDefinition,
   spec: ChildSpec,
   files: SessionFiles,
 ): string[] {
-  const args = ["--mode", "json", "--model", spec.model];
+  const args = ["--mode", "rpc", "--model", spec.model];
   if (definition.thinking !== null) {
     args.push("--thinking", definition.thinking);
   }

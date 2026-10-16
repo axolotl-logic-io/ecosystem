@@ -152,8 +152,19 @@ function passesOf(stage: StageName): number {
   return passes;
 }
 
+// The run's lane: the one its args name, or else the sweep's id.
+function laneOf(args: { lane?: unknown }, sweepId: string): string {
+  const { lane } = args;
+  const named = Boolean(lane);
+  if (named) {
+    return String(lane);
+  }
+  return sweepId;
+}
+
 export type { SweepSettings };
 export {
+  laneOf,
   onlyOf,
   PASSES_USED,
   passesOf,

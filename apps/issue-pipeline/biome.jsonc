@@ -30,8 +30,10 @@
     // The stage job (#232) is part of it too: its entry src/job.ts reads its
     // arguments and writes its summary, src/job/launch.ts spawns ops.mjs and
     // pi, src/job/agent-definition.ts reads the installed agent files, and the
-    // pi extension src/job/structured-output.ts reads its schema file. The
-    // job's pure modules (raw-results, pool) get no exception.
+    // pi extension src/job/structured-output.ts reads its schema file (#232).
+    // src/job/args.ts reads the job's arguments, src/job/rpc.ts spawns pi in RPC mode, src/job/status.ts writes job.json
+    // and src/job/control.ts keeps the steer socket and the stop signals
+    // (#233). The job's pure modules (raw-results, pool) get no exception.
     {
       "includes": [
         "install.mjs",
@@ -56,7 +58,11 @@
         "src/job.ts",
         "src/job/launch.ts",
         "src/job/agent-definition.ts",
-        "src/job/structured-output.ts"
+        "src/job/structured-output.ts",
+        "src/job/args.ts",
+        "src/job/rpc.ts",
+        "src/job/status.ts",
+        "src/job/control.ts"
       ],
       "linter": {
         "rules": {

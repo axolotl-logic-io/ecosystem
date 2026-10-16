@@ -1,4 +1,4 @@
-// The stage job's raw results: an ops child's exit and a pi session's JSONL
+// The stage job's raw results: an ops child's exit and a pi session's RPC
 // events, mapped to the shapes launch-results.ts reads unchanged.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -122,4 +122,31 @@ test("a session that ends without structured output fails, naming the stderr or 
   const quiet = sessionRaw(LAUNCH, exited(0, stdout));
   assert.equal(quiet.ok, false);
   assert.equal(quiet.error, "no structured output");
+});
+
+test("a session whose prompt pi rejected fails with the response's error", () => {
+  const rejected = {
+    id: "prompt",
+    type: "response",
+    command: "prompt",
+    success: false,
+    error: "Model not found: x/y",
+  };
+  const raw = sessionRaw(LAUNCH, exited(0, jsonl([rejected])));
+  assert.equal(raw.ok, false);
+  assert.equal(raw.error, "Model not found: x/y");
+});
+
+test("a resumed session adds its earlier usage to its new events'", () => {
+  const earlier = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 };
+  const usage = { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 };
+  const stdout = jsonl([assistantEnd(usage), outputEnd({ decision: "ready" })]);
+  const raw = sessionRaw(LAUNCH, exited(0, stdout), earlier);
+  assert.equal(raw.ok, true);
+  assert.deepEqual(raw.results[0].usage, {
+    input: 11,
+    output: 22,
+    cacheRead: 33,
+    cacheWrite: 44,
+  });
 });

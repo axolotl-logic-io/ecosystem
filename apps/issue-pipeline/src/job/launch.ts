@@ -1,7 +1,9 @@
 // One launch of the sweep, run as a child process by the stage job: an ops
 // request runs the installed ops.mjs with no model, and a model session runs
-// `pi` in JSON mode as the launch's installed agent. Either way the launch
-// resolves to the raw result the sweep's driver reads; it never rejects.
+// `pi` in RPC mode (src/job/rpc.ts) as the launch's installed agent, fresh or
+// resuming an interrupted session. Either way the launch resolves to the raw
+// result the sweep's driver reads; it never rejects. The job's hooks hear of
+// each launch's start, its records and its end.
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -10,28 +12,54 @@ import process from "node:process";
 import { ROOT } from "../pipeline-root.ts";
 import type { ChildSpec, LaunchSpec } from "../workflow/launches.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
+import type { LiveLaunch } from "./control.ts";
 import type { OpsRaw, ProcessExit, SessionRaw } from "./raw-results.ts";
-import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
+import {
+  failedSession,
+  opsRaw,
+  sessionRaw,
+  ZERO_USAGE,
+} from "./raw-results.ts";
+import type { RpcProcess } from "./rpc.ts";
+import { runRpc } from "./rpc.ts";
+import type { LaunchStart, ResumePoint } from "./status.ts";
 
 const OPS_CLI = path.join(ROOT, "ops.mjs");
 const OUTPUT_EXTENSION = path.join(ROOT, "structured-output.mjs");
-const PI = "pi";
 const TIME_RADIX = 36;
+// The prompt that carries on an interrupted session.
+const RESUME_PROMPT =
+  "This session was interrupted before it finished. Carry on with your task from where it stopped, and end with the structured_output tool as your task says.";
 
-// A command to run: its program, arguments, folder, stdin and time limit.
-interface Command {
-  program: string;
-  args: readonly string[];
-  cwd: string;
-  input: string;
-  timeoutMs: number;
+// What the stage job hears of its launches.
+interface LaunchHooks {
+  // Where launch `key`'s session JSONL goes when it starts fresh.
+  sessionFile: (key: string) => string;
+  // Where an interrupted session of launch `key` can carry on, if anywhere.
+  resumePoint: (key: string) => ResumePoint | null;
+  // A launch started; `live` is its pi session, or null for an ops child.
+  started: (launch: LaunchStart, live: LiveLaunch | null) => void;
+  // Session `key` printed `record`.
+  record: (key: string, record: unknown) => void;
+  // Launch `key`'s process ended.
+  ended: (key: string) => void;
 }
 
-// Runs the command, writing its input to stdin, and stops it with SIGTERM
-// once its time is up. A command that can't start ends with code null and
-// the reason on stderr.
+// An ops command to run: its arguments, stdin and time limit, and the hook
+// told its pid once it starts.
+interface Command {
+  args: readonly string[];
+  input: string;
+  timeoutMs: number;
+  started: (pid: number | null) => void;
+}
+
+// Runs ops.mjs, writing its input to stdin, and stops it with SIGTERM once
+// its time is up. A command that can't start ends with code null and the
+// reason on stderr.
 function runCommand(command: Command): Promise<ProcessExit> {
-  const { program, args, cwd, input, timeoutMs } = command;
+  const { args, input, timeoutMs } = command;
+  const program = process.execPath;
   return new Promise((resolve: (exit: ProcessExit) => void): void => {
     const exit: ProcessExit = {
       code: null,
@@ -39,7 +67,8 @@ function runCommand(command: Command): Promise<ProcessExit> {
       stderr: "",
       timedOut: false,
     };
-    const child = spawn(program, args, { cwd, stdio: "pipe" });
+    const child = spawn(program, args, { stdio: "pipe", detached: true });
+    command.started(child.pid ?? null);
     const timer = setTimeout((): void => {
       exit.timedOut = true;
       child.kill("SIGTERM");
@@ -66,11 +95,15 @@ function runCommand(command: Command): Promise<ProcessExit> {
 }
 
 // Readies the launch's files: creates the sessions folder, moves an earlier
-// job's session at the same path aside to `<key>.<time>.jsonl` (pi would
-// otherwise resume it, since launch keys repeat from job to job), and writes
-// the output schema beside it. Returns the schema file, or null if any of
-// that fails.
-function prepareFiles(spec: ChildSpec, sessionFile: string): string | null {
+// job's session at the same path aside to `<key>.<time>.jsonl` unless it is
+// being resumed (pi would otherwise resume it, since launch keys repeat from
+// job to job), and writes the output schema beside it. Returns the schema
+// file, or null if any of that fails.
+function prepareFiles(
+  spec: ChildSpec,
+  sessionFile: string,
+  resuming: boolean,
+): string | null {
   const dir = path.dirname(sessionFile);
   const schema = path.join(dir, `${spec.key}.schema.json`);
   const aside = path.join(
@@ -79,7 +112,7 @@ function prepareFiles(spec: ChildSpec, sessionFile: string): string | null {
   );
   try {
     fs.mkdirSync(dir, { recursive: true });
-    if (fs.existsSync(sessionFile)) {
+    if (!resuming && fs.existsSync(sessionFile)) {
       fs.renameSync(sessionFile, aside);
     }
     fs.writeFileSync(schema, JSON.stringify(spec.outputSchema));
@@ -91,47 +124,82 @@ function prepareFiles(spec: ChildSpec, sessionFile: string): string | null {
 
 async function runSession(
   spec: ChildSpec,
-  sessionFile: string,
+  hooks: LaunchHooks,
 ): Promise<SessionRaw> {
   const read = readDefinition(spec.agent);
   if (read.kind === "missing") {
     return failedSession(spec, read.error);
   }
-  const schema = prepareFiles(spec, sessionFile);
+  const resume = hooks.resumePoint(spec.key);
+  const session = resume?.session ?? hooks.sessionFile(spec.key);
+  const schema = prepareFiles(spec, session, resume !== null);
   if (schema === null) {
     return failedSession(
       spec,
       `agent ${spec.agent}: cannot prepare its session and schema files`,
     );
   }
-  const files = { session: sessionFile, extension: OUTPUT_EXTENSION, schema };
-  const exit = await runCommand({
-    program: PI,
+  const files = { session, extension: OUTPUT_EXTENSION, schema };
+  const { key } = spec;
+  const usage = resume?.usage ?? ZERO_USAGE;
+  let prompt = spec.task;
+  if (resume !== null) {
+    prompt = RESUME_PROMPT;
+  }
+  const exit = await runRpc({
     args: piArgs(read.definition, spec, files),
     cwd: spec.cwd,
-    input: spec.task,
+    prompt,
     timeoutMs: spec.timeoutMs,
+    onSpawn: (rpc: RpcProcess): void => {
+      const { pid } = rpc;
+      const resumed = resume !== null;
+      const start: LaunchStart = {
+        key,
+        kind: "session",
+        pid,
+        session,
+        resumed,
+        usage,
+      };
+      hooks.started(start, { key, ...rpc });
+    },
+    onRecord: (record: unknown): void => hooks.record(key, record),
   });
-  return sessionRaw(spec, exit);
+  hooks.ended(key);
+  return sessionRaw(spec, exit, usage);
 }
 
-// Runs `spec` and resolves to its raw result. A model session's JSONL goes
-// to `sessionFile(spec.key)`, always in a fresh session.
+// Runs `spec` and resolves to its raw result, telling `hooks` of it. A model
+// session resumes where `hooks.resumePoint` says, and otherwise starts fresh
+// with its JSONL at `hooks.sessionFile(spec.key)`.
 async function runLaunch(
   spec: LaunchSpec,
-  sessionFile: (key: string) => string,
+  hooks: LaunchHooks,
 ): Promise<OpsRaw | SessionRaw> {
   if ("model" in spec) {
-    return await runSession(spec, sessionFile(spec.key));
+    return await runSession(spec, hooks);
   }
+  const { key } = spec;
   const exit = await runCommand({
-    program: process.execPath,
     args: [OPS_CLI],
-    cwd: process.cwd(),
     input: spec.task,
     timeoutMs: spec.timeoutMs,
+    started: (pid: number | null): void => {
+      const start: LaunchStart = {
+        key,
+        kind: "ops",
+        pid,
+        session: null,
+        resumed: false,
+        usage: ZERO_USAGE,
+      };
+      hooks.started(start, null);
+    },
   });
+  hooks.ended(key);
   return opsRaw(exit);
 }
 
+export type { LaunchHooks };
 export { runLaunch };

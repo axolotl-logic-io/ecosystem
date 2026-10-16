@@ -162,6 +162,22 @@ function finishLaunches(
   return launches;
 }
 
+// The save of an open issue at its stage, with no lease, so the next job
+// for that stage continues it, when a stop interrupts the sweep; or null
+// when there is no open issue to save.
+function interruptLaunch(item: ClosingItem | null): OpLaunch | null {
+  if (item === null || item.openState === null) {
+    return null;
+  }
+  const { n } = item;
+  return {
+    kind: "op",
+    name: `i${n}-interrupt`,
+    op: "save-state",
+    payload: { number: n, state: { ...item.openState, lease: null } },
+  };
+}
+
 // The sweep's issue as its summary reports it.
 interface SummarySource {
   n: number;
@@ -225,6 +241,7 @@ export {
   claimLaunch,
   claimStep,
   finishLaunches,
+  interruptLaunch,
   sweepLaunch,
   sweepReplyOf,
 };

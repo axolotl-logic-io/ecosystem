@@ -1,7 +1,7 @@
 // The raw results a stage job hands the sweep's driver, in the shape that
 // launch-results.ts parses: an ops child's exit as `{ ok, output, error }`, and
-// a pi session's JSONL events as its structured output, error and summed
-// token usage.
+// a pi session's RPC records as its structured output, error and summed
+// token usage. It alone knows the shape of the records it reads.
 
 import { z } from "zod";
 
@@ -42,6 +42,11 @@ interface SessionRaw {
   results: [{ usage: Usage }];
 }
 
+interface RecordFacts {
+  usage: Usage | null;
+  toolFailed: boolean | null;
+}
+
 // The launch a session ran for.
 interface SessionLaunch {
   key: string;
@@ -69,7 +74,19 @@ const OUTPUT_END = z.object({
   isError: z.literal(false).optional(),
   result: z.object({ details: z.record(z.string(), z.unknown()) }),
 });
-const EVENT = z.union([MESSAGE_END, OUTPUT_END]);
+// pi's answer to the prompt command when it refused the prompt.
+const PROMPT_REJECTED = z.object({
+  type: z.literal("response"),
+  command: z.literal("prompt"),
+  success: z.literal(false),
+  error: z.string().catch("pi rejected the prompt"),
+});
+const EVENT = z.union([MESSAGE_END, OUTPUT_END, PROMPT_REJECTED]);
+const TOOL_END = z.object({
+  type: z.literal("tool_execution_end"),
+  isError: z.boolean(),
+});
+const ZERO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 type SessionEvent = z.infer<typeof EVENT>;
 
@@ -112,27 +129,50 @@ function eventOf(line: string): SessionEvent | null {
   return event.data;
 }
 
+// The two usages summed.
+function addUsage(sum: Usage, usage: Usage): Usage {
+  return {
+    input: sum.input + usage.input,
+    output: sum.output + usage.output,
+    cacheRead: sum.cacheRead + usage.cacheRead,
+    cacheWrite: sum.cacheWrite + usage.cacheWrite,
+  };
+}
+
 function addEvent(tally: SessionTally, event: SessionEvent): SessionTally {
   if (event.type === "tool_execution_end") {
     return { ...tally, structuredOutput: event.result.details };
   }
+  if (event.type === "response") {
+    return { ...tally, errorMessage: event.error };
+  }
   const { usage, errorMessage } = event.message;
-  const sum = tally.usage;
   return {
     structuredOutput: tally.structuredOutput,
     errorMessage: errorMessage ?? tally.errorMessage,
-    usage: {
-      input: sum.input + (usage?.input ?? 0),
-      output: sum.output + (usage?.output ?? 0),
-      cacheRead: sum.cacheRead + (usage?.cacheRead ?? 0),
-      cacheWrite: sum.cacheWrite + (usage?.cacheWrite ?? 0),
-    },
+    usage: addUsage(tally.usage, usage ?? ZERO_USAGE),
   };
 }
 
-function tallyOf(stdout: string): SessionTally {
+// What a record a session printed tells the job's status: the usage of an
+// assistant message, and whether a tool call failed (true) or succeeded.
+function recordFacts(record: unknown): RecordFacts {
+  const message = MESSAGE_END.safeParse(record);
+  const tool = TOOL_END.safeParse(record);
+  let usage: Usage | null = null;
+  if (message.success) {
+    usage = message.data.message.usage ?? null;
+  }
+  let toolFailed: boolean | null = null;
+  if (tool.success) {
+    toolFailed = tool.data.isError;
+  }
+  return { usage, toolFailed };
+}
+
+function tallyOf(stdout: string, start: Usage): SessionTally {
   const empty: SessionTally = {
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    usage: start,
     structuredOutput: null,
     errorMessage: null,
   };
@@ -159,11 +199,17 @@ function sessionError(exit: ProcessExit, tally: SessionTally): string {
   return tail(exit.stderr) || NO_OUTPUT;
 }
 
-// A pi session's result from its exit and JSONL events: ok only when it
-// exited 0 within its timeout and gave structured output. Its usage is the
-// sum of its assistant messages', reported even when it failed.
-function sessionRaw(launch: SessionLaunch, exit: ProcessExit): SessionRaw {
-  const tally = tallyOf(exit.stdout);
+// A pi session's result from its exit and RPC records: ok only when it
+// exited 0 within its timeout and gave structured output, and failed with
+// the error of a rejected prompt. Its usage is `start` (what a resumed
+// session spent before) plus its assistant messages', reported even when it
+// failed.
+function sessionRaw(
+  launch: SessionLaunch,
+  exit: ProcessExit,
+  start: Usage = ZERO_USAGE,
+): SessionRaw {
+  const tally = tallyOf(exit.stdout, start);
   const ok = exitedClean(exit) && tally.structuredOutput !== null;
   let error: string | null = null;
   if (!ok) {
@@ -189,5 +235,13 @@ function failedSession(launch: SessionLaunch, error: string): SessionRaw {
   });
 }
 
-export type { OpsRaw, ProcessExit, SessionLaunch, SessionRaw };
-export { failedSession, opsRaw, sessionRaw };
+export type { OpsRaw, ProcessExit, SessionLaunch, SessionRaw, Usage };
+export {
+  addUsage,
+  failedSession,
+  opsRaw,
+  recordFacts,
+  sessionRaw,
+  USAGE,
+  ZERO_USAGE,
+};

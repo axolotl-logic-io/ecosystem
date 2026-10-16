@@ -52,12 +52,12 @@ function flagValue(args, flag) {
   return args[args.indexOf(flag) + 1];
 }
 
-test("the reader runs pi in JSON mode with its tools, thinking and prompt", () => {
+test("the reader runs pi in RPC mode with its tools, thinking and prompt", () => {
   const definition = definitionOf("issue-pipeline-reader");
   const args = piArgs(definition, specFor("issue-pipeline-reader"), FILES);
   assert.deepEqual(args.slice(0, LEADING_FLAGS), [
     "--mode",
-    "json",
+    "rpc",
     "--model",
     "anthropic/claude-opus-5-5",
   ]);

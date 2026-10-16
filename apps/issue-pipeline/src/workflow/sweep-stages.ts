@@ -247,4 +247,4 @@ function unreachable(value: never): never {
 }
 
 export type { StageBatch, StagePhase };
-export { afterClaim, stageResults };
+export { afterClaim, stageResults, unreachable };

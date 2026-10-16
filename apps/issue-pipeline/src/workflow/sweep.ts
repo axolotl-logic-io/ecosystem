@@ -20,12 +20,13 @@ import {
   claimLaunch,
   claimStep,
   finishLaunches,
+  interruptLaunch,
   sweepLaunch,
   sweepReplyOf,
 } from "./stages/entry.ts";
 import { parentsClosed } from "./stages/parents.ts";
 import type { StageName, SweepSummary } from "./stages/types.ts";
-import { onlyOf, stageArgOf, sweepSettings } from "./sweep-config.ts";
+import { laneOf, onlyOf, stageArgOf, sweepSettings } from "./sweep-config.ts";
 import type { SweepCounts, SweepItem, SweepRun } from "./sweep-item.ts";
 import {
   closingOf,
@@ -36,7 +37,7 @@ import {
   summarySource,
 } from "./sweep-item.ts";
 import type { StageBatch, StagePhase } from "./sweep-stages.ts";
-import { afterClaim, stageResults } from "./sweep-stages.ts";
+import { afterClaim, stageResults, unreachable } from "./sweep-stages.ts";
 
 // What the sweep awaits: the sweep op's reply, a candidate's claim, a stage
 // group's batch, the closing launches or the cleanup; or nothing, once done.
@@ -69,6 +70,9 @@ interface SweepClock {
 interface Sweep {
   next: (raw: readonly unknown[]) => LaunchSpec[];
   summary: () => SweepSummary;
+  // The save that leaves the claimed open issue at its stage with no lease
+  // when a stop cuts the stages short; null outside the stages.
+  interrupt: () => LaunchSpec | null;
 }
 
 interface Driver {
@@ -79,15 +83,6 @@ interface Driver {
   stage: StageName | null;
   counts: SweepCounts;
   phase: Phase;
-}
-
-function laneOf(args: SweepArgs, sweepId: string): string {
-  const { lane } = args;
-  const named = Boolean(lane);
-  if (named) {
-    return String(lane);
-  }
-  return sweepId;
 }
 
 // The sweep's run, once the sweep op has answered.
@@ -267,10 +262,6 @@ function summaryOf(driver: Driver): SweepSummary {
   });
 }
 
-function unreachable(value: never): never {
-  throw new Error(`sweep: unexpected phase ${JSON.stringify(value)}`);
-}
-
 // Starts a sweep for the run's args, keyed by the clock's sweep id.
 function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
   const { sweepId, now } = clock;
@@ -291,6 +282,14 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
       return specs;
     },
     summary: (): SweepSummary => summaryOf(driver),
+    interrupt: (): LaunchSpec | null => {
+      const { phase } = driver;
+      if (phase.kind !== "stages") {
+        return null;
+      }
+      const launch = interruptLaunch(closingOf(phase.run.item));
+      return launch && opsLaunchSpec(phase.run, launch);
+    },
   };
 }
 

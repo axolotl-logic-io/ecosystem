@@ -1,93 +1,211 @@
 #!/usr/bin/env node
 // The stage job: one sweep pinned to one issue that begins only one stage.
 //
-//   node job.mjs --config <path> --issue N --stage <stage> [--lane L]
+//   node job.mjs --config <path> --issue N --stage <stage> [--lane L] [--resume]
+//   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //
 // It claims #N, begins only <stage> (an issue saved at another stage is
 // released untouched as "wrong-stage"), then closes parents, releases or
 // posts, and cleans up as a sweep does. Each batch the sweep's driver asks
 // for runs in parallel, up to the config's spawn cap: ops requests run the
-// installed ops.mjs and model sessions run `pi` (src/job/launch.ts). It prints
+// installed ops.mjs and model sessions run `pi --mode rpc`
+// (src/job/launch.ts). While it runs it keeps the issue's job.json current
+// (src/job/status.ts) and listens for steers (src/job/control.ts). It prints
 // the sweep's summary as one JSON line and exits 0, even when the stage stops
 // the issue; it exits 1, with the reason on stderr, only when the job itself
 // fails: bad arguments, a config loadConfig refuses, or a failed sweep op.
+//
+// SIGTERM or SIGINT stops it: it aborts its sessions, saves a claimed open
+// issue at its stage with no lease, and exits 128 + the signal's number with
+// nothing on stdout. --resume carries on the sessions an earlier stopped job
+// left in job.json. --steer sends a message to a live session of the job
+// running for #N, exiting 0 once pi accepted it and 1 otherwise.
 
+import os from "node:os";
 import process from "node:process";
-import { parseArgs } from "node:util";
 import { z } from "zod";
+import type { Config } from "./config.ts";
 import { loadConfig, paths } from "./config.ts";
+import type { RunArgs, SteerArgs } from "./job/args.ts";
+import { jobArgsOf } from "./job/args.ts";
+import type { Control, LiveLaunch } from "./job/control.ts";
+import { openControl, steerJob } from "./job/control.ts";
+import type { LaunchHooks } from "./job/launch.ts";
 import { runLaunch } from "./job/launch.ts";
 import { runAll } from "./job/pool.ts";
+import type { OpsRaw, SessionRaw } from "./job/raw-results.ts";
+import type {
+  JobOutcome,
+  JobStatus,
+  LaunchStart,
+  StopSignal,
+} from "./job/status.ts";
+import { openStatus, resumePoints, socketOf } from "./job/status.ts";
 import type { LaunchSpec } from "./workflow/launches.ts";
 import type { SweepSummary } from "./workflow/stages/types.ts";
+import type { Sweep } from "./workflow/sweep.ts";
 import { startSweep } from "./workflow/sweep.ts";
-import { STAGE_ORDER, spawnLimitOf } from "./workflow/sweep-config.ts";
+import { spawnLimitOf } from "./workflow/sweep-config.ts";
 
-const STAGES = STAGE_ORDER.join(", ");
 // A sweep's id is "s" and the start time in base 36, as workflow.js makes it.
 const SWEEP_ID_RADIX = 36;
-const NO_CONFIG = "--config must name a repo config file";
-const NO_ISSUE = "--issue must be an issue number";
-const NO_STAGE = `--stage must be one of: ${STAGES}`;
-const JOB_ARGS = z.object({
-  config: z.string({ error: NO_CONFIG }).min(1, NO_CONFIG),
-  issue: z.coerce.number({ error: NO_ISSUE }).int(NO_ISSUE).positive(NO_ISSUE),
-  stage: z
-    .string({ error: NO_STAGE })
-    .refine(
-      (stage: string): boolean => STAGE_ORDER.some((name) => name === stage),
-      { message: NO_STAGE },
-    ),
-  lane: z.string().optional(),
-});
+// A process a signal ended exits with 128 + the signal's number.
+const SIGNAL_EXIT_BASE = 128;
 const SPAWN_CAP = z.number().nullish().catch(null);
 
-type JobArgs = z.infer<typeof JOB_ARGS>;
+type Resume = LaunchHooks["resumePoint"];
 
-// The job's arguments, or a throw that says which is missing or bad.
-function jobArgsOf(argv: readonly string[]): JobArgs {
-  const { values } = parseArgs({
-    args: [...argv],
-    options: {
-      config: { type: "string" },
-      issue: { type: "string" },
-      stage: { type: "string" },
-      lane: { type: "string" },
-    },
-    strict: true,
-  });
-  const parsed = JOB_ARGS.safeParse(values);
-  if (!parsed.success) {
-    throw new Error(z.prettifyError(parsed.error));
-  }
-  return parsed.data;
+// How a run ended: finished with the sweep's summary, or stopped by a signal.
+type RunEnd =
+  | { kind: "finished"; summary: SweepSummary }
+  | { kind: "stopped"; signal: StopSignal };
+
+function noResume(): null {
+  return null;
 }
 
-async function runJob(argv: readonly string[]): Promise<SweepSummary> {
-  const args = jobArgsOf(argv);
-  const cfg = loadConfig(args.config);
+// What the job's launches tell its status file and its control.
+function hooksOf(
+  cfg: Config,
+  args: RunArgs,
+  watch: { status: JobStatus; control: Control; resumePoint: Resume },
+): LaunchHooks {
+  const { status, control, resumePoint } = watch;
+  return {
+    sessionFile: (key: string): string => paths.session(cfg, args.issue, key),
+    resumePoint,
+    started: (launch: LaunchStart, live: LiveLaunch | null): void => {
+      status.started(launch);
+      if (live !== null) {
+        control.register(live);
+      }
+    },
+    record: status.record,
+    ended: status.ended,
+  };
+}
+
+// Runs each batch the sweep asks for, feeding its results back, until the
+// sweep asks for none or a signal stops the job. A stop starts no more
+// launches and throws the batch's results away.
+async function drive(
+  sweep: Sweep,
+  limit: number,
+  job: { hooks: LaunchHooks; status: JobStatus; control: Control },
+): Promise<StopSignal | null> {
+  async function next(
+    specs: readonly LaunchSpec[],
+  ): Promise<StopSignal | null> {
+    if (specs.length === 0) {
+      return null;
+    }
+    const results = await runAll(
+      specs,
+      limit,
+      async (spec: LaunchSpec): Promise<OpsRaw | SessionRaw | null> => {
+        if (job.control.stopping() !== null) {
+          return null;
+        }
+        return await runLaunch(spec, job.hooks);
+      },
+    );
+    const signal = job.control.stopping();
+    if (signal !== null) {
+      return signal;
+    }
+    specs.forEach(({ key }: LaunchSpec, index: number): void => {
+      let outcome: "ok" | "failed" = "failed";
+      if (results[index]?.ok === true) {
+        outcome = "ok";
+      }
+      job.status.settled(key, outcome);
+    });
+    return await next(sweep.next(results));
+  }
+  return await next(sweep.next([]));
+}
+
+async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const { maxSpawnsPerRun } = cfg;
   const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
-  function sessionFile(key: string): string {
-    return paths.session(cfg, args.issue, key);
-  }
   const sweep = startSweep(args, {
     sweepId: `s${Date.now().toString(SWEEP_ID_RADIX)}`,
     now: (): Date => new Date(),
   });
-  // Runs each batch the sweep asks for, feeding its results back, until the
-  // sweep asks for none.
-  async function drive(specs: readonly LaunchSpec[]): Promise<void> {
-    if (specs.length === 0) {
-      return;
-    }
-    const results = await runAll(specs, limit, (spec: LaunchSpec) =>
-      runLaunch(spec, sessionFile),
-    );
-    await drive(sweep.next(results));
+  const runDir = paths.runDir(cfg, args.issue);
+  // Read before openStatus replaces the earlier job's file.
+  let resumePoint: Resume = noResume;
+  if (args.resume === true) {
+    resumePoint = resumePoints(runDir);
   }
-  await drive(sweep.next([]));
-  return sweep.summary();
+  const control = await openControl(runDir);
+  const { issue, stage, lane = null } = args;
+  const job = { issue, stage, lane, socket: control.socket };
+  const status = openStatus(runDir, job);
+  const hooks = hooksOf(cfg, args, { status, control, resumePoint });
+  const ending = runDriven(sweep, limit, { hooks, status, control });
+  try {
+    const end = await ending;
+    status.finish(outcomeOf(end));
+    return end;
+  } catch (error: unknown) {
+    status.finish({ kind: "failed", error: messageOf(error) });
+    throw error;
+  } finally {
+    control.close();
+  }
+}
+
+// Drives the sweep to its end, or to a stop, after which it saves the issue
+// the stages held.
+async function runDriven(
+  sweep: Sweep,
+  limit: number,
+  job: { hooks: LaunchHooks; status: JobStatus; control: Control },
+): Promise<RunEnd> {
+  const signal = await drive(sweep, limit, job);
+  if (signal === null) {
+    return { kind: "finished", summary: sweep.summary() };
+  }
+  const save = sweep.interrupt();
+  if (save !== null) {
+    await runLaunch(save, job.hooks);
+  }
+  return { kind: "stopped", signal };
+}
+
+function outcomeOf(end: RunEnd): JobOutcome {
+  if (end.kind === "finished") {
+    return { kind: "finished" };
+  }
+  return { kind: "stopped", signal: end.signal };
+}
+
+async function steer(args: SteerArgs, cfg: Config): Promise<void> {
+  const socket = socketOf(paths.runDir(cfg, args.issue));
+  if (socket === null) {
+    throw new Error(`no running job for #${args.issue}`);
+  }
+  const error = await steerJob(socket, args.steer, args.message);
+  if (error !== null) {
+    throw new Error(error);
+  }
+}
+
+function exitCodeOf(signal: StopSignal): number {
+  const { SIGTERM, SIGINT } = os.constants.signals;
+  switch (signal) {
+    case "SIGTERM":
+      return SIGNAL_EXIT_BASE + SIGTERM;
+    case "SIGINT":
+      return SIGNAL_EXIT_BASE + SIGINT;
+    default:
+      return unreachable(signal);
+  }
+}
+
+function unreachable(value: never): never {
+  throw new Error(`job: unexpected ${JSON.stringify(value)}`);
 }
 
 function messageOf(error: unknown): string {
@@ -99,8 +217,19 @@ function messageOf(error: unknown): string {
 
 async function main(): Promise<void> {
   try {
-    const summary = await runJob(process.argv.slice(2));
-    process.stdout.write(`${JSON.stringify(summary)}\n`);
+    const args = jobArgsOf(process.argv.slice(2));
+    const cfg = loadConfig(args.config);
+    if (args.kind === "steer") {
+      await steer(args, cfg);
+      return;
+    }
+    const end = await runStage(args, cfg);
+    if (end.kind === "finished") {
+      process.stdout.write(`${JSON.stringify(end.summary)}\n`);
+      return;
+    }
+    process.stderr.write(`job: stopped by ${end.signal}\n`);
+    process.exitCode = exitCodeOf(end.signal);
   } catch (error: unknown) {
     process.stderr.write(`job: ${messageOf(error)}\n`);
     process.exitCode = 1;
