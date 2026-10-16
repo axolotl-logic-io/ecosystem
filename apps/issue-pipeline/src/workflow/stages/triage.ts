@@ -1,6 +1,7 @@
 // Triage: decides whether the pipeline takes the issue on. A ready issue moves
 // to spec and gets its draft PR; one that needs answers gets its questions; a
-// large one is split into sub-issues; anything else is rejected with a stop.
+// large one moves to spec with its split suggested, for the spec writer to cut
+// (#267); anything else is rejected with a stop.
 
 import { chargeSession, sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
@@ -8,6 +9,7 @@ import { noteEvent } from "../event-log.ts";
 import { preamble } from "../prompts.ts";
 import { TRIAGE_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
+import type { IssueState } from "../types.ts";
 import {
   doneStep,
   launchStep,
@@ -27,7 +29,7 @@ import type {
 } from "./types.ts";
 
 // Where triage is: about to launch the session, reading its reply, waiting
-// for the questions or the split, or waiting for the draft PR.
+// for the questions to be posted, or waiting for the draft PR.
 type TriagePhase = "begin" | "decide" | "follow-up" | "start-pr";
 
 const PHASES: readonly TriagePhase[] = [
@@ -42,7 +44,6 @@ const PLAN_LIMIT = 4000;
 // The longest error a failed draft PR logs.
 const PR_ERROR_LIMIT = 300;
 const TRIAGE_MINUTES = 20;
-const MIN_SUB_ISSUES = 2;
 
 function phaseOf(state: StageState): TriagePhase {
   const phase = PHASES.find((entry) => entry === state.phase);
@@ -54,7 +55,7 @@ function phaseOf(state: StageState): TriagePhase {
 
 // The line on splitting: a sub-issue may not split again.
 const SPLIT_ALLOWED: string =
-  "- split: too big for one session. Give 2 to 5 sub-issues, each a complete, independently testable change with its own acceptance criteria. Use `after` to list the 0-based indexes of earlier sub-issues that must merge first. Sub-issues without `after` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one sub-issue where you can, and name each one's files in its body. Where two must edit the same file, such as a shared index, registry or wiki page, put one `after` the other so they run in turn. Prefer fewer sub-issues to many that share files.";
+  "- split: too big for one session. Say why in `reason` and write `plan` as for ready; the spec writer decides how to cut it.";
 const SPLIT_FORBIDDEN: string =
   "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so.";
 
@@ -117,14 +118,29 @@ function issueComment(by: Signature, body: string): StageComment[] {
   return [{ by, body, where: "issue" }];
 }
 
+// The issue's state once triage takes it on: at spec with its plan, and with
+// triage's too-big reason when it suggested a split. A ready triage clears an
+// earlier suggestion.
+function takenState(
+  state: StageState,
+  plan: string,
+  splitSuggested: string | null,
+): IssueState {
+  const st: IssueState = {
+    ...state.st,
+    plan: clip(plan, PLAN_LIMIT),
+    stage: "spec",
+  };
+  if (splitSuggested !== null || typeof st.splitSuggested === "string") {
+    st.splitSuggested = splitSuggested;
+  }
+  return st;
+}
+
 // Moves the issue to spec, and opens its draft PR if it has none, so the issue
 // links to its branch and PR while work is under way.
 function ready(state: StageState, reply: TriageReply, by: Signature): Step {
-  const st = {
-    ...state.st,
-    plan: clip(reply.plan, PLAN_LIMIT),
-    stage: "spec",
-  };
+  const st = takenState(state, reply.plan, null);
   const comments = issueComment(
     by,
     `Taking this issue. ${reply.reason} A spec follows.`,
@@ -141,21 +157,29 @@ function ready(state: StageState, reply: TriageReply, by: Signature): Step {
   );
 }
 
+// Moves a large issue to spec with its split suggested. It opens no draft PR:
+// the split op, which the spec writer's split goes through, wouldn't close it.
+function suggestSplit(
+  state: StageState,
+  reply: TriageReply,
+  by: Signature,
+): Step {
+  const st = takenState(state, reply.plan, reply.reason);
+  return doneStep(
+    { ...state, st },
+    issueComment(
+      by,
+      `Taking this issue. ${reply.reason} A spec follows, which may split it.`,
+    ),
+  );
+}
+
 function ask(state: StageState, reply: TriageReply, by: Signature): Step {
   const { questions } = reply;
   const payload = { number: state.n, state: state.st, questions, by };
   return launchStep(
     { ...state, closed: true, outcome: "needs-info", phase: "follow-up" },
     [{ kind: "op", name: "ask", op: "ask", payload }],
-  );
-}
-
-function split(state: StageState, reply: TriageReply, by: Signature): Step {
-  const { subIssues } = reply;
-  const payload = { number: state.n, state: state.st, subIssues, by };
-  return launchStep(
-    { ...state, closed: true, outcome: "split", phase: "follow-up" },
-    [{ kind: "op", name: "split", op: "split", payload }],
   );
 }
 
@@ -171,8 +195,8 @@ function reject(state: StageState, reply: TriageReply, by: Signature): Step {
   );
 }
 
-// Acts on the session's decision. A split or questions the pipeline can't act
-// on reads as a reject.
+// Acts on the session's decision. A sub-issue's split, or questions the
+// pipeline can't act on, reads as a reject.
 function decide(
   state: StageState,
   ctx: StageContext,
@@ -186,27 +210,28 @@ function decide(
   if (reply === null) {
     return stopStep(state, "triage failed", result.error);
   }
+  const { decision, questions } = reply;
+  const suggestsSplit = decision === "split" && state.st.depth < 1;
+  let event: string = decision;
+  if (suggestsSplit) {
+    event = "split-suggested";
+  }
   const st = { ...state.st };
-  noteEvent(st, `triage: ${reply.decision} - ${reply.reason}`, ctx.now());
+  noteEvent(st, `triage: ${event} - ${reply.reason}`, ctx.now());
   const decided = { ...state, st };
-  const { decision, questions, subIssues } = reply;
   if (decision === "ready") {
     return ready(decided, reply, result.by);
+  }
+  if (suggestsSplit) {
+    return suggestSplit(decided, reply, result.by);
   }
   if (decision === "needs-info" && questions.length > 0) {
     return ask(decided, reply, result.by);
   }
-  if (
-    decision === "split" &&
-    st.depth < 1 &&
-    subIssues.length >= MIN_SUB_ISSUES
-  ) {
-    return split(decided, reply, result.by);
-  }
   return reject(decided, reply, result.by);
 }
 
-// The questions or the split were posted; a failure aborts the sweep.
+// The questions were posted; a failure aborts the sweep.
 function followedUp(state: StageState, results: readonly LaunchResult[]): Step {
   const { ok, error } = onlyReply(results);
   if (ok !== true) {

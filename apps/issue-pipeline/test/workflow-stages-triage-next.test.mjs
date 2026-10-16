@@ -21,7 +21,6 @@ import {
   SPLIT_ALLOWED,
   SPLIT_FORBIDDEN,
   STAMP,
-  SUB_ISSUES,
   sessionLaunch,
   stateWith,
 } from "./workflow-triage-test-kit.mjs";
@@ -155,27 +154,40 @@ test("a rejected issue gets the reason, then a stop", () => {
   });
 });
 
-test("a large issue at depth 0 is split, and closed for the sweep", () => {
+test("a large issue at depth 0 goes on to the spec with its split suggested", () => {
   const split = replyOf({
     decision: "split",
     reason: "Big.",
-    subIssues: SUB_ISSUES,
+    plan: "Cut a.ts from b.ts.",
   });
   const step = decided(split);
-  assert.deepEqual(opsRequests(step), [
+  assert.equal(step.done, true);
+  assert.equal(Object.hasOwn(step, "launches"), false);
+  assert.equal(step.stop, null);
+  assert.equal(step.state.st.stage, "spec");
+  assert.equal(step.state.st.splitSuggested, "Big.");
+  assert.equal(step.state.st.plan, "Cut a.ts from b.ts.");
+  assert.equal(
+    step.state.st.log?.at(-1),
+    `${STAMP} triage: split-suggested - Big.`,
+  );
+  assert.deepEqual(step.comments, [
     {
-      op: "split",
-      payload: {
-        number: 7,
-        state: step.state.st,
-        subIssues: SUB_ISSUES,
-        by: SIGNATURE,
-      },
+      by: SIGNATURE,
+      body: "Taking this issue. Big. A spec follows, which may split it.",
+      where: "issue",
     },
   ]);
-  assert.deepEqual([step.state.closed, step.state.outcome], [true, "split"]);
-  assert.equal(replied(step, { ok: true }).done, true);
   assert.equal(decided(split, { depth: 1 }).stop?.reason, REJECTED);
+});
+
+test("a ready triage clears an earlier suggested split", () => {
+  const step = decided(replyOf({ reason: "Small." }), {
+    splitSuggested: "Big.",
+  });
+  assert.equal(step.state.st.splitSuggested, null);
+  const fresh = decided(replyOf({ reason: "Small." }));
+  assert.equal(Object.hasOwn(fresh.state.st, "splitSuggested"), false);
 });
 
 test("questions are asked, and no questions read as a reject", () => {

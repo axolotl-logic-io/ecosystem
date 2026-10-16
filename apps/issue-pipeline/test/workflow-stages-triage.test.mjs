@@ -32,7 +32,6 @@ function triageReply(fields) {
     decision: "ready",
     reason: "",
     questions: [],
-    subIssues: [],
     plan: "",
     ...fields,
   });
@@ -125,18 +124,26 @@ test("a rejected issue is stopped with the reason", async () => {
   );
 });
 
-test("a large issue at depth 0 is split into its sub-issues", async () => {
-  const subIssues = [
-    { title: "First part", body: "Do the first part.", after: [] },
-    { title: "Second part", body: "Do the second part.", after: [0] },
-  ];
+test("a large issue at depth 0 goes on to the spec with no sub-issues", async () => {
+  // With no draft PR to open, the run spawns one fewer than the ready issue's,
+  // so a cap one lower holds it at spec.
   const { trace, summary } = await triageRun(
-    triageReply({ decision: "split", reason: "Too big.", subIssues }),
-    { split: { ok: true } },
+    triageReply({ decision: "split", reason: "Too big.", plan: PLAN }),
+    {},
+    { maxSpawnsPerRun: 11 },
   );
-  const { subIssues: requested } = requestFor(trace, "split");
-  assert.deepEqual(requested, subIssues);
-  assert.throws(() => releasedState(trace));
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-reader"]);
+  assert.throws(() => requestFor(trace, "split"));
+  assert.throws(() => requestFor(trace, "start-pr"));
+  const state = releasedState(trace);
+  assert.deepEqual(
+    {
+      stage: state.stage,
+      splitSuggested: state.splitSuggested,
+      plan: state.plan,
+    },
+    { stage: "spec", splitSuggested: "Too big.", plan: PLAN },
+  );
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -144,8 +151,8 @@ test("a large issue at depth 0 is split into its sub-issues", async () => {
         {
           issue: 7,
           pr: null,
-          stage: "triage",
-          outcome: "split",
+          stage: "spec",
+          outcome: "in-progress",
           reason: null,
           allocatedTokens: 50_000,
           rebaseAllocatedTokens: 0,

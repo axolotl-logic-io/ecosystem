@@ -41,6 +41,7 @@ const READY_SPEC = {
   spec: `${SPEC}\n\n<!-- end of spec -->`,
   questions: [],
   files: ["src/a.ts"],
+  subIssues: [],
 };
 
 // A session that spends USAGE and ends with the ready spec.

@@ -30,6 +30,7 @@ const SPEC_READY = replyWith({
   spec: "## Behaviour\n\n1. src/a.ts does the thing.\n\n<!-- end of spec -->",
   questions: [],
   files: ["src/a.ts"],
+  subIssues: [],
 });
 
 // The error a run with an unknown args.stage fails with.

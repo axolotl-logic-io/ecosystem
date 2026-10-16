@@ -52,6 +52,7 @@ function replied(fields) {
     spec: SPEC_REPLY,
     questions: [],
     files: FILES,
+    subIssues: [],
     ...fields,
   };
   return decided({ ok: true, structuredOutput: output });

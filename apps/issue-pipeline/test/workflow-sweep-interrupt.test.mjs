@@ -77,6 +77,7 @@ const NEEDS_INFO_RUN = {
       spec: "So far.\n<!-- end of spec -->",
       questions: ["Which file?"],
       files: [],
+      subIssues: [],
     }),
   },
 };

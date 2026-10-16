@@ -56,6 +56,9 @@ interface IssueState {
   triages?: number;
   // Triage's plan for the spec writer.
   plan?: string | null;
+  // Triage's reason for judging the issue too big for one session, for the
+  // spec writer.
+  splitSuggested?: string | null;
   // The spec the implementer builds to, clipped to the spec stage's limit.
   spec?: string | null;
   // Where the full spec is (spec.md in the run dir), set only when `spec` was

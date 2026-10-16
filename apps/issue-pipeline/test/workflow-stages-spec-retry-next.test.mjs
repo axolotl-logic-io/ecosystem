@@ -36,6 +36,7 @@ const UNMARKED = {
     spec: SPEC,
     questions: [],
     files: FILES,
+    subIssues: [],
   },
 };
 // A whole ready reply.
@@ -46,6 +47,7 @@ const MARKED = {
     spec: SPEC_REPLY,
     questions: [],
     files: FILES,
+    subIssues: [],
   },
 };
 

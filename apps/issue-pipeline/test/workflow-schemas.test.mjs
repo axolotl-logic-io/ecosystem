@@ -14,9 +14,16 @@ import {
   REREVIEW_SCHEMA,
   REREVIEW_SEC_SCHEMA,
 } from "../src/workflow/review-schemas.ts";
-import { CIFIX_SCHEMA, SPEC_SCHEMA } from "../src/workflow/schemas.ts";
+import {
+  CIFIX_SCHEMA,
+  SPEC_SCHEMA,
+  TRIAGE_SCHEMA,
+} from "../src/workflow/schemas.ts";
 
 /** @import { JsonSchema } from "../src/workflow/schemas.ts" */
+
+// The most parts a spec writer's split may have.
+const MAX_PARTS = 5;
 
 // A plain copy, so a comparison sees only the schema's JSON.
 /** @param {JsonSchema} schema @returns {unknown} */
@@ -84,6 +91,26 @@ test("a review fixer replies done or that it handed off (#269)", () => {
     required: true,
     status: { enum: ["done", "handoff"] },
   });
+});
+
+test("the spec schema can split, into at most 5 parts with their files", () => {
+  const { properties = {}, required = [] } = SPEC_SCHEMA;
+  const { decision = {}, subIssues = {} } = properties;
+  assert.ok(decision.enum?.includes("split"));
+  assert.ok(required.includes("subIssues"));
+  assert.equal(subIssues.maxItems, MAX_PARTS);
+  assert.deepEqual([...(subIssues.items?.required ?? [])].toSorted(), [
+    "after",
+    "body",
+    "files",
+    "title",
+  ]);
+});
+
+test("the triage schema has no sub-issues", () => {
+  const { properties = {}, required = [] } = TRIAGE_SCHEMA;
+  assert.equal(Object.hasOwn(properties, "subIssues"), false);
+  assert.equal(required.includes("subIssues"), false);
 });
 
 test("the categories are the four harms", () => {

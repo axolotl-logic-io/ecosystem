@@ -2,7 +2,8 @@
 // Autumn (2026-10-13): every issue gets a spec before implementation. It is
 // posted on the issue, and the implementer and the acceptance check work from
 // it. A spec that needs a maintainer's answer goes back to triage with its
-// questions. A failed spec session, including one whose spec stops partway, is
+// questions, and an issue too big for one session is split into sub-issues
+// (spec-split.ts, #267). A failed spec session, including one whose spec stops partway, is
 // tried once more within the spec budget (#280).
 
 import { chargeSession, sessionBudget } from "../budget.ts";
@@ -14,6 +15,7 @@ import type { IssueState } from "../types.ts";
 import type { SpecReply } from "./build-replies.ts";
 import { SPEC_END, specReplyOf } from "./build-replies.ts";
 import { isRecord, isStrings, signatureOf } from "./reply-guards.ts";
+import { splitStep } from "./spec-split.ts";
 import { ROLE, specTask } from "./spec-task.ts";
 import {
   doneStep,
@@ -35,7 +37,7 @@ import type {
 
 // Where spec is: about to launch the session, reading its reply, reading the
 // reply of its one retry, waiting for the full spec to be saved, or waiting
-// for its questions to be posted.
+// for its questions or its split to be posted.
 type SpecPhase = "begin" | "decide" | "decide-again" | "saved" | "follow-up";
 
 // The phases a spec session's reply is read in.
@@ -212,13 +214,16 @@ function decide(
   const st = { ...state.st };
   noteEvent(st, `spec: ${reply.decision}`, ctx.now());
   const decided = { ...state, st };
+  if (reply.decision === "split") {
+    return splitStep(decided, reply, result.by);
+  }
   if (reply.decision === "needs-info" && reply.questions.length > 0) {
     return ask(decided, reply, result.by);
   }
   return ready(decided, reply, result.by);
 }
 
-// The questions were posted; a failure aborts the sweep.
+// The questions or the split were posted; a failure aborts the sweep.
 function followedUp(state: StageState, results: readonly LaunchResult[]): Step {
   const { ok, error } = onlyReply(results);
   if (ok !== true) {
