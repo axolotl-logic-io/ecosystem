@@ -29,11 +29,13 @@ import {
   MODELS,
   prepared,
   ROLES,
+  replied,
   SIGNATURE,
   STAMP,
   sessionEnded,
   stateWith,
   taskOf,
+  VERIFIED,
 } from "./workflow-finish-test-kit.mjs";
 
 /** @import { Step } from "../src/workflow/stages/types.ts" */
@@ -127,9 +129,27 @@ test("a pass keeps the reason and moves the issue to security", () => {
   ]);
 });
 
-test("a fail posts the verdict, then stops with the reason", () => {
-  const step = accepted({ verdict: "fail", reason: "Misses b." });
-  assert.equal(step.state.st.stage, "accept");
+test("a fail stores an open acceptance finding and saves the issue at fix", () => {
+  const given = stateWith("accept", { round: 1, rechecking: true });
+  const step = decided(next, given, { verdict: "fail", reason: "Misses b." });
+  assert.equal(step.done, false);
+  assert.equal(step.stop, null);
+  const { st } = step.state;
+  assert.equal(st.stage, "fix");
+  assert.deepEqual(
+    st.findings.map(({ lenses, evidence, status }) => ({
+      lenses,
+      evidence,
+      status,
+    })),
+    [{ lenses: ["acceptance"], evidence: "Misses b.", status: "open" }],
+  );
+  assert.equal(st.round, 1);
+  assert.equal(st.rechecking, false);
+  assert.equal(st.reviewedSha, VERIFIED);
+  assert.deepEqual(opsRequests(step), [
+    { op: "save-state", payload: { number: 7, state: st } },
+  ]);
   assert.deepEqual(step.comments, [
     {
       by: BY,
@@ -137,11 +157,9 @@ test("a fail posts the verdict, then stops with the reason", () => {
       where: "pr",
     },
   ]);
-  assert.deepEqual(step.stop, {
-    reason: "the acceptance verifier found the issue is not fully resolved",
-    detail: "Misses b.",
-    code: null,
-  });
+  const done = replied(next, step, { ok: true });
+  assert.deepEqual([done.done, done.stop], [true, null]);
+  assert.equal(done.state.st.stage, "fix");
 });
 
 test("a failed or moved diff stops before the session", () => {

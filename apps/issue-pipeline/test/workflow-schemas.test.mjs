@@ -95,7 +95,7 @@ test("the categories are the four harms", () => {
   ]);
 });
 
-test("every lens is a first-round lens or security", () => {
+test("every lens is a first-round lens, security or acceptance", () => {
   assert.deepEqual(LENS_NAMES, ["correctness", "tests", "scope"]);
-  assert.deepEqual(ALL_LENSES, [...LENS_NAMES, "security"]);
+  assert.deepEqual(ALL_LENSES, [...LENS_NAMES, "security", "acceptance"]);
 });

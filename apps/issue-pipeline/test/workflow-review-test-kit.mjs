@@ -59,6 +59,7 @@ const MODELS = {
   fixer: OPUS,
   verifier: SONNET,
   security: OPUS,
+  acceptance: SONNET,
 };
 const ISSUE_BUDGET = 1_000_000;
 const DIFF = { path: "/runs/issue-7/r0.diff", lines: 40 };

@@ -1,12 +1,15 @@
 // Fix: one fix round per begin. The fixer resolves or disputes the open
 // findings, the fix is pushed, and the re-reviewers judge it (rereview.ts).
 // A round that leaves findings open ends with an again step, so the sweep
-// holds the next round to the spawn cap; one past the last round stops.
+// holds the next round to the spawn cap; one past the last round stops. A
+// disputed acceptance finding stops the round before the push, since only the
+// operator can rule on what the issue asks.
 
 import { chargeSession } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import {
+  acceptanceDisputeStop,
   findingsStopCode,
   findingsStopReason,
   findingsText,
@@ -119,7 +122,8 @@ function recordDisputes(st: IssueState, disputes: readonly Dispute[]): void {
   }
 }
 
-// Records the fixer's disputes and posts its comment, then pushes the fix.
+// Records the fixer's disputes and posts its comment, then pushes the fix, or
+// stops if it disputed the acceptance finding.
 function fixed(
   state: StageState,
   ctx: StageContext,
@@ -138,10 +142,15 @@ function fixed(
   recordDisputes(st, reply.disputed);
   noteEvent(st, `fix round ${round}: ${reply.summary}`, ctx.now());
   const by = { ...result.by, role: `fixer (round ${round})` };
+  const comments = [prComment(by, fixComment(reply))];
+  const disputed = acceptanceDisputeStop({ st });
+  if (disputed !== null) {
+    return codedStopStep({ ...state, st }, disputed, comments);
+  }
   return launchStep(
     { ...state, st, phase: "pushed" },
     [{ kind: "op", name: "push", op: "push", payload: { number: state.n } }],
-    [prComment(by, fixComment(reply))],
+    comments,
   );
 }
 

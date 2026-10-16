@@ -45,8 +45,7 @@ interface StageState {
   // Set when checks pass on a clean rebase of a head that passed acceptance
   // and the security review before it.
   rebasedOnly: boolean;
-  // Set when merge sent the issue back to sync to rebase in this sweep; never
-  // saved.
+  // Set when merge sent the issue back to sync to rebase this sweep; unsaved.
   resynced: boolean;
   phase: string;
   // JSON-safe data the stage passes to its own next step within one sweep,
@@ -148,7 +147,8 @@ type ModelRole =
   | "aggregator"
   | "fixer"
   | "verifier"
-  | "security";
+  | "security"
+  | "acceptance";
 
 // The commands the implementer runs before it finishes, each only if set.
 interface StageCommands {

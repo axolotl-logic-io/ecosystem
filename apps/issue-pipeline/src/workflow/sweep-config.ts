@@ -33,6 +33,7 @@ const MODELS: Readonly<Record<ModelRole, string>> = {
   fixer: "anthropic/claude-opus-5-5",
   verifier: "anthropic/claude-sonnet-5-5",
   security: "anthropic/claude-opus-5-5",
+  acceptance: "anthropic/claude-sonnet-5-5",
 };
 
 // pi-subagents' own per-run spawn cap (maxSubagentSpawnsPerRun), unless the
@@ -49,7 +50,7 @@ const STAGE_SPAWNS: Readonly<Record<StageName, number>> = {
   fix: 8,
   sync: 3,
   checks: 11,
-  accept: 2,
+  accept: 3,
   security: 3,
   merge: 2,
 };

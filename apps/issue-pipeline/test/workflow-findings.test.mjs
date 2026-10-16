@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  acceptanceDisputeStop,
   addFinding,
   findingsStopCode,
   findingsStopReason,
@@ -18,6 +19,9 @@ const EVIDENCE_LIMIT = 600;
 const SUGGESTION_LIMIT = 400;
 // The last number an earlier sweep gave a finding.
 const LAST_NUMBER = 6;
+// The titles of two acceptance findings, as a stop's detail shows them.
+const FIRST_ITEM = /Spec item 1/u;
+const SECOND_ITEM = /Spec item 2/u;
 
 const reported = {
   file: "src/a.ts",
@@ -123,4 +127,27 @@ test("a resolved security finding doesn't name the stop", () => {
   addFinding(item, reported, ["tests"]);
   assert.equal(findingsStopCode(item), null);
   assert.equal(findingsStopReason(cfg, item, BASE), BASE);
+});
+
+test("a dispute of any open acceptance finding stops with that finding", () => {
+  const item = emptyItem();
+  addFinding(item, { ...reported, title: "Spec item 1" }, ["acceptance"]);
+  addFinding(item, { ...reported, title: "Spec item 2" }, [
+    "acceptance",
+  ]).disputed = true;
+  const stop = acceptanceDisputeStop(item);
+  assert.equal(stop?.code, "acceptance");
+  assert.equal(
+    stop?.reason,
+    "the acceptance verifier found the issue is not fully resolved",
+  );
+  assert.match(stop?.detail ?? "", SECOND_ITEM);
+  assert.doesNotMatch(stop?.detail ?? "", FIRST_ITEM);
+});
+
+test("open acceptance findings no one disputed don't stop", () => {
+  const item = emptyItem();
+  addFinding(item, reported, ["acceptance"]);
+  addFinding(item, reported, ["correctness"]).disputed = true;
+  assert.equal(acceptanceDisputeStop(item), null);
 });

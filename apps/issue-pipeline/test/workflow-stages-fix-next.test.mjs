@@ -221,6 +221,12 @@ test("a dispute is recorded once, clipped", () => {
   );
   assert.deepEqual(f2, earlier);
   assert.match(fixed.comments[0]?.body ?? "", DISPUTES);
+  // A dispute outside the acceptance lens goes to its re-reviewer (#266).
+  assert.equal(fixed.stop, null);
+  assert.deepEqual(
+    launchesOf(fixed).map((launch) => launch.kind === "op" && launch.op),
+    ["push"],
+  );
 });
 
 test("a recurring finding stops the issue, with its lens's comment", () => {

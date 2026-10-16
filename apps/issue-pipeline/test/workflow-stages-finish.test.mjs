@@ -46,7 +46,9 @@ test("passing acceptance moves to security, held by the spawn cap", async ({
   snapshot(trace);
 });
 
-test("failing acceptance stops the issue", async ({ assert: { snapshot } }) => {
+test("failing acceptance sends the issue to fix", async ({
+  assert: { snapshot },
+}) => {
   const { trace, summary } = await finishRun({
     stage: "accept",
     fields: CHECKED,
@@ -55,23 +57,13 @@ test("failing acceptance stops the issue", async ({ assert: { snapshot } }) => {
       "i7-accept": replyWith({ verdict: "fail", reason: "Misses item 1." }),
     },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-prep-3",
-    "i7-accept-4",
-    "i7-stop-5",
-    "cleanup-6",
-  ]);
+  const keys = launchKeys(trace);
+  assert.ok(keys.includes("i7-accept-4"));
+  assert.ok(keys.slice(keys.indexOf("i7-accept-4")).includes("i7-save-5"));
+  assert.ok(!keys.some((key) => key.startsWith("i7-stop")));
   assert.deepEqual(
     summary,
-    issueSummary({
-      stage: "accept",
-      outcome: "stopped",
-      reason: "the acceptance verifier found the issue is not fully resolved",
-      allocatedTokens: 880_000,
-      rebaseAllocatedTokens: 0,
-    }),
+    issueSummary({ stage: "fix", allocatedTokens: 880_000 }),
   );
   snapshot(trace);
 });

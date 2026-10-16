@@ -563,7 +563,7 @@ exports[`an issue at merge is merged 1`] = `
 ]
 `;
 
-exports[`failing acceptance stops the issue 1`] = `
+exports[`failing acceptance sends the issue to fix 1`] = `
 [
   {
     "key": "sweep-1",
@@ -607,11 +607,11 @@ exports[`failing acceptance stops the issue 1`] = `
     "label": "Check issue 7 is resolved"
   },
   {
-    "key": "i7-stop-5",
+    "key": "i7-save-5",
     "agent": "issue-pipeline-ops",
-    "label": "Run stop operation",
+    "label": "Run save-state operation",
     "request": {
-      "op": "stop",
+      "op": "save-state",
       "config": "/w/repos/o__r.json",
       "sweepId": "smv9hl6o0",
       "lane": "lane-a",
@@ -620,7 +620,7 @@ exports[`failing acceptance stops the issue 1`] = `
         "version": 1,
         "number": 7,
         "depth": 0,
-        "stage": "accept",
+        "stage": "fix",
         "lease": null,
         "pr": 42,
         "headSha": "fffffff",
@@ -637,22 +637,34 @@ exports[`failing acceptance stops the issue 1`] = `
         "round": 0,
         "ciFixes": 0,
         "syncs": 0,
-        "findings": [],
+        "findings": [
+          {
+            "id": "f1",
+            "file": "",
+            "line": 0,
+            "title": "acceptance: issue not fully resolved",
+            "evidence": "Misses item 1.",
+            "suggestion": "Change the code, tests or docs so the issue and spec requirement named in the evidence is met.",
+            "lenses": [
+              "acceptance"
+            ],
+            "category": null,
+            "status": "open",
+            "disputed": false
+          }
+        ],
         "resolvedHistory": [],
         "questionsAt": null,
         "log": [
           "2026-10-15T12:00Z charged verifier 60000 to issueTokenBudget",
-          "2026-10-15T12:00Z acceptance: fail - Misses item 1.",
-          "2026-10-15T12:00Z stopped: the acceptance verifier found the issue is not fully resolved"
+          "2026-10-15T12:00Z acceptance: fail - Misses item 1."
         ],
         "verifySummary": "test: passed",
         "implemented": true,
-        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing."
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "nextFindingId": 1,
+        "rechecking": false
       },
-      "reason": "the acceptance verifier found the issue is not fully resolved",
-      "detail": "Misses item 1.",
-      "nextStep": null,
-      "code": null,
       "comments": [
         {
           "number": 42,
@@ -668,7 +680,68 @@ exports[`failing acceptance stops the issue 1`] = `
     }
   },
   {
-    "key": "cleanup-6",
+    "key": "i7-release-6",
+    "agent": "issue-pipeline-ops",
+    "label": "Run release operation",
+    "request": {
+      "op": "release",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7,
+      "state": {
+        "version": 1,
+        "number": 7,
+        "depth": 0,
+        "stage": "fix",
+        "lease": null,
+        "pr": 42,
+        "headSha": "fffffff",
+        "reviewedSha": "fffffff",
+        "verifiedSha": "fffffff",
+        "plan": null,
+        "allocated": 880000,
+        "reportedTokens": 0,
+        "sessions": [
+          "verifier"
+        ],
+        "triages": 0,
+        "continuations": 0,
+        "round": 0,
+        "ciFixes": 0,
+        "syncs": 0,
+        "findings": [
+          {
+            "id": "f1",
+            "file": "",
+            "line": 0,
+            "title": "acceptance: issue not fully resolved",
+            "evidence": "Misses item 1.",
+            "suggestion": "Change the code, tests or docs so the issue and spec requirement named in the evidence is met.",
+            "lenses": [
+              "acceptance"
+            ],
+            "category": null,
+            "status": "open",
+            "disputed": false
+          }
+        ],
+        "resolvedHistory": [],
+        "questionsAt": null,
+        "log": [
+          "2026-10-15T12:00Z charged verifier 60000 to issueTokenBudget",
+          "2026-10-15T12:00Z acceptance: fail - Misses item 1."
+        ],
+        "verifySummary": "test: passed",
+        "implemented": true,
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "nextFindingId": 1,
+        "rechecking": false
+      }
+    }
+  },
+  {
+    "key": "cleanup-7",
     "agent": "issue-pipeline-ops",
     "label": "Run cleanup operation",
     "request": {
