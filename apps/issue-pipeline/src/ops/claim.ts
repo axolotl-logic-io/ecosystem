@@ -14,7 +14,7 @@ import { laneOf, raceForClaim } from "../claims.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { branchHasWork, fetchIn, remoteHead } from "../git-state.ts";
+import { branchHasWork, fetchIn, head, remoteHead } from "../git-state.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError, run, shell } from "../process.ts";
@@ -22,6 +22,7 @@ import { adoptPush, startState } from "../start-state.ts";
 import type { State } from "../state.ts";
 import { readState, writeState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
+import { resetKeepingUnpushed } from "../unpushed.ts";
 import { ensureWiki, wikiBranchHasWork } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
 import { answeredSince, issueDepth } from "./sweep-verdict.ts";
@@ -118,18 +119,33 @@ function resetToBase(cfg: Config, wt: string): void {
 
 // Puts an existing worktree back at the branch head on GitHub or, when the
 // issue has no branch there, at the base unless it holds commits of its own.
-function resetWorktree(cfg: Config, n: number, remote: string | null): void {
+// Commits the branch lacks are never dropped (#283); returns the log entry
+// saying where they were kept, or null when there were none, and whether
+// HEAD stayed past the branch with them.
+function resetWorktree(
+  cfg: Config,
+  n: number,
+  remote: string | null,
+): { entry: string | null; kept: boolean } {
   const wt = paths.worktree(cfg, n);
   if (!fs.existsSync(path.join(wt, ".git"))) {
-    return;
+    return { entry: null, kept: false };
   }
   if (remote === null) {
     resetToBase(cfg, wt);
-    return;
+    return { entry: null, kept: false };
   }
   fetchIn(cfg, wt, paths.branch(n));
-  run("git", ["-C", wt, "reset", "--hard", remote]);
-  run("git", ["-C", wt, "clean", "-fd"]);
+  const entry = resetKeepingUnpushed(wt, n, remote, new Date());
+  return { entry, kept: head(wt) !== remote };
+}
+
+// `state` with the reset's log entry, if it has one.
+function withEntry(state: State, entry: string | null): State {
+  if (entry === null) {
+    return state;
+  }
+  return { ...state, log: [...(state.log ?? []), entry] };
 }
 
 // True when the issue has questions open (agent:needs-info).
@@ -165,16 +181,15 @@ function claimedState(
     if (adopted === null) {
       return { state: saved, remote };
     }
-    resetWorktree(cfg, n, remote);
-    return { state: adopted, remote };
+    const { entry } = resetWorktree(cfg, n, remote);
+    return { state: withEntry(adopted, entry), remote };
   }
   const { pr, hasWork } = branchWork(cfg, n, remote);
   const depth = issueDepth(issue.body);
   const now = new Date();
-  const start = { n, depth, remote, pr, hasWork, answered, now };
-  const state = startState(saved, start);
-  resetWorktree(cfg, n, remote);
-  return { state, remote };
+  const { entry, kept: keptUnpushed } = resetWorktree(cfg, n, remote);
+  const start = { n, depth, remote, pr, hasWork, keptUnpushed, answered, now };
+  return { state: withEntry(startState(saved, start), entry), remote };
 }
 
 // Sets up a new worktree now, not only at verify, so the writer's own test

@@ -14,6 +14,7 @@ import {
   CTX,
   contextWith,
   expectedTask,
+  PATHS,
   REJECTED,
   replyOf,
   SIGNATURE,
@@ -78,6 +79,11 @@ test("the first call counts the run, charges it and launches the session", () =>
 test("a sub-issue's session is told it may not split", () => {
   const step = next(stateWith({ depth: 1 }), CTX, []);
   assert.deepEqual(sessions(step), triager(expectedTask(SPLIT_FORBIDDEN)));
+});
+
+test("the session is told to read an earlier implementer's handoff (#283)", () => {
+  const [session] = sessions(next(stateWith(), CTX, []));
+  assert.ok(session?.task.includes(PATHS.handoffFile));
 });
 
 test("a ready issue moves to spec, is taken, and opens its draft PR", () => {

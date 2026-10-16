@@ -45,6 +45,7 @@ const ctx = {
   remote: "h1",
   pr: PR,
   hasWork: true,
+  keptUnpushed: false,
   answered: false,
   now,
 };

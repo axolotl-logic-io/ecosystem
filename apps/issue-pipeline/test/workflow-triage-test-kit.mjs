@@ -131,6 +131,7 @@ function replyOf(fields) {
 function expectedTask(splitLine) {
   return preamble(CFG, { n: 7, paths: PATHS }, "triage", ROLES.triage)
     .concat([
+      "If /runs/issue-7/handoff.md exists, an earlier implementer session wrote it when it ran out of room: read it and the commits on `agent/issue-7` before you decide.",
       "Read the issue and as much of the code as you need to decide one of:",
       "- ready: one implementer session (at most 150000 tokens of context) can implement and test it. Write `plan`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.",
       "- needs-info: a competent engineer could not start without answers. Ask at most 5 specific questions. If earlier questions were answered in the comments, use the answers.",
@@ -160,6 +161,7 @@ export {
   CTX,
   contextWith,
   expectedTask,
+  PATHS,
   REJECTED,
   replyOf,
   SIGNATURE,

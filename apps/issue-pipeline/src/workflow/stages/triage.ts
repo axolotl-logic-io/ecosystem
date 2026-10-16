@@ -69,6 +69,7 @@ function triageLaunch(state: StageState, ctx: StageContext): ChildLaunch {
   const { cfg, budgets, models } = ctx;
   const budget = sessionBudget(budgets, "triage");
   const lines = [
+    `If ${state.paths.handoffFile} exists, an earlier implementer session wrote it when it ran out of room: read it and the commits on \`agent/issue-${state.n}\` before you decide.`,
     "Read the issue and as much of the code as you need to decide one of:",
     `- ready: one implementer session (at most ${budgets.sessionCap} tokens of context) can implement and test it. Write \`plan\`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.`,
     "- needs-info: a competent engineer could not start without answers. Ask at most 5 specific questions. If earlier questions were answered in the comments, use the answers.",

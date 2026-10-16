@@ -12,6 +12,7 @@ import { OpsError } from "../process.ts";
 import { writeState } from "../state.ts";
 import type { Stop } from "../stops.ts";
 import { STOPS, stopFor } from "../stops.ts";
+import { pushUnpushed } from "../unpushed.ts";
 
 // The catch-all stop, for a reason no other control names.
 const ERROR_CODE = "error";
@@ -26,6 +27,10 @@ const STOP_REQUEST = z.looseObject({
 });
 
 const PR = z.number().nullish();
+
+// The stage whose commits a stop pushes first, since only open-pr pushes
+// them otherwise (#283).
+const IMPLEMENT_STAGE = "implement";
 
 // The stage after the merge, which a start resumes at (start-state.ts).
 const PUBLISH_STAGE = "publish";
@@ -68,7 +73,11 @@ function nextStepText(control: Stop, req: StopRequest): string {
   return `To resume, fix what this names (push to the branch if you like), then remove \`${control.label.name}\`. The next sweep continues from the PR's branch at review, with every limit reset, the token budget included.`;
 }
 
-function stopComment(control: Stop, req: StopRequest): string {
+function stopComment(
+  control: Stop,
+  req: StopRequest,
+  unpushed: readonly string[],
+): string {
   return [
     `**🛑 Stopped by a control: ${control.control}** (\`${control.label.name}\`)`,
     "",
@@ -76,6 +85,7 @@ function stopComment(control: Stop, req: StopRequest): string {
     "",
     `Reason: ${String(req.reason)}`,
     detailLine(req.detail),
+    ...unpushed.map((line) => `\n${line}`),
     "",
     nextStepText(control, req),
   ].join("\n");
@@ -96,7 +106,11 @@ function stop(cfg: Config, request: unknown): { code: string; label: string } {
   };
   const { pr } = req.state ?? {};
   const prNumber = PR.parse(pr) ?? 0;
-  const body = stopComment(found, req);
+  let unpushed: string[] = [];
+  if (stage === IMPLEMENT_STAGE) {
+    unpushed = pushUnpushed(cfg, n);
+  }
+  const body = stopComment(found, req, unpushed);
   comment(cfg, n, COORDINATOR, body);
   if (prNumber !== 0) {
     comment(cfg, prNumber, COORDINATOR, body);

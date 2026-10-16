@@ -39,6 +39,7 @@ const start = {
   remote: null,
   pr: null,
   hasWork: true,
+  keptUnpushed: false,
   answered: false,
   now: new Date("2026-10-15T03:00:00Z"),
 };
