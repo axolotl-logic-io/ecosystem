@@ -1,6 +1,7 @@
 // The issue branch against its base: prepare-review writes the diff a review
 // reads, sync-base rebases the branch onto the moved base, and finish-sync
-// checks and pushes a rebase a writer resolved. None of them calls gh.
+// checks a rebase a writer resolved against the base sync-base rebased onto
+// and pushes it. None of them calls gh.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -50,6 +51,8 @@ type Op = (
   request: unknown,
 ) => ReviewReply | SyncReply | FinishReply;
 
+const COMMIT_SHA = /^[0-9a-f]{40,64}$/u;
+
 const REVIEW_REQUEST = z.looseObject({
   number: z.number().int(),
   sinceSha: z.string().nullish(),
@@ -63,7 +66,11 @@ const FINISH_REQUEST = z.looseObject({
   number: z.number().int(),
   abort: z.boolean().nullish(),
   reason: z.string().nullish(),
+  // The commit sync-base rebased onto (its reply's baseSha), #279.
+  baseSha: z.string().regex(COMMIT_SHA).nullish(),
 });
+
+type FinishRequest = z.infer<typeof FINISH_REQUEST>;
 
 function present(text: string | null | undefined): text is string {
   return text !== undefined && text !== null && text !== "";
@@ -215,9 +222,29 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   return { changed: true, conflict: false, headSha: head(wt), ...changes };
 }
 
-// After a writer resolved a kept rebase: push it if it passes the checks.
-// Anything else (or abort: true) resets the worktree to the pushed branch and
-// reports why.
+// Why the resolved rebase can't be pushed, or undefined when it can. With a
+// baseSha it is checked against that commit, which must be on the base, so a
+// base that moved during the fix doesn't throw the resolution away.
+function finishProblem(
+  cfg: Config,
+  wt: string,
+  req: FinishRequest,
+): string | undefined {
+  const base = `origin/${cfg.baseBranch}`;
+  const { baseSha } = req;
+  if (!present(baseSha)) {
+    return rebaseProblem(wt, base);
+  }
+  if (!gitSucceeds(wt, ["merge-base", "--is-ancestor", baseSha, base])) {
+    return `${baseSha} is not on ${base}`;
+  }
+  return rebaseProblem(wt, baseSha);
+}
+
+// After a writer resolved a kept rebase: push it if it passes the checks
+// against the base sync-base rebased onto (the request's baseSha, else the
+// base branch as fetched). Anything else (or abort: true) resets the worktree
+// to the pushed branch and reports why.
 function finishSync(cfg: Config, request: unknown): FinishReply {
   const req = parseRequest(FINISH_REQUEST, "finish-sync", request);
   const n = req.number;
@@ -226,7 +253,7 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
   if (req.abort === true) {
     reason = textOr(req.reason, "aborted");
   } else {
-    reason = rebaseProblem(wt, `origin/${cfg.baseBranch}`);
+    reason = finishProblem(cfg, wt, req);
   }
   if (reason !== undefined) {
     resetToRemote(cfg, n);

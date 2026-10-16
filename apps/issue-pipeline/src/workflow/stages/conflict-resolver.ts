@@ -8,9 +8,8 @@ import { chargeSession, sessionBudget } from "../budget.ts";
 import { handoffLead, handoffRule, preamble } from "../prompts.ts";
 import { CIFIX_SCHEMA } from "../schemas.ts";
 import type { IssueState } from "../types.ts";
-import { isRecord } from "./checks-reply.ts";
 import type { Conflict } from "./conflict-memo.ts";
-import { carriedOf } from "./conflict-memo.ts";
+import { conflictOf } from "./conflict-memo.ts";
 import { resolverTask } from "./conflict-target.ts";
 import { continuationsOf, continued } from "./continuation.ts";
 import { launchStep, stopStep } from "./step.ts";
@@ -30,19 +29,6 @@ const KEEP_REBASE =
 
 function maxConflictFixes(ctx: StageContext): number {
   return ctx.cfg.maxConflictFixes ?? DEFAULT_CONFLICT_FIXES;
-}
-
-// The rebase the last resolver was launched on. The steps after a launch
-// always follow it in the same sweep, so anything else is a bug in the
-// sweep's loop.
-function conflictOf(state: StageState): Conflict {
-  const { files, target } = carriedOf(state);
-  const { carry } = state;
-  if (!isRecord(carry)) {
-    throw new Error("conflict: expected the rebase's base");
-  }
-  const { baseSha } = carry;
-  return { files, target, baseSha };
 }
 
 // The resolver for `conflict`; a continuation starts from the handoff.

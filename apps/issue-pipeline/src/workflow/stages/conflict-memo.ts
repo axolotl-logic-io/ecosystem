@@ -1,7 +1,7 @@
 // What a conflict resolution carries between its steps (sync-conflict.ts):
-// the conflicting files and the rebase's target, and once the resolver has
-// replied, its reply, signature and error. The carry is JSON-safe and never
-// saved; these guards read it back.
+// the conflicting files and the rebase's base and target, and once the
+// resolver has replied, its reply, signature and error. The carry is
+// JSON-safe and never saved; these guards read it back.
 
 import type { Signature } from "../signing.ts";
 import type { FixOutput } from "./checks-reply.ts";
@@ -42,6 +42,19 @@ function carriedOf(state: StageState): Omit<Conflict, "baseSha"> {
   throw new Error("conflict: expected the conflicting files");
 }
 
+// The rebase the last resolver was launched on. The steps after a launch
+// always follow it in the same sweep, so anything else is a bug in the
+// sweep's loop.
+function conflictOf(state: StageState): Conflict {
+  const { files, target } = carriedOf(state);
+  const { carry } = state;
+  if (!isRecord(carry)) {
+    throw new Error("conflict: expected the rebase's base");
+  }
+  const { baseSha } = carry;
+  return { files, target, baseSha };
+}
+
 function memoOf(state: StageState): ConflictMemo {
   const { files, target } = carriedOf(state);
   const { carry } = state;
@@ -56,4 +69,4 @@ function memoOf(state: StageState): ConflictMemo {
 }
 
 export type { Conflict, ConflictMemo };
-export { carriedOf, memoOf };
+export { carriedOf, conflictOf, memoOf };

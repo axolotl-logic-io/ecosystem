@@ -1,8 +1,8 @@
 // What a rebase that stopped on conflicts is rebasing: the issue's code onto
 // the base branch, or its wiki commits onto the wiki's branch. The conflict
 // resolution (sync-conflict.ts) is the same for both; this module holds what
-// differs: the resolver's instructions, the op that finishes the rebase, and
-// the words the comments use.
+// differs: the resolver's instructions, the request that finishes the
+// rebase, and the words the comments use.
 
 import { isRecord } from "./checks-reply.ts";
 import type { StageState } from "./types.ts";
@@ -44,13 +44,30 @@ function ontoText(target: ConflictTarget, baseBranch: string): string {
   }
 }
 
-// The op that finishes, or aborts, the resolved rebase.
-function finishOp(target: ConflictTarget): string {
+// What finishing, or aborting, the resolved rebase asks for.
+interface Finish {
+  number: number;
+  abort: boolean;
+  reason: string;
+  baseSha: unknown;
+}
+
+// The ops request that finishes, or aborts, the resolved rebase. A code
+// rebase's is checked against the base it stopped on, `baseSha`, when it
+// is known (#279).
+function finishRequest(
+  target: ConflictTarget,
+  { number, abort, reason, baseSha }: Finish,
+): { op: string; payload: Readonly<Record<string, unknown>> } {
+  const payload = { number, abort, reason };
   switch (target.kind) {
     case "code":
-      return "finish-sync";
+      if (typeof baseSha === "string" && baseSha !== "") {
+        return { op: "finish-sync", payload: { ...payload, baseSha } };
+      }
+      return { op: "finish-sync", payload };
     case "wiki":
-      return "finish-wiki-sync";
+      return { op: "finish-wiki-sync", payload };
     default: {
       const unhandled: never = target;
       return unhandled;
@@ -105,4 +122,4 @@ function resolverTask(
 }
 
 export type { ConflictTarget };
-export { CODE_TARGET, finishOp, ontoText, resolverTask, targetOf };
+export { CODE_TARGET, finishRequest, ontoText, resolverTask, targetOf };

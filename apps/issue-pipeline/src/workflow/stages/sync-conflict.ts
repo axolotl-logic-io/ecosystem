@@ -12,14 +12,14 @@ import { byStep } from "../signing.ts";
 import type { FixOutput } from "./checks-reply.ts";
 import { finishReplyOf, fixOutputOf } from "./checks-reply.ts";
 import type { ConflictMemo } from "./conflict-memo.ts";
-import { carriedOf, memoOf } from "./conflict-memo.ts";
+import { conflictOf, memoOf } from "./conflict-memo.ts";
 import {
   conflicted,
   continueResolver,
   maxConflictFixes,
 } from "./conflict-resolver.ts";
 import type { ConflictTarget } from "./conflict-target.ts";
-import { finishOp, ontoText } from "./conflict-target.ts";
+import { finishRequest, ontoText } from "./conflict-target.ts";
 import { mayContinue, outOfRoomReason } from "./continuation.ts";
 import { flowEnd } from "./flow-step.ts";
 import {
@@ -92,7 +92,7 @@ function resolved(
   results: readonly LaunchResult[],
 ): Step {
   const result = onlyChild(results);
-  const { files, target } = carriedOf(state);
+  const { files, target, baseSha } = conflictOf(state);
   const fix = fixOutputOf(result);
   const memo: ConflictMemo = {
     files,
@@ -109,9 +109,10 @@ function resolved(
   }
   const abort = fix === null || fix.status !== "fixed";
   const reason = fix?.summary ?? "the conflict resolver failed";
-  const op = finishOp(target);
+  const finish = { number: state.n, abort, reason, baseSha };
+  const { op, payload } = finishRequest(target, finish);
   return launchStep({ ...state, phase: "finished", carry: memo }, [
-    { kind: "op", name: op, op, payload: { number: state.n, abort, reason } },
+    { kind: "op", name: op, op, payload },
   ]);
 }
 
