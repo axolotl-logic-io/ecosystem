@@ -200,6 +200,8 @@ function writeJob({
         usage: { input: tokens, output: 0, cacheRead: 0, cacheWrite: 0 },
         tokenBudget,
         contextTokens,
+        peakContext: 0,
+        contextStop: null,
         resumed: false,
         outcome: launchOutcome,
       },

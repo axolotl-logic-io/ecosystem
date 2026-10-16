@@ -47,7 +47,7 @@
     // (#233). src/job/checkout.ts makes, closes and removes the job's own
     // checkout and the bare mirrors it comes from with git, and
     // src/job/exit-push.ts reports a failed exit push on stderr (#250). The
-    // job's pure modules (raw-results, pool, roles) get no exception.
+    // job's pure modules (raw-results, pool, roles, context-watch) get no exception.
     // The orchestrator (#234) too: its entry src/orchestrate.ts spawns the
     // jobs and handles the stop signals, src/orchestrator/args.ts reads its
     // arguments, snapshot.ts checks the jobs' pids, and ledger.ts and log.ts

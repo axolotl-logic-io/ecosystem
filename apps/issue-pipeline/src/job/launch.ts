@@ -1,9 +1,11 @@
 // One launch of the sweep, run as a child process by the stage job: an ops
 // request runs the installed ops.mjs with no model, and a model session runs
 // `pi` in RPC mode (src/job/rpc.ts) as the launch's installed agent, fresh or
-// resuming an interrupted session. Either way the launch resolves to the raw
+// resuming an interrupted session, held to the config's contextLimits
+// (src/job/context-watch.ts). Either way the launch resolves to the raw
 // result the sweep's driver reads; it never rejects. The job's hooks hear of
-// each launch's start, its records and its end.
+// each launch's start, its records, a session's stop at the hard context
+// limit, and its end.
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -12,6 +14,12 @@ import process from "node:process";
 import { ROOT } from "../pipeline-root.ts";
 import type { ChildSpec, LaunchSpec } from "../workflow/launches.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
+import type {
+  ContextLimits,
+  ContextStop,
+  ContextWatch,
+} from "./context-watch.ts";
+import { contextStopped, watchContext } from "./context-watch.ts";
 import type { LiveLaunch } from "./control.ts";
 import type { OpsRaw, ProcessExit, SessionRaw } from "./raw-results.ts";
 import {
@@ -43,6 +51,10 @@ interface LaunchHooks {
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
   ended: (key: string) => void;
+  // The limits every session's context is held to.
+  contextLimits: ContextLimits;
+  // Session `key` passed the hard context limit and was stopped.
+  contextStopped: (key: string, stop: ContextStop) => void;
   // The whole environment a session of installed agent `agent` runs with.
   env: (agent: string) => Readonly<Record<string, string>>;
   // Where every model session runs: the job's own checkout.
@@ -126,6 +138,67 @@ function prepareFiles(
   }
 }
 
+// Where a session starts: pi's arguments, the session file, and the point
+// it resumes from, if any.
+interface SessionStart {
+  args: readonly string[];
+  session: string;
+  resume: ResumePoint | null;
+}
+
+// Runs pi for `spec` from `from`, its context watched (context-watch.ts),
+// and resolves to its result: the watch's for a session stopped at the hard
+// limit, and its records' for any other.
+async function runPi(
+  spec: ChildSpec,
+  hooks: LaunchHooks,
+  from: SessionStart,
+): Promise<SessionRaw> {
+  const { key } = spec;
+  const { session, resume } = from;
+  const usage = resume?.usage ?? ZERO_USAGE;
+  let prompt = spec.task;
+  if (resume !== null) {
+    prompt = RESUME_PROMPT;
+  }
+  const watched: { watch: ContextWatch | null } = { watch: null };
+  const exit = await runRpc({
+    args: from.args,
+    cwd: hooks.cwd,
+    env: hooks.env(spec.agent),
+    prompt,
+    timeoutMs: spec.timeoutMs,
+    onSpawn: (rpc: RpcProcess): void => {
+      const { pid } = rpc;
+      const resumed = resume !== null;
+      const start: LaunchStart = {
+        key,
+        kind: "session",
+        pid,
+        session,
+        resumed,
+        usage,
+        tokenBudget: spec.tokenBudget,
+      };
+      const live = { key, ...rpc };
+      watched.watch = watchContext(hooks.contextLimits, spec.agent, live);
+      hooks.started(start, live);
+    },
+    onRecord: (record: unknown): void => {
+      hooks.record(key, record);
+      watched.watch?.read(record);
+    },
+  });
+  hooks.ended(key);
+  const raw = sessionRaw(spec, exit, usage);
+  const stop = watched.watch?.stopped() ?? null;
+  if (stop === null) {
+    return raw;
+  }
+  hooks.contextStopped(key, stop);
+  return contextStopped(spec, stop, raw.results[0].usage);
+}
+
 async function runSession(
   spec: ChildSpec,
   hooks: LaunchHooks,
@@ -144,36 +217,8 @@ async function runSession(
     );
   }
   const files = { session, extension: OUTPUT_EXTENSION, schema };
-  const { key } = spec;
-  const usage = resume?.usage ?? ZERO_USAGE;
-  let prompt = spec.task;
-  if (resume !== null) {
-    prompt = RESUME_PROMPT;
-  }
-  const exit = await runRpc({
-    args: piArgs(read.definition, spec, files),
-    cwd: hooks.cwd,
-    env: hooks.env(spec.agent),
-    prompt,
-    timeoutMs: spec.timeoutMs,
-    onSpawn: (rpc: RpcProcess): void => {
-      const { pid } = rpc;
-      const resumed = resume !== null;
-      const start: LaunchStart = {
-        key,
-        kind: "session",
-        pid,
-        session,
-        resumed,
-        usage,
-        tokenBudget: spec.tokenBudget,
-      };
-      hooks.started(start, { key, ...rpc });
-    },
-    onRecord: (record: unknown): void => hooks.record(key, record),
-  });
-  hooks.ended(key);
-  return sessionRaw(spec, exit, usage);
+  const args = piArgs(read.definition, spec, files);
+  return await runPi(spec, hooks, { args, session, resume });
 }
 
 // Runs `spec` and resolves to its raw result, telling `hooks` of it. A model

@@ -106,6 +106,8 @@ function hooksOf(
     },
     record: status.record,
     ended: status.ended,
+    contextLimits: cfg.contextLimits,
+    contextStopped: status.contextStopped,
     env: (agent: string): Readonly<Record<string, string>> =>
       agentEnvOf(sessionRoleOf(agent), roles, process.env),
     cwd,

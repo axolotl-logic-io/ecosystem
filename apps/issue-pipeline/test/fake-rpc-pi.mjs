@@ -1,6 +1,8 @@
 // @ts-check
 // The stage job tests' fakes: the ops.mjs and RPC `pi` sources that
-// job-test-kit.mjs installs, and builders for the records pi prints.
+// job-test-kit.mjs installs, and builders for the records pi prints:
+// `turns` gives one assistant message per turn whose usage shows that turn's
+// context, so a script's context can rise turn by turn.
 
 // Answers each op from replies.json and logs the request to ops.log. A push
 // whose reply sets `git` pushes the request's checkout's HEAD to the
@@ -118,6 +120,34 @@ function messageEnd(usage) {
   };
 }
 
+// The output tokens each turn of `turns` adds, which count towards no
+// turn's context.
+const TURN_OUTPUT = 5000;
+// The share of a turn's context that `turns` gives each of input and cache
+// writes; cache reads take the rest.
+const TURN_SHARE = 4;
+
+/**
+ * One assistant message per entry of `contexts`, whose usage shows that
+ * entry as its turn's context, split across input, cache reads and cache
+ * writes, with TURN_OUTPUT output tokens besides.
+ * @param {readonly number[]} contexts
+ * @returns {object[]}
+ */
+function turns(contexts) {
+  return contexts.map((context) => {
+    const input = Math.floor(context / TURN_SHARE);
+    const cacheWrite = Math.floor(context / TURN_SHARE);
+    const cacheRead = context - input - cacheWrite;
+    return messageEnd({
+      input,
+      output: TURN_OUTPUT,
+      cacheRead,
+      cacheWrite,
+    });
+  });
+}
+
 /**
  * A call of tool `toolName` ending, failed with `error` as its text when
  * `isError`.
@@ -145,4 +175,4 @@ function outputEnd(details) {
   };
 }
 
-export { FAKE_OPS, FAKE_PI, messageEnd, outputEnd, toolEnd };
+export { FAKE_OPS, FAKE_PI, messageEnd, outputEnd, toolEnd, turns };

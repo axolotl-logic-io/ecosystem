@@ -207,4 +207,4 @@ function steerJob(
 }
 
 export type { Control, LiveLaunch };
-export { openControl, steerJob };
+export { openControl, steerJob, stopLaunch };

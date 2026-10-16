@@ -38,6 +38,8 @@ function hooksIn(sessions) {
     started: () => undefined,
     record: () => undefined,
     ended: () => undefined,
+    contextLimits: { soft: 150_000, hard: 175_000 },
+    contextStopped: () => undefined,
     env: () => ({}),
     cwd: sessions,
   };
