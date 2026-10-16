@@ -179,6 +179,7 @@ export type { StackedOn, SyncTarget };
 export {
   claimedStack,
   measureFrom,
+  prereqMerged,
   resetToStart,
   STACKED_ON,
   stackStart,
