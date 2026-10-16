@@ -2,11 +2,11 @@
 // aggregator, the fixer and the re-reviewers, and the comments the review and
 // fix rounds post on the PR.
 
-import { sessionBudget } from "../budget.ts";
 import { findingLines, findingsText } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
 import {
+  commitOftenRule,
   handoffLead,
   handoffRule,
   practicesNote,
@@ -60,9 +60,9 @@ function lensTask(
   lens: Lens,
   diff: ReviewDiff,
 ): string {
-  const { cfg, budgets } = ctx;
+  const { cfg } = ctx;
   const role = `reviewer (${lens})`;
-  return preamble(cfg, state, role, sessionBudget(budgets, "reviewer"))
+  return preamble(cfg, state, role)
     .concat([
       `Review only this concern: ${LENSES[lens]}`,
       practicesNote(cfg, state, "reviewer"),
@@ -104,13 +104,8 @@ function aggregateTask(
   state: StageState,
   raw: readonly RawFinding[],
 ): string {
-  const { cfg, budgets } = ctx;
-  return preamble(
-    cfg,
-    state,
-    "review aggregator",
-    sessionBudget(budgets, "aggregator"),
-  )
+  const { cfg } = ctx;
+  return preamble(cfg, state, "review aggregator")
     .concat([
       "Three reviewers reported these blocking findings. Merge duplicates (same defect at the same place) into one entry listing every lens that raised it. Keep every distinct finding; do not drop or downgrade any. Do not edit files.",
       "",
@@ -154,7 +149,7 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
   if (job.continuation) {
     lead.push(handoffLead(handoffFile));
   }
-  return preamble(cfg, state, role, sessionBudget(budgets, "fixer"))
+  return preamble(cfg, state, role)
     .concat([
       ...lead,
       practicesNote(cfg, state, "writer"),
@@ -163,7 +158,10 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
       findingsText(open),
       "",
       `For each finding, either fix it (list its id in \`fixed\`) or, if you have concrete evidence it is wrong, dispute it (list it in \`disputed\` with the evidence). Findings already disputed once cannot be disputed again: ${disputedIds(open)}.`,
-      `Make only the changes the findings need. Run the tests, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`) and leave the worktree clean. Return status \`done\` when you finish.`,
+      commitOftenRule(
+        `commit each fix with \`git add -A && git commit\` as soon as it works, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\``,
+      ),
+      "Make only the changes the findings need. Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
       handoffRule(budgets.hardLimit, handoffFile, "commit what builds"),
     ])
     .join("\n");
@@ -209,9 +207,9 @@ function rereviewTask(
   state: StageState,
   { lens, diffPath, findings }: RereviewScope,
 ): string {
-  const { cfg, budgets } = ctx;
+  const { cfg } = ctx;
   const role = `re-reviewer (${lens})`;
-  return preamble(cfg, state, role, sessionBudget(budgets, "rereviewer"))
+  return preamble(cfg, state, role)
     .concat([
       `Concern: ${LENSES[lens]}`,
       ...specSection(state, SPEC_RULE_REVIEW),

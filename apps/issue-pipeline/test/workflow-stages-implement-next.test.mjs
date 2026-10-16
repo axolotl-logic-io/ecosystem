@@ -11,7 +11,6 @@ import {
   afterSession,
   BUILD_CTX,
   buildState,
-  contextWith,
   HANDOFF,
   IMPL_BY,
   implementLaunch,
@@ -19,16 +18,12 @@ import {
   PLAN,
   SPEC,
   STAMP,
-  TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
 /** @import { StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
 /** @typedef {Readonly<Record<string, unknown>>} Reply */
 
-const IMPL_TOKENS = 150_000;
 const TITLE_LIMIT = 200;
-// An issue budget with room for triage but not for an implementer session.
-const SMALL_BUDGET = 150_000;
 const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first: ${HANDOFF}. Continue from the current branch state.`;
 const CONTINUED =
   "This session ran out of room before finishing. Another implementer session continues from its handoff.";
@@ -97,8 +92,6 @@ test("the first call charges the implementer and launches a writer from the spec
   );
   assert.equal(sessions(step)[0]?.agent, "issue-pipeline-writer");
   assert.equal(step.state.phase, "decide");
-  assert.equal(step.state.st.allocated, TRIAGE_TOKENS + IMPL_TOKENS);
-  assert.deepEqual(step.state.st.sessions, ["triage", "implementer"]);
   assert.deepEqual(given, buildState("implement", { spec: SPEC }));
 });
 
@@ -108,12 +101,6 @@ test("without a spec the session works from triage's plan", () => {
     sessions(step),
     implementer(implementTask(`Triage plan:\n${PLAN}`)),
   );
-});
-
-test("a budget too small for the session stops", () => {
-  const step = next(buildState("implement"), contextWith(SMALL_BUDGET), []);
-  assert.equal(step.done, true);
-  assert.equal(step.stop?.reason, "issue token budget exhausted");
 });
 
 test("a handoff, then a continuation, then done moves the issue to open-pr", () => {
@@ -129,7 +116,6 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
     { by: IMPL_BY, body: `${CONTINUED}\n\nHalf done.`, where: "issue" },
   ]);
   assert.deepEqual(first.state.st.log, [
-    `${STAMP} charged implementer 150000 to issueTokenBudget`,
     `${STAMP} implement: handoff - Half done.`,
   ]);
   const again = begunAgain(first);

@@ -4,9 +4,9 @@
 // it. A spec that needs a maintainer's answer goes back to triage with its
 // questions, and an issue too big for one session is split into sub-issues
 // (spec-split.ts, #267). A failed spec session, including one whose spec stops partway, is
-// tried once more within the spec budget (#280).
+// tried once more (#280).
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import { SPEC_SCHEMA } from "../schemas.ts";
@@ -81,25 +81,17 @@ function specLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     minutes: SPEC_MINUTES,
     budgetRole: "spec",
     tokenBudget: budget,
-    task: specTask(state, ctx, budget),
+    task: specTask(state, ctx),
   };
 }
 
-// Charges a spec session, then launches it, its reply read in `phase`.
+// Launches a spec session, its reply read in `phase`.
 function launchSession(
   state: StageState,
   ctx: StageContext,
   phase: DecidePhase,
 ): Step {
-  const st = { ...state.st };
-  const charge = chargeSession(ctx.budgets, st, "spec", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(state, charge.reason, charge.detail);
-  }
-  const charged = { ...state, st };
-  return launchStep({ ...charged, phase }, [specLaunch(charged, ctx)]);
+  return launchStep({ ...state, phase }, [specLaunch(state, ctx)]);
 }
 
 // Sends the questions back to triage, with what the spec writer found so far.

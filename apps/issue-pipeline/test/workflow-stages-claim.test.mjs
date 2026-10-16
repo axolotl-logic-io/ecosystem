@@ -37,7 +37,6 @@ const CRASHED_LEASE = {
   verifiedSha: "8888888",
   acceptReason: "Does what #8 asks.",
   verifySummary: "test: passed",
-  allocated: 400_000,
 };
 
 test("a sweep with nothing to do claims nothing and cleans up", async () => {
@@ -92,8 +91,6 @@ test("after a lost claim, the next candidate resumes from its saved lease", asyn
           stage: "merge",
           outcome: "merged",
           reason: null,
-          allocatedTokens: 400_000,
-          rebaseAllocatedTokens: 0,
         },
       ],
     }),
@@ -135,8 +132,6 @@ test("a failed claim is the sweep's item, with no state", async () => {
           stage: null,
           outcome: "claim-failed",
           reason: "the issue is locked",
-          allocatedTokens: null,
-          rebaseAllocatedTokens: null,
         },
       ],
     }),
@@ -164,8 +159,6 @@ test("a claim waiting for an answer is the sweep's item and launches nothing", a
           stage: null,
           outcome: "waiting-for-answer",
           reason: "waiting for an answer to the pipeline's questions",
-          allocatedTokens: null,
-          rebaseAllocatedTokens: null,
         },
       ],
     }),
@@ -179,7 +172,7 @@ test("a PR branch that moved outside the pipeline stops the claimed issue", asyn
       ...ROUTINE_OPS,
       sweep: sweepReply({ items: [LOST_ISSUE] }),
       claim: {
-        ...claimAt("merge", { pr: 42, headSha: "aaaaaaa", allocated: 9 }),
+        ...claimAt("merge", { pr: 42, headSha: "aaaaaaa" }),
         remoteHead: "bbbbbbb",
       },
     },
@@ -196,8 +189,6 @@ test("a PR branch that moved outside the pipeline stops the claimed issue", asyn
           stage: "merge",
           outcome: "stopped",
           reason: "the PR branch changed outside the pipeline",
-          allocatedTokens: 9,
-          rebaseAllocatedTokens: 0,
         },
       ],
     }),

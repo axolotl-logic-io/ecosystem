@@ -60,7 +60,7 @@ function requestOf(spec) {
 // An issue at triage with no tokens reported yet.
 /** @returns {IssueState} */
 function triageState() {
-  return { stage: "triage", depth: 0, findings: [], allocated: 0 };
+  return { stage: "triage", depth: 0, findings: [] };
 }
 
 test("a failed ops child is an error with its detail", () => {

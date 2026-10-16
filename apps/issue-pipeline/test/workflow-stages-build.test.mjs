@@ -27,7 +27,6 @@ const TRIAGED = {
   pr: 42,
   headSha: "aaaaaaa",
   implemented: false,
-  allocated: 50_000,
 };
 
 // The spec writer and the implementer, each done.
@@ -82,8 +81,6 @@ test("a spec is written, implemented and its PR opened, then held at review", as
           stage: "review",
           outcome: "in-progress",
           reason: null,
-          allocatedTokens: 280_000,
-          rebaseAllocatedTokens: 0,
         },
       ],
     }),

@@ -3,7 +3,7 @@
 // large one moves to spec with its split suggested, for the spec writer to cut
 // (#267); anything else is rejected with a stop.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import { preamble } from "../prompts.ts";
@@ -88,11 +88,11 @@ function triageLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     minutes: TRIAGE_MINUTES,
     budgetRole: "triage",
     tokenBudget: budget,
-    task: preamble(cfg, state, "triage", budget).concat(lines).join("\n"),
+    task: preamble(cfg, state, "triage").concat(lines).join("\n"),
   };
 }
 
-// Counts the run and charges the session, then launches it.
+// Counts the run, then launches the session.
 function begin(state: StageState, ctx: StageContext): Step {
   const { maxTriages } = ctx.cfg;
   const triages = (state.st.triages ?? 0) + 1;
@@ -103,12 +103,6 @@ function begin(state: StageState, ctx: StageContext): Step {
       `triage ran ${maxTriages} times without reaching a decision the pipeline can act on`,
       null,
     );
-  }
-  const charge = chargeSession(ctx.budgets, counted.st, "triage", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(counted, charge.reason, charge.detail);
   }
   return launchStep({ ...counted, phase: "decide" }, [
     triageLaunch(counted, ctx),

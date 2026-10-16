@@ -31,6 +31,8 @@ const RATED = { spent: 50, waiting: 51 };
 const STACK = { prereq: 60, dependent: 61 };
 const PR = { merging: 1, accepting: 2 };
 const TOKENS_PER_HOUR = 1000;
+// Past the 2M an hour the orchestrator once held starts at by default.
+const PAST_OLD_HOURLY_LIMIT = 3_000_000;
 const LOG_LINE = z.strictObject({
   at: z.string(),
   issue: z.number(),
@@ -228,6 +230,38 @@ test("once the jobs' tokens in the last hour reach tokensPerHour every start is 
       { issue: RATED.waiting, action: "held", reason: "rate-limit" },
     ],
   );
+});
+
+test("with tokensPerHour unset, the default, no start is held for the rate limit however many tokens the jobs used", () => {
+  const unrated = loadConfig(configWith({}));
+  const { tokensPerHour } = unrated;
+  assert.equal(tokensPerHour, null);
+  writeJob({
+    issue: RATED.spent,
+    stage: "review",
+    pid: process.pid,
+    ended: true,
+    tokens: PAST_OLD_HOURLY_LIMIT,
+  });
+  openWith([
+    { number: RATED.spent, state: { stage: "accept" } },
+    { number: RATED.waiting },
+  ]);
+  const { spawned, spawn } = recordingSpawn(process.pid);
+  const decisions = tick(unrated, {
+    configPath: CONFIG,
+    now: () => NOW,
+    spawn,
+    ...UNWATCHED,
+  });
+  assert.deepEqual(
+    decisions.map(({ issue, action }) => ({ issue, action })),
+    [
+      { issue: RATED.spent, action: "started" },
+      { issue: RATED.waiting, action: "started" },
+    ],
+  );
+  assert.equal(spawned.length, 2);
 });
 
 test("a waiting issue whose prerequisite is at checks starts stacked on it", () => {

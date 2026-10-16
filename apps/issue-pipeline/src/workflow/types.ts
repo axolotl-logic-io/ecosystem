@@ -116,17 +116,10 @@ interface IssueState {
   resolvedHistory?: string[];
   // The security reviews run on the issue.
   securityRounds?: number;
-  // Tokens allocated to the issue's sessions so far.
-  allocated: number;
-  // Tokens allocated to the rebase pool (`rebaseTokenBudget`): conflict
-  // resolvers, and re-checks after a rebase the merge stage asked for. Reset at
-  // merge and restart; missing in states saved before #201, read as 0.
-  rebaseAllocated?: number;
-  // Whether the issue is re-checking after a rebase the merge stage asked for,
-  // so its sessions are charged to the rebase pool. Missing reads as false.
-  rechecking?: boolean;
-  // The roles of the issue's latest sessions, oldest first.
-  sessions?: string[];
+  // A state saved before budgets-bound-context (2026-10-16) also holds
+  // `allocated`, `rebaseAllocated`, `rechecking` and `sessions`, the spend
+  // bookkeeping of the removed issue budget and rebase allowance. Nothing
+  // reads them, and they pass through unchanged.
 }
 
 // The local paths ops gives the issue at claim.
@@ -171,7 +164,7 @@ interface FixRoundsConfig {
   maxFixRounds: number;
 }
 
-// The roles a session is charged to, each with its own token budget.
+// The roles a session runs as, each with its own context budget.
 type Role =
   | "triage"
   | "spec"

@@ -32,7 +32,6 @@ const ACCEPTED = {
   implemented: true,
   spec: "## Behaviour\n\n1. src/a.ts does the thing.",
   acceptReason: "Does what #7 asks.",
-  allocated: 880_000,
 };
 // A security reviewer's finding that harms the users.
 const LEAK = {
@@ -78,8 +77,6 @@ function leakStopped(stage) {
         outcome: "stopped",
         reason:
           "security review (user-harm): Logs the user's email is still open after 2 fix rounds",
-        allocatedTokens: 940_000,
-        rebaseAllocatedTokens: 0,
       },
     ],
   });
@@ -104,7 +101,6 @@ test("an open security finding stops the merge with its harm as the code", async
     stage: "merge",
     fields: {
       ...ACCEPTED,
-      allocated: 940_000,
       findings: [{ ...open, disputed: false }],
     },
   });
@@ -134,7 +130,6 @@ const UNMET = {
 const AT_FIX = {
   ...ACCEPTED,
   acceptReason: undefined,
-  allocated: 500_000,
   findings: [UNMET],
   nextFindingId: 1,
 };

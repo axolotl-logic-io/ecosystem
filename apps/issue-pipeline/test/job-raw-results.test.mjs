@@ -82,7 +82,6 @@ function specState(reportedTokens) {
     stage: "spec",
     depth: 0,
     findings: [],
-    allocated: 0,
     reportedTokens,
   };
 }

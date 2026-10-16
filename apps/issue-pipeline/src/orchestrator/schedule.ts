@@ -147,7 +147,8 @@ function holdReason(
       throw new Error(`unknown role ${String(unknown)}`);
     }
   }
-  if (reason === null && count.spent >= count.settings.tokensPerHour) {
+  const limit = count.settings.tokensPerHour ?? 0; // null or 0: no limit
+  if (reason === null && limit > 0 && count.spent >= limit) {
     return "rate-limit";
   }
   return reason;

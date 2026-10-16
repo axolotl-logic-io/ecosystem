@@ -62,7 +62,6 @@ const MODELS = {
   security: OPUS,
   acceptance: SONNET,
 };
-const ISSUE_BUDGET = 1_000_000;
 const DIFF = { path: "/runs/issue-7/r0.diff", lines: 40 };
 const OFF_BY_ONE = {
   file: "src/a.ts",
@@ -72,19 +71,14 @@ const OFF_BY_ONE = {
   suggestion: "Use <= in the loop bound.",
 };
 
-// Every kit's rebase pool (`rebaseTokenBudget`).
-const REBASE_BUDGET = 500_000;
-
-/** @param {number} issueBudget @returns {StageContext} */
-function contextWith(issueBudget) {
+/** @returns {StageContext} */
+function contextWith() {
   return {
     cfg: CFG,
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
       hardLimit: 175_000,
-      issueBudget,
-      rebaseBudget: REBASE_BUDGET,
     },
     models: MODELS,
     now: () => NOW,
@@ -93,7 +87,7 @@ function contextWith(issueBudget) {
   };
 }
 
-const CTX = contextWith(ISSUE_BUDGET);
+const CTX = contextWith();
 
 // Issue #7 at `stage` with its PR open, with `fields` replacing its saved
 // state's.
@@ -109,8 +103,6 @@ function stateWith(stage, fields = {}) {
       headSha: "bbbbbbb",
       reviewedSha: null,
       plan: null,
-      allocated: 0,
-      sessions: [],
       round: 0,
       findings: [],
       resolvedHistory: [],
@@ -196,7 +188,7 @@ function specLines(spec, rule) {
 // The first reviewer's whole task for `lens`, with `spec` if the issue has one.
 /** @param {Lens} lens @param {string | null} [spec] @returns {string} */
 function lensTask(lens, spec = null) {
-  return preamble(CFG, ITEM, `reviewer (${lens})`, ROLES.reviewer)
+  return preamble(CFG, ITEM, `reviewer (${lens})`)
     .concat([
       `Review only this concern: ${LENSES[lens]}`,
       practicesNote(CFG, ITEM, "reviewer"),
@@ -211,7 +203,7 @@ function lensTask(lens, spec = null) {
 // The aggregator's whole task over `raw`.
 /** @param {unknown} raw @returns {string} */
 function aggregateTask(raw) {
-  return preamble(CFG, ITEM, "review aggregator", ROLES.aggregator)
+  return preamble(CFG, ITEM, "review aggregator")
     .concat([
       "Three reviewers reported these blocking findings. Merge duplicates (same defect at the same place) into one entry listing every lens that raised it. Keep every distinct finding; do not drop or downgrade any. Do not edit files.",
       "",
@@ -228,7 +220,7 @@ function aggregateTask(raw) {
  * @returns {string}
  */
 function fixTask(round, open, disputed = "none", spec = null) {
-  return preamble(CFG, ITEM, `fixer, round ${round} of 2`, ROLES.fixer)
+  return preamble(CFG, ITEM, `fixer, round ${round} of 2`)
     .concat([
       practicesNote(CFG, ITEM, "writer"),
       ...specLines(spec, FIX_RULE),
@@ -236,7 +228,8 @@ function fixTask(round, open, disputed = "none", spec = null) {
       findingsText(open),
       "",
       `For each finding, either fix it (list its id in \`fixed\`) or, if you have concrete evidence it is wrong, dispute it (list it in \`disputed\` with the evidence). Findings already disputed once cannot be disputed again: ${disputed}.`,
-      `Make only the changes the findings need. Run the tests, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`) and leave the worktree clean. Return status \`done\` when you finish.`,
+      `Commit often, in small working steps: commit each fix with \`git add -A && git commit\` as soon as it works, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.`,
+      "Make only the changes the findings need. Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
       `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${PATHS.handoffFile} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
     ])
     .join("\n");
@@ -255,7 +248,7 @@ function rereviewTask(
   mine,
   { resolved = "none", spec = null } = {},
 ) {
-  return preamble(CFG, ITEM, `re-reviewer (${lens})`, ROLES.rereviewer)
+  return preamble(CFG, ITEM, `re-reviewer (${lens})`)
     .concat([
       `Concern: ${LENSES[lens]}`,
       ...specLines(spec, REVIEW_RULE),

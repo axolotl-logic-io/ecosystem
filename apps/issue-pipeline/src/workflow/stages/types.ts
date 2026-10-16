@@ -180,12 +180,10 @@ interface StageContext {
 }
 
 // The repo config as the sweep reply carries it: what the stages read, the
-// token budgets, and the config's overrides of the sweep's defaults.
+// context budgets, and the config's overrides of the sweep's defaults.
 interface SweepConfig extends StageConfig {
   sessionTokenCap: number;
   contextLimits: { soft: number; hard: number };
-  issueTokenBudget: number;
-  rebaseTokenBudget: number;
   roleBudgets?: Readonly<Partial<Record<Role, number>>> | null;
   models?: Readonly<Partial<Record<ModelRole, string>>> | null;
   maxSpawnsPerRun?: number | null;
@@ -240,8 +238,6 @@ interface SummaryItem {
   stage: string | null;
   outcome: string;
   reason: string | null;
-  allocatedTokens: number | null;
-  rebaseAllocatedTokens: number | null;
 }
 
 // What the end-of-sweep cleanup did: ops' list of worktrees, or its error.

@@ -10,19 +10,16 @@ import {
   afterSession,
   BUILD_CTX,
   buildState,
-  contextWith,
   SPEC,
   SPEC_BY,
   SPEC_END,
   SPEC_REPLY,
   specLaunch,
   specTask,
-  TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
-/** @import { ChildResult, Step } from "../src/workflow/stages/types.ts" */
+/** @import { Step } from "../src/workflow/stages/types.ts" */
 
-const SPEC_TOKENS = 80_000;
 const FILES = ["src/thing.ts"];
 const TWICE = "the spec writer failed twice";
 const CUT_SHORT = `its spec did not end with ${SPEC_END}, so it may stop partway`;
@@ -71,8 +68,6 @@ test("a spec without its marker launches the spec writer once more", () => {
   assert.equal(step.stop, null);
   assert.equal(step.state.phase, "decide-again");
   assert.deepEqual(sessions(step), asSessions([specLaunch(specTask())]));
-  assert.equal(step.state.st.allocated, TRIAGE_TOKENS + 2 * SPEC_TOKENS);
-  assert.deepEqual(step.state.st.sessions, ["triage", "spec", "spec"]);
   assert.deepEqual(step.comments, []);
   assert.equal(step.state.st.spec, undefined);
 });
@@ -114,19 +109,4 @@ test("a failed first session followed by a whole reply is kept as ready", () => 
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "implement");
   assert.equal(step.state.st.spec, SPEC);
-});
-
-test("a retry the budget can't take stops with the budget's reason", () => {
-  const ctx = contextWith(TRIAGE_TOKENS + SPEC_TOKENS);
-  const begun = next(buildState("spec"), ctx, []);
-  /** @type {ChildResult} */
-  const result = { kind: "child", error: null, by: SPEC_BY, ...UNMARKED };
-  const step = next(begun.state, ctx, [result]);
-  assert.equal(step.done, true);
-  assert.deepEqual(step.stop, {
-    reason: "issue token budget exhausted",
-    detail:
-      "Allocated 130000 of 130000 tokens (issueTokenBudget); the next step (spec) needs 80000.",
-    code: null,
-  });
 });

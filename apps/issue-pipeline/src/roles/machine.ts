@@ -21,7 +21,7 @@ type End =
   | { kind: "held" };
 
 // A model session: its name, agent and model, the schema of its reply, its
-// task, its token budget and the role it is charged as (its context log
+// task, its context budget and the role it is the budget of (its context log
 // line's role).
 interface SessionEffect {
   kind: "session";

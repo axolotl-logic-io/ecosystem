@@ -3,7 +3,7 @@
 // join the open ones. A finding that comes back after being resolved stops
 // the issue, since the fixes are undoing each other.
 
-import { chargeSession, launchBudget } from "../budget.ts";
+import { launchBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding, openFindings } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
@@ -142,8 +142,7 @@ function settle(
   return saveStep({ ...state, st, phase: "saved" }, comments);
 }
 
-// Charges a re-reviewer for each lens with open findings, then launches them
-// on the fix diff. With none to launch, the round settles at once.
+// Launches a re-reviewer for each lens with open findings on the fix diff. With none to launch, the round settles at once.
 function launchRereviews(
   state: StageState,
   ctx: StageContext,
@@ -159,13 +158,6 @@ function launchRereviews(
   }
   const lenses = openLenses(state);
   const st = copyState(state.st);
-  const charge = chargeSession(ctx.budgets, st, "rereviewer", {
-    at: ctx.now(),
-    count: lenses.length,
-  });
-  if (!charge.charged) {
-    return stopStep({ ...state, st }, charge.reason, charge.detail);
-  }
   if (lenses.length === 0) {
     return settle(state, ctx, {
       st,
@@ -174,10 +166,12 @@ function launchRereviews(
       stop: null,
     });
   }
-  const charged = { ...state, st, phase: "rereviewed" };
+  const rereviewing = { ...state, st, phase: "rereviewed" };
   return launchEach(
-    charged,
-    lenses.map((lens) => rereviewLaunch(ctx, charged, lens, String(diffPath))),
+    rereviewing,
+    lenses.map((lens) =>
+      rereviewLaunch(ctx, rereviewing, lens, String(diffPath)),
+    ),
   );
 }
 

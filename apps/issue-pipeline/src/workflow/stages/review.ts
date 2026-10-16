@@ -3,7 +3,7 @@
 // numbered for the fixer. A clean review moves the issue to sync, one with
 // blocking findings to fix.
 
-import { chargeSession, launchBudget } from "../budget.ts";
+import { launchBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding } from "../findings.ts";
 import type { ReviewLens } from "../lenses.ts";
@@ -75,19 +75,10 @@ function phaseOf(state: StageState): ReviewPhase {
   return phase;
 }
 
-// Charges the three reviewers, then prepares the diff.
-function begin(state: StageState, ctx: StageContext): Step {
-  const st = copyState(state.st);
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "reviewer", {
-    at: ctx.now(),
-    count: LENS_NAMES.length,
-  });
-  if (!charge.charged) {
-    return stopStep(charged, charge.reason, charge.detail);
-  }
-  return launchStep({ ...charged, phase: "prepared" }, [
-    prepareLaunch(charged, { tag: "r0" }),
+// Prepares the diff for the three reviewers.
+function begin(state: StageState): Step {
+  return launchStep({ ...state, phase: "prepared" }, [
+    prepareLaunch(state, { tag: "r0" }),
   ]);
 }
 
@@ -219,14 +210,12 @@ function reviewed(
     noteEvent(st, "review: no blocking findings", ctx.now());
     return saveStep({ ...state, st, phase: "saved" }, comments);
   }
-  const charge = chargeSession(ctx.budgets, st, "aggregator", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep({ ...state, st }, charge.reason, charge.detail, comments);
-  }
-  const charged = { ...state, st, phase: "aggregated", carry: raw };
-  return launchStep(charged, [aggregateLaunch(ctx, charged, raw)], comments);
+  const aggregating = { ...state, st, phase: "aggregated", carry: raw };
+  return launchStep(
+    aggregating,
+    [aggregateLaunch(ctx, aggregating, raw)],
+    comments,
+  );
 }
 
 function lensesOf(finding: MergedFinding): string[] {
@@ -281,7 +270,7 @@ function next(
   const phase = phaseOf(state);
   switch (phase) {
     case "begin":
-      return begin(state, ctx);
+      return begin(state);
     case "prepared":
       return prepared(state, ctx, results);
     case "reviewed":

@@ -2,7 +2,7 @@
 // (and its spec) asks. A pass moves the issue to the security review; a fail
 // becomes a blocking finding in the acceptance lens and sends the issue to fix.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding } from "../findings.ts";
 import { preamble, specText } from "../prompts.ts";
@@ -86,9 +86,7 @@ function acceptLaunch(
     minutes: ACCEPT_MINUTES,
     budgetRole: "verifier",
     tokenBudget: budget,
-    task: preamble(cfg, state, "acceptance verifier", budget)
-      .concat(lines)
-      .join("\n"),
+    task: preamble(cfg, state, "acceptance verifier").concat(lines).join("\n"),
   };
 }
 
@@ -99,7 +97,7 @@ function begin(state: StageState): Step {
   ]);
 }
 
-// Charges the verifier's session once the diff is ready, then launches it.
+// Launches the verifier's session once the diff is ready.
 function review(
   state: StageState,
   ctx: StageContext,
@@ -110,16 +108,8 @@ function review(
   if (!diff.ok) {
     return diff.step;
   }
-  const st = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "verifier", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(charged, charge.reason, charge.detail);
-  }
-  return launchStep({ ...charged, phase: "decide" }, [
-    acceptLaunch(charged, ctx, diff.path),
+  return launchStep({ ...state, phase: "decide" }, [
+    acceptLaunch(state, ctx, diff.path),
   ]);
 }
 
@@ -157,8 +147,6 @@ function failed(
     ["acceptance"],
   );
   st.reviewedSha = st.verifiedSha ?? st.headSha ?? null;
-  // The fix brings new code, which is not a re-check after a rebase.
-  st.rechecking = false;
   st.stage = "fix";
   const payload = { number: state.n, state: st };
   return launchStep(

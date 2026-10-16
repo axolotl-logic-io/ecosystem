@@ -71,7 +71,9 @@ interface Snapshot {
 interface ScheduleSettings {
   maxJobs: number;
   stageCaps: Readonly<Record<string, number>>;
-  tokensPerHour: number;
+  // The tokens the jobs may use an hour before no job starts; null or 0
+  // means no limit (budgets-bound-context).
+  tokensPerHour: number | null;
 }
 
 const STAGE_AT: ReadonlyMap<string, number> = new Map(

@@ -1,9 +1,8 @@
 // Sync: rebases the PR branch onto the base branch. A clean rebase moves to
 // checks; a conflicting one is resolved by a writer while the issue has
-// conflict attempts and rebase budget left, and then goes through every check
+// conflict attempts left, and then goes through every check
 // again. Either way the rebase's flows are saved and acted on (flow-step.ts).
 
-import { chargeCheck } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
@@ -52,20 +51,12 @@ function prComment(by: Signature, body: string): StageComment {
 }
 
 // Rebases, leaving a conflicting rebase stopped for a resolver while the issue
-// has conflict attempts and rebase budget for one left. An issue the merge
-// stage sent back is re-checking from here on, so its sessions are charged to
-// the rebase pool. A stacked issue rebases onto its prerequisite's branch, or
-// onto the base once that has merged (sync-base decides).
+// has conflict attempts left. A stacked issue rebases onto its prerequisite's
+// branch, or onto the base once that has merged (sync-base decides).
 function begin(state: StageState, ctx: StageContext): Step {
-  const st: IssueState = { ...state.st };
-  if (typeof st.passedSha === "string" && st.passedSha !== "") {
-    st.rechecking = true;
-  }
-  const keepConflict =
-    (st.conflictFixes ?? 0) < maxConflictFixes(ctx) &&
-    chargeCheck(ctx.budgets, st, "fixer", "rebase").charged;
+  const keepConflict = (state.st.conflictFixes ?? 0) < maxConflictFixes(ctx);
   const payload = branchPayload(state, { keepConflict });
-  return launchStep({ ...state, st, phase: "synced" }, [
+  return launchStep({ ...state, phase: "synced" }, [
     { kind: "op", name: "sync", op: "sync-base", payload },
   ]);
 }
@@ -158,12 +149,6 @@ function synced(
       `rebasing onto ${base} conflicts again after ${max} resolutions`,
       files,
     );
-  }
-  // Attempts were left, so sync-base gave up the rebase because the resolver
-  // didn't fit the rebase pool: a budget stop, not a resolver failure.
-  const fixer = chargeCheck(ctx.budgets, state.st, "fixer", "rebase");
-  if (!fixer.charged) {
-    return stopStep(state, fixer.reason, `${fixer.detail}\n\n${files}`);
   }
   return stopStep(state, `rebasing onto ${base} conflicts`, files);
 }

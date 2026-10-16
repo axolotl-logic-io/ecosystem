@@ -21,7 +21,6 @@ import {
 
 /** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
 
-const IMPL_TOKENS = 150_000;
 const WRITER = "issue-pipeline-writer";
 
 // An implementer that always runs out of room.
@@ -66,8 +65,6 @@ test("the spawn cap holds the continuation until the next sweep", async () => {
           stage: "implement",
           outcome: "in-progress",
           reason: null,
-          allocatedTokens: IMPL_TOKENS,
-          rebaseAllocatedTokens: 0,
         },
       ],
     }),

@@ -176,14 +176,3 @@ test("a rejected resolution at the conflict limit stops as a conflict", () => {
   assert.equal(step.state.st.stage, "publish");
   assert.equal(step.state.closed, false);
 });
-
-test("a publish conflict with the rebase allowance spent stops for the budget", () => {
-  const step = published(CONFLICT, { rebaseAllocated: 450_000 });
-  assert.deepEqual(step.stop, {
-    reason: "rebase token budget exhausted",
-    detail:
-      "Allocated 450000 of 500000 rebase tokens (rebaseTokenBudget); the next step (fixer) needs 100000.",
-    code: null,
-  });
-  assert.equal(step.state.st.stage, "publish");
-});

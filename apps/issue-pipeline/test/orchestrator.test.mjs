@@ -188,3 +188,11 @@ test("once the last hour's tokens reach the rate limit, every start is held", ()
   const under = snapshotOf([...IMPLEMENTS.issues], TOKENS_PER_HOUR - 1);
   assert.deepEqual(decided(under), decided(IMPLEMENTS));
 });
+
+test("a tokensPerHour of null or 0 holds no start for the rate limit", () => {
+  const spent = snapshotOf([...IMPLEMENTS.issues], TOKENS_PER_HOUR * 2);
+  for (const tokensPerHour of [null, 0]) {
+    const settings = { ...SETTINGS, tokensPerHour };
+    assert.deepEqual(decided(spent, settings), decided(IMPLEMENTS));
+  }
+});

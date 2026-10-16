@@ -57,19 +57,14 @@ const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
 const SPEC_END = "<!-- end of spec -->";
 const SPEC_REPLY = `${SPEC}\n\n${SPEC_END}`;
 
-// Every kit's rebase pool (`rebaseTokenBudget`).
-const REBASE_BUDGET = 500_000;
-
-/** @param {number} issueBudget @returns {StageContext} */
-function contextWith(issueBudget) {
+/** @returns {StageContext} */
+function contextWith() {
   return {
     cfg: CFG,
     budgets: {
       roles: ROLES,
       sessionCap: SESSION_CAP,
       hardLimit: 175_000,
-      issueBudget,
-      rebaseBudget: REBASE_BUDGET,
     },
     models: modelsWith({ spec: SPEC_MODEL, implementer: IMPL_MODEL }),
     now: () => NOW,
@@ -78,8 +73,7 @@ function contextWith(issueBudget) {
   };
 }
 
-const ISSUE_BUDGET = 1_000_000;
-const BUILD_CTX = contextWith(ISSUE_BUDGET);
+const BUILD_CTX = contextWith();
 
 // Issue #7 at `stage`'s first call, after triage, with `fields` replacing its
 // saved state's.
@@ -99,8 +93,6 @@ function buildState(stage, fields = {}, paths = PATHS) {
       headSha: "aaaaaaa",
       implemented: false,
       plan: PLAN,
-      allocated: TRIAGE_TOKENS,
-      sessions: ["triage"],
       continuations: {},
       findings: [],
       log: [],
@@ -141,7 +133,7 @@ function specTask(paths = PATHS) {
   if (paths.wiki) {
     start = ` (start from ${paths.wiki}/Home.md)`;
   }
-  return preamble(CFG, item, "spec writer", ROLES.spec)
+  return preamble(CFG, item, "spec writer")
     .concat([
       `Triage found this issue ready. Its notes:\n${PLAN}`,
       "",
@@ -185,7 +177,7 @@ function specLaunch(task) {
 /** @param {string} source @returns {string} */
 function implementTask(source) {
   const item = { n: 7, paths: PATHS };
-  return preamble(CFG, item, "implementer", SESSION_CAP)
+  return preamble(CFG, item, "implementer")
     .concat([
       practicesNote(CFG, item, "writer"),
       source,
@@ -194,10 +186,11 @@ function implementTask(source) {
       "1. Write or update tests that specify the fix. They must fail without your change.",
       "2. Implement the smallest change that resolves the issue. Do not refactor unrelated code.",
       "3. Run the tests (`npm test`), lint (`npm run lint`) and fix failures.",
-      "4. Commit everything with clear messages (`git add -A && git commit`), ending each message with the trailer line `Pipeline-Agent: implementer`. Leave the worktree clean.",
+      "4. Commit as you go (see below), and commit what is left at the end. Leave the worktree clean.",
       `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${WIKI} add -A && git -C ${WIKI} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`,
       "Change lockfiles only through the package manager, never by hand.",
       "",
+      "Commit often, in small working steps: commit each step with `git add -A && git commit` and a clear message as soon as it builds and its tests pass, ending each message with the trailer line `Pipeline-Agent: implementer`. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.",
       `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${HANDOFF} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
       "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
       "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",

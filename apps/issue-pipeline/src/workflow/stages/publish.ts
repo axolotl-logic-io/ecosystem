@@ -4,7 +4,7 @@
 // as a code conflict does (conflicts-never-stop), and the stage publishes
 // again once the rebase is resolved. Nothing is saved as a patch. An issue
 // whose publish still conflicts, or whose resolution was turned down, stays
-// here and retries next sweep, within maxConflictFixes and the budget.
+// here and retries next sweep, within maxConflictFixes.
 
 import { noteEvent } from "../event-log.ts";
 import { wikiOnly } from "../flows.ts";

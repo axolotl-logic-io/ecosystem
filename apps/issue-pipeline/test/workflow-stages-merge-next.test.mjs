@@ -136,17 +136,6 @@ test("a merged PR closes the issue for the sweep", () => {
   );
 });
 
-test("a merge resets the rebase pool and ends the re-check", () => {
-  const step = answered(
-    { ok: true, merged: true },
-    { rebaseAllocated: 160_000, rechecking: true },
-  );
-  assert.deepEqual(
-    [step.state.st.rebaseAllocated, step.state.st.rechecking],
-    [0, false],
-  );
-});
-
 test("a queued merge notes the wait once and stays at merge", () => {
   const step = answered(QUEUED);
   assert.equal(step.done, true);

@@ -19,18 +19,19 @@ const stopped = {
   depth: 1,
   pr: PR,
   headSha: "h1",
-  allocated: 990_000,
   conflictFixes: 2,
   log: ["a"],
   stage: "stopped",
   stoppedStage: "publish",
   stopCode: "conflict",
   stopReason: "conflict limit",
-  rebaseAllocated: 40_000,
   syncs: 3,
   findings: [{ id: "f1", status: "resolved" }],
-  sessions: [{ role: "writer" }],
   spec: "the spec",
+  // Spend fields a state saved before budgets-bound-context holds; they
+  // pass through unread.
+  allocated: 990_000,
+  rebaseAllocated: 40_000,
 };
 // The merged PR is closed, and the wiki branch still holds the issue's work.
 const start = {
@@ -50,7 +51,6 @@ test("an issue stopped at publish resumes there, resetting only the conflict lim
     ...stopped,
     stage: "publish",
     conflictFixes: 0,
-    rebaseAllocated: 0,
     stopCode: null,
     stopReason: null,
     log: [

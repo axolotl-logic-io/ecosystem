@@ -9,8 +9,6 @@
   "leaseHours": 3,
   "claimWaitSeconds": [5, 20],
   "claimCandidates": 5,
-  "issueTokenBudget": 1000000,
-  "rebaseTokenBudget": 500000,
   "sessionTokenCap": 150000,
   "contextLimits": { "soft": 150000, "hard": 175000 },
   "maxContinuations": 1,
@@ -30,7 +28,7 @@
     "accept": 2,
     "security": 2
   },
-  "tokensPerHour": 2000000,
+  "tokensPerHour": null,
   "orchestratorIntervalSeconds": 60,
   "maxResumes": 2,
   "silentMinutes": 30,

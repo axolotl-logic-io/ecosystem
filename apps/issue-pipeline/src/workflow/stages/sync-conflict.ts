@@ -171,7 +171,7 @@ function rejected(
 
 // Acts on the resolver's reply and the finished rebase. Conflicts never wait
 // for a human (Autumn, 2026-10-13): a fresh resolver tries again next sweep,
-// against a base that may have moved, until the budget runs out. The one
+// against a base that may have moved, up to maxConflictFixes. The one
 // exception is a resolver that ran out of room with no continuation left: the
 // rebase was aborted, and the issue stops as too large.
 function settle(

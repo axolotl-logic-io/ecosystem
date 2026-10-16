@@ -12,7 +12,6 @@ import {
 } from "./stage-outcome-test-kit.mjs";
 import {
   CTX,
-  contextWith,
   expectedTask,
   PATHS,
   REJECTED,
@@ -29,11 +28,8 @@ import {
 /** @typedef {Parameters<typeof stateWith>[0]} Fields */
 /** @typedef {Pick<ChildResult, "ok" | "structuredOutput"> & Partial<Pick<ChildResult, "error">>} Ended */
 
-const TRIAGE_TOKENS = 50_000;
 const PR = 42;
 const PLAN_LIMIT = 4000;
-// An issue budget smaller than one triage session.
-const SMALL_BUDGET = 40_000;
 
 // Triage's step after its session ends with `result`.
 /** @param {Ended} result @param {Fields} [fields] @returns {Step} */
@@ -69,8 +65,6 @@ test("the first call counts the run, charges it and launches the session", () =>
   assert.equal(step.done, false);
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.triages, 1);
-  assert.equal(step.state.st.allocated, TRIAGE_TOKENS);
-  assert.deepEqual(step.state.st.sessions, ["triage"]);
   assert.deepEqual([step.comments, step.stop], [[], null]);
   assert.deepEqual(given, stateWith());
 });
@@ -89,10 +83,7 @@ test("a ready issue moves to spec, is taken, and opens its draft PR", () => {
   const step = decided(replyOf({ reason: "Small.", plan: "Change a.ts." }));
   assert.equal(step.state.st.stage, "spec");
   assert.equal(step.state.st.plan, "Change a.ts.");
-  assert.deepEqual(step.state.st.log, [
-    `${STAMP} charged triage 50000 to issueTokenBudget`,
-    `${STAMP} triage: ready - Small.`,
-  ]);
+  assert.deepEqual(step.state.st.log, [`${STAMP} triage: ready - Small.`]);
   assert.deepEqual(step.comments, [
     {
       by: SIGNATURE,
@@ -239,18 +230,6 @@ test("a run past maxTriages stops without a launch", () => {
     reason:
       "triage ran 2 times without reaching a decision the pipeline can act on",
     detail: null,
-    code: null,
-  });
-  assert.equal(step.state.st.allocated, 0);
-});
-
-test("a session the issue's budget can't fit stops triage", () => {
-  const step = next(stateWith(), contextWith(SMALL_BUDGET), []);
-  assert.equal(step.done, true);
-  assert.deepEqual(step.stop, {
-    reason: "issue token budget exhausted",
-    detail:
-      "Allocated 0 of 40000 tokens (issueTokenBudget); the next step (triage) needs 50000.",
     code: null,
   });
 });

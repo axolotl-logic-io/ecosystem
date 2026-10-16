@@ -23,7 +23,6 @@ const TRIAGED = {
   pr: 42,
   headSha: "aaaaaaa",
   implemented: false,
-  allocated: 50_000,
 };
 
 const SPEC_READY = replyWith({

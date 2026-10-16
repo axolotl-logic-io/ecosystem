@@ -93,7 +93,6 @@ function resumedPublish(state: State, start: StartContext): State {
     ...state,
     stage: "publish",
     conflictFixes: 0,
-    rebaseAllocated: 0,
     stopCode: null,
     stopReason: null,
     log: [...(log ?? []), entry],
@@ -112,8 +111,8 @@ function continuesWork(state: State | null, start: StartContext): boolean {
 
 // The state a start begins from (Autumn, 2026-10-15). Every start finds the
 // issue's open PR by its branch name. When the branch holds work, the start
-// continues it at review with every limit reset, the token budget included,
-// whatever stopped it, except a too-large stop (#283); when nobody pushed since
+// continues it at review with every limit reset, whatever stopped it, except
+// a too-large stop (#283); when nobody pushed since
 // the review, the worktree kept no unpushed commits past the branch and no
 // blocking finding is open, the review stands and it goes straight to sync. The plan and spec carry over, except after answered
 // questions, which may change them. Commits on the wiki's agent/issue-<n> count

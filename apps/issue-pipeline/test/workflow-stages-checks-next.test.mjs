@@ -30,8 +30,6 @@ import {
 /** @import { LaunchResult, StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
 const HEAD = "cccccccccccccccc";
 const FIXED_HEAD = "ffffffffffffffff";
-const CI_FIXER_TOKENS = 100_000;
-const REREVIEW_TOKENS = 80_000;
 const FAILED = { id: "test", pass: false, detail: "1 failed", tail: "3 != 2" };
 const PASSED = { id: "test", pass: true, detail: "passed" };
 const FAILING = { ok: true, headSha: HEAD, pass: false, checks: [FAILED] };
@@ -98,7 +96,7 @@ function ciFixRun(ctx = CTX, lenses = lensResults(NO_FINDINGS, NO_FINDINGS)) {
   return { begun, fixing, pushing, preparing, reviewing, saving, resumed };
 }
 
-test("failing verification launches a charged CI fixer after the checks' table", () => {
+test("failing verification launches a CI fixer after the checks' table", () => {
   const { begun, fixing } = ciFixRun();
   assert.deepEqual(opsRequests(begun), [VERIFY_REQUEST]);
   const [launch] = sessions(fixing);
@@ -118,7 +116,6 @@ test("failing verification launches a charged CI fixer after the checks' table",
     launch.task.includes(`${note}\nThese checks failed:\n${failure}\n`),
   );
   assert.equal(fixing.state.st.ciFixes, 1);
-  assert.equal(fixing.state.st.allocated, CI_FIXER_TOKENS);
   assert.deepEqual(fixing.comments, [
     stepComment(
       "local checks",
@@ -150,7 +147,6 @@ test("a CI fix is pushed, its diff prepared, and reviewed by two lenses", () => 
     [reader, MODELS.correctness, REVIEW_SCHEMA],
     [reader, MODELS.scope, REVIEW_SCHEMA],
   ]);
-  assert.equal(reviewing.state.st.allocated, CI_FIXER_TOKENS + REREVIEW_TOKENS);
 });
 
 test("a reviewed CI fix is saved, then verified and passed to accept", () => {

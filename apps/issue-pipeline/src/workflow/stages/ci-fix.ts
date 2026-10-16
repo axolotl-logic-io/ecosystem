@@ -2,7 +2,7 @@
 // the failing checks, the fix is pushed, and the correctness and scope lenses
 // review just its diff before the state is saved for the next round.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { findingLines } from "../findings.ts";
 import { LENSES } from "../lenses.ts";
@@ -118,7 +118,7 @@ function lensLaunch(
     minutes: REVIEW_MINUTES,
     budgetRole: "rereviewer",
     tokenBudget: budget,
-    task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
+    task: preamble(cfg, state, role).concat(lines).join("\n"),
   };
 }
 
@@ -133,18 +133,9 @@ function prepared(
   if (reply.kind === "failed") {
     return stopStep(state, "could not prepare the check-fix diff", reply.error);
   }
-  const st: IssueState = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "rereviewer", {
-    at: ctx.now(),
-    count: FIX_LENSES.length,
-  });
-  if (!charge.charged) {
-    return stopStep(state, charge.reason, charge.detail);
-  }
-  return launchStep({ ...charged, phase: "reviewed" }, [
-    lensLaunch(charged, ctx, "correctness", reply.value),
-    lensLaunch(charged, ctx, "scope", reply.value),
+  return launchStep({ ...state, phase: "reviewed" }, [
+    lensLaunch(state, ctx, "correctness", reply.value),
+    lensLaunch(state, ctx, "scope", reply.value),
   ]);
 }
 

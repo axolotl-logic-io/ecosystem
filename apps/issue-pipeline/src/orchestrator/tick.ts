@@ -30,7 +30,8 @@ import { readWatchMemory, saveWatchMemory } from "./watchdog-memory.ts";
 const ORCHESTRATOR_SETTINGS = z.looseObject({
   maxJobs: z.number().int().positive(),
   stageCaps: z.record(z.string(), z.number().int().nonnegative()),
-  tokensPerHour: z.number().positive(),
+  // An optional throttle; null or 0 means no hourly limit.
+  tokensPerHour: z.number().nonnegative().nullable(),
 });
 // The watchdog's keys (#235) and their defaults, kept with the one module
 // that reads them, as config.ts is at its line limit.

@@ -1,4 +1,4 @@
-// The sweep's settings: the token budgets, models and spawn cap a repo config
+// The sweep's settings: the context budgets, models and spawn cap a repo config
 // may override, and the fixed facts about each stage that the sweep's driver
 // plans with (how many spawns a run of it can take, how often it may begin in
 // one sweep, which stages save first, and the order the stages run in).
@@ -8,7 +8,8 @@ import type { Budgets } from "./budget.ts";
 import type { ModelRole, StageName, SweepConfig } from "./stages/types.ts";
 import type { Role } from "./types.ts";
 
-// Each role's token budget per session, unless the config's roleBudgets sets it.
+// Each role's context budget per session, unless the config's roleBudgets sets
+// it.
 const ROLE_BUDGETS: Readonly<Record<Role, number>> = {
   triage: 50_000,
   spec: 80_000,
@@ -218,8 +219,6 @@ function sweepSettings(cfg: SweepConfig): SweepSettings {
       roles: { ...ROLE_BUDGETS, ...cfg.roleBudgets },
       sessionCap: cfg.sessionTokenCap,
       hardLimit: cfg.contextLimits.hard,
-      issueBudget: cfg.issueTokenBudget,
-      rebaseBudget: cfg.rebaseTokenBudget,
     },
     models: { ...MODELS, ...cfg.models },
     spawnLimit: spawnLimitOf(cfg.maxSpawnsPerRun),

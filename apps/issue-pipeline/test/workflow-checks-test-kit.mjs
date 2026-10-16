@@ -47,12 +47,8 @@ const MODELS = {
   correctness: "anthropic/claude-opus-5-5",
   scope: "anthropic/claude-sonnet-5-5",
 };
-const ISSUE_BUDGET = 1_000_000;
 
 // A context with a fixed clock, with `fields` replacing its defaults.
-// Every kit's rebase pool (`rebaseTokenBudget`).
-const REBASE_BUDGET = 500_000;
-
 /** @param {Partial<StageContext>} [fields] @returns {StageContext} */
 function contextWith(fields = {}) {
   return {
@@ -61,8 +57,6 @@ function contextWith(fields = {}) {
       roles: ROLES,
       sessionCap: 150_000,
       hardLimit: 175_000,
-      issueBudget: ISSUE_BUDGET,
-      rebaseBudget: REBASE_BUDGET,
     },
     models: modelsWith(MODELS),
     now: () => NOW,
@@ -88,8 +82,6 @@ function stateAt(stage, fields = {}) {
       headSha: "cccccccccccccccc",
       reviewedSha: "cccccccccccccccc",
       verifiedSha: null,
-      allocated: 0,
-      sessions: [],
       ciFixes: 0,
       syncs: 0,
       findings: [],

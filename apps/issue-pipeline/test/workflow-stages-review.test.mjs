@@ -70,8 +70,6 @@ function issueSummary(fields) {
         stage: "sync",
         outcome: "in-progress",
         reason: null,
-        allocatedTokens: 0,
-        rebaseAllocatedTokens: 0,
         ...fields,
       },
     ],
@@ -82,7 +80,7 @@ test("a review with no blocking findings moves to sync, held by the spawn cap", 
   // The save after open-pr runs for an issue already at review. sync needs 3
   // spawns: 8 launched + 3 + a reserve of 4 passes 14.
   const { trace, summary } = await reviewRun({
-    claim: claimAt("review", { ...OPENED, allocated: 280_000 }),
+    claim: claimAt("review", OPENED),
     ops: { "prepare-review": { ok: true, headSha: "bbbbbbb" } },
     agents: {
       "i7-review-correctness": NO_FINDINGS,
@@ -96,7 +94,7 @@ test("a review with no blocking findings moves to sync, held by the spawn cap", 
   assert.deepEqual(sessionAgents(trace), [READER, READER, READER]);
   const state = releasedState(trace);
   assert.deepEqual([state.stage, state.reviewedSha], ["sync", "bbbbbbb"]);
-  assert.deepEqual(summary, issueSummary({ allocatedTokens: 460_000 }));
+  assert.deepEqual(summary, issueSummary({}));
 });
 
 // One blocking finding, aggregated, fixed and resolved on re-review.
@@ -125,7 +123,7 @@ test("a blocking finding is fixed and re-reviewed clean, then synced and held at
   // sync runs at the spawn count fix needed, so the hold comes at checks:
   // 15 launched + 11 + a reserve of 4 passes 28.
   const { trace, summary } = await reviewRun({
-    claim: claimAt("review", { ...OPENED, allocated: 280_000 }),
+    claim: claimAt("review", OPENED),
     ops: {
       "prepare-review": { ok: true, headSha: "bbbbbbb" },
       push: { ok: true, headSha: "ccccccc" },
@@ -145,10 +143,7 @@ test("a blocking finding is fixed and re-reviewed clean, then synced and held at
     [state.stage, state.findings?.map(({ status }) => status)],
     ["checks", ["resolved"]],
   );
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "checks", allocatedTokens: 620_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "checks" }));
 });
 
 test("a finding still open after the last fix round stops the issue", async () => {
@@ -157,7 +152,6 @@ test("a finding still open after the last fix round stops the issue", async () =
       ...OPENED,
       reviewedSha: "bbbbbbb",
       round: 2,
-      allocated: 620_000,
       nextFindingId: 1,
       findings: [
         {
@@ -183,8 +177,6 @@ test("a finding still open after the last fix round stops the issue", async () =
       stage: "fix",
       outcome: "stopped",
       reason: "blocking findings remain after 2 fix rounds",
-      allocatedTokens: 620_000,
-      rebaseAllocatedTokens: 0,
     }),
   );
 });

@@ -5,11 +5,10 @@
 // Running-the-Issue-Pipeline page promises.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { preamble } from "../src/workflow/prompts.ts";
+import { commitOftenRule, preamble } from "../src/workflow/prompts.ts";
 import { by, byStep } from "../src/workflow/signing.ts";
 
 const cfg = { repo: "o/r", baseBranch: "integration" };
-const CAP = 60_000;
 
 // Issue #7, with its wiki checked out at `wiki`, or none.
 /** @param {string | null} wiki @returns {Parameters<typeof preamble>[1]} */
@@ -28,20 +27,30 @@ function itemWith(wiki) {
 // The preamble's text for a fixer on issue #7, with `wiki` as its wiki.
 /** @param {string | null} wiki @returns {string} */
 function fixerPreamble(wiki) {
-  return preamble(cfg, itemWith(wiki), "fixer", CAP).join("\n");
+  return preamble(cfg, itemWith(wiki), "fixer").join("\n");
 }
 
-test("the preamble names the role, the worktree, its branch, the issue and the cap", () => {
+test("the preamble names the role, the worktree, its branch and the issue", () => {
   const text = fixerPreamble(null);
   for (const fact of [
     "fixer",
     "/w/issue-7",
     "agent/issue-7",
     "/runs/issue.md",
-    String(CAP),
   ]) {
     assert.ok(text.includes(fact), `${fact} missing from:\n${text}`);
   }
+});
+
+test("the preamble gives no context budget (Axlog, 2026-10-16)", () => {
+  assert.equal(fixerPreamble(null).includes("Context budget"), false);
+});
+
+test("a writer is told to commit small, working steps often, and how", () => {
+  const rule = commitOftenRule("commit each step with `git commit`");
+  assert.ok(rule.startsWith("Commit often, in small working steps:"));
+  assert.ok(rule.includes("commit each step with `git commit`"));
+  assert.ok(rule.includes("Don't save your work for one commit at the end"));
 });
 
 test("the preamble points at the wiki checkout only when there is one", () => {

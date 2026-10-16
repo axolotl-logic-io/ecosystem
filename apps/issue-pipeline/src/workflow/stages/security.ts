@@ -3,7 +3,7 @@
 // findings the issue moves to merge; findings go back through fresh fix rounds,
 // until there have been more security rounds than fix rounds allow.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding, findingsStop } from "../findings.ts";
 import { SECURITY_RULES } from "../lenses.ts";
@@ -64,7 +64,7 @@ function securityLaunch(
     minutes: SECURITY_MINUTES,
     budgetRole: "reviewer",
     tokenBudget: budget,
-    task: preamble(cfg, state, "security reviewer", budget)
+    task: preamble(cfg, state, "security reviewer")
       .concat([
         `You are the last review before this PR merges. Review the full diff against ${cfg.baseBranch} at ${diff.path} (${diff.lines} lines), reading surrounding code where needed, for harm to the app's users and the operator.`,
       ])
@@ -88,7 +88,7 @@ function begin(state: StageState): Step {
   ]);
 }
 
-// Charges the reviewer's session once the diff is ready, then launches it.
+// Launches the reviewer's session once the diff is ready.
 function review(
   state: StageState,
   ctx: StageContext,
@@ -99,16 +99,8 @@ function review(
   if (!diff.ok) {
     return diff.step;
   }
-  const st = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "reviewer", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(charged, charge.reason, charge.detail);
-  }
-  return launchStep({ ...charged, phase: "decide" }, [
-    securityLaunch(charged, ctx, diff),
+  return launchStep({ ...state, phase: "decide" }, [
+    securityLaunch(state, ctx, diff),
   ]);
 }
 
@@ -172,8 +164,6 @@ function found(
   }
   st.reviewedSha = st.verifiedSha ?? null;
   st.round = 0;
-  // The fix brings new code, which is not a re-check after a rebase.
-  st.rechecking = false;
   st.stage = "fix";
   return saved({ ...state, st }, by, body);
 }

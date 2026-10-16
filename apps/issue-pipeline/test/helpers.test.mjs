@@ -90,6 +90,18 @@ test("only GETs and list or view commands count as reads", () => {
   assert.equal(ghIsRead(["pr", "merge", "1"]), false);
 });
 
+test("a state saved with the old spend fields still loads, keeping them", () => {
+  const state = {
+    ...newState(STATE_ISSUE, 1),
+    allocated: 1_990_000,
+    rebaseAllocated: 450_000,
+    rechecking: true,
+    sessions: ["triage", "spec"],
+  };
+  const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->\n<sub>x</sub>`;
+  assert.deepEqual(parseStateBody(body), state);
+});
+
 test("a state comment's body gives its state, or null", () => {
   const state = newState(STATE_ISSUE, 1);
   const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->\n<sub>x</sub>`;
@@ -106,7 +118,6 @@ test("a state comment's body gives its state, or null", () => {
     "verifiedSha",
     "findings",
     "round",
-    "allocated",
   ];
   assert.deepEqual(
     promised.filter((key) => !(key in state)),

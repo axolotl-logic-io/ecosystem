@@ -44,11 +44,7 @@ function wikiStart(state: StageState): string {
 }
 
 // The spec writer's whole task.
-function specTask(
-  state: StageState,
-  ctx: StageContext,
-  budget: number,
-): string {
+function specTask(state: StageState, ctx: StageContext): string {
   const { cfg, budgets } = ctx;
   const lines = [
     triageFinding(state.st),
@@ -68,7 +64,7 @@ function specTask(
     splitOption(state.st.depth, budgets.sessionCap),
     `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
   ];
-  return preamble(cfg, state, ROLE, budget).concat(lines).join("\n");
+  return preamble(cfg, state, ROLE).concat(lines).join("\n");
 }
 
 export { ROLE, specTask };

@@ -64,14 +64,13 @@ function isSweepConfig(value: unknown): value is SweepConfig {
   if (!isRecord(value)) {
     return false;
   }
-  const { repo, baseBranch, sessionTokenCap, issueTokenBudget } = value;
+  const { repo, baseBranch, sessionTokenCap } = value;
   const { commands, roleBudgets, models, contextLimits } = value;
   return (
     isString(repo) &&
     isString(baseBranch) &&
     isNumber(sessionTokenCap) &&
     isContextLimits(contextLimits) &&
-    isNumber(issueTokenBudget) &&
     isRecord(commands) &&
     hasStageCounts(value) &&
     hasOptionalFields(value) &&
@@ -109,13 +108,8 @@ function isIssueState(value: unknown): value is IssueState {
   if (!isRecord(value)) {
     return false;
   }
-  const { stage, depth, allocated, findings } = value;
-  return (
-    isString(stage) &&
-    isNumber(depth) &&
-    isNumber(allocated) &&
-    Array.isArray(findings)
-  );
+  const { stage, depth, findings } = value;
+  return isString(stage) && isNumber(depth) && Array.isArray(findings);
 }
 
 function isItemPaths(value: unknown): value is ItemPaths {

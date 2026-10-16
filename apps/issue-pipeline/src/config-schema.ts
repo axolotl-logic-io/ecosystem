@@ -19,10 +19,9 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // reads each in full and specs to them (Autumn, 2026-10-15). Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
-  issueTokenBudget: 1_000_000,
-  // The rebase pool per issue: conflict resolvers, and re-checks after a rebase
-  // the merge stage asked for (#201). Reset at merge and restart.
-  rebaseTokenBudget: 500_000,
+  // Caps each session's context budget, the context the orchestrator's
+  // watchdog stops a writer session past; roleBudgets sets each role's. Budgets bound context, not spend (budgets-bound-context,
+  // Axlog, 2026-10-16).
   sessionTokenCap: 150_000,
   // No writer session may pass `hard` tokens of context; past it, it hands off,
   // up to maxContinuations times per stage per issue (#264).
@@ -52,11 +51,12 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   lockfiles: [],
   migrations: null,
   // The orchestrator (#234): caps on live stage jobs, in all and per reader
-  // stage, the tokens its jobs may spend an hour (input, output and cache
-  // writes, not cache reads), and its seconds between ticks.
+  // stage, an optional throttle on the tokens its jobs may use an hour (input,
+  // output and cache writes, not cache reads; null or 0, the default, means no
+  // limit, budgets-bound-context), and its seconds between ticks.
   maxJobs: 4,
   stageCaps: { triage: 2, spec: 2, review: 2, accept: 2, security: 2 },
-  tokensPerHour: 2_000_000,
+  tokensPerHour: null,
   orchestratorIntervalSeconds: 60,
 };
 
@@ -94,10 +94,18 @@ const CONFIG_SCHEMA = z.looseObject({
     ),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
+  // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue token
+  // budget that once stopped an issue. Accepted so older configs still load,
+  // and unused.
+  issueTokenBudget: z.unknown().optional(),
   jobRoles: JOB_ROLES.nullish(),
   leaseHours: z.number(),
   maxContinuations: z.number().int().nonnegative(),
   practices: z.array(z.string()),
+  // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue
+  // rebase allowance (#201) that once stopped an issue. Accepted so older
+  // configs still load, and unused.
+  rebaseTokenBudget: z.unknown().optional(),
   repo: z.string(),
   tokenFile: OPTIONAL_TEXT,
   wiki: z

@@ -56,19 +56,14 @@ const SPLIT_FORBIDDEN =
   "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so.";
 const REJECTED = "triage rejected the issue for the agent pipeline";
 
-// Every kit's rebase pool (`rebaseTokenBudget`).
-const REBASE_BUDGET = 500_000;
-
-/** @param {number} issueBudget @returns {StageContext} */
-function contextWith(issueBudget) {
+/** @returns {StageContext} */
+function contextWith() {
   return {
     cfg: CFG,
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
       hardLimit: 175_000,
-      issueBudget,
-      rebaseBudget: REBASE_BUDGET,
     },
     models: modelsWith({ triage: MODEL }),
     now: () => NOW,
@@ -77,8 +72,7 @@ function contextWith(issueBudget) {
   };
 }
 
-const ISSUE_BUDGET = 1_000_000;
-const CTX = contextWith(ISSUE_BUDGET);
+const CTX = contextWith();
 
 // Issue #7 at triage's first call, with `fields` replacing its saved state's.
 /** @param {Partial<IssueState>} [fields] @returns {StageState} */
@@ -92,8 +86,6 @@ function stateWith(fields = {}) {
       pr: null,
       headSha: null,
       plan: null,
-      allocated: 0,
-      sessions: [],
       triages: 0,
       findings: [],
       log: [],
@@ -124,7 +116,7 @@ function replyOf(fields) {
 // The session's whole task, as the sweep has always written it.
 /** @param {string} splitLine @returns {string} */
 function expectedTask(splitLine) {
-  return preamble(CFG, { n: 7, paths: PATHS }, "triage", ROLES.triage)
+  return preamble(CFG, { n: 7, paths: PATHS }, "triage")
     .concat([
       "If /runs/issue-7/handoff.md exists, an earlier implementer session wrote it when it ran out of room: read it and the commits on `agent/issue-7` before you decide.",
       "Read the issue and as much of the code as you need to decide one of:",

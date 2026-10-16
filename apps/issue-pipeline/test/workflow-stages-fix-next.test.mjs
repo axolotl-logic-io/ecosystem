@@ -37,8 +37,6 @@ import {
 } from "./workflow-review-test-kit.mjs";
 
 /** @import { Launch, Step } from "../src/workflow/stages/types.ts" */
-const FIXER_TOKENS = 100_000;
-const REREVIEWER_TOKENS = 40_000;
 const EVIDENCE_LIMIT = 600;
 const DISPUTES =
   /\n\nDisputed:\n- \*\*f1\*\*: x+\n- \*\*f1\*\*: Again\.\n- \*\*f2\*\*: Twice\.$/u;
@@ -67,7 +65,6 @@ function rereviewed(output) {
 describe("a finding fixed in round 1", () => {
   test("counts the round and launches the fixer as a writer", () => {
     assert.equal(ROUND_ONE.begun.state.st.round, 1);
-    assert.equal(ROUND_ONE.begun.state.st.allocated, FIXER_TOKENS);
     assert.deepEqual(sessions(ROUND_ONE.begun), [
       {
         agent: "issue-pipeline-writer",
@@ -105,10 +102,6 @@ describe("a finding fixed in round 1", () => {
 
 describe("the re-review of a fixed finding", () => {
   test("re-reviews the lens with open findings", () => {
-    assert.equal(
-      ROUND_ONE.prepared.state.st.allocated,
-      FIXER_TOKENS + REREVIEWER_TOKENS,
-    );
     assert.deepEqual(sessions(ROUND_ONE.prepared), [
       {
         agent: "issue-pipeline-reader",
