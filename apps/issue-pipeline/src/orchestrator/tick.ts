@@ -62,6 +62,7 @@ interface Start {
   issue: number;
   stage: string;
   mergeQueue: readonly number[] | null;
+  stackOn: number | null;
 }
 
 function jobArgv(configPath: string, start: Start): string[] {
@@ -77,6 +78,9 @@ function jobArgv(configPath: string, start: Start): string[] {
   ];
   if (start.mergeQueue !== null) {
     argv.push("--merge-queue", start.mergeQueue.join(","));
+  }
+  if (start.stackOn !== null) {
+    argv.push("--stack-on", String(start.stackOn));
   }
   return argv;
 }
@@ -135,6 +139,7 @@ function act(
       startJob(run, {
         ...action,
         mergeQueue: null,
+        stackOn: null,
         resume: true,
       });
       if (issue.row !== undefined) {
@@ -192,7 +197,8 @@ function adviceOf(
         return held;
       }
       const at = view.now.toISOString();
-      startJob(run, { issue, stage, at, mergeQueue: null, resume: true });
+      const restart = { issue, stage, at, mergeQueue: null, stackOn: null };
+      startJob(run, { ...restart, resume: true });
       if (row !== undefined) {
         row.job = { live: true, stage };
       }

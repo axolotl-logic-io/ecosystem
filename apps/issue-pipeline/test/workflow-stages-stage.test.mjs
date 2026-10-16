@@ -3,7 +3,11 @@
 // leaves it, and releases an issue saved at another stage untouched.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { releasedState, sessionAgents } from "./stage-outcome-test-kit.mjs";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
@@ -87,4 +91,77 @@ test("stage names an unknown stage: the run fails before the sweep", async () =>
     }),
     UNKNOWN_STAGE,
   );
+});
+
+// Issue #7 at merge, its passed head stacked on #9's branch (#290).
+const STACKED_AT_MERGE = {
+  pr: 42,
+  headSha: "aaaaaaa",
+  verifiedSha: "aaaaaaa",
+  stackedOn: { issue: 9, headSha: "9999999" },
+};
+const MOVED_ON = { issue: 9, headSha: "8888888" };
+const RESTACKED = {
+  ok: true,
+  conflict: false,
+  changed: true,
+  headSha: "bbbbbbb",
+  stackedOn: MOVED_ON,
+};
+
+test("stage sync: a stacked issue saved at merge goes back to sync and rebases onto its prerequisite", async () => {
+  const { trace, summary } = await runWorkflow({
+    args: { ...WORKFLOW_ARGS, stage: "sync" },
+    ops: {
+      ...ROUTINE_OPS,
+      sweep: sweepReply({ items: [ISSUE] }),
+      claim: claimAt("merge", STACKED_AT_MERGE),
+      "sync-base": RESTACKED,
+    },
+    agents: {},
+  });
+  const { stackedOn } = requestFor(trace, "sync-base");
+  assert.deepEqual(stackedOn, STACKED_AT_MERGE.stackedOn);
+  const state = releasedState(trace);
+  // The head had passed every check, so only the tests run again.
+  assert.deepEqual(
+    [state.stage, state.headSha, state.stackedOn, state.testsOnly],
+    ["checks", "bbbbbbb", MOVED_ON, true],
+  );
+  const [item] = /** @type {SweepSummary} */ (summary).items;
+  assert.notEqual(item?.outcome, "wrong-stage");
+});
+
+test("stage sync: a stacked issue restacked from accept goes through acceptance and security again", async () => {
+  const { trace } = await runWorkflow({
+    args: { ...WORKFLOW_ARGS, stage: "sync" },
+    ops: {
+      ...ROUTINE_OPS,
+      sweep: sweepReply({ items: [ISSUE] }),
+      claim: claimAt("accept", STACKED_AT_MERGE),
+      "sync-base": RESTACKED,
+    },
+    agents: {},
+  });
+  const state = releasedState(trace);
+  // Its local checks had passed, but not acceptance or the security review.
+  assert.deepEqual(
+    [state.stage, state.headSha, state.testsOnly],
+    ["checks", "bbbbbbb", false],
+  );
+});
+
+test("stage sync: an issue saved at merge that isn't stacked is released as wrong-stage", async () => {
+  const { trace, summary } = await runWorkflow({
+    args: { ...WORKFLOW_ARGS, stage: "sync" },
+    ops: {
+      ...ROUTINE_OPS,
+      sweep: sweepReply({ items: [ISSUE] }),
+      claim: claimAt("merge", { ...STACKED_AT_MERGE, stackedOn: null }),
+    },
+    agents: {},
+  });
+  assert.equal(releasedState(trace).stage, "merge");
+  const [item] = /** @type {SweepSummary} */ (summary).items;
+  assert.equal(item?.outcome, "wrong-stage");
 });

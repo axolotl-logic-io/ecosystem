@@ -145,9 +145,10 @@ function commentReplies(issue) {
   return Array.from({ length: issue.reads ?? 1 }, () => one);
 }
 
-// Queues gh's answers to one read of the queue holding `issues`.
-/** @param {readonly OpenIssue[]} issues @returns {void} */
-function openWith(issues) {
+// Queues gh's answers to one read of the queue holding `issues`, then
+// `others`, such as a closed issue's PR lookups.
+/** @param {readonly OpenIssue[]} issues @param {readonly GhReply[]} [others] @returns {void} */
+function openWith(issues, others = []) {
   fakeGh.reply([
     { when: "api user", stdout: `${ACCOUNT}\n` },
     {
@@ -156,6 +157,7 @@ function openWith(issues) {
     },
     { when: "issue list", stdout: JSON.stringify(issues.map(row)) },
     ...issues.flatMap(commentReplies),
+    ...others,
   ]);
 }
 

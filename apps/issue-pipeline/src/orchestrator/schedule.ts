@@ -14,8 +14,10 @@ import {
   mergeRank,
   runStage,
   stageIndex,
+  verdictHold,
   WRITERS,
 } from "./queue.ts";
+import { stackPartners, stackRule } from "./stacking.ts";
 
 type Decision =
   | {
@@ -25,6 +27,8 @@ type Decision =
       stage: string;
       reason: "free" | "merge-first";
       mergeQueue: readonly number[] | null;
+      // The prerequisite a first job starts the issue's branch on (#290).
+      stackOn: number | null;
     }
   | {
       action: "held";
@@ -85,7 +89,8 @@ function queueRank(count: TickCount, issue: SnapshotIssue): number {
 // implement, but for a live issue's fix, sync or checks only an older one that
 // doesn't merge after it. A queued issue's writer is never held by one queued
 // later or not queued, so the merge queue's top always moves, and a writer
-// hold and a merge-order hold can't form a cycle.
+// hold and a merge-order hold can't form a cycle. An issue and its
+// prerequisite never hold each other.
 function overlapReason(
   count: TickCount,
   issue: SnapshotIssue,
@@ -95,6 +100,7 @@ function overlapReason(
     .filter(
       (other) =>
         other.number !== issue.number &&
+        !stackPartners(issue, other) &&
         (stage === "implement" ||
           (byAge(other, issue) < 0 &&
             queueRank(count, other) <= queueRank(count, issue))) &&
@@ -163,22 +169,29 @@ function countStart(
   }
 }
 
-// Why the classify verdict alone holds the issue, or null for a candidate.
-// Undefined: no decision at all.
-function verdictHold(issue: SnapshotIssue): string | null | undefined {
-  const { verdict } = issue;
-  switch (verdict.kind) {
-    case "skip":
-      return undefined;
-    case "waiting-on-after":
-      return `after:#${String(issue.after.at(0))}`;
-    case "live-elsewhere":
-      return `lane:${verdict.lane}`;
-    case "candidate":
-      return null;
+// The stage the issue's next job runs, what holds it before the caps and
+// gates, and what its branch starts on; null for no decision. The stacking
+// rules come first, then the classify verdict's hold.
+function planOf(
+  issue: SnapshotIssue,
+): { stage: string; held: string | null; stackOn: number | null } | null {
+  const rule = stackRule(issue);
+  const stage = runStage(issue);
+  switch (rule.kind) {
+    case "run":
+      return { stage: rule.stage, held: null, stackOn: rule.stackOn };
+    case "hold":
+      return { stage, held: rule.reason, stackOn: null };
+    case "none": {
+      const held = verdictHold(issue);
+      if (held === undefined) {
+        return null;
+      }
+      return { stage, held, stackOn: null };
+    }
     default: {
-      const unknown: never = verdict;
-      throw new Error(`unknown verdict ${JSON.stringify(unknown)}`);
+      const unknown: never = rule;
+      throw new Error(`unknown stack rule ${JSON.stringify(unknown)}`);
     }
   }
 }
@@ -188,12 +201,12 @@ function decide(
   issue: SnapshotIssue,
   at: string,
 ): Decision | null {
-  const stage = runStage(issue);
-  const held = verdictHold(issue);
-  if (held === undefined) {
+  const plan = planOf(issue);
+  if (plan === null) {
     return null;
   }
-  const reason = held ?? holdReason(count, issue, stage);
+  const { stage, stackOn } = plan;
+  const reason = plan.held ?? holdReason(count, issue, stage);
   const { number } = issue;
   if (reason !== null) {
     return { action: "held", at, issue: number, stage, reason };
@@ -212,6 +225,7 @@ function decide(
     stage,
     reason: why,
     mergeQueue,
+    stackOn,
   };
 }
 

@@ -165,7 +165,7 @@ function claimed(
     return claimBatch(driver, run, index + 1);
   }
   run.item = item;
-  markWrongStage(item, run.stage);
+  markWrongStage(item, run);
   return stagesBatch(driver, run, afterClaim(run));
 }
 

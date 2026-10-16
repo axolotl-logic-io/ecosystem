@@ -14,6 +14,31 @@ type IssueVerdict =
   | { kind: "live-elsewhere"; lane: string }
   | { kind: "skip" };
 
+// The issue an issue's branch is stacked on (#268), and the head of its
+// branch it was last put on.
+interface StackedOn {
+  issue: number;
+  headSha: string;
+}
+
+// The issue's prerequisite (#290), as far as scheduling cares: the issue it
+// is stacked on, or, when it isn't stacked, the one open issue its after mark
+// names. An open prerequisite carries its stage, how many of its findings are
+// open, its branch head, whether it is stacked itself and whether it is
+// stopped; one whose PR merged, at publish or closed, has merged.
+type Prereq =
+  | {
+      number: number;
+      status: "open";
+      stage: string;
+      openFindings: number;
+      headSha: string | null;
+      stacked: boolean;
+      stopped: boolean;
+    }
+  | { number: number; status: "merged" }
+  | { number: number; status: "closed-unmerged" };
+
 // The issue's stage job: whether it runs, and the stage it began.
 interface IssueJob {
   live: boolean;
@@ -33,6 +58,8 @@ interface SnapshotIssue {
   after: readonly number[];
   stopped: boolean;
   job: IssueJob | null;
+  stackedOn: StackedOn | null;
+  prereq: Prereq | null;
 }
 
 interface Snapshot {
@@ -120,12 +147,43 @@ function dependents(
   ).length;
 }
 
+// Why the classify verdict alone holds the issue, or null for a candidate.
+// Undefined: no decision at all.
+function verdictHold(issue: SnapshotIssue): string | null | undefined {
+  const { verdict } = issue;
+  switch (verdict.kind) {
+    case "skip":
+      return undefined;
+    case "waiting-on-after":
+      return `after:#${String(issue.after.at(0))}`;
+    case "live-elsewhere":
+      return `lane:${verdict.lane}`;
+    case "candidate":
+      return null;
+    default: {
+      const unknown: never = verdict;
+      throw new Error(`unknown verdict ${JSON.stringify(unknown)}`);
+    }
+  }
+}
+
+// True for a stacked issue whose prerequisite is still open: it can't merge
+// until that one has.
+function awaitsPrereq(issue: SnapshotIssue): boolean {
+  return issue.stackedOn !== null && issue.prereq?.status === "open";
+}
+
 // The issues at a merge-ready stage, in the order they should merge: the one
-// the most waiting issues depend on first, then the lower PR and number.
+// the most waiting issues depend on first, then the lower PR and number. A
+// stacked issue isn't ranked while its prerequisite is open.
 function mergeRank(issues: readonly SnapshotIssue[]): number[] {
   const waiting = issues.filter(isWaiting);
   const ranked = issues
-    .filter((issue) => !isStopped(issue) && READY_STAGES.has(runStage(issue)))
+    .filter(
+      (issue) =>
+        !(isStopped(issue) || awaitsPrereq(issue)) &&
+        READY_STAGES.has(runStage(issue)),
+    )
     .map((issue) => ({ issue, count: dependents(issue, waiting) }));
   ranked.sort(
     (a, b) =>
@@ -140,11 +198,14 @@ function mergeRank(issues: readonly SnapshotIssue[]): number[] {
 export type {
   IssueJob,
   IssueVerdict,
+  Prereq,
   ScheduleSettings,
   Snapshot,
   SnapshotIssue,
+  StackedOn,
 };
 export {
+  awaitsPrereq,
   byAge,
   fileSet,
   isLive,
@@ -153,5 +214,6 @@ export {
   mergeRank,
   runStage,
   stageIndex,
+  verdictHold,
   WRITERS,
 };

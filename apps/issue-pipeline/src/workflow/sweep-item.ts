@@ -9,6 +9,7 @@ import type { LaunchSpec, OpsFrame, OpsSpec, Outbox } from "./launches.ts";
 import { childSpec, opsSpec } from "./launches.ts";
 import type { LaunchMeta } from "./signing.ts";
 import type { ClosingItem, SummarySource } from "./stages/entry.ts";
+import { restackToSync } from "./stages/stacked.ts";
 import type {
   AbandonedClaim,
   CleanupLog,
@@ -254,12 +255,16 @@ function closingOf(item: SweepItem | null): ClosingItem | null {
 
 // Marks an open claimed issue saved at a stage other than `stage`, the only
 // one the run may begin, as "wrong-stage": the sweep begins nothing and
-// releases it with its state unchanged.
-function markWrongStage(item: SweepItem, stage: StageName | null): void {
-  if (item.kind !== "claimed" || item.closed || stage === null) {
+// releases it with its state unchanged. A stacked issue past sync that is
+// asked to sync goes back to sync instead (#290).
+function markWrongStage(item: SweepItem, { stage, ctx }: SweepRun): void {
+  if (item.kind !== "claimed" || item.closed || item.st.stage === stage) {
     return;
   }
-  if (item.st.stage !== stage) {
+  const restacked = restackToSync(item.st, ctx.now());
+  if (stage === "sync" && restacked !== null) {
+    item.st = restacked;
+  } else if (stage !== null) {
     item.outcome = "wrong-stage";
     item.reason = `the issue is at ${item.st.stage}, not the requested stage ${stage}`;
   }
