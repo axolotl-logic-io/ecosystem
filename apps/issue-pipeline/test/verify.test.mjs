@@ -123,8 +123,9 @@ test("each command's check gives its exit code, its log and, when it fails, its 
       { ...NO_NEW_TESTS, pass: false },
     ],
   };
-  // The raw line pins the key order too.
-  assert.equal(raw, `${JSON.stringify(want)}\n`);
+  // The reply is one JSON line.
+  assert.equal(raw.indexOf("\n"), raw.length - 1);
+  assert.deepEqual(JSON.parse(raw), want);
   assert.deepEqual(leftovers, CLEAN);
 });
 

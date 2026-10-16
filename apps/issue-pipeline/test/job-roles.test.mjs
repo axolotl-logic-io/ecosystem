@@ -4,25 +4,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   agentEnvOf,
+  boundaryOf,
   rolesOf,
-  STAGE_ROLES,
   sessionRoleOf,
 } from "../src/job/roles.ts";
 import { STAGE_ORDER } from "../src/workflow/sweep-config.ts";
 
-const EXPECTED_ROLES = {
-  triage: "reader",
-  spec: "reader",
-  implement: "writer",
-  "open-pr": "writer",
-  review: "reader",
-  fix: "writer",
-  sync: "writer",
-  checks: "writer",
-  accept: "reader",
-  security: "reader",
-  merge: "merger",
-};
+// The stages each role runs, as the wiki's Issue-Pipeline "Job boundaries"
+// lists them under "Roles".
+/** @typedef {import("../src/workflow/stages/types.ts").StageName} StageName */
+/** @type {StageName[]} */
+const READER_STAGES = ["triage", "spec", "review", "accept", "security"];
+/** @type {StageName[]} */
+const WRITER_STAGES = ["implement", "fix", "open-pr", "sync", "checks"];
+/** @type {StageName[]} */
+const MERGER_STAGES = ["merge"];
 
 const GH_VARS = [
   "GH_TOKEN",
@@ -53,17 +49,44 @@ const FROM = {
   ...envOf(GH_VARS.map((name) => [name, `${name}-secret`])),
 };
 
-const CONFIGURED = rolesOf({
+const JOB_ROLES = {
   writer: { tokenEnv: "W_TOKEN" },
   merger: { tokenEnv: "M_TOKEN" },
-});
+};
+const CONFIGURED = rolesOf(JOB_ROLES);
+const ISSUE = 7;
 
-test("every stage runs as the role its table names", () => {
-  assert.deepEqual(
-    Object.fromEntries(STAGE_ORDER.map((stage) => [stage, STAGE_ROLES[stage]])),
-    EXPECTED_ROLES,
-  );
-  assert.equal(Object.keys(STAGE_ROLES).length, STAGE_ORDER.length);
+/** @type {import("../src/config.ts").Config} */
+const CFG = {
+  account: "a",
+  allowedUsers: ["a"],
+  baseBranch: "integration",
+  claimWaitSeconds: [0, 0],
+  commands: { test: "true" },
+  jobRoles: JOB_ROLES,
+  leaseHours: 1,
+  practices: [],
+  repo: "o/r",
+  slug: "o__r",
+};
+
+test("each stage's boundary has the wiki's role, and only writer and merger stages get GH_TOKEN", () => {
+  /** @type {[StageName[], string, boolean][]} */
+  const groups = [
+    [READER_STAGES, "reader", false],
+    [WRITER_STAGES, "writer", true],
+    [MERGER_STAGES, "merger", true],
+  ];
+  for (const [stages, role, token] of groups) {
+    for (const stage of stages) {
+      const boundary = boundaryOf(CFG, ISSUE, stage, FROM);
+      assert.equal(boundary.role, role, stage);
+      assert.equal(boundary.env.includes("GH_TOKEN"), token, stage);
+    }
+  }
+  const listed = [...READER_STAGES, ...WRITER_STAGES, ...MERGER_STAGES];
+  assert.equal(listed.length, STAGE_ORDER.length);
+  assert.deepEqual(new Set(listed), new Set(STAGE_ORDER));
 });
 
 test("only the writer agent's sessions run as writer", () => {

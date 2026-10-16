@@ -92,12 +92,11 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     const lines = r.stdout.trim().split("\n");
     assert.equal(lines.length, 1);
     const boundary = JSON.parse(r.stdout);
-    assert.deepEqual(Object.keys(boundary), [
-      "role",
-      "checkout",
-      "env",
-      "network",
-    ]);
+    // The wiki promises these fields, not their order.
+    assert.deepEqual(
+      new Set(Object.keys(boundary)),
+      new Set(["role", "checkout", "env", "network"]),
+    );
     assert.equal(boundary.role, expected.role);
     assert.equal(boundary.checkout, checkoutOf(place.root, stage));
     assert.ok(!fs.existsSync(boundary.checkout));

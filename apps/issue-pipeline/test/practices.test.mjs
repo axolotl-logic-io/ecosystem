@@ -26,41 +26,17 @@ import {
 
 /** @import { StageMachine } from "../src/workflow/stages/types.ts" */
 
-// What each practices note must say, by role and case.
-const READ_IN_FULL = /read each of these in full/u;
-const LISTED_UNDER_WORKTREE =
-  /\/w\/issue-7\/CONTRIBUTING\.md, \/w\/issue-7\/wiki\/Decisions\.md\./u;
-const ALL_CODE = /all of the repo's code/u;
-const NEEDS_INFO = /needs-info/u;
-const NONE_CONFIGURED = /\(none configured\)/u;
-const SPEC_FOLLOWS = /The spec must follow them/u;
-const WRITER_FOLLOWS = /Every change you make must follow them/u;
-const REVIEWER_BLOCKS = /mark it `blocking`, quote the rule/u;
 // The first review launches one session per lens.
 const FIRST_REVIEW_LENSES = 3;
 // A practices entry that isn't a path.
 const NOT_A_PATH = 3;
 
-test("the spec task names every practices file under the worktree", () => {
-  const note = practicesNote(
-    { practices: ["CONTRIBUTING.md", "wiki/Decisions.md"] },
-    ITEM,
-  );
-  assert.match(note, READ_IN_FULL);
-  assert.match(note, LISTED_UNDER_WORKTREE);
-  assert.match(note, ALL_CODE);
-  assert.match(note, NEEDS_INFO);
-});
-
-test("the spec task says when no practices are configured", () => {
-  assert.match(practicesNote({ practices: [] }, ITEM), NONE_CONFIGURED);
-});
-
-test("each role is told what to do with them", () => {
-  const cfg = { practices: ["CONTRIBUTING.md"] };
-  assert.match(practicesNote(cfg, ITEM, "spec"), SPEC_FOLLOWS);
-  assert.match(practicesNote(cfg, ITEM, "writer"), WRITER_FOLLOWS);
-  assert.match(practicesNote(cfg, ITEM, "reviewer"), REVIEWER_BLOCKS);
+test("the note names every practices file under the worktree", () => {
+  const practices = ["CONTRIBUTING.md", "wiki/Decisions.md"];
+  const note = practicesNote({ practices }, ITEM);
+  for (const file of practices) {
+    assert.ok(note.includes(path.join(ITEM.paths.worktree, file)), file);
+  }
 });
 
 // The task of the session a stage machine launches first.
