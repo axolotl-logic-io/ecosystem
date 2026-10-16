@@ -82,3 +82,50 @@ test("a reply without the PR number stops", () => {
     code: null,
   });
 });
+
+// The step after an open-pr reply that reports `codeChanged` and `wikiAhead`.
+/** @param {boolean} codeChanged @param {number} wikiAhead @returns {Step} */
+function openedWith(codeChanged, wikiAhead) {
+  const reply = { ok: true, pr: 43, headSha: "bbbbbbb", codeChanged };
+  return afterReply(next, begun(), { ...reply, wikiAhead });
+}
+
+test("a code-only change goes to review with its flows", () => {
+  const step = openedWith(true, 0);
+  assert.equal(step.done, true);
+  assert.equal(step.stop, null);
+  const { flows, stage, prClosed } = step.state.st;
+  assert.deepEqual(flows, { code: true, wiki: false });
+  assert.equal(stage, "review");
+  assert.equal(prClosed, undefined);
+});
+
+test("a change to code and the wiki goes to review as code only does", () => {
+  const step = openedWith(true, 1);
+  assert.equal(step.done, true);
+  assert.deepEqual(step.state.st.flows, { code: true, wiki: true });
+  assert.equal(step.state.st.stage, "review");
+});
+
+test("a wiki-only change closes the draft PR, then goes to review", () => {
+  const closing = openedWith(false, 1);
+  assert.equal(closing.done, false);
+  assert.deepEqual(opsRequests(closing), [
+    { op: "close-pr", payload: { number: 7, pr: 43 } },
+  ]);
+  const step = afterReply(next, closing, { ok: true, pr: 43, closed: true });
+  assert.equal(step.done, true);
+  assert.equal(step.stop, null);
+  const { flows, stage, prClosed } = step.state.st;
+  assert.deepEqual(flows, { code: false, wiki: true });
+  assert.deepEqual({ stage, prClosed }, { stage: "review", prClosed: true });
+});
+
+test("a change that changed nothing stops as not doable", () => {
+  const step = openedWith(false, 0);
+  assert.deepEqual(step.stop, {
+    reason: "the implementation changed nothing",
+    detail: null,
+    code: null,
+  });
+});

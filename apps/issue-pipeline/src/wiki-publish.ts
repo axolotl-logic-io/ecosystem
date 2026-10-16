@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
-import { head } from "./git-state.ts";
+import { gitIn, head } from "./git-state.ts";
 import { git } from "./github.ts";
 import { withWikiLock } from "./locks.ts";
 import { OpsError, run } from "./process.ts";
@@ -41,8 +41,10 @@ type WikiFinishReply =
   | { resolved: false; reason: string }
   | { resolved: true; headSha: string };
 
+// A publish: the wiki's new head and the commits it added ("<short sha>
+// <subject>", oldest first), or the conflict that stopped it.
 type WikiPublish =
-  | { published: true; sha: string | null }
+  | { published: true; sha: string | null; commits: string[] }
   | ({ published: false } & WikiConflict);
 
 interface Checkout {
@@ -164,12 +166,12 @@ function deleteWikiBranch(cfg: Config, dir: string, n: number): void {
 }
 
 // Rebases and pushes to the wiki's branch, retrying a lost push race. Returns
-// the pushed head, null with nothing to push, or the conflict.
+// the pushed head and commits, null with nothing to push, or the conflict.
 function pushRebased(
   cfg: Config,
   n: number,
   checkout: Checkout,
-): string | null | WikiConflict {
+): { sha: string; commits: string[] } | null | WikiConflict {
   const target = `HEAD:refs/heads/${checkout.wiki.branch}`;
   for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt += 1) {
     freshen(cfg, checkout);
@@ -180,9 +182,12 @@ function pushRebased(
     if (wikiAhead(cfg, n) === 0) {
       return null;
     }
+    const range = `origin/${checkout.wiki.branch}..HEAD`;
+    const log = ["log", "--reverse", "--abbrev=12", "--format=%h %s", range];
+    const commits = gitIn(checkout.dir, log).trim().split("\n");
     const push = ["-C", checkout.dir, "push", "origin", target];
     if (git(cfg, push, { allowFail: true }).code === 0) {
-      return head(checkout.dir);
+      return { sha: head(checkout.dir), commits };
     }
   }
   throw new OpsError(
@@ -196,15 +201,18 @@ function pushRebased(
 function publishWiki(cfg: Config, n: number): WikiPublish {
   const checkout = checkoutOf(cfg, n);
   if (checkout === null) {
-    return { published: true, sha: null };
+    return { published: true, sha: null, commits: [] };
   }
   return withWikiLock(cfg, () => {
     const pushed = pushRebased(cfg, n, checkout);
-    if (typeof pushed === "object" && pushed !== null) {
+    if (pushed !== null && "conflict" in pushed) {
       return { published: false, ...pushed };
     }
     deleteWikiBranch(cfg, checkout.dir, n);
-    return { published: true, sha: pushed };
+    if (pushed === null) {
+      return { published: true, sha: null, commits: [] };
+    }
+    return { published: true, ...pushed };
   });
 }
 

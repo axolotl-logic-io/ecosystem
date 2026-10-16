@@ -146,9 +146,10 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     code: "not-doable",
     short:
       "Stopped: the implementer can't do the issue as written. See the stop comment.",
-    test: /could not do the issue as written/iu,
+    test: /could not do the issue as written|the implementation changed nothing/iu,
     control: "implementer",
-    explain: "The implementer found the issue can't be done as written.",
+    explain:
+      "The implementer found the issue can't be done as written, or its work changed nothing: no files on the branch and no wiki commits.",
   },
   {
     code: "too-large",

@@ -25,7 +25,13 @@ import {
   mayContinue,
   outOfRoomReason,
 } from "./continuation.ts";
-import { launchRereviews, roundOf, settleRereviews } from "./rereview.ts";
+import { flowStep, prFlowed } from "./flow-step.ts";
+import {
+  launchRereviews,
+  prepareRereview,
+  roundOf,
+  settleRereviews,
+} from "./rereview.ts";
 import type { Dispute, FixReply } from "./review-replies.ts";
 import { fixReplyOf } from "./review-replies.ts";
 import { fixComment, fixTask } from "./review-text.ts";
@@ -60,6 +66,7 @@ type FixPhase =
   | "fixed"
   | "pushed"
   | "repushed"
+  | "flowed"
   | "prepared"
   | "rereviewed"
   | "saved";
@@ -69,6 +76,7 @@ const PHASES: readonly FixPhase[] = [
   "fixed",
   "pushed",
   "repushed",
+  "flowed",
   "prepared",
   "rereviewed",
   "saved",
@@ -220,31 +228,24 @@ function fixed(
   }
 }
 
-// The re-review diff's tag: the round, after the security round if any.
-function prepTag(st: IssueState, round: number): string {
-  const { securityRounds = 0 } = st;
-  if (securityRounds === 0) {
-    return `r${round}`;
-  }
-  return `s${securityRounds}-r${round}`;
-}
-
-// Records the pushed head, then prepares the diff since the last review. A
-// failed push is retried once unless git's push was rejected.
-function pushed(state: StageState, results: readonly LaunchResult[]): Step {
-  const { ok, error, headSha } = onlyReply(results);
+// Records the pushed head and acts on the flows (flow-step.ts), then prepares
+// the diff since the last review. A failed push is retried once unless git's
+// push was rejected.
+function pushed(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
+  const reply = onlyReply(results);
+  const { ok, error, headSha } = reply;
   if (ok !== true || typeof headSha !== "string") {
     return pushFailedStep(state, "could not push the fix", replyError(error));
   }
   const st = { ...state.st, headSha };
-  const payload = {
-    number: state.n,
-    sinceSha: st.reviewedSha,
-    tag: prepTag(st, roundOf(state)),
-  };
-  return launchStep({ ...state, st, phase: "prepared" }, [
-    { kind: "op", name: "prep", op: "prepare-review", payload },
-  ]);
+  return flowStep({ ...state, st }, ctx, reply, {
+    phase: "flowed",
+    goOn: prepareRereview,
+  });
 }
 
 // The saved round is finished; one that left findings open goes again.
@@ -271,7 +272,9 @@ function next(
       return fixed(state, ctx, results);
     case "pushed":
     case "repushed":
-      return pushed(state, results);
+      return pushed(state, ctx, results);
+    case "flowed":
+      return prFlowed(state, ctx, results, prepareRereview);
     case "prepared":
       return launchRereviews(state, ctx, results);
     case "rereviewed":

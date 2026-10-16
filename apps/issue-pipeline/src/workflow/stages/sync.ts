@@ -1,7 +1,7 @@
 // Sync: rebases the PR branch onto the base branch. A clean rebase moves to
 // checks; a conflicting one is resolved by a writer while the issue has
 // conflict attempts and rebase budget left, and then goes through every check
-// again.
+// again. Either way the rebase's flows are saved and acted on (flow-step.ts).
 
 import { chargeCheck } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
@@ -11,8 +11,9 @@ import type { IssueState } from "../types.ts";
 import { syncReplyOf } from "./checks-reply.ts";
 import { conflicted, maxConflictFixes } from "./conflict-resolver.ts";
 import { CODE_TARGET } from "./conflict-target.ts";
+import { flowEnd, prFlowed } from "./flow-step.ts";
 import { opFailedStep } from "./network.ts";
-import { doneStep, launchStep, onlyReply, stopStep } from "./step.ts";
+import { launchStep, onlyReply, stopStep } from "./step.ts";
 import { finished, resolved } from "./sync-conflict.ts";
 import type {
   LaunchResult,
@@ -23,14 +24,16 @@ import type {
 } from "./types.ts";
 
 // Where sync is: about to rebase, reading the rebase, waiting for the
-// conflict resolver, or waiting for the rebase to finish.
-type SyncPhase = "begin" | "synced" | "resolved" | "finished";
+// conflict resolver, waiting for the rebase to finish, or reading the PR's
+// close or reopen.
+type SyncPhase = "begin" | "synced" | "resolved" | "finished" | "flowed";
 
 const PHASES: readonly SyncPhase[] = [
   "begin",
   "synced",
   "resolved",
   "finished",
+  "flowed",
 ];
 
 const SHORT_SHA = 12;
@@ -71,8 +74,8 @@ function begin(state: StageState, ctx: StageContext): Step {
 function clean(
   state: StageState,
   ctx: StageContext,
-  changed: boolean,
-  headSha: string,
+  reply: Readonly<Record<string, unknown>>,
+  { changed, headSha }: { changed: boolean; headSha: string },
 ): Step {
   const { baseBranch, maxSyncs } = ctx.cfg;
   const st: IssueState = { ...state.st };
@@ -111,14 +114,16 @@ function clean(
   }
   st.headSha = headSha;
   st.stage = "checks";
-  return doneStep({ ...state, st }, comments);
+  return flowEnd({ ...state, st }, ctx, reply, comments);
 }
+
 function synced(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const reply = syncReplyOf(onlyReply(results));
+  const raw = onlyReply(results);
+  const reply = syncReplyOf(raw);
   const base = ctx.cfg.baseBranch;
   if (reply.kind === "failed") {
     const reason = `could not sync with ${base}`;
@@ -126,7 +131,7 @@ function synced(
     return opFailedStep(state, failed, ctx.now());
   }
   if (reply.kind === "clean") {
-    return clean(state, ctx, reply.changed, reply.headSha);
+    return clean(state, ctx, raw, reply);
   }
   if (reply.inRebase) {
     const { conflicts: files, baseSha } = reply;
@@ -165,6 +170,8 @@ function next(
       return resolved(state, ctx, results);
     case "finished":
       return finished(state, ctx, results);
+    case "flowed":
+      return prFlowed(state, ctx, results);
     default: {
       const unhandled: never = phase;
       return unhandled;

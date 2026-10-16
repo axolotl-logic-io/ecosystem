@@ -3,13 +3,15 @@
 // commits onto the wiki's latest version, the conflict resolver settling any
 // conflict, and checks them (merge-wiki.ts), so the wiki is ready while the
 // code is still unmerged. A merge whose wiki changes could not be published
-// moves to the publish stage. A merge that waits for an older PR stays at merge;
+// moves to the publish stage. A change that lives only in the wiki is
+// finished by finish-wiki instead of merged. A merge that waits for an older PR stays at merge;
 // one that must rebase first goes back to sync with its passed head kept. A
 // branch behind its base rebases in this sweep, once; after that, and on a
 // conflict, it rebases next sweep.
 
 import { noteEvent } from "../event-log.ts";
 import { findingsStop, openFindings } from "../findings.ts";
+import { wikiOnly } from "../flows.ts";
 import { acceptanceSummary } from "../summary.ts";
 import type { IssueState } from "../types.ts";
 import {
@@ -66,8 +68,14 @@ function phaseOf(state: StageState): MergePhase {
   return phase;
 }
 
+// The merge, or for a change that lives only in the wiki the finish-wiki op,
+// which publishes the wiki and closes the issue as merged.
 function mergeLaunch(state: StageState, ctx: StageContext): OpLaunch {
   const { st } = state;
+  if (wikiOnly(st.flows)) {
+    const payload = { number: state.n, state: st };
+    return { kind: "op", name: "merge", op: "finish-wiki", payload };
+  }
   const checks = st.verifySummary ?? "";
   const acceptance = acceptanceSummary(ctx.cfg, state);
   const payload = {

@@ -5,7 +5,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { recordPush } from "../checkouts.ts";
+import type { BranchChanges } from "../checkouts.ts";
+import { branchChanges, recordPush } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { assertClean, fetchIn, head, remoteHead } from "../git-state.ts";
@@ -28,8 +29,8 @@ interface ReviewReply {
 }
 
 type SyncReply =
-  | { changed: false; conflict: false; headSha: string }
-  | { changed: true; conflict: false; headSha: string }
+  | ({ changed: false; conflict: false; headSha: string } & BranchChanges)
+  | ({ changed: true; conflict: false; headSha: string } & BranchChanges)
   | SyncConflict;
 
 interface SyncConflict {
@@ -42,7 +43,7 @@ interface SyncConflict {
 
 type FinishReply =
   | { resolved: false; reason: string }
-  | { resolved: true; headSha: string };
+  | ({ resolved: true; headSha: string } & BranchChanges);
 
 type Op = (
   cfg: Config,
@@ -195,7 +196,8 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   fetchIn(cfg, wt, cfg.baseBranch);
   const base = `origin/${cfg.baseBranch}`;
   if (gitSucceeds(wt, ["merge-base", "--is-ancestor", base, "HEAD"])) {
-    return { changed: false, conflict: false, headSha: head(wt) };
+    const changes = branchChanges(cfg, n);
+    return { changed: false, conflict: false, headSha: head(wt), ...changes };
   }
   const before = head(wt);
   if (!gitSucceeds(wt, ["rebase", base])) {
@@ -209,7 +211,8 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     run("git", ["-C", wt, "reset", "--hard", before]);
     throw error;
   }
-  return { changed: true, conflict: false, headSha: head(wt) };
+  const changes = branchChanges(cfg, n);
+  return { changed: true, conflict: false, headSha: head(wt), ...changes };
 }
 
 // After a writer resolved a kept rebase: push it if it passes the checks.
@@ -230,7 +233,7 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
     return { resolved: false, reason };
   }
   pushBranch(cfg, n, wt, "finish-sync");
-  return { resolved: true, headSha: head(wt) };
+  return { resolved: true, headSha: head(wt), ...branchChanges(cfg, n) };
 }
 
 const syncOps: Readonly<Record<string, Op>> = {

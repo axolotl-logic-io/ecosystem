@@ -26,6 +26,8 @@ import { hasBranch, withWiki } from "./wiki-test-kit.mjs";
 
 /** @import { World } from "./ops-test-kit.mjs" */
 
+// The length of a short sha in a publish reply's commit list.
+const SHORT_SHA = 12;
 const ISSUE = 7;
 const STATE = {
   pr: 50,
@@ -165,7 +167,8 @@ test("publish starts over from a rebase an earlier publish left stopped", () => 
   fakeGh.reply(finishReplies());
   const out = ask(w, { op: "publish", number: ISSUE, state: STATE });
   const sha = revOf(wiki.origin, "master");
-  assert.equal(out, line("publish", { published: true, sha }));
+  const commits = [`${sha.slice(0, SHORT_SHA)} page`];
+  assert.equal(out, line("publish", { published: true, sha, commits }));
   assert.equal(sh(`git -C ${wiki.origin} log -1 --format=%s master`), "page");
   assert.equal(hasBranch(wiki.origin, "agent/issue-7"), false);
 });
@@ -222,7 +225,8 @@ test("publish rebases again and pushes after losing a push race", () => {
   fakeGh.reply(finishReplies());
   const out = ask(w, { op: "publish", number: ISSUE, state: STATE });
   const sha = revOf(wiki.origin, "master");
-  assert.equal(out, line("publish", { published: true, sha }));
+  const commits = [`${sha.slice(0, SHORT_SHA)} page`];
+  assert.equal(out, line("publish", { published: true, sha, commits }));
   assert.equal(revOf(wiki.origin, "master~1"), raced);
   assert.equal(sh(`git -C ${wiki.origin} log -1 --format=%s master`), "page");
   assert.equal(fs.existsSync(path.join(w.root, "race-lost")), true);
@@ -236,6 +240,9 @@ test("publish with no wiki commits of the issue's own pushes nothing", () => {
   sh(`git -C ${wikiDir(w)} reset -q --hard origin/master`);
   fakeGh.reply(finishReplies());
   const out = ask(w, { op: "publish", number: ISSUE, state: STATE });
-  assert.equal(out, line("publish", { published: true, sha: null }));
+  assert.equal(
+    out,
+    line("publish", { published: true, sha: null, commits: [] }),
+  );
   assert.equal(revOf(wiki.origin, "master"), master);
 });

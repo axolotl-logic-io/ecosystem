@@ -9,20 +9,9 @@ import { LENSES } from "../lenses.ts";
 import { preamble } from "../prompts.ts";
 import { REVIEW_SCHEMA } from "../review-schemas.ts";
 import type { IssueState, ListedFinding } from "../types.ts";
-import {
-  blockingOf,
-  fixOutputOf,
-  preparedOf,
-  pushedOf,
-} from "./checks-reply.ts";
+import { blockingOf, fixOutputOf, preparedOf } from "./checks-reply.ts";
 import { attemptOf, handedOff } from "./ci-fixer.ts";
-import {
-  launchStep,
-  onlyChild,
-  onlyReply,
-  pushFailedStep,
-  stopStep,
-} from "./step.ts";
+import { launchStep, onlyChild, onlyReply, stopStep } from "./step.ts";
 import type {
   ChildLaunch,
   ChildResult,
@@ -95,17 +84,10 @@ function fixed(
   );
 }
 
-// Records the pushed head, then prepares the fix's diff for review. A check
-// fix changes code, so acceptance and the security review run again. A failed
-// push is retried once unless git's push was rejected.
-function pushed(state: StageState, results: readonly LaunchResult[]): Step {
-  const reply = pushedOf(onlyReply(results));
-  if (reply.kind === "failed") {
-    return pushFailedStep(state, "could not push the check fix", reply.error);
-  }
-  const st: IssueState = { ...state.st };
-  st.headSha = reply.value;
-  st.testsOnly = false;
+// Prepares the pushed check fix's diff for review. A check fix changes code,
+// so acceptance and the security review run again.
+function prepareFix(state: StageState): Step {
+  const st = { ...state.st, testsOnly: false };
   const payload = {
     number: state.n,
     sinceSha: st.reviewedSha,
@@ -234,4 +216,4 @@ function reviewed(state: StageState, results: readonly LaunchResult[]): Step {
   );
 }
 
-export { fixed, prepared, pushed, reviewed };
+export { fixed, prepared, prepareFix, reviewed };

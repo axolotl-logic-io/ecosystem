@@ -1,18 +1,37 @@
-// Checks: verifies the head with the repo's own commands, then waits for CI.
-// Passing checks move to acceptance, or straight to merge after a clean rebase
-// of a head that passed everything before; failing ones get CI-fix rounds
-// (ci-fix.ts) until they pass or the limit is reached.
+// Checks: checks the wiki pages of an issue that changes the wiki, verifies
+// the head of one that changes code with the repo's own commands, then waits
+// for CI (checks-round.ts). Passing checks move to acceptance, or straight to
+// merge after a clean rebase of a head that passed everything before; failing
+// ones get CI-fix rounds (ci-fix.ts) until they pass or the limit is reached.
 
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import { byStep } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import type { Check } from "./checks-reply.ts";
-import { ciReplyOf, isRecord, verifyReplyOf } from "./checks-reply.ts";
-import { fixed, prepared, pushed, reviewed } from "./ci-fix.ts";
+import {
+  ciReplyOf,
+  isRecord,
+  pushedOf,
+  verifyReplyOf,
+} from "./checks-reply.ts";
+import {
+  ciLaunch,
+  failureLine,
+  startRound,
+  wikiChecked,
+} from "./checks-round.ts";
+import { fixed, prepared, prepareFix, reviewed } from "./ci-fix.ts";
 import { startFix } from "./ci-fixer.ts";
+import { flowStep, prFlowed } from "./flow-step.ts";
 import { opFailedStep } from "./network.ts";
-import { doneStep, launchStep, onlyReply, phaseOf, stopStep } from "./step.ts";
+import {
+  doneStep,
+  onlyReply,
+  phaseOf,
+  pushFailedStep,
+  stopStep,
+} from "./step.ts";
 import type {
   LaunchResult,
   StageComment,
@@ -21,35 +40,36 @@ import type {
   Step,
 } from "./types.ts";
 
-// Where checks is: about to start, reading verification, reading CI, in a CI
-// fix (ci-fix.ts, whose push may be retried once), or after a CI fix's state
-// was saved.
+// Where checks is: about to start, reading the wiki check, verification or
+// CI, in a CI fix (ci-fix.ts, whose push may be retried once and may close
+// or reopen the PR, flow-step.ts), or after a CI fix's state was saved.
 type ChecksPhase =
   | "begin"
+  | "wiki-checked"
   | "verified"
   | "ci"
   | "fixed"
   | "pushed"
   | "repushed"
+  | "flowed"
   | "prepared"
   | "reviewed"
   | "saved";
 
 const PHASES: readonly ChecksPhase[] = [
   "begin",
+  "wiki-checked",
   "verified",
   "ci",
   "fixed",
   "pushed",
   "repushed",
+  "flowed",
   "prepared",
   "reviewed",
   "saved",
 ];
 
-const VERIFY_MINUTES = 120;
-// Minutes the CI wait gets beyond the configured wait.
-const CI_MARGIN_MINUTES = 10;
 const SUMMARY_LIMIT = 1500;
 const SHORT_SHA = 12;
 const LOG_SHA = 8;
@@ -74,66 +94,12 @@ function prComment(role: string, body: string): StageComment {
   return { by: byStep(role), body, where: "pr" };
 }
 
-function ciLaunch(
-  state: StageState,
-  ctx: StageContext,
-  comments: readonly StageComment[],
-): Step {
-  const { st } = state;
-  const payload = { number: state.n, pr: st.pr, expectedSha: st.headSha };
-  const minutes = ctx.cfg.ciWaitMinutes + CI_MARGIN_MINUTES;
-  return launchStep(
-    { ...state, phase: "ci" },
-    [{ kind: "op", name: "ci", op: "ci-status", payload, minutes }],
-    comments,
-  );
-}
-
-// Starts round `rounds`. A head that already passed local verification (such
-// as one waiting on CI last sweep) skips straight to CI.
-function startRound(
-  state: StageState,
-  ctx: StageContext,
-  rounds: number,
-): Step {
-  const counted = { ...state, carry: { rounds } };
-  const { verifiedSha, headSha, testsOnly } = state.st;
-  if (
-    typeof verifiedSha === "string" &&
-    verifiedSha !== "" &&
-    verifiedSha === headSha
-  ) {
-    return ciLaunch(counted, ctx, []);
-  }
-  const payload = { number: state.n, testsOnly: testsOnly === true };
-  return launchStep({ ...counted, phase: "verified" }, [
-    {
-      kind: "op",
-      name: "verify",
-      op: "verify",
-      payload,
-      minutes: VERIFY_MINUTES,
-    },
-  ]);
-}
-
 function checkLine(check: Check): string {
   let mark = "❌";
   if (check.pass) {
     mark = "✅";
   }
   return `- ${mark} ${check.id}: ${check.detail}`;
-}
-
-function failureLine(check: Check): string {
-  let line = `- ${check.id}: ${check.detail}`;
-  if (check.log !== "") {
-    line += ` (log: ${check.log})`;
-  }
-  if (check.tail !== "") {
-    line += `\n${check.tail}`;
-  }
-  return line;
 }
 
 // Posts the checks' table, then goes on to CI, or to a fix when one failed.
@@ -168,6 +134,24 @@ function verified(
     SUMMARY_LIMIT,
   );
   return ciLaunch({ ...state, st }, ctx, [comment]);
+}
+
+// A CI fix was pushed: records the head and acts on its flows (flow-step.ts),
+// then prepares its diff (ci-fix.ts). A failed push is retried once unless
+// git's push was rejected.
+function fixPushed(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
+  const raw = onlyReply(results);
+  const reply = pushedOf(raw);
+  if (reply.kind === "failed") {
+    return pushFailedStep(state, "could not push the check fix", reply.error);
+  }
+  const st = { ...state.st, headSha: reply.value };
+  const flowed = { phase: "flowed", goOn: prepareFix };
+  return flowStep({ ...state, st }, ctx, raw, flowed);
 }
 
 // Checks passed: on to acceptance, or to merge when only the tests ran again.
@@ -271,6 +255,8 @@ function next(
   switch (phase) {
     case "begin":
       return startRound(state, ctx, 1);
+    case "wiki-checked":
+      return wikiChecked(state, ctx, results, passed);
     case "verified":
       return verified(state, ctx, results);
     case "ci":
@@ -279,7 +265,9 @@ function next(
       return fixed(state, ctx, results);
     case "pushed":
     case "repushed":
-      return pushed(state, results);
+      return fixPushed(state, ctx, results);
+    case "flowed":
+      return prFlowed(state, ctx, results, prepareFix);
     case "prepared":
       return prepared(state, ctx, results);
     case "reviewed":

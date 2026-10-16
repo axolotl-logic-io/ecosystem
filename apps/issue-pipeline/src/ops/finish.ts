@@ -12,6 +12,7 @@ import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { parseRequest } from "../process.ts";
 import type { State } from "../state.ts";
 import { STATE, writeState } from "../state.ts";
+import type { WikiPublish } from "../wiki-publish.ts";
 import { publishMerged } from "./publish.ts";
 
 const SUB_ISSUES_PER_PAGE = 100;
@@ -22,6 +23,10 @@ const SUB_ISSUES = z
   .nullable();
 
 const ISSUE_REQUEST = z.looseObject({ number: z.number().int() });
+const FINISH_WIKI_REQUEST = z.looseObject({
+  number: z.number().int(),
+  state: STATE,
+});
 // The lane fields are whatever the workflow sent (LaneRequest in claims.ts).
 const RELEASE_REQUEST = z.looseObject({
   lane: z.unknown().optional(),
@@ -37,11 +42,28 @@ type CloseParentReply =
 
 type EmptyReply = Record<string, never>;
 
+type FinishWikiReply = { merged: true } & WikiPublish;
+
 function errorMessage(error: unknown): string | undefined {
   if (error instanceof Error) {
     return error.message;
   }
   return undefined;
+}
+
+// Deletes the issue's code branch on GitHub, if it is there.
+function deleteBranch(cfg: Config, n: number): void {
+  gh(
+    cfg,
+    [
+      "api",
+      "-X",
+      "DELETE",
+      `repos/${cfg.repo}/git/refs/heads/${paths.branch(n)}`,
+      "--silent",
+    ],
+    { allowFail: true },
+  );
 }
 
 // After a PR merges, by the pipeline or by hand: delete the branch, label the
@@ -54,17 +76,7 @@ function finishMerged(
   pr: number,
   state: State,
 ): boolean {
-  gh(
-    cfg,
-    [
-      "api",
-      "-X",
-      "DELETE",
-      `repos/${cfg.repo}/git/refs/heads/${paths.branch(n)}`,
-      "--silent",
-    ],
-    { allowFail: true },
-  );
+  deleteBranch(cfg, n);
   setLabels(cfg, pr, [LABELS.merged.name], [LABELS.working.name]);
   clearStopLabels(cfg, pr);
   try {
@@ -81,6 +93,21 @@ function finishMerged(
   }
   writeState(cfg, n, { ...state, stage: "publish" });
   return false;
+}
+
+// Finishes an issue whose change lives only in the wiki, in place of a merge:
+// deletes its code branch, publishes its wiki commits and closes it as
+// merged. A conflict leaves it waiting at the publish stage with the
+// conflict in the reply; a push that keeps failing throws.
+function finishWiki(cfg: Config, request: unknown): FinishWikiReply {
+  const req = parseRequest(FINISH_WIKI_REQUEST, "finish-wiki", request);
+  const n = req.number;
+  deleteBranch(cfg, n);
+  const published = publishMerged(cfg, n, null, req.state);
+  if (!published.published) {
+    writeState(cfg, n, { ...req.state, stage: "publish" });
+  }
+  return { merged: true, ...published };
 }
 
 // Closes a split issue once every sub-issue is closed.
@@ -138,4 +165,4 @@ function release(cfg: Config, request: unknown): EmptyReply {
   return {};
 }
 
-export { closeParent, finishMerged, post, release };
+export { closeParent, finishMerged, finishWiki, post, release };

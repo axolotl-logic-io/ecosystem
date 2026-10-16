@@ -47,13 +47,16 @@ function gitIn(dir, args) {
   return sh(`git -C ${dir} ${args}`);
 }
 
+// What a branch with a code change and no wiki reports.
+const CODE = { codeChanged: true, wikiAhead: 0 };
+
 test("sync-base leaves an up-to-date branch alone", () => {
   const headSha = fx.startBranch(ISSUE.upToDate, "g", "one");
   const { out, calls } = ask({ op: "sync-base", number: ISSUE.upToDate });
   assert.deepEqual(calls, []);
   assert.equal(
     out,
-    okLine("sync-base", { changed: false, conflict: false, headSha }),
+    okLine("sync-base", { changed: false, conflict: false, headSha, ...CODE }),
   );
   assert.equal(originRef("agent/issue-31"), headSha);
 });
@@ -67,7 +70,7 @@ test("sync-base rebases onto a moved base and pushes", () => {
   assert.notEqual(headSha, before);
   assert.equal(
     out,
-    okLine("sync-base", { changed: true, conflict: false, headSha }),
+    okLine("sync-base", { changed: true, conflict: false, headSha, ...CODE }),
   );
   assert.equal(originRef(`${headSha}^`), base);
   const record = { sha: headSha, op: "sync-base", dated: true };
@@ -262,7 +265,10 @@ test("finish-sync pushes a finished rebase", () => {
   const { out, calls } = ask({ op: "finish-sync", number: ISSUE.finished });
   assert.deepEqual(calls, []);
   const headSha = originRef("agent/issue-48");
-  assert.equal(out, okLine("finish-sync", { resolved: true, headSha }));
+  assert.equal(
+    out,
+    okLine("finish-sync", { resolved: true, headSha, ...CODE }),
+  );
   assert.equal(gitIn(wt, "rev-parse HEAD"), headSha);
   assert.equal(originRef(`${headSha}^`), originRef("integration"));
   const record = { sha: headSha, op: "finish-sync", dated: true };

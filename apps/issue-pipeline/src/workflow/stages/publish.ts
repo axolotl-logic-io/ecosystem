@@ -7,6 +7,7 @@
 // here and retries next sweep, within maxConflictFixes and the budget.
 
 import { noteEvent } from "../event-log.ts";
+import { wikiOnly } from "../flows.ts";
 import { isRecord, syncReplyOf } from "./checks-reply.ts";
 import { branchOf } from "./merge-wiki.ts";
 import { opFailedStep } from "./network.ts";
@@ -39,7 +40,8 @@ function phaseOf(state: StageState): PublishPhase {
   return phase;
 }
 
-// Asks ops to publish, after posting `comments`. `retried` is set once a
+// Asks ops to publish, after posting `comments`; a change that lives only in
+// the wiki ends through finish-wiki, as at merge. `retried` is set once a
 // resolved conflict has been published again in this sweep.
 function publishStep(
   state: StageState,
@@ -47,9 +49,13 @@ function publishStep(
   retried: boolean,
 ): Step {
   const payload = { number: state.n, state: state.st };
+  let op = "publish";
+  if (wikiOnly(state.st.flows)) {
+    op = "finish-wiki";
+  }
   return launchStep(
     { ...state, phase: "published", carry: { retried } },
-    [{ kind: "op", name: "publish", op: "publish", payload }],
+    [{ kind: "op", name: "publish", op, payload }],
     comments,
   );
 }

@@ -21,6 +21,7 @@ import {
 import type { ConflictTarget } from "./conflict-target.ts";
 import { finishOp, ontoText } from "./conflict-target.ts";
 import { mayContinue, outOfRoomReason } from "./continuation.ts";
+import { flowEnd } from "./flow-step.ts";
 import {
   doneStep,
   launchStep,
@@ -218,7 +219,8 @@ function settle(
   return { kind: "rebased", state: copied, headSha: reply.headSha, outcome };
 }
 
-// Sync's code rebase is finished: every check runs again on the new head.
+// Sync's code rebase is finished: its flows are acted on (flow-step.ts, sync's
+// "flowed" phase), and every check runs again on the new head.
 function finished(
   state: StageState,
   ctx: StageContext,
@@ -241,7 +243,8 @@ function finished(
   );
   st.headSha = headSha;
   st.stage = "checks";
-  return doneStep(settled.state, [comment, syncComment]);
+  const comments = [comment, syncComment];
+  return flowEnd(settled.state, ctx, onlyReply(results), comments);
 }
 
 // The wiki's rebase is finished: the stage carries on through `resume`. The

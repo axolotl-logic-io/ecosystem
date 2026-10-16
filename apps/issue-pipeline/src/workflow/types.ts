@@ -2,6 +2,7 @@
 // the work item a helper reads for its issue, and the slices of the repo
 // config each helper needs.
 
+import type { Flows } from "./flows.ts";
 import type { Signature } from "./signing.ts";
 
 // A finding is open until a re-review resolves it.
@@ -71,6 +72,12 @@ interface IssueState {
   prBody?: string;
   prBy?: Signature;
   pr?: number | null;
+  // What the issue's work changes (flows.ts), as the last push or rebase
+  // reported; missing until then, and after a restart.
+  flows?: Flows;
+  // Set while the issue's PR is closed because its change lives only in the
+  // wiki.
+  prClosed?: boolean;
   // The PR branch's head as the pipeline last pushed or saw it.
   headSha?: string | null;
   implemented?: boolean;

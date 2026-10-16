@@ -18,6 +18,7 @@ import {
   codedStopStep,
   copyState,
   launchEach,
+  launchStep,
   onlyReply,
   prComment,
   replyError,
@@ -45,6 +46,28 @@ const CLOSING: readonly string[] = ["resolved", "dispute-accepted"];
 // The fix round the issue is in, 0 before the first.
 function roundOf(state: StageState): number {
   return state.st.round ?? 0;
+}
+
+// The re-review diff's tag: the round, after the security round if any.
+function prepTag(st: IssueState, round: number): string {
+  const { securityRounds = 0 } = st;
+  if (securityRounds === 0) {
+    return `r${round}`;
+  }
+  return `s${securityRounds}-r${round}`;
+}
+
+// Prepares the diff since the last review for the fix round's re-reviewers.
+function prepareRereview(state: StageState): Step {
+  const { st } = state;
+  const payload = {
+    number: state.n,
+    sinceSha: st.reviewedSha,
+    tag: prepTag(st, roundOf(state)),
+  };
+  return launchStep({ ...state, phase: "prepared" }, [
+    { kind: "op", name: "prep", op: "prepare-review", payload },
+  ]);
 }
 
 function lensFindings(open: readonly Finding[], lens: Lens): Finding[] {
@@ -230,4 +253,4 @@ function settleRereviews(
   return settle(state, ctx, rereviews);
 }
 
-export { launchRereviews, roundOf, settleRereviews };
+export { launchRereviews, prepareRereview, roundOf, settleRereviews };

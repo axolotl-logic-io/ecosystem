@@ -276,6 +276,7 @@ function blockingOf(result: ChildResult): ListedFinding[] | null {
 export type { Check, FinishReply, FixOutput };
 export {
   blockingOf,
+  checksOf,
   ciReplyOf,
   finishReplyOf,
   fixOf,

@@ -41,15 +41,17 @@ const MODELS: Readonly<Record<ModelRole, string>> = {
 const DEFAULT_SPAWN_LIMIT = 64;
 
 // The most children one run of each stage can spawn, ops steps included.
+// Open-pr, fix and sync may close or reopen the PR (flow-step.ts), and a
+// checks round may run wiki-check and a CI fix's reopen.
 const STAGE_SPAWNS: Readonly<Record<StageName, number>> = {
   triage: 4,
   spec: 3,
   implement: 1,
-  "open-pr": 2,
+  "open-pr": 3,
   review: 7,
-  fix: 8,
-  sync: 3,
-  checks: 11,
+  fix: 9,
+  sync: 4,
+  checks: 13,
   accept: 3,
   security: 3,
   merge: 5,

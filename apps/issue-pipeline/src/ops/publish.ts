@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { removeWorktree } from "../checkouts.ts";
 import { closeClaims } from "../claims.ts";
-import { comment } from "../comments.ts";
+import { comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { gh, issueState } from "../github.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
@@ -34,8 +34,9 @@ const PUBLISH_REQUEST = z.looseObject({
 });
 
 // GitHub closes an issue from "Closes #N" only when the PR merges into the
-// default branch. A base like integration leaves it open, so close it here.
-function closeIssue(cfg: Config, n: number, pr: number): void {
+// default branch. A base like integration leaves it open, so close it here,
+// with `text` as the closing comment.
+function closeIssue(cfg: Config, n: number, text: string): void {
   if (issueState(cfg, n) !== "open") {
     return;
   }
@@ -50,33 +51,53 @@ function closeIssue(cfg: Config, n: number, pr: number): void {
       "--reason",
       "completed",
       "--comment",
-      `PR #${pr} merged into ${cfg.baseBranch}.`,
+      text,
     ],
     { allowFail: true },
   );
 }
 
-// The issue is done: its state, labels, claims and worktree say so.
-function closeMerged(cfg: Config, n: number, pr: number, state: State): void {
+// The issue is done: its state, labels, claims and worktree say so. `why` is
+// what finished it, for the claims; `closing` is the issue's closing comment.
+function closeMerged(
+  cfg: Config,
+  n: number,
+  state: State,
+  { why, closing }: { why: string; closing: string },
+): void {
   writeState(cfg, n, { ...state, stage: "done", lease: null });
   setLabels(cfg, n, [LABELS.merged.name], [LABELS.working.name]);
   clearStopLabels(cfg, n);
-  closeClaims(cfg, n, `PR #${pr} merged.`);
-  closeIssue(cfg, n, pr);
+  closeClaims(cfg, n, why);
+  closeIssue(cfg, n, closing);
   removeWorktree(cfg, n);
 }
 
-// After PR #pr merged: publish the issue's wiki commits and, once they are on
-// the wiki (or there are none), finish the issue. A conflict leaves the rebase
-// stopped and the issue as it was; a push that keeps failing throws.
+// The closing comment of an issue whose change lives only in the wiki.
+function wikiOnlyClosing(cfg: Config, commits: readonly string[]): string {
+  const list = commits.map((line) => `- ${line}`).join("\n");
+  const history = `https://github.com/${cfg.repo}/wiki/_history`;
+  const text = `This issue's change lives only in the wiki, so it had no PR to merge. Published these wiki commits (history: ${history}):\n\n${list}`;
+  return signed({ role: "merger" }, text);
+}
+
+// After PR #pr merged, or with `pr` null for a change that lives only in the
+// wiki: publish the issue's wiki commits and, once they are on the wiki (or
+// there are none), finish the issue. A conflict leaves the rebase stopped and
+// the issue as it was; a push that keeps failing throws.
 function publishMerged(
   cfg: Config,
   n: number,
-  pr: number,
+  pr: number | null,
   state: State,
 ): WikiPublish {
   const published = publishWiki(cfg, n);
   if (!published.published) {
+    return published;
+  }
+  if (pr === null) {
+    const closing = wikiOnlyClosing(cfg, published.commits);
+    closeMerged(cfg, n, state, { why: "Wiki changes published.", closing });
     return published;
   }
   if (published.sha !== null) {
@@ -88,7 +109,8 @@ function publishMerged(
       `Pushed this issue's wiki changes as wiki commit ${sha} (history: https://github.com/${cfg.repo}/wiki/_history).`,
     );
   }
-  closeMerged(cfg, n, pr, state);
+  const closing = `PR #${pr} merged into ${cfg.baseBranch}.`;
+  closeMerged(cfg, n, state, { why: `PR #${pr} merged.`, closing });
   return published;
 }
 

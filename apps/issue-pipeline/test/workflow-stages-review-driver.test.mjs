@@ -107,8 +107,9 @@ test("an issue claimed at open-pr is opened and reviewed in the same sweep", asy
 });
 
 test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix", async () => {
-  // Round 1 fits: 2 launched + 8 + a reserve of 4 is 14. Round 2 doesn't:
-  // 7 launched + 8 + 4 is 19.
+  // Fix needs 9 (a reopen of a closed PR included). Round 1 fits: 3
+  // launched + 9 + a reserve of 4 is 16. Round 2, after round 1's launches,
+  // doesn't.
   const { trace, summary } = await issueRun({
     claim: OPEN_FINDING_CLAIM,
     ops: {
@@ -116,7 +117,7 @@ test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix",
       "prepare-review": { ok: true, diffPath: "/runs/r1.diff" },
     },
     agents: UNRESOLVED_ROUND,
-    config: { maxSpawnsPerRun: 15 },
+    config: { maxSpawnsPerRun: 16 },
   });
   // Round 1's fixer and re-reviewer, and no round 2.
   assert.deepEqual(sessionAgents(trace), ["issue-pipeline-writer", READER]);

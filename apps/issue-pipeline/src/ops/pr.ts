@@ -1,8 +1,10 @@
 // The issue's pull request: start-pr opens it as a draft before any code is
-// written, open-pr fills it in and marks it ready, and push pushes the branch.
-// How a PR links to its issue lives here.
+// written, open-pr fills it in and marks it ready (reopening a closed one),
+// close-pr closes the draft of a change that lives only in the wiki, and push
+// pushes the branch. How a PR links to its issue lives here.
 
 import { z } from "zod";
+import type { BranchChanges } from "../checkouts.ts";
 import { ensureWorktree, push } from "../checkouts.ts";
 import type { Author } from "../comments.ts";
 import { AUTHOR, signed } from "../comments.ts";
@@ -19,11 +21,21 @@ interface PrReply {
   headSha: string;
 }
 
-interface PushReply {
+interface OpenReply extends PrReply, BranchChanges {}
+
+interface PushReply extends BranchChanges {
   headSha: string;
 }
 
-type Op = (cfg: Config, request: unknown) => PrReply | PushReply;
+interface CloseReply {
+  pr: number;
+  closed: true;
+}
+
+type Op = (
+  cfg: Config,
+  request: unknown,
+) => PrReply | OpenReply | PushReply | CloseReply;
 
 const DRAFT_TEXT =
   "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.";
@@ -38,6 +50,11 @@ const OPEN_REQUEST = z.looseObject({
   title: z.string().nullish(),
   body: z.string().nullish(),
   by: AUTHOR.nullish(),
+  reopen: z.number().int().nullish(),
+});
+const CLOSE_REQUEST = z.looseObject({
+  number: z.number().int(),
+  pr: z.number().int(),
 });
 const PUSH_REQUEST = z.looseObject({ number: z.number().int() });
 const ISSUE = z.looseObject({ title: z.string() });
@@ -120,7 +137,7 @@ function startBranch(cfg: Config, n: number): string {
   assertClean(wt);
   const message = `Start work on #${n}\n\nPipeline-Agent: coordinator`;
   run("git", ["-C", wt, "commit", "--allow-empty", "-m", message]);
-  return push(cfg, n, "start-pr", { allowEmpty: true });
+  return push(cfg, n, "start-pr", { allowEmpty: true }).headSha;
 }
 
 // Open the issue's PR as a draft as soon as triage says ready, before any code is
@@ -146,37 +163,82 @@ function startPr(cfg: Config, request: unknown): PrReply {
   return { pr, headSha };
 }
 
-function openPr(cfg: Config, request: unknown): PrReply {
+// The issue's open PR, else `reopen` reopened, else none (undefined).
+function existingPr(
+  cfg: Config,
+  n: number,
+  reopen: number | null | undefined,
+): number | undefined {
+  const open = openPrFor(cfg, n);
+  if (open !== undefined || reopen === undefined || reopen === null) {
+    return open;
+  }
+  const args = ["pr", "reopen", String(reopen), "-R", cfg.repo];
+  if (gh(cfg, args, { allowFail: true }).code === 0) {
+    return reopen;
+  }
+  return undefined;
+}
+
+// Pushes the branch, then fills in the issue's PR and marks it ready when the
+// branch changes files. A change that lives only in the wiki leaves the draft
+// as it is.
+function openPr(cfg: Config, request: unknown): OpenReply {
   const req = parsed(OPEN_REQUEST, "open-pr request", request);
   const n = req.number;
-  const headSha = push(cfg, n, "open-pr");
+  const pushed = push(cfg, n, "open-pr");
   const title = titleFor(n, textOr(req.title, `Fix #${n}`));
   const body = signed(
     req.by ?? IMPLEMENTER,
     closesBody(n, textOr(req.body, "")),
   );
-  let pr = openPrFor(cfg, n);
+  if (!pushed.codeChanged) {
+    const draft =
+      openPrFor(cfg, n) ?? createPr(cfg, n, ["--draft"], { title, body });
+    return { pr: draft, ...pushed };
+  }
+  let pr = existingPr(cfg, n, req.reopen);
   if (pr === undefined) {
     pr = createPr(cfg, n, [], { title, body });
   } else {
-    // The draft from start-pr: fill it in and mark it ready for review.
+    // The draft from start-pr, or a reopened PR: fill it in and mark it ready.
     const number = String(pr);
     const edit = ["--title", title, "--body", body];
     gh(cfg, ["pr", "edit", number, "-R", cfg.repo, ...edit]);
     gh(cfg, ["pr", "ready", number, "-R", cfg.repo], { allowFail: true });
   }
   setLabels(cfg, pr, [LABELS.working.name], []);
-  return { pr, headSha };
+  return { pr, ...pushed };
+}
+
+// Closes the draft PR of a change that lives only in the wiki, saying where
+// the change is.
+function closePr(cfg: Config, request: unknown): CloseReply {
+  const req = parsed(CLOSE_REQUEST, "close-pr request", request);
+  const branch = paths.branch(req.number);
+  const text = `This change lives only in the wiki, on the wiki branch \`${branch}\`, so this PR has no code to merge and is closed. The pipeline reopens it if a later fix changes code.`;
+  const comment = signed({ role: "coordinator" }, text);
+  gh(cfg, [
+    "pr",
+    "close",
+    String(req.pr),
+    "-R",
+    cfg.repo,
+    "--comment",
+    comment,
+  ]);
+  return { pr: req.pr, closed: true };
 }
 
 function pushOp(cfg: Config, request: unknown): PushReply {
   const { number } = parsed(PUSH_REQUEST, "push request", request);
-  return { headSha: push(cfg, number, "push") };
+  return push(cfg, number, "push");
 }
 
 const prOps: Readonly<Record<string, Op>> = {
   "start-pr": startPr,
   "open-pr": openPr,
+  "close-pr": closePr,
   push: pushOp,
 };
 

@@ -23,6 +23,13 @@ const UNOPENED = { n: 6, pr: 56, opened: 66 };
 const NULL_AUTHOR = { n: 9, pr: 59 };
 const PUSHED = { n: 7, pr: 57 };
 const EMPTY = { n: 8, pr: 58 };
+const REOPENED = { n: 11, pr: 61 };
+// What a branch with a code change and no wiki reports.
+const CODE = { codeChanged: true, wikiAhead: 0 };
+const CLOSED = { n: 10, pr: 60 };
+const COORDINATOR_SIGNATURE = /agent-pipeline:comment role=coordinator/u;
+const WIKI_ONLY = /lives only in the wiki/u;
+const WIKI_BRANCH_10 = /`agent\/issue-10`/u;
 
 // The gh calls since the last reply that change GitHub, by src/github.ts's
 // own read/write rule.
@@ -139,7 +146,7 @@ test("open-pr fills in the draft and marks it ready", () => {
   const out = ask({ op: "open-pr", number: 4, title: null, body: null });
   const headSha = originRef("agent/issue-4");
   assert.equal(headSha, fx.sh(`git -C ${fx.worktree(n)} rev-parse HEAD`));
-  assert.equal(out, okLine("open-pr", { pr, headSha }));
+  assert.equal(out, okLine("open-pr", { pr, headSha, ...CODE }));
   const record = { sha: headSha, op: "open-pr", dated: true };
   assert.deepEqual(pushRecord(fx.root, n), record);
   const body = signed({ role: "implementer" }, "Closes #4\n\n");
@@ -160,7 +167,7 @@ test("open-pr keeps a title and body that already name the issue", () => {
   const text = "Fixes #5 by changing g.";
   const out = ask({ op: "open-pr", number: 5, title, body: text, by });
   const headSha = originRef("agent/issue-5");
-  assert.equal(out, okLine("open-pr", { pr, headSha }));
+  assert.equal(out, okLine("open-pr", { pr, headSha, ...CODE }));
   assert.deepEqual(writes(), [
     ...editCalls(pr, title, signed(by, text)),
     labelCall(pr),
@@ -176,7 +183,7 @@ test("open-pr opens a ready PR when none is open", () => {
   ]);
   const out = ask({ op: "open-pr", number: 6, title: "", body: "B" });
   const headSha = originRef("agent/issue-6");
-  assert.equal(out, okLine("open-pr", { pr: opened, headSha }));
+  assert.equal(out, okLine("open-pr", { pr: opened, headSha, ...CODE }));
   const body = signed({ role: "implementer" }, "Closes #6\n\nB");
   assert.deepEqual(writes(), [
     createCall(n, [], "Fix #6", body),
@@ -197,7 +204,7 @@ test("open-pr accepts the null author fields the workflow sends", () => {
   };
   const out = ask({ op: "open-pr", number: 9, title: "T", body: "B", by });
   const headSha = originRef("agent/issue-9");
-  assert.equal(out, okLine("open-pr", { pr, headSha }));
+  assert.equal(out, okLine("open-pr", { pr, headSha, ...CODE }));
   const body = [
     "**🤖 issue-pipeline · implementer**",
     "<sub>agent `issue-pipeline-writer`</sub>",
@@ -218,19 +225,58 @@ test("push pushes the branch after a real commit", () => {
   const sha = fx.commitIn(n, "g", "work");
   fakeGh.reply([]);
   const out = ask({ op: "push", number: 7 });
-  assert.equal(out, okLine("push", { headSha: sha }));
+  assert.equal(out, okLine("push", { headSha: sha, ...CODE }));
   assert.equal(originRef("agent/issue-7"), sha);
   assert.deepEqual(pushRecord(fx.root, n), { sha, op: "push", dated: true });
   assert.deepEqual(fakeGh.calls(), []);
 });
 
-test("push refuses a branch with only the empty start commit", () => {
+test("push with no code change and no wiki commits pushes nothing and says so", () => {
   const { n, pr } = EMPTY;
   startPr(n, pr);
   const before = originRef("agent/issue-8");
+  const record = pushRecord(fx.root, n);
   fakeGh.reply([]);
   const out = ask({ op: "push", number: 8 });
-  const error = "branch changes no files against the base branch";
-  assert.equal(out, `${JSON.stringify({ ok: false, error })}\n`);
+  const nothing = { headSha: before, codeChanged: false, wikiAhead: 0 };
+  assert.equal(out, okLine("push", nothing));
   assert.equal(originRef("agent/issue-8"), before);
+  assert.deepEqual(pushRecord(fx.root, n), record);
+});
+
+test("close-pr closes the draft with a signed comment naming the wiki branch", () => {
+  const { n, pr } = CLOSED;
+  fakeGh.reply([]);
+  const out = ask({ op: "close-pr", number: n, pr });
+  assert.equal(out, okLine("close-pr", { pr, closed: true }));
+  const [call = [], ...rest] = writes();
+  assert.deepEqual(rest, []);
+  const [command, verb, closed] = call;
+  assert.deepEqual([command, verb, closed], ["pr", "close", String(pr)]);
+  const comment = call.at(call.indexOf("--comment") + 1) ?? "";
+  assert.match(comment, COORDINATOR_SIGNATURE);
+  assert.match(comment, WIKI_ONLY);
+  assert.match(comment, WIKI_BRANCH_10);
+});
+
+test("open-pr with reopen reopens the closed PR, fills it in and marks it ready", () => {
+  const { n, pr } = REOPENED;
+  startPr(n, pr);
+  fx.commitIn(n, "g", "work");
+  fakeGh.reply([{ when: "pr list", stdout: "[]" }]);
+  const out = ask({
+    op: "open-pr",
+    number: n,
+    title: "T",
+    body: "B",
+    reopen: pr,
+  });
+  const headSha = originRef(`agent/issue-${n}`);
+  assert.equal(out, okLine("open-pr", { pr, headSha, ...CODE }));
+  const body = signed({ role: "implementer" }, `Closes #${n}\n\nB`);
+  assert.deepEqual(writes(), [
+    ["pr", "reopen", String(pr), "-R", "o/r"],
+    ...editCalls(pr, `T (#${n})`, body),
+    labelCall(pr),
+  ]);
 });

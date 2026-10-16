@@ -27,7 +27,7 @@ import { ask } from "./ops/ask.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
-import { closeParent, post, release } from "./ops/finish.ts";
+import { closeParent, finishWiki, post, release } from "./ops/finish.ts";
 import { merge } from "./ops/merge.ts";
 import { prOps } from "./ops/pr.ts";
 import { publishOps } from "./ops/publish.ts";
@@ -78,6 +78,7 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["merge", merge],
   ...Object.entries(publishOps),
   ["close-parent", closeParent],
+  ["finish-wiki", finishWiki],
   ["post", post],
   ["release", release],
   // Frees closed issues' worktrees once nothing local is unsaved (#174).
