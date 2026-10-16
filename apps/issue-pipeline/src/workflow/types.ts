@@ -57,6 +57,8 @@ interface IssueState {
   plan?: string | null;
   // The spec the implementer builds to.
   spec?: string | null;
+  // The repo paths or globs the spec says the change will touch.
+  files?: string[] | null;
   // How many continuation sessions the implementer has had.
   continuations?: number;
   // The PR the implementer described, and its signature.

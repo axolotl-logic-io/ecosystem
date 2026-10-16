@@ -62,8 +62,9 @@ const SPEC_SCHEMA: JsonSchema = {
     decision: { enum: ["ready", "needs-info"] },
     spec: STR,
     questions: { type: "array", items: STR, maxItems: 5 },
+    files: { type: "array", items: STR },
   },
-  required: ["decision", "spec", "questions"],
+  required: ["decision", "spec", "questions", "files"],
 };
 
 const IMPL_SCHEMA: JsonSchema = {

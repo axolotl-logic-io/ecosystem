@@ -36,7 +36,12 @@ const USAGE_TOTAL =
   USAGE.input + USAGE.output + USAGE.cacheRead + USAGE.cacheWrite;
 
 // The structured output of a spec writer whose spec is ready.
-const READY_SPEC = { decision: "ready", spec: SPEC, questions: [] };
+const READY_SPEC = {
+  decision: "ready",
+  spec: SPEC,
+  questions: [],
+  files: ["src/a.ts"],
+};
 
 // A session that spends USAGE and ends with the ready spec.
 const SPEC_SESSION = { events: [messageEnd(USAGE), outputEnd(READY_SPEC)] };

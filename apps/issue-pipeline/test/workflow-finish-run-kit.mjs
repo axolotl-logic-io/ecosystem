@@ -21,6 +21,7 @@ import {
  * @property {Readonly<Record<string, Scripted>>} [ops]
  * @property {Readonly<Record<string, Scripted>>} [agents]
  * @property {object} [config]
+ * @property {object} [args]
  */
 
 // Issue #7 with its checks passed at fffffff.
@@ -45,9 +46,16 @@ const SECURED = { ...ACCEPTED, allocated: 940_000 };
 
 // A run of issue #7 claimed at `stage` with `fields`, with ops and agents.
 /** @param {FinishRun} run @returns {Promise<{ trace: TraceEntry[], summary: unknown }>} */
-function finishRun({ stage, fields, ops = {}, agents = {}, config = {} }) {
+function finishRun({
+  stage,
+  fields,
+  ops = {},
+  agents = {},
+  config = {},
+  args = {},
+}) {
   return runWorkflow({
-    args: WORKFLOW_ARGS,
+    args: { ...WORKFLOW_ARGS, ...args },
     ops: {
       ...ROUTINE_OPS,
       sweep: sweepReply({ items: [ISSUE], config }),

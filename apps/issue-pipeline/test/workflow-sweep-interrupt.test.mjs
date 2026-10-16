@@ -76,6 +76,7 @@ const NEEDS_INFO_RUN = {
       decision: "needs-info",
       spec: "So far.",
       questions: ["Which file?"],
+      files: [],
     }),
   },
 };

@@ -13,6 +13,18 @@ const NO_STAGE = `--stage must be one of: ${STAGES}`;
 const NO_MESSAGE = "--steer needs a --message";
 const STEER_RESUME = "--steer can't be combined with --resume";
 const STEER_BOUNDARY = "--steer can't be combined with --print-boundary";
+const NO_QUEUE = "--merge-queue must list issue numbers, such as 3,5";
+const MERGE_QUEUE = z
+  .string()
+  .transform((list: string): string[] => list.split(","))
+  .pipe(
+    z.array(
+      z.coerce
+        .number<string>({ error: NO_QUEUE })
+        .int(NO_QUEUE)
+        .positive(NO_QUEUE),
+    ),
+  );
 const CONFIG = z.string({ error: NO_CONFIG }).min(1, NO_CONFIG);
 const ISSUE = z.coerce
   .number({ error: NO_ISSUE })
@@ -27,6 +39,8 @@ const JOB_ARGS = z.discriminatedUnion("kind", [
     stage: STAGE,
     lane: z.string().optional(),
     resume: z.boolean().optional(),
+    // The merge order the orchestrator ranked (#234).
+    mergeQueue: MERGE_QUEUE.optional(),
   }),
   z.object({
     kind: z.literal("steer"),
@@ -63,17 +77,27 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       steer: { type: "string" },
       message: { type: "string" },
       "print-boundary": { type: "boolean" },
+      "merge-queue": { type: "string" },
     },
     strict: true,
   });
-  const { "print-boundary": printBoundary, ...named } = values;
+  const {
+    "print-boundary": printBoundary,
+    "merge-queue": mergeQueue,
+    ...named
+  } = values;
   let kind = "run";
   if (named.steer !== undefined) {
     kind = "steer";
   } else if (printBoundary === true) {
     kind = "boundary";
   }
-  const parsed = JOB_ARGS.safeParse({ ...named, printBoundary, kind });
+  const parsed = JOB_ARGS.safeParse({
+    ...named,
+    printBoundary,
+    mergeQueue,
+    kind,
+  });
   if (!parsed.success) {
     throw new Error(z.prettifyError(parsed.error));
   }

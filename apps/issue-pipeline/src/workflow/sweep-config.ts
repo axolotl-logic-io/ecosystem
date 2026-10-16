@@ -99,8 +99,9 @@ function stageArgOf(name: string, value: unknown): StageName | null {
 // The run's args as pi-subagents or the stage job passes them: the repo
 // config's path, the lane, the one issue a human launched the run for, if
 // any, whether to take it even when stopped (takeStopped), the last stage
-// (through) or only stage (stage) it may begin, and a stage job's checkout,
-// which every request then names.
+// (through) or only stage (stage) it may begin, a stage job's checkout,
+// which every request then names, and the merge order the orchestrator
+// ranked (mergeQueue).
 interface SweepArgs {
   config: string;
   checkout?: JobCheckout;
@@ -109,6 +110,7 @@ interface SweepArgs {
   takeStopped?: unknown;
   through?: unknown;
   stage?: unknown;
+  mergeQueue?: unknown;
 }
 
 // The issues a run may take: the one a human launched it for, or null for
@@ -126,6 +128,43 @@ function sweepTargetOf(issue: unknown, takeStopped: unknown): SweepTarget {
     only = null;
   }
   return { only, takeStopped: takeStopped === true };
+}
+
+// The merge order the orchestrator ranked (args.mergeQueue, #234): issue
+// numbers as an array or a comma-separated string. Null when unset; an entry
+// that isn't a positive integer throws before the sweep launches anything.
+function mergeQueueOf(value: unknown): readonly number[] | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  let entries: readonly unknown[] = String(value).split(",");
+  if (Array.isArray(value)) {
+    entries = value;
+  }
+  const queue = entries.map(Number);
+  if (!queue.every((n) => Number.isInteger(n) && n > 0)) {
+    throw new Error("args.mergeQueue must list issue numbers");
+  }
+  return queue;
+}
+
+// What a run's args pin: the issues it may take (args.issue and
+// args.takeStopped), the last stage it may begin (args.through), the only one
+// (args.stage) and the merge order (args.mergeQueue).
+interface RunPins {
+  target: SweepTarget;
+  through: StageName | null;
+  stage: StageName | null;
+  mergeQueue: readonly number[] | null;
+}
+
+function runPinsOf(args: SweepArgs): RunPins {
+  return {
+    target: sweepTargetOf(args.issue, args.takeStopped),
+    through: stageArgOf("through", args.through),
+    stage: stageArgOf("stage", args.stage),
+    mergeQueue: mergeQueueOf(args.mergeQueue),
+  };
 }
 
 // Whether a run that may begin stages up to `through` may begin `stage`.
@@ -185,17 +224,17 @@ function laneOf(args: { lane?: unknown }, sweepId: string): string {
   return sweepId;
 }
 
-export type { SweepArgs, SweepSettings, SweepTarget };
+export type { RunPins, SweepArgs, SweepSettings, SweepTarget };
 export {
   laneOf,
   PASSES_USED,
   passesOf,
+  runPinsOf,
   SAVE_BEFORE,
   STAGE_GROUPS,
   STAGE_ORDER,
   STAGE_SPAWNS,
   spawnLimitOf,
-  stageArgOf,
   sweepSettings,
   sweepTargetOf,
   within,

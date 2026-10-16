@@ -230,6 +230,7 @@ export type {
   LaunchOutcome,
   LaunchStart,
   ResumePoint,
+  StatusFile,
   StopSignal,
 };
-export { openStatus, resumePoints, socketOf };
+export { openStatus, readStatus, resumePoints, socketOf };

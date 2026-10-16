@@ -37,6 +37,10 @@ const OPEN = {
   disputed: false,
 };
 const ACCEPTED = { acceptReason: "Does it." };
+// The orchestrator's merge queue: #9, then this issue, #7.
+const AHEAD_IN_QUEUE = 9;
+const THIS_ISSUE = 7;
+const MERGE_QUEUE = [AHEAD_IN_QUEUE, THIS_ISSUE];
 const QUEUED = {
   ok: true,
   merged: false,
@@ -102,6 +106,15 @@ test("the merge request carries the state and the summary", () => {
     },
   ]);
   assert.deepEqual(given, mergeState());
+});
+
+test("the orchestrator's merge queue rides in the merge request", () => {
+  const step = next(mergeState(), { ...CTX, mergeQueue: MERGE_QUEUE }, []);
+  assert.equal(step.done, false);
+  const [launch] = step.launches;
+  assert.equal(launch?.kind, "op");
+  const { mergeQueue } = launch.payload;
+  assert.deepEqual(mergeQueue, MERGE_QUEUE);
 });
 
 test("the summary notes a verdict given before a clean rebase", () => {

@@ -28,6 +28,7 @@ const SPEC_LIMIT = 12_000;
 const SMALL_BUDGET = 100_000;
 const START_FROM = /start from/u;
 const QUESTIONS = ["Which file holds the thing?"];
+const FILES = ["src/thing.ts", "test/**"];
 
 // Spec's step after its session ends with `result`.
 /** @param {Parameters<typeof afterSession>[3]} result @returns {Step} */
@@ -39,7 +40,13 @@ function decided(result) {
 // Spec's step after its session replies with `fields` over a ready spec.
 /** @param {Readonly<Record<string, unknown>>} fields @returns {Step} */
 function replied(fields) {
-  const output = { decision: "ready", spec: SPEC, questions: [], ...fields };
+  const output = {
+    decision: "ready",
+    spec: SPEC,
+    questions: [],
+    files: FILES,
+    ...fields,
+  };
   return decided({ ok: true, structuredOutput: output });
 }
 
@@ -84,6 +91,7 @@ test("a ready spec is kept, posted, and moves the issue to implement", () => {
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "implement");
   assert.equal(step.state.st.spec, `${long.slice(0, SPEC_LIMIT)}…`);
+  assert.deepEqual(step.state.st.files, FILES);
   assert.deepEqual(step.state.st.log, [
     `${STAMP} charged spec 80000 to issueTokenBudget`,
     `${STAMP} spec: ready`,
@@ -160,6 +168,16 @@ test("a failed session or a malformed reply stops", () => {
   });
   const malformed = decided({ ok: true, structuredOutput: { decision: "ok" } });
   assert.deepEqual(malformed.stop, {
+    reason: "the spec writer failed",
+    detail: null,
+    code: null,
+  });
+});
+
+test("a reply without the files it will touch is a failed spec writer", () => {
+  const output = { decision: "ready", spec: SPEC, questions: [] };
+  const step = decided({ ok: true, structuredOutput: output });
+  assert.deepEqual(step.stop, {
     reason: "the spec writer failed",
     detail: null,
     code: null,

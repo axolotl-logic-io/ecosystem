@@ -188,12 +188,18 @@ function classifyWork(
   return candidate(issue, "new");
 }
 
-// True when an earlier sub-issue the issue waits on is still open.
-function waitsOnAfter(ctx: SweepContext, issue: IssueRow): boolean {
-  const { after } = AFTER_MARK.exec(issue.body ?? "")?.groups ?? {};
+// The issues an issue's body says it comes after (its after mark).
+function afterDeps(body: string | null | undefined): number[] {
+  const { after } = AFTER_MARK.exec(body ?? "")?.groups ?? {};
   return (after ?? "")
     .split(",")
-    .some((dep) => dep !== "" && ctx.openNumbers.has(Number(dep)));
+    .filter((dep) => dep !== "")
+    .map(Number);
+}
+
+// True when an earlier sub-issue the issue waits on is still open.
+function waitsOnAfter(ctx: SweepContext, issue: IssueRow): boolean {
+  return afterDeps(issue.body).some((dep) => ctx.openNumbers.has(dep));
 }
 
 function classify(ctx: SweepContext, issue: IssueRow): Verdict {
@@ -222,4 +228,12 @@ function classify(ctx: SweepContext, issue: IssueRow): Verdict {
 }
 
 export type { Candidate, IssueRow, Kind, SweepContext, Verdict };
-export { answeredSince, classify, ISSUE_ROW, issueDepth, liveLease, PRIORITY };
+export {
+  afterDeps,
+  answeredSince,
+  classify,
+  ISSUE_ROW,
+  issueDepth,
+  liveLease,
+  PRIORITY,
+};

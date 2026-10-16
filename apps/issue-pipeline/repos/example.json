@@ -20,6 +20,16 @@
   "requireNewTests": true,
   "ciWaitMinutes": 30,
   "commandTimeoutMinutes": 20,
+  "maxJobs": 4,
+  "stageCaps": {
+    "triage": 2,
+    "spec": 2,
+    "review": 2,
+    "accept": 2,
+    "security": 2
+  },
+  "tokensPerHour": 2000000,
+  "orchestratorIntervalSeconds": 60,
   "commands": {
     "setup": "npm ci",
     "test": "npm test",

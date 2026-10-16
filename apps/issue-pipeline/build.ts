@@ -36,11 +36,12 @@ const WORKFLOW_RESULT = "sweep.summary()";
 const OPS_SOURCE = path.join(SOURCE_DIR, "ops.ts");
 const WORKFLOW_OUTPUT = "workflow.js";
 const OPS_OUTPUT = "ops.mjs";
-// The Node ES modules built from one entry each: the ops CLI, the stage job
-// and the job's pi extension.
+// The Node ES modules built from one entry each: the ops CLI, the stage job,
+// the job's pi extension and the orchestrator.
 const NODE_MODULES: ReadonlyMap<string, string> = new Map([
   [OPS_SOURCE, OPS_OUTPUT],
   [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],
+  [path.join(SOURCE_DIR, "orchestrate.ts"), "orchestrate.mjs"],
   [
     path.join(SOURCE_DIR, "job", "structured-output.ts"),
     "structured-output.mjs",

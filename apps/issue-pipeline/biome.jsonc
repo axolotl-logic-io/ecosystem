@@ -46,6 +46,10 @@
     // checkout and the bare mirrors it comes from with git, and
     // src/job/exit-push.ts reports a failed exit push on stderr (#250). The
     // job's pure modules (raw-results, pool, roles) get no exception.
+    // The orchestrator (#234) too: its entry src/orchestrate.ts spawns the
+    // jobs and handles the stop signals, src/orchestrator/args.ts reads its
+    // arguments, snapshot.ts checks the jobs' pids, and ledger.ts and log.ts
+    // keep its files. Its pure modules (queue, schedule, tick) get none.
     {
       "includes": [
         "install.mjs",
@@ -77,7 +81,12 @@
         "src/job/status.ts",
         "src/job/control.ts",
         "src/job/checkout.ts",
-        "src/job/exit-push.ts"
+        "src/job/exit-push.ts",
+        "src/orchestrate.ts",
+        "src/orchestrator/args.ts",
+        "src/orchestrator/snapshot.ts",
+        "src/orchestrator/ledger.ts",
+        "src/orchestrator/log.ts"
       ],
       "linter": {
         "rules": {

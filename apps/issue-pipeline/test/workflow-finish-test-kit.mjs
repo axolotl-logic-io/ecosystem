@@ -80,6 +80,7 @@ function contextWith(issueBudget) {
     models: modelsWith(MODELS),
     now: () => NOW,
     hasRoom,
+    mergeQueue: null,
   };
 }
 

@@ -65,6 +65,7 @@ function contextWith(fields = {}) {
     models: modelsWith(MODELS),
     now: () => NOW,
     hasRoom,
+    mergeQueue: null,
     ...fields,
   };
 }

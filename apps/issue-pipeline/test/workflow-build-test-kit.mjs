@@ -69,6 +69,7 @@ function contextWith(issueBudget) {
     models: modelsWith({ spec: SPEC_MODEL, implementer: IMPL_MODEL }),
     now: () => NOW,
     hasRoom,
+    mergeQueue: null,
   };
 }
 
@@ -148,6 +149,7 @@ function specTask(paths = PATHS) {
       "- **Tests**: the tests to add or change, each naming the behaviour it pins down and why it fails today.",
       '- **Wiki updates**: wiki pages to add or change, or "None".',
       "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
+      "`files` lists the repo paths or globs the change will touch, relative to the repo root, without wiki pages (such as `src/a.ts` or `src/orchestrator/**`). The orchestrator holds back other changes that touch them.",
       "Keep it under about 150 lines. Set `decision` to ready, with `questions` empty.",
       "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
     ])

@@ -104,7 +104,10 @@ exports[`a spec is written, implemented and its PR opened, then held at review 1
           "2026-10-15T12:00Z spec: ready"
         ],
         "implemented": false,
-        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing."
+        "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "files": [
+          "src/a.ts"
+        ]
       },
       "comments": [
         {
@@ -189,6 +192,9 @@ exports[`a spec is written, implemented and its PR opened, then held at review 1
         ],
         "implemented": true,
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "files": [
+          "src/a.ts"
+        ],
         "prTitle": "Do the thing",
         "prBody": "Does the thing, tested in src/a.test.ts.",
         "prBy": {
@@ -245,6 +251,9 @@ exports[`a spec is written, implemented and its PR opened, then held at review 1
         ],
         "implemented": true,
         "spec": "## Behaviour\\n\\n1. src/a.ts does the thing.",
+        "files": [
+          "src/a.ts"
+        ],
         "prTitle": "Do the thing",
         "prBody": "Does the thing, tested in src/a.test.ts.",
         "prBy": {

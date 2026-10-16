@@ -168,14 +168,15 @@ interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
 }
 
 // What every stage reads besides the issue: the repo config, the token
-// budgets, the models, the clock, and whether the sweep's spawn cap leaves
-// room for another run of a stage.
+// budgets, the models, the clock, whether the spawn cap leaves room for a
+// stage, and the orchestrator's merge order, or null outside it (#234).
 interface StageContext {
   cfg: StageConfig;
   budgets: Budgets;
   models: Readonly<Record<ModelRole, string>>;
   now: () => Date;
   hasRoom: (stage: StageName) => boolean;
+  mergeQueue: readonly number[] | null;
 }
 
 // The repo config as the sweep reply carries it: what the stages read, the

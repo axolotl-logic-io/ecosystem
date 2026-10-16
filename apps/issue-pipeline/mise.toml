@@ -11,6 +11,7 @@ run = [
   "node --check install.mjs",
   "node --check dist/ops.mjs",
   "node --check dist/job.mjs",
+  "node --check dist/orchestrate.mjs",
   "node --test 'test/*.test.mjs'",
 ]
 

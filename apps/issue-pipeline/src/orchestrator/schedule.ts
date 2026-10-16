@@ -1,0 +1,265 @@
+// The orchestrator's rules (#234): given a snapshot of the open issues and
+// their jobs, which stage jobs start now and why each other runnable issue is
+// held. Pure: the snapshot carries everything it reads, so recorded snapshots
+// test it with no clock, files or processes.
+
+import { fileSetsOverlap } from "../globs.ts";
+import type { ScheduleSettings, Snapshot, SnapshotIssue } from "./queue.ts";
+import {
+  byAge,
+  fileSet,
+  isLive,
+  isLiveImplementation,
+  isStopped,
+  mergeRank,
+  runStage,
+  stageIndex,
+  WRITERS,
+} from "./queue.ts";
+
+type Decision =
+  | {
+      action: "started";
+      at: string;
+      issue: number;
+      stage: string;
+      reason: "free" | "merge-first";
+      mergeQueue: readonly number[] | null;
+    }
+  | {
+      action: "held";
+      at: string;
+      issue: number;
+      stage: string;
+      reason: string;
+    };
+
+type Role = "reader" | "writer" | "merge";
+
+// What a tick has decided so far, which later decisions read.
+interface TickCount {
+  settings: ScheduleSettings;
+  spent: number;
+  live: number;
+  liveAt: Map<string, number>;
+  implementations: SnapshotIssue[];
+  mergeLive: number | null;
+  queue: readonly number[];
+}
+
+function roleOf(stage: string): Role {
+  if (stage === "merge") {
+    return "merge";
+  }
+  if (WRITERS.has(stage)) {
+    return "writer";
+  }
+  return "reader";
+}
+
+function capReason(
+  count: TickCount,
+  stage: string,
+): "global-cap" | "stage-cap" | null {
+  const { maxJobs, stageCaps } = count.settings;
+  if (count.live >= maxJobs) {
+    return "global-cap";
+  }
+  const { [stage]: cap = Number.POSITIVE_INFINITY } = stageCaps;
+  if ((count.liveAt.get(stage) ?? 0) >= cap) {
+    return "stage-cap";
+  }
+  return null;
+}
+
+// The issue's place in the merge queue, or infinity when it isn't queued.
+function queueRank(count: TickCount, issue: SnapshotIssue): number {
+  const at = count.queue.indexOf(issue.number);
+  if (at < 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return at;
+}
+
+// The oldest live implementation whose files overlap the issue's: any for an
+// implement, but for a live issue's fix, sync or checks only an older one that
+// doesn't merge after it. A queued issue's writer is never held by one queued
+// later or not queued, so the merge queue's top always moves, and a writer
+// hold and a merge-order hold can't form a cycle.
+function overlapReason(
+  count: TickCount,
+  issue: SnapshotIssue,
+  stage: string,
+): string | null {
+  const blocker = count.implementations
+    .filter(
+      (other) =>
+        other.number !== issue.number &&
+        (stage === "implement" ||
+          (byAge(other, issue) < 0 &&
+            queueRank(count, other) <= queueRank(count, issue))) &&
+        fileSetsOverlap(fileSet(other), fileSet(issue)),
+    )
+    .sort(byAge)
+    .at(0);
+  if (blocker === undefined) {
+    return null;
+  }
+  return `files-overlap:#${blocker.number}`;
+}
+
+function mergeReason(count: TickCount, issue: SnapshotIssue): string | null {
+  const [top] = count.queue;
+  if (top !== issue.number) {
+    return `merge-order:#${String(top)}`;
+  }
+  if (count.mergeLive !== null) {
+    return `merge-order:#${count.mergeLive}`;
+  }
+  return null;
+}
+
+function holdReason(
+  count: TickCount,
+  issue: SnapshotIssue,
+  stage: string,
+): string | null {
+  const role = roleOf(stage);
+  let reason: string | null;
+  switch (role) {
+    case "reader":
+      reason = capReason(count, stage);
+      break;
+    case "writer":
+      reason = overlapReason(count, issue, stage) ?? capReason(count, stage);
+      break;
+    case "merge":
+      reason = mergeReason(count, issue) ?? capReason(count, stage);
+      break;
+    default: {
+      const unknown: never = role;
+      throw new Error(`unknown role ${String(unknown)}`);
+    }
+  }
+  if (reason === null && count.spent >= count.settings.tokensPerHour) {
+    return "rate-limit";
+  }
+  return reason;
+}
+
+// Counts a started job as live for the rest of the tick.
+function countStart(
+  count: TickCount,
+  issue: SnapshotIssue,
+  stage: string,
+): void {
+  count.live += 1;
+  count.liveAt.set(stage, (count.liveAt.get(stage) ?? 0) + 1);
+  if (stage === "implement") {
+    count.implementations.push(issue);
+  }
+  if (stage === "merge") {
+    count.mergeLive = issue.number;
+  }
+}
+
+// Why the classify verdict alone holds the issue, or null for a candidate.
+// Undefined: no decision at all.
+function verdictHold(issue: SnapshotIssue): string | null | undefined {
+  const { verdict } = issue;
+  switch (verdict.kind) {
+    case "skip":
+      return undefined;
+    case "waiting-on-after":
+      return `after:#${String(issue.after.at(0))}`;
+    case "live-elsewhere":
+      return `lane:${verdict.lane}`;
+    case "candidate":
+      return null;
+    default: {
+      const unknown: never = verdict;
+      throw new Error(`unknown verdict ${JSON.stringify(unknown)}`);
+    }
+  }
+}
+
+function decide(
+  count: TickCount,
+  issue: SnapshotIssue,
+  at: string,
+): Decision | null {
+  const stage = runStage(issue);
+  const held = verdictHold(issue);
+  if (held === undefined) {
+    return null;
+  }
+  const reason = held ?? holdReason(count, issue, stage);
+  const { number } = issue;
+  if (reason !== null) {
+    return { action: "held", at, issue: number, stage, reason };
+  }
+  countStart(count, issue, stage);
+  let why: "free" | "merge-first" = "free";
+  let mergeQueue: readonly number[] | null = null;
+  if (stage === "merge") {
+    why = "merge-first";
+    mergeQueue = count.queue;
+  }
+  return {
+    action: "started",
+    at,
+    issue: number,
+    stage,
+    reason: why,
+    mergeQueue,
+  };
+}
+
+function countOf(snapshot: Snapshot, settings: ScheduleSettings): TickCount {
+  const liveAt = new Map<string, number>();
+  let mergeLive: number | null = null;
+  for (const { job, number } of snapshot.issues) {
+    if (job?.live === true) {
+      liveAt.set(job.stage, (liveAt.get(job.stage) ?? 0) + 1);
+      if (job.stage === "merge") {
+        mergeLive = number;
+      }
+    }
+  }
+  return {
+    settings,
+    spent: snapshot.spentLastHour,
+    live: snapshot.issues.filter(isLive).length,
+    liveAt,
+    implementations: snapshot.issues.filter(isLiveImplementation),
+    mergeLive,
+    queue: mergeRank(snapshot.issues),
+  };
+}
+
+// Finish work first: the later stage first, then the older issue.
+function byStageThenAge(a: SnapshotIssue, b: SnapshotIssue): number {
+  return stageIndex(runStage(b)) - stageIndex(runStage(a)) || byAge(a, b);
+}
+
+// One decision for each issue that may run a stage: those stopped, done or
+// with a live job get none.
+function schedule(
+  snapshot: Snapshot,
+  settings: ScheduleSettings,
+  now: Date,
+): Decision[] {
+  const count = countOf(snapshot, settings);
+  const at = now.toISOString();
+  return snapshot.issues
+    .filter(
+      (issue) =>
+        !(isStopped(issue) || isLive(issue)) &&
+        stageIndex(runStage(issue)) >= 0,
+    )
+    .sort(byStageThenAge)
+    .flatMap((issue) => decide(count, issue, at) ?? []);
+}
+
+export type { Decision };
+export { schedule };

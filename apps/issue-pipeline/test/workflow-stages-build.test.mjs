@@ -31,6 +31,7 @@ const BUILD_AGENTS = {
     decision: "ready",
     spec: "## Behaviour\n\n1. src/a.ts does the thing.",
     questions: [],
+    files: ["src/a.ts"],
   }),
   "i7-implement": replyWith({
     status: "done",

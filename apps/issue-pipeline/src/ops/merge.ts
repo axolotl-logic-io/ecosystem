@@ -8,15 +8,13 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
 import { gh, ghJson } from "../github.ts";
-import { LABELS } from "../labels.ts";
 import type { RunResult } from "../process.ts";
 import { parseRequest, run, tail } from "../process.ts";
-import { readState, STATE } from "../state.ts";
-import { isStopLabel } from "../stops.ts";
+import { STATE } from "../state.ts";
 import { finishMerged } from "./finish.ts";
+import type { Queued } from "./merge-order.ts";
+import { queued } from "./merge-order.ts";
 
-const MS_PER_HOUR = 3_600_000;
-const WORKING_LIST_LIMIT = "100";
 const SHORT_SHA_LENGTH = 12;
 const REFUSAL_TAIL_LINES = 5;
 const BASE_MOVED =
@@ -26,16 +24,7 @@ const NEEDS_APPROVAL =
 const APPROVAL_HINT =
   " Branch protection requires an approving review, which the pipeline's own account can't give. Drop the approval rule, give the account a bypass, or set mergeAdmin in the config.";
 
-// Stages after review, where an issue only waits to merge.
-const READY_STAGES: ReadonlySet<string> = new Set([
-  "sync",
-  "checks",
-  "accept",
-  "security",
-  "merge",
-]);
-
-// gh's answers, and the part of another issue's state the merge order reads.
+// gh's answer to the PR view.
 const PR_VIEW = z.looseObject({
   headRefOid: z.string(),
   isDraft: z.boolean(),
@@ -43,23 +32,12 @@ const PR_VIEW = z.looseObject({
   mergeStateStatus: z.string(),
   state: z.string(),
 });
-const WORKING = z
-  .array(
-    z.looseObject({
-      labels: z.array(z.looseObject({ name: z.string() })),
-      number: z.number(),
-    }),
-  )
-  .nullable();
-const READY_STATE = z.looseObject({
-  lease: z.looseObject({ at: z.string().nullish() }).nullish(),
-  pr: z.number().positive(),
-  stage: z.string(),
-});
-
 const MERGE_REQUEST = z.looseObject({
   expectedSha: z.string(),
   mergeOrder: z.boolean().nullish(),
+  // The merge order the orchestrator ranked (#234), which replaces the
+  // lowest-PR order when given.
+  mergeQueue: z.array(z.number().int()).nullish(),
   number: z.number().int(),
   state: STATE.extend({ pr: z.number() }),
   summary: z.string().nullish(),
@@ -68,97 +46,12 @@ const MERGE_REQUEST = z.looseObject({
 type PrView = z.infer<typeof PR_VIEW>;
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
-// The merge waits for issue #waitingFor, whose PR #waitingForPr is older.
-interface Queued {
-  merged: false;
-  reason: "queued";
-  waitingFor: number;
-  waitingForPr: number;
-}
-
 type MergeReply =
   | { merged: true; byHand: true }
   | { merged: true }
   | { merged: false; reason: string }
   | { merged: false; reason: "head-changed"; headSha: string }
   | Queued;
-
-interface Ahead {
-  number: number;
-  pr: number;
-}
-
-// The PR of issue #number when it should merge before PR `pr`: past review,
-// with an older PR and a lease that hasn't expired (a crashed sweep).
-function readyPr(
-  cfg: Config,
-  number: number,
-  pr: number,
-  leaseMs: number,
-): number | undefined {
-  const parsed = READY_STATE.safeParse(readState(cfg, number).state);
-  if (!parsed.success) {
-    return undefined;
-  }
-  const { data } = parsed;
-  if (data.pr >= pr || !READY_STAGES.has(data.stage)) {
-    return undefined;
-  }
-  const at = data.lease?.at;
-  const leased = at !== undefined && at !== null && at !== "";
-  if (leased && Date.now() - Date.parse(at) >= leaseMs) {
-    return undefined;
-  }
-  return data.pr;
-}
-
-// The open issue, other than #n, that should merge before PR `pr`: one past
-// review whose PR is older. Without this, a slow issue's long verify keeps
-// losing the merge to quick issues in the other slots.
-function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
-  const listed = ghJson(cfg, [
-    "issue",
-    "list",
-    "-R",
-    cfg.repo,
-    "--state",
-    "open",
-    "--label",
-    LABELS.working.name,
-    "--limit",
-    WORKING_LIST_LIMIT,
-    "--json",
-    "number,labels",
-  ]);
-  const leaseMs = cfg.leaseHours * MS_PER_HOUR;
-  let best: Ahead | null = null;
-  for (const issue of WORKING.parse(listed) ?? []) {
-    const stopped = issue.labels.some((label) => isStopLabel(label.name));
-    if (issue.number !== n && !stopped) {
-      const older = readyPr(cfg, issue.number, pr, leaseMs);
-      if (older !== undefined && (best === null || older < best.pr)) {
-        best = { number: issue.number, pr: older };
-      }
-    }
-  }
-  return best;
-}
-
-function queued(cfg: Config, req: MergeRequest): Queued | undefined {
-  if (req.mergeOrder !== true) {
-    return undefined;
-  }
-  const ahead = olderReadyIssue(cfg, req.number, req.state.pr);
-  if (ahead === null) {
-    return undefined;
-  }
-  return {
-    merged: false,
-    reason: "queued",
-    waitingFor: ahead.number,
-    waitingForPr: ahead.pr,
-  };
-}
 
 // Why the open PR may not merge yet, or undefined when it may.
 function precheck(

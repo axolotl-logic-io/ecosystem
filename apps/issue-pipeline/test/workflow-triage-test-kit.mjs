@@ -75,6 +75,7 @@ function contextWith(issueBudget) {
     models: modelsWith({ triage: MODEL }),
     now: () => NOW,
     hasRoom,
+    mergeQueue: null,
   };
 }
 

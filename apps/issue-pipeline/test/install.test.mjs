@@ -65,6 +65,7 @@ test("installs the pipeline with local paths filled in", () => {
     "ops.mjs",
     "job.mjs",
     "structured-output.mjs",
+    "orchestrate.mjs",
     "repos/example.json",
     "README.md",
     "INSTALLED.json",
@@ -76,6 +77,7 @@ test("installs the pipeline with local paths filled in", () => {
     "ops.mjs",
     "job.mjs",
     "structured-output.mjs",
+    "orchestrate.mjs",
   ]) {
     assert.equal(
       fs.readFileSync(path.join(root, f), "utf8"),

@@ -32,6 +32,7 @@ const SPEC_READY = replyWith({
   decision: "ready",
   spec: "## Behaviour\n\n1. src/a.ts does the thing.",
   questions: [],
+  files: ["src/a.ts"],
 });
 
 // The error a run with an unknown args.through fails with.

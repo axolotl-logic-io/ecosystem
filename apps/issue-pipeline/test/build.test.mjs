@@ -1,7 +1,8 @@
 // @ts-check
 // build.ts into a temporary folder: the built workflow is still an async
 // function body with no imports, and the built ops CLI answers as src/ops.ts
-// does. It builds into its own folder, so it never races install.test.mjs,
+// does, and the built orchestrator's --once exits 0 after a tick and 1 after
+// one that throws. It builds into its own folder, so it never races install.test.mjs,
 // which builds dist/.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -9,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { installFakeGh } from "./fake-gh.mjs";
 
 // What the built workflow must never contain: it is a sandboxed function body.
 const BANNED_IN_WORKFLOW = [
@@ -24,6 +26,13 @@ const MISSING_CONFIG = /args\.config must be/u;
 const RETURN_SUMMARY = "return sweep.summary();";
 // The error the stage job exits with for an unknown --stage.
 const BAD_STAGE = /--stage must be one of/u;
+const UNKNOWN_FLAG = /--nope/u;
+const NO_CONFIG = /--config must name a repo config file/u;
+// What the orchestrator prints when a tick throws, here because gh is logged
+// in as another account than the config's.
+const TICK_FAILED = /orchestrate: tick failed: gh is logged in as mallory/u;
+// The account the orchestrator's test config names.
+const ACCOUNT = "bot";
 // The variable that points ops at a pipeline root, here the temporary folder.
 const ROOT_VAR = "ISSUE_PIPELINE_ROOT";
 
@@ -119,6 +128,91 @@ test("the built stage job parses, keeps its #! line and rejects a bad stage", ()
   );
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, BAD_STAGE);
+});
+
+test("the built orchestrator parses and names a bad flag or a missing --config", () => {
+  const orchestrator = path.join(tmp, "orchestrate.mjs");
+  const check = spawnSync(process.execPath, ["--check", orchestrator], {
+    encoding: "utf8",
+  });
+  assert.equal(check.status, 0, check.stderr);
+  const head = fs.readFileSync(orchestrator, "utf8");
+  assert.ok(head.startsWith("#!/usr/bin/env node\n"));
+  /** @param {string[]} args @returns {import("node:child_process").SpawnSyncReturns<string>} */
+  function run(args) {
+    return spawnSync(process.execPath, [orchestrator, ...args], {
+      encoding: "utf8",
+      env: { [ROOT_VAR]: tmp },
+    });
+  }
+  const unknown = run(["--config", "/none.json", "--nope"]);
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, UNKNOWN_FLAG);
+  const missing = run(["--once"]);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, NO_CONFIG);
+});
+
+// A repo config for the built orchestrator, cloning a bare origin in tmp.
+/** @returns {string} */
+function orchestratorConfig() {
+  const origin = path.join(tmp, "origin.git");
+  const seed = spawnSync(
+    "bash",
+    [
+      "-c",
+      `git init -q --bare -b integration ${origin} && git clone -q ${origin} ${tmp}/seed 2>/dev/null; cd ${tmp}/seed && git -c user.email=a@b -c user.name=a commit -q --allow-empty -m base && git push -q origin HEAD:integration`,
+    ],
+    { encoding: "utf8" },
+  );
+  if (seed.status !== 0) {
+    throw new Error(`could not seed the origin: ${seed.stderr}`);
+  }
+  const file = path.join(tmp, "repo.json");
+  const config = {
+    repo: "o/r",
+    account: ACCOUNT,
+    allowedUsers: ["alice"],
+    cloneUrl: origin,
+    baseBranch: "integration",
+    commands: { test: "true" },
+  };
+  fs.writeFileSync(file, JSON.stringify(config));
+  return file;
+}
+
+test("the built orchestrator's --once exits 0 after a tick and 1 after a failed one", () => {
+  const fakeGh = installFakeGh();
+  const config = orchestratorConfig();
+  const orchestrator = path.join(tmp, "orchestrate.mjs");
+  /** @returns {import("node:child_process").SpawnSyncReturns<string>} */
+  function once() {
+    return spawnSync(
+      process.execPath,
+      [orchestrator, "--config", config, "--once"],
+      {
+        encoding: "utf8",
+        env: { ...process.env, [ROOT_VAR]: tmp },
+      },
+    );
+  }
+  fakeGh.reply([
+    { when: "api user", stdout: `${ACCOUNT}\n` },
+    { when: "label list", stdout: "[]" },
+    { when: "issue list", stdout: "[]" },
+  ]);
+  const good = once();
+  assert.equal(good.status, 0, good.stderr);
+  assert.equal(good.stderr, "");
+  assert.ok(
+    fakeGh.calls().some((call) => call.join(" ").startsWith("issue list")),
+  );
+  const log = path.join(tmp, "runs", "o__r", "orchestrator.log");
+  assert.equal(readIfExists(log), "");
+  fakeGh.reply([{ when: "api user", stdout: "mallory\n" }]);
+  const failed = once();
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, TICK_FAILED);
 });
 
 test("the built pi extension default-exports its factory", async () => {

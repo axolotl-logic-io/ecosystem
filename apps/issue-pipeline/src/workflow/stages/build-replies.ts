@@ -11,6 +11,8 @@ interface SpecReply {
   decision: SpecDecision;
   spec: string;
   questions: string[];
+  // The repo paths or globs the change will touch.
+  files: string[];
 }
 
 type ImplStatus = "done" | "handoff" | "blocked";
@@ -31,16 +33,17 @@ function specReplyOf(output: unknown): SpecReply | null {
   if (!isRecord(output)) {
     return null;
   }
-  const { decision, spec, questions } = output;
+  const { decision, spec, questions, files } = output;
   const known = SPEC_DECISIONS.find((entry) => entry === decision);
   if (
     known === undefined ||
     typeof spec !== "string" ||
-    !isStrings(questions)
+    !isStrings(questions) ||
+    !isStrings(files)
   ) {
     return null;
   }
-  return { decision: known, spec, questions };
+  return { decision: known, spec, questions, files };
 }
 
 // The implementer's reply, or null when the output doesn't fit the schema.

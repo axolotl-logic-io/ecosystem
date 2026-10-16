@@ -76,6 +76,7 @@ function specTask(state: StageState, ctx: StageContext): string {
     "- **Tests**: the tests to add or change, each naming the behaviour it pins down and why it fails today.",
     '- **Wiki updates**: wiki pages to add or change, or "None".',
     "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
+    "`files` lists the repo paths or globs the change will touch, relative to the repo root, without wiki pages (such as `src/a.ts` or `src/orchestrator/**`). The orchestrator holds back other changes that touch them.",
     "Keep it under about 150 lines. Set `decision` to ready, with `questions` empty.",
     "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
   ];
@@ -134,6 +135,7 @@ function ready(state: StageState, reply: SpecReply, by: Signature): Step {
   const st = {
     ...state.st,
     spec: clip(reply.spec, SPEC_LIMIT),
+    files: reply.files,
     stage: "implement",
   };
   const body = `## Spec\n\nThe implementer builds to this spec, and the acceptance check judges the result against it.\n\n${reply.spec}`;

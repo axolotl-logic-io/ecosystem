@@ -29,13 +29,8 @@ import {
 } from "./stages/entry.ts";
 import { parentsClosed } from "./stages/parents.ts";
 import type { StageName, SweepSummary } from "./stages/types.ts";
-import type { SweepArgs, SweepTarget } from "./sweep-config.ts";
-import {
-  laneOf,
-  stageArgOf,
-  sweepSettings,
-  sweepTargetOf,
-} from "./sweep-config.ts";
+import type { RunPins, SweepArgs } from "./sweep-config.ts";
+import { laneOf, runPinsOf, sweepSettings } from "./sweep-config.ts";
 import type { SweepCounts, SweepItem, SweepRun } from "./sweep-item.ts";
 import {
   closingOf,
@@ -73,12 +68,9 @@ interface Sweep {
   interrupt: () => LaunchSpec | null;
 }
 
-interface Driver {
+interface Driver extends RunPins {
   frame: OpsFrame;
   now: () => Date;
-  target: SweepTarget;
-  through: StageName | null;
-  stage: StageName | null;
   counts: SweepCounts;
   phase: Phase;
 }
@@ -98,6 +90,7 @@ function runOf(driver: Driver, raw: unknown): SweepRun {
       models: settings.models,
       now: driver.now,
       hasRoom: (stage: StageName): boolean => hasRoom(run, stage),
+      mergeQueue: driver.mergeQueue,
     },
     abandoned: [],
     item: null,
@@ -267,9 +260,7 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
   const driver: Driver = {
     frame: opsFrame(args, sweepId, lane),
     now,
-    target: sweepTargetOf(args.issue, args.takeStopped),
-    through: stageArgOf("through", args.through),
-    stage: stageArgOf("stage", args.stage),
+    ...runPinsOf(args),
     counts: { seq: 0, spawned: 0 },
     phase: { kind: "start" },
   };

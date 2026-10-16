@@ -19,6 +19,7 @@ const MAX_STATE_LENGTH = 60_000;
 // through unchanged.
 const STATE = z.looseObject({
   depth: z.number().optional(),
+  files: z.array(z.string()).nullish(),
   findings: z.array(z.looseObject({ status: z.unknown() })).nullish(),
   headSha: z.string().nullish(),
   log: z.array(z.unknown()).nullish(),

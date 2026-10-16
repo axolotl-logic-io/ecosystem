@@ -19,7 +19,9 @@ Object.assign(
   process.env,
   Object.fromEntries([["ISSUE_PIPELINE_ROOT", "/opt/pipeline-root"]]),
 );
-const { globToRegExp, matchAny } = await import("../src/globs.ts");
+const { fileSetsOverlap, globsOverlap, globToRegExp, matchAny } = await import(
+  "../src/globs.ts"
+);
 const { signature, signed } = await import("../src/comments.ts");
 const { ghIsRead, redactGhArgs } = await import("../src/github.ts");
 const { redactLocalPaths, HOME } = await import("../src/pipeline-root.ts");
@@ -147,4 +149,19 @@ test("a job checkout stands in for its own issue's worktree and wiki only", () =
   const other = STATE_ISSUE + 1;
   assert.equal(paths.worktree(scoped, other), `${work}/issue-${other}`);
   assert.equal(withCheckout(cfg, null), cfg);
+});
+
+test("globs overlap when equal, when one matches the other's path, or when their literal prefixes nest", () => {
+  assert.equal(globsOverlap("src/a.ts", "src/a.ts"), true);
+  assert.equal(globsOverlap("src/**", "src/a/b.ts"), true);
+  assert.equal(globsOverlap("src/a/b.ts", "src/**"), true);
+  assert.equal(globsOverlap("src/*.ts", "src/*.md"), true);
+  assert.equal(globsOverlap("src/**", "src/a/*.ts"), true);
+  assert.equal(globsOverlap("**", "docs/x.md"), true);
+  assert.equal(globsOverlap("src/a.ts", "docs/x.md"), false);
+  assert.equal(globsOverlap("src/*.ts", "docs/x.md"), false);
+  assert.equal(globsOverlap("src/**", "docs/**"), false);
+  assert.equal(fileSetsOverlap(["a.ts", "docs/**"], ["docs/x.md"]), true);
+  assert.equal(fileSetsOverlap(["a.ts"], ["b.ts", "c/**"]), false);
+  assert.equal(fileSetsOverlap([], ["**"]), false);
 });

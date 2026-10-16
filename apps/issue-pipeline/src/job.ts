@@ -2,6 +2,7 @@
 // The stage job: one sweep pinned to one issue that begins only one stage.
 //
 //   node job.mjs --config <path> --issue N --stage <stage> [--lane L] [--resume]
+//     [--merge-queue n1,n2,…]
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //   node job.mjs --config <path> --issue N --stage <stage> --print-boundary
 //

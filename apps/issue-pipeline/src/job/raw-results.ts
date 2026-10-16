@@ -139,6 +139,11 @@ function addUsage(sum: Usage, usage: Usage): Usage {
   };
 }
 
+// Every token the usage counts: input, output and both cache counts.
+function usageTotal(usage: Usage): number {
+  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+}
+
 function addEvent(tally: SessionTally, event: SessionEvent): SessionTally {
   if (event.type === "tool_execution_end") {
     return { ...tally, structuredOutput: event.result.details };
@@ -243,5 +248,6 @@ export {
   recordFacts,
   sessionRaw,
   USAGE,
+  usageTotal,
   ZERO_USAGE,
 };

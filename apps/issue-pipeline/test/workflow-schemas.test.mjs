@@ -1,5 +1,6 @@
 // @ts-check
-// The re-review schemas, and the lenses the review rounds run.
+// The re-review schemas, the spec schema, and the lenses the review rounds
+// run.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -11,6 +12,7 @@ import {
   REREVIEW_SCHEMA,
   REREVIEW_SEC_SCHEMA,
 } from "../src/workflow/review-schemas.ts";
+import { SPEC_SCHEMA } from "../src/workflow/schemas.ts";
 
 /** @import { JsonSchema } from "../src/workflow/schemas.ts" */
 
@@ -72,6 +74,16 @@ test("the re-review schema's new findings carry no category", () => {
 test("the security re-review schema adds a required harm category last", () => {
   const want = plain(withHarmCategory(REREVIEW_SCHEMA));
   assert.deepEqual(plain(REREVIEW_SEC_SCHEMA), want);
+});
+
+test("the spec schema requires the files the change will touch, as strings", () => {
+  const { properties = {}, required = [] } = SPEC_SCHEMA;
+  const { files = {} } = properties;
+  assert.ok(required.includes("files"));
+  assert.deepEqual(plain(files), {
+    type: "array",
+    items: { type: "string" },
+  });
 });
 
 test("the categories are the four harms", () => {

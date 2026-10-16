@@ -42,17 +42,22 @@ function mergeLaunch(state: StageState, ctx: StageContext): OpLaunch {
   const { st } = state;
   const checks = st.verifySummary ?? "";
   const acceptance = acceptanceSummary(ctx.cfg, state);
+  const payload = {
+    number: state.n,
+    state: st,
+    expectedSha: st.verifiedSha,
+    mergeOrder: true,
+    summary: `Checks: ${checks}\n\nAcceptance: ${acceptance}`,
+  };
+  const { mergeQueue } = ctx;
+  if (mergeQueue === null) {
+    return { kind: "op", name: "merge", op: "merge", payload };
+  }
   return {
     kind: "op",
     name: "merge",
     op: "merge",
-    payload: {
-      number: state.n,
-      state: st,
-      expectedSha: st.verifiedSha,
-      mergeOrder: true,
-      summary: `Checks: ${checks}\n\nAcceptance: ${acceptance}`,
-    },
+    payload: { ...payload, mergeQueue },
   };
 }
 

@@ -297,4 +297,4 @@ function sweep(cfg: Config, request: unknown): SweepReply {
   };
 }
 
-export { sweep };
+export { openIssues, sweep };
