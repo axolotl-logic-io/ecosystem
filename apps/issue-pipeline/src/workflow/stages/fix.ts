@@ -7,7 +7,7 @@
 // hands off to a continuation in the same round, up to config
 // maxContinuations per issue (#269).
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { chargeSession, launchBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import {
@@ -107,7 +107,7 @@ function fixerLaunch(
     model: ctx.models.fixer,
     schema: FIX_SCHEMA,
     minutes: FIX_MINUTES,
-    tokenBudget: sessionBudget(ctx.budgets, "fixer"),
+    ...launchBudget(ctx.budgets, "fixer"),
     task: fixTask(ctx, state, { round, open, continuation }),
     writer: true,
   };

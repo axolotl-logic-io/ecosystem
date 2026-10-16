@@ -18,7 +18,7 @@ import {
   sessionOf,
   setUp,
   statusOf,
-  USAGE_TOTAL,
+  USAGE_SPENT,
 } from "./job-test-kit.mjs";
 import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
@@ -40,7 +40,7 @@ test("a stage job runs the spec stage, releases the issue at implement and print
   assert.equal(sweep.lane, "L");
   const release = ops.find(({ op }) => op === "release");
   assert.equal(release.state.stage, "implement");
-  assert.equal(release.state.reportedTokens, USAGE_TOTAL);
+  assert.equal(release.state.reportedTokens, USAGE_SPENT);
   const calls = piStarts(place);
   assert.equal(calls.length, 1);
   const [{ argv, cwd }] = calls;

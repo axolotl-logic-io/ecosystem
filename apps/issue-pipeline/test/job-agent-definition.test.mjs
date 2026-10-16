@@ -40,6 +40,7 @@ function hooksIn(sessions) {
     ended: () => undefined,
     contextLimits: { soft: 150_000, hard: 175_000 },
     contextStopped: () => undefined,
+    sessionEnded: () => undefined,
     env: () => ({}),
     cwd: sessions,
   };
@@ -71,6 +72,7 @@ function specFor(agent) {
     task: "Write the spec.",
     outputSchema: { type: "object" },
     timeoutMs: 60_000,
+    budgetRole: "spec",
     tokenBudget: 80_000,
     intercomBridge: { mode: "off" },
   };

@@ -81,6 +81,7 @@ function fixerLaunch(
     schema: CIFIX_SCHEMA,
     writer: true,
     minutes: FIXER_MINUTES,
+    budgetRole: "ciFixer",
     tokenBudget: budget,
     task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
   };

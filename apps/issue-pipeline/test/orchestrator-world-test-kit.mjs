@@ -217,6 +217,8 @@ function writeJob({
         tokenBudget,
         contextTokens,
         peakContext: 0,
+        firstContext: null,
+        turns: 0,
         contextStop: null,
         resumed: false,
         outcome: launchOutcome,

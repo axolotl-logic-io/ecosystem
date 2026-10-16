@@ -6,6 +6,7 @@
 // bounded by a configured count, every state is reachable and can end.
 
 import type { JsonSchema } from "../workflow/schemas.ts";
+import type { Role as BudgetRole } from "../workflow/types.ts";
 
 type StateKind = "script" | "session" | "end";
 
@@ -20,7 +21,8 @@ type End =
   | { kind: "held" };
 
 // A model session: its name, agent and model, the schema of its reply, its
-// task and its token budget.
+// task, its token budget and the role it is charged as (its context log
+// line's role).
 interface SessionEffect {
   kind: "session";
   name: string;
@@ -29,6 +31,7 @@ interface SessionEffect {
   schema: JsonSchema;
   task: string;
   tokenBudget: number;
+  budgetRole: BudgetRole;
 }
 
 // What a state does: run an op or a script check with its payload, run a

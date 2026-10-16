@@ -147,6 +147,7 @@ function sessionLaunch(task) {
     model: MODEL,
     schema: TRIAGE_SCHEMA,
     minutes: 20,
+    budgetRole: "triage",
     tokenBudget: ROLES.triage,
     task,
   };

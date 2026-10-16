@@ -62,6 +62,7 @@ function securityLaunch(
     model: models.security,
     schema: SECURITY_SCHEMA,
     minutes: SECURITY_MINUTES,
+    budgetRole: "reviewer",
     tokenBudget: budget,
     task: preamble(cfg, state, "security reviewer", budget)
       .concat([

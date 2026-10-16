@@ -6,6 +6,7 @@ import type { JobCheckout } from "../config.ts";
 import type { JsonSchema } from "./schemas.ts";
 import type { LaunchMeta, Signature } from "./signing.ts";
 import type { ChildLaunch, OpLaunch } from "./stages/types.ts";
+import type { Role } from "./types.ts";
 
 const OPS_AGENT = "issue-pipeline-ops";
 const MINUTE_MS = 60_000;
@@ -61,7 +62,10 @@ interface ChildSpec {
   task: string;
   outputSchema: JsonSchema;
   timeoutMs: number;
-  // The session's token budget; the stage job records it in job.json.
+  // The role whose budget `tokenBudget` is.
+  budgetRole: Role;
+  // The session's token budget; the stage job records it in job.json for a
+  // writer session only.
   tokenBudget: number;
   intercomBridge: { mode: "off" };
   acceptance?: WriterAcceptance;
@@ -153,6 +157,7 @@ function childSpec(
     task: launch.task,
     outputSchema: launch.schema,
     timeoutMs: timeoutOf(launch.minutes, CHILD_MINUTES),
+    budgetRole: launch.budgetRole,
     tokenBudget: launch.tokenBudget,
     // pi-subagents gives every child contact_supervisor unless the bridge is
     // off. No one answers an unattended sweep, so a question would hang.

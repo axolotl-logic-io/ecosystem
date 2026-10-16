@@ -9,11 +9,11 @@
 // It claims #N, begins only <stage> (an issue saved at another stage is
 // released untouched as "wrong-stage"), then closes parents, releases or
 // posts, and cleans up as a sweep does. Each batch the sweep's driver asks
-// for runs in parallel, up to the config's spawn cap: ops requests run the
-// installed ops.mjs and model sessions run `pi --mode rpc`
-// (src/job/launch.ts). While it runs it keeps the issue's job.json current
-// (src/job/status.ts) and listens for steers (src/job/control.ts). It prints
-// the sweep's summary as one JSON line and exits 0, even when the stage stops
+// for runs in parallel, up to the spawn cap: ops run the installed ops.mjs
+// and model sessions `pi --mode rpc` (src/job/launch.ts). It keeps job.json
+// current (status.ts), logs each ended session to context.jsonl
+// (context-log.ts) and listens for steers (control.ts). It prints the
+// sweep's summary as one JSON line and exits 0, even when the stage stops
 // the issue; it exits 1, with the reason on stderr, only when the job itself
 // fails: bad arguments, a config loadConfig refuses, or a failed sweep op.
 //
@@ -46,6 +46,7 @@ import { loadConfig, paths } from "./config.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
 import { closeJobCheckout, openJobCheckout } from "./job/checkout.ts";
+import { contextLogOf } from "./job/context-log.ts";
 import type { Control, LiveLaunch } from "./job/control.ts";
 import { openControl, steerJob } from "./job/control.ts";
 import { exitPushOf } from "./job/exit-push.ts";
@@ -87,7 +88,7 @@ type RunEnd =
   | { kind: "finished"; summary: SweepSummary | RoleLine }
   | { kind: "stopped"; signal: StopSignal };
 
-// What the job's launches tell its status file and its control.
+// What the job's launches tell its status file, context log and control.
 function hooksOf(
   cfg: Config,
   args: RunArgs,
@@ -109,6 +110,7 @@ function hooksOf(
     ended: status.ended,
     contextLimits: cfg.contextLimits,
     contextStopped: status.contextStopped,
+    sessionEnded: contextLogOf(paths.runDir(cfg, args.issue), args, watch),
     env: (agent: string): Readonly<Record<string, string>> =>
       agentEnvOf(sessionRoleOf(agent), roles, process.env),
     cwd,

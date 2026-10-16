@@ -5,7 +5,13 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { messageEnd, outputEnd, toolEnd } from "./fake-rpc-pi.mjs";
+import {
+  messageEnd,
+  outputEnd,
+  TURN_OUTPUT,
+  toolEnd,
+  turns,
+} from "./fake-rpc-pi.mjs";
 import {
   piStarts,
   READY_SPEC,
@@ -25,6 +31,9 @@ const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
 const SPEC_BUDGET = 80_000;
 const FIRST_CONTEXT = 50_000;
 const LAST_CONTEXT = 51_000;
+// A spec writer's turn context past its 80k budget and under the hard limit.
+const OVER_SPEC_BUDGET = 90_000;
+const IMPLEMENTER_BUDGET = 150_000;
 
 test("while a session waits, job.json shows its pid, session, last event and tool failures", async () => {
   const place = setUp(repliesAt("spec"), {
@@ -93,8 +102,8 @@ test("a finished job's file counts only the last tool failures and records each 
   assert.equal(launch.toolFailures, 1);
   assert.equal(launch.outcome, "ok");
   assert.deepEqual(launch.usage, USAGE);
-  // The spec writer's default budget, under the fixtures' session cap (#281).
-  assert.equal(launch.tokenBudget, SPEC_BUDGET);
+  // The spec writer is no writer session, so it has no watchdog max.
+  assert.equal(launch.tokenBudget, null);
   assert.equal(launch.contextTokens, USAGE_TOTAL);
   const ops = status.launches.filter(
     (/** @type {{ kind: string }} */ { kind }) => kind === "ops",
@@ -106,9 +115,31 @@ test("a finished job's file counts only the last tool failures and records each 
     assert.equal(op.tokenBudget, null);
   }
   assert.deepEqual(fs.readdirSync(place.runDir).sort(), [
+    "context.jsonl",
     "job.json",
     "sessions",
   ]);
+});
+
+test("a non-writer session past its role's budget records no token budget, so the watchdog never stops it", () => {
+  const events = [...turns([OVER_SPEC_BUDGET]), outputEnd(READY_SPEC)];
+  const place = setUp(repliesAt("spec"), { events });
+  const r = runJob(place, STAGE_ARGS);
+  assert.equal(r.status, 0, r.stderr);
+  const launch = sessionOf(statusOf(place));
+  assert.equal(launch.outcome, "ok");
+  assert.equal(launch.contextTokens, OVER_SPEC_BUDGET + TURN_OUTPUT);
+  assert.equal(launch.tokenBudget, null);
+});
+
+test("a writer session records its token budget, which the watchdog stops it past", async () => {
+  const place = setUp(repliesAt("implement"), { events: ["wait"] });
+  const job = startJob(place, ["--stage", "implement"]);
+  await waitFor(() => sessionOf(statusOf(place)) !== null);
+  // The implementer's default budget at the default session cap.
+  assert.equal(sessionOf(statusOf(place)).tokenBudget, IMPLEMENTER_BUDGET);
+  job.child.kill("SIGTERM");
+  await job.end;
 });
 
 test("job.json's lostChanges round-trips through its schema", async () => {

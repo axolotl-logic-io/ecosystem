@@ -15,9 +15,8 @@ import { test } from "node:test";
 const root = fs.mkdtempSync("/tmp/issue-pipeline-ledger-");
 // Environment variables are named by strings, as src/process.ts takes them.
 Object.assign(process.env, Object.fromEntries([["ISSUE_PIPELINE_ROOT", root]]));
-const { openLedger, rateTokens } = await import(
-  "../src/orchestrator/ledger.ts"
-);
+const { openLedger } = await import("../src/orchestrator/ledger.ts");
+const { rateTokens } = await import("../src/workflow/rate-tokens.ts");
 
 /** @type {Config} */
 const cfg = {
@@ -83,6 +82,8 @@ function jobWith(input, minute = 0) {
         tokenBudget: null,
         contextTokens: 0,
         peakContext: 0,
+        firstContext: null,
+        turns: 0,
         contextStop: null,
         resumed: false,
         outcome: null,

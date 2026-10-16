@@ -34,6 +34,8 @@ const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
 const USAGE = { input: 1000, output: 200, cacheRead: 3000, cacheWrite: 400 };
 const USAGE_TOTAL =
   USAGE.input + USAGE.output + USAGE.cacheRead + USAGE.cacheWrite;
+// What USAGE counts as spent towards reportedTokens: cache reads left out.
+const USAGE_SPENT = USAGE.input + USAGE.output + USAGE.cacheWrite;
 
 // The structured output of a spec writer whose spec is ready.
 const READY_SPEC = {
@@ -303,6 +305,7 @@ export {
   startJob,
   statusOf,
   USAGE,
+  USAGE_SPENT,
   USAGE_TOTAL,
   waitFor,
 };

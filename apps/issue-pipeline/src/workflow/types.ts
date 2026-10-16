@@ -102,7 +102,8 @@ interface IssueState {
   ciFixes?: number;
   // The issue's event log, oldest first (event-log.ts).
   log?: string[];
-  // Tokens the issue's sessions reported using.
+  // Tokens the issue's sessions reported spending, less cache reads
+  // (rateTokens); an issue saved before 2026-10-16 counted them too.
   reportedTokens?: number;
   findings: Finding[];
   nextFindingId?: number;

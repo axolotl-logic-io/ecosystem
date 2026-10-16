@@ -1,12 +1,14 @@
-// The watchdog's budget rule (#281): a live job whose session launch's
+// The watchdog's budget rule (#281): a live job whose writer session launch's
 // context (job.json's `contextTokens`, the latest message's token total)
 // went past its token budget gets SIGTERM once, and once it has exited its
 // issue is stopped with the budget stop and never restarted. The SIGTERM
 // comes first because a job saves the issue's state on SIGTERM, which would
-// overwrite the stop's. Ops launches, launches with no budget and launches
-// that ended are never stopped. Pure: the tick carries out its actions. A
-// session the job stopped at the hard context limit has ended though its
-// outcome waits for its retry (#272), so no live-session check counts it.
+// overwrite the stop's. Ops launches, launches with no budget (every
+// non-writer session: the job records a budget for writers only) and
+// launches that ended are never stopped. Pure: the tick carries out its actions. A
+// writer the job stopped at the hard context limit has ended though its
+// outcome waits for its batch, and an older job's reader so stopped had a
+// retry run after it (#272), so no live-session check counts either.
 
 import type { StatusFile } from "../job/status.ts";
 import type { WatchAction, WatchedJob } from "./watchdog.ts";

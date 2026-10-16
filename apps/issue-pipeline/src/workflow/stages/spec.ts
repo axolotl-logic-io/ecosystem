@@ -79,6 +79,7 @@ function specLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     model: ctx.models.spec,
     schema: SPEC_SCHEMA,
     minutes: SPEC_MINUTES,
+    budgetRole: "spec",
     tokenBudget: budget,
     task: specTask(state, ctx, budget),
   };

@@ -20,7 +20,7 @@ import {
   startJob,
   statusOf,
   USAGE,
-  USAGE_TOTAL,
+  USAGE_SPENT,
   waitFor,
 } from "./job-test-kit.mjs";
 
@@ -64,7 +64,7 @@ test("--resume reopens the interrupted session with the resume prompt and counts
     fs.readdirSync(path.dirname(session)).filter((f) => f.endsWith(".jsonl")),
     [path.basename(session)],
   );
-  assert.equal(releaseOf(place).state.reportedTokens, 2 * USAGE_TOTAL);
+  assert.equal(releaseOf(place).state.reportedTokens, 2 * USAGE_SPENT);
   const launch = sessionOf(statusOf(place));
   assert.equal(launch.resumed, true);
   assert.equal(launch.usage.input, 2 * USAGE.input);
@@ -81,7 +81,7 @@ test("--resume starts a launch whose session file is gone afresh", async () => {
   assert.equal(second.fresh, true);
   const prompts = piCommands(place).filter(({ type }) => type === "prompt");
   assert.equal(prompts[1].message, prompts[0].message);
-  assert.equal(releaseOf(place).state.reportedTokens, USAGE_TOTAL);
+  assert.equal(releaseOf(place).state.reportedTokens, USAGE_SPENT);
   assert.equal(sessionOf(statusOf(place)).resumed, false);
 });
 
@@ -90,5 +90,5 @@ test("--resume with no earlier job.json runs the stage as a fresh job", () => {
   const r = runJob(place, [...STAGE_ARGS, "--resume"]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(piStarts(place)[0].fresh, true);
-  assert.equal(releaseOf(place).state.reportedTokens, USAGE_TOTAL);
+  assert.equal(releaseOf(place).state.reportedTokens, USAGE_SPENT);
 });

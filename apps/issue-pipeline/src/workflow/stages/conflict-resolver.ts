@@ -63,6 +63,7 @@ function resolverLaunch(
     schema: CIFIX_SCHEMA,
     writer: true,
     minutes: RESOLVER_MINUTES,
+    budgetRole: "fixer",
     tokenBudget: budget,
     task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
   };

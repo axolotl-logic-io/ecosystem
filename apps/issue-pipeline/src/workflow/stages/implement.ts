@@ -133,6 +133,7 @@ function implementLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     schema: IMPL_SCHEMA,
     writer: true,
     minutes: IMPLEMENT_MINUTES,
+    budgetRole: "implementer",
     tokenBudget: budget,
     task: implementTask(state, ctx, budget),
   };

@@ -79,10 +79,21 @@ function poolTerms(budgets: Budgets, st: BudgetState, pool: Pool): PoolTerms {
 }
 
 // The token budget of one `role` session: its role's budget, capped by the
-// per-session cap. Its preamble shows it, and the stage job's watchdog stops
-// the session once its context passes it.
+// per-session cap. Its preamble shows it, and the orchestrator's watchdog
+// stops a writer session, and no other, once its context passes it.
 function sessionBudget(budgets: Budgets, role: Role): number {
   return Math.min(budgets.roles[role], budgets.sessionCap);
+}
+
+// A session's token budget and the role it is the budget of.
+interface LaunchBudget {
+  budgetRole: Role;
+  tokenBudget: number;
+}
+
+// The budget of one `role` session, with its role.
+function launchBudget(budgets: Budgets, role: Role): LaunchBudget {
+  return { budgetRole: role, tokenBudget: sessionBudget(budgets, role) };
 }
 
 function sessionCost(
@@ -159,5 +170,5 @@ function chargeSession(
   return charge;
 }
 
-export type { Budgets, Charge, Pool };
-export { chargeCheck, chargeSession, sessionBudget };
+export type { Budgets, Charge, LaunchBudget, Pool };
+export { chargeCheck, chargeSession, launchBudget, sessionBudget };

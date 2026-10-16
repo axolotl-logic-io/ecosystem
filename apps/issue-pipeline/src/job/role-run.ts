@@ -69,7 +69,7 @@ function opOutcome(reply: Reply): Outcome {
 }
 
 function childOf(effect: SessionEffect): ChildLaunch {
-  const { name, agent, model, schema, task, tokenBudget } = effect;
+  const { name, agent, model, schema, task, tokenBudget, budgetRole } = effect;
   const label = `Run ${name} session`;
   return {
     kind: "child",
@@ -81,6 +81,7 @@ function childOf(effect: SessionEffect): ChildLaunch {
     minutes: 0,
     task,
     tokenBudget,
+    budgetRole,
   };
 }
 

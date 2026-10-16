@@ -5,7 +5,7 @@
 // carries and hands its launches to the loop that awaits them, so no stage
 // awaits anything. The sweep's entry (entry.ts) has its own steps here too.
 
-import type { Budgets } from "../budget.ts";
+import type { Budgets, LaunchBudget } from "../budget.ts";
 import type { JsonSchema } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import type {
@@ -55,7 +55,7 @@ interface StageState {
 
 // A model session. The sweep keys it "i<n>-<name>-<seq>" and signs its result
 // with `role`, or `name` with no role. Its preamble shows `tokenBudget`.
-interface ChildLaunch {
+interface ChildLaunch extends LaunchBudget {
   kind: "child";
   name: string;
   role?: string;
@@ -65,7 +65,6 @@ interface ChildLaunch {
   schema: JsonSchema;
   minutes: number;
   task: string;
-  tokenBudget: number;
   // A session that changes the code, which the sweep's own checks verify.
   writer?: true;
 }

@@ -116,6 +116,7 @@ function lensLaunch(
     model: models[lens],
     schema: REVIEW_SCHEMA,
     minutes: REVIEW_MINUTES,
+    budgetRole: "rereviewer",
     tokenBudget: budget,
     task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
   };

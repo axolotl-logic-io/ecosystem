@@ -21,6 +21,7 @@ const SPEC_LAUNCH = {
   model: "anthropic/claude-opus-5-5",
   schema: { type: "object" },
   minutes: 30,
+  budgetRole: "spec",
   tokenBudget: 80_000,
   task: "Write the spec.",
 };
@@ -68,9 +69,10 @@ const EARLIER_TOKENS = 10;
 const CONFIG_NOT_FOUND = /boom: config not found/u;
 const TIMED_OUT = /timed out/u;
 
+// The tokens a session's usage counts as spent: cache reads are left out.
 /** @param {Usage} usage @returns {number} */
 function tokensOf(usage) {
-  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+  return usage.input + usage.output + usage.cacheWrite;
 }
 
 // An issue at spec that had reported `reportedTokens` before the session.
@@ -113,7 +115,7 @@ test("an ops child stopped by its timeout fails with a timeout message", () => {
   assert.match(raw.error, TIMED_OUT);
 });
 
-test("a session with structured output sums its usage and counts it as reported tokens", () => {
+test("a session with structured output sums its usage and counts it, less cache reads, as reported tokens", () => {
   const details = { decision: "ready", spec: "## Behaviour", questions: [] };
   const stdout = jsonl([
     { type: "session", version: 3, id: "x" },

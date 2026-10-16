@@ -32,6 +32,7 @@ const WORK = {
   schema: { type: "object" },
   task: "Do the toy work.",
   tokenBudget: 1000,
+  budgetRole: "implementer",
 };
 
 /** @param {End} end @returns {Effect} */

@@ -87,13 +87,14 @@ interface JobStatus {
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
   ended: (key: string) => void;
-  // Session `key` was stopped at the hard context limit.
+  // Writer session `key` was stopped at the hard context limit.
   contextStopped: (key: string, stop: ContextStop) => void;
-  // Launch `key`'s result went back to the sweep: sets `outcome` on it and
-  // on every session it ran, keyed `${key}.<part>`.
+  // Launch `key`'s result went back to the sweep: sets its `outcome`.
   settled: (key: string, outcome: LaunchOutcome) => void;
   // A role's step started, or the step it last started ended.
   step: (step: StepReport) => void;
+  // Launch `key`'s record as it stands, or null with none.
+  launch: (key: string) => LaunchRecord | null;
   // The job ended.
   finish: (outcome: JobOutcome) => void;
   // The uncommitted paths the job's checkout held at exit, which it dropped.
@@ -149,14 +150,13 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     outcome: null,
     launches: [],
   };
-  // Changes launch `key`, and with `parts` every session it ran too.
+  // Changes launch `key`.
   function update(
     key: string,
     change: (l: LaunchRecord) => LaunchRecord,
-    parts = false,
   ): void {
     status.launches = status.launches.map((l: LaunchRecord): LaunchRecord => {
-      if (l.key === key || (parts && l.key.startsWith(`${key}.`))) {
+      if (l.key === key) {
         return change(l);
       }
       return l;
@@ -175,7 +175,7 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     contextStopped: (key: string, contextStop: ContextStop): void =>
       update(key, (launch) => ({ ...launch, contextStop })),
     settled: (key: string, outcome: LaunchOutcome): void =>
-      update(key, (launch) => ({ ...launch, outcome }), true),
+      update(key, (launch) => ({ ...launch, outcome })),
     step: (step: StepReport): void => {
       const steps = status.steps ?? [];
       if (steps.at(-1)?.endedAt === null) {
@@ -184,6 +184,8 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
       status.steps = [...steps, step];
       writeStatus(file, status);
     },
+    launch: (key: string): LaunchRecord | null =>
+      status.launches.find((l: LaunchRecord): boolean => l.key === key) ?? null,
     finish: (outcome: JobOutcome): void => {
       status.outcome = outcome;
       status.endedAt = new Date().toISOString();

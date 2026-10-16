@@ -3,7 +3,7 @@
 // join the open ones. A finding that comes back after being resolved stops
 // the issue, since the fixes are undoing each other.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { chargeSession, launchBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding, openFindings } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
@@ -99,7 +99,7 @@ function rereviewLaunch(
     model: ctx.models[lens],
     schema: schemaOf(lens),
     minutes: REREVIEW_MINUTES,
-    tokenBudget: sessionBudget(ctx.budgets, "rereviewer"),
+    ...launchBudget(ctx.budgets, "rereviewer"),
     task: rereviewTask(ctx, state, { lens, diffPath, findings }),
   };
 }

@@ -39,7 +39,7 @@ interface Control {
   // The steer socket's path.
   socket: string;
   // Keeps `launch` live, for steers and the stop, until it exits. A launch
-  // registered once the stop began, such as a retry (launch.ts), is stopped.
+  // registered once the stop began is stopped.
   register: (launch: LiveLaunch) => void;
   // The signal that began the stop, or null while the job runs on.
   stopping: () => StopSignal | null;

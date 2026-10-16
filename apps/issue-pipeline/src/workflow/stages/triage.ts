@@ -86,6 +86,7 @@ function triageLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     model: models.triage,
     schema: TRIAGE_SCHEMA,
     minutes: TRIAGE_MINUTES,
+    budgetRole: "triage",
     tokenBudget: budget,
     task: preamble(cfg, state, "triage", budget).concat(lines).join("\n"),
   };
