@@ -46,11 +46,13 @@ interface RpcProcess {
   exited: Promise<void>;
 }
 
-// What to run: pi's arguments, its folder, the prompt, the time limit, and
-// the hooks told of the process and of each record it prints.
+// What to run: pi's arguments, its folder, its whole environment, the
+// prompt, the time limit, and the hooks told of the process and of each
+// record it prints.
 interface RpcRun {
   args: readonly string[];
   cwd: string;
+  env: Readonly<Record<string, string>>;
   prompt: string;
   timeoutMs: number;
   onSpawn: (rpc: RpcProcess) => void;
@@ -183,6 +185,7 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
     };
     const child = spawn(PI, [...run.args], {
       cwd: run.cwd,
+      env: run.env,
       stdio: "pipe",
       detached: true,
     });

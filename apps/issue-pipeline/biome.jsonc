@@ -33,7 +33,7 @@
     // pi extension src/job/structured-output.ts reads its schema file (#232).
     // src/job/args.ts reads the job's arguments, src/job/rpc.ts spawns pi in RPC mode, src/job/status.ts writes job.json
     // and src/job/control.ts keeps the steer socket and the stop signals
-    // (#233). The job's pure modules (raw-results, pool) get no exception.
+    // (#233). The job's pure modules (raw-results, pool, roles) get no exception.
     {
       "includes": [
         "install.mjs",

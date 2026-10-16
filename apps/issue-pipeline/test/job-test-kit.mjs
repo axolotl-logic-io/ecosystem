@@ -63,9 +63,10 @@ function repliesAt(stage) {
  * A fresh pipeline root, agent dir, worktree and fake bin for one job.
  * @param {{ claim: { paths?: object } }} replies
  * @param {object} script
+ * @param {Record<string, unknown>} [extraConfig] more config keys
  * @returns {Place}
  */
-function setUp(replies, script) {
+function setUp(replies, script, extraConfig = {}) {
   const tmp = fs.mkdtempSync("/tmp/issue-pipeline-job-");
   process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
   const root = path.join(tmp, "root");
@@ -88,6 +89,7 @@ function setUp(replies, script) {
       account: "bot",
       allowedUsers: ["alice"],
       commands: { test: "true" },
+      ...extraConfig,
     }),
   );
   const claim = {
@@ -110,11 +112,16 @@ function setScript(place, script) {
   fs.writeFileSync(file, JSON.stringify(script));
 }
 
-/** @param {Place} place @returns {NodeJS.ProcessEnv} */
-function jobEnv(place) {
+/**
+ * @param {Place} place
+ * @param {Record<string, string>} extraEnv
+ * @returns {NodeJS.ProcessEnv}
+ */
+function jobEnv(place, extraEnv) {
   const { PATH: searchPath } = process.env;
   return {
     ...process.env,
+    ...extraEnv,
     ...Object.fromEntries([
       ["PATH", `${place.bin}${path.delimiter}${searchPath}`],
       ["ISSUE_PIPELINE_ROOT", place.root],
@@ -133,11 +140,12 @@ function argvOf(place, args) {
  * Runs the job to its end with `args` after its config and issue.
  * @param {Place} place
  * @param {readonly string[]} args
+ * @param {Record<string, string>} [extraEnv] more job env
  */
-function runJob(place, args) {
+function runJob(place, args, extraEnv = {}) {
   return spawnSync(process.execPath, argvOf(place, args), {
     encoding: "utf8",
-    env: jobEnv(place),
+    env: jobEnv(place, extraEnv),
   });
 }
 
@@ -153,11 +161,12 @@ function runJob(place, args) {
  * once it exits.
  * @param {Place} place
  * @param {readonly string[]} args
+ * @param {Record<string, string>} [extraEnv] more job env
  * @returns {{ child: import("node:child_process").ChildProcess, end: Promise<JobEnd> }}
  */
-function startJob(place, args) {
+function startJob(place, args, extraEnv = {}) {
   const child = spawn(process.execPath, argvOf(place, args), {
-    env: jobEnv(place),
+    env: jobEnv(place, extraEnv),
   });
   let stdout = "";
   let stderr = "";

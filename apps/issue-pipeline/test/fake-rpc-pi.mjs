@@ -12,8 +12,8 @@ const replies = JSON.parse(fs.readFileSync(dir + "/replies.json", "utf8"));
 process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(replies[request.op]) + "\\n");
 `;
 
-// A fake pi in RPC mode. It logs its argv, cwd, pid and whether its session
-// file was new to pi.log, then every command it reads, and answers each with
+// A fake pi in RPC mode. It logs its argv, cwd, pid, whether its session
+// file was new, its env's names and its GH_TOKEN to pi.log, then every command it reads, and answers each with
 // a response. On "prompt" it plays pi-script.json's events, writing each to
 // stdout and the session file as pi does, up to a "wait" mark, where it
 // pauses until "abort" (which settles it, aborted) or "steer" (which plays
@@ -26,7 +26,7 @@ const argv = process.argv.slice(2);
 const session = argv[argv.indexOf("--session") + 1];
 const fresh = !fs.existsSync(session);
 const log = (entry) => fs.appendFileSync(root + "/pi.log", JSON.stringify(entry) + "\\n");
-log({ argv, cwd: process.cwd(), pid: process.pid, fresh });
+log({ argv, cwd: process.cwd(), pid: process.pid, fresh, env: Object.keys(process.env).sort(), ghToken: process.env.GH_TOKEN ?? null });
 const script = JSON.parse(fs.readFileSync(root + "/pi-script.json", "utf8"));
 const print = (event) => {
   process.stdout.write(JSON.stringify(event) + "\\n");

@@ -56,8 +56,22 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
 const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
 const PATH_SEPARATOR = /[\\/]/u;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 const OPTIONAL_TEXT = z.string().nullish();
+// What a stage job's role may hold (src/job/roles.ts): the job variable its
+// GH_TOKEN comes from, and the hosts it may reach.
+const JOB_ROLE = z
+  .object({
+    tokenEnv: z.string().regex(ENV_NAME, "must be an env var name").optional(),
+    network: z.array(z.string().min(1)).optional(),
+  })
+  .optional();
+const JOB_ROLES = z.object({
+  reader: JOB_ROLE,
+  writer: JOB_ROLE,
+  merger: JOB_ROLE,
+});
 // What the ops modules read from a config. Every other key passes through to
 // the workflow as it is.
 const CONFIG_SCHEMA = z.looseObject({
@@ -69,6 +83,7 @@ const CONFIG_SCHEMA = z.looseObject({
   commands: z.looseObject({ teardown: OPTIONAL_TEXT, test: z.string() }),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
+  jobRoles: JOB_ROLES.nullish(),
   leaseHours: z.number(),
   practices: z.array(z.string()),
   repo: z.string(),
@@ -86,6 +101,7 @@ const CONFIG_SCHEMA = z.looseObject({
 });
 
 type Config = z.infer<typeof CONFIG_SCHEMA> & { slug: string };
+type JobRolesConfig = z.infer<typeof JOB_ROLES>;
 
 interface WikiSettings {
   branch: string;
@@ -236,5 +252,5 @@ const paths = {
     path.join(ROOT, "work", cfg.slug, `issue-${n}`),
 };
 
-export type { Config, WikiSettings };
+export type { Config, JobRolesConfig, WikiSettings };
 export { loadConfig, paths, publicConfig, tokenEnv, wikiCfg };

@@ -3,6 +3,7 @@
 //
 //   node job.mjs --config <path> --issue N --stage <stage> [--lane L] [--resume]
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
+//   node job.mjs --config <path> --issue N --stage <stage> --print-boundary
 //
 // It claims #N, begins only <stage> (an issue saved at another stage is
 // released untouched as "wrong-stage"), then closes parents, releases or
@@ -20,6 +21,11 @@
 // nothing on stdout. --resume carries on the sessions an earlier stopped job
 // left in job.json. --steer sends a message to a live session of the job
 // running for #N, exiting 0 once pi accepted it and 1 otherwise.
+//
+// Each pi session runs with the env of its role (src/job/roles.ts): no gh
+// token but its role's own; ops keep the job's env. --print-boundary prints
+// the stage job's boundary (role, checkout, env names, network) as one JSON
+// line and starts nothing.
 
 import os from "node:os";
 import process from "node:process";
@@ -34,6 +40,7 @@ import type { LaunchHooks } from "./job/launch.ts";
 import { runLaunch } from "./job/launch.ts";
 import { runAll } from "./job/pool.ts";
 import type { OpsRaw, SessionRaw } from "./job/raw-results.ts";
+import { agentEnvOf, boundaryOf, rolesOf, sessionRoleOf } from "./job/roles.ts";
 import type {
   JobOutcome,
   JobStatus,
@@ -71,6 +78,7 @@ function hooksOf(
   watch: { status: JobStatus; control: Control; resumePoint: Resume },
 ): LaunchHooks {
   const { status, control, resumePoint } = watch;
+  const roles = rolesOf(cfg.jobRoles);
   return {
     sessionFile: (key: string): string => paths.session(cfg, args.issue, key),
     resumePoint,
@@ -82,6 +90,8 @@ function hooksOf(
     },
     record: status.record,
     ended: status.ended,
+    env: (agent: string): Readonly<Record<string, string>> =>
+      agentEnvOf(sessionRoleOf(agent), roles, process.env),
   };
 }
 
@@ -221,6 +231,11 @@ async function main(): Promise<void> {
     const cfg = loadConfig(args.config);
     if (args.kind === "steer") {
       await steer(args, cfg);
+      return;
+    }
+    if (args.kind === "boundary") {
+      const boundary = boundaryOf(cfg, args.issue, args.stage, process.env);
+      process.stdout.write(`${JSON.stringify(boundary)}\n`);
       return;
     }
     const end = await runStage(args, cfg);
