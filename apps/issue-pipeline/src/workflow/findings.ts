@@ -1,6 +1,6 @@
 // The blocking findings an issue carries through its fix rounds: numbering and
 // storing them, which are still open, how comments and prompts list them, and
-// how open ones name the issue's stop.
+// how open ones, a failed acceptance check's included, name the issue's stop.
 
 import { clip } from "./clip.ts";
 import type {
@@ -75,24 +75,45 @@ function openSecurityFinding(item: FindingsItem): Finding | undefined {
   return openFindings(item).find(hasCategory);
 }
 
-// The stop code for open findings: a security category if any security finding
-// is still open, so the label names the harm; otherwise null, the generic
-// review-rounds code.
-function findingsStopCode(item: FindingsItem): string | null {
-  return openSecurityFinding(item)?.category ?? null;
+// Why a failed acceptance check stops the issue.
+const ACCEPTANCE_REASON: string =
+  "the acceptance verifier found the issue is not fully resolved";
+
+// The open finding a failed acceptance check raised, if any.
+function openAcceptanceFinding(item: FindingsItem): Finding | undefined {
+  return openFindings(item).find((f) => f.lenses.includes("acceptance"));
 }
 
-// The stop reason for open findings: an open security finding's, or `base`.
+// The stop code for open findings: a security category if any security finding
+// is still open, so the label names the harm; else "acceptance" if a failed
+// acceptance check's finding is open; otherwise null, the generic
+// review-rounds code.
+function findingsStopCode(item: FindingsItem): string | null {
+  const security = openSecurityFinding(item);
+  if (security !== undefined) {
+    return security.category;
+  }
+  if (openAcceptanceFinding(item) !== undefined) {
+    return "acceptance";
+  }
+  return null;
+}
+
+// The stop reason for open findings: an open security finding's, else the
+// acceptance check's, or `base`.
 function findingsStopReason(
   cfg: FixRoundsConfig,
   item: FindingsItem,
   base: string,
 ): string {
   const security = openSecurityFinding(item);
-  if (security === undefined) {
-    return base;
+  if (security !== undefined) {
+    return `security review (${security.category}): ${security.title} is still open after ${cfg.maxFixRounds} fix rounds`;
   }
-  return `security review (${security.category}): ${security.title} is still open after ${cfg.maxFixRounds} fix rounds`;
+  if (openAcceptanceFinding(item) !== undefined) {
+    return ACCEPTANCE_REASON;
+  }
+  return base;
 }
 
 // The stop for open findings: their reason with `base` as the fallback, the
@@ -106,6 +127,22 @@ function findingsStop(
     reason: findingsStopReason(cfg, item, base),
     detail: findingsText(openFindings(item)),
     code: findingsStopCode(item),
+  };
+}
+
+// The stop for any open acceptance finding the fixer disputed, since only the
+// operator can rule on what the issue asks; null when there is none.
+function acceptanceDisputeStop(item: FindingsItem): FindingsStop | null {
+  const finding = openFindings(item).find(
+    (f) => f.lenses.includes("acceptance") && f.disputed,
+  );
+  if (finding === undefined) {
+    return null;
+  }
+  return {
+    reason: ACCEPTANCE_REASON,
+    detail: findingsText([finding]),
+    code: "acceptance",
   };
 }
 
@@ -152,6 +189,8 @@ function findingsText(list: readonly Finding[]): string {
 
 export type { FindingsStop };
 export {
+  ACCEPTANCE_REASON,
+  acceptanceDisputeStop,
   addFinding,
   findingLines,
   findingsStop,

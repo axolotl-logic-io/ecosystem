@@ -116,7 +116,8 @@ function claimBatch(
     return stagesBatch(driver, run, afterClaim(run));
   }
   driver.phase = { kind: "claim", run, index };
-  return [opsLaunchSpec(run, claimLaunch(candidate.number))];
+  const claim = claimLaunch(candidate.number, driver.stackOn);
+  return [opsLaunchSpec(run, claim)];
 }
 
 // The issue the claim reply for candidate `n` gives the sweep, if any.
@@ -164,7 +165,7 @@ function claimed(
     return claimBatch(driver, run, index + 1);
   }
   run.item = item;
-  markWrongStage(item, run.stage);
+  markWrongStage(item, run);
   return stagesBatch(driver, run, afterClaim(run));
 }
 

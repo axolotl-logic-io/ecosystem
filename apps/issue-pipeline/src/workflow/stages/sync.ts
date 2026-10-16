@@ -1,7 +1,7 @@
 // Sync: rebases the PR branch onto the base branch. A clean rebase moves to
 // checks; a conflicting one is resolved by a writer while the issue has
 // conflict attempts and rebase budget left, and then goes through every check
-// again.
+// again. Either way the rebase's flows are saved and acted on (flow-step.ts).
 
 import { chargeCheck } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
@@ -9,14 +9,13 @@ import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import { syncReplyOf } from "./checks-reply.ts";
+import { conflicted, maxConflictFixes } from "./conflict-resolver.ts";
+import type { ConflictTarget } from "./conflict-target.ts";
+import { flowEnd, prFlowed } from "./flow-step.ts";
 import { opFailedStep } from "./network.ts";
-import { doneStep, launchStep, onlyReply, stopStep } from "./step.ts";
-import {
-  conflicted,
-  finished,
-  maxConflictFixes,
-  resolved,
-} from "./sync-conflict.ts";
+import { branchPayload, stackedOnOf, syncOnto } from "./stacked.ts";
+import { launchStep, onlyReply, stopStep } from "./step.ts";
+import { finished, resolved } from "./sync-conflict.ts";
 import type {
   LaunchResult,
   StageComment,
@@ -26,14 +25,16 @@ import type {
 } from "./types.ts";
 
 // Where sync is: about to rebase, reading the rebase, waiting for the
-// conflict resolver, or waiting for the rebase to finish.
-type SyncPhase = "begin" | "synced" | "resolved" | "finished";
+// conflict resolver, waiting for the rebase to finish, or reading the PR's
+// close or reopen.
+type SyncPhase = "begin" | "synced" | "resolved" | "finished" | "flowed";
 
 const PHASES: readonly SyncPhase[] = [
   "begin",
   "synced",
   "resolved",
   "finished",
+  "flowed",
 ];
 
 const SHORT_SHA = 12;
@@ -53,7 +54,8 @@ function prComment(by: Signature, body: string): StageComment {
 // Rebases, leaving a conflicting rebase stopped for a resolver while the issue
 // has conflict attempts and rebase budget for one left. An issue the merge
 // stage sent back is re-checking from here on, so its sessions are charged to
-// the rebase pool.
+// the rebase pool. A stacked issue rebases onto its prerequisite's branch, or
+// onto the base once that has merged (sync-base decides).
 function begin(state: StageState, ctx: StageContext): Step {
   const st: IssueState = { ...state.st };
   if (typeof st.passedSha === "string" && st.passedSha !== "") {
@@ -62,7 +64,7 @@ function begin(state: StageState, ctx: StageContext): Step {
   const keepConflict =
     (st.conflictFixes ?? 0) < maxConflictFixes(ctx) &&
     chargeCheck(ctx.budgets, st, "fixer", "rebase").charged;
-  const payload = { number: state.n, keepConflict };
+  const payload = branchPayload(state, { keepConflict });
   return launchStep({ ...state, st, phase: "synced" }, [
     { kind: "op", name: "sync", op: "sync-base", payload },
   ]);
@@ -70,15 +72,21 @@ function begin(state: StageState, ctx: StageContext): Step {
 
 // A clean rebase moves to checks. A clean rebase of a head that passed every
 // check, acceptance and the security review only re-runs the tests (Autumn,
-// 2026-10-14): the change itself is the same.
+// 2026-10-14): the change itself is the same. A stacked issue's reply says
+// what it is stacked on now.
 function clean(
   state: StageState,
   ctx: StageContext,
-  changed: boolean,
-  headSha: string,
+  reply: Readonly<Record<string, unknown>>,
+  { changed, headSha }: { changed: boolean; headSha: string },
 ): Step {
   const { baseBranch, maxSyncs } = ctx.cfg;
   const st: IssueState = { ...state.st };
+  const stackedOn = stackedOnOf(reply);
+  if (stackedOn !== undefined) {
+    st.stackedOn = stackedOn;
+  }
+  const onto = syncOnto(stackedOn, baseBranch);
   if (changed) {
     st.syncs = (st.syncs ?? 0) + 1;
     if (st.syncs > maxSyncs) {
@@ -104,24 +112,26 @@ function clean(
       then =
         "This head already passed every check before the rebase, so only the tests run again before merge.";
     }
-    noteEvent(st, `rebased onto ${baseBranch}${note}`, ctx.now());
+    noteEvent(st, `rebased onto ${onto}${note}`, ctx.now());
     comments.push(
       prComment(
         byStep("sync"),
-        `Rebased onto ${baseBranch} without conflicts; the head is now ${headSha.slice(0, SHORT_SHA)}. ${then}`,
+        `Rebased onto ${onto} without conflicts; the head is now ${headSha.slice(0, SHORT_SHA)}. ${then}`,
       ),
     );
   }
   st.headSha = headSha;
   st.stage = "checks";
-  return doneStep({ ...state, st }, comments);
+  return flowEnd({ ...state, st }, ctx, reply, comments);
 }
+
 function synced(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const reply = syncReplyOf(onlyReply(results));
+  const raw = onlyReply(results);
+  const reply = syncReplyOf(raw);
   const base = ctx.cfg.baseBranch;
   if (reply.kind === "failed") {
     const reason = `could not sync with ${base}`;
@@ -129,10 +139,16 @@ function synced(
     return opFailedStep(state, failed, ctx.now());
   }
   if (reply.kind === "clean") {
-    return clean(state, ctx, reply.changed, reply.headSha);
+    return clean(state, ctx, raw, reply);
   }
   if (reply.inRebase) {
-    return conflicted(state, ctx, reply.conflicts, reply.baseSha);
+    const { conflicts: files, baseSha } = reply;
+    const stackedOn = stackedOnOf(raw);
+    let target: ConflictTarget = { kind: "code" };
+    if (stackedOn !== undefined) {
+      target = { kind: "code", stackedOn };
+    }
+    return conflicted(state, ctx, { files, baseSha, target });
   }
   const files = `Conflicting files:\n${reply.conflicts.join("\n")}`;
   const max = maxConflictFixes(ctx);
@@ -164,9 +180,11 @@ function next(
     case "synced":
       return synced(state, ctx, results);
     case "resolved":
-      return resolved(state, results);
+      return resolved(state, ctx, results);
     case "finished":
       return finished(state, ctx, results);
+    case "flowed":
+      return prFlowed(state, ctx, results);
     default: {
       const unhandled: never = phase;
       return unhandled;

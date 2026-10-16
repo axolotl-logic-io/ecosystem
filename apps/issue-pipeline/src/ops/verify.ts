@@ -12,6 +12,7 @@ import { assertClean, fetchIn, head } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
+import { measureFrom, STACKED_ON } from "../stack.ts";
 import type { Change } from "./fails-before-fix.ts";
 import { failsBeforeFix } from "./fails-before-fix.ts";
 
@@ -47,6 +48,7 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
 const REQUEST = z.looseObject({
   number: z.number(),
   testsOnly: z.boolean().optional(),
+  stackedOn: STACKED_ON.nullish(),
 });
 const COMMAND = z.string().nullish();
 const MIGRATIONS = z.looseObject({
@@ -210,20 +212,15 @@ function runMigrations(v: Verification): void {
 }
 
 function verify(cfg: Config, request: unknown): VerifyReply {
-  const { number, testsOnly } = REQUEST.parse(request);
+  const { number, testsOnly, stackedOn } = REQUEST.parse(request);
   const settings = SETTINGS.parse(cfg);
   const wt = paths.worktree(cfg, number);
   assertClean(wt);
   fetchIn(cfg, wt, cfg.baseBranch);
   const sha = head(wt);
   const shortSha = sha.slice(0, SHORT_SHA_LENGTH);
-  const mergeBase = [
-    "-C",
-    wt,
-    "merge-base",
-    `origin/${cfg.baseBranch}`,
-    "HEAD",
-  ];
+  const from = measureFrom(stackedOn, cfg);
+  const mergeBase = ["-C", wt, "merge-base", from, "HEAD"];
   const base = run("git", mergeBase).stdout.trim();
   const changed = run("git", [
     "-C",

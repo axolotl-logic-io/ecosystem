@@ -55,6 +55,7 @@ const AGG_SCHEMA: JsonSchema = closedObject({
 });
 
 const FIX_SCHEMA: JsonSchema = closedObject({
+  status: { enum: ["done", "handoff"] },
   fixed: { type: "array", items: STR },
   disputed: { type: "array", items: closedObject({ id: STR, evidence: STR }) },
   summary: STR,

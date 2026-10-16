@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("sync-ops-prepare-review");
@@ -15,7 +16,20 @@ const BASE = "origin/integration";
 const WIKI_HEADING =
   "\n\n# Wiki changes (paths under wiki/; pushed to the wiki when the PR merges)\n\n";
 // Each test's issue.
-const ISSUE = { mergeBase: 21, sinceSha: 22, rebasedSince: 23, wiki: 24 };
+const ISSUE = {
+  mergeBase: 21,
+  sinceSha: 22,
+  rebasedSince: 23,
+  wiki: 24,
+  prereq: 25,
+  stacked: 26,
+};
+// The reply fields the stacked test reads.
+const REVIEW_REPLY = z.looseObject({
+  baseSha: z.string(),
+  diffPath: z.string(),
+  changedFiles: z.array(z.string()),
+});
 
 // Runs an op; returns its stdout and the gh calls it made.
 /** @param {object} request @param {string} [config] @returns {{ out: string, calls: string[][] }} */
@@ -154,4 +168,21 @@ test("prepare-review appends the issue's wiki commits", () => {
   assert.deepEqual(want.reply.changedFiles, ["g", "wiki/Page.md"]);
   const { got, expected } = reviewOutcome(out, want);
   assert.deepEqual(got, expected);
+});
+
+test("prepare-review of a stacked branch diffs only its own change, from the prerequisite's head", () => {
+  const prereqHead = fx.startBranch(ISSUE.prereq, "prereq-file", "prereq");
+  const wt = worktree(ISSUE.stacked);
+  sh(
+    `git -C ${fx.root}/clones/o__r worktree add -q -B agent/issue-${ISSUE.stacked} ${wt} ${prereqHead}`,
+  );
+  fx.commitIn(ISSUE.stacked, "own-file", "own");
+  const stackedOn = { issue: ISSUE.prereq, headSha: prereqHead };
+  const request = { op: "prepare-review", number: ISSUE.stacked, stackedOn };
+  const reply = REVIEW_REPLY.parse(JSON.parse(ask(request).out));
+  assert.equal(reply.baseSha, prereqHead);
+  assert.deepEqual(reply.changedFiles, ["own-file"]);
+  const diff = fs.readFileSync(reply.diffPath, "utf8");
+  assert.ok(diff.includes("own-file"));
+  assert.ok(!diff.includes("prereq-file"));
 });

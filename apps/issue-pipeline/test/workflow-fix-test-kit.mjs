@@ -22,7 +22,19 @@ import {
 const HEAD = "ccccccc";
 const DIFF_PATH = "/runs/issue-7/r1.diff";
 const F1 = openFinding("f1", ["correctness"]);
-const FIXED = { fixed: ["f1"], disputed: [], summary: "Fixed the loop bound." };
+const FIXED = {
+  status: "done",
+  fixed: ["f1"],
+  disputed: [],
+  summary: "Fixed the loop bound.",
+};
+// The push op's reply when the remote rejects git's push, in runFailure's
+// words (src/process.ts).
+const REJECTED_PUSH = opReply({
+  ok: false,
+  error:
+    "git -C /w push --force-with-lease -u origin HEAD:refs/heads/agent/issue-7 exited 1: ! [remote rejected] HEAD -> agent/issue-7 (cannot lock ref)",
+});
 
 // Issue #7 at fix with `findings`, its last review at bbbbbbb.
 /** @param {Finding[]} [findings] @param {Partial<IssueState>} [fields] @returns {StageState} */
@@ -83,4 +95,14 @@ function saved(step) {
   return next(step.state, CTX, [opReply({ ok: true })]);
 }
 
-export { DIFF_PATH, F1, FIXED, fixState, HEAD, round, saved, verdict };
+export {
+  DIFF_PATH,
+  F1,
+  FIXED,
+  fixState,
+  HEAD,
+  REJECTED_PUSH,
+  round,
+  saved,
+  verdict,
+};

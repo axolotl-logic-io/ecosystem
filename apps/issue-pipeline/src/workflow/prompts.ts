@@ -2,6 +2,7 @@
 // works, its context budget, its limits, and the coding practices it reads.
 
 import type {
+  IssueState,
   PracticesConfig,
   PracticesUse,
   RepoConfig,
@@ -78,4 +79,29 @@ function practicesNote(
   ].join("\n");
 }
 
-export { practicesNote, preamble };
+// How a task shows the issue's spec: "" when it has none, the spec itself, or,
+// when the saved copy was clipped, where the full spec is (#280).
+function specText(st: Pick<IssueState, "spec" | "specFile">): string {
+  const { spec, specFile } = st;
+  if (typeof specFile === "string" && specFile !== "") {
+    return `The full spec is in ${specFile}. Read the whole spec there; it is too long to include here.`;
+  }
+  if (typeof spec !== "string") {
+    return "";
+  }
+  return spec;
+}
+
+// What a writer session does that has reached the hard context limit `limit`
+// (config contextLimits.hard): `keep` says what it keeps of its work, then it
+// writes the handoff file and returns `handoff` for a continuation (#269).
+function handoffRule(limit: number, handoffFile: string, keep: string): string {
+  return `Hard limit: ${limit} tokens of context. If this session passes it before the work is done, stop: ${keep}, write ${handoffFile} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`;
+}
+
+// The first line of a continuation's task: where its predecessor's handoff is.
+function handoffLead(handoffFile: string): string {
+  return `A previous session ran out of room. Read its handoff first: ${handoffFile}. Continue from the current branch state.`;
+}
+
+export { handoffLead, handoffRule, practicesNote, preamble, specText };

@@ -4,11 +4,11 @@
 // and each fix round is held to the per-run spawn cap.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { releasedState, sessionAgents } from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -16,10 +16,10 @@ import {
 } from "./workflow-stages-fixtures.mjs";
 
 /** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
-/** @import { IssueState } from "../src/workflow/types.ts" */
-/** @import { Scripted, TraceEntry } from "./workflow-harness.mjs" */
+/** @import { Scripted } from "./workflow-harness.mjs" */
 
 const NO_FINDINGS = replyWith({ findings: [] });
+const READER = "issue-pipeline-reader";
 const OFF_BY_ONE = {
   file: "src/a.ts",
   line: 3,
@@ -50,7 +50,12 @@ const OPEN_FINDING_CLAIM = claimAt("fix", {
 });
 // A fix round 1 that fixes nothing, whose re-review finds f1 unresolved.
 const UNRESOLVED_ROUND = {
-  "i7-fix-r1": replyWith({ fixed: [], disputed: [], summary: "Tried." }),
+  "i7-fix-r1": replyWith({
+    status: "done",
+    fixed: [],
+    disputed: [],
+    summary: "Tried.",
+  }),
   "i7-rereview-correctness-r1": replyWith({
     results: [{ id: "f1", status: "unresolved", note: "" }],
     newFindings: [],
@@ -80,15 +85,6 @@ function issueRun({ claim, ops, agents, config }) {
   });
 }
 
-// The state the run's last ops request before the cleanup carried.
-/** @param {readonly TraceEntry[]} trace @returns {IssueState} */
-function lastState(trace) {
-  const { state } = /** @type {{ state: IssueState }} */ (
-    trace.at(-2)?.request ?? {}
-  );
-  return state;
-}
-
 test("an issue claimed at open-pr is opened and reviewed in the same sweep", async () => {
   // review fits: 4 launched + 7 + a reserve of 4 is 15; sync doesn't.
   const { trace, summary } = await issueRun({
@@ -104,27 +100,16 @@ test("an issue claimed at open-pr is opened and reviewed in the same sweep", asy
     },
     config: { maxSpawnsPerRun: 16 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-openpr-3",
-    "i7-save-4",
-    "i7-prep-5",
-    "i7-review-correctness-6",
-    "i7-review-tests-7",
-    "i7-review-scope-8",
-    "i7-save-9",
-    "i7-release-10",
-    "cleanup-11",
-  ]);
+  assert.deepEqual(sessionAgents(trace), [READER, READER, READER]);
   const [item] = /** @type {SweepSummary} */ (summary).items;
   assert.equal(item?.stage, "sync");
-  assert.equal(lastState(trace).reviewedSha, "bbbbbbb");
+  assert.equal(releasedState(trace).reviewedSha, "bbbbbbb");
 });
 
 test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix", async () => {
-  // Round 1 fits: 2 launched + 8 + a reserve of 4 is 14. Round 2 doesn't:
-  // 7 launched + 8 + 4 is 19.
+  // Fix needs 9 (a reopen of a closed PR included). Round 1 fits: 3
+  // launched + 9 + a reserve of 4 is 16. Round 2, after round 1's launches,
+  // doesn't.
   const { trace, summary } = await issueRun({
     claim: OPEN_FINDING_CLAIM,
     ops: {
@@ -132,23 +117,14 @@ test("a spawn cap that fits fix round 1 but not round 2 holds the issue at fix",
       "prepare-review": { ok: true, diffPath: "/runs/r1.diff" },
     },
     agents: UNRESOLVED_ROUND,
-    config: { maxSpawnsPerRun: 15 },
+    config: { maxSpawnsPerRun: 16 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-fix-r1-3",
-    "i7-push-4",
-    "i7-prep-5",
-    "i7-rereview-correctness-r1-6",
-    "i7-save-7",
-    "i7-release-8",
-    "cleanup-9",
-  ]);
+  // Round 1's fixer and re-reviewer, and no round 2.
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-writer", READER]);
   const [item] = /** @type {SweepSummary} */ (summary).items;
   assert.deepEqual(
     [item?.stage, item?.outcome, item?.reason],
     ["fix", "in-progress", null],
   );
-  assert.equal(lastState(trace).log?.at(-1), HELD_AT_FIX);
+  assert.equal(releasedState(trace).log?.at(-1), HELD_AT_FIX);
 });

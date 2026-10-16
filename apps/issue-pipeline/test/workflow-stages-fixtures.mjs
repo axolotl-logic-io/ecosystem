@@ -3,7 +3,6 @@
 // the run's args, the ops replies every scenario needs, and builders for the
 // sweep and claim replies and for the summary the workflow returns.
 
-/** @import { TraceEntry } from "./workflow-harness.mjs" */
 /** @import { IssueState, ItemPaths } from "../src/workflow/types.ts" */
 
 // The run's args. The workflow reads its settings from the sweep reply.
@@ -20,6 +19,8 @@ const DEFAULT_CONFIG = {
   repo: "o/r",
   baseBranch: "integration",
   sessionTokenCap: 150_000,
+  contextLimits: { soft: 150_000, hard: 175_000 },
+  maxContinuations: 1,
   issueTokenBudget: 1_000_000,
   rebaseTokenBudget: 500_000,
   maxTriages: 2,
@@ -31,9 +32,13 @@ const DEFAULT_CONFIG = {
   commands: { test: "npm test", lint: "npm run lint" },
 };
 
-// Replies for the ops whose answer the workflow only checks for `ok`.
+// Replies for the ops whose answer the workflow only checks for `ok`, and the
+// merge's wiki steps for an issue whose wiki changes rebase and check clean.
 const ROUTINE_OPS = {
   "save-state": { ok: true },
+  "save-spec": { ok: true, specFile: "/w/runs/o__r/issue-7/spec.md" },
+  "wiki-sync": { ok: true, conflict: false, changed: false, headSha: "" },
+  "wiki-check": { ok: true, pass: true, checks: [] },
   stop: { ok: true },
   release: { ok: true },
   post: { ok: true },
@@ -76,7 +81,7 @@ function claimAt(stage, fields = {}) {
     reportedTokens: 0,
     sessions: [],
     triages: 0,
-    continuations: 0,
+    continuations: {},
     round: 0,
     ciFixes: 0,
     syncs: 0,
@@ -121,16 +126,9 @@ function sweepSummary(fields = {}) {
   };
 }
 
-// The launch keys of a trace, in order.
-/** @param {readonly TraceEntry[]} trace @returns {string[]} */
-function launchKeys(trace) {
-  return trace.map(({ key }) => key);
-}
-
 export {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,

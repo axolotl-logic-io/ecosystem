@@ -13,6 +13,7 @@ import {
   deferredFrom,
   NETWORK_FAILURE,
 } from "./deferral-test-kit.mjs";
+import { opsRequests, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   after,
   CTX,
@@ -26,15 +27,11 @@ import {
   stepComment,
 } from "./workflow-checks-test-kit.mjs";
 
-/** @import { Launch, LaunchResult, StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { LaunchResult, StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
 const HEAD = "cccccccccccccccc";
 const FIXED_HEAD = "ffffffffffffffff";
 const CI_FIXER_TOKENS = 100_000;
 const REREVIEW_TOKENS = 80_000;
-// The configured CI wait, 30 minutes, and its margin of 10.
-const CI_MINUTES = 40;
-const VERIFY_MINUTES = 120;
-const REVIEW_MINUTES = 20;
 const FAILED = { id: "test", pass: false, detail: "1 failed", tail: "3 != 2" };
 const PASSED = { id: "test", pass: true, detail: "passed" };
 const FAILING = { ok: true, headSha: HEAD, pass: false, checks: [FAILED] };
@@ -62,19 +59,15 @@ const NO_BLOCKING =
 const REBASED_NOTE = /acceptance and security passed before the rebase$/u;
 const BLOCKING_HEADING = /\*\*Blocking\*\*/u;
 
-/** @param {string} expectedSha @returns {Launch} */
-function ciLaunch(expectedSha) {
-  const payload = { number: 7, pr: 42, expectedSha };
-  const minutes = CI_MINUTES;
-  return { kind: "op", name: "ci", op: "ci-status", payload, minutes };
+// The CI status request for the PR's head `expectedSha`.
+/** @param {string} expectedSha @returns {object} */
+function ciRequest(expectedSha) {
+  return { op: "ci-status", payload: { number: 7, pr: 42, expectedSha } };
 }
 
-const VERIFY_LAUNCH = {
-  kind: "op",
-  name: "verify",
+const VERIFY_REQUEST = {
   op: "verify",
   payload: { number: 7, testsOnly: false },
-  minutes: VERIFY_MINUTES,
 };
 
 /** @param {unknown} correctness @param {unknown} scope @returns {LaunchResult[]} */
@@ -105,30 +98,17 @@ function ciFixRun(ctx = CTX, lenses = lensResults(NO_FINDINGS, NO_FINDINGS)) {
   return { begun, fixing, pushing, preparing, reviewing, saving, resumed };
 }
 
-/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
-function launchesOf(step) {
-  if (step.done) {
-    throw new Error("the step ended instead of launching");
-  }
-  return step.launches;
-}
-
 test("failing verification launches a charged CI fixer after the checks' table", () => {
   const { begun, fixing } = ciFixRun();
-  assert.deepEqual(launchesOf(begun), [VERIFY_LAUNCH]);
-  const [launch] = launchesOf(fixing);
-  assert.ok(launch.kind === "child");
+  assert.deepEqual(opsRequests(begun), [VERIFY_REQUEST]);
+  const [launch] = sessions(fixing);
+  assert.ok(launch);
   assert.deepEqual(
     { ...launch, task: "" },
     {
-      kind: "child",
-      name: "cifix-1",
-      label: "Fix failing checks for issue 7",
       agent: "issue-pipeline-writer",
       model: MODELS.fixer,
       schema: CIFIX_SCHEMA,
-      writer: true,
-      minutes: 60,
       task: "",
     },
   );
@@ -149,31 +129,26 @@ test("failing verification launches a charged CI fixer after the checks' table",
 
 test("a CI fix is pushed, its diff prepared, and reviewed by two lenses", () => {
   const { pushing, preparing, reviewing } = ciFixRun();
-  assert.deepEqual(launchesOf(pushing), [
-    { kind: "op", name: "push", op: "push", payload: { number: 7 } },
+  assert.deepEqual(opsRequests(pushing), [
+    { op: "push", payload: { number: 7 } },
   ]);
   assert.equal(pushing.comments[0]?.by.role, "check fixer (attempt 1)");
   assert.equal(preparing.state.st.headSha, FIXED_HEAD);
-  const [prepare] = launchesOf(preparing);
-  assert.ok(prepare.kind === "op");
-  assert.deepEqual(prepare.payload, {
-    number: 7,
-    sinceSha: HEAD,
-    tag: "cifix1",
-  });
-  const launched = launchesOf(reviewing).map((launch) => {
-    assert.ok(launch.kind === "child");
-    const { name, model, schema, minutes } = launch;
-    return [name, model, schema, minutes];
-  });
+  assert.deepEqual(opsRequests(preparing), [
+    {
+      op: "prepare-review",
+      payload: { number: 7, sinceSha: HEAD, tag: "cifix1" },
+    },
+  ]);
+  const launched = sessions(reviewing).map(({ agent, model, schema }) => [
+    agent,
+    model,
+    schema,
+  ]);
+  const reader = "issue-pipeline-reader";
   assert.deepEqual(launched, [
-    [
-      "cifix-review-correctness-1",
-      MODELS.correctness,
-      REVIEW_SCHEMA,
-      REVIEW_MINUTES,
-    ],
-    ["cifix-review-scope-1", MODELS.scope, REVIEW_SCHEMA, REVIEW_MINUTES],
+    [reader, MODELS.correctness, REVIEW_SCHEMA],
+    [reader, MODELS.scope, REVIEW_SCHEMA],
   ]);
   assert.equal(reviewing.state.st.allocated, CI_FIXER_TOKENS + REREVIEW_TOKENS);
 });
@@ -181,13 +156,8 @@ test("a CI fix is pushed, its diff prepared, and reviewed by two lenses", () => 
 test("a reviewed CI fix is saved, then verified and passed to accept", () => {
   const { saving, resumed } = ciFixRun();
   assert.equal(saving.state.st.reviewedSha, FIXED_HEAD);
-  assert.deepEqual(launchesOf(saving), [
-    {
-      kind: "op",
-      name: "save",
-      op: "save-state",
-      payload: { number: 7, state: saving.state.st },
-    },
+  assert.deepEqual(opsRequests(saving), [
+    { op: "save-state", payload: { number: 7, state: saving.state.st } },
   ]);
   assert.deepEqual(
     saving.comments.map(({ by, body }) => [by.role, body]),
@@ -196,9 +166,9 @@ test("a reviewed CI fix is saved, then verified and passed to accept", () => {
       ["check-fix reviewer (scope)", NO_BLOCKING],
     ],
   );
-  assert.deepEqual(launchesOf(resumed), [VERIFY_LAUNCH]);
+  assert.deepEqual(opsRequests(resumed), [VERIFY_REQUEST]);
   const toCi = replied(next, resumed, PASSING);
-  assert.deepEqual(launchesOf(toCi), [ciLaunch(FIXED_HEAD)]);
+  assert.deepEqual(opsRequests(toCi), [ciRequest(FIXED_HEAD)]);
   assert.equal(toCi.state.st.verifiedSha, FIXED_HEAD);
   assert.equal(toCi.state.st.verifySummary, "test: passed");
   const step = replied(next, toCi, { ok: true, status: "pass" });
@@ -210,7 +180,7 @@ test("a reviewed CI fix is saved, then verified and passed to accept", () => {
 
 test("a head that already passed verification goes straight to CI", () => {
   const step = next(stateAt("checks", { verifiedSha: HEAD }), CTX, []);
-  assert.deepEqual(launchesOf(step), [ciLaunch(HEAD)]);
+  assert.deepEqual(opsRequests(step), [ciRequest(HEAD)]);
 });
 
 test("passing CI after a clean rebase that only re-ran the tests goes to merge", () => {

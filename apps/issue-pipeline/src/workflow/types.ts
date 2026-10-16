@@ -2,6 +2,7 @@
 // the work item a helper reads for its issue, and the slices of the repo
 // config each helper needs.
 
+import type { Flows } from "./flows.ts";
 import type { Signature } from "./signing.ts";
 
 // A finding is open until a re-review resolves it.
@@ -55,17 +56,34 @@ interface IssueState {
   triages?: number;
   // Triage's plan for the spec writer.
   plan?: string | null;
-  // The spec the implementer builds to.
+  // Triage's reason for judging the issue too big for one session, for the
+  // spec writer.
+  splitSuggested?: string | null;
+  // The spec the implementer builds to, clipped to the spec stage's limit.
   spec?: string | null;
+  // Where the full spec is (spec.md in the run dir), set only when `spec` was
+  // clipped (#280).
+  specFile?: string | null;
   // The repo paths or globs the spec says the change will touch.
   files?: string[] | null;
-  // How many continuation sessions the implementer has had.
-  continuations?: number;
+  // The prerequisite issue this one's branch is stacked on, and the head of
+  // its branch the branch was last put on (#268); null when it isn't.
+  stackedOn?: { issue: number; headSha: string } | null;
+  // How many continuation sessions each writer stage has had. Read only
+  // through stages/continuation.ts: a number is the older form, the
+  // implementer's count.
+  continuations?: Continuations | number;
   // The PR the implementer described, and its signature.
   prTitle?: string;
   prBody?: string;
   prBy?: Signature;
   pr?: number | null;
+  // What the issue's work changes (flows.ts), as the last push or rebase
+  // reported; missing until then, and after a restart.
+  flows?: Flows;
+  // Set while the issue's PR is closed because its change lives only in the
+  // wiki.
+  prClosed?: boolean;
   // The PR branch's head as the pipeline last pushed or saw it.
   headSha?: string | null;
   implemented?: boolean;
@@ -129,6 +147,14 @@ interface WorkItem {
   rebasedOnly?: boolean;
 }
 
+// The continuation sessions each writer stage has had, missing meaning none.
+interface Continuations {
+  implement?: number;
+  fix?: number;
+  ciFix?: number;
+  conflicts?: number;
+}
+
 // The slices of the repo config the helpers read.
 interface RepoConfig {
   repo: string;
@@ -161,6 +187,7 @@ type Role =
 type PracticesUse = "spec" | "writer" | "reviewer";
 
 export type {
+  Continuations,
   Finding,
   FindingStatus,
   FixRoundsConfig,

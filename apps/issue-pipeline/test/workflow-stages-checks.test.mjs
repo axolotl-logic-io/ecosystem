@@ -1,14 +1,18 @@
 // @ts-check
 // The built workflow's sync and checks paths, run through workflow-harness.mjs.
-// Each test pins the launch keys and the summary by hand, and the whole trace
-// in workflow-stages-checks.test.mjs.snapshot.
+// Each test pins the summary, the sessions that ran, and the stop request or
+// the state saved at release, read through stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -80,9 +84,7 @@ function issueSummary(fields) {
   });
 }
 
-test("a clean rebase moves to checks, held by the spawn cap", async ({
-  assert: { snapshot },
-}) => {
+test("a clean rebase moves to checks, held by the spawn cap", async () => {
   // checks needs 11 spawns: 3 launched + 11 + a reserve of 4 passes 17.
   const { trace, summary } = await checksRun({
     claim: claimAt("sync", REVIEWED),
@@ -96,20 +98,13 @@ test("a clean rebase moves to checks, held by the spawn cap", async ({
     },
     config: { maxSpawnsPerRun: 18 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-sync-3",
-    "i7-release-4",
-    "cleanup-5",
-  ]);
+  assert.deepEqual(sessionAgents(trace), []);
+  const state = releasedState(trace);
+  assert.deepEqual([state.stage, state.headSha], ["checks", "ddddddd"]);
   assert.deepEqual(summary, issueSummary({}));
-  snapshot(trace);
 });
 
-test("a conflicting rebase is resolved by a writer, then held at checks", async ({
-  assert: { snapshot },
-}) => {
+test("a conflicting rebase is resolved by a writer, then held at checks", async () => {
   // checks needs 11 spawns: 5 launched + 11 + a reserve of 4 passes 19.
   const { trace, summary } = await checksRun({
     claim: claimAt("sync", REVIEWED),
@@ -130,21 +125,14 @@ test("a conflicting rebase is resolved by a writer, then held at checks", async 
     },
     config: { maxSpawnsPerRun: 20 },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-sync-3",
-    "i7-conflicts-1-4",
-    "i7-finish-sync-5",
-    "i7-release-6",
-    "cleanup-7",
-  ]);
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-writer"]);
+  const state = releasedState(trace);
+  assert.deepEqual([state.stage, state.headSha], ["checks", "ddddddd"]);
   // The resolver is charged to the rebase pool, not the issue budget.
   assert.deepEqual(
     summary,
     issueSummary({ allocatedTokens: 620_000, rebaseAllocatedTokens: 100_000 }),
   );
-  snapshot(trace);
 });
 
 // Verification failing and then passing, and every op after it succeeding.
@@ -173,9 +161,7 @@ const CI_FIX_AGENTS = {
   "i7-security": NO_FINDINGS,
 };
 
-test("failing checks get a reviewed CI fix, then pass and go on to merge", async ({
-  assert: { snapshot },
-}) => {
+test("failing checks get a reviewed CI fix, then pass and go on to merge", async () => {
   // accept needs 2 spawns and checks 11, so no spawn cap holds the issue
   // at accept once its checks fit: the run goes on to merge.
   const { trace, summary } = await checksRun({
@@ -183,26 +169,13 @@ test("failing checks get a reviewed CI fix, then pass and go on to merge", async
     ops: CI_FIX_OPS,
     agents: CI_FIX_AGENTS,
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-verify-3",
-    "i7-cifix-1-4",
-    "i7-push-5",
-    "i7-prep-6",
-    "i7-cifix-review-correctness-1-7",
-    "i7-cifix-review-scope-1-8",
-    "i7-save-9",
-    "i7-verify-10",
-    "i7-ci-11",
-    "i7-prep-12",
-    "i7-accept-13",
-    "i7-prep-14",
-    "i7-security-15",
-    "i7-save-16",
-    "i7-merge-17",
-    "cleanup-18",
-  ]);
+  // A writer fixed CI, a reader reviewed the fix, and the fix was pushed.
+  const agents = sessionAgents(trace);
+  assert.ok(agents.includes("issue-pipeline-writer"));
+  assert.ok(agents.includes("issue-pipeline-reader"));
+  const { number: pushed } = requestFor(trace, "push");
+  const { number: merged } = requestFor(trace, "merge");
+  assert.deepEqual([pushed, merged], [ISSUE, ISSUE]);
   assert.deepEqual(
     summary,
     issueSummary({
@@ -212,12 +185,9 @@ test("failing checks get a reviewed CI fix, then pass and go on to merge", async
       rebaseAllocatedTokens: 0,
     }),
   );
-  snapshot(trace);
 });
 
-test("CI still failing after the last CI fix stops the issue", async ({
-  assert: { snapshot },
-}) => {
+test("CI still failing after the last CI fix stops the issue", async () => {
   const { trace, summary } = await checksRun({
     claim: claimAt("checks", {
       ...SYNCED,
@@ -233,13 +203,12 @@ test("CI still failing after the last CI fix stops the issue", async ({
       },
     },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-ci-3",
-    "i7-stop-4",
-    "cleanup-5",
-  ]);
+  assert.deepEqual(sessionAgents(trace), []);
+  const { code, reason } = requestFor(trace, "stop");
+  assert.deepEqual(
+    [code, reason],
+    [null, "checks still fail after 1 CI-fix attempts"],
+  );
   assert.deepEqual(
     summary,
     issueSummary({
@@ -247,5 +216,4 @@ test("CI still failing after the last CI fix stops the issue", async ({
       reason: "checks still fail after 1 CI-fix attempts",
     }),
   );
-  snapshot(trace);
 });

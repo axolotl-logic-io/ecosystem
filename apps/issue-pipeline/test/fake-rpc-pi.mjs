@@ -1,6 +1,8 @@
 // @ts-check
 // The stage job tests' fakes: the ops.mjs and RPC `pi` sources that
-// job-test-kit.mjs installs, and builders for the records pi prints.
+// job-test-kit.mjs installs, and builders for the records pi prints:
+// `turns` gives one assistant message per turn whose usage shows that turn's
+// context, so a script's context can rise turn by turn.
 
 // Answers each op from replies.json and logs the request to ops.log. A push
 // whose reply sets `git` pushes the request's checkout's HEAD to the
@@ -25,7 +27,10 @@ process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(replies[reque
 // a response. On "prompt" it plays pi-script.json's events, writing each to
 // stdout and the session file as pi does, up to a "wait" mark, where it
 // pauses until "abort" (which settles it, aborted) or "steer" (which plays
-// the rest). With ignoreAbort it never answers an abort. A rejectPrompt
+// the rest). A script with `launches`, a list of event lists, plays
+// launches[n] on the n-th prompt across every pi process, counted in
+// prompts.count under FAKE_PI_ROOT, its last entry repeating once the list
+// runs out. With ignoreAbort it never answers an abort. A rejectPrompt
 // script rejects the prompt with that error. On the prompt, a `commit`
 // script first commits that file, relative to its cwd, in the repo holding
 // it, logging the commit's sha; an `untracked` script leaves that file
@@ -62,6 +67,15 @@ const work = () => {
     fs.writeFileSync(path.join(process.cwd(), script.untracked), "left\\n");
   }
 };
+const promptEvents = () => {
+  if (!script.launches) {
+    return script.events;
+  }
+  const counter = root + "/prompts.count";
+  const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8")) : 0;
+  fs.writeFileSync(counter, String(n + 1));
+  return script.launches[Math.min(n, script.launches.length - 1)];
+};
 let rest = null;
 const play = (events) => {
   const at = events.indexOf("wait");
@@ -82,7 +96,7 @@ const handle = (command) => {
   } else if (command.type === "prompt") {
     respond(command, { success: true, data: { disposition: "started" } });
     work();
-    play(script.events);
+    play(promptEvents());
   } else if (command.type === "abort" && !script.ignoreAbort) {
     respond(command, { success: true });
     if (rest !== null) {
@@ -118,13 +132,46 @@ function messageEnd(usage) {
   };
 }
 
-/** @param {boolean} isError @returns {object} */
-function toolEnd(isError) {
+// The output tokens each turn of `turns` adds, which count towards no
+// turn's context.
+const TURN_OUTPUT = 5000;
+// The share of a turn's context that `turns` gives each of input and cache
+// writes; cache reads take the rest.
+const TURN_SHARE = 4;
+
+/**
+ * One assistant message per entry of `contexts`, whose usage shows that
+ * entry as its turn's context, split across input, cache reads and cache
+ * writes, with TURN_OUTPUT output tokens besides.
+ * @param {readonly number[]} contexts
+ * @returns {object[]}
+ */
+function turns(contexts) {
+  return contexts.map((context) => {
+    const input = Math.floor(context / TURN_SHARE);
+    const cacheWrite = Math.floor(context / TURN_SHARE);
+    const cacheRead = context - input - cacheWrite;
+    return messageEnd({
+      input,
+      output: TURN_OUTPUT,
+      cacheRead,
+      cacheWrite,
+    });
+  });
+}
+
+/**
+ * A call of tool `toolName` ending, failed with `error` as its text when
+ * `isError`.
+ * @param {boolean} isError @param {string} [toolName] @param {string} [error]
+ * @returns {object}
+ */
+function toolEnd(isError, toolName = "bash", error = "") {
   return {
     type: "tool_execution_end",
     toolCallId: "t",
-    toolName: "bash",
-    result: { content: [] },
+    toolName,
+    result: { content: [{ type: "text", text: error }] },
     isError,
   };
 }
@@ -140,4 +187,12 @@ function outputEnd(details) {
   };
 }
 
-export { FAKE_OPS, FAKE_PI, messageEnd, outputEnd, toolEnd };
+export {
+  FAKE_OPS,
+  FAKE_PI,
+  messageEnd,
+  outputEnd,
+  TURN_OUTPUT,
+  toolEnd,
+  turns,
+};

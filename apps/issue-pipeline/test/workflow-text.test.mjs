@@ -1,5 +1,6 @@
 // @ts-check
-// How the workflow cuts text and lists findings in comments and prompts.
+// How the workflow cuts text and lists findings in comments and prompts:
+// each listed finding holds its facts, checked without copying the wording.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clip } from "../src/workflow/clip.ts";
@@ -9,6 +10,8 @@ import { findingLines, findingsText } from "../src/workflow/findings.ts";
 
 const LIMIT = 5;
 const NUMBER = 1_234_567;
+// The break between two findings' entries in a list of them.
+const FINDING_BREAK = /\n(?=- )/u;
 
 const reported = {
   file: "src/a.ts",
@@ -26,6 +29,19 @@ const numbered = {
   status: "open",
   disputed: false,
 };
+// What a listed finding tells its reader, wherever the list appears.
+const FACTS = [
+  reported.file,
+  reported.title,
+  reported.evidence,
+  reported.suggestion,
+];
+
+// The facts of `facts` that `text` leaves out.
+/** @param {string} text @param {readonly string[]} facts @returns {string[]} */
+function missingFacts(text, facts) {
+  return facts.filter((fact) => !text.includes(fact));
+}
 
 test("clip leaves short text unchanged", () => {
   assert.equal(clip("short", LIMIT), "short");
@@ -43,37 +59,38 @@ test("clip cuts long text at the limit with an ellipsis", () => {
 });
 
 test("a review comment lists a reported finding without an id", () => {
-  assert.equal(
-    findingLines([reported]),
-    "- `src/a.ts:12` Off by one\n  The loop stops early.\n  Suggested: Use <=.",
-  );
+  const text = findingLines([reported]);
+  assert.deepEqual(missingFacts(text, FACTS), []);
+  assert.equal(text.includes("undefined"), false);
+  // The same finding listed with an id is longer by its id marker.
+  assert.ok(text.length < findingLines([numbered]).length);
 });
 
 test("a review comment lists numbered findings with their ids", () => {
-  assert.equal(
-    findingLines([numbered, { ...reported, id: "f4", line: 2 }]),
-    [
-      "- **f3** `src/a.ts:12` Off by one\n  The loop stops early.\n  Suggested: Use <=.",
-      "- **f4** `src/a.ts:2` Off by one\n  The loop stops early.\n  Suggested: Use <=.",
-    ].join("\n"),
-  );
+  const lines = findingLines([numbered, { ...reported, id: "f4", line: 2 }]);
+  const [first = "", second = ""] = lines.split(FINDING_BREAK);
+  assert.deepEqual(missingFacts(first, ["f3", "src/a.ts:12", ...FACTS]), []);
+  assert.deepEqual(missingFacts(second, ["f4", "src/a.ts:2", ...FACTS]), []);
 });
 
 test("a prompt lists a finding with its evidence and suggestion", () => {
-  assert.equal(
-    findingsText([numbered]),
-    "- f3 [src/a.ts:12] Off by one\n  Evidence: The loop stops early.\n  Suggestion: Use <=.",
+  assert.deepEqual(
+    missingFacts(findingsText([numbered]), ["f3", "src/a.ts:12", ...FACTS]),
+    [],
   );
 });
 
 test("a prompt lists a security finding's category and the fixer's dispute", () => {
   /** @type {Finding} */
   const disputed = { ...numbered, category: "rights", dispute: "It is <." };
-  assert.equal(
-    findingsText([disputed, numbered]),
-    [
-      "- f3 (security: rights) [src/a.ts:12] Off by one\n  Evidence: The loop stops early.\n  Suggestion: Use <=.\n  Fixer's dispute: It is <.",
-      "- f3 [src/a.ts:12] Off by one\n  Evidence: The loop stops early.\n  Suggestion: Use <=.",
-    ].join("\n"),
+  const [first = "", second = ""] = findingsText([disputed, numbered]).split(
+    FINDING_BREAK,
   );
+  assert.deepEqual(
+    missingFacts(first, ["f3", "rights", "It is <.", ...FACTS]),
+    [],
+  );
+  assert.deepEqual(missingFacts(second, ["f3", ...FACTS]), []);
+  assert.equal(second.includes("rights"), false);
+  assert.equal(second.includes("It is <."), false);
 });

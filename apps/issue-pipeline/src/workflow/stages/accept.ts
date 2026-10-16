@@ -1,16 +1,23 @@
 // Acceptance: a reader checks that the change, as a whole, does what the issue
 // (and its spec) asks. A pass moves the issue to the security review; a fail
-// stops it.
+// becomes a blocking finding in the acceptance lens and sends the issue to fix.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
-import { preamble } from "../prompts.ts";
+import { addFinding } from "../findings.ts";
+import { preamble, specText } from "../prompts.ts";
 import { ACCEPT_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
 import type { AcceptReply } from "./replies.ts";
 import { acceptReplyOf } from "./replies.ts";
-import { doneStep, launchStep, onlyChild, stopStep } from "./step.ts";
+import {
+  doneStep,
+  launchStep,
+  onlyChild,
+  onlyReply,
+  stopStep,
+} from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
@@ -21,10 +28,10 @@ import type {
 } from "./types.ts";
 
 // Where acceptance is: about to prepare the diff, launching the verifier on
-// it, or reading the verdict.
-type AcceptPhase = "begin" | "review" | "decide";
+// it, reading the verdict, or waiting for a failed check's save.
+type AcceptPhase = "begin" | "review" | "decide" | "saved";
 
-const PHASES: readonly AcceptPhase[] = ["begin", "review", "decide"];
+const PHASES: readonly AcceptPhase[] = ["begin", "review", "decide", "saved"];
 
 const ACCEPT_MINUTES = 25;
 
@@ -61,7 +68,8 @@ function acceptLaunch(
   diffPath: string,
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
-  const spec = state.st.spec ?? "";
+  const budget = sessionBudget(budgets, "verifier");
+  const spec = specText(state.st);
   const lines = [
     `Decide whether the change, as a whole, does what the issue asks. Tests, lint, and CI already pass (${state.st.verifySummary ?? ""}); do not re-run them.`,
     specLine(spec),
@@ -76,7 +84,8 @@ function acceptLaunch(
     model: models.verifier,
     schema: ACCEPT_SCHEMA,
     minutes: ACCEPT_MINUTES,
-    task: preamble(cfg, state, "acceptance verifier", budgets.roles.verifier)
+    tokenBudget: budget,
+    task: preamble(cfg, state, "acceptance verifier", budget)
       .concat(lines)
       .join("\n"),
   };
@@ -125,6 +134,39 @@ function verdictComment(reply: AcceptReply, by: Signature): StageComment {
   };
 }
 
+// Stores the unmet requirement as an open acceptance finding and sends the
+// issue to fix, saving the state before the stage ends. The fix round counts
+// toward the fix rounds.
+function failed(
+  state: StageState,
+  reply: AcceptReply,
+  comments: readonly StageComment[],
+): Step {
+  const st = { ...state.st, findings: [...state.st.findings] };
+  addFinding(
+    { st },
+    {
+      file: "",
+      line: 0,
+      title: "acceptance: issue not fully resolved",
+      evidence: reply.reason,
+      suggestion:
+        "Change the code, tests or docs so the issue and spec requirement named in the evidence is met.",
+    },
+    ["acceptance"],
+  );
+  st.reviewedSha = st.verifiedSha ?? st.headSha ?? null;
+  // The fix brings new code, which is not a re-check after a rebase.
+  st.rechecking = false;
+  st.stage = "fix";
+  const payload = { number: state.n, state: st };
+  return launchStep(
+    { ...state, st, phase: "saved" },
+    [{ kind: "op", name: "save", op: "save-state", payload }],
+    comments,
+  );
+}
+
 // Logs and posts the verdict. The reason is kept in the state, since a merge
 // queued behind an older PR runs in a later sweep.
 function decide(
@@ -144,12 +186,7 @@ function decide(
   noteEvent(st, `acceptance: ${reply.verdict} - ${reply.reason}`, ctx.now());
   const comments = [verdictComment(reply, result.by)];
   if (reply.verdict !== "pass") {
-    return stopStep(
-      { ...state, st },
-      "the acceptance verifier found the issue is not fully resolved",
-      reply.reason,
-      comments,
-    );
+    return failed({ ...state, st }, reply, comments);
   }
   st.acceptReason = reply.reason;
   st.stage = "security";
@@ -170,6 +207,9 @@ function next(
       return review(state, ctx, results);
     case "decide":
       return decide(state, ctx, results);
+    case "saved":
+      onlyReply(results);
+      return doneStep(state);
     default: {
       const unhandled: never = phase;
       return unhandled;

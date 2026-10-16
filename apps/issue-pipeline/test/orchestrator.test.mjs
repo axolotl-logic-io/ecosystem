@@ -68,6 +68,7 @@ test("each decision carries its time, and a reader's start no merge queue", () =
     stage: "security",
     reason: "free",
     mergeQueue: null,
+    stackOn: null,
   });
 });
 

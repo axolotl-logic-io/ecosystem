@@ -1,18 +1,28 @@
 // A stage job's status file, `job.json` in the issue's run folder. While the
 // job runs it holds the job's pid, issue, stage, lane, start time and steer
 // socket, and a record of every launch it started: its pid, session file,
-// last event, consecutive tool failures, token usage and outcome. On exit it
-// holds the job's outcome, and the uncommitted paths its checkout dropped
-// (lostChanges). Each change rewrites the whole file atomically, so
-// a reader never sees part of one; a write that fails is reported on stderr
-// and the job goes on. This module alone knows the file's name and layout.
+// last event, consecutive failures of one tool and the last one's error,
+// token usage, token budget, context size, peak turn context, stop at the
+// hard context limit and outcome. On exit it holds the job's outcome, and the
+// uncommitted paths its checkout dropped (lostChanges). Each change rewrites
+// the whole file atomically, so a reader never sees part of one; a write that
+// fails is reported on stderr and the job goes on. This module alone knows
+// the file's name and layout.
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
-import type { Usage } from "./raw-results.ts";
-import { addUsage, recordFacts, USAGE, ZERO_USAGE } from "./raw-results.ts";
+import type { ContextStop } from "./context-watch.ts";
+import { turnContext } from "./context-watch.ts";
+import type { ToolFailure, Usage } from "./raw-results.ts";
+import {
+  addUsage,
+  recordFacts,
+  USAGE,
+  usageTotal,
+  ZERO_USAGE,
+} from "./raw-results.ts";
 
 const STATUS_FILE = "job.json";
 const SIGNAL = z.enum(["SIGTERM", "SIGINT"]);
@@ -24,8 +34,26 @@ const LAUNCH = z.object({
   session: z.string().nullable(),
   startedAt: z.string(),
   lastEventAt: z.string().nullable(),
+  // Consecutive failed calls of the tool that failed last; a success or
+  // another tool's failure starts the count again.
   toolFailures: z.number(),
+  lastToolFailure: z
+    .object({ tool: z.string(), error: z.string() })
+    .nullable()
+    .default(null),
   usage: USAGE,
+  // A session's token budget; null for an ops launch.
+  tokenBudget: z.number().nullable().default(null),
+  // The token total of the latest message that reported usage: the session's
+  // live context size, 0 before the first one.
+  contextTokens: z.number().default(0),
+  // The highest turn context the session has shown (context-watch.ts).
+  peakContext: z.number().default(0),
+  // The session's stop at the hard context limit, if it was stopped.
+  contextStop: z
+    .object({ context: z.number(), result: z.enum(["handoff", "error"]) })
+    .nullable()
+    .default(null),
   resumed: z.boolean(),
   outcome: LAUNCH_OUTCOME.nullable(),
 });
@@ -62,8 +90,8 @@ interface JobInfo {
   socket: string;
 }
 
-// A launch as it starts: a pi session with its file, or an ops child, and
-// the usage it starts from (a resumed session's earlier usage).
+// A launch as it starts: a pi session with its file, or an ops child, the
+// usage it starts from (a resumed session's) and its token budget (or null).
 interface LaunchStart {
   key: string;
   kind: "session" | "ops";
@@ -71,6 +99,7 @@ interface LaunchStart {
   session: string | null;
   resumed: boolean;
   usage: Usage;
+  tokenBudget: number | null;
 }
 
 // Where an interrupted session can carry on: its file and what it spent.
@@ -87,7 +116,10 @@ interface JobStatus {
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
   ended: (key: string) => void;
-  // Launch `key`'s result went back to the sweep.
+  // Session `key` was stopped at the hard context limit.
+  contextStopped: (key: string, stop: ContextStop) => void;
+  // Launch `key`'s result went back to the sweep: sets `outcome` on it and
+  // on every session it ran, keyed `${key}.<part>`.
   settled: (key: string, outcome: LaunchOutcome) => void;
   // The job ended.
   finish: (outcome: JobOutcome) => void;
@@ -133,20 +165,41 @@ function readStatus(runDir: string): StatusFile | null {
   }
 }
 
-function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
-  const { usage, toolFailed } = recordFacts(record);
-  let { toolFailures } = launch;
-  if (toolFailed !== null) {
-    toolFailures = 0;
+// The launch's count of consecutive failures of one tool after a call ends
+// with `failure`, or with success when it is null.
+function failuresAfter(
+  launch: LaunchRecord,
+  failure: ToolFailure | null,
+): number {
+  if (failure === null) {
+    return 0;
   }
-  if (toolFailed === true) {
-    toolFailures = launch.toolFailures + 1;
+  const { toolFailures, lastToolFailure } = launch;
+  if (failure.tool === lastToolFailure?.tool) {
+    return toolFailures + 1;
+  }
+  return 1;
+}
+
+function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
+  const { usage, toolEnd } = recordFacts(record);
+  let { toolFailures, lastToolFailure, contextTokens, peakContext } = launch;
+  if (toolEnd !== null) {
+    toolFailures = failuresAfter(launch, toolEnd.failure);
+    lastToolFailure = toolEnd.failure;
+  }
+  if (usage !== null) {
+    contextTokens = usageTotal(usage);
+    peakContext = Math.max(peakContext, turnContext(usage));
   }
   return {
     ...launch,
     lastEventAt: new Date().toISOString(),
     toolFailures,
+    lastToolFailure,
+    contextTokens,
     usage: addUsage(launch.usage, usage ?? ZERO_USAGE),
+    peakContext,
   };
 }
 
@@ -161,33 +214,43 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     outcome: null,
     launches: [],
   };
+  // Changes launch `key`, and with `parts` every session it ran too.
   function update(
     key: string,
     change: (l: LaunchRecord) => LaunchRecord,
+    parts = false,
   ): void {
-    status.launches = status.launches.map(
-      (launch: LaunchRecord): LaunchRecord => {
-        if (launch.key === key) {
-          return change(launch);
-        }
-        return launch;
-      },
-    );
+    status.launches = status.launches.map((l: LaunchRecord): LaunchRecord => {
+      if (l.key === key || (parts && l.key.startsWith(`${key}.`))) {
+        return change(l);
+      }
+      return l;
+    });
     writeStatus(file, status);
   }
   writeStatus(file, status);
   return {
     started: (launch: LaunchStart): void => {
       const startedAt = new Date().toISOString();
-      const fields = { startedAt, lastEventAt: null, toolFailures: 0 };
+      const fields = {
+        startedAt,
+        lastEventAt: null,
+        toolFailures: 0,
+        lastToolFailure: null,
+        contextTokens: 0,
+        peakContext: 0,
+        contextStop: null,
+      };
       status.launches.push({ ...launch, ...fields, outcome: null });
       writeStatus(file, status);
     },
     record: (key: string, record: unknown): void =>
       update(key, (launch) => withRecord(launch, record)),
     ended: (key: string): void => update(key, (launch) => launch),
+    contextStopped: (key: string, contextStop: ContextStop): void =>
+      update(key, (launch) => ({ ...launch, contextStop })),
     settled: (key: string, outcome: LaunchOutcome): void =>
-      update(key, (launch) => ({ ...launch, outcome })),
+      update(key, (launch) => ({ ...launch, outcome }), true),
     finish: (outcome: JobOutcome): void => {
       status.outcome = outcome;
       status.endedAt = new Date().toISOString();
@@ -201,8 +264,8 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
 }
 
 // Where the earlier job in `runDir` left each interrupted session: a session
-// launch with no outcome whose file is still on disk. Nothing, when there is
-// no earlier file or it is malformed.
+// launch with no outcome and no stop at the hard context limit whose file is
+// still on disk. Nothing, when there is no earlier file or it is malformed.
 function resumePoints(runDir: string): (key: string) => ResumePoint | null {
   const earlier = readStatus(runDir);
   return (key: string): ResumePoint | null => {
@@ -210,6 +273,7 @@ function resumePoints(runDir: string): (key: string) => ResumePoint | null {
     if (
       launch?.kind !== "session" ||
       launch.outcome !== null ||
+      launch.contextStop !== null ||
       launch.session === null ||
       !fs.existsSync(launch.session)
     ) {

@@ -1,9 +1,12 @@
 // One launch of the sweep, run as a child process by the stage job: an ops
 // request runs the installed ops.mjs with no model, and a model session runs
 // `pi` in RPC mode (src/job/rpc.ts) as the launch's installed agent, fresh or
-// resuming an interrupted session. Either way the launch resolves to the raw
+// resuming an interrupted session, held to the config's contextLimits
+// (src/job/context-watch.ts); one stopped there with an error runs once
+// more, fresh, as `<key>.retry`. Either way the launch resolves to the raw
 // result the sweep's driver reads; it never rejects. The job's hooks hear of
-// each launch's start, its records and its end.
+// each session's start, records, stop at the hard limit and end, under the
+// session's own key.
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -11,7 +14,20 @@ import path from "node:path";
 import process from "node:process";
 import { ROOT } from "../pipeline-root.ts";
 import type { ChildSpec, LaunchSpec } from "../workflow/launches.ts";
+import type { AgentDefinition } from "./agent-definition.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
+import type {
+  ContextLimits,
+  ContextStop,
+  ContextWatch,
+  WatchedEnd,
+} from "./context-watch.ts";
+import {
+  contextStopped,
+  retryResult,
+  retryTask,
+  watchContext,
+} from "./context-watch.ts";
 import type { LiveLaunch } from "./control.ts";
 import type { OpsRaw, ProcessExit, SessionRaw } from "./raw-results.ts";
 import {
@@ -43,6 +59,11 @@ interface LaunchHooks {
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
   ended: (key: string) => void;
+  // The limits every session's context is held to.
+  contextLimits: ContextLimits;
+  // Session `key` (a launch's, or its retry's) passed the hard context
+  // limit and was stopped.
+  contextStopped: (key: string, stop: ContextStop) => void;
   // The whole environment a session of installed agent `agent` runs with.
   env: (agent: string) => Readonly<Record<string, string>>;
   // Where every model session runs: the job's own checkout.
@@ -98,60 +119,67 @@ function runCommand(command: Command): Promise<ProcessExit> {
   });
 }
 
-// Readies the launch's files: creates the sessions folder, moves an earlier
-// job's session at the same path aside to `<key>.<time>.jsonl` unless it is
-// being resumed (pi would otherwise resume it, since launch keys repeat from
-// job to job), and writes the output schema beside it. Returns the schema
-// file, or null if any of that fails.
-function prepareFiles(
+// One session a launch runs: the key it is recorded under (the launch's, or
+// its retry's), the task it starts with when fresh, and the point it resumes
+// from, if any.
+interface Attempt {
+  key: string;
+  task: string;
+  resume: ResumePoint | null;
+}
+
+// Where a session starts: pi's arguments and the session file.
+interface SessionStart extends Attempt {
+  args: readonly string[];
+  session: string;
+}
+
+// Readies `spec`'s session `attempt` as installed agent `definition`:
+// creates the sessions folder, moves an earlier job's session at the same
+// path aside to `<key>.<time>.jsonl` unless it is being resumed (pi would
+// otherwise resume it, since launch keys repeat from job to job), and writes
+// the output schema beside it. Returns where it starts, or null if any of
+// that fails.
+function prepareSession(
   spec: ChildSpec,
-  sessionFile: string,
-  resuming: boolean,
-): string | null {
-  const dir = path.dirname(sessionFile);
-  const schema = path.join(dir, `${spec.key}.schema.json`);
-  const aside = path.join(
-    dir,
-    `${spec.key}.${Date.now().toString(TIME_RADIX)}.jsonl`,
-  );
+  hooks: LaunchHooks,
+  definition: AgentDefinition,
+  attempt: Attempt,
+): SessionStart | null {
+  const { key, resume } = attempt;
+  const session = resume?.session ?? hooks.sessionFile(key);
+  const dir = path.dirname(session);
+  const schema = path.join(dir, `${key}.schema.json`);
+  const time = Date.now().toString(TIME_RADIX);
   try {
     fs.mkdirSync(dir, { recursive: true });
-    if (!resuming && fs.existsSync(sessionFile)) {
-      fs.renameSync(sessionFile, aside);
+    if (resume === null && fs.existsSync(session)) {
+      fs.renameSync(session, path.join(dir, `${key}.${time}.jsonl`));
     }
     fs.writeFileSync(schema, JSON.stringify(spec.outputSchema));
-    return schema;
   } catch {
     return null;
   }
+  const files = { session, extension: OUTPUT_EXTENSION, schema };
+  return { ...attempt, args: piArgs(definition, spec, files), session };
 }
 
-async function runSession(
+// Runs pi for `spec` from `from`, its context watched (context-watch.ts),
+// telling `hooks` of it under the session's own key.
+async function runPi(
   spec: ChildSpec,
   hooks: LaunchHooks,
-): Promise<SessionRaw> {
-  const read = readDefinition(spec.agent);
-  if (read.kind === "missing") {
-    return failedSession(spec, read.error);
-  }
-  const resume = hooks.resumePoint(spec.key);
-  const session = resume?.session ?? hooks.sessionFile(spec.key);
-  const schema = prepareFiles(spec, session, resume !== null);
-  if (schema === null) {
-    return failedSession(
-      spec,
-      `agent ${spec.agent}: cannot prepare its session and schema files`,
-    );
-  }
-  const files = { session, extension: OUTPUT_EXTENSION, schema };
-  const { key } = spec;
+  from: SessionStart,
+): Promise<WatchedEnd> {
+  const { key, session, resume } = from;
   const usage = resume?.usage ?? ZERO_USAGE;
-  let prompt = spec.task;
+  let prompt = from.task;
   if (resume !== null) {
     prompt = RESUME_PROMPT;
   }
+  const watched: { watch: ContextWatch | null } = { watch: null };
   const exit = await runRpc({
-    args: piArgs(read.definition, spec, files),
+    args: from.args,
     cwd: hooks.cwd,
     env: hooks.env(spec.agent),
     prompt,
@@ -166,13 +194,71 @@ async function runSession(
         session,
         resumed,
         usage,
+        tokenBudget: spec.tokenBudget,
       };
-      hooks.started(start, { key, ...rpc });
+      const live = { key, ...rpc };
+      watched.watch = watchContext(hooks.contextLimits, spec.agent, live);
+      hooks.started(start, live);
     },
-    onRecord: (record: unknown): void => hooks.record(key, record),
+    onRecord: (record: unknown): void => {
+      hooks.record(key, record);
+      watched.watch?.read(record);
+    },
   });
   hooks.ended(key);
-  return sessionRaw(spec, exit, usage);
+  const stop = watched.watch?.stopped() ?? null;
+  if (stop !== null) {
+    hooks.contextStopped(key, stop);
+  }
+  return { raw: sessionRaw(spec, exit, usage), stop };
+}
+
+// The key launch `key`'s retry is recorded under.
+function retryKeyOf(key: string): string {
+  return `${key}.retry`;
+}
+
+// Runs `spec`'s session, or resumes its interrupted retry as the retry, and
+// runs a session the watch stopped with an error once more, fresh.
+async function runSession(
+  spec: ChildSpec,
+  hooks: LaunchHooks,
+): Promise<SessionRaw> {
+  const read = readDefinition(spec.agent);
+  if (read.kind === "missing") {
+    return failedSession(spec, read.error);
+  }
+  const { definition } = read;
+  async function run(attempt: Attempt): Promise<WatchedEnd> {
+    const start = prepareSession(spec, hooks, definition, attempt);
+    if (start === null) {
+      const error = `agent ${spec.agent}: cannot prepare its session and schema files`;
+      return { raw: failedSession(spec, error), stop: null };
+    }
+    return await runPi(spec, hooks, start);
+  }
+  const retry = { key: retryKeyOf(spec.key), task: retryTask(spec.task) };
+  const interrupted = hooks.resumePoint(retry.key);
+  if (interrupted !== null) {
+    const end = await run({ ...retry, resume: interrupted });
+    return retryResult(spec, end, ZERO_USAGE);
+  }
+  const resume = hooks.resumePoint(spec.key);
+  const { raw, stop } = await run({ key: spec.key, task: spec.task, resume });
+  if (stop === null) {
+    return raw;
+  }
+  const spent = raw.results[0].usage;
+  switch (stop.result) {
+    case "handoff":
+      return contextStopped(spec, stop, spent);
+    case "error":
+      return retryResult(spec, await run({ ...retry, resume: null }), spent);
+    default: {
+      const unhandled: never = stop.result;
+      return unhandled;
+    }
+  }
 }
 
 // Runs `spec` and resolves to its raw result, telling `hooks` of it. A model
@@ -198,6 +284,7 @@ async function runLaunch(
         session: null,
         resumed: false,
         usage: ZERO_USAGE,
+        tokenBudget: null,
       };
       hooks.started(start, null);
     },
@@ -207,4 +294,4 @@ async function runLaunch(
 }
 
 export type { LaunchHooks };
-export { runLaunch };
+export { OUTPUT_EXTENSION, runLaunch };

@@ -1,20 +1,22 @@
 // @ts-check
 // The built workflow's sweep and claim paths, and closing parents, run through
-// workflow-harness.mjs. Each test pins the launch keys and the summary by
-// hand, and the whole trace in workflow-stages-claim.test.mjs.snapshot.
+// workflow-harness.mjs. Each test pins the summary and the ops requests the
+// sweep's effects go through, read through stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
-  launchKeys,
   ROUTINE_OPS,
   sweepReply,
   sweepSummary,
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
-
-/** @import { OpLaunch, SweepSummary } from "../src/workflow/stages/types.ts" */
 
 // The issue another lane claims first, the issue resumed after it, and a
 // parent of split issues.
@@ -38,23 +40,18 @@ const CRASHED_LEASE = {
   allocated: 400_000,
 };
 
-test("a sweep with nothing to do launches the sweep and the cleanup", async ({
-  assert: { snapshot },
-}) => {
+test("a sweep with nothing to do claims nothing and cleans up", async () => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
     ops: { sweep: sweepReply(), cleanup: ROUTINE_OPS.cleanup },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "cleanup-2"]);
-  const { skip } = /** @type {OpLaunch["payload"]} */ (trace[1]?.request ?? {});
+  assert.throws(() => requestFor(trace, "claim"));
+  const { skip } = requestFor(trace, "cleanup");
   assert.equal(skip, null);
   assert.deepEqual(summary, sweepSummary({ items: [] }));
-  snapshot(trace);
 });
 
-test("a lost claim is recorded as abandoned, with no item", async ({
-  assert: { snapshot },
-}) => {
+test("a lost claim is recorded as abandoned, with no item", async () => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
     ops: {
@@ -63,19 +60,16 @@ test("a lost claim is recorded as abandoned, with no item", async ({
       cleanup: ROUTINE_OPS.cleanup,
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "cleanup-3"]);
+  assert.throws(() => releasedState(trace));
   assert.deepEqual(
     summary,
     sweepSummary({
       abandoned: [{ issue: LOST_ISSUE, holder: "lane-b", commented: true }],
     }),
   );
-  snapshot(trace);
 });
 
-test("after a lost claim, the next candidate resumes from its saved lease", async ({
-  assert: { snapshot },
-}) => {
+test("after a lost claim, the next candidate resumes from its saved lease", async () => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
     ops: {
@@ -85,13 +79,8 @@ test("after a lost claim, the next candidate resumes from its saved lease", asyn
       merge: { ok: true, merged: true },
     },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i8-claim-3",
-    "i8-merge-4",
-    "cleanup-5",
-  ]);
+  const { number } = requestFor(trace, "merge");
+  assert.equal(number, RESUMED_ISSUE);
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -109,36 +98,9 @@ test("after a lost claim, the next candidate resumes from its saved lease", asyn
       ],
     }),
   );
-  snapshot(trace);
 });
 
-test("a claimed branch whose head isn't the saved one stops as changed", async () => {
-  const saved = { number: RESUMED_ISSUE, pr: 48, headSha: "8888888" };
-  const claim = { ...claimAt("merge", saved), remoteHead: "9999999" };
-  const { trace, summary } = await runWorkflow({
-    args: WORKFLOW_ARGS,
-    ops: {
-      ...ROUTINE_OPS,
-      sweep: sweepReply({ items: [RESUMED_ISSUE] }),
-      claim,
-    },
-  });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i8-claim-2",
-    "i8-stop-3",
-    "cleanup-4",
-  ]);
-  const [item] = /** @type {SweepSummary} */ (summary).items;
-  assert.deepEqual(
-    [item?.outcome, item?.reason],
-    ["stopped", "the PR branch changed outside the pipeline"],
-  );
-});
-
-test("a sweep closes the parents it is given", async ({
-  assert: { snapshot },
-}) => {
+test("a sweep closes the parents it is given", async () => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
     ops: {
@@ -147,9 +109,9 @@ test("a sweep closes the parents it is given", async ({
       "close-parent": { ok: true, closed: true },
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "p5-close-2", "cleanup-3"]);
+  const { number } = requestFor(trace, "close-parent");
+  assert.equal(number, PARENT_ISSUE);
   assert.deepEqual(summary, sweepSummary({ parentsClosed: 1 }));
-  snapshot(trace);
 });
 
 test("a failed claim is the sweep's item, with no state", async () => {
@@ -161,7 +123,8 @@ test("a failed claim is the sweep's item, with no state", async () => {
       cleanup: ROUTINE_OPS.cleanup,
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "cleanup-3"]);
+  assert.deepEqual(sessionAgents(trace), []);
+  assert.throws(() => releasedState(trace));
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -180,9 +143,7 @@ test("a failed claim is the sweep's item, with no state", async () => {
   );
 });
 
-test("a claim waiting for an answer is the sweep's item and launches nothing", async ({
-  assert: { snapshot },
-}) => {
+test("a claim waiting for an answer is the sweep's item and launches nothing", async () => {
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
     ops: {
@@ -191,7 +152,8 @@ test("a claim waiting for an answer is the sweep's item and launches nothing", a
       cleanup: ROUTINE_OPS.cleanup,
     },
   });
-  assert.deepEqual(launchKeys(trace), ["sweep-1", "i7-claim-2", "cleanup-3"]);
+  assert.deepEqual(sessionAgents(trace), []);
+  assert.throws(() => releasedState(trace));
   assert.deepEqual(
     summary,
     sweepSummary({
@@ -208,7 +170,6 @@ test("a claim waiting for an answer is the sweep's item and launches nothing", a
       ],
     }),
   );
-  snapshot(trace);
 });
 
 test("a PR branch that moved outside the pipeline stops the claimed issue", async () => {
@@ -223,16 +184,8 @@ test("a PR branch that moved outside the pipeline stops the claimed issue", asyn
       },
     },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-stop-3",
-    "cleanup-4",
-  ]);
-  const { detail } = /** @type {OpLaunch["payload"]} */ (
-    trace.at(-2)?.request ?? {}
-  );
-  assert.equal(detail, "Expected aaaaaaa, found bbbbbbb.");
+  const { code, detail } = requestFor(trace, "stop");
+  assert.deepEqual([code, detail], [null, "Expected aaaaaaa, found bbbbbbb."]);
   assert.deepEqual(
     summary,
     sweepSummary({

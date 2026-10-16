@@ -1,15 +1,18 @@
 // @ts-check
-// The built workflow's security stops, run through workflow-harness.mjs: a
-// stop for an open security finding carries the finding's harm as its code.
-// Each test pins the launch keys, the stop request's code and the summary by
-// hand, with no snapshot.
+// The built workflow's security and acceptance stops, run through
+// workflow-harness.mjs: a stop for an open security finding carries the
+// finding's harm as its code, and one for a failed acceptance check's finding
+// carries "acceptance" (#266).
+// Each test pins the sessions that ran, the stop request's code and the
+// summary by hand, with no snapshot.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { STOP_PREFIX } from "../src/stops.ts";
+import { requestFor, sessionAgents } from "./stage-outcome-test-kit.mjs";
 import { runWorkflow } from "./workflow-harness.mjs";
 import {
   claimAt,
   ISSUE,
-  launchKeys,
   ROUTINE_OPS,
   replyWith,
   sweepReply,
@@ -17,7 +20,6 @@ import {
   WORKFLOW_ARGS,
 } from "./workflow-stages-fixtures.mjs";
 
-/** @import { OpLaunch } from "../src/workflow/stages/types.ts" */
 /** @import { Scripted } from "./workflow-harness.mjs" */
 
 // Issue #7 with acceptance passed at fffffff.
@@ -90,17 +92,8 @@ test("a security finding past the fix rounds stops with its harm as the code", a
     ops: { "prepare-review": { ok: true, headSha: "fffffff" } },
     agents: { "i7-security": replyWith({ findings: [LEAK] }) },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-prep-3",
-    "i7-security-4",
-    "i7-stop-5",
-    "cleanup-6",
-  ]);
-  const { code } = /** @type {OpLaunch["payload"]} */ (
-    trace.at(-2)?.request ?? {}
-  );
+  assert.deepEqual(sessionAgents(trace), ["issue-pipeline-reader"]);
+  const { code } = requestFor(trace, "stop");
   assert.equal(code, "user-harm");
   assert.deepEqual(summary, leakStopped("security"));
 });
@@ -115,15 +108,70 @@ test("an open security finding stops the merge with its harm as the code", async
       findings: [{ ...open, disputed: false }],
     },
   });
-  assert.deepEqual(launchKeys(trace), [
-    "sweep-1",
-    "i7-claim-2",
-    "i7-stop-3",
-    "cleanup-4",
-  ]);
-  const { code } = /** @type {OpLaunch["payload"]} */ (
-    trace.at(-2)?.request ?? {}
-  );
+  assert.deepEqual(sessionAgents(trace), []);
+  const { code } = requestFor(trace, "stop");
   assert.equal(code, "user-harm");
   assert.deepEqual(summary, leakStopped("merge"));
+});
+
+const NOT_RESOLVED = /not fully resolved/u;
+const FIXER_DISPUTE = /Fixer's dispute: The issue never asks for it\./u;
+const NO_PUSH = /no push request/u;
+// The open finding a failed acceptance check left on issue #7.
+const UNMET = {
+  id: "f1",
+  file: "",
+  line: 0,
+  title: "acceptance: issue not fully resolved",
+  evidence: "The wiki misses the new stage.",
+  suggestion: "Meet the requirement.",
+  lenses: ["acceptance"],
+  category: null,
+  status: "open",
+  disputed: false,
+};
+// Issue #7 sent back to fix by a failed acceptance check.
+const AT_FIX = {
+  ...ACCEPTED,
+  acceptReason: undefined,
+  allocated: 500_000,
+  findings: [UNMET],
+  nextFindingId: 1,
+};
+
+test("an acceptance finding past the fix rounds stops with the acceptance code", async () => {
+  const { trace } = await codesRun({
+    stage: "fix",
+    fields: { ...AT_FIX, round: 2 },
+  });
+  assert.deepEqual(sessionAgents(trace), []);
+  const { code, reason, detail } = requestFor(trace, "stop");
+  assert.equal(code, "acceptance");
+  assert.match(String(reason), NOT_RESOLVED);
+  assert.equal(`${STOP_PREFIX}${String(code)}`, "agent:stopped-acceptance");
+  assert.ok(String(detail).includes(UNMET.evidence));
+});
+
+test("a fixer's dispute of the acceptance finding stops before the push", async () => {
+  const { trace } = await codesRun({
+    stage: "fix",
+    fields: { ...AT_FIX, round: 0 },
+    agents: {
+      "i7-fix-r1": replyWith({
+        status: "done",
+        fixed: [],
+        disputed: [{ id: "f1", evidence: "The issue never asks for it." }],
+        summary: "Disputed f1.",
+      }),
+    },
+  });
+  const { code, reason, detail, comments } = requestFor(trace, "stop");
+  assert.equal(code, "acceptance");
+  assert.match(String(reason), NOT_RESOLVED);
+  assert.ok(String(detail).includes(UNMET.evidence));
+  assert.match(String(detail), FIXER_DISPUTE);
+  assert.ok(JSON.stringify(comments).includes("fixer (round 1)"));
+  // Only the fixer ran: no re-review session, and nothing was pushed.
+  assert.equal(sessionAgents(trace).length, 1);
+  assert.throws(() => requestFor(trace, "push"), NO_PUSH);
 });

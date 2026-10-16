@@ -77,7 +77,7 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     short: "Stopped: the issue's token budget ran out. See the stop comment.",
     test: /token budget/iu,
     control: "token budget",
-    explain: `The next session would take the issue past its token budget ${settingRef("issueTokenBudget")}, or a re-check or conflict fix after a rebase past the rebase allowance ${settingRef("rebaseTokenBudget")}.`,
+    explain: `The next session would take the issue past its token budget ${settingRef("issueTokenBudget")}, or a re-check or conflict fix after a rebase past the rebase allowance ${settingRef("rebaseTokenBudget")}. Or a session's context went past its role's budget ${settingRef("roleBudgets")}, capped by ${settingRef("sessionTokenCap")}, and the orchestrator's watchdog stopped its job.`,
   },
   {
     code: "fix-loop",
@@ -146,18 +146,21 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     code: "not-doable",
     short:
       "Stopped: the implementer can't do the issue as written. See the stop comment.",
-    test: /could not do the issue as written/iu,
+    test: /could not do the issue as written|the implementation changed nothing/iu,
     control: "implementer",
-    explain: "The implementer found the issue can't be done as written.",
+    explain:
+      "The implementer found the issue can't be done as written, or its work changed nothing: no files on the branch and no wiki commits.",
   },
   {
     code: "too-large",
     short:
-      "Stopped: too large for the implementer; split it. See the stop comment.",
+      "Stopped: too large for its writer sessions; split it. See the stop comment.",
     test: /ran out of room|did not finish within its sessions/iu,
-    control: "implementer sessions",
-    explain:
-      "The implementer ran out of room in its session and its one continuation; the issue needs splitting.",
+    control: "writer sessions",
+    explain: limitText(
+      "A writer session (the implementer, fixer, CI fixer or conflict resolver) ran out of room, and so did each continuation its stage was allowed; the issue needs splitting",
+      "maxContinuations",
+    ),
   },
   {
     code: "acceptance",
@@ -176,6 +179,15 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     control: "branch integrity",
     explain:
       "The PR branch changed outside the pipeline, so it stopped rather than overwrite it.",
+  },
+  {
+    code: "wiki-check",
+    short:
+      "Stopped: the wiki changes failed the wiki check. See the stop comment.",
+    test: /wiki check/iu,
+    control: "wiki check",
+    explain:
+      "Before the code merges, the issue's wiki changes, rebased onto the wiki's latest version, must pass the wiki check: every link in a changed page names a page on the wiki, and every new page is linked from _Sidebar or another page.",
   },
   {
     code: "conflict",
@@ -207,6 +219,17 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     test: /refused the merge/iu,
     control: "merge",
     explain: "GitHub refused the merge.",
+  },
+  {
+    code: "job",
+    short:
+      "Stopped: the stage job kept dying and was restarted too often. See the stop comment.",
+    test: /stage job kept dying/iu,
+    control: "stage job restarts",
+    explain: limitText(
+      "The issue's stage job died with no outcome after the orchestrator had already restarted it the most times it may",
+      "maxResumes",
+    ),
   },
   {
     code: "error",

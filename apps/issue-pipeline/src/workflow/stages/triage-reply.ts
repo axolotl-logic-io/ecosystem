@@ -6,18 +6,10 @@ import { isRecord, isStrings } from "./reply-guards.ts";
 
 type TriageDecision = "ready" | "needs-info" | "split" | "reject";
 
-interface SubIssue {
-  title: string;
-  body: string;
-  // The 0-based indexes of earlier sub-issues that must merge first.
-  after: number[];
-}
-
 interface TriageReply {
   decision: TriageDecision;
   reason: string;
   questions: string[];
-  subIssues: SubIssue[];
   plan: string;
 }
 
@@ -28,41 +20,23 @@ const DECISIONS: readonly TriageDecision[] = [
   "reject",
 ];
 
-function isSubIssue(value: unknown): value is SubIssue {
-  if (!isRecord(value)) {
-    return false;
-  }
-  const { title, body, after } = value;
-  return (
-    typeof title === "string" &&
-    typeof body === "string" &&
-    Array.isArray(after) &&
-    after.every((index) => typeof index === "number")
-  );
-}
-
-function isSubIssues(value: unknown): value is SubIssue[] {
-  return Array.isArray(value) && value.every(isSubIssue);
-}
-
-// The reply, or null when the output doesn't fit the schema. The arrays are
-// the output's own, unchanged.
+// The reply, or null when the output doesn't fit the schema. Its questions
+// are the output's own, unchanged.
 function triageReplyOf(output: unknown): TriageReply | null {
   if (!isRecord(output)) {
     return null;
   }
-  const { decision, reason, questions, subIssues, plan } = output;
+  const { decision, reason, questions, plan } = output;
   const known = DECISIONS.find((entry) => entry === decision);
   if (
     known === undefined ||
     typeof reason !== "string" ||
     typeof plan !== "string" ||
-    !isStrings(questions) ||
-    !isSubIssues(subIssues)
+    !isStrings(questions)
   ) {
     return null;
   }
-  return { decision: known, reason, questions, subIssues, plan };
+  return { decision: known, reason, questions, plan };
 }
 
 export type { TriageReply };

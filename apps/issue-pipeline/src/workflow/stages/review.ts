@@ -3,7 +3,7 @@
 // numbered for the fixer. A clean review moves the issue to sync, one with
 // blocking findings to fix.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding } from "../findings.ts";
 import type { ReviewLens } from "../lenses.ts";
@@ -28,6 +28,7 @@ import {
   lensComment,
   lensTask,
 } from "./review-text.ts";
+import { prepareLaunch } from "./stacked.ts";
 import {
   copyState,
   doneStep,
@@ -85,9 +86,8 @@ function begin(state: StageState, ctx: StageContext): Step {
   if (!charge.charged) {
     return stopStep(charged, charge.reason, charge.detail);
   }
-  const payload = { number: state.n, tag: "r0" };
   return launchStep({ ...charged, phase: "prepared" }, [
-    { kind: "op", name: "prep", op: "prepare-review", payload },
+    prepareLaunch(charged, { tag: "r0" }),
   ]);
 }
 
@@ -105,6 +105,7 @@ function lensLaunch(
     model: ctx.models[lens],
     schema: REVIEW_SCHEMA,
     minutes: REVIEW_MINUTES,
+    tokenBudget: sessionBudget(ctx.budgets, "reviewer"),
     task: lensTask(ctx, state, lens, diff),
   };
 }
@@ -193,6 +194,7 @@ function aggregateLaunch(
     model: ctx.models.aggregator,
     schema: AGG_SCHEMA,
     minutes: AGGREGATE_MINUTES,
+    tokenBudget: sessionBudget(ctx.budgets, "aggregator"),
     task: aggregateTask(ctx, state, raw),
   };
 }

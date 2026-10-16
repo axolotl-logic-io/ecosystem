@@ -3,7 +3,7 @@
 // join the open ones. A finding that comes back after being resolved stops
 // the issue, since the fixes are undoing each other.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding, openFindings } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
@@ -14,10 +14,12 @@ import type { Finding, IssueState } from "../types.ts";
 import type { NewFinding, RereviewReply } from "./review-replies.ts";
 import { rereviewReplyOf } from "./review-replies.ts";
 import { rereviewComment, rereviewTask } from "./review-text.ts";
+import { prepareLaunch } from "./stacked.ts";
 import {
   codedStopStep,
   copyState,
   launchEach,
+  launchStep,
   onlyReply,
   prComment,
   replyError,
@@ -45,6 +47,24 @@ const CLOSING: readonly string[] = ["resolved", "dispute-accepted"];
 // The fix round the issue is in, 0 before the first.
 function roundOf(state: StageState): number {
   return state.st.round ?? 0;
+}
+
+// The re-review diff's tag: the round, after the security round if any.
+function prepTag(st: IssueState, round: number): string {
+  const { securityRounds = 0 } = st;
+  if (securityRounds === 0) {
+    return `r${round}`;
+  }
+  return `s${securityRounds}-r${round}`;
+}
+
+// Prepares the diff since the last review for the fix round's re-reviewers.
+function prepareRereview(state: StageState): Step {
+  const { st } = state;
+  const fields = { sinceSha: st.reviewedSha, tag: prepTag(st, roundOf(state)) };
+  return launchStep({ ...state, phase: "prepared" }, [
+    prepareLaunch(state, fields),
+  ]);
 }
 
 function lensFindings(open: readonly Finding[], lens: Lens): Finding[] {
@@ -79,6 +99,7 @@ function rereviewLaunch(
     model: ctx.models[lens],
     schema: schemaOf(lens),
     minutes: REREVIEW_MINUTES,
+    tokenBudget: sessionBudget(ctx.budgets, "rereviewer"),
     task: rereviewTask(ctx, state, { lens, diffPath, findings }),
   };
 }
@@ -230,4 +251,4 @@ function settleRereviews(
   return settle(state, ctx, rereviews);
 }
 
-export { launchRereviews, roundOf, settleRereviews };
+export { launchRereviews, prepareRereview, roundOf, settleRereviews };

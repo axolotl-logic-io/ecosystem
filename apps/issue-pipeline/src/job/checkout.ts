@@ -17,12 +17,14 @@ import { withCloneLock, withWikiLock } from "../locks.ts";
 import { run } from "../process.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
-// base branch, and the branch the issue's work is on.
+// base branch, the branch the issue's work is on, and the issue whose branch
+// it is stacked on (#268), or null.
 interface CloneSpec {
   mirror: string;
   url: string;
   base: string;
   branch: string;
+  stackOn: number | null;
 }
 
 // A `git status --porcelain` entry is two status letters and a space, then
@@ -69,13 +71,19 @@ function syncMirror(
 }
 
 // Clones `spec.mirror` into `dir` on the issue's branch: at the mirror's
-// branch head when it has one, at the base otherwise.
+// branch head when it has one, otherwise at the head of the branch it is
+// stacked on when the mirror has that, and at the base otherwise.
 function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
-  const { mirror, url, base, branch } = spec;
+  const { mirror, url, base, branch, stackOn } = spec;
   run("git", ["clone", "--quiet", "--no-checkout", mirror, dir]);
   let start = `origin/${base}`;
   if (hasRef(mirror, `refs/heads/${branch}`)) {
     start = `origin/${branch}`;
+  } else if (
+    stackOn !== null &&
+    hasRef(mirror, `refs/heads/${paths.branch(stackOn)}`)
+  ) {
+    start = `origin/${paths.branch(stackOn)}`;
   }
   gitIn(dir, ["checkout", "--quiet", "-B", branch, start]);
   gitIn(dir, ["remote", "set-url", "origin", url]);
@@ -104,12 +112,19 @@ function openWiki(cfg: Config, issue: number, dir: string): void {
   }
   const into = paths.wiki(withCheckout(cfg, { issue, dir }), issue);
   const branch = paths.branch(issue);
-  cloneInto(cfg, { mirror, url, base: wiki.branch, branch }, into);
+  const spec = { mirror, url, base: wiki.branch, branch, stackOn: null };
+  cloneInto(cfg, spec, into);
 }
 
 // Makes stage job `stage`'s checkout of issue `issue` from the freshly
 // fetched mirror, replacing one an earlier job left, and returns its path.
-function openJobCheckout(cfg: Config, issue: number, stage: string): string {
+// With `stackOn`, an issue with no branch yet starts on that issue's branch.
+function openJobCheckout(
+  cfg: Config,
+  issue: number,
+  job: { stage: string; stackOn: number | null },
+): string {
+  const { stage, stackOn } = job;
   const mirror = paths.mirror(cfg);
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
   withCloneLock(cfg, (): boolean =>
@@ -119,7 +134,7 @@ function openJobCheckout(cfg: Config, issue: number, stage: string): string {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   const branch = paths.branch(issue);
-  cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch }, dir);
+  cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch, stackOn }, dir);
   excludeWiki(dir, wikiCfg(cfg)?.dir ?? "wiki");
   openWiki(cfg, issue, dir);
   return dir;
@@ -149,16 +164,11 @@ function dropChanges(dir: string, prefix: string): string[] {
   return lost;
 }
 
-// How many commits the checkout has that neither the base nor the issue's
-// branch on the remote has.
-function unpushed(cfg: Config, issue: number, dir: string): number {
+// How many commits the checkout has that no branch on the remote has, so
+// that a branch stacked on another issue's (#268) holds none of that issue's.
+function unpushed(cfg: Config, dir: string): number {
   git(cfg, ["-C", dir, "fetch", "--quiet", "--prune", "origin"]);
-  const known = [`origin/${cfg.baseBranch}`];
-  const branch = `origin/${paths.branch(issue)}`;
-  if (hasRef(dir, branch)) {
-    known.push(branch);
-  }
-  const range = ["rev-list", "--count", "HEAD", "--not", ...known];
+  const range = ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"];
   return Number(gitIn(dir, range).trim());
 }
 
@@ -221,10 +231,7 @@ async function closeJobCheckout(
     );
     if (
       push !== null &&
-      reported(
-        (): boolean => hasGit(dir) && unpushed(cfg, issue, dir) > 0,
-        false,
-      )
+      reported((): boolean => hasGit(dir) && unpushed(cfg, dir) > 0, false)
     ) {
       await push();
     }

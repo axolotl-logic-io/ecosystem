@@ -31,6 +31,7 @@ const CFG = {
   maxSyncs: 3,
   maxCiFixes: 1,
   ciWaitMinutes: 30,
+  maxContinuations: 1,
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   commands: { test: "npm test", lint: "npm run lint" },
 };
@@ -52,6 +53,9 @@ const PLAN = "Change src/a.ts and test it.";
 // The tokens triage was charged.
 const TRIAGE_TOKENS = 50_000;
 const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
+// The line a whole spec ends with (#280), and SPEC as the spec writer writes it.
+const SPEC_END = "<!-- end of spec -->";
+const SPEC_REPLY = `${SPEC}\n\n${SPEC_END}`;
 
 // Every kit's rebase pool (`rebaseTokenBudget`).
 const REBASE_BUDGET = 500_000;
@@ -63,6 +67,7 @@ function contextWith(issueBudget) {
     budgets: {
       roles: ROLES,
       sessionCap: SESSION_CAP,
+      hardLimit: 175_000,
       issueBudget,
       rebaseBudget: REBASE_BUDGET,
     },
@@ -96,7 +101,7 @@ function buildState(stage, fields = {}, paths = PATHS) {
       plan: PLAN,
       allocated: TRIAGE_TOKENS,
       sessions: ["triage"],
-      continuations: 0,
+      continuations: {},
       findings: [],
       log: [],
       ...fields,
@@ -150,8 +155,10 @@ function specTask(paths = PATHS) {
       '- **Wiki updates**: wiki pages to add or change, or "None".',
       "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
       "`files` lists the repo paths or globs the change will touch, relative to the repo root, without wiki pages (such as `src/a.ts` or `src/orchestrator/**`). The orchestrator holds back other changes that touch them.",
-      "Keep it under about 150 lines. Set `decision` to ready, with `questions` empty.",
-      "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
+      "Keep it under about 150 lines. Set `decision` to ready, with `questions` and `subIssues` empty.",
+      "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, put what you found so far in `spec`, and leave `subIssues` empty.",
+      `Only if one implementer session (at most ${SESSION_CAP} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec in its \`body\`, and in its \`files\` the paths from \`files\` it touches. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`,
+      `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
     ])
     .join("\n");
 }
@@ -167,6 +174,7 @@ function specLaunch(task) {
     model: SPEC_MODEL,
     schema: SPEC_SCHEMA,
     minutes: 30,
+    tokenBudget: ROLES.spec,
     task,
   };
 }
@@ -189,7 +197,7 @@ function implementTask(source) {
       `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${WIKI} add -A && git -C ${WIKI} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`,
       "Change lockfiles only through the package manager, never by hand.",
       "",
-      `If the work is bigger than this session can finish within budget (for example, you have read more than about 15 files or made more than about 30 substantial tool calls and are not close), stop: commit what builds, write ${HANDOFF} (what is done, what is left, current branch state), and return status \`handoff\`.`,
+      `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${HANDOFF} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
       "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
       "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
     ])
@@ -208,6 +216,7 @@ function implementLaunch(task) {
     schema: IMPL_SCHEMA,
     writer: true,
     minutes: 90,
+    tokenBudget: SESSION_CAP,
     task,
   };
 }
@@ -244,6 +253,8 @@ export {
   PLAN,
   SPEC,
   SPEC_BY,
+  SPEC_END,
+  SPEC_REPLY,
   STAMP,
   specLaunch,
   specTask,

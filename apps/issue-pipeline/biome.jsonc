@@ -27,7 +27,9 @@
     // files and the terminal.
     // The ops CLI's own modules are part of that boundary: they run git, gh
     // and the configured commands, and keep the clones, worktrees, locks and
-    // logs on disk (#166), clone-setup among them (#213), as do the ops that
+    // logs on disk (#166), clone-setup among them (#213), wiki-publish, which
+    // rebases and publishes the wiki checkout, and rebase, the rebase checks
+    // it shares with the sync ops (#216), as do the ops that
     // keep files themselves: the sweep's reservations and the claim's worktree checks and setup log
     // (#183), the PR and sync ops, which run git in the worktree and write
     // the review diff (#184), and the ops that run git, gh and the configured
@@ -45,11 +47,15 @@
     // (#233). src/job/checkout.ts makes, closes and removes the job's own
     // checkout and the bare mirrors it comes from with git, and
     // src/job/exit-push.ts reports a failed exit push on stderr (#250). The
-    // job's pure modules (raw-results, pool, roles) get no exception.
+    // job's pure modules (raw-results, pool, roles, context-watch) get no exception.
     // The orchestrator (#234) too: its entry src/orchestrate.ts spawns the
     // jobs and handles the stop signals, src/orchestrator/args.ts reads its
     // arguments, snapshot.ts checks the jobs' pids, and ledger.ts and log.ts
-    // keep its files. Its pure modules (queue, schedule, tick) get none.
+    // keep its files, as watchdog-memory.ts keeps the watchdog's (#235), and
+    // escalation-consult.ts keeps the escalation agent's reply schema and
+    // session folder and gives its pi the orchestrator's environment less
+    // the gh tokens (#282). Its pure modules (queue, schedule, tick,
+    // watchdog) get none.
     {
       "includes": [
         "install.mjs",
@@ -64,6 +70,8 @@
         "src/clone-setup.ts",
         "src/checkouts.ts",
         "src/wiki.ts",
+        "src/wiki-publish.ts",
+        "src/rebase.ts",
         "src/issue-context.ts",
         "src/ops/sweep.ts",
         "src/ops/claim.ts",
@@ -86,7 +94,9 @@
         "src/orchestrator/args.ts",
         "src/orchestrator/snapshot.ts",
         "src/orchestrator/ledger.ts",
-        "src/orchestrator/log.ts"
+        "src/orchestrator/log.ts",
+        "src/orchestrator/watchdog-memory.ts",
+        "src/orchestrator/escalation-consult.ts"
       ],
       "linter": {
         "rules": {

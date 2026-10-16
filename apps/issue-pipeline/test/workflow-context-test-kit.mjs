@@ -27,6 +27,7 @@ const UNUSED_MODELS = {
   fixer: UNUSED,
   verifier: UNUSED,
   security: UNUSED,
+  acceptance: UNUSED,
 };
 
 /**

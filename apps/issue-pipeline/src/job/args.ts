@@ -14,6 +14,7 @@ const NO_MESSAGE = "--steer needs a --message";
 const STEER_RESUME = "--steer can't be combined with --resume";
 const STEER_BOUNDARY = "--steer can't be combined with --print-boundary";
 const NO_QUEUE = "--merge-queue must list issue numbers, such as 3,5";
+const NO_PREREQ = "--stack-on must be an issue number other than --issue";
 const MERGE_QUEUE = z
   .string()
   .transform((list: string): string[] => list.split(","))
@@ -30,18 +31,29 @@ const ISSUE = z.coerce
   .number({ error: NO_ISSUE })
   .int(NO_ISSUE)
   .positive(NO_ISSUE);
+const PREREQ = z.coerce
+  .number({ error: NO_PREREQ })
+  .int(NO_PREREQ)
+  .positive(NO_PREREQ);
 const STAGE = z.enum(STAGE_ORDER, { error: NO_STAGE });
 const JOB_ARGS = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("run"),
-    config: CONFIG,
-    issue: ISSUE,
-    stage: STAGE,
-    lane: z.string().optional(),
-    resume: z.boolean().optional(),
-    // The merge order the orchestrator ranked (#234).
-    mergeQueue: MERGE_QUEUE.optional(),
-  }),
+  z
+    .object({
+      kind: z.literal("run"),
+      config: CONFIG,
+      issue: ISSUE,
+      stage: STAGE,
+      lane: z.string().optional(),
+      resume: z.boolean().optional(),
+      // The merge order the orchestrator ranked (#234).
+      mergeQueue: MERGE_QUEUE.optional(),
+      // The issue whose branch this one starts on, if it has none (#268).
+      stackOn: PREREQ.optional(),
+    })
+    .refine((run) => run.stackOn !== run.issue, {
+      error: NO_PREREQ,
+      path: ["stackOn"],
+    }),
   z.object({
     kind: z.literal("steer"),
     config: CONFIG,
@@ -78,12 +90,14 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       message: { type: "string" },
       "print-boundary": { type: "boolean" },
       "merge-queue": { type: "string" },
+      "stack-on": { type: "string" },
     },
     strict: true,
   });
   const {
     "print-boundary": printBoundary,
     "merge-queue": mergeQueue,
+    "stack-on": stackOn,
     ...named
   } = values;
   let kind = "run";
@@ -96,6 +110,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     ...named,
     printBoundary,
     mergeQueue,
+    stackOn,
     kind,
   });
   if (!parsed.success) {

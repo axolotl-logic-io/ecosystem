@@ -1,12 +1,17 @@
 // Fix: one fix round per begin. The fixer resolves or disputes the open
 // findings, the fix is pushed, and the re-reviewers judge it (rereview.ts).
 // A round that leaves findings open ends with an again step, so the sweep
-// holds the next round to the spawn cap; one past the last round stops.
+// holds the next round to the spawn cap; one past the last round stops. A
+// disputed acceptance finding stops the round before the push, since only the
+// operator can rule on what the issue asks. A fixer that runs out of room
+// hands off to a continuation in the same round, up to config
+// maxContinuations per issue (#269).
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import {
+  acceptanceDisputeStop,
   findingsStopCode,
   findingsStopReason,
   findingsText,
@@ -14,7 +19,19 @@ import {
 } from "../findings.ts";
 import { FIX_SCHEMA } from "../review-schemas.ts";
 import type { IssueState } from "../types.ts";
-import { launchRereviews, roundOf, settleRereviews } from "./rereview.ts";
+import {
+  continuationsOf,
+  continued,
+  mayContinue,
+  outOfRoomReason,
+} from "./continuation.ts";
+import { flowStep, prFlowed } from "./flow-step.ts";
+import {
+  launchRereviews,
+  prepareRereview,
+  roundOf,
+  settleRereviews,
+} from "./rereview.ts";
 import type { Dispute, FixReply } from "./review-replies.ts";
 import { fixReplyOf } from "./review-replies.ts";
 import { fixComment, fixTask } from "./review-text.ts";
@@ -26,24 +43,30 @@ import {
   launchStep,
   onlyChild,
   onlyReply,
+  phaseOf,
   prComment,
+  pushFailedStep,
   replyError,
   stopStep,
 } from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
+  StageComment,
   StageContext,
   StageState,
   Step,
 } from "./types.ts";
 
 // Where the round is: about to launch the fixer, reading its reply, waiting
-// for the push, the re-review diff, the re-reviewers, or the save.
+// for the push or its one retry, the re-review diff, the re-reviewers, or the
+// save.
 type FixPhase =
   | "begin"
   | "fixed"
   | "pushed"
+  | "repushed"
+  | "flowed"
   | "prepared"
   | "rereviewed"
   | "saved";
@@ -52,6 +75,8 @@ const PHASES: readonly FixPhase[] = [
   "begin",
   "fixed",
   "pushed",
+  "repushed",
+  "flowed",
   "prepared",
   "rereviewed",
   "saved",
@@ -61,25 +86,29 @@ const FIX_MINUTES = 60;
 // The longest dispute evidence a finding keeps.
 const DISPUTE_LIMIT = 600;
 
-function phaseOf(state: StageState): FixPhase {
-  const phase = PHASES.find((entry) => entry === state.phase);
-  if (phase === undefined) {
-    throw new Error(`fix: unknown phase ${state.phase}`);
-  }
-  return phase;
-}
-
-function fixerLaunch(ctx: StageContext, state: StageState): ChildLaunch {
+// The round's fixer, `fix-r<round>`, or `fix-r<round>-c<k>` for the issue's
+// kth fixer continuation.
+function fixerLaunch(
+  ctx: StageContext,
+  state: StageState,
+  continuation = false,
+): ChildLaunch {
   const round = roundOf(state);
+  const open = openFindings(state);
+  let name = `fix-r${round}`;
+  if (continuation) {
+    name += `-c${continuationsOf(state.st, "fix")}`;
+  }
   return {
     kind: "child",
-    name: `fix-r${round}`,
+    name,
     label: `Fix review findings for issue ${state.n}`,
     agent: "issue-pipeline-writer",
     model: ctx.models.fixer,
     schema: FIX_SCHEMA,
     minutes: FIX_MINUTES,
-    task: fixTask(ctx, state, round, openFindings(state)),
+    tokenBudget: sessionBudget(ctx.budgets, "fixer"),
+    task: fixTask(ctx, state, { round, open, continuation }),
     writer: true,
   };
 }
@@ -122,7 +151,37 @@ function recordDisputes(st: IssueState, disputes: readonly Dispute[]): void {
   }
 }
 
-// Records the fixer's disputes and posts its comment, then pushes the fix.
+// A fixer that ran out of room: a continuation in the same round while the
+// cap allows, else the issue stops as too large.
+function handedOff(
+  state: StageState,
+  ctx: StageContext,
+  reply: FixReply,
+  comment: StageComment,
+): Step {
+  if (!mayContinue(state.st, ctx.cfg, "fix")) {
+    return stopStep(
+      state,
+      outOfRoomReason("fixer", ctx.cfg.maxContinuations),
+      `Latest handoff: ${state.paths.handoffFile}\n\n${reply.summary}`,
+      [comment],
+    );
+  }
+  const st = continued(copyState(state.st), "fix");
+  const charge = chargeSession(ctx.budgets, st, "fixer", { at: ctx.now() });
+  if (!charge.charged) {
+    return stopStep({ ...state, st }, charge.reason, charge.detail, [comment]);
+  }
+  const continuing = { ...state, st, phase: "fixed" };
+  return launchStep(
+    continuing,
+    [fixerLaunch(ctx, continuing, true)],
+    [comment],
+  );
+}
+
+// Records the fixer's disputes and posts its comment, then pushes the fix,
+// stops if it disputed the acceptance finding, or continues from its handoff.
 function fixed(
   state: StageState,
   ctx: StageContext,
@@ -141,37 +200,53 @@ function fixed(
   recordDisputes(st, reply.disputed);
   noteEvent(st, `fix round ${round}: ${reply.summary}`, ctx.now());
   const by = { ...result.by, role: `fixer (round ${round})` };
-  return launchStep(
-    { ...state, st, phase: "pushed" },
-    [{ kind: "op", name: "push", op: "push", payload: { number: state.n } }],
-    [prComment(by, fixComment(reply))],
-  );
-}
-
-// The re-review diff's tag: the round, after the security round if any.
-function prepTag(st: IssueState, round: number): string {
-  const { securityRounds = 0 } = st;
-  if (securityRounds === 0) {
-    return `r${round}`;
+  const comment = prComment(by, fixComment(reply));
+  const disputed = acceptanceDisputeStop({ st });
+  if (disputed !== null) {
+    return codedStopStep({ ...state, st }, disputed, [comment]);
   }
-  return `s${securityRounds}-r${round}`;
+  const { status } = reply;
+  switch (status) {
+    case "handoff":
+      return handedOff({ ...state, st }, ctx, reply, comment);
+    case "done":
+      return launchStep(
+        { ...state, st, phase: "pushed" },
+        [
+          {
+            kind: "op",
+            name: "push",
+            op: "push",
+            payload: { number: state.n },
+          },
+        ],
+        [comment],
+      );
+    default: {
+      const unhandled: never = status;
+      return unhandled;
+    }
+  }
 }
 
-// Records the pushed head, then prepares the diff since the last review.
-function pushed(state: StageState, results: readonly LaunchResult[]): Step {
-  const { ok, error, headSha } = onlyReply(results);
+// Records the pushed head and acts on the flows (flow-step.ts), then prepares
+// the diff since the last review. A failed push is retried once unless git's
+// push was rejected.
+function pushed(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
+  const reply = onlyReply(results);
+  const { ok, error, headSha } = reply;
   if (ok !== true || typeof headSha !== "string") {
-    return stopStep(state, "could not push the fix", replyError(error));
+    return pushFailedStep(state, "could not push the fix", replyError(error));
   }
   const st = { ...state.st, headSha };
-  const payload = {
-    number: state.n,
-    sinceSha: st.reviewedSha,
-    tag: prepTag(st, roundOf(state)),
-  };
-  return launchStep({ ...state, st, phase: "prepared" }, [
-    { kind: "op", name: "prep", op: "prepare-review", payload },
-  ]);
+  return flowStep({ ...state, st }, ctx, reply, {
+    phase: "flowed",
+    goOn: prepareRereview,
+  });
 }
 
 // The saved round is finished; one that left findings open goes again.
@@ -190,14 +265,17 @@ function next(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const phase = phaseOf(state);
+  const phase = phaseOf("fix", PHASES, state);
   switch (phase) {
     case "begin":
       return begin(state, ctx);
     case "fixed":
       return fixed(state, ctx, results);
     case "pushed":
-      return pushed(state, results);
+    case "repushed":
+      return pushed(state, ctx, results);
+    case "flowed":
+      return prFlowed(state, ctx, results, prepareRereview);
     case "prepared":
       return launchRereviews(state, ctx, results);
     case "rereviewed":

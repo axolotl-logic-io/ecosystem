@@ -24,7 +24,8 @@ async function mergeRequest(args) {
     ops: { merge: MERGED },
     args,
   });
-  const merge = trace.find((entry) => entry.key === "i7-merge-3");
+  // The merge op runs after the wiki's rebase and check (#216).
+  const merge = trace.find((entry) => entry.key === "i7-merge-5");
   if (merge === undefined) {
     throw new Error("the run made no merge request");
   }

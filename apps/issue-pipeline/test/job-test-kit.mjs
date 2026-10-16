@@ -38,9 +38,10 @@ const USAGE_TOTAL =
 // The structured output of a spec writer whose spec is ready.
 const READY_SPEC = {
   decision: "ready",
-  spec: SPEC,
+  spec: `${SPEC}\n\n<!-- end of spec -->`,
   questions: [],
   files: ["src/a.ts"],
+  subIssues: [],
 };
 
 // A session that spends USAGE and ends with the ready spec.

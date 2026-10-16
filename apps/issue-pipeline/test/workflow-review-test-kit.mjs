@@ -31,6 +31,7 @@ const CFG = {
   maxSyncs: 3,
   maxCiFixes: 1,
   ciWaitMinutes: 30,
+  maxContinuations: 1,
   practices: ["CONTRIBUTING.md"],
   commands: {},
 };
@@ -59,6 +60,7 @@ const MODELS = {
   fixer: OPUS,
   verifier: SONNET,
   security: OPUS,
+  acceptance: SONNET,
 };
 const ISSUE_BUDGET = 1_000_000;
 const DIFF = { path: "/runs/issue-7/r0.diff", lines: 40 };
@@ -80,6 +82,7 @@ function contextWith(issueBudget) {
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
+      hardLimit: 175_000,
       issueBudget,
       rebaseBudget: REBASE_BUDGET,
     },
@@ -233,7 +236,8 @@ function fixTask(round, open, disputed = "none", spec = null) {
       findingsText(open),
       "",
       `For each finding, either fix it (list its id in \`fixed\`) or, if you have concrete evidence it is wrong, dispute it (list it in \`disputed\` with the evidence). Findings already disputed once cannot be disputed again: ${disputed}.`,
-      `Make only the changes the findings need. Run the tests, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`) and leave the worktree clean.`,
+      `Make only the changes the findings need. Run the tests, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`) and leave the worktree clean. Return status \`done\` when you finish.`,
+      `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${PATHS.handoffFile} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
     ])
     .join("\n");
 }

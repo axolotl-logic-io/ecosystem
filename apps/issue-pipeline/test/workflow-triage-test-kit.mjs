@@ -28,6 +28,7 @@ const CFG = {
   maxSyncs: 3,
   maxCiFixes: 1,
   ciWaitMinutes: 30,
+  maxContinuations: 1,
   commands: {},
 };
 const ROLES = {
@@ -50,14 +51,10 @@ const SIGNATURE = {
   run: "i7-triage-3",
 };
 const SPLIT_ALLOWED =
-  "- split: too big for one session. Give 2 to 5 sub-issues, each a complete, independently testable change with its own acceptance criteria. Use `after` to list the 0-based indexes of earlier sub-issues that must merge first. Sub-issues without `after` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one sub-issue where you can, and name each one's files in its body. Where two must edit the same file, such as a shared index, registry or wiki page, put one `after` the other so they run in turn. Prefer fewer sub-issues to many that share files.";
+  "- split: too big for one session. Say why in `reason` and write `plan` as for ready; the spec writer decides how to cut it.";
 const SPLIT_FORBIDDEN =
   "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so.";
 const REJECTED = "triage rejected the issue for the agent pipeline";
-const SUB_ISSUES = [
-  { title: "First part", body: "Do the first part.", after: [] },
-  { title: "Second part", body: "Do the second part.", after: [0] },
-];
 
 // Every kit's rebase pool (`rebaseTokenBudget`).
 const REBASE_BUDGET = 500_000;
@@ -69,6 +66,7 @@ function contextWith(issueBudget) {
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
+      hardLimit: 175_000,
       issueBudget,
       rebaseBudget: REBASE_BUDGET,
     },
@@ -118,7 +116,6 @@ function replyOf(fields) {
     decision: "ready",
     reason: "",
     questions: [],
-    subIssues: [],
     plan: "",
     ...fields,
   };
@@ -129,6 +126,7 @@ function replyOf(fields) {
 function expectedTask(splitLine) {
   return preamble(CFG, { n: 7, paths: PATHS }, "triage", ROLES.triage)
     .concat([
+      "If /runs/issue-7/handoff.md exists, an earlier implementer session wrote it when it ran out of room: read it and the commits on `agent/issue-7` before you decide.",
       "Read the issue and as much of the code as you need to decide one of:",
       "- ready: one implementer session (at most 150000 tokens of context) can implement and test it. Write `plan`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.",
       "- needs-info: a competent engineer could not start without answers. Ask at most 5 specific questions. If earlier questions were answered in the comments, use the answers.",
@@ -149,6 +147,7 @@ function sessionLaunch(task) {
     model: MODEL,
     schema: TRIAGE_SCHEMA,
     minutes: 20,
+    tokenBudget: ROLES.triage,
     task,
   };
 }
@@ -157,13 +156,13 @@ export {
   CTX,
   contextWith,
   expectedTask,
+  PATHS,
   REJECTED,
   replyOf,
   SIGNATURE,
   SPLIT_ALLOWED,
   SPLIT_FORBIDDEN,
   STAMP,
-  SUB_ISSUES,
   sessionLaunch,
   stateWith,
 };

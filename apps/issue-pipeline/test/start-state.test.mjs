@@ -45,6 +45,7 @@ const ctx = {
   remote: "h1",
   pr: PR,
   hasWork: true,
+  keptUnpushed: false,
   answered: false,
   now,
 };
@@ -255,7 +256,9 @@ const cfg = {
   baseBranch: "integration",
   claimWaitSeconds: [0, 0],
   commands: { test: "true" },
+  contextLimits: { soft: 150_000, hard: 175_000 },
   leaseHours: 3,
+  maxContinuations: 1,
   practices: [],
   repo: "o/r",
   slug: "o__r",

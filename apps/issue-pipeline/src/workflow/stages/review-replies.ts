@@ -28,7 +28,9 @@ interface Dispute {
   evidence: string;
 }
 
+// A fixer's reply: `handoff` means it ran out of room before finishing.
 interface FixReply {
+  status: "done" | "handoff";
   fixed: string[];
   disputed: Dispute[];
   summary: string;
@@ -165,9 +167,10 @@ function fixReplyOf(output: unknown): FixReply | null {
   if (!isRecord(output)) {
     return null;
   }
-  const { fixed, disputed, summary } = output;
+  const { status, fixed, disputed, summary } = output;
   if (
     !(
+      (status === "done" || status === "handoff") &&
       isListOf(fixed, isString) &&
       isListOf(disputed, isDispute) &&
       isString(summary)
@@ -175,7 +178,7 @@ function fixReplyOf(output: unknown): FixReply | null {
   ) {
     return null;
   }
-  return { fixed, disputed, summary };
+  return { status, fixed, disputed, summary };
 }
 
 function rereviewReplyOf(output: unknown): RereviewReply | null {

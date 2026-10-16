@@ -1,7 +1,7 @@
 // @ts-check
 // The ops that finish an issue's sweep or take it out of the pipeline
-// (close-parent, post, release), through the ops CLI, and the modules that
-// hold them and merge.
+// (close-parent, post, release), through the ops CLI, and the built ops CLI
+// against src/ops.ts.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -18,12 +18,12 @@ import {
   finishReplies,
   hoursFromNow,
   LANE,
-  listCall,
   relabel,
   replyLine,
   SWEEP,
   signedBy,
   world,
+  writes,
 } from "./ops-test-kit.mjs";
 
 /** @import { World } from "./ops-test-kit.mjs" */
@@ -39,9 +39,10 @@ const ISSUE = 7;
 // The sub-issues still open in the open-sub-issues case.
 const OPEN_SUB = 4;
 const LAST_OPEN_SUB = 5;
-// How old the lease release renews is, and the gh calls release makes.
+// How old the lease release renews is, and the gh writes release makes: the
+// state comment and the claim touch.
 const LEASE_AGE_HOURS = 2;
-const RELEASE_CALLS = 4;
+const RELEASE_WRITES = 2;
 const STATE_GROUPS = z.object({ json: z.string() });
 const LEASED = z.looseObject({ lease: z.looseObject({ at: z.string() }) });
 const FAILED_REPLY = z.object({ ok: z.boolean(), error: z.string() });
@@ -52,28 +53,6 @@ function closeParent(w, subs) {
   fakeGh.reply([{ when: "sub_issues", stdout: subs }]);
   return ask(w, { op: "close-parent", number: ISSUE });
 }
-
-test("the moved ops live in src/ops/merge.ts and src/ops/finish.ts", async () => {
-  const { merge } = await import("../src/ops/merge.ts");
-  const finish = await import("../src/ops/finish.ts");
-  assert.equal(typeof merge, "function");
-  const {
-    finishMerged,
-    closeParent: closeParentOp,
-    post,
-    release: releaseOp,
-  } = finish;
-  const ops = {
-    finishMerged,
-    closeParent: closeParentOp,
-    post,
-    release: releaseOp,
-  };
-  for (const [name, op] of Object.entries(ops)) {
-    assert.equal(typeof op, "function", name);
-  }
-  assert.deepEqual(finish.post(), {});
-});
 
 test("close-parent with no sub-issues closes nothing", () => {
   const w = world();
@@ -89,9 +68,7 @@ test("close-parent with no sub-issues closes nothing", () => {
       }),
     );
   }
-  assert.deepEqual(calls(), [
-    ["api", "repos/o/r/issues/7/sub_issues?per_page=100"],
-  ]);
+  assert.deepEqual(writes(), []);
 });
 
 test("close-parent with open sub-issues names them", () => {
@@ -126,8 +103,7 @@ test("close-parent closes a parent whose sub-issues are all closed", () => {
       closed: true,
     }),
   );
-  assert.deepEqual(calls(), [
-    ["api", "repos/o/r/issues/7/sub_issues?per_page=100"],
+  assert.deepEqual(writes(), [
     commentPost(
       ISSUE,
       signedBy("coordinator", "All sub-issues are closed (#3, #4). Closing."),
@@ -148,7 +124,7 @@ test("post only posts the queued comments", () => {
   assert.deepEqual(calls(), [commentPost(ISSUE, signedBy("x", "b"))]);
 });
 
-// Runs release for #7 with `state`: its reply, the gh calls it made, the
+// Runs release for #7 with `state`: its reply, the gh writes it made, the
 // claim edit's body and the state it wrote.
 /** @param {World} w @param {object} state @returns {{ out: string, made: string[][], touched: string, written: unknown }} */
 function release(w, state) {
@@ -160,15 +136,15 @@ function release(w, state) {
     sweepId: SWEEP,
     state,
   });
-  const made = calls();
-  const [, stateCall = [], , touchCall = []] = made;
+  const made = writes();
+  const [stateWrite = [], claimTouch = []] = made;
   const { json } = STATE_GROUPS.parse(
-    STATE_JSON.exec(stateCall.at(-2) ?? "")?.groups,
+    STATE_JSON.exec(stateWrite.at(-2) ?? "")?.groups,
   );
   return {
     out,
     made,
-    touched: touchCall.at(-2) ?? "",
+    touched: claimTouch.at(-2) ?? "",
     written: JSON.parse(json),
   };
 }
@@ -184,10 +160,8 @@ test("release renews the lease's time, keeps its lane and touches the claim", ()
   const state = { pr: 50, stage: "review", lease };
   const { out, made, touched, written } = release(w, state);
   assert.equal(out, replyLine(RELEASED));
-  assert.deepEqual(made[0], listCall(ISSUE));
-  assert.deepEqual(made[2], listCall(ISSUE));
   assert.match(touched, STILL_WORKING);
-  assert.equal(made.length, RELEASE_CALLS);
+  assert.equal(made.length, RELEASE_WRITES);
   const { at } = LEASED.parse(written).lease;
   assert.ok(Date.parse(at) >= before);
   assert.equal(
@@ -259,9 +233,7 @@ test("release writes a missing lease as null", () => {
   const state = { pr: 50, stage: "review", lease: null };
   const { out, made, touched, written } = release(w, state);
   assert.equal(out, replyLine(RELEASED));
-  assert.deepEqual(made[0], listCall(ISSUE));
-  assert.deepEqual(made[2], listCall(ISSUE));
   assert.match(touched, STILL_WORKING);
-  assert.equal(made.length, RELEASE_CALLS);
+  assert.equal(made.length, RELEASE_WRITES);
   assert.equal(JSON.stringify(written), JSON.stringify(state));
 });

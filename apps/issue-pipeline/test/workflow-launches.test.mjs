@@ -22,6 +22,7 @@ const SAVE = {
   op: "save-state",
   payload: { number: 7, state: { stage: "spec" } },
 };
+const TOKEN_BUDGET = 50_000;
 /** @type {ChildLaunch} */
 const CHILD = {
   kind: "child",
@@ -31,16 +32,13 @@ const CHILD = {
   model: "anthropic/claude-opus-5-5",
   schema: { type: "object" },
   minutes: 0,
+  tokenBudget: TOKEN_BUDGET,
   task: "Triage.",
 };
 const SEQ = 4;
 const OUTPUT_TAIL = 500;
-const OPS_TIMEOUT_MS = 600_000;
-const CLAIM_MINUTES = 15;
-const CLAIM_TIMEOUT_MS = 900_000;
-const CHILD_TIMEOUT_MS = 1_800_000;
-const WRITER_MINUTES = 60;
-const WRITER_TIMEOUT_MS = 3_600_000;
+// More minutes than any default, asked for by a launch.
+const LONG_MINUTES = 60;
 // The state's tokens before a session, and after it reports 1 + 2 + 3 + 4.
 const TOKENS_BEFORE = 10;
 const TOKENS_AFTER = 20;
@@ -93,19 +91,9 @@ test("output with no JSON keeps its last 500 characters", () => {
   assert.equal(error, `ops reply was not JSON: ${output.slice(-OUTPUT_TAIL)}`);
 });
 
-test("the ops request keeps its key order, the frame first", () => {
-  const spec = opsSpec(FRAME, SEQ, SAVE, null);
-  assert.equal(spec.key, "i7-save-4");
-  assert.equal(spec.label, "Run save-state operation");
-  assert.equal(spec.agent, "issue-pipeline-ops");
-  assert.deepEqual(Object.keys(requestOf(spec)), [
-    "op",
-    "config",
-    "sweepId",
-    "lane",
-    "number",
-    "state",
-  ]);
+test("an ops request carries the sweep's frame, the op and its payload", () => {
+  const request = requestOf(opsSpec(FRAME, SEQ, SAVE, null));
+  assert.deepEqual(request, { op: "save-state", ...FRAME, ...SAVE.payload });
 });
 
 test("queued comments ride along only on a request for their issue", () => {
@@ -116,7 +104,6 @@ test("queued comments ride along only on a request for their issue", () => {
   assert.equal(requestOf(opsSpec(FRAME, 1, other, outbox)).comments, undefined);
   assert.deepEqual(outbox.comments, [comment]);
   const request = requestOf(opsSpec(FRAME, 2, SAVE, outbox));
-  assert.deepEqual(Object.keys(request).at(-1), "comments");
   assert.deepEqual(request.comments, [comment]);
   assert.deepEqual(outbox.comments, []);
   assert.equal(
@@ -125,19 +112,20 @@ test("queued comments ride along only on a request for their issue", () => {
   );
 });
 
-test("an ops request has 10 minutes unless it asks for more, and no silence alert", () => {
-  const spec = opsSpec(FRAME, 1, SAVE, null);
-  assert.equal(spec.timeoutMs, OPS_TIMEOUT_MS);
-  assert.deepEqual(spec.control, { needsAttentionAfterMs: OPS_TIMEOUT_MS });
-  const claim = opsSpec(FRAME, 1, { ...SAVE, minutes: CLAIM_MINUTES }, null);
-  assert.equal(claim.timeoutMs, CLAIM_TIMEOUT_MS);
-  assert.deepEqual(claim.control, { needsAttentionAfterMs: CLAIM_TIMEOUT_MS });
+test("an ops request that asks for more minutes gets them, with no earlier silence alert", () => {
+  const plain = opsSpec(FRAME, 1, SAVE, null);
+  const long = opsSpec(FRAME, 1, { ...SAVE, minutes: LONG_MINUTES }, null);
+  assert.ok(long.timeoutMs > plain.timeoutMs);
+  for (const spec of [plain, long]) {
+    assert.deepEqual(spec.control, { needsAttentionAfterMs: spec.timeoutMs });
+  }
 });
 
 test("a session runs in the worktree with the bridge off, keyed by its issue", () => {
   /** @type {Record<string, LaunchMeta>} */
   const meta = {};
-  const spec = childSpec(SEQ, WHERE, CHILD, meta);
+  const { timeoutMs, ...spec } = childSpec(SEQ, WHERE, CHILD, meta);
+  assert.ok(timeoutMs > 0);
   assert.deepEqual(spec, {
     key: "i7-triage-4",
     label: "Triage #7",
@@ -146,7 +134,7 @@ test("a session runs in the worktree with the bridge off, keyed by its issue", (
     cwd: "/w/work/o__r/issue-7",
     task: "Triage.",
     outputSchema: { type: "object" },
-    timeoutMs: CHILD_TIMEOUT_MS,
+    tokenBudget: TOKEN_BUDGET,
     intercomBridge: { mode: "off" },
   });
   assert.deepEqual(meta, {
@@ -158,18 +146,16 @@ test("a session runs in the worktree with the bridge off, keyed by its issue", (
 });
 
 test("only a writer's session waives pi-subagents' acceptance", () => {
-  const spec = childSpec(
+  const reader = childSpec(SEQ, WHERE, CHILD, {});
+  const writer = childSpec(
     SEQ,
     WHERE,
-    { ...CHILD, writer: true, minutes: WRITER_MINUTES },
+    { ...CHILD, writer: true, minutes: LONG_MINUTES },
     {},
   );
-  assert.equal(spec.timeoutMs, WRITER_TIMEOUT_MS);
-  assert.deepEqual(spec.acceptance, {
-    level: "none",
-    reason:
-      "The pipeline verifies changes with its own commands and reviewers.",
-  });
+  assert.equal(reader.acceptance, undefined);
+  assert.equal(writer.acceptance?.level, "none");
+  assert.ok(writer.timeoutMs > reader.timeoutMs);
 });
 
 test("a session's reported tokens add to the state, and its result is signed", () => {

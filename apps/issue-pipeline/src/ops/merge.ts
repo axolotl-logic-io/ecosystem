@@ -1,6 +1,8 @@
 // The decision to merge an issue's PR or refuse it: the checks that the
-// verified commit is still the PR's head and contains the current base, the
-// merge order between issues, the squash merge itself and what a refusal means.
+// verified commit is still the PR's head, contains the current base and isn't
+// stacked on another issue's branch, the wait for a stacked issue's open
+// prerequisite, the merge order between issues, the squash merge itself and
+// what a refusal means.
 
 import { z } from "zod";
 import { comment } from "../comments.ts";
@@ -12,8 +14,8 @@ import type { RunResult } from "../process.ts";
 import { parseRequest, run, tail } from "../process.ts";
 import { STATE } from "../state.ts";
 import { finishMerged } from "./finish.ts";
-import type { Queued } from "./merge-order.ts";
-import { queued } from "./merge-order.ts";
+import type { Queued, StackQueued } from "./merge-order.ts";
+import { queued, stackedQueued } from "./merge-order.ts";
 
 const SHORT_SHA_LENGTH = 12;
 const REFUSAL_TAIL_LINES = 5;
@@ -47,11 +49,12 @@ type PrView = z.infer<typeof PR_VIEW>;
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
 type MergeReply =
-  | { merged: true; byHand: true }
-  | { merged: true }
+  | { merged: true; byHand: true; published: boolean }
+  | { merged: true; published: boolean }
   | { merged: false; reason: string }
   | { merged: false; reason: "head-changed"; headSha: string }
-  | Queued;
+  | Queued
+  | StackQueued;
 
 // Why the open PR may not merge yet, or undefined when it may.
 function precheck(
@@ -61,6 +64,14 @@ function precheck(
 ): MergeReply | undefined {
   if (view.state !== "OPEN") {
     return { merged: false, reason: `PR is ${view.state}` };
+  }
+  // A stacked branch (stack.ts) still holds its prerequisite's commits, which
+  // its reviews never measured. It waits (queued) while the prerequisite is
+  // open; once the prerequisite merged it is behind, like a branch behind its
+  // base, until the sync moves it onto the base.
+  const { stackedOn } = req.state;
+  if (stackedOn !== null && stackedOn !== undefined) {
+    return stackedQueued(cfg, stackedOn) ?? { merged: false, reason: "behind" };
   }
   if (view.headRefOid !== req.expectedSha) {
     return { merged: false, reason: "head-changed", headSha: view.headRefOid };
@@ -118,8 +129,8 @@ function merge(cfg: Config, request: unknown): MergeReply {
   );
   if (view.state === "MERGED") {
     // Someone merged it by hand first. Finish the bookkeeping a merge does.
-    finishMerged(cfg, n, pr, req.state);
-    return { merged: true, byHand: true };
+    const published = finishMerged(cfg, n, pr, req.state);
+    return { merged: true, byHand: true, published };
   }
   const refused = precheck(cfg, req, view);
   if (refused !== undefined) {
@@ -148,8 +159,8 @@ function merge(cfg: Config, request: unknown): MergeReply {
     { role: "merger" },
     `Merged ${sha}: every blocking review finding is resolved and every check passed on this commit.\n\n${req.summary ?? ""}`,
   );
-  finishMerged(cfg, n, pr, req.state);
-  return { merged: true };
+  const published = finishMerged(cfg, n, pr, req.state);
+  return { merged: true, published };
 }
 
 export { merge };

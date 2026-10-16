@@ -5,7 +5,17 @@
 
 import { isRecord, isStrings } from "./reply-guards.ts";
 
-type SpecDecision = "ready" | "needs-info";
+type SpecDecision = "ready" | "needs-info" | "split";
+
+// One part of a spec writer's split, opened as a sub-issue.
+interface SpecPart {
+  title: string;
+  body: string;
+  // The 0-based indexes of earlier parts that must merge first.
+  after: number[];
+  // The repo paths or globs the part will touch.
+  files: string[];
+}
 
 interface SpecReply {
   decision: SpecDecision;
@@ -13,6 +23,8 @@ interface SpecReply {
   questions: string[];
   // The repo paths or globs the change will touch.
   files: string[];
+  // The parts of a split; empty for any other decision.
+  subIssues: SpecPart[];
 }
 
 type ImplStatus = "done" | "handoff" | "blocked";
@@ -25,25 +37,65 @@ interface ImplReply {
   testsAdded: string[];
 }
 
-const SPEC_DECISIONS: readonly SpecDecision[] = ["ready", "needs-info"];
+// A spec writer's reply that fits the schema: complete when its spec ends with
+// SPEC_END, which is then stripped, or cut short when it doesn't (#280).
+type SpecRead = { complete: true; reply: SpecReply } | { complete: false };
+
+// The line the spec writer writes last in `spec`, after every section, so a
+// spec that stops partway can be told from a whole one (#280). An HTML comment,
+// so it would not show even if it were posted.
+const SPEC_END = "<!-- end of spec -->";
+
+const SPEC_DECISIONS: readonly SpecDecision[] = [
+  "ready",
+  "needs-info",
+  "split",
+];
 const IMPL_STATUSES: readonly ImplStatus[] = ["done", "handoff", "blocked"];
 
+function isSpecPart(value: unknown): value is SpecPart {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const { title, body, after, files } = value;
+  return (
+    typeof title === "string" &&
+    typeof body === "string" &&
+    Array.isArray(after) &&
+    after.every((index) => typeof index === "number") &&
+    isStrings(files)
+  );
+}
+
+function isSpecParts(value: unknown): value is SpecPart[] {
+  return Array.isArray(value) && value.every(isSpecPart);
+}
+
 // The spec writer's reply, or null when the output doesn't fit the schema.
-function specReplyOf(output: unknown): SpecReply | null {
+function specReplyOf(output: unknown): SpecRead | null {
   if (!isRecord(output)) {
     return null;
   }
-  const { decision, spec, questions, files } = output;
+  const { decision, spec, questions, files, subIssues } = output;
   const known = SPEC_DECISIONS.find((entry) => entry === decision);
   if (
     known === undefined ||
     typeof spec !== "string" ||
     !isStrings(questions) ||
-    !isStrings(files)
+    !isStrings(files) ||
+    !isSpecParts(subIssues)
   ) {
     return null;
   }
-  return { decision: known, spec, questions, files };
+  const text = spec.trimEnd();
+  if (!text.endsWith(SPEC_END)) {
+    return { complete: false };
+  }
+  const whole = text.slice(0, -SPEC_END.length).trimEnd();
+  return {
+    complete: true,
+    reply: { decision: known, spec: whole, questions, files, subIssues },
+  };
 }
 
 // The implementer's reply, or null when the output doesn't fit the schema.
@@ -65,5 +117,5 @@ function implReplyOf(output: unknown): ImplReply | null {
   return { status: known, summary, prTitle, prBody, testsAdded };
 }
 
-export type { ImplReply, SpecReply };
-export { implReplyOf, specReplyOf };
+export type { ImplReply, SpecPart, SpecRead, SpecReply };
+export { implReplyOf, SPEC_END, specReplyOf };

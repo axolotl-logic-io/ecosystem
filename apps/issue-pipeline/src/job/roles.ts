@@ -4,8 +4,9 @@
 // only the one its config names, as GH_TOKEN. No session runs as merger, so
 // no model holds merge credentials. The networks are recorded, not enforced.
 
-import type { Config, JobRolesConfig } from "../config.ts";
+import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import type { JobRolesConfig } from "../config-schema.ts";
 import type { StageName } from "../workflow/stages/types.ts";
 
 type JobRole = "reader" | "writer" | "merger";
@@ -35,7 +36,9 @@ interface Boundary {
 }
 
 // The role each stage's job runs as. sync and checks write because their
-// conflict resolver and CI fixer do.
+// conflict resolver and CI fixer do. merge and publish run as merger; their
+// wiki conflict resolvers' sessions run as writers, as every writer session
+// does.
 const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
   triage: "reader",
   spec: "reader",
@@ -48,6 +51,7 @@ const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
   accept: "reader",
   security: "reader",
   merge: "merger",
+  publish: "merger",
 };
 
 const DEFAULT_ROLES: Roles = {

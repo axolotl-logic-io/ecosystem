@@ -29,7 +29,8 @@ const SETTINGS = {
 const CAPPED = { ...SETTINGS, maxJobs: CAPPED_JOBS };
 
 // Issue #number, opened `number` minutes after the first: a runnable
-// candidate at triage with no files, PR, after mark or job, then `fields`.
+// candidate at triage with no files, PR, after mark, job or prerequisite,
+// unstacked, then `fields`.
 /** @param {Partial<SnapshotIssue> & { number: number }} fields @returns {SnapshotIssue} */
 function issue(fields) {
   const { number } = fields;
@@ -42,6 +43,8 @@ function issue(fields) {
     after: [],
     stopped: false,
     job: null,
+    stackedOn: null,
+    prereq: null,
     ...fields,
   };
 }

@@ -2,90 +2,74 @@
 // Autumn (2026-10-13): every issue gets a spec before implementation. It is
 // posted on the issue, and the implementer and the acceptance check work from
 // it. A spec that needs a maintainer's answer goes back to triage with its
-// questions.
+// questions, and an issue too big for one session is split into sub-issues
+// (spec-split.ts, #267). A failed spec session, including one whose spec stops partway, is
+// tried once more within the spec budget (#280).
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
-import { practicesNote, preamble } from "../prompts.ts";
 import { SPEC_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
+import type { IssueState } from "../types.ts";
 import type { SpecReply } from "./build-replies.ts";
-import { specReplyOf } from "./build-replies.ts";
+import { SPEC_END, specReplyOf } from "./build-replies.ts";
+import { isRecord, isStrings, signatureOf } from "./reply-guards.ts";
+import { splitStep } from "./spec-split.ts";
+import { ROLE, specTask } from "./spec-task.ts";
 import {
   doneStep,
   launchStep,
   onlyChild,
   onlyReply,
+  phaseOf,
+  replyError,
   stopStep,
 } from "./step.ts";
 import type {
   ChildLaunch,
+  ChildResult,
   LaunchResult,
   StageContext,
   StageState,
   Step,
 } from "./types.ts";
 
-// Where spec is: about to launch the session, reading its reply, or waiting
-// for its questions to be posted.
-type SpecPhase = "begin" | "decide" | "follow-up";
+// Where spec is: about to launch the session, reading its reply, reading the
+// reply of its one retry, waiting for the full spec to be saved, or waiting
+// for its questions or its split to be posted.
+type SpecPhase = "begin" | "decide" | "decide-again" | "saved" | "follow-up";
 
-const PHASES: readonly SpecPhase[] = ["begin", "decide", "follow-up"];
+// The phases a spec session's reply is read in.
+type DecidePhase = "decide" | "decide-again";
 
-// The longest spec the state keeps.
+const PHASES: readonly SpecPhase[] = [
+  "begin",
+  "decide",
+  "decide-again",
+  "saved",
+  "follow-up",
+];
+
+// The longest spec the state keeps; a longer one is saved whole to spec.md.
 const SPEC_LIMIT = 12_000;
 const SPEC_MINUTES = 30;
-const ROLE = "spec writer";
 
-function phaseOf(state: StageState): SpecPhase {
-  const phase = PHASES.find((entry) => entry === state.phase);
-  if (phase === undefined) {
-    throw new Error(`spec: unknown phase ${state.phase}`);
-  }
-  return phase;
-}
+// A spec session's outcome: a whole reply, or why the session failed.
+type SessionRead =
+  | { ok: true; reply: SpecReply }
+  | { ok: false; detail: string | null };
 
-function planText(plan: string | null | undefined): string {
-  if (typeof plan !== "string" || plan === "") {
-    return "(none)";
-  }
-  return plan;
-}
-
-// Where the spec writer starts reading the wiki, or "" when there is none.
-function wikiStart(state: StageState): string {
-  const { wiki } = state.paths;
-  if (wiki === null || wiki === "") {
-    return "";
-  }
-  return ` (start from ${wiki}/Home.md)`;
-}
-
-function specTask(state: StageState, ctx: StageContext): string {
-  const { cfg, budgets } = ctx;
-  const lines = [
-    `Triage found this issue ready. Its notes:\n${planText(state.st.plan)}`,
-    "",
-    `Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the project's coding practices (below); the wiki pages that bear on it${wikiStart(state)}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
-    practicesNote(cfg, state, "spec"),
-    "`spec` is GitHub markdown with these sections:",
-    "- **Behaviour**: what is true when the issue is done, as checkable statements.",
-    "- **Out of scope**: what this issue does not change.",
-    "- **Design**: the approach, the files to change with `file:line` anchors, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
-    "- **Tests**: the tests to add or change, each naming the behaviour it pins down and why it fails today.",
-    '- **Wiki updates**: wiki pages to add or change, or "None".',
-    "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
-    "`files` lists the repo paths or globs the change will touch, relative to the repo root, without wiki pages (such as `src/a.ts` or `src/orchestrator/**`). The orchestrator holds back other changes that touch them.",
-    "Keep it under about 150 lines. Set `decision` to ready, with `questions` empty.",
-    "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
-  ];
-  return preamble(cfg, state, ROLE, budgets.roles.spec)
-    .concat(lines)
-    .join("\n");
+// A ready spec on its way to being kept, carried to "saved" while its full
+// text is written to spec.md.
+interface ReadySpec {
+  spec: string;
+  files: string[];
+  by: Signature;
 }
 
 function specLaunch(state: StageState, ctx: StageContext): ChildLaunch {
+  const budget = sessionBudget(ctx.budgets, "spec");
   return {
     kind: "child",
     name: "spec",
@@ -95,12 +79,17 @@ function specLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     model: ctx.models.spec,
     schema: SPEC_SCHEMA,
     minutes: SPEC_MINUTES,
-    task: specTask(state, ctx),
+    tokenBudget: budget,
+    task: specTask(state, ctx, budget),
   };
 }
 
-// Charges the session, then launches it.
-function begin(state: StageState, ctx: StageContext): Step {
+// Charges a spec session, then launches it, its reply read in `phase`.
+function launchSession(
+  state: StageState,
+  ctx: StageContext,
+  phase: DecidePhase,
+): Step {
   const st = { ...state.st };
   const charge = chargeSession(ctx.budgets, st, "spec", {
     at: ctx.now(),
@@ -109,9 +98,7 @@ function begin(state: StageState, ctx: StageContext): Step {
     return stopStep(state, charge.reason, charge.detail);
   }
   const charged = { ...state, st };
-  return launchStep({ ...charged, phase: "decide" }, [
-    specLaunch(charged, ctx),
-  ]);
+  return launchStep({ ...charged, phase }, [specLaunch(charged, ctx)]);
 }
 
 // Sends the questions back to triage, with what the spec writer found so far.
@@ -130,42 +117,113 @@ function ask(state: StageState, reply: SpecReply, by: Signature): Step {
   );
 }
 
-// Keeps the spec, moves the issue to implement and posts the spec.
-function ready(state: StageState, reply: SpecReply, by: Signature): Step {
-  const st = {
+// Keeps the spec, clipped, with the path of its full text when it was
+// clipped, moves the issue to implement and posts the whole spec.
+function kept(
+  state: StageState,
+  whole: ReadySpec,
+  specFile: string | null,
+): Step {
+  const st: IssueState = {
     ...state.st,
-    spec: clip(reply.spec, SPEC_LIMIT),
-    files: reply.files,
+    spec: clip(whole.spec, SPEC_LIMIT),
+    files: whole.files,
     stage: "implement",
   };
-  const body = `## Spec\n\nThe implementer builds to this spec, and the acceptance check judges the result against it.\n\n${reply.spec}`;
-  return doneStep({ ...state, st }, [{ by, body, where: "issue" }]);
+  if (specFile !== null || typeof st.specFile === "string") {
+    st.specFile = specFile;
+  }
+  const body = `## Spec\n\nThe implementer builds to this spec, and the acceptance check judges the result against it.\n\n${whole.spec}`;
+  return doneStep({ ...state, st, carry: null }, [
+    { by: whole.by, body, where: "issue" },
+  ]);
+}
+
+// Keeps a spec that fits SPEC_LIMIT at once; saves a longer one whole to
+// spec.md first.
+function ready(state: StageState, reply: SpecReply, by: Signature): Step {
+  const spec: ReadySpec = { spec: reply.spec, files: reply.files, by };
+  if (reply.spec.length <= SPEC_LIMIT) {
+    return kept(state, spec, null);
+  }
+  const payload = { number: state.n, spec: reply.spec };
+  return launchStep({ ...state, phase: "saved", carry: spec }, [
+    { kind: "op", name: "save-spec", op: "save-spec", payload },
+  ]);
+}
+
+function readySpecOf(state: StageState): ReadySpec {
+  const { carry } = state;
+  if (isRecord(carry)) {
+    const { spec, files, by } = carry;
+    const signature = signatureOf(by);
+    if (typeof spec === "string" && isStrings(files) && signature !== null) {
+      return { spec, files, by: signature };
+    }
+  }
+  throw new Error("spec: expected the spec to save");
+}
+
+// The full spec was saved, or the issue stops.
+function saved(state: StageState, results: readonly LaunchResult[]): Step {
+  const spec = readySpecOf(state);
+  const { ok, error, specFile } = onlyReply(results);
+  if (ok !== true || typeof specFile !== "string") {
+    return stopStep(
+      { ...state, carry: null },
+      "could not save the full spec",
+      replyError(error),
+    );
+  }
+  return kept(state, spec, specFile);
+}
+
+// The session's whole reply, or why the session failed.
+function sessionRead(result: ChildResult): SessionRead {
+  if (!result.ok) {
+    return { ok: false, detail: result.error };
+  }
+  const read = specReplyOf(result.structuredOutput);
+  if (read === null) {
+    return { ok: false, detail: "its reply did not fit the schema" };
+  }
+  if (!read.complete) {
+    const detail = `its spec did not end with ${SPEC_END}, so it may stop partway`;
+    return { ok: false, detail };
+  }
+  return { ok: true, reply: read.reply };
 }
 
 // Acts on the spec writer's decision. Questions it didn't ask read as ready.
+// A failed session is tried once more; a second failure stops the issue.
 function decide(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
+  phase: DecidePhase,
 ): Step {
   const result = onlyChild(results);
-  let reply: SpecReply | null = null;
-  if (result.ok) {
-    reply = specReplyOf(result.structuredOutput);
+  const read = sessionRead(result);
+  if (!read.ok) {
+    if (phase === "decide") {
+      return launchSession(state, ctx, "decide-again");
+    }
+    return stopStep(state, "the spec writer failed twice", read.detail);
   }
-  if (reply === null) {
-    return stopStep(state, "the spec writer failed", result.error);
-  }
+  const { reply } = read;
   const st = { ...state.st };
   noteEvent(st, `spec: ${reply.decision}`, ctx.now());
   const decided = { ...state, st };
+  if (reply.decision === "split") {
+    return splitStep(decided, reply, result.by);
+  }
   if (reply.decision === "needs-info" && reply.questions.length > 0) {
     return ask(decided, reply, result.by);
   }
   return ready(decided, reply, result.by);
 }
 
-// The questions were posted; a failure aborts the sweep.
+// The questions or the split were posted; a failure aborts the sweep.
 function followedUp(state: StageState, results: readonly LaunchResult[]): Step {
   const { ok, error } = onlyReply(results);
   if (ok !== true) {
@@ -180,12 +238,15 @@ function next(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const phase = phaseOf(state);
+  const phase = phaseOf("spec", PHASES, state);
   switch (phase) {
     case "begin":
-      return begin(state, ctx);
+      return launchSession(state, ctx, "decide");
     case "decide":
-      return decide(state, ctx, results);
+    case "decide-again":
+      return decide(state, ctx, results, phase);
+    case "saved":
+      return saved(state, results);
     case "follow-up":
       return followedUp(state, results);
     default: {

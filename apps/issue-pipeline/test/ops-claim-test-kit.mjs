@@ -46,13 +46,14 @@ const NEW_STATE = {
   reportedTokens: 0,
   sessions: [],
   triages: 0,
-  continuations: 0,
+  continuations: {},
   round: 0,
   ciFixes: 0,
   syncs: 0,
   findings: [],
   resolvedHistory: [],
   questionsAt: null,
+  stackedOn: null,
   log: [],
 };
 

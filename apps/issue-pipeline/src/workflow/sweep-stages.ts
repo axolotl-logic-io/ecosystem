@@ -113,7 +113,10 @@ function groupBatch(
       specs: [opsLaunchSpec(run, save)],
     };
   }
-  if (runs >= passesOf(stage) || !fits(run, item, stage)) {
+  if (
+    runs >= passesOf(stage, run.ctx.cfg.maxContinuations) ||
+    !fits(run, item, stage)
+  ) {
     return null;
   }
   run.stagesRun = { ...run.stagesRun, [stage]: runs + 1 };

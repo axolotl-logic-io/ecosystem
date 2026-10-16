@@ -1,13 +1,17 @@
 // The merge order between issues: which other issue's PR should merge before
-// this one's. By default the oldest ready PR goes first (decision
+// this one's. A stacked issue always waits for its open prerequisite (#289).
+// Otherwise, by default the oldest ready PR goes first (decision
 // merge-order); the orchestrator can pass its own ranked queue instead (#234).
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { ghJson } from "../github.ts";
 import { LABELS } from "../labels.ts";
+import type { StackedOn } from "../stack.ts";
+import { prereqMerged } from "../stack.ts";
 import { readState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
+import { openPrFor } from "./prs.ts";
 
 const MS_PER_HOUR = 3_600_000;
 const WORKING_LIST_LIMIT = "100";
@@ -57,6 +61,11 @@ interface Queued {
   reason: "queued";
   waitingFor: number;
   waitingForPr: number;
+}
+
+// The merge waits for prerequisite #stackedOn, the issue it is stacked on.
+interface StackQueued extends Queued {
+  stackedOn: number;
 }
 
 interface Ahead {
@@ -183,5 +192,26 @@ function queued(cfg: Config, req: OrderRequest): Queued | undefined {
   };
 }
 
-export type { Queued };
-export { queued, READY_STAGES };
+// Why a merge stacked on `stackedOn` waits for its prerequisite, or undefined
+// once the prerequisite has merged. A stacked issue's merge waits while its
+// prerequisite is open, whatever the merge order. `waitingForPr` is the
+// prerequisite's open PR, or 0 when it has none.
+function stackedQueued(
+  cfg: Config,
+  stackedOn: StackedOn,
+): StackQueued | undefined {
+  const { issue } = stackedOn;
+  if (prereqMerged(cfg, issue)) {
+    return undefined;
+  }
+  return {
+    merged: false,
+    reason: "queued",
+    waitingFor: issue,
+    waitingForPr: openPrFor(cfg, issue) ?? 0,
+    stackedOn: issue,
+  };
+}
+
+export type { Queued, StackQueued };
+export { queued, READY_STAGES, stackedQueued };

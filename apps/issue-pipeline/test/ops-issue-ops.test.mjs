@@ -1,8 +1,10 @@
 // @ts-check
-// The save-state, ask and stop ops through the ops CLI: their replies, and
+// The save-state, save-spec, ask and stop ops through the ops CLI: their replies, and
 // what each shows on GitHub (comments, the state comment, labels, closed
 // claims). The split op is in ops-split.test.mjs.
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { STOPS } from "../src/stops.ts";
 import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
@@ -13,6 +15,7 @@ import {
   effects,
   reply,
   root,
+  runDir,
   sh,
   stateComment,
   TIME,
@@ -26,6 +29,7 @@ const CLAIM_MARK = "<!-- agent-pipeline:claim-closed lane=me sweep=s1 -->";
 // Each test's issue, and the comments and PRs it meets.
 const SAVED = { n: 50 };
 const SAVE_REPLY = { ok: true, op: "save-state", posted: 0 };
+const SPEC_SAVED = { n: 55 };
 const ASKED = { n: 51, state: 5, claim: 6 };
 const STOPPED = { n: 53, pr: 70, claim: 8 };
 const STOPPED_BY_REASON = { n: 54 };
@@ -78,6 +82,22 @@ test("save-state writes the state it is given, and nothing without one", () => {
   assert.deepEqual(stateOf(saved, `comment #${n} state`), state);
   reply([]);
   assert.deepEqual(askOps({ op: "save-state", number: n }), SAVE_REPLY);
+  assert.deepEqual(writes(), []);
+});
+
+test("save-spec writes the full spec to spec.md in the run dir and replies with its path", () => {
+  const { n } = SPEC_SAVED;
+  const spec = "## Behaviour\n\n1. Every rule.\n";
+  reply([]);
+  const specFile = path.join(runDir(n), "spec.md");
+  assert.deepEqual(askOps({ op: "save-spec", number: n, spec }), {
+    ok: true,
+    op: "save-spec",
+    posted: 0,
+    specFile,
+  });
+  assert.ok(path.isAbsolute(specFile));
+  assert.equal(fs.readFileSync(specFile, "utf8"), spec);
   assert.deepEqual(writes(), []);
 });
 
@@ -160,6 +180,7 @@ test("stop by code explains the control on the issue and its PR and swaps labels
   assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
     stage: "stopped",
     pr,
+    stoppedStage: "review",
     lease: null,
     stopCode: "budget",
     stopReason: "over budget",
@@ -204,8 +225,38 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
   assert.ok(body.includes("To resume") && body.includes(`remove \`${label}\``));
   assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
     stage: "stopped",
+    stoppedStage: "implement",
     lease: null,
     stopCode: "push-rejected",
     stopReason: "could not push",
   });
+});
+
+test("a stop at publish keeps its stage and says the wiki is published again", () => {
+  const { n } = STOPPED_BY_REASON;
+  reply([]);
+  const request = {
+    op: "stop",
+    number: n,
+    code: "conflict",
+    reason: "the conflict resolution was rejected",
+    state: { stage: "publish", pr: 9 },
+  };
+  const label = "agent:stopped-conflict";
+  assert.deepEqual(askOps(request), {
+    ok: true,
+    op: "stop",
+    posted: 0,
+    code: "conflict",
+    label,
+  });
+  const stopped = effects();
+  const body = bodyOf(stopped, `comment #${n} role=coordinator`);
+  assert.ok(
+    body.endsWith(
+      `To resume, fix what this names, then remove \`${label}\`. The PR has merged, so the next sweep publishes the wiki changes again, with every limit reset.`,
+    ),
+  );
+  const saved = JSON.stringify(stateOf(stopped, `comment #${n} state`));
+  assert.ok(saved.includes('"stoppedStage":"publish"'));
 });

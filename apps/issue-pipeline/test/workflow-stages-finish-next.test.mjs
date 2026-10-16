@@ -17,6 +17,11 @@ import {
   NETWORK_FAILURE,
 } from "./deferral-test-kit.mjs";
 import {
+  asRequests,
+  opsRequests,
+  sessions,
+} from "./stage-outcome-test-kit.mjs";
+import {
   CTX,
   contextWith,
   DIFF,
@@ -24,16 +29,23 @@ import {
   MODELS,
   prepared,
   ROLES,
+  replied,
   SIGNATURE,
   STAMP,
   sessionEnded,
   stateWith,
   taskOf,
+  VERIFIED,
 } from "./workflow-finish-test-kit.mjs";
 
-/** @import { ChildLaunch, Step } from "../src/workflow/stages/types.ts" */
+/** @import { Step } from "../src/workflow/stages/types.ts" */
+/** @import { Session } from "./stage-outcome-test-kit.mjs" */
 
 const SPEC = "## Behaviour\n\n- It works.";
+// A spec clipped in the saved state, and where its full text is (#280).
+const CLIPPED = "## Behaviour\n\n1. The clipped copy…";
+const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
+const READ_WHOLE = /Read the whole spec there/u;
 // An issue budget smaller than one verifier session.
 const SMALL_BUDGET = 40_000;
 const BY = { ...SIGNATURE, role: "acceptance verifier" };
@@ -59,16 +71,12 @@ function acceptTask(spec) {
   ]);
 }
 
-/** @param {string} task @returns {ChildLaunch} */
-function sessionLaunch(task) {
+/** @param {string} task @returns {Session} */
+function verifierSession(task) {
   return {
-    kind: "child",
-    name: "accept",
-    label: "Check issue 7 is resolved",
     agent: "issue-pipeline-reader",
     model: MODELS.verifier,
     schema: ACCEPT_SCHEMA,
-    minutes: 25,
     task,
   };
 }
@@ -82,13 +90,8 @@ test("acceptance prepares the final diff before charging the verifier", () => {
   const given = stateWith("accept");
   const step = next(given, CTX, []);
   assert.equal(step.done, false);
-  assert.deepEqual(step.launches, [
-    {
-      kind: "op",
-      name: "prep",
-      op: "prepare-review",
-      payload: { number: 7, tag: "final" },
-    },
+  assert.deepEqual(opsRequests(step), [
+    { op: "prepare-review", payload: { number: 7, tag: "final" } },
   ]);
   assert.equal(step.state.phase, "review");
   assert.equal(step.state.st.allocated, 0);
@@ -102,13 +105,22 @@ test("the verifier is charged, then reads the final diff and the checks' summary
   assert.equal(step.state.phase, "decide");
   assert.equal(step.state.st.allocated, ROLES.verifier);
   assert.deepEqual(step.state.st.sessions, ["verifier"]);
-  assert.deepEqual(step.launches, [sessionLaunch(acceptTask(""))]);
+  assert.deepEqual(sessions(step), [verifierSession(acceptTask(""))]);
 });
 
 test("the verifier also judges the spec when the issue has one", () => {
   const step = prepared(next, stateWith("accept", { spec: SPEC }));
   assert.equal(step.done, false);
-  assert.deepEqual(step.launches, [sessionLaunch(acceptTask(SPEC))]);
+  assert.deepEqual(sessions(step), [verifierSession(acceptTask(SPEC))]);
+});
+
+test("a clipped spec reaches the verifier by its full text's path", () => {
+  const given = stateWith("accept", { spec: CLIPPED, specFile: SPEC_FILE });
+  const [session] = sessions(prepared(next, given));
+  const task = session?.task ?? "";
+  assert.ok(task.includes(SPEC_FILE));
+  assert.match(task, READ_WHOLE);
+  assert.ok(!task.includes(CLIPPED));
 });
 
 test("a pass keeps the reason and moves the issue to security", () => {
@@ -130,9 +142,27 @@ test("a pass keeps the reason and moves the issue to security", () => {
   ]);
 });
 
-test("a fail posts the verdict, then stops with the reason", () => {
-  const step = accepted({ verdict: "fail", reason: "Misses b." });
-  assert.equal(step.state.st.stage, "accept");
+test("a fail stores an open acceptance finding and saves the issue at fix", () => {
+  const given = stateWith("accept", { round: 1, rechecking: true });
+  const step = decided(next, given, { verdict: "fail", reason: "Misses b." });
+  assert.equal(step.done, false);
+  assert.equal(step.stop, null);
+  const { st } = step.state;
+  assert.equal(st.stage, "fix");
+  assert.deepEqual(
+    st.findings.map(({ lenses, evidence, status }) => ({
+      lenses,
+      evidence,
+      status,
+    })),
+    [{ lenses: ["acceptance"], evidence: "Misses b.", status: "open" }],
+  );
+  assert.equal(st.round, 1);
+  assert.equal(st.rechecking, false);
+  assert.equal(st.reviewedSha, VERIFIED);
+  assert.deepEqual(opsRequests(step), [
+    { op: "save-state", payload: { number: 7, state: st } },
+  ]);
   assert.deepEqual(step.comments, [
     {
       by: BY,
@@ -140,11 +170,9 @@ test("a fail posts the verdict, then stops with the reason", () => {
       where: "pr",
     },
   ]);
-  assert.deepEqual(step.stop, {
-    reason: "the acceptance verifier found the issue is not fully resolved",
-    detail: "Misses b.",
-    code: null,
-  });
+  const done = replied(next, step, { ok: true });
+  assert.deepEqual([done.done, done.stop], [true, null]);
+  assert.equal(done.state.st.stage, "fix");
 });
 
 test("a failed or moved diff stops before the session", () => {
@@ -234,20 +262,10 @@ test("a re-check's verifier is charged to the rebase pool, and stops when it is 
   });
 });
 
-test("each parent gets a close request keyed by its number", () => {
-  assert.deepEqual(closeParentLaunches(PARENTS), [
-    {
-      kind: "op",
-      name: "p5-close",
-      op: "close-parent",
-      payload: { number: 5 },
-    },
-    {
-      kind: "op",
-      name: "p9-close",
-      op: "close-parent",
-      payload: { number: 9 },
-    },
+test("each parent gets a close request for its number", () => {
+  assert.deepEqual(asRequests(closeParentLaunches(PARENTS)), [
+    { op: "close-parent", payload: { number: FIRST_PARENT } },
+    { op: "close-parent", payload: { number: SECOND_PARENT } },
   ]);
   assert.deepEqual(closeParentLaunches([]), []);
 });

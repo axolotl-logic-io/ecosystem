@@ -15,6 +15,10 @@ import {
 /** @import { Step } from "../src/workflow/stages/types.ts" */
 
 const SPEC = "## Behaviour\n\n1. The loop visits every item.";
+// A spec clipped in the saved state, and where its full text is (#280).
+const CLIPPED = "## Behaviour\n\n1. The clipped copy…";
+const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
+const READ_WHOLE = /Read the whole spec there/u;
 /** @type {[name: string, spec: string | null][]} */
 const NO_SPECS = [
   ["no spec", null],
@@ -50,6 +54,30 @@ describe("a fix round on an issue with a spec", () => {
       rereviewTask("correctness", DIFF_PATH, [F1], { spec: SPEC }),
     );
     assert.ok(task.includes(SPEC));
+  });
+});
+
+// Whether `task` names the full spec's path, tells the agent to read it, and
+// leaves out the clipped copy.
+/** @param {string} task @returns {boolean[]} */
+function specFileFacts(task) {
+  return [
+    task.includes(SPEC_FILE),
+    READ_WHOLE.test(task),
+    !task.includes(CLIPPED),
+  ];
+}
+
+describe("a fix round on an issue with a clipped spec", () => {
+  const given = { spec: CLIPPED, specFile: SPEC_FILE };
+  const { begun, prepared } = round(fixState([F1], given));
+
+  test("gives the fixer the full spec's path, not the clipped copy", () => {
+    assert.deepEqual(specFileFacts(firstTask(begun)), [true, true, true]);
+  });
+
+  test("gives the re-reviewer the full spec's path, not the clipped copy", () => {
+    assert.deepEqual(specFileFacts(firstTask(prepared)), [true, true, true]);
   });
 });
 

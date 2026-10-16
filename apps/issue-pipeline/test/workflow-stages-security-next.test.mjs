@@ -13,6 +13,7 @@ import {
   deferredFrom,
   NETWORK_FAILURE,
 } from "./deferral-test-kit.mjs";
+import { opsRequests, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   CTX,
   contextWith,
@@ -31,8 +32,9 @@ import {
   VERIFIED,
 } from "./workflow-finish-test-kit.mjs";
 
-/** @import { Launch, Step } from "../src/workflow/stages/types.ts" */
+/** @import { Step } from "../src/workflow/stages/types.ts" */
 /** @import { IssueState } from "../src/workflow/types.ts" */
+/** @import { OpsRequest } from "./stage-outcome-test-kit.mjs" */
 /** @typedef {Parameters<typeof stateWith>[1]} Fields */
 
 const BY = { ...SIGNATURE, role: "security reviewer" };
@@ -58,31 +60,19 @@ function securityTask() {
   ]);
 }
 
-/** @param {IssueState} st @returns {Launch} */
-function saveLaunch(st) {
-  return {
-    kind: "op",
-    name: "save",
-    op: "save-state",
-    payload: { number: 7, state: st },
-  };
-}
-
-/** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
-function launchesOf(step) {
-  if (step.done) {
-    throw new Error("the step ended instead of launching");
-  }
-  return step.launches;
+// The request that saves `st`.
+/** @param {IssueState} st @returns {OpsRequest} */
+function saveRequest(st) {
+  return { op: "save-state", payload: { number: 7, state: st } };
 }
 
 /** @param {Fields} fields @returns {unknown} */
 function prepTag(fields) {
-  const [launch] = launchesOf(next(stateWith("security", fields), CTX, []));
-  if (launch.kind !== "op") {
-    throw new Error(`${launch.name} is not an ops request`);
+  const [request] = opsRequests(next(stateWith("security", fields), CTX, []));
+  if (request === undefined) {
+    throw new Error("the security review made no request");
   }
-  const { tag } = launch.payload;
+  const { tag } = request.payload;
   return tag;
 }
 
@@ -94,13 +84,8 @@ function reviewed(findings, fields = {}) {
 test("the security review tags its diff by round before charging the reviewer", () => {
   const given = stateWith("security");
   const step = next(given, CTX, []);
-  assert.deepEqual(launchesOf(step), [
-    {
-      kind: "op",
-      name: "prep",
-      op: "prepare-review",
-      payload: { number: 7, tag: "security-1" },
-    },
+  assert.deepEqual(opsRequests(step), [
+    { op: "prepare-review", payload: { number: 7, tag: "security-1" } },
   ]);
   assert.equal(step.state.st.allocated, 0);
   assert.equal(prepTag({ securityRounds: 2 }), "security-3");
@@ -111,15 +96,11 @@ test("the reviewer is charged, then reads the full diff with the security rules"
   const step = prepared(next, stateWith("security"));
   assert.equal(step.state.st.allocated, ROLES.reviewer);
   assert.deepEqual(step.state.st.sessions, ["reviewer"]);
-  assert.deepEqual(launchesOf(step), [
+  assert.deepEqual(sessions(step), [
     {
-      kind: "child",
-      name: "security",
-      label: "Security review of issue 7",
       agent: "issue-pipeline-reader",
       model: MODELS.security,
       schema: SECURITY_SCHEMA,
-      minutes: 25,
       task: securityTask(),
     },
   ]);
@@ -141,7 +122,7 @@ test("no findings moves the issue to merge, then saves it", () => {
       where: "pr",
     },
   ]);
-  assert.deepEqual(launchesOf(step), [saveLaunch(step.state.st)]);
+  assert.deepEqual(opsRequests(step), [saveRequest(step.state.st)]);
   const saved = replied(next, step, { ok: true });
   assert.deepEqual([saved.done, saved.comments, saved.stop], [true, [], null]);
   assert.equal(saved.state.st, step.state.st);
@@ -177,7 +158,7 @@ test("a finding within the rounds is stored and sent back to fix", () => {
       where: "pr",
     },
   ]);
-  assert.deepEqual(launchesOf(step), [saveLaunch(st)]);
+  assert.deepEqual(opsRequests(step), [saveRequest(st)]);
   assert.deepEqual(given, stateWith("security"));
 });
 

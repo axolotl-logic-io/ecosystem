@@ -29,6 +29,24 @@ const SIGNAL_CODES = [
   ["SIGINT", STOPPED_BY_SIGINT],
 ];
 
+// A stop saves the issue at its stage with no lease, through save-state only.
+const SAVED_AT_SPEC = {
+  released: false,
+  saved: { stage: "spec", lease: null },
+};
+
+// Whether the stopped job released the issue, which would renew its lease,
+// and the state it last saved through save-state.
+/** @param {import("./job-test-kit.mjs").Place} place @returns {{ released: boolean, saved: { stage: unknown, lease: unknown } }} */
+function stopSaveOf(place) {
+  const ops = logOf(place, "ops.log");
+  const [save] = ops.filter(({ op }) => op === "save-state").slice(-1);
+  return {
+    released: ops.some(({ op }) => op === "release"),
+    saved: { stage: save?.state.stage, lease: save?.state.lease },
+  };
+}
+
 for (const [signal, code] of SIGNAL_CODES) {
   test(`${signal} aborts the session, saves the issue at its stage with no lease and exits ${code}`, async () => {
     const place = setUp(repliesAt("spec"), {
@@ -42,14 +60,7 @@ for (const [signal, code] of SIGNAL_CODES) {
     assert.equal(end.stdout, "");
     assert.match(end.stderr, new RegExp(`job: stopped by ${signal}`, "u"));
     assert.ok(piCommands(place).some(({ type }) => type === "abort"));
-    const ops = logOf(place, "ops.log");
-    assert.deepEqual(
-      ops.map(({ op }) => op),
-      ["sweep", "claim", "save-state", "save-state"],
-    );
-    const [save] = ops.slice(-1);
-    assert.equal(save.state.stage, "spec");
-    assert.equal(save.state.lease, null);
+    assert.deepEqual(stopSaveOf(place), SAVED_AT_SPEC);
     const status = statusOf(place);
     assert.deepEqual(status.outcome, { kind: "stopped", signal });
     assert.equal(sessionOf(status).outcome, null);
@@ -69,6 +80,5 @@ test("a session that ignores the abort is killed after the grace period, and the
   const end = await job.end;
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
   assert.equal(alive(pid), false);
-  const ops = logOf(place, "ops.log").map(({ op }) => op);
-  assert.deepEqual(ops, ["sweep", "claim", "save-state", "save-state"]);
+  assert.deepEqual(stopSaveOf(place), SAVED_AT_SPEC);
 });

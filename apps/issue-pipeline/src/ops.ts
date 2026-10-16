@@ -18,6 +18,7 @@
 
 import fs from "node:fs";
 import process from "node:process";
+import { text } from "node:stream/consumers";
 import { z } from "zod";
 import { AUTHOR, comment } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -26,9 +27,11 @@ import { ask } from "./ops/ask.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
-import { closeParent, post, release } from "./ops/finish.ts";
+import { closeParent, finishWiki, post, release } from "./ops/finish.ts";
 import { merge } from "./ops/merge.ts";
 import { prOps } from "./ops/pr.ts";
+import { publishOps } from "./ops/publish.ts";
+import { saveSpec } from "./ops/save-spec.ts";
 import { saveState } from "./ops/save-state.ts";
 import { split } from "./ops/split.ts";
 import { stop } from "./ops/stop.ts";
@@ -62,6 +65,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["claim", claim],
   // Writes state and nothing else; queued comments ride along on every op (see main).
   ["save-state", saveState],
+  // Writes a spec too long for the saved state to spec.md in the run dir (#280).
+  ["save-spec", saveSpec],
   ["ask", ask],
   ["split", split],
   // Stop an issue at a failed control: label it agent:stopped-<code>, and explain
@@ -71,7 +76,9 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["wiki-check", wikiCheck],
   ["ci-status", ciStatus],
   ["merge", merge],
+  ...Object.entries(publishOps),
   ["close-parent", closeParent],
+  ["finish-wiki", finishWiki],
   ["post", post],
   ["release", release],
   // Frees closed issues' worktrees once nothing local is unsaved (#174).
@@ -104,9 +111,11 @@ const ENVELOPE = z.looseObject({
     .nullish(),
 });
 
-// The JSON request framed on stdin.
-function readRequest(): unknown {
-  const groups = OPS_REQUEST.exec(fs.readFileSync(0, "utf8"))?.groups;
+// The JSON request framed on stdin. Read as a stream, since fd 0 can be a
+// non-blocking pipe whose data arrives late, which a synchronous read answers
+// with EAGAIN (#263).
+async function readRequest(): Promise<unknown> {
+  const groups = OPS_REQUEST.exec(await text(process.stdin))?.groups;
   const { json } = groups ?? {};
   if (json === undefined) {
     throw new OpsError(
@@ -156,9 +165,9 @@ function stackOf(error: unknown): string {
 
 // The reply to stdin's request. A crash, an error that is neither an OpsError
 // nor unreadable JSON, also writes its stack to stderr.
-function reply(): OpsReply | ErrorReply {
+async function reply(): Promise<OpsReply | ErrorReply> {
   try {
-    return runRequest(readRequest());
+    return runRequest(await readRequest());
   } catch (error: unknown) {
     if (!(error instanceof OpsError || error instanceof SyntaxError)) {
       process.stderr.write(stackOf(error));
@@ -167,8 +176,8 @@ function reply(): OpsReply | ErrorReply {
   }
 }
 
-function main(): void {
-  process.stdout.write(`${JSON.stringify(reply())}\n`);
+async function main(): Promise<void> {
+  process.stdout.write(`${JSON.stringify(await reply())}\n`);
 }
 
-main();
+await main();

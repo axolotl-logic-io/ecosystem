@@ -2,7 +2,8 @@
 // Shared setup for the tests that run the orchestrator's queue and tick
 // in-process (#234): a pipeline root with a bare origin and a config, the fake
 // gh answering the sweep's calls, and the issue rows, state comments and
-// job.json files the queue reads.
+// job.json files the queue reads, and the repo's agent definitions installed
+// where the escalation agent (#282) reads them.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -31,8 +32,21 @@ const PIPELINE_LABELS = [
 
 const root = fs.mkdtempSync("/tmp/issue-pipeline-orchestrator-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
+const agentDir = path.join(root, "agent");
+const installed = path.join(agentDir, "agents", "issue-pipeline");
+const AGENTS = new URL("../agents/", import.meta.url).pathname;
+fs.mkdirSync(installed, { recursive: true });
+for (const file of fs.readdirSync(AGENTS)) {
+  fs.copyFileSync(path.join(AGENTS, file), path.join(installed, file));
+}
 // Environment variables are named by strings, as src/process.ts takes them.
-Object.assign(process.env, Object.fromEntries([["ISSUE_PIPELINE_ROOT", root]]));
+Object.assign(
+  process.env,
+  Object.fromEntries([
+    ["ISSUE_PIPELINE_ROOT", root],
+    ["PI_CODING_AGENT_DIR", agentDir],
+  ]),
+);
 
 /** @param {string} command @returns {string} */
 function sh(command) {
@@ -131,9 +145,10 @@ function commentReplies(issue) {
   return Array.from({ length: issue.reads ?? 1 }, () => one);
 }
 
-// Queues gh's answers to one read of the queue holding `issues`.
-/** @param {readonly OpenIssue[]} issues @returns {void} */
-function openWith(issues) {
+// Queues gh's answers to one read of the queue holding `issues`, then
+// `others`, such as a closed issue's PR lookups.
+/** @param {readonly OpenIssue[]} issues @param {readonly GhReply[]} [others] @returns {void} */
+function openWith(issues, others = []) {
   fakeGh.reply([
     { when: "api user", stdout: `${ACCOUNT}\n` },
     {
@@ -142,6 +157,7 @@ function openWith(issues) {
     },
     { when: "issue list", stdout: JSON.stringify(issues.map(row)) },
     ...issues.flatMap(commentReplies),
+    ...others,
   ]);
 }
 
@@ -151,11 +167,32 @@ function leaseOf(lane) {
   return { lane, sweepId: "x", at: NOW.toISOString() };
 }
 
-// Writes issue `issue`'s job.json: a `stage` job run by `pid`, ended or not,
-// whose one session spent `tokens` input tokens by the tick.
-/** @param {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number }} job @returns {StatusFile} */
-function writeJob({ issue, stage, pid, ended = false, tokens = 0 }) {
-  const at = NOW.toISOString();
+// Writes issue `issue`'s job.json: a `stage` job run by `pid`, ended or not
+// (`outcome` overrides `ended`), whose one launch, a session unless `kind`
+// says ops, spent `tokens` input tokens by the tick and was last heard from
+// `silentMinutes` before it, and whose last `failures.count` calls of
+// `failures.tool` failed, the last with `failures.error`, with a token budget
+// of `tokenBudget`, a live context of `contextTokens` tokens and the launch's
+// own `launchOutcome`.
+/** @typedef {{ count: number, tool: string, error: string }} Failures */
+/** @typedef {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number, outcome?: StatusFile["outcome"], kind?: "session" | "ops", silentMinutes?: number, failures?: Failures, tokenBudget?: number | null, contextTokens?: number, launchOutcome?: LaunchOutcome }} JobFacts */
+/** @typedef {StatusFile["launches"][number]["outcome"]} LaunchOutcome */
+/** @param {JobFacts} job @returns {StatusFile} */
+function writeJob({
+  issue,
+  stage,
+  pid,
+  ended = false,
+  tokens = 0,
+  outcome,
+  kind = "session",
+  silentMinutes = 0,
+  failures = { count: 0, tool: "", error: "" },
+  tokenBudget = null,
+  contextTokens = 0,
+  launchOutcome = null,
+}) {
+  const at = new Date(NOW.getTime() - silentMinutes * MINUTE_MS).toISOString();
   /** @type {StatusFile} */
   const status = {
     version: 1,
@@ -169,25 +206,41 @@ function writeJob({ issue, stage, pid, ended = false, tokens = 0 }) {
     launches: [
       {
         key: `i${issue}-${stage}-1`,
-        kind: "session",
+        kind,
         pid,
         session: null,
         startedAt: at,
         lastEventAt: at,
-        toolFailures: 0,
+        toolFailures: failures.count,
+        lastToolFailure: lastFailure(failures),
         usage: { input: tokens, output: 0, cacheRead: 0, cacheWrite: 0 },
+        tokenBudget,
+        contextTokens,
+        peakContext: 0,
+        contextStop: null,
         resumed: false,
-        outcome: null,
+        outcome: launchOutcome,
       },
     ],
   };
   if (ended) {
     status.outcome = { kind: "finished" };
   }
+  if (outcome !== undefined) {
+    status.outcome = outcome;
+  }
   const dir = paths.runDir(cfg, issue);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "job.json"), JSON.stringify(status));
   return status;
+}
+
+/** @param {Failures} failures @returns {{ tool: string, error: string } | null} */
+function lastFailure({ count, tool, error }) {
+  if (count === 0) {
+    return null;
+  }
+  return { tool, error };
 }
 
 // A pid whose process has exited and been reaped.
@@ -211,7 +264,9 @@ export {
   cfg,
   configWith,
   deadPid,
+  fakeGh,
   leaseOf,
+  MINUTE_MS,
   NOW,
   OTHERS_PID,
   openWith,

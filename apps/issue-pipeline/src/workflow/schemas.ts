@@ -31,6 +31,7 @@ const FINDING: JsonSchema = {
   required: ["severity", "file", "line", "title", "evidence", "suggestion"],
 };
 
+// One part of a spec writer's split, with the files it touches.
 const SUB_ISSUE: JsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -38,8 +39,9 @@ const SUB_ISSUE: JsonSchema = {
     title: STR,
     body: STR,
     after: { type: "array", items: INTEGER },
+    files: { type: "array", items: STR },
   },
-  required: ["title", "body", "after"],
+  required: ["title", "body", "after", "files"],
 };
 
 const TRIAGE_SCHEMA: JsonSchema = {
@@ -49,22 +51,22 @@ const TRIAGE_SCHEMA: JsonSchema = {
     decision: { enum: ["ready", "needs-info", "split", "reject"] },
     reason: STR,
     questions: { type: "array", items: STR, maxItems: 5 },
-    subIssues: { type: "array", maxItems: 5, items: SUB_ISSUE },
     plan: STR,
   },
-  required: ["decision", "reason", "questions", "subIssues", "plan"],
+  required: ["decision", "reason", "questions", "plan"],
 };
 
 const SPEC_SCHEMA: JsonSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    decision: { enum: ["ready", "needs-info"] },
+    decision: { enum: ["ready", "needs-info", "split"] },
     spec: STR,
     questions: { type: "array", items: STR, maxItems: 5 },
     files: { type: "array", items: STR },
+    subIssues: { type: "array", maxItems: 5, items: SUB_ISSUE },
   },
-  required: ["decision", "spec", "questions", "files"],
+  required: ["decision", "spec", "questions", "files", "subIssues"],
 };
 
 const IMPL_SCHEMA: JsonSchema = {
@@ -83,7 +85,10 @@ const IMPL_SCHEMA: JsonSchema = {
 const CIFIX_SCHEMA: JsonSchema = {
   type: "object",
   additionalProperties: false,
-  properties: { status: { enum: ["fixed", "cannot-fix"] }, summary: STR },
+  properties: {
+    status: { enum: ["fixed", "cannot-fix", "handoff"] },
+    summary: STR,
+  },
   required: ["status", "summary"],
 };
 

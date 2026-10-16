@@ -3,7 +3,7 @@
 // findings the issue moves to merge; findings go back through fresh fix rounds,
 // until there have been more security rounds than fix rounds allow.
 
-import { chargeSession } from "../budget.ts";
+import { chargeSession, sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding, findingsStop } from "../findings.ts";
 import { SECURITY_RULES } from "../lenses.ts";
@@ -53,6 +53,7 @@ function securityLaunch(
   diff: { path: string; lines: string },
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
+  const budget = sessionBudget(budgets, "reviewer");
   return {
     kind: "child",
     name: "security",
@@ -61,7 +62,8 @@ function securityLaunch(
     model: models.security,
     schema: SECURITY_SCHEMA,
     minutes: SECURITY_MINUTES,
-    task: preamble(cfg, state, "security reviewer", budgets.roles.reviewer)
+    tokenBudget: budget,
+    task: preamble(cfg, state, "security reviewer", budget)
       .concat([
         `You are the last review before this PR merges. Review the full diff against ${cfg.baseBranch} at ${diff.path} (${diff.lines} lines), reading surrounding code where needed, for harm to the app's users and the operator.`,
       ])

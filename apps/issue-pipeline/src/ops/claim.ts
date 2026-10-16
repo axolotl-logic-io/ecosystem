@@ -14,14 +14,17 @@ import { laneOf, raceForClaim } from "../claims.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { branchHasWork, fetchIn, remoteHead } from "../git-state.ts";
+import { branchHasWork, fetchIn, head, remoteHead } from "../git-state.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
-import { OpsError, run, shell } from "../process.ts";
+import { OpsError, shell } from "../process.ts";
+import type { StackedOn } from "../stack.ts";
+import { claimedStack, resetToStart } from "../stack.ts";
 import { adoptPush, startState } from "../start-state.ts";
 import type { State } from "../state.ts";
 import { readState, writeState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
+import { resetKeepingUnpushed } from "../unpushed.ts";
 import { ensureWiki, wikiBranchHasWork } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
 import { answeredSince, issueDepth } from "./sweep-verdict.ts";
@@ -31,6 +34,8 @@ const MS_PER_MINUTE = 60_000;
 const CLAIM_REQUEST = z.looseObject({
   lane: z.unknown().optional(),
   number: z.number(),
+  // The issue whose branch this one starts on, if it has none yet (#268).
+  stackOn: z.number().int().positive().nullish(),
   sweepId: z.unknown().optional(),
 });
 
@@ -50,6 +55,7 @@ const CLAIM_SETTINGS = z.looseObject({
 const PR = z.number().nullish();
 
 type ClaimedIssue = z.infer<typeof CLAIMED_ISSUE>;
+type Prereq = number | null | undefined;
 
 interface ClaimLost {
   lost: true;
@@ -97,39 +103,46 @@ function branchWork(
   return { pr, hasWork: codeWork || wikiBranchHasWork(cfg, n) };
 }
 
-// Moves a worktree with no commits past the base to the base's head on
-// GitHub, dropping its edits. A worktree with commits of its own is kept.
-function resetToBase(cfg: Config, wt: string): void {
-  const base = cfg.baseBranch;
-  fetchIn(cfg, wt, `+refs/heads/${base}:refs/remotes/origin/${base}`);
-  const ahead = run("git", [
-    "-C",
-    wt,
-    "rev-list",
-    "--count",
-    `origin/${base}..HEAD`,
-  ]);
-  if (Number(ahead.stdout) !== 0) {
-    return;
-  }
-  run("git", ["-C", wt, "reset", "--hard", `origin/${base}`]);
-  run("git", ["-C", wt, "clean", "-fd"]);
-}
-
 // Puts an existing worktree back at the branch head on GitHub or, when the
-// issue has no branch there, at the base unless it holds commits of its own.
-function resetWorktree(cfg: Config, n: number, remote: string | null): void {
+// issue has no branch there, where it starts (stack.ts) unless it holds
+// commits of its own.
+// Commits the branch lacks are never dropped (#283); returns the log entry
+// saying where they were kept, or null when there were none, and whether
+// HEAD stayed past the branch with them.
+function resetWorktree(
+  cfg: Config,
+  n: number,
+  start: { remote: string | null; stackedOn: StackedOn | null },
+): { entry: string | null; kept: boolean } {
+  const { remote, stackedOn } = start;
   const wt = paths.worktree(cfg, n);
   if (!fs.existsSync(path.join(wt, ".git"))) {
-    return;
+    return { entry: null, kept: false };
   }
   if (remote === null) {
-    resetToBase(cfg, wt);
-    return;
+    resetToStart(cfg, wt, stackedOn);
+    return { entry: null, kept: false };
   }
   fetchIn(cfg, wt, paths.branch(n));
-  run("git", ["-C", wt, "reset", "--hard", remote]);
-  run("git", ["-C", wt, "clean", "-fd"]);
+  const entry = resetKeepingUnpushed(wt, n, remote, new Date());
+  return { entry, kept: head(wt) !== remote };
+}
+
+// `state` with the reset's log entry, if it has one, and what the issue is
+// stacked on, if it is.
+function withEntry(
+  state: State,
+  entry: string | null,
+  on: StackedOn | null,
+): State {
+  const next: State = { ...state };
+  if (on !== null) {
+    next.stackedOn = on;
+  }
+  if (entry !== null) {
+    next.log = [...(state.log ?? []), entry];
+  }
+  return next;
 }
 
 // True when the issue has questions open (agent:needs-info).
@@ -149,31 +162,41 @@ function awaitsAnswer(
 }
 
 // The state this claim carries on from, the saved one mid-stage or a restart
-// from the issue's branch, and the branch's head on GitHub.
+// from the issue's branch, and the branch's head on GitHub. An issue with no
+// branch that is stacked, or asked to be, starts on its prerequisite's head.
 function claimedState(
   cfg: Config,
   n: number,
   issue: ClaimedIssue,
-  comments: readonly IssueComment[],
+  context: { comments: readonly IssueComment[]; stackOn: Prereq },
 ): { state: State; remote: string | null } {
+  const { comments, stackOn } = context;
   const { state: saved } = readState(cfg, n, comments);
   const remote = remoteHead(cfg, n);
+  // Fetched into the worktree or, before it has one, the clone.
+  let dir = paths.worktree(cfg, n);
+  if (!fs.existsSync(path.join(dir, ".git"))) {
+    dir = paths.clone(cfg);
+  }
+  const stack = { remote, saved: saved?.stackedOn, stackOn };
+  const stackedOn = claimedStack(cfg, dir, stack);
   const answered = hasNeedsInfo(issue) && answeredSince(cfg, comments, saved);
   const ended = saved?.stage === "stopped" || saved?.stage === "done";
   if (saved !== null && !ended && !answered) {
     const adopted = adoptPush(saved, remote, lastPush(cfg, n), new Date());
-    if (adopted === null) {
+    if (adopted === null && (remote !== null || stackedOn === null)) {
       return { state: saved, remote };
     }
-    resetWorktree(cfg, n, remote);
-    return { state: adopted, remote };
+    const { entry } = resetWorktree(cfg, n, { remote, stackedOn });
+    return { state: withEntry(adopted ?? saved, entry, stackedOn), remote };
   }
   const { pr, hasWork } = branchWork(cfg, n, remote);
   const depth = issueDepth(issue.body);
   const now = new Date();
-  const start = { n, depth, remote, pr, hasWork, answered, now };
-  const state = startState(saved, start);
-  resetWorktree(cfg, n, remote);
+  const reset = resetWorktree(cfg, n, { remote, stackedOn });
+  const keptUnpushed = reset.kept;
+  const start = { n, depth, remote, pr, hasWork, keptUnpushed, answered, now };
+  const state = withEntry(startState(saved, start), reset.entry, stackedOn);
   return { state, remote };
 }
 
@@ -210,12 +233,13 @@ function labelWorking(
 // Leases the issue to this lane and readies its worktree and wiki.
 function take(
   cfg: Config,
-  req: LaneRequest & { number: number },
+  req: LaneRequest & { number: number; stackOn?: Prereq },
   issue: ClaimedIssue,
   comments: readonly IssueComment[],
 ): { state: State; remote: string | null; wt: string; wiki: string | null } {
   const n = req.number;
-  const { state: claimed, remote } = claimedState(cfg, n, issue, comments);
+  const context = { comments, stackOn: req.stackOn };
+  const { state: claimed, remote } = claimedState(cfg, n, issue, context);
   const lease = {
     lane: laneOf(req),
     sweepId: req.sweepId,
@@ -223,7 +247,7 @@ function take(
   };
   const state = { ...claimed, lease };
   const newWorktree = !fs.existsSync(path.join(paths.worktree(cfg, n), ".git"));
-  const wt = ensureWorktree(cfg, n);
+  const wt = ensureWorktree(cfg, n, claimed.stackedOn ?? null);
   const wiki = ensureWiki(cfg, n);
   if (newWorktree) {
     setUpAtClaim(cfg, n, wt);

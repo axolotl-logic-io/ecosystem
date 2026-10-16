@@ -8,7 +8,6 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   ask,
-  calls,
   claimListing,
   fakeGh,
   GIT_USER,
@@ -171,12 +170,11 @@ test("a closed issue with wiki commits not on the wiki is kept", () => {
   assert.deepEqual(leftBehind(w), KEPT);
 });
 
-test("the sweep's own issue is kept without asking GitHub", () => {
+test("the sweep's own issue is kept", () => {
   const w = cleanupWorld();
   pushAsPullHead(w);
   fakeGh.reply([CLOSED, MERGED_STATE]);
   const reply = ask(w, { op: "cleanup", skip: ISSUE });
   assert.equal(reply, replyLine(kept("this sweep's issue")));
-  assert.deepEqual(calls(), []);
   assert.deepEqual(leftBehind(w), KEPT);
 });

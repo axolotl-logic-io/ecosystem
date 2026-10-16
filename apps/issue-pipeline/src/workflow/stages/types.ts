@@ -29,10 +29,10 @@ type StageName =
   | "checks"
   | "accept"
   | "security"
-  | "merge";
+  | "merge"
+  | "publish";
 
-// The issue as a stage sees it. `phase` is the stage's own position, "begin"
-// on its first call.
+// The issue as a stage sees it. `phase` is its own position, "begin" at first.
 interface StageState {
   n: number;
   paths: ItemPaths;
@@ -45,18 +45,16 @@ interface StageState {
   // Set when checks pass on a clean rebase of a head that passed acceptance
   // and the security review before it.
   rebasedOnly: boolean;
-  // Set when merge sent the issue back to sync to rebase in this sweep; never
-  // saved.
+  // Set when merge sent the issue back to sync to rebase this sweep; unsaved.
   resynced: boolean;
   phase: string;
   // JSON-safe data the stage passes to its own next step within one sweep,
-  // null at "begin". It is never saved. Each stage reads it through its own
-  // guard.
+  // null at "begin" and never saved. Each stage reads it through its guard.
   carry: unknown;
 }
 
-// A model session. The sweep keys it "i<n>-<name>-<seq>", and signs its
-// result with `role`, or with `name` when there is no role.
+// A model session. The sweep keys it "i<n>-<name>-<seq>" and signs its result
+// with `role`, or `name` with no role. Its preamble shows `tokenBudget`.
 interface ChildLaunch {
   kind: "child";
   name: string;
@@ -67,6 +65,7 @@ interface ChildLaunch {
   schema: JsonSchema;
   minutes: number;
   task: string;
+  tokenBudget: number;
   // A session that changes the code, which the sweep's own checks verify.
   writer?: true;
 }
@@ -148,7 +147,8 @@ type ModelRole =
   | "aggregator"
   | "fixer"
   | "verifier"
-  | "security";
+  | "security"
+  | "acceptance";
 
 // The commands the implementer runs before it finishes, each only if set.
 interface StageCommands {
@@ -161,6 +161,7 @@ interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
   maxTriages: number;
   maxSyncs: number;
   maxCiFixes: number;
+  maxContinuations: number;
   ciWaitMinutes: number;
   // Missing or null means 2.
   maxConflictFixes?: number | null;
@@ -183,6 +184,7 @@ interface StageContext {
 // token budgets, and the config's overrides of the sweep's defaults.
 interface SweepConfig extends StageConfig {
   sessionTokenCap: number;
+  contextLimits: { soft: number; hard: number };
   issueTokenBudget: number;
   rebaseTokenBudget: number;
   roleBudgets?: Readonly<Partial<Record<Role, number>>> | null;
@@ -220,9 +222,8 @@ interface AbandonedClaim {
 type UnclaimedOutcome = "claim-failed" | "waiting-for-answer";
 
 // What a claim reply means for the sweep: the candidate was lost to another
-// lane, it stays unclaimed (with the outcome and the reason, if there is
-// one), or the sweep holds the issue, with the stop to queue if its PR branch
-// moved.
+// lane, it stays unclaimed (with its outcome and reason, if any), or the
+// sweep holds the issue, with the stop to queue if its PR branch moved.
 type ClaimStep =
   | { kind: "lost"; abandoned: AbandonedClaim }
   | { kind: "unclaimed"; outcome: UnclaimedOutcome; reason: string | null }
@@ -233,8 +234,7 @@ type ClaimStep =
       stop: StageStop | null;
     };
 
-// The sweep's issue in its summary. `pr` is undefined when the state has no
-// `pr` field.
+// The sweep's issue in its summary; `pr` is undefined if the state has none.
 interface SummaryItem {
   issue: number;
   pr: number | null | undefined;

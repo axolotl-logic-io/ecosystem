@@ -28,6 +28,7 @@ const { tick } = await import("../src/orchestrator/tick.ts");
 
 const ISSUE = { merging: 40, accepting: 41, fresh: 42, stopped: 43 };
 const RATED = { spent: 50, waiting: 51 };
+const STACK = { prereq: 60, dependent: 61 };
 const PR = { merging: 1, accepting: 2 };
 const TOKENS_PER_HOUR = 1000;
 const LOG_LINE = z.strictObject({
@@ -60,10 +61,25 @@ const QUEUE = [
   { number: ISSUE.fresh },
   {
     number: ISSUE.stopped,
-    labels: ["agent:stopped-error"],
+    // A stop the watchdog's rules end in, so it raises no escalation (#235).
+    labels: ["agent:stopped-job"],
     state: { stage: "fix" },
   },
 ];
+
+// The watchdog's steer and SIGTERM, which no job in these tests is due, and
+// the escalation agent, which no config here sets (#282).
+const UNWATCHED = {
+  runAgent: () => {
+    throw new Error("unexpected escalation agent run");
+  },
+  steer: () => {
+    throw new Error("unexpected steer");
+  },
+  terminate: () => {
+    throw new Error("unexpected SIGTERM");
+  },
+};
 
 /**
  * A spawn that records each call and answers with `pid`.
@@ -117,7 +133,12 @@ function jobLogOf(issue) {
 test("a tick spawns each start in the orchestrator lane, logs every decision and records the starts", () => {
   openWith(QUEUE);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(cfg, { configPath: CONFIG, now: () => NOW, spawn });
+  const decisions = tick(cfg, {
+    configPath: CONFIG,
+    now: () => NOW,
+    spawn,
+    ...UNWATCHED,
+  });
   const queue = `${ISSUE.merging},${ISSUE.accepting}`;
   assert.deepEqual(spawned, [
     {
@@ -172,7 +193,7 @@ test("the next tick starts nothing for a spawned job that still runs but has wri
   const { spawned, spawn } = recordingSpawn(process.pid);
   const before = logLines().length;
   assert.deepEqual(
-    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn }),
+    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn, ...UNWATCHED }),
     [],
   );
   assert.deepEqual(spawned, []);
@@ -193,7 +214,12 @@ test("once the jobs' tokens in the last hour reach tokensPerHour every start is 
     { number: RATED.waiting },
   ]);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(rated, { configPath: CONFIG, now: () => NOW, spawn });
+  const decisions = tick(rated, {
+    configPath: CONFIG,
+    now: () => NOW,
+    spawn,
+    ...UNWATCHED,
+  });
   assert.deepEqual(spawned, []);
   assert.deepEqual(
     decisions.map(({ issue, action, reason }) => ({ issue, action, reason })),
@@ -201,5 +227,31 @@ test("once the jobs' tokens in the last hour reach tokensPerHour every start is 
       { issue: RATED.spent, action: "held", reason: "rate-limit" },
       { issue: RATED.waiting, action: "held", reason: "rate-limit" },
     ],
+  );
+});
+
+test("a waiting issue whose prerequisite is at checks starts stacked on it", () => {
+  openWith([
+    { number: STACK.prereq, state: { stage: "checks", headSha: "abc" } },
+    {
+      number: STACK.dependent,
+      body: `<!-- agent-pipeline:after ${STACK.prereq} -->`,
+    },
+  ]);
+  const { spawned, spawn } = recordingSpawn(process.pid);
+  tick(cfg, { configPath: CONFIG, now: () => NOW, spawn, ...UNWATCHED });
+  const stackOn = ["--stack-on", String(STACK.prereq)];
+  assert.deepEqual(
+    spawned.find(({ log }) => log === jobLogOf(STACK.dependent)),
+    {
+      argv: [...argvOf(STACK.dependent, "triage"), ...stackOn],
+      log: jobLogOf(STACK.dependent),
+    },
+  );
+  assert.deepEqual(
+    logLines()
+      .filter(({ issue }) => issue === STACK.dependent)
+      .map(({ stage, action, reason }) => ({ stage, action, reason })),
+    [{ stage: "triage", action: "started", reason: "free" }],
   );
 });
