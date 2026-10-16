@@ -3,19 +3,17 @@
 // closed, posting queued comments, and keeping an unfinished issue's lease.
 
 import { z } from "zod";
-import { removeWorktree } from "../checkouts.ts";
-import { closeClaims, touchClaim } from "../claims.ts";
+import { touchClaim } from "../claims.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { gh, ghJson, issueState } from "../github.ts";
+import { gh, ghJson } from "../github.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { parseRequest } from "../process.ts";
 import type { State } from "../state.ts";
 import { STATE, writeState } from "../state.ts";
-import { pushWiki } from "../wiki.ts";
+import { publishMerged } from "./publish.ts";
 
-const SHORT_SHA_LENGTH = 12;
 const SUB_ISSUES_PER_PAGE = 100;
 
 // gh's answer, or null when it printed nothing.
@@ -46,57 +44,16 @@ function errorMessage(error: unknown): string | undefined {
   return undefined;
 }
 
-// Pushes the issue's wiki commits and says so on the issue. False when the
-// push failed: the worktree, and its wiki commits, stay for a person to push.
-function pushIssueWiki(cfg: Config, n: number): boolean {
-  try {
-    const pushed = pushWiki(cfg, n);
-    if (pushed?.pushed === true) {
-      comment(
-        cfg,
-        n,
-        { role: "merger" },
-        `Pushed this issue's wiki changes as wiki commit ${pushed.sha.slice(0, SHORT_SHA_LENGTH)} (history: https://github.com/${cfg.repo}/wiki/_history).`,
-      );
-    }
-  } catch (error) {
-    comment(
-      cfg,
-      n,
-      { role: "merger" },
-      `The wiki changes from this issue were not pushed: ${String(errorMessage(error))}`,
-    );
-    return false;
-  }
-  return true;
-}
-
-// GitHub closes an issue from "Closes #N" only when the PR merges into the
-// default branch. A base like integration leaves it open, so close it here.
-function closeIssue(cfg: Config, n: number, pr: number): void {
-  if (issueState(cfg, n) !== "open") {
-    return;
-  }
-  gh(
-    cfg,
-    [
-      "issue",
-      "close",
-      String(n),
-      "-R",
-      cfg.repo,
-      "--reason",
-      "completed",
-      "--comment",
-      `PR #${pr} merged into ${cfg.baseBranch}.`,
-    ],
-    { allowFail: true },
-  );
-}
-
-// After a PR merges, by the pipeline or by hand: delete the branch, mark the
-// issue done, label both, and remove the worktree (which runs teardown).
-function finishMerged(cfg: Config, n: number, pr: number, state: State): void {
+// After a PR merges, by the pipeline or by hand: delete the branch, label the
+// PR, then publish the issue's wiki changes, which finishes the issue. True
+// when it published. Otherwise (a wiki conflict, or an error) the issue waits
+// at the publish stage, open, with its claim, lease and worktree.
+function finishMerged(
+  cfg: Config,
+  n: number,
+  pr: number,
+  state: State,
+): boolean {
   gh(
     cfg,
     [
@@ -108,16 +65,22 @@ function finishMerged(cfg: Config, n: number, pr: number, state: State): void {
     ],
     { allowFail: true },
   );
-  writeState(cfg, n, { ...state, stage: "done", lease: null });
-  for (const target of [n, pr]) {
-    setLabels(cfg, target, [LABELS.merged.name], [LABELS.working.name]);
-    clearStopLabels(cfg, target);
+  setLabels(cfg, pr, [LABELS.merged.name], [LABELS.working.name]);
+  clearStopLabels(cfg, pr);
+  try {
+    if (publishMerged(cfg, n, pr, state).published) {
+      return true;
+    }
+  } catch (error) {
+    comment(
+      cfg,
+      n,
+      { role: "merger" },
+      `The wiki changes from this issue were not published: ${String(errorMessage(error))}. The pipeline will retry the publish.`,
+    );
   }
-  closeClaims(cfg, n, `PR #${pr} merged.`);
-  closeIssue(cfg, n, pr);
-  if (pushIssueWiki(cfg, n)) {
-    removeWorktree(cfg, n);
-  }
+  writeState(cfg, n, { ...state, stage: "publish" });
+  return false;
 }
 
 // Closes a split issue once every sub-issue is closed.

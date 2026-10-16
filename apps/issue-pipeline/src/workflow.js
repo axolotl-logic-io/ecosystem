@@ -1,8 +1,9 @@
 // Issue pipeline sweep. One run claims one issue and moves it as far as it can:
 // triage -> draft PR -> spec -> implement -> PR ready -> review -> fix rounds ->
 // sync with base -> checks (local verify + CI) -> acceptance -> security review
-// -> merge. To work on more issues at once, run more lanes (one schedule per pi
-// session, see the README); the number of lanes is not a setting.
+// -> merge -> publish the wiki changes. To work on more issues at once, run
+// more lanes (one schedule per pi session, see the README); the number of
+// lanes is not a setting.
 //
 // The script holds no tokens' worth of context: every model session is a fresh
 // child with one narrow job, and every git/GitHub action goes through the

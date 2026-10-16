@@ -9,6 +9,7 @@ import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import { syncReplyOf } from "./checks-reply.ts";
+import { CODE_TARGET } from "./conflict-target.ts";
 import { opFailedStep } from "./network.ts";
 import { doneStep, launchStep, onlyReply, stopStep } from "./step.ts";
 import {
@@ -132,7 +133,8 @@ function synced(
     return clean(state, ctx, reply.changed, reply.headSha);
   }
   if (reply.inRebase) {
-    return conflicted(state, ctx, reply.conflicts, reply.baseSha);
+    const { conflicts: files, baseSha } = reply;
+    return conflicted(state, ctx, { files, baseSha, target: CODE_TARGET });
   }
   const files = `Conflicting files:\n${reply.conflicts.join("\n")}`;
   const max = maxConflictFixes(ctx);

@@ -35,7 +35,9 @@ interface Boundary {
 }
 
 // The role each stage's job runs as. sync and checks write because their
-// conflict resolver and CI fixer do.
+// conflict resolver and CI fixer do. merge and publish run as merger; their
+// wiki conflict resolvers' sessions run as writers, as every writer session
+// does.
 const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
   triage: "reader",
   spec: "reader",
@@ -48,6 +50,7 @@ const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
   accept: "reader",
   security: "reader",
   merge: "merger",
+  publish: "merger",
 };
 
 const DEFAULT_ROLES: Roles = {

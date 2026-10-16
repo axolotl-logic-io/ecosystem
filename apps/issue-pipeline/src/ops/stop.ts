@@ -27,6 +27,9 @@ const STOP_REQUEST = z.looseObject({
 
 const PR = z.number().nullish();
 
+// The stage after the merge, which a start resumes at (start-state.ts).
+const PUBLISH_STAGE = "publish";
+
 type StopRequest = z.infer<typeof STOP_REQUEST>;
 
 const COORDINATOR: Author = { role: "coordinator" };
@@ -53,12 +56,14 @@ function detailLine(detail: string | null | undefined): string {
   return `\n${detail}`;
 }
 
-function nextStepText(
-  control: Stop,
-  nextStep: string | null | undefined,
-): string {
+function nextStepText(control: Stop, req: StopRequest): string {
+  const { nextStep } = req;
   if (nextStep !== undefined && nextStep !== null && nextStep !== "") {
     return nextStep;
+  }
+  const { stage } = req.state ?? {};
+  if (stage === PUBLISH_STAGE) {
+    return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next sweep publishes the wiki changes again, with every limit reset.`;
   }
   return `To resume, fix what this names (push to the branch if you like), then remove \`${control.label.name}\`. The next sweep continues from the PR's branch at review, with every limit reset, the token budget included.`;
 }
@@ -72,7 +77,7 @@ function stopComment(control: Stop, req: StopRequest): string {
     `Reason: ${String(req.reason)}`,
     detailLine(req.detail),
     "",
-    nextStepText(control, req.nextStep),
+    nextStepText(control, req),
   ].join("\n");
 }
 
@@ -80,9 +85,11 @@ function stop(cfg: Config, request: unknown): { code: string; label: string } {
   const req = STOP_REQUEST.parse(request);
   const n = req.number;
   const found = stopOf(req.code, req.reason);
+  const { stage } = req.state ?? {};
   const state = {
     ...req.state,
     stage: "stopped",
+    stoppedStage: stage ?? null,
     lease: null,
     stopCode: found.code,
     stopReason: req.reason,

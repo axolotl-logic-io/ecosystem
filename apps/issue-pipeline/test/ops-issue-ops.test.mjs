@@ -160,6 +160,7 @@ test("stop by code explains the control on the issue and its PR and swaps labels
   assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
     stage: "stopped",
     pr,
+    stoppedStage: "review",
     lease: null,
     stopCode: "budget",
     stopReason: "over budget",
@@ -204,8 +205,38 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
   assert.ok(body.includes("To resume") && body.includes(`remove \`${label}\``));
   assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
     stage: "stopped",
+    stoppedStage: "implement",
     lease: null,
     stopCode: "push-rejected",
     stopReason: "could not push",
   });
+});
+
+test("a stop at publish keeps its stage and says the wiki is published again", () => {
+  const { n } = STOPPED_BY_REASON;
+  reply([]);
+  const request = {
+    op: "stop",
+    number: n,
+    code: "conflict",
+    reason: "the conflict resolution was rejected",
+    state: { stage: "publish", pr: 9 },
+  };
+  const label = "agent:stopped-conflict";
+  assert.deepEqual(askOps(request), {
+    ok: true,
+    op: "stop",
+    posted: 0,
+    code: "conflict",
+    label,
+  });
+  const stopped = effects();
+  const body = bodyOf(stopped, `comment #${n} role=coordinator`);
+  assert.ok(
+    body.endsWith(
+      `To resume, fix what this names, then remove \`${label}\`. The PR has merged, so the next sweep publishes the wiki changes again, with every limit reset.`,
+    ),
+  );
+  const saved = JSON.stringify(stateOf(stopped, `comment #${n} state`));
+  assert.ok(saved.includes('"stoppedStage":"publish"'));
 });

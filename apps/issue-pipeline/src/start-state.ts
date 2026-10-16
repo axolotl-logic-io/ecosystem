@@ -71,6 +71,30 @@ function carriedReview(state: State | null, stands: boolean): State {
   return { findings, resolvedHistory: resolvedHistory ?? [], reviewedSha };
 }
 
+// Whether the issue stopped at publish, after its PR merged, with no answered
+// questions to act on.
+function stoppedAtPublish(state: State, answered: boolean): boolean {
+  const { stage, stoppedStage } = state;
+  return !answered && stage === "stopped" && stoppedStage === "publish";
+}
+
+// A stop after the merge: the code is on the base branch and only the wiki
+// changes wait, so the start resumes at publish with the conflict limits and
+// the stop cleared, and everything else kept.
+function resumedPublish(state: State, start: StartContext): State {
+  const { log } = state;
+  const entry = `${stamp(start.now)} restarted at publish after ${restartReason(state, false)}; conflict limits reset`;
+  return {
+    ...state,
+    stage: "publish",
+    conflictFixes: 0,
+    rebaseAllocated: 0,
+    stopCode: null,
+    stopReason: null,
+    log: [...(log ?? []), entry],
+  };
+}
+
 // The state a start begins from (Autumn, 2026-10-15). Every start finds the
 // issue's open PR by its branch name. When the branch holds work, the start
 // continues it at review with every limit reset, the token budget included,
@@ -80,9 +104,13 @@ function carriedReview(state: State | null, stands: boolean): State {
 // Commits on the wiki's agent/issue-<n> count as work too, so a start may
 // continue at review with no PR. With no work (no open PR with code changes and
 // no wiki-branch commits), it goes back to triage, and the implementer builds
-// on the branch as it is.
+// on the branch as it is. An issue stopped at publish, after its PR merged,
+// resumes there.
 function startState(state: State | null, start: StartContext): State {
   const { answered, hasWork, n, pr, remote } = start;
+  if (state !== null && stoppedAtPublish(state, answered)) {
+    return resumedPublish(state, start);
+  }
   const log = state?.log ?? [];
   const finished = state?.stage === "stopped" || state?.stage === "done";
   if (state !== null && !answered && !finished) {

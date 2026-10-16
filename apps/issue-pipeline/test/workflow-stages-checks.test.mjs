@@ -200,8 +200,10 @@ test("failing checks get a reviewed CI fix, then pass and go on to merge", async
     "i7-prep-14",
     "i7-security-15",
     "i7-save-16",
-    "i7-merge-17",
-    "cleanup-18",
+    "i7-wiki-sync-17",
+    "i7-wiki-check-18",
+    "i7-merge-19",
+    "cleanup-20",
   ]);
   assert.deepEqual(
     summary,

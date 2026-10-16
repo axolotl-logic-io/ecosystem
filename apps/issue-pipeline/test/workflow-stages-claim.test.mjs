@@ -89,8 +89,10 @@ test("after a lost claim, the next candidate resumes from its saved lease", asyn
     "sweep-1",
     "i7-claim-2",
     "i8-claim-3",
-    "i8-merge-4",
-    "cleanup-5",
+    "i8-wiki-sync-4",
+    "i8-wiki-check-5",
+    "i8-merge-6",
+    "cleanup-7",
   ]);
   assert.deepEqual(
     summary,

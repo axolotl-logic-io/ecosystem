@@ -10,7 +10,13 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { assertClean, fetchIn, head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
-import { parseRequest, run, tail } from "../process.ts";
+import { parseRequest, run } from "../process.ts";
+import {
+  abortRebase,
+  rebaseInProgress,
+  rebaseProblem,
+  unmergedFiles,
+} from "../rebase.ts";
 import { wikiDiff } from "../wiki.ts";
 
 interface ReviewReply {
@@ -42,12 +48,6 @@ type Op = (
   cfg: Config,
   request: unknown,
 ) => ReviewReply | SyncReply | FinishReply;
-
-const REBASE_DIRS: readonly string[] = ["rebase-merge", "rebase-apply"];
-const DIRTY_LINES = 20;
-const MARKER_LINES = 10;
-const CONFLICT_MARKER = /^\+(?:<{7}|>{7})(?: |$)/u;
-const MIDDLE_MARKER = "+=======";
 
 const REVIEW_REQUEST = z.looseObject({
   number: z.number().int(),
@@ -147,19 +147,10 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   };
 }
 
-function rebaseInProgress(wt: string): boolean {
-  return REBASE_DIRS.some((dir) => {
-    const where = gitOut(wt, ["rev-parse", "--git-path", dir]).trim();
-    return fs.existsSync(path.resolve(wt, where));
-  });
-}
-
 // Puts the worktree back on the pushed branch, dropping a half-done rebase.
 function resetToRemote(cfg: Config, n: number): void {
   const wt = paths.worktree(cfg, n);
-  if (rebaseInProgress(wt)) {
-    run("git", ["-C", wt, "rebase", "--abort"], { allowFail: true });
-  }
+  abortRebase(wt);
   const remote = remoteHead(cfg, n);
   if (remote !== null) {
     run("git", ["-C", wt, "reset", "--hard", remote]);
@@ -177,8 +168,7 @@ function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
 
 // The conflicting rebase's files. Unless kept, the rebase is aborted.
 function conflictReply(wt: string, base: string, keep: boolean): SyncConflict {
-  const unmerged = ["-C", wt, "diff", "--name-only", "--diff-filter=U"];
-  const conflicts = run("git", unmerged, { allowFail: true }).stdout.trim();
+  const conflicts = unmergedFiles(wt);
   const inRebase = keep && rebaseInProgress(wt);
   if (!inRebase) {
     run("git", ["-C", wt, "rebase", "--abort"], { allowFail: true });
@@ -187,7 +177,7 @@ function conflictReply(wt: string, base: string, keep: boolean): SyncConflict {
     changed: false,
     conflict: true,
     inRebase,
-    conflicts: nonEmptyLines(conflicts),
+    conflicts,
     baseSha: gitOut(wt, ["rev-parse", base]).trim(),
   };
 }
@@ -222,42 +212,6 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   return { changed: true, conflict: false, headSha: head(wt) };
 }
 
-function isMarker(line: string): boolean {
-  return CONFLICT_MARKER.test(line) || line === MIDDLE_MARKER;
-}
-
-// Why the branch's commits can't be pushed as the rebased branch, if they can't.
-function commitsProblem(wt: string, base: string): string | undefined {
-  if (!gitSucceeds(wt, ["merge-base", "--is-ancestor", base, "HEAD"])) {
-    return `HEAD is not based on ${base}`;
-  }
-  const count = gitOut(wt, ["rev-list", "--count", `${base}..HEAD`]);
-  if (!(Number(count.trim()) > 0)) {
-    return "the branch has no commits left after the rebase";
-  }
-  const diff = gitOut(wt, ["diff", `${base}...HEAD`, "-U0"]);
-  const markers = diff.split("\n").filter(isMarker);
-  if (markers.length > 0) {
-    const shown = markers.slice(0, MARKER_LINES).join("\n");
-    return `conflict markers remain:\n${shown}`;
-  }
-  return undefined;
-}
-
-// Why a writer's resolved rebase can't be pushed, or undefined when it can: the
-// rebase must have finished on the current base with no markers left.
-function syncProblem(cfg: Config, wt: string): string | undefined {
-  if (rebaseInProgress(wt)) {
-    return "the rebase was not finished";
-  }
-  const dirty = gitOut(wt, ["status", "--porcelain"]).trim();
-  if (dirty !== "") {
-    const shown = tail(dirty, DIRTY_LINES);
-    return `the worktree has uncommitted changes:\n${shown}`;
-  }
-  return commitsProblem(wt, `origin/${cfg.baseBranch}`);
-}
-
 // After a writer resolved a kept rebase: push it if it passes the checks.
 // Anything else (or abort: true) resets the worktree to the pushed branch and
 // reports why.
@@ -269,7 +223,7 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
   if (req.abort === true) {
     reason = textOr(req.reason, "aborted");
   } else {
-    reason = syncProblem(cfg, wt);
+    reason = rebaseProblem(wt, `origin/${cfg.baseBranch}`);
   }
   if (reason !== undefined) {
     resetToRemote(cfg, n);

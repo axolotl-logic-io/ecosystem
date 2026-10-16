@@ -120,7 +120,13 @@ test("closed, stopped and unready issues ahead, and older PRs behind, don't hold
   );
   assert.equal(
     out,
-    replyLine({ ok: true, op: "merge", posted: 0, merged: true }),
+    replyLine({
+      ok: true,
+      op: "merge",
+      posted: 0,
+      merged: true,
+      published: true,
+    }),
   );
   // Only the issues ahead are viewed, and only the open, unstopped #11 has
   // its state read.

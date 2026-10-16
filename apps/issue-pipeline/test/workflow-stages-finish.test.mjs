@@ -139,8 +139,10 @@ test("an issue at merge is merged", async ({ assert: { snapshot } }) => {
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
     "i7-claim-2",
-    "i7-merge-3",
-    "cleanup-4",
+    "i7-wiki-sync-3",
+    "i7-wiki-check-4",
+    "i7-merge-5",
+    "cleanup-6",
   ]);
   // The cleanup leaves the sweep's own issue alone.
   const { skip } = /** @type {OpLaunch["payload"]} */ (
@@ -178,9 +180,11 @@ test("a merge queued behind an older PR notes it and stays at merge", async ({
   assert.deepEqual(launchKeys(trace), [
     "sweep-1",
     "i7-claim-2",
-    "i7-merge-3",
-    "i7-release-4",
-    "cleanup-5",
+    "i7-wiki-sync-3",
+    "i7-wiki-check-4",
+    "i7-merge-5",
+    "i7-release-6",
+    "cleanup-7",
   ]);
   const { state } = /** @type {{ state: IssueState }} */ (
     trace.at(-2)?.request ?? {}

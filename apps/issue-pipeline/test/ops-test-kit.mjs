@@ -232,9 +232,11 @@ function finishReplies() {
   ];
 }
 
-// The gh writes finishMerged makes for issue #7 and PR #50, in order.
-/** @param {object} state @returns {string[][]} */
-function finishWrites(state) {
+// The gh writes finishMerged makes for issue #7 and PR #50, in order, with
+// `published`, the writes the wiki publish makes, between the PR's labels and
+// the issue's.
+/** @param {object} state @param {string[][]} [published] @returns {string[][]} */
+function finishWrites(state, published = []) {
   const closed = CLAIM_BODY.replace(
     `agent-pipeline:claim lane=${LANE}`,
     `agent-pipeline:claim-closed lane=${LANE}`,
@@ -247,12 +249,13 @@ function finishWrites(state) {
       `repos/${REPO}/git/refs/heads/agent/issue-7`,
       "--silent",
     ],
+    ...relabel(PR, "agent:merged", "agent:working"),
+    ...published,
     commentPost(
       ISSUE,
       stateBody(ISSUE, { ...state, stage: "done", lease: null }),
     ),
     ...relabel(ISSUE, "agent:merged", "agent:working"),
-    ...relabel(PR, "agent:merged", "agent:working"),
     patchComment(CLAIM_ID, `${closed}\n\nClosed <minute>: PR #50 merged.`),
     [
       "issue",

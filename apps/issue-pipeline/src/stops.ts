@@ -178,6 +178,15 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "The PR branch changed outside the pipeline, so it stopped rather than overwrite it.",
   },
   {
+    code: "wiki-check",
+    short:
+      "Stopped: the wiki changes failed the wiki check. See the stop comment.",
+    test: /wiki check/iu,
+    control: "wiki check",
+    explain:
+      "Before the code merges, the issue's wiki changes, rebased onto the wiki's latest version, must pass the wiki check: every link in a changed page names a page on the wiki, and every new page is linked from _Sidebar or another page.",
+  },
+  {
     code: "conflict",
     short:
       "Stopped: rebase conflicts could not be resolved. See the stop comment.",

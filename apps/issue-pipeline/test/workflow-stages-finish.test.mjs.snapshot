@@ -24,7 +24,31 @@ exports[`a merge queued behind an older PR notes it and stays at merge 1`] = `
     }
   },
   {
-    "key": "i7-merge-3",
+    "key": "i7-wiki-sync-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-sync operation",
+    "request": {
+      "op": "wiki-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-wiki-check-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-check operation",
+    "request": {
+      "op": "wiki-check",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-merge-5",
     "agent": "issue-pipeline-ops",
     "label": "Run merge operation",
     "request": {
@@ -67,7 +91,7 @@ exports[`a merge queued behind an older PR notes it and stays at merge 1`] = `
     }
   },
   {
-    "key": "i7-release-4",
+    "key": "i7-release-6",
     "agent": "issue-pipeline-ops",
     "label": "Run release operation",
     "request": {
@@ -109,7 +133,7 @@ exports[`a merge queued behind an older PR notes it and stays at merge 1`] = `
     }
   },
   {
-    "key": "cleanup-5",
+    "key": "cleanup-7",
     "agent": "issue-pipeline-ops",
     "label": "Run cleanup operation",
     "request": {
@@ -506,7 +530,31 @@ exports[`an issue at merge is merged 1`] = `
     }
   },
   {
-    "key": "i7-merge-3",
+    "key": "i7-wiki-sync-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-sync operation",
+    "request": {
+      "op": "wiki-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-wiki-check-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-check operation",
+    "request": {
+      "op": "wiki-check",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-merge-5",
     "agent": "issue-pipeline-ops",
     "label": "Run merge operation",
     "request": {
@@ -549,7 +597,7 @@ exports[`an issue at merge is merged 1`] = `
     }
   },
   {
-    "key": "cleanup-4",
+    "key": "cleanup-6",
     "agent": "issue-pipeline-ops",
     "label": "Run cleanup operation",
     "request": {

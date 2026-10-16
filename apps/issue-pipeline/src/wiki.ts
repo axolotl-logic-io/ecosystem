@@ -3,31 +3,24 @@
 // info/exclude hides it from the code repo. Agents read it and may commit to
 // it; each code push also keeps them on the wiki remote's agent/issue-<n>, so a
 // lane on a fresh machine rebuilds the checkout from there. prepare-review adds
-// those commits to the review diff, and pushWiki pushes them to the wiki's main
-// branch after the PR merges. A wiki that doesn't exist yet (GitHub creates it
-// with the first page) is skipped.
+// those commits to the review diff, and wiki-publish.ts rebases them onto the
+// wiki's main branch and pushes them there after the PR merges. A wiki that
+// doesn't exist yet (GitHub creates it with the first page) is skipped.
 
 import fs from "node:fs";
 import path from "node:path";
 import { configureClone, GH_HELPER } from "./clone-setup.ts";
-import { comment } from "./comments.ts";
 import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
-import { head, uncommitted } from "./git-state.ts";
+import { uncommitted } from "./git-state.ts";
 import { git } from "./github.ts";
 import { withWikiLock } from "./locks.ts";
-import { OpsError, run } from "./process.ts";
-
-const PUSH_ATTEMPTS = 3;
+import { run } from "./process.ts";
 
 interface WikiDiff {
   diff: string;
   files: string[];
 }
-
-type WikiPush =
-  | { pushed: true; sha: string }
-  | { pushed: false; patch: string };
 
 function gitIn(dir: string, args: readonly string[]): string {
   return run("git", ["-C", dir, ...args]).stdout;
@@ -161,52 +154,8 @@ function wikiDiff(cfg: Config, n: number): WikiDiff {
   return { diff, files };
 }
 
-// Saves the issue's wiki commits as a patch in its run dir and says so on the
-// issue, since the code has already merged.
-function savePatch(cfg: Config, n: number, wiki: WikiSettings): WikiPush {
-  const dir = paths.wiki(cfg, n);
-  run("git", ["-C", dir, "rebase", "--abort"], { allowFail: true });
-  const patch = path.join(paths.runDir(cfg, n), "wiki-unpushed.patch");
-  const range = `origin/${wiki.branch}..HEAD`;
-  fs.writeFileSync(patch, gitIn(dir, ["format-patch", "--stdout", range]));
-  comment(
-    cfg,
-    n,
-    { role: "merger" },
-    `The wiki changes from this issue conflict with newer wiki edits, so they were not pushed. They are saved as a patch at \`${patch}\` on the pipeline's machine.`,
-  );
-  return { pushed: false, patch };
-}
-
-// After the PR merges: replay the issue's wiki commits on the wiki's latest
-// version and push them. On a conflict the commits are saved as a patch.
-function pushWiki(cfg: Config, n: number): WikiPush | null {
-  const wiki = wikiCfg(cfg);
-  if (wiki === null || wikiAhead(cfg, n) === 0) {
-    return null;
-  }
-  const dir = paths.wiki(cfg, n);
-  const target = `HEAD:refs/heads/${wiki.branch}`;
-  return withWikiLock(cfg, () => {
-    for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt += 1) {
-      git(cfg, ["-C", dir, "fetch", "origin", wiki.branch]);
-      const rebase = ["-C", dir, "rebase", `origin/${wiki.branch}`];
-      if (run("git", rebase, { allowFail: true }).code !== 0) {
-        return savePatch(cfg, n, wiki);
-      }
-      const pushed = git(cfg, ["-C", dir, "push", "origin", target], {
-        allowFail: true,
-      });
-      if (pushed.code === 0) {
-        return { pushed: true, sha: head(dir) };
-      }
-    }
-    throw new OpsError("could not push the wiki changes after 3 attempts");
-  });
-}
-
 // Why the issue's wiki checkout holds work the wiki lacks (uncommitted changes,
-// or commits not on the wiki's branch, such as a saved unpushed patch's), or
+// or commits not on the wiki's branch, such as an unpublished rebase's), or
 // null when it holds none or there is no checkout.
 function unsavedWiki(cfg: Config, n: number): string | null {
   const wiki = wikiCfg(cfg);
@@ -229,10 +178,9 @@ function unsavedWiki(cfg: Config, n: number): string | null {
   });
 }
 
-export type { WikiDiff, WikiPush };
+export type { WikiDiff };
 export {
   ensureWiki,
-  pushWiki,
   pushWikiBranch,
   unsavedWiki,
   wikiAhead,

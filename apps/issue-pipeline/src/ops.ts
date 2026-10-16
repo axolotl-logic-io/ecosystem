@@ -30,6 +30,7 @@ import { cleanup } from "./ops/cleanup.ts";
 import { closeParent, post, release } from "./ops/finish.ts";
 import { merge } from "./ops/merge.ts";
 import { prOps } from "./ops/pr.ts";
+import { publishOps } from "./ops/publish.ts";
 import { saveState } from "./ops/save-state.ts";
 import { split } from "./ops/split.ts";
 import { stop } from "./ops/stop.ts";
@@ -72,6 +73,7 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["wiki-check", wikiCheck],
   ["ci-status", ciStatus],
   ["merge", merge],
+  ...Object.entries(publishOps),
   ["close-parent", closeParent],
   ["post", post],
   ["release", release],

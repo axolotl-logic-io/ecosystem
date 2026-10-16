@@ -100,7 +100,7 @@ test("a PR merged by hand gets the merge bookkeeping and no merge", () => {
     viewReply(w.sha, { state: "MERGED" }),
     ...finishReplies(),
   ]);
-  assert.equal(out, mergeLine({ merged: true, byHand: true }));
+  assert.equal(out, mergeLine({ merged: true, byHand: true, published: true }));
   assert.deepEqual(writes(), finishWrites(STATE));
   assert.equal(fs.existsSync(w.worktree), false);
 });
@@ -198,7 +198,7 @@ test("stopped, newer, unreviewed and expired issues don't hold the line", () => 
     { mergeOrder: true },
   );
   // Had #7 or the stopped #10 held the line, the reply would be queued.
-  assert.equal(out, mergeLine({ merged: true }));
+  assert.equal(out, mergeLine({ merged: true, published: true }));
   assert.deepEqual(writes()[0], mergeArgs(w.sha));
 });
 
@@ -261,7 +261,7 @@ test("a merge refused because the base branch was modified is behind", () => {
 test("a merge squashes, records the verdict and finishes the issue", () => {
   const w = world();
   const out = runMerge(w, [viewReply(w.sha), ...finishReplies()]);
-  assert.equal(out, mergeLine({ merged: true }));
+  assert.equal(out, mergeLine({ merged: true, published: true }));
   const verdict = `Merged ${w.sha.slice(0, SHORT_SHA)}: every blocking review finding is resolved and every check passed on this commit.\n\nAll good.`;
   assert.deepEqual(writes(), [
     mergeArgs(w.sha),

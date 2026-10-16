@@ -34,6 +34,7 @@ test("the stops keep their order and label names", () => {
       "too-large",
       "acceptance",
       "branch-changed",
+      "wiki-check",
       "conflict",
       "sync-limit",
       "push-rejected",
@@ -49,5 +50,13 @@ test("a reason maps to its stop, and any other reason to error", () => {
   assert.equal(stopFor("the push was rejected")?.code, "push-rejected");
   assert.equal(stopFor("issue token budget exhausted")?.code, "budget");
   assert.equal(stopFor("rebase token budget exhausted")?.code, "budget");
+  assert.equal(
+    stopFor("the wiki changes failed the wiki check")?.code,
+    "wiki-check",
+  );
+  assert.equal(
+    stopFor("rebasing the wiki onto master conflicts again")?.code,
+    "conflict",
+  );
   assert.equal(stopFor("something else")?.code, "error");
 });

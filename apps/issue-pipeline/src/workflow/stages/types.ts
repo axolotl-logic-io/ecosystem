@@ -29,7 +29,8 @@ type StageName =
   | "checks"
   | "accept"
   | "security"
-  | "merge";
+  | "merge"
+  | "publish";
 
 // The issue as a stage sees it. `phase` is the stage's own position, "begin"
 // on its first call.
@@ -49,8 +50,7 @@ interface StageState {
   resynced: boolean;
   phase: string;
   // JSON-safe data the stage passes to its own next step within one sweep,
-  // null at "begin". It is never saved. Each stage reads it through its own
-  // guard.
+  // null at "begin" and never saved. Each stage reads it through its guard.
   carry: unknown;
 }
 

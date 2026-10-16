@@ -24,7 +24,31 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
     }
   },
   {
-    "key": "i7-merge-3",
+    "key": "i7-wiki-sync-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-sync operation",
+    "request": {
+      "op": "wiki-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-wiki-check-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-check operation",
+    "request": {
+      "op": "wiki-check",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-merge-5",
     "agent": "issue-pipeline-ops",
     "label": "Run merge operation",
     "request": {
@@ -67,7 +91,7 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
     }
   },
   {
-    "key": "i7-sync-4",
+    "key": "i7-sync-6",
     "agent": "issue-pipeline-ops",
     "label": "Run sync-base operation",
     "request": {
@@ -80,7 +104,7 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
     }
   },
   {
-    "key": "i7-verify-5",
+    "key": "i7-verify-7",
     "agent": "issue-pipeline-ops",
     "label": "Run verify operation",
     "request": {
@@ -105,7 +129,7 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
     }
   },
   {
-    "key": "i7-ci-6",
+    "key": "i7-ci-8",
     "agent": "issue-pipeline-ops",
     "label": "Run ci-status operation",
     "request": {
@@ -131,7 +155,31 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
     }
   },
   {
-    "key": "i7-merge-7",
+    "key": "i7-wiki-sync-9",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-sync operation",
+    "request": {
+      "op": "wiki-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-wiki-check-10",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-check operation",
+    "request": {
+      "op": "wiki-check",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-merge-11",
     "agent": "issue-pipeline-ops",
     "label": "Run merge operation",
     "request": {
@@ -181,7 +229,7 @@ exports[`a merge refused as behind rebases, re-runs the tests and merges 1`] = `
     }
   },
   {
-    "key": "cleanup-8",
+    "key": "cleanup-12",
     "agent": "issue-pipeline-ops",
     "label": "Run cleanup operation",
     "request": {
@@ -221,7 +269,31 @@ exports[`a merge refused as conflict waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-merge-3",
+    "key": "i7-wiki-sync-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-sync operation",
+    "request": {
+      "op": "wiki-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-wiki-check-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-check operation",
+    "request": {
+      "op": "wiki-check",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-merge-5",
     "agent": "issue-pipeline-ops",
     "label": "Run merge operation",
     "request": {
@@ -264,7 +336,7 @@ exports[`a merge refused as conflict waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-release-4",
+    "key": "i7-release-6",
     "agent": "issue-pipeline-ops",
     "label": "Run release operation",
     "request": {
@@ -307,7 +379,7 @@ exports[`a merge refused as conflict waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "cleanup-5",
+    "key": "cleanup-7",
     "agent": "issue-pipeline-ops",
     "label": "Run cleanup operation",
     "request": {
@@ -347,7 +419,31 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-merge-3",
+    "key": "i7-wiki-sync-3",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-sync operation",
+    "request": {
+      "op": "wiki-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-wiki-check-4",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-check operation",
+    "request": {
+      "op": "wiki-check",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-merge-5",
     "agent": "issue-pipeline-ops",
     "label": "Run merge operation",
     "request": {
@@ -390,7 +486,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-sync-4",
+    "key": "i7-sync-6",
     "agent": "issue-pipeline-ops",
     "label": "Run sync-base operation",
     "request": {
@@ -403,7 +499,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-verify-5",
+    "key": "i7-verify-7",
     "agent": "issue-pipeline-ops",
     "label": "Run verify operation",
     "request": {
@@ -428,7 +524,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-ci-6",
+    "key": "i7-ci-8",
     "agent": "issue-pipeline-ops",
     "label": "Run ci-status operation",
     "request": {
@@ -454,7 +550,31 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-merge-7",
+    "key": "i7-wiki-sync-9",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-sync operation",
+    "request": {
+      "op": "wiki-sync",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-wiki-check-10",
+    "agent": "issue-pipeline-ops",
+    "label": "Run wiki-check operation",
+    "request": {
+      "op": "wiki-check",
+      "config": "/w/repos/o__r.json",
+      "sweepId": "smv9hl6o0",
+      "lane": "lane-a",
+      "number": 7
+    }
+  },
+  {
+    "key": "i7-merge-11",
     "agent": "issue-pipeline-ops",
     "label": "Run merge operation",
     "request": {
@@ -504,7 +624,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "i7-release-8",
+    "key": "i7-release-12",
     "agent": "issue-pipeline-ops",
     "label": "Run release operation",
     "request": {
@@ -552,7 +672,7 @@ exports[`a second behind in one sweep waits at sync for the next sweep 1`] = `
     }
   },
   {
-    "key": "cleanup-9",
+    "key": "cleanup-13",
     "agent": "issue-pipeline-ops",
     "label": "Run cleanup operation",
     "request": {

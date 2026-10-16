@@ -52,7 +52,8 @@ const STAGE_SPAWNS: Readonly<Record<StageName, number>> = {
   checks: 11,
   accept: 3,
   security: 3,
-  merge: 2,
+  merge: 5,
+  publish: 4,
 };
 
 // How many times a sweep may begin a stage (default 1): implement runs once
@@ -77,7 +78,7 @@ const STAGE_GROUPS: readonly (readonly StageName[])[] = [
   ["triage", "spec", "implement", "open-pr"],
   ["review", "fix"],
   ["sync", "checks"],
-  ["accept", "security", "merge"],
+  ["accept", "security", "merge", "publish"],
 ];
 
 // Every stage, in the order an issue moves through them.

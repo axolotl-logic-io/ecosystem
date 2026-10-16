@@ -31,9 +31,12 @@ const DEFAULT_CONFIG = {
   commands: { test: "npm test", lint: "npm run lint" },
 };
 
-// Replies for the ops whose answer the workflow only checks for `ok`.
+// Replies for the ops whose answer the workflow only checks for `ok`, and the
+// merge's wiki steps for an issue whose wiki changes rebase and check clean.
 const ROUTINE_OPS = {
   "save-state": { ok: true },
+  "wiki-sync": { ok: true, conflict: false, changed: false, headSha: "" },
+  "wiki-check": { ok: true, pass: true, checks: [] },
   stop: { ok: true },
   release: { ok: true },
   post: { ok: true },

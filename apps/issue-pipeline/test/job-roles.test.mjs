@@ -18,7 +18,7 @@ const READER_STAGES = ["triage", "spec", "review", "accept", "security"];
 /** @type {StageName[]} */
 const WRITER_STAGES = ["implement", "fix", "open-pr", "sync", "checks"];
 /** @type {StageName[]} */
-const MERGER_STAGES = ["merge"];
+const MERGER_STAGES = ["merge", "publish"];
 
 const GH_VARS = [
   "GH_TOKEN",

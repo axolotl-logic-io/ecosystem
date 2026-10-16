@@ -7,6 +7,7 @@ import { next as nextFix } from "./fix.ts";
 import { next as nextImplement } from "./implement.ts";
 import { next as nextMerge } from "./merge.ts";
 import { next as nextOpenPr } from "./open-pr.ts";
+import { next as nextPublish } from "./publish.ts";
 import { next as nextReview } from "./review.ts";
 import { next as nextSecurity } from "./security.ts";
 import { next as nextSpec } from "./spec.ts";
@@ -28,6 +29,7 @@ const STAGES: StageDispatch = {
   accept: { next: nextAccept },
   security: { next: nextSecurity },
   merge: { next: nextMerge },
+  publish: { next: nextPublish },
 };
 
 export type { StageDispatch };

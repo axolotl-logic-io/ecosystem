@@ -47,8 +47,8 @@ type PrView = z.infer<typeof PR_VIEW>;
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
 type MergeReply =
-  | { merged: true; byHand: true }
-  | { merged: true }
+  | { merged: true; byHand: true; published: boolean }
+  | { merged: true; published: boolean }
   | { merged: false; reason: string }
   | { merged: false; reason: "head-changed"; headSha: string }
   | Queued;
@@ -118,8 +118,8 @@ function merge(cfg: Config, request: unknown): MergeReply {
   );
   if (view.state === "MERGED") {
     // Someone merged it by hand first. Finish the bookkeeping a merge does.
-    finishMerged(cfg, n, pr, req.state);
-    return { merged: true, byHand: true };
+    const published = finishMerged(cfg, n, pr, req.state);
+    return { merged: true, byHand: true, published };
   }
   const refused = precheck(cfg, req, view);
   if (refused !== undefined) {
@@ -148,8 +148,8 @@ function merge(cfg: Config, request: unknown): MergeReply {
     { role: "merger" },
     `Merged ${sha}: every blocking review finding is resolved and every check passed on this commit.\n\n${req.summary ?? ""}`,
   );
-  finishMerged(cfg, n, pr, req.state);
-  return { merged: true };
+  const published = finishMerged(cfg, n, pr, req.state);
+  return { merged: true, published };
 }
 
 export { merge };
