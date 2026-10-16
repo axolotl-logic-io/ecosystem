@@ -14,7 +14,10 @@
 //   race for new issues with claim comments (see raceForClaim in ops.mjs).
 //   Without it, the run is its own lane.
 //   Optional, for a run a human launches for one issue:
-//   issue: N               work only on #N, even with an agent:stopped-* label on it
+//   issue: N               work only on #N, and leave it alone while it has an
+//                          agent:stopped-* label
+//   takeStopped: true      with issue, take #N even with a stop label (a
+//                          one-shot; the claim clears the label)
 //   through: "<stage>"     begin no stage after this one, then release the issue
 //                          at its next stage; { issue: N, through: "spec" }
 //                          triages and specs #N and goes no further

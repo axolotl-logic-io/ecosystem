@@ -31,14 +31,26 @@ function stateAt(headSha) {
 }
 
 test("the sweep op asks for every candidate, or for one issue", () => {
-  assert.deepEqual(sweepLaunch(null), {
+  assert.deepEqual(sweepLaunch({ only: null, takeStopped: true }), {
     kind: "op",
     name: "sweep",
     op: "sweep",
     payload: {},
     minutes: 20,
   });
-  assert.deepEqual(sweepLaunch(ISSUE).payload, { only: ISSUE });
+  const named = { only: ISSUE, takeStopped: false };
+  assert.deepEqual(sweepLaunch(named).payload, { only: ISSUE });
+  assert.deepEqual(sweepLaunch({ ...named, takeStopped: true }).payload, {
+    only: ISSUE,
+    takeStopped: true,
+  });
+});
+
+test("a sweep reply keeps a well-formed stopped and drops a malformed one", () => {
+  const stopped = { issue: ISSUE, label: "agent:stopped-error" };
+  assert.deepEqual(sweepReplyOf({ ...sweepReply(), stopped }).stopped, stopped);
+  const malformed = sweepReplyOf({ ...sweepReply(), stopped: { issue: "7" } });
+  assert.equal("stopped" in malformed, false);
 });
 
 test("a failed sweep reply fails the sweep with its error", () => {

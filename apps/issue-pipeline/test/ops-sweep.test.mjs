@@ -8,7 +8,6 @@ import { test } from "node:test";
 import {
   ALLOWED,
   askOps,
-  CONFIG,
   calls,
   commentsReply,
   configWith,
@@ -220,23 +219,6 @@ test("a sweep returns the oldest claimCandidates and counts the rest as waiting"
     }),
   );
   assert.deepEqual(calls(), [...SWEEP_HEAD, ghCalls.collaborator(ALLOWED)]);
-});
-
-test("a sweep for one named issue takes it even when stopped", () => {
-  const body = "<!-- agent-pipeline:parent 5 depth 1 -->";
-  reply(sweepReplies([row(NAMED.stopped, ["agent:stopped-error"], { body })]));
-  assert.deepEqual(
-    askOps({ op: "sweep", only: NAMED.stopped, ...LANE }),
-    sweepReply({
-      config: publicConfigOf(CONFIG),
-      items: [candidate(NAMED.stopped, "named", 1)],
-    }),
-  );
-  assert.deepEqual(calls(), [
-    ...SWEEP_HEAD,
-    ghCalls.collaborator(ALLOWED),
-    listComments(NAMED.stopped),
-  ]);
 });
 
 test("a sweep for one named issue refuses an issue that isn't open", () => {

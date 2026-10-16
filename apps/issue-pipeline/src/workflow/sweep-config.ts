@@ -95,14 +95,34 @@ function stageArgOf(name: string, value: unknown): StageName | null {
   return stage;
 }
 
-// The issue a human launched the run for (args.issue), or null for every
-// candidate.
-function onlyOf(issue: unknown): number | null {
-  const only = Number(issue);
+// The run's args as pi-subagents or the stage job passes them: the repo
+// config's path, the lane, the one issue a human launched the run for, if
+// any, whether to take it even when stopped (takeStopped), and the last stage
+// (through) or only stage (stage) it may begin.
+interface SweepArgs {
+  config: string;
+  lane?: unknown;
+  issue?: unknown;
+  takeStopped?: unknown;
+  through?: unknown;
+  stage?: unknown;
+}
+
+// The issues a run may take: the one a human launched it for, or null for
+// every candidate, and whether it takes that issue even with a stop label.
+interface SweepTarget {
+  only: number | null;
+  takeStopped: boolean;
+}
+
+// The run's target from args.issue and args.takeStopped, which counts only as
+// the boolean true.
+function sweepTargetOf(issue: unknown, takeStopped: unknown): SweepTarget {
+  let only: number | null = Number(issue);
   if (Number.isNaN(only) || only === 0) {
-    return null;
+    only = null;
   }
-  return only;
+  return { only, takeStopped: takeStopped === true };
 }
 
 // Whether a run that may begin stages up to `through` may begin `stage`.
@@ -162,10 +182,9 @@ function laneOf(args: { lane?: unknown }, sweepId: string): string {
   return sweepId;
 }
 
-export type { SweepSettings };
+export type { SweepArgs, SweepSettings, SweepTarget };
 export {
   laneOf,
-  onlyOf,
   PASSES_USED,
   passesOf,
   SAVE_BEFORE,
@@ -175,5 +194,6 @@ export {
   spawnLimitOf,
   stageArgOf,
   sweepSettings,
+  sweepTargetOf,
   within,
 };

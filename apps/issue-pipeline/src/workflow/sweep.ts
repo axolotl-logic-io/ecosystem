@@ -24,7 +24,13 @@ import {
 } from "./stages/entry.ts";
 import { parentsClosed } from "./stages/parents.ts";
 import type { StageName, SweepSummary } from "./stages/types.ts";
-import { laneOf, onlyOf, stageArgOf, sweepSettings } from "./sweep-config.ts";
+import type { SweepArgs, SweepTarget } from "./sweep-config.ts";
+import {
+  laneOf,
+  stageArgOf,
+  sweepSettings,
+  sweepTargetOf,
+} from "./sweep-config.ts";
 import type { SweepCounts, SweepItem, SweepRun } from "./sweep-item.ts";
 import {
   closingOf,
@@ -48,17 +54,6 @@ type Phase =
   | { kind: "cleanup"; run: SweepRun }
   | { kind: "done"; run: SweepRun };
 
-// The run's args as pi-subagents or the stage job passes them: the repo
-// config's path, the lane, the one issue a human launched the run for, if
-// any, and the last stage (through) or only stage (stage) it may begin.
-interface SweepArgs {
-  config: string;
-  lane?: unknown;
-  issue?: unknown;
-  through?: unknown;
-  stage?: unknown;
-}
-
 // The sweep's id and its clock.
 interface SweepClock {
   sweepId: string;
@@ -76,7 +71,7 @@ interface Sweep {
 interface Driver {
   frame: OpsFrame;
   now: () => Date;
-  only: number | null;
+  target: SweepTarget;
   through: StageName | null;
   stage: StageName | null;
   counts: SweepCounts;
@@ -211,7 +206,7 @@ function advance(driver: Driver, raw: readonly unknown[]): LaunchSpec[] {
   switch (phase.kind) {
     case "start": {
       driver.phase = { kind: "sweep" };
-      const launch = sweepLaunch(driver.only);
+      const launch = sweepLaunch(driver.target);
       driver.counts.seq += 1;
       return [opsSpec(driver.frame, driver.counts.seq, launch, null)];
     }
@@ -267,7 +262,7 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
   const driver: Driver = {
     frame: { config: args.config, sweepId, lane },
     now,
-    only: onlyOf(args.issue),
+    target: sweepTargetOf(args.issue, args.takeStopped),
     through: stageArgOf("through", args.through),
     stage: stageArgOf("stage", args.stage),
     counts: { seq: 0, spawned: 0 },
@@ -291,5 +286,5 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
   };
 }
 
-export type { Sweep, SweepArgs, SweepClock };
+export type { Sweep, SweepClock };
 export { startSweep };

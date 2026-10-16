@@ -5,9 +5,10 @@
 
 import type { IssueState, ItemPaths } from "../types.ts";
 import { isRecord, isStrings } from "./reply-guards.ts";
-import type { SweepCandidate, SweepConfig } from "./types.ts";
+import type { SweepCandidate, SweepConfig, SweepReply } from "./types.ts";
 
 type Fields = Readonly<Record<string, unknown>>;
+type StoppedIssue = NonNullable<SweepReply["stopped"]>;
 
 function isNumber(value: unknown): value is number {
   return typeof value === "number";
@@ -80,6 +81,15 @@ function isNumbers(value: unknown): value is number[] {
   return Array.isArray(value) && value.every(isNumber);
 }
 
+// The named issue a sweep left alone, and its stop label.
+function isStoppedIssue(value: unknown): value is StoppedIssue {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const { issue, label } = value;
+  return isNumber(issue) && isString(label);
+}
+
 function isIssueState(value: unknown): value is IssueState {
   if (!isRecord(value)) {
     return false;
@@ -111,6 +121,7 @@ export {
   isIssueState,
   isItemPaths,
   isNumbers,
+  isStoppedIssue,
   isString,
   isSweepConfig,
 };

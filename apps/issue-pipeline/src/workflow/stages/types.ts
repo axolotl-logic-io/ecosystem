@@ -195,13 +195,15 @@ interface SweepCandidate {
 }
 
 // The sweep op's reply: the config, the candidates in the order to claim
-// them, how many issues wait for an answer, and the parents to close.
+// them, how many issues wait for an answer, the parents to close, and the
+// named issue it left alone for its stop label, if any.
 interface SweepReply {
   ok: true;
   config: SweepConfig;
   items: readonly SweepCandidate[];
   waiting: number;
   parents: readonly number[];
+  stopped?: { issue: number; label: string };
 }
 
 // A candidate another lane claimed first: the lane that holds it, and
@@ -242,7 +244,6 @@ interface SummaryItem {
   rebaseAllocatedTokens: number | null;
 }
 
-// What a sweep returns.
 // What the end-of-sweep cleanup did: ops' list of worktrees, or its error.
 interface CleanupLog {
   worktrees: readonly unknown[];

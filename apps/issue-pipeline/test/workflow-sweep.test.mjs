@@ -14,7 +14,7 @@ import {
 
 /** @import { LaunchSpec } from "../src/workflow/launches.ts" */
 /** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
-/** @import { SweepArgs } from "../src/workflow/sweep.ts" */
+/** @import { SweepArgs } from "../src/workflow/sweep-config.ts" */
 /** @import { IssueState } from "../src/workflow/types.ts" */
 /**
  * An ops request as a spec's task frames it, with the fields the tests read.
@@ -36,6 +36,7 @@ const SEQUENCE = /-\d+$/u;
 const PARENT = 5;
 const SWEEP_FAILED = /sweep failed: gh is down/u;
 const NOT_FINISHED = /only once the sweep is finished/u;
+const TARGET_KEYS = new Set(["only", "takeStopped"]);
 // An implementer that always runs out of room.
 const HANDOFF = replyWith({
   status: "handoff",
@@ -54,6 +55,22 @@ function requestOf(spec) {
   }
   const { json = "" } = match.groups ?? {};
   return JSON.parse(json);
+}
+
+// The keys of the first sweep request for `args` that name its target.
+/** @param {Partial<SweepArgs>} args @returns {Record<string, unknown>} */
+function targetOf(args) {
+  const [spec] = startSweep({ ...ARGS, ...args }, CLOCK).next([]);
+  if (spec === undefined) {
+    throw new Error("the sweep launched nothing");
+  }
+  const request = requestOf(spec);
+  if (request === null) {
+    throw new Error("the sweep's first launch is not an ops request");
+  }
+  return Object.fromEntries(
+    Object.entries(request).filter(([key]) => TARGET_KEYS.has(key)),
+  );
 }
 
 // The raw result pi-subagents would give `spec`: an ops child printing the
@@ -133,6 +150,36 @@ test("the driver asks for the sweep op first, keyed by the clock's sweep", () =>
     lane: "lane-a",
     only: 7,
   });
+});
+
+test("takeStopped reaches the sweep op", () => {
+  assert.deepEqual(targetOf({ issue: "7", takeStopped: true }), {
+    only: 7,
+    takeStopped: true,
+  });
+  assert.deepEqual(targetOf({ issue: "7", takeStopped: "yes" }), { only: 7 });
+  assert.deepEqual(targetOf({ issue: "7" }), { only: 7 });
+  assert.deepEqual(targetOf({ takeStopped: true }), {});
+});
+
+test("a named sweep left stopped ends cleanly", () => {
+  const stopped = { issue: 7, label: "agent:stopped-budget" };
+  const { keys, summary } = drive({
+    args: { ...ARGS, issue: "7" },
+    ops: { ...ROUTINE_OPS, sweep: { ...sweepReply(), stopped } },
+  });
+  assert.deepEqual(keys, ["sweep-1", "cleanup-2"]);
+  assert.deepEqual(summary.items, [
+    {
+      issue: 7,
+      pr: null,
+      stage: null,
+      outcome: "left-stopped",
+      reason: "agent:stopped-budget",
+      allocatedTokens: null,
+      rebaseAllocatedTokens: null,
+    },
+  ]);
 });
 
 test("a failed sweep reply rejects the run", () => {

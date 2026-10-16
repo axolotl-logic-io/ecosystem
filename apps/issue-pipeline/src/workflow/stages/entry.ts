@@ -3,12 +3,14 @@
 // last comments of the issue), and the summary the sweep returns. The sweep's
 // driver (../sweep.ts) runs them around the stages.
 
+import type { SweepTarget } from "../sweep-config.ts";
 import type { IssueState } from "../types.ts";
 import {
   isCandidates,
   isIssueState,
   isItemPaths,
   isNumbers,
+  isStoppedIssue,
   isString,
   isSweepConfig,
 } from "./entry-replies.ts";
@@ -32,10 +34,13 @@ const NO_STATE = "the claim reply had no valid state and paths for the issue";
 const WAITING = "waiting for an answer to the pipeline's questions";
 const BRANCH_MOVED = "the PR branch changed outside the pipeline";
 
-// The sweep op, for every candidate or only issue `only`.
-function sweepLaunch(only: number | null): OpLaunch {
+// The sweep op, for every candidate or only the target's issue, taken even
+// when stopped if the target says so.
+function sweepLaunch({ only, takeStopped }: SweepTarget): OpLaunch {
   let payload: Reply = {};
-  if (only !== null) {
+  if (only !== null && takeStopped) {
+    payload = { only, takeStopped };
+  } else if (only !== null) {
     payload = { only };
   }
   return {
@@ -47,9 +52,10 @@ function sweepLaunch(only: number | null): OpLaunch {
   };
 }
 
-// The sweep op's reply. A failed or malformed one fails the whole sweep.
+// The sweep op's reply. A failed or malformed one fails the whole sweep; a
+// malformed `stopped` is dropped.
 function sweepReplyOf(reply: Reply): SweepReply {
-  const { ok, error, config, items, waiting, parents } = reply;
+  const { ok, error, config, items, waiting, parents, stopped } = reply;
   if (ok !== true) {
     throw new Error(`sweep failed: ${String(error)}`);
   }
@@ -63,7 +69,11 @@ function sweepReplyOf(reply: Reply): SweepReply {
   ) {
     throw new Error("sweep failed: the sweep reply was malformed");
   }
-  return { ok, config, items, waiting, parents };
+  const parsed: SweepReply = { ok, config, items, waiting, parents };
+  if (isStoppedIssue(stopped)) {
+    parsed.stopped = stopped;
+  }
+  return parsed;
 }
 
 // The claim of candidate `n`.
@@ -231,6 +241,10 @@ function buildSummary(input: SummaryInput): SweepSummary {
   let items: SummaryItem[] = [];
   if (item !== null) {
     items = [summaryItem(item)];
+  } else if (reply.stopped !== undefined) {
+    const { issue, label } = reply.stopped;
+    const outcome = "left-stopped";
+    items = [summaryItem({ n: issue, st: null, outcome, reason: label })];
   }
   return {
     sweep: sweepId,

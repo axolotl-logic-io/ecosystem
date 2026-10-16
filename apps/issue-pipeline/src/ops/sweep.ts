@@ -17,6 +17,7 @@ import { RESERVATION_MS, withRepoLock } from "../locks.ts";
 import { ROOT } from "../pipeline-root.ts";
 import { OpsError } from "../process.ts";
 import { readState } from "../state.ts";
+import { isStopLabel } from "../stops.ts";
 import type { Candidate, IssueRow, SweepContext } from "./sweep-verdict.ts";
 import {
   classify,
@@ -36,6 +37,8 @@ const SWEEP_REQUEST = z.looseObject({
   // The one issue a run was launched for (workflow args.issue).
   only: z.union([z.number(), z.string()]).nullish(),
   sweepId: z.unknown().optional(),
+  // With only, take the issue even with an agent:stopped-* label on it.
+  takeStopped: z.boolean().nullish(),
 });
 
 // The config keys only the sweep reads; loadConfig applied their defaults.
@@ -55,6 +58,12 @@ const RESERVATIONS = z.record(z.string(), z.unknown());
 
 type SweepRequest = z.infer<typeof SWEEP_REQUEST>;
 
+// A named issue the sweep left alone, and the stop label it left it for.
+interface StoppedIssue {
+  issue: number;
+  label: string;
+}
+
 interface SweepReply {
   config: Omit<Config, "tokenFile">;
   items: Candidate[];
@@ -62,6 +71,7 @@ interface SweepReply {
   parents: number[];
   liveElsewhere: number;
   skipped: number;
+  stopped?: StoppedIssue;
 }
 
 // Reserves the split parents no other live sweep on this machine reserved, so
@@ -105,13 +115,37 @@ function reserveParents(
   return mine;
 }
 
-// A run launched for one named issue takes it even with an agent:stopped-*
-// label on it: a human chose it. It still refuses an issue another live lane
-// holds, and its claim races like any other.
+// The reply to a run named for one issue: its candidates, and the issue it
+// left stopped, if any.
+function namedReply(
+  cfg: Config,
+  items: Candidate[],
+  stopped: StoppedIssue | null,
+): SweepReply {
+  const reply: SweepReply = {
+    config: publicConfig(cfg),
+    items,
+    waiting: 0,
+    parents: [],
+    liveElsewhere: 0,
+    skipped: 0,
+  };
+  if (stopped !== null) {
+    reply.stopped = stopped;
+  }
+  return reply;
+}
+
+// A run named for one issue leaves it alone while it has an agent:stopped-*
+// label, and reports it as stopped, so a pinned run doesn't redo a stopped
+// issue every interval; removing the label resumes it. takeStopped takes it
+// anyway, for a deliberate one-shot. It still refuses an issue another live
+// lane holds, and its claim races like any other.
 function sweepOne(
   ctx: SweepContext,
   issues: readonly IssueRow[],
   n: number,
+  takeStopped: boolean,
 ): SweepReply {
   const issue = issues.find((row) => row.number === n);
   if (issue === undefined) {
@@ -123,6 +157,10 @@ function sweepOne(
       `#${n} was opened by @${String(author)}, who is not on allowedUsers or not a collaborator`,
     );
   }
+  const stop = issue.labels.find((label) => isStopLabel(label.name));
+  if (stop !== undefined && !takeStopped) {
+    return namedReply(ctx.cfg, [], { issue: n, label: stop.name });
+  }
   const working = issue.labels.some(
     (label) => label.name === LABELS.working.name,
   );
@@ -133,23 +171,15 @@ function sweepOne(
       `#${n} is held by live lane ${String(leaseLane(lease))}`,
     );
   }
-  return {
-    config: publicConfig(ctx.cfg),
-    items: [
-      {
-        number: n,
-        title: issue.title,
-        kind: "named",
-        priority: PRIORITY.named,
-        createdAt: issue.createdAt,
-        depth: issueDepth(issue.body),
-      },
-    ],
-    waiting: 0,
-    parents: [],
-    liveElsewhere: 0,
-    skipped: 0,
+  const named: Candidate = {
+    number: n,
+    title: issue.title,
+    kind: "named",
+    priority: PRIORITY.named,
+    createdAt: issue.createdAt,
+    depth: issueDepth(issue.body),
   };
+  return namedReply(ctx.cfg, [named], null);
 }
 
 // The issue a run names, or null for a full sweep.
@@ -249,7 +279,7 @@ function sweep(cfg: Config, request: unknown): SweepReply {
   };
   const named = namedIssue(req.only);
   if (named !== null) {
-    return sweepOne(ctx, issues, named);
+    return sweepOne(ctx, issues, named, req.takeStopped === true);
   }
   const { candidates, parents, liveElsewhere, skipped } = tally(ctx, issues);
   candidates.sort(byPriority);
