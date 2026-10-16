@@ -52,7 +52,8 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   lockfiles: [],
   migrations: null,
   // The orchestrator (#234): caps on live stage jobs, in all and per reader
-  // stage, the tokens its jobs may spend an hour, and its seconds between ticks.
+  // stage, the tokens its jobs may spend an hour (input, output and cache
+  // writes, not cache reads), and its seconds between ticks.
   maxJobs: 4,
   stageCaps: { triage: 2, spec: 2, review: 2, accept: 2, security: 2 },
   tokensPerHour: 2_000_000,

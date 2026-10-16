@@ -3,14 +3,15 @@
 // hourly rate limit can count them even after a job.json is overwritten, and
 // the jobs the orchestrator started, which cover the gap before a job writes
 // its own job.json. It keeps an hour of both. It alone knows the file's
-// layout; each save rewrites the whole file atomically.
+// layout; each save rewrites the whole file atomically. The tokens it counts
+// are `rateTokens`, which leave out cache reads.
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import { usageTotal } from "../job/raw-results.ts";
+import type { Usage } from "../job/raw-results.ts";
 import type { StatusFile } from "../job/status.ts";
 import { ROOT } from "../pipeline-root.ts";
 
@@ -70,6 +71,13 @@ function writeLedger(file: string, ledger: z.infer<typeof LEDGER>): void {
   fs.renameSync(temp, file);
 }
 
+// The tokens the hourly rate limit counts: input, output and cache writes.
+// Cache reads are left out: every call re-reads the cached context, so they
+// would dwarf the rest. Context measures (`usageTotal`) still count them.
+function rateTokens(usage: Usage): number {
+  return usage.input + usage.output + usage.cacheWrite;
+}
+
 function withinHour(at: string, now: Date): boolean {
   return now.getTime() - Date.parse(at) < HOUR_MS;
 }
@@ -106,7 +114,7 @@ function recordJobs(
   for (const job of jobs) {
     for (const launch of job.launches) {
       const id = `${job.startedAt} ${launch.key}`;
-      const total = usageTotal(launch.usage);
+      const total = rateTokens(launch.usage);
       // Each event that adds usage moves lastEventAt.
       const active = launch.lastEventAt ?? launch.startedAt;
       launches.set(id, recorded(launches.get(id), total, active, now));
@@ -162,4 +170,4 @@ function openLedger(cfg: Config): Ledger {
 }
 
 export type { Ledger, StartRecord };
-export { openLedger };
+export { openLedger, rateTokens };
