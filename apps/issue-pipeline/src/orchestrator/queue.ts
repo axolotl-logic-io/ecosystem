@@ -1,11 +1,12 @@
 // The queue the orchestrator schedules (#234): the snapshot of the open
 // issues and their jobs, what each issue's facts mean (the stage its next job
-// runs, its file set, whether it is live, waiting or a live implementation),
-// the order the merge-ready issues should merge in, and which of them hold
-// the merges ranked after them. Pure.
+// runs, its file set, whether it is live, waiting, stopped, lifted after a
+// stop (#381) or a live implementation), the order the merge-ready issues
+// should merge in, and which of them hold the merges ranked after them. Pure.
 
 import { fileSetsOverlap } from "../globs.ts";
 import { HOLDING_STAGES, READY_STAGES } from "../ops/merge-order.ts";
+import { resumesAfterStop } from "../resume-stage.ts";
 import { STAGE_ORDER } from "../workflow/sweep-config.ts";
 
 // How the sweep's classify judged the issue, as far as scheduling cares.
@@ -58,6 +59,8 @@ interface SnapshotIssue {
   verdict: IssueVerdict;
   // The stage its saved state names, or null with no state.
   stage: string | null;
+  // The stage a state saved at `stopped` stopped in, or null for none.
+  stoppedStage: string | null;
   // The paths or globs the spec says it touches (st.files).
   files: readonly string[] | null;
   pr: number | null;
@@ -100,13 +103,45 @@ function stageIndex(stage: string): number {
   return STAGE_AT.get(stage) ?? -1;
 }
 
-// The stage the issue's next job runs.
+// Why a started job starts: its issue was lifted, it merges, or it was free.
+type StartReason = "free" | "merge-first" | "lifted";
+
+function isAnswered({ verdict }: SnapshotIssue): boolean {
+  return verdict.kind === "candidate" && verdict.answered;
+}
+
+// The stage a lifted issue resumes at, or null when it isn't lifted. An issue
+// is lifted when its stop label is gone but its state is still saved at
+// `stopped`, with no answered questions and a stopped stage a restart resumes
+// at: its next job's claim turns the state back (`every-role-resumes`).
+function liftedStage(issue: SnapshotIssue): string | null {
+  const { stage, stoppedStage, stopped } = issue;
+  const lifted = !stopped && stage === "stopped" && !isAnswered(issue);
+  if (lifted && resumesAfterStop(stoppedStage)) {
+    return stoppedStage;
+  }
+  return null;
+}
+
+// The stage the issue's next job runs: triage with no state or with answered
+// questions, a lifted issue's stopped stage, or else its saved stage.
 function runStage(issue: SnapshotIssue): string {
-  const { stage, verdict } = issue;
-  if (stage === null || (verdict.kind === "candidate" && verdict.answered)) {
+  const { stage } = issue;
+  if (stage === null || isAnswered(issue)) {
     return "triage";
   }
-  return stage;
+  return liftedStage(issue) ?? stage;
+}
+
+// Why a job for the issue that runs `stage` starts, once nothing holds it.
+function startReason(issue: SnapshotIssue, stage: string): StartReason {
+  if (liftedStage(issue) !== null) {
+    return "lifted";
+  }
+  if (stage === "merge") {
+    return "merge-first";
+  }
+  return "free";
 }
 
 function fileSet(issue: SnapshotIssue): readonly string[] {
@@ -120,8 +155,11 @@ function isLive(issue: SnapshotIssue): boolean {
   return issue.job?.live === true;
 }
 
+// True for an issue with a stop label, or saved at `stopped` and not lifted.
 function isStopped(issue: SnapshotIssue): boolean {
-  return issue.stopped || issue.stage === "stopped";
+  return (
+    issue.stopped || (issue.stage === "stopped" && liftedStage(issue) === null)
+  );
 }
 
 // From implement (with a live job) until merge, or until it stops.
@@ -137,6 +175,11 @@ function byAge(a: SnapshotIssue, b: SnapshotIssue): number {
   return (
     Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.number - b.number
   );
+}
+
+// Finish work first: the later stage first, then the older issue.
+function byStageThenAge(a: SnapshotIssue, b: SnapshotIssue): number {
+  return stageIndex(runStage(b)) - stageIndex(runStage(a)) || byAge(a, b);
 }
 
 function isWaiting(issue: SnapshotIssue): boolean {
@@ -234,10 +277,12 @@ export type {
   Snapshot,
   SnapshotIssue,
   StackedOn,
+  StartReason,
 };
 export {
   awaitsPrereq,
   byAge,
+  byStageThenAge,
   fileSet,
   isLive,
   isLiveImplementation,
@@ -247,6 +292,7 @@ export {
   queueRank,
   runStage,
   stageIndex,
+  startReason,
   verdictHold,
   WRITERS,
 };

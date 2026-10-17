@@ -1,7 +1,7 @@
 // The line that names the files a sub-issue touches, which spec's split
 // writes at the end of each part's body (spec-split.ts), and its reading,
 // which the orchestrator's file holds fall back on when the saved state has
-// no files.
+// no files (filesOf).
 
 const FILES_LINE = /^Files: (?<named>`[^`\n]+`(?:, `[^`\n]+`)*)[ \t]*$/gmu;
 const NAMED_FILE = /`(?<file>[^`\n]+)`/gu;
@@ -24,4 +24,17 @@ function filesOfBody(body: string | null | undefined): string[] | null {
   });
 }
 
-export { filesLine, filesOfBody };
+// The files an issue touches: `saved`, those its saved state names, or, when
+// it names none (a state saved before restarts kept them), those its body's
+// files line names, as a split's sub-issue has; null leaves the whole repo.
+function filesOf(
+  saved: readonly string[] | null | undefined,
+  body: string | null | undefined,
+): readonly string[] | null {
+  if (saved !== undefined && saved !== null && saved.length > 0) {
+    return saved;
+  }
+  return filesOfBody(body);
+}
+
+export { filesLine, filesOf, filesOfBody };

@@ -37,6 +37,10 @@ const STATE = z.looseObject({
   // missing when it isn't stacked, and null when it is unreadable.
   stackedOn: STACKED_ON.nullish().catch(null),
   stage: z.string().optional(),
+  // The stage a stop saved at `stopped` stopped in, which a restart resumes
+  // at (`every-role-resumes`); null or missing for none, and null when it is
+  // malformed.
+  stoppedStage: z.string().nullish().catch(null),
   // The values a role's run saved because a later start needs them and
   // GitHub and git can't give them back, such as the counts that bound its
   // loops (#301). A malformed record reads as missing.

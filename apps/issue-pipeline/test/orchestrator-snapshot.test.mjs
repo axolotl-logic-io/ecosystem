@@ -32,9 +32,10 @@ const JOB = {
 };
 const PR = 70;
 const CLOSED = 99;
-// An issue's facts with none of its own: no files, PR, after mark, stop, job,
-// stack or prerequisite.
+// An issue's facts with none of its own: no stopped stage, files, PR, after
+// mark, stop, job, stack or prerequisite.
 const BASE = {
+  stoppedStage: null,
   files: null,
   pr: null,
   after: [],

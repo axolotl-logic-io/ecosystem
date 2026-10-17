@@ -20,7 +20,7 @@ import { prereqBehind, prereqMerged } from "../stack.ts";
 import type { State } from "../state.ts";
 import { readState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
-import { filesOfBody } from "../workflow/files-line.ts";
+import { filesOf } from "../workflow/files-line.ts";
 import type { StartRecord } from "./ledger.ts";
 import type { IssueJob, IssueVerdict, Prereq, SnapshotIssue } from "./queue.ts";
 import { isStopped } from "./queue.ts";
@@ -112,20 +112,6 @@ function numberOr(value: unknown): number | null {
   return null;
 }
 
-// The files the issue touches: those its saved state names, or, when it names
-// none (a state saved before restarts kept them), those its body's files line
-// names, as a split's sub-issue has; null leaves the whole repo.
-function filesOf(
-  state: State | null,
-  body: string | null | undefined,
-): readonly string[] | null {
-  const saved = state?.files;
-  if (saved !== undefined && saved !== null && saved.length > 0) {
-    return saved;
-  }
-  return filesOfBody(body);
-}
-
 function issueOf(
   ctx: SweepContext,
   row: IssueRow,
@@ -141,7 +127,8 @@ function issueOf(
     createdAt: row.createdAt,
     verdict: verdictOf(ctx, row, state),
     stage: state?.stage ?? null,
-    files: filesOf(state, row.body),
+    stoppedStage: state?.stoppedStage ?? null,
+    files: filesOf(state?.files, row.body),
     pr: numberOr(state?.pr),
     after: afterDeps(row.body).filter((n) => ctx.openNumbers.has(n)),
     stopped: row.labels.some((label) => isStopLabel(label.name)),

@@ -4,9 +4,15 @@
 // test it with no clock, files or processes.
 
 import { fileSetsOverlap } from "../globs.ts";
-import type { ScheduleSettings, Snapshot, SnapshotIssue } from "./queue.ts";
+import type {
+  ScheduleSettings,
+  Snapshot,
+  SnapshotIssue,
+  StartReason,
+} from "./queue.ts";
 import {
   byAge,
+  byStageThenAge,
   fileSet,
   isLive,
   isLiveImplementation,
@@ -16,6 +22,7 @@ import {
   queueRank,
   runStage,
   stageIndex,
+  startReason,
   verdictHold,
   WRITERS,
 } from "./queue.ts";
@@ -27,7 +34,7 @@ type Decision =
       at: string;
       issue: number;
       stage: string;
-      reason: "free" | "merge-first";
+      reason: StartReason;
       mergeQueue: readonly number[] | null;
       // The prerequisite a first job starts the issue's branch on (#290).
       stackOn: number | null;
@@ -211,10 +218,8 @@ function decide(
     return { action: "held", at, issue: number, stage, reason };
   }
   countStart(count, issue, stage);
-  let why: "free" | "merge-first" = "free";
   let mergeQueue: readonly number[] | null = null;
   if (stage === "merge") {
-    why = "merge-first";
     mergeQueue = count.queue;
   }
   return {
@@ -222,7 +227,7 @@ function decide(
     at,
     issue: number,
     stage,
-    reason: why,
+    reason: startReason(issue, stage),
     mergeQueue,
     stackOn,
   };
@@ -249,11 +254,6 @@ function countOf(snapshot: Snapshot, settings: ScheduleSettings): TickCount {
     queue: mergeRank(snapshot.issues),
     holders: mergeHolders(snapshot.issues),
   };
-}
-
-// Finish work first: the later stage first, then the older issue.
-function byStageThenAge(a: SnapshotIssue, b: SnapshotIssue): number {
-  return stageIndex(runStage(b)) - stageIndex(runStage(a)) || byAge(a, b);
 }
 
 // One decision for each issue that may run a stage: those stopped, done or

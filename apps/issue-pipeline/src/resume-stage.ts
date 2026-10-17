@@ -39,6 +39,14 @@ const LIMITS_RESET: State = {
   conflictFixes: 0,
 };
 
+// True when a stop saved with `stoppedStage` resumes when it is lifted: a
+// claim with no answered questions restarts the issue there (or at review,
+// when the review no longer stands), as `every-role-resumes` promises. False
+// for a missing or malformed stage, and for one a restart doesn't resume.
+function resumesAfterStop(stoppedStage: unknown): stoppedStage is string {
+  return RESUMABLE.has(stoppedStage) || stoppedStage === "publish";
+}
+
 // True when the issue has a blocking finding open.
 function hasOpenFinding(state: State): boolean {
   return (state.findings ?? []).some((finding) => finding.status === "open");
@@ -91,4 +99,4 @@ function keptReview(stage: string, stands: boolean): State {
   };
 }
 
-export { keptReview, LIMITS_RESET, RESUMABLE, resumedStage };
+export { keptReview, LIMITS_RESET, RESUMABLE, resumedStage, resumesAfterStop };

@@ -29,8 +29,8 @@ const SETTINGS = {
 const CAPPED = { ...SETTINGS, maxJobs: CAPPED_JOBS };
 
 // Issue #number, opened `number` minutes after the first: a runnable
-// candidate at triage with no files, PR, after mark, job or prerequisite,
-// unstacked, then `fields`.
+// candidate at triage with no stopped stage, files, PR, after mark, job or
+// prerequisite, unstacked, then `fields`.
 /** @param {Partial<SnapshotIssue> & { number: number }} fields @returns {SnapshotIssue} */
 function issue(fields) {
   const { number } = fields;
@@ -38,6 +38,7 @@ function issue(fields) {
     createdAt: new Date(FIRST_ISSUE_AT + number * MINUTE_MS).toISOString(),
     verdict: { kind: "candidate", answered: false },
     stage: "triage",
+    stoppedStage: null,
     files: null,
     pr: null,
     after: [],
