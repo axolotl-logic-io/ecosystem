@@ -2,8 +2,9 @@
 // the ledger, note a rate-limited job's backoff, let the watchdog act on the
 // jobs and write the escalations (#235), ask the escalation agent about them
 // (#282), decide with the scheduler, hold every start during a backoff, start
-// the jobs it chose and log every action and decision. The processes, the
-// steers, the agent's run and the clock come from the caller.
+// the jobs it chose, log every action and decision, then close the split
+// parents that are done (#378). The processes, the steers, the agent's run
+// and the clock come from the caller.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -11,13 +12,14 @@ import { paths } from "../config.ts";
 import { stop } from "../ops/stop.ts";
 import { roleOf } from "../roles/registry.ts";
 import type { State } from "../state.ts";
-import { escalate } from "./escalate.ts";
 import type { AdviceContext } from "./escalation-agent.ts";
-import { adviseOnEscalations } from "./escalation-agent.ts";
+import { escalateOpenIssues } from "./escalation-agent.ts";
 import type { RunAgent } from "./escalation-consult.ts";
 import type { Ledger } from "./ledger.ts";
 import { openLedger } from "./ledger.ts";
-import { logDecisions, logEscalations } from "./log.ts";
+import { logDecisions } from "./log.ts";
+import type { ParentOutcome } from "./parents.ts";
+import { closeParents } from "./parents.ts";
 import type { SnapshotIssue } from "./queue.ts";
 import { openBackoff } from "./rate-limit-backoff.ts";
 import type { Decision, StartGate } from "./schedule.ts";
@@ -25,8 +27,7 @@ import { schedule, startGate } from "./schedule.ts";
 import { LANE, readQueue } from "./snapshot.ts";
 import type { WatchAction } from "./watchdog.ts";
 import { watch } from "./watchdog.ts";
-import { budgetStopped } from "./watchdog-budget.ts";
-import { readWatchMemory, saveWatchMemory } from "./watchdog-memory.ts";
+import { readWatchMemory } from "./watchdog-memory.ts";
 
 // The config keys only the orchestrator reads; loadConfig applied their
 // defaults.
@@ -233,8 +234,15 @@ function withoutHeld(
   return decisions.filter(({ issue }) => !waiting.has(issue));
 }
 
-// Runs one tick and returns its decisions.
-function tick(cfg: Config, deps: TickDeps): Decision[] {
+// What a tick did: the scheduler's decisions, and what became of each open
+// split parent, for which the scheduler makes no decision.
+interface TickResult {
+  decisions: Decision[];
+  parents: ParentOutcome[];
+}
+
+// Runs one tick and returns what it did.
+function tick(cfg: Config, deps: TickDeps): TickResult {
   const settings = ORCHESTRATOR_SETTINGS.parse(cfg);
   const ledger = openLedger(cfg);
   const now = deps.now();
@@ -264,22 +272,9 @@ function tick(cfg: Config, deps: TickDeps): Decision[] {
       });
       done.push(action);
     }
-    const flagged = issues.map(({ number, stage }) => {
-      const job = watched.find((w) => w.issue === number);
-      return {
-        issue: number,
-        stage,
-        labels: labels.get(number) ?? [],
-        budgetStopped:
-          job !== undefined && budgetStopped(watchdog.memory, job.status),
-      };
-    });
-    const raised = escalate(flagged, watchdog.memory.escalated, now);
-    logEscalations(cfg, raised.escalations);
     const view = { watched, states, admit, now };
-    adviseOnEscalations(cfg, raised.escalations, adviceOf(run, issues, view));
-    // Kept only once every action is done, so a failed one is tried again.
-    saveWatchMemory(cfg, { ...watchdog.memory, escalated: raised.escalated });
+    const advice = adviceOf(run, issues, view);
+    escalateOpenIssues(cfg, { issues, labels }, watchdog.memory, advice);
     const scheduled = schedule({ issues, spentLastHour }, settings, now);
     decisions = backoff.hold(withoutHeld(scheduled, done));
     for (const decision of decisions) {
@@ -292,8 +287,14 @@ function tick(cfg: Config, deps: TickDeps): Decision[] {
     logDecisions(cfg, done);
   }
   logDecisions(cfg, decisions);
-  return decisions;
+  const split = issues.filter(({ verdict }) => verdict.kind === "parent");
+  const parents = closeParents(
+    cfg,
+    split.map(({ number }) => number),
+    now,
+  );
+  return { decisions, parents };
 }
 
-export type { TickDeps };
+export type { TickDeps, TickResult };
 export { tick };

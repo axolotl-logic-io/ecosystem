@@ -135,7 +135,7 @@ function jobLogOf(issue) {
 test("a tick spawns each start in the orchestrator lane, logs every decision and records the starts", () => {
   openWith(QUEUE);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(cfg, {
+  const { decisions } = tick(cfg, {
     configPath: CONFIG,
     now: () => NOW,
     spawn,
@@ -195,7 +195,8 @@ test("the next tick starts nothing for a spawned job that still runs but has wri
   const { spawned, spawn } = recordingSpawn(process.pid);
   const before = logLines().length;
   assert.deepEqual(
-    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn, ...UNWATCHED }),
+    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn, ...UNWATCHED })
+      .decisions,
     [],
   );
   assert.deepEqual(spawned, []);
@@ -216,7 +217,7 @@ test("once the jobs' tokens in the last hour reach tokensPerHour every start is 
     { number: RATED.waiting },
   ]);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(rated, {
+  const { decisions } = tick(rated, {
     configPath: CONFIG,
     now: () => NOW,
     spawn,
@@ -248,7 +249,7 @@ test("with tokensPerHour unset, the default, no start is held for the rate limit
     { number: RATED.waiting },
   ]);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(unrated, {
+  const { decisions } = tick(unrated, {
     configPath: CONFIG,
     now: () => NOW,
     spawn,

@@ -1,14 +1,14 @@
 // The orchestrator's decision log, `runs/<slug>/orchestrator.log` (#234): one
-// JSON line per scheduler decision or watchdog action (#235),
-// `{"at","issue","stage","action","reason"}`; and its escalations,
-// `runs/<slug>/escalations.jsonl` (#235), one JSON line each,
-// `{"at","issue","stage","reason","label"}`.
+// JSON line per scheduler decision, watchdog action (#235) or closed split
+// parent (#378), `{"at","issue","stage","action","reason"}`; and its
+// escalations, `runs/<slug>/escalations.jsonl` (#235), one JSON line each,
+// `{"at","issue","stage","reason","label"}`, from the watchdog's rules or a
+// split parent's close that failed (#378).
 
 import fs from "node:fs";
 import path from "node:path";
 import type { Config } from "../config.ts";
 import { ROOT } from "../pipeline-root.ts";
-import type { Escalation } from "./escalate.ts";
 
 const LOG_FILE = "orchestrator.log";
 const ESCALATIONS_FILE = "escalations.jsonl";
@@ -42,7 +42,10 @@ function logDecisions(cfg: Config, decisions: readonly LogEntry[]): void {
 }
 
 // Logs each escalation to orchestrator.log and to escalations.jsonl.
-function logEscalations(cfg: Config, escalations: readonly Escalation[]): void {
+function logEscalations(
+  cfg: Config,
+  escalations: readonly (LogEntry & { label: string })[],
+): void {
   logDecisions(cfg, escalations);
   const lines = escalations.map(({ at, issue, stage, reason, label }) =>
     JSON.stringify({ at, issue, stage, reason, label }),

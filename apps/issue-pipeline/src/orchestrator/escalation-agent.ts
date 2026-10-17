@@ -12,11 +12,15 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { State } from "../state.ts";
 import type { Escalation } from "./escalate.ts";
+import { escalate } from "./escalate.ts";
 import type { Action, Reply, RunAgent } from "./escalation-consult.ts";
 import { consult } from "./escalation-consult.ts";
 import type { LogEntry } from "./log.ts";
-import { logDecisions } from "./log.ts";
+import { logDecisions, logEscalations } from "./log.ts";
 import type { WatchedJob } from "./watchdog.ts";
+import { budgetStopped } from "./watchdog-budget.ts";
+import type { WatchMemory } from "./watchdog-memory.ts";
+import { saveWatchMemory } from "./watchdog-memory.ts";
 
 const DEFAULT_TIMEOUT_SECONDS = 300;
 const DEFAULT_MODEL = "anthropic/claude-sonnet-5-5";
@@ -214,5 +218,37 @@ function adviseOnEscalations(
   }
 }
 
+// The open issues the tick's escalations are raised over: each one's number,
+// the stage its saved state names, and its label names.
+interface Escalating {
+  issues: readonly { number: number; stage: string | null }[];
+  labels: ReadonlyMap<number, readonly string[]>;
+}
+
+// Raises the escalations `open` holds that the watchdog's `memory` doesn't
+// hold yet, logs them, asks the escalation agent about them, then saves the
+// memory with what is escalated now: kept only once every step is done, so a
+// failed one is tried again on the next tick.
+function escalateOpenIssues(
+  cfg: Config,
+  open: Escalating,
+  memory: WatchMemory,
+  ctx: AdviceContext,
+): void {
+  const flagged = open.issues.map(({ number, stage }) => {
+    const job = ctx.watched.find((w) => w.issue === number);
+    return {
+      issue: number,
+      stage,
+      labels: open.labels.get(number) ?? [],
+      budgetStopped: job !== undefined && budgetStopped(memory, job.status),
+    };
+  });
+  const raised = escalate(flagged, memory.escalated, ctx.now);
+  logEscalations(cfg, raised.escalations);
+  adviseOnEscalations(cfg, raised.escalations, ctx);
+  saveWatchMemory(cfg, { ...memory, escalated: raised.escalated });
+}
+
 export type { AdviceContext, AgentActs };
-export { adviseOnEscalations };
+export { escalateOpenIssues };

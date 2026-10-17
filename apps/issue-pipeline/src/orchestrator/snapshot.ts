@@ -74,9 +74,10 @@ function verdictOf(
       const lease = liveLease(state, ctx.now, ctx.leaseMs);
       return { kind: "live-elsewhere", lane: String(leaseLane(lease)) };
     }
+    case "parent":
+      return { kind: "parent" };
     case "skip":
     case "skipped":
-    case "parent":
       return { kind: "skip" };
     default: {
       const unknown: never = verdict;

@@ -17,10 +17,20 @@ import { publishMerged } from "./publish.ts";
 
 const SUB_ISSUES_PER_PAGE = 100;
 
-// gh's answer, or null when it printed nothing.
+// The sub-issues as closeParent's jq reads them (GitHub's `state_reason` as
+// `reason`, each label by name), or null when gh printed nothing.
 const SUB_ISSUES = z
-  .array(z.looseObject({ number: z.number(), state: z.unknown() }))
+  .array(
+    z.looseObject({
+      number: z.number(),
+      state: z.unknown(),
+      reason: z.string().nullable(),
+      labels: z.array(z.string()),
+    }),
+  )
   .nullable();
+
+type SubIssue = NonNullable<z.infer<typeof SUB_ISSUES>>[number];
 
 const ISSUE_REQUEST = z.looseObject({ number: z.number().int() });
 const FINISH_WIKI_REQUEST = z.looseObject({
@@ -110,7 +120,16 @@ function finishWiki(cfg: Config, request: unknown): FinishWikiReply {
   return { merged: true, ...published };
 }
 
-// Closes a split issue once every sub-issue is closed.
+// A closed sub-issue merged when GitHub closed it as completed, as a merge
+// does, or it carries agent:merged.
+function merged(sub: SubIssue): boolean {
+  return sub.reason === "completed" || sub.labels.includes(LABELS.merged.name);
+}
+
+// Closes a split issue once every sub-issue is closed and at least one of
+// them merged; otherwise it writes nothing. It closes the issue before it
+// relabels it and comments, so a close that fails leaves no comment and a
+// retry comments once.
 function closeParent(cfg: Config, request: unknown): CloseParentReply {
   const { number: n } = parseRequest(ISSUE_REQUEST, "close-parent", request);
   const subs =
@@ -118,6 +137,8 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
       ghJson(cfg, [
         "api",
         `repos/${cfg.repo}/issues/${n}/sub_issues?per_page=${SUB_ISSUES_PER_PAGE}`,
+        "--jq",
+        "[.[] | {number, state, reason: .state_reason, labels: [.labels[].name]}]",
       ]),
     ) ?? [];
   if (subs.length === 0) {
@@ -129,6 +150,11 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   if (open.length > 0) {
     return { closed: false, open };
   }
+  if (!subs.some(merged)) {
+    return { closed: false, reason: "no sub-issue merged" };
+  }
+  gh(cfg, ["issue", "close", String(n), "-R", cfg.repo]);
+  setLabels(cfg, n, [LABELS.merged.name], [LABELS.split.name]);
   const list = subs.map((sub) => `#${sub.number}`).join(", ");
   comment(
     cfg,
@@ -136,8 +162,6 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
     { role: "coordinator" },
     `All sub-issues are closed (${list}). Closing.`,
   );
-  gh(cfg, ["issue", "close", String(n), "-R", cfg.repo]);
-  setLabels(cfg, n, [LABELS.merged.name], [LABELS.split.name]);
   return { closed: true };
 }
 
@@ -165,4 +189,5 @@ function release(cfg: Config, request: unknown): EmptyReply {
   return {};
 }
 
+export type { CloseParentReply };
 export { closeParent, finishMerged, finishWiki, post, release };

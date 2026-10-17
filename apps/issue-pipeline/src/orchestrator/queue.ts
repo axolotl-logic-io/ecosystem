@@ -13,6 +13,8 @@ type IssueVerdict =
   | { kind: "candidate"; answered: boolean }
   | { kind: "waiting-on-after" }
   | { kind: "live-elsewhere"; lane: string }
+  // A split parent, which the tick closes rather than schedules (#378).
+  | { kind: "parent" }
   | { kind: "skip" };
 
 // The issue an issue's branch is stacked on (#268), and the head of its
@@ -160,6 +162,7 @@ function verdictHold(issue: SnapshotIssue): string | null | undefined {
   const { verdict } = issue;
   switch (verdict.kind) {
     case "skip":
+    case "parent":
       return undefined;
     case "waiting-on-after":
       return `after:#${String(issue.after.at(0))}`;
