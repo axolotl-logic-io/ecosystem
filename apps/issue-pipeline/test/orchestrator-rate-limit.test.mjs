@@ -135,16 +135,16 @@ test("rateLimitBackoffMinutes sets the backoff", () => {
 test("a dead job's restart is held as rate-limited during a backoff", () => {
   noBackoff();
   endedAt(RESTART.limited, 0, RATE_LIMITED, "spec");
-  writeJob({ issue: RESTART.dead, stage: "implement", pid: deadPid() });
+  writeJob({ issue: RESTART.dead, stage: "fix", pid: deadPid() });
   const issues = [
     { number: RESTART.limited, state: { stage: "spec" } },
-    { number: RESTART.dead, state: { stage: "implement" } },
+    { number: RESTART.dead, state: { stage: "fix" } },
   ];
   assert.deepEqual(tickOver(issues, 0).spawned, []);
   assert.deepEqual(loggedFor(RESTART.dead), [
     {
       issue: RESTART.dead,
-      stage: "implement",
+      stage: "fix",
       action: "held",
       reason: "rate-limited",
     },

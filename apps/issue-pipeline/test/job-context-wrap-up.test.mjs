@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { turns } from "./fake-rpc-pi.mjs";
+import { implementReplies } from "./implementor-job-test-kit.mjs";
 import {
   logOf,
   piCommands,
@@ -25,7 +26,6 @@ import {
   startJob,
   statusOf,
 } from "./job-test-kit.mjs";
-import { ISSUE, sweepReply } from "./workflow-stages-fixtures.mjs";
 
 const SOFT = 1000;
 const HARD = 2000;
@@ -58,12 +58,11 @@ const PROMISED_WRAP_UP = [
 // real, so the issue stops at the first handoff and the WIP commit reaches
 // the origin.
 const IMPLEMENT_ONCE = {
-  ...repliesAt("implement"),
-  sweep: sweepReply({ items: [ISSUE], config: { maxContinuations: 0 } }),
+  ...implementReplies(),
   "exit-push": { ok: true, git: true },
 };
-// The spec stage with no continuations, so a handoff stops the issue.
-const SPEC_ONCE = { ...LIMITS, maxContinuations: 0 };
+// No continuations, so a handoff stops the issue.
+const ONCE = { ...LIMITS, maxContinuations: 0 };
 const IDENTITY = [
   "-c",
   "user.name=Test",
@@ -104,7 +103,7 @@ test(
       ...turns([PAST_HARD]),
       "wait",
     ];
-    const place = setUp(IMPLEMENT_ONCE, { events }, LIMITS);
+    const place = setUp(IMPLEMENT_ONCE, { events }, ONCE);
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
     const steers = piCommands(place).filter(({ type }) => type === "steer");
@@ -123,7 +122,7 @@ test(
   async () => {
     const events = [turnSaying(PAST_HARD, LAST_WORDS), "wait"];
     const script = { events, commit: "repo/a.txt", untracked: "repo/left.txt" };
-    const place = setUp(IMPLEMENT_ONCE, script, LIMITS);
+    const place = setUp(IMPLEMENT_ONCE, script, ONCE);
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
     const handoff = fs.readFileSync(handoffOf(place), "utf8");
@@ -158,7 +157,7 @@ test(
   HANG_GUARD,
   async () => {
     const events = [turnSaying(PAST_HARD, LAST_WORDS), "wait"];
-    const place = setUp(IMPLEMENT_ONCE, { events }, LIMITS);
+    const place = setUp(IMPLEMENT_ONCE, { events }, ONCE);
     const handoff = { file: handoffOf(place), text: OWN };
     setScript(place, { events, untracked: "repo/left.txt", handoff });
     const end = await startJob(place, ["--stage", "implement"]).end;
@@ -185,7 +184,7 @@ test(
       ...turns([PAST_HARD]),
       "wait",
     ];
-    const place = setUp(repliesAt("spec"), { events }, SPEC_ONCE);
+    const place = setUp(repliesAt("spec"), { events }, ONCE);
     const end = await startJob(place, ["--stage", "spec"]).end;
     assert.equal(end.status, 0, end.stderr);
     const steers = piCommands(place).filter(({ type }) => type === "steer");

@@ -43,7 +43,9 @@ const LAST_CONTEXT = 51_000;
 // An acceptance verifier's turn context past its 60k budget and under the
 // hard limit.
 const OVER_VERIFIER_BUDGET = 90_000;
-const IMPLEMENTER_BUDGET = 150_000;
+// The implementer's default budget at the default sessionTokenCap, both
+// 300k: the implementor role reads them from the job's config.
+const IMPLEMENTER_BUDGET = 300_000;
 
 test("while a session waits, job.json shows its pid, session, last event and tool failures", async () => {
   const place = setUp(repliesAt(SWEEP_STAGE), {

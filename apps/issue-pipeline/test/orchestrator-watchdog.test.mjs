@@ -97,15 +97,15 @@ function resumeArgv(issue, stage) {
 }
 
 test("a dead job is restarted as the same stage with --resume, and the scheduler starts nothing else for it", () => {
-  writeJob({ issue: ISSUE.dead, stage: "implement", pid: deadPid() });
+  writeJob({ issue: ISSUE.dead, stage: "fix", pid: deadPid() });
   const { spawned } = tickOver([
-    { number: ISSUE.dead, state: { stage: "implement" } },
+    { number: ISSUE.dead, state: { stage: "fix" } },
   ]);
-  assert.deepEqual(spawned, [resumeArgv(ISSUE.dead, "implement")]);
+  assert.deepEqual(spawned, [resumeArgv(ISSUE.dead, "fix")]);
   assert.deepEqual(loggedFor(ISSUE.dead), [
     {
       issue: ISSUE.dead,
-      stage: "implement",
+      stage: "fix",
       action: "resumed",
       reason: "dead",
     },
@@ -131,11 +131,11 @@ test("a dead triage job is restarted without --resume, since its role restarts f
 });
 
 test("a restarted job still running from its start record is not restarted again while its old job.json is dead", () => {
-  writeJob({ issue: ISSUE.restarted, stage: "implement", pid: deadPid() });
-  const issues = [{ number: ISSUE.restarted, state: { stage: "implement" } }];
+  writeJob({ issue: ISSUE.restarted, stage: "fix", pid: deadPid() });
+  const issues = [{ number: ISSUE.restarted, state: { stage: "fix" } }];
   const running = { spawnPid: OTHERS_PID };
   assert.deepEqual(tickOver(issues, 0, running).spawned, [
-    resumeArgv(ISSUE.restarted, "implement"),
+    resumeArgv(ISSUE.restarted, "fix"),
   ]);
   assert.deepEqual(tickOver(issues, 1, running).spawned, []);
   assert.deepEqual(
@@ -197,13 +197,13 @@ test("finished, failed and stopped jobs, and jobs of issues with a stop label, a
 });
 
 test("a session silent for silentMinutes is steered once, its job gets SIGTERM after as long again, and is resumed once stopped", () => {
-  const job = { issue: ISSUE.silent, stage: "implement", pid: OTHERS_PID };
+  const job = { issue: ISSUE.silent, stage: "fix", pid: OTHERS_PID };
   writeJob({ ...job, silentMinutes: SILENT_MINUTES - 1 });
-  const issues = [{ number: ISSUE.silent, state: { stage: "implement" } }];
+  const issues = [{ number: ISSUE.silent, state: { stage: "fix" } }];
   const early = tickOver(issues);
   assert.deepEqual([early.steered, early.terminated], [[], []]);
   const status = writeJob({ ...job, silentMinutes: SILENT_MINUTES });
-  const key = `i${ISSUE.silent}-implement-1`;
+  const key = `i${ISSUE.silent}-fix-1`;
   assert.deepEqual(tickOver(issues).steered, [
     [status.socket, key, SILENT_STEER],
   ]);
@@ -219,7 +219,7 @@ test("a session silent for silentMinutes is steered once, its job gets SIGTERM a
     outcome: STOPPED,
   });
   const resumed = tickOver(issues, SILENT_MINUTES + 2);
-  assert.deepEqual(resumed.spawned, [resumeArgv(ISSUE.silent, "implement")]);
+  assert.deepEqual(resumed.spawned, [resumeArgv(ISSUE.silent, "fix")]);
   assert.deepEqual(
     loggedFor(ISSUE.silent).map(({ action, reason }) => `${action} ${reason}`),
     [`steered silent:${key}`, `killed silent:${key}`, "resumed dead"],

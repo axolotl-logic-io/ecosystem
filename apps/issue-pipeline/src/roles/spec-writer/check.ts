@@ -18,13 +18,13 @@ import { matchAny } from "../../globs.ts";
 import { revertedTest } from "../../ops/fails-before-fix.ts";
 import type { ShellResult } from "../../process.ts";
 import { run, shell } from "../../process.ts";
+import { SPEC_DRAFT } from "../../spec-draft.ts";
 import { LINE_ANCHOR } from "../../spec-files.ts";
 import { typeOnlyAdditionsFault } from "../../type-only-additions.ts";
 import type { WikiChange } from "../../wiki-check.ts";
 import type { Facts, Failure } from "./check-rules.ts";
 import { scopeFailure, testFilesFailure, wikiFailure } from "./check-rules.ts";
 import { helperStubs } from "./helper-stubs.ts";
-import { SPEC_DRAFT } from "./task.ts";
 
 // The part of a test interface entry the check reads.
 interface CheckedInterface {

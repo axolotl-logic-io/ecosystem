@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { transition } from "../src/roles/spec-writer/machine.ts";
 import { SPEC_WRITER_SCHEMA } from "../src/roles/spec-writer/reply.ts";
-import { SPEC_DRAFT } from "../src/roles/spec-writer/task.ts";
+import { SPEC_DRAFT } from "../src/spec-draft.ts";
 import { sessionBudget } from "../src/workflow/budget.ts";
 import {
   COMMITTED,

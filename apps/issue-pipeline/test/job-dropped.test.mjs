@@ -10,6 +10,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
+import { BLOCKED } from "./implementor-role-test-kit.mjs";
 import {
   logOf,
   READY_SPEC,
@@ -49,6 +50,9 @@ const READY_TRIAGE = {
 // The fake ops answers the notice's post; ROUTINE_OPS answers it too.
 const POSTING = { post: { ok: true } };
 const POST_FAILS = { post: { ok: false, error: "gh failed" } };
+// An implementer session that spends USAGE and is blocked, which stops the
+// issue.
+const BLOCKED_SESSION = { events: [messageEnd(USAGE), outputEnd(BLOCKED)] };
 
 /** @param {Place} place @returns {boolean} whether a launch spent tokens */
 function spent(place) {
@@ -93,11 +97,11 @@ function roleEnd(kind) {
 test("a finished writer whose issue stopped saves its patch, which job.json names, and posts the notice", () => {
   const place = setUp(
     { ...repliesAt("implement"), ...POSTING },
-    { ...SPEC_SESSION, untracked: "repo/left.txt" },
+    { ...BLOCKED_SESSION, untracked: "repo/left.txt" },
   );
   const r = runJob(place, ["--stage", "implement"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(JSON.parse(r.stdout).items[0].outcome, "stopped");
+  assert.equal(JSON.parse(r.stdout).end.kind, "stopped");
   const { droppedPatches, lostChanges } = statusOf(place);
   assert.deepEqual(lostChanges, ["repo/left.txt"]);
   assert.equal(droppedPatches.length, 1);
@@ -109,7 +113,7 @@ test("a finished writer whose issue stopped saves its patch, which job.json name
 test("a notice whose post fails is reported on stderr and the job still exits 0", () => {
   const place = setUp(
     { ...repliesAt("implement"), ...POST_FAILS },
-    { ...SPEC_SESSION, untracked: "repo/left.txt" },
+    { ...BLOCKED_SESSION, untracked: "repo/left.txt" },
   );
   const r = runJob(place, ["--stage", "implement"]);
   assert.equal(r.status, 0, r.stderr);

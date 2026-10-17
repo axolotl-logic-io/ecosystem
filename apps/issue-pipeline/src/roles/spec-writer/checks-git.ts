@@ -17,12 +17,13 @@ import { git } from "../../github.ts";
 import { matchAny } from "../../globs.ts";
 import { withWikiLock } from "../../locks.ts";
 import { OpsError, run, shell } from "../../process.ts";
+import { SPEC_DRAFT } from "../../spec-draft.ts";
 import type { StackedOn } from "../../stack.ts";
 import { readWikiChange } from "../../wiki-check.ts";
 import type { CheckedInterface, SpecTestsResult } from "./check.ts";
 import { specTestsCheck } from "./check.ts";
 import type { SpecCommitted } from "./task.ts";
-import { SPEC_DRAFT, SPEC_TRAILER } from "./task.ts";
+import { SPEC_TRAILER } from "./task.ts";
 
 const MS_PER_MINUTE = 60_000;
 const SHORT_SHA_LENGTH = 8;

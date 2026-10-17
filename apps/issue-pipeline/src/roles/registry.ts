@@ -1,6 +1,7 @@
 // Which stages run a role on the role runner (src/job/runner.ts), and the
 // builders that make a role from a machine or a linear script. It registers
-// each built role as it loads, triage and the spec writer so far; a stage
+// each built role as it loads, triage, the spec writer and the implementor
+// so far; a stage
 // with no role runs the sweep as before (src/job.ts).
 // A role keeps its own types inside its `run`, so the registry holds one
 // non-generic shape for every role.
@@ -9,6 +10,11 @@ import type { Config } from "../config.ts";
 import type { CheckEffect, Effects, Outcome } from "../job/run-step.ts";
 import type { Entry, RunEnd } from "../job/runner.ts";
 import { runLinear, runMachine } from "../job/runner.ts";
+import { implementorChecks } from "./implementor/checks.ts";
+import {
+  IMPLEMENTOR_STAGES,
+  implementorMachine,
+} from "./implementor/implementor.ts";
 import { specWriterChecks } from "./spec-writer/checks.ts";
 import { specWriterMachine } from "./spec-writer/machine.ts";
 import { triageScript } from "./triage/script.ts";
@@ -106,6 +112,15 @@ registerRole(
   "spec",
   machineRole("spec-writer", specWriterMachine, specWriterChecks),
 );
+
+const implementor = machineRole(
+  "implementor",
+  implementorMachine,
+  implementorChecks,
+);
+for (const stage of IMPLEMENTOR_STAGES) {
+  registerRole(stage, implementor);
+}
 
 export type { Checks, ChecksOf, JobEffects, Role, RoleName };
 export { linearRole, machineRole, ROLE_NAMES, registerRole, roleOf };

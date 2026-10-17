@@ -15,6 +15,7 @@ import { contextLogOf } from "../src/job/context-log.ts";
 import { ZERO_USAGE } from "../src/job/token-usage.ts";
 import { waitFor } from "./bounded-test-kit.mjs";
 import { outputEnd, TURN_OUTPUT, turns } from "./fake-rpc-pi.mjs";
+import { implementReplies } from "./implementor-job-test-kit.mjs";
 import {
   flagValue,
   PASS_VERDICT,
@@ -27,7 +28,7 @@ import {
   startJob,
   statusOf,
 } from "./job-test-kit.mjs";
-import { ISSUE, sweepReply } from "./workflow-stages-fixtures.mjs";
+import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
 const HANG_GUARD = { timeout: 60_000 };
 const LIMITS = { contextLimits: { soft: 1000, hard: 2000 } };
@@ -135,17 +136,15 @@ test(
   "a writer steered at soft and stopped at hard is logged as a handoff with its steer and stop, and names no reviewed head",
   HANG_GUARD,
   async () => {
-    const replies = {
-      ...repliesAt("implement"),
-      sweep: sweepReply({ items: [ISSUE], config: { maxContinuations: 0 } }),
-    };
     const events = [
       ...turns([PAST_SOFT]),
       "wait",
       ...turns([PAST_HARD]),
       "wait",
     ];
-    const place = setUp(replies, { events }, LIMITS);
+    // No continuations, so the first handoff stops the issue.
+    const once = { ...LIMITS, maxContinuations: 0 };
+    const place = setUp(implementReplies(), { events }, once);
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
     const [line, ...more] = contextLines(place);

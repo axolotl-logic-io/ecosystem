@@ -25,6 +25,7 @@ import { implReplyOf } from "../src/workflow/stages/build-replies.ts";
 import { fixOf } from "../src/workflow/stages/checks-reply.ts";
 import { fixReplyOf } from "../src/workflow/stages/review-replies.ts";
 import { outputEnd, turns } from "./fake-rpc-pi.mjs";
+import { implementReplies } from "./implementor-job-test-kit.mjs";
 import {
   logOf,
   PASS_VERDICT,
@@ -38,7 +39,7 @@ import {
   statusOf,
   USAGE,
 } from "./job-test-kit.mjs";
-import { ISSUE, sweepReply } from "./workflow-stages-fixtures.mjs";
+import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
 const SOFT = 1000;
 const HARD = 2000;
@@ -53,14 +54,9 @@ const PAST_HARD = 2100;
 // never stops a session waiting at the fake pi's "wait".
 const HANG_GUARD = { timeout: 60_000 };
 const WRITER = "issue-pipeline-writer";
-// Implement with no continuations, so the first handoff stops the issue.
-const IMPLEMENT_ONCE = {
-  ...repliesAt("implement"),
-  sweep: sweepReply({ items: [ISSUE], config: { maxContinuations: 0 } }),
-};
-
-// The spec stage with no continuations, so its first handoff stops the issue.
-const SPEC_ONCE = { ...LIMITS, maxContinuations: 0 };
+// Implement (the implementor role) or spec (the spec writer role) with no
+// continuations, so the first handoff stops the issue.
+const ONCE = { ...LIMITS, maxContinuations: 0 };
 const SPEC_AGENT = "issue-pipeline-specifier";
 // The structured output of a triage agent that finds the issue ready.
 const READY_TRIAGE = {
@@ -92,7 +88,7 @@ test(
       ...turns([STILL_PAST_SOFT, PAST_HARD]),
       "wait",
     ];
-    const place = setUp(IMPLEMENT_ONCE, { events }, LIMITS);
+    const place = setUp(implementReplies(), { events }, ONCE);
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
     const steers = commandsOf(place, "steer");
@@ -105,7 +101,7 @@ test(
     assert.equal(launch.peakContext, PAST_HARD);
     assert.deepEqual(launch.contextStop, { context: PAST_HARD });
     assert.equal(launch.outcome, "ok");
-    // Out of room with no continuations left: the sweep took the handoff.
+    // Out of room with no continuations left: the role took the handoff.
     const stop = logOf(place, "ops.log").find(({ op }) => op === "stop");
     const request = JSON.stringify(stop);
     assert.ok(request.includes(String(PAST_HARD)), request);
@@ -138,7 +134,7 @@ test(
   HANG_GUARD,
   async () => {
     const events = [...turns([PAST_HARD]), "wait"];
-    const place = setUp(IMPLEMENT_ONCE, { events }, LIMITS);
+    const place = setUp(implementReplies(), { events }, ONCE);
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
     assert.equal(piStarts(place).length, 1);
@@ -238,7 +234,7 @@ test(
   HANG_GUARD,
   async () => {
     const events = [...turns([PAST_HARD]), "wait"];
-    const place = setUp(repliesAt("spec"), { events }, SPEC_ONCE);
+    const place = setUp(repliesAt("spec"), { events }, ONCE);
     const end = await startJob(place, ["--stage", "spec"]).end;
     assert.equal(end.status, 0, end.stderr);
     assert.equal(commandsOf(place, "abort").length, 1);

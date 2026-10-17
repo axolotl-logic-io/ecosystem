@@ -206,7 +206,8 @@ test("a writer stopped by SIGTERM still saves, logs the job's usage and pushes i
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
   assert.equal(refOf(place.origin, BRANCH), committed(place));
   const ops = logOf(place, "ops.log").map(({ op }) => op);
-  const last = ["save-state", "usage", "exit-push"];
+  // The role logs the stopped session's usage, then saves; the push is last.
+  const last = ["usage", "save-state", "exit-push"];
   assert.deepEqual(ops.slice(-last.length), last);
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
 });

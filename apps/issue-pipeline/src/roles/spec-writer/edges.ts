@@ -87,13 +87,21 @@ function testsCommitted(data: SpecData, reply: unknown): SpecData {
 }
 
 // The spec as published: the saved copy and where the whole of it is, if
-// it was too long to keep, with its tests written by this role.
+// it was too long to keep, with its tests written by this role. No session
+// runs after it, and the role the spec goes to next keeps its own count in
+// the same `continuations` checkpoint, so the spec writer's ends here at 0
+// (#414): its continuations don't use up the implementer's.
 function published(data: SpecData, reply: unknown): SpecData {
   if (!isRecord(reply)) {
-    return data;
+    return { ...data, continuations: 0 };
   }
   const { spec, specFile } = reply;
-  const next: SpecData = { ...data, specFile: null, specWritesTests: true };
+  const next: SpecData = {
+    ...data,
+    continuations: 0,
+    specFile: null,
+    specWritesTests: true,
+  };
   if (typeof spec === "string") {
     next.spec = spec;
   }

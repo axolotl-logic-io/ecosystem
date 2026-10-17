@@ -5,11 +5,18 @@
 // attempts and start heads, and a handoff starts a continuation that resumes
 // from the commits and the handoff, until maxContinuations runs out and the
 // issue stops as too large, counting the continuations a killed run took.
+// The state it saves at implement leaves the implementer its own
+// continuations (#414).
 // Every run is made before the tests, because the fake gh's writes are
 // global.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
+import {
+  HANDOFF as IMPL_HANDOFF,
+  located,
+  stepFrom,
+} from "./implementor-role-test-kit.mjs";
 import { BRANCH, specWriter } from "./spec-writer-git-test-kit.mjs";
 import { INTERFACE, replyOf } from "./spec-writer-role-test-kit.mjs";
 
@@ -118,15 +125,30 @@ test("a handoff starts a continuation that resumes from the commits and the hand
   const { end, saved, tasks, repo } = handedOff;
   assert.deepEqual(end, { kind: "saved", stage: "implement" });
   assert.equal(sessions(handedOff), 2);
-  const { attempts, continuations } = saved.checkpoints ?? {};
+  const { attempts } = saved.checkpoints ?? {};
   assert.equal(attempts, 1);
-  assert.equal(continuations, 1);
   const [first = "", second = ""] = tasks;
   assert.ok(!CONTINUES.test(first), first);
   assert.ok(CONTINUES.test(second), second);
   assert.ok(second.includes(repo.handoffFile), second);
   assert.ok(second.includes(`\`${FIRST_TEST}\``), second);
   assert.equal(onBranch(repo.origin, FIRST_TEST), FIRST_TEXT);
+});
+
+// The implementor keeps its count in the same checkpoint (#414).
+test("the spec writer's continuation leaves the implementer its own: its state saved at implement starts the implementer with none taken", () => {
+  const { saved } = handedOff;
+  assert.equal(saved.stage, "implement");
+  const { continuations } = saved.checkpoints ?? {};
+  assert.equal(continuations, 0);
+  const { data } = located(saved);
+  assert.equal(data.continuations, 0);
+  const step = stepFrom("implementer-reply", "handoff", null, {
+    ...data,
+    reply: IMPL_HANDOFF,
+  });
+  assert.equal(step.state.at, "implementer");
+  assert.equal(step.state.data.continuations, 1);
 });
 
 test("a handoff past maxContinuations stops the issue as too large", () => {

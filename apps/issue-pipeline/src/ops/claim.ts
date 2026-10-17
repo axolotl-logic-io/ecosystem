@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ensureWorktree } from "../checkouts.ts";
+import { ensureWorktree, setUpCheckout } from "../checkouts.ts";
 import type { LaneRequest } from "../claims.ts";
 import { laneOf, raceForClaim } from "../claims.ts";
 import type { IssueComment } from "../comments.ts";
@@ -16,7 +16,7 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
-import { OpsError, shell } from "../process.ts";
+import { OpsError } from "../process.ts";
 import { checkedSpecFiles, specFilesMissing } from "../restart-spec.ts";
 import type { State } from "../state.ts";
 import { readState, writeState } from "../state.ts";
@@ -26,20 +26,12 @@ import type { ClaimedIssue, Prereq } from "./claim-state.ts";
 import { CLAIMED_ISSUE, claimedState, hasNeedsInfo } from "./claim-state.ts";
 import { answeredSince } from "./sweep-verdict.ts";
 
-const MS_PER_MINUTE = 60_000;
-
 const CLAIM_REQUEST = z.looseObject({
   lane: z.unknown().optional(),
   number: z.number(),
   // The issue whose branch this one starts on, if it has none yet (#268).
   stackOn: z.number().int().positive().nullish(),
   sweepId: z.unknown().optional(),
-});
-
-// The config keys only the claim reads; loadConfig applied their defaults.
-const CLAIM_SETTINGS = z.looseObject({
-  commandTimeoutMinutes: z.number(),
-  commands: z.looseObject({ setup: z.string().nullish() }),
 });
 
 const PR = z.number().nullish();
@@ -85,19 +77,6 @@ function awaitsAnswer(
 ): boolean {
   const { state } = readState(cfg, n, comments);
   return hasNeedsInfo(issue) && !answeredSince(cfg, comments, state);
-}
-
-// Sets up a new worktree now, not only at verify, so the writer's own test
-// runs get this issue's database and ports instead of the shared defaults. A
-// failure is only logged: verify runs setup again and reports it.
-function setUpAtClaim(cfg: Config, n: number, wt: string): void {
-  const { commandTimeoutMinutes, commands } = CLAIM_SETTINGS.parse(cfg);
-  const { setup } = commands;
-  if (setup === undefined || setup === null || setup === "") {
-    return;
-  }
-  const log = path.join(paths.runDir(cfg, n), "setup-at-claim.log");
-  shell(setup, wt, log, commandTimeoutMinutes * MS_PER_MINUTE);
 }
 
 // Labels the issue, and its PR if it has one, as worked on, and clears the
@@ -148,7 +127,8 @@ function take(
   const wt = ensureWorktree(cfg, n, claimed.stackedOn ?? null);
   const wiki = ensureWiki(cfg, n);
   if (newWorktree) {
-    setUpAtClaim(cfg, n, wt);
+    // Set up now, not only at verify, for the writer's own test runs.
+    setUpCheckout(cfg, n, wt, "setup-at-claim.log");
   }
   let missing: string[] = [];
   if (begun.restarted) {

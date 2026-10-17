@@ -5,6 +5,7 @@
 // failing tests, spec draft and wiki updates the session commits as it goes,
 // its context limits, and the decisions it may reply with. Pure.
 
+import { SPEC_DRAFT } from "../../spec-draft.ts";
 import type { Budgets } from "../../workflow/budget.ts";
 import { sessionBudget, splitBound } from "../../workflow/budget.ts";
 import {
@@ -36,10 +37,6 @@ const FAILED_TWICE = "the spec writer failed twice";
 const SPEC_TRAILER = "Pipeline-Agent: spec writer";
 // The wiki's folder in the checkout when it isn't under the worktree.
 const DEFAULT_WIKI_DIR = "wiki";
-// Where the session keeps its spec draft on the issue's branch, relative to
-// the repo root. It is committed as the session goes, found on a restart,
-// never counted as a changed file, and removed once the spec is posted.
-const SPEC_DRAFT = ".issue-pipeline/spec-draft.md";
 // What a session keeps of its work when it wraps up at the soft limit.
 const KEEP_SPEC_WORK = "commit the tests, stubs and spec draft you have";
 
@@ -257,7 +254,6 @@ export type { SpecCommitted, SpecItem, SpecSettings };
 export {
   FAILED_TWICE,
   SPEC_AGENT,
-  SPEC_DRAFT,
   SPEC_ROLE,
   SPEC_TRAILER,
   specSession,
