@@ -37,6 +37,11 @@ interface ReviewDiff {
 // What a reviewer or re-reviewer does with the spec.
 const SPEC_RULE_REVIEW =
   "A finding must not ask for a change the spec forbids.";
+// What a first reviewer returns, after its lens and what it reads.
+const LENS_OUTPUT_RULES: readonly string[] = [
+  "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
+  "Return an empty list if you find nothing. Do not edit files.",
+];
 // What the fixer does with the spec.
 const SPEC_RULE_FIX =
   "Fix each finding in a way the spec allows. If a finding can only be met by breaking the spec, dispute it and quote the spec line.";
@@ -70,8 +75,7 @@ function lensTask(
       practicesNote(cfg, state, "reviewer"),
       ...specSection(state, SPEC_RULE_REVIEW),
       `The diff against ${cfg.baseBranch} is at ${diff.path} (${diff.lines} lines). Read it, then read surrounding code only where needed.`,
-      "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
-      "Return an empty list if you find nothing. Do not edit files.",
+      ...LENS_OUTPUT_RULES,
     ])
     .join("\n");
 }
@@ -274,8 +278,11 @@ export {
   findingIdsComment,
   fixComment,
   fixTask,
+  LENS_OUTPUT_RULES,
   lensComment,
   lensTask,
   rereviewComment,
   rereviewTask,
+  SPEC_RULE_REVIEW,
+  specSection,
 };

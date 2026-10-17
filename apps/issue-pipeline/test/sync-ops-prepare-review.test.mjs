@@ -115,12 +115,15 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
 
 // What prepare-review replied and wrote, beside what it should have. The
 // replies are compared as objects, since nothing promises their key order.
+// The bundle's fields are left out: sync-ops-prepare-review-bundle.test.mjs
+// checks them against the bundle it wrote (#415).
 /** @param {string} out @param {Review} want @returns {{ got: { reply: unknown, file: string }, expected: { reply: unknown, file: string } }} */
 function reviewOutcome(out, want) {
   const file = fs.readFileSync(want.reply.diffPath, "utf8");
   const expected = JSON.parse(okLine("prepare-review", want.reply));
+  const { bundlePath, bundleLines, ...reply } = JSON.parse(out);
   return {
-    got: { reply: JSON.parse(out), file },
+    got: { reply, file },
     expected: { reply: expected, file: want.file },
   };
 }

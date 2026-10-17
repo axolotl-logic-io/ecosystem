@@ -24,12 +24,13 @@ import { parseRequest, run } from "../process.ts";
 import { abortRebase, rebaseInProgress, unmergedFiles } from "../rebase.ts";
 import type { StackedOn, SyncTarget } from "../stack.ts";
 import { measureFrom, STACKED_ON, syncTarget } from "../stack.ts";
-import { commitLog, withWiki } from "./review-diff.ts";
+import { commitLog, reviewBundle, withWiki } from "./review-diff.ts";
 import { finishProblem } from "./sync-finish.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
 // patchId is the id of the branch's changes, which a clean rebase keeps, or
-// null when there are none (review-keeps-on-clean-rebase).
+// null when there are none (review-keeps-on-clean-rebase). bundlePath is the
+// review bundle beside the diff: the diff, then the changed files' head texts.
 interface ReviewReply {
   headSha: string;
   headTree: string;
@@ -38,6 +39,8 @@ interface ReviewReply {
   diffPath: string;
   diffLines: number;
   changedFiles: string[];
+  bundlePath: string;
+  bundleLines: number;
 }
 
 // A stacked sync's reply names what the branch is stacked on after it; an
@@ -152,6 +155,9 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const diffPath = path.join(dir, "diff.patch");
   const full = withWiki(cfg, n, diff);
   fs.writeFileSync(diffPath, full.text);
+  const bundlePath = path.join(dir, "bundle.md");
+  const bundle = reviewBundle(wt, { from, head: headSha }, full.text);
+  fs.writeFileSync(bundlePath, bundle);
   return {
     headSha,
     headTree,
@@ -160,6 +166,8 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
     diffPath,
     diffLines: full.text.split("\n").length,
     changedFiles: nonEmptyLines(names).concat(full.files),
+    bundlePath,
+    bundleLines: bundle.split("\n").length,
   };
 }
 
