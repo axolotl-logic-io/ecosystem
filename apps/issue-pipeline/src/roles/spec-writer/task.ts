@@ -1,0 +1,179 @@
+// The spec writer role's session: its agent, model, context budget, reply
+// schema and task. The task says what to read and in what order, the spec's
+// sections and its test interfaces, the stubs, failing tests and wiki
+// updates the session commits, and the decisions it may reply with. Pure.
+
+import type { Budgets } from "../../workflow/budget.ts";
+import { sessionBudget } from "../../workflow/budget.ts";
+import {
+  commitRulesOf,
+  practicesNote,
+  preamble,
+} from "../../workflow/prompts.ts";
+import { SPEC_END } from "../../workflow/stages/build-replies.ts";
+import type { ModelRole } from "../../workflow/stages/types.ts";
+import type {
+  ItemPaths,
+  PracticesConfig,
+  RepoConfig,
+} from "../../workflow/types.ts";
+import type { SessionEffect } from "../machine.ts";
+import { SPEC_WRITER_SCHEMA } from "./reply.ts";
+
+// The agent every spec writer session runs as.
+const SPEC_AGENT = "issue-pipeline-specifier";
+// The role the session's comments are signed as.
+const SPEC_ROLE = "spec writer";
+// The stop reason once the session has failed twice.
+const FAILED_TWICE = "the spec writer failed twice";
+// The wiki's folder in the checkout when it isn't under the worktree.
+const DEFAULT_WIKI_DIR = "wiki";
+
+// The issue a session specifies: its number, its paths, its depth (0 for an
+// issue, 1 for a sub-issue), triage's plan and the reason it suggested a
+// split, if any, the session's attempt (from 1), and the failed check's
+// output when this attempt is a retry.
+interface SpecItem {
+  n: number;
+  paths: ItemPaths;
+  depth: number;
+  plan: string | undefined;
+  splitSuggested: string | null | undefined;
+  attempt: number;
+  checkOutput: string | null;
+}
+
+interface SpecSettings {
+  cfg: RepoConfig & PracticesConfig;
+  budgets: Budgets;
+  models: Readonly<Record<ModelRole, string>>;
+}
+
+// The wiki checkout's folder relative to the worktree, as `files` names a
+// wiki page: `<dir>/<page>`.
+function wikiDirOf(paths: ItemPaths): string {
+  const { wiki, worktree } = paths;
+  const prefix = `${worktree}/`;
+  if (wiki === null || !wiki.startsWith(prefix) || wiki === prefix) {
+    return DEFAULT_WIKI_DIR;
+  }
+  return wiki.slice(prefix.length);
+}
+
+function planText(plan: string | undefined): string {
+  if (plan === undefined || plan === "") {
+    return "(none)";
+  }
+  return plan;
+}
+
+// What triage found: the issue ready, or too big for one session.
+function triageFinding(item: SpecItem): string {
+  const notes = `Its notes:\n${planText(item.plan)}`;
+  const { splitSuggested } = item;
+  if (typeof splitSuggested !== "string") {
+    return `Triage found this issue ready. ${notes}`;
+  }
+  return `Triage judged this issue too big for one session: ${splitSuggested} Split it unless your spec shows the change fits one session. ${notes}`;
+}
+
+function retryLines(item: SpecItem): string[] {
+  if (item.checkOutput === null) {
+    return [];
+  }
+  return [
+    "",
+    `Your previous attempt failed its check. Fix what it found; your earlier commits are on the branch. Its output:\n${item.checkOutput}`,
+  ];
+}
+
+function wikiStart(paths: ItemPaths): string {
+  if (paths.wiki === null || paths.wiki === "") {
+    return "";
+  }
+  return ` (start from ${paths.wiki}/Home.md)`;
+}
+
+function readingLines(item: SpecItem, cfg: SpecSettings["cfg"]): string[] {
+  return [
+    `Read, in this order: the project's coding practices (below), in full, before the code; then the issue, ${item.paths.issueFile}; the wiki pages that bear on it${wikiStart(item.paths)}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
+    practicesNote(cfg, item, "spec"),
+  ];
+}
+
+const SECTION_LINES: readonly string[] = [
+  "`spec` is GitHub markdown with these sections:",
+  "- **Behaviour**: what is true when the issue is done, as checkable statements.",
+  "- **Out of scope**: what this issue does not change.",
+  "- **Design**: the approach, the files to change with `file:line` anchors, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and update that wiki page yourself.",
+  "- **Test interfaces**: the public interfaces the tests drive, as in `interfaces`.",
+  "- **Tests**: the test files you committed. Each test names the interface it drives, the Behaviour item it pins and why it fails today.",
+  '- **Wiki updates**: the wiki pages you changed, or "None".',
+  "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
+  "`interfaces` lists the same interfaces: for each, its `name`, its `kind`, `where` it lives (`file:line` for an existing one, the path for a new one), its `status` (existing, new or changed), its `signature` (its call shape), and the Behaviour items tests check through it in `behaviours`, quoted from the spec. Every Behaviour item is checked through at least one of them. List only interfaces the wiki or README promise or the change adds on purpose, never internals.",
+  "`noTestsReason` is null, unless every test that could be written would test implementation rather than promised behaviour: then write no tests, say why there and in Tests, and `interfaces` may be empty.",
+];
+
+function workLines(item: SpecItem): string[] {
+  const dir = wikiDirOf(item.paths);
+  return [
+    "Before you reply, commit to the issue's branch a stub at its `where` for each `new` interface that doesn't exist yet (its call shape, with a body that only throws or returns a not-implemented error, so the code builds and type-checks), and failing tests for every Behaviour item through the listed interfaces, unless `noTestsReason` applies. Each test fails because the behaviour is missing, not on a syntax, import or type error.",
+    "Make the spec's Wiki updates yourself, in the wiki checkout.",
+    `Change only test files, those stubs and wiki pages; write no behaviour. \`files\` lists every repo path or glob the change will touch, relative to the repo root, and each wiki page you changed as \`${dir}/<page>\`.`,
+    ...commitRulesOf("pipeline_commit", {
+      unit: "step",
+      when: "as soon as it builds",
+      trailer: "Pipeline-Agent: spec writer",
+      clearMessage: true,
+    }),
+  ];
+}
+
+// The line on splitting: a sub-issue may not split again.
+function splitLine(depth: number, sessionCap: number): string {
+  if (depth >= 1) {
+    return "Don't set `decision` to split: this issue is already a sub-issue, so splitting is not allowed. Leave `subIssues` empty.";
+  }
+  return `Only if one implementer session (at most ${sessionCap} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec, with its interfaces, in its \`body\`, and in its \`files\` the paths it touches. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Cut along file boundaries, order parts that must edit the same file with \`after\`, and prefer fewer parts.`;
+}
+
+function decisionLines(item: SpecItem, settings: SpecSettings): string[] {
+  const { cfg, budgets } = settings;
+  return [
+    `The PR merges into ${cfg.baseBranch}, not into production. Releasing is never part of an issue's work: don't deploy or plan a step that does.`,
+    "Set `decision` to ready, with `questions` and `subIssues` empty, once the spec, its tests and its stubs are committed.",
+    "Set `decision` to no-work only if the issue's Behaviour already holds on the base: give the evidence in `spec` (where the behaviour lives, and how you checked). Any tests you commit to show it must pass.",
+    "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
+    splitLine(item.depth, budgets.sessionCap),
+    `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
+  ];
+}
+
+// The spec writer session for `item`.
+function specSession(item: SpecItem, settings: SpecSettings): SessionEffect {
+  const { cfg, budgets, models } = settings;
+  const lines = [
+    triageFinding(item),
+    ...retryLines(item),
+    "",
+    "Write the spec the implementer will build to and the acceptance check will judge against, with the failing tests and stubs it documents.",
+    ...readingLines(item, cfg),
+    ...SECTION_LINES,
+    ...workLines(item),
+    ...decisionLines(item, settings),
+  ];
+  return {
+    kind: "session",
+    name: "spec",
+    agent: SPEC_AGENT,
+    model: models.spec,
+    schema: SPEC_WRITER_SCHEMA,
+    budgetRole: "spec",
+    tokenBudget: sessionBudget(budgets, "spec"),
+    attempt: item.attempt,
+    task: preamble(cfg, item, SPEC_ROLE).concat(lines).join("\n"),
+  };
+}
+
+export type { SpecItem, SpecSettings };
+export { FAILED_TWICE, SPEC_AGENT, SPEC_ROLE, specSession, wikiDirOf };

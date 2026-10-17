@@ -1,0 +1,113 @@
+// How each result's reply changes the spec writer's `data` as the machine
+// (machine.ts) takes an edge: the start heads checkout found, the session's
+// reply as read, the ready spec's hand-off fields, the head with its tests
+// committed, the spec as published, and a failure's output; and what the
+// later states read from the reply. Pure.
+
+import { isRecord } from "../../workflow/stages/reply-guards.ts";
+import type { SpecData } from "./locate.ts";
+import type { SpecWriterReply } from "./reply.ts";
+import { specReadingOf } from "./reply.ts";
+import { FAILED_TWICE } from "./task.ts";
+
+// The session's reply, as the role reads it.
+function read(data: SpecData, reply: unknown): SpecData {
+  return { ...data, reply: specReadingOf(reply, data.depth) };
+}
+
+// A failure's output, which the retry's task includes.
+function failed(data: SpecData, reply: unknown): SpecData {
+  return { ...data, checkOutput: String(reply) };
+}
+
+function shaOf(value: unknown): string | null | undefined {
+  if (typeof value === "string" || value === null) {
+    return value;
+  }
+  return undefined;
+}
+
+// The start heads checkout found, unless an earlier start saved them.
+function started(data: SpecData, reply: unknown): SpecData {
+  if (!isRecord(reply)) {
+    return data;
+  }
+  const { startSha, startWikiSha } = reply;
+  const next = { ...data };
+  if (data.startSha === undefined) {
+    next.startSha = shaOf(startSha);
+  }
+  if (data.startWikiSha === undefined) {
+    next.startWikiSha = shaOf(startWikiSha);
+  }
+  return next;
+}
+
+// The ready reply's hand-off fields.
+function readied(data: SpecData): SpecData {
+  const { reply } = data;
+  if (reply?.kind !== "ready") {
+    return data;
+  }
+  const { spec, files, interfaces, noTestsReason } = reply.reply;
+  return { ...data, spec, files, interfaces, noTestsReason };
+}
+
+function testsCommitted(data: SpecData, reply: unknown): SpecData {
+  if (!isRecord(reply)) {
+    return data;
+  }
+  const { sha } = reply;
+  if (typeof sha !== "string") {
+    return data;
+  }
+  return { ...data, specTestsSha: sha };
+}
+
+// The spec as published: the saved copy and where the whole of it is.
+function published(data: SpecData, reply: unknown): SpecData {
+  if (!isRecord(reply)) {
+    return data;
+  }
+  const { spec, specFile } = reply;
+  const next = { ...data };
+  if (typeof spec === "string") {
+    next.spec = spec;
+  }
+  if (typeof specFile === "string") {
+    next.specFile = specFile;
+  }
+  return next;
+}
+
+// What the ask, split and no-work ops post from the decided reply.
+function decided(
+  data: SpecData,
+): Pick<SpecWriterReply, "spec" | "questions" | "subIssues"> {
+  const { reply } = data;
+  if (reply === null || reply.kind === "bad" || reply.kind === "refused") {
+    return { spec: "", questions: [], subIssues: [] };
+  }
+  const { spec, questions, subIssues } = reply.reply;
+  return { spec, questions, subIssues };
+}
+
+// The reason a run stops with after a refused split or a second failure.
+function refusal(data: SpecData): string {
+  const { reply } = data;
+  if (reply?.kind === "refused") {
+    return reply.reason;
+  }
+  return FAILED_TWICE;
+}
+
+export {
+  decided,
+  failed,
+  published,
+  read,
+  readied,
+  refusal,
+  started,
+  testsCommitted,
+};

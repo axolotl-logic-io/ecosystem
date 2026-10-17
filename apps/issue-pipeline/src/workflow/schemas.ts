@@ -4,7 +4,8 @@
 
 // The subset of JSON Schema the replies use.
 interface JsonSchema {
-  type?: string;
+  // One type, or a list of them, such as a string or null.
+  type?: string | readonly string[];
   additionalProperties?: boolean;
   properties?: Readonly<Record<string, JsonSchema>>;
   required?: readonly string[];
