@@ -51,13 +51,14 @@ function patch(dir, range) {
   return spawnSync("git", args, { encoding: "utf8" }).stdout;
 }
 
-/** @typedef {{ file: string, reply: { headSha: string, baseSha: string, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
+/** @typedef {{ file: string, reply: { headSha: string, headTree: string, baseSha: string, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
 
 // What prepare-review should reply and write for the diff `from..HEAD`.
 /** @param {number} n @param {string | undefined} from @param {string} tag @param {{ diff: string, files: string[] }} [wiki] @returns {Review} */
 function review(n, from, tag, wiki = { diff: "", files: [] }) {
   const wt = worktree(n);
   const headSha = gitIn(wt, "rev-parse HEAD");
+  const headTree = gitIn(wt, `rev-parse ${headSha}^{tree}`);
   const baseSha = gitIn(wt, `merge-base ${BASE} HEAD`);
   const code = patch(wt, `${from ?? baseSha}..${headSha}`);
   let file = code;
@@ -77,17 +78,19 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
   const diffLines = file.split("\n").length;
   return {
     file,
-    reply: { headSha, baseSha, diffPath, diffLines, changedFiles },
+    reply: { headSha, headTree, baseSha, diffPath, diffLines, changedFiles },
   };
 }
 
-// What prepare-review replied and wrote, beside what it should have.
-/** @param {string} out @param {Review} want @returns {{ got: { out: string, file: string }, expected: { out: string, file: string } }} */
+// What prepare-review replied and wrote, beside what it should have. The
+// replies are compared as objects, since nothing promises their key order.
+/** @param {string} out @param {Review} want @returns {{ got: { reply: unknown, file: string }, expected: { reply: unknown, file: string } }} */
 function reviewOutcome(out, want) {
   const file = fs.readFileSync(want.reply.diffPath, "utf8");
+  const expected = JSON.parse(okLine("prepare-review", want.reply));
   return {
-    got: { out, file },
-    expected: { out: okLine("prepare-review", want.reply), file: want.file },
+    got: { reply: JSON.parse(out), file },
+    expected: { reply: expected, file: want.file },
   };
 }
 

@@ -21,8 +21,10 @@ import { measureFrom, STACKED_ON, syncTarget } from "../stack.ts";
 import { wikiDiff } from "../wiki.ts";
 import { finishProblem } from "./sync-finish.ts";
 
+// headTree is the head's tree, the same for any head with the same code.
 interface ReviewReply {
   headSha: string;
+  headTree: string;
   baseSha: string;
   diffPath: string;
   diffLines: number;
@@ -142,6 +144,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);
   const headSha = head(wt);
+  const headTree = gitOut(wt, ["rev-parse", `${headSha}^{tree}`]).trim();
   const baseArgs = ["merge-base", measureFrom(req.stackedOn, cfg), "HEAD"];
   const baseSha = gitOut(wt, baseArgs).trim();
   const from = reviewFrom(wt, req.sinceSha, { headSha, baseSha });
@@ -155,6 +158,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   fs.writeFileSync(diffPath, full.text);
   return {
     headSha,
+    headTree,
     baseSha,
     diffPath,
     diffLines: full.text.split("\n").length,
