@@ -32,10 +32,11 @@
 // A stage with a registered role (src/roles/registry.ts) runs it on the role
 // runner (src/job/role-run.ts), printing { issue, stage, end }; no --resume.
 //
-// The job works in its own checkout, cloned from a bare mirror of the repo
-// (src/job/checkout.ts), where every pi session runs. On every exit it records
-// and drops what the checkout left uncommitted (lostChanges), a writer pushes
-// what the remote lacks (src/job/exit-push.ts), and the checkout is removed.
+// The job works in its own folder, where every pi session runs, holding its
+// code checkout, cloned from a bare mirror of the repo, and its wiki checkout
+// (src/job/checkout.ts). On every exit it records and drops what the
+// checkouts left uncommitted (lostChanges), a writer pushes what the remotes
+// lack (src/job/exit-push.ts), and the folder is removed.
 
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -135,8 +136,10 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     );
   }
   const wiki = STAGE_WIKI_ACCESS[stage];
-  const dir = openJobCheckout(cfg, issue, { stage, stackOn, wiki });
-  const checkout = { issue, dir };
+  const dirs = openJobCheckout(cfg, issue, { stage, stackOn });
+  const { root, repo } = dirs;
+  const checkout = { issue, dir: repo };
+  const layout = { dir: root, docs: wiki };
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const runDir = paths.runDir(cfg, args.issue);
   // Read before openStatus replaces the earlier job's file.
@@ -148,24 +151,28 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const status = openStatus(runDir, job);
   const control = await openControl(
     runDir,
-    pushServerOf(cfg, { issue, stage, checkout: dir }, status.pushed),
+    pushServerOf(cfg, { issue, stage, checkout: repo }, status.pushed),
   );
   const watch = { status, control, resumePoint };
-  const hooks = hooksOf(cfg, args, watch, { cwd: dir, from: process.env });
+  const hooks = hooksOf(cfg, args, watch, {
+    cwd: root,
+    repo,
+    from: process.env,
+  });
   const frame = opsFrame({ ...args, checkout }, sweepId, laneOf(args, sweepId));
   const push = exitPushOf(args, frame, hooks);
   const watched = { hooks, status, control };
   let ending: Promise<RunEnd>;
   if (role === undefined) {
     const sweep = startSweep(
-      { ...args, checkout },
+      { ...args, checkout, job: layout },
       { sweepId, now: (): Date => new Date() },
     );
     const { maxSpawnsPerRun } = cfg;
     const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
     ending = runDriven(sweep, limit, watched);
   } else {
-    const roleJob = { role, cfg, issue, stage, stackOn, frame, dir };
+    const roleJob = { role, cfg, issue, stage, stackOn, frame, repo, layout };
     ending = runRoleStage({ ...roleJob, ...watched, jobId: randomUUID() });
   }
   try {
@@ -177,7 +184,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     throw error;
   } finally {
     try {
-      const lost = await closeJobCheckout(cfg, issue, { dir, wiki }, push);
+      const lost = await closeJobCheckout(cfg, issue, { ...dirs, wiki }, push);
       status.lostChanges(lost);
     } finally {
       control.close();

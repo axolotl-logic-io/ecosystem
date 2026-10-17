@@ -88,6 +88,47 @@ test("the preamble points at the wiki checkout only when there is one", () => {
   assert.equal(fixerPreamble(null).includes("wiki"), false);
 });
 
+// The preamble's text for a fixer in issue #7's stage job, whose folder
+// holds repo/ and docs/, with `docs` access to the wiki checkout.
+/** @param {"read" | "write"} docs @returns {string} */
+function jobPreamble(docs) {
+  const item = {
+    n: 7,
+    paths: {
+      worktree: "/jobs/issue-7-fix/repo",
+      issueFile: "/runs/issue.md",
+      wiki: "/jobs/issue-7-fix/docs",
+      handoffFile: "/runs/issue-7/handoff.md",
+      job: { dir: "/jobs/issue-7-fix", docs },
+    },
+  };
+  return preamble(cfg, item, "fixer").join("\n");
+}
+
+test("in a stage job, the preamble names the job's folder, repo/ with its branch and docs/ with the stage's access (separate-checkouts, #338)", () => {
+  const text = jobPreamble("read");
+  for (const fact of [
+    "Working directory: /jobs/issue-7-fix,",
+    "`repo/` (/jobs/issue-7-fix/repo)",
+    "agent/issue-7, based on integration",
+    "`docs/` (/jobs/issue-7-fix/docs)",
+    "read access",
+    "dropped",
+  ]) {
+    assert.ok(text.includes(fact), `${fact} missing from:\n${text}`);
+  }
+  const writing = jobPreamble("write");
+  assert.ok(writing.includes("write access"), writing);
+  assert.ok(writing.includes("`pipeline_commit`"), writing);
+});
+
+test("in a lane, the preamble names the worktree as the working directory and no repo/ or docs/", () => {
+  const text = fixerPreamble("/w/issue-7/wiki");
+  assert.ok(text.includes("Working directory: /w/issue-7 ("), text);
+  assert.equal(text.includes("`repo/`"), false);
+  assert.equal(text.includes("`docs/`"), false);
+});
+
 test("a deterministic step signs with its role alone", () => {
   assert.deepEqual(byStep("CI"), {
     role: "CI",

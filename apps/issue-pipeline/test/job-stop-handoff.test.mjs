@@ -60,7 +60,7 @@ function repo() {
 // held `handoff` as it started.
 /** @param {Repo} at @param {string | null} handoff */
 function stopIn(at, handoff) {
-  const place = { cwd: at.dir, handoffFile: at.handoffFile };
+  const place = { repo: at.dir, handoffFile: at.handoffFile };
   return saveStoppedWork(place, {
     key: KEY,
     stop: { context: PAST_HARD },

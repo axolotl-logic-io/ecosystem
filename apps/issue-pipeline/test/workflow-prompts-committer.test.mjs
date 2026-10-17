@@ -127,6 +127,14 @@ describe("in a stage job, every writer's task", () => {
     }
   });
 
+  test("outside a rebase, stages with `git -C repo add -A` and names pathspecs from the job's folder, under repo/ or docs/", () => {
+    const committers = new Set(["implementer", "fixer", "CI fixer"]);
+    for (const [writer, task] of tasks.filter(([w]) => committers.has(w))) {
+      assert.ok(task.includes("`git -C repo add -A`"), writer);
+      assert.ok(task.includes("start with `repo/` or `docs/`"), writer);
+    }
+  });
+
   test("lets only the resolvers continue their rebase with git", () => {
     const continues = tasks
       .filter(([, task]) => task.includes("rebase --continue"))

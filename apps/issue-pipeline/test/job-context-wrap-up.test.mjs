@@ -118,7 +118,7 @@ test(
   HANG_GUARD,
   async () => {
     const events = [turnSaying(PAST_HARD, LAST_WORDS), "wait"];
-    const script = { events, commit: "a.txt", untracked: "left.txt" };
+    const script = { events, commit: "repo/a.txt", untracked: "repo/left.txt" };
     const place = setUp(IMPLEMENT_ONCE, script, LIMITS);
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
@@ -156,7 +156,7 @@ test(
     const events = [turnSaying(PAST_HARD, LAST_WORDS), "wait"];
     const place = setUp(IMPLEMENT_ONCE, { events }, LIMITS);
     const handoff = { file: handoffOf(place), text: OWN };
-    setScript(place, { events, untracked: "left.txt", handoff });
+    setScript(place, { events, untracked: "repo/left.txt", handoff });
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
     const subjects = git(place.origin, ["log", "--format=%s", BRANCH]);

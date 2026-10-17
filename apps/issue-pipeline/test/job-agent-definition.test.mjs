@@ -44,6 +44,7 @@ function hooksIn(sessions) {
     sessionEnded: () => undefined,
     env: () => ({}),
     cwd: sessions,
+    repo: sessions,
   };
 }
 

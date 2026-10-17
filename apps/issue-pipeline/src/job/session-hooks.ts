@@ -21,18 +21,19 @@ interface JobWatch {
   resumePoint: LaunchHooks["resumePoint"];
 }
 
-// The launch hooks of the job `args` names, whose sessions run in `cwd`
-// with the job's environment `from`.
+// The launch hooks of the job `args` names, whose sessions run in its folder
+// `cwd`, which holds its code checkout `repo`, with the job's environment
+// `from`.
 function hooksOf(
   cfg: Config,
   args: RunArgs,
   watch: JobWatch,
-  job: { cwd: string; from: EnvSource },
+  job: { cwd: string; repo: string; from: EnvSource },
 ): LaunchHooks {
   const { status, control, resumePoint } = watch;
-  const { cwd, from } = job;
+  const { cwd, repo, from } = job;
   const shared = agentEnvOf(rolesOf(cfg.jobRoles), from);
-  const scope = commitScopeOf(args.stage, wikiCfg(cfg)?.dir ?? null);
+  const scope = commitScopeOf(args.stage, wikiCfg(cfg) !== null);
   return {
     sessionFile: (key: string): string => paths.session(cfg, args.issue, key),
     resumePoint,
@@ -53,10 +54,11 @@ function hooksOf(
         return shared;
       }
       const { socket } = control;
-      const commit = commitEnvOf({ socket, key, checkout: cwd, ...scope });
+      const commit = commitEnvOf({ socket, key, root: cwd, ...scope });
       return { ...shared, ...commit };
     },
     cwd,
+    repo,
   };
 }
 

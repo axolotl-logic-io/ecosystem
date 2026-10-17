@@ -1,21 +1,22 @@
-// A stage job's own checkout of its issue (#250): a full clone, made from a
-// bare mirror of the repo, that no other job shares. Its origin is the real
-// remote, so ops fetch and push there, and it is set up as the ops CLI sets
-// up its clone. When the repo has a wiki, the checkout holds a clone of it
-// too, made from a bare mirror of the wiki. Closing the checkout drops what
-// it left uncommitted, lets a writer push its commits, keeps unpushed wiki
-// commits in the wiki mirror for the issue's next job, and removes it.
+// A stage job's own checkouts of its issue (#250), in a folder no other job
+// shares (separate-checkouts, #338): `repo/`, a full clone made from a bare
+// mirror of the repo, and, when the repo has a wiki, `docs/` beside it, a
+// clone made from a bare mirror of the wiki. Their origins are the real
+// remotes, so ops fetch and push there, and they are set up as the ops CLI
+// sets up its clone. Closing them drops what they left uncommitted, lets a
+// writer push its commits, keeps unpushed wiki commits in the wiki mirror for
+// the issue's next job, and removes the folder.
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { configureClone, GH_HELPER, guardCommits } from "../clone-setup.ts";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg, withCheckout } from "../config.ts";
+import { paths, wikiCfg } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
 import { run } from "../process.ts";
-import type { WikiAccess } from "./pipeline-commit.ts";
+import type { Access } from "./pipeline-commit.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
 // base branch, the branch the issue's work is on, and the issue whose branch
@@ -26,6 +27,14 @@ interface CloneSpec {
   base: string;
   branch: string;
   stackOn: number | null;
+}
+
+// A stage job's folder, its code checkout and its wiki checkout (null when
+// the repo has no wiki, or its wiki can't be cloned).
+interface JobDirs {
+  root: string;
+  repo: string;
+  docs: string | null;
 }
 
 // A `git status --porcelain` entry is two status letters and a space, then
@@ -93,17 +102,12 @@ function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
   guardCommits(dir);
 }
 
-function excludeWiki(dir: string, wikiDir: string): void {
-  const exclude = path.join(dir, ".git", "info", "exclude");
-  fs.mkdirSync(path.dirname(exclude), { recursive: true });
-  fs.appendFileSync(exclude, `\n/${wikiDir}/\n`);
-}
-
-// Clones the wiki into the checkout `dir`, unless the repo has no wiki yet.
-function openWiki(cfg: Config, issue: number, dir: string): void {
+// Clones the wiki into `into`, and returns it; null when the repo has no
+// wiki yet.
+function openWiki(cfg: Config, issue: number, into: string): string | null {
   const wiki = wikiCfg(cfg);
   if (wiki === null) {
-    return;
+    return null;
   }
   const mirror = paths.wikiMirror(cfg);
   const url = wiki.url ?? `https://github.com/${cfg.repo}.wiki.git`;
@@ -111,39 +115,37 @@ function openWiki(cfg: Config, issue: number, dir: string): void {
     syncMirror(cfg, { mirror, url, prune: false, optional: true }),
   );
   if (!synced) {
-    return;
+    return null;
   }
-  const into = paths.wiki(withCheckout(cfg, { issue, dir }), issue);
   const branch = paths.branch(issue);
   const spec = { mirror, url, base: wiki.branch, branch, stackOn: null };
   cloneInto(cfg, spec, into);
+  return into;
 }
 
-// Makes stage job `stage`'s checkout of issue `issue` from the freshly
-// fetched mirror, replacing one an earlier job left, and returns its path.
-// With `stackOn`, an issue with no branch yet starts on that issue's branch.
-// It holds the wiki's checkout unless the stage's `wiki` access is none.
+// Makes stage job `stage`'s folder for issue `issue`, replacing one an
+// earlier job left: its code checkout from the freshly fetched mirror, and
+// its wiki checkout whenever the repo has a wiki. With `stackOn`, an issue
+// with no branch yet starts on that issue's branch.
 function openJobCheckout(
   cfg: Config,
   issue: number,
-  job: { stage: string; stackOn: number | null; wiki: WikiAccess },
-): string {
-  const { stage, stackOn, wiki } = job;
+  job: { stage: string; stackOn: number | null },
+): JobDirs {
+  const { stage, stackOn } = job;
   const mirror = paths.mirror(cfg);
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
   withCloneLock(cfg, (): boolean =>
     syncMirror(cfg, { mirror, url, prune: true, optional: false }),
   );
-  const dir = paths.jobCheckout(cfg, issue, stage);
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const root = paths.jobCheckout(cfg, issue, stage);
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.mkdirSync(root, { recursive: true });
+  const repo = paths.jobRepo(cfg, issue, stage);
   const branch = paths.branch(issue);
-  cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch, stackOn }, dir);
-  excludeWiki(dir, wikiCfg(cfg)?.dir ?? "wiki");
-  if (wiki !== "none") {
-    openWiki(cfg, issue, dir);
-  }
-  return dir;
+  cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch, stackOn }, repo);
+  const docs = openWiki(cfg, issue, paths.jobDocs(cfg, issue, stage));
+  return { root, repo, docs };
 }
 
 // The paths `dir` holds uncommitted, each after `prefix`, which it then
@@ -222,42 +224,43 @@ function reported<T>(step: () => T, fallback: T): T {
   }
 }
 
-// Closes the job checkout `dir` of issue `issue`: drops its uncommitted
-// changes, calls `push` when it, or its wiki checkout under `wiki` write
-// access, holds commits the remote lacks, saves its wiki commits and removes
-// it. Resolves to the dropped paths, wiki paths
-// under the wiki's folder. A git step that fails, such as a fetch from an
-// unreachable remote, is reported on stderr and skipped, and the checkout is
-// removed whatever fails.
+// Closes job folder `job.root` of issue `issue`: drops its checkouts'
+// uncommitted changes, calls `push` when its code checkout, or its wiki
+// checkout under `job.wiki` write access, holds commits the remote lacks,
+// saves its wiki commits and removes the folder. Resolves to the dropped
+// paths, each under its checkout's folder (`repo/`, `docs/`). A git step that
+// fails, such as a fetch from an unreachable remote, is reported on stderr
+// and skipped, and the folder is removed whatever fails.
 async function closeJobCheckout(
   cfg: Config,
   issue: number,
-  job: { dir: string; wiki: WikiAccess },
+  job: JobDirs & { wiki: Access },
   push: (() => Promise<void>) | null,
 ): Promise<readonly string[]> {
-  const { dir, wiki } = job;
+  const { root, repo, docs, wiki } = job;
   try {
-    const wikiDir = paths.wiki(withCheckout(cfg, { issue, dir }), issue);
-    const wikiPrefix = `${path.relative(dir, wikiDir)}/`;
-    const lost = reported(
-      (): string[] => [
-        ...dropChanges(dir, ""),
-        ...dropChanges(wikiDir, wikiPrefix),
-      ],
-      [],
-    );
+    const lost = reported((): string[] => {
+      const dropped = dropChanges(repo, `${path.relative(root, repo)}/`);
+      if (docs !== null) {
+        dropped.push(...dropChanges(docs, `${path.relative(root, docs)}/`));
+      }
+      return dropped;
+    }, []);
     if (
       push !== null &&
-      (holdsUnpushed(cfg, dir) ||
-        (wiki === "write" && holdsUnpushed(cfg, wikiDir)))
+      (holdsUnpushed(cfg, repo) ||
+        (wiki === "write" && docs !== null && holdsUnpushed(cfg, docs)))
     ) {
       await push();
     }
-    reported((): void => saveWiki(cfg, issue, wikiDir), undefined);
+    if (docs !== null) {
+      reported((): void => saveWiki(cfg, issue, docs), undefined);
+    }
     return lost;
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
   }
 }
 
+export type { JobDirs };
 export { closeJobCheckout, openJobCheckout };

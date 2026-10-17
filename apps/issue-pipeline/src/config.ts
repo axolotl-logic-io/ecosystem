@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { CONFIG_SCHEMA, DEFAULTS } from "./config-schema.ts";
+import { JOB_DOCS, JOB_REPO } from "./job/layout.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
 import { OpsError } from "./process.ts";
 import type { Budgets } from "./workflow/budget.ts";
@@ -17,7 +18,8 @@ const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
 const PATH_SEPARATOR = /[\\/]/u;
 
 // A stage job's own checkout of issue `issue` (#250). While an ops request
-// that names it runs, the issue's worktree is `dir`; it never comes from the
+// that names it runs, the issue's worktree is `dir`, the job's code checkout,
+// and its wiki checkout is `dir`'s sibling (#338); it never comes from the
 // config file.
 interface JobCheckout {
   issue: number;
@@ -213,9 +215,16 @@ function withCheckout(
 const paths = {
   branch: (n: number): string => `agent/issue-${n}`,
   clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
-  // Stage job `stage`'s own checkout of issue `n`, cloned from the mirror.
+  // Stage job `stage`'s own folder for issue `n`, which holds its code
+  // checkout and its wiki checkout side by side (#338).
   jobCheckout: (cfg: Config, n: number, stage: string): string =>
     path.join(ROOT, "work", cfg.slug, "jobs", `issue-${n}-${stage}`),
+  // The job's code checkout, cloned from the mirror.
+  jobRepo: (cfg: Config, n: number, stage: string): string =>
+    path.join(paths.jobCheckout(cfg, n, stage), JOB_REPO),
+  // The job's wiki checkout, cloned from the wiki mirror.
+  jobDocs: (cfg: Config, n: number, stage: string): string =>
+    path.join(paths.jobCheckout(cfg, n, stage), JOB_DOCS),
   // Where a writer session of issue `n` that runs out of room writes its
   // handoff, which the next session reads.
   handoff: (cfg: Config, n: number): string =>
@@ -230,8 +239,14 @@ const paths = {
   // A stage job's model session for launch `key` on issue `n`, as JSONL.
   session: (cfg: Config, n: number, key: string): string =>
     path.join(paths.runDir(cfg, n), "sessions", `${key}.jsonl`),
-  wiki: (cfg: Config, n: number): string =>
-    path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki"),
+  // The issue's wiki checkout: in a stage job, its code checkout's sibling;
+  // in a lane, a folder of its worktree.
+  wiki: (cfg: Config, n: number): string => {
+    if (cfg.checkout?.issue === n) {
+      return path.join(path.dirname(cfg.checkout.dir), JOB_DOCS);
+    }
+    return path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki");
+  },
   wikiClone: (cfg: Config): string =>
     path.join(ROOT, "clones", `${cfg.slug}.wiki`),
   wikiMirror: (cfg: Config): string =>

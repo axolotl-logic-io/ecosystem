@@ -43,7 +43,7 @@ const READY_TRIAGE = {
 };
 // A triage session that commits a file, spends USAGE and finds the issue ready.
 const TRIAGE_SESSION = {
-  commit: "work.txt",
+  commit: "repo/work.txt",
   events: [messageEnd(USAGE), outputEnd(READY_TRIAGE)],
 };
 

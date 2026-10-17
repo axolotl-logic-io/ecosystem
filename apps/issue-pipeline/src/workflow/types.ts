@@ -130,6 +130,13 @@ interface IssueState {
   // reads them, and they pass through unchanged.
 }
 
+// A stage job's folder, where its sessions run beside its code and wiki
+// checkouts, and its stage's access to the wiki checkout (#338).
+interface JobLayout {
+  dir: string;
+  docs: "read" | "write";
+}
+
 // The local paths ops gives the issue at claim.
 interface ItemPaths {
   worktree: string;
@@ -138,6 +145,8 @@ interface ItemPaths {
   wiki: string | null;
   // Where an implementer that runs out of room writes its handoff.
   handoffFile: string;
+  // The stage job's folder, in a stage job only; a lane has none.
+  job?: JobLayout;
 }
 
 // The issue the sweep works on.
@@ -195,6 +204,7 @@ export type {
   FixRoundsConfig,
   IssueState,
   ItemPaths,
+  JobLayout,
   ListedFinding,
   PracticesConfig,
   PracticesUse,

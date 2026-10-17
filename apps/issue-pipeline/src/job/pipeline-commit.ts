@@ -1,9 +1,11 @@
 // What a `pipeline_commit` call commits, worked out before git runs: the
 // planner reads the call's options (commit-options.ts), refuses the flags and
-// paths a session may not use, splits the pathspecs between the code repo and
-// the wiki checkout, and owns the session variable that tells the tool its
-// scope. It runs nothing; the tool (pipeline-commit-tool.ts) runs the argv it
-// returns.
+// paths a session may not use, routes the pathspecs, which are relative to
+// the job's folder, to its code checkout (repo/) and its wiki checkout
+// (docs/), refuses those into a checkout the stage may not write
+// (commit-needs-write-access, #338), and owns the session variable that tells
+// the tool its scope. It runs nothing; the tool (pipeline-commit-tool.ts)
+// runs the argv it returns.
 
 import { z } from "zod";
 import { matchAny } from "../globs.ts";
@@ -14,32 +16,50 @@ import { Refusal, readArgs, refuse } from "./commit-options.ts";
 const COMMIT_TOOL = "pipeline_commit";
 // The session variable that carries the tool's scope, as JSON.
 const COMMIT_SCOPE_ENV = "ISSUE_PIPELINE_COMMIT_SCOPE";
-const WIKI_ACCESS = z.enum(["none", "read", "write"]);
-// A session's commit scope: the job's control socket, the launch it is, its
-// checkout, the wiki's folder in the checkout (null with no wiki), its wiki
-// access, and the code globs it may commit.
+const ACCESS = z.enum(["read", "write"]);
+// One of the job's checkouts: its folder in the job's folder, and the
+// stage's access to it.
+const CHECKOUT_SCOPE = z.object({ dir: z.string(), access: ACCESS });
+// A session's commit scope: the job's control socket, the launch it is, the
+// job's folder, its code checkout, its wiki checkout (null with no wiki), and
+// the code globs, relative to the code checkout, it may commit.
 const COMMIT_SCOPE = z.object({
   socket: z.string(),
   key: z.string(),
-  checkout: z.string(),
-  wikiDir: z.string().nullable(),
-  wikiAccess: WIKI_ACCESS,
+  root: z.string(),
+  repo: CHECKOUT_SCOPE,
+  docs: CHECKOUT_SCOPE.nullable(),
   allowed: z.array(z.string()).readonly(),
 });
 
-type WikiAccess = z.infer<typeof WIKI_ACCESS>;
+type Access = z.infer<typeof ACCESS>;
+type CheckoutScope = z.infer<typeof CHECKOUT_SCOPE>;
 type CommitScope = z.infer<typeof COMMIT_SCOPE>;
 
-// What a session may commit: the wiki's folder (null with no wiki), its wiki
-// access and the code globs it may commit (none: wiki only).
+// What a session may commit: its code checkout, its wiki checkout (null with
+// no wiki) and the code globs it may commit (none: wiki only).
 interface PathScope {
-  wikiDir: string | null;
-  wikiAccess: WikiAccess;
+  repo: CheckoutScope;
+  docs: CheckoutScope | null;
   allowed: readonly string[];
 }
 
+type CheckoutName = "repo" | "docs";
+
+// What an error calls each checkout.
+const CHECKOUT_LABELS: Readonly<Record<CheckoutName, string>> = {
+  repo: "the code checkout",
+  docs: "the wiki checkout",
+};
+
+// A pathspec routed to a checkout, relative to it.
+interface Routed {
+  checkout: CheckoutName;
+  path: string;
+}
+
 // A call's plan: refused with the reason, or the git argv to run in the code
-// repo (null for none) and in the wiki checkout (in order, null for none).
+// checkout (null for none) and in the wiki checkout (in order, null for none).
 type CommitPlan =
   | { kind: "refused"; error: string }
   | {
@@ -49,8 +69,8 @@ type CommitPlan =
       dryRun: boolean;
     };
 
-// The pathspec normalized, or refused when it reaches outside the checkout
-// or uses pathspec magic.
+// The pathspec normalized, or refused when it reaches outside the job's
+// folder or uses pathspec magic.
 function checkedPath(spec: string): string {
   const segments = spec.split("/").filter((s) => s !== "" && s !== ".");
   if (spec.startsWith("/") || spec.startsWith(":") || segments.includes("..")) {
@@ -59,30 +79,53 @@ function checkedPath(spec: string): string {
   return segments.join("/") || ".";
 }
 
-// The pathspec relative to the wiki folder, or null when it is a code path.
-function wikiPathOf(spec: string, wikiDir: string | null): string | null {
-  if (wikiDir === null) {
-    return null;
+// The job's checkouts, by name.
+function checkoutsOf(scope: PathScope): [CheckoutName, CheckoutScope][] {
+  const list: [CheckoutName, CheckoutScope][] = [["repo", scope.repo]];
+  if (scope.docs !== null) {
+    list.push(["docs", scope.docs]);
   }
-  if (spec === wikiDir) {
-    return ".";
-  }
-  if (spec.startsWith(`${wikiDir}/`)) {
-    return spec.slice(wikiDir.length + 1);
-  }
-  return null;
+  return list;
 }
 
-// A message file's path as the wiki checkout sees it.
-function fromWiki(file: string, wikiDir: string): string {
+// Where pathspec `spec` goes: refused unless it is in a checkout of the job
+// that the stage may write.
+function routeOf(spec: string, scope: PathScope): Routed {
+  const [first = "", ...rest] = checkedPath(spec).split("/");
+  const checkouts = checkoutsOf(scope);
+  const found = checkouts.find(([, checkout]) => checkout.dir === first);
+  if (found === undefined) {
+    const dirs = checkouts.map(([, checkout]) => `${checkout.dir}/`);
+    return refuse(
+      `${spec}: not in a checkout of this job; paths start with ${dirs.join(" or ")}`,
+    );
+  }
+  const [name, { dir, access }] = found;
+  if (access !== "write") {
+    refuse(
+      `${spec}: this stage has ${access} access to ${CHECKOUT_LABELS[name]} (${dir}/); it may not commit there`,
+    );
+  }
+  return { checkout: name, path: rest.join("/") || "." };
+}
+
+// A message file's path as checkout folder `dir`, inside the job's folder,
+// sees it: the call names it relative to the job's folder.
+function fileFrom(file: string, dir: string): string {
   if (file.startsWith("/")) {
     return file;
   }
-  const inside = wikiPathOf(checkedPath(file), wikiDir);
-  if (inside !== null) {
-    return inside;
-  }
-  return `${"../".repeat(wikiDir.split("/").length)}${file}`;
+  return `${"../".repeat(dir.split("/").length)}${file}`;
+}
+
+// The call's options, its message files read from checkout folder `dir`.
+function optionsIn(read: ReadArgs, dir: string): string[] {
+  return read.options.map((option, at) => {
+    if (read.files.includes(at)) {
+      return fileFrom(option, dir);
+    }
+    return option;
+  });
 }
 
 function withPaths(argv: string[], paths: readonly string[]): string[] {
@@ -93,17 +136,13 @@ function withPaths(argv: string[], paths: readonly string[]): string[] {
 }
 
 // The wiki's argv: everything when it got no pathspec, else the named paths.
-function wikiArgv(
-  read: ReadArgs,
-  paths: string[],
-  wikiDir: string,
-): string[][] {
+function wikiArgv(read: ReadArgs, paths: string[], dir: string): string[][] {
   const message = read.message.flatMap(([option = "", value]): string[] => {
     if (value === undefined) {
       return [option];
     }
     if (option === "-F") {
-      return [option, fromWiki(value, wikiDir)];
+      return [option, fileFrom(value, dir)];
     }
     return [option, value];
   });
@@ -121,32 +160,36 @@ function wikiArgv(
 }
 
 // The plan for one call of `pipeline_commit` with git commit's `args`, in a
-// session that may commit what `scope` allows.
+// session that may commit what `scope` allows. A call that names pathspecs
+// commits only the checkouts they are in; one that names none commits each
+// checkout the stage may write.
 function planOf(args: readonly string[], scope: PathScope): CommitPlan {
   const read = readArgs(args);
   const codePaths: string[] = [];
   const wikiPaths: string[] = [];
-  for (const spec of read.paths.map(checkedPath)) {
-    const inWiki = wikiPathOf(spec, scope.wikiDir);
-    if (inWiki !== null && scope.wikiAccess !== "write") {
-      refuse(`${spec}: this session may not commit to the wiki`);
-    }
-    if (inWiki !== null) {
-      wikiPaths.push(inWiki);
-    } else if (matchAny(scope.allowed, spec)) {
-      codePaths.push(spec);
+  for (const spec of read.paths) {
+    const routed = routeOf(spec, scope);
+    if (routed.checkout === "docs") {
+      wikiPaths.push(routed.path);
+    } else if (matchAny(scope.allowed, routed.path)) {
+      codePaths.push(routed.path);
     } else {
       refuse(`${spec}: outside the paths this session may commit`);
     }
   }
+  const named = read.paths.length > 0;
+  const { repo, docs } = scope;
   let code: string[] | null = null;
-  const onlyWiki = wikiPaths.length > 0 && codePaths.length === 0;
-  if (scope.allowed.length > 0 && !onlyWiki) {
-    code = withPaths(["commit", ...read.options], codePaths);
+  if (
+    repo.access === "write" &&
+    scope.allowed.length > 0 &&
+    (!named || codePaths.length > 0)
+  ) {
+    code = withPaths(["commit", ...optionsIn(read, repo.dir)], codePaths);
   }
   let wiki: string[][] | null = null;
-  if (scope.wikiAccess === "write" && scope.wikiDir !== null) {
-    wiki = wikiArgv(read, wikiPaths, scope.wikiDir);
+  if (docs?.access === "write" && (!named || wikiPaths.length > 0)) {
+    wiki = wikiArgv(read, wikiPaths, docs.dir);
   }
   return { kind: "commit", code, wiki, dryRun: read.dryRun };
 }
@@ -189,7 +232,7 @@ function commitScopeIn(
   }
 }
 
-export type { CommitPlan, CommitScope, PathScope, WikiAccess };
+export type { Access, CommitPlan, CommitScope, PathScope };
 export {
   COMMIT_SCOPE_ENV,
   COMMIT_TOOL,

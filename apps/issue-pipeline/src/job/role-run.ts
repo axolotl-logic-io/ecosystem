@@ -20,7 +20,7 @@ import { claimLaunch, claimStep } from "../workflow/stages/entry.ts";
 import { isSweepConfig } from "../workflow/stages/entry-replies.ts";
 import type { ChildLaunch, OpLaunch } from "../workflow/stages/types.ts";
 import { sweepSettings } from "../workflow/sweep-config.ts";
-import type { ItemPaths } from "../workflow/types.ts";
+import type { ItemPaths, JobLayout } from "../workflow/types.ts";
 import type { ContextStop } from "./context-watch.ts";
 import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
@@ -55,8 +55,10 @@ interface RoleJob {
   stage: string;
   stackOn: number | null;
   frame: OpsFrame;
-  // The job's checkout, where every session runs.
-  dir: string;
+  // The job's code checkout.
+  repo: string;
+  // The job's folder, where every session runs, and its wiki access.
+  layout: JobLayout;
   hooks: LaunchHooks;
   status: JobStatus;
   control: Control;
@@ -154,7 +156,7 @@ function launcherOf(job: RoleJob): Launcher {
       effect: SessionEffect,
     ): Promise<{ outcome: Outcome; launch: LaunchUsage }> => {
       seq += 1;
-      const item = { n: job.issue, worktree: job.dir };
+      const item = { n: job.issue, worktree: job.repo };
       const spec = childSpec(seq, item, childOf(effect), meta);
       const tally = usageTally(job.hooks.contextLimits.soft);
       const startedAt = Date.now();
@@ -176,7 +178,8 @@ function opLaunchOf(issue: number, op: string, payload: Reply): OpLaunch {
 }
 
 // What the role's locate reads besides the claimed state: the claim's paths,
-// with the job's checkout as the worktree, and the config's settings. The
+// with the job's code checkout as the worktree and its folder, and the
+// config's settings. The
 // loaded config always has them, from its defaults.
 function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
   const { cfg } = job;
@@ -189,7 +192,7 @@ function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
     cfg,
     budgets,
     models,
-    paths: { ...paths, worktree: job.dir },
+    paths: { ...paths, worktree: job.repo, job: job.layout },
     now: new Date(),
   };
 }

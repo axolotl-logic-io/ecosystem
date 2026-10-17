@@ -1,5 +1,5 @@
 // The stage job's roles: which role each stage and each session runs as,
-// each stage's wiki access, the roles' merged settings, and the environment a
+// each stage's wiki and code access, the roles' merged settings, and the environment a
 // session's pi gets, which holds no token (Pipeline-Roles-Shared, "No token
 // in sessions").
 import assert from "node:assert/strict";
@@ -7,11 +7,14 @@ import { test } from "node:test";
 import {
   agentEnvOf,
   boundaryOf,
+  codeAccessOf,
   rolesOf,
   STAGE_WIKI_ACCESS,
   sessionRoleOf,
 } from "../src/job/roles.ts";
 import { STAGE_ORDER } from "../src/workflow/sweep-config.ts";
+
+const COMMIT_SCOPE_ENV = "ISSUE_PIPELINE_COMMIT_SCOPE";
 
 // The stages each role runs, as the wiki's Issue-Pipeline "Job boundaries"
 // lists them under "Roles".
@@ -138,7 +141,12 @@ test("with no tokenEnv set, the role variables are ordinary and only gh's are hi
   assert.deepEqual(agentEnvOf(rolesOf({}), FROM), untouched);
 });
 
-test("spec, merge and publish write the wiki, and, until the spec writer commits its updates, implement, fix and checks too; every stage has a wiki access", () => {
+test("no session env inherits a commit scope from the job's own env", () => {
+  const scoped = envOf([...Object.entries(PLAIN), [COMMIT_SCOPE_ENV, "{}"]]);
+  assert.deepEqual(agentEnvOf(rolesOf({}), scoped), PLAIN);
+});
+
+test("spec, merge and publish write the wiki, and, until the spec writer commits its updates, implement, fix and checks too; every stage at least reads it", () => {
   const writers = Object.entries(STAGE_WIKI_ACCESS)
     .filter(([, access]) => access === "write")
     .map(([stage]) => stage)
@@ -150,6 +158,15 @@ test("spec, merge and publish write the wiki, and, until the spec writer commits
     new Set(STAGE_ORDER),
   );
   for (const access of Object.values(STAGE_WIKI_ACCESS)) {
-    assert.ok(["none", "read", "write"].includes(access), access);
+    assert.ok(["read", "write"].includes(access), access);
+  }
+});
+
+test("a stage writes its code checkout exactly when it runs as writer, and otherwise reads it", () => {
+  for (const stage of WRITER_STAGES) {
+    assert.equal(codeAccessOf(stage), "write", stage);
+  }
+  for (const stage of [...READER_STAGES, ...MERGER_STAGES]) {
+    assert.equal(codeAccessOf(stage), "read", stage);
   }
 });

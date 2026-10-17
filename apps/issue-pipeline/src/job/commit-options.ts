@@ -39,10 +39,12 @@ const LONG_OPTION = /^--(?<name>[^=]+)(?:=(?<value>[\s\S]*))?$/u;
 // How many arguments an option used: itself, or itself and its value.
 type Used = 1 | 2;
 
-// A commit call's arguments, read: the options as given, the options the
-// wiki's commit repeats, the pathspecs and whether it is a dry run.
+// A commit call's arguments, read: the options as given, where in them each
+// message file's path sits, the options the wiki's commit repeats, the
+// pathspecs and whether it is a dry run.
 interface ReadArgs {
   options: string[];
+  files: number[];
   message: string[][];
   paths: string[];
   dryRun: boolean;
@@ -93,7 +95,11 @@ function readLong(args: readonly string[], at: number, read: ReadArgs): Used {
     return 1;
   }
   const given = value ?? valueAt(args, at, `--${full}`);
-  read.options.push(`--${full}=${given}`);
+  if (full === "file") {
+    read.options.push("--file", given);
+  } else {
+    read.options.push(`--${full}=${given}`);
+  }
   messageOption(full, given, read);
   if (value === undefined) {
     return 2;
@@ -101,7 +107,8 @@ function readLong(args: readonly string[], at: number, read: ReadArgs): Used {
   return 1;
 }
 
-// Keeps the message options the wiki's commit repeats.
+// Keeps the message options the wiki's commit repeats, and where a message
+// file's path, the last of the options read so far, sits.
 function messageOption(option: string, value: string, read: ReadArgs): void {
   switch (option) {
     case "message":
@@ -113,6 +120,7 @@ function messageOption(option: string, value: string, read: ReadArgs): void {
       if (value === "-") {
         refuse("-F - is not allowed: the message can't come from stdin");
       }
+      read.files.push(read.options.length - 1);
       read.message.push(["-F", value]);
       return;
     case "trailer":
@@ -154,7 +162,13 @@ function readShort(args: readonly string[], at: number, read: ReadArgs): Used {
 }
 
 function readArgs(args: readonly string[]): ReadArgs {
-  const read: ReadArgs = { options: [], message: [], paths: [], dryRun: false };
+  const read: ReadArgs = {
+    options: [],
+    files: [],
+    message: [],
+    paths: [],
+    dryRun: false,
+  };
   let at = 0;
   let pathsOnly = false;
   while (at < args.length) {

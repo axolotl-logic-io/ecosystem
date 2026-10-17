@@ -1,7 +1,8 @@
 // @ts-check
-// A stage job's own checkout (#250): cloned from a bare mirror of the repo,
-// the cwd of its sessions and the checkout every ops request names, closed on
-// every exit, after a writer's push of its commits.
+// A stage job's own checkout (#250): cloned from a bare mirror of the repo
+// into repo/ in the job's folder, which is its sessions' cwd (#338), the
+// checkout every ops request names, closed on every exit, after a writer's
+// push of its commits.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,6 +13,7 @@ import {
   branchOnOrigin,
   checkoutOf,
   refOf,
+  repoOf,
 } from "./job-git-test-kit.mjs";
 import {
   logOf,
@@ -39,7 +41,7 @@ const BRANCH = "refs/heads/agent/issue-7";
 const PUSHING = { "exit-push": { ok: true, git: true } };
 // A session that commits a file, then waits until it is stopped.
 const COMMIT_AND_WAIT = {
-  commit: "work.txt",
+  commit: "repo/work.txt",
   events: [messageEnd(USAGE), "wait", outputEnd(READY_SPEC)],
 };
 
@@ -137,7 +139,7 @@ test("a job stopped by SIGTERM exits 143 and removes its checkout", async () => 
 test("a writer's commit reaches the issue's branch through the exit-push op before its checkout goes", () => {
   const place = setUp(pushingRepliesAt("implement"), {
     ...SPEC_SESSION,
-    commit: "work.txt",
+    commit: "repo/work.txt",
   });
   const r = runJob(place, ["--stage", "implement"]);
   assert.equal(r.status, 0, r.stderr);
@@ -148,7 +150,7 @@ test("a writer's commit reaches the issue's branch through the exit-push op befo
   assert.equal(push.number, ISSUE);
   assert.deepEqual(push.checkout, {
     issue: ISSUE,
-    dir: checkoutOf(place.root, "implement"),
+    dir: repoOf(place.root, "implement"),
   });
   const launches = statusOf(place).launches.map(
     (/** @type {{ key: string }} */ launch) => launch.key,
@@ -200,11 +202,11 @@ test("a writer stopped by SIGTERM still pushes its commit before its checkout go
 test("a writer's uncommitted files are recorded as lostChanges and dropped", () => {
   const place = setUp(repliesAt("implement"), {
     ...SPEC_SESSION,
-    untracked: "left.txt",
+    untracked: "repo/left.txt",
   });
   const r = runJob(place, ["--stage", "implement"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(statusOf(place).lostChanges, ["left.txt"]);
+  assert.deepEqual(statusOf(place).lostChanges, ["repo/left.txt"]);
   assert.deepEqual(pushes(place), []);
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
 });
@@ -212,7 +214,7 @@ test("a writer's uncommitted files are recorded as lostChanges and dropped", () 
 test("a reader's commit is never pushed", () => {
   const place = setUp(pushingRepliesAt("spec"), {
     ...SPEC_SESSION,
-    commit: "work.txt",
+    commit: "repo/work.txt",
   });
   const r = runJob(place, ["--stage", "spec"]);
   assert.equal(r.status, 0, r.stderr);
@@ -227,7 +229,7 @@ test("every ops request the job makes names its checkout", () => {
   runJob(place, ["--stage", "spec"]);
   const ops = logOf(place, "ops.log");
   assert.ok(ops.length > 0);
-  const checkout = { issue: ISSUE, dir: checkoutOf(place.root, "spec") };
+  const checkout = { issue: ISSUE, dir: repoOf(place.root, "spec") };
   for (const request of ops) {
     assert.deepEqual(request.checkout, checkout, request.op);
   }
@@ -236,7 +238,7 @@ test("every ops request the job makes names its checkout", () => {
 test("a failed exit push is reported on stderr and the checkout still goes", () => {
   const place = setUp(repliesAt("implement"), {
     ...SPEC_SESSION,
-    commit: "work.txt",
+    commit: "repo/work.txt",
   });
   const r = runJob(place, ["--stage", "implement"]);
   assert.equal(r.status, 0, r.stderr);
@@ -248,7 +250,7 @@ test("a failed exit push is reported on stderr and the checkout still goes", () 
 test("the job's wiki checkout comes from the wiki mirror, and its unpushed commits wait there", () => {
   const place = setUp(
     repliesAt("spec"),
-    { ...SPEC_SESSION, commit: "wiki/Page.md" },
+    { ...SPEC_SESSION, commit: "docs/Page.md" },
     {},
     { wiki: true },
   );
@@ -258,7 +260,7 @@ test("the job's wiki checkout comes from the wiki mirror, and its unpushed commi
   const wikiMirror = path.join(place.root, "work/o__r/wiki-mirror.git");
   assert.equal(refOf(wikiMirror, BRANCH), first);
   assert.equal(refOf(String(place.wikiOrigin), BRANCH), "");
-  setScript(place, { ...SPEC_SESSION, commit: "wiki/Other.md" });
+  setScript(place, { ...SPEC_SESSION, commit: "docs/Other.md" });
   const again = runJob(place, ["--stage", "spec"]);
   assert.equal(again.status, 0, again.stderr);
   assert.equal(refOf(wikiMirror, `${BRANCH}~1`), first);

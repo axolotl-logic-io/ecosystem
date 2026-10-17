@@ -40,9 +40,9 @@ interface HandoffStart {
   handoff: string | null;
 }
 
-// Where a writer session works, and where its handoff goes.
+// Where a writer session's code checkout is, and where its handoff goes.
 interface WriterPlace {
-  cwd: string;
+  repo: string;
   handoffFile: string;
 }
 
@@ -117,7 +117,7 @@ function unsafeToCommit(cwd: string): string | null {
 // Commits everything `session` left uncommitted as one WIP commit, through
 // the commit hooks; a refused commit is unstaged again.
 function commitWip(session: StoppedSession): WipResult {
-  const { cwd, key, stop } = session;
+  const { repo: cwd, key, stop } = session;
   const unsafe = unsafeToCommit(cwd);
   if (unsafe !== null) {
     return { kind: "left", why: unsafe };
@@ -140,7 +140,7 @@ function commitWip(session: StoppedSession): WipResult {
 
 // What git shows of `session`'s checkout.
 function checkoutView(session: StoppedSession): CheckoutView {
-  const { cwd, start } = session;
+  const { repo: cwd, start } = session;
   let log: string | null = "(the session's start commit is unknown)";
   if (start.head !== null) {
     log = gitOut(cwd, ["log", "--oneline", `${start.head}..HEAD`]);
@@ -183,7 +183,7 @@ function saveWork(session: StoppedSession): StoppedWork {
 // saveWork for the session at `place` that ended as `end`; a failure is
 // reported on stderr and counts as no handoff written and no WIP commit.
 function saveStoppedWork(place: WriterPlace, end: StoppedEnd): StoppedWork {
-  const session = { ...end, cwd: place.cwd, handoffFile: place.handoffFile };
+  const session = { ...end, repo: place.repo, handoffFile: place.handoffFile };
   try {
     return saveWork(session);
   } catch (error: unknown) {

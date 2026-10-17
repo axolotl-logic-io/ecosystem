@@ -39,10 +39,30 @@ const BOUNDARY_ROLES = {
   writer: { tokenEnv: "W_TOKEN", network: ["example.com"] },
   merger: { tokenEnv: "M_TOKEN" },
 };
+// Each stage's role, network and access to its code (repo/) and wiki (docs/)
+// checkouts: the writer writes code, and the spec writer and merger write
+// the wiki.
 const EXPECTED = {
-  spec: { role: "reader", network: ["api.anthropic.com"] },
-  implement: { role: "writer", network: ["example.com"] },
-  merge: { role: "merger", network: ["api.github.com"] },
+  spec: {
+    role: "reader",
+    network: ["api.anthropic.com"],
+    access: { repo: "read", docs: "write" },
+  },
+  implement: {
+    role: "writer",
+    network: ["example.com"],
+    access: { repo: "write", docs: "write" },
+  },
+  merge: {
+    role: "merger",
+    network: ["api.github.com"],
+    access: { repo: "read", docs: "write" },
+  },
+  review: {
+    role: "reader",
+    network: ["api.anthropic.com"],
+    access: { repo: "read", docs: "read" },
+  },
 };
 const COMMIT_EXTENSION = /\/pipeline-commit\.mjs$/u;
 // A --tools entry that adds a tool to pi's defaults starts with "+".
@@ -127,9 +147,10 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     // The wiki promises these fields, not their order.
     assert.deepEqual(
       new Set(Object.keys(boundary)),
-      new Set(["role", "checkout", "env", "network"]),
+      new Set(["role", "checkout", "access", "env", "network"]),
     );
     assert.equal(boundary.role, expected.role);
+    assert.deepEqual(boundary.access, expected.access);
     assert.equal(boundary.checkout, checkoutOf(place.root, stage));
     assert.ok(!fs.existsSync(boundary.checkout));
     assert.deepEqual(boundary.network, expected.network);

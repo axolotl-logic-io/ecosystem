@@ -1,8 +1,9 @@
 // The pi extension that gives a stage job's writer session its only way to
 // commit: the `pipeline_commit` tool (Pipeline-Roles-Shared,
 // "pipeline_commit"). `pi -e pipeline-commit.mjs` registers it; the session's
-// ISSUE_PIPELINE_COMMIT_SCOPE (pipeline-commit.ts) names its checkout, what
-// it may commit and the job to ask for the push. The tool runs the planner's
+// ISSUE_PIPELINE_COMMIT_SCOPE (pipeline-commit.ts) names the job's folder,
+// its code and wiki checkouts there, what it may commit and the job to ask
+// for the push. The tool runs the planner's
 // git commands with ISSUE_PIPELINE_COMMIT=1, which the checkouts' pre-commit
 // hook lets through, then asks the job over its control socket to push: the
 // session holds no token and never pushes itself.
@@ -98,12 +99,12 @@ function gitError(result: RepoResult | null): boolean {
   return !NOTHING_TO_COMMIT.test(`${result.stdout}\n${result.stderr}`);
 }
 
-// The wiki checkout's folder, or null when the plan or the checkout has none.
+// The wiki checkout's folder, or null when the job has none.
 function wikiFolder(scope: CommitScope): string | null {
-  if (scope.wikiDir === null) {
+  if (scope.docs === null) {
     return null;
   }
-  const dir = path.join(scope.checkout, scope.wikiDir);
+  const dir = path.join(scope.root, scope.docs.dir);
   if (!fs.existsSync(path.join(dir, ".git"))) {
     return null;
   }
@@ -129,7 +130,7 @@ async function commitAndPush(
 ): Promise<ToolResult> {
   let code: RepoResult | null = null;
   if (plan.code !== null) {
-    code = runIn(scope.checkout, [plan.code]);
+    code = runIn(path.join(scope.root, scope.repo.dir), [plan.code]);
   }
   const wikiDir = wikiFolder(scope);
   let wiki: RepoResult | null = null;
@@ -184,7 +185,7 @@ function pipelineCommit(pi: ExtensionApi): void {
     name: COMMIT_TOOL,
     label: "Pipeline Commit",
     description:
-      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "src/a.ts"]. Wiki paths are committed in the wiki checkout when this stage may write it. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
+      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "repo/src/a.ts"]. Paths, and a relative -F file, are relative to the job folder, your working directory: pathspecs start with repo/ (the code checkout) or docs/ (the wiki checkout), and with none, every checkout this stage may write is committed. A path into a checkout this stage only reads is refused. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
     promptSnippet: "Commit and push your work (the only way to commit)",
     parameters: {
       type: "object",

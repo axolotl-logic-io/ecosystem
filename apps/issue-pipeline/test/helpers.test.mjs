@@ -125,17 +125,17 @@ test("a state comment's body gives its state, or null", () => {
   );
 });
 
-test("a job checkout stands in for its own issue's worktree and wiki only", () => {
+test("a job checkout stands in for its own issue's worktree, with the wiki checkout docs/ beside it, and for its issue only", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-paths-"));
   process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "o__r.json");
-  const checkout = { issue: STATE_ISSUE, dir: "/jobs/issue-7-spec" };
+  const checkout = { issue: STATE_ISSUE, dir: "/jobs/issue-7-spec/repo" };
   const config = {
     repo: "o/r",
     account: "bot",
     allowedUsers: ["alice"],
     commands: { test: "true" },
-    wiki: { dir: "docs" },
+    wiki: { dir: "wiki" },
     checkout,
   };
   fs.writeFileSync(file, JSON.stringify(config));
@@ -143,9 +143,9 @@ test("a job checkout stands in for its own issue's worktree and wiki only", () =
   assert.equal(cfg.checkout, undefined);
   const work = "/opt/pipeline-root/work/o__r";
   assert.equal(paths.worktree(cfg, STATE_ISSUE), `${work}/issue-7`);
-  assert.equal(paths.wiki(cfg, STATE_ISSUE), `${work}/issue-7/docs`);
+  assert.equal(paths.wiki(cfg, STATE_ISSUE), `${work}/issue-7/wiki`);
   const scoped = withCheckout(cfg, checkout);
-  assert.equal(paths.worktree(scoped, STATE_ISSUE), "/jobs/issue-7-spec");
+  assert.equal(paths.worktree(scoped, STATE_ISSUE), "/jobs/issue-7-spec/repo");
   assert.equal(paths.wiki(scoped, STATE_ISSUE), "/jobs/issue-7-spec/docs");
   const other = STATE_ISSUE + 1;
   assert.equal(paths.worktree(scoped, other), `${work}/issue-${other}`);

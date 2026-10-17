@@ -6,7 +6,7 @@
 import type { JobCheckout } from "../config.ts";
 import type { Budgets } from "./budget.ts";
 import type { ModelRole, StageName, SweepConfig } from "./stages/types.ts";
-import type { Role } from "./types.ts";
+import type { JobLayout, Role } from "./types.ts";
 
 // Each role's context budget per session, unless the config's roleBudgets sets
 // it. A writer's (WRITER_BUDGET_ROLES) is above the default contextLimits.hard,
@@ -109,12 +109,14 @@ function stageArgOf(name: string, value: unknown): StageName | null {
 // config's path, the lane, the one issue a human launched the run for, if
 // any, whether to take it even when stopped (takeStopped), the last stage
 // (through) or only stage (stage) it may begin, a stage job's checkout,
-// which every request then names, the merge order the orchestrator ranked
+// which every request then names, and its folder (job), which its prompts
+// name, the merge order the orchestrator ranked
 // (mergeQueue), and the issue whose branch a claimed issue with none starts
 // on (stackOn, #268).
 interface SweepArgs {
   config: string;
   checkout?: JobCheckout;
+  job?: JobLayout;
   lane?: unknown;
   issue?: unknown;
   takeStopped?: unknown;
@@ -183,10 +185,13 @@ interface RunPins {
   stage: StageName | null;
   mergeQueue: readonly number[] | null;
   stackOn: number | null;
+  // A stage job's folder, which the claimed issue's paths carry.
+  job: JobLayout | null;
 }
 
 function runPinsOf(args: SweepArgs): RunPins {
   return {
+    job: args.job ?? null,
     target: sweepTargetOf(args.issue, args.takeStopped),
     through: stageArgOf("through", args.through),
     stage: stageArgOf("stage", args.stage),

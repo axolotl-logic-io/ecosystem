@@ -68,8 +68,10 @@ interface LaunchHooks {
   // The whole environment launch `key`'s session of installed agent `agent`
   // runs with.
   env: (agent: string, key: string) => Readonly<Record<string, string>>;
-  // Where every model session runs: the job's own checkout.
+  // Where every model session runs: the job's own folder.
   cwd: string;
+  // The job's code checkout, in its folder.
+  repo: string;
 }
 
 // An ops command to run: its arguments, stdin and time limit, and the hook
@@ -245,7 +247,7 @@ async function runSession(
     const error = `agent ${spec.agent}: cannot prepare its session and schema files`;
     return failedSession(spec, error);
   }
-  const begun = handoffStartOf(hooks.cwd, hooks.handoffFile);
+  const begun = handoffStartOf(hooks.repo, hooks.handoffFile);
   const { raw, stop, lastText } = await runPi(spec, hooks, start);
   const { budgetRole, agent, model } = spec;
   const ended = endedOf(raw, stop);

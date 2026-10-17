@@ -1,17 +1,33 @@
 // What a pipeline_commit call plans before git runs (wiki Pipeline-Roles-
 // Shared, "pipeline_commit"): the refused flags and paths, how pathspecs
-// split between the code repo and the wiki, the wiki's commit of everything
-// with the same message, and the dry run.
+// route to the code checkout (repo/) and the wiki checkout (docs/), the access
+// refusals (#338), the wiki's commit of everything with the same message,
+// and the dry run.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { commitArgsOf } from "../src/job/pipeline-commit.ts";
 
 /** @typedef {import("../src/job/pipeline-commit.ts").PathScope} PathScope */
 
-/** @type {PathScope} */
-const WRITE = { wikiDir: "wiki", wikiAccess: "write", allowed: ["**"] };
-/** @type {PathScope} */
-const READ = { wikiDir: "wiki", wikiAccess: "read", allowed: ["**"] };
+/**
+ * @param {"read" | "write"} repo
+ * @param {"read" | "write" | null} docs
+ * @param {readonly string[]} allowed
+ * @returns {PathScope}
+ */
+function scopeOf(repo, docs, allowed = ["**"]) {
+  if (docs === null) {
+    return { repo: { dir: "repo", access: repo }, docs: null, allowed };
+  }
+  return {
+    repo: { dir: "repo", access: repo },
+    docs: { dir: "docs", access: docs },
+    allowed,
+  };
+}
+
+const WRITE = scopeOf("write", "write");
+const READ = scopeOf("write", "read");
 
 /** @param {string[]} args @param {PathScope} scope */
 function refusal(args, scope = WRITE) {
@@ -53,30 +69,53 @@ test("flags that rewrite history, skip hooks, change the identity or read hidden
 });
 
 test("a path outside the session's allowed paths is refused, naming it", () => {
-  /** @type {PathScope} */
-  const scope = { wikiDir: "wiki", wikiAccess: "write", allowed: ["src/**"] };
+  const scope = scopeOf("write", "write", ["src/**"]);
   assert.ok(
-    refusal(["-m", "x", "--", "README.md"], scope).includes("README.md"),
+    refusal(["-m", "x", "--", "repo/README.md"], scope).includes(
+      "repo/README.md",
+    ),
   );
   assert.ok(refusal(["-m", "x", "../out.txt"]).includes("../out.txt"));
   assert.ok(refusal(["-m", "x", "/etc/passwd"]).includes("/etc/passwd"));
   assert.ok(refusal(["-m", "x", ":(glob)**"]).includes(":(glob)"));
 });
 
-test("a wiki path is refused without write access to the wiki", () => {
-  const error = refusal(["-m", "x", "--", "wiki/Home.md"], READ);
-  assert.ok(error.includes("wiki/Home.md"));
+test("a path outside repo/ and docs/ is refused, naming it and the checkouts", () => {
+  const error = refusal(["-m", "x", "--", "src/a.ts"]);
+  assert.ok(error.includes("src/a.ts"));
+  assert.ok(error.includes("repo/"));
+  assert.ok(error.includes("docs/"));
 });
 
-test("wiki pathspecs go to the wiki, relative to it, and the rest to the code repo", () => {
-  const plan = planned(["-m", "Add", "--", "src/a.ts", "wiki/Home.md"]);
+test("a wiki path is refused without write access to the wiki, naming the checkout and the access", () => {
+  const error = refusal(["-m", "x", "--", "docs/Home.md"], READ);
+  assert.ok(error.includes("docs/Home.md"));
+  assert.ok(error.includes("wiki checkout (docs/)"));
+  assert.ok(error.includes("read access"));
+});
+
+test("a code path is refused without write access to the code, naming the checkout and the access", () => {
+  const merger = scopeOf("read", "write", []);
+  const error = refusal(["-m", "x", "--", "repo/README.md"], merger);
+  assert.ok(error.includes("repo/README.md"));
+  assert.ok(error.includes("code checkout (repo/)"));
+  assert.ok(error.includes("read access"));
+});
+
+test("a docs/ path is refused in a job with no wiki checkout", () => {
+  const error = refusal(["-m", "x", "docs/x"], scopeOf("write", null));
+  assert.ok(error.includes("docs/x"));
+});
+
+test("pathspecs lose their repo/ or docs/ prefix and go to that checkout", () => {
+  const plan = planned(["-m", "Add", "--", "repo/src/a.ts", "docs/Home.md"]);
   assert.deepEqual(plan.code, ["commit", "-m", "Add", "--", "src/a.ts"]);
   assert.deepEqual(plan.wiki, [
     ["add", "-A", "--", "Home.md"],
     ["commit", "-m", "Add", "--", "Home.md"],
   ]);
   assert.equal(plan.dryRun, false);
-  const wikiOnly = planned(["-m", "Page", "wiki/New.md"]);
+  const wikiOnly = planned(["-m", "Page", "docs/New.md"]);
   assert.equal(wikiOnly.code, null);
   assert.deepEqual(wikiOnly.wiki?.[1], [
     "commit",
@@ -85,9 +124,12 @@ test("wiki pathspecs go to the wiki, relative to it, and the rest to the code re
     "--",
     "New.md",
   ]);
+  const codeOnly = planned(["-m", "Code", "repo"]);
+  assert.deepEqual(codeOnly.code, ["commit", "-m", "Code", "--", "."]);
+  assert.equal(codeOnly.wiki, null);
 });
 
-test("with no wiki pathspec the wiki adds every change and commits it with the same message", () => {
+test("with no pathspec the wiki adds every change and commits it with the same message", () => {
   const trailer = "Pipeline-Agent: implementer";
   const plan = planned(["-am", "Fix it", "--trailer", trailer]);
   assert.equal(plan.code?.[0], "commit");
@@ -100,29 +142,31 @@ test("with no wiki pathspec the wiki adds every change and commits it with the s
   assert.deepEqual(signed.wiki?.[1], ["commit", "-m", "Docs", "-s"]);
 });
 
-test("a relative message file is rewritten for the wiki folder", () => {
+test("a relative message file is read from the job's folder in both checkouts", () => {
   const plan = planned(["-F", "msg.txt"]);
-  assert.deepEqual(plan.code, ["commit", "-F", "msg.txt"]);
+  assert.deepEqual(plan.code, ["commit", "-F", "../msg.txt"]);
   assert.deepEqual(plan.wiki?.[1], ["commit", "-F", "../msg.txt"]);
-  const nested = planned(["--file", "m.txt"], {
-    ...WRITE,
-    wikiDir: "docs/wiki",
-  });
-  assert.deepEqual(nested.wiki?.[1], ["commit", "-F", "../../m.txt"]);
+  const long = planned(["--file", "m.txt"]);
+  assert.deepEqual(long.code, ["commit", "--file", "../m.txt"]);
+  assert.deepEqual(long.wiki?.[1], ["commit", "-F", "../m.txt"]);
+  const absolute = planned(["-F", "/tmp/m.txt"]);
+  assert.deepEqual(absolute.code, ["commit", "-F", "/tmp/m.txt"]);
 });
 
-test("without write access, or a wiki, nothing is planned for the wiki", () => {
+test("with no pathspec, only the checkouts the stage may write are planned", () => {
   assert.equal(planned(["-am", "x"], READ).wiki, null);
-  /** @type {PathScope} */
-  const none = { wikiDir: null, wikiAccess: "none", allowed: ["**"] };
-  assert.equal(planned(["-am", "x"], none).wiki, null);
+  assert.equal(planned(["-am", "x"], scopeOf("write", null)).wiki, null);
+  const merger = planned(["-m", "x"], scopeOf("read", "write", []));
+  assert.equal(merger.code, null);
+  assert.notEqual(merger.wiki, null);
 });
 
 test("a session that may commit only the wiki plans no code commit", () => {
-  /** @type {PathScope} */
-  const wikiOnly = { wikiDir: "wiki", wikiAccess: "write", allowed: [] };
+  const wikiOnly = scopeOf("write", "write", []);
   assert.equal(planned(["-m", "x"], wikiOnly).code, null);
-  assert.ok(refusal(["-m", "x", "src/a.ts"], wikiOnly).includes("src/a.ts"));
+  assert.ok(
+    refusal(["-m", "x", "repo/src/a.ts"], wikiOnly).includes("repo/src/a.ts"),
+  );
 });
 
 test("--dry-run passes through, marks the plan a dry run and runs no add", () => {

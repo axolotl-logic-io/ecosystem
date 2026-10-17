@@ -27,9 +27,7 @@ const { openStatus, readStatus } = await import("../src/job/status.ts");
 const { COMMIT_SCOPE_ENV, commitEnvOf } = await import(
   "../src/job/pipeline-commit.ts"
 );
-const { commitScopeOf, STAGE_WIKI_ACCESS } = await import(
-  "../src/job/roles.ts"
-);
+const { commitScopeOf } = await import("../src/job/roles.ts");
 const { default: pipelineCommit } = await import(
   "../src/job/pipeline-commit-tool.ts"
 );
@@ -40,8 +38,9 @@ const KEY = "i7-launch-1";
 const ZERO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /**
- * One stage job's checkout, its control socket and its registered tool.
- * @typedef {{ cfg: Config, dir: string, wikiDir: string, origin: string, wikiOrigin: string, runDir: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
+ * One stage job's folder (root) with its code checkout (repo) and wiki
+ * checkout (docs), its control socket and its registered tool.
+ * @typedef {{ cfg: Config, root: string, repo: string, docs: string, origin: string, wikiOrigin: string, runDir: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
  */
 
 let repos = 0;
@@ -60,10 +59,15 @@ function git(dir, args, env = {}) {
   }).trim();
 }
 
-/** @param {string} tmp @returns {Config} a config of a repo of its own */
-function configIn(tmp) {
+/**
+ * A config of a repo of its own, with a wiki unless `wiki` is false.
+ * @param {string} tmp
+ * @param {boolean} [wiki]
+ * @returns {Config}
+ */
+function configIn(tmp, wiki = true) {
   repos += 1;
-  const origins = seedOrigins(tmp, true);
+  const origins = seedOrigins(tmp, wiki);
   const file = path.join(tmp, "config.json");
   const config = {
     repo: `o/r${repos}`,
@@ -91,10 +95,12 @@ function registeredTool() {
 async function openJob(stage) {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp);
-  const wiki = STAGE_WIKI_ACCESS[stage];
-  const dir = openJobCheckout(cfg, ISSUE, { stage, stackOn: null, wiki });
+  const dirs = openJobCheckout(cfg, ISSUE, { stage, stackOn: null });
+  if (dirs.docs === null) {
+    throw new Error("the job has no wiki checkout");
+  }
   const runDir = paths.runDir(cfg, ISSUE);
-  const job = { issue: ISSUE, stage, checkout: dir };
+  const job = { issue: ISSUE, stage, checkout: dirs.repo };
   const status = openStatus(runDir, { ...job, lane: null, socket: "" });
   const server = pushServerOf(cfg, job, status.pushed);
   const control = await openControl(runDir, server);
@@ -107,13 +113,14 @@ async function openJob(stage) {
     usage: ZERO,
     tokenBudget: null,
   });
-  const scope = { socket: control.socket, key: KEY, checkout: dir };
-  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, "wiki") });
+  const scope = { socket: control.socket, key: KEY, root: dirs.root };
+  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true) });
   const tool = registeredTool();
   return {
     cfg,
-    dir,
-    wikiDir: path.join(dir, "wiki"),
+    root: dirs.root,
+    repo: dirs.repo,
+    docs: dirs.docs,
     origin: path.join(tmp, "origin.git"),
     wikiOrigin: path.join(tmp, "wiki-origin.git"),
     runDir,
