@@ -10,6 +10,7 @@ import {
   committerText,
   handoffLead,
   handoffRule,
+  NO_ARTIFICIAL_LOAD_RULE,
   preamble,
 } from "../prompts.ts";
 import { CIFIX_SCHEMA } from "../schemas.ts";
@@ -67,6 +68,7 @@ function resolverLaunch(
         "continue the rebase as soon as each stopped commit is resolved, and commit each fix after it on its own with `pipeline_commit` as soon as it works",
       ),
     ),
+    NO_ARTIFICIAL_LOAD_RULE,
     handoffRule(budgets, handoffFile, KEEP_REBASE),
   );
   let name = `conflicts-${attempt}`;

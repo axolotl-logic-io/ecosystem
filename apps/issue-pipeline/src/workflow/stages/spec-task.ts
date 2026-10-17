@@ -1,7 +1,11 @@
 // The spec writer's task: what to read, the sections of `spec`, when and how
 // to split the issue, and the end marker it writes last.
 
-import { practicesNote, preamble } from "../prompts.ts";
+import {
+  NO_ARTIFICIAL_LOAD_RULE,
+  practicesNote,
+  preamble,
+} from "../prompts.ts";
 import type { IssueState } from "../types.ts";
 import { SPEC_END } from "./build-replies.ts";
 import type { StageContext, StageState } from "./types.ts";
@@ -51,6 +55,7 @@ function specTask(state: StageState, ctx: StageContext): string {
     "",
     `Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the project's coding practices (below); the wiki pages that bear on it${wikiStart(state)}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
     practicesNote(cfg, state, "spec"),
+    NO_ARTIFICIAL_LOAD_RULE,
     "`spec` is GitHub markdown with these sections:",
     "- **Behaviour**: what is true when the issue is done, as checkable statements.",
     "- **Out of scope**: what this issue does not change.",

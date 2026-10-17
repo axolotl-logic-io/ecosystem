@@ -2,7 +2,11 @@
 // Fixtures for driving the spec, implement and open-pr step machines directly:
 // a context with a fixed clock, issue #7's state at a stage, the signatures,
 // and the launches and tasks the sweep has always used.
-import { practicesNote, preamble } from "../src/workflow/prompts.ts";
+import {
+  NO_ARTIFICIAL_LOAD_RULE,
+  practicesNote,
+  preamble,
+} from "../src/workflow/prompts.ts";
 import { IMPL_SCHEMA, SPEC_SCHEMA } from "../src/workflow/schemas.ts";
 import { hasRoom, modelsWith } from "./workflow-context-test-kit.mjs";
 
@@ -141,6 +145,7 @@ function specTask(paths = PATHS) {
       "",
       `Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the project's coding practices (below); the wiki pages that bear on it${start}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
       practicesNote(CFG, item, "spec"),
+      NO_ARTIFICIAL_LOAD_RULE,
       "`spec` is GitHub markdown with these sections:",
       "- **Behaviour**: what is true when the issue is done, as checkable statements.",
       "- **Out of scope**: what this issue does not change.",
@@ -191,6 +196,7 @@ function implementTask(source) {
       `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${WIKI} add -A && git -C ${WIKI} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`,
       "Change lockfiles only through the package manager, never by hand.",
       "Scope doesn't limit you to the issue: fix anything broken you find while you work, such as bugs or flaky or broken tests and checks, including breakage on integration, and simplify, remove code smells or refactor the code you work in so the change has a better design. Keep the issue's change the main one, commit each such fix or improvement as its own commit with a message that says what it does and why, keep the tests passing, and name each one in `prBody`.",
+      NO_ARTIFICIAL_LOAD_RULE,
       "",
       "Commit often, in small working steps: commit each step with `git add -A && git commit` and a clear message as soon as it builds and its tests pass, ending each message with the trailer line `Pipeline-Agent: implementer`. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.",
       `Context limits: at 175000 tokens of context, if the work isn't done, wrap up: finish the edit you are in the middle of and start no new ones, make it build and commit it, then write ${HANDOFF} as a summary for the next round (what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass), and return status \`handoff\`. The next session starts from your summary alone. At 225000 tokens of context the session is stopped.`,

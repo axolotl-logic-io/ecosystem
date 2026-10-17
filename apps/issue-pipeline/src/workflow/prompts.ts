@@ -200,6 +200,14 @@ function beyondIssueRule(base: string, nameIn: string): string {
   return `Scope doesn't limit you to the issue: fix anything broken you find while you work, such as bugs or flaky or broken tests and checks, including breakage on ${base}, and simplify, remove code smells or refactor the code you work in so the change has a better design. Keep the issue's change the main one, commit each such fix or improvement as its own commit with a message that says what it does and why, keep the tests passing, and name each one in ${nameIn}.`;
 }
 
+// The rule every writer task carries, once and word for word, against making
+// artificial load on the machine the jobs share (writers-make-no-load, #409):
+// no CPU burners, flake hunts by rerunning, runs that outlive their command or
+// second copies of the app or test database; a suspected load or timing flake
+// is reasoned from the logs and reported, not reproduced. Readers don't get it.
+const NO_ARTIFICIAL_LOAD_RULE: string =
+  "The machine you run on is shared with other issues' jobs, so don't create artificial load on it: no busy loops, stress tools or any other process whose only purpose is to use CPU; no repeated runs of a test or the whole suite to find out whether it flakes; no background or detached runs that outlive the command that started them; and no second copy of the app or the test database beside the job's own. Instead, reason from the failing run's logs and timings, run each failing test file once, in the foreground, and stop a command that hasn't ended after the repo's configured timeout. If you suspect a load or timing flake, report it in your reply with the evidence from the logs, and don't reproduce it.";
+
 // What a writer session does once its context passes `limits.softLimit`
 // (config contextLimits.soft) before the work is done (wrap-up-at-175k, Axlog,
 // 2026-10-17): it finishes the edit it is in, `keep` says what it keeps of its
@@ -228,6 +236,7 @@ export {
   FORBIDDEN_GIT,
   handoffLead,
   handoffRule,
+  NO_ARTIFICIAL_LOAD_RULE,
   practicesNote,
   preamble,
   specText,

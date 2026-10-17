@@ -11,6 +11,7 @@ import {
   commitRulesOf,
   handoffLead,
   handoffRule,
+  NO_ARTIFICIAL_LOAD_RULE,
   practicesNote,
   preamble,
 } from "../../workflow/prompts.ts";
@@ -187,6 +188,7 @@ function workLines(item: SpecItem, budgets: Budgets): string[] {
     "Before you reply, commit to the issue's branch a stub at its `where` for each `new` interface that doesn't exist yet (its call shape, with a body that only throws or returns a not-implemented error, so the code builds and type-checks), and failing tests for every Behaviour item through the listed interfaces, unless `noTestsReason` applies. Each test fails because the behaviour is missing, not on a syntax, import or type error.",
     "Make the spec's Wiki updates yourself, in the wiki checkout.",
     "Change only test files, those stubs and wiki pages; write no behaviour. `wikiOnly` is true only when the wiki pages you changed are the whole change, with `noTestsReason` set; otherwise false.",
+    NO_ARTIFICIAL_LOAD_RULE,
     ...commitRulesOf("pipeline_commit", {
       unit: "step",
       when: "as soon as it builds",

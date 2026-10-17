@@ -9,6 +9,7 @@ import {
   commitRulesOf,
   handoffLead,
   handoffRule,
+  NO_ARTIFICIAL_LOAD_RULE,
   practicesNote,
   preamble,
 } from "../prompts.ts";
@@ -76,6 +77,7 @@ function fixerLaunch(
     }),
     `Run the failing check locally, commit what is left and leave the worktree clean. Return \`cannot-fix\` only for a failure no change in the repo can fix: an outage of an outside service, missing secrets or credentials, or anything that needs the repo's owner. Say which in \`summary\`.`,
     beyondIssueRule(cfg.baseBranch, "`summary`, which is posted on the PR"),
+    NO_ARTIFICIAL_LOAD_RULE,
     handoffRule(budgets, handoffFile, "make it build and commit it"),
   ];
   if (job.continuation) {

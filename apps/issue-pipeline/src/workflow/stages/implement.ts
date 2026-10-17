@@ -14,6 +14,7 @@ import {
   commitRulesOf,
   handoffLead,
   handoffRule,
+  NO_ARTIFICIAL_LOAD_RULE,
   practicesNote,
   preamble,
   specText,
@@ -116,6 +117,7 @@ function implementTask(state: StageState, ctx: StageContext): string {
     wikiStep(state.paths.wiki, ctx.committer),
     "Change lockfiles only through the package manager, never by hand.",
     beyondIssueRule(cfg.baseBranch, "`prBody`"),
+    NO_ARTIFICIAL_LOAD_RULE,
     "",
     ...commitRulesOf(ctx.committer, {
       unit: "step",

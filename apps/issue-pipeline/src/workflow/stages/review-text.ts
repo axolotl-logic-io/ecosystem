@@ -10,6 +10,7 @@ import {
   commitRulesOf,
   handoffLead,
   handoffRule,
+  NO_ARTIFICIAL_LOAD_RULE,
   practicesNote,
   preamble,
   specText,
@@ -166,6 +167,7 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
         clearMessage: false,
       }),
       beyondIssueRule(cfg.baseBranch, "`summary`, which is posted on the PR"),
+      NO_ARTIFICIAL_LOAD_RULE,
       "Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
       handoffRule(budgets, handoffFile, "make it build and commit it"),
     ])
