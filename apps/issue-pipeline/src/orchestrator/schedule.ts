@@ -3,7 +3,6 @@
 // held. Pure: the snapshot carries everything it reads, so recorded snapshots
 // test it with no clock, files or processes.
 
-import { fileSetsOverlap } from "../globs.ts";
 import type {
   ScheduleSettings,
   Snapshot,
@@ -13,13 +12,12 @@ import type {
 import {
   byAge,
   byStageThenAge,
-  fileSet,
+  changesStub,
   isLive,
   isLiveImplementation,
   isStopped,
   mergeHolders,
   mergeRank,
-  queueRank,
   runStage,
   stageIndex,
   startReason,
@@ -86,28 +84,24 @@ function capReason(
   return null;
 }
 
-// The oldest live implementation whose files overlap the issue's: any for an
-// implement, but for a live issue's fix, sync or checks only an older one that
-// doesn't merge after it, so a queued writer never waits on a later one. No
-// cycle forms with the merge order: a merge waits only for higher-ranked
-// issues at accept, security or merge, which are readers held only by caps or
-// merges held only by issues ranked further ahead, never for a writer. An
-// issue and its prerequisite never hold each other.
+// For an implement, the oldest live implementation whose branch changes one
+// of its stub files (#390). Only an implement is gated on files: overlap that
+// shows up later is the start sync's and the conflict resolver's. An issue
+// and its prerequisite never hold each other.
 function overlapReason(
   count: TickCount,
   issue: SnapshotIssue,
   stage: string,
 ): string | null {
+  if (stage !== "implement") {
+    return null;
+  }
   const blocker = count.implementations
     .filter(
       (other) =>
         other.number !== issue.number &&
         !stackPartners(issue, other) &&
-        (stage === "implement" ||
-          (byAge(other, issue) < 0 &&
-            queueRank(count.queue, other.number) <=
-              queueRank(count.queue, issue.number))) &&
-        fileSetsOverlap(fileSet(other), fileSet(issue)),
+        changesStub(issue, other),
     )
     .sort(byAge)
     .at(0);

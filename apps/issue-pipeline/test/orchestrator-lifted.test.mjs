@@ -31,12 +31,13 @@ const { tick } = await import("../src/orchestrator/tick.ts");
 
 /** @import { Config } from "../src/config.ts" */
 /** @import { ScheduleSettings, Snapshot, SnapshotIssue } from "../src/orchestrator/queue.ts" */
+/** @import { IssueFields } from "./orchestrator-fixtures.mjs" */
 
 const REVIEW_JOB = { live: true, stage: "review" };
 
 // An issue saved at `stopped` after a stop in `stoppedStage`, its stop label
 // gone, then `fields`.
-/** @param {string} stoppedStage @param {Partial<SnapshotIssue> & { number: number }} fields @returns {SnapshotIssue} */
+/** @param {string} stoppedStage @param {IssueFields & { number: number }} fields @returns {SnapshotIssue} */
 function lifted(stoppedStage, fields) {
   return issue({ stage: "stopped", stoppedStage, ...fields });
 }
@@ -71,28 +72,33 @@ test("a lifted issue starts at its stopped stage with reason lifted", () => {
 
 test("a lifted issue is held at the global cap like any other start", () => {
   const snapshot = snapshotOf([
-    lifted("checks", { number: 1, pr: 5, files: ["a.ts"] }),
-    issue({ number: 2, stage: "review", job: REVIEW_JOB, files: ["b.ts"] }),
-    issue({ number: 3, stage: "review", job: REVIEW_JOB, files: ["c.ts"] }),
+    lifted("checks", { number: 1, pr: 5, changed: ["a.ts"] }),
+    issue({ number: 2, stage: "review", job: REVIEW_JOB, changed: ["b.ts"] }),
+    issue({ number: 3, stage: "review", job: REVIEW_JOB, changed: ["c.ts"] }),
   ]);
   assert.deepEqual(decided(snapshot, CAPPED), ["#1 checks held global-cap"]);
 });
 
-test("a lifted writer waits on an older overlapping implementation ranked ahead of it", () => {
+test("a lifted checks isn't held by an older live branch ranked ahead of it that changes its stub", () => {
   const snapshot = snapshotOf([
-    issue({ number: 1, stage: "sync", pr: 4, files: ["src/**"] }),
-    lifted("checks", { number: 2, pr: 5, files: ["src/a.ts"] }),
+    issue({ number: 1, stage: "sync", pr: 4, changed: ["src/a.ts"] }),
+    lifted("checks", {
+      number: 2,
+      pr: 5,
+      stubs: ["src/a.ts"],
+      changed: ["src/a.ts"],
+    }),
   ]);
   assert.deepEqual(decided(snapshot), [
-    "#2 checks held files-overlap:#1",
+    "#2 checks started lifted",
     "#1 sync started free",
   ]);
 });
 
-test("a lifted issue past implement holds a younger implement over its files", () => {
+test("a lifted issue past implement holds a younger implement whose stub its branch changes", () => {
   const snapshot = snapshotOf([
-    lifted("fix", { number: 1, pr: 5, files: ["src/**"] }),
-    issue({ number: 2, stage: "implement", files: ["src/b.ts"] }),
+    lifted("fix", { number: 1, pr: 5, changed: ["src/b.ts"] }),
+    issue({ number: 2, stage: "implement", stubs: ["src/b.ts"] }),
   ]);
   assert.deepEqual(decided(snapshot), [
     "#1 fix started lifted",
@@ -102,8 +108,8 @@ test("a lifted issue past implement holds a younger implement over its files", (
 
 test("a lifted merge ranked first starts with the merge queue", () => {
   const snapshot = snapshotOf([
-    lifted("merge", { number: 1, pr: 5, files: ["a.ts"] }),
-    issue({ number: 2, stage: "checks", pr: 6, files: ["b.ts"] }),
+    lifted("merge", { number: 1, pr: 5, changed: ["a.ts"] }),
+    issue({ number: 2, stage: "checks", pr: 6, changed: ["b.ts"] }),
   ]);
   assert.deepEqual(decided(snapshot), [
     "#1 merge started lifted queue:#1,#2",
@@ -113,8 +119,8 @@ test("a lifted merge ranked first starts with the merge queue", () => {
 
 test("a lifted merge waits for a higher-ranked issue at accept", () => {
   const snapshot = snapshotOf([
-    lifted("merge", { number: 1, pr: 41, files: ["a.ts"] }),
-    issue({ number: 2, stage: "accept", pr: 40, files: ["b.ts"] }),
+    lifted("merge", { number: 1, pr: 41, changed: ["a.ts"] }),
+    issue({ number: 2, stage: "accept", pr: 40, changed: ["b.ts"] }),
   ]);
   assert.deepEqual(decided(snapshot), [
     "#1 merge held merge-order:#2",
@@ -124,8 +130,8 @@ test("a lifted merge waits for a higher-ranked issue at accept", () => {
 
 test("a lifted issue at accept holds the merges ranked after it", () => {
   const snapshot = snapshotOf([
-    issue({ number: 1, stage: "merge", pr: 41, files: ["a.ts"] }),
-    lifted("accept", { number: 2, pr: 40, files: ["b.ts"] }),
+    issue({ number: 1, stage: "merge", pr: 41, changed: ["a.ts"] }),
+    lifted("accept", { number: 2, pr: 40, changed: ["b.ts"] }),
   ]);
   assert.deepEqual(decided(snapshot), [
     "#1 merge held merge-order:#2",

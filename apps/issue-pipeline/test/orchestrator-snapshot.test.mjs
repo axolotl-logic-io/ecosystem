@@ -32,11 +32,12 @@ const JOB = {
 };
 const PR = 70;
 const CLOSED = 99;
-// An issue's facts with none of its own: no stopped stage, files, PR, after
-// mark, stop, job, stack or prerequisite.
+// An issue's facts with none of its own: no stopped stage, stub files,
+// changed files, PR, after mark, stop, job, stack or prerequisite.
 const BASE = {
   stoppedStage: null,
-  files: null,
+  stubs: [],
+  changed: null,
   pr: null,
   after: [],
   stopped: false,
@@ -61,7 +62,7 @@ function started(issue, pid) {
   return { issue, stage: "spec", pid, at: NOW.toISOString() };
 }
 
-test("each open issue carries the sweep's verdict, its saved stage, files and PR, and its open after marks", () => {
+test("each open issue carries the sweep's verdict, its saved stage and PR, and its open after marks, but no saved files", () => {
   openWith([
     { number: ISSUE.fresh },
     {
@@ -105,7 +106,6 @@ test("each open issue carries the sweep's verdict, its saved stage, files and PR
       number: ISSUE.elsewhere,
       verdict: { kind: "live-elsewhere", lane: "other" },
       stage: "implement",
-      files: ["src/a.ts"],
       pr: PR,
     },
     {

@@ -16,11 +16,12 @@ import { openIssues } from "../ops/sweep.ts";
 import type { IssueRow, SweepContext } from "../ops/sweep-verdict.ts";
 import { afterDeps, classify, liveLease } from "../ops/sweep-verdict.ts";
 import { OpsError } from "../process.ts";
+import { interfacesOf } from "../roles/spec-writer/reply.ts";
 import { prereqBehind, prereqMerged } from "../stack.ts";
 import type { State } from "../state.ts";
 import { readState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
-import { filesOf } from "../workflow/files-line.ts";
+import { readBranchChanges } from "./branch-changes.ts";
 import type { StartRecord } from "./ledger.ts";
 import type { IssueJob, IssueVerdict, Prereq, SnapshotIssue } from "./queue.ts";
 import { isStopped } from "./queue.ts";
@@ -112,6 +113,14 @@ function numberOr(value: unknown): number | null {
   return null;
 }
 
+// The `where` of each `new` interface the saved state names, or none when it
+// names none or they are malformed.
+function stubsOf(state: State | null): string[] {
+  const { interfaces } = state ?? {};
+  const saved = interfacesOf(interfaces) ?? [];
+  return saved.filter((i) => i.status === "new").map((i) => i.where);
+}
+
 function issueOf(
   ctx: SweepContext,
   row: IssueRow,
@@ -128,7 +137,8 @@ function issueOf(
     verdict: verdictOf(ctx, row, state),
     stage: state?.stage ?? null,
     stoppedStage: state?.stoppedStage ?? null,
-    files: filesOf(state?.files, row.body),
+    stubs: stubsOf(state),
+    changed: null,
     pr: numberOr(state?.pr),
     after: afterDeps(row.body).filter((n) => ctx.openNumbers.has(n)),
     stopped: row.labels.some((label) => isStopLabel(label.name)),
@@ -281,6 +291,7 @@ function readQueue(
     const closed = closedAfter.get(issue.number) ?? [];
     issue.prereq = prereqOf(cfg, issue, queue, closed);
   }
+  readBranchChanges(cfg, queue.issues);
   return queue;
 }
 

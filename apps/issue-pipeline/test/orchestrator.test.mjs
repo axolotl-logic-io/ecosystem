@@ -1,7 +1,8 @@
 // @ts-check
 // The orchestrator's scheduler (#234) on recorded queue snapshots: readers
-// run in parallel up to the caps, writers wait on overlapping files, merges
-// go in the order of what they unblock, and the rate limit holds every start.
+// run in parallel up to the caps, an implement waits on a live branch that
+// changes its stub files (#390), merges go in the order of what they
+// unblock, and the rate limit holds every start.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mergeRank } from "../src/orchestrator/queue.ts";
@@ -9,9 +10,9 @@ import { schedule } from "../src/orchestrator/schedule.ts";
 import {
   CAPPED,
   IMPLEMENTS,
-  LEGACY_FIXES,
   MERGE_BY_AFTER,
-  MERGE_BY_FILES,
+  MERGE_BY_NEITHER,
+  MERGE_BY_STUBS,
   MERGE_LIVE,
   MERGE_NOT_WAITING,
   MERGE_OVER_CHAIN,
@@ -26,8 +27,6 @@ import {
   SPECS,
   snapshotOf,
   TOKENS_PER_HOUR,
-  TWO_IMPLEMENTS,
-  WHOLE_REPO_LIVE,
 } from "./orchestrator-fixtures.mjs";
 
 /** @import { ScheduleSettings, Snapshot } from "../src/orchestrator/queue.ts" */
@@ -91,32 +90,11 @@ test("starts beyond maxJobs are held at the global cap", () => {
   ]);
 });
 
-test("an implement overlapping a live implementation waits; a disjoint one starts", () => {
+test("an implement whose stub a live branch changes waits; one whose stubs no branch changes starts", () => {
   assert.deepEqual(decided(IMPLEMENTS), [
     "#10 review started free",
     "#11 implement held files-overlap:#10",
     "#12 implement started free",
-  ]);
-});
-
-test("a live implementation without st.files holds every implement", () => {
-  assert.deepEqual(decided(WHOLE_REPO_LIVE), [
-    "#20 review started free",
-    "#21 implement held files-overlap:#20",
-  ]);
-});
-
-test("of two overlapping implements in one tick, the first starts and holds the second", () => {
-  assert.deepEqual(decided(TWO_IMPLEMENTS), [
-    "#22 implement started free",
-    "#23 implement held files-overlap:#22",
-  ]);
-});
-
-test("two live overlapping issues at fix: the older starts, so neither deadlocks", () => {
-  assert.deepEqual(decided(LEGACY_FIXES), [
-    "#30 fix started free",
-    "#31 fix held files-overlap:#30",
   ]);
 });
 
@@ -131,8 +109,12 @@ test("the merge an issue's after mark waits for ranks first", () => {
   ]);
 });
 
-test("the merge a waiting issue's files overlap ranks first", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_BY_FILES.issues)), ["#40", "#41"]);
+test("the merge whose branch changes a waiting issue's stub ranks first", () => {
+  assert.deepEqual(ranked(mergeRank(MERGE_BY_STUBS.issues)), ["#40", "#41"]);
+});
+
+test("a waiting issue whose stubs no ranked branch changes adds to no merge's rank", () => {
+  assert.deepEqual(ranked(mergeRank(MERGE_BY_NEITHER.issues)), ["#41", "#40"]);
 });
 
 test("issues past implement, stopped or live don't count toward a merge's rank", () => {
@@ -161,12 +143,12 @@ test("an older merge doesn't hold the writer ranked ahead of it", () => {
   ]);
 });
 
-test("an older unqueued writer doesn't hold the queue's first, so no chain deadlocks", () => {
+test("a fix isn't held by an older live branch that changes its stub, so no chain deadlocks", () => {
   assert.deepEqual(ranked(mergeRank(MERGE_OVER_CHAIN.issues)), ["#85", "#83"]);
   assert.deepEqual(decided(MERGE_OVER_CHAIN), [
     "#83 merge started merge-first queue:#85,#83",
     "#85 sync started free",
-    "#84 fix held files-overlap:#83",
+    "#84 fix started free",
     "#86 spec started free",
   ]);
 });
@@ -210,7 +192,8 @@ test("a merge waits for the first issue at a holding stage, not the queue's top 
 // Every merge fixture, and each stage an issue ranked ahead of a merge is at.
 const MERGE_SNAPSHOTS = [
   MERGE_BY_AFTER,
-  MERGE_BY_FILES,
+  MERGE_BY_STUBS,
+  MERGE_BY_NEITHER,
   MERGE_NOT_WAITING,
   MERGE_TIE,
   MERGE_LIVE,

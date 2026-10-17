@@ -165,7 +165,7 @@ test("a prerequisite closed unmerged holds its stacked dependent", () => {
   ]);
 });
 
-test("a stacked issue's implement and fix aren't held by its prerequisite's overlapping files", () => {
+test("a stacked issue's implement and fix aren't held by its prerequisite's branch changing their stub", () => {
   assert.deepEqual(decided(overlapping("implement")), [
     `#${PREREQ} fix started free`,
     `#${DEPENDENT} implement started free`,
@@ -186,7 +186,7 @@ test("with no after mark and no stack, the decisions are as before and none stac
   assert.deepEqual(decided(MERGE_OVER_CHAIN), [
     "#83 merge started merge-first",
     "#85 sync started free",
-    "#84 fix held files-overlap:#83",
+    "#84 fix started free",
     "#86 spec started free",
   ]);
   const stacks = schedule(MERGE_OVER_CHAIN, SETTINGS, NOW).flatMap(
@@ -197,5 +197,5 @@ test("with no after mark and no stack, the decisions are as before and none stac
       return [];
     },
   );
-  assert.deepEqual(stacks, [null, null, null]);
+  assert.deepEqual(stacks, [null, null, null, null]);
 });

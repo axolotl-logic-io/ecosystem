@@ -1,10 +1,10 @@
 // The queue the orchestrator schedules (#234): the snapshot of the open
 // issues and their jobs, what each issue's facts mean (the stage its next job
-// runs, its file set, whether it is live, waiting, stopped, lifted after a
-// stop (#381) or a live implementation), the order the merge-ready issues
-// should merge in, and which of them hold the merges ranked after them. Pure.
+// runs, whether a live branch changes one of its stub files, whether it is
+// live, waiting, stopped, lifted after a stop (#381) or a live
+// implementation), the order the merge-ready issues should merge in, and
+// which of them hold the merges ranked after them. Pure.
 
-import { fileSetsOverlap } from "../globs.ts";
 import { HOLDING_STAGES, READY_STAGES } from "../ops/merge-order.ts";
 import { resumesAfterStop } from "../resume-stage.ts";
 import { STAGE_ORDER } from "../workflow/sweep-config.ts";
@@ -61,8 +61,10 @@ interface SnapshotIssue {
   stage: string | null;
   // The stage a state saved at `stopped` stopped in, or null for none.
   stoppedStage: string | null;
-  // The paths or globs the spec says it touches (st.files).
-  files: readonly string[] | null;
+  // Its stub files: the `where` of each `new` interface its state saves.
+  stubs: readonly string[];
+  // The files its branch changes, for a live implementation; null unread.
+  changed: readonly string[] | null;
   pr: number | null;
   // The issues its after mark names.
   after: readonly number[];
@@ -96,7 +98,6 @@ const WRITERS: ReadonlySet<string> = new Set([
   "sync",
   "checks",
 ]);
-const WHOLE_REPO: readonly string[] = ["**"];
 
 // The stage's place in STAGE_ORDER, or -1 for another stage (stopped, done).
 function stageIndex(stage: string): number {
@@ -144,11 +145,11 @@ function startReason(issue: SnapshotIssue, stage: string): StartReason {
   return "free";
 }
 
-function fileSet(issue: SnapshotIssue): readonly string[] {
-  if (issue.files === null || issue.files.length === 0) {
-    return WHOLE_REPO;
-  }
-  return issue.files;
+// True when `other`'s branch changes one of `issue`'s stub files (#390);
+// false when its changes weren't read.
+function changesStub(issue: SnapshotIssue, other: SnapshotIssue): boolean {
+  const { changed } = other;
+  return changed !== null && issue.stubs.some((stub) => changed.includes(stub));
 }
 
 function isLive(issue: SnapshotIssue): boolean {
@@ -194,8 +195,7 @@ function dependents(
   return waiting.filter(
     (issue) =>
       issue.number !== candidate.number &&
-      (issue.after.includes(candidate.number) ||
-        fileSetsOverlap(fileSet(issue), fileSet(candidate))),
+      (issue.after.includes(candidate.number) || changesStub(issue, candidate)),
   ).length;
 }
 
@@ -259,16 +259,6 @@ function mergeHolders(issues: readonly SnapshotIssue[]): number[] {
   return mergeRank(issues).filter((number) => holding.has(number));
 }
 
-// Issue #number's place in a ranked merge queue, or infinity when it isn't
-// queued.
-function queueRank(queue: readonly number[], number: number): number {
-  const at = queue.indexOf(number);
-  if (at < 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return at;
-}
-
 export type {
   IssueJob,
   IssueVerdict,
@@ -283,13 +273,12 @@ export {
   awaitsPrereq,
   byAge,
   byStageThenAge,
-  fileSet,
+  changesStub,
   isLive,
   isLiveImplementation,
   isStopped,
   mergeHolders,
   mergeRank,
-  queueRank,
   runStage,
   stageIndex,
   startReason,
