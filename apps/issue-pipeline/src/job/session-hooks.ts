@@ -7,7 +7,7 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import type { RunArgs } from "./args.ts";
 import { contextLogOf } from "./context-log.ts";
-import type { Control, LiveLaunch } from "./control.ts";
+import type { Control, LiveHandle } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { commitEnvOf } from "./pipeline-commit.ts";
 import type { EnvSource } from "./roles.ts";
@@ -37,11 +37,9 @@ function hooksOf(
   return {
     sessionFile: (key: string): string => paths.session(cfg, args.issue, key),
     resumePoint,
-    started: (launch: LaunchStart, live: LiveLaunch | null): void => {
+    started: (launch: LaunchStart, live: LiveHandle): void => {
       status.started(launch);
-      if (live !== null) {
-        control.register(live);
-      }
+      control.register(live);
     },
     record: status.record,
     ended: status.ended,

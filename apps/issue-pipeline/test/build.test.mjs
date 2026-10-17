@@ -1,7 +1,7 @@
 // @ts-check
 // build.ts into a temporary folder: the built workflow is still an async
-// function body with no imports, and the built ops CLI answers as src/ops.ts
-// does, the built orchestrator's --once exits 0 after a tick and 1 after
+// function body with no imports, the built ops CLI answers as src/ops.ts
+// does and its shell supervisor parses, the built orchestrator's --once exits 0 after a tick and 1 after
 // one that throws, and the built report names a missing --config. It builds into its own folder, so it never races install.test.mjs,
 // which builds dist/.
 import assert from "node:assert/strict";
@@ -95,6 +95,14 @@ test("the built ops parses and keeps its #! line", () => {
   assert.ok(
     fs.readFileSync(builtOps, "utf8").startsWith("#!/usr/bin/env node\n"),
   );
+});
+
+test("the build writes the shell supervisor beside ops, and it parses", () => {
+  const supervisor = path.join(tmp, "shell-supervisor.mjs");
+  const r = spawnSync(process.execPath, ["--check", supervisor], {
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
 });
 
 // Inputs the ops CLI answers without running an op, by name.

@@ -1,10 +1,12 @@
 // How a running stage job is controlled from outside: its live pi sessions
-// by launch key, the local socket that steers them (`job.mjs --steer`) and
-// takes its writer sessions' push requests (`pipeline_commit`), and the stop
-// that SIGTERM or SIGINT begins, which aborts every live session, gives each
-// STOP_GRACE_MS to exit and then kills it. This module alone listens on the
-// socket and handles signals; control-protocol.ts holds its requests and
-// clients.
+// by launch key and its live ops children, the local socket that steers the
+// sessions (`job.mjs --steer`) and takes its writer sessions' push requests
+// (`pipeline_commit`), and the stop that SIGTERM or SIGINT begins. The stop
+// aborts every live session, gives each STOP_GRACE_MS to exit and then kills
+// its process group, and sends SIGTERM to the process group of every ops
+// child live at that moment, and SIGKILL to one that hasn't exited within
+// STOP_GRACE_MS (#371). This module alone listens on the socket and handles
+// signals; control-protocol.ts holds its requests and clients.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -13,12 +15,18 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { endGroup } from "../process-group.ts";
 import type { PushReply, SteerReply } from "./control-protocol.ts";
 import { CONTROL_REQUEST } from "./control-protocol.ts";
+import type { OpsProcess } from "./ops-process.ts";
 import type { RpcAnswer, RpcProcess } from "./rpc.ts";
 import type { StopSignal } from "./status.ts";
 
-// How long a session has to exit after its abort before it is killed.
+// How long a session has to exit after its abort, and an ops child or a
+// timed-out launch after its SIGTERM, before its process group is killed. It
+// must stay above SHELL_KILL_GRACE_MS (src/shell-protocol.ts), so that the
+// shell supervisor of an op stopped mid-command ends the command's group
+// before this SIGKILL reaches the supervisor.
 const STOP_GRACE_MS = 5000;
 // The longest socket path every platform takes: macOS's sun_path is 104
 // bytes with its terminating zero, Linux's 108.
@@ -34,12 +42,18 @@ interface LiveLaunch extends RpcProcess {
   key: string;
 }
 
+// A live launch: a pi session, or an ops child.
+type LiveHandle =
+  | { kind: "session"; session: LiveLaunch }
+  | { kind: "ops"; ops: OpsProcess };
+
 interface Control {
   // The steer socket's path.
   socket: string;
-  // Keeps `launch` live, for steers and the stop, until it exits. A launch
-  // registered once the stop began is stopped.
-  register: (launch: LiveLaunch) => void;
+  // Keeps `live` live, a session for steers and the stop, an ops child for
+  // the stop, until it exits. A session registered once the stop began is
+  // stopped; an ops child is not, since the stop runs its own ops.
+  register: (live: LiveHandle) => void;
   // The signal that began the stop, or null while the job runs on.
   stopping: () => StopSignal | null;
   // Stops listening, removes the socket and the signal handlers.
@@ -58,7 +72,8 @@ function socketPathOf(runDir: string): string {
   return path.join(os.tmpdir(), name);
 }
 
-// Aborts `launch`, and kills it if it hasn't exited within the grace.
+// Aborts `launch`, and kills its process group if it hasn't exited within
+// the grace.
 async function stopLaunch(launch: LiveLaunch): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const graceUp = new Promise<boolean>((up: (exited: boolean) => void) => {
@@ -71,6 +86,14 @@ async function stopLaunch(launch: LiveLaunch): Promise<void> {
   }
   clearTimeout(timer);
   await Promise.all([answered, launch.exited]);
+}
+
+// Ends `ops`'s process group: SIGTERM, then SIGKILL if it hasn't exited
+// within the grace.
+async function stopOps(ops: OpsProcess): Promise<void> {
+  if (ops.pid !== null) {
+    await endGroup(ops.pid, ops.exited, STOP_GRACE_MS);
+  }
 }
 
 async function steerReply(
@@ -114,7 +137,7 @@ async function replyTo(
 }
 
 function unreachable(value: never): never {
-  throw new Error(`job: unexpected request ${JSON.stringify(value)}`);
+  throw new Error(`job: unexpected ${JSON.stringify(value)}`);
 }
 
 // Reads one request line from `connection` and answers it. A push is
@@ -151,41 +174,80 @@ function listen(server: net.Server, socket: string): Promise<void> {
   });
 }
 
+// The job's live launches: its sessions by key and its ops children.
+interface LiveSet {
+  sessions: ReadonlyMap<string, LiveLaunch>;
+  // Keeps `live` until it exits, stopping a session at once if `stopping`.
+  add: (live: LiveHandle, stopping: boolean) => void;
+  // Stops every launch live now.
+  stopAll: () => Promise<unknown>;
+}
+
+function liveSetOf(): LiveSet {
+  const sessions = new Map<string, LiveLaunch>();
+  const ops = new Set<OpsProcess>();
+  function addSession(launch: LiveLaunch, stopping: boolean): void {
+    sessions.set(launch.key, launch);
+    if (stopping) {
+      stopLaunch(launch).catch(() => null);
+    }
+    launch.exited
+      .then((): boolean => sessions.delete(launch.key))
+      .catch(() => null);
+  }
+  function addOps(child: OpsProcess): void {
+    ops.add(child);
+    child.exited.then((): boolean => ops.delete(child)).catch(() => null);
+  }
+  return {
+    sessions,
+    add: (live: LiveHandle, stopping: boolean): void => {
+      switch (live.kind) {
+        case "session":
+          addSession(live.session, stopping);
+          return;
+        case "ops":
+          addOps(live.ops);
+          return;
+        default:
+          unreachable(live);
+      }
+    },
+    stopAll: (): Promise<unknown> =>
+      Promise.all([
+        ...[...sessions.values()].map(stopLaunch),
+        ...[...ops].map(stopOps),
+      ]),
+  };
+}
+
 // Opens the job's control for its run folder: listens on its socket, after
 // removing a stale one, answering push requests through `onPush`, and stops
-// the live sessions on SIGTERM or SIGINT. A second signal while stopping
-// changes nothing.
+// the live sessions and ops children on SIGTERM or SIGINT. A second signal
+// while stopping changes nothing.
 async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
   const socket = socketPathOf(runDir);
-  const launches = new Map<string, LiveLaunch>();
+  const live = liveSetOf();
   let signal: StopSignal | null = null;
   function onSignal(received: StopSignal): void {
     if (signal !== null) {
       return;
     }
     signal = received;
-    Promise.all([...launches.values()].map(stopLaunch)).catch(() => null);
+    live.stopAll().catch(() => null);
   }
   for (const name of SIGNALS) {
     process.on(name, onSignal);
   }
   const server = net.createServer((connection: net.Socket): void =>
-    serve(connection, launches, onPush),
+    serve(connection, live.sessions, onPush),
   );
   fs.mkdirSync(path.dirname(socket), { recursive: true });
   fs.rmSync(socket, { force: true });
   await listen(server, socket);
   return {
     socket,
-    register: (launch: LiveLaunch): void => {
-      launches.set(launch.key, launch);
-      if (signal !== null) {
-        stopLaunch(launch).catch(() => null);
-      }
-      launch.exited
-        .then((): boolean => launches.delete(launch.key))
-        .catch(() => null);
-    },
+    register: (launch: LiveHandle): void => live.add(launch, signal !== null),
     stopping: (): StopSignal | null => signal,
     close: (): void => {
       for (const name of SIGNALS) {
@@ -197,5 +259,5 @@ async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
   };
 }
 
-export type { Control, LiveLaunch, OnPush };
-export { openControl, socketPathOf, stopLaunch };
+export type { Control, LiveHandle, LiveLaunch, OnPush };
+export { openControl, STOP_GRACE_MS, socketPathOf, stopLaunch };

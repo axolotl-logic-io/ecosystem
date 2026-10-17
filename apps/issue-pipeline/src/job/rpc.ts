@@ -3,11 +3,16 @@
 // responses to the commands it sent, and closes stdin, which shuts pi down,
 // once the run has settled or pi refused the prompt. While it runs, the
 // caller holds a handle that sends commands (abort, steer) and kills it.
+// pi starts in a process group of its own, and a kill or a timeout ends the
+// whole group, so the tools pi started end with it
+// (commands-leave-no-processes, #371).
 
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
 import type { Writable } from "node:stream";
 import { z } from "zod";
+import { endGroup, signalGroup } from "../process-group.ts";
+import { STOP_GRACE_MS } from "./control.ts";
 import type { ProcessExit } from "./raw-results.ts";
 
 const PI = "pi";
@@ -40,7 +45,7 @@ interface RpcProcess {
   pid: number | null;
   // Sends `command` and resolves to pi's answer; to a failure once pi ended.
   send: (command: RpcCommand) => Promise<RpcAnswer>;
-  // Signals pi unless it has already exited.
+  // Signals pi's process group unless pi has already exited.
   kill: (signal: NodeJS.Signals) => void;
   // Resolves once pi has exited.
   exited: Promise<void>;
@@ -156,16 +161,16 @@ function framerOf(onLine: (line: string) => void): {
 function handleOf(
   child: ChildProcessWithoutNullStreams,
   channel: Channel,
+  exited: Promise<void>,
 ): RpcProcess {
-  const exited = new Promise<void>((done: () => void): void => {
-    child.on("close", (): void => done());
-  });
+  const pid = child.pid ?? null;
   return {
-    pid: child.pid ?? null,
+    pid,
     send: (command: RpcCommand): Promise<RpcAnswer> => channel.send(command),
     kill: (signal: NodeJS.Signals): void => {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill(signal);
+      const running = child.exitCode === null && child.signalCode === null;
+      if (running && pid !== null) {
+        signalGroup(pid, signal);
       }
     },
     exited,
@@ -189,6 +194,10 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
       stdio: "pipe",
       detached: true,
     });
+    const pid = child.pid ?? null;
+    const exited = new Promise<void>((done: () => void): void => {
+      child.on("close", (): void => done());
+    });
     const channel = channelOf(child.stdin);
     const framer = framerOf((line: string): void => {
       exit.stdout += `${line}\n`;
@@ -200,7 +209,9 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
     });
     const timer = setTimeout((): void => {
       exit.timedOut = true;
-      child.kill("SIGTERM");
+      if (pid !== null) {
+        endGroup(pid, exited, STOP_GRACE_MS).catch(() => null);
+      }
     }, run.timeoutMs);
     function noteError(error: Error): void {
       exit.stderr += `${PI}: ${error.message}\n`;
@@ -219,7 +230,7 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
       channel.endAll();
       resolve({ ...exit, code });
     });
-    run.onSpawn(handleOf(child, channel));
+    run.onSpawn(handleOf(child, channel, exited));
     child.stdin.write(
       `${JSON.stringify({ id: PROMPT_ID, type: "prompt", message: run.prompt })}\n`,
     );

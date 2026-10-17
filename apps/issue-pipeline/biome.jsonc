@@ -75,6 +75,12 @@
     // commits, run the no-work tests, drop the spec draft and the handoff
     // file and reset the issue's branches, does (#334, #335); the role's pure
     // modules, such as coverage.ts, get none.
+    // src/shell-supervisor.ts is the entry `shell` (process.ts) runs for each
+    // command: it spawns bash in a process group of its own, handles the
+    // stop signals and prints its report. src/process-group.ts signals and
+    // lists process groups, for it, rpc.ts and the job's ops runner, and
+    // src/job/ops-process.ts spawns ops.mjs (#371). Their pure protocol,
+    // src/shell-protocol.ts, gets none.
     {
       "includes": [
         "install.mjs",
@@ -83,6 +89,8 @@
         "src/ops.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
+        "src/process-group.ts",
+        "src/shell-supervisor.ts",
         "src/config.ts",
         "src/comment-only.ts",
         "src/locks.ts",
@@ -103,6 +111,7 @@
         "src/ops/ci-status.ts",
         "src/job.ts",
         "src/job/launch.ts",
+        "src/job/ops-process.ts",
         "src/job/agent-definition.ts",
         "src/job/structured-output.ts",
         "src/job/args.ts",

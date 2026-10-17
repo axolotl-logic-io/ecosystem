@@ -1,15 +1,13 @@
 // One launch of the sweep, run as a child process by the stage job: an ops
-// request runs the installed ops.mjs with no model, and a model session runs
-// `pi` in RPC mode (src/job/rpc.ts) as the launch's installed agent, fresh or
-// resuming an interrupted session, a writer held to the config's
+// request runs the installed ops.mjs with no model (src/job/ops-process.ts),
+// and a model session runs `pi` in RPC mode (src/job/rpc.ts) as the launch's
+// installed agent, fresh or resuming an interrupted session, a writer held to the config's
 // contextLimits (src/job/context-watch.ts). Either way the launch resolves to
 // the raw result the sweep's driver reads; it never rejects. The job's hooks
 // hear of each session's start, records, stop at the hard limit and end.
 
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { ROOT } from "../pipeline-root.ts";
 import type { ChildSpec, LaunchSpec } from "../workflow/launches.ts";
 import type { AgentDefinition } from "./agent-definition.ts";
@@ -22,8 +20,10 @@ import type {
   WatchedEnd,
 } from "./context-watch.ts";
 import { contextStopped, watchContext } from "./context-watch.ts";
-import type { LiveLaunch } from "./control.ts";
-import type { OpsRaw, ProcessExit, SessionRaw } from "./raw-results.ts";
+import type { LiveHandle } from "./control.ts";
+import type { OpsProcess } from "./ops-process.ts";
+import { runOps } from "./ops-process.ts";
+import type { OpsRaw, SessionRaw } from "./raw-results.ts";
 import {
   failedSession,
   opsRaw,
@@ -50,8 +50,8 @@ interface LaunchHooks {
   sessionFile: (key: string) => string;
   // Where an interrupted session of launch `key` can carry on, if anywhere.
   resumePoint: (key: string) => ResumePoint | null;
-  // A launch started; `live` is its pi session, or null for an ops child.
-  started: (launch: LaunchStart, live: LiveLaunch | null) => void;
+  // A launch started; `live` is its pi session or its ops child.
+  started: (launch: LaunchStart, live: LiveHandle) => void;
   // Session `key` printed `record`.
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
@@ -72,55 +72,6 @@ interface LaunchHooks {
   cwd: string;
   // The job's code checkout, in its folder.
   repo: string;
-}
-
-// An ops command to run: its arguments, stdin and time limit, and the hook
-// told its pid once it starts.
-interface Command {
-  args: readonly string[];
-  input: string;
-  timeoutMs: number;
-  started: (pid: number | null) => void;
-}
-
-// Runs ops.mjs, writing its input to stdin, and stops it with SIGTERM once
-// its time is up. A command that can't start ends with code null and the
-// reason on stderr.
-function runCommand(command: Command): Promise<ProcessExit> {
-  const { args, input, timeoutMs } = command;
-  const program = process.execPath;
-  return new Promise((resolve: (exit: ProcessExit) => void): void => {
-    const exit: ProcessExit = {
-      code: null,
-      stdout: "",
-      stderr: "",
-      timedOut: false,
-    };
-    const child = spawn(program, args, { stdio: "pipe", detached: true });
-    command.started(child.pid ?? null);
-    const timer = setTimeout((): void => {
-      exit.timedOut = true;
-      child.kill("SIGTERM");
-    }, timeoutMs);
-    function noteError(error: Error): void {
-      exit.stderr += `${program}: ${error.message}\n`;
-    }
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string): void => {
-      exit.stdout += chunk;
-    });
-    child.stderr.on("data", (chunk: string): void => {
-      exit.stderr += chunk;
-    });
-    child.stdin.on("error", noteError);
-    child.on("error", noteError);
-    child.on("close", (code: number | null): void => {
-      clearTimeout(timer);
-      resolve({ ...exit, code });
-    });
-    child.stdin.end(input);
-  });
 }
 
 // Where a session starts: pi's arguments, the session file and the point it
@@ -202,7 +153,7 @@ async function runPi(
       const live = { key, ...rpc };
       const { contextLimits: limits, handoffFile } = hooks;
       watched.watch = watchContext({ limits, handoffFile }, spec.agent, live);
-      hooks.started(start, live);
+      hooks.started(start, { kind: "session", session: live });
     },
     onRecord: (record: unknown): void => {
       hooks.record(key, record);
@@ -270,21 +221,22 @@ async function runLaunch(
     return await runSession(spec, hooks);
   }
   const { key } = spec;
-  const exit = await runCommand({
+  const exit = await runOps({
+    key,
     args: [OPS_CLI],
     input: spec.task,
     timeoutMs: spec.timeoutMs,
-    started: (pid: number | null): void => {
+    started: (ops: OpsProcess): void => {
       const start: LaunchStart = {
         key,
         kind: "ops",
-        pid,
+        pid: ops.pid,
         session: null,
         resumed: false,
         usage: ZERO_USAGE,
         tokenBudget: null,
       };
-      hooks.started(start, null);
+      hooks.started(start, { kind: "ops", ops });
     },
   });
   hooks.ended(key);

@@ -2,9 +2,11 @@
 //
 //   node build.ts [outdir]   (outdir defaults to dist/ in this folder)
 //
-// writes <outdir>/workflow.js, <outdir>/ops.mjs, <outdir>/job.mjs, its pi
-// extensions <outdir>/structured-output.mjs and <outdir>/pipeline-commit.mjs,
-// and the orchestrator and reports, the files the install copies. It prints nothing on success; on failure it prints esbuild's error to
+// writes <outdir>/workflow.js, <outdir>/ops.mjs, the shell supervisor ops
+// runs each command through (<outdir>/shell-supervisor.mjs), <outdir>/job.mjs,
+// its pi extensions <outdir>/structured-output.mjs and
+// <outdir>/pipeline-commit.mjs, and the orchestrator and reports, the files
+// the install copies. It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
 //
 // The workflow is the body of an async function that pi-subagents runs with
@@ -38,10 +40,12 @@ const WORKFLOW_RESULT = "sweep.summary()";
 const OPS_SOURCE = path.join(SOURCE_DIR, "ops.ts");
 const WORKFLOW_OUTPUT = "workflow.js";
 const OPS_OUTPUT = "ops.mjs";
-// The Node ES modules built from one entry each: the ops CLI, the stage job,
-// the job's pi extensions, the orchestrator and the reports.
+// The Node ES modules built from one entry each: the ops CLI and its shell
+// supervisor, the stage job, the job's pi extensions, the orchestrator and
+// the reports.
 const NODE_MODULES: ReadonlyMap<string, string> = new Map([
   [OPS_SOURCE, OPS_OUTPUT],
+  [path.join(SOURCE_DIR, "shell-supervisor.ts"), "shell-supervisor.mjs"],
   [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],
   [path.join(SOURCE_DIR, "orchestrate.ts"), "orchestrate.mjs"],
   [path.join(SOURCE_DIR, "report.ts"), "report.mjs"],

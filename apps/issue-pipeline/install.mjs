@@ -53,6 +53,7 @@ const DATE_PUNCTUATION = /[-:]/gu;
 const BUILT = [
   "workflow.js",
   "ops.mjs",
+  "shell-supervisor.mjs",
   "job.mjs",
   "orchestrate.mjs",
   "report.mjs",
