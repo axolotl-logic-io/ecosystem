@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import { gitIn } from "./git-state.ts";
+import { run } from "./process.ts";
 import { interfacesOf } from "./roles/spec-writer/reply.ts";
 import { missingSpecFiles } from "./spec-files.ts";
 import type { State } from "./state.ts";
@@ -22,13 +23,39 @@ const AFTER_SPEC: ReadonlySet<unknown> = new Set([
   "merge",
 ]);
 
-// The test and stub files the spec of a restart past spec documents that the
-// commit checked out at `wt` lacks; none for a start at an earlier stage. The
-// spec is read whole from spec.md when it was saved, and its stubs from its
-// saved `new` interfaces. Wiki pages, under
-// `wikiDir`, are not checked: the code checkout never tracks them.
+// The paths the commit `rev` tracks in the checkout at `wt`.
+function treeAt(wt: string, rev: string): string[] {
+  return lines(gitIn(wt, ["ls-tree", "-r", "--name-only", rev]));
+}
+
+// The paths the spec head `sha` tracks in the checkout at `wt`; none when
+// there is no spec head or the checkout can't resolve it.
+function specHeadTree(wt: string, sha: unknown): string[] {
+  if (typeof sha !== "string" || sha === "") {
+    return [];
+  }
+  const args = ["-C", wt, "ls-tree", "-r", "--name-only", "--end-of-options"];
+  const out = run("git", [...args, sha], { allowFail: true });
+  if (out.code !== 0) {
+    return [];
+  }
+  return lines(out.stdout);
+}
+
+function lines(text: string): string[] {
+  return text.split("\n").filter((line) => line !== "");
+}
+
+// The test and stub files the spec of a restart past spec documents that
+// neither the commit checked out at `wt` nor the spec head (the saved
+// `specTestsSha`) tracks; none for a start at an earlier stage. So a file the
+// branch deleted or moved since the spec head isn't missing (#408), and a
+// state with no spec head the checkout can resolve checks the checkout's
+// commit alone. The spec is read whole from spec.md when it was saved, and its
+// stubs from its saved `new` interfaces. Wiki pages, under `wikiDir`, are not
+// checked: the code checkout never tracks them.
 function specFilesMissing(wt: string, state: State, wikiDir: string): string[] {
-  const { spec, specFile, interfaces, stage } = state;
+  const { spec, specFile, interfaces, stage, specTestsSha } = state;
   if (!AFTER_SPEC.has(stage)) {
     return [];
   }
@@ -42,9 +69,7 @@ function specFilesMissing(wt: string, state: State, wikiDir: string): string[] {
   if (text === "") {
     return [];
   }
-  const tracked = gitIn(wt, ["ls-tree", "-r", "--name-only", "HEAD"])
-    .split("\n")
-    .filter((path) => path !== "");
+  const tracked = [...treeAt(wt, "HEAD"), ...specHeadTree(wt, specTestsSha)];
   return missingSpecFiles(
     text,
     interfacesOf(interfaces) ?? [],
