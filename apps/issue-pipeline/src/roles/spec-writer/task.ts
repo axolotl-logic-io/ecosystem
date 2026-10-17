@@ -188,6 +188,8 @@ function workLines(item: SpecItem, budgets: Budgets): string[] {
     "Before you reply, commit to the issue's branch a stub at its `where` for each `new` interface that doesn't exist yet (its call shape, with a body that only throws or returns a not-implemented error, so the code builds and type-checks), and failing tests for every Behaviour item through the listed interfaces, unless `noTestsReason` applies. Each test fails because the behaviour is missing, not on a syntax, import or type error.",
     "Make the spec's Wiki updates yourself, in the wiki checkout.",
     "Change only test files, those stubs and wiki pages; write no behaviour. `wikiOnly` is true only when the wiki pages you changed are the whole change, with `noTestsReason` set; otherwise false.",
+    "If your tests need a field or member an existing interface lacks, declare that interface `changed` in `interfaces`, with its file as `where`, and extend it there with type-only additions (fields or members of an interface, type alias or object type, optional properties, union members, `import type`, comments), removing no line; implementing it is the implementer's job.",
+    "Every new source file needs its own `new` interface entry, unless a declared stub imports it, directly or through other new files, by a relative import.",
     NO_ARTIFICIAL_LOAD_RULE,
     ...commitRulesOf("pipeline_commit", {
       unit: "step",

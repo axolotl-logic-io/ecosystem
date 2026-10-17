@@ -180,4 +180,4 @@ function commentOnlyChange(
   return sameWithoutComments(ts, { after, before, file });
 }
 
-export { commentOnlyChange };
+export { commentOnlyChange, DIRECTIVE_COMMENT, showFile, worktreeTypeScript };

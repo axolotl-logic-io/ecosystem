@@ -79,4 +79,4 @@ function missingSpecFiles(
   );
 }
 
-export { documentedFiles, missingSpecFiles };
+export { documentedFiles, LINE_ANCHOR, missingSpecFiles };

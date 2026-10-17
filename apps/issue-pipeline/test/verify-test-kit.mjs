@@ -2,7 +2,7 @@
 // Local git repos and an ops CLI caller for the tests of the check ops (verify,
 // ci-status) and of the spec writer's commit check. verifyKit(root) builds a
 // bare `origin.git` whose `integration` branch holds src/a.js ("old"),
-// .gitignore (node_modules) and README.md, and a clone of it at
+// .gitignore (node_modules), README.md and any extra files, and a clone of it at
 // <root>/clones/o__r, where the ops CLI looks for repo "o/r".
 // Not a test file: `node --test 'test/*.test.mjs'` doesn't run it.
 import { spawnSync } from "node:child_process";
@@ -91,10 +91,10 @@ function writeFiles(dir, files) {
   }
 }
 
-// The bare origin, a seed checkout that pushes to it, and the ops CLI's clone.
-// Returns the base commit.
-/** @param {string} root @param {string} seed @param {string} clone @returns {string} */
-function seedRepo(root, seed, clone) {
+// The bare origin, a seed checkout that pushes to it, and the ops CLI's clone,
+// with `extra` files in the base commit too. Returns the base commit.
+/** @param {string} root @param {string} seed @param {string} clone @param {Files} extra @returns {string} */
+function seedRepo(root, seed, clone, extra) {
   sh(
     `git init -q --bare -b integration ${root}/origin.git && git clone -q ${root}/origin.git ${seed} 2>/dev/null`,
   );
@@ -105,6 +105,7 @@ function seedRepo(root, seed, clone) {
     "src/a.js": "old\n",
     ".gitignore": "node_modules\n",
     "README.md": "# r\n",
+    ...extra,
   });
   sh(
     `cd ${seed} && git add -A && git commit -qm base && git push -q origin HEAD:integration`,
@@ -130,11 +131,12 @@ function writeConfig(root, n, commands, extra = {}) {
   return file;
 }
 
-/** @param {string} root @returns {VerifyKit} */
-function verifyKit(root) {
+// The repos under `root`, whose base commit also holds `extra` files.
+/** @param {string} root @param {Files} [extra] @returns {VerifyKit} */
+function verifyKit(root, extra = {}) {
   const seed = path.join(root, "seed");
   const clone = path.join(root, "clones", "o__r");
-  const base = seedRepo(root, seed, clone);
+  const base = seedRepo(root, seed, clone, extra);
   /** @param {number} n @returns {string} */
   function worktree(n) {
     return path.join(root, "work", "o__r", `issue-${n}`);

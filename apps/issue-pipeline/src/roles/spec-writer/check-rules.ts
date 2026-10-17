@@ -1,6 +1,8 @@
 // The spec writer's commit check's rules on what its commits changed: which
-// files may change, that tests change unless `noTestsReason` is set, that
-// something is left to build, and that the wiki change is clean. Pure: src/roles/spec-writer/check.ts reads the commits.
+// files may change (a `changed` interface's file only by type-only
+// additions, and a stub's added imports with it), that tests change unless
+// `noTestsReason` is set, that something is left to build, and that the wiki
+// change is clean. Pure: src/roles/spec-writer/check.ts reads the commits.
 
 import type { WikiChange, WikiProblem } from "../../wiki-check.ts";
 import { wikiProblems } from "../../wiki-check.ts";
@@ -23,35 +25,58 @@ interface Failure {
 }
 
 // What the commits changed: every file, the test files and the wiki pages
-// (as `<wiki dir>/<page>.md`), with the `new` interfaces' stub files, the prefix
-// every wiki page's path starts with, and the reply's `wikiOnly` and
-// `noTestsReason`.
+// (as `<wiki dir>/<page>.md`), with the `new` interfaces' stub files, the
+// added files those stubs import, the changed files that are the `where` of
+// a `changed` interface, the prefix every wiki page's path starts with, and
+// the reply's `wikiOnly` and `noTestsReason`.
 interface Facts {
   wikiOnly: boolean;
   noTestsReason: string | null;
   changed: readonly string[];
   tests: readonly string[];
   stubs: readonly string[];
+  helpers: readonly string[];
+  // Each changed file that is the `where` of a `changed` interface, with why
+  // its change is not type-only additions, or null when it is.
+  extended: ReadonlyMap<string, string | null>;
   wikiPages: readonly string[];
   wikiPrefix: string;
 }
 
-// Only test files, stubs and wiki pages change.
-function scopeFailure(facts: Facts): Failure | null {
-  const { changed, tests, stubs, wikiPrefix } = facts;
-  const outside = changed.find(
-    (file) =>
-      !(
-        tests.includes(file) ||
-        stubs.includes(file) ||
-        file.startsWith(wikiPrefix)
-      ),
-  );
-  if (outside !== undefined) {
-    const reason = `${outside} changed, but it is not a test file (testPathGlobs), the stub of a new interface or a wiki page`;
-    return { rule: "not-allowed", reason };
+// Why `file` may not change, or null when it may.
+function outsideReason(facts: Facts, file: string): string | null {
+  const { tests, stubs, helpers, extended, wikiPrefix } = facts;
+  const fault = extended.get(file);
+  if (
+    tests.includes(file) ||
+    stubs.includes(file) ||
+    helpers.includes(file) ||
+    fault === null ||
+    file.startsWith(wikiPrefix)
+  ) {
+    return null;
   }
-  return null;
+  if (fault !== undefined) {
+    return `${file} changed, and it is the file of a changed interface, but its change is not type-only additions: ${fault}`;
+  }
+  return `${file} changed, but it is not a test file (testPathGlobs), the stub of a new interface or an added file a stub imports, the file of a changed interface or a wiki page`;
+}
+
+// Only test files, stubs and the added files they import, wiki pages and
+// type-only additions to the files of `changed` interfaces change. A failure
+// names every file that may not, one per line, each with its reason.
+function scopeFailure(facts: Facts): Failure | null {
+  const reasons = facts.changed.flatMap((file) => {
+    const reason = outsideReason(facts, file);
+    if (reason === null) {
+      return [];
+    }
+    return [reason];
+  });
+  if (reasons.length === 0) {
+    return null;
+  }
+  return { rule: "not-allowed", reason: reasons.join("\n") };
 }
 
 // Tests change unless `noTestsReason` is set, and then no test or stub does.

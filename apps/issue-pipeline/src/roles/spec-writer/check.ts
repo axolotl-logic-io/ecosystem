@@ -1,8 +1,11 @@
 // The spec writer's commit check, `spec-tests-check` (the wiki's
 // Pipeline-Roles-Spec-Writer): the spec writer's commits hold only test files,
-// the stubs of the `new` interfaces its spec documents and wiki pages; the
-// stubs exist, lint and type-check; the wiki change is clean; and the new tests fail at the spec head but pass with the test
-// files put back as they were at the base, so the stubs broke nothing. With
+// the stubs of the `new` interfaces its spec documents, the added files those
+// stubs import (helper-stubs.ts), type-only additions to the files of its
+// `changed` interfaces and wiki pages; the stubs exist, lint and type-check;
+// the wiki change is clean; and the new tests fail at the spec head but pass
+// with the test files put back as they were at the base, so the stubs broke
+// nothing. With
 // `noTestsReason` set, no test or stub may change and the tests don't run.
 // It reads the commits through git and runs the configured commands in the
 // spec head's worktree, which the caller checked out and set up; it leaves
@@ -15,9 +18,12 @@ import { matchAny } from "../../globs.ts";
 import { revertedTest } from "../../ops/fails-before-fix.ts";
 import type { ShellResult } from "../../process.ts";
 import { run, shell } from "../../process.ts";
+import { LINE_ANCHOR } from "../../spec-files.ts";
+import { typeOnlyAdditionsFault } from "../../type-only-additions.ts";
 import type { WikiChange } from "../../wiki-check.ts";
 import type { Facts, Failure } from "./check-rules.ts";
 import { scopeFailure, testFilesFailure, wikiFailure } from "./check-rules.ts";
+import { helperStubs } from "./helper-stubs.ts";
 import { SPEC_DRAFT } from "./task.ts";
 
 // The part of a test interface entry the check reads.
@@ -67,24 +73,53 @@ type SpecTestsResult =
 
 const REVERTED_LABEL = "spec-tests-reverted";
 
-function changedFiles(change: SpecTestsChange): string[] {
+// The files the change changes, or with `--diff-filter=A` only those it adds.
+function changedFiles(change: SpecTestsChange, ...filter: string[]): string[] {
   const range = `${change.base}...${change.sha}`;
-  return run("git", ["-C", change.wt, "diff", "--name-only", range])
+  return run("git", ["-C", change.wt, "diff", "--name-only", ...filter, range])
     .stdout.split("\n")
     .filter((file) => file !== "");
+}
+
+// Each file of `changed` that is the `where` (without a line anchor) of a
+// `changed` interface, with why its change since the merge base is not
+// type-only additions, or null when it is.
+function extendedFiles(
+  change: SpecTestsChange,
+  changed: readonly string[],
+): Map<string, string | null> {
+  const declared = new Set(
+    change.interfaces
+      .filter((entry) => entry.status === "changed")
+      .map((entry) => entry.where.replace(LINE_ANCHOR, "")),
+  );
+  const files = changed.filter((file) => declared.has(file));
+  if (files.length === 0) {
+    return new Map();
+  }
+  const { wt, base, sha } = change;
+  const from = run("git", ["-C", wt, "merge-base", base, sha]).stdout.trim();
+  return new Map(
+    files.map((file) => [file, typeOnlyAdditionsFault(wt, file, from, sha)]),
+  );
 }
 
 function factsOf(change: SpecTestsChange, settings: SpecTestsSettings): Facts {
   const wikiPrefix = `${wikiCfg(change.cfg)?.dir ?? "wiki"}/`;
   // The spec draft leaves the branch once the spec is posted (#335).
   const changed = changedFiles(change).filter((file) => file !== SPEC_DRAFT);
+  const stubs = change.interfaces
+    .filter((entry) => entry.status === "new")
+    .map((entry) => entry.where);
+  const added = changedFiles(change, "--diff-filter=A");
+  const head = { wt: change.wt, rev: change.sha };
   return {
     changed,
     wikiOnly: change.wikiOnly,
     noTestsReason: change.noTestsReason,
-    stubs: change.interfaces
-      .filter((entry) => entry.status === "new")
-      .map((entry) => entry.where),
+    stubs,
+    helpers: helperStubs(head, stubs, added),
+    extended: extendedFiles(change, changed),
     tests: changed.filter((file) => matchAny(settings.testPathGlobs, file)),
     wikiPages: (change.wiki?.changed ?? []).map(
       (page) => `${wikiPrefix}${page}`,
