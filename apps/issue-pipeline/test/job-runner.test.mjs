@@ -20,6 +20,8 @@ import {
 /** @import { Call, OpFake, RoleRun, ToyRole } from "./runner-test-kit.mjs" */
 
 const NETWORK_ERROR = "error connecting to api.github.com";
+const RATE_LIMIT_ERROR =
+  '429 {"type":"error","error":{"type":"rate_limit_error","message":"cooling down"}}';
 const STEP_FAILED = { kind: "stopped", code: "error" };
 /** @type {readonly ("before" | "after")[]} */
 const KILL_POINTS = ["before", "after"];
@@ -70,6 +72,22 @@ test("a network error the state doesn't list ends held", async () => {
   });
   assert.deepEqual(run.end, { kind: "held" });
 });
+
+for (const role of ROLES) {
+  test(`a ${role} role's session that hits a rate limit ends held, saving the state it last saved`, async () => {
+    const run = await uninterrupted(role, {
+      session: { ok: false, error: RATE_LIMIT_ERROR },
+    });
+    assert.deepEqual(run.end, { kind: "held", rateLimited: true });
+    const session = run.calls.findIndex(({ kind }) => kind === "session");
+    const before = run.calls
+      .slice(0, session)
+      .findLast(({ kind }) => kind === "save");
+    const last = before?.state ?? startState();
+    assert.deepEqual(run.saved, { ...last, lease: null });
+    assert.equal(sessions(run.calls), 1);
+  });
+}
 
 test("another failure the state doesn't list ends stopped with error", async () => {
   const run = await uninterrupted("machine", {

@@ -1,8 +1,9 @@
 // One orchestrator tick (#234): read the queue, add what the jobs spent to
-// the ledger, let the watchdog act on the jobs and write the escalations
-// (#235), ask the escalation agent about them (#282), decide with the
-// scheduler, start the jobs it chose and log every action and decision. The
-// processes, the steers, the agent's run and the clock come from the caller.
+// the ledger, note a rate-limited job's backoff, let the watchdog act on the
+// jobs and write the escalations (#235), ask the escalation agent about them
+// (#282), decide with the scheduler, hold every start during a backoff, start
+// the jobs it chose and log every action and decision. The processes, the
+// steers, the agent's run and the clock come from the caller.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -18,6 +19,7 @@ import type { Ledger } from "./ledger.ts";
 import { openLedger } from "./ledger.ts";
 import { logDecisions, logEscalations } from "./log.ts";
 import type { SnapshotIssue } from "./queue.ts";
+import { openBackoff } from "./rate-limit-backoff.ts";
 import type { Decision, StartGate } from "./schedule.ts";
 import { schedule, startGate } from "./schedule.ts";
 import { LANE, readQueue } from "./snapshot.ts";
@@ -243,7 +245,8 @@ function tick(cfg: Config, deps: TickDeps): Decision[] {
   );
   ledger.record(jobs, now);
   const spentLastHour = ledger.spentLastHour(now);
-  const admit = startGate({ issues, spentLastHour }, settings);
+  const backoff = openBackoff(cfg, jobs, now);
+  const admit = backoff.gate(startGate({ issues, spentLastHour }, settings));
   const watchdog = watch(watched, readWatchMemory(cfg), {
     ...WATCH_SETTINGS.parse(cfg),
     now,
@@ -277,10 +280,8 @@ function tick(cfg: Config, deps: TickDeps): Decision[] {
     adviseOnEscalations(cfg, raised.escalations, adviceOf(run, issues, view));
     // Kept only once every action is done, so a failed one is tried again.
     saveWatchMemory(cfg, { ...watchdog.memory, escalated: raised.escalated });
-    decisions = withoutHeld(
-      schedule({ issues, spentLastHour }, settings, now),
-      done,
-    );
+    const scheduled = schedule({ issues, spentLastHour }, settings, now);
+    decisions = backoff.hold(withoutHeld(scheduled, done));
     for (const decision of decisions) {
       if (decision.action === "started") {
         startJob(run, { ...decision, resume: false });

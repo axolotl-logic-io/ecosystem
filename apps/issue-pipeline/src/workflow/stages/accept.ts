@@ -9,15 +9,10 @@ import { preamble, specText } from "../prompts.ts";
 import { ACCEPT_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import type { AcceptReply } from "./replies.ts";
 import { acceptReplyOf } from "./replies.ts";
-import {
-  doneStep,
-  launchStep,
-  onlyChild,
-  onlyReply,
-  stopStep,
-} from "./step.ts";
+import { doneStep, launchStep, onlyChild, onlyReply } from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
@@ -169,7 +164,8 @@ function decide(
     reply = acceptReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the acceptance verifier failed", result.error);
+    const reason = "the acceptance verifier failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const st = { ...state.st };
   noteEvent(st, `acceptance: ${reply.verdict} - ${reply.reason}`, ctx.now());

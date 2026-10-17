@@ -11,6 +11,7 @@ import { LENS_NAMES } from "../lenses.ts";
 import { AGG_SCHEMA, REVIEW_SCHEMA } from "../review-schemas.ts";
 import { byStep } from "../signing.ts";
 import type { Finding } from "../types.ts";
+import { rateLimitedIn, rateLimitStep } from "./rate-limit.ts";
 import type {
   MergedFinding,
   RawFinding,
@@ -197,6 +198,9 @@ function reviewed(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
+  if (rateLimitedIn(results)) {
+    return rateLimitStep(state, "a reviewer failed", ctx.now());
+  }
   const { comments, raw, failed } = readReviews(
     state,
     sessionsOf(LENS_NAMES, results),

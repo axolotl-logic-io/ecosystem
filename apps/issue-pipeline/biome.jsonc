@@ -55,7 +55,8 @@
     // The orchestrator (#234) too: its entry src/orchestrate.ts spawns the
     // jobs and handles the stop signals, src/orchestrator/args.ts reads its
     // arguments, snapshot.ts checks the jobs' pids, and ledger.ts and log.ts
-    // keep its files, as watchdog-memory.ts keeps the watchdog's (#235), and
+    // keep its files, as watchdog-memory.ts keeps the watchdog's (#235) and
+    // rate-limit-backoff.ts the rate-limit backoff's, and
     // escalation-consult.ts keeps the escalation agent's reply schema and
     // session folder and gives its pi the orchestrator's environment less
     // the gh tokens (#282). Its pure modules (queue, schedule, tick,
@@ -106,6 +107,7 @@
         "src/orchestrator/ledger.ts",
         "src/orchestrator/log.ts",
         "src/orchestrator/watchdog-memory.ts",
+        "src/orchestrator/rate-limit-backoff.ts",
         "src/orchestrator/escalation-consult.ts",
         "src/report.ts"
       ],

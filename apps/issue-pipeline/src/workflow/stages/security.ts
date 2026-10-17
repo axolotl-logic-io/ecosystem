@@ -12,15 +12,10 @@ import { SECURITY_SCHEMA } from "../review-schemas.ts";
 import type { Signature } from "../signing.ts";
 import type { Finding, IssueState } from "../types.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import type { SecurityReply } from "./replies.ts";
 import { securityReplyOf } from "./replies.ts";
-import {
-  codedStopStep,
-  doneStep,
-  launchStep,
-  onlyChild,
-  stopStep,
-} from "./step.ts";
+import { codedStopStep, doneStep, launchStep, onlyChild } from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
@@ -179,7 +174,8 @@ function decide(
     reply = securityReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the security reviewer failed", result.error);
+    const reason = "the security reviewer failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const by = { ...result.by, role: "security reviewer" };
   if (reply.findings.length === 0) {

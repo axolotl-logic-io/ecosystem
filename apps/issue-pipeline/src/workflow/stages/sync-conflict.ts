@@ -22,6 +22,7 @@ import type { ConflictTarget } from "./conflict-target.ts";
 import { finishRequest, ontoText } from "./conflict-target.ts";
 import { mayContinue, outOfRoomReason } from "./continuation.ts";
 import { flowEnd } from "./flow-step.ts";
+import { isRateLimitError, rateLimitStep } from "./rate-limit.ts";
 import {
   doneStep,
   launchStep,
@@ -173,7 +174,8 @@ function rejected(
 // for a human (Autumn, 2026-10-13): a fresh resolver tries again next sweep,
 // against a base that may have moved, up to maxConflictFixes. The one
 // exception is a resolver that ran out of room with no continuation left: the
-// rebase was aborted, and the issue stops as too large.
+// rebase was aborted, and the issue stops as too large. A resolver that hit a
+// rate limit defers once its rebase is aborted, counting no attempt.
 function settle(
   state: StageState,
   ctx: StageContext,
@@ -185,6 +187,9 @@ function settle(
   if (fix === null) {
     const detail = `${fileListOf(files)}\n\n${memo.error ?? ""}`;
     const why = "the conflict-resolver session failed";
+    if (isRateLimitError(memo.error) && reply.kind !== "failed") {
+      return { kind: "step", step: rateLimitStep(state, why, ctx.now()) };
+    }
     return { kind: "step", step: stopStep(state, why, detail) };
   }
   const comment = resolverComment(state, ctx, memo, fix);

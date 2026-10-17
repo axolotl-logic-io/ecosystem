@@ -2,7 +2,8 @@
 // job runs it holds the job's pid, issue, stage, lane, start time and steer
 // socket, a record of every launch it started (src/job/launch-record.ts),
 // and for a stage that runs a role, each step of the role's run (#301). On
-// exit it holds the job's outcome, and the
+// exit it holds the job's outcome, which notes a sweep that deferred its
+// issue on a rate limit for the orchestrator's backoff, and the
 // uncommitted paths its checkout dropped (lostChanges). Each change rewrites
 // the whole file atomically, so a reader never sees part of one; a write that
 // fails is reported on stderr and the job goes on. This module alone knows
@@ -21,7 +22,12 @@ import type { StepReport } from "./step-report.ts";
 const STATUS_FILE = "job.json";
 const SIGNAL = z.enum(["SIGTERM", "SIGINT"]);
 const JOB_OUTCOME = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("finished") }),
+  // rateLimited: the issue deferred on a model provider's rate limit
+  // (src/workflow/stages/rate-limit.ts); absent before it was recorded.
+  z.object({
+    kind: z.literal("finished"),
+    rateLimited: z.boolean().optional(),
+  }),
   z.object({ kind: z.literal("stopped"), signal: SIGNAL }),
   z.object({ kind: z.literal("failed"), error: z.string() }),
 ]);

@@ -27,6 +27,7 @@ import {
   mayContinue,
   outOfRoomReason,
 } from "./continuation.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import {
   doneStep,
   launchStep,
@@ -47,8 +48,7 @@ import type {
 } from "./types.ts";
 
 // Where implement is: about to launch the session, reading its reply, or
-// reading the reply of the push of a done session's commits (or of its one
-// retry).
+// reading the reply of the push of a done session's commits (or its retry).
 type ImplementPhase = "begin" | "decide" | "pushed" | "repushed";
 
 const PHASES: readonly ImplementPhase[] = [
@@ -249,7 +249,8 @@ function decide(
     reply = implReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the implementer session failed", result.error);
+    const reason = "the implementer session failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const st = { ...state.st };
   noteEvent(st, `implement: ${reply.status} - ${reply.summary}`, ctx.now());

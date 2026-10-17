@@ -2,14 +2,15 @@
 // page): it runs a role's locate over the issue's saved state, then each
 // state's effect, then the role's transition, until an end, reporting every
 // step. It alone decides how a failure the role doesn't list ends (held on a
-// network error, stopped with the step-failure code otherwise), refuses a
-// session from a non-session state, and decides what is saved and when: only
-// the role's declared hand-off fields and checkpoints, saved at every end
-// and as soon as a checkpoint changes, so a count is saved when it goes up.
-// An end's own op runs after the end's save, on the state just saved. It
-// reads nothing but the saved state and context it is given
-// (`every-role-resumes`). It appends a usage entry for every session that
-// ends and for the run.
+// network error; held on a model provider's rate limit with the state it
+// last saved, counting no attempt (`rate-limit-defers`); stopped with the
+// step-failure code otherwise), refuses a session from a non-session state,
+// and decides what is saved and when: only the role's declared hand-off
+// fields and checkpoints, saved at every end and as soon as a checkpoint
+// changes, so a count is saved when it goes up. An end's own op runs after
+// the end's save, on the state just saved. It reads nothing but the saved
+// state and context it is given (`every-role-resumes`). It appends a usage
+// entry for every session that ends and for the run.
 
 import type { Effect, End, Result, SessionEffect } from "../roles/machine.ts";
 import type {
@@ -23,6 +24,7 @@ import type {
 import { linearWalk, machineWalk } from "../roles/walk.ts";
 import type { State } from "../state.ts";
 import { isNetworkError } from "../workflow/stages/network.ts";
+import { isRateLimitError } from "../workflow/stages/rate-limit.ts";
 import { checkpointsChanged, writtenState } from "./role-state.ts";
 import type { Effects, Outcome, Performed } from "./run-step.ts";
 import { perform } from "./run-step.ts";
@@ -63,7 +65,17 @@ async function save<D>(run: Run<D>, data: D, end: boolean): Promise<Performed> {
   return done;
 }
 
+// Saves the state the run last saved with no lease, dropping what the run
+// did since, such as a count it took at its start.
+function release<D>(run: Run<D>): Promise<Performed> {
+  const state = { ...run.saved, lease: null };
+  return perform(run.effects, () => run.effects.save(state));
+}
+
 function failedEnd(error: string): End {
+  if (isRateLimitError(error)) {
+    return { kind: "held", rateLimited: true };
+  }
   if (isNetworkError(error)) {
     return { kind: "held" };
   }
@@ -115,7 +127,12 @@ async function finish<S extends string, D>(
     run.stage = end.stage;
     run.usage.moved(end.stage);
   }
-  const done = await save(run, data, end.kind !== "next");
+  let done: Performed;
+  if (end.kind === "held" && end.rateLimited === true) {
+    done = await release(run);
+  } else {
+    done = await save(run, data, end.kind !== "next");
+  }
   if (done.kind === "signal") {
     return { kind: "interrupted", signal: done.signal };
   }

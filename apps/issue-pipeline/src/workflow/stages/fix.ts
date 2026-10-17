@@ -26,6 +26,7 @@ import {
   outOfRoomReason,
 } from "./continuation.ts";
 import { flowStep, prFlowed } from "./flow-step.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import {
   launchRereviews,
   prepareRereview,
@@ -183,7 +184,8 @@ function fixed(
     reply = fixReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the fixer session failed", result.error);
+    const reason = "the fixer session failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const round = roundOf(state);
   const st = copyState(state.st);

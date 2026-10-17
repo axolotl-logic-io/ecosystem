@@ -14,6 +14,7 @@ import type { Signature } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import type { SpecReply } from "./build-replies.ts";
 import { SPEC_END, specReplyOf } from "./build-replies.ts";
+import { isRateLimitError, rateLimitStep } from "./rate-limit.ts";
 import { isRecord, isStrings, signatureOf } from "./reply-guards.ts";
 import { splitStep } from "./spec-split.ts";
 import { ROLE, specTask } from "./spec-task.ts";
@@ -191,7 +192,8 @@ function sessionRead(result: ChildResult): SessionRead {
 }
 
 // Acts on the spec writer's decision. Questions it didn't ask read as ready.
-// A failed session is tried once more; a second failure stops the issue.
+// A failed session is tried once more; a second failure stops the issue. A
+// session that hit a rate limit defers it instead.
 function decide(
   state: StageState,
   ctx: StageContext,
@@ -201,6 +203,9 @@ function decide(
   const result = onlyChild(results);
   const read = sessionRead(result);
   if (!read.ok) {
+    if (isRateLimitError(result.error)) {
+      return rateLimitStep(state, "the spec writer failed", ctx.now());
+    }
     if (phase === "decide") {
       return launchSession(state, ctx, "decide-again");
     }

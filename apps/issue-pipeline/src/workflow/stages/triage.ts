@@ -22,6 +22,7 @@ import {
 import { noteEvent } from "../event-log.ts";
 import type { Signature } from "../signing.ts";
 import type { IssueState } from "../types.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import {
   doneStep,
   launchStep,
@@ -171,7 +172,7 @@ function decide(
     reply = triageReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, TRIAGE_FAILED, result.error);
+    return sessionFailedStep(state, TRIAGE_FAILED, result.error, ctx.now());
   }
   const decision = decisionOf(reply, state.st.depth);
   const st = { ...state.st };

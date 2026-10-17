@@ -11,6 +11,7 @@ import { ALL_LENSES } from "../lenses.ts";
 import { REREVIEW_SCHEMA, REREVIEW_SEC_SCHEMA } from "../review-schemas.ts";
 import type { JsonSchema } from "../schemas.ts";
 import type { Finding, IssueState } from "../types.ts";
+import { rateLimitedIn, rateLimitStep } from "./rate-limit.ts";
 import type { NewFinding, RereviewReply } from "./review-replies.ts";
 import { rereviewReplyOf } from "./review-replies.ts";
 import { rereviewComment, rereviewTask } from "./review-text.ts";
@@ -235,6 +236,9 @@ function settleRereviews(
     comments: [],
     stop: null,
   };
+  if (rateLimitedIn(results)) {
+    return rateLimitStep(state, "a re-reviewer failed", ctx.now());
+  }
   for (const { name, result } of sessionsOf(openLenses(state), results)) {
     readRereview(rereviews, state, name, result);
     const { stop, st, comments } = rereviews;

@@ -66,6 +66,7 @@ import { openStatus, resumePoints, socketOf } from "./job/status.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { LaunchSpec } from "./workflow/launches.ts";
 import { opsFrame } from "./workflow/launches.ts";
+import { rateLimitedRun } from "./workflow/stages/rate-limit.ts";
 import type { SweepSummary } from "./workflow/stages/types.ts";
 import type { Sweep } from "./workflow/sweep.ts";
 import { startSweep } from "./workflow/sweep.ts";
@@ -212,8 +213,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   }
 }
 
-// Drives the sweep to its end, or to a stop, after which it saves the issue
-// the stages held.
+// Drives the sweep to its end, or to a stop and saves the issue it held.
 async function runDriven(
   sweep: Sweep,
   limit: number,
@@ -232,7 +232,7 @@ async function runDriven(
 
 function outcomeOf(end: RunEnd): JobOutcome {
   if (end.kind === "finished") {
-    return { kind: "finished" };
+    return { kind: "finished", rateLimited: rateLimitedRun(end.summary) };
   }
   return { kind: "stopped", signal: end.signal };
 }

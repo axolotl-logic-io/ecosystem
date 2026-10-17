@@ -19,14 +19,15 @@ interface AfterOp {
 
 // How a run ends: the issue saved at `stage` (the job ends), saved at
 // `stage` and carried on there in the same job, stopped with a stop code,
-// released, or held for the next tick. A stop or a release may name the op
-// that carries it out on GitHub, such as `stop` or `ask`.
+// released, or held for the next tick (`rateLimited` when a model provider's
+// rate limit held it, `rate-limit-defers`). A stop or a release may name the
+// op that carries it out on GitHub, such as `stop` or `ask`.
 type End =
   | { kind: "saved"; stage: string }
   | { kind: "next"; stage: string }
   | { kind: "stopped"; code: string; after?: AfterOp }
   | { kind: "released"; after?: AfterOp }
-  | { kind: "held" };
+  | { kind: "held"; rateLimited?: true };
 
 // A model session: its name, agent and model, the schema of its reply, its
 // task, its context budget, the role it is the budget of (its context log

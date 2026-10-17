@@ -271,7 +271,7 @@ function next(
     case "prepared":
       return prepared(state, ctx, results);
     case "reviewed":
-      return reviewed(state, results);
+      return reviewed(state, ctx, results);
     case "saved":
       return saved(state, ctx, results);
     default: {

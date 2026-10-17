@@ -11,6 +11,11 @@ import { REVIEW_SCHEMA } from "../review-schemas.ts";
 import type { IssueState, ListedFinding } from "../types.ts";
 import { blockingOf, fixOutputOf, preparedOf } from "./checks-reply.ts";
 import { attemptOf, handedOff } from "./ci-fixer.ts";
+import {
+  rateLimitedIn,
+  rateLimitStep,
+  sessionFailedStep,
+} from "./rate-limit.ts";
 import { prepareLaunch } from "./stacked.ts";
 import { launchStep, onlyChild, onlyReply, stopStep } from "./step.ts";
 import type {
@@ -44,7 +49,8 @@ function fixed(
   const result = onlyChild(results);
   const fix = fixOutputOf(result);
   if (fix === null) {
-    return stopStep(state, "the check-fixer session failed", result.error);
+    const reason = "the check-fixer session failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const attempt = attemptOf(state);
   const by = { ...result.by, role: `check fixer (attempt ${attempt})` };
@@ -168,8 +174,19 @@ function reviewBody(
 }
 
 // Posts every lens's comment, then stops on the first failure or blocking
-// finding in lens order, or saves the reviewed head.
-function reviewed(state: StageState, results: readonly LaunchResult[]): Step {
+// finding in lens order, or saves the reviewed head. A reviewer that hit a
+// rate limit defers the issue to review instead: the pushed fix still needs
+// its review, and checks alone would pass it on without one.
+function reviewed(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
+  if (rateLimitedIn(results)) {
+    const st = { ...state.st, stage: "review" };
+    const why = "a check-fix reviewer failed";
+    return rateLimitStep({ ...state, st }, why, ctx.now());
+  }
   const comments: StageComment[] = [];
   const stops: StageStop[] = [];
   FIX_LENSES.forEach((lens, index) => {
