@@ -66,6 +66,14 @@ interface IssueState {
   specFile?: string | null;
   // The repo paths or globs the spec says the change will touch.
   files?: string[] | null;
+  // Whether the spec writer wrote the tests and stubs the spec documents, so
+  // a restart that finds one missing stops (src/restart-spec.ts). The spec
+  // stage sets it false; the spec writer that writes them (#305) sets it true.
+  specWritesTests?: boolean;
+  // The test and stub files the spec documents that the branch lacked at the
+  // last restart, when the spec writer didn't write them: work the
+  // implementer finishes.
+  unwrittenFiles?: string[];
   // The prerequisite issue this one's branch is stacked on, and the head of
   // its branch the branch was last put on (#268); null when it isn't.
   stackedOn?: { issue: number; headSha: string } | null;

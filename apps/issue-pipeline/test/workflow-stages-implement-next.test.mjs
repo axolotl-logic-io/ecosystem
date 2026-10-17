@@ -25,6 +25,9 @@ import {
 /** @typedef {Readonly<Record<string, unknown>>} Reply */
 
 const TITLE_LIMIT = 200;
+// The lead a first session from a spec gets: a restart resumes implement
+// with the handoff of the session before the stop (`every-role-resumes`).
+const EARLIER_HANDOFF = `If ${HANDOFF} exists, an earlier implementer session of this issue wrote it before the issue stopped: read it and the commits on the branch first, and build on them.\n\n`;
 const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first: ${HANDOFF}. Continue from the current branch state.`;
 const CONTINUED =
   "This session ran out of room before finishing. Another implementer session continues from its handoff.";
@@ -89,11 +92,26 @@ test("the first call charges the implementer and launches a writer from the spec
   const step = next(given, BUILD_CTX, []);
   assert.deepEqual(
     sessions(step),
-    implementer(implementTask(`Spec (also posted on the issue):\n${SPEC}`)),
+    implementer(
+      implementTask(
+        `${EARLIER_HANDOFF}Spec (also posted on the issue):\n${SPEC}`,
+      ),
+    ),
   );
   assert.equal(sessions(step)[0]?.agent, "issue-pipeline-writer");
   assert.equal(step.state.phase, "decide");
   assert.deepEqual(given, buildState("implement", { spec: SPEC }));
+});
+
+test("a restart's unwritten spec files lead the session's task", () => {
+  const files = ["test/a.test.mjs", "src/b.ts"];
+  const given = buildState("implement", { spec: SPEC, unwrittenFiles: files });
+  const [session] = sessions(next(given, BUILD_CTX, []));
+  assert.ok(
+    session?.task.includes(
+      "The spec documents these test or stub files, which the branch lacks; write them as part of this work: `test/a.test.mjs`, `src/b.ts`.",
+    ),
+  );
 });
 
 test("without a spec the session works from triage's plan", () => {

@@ -47,7 +47,8 @@
     // (#233). src/job/checkout.ts makes, closes and removes the job's own
     // checkout and the bare mirrors it comes from with git, and
     // src/job/exit-push.ts reports a failed exit push on stderr (#250).
-    // src/job/context-log.ts appends to the issue's context.jsonl. The
+    // src/job/context-log.ts appends to the issue's context.jsonl.
+    // src/restart-spec.ts reads a restart's spec.md. The
     // job's pure modules (raw-results, pool, roles, context-watch, launch-record) get no exception.
     // The orchestrator (#234) too: its entry src/orchestrate.ts spawns the
     // jobs and handles the stop signals, src/orchestrator/args.ts reads its
@@ -76,8 +77,10 @@
         "src/wiki-publish.ts",
         "src/rebase.ts",
         "src/issue-context.ts",
+        "src/restart-spec.ts",
         "src/ops/sweep.ts",
         "src/ops/claim.ts",
+        "src/ops/claim-state.ts",
         "src/ops/pr.ts",
         "src/ops/sync.ts",
         "src/ops/verify.ts",

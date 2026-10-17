@@ -75,7 +75,7 @@ test("a standing review keeps the counter that numbers the next finding", () => 
     ...ctx,
     remote: "h1",
   });
-  assert.deepEqual([stage, nextFindingId], ["sync", NEXT_FINDING]);
+  assert.deepEqual([stage, nextFindingId], ["checks", NEXT_FINDING]);
 });
 
 test("a review that doesn't stand starts the findings and their numbers again", () => {
@@ -98,12 +98,12 @@ test("answered questions with work drop the spec's files with the spec", () => {
   );
 });
 
-test("a too-large stop's restart at triage keeps the reported tokens", () => {
+test("a too-large stop's restart at implement keeps the reported tokens", () => {
   const { stage, reportedTokens } = startState(
     { ...stopped, stopCode: "too-large", stoppedStage: "implement" },
     ctx,
   );
-  assert.deepEqual([stage, reportedTokens], ["triage", TOKENS]);
+  assert.deepEqual([stage, reportedTokens], ["implement", TOKENS]);
 });
 
 test("a restart adds no key the stopped state lacked", () => {

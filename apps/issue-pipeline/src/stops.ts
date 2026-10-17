@@ -153,6 +153,15 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "The implementer found the issue can't be done as written, or its work changed nothing: no files on the branch and no wiki commits.",
   },
   {
+    code: "spec-files",
+    short:
+      "Stopped: the spec's documented tests or stubs are missing from the branch. See the stop comment.",
+    test: /documented tests or stubs are missing/iu,
+    control: "spec's tests and stubs",
+    explain:
+      "A restart found that test or stub files the spec documents are missing from the branch. The spec writer is responsible for the spec, its tests and its stubs, so the pipeline neither hands them to the implementer nor writes a new spec.",
+  },
+  {
     code: "too-large",
     short:
       "Stopped: too large for its writer sessions; split it. See the stop comment.",

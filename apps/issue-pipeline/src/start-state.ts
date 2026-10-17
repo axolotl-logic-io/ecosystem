@@ -1,12 +1,16 @@
 // Where a start or restart picks up an issue's machine state from: a claim's
-// start state, and the adoption of a push whose state save failed.
-import type { PushRecord } from "./checkouts.ts";
+// start state. The adoption of a push whose state save failed is in
+// adopt-push.ts, and where a stop resumes in resume-stage.ts.
+import {
+  keptReview,
+  LIMITS_RESET,
+  RESUMABLE,
+  resumedStage,
+} from "./resume-stage.ts";
 import type { State } from "./state.ts";
 import { newState } from "./state.ts";
 
 const STAMP_LENGTH = 16;
-// How much of a head the log names.
-const LOG_SHA_LENGTH = 8;
 
 // Where a start finds the issue: its branch head, open PR, whether the
 // branch holds work, and whether the worktree kept commits the branch lacks
@@ -63,18 +67,25 @@ function present(fields: State): State {
   );
 }
 
-// The plan and spec carry over, with the spec's full-text path and the files
-// it touches, which the orchestrator's file holds read, except after answered
-// questions.
+// The plan and spec carry over, with the spec's full-text path, the files it
+// touches, which the orchestrator's file holds read, and whether its writer
+// wrote its tests, except after answered questions.
 function carriedWork(state: State | null, answered: boolean): State {
   if (answered || state === null) {
     return {};
   }
-  const { plan, spec, specFile, files } = state;
+  const { plan: saved, spec, specFile, files, specWritesTests } = state;
+  const plan = saved ?? null;
   if (spec === undefined || spec === null || spec === "") {
-    return { plan: plan ?? null };
+    return { plan };
   }
-  return present({ plan: plan ?? null, spec, specFile, files });
+  return present({ plan, spec, specFile, files, specWritesTests });
+}
+
+// True when the carried work holds a spec.
+function hasSpec(work: State): boolean {
+  const { spec } = work;
+  return typeof spec === "string" && spec !== "";
 }
 
 // What a stop's restart keeps, on the branch or back at triage: the PR's
@@ -136,42 +147,101 @@ function continuesWork(state: State | null, start: StartContext): boolean {
   return stage !== "stopped" || stopCode !== "too-large";
 }
 
+// A restart after a stop, with no answered questions: it carries the saved
+// state and resumes at the stage that stopped, with the stop cleared and
+// every limit reset (`every-role-resumes`, Axlog, 2026-10-16). A specced
+// issue doesn't go through triage and spec again. Null when the state names
+// no stage it stopped in, so the start begins as before.
+function resumedStop(state: State | null, start: StartContext): State | null {
+  if (state === null || start.answered || state.stage !== "stopped") {
+    return null;
+  }
+  const { stoppedStage } = state;
+  if (typeof stoppedStage !== "string" || !RESUMABLE.has(stoppedStage)) {
+    return null;
+  }
+  const work = carriedWork(state, false);
+  const stands = reviewStands(state, start);
+  const stage = resumedStage(state, stoppedStage, stands, hasSpec(work));
+  const entry = `${stamp(start.now)} restarted at ${stage} after ${restartReason(state, false)}; limits reset`;
+  const resumed: State = present({
+    ...state,
+    ...work,
+    ...LIMITS_RESET,
+    ...keptReview(stage, stands),
+    stage,
+    headSha: start.remote,
+    pr: start.pr ?? state.pr ?? null,
+    stopCode: null,
+    stopReason: null,
+    stoppedStage: null,
+    log: [...(state.log ?? []), entry],
+  });
+  if (!hasSpec(work)) {
+    return { ...resumed, spec: null, specFile: null };
+  }
+  return resumed;
+}
+
 // The state a start begins from (Autumn, 2026-10-15). Every start finds the
-// issue's open PR by its branch name. When the branch holds work, the start
-// continues it at review with every limit reset, whatever stopped it, except
-// a too-large stop (#283); when nobody pushed since the review, the worktree
-// kept no unpushed commits past the branch and no blocking finding is open,
-// the review stands and it goes straight to sync. The plan and spec, with the
-// spec's files, carry over, except after answered questions, which may change
-// them. Commits on the wiki's agent/issue-<n> count as work too, so a start may continue at review with no PR. With no work (no
-// open PR with code changes and no wiki-branch commits), or after a too-large
-// stop, whose half-built spec shouldn't be reviewed, it goes back to triage,
-// which reads the implementer's handoff, keeping the PR, and the implementer
-// builds on the branch as it is. An issue stopped at publish, after its PR
-// merged, resumes there.
+// issue's open PR by its branch name. An issue stopped at publish, after its
+// PR merged, resumes there. Any other stop resumes at the stage it stopped
+// in, carrying the saved state, with every limit reset (resumedStop,
+// `every-role-resumes`). Without a stage to resume (a lost state, a finished
+// one, or answered questions): when the branch holds work, the start
+// continues it at review with every limit reset, or at sync when nobody pushed
+// since the review, the worktree kept no unpushed commits past the branch and
+// no blocking finding is open. The plan and spec carry over, except after
+// answered questions, which may change them. Commits on the wiki's
+// agent/issue-<n> count as work too, so a start may continue at review with
+// no PR. With no work, a specced issue goes to
+// implement and builds on the branch as it is; one with no spec goes back to
+// triage, which reads the implementer's handoff, keeping the PR.
 function startState(state: State | null, start: StartContext): State {
-  const { answered, n, pr, remote } = start;
-  const hasWork = continuesWork(state, start);
+  const { answered } = start;
   if (state !== null && stoppedAtPublish(state, answered)) {
     return resumedPublish(state, start);
   }
-  const log = state?.log ?? [];
   const finished = state?.stage === "stopped" || state?.stage === "done";
   if (state !== null && !answered && !finished) {
     return state;
   }
-  const fresh = newState(n, state?.depth ?? start.depth);
-  if (!hasWork) {
-    // Answered questions keep their counters (triages); a stop or a lost
-    // state starts fresh but for carriedRecord.
-    if (answered && state !== null) {
-      return { ...state, pr: pr ?? state.pr ?? null, stage: "triage" };
-    }
-    const implemented = state?.implemented;
-    const keptPr = pr ?? state?.pr ?? null;
-    const kept = { headSha: remote, implemented, log, pr: keptPr };
-    return { ...fresh, ...carriedRecord(state), ...kept };
+  const resumed = resumedStop(state, start);
+  if (resumed !== null) {
+    return resumed;
   }
+  if (!continuesWork(state, start)) {
+    return noWorkStart(state, start);
+  }
+  return branchStart(state, start);
+}
+
+// A start with no work on the branch: answered questions go back to triage
+// with their counters (triages); a specced issue goes to implement; anything
+// else starts fresh at triage. Both keep carriedRecord.
+function noWorkStart(state: State | null, start: StartContext): State {
+  const { answered, n, pr, remote } = start;
+  if (answered && state !== null) {
+    return { ...state, pr: pr ?? state.pr ?? null, stage: "triage" };
+  }
+  const log = state?.log ?? [];
+  const fresh = newState(n, state?.depth ?? start.depth);
+  const implemented = state?.implemented;
+  const keptPr = pr ?? state?.pr ?? null;
+  const kept = { headSha: remote, implemented, log, pr: keptPr };
+  const base = { ...fresh, ...carriedRecord(state), ...kept };
+  const work = carriedWork(state, answered);
+  if (!hasSpec(work)) {
+    return base;
+  }
+  const entry = `${stamp(start.now)} restarted at implement with the saved spec after ${restartReason(state, answered)}`;
+  return { ...base, ...work, stage: "implement", log: [...log, entry] };
+}
+
+// A start that continues the branch's work at review, or at sync when the
+// review stands.
+function branchStart(state: State | null, start: StartContext): State {
+  const { answered, n, pr, remote } = start;
   const stands = reviewStands(state, start);
   let stage = "review";
   if (stands) {
@@ -181,9 +251,10 @@ function startState(state: State | null, start: StartContext): State {
   if (pr !== null) {
     onPr = `PR #${pr}`;
   }
+  const log = state?.log ?? [];
   const entry = `${stamp(start.now)} restarted on the existing branch (${onPr}) at ${stage} after ${restartReason(state, answered)}; limits reset`;
   return {
-    ...fresh,
+    ...newState(n, state?.depth ?? start.depth),
     headSha: remote,
     implemented: true,
     pr,
@@ -195,79 +266,5 @@ function startState(state: State | null, start: StartContext): State {
   };
 }
 
-// The ops whose pushes are adopted: the syncs with the base branch, which push
-// a head made from one the reviews already passed. Every other push (start-pr,
-// open-pr, a fix's or a CI fix's push) is followed by a review that adoption
-// would skip.
-const ADOPTABLE_OPS: ReadonlySet<string> = new Set([
-  "sync-base",
-  "finish-sync",
-]);
-
-// The stages after review, from which an adopted head can go back to sync
-// without skipping the code review.
-const ADOPTABLE_STAGES: ReadonlySet<unknown> = new Set([
-  "sync",
-  "checks",
-  "accept",
-  "security",
-  "merge",
-]);
-
-// The op a writer's stage job pushes with as it exits (src/job/exit-push.ts),
-// of commits its checkout holds past its last state save, such as those of an
-// implementer session a stop interrupted (#315).
-const EXIT_PUSH_OP = "exit-push";
-
-// The stages from which a job's exit push is adopted, keeping the stage: each
-// reviews every commit past the last review before the code moves on (the
-// review after open-pr, or a fix round's re-review of the diff since the last
-// review). From a later stage it would skip that review, so it still stops.
-const EXIT_PUSH_STAGES: ReadonlySet<unknown> = new Set([
-  "implement",
-  "open-pr",
-  "fix",
-]);
-
-// The saved state with the branch head the pipeline pushed itself adopted, for
-// when the push landed after the last state save: the saved head is set, and
-// `remote` differs from it but is the head this machine recorded pushing
-// (`pushed`). A sync's push, whose state save failed, from a state saved at
-// sync or later, goes back through sync and every check after it. A job's
-// exit push from a state saved at implement, open-pr or fix keeps the stage.
-// Any other push would skip the review that follows it, so it still stops
-// with branch-changed. Null when there is nothing to adopt.
-function adoptPush(
-  saved: State,
-  remote: string | null,
-  pushed: PushRecord | null,
-  now: Date,
-): State | null {
-  const { headSha, stage } = saved;
-  const known = headSha !== undefined && headSha !== null;
-  if (!known || remote === null || remote === headSha || pushed === null) {
-    return null;
-  }
-  if (remote !== pushed.sha) {
-    return null;
-  }
-  const short = remote.slice(0, LOG_SHA_LENGTH);
-  if (pushed.op === EXIT_PUSH_OP && EXIT_PUSH_STAGES.has(stage)) {
-    const entry = `${stamp(now)} adopted the stage job's exit push ${short} at ${String(stage)}`;
-    return { ...saved, headSha: remote, log: [...(saved.log ?? []), entry] };
-  }
-  if (!(ADOPTABLE_OPS.has(pushed.op) && ADOPTABLE_STAGES.has(stage))) {
-    return null;
-  }
-  const entry = `${stamp(now)} adopted the pipeline's own push ${short}; its state save had failed`;
-  return {
-    ...saved,
-    headSha: remote,
-    passedSha: null,
-    stage: "sync",
-    log: [...(saved.log ?? []), entry],
-  };
-}
-
 export type { StartContext };
-export { adoptPush, startState };
+export { startState };

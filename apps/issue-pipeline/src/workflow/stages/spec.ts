@@ -121,6 +121,9 @@ function kept(
     ...state.st,
     spec: clip(whole.spec, SPEC_LIMIT),
     files: whole.files,
+    // This spec writer leaves the spec's tests and stubs to the implementer;
+    // #305's spec writer writes them and sets this true.
+    specWritesTests: false,
     stage: "implement",
   };
   if (specFile !== null || typeof st.specFile === "string") {

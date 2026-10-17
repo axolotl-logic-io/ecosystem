@@ -80,6 +80,8 @@ test("a whole ready spec is kept without its marker, posted, and moves the issue
   assert.equal(step.state.st.spec, SPEC);
   assert.equal(step.state.st.specFile, undefined);
   assert.deepEqual(step.state.st.files, FILES);
+  // This spec writer leaves the spec's tests to the implementer (#305).
+  assert.equal(step.state.st.specWritesTests, false);
   assert.deepEqual(step.state.st.log, [`${STAMP} spec: ready`]);
   assert.deepEqual(step.comments, [
     {

@@ -75,15 +75,32 @@ function isSet(text: string | null | undefined): text is string {
   return typeof text === "string" && text !== "";
 }
 
-// What the session works from: the handoff, the spec, or triage's plan.
+// The spec's documented test and stub files the branch lacked at a restart,
+// as a lead for the session; "" when there are none.
+function unwrittenLead(st: StageState["st"]): string {
+  const files = st.unwrittenFiles ?? [];
+  if (files.length === 0) {
+    return "";
+  }
+  const named = files.map((file) => `\`${file}\``).join(", ");
+  return `The spec documents these test or stub files, which the branch lacks; write them as part of this work: ${named}.\n\n`;
+}
+
+// What the session works from: the handoff, the spec (with the handoff of a
+// session before a restart, if any, `every-role-resumes`), or triage's plan,
+// after any files the spec documents that the branch lacks.
 function sourceLine(state: StageState): string {
+  return `${unwrittenLead(state.st)}${workSource(state)}`;
+}
+
+function workSource(state: StageState): string {
   const { st, paths } = state;
   if (continuationsOf(st, "implement") > 0) {
     return handoffLead(paths.handoffFile);
   }
   const spec = specText(st);
   if (spec !== "") {
-    return `Spec (also posted on the issue):\n${spec}`;
+    return `If ${paths.handoffFile} exists, an earlier implementer session of this issue wrote it before the issue stopped: read it and the commits on the branch first, and build on them.\n\nSpec (also posted on the issue):\n${spec}`;
   }
   return `Triage plan:\n${String(st.plan)}`;
 }

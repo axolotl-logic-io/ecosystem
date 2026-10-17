@@ -149,18 +149,32 @@ test("answered no work -> triage keeps triages", () => {
   );
   assert.deepEqual([stage, triages], ["triage", 2]);
 });
-// stopped, no work (empty start-pr branch) -> triage fresh
-test("stopped no work -> triage fresh", () => {
+// stopped, no work (empty start-pr branch), no spec -> triage fresh
+test("stopped no work and no spec -> triage fresh", () => {
   const { stage, pr, implemented } = startState(
-    { ...base, stage: "stopped", stopCode: "error", implemented: false },
+    {
+      ...base,
+      stage: "stopped",
+      stopCode: "error",
+      implemented: false,
+      spec: null,
+    },
     { ...ctx, hasWork: false },
   );
   assert.deepEqual([stage, pr, implemented], ["triage", PR, false]);
 });
+// stopped, no work, specced -> implement with the spec, not spec again
+test("stopped no work with a saved spec -> implement, keeping the spec", () => {
+  const { stage, spec, plan } = startState(
+    { ...base, stage: "stopped", stopCode: "error" },
+    { ...ctx, hasWork: false },
+  );
+  assert.deepEqual([stage, spec, plan], ["implement", "S", "P"]);
+});
 // stopped, PR closed (pr null), branch exists -> triage, state.pr kept
 test("no open PR -> triage", () => {
   const { stage, pr } = startState(
-    { ...base, stage: "stopped", stopCode: "error" },
+    { ...base, stage: "stopped", stopCode: "error", spec: null },
     { ...ctx, pr: null, hasWork: false },
   );
   assert.deepEqual([stage, pr], ["triage", PR]);

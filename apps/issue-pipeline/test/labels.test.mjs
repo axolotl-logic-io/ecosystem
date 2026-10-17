@@ -31,6 +31,7 @@ test("the stops keep their order and label names", () => {
       "triage-rejected",
       "triage-limit",
       "not-doable",
+      "spec-files",
       "too-large",
       "acceptance",
       "branch-changed",
