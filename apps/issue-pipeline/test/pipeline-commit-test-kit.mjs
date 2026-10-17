@@ -100,9 +100,14 @@ function registeredTool() {
 }
 
 // Opens a job of `stage` for #7 of a repo of its own, with a wiki, whose
-// launch KEY has started.
-/** @param {StageName} stage @returns {Promise<Job>} */
-async function openJob(stage) {
+// launch KEY has started. With `withJobStart` false its commit scope lacks
+// the job's start, as a job started before the trailer (#402) sends it.
+/**
+ * @param {StageName} stage
+ * @param {{ withJobStart?: boolean }} [options]
+ * @returns {Promise<Job>}
+ */
+async function openJob(stage, { withJobStart = true } = {}) {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp);
   const dirs = openJobCheckout(cfg, ISSUE, { stage, stackOn: null });
@@ -128,12 +133,11 @@ async function openJob(stage) {
     usage: ZERO,
     tokenBudget: null,
   });
-  const scope = {
-    socket: control.socket,
-    key: KEY,
-    jobStartedAt: JOB_STARTED_AT,
-    root: dirs.root,
-  };
+  /** @type {{ socket: string, key: string, root: string, jobStartedAt?: string }} */
+  const scope = { socket: control.socket, key: KEY, root: dirs.root };
+  if (withJobStart) {
+    scope.jobStartedAt = JOB_STARTED_AT;
+  }
   const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true) });
   const tool = registeredTool();
   return {

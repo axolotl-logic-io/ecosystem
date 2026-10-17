@@ -2,7 +2,8 @@
 // Shared, "pipeline_commit"): the refused flags and paths, how pathspecs
 // route to the code checkout (repo/) and the wiki checkout (docs/), the access
 // refusals (#338), the wiki's commit of everything with the same message,
-// the session trailer every commit ends with, and the dry run.
+// the session trailer every commit ends with, and none for a scope without
+// the job's start, and the dry run.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { commitArgsOf, sessionTrailer } from "../src/job/pipeline-commit.ts";
@@ -31,6 +32,9 @@ const SESSION = sessionTrailer({
   key: "i7-implement-1",
   jobStartedAt: "2026-10-17T12:00:00.000Z",
 });
+if (SESSION === null) {
+  throw new Error("a scope with the job's start has a trailer");
+}
 const TRAILER = ["--trailer", SESSION];
 
 const WRITE = scopeOf("write", "write");
@@ -153,6 +157,21 @@ test("every commit, code or wiki, ends with the session's trailer, naming its la
   const plan = planned(["-am", "Work"]);
   assert.deepEqual(plan.code?.slice(-2), TRAILER);
   assert.deepEqual(plan.wiki?.[1]?.slice(-2), TRAILER);
+});
+
+test("a scope without the job's start, as a job started before the trailer sends, commits code and wiki without a trailer", () => {
+  const trailer = sessionTrailer({ key: "i7-implement-1" });
+  assert.equal(trailer, null);
+  const plan = commitArgsOf(["-am", "Work"], WRITE, trailer);
+  assert.equal(plan.kind, "commit");
+  if (plan.kind !== "commit") {
+    return;
+  }
+  assert.deepEqual(plan.code, ["commit", "-am", "Work"]);
+  assert.deepEqual(plan.wiki, [
+    ["add", "-A"],
+    ["commit", "-m", "Work"],
+  ]);
 });
 
 test("with no pathspec the wiki adds every change and commits it with the same message", () => {

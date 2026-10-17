@@ -4,9 +4,10 @@
 // the job's folder, to its code checkout (repo/) and its wiki checkout
 // (docs/), refuses those into a checkout the stage may not write
 // (commit-needs-write-access, #338), adds the trailer that names the session
-// to every commit, `Pipeline-Session: <launch key>@<job start>`, and owns the
-// session variable that tells the tool its scope. It runs nothing; the tool
-// (pipeline-commit-tool.ts) runs the argv it returns.
+// to every commit, `Pipeline-Session: <launch key>@<job start>`, when its
+// scope names the job's start, and owns the session variable that tells the
+// tool its scope. It runs nothing; the tool (pipeline-commit-tool.ts) runs
+// the argv it returns.
 
 import { z } from "zod";
 import { matchAny } from "../globs.ts";
@@ -24,11 +25,12 @@ const CHECKOUT_SCOPE = z.object({ dir: z.string(), access: ACCESS });
 // A session's commit scope: the job's control socket, the launch it is, the
 // job's start, the job's folder, its code checkout, its wiki checkout (null
 // with no wiki), and the code globs, relative to the code checkout, it may
-// commit.
+// commit. A job started before the trailer (#402) sends no `jobStartedAt`,
+// and its sessions commit without the trailer.
 const COMMIT_SCOPE = z.object({
   socket: z.string(),
   key: z.string(),
-  jobStartedAt: z.string(),
+  jobStartedAt: z.string().optional(),
   root: z.string(),
   repo: CHECKOUT_SCOPE,
   docs: CHECKOUT_SCOPE.nullable(),
@@ -138,12 +140,20 @@ function withPaths(argv: string[], paths: readonly string[]): string[] {
   return [...argv, "--", ...paths];
 }
 
+// The argv that ends a commit with `trailer`, or none for no trailer.
+function trailerArgs(trailer: string | null): string[] {
+  if (trailer === null) {
+    return [];
+  }
+  return ["--trailer", trailer];
+}
+
 // The wiki's argv: everything when it got no pathspec, else the named paths,
-// committed with `trailer`.
+// committed with `trailer` (none when null).
 function wikiArgv(
   read: ReadArgs,
   paths: string[],
-  where: { dir: string; trailer: string },
+  where: { dir: string; trailer: string | null },
 ): string[][] {
   const { dir, trailer } = where;
   const message = read.message.flatMap(([option = "", value]): string[] => {
@@ -164,19 +174,19 @@ function wikiArgv(
   }
   return [
     withPaths(["add", "-A"], paths),
-    withPaths(["commit", ...message, "--trailer", trailer], paths),
+    withPaths(["commit", ...message, ...trailerArgs(trailer)], paths),
   ];
 }
 
 // The plan for one call of `pipeline_commit` with git commit's `args`, in a
 // session that may commit what `scope` allows, each commit ending with the
-// trailer `trailer`. A call that names pathspecs commits only the checkouts
-// they are in; one that names none commits each checkout the stage may
-// write.
+// trailer `trailer` (none when null). A call that names pathspecs commits
+// only the checkouts they are in; one that names none commits each checkout
+// the stage may write.
 function planOf(
   args: readonly string[],
   scope: PathScope,
-  trailer: string,
+  trailer: string | null,
 ): CommitPlan {
   const read = readArgs(args);
   const codePaths: string[] = [];
@@ -200,7 +210,8 @@ function planOf(
     (!named || codePaths.length > 0)
   ) {
     const options = optionsIn(read, repo.dir);
-    code = withPaths(["commit", ...options, "--trailer", trailer], codePaths);
+    const commit = ["commit", ...options, ...trailerArgs(trailer)];
+    code = withPaths(commit, codePaths);
   }
   let wiki: string[][] | null = null;
   if (docs?.access === "write" && (!named || wikiPaths.length > 0)) {
@@ -210,18 +221,24 @@ function planOf(
 }
 
 // The trailer that names session `key` of the job that started at
-// `jobStartedAt` on each of its commits.
-function sessionTrailer(scope: { key: string; jobStartedAt: string }): string {
+// `jobStartedAt` on each of its commits, or null when the scope doesn't
+// name the job's start.
+function sessionTrailer(
+  scope: Pick<CommitScope, "key" | "jobStartedAt">,
+): string | null {
+  if (scope.jobStartedAt === undefined) {
+    return null;
+  }
   return `Pipeline-Session: ${scope.key}@${scope.jobStartedAt}`;
 }
 
-// The plan for `args` within `scope`, each commit ending with `trailer`:
-// refused, naming the flag or path, before anything runs; or the argv for
-// each repo.
+// The plan for `args` within `scope`, each commit ending with `trailer`
+// (none when null): refused, naming the flag or path, before anything runs;
+// or the argv for each repo.
 function commitArgsOf(
   args: readonly string[],
   scope: PathScope,
-  trailer: string,
+  trailer: string | null,
 ): CommitPlan {
   try {
     return planOf(args, scope, trailer);
