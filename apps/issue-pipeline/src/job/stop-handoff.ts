@@ -1,21 +1,26 @@
-// The handoff a stage job writes for a writer session it stopped at the hard
-// context limit (context-watch.ts) that left no handoff file, or left it as
-// it found it (wrap-up-at-175k, Axlog, 2026-10-17): a header saying the
-// session was stopped before it wrote its summary, the session's commits, its
-// uncommitted work and the start of its last assistant text. Before writing
-// it, the job commits that uncommitted work as one WIP commit
-// (kill-saves-writer-work), so the job's exit push keeps it, unless the
+// What a stage job saves for a writer session it stopped at the hard context
+// limit (context-watch.ts; wrap-up-at-175k, Axlog, 2026-10-17). On every
+// stop, the job commits the work the session left uncommitted as one WIP
+// commit (kill-saves-writer-work), so the job's exit push keeps it, unless the
 // checkout is off its branch, mid rebase, merge, cherry-pick or revert, or
-// holds unmerged paths, or the commit hooks refuse it; the handoff says which.
+// holds unmerged paths, or the commit hooks refuse it; work left uncommitted
+// is what the job's exit lists in `lostChanges`. Then it updates the handoff,
+// never dropping text already in it (stop-handoff-text.ts):
+// - a handoff the session wrote is kept, with a note on its uncommitted work,
+//   when there was any: the WIP commit, or why the job made none;
+// - an earlier round's handoff the session left unchanged is kept, followed
+//   by the job's section on the stopped session;
+// - with no handoff before or after, the job writes one: the session's
+//   commits, its uncommitted work and the start of its last assistant text.
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { run } from "../process.ts";
 import type { ContextStop } from "./context-watch.ts";
+import type { CheckoutView, WipResult } from "./stop-handoff-text.ts";
+import { stopHandoffText } from "./stop-handoff-text.ts";
 
-// How much of the session's last assistant text the handoff keeps.
-const LAST_TEXT_CHARS = 2000;
 // The longest one git command, a commit's hooks included, may take.
 const COMMIT_TIMEOUT_MS = 120_000;
 // What git keeps under .git while an operation a commit would break is in
@@ -27,8 +32,6 @@ const IN_PROGRESS: readonly string[] = [
   "CHERRY_PICK_HEAD",
   "REVERT_HEAD",
 ];
-const BACKTICKS = /`+/gu;
-const MIN_FENCE = 3;
 
 // What the job notes as a writer session starts: its checkout's HEAD, null
 // when it has none, and the handoff file's text, null when there is none.
@@ -53,9 +56,9 @@ interface StoppedEnd {
   start: HandoffStart;
 }
 
-// What the job did for a stopped session: whether it wrote the handoff file
-// (false when the session wrote its own), and its WIP commit's sha, null when
-// it made none.
+// What the job did for a stopped session: whether it wrote to the handoff
+// file (false when it left the file as the session did), and its WIP
+// commit's sha, null when it made none.
 interface StoppedWork {
   wroteHandoff: boolean;
   wipCommit: string | null;
@@ -63,11 +66,6 @@ interface StoppedWork {
 
 // A stopped writer session, where it worked.
 type StoppedSession = StoppedEnd & WriterPlace;
-
-// The WIP commit's sha, or why the job made none.
-type WipResult =
-  | { kind: "committed"; sha: string }
-  | { kind: "left"; why: string };
 
 // git's trimmed stdout in `cwd`, run with `env` added to the job's
 // environment, or null when it fails.
@@ -140,48 +138,7 @@ function commitWip(session: StoppedSession): WipResult {
   return { kind: "committed", sha };
 }
 
-// `text` in a code fence longer than any run of backticks in it.
-function fenced(text: string): string {
-  const runs = text.match(BACKTICKS) ?? [];
-  const longest = Math.max(0, ...runs.map((found) => found.length));
-  const fence = "`".repeat(Math.max(MIN_FENCE, longest + 1));
-  return `${fence}text\n${text}\n${fence}`;
-}
-
-// `text` as a fenced block, or `none` when it is empty.
-function blockOr(text: string | null, none: string): string {
-  if (text === null || text === "") {
-    return none;
-  }
-  return fenced(text);
-}
-
-// The start of the session's last assistant text, cut to LAST_TEXT_CHARS.
-function lastTextOf(text: string | null): string | null {
-  if (text === null || text.length <= LAST_TEXT_CHARS) {
-    return text;
-  }
-  return `${text.slice(0, LAST_TEXT_CHARS)}\n[… cut at ${LAST_TEXT_CHARS} characters]`;
-}
-
-function wipLine(wip: WipResult | null): string {
-  if (wip === null) {
-    return "";
-  }
-  if (wip.kind === "committed") {
-    return `\n\nThe job committed this work as WIP commit ${wip.sha}, which may not build.`;
-  }
-  return `\n\nThe job left this work uncommitted (${wip.why}); it is lost when the job's checkout is removed.`;
-}
-
-// What git showed of a stopped session's checkout before any WIP commit:
-// its commits since it started, and its uncommitted work.
-interface CheckoutView {
-  log: string | null;
-  status: string | null;
-  diffStat: string | null;
-}
-
+// What git shows of `session`'s checkout.
 function checkoutView(session: StoppedSession): CheckoutView {
   const { cwd, start } = session;
   let log: string | null = "(the session's start commit is unknown)";
@@ -193,66 +150,38 @@ function checkoutView(session: StoppedSession): CheckoutView {
   return { log, status, diffStat };
 }
 
-// The handoff for `session`, from what git showed (`view`) and the WIP
-// commit (`wip`, null when there was nothing to commit).
-function handoffText(
-  session: StoppedSession,
-  view: CheckoutView,
-  wip: WipResult | null,
-): string {
-  const { key, stop } = session;
-  return [
-    "# Handoff: the session was stopped before it wrote its summary",
-    "",
-    `The job stopped writer session ${key} at ${stop.context} tokens of context, past the hard context limit, before it wrote its own summary. The job wrote this handoff from the checkout. Check the branch before you trust it.`,
-    "",
-    "## The session's commits (`git log --oneline` since its start)",
-    "",
-    blockOr(view.log, "None."),
-    "",
-    "## Uncommitted work when it stopped",
-    "",
-    "`git status --short`:",
-    "",
-    blockOr(view.status, "Nothing uncommitted."),
-    "",
-    "`git diff --stat HEAD`:",
-    "",
-    `${blockOr(view.diffStat, "No changes to tracked files.")}${wipLine(wip)}`,
-    "",
-    "## The session's last assistant text",
-    "",
-    blockOr(lastTextOf(session.lastText), "None."),
-    "",
-  ].join("\n");
-}
-
-// Saves what stopped `session` left: when it wrote no handoff file of its
-// own, commits its uncommitted work as a WIP commit where that is safe and
-// writes the handoff for it.
+// Saves what stopped `session` left: commits its uncommitted work as a WIP
+// commit where that is safe, from what git showed before it, then updates
+// the handoff without dropping any text already in it.
 function saveWork(session: StoppedSession): StoppedWork {
   const { handoffFile, start } = session;
-  const current = readText(handoffFile);
-  if (current !== null && current !== start.handoff) {
-    return { wroteHandoff: false, wipCommit: null };
-  }
   const view = checkoutView(session);
   let wip: WipResult | null = null;
   if (view.status !== null && view.status !== "") {
     wip = commitWip(session);
   }
-  const text = handoffText(session, view, wip);
-  fs.mkdirSync(path.dirname(handoffFile), { recursive: true });
-  fs.writeFileSync(handoffFile, text);
+  const text = stopHandoffText({
+    key: session.key,
+    context: session.stop.context,
+    lastText: session.lastText,
+    startHandoff: start.handoff,
+    current: readText(handoffFile),
+    view,
+    wip,
+  });
+  if (text !== null) {
+    fs.mkdirSync(path.dirname(handoffFile), { recursive: true });
+    fs.writeFileSync(handoffFile, text);
+  }
   let wipCommit: string | null = null;
   if (wip?.kind === "committed") {
     wipCommit = wip.sha;
   }
-  return { wroteHandoff: true, wipCommit };
+  return { wroteHandoff: text !== null, wipCommit };
 }
 
 // saveWork for the session at `place` that ended as `end`; a failure is
-// reported on stderr, changes nothing else, and counts as no handoff written.
+// reported on stderr and counts as no handoff written and no WIP commit.
 function saveStoppedWork(place: WriterPlace, end: StoppedEnd): StoppedWork {
   const session = { ...end, cwd: place.cwd, handoffFile: place.handoffFile };
   try {

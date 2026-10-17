@@ -34,7 +34,8 @@ process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(replies[reque
 // script rejects the prompt with that error. On the prompt, a `commit`
 // script first commits that file, relative to its cwd, in the repo holding
 // it, logging the commit's sha; an `untracked` script leaves that file
-// uncommitted. It exits when stdin closes.
+// uncommitted; a `handoff` script, `{ file, text }`, writes `text` to that
+// file, as a session writes its handoff. It exits when stdin closes.
 const FAKE_PI = `#!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -66,6 +67,10 @@ const work = () => {
   }
   if (script.untracked) {
     fs.writeFileSync(path.join(process.cwd(), script.untracked), "left\\n");
+  }
+  if (script.handoff) {
+    fs.mkdirSync(path.dirname(script.handoff.file), { recursive: true });
+    fs.writeFileSync(script.handoff.file, script.handoff.text);
   }
 };
 const promptEvents = () => {
