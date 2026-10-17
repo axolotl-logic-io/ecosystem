@@ -76,7 +76,7 @@ interface SpecSettings {
 }
 
 // The wiki checkout's folder relative to the worktree, as `files` names a
-// wiki page: `<dir>/<page>`.
+// wiki page: `<dir>/<page>.md`.
 function wikiDirOf(paths: ItemPaths): string {
   const { wiki, worktree } = paths;
   const prefix = `${worktree}/`;
@@ -187,7 +187,7 @@ function workLines(item: SpecItem, budgets: Budgets): string[] {
     `Keep your spec draft in \`${SPEC_DRAFT}\` on the issue's branch (\`repo/${SPEC_DRAFT}\` as a pathspec), and commit the tests, stubs, spec draft and wiki pages with \`pipeline_commit\` as you go, not only at the end. The draft never merges: the pipeline removes it once your spec is posted.`,
     "Before you reply, commit to the issue's branch a stub at its `where` for each `new` interface that doesn't exist yet (its call shape, with a body that only throws or returns a not-implemented error, so the code builds and type-checks), and failing tests for every Behaviour item through the listed interfaces, unless `noTestsReason` applies. Each test fails because the behaviour is missing, not on a syntax, import or type error.",
     "Make the spec's Wiki updates yourself, in the wiki checkout.",
-    `Change only test files, those stubs and wiki pages; write no behaviour. \`files\` lists every repo path or glob the change will touch, relative to the repo root, and each wiki page you changed as \`${dir}/<page>\`.`,
+    `Change only test files, those stubs and wiki pages; write no behaviour. \`files\` lists every repo path or glob the change will touch, relative to the repo root, and each wiki page you changed as \`${dir}/<page>.md\`.`,
     ...commitRulesOf("pipeline_commit", {
       unit: "step",
       when: "as soon as it builds",

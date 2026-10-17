@@ -26,7 +26,7 @@ interface Failure {
 }
 
 // What the commits changed: every file, the test files and the wiki pages
-// (as `<wiki dir>/<page>`), with the `new` interfaces' stub files, the prefix
+// (as `<wiki dir>/<page>.md`), with the `new` interfaces' stub files, the prefix
 // every wiki page's path starts with, and the reply's `files` and
 // `noTestsReason`.
 interface Facts {
@@ -37,6 +37,16 @@ interface Facts {
   stubs: readonly string[];
   wikiPages: readonly string[];
   wikiPrefix: string;
+}
+
+const MD_EXTENSION = /\.md$/u;
+
+// Whether `files` lists wiki page `page` (`<wiki dir>/<page>.md`), with or
+// without its `.md`: a spec writer may name a page either way (#385).
+function listsWikiPage(files: readonly string[], page: string): boolean {
+  return (
+    matchAny(files, page) || matchAny(files, page.replace(MD_EXTENSION, ""))
+  );
 }
 
 // Only test files, stubs and wiki pages change, and `files` lists each.
@@ -54,9 +64,9 @@ function scopeFailure(facts: Facts): Failure | null {
     const reason = `${outside} changed, but it is not a test file (testPathGlobs), the stub of a new interface or a wiki page`;
     return { rule: "not-allowed", reason };
   }
-  const unlisted = [...changed, ...facts.wikiPages].find(
-    (file) => !matchAny(facts.files, file),
-  );
+  const unlisted =
+    changed.find((file) => !matchAny(facts.files, file)) ??
+    facts.wikiPages.find((page) => !listsWikiPage(facts.files, page));
   if (unlisted !== undefined) {
     const reason = `${unlisted} changed, but no entry of files matches it`;
     return { rule: "not-in-files", reason };

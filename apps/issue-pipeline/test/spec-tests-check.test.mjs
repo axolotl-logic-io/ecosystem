@@ -132,6 +132,25 @@ test("a changed wiki page outside files fails", () => {
   assert.deepEqual(outcome(got, [PAGE]), failed("not-in-files"));
 });
 
+// #385's spec writer listed its pages without `.md` and was stopped.
+for (const listed of [PAGE, "wiki/Page"]) {
+  test(`a failing test plus a wiki page listed as ${listed} passes`, () => {
+    const got = check(FAILING, {
+      files: [TEST, listed],
+      wiki: wikiPage("Text.\n"),
+    });
+    assert.deepEqual(outcome(got), passed(false));
+  });
+}
+
+test("a changed wiki page with only another page in files fails", () => {
+  const got = check(FAILING, {
+    files: [TEST, "wiki/Other", "wiki/Pages.md"],
+    wiki: wikiPage("Text.\n"),
+  });
+  assert.deepEqual(outcome(got, [PAGE]), failed("not-in-files"));
+});
+
 test("a new interface whose stub file is absent fails", () => {
   const got = check(FAILING, { files: [TEST, STUB], interfaces: [GREET] });
   assert.deepEqual(outcome(got, [STUB, "greet"]), failed("stub-missing"));
