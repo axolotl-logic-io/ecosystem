@@ -24,8 +24,11 @@ interface StackedOn {
 // The issue's prerequisite (#290), as far as scheduling cares: the issue it
 // is stacked on, or, when it isn't stacked, the one open issue its after mark
 // names. An open prerequisite carries its stage, how many of its findings are
-// open, its branch head, whether it is stacked itself and whether it is
-// stopped; one whose PR merged, at publish or closed, has merged.
+// open, its branch head, whether it is stacked itself, whether it is stopped,
+// and whether it is behind (#328): its branch on GitHub lacks the merge commit
+// of another prerequisite in the issue's after mark that merged, which is
+// false when not computed. One whose PR merged, at publish or closed, has
+// merged.
 type Prereq =
   | {
       number: number;
@@ -35,6 +38,7 @@ type Prereq =
       headSha: string | null;
       stacked: boolean;
       stopped: boolean;
+      behind: boolean;
     }
   | { number: number; status: "merged" }
   | { number: number; status: "closed-unmerged" };

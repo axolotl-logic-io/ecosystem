@@ -9,7 +9,7 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { fetchIn, remoteHead } from "./git-state.ts";
 import { ghJson } from "./github.ts";
-import { mergedPrFor } from "./ops/prs.ts";
+import { mergeCommitFor, mergedPrFor } from "./ops/prs.ts";
 import { OpsError, run } from "./process.ts";
 
 // The prerequisite issue and the head of its branch the stacked branch was
@@ -26,6 +26,10 @@ const ISSUE_CLOSE = z
   .nullable();
 
 type StackedOn = z.infer<typeof STACKED_ON>;
+
+// `git merge-base --is-ancestor`'s exit code when the commit isn't an
+// ancestor; any other failure is an error.
+const NOT_ANCESTOR = 1;
 
 // What a sync rebases: the commits after `upstream`, onto `onto`. `stackedOn`
 // is what the issue is stacked on once the sync is done, null when it isn't.
@@ -81,6 +85,43 @@ function prereqMerged(cfg: Config, issue: number): boolean {
   ];
   const closed = ISSUE_CLOSE.parse(ghJson(cfg, args));
   return closed?.state === "closed" && closed.reason === "completed";
+}
+
+// True when the branch on GitHub of open prerequisite `prereq` lacks the merge
+// commit of some issue in `merged` whose PR merged (#328). Each merge commit
+// is the base's head just after that PR merged, so later moves of the base
+// don't count. False when none of them has a merged PR, and when gh or git
+// can't tell, as when the prerequisite has no branch or there is no clone.
+function prereqBehind(
+  cfg: Config,
+  prereq: number,
+  merged: readonly number[],
+): boolean {
+  try {
+    const commits = merged.flatMap((n) => mergeCommitFor(cfg, n) ?? []);
+    if (commits.length === 0) {
+      return false;
+    }
+    const clone = paths.clone(cfg);
+    fetchIn(cfg, clone, cfg.baseBranch);
+    const head = fetchPrereq(cfg, clone, prereq);
+    if (head === null) {
+      return false;
+    }
+    return commits.some((commit) => {
+      const args = ["-C", clone, "merge-base", "--is-ancestor", commit, head];
+      return run("git", args, { allowFail: true }).code === NOT_ANCESTOR;
+    });
+  } catch (error: unknown) {
+    if (
+      error instanceof OpsError ||
+      error instanceof SyntaxError ||
+      error instanceof z.ZodError
+    ) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 // What a sync of the branch in `dir` rebases onto, with the base fetched:
@@ -179,6 +220,7 @@ export type { StackedOn, SyncTarget };
 export {
   claimedStack,
   measureFrom,
+  prereqBehind,
   prereqMerged,
   resetToStart,
   STACKED_ON,

@@ -20,7 +20,8 @@ const STACKED_ON = { issue: PREREQ, headSha: STACKED_HEAD };
 const PREREQ_LIVE = { live: true, stage: "review" };
 
 // The open prerequisite's facts: at checks with no open findings, on the
-// head the dependent was put on, not stacked or stopped, then `fields`.
+// head the dependent was put on, not stacked, stopped or behind, then
+// `fields`.
 /** @param {Partial<OpenPrereq>} [fields] @returns {OpenPrereq} */
 function openPrereq(fields = {}) {
   return {
@@ -31,6 +32,7 @@ function openPrereq(fields = {}) {
     headSha: STACKED_HEAD,
     stacked: false,
     stopped: false,
+    behind: false,
     ...fields,
   };
 }

@@ -52,6 +52,7 @@ const FRESH_PREREQ = {
   headSha: null,
   stacked: false,
   stopped: false,
+  behind: false,
 };
 
 /** @param {number} issue @param {number} pid @returns {StartRecord} */
@@ -184,6 +185,17 @@ const STACK = {
   published: 25,
 };
 const HEAD = "cccccccccccccccc";
+// #20 as the prerequisite of #21 and #22: open at checks, stacked itself.
+const STACK_PREREQ = {
+  number: STACK.prereq,
+  status: "open",
+  stage: "checks",
+  openFindings: 1,
+  headSha: HEAD,
+  stacked: true,
+  stopped: false,
+  behind: false,
+};
 /** @param {number} issue @returns {{ issue: number, headSha: string }} */
 function stackedOn(issue) {
   return { issue, headSha: "aaaaaaaaaaaaaaaa" };
@@ -228,17 +240,8 @@ function prereqOf(issues, number) {
 
 test("each issue carries what it is stacked on and its prerequisite's facts", () => {
   const issues = readStacks([]);
-  const open = {
-    number: STACK.prereq,
-    status: "open",
-    stage: "checks",
-    openFindings: 1,
-    headSha: HEAD,
-    stacked: true,
-    stopped: false,
-  };
-  assert.deepEqual(prereqOf(issues, STACK.waiting), open);
-  assert.deepEqual(prereqOf(issues, STACK.stacked), open);
+  assert.deepEqual(prereqOf(issues, STACK.waiting), STACK_PREREQ);
+  assert.deepEqual(prereqOf(issues, STACK.stacked), STACK_PREREQ);
   assert.deepEqual(
     issues.find((issue) => issue.number === STACK.stacked)?.stackedOn,
     stackedOn(STACK.prereq),
@@ -287,13 +290,5 @@ test("a stacked issue whose closed prerequisite GitHub can't read has no prerequ
   ]);
   assert.equal(prereqOf(issues, STACK.onClosed), null);
   assert.equal(prereqOf(issues, STACK.prereq), null);
-  assert.deepEqual(prereqOf(issues, STACK.waiting), {
-    number: STACK.prereq,
-    status: "open",
-    stage: "checks",
-    openFindings: 1,
-    headSha: HEAD,
-    stacked: true,
-    stopped: false,
-  });
+  assert.deepEqual(prereqOf(issues, STACK.waiting), STACK_PREREQ);
 });
