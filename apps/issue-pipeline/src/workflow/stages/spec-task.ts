@@ -2,11 +2,8 @@
 // to split the issue, and the end marker it writes last.
 
 import { splitBound } from "../budget.ts";
-import {
-  NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
-  preamble,
-} from "../prompts.ts";
+import { practicesNote } from "../practices.ts";
+import { NO_ARTIFICIAL_LOAD_RULE, preamble } from "../prompts.ts";
 import type { IssueState } from "../types.ts";
 import { SPEC_END } from "./build-replies.ts";
 import type { StageContext, StageState } from "./types.ts";

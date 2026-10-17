@@ -4,7 +4,7 @@
 // trace tests run it through the sweep; these pin each outcome's step.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { practicesNote } from "../src/workflow/prompts.ts";
+import { practicesNote } from "../src/workflow/practices.ts";
 import { REVIEW_SCHEMA } from "../src/workflow/review-schemas.ts";
 import { CIFIX_SCHEMA } from "../src/workflow/schemas.ts";
 import { next } from "../src/workflow/stages/checks.ts";

@@ -5,13 +5,13 @@
 import { findingLines, findingsText } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
+import { practicesNote } from "../practices.ts";
 import {
   beyondIssueRule,
   commitRulesOf,
   handoffLead,
   handoffRule,
   NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
   preamble,
   specText,
 } from "../prompts.ts";

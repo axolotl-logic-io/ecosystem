@@ -187,6 +187,11 @@ interface RepoConfig {
 interface PracticesConfig {
   // The coding-practice files, relative to the worktree.
   practices?: readonly string[];
+  // Their digest, relative to the worktree, which the spec writer reads in
+  // their place; null or unset when there is none.
+  practicesDigest?: string | null | undefined;
+  // The repo's wiki setting, for the wiki's dir that practices pages sit under.
+  wiki?: boolean | { dir?: string | undefined } | null | undefined;
 }
 
 interface FixRoundsConfig {

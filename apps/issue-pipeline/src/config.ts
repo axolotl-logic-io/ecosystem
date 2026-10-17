@@ -61,10 +61,19 @@ function insideWorktree(entry: unknown): boolean {
   );
 }
 
-function checkPractices(configPath: string, practices: unknown): void {
+function checkPractices(
+  configPath: string,
+  practices: unknown,
+  digest: unknown,
+): void {
   if (!Array.isArray(practices)) {
     throw new OpsError(
       `config ${configPath}: practices must be a list of paths`,
+    );
+  }
+  if (digest !== null && digest !== undefined && !insideWorktree(digest)) {
+    throw new OpsError(
+      `config ${configPath}: practicesDigest ${JSON.stringify(digest)} must be null or a path inside the worktree`,
     );
   }
   for (const entry of practices) {
@@ -90,6 +99,7 @@ function checkRequired(
   raw: Readonly<Record<string, unknown>>,
 ): void {
   const { account, allowedUsers, commands, practices, repo } = raw;
+  const { practicesDigest } = raw;
   if (!present(repo)) {
     throw new OpsError(`config ${configPath} is missing "repo"`);
   }
@@ -106,7 +116,7 @@ function checkRequired(
     throw new OpsError(`bad repo "${String(repo)}"`);
   }
   checkUsers(configPath, allowedUsers);
-  checkPractices(configPath, practices);
+  checkPractices(configPath, practices, practicesDigest);
 }
 
 // What the writer budget check reads of a config; a value of another type is

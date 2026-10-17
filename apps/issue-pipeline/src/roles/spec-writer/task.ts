@@ -8,12 +8,12 @@
 import { SPEC_DRAFT } from "../../spec-draft.ts";
 import type { Budgets } from "../../workflow/budget.ts";
 import { sessionBudget, splitBound } from "../../workflow/budget.ts";
+import { practicesNote } from "../../workflow/practices.ts";
 import {
   commitRulesOf,
   handoffLead,
   handoffRule,
   NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
   preamble,
 } from "../../workflow/prompts.ts";
 import { SPEC_END } from "../../workflow/stages/build-replies.ts";
@@ -166,7 +166,7 @@ function wikiStart(paths: ItemPaths): string {
 
 function readingLines(item: SpecItem, cfg: SpecSettings["cfg"]): string[] {
   return [
-    `Read, in this order: the project's coding practices (below), in full, before the code; then the issue, ${item.paths.issueFile}; the wiki pages that bear on it${wikiStart(item.paths)}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
+    `Read, in this order: the project's coding practices (below), before the code; then the issue, ${item.paths.issueFile}; the wiki pages that bear on it${wikiStart(item.paths)}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
     "Commit a first artifact early: once you know the issue's main interface, and before you read the code broadly, commit with `pipeline_commit` its stub (or the type-only addition a `changed` one needs) and a first failing test, then grow them as you read. A session that stops early then leaves work the next one builds on.",
     practicesNote(cfg, item, "spec"),
   ];
@@ -223,6 +223,7 @@ function decisionLines(item: SpecItem, settings: SpecSettings): string[] {
     "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
     splitLine(item.depth, splitBound(budgets)),
     `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
+    `If \`${SPEC_DRAFT}\` holds the whole spec and is committed, set \`specInDraft\` to true and leave \`spec\` empty rather than retyping it: the pipeline reads the spec from the draft at the branch's head. Otherwise set \`specInDraft\` to false and give the spec in \`spec\`.`,
   ];
 }
 
@@ -258,6 +259,7 @@ function specSession(item: SpecItem, settings: SpecSettings): SessionEffect {
       check: SESSION_REPLY_CHECK,
       payload: { number: item.n, startSha: item.startSha, depth: item.depth },
     },
+    replyFile: { path: SPEC_DRAFT, field: "spec", flag: "specInDraft" },
   };
 }
 

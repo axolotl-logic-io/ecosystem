@@ -1,36 +1,16 @@
 // The opening lines every child's task shares: who the child is, where it
-// works, its limits, and the coding practices it reads; and how a writer
-// commits and hands off.
+// works and its limits, with the coding practices it reads (practices.ts);
+// and how a writer commits and hands off.
 
 import { JOB_DOCS, JOB_REPO } from "../job/layout.ts";
 import type { Budgets } from "./budget.ts";
-import type {
-  IssueState,
-  JobLayout,
-  PracticesConfig,
-  PracticesUse,
-  RepoConfig,
-  WorkItem,
-} from "./types.ts";
+import type { IssueState, JobLayout, RepoConfig, WorkItem } from "./types.ts";
 
 type PromptItem = Pick<WorkItem, "n" | "paths">;
 
 // How writer sessions commit: through the `pipeline_commit` tool in a stage
 // job, or with plain git in a lane's worktree (#303).
 type Committer = "pipeline_commit" | "git";
-
-// The coding practices that the spec writer, every session that writes code and
-// the first reviewers read in full (config `practices`, Autumn, 2026-10-15).
-// They cover all of the repo's code, not only the app an issue names, so no
-// step may skip them by reading only the pages that look relevant. Each use
-// says what the role does with them.
-const PRACTICES_USE: Readonly<Record<PracticesUse, string>> = {
-  spec: "The spec must follow them: its Design names the practices that bear on the work, and its Tests meet their test rules. If the work can't follow one, say which rule and why in Design. If following the issue needs an exception only the maintainer can grant, set `decision` to needs-info and ask for it.",
-  writer:
-    "Every change you make must follow them, tests included. If the task can't be done within one, don't work around it: say which rule and why in your summary.",
-  reviewer:
-    "A change that breaks a written rule in them is a defect: mark it `blocking`, quote the rule, and cite the file and line. Preferences they don't settle stay `nit`.",
-};
 
 // What a stage job's stage may do with its wiki checkout (#338).
 const DOCS_ACCESS: Readonly<Record<JobLayout["docs"], string>> = {
@@ -82,29 +62,6 @@ function preamble(cfg: RepoConfig, item: PromptItem, role: string): string[] {
     CODEMODE_RULE,
     "",
   ];
-}
-
-function practicesList(cfg: PracticesConfig, item: PromptItem): string {
-  const files = (cfg.practices ?? []).map(
-    (file) => `${item.paths.worktree}/${file}`,
-  );
-  if (files.length === 0) {
-    return "(none configured)";
-  }
-  return files.join(", ");
-}
-
-// The note that tells a role to read the coding practices in full, and what
-// to do with them.
-function practicesNote(
-  cfg: PracticesConfig,
-  item: PromptItem,
-  use: PracticesUse = "spec",
-): string {
-  return [
-    `Coding practices: before the code, read each of these in full, skipping any that don't exist: ${practicesList(cfg, item)}. Also read any contributor rules they point to. They apply to all of the repo's code, not only the part the issue names.`,
-    PRACTICES_USE[use],
-  ].join("\n");
 }
 
 // How a task shows the issue's spec: "" when it has none, the spec itself, or,
@@ -247,7 +204,6 @@ export {
   handoffLead,
   handoffRule,
   NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
   preamble,
   specText,
 };

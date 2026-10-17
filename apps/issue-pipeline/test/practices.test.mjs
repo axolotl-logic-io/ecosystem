@@ -9,7 +9,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { loadConfig } from "../src/config.ts";
 import { OpsError } from "../src/process.ts";
-import { practicesNote } from "../src/workflow/prompts.ts";
+import { practicesNote } from "../src/workflow/practices.ts";
 import { next as nextFix } from "../src/workflow/stages/fix.ts";
 import { next as nextImplement } from "../src/workflow/stages/implement.ts";
 import { next as nextReview } from "../src/workflow/stages/review.ts";

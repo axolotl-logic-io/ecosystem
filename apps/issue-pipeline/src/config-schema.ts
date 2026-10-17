@@ -15,9 +15,16 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // Issues with any of these labels are never pipeline work, such as deploy tickets.
   skipLabels: [],
   // The files that hold the project's coding practices, relative to the worktree
-  // (wiki pages under the wiki's dir, such as "wiki/Decisions.md"). The spec writer
-  // reads each in full and specs to them (Autumn, 2026-10-15). Missing files are skipped.
+  // (wiki pages under the wiki's dir, such as "wiki/Decisions.md"). Writers and
+  // reviewers read each in full (Axlog, 2026-10-15); the spec writer reads their
+  // digest when there is one, and specs to them. Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
+  // A digest of the practices files, relative to the worktree like them (a
+  // wiki page under the wiki's dir is read in the wiki checkout). The spec
+  // writer reads it in place of the full files, and opens a full file only for
+  // a rule that bears on its work; with no digest, or none at that path, it
+  // reads them in full. null turns it off (spec-practices-digest, 2026-10-17).
+  practicesDigest: "wiki/Coding-Practices-Digest.md",
   leaseHours: 3,
   // Caps each session's context budget, the context the orchestrator's
   // watchdog stops a writer session past; roleBudgets sets each role's. Budgets bound context, not spend (budgets-bound-context,
@@ -110,6 +117,7 @@ const CONFIG_SCHEMA = z.looseObject({
   leaseHours: z.number(),
   maxContinuations: z.number().int().nonnegative(),
   practices: z.array(z.string()),
+  practicesDigest: z.string().nullish(),
   // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue
   // rebase allowance (#201) that once stopped an issue. Accepted so older
   // configs still load, and unused.

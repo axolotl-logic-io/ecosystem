@@ -4,11 +4,8 @@
 // finding, and the tasks the sweep has always written for each session.
 import { findingsText } from "../src/workflow/findings.ts";
 import { LENSES } from "../src/workflow/lenses.ts";
-import {
-  NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
-  preamble,
-} from "../src/workflow/prompts.ts";
+import { practicesNote } from "../src/workflow/practices.ts";
+import { NO_ARTIFICIAL_LOAD_RULE, preamble } from "../src/workflow/prompts.ts";
 import { hasRoom } from "./workflow-context-test-kit.mjs";
 
 /** @import { Lens } from "../src/workflow/lenses.ts" */

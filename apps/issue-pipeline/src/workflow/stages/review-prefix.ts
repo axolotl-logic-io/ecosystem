@@ -6,7 +6,8 @@
 
 import type { ReviewLens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
-import { practicesNote, preamble } from "../prompts.ts";
+import { practicesNote } from "../practices.ts";
+import { preamble } from "../prompts.ts";
 import type { ReviewDiff } from "./review-text.ts";
 import {
   LENS_OUTPUT_RULES,

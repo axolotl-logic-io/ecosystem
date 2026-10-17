@@ -119,6 +119,20 @@ test("the session's reply is put through the session-reply check with the issue,
   }
 });
 
+// The line that lets a ready reply point at the committed spec draft.
+const SPEC_IN_DRAFT =
+  /set `specInDraft` to true and leave `spec` empty[^\n]*reads the spec from the draft/u;
+
+test("the session's reply may point at the spec draft, which the job reads at the head", () => {
+  const session = retried();
+  assert.deepEqual(session.replyFile, {
+    path: SPEC_DRAFT,
+    field: "spec",
+    flag: "specInDraft",
+  });
+  assert.match(session.task, SPEC_IN_DRAFT);
+});
+
 test("the task says the ready reply is checked in the session, and how a changed interface's file may grow", () => {
   const { task } = retried();
   assert.match(task, CHECKED_IN_SESSION);

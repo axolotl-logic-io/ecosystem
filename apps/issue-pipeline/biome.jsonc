@@ -49,7 +49,9 @@
     // src/job/exit-push.ts reports a failed exit push on stderr (#250).
     // src/job/context-log.ts appends to the issue's context.jsonl, and
     // src/job/stop-handoff.ts runs git in the checkout and writes the handoff
-    // of a writer the job stopped.
+    // of a writer the job stopped. src/job/reply-file.ts reads the file at
+    // the checkout's head that a session's reply points at
+    // (spec-practices-digest).
     // src/job/dropped-patch.ts runs git in a checkout and writes the patch of
     // the changes the job drops, and src/job/teardown.ts names those patches
     // on stderr and reports a failed notice there (#369).
@@ -129,6 +131,7 @@
         "src/job/checkout.ts",
         "src/job/exit-push.ts",
         "src/job/stop-handoff.ts",
+        "src/job/reply-file.ts",
         "src/job/dropped-patch.ts",
         "src/job/teardown.ts",
         "src/orchestrate.ts",

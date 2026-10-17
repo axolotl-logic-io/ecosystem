@@ -2,11 +2,8 @@
 // Fixtures for driving the spec, implement and open-pr step machines directly:
 // a context with a fixed clock, issue #7's state at a stage, the signatures,
 // and the launches and tasks the sweep has always used.
-import {
-  NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
-  preamble,
-} from "../src/workflow/prompts.ts";
+import { practicesNote } from "../src/workflow/practices.ts";
+import { NO_ARTIFICIAL_LOAD_RULE, preamble } from "../src/workflow/prompts.ts";
 import { IMPL_SCHEMA, SPEC_SCHEMA } from "../src/workflow/schemas.ts";
 import { hasRoom, modelsWith } from "./workflow-context-test-kit.mjs";
 

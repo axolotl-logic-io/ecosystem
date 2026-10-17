@@ -9,13 +9,13 @@
 import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
+import { practicesNote } from "../practices.ts";
 import {
   beyondIssueRule,
   commitRulesOf,
   handoffLead,
   handoffRule,
   NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
   preamble,
   specText,
 } from "../prompts.ts";

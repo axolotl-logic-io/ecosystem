@@ -1,6 +1,8 @@
 // The spec writer role's reply: its schema (SPEC_WRITER_SCHEMA, the spec
 // stage's SPEC_SCHEMA plus `no-work`, the test interfaces, the reason for
-// writing no tests, whether the wiki is the whole change, and the optional `handoff` status and its summary), and
+// writing no tests, whether the wiki is the whole change, the optional
+// `handoff` status and its summary, and `specInDraft`, which points at the
+// committed spec draft instead of retyping it), and
 // what the role reads from a reply: the decision `check-reply` routes on, a
 // handoff, a failed session, or a split it refuses. The
 // reader parses with zod: unlike the spec stage's reader (#178), it never
@@ -94,6 +96,7 @@ const SUB_ISSUE_SPLIT = "a sub-issue can't split again";
 const NO_MARKER = `the spec doesn't end with ${SPEC_END}, so the session stopped partway`;
 const NO_INTERFACES =
   "a ready reply gave no interfaces and no noTestsReason, so no test is tied to its Behaviour";
+const NO_DRAFT = "the reply points at the spec draft, but the branch has none";
 
 const STRINGS: JsonSchema = { type: "array", items: STR };
 
@@ -120,6 +123,7 @@ const SPEC_WRITER_SCHEMA: JsonSchema = {
     interfaces: { type: "array", items: INTERFACE_SCHEMA },
     noTestsReason: { type: ["string", "null"] },
     wikiOnly: { type: "boolean" },
+    specInDraft: { type: "boolean" },
     status: { enum: SPEC_STATUSES },
     summary: STR,
   },
@@ -128,6 +132,7 @@ const SPEC_WRITER_SCHEMA: JsonSchema = {
     "interfaces",
     "noTestsReason",
     "wikiOnly",
+    "specInDraft",
     "status",
     "summary",
   ],
@@ -150,7 +155,13 @@ const INTERFACE: z.ZodType<SpecInterface> = z.strictObject({
 
 const INTERFACES = z.array(INTERFACE);
 
-const REPLY: z.ZodType<SpecWriterReply> = z.strictObject({
+// A reply as the session gives it: with `specInDraft`, the job has put the
+// committed spec draft in `spec` (SessionEffect.replyFile), or left `spec` as
+// it was when the branch has no draft. The schema asks for `specInDraft`, and
+// the reader still takes a reply without it, which gives the spec inline.
+const REPLY: z.ZodType<
+  SpecWriterReply & { specInDraft?: boolean | undefined }
+> = z.strictObject({
   decision: z.enum(DECISIONS),
   spec: z.string(),
   questions: z.array(z.string()).max(MOST_ITEMS),
@@ -158,6 +169,7 @@ const REPLY: z.ZodType<SpecWriterReply> = z.strictObject({
   interfaces: INTERFACES,
   noTestsReason: z.string().nullable(),
   wikiOnly: z.boolean().default(false),
+  specInDraft: z.boolean().optional(),
   status: z.enum(SPEC_STATUSES).optional(),
   summary: z.string().optional(),
 });
@@ -212,7 +224,9 @@ function decidedReading(reply: SpecWriterReply, depth: number): SpecReading {
 // for an issue, 1 for a sub-issue). A reply whose status is `handoff` is a
 // handoff. A reply that doesn't fit the schema, or whose spec doesn't end
 // with SPEC_END, is a failed session; otherwise the marker is stripped from
-// the spec.
+// the spec. A spec taken from the committed draft (`specInDraft`) needs no
+// marker, since no reply was cut short, and an empty one means the branch
+// has no draft.
 function specReadingOf(output: unknown, depth: number): SpecReading {
   const handoff = HANDOFF.safeParse(output);
   if (handoff.success) {
@@ -223,12 +237,21 @@ function specReadingOf(output: unknown, depth: number): SpecReading {
     const reason = `the reply doesn't fit the spec writer's schema: ${z.prettifyError(parsed.error)}`;
     return { kind: "bad", reason };
   }
-  const text = parsed.data.spec.trimEnd();
+  const { specInDraft, ...reply } = parsed.data;
+  let text = reply.spec.trimEnd();
+  if (specInDraft === true) {
+    if (text === "") {
+      return { kind: "bad", reason: NO_DRAFT };
+    }
+    if (!text.endsWith(SPEC_END)) {
+      text = `${text}\n${SPEC_END}`;
+    }
+  }
   if (!text.endsWith(SPEC_END)) {
     return { kind: "bad", reason: NO_MARKER };
   }
   const spec = text.slice(0, -SPEC_END.length).trimEnd();
-  return decidedReading({ ...parsed.data, spec }, depth);
+  return decidedReading({ ...reply, spec }, depth);
 }
 
 // Saved interfaces, or undefined when `value` isn't a list of them.

@@ -4,13 +4,13 @@
 // (#269). A continuation is not a CI-fix attempt.
 
 import { sessionBudget } from "../budget.ts";
+import { practicesNote } from "../practices.ts";
 import {
   beyondIssueRule,
   commitRulesOf,
   handoffLead,
   handoffRule,
   NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
   preamble,
 } from "../prompts.ts";
 import { CIFIX_SCHEMA } from "../schemas.ts";

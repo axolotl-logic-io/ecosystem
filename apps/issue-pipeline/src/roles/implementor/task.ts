@@ -7,13 +7,13 @@
 // continuation's task leads with its predecessor's handoff. Pure.
 
 import { sessionBudget } from "../../workflow/budget.ts";
+import { practicesNote } from "../../workflow/practices.ts";
 import {
   beyondIssueRule,
   commitRulesOf,
   handoffLead,
   handoffRule,
   NO_ARTIFICIAL_LOAD_RULE,
-  practicesNote,
   preamble,
   specText,
 } from "../../workflow/prompts.ts";

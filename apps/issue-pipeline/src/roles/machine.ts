@@ -35,7 +35,10 @@ type End =
 // line's role), its attempt: the retry, continuation or round number,
 // from 1, as the role counts it, and, optionally, the role's check that its
 // reply is put through before the session ends: the check's name and its
-// payload, to which the reply is added as `reply` (src/job/reply-checks.ts).
+// payload, to which the reply is added as `reply` (src/job/reply-checks.ts);
+// and, optionally, a file of the job's code checkout whose text at its head
+// the job puts in the reply's `field` when the reply sets `flag` to true,
+// before the reply check or the role reads it (src/job/reply-file.ts).
 interface SessionEffect {
   kind: "session";
   name: string;
@@ -50,6 +53,7 @@ interface SessionEffect {
     check: string;
     payload: Readonly<Record<string, unknown>>;
   };
+  replyFile?: { path: string; field: string; flag: string };
 }
 
 // What a state does: run an op or a script check with its payload, run a

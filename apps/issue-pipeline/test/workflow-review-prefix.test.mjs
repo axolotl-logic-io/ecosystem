@@ -7,7 +7,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LENS_NAMES, LENSES } from "../src/workflow/lenses.ts";
-import { practicesNote, preamble } from "../src/workflow/prompts.ts";
+import { practicesNote } from "../src/workflow/practices.ts";
+import { preamble } from "../src/workflow/prompts.ts";
 import { lensTaskShared } from "../src/workflow/stages/review-prefix.ts";
 import { lensTask } from "../src/workflow/stages/review-text.ts";
 import {
