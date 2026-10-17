@@ -136,7 +136,9 @@ function startBranch(cfg: Config, n: number): string {
   }
   assertClean(wt);
   const message = `Start work on #${n}\n\nPipeline-Agent: coordinator`;
-  run("git", ["-C", wt, "commit", "--allow-empty", "-m", message]);
+  // A job checkout's pre-commit hook passes only commits that say so.
+  const env = new Map([["ISSUE_PIPELINE_COMMIT", "1"]]);
+  run("git", ["-C", wt, "commit", "--allow-empty", "-m", message], { env });
   return push(cfg, n, "start-pr", { allowEmpty: true }).headSha;
 }
 

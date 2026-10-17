@@ -7,6 +7,7 @@
 import { sessionBudget } from "../budget.ts";
 import {
   commitOftenRule,
+  committerText,
   handoffLead,
   handoffRule,
   preamble,
@@ -48,14 +49,23 @@ function resolverLaunch(
   const { handoffFile } = state.paths;
   const attempt = state.st.conflictFixes ?? 0;
   const role = `conflict resolver, attempt ${attempt} of ${maxConflictFixes(ctx)}`;
-  const lines = resolverTask(state, conflict.target, {
-    base: cfg.baseBranch,
-    files: conflict.files,
-    baseSha: conflict.baseSha,
-  });
+  const lines = resolverTask(
+    state,
+    conflict.target,
+    {
+      base: cfg.baseBranch,
+      files: conflict.files,
+      baseSha: conflict.baseSha,
+    },
+    ctx.committer,
+  );
   lines.push(
     commitOftenRule(
-      "continue the rebase as soon as each stopped commit is resolved, and commit each fix after it on its own as soon as it works",
+      committerText(
+        ctx.committer,
+        "continue the rebase as soon as each stopped commit is resolved, and commit each fix after it on its own as soon as it works",
+        "continue the rebase as soon as each stopped commit is resolved, and commit each fix after it on its own with `pipeline_commit` as soon as it works",
+      ),
     ),
     handoffRule(budgets, handoffFile, KEEP_REBASE),
   );

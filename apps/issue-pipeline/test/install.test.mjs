@@ -65,6 +65,7 @@ test("installs the pipeline with local paths filled in", () => {
     "ops.mjs",
     "job.mjs",
     "structured-output.mjs",
+    "pipeline-commit.mjs",
     "orchestrate.mjs",
     "report.mjs",
     "repos/example.json",
@@ -78,6 +79,7 @@ test("installs the pipeline with local paths filled in", () => {
     "ops.mjs",
     "job.mjs",
     "structured-output.mjs",
+    "pipeline-commit.mjs",
     "orchestrate.mjs",
     "report.mjs",
   ]) {

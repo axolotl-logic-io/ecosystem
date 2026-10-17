@@ -222,6 +222,7 @@ function writeJob({
         turns: 0,
         contextStop: null,
         resumed: false,
+        pushes: [],
         outcome: launchOutcome,
       },
     ],

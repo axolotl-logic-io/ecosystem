@@ -72,8 +72,8 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 const OPTIONAL_TEXT = z.string().nullish();
 const TOKENS = z.number().int().positive();
-// What a stage job's role may hold (src/job/roles.ts): the job variable its
-// GH_TOKEN comes from, and the hosts it may reach.
+// What a stage job's role may hold (src/job/roles.ts): a job variable that
+// holds its token, which no session sees, and the hosts it may reach.
 const JOB_ROLE = z
   .object({
     tokenEnv: z.string().regex(ENV_NAME, "must be an env var name").optional(),

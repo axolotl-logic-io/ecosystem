@@ -1,18 +1,21 @@
 // The stage job's roles (sandbox-ready-jobs): the role each stage and each
-// model session runs as, what each role may hold, and the environment a
-// session's pi gets. A reader holds no GitHub token; a writer or merger holds
-// only the one its config names, as GH_TOKEN. No session runs as merger, so
-// no model holds merge credentials. The networks are recorded, not enforced.
+// model session runs as, each stage's wiki access and what its writer
+// sessions may commit, what each role may hold, the environment a
+// session's pi gets and the token budget its job.json records. No session holds a GitHub token: only the job does, and
+// its writer sessions commit and push through it (`pipeline_commit`). No
+// session runs as merger. The networks are recorded, not enforced.
 
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import type { JobRolesConfig } from "../config-schema.ts";
+import type { ChildSpec } from "../workflow/launches.ts";
 import type { StageName } from "../workflow/stages/types.ts";
+import type { PathScope, WikiAccess } from "./pipeline-commit.ts";
 
 type JobRole = "reader" | "writer" | "merger";
 
-// What a role may hold: the job variable its GH_TOKEN comes from, if any, and
-// the hosts it may reach.
+// What a role may hold: the job variable its token comes from, if any, which
+// is hidden from every session, and the hosts it may reach.
 interface RoleSettings {
   tokenEnv: string | undefined;
   network: readonly string[];
@@ -54,6 +57,24 @@ const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
   publish: "merger",
 };
 
+// Each stage's access to the issue's wiki checkout (Pipeline-Roles-Shared,
+// "Wiki provisioning"): the spec writer writes the wiki, as merge and publish
+// do when they rebase and publish its commits; every other stage reads it.
+const STAGE_WIKI_ACCESS: Readonly<Record<StageName, WikiAccess>> = {
+  triage: "read",
+  spec: "write",
+  implement: "read",
+  "open-pr": "read",
+  review: "read",
+  fix: "read",
+  sync: "read",
+  checks: "read",
+  accept: "read",
+  security: "read",
+  merge: "write",
+  publish: "write",
+};
+
 const DEFAULT_ROLES: Roles = {
   reader: { tokenEnv: undefined, network: ["api.anthropic.com"] },
   writer: {
@@ -65,11 +86,9 @@ const DEFAULT_ROLES: Roles = {
 
 // The installed agent whose sessions write.
 const WRITER_AGENT = "issue-pipeline-writer";
-// The variable gh reads its token from first, which a session's token goes in.
-const GH_TOKEN = "GH_TOKEN";
 // The variables gh reads a token from.
 const GH_TOKEN_VARS: readonly string[] = [
-  GH_TOKEN,
+  "GH_TOKEN",
   "GITHUB_TOKEN",
   "GH_ENTERPRISE_TOKEN",
   "GITHUB_ENTERPRISE_TOKEN",
@@ -82,6 +101,16 @@ function sessionRoleOf(agent: string): SessionRole {
     return "writer";
   }
   return "reader";
+}
+
+// The token budget job.json records for `spec`'s session, which the
+// orchestrator's watchdog stops it past: its budget for a writer session, and
+// null, no watchdog max, for any other (Axlog, 2026-10-16).
+function recordedBudgetOf(spec: ChildSpec): number | null {
+  if (sessionRoleOf(spec.agent) === "writer") {
+    return spec.tokenBudget;
+  }
+  return null;
 }
 
 function mergedRole(
@@ -104,35 +133,9 @@ function rolesOf(config: JobRolesConfig | null | undefined): Roles {
   };
 }
 
-// The token a role's GH_TOKEN carries: its tokenEnv's value, or null for a
-// reader, no tokenEnv, or a variable that is unset or empty.
-function roleTokenOf(
-  role: JobRole,
-  roles: Roles,
-  from: EnvSource,
-): string | null {
-  if (role === "reader") {
-    return null;
-  }
-  const { tokenEnv } = roles[role];
-  if (tokenEnv === undefined) {
-    return null;
-  }
-  const token = new Map(Object.entries(from)).get(tokenEnv);
-  if (token === undefined || token === "") {
-    return null;
-  }
-  return token;
-}
-
-// The environment a session of `role` runs with: the job's own `from`, less
-// gh's token variables and every role's tokenEnv, plus GH_TOKEN for a writer
-// or merger whose token is set.
-function agentEnvOf(
-  role: JobRole,
-  roles: Roles,
-  from: EnvSource,
-): Record<string, string> {
+// The environment every session runs with: the job's own `from`, less gh's
+// token variables and every role's tokenEnv.
+function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
   const hidden = new Set(GH_TOKEN_VARS);
   for (const settings of Object.values(roles)) {
     if (settings.tokenEnv !== undefined) {
@@ -145,11 +148,18 @@ function agentEnvOf(
       env.set(name, value);
     }
   }
-  const token = roleTokenOf(role, roles, from);
-  if (token !== null) {
-    env.set(GH_TOKEN, token);
-  }
   return Object.fromEntries(env);
+}
+
+// What a writer session of `stage` may commit: the merger stages commit only
+// the wiki, and every other stage any code path; the wiki as the stage's
+// access allows. `wikiDir` is the wiki's folder in the checkout, or null.
+function commitScopeOf(stage: StageName, wikiDir: string | null): PathScope {
+  const allowed: string[] = [];
+  if (STAGE_ROLES[stage] !== "merger") {
+    allowed.push("**");
+  }
+  return { wikiDir, wikiAccess: STAGE_WIKI_ACCESS[stage], allowed };
 }
 
 function byName(a: string, b: string): -1 | 0 | 1 {
@@ -174,10 +184,19 @@ function boundaryOf(
   return {
     role,
     checkout: paths.jobCheckout(cfg, issue, stage),
-    env: Object.keys(agentEnvOf(role, roles, from)).sort(byName),
+    env: Object.keys(agentEnvOf(roles, from)).sort(byName),
     network: roles[role].network,
   };
 }
 
 export type { Boundary, EnvSource, JobRole, RoleSettings, Roles, SessionRole };
-export { agentEnvOf, boundaryOf, rolesOf, STAGE_ROLES, sessionRoleOf };
+export {
+  agentEnvOf,
+  boundaryOf,
+  commitScopeOf,
+  recordedBudgetOf,
+  rolesOf,
+  STAGE_ROLES,
+  STAGE_WIKI_ACCESS,
+  sessionRoleOf,
+};

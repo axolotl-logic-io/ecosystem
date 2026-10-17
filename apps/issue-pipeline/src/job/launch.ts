@@ -30,7 +30,7 @@ import {
   sessionRaw,
   ZERO_USAGE,
 } from "./raw-results.ts";
-import { sessionRoleOf } from "./roles.ts";
+import { recordedBudgetOf, sessionRoleOf } from "./roles.ts";
 import type { RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart, ResumePoint } from "./status.ts";
@@ -38,6 +38,7 @@ import { handoffStartOf, saveStoppedWork } from "./stop-handoff.ts";
 
 const OPS_CLI = path.join(ROOT, "ops.mjs");
 const OUTPUT_EXTENSION = path.join(ROOT, "structured-output.mjs");
+const COMMIT_EXTENSION = path.join(ROOT, "pipeline-commit.mjs");
 const TIME_RADIX = 36;
 // The prompt that carries on an interrupted session.
 const RESUME_PROMPT =
@@ -64,8 +65,9 @@ interface LaunchHooks {
   // Session `key` ended, after `ended` and any `contextStopped`, as `end`
   // says.
   sessionEnded: (key: string, end: SessionEnd) => void;
-  // The whole environment a session of installed agent `agent` runs with.
-  env: (agent: string) => Readonly<Record<string, string>>;
+  // The whole environment launch `key`'s session of installed agent `agent`
+  // runs with.
+  env: (agent: string, key: string) => Readonly<Record<string, string>>;
   // Where every model session runs: the job's own checkout.
   cwd: string;
 }
@@ -132,8 +134,8 @@ interface SessionStart {
 // creates the sessions folder, moves an earlier job's session at the same
 // path aside to `<key>.<time>.jsonl` unless it is being resumed (pi would
 // otherwise resume it, since launch keys repeat from job to job), and writes
-// the output schema beside it. Returns where it starts, or null if any of
-// that fails.
+// the output schema beside it. A writer session also loads pipeline_commit.
+// Returns where it starts, or null if any of that fails.
 function prepareSession(
   spec: ChildSpec,
   hooks: LaunchHooks,
@@ -154,18 +156,12 @@ function prepareSession(
   } catch {
     return null;
   }
-  const files = { session, extension: OUTPUT_EXTENSION, schema };
-  return { args: piArgs(definition, spec, files), session, resume };
-}
-
-// The token budget job.json records for `spec`'s session, which the
-// orchestrator's watchdog stops it past: its budget for a writer session, and
-// null, no watchdog max, for any other (Axlog, 2026-10-16).
-function recordedBudgetOf(spec: ChildSpec): number | null {
+  let commit: string | null = null;
   if (sessionRoleOf(spec.agent) === "writer") {
-    return spec.tokenBudget;
+    commit = COMMIT_EXTENSION;
   }
-  return null;
+  const files = { session, extension: OUTPUT_EXTENSION, schema, commit };
+  return { args: piArgs(definition, spec, files), session, resume };
 }
 
 // Runs pi for `spec` from `from`, its context watched (context-watch.ts),
@@ -186,7 +182,7 @@ async function runPi(
   const exit = await runRpc({
     args: from.args,
     cwd: hooks.cwd,
-    env: hooks.env(spec.agent),
+    env: hooks.env(spec.agent, key),
     prompt,
     timeoutMs: spec.timeoutMs,
     onSpawn: (rpc: RpcProcess): void => {

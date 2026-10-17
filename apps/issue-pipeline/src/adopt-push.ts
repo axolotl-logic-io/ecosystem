@@ -31,12 +31,17 @@ const ADOPTABLE_STAGES: ReadonlySet<unknown> = new Set([
   "merge",
 ]);
 
-// The op a writer's stage job pushes with as it exits (src/job/exit-push.ts),
-// of commits its checkout holds past its last state save, such as those of an
-// implementer session a stop interrupted (#315).
-const EXIT_PUSH_OP = "exit-push";
+// The ops a writer's stage job pushes with past its last state save: as it
+// exits (src/job/exit-push.ts), of commits its checkout holds, such as those
+// of an implementer session a stop interrupted (#315); and as its sessions
+// commit through pipeline_commit (src/job/commit-push.ts, #303).
+// Each names the push in the state's log.
+const JOB_PUSHES: ReadonlyMap<string, string> = new Map([
+  ["exit-push", "exit push"],
+  ["pipeline-commit", "pipeline_commit push"],
+]);
 
-// The stages from which a job's exit push is adopted, keeping the stage: each
+// The stages from which a job's push is adopted, keeping the stage: each
 // reviews every commit past the last review before the code moves on (the
 // review after open-pr, or a fix round's re-review of the diff since the last
 // review). From a later stage it would skip that review, so it still stops.
@@ -51,7 +56,8 @@ const EXIT_PUSH_STAGES: ReadonlySet<unknown> = new Set([
 // `remote` differs from it but is the head this machine recorded pushing
 // (`pushed`). A sync's push, whose state save failed, from a state saved at
 // sync or later, goes back through sync and every check after it. A job's
-// exit push from a state saved at implement, open-pr or fix keeps the stage.
+// exit or pipeline_commit push from a state saved at implement, open-pr or
+// fix keeps the stage.
 // Any other push would skip the review that follows it, so it still stops
 // with branch-changed. Null when there is nothing to adopt.
 function adoptPush(
@@ -69,8 +75,9 @@ function adoptPush(
     return null;
   }
   const short = remote.slice(0, LOG_SHA_LENGTH);
-  if (pushed.op === EXIT_PUSH_OP && EXIT_PUSH_STAGES.has(stage)) {
-    const entry = `${stamp(now)} adopted the stage job's exit push ${short} at ${String(stage)}`;
+  const jobPush = JOB_PUSHES.get(pushed.op);
+  if (jobPush !== undefined && EXIT_PUSH_STAGES.has(stage)) {
+    const entry = `${stamp(now)} adopted the stage job's ${jobPush} ${short} at ${String(stage)}`;
     return { ...saved, headSha: remote, log: [...(saved.log ?? []), entry] };
   }
   if (!(ADOPTABLE_OPS.has(pushed.op) && ADOPTABLE_STAGES.has(stage))) {

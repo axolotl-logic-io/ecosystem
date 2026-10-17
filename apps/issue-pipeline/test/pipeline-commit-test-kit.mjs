@@ -1,0 +1,145 @@
+// @ts-check
+// pipeline_commit's integration tests' jobs, in-process against bare remotes:
+// a real job checkout (openJobCheckout), the job's control socket serving
+// pushes (openControl with pushServerOf), and the tool's default export
+// registered on a fake pi API (Pipeline-Roles-Shared, "pipeline_commit").
+// Importing it sets the pipeline root to a temp folder, so it comes before
+// anything a test imports from src/.
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import process from "node:process";
+import { seedOrigins } from "./job-git-test-kit.mjs";
+import { setEnv } from "./ops-run-test-kit.mjs";
+
+/** @import { Config } from "../src/config.ts" */
+/** @import { StageName } from "../src/workflow/stages/types.ts" */
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-commit-push-"));
+process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
+setEnv("ISSUE_PIPELINE_ROOT", root);
+const { loadConfig, paths } = await import("../src/config.ts");
+const { openJobCheckout } = await import("../src/job/checkout.ts");
+const { openControl } = await import("../src/job/control.ts");
+const { pushServerOf } = await import("../src/job/commit-push.ts");
+const { openStatus, readStatus } = await import("../src/job/status.ts");
+const { COMMIT_SCOPE_ENV, commitEnvOf } = await import(
+  "../src/job/pipeline-commit.ts"
+);
+const { commitScopeOf, STAGE_WIKI_ACCESS } = await import(
+  "../src/job/roles.ts"
+);
+const { default: pipelineCommit } = await import(
+  "../src/job/pipeline-commit-tool.ts"
+);
+
+const ISSUE = 7;
+const BRANCH = "refs/heads/agent/issue-7";
+const KEY = "i7-launch-1";
+const ZERO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+/**
+ * One stage job's checkout, its control socket and its registered tool.
+ * @typedef {{ cfg: Config, dir: string, wikiDir: string, origin: string, wikiOrigin: string, runDir: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
+ */
+
+let repos = 0;
+
+/**
+ * git's trimmed stdout in `dir`.
+ * @param {string} dir
+ * @param {readonly string[]} args
+ * @param {Record<string, string>} [env]
+ * @returns {string}
+ */
+function git(dir, args, env = {}) {
+  return execFileSync("git", ["-C", dir, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  }).trim();
+}
+
+/** @param {string} tmp @returns {Config} a config of a repo of its own */
+function configIn(tmp) {
+  repos += 1;
+  const origins = seedOrigins(tmp, true);
+  const file = path.join(tmp, "config.json");
+  const config = {
+    repo: `o/r${repos}`,
+    account: "bot",
+    allowedUsers: ["alice"],
+    commands: { test: "true" },
+    ...origins.config,
+  };
+  fs.writeFileSync(file, JSON.stringify(config));
+  return loadConfig(file);
+}
+
+// The tool pipelineCommit registers on a fake pi API.
+/** @returns {any} */
+function registeredTool() {
+  /** @type {any[]} */
+  const tools = [];
+  pipelineCommit({ registerTool: (tool) => tools.push(tool) });
+  return tools[0];
+}
+
+// Opens a job of `stage` for #7 of a repo of its own, with a wiki, whose
+// launch KEY has started.
+/** @param {StageName} stage @returns {Promise<Job>} */
+async function openJob(stage) {
+  const tmp = fs.mkdtempSync(path.join(root, "repo-"));
+  const cfg = configIn(tmp);
+  const wiki = STAGE_WIKI_ACCESS[stage];
+  const dir = openJobCheckout(cfg, ISSUE, { stage, stackOn: null, wiki });
+  const runDir = paths.runDir(cfg, ISSUE);
+  const job = { issue: ISSUE, stage, checkout: dir };
+  const status = openStatus(runDir, { ...job, lane: null, socket: "" });
+  const server = pushServerOf(cfg, job, status.pushed);
+  const control = await openControl(runDir, server);
+  status.started({
+    key: KEY,
+    kind: "session",
+    pid: null,
+    session: null,
+    resumed: false,
+    usage: ZERO,
+    tokenBudget: null,
+  });
+  const scope = { socket: control.socket, key: KEY, checkout: dir };
+  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, "wiki") });
+  const tool = registeredTool();
+  return {
+    cfg,
+    dir,
+    wikiDir: path.join(dir, "wiki"),
+    origin: path.join(tmp, "origin.git"),
+    wikiOrigin: path.join(tmp, "wiki-origin.git"),
+    runDir,
+    commit: async (args) => {
+      setEnv(COMMIT_SCOPE_ENV, env[COMMIT_SCOPE_ENV] ?? "");
+      return await tool.execute("call", { args });
+    },
+    close: () => control.close(),
+  };
+}
+
+// The pushes job.json records under the job's launch.
+/** @param {Job} job @returns {{ repo: string, sha: string }[]} */
+function pushesOf(job) {
+  const pushes = readStatus(job.runDir)?.launches[0]?.pushes ?? [];
+  return pushes.map(({ repo, sha }) => ({ repo, sha }));
+}
+
+/** @param {string} dir @param {string} file @param {string} text */
+function write(dir, file, text) {
+  fs.writeFileSync(path.join(dir, file), text);
+}
+
+/** @param {string} dir @returns {string} */
+function headOf(dir) {
+  return git(dir, ["rev-parse", "HEAD"]);
+}
+
+export { BRANCH, configIn, git, headOf, ISSUE, openJob, pushesOf, root, write };

@@ -8,6 +8,7 @@ import path from "node:path";
 import { z } from "zod";
 import { AGENT_DIR } from "../pipeline-root.ts";
 import type { ChildSpec } from "../workflow/launches.ts";
+import { COMMIT_TOOL } from "./pipeline-commit.ts";
 
 const FRONTMATTER =
   /^---\r?\n(?<head>[\s\S]*?)\r?\n---\r?\n?(?<body>[\s\S]*)$/u;
@@ -42,11 +43,13 @@ type DefinitionRead =
   | { kind: "missing"; error: string };
 
 // The files a session uses: its JSONL session, the structured-output
-// extension and the JSON Schema file that extension reads.
+// extension, the JSON Schema file that extension reads, and the
+// pipeline_commit extension a writer session loads (null for any other).
 interface SessionFiles {
   session: string;
   extension: string;
   schema: string;
+  commit: string | null;
 }
 
 function listOf(value: string | undefined): string[] {
@@ -106,18 +109,19 @@ function readDefinition(agent: string): DefinitionRead {
   return { kind: "found", definition };
 }
 
-// The tools flag: the definition's tools and structured_output, or, when it
-// names none, pi's default tools with structured_output added.
-function toolsFlag(tools: readonly string[]): string {
+// The tools flag: the definition's tools and `added`, or, when it names
+// none, pi's default tools with `added` added.
+function toolsFlag(tools: readonly string[], added: readonly string[]): string {
   if (tools.length === 0) {
-    return `+${OUTPUT_TOOL}`;
+    return added.map((tool) => `+${tool}`).join(",");
   }
-  return [...tools, OUTPUT_TOOL].join(",");
+  return [...tools, ...added].join(",");
 }
 
 // The `pi` arguments that run `spec` as `definition` in RPC mode, which
 // takes its prompt as a command on stdin, writing its session to
-// `files.session` and ending on the structured_output tool.
+// `files.session` and ending on the structured_output tool. A session given
+// `files.commit` also gets the pipeline_commit tool.
 function piArgs(
   definition: AgentDefinition,
   spec: ChildSpec,
@@ -127,7 +131,11 @@ function piArgs(
   if (definition.thinking !== null) {
     args.push("--thinking", definition.thinking);
   }
-  args.push("--tools", toolsFlag(definition.tools));
+  const added = [OUTPUT_TOOL];
+  if (files.commit !== null) {
+    added.push(COMMIT_TOOL);
+  }
+  args.push("--tools", toolsFlag(definition.tools, added));
   args.push("--system-prompt", definition.systemPrompt);
   for (const extension of definition.extensions) {
     args.push("-e", extension);
@@ -140,6 +148,9 @@ function piArgs(
   }
   args.push("--session", files.session);
   args.push("-e", files.extension, "--output-schema", files.schema);
+  if (files.commit !== null) {
+    args.push("-e", files.commit);
+  }
   return args;
 }
 

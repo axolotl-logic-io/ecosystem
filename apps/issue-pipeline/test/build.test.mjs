@@ -231,7 +231,12 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   assert.match(failed.stderr, TICK_FAILED);
 });
 
-test("the built pi extension default-exports its factory", async () => {
-  const extension = await import(path.join(tmp, "structured-output.mjs"));
-  assert.equal(typeof extension.default, "function");
+test("the built pi extensions default-export their factories", async () => {
+  const files = ["structured-output.mjs", "pipeline-commit.mjs"];
+  const extensions = await Promise.all(
+    files.map((file) => import(path.join(tmp, file))),
+  );
+  for (const extension of extensions) {
+    assert.equal(typeof extension.default, "function");
+  }
 });

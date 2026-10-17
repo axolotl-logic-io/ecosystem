@@ -30,7 +30,8 @@ const SHORT_SHA = 8;
 // The issues: one with a matching push record, one whose record names another
 // head, one with no record and then an unreadable one, one saved before the
 // review, one whose record is a CI fix's push, one whose record is a stage
-// job's exit push from open-pr, and one with an exit push after the review.
+// job's exit push from open-pr, one with an exit push after the review, and
+// two whose record is a pipeline_commit push, from implement and from checks.
 const ADOPTED = 61;
 const OTHER_RECORD = 62;
 const NO_RECORD = 63;
@@ -38,6 +39,8 @@ const BEFORE_REVIEW = 64;
 const CI_FIX = 65;
 const EXIT_PUSHED = 66;
 const EXIT_PUSHED_LATE = 67;
+const COMMIT_PUSHED = 68;
+const COMMIT_PUSHED_LATE = 69;
 // Each issue's claim comment id; its state comment follows it.
 const CLAIM_IDS = 10;
 
@@ -206,4 +209,26 @@ test("a claim keeps the saved head for an exit push after the review", () => {
   assert.deepEqual(kept.state, { ...saved, lease: LEASE });
   assert.equal(kept.remoteHead, remote);
   assert.equal(head(EXIT_PUSHED_LATE), saved.headSha);
+});
+
+// pipeline_commit pushes an interrupted implementer's commits as it makes
+// them (#303): the claim adopts them where it adopts an exit push.
+test("a claim adopts a pipeline_commit push at implement, keeping the stage", () => {
+  const moved = movedBranch(COMMIT_PUSHED);
+  const saved = { ...moved.saved, stage: "implement", passedSha: null };
+  recordPush(COMMIT_PUSHED, moved.remote, "pipeline-commit");
+  const got = claimSaved(COMMIT_PUSHED, saved);
+  const { log } = LOGGED.parse(got.state);
+  assert.match(log.join(""), ADOPTED_LOG);
+  const state = { ...saved, headSha: moved.remote, log, lease: LEASE };
+  assert.deepEqual(got.state, state);
+  assert.equal(head(COMMIT_PUSHED), moved.remote);
+});
+
+test("a claim keeps the saved head for a pipeline_commit push after the review", () => {
+  const { saved, remote } = movedBranch(COMMIT_PUSHED_LATE);
+  recordPush(COMMIT_PUSHED_LATE, remote, "pipeline-commit");
+  const kept = claimSaved(COMMIT_PUSHED_LATE, saved);
+  assert.deepEqual(kept.state, { ...saved, lease: LEASE });
+  assert.equal(head(COMMIT_PUSHED_LATE), saved.headSha);
 });

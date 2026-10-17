@@ -1,11 +1,14 @@
-// The stage job's roles: which role each stage and each session runs as, the
-// roles' merged settings, and the environment a session's pi gets.
+// The stage job's roles: which role each stage and each session runs as,
+// each stage's wiki access, the roles' merged settings, and the environment a
+// session's pi gets, which holds no token (Pipeline-Roles-Shared, "No token
+// in sessions").
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   agentEnvOf,
   boundaryOf,
   rolesOf,
+  STAGE_WIKI_ACCESS,
   sessionRoleOf,
 } from "../src/job/roles.ts";
 import { STAGE_ORDER } from "../src/workflow/sweep-config.ts";
@@ -74,18 +77,20 @@ const CFG = {
   slug: "o__r",
 };
 
-test("each stage's boundary has the wiki's role, and only writer and merger stages get GH_TOKEN", () => {
-  /** @type {[StageName[], string, boolean][]} */
+test("each stage's boundary has the wiki's role, and no stage's session env names a token", () => {
+  /** @type {[StageName[], string][]} */
   const groups = [
-    [READER_STAGES, "reader", false],
-    [WRITER_STAGES, "writer", true],
-    [MERGER_STAGES, "merger", true],
+    [READER_STAGES, "reader"],
+    [WRITER_STAGES, "writer"],
+    [MERGER_STAGES, "merger"],
   ];
-  for (const [stages, role, token] of groups) {
+  for (const [stages, role] of groups) {
     for (const stage of stages) {
       const boundary = boundaryOf(CFG, ISSUE, stage, FROM);
       assert.equal(boundary.role, role, stage);
-      assert.equal(boundary.env.includes("GH_TOKEN"), token, stage);
+      for (const name of [...GH_VARS, "W_TOKEN", "M_TOKEN"]) {
+        assert.equal(boundary.env.includes(name), false, `${stage} ${name}`);
+      }
     }
   }
   const listed = [...READER_STAGES, ...WRITER_STAGES, ...MERGER_STAGES];
@@ -120,27 +125,30 @@ test("the roles' defaults hold with no config, and a config network replaces one
   assert.deepEqual(merged.reader.network, ["api.anthropic.com"]);
 });
 
-test("a reader's env keeps the job's other variables but no token", () => {
-  assert.deepEqual(agentEnvOf("reader", CONFIGURED, FROM), PLAIN);
+test("no session env holds a gh token variable or any role's tokenEnv", () => {
+  assert.deepEqual(agentEnvOf(CONFIGURED, FROM), PLAIN);
+  const values = Object.values(agentEnvOf(CONFIGURED, FROM));
+  for (const secret of ["w-secret", "m-secret"]) {
+    assert.equal(values.includes(secret), false, secret);
+  }
 });
 
-test("a writer's and a merger's GH_TOKEN come from their own tokenEnv", () => {
-  assert.deepEqual(
-    agentEnvOf("writer", CONFIGURED, FROM),
-    envOf([...Object.entries(PLAIN), ["GH_TOKEN", "w-secret"]]),
-  );
-  assert.deepEqual(
-    agentEnvOf("merger", CONFIGURED, FROM),
-    envOf([...Object.entries(PLAIN), ["GH_TOKEN", "m-secret"]]),
-  );
-});
-
-test("a writer with no tokenEnv, or one naming an unset or empty variable, gets no token", () => {
+test("with no tokenEnv set, the role variables are ordinary and only gh's are hidden", () => {
   const untouched = { ...PLAIN, ...ROLE_TOKENS };
-  assert.deepEqual(agentEnvOf("writer", rolesOf({}), FROM), untouched);
-  const unset = rolesOf({ writer: { tokenEnv: "NOT_SET" } });
-  assert.deepEqual(agentEnvOf("writer", unset, FROM), untouched);
-  const empty = rolesOf({ writer: { tokenEnv: "EMPTY" } });
-  const from = { ...PLAIN, ...envOf([["EMPTY", ""]]) };
-  assert.deepEqual(agentEnvOf("writer", empty, from), PLAIN);
+  assert.deepEqual(agentEnvOf(rolesOf({}), FROM), untouched);
+});
+
+test("only spec, merge and publish write the wiki, and every stage has a wiki access", () => {
+  const writers = Object.entries(STAGE_WIKI_ACCESS)
+    .filter(([, access]) => access === "write")
+    .map(([stage]) => stage)
+    .sort();
+  assert.deepEqual(writers, ["merge", "publish", "spec"]);
+  assert.deepEqual(
+    new Set(Object.keys(STAGE_WIKI_ACCESS)),
+    new Set(STAGE_ORDER),
+  );
+  for (const access of Object.values(STAGE_WIKI_ACCESS)) {
+    assert.ok(["none", "read", "write"].includes(access), access);
+  }
 });

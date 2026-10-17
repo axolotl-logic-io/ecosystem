@@ -3,6 +3,7 @@
 // session runs in the issue's worktree with no way to ask a question.
 
 import type { JobCheckout } from "../config.ts";
+import type { Committer } from "./prompts.ts";
 import type { JsonSchema } from "./schemas.ts";
 import type { LaunchMeta, Signature } from "./signing.ts";
 import type { ChildLaunch, OpLaunch } from "./stages/types.ts";
@@ -112,6 +113,15 @@ function opsFrame(
   return frame;
 }
 
+// How the sweep's writers commit: a stage job, which names its checkout,
+// gives them `pipeline_commit`; a lane's writers commit with git (#303).
+function committerOf(frame: OpsFrame): Committer {
+  if (frame.checkout === undefined) {
+    return "git";
+  }
+  return "pipeline_commit";
+}
+
 // The ops request for `launch`, keyed "<name>-<seq>". The comments queued for
 // the issue it names ride along, and leave the outbox.
 function opsSpec(
@@ -171,4 +181,4 @@ function childSpec(
 }
 
 export type { ChildSpec, LaunchSpec, OpsFrame, OpsSpec, Outbox, QueuedComment };
-export { childSpec, opsFrame, opsSpec };
+export { childSpec, committerOf, opsFrame, opsSpec };

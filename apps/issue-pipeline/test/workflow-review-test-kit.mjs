@@ -85,6 +85,7 @@ function contextWith() {
     now: () => NOW,
     hasRoom,
     mergeQueue: null,
+    committer: "git",
   };
 }
 

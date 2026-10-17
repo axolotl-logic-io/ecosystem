@@ -6,6 +6,7 @@
 // awaits anything. The sweep's entry (entry.ts) has its own steps here too.
 
 import type { Budgets, LaunchBudget } from "../budget.ts";
+import type { Committer } from "../prompts.ts";
 import type { JsonSchema } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import type {
@@ -169,7 +170,8 @@ interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
 
 // What every stage reads besides the issue: the repo config, the token
 // budgets, the models, the clock, whether the spawn cap leaves room for a
-// stage, and the orchestrator's merge order, or null outside it (#234).
+// stage, the orchestrator's merge order, or null outside it (#234), and how
+// its writers commit.
 interface StageContext {
   cfg: StageConfig;
   budgets: Budgets;
@@ -177,6 +179,7 @@ interface StageContext {
   now: () => Date;
   hasRoom: (stage: StageName) => boolean;
   mergeQueue: readonly number[] | null;
+  committer: Committer;
 }
 
 // The repo config as the sweep reply carries it: what the stages read, the

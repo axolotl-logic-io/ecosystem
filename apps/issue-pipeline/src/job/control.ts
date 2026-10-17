@@ -1,8 +1,10 @@
 // How a running stage job is controlled from outside: its live pi sessions
-// by launch key, the local socket that steers them (`job.mjs --steer`), and
-// the stop that SIGTERM or SIGINT begins, which aborts every live session,
-// gives each STOP_GRACE_MS to exit and then kills it. This module alone
-// knows sockets and signals.
+// by launch key, the local socket that steers them (`job.mjs --steer`) and
+// takes its writer sessions' push requests (`pipeline_commit`), and the stop
+// that SIGTERM or SIGINT begins, which aborts every live session, gives each
+// STOP_GRACE_MS to exit and then kills it. This module alone listens on the
+// socket and handles signals; control-protocol.ts holds its requests and
+// clients.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -11,6 +13,8 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import type { PushReply, SteerReply } from "./control-protocol.ts";
+import { CONTROL_REQUEST } from "./control-protocol.ts";
 import type { RpcAnswer, RpcProcess } from "./rpc.ts";
 import type { StopSignal } from "./status.ts";
 
@@ -21,14 +25,9 @@ const STOP_GRACE_MS = 5000;
 const SOCKET_PATH_MAX = 103;
 const SOCKET_HASH_LENGTH = 12;
 const SIGNALS: readonly StopSignal[] = ["SIGTERM", "SIGINT"];
-const STEER_REQUEST = z.object({
-  type: z.literal("steer"),
-  key: z.string(),
-  message: z.string(),
-});
-const STEER_REPLY = z.object({ ok: z.boolean(), error: z.string().nullable() });
 
-type SteerReply = z.infer<typeof STEER_REPLY>;
+// Pushes what session `key` committed, and says what it pushed.
+type OnPush = (key: string) => PushReply;
 
 // A live pi session of the job's.
 interface LiveLaunch extends RpcProcess {
@@ -76,19 +75,9 @@ async function stopLaunch(launch: LiveLaunch): Promise<void> {
 
 async function steerReply(
   launches: ReadonlyMap<string, LiveLaunch>,
-  text: string,
+  key: string,
+  message: string,
 ): Promise<SteerReply> {
-  let request: unknown = null;
-  try {
-    request = JSON.parse(text);
-  } catch {
-    return { ok: false, error: "the steer request is not JSON" };
-  }
-  const parsed = STEER_REQUEST.safeParse(request);
-  if (!parsed.success) {
-    return { ok: false, error: z.prettifyError(parsed.error) };
-  }
-  const { key, message } = parsed.data;
   const launch = launches.get(key);
   if (launch === undefined) {
     return { ok: false, error: `${key} is not a live session of this job` };
@@ -97,10 +86,43 @@ async function steerReply(
   return { ok: answer.success, error: answer.error };
 }
 
-// Reads one request line from `connection` and answers it.
+// The answer to one request line: a steer's or a push's reply.
+async function replyTo(
+  text: string,
+  launches: ReadonlyMap<string, LiveLaunch>,
+  onPush: OnPush,
+): Promise<SteerReply | PushReply> {
+  let request: unknown = null;
+  try {
+    request = JSON.parse(text);
+  } catch {
+    return { ok: false, error: "the request is not JSON" };
+  }
+  const parsed = CONTROL_REQUEST.safeParse(request);
+  if (!parsed.success) {
+    return { ok: false, error: z.prettifyError(parsed.error) };
+  }
+  const { data } = parsed;
+  switch (data.type) {
+    case "steer":
+      return await steerReply(launches, data.key, data.message);
+    case "push":
+      return onPush(data.key);
+    default:
+      return unreachable(data);
+  }
+}
+
+function unreachable(value: never): never {
+  throw new Error(`job: unexpected request ${JSON.stringify(value)}`);
+}
+
+// Reads one request line from `connection` and answers it. A push is
+// answered synchronously, so the job handles push requests one at a time.
 function serve(
   connection: net.Socket,
   launches: ReadonlyMap<string, LiveLaunch>,
+  onPush: OnPush,
 ): void {
   let text = "";
   connection.setEncoding("utf8");
@@ -112,7 +134,9 @@ function serve(
     if (!text.includes("\n")) {
       return;
     }
-    const reply = await steerReply(launches, text.split("\n")[0] ?? "");
+    const line = text.split("\n")[0] ?? "";
+    text = "";
+    const reply = await replyTo(line, launches, onPush);
     connection.end(`${JSON.stringify(reply)}\n`);
   });
 }
@@ -128,9 +152,10 @@ function listen(server: net.Server, socket: string): Promise<void> {
 }
 
 // Opens the job's control for its run folder: listens on its socket, after
-// removing a stale one, and stops the live sessions on SIGTERM or SIGINT.
-// A second signal while stopping changes nothing.
-async function openControl(runDir: string): Promise<Control> {
+// removing a stale one, answering push requests through `onPush`, and stops
+// the live sessions on SIGTERM or SIGINT. A second signal while stopping
+// changes nothing.
+async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
   const socket = socketPathOf(runDir);
   const launches = new Map<string, LiveLaunch>();
   let signal: StopSignal | null = null;
@@ -145,7 +170,7 @@ async function openControl(runDir: string): Promise<Control> {
     process.on(name, onSignal);
   }
   const server = net.createServer((connection: net.Socket): void =>
-    serve(connection, launches),
+    serve(connection, launches, onPush),
   );
   fs.mkdirSync(path.dirname(socket), { recursive: true });
   fs.rmSync(socket, { force: true });
@@ -172,43 +197,5 @@ async function openControl(runDir: string): Promise<Control> {
   };
 }
 
-// Sends `message` to session `key` of the job listening on `socket`, and
-// resolves to null once pi accepted it, or else to the reason it didn't.
-function steerJob(
-  socket: string,
-  key: string,
-  message: string,
-): Promise<string | null> {
-  return new Promise((resolve: (error: string | null) => void): void => {
-    let text = "";
-    const connection = net.createConnection(socket);
-    connection.setEncoding("utf8");
-    connection.on("error", (error: Error): void => {
-      resolve(`no running job at ${socket}: ${error.message}`);
-    });
-    connection.on("data", (chunk: string): void => {
-      text += chunk;
-    });
-    connection.on("end", (): void => {
-      let reply: unknown = null;
-      try {
-        reply = JSON.parse(text);
-      } catch {
-        resolve("the job gave no answer");
-        return;
-      }
-      const parsed = STEER_REPLY.safeParse(reply);
-      if (!parsed.success) {
-        resolve("the job's answer is malformed");
-      } else if (parsed.data.ok) {
-        resolve(null);
-      } else {
-        resolve(parsed.data.error ?? "pi rejected the steer");
-      }
-    });
-    connection.write(`${JSON.stringify({ type: "steer", key, message })}\n`);
-  });
-}
-
-export type { Control, LiveLaunch };
-export { openControl, steerJob, stopLaunch };
+export type { Control, LiveLaunch, OnPush };
+export { openControl, socketPathOf, stopLaunch };

@@ -88,6 +88,7 @@ function jobWith(input, minute = 0) {
         turns: 0,
         contextStop: null,
         resumed: false,
+        pushes: [],
         outcome: null,
       },
     ],

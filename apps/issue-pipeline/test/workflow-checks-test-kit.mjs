@@ -63,6 +63,7 @@ function contextWith(fields = {}) {
     now: () => NOW,
     hasRoom,
     mergeQueue: null,
+    committer: "git",
     ...fields,
   };
 }

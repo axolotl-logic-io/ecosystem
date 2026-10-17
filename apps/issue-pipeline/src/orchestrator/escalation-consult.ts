@@ -182,7 +182,7 @@ function consult(
     const exit = ctx.runAgent(argv, {
       timeoutMs: agent.timeoutSeconds * MS_PER_SECOND,
       cwd: dir,
-      env: agentEnvOf("reader", rolesOf(cfg.jobRoles), process.env),
+      env: agentEnvOf(rolesOf(cfg.jobRoles), process.env),
     });
     return replyOf(agent.name, exit);
   } catch {

@@ -1,8 +1,8 @@
 // A launch's record in job.json (src/job/status.ts): its pid, session file,
 // last event, consecutive failures of one tool and the last one's error,
 // token usage, token budget, context size, peak and first turn context,
-// turns, stop at the hard context limit and outcome, and how a record a
-// session prints changes it.
+// turns, stop at the hard context limit, the pushes its commits made, and
+// outcome, and how a record a session prints changes it.
 
 import { z } from "zod";
 import { turnContext } from "./context-watch.ts";
@@ -16,6 +16,13 @@ import {
 } from "./raw-results.ts";
 
 const LAUNCH_OUTCOME = z.enum(["ok", "failed"]);
+// One push the job made for a writer session's `pipeline_commit`: the repo,
+// the head it pushed, and when.
+const PUSH = z.object({
+  repo: z.enum(["code", "wiki"]),
+  sha: z.string(),
+  at: z.string(),
+});
 const LAUNCH = z.object({
   key: z.string(),
   kind: z.enum(["session", "ops"]),
@@ -46,12 +53,15 @@ const LAUNCH = z.object({
   // A writer session's stop at the hard context limit, if it was stopped.
   // An older file's stop may carry a `result`, which is dropped.
   contextStop: z.object({ context: z.number() }).nullable().default(null),
+  // The pushes the job made for the session's commits, oldest first.
+  pushes: z.array(PUSH).default([]),
   resumed: z.boolean(),
   outcome: LAUNCH_OUTCOME.nullable(),
 });
 
 type LaunchOutcome = z.infer<typeof LAUNCH_OUTCOME>;
 type LaunchRecord = z.infer<typeof LAUNCH>;
+type LaunchPush = z.infer<typeof PUSH>;
 
 // The launch's count of consecutive failures of one tool after a call ends
 // with `failure`, or with success when it is null.
@@ -115,9 +125,10 @@ function startedRecord(
     firstContext: null,
     turns: 0,
     contextStop: null,
+    pushes: [],
     outcome: null,
   };
 }
 
-export type { LaunchOutcome, LaunchRecord };
+export type { LaunchOutcome, LaunchPush, LaunchRecord };
 export { LAUNCH, startedRecord, withRecord };

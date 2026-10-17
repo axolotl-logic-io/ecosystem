@@ -51,7 +51,10 @@ const FILES = {
   session: "/r/runs/o__r/issue-7/sessions/i7-spec-4.jsonl",
   extension: "/r/structured-output.mjs",
   schema: "/r/runs/o__r/issue-7/sessions/i7-spec-4.schema.json",
+  commit: null,
 };
+// A writer session's files, which load the pipeline_commit extension.
+const WRITER_FILES = { ...FILES, commit: "/r/pipeline-commit.mjs" };
 
 // A session's raw result, which a child launch always gives.
 /** @param {OpsRaw | SessionRaw} raw @returns {SessionRaw} */
@@ -206,6 +209,28 @@ test("a definition's thinking and extensions reach pi's command line", () => {
     new Set(["/x/ext-a", "/x/ext-b", FILES.extension]),
   );
   assert.equal(flagValue(args, "--tools"), "read,structured_output");
+});
+
+test("a writer session's files add the pipeline_commit extension and tool", () => {
+  const definition = parsed("---\nname: x\ntools: read,edit\n---\nBe brief.\n");
+  const args = piArgs(definition, specFor("x"), WRITER_FILES);
+  assert.deepEqual(
+    new Set(flagValues(args, "-e")),
+    new Set([FILES.extension, WRITER_FILES.commit]),
+  );
+  assert.equal(
+    flagValue(args, "--tools"),
+    "read,edit,structured_output,pipeline_commit",
+  );
+});
+
+test("a writer session with pi's default tools adds both tools to them", () => {
+  const definition = parsed("---\nname: x\n---\nBe brief.\n");
+  const args = piArgs(definition, specFor("x"), WRITER_FILES);
+  assert.equal(
+    flagValue(args, "--tools"),
+    "+structured_output,+pipeline_commit",
+  );
 });
 
 test("a missing agent definition fails its launch with an error naming the agent", async () => {

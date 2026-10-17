@@ -40,10 +40,27 @@ const BOUNDARY_ROLES = {
   merger: { tokenEnv: "M_TOKEN" },
 };
 const EXPECTED = {
-  spec: { role: "reader", network: ["api.anthropic.com"], token: false },
-  implement: { role: "writer", network: ["example.com"], token: true },
-  merge: { role: "merger", network: ["api.github.com"], token: true },
+  spec: { role: "reader", network: ["api.anthropic.com"] },
+  implement: { role: "writer", network: ["example.com"] },
+  merge: { role: "merger", network: ["api.github.com"] },
 };
+const COMMIT_EXTENSION = /\/pipeline-commit\.mjs$/u;
+// A --tools entry that adds a tool to pi's defaults starts with "+".
+const ADDED_TOOL = /^\+/u;
+const COMMIT_SCOPE_ENV = "ISSUE_PIPELINE_COMMIT_SCOPE";
+
+// The extensions pi's `argv` loads.
+/** @param {string[]} argv @returns {string[]} */
+function extensionsOf(argv) {
+  return argv.filter((_, at) => argv[at - 1] === "-e");
+}
+
+// The tools pi's `argv` names in --tools, without a leading "+".
+/** @param {string[]} argv @returns {string[]} */
+function toolsOf(argv) {
+  const list = argv[argv.indexOf("--tools") + 1] ?? "";
+  return list.split(",").map((tool) => tool.replace(ADDED_TOOL, ""));
+}
 
 /** @param {readonly string[]} names @returns {boolean} */
 function isSorted(names) {
@@ -67,21 +84,36 @@ test("a reader session's pi gets none of the gh token variables nor a role's tok
   assert.equal(start.ghToken, null);
 });
 
-test("a writer session's pi gets GH_TOKEN from the writer's tokenEnv only", () => {
+test("a writer session's pi gets no gh token, even its role's tokenEnv", () => {
   const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "implement");
   runJob(place, ["--stage", "implement"], TOKENS_ENV);
   const [start] = piStarts(place);
-  assert.equal(start.ghToken, "w-secret");
-  assert.ok(!start.env.includes("W_TOKEN"));
-  assert.ok(!start.env.includes("GITHUB_TOKEN"));
+  assert.equal(start.ghToken, null);
+  for (const name of [...GH_VARS, "W_TOKEN"]) {
+    assert.ok(!start.env.includes(name), name);
+  }
 });
 
-test("a writer with no tokenEnv gets no GH_TOKEN, even when the job has one", () => {
+test("a writer session's pi loads pipeline_commit with its commit scope", () => {
   const place = placeAt({}, "implement");
-  runJob(place, ["--stage", "implement"], GH_ENV);
+  runJob(place, ["--stage", "implement"]);
   const [start] = piStarts(place);
-  assert.equal(start.ghToken, null);
-  assert.ok(!start.env.includes("GH_TOKEN"));
+  assert.ok(
+    extensionsOf(start.argv).some((file) => COMMIT_EXTENSION.test(file)),
+  );
+  assert.ok(toolsOf(start.argv).includes("pipeline_commit"));
+  assert.ok(start.env.includes(COMMIT_SCOPE_ENV));
+});
+
+test("a reader session's pi gets neither pipeline_commit nor a commit scope", () => {
+  const place = placeAt({}, "spec");
+  runJob(place, ["--stage", "spec"]);
+  const [start] = piStarts(place);
+  assert.ok(
+    !extensionsOf(start.argv).some((file) => COMMIT_EXTENSION.test(file)),
+  );
+  assert.ok(!toolsOf(start.argv).includes("pipeline_commit"));
+  assert.ok(!start.env.includes(COMMIT_SCOPE_ENV));
 });
 
 for (const [stage, expected] of Object.entries(EXPECTED)) {
@@ -107,7 +139,9 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
         (/** @type {unknown} */ name) => typeof name === "string",
       ),
     );
-    assert.equal(boundary.env.includes("GH_TOKEN"), expected.token);
+    for (const name of GH_VARS) {
+      assert.ok(!boundary.env.includes(name), name);
+    }
     assert.ok(!boundary.env.includes("W_TOKEN"));
     assert.ok(!boundary.env.includes("M_TOKEN"));
     assert.ok(boundary.env.includes("PATH"));

@@ -24,8 +24,9 @@
 // running for #N, exiting 0 once pi accepted it and 1 otherwise. --stack-on P
 // starts an issue with no branch of its own on #P's branch (#268).
 //
-// Each pi session runs with the env of its role (src/job/roles.ts): no gh
-// token but its role's own; ops keep the job's env. --print-boundary prints
+// No pi session gets a gh token (src/job/roles.ts); ops keep the job's env.
+// A writer session commits through pipeline_commit, which asks the job over
+// its control socket to push (src/job/commit-push.ts). --print-boundary prints
 // the stage job's boundary as one JSON line and starts nothing.
 //
 // A stage with a registered role (src/roles/registry.ts) runs it on the role
@@ -45,9 +46,10 @@ import { loadConfig, paths } from "./config.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
 import { closeJobCheckout, openJobCheckout } from "./job/checkout.ts";
-import { contextLogOf } from "./job/context-log.ts";
-import type { Control, LiveLaunch } from "./job/control.ts";
-import { openControl, steerJob } from "./job/control.ts";
+import { pushServerOf } from "./job/commit-push.ts";
+import type { Control } from "./job/control.ts";
+import { openControl, socketPathOf } from "./job/control.ts";
+import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
 import type { LaunchHooks } from "./job/launch.ts";
 import { runLaunch } from "./job/launch.ts";
@@ -55,13 +57,9 @@ import { runAll } from "./job/pool.ts";
 import type { OpsRaw, SessionRaw } from "./job/raw-results.ts";
 import type { RoleLine } from "./job/role-run.ts";
 import { runRoleStage } from "./job/role-run.ts";
-import { agentEnvOf, boundaryOf, rolesOf, sessionRoleOf } from "./job/roles.ts";
-import type {
-  JobOutcome,
-  JobStatus,
-  LaunchStart,
-  StopSignal,
-} from "./job/status.ts";
+import { boundaryOf, STAGE_WIKI_ACCESS } from "./job/roles.ts";
+import { hooksOf } from "./job/session-hooks.ts";
+import type { JobOutcome, JobStatus, StopSignal } from "./job/status.ts";
 import { openStatus, resumePoints, socketOf } from "./job/status.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { LaunchSpec } from "./workflow/launches.ts";
@@ -87,36 +85,6 @@ type Resume = LaunchHooks["resumePoint"];
 type RunEnd =
   | { kind: "finished"; summary: SweepSummary | RoleLine }
   | { kind: "stopped"; signal: StopSignal };
-
-// What the job's launches tell its status file, context log and control.
-function hooksOf(
-  cfg: Config,
-  args: RunArgs,
-  watch: { status: JobStatus; control: Control; resumePoint: Resume },
-  cwd: string,
-): LaunchHooks {
-  const { status, control, resumePoint } = watch;
-  const roles = rolesOf(cfg.jobRoles);
-  return {
-    sessionFile: (key: string): string => paths.session(cfg, args.issue, key),
-    resumePoint,
-    started: (launch: LaunchStart, live: LiveLaunch | null): void => {
-      status.started(launch);
-      if (live !== null) {
-        control.register(live);
-      }
-    },
-    record: status.record,
-    ended: status.ended,
-    contextLimits: cfg.contextLimits,
-    handoffFile: paths.handoff(cfg, args.issue),
-    contextStopped: status.contextStopped,
-    sessionEnded: contextLogOf(paths.runDir(cfg, args.issue), args, watch),
-    env: (agent: string): Readonly<Record<string, string>> =>
-      agentEnvOf(sessionRoleOf(agent), roles, process.env),
-    cwd,
-  };
-}
 
 // Runs each batch the sweep asks for, feeding its results back, until the
 // sweep asks for none or a signal stops the job. A stop starts no more
@@ -166,7 +134,8 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
       `${RESUME_REFUSED} ${stage}; it restarts from what is done`,
     );
   }
-  const dir = openJobCheckout(cfg, issue, { stage, stackOn });
+  const wiki = STAGE_WIKI_ACCESS[stage];
+  const dir = openJobCheckout(cfg, issue, { stage, stackOn, wiki });
   const checkout = { issue, dir };
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const runDir = paths.runDir(cfg, args.issue);
@@ -175,11 +144,14 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   if (args.resume === true) {
     resumePoint = resumePoints(runDir);
   }
-  const control = await openControl(runDir);
-  const job = { issue, stage, lane, socket: control.socket };
+  const job = { issue, stage, lane, socket: socketPathOf(runDir) };
   const status = openStatus(runDir, job);
+  const control = await openControl(
+    runDir,
+    pushServerOf(cfg, { issue, stage, checkout: dir }, status.pushed),
+  );
   const watch = { status, control, resumePoint };
-  const hooks = hooksOf(cfg, args, watch, checkout.dir);
+  const hooks = hooksOf(cfg, args, watch, { cwd: dir, from: process.env });
   const frame = opsFrame({ ...args, checkout }, sweepId, laneOf(args, sweepId));
   const push = exitPushOf(args, frame, hooks);
   const watched = { hooks, status, control };
@@ -205,7 +177,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     throw error;
   } finally {
     try {
-      const lost = await closeJobCheckout(cfg, issue, checkout.dir, push);
+      const lost = await closeJobCheckout(cfg, issue, { dir, wiki }, push);
       status.lostChanges(lost);
     } finally {
       control.close();

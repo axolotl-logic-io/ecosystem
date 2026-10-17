@@ -12,6 +12,7 @@
 
 import { parseOps } from "./launch-results.ts";
 import {
+  committerOf,
   type LaunchSpec,
   type OpsFrame,
   opsFrame,
@@ -91,6 +92,7 @@ function runOf(driver: Driver, raw: unknown): SweepRun {
       now: driver.now,
       hasRoom: (stage: StageName): boolean => hasRoom(run, stage),
       mergeQueue: driver.mergeQueue,
+      committer: committerOf(driver.frame),
     },
     abandoned: [],
     item: null,

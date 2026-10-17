@@ -10,7 +10,7 @@ import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import {
-  commitOftenRule,
+  commitRulesOf,
   handoffLead,
   handoffRule,
   practicesNote,
@@ -27,6 +27,7 @@ import {
   mayContinue,
   outOfRoomReason,
 } from "./continuation.ts";
+import { commandsClause, wikiStep } from "./implement-steps.ts";
 import { sessionFailedStep } from "./rate-limit.ts";
 import {
   doneStep,
@@ -40,7 +41,6 @@ import {
 import type {
   ChildLaunch,
   LaunchResult,
-  StageCommands,
   StageComment,
   StageContext,
   StageState,
@@ -69,10 +69,6 @@ function phaseOf(state: StageState): ImplementPhase {
     throw new Error(`implement: unknown phase ${state.phase}`);
   }
   return phase;
-}
-
-function isSet(text: string | null | undefined): text is string {
-  return typeof text === "string" && text !== "";
 }
 
 // The spec's documented test and stub files the branch lacked at a restart,
@@ -105,29 +101,6 @@ function workSource(state: StageState): string {
   return `Triage plan:\n${String(st.plan)}`;
 }
 
-// The configured commands the session runs, as a clause of step 3.
-function commandsClause(commands: StageCommands): string {
-  let clause = "";
-  if (isSet(commands.test)) {
-    clause += ` (\`${commands.test}\`)`;
-  }
-  if (isSet(commands.lint)) {
-    clause += `, lint (\`${commands.lint}\`)`;
-  }
-  if (isSet(commands.typecheck)) {
-    clause += `, and typecheck (\`${commands.typecheck}\`)`;
-  }
-  return clause;
-}
-
-// The step that commits the wiki updates, or "" when there is no wiki.
-function wikiStep(wiki: string | null): string {
-  if (!isSet(wiki)) {
-    return "";
-  }
-  return `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${wiki} add -A && git -C ${wiki} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`;
-}
-
 function implementTask(state: StageState, ctx: StageContext): string {
   const { cfg, budgets } = ctx;
   const lines = [
@@ -139,12 +112,15 @@ function implementTask(state: StageState, ctx: StageContext): string {
     "2. Implement the smallest change that resolves the issue. Do not refactor unrelated code.",
     `3. Run the tests${commandsClause(cfg.commands)} and fix failures.`,
     "4. Commit as you go (see below), and commit what is left at the end. Leave the worktree clean.",
-    wikiStep(state.paths.wiki),
+    wikiStep(state.paths.wiki, ctx.committer),
     "Change lockfiles only through the package manager, never by hand.",
     "",
-    commitOftenRule(
-      "commit each step with `git add -A && git commit` and a clear message as soon as it builds and its tests pass, ending each message with the trailer line `Pipeline-Agent: implementer`",
-    ),
+    ...commitRulesOf(ctx.committer, {
+      unit: "step",
+      when: "as soon as it builds and its tests pass",
+      trailer: "Pipeline-Agent: implementer",
+      clearMessage: true,
+    }),
     handoffRule(
       budgets,
       state.paths.handoffFile,

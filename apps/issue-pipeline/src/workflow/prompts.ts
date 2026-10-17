@@ -13,6 +13,10 @@ import type {
 
 type PromptItem = Pick<WorkItem, "n" | "paths">;
 
+// How writer sessions commit: through the `pipeline_commit` tool in a stage
+// job, or with plain git in a lane's worktree (#303).
+type Committer = "pipeline_commit" | "git";
+
 // The coding practices that the spec writer, every session that writes code and
 // the first reviewers read in full (config `practices`, Autumn, 2026-10-15).
 // They cover all of the repo's code, not only the app an issue names, so no
@@ -91,10 +95,75 @@ function specText(st: Pick<IssueState, "spec" | "specFile">): string {
 
 // How a writer session commits (Axlog, 2026-10-16): small, working steps,
 // often, so a stop or the watchdog's kill loses little. `how` says how to
-// commit a step. Writers commit with plain git commit in the worktree for now;
-// #303 switches this to the pipeline_commit tool.
+// commit a step.
 function commitOftenRule(how: string): string {
   return `Commit often, in small working steps: ${how}. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.`;
+}
+
+// The git commands a session that commits through `pipeline_commit` never
+// runs (Pipeline-Roles-Shared, "Limiting git").
+const FORBIDDEN_GIT =
+  "git's `commit`, `push`, `rebase`, `reset`, `checkout` or `merge`";
+
+// One commit of a writer's: what it commits (`unit`, such as "step"), when
+// (`when`, such as "as soon as it works"), the trailer its message ends
+// with, and whether the rule asks for a clear message.
+interface CommitStep {
+  unit: string;
+  when: string;
+  trailer: string;
+  clearMessage: boolean;
+}
+
+// How a writer commits each `step` with `committer`.
+function commitStepOf(committer: Committer, step: CommitStep): string {
+  const { unit, when, trailer, clearMessage } = step;
+  switch (committer) {
+    case "git": {
+      let how = `commit each ${unit} with \`git add -A && git commit\``;
+      if (clearMessage) {
+        how += " and a clear message";
+      }
+      return `${how} ${when}, ending each message with the trailer line \`${trailer}\``;
+    }
+    case "pipeline_commit":
+      return `stage each ${unit} with \`git add -A\` and commit it with the \`pipeline_commit\` tool ${when}, with a clear message ending with the trailer line \`${trailer}\``;
+    default: {
+      const unhandled: never = committer;
+      return unhandled;
+    }
+  }
+}
+
+// The text for writers that commit with `committer`: `git` for plain git,
+// `tool` for `pipeline_commit`.
+function committerText(
+  committer: Committer,
+  git: string,
+  tool: string,
+): string {
+  switch (committer) {
+    case "git":
+      return git;
+    case "pipeline_commit":
+      return tool;
+    default: {
+      const unhandled: never = committer;
+      return unhandled;
+    }
+  }
+}
+
+// A writer's commit rules: commit `step` often, and, through
+// `pipeline_commit`, the git it may not run (#303).
+function commitRulesOf(committer: Committer, step: CommitStep): string[] {
+  const rules = [commitOftenRule(commitStepOf(committer, step))];
+  if (committer === "pipeline_commit") {
+    rules.push(
+      `Commit only through \`pipeline_commit\`: its \`args\` are git commit's options and pathspecs (such as \`["-m", "<message>"]\`), and the pipeline pushes what it commits. Never run ${FORBIDDEN_GIT} yourself.`,
+    );
+  }
+  return rules;
 }
 
 // What a writer session does once its context passes `limits.softLimit`
@@ -116,8 +185,12 @@ function handoffLead(handoffFile: string): string {
   return `A previous session ran out of room. Read its handoff first: ${handoffFile}. Continue from the current branch state.`;
 }
 
+export type { CommitStep, Committer };
 export {
   commitOftenRule,
+  commitRulesOf,
+  committerText,
+  FORBIDDEN_GIT,
   handoffLead,
   handoffRule,
   practicesNote,

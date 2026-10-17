@@ -45,7 +45,8 @@ const session = argv[argv.indexOf("--session") + 1];
 const fresh = !fs.existsSync(session);
 const log = (entry) => fs.appendFileSync(root + "/pi.log", JSON.stringify(entry) + "\\n");
 const script = JSON.parse(fs.readFileSync(root + "/pi-script.json", "utf8"));
-const git = (dir, args) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" }).trim();
+// It stands in for pipeline_commit, so its commits pass the checkout's pre-commit hook.
+const git = (dir, args) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8", env: { ...process.env, ISSUE_PIPELINE_COMMIT: "1" } }).trim();
 let head = null;
 try {
   head = git(process.cwd(), ["rev-parse", "HEAD"]);

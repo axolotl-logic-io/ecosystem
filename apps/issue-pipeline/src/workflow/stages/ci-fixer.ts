@@ -5,7 +5,7 @@
 
 import { sessionBudget } from "../budget.ts";
 import {
-  commitOftenRule,
+  commitRulesOf,
   handoffLead,
   handoffRule,
   practicesNote,
@@ -67,9 +67,12 @@ function fixerLaunch(
     job.failure,
     "",
     "Find the cause and fix it with the smallest change. If `fails-before-fix` failed, the tests do not prove the change: strengthen them so they fail without the fix. If a lockfile check failed, regenerate the lockfile with the package manager.",
-    commitOftenRule(
-      "commit each step with `git add -A && git commit` as soon as it works, ending each message with the trailer line `Pipeline-Agent: check fixer`",
-    ),
+    ...commitRulesOf(ctx.committer, {
+      unit: "step",
+      when: "as soon as it works",
+      trailer: "Pipeline-Agent: check fixer",
+      clearMessage: false,
+    }),
     `Run the failing check locally, commit what is left and leave the worktree clean. Return \`cannot-fix\` if the failure is unrelated to this change (for example, a flaky or broken check on ${cfg.baseBranch}).`,
     handoffRule(budgets, handoffFile, "make it build and commit it"),
   ];

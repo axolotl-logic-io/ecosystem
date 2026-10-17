@@ -9,12 +9,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { configureClone, GH_HELPER } from "../clone-setup.ts";
+import { configureClone, GH_HELPER, guardCommits } from "../clone-setup.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
 import { run } from "../process.ts";
+import type { WikiAccess } from "./pipeline-commit.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
 // base branch, the branch the issue's work is on, and the issue whose branch
@@ -72,7 +73,8 @@ function syncMirror(
 
 // Clones `spec.mirror` into `dir` on the issue's branch: at the mirror's
 // branch head when it has one, otherwise at the head of the branch it is
-// stacked on when the mirror has that, and at the base otherwise.
+// stacked on when the mirror has that, and at the base otherwise. Only
+// pipeline_commit and the ops commit there.
 function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
   const { mirror, url, base, branch, stackOn } = spec;
   run("git", ["clone", "--quiet", "--no-checkout", mirror, dir]);
@@ -88,6 +90,7 @@ function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
   gitIn(dir, ["checkout", "--quiet", "-B", branch, start]);
   gitIn(dir, ["remote", "set-url", "origin", url]);
   configureClone(cfg, dir);
+  guardCommits(dir);
 }
 
 function excludeWiki(dir: string, wikiDir: string): void {
@@ -119,12 +122,13 @@ function openWiki(cfg: Config, issue: number, dir: string): void {
 // Makes stage job `stage`'s checkout of issue `issue` from the freshly
 // fetched mirror, replacing one an earlier job left, and returns its path.
 // With `stackOn`, an issue with no branch yet starts on that issue's branch.
+// It holds the wiki's checkout unless the stage's `wiki` access is none.
 function openJobCheckout(
   cfg: Config,
   issue: number,
-  job: { stage: string; stackOn: number | null },
+  job: { stage: string; stackOn: number | null; wiki: WikiAccess },
 ): string {
-  const { stage, stackOn } = job;
+  const { stage, stackOn, wiki } = job;
   const mirror = paths.mirror(cfg);
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
   withCloneLock(cfg, (): boolean =>
@@ -136,7 +140,9 @@ function openJobCheckout(
   const branch = paths.branch(issue);
   cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch, stackOn }, dir);
   excludeWiki(dir, wikiCfg(cfg)?.dir ?? "wiki");
-  openWiki(cfg, issue, dir);
+  if (wiki !== "none") {
+    openWiki(cfg, issue, dir);
+  }
   return dir;
 }
 
@@ -170,6 +176,15 @@ function unpushed(cfg: Config, dir: string): number {
   git(cfg, ["-C", dir, "fetch", "--quiet", "--prune", "origin"]);
   const range = ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"];
   return Number(gitIn(dir, range).trim());
+}
+
+// True when `repo` is a clone with commits its remote lacks; a git step that
+// fails is reported and counts as none.
+function holdsUnpushed(cfg: Config, repo: string): boolean {
+  return reported(
+    (): boolean => hasGit(repo) && unpushed(cfg, repo) > 0,
+    false,
+  );
 }
 
 // Keeps the wiki checkout's unpushed commits as the issue's branch in the
@@ -208,17 +223,19 @@ function reported<T>(step: () => T, fallback: T): T {
 }
 
 // Closes the job checkout `dir` of issue `issue`: drops its uncommitted
-// changes, calls `push` when it holds commits the remote lacks, saves its
-// wiki commits and removes it. Resolves to the dropped paths, wiki paths
+// changes, calls `push` when it, or its wiki checkout under `wiki` write
+// access, holds commits the remote lacks, saves its wiki commits and removes
+// it. Resolves to the dropped paths, wiki paths
 // under the wiki's folder. A git step that fails, such as a fetch from an
 // unreachable remote, is reported on stderr and skipped, and the checkout is
 // removed whatever fails.
 async function closeJobCheckout(
   cfg: Config,
   issue: number,
-  dir: string,
+  job: { dir: string; wiki: WikiAccess },
   push: (() => Promise<void>) | null,
 ): Promise<readonly string[]> {
+  const { dir, wiki } = job;
   try {
     const wikiDir = paths.wiki(withCheckout(cfg, { issue, dir }), issue);
     const wikiPrefix = `${path.relative(dir, wikiDir)}/`;
@@ -231,7 +248,8 @@ async function closeJobCheckout(
     );
     if (
       push !== null &&
-      reported((): boolean => hasGit(dir) && unpushed(cfg, dir) > 0, false)
+      (holdsUnpushed(cfg, dir) ||
+        (wiki === "write" && holdsUnpushed(cfg, wikiDir)))
     ) {
       await push();
     }

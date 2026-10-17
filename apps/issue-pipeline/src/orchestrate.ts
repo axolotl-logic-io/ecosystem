@@ -19,7 +19,7 @@ import process from "node:process";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { loadConfig } from "./config.ts";
-import { steerJob } from "./job/control.ts";
+import { steerJob } from "./job/control-protocol.ts";
 import type { ProcessExit } from "./job/raw-results.ts";
 import { orchestratorArgsOf } from "./orchestrator/args.ts";
 import type { AgentRunOptions } from "./orchestrator/escalation-consult.ts";

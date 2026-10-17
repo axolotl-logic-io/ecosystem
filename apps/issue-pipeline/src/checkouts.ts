@@ -202,6 +202,18 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
   return { codeChanged: result.code === 1, wikiAhead: wikiAhead(cfg, n) };
 }
 
+// Pushes the issue's checkout's HEAD to its branch for `op`, recording the
+// push first, with --force-with-lease against the head it last pushed, and
+// returns the head pushed. A refused push throws.
+function pushHead(cfg: Config, n: number, op: string): string {
+  const wt = paths.worktree(cfg, n);
+  const headSha = head(wt);
+  const target = `HEAD:refs/heads/${paths.branch(n)}`;
+  recordPush(cfg, n, headSha, op);
+  git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
+  return headSha;
+}
+
 // Pushes the issue's branch for `op`, recording the push first, and its wiki
 // checkout's own commits to the wiki's branch of the same name, and returns
 // the code head and what the work changes. allowEmpty lets start-pr push the
@@ -228,13 +240,10 @@ function push(
     throw new OpsError("branch has no commits ahead of the base branch");
   }
   const changes = branchChanges(cfg, number);
-  const headSha = head(wt);
   if (allowEmpty !== true && !changes.codeChanged && changes.wikiAhead === 0) {
-    return { headSha, ...changes };
+    return { headSha: head(wt), ...changes };
   }
-  const target = `HEAD:refs/heads/${paths.branch(number)}`;
-  recordPush(cfg, number, headSha, op);
-  git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
+  const headSha = pushHead(cfg, number, op);
   pushWikiBranch(cfg, number);
   return { headSha, ...changes };
 }
@@ -247,6 +256,7 @@ export {
   issueWorktrees,
   lastPush,
   push,
+  pushHead,
   recordPush,
   removeWorktree,
   unsavedWork,

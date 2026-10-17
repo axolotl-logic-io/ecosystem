@@ -14,7 +14,11 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { ContextStop } from "./context-watch.ts";
-import type { LaunchOutcome, LaunchRecord } from "./launch-record.ts";
+import type {
+  LaunchOutcome,
+  LaunchPush,
+  LaunchRecord,
+} from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
 import type { Usage } from "./raw-results.ts";
 import type { StepReport } from "./step-report.ts";
@@ -95,6 +99,8 @@ interface JobStatus {
   ended: (key: string) => void;
   // Writer session `key` was stopped at the hard context limit.
   contextStopped: (key: string, stop: ContextStop) => void;
+  // The job pushed `push` for session `key`'s commits.
+  pushed: (key: string, push: LaunchPush) => void;
   // Launch `key`'s result went back to the sweep: sets its `outcome`.
   settled: (key: string, outcome: LaunchOutcome) => void;
   // A role's step started, or the step it last started ended.
@@ -180,6 +186,11 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     ended: (key: string): void => update(key, (launch) => launch),
     contextStopped: (key: string, contextStop: ContextStop): void =>
       update(key, (launch) => ({ ...launch, contextStop })),
+    pushed: (key: string, push: LaunchPush): void =>
+      update(key, (launch) => ({
+        ...launch,
+        pushes: [...launch.pushes, push],
+      })),
     settled: (key: string, outcome: LaunchOutcome): void =>
       update(key, (launch) => ({ ...launch, outcome })),
     step: (step: StepReport): void => {

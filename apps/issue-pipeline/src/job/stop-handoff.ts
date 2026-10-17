@@ -69,13 +69,14 @@ type WipResult =
   | { kind: "committed"; sha: string }
   | { kind: "left"; why: string };
 
-// git's trimmed stdout in `cwd`, or null when it fails.
+// git's trimmed stdout in `cwd`, run with `env` added to the job's
+// environment, or null when it fails.
 function gitOut(
   cwd: string,
   args: readonly string[],
-  timeoutMs = COMMIT_TIMEOUT_MS,
+  env: ReadonlyMap<string, string> = new Map(),
 ): string | null {
-  const options = { allowFail: true, cwd, timeoutMs };
+  const options = { allowFail: true, cwd, timeoutMs: COMMIT_TIMEOUT_MS, env };
   const result = run("git", ["-C", cwd, ...args], options);
   if (result.code !== 0) {
     return null;
@@ -129,7 +130,9 @@ function commitWip(session: StoppedSession): WipResult {
   }
   const message = `WIP: work ${key} left uncommitted when the job stopped it at the hard context limit (${stop.context})\n\nPipeline-Agent: stage job`;
   const commit = ["commit", "--quiet", "-m", message];
-  if (gitOut(cwd, commit) === null) {
+  // The checkout's pre-commit hook passes only commits that say so (#303).
+  const env = new Map([["ISSUE_PIPELINE_COMMIT", "1"]]);
+  if (gitOut(cwd, commit, env) === null) {
     gitOut(cwd, ["reset", "--quiet"]);
     return { kind: "left", why: "git commit failed or its hooks refused it" };
   }

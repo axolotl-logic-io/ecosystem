@@ -2,8 +2,9 @@
 //
 //   node build.ts [outdir]   (outdir defaults to dist/ in this folder)
 //
-// writes <outdir>/workflow.js, <outdir>/ops.mjs, <outdir>/job.mjs and
-// <outdir>/structured-output.mjs, the files the install copies. It prints nothing on success; on failure it prints esbuild's error to
+// writes <outdir>/workflow.js, <outdir>/ops.mjs, <outdir>/job.mjs, its pi
+// extensions <outdir>/structured-output.mjs and <outdir>/pipeline-commit.mjs,
+// and the orchestrator and reports, the files the install copies. It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
 //
 // The workflow is the body of an async function that pi-subagents runs with
@@ -14,9 +15,10 @@
 // since Biome, which lints the source, can't parse a top-level one.
 // The ops CLI's entry, src/ops.ts, is bundled with the strict-TS modules it
 // imports for Node into one ES module, ops.mjs, that keeps its `#!` line. The
-// stage job's entry, src/job.ts, and its pi extension,
-// src/job/structured-output.ts, are bundled the same way, into job.mjs and
-// structured-output.mjs.
+// stage job's entry, src/job.ts, and its pi extensions,
+// src/job/structured-output.ts and src/job/pipeline-commit-tool.ts, are
+// bundled the same way, into job.mjs, structured-output.mjs and
+// pipeline-commit.mjs.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -37,7 +39,7 @@ const OPS_SOURCE = path.join(SOURCE_DIR, "ops.ts");
 const WORKFLOW_OUTPUT = "workflow.js";
 const OPS_OUTPUT = "ops.mjs";
 // The Node ES modules built from one entry each: the ops CLI, the stage job,
-// the job's pi extension, the orchestrator and the reports.
+// the job's pi extensions, the orchestrator and the reports.
 const NODE_MODULES: ReadonlyMap<string, string> = new Map([
   [OPS_SOURCE, OPS_OUTPUT],
   [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],
@@ -46,6 +48,10 @@ const NODE_MODULES: ReadonlyMap<string, string> = new Map([
   [
     path.join(SOURCE_DIR, "job", "structured-output.ts"),
     "structured-output.mjs",
+  ],
+  [
+    path.join(SOURCE_DIR, "job", "pipeline-commit-tool.ts"),
+    "pipeline-commit.mjs",
   ],
 ]);
 

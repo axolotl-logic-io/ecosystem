@@ -4,7 +4,7 @@
 // `npm ci` at the repo root first), then installs it where pi reads it:
 //
 //   dist/workflow.js, dist/*.mjs              -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
-//     (BUILT: the sweep, ops, the stage job and its pi extension, the orchestrator and the reports)
+//     (BUILT: the sweep, ops, the stage job and its pi extensions, the orchestrator and the reports)
 //   repos/example.json                        -> $ISSUE_PIPELINE_ROOT/repos/
 //   agents/*.md                               -> $PI_CODING_AGENT_DIR/agents/issue-pipeline/ (default ~/.pi/agent)
 //   prompts/*.md                              -> $PI_CODING_AGENT_DIR/prompts/
@@ -57,6 +57,7 @@ const BUILT = [
   "orchestrate.mjs",
   "report.mjs",
   "structured-output.mjs",
+  "pipeline-commit.mjs",
 ];
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
