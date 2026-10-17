@@ -93,7 +93,22 @@ function factsOf(change: SpecTestsChange, settings: SpecTestsSettings): Facts {
   };
 }
 
-// Each `new` interface's stub file exists at the spec head and names it.
+// Between the names of an interface entry that groups several, such as
+// "TABLE, LIMITS and transition": a comma, with or without a following "and",
+// or " and ".
+const NAME_SEPARATOR = /\s*,\s*(?:and\s+)?|\s+and\s+/u;
+
+// The names an interface entry's `name` gives: one, or each of a group. Each
+// is part of `name`, so a stub that names the whole entry names each of them.
+function interfaceNames(name: string): string[] {
+  return name
+    .split(NAME_SEPARATOR)
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
+// Each `new` interface's stub file exists at the spec head and names each of
+// the entry's names. A failure names only the names the stub lacks.
 function stubFailure(change: SpecTestsChange): Failure | null {
   const stubs = change.interfaces.filter((entry) => entry.status === "new");
   for (const { name, where } of stubs) {
@@ -101,13 +116,15 @@ function stubFailure(change: SpecTestsChange): Failure | null {
     const exists = run("git", ["-C", change.wt, "cat-file", "-e", object], {
       allowFail: true,
     });
-    const stub = `${where}, the stub of new interface ${name},`;
     if (exists.code !== 0) {
-      return { rule: "stub-missing", reason: `${stub} does not exist` };
+      const reason = `${where}, the stub of new interface ${name}, does not exist`;
+      return { rule: "stub-missing", reason };
     }
     const text = run("git", ["-C", change.wt, "show", object]).stdout;
-    if (!text.includes(name)) {
-      return { rule: "stub-missing", reason: `${stub} does not name it` };
+    const missing = interfaceNames(name).filter((one) => !text.includes(one));
+    if (missing.length > 0) {
+      const reason = `${where}, a new interface's stub, does not name ${missing.join(", ")}`;
+      return { rule: "stub-missing", reason };
     }
   }
   return null;

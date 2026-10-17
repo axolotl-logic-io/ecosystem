@@ -139,6 +139,40 @@ test("a new interface whose stub doesn't name it fails", () => {
   assert.deepEqual(outcome(got, [STUB, "greet"]), failed("stub-missing"));
 });
 
+// An entry that groups several names, as #414's and #399's spec writers did,
+// checked against a stub that exports `exported`.
+/** @param {readonly string[]} exported @returns {Got} */
+function groupedCheck(exported) {
+  const text = exported.map((one) => `export const ${one} = 1;\n`).join("");
+  /** @type {CheckedInterface} */
+  const grouped = {
+    name: "TABLE, LIMITS and transition",
+    where: STUB,
+    status: "new",
+  };
+  return check({ [STUB]: text, ...FAILING }, { interfaces: [grouped] });
+}
+
+// A stub-missing failure whose reason names exactly `missing`.
+/** @param {string} missing @returns {Got} */
+function notNamed(missing) {
+  const reason = `${STUB}, a new interface's stub, does not name ${missing}`;
+  return {
+    result: { pass: false, rule: "stub-missing", reason },
+    leftovers: CLEAN,
+  };
+}
+
+test("a new grouped interface whose stub names each name passes", () => {
+  const got = groupedCheck(["TABLE", "LIMITS", "transition"]);
+  assert.deepEqual(got, passed(false));
+});
+
+test("a new grouped interface whose stub lacks names fails, naming only those", () => {
+  assert.deepEqual(groupedCheck(["TABLE", "transition"]), notNamed("LIMITS"));
+  assert.deepEqual(groupedCheck(["TABLE"]), notNamed("LIMITS, transition"));
+});
+
 test("a stub with no test file and no noTestsReason fails", () => {
   const got = check({ [STUB]: STUB_TEXT }, { interfaces: [GREET] });
   assert.deepEqual(outcome(got, ["test file"]), failed("no-tests"));

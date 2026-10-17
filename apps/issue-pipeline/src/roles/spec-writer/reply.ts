@@ -26,6 +26,8 @@ type SpecInterfaceStatus = "existing" | "new" | "changed";
 // A public interface the spec's tests drive (the wiki's
 // Pipeline-Roles-Spec-Writer, "Test interfaces").
 interface SpecInterface {
+  // Its name, or several names that share `where`, separated by commas or
+  // "and" ("TABLE, LIMITS and transition").
   name: string;
   kind: SpecInterfaceKind;
   // `file:line` for an existing interface, or the new file's path.

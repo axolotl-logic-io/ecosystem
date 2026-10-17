@@ -178,7 +178,7 @@ const SECTION_LINES: readonly string[] = [
   "- **Tests**: the test files you committed. Each test names the interface it drives, the Behaviour item it pins and why it fails today.",
   '- **Wiki updates**: the wiki pages you changed, or "None".',
   "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
-  "`interfaces` lists the same interfaces: for each, its `name`, its `kind`, `where` it lives (`file:line` for an existing one, the path for a new one), its `status` (existing, new or changed), its `signature` (its call shape), and the Behaviour items tests check through it in `behaviours`, quoted from the spec. Every Behaviour item is checked through at least one of them. List only interfaces the wiki or README promise or the change adds on purpose, never internals.",
+  "`interfaces` lists the same interfaces: for each, its `name` (several names that share a `where` may go in one entry, separated by commas, and a new entry's stub names each), its `kind`, `where` it lives (`file:line` for an existing one, the path for a new one), its `status` (existing, new or changed), its `signature` (its call shape), and the Behaviour items tests check through it in `behaviours`, quoted from the spec. Every Behaviour item is checked through at least one of them. List only interfaces the wiki or README promise or the change adds on purpose, never internals.",
   "`noTestsReason` is null, unless every test that could be written would test implementation rather than promised behaviour: then write no tests, say why there and in Tests, and `interfaces` may be empty.",
 ];
 
