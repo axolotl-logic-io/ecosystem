@@ -26,6 +26,7 @@ import {
 
 /** @import { Lens } from "../src/workflow/lenses.ts" */
 /** @import { LaunchResult, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
 /** @import { OpsRequest } from "./stage-outcome-test-kit.mjs" */
 /** @typedef {{ findings?: unknown[], failed?: string }} LensOutput */
 /** @type {Lens[]} */
@@ -51,10 +52,11 @@ const NIT_SECTION =
 const BLOCKING_SECTION = /\*\*Blocking\*\*\n\n- `src\/a.ts:3` Off by one/u;
 
 // The review's step after its reviewers reply with `outputs` by lens (no
-// findings for a lens not named), or with a failed result.
-/** @param {Partial<Record<Lens, LensOutput>>} [outputs] @returns {Step} */
-function reviewed(outputs = {}) {
-  const begun = next(stateWith("review"), CTX, []);
+// findings for a lens not named), or with a failed result, for a state saved
+// with `fields`.
+/** @param {Partial<Record<Lens, LensOutput>>} [outputs] @param {Partial<IssueState>} [fields] @returns {Step} */
+function reviewed(outputs = {}, fields = {}) {
+  const begun = next(stateWith("review", fields), CTX, []);
   const started = next(begun.state, CTX, [opReply(PREPARED)]);
   const results = LENS_NAMES.map((lens) => {
     const output = outputs[lens] ?? { findings: [] };
@@ -89,9 +91,10 @@ describe("a clean review", () => {
     assert.deepEqual(given, stateWith("review"));
   });
 
-  test("posts each lens's comment, moves to sync, saves, then is done", () => {
+  test("posts each lens's comment, moves to checks, saves, then is done", () => {
     const nit = { ...OFF_BY_ONE, severity: "nit", title: "Name it" };
-    const step = reviewed({ tests: { findings: [nit] } });
+    // A stale flag from an earlier rebase must not skip acceptance (#340).
+    const step = reviewed({ tests: { findings: [nit] } }, { testsOnly: true });
     assert.deepEqual(
       step.comments.map(({ by }) => by),
       LENS_NAMES.map((lens) => ({
@@ -108,10 +111,11 @@ describe("a clean review", () => {
       where: "pr",
     });
     assert.match(step.comments.at(1)?.body ?? "", NIT_SECTION);
-    assert.equal(step.state.st.stage, "sync");
+    assert.equal(step.state.st.stage, "checks");
+    assert.equal(step.state.st.testsOnly, false);
     assert.equal(step.state.st.reviewedSha, HEAD);
     assert.deepEqual(step.state.st.log, [
-      `${STAMP} review: no blocking findings`,
+      `${STAMP} review: no blocking findings; checks run without a rebase`,
     ]);
     assert.deepEqual(opsRequests(step), saveOf(step));
     const done = next(step.state, CTX, [opReply({ ok: true })]);

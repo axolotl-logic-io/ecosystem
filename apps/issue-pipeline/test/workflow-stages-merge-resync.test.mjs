@@ -4,7 +4,11 @@
 // stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { releasedState, requestFor } from "./stage-outcome-test-kit.mjs";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import {
   finishRun,
   issueSummary,
@@ -32,6 +36,8 @@ test("a merge refused as behind rebases, re-runs the tests and merges", async ()
   });
   const { testsOnly } = requestFor(trace, "verify");
   assert.equal(testsOnly, true);
+  // No acceptance or security session runs between the rebase and the merge.
+  assert.deepEqual(sessionAgents(trace), []);
   assert.deepEqual(
     summary,
     issueSummary({

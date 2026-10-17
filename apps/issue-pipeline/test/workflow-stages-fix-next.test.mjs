@@ -43,8 +43,9 @@ const DISPUTES =
 const RECURS =
   /\*\*Findings that came back after being resolved\*\*\n\n- was f0: `src\/a.ts:3` Back again/u;
 
-// Round 1 of a finding the re-reviewer resolves.
-const GIVEN = fixState();
+// Round 1 of a finding the re-reviewer resolves, begun with a stale
+// `testsOnly` from an earlier rebase.
+const GIVEN = fixState([F1], { testsOnly: true });
 const ROUND_ONE = round(GIVEN);
 
 /** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
@@ -112,13 +113,17 @@ describe("the re-review of a fixed finding", () => {
     ]);
   });
 
-  test("resolves the finding, moves to sync, saves, then is done", () => {
+  test("resolves the finding, moves to checks, saves, then is done", () => {
     const { st } = ROUND_ONE.settled.state;
     assert.deepEqual(st.findings, [{ ...F1, status: "resolved" }]);
     assert.deepEqual(st.resolvedHistory, ["f1: Off by one"]);
     assert.equal(st.reviewedSha, HEAD);
-    assert.equal(st.stage, "sync");
-    assert.equal(st.log?.at(-1), `${STAMP} fix round 1: all findings resolved`);
+    assert.equal(st.stage, "checks");
+    assert.equal(st.testsOnly, false);
+    assert.equal(
+      st.log?.at(-1),
+      `${STAMP} fix round 1: all findings resolved; checks run without a rebase`,
+    );
     assert.deepEqual(ROUND_ONE.settled.comments, [
       {
         by: {
@@ -135,7 +140,7 @@ describe("the re-review of a fixed finding", () => {
     const done = saved(ROUND_ONE.settled);
     assert.ok(done.done);
     assert.deepEqual([done.done, done.again], [true, false]);
-    assert.deepEqual(GIVEN, fixState());
+    assert.deepEqual(GIVEN, fixState([F1], { testsOnly: true }));
   });
 });
 

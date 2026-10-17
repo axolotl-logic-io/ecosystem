@@ -115,7 +115,8 @@ interface Rereviews {
 }
 
 // Resolves each open finding every verdict on it closes, records the head as
-// reviewed, moves to sync when none is open, then saves.
+// reviewed, moves to checks on the branch as it stands, with every check to
+// run, when none is open, then saves.
 function settle(
   state: StageState,
   ctx: StageContext,
@@ -136,8 +137,9 @@ function settle(
   }
   st.reviewedSha = st.headSha ?? null;
   if (openFindings({ st }).length === 0) {
-    st.stage = "sync";
-    const text = `fix round ${roundOf(state)}: all findings resolved`;
+    st.stage = "checks";
+    st.testsOnly = false;
+    const text = `fix round ${roundOf(state)}: all findings resolved; checks run without a rebase`;
     noteEvent(st, text, ctx.now());
   }
   return saveStep({ ...state, st, phase: "saved" }, comments);

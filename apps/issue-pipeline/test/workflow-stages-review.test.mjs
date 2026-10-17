@@ -67,7 +67,7 @@ function issueSummary(fields) {
       {
         issue: 7,
         pr: 42,
-        stage: "sync",
+        stage: "checks",
         outcome: "in-progress",
         reason: null,
         ...fields,
@@ -76,9 +76,9 @@ function issueSummary(fields) {
   });
 }
 
-test("a review with no blocking findings moves to sync, held by the spawn cap", async () => {
-  // The save after open-pr runs for an issue already at review. sync needs 3
-  // spawns: 8 launched + 3 + a reserve of 4 passes 14.
+test("a review with no blocking findings moves to checks, held by the spawn cap", async () => {
+  // The save after open-pr runs for an issue already at review. checks needs
+  // 13 spawns: 8 launched + 13 + a reserve of 5 is 26, past 15.
   const { trace, summary } = await reviewRun({
     claim: claimAt("review", OPENED),
     ops: { "prepare-review": { ok: true, headSha: "bbbbbbb" } },
@@ -93,7 +93,7 @@ test("a review with no blocking findings moves to sync, held by the spawn cap", 
   });
   assert.deepEqual(sessionAgents(trace), [READER, READER, READER]);
   const state = releasedState(trace);
-  assert.deepEqual([state.stage, state.reviewedSha], ["sync", "bbbbbbb"]);
+  assert.deepEqual([state.stage, state.reviewedSha], ["checks", "bbbbbbb"]);
   assert.deepEqual(summary, issueSummary({}));
 });
 
@@ -119,15 +119,13 @@ const FIX_AGENTS = {
   }),
 };
 
-test("a blocking finding is fixed and re-reviewed clean, then synced and held at checks", async () => {
-  // sync runs at the spawn count fix needed, so the hold comes at checks:
-  // 15 launched + 11 + a reserve of 4 passes 28.
+test("a blocking finding is fixed and re-reviewed clean, then held at checks without a rebase", async () => {
+  // checks needs 13 spawns: 14 launched + 13 + a reserve of 5 is 32, past 29.
   const { trace, summary } = await reviewRun({
     claim: claimAt("review", OPENED),
     ops: {
       "prepare-review": { ok: true, headSha: "bbbbbbb" },
       push: { ok: true, headSha: "ccccccc" },
-      "sync-base": { ok: true, conflict: false, headSha: "ccccccc" },
     },
     agents: FIX_AGENTS,
     config: { maxSpawnsPerRun: 29 },
@@ -138,6 +136,8 @@ test("a blocking finding is fixed and re-reviewed clean, then synced and held at
   assert.ok(agents.includes(READER));
   const { number } = requestFor(trace, "push");
   assert.equal(number, ISSUE);
+  // A cleared re-review goes to checks on the branch as it stands (#340).
+  assert.throws(() => requestFor(trace, "sync-base"));
   const state = releasedState(trace);
   assert.deepEqual(
     [state.stage, state.findings?.map(({ status }) => status)],

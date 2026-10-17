@@ -2,7 +2,8 @@
 // A failed acceptance check sent through a fix round (#266), driven through
 // the accept and fix step machines directly with recorded results: the fail
 // moves the issue to fix, the round's acceptance re-reviewer resolves the
-// finding, the issue moves to sync, and a later pass moves it to security.
+// finding, the issue moves to checks without a rebase (#340), and a later
+// pass moves it to security.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { REREVIEW_SCHEMA } from "../src/workflow/review-schemas.ts";
@@ -40,12 +41,12 @@ test("a failed acceptance is fixed, re-reviewed, then accepted", () => {
     }),
     [["rereview-acceptance-r1", CTX.models.acceptance, REREVIEW_SCHEMA]],
   );
-  const atSync = saved(settled);
-  assert.deepEqual([atSync.done, atSync.stop], [true, null]);
-  assert.equal(atSync.state.st.stage, "sync");
+  const atChecks = saved(settled);
+  assert.deepEqual([atChecks.done, atChecks.stop], [true, null]);
+  assert.equal(atChecks.state.st.stage, "checks");
 
   const pass = { verdict: "pass", reason: "Does what #7 asks." };
-  const passed = decided(acceptNext, begunFrom(atSync, "accept"), pass);
+  const passed = decided(acceptNext, begunFrom(atChecks, "accept"), pass);
   assert.deepEqual([passed.done, passed.stop], [true, null]);
   assert.equal(passed.state.st.stage, "security");
 });

@@ -135,8 +135,7 @@ function findingList(added: readonly Finding[]): string {
 }
 
 // Stores the findings, then stops past the fix rounds, or sends the verified
-// head back through fresh fix rounds, then sync, checks, acceptance and this
-// review.
+// head back through fresh fix rounds, then checks, acceptance and this review.
 function found(
   state: StageState,
   ctx: StageContext,

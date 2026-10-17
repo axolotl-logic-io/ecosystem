@@ -1,7 +1,7 @@
 // Review: the first review of the PR. Three reviewers each read the diff
 // through one lens; their blocking findings are merged by the aggregator and
-// numbered for the fixer. A clean review moves the issue to sync, one with
-// blocking findings to fix.
+// numbered for the fixer. A clean review moves the issue to checks on the
+// branch as it stands, one with blocking findings to fix.
 
 import { launchBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
@@ -67,6 +67,8 @@ const PHASES: readonly ReviewPhase[] = [
 
 const REVIEW_MINUTES = 25;
 const AGGREGATE_MINUTES = 10;
+const NO_FINDINGS_NOTE =
+  "review: no blocking findings; checks run without a rebase";
 
 function phaseOf(state: StageState): ReviewPhase {
   const phase = PHASES.find((entry) => entry === state.phase);
@@ -191,7 +193,7 @@ function aggregateLaunch(
   };
 }
 
-// Posts each reviewer's comment. A clean review moves to sync; blocking
+// Posts each reviewer's comment. A clean review moves to checks; blocking
 // findings go to the aggregator, carrying the raw findings for its fallback.
 function reviewed(
   state: StageState,
@@ -210,8 +212,9 @@ function reviewed(
   }
   const st = { ...state.st, reviewedSha: state.st.headSha ?? null };
   if (raw.length === 0) {
-    st.stage = "sync";
-    noteEvent(st, "review: no blocking findings", ctx.now());
+    st.stage = "checks";
+    st.testsOnly = false;
+    noteEvent(st, NO_FINDINGS_NOTE, ctx.now());
     return saveStep({ ...state, st, phase: "saved" }, comments);
   }
   const aggregating = { ...state, st, phase: "aggregated", carry: raw };
