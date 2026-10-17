@@ -54,21 +54,24 @@ function verdict(id, status, newFindings = []) {
   return { results: [{ id, status, note: "Checked." }], newFindings };
 }
 
+// The prep's reply: the re-review diff.
+const PREPARED = { ok: true, diffPath: DIFF_PATH };
+
 // The steps of one round, from `given`, through the fixer's `fix` reply, the
-// push and the prep, to the re-review with `rereviews` (by launch name).
+// push and the prep (replying `prep`), to the re-review with `rereviews` (by
+// launch name).
 /**
  * @param {StageState} given @param {unknown} [fix]
  * @param {Readonly<Record<string, LaunchResult>>} [rereviews]
+ * @param {Readonly<Record<string, unknown>>} [prep]
  * @returns {Round}
  */
-function round(given, fix = FIXED, rereviews = {}) {
+function round(given, fix = FIXED, rereviews = {}, prep = PREPARED) {
   const begun = next(given, CTX, []);
   const [fixer] = launchesOf(begun);
   const fixed = next(begun.state, CTX, [replied(fixer.name, fix)]);
   const pushed = next(fixed.state, CTX, [opReply({ ok: true, headSha: HEAD })]);
-  const prepared = next(pushed.state, CTX, [
-    opReply({ ok: true, diffPath: DIFF_PATH }),
-  ]);
+  const prepared = next(pushed.state, CTX, [opReply(prep)]);
   let settled = prepared;
   if (!prepared.done && prepared.launches[0].kind === "child") {
     const results = prepared.launches.map(
@@ -101,6 +104,7 @@ export {
   FIXED,
   fixState,
   HEAD,
+  PREPARED,
   REJECTED_PUSH,
   round,
   saved,

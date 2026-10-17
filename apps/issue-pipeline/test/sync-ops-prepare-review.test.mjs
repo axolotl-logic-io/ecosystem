@@ -63,7 +63,17 @@ function codePart(dir, range) {
   return `# Commits, oldest first\n\n${log}\n\n# Diff\n\n${patch(dir, range)}`;
 }
 
-/** @typedef {{ file: string, reply: { headSha: string, headTree: string, baseSha: string, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
+// git's verbatim patch id of the diff `range`, or null when it prints none
+// (#394).
+/** @param {string} dir @param {string} range @returns {string | null} */
+function patchIdIn(dir, range) {
+  const out = sh(
+    `git -C ${dir} diff --binary ${range} | git patch-id --verbatim`,
+  );
+  return out.split(" ")[0] || null;
+}
+
+/** @typedef {{ file: string, reply: { headSha: string, headTree: string, baseSha: string, patchId: string | null, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
 
 // What prepare-review should reply and write for the diff `from..HEAD`.
 /** @param {number} n @param {string | undefined} from @param {string} tag @param {{ diff: string, files: string[] }} [wiki] @returns {Review} */
@@ -78,6 +88,7 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
     file = `${code}${WIKI_HEADING}${wiki.diff}`;
   }
   const names = gitIn(wt, `diff --name-only ${baseSha}..${headSha}`);
+  const patchId = patchIdIn(wt, `${baseSha} ${headSha}`);
   const diffPath = path.join(
     fx.root,
     "runs",
@@ -90,7 +101,15 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
   const diffLines = file.split("\n").length;
   return {
     file,
-    reply: { headSha, headTree, baseSha, diffPath, diffLines, changedFiles },
+    reply: {
+      headSha,
+      headTree,
+      baseSha,
+      patchId,
+      diffPath,
+      diffLines,
+      changedFiles,
+    },
   };
 }
 

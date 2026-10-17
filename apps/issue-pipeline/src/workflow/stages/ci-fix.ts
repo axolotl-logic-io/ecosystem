@@ -16,6 +16,7 @@ import {
   rateLimitStep,
   sessionFailedStep,
 } from "./rate-limit.ts";
+import { isRecord, patchIdIn } from "./reply-guards.ts";
 import { prepareLaunch } from "./stacked.ts";
 import { launchStep, onlyChild, onlyReply, stopStep } from "./step.ts";
 import type {
@@ -129,17 +130,24 @@ function lensLaunch(
 }
 
 // A check fix changes reviewed code, so the correctness and scope lenses look
-// at just its diff.
+// at just its diff. The carry keeps the patch id the diff's reply named, for
+// the review to record.
 function prepared(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const reply = preparedOf(onlyReply(results));
+  const replied = onlyReply(results);
+  const reply = preparedOf(replied);
   if (reply.kind === "failed") {
     return stopStep(state, "could not prepare the check-fix diff", reply.error);
   }
-  return launchStep({ ...state, phase: "reviewed" }, [
+  let kept: Readonly<Record<string, unknown>> = {};
+  if (isRecord(state.carry)) {
+    kept = state.carry;
+  }
+  const carry = { ...kept, patchId: patchIdIn(replied) };
+  return launchStep({ ...state, phase: "reviewed", carry }, [
     lensLaunch(state, ctx, "correctness", reply.value),
     lensLaunch(state, ctx, "scope", reply.value),
   ]);
@@ -214,6 +222,7 @@ function reviewed(
   }
   const st: IssueState = { ...state.st };
   st.reviewedSha = st.headSha ?? null;
+  st.reviewedPatchId = patchIdIn(state.carry);
   const payload = { number: state.n, state: st };
   return launchStep(
     { ...state, st, phase: "saved" },

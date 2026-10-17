@@ -7,7 +7,7 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
-import type { RunResult } from "./process.ts";
+import type { RunOptions, RunResult } from "./process.ts";
 import { OpsError, run, runFailure, tail } from "./process.ts";
 
 const STATUS_LINES = 20;
@@ -103,6 +103,31 @@ function branchHasWork(cfg: Config, n: number, remote: string): boolean {
   return result.code === 1;
 }
 
+// The patch id of the changes `head` makes against its merge base with
+// `from` (`git patch-id --verbatim`, so a whitespace edit changes it), or
+// null when it can't be computed: no merge base, an empty diff, or a git
+// failure. A rebase that leaves those changes as they were keeps the id.
+function patchIdOf(dir: string, from: string, tip: string): string | null {
+  const options: RunOptions = { allowFail: true };
+  const base = run("git", ["-C", dir, "merge-base", from, tip], options);
+  const mergeBase = base.stdout.trim();
+  if (base.code !== 0 || mergeBase === "") {
+    return null;
+  }
+  const diffArgs = ["-C", dir, "diff", "--binary", mergeBase, tip];
+  const diff = run("git", diffArgs, options);
+  if (diff.code !== 0 || diff.stdout === "") {
+    return null;
+  }
+  const idArgs = ["-C", dir, "patch-id", "--verbatim"];
+  const ids = run("git", idArgs, { ...options, input: diff.stdout });
+  const [id] = ids.stdout.trim().split(WHITESPACE);
+  if (ids.code !== 0 || id === undefined || id === "") {
+    return null;
+  }
+  return id;
+}
+
 export {
   assertClean,
   branchHasWork,
@@ -110,6 +135,7 @@ export {
   fetchIn,
   gitIn,
   head,
+  patchIdOf,
   remoteHead,
   uncommitted,
 };

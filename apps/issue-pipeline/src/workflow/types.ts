@@ -120,6 +120,13 @@ interface IssueState {
   round?: number;
   // The head the last review or re-review saw.
   reviewedSha?: string | null;
+  // The patch id of the changes the last passing review saw; a restart on a
+  // head with the same id keeps the review (review-keeps-on-clean-rebase).
+  reviewedPatchId?: string | null;
+  // The head acceptance last passed, and the patch id of its changes; an
+  // acceptance whose changes have the same id keeps the verdict.
+  acceptedSha?: string | null;
+  acceptedPatchId?: string | null;
   // The findings resolved so far, as "<id>: <title>", the last 30.
   resolvedHistory?: string[];
   // The security reviews run on the issue.

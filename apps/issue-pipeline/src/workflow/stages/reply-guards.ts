@@ -18,6 +18,19 @@ function nullableText(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
+// The patch id a prepare-review reply, or a carry that kept it, names, or
+// null when it names none (review-keeps-on-clean-rebase).
+function patchIdIn(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const { patchId } = value;
+  if (typeof patchId !== "string" || patchId === "") {
+    return null;
+  }
+  return patchId;
+}
+
 // A signature carried between a stage's steps, or null when it is not one.
 function signatureOf(value: unknown): Signature | null {
   if (!isRecord(value)) {
@@ -35,4 +48,4 @@ function signatureOf(value: unknown): Signature | null {
   return { role, agent, model, run };
 }
 
-export { isRecord, isStrings, nullableText, signatureOf };
+export { isRecord, isStrings, nullableText, patchIdIn, signatureOf };

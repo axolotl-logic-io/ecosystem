@@ -41,6 +41,7 @@ const start = {
   pr: null,
   hasWork: true,
   keptUnpushed: false,
+  patchId: null,
   answered: false,
   now: new Date("2026-10-15T03:00:00Z"),
 };

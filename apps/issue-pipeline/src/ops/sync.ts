@@ -12,7 +12,13 @@ import type { BranchChanges } from "../checkouts.ts";
 import { branchChanges, recordPush } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { assertClean, fetchIn, head, remoteHead } from "../git-state.ts";
+import {
+  assertClean,
+  fetchIn,
+  head,
+  patchIdOf,
+  remoteHead,
+} from "../git-state.ts";
 import { git } from "../github.ts";
 import { parseRequest, run } from "../process.ts";
 import { abortRebase, rebaseInProgress, unmergedFiles } from "../rebase.ts";
@@ -22,10 +28,13 @@ import { commitLog, withWiki } from "./review-diff.ts";
 import { finishProblem } from "./sync-finish.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
+// patchId is the id of the branch's changes, which a clean rebase keeps, or
+// null when there are none (review-keeps-on-clean-rebase).
 interface ReviewReply {
   headSha: string;
   headTree: string;
   baseSha: string;
+  patchId: string | null;
   diffPath: string;
   diffLines: number;
   changedFiles: string[];
@@ -129,7 +138,8 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   fetchIn(cfg, wt, cfg.baseBranch);
   const headSha = head(wt);
   const headTree = gitOut(wt, ["rev-parse", `${headSha}^{tree}`]).trim();
-  const baseArgs = ["merge-base", measureFrom(req.stackedOn, cfg), "HEAD"];
+  const measured = measureFrom(req.stackedOn, cfg);
+  const baseArgs = ["merge-base", measured, "HEAD"];
   const baseSha = gitOut(wt, baseArgs).trim();
   const from = reviewFrom(wt, req.sinceSha, { headSha, baseSha });
   const range = `${from}..${headSha}`;
@@ -146,6 +156,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
     headSha,
     headTree,
     baseSha,
+    patchId: patchIdOf(wt, measured, headSha),
     diffPath,
     diffLines: full.text.split("\n").length,
     changedFiles: nonEmptyLines(names).concat(full.files),

@@ -33,6 +33,7 @@ const ctx = {
   pr: PR,
   hasWork: true,
   keptUnpushed: false,
+  patchId: null,
   answered: false,
   now: new Date("2026-10-16T03:00:00Z"),
 };

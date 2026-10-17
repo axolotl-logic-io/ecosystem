@@ -10,10 +10,16 @@ import { lastPush } from "../checkouts.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { branchHasWork, fetchIn, head, remoteHead } from "../git-state.ts";
+import {
+  branchHasWork,
+  fetchIn,
+  head,
+  patchIdOf,
+  remoteHead,
+} from "../git-state.ts";
 import { LABELS } from "../labels.ts";
 import type { StackedOn } from "../stack.ts";
-import { claimedStack, resetToStart } from "../stack.ts";
+import { claimedStack, measureFrom, resetToStart } from "../stack.ts";
 import { startState } from "../start-state.ts";
 import type { State } from "../state.ts";
 import { readState } from "../state.ts";
@@ -47,6 +53,20 @@ function branchWork(
     codeWork = pr !== null && branchHasWork(cfg, n, remote);
   }
   return { pr, hasWork: codeWork || wikiBranchHasWork(cfg, n) };
+}
+
+// The patch id of the changes the branch's head on GitHub makes against its
+// base or prerequisite, which a clean rebase keeps
+// (review-keeps-on-clean-rebase); null when it has no head there.
+function branchPatchId(
+  cfg: Config,
+  remote: string | null,
+  stackedOn: StackedOn | null,
+): string | null {
+  if (remote === null) {
+    return null;
+  }
+  return patchIdOf(paths.clone(cfg), measureFrom(stackedOn, cfg), remote);
 }
 
 // Puts an existing worktree back at the branch head on GitHub or, when the
@@ -132,7 +152,9 @@ function claimedState(
   const now = new Date();
   const reset = resetWorktree(cfg, n, { remote, stackedOn });
   const keptUnpushed = reset.kept;
-  const start = { n, depth, remote, pr, hasWork, keptUnpushed, answered, now };
+  const patchId = branchPatchId(cfg, remote, stackedOn);
+  const facts = { remote, patchId, keptUnpushed, answered };
+  const start = { n, depth, pr, hasWork, now, ...facts };
   const begun = startState(saved, start);
   const state = withEntry(begun, reset.entry, stackedOn);
   return { state, remote, restarted: true };

@@ -1,11 +1,14 @@
 // Where a start or restart picks up an issue's machine state from: a claim's
 // start state. The adoption of a push whose state save failed is in
 // adopt-push.ts, and where a stop resumes in resume-stage.ts.
+import type { BranchFacts } from "./resume-stage.ts";
 import {
+  keptNote,
   keptReview,
   LIMITS_RESET,
   RESUMABLE,
   resumedStage,
+  reviewStands,
 } from "./resume-stage.ts";
 import type { State } from "./state.ts";
 import { newState } from "./state.ts";
@@ -13,16 +16,13 @@ import { newState } from "./state.ts";
 const STAMP_LENGTH = 16;
 
 // Where a start finds the issue: its branch head, open PR, whether the
-// branch holds work, and whether the worktree kept commits the branch lacks
-// (#283).
-interface StartContext {
+// branch holds work, whether the worktree kept commits the branch lacks
+// (#283), and the patch id of the branch's changes (null when it has none).
+interface StartContext extends BranchFacts {
   n: number;
   depth: number;
-  remote: string | null;
   pr: number | null;
   hasWork: boolean;
-  keptUnpushed: boolean;
-  answered: boolean;
   now: Date;
 }
 
@@ -43,21 +43,6 @@ function restartReason(state: State | null, answered: boolean): string {
     return `the ${stopCode} stop`;
   }
   return `the ${String(state.stage)} state`;
-}
-
-// True when nobody pushed since the review, the worktree kept no unreviewed
-// commits past the branch, and no blocking finding is open. A start with no
-// code branch (wiki-only work) has no reviewed head to stand on.
-function reviewStands(state: State | null, start: StartContext): boolean {
-  if (start.answered || start.keptUnpushed) {
-    return false;
-  }
-  return (
-    state !== null &&
-    start.remote !== null &&
-    start.remote === state.reviewedSha &&
-    !(state.findings ?? []).some((finding) => finding.status === "open")
-  );
 }
 
 // `fields` without those it lacks, so a restart adds no undefined keys.
@@ -105,14 +90,17 @@ function carriedRecord(state: State | null): State {
   });
 }
 
-// A standing review keeps its findings and the counter that numbers the next.
+// A standing review keeps its findings, the counter that numbers the next,
+// and the reviewed and accepted heads and patch ids.
 function carriedReview(state: State | null, stands: boolean): State {
   if (!stands || state === null) {
     return {};
   }
   const { findings, nextFindingId, resolvedHistory, reviewedSha } = state;
+  const { reviewedPatchId, acceptedSha, acceptedPatchId } = state;
   const kept = { findings, resolvedHistory: resolvedHistory ?? [] };
-  return present({ ...kept, nextFindingId, reviewedSha });
+  const passed = { reviewedPatchId, acceptedSha, acceptedPatchId };
+  return present({ ...kept, nextFindingId, reviewedSha, ...passed });
 }
 
 // Whether the issue stopped at publish, after its PR merged, with no answered
@@ -188,8 +176,9 @@ function resumedStop(state: State | null, start: StartContext): State | null {
   }
   const work = carriedWork(state, false);
   const stands = reviewStands(state, start);
-  const stage = resumedStage(state, stoppedStage, stands, hasSpec(work));
-  const entry = `${stamp(start.now)} restarted at ${stage} after ${restartReason(state, false)}; limits reset`;
+  const resume = { stands, specced: hasSpec(work), head: start.remote };
+  const stage = resumedStage(state, stoppedStage, resume);
+  const entry = `${stamp(start.now)} restarted at ${stage} after ${restartReason(state, false)}; limits reset${keptNote(state, start)}`;
   const resumed: State = present({
     ...state,
     ...work,
@@ -216,9 +205,10 @@ function resumedStop(state: State | null, start: StartContext): State | null {
 // in, carrying the saved state, with every limit reset (resumedStop,
 // `every-role-resumes`). Without a stage to resume (a lost state, a finished
 // one, or answered questions): when the branch holds work, the start
-// continues it at review with every limit reset, or at sync when nobody pushed
-// since the review, the worktree kept no unpushed commits past the branch and
-// no blocking finding is open. The plan and spec carry over, except after
+// continues it at review with every limit reset, or at sync when the review
+// stands: the head is the reviewed one or its changes have the reviewed
+// patch id, the worktree kept no unpushed commits past the branch and no
+// blocking finding is open. The plan and spec carry over, except after
 // answered questions, which may change them. Commits on the wiki's
 // agent/issue-<n> count as work too, so a start may continue at review with
 // no PR. With no work, a specced issue goes to
@@ -279,7 +269,7 @@ function branchStart(state: State | null, start: StartContext): State {
     onPr = `PR #${pr}`;
   }
   const log = state?.log ?? [];
-  const entry = `${stamp(start.now)} restarted on the existing branch (${onPr}) at ${stage} after ${restartReason(state, answered)}; limits reset`;
+  const entry = `${stamp(start.now)} restarted on the existing branch (${onPr}) at ${stage} after ${restartReason(state, answered)}; limits reset${keptNote(state, start)}`;
   return {
     ...newState(n, state?.depth ?? start.depth),
     headSha: remote,

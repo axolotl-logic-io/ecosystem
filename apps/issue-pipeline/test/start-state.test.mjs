@@ -44,6 +44,7 @@ const ctx = {
   pr: PR,
   hasWork: true,
   keptUnpushed: false,
+  patchId: null,
   answered: false,
   now,
 };

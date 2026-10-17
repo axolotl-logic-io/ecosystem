@@ -12,6 +12,7 @@ import { AGG_SCHEMA, REVIEW_SCHEMA } from "../review-schemas.ts";
 import { byStep } from "../signing.ts";
 import type { Finding } from "../types.ts";
 import { rateLimitedIn, rateLimitStep } from "./rate-limit.ts";
+import { patchIdIn } from "./reply-guards.ts";
 import type {
   MergedFinding,
   RawFinding,
@@ -110,7 +111,8 @@ function prepared(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const { ok, error, headSha, diffPath, diffLines } = onlyReply(results);
+  const reply = onlyReply(results);
+  const { ok, error, headSha, diffPath, diffLines } = reply;
   if (ok !== true || typeof headSha !== "string") {
     return stopStep(
       state,
@@ -119,7 +121,8 @@ function prepared(
     );
   }
   const st = { ...state.st, headSha, findings: [], round: 0 };
-  const started = { ...state, st, phase: "reviewed" };
+  const carry = { patchId: patchIdIn(reply) };
+  const started = { ...state, st, phase: "reviewed", carry };
   const diff = { path: String(diffPath), lines: String(diffLines) };
   return launchEach(
     started,
@@ -214,6 +217,7 @@ function reviewed(
   if (raw.length === 0) {
     st.stage = "checks";
     st.testsOnly = false;
+    st.reviewedPatchId = patchIdIn(state.carry);
     noteEvent(st, NO_FINDINGS_NOTE, ctx.now());
     return saveStep({ ...state, st, phase: "saved" }, comments);
   }

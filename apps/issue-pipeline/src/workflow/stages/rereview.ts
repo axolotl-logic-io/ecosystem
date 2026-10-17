@@ -12,6 +12,7 @@ import { REREVIEW_SCHEMA, REREVIEW_SEC_SCHEMA } from "../review-schemas.ts";
 import type { JsonSchema } from "../schemas.ts";
 import type { Finding, IssueState } from "../types.ts";
 import { rateLimitedIn, rateLimitStep } from "./rate-limit.ts";
+import { patchIdIn } from "./reply-guards.ts";
 import type { NewFinding, RereviewReply } from "./review-replies.ts";
 import { rereviewReplyOf } from "./review-replies.ts";
 import { rereviewComment, rereviewTask } from "./review-text.ts";
@@ -116,7 +117,8 @@ interface Rereviews {
 
 // Resolves each open finding every verdict on it closes, records the head as
 // reviewed, moves to checks on the branch as it stands, with every check to
-// run, when none is open, then saves.
+// run, and records the patch id the round's diff named, when none is open,
+// then saves.
 function settle(
   state: StageState,
   ctx: StageContext,
@@ -139,6 +141,7 @@ function settle(
   if (openFindings({ st }).length === 0) {
     st.stage = "checks";
     st.testsOnly = false;
+    st.reviewedPatchId = patchIdIn(state.carry);
     const text = `fix round ${roundOf(state)}: all findings resolved; checks run without a rebase`;
     noteEvent(st, text, ctx.now());
   }
@@ -151,7 +154,8 @@ function launchRereviews(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const { ok, error, diffPath } = onlyReply(results);
+  const reply = onlyReply(results);
+  const { ok, error, diffPath } = reply;
   if (ok !== true) {
     return stopStep(
       state,
@@ -161,15 +165,16 @@ function launchRereviews(
   }
   const lenses = openLenses(state);
   const st = copyState(state.st);
+  const prepared = { ...state, carry: { patchId: patchIdIn(reply) } };
   if (lenses.length === 0) {
-    return settle(state, ctx, {
+    return settle(prepared, ctx, {
       st,
       verdicts: new Map(),
       comments: [],
       stop: null,
     });
   }
-  const rereviewing = { ...state, st, phase: "rereviewed" };
+  const rereviewing = { ...prepared, st, phase: "rereviewed" };
   return launchEach(
     rereviewing,
     lenses.map((lens) =>
