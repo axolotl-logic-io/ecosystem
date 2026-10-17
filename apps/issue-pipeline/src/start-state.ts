@@ -56,24 +56,51 @@ function reviewStands(state: State | null, start: StartContext): boolean {
   );
 }
 
-// The plan and spec carry over, except after answered questions.
+// `fields` without those it lacks, so a restart adds no undefined keys.
+function present(fields: State): State {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined),
+  );
+}
+
+// The plan and spec carry over, with the spec's full-text path and the files
+// it touches, which the orchestrator's file holds read, except after answered
+// questions.
 function carriedWork(state: State | null, answered: boolean): State {
   if (answered || state === null) {
     return {};
   }
-  const { plan, spec } = state;
+  const { plan, spec, specFile, files } = state;
   if (spec === undefined || spec === null || spec === "") {
     return { plan: plan ?? null };
   }
-  return { plan: plan ?? null, spec };
+  return present({ plan: plan ?? null, spec, specFile, files });
 }
 
+// What a stop's restart keeps, on the branch or back at triage: the PR's
+// description, for an open-pr that reopens it, and the tokens the issue's
+// sessions reported.
+function carriedRecord(state: State | null): State {
+  if (state === null) {
+    return {};
+  }
+  const { prTitle, prBody, prBy, reportedTokens } = state;
+  return present({
+    prTitle,
+    prBody,
+    prBy,
+    reportedTokens: reportedTokens ?? 0,
+  });
+}
+
+// A standing review keeps its findings and the counter that numbers the next.
 function carriedReview(state: State | null, stands: boolean): State {
   if (!stands || state === null) {
     return {};
   }
-  const { findings, resolvedHistory, reviewedSha } = state;
-  return { findings, resolvedHistory: resolvedHistory ?? [], reviewedSha };
+  const { findings, nextFindingId, resolvedHistory, reviewedSha } = state;
+  const kept = { findings, resolvedHistory: resolvedHistory ?? [] };
+  return present({ ...kept, nextFindingId, reviewedSha });
 }
 
 // Whether the issue stopped at publish, after its PR merged, with no answered
@@ -112,11 +139,11 @@ function continuesWork(state: State | null, start: StartContext): boolean {
 // The state a start begins from (Autumn, 2026-10-15). Every start finds the
 // issue's open PR by its branch name. When the branch holds work, the start
 // continues it at review with every limit reset, whatever stopped it, except
-// a too-large stop (#283); when nobody pushed since
-// the review, the worktree kept no unpushed commits past the branch and no
-// blocking finding is open, the review stands and it goes straight to sync. The plan and spec carry over, except after answered
-// questions, which may change them. Commits on the wiki's agent/issue-<n> count
-// as work too, so a start may continue at review with no PR. With no work (no
+// a too-large stop (#283); when nobody pushed since the review, the worktree
+// kept no unpushed commits past the branch and no blocking finding is open,
+// the review stands and it goes straight to sync. The plan and spec, with the
+// spec's files, carry over, except after answered questions, which may change
+// them. Commits on the wiki's agent/issue-<n> count as work too, so a start may continue at review with no PR. With no work (no
 // open PR with code changes and no wiki-branch commits), or after a too-large
 // stop, whose half-built spec shouldn't be reviewed, it goes back to triage,
 // which reads the implementer's handoff, keeping the PR, and the implementer
@@ -136,13 +163,14 @@ function startState(state: State | null, start: StartContext): State {
   const fresh = newState(n, state?.depth ?? start.depth);
   if (!hasWork) {
     // Answered questions keep their counters (triages); a stop or a lost
-    // state starts fresh.
+    // state starts fresh but for carriedRecord.
     if (answered && state !== null) {
       return { ...state, pr: pr ?? state.pr ?? null, stage: "triage" };
     }
     const implemented = state?.implemented;
     const keptPr = pr ?? state?.pr ?? null;
-    return { ...fresh, headSha: remote, implemented, log, pr: keptPr };
+    const kept = { headSha: remote, implemented, log, pr: keptPr };
+    return { ...fresh, ...carriedRecord(state), ...kept };
   }
   const stands = reviewStands(state, start);
   let stage = "review";
@@ -160,6 +188,7 @@ function startState(state: State | null, start: StartContext): State {
     implemented: true,
     pr,
     stage,
+    ...carriedRecord(state),
     ...carriedWork(state, answered),
     ...carriedReview(state, stands),
     log: [...log, entry],

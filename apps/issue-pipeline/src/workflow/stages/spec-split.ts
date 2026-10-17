@@ -2,6 +2,7 @@
 // to 5 parts, which the split op opens as sub-issues under it (#267). Each
 // part's body names the files it touches. A sub-issue can't split again.
 
+import { filesLine } from "../files-line.ts";
 import type { Signature } from "../signing.ts";
 import type { SpecPart, SpecReply } from "./build-replies.ts";
 import { launchStep, stopStep } from "./step.ts";
@@ -23,8 +24,7 @@ function subIssueOf(part: SpecPart): SubIssue {
   if (files.length === 0) {
     return { title, body, after };
   }
-  const named = files.map((file) => `\`${file}\``).join(", ");
-  return { title, body: `${body}\n\nFiles: ${named}`, after };
+  return { title, body: `${body}\n\n${filesLine(files)}`, after };
 }
 
 // Spec's step for a split reply, signed `by`: the split op opens the parts and
