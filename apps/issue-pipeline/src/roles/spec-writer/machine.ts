@@ -58,9 +58,9 @@ type SpecResult =
 type Spec = StateSpec<SpecState, SpecResult, SpecData>;
 type Payload = Readonly<Record<string, unknown>>;
 
-// At most 2 sessions per issue, counted across restarts, besides the
-// continuations after a handoff: the config's maxContinuations (limitsOf),
-// 1 by default.
+// At most 2 sessions per issue, counted across crash restarts (a lifted
+// stop's restart resets the counts), besides the continuations after a
+// handoff: the config's maxContinuations (limitsOf), 1 by default.
 const LIMITS: Readonly<Record<string, number>> = {
   specAttempts: 2,
   specContinuations: 1,

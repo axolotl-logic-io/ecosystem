@@ -30,6 +30,8 @@ const RESUMABLE: ReadonlySet<unknown> = new Set([
 ]);
 // The counts that bound a stage's loops. A restart after a stop resets them,
 // as the stop comment promises, so the limit that stopped it doesn't at once.
+// The role machines' counts are in their checkpoints (checkpointsReset in
+// start-state.ts).
 const LIMITS_RESET: State = {
   triages: 0,
   continuations: {},
@@ -37,6 +39,7 @@ const LIMITS_RESET: State = {
   ciFixes: 0,
   syncs: 0,
   conflictFixes: 0,
+  securityRounds: 0,
 };
 
 // True when a stop saved with `stoppedStage` resumes when it is lifted: a

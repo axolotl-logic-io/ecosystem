@@ -1,8 +1,9 @@
 // Where a spec writer run starts, and what it carries (`every-role-resumes`
 // in the wiki's Pipeline-Roles-Shared page). It reads back the checkpoints
 // (the heads the spec stage began from, the sessions run and the
-// continuations taken, so a restart keeps its limits and its resets'
-// targets) and the hand-off fields. An
+// continuations taken, so a crash restart keeps its limits and its resets'
+// targets; a lifted stop's restart keeps only the heads, start-state.ts) and
+// the hand-off fields. An
 // issue whose spec is published with its tests committed goes straight to
 // its PR, so a restart posts no second spec; every other start claims the
 // issue and runs the session again, since the reply isn't kept across a

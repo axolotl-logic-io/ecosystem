@@ -147,15 +147,27 @@ function continuesWork(state: State | null, start: StartContext): boolean {
   return stage !== "stopped" || stopCode !== "too-large";
 }
 
-// A role's checkpoints with its continuation count dropped, as a restart
-// after a stop resets the limits (#335); its start heads and attempts stay.
+// The role checkpoints a restart after a stop keeps: the spec writer's start
+// heads, the targets its resets go back to and the heads its task lists the
+// stage's commits since. Fresh heads would be the branch's current ones, so a
+// reset would keep a failed session's commits.
+const KEPT_CHECKPOINTS: ReadonlySet<string> = new Set([
+  "startSha",
+  "startWikiSha",
+]);
+
+// A role's checkpoints with only KEPT_CHECKPOINTS left, as a restart after a
+// stop resets the limits (#335): every other checkpoint is a count that
+// bounds a loop (the spec writer's `attempts` and `continuations`), which
+// reads as 0 when missing, so the limit that stopped the issue doesn't stop
+// it again before a session runs.
 function checkpointsReset(state: State): State["checkpoints"] {
   const { checkpoints } = state;
   if (checkpoints === undefined) {
     return undefined;
   }
-  const kept = Object.entries(checkpoints).filter(
-    ([name]) => name !== "continuations",
+  const kept = Object.entries(checkpoints).filter(([name]) =>
+    KEPT_CHECKPOINTS.has(name),
   );
   return Object.fromEntries(kept);
 }

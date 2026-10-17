@@ -14,6 +14,7 @@ process.on("exit", () => fs.rmSync(d, { recursive: true, force: true }));
 // The pipeline root is read once, on import, so it is set first.
 setEnv("ISSUE_PIPELINE_ROOT", d);
 const { startState } = await import("../src/start-state.ts");
+const { located } = await import("./spec-writer-role-test-kit.mjs");
 
 const PR = 50;
 const HEAD = "h1";
@@ -42,6 +43,7 @@ function stoppedAt(stage, fields = {}) {
     ciFixes: 2,
     syncs: 4,
     conflictFixes: 1,
+    securityRounds: 2,
     findings: FINDINGS,
     nextFindingId: 2,
     log: ["a"],
@@ -65,6 +67,7 @@ const LIMITS = {
   ciFixes: 0,
   syncs: 0,
   conflictFixes: 0,
+  securityRounds: 0,
 };
 
 for (const stage of [
@@ -82,6 +85,7 @@ for (const stage of [
     const resumed = startState(stoppedAt(stage), ctx);
     const { triages, continuations, round, ciFixes, syncs, conflictFixes } =
       resumed;
+    const { securityRounds } = resumed;
     const { plan, spec, files, findings, reviewedSha, verifiedSha } = resumed;
     const { stopCode, stopReason, stoppedStage, log } = resumed;
     assert.deepEqual(
@@ -100,6 +104,7 @@ for (const stage of [
           ciFixes,
           syncs,
           conflictFixes,
+          securityRounds,
         },
         stop: [stopCode, stopReason, stoppedStage],
         last: log?.at(-1),
@@ -180,14 +185,49 @@ test("answered questions still go back to triage, whatever stopped", () => {
   assert.equal(stage, "triage");
 });
 
-test("a too-large stop at spec resumes spec with its continuations cleared and its start heads and attempts kept", () => {
-  const kept = { startSha: "s0", startWikiSha: null, attempts: 1 };
+// The spec writer's start heads, which every restart keeps.
+const HEADS = { startSha: "s0", startWikiSha: null };
+
+test("a too-large stop at spec resumes spec with its continuations and attempts cleared and its start heads kept", () => {
   const state = stoppedAt("spec", {
     stopCode: "too-large",
     spec: null,
-    checkpoints: { ...kept, continuations: 1 },
+    checkpoints: { ...HEADS, attempts: 1, continuations: 1 },
   });
   const got = startState(state, ctx);
   assert.equal(got.stage, "spec");
-  assert.deepEqual(got.checkpoints, kept);
+  assert.deepEqual(got.checkpoints, HEADS);
+});
+
+test("a stop by the spec writer failing twice resumes spec, whose run starts at claim with attempts 0 and its start heads", () => {
+  const state = stoppedAt("spec", {
+    stopCode: "error",
+    stopReason: "the spec writer failed twice",
+    spec: null,
+    checkpoints: { ...HEADS, attempts: 2, continuations: 0 },
+  });
+  const got = startState(state, ctx);
+  const { at, data } = located(got);
+  const { attempts, continuations, startSha, startWikiSha } = data;
+  assert.deepEqual(
+    [got.stage, at, { attempts, continuations, startSha, startWikiSha }],
+    ["spec", "claim", { ...HEADS, attempts: 0, continuations: 0 }],
+  );
+});
+
+test("a restart with no stop, after a crash at spec, keeps its counts and checkpoints", () => {
+  const checkpoints = { ...HEADS, attempts: 1, continuations: 1 };
+  const state = {
+    ...stoppedAt("spec", { spec: null, checkpoints }),
+    stage: "spec",
+    stoppedStage: null,
+    stopCode: null,
+    stopReason: null,
+  };
+  const got = startState(state, ctx);
+  const { round, securityRounds } = got;
+  assert.deepEqual(
+    [got.stage, got.checkpoints, { round, securityRounds }],
+    ["spec", checkpoints, { round: 3, securityRounds: 2 }],
+  );
 });
