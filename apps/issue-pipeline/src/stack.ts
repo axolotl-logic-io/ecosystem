@@ -161,11 +161,13 @@ function syncTarget(
 // Moves a worktree with no commits of its own, on neither the base nor the
 // prerequisite it is stacked on, to where the issue starts: that
 // prerequisite's head, or the base's head on GitHub. It drops the edits. A
-// worktree with commits of its own is kept.
+// worktree with commits of its own is kept. Commits up to `unstackedHead`,
+// the head of a merged prerequisite the issue unstacked from, aren't its own.
 function resetToStart(
   cfg: Config,
   wt: string,
   stackedOn: StackedOn | null,
+  unstackedHead: string | null = null,
 ): void {
   const base = cfg.baseBranch;
   fetchIn(cfg, wt, `+refs/heads/${base}:refs/remotes/origin/${base}`);
@@ -175,6 +177,12 @@ function resetToStart(
     start = stackedOn.headSha;
     known.push(start);
   }
+  if (
+    unstackedHead !== null &&
+    gitSucceeds(wt, ["cat-file", "-e", `${unstackedHead}^{commit}`])
+  ) {
+    known.push(unstackedHead);
+  }
   const range = ["rev-list", "--count", "HEAD", "--not", ...known];
   if (Number(run("git", ["-C", wt, ...range]).stdout) !== 0) {
     return;
@@ -183,10 +191,19 @@ function resetToStart(
   run("git", ["-C", wt, "clean", "-fd"]);
 }
 
+// What a claimed issue is stacked on, and the merged prerequisite it
+// unstacked from, with the head the saved state last put it on, if any.
+interface ClaimedStack {
+  stackedOn: StackedOn | null;
+  unstacked: { issue: number; headSha: string | null } | null;
+}
+
 // What a claimed issue is stacked on. With no branch of its own on GitHub
 // (`remote` null), that is the prerequisite the claim (`stackOn`) or the
-// saved state names, at its branch's head now, fetched into `dir`; with one,
-// it is what the saved state says, and `stackOn` is ignored.
+// saved state names, at its branch's head now, fetched into `dir`, unless
+// that prerequisite has merged, its branch deleted or not: then the issue
+// unstacks and starts from the base. With a branch of its own, it is what
+// the saved state says, and `stackOn` is ignored; a sync unstacks it.
 function claimedStack(
   cfg: Config,
   dir: string,
@@ -195,13 +212,20 @@ function claimedStack(
     saved: StackedOn | null | undefined;
     stackOn: number | null | undefined;
   },
-): StackedOn | null {
+): ClaimedStack {
   const kept = claim.saved ?? null;
   const prereq = claim.stackOn ?? kept?.issue;
   if (claim.remote !== null || prereq === undefined) {
-    return kept;
+    return { stackedOn: kept, unstacked: null };
   }
-  return stackStart(cfg, dir, prereq);
+  if (prereqMerged(cfg, prereq)) {
+    let headSha: string | null = null;
+    if (kept?.issue === prereq) {
+      ({ headSha } = kept);
+    }
+    return { stackedOn: null, unstacked: { issue: prereq, headSha } };
+  }
+  return { stackedOn: stackStart(cfg, dir, prereq), unstacked: null };
 }
 
 // What the issue's own change is measured from: the prerequisite head it is
@@ -216,7 +240,7 @@ function measureFrom(
   return stackedOn.headSha;
 }
 
-export type { StackedOn, SyncTarget };
+export type { ClaimedStack, StackedOn, SyncTarget };
 export {
   claimedStack,
   measureFrom,

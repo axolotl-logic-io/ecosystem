@@ -18,7 +18,7 @@ import {
   remoteHead,
 } from "../git-state.ts";
 import { LABELS } from "../labels.ts";
-import type { StackedOn } from "../stack.ts";
+import type { ClaimedStack, StackedOn } from "../stack.ts";
 import { claimedStack, measureFrom, resetToStart } from "../stack.ts";
 import { startState } from "../start-state.ts";
 import type { State } from "../state.ts";
@@ -37,6 +37,12 @@ const CLAIMED_ISSUE = z.looseObject({
 
 type ClaimedIssue = z.infer<typeof CLAIMED_ISSUE>;
 type Prereq = number | null | undefined;
+
+const STAMP_LENGTH = 16;
+
+function stamp(now: Date): string {
+  return `${now.toISOString().slice(0, STAMP_LENGTH)}Z`;
+}
 
 // The open (or draft) PR from the issue's branch, and whether the issue holds
 // work: code changes on a branch with an open PR, or commits on the wiki's
@@ -78,15 +84,15 @@ function branchPatchId(
 function resetWorktree(
   cfg: Config,
   n: number,
-  start: { remote: string | null; stackedOn: StackedOn | null },
+  start: { remote: string | null } & ClaimedStack,
 ): { entry: string | null; kept: boolean } {
-  const { remote, stackedOn } = start;
+  const { remote, stackedOn, unstacked } = start;
   const wt = paths.worktree(cfg, n);
   if (!fs.existsSync(path.join(wt, ".git"))) {
     return { entry: null, kept: false };
   }
   if (remote === null) {
-    resetToStart(cfg, wt, stackedOn);
+    resetToStart(cfg, wt, stackedOn, unstacked?.headSha ?? null);
     return { entry: null, kept: false };
   }
   fetchIn(cfg, wt, paths.branch(n));
@@ -95,18 +101,29 @@ function resetWorktree(
 }
 
 // `state` with the reset's log entry, if it has one, and what the issue is
-// stacked on, if it is.
+// stacked on, if it is. An issue that unstacked from a merged prerequisite
+// has its stackedOn cleared and a log entry saying so.
 function withEntry(
   state: State,
   entry: string | null,
-  on: StackedOn | null,
+  stack: ClaimedStack & { base: string; now: Date },
 ): State {
   const next: State = { ...state };
-  if (on !== null) {
-    next.stackedOn = on;
+  const entries: string[] = [];
+  if (stack.stackedOn !== null) {
+    next.stackedOn = stack.stackedOn;
+  }
+  if (stack.unstacked !== null) {
+    next.stackedOn = null;
+    entries.push(
+      `${stamp(stack.now)} unstacked from #${stack.unstacked.issue}, which has merged; starts from ${stack.base}`,
+    );
   }
   if (entry !== null) {
-    next.log = [...(state.log ?? []), entry];
+    entries.push(entry);
+  }
+  if (entries.length > 0) {
+    next.log = [...(state.log ?? []), ...entries];
   }
   return next;
 }
@@ -119,7 +136,7 @@ function hasNeedsInfo(issue: ClaimedIssue): boolean {
 // The state this claim carries on from, the saved one mid-stage or a restart
 // from the issue's branch, the branch's head on GitHub, and whether it
 // restarted. An issue with no branch that is stacked, or asked to be, starts
-// on its prerequisite's head.
+// on its prerequisite's head, or on the base once that prerequisite merged.
 function claimedState(
   cfg: Config,
   n: number,
@@ -135,28 +152,31 @@ function claimedState(
     dir = paths.clone(cfg);
   }
   const stack = { remote, saved: saved?.stackedOn, stackOn };
-  const stackedOn = claimedStack(cfg, dir, stack);
+  const claimed = claimedStack(cfg, dir, stack);
+  const { stackedOn, unstacked } = claimed;
+  const now = new Date();
+  const logged = { ...claimed, base: `origin/${cfg.baseBranch}`, now };
   const answered = hasNeedsInfo(issue) && answeredSince(cfg, comments, saved);
   const ended = saved?.stage === "stopped" || saved?.stage === "done";
   if (saved !== null && !ended && !answered) {
-    const adopted = adoptPush(saved, remote, lastPush(cfg, n), new Date());
-    if (adopted === null && (remote !== null || stackedOn === null)) {
+    const adopted = adoptPush(saved, remote, lastPush(cfg, n), now);
+    const restacked = remote === null && stackedOn !== null;
+    if (adopted === null && !restacked && unstacked === null) {
       return { state: saved, remote, restarted: false };
     }
-    const { entry } = resetWorktree(cfg, n, { remote, stackedOn });
-    const state = withEntry(adopted ?? saved, entry, stackedOn);
+    const { entry } = resetWorktree(cfg, n, { remote, ...claimed });
+    const state = withEntry(adopted ?? saved, entry, logged);
     return { state, remote, restarted: false };
   }
   const { pr, hasWork } = branchWork(cfg, n, remote);
   const depth = issueDepth(issue.body);
-  const now = new Date();
-  const reset = resetWorktree(cfg, n, { remote, stackedOn });
+  const reset = resetWorktree(cfg, n, { remote, ...claimed });
   const keptUnpushed = reset.kept;
   const patchId = branchPatchId(cfg, remote, stackedOn);
   const facts = { remote, patchId, keptUnpushed, answered };
   const start = { n, depth, pr, hasWork, now, ...facts };
   const begun = startState(saved, start);
-  const state = withEntry(begun, reset.entry, stackedOn);
+  const state = withEntry(begun, reset.entry, logged);
   return { state, remote, restarted: true };
 }
 
