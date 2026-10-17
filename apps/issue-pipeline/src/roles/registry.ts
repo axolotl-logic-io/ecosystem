@@ -1,17 +1,14 @@
 // Which stages run a role on the role runner (src/job/runner.ts), and the
-// builders that make a role from a machine or a linear script. The registry
-// starts empty: a stage with no role runs the sweep as before (src/job.ts).
+// builders that make a role from a machine or a linear script. It registers
+// each built role as it loads, triage so far; a stage with no role runs the
+// sweep as before (src/job.ts).
 // A role keeps its own types inside its `run`, so the registry holds one
 // non-generic shape for every role.
 
-import type {
-  CheckEffect,
-  Effects,
-  Entry,
-  Outcome,
-  RunEnd,
-} from "../job/runner.ts";
+import type { CheckEffect, Effects, Outcome } from "../job/run-step.ts";
+import type { Entry, RunEnd } from "../job/runner.ts";
 import { runLinear, runMachine } from "../job/runner.ts";
+import { triageScript } from "./triage/script.ts";
 import type { LinearScript, Machine } from "./walk.ts";
 
 // The effects a job gives a role: all but the script checks, which are the
@@ -93,6 +90,8 @@ function registerRole(stage: string, role: Role): void {
 function roleOf(stage: string): Role | undefined {
   return ROLES.get(stage);
 }
+
+registerRole("triage", linearRole("triage", triageScript));
 
 export type { Checks, JobEffects, Role, RoleName };
 export { linearRole, machineRole, ROLE_NAMES, registerRole, roleOf };

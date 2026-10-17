@@ -5,10 +5,19 @@
 // does, with no comment posted twice.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { runLinear } from "../src/job/runner.ts";
 import { killAt, runToy, uninterrupted, world } from "./runner-test-kit.mjs";
-import { TOY_LIMITS, TOY_STATES, toyMachine, WORK } from "./runner-toys.mjs";
+import {
+  startState,
+  TOY_LIMITS,
+  TOY_STATES,
+  toyMachine,
+  WORK,
+} from "./runner-toys.mjs";
 
-/** @import { Call, ToyRole } from "./runner-test-kit.mjs" */
+/** @import { End } from "../src/roles/machine.ts" */
+/** @import { LinearScript } from "../src/roles/walk.ts" */
+/** @import { Call, OpFake, RoleRun, ToyRole } from "./runner-test-kit.mjs" */
 
 const NETWORK_ERROR = "error connecting to api.github.com";
 const STEP_FAILED = { kind: "stopped", code: "error" };
@@ -88,6 +97,59 @@ test("a failed save at an end ends the run as a failed step", async () => {
   assert.deepEqual(stopped.end, STEP_FAILED);
   const held = await uninterrupted("linear", { failSave: NETWORK_ERROR });
   assert.deepEqual(held.end, { kind: "held" });
+});
+
+/** @param {End} end @returns {RoleRun} a role that keeps its plan and ends at `end` */
+function endingAt(end) {
+  /** @type {LinearScript<{ plan: string }>} */
+  const script = {
+    locate: () => ({ at: "end", data: { plan: "kept" } }),
+    steps: [],
+    end: () => end,
+    handoff: ["plan"],
+    checkpoints: [],
+  };
+  return (entry, effects) => runLinear(script, entry, effects);
+}
+
+/** @type {End} */
+const STOPPING = {
+  kind: "stopped",
+  code: "toy-stop",
+  after: { op: "stop", payload: { reason: "toy reason" } },
+};
+
+/** @param {unknown[]} seen @returns {OpFake} a stop that saves its own state */
+function stopFake(seen) {
+  return (store, payload) => {
+    const { state } = payload;
+    seen.push(structuredClone(state));
+    return {
+      write: () => {
+        store.saved = { ...store.saved, stage: "stopped" };
+      },
+      reply: { ok: true, name: "ok", reply: { ok: true } },
+    };
+  };
+}
+
+test("an end's own op runs once, after its save, on the saved state", async () => {
+  /** @type {unknown[]} */
+  const seen = [];
+  const run = await uninterrupted(endingAt(STOPPING), {
+    ops: { stop: stopFake(seen) },
+  });
+  assert.deepEqual(run.end, { kind: "stopped", code: "toy-stop" });
+  const saved = { ...startState(), plan: "kept", checkpoints: {}, lease: null };
+  assert.deepEqual(seen, [saved]);
+  assert.equal(run.saved.stage, "stopped");
+});
+
+test("a failed end's op ends stopped with error, with no op of its own", async () => {
+  const run = await uninterrupted(endingAt(STOPPING), {
+    ops: { stop: () => ({ reply: { ok: false, error: "gh broke" } }) },
+  });
+  assert.deepEqual(run.end, STEP_FAILED);
 });
 
 test("only declared checkpoints and hand-off fields reach a save", async () => {

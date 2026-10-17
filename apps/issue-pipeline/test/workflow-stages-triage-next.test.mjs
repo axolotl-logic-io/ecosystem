@@ -169,7 +169,20 @@ test("a large issue at depth 0 goes on to the spec with its split suggested", ()
       where: "issue",
     },
   ]);
-  assert.equal(decided(split, { depth: 1 }).stop?.reason, REJECTED);
+});
+
+test("a sub-issue's split stops with the triage-rejected reason and the reject comment", () => {
+  const split = replyOf({ decision: "split", reason: "Big.", plan: "Cut." });
+  const step = decided(split, { depth: 1 });
+  assert.equal(step.done, true);
+  assert.deepEqual(step.stop, { reason: REJECTED, detail: "Big.", code: null });
+  assert.deepEqual(step.comments, [
+    {
+      by: SIGNATURE,
+      body: "This issue isn't one the pipeline should take on: Big.",
+      where: "issue",
+    },
+  ]);
 });
 
 test("a ready triage clears an earlier suggested split", () => {

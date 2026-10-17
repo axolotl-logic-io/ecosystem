@@ -10,14 +10,22 @@ import type { Role as BudgetRole } from "../workflow/types.ts";
 
 type StateKind = "script" | "session" | "end";
 
+// An op an end runs once its save is done, on the state it saved; named
+// `after` since an object may not have a `then`.
+interface AfterOp {
+  op: string;
+  payload: Readonly<Record<string, unknown>>;
+}
+
 // How a run ends: the issue saved at `stage` (the job ends), saved at
 // `stage` and carried on there in the same job, stopped with a stop code,
-// released, or held for the next tick.
+// released, or held for the next tick. A stop or a release may name the op
+// that carries it out on GitHub, such as `stop` or `ask`.
 type End =
   | { kind: "saved"; stage: string }
   | { kind: "next"; stage: string }
-  | { kind: "stopped"; code: string }
-  | { kind: "released" }
+  | { kind: "stopped"; code: string; after?: AfterOp }
+  | { kind: "released"; after?: AfterOp }
   | { kind: "held" };
 
 // A model session: its name, agent and model, the schema of its reply, its
@@ -261,6 +269,7 @@ function checkTable<S extends string, R extends string, D>(
 }
 
 export type {
+  AfterOp,
   Edge,
   Effect,
   End,

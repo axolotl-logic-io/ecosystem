@@ -1,7 +1,8 @@
 // @ts-check
 // The orchestrator's watchdog (#235), run through whole ticks over recorded
-// job.json files: a dead job is restarted with --resume up to maxResumes
-// times per issue and stage and its issue then stopped with
+// job.json files: a dead job is restarted with --resume (a stage that runs
+// a role, such as triage, without it, #304) up to maxResumes times per issue
+// and stage and its issue then stopped with
 // agent:stopped-job; finished, failed and stopped jobs and stopped issues are
 // left alone; a silent session is steered at silentMinutes, and its job sent
 // SIGTERM after as long again, then resumed once it has stopped. Each rule
@@ -39,6 +40,7 @@ const ISSUE = {
   quiet: 67,
   ops: 68,
   restarted: 69,
+  deadTriage: 70,
 };
 const PR_OF_CAPPED = 9;
 // The defaults, which the kit's config leaves to the watchdog.
@@ -91,6 +93,24 @@ test("a dead job is restarted as the same stage with --resume, and the scheduler
       reason: "dead",
     },
   ]);
+});
+
+test("a dead triage job is restarted without --resume, since its role restarts from its state", () => {
+  writeJob({ issue: ISSUE.deadTriage, stage: "triage", pid: deadPid() });
+  const { spawned } = tickOver([
+    { number: ISSUE.deadTriage, state: { stage: "triage" } },
+  ]);
+  const [argv, ...more] = spawned;
+  assert.deepEqual(more, []);
+  const stageAt = argv?.indexOf("--stage") ?? -1;
+  assert.equal(argv?.[stageAt + 1], "triage");
+  assert.equal(argv?.includes("--resume"), false);
+  assert.deepEqual(
+    loggedFor(ISSUE.deadTriage).map(
+      ({ action, reason }) => `${action} ${reason}`,
+    ),
+    ["resumed dead"],
+  );
 });
 
 test("a restarted job still running from its start record is not restarted again while its old job.json is dead", () => {

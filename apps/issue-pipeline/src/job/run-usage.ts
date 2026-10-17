@@ -8,7 +8,8 @@ import type { JsonSchema } from "../workflow/schemas.ts";
 import { isRecord } from "../workflow/stages/reply-guards.ts";
 import type { Usage } from "./raw-results.ts";
 import { addUsage, ZERO_USAGE } from "./raw-results.ts";
-import type { Outcome, RunEnd } from "./runner.ts";
+import type { Outcome } from "./run-step.ts";
+import type { RunEnd } from "./runner.ts";
 import type { Ended } from "./usage-log.ts";
 import type { LaunchUsage } from "./usage-tally.ts";
 

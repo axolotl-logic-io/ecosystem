@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { stop } from "../ops/stop.ts";
+import { roleOf } from "../roles/registry.ts";
 import type { State } from "../state.ts";
 import { escalate } from "./escalate.ts";
 import type { AdviceContext } from "./escalation-agent.ts";
@@ -98,7 +99,8 @@ function startJob(
   start: Start & { at: string; resume: boolean },
 ): void {
   const argv = jobArgv(deps.configPath, start);
-  if (start.resume) {
+  // A stage that runs a role refuses --resume: it restarts from its state.
+  if (start.resume && roleOf(start.stage) === undefined) {
     argv.push("--resume");
   }
   const pid = deps.spawn(argv, paths.jobLog(cfg, start.issue));

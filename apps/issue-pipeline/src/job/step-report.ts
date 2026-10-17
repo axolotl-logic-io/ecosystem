@@ -3,7 +3,7 @@
 // of its result, or `failed`, or `interrupted` when a signal came.
 
 import type { Effect } from "../roles/machine.ts";
-import type { Outcome } from "./runner.ts";
+import type { Outcome } from "./run-step.ts";
 
 // One step as job.json shows it; endedAt and result are null while it runs.
 interface StepReport {

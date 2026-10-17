@@ -92,19 +92,6 @@ function rawComment(cfg: Config, number: number, body: string): void {
   ]);
 }
 
-// Replaces comment `id`'s body with `body`.
-function editComment(cfg: Config, id: number, body: string): void {
-  gh(cfg, [
-    "api",
-    "-X",
-    "PATCH",
-    `repos/${cfg.repo}/issues/comments/${id}`,
-    "-f",
-    `body=${body}`,
-    "--silent",
-  ]);
-}
-
 // Every comment on the repo's issues and PRs, or only those changed at or
 // after `since` (an ISO time), in one paged listing.
 function listRepoComments(cfg: Config, since: string | null): IssueComment[] {
@@ -187,6 +174,51 @@ function comment(
   rawComment(cfg, number, signed(by, body));
 }
 
+// Replaces comment `id`'s body; with `allowFail`, a failed edit is ignored.
+function editComment(
+  cfg: Config,
+  id: number,
+  body: string,
+  options: { allowFail?: boolean } = {},
+): void {
+  gh(
+    cfg,
+    [
+      "api",
+      "-X",
+      "PATCH",
+      `repos/${cfg.repo}/issues/comments/${id}`,
+      "-f",
+      `body=${body}`,
+      "--silent",
+    ],
+    options,
+  );
+}
+
+// Writes `body`, signed by `by`, as issue `number`'s one comment keyed
+// `key`: it edits the pipeline account's comment that carries the key's
+// hidden marker, and posts a new one only when there is none, so writing
+// it again posts nothing twice.
+function commentByKey(
+  cfg: Config,
+  number: number,
+  by: Author | undefined,
+  keyed: { body: string; key: string },
+): void {
+  const mark = `<!-- issue-pipeline:${number}:${keyed.key} -->`;
+  const text = `${signed(by, keyed.body)}\n${mark}`;
+  const mine = listComments(cfg, number).find(
+    (item) =>
+      item.user?.login === cfg.account && (item.body ?? "").includes(mark),
+  );
+  if (mine === undefined) {
+    rawComment(cfg, number, text);
+    return;
+  }
+  editComment(cfg, mine.id, text);
+}
+
 // The role of the pipeline agent that wrote a comment ("state" for the state
 // comment), or null when the pipeline didn't write it.
 function pipelineRole(cfg: Config, item: IssueComment): string | null {
@@ -212,6 +244,7 @@ export {
   CLAIM_MARK,
   COMMENT,
   comment,
+  commentByKey,
   editComment,
   listComments,
   listRepoComments,

@@ -6,14 +6,17 @@
 // session from a non-session state, and decides what is saved and when: only
 // the role's declared hand-off fields and checkpoints, saved at every end
 // and as soon as a checkpoint changes, so a count is saved when it goes up.
-// It reads nothing but the saved state it is given (`every-role-resumes`).
-// It appends a usage entry for every session that ends and for the run.
+// An end's own op runs after the end's save, on the state just saved. It
+// reads nothing but the saved state and context it is given
+// (`every-role-resumes`). It appends a usage entry for every session that
+// ends and for the run.
 
 import type { Effect, End, Result, SessionEffect } from "../roles/machine.ts";
 import type {
   LinearScript,
   Machine,
   Position,
+  RoleContext,
   Walk,
   Writes,
 } from "../roles/walk.ts";
@@ -21,42 +24,22 @@ import { linearWalk, machineWalk } from "../roles/walk.ts";
 import type { State } from "../state.ts";
 import { isNetworkError } from "../workflow/stages/network.ts";
 import { checkpointsChanged, writtenState } from "./role-state.ts";
-import type { RunUsage, UsageEntry } from "./run-usage.ts";
+import type { Effects, Outcome, Performed } from "./run-step.ts";
+import { perform } from "./run-step.ts";
+import type { RunUsage } from "./run-usage.ts";
 import { runUsage } from "./run-usage.ts";
 import type { StopSignal } from "./status.ts";
-import type { StepReport } from "./step-report.ts";
 import { reportedStep } from "./step-report.ts";
-import type { LaunchUsage } from "./usage-tally.ts";
 
 // The end of a failed step, with the step-failure stop code (src/stops.ts).
 const STEP_FAILED: End = { kind: "stopped", code: "error" };
 
-type OpEffect = Extract<Effect, { kind: "op" }>;
-type CheckEffect = Extract<Effect, { kind: "check" }>;
-
-// What an effect came to: a named result with its reply, or a failure.
-type Outcome =
-  | { ok: true; name: string; reply: unknown }
-  | { ok: false; error: string };
-
-interface Effects {
-  op: (effect: OpEffect) => Promise<Outcome>;
-  check: (effect: CheckEffect) => Promise<Outcome>;
-  session: (
-    effect: SessionEffect,
-  ) => Promise<{ outcome: Outcome; launch: LaunchUsage }>;
-  // Appends a usage entry; it never rejects.
-  usage: (entry: UsageEntry) => Promise<void>;
-  save: (state: State) => Promise<Outcome>;
-  clock: () => Date;
-  stopping: () => StopSignal | null;
-  step: (step: StepReport) => void;
-}
-
-// Where a run starts: the job's stage and the issue's saved state.
+// Where a run starts: the job's stage, the issue's saved state and what
+// the role's locate reads besides it.
 interface Entry {
   stage: string;
   saved: State;
+  context: RoleContext;
 }
 
 type RunEnd = End | { kind: "interrupted"; signal: StopSignal };
@@ -65,31 +48,10 @@ type RunEnd = End | { kind: "interrupted"; signal: StopSignal };
 interface Run<D> {
   writes: Writes<D>;
   effects: Effects;
+  context: RoleContext;
   stage: string;
   saved: State;
   usage: RunUsage;
-}
-
-type Performed =
-  | { kind: "signal"; signal: StopSignal }
-  | { kind: "done"; outcome: Outcome };
-
-// Runs `act` unless a signal is pending, and gives the signal ahead of its
-// result when one came while it ran.
-async function perform(
-  effects: Effects,
-  act: () => Promise<Outcome>,
-): Promise<Performed> {
-  const before = effects.stopping();
-  if (before !== null) {
-    return { kind: "signal", signal: before };
-  }
-  const outcome = await act();
-  const after = effects.stopping();
-  if (after !== null) {
-    return { kind: "signal", signal: after };
-  }
-  return { kind: "done", outcome };
 }
 
 async function save<D>(run: Run<D>, data: D, end: boolean): Promise<Performed> {
@@ -106,6 +68,39 @@ function failedEnd(error: string): End {
     return { kind: "held" };
   }
   return STEP_FAILED;
+}
+
+// The end as the run returns it, without its own op.
+function bareEnd(end: End): End {
+  if (end.kind === "stopped") {
+    return { kind: "stopped", code: end.code };
+  }
+  if (end.kind === "released") {
+    return { kind: "released" };
+  }
+  return end;
+}
+
+// Runs the end's own op, if it has one, on the state just saved, reported
+// as a step at `end`; its failure ends the run as a failed step would.
+async function settle<D>(run: Run<D>, end: End): Promise<RunEnd> {
+  if (!(end.kind === "stopped" || end.kind === "released")) {
+    return end;
+  }
+  const { after } = end;
+  if (after === undefined) {
+    return end;
+  }
+  const payload = { ...after.payload, state: run.saved };
+  const effect: Effect = { kind: "op", op: after.op, payload };
+  const done = await stepOf(run, { at: "end", effect });
+  if (done.kind === "signal") {
+    return { kind: "interrupted", signal: done.signal };
+  }
+  if (!done.outcome.ok) {
+    return failedEnd(done.outcome.error);
+  }
+  return bareEnd(end);
 }
 
 // Saves the issue at the end and ends the run, or ends it as a failed step
@@ -128,7 +123,7 @@ async function finish<S extends string, D>(
     return failedEnd(done.outcome.error);
   }
   if (end.kind !== "next") {
-    return end;
+    return await settle(run, end);
   }
   return await enter(run, walk, run.saved);
 }
@@ -140,7 +135,7 @@ async function enter<S extends string, D>(
 ): Promise<RunEnd> {
   let position: Position<S, D>;
   try {
-    position = walk.start(saved);
+    position = walk.start(saved, run.context);
   } catch {
     return STEP_FAILED;
   }
@@ -178,10 +173,11 @@ function execute<D>(run: Run<D>, at: string, effect: Effect): Promise<Outcome> {
   }
 }
 
-// Runs the position's effect, reported as a step.
-function stepOf<S extends string, D>(
+// Runs the position's effect, reported as a step, unless a signal is
+// pending, and gives its outcome or the signal.
+function stepOf<D>(
   run: Run<D>,
-  position: Position<S, D>,
+  position: { at: string; effect: Effect },
 ): Promise<Performed> {
   const { at, effect } = position;
   return reportedStep(run.effects, at, effect, () =>
@@ -253,9 +249,9 @@ async function runWalk<S extends string, D>(
   entry: Entry,
   effects: Effects,
 ): Promise<RunEnd> {
-  const { stage, saved } = entry;
+  const { stage, saved, context } = entry;
   const usage = runUsage(stage, effects.clock());
-  const run: Run<D> = { writes, effects, stage, saved, usage };
+  const run: Run<D> = { writes, effects, context, stage, saved, usage };
   const end = await enter(run, walk, saved);
   await effects.usage(usage.job(end, run.saved, effects.clock()));
   return end;
@@ -283,5 +279,5 @@ function unreachable(value: never): never {
   throw new Error(`runner: unexpected ${JSON.stringify(value)}`);
 }
 
-export type { CheckEffect, Effects, Entry, OpEffect, Outcome, RunEnd };
+export type { Entry, RunEnd };
 export { runLinear, runMachine };

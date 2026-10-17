@@ -11,12 +11,13 @@ import type { IssueComment } from "./comments.ts";
 import {
   CLAIM_MARK,
   COMMENT,
+  editComment,
   listComments,
   PIPELINE_MARK,
   signed,
 } from "./comments.ts";
 import type { Config } from "./config.ts";
-import { gh, ghJson } from "./github.ts";
+import { ghJson } from "./github.ts";
 import { LABELS, setLabels } from "./labels.ts";
 import { sleepMs } from "./process.ts";
 
@@ -25,6 +26,8 @@ const MS_PER_SECOND = 1000;
 const STAMP_LENGTH = 16;
 const STILL_WORKING_AT_END = /\n<sub>Lane still working at [^<]*<\/sub>$/u;
 const STILL_WORKING = /<sub>Lane still working at [^<]*<\/sub>$/u;
+// A claim that stays open only expires later, so a failed edit isn't fatal.
+const QUIET = { allowFail: true };
 
 // The request fields that name the lane: its own name, or its sweep's id.
 interface LaneRequest {
@@ -101,29 +104,13 @@ function liveClaims(cfg: Config, comments: readonly IssueComment[]): Claim[] {
     .sort((a, b) => a.id - b.id); // comment ids increase with creation
 }
 
-function editComment(cfg: Config, id: number, body: string): void {
-  // A claim that stays open only expires later, so a failed edit isn't fatal.
-  gh(
-    cfg,
-    [
-      "api",
-      "-X",
-      "PATCH",
-      `repos/${cfg.repo}/issues/comments/${id}`,
-      "-f",
-      `body=${body}`,
-      "--silent",
-    ],
-    { allowFail: true },
-  );
-}
-
 function closeClaim(cfg: Config, claim: Claim, note: string): void {
   const closed = `<!-- agent-pipeline:claim-closed lane=${claim.lane} sweep=${claim.sweep} -->`;
   editComment(
     cfg,
     claim.id,
     `${claim.body.replace(CLAIM_MARK, closed)}\n\n${note}`,
+    QUIET,
   );
 }
 
@@ -141,7 +128,7 @@ function touchClaim(cfg: Config, n: number, req: LaneRequest): void {
   if (STILL_WORKING_AT_END.test(mine.body)) {
     body = mine.body.replace(STILL_WORKING, stamp);
   }
-  editComment(cfg, mine.id, body);
+  editComment(cfg, mine.id, body, QUIET);
 }
 
 // The issue is leaving the pipeline, so every live claim on it is void.

@@ -20,7 +20,7 @@ import fs from "node:fs";
 import process from "node:process";
 import { text } from "node:stream/consumers";
 import { z } from "zod";
-import { AUTHOR, comment } from "./comments.ts";
+import { AUTHOR, comment, commentByKey } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { loadConfig, withCheckout } from "./config.ts";
 import { ask } from "./ops/ask.ts";
@@ -102,6 +102,9 @@ const ENVELOPE = z.looseObject({
       z.looseObject({
         body: z.string(),
         by: AUTHOR.nullish(),
+        // A keyed comment is written once: a later one with the same key
+        // edits it (commentByKey).
+        key: z.string().nullish(),
         number: z.number().int(),
       }),
     )
@@ -145,8 +148,12 @@ function runRequest(request: unknown): OpsReply {
   // Post the signed comments the workflow queued for this issue before running the op,
   // so they land in order and aren't lost if the op fails.
   let posted = 0;
-  for (const { body, by, number } of comments ?? []) {
-    comment(cfg, number, by ?? undefined, body);
+  for (const { body, by, key, number } of comments ?? []) {
+    if (typeof key === "string") {
+      commentByKey(cfg, number, by ?? undefined, { body, key });
+    } else {
+      comment(cfg, number, by ?? undefined, body);
+    }
     posted += 1;
   }
   return { ok: true, op, posted, ...handler(cfg, request) };

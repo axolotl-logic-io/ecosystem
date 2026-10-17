@@ -3,11 +3,23 @@
 // large one moves to spec with its split suggested, for the spec writer to cut
 // (#267); anything else is rejected with a stop.
 
-import { sessionBudget } from "../budget.ts";
-import { clip } from "../clip.ts";
+import { startTriage } from "../../roles/triage/locate.ts";
+import type { TriageDecision, TriageReply } from "../../roles/triage/reply.ts";
+import {
+  decisionOf,
+  startedPrOf,
+  triageReplyOf,
+} from "../../roles/triage/reply.ts";
+import {
+  announcement,
+  keptPlan,
+  prEvent,
+  REJECTED,
+  TRIAGE_FAILED,
+  triageEvent,
+  triageSession,
+} from "../../roles/triage/task.ts";
 import { noteEvent } from "../event-log.ts";
-import { preamble } from "../prompts.ts";
-import { TRIAGE_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import {
@@ -17,8 +29,6 @@ import {
   onlyReply,
   stopStep,
 } from "./step.ts";
-import type { TriageReply } from "./triage-reply.ts";
-import { triageReplyOf } from "./triage-reply.ts";
 import type {
   ChildLaunch,
   LaunchResult,
@@ -39,10 +49,6 @@ const PHASES: readonly TriagePhase[] = [
   "start-pr",
 ];
 
-// The longest plan the state keeps.
-const PLAN_LIMIT = 4000;
-// The longest error a failed draft PR logs.
-const PR_ERROR_LIMIT = 300;
 const TRIAGE_MINUTES = 20;
 
 function phaseOf(state: StageState): TriagePhase {
@@ -53,63 +59,42 @@ function phaseOf(state: StageState): TriagePhase {
   return phase;
 }
 
-// The line on splitting: a sub-issue may not split again.
-const SPLIT_ALLOWED: string =
-  "- split: too big for one session. Say why in `reason` and write `plan` as for ready; the spec writer decides how to cut it.";
-const SPLIT_FORBIDDEN: string =
-  "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so.";
-
-function splitLine(depth: number): string {
-  if (depth >= 1) {
-    return SPLIT_FORBIDDEN;
-  }
-  return SPLIT_ALLOWED;
-}
-
 function triageLaunch(state: StageState, ctx: StageContext): ChildLaunch {
-  const { cfg, budgets, models } = ctx;
-  const budget = sessionBudget(budgets, "triage");
-  const lines = [
-    `If ${state.paths.handoffFile} exists, an earlier implementer session wrote it when it ran out of room: read it and the commits on \`agent/issue-${state.n}\` before you decide.`,
-    "Read the issue and as much of the code as you need to decide one of:",
-    `- ready: one implementer session (at most ${budgets.sessionCap} tokens of context) can implement and test it. Write \`plan\`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.`,
-    "- needs-info: a competent engineer could not start without answers. Ask at most 5 specific questions. If earlier questions were answered in the comments, use the answers.",
-    splitLine(state.st.depth),
-    "- reject: not suitable for an agent (design debate, production incident, needs production access, not a code change). Explain in `reason`. Issues that change CI workflows, auth, dependencies or migrations are suitable.",
-    "Leave unused fields as empty strings or arrays.",
-  ];
+  const { st, n, paths } = state;
+  const item = { n, paths, depth: st.depth, attempt: st.triages ?? 1 };
+  const session = triageSession(item, ctx);
   return {
+    ...session,
     kind: "child",
-    name: "triage",
-    label: `Triage issue ${state.n}`,
-    agent: "issue-pipeline-reader",
-    model: models.triage,
-    schema: TRIAGE_SCHEMA,
+    label: `Triage issue ${n}`,
     minutes: TRIAGE_MINUTES,
-    budgetRole: "triage",
-    tokenBudget: budget,
-    task: preamble(cfg, state, "triage").concat(lines).join("\n"),
   };
 }
 
 // Counts the run, then launches the session.
 function begin(state: StageState, ctx: StageContext): Step {
   const { maxTriages } = ctx.cfg;
-  const triages = (state.st.triages ?? 0) + 1;
-  const counted = { ...state, st: { ...state.st, triages } };
-  if (triages > maxTriages) {
-    return stopStep(
-      counted,
-      `triage ran ${maxTriages} times without reaching a decision the pipeline can act on`,
-      null,
-    );
+  const started = startTriage(state.st, maxTriages);
+  const counted = { ...state, st: started.counted };
+  const { stop } = started;
+  if (stop !== null) {
+    return stopStep(counted, stop.reason, stop.detail);
   }
   return launchStep({ ...counted, phase: "decide" }, [
     triageLaunch(counted, ctx),
   ]);
 }
 
-function issueComment(by: Signature, body: string): StageComment[] {
+// The comment triage posts on the issue for `decision`, if any.
+function announced(
+  by: Signature,
+  decision: TriageDecision,
+  reason: string,
+): StageComment[] {
+  const body = announcement(decision, reason);
+  if (body === null) {
+    return [];
+  }
   return [{ by, body, where: "issue" }];
 }
 
@@ -123,7 +108,7 @@ function takenState(
 ): IssueState {
   const st: IssueState = {
     ...state.st,
-    plan: clip(plan, PLAN_LIMIT),
+    plan: keptPlan(plan),
     stage: "spec",
   };
   if (splitSuggested !== null || typeof st.splitSuggested === "string") {
@@ -136,10 +121,7 @@ function takenState(
 // links to its branch and PR while work is under way.
 function ready(state: StageState, reply: TriageReply, by: Signature): Step {
   const st = takenState(state, reply.plan, null);
-  const comments = issueComment(
-    by,
-    `Taking this issue. ${reply.reason} A spec follows.`,
-  );
+  const comments = announced(by, "ready", reply.reason);
   const { pr } = st;
   if (typeof pr === "number" && pr > 0) {
     return doneStep({ ...state, st }, comments);
@@ -160,13 +142,7 @@ function suggestSplit(
   by: Signature,
 ): Step {
   const st = takenState(state, reply.plan, reply.reason);
-  return doneStep(
-    { ...state, st },
-    issueComment(
-      by,
-      `Taking this issue. ${reply.reason} A spec follows, which may split it.`,
-    ),
-  );
+  return doneStep({ ...state, st }, announced(by, "split", reply.reason));
 }
 
 function ask(state: StageState, reply: TriageReply, by: Signature): Step {
@@ -179,19 +155,11 @@ function ask(state: StageState, reply: TriageReply, by: Signature): Step {
 }
 
 function reject(state: StageState, reply: TriageReply, by: Signature): Step {
-  return stopStep(
-    state,
-    "triage rejected the issue for the agent pipeline",
-    reply.reason,
-    issueComment(
-      by,
-      `This issue isn't one the pipeline should take on: ${reply.reason}`,
-    ),
-  );
+  const { reason } = reply;
+  return stopStep(state, REJECTED, reason, announced(by, "reject", reason));
 }
 
-// Acts on the session's decision. A sub-issue's split, or questions the
-// pipeline can't act on, reads as a reject.
+// Acts on the session's decision, as the role reads it (decisionOf).
 function decide(
   state: StageState,
   ctx: StageContext,
@@ -203,27 +171,26 @@ function decide(
     reply = triageReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "triage failed", result.error);
+    return stopStep(state, TRIAGE_FAILED, result.error);
   }
-  const { decision, questions } = reply;
-  const suggestsSplit = decision === "split" && state.st.depth < 1;
-  let event: string = decision;
-  if (suggestsSplit) {
-    event = "split-suggested";
-  }
+  const decision = decisionOf(reply, state.st.depth);
   const st = { ...state.st };
-  noteEvent(st, `triage: ${event} - ${reply.reason}`, ctx.now());
+  noteEvent(st, triageEvent(reply, decision), ctx.now());
   const decided = { ...state, st };
-  if (decision === "ready") {
-    return ready(decided, reply, result.by);
+  switch (decision) {
+    case "ready":
+      return ready(decided, reply, result.by);
+    case "split":
+      return suggestSplit(decided, reply, result.by);
+    case "needs-info":
+      return ask(decided, reply, result.by);
+    case "reject":
+      return reject(decided, reply, result.by);
+    default: {
+      const unhandled: never = decision;
+      return unhandled;
+    }
   }
-  if (suggestsSplit) {
-    return suggestSplit(decided, reply, result.by);
-  }
-  if (decision === "needs-info" && questions.length > 0) {
-    return ask(decided, reply, result.by);
-  }
-  return reject(decided, reply, result.by);
 }
 
 // The questions were posted; a failure aborts the sweep.
@@ -242,16 +209,17 @@ function prStarted(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const { ok, error, pr, headSha } = onlyReply(results);
+  const reply = onlyReply(results);
+  const started = startedPrOf(reply);
   const st = { ...state.st };
-  if (ok === true && typeof pr === "number" && typeof headSha === "string") {
-    st.pr = pr;
-    st.headSha = headSha;
-    st.implemented = false;
-    noteEvent(st, `opened draft PR #${pr}`, ctx.now());
+  if (started === null) {
+    const { error } = reply;
+    noteEvent(st, prEvent(null, error), ctx.now());
   } else {
-    const failure = clip(String(error), PR_ERROR_LIMIT);
-    noteEvent(st, `could not open the draft PR yet: ${failure}`, ctx.now());
+    st.pr = started.pr;
+    st.headSha = started.headSha;
+    st.implemented = false;
+    noteEvent(st, prEvent(started.pr, null), ctx.now());
   }
   return doneStep({ ...state, st });
 }

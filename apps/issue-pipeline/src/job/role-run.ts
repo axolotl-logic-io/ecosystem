@@ -6,8 +6,10 @@
 // job's control and each step in job.json. On a signal it saves the issue at
 // the stage it last saved, with no lease, as a sweep's stop does.
 
+import type { Config } from "../config.ts";
 import type { SessionEffect } from "../roles/machine.ts";
 import type { Role } from "../roles/registry.ts";
+import type { RoleContext } from "../roles/walk.ts";
 import type { State } from "../state.ts";
 import { STATE } from "../state.ts";
 import { parseOps } from "../workflow/launch-results.ts";
@@ -15,13 +17,17 @@ import type { OpsFrame } from "../workflow/launches.ts";
 import { childSpec, opsSpec } from "../workflow/launches.ts";
 import type { LaunchMeta } from "../workflow/signing.ts";
 import { claimLaunch, claimStep } from "../workflow/stages/entry.ts";
+import { isSweepConfig } from "../workflow/stages/entry-replies.ts";
 import type { ChildLaunch, OpLaunch } from "../workflow/stages/types.ts";
+import { sweepSettings } from "../workflow/sweep-config.ts";
+import type { ItemPaths } from "../workflow/types.ts";
 import type { ContextStop } from "./context-watch.ts";
 import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runLaunch } from "./launch.ts";
 import type { OpsRaw, SessionRaw } from "./raw-results.ts";
-import type { OpEffect, Outcome, RunEnd } from "./runner.ts";
+import type { OpEffect, Outcome } from "./run-step.ts";
+import type { RunEnd } from "./runner.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 import { usageAppender } from "./usage-append.ts";
 import type { LaunchUsage, UsageTally } from "./usage-tally.ts";
@@ -42,10 +48,9 @@ type RoleStageEnd =
 
 interface RoleJob {
   role: Role;
+  cfg: Config;
   // The job's random id, which its usage records carry.
   jobId: string;
-  // The repo as `owner/name`.
-  repo: string;
   issue: number;
   stage: string;
   stackOn: number | null;
@@ -170,21 +175,40 @@ function opLaunchOf(issue: number, op: string, payload: Reply): OpLaunch {
   };
 }
 
+// What the role's locate reads besides the claimed state: the claim's paths,
+// with the job's checkout as the worktree, and the config's settings. The
+// loaded config always has them, from its defaults.
+function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
+  const { cfg } = job;
+  if (!isSweepConfig(cfg)) {
+    throw new Error("job: the config has none of the sweep's settings");
+  }
+  const { budgets, models } = sweepSettings(cfg);
+  return {
+    issue: job.issue,
+    cfg,
+    budgets,
+    models,
+    paths: { ...paths, worktree: job.dir },
+    now: new Date(),
+  };
+}
+
 // Runs the role from the claimed state, and on a signal saves the issue at
 // the stage it last saved with no lease.
 async function runClaimed(
   job: RoleJob,
   launcher: Launcher,
-  claimed: State,
+  claimed: { state: State; paths: ItemPaths },
 ): Promise<RoleStageEnd> {
   const { issue, stage, control, status } = job;
-  const { repo, jobId, role } = job;
+  const { cfg, jobId, role } = job;
   const limits = job.hooks.contextLimits;
-  const context = { repo, issue, job: jobId, role: role.name, limits };
-  const usage = usageAppender(context, async (line: string) =>
+  const owner = { repo: cfg.repo, issue, job: jobId, role: role.name, limits };
+  const usage = usageAppender(owner, async (line: string) =>
     succeeded(await launcher.op(opLaunchOf(issue, "usage", { line }))),
   );
-  let last = claimed;
+  let last = claimed.state;
   async function save(state: State): Promise<Outcome> {
     const reply = await launcher.op(opLaunchOf(issue, "save-state", { state }));
     if (succeeded(reply)) {
@@ -193,7 +217,7 @@ async function runClaimed(
     return opOutcome(reply);
   }
   const end = await job.role.run(
-    { stage, saved: claimed },
+    { stage, saved: claimed.state, context: contextOf(job, claimed.paths) },
     {
       op: async (effect: OpEffect): Promise<Outcome> =>
         opOutcome(
@@ -237,7 +261,10 @@ async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
       summary: { issue, stage, end: { kind: "unclaimed", outcome } },
     };
   }
-  return await runClaimed(job, launcher, parsed.data);
+  return await runClaimed(job, launcher, {
+    state: parsed.data,
+    paths: claim.paths,
+  });
 }
 
 export type { RoleJob, RoleLine, RoleStageEnd };

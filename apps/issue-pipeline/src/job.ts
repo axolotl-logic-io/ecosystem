@@ -192,7 +192,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
     ending = runDriven(sweep, limit, watched);
   } else {
-    const roleJob = { role, issue, stage, stackOn, frame, dir, repo: cfg.repo };
+    const roleJob = { role, cfg, issue, stage, stackOn, frame, dir };
     ending = runRoleStage({ ...roleJob, ...watched, jobId: randomUUID() });
   }
   try {

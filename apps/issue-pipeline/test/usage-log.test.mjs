@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LAUNCH, runToy, world } from "./runner-test-kit.mjs";
 
-/** @import { Outcome, RunEnd } from "../src/job/runner.ts" */
+/** @import { Outcome } from "../src/job/run-step.ts" */
+/** @import { RunEnd } from "../src/job/runner.ts" */
 /** @import { UsageEntry } from "../src/job/run-usage.ts" */
 /** @import { ToyRole, WorldOptions } from "./runner-test-kit.mjs" */
 

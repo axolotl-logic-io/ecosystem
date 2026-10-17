@@ -4,6 +4,9 @@
 // Pure, with no I/O.
 
 import type { State } from "../state.ts";
+import type { Budgets } from "../workflow/budget.ts";
+import type { ModelRole, SweepConfig } from "../workflow/stages/types.ts";
+import type { ItemPaths } from "../workflow/types.ts";
 import type {
   Effect,
   End,
@@ -15,6 +18,18 @@ import type {
 } from "./machine.ts";
 import { transitionOf } from "./machine.ts";
 
+// What a role's locate reads besides the saved state: the issue, the repo
+// config, the token budgets and models, the claim's paths with the job's
+// checkout as the worktree, and the time the run started.
+interface RoleContext {
+  issue: number;
+  cfg: SweepConfig;
+  budgets: Budgets;
+  models: Readonly<Record<ModelRole, string>>;
+  paths: ItemPaths;
+  now: Date;
+}
+
 // The `data` keys a role may write to the issue's state.
 interface Writes<D> {
   handoff: readonly (keyof D & string)[];
@@ -24,21 +39,24 @@ interface Writes<D> {
 interface Machine<S extends string, R extends string, D> extends Writes<D> {
   table: Table<S, R, D>;
   limits: Limits;
-  locate: (saved: State) => MachineState<S, D>;
+  locate: (saved: State, context: RoleContext) => MachineState<S, D>;
 }
 
-// A linear role's step: what it runs, and how its reply changes `data`.
+// A linear role's step: what it runs, how its reply changes `data`, and,
+// for a step whose failure the role takes, how the error changes `data`
+// before the run goes on.
 interface LinearStep<D> {
   name: string;
   kind: "script" | "session";
   effect: (data: D) => Effect;
   apply?: (data: D, reply: unknown) => D;
+  recover?: (data: D, error: string) => D;
 }
 
 // A linear role: its locate picks the step to start at (a name no step has
 // starts at the end), then the steps run in order, then `end`.
 interface LinearScript<D> extends Writes<D> {
-  locate: (saved: State) => MachineState<string, D>;
+  locate: (saved: State, context: RoleContext) => MachineState<string, D>;
   steps: readonly LinearStep<D>[];
   end: (data: D) => End;
 }
@@ -54,7 +72,7 @@ interface Position<S extends string, D> {
 // How a run moves: where locate starts it, the position after a result,
 // and whether a position lists the failed result.
 interface Walk<S extends string, D> {
-  start: (saved: State) => Position<S, D>;
+  start: (saved: State, context: RoleContext) => Position<S, D>;
   next: (position: Position<S, D>, result: Result<string>) => Position<S, D>;
   takesFailure: (position: Position<S, D>) => boolean;
 }
@@ -77,7 +95,8 @@ function machineWalk<S extends string, R extends string, D>(
     return { at, kind: states[at].kind, data, effect: states[at].effect(data) };
   }
   return {
-    start: (saved: State): Position<S, D> => positionOf(machine.locate(saved)),
+    start: (saved: State, context: RoleContext): Position<S, D> =>
+      positionOf(machine.locate(saved, context)),
     next: (
       position: Position<S, D>,
       result: Result<string>,
@@ -108,8 +127,8 @@ function linearWalk<D>(script: LinearScript<D>): Walk<string, D> {
     return { at: step.name, kind: step.kind, data, effect: step.effect(data) };
   }
   return {
-    start: (saved: State): Position<string, D> => {
-      const { at, data } = script.locate(saved);
+    start: (saved: State, context: RoleContext): Position<string, D> => {
+      const { at, data } = script.locate(saved, context);
       return positionAt(indexOf(at), data);
     },
     next: (
@@ -117,16 +136,27 @@ function linearWalk<D>(script: LinearScript<D>): Walk<string, D> {
       result: Result<string>,
     ): Position<string, D> => {
       const index = indexOf(position.at);
+      const step = steps[index];
       let { data } = position;
-      const apply = steps[index]?.apply;
-      if (apply !== undefined) {
-        data = apply(data, result.reply);
+      if (result.name === "failed" && step?.recover !== undefined) {
+        data = step.recover(data, String(result.reply));
+      } else if (step?.apply !== undefined) {
+        data = step.apply(data, result.reply);
       }
       return positionAt(index + 1, data);
     },
-    takesFailure: (): boolean => false,
+    takesFailure: (position: Position<string, D>): boolean =>
+      steps[indexOf(position.at)]?.recover !== undefined,
   };
 }
 
-export type { LinearScript, LinearStep, Machine, Position, Walk, Writes };
+export type {
+  LinearScript,
+  LinearStep,
+  Machine,
+  Position,
+  RoleContext,
+  Walk,
+  Writes,
+};
 export { linearWalk, machineWalk };
