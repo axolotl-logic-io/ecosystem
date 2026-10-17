@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
+import { parseUsageLine } from "../src/job/usage-log.ts";
 import { checkoutOf } from "./job-git-test-kit.mjs";
 import {
   logOf,
@@ -18,7 +19,7 @@ import {
 const PRELOAD = new URL("./toy-role-preload.mjs", import.meta.url).pathname;
 // Environment variables are named by strings, as the job kit's env is.
 const ROLE_ENV = Object.fromEntries([["NODE_OPTIONS", `--import=${PRELOAD}`]]);
-/** @import { StepReport } from "../src/job/runner.ts" */
+/** @import { StepReport } from "../src/job/step-report.ts" */
 
 /** @param {StepReport} step a job.json step, less its times */
 function briefOf({ at, effect, name, result }) {
@@ -77,4 +78,24 @@ test("a role stage runs its role and saves only its declared fields", () => {
   assert.equal(last.note, "noted");
   assert.deepEqual(last.checkpoints, { count: 1 });
   assert.equal(fs.existsSync(checkoutOf(place.root, "spec")), false);
+});
+
+test("a failing usage write is retried once, then dropped, and the role's end stands", () => {
+  const replies = {
+    ...repliesAt("spec"),
+    usage: { ok: false, error: "refused" },
+  };
+  const place = setUp(replies, SPEC_SESSION);
+  const r = runJob(place, ["--stage", "spec"], ROLE_ENV);
+  assert.equal(r.status, 0, r.stderr);
+  const usages = logOf(place, "ops.log").filter(({ op }) => op === "usage");
+  assert.equal(usages.length, 2);
+  const [first, second] = usages.map(({ line }) => String(line));
+  assert.equal(first, second);
+  assert.equal(parseUsageLine(first ?? "")?.kind, "job");
+  const [summary] = r.stdout.trim().split("\n");
+  assert.deepEqual(JSON.parse(summary ?? "").end, {
+    kind: "saved",
+    stage: "implement",
+  });
 });

@@ -21,8 +21,9 @@ type End =
   | { kind: "held" };
 
 // A model session: its name, agent and model, the schema of its reply, its
-// task, its context budget and the role it is the budget of (its context log
-// line's role).
+// task, its context budget, the role it is the budget of (its context log
+// line's role), and its attempt: the retry, continuation or round number,
+// from 1, as the role counts it.
 interface SessionEffect {
   kind: "session";
   name: string;
@@ -32,6 +33,7 @@ interface SessionEffect {
   task: string;
   tokenBudget: number;
   budgetRole: BudgetRole;
+  attempt: number;
 }
 
 // What a state does: run an op or a script check with its payload, run a

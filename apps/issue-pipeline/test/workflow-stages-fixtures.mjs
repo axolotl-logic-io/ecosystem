@@ -43,6 +43,7 @@ const ROUTINE_OPS = {
   release: { ok: true },
   post: { ok: true },
   cleanup: { ok: true, worktrees: [] },
+  usage: { ok: true, usageComment: 1, edited: true },
 };
 
 // The sweep reply: candidate issue numbers, parents to close, and config

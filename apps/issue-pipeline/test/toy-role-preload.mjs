@@ -9,7 +9,7 @@ import { linearRole, registerRole } from "../src/roles/registry.ts";
 
 registerRole(
   "spec",
-  linearRole({
+  linearRole("spec-writer", {
     locate: () => ({
       at: "announce",
       data: { note: "noted", count: 1, scratch: "never saved" },

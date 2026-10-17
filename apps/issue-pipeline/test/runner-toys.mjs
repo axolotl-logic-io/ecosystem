@@ -7,7 +7,7 @@
 // `spec`. Both write `plan` as their hand-off; the machine's `tries` is its
 // checkpoint, and `scratch` is data no save may carry.
 
-/** @import { Effect, End, StateSpec } from "../src/roles/machine.ts" */
+/** @import { Effect, End, SessionEffect, StateSpec } from "../src/roles/machine.ts" */
 /** @import { LinearScript, Machine } from "../src/roles/walk.ts" */
 /** @import { State } from "../src/state.ts" */
 
@@ -23,16 +23,20 @@ function post(marker) {
   return { kind: "op", op: "post", payload: { marker, body: `Toy ${marker}` } };
 }
 
-/** @type {Effect} */
+/** @type {SessionEffect} */
 const WORK = {
   kind: "session",
   name: "work",
   agent: "toy-writer",
   model: "mock",
-  schema: { type: "object" },
+  schema: {
+    type: "object",
+    properties: { status: { type: "string", enum: ["done", "handoff"] } },
+  },
   task: "Do the toy work.",
   tokenBudget: 1000,
   budgetRole: "implementer",
+  attempt: 1,
 };
 
 /** @param {End} end @returns {Effect} */
@@ -66,7 +70,7 @@ const TOY_STATES = {
   },
   work: {
     kind: "session",
-    effect: () => WORK,
+    effect: (data) => ({ ...WORK, attempt: data.tries + 1 }),
     on: { replied: { to: "verify", apply: withPlan } },
   },
   verify: {

@@ -23,7 +23,24 @@ type Checks = Readonly<
   Record<string, (payload: CheckEffect["payload"]) => Promise<Outcome>>
 >;
 
+// The pipeline's roles (the wiki's Pipeline-Roles page).
+type RoleName =
+  | "triage"
+  | "spec-writer"
+  | "implementor"
+  | "reviewer"
+  | "finalizer";
+
+const ROLE_NAMES: readonly RoleName[] = [
+  "triage",
+  "spec-writer",
+  "implementor",
+  "reviewer",
+  "finalizer",
+];
+
 interface Role {
+  name: RoleName;
   kind: "machine" | "linear";
   run: (entry: Entry, effects: JobEffects) => Promise<RunEnd>;
 }
@@ -42,19 +59,25 @@ function checkOf(checks: Checks): Effects["check"] {
 }
 
 function machineRole<S extends string, R extends string, D>(
+  name: RoleName,
   machine: Machine<S, R, D> & { checks?: Checks },
 ): Role {
   const check = checkOf(machine.checks ?? {});
   return {
+    name,
     kind: "machine",
     run: (entry: Entry, effects: JobEffects): Promise<RunEnd> =>
       runMachine(machine, entry, { ...effects, check }),
   };
 }
 
-function linearRole<D>(script: LinearScript<D> & { checks?: Checks }): Role {
+function linearRole<D>(
+  name: RoleName,
+  script: LinearScript<D> & { checks?: Checks },
+): Role {
   const check = checkOf(script.checks ?? {});
   return {
+    name,
     kind: "linear",
     run: (entry: Entry, effects: JobEffects): Promise<RunEnd> =>
       runLinear(script, entry, { ...effects, check }),
@@ -71,5 +94,5 @@ function roleOf(stage: string): Role | undefined {
   return ROLES.get(stage);
 }
 
-export type { Checks, JobEffects, Role };
-export { linearRole, machineRole, registerRole, roleOf };
+export type { Checks, JobEffects, Role, RoleName };
+export { linearRole, machineRole, ROLE_NAMES, registerRole, roleOf };

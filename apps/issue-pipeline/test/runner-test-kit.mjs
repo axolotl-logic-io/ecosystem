@@ -5,13 +5,16 @@
 // write the store's state. Every effect call is recorded. killAt makes the
 // k-th effect call (saves included) never settle, before or after its durable
 // write; a restart then runs again from the store alone, as a job started
-// afresh would. uninterrupted gives the reference run.
+// afresh would. uninterrupted gives the reference run. Usage entries go to
+// the world's `usages`, outside `calls` and the kill count.
 import { spawnSync } from "node:child_process";
 import { runLinear, runMachine } from "../src/job/runner.ts";
 import { installFakeGh } from "./fake-gh.mjs";
 import { ISSUE, startState, TOY_SCRIPT, toyMachine } from "./runner-toys.mjs";
 
 /** @import { CheckEffect, Effects, OpEffect, Outcome, RunEnd } from "../src/job/runner.ts" */
+/** @import { UsageEntry } from "../src/job/run-usage.ts" */
+/** @import { LaunchUsage } from "../src/job/usage-tally.ts" */
 /** @import { Machine } from "../src/roles/walk.ts" */
 /** @import { State } from "../src/state.ts" */
 /** @import { ToyData } from "./runner-toys.mjs" */
@@ -26,6 +29,8 @@ const gh = installFakeGh();
  * @property {boolean} [verifyFails] whether the verify check fails outright
  * @property {string} [failSave] the error every save fails with
  * @property {number} [signalAt] the call during which SIGTERM arrives
+ * @property {Outcome} [session] what every session comes to
+ * @property {boolean} [contextStop] whether the context watch stopped every session
  */
 
 /** @typedef {{ kind: string, name: string, state?: State }} Call */
@@ -36,6 +41,23 @@ const gh = installFakeGh();
 
 /** @type {Outcome} */
 const OK = { ok: true, name: "ok", reply: null };
+
+/** @type {Outcome} */
+const REPLIED = { ok: true, name: "replied", reply: { plan: "toy plan" } };
+
+/** @type {LaunchUsage} what every toy session's launch spent */
+const LAUNCH = {
+  turns: 3,
+  tokens: { input: 900, output: 120, cacheRead: 4000, cacheWrite: 300 },
+  first: 1200,
+  peak: 5300,
+  atFinish: 5000,
+  steered: false,
+  stopped: false,
+  tools: { read: { calls: 2, outputChars: 800 } },
+  largest: { tool: "read", chars: 500 },
+  seconds: 7,
+};
 
 /** @param {unknown} value @returns {string} */
 function textOf(value) {
@@ -90,6 +112,14 @@ function saveAct(store, options, state) {
   };
 }
 
+/** @param {UsageEntry[]} list @returns {Effects["usage"]} an effect that appends to `list` */
+function appendTo(list) {
+  return (entry) => {
+    list.push(entry);
+    return Promise.resolve();
+  };
+}
+
 /**
  * A world: the durable store, every call made, and fresh effects over it.
  * @param {WorldOptions} [options]
@@ -99,6 +129,8 @@ function world(options = {}) {
   const store = { saved: startState(), markers: new Set() };
   /** @type {Call[]} */
   const calls = [];
+  /** @type {UsageEntry[]} */
+  const usages = [];
   /** @type {"SIGTERM" | null} */
   let signal = null;
   /**
@@ -138,11 +170,14 @@ function world(options = {}) {
       },
       check: (effect) =>
         run({ kind: "check", name: effect.check }, checkAct(options, effect)),
-      session: (effect) =>
-        run(
+      session: async (effect) => ({
+        outcome: await run(
           { kind: "session", name: effect.name },
-          { reply: { ok: true, name: "replied", reply: { plan: "toy plan" } } },
+          { reply: options.session ?? REPLIED },
         ),
+        launch: { ...LAUNCH, stopped: options.contextStop === true },
+      }),
+      usage: appendTo(usages),
       save: (state) =>
         run(
           { kind: "save", name: "save", state },
@@ -154,7 +189,7 @@ function world(options = {}) {
     };
     return { effects: all, killed, made };
   }
-  return { store, calls, effects };
+  return { store, calls, usages, effects };
 }
 
 /** @typedef {ReturnType<typeof world>} World */
@@ -214,4 +249,4 @@ function uninterrupted(role, options = {}) {
   return killAt(role, undefined, options);
 }
 
-export { gh, killAt, runToy, uninterrupted, world, writes };
+export { gh, killAt, LAUNCH, runToy, uninterrupted, world, writes };

@@ -56,7 +56,9 @@
     // escalation-consult.ts keeps the escalation agent's reply schema and
     // session folder and gives its pi the orchestrator's environment less
     // the gh tokens (#282). Its pure modules (queue, schedule, tick,
-    // watchdog) get none.
+    // watchdog) get none. The report CLI's entry src/report.ts (#302) prints
+    // the usage report and sets the exit code; its pure module
+    // src/report/usage.ts gets none.
     {
       "includes": [
         "install.mjs",
@@ -98,7 +100,8 @@
         "src/orchestrator/ledger.ts",
         "src/orchestrator/log.ts",
         "src/orchestrator/watchdog-memory.ts",
-        "src/orchestrator/escalation-consult.ts"
+        "src/orchestrator/escalation-consult.ts",
+        "src/report.ts"
       ],
       "linter": {
         "rules": {

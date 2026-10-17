@@ -11,6 +11,10 @@ import type { Config } from "./config.ts";
 import { gh, ghLines } from "./github.ts";
 
 const STATE_MARK = "<!-- agent-pipeline:state";
+// The mark of an issue's n-th usage comment (src/job/usage-log.ts): the
+// first is `usage`, the next `usage-2`, and so on.
+const USAGE_MARK =
+  /<!-- issue-pipeline:(?<issue>\d+):usage(?:-(?<n>[2-9]|[1-9]\d+))? -->/u;
 const PIPELINE_MARK = /<!-- agent-pipeline:comment role=(?<role>[\w.:-]+) -->/u;
 const PARENT_MARK =
   /<!-- agent-pipeline:parent (?<parent>\d+) depth (?<depth>\d+) -->/u;
@@ -56,6 +60,14 @@ const AUTHOR = z.looseObject({
   run: AUTHOR_FIELD,
 });
 
+// A comment from a line of gh's `--jq '.[] | @json'`.
+function commentOf(line: unknown): IssueComment {
+  if (typeof line === "string") {
+    return COMMENT.parse(JSON.parse(line));
+  }
+  return COMMENT.parse(line);
+}
+
 function listComments(cfg: Config, number: number): IssueComment[] {
   const lines = ghLines(cfg, [
     "api",
@@ -64,12 +76,7 @@ function listComments(cfg: Config, number: number): IssueComment[] {
     "--jq",
     ".[] | @json",
   ]);
-  return lines.map((line) => {
-    if (typeof line === "string") {
-      return COMMENT.parse(JSON.parse(line));
-    }
-    return COMMENT.parse(line);
-  });
+  return lines.map(commentOf);
 }
 
 // Posts `body` exactly as given: no signature, no mark.
@@ -83,6 +90,45 @@ function rawComment(cfg: Config, number: number, body: string): void {
     `body=${body}`,
     "--silent",
   ]);
+}
+
+// Replaces comment `id`'s body with `body`.
+function editComment(cfg: Config, id: number, body: string): void {
+  gh(cfg, [
+    "api",
+    "-X",
+    "PATCH",
+    `repos/${cfg.repo}/issues/comments/${id}`,
+    "-f",
+    `body=${body}`,
+    "--silent",
+  ]);
+}
+
+// Every comment on the repo's issues and PRs, or only those changed at or
+// after `since` (an ISO time), in one paged listing.
+function listRepoComments(cfg: Config, since: string | null): IssueComment[] {
+  let query = "per_page=100";
+  if (since !== null) {
+    query = `${query}&since=${since}`;
+  }
+  const lines = ghLines(cfg, [
+    "api",
+    "--paginate",
+    `repos/${cfg.repo}/issues/comments?${query}`,
+    "--jq",
+    ".[] | @json",
+  ]);
+  return lines.map(commentOf);
+}
+
+// The mark of issue `issue`'s n-th usage comment.
+function usageMark(issue: number, n: number): string {
+  let kind = "usage";
+  if (n > 1) {
+    kind = `usage-${n}`;
+  }
+  return `<!-- issue-pipeline:${issue}:${kind} -->`;
 }
 
 // `text`, or `fallback` when it is missing or empty.
@@ -166,7 +212,9 @@ export {
   CLAIM_MARK,
   COMMENT,
   comment,
+  editComment,
   listComments,
+  listRepoComments,
   PARENT_MARK,
   PIPELINE_MARK,
   pipelineRole,
@@ -175,4 +223,6 @@ export {
   STATE_MARK,
   signature,
   signed,
+  USAGE_MARK,
+  usageMark,
 };

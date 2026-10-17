@@ -16,11 +16,18 @@ import { childSpec, opsSpec } from "../workflow/launches.ts";
 import type { LaunchMeta } from "../workflow/signing.ts";
 import { claimLaunch, claimStep } from "../workflow/stages/entry.ts";
 import type { ChildLaunch, OpLaunch } from "../workflow/stages/types.ts";
+import type { ContextStop } from "./context-watch.ts";
 import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runLaunch } from "./launch.ts";
+import type { OpsRaw, SessionRaw } from "./raw-results.ts";
 import type { OpEffect, Outcome, RunEnd } from "./runner.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
+import { usageAppender } from "./usage-append.ts";
+import type { LaunchUsage, UsageTally } from "./usage-tally.ts";
+import { usageTally } from "./usage-tally.ts";
+
+const MS_PER_SECOND = 1000;
 
 // What a role stage's job prints: the issue, the stage and how it ended.
 interface RoleLine {
@@ -35,6 +42,10 @@ type RoleStageEnd =
 
 interface RoleJob {
   role: Role;
+  // The job's random id, which its usage records carry.
+  jobId: string;
+  // The repo as `owner/name`.
+  repo: string;
   issue: number;
   stage: string;
   stackOn: number | null;
@@ -89,7 +100,31 @@ function childOf(effect: SessionEffect): ChildLaunch {
 // sequence number in its key, and its outcome in job.json.
 interface Launcher {
   op: (launch: OpLaunch) => Promise<Reply>;
-  session: (effect: SessionEffect) => Promise<Outcome>;
+  session: (
+    effect: SessionEffect,
+  ) => Promise<{ outcome: Outcome; launch: LaunchUsage }>;
+}
+
+// The job's hooks, which also feed every record and stop to `tally`.
+function tallied(hooks: LaunchHooks, tally: UsageTally): LaunchHooks {
+  return {
+    ...hooks,
+    record: (key: string, record: unknown): void => {
+      tally.record(key, record);
+      hooks.record(key, record);
+    },
+    contextStopped: (key: string, stop: ContextStop): void => {
+      tally.contextStopped(key);
+      hooks.contextStopped(key, stop);
+    },
+  };
+}
+
+function sessionOutcome(raw: OpsRaw | SessionRaw): Outcome {
+  if ("structuredOutput" in raw && raw.ok) {
+    return { ok: true, name: "replied", reply: raw.structuredOutput };
+  }
+  return { ok: false, error: raw.error ?? "the session failed" };
 }
 
 function launcherOf(job: RoleJob): Launcher {
@@ -110,16 +145,18 @@ function launcherOf(job: RoleJob): Launcher {
       settled(spec.key, succeeded(reply));
       return reply;
     },
-    session: async (effect: SessionEffect): Promise<Outcome> => {
+    session: async (
+      effect: SessionEffect,
+    ): Promise<{ outcome: Outcome; launch: LaunchUsage }> => {
       seq += 1;
       const item = { n: job.issue, worktree: job.dir };
       const spec = childSpec(seq, item, childOf(effect), meta);
-      const raw = await runLaunch(spec, job.hooks);
+      const tally = usageTally(job.hooks.contextLimits.soft);
+      const startedAt = Date.now();
+      const raw = await runLaunch(spec, tallied(job.hooks, tally));
       settled(spec.key, raw.ok);
-      if ("structuredOutput" in raw && raw.ok) {
-        return { ok: true, name: "replied", reply: raw.structuredOutput };
-      }
-      return { ok: false, error: raw.error ?? "the session failed" };
+      const seconds = (Date.now() - startedAt) / MS_PER_SECOND;
+      return { outcome: sessionOutcome(raw), launch: tally.usage(seconds) };
     },
   };
 }
@@ -141,6 +178,12 @@ async function runClaimed(
   claimed: State,
 ): Promise<RoleStageEnd> {
   const { issue, stage, control, status } = job;
+  const { repo, jobId, role } = job;
+  const limits = job.hooks.contextLimits;
+  const context = { repo, issue, job: jobId, role: role.name, limits };
+  const usage = usageAppender(context, async (line: string) =>
+    succeeded(await launcher.op(opLaunchOf(issue, "usage", { line }))),
+  );
   let last = claimed;
   async function save(state: State): Promise<Outcome> {
     const reply = await launcher.op(opLaunchOf(issue, "save-state", { state }));
@@ -157,6 +200,7 @@ async function runClaimed(
           await launcher.op(opLaunchOf(issue, effect.op, effect.payload)),
         ),
       session: launcher.session,
+      usage,
       save,
       clock: (): Date => new Date(),
       stopping: control.stopping,

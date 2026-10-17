@@ -58,6 +58,10 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   stageCaps: { triage: 2, spec: 2, review: 2, accept: 2, security: 2 },
   tokensPerHour: null,
   orchestratorIntervalSeconds: 60,
+  // What the usage report (report.mjs usage) flags: a session whose first turn
+  // passed `firstContext` tokens of context, or whose largest tool output
+  // passed `toolOutputShare` of its peak context (#302).
+  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
 };
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -108,6 +112,10 @@ const CONFIG_SCHEMA = z.looseObject({
   rebaseTokenBudget: z.unknown().optional(),
   repo: z.string(),
   tokenFile: OPTIONAL_TEXT,
+  usageFlags: z.object({
+    firstContext: TOKENS,
+    toolOutputShare: z.number().gt(0).max(1),
+  }),
   wiki: z
     .union([
       z.boolean(),

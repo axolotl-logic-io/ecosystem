@@ -30,6 +30,7 @@
   },
   "tokensPerHour": null,
   "orchestratorIntervalSeconds": 60,
+  "usageFlags": { "firstContext": 40000, "toolOutputShare": 0.25 },
   "maxResumes": 2,
   "silentMinutes": 30,
   "failureStreak": 3,

@@ -33,11 +33,11 @@
 // { issue, stage, end }; --resume is refused for it.
 //
 // The job works in its own checkout, cloned from a bare mirror of the repo
-// (src/job/checkout.ts), where every pi session runs. On every exit it
-// records and drops what the checkout left uncommitted (lostChanges), a
-// writer pushes what the remote lacks (src/job/exit-push.ts), and the
-// checkout is removed.
+// (src/job/checkout.ts), where every pi session runs. On every exit it records
+// and drops what the checkout left uncommitted (lostChanges), a writer pushes
+// what the remote lacks (src/job/exit-push.ts), and the checkout is removed.
 
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import process from "node:process";
 import { z } from "zod";
@@ -192,8 +192,8 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     const limit = spawnLimitOf(SPAWN_CAP.parse(maxSpawnsPerRun));
     ending = runDriven(sweep, limit, watched);
   } else {
-    const roleJob = { role, issue, stage, stackOn, frame, dir, ...watched };
-    ending = runRoleStage(roleJob);
+    const roleJob = { role, issue, stage, stackOn, frame, dir, repo: cfg.repo };
+    ending = runRoleStage({ ...roleJob, ...watched, jobId: randomUUID() });
   }
   try {
     const end = await ending;

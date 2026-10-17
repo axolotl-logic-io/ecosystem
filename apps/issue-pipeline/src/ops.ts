@@ -37,6 +37,7 @@ import { split } from "./ops/split.ts";
 import { stop } from "./ops/stop.ts";
 import { sweep } from "./ops/sweep.ts";
 import { syncOps } from "./ops/sync.ts";
+import { usage } from "./ops/usage.ts";
 import { verify } from "./ops/verify.ts";
 import { wikiCheck } from "./ops/wiki-check.ts";
 import { ROOT } from "./pipeline-root.ts";
@@ -83,6 +84,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["release", release],
   // Frees closed issues' worktrees once nothing local is unsaved (#174).
   ["cleanup", cleanup],
+  // Appends a role job's usage record to the issue's usage comments (#302).
+  ["usage", usage],
 ]);
 
 // The request runs to the last END marker, not the first: the JSON can carry the

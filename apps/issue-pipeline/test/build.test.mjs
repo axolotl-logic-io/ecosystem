@@ -1,8 +1,8 @@
 // @ts-check
 // build.ts into a temporary folder: the built workflow is still an async
 // function body with no imports, and the built ops CLI answers as src/ops.ts
-// does, and the built orchestrator's --once exits 0 after a tick and 1 after
-// one that throws. It builds into its own folder, so it never races install.test.mjs,
+// does, the built orchestrator's --once exits 0 after a tick and 1 after
+// one that throws, and the built report names a missing --config. It builds into its own folder, so it never races install.test.mjs,
 // which builds dist/.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -149,6 +149,22 @@ test("the built orchestrator parses and names a bad flag or a missing --config",
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, UNKNOWN_FLAG);
   const missing = run(["--once"]);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, NO_CONFIG);
+});
+
+test("the built report parses, keeps its #! line and names a missing --config", () => {
+  const report = path.join(tmp, "report.mjs");
+  const check = spawnSync(process.execPath, ["--check", report], {
+    encoding: "utf8",
+  });
+  assert.equal(check.status, 0, check.stderr);
+  const head = fs.readFileSync(report, "utf8");
+  assert.ok(head.startsWith("#!/usr/bin/env node\n"));
+  const missing = spawnSync(process.execPath, [report, "usage"], {
+    encoding: "utf8",
+    env: Object.fromEntries([[ROOT_VAR, tmp]]),
+  });
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, NO_CONFIG);
 });

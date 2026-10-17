@@ -67,6 +67,8 @@ const CFG = {
   jobRoles: JOB_ROLES,
   leaseHours: 1,
   maxContinuations: 1,
+  issueTokenBudget: 1_000_000,
+  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
   practices: [],
   repo: "o/r",
   slug: "o__r",

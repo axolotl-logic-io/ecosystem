@@ -16,7 +16,7 @@ import type { ContextStop } from "./context-watch.ts";
 import type { LaunchOutcome, LaunchRecord } from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
 import type { Usage } from "./raw-results.ts";
-import type { StepReport } from "./runner.ts";
+import type { StepReport } from "./step-report.ts";
 
 const STATUS_FILE = "job.json";
 const SIGNAL = z.enum(["SIGTERM", "SIGINT"]);
