@@ -1,8 +1,9 @@
 // @ts-check
 // Local git repos and an ops CLI caller for the tests of the check ops (verify,
-// ci-status). verifyKit(root) builds a bare `origin.git` whose `integration`
-// branch holds src/a.js ("old"), .gitignore (node_modules) and README.md, and a
-// clone of it at <root>/clones/o__r, where the ops CLI looks for repo "o/r".
+// ci-status) and of the spec writer's commit check. verifyKit(root) builds a
+// bare `origin.git` whose `integration` branch holds src/a.js ("old"),
+// .gitignore (node_modules) and README.md, and a clone of it at
+// <root>/clones/o__r, where the ops CLI looks for repo "o/r".
 // Not a test file: `node --test 'test/*.test.mjs'` doesn't run it.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -19,14 +20,15 @@ const MODULES = path.dirname(
 );
 
 const SHORT_SHA_LENGTH = 8;
-// What verify leaves behind after every case: a clean worktree and no temp
-// worktree.
+// What verify and the spec writer's check leave behind after every case: a
+// clean worktree and no temp worktree.
 const CLEAN = { status: "", temps: [] };
-const TEMP_WORKTREE = /\/fails-before-[0-9a-f]{8} /u;
+const TEMP_WORKTREE = /\/(?:fails-before|spec-tests-reverted)-[0-9a-f]{8} /u;
 
 /**
  * The repos verifyKit builds, and helpers for an issue `n`'s worktree.
  * @typedef {object} VerifyKit
+ * @property {string} base
  * @property {(n: number) => string} worktree
  * @property {(n: number) => string} runDir
  * @property {(n: number, sha: string) => string} logs
@@ -139,6 +141,8 @@ function verifyKit(root) {
   }
   let issues = 0;
   return {
+    // The seed commit every branch starts from.
+    base,
     worktree,
     runDir(n) {
       return path.join(root, "runs", "o__r", `issue-${n}`);
@@ -149,8 +153,8 @@ function verifyKit(root) {
       return path.join(root, "runs", "o__r", `issue-${n}`, dir);
     },
     // Pushes agent/issue-<n>, for the next issue number n, with `files`
-    // changed in one commit, checks it out at the issue's worktree and returns
-    // n and the commit.
+    // changed in one commit (an empty one for no files), checks it out at the
+    // issue's worktree and returns n and the commit.
     branch(files) {
       issues += 1;
       const n = issues;
@@ -158,7 +162,7 @@ function verifyKit(root) {
       sh(`git -C ${seed} checkout -q -b ${branch} ${base}`);
       writeFiles(seed, files);
       sh(
-        `cd ${seed} && git add -A && git commit -qm "issue ${n}" && git push -q origin ${branch}`,
+        `cd ${seed} && git add -A && git commit -q --allow-empty -m "issue ${n}" && git push -q origin ${branch}`,
       );
       sh(
         `git -C ${clone} fetch -q origin && git -C ${clone} worktree add -q -b ${branch} ${worktree(n)} origin/${branch}`,

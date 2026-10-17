@@ -68,7 +68,10 @@
     // the gh tokens (#282). Its pure modules (queue, schedule, tick,
     // watchdog) get none. The report CLI's entry src/report.ts (#302) prints
     // the usage report and sets the exit code; its pure module
-    // src/report/usage.ts gets none.
+    // src/report/usage.ts gets none. The spec writer's commit check,
+    // src/roles/spec-writer/check.ts, runs git and the configured commands in
+    // the spec head's worktree and writes their logs (#331); the role's pure
+    // modules, such as coverage.ts, get none.
     {
       "includes": [
         "install.mjs",
@@ -117,7 +120,8 @@
         "src/orchestrator/watchdog-memory.ts",
         "src/orchestrator/rate-limit-backoff.ts",
         "src/orchestrator/escalation-consult.ts",
-        "src/report.ts"
+        "src/report.ts",
+        "src/roles/spec-writer/check.ts"
       ],
       "linter": {
         "rules": {

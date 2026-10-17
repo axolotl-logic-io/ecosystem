@@ -12,6 +12,8 @@ import { withCloneLock } from "../locks.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 
+const SHORT_SHA_LENGTH = 8;
+
 // The settings the check reads from the repo's config.
 interface FailsBeforeFixSettings {
   commands: { setup?: string | null | undefined; test: string };
@@ -29,10 +31,24 @@ interface Change {
   wt: string;
   base: string;
   sha: string;
-  shortSha: string;
   changed: readonly string[];
   logDir: string;
   timeoutMs: number;
+}
+
+// A test run at the head with some files put back as they were at the base:
+// the worktree and commits, the commands, where logs go, and the label that
+// names the temp worktree and the logs.
+interface RevertedTest {
+  cfg: Config;
+  number: number;
+  wt: string;
+  base: string;
+  sha: string;
+  logDir: string;
+  timeoutMs: number;
+  commands: { setup?: string | null | undefined; test: string };
+  label: string;
 }
 
 // What verify knows before the check runs.
@@ -70,12 +86,17 @@ function revert(tmp: string, base: string, code: readonly string[]): void {
   }
 }
 
-// Runs the tests in a temp worktree at the head with `code` reverted.
-function revertedRun(change: Change, code: readonly string[]): Outcome {
-  const { cfg, wt, sha, logDir, timeoutMs } = change;
+// Runs `files` reverted to the base and the tests, in a temp worktree at the
+// head named for `label` and the head, removed afterwards whatever happens.
+// Logs go to `<label>-setup.log` and `<label>-test.log` in the log dir.
+function revertedTest(
+  reverted: RevertedTest,
+  files: readonly string[],
+): ShellResult {
+  const { cfg, wt, sha, logDir, timeoutMs, label } = reverted;
   const tmp = path.join(
-    paths.runDir(cfg, change.number),
-    `fails-before-${change.shortSha}`,
+    paths.runDir(cfg, reverted.number),
+    `${label}-${sha.slice(0, SHORT_SHA_LENGTH)}`,
   );
   const remove = ["-C", wt, "worktree", "remove", "--force", tmp];
   withCloneLock(cfg, () => {
@@ -83,17 +104,33 @@ function revertedRun(change: Change, code: readonly string[]): Outcome {
     run("git", ["-C", wt, "worktree", "add", "--detach", tmp, sha]);
   });
   try {
-    revert(tmp, change.base, code);
-    const { setup, test } = change.settings.commands;
+    revert(tmp, reverted.base, files);
+    const { setup, test } = reverted.commands;
     if (setup !== undefined && setup !== null && setup !== "") {
-      const log = path.join(logDir, "fails-before-setup.log");
-      shell(setup, tmp, log, timeoutMs);
+      shell(setup, tmp, path.join(logDir, `${label}-setup.log`), timeoutMs);
     }
-    const log = path.join(logDir, "fails-before-test.log");
-    return revertedOutcome(shell(test, tmp, log, timeoutMs));
+    return shell(test, tmp, path.join(logDir, `${label}-test.log`), timeoutMs);
   } finally {
     withCloneLock(cfg, () => run("git", remove, { allowFail: true }));
   }
+}
+
+// Runs the tests in a temp worktree at the head with `code` reverted.
+function revertedRun(change: Change, code: readonly string[]): Outcome {
+  const { cfg, number, wt, base, sha, logDir, timeoutMs } = change;
+  const { commands } = change.settings;
+  const reverted: RevertedTest = {
+    base,
+    cfg,
+    commands,
+    label: "fails-before",
+    logDir,
+    number,
+    sha,
+    timeoutMs,
+    wt,
+  };
+  return revertedOutcome(revertedTest(reverted, code));
 }
 
 function noCodeOutcome(commentOnly: readonly string[]): Outcome {
@@ -135,5 +172,5 @@ function failsBeforeFix(change: Change, context: Context): Outcome {
   return revertedRun(change, code);
 }
 
-export type { Change, FailsBeforeFixSettings };
-export { failsBeforeFix };
+export type { Change, FailsBeforeFixSettings, RevertedTest };
+export { failsBeforeFix, revertedTest };

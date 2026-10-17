@@ -6,33 +6,14 @@
 // them (#305), the implementer does, so the missing ones are its unfinished
 // work. Pure: src/restart-spec.ts reads the spec and the branch's files.
 
-// A spec's Tests section starts at a heading or bold label named Tests and
-// ends at the next section.
-const TESTS_START = /^\s*(?:#{1,6}\s+Tests\b|[-*]?\s*\*\*Tests\*\*)/u;
-const SECTION_START =
-  /^\s*(?:#{1,6}\s+\S|[-*]?\s*\*\*(?:Behaviour|Out of scope|Design|Wiki updates|Assumptions|Sources)\b)/u;
+import { specSection } from "./spec-sections.ts";
+
 const CODE_SPAN = /`(?<text>[^`\s]+)`/gu;
 // A `file:line` anchor's tail, such as `:12`, `:12-30` or `:12,40`.
 const LINE_ANCHOR = /:\d+(?:[-,]\d+)*$/u;
 // A path with at least one directory and an extension.
 const FILE_PATH = /^[\w.@-]+(?:\/[\w.@-]+)+\.[A-Za-z0-9]+$/u;
 const GLOB = /[*?[\]{}]/u;
-const LINE_END = /\r?\n/u;
-
-// The lines of `spec`'s Tests section.
-function testsSection(spec: string): string[] {
-  const lines = spec.split(LINE_END);
-  const start = lines.findIndex((line) => TESTS_START.test(line));
-  if (start < 0) {
-    return [];
-  }
-  const rest = lines.slice(start + 1);
-  let end = rest.findIndex((line) => SECTION_START.test(line));
-  if (end < 0) {
-    end = rest.length;
-  }
-  return [lines[start] ?? "", ...rest.slice(0, end)];
-}
 
 // The file paths named in code spans on `lines`, without line anchors.
 function namedPaths(lines: readonly string[]): string[] {
@@ -54,7 +35,7 @@ function documentedFiles(spec: string, files: readonly string[]): string[] {
   const listed = files.filter(
     (file) => !(GLOB.test(file) || file.endsWith("/")),
   );
-  return [...new Set([...namedPaths(testsSection(spec)), ...listed])];
+  return [...new Set([...namedPaths(specSection(spec, "Tests")), ...listed])];
 }
 
 // Whether `file` is in `tracked`, by its path from the repo root or, for a

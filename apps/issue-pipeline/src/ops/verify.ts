@@ -240,7 +240,6 @@ function verify(cfg: Config, request: unknown): VerifyReply {
     number,
     settings,
     sha,
-    shortSha,
     timeoutMs: settings.commandTimeoutMinutes * MS_PER_MINUTE,
     wt,
   };
