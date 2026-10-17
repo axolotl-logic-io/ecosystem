@@ -280,7 +280,7 @@ function runMachine<S extends string, R extends string, D>(
   entry: Entry,
   effects: Effects,
 ): Promise<RunEnd> {
-  return runWalk(machineWalk(machine), machine, entry, effects);
+  return runWalk(machineWalk(machine, entry.context), machine, entry, effects);
 }
 
 // Runs a linear role from `entry` to its end, or to a signal.

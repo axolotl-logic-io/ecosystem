@@ -1,7 +1,8 @@
-// The stage job holds each writer session to the config's contextLimits
-// (#271): a writer whose turn context passes `soft` is steered once to hand
-// off, and past `hard` is stopped after one session and hands off. Any other
-// session is neither steered nor stopped (Axlog, 2026-10-16). job.json
+// The stage job holds each writer and spec writer session to the config's
+// contextLimits (#271, #335): one whose turn context passes `soft` is steered
+// once to hand off, and past `hard` is stopped after one session and hands
+// off. Any other session, such as triage's or a reviewer's, is neither
+// steered nor stopped (Axlog, 2026-10-16). job.json
 // records each session's peak turn context and a writer's stop, and a
 // context-stopped session is never resumed. Each async test has a timeout so
 // a session the job never stops fails the test instead of hanging at the
@@ -14,6 +15,10 @@ import process from "node:process";
 import { test } from "node:test";
 import { contextStopped } from "../src/job/context-watch.ts";
 import { readStatus, resumePoints } from "../src/job/status.ts";
+import {
+  SPEC_WRITER_SCHEMA,
+  specReadingOf,
+} from "../src/roles/spec-writer/reply.ts";
 import { FIX_SCHEMA } from "../src/workflow/review-schemas.ts";
 import { CIFIX_SCHEMA, IMPL_SCHEMA } from "../src/workflow/schemas.ts";
 import { implReplyOf } from "../src/workflow/stages/build-replies.ts";
@@ -52,6 +57,17 @@ const WRITER = "issue-pipeline-writer";
 const IMPLEMENT_ONCE = {
   ...repliesAt("implement"),
   sweep: sweepReply({ items: [ISSUE], config: { maxContinuations: 0 } }),
+};
+
+// The spec stage with no continuations, so its first handoff stops the issue.
+const SPEC_ONCE = { ...LIMITS, maxContinuations: 0 };
+const SPEC_AGENT = "issue-pipeline-specifier";
+// The structured output of a triage agent that finds the issue ready.
+const READY_TRIAGE = {
+  decision: "ready",
+  reason: "Small.",
+  questions: [],
+  plan: "Change src/a.ts and test it.",
 };
 
 /** @param {import("./job-test-kit.mjs").Place} place @param {string} type */
@@ -216,3 +232,51 @@ test("a writer stopped at hard hands off in every writer stage's reply", () => {
     assert.ok(reply.summary.includes(String(PAST_HARD)), reply.summary);
   }
 });
+
+test(
+  "a spec writer past hard is stopped, and its handoff with no continuation left stops the issue as too large",
+  HANG_GUARD,
+  async () => {
+    const events = [...turns([PAST_HARD]), "wait"];
+    const place = setUp(repliesAt("spec"), { events }, SPEC_ONCE);
+    const end = await startJob(place, ["--stage", "spec"]).end;
+    assert.equal(end.status, 0, end.stderr);
+    assert.equal(commandsOf(place, "abort").length, 1);
+    assert.equal(piStarts(place).length, 1);
+    const sessions = sessionsOf(statusOf(place));
+    assert.equal(sessions.length, 1);
+    assert.deepEqual(sessions[0].contextStop, { context: PAST_HARD });
+    const stop = logOf(place, "ops.log").find(({ op }) => op === "stop");
+    assert.equal(stop?.code, "too-large", JSON.stringify(stop));
+  },
+);
+
+test("a spec writer stopped at hard reads as a handoff", () => {
+  const launch = {
+    key: "i7-spec-1",
+    agent: SPEC_AGENT,
+    outputSchema: SPEC_WRITER_SCHEMA,
+  };
+  const raw = contextStopped(launch, { context: PAST_HARD }, USAGE);
+  const reading = specReadingOf(raw.structuredOutput, 0);
+  assert.equal(reading.kind, "handoff");
+});
+
+test(
+  "a triage session past soft and hard is neither steered nor stopped, and finishes",
+  HANG_GUARD,
+  async () => {
+    const events = [
+      ...turns([STILL_PAST_SOFT, PAST_HARD]),
+      outputEnd(READY_TRIAGE),
+    ];
+    const place = setUp(repliesAt("triage"), { events }, LIMITS);
+    const end = await startJob(place, ["--stage", "triage"]).end;
+    assert.equal(end.status, 0, end.stderr);
+    assert.deepEqual(commandsOf(place, "abort"), []);
+    assert.deepEqual(commandsOf(place, "steer"), []);
+    const launch = sessionOf(statusOf(place));
+    assert.equal(launch.contextStop, null);
+    assert.equal(launch.outcome, "ok");
+  },
+);

@@ -1,7 +1,8 @@
 // Where a spec writer run starts, and what it carries (`every-role-resumes`
 // in the wiki's Pipeline-Roles-Shared page). It reads back the checkpoints
-// (the heads the spec stage began from and the sessions run, so a restart
-// keeps its retry limit and its resets' targets) and the hand-off fields. An
+// (the heads the spec stage began from, the sessions run and the
+// continuations taken, so a restart keeps its limits and its resets'
+// targets) and the hand-off fields. An
 // issue whose spec is published with its tests committed goes straight to
 // its PR, so a restart posts no second spec; every other start claims the
 // issue and runs the session again, since the reply isn't kept across a
@@ -15,7 +16,7 @@ import type { MachineState } from "../machine.ts";
 import type { RoleContext } from "../walk.ts";
 import type { SpecInterface, SpecReading } from "./reply.ts";
 import { interfacesOf } from "./reply.ts";
-import type { SpecSettings } from "./task.ts";
+import type { SpecCommitted, SpecSettings } from "./task.ts";
 import { SPEC_AGENT, SPEC_ROLE, wikiDirOf } from "./task.ts";
 
 // The machine's states: the wiki's Lifecycle table, then its ends.
@@ -27,6 +28,7 @@ type SpecState =
   | "check-commits"
   | "confirm-no-work"
   | "retry"
+  | "resume"
   | "reset"
   | "ask"
   | "split"
@@ -41,7 +43,8 @@ type SpecState =
   | "pr-opened"
   | "wiki-only"
   | "failed-twice"
-  | "split-refused";
+  | "split-refused"
+  | "out-of-room";
 
 // The states a run can start at.
 type SpecEntry = "claim" | "open-pr" | "close-old-pr";
@@ -77,8 +80,13 @@ interface SpecData extends SpecHandoff {
   by: Signature;
   // What the session's task is built from.
   settings: SpecSettings & { paths: ItemPaths };
-  // The sessions run on the issue, this one included.
+  // The sessions run on the issue, this one included, less continuations.
   attempts: number;
+  // The continuations taken after a handoff, and the config's limit on them.
+  continuations: number;
+  maxContinuations: number;
+  // What the stage committed since its start heads, once listed.
+  committed: SpecCommitted | null;
   startSha: StartSha;
   startWikiSha: StartSha;
   // What the run read from the last session's reply, or null before one.
@@ -105,17 +113,22 @@ function filled(value: string | null | undefined): boolean {
   return typeof value === "string" && value !== "";
 }
 
+function countOf(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  return 0;
+}
+
 // The saved checkpoints; a missing or malformed one reads as missing.
 function checkpointsOf(
   saved: State,
-): Pick<SpecData, "attempts" | "startSha" | "startWikiSha"> {
-  const { attempts, startSha, startWikiSha } = saved.checkpoints ?? {};
-  let count = 0;
-  if (typeof attempts === "number") {
-    count = attempts;
-  }
+): Pick<SpecData, "attempts" | "continuations" | "startSha" | "startWikiSha"> {
+  const { attempts, continuations, startSha, startWikiSha } =
+    saved.checkpoints ?? {};
   return {
-    attempts: count,
+    attempts: countOf(attempts),
+    continuations: countOf(continuations),
     startSha: textOr(startSha, nullOr(startSha)),
     startWikiSha: textOr(startWikiSha, nullOr(startWikiSha)),
   };
@@ -202,6 +215,8 @@ function locate(
     splitSuggested: textOr(splitSuggested, nullOr(splitSuggested)),
     by,
     settings: { cfg, budgets, models, paths },
+    maxContinuations: cfg.maxContinuations,
+    committed: null,
     reply: null,
     checkOutput: null,
   };

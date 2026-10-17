@@ -6,10 +6,11 @@
 // module only names them with their payloads. The registry runs it for
 // `--stage spec` (src/roles/registry.ts, #334).
 
+import type { SweepConfig } from "../../workflow/stages/types.ts";
 import type {
   Edge,
-  End,
   Guard,
+  Limits,
   MachineState,
   Result,
   SessionEffect,
@@ -22,18 +23,19 @@ import type { Machine } from "../walk.ts";
 import {
   decided,
   failed,
+  found,
   prOpened,
   published,
   read,
   readied,
-  refusal,
   started,
   testsCommitted,
 } from "./edges.ts";
+import { END_STATES } from "./ends.ts";
 import type { SpecData, SpecState } from "./locate.ts";
 import { locate } from "./locate.ts";
 import { prBodyOf } from "./pr.ts";
-import { FAILED_TWICE, specSession } from "./task.ts";
+import { specSession } from "./task.ts";
 
 // The results the states answer with.
 type SpecResult =
@@ -50,22 +52,33 @@ type SpecResult =
   | "pass"
   | "fail"
   | "code"
-  | "wiki-only";
+  | "wiki-only"
+  | "handoff";
 
 type Spec = StateSpec<SpecState, SpecResult, SpecData>;
 type Payload = Readonly<Record<string, unknown>>;
 
-// At most 2 sessions per issue, counted across restarts.
-const LIMITS: Readonly<Record<string, number>> = { specAttempts: 2 };
+// At most 2 sessions per issue, counted across restarts, besides the
+// continuations after a handoff: the config's maxContinuations (limitsOf),
+// 1 by default.
+const LIMITS: Readonly<Record<string, number>> = {
+  specAttempts: 2,
+  specContinuations: 1,
+};
 
-// The no-work stop's code (agent:stopped-no-work), and its comment's key.
-const NO_WORK_CODE = "no-work";
+// The no-work comment's key.
 const NO_WORK_KEY = "no-work";
 
 const ATTEMPTS: Guard<SpecState, SpecData> = {
   field: "attempts",
   limit: "specAttempts",
   over: "failed-twice",
+};
+
+const CONTINUATIONS: Guard<SpecState, SpecData> = {
+  field: "continuations",
+  limit: "specContinuations",
+  over: "out-of-room",
 };
 
 function check(
@@ -100,20 +113,6 @@ function op(
   };
 }
 
-function end(endOf: (data: SpecData) => End): Spec {
-  return {
-    kind: "end",
-    effect: (data: SpecData) => ({ kind: "end", end: endOf(data) }),
-    on: {},
-  };
-}
-
-function stopped(data: SpecData, reason: string): End {
-  const { issue: number, checkOutput: detail } = data;
-  const payload = { number, code: "error", reason, detail };
-  return { kind: "stopped", code: "error", after: { op: "stop", payload } };
-}
-
 function session(data: SpecData): SessionEffect {
   const { settings } = data;
   return specSession(
@@ -125,6 +124,8 @@ function session(data: SpecData): SessionEffect {
       splitSuggested: data.splitSuggested,
       attempt: data.attempts,
       checkOutput: data.checkOutput,
+      committed: data.committed,
+      continued: data.reply?.kind === "handoff",
     },
     settings,
   );
@@ -153,7 +154,16 @@ const SCRIPT_STATES = {
       split: { to: "reset" },
       refused: { to: "reset" },
       bad: { to: "retry", apply: failed },
+      handoff: { to: "resume", count: CONTINUATIONS },
     },
+  ),
+  resume: check(
+    "spec-commits",
+    (data: SpecData) => ({
+      startSha: data.startSha,
+      startWikiSha: data.startWikiSha,
+    }),
+    { ok: { to: "session", apply: found } },
   ),
   "check-commits": check(
     "spec-tests-check",
@@ -243,17 +253,6 @@ const SCRIPT_STATES = {
   }),
 };
 
-const END_STATES = {
-  released: end(() => ({ kind: "released" })),
-  "split-opened": end(() => ({ kind: "released" })),
-  asked: end(() => ({ kind: "saved", stage: "triage" })),
-  "no-work": end(() => ({ kind: "stopped", code: NO_WORK_CODE })),
-  "pr-opened": end(() => ({ kind: "saved", stage: "implement" })),
-  "wiki-only": end(() => ({ kind: "saved", stage: "review" })),
-  "failed-twice": end((data: SpecData) => stopped(data, FAILED_TWICE)),
-  "split-refused": end((data: SpecData) => stopped(data, refusal(data))),
-};
-
 const TABLE: Table<SpecState, SpecResult, SpecData> = {
   entries: ["claim", "open-pr", "close-old-pr"],
   states: {
@@ -278,6 +277,9 @@ const transition: (
 const specWriterMachine: Machine<SpecState, SpecResult, SpecData> = {
   table: TABLE,
   limits: LIMITS,
+  limitsOf: (cfg: SweepConfig): Limits => ({
+    specContinuations: cfg.maxContinuations,
+  }),
   locate,
   handoff: [
     "spec",
@@ -291,7 +293,7 @@ const specWriterMachine: Machine<SpecState, SpecResult, SpecData> = {
     "headSha",
     "implemented",
   ],
-  checkpoints: ["startSha", "startWikiSha", "attempts"],
+  checkpoints: ["startSha", "startWikiSha", "attempts", "continuations"],
 };
 
 export type { SpecResult };

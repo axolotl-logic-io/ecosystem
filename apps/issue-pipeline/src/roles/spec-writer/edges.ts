@@ -1,13 +1,14 @@
 // How each result's reply changes the spec writer's `data` as the machine
-// (machine.ts) takes an edge: the start heads checkout found, the session's
-// reply as read, the ready spec's hand-off fields, the head with its tests
+// (machine.ts) takes an edge: the start heads checkout found, what the stage
+// committed since them, the session's reply as read, the ready spec's hand-off fields, the head with its tests
 // committed, the spec as published, and a failure's output; and what the
 // later states read from the reply. Pure.
 
-import { isRecord } from "../../workflow/stages/reply-guards.ts";
+import { isRecord, isStrings } from "../../workflow/stages/reply-guards.ts";
 import type { SpecData } from "./locate.ts";
 import type { SpecWriterReply } from "./reply.ts";
 import { specReadingOf } from "./reply.ts";
+import type { SpecCommitted } from "./task.ts";
 import { FAILED_TWICE } from "./task.ts";
 
 // The session's reply, as the role reads it.
@@ -27,13 +28,34 @@ function shaOf(value: unknown): string | null | undefined {
   return undefined;
 }
 
-// The start heads checkout found, unless an earlier start saved them.
+function committedOf(value: unknown): SpecCommitted | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const { tests, stubs, wiki, draft } = value;
+  if (!(isStrings(tests) && isStrings(stubs) && isStrings(wiki))) {
+    return null;
+  }
+  return { tests, stubs, wiki, draft: draft === true };
+}
+
+// What the stage committed since its start heads, as listed.
+function found(data: SpecData, reply: unknown): SpecData {
+  if (!isRecord(reply)) {
+    return data;
+  }
+  const { committed } = reply;
+  return { ...data, committed: committedOf(committed) };
+}
+
+// The start heads checkout found, unless an earlier start saved them, and
+// what the stage committed since them.
 function started(data: SpecData, reply: unknown): SpecData {
   if (!isRecord(reply)) {
     return data;
   }
   const { startSha, startWikiSha } = reply;
-  const next = { ...data };
+  const next = found(data, reply);
   if (data.startSha === undefined) {
     next.startSha = shaOf(startSha);
   }
@@ -102,11 +124,20 @@ function decided(
   data: SpecData,
 ): Pick<SpecWriterReply, "spec" | "questions" | "subIssues"> {
   const { reply } = data;
-  if (reply === null || reply.kind === "bad" || reply.kind === "refused") {
+  if (reply === null || !("reply" in reply)) {
     return { spec: "", questions: [], subIssues: [] };
   }
   const { spec, questions, subIssues } = reply.reply;
   return { spec, questions, subIssues };
+}
+
+// The summary of the handoff the last session replied with, if any.
+function handoffSummary(data: SpecData): string {
+  const { reply } = data;
+  if (reply?.kind !== "handoff") {
+    return "";
+  }
+  return reply.summary;
 }
 
 // The reason a run stops with after a refused split or a second failure.
@@ -121,6 +152,8 @@ function refusal(data: SpecData): string {
 export {
   decided,
   failed,
+  found,
+  handoffSummary,
   prOpened,
   published,
   read,

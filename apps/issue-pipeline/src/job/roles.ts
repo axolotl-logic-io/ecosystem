@@ -115,10 +115,9 @@ function commitsOf(agent: string): boolean {
 }
 
 // Whether a session of `agent` is held to the config's `contextLimits` and
-// records a token budget: only the writer's, until the spec writer gets its
-// limits (#335).
+// records a token budget: the writer's and the specifier's (#335).
 function heldToLimits(agent: string): boolean {
-  return agent === WRITER_AGENT;
+  return agent === WRITER_AGENT || agent === SPEC_AGENT;
 }
 
 // The token budget job.json records for `spec`'s session, which the
@@ -241,6 +240,7 @@ export {
   heldToLimits,
   recordedBudgetOf,
   rolesOf,
+  SPEC_AGENT,
   STAGE_ROLES,
   STAGE_WIKI_ACCESS,
 };

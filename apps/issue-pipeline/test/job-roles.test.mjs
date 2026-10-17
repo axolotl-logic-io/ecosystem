@@ -102,11 +102,11 @@ test("each stage's boundary has the wiki's role, and no stage's session env name
   assert.deepEqual(new Set(listed), new Set(STAGE_ORDER));
 });
 
-test("the writer and specifier agents' sessions commit, and only the writer's are held to the context limits", () => {
+test("the writer and specifier agents' sessions commit and are held to the context limits", () => {
   assert.equal(commitsOf("issue-pipeline-writer"), true);
   assert.equal(heldToLimits("issue-pipeline-writer"), true);
   assert.equal(commitsOf("issue-pipeline-specifier"), true);
-  assert.equal(heldToLimits("issue-pipeline-specifier"), false);
+  assert.equal(heldToLimits("issue-pipeline-specifier"), true);
   for (const agent of [
     "issue-pipeline-reader",
     "issue-pipeline-ops",

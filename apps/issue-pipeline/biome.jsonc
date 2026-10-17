@@ -71,9 +71,10 @@
     // src/report/usage.ts gets none. The spec writer's commit check,
     // src/roles/spec-writer/check.ts, runs git and the configured commands in
     // the spec head's worktree and writes their logs (#331), as
-    // checks-git.ts, its checks that read the job checkout's heads, run the
-    // no-work tests and reset the issue's branches, does (#334); the role's
-    // pure modules, such as coverage.ts, get none.
+    // checks-git.ts, its checks that read the job checkout's heads and
+    // commits, run the no-work tests, drop the spec draft and the handoff
+    // file and reset the issue's branches, does (#334, #335); the role's pure
+    // modules, such as coverage.ts, get none.
     {
       "includes": [
         "install.mjs",

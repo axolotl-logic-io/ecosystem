@@ -1,21 +1,22 @@
-// How a stage job holds a writer session to the config's contextLimits. A
-// turn's context is the input, cache-read and cache-write tokens of one
-// assistant message's usage (output tokens and earlier turns don't count). A
-// writer session (an implementer, fixer, CI fixer or conflict resolver) past
-// `soft` gets one steer to wrap up and write its handoff as the next round's
-// summary (wrap-up-at-175k, Axlog, 2026-10-17), and past `hard` is stopped,
-// its result a `handoff` reply that fits its launch's output schema (the
-// handoff file the job then writes for it is stop-handoff.ts's). Any other
-// session is neither steered nor stopped (Axlog, 2026-10-16). This module
-// alone knows that rule, the limits' meaning, the steer's text and the
-// stopped session's result.
+// How a stage job holds a writer or spec writer session to the config's
+// contextLimits. A turn's context is the input, cache-read and cache-write
+// tokens of one assistant message's usage (output tokens and earlier turns
+// don't count). A session held to the limits (an implementer, fixer, CI
+// fixer or conflict resolver, or the spec writer, #335) past `soft` gets one
+// steer to wrap up and write its handoff as the next round's summary
+// (wrap-up-at-175k, Axlog, 2026-10-17), and past `hard` is stopped, its
+// result a `handoff` reply that fits its launch's output schema (the handoff
+// file the job then writes for it is stop-handoff.ts's). Any other session
+// is neither steered nor stopped (Axlog, 2026-10-16). This module alone
+// knows that rule, the limits' meaning, the steer's text and the stopped
+// session's result.
 
 import type { JsonSchema } from "../workflow/schemas.ts";
 import type { LiveLaunch } from "./control.ts";
 import { stopLaunch } from "./control.ts";
 import type { SessionLaunch, SessionRaw, Usage } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
-import { heldToLimits } from "./roles.ts";
+import { heldToLimits, SPEC_AGENT } from "./roles.ts";
 
 // The context a writer session may pass once, to be steered (`soft`), and
 // the one it may never pass (`hard`), in tokens.
@@ -66,12 +67,40 @@ function turnContext(usage: Usage): number {
   return usage.input + usage.cacheRead + usage.cacheWrite;
 }
 
-// The steer a writer session gets once its turn context `context` passes
-// `soft`: finish the edit it is in, commit it building, and write the
-// handoff as the next round's only summary.
-function steerText(hold: WriterHold, context: number): string {
+// What the steer tells a session to keep of its work, and how to reply.
+interface WrapUp {
+  keep: string;
+  reply: string;
+}
+
+// A writer makes its work build and commits it.
+const WRITER_WRAP_UP: WrapUp = {
+  keep: "Make it build, and commit it.",
+  reply: "Then return status `handoff`.",
+};
+
+// The spec writer commits its tests, stubs and spec draft; its reply's
+// other fields are ignored once its status is `handoff`.
+const SPEC_WRAP_UP: WrapUp = {
+  keep: "Commit the tests, stubs and spec draft you have with `pipeline_commit`.",
+  reply:
+    "Then return status `handoff` with a `summary`; the reply's other fields are ignored.",
+};
+
+function wrapUpOf(agent: string): WrapUp {
+  if (agent === SPEC_AGENT) {
+    return SPEC_WRAP_UP;
+  }
+  return WRITER_WRAP_UP;
+}
+
+// The steer a session of `agent` gets once its turn context `context` passes
+// `soft`: finish the edit it is in, keep its work, and write the handoff as
+// the next round's only summary.
+function steerText(hold: WriterHold, context: number, agent: string): string {
   const { limits, handoffFile } = hold;
-  return `Context is at ${context} tokens, past the soft limit of ${limits.soft}. Wrap up now: finish the edit you are in the middle of, and don't start new ones. Make it build, and commit it. Then write ${handoffFile} as a summary for the next round: what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass. The next session starts from this summary alone. Then return status \`handoff\`. At ${limits.hard} tokens this session is stopped.`;
+  const { keep, reply } = wrapUpOf(agent);
+  return `Context is at ${context} tokens, past the soft limit of ${limits.soft}. Wrap up now: finish the edit you are in the middle of, and don't start new ones. ${keep} Then write ${handoffFile} as a summary for the next round: what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass. The next session starts from this summary alone. ${reply} At ${limits.hard} tokens this session is stopped.`;
 }
 
 // The watch on a session the limits don't hold: it never steers or stops.
@@ -82,9 +111,9 @@ const UNWATCHED: ContextWatch = {
 };
 
 // Watches session `live` of installed agent `agent` against `hold.limits`:
-// steers a writer once, the first time a turn passes `soft`, and stops it,
-// once, the first time a turn passes `hard`. Any other session goes
-// unwatched.
+// steers a session held to the limits once, the first time a turn passes
+// `soft`, and stops it, once, the first time a turn passes `hard`. Any other
+// session goes unwatched.
 function watchContext(
   hold: WriterHold,
   agent: string,
@@ -111,7 +140,7 @@ function watchContext(
       } else if (context > limits.soft && !steered) {
         steered = true;
         live
-          .send({ type: "steer", message: steerText(hold, context) })
+          .send({ type: "steer", message: steerText(hold, context, agent) })
           .catch(() => null);
       }
     },

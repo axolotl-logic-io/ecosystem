@@ -19,6 +19,7 @@ import { run, shell } from "../../process.ts";
 import type { WikiChange } from "../../wiki-check.ts";
 import type { Facts, Failure } from "./check-rules.ts";
 import { scopeFailure, testFilesFailure, wikiFailure } from "./check-rules.ts";
+import { SPEC_DRAFT } from "./task.ts";
 
 // The part of a test interface entry the check reads.
 interface CheckedInterface {
@@ -76,7 +77,8 @@ function changedFiles(change: SpecTestsChange): string[] {
 
 function factsOf(change: SpecTestsChange, settings: SpecTestsSettings): Facts {
   const wikiPrefix = `${wikiCfg(change.cfg)?.dir ?? "wiki"}/`;
-  const changed = changedFiles(change);
+  // The spec draft leaves the branch once the spec is posted (#335).
+  const changed = changedFiles(change).filter((file) => file !== SPEC_DRAFT);
   return {
     changed,
     files: change.files,

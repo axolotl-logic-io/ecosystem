@@ -260,3 +260,10 @@ test("a clean wiki change with only wiki pages in files is wiki-only", () => {
   );
   assert.deepEqual(outcome(got), passed(true));
 });
+
+// The draft leaves the branch once the spec is posted, so it never merges.
+test("a failing test plus the spec draft, which files leaves out, passes", () => {
+  const draft = { ".issue-pipeline/spec-draft.md": "## Behaviour\n" };
+  const got = check({ ...draft, ...FAILING }, { files: [TEST] });
+  assert.deepEqual(outcome(got), passed(false));
+});

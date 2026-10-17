@@ -1,8 +1,9 @@
 // The spec writer's script checks (the wiki's Pipeline-Roles-Spec-Writer,
 // "Lifecycle"), for one run of its machine: the reply check with interface
-// coverage, the commit check, the no-work test run, the start heads and the
-// reset (checks-git.ts), the spec's publication through the post and
-// save-spec ops, and the close of an earlier PR. Each answers with one of the
+// coverage, the commit check, the no-work test run, the start heads with
+// what the stage committed since them, the reset (checks-git.ts), the spec's
+// publication through the post and save-spec ops, which drops the spec draft
+// and the handoff, and the close of an earlier PR. Each answers with one of the
 // machine's result names; a failure's reason is its reply, which the retry's
 // task includes. The job has already claimed the issue, so the claim and the
 // retry answer ok.
@@ -17,6 +18,8 @@ import { clip } from "../../workflow/clip.ts";
 import type { Checks, JobEffects } from "../registry.ts";
 import type { SpecJob } from "./checks-git.ts";
 import {
+  committedSince,
+  dropLeftovers,
   noWorkConfirmed,
   resetBranches,
   specTestsAtHead,
@@ -48,10 +51,15 @@ const READY = z.looseObject({
 const READING = z.looseObject({
   kind: z.string(),
   reason: z.string().optional(),
-  reply: z.unknown(),
+  reply: z.unknown().optional(),
 });
 const COMMITS = READY.omit({ spec: true }).extend({ startSha: SHA });
 const HEADS = z.looseObject({ startSha: SHA, startWikiSha: SHA });
+// The start heads an earlier start saved, if any.
+const SAVED_HEADS = z.looseObject({
+  startSha: SHA.optional(),
+  startWikiSha: SHA.optional(),
+});
 const RESET = HEADS.extend({ reading: READING });
 const SAVED_SPEC = z.looseObject({ specFile: z.string() });
 
@@ -121,8 +129,10 @@ function op(
 }
 
 // Posts the spec as the issue's `## Spec` comment, saving a spec too long
-// for the state to spec.md first, and answers whether it is wiki-only.
+// for the state to spec.md first, then drops the draft and the handoff, and
+// answers whether it is wiki-only.
 async function publish(
+  job: SpecJob,
   entry: Entry,
   effects: JobEffects,
   payload: Payload,
@@ -144,6 +154,7 @@ async function publish(
   if (!posted.ok) {
     return posted;
   }
+  dropLeftovers(job);
   let kind = "code";
   if (wikiOnly({ files, noTestsReason }, paths)) {
     kind = "wiki-only";
@@ -185,6 +196,26 @@ function confirmNoWork(job: SpecJob, payload: Payload): Outcome {
   return answer("pass");
 }
 
+// The start heads, the saved ones where an earlier start saved them, and
+// what the stage committed since them.
+function checkout(job: SpecJob, payload: Payload): Outcome {
+  const found = startHeads(job.cfg, job.n);
+  const saved = SAVED_HEADS.parse(payload);
+  const heads = { ...found };
+  if (saved.startSha !== undefined) {
+    heads.startSha = saved.startSha;
+  }
+  if (saved.startWikiSha !== undefined) {
+    heads.startWikiSha = saved.startWikiSha;
+  }
+  return answer("ok", { ...found, committed: committedSince(job, heads) });
+}
+
+function specCommits(job: SpecJob, payload: Payload): Outcome {
+  const heads = HEADS.parse(payload);
+  return answer("ok", { committed: committedSince(job, heads) });
+}
+
 function reset(job: SpecJob, payload: Payload): Outcome {
   const { startSha, startWikiSha, reading } = RESET.parse(payload);
   resetBranches(job, { startSha, startWikiSha });
@@ -201,11 +232,14 @@ function specWriterChecks(
   const { issue: n, paths } = entry.context;
   const jobCfg = withCheckout(cfg, { issue: n, dir: paths.worktree });
   const stackedOn = entry.saved.stackedOn?.issue ?? null;
-  const job: SpecJob = { cfg: jobCfg, n, stackedOn };
+  const { handoffFile } = paths;
+  const job: SpecJob = { cfg: jobCfg, n, stackedOn, handoffFile };
   return {
     claim: ok,
     retry: ok,
-    checkout: () => guarded(() => answer("ok", startHeads(jobCfg, n))),
+    checkout: (payload: Payload) => guarded(() => checkout(job, payload)),
+    "spec-commits": (payload: Payload) =>
+      guarded(() => specCommits(job, payload)),
     "check-reply": (payload: Payload) => guarded(() => checkReply(payload)),
     "spec-tests-check": (payload: Payload) =>
       guarded(() => specTests(job, payload)),
@@ -213,7 +247,7 @@ function specWriterChecks(
       guarded(() => confirmNoWork(job, payload)),
     reset: (payload: Payload) => guarded(() => reset(job, payload)),
     "publish-spec": (payload: Payload) =>
-      guarded(() => publish(entry, effects, payload)),
+      guarded(() => publish(job, entry, effects, payload)),
     "close-old-pr": () => guarded(() => closeOldPr(entry, effects)),
   };
 }

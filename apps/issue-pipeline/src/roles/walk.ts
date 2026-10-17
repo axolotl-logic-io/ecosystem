@@ -36,9 +36,12 @@ interface Writes<D> {
   checkpoints: readonly (keyof D & string)[];
 }
 
+// A machine role: its table, its limits, the limits the repo config sets
+// over them, if any, where locate starts it, and what it writes.
 interface Machine<S extends string, R extends string, D> extends Writes<D> {
   table: Table<S, R, D>;
   limits: Limits;
+  limitsOf?: (cfg: SweepConfig) => Limits;
   locate: (saved: State, context: RoleContext) => MachineState<S, D>;
 }
 
@@ -86,11 +89,15 @@ function listed<S extends string, R extends string, D>(
   return Object.hasOwn(machine.table.states[at].on, name);
 }
 
+// How `machine` moves in a run whose config is `cfg`, under its limits with
+// those the config sets over them.
 function machineWalk<S extends string, R extends string, D>(
   machine: Machine<S, R, D>,
+  { cfg }: RoleContext,
 ): Walk<S, D> {
   const { states } = machine.table;
-  const transition = transitionOf(machine.table, machine.limits);
+  const limits = { ...machine.limits, ...machine.limitsOf?.(cfg) };
+  const transition = transitionOf(machine.table, limits);
   function positionOf({ at, data }: MachineState<S, D>): Position<S, D> {
     return { at, kind: states[at].kind, data, effect: states[at].effect(data) };
   }

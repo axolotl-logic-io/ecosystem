@@ -1,7 +1,8 @@
 // The spec writer role's reply: its schema (SPEC_WRITER_SCHEMA, the spec
-// stage's SPEC_SCHEMA plus `no-work`, the test interfaces and the reason for
-// writing no tests), and what the role reads from a reply: the decision
-// `check-reply` routes on, a failed session, or a split it refuses. The
+// stage's SPEC_SCHEMA plus `no-work`, the test interfaces, the reason for
+// writing no tests, and the optional `handoff` status and its summary), and
+// what the role reads from a reply: the decision `check-reply` routes on, a
+// handoff, a failed session, or a split it refuses. The
 // reader parses with zod: unlike the spec stage's reader (#178), it never
 // runs in workflow.js's sandbox. Pure.
 
@@ -51,10 +52,12 @@ interface SpecWriterReply {
   noTestsReason: string | null;
 }
 
-// What the role reads from a reply: a decision with the reply, a failed
-// session with its reason, or a split it won't open with the stop's reason.
+// What the role reads from a reply: a decision with the reply, a handoff
+// with its summary (#335), a failed session with its reason, or a split it
+// won't open with the stop's reason.
 type SpecReading =
   | { kind: SpecWriterDecision; reply: SpecWriterReply }
+  | { kind: "handoff"; summary: string }
   | { kind: "bad"; reason: string }
   | { kind: "refused"; reason: string };
 
@@ -78,6 +81,8 @@ const DECISIONS: readonly SpecWriterDecision[] = [
   "split",
   "no-work",
 ];
+// A finished session's status, or a handoff when it ran out of room (#335).
+const SPEC_STATUSES: readonly ("done" | "handoff")[] = ["done", "handoff"];
 // The most questions or parts a reply may give.
 const MOST_ITEMS = 5;
 const SPLIT_TOO_SMALL = "the spec writer's split had fewer than 2 parts";
@@ -110,8 +115,16 @@ const SPEC_WRITER_SCHEMA: JsonSchema = {
     decision: { enum: DECISIONS },
     interfaces: { type: "array", items: INTERFACE_SCHEMA },
     noTestsReason: { type: ["string", "null"] },
+    status: { enum: SPEC_STATUSES },
+    summary: STR,
   },
-  required: [...(SPEC_SCHEMA.required ?? []), "interfaces", "noTestsReason"],
+  required: [
+    ...(SPEC_SCHEMA.required ?? []),
+    "interfaces",
+    "noTestsReason",
+    "status",
+    "summary",
+  ],
 };
 
 const PART: z.ZodType<SpecPart> = z.strictObject({
@@ -140,6 +153,15 @@ const REPLY: z.ZodType<SpecWriterReply> = z.strictObject({
   subIssues: z.array(PART).max(MOST_ITEMS),
   interfaces: INTERFACES,
   noTestsReason: z.string().nullable(),
+  status: z.enum(SPEC_STATUSES).optional(),
+  summary: z.string().optional(),
+});
+
+// A handoff, whatever the reply's other fields: the session's own, or the
+// one the job builds for a session it stopped at the hard context limit.
+const HANDOFF = z.looseObject({
+  status: z.literal("handoff"),
+  summary: z.string(),
 });
 
 // A ready reply, unless no interface and no reason to write no tests ties a
@@ -182,10 +204,15 @@ function decidedReading(reply: SpecWriterReply, depth: number): SpecReading {
 }
 
 // What the role reads from the session's `output` on an issue at `depth` (0
-// for an issue, 1 for a sub-issue). A reply that doesn't fit the schema, or
-// whose spec doesn't end with SPEC_END, is a failed session; otherwise the
-// marker is stripped from the spec.
+// for an issue, 1 for a sub-issue). A reply whose status is `handoff` is a
+// handoff. A reply that doesn't fit the schema, or whose spec doesn't end
+// with SPEC_END, is a failed session; otherwise the marker is stripped from
+// the spec.
 function specReadingOf(output: unknown, depth: number): SpecReading {
+  const handoff = HANDOFF.safeParse(output);
+  if (handoff.success) {
+    return { kind: "handoff", summary: handoff.data.summary };
+  }
   const parsed = REPLY.safeParse(output);
   if (!parsed.success) {
     const reason = `the reply doesn't fit the spec writer's schema: ${z.prettifyError(parsed.error)}`;

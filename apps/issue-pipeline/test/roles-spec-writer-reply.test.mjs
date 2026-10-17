@@ -211,3 +211,18 @@ test("no-work reads as no-work, with its evidence", () => {
   assert.ok(reading.kind === "no-work");
   assert.equal(reading.reply.spec, SPEC);
 });
+
+test("a reply with status handoff reads as a handoff with its summary, whatever its other fields, and status done as its decision", () => {
+  const handoff = { status: "handoff", summary: "Half done." };
+  for (const output of [handoff, replyOf({ ...handoff, spec: "partway" })]) {
+    assert.deepEqual(specReadingOf(output, 0), {
+      kind: "handoff",
+      summary: handoff.summary,
+    });
+  }
+  const done = replyOf({ status: "done", summary: "Ready." });
+  assert.equal(specReadingOf(done, 0).kind, "ready");
+  assert.deepEqual(propertiesOf(SPEC_WRITER_SCHEMA).get("status"), {
+    enum: ["done", "handoff"],
+  });
+});

@@ -9,12 +9,12 @@ import type { ModelRole, StageName, SweepConfig } from "./stages/types.ts";
 import type { JobLayout, Role } from "./types.ts";
 
 // Each role's context budget per session, unless the config's roleBudgets sets
-// it. A writer's (WRITER_BUDGET_ROLES) is above the default contextLimits.hard,
-// so the job stops it before the watchdog kills it (wrap-up-at-175k, Axlog,
-// 2026-10-17).
+// it. A writer's or the spec writer's (WRITER_BUDGET_ROLES) is above the
+// default contextLimits.hard, so the job stops it before the watchdog kills it
+// (wrap-up-at-175k, Axlog, 2026-10-17; #335).
 const ROLE_BUDGETS: Readonly<Record<Role, number>> = {
   triage: 50_000,
-  spec: 80_000,
+  spec: 300_000,
   implementer: 300_000,
   reviewer: 60_000,
   aggregator: 20_000,
@@ -24,9 +24,11 @@ const ROLE_BUDGETS: Readonly<Record<Role, number>> = {
   verifier: 60_000,
 };
 
-// The roles whose budgets writer sessions run on: the implementer's, the
-// fixer's (the conflict resolver's too) and the CI fixer's.
+// The roles whose budgets the sessions held to contextLimits run on: the spec
+// writer's, the implementer's, the fixer's (the conflict resolver's too) and
+// the CI fixer's.
 const WRITER_BUDGET_ROLES: readonly Role[] = [
+  "spec",
   "implementer",
   "fixer",
   "ciFixer",

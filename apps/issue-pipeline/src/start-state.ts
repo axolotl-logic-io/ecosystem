@@ -147,6 +147,19 @@ function continuesWork(state: State | null, start: StartContext): boolean {
   return stage !== "stopped" || stopCode !== "too-large";
 }
 
+// A role's checkpoints with its continuation count dropped, as a restart
+// after a stop resets the limits (#335); its start heads and attempts stay.
+function checkpointsReset(state: State): State["checkpoints"] {
+  const { checkpoints } = state;
+  if (checkpoints === undefined) {
+    return undefined;
+  }
+  const kept = Object.entries(checkpoints).filter(
+    ([name]) => name !== "continuations",
+  );
+  return Object.fromEntries(kept);
+}
+
 // A restart after a stop, with no answered questions: it carries the saved
 // state and resumes at the stage that stopped, with the stop cleared and
 // every limit reset (`every-role-resumes`, Axlog, 2026-10-16). A specced
@@ -169,6 +182,7 @@ function resumedStop(state: State | null, start: StartContext): State | null {
     ...work,
     ...LIMITS_RESET,
     ...keptReview(stage, stands),
+    checkpoints: checkpointsReset(state),
     stage,
     headSha: start.remote,
     pr: start.pr ?? state.pr ?? null,

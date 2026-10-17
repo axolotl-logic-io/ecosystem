@@ -1,7 +1,9 @@
 // @ts-check
 // A writer's wrap-up at the context limits (wrap-up-at-175k, Axlog,
 // 2026-10-17): past `soft` its one steer tells it to finish the edit it is
-// in, commit it building and write the handoff as the next round's summary;
+// in, commit it building and write the handoff as the next round's summary,
+// and a spec writer's tells it to commit its tests, stubs and spec draft
+// (#335);
 // stopped past `hard`, its uncommitted work gets a WIP commit
 // (kill-saves-writer-work) where that is safe, whether or not it wrote a
 // handoff, and the job writes the handoff when it wrote none. The job's save
@@ -60,6 +62,8 @@ const IMPLEMENT_ONCE = {
   sweep: sweepReply({ items: [ISSUE], config: { maxContinuations: 0 } }),
   "exit-push": { ok: true, git: true },
 };
+// The spec stage with no continuations, so a handoff stops the issue.
+const SPEC_ONCE = { ...LIMITS, maxContinuations: 0 };
 const IDENTITY = [
   "-c",
   "user.name=Test",
@@ -168,5 +172,29 @@ test(
     assert.ok(text.startsWith(OWN), text);
     const wip = git(place.origin, ["rev-parse", BRANCH]);
     assert.ok(text.includes(wip.slice(0, SHORT_SHA)), text);
+  },
+);
+
+test(
+  "a spec writer past soft is steered once to commit its tests, stubs and spec draft, not to make it build",
+  HANG_GUARD,
+  async () => {
+    const events = [
+      ...turns([PAST_SOFT]),
+      "wait",
+      ...turns([PAST_HARD]),
+      "wait",
+    ];
+    const place = setUp(repliesAt("spec"), { events }, SPEC_ONCE);
+    const end = await startJob(place, ["--stage", "spec"]).end;
+    assert.equal(end.status, 0, end.stderr);
+    const steers = piCommands(place).filter(({ type }) => type === "steer");
+    assert.equal(steers.length, 1);
+    const [{ message }] = steers;
+    for (const part of ["spec draft", "`pipeline_commit`", handoffOf(place)]) {
+      assert.ok(message.includes(part), `${part} in: ${message}`);
+    }
+    assert.ok(!message.includes("Make it build"), message);
+    assert.ok(message.includes(String(HARD)), message);
   },
 );

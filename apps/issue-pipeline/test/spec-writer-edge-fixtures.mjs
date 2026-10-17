@@ -3,7 +3,12 @@
 // Pipeline-Roles-Spec-Writer): a state, its result and the result's reply,
 // what `data` held, and the next state, its effect's kind and op, check or
 // session name (`check:reset`) or its end, and what `data` holds after.
-import { READINGS, replyOf } from "./spec-writer-role-test-kit.mjs";
+import {
+  COMMITTED,
+  OUT_OF_ROOM,
+  READINGS,
+  replyOf,
+} from "./spec-writer-role-test-kit.mjs";
 
 /** @import { End, Effect } from "../src/roles/machine.ts" */
 /** @import { SpecData, SpecState } from "../src/roles/spec-writer/locate.ts" */
@@ -31,7 +36,7 @@ function stoppedWith(reason, detail) {
   return { kind: "stopped", code: "error", after: { op: "stop", payload } };
 }
 
-const { ready, refused } = READINGS;
+const { ready, refused, handoff } = READINGS;
 /** @param {SpecReading} reading @returns {SpecWriterReply | null} its reply, when it is ready */
 function readyOf(reading) {
   if (reading.kind === "ready") {
@@ -114,6 +119,30 @@ const EDGES = [
     next: "retry",
     effect: "check:retry",
     changes: { checkOutput: "no marker" },
+  },
+  {
+    at: "check-reply",
+    result: "handoff",
+    data: { reply: handoff, attempts: 1 },
+    next: "resume",
+    effect: "check:spec-commits",
+    changes: { continuations: 1, attempts: 1 },
+  },
+  {
+    at: "check-reply",
+    result: "handoff",
+    data: { reply: handoff, continuations: 1 },
+    next: "out-of-room",
+    effect: OUT_OF_ROOM,
+  },
+  {
+    at: "resume",
+    result: "ok",
+    reply: { committed: COMMITTED },
+    data: { reply: handoff, attempts: 1 },
+    next: "session",
+    effect: "session:spec",
+    changes: { committed: COMMITTED, attempts: 1 },
   },
   {
     at: "check-commits",

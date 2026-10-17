@@ -8,7 +8,7 @@ import { specReadingOf } from "../src/roles/spec-writer/reply.ts";
 import { roleContext } from "./role-context-fixtures.mjs";
 
 /** @import { State } from "../src/state.ts" */
-/** @import { SessionEffect, Step } from "../src/roles/machine.ts" */
+/** @import { End, SessionEffect, Step } from "../src/roles/machine.ts" */
 /** @import { RoleContext } from "../src/roles/walk.ts" */
 /** @import { SpecData, SpecState } from "../src/roles/spec-writer/locate.ts" */
 /** @import { SpecResult } from "../src/roles/spec-writer/machine.ts" */
@@ -68,13 +68,39 @@ function readingOf(fields, depth = 0) {
   return specReadingOf(replyOf(fields), depth);
 }
 
-/** The readings check-reply and reset route on, by kind. */
+/** The readings check-reply and reset route on, by kind, and a handoff. */
 const READINGS = {
   ready: readingOf({}),
   "no-work": readingOf({ decision: "no-work" }),
   "needs-info": readingOf({ decision: "needs-info", questions: ["Why?"] }),
   split: readingOf({ decision: "split", subIssues: [part("A"), part("B")] }),
   refused: readingOf({ decision: "split", subIssues: [part("A")] }),
+  handoff: specReadingOf({ status: "handoff", summary: "Half done." }, 0),
+};
+
+// What resume lists as committed since the start heads.
+const COMMITTED = {
+  tests: ["test/a.test.sh"],
+  stubs: ["src/a.ts"],
+  wiki: [],
+  draft: true,
+};
+// The stop for a handoff with no continuation left (the context fixtures'
+// maxContinuations is 1, and their handoff file is this).
+/** @type {End} */
+const OUT_OF_ROOM = {
+  kind: "stopped",
+  code: "too-large",
+  after: {
+    op: "stop",
+    payload: {
+      number: 7,
+      code: "too-large",
+      reason:
+        "the spec writer ran out of room in its session and its 1 continuation(s) (maxContinuations); the issue needs splitting",
+      detail: "Latest handoff: /runs/issue-7/handoff.md\n\nHalf done.",
+    },
+  },
 };
 
 /** @param {Partial<RoleContext>} [fields] @returns {RoleContext} issue #7's context, with the practices files set */
@@ -114,9 +140,11 @@ function retried(fields = {}) {
 }
 
 export {
+  COMMITTED,
   dataWith,
   INTERFACE,
   located,
+  OUT_OF_ROOM,
   PRACTICES,
   part,
   READINGS,

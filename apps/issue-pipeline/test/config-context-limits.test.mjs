@@ -3,8 +3,8 @@
 // works to, in tokens) and `maxContinuations` (handoffs each writer stage may
 // continue, per issue) default to 175000/225000 and 1 (#269,
 // wrap-up-at-175k), and loadConfig refuses limits that are not positive whole
-// numbers with soft below hard, and a hard limit at or above a writer's
-// context budget, which the watchdog kills it past.
+// numbers with soft below hard, and a hard limit at or above a writer's or
+// the spec writer's context budget, which the watchdog kills it past (#335).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -19,8 +19,13 @@ let files = 0;
 const SEVERAL = 3;
 // The default sessionTokenCap, a writer's watchdog budget.
 const WRITER_CAP = 300_000;
+// The default contextLimits.hard, and the spec writer's budget before #335.
+const DEFAULT_HARD = 225_000;
+const OLD_SPEC_BUDGET = 80_000;
 const BELOW_WRITER_BUDGETS =
   /contextLimits\.hard \(225000\) must be below every writer's context budget, but ciFixer's is 100000/u;
+const BELOW_SPEC_BUDGET =
+  /contextLimits\.hard \(225000\) must be below every writer's context budget, but spec's is \d+/u;
 
 /** @param {object} extra @returns {string} */
 function configWith(extra) {
@@ -76,11 +81,21 @@ test("a hard limit at or above a writer's context budget is refused, naming the 
   );
 });
 
+test("a spec writer's budget at or below the hard limit is refused, naming spec, and the defaults load", () => {
+  for (const spec of [DEFAULT_HARD, OLD_SPEC_BUDGET]) {
+    assert.throws(
+      () => loadConfig(configWith({ roleBudgets: { spec } })),
+      BELOW_SPEC_BUDGET,
+    );
+  }
+  assert.equal(loadConfig(configWith({})).contextLimits.hard, DEFAULT_HARD);
+});
+
 test("a hard limit below every writer's budget loads, whatever a reader's budget is", () => {
   const cfg = loadConfig(
     configWith({
       sessionTokenCap: 300_000,
-      roleBudgets: { implementer: 300_000, triage: 50_000, spec: 200_000 },
+      roleBudgets: { implementer: 300_000, triage: 50_000, spec: 300_000 },
       contextLimits: { soft: 175_000, hard: 225_000 },
     }),
   );

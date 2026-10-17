@@ -1,7 +1,9 @@
 // The spec writer's checks that run git and the configured commands in the
-// job's checkout (checks.ts names them for the machine): the start heads,
-// the commit check at the spec head, the no-work test run, and the reset of
-// the issue's code and wiki branches to the heads the stage began from.
+// job's checkout (checks.ts names them for the machine): the start heads and
+// what the stage committed since them, the commit check at the spec head, the
+// no-work test run, the removal of the spec draft and the handoff once the
+// spec is posted, and the reset of the issue's code and wiki branches to the
+// heads the stage began from.
 // `cfg` is the job's config with its checkout, so the worktree and wiki paths
 // are the job's.
 
@@ -12,12 +14,14 @@ import type { Config } from "../../config.ts";
 import { paths, wikiCfg } from "../../config.ts";
 import { head } from "../../git-state.ts";
 import { git } from "../../github.ts";
+import { matchAny } from "../../globs.ts";
 import { withWikiLock } from "../../locks.ts";
 import { OpsError, run, shell } from "../../process.ts";
 import { readWikiChange } from "../../wiki-check.ts";
 import type { CheckedInterface, SpecTestsResult } from "./check.ts";
 import { specTestsCheck } from "./check.ts";
-import { SPEC_TRAILER } from "./task.ts";
+import type { SpecCommitted } from "./task.ts";
+import { SPEC_DRAFT, SPEC_TRAILER } from "./task.ts";
 
 const MS_PER_MINUTE = 60_000;
 const SHORT_SHA_LENGTH = 8;
@@ -35,12 +39,13 @@ const SETTINGS = z.looseObject({
   testPathGlobs: z.array(z.string()),
 });
 
-// The job's config with its checkout, the issue, and the issue it is stacked
-// on, if any.
+// The job's config with its checkout, the issue, the issue it is stacked on,
+// if any, and the handoff file a session that ran out of room writes.
 interface SpecJob {
   cfg: Config;
   n: number;
   stackedOn: number | null;
+  handoffFile: string;
 }
 
 // The heads the spec stage began from, or null where the branch is new.
@@ -105,6 +110,53 @@ function baseOf(job: SpecJob, startSha: string | null): string {
     }
   }
   return `origin/${cfg.baseBranch}`;
+}
+
+// Whether `file` exists in the checkout `wt` at HEAD.
+function atHead(wt: string, file: string): boolean {
+  const args = ["-C", wt, "cat-file", "-e", `HEAD:${file}`];
+  return run("git", args, { allowFail: true }).code === 0;
+}
+
+// What the stage committed since `heads`: the code branch's test files and
+// other files (stubs), whether the spec draft is at its head, and the wiki
+// pages the issue's wiki branch changed.
+function committedSince(job: SpecJob, heads: StartHeads): SpecCommitted {
+  const { cfg, n } = job;
+  const { testPathGlobs } = SETTINGS.parse(cfg);
+  const wt = paths.worktree(cfg, n);
+  const range = `${baseOf(job, heads.startSha)}...HEAD`;
+  const changed = run("git", ["-C", wt, "diff", "--name-only", range])
+    .stdout.split("\n")
+    .filter((file) => file !== "" && file !== SPEC_DRAFT);
+  function isTest(file: string): boolean {
+    return matchAny(testPathGlobs, file);
+  }
+  return {
+    tests: changed.filter(isTest),
+    stubs: changed.filter((file) => !isTest(file)),
+    wiki: readWikiChange(cfg, n)?.changed ?? [],
+    draft: atHead(wt, SPEC_DRAFT),
+  };
+}
+
+// What the stage leaves once its spec is posted, removed: the spec draft,
+// from the issue's branch in one pushed commit so it never merges, and the
+// handoff file, which the implementer would take for its own.
+function dropLeftovers(job: SpecJob): void {
+  const { cfg, n } = job;
+  const wt = paths.worktree(cfg, n);
+  fs.rmSync(job.handoffFile, { force: true });
+  if (!atHead(wt, SPEC_DRAFT)) {
+    return;
+  }
+  run("git", ["-C", wt, "rm", "--quiet", "--", SPEC_DRAFT]);
+  const message = `Remove the spec draft of #${n}, now that the spec is posted\n\nPipeline-Agent: spec writer`;
+  // A job checkout's pre-commit hook passes only commits that say so.
+  const env = new Map([["ISSUE_PIPELINE_COMMIT", "1"]]);
+  run("git", ["-C", wt, "commit", "--quiet", "-m", message], { env });
+  const ref = `HEAD:refs/heads/${paths.branch(n)}`;
+  git(cfg, ["-C", wt, "push", "--quiet", "origin", ref]);
 }
 
 // Runs the commit check (check.ts) at the job checkout's head.
@@ -211,9 +263,11 @@ function resetBranch(
 }
 
 // Resets the issue's code branch to `heads.startSha` and its wiki branch to
-// `heads.startWikiSha`, deleting a branch the stage created (null).
+// `heads.startWikiSha`, deleting a branch the stage created (null), and
+// deletes the stage's handoff file.
 function resetBranches(job: SpecJob, heads: StartHeads): void {
   const { cfg, n } = job;
+  fs.rmSync(job.handoffFile, { force: true });
   const wt = paths.worktree(cfg, n);
   const fallback = baseOf(job, null);
   resetBranch(cfg, { dir: wt, n, fallback }, heads.startSha);
@@ -227,4 +281,11 @@ function resetBranches(job: SpecJob, heads: StartHeads): void {
 }
 
 export type { Judged, SpecCommits, SpecJob, StartHeads };
-export { noWorkConfirmed, resetBranches, specTestsAtHead, startHeads };
+export {
+  committedSince,
+  dropLeftovers,
+  noWorkConfirmed,
+  resetBranches,
+  specTestsAtHead,
+  startHeads,
+};

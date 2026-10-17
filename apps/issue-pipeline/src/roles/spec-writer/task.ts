@@ -1,12 +1,16 @@
 // The spec writer role's session: its agent, model, context budget, reply
-// schema and task. The task says what to read and in what order, the spec's
-// sections and its test interfaces, the stubs, failing tests and wiki
-// updates the session commits, and the decisions it may reply with. Pure.
+// schema and task. The task says what to read and in what order, what an
+// earlier session of the stage committed and handed off, which it continues
+// from (#335), the spec's sections and its test interfaces, the stubs,
+// failing tests, spec draft and wiki updates the session commits as it goes,
+// its context limits, and the decisions it may reply with. Pure.
 
 import type { Budgets } from "../../workflow/budget.ts";
 import { sessionBudget } from "../../workflow/budget.ts";
 import {
   commitRulesOf,
+  handoffLead,
+  handoffRule,
   practicesNote,
   preamble,
 } from "../../workflow/prompts.ts";
@@ -31,11 +35,28 @@ const FAILED_TWICE = "the spec writer failed twice";
 const SPEC_TRAILER = "Pipeline-Agent: spec writer";
 // The wiki's folder in the checkout when it isn't under the worktree.
 const DEFAULT_WIKI_DIR = "wiki";
+// Where the session keeps its spec draft on the issue's branch, relative to
+// the repo root. It is committed as the session goes, found on a restart,
+// never counted as a changed file, and removed once the spec is posted.
+const SPEC_DRAFT = ".issue-pipeline/spec-draft.md";
+// What a session keeps of its work when it wraps up at the soft limit.
+const KEEP_SPEC_WORK = "commit the tests, stubs and spec draft you have";
+
+// What the stage committed since its start heads: test files and other repo
+// files (stubs) on the code branch, whether the spec draft is at its head,
+// and the wiki pages changed on the wiki branch.
+interface SpecCommitted {
+  tests: readonly string[];
+  stubs: readonly string[];
+  wiki: readonly string[];
+  draft: boolean;
+}
 
 // The issue a session specifies: its number, its paths, its depth (0 for an
 // issue, 1 for a sub-issue), triage's plan and the reason it suggested a
-// split, if any, the session's attempt (from 1), and the failed check's
-// output when this attempt is a retry.
+// split, if any, the session's attempt (from 1), the failed check's output
+// when this attempt is a retry, what the stage committed before it (null
+// when not yet listed), and whether it continues a session that handed off.
 interface SpecItem {
   n: number;
   paths: ItemPaths;
@@ -44,6 +65,8 @@ interface SpecItem {
   splitSuggested: string | null | undefined;
   attempt: number;
   checkOutput: string | null;
+  committed: SpecCommitted | null;
+  continued: boolean;
 }
 
 interface SpecSettings {
@@ -90,6 +113,47 @@ function retryLines(item: SpecItem): string[] {
   ];
 }
 
+function listed(what: string, files: readonly string[]): string[] {
+  if (files.length === 0) {
+    return [];
+  }
+  return [`${what}: ${files.map((file) => `\`${file}\``).join(", ")}.`];
+}
+
+// What an earlier session of the stage left: the handoff to read first
+// (a continuation's task leads with it instead), and the commits to continue
+// from rather than start the spec over.
+function resumeLines(item: SpecItem): string[] {
+  const { committed, paths } = item;
+  const lines = [""];
+  if (!item.continued) {
+    lines.push(
+      `If ${paths.handoffFile} exists, an earlier spec writer session of this issue wrote it when it ran out of room: read it first, and build on it.`,
+    );
+  }
+  if (committed === null) {
+    return lines;
+  }
+  const { tests, stubs, wiki, draft } = committed;
+  const found = [
+    ...listed("Test files", tests),
+    ...listed("Stubs and other repo files", stubs),
+    ...listed(`Wiki pages (in ${paths.wiki ?? "the wiki"})`, wiki),
+  ];
+  if (draft) {
+    found.push(`The spec draft: \`${SPEC_DRAFT}\`.`);
+  }
+  if (found.length === 0) {
+    return lines;
+  }
+  return [
+    ...lines,
+    "An earlier session of this stage already committed these on the issue's branches:",
+    ...found,
+    "Continue from them: don't start the spec over, and don't rewrite the tests already committed; add what is left.",
+  ];
+}
+
 function wikiStart(paths: ItemPaths): string {
   if (paths.wiki === null || paths.wiki === "") {
     return "";
@@ -117,9 +181,10 @@ const SECTION_LINES: readonly string[] = [
   "`noTestsReason` is null, unless every test that could be written would test implementation rather than promised behaviour: then write no tests, say why there and in Tests, and `interfaces` may be empty.",
 ];
 
-function workLines(item: SpecItem): string[] {
+function workLines(item: SpecItem, budgets: Budgets): string[] {
   const dir = wikiDirOf(item.paths);
   return [
+    `Keep your spec draft in \`${SPEC_DRAFT}\` on the issue's branch (\`repo/${SPEC_DRAFT}\` as a pathspec), and commit the tests, stubs, spec draft and wiki pages with \`pipeline_commit\` as you go, not only at the end. The draft never merges: the pipeline removes it once your spec is posted.`,
     "Before you reply, commit to the issue's branch a stub at its `where` for each `new` interface that doesn't exist yet (its call shape, with a body that only throws or returns a not-implemented error, so the code builds and type-checks), and failing tests for every Behaviour item through the listed interfaces, unless `noTestsReason` applies. Each test fails because the behaviour is missing, not on a syntax, import or type error.",
     "Make the spec's Wiki updates yourself, in the wiki checkout.",
     `Change only test files, those stubs and wiki pages; write no behaviour. \`files\` lists every repo path or glob the change will touch, relative to the repo root, and each wiki page you changed as \`${dir}/<page>\`.`,
@@ -129,6 +194,7 @@ function workLines(item: SpecItem): string[] {
       trailer: SPEC_TRAILER,
       clearMessage: true,
     }),
+    `${handoffRule(budgets, item.paths.handoffFile, KEEP_SPEC_WORK)} Your reply's other fields are ignored when its status is \`handoff\`; give your summary in \`summary\`. Otherwise set \`status\` to done, with a one-line \`summary\` of your decision.`,
   ];
 }
 
@@ -158,13 +224,18 @@ function specSession(item: SpecItem, settings: SpecSettings): SessionEffect {
   const lines = [
     triageFinding(item),
     ...retryLines(item),
+    ...resumeLines(item),
     "",
     "Write the spec the implementer will build to and the acceptance check will judge against, with the failing tests and stubs it documents.",
     ...readingLines(item, cfg),
     ...SECTION_LINES,
-    ...workLines(item),
+    ...workLines(item, budgets),
     ...decisionLines(item, settings),
   ];
+  const lead: string[] = [];
+  if (item.continued) {
+    lead.push(handoffLead(item.paths.handoffFile), "");
+  }
   return {
     kind: "session",
     name: "spec",
@@ -174,14 +245,15 @@ function specSession(item: SpecItem, settings: SpecSettings): SessionEffect {
     budgetRole: "spec",
     tokenBudget: sessionBudget(budgets, "spec"),
     attempt: item.attempt,
-    task: preamble(cfg, item, SPEC_ROLE).concat(lines).join("\n"),
+    task: [...lead, ...preamble(cfg, item, SPEC_ROLE), ...lines].join("\n"),
   };
 }
 
-export type { SpecItem, SpecSettings };
+export type { SpecCommitted, SpecItem, SpecSettings };
 export {
   FAILED_TWICE,
   SPEC_AGENT,
+  SPEC_DRAFT,
   SPEC_ROLE,
   SPEC_TRAILER,
   specSession,

@@ -21,11 +21,12 @@ import {
   WIKI_BRANCH,
 } from "./job-git-test-kit.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
-import { uninterrupted } from "./runner-test-kit.mjs";
+import { killAt } from "./runner-test-kit.mjs";
 import { replyOf, specContext } from "./spec-writer-role-test-kit.mjs";
 import { restarts, SPEC_OPS, specState } from "./spec-writer-run-test-kit.mjs";
 
-/** @import { OpFake, RoleRun, WorldOptions } from "./runner-test-kit.mjs" */
+/** @import { Kill, OpFake, RoleRun, WorldOptions } from "./runner-test-kit.mjs" */
+/** @import { SweepConfig } from "../src/workflow/stages/types.ts" */
 /** @import { Outcome } from "../src/job/run-step.ts" */
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "spec-writer-role-"));
@@ -60,6 +61,7 @@ const SPEC_TRAILER = "Pipeline-Agent: spec writer";
  * @typedef {object} Setup
  * @property {Record<string, unknown>[]} [replies] the session's replies, in turn; the last repeats
  * @property {Files} [code] what each session commits to the code branch
+ * @property {Files[]} [codes] what each session commits to the code branch, in turn, in place of `code`; the last repeats
  * @property {Files} [wiki] what each session commits to the wiki branch
  * @property {boolean} [existing] whether the branches exist before the stage
  * @property {boolean} [pushedMeanwhile] whether a person pushes a commit to both branches after the session's own push
@@ -67,6 +69,9 @@ const SPEC_TRAILER = "Pipeline-Agent: spec writer";
  * @property {Record<string, unknown>} [start] fields of the state the run starts from
  * @property {Record<string, OpFake>} [ops] op fakes in place of the kit's
  * @property {string} [testCommand] the config's test command, in place of running every test file
+ * @property {Partial<SweepConfig>} [sweep] fields of the context's config in place of its own
+ * @property {string} [handoff] the handoff file an earlier session left, if any
+ * @property {Kill} [kill] the effect call the first run is killed at, before the run starts again
  */
 
 /** @param {string} dir @param {readonly string[]} args @returns {string} */
@@ -158,6 +163,7 @@ function repoOf(setup) {
   const { root: folder, repo: dir, docs: wikiDir } = dirs;
   return {
     cfg,
+    handoffFile: path.join(tmp, "handoff.md"),
     origin,
     wikiOrigin,
     folder,
@@ -175,11 +181,20 @@ function repoOf(setup) {
  */
 function specRun(setup) {
   const repo = repoOf(setup);
-  const { cfg, origin, wikiOrigin, folder, dir, wikiDir, stacked } = repo;
+  const { cfg, folder, dir, wikiDir, stacked, handoffFile } = repo;
+  if (setup.handoff !== undefined) {
+    fs.writeFileSync(handoffFile, setup.handoff);
+  }
   const base = specContext();
   /** @type {{ dir: string, docs: "write" }} */
   const job = { dir: folder, docs: "write" };
-  const paths = { ...base.paths, worktree: dir, wiki: wikiDir, job };
+  const paths = {
+    ...base.paths,
+    worktree: dir,
+    wiki: wikiDir,
+    handoffFile,
+    job,
+  };
   const replies = setup.replies ?? [replyOf()];
   /** @type {string[]} */
   const tasks = [];
@@ -187,11 +202,12 @@ function specRun(setup) {
   /** @param {{ task: string }} effect @returns {Outcome} */
   function session(effect) {
     tasks.push(effect.task);
-    commitPush(dir, setup.code ?? {});
+    const codes = setup.codes ?? [setup.code ?? {}];
+    commitPush(dir, codes[Math.min(sessions, codes.length - 1)] ?? {});
     commitPush(wikiDir, setup.wiki ?? {});
     if (setup.pushedMeanwhile === true) {
-      personPushes(origin);
-      personPushes(wikiOrigin);
+      personPushes(repo.origin);
+      personPushes(repo.wikiOrigin);
     }
     const reply = replies[Math.min(sessions, replies.length - 1)];
     sessions += 1;
@@ -200,7 +216,7 @@ function specRun(setup) {
   /** @type {WorldOptions} */
   const options = {
     start: () => specState({ ...stacked, ...setup.start }),
-    context: { ...base, paths },
+    context: { ...base, paths, cfg: { ...base.cfg, ...setup.sweep } },
     session,
     ops: { ...SPEC_OPS, ...setup.ops },
     restarts,
@@ -252,10 +268,10 @@ async function exitOf(repo) {
   return { heads, pushes };
 }
 
-/** @param {Setup} setup runs the spec stage to its end, then closes its checkout */
+/** @param {Setup} setup runs the spec stage to its end, killed and started again if it says so, then closes its checkout */
 async function specWriter(setup) {
   const { repo, options, run, tasks } = specRun(setup);
-  const ran = await uninterrupted(run, options);
+  const ran = await killAt(run, setup.kill, options);
   return { ...ran, repo, tasks, exit: await exitOf(repo) };
 }
 

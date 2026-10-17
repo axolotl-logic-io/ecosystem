@@ -168,7 +168,7 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     test: /ran out of room|did not finish within its sessions/iu,
     control: "writer sessions",
     explain: limitText(
-      "A writer session (the implementer, fixer, CI fixer or conflict resolver) ran out of room, and so did each continuation its stage was allowed; the issue needs splitting",
+      "A writer session (the spec writer, implementer, fixer, CI fixer or conflict resolver) ran out of room, and so did each continuation its stage was allowed; the issue needs splitting",
       "maxContinuations",
     ),
   },

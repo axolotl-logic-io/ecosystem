@@ -179,3 +179,15 @@ test("answered questions still go back to triage, whatever stopped", () => {
   });
   assert.equal(stage, "triage");
 });
+
+test("a too-large stop at spec resumes spec with its continuations cleared and its start heads and attempts kept", () => {
+  const kept = { startSha: "s0", startWikiSha: null, attempts: 1 };
+  const state = stoppedAt("spec", {
+    stopCode: "too-large",
+    spec: null,
+    checkpoints: { ...kept, continuations: 1 },
+  });
+  const got = startState(state, ctx);
+  assert.equal(got.stage, "spec");
+  assert.deepEqual(got.checkpoints, kept);
+});
