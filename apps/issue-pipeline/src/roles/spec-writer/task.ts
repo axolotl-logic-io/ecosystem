@@ -37,6 +37,9 @@ const FAILED_TWICE = "the spec writer failed twice";
 const SPEC_TRAILER = "Pipeline-Agent: spec writer";
 // The wiki's folder in the checkout when it isn't under the worktree.
 const DEFAULT_WIKI_DIR = "wiki";
+// The check the session's reply is put through before the session ends
+// (checks.ts): the reply check and the commit check's git-only rules.
+const SESSION_REPLY_CHECK = "session-reply";
 // What a session keeps of its work when it wraps up at the soft limit.
 const KEEP_SPEC_WORK = "commit the tests, stubs and spec draft you have";
 
@@ -54,7 +57,8 @@ interface SpecCommitted {
 // issue, 1 for a sub-issue), triage's plan and the reason it suggested a
 // split, if any, the session's attempt (from 1), the failed check's output
 // when this attempt is a retry, what the stage committed before it (null
-// when not yet listed), and whether it continues a session that handed off.
+// when not yet listed), whether it continues a session that handed off, and
+// the head the stage started from (null for a branch it created).
 interface SpecItem {
   n: number;
   paths: ItemPaths;
@@ -65,6 +69,7 @@ interface SpecItem {
   checkOutput: string | null;
   committed: SpecCommitted | null;
   continued: boolean;
+  startSha: string | null;
 }
 
 interface SpecSettings {
@@ -185,8 +190,9 @@ function workLines(item: SpecItem, budgets: Budgets): string[] {
     "Before you reply, commit to the issue's branch a stub at its `where` for each `new` interface that doesn't exist yet (its call shape, with a body that only throws or returns a not-implemented error, so the code builds and type-checks), and failing tests for every Behaviour item through the listed interfaces, unless `noTestsReason` applies. Each test fails because the behaviour is missing, not on a syntax, import or type error.",
     "Make the spec's Wiki updates yourself, in the wiki checkout.",
     "Change only test files, those stubs and wiki pages; write no behaviour. `wikiOnly` is true only when the wiki pages you changed are the whole change, with `noTestsReason` set; otherwise false.",
-    "If your tests need a field or member an existing interface lacks, declare that interface `changed` in `interfaces`, with its file as `where`, and extend it there with type-only additions (fields or members of an interface, type alias or object type, optional properties, union members, `import type`, comments), removing no line; implementing it is the implementer's job.",
+    "If your tests need a field or member an existing interface lacks, declare that interface `changed` in `interfaces`, with its file as `where`, and extend it there with type-only additions (fields or members of an interface, type alias or object type, optional properties, union members, `import type`, comments), removing no line, and with any change to its zod schemas (expressions rooted at `z.`, such as `z.object({...})`, `z.enum([...])` or `.extend()`, new schema constants included); implementing it is the implementer's job, and no other runtime code may change. Declare as `changed` every interface whose file you extend, each with that file as `where`; an extended file no `changed` interface names fails the commit check.",
     "Every new source file needs its own `new` interface entry, unless a declared stub imports it, directly or through other new files, by a relative import.",
+    "When you call `structured_output` with a ready reply, the pipeline first checks its coverage, scope, stubs and tests against your commits; if it reports problems, fix them, commit with `pipeline_commit` and call `structured_output` again.",
     NO_ARTIFICIAL_LOAD_RULE,
     ...commitRulesOf("pipeline_commit", {
       unit: "step",
@@ -247,6 +253,10 @@ function specSession(item: SpecItem, settings: SpecSettings): SessionEffect {
     tokenBudget: sessionBudget(budgets, "spec"),
     attempt: item.attempt,
     task: [...lead, ...preamble(cfg, item, SPEC_ROLE), ...lines].join("\n"),
+    replyCheck: {
+      check: SESSION_REPLY_CHECK,
+      payload: { number: item.n, startSha: item.startSha, depth: item.depth },
+    },
   };
 }
 

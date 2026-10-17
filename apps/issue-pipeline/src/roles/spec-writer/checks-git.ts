@@ -1,9 +1,9 @@
 // The spec writer's checks that run git and the configured commands in the
 // job's checkout (checks.ts names them for the machine): the start heads and
-// what the stage committed since them, the commit check at the spec head, the
-// no-work test run, the removal of the spec draft and the handoff once the
-// spec is posted, and the reset of the issue's code and wiki branches to the
-// heads the stage began from.
+// what the stage committed since them, the commit check, or its git-only
+// rules, at the spec head, the no-work test run, the removal of the spec
+// draft and the handoff once the spec is posted, and the reset of the issue's
+// code and wiki branches to the heads the stage began from.
 // `cfg` is the job's config with its checkout, so the worktree and wiki paths
 // are the job's.
 
@@ -20,8 +20,11 @@ import { OpsError, run, shell } from "../../process.ts";
 import { SPEC_DRAFT } from "../../spec-draft.ts";
 import type { StackedOn } from "../../stack.ts";
 import { readWikiChange } from "../../wiki-check.ts";
-import type { CheckedInterface, SpecTestsResult } from "./check.ts";
-import { specTestsCheck } from "./check.ts";
+import type {
+  CheckedInterface,
+  SpecTestsChange,
+  SpecTestsSettings,
+} from "./check.ts";
 import type { SpecCommitted } from "./task.ts";
 import { SPEC_TRAILER } from "./task.ts";
 
@@ -160,33 +163,32 @@ function dropLeftovers(job: SpecJob): void {
   git(cfg, ["-C", wt, "push", "--quiet", "origin", ref]);
 }
 
-// Runs the commit check (check.ts) at the job checkout's head.
-function specTestsAtHead(
+// Runs `check`, the commit check (check.ts) or its git-only rules, at the
+// job checkout's head, and gives its result with that head.
+function specTestsAtHead<T>(
   job: SpecJob,
   commits: SpecCommits,
-): SpecTestsResult & { sha: string } {
+  check: (change: SpecTestsChange, settings: SpecTestsSettings) => T,
+): { result: T; sha: string } {
   const { cfg, n } = job;
   const settings = SETTINGS.parse(cfg);
   const wt = paths.worktree(cfg, n);
   const sha = head(wt);
   const short = sha.slice(0, SHORT_SHA_LENGTH);
-  const result = specTestsCheck(
-    {
-      cfg,
-      number: n,
-      wt,
-      base: baseOf(job, commits.startSha),
-      sha,
-      logDir: path.join(paths.runDir(cfg, n), `spec-tests-${short}`),
-      timeoutMs: settings.commandTimeoutMinutes * MS_PER_MINUTE,
-      wikiOnly: commits.wikiOnly,
-      interfaces: commits.interfaces,
-      noTestsReason: commits.noTestsReason,
-      wiki: readWikiChange(cfg, n),
-    },
-    settings,
-  );
-  return { ...result, sha };
+  const change = {
+    cfg,
+    number: n,
+    wt,
+    base: baseOf(job, commits.startSha),
+    sha,
+    logDir: path.join(paths.runDir(cfg, n), `spec-tests-${short}`),
+    timeoutMs: settings.commandTimeoutMinutes * MS_PER_MINUTE,
+    wikiOnly: commits.wikiOnly,
+    interfaces: commits.interfaces,
+    noTestsReason: commits.noTestsReason,
+    wiki: readWikiChange(cfg, n),
+  };
+  return { result: check(change, settings), sha };
 }
 
 // Whether there is no work: the branch changes nothing since it began, or

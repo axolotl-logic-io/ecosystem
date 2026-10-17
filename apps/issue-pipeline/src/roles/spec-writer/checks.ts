@@ -1,6 +1,8 @@
 // The spec writer's script checks (the wiki's Pipeline-Roles-Spec-Writer,
 // "Lifecycle"), for one run of its machine: the reply check with interface
-// coverage, the commit check, the no-work test run, the start heads with
+// coverage, the session's reply check, which runs the reply check and the
+// commit check's git-only rules while the session can still fix what they
+// find, the commit check, the no-work test run, the start heads with
 // what the stage committed since them, the reset (checks-git.ts), the spec's
 // publication through the post and save-spec ops, which drops the spec draft
 // and the handoff, and the close of an earlier PR. Each answers with one of the
@@ -13,9 +15,9 @@ import type { Config } from "../../config.ts";
 import { withCheckout } from "../../config.ts";
 import type { CheckEffect, Outcome } from "../../job/run-step.ts";
 import type { Entry } from "../../job/runner.ts";
-import { specSection } from "../../spec-sections.ts";
 import { clip } from "../../workflow/clip.ts";
 import type { Checks, JobEffects } from "../registry.ts";
+import { gitOnlyFailures, specTestsCheck } from "./check.ts";
 import type { SpecJob } from "./checks-git.ts";
 import {
   committedSince,
@@ -25,8 +27,8 @@ import {
   specTestsAtHead,
   startHeads,
 } from "./checks-git.ts";
-import { interfaceGaps } from "./coverage.ts";
 import { wikiOnly } from "./locate.ts";
+import { READY, readyFault, sessionFindings } from "./reply-faults.ts";
 
 type Payload = CheckEffect["payload"];
 
@@ -36,18 +38,6 @@ const SPEC_INTRO =
   "## Spec\n\nThe implementer builds to this spec, and the acceptance check judges the result against it.";
 
 const SHA = z.string().nullable();
-const INTERFACE = z.looseObject({
-  name: z.string(),
-  where: z.string(),
-  status: z.enum(["existing", "new", "changed"]),
-  behaviours: z.array(z.string()),
-});
-const READY = z.looseObject({
-  spec: z.string(),
-  wikiOnly: z.boolean().default(false),
-  interfaces: z.array(INTERFACE),
-  noTestsReason: z.string().nullable(),
-});
 const READING = z.looseObject({
   kind: z.string(),
   reason: z.string().optional(),
@@ -62,6 +52,11 @@ const SAVED_HEADS = z.looseObject({
 });
 const RESET = HEADS.extend({ reading: READING });
 const SAVED_SPEC = z.looseObject({ specFile: z.string() });
+const SESSION_REPLY = z.looseObject({
+  reply: z.unknown(),
+  startSha: SHA,
+  depth: z.number(),
+});
 
 function answer(name: string, reply: unknown = null): Outcome {
   return { ok: true, name, reply };
@@ -69,24 +64,6 @@ function answer(name: string, reply: unknown = null): Outcome {
 
 function ok(): Promise<Outcome> {
   return Promise.resolve(answer("ok"));
-}
-
-// Why a ready reply fails before its commits are checked, or null.
-function readyFault(reply: unknown): string | null {
-  const parsed = READY.safeParse(reply);
-  if (!parsed.success) {
-    return "the ready reply has no spec or interfaces";
-  }
-  const { spec, interfaces, noTestsReason } = parsed.data;
-  if (specSection(spec, "Behaviour").length === 0) {
-    return "the spec has no Behaviour section";
-  }
-  const gaps = interfaceGaps(spec, interfaces);
-  if (noTestsReason === null && gaps.length > 0) {
-    const list = gaps.map((item) => `- ${item}`).join("\n");
-    return `No test interface quotes these Behaviour items in its behaviours:\n${list}`;
-  }
-  return null;
 }
 
 function checkReply(payload: Payload): Outcome {
@@ -180,11 +157,26 @@ async function closeOldPr(entry: Entry, effects: JobEffects): Promise<Outcome> {
 }
 
 function specTests(job: SpecJob, payload: Payload): Outcome {
-  const result = specTestsAtHead(job, COMMITS.parse(payload));
+  const commits = COMMITS.parse(payload);
+  const { result, sha } = specTestsAtHead(job, commits, specTestsCheck);
   if (!result.pass) {
     return answer("fail", `${result.rule}: ${result.reason}`);
   }
-  return answer("pass", { sha: result.sha });
+  return answer("pass", { sha });
+}
+
+// What the role's checks would fail the session's reply for, before the
+// session ends (reply-faults.ts): `bad` with the findings, or `ok`.
+function sessionReply(job: SpecJob, payload: Payload): Outcome {
+  const { reply, startSha, depth } = SESSION_REPLY.parse(payload);
+  const findings = sessionFindings(reply, depth, (ready) => {
+    const commits = { ...ready, startSha };
+    return specTestsAtHead(job, commits, gitOnlyFailures).result;
+  });
+  if (findings === null) {
+    return answer("ok");
+  }
+  return answer("bad", findings);
 }
 
 function confirmNoWork(job: SpecJob, payload: Payload): Outcome {
@@ -242,6 +234,8 @@ function specWriterChecks(
     "spec-commits": (payload: Payload) =>
       guarded(() => specCommits(job, payload)),
     "check-reply": (payload: Payload) => guarded(() => checkReply(payload)),
+    "session-reply": (payload: Payload) =>
+      guarded(() => sessionReply(job, payload)),
     "spec-tests-check": (payload: Payload) =>
       guarded(() => specTests(job, payload)),
     "confirm-no-work": (payload: Payload) =>

@@ -1,9 +1,11 @@
 // The spec writer's interface coverage check: which Behaviour items of a spec
-// no test interface covers. An interface covers an item when one of its
-// `behaviours` quotes the item: the two are equal once each is trimmed and
-// every run of whitespace is one space. Case, punctuation and wording must
-// match (the wiki's "Coverage check strictness"). Pure: it reads only its
-// arguments.
+// no test interface covers. A Behaviour item is a top-level list item of the
+// section, with its nested sub-bullets folded into it. An interface covers an
+// item when one of its `behaviours` quotes the item's own text, or its text
+// with its sub-bullets: the two are equal once markdown (backticks, `*`, `_`,
+// `~` and link brackets) and every whitespace character are stripped from
+// each. Case, punctuation and wording must match (the wiki's "Coverage check
+// strictness"). Pure: it reads only its arguments.
 
 import { specSection } from "../../spec-sections.ts";
 
@@ -13,59 +15,113 @@ interface CoveringInterface {
   behaviours: readonly string[];
 }
 
-// A list item's marker, `-`, `*`, `+`, `1.` or `1)`, and the item's text.
-const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+(?<text>.*)$/u;
+// A Behaviour item no interface covers: its number among the section's
+// top-level items, from 1, and its own text with whitespace collapsed.
+interface BehaviourGap {
+  number: number;
+  text: string;
+}
+
+// A top-level list item: its indent, its own text with its continuation
+// lines, and its nested sub-bullets' texts.
+interface ListItem {
+  indent: number;
+  text: string;
+  nested: string[];
+}
+
+// A list item's indent, its marker, `-`, `*`, `+`, `1.` or `1)`, and its text.
+const LIST_ITEM = /^(?<indent>\s*)(?:[-*+]|\d+[.)])\s+(?<text>.*)$/u;
 const WHITESPACE = /\s+/gu;
+// A markdown link or image, `[text](target)`, whose text is kept.
+const LINK = /!?\[(?<text>[^\]]*)\]\([^)]*\)/gu;
+const MARKDOWN = /[`*_~]/gu;
 
 function normalised(text: string): string {
   return text.trim().replace(WHITESPACE, " ");
 }
 
-// The items of a list's lines, nested ones included, each with its
-// continuation lines joined on. A blank line ends an item.
-function listItems(lines: readonly string[]): string[] {
-  const items: string[] = [];
-  let current: string | null = null;
+// What a quote and an item are compared by: the text without markdown and
+// without whitespace.
+function compared(text: string): string {
+  return text
+    .replace(LINK, "$<text>")
+    .replace(MARKDOWN, "")
+    .replace(WHITESPACE, "");
+}
+
+// The top-level items of a list's lines, each with its continuation lines
+// joined on and its nested items folded in. An item nests when it is indented
+// more than the top-level item before it. A blank line ends an item's
+// continuation lines, but a nested item after it still folds into its parent.
+function listItems(lines: readonly string[]): ListItem[] {
+  const items: ListItem[] = [];
+  let current: ListItem | null = null;
+  let continuing = false;
   for (const line of lines) {
-    const { text } = LIST_ITEM.exec(line)?.groups ?? {};
-    if (text !== undefined) {
-      if (current !== null) {
+    const { indent, text } = LIST_ITEM.exec(line)?.groups ?? {};
+    if (indent !== undefined && text !== undefined) {
+      if (current !== null && indent.length > current.indent) {
+        current.nested.push(text);
+      } else {
+        current = { indent: indent.length, text, nested: [] };
         items.push(current);
       }
-      current = text;
+      continuing = true;
     } else if (line.trim() === "") {
-      if (current !== null) {
-        items.push(current);
-      }
-      current = null;
-    } else if (current !== null) {
-      current = `${current} ${line}`;
+      continuing = false;
+    } else if (current !== null && continuing) {
+      continued(current, line);
     }
-  }
-  if (current !== null) {
-    items.push(current);
   }
   return items;
 }
 
-// The Behaviour items of `spec`, normalised, each once, in spec order.
-function behaviourItems(spec: string): string[] {
-  const [, ...lines] = specSection(spec, "Behaviour");
-  const items = listItems(lines).map(normalised);
-  return [...new Set(items.filter((item) => item !== ""))];
+// Joins continuation `line` onto `item`'s last nested item, or onto its own
+// text when it has none.
+function continued(item: ListItem, line: string): void {
+  const last = item.nested.length - 1;
+  if (last >= 0) {
+    item.nested[last] = `${item.nested[last]} ${line}`;
+  } else {
+    item.text = `${item.text} ${line}`;
+  }
 }
 
-// The Behaviour items of `spec` that no entry of `interfaces` quotes,
-// normalised, in spec order; empty when every item is covered.
+// The Behaviour items of `spec` no entry of `interfaces` quotes, in spec
+// order, each once; empty when every item is covered.
+function behaviourGaps(
+  spec: string,
+  interfaces: readonly CoveringInterface[],
+): BehaviourGap[] {
+  const [, ...lines] = specSection(spec, "Behaviour");
+  const quoted = new Set(
+    interfaces.flatMap((entry) => entry.behaviours.map(compared)),
+  );
+  const seen = new Set<string>();
+  const gaps: BehaviourGap[] = [];
+  for (const [index, item] of listItems(lines).entries()) {
+    const own = compared(item.text);
+    const whole = compared([item.text, ...item.nested].join(" "));
+    if (own !== "" && !seen.has(own)) {
+      seen.add(own);
+      if (!(quoted.has(own) || quoted.has(whole))) {
+        gaps.push({ number: index + 1, text: normalised(item.text) });
+      }
+    }
+  }
+  return gaps;
+}
+
+// The Behaviour items of `spec` that no entry of `interfaces` quotes, each
+// its own text with whitespace collapsed, in spec order; empty when every
+// item is covered.
 function interfaceGaps(
   spec: string,
   interfaces: readonly CoveringInterface[],
 ): string[] {
-  const quoted = new Set(
-    interfaces.flatMap((entry) => entry.behaviours.map(normalised)),
-  );
-  return behaviourItems(spec).filter((item) => !quoted.has(item));
+  return behaviourGaps(spec, interfaces).map((gap) => gap.text);
 }
 
-export type { CoveringInterface };
-export { interfaceGaps };
+export type { BehaviourGap, CoveringInterface };
+export { behaviourGaps, interfaceGaps };

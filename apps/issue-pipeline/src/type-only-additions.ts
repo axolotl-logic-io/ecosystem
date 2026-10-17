@@ -2,11 +2,18 @@
 // type-level lines, so that the spec writer may extend an interface its reply
 // declares as `changed` (the wiki's Pipeline-Roles-Spec-Writer): fields or
 // members of an interface, type alias or object type, union members,
-// `import type` and comments. The diff may remove no line, and the file's
-// JavaScript, as TypeScript emits it with types and comments erased, must be
-// the same before and after: a new function, statement, value import or
-// changed runtime value changes the emitted code. Uses the worktree's own
-// `typescript` package; without it, a change counts as code.
+// `import type` and comments; and any change to its zod schemas (Axlog,
+// 2026-10-17: "Schema changes are okay"). A zod schema is an expression of
+// calls and property reads rooted at `z`, such as `z.object({...})`,
+// `z.enum([...])` or `BASE.extend(...)` once `BASE` is a schema constant; a
+// schema constant is a `const` whose every value is one, and it may be new.
+// Outside the schemas and export lists the diff may remove no line, and the
+// file's JavaScript, as TypeScript emits it with types and comments erased,
+// must be the same before and after once each schema is reduced to `z`,
+// each schema constant left out, and the export lists stripped of them: a
+// new function, statement, value import or changed runtime value elsewhere
+// changes the emitted code. Uses the worktree's own `typescript` package;
+// without it, a change counts as code.
 
 import type { TranspileOptions } from "typescript";
 import {
@@ -15,6 +22,7 @@ import {
   worktreeTypeScript,
 } from "./comment-only.ts";
 import { run } from "./process.ts";
+import { schemasOf } from "./zod-schemas.ts";
 
 type TypeScript = typeof import("typescript");
 
@@ -23,11 +31,13 @@ const TS_FILE = /\.[cm]?tsx?$/u;
 const TSX_FILE = /\.tsx$/u;
 // A hunk's header in a unified diff; the file's headers come before the first.
 const HUNK_HEADER = "@@";
+// A hunk header's ranges: each its first line and its count, 1 if unset.
+const RANGES = /^@@ -(?<oldStart>\d+)(?:,(?<oldCount>\d+))? \+\d+(?:,\d+)? @@/u;
 
 // Why a change is not type-only additions.
 type TypeOnlyFault =
   | "it is not a TypeScript file"
-  | "the diff removes or changes lines; it may only add them"
+  | "the diff removes or changes lines outside zod schemas and export lists; elsewhere it may only add them"
   | "it adds a directive comment, which changes what a tool checks"
   | "it does not exist at both the base and the spec head"
   | "the worktree has no typescript package to read its types with"
@@ -42,6 +52,18 @@ function hunkLines(diff: readonly string[]): readonly string[] {
     return [];
   }
   return diff.slice(first);
+}
+
+// The 1-based lines of the old file that `hunks` remove or change.
+function removedLines(hunks: readonly string[]): number[] {
+  return hunks.flatMap((line) => {
+    const { oldStart, oldCount } = RANGES.exec(line)?.groups ?? {};
+    if (oldStart === undefined) {
+      return [];
+    }
+    const count = Number(oldCount ?? "1");
+    return Array.from({ length: count }, (_, i) => Number(oldStart) + i);
+  });
 }
 
 // The file name transpileModule parses `file` as, or undefined for a file
@@ -104,9 +126,6 @@ function typeOnlyAdditionsFault(
     file,
   ]).stdout.split("\n");
   const hunks = hunkLines(diff);
-  if (hunks.some((line) => line.startsWith("-"))) {
-    return "the diff removes or changes lines; it may only add them";
-  }
   const added = hunks.filter((line) => line.startsWith("+"));
   if (added.some((line) => DIRECTIVE_COMMENT.test(line))) {
     return "it adds a directive comment, which changes what a tool checks";
@@ -120,12 +139,20 @@ function typeOnlyAdditionsFault(
   if (ts === undefined) {
     return "the worktree has no typescript package to read its types with";
   }
-  const was = emitted(ts, fileName, before);
-  const now = emitted(ts, fileName, after);
-  if (was === undefined || now === undefined) {
+  const was = schemasOf(ts, fileName, before);
+  if (removedLines(hunks).some((line) => !was.lines.has(line))) {
+    return "the diff removes or changes lines outside zod schemas and export lists; elsewhere it may only add them";
+  }
+  const wasEmitted = emitted(ts, fileName, was.reduced);
+  const nowEmitted = emitted(
+    ts,
+    fileName,
+    schemasOf(ts, fileName, after).reduced,
+  );
+  if (wasEmitted === undefined || nowEmitted === undefined) {
     return "it does not parse as TypeScript";
   }
-  if (was !== now) {
+  if (wasEmitted !== nowEmitted) {
     return "it adds runtime code, not only types: its emitted JavaScript changed";
   }
   return null;

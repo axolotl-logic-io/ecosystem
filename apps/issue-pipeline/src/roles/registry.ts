@@ -7,6 +7,7 @@
 // non-generic shape for every role.
 
 import type { Config } from "../config.ts";
+import { replyCheckOf } from "../job/reply-checks.ts";
 import type { CheckEffect, Effects, Outcome } from "../job/run-step.ts";
 import type { Entry, RunEnd } from "../job/runner.ts";
 import { runLinear, runMachine } from "../job/runner.ts";
@@ -15,6 +16,7 @@ import {
   IMPLEMENTOR_STAGES,
   implementorMachine,
 } from "./implementor/implementor.ts";
+import type { SessionEffect } from "./machine.ts";
 import { specWriterChecks } from "./spec-writer/checks.ts";
 import { specWriterMachine } from "./spec-writer/machine.ts";
 import { triageScript } from "./triage/script.ts";
@@ -79,7 +81,11 @@ function machineRole<S extends string, R extends string, D>(
     kind: "machine",
     run: (entry: Entry, effects: JobEffects, cfg: Config): Promise<RunEnd> => {
       const check = checkOf(checksOf(entry, effects, cfg));
-      return runMachine(machine, entry, { ...effects, check });
+      // A session's reply is put through the check its effect names while
+      // the session runs (src/job/reply-checks.ts).
+      const session: Effects["session"] = (effect: SessionEffect) =>
+        effects.session(effect, replyCheckOf(check, effect));
+      return runMachine(machine, entry, { ...effects, check, session });
     },
   };
 }

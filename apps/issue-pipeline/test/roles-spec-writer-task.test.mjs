@@ -31,6 +31,12 @@ const READ_IT_FIRST = /\bread it first\b/iu;
 const CONTINUES =
   /^A previous session ran out of room\. Read its handoff first: /u;
 const FILES_FIELD = /`files`/u;
+const EXTENDED_FILES_CHANGED =
+  /Declare as `changed` every interface whose file you extend/u;
+const ZOD_SCHEMAS =
+  /any change to its zod schemas \(expressions rooted at `z\.`/u;
+const CHECKED_IN_SESSION =
+  /call `structured_output` with a ready reply, the pipeline first checks[^\n]*call `structured_output` again/u;
 const DESIGN_ANCHORS =
   "- **Design**: the approach, with `file:line` anchors to the code it builds on,";
 
@@ -101,6 +107,23 @@ test("split is offered only at depth 0, and a suggested split opens with triage'
   const { task } = retried({ splitSuggested: reason });
   assert.ok(task.includes(reason));
   assert.equal(task.includes("Triage found this issue ready."), false);
+});
+
+test("the session's reply is put through the session-reply check with the issue, start head and depth", () => {
+  for (const depth of [0, 1]) {
+    const { replyCheck } = retried({ depth, startSha: "abc123" });
+    assert.deepEqual(replyCheck, {
+      check: "session-reply",
+      payload: { number: 7, startSha: "abc123", depth },
+    });
+  }
+});
+
+test("the task says the ready reply is checked in the session, and how a changed interface's file may grow", () => {
+  const { task } = retried();
+  assert.match(task, CHECKED_IN_SESSION);
+  assert.match(task, ZOD_SCHEMAS);
+  assert.match(task, EXTENDED_FILES_CHANGED);
 });
 
 test("a retry's task includes the failed check's output", () => {

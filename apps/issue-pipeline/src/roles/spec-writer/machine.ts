@@ -114,11 +114,10 @@ function op(
 }
 
 function session(data: SpecData): SessionEffect {
-  const { settings } = data;
   return specSession(
     {
       n: data.issue,
-      paths: settings.paths,
+      paths: data.settings.paths,
       depth: data.depth,
       plan: data.plan,
       splitSuggested: data.splitSuggested,
@@ -126,8 +125,9 @@ function session(data: SpecData): SessionEffect {
       checkOutput: data.checkOutput,
       committed: data.committed,
       continued: data.reply?.kind === "handoff",
+      startSha: data.startSha ?? null,
     },
-    settings,
+    data.settings,
   );
 }
 

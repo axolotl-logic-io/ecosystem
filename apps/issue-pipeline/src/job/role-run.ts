@@ -26,7 +26,7 @@ import type { ContextStop } from "./context-watch.ts";
 import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runLaunch } from "./launch.ts";
-import type { OpEffect, Outcome } from "./run-step.ts";
+import type { OpEffect, Outcome, ReplyCheck } from "./run-step.ts";
 import { sessionOutcome } from "./run-usage.ts";
 import type { RunEnd } from "./runner.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
@@ -107,11 +107,13 @@ function childOf(effect: SessionEffect): ChildLaunch {
 }
 
 // The job's launches for the role: each op and session gets the next
-// sequence number in its key, and its outcome in job.json.
+// sequence number in its key, and its outcome in job.json. A session's reply
+// check answers on the job's control socket while the session runs.
 interface Launcher {
   op: (launch: OpLaunch) => Promise<Reply>;
   session: (
     effect: SessionEffect,
+    replyCheck?: ReplyCheck,
   ) => Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }>;
 }
 
@@ -150,13 +152,19 @@ function launcherOf(job: RoleJob): Launcher {
     },
     session: async (
       effect: SessionEffect,
+      replyCheck?: ReplyCheck,
     ): Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }> => {
       seq += 1;
       const item = { n: job.issue, worktree: job.repo };
       const spec = childSpec(seq, item, childOf(effect), meta);
       const tally = usageTally(job.hooks.contextLimits.soft);
       const startedAt = Date.now();
+      let release: (() => void) | null = null;
+      if (replyCheck !== undefined) {
+        release = job.control.checkReplies(spec.key, replyCheck);
+      }
       const raw = await runLaunch(spec, tallied(job.hooks, tally));
+      release?.();
       settled(spec.key, raw.ok);
       const seconds = (Date.now() - startedAt) / MS_PER_SECOND;
       const launch = tally.usage(seconds);

@@ -12,6 +12,10 @@ import type { LaunchUsage } from "./usage-tally.ts";
 type OpEffect = Extract<Effect, { kind: "op" }>;
 type CheckEffect = Extract<Effect, { kind: "check" }>;
 
+// Checks a session's reply while the session still runs: what the role's
+// checks would fail it for, in compact form, or null when they pass.
+type ReplyCheck = (reply: unknown) => Promise<string | null>;
+
 // What an effect came to: a named result with its reply, or a failure.
 type Outcome =
   | { ok: true; name: string; reply: unknown }
@@ -20,9 +24,12 @@ type Outcome =
 interface Effects {
   op: (effect: OpEffect) => Promise<Outcome>;
   check: (effect: CheckEffect) => Promise<Outcome>;
-  // Runs the session, giving its outcome, its usage and its launch key.
+  // Runs the session, giving its outcome, its usage and its launch key. With
+  // `replyCheck`, the session's reply is checked before the session ends, so
+  // it can fix what the check finds (src/job/control.ts).
   session: (
     effect: SessionEffect,
+    replyCheck?: ReplyCheck,
   ) => Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }>;
   // Appends a usage entry; it never rejects.
   usage: (entry: UsageEntry) => Promise<void>;
@@ -54,5 +61,5 @@ async function perform(
   return { kind: "done", outcome };
 }
 
-export type { CheckEffect, Effects, OpEffect, Outcome, Performed };
+export type { CheckEffect, Effects, OpEffect, Outcome, Performed, ReplyCheck };
 export { perform };

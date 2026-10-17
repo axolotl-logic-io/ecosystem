@@ -239,6 +239,22 @@ function testRunFailure(
   return { rule: "reverted-fails", reason: commandReason(what, reverted) };
 }
 
+// The rules the change breaks among those that only read git, in the check's
+// order: the scope, the stubs, and the tests and work left to build. Each
+// failure is one rule's first; empty when all of them pass. The session's
+// reply check runs these while the session can still fix them.
+function gitOnlyFailures(
+  change: SpecTestsChange,
+  settings: SpecTestsSettings,
+): Failure[] {
+  const facts = factsOf(change, settings);
+  return [
+    scopeFailure(facts),
+    stubFailure(change),
+    testFilesFailure(facts),
+  ].filter((failure) => failure !== null);
+}
+
 // Checks the spec writer's change against each rule in turn and returns the
 // first it breaks, or a pass.
 function specTestsCheck(
@@ -260,11 +276,11 @@ function specTestsCheck(
   return { pass: true, wikiOnly };
 }
 
-export type { SpecTestsRule } from "./check-rules.ts";
+export type { Failure, SpecTestsRule } from "./check-rules.ts";
 export type {
   CheckedInterface,
   SpecTestsChange,
   SpecTestsResult,
   SpecTestsSettings,
 };
-export { specTestsCheck };
+export { gitOnlyFailures, specTestsCheck };

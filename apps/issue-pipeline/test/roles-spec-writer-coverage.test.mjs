@@ -1,11 +1,15 @@
 // @ts-check
 // The spec writer's interface coverage check (src/roles/spec-writer/
 // coverage.ts, #331): the Behaviour items of a spec that no test interface
-// quotes. A quote matches once trimmed with its whitespace collapsed, and is
+// quotes. Nested sub-bullets fold into their parent item, and a quote matches
+// once markdown and whitespace are stripped from it and the item; it is
 // otherwise exact (the wiki's "Coverage check strictness").
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { interfaceGaps } from "../src/roles/spec-writer/coverage.ts";
+import {
+  behaviourGaps,
+  interfaceGaps,
+} from "../src/roles/spec-writer/coverage.ts";
 
 const SPEC = [
   "# Spec",
@@ -28,7 +32,6 @@ const SPEC = [
 const ITEMS = [
   "The check is pure: it reads only its arguments.",
   "It returns the uncovered items.",
-  "Nested items count too.",
   "A starred item.",
   "A plus item.",
   "A parenthesised item.",
@@ -36,8 +39,7 @@ const ITEMS = [
 // The items quoted with other whitespace and line wrapping.
 const WRAPPED = [
   "  The check is pure:\n  it reads only\tits arguments.",
-  "It returns the  uncovered items.",
-  "Nested items count too.\n",
+  "It returns the  uncovered items.\n",
   "A starred item.",
   "A plus item.",
   "A parenthesised   item.",
@@ -76,4 +78,64 @@ test("a spec with a bold Behaviour label has its items read", () => {
 
 test("a spec with no Behaviour section has no gaps", () => {
   assert.deepEqual(interfaceGaps("## Design\n\n- A note.", []), []);
+});
+
+test("quoting a parent item covers its nested sub-bullets", () => {
+  // ITEMS quotes "It returns the uncovered items." but not its sub-bullet.
+  assert.deepEqual(interfaceGaps(SPEC, [{ behaviours: ITEMS }]), []);
+});
+
+test("quoting a parent item with its sub-bullets covers it too", () => {
+  const behaviours = ITEMS.map((item) => {
+    if (item === "It returns the uncovered items.") {
+      return "It returns the uncovered items. Nested items count too.";
+    }
+    return item;
+  });
+  assert.deepEqual(interfaceGaps(SPEC, [{ behaviours }]), []);
+});
+
+test("quoting only a sub-bullet leaves its parent a gap", () => {
+  const behaviours = ITEMS.map((item) => {
+    if (item === "It returns the uncovered items.") {
+      return "Nested items count too.";
+    }
+    return item;
+  });
+  assert.deepEqual(interfaceGaps(SPEC, [{ behaviours }]), [
+    "It returns the uncovered items.",
+  ]);
+});
+
+test("markdown and whitespace in the item or the quote don't matter", () => {
+  const spec = [
+    "## Behaviour",
+    "",
+    "- **Layout.** The `--plain` flag prints [the table](https://example.com/t) as _text_.",
+    "  - Each row is one line.",
+    "- ~~Old~~ rows stay.",
+  ].join("\n");
+  const behaviours = [
+    "Layout. The --plain flag prints the table as text.",
+    "**Old** rows  stay.",
+  ];
+  assert.deepEqual(interfaceGaps(spec, [{ behaviours }]), []);
+  assert.deepEqual(
+    interfaceGaps(spec, [
+      { behaviours: ["Layout. The --plain flag prints the table."] },
+    ]),
+    [
+      "**Layout.** The `--plain` flag prints [the table](https://example.com/t) as _text_.",
+      "~~Old~~ rows stay.",
+    ],
+  );
+});
+
+test("each gap carries its item's number among the top-level items", () => {
+  const behaviours = ["It returns the uncovered items.", "A plus item."];
+  assert.deepEqual(behaviourGaps(SPEC, [{ behaviours }]), [
+    { number: 1, text: "The check is pure: it reads only its arguments." },
+    { number: 3, text: "A starred item." },
+    { number: 5, text: "A parenthesised item." },
+  ]);
 });

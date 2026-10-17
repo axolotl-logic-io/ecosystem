@@ -32,8 +32,10 @@ type End =
 
 // A model session: its name, agent and model, the schema of its reply, its
 // task, its context budget, the role it is the budget of (its context log
-// line's role), and its attempt: the retry, continuation or round number,
-// from 1, as the role counts it.
+// line's role), its attempt: the retry, continuation or round number,
+// from 1, as the role counts it, and, optionally, the role's check that its
+// reply is put through before the session ends: the check's name and its
+// payload, to which the reply is added as `reply` (src/job/reply-checks.ts).
 interface SessionEffect {
   kind: "session";
   name: string;
@@ -44,6 +46,10 @@ interface SessionEffect {
   tokenBudget: number;
   budgetRole: BudgetRole;
   attempt: number;
+  replyCheck?: {
+    check: string;
+    payload: Readonly<Record<string, unknown>>;
+  };
 }
 
 // What a state does: run an op or a script check with its payload, run a
