@@ -11,7 +11,9 @@ import {
   isLive,
   isLiveImplementation,
   isStopped,
+  mergeHolders,
   mergeRank,
+  queueRank,
   runStage,
   stageIndex,
   verdictHold,
@@ -49,6 +51,7 @@ interface TickCount {
   implementations: SnapshotIssue[];
   mergeLive: number | null;
   queue: readonly number[];
+  holders: readonly number[];
 }
 
 function roleOf(stage: string): Role {
@@ -76,21 +79,13 @@ function capReason(
   return null;
 }
 
-// The issue's place in the merge queue, or infinity when it isn't queued.
-function queueRank(count: TickCount, issue: SnapshotIssue): number {
-  const at = count.queue.indexOf(issue.number);
-  if (at < 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return at;
-}
-
 // The oldest live implementation whose files overlap the issue's: any for an
 // implement, but for a live issue's fix, sync or checks only an older one that
-// doesn't merge after it. A queued issue's writer is never held by one queued
-// later or not queued, so the merge queue's top always moves, and a writer
-// hold and a merge-order hold can't form a cycle. An issue and its
-// prerequisite never hold each other.
+// doesn't merge after it, so a queued writer never waits on a later one. No
+// cycle forms with the merge order: a merge waits only for higher-ranked
+// issues at accept, security or merge, which are readers held only by caps or
+// merges held only by issues ranked further ahead, never for a writer. An
+// issue and its prerequisite never hold each other.
 function overlapReason(
   count: TickCount,
   issue: SnapshotIssue,
@@ -103,7 +98,8 @@ function overlapReason(
         !stackPartners(issue, other) &&
         (stage === "implement" ||
           (byAge(other, issue) < 0 &&
-            queueRank(count, other) <= queueRank(count, issue))) &&
+            queueRank(count.queue, other.number) <=
+              queueRank(count.queue, issue.number))) &&
         fileSetsOverlap(fileSet(other), fileSet(issue)),
     )
     .sort(byAge)
@@ -114,10 +110,12 @@ function overlapReason(
   return `files-overlap:#${blocker.number}`;
 }
 
+// A merge waits for the first issue ranked ahead of it at a holding stage,
+// then for a live merge job.
 function mergeReason(count: TickCount, issue: SnapshotIssue): string | null {
-  const [top] = count.queue;
-  if (top !== issue.number) {
-    return `merge-order:#${String(top)}`;
+  const [first] = count.holders;
+  if (first !== undefined && first !== issue.number) {
+    return `merge-order:#${first}`;
   }
   if (count.mergeLive !== null) {
     return `merge-order:#${count.mergeLive}`;
@@ -249,6 +247,7 @@ function countOf(snapshot: Snapshot, settings: ScheduleSettings): TickCount {
     implementations: snapshot.issues.filter(isLiveImplementation),
     mergeLive,
     queue: mergeRank(snapshot.issues),
+    holders: mergeHolders(snapshot.issues),
   };
 }
 

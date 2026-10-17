@@ -1,7 +1,7 @@
 // @ts-check
-// The merge op with the orchestrator's ranked merge queue (#234): only a
-// ready issue ahead of this one in the queue holds its merge, in place of
-// the lowest-PR order.
+// The merge op with the orchestrator's ranked merge queue (#234): only an
+// issue ahead of this one in the queue at a holding stage (accept, security
+// or merge, #358) holds its merge, in place of the lowest-PR order.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -16,6 +16,7 @@ import {
   SWEEP,
   stateListing,
   world,
+  writes,
 } from "./ops-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
@@ -27,6 +28,8 @@ const CLOSED = 12;
 const STOPPED = 9;
 const UNREADY = 11;
 const BEHIND = 13;
+const AHEAD = 14;
+const AHEAD_PR = 60;
 const ORDER_CALLS = 5;
 const VIEW_ARGS = [
   ..."pr view 50 -R o/r --json".split(" "),
@@ -139,3 +142,55 @@ test("closed, stopped and unready issues ahead, and older PRs behind, don't hold
   ]);
   assert.equal(calls()[ORDER_CALLS]?.[1], "merge");
 });
+
+for (const stage of ["sync", "checks"]) {
+  test(`an issue ahead in the queue at ${stage} doesn't hold the merge`, () => {
+    const w = world();
+    const out = queuedMerge(
+      w,
+      [AHEAD, ISSUE],
+      [
+        issueView(AHEAD, "OPEN", []),
+        stateListing(AHEAD, { pr: AHEAD_PR, stage }),
+        ...finishReplies(),
+      ],
+    );
+    assert.equal(
+      out,
+      replyLine({
+        ok: true,
+        op: "merge",
+        posted: 0,
+        merged: true,
+        published: true,
+      }),
+    );
+  });
+}
+
+for (const stage of ["accept", "security", "merge"]) {
+  test(`an issue ahead in the queue at ${stage} holds the merge`, () => {
+    const w = world();
+    const out = queuedMerge(
+      w,
+      [AHEAD, ISSUE],
+      [
+        issueView(AHEAD, "OPEN", []),
+        stateListing(AHEAD, { pr: AHEAD_PR, stage }),
+      ],
+    );
+    assert.equal(
+      out,
+      replyLine({
+        ok: true,
+        op: "merge",
+        posted: 0,
+        merged: false,
+        reason: "queued",
+        waitingFor: AHEAD,
+        waitingForPr: AHEAD_PR,
+      }),
+    );
+    assert.deepEqual(writes(), []);
+  });
+}

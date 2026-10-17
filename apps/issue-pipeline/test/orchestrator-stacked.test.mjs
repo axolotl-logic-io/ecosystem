@@ -184,7 +184,7 @@ test("a prerequisite's checks aren't held by an older dependent stacked on it", 
 
 test("with no after mark and no stack, the decisions are as before and none stacks", () => {
   assert.deepEqual(decided(MERGE_OVER_CHAIN), [
-    "#83 merge held merge-order:#85",
+    "#83 merge started merge-first",
     "#85 sync started free",
     "#84 fix held files-overlap:#83",
     "#86 spec started free",
@@ -197,5 +197,5 @@ test("with no after mark and no stack, the decisions are as before and none stac
       return [];
     },
   );
-  assert.deepEqual(stacks, [null, null]);
+  assert.deepEqual(stacks, [null, null, null]);
 });

@@ -182,6 +182,24 @@ const MERGE_OVER_CHAIN = snapshotOf([
   issue({ number: 86, stage: "spec", files: ["lib/x.ts"] }),
 ]);
 
+// #90 waits at merge behind #91 at `stage`, which ranks first by its lower
+// PR; their files don't overlap.
+/** @param {string} stage @returns {Snapshot} */
+function mergeBehind(stage) {
+  return snapshotOf([
+    issue({ number: 90, stage: "merge", pr: 41, files: ["a.ts"] }),
+    issue({ number: 91, stage, pr: 40, files: ["b.ts"] }),
+  ]);
+}
+
+// The queue's top, #92, is at checks; the first issue at a holding stage is
+// #93, at accept, ahead of #94 at merge.
+const MERGE_PAST_CHECKS = snapshotOf([
+  issue({ number: 92, stage: "checks", pr: 10, files: ["c.ts"] }),
+  issue({ number: 93, stage: "accept", pr: 20, files: ["d.ts"] }),
+  issue({ number: 94, stage: "merge", pr: 30, files: ["e.ts"] }),
+]);
+
 // Issues that get no decision, or a hold from their classify verdict.
 const LIVE_IMPLEMENT = 70;
 const NO_RUN = snapshotOf([
@@ -224,7 +242,9 @@ export {
   MERGE_NOT_WAITING,
   MERGE_OVER_CHAIN,
   MERGE_OVER_WRITER,
+  MERGE_PAST_CHECKS,
   MERGE_TIE,
+  mergeBehind,
   NO_RUN,
   NOW,
   READERS,

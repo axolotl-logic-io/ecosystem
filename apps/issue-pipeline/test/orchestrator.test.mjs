@@ -16,7 +16,9 @@ import {
   MERGE_NOT_WAITING,
   MERGE_OVER_CHAIN,
   MERGE_OVER_WRITER,
+  MERGE_PAST_CHECKS,
   MERGE_TIE,
+  mergeBehind,
   NO_RUN,
   NOW,
   READERS,
@@ -150,10 +152,10 @@ test("no merge starts while another merge job runs, even the first in the queue"
   assert.deepEqual(decided(MERGE_LIVE), ["#61 merge held merge-order:#60"]);
 });
 
-test("an older merge waiting on the queue's first doesn't hold its writer", () => {
+test("an older merge doesn't hold the writer ranked ahead of it", () => {
   assert.deepEqual(ranked(mergeRank(MERGE_OVER_WRITER.issues)), ["#81", "#80"]);
   assert.deepEqual(decided(MERGE_OVER_WRITER), [
-    "#80 merge held merge-order:#81",
+    "#80 merge started merge-first queue:#81,#80",
     "#81 sync started free",
     "#82 spec started free",
   ]);
@@ -162,11 +164,95 @@ test("an older merge waiting on the queue's first doesn't hold its writer", () =
 test("an older unqueued writer doesn't hold the queue's first, so no chain deadlocks", () => {
   assert.deepEqual(ranked(mergeRank(MERGE_OVER_CHAIN.issues)), ["#85", "#83"]);
   assert.deepEqual(decided(MERGE_OVER_CHAIN), [
-    "#83 merge held merge-order:#85",
+    "#83 merge started merge-first queue:#85,#83",
     "#85 sync started free",
     "#84 fix held files-overlap:#83",
     "#86 spec started free",
   ]);
+});
+
+for (const stage of ["sync", "checks"]) {
+  test(`an issue ranked ahead at ${stage} doesn't hold a merge, but stays in its queue`, () => {
+    assert.deepEqual(decided(mergeBehind(stage)), [
+      "#90 merge started merge-first queue:#91,#90",
+      `#91 ${stage} started free`,
+    ]);
+  });
+}
+
+for (const stage of ["accept", "security"]) {
+  test(`an issue ranked ahead at ${stage} holds a merge`, () => {
+    assert.deepEqual(decided(mergeBehind(stage)), [
+      "#90 merge held merge-order:#91",
+      `#91 ${stage} started free`,
+    ]);
+  });
+}
+
+test("an issue ranked ahead at merge holds a merge and merges first", () => {
+  assert.deepEqual(decided(mergeBehind("merge")), [
+    "#90 merge held merge-order:#91",
+    "#91 merge started merge-first queue:#91,#90",
+  ]);
+});
+
+test("a merge waits for the first issue at a holding stage, not the queue's top at checks", () => {
+  assert.deepEqual(ranked(mergeRank(MERGE_PAST_CHECKS.issues)), [
+    "#92",
+    "#93",
+    "#94",
+  ]);
+  assert.ok(
+    decided(MERGE_PAST_CHECKS).includes("#94 merge held merge-order:#93"),
+  );
+});
+
+// Every merge fixture, and each stage an issue ranked ahead of a merge is at.
+const MERGE_SNAPSHOTS = [
+  MERGE_BY_AFTER,
+  MERGE_BY_FILES,
+  MERGE_NOT_WAITING,
+  MERGE_TIE,
+  MERGE_LIVE,
+  MERGE_OVER_WRITER,
+  MERGE_OVER_CHAIN,
+  MERGE_PAST_CHECKS,
+  ...["sync", "checks", "accept", "security", "merge"].map(mergeBehind),
+];
+const MERGE_ORDER = /^merge-order:#(?<held>\d+)$/u;
+
+// The merge-order holds in the snapshot's decisions that name neither an
+// issue ranked before the held one nor the live merge, and the merges started
+// beyond the first.
+/** @param {Snapshot} snapshot @returns {string[]} */
+function orderBreaks(snapshot) {
+  const rank = mergeRank(snapshot.issues);
+  const live = snapshot.issues
+    .filter(({ job }) => job?.live === true && job.stage === "merge")
+    .map(({ number }) => number);
+  const decisions = schedule(snapshot, SETTINGS, NOW);
+  const holds = decisions.filter(({ action, issue, reason }) => {
+    const { held } = MERGE_ORDER.exec(reason)?.groups ?? {};
+    if (action !== "held" || held === undefined) {
+      return false;
+    }
+    const at = rank.indexOf(Number(held));
+    const own = rank.indexOf(issue);
+    const earlier = at >= 0 && (own < 0 || at < own);
+    return !(earlier || live.includes(Number(held)));
+  });
+  const starts = decisions.filter(
+    ({ action, stage }) => action === "started" && stage === "merge",
+  );
+  return [...holds, ...starts.slice(1)].map(
+    ({ issue, action, reason }) => `#${issue} ${action} ${reason}`,
+  );
+}
+
+test("merge-order holds name an issue ranked earlier or the live merge, and one merge starts a tick", () => {
+  for (const snapshot of MERGE_SNAPSHOTS) {
+    assert.deepEqual(orderBreaks(snapshot), []);
+  }
 });
 
 test("live, stopped, done and skipped issues get no decision; after marks and other lanes hold", () => {

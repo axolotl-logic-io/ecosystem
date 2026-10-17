@@ -1,10 +1,11 @@
 // The queue the orchestrator schedules (#234): the snapshot of the open
 // issues and their jobs, what each issue's facts mean (the stage its next job
 // runs, its file set, whether it is live, waiting or a live implementation),
-// and the order the merge-ready issues should merge in. Pure.
+// the order the merge-ready issues should merge in, and which of them hold
+// the merges ranked after them. Pure.
 
 import { fileSetsOverlap } from "../globs.ts";
-import { READY_STAGES } from "../ops/merge-order.ts";
+import { HOLDING_STAGES, READY_STAGES } from "../ops/merge-order.ts";
 import { STAGE_ORDER } from "../workflow/sweep-config.ts";
 
 // How the sweep's classify judged the issue, as far as scheduling cares.
@@ -201,6 +202,27 @@ function mergeRank(issues: readonly SnapshotIssue[]): number[] {
   return ranked.map(({ issue }) => issue.number);
 }
 
+// The ranked issues at a holding stage (accept, security or merge), in
+// mergeRank's order: each holds every merge ranked after it (#358).
+function mergeHolders(issues: readonly SnapshotIssue[]): number[] {
+  const holding = new Set(
+    issues
+      .filter((issue) => HOLDING_STAGES.has(runStage(issue)))
+      .map((issue) => issue.number),
+  );
+  return mergeRank(issues).filter((number) => holding.has(number));
+}
+
+// Issue #number's place in a ranked merge queue, or infinity when it isn't
+// queued.
+function queueRank(queue: readonly number[], number: number): number {
+  const at = queue.indexOf(number);
+  if (at < 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return at;
+}
+
 export type {
   IssueJob,
   IssueVerdict,
@@ -217,7 +239,9 @@ export {
   isLive,
   isLiveImplementation,
   isStopped,
+  mergeHolders,
   mergeRank,
+  queueRank,
   runStage,
   stageIndex,
   verdictHold,
