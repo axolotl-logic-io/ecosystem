@@ -1,6 +1,7 @@
-// The orchestrator's backoff after a model provider's rate limit
-// (`rate-limit-defers`): once a stage job ends with its issue deferred on a
-// rate limit (job.json's outcome `rateLimited`), the tick starts no stage
+// The orchestrator's backoff after a transient provider error, a model
+// provider's rate limit or a transport error reaching it
+// (`rate-limit-defers`): once a stage job ends with its issue deferred on one
+// (job.json's outcome `rateLimited`), the tick starts no stage
 // job, and admits no restart, for rateLimitBackoffMinutes, logging each as
 // held with reason `rate-limited`. Each rate-limited end after a backoff has
 // passed doubles the next, up to MAX_BACKOFF_MINUTES (or the configured
@@ -45,7 +46,8 @@ const NO_BACKOFF: Backoff = { lastAt: null, until: null, minutes: 0 };
 
 type Backoff = z.infer<typeof BACKOFF>;
 
-// A finished job's end, and whether its issue deferred on a rate limit.
+// A finished job's end, and whether its issue deferred on a transient
+// provider error.
 interface JobEnd {
   at: number;
   rateLimited: boolean;

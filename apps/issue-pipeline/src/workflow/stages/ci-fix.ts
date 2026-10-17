@@ -175,8 +175,8 @@ function reviewBody(
 
 // Posts every lens's comment, then stops on the first failure or blocking
 // finding in lens order, or saves the reviewed head. A reviewer that hit a
-// rate limit defers the issue to review instead: the pushed fix still needs
-// its review, and checks alone would pass it on without one.
+// transient provider error defers the issue to review instead: the pushed fix
+// still needs its review, and checks alone would pass it on without one.
 function reviewed(
   state: StageState,
   ctx: StageContext,

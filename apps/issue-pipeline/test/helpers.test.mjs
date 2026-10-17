@@ -80,6 +80,35 @@ test("text posted to GitHub names local paths by variable", () => {
   );
 });
 
+// Text that names no address: times, a SHA and a version (#385).
+const NOT_ADDRESSES =
+  "at 01:02:03, 01:02Z and 2026-10-17T13:52:55.123Z, head ad7243c0123456789abcdef0123456789abcdef0, v1.2.3";
+
+test("text posted to GitHub hides IP addresses, with or without a port", () => {
+  assert.deepEqual(
+    redactGhArgs([
+      "api",
+      "repos/o/r/issues/7/comments",
+      "-f",
+      "body=read tcp 10.0.0.5:51234->1.2.3.4:443: read: connection reset",
+      "--title",
+      "from [2001:db8::1]:443, 2001:db8::1, fe80::1 and 2001:0db8:0000:0000:0000:ff00:0042:8329",
+      "--body",
+      NOT_ADDRESSES,
+    ]),
+    [
+      "api",
+      "repos/o/r/issues/7/comments",
+      "-f",
+      "body=read tcp [redacted]->[redacted]: read: connection reset",
+      "--title",
+      "from [redacted], [redacted], [redacted] and [redacted]",
+      "--body",
+      NOT_ADDRESSES,
+    ],
+  );
+});
+
 test("only GETs and list or view commands count as reads", () => {
   assert.equal(ghIsRead(["api", "repos/o/r/issues"]), true);
   assert.equal(ghIsRead(["api", "-X", "POST", "x"]), false);

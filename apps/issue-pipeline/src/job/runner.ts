@@ -2,7 +2,7 @@
 // page): it runs a role's locate over the issue's saved state, then each
 // state's effect, then the role's transition, until an end, reporting every
 // step. It alone decides how a failure the role doesn't list ends (held on a
-// network error; held on a model provider's rate limit with the state it
+// network error; held on a rate limit or transport error with the state it
 // last saved, counting no attempt (`rate-limit-defers`); stopped with the
 // step-failure code otherwise), refuses a session from a non-session state,
 // and decides what is saved and when: only the role's declared hand-off
@@ -24,7 +24,7 @@ import type {
 import { linearWalk, machineWalk } from "../roles/walk.ts";
 import type { State } from "../state.ts";
 import { isNetworkError } from "../workflow/stages/network.ts";
-import { isRateLimitError } from "../workflow/stages/rate-limit.ts";
+import { isTransientSessionError } from "../workflow/stages/rate-limit.ts";
 import { checkpointsChanged, writtenState } from "./role-state.ts";
 import type { Effects, Outcome, Performed } from "./run-step.ts";
 import { perform } from "./run-step.ts";
@@ -73,7 +73,7 @@ function release<D>(run: Run<D>): Promise<Performed> {
 }
 
 function failedEnd(error: string): End {
-  if (isRateLimitError(error)) {
+  if (isTransientSessionError(error)) {
     return { kind: "held", rateLimited: true };
   }
   if (isNetworkError(error)) {

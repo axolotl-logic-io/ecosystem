@@ -100,6 +100,18 @@ for (const role of ROLES) {
   });
 }
 
+// #369's implementer error (#385): a transport error, lower case, in an
+// api_error.
+const CONNECTION_RESET =
+  "api_error: read tcp 10.0.0.5:51234->1.2.3.4:443: read: connection reset by peer";
+
+test("a session that fails with a transport error ends held as a rate limit does", async () => {
+  const run = await uninterrupted("machine", {
+    session: { ok: false, error: CONNECTION_RESET },
+  });
+  assert.deepEqual(run.end, { kind: "held", rateLimited: true });
+});
+
 test("another failure the state doesn't list ends stopped with error", async () => {
   const run = await uninterrupted("machine", {
     failOp: { "toy-post": "boom" },
