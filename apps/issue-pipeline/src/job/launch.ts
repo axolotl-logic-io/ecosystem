@@ -12,7 +12,7 @@ import { ROOT } from "../pipeline-root.ts";
 import type { ChildSpec, LaunchSpec } from "../workflow/launches.ts";
 import type { AgentDefinition } from "./agent-definition.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
-import type { SessionEnd, SessionEnded } from "./context-log.ts";
+import type { SessionEnd, SessionEnded, Steers } from "./context-log.ts";
 import type {
   ContextLimits,
   ContextStop,
@@ -20,21 +20,21 @@ import type {
   WatchedEnd,
 } from "./context-watch.ts";
 import { contextStopped, watchContext } from "./context-watch.ts";
-import type { LiveHandle } from "./control.ts";
+import type { LiveHandle, LiveLaunch } from "./control.ts";
 import type { OpsProcess } from "./ops-process.ts";
 import { runOps } from "./ops-process.ts";
 import type { OpsRaw, SessionRaw } from "./raw-results.ts";
-import {
-  failedSession,
-  opsRaw,
-  sessionRaw,
-  ZERO_USAGE,
-} from "./raw-results.ts";
+import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
 import { commitsOf, recordedBudgetOf } from "./roles.ts";
-import type { RpcProcess } from "./rpc.ts";
+import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart, ResumePoint } from "./status.ts";
-import { handoffStartOf, saveStoppedWork } from "./stop-handoff.ts";
+import {
+  checkoutHead,
+  handoffStartOf,
+  saveStoppedWork,
+} from "./stop-handoff.ts";
+import { ZERO_USAGE } from "./token-usage.ts";
 
 const OPS_CLI = path.join(ROOT, "ops.mjs");
 const OUTPUT_EXTENSION = path.join(ROOT, "structured-output.mjs");
@@ -117,13 +117,30 @@ function prepareSession(
   return { args: piArgs(definition, spec, files), session, resume };
 }
 
+// `live` with its steers counted in `steers` as `source`'s.
+function countingSteers(
+  live: LiveLaunch,
+  steers: Steers,
+  source: keyof Steers,
+): LiveLaunch {
+  return {
+    ...live,
+    send: (command: RpcCommand): Promise<RpcAnswer> => {
+      if (command.type === "steer") {
+        steers[source] += 1;
+      }
+      return live.send(command);
+    },
+  };
+}
+
 // Runs pi for `spec` from `from`, its context watched (context-watch.ts),
-// telling `hooks` of it.
+// telling `hooks` of it, and counts the steers the job sent it.
 async function runPi(
   spec: ChildSpec,
   hooks: LaunchHooks,
   from: SessionStart,
-): Promise<WatchedEnd> {
+): Promise<WatchedEnd & { steers: Steers }> {
   const { key } = spec;
   const { session, resume } = from;
   const usage = resume?.usage ?? ZERO_USAGE;
@@ -132,6 +149,7 @@ async function runPi(
     prompt = RESUME_PROMPT;
   }
   const watched: { watch: ContextWatch | null } = { watch: null };
+  const steers: Steers = { context: 0, socket: 0 };
   const exit = await runRpc({
     args: from.args,
     cwd: hooks.cwd,
@@ -152,8 +170,11 @@ async function runPi(
       };
       const live = { key, ...rpc };
       const { contextLimits: limits, handoffFile } = hooks;
-      watched.watch = watchContext({ limits, handoffFile }, spec.agent, live);
-      hooks.started(start, { kind: "session", session: live });
+      const hold = { limits, handoffFile };
+      const watching = countingSteers(live, steers, "context");
+      watched.watch = watchContext(hold, spec.agent, watching);
+      const steered = countingSteers(live, steers, "socket");
+      hooks.started(start, { kind: "session", session: steered });
     },
     onRecord: (record: unknown): void => {
       hooks.record(key, record);
@@ -166,7 +187,7 @@ async function runPi(
     hooks.contextStopped(key, stop);
   }
   const lastText = watched.watch?.lastText() ?? null;
-  return { raw: sessionRaw(spec, exit, usage), stop, lastText };
+  return { raw: sessionRaw(spec, exit, usage), stop, lastText, steers };
 }
 
 // How a session that ran ended: handed off, when the watch stopped it or
@@ -199,10 +220,16 @@ async function runSession(
     return failedSession(spec, error);
   }
   const begun = handoffStartOf(hooks.repo, hooks.handoffFile);
-  const { raw, stop, lastText } = await runPi(spec, hooks, start);
+  const { raw, stop, lastText, steers } = await runPi(spec, hooks, start);
   const { budgetRole, agent, model } = spec;
   const ended = endedOf(raw, stop);
-  hooks.sessionEnded(spec.key, { budgetRole, agent, model, ended });
+  let reviewedSha: string | null = null;
+  if (!commitsOf(agent)) {
+    reviewedSha = begun.head;
+  }
+  const headSha = checkoutHead(hooks.repo);
+  const end = { budgetRole, agent, model, ended, steers };
+  hooks.sessionEnded(spec.key, { ...end, headSha, reviewedSha });
   if (stop === null) {
     return raw;
   }

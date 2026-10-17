@@ -5,6 +5,7 @@
 // throws, which the tick logs as the agent failing.
 import fs from "node:fs";
 import { z } from "zod";
+import { withoutJobId } from "./orchestrator-job-id-kit.mjs";
 import {
   CONFIG,
   cfg,
@@ -34,8 +35,8 @@ const LOG_LINE = z.object({
 });
 
 /**
- * One tick at `minutes` after NOW over `issues`, with every spawn, steer and
- * SIGTERM recorded, under `config` (the kit's by default). Spawned jobs die
+ * One tick at `minutes` after NOW over `issues`, with every spawn (less its
+ * job id), steer and SIGTERM recorded, under `config` (the kit's by default). Spawned jobs die
  * at once, as a crashing job would, unless `spawnPid` gives the live pid they
  * run as. `runAgent` runs the escalation agent's pi.
  * @param {readonly OpenIssue[]} issues
@@ -55,7 +56,7 @@ function tickOver(issues, minutes = 0, options = {}) {
     configPath: CONFIG,
     now: () => new Date(NOW.getTime() + minutes * MINUTE_MS),
     spawn: (argv) => {
-      spawned.push([...argv]);
+      spawned.push(withoutJobId(argv));
       return spawnPid ?? deadPid();
     },
     steer: (socket, key, message) => steered.push([socket, key, message]),

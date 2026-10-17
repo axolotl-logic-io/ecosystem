@@ -2,21 +2,20 @@
 // the ledger, note a rate-limited job's backoff, let the watchdog act on the
 // jobs and write the escalations (#235), ask the escalation agent about them
 // (#282), decide with the scheduler, hold every start during a backoff, start
-// the jobs it chose, log every action and decision, then close the split
-// parents that are done (#378). The processes, the steers, the agent's run
+// the jobs it chose (start-job.ts), log every action and decision, then close
+// the split parents that are done (#378). The processes, the steers, the agent's run
 // and the clock come from the caller.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import { paths } from "../config.ts";
 import { stop } from "../ops/stop.ts";
-import { roleOf } from "../roles/registry.ts";
 import type { State } from "../state.ts";
-import type { AdviceContext } from "./escalation-agent.ts";
+import type { AdviceContext, Resumed } from "./escalation-agent.ts";
 import { escalateOpenIssues } from "./escalation-agent.ts";
 import type { RunAgent } from "./escalation-consult.ts";
 import type { Ledger } from "./ledger.ts";
 import { openLedger } from "./ledger.ts";
+import type { LogEntry } from "./log.ts";
 import { logDecisions } from "./log.ts";
 import type { ParentOutcome } from "./parents.ts";
 import { closeParents } from "./parents.ts";
@@ -24,7 +23,9 @@ import type { SnapshotIssue } from "./queue.ts";
 import { openBackoff } from "./rate-limit-backoff.ts";
 import type { Decision, StartGate } from "./schedule.ts";
 import { schedule, startGate } from "./schedule.ts";
-import { LANE, readQueue } from "./snapshot.ts";
+import { readQueue } from "./snapshot.ts";
+import type { StartedJob } from "./start-job.ts";
+import { decisionLines, startJob } from "./start-job.ts";
 import type { WatchAction } from "./watchdog.ts";
 import { watch } from "./watchdog.ts";
 import { readWatchMemory } from "./watchdog-memory.ts";
@@ -63,33 +64,6 @@ interface TickDeps {
   runAgent: RunAgent;
 }
 
-interface Start {
-  issue: number;
-  stage: string;
-  mergeQueue: readonly number[] | null;
-  stackOn: number | null;
-}
-
-function jobArgv(configPath: string, start: Start): string[] {
-  const argv = [
-    "--config",
-    configPath,
-    "--issue",
-    String(start.issue),
-    "--stage",
-    start.stage,
-    "--lane",
-    LANE,
-  ];
-  if (start.mergeQueue !== null) {
-    argv.push("--merge-queue", start.mergeQueue.join(","));
-  }
-  if (start.stackOn !== null) {
-    argv.push("--stack-on", String(start.stackOn));
-  }
-  return argv;
-}
-
 // What a tick acts with: the config, the caller's processes and the ledger.
 interface TickRun {
   cfg: Config;
@@ -97,18 +71,13 @@ interface TickRun {
   ledger: Ledger;
 }
 
-function startJob(
+// Starts a job for `start` with the tick's processes and ledger.
+function startOf(
   { cfg, deps, ledger }: TickRun,
-  start: Start & { at: string; resume: boolean },
-): void {
-  const argv = jobArgv(deps.configPath, start);
-  // A stage that runs a role refuses --resume: it restarts from its state.
-  if (start.resume && roleOf(start.stage) === undefined) {
-    argv.push("--resume");
-  }
-  const pid = deps.spawn(argv, paths.jobLog(cfg, start.issue));
-  const { issue, stage, at } = start;
-  ledger.launched({ issue, stage, pid, at });
+  start: Parameters<typeof startJob>[1],
+): StartedJob {
+  const { configPath, spawn } = deps;
+  return startJob({ cfg, configPath, spawn, ledger }, start);
 }
 
 // The stop code and the comment's reason for a watchdog stop.
@@ -133,16 +102,17 @@ function stopOf(action: WatchAction & { action: "stopped" }): {
 
 // Carries out one watchdog action, and notes its effect on `issue`: a
 // restarted job is live, a stopped issue is stopped. A held restart does
-// nothing; the tick leaves its issue to a later tick.
+// nothing; the tick leaves its issue to a later tick. Gives the restarted
+// job's pid and id, or null for any other action.
 function act(
   run: TickRun,
   action: WatchAction,
   issue: { row: SnapshotIssue | undefined; state: State | null },
-): void {
+): StartedJob | null {
   switch (action.action) {
     case "resumed": {
       const { stage } = action;
-      startJob(run, {
+      const started = startOf(run, {
         ...action,
         mergeQueue: null,
         stackOn: null,
@@ -151,7 +121,7 @@ function act(
       if (issue.row !== undefined) {
         issue.row.job = { live: true, stage };
       }
-      return;
+      return started;
     }
     case "stopped": {
       stop(run.cfg, {
@@ -162,16 +132,16 @@ function act(
       if (issue.row !== undefined) {
         issue.row.stopped = true;
       }
-      return;
+      return null;
     }
     case "held":
-      return;
+      return null;
     case "steered":
       run.deps.steer(action.socket, action.key, action.message);
-      return;
+      return null;
     case "killed":
       run.deps.terminate(action.pid);
-      return;
+      return null;
     default: {
       const unknown: never = action;
       throw new Error(`unknown watchdog action ${JSON.stringify(unknown)}`);
@@ -193,22 +163,22 @@ function adviceOf(
   const { admit, ...seen } = view;
   const commands: AdviceContext["act"] = {
     steer: run.deps.steer,
-    resume: (issue: number, stage: string): string | null => {
+    resume: (issue: number, stage: string): Resumed => {
       const row = rowOf(issue);
       if (row?.job?.live === true) {
-        return "live";
+        return { kind: "held", reason: "live" };
       }
       const held = admit(issue, stage);
       if (held !== null) {
-        return held;
+        return { kind: "held", reason: held };
       }
       const at = view.now.toISOString();
       const restart = { issue, stage, at, mergeQueue: null, stackOn: null };
-      startJob(run, { ...restart, resume: true });
+      const started = startOf(run, { ...restart, resume: true });
       if (row !== undefined) {
         row.job = { live: true, stage };
       }
-      return null;
+      return { kind: "started", ...started };
     },
     stop: (issue: number, code: string, reason: string): void => {
       const state = { ...view.states.get(issue) };
@@ -262,15 +232,18 @@ function tick(cfg: Config, deps: TickDeps): TickResult {
   });
   const run: TickRun = { cfg, deps, ledger };
   const done: WatchAction[] = [];
+  const restarted: LogEntry[] = [];
+  const started = new Map<Decision, StartedJob>();
   let decisions: Decision[] = [];
   try {
     for (const action of watchdog.actions) {
       const row = issues.find((issue) => issue.number === action.issue);
-      act(run, action, {
+      const job = act(run, action, {
         row,
         state: states.get(action.issue) ?? null,
       });
       done.push(action);
+      restarted.push({ ...action, ...job });
     }
     const view = { watched, states, admit, now };
     const advice = adviceOf(run, issues, view);
@@ -279,14 +252,14 @@ function tick(cfg: Config, deps: TickDeps): TickResult {
     decisions = backoff.hold(withoutHeld(scheduled, done));
     for (const decision of decisions) {
       if (decision.action === "started") {
-        startJob(run, { ...decision, resume: false });
+        started.set(decision, startOf(run, { ...decision, resume: false }));
       }
     }
   } finally {
     ledger.save(now);
-    logDecisions(cfg, done);
+    logDecisions(cfg, restarted);
   }
-  logDecisions(cfg, decisions);
+  logDecisions(cfg, decisionLines(decisions, started, states));
   const split = issues.filter(({ verdict }) => verdict.kind === "parent");
   const parents = closeParents(
     cfg,

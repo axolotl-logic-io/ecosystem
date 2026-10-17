@@ -37,6 +37,12 @@ const STATE = z.looseObject({
   // missing when it isn't stacked, and null when it is unreadable.
   stackedOn: STACKED_ON.nullish().catch(null),
   stage: z.string().optional(),
+  // The code of the stop the state is saved at, as stop.ts saves it; null
+  // or missing for none, and null when it is malformed.
+  stopCode: z.string().nullish().catch(null),
+  // The tokens the issue's sessions have spent (launch-results.ts); a
+  // malformed count reads as missing.
+  reportedTokens: z.number().optional().catch(undefined),
   // The stage a stop saved at `stopped` stopped in, which a restart resumes
   // at (`every-role-resumes`); null or missing for none, and null when it is
   // malformed.

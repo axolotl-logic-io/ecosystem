@@ -149,11 +149,22 @@ process.stdin.on("data", (chunk) => {
 process.stdin.on("end", () => process.exit(0));
 `;
 
-/** @param {object} usage @returns {object} */
+/**
+ * An assistant message's end that spent `usage`, a usage as the job keeps
+ * it, printed as pi prints it: its cost a breakdown with its total.
+ * @param {import("../src/job/token-usage.ts").Usage} usage
+ * @returns {object}
+ */
 function messageEnd(usage) {
+  const { cost, ...counts } = usage;
   return {
     type: "message_end",
-    message: { role: "assistant", content: [], usage, stopReason: "toolUse" },
+    message: {
+      role: "assistant",
+      content: [],
+      usage: { ...counts, cost: { input: 0, total: cost } },
+      stopReason: "toolUse",
+    },
   };
 }
 
@@ -181,6 +192,8 @@ function turns(contexts) {
       output: TURN_OUTPUT,
       cacheRead,
       cacheWrite,
+      cacheWrite1h: 0,
+      cost: 0,
     });
   });
 }

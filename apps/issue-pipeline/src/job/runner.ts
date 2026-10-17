@@ -10,7 +10,7 @@
 // changes, so a count is saved when it goes up. An end's own op runs after
 // the end's save, on the state just saved. It reads nothing but the saved
 // state and context it is given (`every-role-resumes`). It appends a usage
-// entry for every session that ends and for the run.
+// entry per ended session and run, and saves reportedTokens with its spend.
 
 import type { Effect, End, Result, SessionEffect } from "../roles/machine.ts";
 import type {
@@ -57,7 +57,7 @@ interface Run<D> {
 }
 
 async function save<D>(run: Run<D>, data: D, end: boolean): Promise<Performed> {
-  const state = writtenState(run, data, end);
+  const state = run.usage.counted(writtenState(run, data, end));
   const done = await perform(run.effects, () => run.effects.save(state));
   if (done.kind === "done" && done.outcome.ok) {
     run.saved = state;
@@ -65,10 +65,10 @@ async function save<D>(run: Run<D>, data: D, end: boolean): Promise<Performed> {
   return done;
 }
 
-// Saves the state the run last saved with no lease, dropping what the run
-// did since, such as a count it took at its start.
+// Saves the state the run last saved with no lease and what its sessions
+// spent, dropping all else the run did since, such as a count it took.
 function release<D>(run: Run<D>): Promise<Performed> {
-  const state = { ...run.saved, lease: null };
+  const state = run.usage.counted({ ...run.saved, lease: null });
   return perform(run.effects, () => run.effects.save(state));
 }
 
@@ -166,10 +166,10 @@ async function session<D>(
   effect: SessionEffect,
 ): Promise<Outcome> {
   const { effects } = run;
-  const { outcome, launch } = await effects.session(effect);
+  const { outcome, launch, key } = await effects.session(effect);
   const signalled = effects.stopping() !== null;
   const { stage } = run;
-  const finished = { at: effects.clock(), stage, state, effect, launch };
+  const finished = { at: effects.clock(), key, stage, state, effect, launch };
   await effects.usage(run.usage.session({ ...finished, outcome, signalled }));
   return outcome;
 }
@@ -267,10 +267,10 @@ async function runWalk<S extends string, D>(
   effects: Effects,
 ): Promise<RunEnd> {
   const { stage, saved, context } = entry;
-  const usage = runUsage(stage, effects.clock());
+  const usage = runUsage(stage, effects.clock(), saved);
   const run: Run<D> = { writes, effects, context, stage, saved, usage };
   const end = await enter(run, walk, saved);
-  await effects.usage(usage.job(end, run.saved, effects.clock()));
+  await effects.usage(usage.job(end, effects.clock()));
   return end;
 }
 

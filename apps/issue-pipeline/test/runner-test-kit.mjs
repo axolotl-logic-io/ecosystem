@@ -59,7 +59,14 @@ const REPLIED = { ok: true, name: "replied", reply: { plan: "toy plan" } };
 /** @type {LaunchUsage} what every toy session's launch spent */
 const LAUNCH = {
   turns: 3,
-  tokens: { input: 900, output: 120, cacheRead: 4000, cacheWrite: 300 },
+  tokens: {
+    input: 900,
+    output: 120,
+    cacheRead: 4000,
+    cacheWrite: 300,
+    cacheWrite1h: 300,
+    cost: 0.25,
+  },
   first: 1200,
   peak: 5300,
   atFinish: 5000,
@@ -231,6 +238,7 @@ function world(options = {}) {
           { reply: sessionReply(options, effect) },
         ),
         launch: { ...LAUNCH, stopped: options.contextStop === true },
+        key: `i7-${effect.name}-1`,
       }),
       usage: appendTo(usages),
       save: (state) =>

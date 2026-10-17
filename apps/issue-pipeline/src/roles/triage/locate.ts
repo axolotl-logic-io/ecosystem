@@ -115,7 +115,7 @@ function locate(
   saved: State,
   context: RoleContext,
 ): MachineState<string, TriageData> {
-  const { issue, cfg, budgets, models, paths, now } = context;
+  const { issue, jobId, cfg, budgets, models, paths, now } = context;
   const depth = numberOr(saved.depth, 0);
   const { counted, stop } = startTriage(countedOf(saved), cfg.maxTriages);
   const session = triageSession(
@@ -127,7 +127,7 @@ function locate(
     start = { kind: "stop", stop };
   }
   const { agent, model } = session;
-  const by: Signature = { role: "triage", agent, model, run: null };
+  const by: Signature = { role: "triage", agent, model, run: jobId };
   const data: TriageData = {
     ...counted,
     ...handoffOf(saved),

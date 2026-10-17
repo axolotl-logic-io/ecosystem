@@ -43,7 +43,7 @@ import {
 } from "./sweep-item.ts";
 import type { StageBatch, StagePhase } from "./sweep-stages.ts";
 import { afterClaim, stageResults, unreachable } from "./sweep-stages.ts";
-import type { JobLayout } from "./types.ts";
+import type { IssueState, JobLayout, Sweep, SweepClock } from "./types.ts";
 
 // What the sweep awaits: the sweep op's reply, a candidate's claim, a stage
 // group's batch, the closing launches or the cleanup; or nothing, once done.
@@ -55,20 +55,6 @@ type Phase =
   | { kind: "finish"; run: SweepRun; parents: number }
   | { kind: "cleanup"; run: SweepRun }
   | { kind: "done"; run: SweepRun };
-
-// The sweep's id and its clock.
-interface SweepClock {
-  sweepId: string;
-  now: () => Date;
-}
-
-interface Sweep {
-  next: (raw: readonly unknown[]) => LaunchSpec[];
-  summary: () => SweepSummary;
-  // The save that leaves the claimed open issue at its stage with no lease
-  // when a stop cuts the stages short; null outside the stages.
-  interrupt: () => LaunchSpec | null;
-}
 
 interface Driver extends RunPins {
   frame: OpsFrame;
@@ -293,8 +279,14 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
       const launch = interruptLaunch(closingOf(phase.run.item));
       return launch && opsLaunchSpec(phase.run, launch);
     },
+    claimed: (): IssueState | null => {
+      const { phase } = driver;
+      if (!("run" in phase) || phase.run.item?.kind !== "claimed") {
+        return null;
+      }
+      return phase.run.item.st;
+    },
   };
 }
 
-export type { Sweep, SweepClock };
 export { startSweep };

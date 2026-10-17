@@ -197,7 +197,7 @@ test("a writer whose origin is gone at exit reports it on stderr, stops on SIGTE
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
 });
 
-test("a writer stopped by SIGTERM still pushes its commit before its checkout goes", async () => {
+test("a writer stopped by SIGTERM still saves, logs the job's usage and pushes its commit before its checkout goes", async () => {
   const place = setUp(pushingRepliesAt("implement"), COMMIT_AND_WAIT);
   const job = startJob(place, ["--stage", "implement"]);
   await waitFor("the session's spending in job.json", () => spent(place));
@@ -206,7 +206,8 @@ test("a writer stopped by SIGTERM still pushes its commit before its checkout go
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
   assert.equal(refOf(place.origin, BRANCH), committed(place));
   const ops = logOf(place, "ops.log").map(({ op }) => op);
-  assert.deepEqual(ops.slice(-2), ["save-state", "exit-push"]);
+  const last = ["save-state", "usage", "exit-push"];
+  assert.deepEqual(ops.slice(-last.length), last);
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
 });
 

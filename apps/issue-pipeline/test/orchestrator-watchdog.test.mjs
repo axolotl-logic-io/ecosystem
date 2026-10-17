@@ -6,7 +6,9 @@
 // agent:stopped-job; finished, failed and stopped jobs and stopped issues are
 // left alone; a silent session is steered at silentMinutes, and its job sent
 // SIGTERM after as long again, then resumed once it has stopped. Each rule
-// fires at its threshold and not before, and every action is logged.
+// fires at its threshold and not before, and every action is logged: a
+// restart with its job's pid and id, an escalation with the attempt its
+// stage is at and the issue's tokens.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,6 +23,7 @@ import {
   MINUTE_MS,
   NOW,
   OTHERS_PID,
+  runFile,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
 
@@ -41,7 +44,10 @@ const ISSUE = {
   ops: 68,
   restarted: 69,
   deadTriage: 70,
+  escalatedAfterRestart: 71,
 };
+const ISSUE_TOKENS = 4321;
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/u;
 const PR_OF_CAPPED = 9;
 // The defaults, which the kit's config leaves to the watchdog.
 const SILENT_MINUTES = 30;
@@ -62,6 +68,17 @@ function heardAt(issue, minutes) {
   const at = new Date(NOW.getTime() + minutes * MINUTE_MS).toISOString();
   status.launches[0].lastEventAt = at;
   fs.writeFileSync(file, JSON.stringify(status));
+}
+
+// Every line orchestrator.log holds for `issue`, as written.
+/** @param {number} issue @returns {any[]} */
+function linesFor(issue) {
+  return fs
+    .readFileSync(runFile("orchestrator.log"), "utf8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line))
+    .filter((line) => line.issue === issue);
 }
 
 /** @param {number} issue @param {string} stage @returns {string[]} */
@@ -223,4 +240,27 @@ test("a session heard from after its steer is not stopped, and ops launches are 
   const later = tickOver(issues, SILENT_MINUTES);
   assert.deepEqual([later.steered, later.terminated], [[], []]);
   assert.deepEqual(loggedFor(ISSUE.ops), []);
+});
+
+test("a restart's line names its job's pid and id, and a later stop's escalation the attempt its stopped stage is at and the issue's tokens", () => {
+  const issue = ISSUE.escalatedAfterRestart;
+  writeJob({ issue, stage: "review", pid: deadPid() });
+  const { spawned } = tickOver([
+    { number: issue, state: { stage: "review", reportedTokens: ISSUE_TOKENS } },
+  ]);
+  assert.equal(spawned.length, 1);
+  const state = {
+    stage: "stopped",
+    stoppedStage: "review",
+    reportedTokens: ISSUE_TOKENS,
+  };
+  tickOver([{ number: issue, labels: ["agent:stopped-error"], state }]);
+  const [resumed, escalated, ...more] = linesFor(issue);
+  assert.deepEqual(more, []);
+  assert.equal(resumed.action, "resumed");
+  assert.equal(typeof resumed.pid, "number");
+  assert.match(resumed.job, UUID);
+  assert.equal(escalated.action, "escalated");
+  assert.equal(escalated.attempt, 2);
+  assert.equal(escalated.issueTokens, ISSUE_TOKENS);
 });

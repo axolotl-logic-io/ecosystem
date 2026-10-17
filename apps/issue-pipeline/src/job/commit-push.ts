@@ -2,7 +2,9 @@
 // a writer session commits, the job, which alone holds the token, pushes the
 // checkout's code commits that origin lacks to the issue's branch, and the
 // wiki checkout's when the stage writes the wiki, and records each push under
-// the session's launch in job.json. It defers while a rebase is stopped in
+// the session's launch in job.json and as a line of `pushes.jsonl` in the
+// issue's run folder, `{key, job, repo, sha, at}`, which outlives job.json.
+// It defers while a rebase is stopped in
 // either checkout, and in the stages whose ops push only after their checks.
 // A refused push keeps the commits and is reported, never thrown; the next
 // request pushes whatever is still unpushed.
@@ -17,6 +19,7 @@ import type { StageName } from "../workflow/stages/types.ts";
 import type { Pushed, PushReply } from "./control-protocol.ts";
 import type { LaunchPush } from "./launch-record.ts";
 import { STAGE_WIKI_ACCESS } from "./roles.ts";
+import { appendRunLine } from "./run-log.ts";
 
 // The op a push for `pipeline_commit` is recorded as in pushed.json, which a
 // claim adopts as the pipeline's own push (src/adopt-push.ts).
@@ -29,11 +32,12 @@ const DEFERRING_STAGES: ReadonlySet<StageName> = new Set<StageName>([
   "publish",
 ]);
 
-// The job a push server pushes for.
+// The job a push server pushes for, and its random id.
 interface PushJob {
   issue: number;
   stage: StageName;
   checkout: string;
+  id: string;
 }
 
 function isRepo(dir: string): boolean {
@@ -104,6 +108,7 @@ function pushServerOf(
   pushed: (key: string, push: LaunchPush) => void,
 ): (key: string) => PushReply {
   const { issue, stage, checkout } = job;
+  const runDir = paths.runDir(cfg, issue);
   const jobCfg = withCheckout(cfg, { issue, dir: checkout });
   const wikiDir = paths.wiki(jobCfg, issue);
   const writesWiki =
@@ -140,6 +145,7 @@ function pushServerOf(
     }
     for (const push of done.pushes) {
       pushed(key, push);
+      appendRunLine(runDir, "pushes.jsonl", { key, job: job.id, ...push });
     }
     let pushError: string | null = null;
     if (done.errors.length > 0) {

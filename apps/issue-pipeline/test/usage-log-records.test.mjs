@@ -1,7 +1,8 @@
 // @ts-check
 // The usage log's records (#302): a launch's tally from its RPC records, the
 // session record built from it, the serializer that admits only numbers,
-// booleans, times and fixed names, and the usage comment's body.
+// booleans, times and fixed names, a record written before the session key,
+// job start, 1h cache writes and cost were, and the usage comment's body.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -35,6 +36,7 @@ function sessionEntry(over = {}) {
   return {
     kind: "session",
     at: "2026-10-16T12:00:00.000Z",
+    key: "i7-spec-1",
     stage: "spec",
     state: "work",
     name: "work",
@@ -111,6 +113,32 @@ test("tool output is counted per tool from tool_execution_end", () => {
 test("a session record carries the entry's facts and the job's identity", () => {
   const line = serializeUsage(usageRecord(sessionEntry(), CONTEXT));
   assert.deepEqual(parseUsageLine(line), sessionRecord({ reply: "done" }));
+});
+
+test("a session record keeps a model id with its provider prefix", () => {
+  const model = "anthropic/claude-opus-5-5";
+  const entry = sessionEntry({ model });
+  const line = serializeUsage(usageRecord(entry, CONTEXT));
+  assert.deepEqual(
+    parseUsageLine(line),
+    sessionRecord({ model, reply: "done" }),
+  );
+  for (const bad of ["a/b/c", "/abs", "a/", "a b/c"]) {
+    assert.throws(() => serializeUsage(sessionRecord({ model: bad })), bad);
+  }
+});
+
+test("a record from before the session key, job start, 1h cache writes and cost still parses", () => {
+  const { cacheWrite1h: _1h, cost: _cost, ...tokens } = LAUNCH.tokens;
+  const {
+    key: _key,
+    jobStartedAt: _start,
+    ...older
+  } = sessionRecord({
+    tokens,
+  });
+  const line = JSON.stringify(older);
+  assert.deepEqual(parseUsageLine(line), older);
 });
 
 test("a reply value the schema's enum doesn't list is recorded as null", () => {

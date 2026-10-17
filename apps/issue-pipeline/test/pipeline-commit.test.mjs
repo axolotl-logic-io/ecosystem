@@ -2,10 +2,10 @@
 // Shared, "pipeline_commit"): the refused flags and paths, how pathspecs
 // route to the code checkout (repo/) and the wiki checkout (docs/), the access
 // refusals (#338), the wiki's commit of everything with the same message,
-// and the dry run.
+// the session trailer every commit ends with, and the dry run.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { commitArgsOf } from "../src/job/pipeline-commit.ts";
+import { commitArgsOf, sessionTrailer } from "../src/job/pipeline-commit.ts";
 
 /** @typedef {import("../src/job/pipeline-commit.ts").PathScope} PathScope */
 
@@ -26,12 +26,19 @@ function scopeOf(repo, docs, allowed = ["**"]) {
   };
 }
 
+// The trailer of session i7-implement-1 of a job started at noon.
+const SESSION = sessionTrailer({
+  key: "i7-implement-1",
+  jobStartedAt: "2026-10-17T12:00:00.000Z",
+});
+const TRAILER = ["--trailer", SESSION];
+
 const WRITE = scopeOf("write", "write");
 const READ = scopeOf("write", "read");
 
 /** @param {string[]} args @param {PathScope} scope */
 function refusal(args, scope = WRITE) {
-  const plan = commitArgsOf(args, scope);
+  const plan = commitArgsOf(args, scope, SESSION);
   if (plan.kind !== "refused") {
     throw new Error(`not refused: ${JSON.stringify(args)}`);
   }
@@ -40,7 +47,7 @@ function refusal(args, scope = WRITE) {
 
 /** @param {string[]} args @param {PathScope} scope */
 function planned(args, scope = WRITE) {
-  const plan = commitArgsOf(args, scope);
+  const plan = commitArgsOf(args, scope, SESSION);
   if (plan.kind !== "commit") {
     throw new Error(`refused: ${plan.error}`);
   }
@@ -109,10 +116,11 @@ test("a docs/ path is refused in a job with no wiki checkout", () => {
 
 test("pathspecs lose their repo/ or docs/ prefix and go to that checkout", () => {
   const plan = planned(["-m", "Add", "--", "repo/src/a.ts", "docs/Home.md"]);
-  assert.deepEqual(plan.code, ["commit", "-m", "Add", "--", "src/a.ts"]);
+  const add = ["commit", "-m", "Add", ...TRAILER];
+  assert.deepEqual(plan.code, [...add, "--", "src/a.ts"]);
   assert.deepEqual(plan.wiki, [
     ["add", "-A", "--", "Home.md"],
-    ["commit", "-m", "Add", "--", "Home.md"],
+    [...add, "--", "Home.md"],
   ]);
   assert.equal(plan.dryRun, false);
   const wikiOnly = planned(["-m", "Page", "docs/New.md"]);
@@ -121,12 +129,30 @@ test("pathspecs lose their repo/ or docs/ prefix and go to that checkout", () =>
     "commit",
     "-m",
     "Page",
+    ...TRAILER,
     "--",
     "New.md",
   ]);
   const codeOnly = planned(["-m", "Code", "repo"]);
-  assert.deepEqual(codeOnly.code, ["commit", "-m", "Code", "--", "."]);
+  assert.deepEqual(codeOnly.code, [
+    "commit",
+    "-m",
+    "Code",
+    ...TRAILER,
+    "--",
+    ".",
+  ]);
   assert.equal(codeOnly.wiki, null);
+});
+
+test("every commit, code or wiki, ends with the session's trailer, naming its launch key and the job's start", () => {
+  assert.equal(
+    SESSION,
+    "Pipeline-Session: i7-implement-1@2026-10-17T12:00:00.000Z",
+  );
+  const plan = planned(["-am", "Work"]);
+  assert.deepEqual(plan.code?.slice(-2), TRAILER);
+  assert.deepEqual(plan.wiki?.[1]?.slice(-2), TRAILER);
 });
 
 test("with no pathspec the wiki adds every change and commits it with the same message", () => {
@@ -136,21 +162,27 @@ test("with no pathspec the wiki adds every change and commits it with the same m
   assert.ok(plan.code?.includes("-am"));
   assert.deepEqual(plan.wiki, [
     ["add", "-A"],
-    ["commit", "-m", "Fix it", "--trailer", trailer],
+    ["commit", "-m", "Fix it", "--trailer", trailer, ...TRAILER],
   ]);
   const signed = planned(["--message=Docs", "-s"]);
-  assert.deepEqual(signed.wiki?.[1], ["commit", "-m", "Docs", "-s"]);
+  assert.deepEqual(signed.wiki?.[1], [
+    "commit",
+    "-m",
+    "Docs",
+    "-s",
+    ...TRAILER,
+  ]);
 });
 
 test("a relative message file is read from the job's folder in both checkouts", () => {
   const plan = planned(["-F", "msg.txt"]);
-  assert.deepEqual(plan.code, ["commit", "-F", "../msg.txt"]);
-  assert.deepEqual(plan.wiki?.[1], ["commit", "-F", "../msg.txt"]);
+  assert.deepEqual(plan.code, ["commit", "-F", "../msg.txt", ...TRAILER]);
+  assert.deepEqual(plan.wiki?.[1], ["commit", "-F", "../msg.txt", ...TRAILER]);
   const long = planned(["--file", "m.txt"]);
-  assert.deepEqual(long.code, ["commit", "--file", "../m.txt"]);
-  assert.deepEqual(long.wiki?.[1], ["commit", "-F", "../m.txt"]);
+  assert.deepEqual(long.code, ["commit", "--file", "../m.txt", ...TRAILER]);
+  assert.deepEqual(long.wiki?.[1], ["commit", "-F", "../m.txt", ...TRAILER]);
   const absolute = planned(["-F", "/tmp/m.txt"]);
-  assert.deepEqual(absolute.code, ["commit", "-F", "/tmp/m.txt"]);
+  assert.deepEqual(absolute.code, ["commit", "-F", "/tmp/m.txt", ...TRAILER]);
 });
 
 test("with no pathspec, only the checkouts the stage may write are planned", () => {

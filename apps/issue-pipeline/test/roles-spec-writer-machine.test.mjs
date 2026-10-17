@@ -1,7 +1,8 @@
 // @ts-check
 // The spec writer role's machine (#333): every edge of the wiki's Lifecycle
 // table as a state and a result, the table's faults, the retry limit, where
-// locate starts a run, and that the role's modules import no other role. The
+// locate starts a run and the job id its comments sign with, and that the
+// role's modules import no other role. The
 // session's task is in roles-spec-writer-task.test.mjs. Ported from the spec
 // stage's tests where they overlap (workflow-stages-spec-next, -retry-next
 // and -split-next).
@@ -17,6 +18,7 @@ import {
   TABLE,
   transition,
 } from "../src/roles/spec-writer/machine.ts";
+import { JOB_ID } from "./role-context-fixtures.mjs";
 import {
   EDGES,
   ENTRY_EFFECTS,
@@ -150,13 +152,14 @@ test("the machine hands off the spec's fields and its PR, and checkpoints its st
   assert.equal(specWriterMachine.limits, LIMITS);
 });
 
-test("a fresh start claims the issue, with no start heads and no sessions run", () => {
+test("a fresh start claims the issue, with no start heads and no sessions run, and signs with the job's id", () => {
   const { at, data } = located();
   assert.equal(at, "claim");
   assert.equal(data.attempts, 0);
   assert.equal(data.startSha, undefined);
   assert.equal(data.startWikiSha, undefined);
   assert.equal(data.reply, null);
+  assert.equal(data.by.run, JOB_ID);
 });
 
 test("a restart reads back its start heads, attempts and continuations, and runs the session again", () => {

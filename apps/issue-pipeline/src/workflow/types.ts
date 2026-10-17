@@ -1,9 +1,11 @@
 // The shapes the workflow's modules read and write: the issue's saved state,
-// the work item a helper reads for its issue, and the slices of the repo
-// config each helper needs.
+// the work item a helper reads for its issue, the slices of the repo config
+// each helper needs, and the sweep its driver (sweep.ts) gives its caller.
 
 import type { Flows } from "./flows.ts";
+import type { LaunchSpec } from "./launches.ts";
 import type { Signature } from "./signing.ts";
+import type { SweepSummary } from "./stages/types.ts";
 
 // A finding is open until a re-review resolves it.
 type FindingStatus = "open" | "resolved";
@@ -202,6 +204,23 @@ type Role =
 // code to them, or reviews against them.
 type PracticesUse = "spec" | "writer" | "reviewer";
 
+// The sweep's id and its clock.
+interface SweepClock {
+  sweepId: string;
+  now: () => Date;
+}
+
+interface Sweep {
+  next: (raw: readonly unknown[]) => LaunchSpec[];
+  summary: () => SweepSummary;
+  // The save that leaves the claimed open issue at its stage with no lease
+  // when a stop cuts the stages short; null outside the stages.
+  interrupt: () => LaunchSpec | null;
+  // The claimed issue's state as it stands, or null before a claim and when
+  // none was claimed.
+  claimed: () => IssueState | null;
+}
+
 export type {
   Continuations,
   Finding,
@@ -216,5 +235,7 @@ export type {
   RepoConfig,
   ReportedFinding,
   Role,
+  Sweep,
+  SweepClock,
   WorkItem,
 };

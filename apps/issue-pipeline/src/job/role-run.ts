@@ -7,6 +7,7 @@
 // the stage it last saved, with no lease, as a sweep's stop does.
 
 import type { Config } from "../config.ts";
+import { paths as configPaths } from "../config.ts";
 import type { SessionEffect } from "../roles/machine.ts";
 import type { Role } from "../roles/registry.ts";
 import type { RoleContext } from "../roles/walk.ts";
@@ -25,8 +26,8 @@ import type { ContextStop } from "./context-watch.ts";
 import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runLaunch } from "./launch.ts";
-import type { OpsRaw, SessionRaw } from "./raw-results.ts";
 import type { OpEffect, Outcome } from "./run-step.ts";
+import { sessionOutcome } from "./run-usage.ts";
 import type { RunEnd } from "./runner.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 import { usageAppender } from "./usage-append.ts";
@@ -49,8 +50,10 @@ type RoleStageEnd =
 interface RoleJob {
   role: Role;
   cfg: Config;
-  // The job's random id, which its usage records carry.
+  // The job's random id, which its usage records and its comments'
+  // signatures carry, and its start, which its commits' trailers name.
   jobId: string;
+  jobStartedAt: string;
   issue: number;
   stage: string;
   stackOn: number | null;
@@ -109,7 +112,7 @@ interface Launcher {
   op: (launch: OpLaunch) => Promise<Reply>;
   session: (
     effect: SessionEffect,
-  ) => Promise<{ outcome: Outcome; launch: LaunchUsage }>;
+  ) => Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }>;
 }
 
 // The job's hooks, which also feed every record and stop to `tally`.
@@ -125,13 +128,6 @@ function tallied(hooks: LaunchHooks, tally: UsageTally): LaunchHooks {
       hooks.contextStopped(key, stop);
     },
   };
-}
-
-function sessionOutcome(raw: OpsRaw | SessionRaw): Outcome {
-  if ("structuredOutput" in raw && raw.ok) {
-    return { ok: true, name: "replied", reply: raw.structuredOutput };
-  }
-  return { ok: false, error: raw.error ?? "the session failed" };
 }
 
 function launcherOf(job: RoleJob): Launcher {
@@ -154,7 +150,7 @@ function launcherOf(job: RoleJob): Launcher {
     },
     session: async (
       effect: SessionEffect,
-    ): Promise<{ outcome: Outcome; launch: LaunchUsage }> => {
+    ): Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }> => {
       seq += 1;
       const item = { n: job.issue, worktree: job.repo };
       const spec = childSpec(seq, item, childOf(effect), meta);
@@ -163,7 +159,8 @@ function launcherOf(job: RoleJob): Launcher {
       const raw = await runLaunch(spec, tallied(job.hooks, tally));
       settled(spec.key, raw.ok);
       const seconds = (Date.now() - startedAt) / MS_PER_SECOND;
-      return { outcome: sessionOutcome(raw), launch: tally.usage(seconds) };
+      const launch = tally.usage(seconds);
+      return { outcome: sessionOutcome(raw), launch, key: spec.key };
     },
   };
 }
@@ -189,6 +186,7 @@ function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
   const { budgets, models } = sweepSettings(cfg);
   return {
     issue: job.issue,
+    jobId: job.jobId,
     cfg,
     budgets,
     models,
@@ -205,11 +203,16 @@ async function runClaimed(
   claimed: { state: State; paths: ItemPaths },
 ): Promise<RoleStageEnd> {
   const { issue, stage, control, status } = job;
-  const { cfg, jobId, role } = job;
+  const { cfg, jobId, jobStartedAt, role } = job;
   const limits = job.hooks.contextLimits;
-  const owner = { repo: cfg.repo, issue, job: jobId, role: role.name, limits };
-  const usage = usageAppender(owner, async (line: string) =>
-    succeeded(await launcher.op(opLaunchOf(issue, "usage", { line }))),
+  const owner = { repo: cfg.repo, issue, job: jobId, jobStartedAt, limits };
+  const usage = usageAppender(
+    { ...owner, role: role.name },
+    {
+      send: async (line: string): Promise<boolean> =>
+        succeeded(await launcher.op(opLaunchOf(issue, "usage", { line }))),
+      runDir: configPaths.runDir(cfg, issue),
+    },
   );
   let last = claimed.state;
   async function save(state: State): Promise<Outcome> {
@@ -272,4 +275,4 @@ async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
 }
 
 export type { RoleJob, RoleLine, RoleStageEnd };
-export { runRoleStage };
+export { runRoleStage, tallied };

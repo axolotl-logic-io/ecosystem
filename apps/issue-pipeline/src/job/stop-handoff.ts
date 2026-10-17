@@ -90,10 +90,14 @@ function readText(file: string): string | null {
   }
 }
 
+// The head of the checkout at `cwd`, or null when it has none.
+function checkoutHead(cwd: string): string | null {
+  return gitOut(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+}
+
 // What the job notes as a writer session in `cwd` starts.
 function handoffStartOf(cwd: string, handoffFile: string): HandoffStart {
-  const head = gitOut(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"]);
-  return { head, handoff: readText(handoffFile) };
+  return { head: checkoutHead(cwd), handoff: readText(handoffFile) };
 }
 
 // Why the job can't safely commit in `cwd`, or null when it can.
@@ -199,4 +203,4 @@ function saveStoppedWork(place: WriterPlace, end: StoppedEnd): StoppedWork {
 }
 
 export type { HandoffStart, StoppedEnd, StoppedWork, WriterPlace };
-export { handoffStartOf, saveStoppedWork };
+export { checkoutHead, handoffStartOf, saveStoppedWork };

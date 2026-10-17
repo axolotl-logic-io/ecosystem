@@ -4,6 +4,7 @@
 // the run, for both the machine and the linear toy.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { rateTokens } from "../src/workflow/rate-tokens.ts";
 import { LAUNCH, runToy, world } from "./runner-test-kit.mjs";
 
 /** @import { Outcome } from "../src/job/run-step.ts" */
@@ -118,7 +119,7 @@ test("each retried session gives its own attempt", async () => {
   );
 });
 
-test("the machine's job entry lists its stages, outcome and summed tokens", async () => {
+test("the machine's job entry lists its stages, outcome, summed tokens and the issue's tokens with its sessions'", async () => {
   const { end, usages } = await usageRun("machine", { verify: failOnce });
   assert.deepEqual(end, { kind: "saved", stage: "merge" });
   const jobs = jobsOf(usages);
@@ -128,7 +129,8 @@ test("the machine's job entry lists its stages, outcome and summed tokens", asyn
   assert.equal(job?.outcome, "saved");
   assert.equal(job?.tokens.input, 2 * LAUNCH.tokens.input);
   assert.equal(job?.tokens.output, 2 * LAUNCH.tokens.output);
-  assert.equal(job?.issueTokens, 0);
+  assert.equal(job?.tokens.cost, 2 * LAUNCH.tokens.cost);
+  assert.equal(job?.issueTokens, 2 * rateTokens(LAUNCH.tokens));
   assert.equal(usages.at(-1)?.kind, "job");
 });
 

@@ -80,6 +80,8 @@ function jobWith(input, minute = 0) {
           output: input,
           cacheRead: input * CACHE_READS_PER_INPUT,
           cacheWrite: input,
+          cacheWrite1h: 0,
+          cost: 0,
         },
         tokenBudget: null,
         contextTokens: 0,

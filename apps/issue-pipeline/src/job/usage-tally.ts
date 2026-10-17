@@ -3,8 +3,9 @@
 // (context-watch.ts) measures context. It does no I/O.
 
 import { turnContext } from "./context-watch.ts";
-import type { Usage } from "./raw-results.ts";
-import { addUsage, recordFacts, ZERO_USAGE } from "./raw-results.ts";
+import { recordFacts } from "./raw-results.ts";
+import type { Usage } from "./token-usage.ts";
+import { addUsage, ZERO_USAGE } from "./token-usage.ts";
 
 interface ToolUse {
   calls: number;

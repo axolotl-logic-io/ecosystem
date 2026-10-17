@@ -39,7 +39,9 @@ const TRIAGED = {
   implemented: false,
 };
 const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
-const USAGE = { input: 1000, output: 200, cacheRead: 3000, cacheWrite: 400 };
+// Its cache writes all last an hour, and its cost is exact in binary.
+const TOKENS = { input: 1000, output: 200, cacheRead: 3000, cacheWrite: 400 };
+const USAGE = { ...TOKENS, cacheWrite1h: TOKENS.cacheWrite, cost: 0.125 };
 const USAGE_TOTAL =
   USAGE.input + USAGE.output + USAGE.cacheRead + USAGE.cacheWrite;
 // What USAGE counts as spent towards reportedTokens: cache reads left out.

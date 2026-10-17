@@ -16,7 +16,12 @@ import { run } from "../process.ts";
 import type { PushReply } from "./control-protocol.ts";
 import { requestPush } from "./control-protocol.ts";
 import type { CommitPlan, CommitScope } from "./pipeline-commit.ts";
-import { COMMIT_TOOL, commitArgsOf, commitScopeIn } from "./pipeline-commit.ts";
+import {
+  COMMIT_TOOL,
+  commitArgsOf,
+  commitScopeIn,
+  sessionTrailer,
+} from "./pipeline-commit.ts";
 
 const PARAMS = z.object({ args: z.array(z.string()) });
 // git's own words for a commit with nothing in it, in the C locale.
@@ -172,7 +177,7 @@ async function execute(_id: string, params: unknown): Promise<ToolResult> {
   if (!parsed.success) {
     throw new Error(`pipeline_commit: ${z.prettifyError(parsed.error)}`);
   }
-  const plan = commitArgsOf(parsed.data.args, scope);
+  const plan = commitArgsOf(parsed.data.args, scope, sessionTrailer(scope));
   if (plan.kind === "refused") {
     throw new Error(`pipeline_commit refused: ${plan.error}`);
   }

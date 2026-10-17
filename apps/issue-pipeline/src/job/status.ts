@@ -1,6 +1,6 @@
 // A stage job's status file, `job.json` in the issue's run folder. While the
-// job runs it holds the job's pid, issue, stage, lane, start time and steer
-// socket, a record of every launch it started (src/job/launch-record.ts),
+// job runs it holds the job's pid, id, issue, stage, lane, start time and
+// steer socket, a record of every launch it started (src/job/launch-record.ts),
 // and for a stage that runs a role, each step of the role's run (#301). On
 // exit it holds the job's outcome, which notes a sweep that deferred its
 // issue on a rate limit for the orchestrator's backoff, the uncommitted
@@ -21,8 +21,8 @@ import type {
   LaunchRecord,
 } from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
-import type { Usage } from "./raw-results.ts";
 import type { StepReport } from "./step-report.ts";
+import type { Usage } from "./token-usage.ts";
 
 const STATUS_FILE = "job.json";
 const SIGNAL = z.enum(["SIGTERM", "SIGINT"]);
@@ -48,6 +48,8 @@ const STEP = z.object({
 const STATUS = z.object({
   version: z.literal(1),
   pid: z.number(),
+  // The job's id; missing from a file written before it was recorded.
+  id: z.string().optional(),
   issue: z.number(),
   stage: z.string(),
   lane: z.string().nullable(),
@@ -65,11 +67,14 @@ type StopSignal = z.infer<typeof SIGNAL>;
 type JobOutcome = z.infer<typeof JOB_OUTCOME>;
 type StatusFile = z.infer<typeof STATUS>;
 
-// The job as its file names it.
+// The job as its file names it: its random id and its start, as its usage
+// records and its commits' trailers name them, too.
 interface JobInfo {
+  id: string;
   issue: number;
   stage: string;
   lane: string | null;
+  startedAt: string;
   socket: string;
 }
 
@@ -175,7 +180,6 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     version: 1,
     pid: process.pid,
     ...job,
-    startedAt: new Date().toISOString(),
     outcome: null,
     launches: [],
   };

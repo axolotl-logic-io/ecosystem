@@ -14,9 +14,10 @@
 import type { JsonSchema } from "../workflow/schemas.ts";
 import type { LiveLaunch } from "./control.ts";
 import { stopLaunch } from "./control.ts";
-import type { SessionLaunch, SessionRaw, Usage } from "./raw-results.ts";
+import type { SessionLaunch, SessionRaw } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
 import { heldToLimits, SPEC_AGENT } from "./roles.ts";
+import type { Usage } from "./token-usage.ts";
 
 // The context a writer session may pass once, to be steered (`soft`), and
 // the one it may never pass (`hard`), in tokens.

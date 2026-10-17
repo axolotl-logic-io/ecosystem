@@ -18,11 +18,13 @@ import type {
 } from "./machine.ts";
 import { transitionOf } from "./machine.ts";
 
-// What a role's locate reads besides the saved state: the issue, the repo
-// config, the token budgets and models, the claim's paths with the job's
-// checkout as the worktree, and the time the run started.
+// What a role's locate reads besides the saved state: the issue, the job's
+// random id, which signs the role's comments, the repo config, the token
+// budgets and models, the claim's paths with the job's checkout as the
+// worktree, and the time the run started.
 interface RoleContext {
   issue: number;
+  jobId: string;
   cfg: SweepConfig;
   budgets: Budgets;
   models: Readonly<Record<ModelRole, string>>;

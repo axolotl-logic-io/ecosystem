@@ -15,6 +15,7 @@ const STEER_RESUME = "--steer can't be combined with --resume";
 const STEER_BOUNDARY = "--steer can't be combined with --print-boundary";
 const NO_QUEUE = "--merge-queue must list issue numbers, such as 3,5";
 const NO_PREREQ = "--stack-on must be an issue number other than --issue";
+const NO_JOB_ID = "--job-id must be a UUID";
 const MERGE_QUEUE = z
   .string()
   .transform((list: string): string[] => list.split(","))
@@ -49,6 +50,9 @@ const JOB_ARGS = z.discriminatedUnion("kind", [
       mergeQueue: MERGE_QUEUE.optional(),
       // The issue whose branch this one starts on, if it has none (#268).
       stackOn: PREREQ.optional(),
+      // The job's id, as the orchestrator logs its start; a job started
+      // without one makes its own.
+      jobId: z.uuid({ error: NO_JOB_ID }).optional(),
     })
     .refine((run) => run.stackOn !== run.issue, {
       error: NO_PREREQ,
@@ -91,6 +95,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       "print-boundary": { type: "boolean" },
       "merge-queue": { type: "string" },
       "stack-on": { type: "string" },
+      "job-id": { type: "string" },
     },
     strict: true,
   });
@@ -98,6 +103,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     "print-boundary": printBoundary,
     "merge-queue": mergeQueue,
     "stack-on": stackOn,
+    "job-id": jobId,
     ...named
   } = values;
   let kind = "run";
@@ -111,6 +117,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     printBoundary,
     mergeQueue,
     stackOn,
+    jobId,
     kind,
   });
   if (!parsed.success) {

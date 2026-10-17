@@ -198,14 +198,14 @@ function locate(
   saved: State,
   context: RoleContext,
 ): MachineState<SpecState, SpecData> {
-  const { issue, cfg, budgets, models, paths } = context;
+  const { issue, jobId, cfg, budgets, models, paths } = context;
   const { depth, plan, splitSuggested } = saved;
   const handoff = handoffOf(saved);
   const by: Signature = {
     role: SPEC_ROLE,
     agent: SPEC_AGENT,
     model: models.spec,
-    run: null,
+    run: jobId,
   };
   const data: SpecData = {
     ...handoff,

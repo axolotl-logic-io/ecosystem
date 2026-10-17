@@ -2,8 +2,9 @@
 // A lifted issue (#381): its stop label is gone but its state is still saved
 // at `stopped`, with a stopped stage a restart resumes at. The orchestrator
 // runs it at that stage under the usual caps, file holds and merge order, as
-// "Restart after a stop" promises, logging `started` with reason `lifted`;
-// its job's claim turns the state back. A stop label, a stage no restart
+// "Restart after a stop" promises, logging a `lifted` line with the stop's
+// code, then `started` with reason `lifted`; its job's claim turns the state
+// back. A stop label, a stage no restart
 // resumes or answered questions still get no decision.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -17,6 +18,7 @@ import {
   SETTINGS,
   snapshotOf,
 } from "./orchestrator-fixtures.mjs";
+import { withoutJobId } from "./orchestrator-job-id-kit.mjs";
 import {
   CONFIG,
   cfg,
@@ -185,7 +187,7 @@ const UNWATCHED = {
 };
 
 // One tick of `config` (the base one by default), with the argv of each job
-// it spawned and its log lines for `number`.
+// it spawned, less its job id, and its log lines for `number`.
 /** @param {number} number @param {Config} [config] */
 function tickFor(number, config = cfg) {
   /** @type {(readonly string[])[]} */
@@ -194,7 +196,7 @@ function tickFor(number, config = cfg) {
     configPath: CONFIG,
     now: () => NOW,
     spawn: (argv) => {
-      spawned.push(argv);
+      spawned.push(withoutJobId(argv));
       return process.pid;
     },
     ...UNWATCHED,
@@ -233,22 +235,24 @@ function argvOf(number, stage) {
   ];
 }
 
-test("a tick spawns a lifted issue's job at its stopped stage, without --resume, and logs it lifted", () => {
+test("a tick spawns a lifted issue's job at its stopped stage, without --resume, and logs it lifted with its stop's code, then started", () => {
   openWith([{ number: ISSUE.checks, state: STOPPED_AT_CHECKS }]);
   const { spawned, logged } = tickFor(ISSUE.checks);
   assert.deepEqual(spawned, [argvOf(ISSUE.checks, "checks")]);
   assert.deepEqual(logged, [
+    { stage: "checks", action: "lifted", reason: STOPPED_AT_CHECKS.stopCode },
     { stage: "checks", action: "started", reason: "lifted" },
   ]);
 });
 
-test("a tick spawns a lifted merge with its merge queue", () => {
+test("a tick spawns a lifted merge with its merge queue, logging a stop with no code as stopped", () => {
   const state = { stage: "stopped", stoppedStage: "merge", pr: 6 };
   openWith([{ number: ISSUE.merge, state }]);
   const { spawned, logged } = tickFor(ISSUE.merge);
   const queue = ["--merge-queue", String(ISSUE.merge)];
   assert.deepEqual(spawned, [[...argvOf(ISSUE.merge, "merge"), ...queue]]);
   assert.deepEqual(logged, [
+    { stage: "merge", action: "lifted", reason: "stopped" },
     { stage: "merge", action: "started", reason: "lifted" },
   ]);
 });

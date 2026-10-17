@@ -1,13 +1,14 @@
 // @ts-check
 // The triage role on the role runner (#304), with the mock session and fake
 // ops: what each decision does to the issue, the stops before a session, a
-// run killed anywhere and started again, and that the role's modules import
-// no other role.
+// run killed anywhere and started again, the job id its comments sign with,
+// and that the role's modules import no other role.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
+import { JOB_ID } from "./role-context-fixtures.mjs";
 import {
   killedTriage,
   replyOf,
@@ -102,6 +103,18 @@ test("a ready issue is taken and saved at spec, with no start-pr and its pr unch
   assert.equal(lease, null);
   assert.equal(sent(run, "start-pr"), false);
   assert.match(String(triagePosts(run.writes)[0]), TAKING_COMMENT);
+});
+
+test("triage's comments are signed with the job's id as their run", async () => {
+  /** @type {any[]} */
+  const seen = [];
+  const reply = replyOf({ decision: "ready", reason: "Small." });
+  await triage({ reply, ops: { post: seeing(seen, TRIAGE_OPS.post) } });
+  const posted = seen.flatMap(({ comments }) => comments);
+  assert.ok(posted.length > 0);
+  for (const { by } of posted) {
+    assert.equal(by.run, JOB_ID);
+  }
 });
 
 test("a large issue is saved at spec with its split suggested, and nothing opened", async () => {

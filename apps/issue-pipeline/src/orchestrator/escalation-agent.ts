@@ -37,13 +37,18 @@ const ESCALATION_SETTINGS = z.looseObject({
   escalationAgentModel: z.string().min(1).default(DEFAULT_MODEL),
 });
 
+// A restart: held for `reason`, or started as job `job`, process `pid`.
+type Resumed =
+  | { kind: "held"; reason: string }
+  | { kind: "started"; pid: number; job: string };
+
 // The watchdog's commands a recommendation is carried out through.
 interface AgentActs {
   // Sends `message` to session `key` of the job listening on `socket`.
   steer: (socket: string, key: string, message: string) => void;
-  // Restarts the issue's `stage` job with --resume, or returns why the
-  // start gate (or the job being live) holds it.
-  resume: (issue: number, stage: string) => string | null;
+  // Restarts the issue's `stage` job with --resume, giving the job's pid
+  // and id, or gives why the start gate (or the job being live) holds it.
+  resume: (issue: number, stage: string) => Resumed;
   // Stops the issue with stop `code`, giving `reason`.
   stop: (issue: number, code: string, reason: string) => void;
 }
@@ -114,11 +119,12 @@ function resumeOf(where: Where, ctx: AdviceContext): LogEntry {
     return { ...where, action: "held", reason: "live" };
   }
   const { stage } = job.status;
-  const held = ctx.act.resume(where.issue, stage);
-  if (held !== null) {
-    return { ...where, action: "held", reason: held };
+  const resumed = ctx.act.resume(where.issue, stage);
+  if (resumed.kind === "held") {
+    return { ...where, action: "held", reason: resumed.reason };
   }
-  return { ...where, stage, action: "resumed", reason: "agent" };
+  const { pid, job: id } = resumed;
+  return { ...where, stage, action: "resumed", reason: "agent", pid, job: id };
 }
 
 // Carries out `action` through the watchdog's commands, and the line that
@@ -225,6 +231,21 @@ interface Escalating {
   labels: ReadonlyMap<number, readonly string[]>;
 }
 
+// The attempt issue `issue` is at in the stage it runs, or for an issue
+// saved at `stopped` the stage it stopped in: the watchdog's restarts of it
+// there, plus 1.
+function attemptOf(
+  memory: WatchMemory,
+  issue: number,
+  state: State | null | undefined,
+): number {
+  let ran = state?.stage;
+  if (ran === "stopped") {
+    ran = state?.stoppedStage ?? ran;
+  }
+  return (memory.resumes[`${issue} ${ran}`] ?? 0) + 1;
+}
+
 // Raises the escalations `open` holds that the watchdog's `memory` doesn't
 // hold yet, logs them, asks the escalation agent about them, then saves the
 // memory with what is escalated now: kept only once every step is done, so a
@@ -245,10 +266,18 @@ function escalateOpenIssues(
     };
   });
   const raised = escalate(flagged, memory.escalated, ctx.now);
-  logEscalations(cfg, raised.escalations);
+  logEscalations(
+    cfg,
+    raised.escalations.map((escalation) => {
+      const state = ctx.states.get(escalation.issue);
+      const attempt = attemptOf(memory, escalation.issue, state);
+      const issueTokens = state?.reportedTokens ?? 0;
+      return { ...escalation, attempt, issueTokens };
+    }),
+  );
   adviseOnEscalations(cfg, raised.escalations, ctx);
   saveWatchMemory(cfg, { ...memory, escalated: raised.escalated });
 }
 
-export type { AdviceContext, AgentActs };
+export type { AdviceContext, AgentActs, Resumed };
 export { escalateOpenIssues };

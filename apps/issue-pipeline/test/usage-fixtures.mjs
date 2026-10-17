@@ -6,12 +6,23 @@
 /** @import { UsageContext } from "../src/job/usage-log.ts" */
 
 const JOB_ID = "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b";
+const JOB_STARTED_AT = "2026-10-16T11:59:00.000Z";
+// The tokens of the runner test kit's toy sessions (LAUNCH).
+const TOKENS = {
+  input: 900,
+  output: 120,
+  cacheRead: 4000,
+  cacheWrite: 300,
+  cacheWrite1h: 300,
+  cost: 0.25,
+};
 
 /** @type {UsageContext} */
 const CONTEXT = {
   repo: "o/r",
   issue: 7,
   job: JOB_ID,
+  jobStartedAt: JOB_STARTED_AT,
   role: "spec-writer",
   limits: { soft: 150_000, hard: 175_000 },
 };
@@ -28,6 +39,8 @@ function sessionRecord(over = {}) {
     repo: "o/r",
     issue: 7,
     job: JOB_ID,
+    jobStartedAt: JOB_STARTED_AT,
+    key: "i7-spec-1",
     role: "spec-writer",
     stage: "spec",
     state: "work",
@@ -39,7 +52,7 @@ function sessionRecord(over = {}) {
     reply: null,
     seconds: 7,
     turns: 3,
-    tokens: { input: 900, output: 120, cacheRead: 4000, cacheWrite: 300 },
+    tokens: TOKENS,
     context: {
       first: 1200,
       peak: 5300,
@@ -68,14 +81,15 @@ function jobRecord(over = {}) {
     repo: "o/r",
     issue: 7,
     job: JOB_ID,
+    jobStartedAt: JOB_STARTED_AT,
     role: "spec-writer",
     stages: ["spec", "implement"],
     outcome: "saved",
     seconds: 30,
-    tokens: { input: 900, output: 120, cacheRead: 4000, cacheWrite: 300 },
+    tokens: TOKENS,
     issueTokens: 0,
     ...over,
   };
 }
 
-export { CONTEXT, JOB_ID, jobRecord, sessionRecord };
+export { CONTEXT, JOB_ID, JOB_STARTED_AT, jobRecord, sessionRecord };

@@ -20,9 +20,10 @@ type Outcome =
 interface Effects {
   op: (effect: OpEffect) => Promise<Outcome>;
   check: (effect: CheckEffect) => Promise<Outcome>;
+  // Runs the session, giving its outcome, its usage and its launch key.
   session: (
     effect: SessionEffect,
-  ) => Promise<{ outcome: Outcome; launch: LaunchUsage }>;
+  ) => Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }>;
   // Appends a usage entry; it never rejects.
   usage: (entry: UsageEntry) => Promise<void>;
   save: (state: State) => Promise<Outcome>;

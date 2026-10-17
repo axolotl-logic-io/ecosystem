@@ -9,6 +9,8 @@ import { sweepSettings } from "../src/workflow/sweep-config.ts";
 /** @import { SweepConfig } from "../src/workflow/stages/types.ts" */
 
 const ROLE_CLOCK = new Date("2026-10-16T12:00:00Z");
+// The job's id, which signs the role's comments.
+const JOB_ID = "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b";
 
 /** @type {SweepConfig} */
 const SWEEP_CONFIG = {
@@ -35,6 +37,7 @@ function roleContext(fields = {}) {
   const { budgets, models } = sweepSettings(cfg);
   return {
     issue: 7,
+    jobId: JOB_ID,
     cfg,
     budgets,
     models,
@@ -66,4 +69,4 @@ const JOB_CONFIG = {
   slug: "o__r",
 };
 
-export { JOB_CONFIG, ROLE_CLOCK, roleContext };
+export { JOB_CONFIG, JOB_ID, ROLE_CLOCK, roleContext };

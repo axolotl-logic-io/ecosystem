@@ -30,6 +30,14 @@ import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
 const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
 const SPEC_BUDGET = 80_000;
+// The job a status file is opened for, less its stage.
+const JOB = {
+  id: "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+  issue: ISSUE,
+  lane: null,
+  startedAt: "2026-10-17T12:00:00.000Z",
+  socket: "/s",
+};
 const FIRST_CONTEXT = 50_000;
 const LAST_CONTEXT = 51_000;
 // An acceptance verifier's turn context past its 60k budget and under the
@@ -123,6 +131,7 @@ test("a finished job's file counts only the last tool failures and records each 
   assert.deepEqual(fs.readdirSync(place.runDir).sort(), [
     "context.jsonl",
     "job.json",
+    "jobs.jsonl",
     "sessions",
   ]);
 });
@@ -155,7 +164,7 @@ test("job.json's lostChanges and droppedPatches round-trip through its schema", 
   const { openStatus, socketOf } = await import("../src/job/status.ts");
   const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
   process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
-  const job = { issue: ISSUE, stage: "implement", lane: null, socket: "/s" };
+  const job = { ...JOB, stage: "implement" };
   const status = openStatus(runDir, job);
   const patches = ["dropped/implement-1-repo.patch"];
   status.lostChanges(["repo/a.txt", "docs/B.md"], patches);
@@ -171,16 +180,23 @@ test("job.json's lostChanges and droppedPatches round-trip through its schema", 
   assert.equal(socketOf(runDir), null);
 });
 
-/** @param {number} input @returns {{ input: number, output: number, cacheRead: number, cacheWrite: number }} */
+/** @param {number} input @returns {import("../src/job/token-usage.ts").Usage} */
 function usageOf(input) {
-  return { input, output: 0, cacheRead: 0, cacheWrite: 0 };
+  return {
+    input,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cacheWrite1h: 0,
+    cost: 0,
+  };
 }
 
 test("a launch records its token budget, and its context is the latest message's total, not the sum (#281)", async () => {
   const { openStatus, readStatus } = await import("../src/job/status.ts");
   const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
   process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
-  const job = { issue: ISSUE, stage: "review", lane: null, socket: "/s" };
+  const job = { ...JOB, stage: "review" };
   const status = openStatus(runDir, job);
   const start = { pid: 1, session: "/s.jsonl", resumed: false };
   const key = "i1-review-1";

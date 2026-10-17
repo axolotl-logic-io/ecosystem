@@ -13,20 +13,21 @@ import { isRecord } from "../workflow/stages/reply-guards.ts";
 import { STAGE_ORDER } from "../workflow/sweep-config.ts";
 import type { ContextLimits } from "./context-watch.ts";
 import type { JobEntry, SessionEntry } from "./run-usage.ts";
-import type { RunEnd } from "./runner.ts";
 import { BLOCK_END } from "./usage-comment.ts";
 import type { ToolOutput, ToolUse } from "./usage-tally.ts";
 
 // A name from a fixed set that pi or a role supplies: one token, with no
 // space, `/`, `<` or `>`.
 const NAME = /^[A-Za-z0-9][\w.:-]{0,99}$/u;
+// A model id: a NAME, or a provider's NAME and the model's, joined by one
+// `/`, as in `anthropic/claude-opus-5-5`.
+const MODEL = /^[A-Za-z0-9][\w.:-]{0,99}(?:\/[A-Za-z0-9][\w.:-]{0,99})?$/u;
 const REPO = /^[\w.-]+\/[\w.-]+$/u;
 const WHITESPACE = /\s/u;
 // The name a tool whose name isn't a NAME is counted under.
 const OTHER_TOOL = "other";
 
 type Ended = "reply" | "handoff" | "context-stop" | "error" | "aborted";
-type Outcome = RunEnd["kind"];
 
 const ENDED: readonly Ended[] = [
   "reply",
@@ -35,20 +36,15 @@ const ENDED: readonly Ended[] = [
   "error",
   "aborted",
 ];
-const OUTCOMES: readonly Outcome[] = [
-  "saved",
-  "next",
-  "stopped",
-  "released",
-  "held",
-  "interrupted",
-];
 
-// The job's identity and settings a record carries.
+// The job's identity and settings a record carries: `job` is its random id
+// and `jobStartedAt` its start, which its commits' Pipeline-Session trailers
+// name.
 interface UsageContext {
   repo: string;
   issue: number;
   job: string;
+  jobStartedAt: string;
   role: RoleName;
   limits: ContextLimits;
 }
@@ -69,27 +65,34 @@ const RELATIVE_PATH = z
       ),
     "must be a relative path",
   );
+// The cache writes that last an hour and the cost in US dollars are missing
+// from the records written before they were recorded, as are a record's
+// `jobStartedAt` and a session record's `key`.
 const TOKENS = z.strictObject({
   input: COUNT,
   output: COUNT,
   cacheRead: COUNT,
   cacheWrite: COUNT,
+  cacheWrite1h: COUNT.optional(),
+  cost: COUNT.optional(),
 });
 const IDENTITY = {
   at: z.iso.datetime(),
   repo: z.string().regex(REPO),
   issue: z.number().int().positive(),
   job: z.uuid(),
+  jobStartedAt: z.iso.datetime().optional(),
   role: z.enum(ROLE_NAMES),
 };
 const SESSION_RECORD = z.strictObject({
   kind: z.literal("session"),
   ...IDENTITY,
+  key: NAMED.optional(),
   stage: STAGE,
   state: NAMED,
   name: NAMED,
   agent: NAMED,
-  model: NAMED,
+  model: z.string().regex(MODEL),
   attempt: z.number().int().positive(),
   ended: z.enum(ENDED),
   reply: NAMED.nullable(),
@@ -113,7 +116,8 @@ const JOB_RECORD = z.strictObject({
   kind: z.literal("job"),
   ...IDENTITY,
   stages: z.array(STAGE),
-  outcome: z.enum(OUTCOMES),
+  // A role run's end (runner.ts), or a sweep's outcome for its issue.
+  outcome: NAMED,
   seconds: COUNT,
   tokens: TOKENS,
   issueTokens: COUNT,
@@ -181,7 +185,7 @@ function usageRecord(
   launch: SessionEntry,
   context: UsageContext,
 ): Unchecked<SessionRecord> {
-  const { repo, issue, job, role, limits } = context;
+  const { repo, issue, job, jobStartedAt, role, limits } = context;
   const { launch: used } = launch;
   let largestToolOutput: ToolOutput | null = null;
   if (used.largest !== null) {
@@ -194,7 +198,9 @@ function usageRecord(
     repo,
     issue,
     job,
+    jobStartedAt,
     role,
+    key: launch.key,
     stage: launch.stage,
     state: launch.state,
     name: launch.name,
@@ -226,7 +232,7 @@ function jobRecord(
   job: JobEntry,
   context: UsageContext,
 ): Unchecked<z.infer<typeof JOB_RECORD>> {
-  const { repo, issue, role } = context;
+  const { repo, issue, jobStartedAt, role } = context;
   const { at, outcome, seconds, tokens, issueTokens } = job;
   const stages = [...job.stages];
   return {
@@ -235,6 +241,7 @@ function jobRecord(
     repo,
     issue,
     job: context.job,
+    jobStartedAt,
     role,
     stages,
     outcome,

@@ -4,6 +4,8 @@
 // token usage. It alone knows the shape of the records it reads.
 
 import { z } from "zod";
+import type { Usage } from "./token-usage.ts";
+import { addUsage, PI_USAGE, ZERO_USAGE } from "./token-usage.ts";
 
 // How much of a child's stderr an error keeps.
 const ERROR_TAIL = 500;
@@ -24,13 +26,6 @@ interface OpsRaw {
   ok: boolean;
   output: string;
   error: string;
-}
-
-interface Usage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
 }
 
 interface SessionRaw {
@@ -67,19 +62,12 @@ interface SessionLaunch {
   agent: string;
 }
 
-const COUNT = z.number().catch(0);
-const USAGE = z.object({
-  input: COUNT,
-  output: COUNT,
-  cacheRead: COUNT,
-  cacheWrite: COUNT,
-});
 const MESSAGE_END = z.object({
   type: z.literal("message_end"),
   message: z.object({
     role: z.literal("assistant"),
     content: z.array(z.unknown()).catch([]),
-    usage: USAGE.optional(),
+    usage: PI_USAGE.optional(),
     errorMessage: z.string().optional(),
   }),
 });
@@ -108,7 +96,6 @@ const TOOL_END = z.object({
 });
 // How much of a failed tool call's error text the status keeps.
 const TOOL_ERROR_CHARS = 2000;
-const ZERO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 type SessionEvent = z.infer<typeof EVENT>;
 
@@ -145,21 +132,6 @@ function eventOf(line: string): SessionEvent | null {
     return null;
   }
   return EVENT.safeParse(parsed).data ?? null;
-}
-
-// The two usages summed.
-function addUsage(sum: Usage, usage: Usage): Usage {
-  return {
-    input: sum.input + usage.input,
-    output: sum.output + usage.output,
-    cacheRead: sum.cacheRead + usage.cacheRead,
-    cacheWrite: sum.cacheWrite + usage.cacheWrite,
-  };
-}
-
-// Every token the usage counts: input, output and both cache counts.
-function usageTotal(usage: Usage): number {
-  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }
 
 function addEvent(tally: SessionTally, event: SessionEvent): SessionTally {
@@ -279,21 +251,5 @@ function failedSession(launch: SessionLaunch, error: string): SessionRaw {
   });
 }
 
-export type {
-  OpsRaw,
-  ProcessExit,
-  SessionLaunch,
-  SessionRaw,
-  ToolFailure,
-  Usage,
-};
-export {
-  addUsage,
-  failedSession,
-  opsRaw,
-  recordFacts,
-  sessionRaw,
-  USAGE,
-  usageTotal,
-  ZERO_USAGE,
-};
+export type { OpsRaw, ProcessExit, SessionLaunch, SessionRaw, ToolFailure };
+export { failedSession, opsRaw, recordFacts, sessionRaw };

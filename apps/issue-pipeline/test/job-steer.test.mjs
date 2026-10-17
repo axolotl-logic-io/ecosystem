@@ -1,7 +1,9 @@
 // Steering a running stage job's session with --steer: the message reaches
-// pi through the job's socket, and every way it can't fails with exit 1.
+// pi through the job's socket, the context log counts it, and every way it
+// can't fails with exit 1.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
@@ -52,7 +54,7 @@ async function steerable(place) {
   );
 }
 
-test("--steer sends the message to the live session, which carries on", async () => {
+test("--steer sends the message to the live session, which carries on, and its context line counts the steer and keeps pi's cost and 1h cache writes", async () => {
   const place = setUp(repliesAt(SWEEP_STAGE), {
     events: ["wait", messageEnd(USAGE), outputEnd(PASS_VERDICT)],
   });
@@ -73,6 +75,10 @@ test("--steer sends the message to the live session, which carries on", async ()
   assert.equal(end.status, 0, end.stderr);
   const ops = logOf(place, "ops.log").map(({ op }) => op);
   assert.ok(ops.includes("release"));
+  const log = fs.readFileSync(path.join(place.runDir, "context.jsonl"), "utf8");
+  const line = JSON.parse(log);
+  assert.deepEqual(line.steers, { context: 0, socket: 1 });
+  assert.deepEqual(line.usage, USAGE);
 });
 
 test("--steer reaches a live writer session too, as the wiki's Steering a running session says", async () => {

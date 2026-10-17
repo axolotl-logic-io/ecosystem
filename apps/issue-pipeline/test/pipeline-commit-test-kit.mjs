@@ -35,7 +35,17 @@ const { default: pipelineCommit } = await import(
 const ISSUE = 7;
 const BRANCH = "refs/heads/agent/issue-7";
 const KEY = "i7-launch-1";
-const ZERO = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+// The job's id and start, as the job's pushes and commits name them.
+const JOB_ID = "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b";
+const JOB_STARTED_AT = "2026-10-17T12:00:00.000Z";
+const ZERO = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  cacheWrite1h: 0,
+  cost: 0,
+};
 
 /**
  * One stage job's folder (root) with its code checkout (repo) and wiki
@@ -100,8 +110,13 @@ async function openJob(stage) {
     throw new Error("the job has no wiki checkout");
   }
   const runDir = paths.runDir(cfg, ISSUE);
-  const job = { issue: ISSUE, stage, checkout: dirs.repo };
-  const status = openStatus(runDir, { ...job, lane: null, socket: "" });
+  const job = { issue: ISSUE, stage, checkout: dirs.repo, id: JOB_ID };
+  const status = openStatus(runDir, {
+    ...job,
+    lane: null,
+    socket: "",
+    startedAt: JOB_STARTED_AT,
+  });
   const server = pushServerOf(cfg, job, status.pushed);
   const control = await openControl(runDir, server);
   status.started({
@@ -113,7 +128,12 @@ async function openJob(stage) {
     usage: ZERO,
     tokenBudget: null,
   });
-  const scope = { socket: control.socket, key: KEY, root: dirs.root };
+  const scope = {
+    socket: control.socket,
+    key: KEY,
+    jobStartedAt: JOB_STARTED_AT,
+    root: dirs.root,
+  };
   const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true) });
   const tool = registeredTool();
   return {
@@ -149,4 +169,17 @@ function headOf(dir) {
   return git(dir, ["rev-parse", "HEAD"]);
 }
 
-export { BRANCH, configIn, git, headOf, ISSUE, openJob, pushesOf, root, write };
+export {
+  BRANCH,
+  configIn,
+  git,
+  headOf,
+  ISSUE,
+  JOB_ID,
+  JOB_STARTED_AT,
+  KEY,
+  openJob,
+  pushesOf,
+  root,
+  write,
+};

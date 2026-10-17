@@ -7,13 +7,8 @@
 import { z } from "zod";
 import { turnContext } from "./context-watch.ts";
 import type { ToolFailure } from "./raw-results.ts";
-import {
-  addUsage,
-  recordFacts,
-  USAGE,
-  usageTotal,
-  ZERO_USAGE,
-} from "./raw-results.ts";
+import { recordFacts } from "./raw-results.ts";
+import { addUsage, USAGE, usageTotal, ZERO_USAGE } from "./token-usage.ts";
 
 const LAUNCH_OUTCOME = z.enum(["ok", "failed"]);
 // One push the job made for a writer session's `pipeline_commit`: the repo,

@@ -3,9 +3,10 @@
 // paths a session may not use, routes the pathspecs, which are relative to
 // the job's folder, to its code checkout (repo/) and its wiki checkout
 // (docs/), refuses those into a checkout the stage may not write
-// (commit-needs-write-access, #338), and owns the session variable that tells
-// the tool its scope. It runs nothing; the tool (pipeline-commit-tool.ts)
-// runs the argv it returns.
+// (commit-needs-write-access, #338), adds the trailer that names the session
+// to every commit, `Pipeline-Session: <launch key>@<job start>`, and owns the
+// session variable that tells the tool its scope. It runs nothing; the tool
+// (pipeline-commit-tool.ts) runs the argv it returns.
 
 import { z } from "zod";
 import { matchAny } from "../globs.ts";
@@ -21,11 +22,13 @@ const ACCESS = z.enum(["read", "write"]);
 // stage's access to it.
 const CHECKOUT_SCOPE = z.object({ dir: z.string(), access: ACCESS });
 // A session's commit scope: the job's control socket, the launch it is, the
-// job's folder, its code checkout, its wiki checkout (null with no wiki), and
-// the code globs, relative to the code checkout, it may commit.
+// job's start, the job's folder, its code checkout, its wiki checkout (null
+// with no wiki), and the code globs, relative to the code checkout, it may
+// commit.
 const COMMIT_SCOPE = z.object({
   socket: z.string(),
   key: z.string(),
+  jobStartedAt: z.string(),
   root: z.string(),
   repo: CHECKOUT_SCOPE,
   docs: CHECKOUT_SCOPE.nullable(),
@@ -135,8 +138,14 @@ function withPaths(argv: string[], paths: readonly string[]): string[] {
   return [...argv, "--", ...paths];
 }
 
-// The wiki's argv: everything when it got no pathspec, else the named paths.
-function wikiArgv(read: ReadArgs, paths: string[], dir: string): string[][] {
+// The wiki's argv: everything when it got no pathspec, else the named paths,
+// committed with `trailer`.
+function wikiArgv(
+  read: ReadArgs,
+  paths: string[],
+  where: { dir: string; trailer: string },
+): string[][] {
+  const { dir, trailer } = where;
   const message = read.message.flatMap(([option = "", value]): string[] => {
     if (value === undefined) {
       return [option];
@@ -155,15 +164,20 @@ function wikiArgv(read: ReadArgs, paths: string[], dir: string): string[][] {
   }
   return [
     withPaths(["add", "-A"], paths),
-    withPaths(["commit", ...message], paths),
+    withPaths(["commit", ...message, "--trailer", trailer], paths),
   ];
 }
 
 // The plan for one call of `pipeline_commit` with git commit's `args`, in a
-// session that may commit what `scope` allows. A call that names pathspecs
-// commits only the checkouts they are in; one that names none commits each
-// checkout the stage may write.
-function planOf(args: readonly string[], scope: PathScope): CommitPlan {
+// session that may commit what `scope` allows, each commit ending with the
+// trailer `trailer`. A call that names pathspecs commits only the checkouts
+// they are in; one that names none commits each checkout the stage may
+// write.
+function planOf(
+  args: readonly string[],
+  scope: PathScope,
+  trailer: string,
+): CommitPlan {
   const read = readArgs(args);
   const codePaths: string[] = [];
   const wikiPaths: string[] = [];
@@ -185,20 +199,32 @@ function planOf(args: readonly string[], scope: PathScope): CommitPlan {
     scope.allowed.length > 0 &&
     (!named || codePaths.length > 0)
   ) {
-    code = withPaths(["commit", ...optionsIn(read, repo.dir)], codePaths);
+    const options = optionsIn(read, repo.dir);
+    code = withPaths(["commit", ...options, "--trailer", trailer], codePaths);
   }
   let wiki: string[][] | null = null;
   if (docs?.access === "write" && (!named || wikiPaths.length > 0)) {
-    wiki = wikiArgv(read, wikiPaths, docs.dir);
+    wiki = wikiArgv(read, wikiPaths, { dir: docs.dir, trailer });
   }
   return { kind: "commit", code, wiki, dryRun: read.dryRun };
 }
 
-// The plan for `args` within `scope`: refused, naming the flag or path, before
-// anything runs; or the argv for each repo.
-function commitArgsOf(args: readonly string[], scope: PathScope): CommitPlan {
+// The trailer that names session `key` of the job that started at
+// `jobStartedAt` on each of its commits.
+function sessionTrailer(scope: { key: string; jobStartedAt: string }): string {
+  return `Pipeline-Session: ${scope.key}@${scope.jobStartedAt}`;
+}
+
+// The plan for `args` within `scope`, each commit ending with `trailer`:
+// refused, naming the flag or path, before anything runs; or the argv for
+// each repo.
+function commitArgsOf(
+  args: readonly string[],
+  scope: PathScope,
+  trailer: string,
+): CommitPlan {
   try {
-    return planOf(args, scope);
+    return planOf(args, scope, trailer);
   } catch (error: unknown) {
     if (error instanceof Refusal) {
       return { kind: "refused", error: error.message };
@@ -239,4 +265,5 @@ export {
   commitArgsOf,
   commitEnvOf,
   commitScopeIn,
+  sessionTrailer,
 };

@@ -2,11 +2,19 @@
 // The role runner (#301): how failures end a run, the session refusal, what
 // reaches the issue's state and when, signals, and that a run killed at any
 // effect and started again from the saved state ends as an uninterrupted one
-// does, with no comment posted twice.
+// does, with no comment posted twice, and the issue's reportedTokens its
+// sessions add to.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runLinear } from "../src/job/runner.ts";
-import { killAt, runToy, uninterrupted, world } from "./runner-test-kit.mjs";
+import { rateTokens } from "../src/workflow/rate-tokens.ts";
+import {
+  killAt,
+  LAUNCH,
+  runToy,
+  uninterrupted,
+  world,
+} from "./runner-test-kit.mjs";
 import {
   startState,
   TOY_LIMITS,
@@ -27,6 +35,8 @@ const STEP_FAILED = { kind: "stopped", code: "error" };
 const KILL_POINTS = ["before", "after"];
 /** @type {readonly ToyRole[]} */
 const ROLES = ["machine", "linear"];
+// What each toy session adds to the issue's reportedTokens.
+const SPENT = rateTokens(LAUNCH.tokens);
 
 /** @param {number} tries @returns {string} the verify result: fail once */
 function failOnce(tries) {
@@ -74,7 +84,7 @@ test("a network error the state doesn't list ends held", async () => {
 });
 
 for (const role of ROLES) {
-  test(`a ${role} role's session that hits a rate limit ends held, saving the state it last saved`, async () => {
+  test(`a ${role} role's session that hits a rate limit ends held, saving the state it last saved and what the session spent`, async () => {
     const run = await uninterrupted(role, {
       session: { ok: false, error: RATE_LIMIT_ERROR },
     });
@@ -84,7 +94,8 @@ for (const role of ROLES) {
       .slice(0, session)
       .findLast(({ kind }) => kind === "save");
     const last = before?.state ?? startState();
-    assert.deepEqual(run.saved, { ...last, lease: null });
+    const reportedTokens = SPENT;
+    assert.deepEqual(run.saved, { ...last, lease: null, reportedTokens });
     assert.equal(sessions(run.calls), 1);
   });
 }
@@ -159,7 +170,7 @@ test("an end's own op runs once, after its save, on the saved state", async () =
   });
   assert.deepEqual(run.end, { kind: "stopped", code: "toy-stop" });
   const saved = { ...startState(), plan: "kept", checkpoints: {}, lease: null };
-  assert.deepEqual(seen, [saved]);
+  assert.deepEqual(seen, [{ ...saved, reportedTokens: 0 }]);
   assert.equal(run.saved.stage, "stopped");
 });
 
@@ -184,7 +195,20 @@ test("only declared checkpoints and hand-off fields reach a save", async () => {
     lease: null,
     plan: "toy plan",
     checkpoints: { tries: 1 },
+    reportedTokens: SPENT * sessions(run.calls),
   });
+});
+
+test("each save counts the run's sessions on top of the issue's reportedTokens", async () => {
+  const earlier = 5000;
+  /** @returns {import("../src/state.ts").State} */
+  function start() {
+    return { ...startState(), reportedTokens: earlier };
+  }
+  const run = await uninterrupted("machine", { verify: failOnce, start });
+  const ran = sessions(run.calls);
+  assert.equal(ran, 2);
+  assert.equal(run.saved.reportedTokens, earlier + SPENT * ran);
 });
 
 test("a count is saved as soon as it goes up", async () => {
@@ -238,7 +262,11 @@ for (const role of ROLES) {
       test(`a ${role} role killed ${when} call ${k} ends as an uninterrupted one`, async () => {
         const run = await killAt(role, { k, when }, { verify: failOnce });
         assert.deepEqual(run.end, reference.end);
-        assert.deepEqual(run.saved, reference.saved);
+        // A session cut short and run again spends again.
+        const { reportedTokens: spent, ...saved } = run.saved;
+        const { reportedTokens: least, ...expected } = reference.saved;
+        assert.deepEqual(saved, expected);
+        assert.ok(Number(spent) >= Number(least));
         assert.deepEqual(run.writes, reference.writes);
       });
     }
