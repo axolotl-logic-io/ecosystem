@@ -3,9 +3,10 @@
 // mirror of the repo, and, when the repo has a wiki, `docs/` beside it, a
 // clone made from a bare mirror of the wiki. Their origins are the real
 // remotes, so ops fetch and push there, and they are set up as the ops CLI
-// sets up its clone. Closing them drops what they left uncommitted, lets a
-// writer push its commits, keeps unpushed wiki commits in the wiki mirror for
-// the issue's next job, and removes the folder.
+// sets up its clone. Closing them saves what they left uncommitted as
+// patches in the issue's run folder and drops it (dropped-changes-saved,
+// #369), lets a writer push its commits, keeps unpushed wiki commits in the
+// wiki mirror for the issue's next job, and removes the folder.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,6 +17,7 @@ import { paths, wikiCfg } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
 import { run } from "../process.ts";
+import { saveDroppedPatch } from "./dropped-patch.ts";
 import type { Access } from "./pipeline-commit.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
@@ -37,6 +39,17 @@ interface JobDirs {
   docs: string | null;
 }
 
+// What closing a job's checkouts dropped: the uncommitted paths, each under
+// its checkout's folder (`repo/`, `docs/`), and the patches that saved them,
+// relative to the issue's run folder.
+interface DroppedChanges {
+  lost: readonly string[];
+  patches: readonly string[];
+}
+
+// A job's checkouts, by their folders' names in the job's folder.
+const CHECKOUTS: readonly ("repo" | "docs")[] = ["repo", "docs"];
+const NOTHING_DROPPED: DroppedChanges = { lost: [], patches: [] };
 // A `git status --porcelain` entry is two status letters and a space, then
 // the path.
 const STATUS_PATH_AT = 3;
@@ -149,10 +162,15 @@ function openJobCheckout(
 }
 
 // The paths `dir` holds uncommitted, each after `prefix`, which it then
-// drops.
-function dropChanges(dir: string, prefix: string): string[] {
+// drops, once it has saved them as the patch `to`; `saved` says whether it
+// wrote one. A failed save is reported, and they are dropped all the same.
+function dropChanges(
+  dir: string,
+  prefix: string,
+  to: { file: string; title: string },
+): { lost: string[]; saved: boolean } {
   if (!hasGit(dir)) {
-    return [];
+    return { lost: [], saved: false };
   }
   const status = ["status", "--porcelain", "-z", "--untracked-files=all"];
   const entries = gitIn(dir, status).split("\0");
@@ -167,9 +185,10 @@ function dropChanges(dir: string, prefix: string): string[] {
       at += 1;
     }
   }
+  const saved = reported((): boolean => saveDroppedPatch(dir, to), false);
   gitIn(dir, ["reset", "--quiet", "--hard"]);
   gitIn(dir, ["clean", "--quiet", "-fd"]);
-  return lost;
+  return { lost, saved };
 }
 
 // How many commits the checkout has that no branch on the remote has, so
@@ -224,28 +243,39 @@ function reported<T>(step: () => T, fallback: T): T {
   }
 }
 
-// Closes job folder `job.root` of issue `issue`: drops its checkouts'
-// uncommitted changes, calls `push` when its code checkout, or its wiki
-// checkout under `job.wiki` write access, holds commits the remote lacks,
-// saves its wiki commits and removes the folder. Resolves to the dropped
-// paths, each under its checkout's folder (`repo/`, `docs/`). A git step that
+// Closes job folder `job.root` of issue `issue`: saves its checkouts'
+// uncommitted changes as patches named by job key `job.key` and drops them,
+// calls `push` when its code checkout, or its wiki checkout under `job.wiki`
+// write access, holds commits the remote lacks, saves its wiki commits and
+// removes the folder. A clean checkout gets no patch. A git or fs step that
 // fails, such as a fetch from an unreachable remote, is reported on stderr
 // and skipped, and the folder is removed whatever fails.
 async function closeJobCheckout(
   cfg: Config,
   issue: number,
-  job: JobDirs & { wiki: Access },
+  job: JobDirs & { wiki: Access; key: string },
   push: (() => Promise<void>) | null,
-): Promise<readonly string[]> {
+): Promise<DroppedChanges> {
   const { root, repo, docs, wiki } = job;
   try {
-    const lost = reported((): string[] => {
-      const dropped = dropChanges(repo, `${path.relative(root, repo)}/`);
-      if (docs !== null) {
-        dropped.push(...dropChanges(docs, `${path.relative(root, docs)}/`));
+    const dropped = reported((): DroppedChanges => {
+      const lost: string[] = [];
+      const patches: string[] = [];
+      for (const name of CHECKOUTS) {
+        const dir = job[name];
+        if (dir !== null) {
+          const file = paths.droppedPatch(cfg, issue, job.key, name);
+          const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
+          const prefix = `${path.relative(root, dir)}/`;
+          const one = dropChanges(dir, prefix, { file, title });
+          lost.push(...one.lost);
+          if (one.saved) {
+            patches.push(path.relative(paths.runDir(cfg, issue), file));
+          }
+        }
       }
-      return dropped;
-    }, []);
+      return { lost, patches };
+    }, NOTHING_DROPPED);
     if (
       push !== null &&
       (holdsUnpushed(cfg, repo) ||
@@ -256,11 +286,11 @@ async function closeJobCheckout(
     if (docs !== null) {
       reported((): void => saveWiki(cfg, issue, docs), undefined);
     }
-    return lost;
+    return dropped;
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
 
-export type { JobDirs };
+export type { DroppedChanges, JobDirs };
 export { closeJobCheckout, openJobCheckout };

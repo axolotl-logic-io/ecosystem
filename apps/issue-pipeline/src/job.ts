@@ -34,9 +34,11 @@
 //
 // The job works in its own folder, where every pi session runs, holding its
 // code checkout, cloned from a bare mirror of the repo, and its wiki checkout
-// (src/job/checkout.ts). On every exit it records and drops what the
-// checkouts left uncommitted (lostChanges), a writer pushes what the remotes
-// lack (src/job/exit-push.ts), and the folder is removed.
+// (src/job/checkout.ts). On every exit (src/job/teardown.ts) it saves what
+// the checkouts left uncommitted as patches in the run folder
+// (droppedPatches), records and drops it (lostChanges), a writer pushes what
+// the remotes lack (src/job/exit-push.ts), and the folder is removed; a run
+// that stopped with saved patches posts a comment saying so (#369).
 
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -46,7 +48,7 @@ import type { Config } from "./config.ts";
 import { loadConfig, paths } from "./config.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
-import { closeJobCheckout, openJobCheckout } from "./job/checkout.ts";
+import { openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
 import type { Control } from "./job/control.ts";
 import { openControl, socketPathOf } from "./job/control.ts";
@@ -56,17 +58,17 @@ import type { LaunchHooks } from "./job/launch.ts";
 import { runLaunch } from "./job/launch.ts";
 import { runAll } from "./job/pool.ts";
 import type { OpsRaw, SessionRaw } from "./job/raw-results.ts";
-import type { RoleLine } from "./job/role-run.ts";
 import { runRoleStage } from "./job/role-run.ts";
 import { boundaryOf, STAGE_WIKI_ACCESS } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
 import type { JobOutcome, JobStatus, StopSignal } from "./job/status.ts";
 import { openStatus, resumePoints, socketOf } from "./job/status.ts";
+import type { ExitingJob, RunEnd } from "./job/teardown.ts";
+import { jobKeyOf, tearDown } from "./job/teardown.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { LaunchSpec } from "./workflow/launches.ts";
 import { opsFrame } from "./workflow/launches.ts";
 import { rateLimitedRun } from "./workflow/stages/rate-limit.ts";
-import type { SweepSummary } from "./workflow/stages/types.ts";
 import type { Sweep } from "./workflow/sweep.ts";
 import { startSweep } from "./workflow/sweep.ts";
 import { laneOf, spawnLimitOf } from "./workflow/sweep-config.ts";
@@ -80,12 +82,6 @@ const SPAWN_CAP = z.number().nullish().catch(null);
 const RESUME_REFUSED = "--resume doesn't apply to stage";
 
 type Resume = LaunchHooks["resumePoint"];
-
-// How a run ended: finished with the sweep's summary (or a role stage's
-// line), or stopped by a signal.
-type RunEnd =
-  | { kind: "finished"; summary: SweepSummary | RoleLine }
-  | { kind: "stopped"; signal: StopSignal };
 
 // Runs each batch the sweep asks for, feeding its results back, until the
 // sweep asks for none or a signal stops the job. A stop starts no more
@@ -129,6 +125,7 @@ async function drive(
 
 async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const { issue, stage, lane = null, stackOn = null } = args;
+  const key = jobKeyOf(stage, new Date());
   const role = roleOf(stage);
   if (role !== undefined && args.resume === true) {
     throw new Error(
@@ -161,6 +158,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   });
   const frame = opsFrame({ ...args, checkout }, sweepId, laneOf(args, sweepId));
   const push = exitPushOf(args, frame, hooks);
+  const exiting = { issue, key, dirs, wiki, push, frame, hooks, status };
   const watched = { hooks, status, control };
   let ending: Promise<RunEnd>;
   if (role === undefined) {
@@ -175,8 +173,20 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     const roleJob = { role, cfg, issue, stage, stackOn, frame, repo, layout };
     ending = runRoleStage({ ...roleJob, ...watched, jobId: randomUUID() });
   }
+  return await settle(cfg, ending, { ...exiting, control });
+}
+
+// Waits for the run's end and records it in job.json, then, whatever
+// happened, tears the job down and closes its control socket.
+async function settle(
+  cfg: Config,
+  ending: Promise<RunEnd>,
+  job: ExitingJob & { control: Control },
+): Promise<RunEnd> {
+  const { status, control } = job;
+  let end: RunEnd | null = null;
   try {
-    const end = await ending;
+    end = await ending;
     status.finish(outcomeOf(end));
     return end;
   } catch (error: unknown) {
@@ -184,8 +194,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     throw error;
   } finally {
     try {
-      const lost = await closeJobCheckout(cfg, issue, { ...dirs, wiki }, push);
-      status.lostChanges(lost);
+      await tearDown(cfg, job, end);
     } finally {
       control.close();
     }

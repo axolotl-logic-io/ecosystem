@@ -3,8 +3,9 @@
 // socket, a record of every launch it started (src/job/launch-record.ts),
 // and for a stage that runs a role, each step of the role's run (#301). On
 // exit it holds the job's outcome, which notes a sweep that deferred its
-// issue on a rate limit for the orchestrator's backoff, and the
-// uncommitted paths its checkout dropped (lostChanges). Each change rewrites
+// issue on a rate limit for the orchestrator's backoff, the uncommitted
+// paths its checkout dropped (lostChanges) and the patches that saved them
+// (droppedPatches, relative to the run folder, #369). Each change rewrites
 // the whole file atomically, so a reader never sees part of one; a write that
 // fails is reported on stderr and the job goes on. This module alone knows
 // the file's name and layout.
@@ -56,6 +57,7 @@ const STATUS = z.object({
   endedAt: z.string().optional(),
   launches: z.array(LAUNCH),
   lostChanges: z.array(z.string()).optional(),
+  droppedPatches: z.array(z.string()).optional(),
   steps: z.array(STEP).optional(),
 });
 
@@ -109,8 +111,9 @@ interface JobStatus {
   launch: (key: string) => LaunchRecord | null;
   // The job ended.
   finish: (outcome: JobOutcome) => void;
-  // The uncommitted paths the job's checkout held at exit, which it dropped.
-  lostChanges: (paths: readonly string[]) => void;
+  // The uncommitted paths the job's checkout held at exit, which it dropped,
+  // and the patches, relative to the run folder, that saved them.
+  lostChanges: (paths: readonly string[], patches: readonly string[]) => void;
 }
 
 function statusFileOf(runDir: string): string {
@@ -151,6 +154,20 @@ function readStatus(runDir: string): StatusFile | null {
   }
 }
 
+// `launches` with launch `key` changed by `change`.
+function withLaunch(
+  launches: readonly LaunchRecord[],
+  key: string,
+  change: (l: LaunchRecord) => LaunchRecord,
+): LaunchRecord[] {
+  return launches.map((l: LaunchRecord): LaunchRecord => {
+    if (l.key === key) {
+      return change(l);
+    }
+    return l;
+  });
+}
+
 // Opens a fresh status file for the job in `runDir` and writes it.
 function openStatus(runDir: string, job: JobInfo): JobStatus {
   const file = statusFileOf(runDir);
@@ -167,12 +184,7 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     key: string,
     change: (l: LaunchRecord) => LaunchRecord,
   ): void {
-    status.launches = status.launches.map((l: LaunchRecord): LaunchRecord => {
-      if (l.key === key) {
-        return change(l);
-      }
-      return l;
-    });
+    status.launches = withLaunch(status.launches, key, change);
     writeStatus(file, status);
   }
   writeStatus(file, status);
@@ -208,8 +220,12 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
       status.endedAt = new Date().toISOString();
       writeStatus(file, status);
     },
-    lostChanges: (paths: readonly string[]): void => {
+    lostChanges: (
+      paths: readonly string[],
+      patches: readonly string[],
+    ): void => {
       status.lostChanges = [...paths];
+      status.droppedPatches = [...patches];
       writeStatus(file, status);
     },
   };

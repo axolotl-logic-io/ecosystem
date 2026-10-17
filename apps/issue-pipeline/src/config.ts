@@ -229,6 +229,15 @@ const paths = {
   // handoff, which the next session reads.
   handoff: (cfg: Config, n: number): string =>
     path.join(paths.runDir(cfg, n), "handoff.md"),
+  // Where stage job `key` of issue `n` saves what its checkout `checkout`
+  // left uncommitted, before it drops it (#369).
+  droppedPatch: (
+    cfg: Config,
+    n: number,
+    key: string,
+    checkout: "repo" | "docs",
+  ): string =>
+    path.join(paths.runDir(cfg, n), "dropped", `${key}-${checkout}.patch`),
   jobLog: (cfg: Config, n: number): string =>
     path.join(paths.runDir(cfg, n), "job.log"),
   // The bare mirrors of the repo and its wiki that job checkouts clone.

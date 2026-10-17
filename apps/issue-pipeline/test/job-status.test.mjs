@@ -151,16 +151,21 @@ test("a writer session records its token budget, which the watchdog stops it pas
   await job.end;
 });
 
-test("job.json's lostChanges round-trips through its schema", async () => {
+test("job.json's lostChanges and droppedPatches round-trip through its schema", async () => {
   const { openStatus, socketOf } = await import("../src/job/status.ts");
   const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
   process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
   const job = { issue: ISSUE, stage: "implement", lane: null, socket: "/s" };
   const status = openStatus(runDir, job);
-  status.lostChanges(["a.txt", "wiki/B.md"]);
+  const patches = ["dropped/implement-1-repo.patch"];
+  status.lostChanges(["repo/a.txt", "docs/B.md"], patches);
   const file = path.join(runDir, "job.json");
   const written = JSON.parse(fs.readFileSync(file, "utf8"));
-  assert.deepEqual(written.lostChanges, ["a.txt", "wiki/B.md"]);
+  assert.deepEqual(written.lostChanges, ["repo/a.txt", "docs/B.md"]);
+  assert.deepEqual(written.droppedPatches, patches);
+  assert.equal(socketOf(runDir), "/s");
+  const { droppedPatches: _, ...older } = written;
+  fs.writeFileSync(file, JSON.stringify(older));
   assert.equal(socketOf(runDir), "/s");
   fs.writeFileSync(file, JSON.stringify({ ...written, lostChanges: "a.txt" }));
   assert.equal(socketOf(runDir), null);

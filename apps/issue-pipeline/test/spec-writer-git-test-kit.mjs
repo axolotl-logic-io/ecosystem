@@ -262,8 +262,14 @@ async function exitOf(repo) {
     }
     return Promise.resolve();
   }
-  /** @type {{ root: string, repo: string, docs: string, wiki: "write" }} */
-  const job = { root: folder, repo: dir, docs: wikiDir, wiki: "write" };
+  /** @type {{ root: string, repo: string, docs: string, wiki: "write", key: string }} */
+  const job = {
+    root: folder,
+    repo: dir,
+    docs: wikiDir,
+    wiki: "write",
+    key: "spec-1",
+  };
   await closeJobCheckout(cfg, ISSUE, job, push);
   return { heads, pushes };
 }

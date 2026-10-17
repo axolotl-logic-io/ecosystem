@@ -50,6 +50,9 @@
     // src/job/context-log.ts appends to the issue's context.jsonl, and
     // src/job/stop-handoff.ts runs git in the checkout and writes the handoff
     // of a writer the job stopped.
+    // src/job/dropped-patch.ts runs git in a checkout and writes the patch of
+    // the changes the job drops, and src/job/teardown.ts names those patches
+    // on stderr and reports a failed notice there (#369).
     // src/restart-spec.ts reads a restart's spec.md.
     // src/job/control-protocol.ts sends the steer and push requests over the
     // job's control socket, and src/job/pipeline-commit-tool.ts, the pi
@@ -124,6 +127,8 @@
         "src/job/checkout.ts",
         "src/job/exit-push.ts",
         "src/job/stop-handoff.ts",
+        "src/job/dropped-patch.ts",
+        "src/job/teardown.ts",
         "src/orchestrate.ts",
         "src/orchestrator/args.ts",
         "src/orchestrator/snapshot.ts",

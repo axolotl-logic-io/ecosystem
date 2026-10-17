@@ -42,6 +42,8 @@ const DEFERRED_COMMITS = [
 ];
 const REFUSE_ALL = "#!/bin/sh\nexit 1\n";
 const HOOK_MODE = 0o755;
+// The key closeJobCheckout names the job's dropped patches by.
+const JOB_KEY = "implement-1";
 // A sequence editor that stops the rebase at once, as a stopped rebase would.
 const BREAK_ENV = Object.fromEntries([
   ["GIT_SEQUENCE_EDITOR", "sh -c 'echo break > \"$1\"' --"],
@@ -170,10 +172,16 @@ test("a spec job's wiki commit whose push was refused is pushed as the job exits
   }
   let exitPushes = 0;
   const access = STAGE_WIKI_ACCESS.spec;
-  const lost = await closeJobCheckout(
+  const { lost } = await closeJobCheckout(
     job.cfg,
     ISSUE,
-    { root: job.root, repo: job.repo, docs: job.docs, wiki: access },
+    {
+      root: job.root,
+      repo: job.repo,
+      docs: job.docs,
+      wiki: access,
+      key: JOB_KEY,
+    },
     () => {
       exitPushes += 1;
       return Promise.resolve();
@@ -195,13 +203,20 @@ test("read wiki access commits code only, and the wiki edit is lost at teardown"
   } finally {
     job.close();
   }
-  const lost = await closeJobCheckout(
+  const { lost, patches } = await closeJobCheckout(
     job.cfg,
     ISSUE,
-    { root: job.root, repo: job.repo, docs: job.docs, wiki: "read" },
+    {
+      root: job.root,
+      repo: job.repo,
+      docs: job.docs,
+      wiki: "read",
+      key: JOB_KEY,
+    },
     null,
   );
   assert.deepEqual(lost, ["docs/Page.md"]);
+  assert.deepEqual(patches, [`dropped/${JOB_KEY}-docs.patch`]);
 });
 
 test("a refused push keeps the commit and reports it, and the next call pushes both commits", async () => {
