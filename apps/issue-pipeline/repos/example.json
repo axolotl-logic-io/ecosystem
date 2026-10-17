@@ -34,6 +34,7 @@
   "maxResumes": 2,
   "silentMinutes": 30,
   "failureStreak": 3,
+  "claimFailureStreak": 3,
   "rateLimitBackoffMinutes": 5,
   "escalationAgent": null,
   "escalationAgentActs": false,

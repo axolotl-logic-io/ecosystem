@@ -249,7 +249,8 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "Stopped: a pipeline step or agent session failed. See the stop comment.",
     test: /./u,
     control: "step failure",
-    explain: "A pipeline step or agent session failed.",
+    explain:
+      "A pipeline step or agent session failed, or the issue's claim failed with the same error `claimFailureStreak` times in a row.",
   },
 ];
 

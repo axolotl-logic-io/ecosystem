@@ -1,7 +1,7 @@
 // The watchdog's memory between ticks (#235), `runs/<slug>/watchdog.json`:
 // the restarts per issue and stage, the steers sent to silent sessions and
 // to failing ones, the jobs stopped for silence, the jobs stopped for their
-// budget, and what is escalated. This module alone knows the file; a missing
+// budget, what is escalated, and each issue's streak of failed claims. This module alone knows the file; a missing
 // or malformed one reads as empty, and each save rewrites it atomically.
 
 import fs from "node:fs";
@@ -21,6 +21,14 @@ const OVER_BUDGET = z.object({
   tokenBudget: z.number(),
   stopped: z.boolean(),
 });
+// An issue's streak of jobs whose claim failed with one error
+// (claim-failures.ts): the error, how many in a row, and the startedAt of the
+// last job counted.
+const CLAIM_FAILURE = z.object({
+  error: z.string(),
+  count: z.number(),
+  job: z.string(),
+});
 const MEMORY = z.object({
   // Restarts so far, by `<issue> <stage>`.
   resumes: z.record(z.string(), z.number()),
@@ -35,11 +43,14 @@ const MEMORY = z.object({
   overBudget: z.record(z.string(), OVER_BUDGET).default({}),
   // What is escalated (escalate.ts), as `<issue> <label>`.
   escalated: z.array(z.string()).default([]),
+  // The streaks of failed claims, by issue number.
+  claimFailures: z.record(z.string(), CLAIM_FAILURE).default({}),
 });
 
 // What the watchdog remembers between ticks.
 type WatchMemory = z.infer<typeof MEMORY>;
 type OverBudget = z.infer<typeof OVER_BUDGET>;
+type ClaimFailure = z.infer<typeof CLAIM_FAILURE>;
 
 function memoryFileOf(cfg: Config): string {
   return path.join(ROOT, "runs", cfg.slug, MEMORY_FILE);
@@ -62,6 +73,7 @@ function readWatchMemory(cfg: Config): WatchMemory {
     failureSteers: {},
     overBudget: {},
     escalated: [],
+    claimFailures: {},
   };
 }
 
@@ -73,5 +85,5 @@ function saveWatchMemory(cfg: Config, memory: WatchMemory): void {
   fs.renameSync(temp, file);
 }
 
-export type { OverBudget, WatchMemory };
+export type { ClaimFailure, OverBudget, WatchMemory };
 export { readWatchMemory, saveWatchMemory };

@@ -173,9 +173,10 @@ function leaseOf(lane) {
 // was last heard from `silentMinutes` before it, and whose last
 // `failures.count` calls of `failures.tool` failed, the last with
 // `failures.error`, with a token budget of `tokenBudget`, a live context of
-// `contextTokens` tokens and the launch's own `launchOutcome`.
+// `contextTokens` tokens and the launch's own `launchOutcome`. The job
+// started when its launch was last heard from, unless `startedAt` says when.
 /** @typedef {{ count: number, tool: string, error: string }} Failures */
-/** @typedef {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number, outcome?: StatusFile["outcome"], endedAt?: string, kind?: "session" | "ops", silentMinutes?: number, failures?: Failures, tokenBudget?: number | null, contextTokens?: number, launchOutcome?: LaunchOutcome }} JobFacts */
+/** @typedef {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number, outcome?: StatusFile["outcome"], endedAt?: string, startedAt?: string, kind?: "session" | "ops", silentMinutes?: number, failures?: Failures, tokenBudget?: number | null, contextTokens?: number, launchOutcome?: LaunchOutcome }} JobFacts */
 /** @typedef {StatusFile["launches"][number]["outcome"]} LaunchOutcome */
 /** @param {JobFacts} job @returns {StatusFile} */
 function writeJob({
@@ -186,6 +187,7 @@ function writeJob({
   tokens = 0,
   outcome,
   endedAt,
+  startedAt,
   kind = "session",
   silentMinutes = 0,
   failures = { count: 0, tool: "", error: "" },
@@ -201,7 +203,7 @@ function writeJob({
     issue,
     stage,
     lane: "orchestrator",
-    startedAt: at,
+    startedAt: startedAt ?? at,
     socket: "/tmp/s.sock",
     outcome: null,
     launches: [

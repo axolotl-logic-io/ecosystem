@@ -1,6 +1,7 @@
 // One orchestrator tick (#234): read the queue, add what the jobs spent to
 // the ledger, note a rate-limited job's backoff, let the watchdog act on the
-// jobs and write the escalations (#235), ask the escalation agent about them
+// jobs, stop an issue whose claim keeps failing (claim-failures.ts, #430),
+// write the escalations (#235), ask the escalation agent about them
 // (#282), decide with the scheduler, hold every start during a backoff, start
 // the jobs it chose (start-job.ts), log every action and decision, then close
 // the split parents that are done (#378). The processes, the steers, the agent's run
@@ -10,6 +11,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { stop } from "../ops/stop.ts";
 import type { State } from "../state.ts";
+import { claimFailureActions } from "./claim-failures.ts";
 import type { AdviceContext, Resumed } from "./escalation-agent.ts";
 import { escalateOpenIssues } from "./escalation-agent.ts";
 import type { RunAgent } from "./escalation-consult.ts";
@@ -26,8 +28,9 @@ import { schedule, startGate } from "./schedule.ts";
 import { readQueue } from "./snapshot.ts";
 import type { StartedJob } from "./start-job.ts";
 import { decisionLines, startJob } from "./start-job.ts";
-import type { WatchAction } from "./watchdog.ts";
+import type { WatchAction, WatchedJob } from "./watchdog.ts";
 import { watch } from "./watchdog.ts";
+import type { WatchMemory } from "./watchdog-memory.ts";
 import { readWatchMemory } from "./watchdog-memory.ts";
 
 // The config keys only the orchestrator reads; loadConfig applied their
@@ -43,10 +46,14 @@ const ORCHESTRATOR_SETTINGS = z.looseObject({
 const DEFAULT_MAX_RESUMES = 2;
 const DEFAULT_SILENT_MINUTES = 30;
 const DEFAULT_FAILURE_STREAK = 3;
+const DEFAULT_CLAIM_FAILURE_STREAK = 3;
+// How many in a row make a streak.
+const STREAK = z.number().int().positive();
 const WATCH_SETTINGS = z.looseObject({
   maxResumes: z.number().int().nonnegative().default(DEFAULT_MAX_RESUMES),
   silentMinutes: z.number().positive().default(DEFAULT_SILENT_MINUTES),
-  failureStreak: z.number().int().positive().default(DEFAULT_FAILURE_STREAK),
+  failureStreak: STREAK.default(DEFAULT_FAILURE_STREAK),
+  claimFailureStreak: STREAK.default(DEFAULT_CLAIM_FAILURE_STREAK),
 });
 
 interface TickDeps {
@@ -82,7 +89,7 @@ function startOf(
 
 // The stop code and the comment's reason for a watchdog stop.
 function stopOf(action: WatchAction & { action: "stopped" }): {
-  code: "job" | "budget";
+  code: "job" | "budget" | "error";
   reason: string;
 } {
   switch (action.reason) {
@@ -93,6 +100,8 @@ function stopOf(action: WatchAction & { action: "stopped" }): {
       };
     case "budget":
       return { code: "budget", reason: action.detail };
+    case "claim-failed":
+      return { code: "error", reason: action.detail };
     default: {
       const unknown: never = action;
       throw new Error(`unknown watchdog stop ${JSON.stringify(unknown)}`);
@@ -124,11 +133,12 @@ function act(
       return started;
     }
     case "stopped": {
-      stop(run.cfg, {
-        ...stopOf(action),
-        number: action.issue,
-        state: { ...issue.state },
-      });
+      let state = { ...issue.state };
+      if (action.reason === "claim-failed") {
+        // The failing jobs' stage, as a lifted issue is saved at `stopped`.
+        state = { ...state, stage: action.stage };
+      }
+      stop(run.cfg, { ...stopOf(action), number: action.issue, state });
       if (issue.row !== undefined) {
         issue.row.stopped = true;
       }
@@ -204,6 +214,26 @@ function withoutHeld(
   return decisions.filter(({ issue }) => !waiting.has(issue));
 }
 
+// The watchdog's and the failing-claim rule's actions on the `watched` jobs
+// of `issues`, and the memory after both.
+function watchJobs(
+  cfg: Config,
+  queue: { issues: readonly SnapshotIssue[]; watched: readonly WatchedJob[] },
+  gate: { now: Date; admit: StartGate },
+): { actions: WatchAction[]; memory: WatchMemory } {
+  const settings = WATCH_SETTINGS.parse(cfg);
+  const { issues, watched } = queue;
+  const memory = readWatchMemory(cfg);
+  const watchdog = watch(watched, memory, { ...settings, ...gate });
+  const labelled = new Set(
+    issues.filter(({ stopped }) => stopped).map(({ number }) => number),
+  );
+  const run = { ...settings, now: gate.now };
+  const claims = claimFailureActions(watched, labelled, watchdog.memory, run);
+  const actions = [...watchdog.actions, ...claims.actions];
+  return { actions, memory: claims.memory };
+}
+
 // What a tick did: the scheduler's decisions, and what became of each open
 // split parent, for which the scheduler makes no decision.
 interface TickResult {
@@ -225,11 +255,7 @@ function tick(cfg: Config, deps: TickDeps): TickResult {
   const spentLastHour = ledger.spentLastHour(now);
   const backoff = openBackoff(cfg, jobs, now);
   const admit = backoff.gate(startGate({ issues, spentLastHour }, settings));
-  const watchdog = watch(watched, readWatchMemory(cfg), {
-    ...WATCH_SETTINGS.parse(cfg),
-    now,
-    admit,
-  });
+  const watchdog = watchJobs(cfg, { issues, watched }, { now, admit });
   const run: TickRun = { cfg, deps, ledger };
   const done: WatchAction[] = [];
   const restarted: LogEntry[] = [];

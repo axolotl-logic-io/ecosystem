@@ -52,7 +52,11 @@ type WatchAction =
   | (ActionBase & { action: "held"; reason: string })
   | (ActionBase & { action: "stopped"; reason: "max-resumes" })
   // `detail` is the stop comment's reason.
-  | (ActionBase & { action: "stopped"; reason: "budget"; detail: string })
+  | (ActionBase & {
+      action: "stopped";
+      reason: "budget" | "claim-failed";
+      detail: string;
+    })
   | (ActionBase & {
       action: "steered";
       reason: `silent:${string}` | `failures:${string}`;
@@ -265,6 +269,7 @@ function pruned(memory: WatchMemory, jobs: readonly WatchedJob[]): WatchMemory {
       Object.entries(memory.overBudget).filter(([id]) => current.has(id)),
     ),
     escalated: [...memory.escalated],
+    claimFailures: { ...memory.claimFailures },
   };
 }
 
@@ -277,12 +282,10 @@ function watch(
   const { now, ...rest } = run;
   const working: Working = { ...pruned(memory, jobs), ...rest };
   const actions = jobs.flatMap((job) => actionsFor(job, working, now));
-  const { resumes, steers, killed, failureSteers, overBudget, escalated } =
-    working;
-  return {
-    actions,
-    memory: { resumes, steers, killed, failureSteers, overBudget, escalated },
-  };
+  const { resumes, steers, killed, failureSteers, overBudget } = working;
+  const { escalated, claimFailures } = working;
+  const kept = { resumes, steers, killed, failureSteers, overBudget };
+  return { actions, memory: { ...kept, escalated, claimFailures } };
 }
 
 export type { WatchAction, WatchedJob, WatchSettings };

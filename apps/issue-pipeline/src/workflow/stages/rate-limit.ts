@@ -6,6 +6,9 @@
 // or inside an `api_error`). Such a failure is transient, like a network
 // error (network.ts): the stage defers instead of stopping, and the next
 // sweep, or the orchestrator's next job after its backoff, runs it again.
+// It also reads the two shapes of a stage job's summary for the facts
+// job.json's outcome records: a deferral on such an error, and a failed
+// claim's error.
 
 import { noteEvent } from "../event-log.ts";
 import type { IssueState } from "../types.ts";
@@ -28,6 +31,8 @@ const TRANSPORT_ERROR: RegExp =
 // The outcome of an issue deferred on a transient provider error, in the sweep's summary;
 // the job notes it in job.json for the orchestrator's backoff.
 const RATE_LIMITED = "rate-limited";
+// The outcome of an issue whose claim failed, in either summary.
+const CLAIM_FAILED = "claim-failed";
 
 // Whether a session's error text, if any, reports a rate limit or overload.
 function isRateLimitError(text: string | null): boolean {
@@ -123,7 +128,27 @@ function rateLimitedRun(summary: object): boolean {
   });
 }
 
+// The error of a stage job's claim that failed, from the same two summaries:
+// the reason of a role stage's unclaimed end, or of the sweep's item, whose
+// outcome is `claim-failed`. Null when the claim passed or gave no reason.
+function claimErrorOf(summary: object): string | null {
+  let failed: unknown[] = [];
+  if ("end" in summary && isRecord(summary.end)) {
+    failed = [summary.end].filter(({ kind }) => kind === "unclaimed");
+  } else if ("items" in summary && Array.isArray(summary.items)) {
+    failed = summary.items;
+  }
+  for (const item of failed.filter(isRecord)) {
+    const { outcome, reason } = item;
+    if (outcome === CLAIM_FAILED && typeof reason === "string" && reason) {
+      return reason;
+    }
+  }
+  return null;
+}
+
 export {
+  claimErrorOf,
   isRateLimitError,
   isTransientSessionError,
   RATE_LIMITED,

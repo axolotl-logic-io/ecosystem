@@ -72,7 +72,7 @@ import { jobKeyOf, tearDown } from "./job/teardown.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { OpsFrame } from "./workflow/launches.ts";
 import { opsFrame } from "./workflow/launches.ts";
-import { rateLimitedRun } from "./workflow/stages/rate-limit.ts";
+import { claimErrorOf, rateLimitedRun } from "./workflow/stages/rate-limit.ts";
 import { startSweep } from "./workflow/sweep.ts";
 import { laneOf, spawnLimitOf } from "./workflow/sweep-config.ts";
 import type { JobLayout } from "./workflow/types.ts";
@@ -201,7 +201,12 @@ async function settle(
 
 function outcomeOf(end: RunEnd): JobOutcome {
   if (end.kind === "finished") {
-    return { kind: "finished", rateLimited: rateLimitedRun(end.summary) };
+    const rateLimited = rateLimitedRun(end.summary);
+    const claimError = claimErrorOf(end.summary);
+    if (claimError === null) {
+      return { kind: "finished", rateLimited };
+    }
+    return { kind: "finished", rateLimited, claimError };
   }
   return { kind: "stopped", signal: end.signal };
 }

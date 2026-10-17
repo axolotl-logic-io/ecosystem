@@ -4,7 +4,7 @@
 // and for a stage that runs a role, each step of the role's run (#301). On
 // exit it holds the job's outcome, which notes a sweep that deferred its
 // issue on a transient provider error for the orchestrator's backoff, the
-// uncommitted paths its checkout dropped (lostChanges) and the patches that
+// error of a claim that failed, the uncommitted paths its checkout dropped (lostChanges) and the patches that
 // saved them (droppedPatches, relative to the run folder, #369). Each change rewrites
 // the whole file atomically, so a reader never sees part of one; a write that
 // fails is reported on stderr and the job goes on. This module alone knows
@@ -29,9 +29,13 @@ const SIGNAL = z.enum(["SIGTERM", "SIGINT"]);
 const JOB_OUTCOME = z.discriminatedUnion("kind", [
   // rateLimited: the issue deferred on a model provider's rate limit or a
   // transport error reaching it (src/workflow/stages/rate-limit.ts); absent before it was recorded.
+  // claimError: the error of the issue's claim, when the claim failed; absent
+  // when it passed. The orchestrator stops an issue on it once it repeats
+  // (src/orchestrator/claim-failures.ts).
   z.object({
     kind: z.literal("finished"),
     rateLimited: z.boolean().optional(),
+    claimError: z.string().optional(),
   }),
   z.object({ kind: z.literal("stopped"), signal: SIGNAL }),
   z.object({ kind: z.literal("failed"), error: z.string() }),

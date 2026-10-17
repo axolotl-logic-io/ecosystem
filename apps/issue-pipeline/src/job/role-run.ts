@@ -35,12 +35,15 @@ import type { LaunchUsage, UsageTally } from "./usage-tally.ts";
 import { usageTally } from "./usage-tally.ts";
 
 const MS_PER_SECOND = 1000;
+// The reason of a claim that passed with a state the role can't run from.
+const BAD_STATE = "the claim's state for the issue doesn't parse";
 
-// What a role stage's job prints: the issue, the stage and how it ended.
+// What a role stage's job prints: the issue, the stage and how it ended. An
+// unclaimed end's `reason` is why the claim failed, or null with none.
 interface RoleLine {
   issue: number;
   stage: string;
-  end: RunEnd | { kind: "unclaimed"; outcome: string };
+  end: RunEnd | { kind: "unclaimed"; outcome: string; reason: string | null };
 }
 
 type RoleStageEnd =
@@ -268,12 +271,15 @@ async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
       return { kind: "stopped", signal };
     }
     let outcome = "claim-failed";
+    let reason: string | null = null;
     if (claim.kind === "unclaimed") {
-      ({ outcome } = claim);
+      ({ outcome, reason } = claim);
+    } else if (claim.kind === "claimed") {
+      reason = BAD_STATE;
     }
     return {
       kind: "finished",
-      summary: { issue, stage, end: { kind: "unclaimed", outcome } },
+      summary: { issue, stage, end: { kind: "unclaimed", outcome, reason } },
     };
   }
   return await runClaimed(job, launcher, {
