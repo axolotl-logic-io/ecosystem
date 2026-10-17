@@ -17,6 +17,7 @@ import { git } from "../../github.ts";
 import { matchAny } from "../../globs.ts";
 import { withWikiLock } from "../../locks.ts";
 import { OpsError, run, shell } from "../../process.ts";
+import type { StackedOn } from "../../stack.ts";
 import { readWikiChange } from "../../wiki-check.ts";
 import type { CheckedInterface, SpecTestsResult } from "./check.ts";
 import { specTestsCheck } from "./check.ts";
@@ -39,12 +40,13 @@ const SETTINGS = z.looseObject({
   testPathGlobs: z.array(z.string()),
 });
 
-// The job's config with its checkout, the issue, the issue it is stacked on,
-// if any, and the handoff file a session that ran out of room writes.
+// The job's config with its checkout, the issue, the prerequisite and the head
+// of it the issue's branch was put on, if stacked, and the handoff file a
+// session that ran out of room writes.
 interface SpecJob {
   cfg: Config;
   n: number;
-  stackedOn: number | null;
+  stackedOn: StackedOn | null;
   handoffFile: string;
 }
 
@@ -96,18 +98,16 @@ function startHeads(cfg: Config, n: number): StartHeads {
 }
 
 // What the spec writer's commits start from: the branch's start head, or for
-// a new branch the head of the branch it is stacked on, or the base.
+// a new branch the prerequisite head it was started on when stacked, or the
+// base branch. It never reads a ref that can move or vanish, such as the
+// prerequisite's branch once that is rebased, merged or deleted (#401).
 function baseOf(job: SpecJob, startSha: string | null): string {
-  const { cfg, n, stackedOn } = job;
+  const { cfg, stackedOn } = job;
   if (startSha !== null) {
     return startSha;
   }
-  const wt = paths.worktree(cfg, n);
   if (stackedOn !== null) {
-    const stacked = `origin/${paths.branch(stackedOn)}`;
-    if (refHead(wt, stacked) !== null) {
-      return stacked;
-    }
+    return stackedOn.headSha;
   }
   return `origin/${cfg.baseBranch}`;
 }

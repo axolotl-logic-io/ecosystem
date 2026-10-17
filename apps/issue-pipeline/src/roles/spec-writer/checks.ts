@@ -232,7 +232,7 @@ function specWriterChecks(
 ): Checks {
   const { issue: n, paths } = entry.context;
   const jobCfg = withCheckout(cfg, { issue: n, dir: paths.worktree });
-  const stackedOn = entry.saved.stackedOn?.issue ?? null;
+  const stackedOn = entry.saved.stackedOn ?? null;
   const { handoffFile } = paths;
   const job: SpecJob = { cfg: jobCfg, n, stackedOn, handoffFile };
   return {

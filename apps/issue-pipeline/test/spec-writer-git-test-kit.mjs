@@ -67,6 +67,7 @@ const SPEC_TRAILER = "Pipeline-Agent: spec writer";
  * @property {boolean} [pushedMeanwhile] whether a person pushes a commit to both branches after the session's own push
  * @property {boolean} [stacked] whether the issue is stacked on #6's branch
  * @property {Record<string, unknown>} [start] fields of the state the run starts from
+ * @property {(origin: string) => Record<string, unknown>} [prepare] builds the origin's branches before the job's checkout opens, and gives fields of the state the run starts from
  * @property {Record<string, OpFake>} [ops] op fakes in place of the kit's
  * @property {string} [testCommand] the config's test command, in place of running every test file
  * @property {Partial<SweepConfig>} [sweep] fields of the context's config in place of its own
@@ -144,15 +145,13 @@ function repoOf(setup) {
     heads.code = branchOnOrigin(origin);
     heads.wiki = branchOnOrigin(wikiOrigin);
   }
-  /** @type {{ stackedOn?: { issue: number, headSha: string } }} */
-  const stacked = {};
+  /** @type {Record<string, unknown>} */
+  let stacked = { ...setup.prepare?.(origin) };
   let stackOn = null;
   if (setup.stacked === true) {
     stackOn = STACKED_ON;
-    stacked.stackedOn = {
-      issue: stackOn,
-      headSha: branchOnOrigin(origin, stackOn),
-    };
+    const headSha = branchOnOrigin(origin, stackOn);
+    stacked = { ...stacked, stackedOn: { issue: stackOn, headSha } };
   }
   /** @type {{ stage: string, stackOn: number | null, wiki: "write" }} */
   const job = { stage: "spec", stackOn, wiki: "write" };
