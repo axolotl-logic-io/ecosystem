@@ -11,14 +11,14 @@ import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
 import { branchChanges, recordPush } from "../checkouts.ts";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg } from "../config.ts";
+import { paths } from "../config.ts";
 import { assertClean, fetchIn, head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
 import { parseRequest, run } from "../process.ts";
 import { abortRebase, rebaseInProgress, unmergedFiles } from "../rebase.ts";
 import type { StackedOn, SyncTarget } from "../stack.ts";
 import { measureFrom, STACKED_ON, syncTarget } from "../stack.ts";
-import { wikiDiff } from "../wiki.ts";
+import { commitLog, withWiki } from "./review-diff.ts";
 import { finishProblem } from "./sync-finish.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
@@ -122,22 +122,6 @@ function reviewFrom(
   return baseSha;
 }
 
-// Wiki commits come after the code diff. They are always the whole wiki change so
-// far, even in a re-review that shows only the code since the last review.
-function withWiki(
-  cfg: Config,
-  n: number,
-  diff: string,
-): { text: string; files: string[] } {
-  const wiki = wikiDiff(cfg, n);
-  const settings = wikiCfg(cfg);
-  if (wiki.diff === "" || settings === null) {
-    return { text: diff, files: wiki.files };
-  }
-  const heading = `# Wiki changes (paths under ${settings.dir}/; pushed to the wiki when the PR merges)`;
-  return { text: `${diff}\n\n${heading}\n\n${wiki.diff}`, files: wiki.files };
-}
-
 function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const req = parseRequest(REVIEW_REQUEST, "prepare-review", request);
   const n = req.number;
@@ -148,7 +132,9 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const baseArgs = ["merge-base", measureFrom(req.stackedOn, cfg), "HEAD"];
   const baseSha = gitOut(wt, baseArgs).trim();
   const from = reviewFrom(wt, req.sinceSha, { headSha, baseSha });
-  const diff = gitOut(wt, ["diff", "--stat", "--patch", `${from}..${headSha}`]);
+  const range = `${from}..${headSha}`;
+  const patch = gitOut(wt, ["diff", "--stat", "--patch", range]);
+  const diff = `${commitLog(wt, range)}${patch}`;
   const names = gitOut(wt, ["diff", "--name-only", `${baseSha}..${headSha}`]);
   const tag = `review-${textOr(req.tag, "r0")}`;
   const dir = path.join(paths.runDir(cfg, n), tag);

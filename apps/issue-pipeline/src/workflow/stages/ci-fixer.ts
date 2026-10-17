@@ -5,6 +5,7 @@
 
 import { sessionBudget } from "../budget.ts";
 import {
+  beyondIssueRule,
   commitRulesOf,
   handoffLead,
   handoffRule,
@@ -66,14 +67,15 @@ function fixerLaunch(
     "These checks failed:",
     job.failure,
     "",
-    "Find the cause and fix it with the smallest change. If `fails-before-fix` failed, the tests do not prove the change: strengthen them so they fail without the fix. If a lockfile check failed, regenerate the lockfile with the package manager.",
+    "Fix every failing check, whatever caused it, even when this change didn't: a flaky check is a failure, so fix its cause and never just re-run it. If `fails-before-fix` failed, the tests do not prove the change: strengthen them so they fail without the fix. If a lockfile check failed, regenerate the lockfile with the package manager.",
     ...commitRulesOf(ctx.committer, {
       unit: "step",
       when: "as soon as it works",
       trailer: "Pipeline-Agent: check fixer",
       clearMessage: false,
     }),
-    `Run the failing check locally, commit what is left and leave the worktree clean. Return \`cannot-fix\` if the failure is unrelated to this change (for example, a flaky or broken check on ${cfg.baseBranch}).`,
+    `Run the failing check locally, commit what is left and leave the worktree clean. Return \`cannot-fix\` only for a failure no change in the repo can fix: an outage of an outside service, missing secrets or credentials, or anything that needs the repo's owner. Say which in \`summary\`.`,
+    beyondIssueRule(cfg.baseBranch, "`summary`, which is posted on the PR"),
     handoffRule(budgets, handoffFile, "make it build and commit it"),
   ];
   if (job.continuation) {

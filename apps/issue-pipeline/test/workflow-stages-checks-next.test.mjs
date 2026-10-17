@@ -56,6 +56,8 @@ const NO_BLOCKING =
   "Review of the check fix in ffffffffffff.\n\nNo blocking findings.";
 const REBASED_NOTE = /acceptance and security passed before the rebase$/u;
 const BLOCKING_HEADING = /\*\*Blocking\*\*/u;
+// A cannot-fix rule that names flaky checks or the base's breakage.
+const CANNOT_FIX_FLAKY = /cannot-fix[^\n]*(?:flaky|integration)/u;
 
 // The CI status request for the PR's head `expectedSha`.
 /** @param {string} expectedSha @returns {object} */
@@ -122,6 +124,32 @@ test("failing verification launches a CI fixer after the checks' table", () => {
       "Ran the repo's commands on cccccccccccc.\n\n- ❌ test: 1 failed",
     ),
   ]);
+});
+
+test("the CI fixer fixes flaky and base failures, and returns cannot-fix only for what the repo can't fix", () => {
+  const [launch] = sessions(ciFixRun().fixing);
+  const task = launch?.task ?? "";
+  assert.ok(!task.includes("unrelated"));
+  assert.doesNotMatch(task, CANNOT_FIX_FLAKY);
+  assert.ok(task.includes("Fix every failing check, whatever caused it"));
+  assert.ok(task.includes("fix its cause and never just re-run it"));
+  assert.ok(task.includes("including breakage on integration"));
+  assert.ok(
+    task.includes(
+      "Return `cannot-fix` only for a failure no change in the repo can fix: an outage of an outside service, missing secrets or credentials, or anything that needs the repo's owner.",
+    ),
+  );
+});
+
+test("a CI fixer's cannot-fix stops as checks it can't fix from the repo", () => {
+  const { fixing } = ciFixRun();
+  const reply = { status: "cannot-fix", summary: "The registry is down." };
+  const step = after(next, fixing, CTX, sessionResult("cifix-1", reply));
+  assert.deepEqual(step.stop, {
+    reason: "the check fixer can't fix the failing checks from the repo",
+    detail: "The registry is down.",
+    code: null,
+  });
 });
 
 test("a CI fix is pushed, its diff prepared, and reviewed by two lenses", () => {

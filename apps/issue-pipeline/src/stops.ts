@@ -102,11 +102,13 @@ const ROWS: readonly Omit<Stop, "label">[] = [
   {
     code: "checks-unrelated",
     short:
-      "Stopped: failing checks look unrelated to the change. See the stop comment.",
-    test: /look unrelated/iu,
+      "Stopped: the check fixer can't fix the failing checks from the repo. See the stop comment.",
+    // "look unrelated" is the reason sweeps sent before
+    // unrelated-fixes-allowed, which in-flight workflow.js copies still send.
+    test: /can't fix the failing checks|look unrelated/iu,
     control: "check fixer",
     explain:
-      "The check fixer judged the failing checks unrelated to this change and did not change them.",
+      "The check fixer found that no change in the repo can fix the failing checks, such as an outside service's outage, missing secrets or credentials, or something that needs the repo's owner.",
   },
   {
     code: "check-fixes",

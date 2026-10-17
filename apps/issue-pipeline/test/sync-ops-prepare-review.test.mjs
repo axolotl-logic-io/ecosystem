@@ -23,7 +23,11 @@ const ISSUE = {
   wiki: 24,
   prereq: 25,
   stacked: 26,
+  messages: 27,
 };
+// The two commits after sinceSha, oldest first.
+const COMMITS_IN_ORDER =
+  /^# Commits, oldest first\n\ncommit \w+\n\nfix a flaky check\n\ncommit \w+\n\nsimplify the parser\n\n$/u;
 // The reply fields the stacked test reads.
 const REVIEW_REPLY = z.looseObject({
   baseSha: z.string(),
@@ -51,6 +55,14 @@ function patch(dir, range) {
   return spawnSync("git", args, { encoding: "utf8" }).stdout;
 }
 
+// The review file's code part: the range's commit messages, then its diff.
+/** @param {string} dir @param {string} range @returns {string} */
+function codePart(dir, range) {
+  const format = "--format=commit %h%n%n%B";
+  const log = gitIn(dir, `log --reverse '${format}' ${range}`);
+  return `# Commits, oldest first\n\n${log}\n\n# Diff\n\n${patch(dir, range)}`;
+}
+
 /** @typedef {{ file: string, reply: { headSha: string, headTree: string, baseSha: string, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
 
 // What prepare-review should reply and write for the diff `from..HEAD`.
@@ -60,7 +72,7 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
   const headSha = gitIn(wt, "rev-parse HEAD");
   const headTree = gitIn(wt, `rev-parse ${headSha}^{tree}`);
   const baseSha = gitIn(wt, `merge-base ${BASE} HEAD`);
-  const code = patch(wt, `${from ?? baseSha}..${headSha}`);
+  const code = codePart(wt, `${from ?? baseSha}..${headSha}`);
   let file = code;
   if (wiki.diff !== "") {
     file = `${code}${WIKI_HEADING}${wiki.diff}`;
@@ -104,6 +116,18 @@ test("prepare-review diffs the branch from its merge base", () => {
   assert.deepEqual(want.reply.changedFiles, ["g", "h"]);
   const { got, expected } = reviewOutcome(out, want);
   assert.deepEqual(got, expected);
+});
+
+test("prepare-review lists the reviewed commits' messages, oldest first, above the diff", () => {
+  const n = ISSUE.messages;
+  const since = fx.startBranch(n, "g", "one");
+  fx.commitIn(n, "h", "two", "fix a flaky check");
+  fx.commitIn(n, "i", "three", "simplify the parser");
+  ask({ op: "prepare-review", number: n, sinceSha: since, tag: "r1" });
+  const file = fs.readFileSync(review(n, since, "r1").reply.diffPath, "utf8");
+  const top = file.slice(0, file.indexOf("# Diff"));
+  assert.match(top, COMMITS_IN_ORDER);
+  assert.ok(!top.includes("edit g"));
 });
 
 test("prepare-review diffs from sinceSha while it is in the branch", () => {

@@ -192,6 +192,14 @@ function commitRulesOf(committer: Committer, step: CommitStep): string[] {
   return rules;
 }
 
+// What a writer may do beyond its issue (unrelated-fixes-allowed, Axlog,
+// 2026-10-17): fix anything broken it finds, on `base` too, and improve the
+// code it works in, each as its own commit that `nameIn` (such as
+// "`prBody`") names.
+function beyondIssueRule(base: string, nameIn: string): string {
+  return `Scope doesn't limit you to the issue: fix anything broken you find while you work, such as bugs or flaky or broken tests and checks, including breakage on ${base}, and simplify, remove code smells or refactor the code you work in so the change has a better design. Keep the issue's change the main one, commit each such fix or improvement as its own commit with a message that says what it does and why, keep the tests passing, and name each one in ${nameIn}.`;
+}
+
 // What a writer session does once its context passes `limits.softLimit`
 // (config contextLimits.soft) before the work is done (wrap-up-at-175k, Axlog,
 // 2026-10-17): it finishes the edit it is in, `keep` says what it keeps of its
@@ -213,6 +221,7 @@ function handoffLead(handoffFile: string): string {
 
 export type { CommitStep, Committer };
 export {
+  beyondIssueRule,
   commitOftenRule,
   commitRulesOf,
   committerText,

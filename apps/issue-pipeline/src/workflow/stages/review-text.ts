@@ -6,6 +6,7 @@ import { findingLines, findingsText } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
 import {
+  beyondIssueRule,
   commitRulesOf,
   handoffLead,
   handoffRule,
@@ -164,7 +165,8 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
         trailer: `Pipeline-Agent: fixer round ${round}`,
         clearMessage: false,
       }),
-      "Make only the changes the findings need. Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
+      beyondIssueRule(cfg.baseBranch, "`summary`, which is posted on the PR"),
+      "Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
       handoffRule(budgets, handoffFile, "make it build and commit it"),
     ])
     .join("\n");

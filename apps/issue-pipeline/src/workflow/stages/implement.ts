@@ -10,6 +10,7 @@ import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import {
+  beyondIssueRule,
   commitRulesOf,
   handoffLead,
   handoffRule,
@@ -109,11 +110,12 @@ function implementTask(state: StageState, ctx: StageContext): string {
     "",
     "Do this:",
     "1. Write or update tests that specify the fix. They must fail without your change.",
-    "2. Implement the smallest change that resolves the issue. Do not refactor unrelated code.",
+    "2. Implement the change that resolves the issue.",
     `3. Run the tests${commandsClause(cfg.commands)} and fix failures.`,
     "4. Commit as you go (see below), and commit what is left at the end. Leave the worktree clean.",
     wikiStep(state.paths.wiki, ctx.committer),
     "Change lockfiles only through the package manager, never by hand.",
+    beyondIssueRule(cfg.baseBranch, "`prBody`"),
     "",
     ...commitRulesOf(ctx.committer, {
       unit: "step",
@@ -127,7 +129,7 @@ function implementTask(state: StageState, ctx: StageContext): string {
       "make it build and commit it",
     ),
     "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
-    "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
+    "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, how it is tested, and each fix or improvement beyond the issue).",
   ];
   return preamble(cfg, state, ROLE).concat(lines).join("\n");
 }

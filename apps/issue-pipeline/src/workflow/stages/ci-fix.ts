@@ -59,7 +59,7 @@ function fixed(
     case "cannot-fix":
       return stopStep(
         state,
-        "the failing checks look unrelated to this change",
+        "the check fixer can't fix the failing checks from the repo",
         summary,
         [
           {

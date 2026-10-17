@@ -186,16 +186,17 @@ function implementTask(source) {
       "",
       "Do this:",
       "1. Write or update tests that specify the fix. They must fail without your change.",
-      "2. Implement the smallest change that resolves the issue. Do not refactor unrelated code.",
+      "2. Implement the change that resolves the issue.",
       "3. Run the tests (`npm test`), lint (`npm run lint`) and fix failures.",
       "4. Commit as you go (see below), and commit what is left at the end. Leave the worktree clean.",
       `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${WIKI} add -A && git -C ${WIKI} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`,
       "Change lockfiles only through the package manager, never by hand.",
+      "Scope doesn't limit you to the issue: fix anything broken you find while you work, such as bugs or flaky or broken tests and checks, including breakage on integration, and simplify, remove code smells or refactor the code you work in so the change has a better design. Keep the issue's change the main one, commit each such fix or improvement as its own commit with a message that says what it does and why, keep the tests passing, and name each one in `prBody`.",
       "",
       "Commit often, in small working steps: commit each step with `git add -A && git commit` and a clear message as soon as it builds and its tests pass, ending each message with the trailer line `Pipeline-Agent: implementer`. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.",
       `Context limits: at 175000 tokens of context, if the work isn't done, wrap up: finish the edit you are in the middle of and start no new ones, make it build and commit it, then write ${HANDOFF} as a summary for the next round (what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass), and return status \`handoff\`. The next session starts from your summary alone. At 225000 tokens of context the session is stopped.`,
       "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
-      "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
+      "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, how it is tested, and each fix or improvement beyond the issue).",
     ])
     .join("\n");
 }
