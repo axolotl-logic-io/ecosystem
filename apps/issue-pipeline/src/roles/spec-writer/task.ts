@@ -6,7 +6,7 @@
 // its context limits, and the decisions it may reply with. Pure.
 
 import type { Budgets } from "../../workflow/budget.ts";
-import { sessionBudget } from "../../workflow/budget.ts";
+import { sessionBudget, splitBound } from "../../workflow/budget.ts";
 import {
   commitRulesOf,
   handoffLead,
@@ -94,14 +94,14 @@ function planText(plan: string | undefined): string {
   return plan;
 }
 
-// What triage found: the issue ready, or too big for one session.
+// What triage found: the issue ready, or too big for two implementer sessions.
 function triageFinding(item: SpecItem): string {
   const notes = `Its notes:\n${planText(item.plan)}`;
   const { splitSuggested } = item;
   if (typeof splitSuggested !== "string") {
     return `Triage found this issue ready. ${notes}`;
   }
-  return `Triage judged this issue too big for one session: ${splitSuggested} Split it unless your spec shows the change fits one session. ${notes}`;
+  return `Triage judged this issue too big for two implementer sessions: ${splitSuggested} Split it unless your spec shows the change fits two sessions. ${notes}`;
 }
 
 function retryLines(item: SpecItem): string[] {
@@ -199,12 +199,13 @@ function workLines(item: SpecItem, budgets: Budgets): string[] {
   ];
 }
 
-// The line on splitting: a sub-issue may not split again.
-function splitLine(depth: number, sessionCap: number): string {
+// The line on splitting: offered past `bound` tokens of context, the most
+// two implementer sessions take; a sub-issue may not split again.
+function splitLine(depth: number, bound: number): string {
   if (depth >= 1) {
     return "Don't set `decision` to split: this issue is already a sub-issue, so splitting is not allowed. Leave `subIssues` empty.";
   }
-  return `Only if one implementer session (at most ${sessionCap} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec, with its interfaces, in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Cut along file boundaries, order parts that must edit the same file with \`after\`, and prefer fewer parts.`;
+  return `Only if implementing and testing it would take more than two implementer sessions (more than ${bound} tokens of context, twice \`contextLimits.soft\`), set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria that two implementer sessions can implement and test. Put its slice of the spec, with its interfaces, in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Cut along file boundaries, order parts that must edit the same file with \`after\`, and prefer fewer parts.`;
 }
 
 function decisionLines(item: SpecItem, settings: SpecSettings): string[] {
@@ -214,7 +215,7 @@ function decisionLines(item: SpecItem, settings: SpecSettings): string[] {
     "Set `decision` to ready, with `questions` and `subIssues` empty, once the spec, its tests and its stubs are committed.",
     "Set `decision` to no-work only if the issue's Behaviour already holds on the base: give the evidence in `spec` (where the behaviour lives, and how you checked). Any tests you commit to show it must pass.",
     "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, and put what you found so far in `spec`.",
-    splitLine(item.depth, budgets.sessionCap),
+    splitLine(item.depth, splitBound(budgets)),
     `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
   ];
 }

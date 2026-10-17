@@ -51,6 +51,9 @@ const ROLES = {
   verifier: 60_000,
 };
 const SESSION_CAP = 150_000;
+// contextLimits.soft, and the split bound: two implementer sessions (#413).
+const SOFT_LIMIT = 175_000;
+const SPLIT_BOUND = 2 * SOFT_LIMIT;
 const SPEC_MODEL = "anthropic/claude-opus-5-5";
 const IMPL_MODEL = "anthropic/claude-sonnet-5-5";
 const PLAN = "Change src/a.ts and test it.";
@@ -68,7 +71,7 @@ function contextWith() {
     budgets: {
       roles: ROLES,
       sessionCap: SESSION_CAP,
-      softLimit: 175_000,
+      softLimit: SOFT_LIMIT,
       hardLimit: 225_000,
     },
     models: modelsWith({ spec: SPEC_MODEL, implementer: IMPL_MODEL }),
@@ -155,7 +158,7 @@ function specTask(paths = PATHS) {
       "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
       "Keep it under about 150 lines. Set `decision` to ready, with `questions` and `subIssues` empty.",
       "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, put what you found so far in `spec`, and leave `subIssues` empty.",
-      `Only if one implementer session (at most ${SESSION_CAP} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`,
+      `Only if implementing and testing it would take more than two implementer sessions (more than ${SPLIT_BOUND} tokens of context, twice \`contextLimits.soft\`), set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria that two implementer sessions can implement and test. Put its slice of the spec in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`,
       `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
     ])
     .join("\n");

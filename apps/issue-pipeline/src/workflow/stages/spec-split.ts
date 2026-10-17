@@ -1,5 +1,5 @@
-// Spec's split: the spec writer cuts an issue too big for one session into 2
-// to 5 parts, which the split op opens as sub-issues under it (#267). Each
+// Spec's split: the spec writer cuts an issue too big for two implementer
+// sessions into 2 to 5 parts, which the split op opens as sub-issues under it (#267). Each
 // part's body goes out as the spec writer wrote it. A sub-issue can't split
 // again.
 

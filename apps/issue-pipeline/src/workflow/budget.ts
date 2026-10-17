@@ -22,6 +22,14 @@ function sessionBudget(budgets: Budgets, role: Role): number {
   return Math.min(budgets.roles[role], budgets.sessionCap);
 }
 
+// The most context an issue, or one part of a split issue, may need without
+// splitting, in tokens: two implementer sessions, each wrapping up at
+// contextLimits.soft (roles-6-10-scope). Triage and the spec writer size the
+// issue against it.
+function splitBound(budgets: Pick<Budgets, "softLimit">): number {
+  return 2 * budgets.softLimit;
+}
+
 // A session's context budget and the role it is the budget of.
 interface LaunchBudget {
   budgetRole: Role;
@@ -34,4 +42,4 @@ function launchBudget(budgets: Budgets, role: Role): LaunchBudget {
 }
 
 export type { Budgets, LaunchBudget };
-export { launchBudget, sessionBudget };
+export { launchBudget, sessionBudget, splitBound };

@@ -51,7 +51,7 @@ const SIGNATURE = {
   run: "i7-triage-3",
 };
 const SPLIT_ALLOWED =
-  "- split: too big for one session. Say why in `reason` and write `plan` as for ready; the spec writer decides how to cut it.";
+  "- split: needs more than two implementer sessions. Say why in `reason` and write `plan` as for ready; the spec writer decides how to cut it.";
 const SPLIT_FORBIDDEN =
   "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so.";
 const REJECTED = "triage rejected the issue for the agent pipeline";
@@ -122,7 +122,7 @@ function expectedTask(splitLine) {
     .concat([
       "If /runs/issue-7/handoff.md exists, an earlier implementer session wrote it when it ran out of room: read it and the commits on `agent/issue-7` before you decide.",
       "Read the issue and as much of the code as you need to decide one of:",
-      "- ready: one implementer session (at most 150000 tokens of context) can implement and test it. Write `plan`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.",
+      "- ready: two implementer sessions (at most 350000 tokens of context) can implement and test it. Write `plan`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.",
       "- needs-info: a competent engineer could not start without answers. Ask at most 5 specific questions. If earlier questions were answered in the comments, use the answers.",
       splitLine,
       "- reject: not suitable for an agent (design debate, production incident, needs production access, not a code change). Explain in `reason`. Issues that change CI workflows, auth, dependencies or migrations are suitable.",

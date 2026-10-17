@@ -2,9 +2,9 @@
 // Autumn (2026-10-13): every issue gets a spec before implementation. It is
 // posted on the issue, and the implementer and the acceptance check work from
 // it. A spec that needs a maintainer's answer goes back to triage with its
-// questions, and an issue too big for one session is split into sub-issues
-// (spec-split.ts, #267). A failed spec session, including one whose spec stops partway, is
-// tried once more (#280).
+// questions, and an issue too big for two implementer sessions is split into
+// sub-issues (spec-split.ts, #267). A failed spec session, including one whose
+// spec stops partway, is tried once more (#280).
 
 import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";

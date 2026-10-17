@@ -1,6 +1,7 @@
 // The spec writer's task: what to read, the sections of `spec`, when and how
 // to split the issue, and the end marker it writes last.
 
+import { splitBound } from "../budget.ts";
 import {
   NO_ARTIFICIAL_LOAD_RULE,
   practicesNote,
@@ -19,23 +20,24 @@ function planText(plan: string | null | undefined): string {
   return plan;
 }
 
-// What triage found: the issue ready, or too big for one session, with its
-// notes.
+// What triage found: the issue ready, or too big for two implementer
+// sessions, with its notes.
 function triageFinding(st: IssueState): string {
   const notes = `Its notes:\n${planText(st.plan)}`;
   const { splitSuggested } = st;
   if (typeof splitSuggested !== "string") {
     return `Triage found this issue ready. ${notes}`;
   }
-  return `Triage judged this issue too big for one session: ${splitSuggested} Split it unless your spec shows the change fits one session. ${notes}`;
+  return `Triage judged this issue too big for two implementer sessions: ${splitSuggested} Split it unless your spec shows the change fits two sessions. ${notes}`;
 }
 
-// The line on splitting: a sub-issue may not split again.
-function splitOption(depth: number, sessionCap: number): string {
+// The line on splitting: offered past `bound` tokens of context, the most
+// two implementer sessions take; a sub-issue may not split again.
+function splitOption(depth: number, bound: number): string {
   if (depth >= 1) {
     return "Don't set `decision` to split: this issue is already a sub-issue, so splitting is not allowed. Leave `subIssues` empty.";
   }
-  return `Only if one implementer session (at most ${sessionCap} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`;
+  return `Only if implementing and testing it would take more than two implementer sessions (more than ${bound} tokens of context, twice \`contextLimits.soft\`), set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria that two implementer sessions can implement and test. Put its slice of the spec in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`;
 }
 
 // Where the spec writer starts reading the wiki, or "" when there is none.
@@ -65,7 +67,7 @@ function specTask(state: StageState, ctx: StageContext): string {
     "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
     "Keep it under about 150 lines. Set `decision` to ready, with `questions` and `subIssues` empty.",
     "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, put what you found so far in `spec`, and leave `subIssues` empty.",
-    splitOption(state.st.depth, budgets.sessionCap),
+    splitOption(state.st.depth, splitBound(budgets)),
     `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
   ];
   return preamble(cfg, state, ROLE).concat(lines).join("\n");
