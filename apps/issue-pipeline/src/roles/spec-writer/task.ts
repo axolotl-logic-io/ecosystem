@@ -167,6 +167,7 @@ function wikiStart(paths: ItemPaths): string {
 function readingLines(item: SpecItem, cfg: SpecSettings["cfg"]): string[] {
   return [
     `Read, in this order: the project's coding practices (below), in full, before the code; then the issue, ${item.paths.issueFile}; the wiki pages that bear on it${wikiStart(item.paths)}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
+    "Commit a first artifact early: once you know the issue's main interface, and before you read the code broadly, commit with `pipeline_commit` its stub (or the type-only addition a `changed` one needs) and a first failing test, then grow them as you read. A session that stops early then leaves work the next one builds on.",
     practicesNote(cfg, item, "spec"),
   ];
 }

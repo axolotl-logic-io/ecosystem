@@ -28,7 +28,7 @@ const TITLE_LIMIT = 200;
 // The lead a first session from a spec gets: a restart resumes implement
 // with the handoff of the session before the stop (`every-role-resumes`).
 const EARLIER_HANDOFF = `If ${HANDOFF} exists, an earlier implementer session of this issue wrote it before the issue stopped: read it and the commits on the branch first, and build on them.\n\n`;
-const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first: ${HANDOFF}. Continue from the current branch state.`;
+const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first: ${HANDOFF}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 const CONTINUED =
   "This session ran out of room before finishing. Another implementer session continues from its handoff.";
 

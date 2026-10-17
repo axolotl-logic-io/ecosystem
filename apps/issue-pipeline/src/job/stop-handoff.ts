@@ -12,14 +12,18 @@
 //   by the job's section on the stopped session;
 // - with no handoff before or after, the job writes one: the session's
 //   commits, its uncommitted work and the start of its last assistant text.
+// A writer session that hands off, stopped or not, also gets the files it
+// read appended to its handoff (read-ledger.ts).
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { run } from "../process.ts";
 import type { ContextStop } from "./context-watch.ts";
+import type { Read } from "./read-ledger.ts";
+import { readLedgerText } from "./read-ledger.ts";
 import type { CheckoutView, WipResult } from "./stop-handoff-text.ts";
-import { stopHandoffText } from "./stop-handoff-text.ts";
+import { appended, stopHandoffText } from "./stop-handoff-text.ts";
 
 // The longest one git command, a commit's hooks included, may take.
 const COMMIT_TIMEOUT_MS = 120_000;
@@ -63,6 +67,9 @@ interface StoppedWork {
   wroteHandoff: boolean;
   wipCommit: string | null;
 }
+
+// pi's read tool takes a path with a leading `@` as the path without it.
+const AT_PREFIX = /^@/u;
 
 // A stopped writer session, where it worked.
 type StoppedSession = StoppedEnd & WriterPlace;
@@ -202,5 +209,40 @@ function saveStoppedWork(place: WriterPlace, end: StoppedEnd): StoppedWork {
   }
 }
 
+// `file` relative to `cwd` when it is inside it, else as an absolute path.
+function shownFile(file: string, cwd: string): string {
+  const absolute = path.resolve(cwd, file.replace(AT_PREFIX, ""));
+  const relative = path.relative(cwd, absolute);
+  if (relative === "" || relative.startsWith("..")) {
+    return absolute;
+  }
+  return relative;
+}
+
+// Appends session `key`'s read ledger to the handoff file, its paths
+// relative to the session's `cwd`, when the file exists and the session read
+// anything; the text already in it stays. A failure is reported on stderr.
+function appendReadLedger(
+  handoffFile: string,
+  key: string,
+  reads: readonly Read[],
+  cwd: string,
+): void {
+  const section = readLedgerText(key, reads, (file: string): string =>
+    shownFile(file, cwd),
+  );
+  const text = readText(handoffFile);
+  if (section === null || text === null) {
+    return;
+  }
+  try {
+    fs.writeFileSync(handoffFile, appended(text, section));
+  } catch (error: unknown) {
+    process.stderr.write(
+      `job: ${key}: cannot append its read ledger: ${String(error)}\n`,
+    );
+  }
+}
+
 export type { HandoffStart, StoppedEnd, StoppedWork, WriterPlace };
-export { checkoutHead, handoffStartOf, saveStoppedWork };
+export { appendReadLedger, checkoutHead, handoffStartOf, saveStoppedWork };

@@ -126,6 +126,17 @@ test("the task says the ready reply is checked in the session, and how a changed
   assert.match(task, EXTENDED_FILES_CHANGED);
 });
 
+// The line that asks for a first stub and failing test before broad reading.
+const EARLY_ARTIFACT =
+  /before you read the code broadly, commit with `pipeline_commit` its stub .* and a first failing test/u;
+
+test("the task asks for a first stub and test early, after the practices and before the code", () => {
+  const { task } = retried();
+  assert.match(task, EARLY_ARTIFACT);
+  const early = task.search(EARLY_ARTIFACT);
+  assert.ok(task.indexOf("Read, in this order:") < early, task);
+});
+
 test("a retry's task includes the failed check's output", () => {
   const failed = stepFrom("session", "failed", "lint: 3 errors in src/a.ts");
   const { effect } = transition(failed.state, { name: "ok", reply: null });

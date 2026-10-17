@@ -23,7 +23,7 @@ import {
 
 const HARD_LIMIT = /\b225000 tokens\b/u;
 const EFFORT_GUESS = /15 files|30 substantial tool calls/u;
-const LEAD = `A previous session ran out of room. Read its handoff first: ${PATHS.handoffFile}. Continue from the current branch state.`;
+const LEAD = `A previous session ran out of room. Read its handoff first: ${PATHS.handoffFile}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 const HANDOFF = { status: "handoff", summary: "Half done." };
 const FIXED = { status: "fixed", summary: "Fixed." };
 const FAILED = { id: "test", pass: false, detail: "1 failed", tail: "3 != 2" };

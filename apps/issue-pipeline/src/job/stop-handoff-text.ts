@@ -170,4 +170,4 @@ function stopHandoffText(facts: StopHandoffFacts): string | null {
 }
 
 export type { CheckoutView, StopHandoffFacts, WipResult };
-export { stopHandoffText };
+export { appended, stopHandoffText };

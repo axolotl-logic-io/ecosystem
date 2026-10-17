@@ -230,9 +230,10 @@ function handoffRule(
   return `Context limits: at ${limits.softLimit} tokens of context, if the work isn't done, wrap up: finish the edit you are in the middle of and start no new ones, ${keep}, then write ${handoffFile} as a summary for the next round (what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass), and return status \`handoff\`. The next session starts from your summary alone. At ${limits.hardLimit} tokens of context the session is stopped.`;
 }
 
-// The first line of a continuation's task: where its predecessor's handoff is.
+// The first line of a continuation's task: where its predecessor's handoff
+// is, and that it ends with the files earlier sessions read (read-ledger.ts).
 function handoffLead(handoffFile: string): string {
-  return `A previous session ran out of room. Read its handoff first: ${handoffFile}. Continue from the current branch state.`;
+  return `A previous session ran out of room. Read its handoff first: ${handoffFile}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 }
 
 export type { CommitStep, Committer };

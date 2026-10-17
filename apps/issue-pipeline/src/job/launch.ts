@@ -25,11 +25,14 @@ import type { OpsProcess } from "./ops-process.ts";
 import { runOps } from "./ops-process.ts";
 import type { OpsRaw, SessionRaw } from "./raw-results.ts";
 import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
+import type { Read } from "./read-ledger.ts";
+import { readLedger } from "./read-ledger.ts";
 import { commitsOf, recordedBudgetOf } from "./roles.ts";
 import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart, ResumePoint } from "./status.ts";
 import {
+  appendReadLedger,
   checkoutHead,
   handoffStartOf,
   saveStoppedWork,
@@ -135,12 +138,13 @@ function countingSteers(
 }
 
 // Runs pi for `spec` from `from`, its context watched (context-watch.ts),
-// telling `hooks` of it, and counts the steers the job sent it.
+// telling `hooks` of it, and counts the steers the job sent it and gathers
+// the files it read (read-ledger.ts).
 async function runPi(
   spec: ChildSpec,
   hooks: LaunchHooks,
   from: SessionStart,
-): Promise<WatchedEnd & { steers: Steers }> {
+): Promise<WatchedEnd & { steers: Steers; reads: readonly Read[] }> {
   const { key } = spec;
   const { session, resume } = from;
   const usage = resume?.usage ?? ZERO_USAGE;
@@ -150,6 +154,7 @@ async function runPi(
   }
   const watched: { watch: ContextWatch | null } = { watch: null };
   const steers: Steers = { context: 0, socket: 0 };
+  const ledger = readLedger();
   const exit = await runRpc({
     args: from.args,
     cwd: hooks.cwd,
@@ -179,6 +184,7 @@ async function runPi(
     onRecord: (record: unknown): void => {
       hooks.record(key, record);
       watched.watch?.read(record);
+      ledger.record(record);
     },
   });
   hooks.ended(key);
@@ -187,7 +193,8 @@ async function runPi(
     hooks.contextStopped(key, stop);
   }
   const lastText = watched.watch?.lastText() ?? null;
-  return { raw: sessionRaw(spec, exit, usage), stop, lastText, steers };
+  const raw = sessionRaw(spec, exit, usage);
+  return { raw, stop, lastText, steers, reads: ledger.reads() };
 }
 
 // How a session that ran ended: handed off, when the watch stopped it or
@@ -204,7 +211,8 @@ function endedOf(raw: SessionRaw, stop: ContextStop | null): SessionEnded {
 }
 
 // Runs `spec`'s session, resuming it where `hooks.resumePoint` says, and
-// gives a writer the watch stopped a handoff for its result.
+// gives a writer the watch stopped a handoff for its result. A writer that
+// handed off gets its read ledger appended to the handoff.
 async function runSession(
   spec: ChildSpec,
   hooks: LaunchHooks,
@@ -220,7 +228,11 @@ async function runSession(
     return failedSession(spec, error);
   }
   const begun = handoffStartOf(hooks.repo, hooks.handoffFile);
-  const { raw, stop, lastText, steers } = await runPi(spec, hooks, start);
+  const { raw, stop, lastText, steers, reads } = await runPi(
+    spec,
+    hooks,
+    start,
+  );
   const { budgetRole, agent, model } = spec;
   const ended = endedOf(raw, stop);
   let reviewedSha: string | null = null;
@@ -230,10 +242,15 @@ async function runSession(
   const headSha = checkoutHead(hooks.repo);
   const end = { budgetRole, agent, model, ended, steers };
   hooks.sessionEnded(spec.key, { ...end, headSha, reviewedSha });
+  if (stop !== null) {
+    saveStoppedWork(hooks, { key: spec.key, stop, lastText, start: begun });
+  }
+  if (ended === "handoff" && commitsOf(agent)) {
+    appendReadLedger(hooks.handoffFile, spec.key, reads, hooks.cwd);
+  }
   if (stop === null) {
     return raw;
   }
-  saveStoppedWork(hooks, { key: spec.key, stop, lastText, start: begun });
   return contextStopped(spec, stop, raw.results[0].usage);
 }
 

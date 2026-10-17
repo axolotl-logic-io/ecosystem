@@ -14,7 +14,7 @@ import { CTX, ITEM, replied } from "./workflow-review-test-kit.mjs";
 const HARD_LIMIT = /\b225000 tokens\b/u;
 const EFFORT_GUESS = /15 files|30 substantial tool calls/u;
 const HANDOFF = { ...FIXED, status: "handoff", summary: "Half fixed." };
-const LEAD = `A previous session ran out of room. Read its handoff first: ${ITEM.paths.handoffFile}. Continue from the current branch state.`;
+const LEAD = `A previous session ran out of room. Read its handoff first: ${ITEM.paths.handoffFile}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 
 /** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
 function launchesOf(step) {
