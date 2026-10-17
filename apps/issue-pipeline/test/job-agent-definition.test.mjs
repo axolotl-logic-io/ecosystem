@@ -195,6 +195,17 @@ test("the specifier may edit, write and run commands, and keeps the web tools", 
   }
 });
 
+// A spec names its entry points, not a list of files (#391).
+test("the specifier's prompt asks for the entry points, not the files", () => {
+  const { systemPrompt } = definitionOf("issue-pipeline-specifier");
+  assert.ok(
+    systemPrompt.includes(
+      "the behaviour, the entry points it builds on, and the tests",
+    ),
+  );
+  assert.ok(!systemPrompt.includes("the behaviour, the files, and the tests"));
+});
+
 test("a definition without project context or a tools list runs with -nc and pi's default tools", () => {
   const definition = parsed(
     "---\nname: x\ninheritProjectContext: false\ninheritSkills: true\n---\nBe brief.\n",

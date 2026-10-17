@@ -76,7 +76,6 @@ const NEEDS_INFO_RUN = {
       decision: "needs-info",
       spec: "So far.\n<!-- end of spec -->",
       questions: ["Which file?"],
-      files: [],
       subIssues: [],
     }),
   },

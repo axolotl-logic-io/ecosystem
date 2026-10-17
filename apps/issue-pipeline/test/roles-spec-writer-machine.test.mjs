@@ -134,7 +134,7 @@ test("the machine hands off the spec's fields and its PR, and checkpoints its st
     new Set([
       "spec",
       "specFile",
-      "files",
+      "wikiOnly",
       "interfaces",
       "specTestsSha",
       "noTestsReason",
@@ -186,7 +186,7 @@ test("a restart reads back its start heads, attempts and continuations, and runs
 test("a published spec with its tests committed starts at its PR", () => {
   const saved = {
     spec: "s",
-    files: ["src/quota.ts"],
+    wikiOnly: false,
     interfaces: [INTERFACE],
     specTestsSha: "t1",
     noTestsReason: null,
@@ -202,7 +202,23 @@ test("a published spec with its tests committed starts at its PR", () => {
   assert.equal(malformed.data.interfaces, undefined);
 });
 
-test("a published wiki-only spec starts by closing an earlier PR", () => {
+test("a published wiki-only spec starts by closing an earlier PR, as its saved wikiOnly says", () => {
+  const saved = {
+    specFile: "/runs/issue-7/spec.md",
+    wikiOnly: true,
+    specTestsSha: "t1",
+    noTestsReason: "Only a wiki page changes.",
+  };
+  assert.equal(located(saved).at, "close-old-pr");
+  const code = { ...saved, wikiOnly: false };
+  assert.equal(located(code).at, "open-pr");
+  const { wikiOnly: _signal, ...unsaid } = saved;
+  assert.equal(located(unsaid).at, "open-pr");
+});
+
+// A state saved before #391 has `files` and no wikiOnly: wiki-only when it
+// has a noTestsReason and every file is under the wiki's folder.
+test("a published spec saved with files and no wikiOnly keeps the old reading", () => {
   const saved = {
     specFile: "/runs/issue-7/spec.md",
     files: ["wiki/Home.md"],
@@ -219,6 +235,7 @@ test("a published wiki-only spec starts by closing an earlier PR", () => {
     "close-old-pr",
   );
   assert.equal(located({ ...saved, noTestsReason: null }).at, "open-pr");
+  assert.equal(located({ ...saved, files: ["src/a.ts"] }).at, "open-pr");
 });
 
 /** @param {string} file @returns {string[]} its imports that reach into another role's folder */

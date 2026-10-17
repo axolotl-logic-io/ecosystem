@@ -1,9 +1,10 @@
 // @ts-check
 // A restart's check of the test and stub files its spec documents
 // (src/spec-files.ts, src/restart-spec.ts): the files the spec's Tests
-// section and Files list name that the branch lacks stop the issue when the
-// spec writer wrote them, and otherwise go to the implementer, noted in the
-// issue's log.
+// section names and the stubs of its `new` interfaces that the branch lacks
+// stop the issue when the spec writer wrote them, and otherwise go to the
+// implementer, noted in the issue's log. A state saved before #391 may hold
+// the files the change touches; the check ignores them.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -16,9 +17,6 @@ const d = fs.mkdtempSync("/tmp/issue-pipeline-test-");
 process.on("exit", () => fs.rmSync(d, { recursive: true, force: true }));
 // The pipeline root is read once, on import, so it is set first.
 setEnv("ISSUE_PIPELINE_ROOT", d);
-const { documentedFiles, missingSpecFiles } = await import(
-  "../src/spec-files.ts"
-);
 const { checkedSpecFiles, specFilesMissing } = await import(
   "../src/restart-spec.ts"
 );
@@ -38,24 +36,31 @@ const SPEC = [
   "",
   "- `test/later.test.mjs`.",
 ].join("\n");
-const FILES = ["src/thing.ts", "src/old/**", "docs/"];
+// The interfaces' `where`s: a `new` one's is its stub; the others' are
+// anchors in code that already exists.
+const INTERFACES = [
+  interfaceAt("thing", "src/thing.ts", "new"),
+  interfaceAt("old", "src/old.ts:12", "existing"),
+  interfaceAt("changed", "src/changed.ts:3-9", "changed"),
+];
+// The files a state saved before #391 lists, which the check ignores.
+const OLD_FILES = ["src/listed.ts", "src/old/**", "docs/"];
 const ISSUE = 7;
 const NOW = new Date("2026-10-16T20:00:00Z");
 const MISSING = ["test/thing-kit.mjs", "src/thing.ts"];
 const WIKI_DIR = "wiki";
 
-test("the documented files are the Tests section's paths and the listed non-glob files", () => {
-  assert.deepEqual(documentedFiles(SPEC, FILES, WIKI_DIR), [
-    "test/thing.test.mjs",
-    "test/thing-kit.mjs",
-    "src/thing.ts",
-  ]);
-});
-
-test("the missing files are those the branch lacks, by path or app-relative path", () => {
-  const tracked = ["apps/issue-pipeline/test/thing.test.mjs", "README.md"];
-  assert.deepEqual(missingSpecFiles(SPEC, FILES, tracked, WIKI_DIR), MISSING);
-});
+/**
+ * A test interface named `name` at `where`, with `status`.
+ * @param {string} name
+ * @param {string} where
+ * @param {"new" | "existing" | "changed"} status
+ * @returns {object}
+ */
+function interfaceAt(name, where, status) {
+  const signature = `${name}(): void`;
+  return { name, kind: "function", where, status, signature, behaviours: [] };
+}
 
 /**
  * A git checkout at `name` whose one commit holds `files`, each empty.
@@ -79,12 +84,45 @@ function committed(name, files) {
   return wt;
 }
 
-test("a branch's commit is checked for the documented files", () => {
-  const wt = committed("wt", ["test/thing.test.mjs"]);
-  const state = { stage: "review", spec: SPEC, files: FILES };
+test("the documented files are the Tests section's paths and the new interfaces' stubs, by path or app-relative path", () => {
+  const wt = committed("wt", ["apps/issue-pipeline/test/thing.test.mjs"]);
+  const state = { stage: "review", spec: SPEC, interfaces: INTERFACES };
   assert.deepEqual(specFilesMissing(wt, state, WIKI_DIR), MISSING);
   const atSpec = { ...state, stage: "spec" };
   assert.deepEqual(specFilesMissing(wt, atSpec, WIKI_DIR), []);
+});
+
+test("an old state's files are ignored, and it restarts on its interfaces", () => {
+  const wt = committed("wt-old", ["test/thing.test.mjs"]);
+  const state = {
+    stage: "implement",
+    spec: SPEC,
+    files: OLD_FILES,
+    interfaces: INTERFACES,
+  };
+  assert.deepEqual(specFilesMissing(wt, state, WIKI_DIR), MISSING);
+  const { interfaces: _i, ...filesOnly } = state;
+  assert.deepEqual(specFilesMissing(wt, filesOnly, WIKI_DIR), [
+    "test/thing-kit.mjs",
+  ]);
+});
+
+test("a missing stub of a spec whose writer wrote its tests stops the restart", () => {
+  const wt = committed("wt-stub", [
+    "test/thing.test.mjs",
+    "test/thing-kit.mjs",
+  ]);
+  const state = {
+    stage: "implement",
+    spec: SPEC,
+    interfaces: INTERFACES,
+    specWritesTests: true,
+  };
+  const missing = specFilesMissing(wt, state, WIKI_DIR);
+  const { specMissing } = checkedSpecFiles(state, missing, NOW);
+  const step = claimStep(ISSUE, { ...claimAt("implement"), specMissing });
+  assert.equal(step.kind === "claimed" && step.stop?.code, "spec-files");
+  assert.deepEqual(specMissing, ["src/thing.ts"]);
 });
 
 test("a restart of a spec writer's spec that lists wiki pages is not stopped for them", () => {
@@ -96,7 +134,8 @@ test("a restart of a spec writer's spec that lists wiki pages is not stopped for
   const state = {
     stage: "implement",
     spec,
-    files: [...FILES, "wiki/Page.md"],
+    files: [...OLD_FILES, "wiki/Page.md"],
+    interfaces: INTERFACES,
     specWritesTests: true,
   };
   const missing = specFilesMissing(wt, state, WIKI_DIR);

@@ -67,19 +67,20 @@ function present(fields: State): State {
   );
 }
 
-// The plan and spec carry over, with the spec's full-text path, the files it
-// touches, which the orchestrator's file holds read, and whether its writer
-// wrote its tests, except after answered questions.
+// The plan and spec carry over, with the spec's full-text path, its
+// interfaces, whose stubs the orchestrator's holds and the restart check
+// read, and whether its writer wrote its tests, except after answered
+// questions. An old state's `files` (before #391) is left behind.
 function carriedWork(state: State | null, answered: boolean): State {
   if (answered || state === null) {
     return {};
   }
-  const { plan: saved, spec, specFile, files, specWritesTests } = state;
+  const { plan: saved, spec, specFile, interfaces, specWritesTests } = state;
   const plan = saved ?? null;
   if (spec === undefined || spec === null || spec === "") {
     return { plan };
   }
-  return present({ plan, spec, specFile, files, specWritesTests });
+  return present({ plan, spec, specFile, interfaces, specWritesTests });
 }
 
 // True when the carried work holds a spec.

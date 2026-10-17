@@ -1,15 +1,12 @@
 // The spec writer's commit check's rules on what its commits changed: which
-// files may change, that `files` lists them, that tests change unless
-// `noTestsReason` is set, that something is left to build, and that the wiki
-// change is clean. Pure: src/roles/spec-writer/check.ts reads the commits.
+// files may change, that tests change unless `noTestsReason` is set, that
+// something is left to build, and that the wiki change is clean. Pure: src/roles/spec-writer/check.ts reads the commits.
 
-import { matchAny } from "../../globs.ts";
 import type { WikiChange, WikiProblem } from "../../wiki-check.ts";
 import { wikiProblems } from "../../wiki-check.ts";
 
 type SpecTestsRule =
   | "not-allowed"
-  | "not-in-files"
   | "stub-missing"
   | "no-tests"
   | "tests-with-reason"
@@ -27,10 +24,10 @@ interface Failure {
 
 // What the commits changed: every file, the test files and the wiki pages
 // (as `<wiki dir>/<page>.md`), with the `new` interfaces' stub files, the prefix
-// every wiki page's path starts with, and the reply's `files` and
+// every wiki page's path starts with, and the reply's `wikiOnly` and
 // `noTestsReason`.
 interface Facts {
-  files: readonly string[];
+  wikiOnly: boolean;
   noTestsReason: string | null;
   changed: readonly string[];
   tests: readonly string[];
@@ -39,17 +36,7 @@ interface Facts {
   wikiPrefix: string;
 }
 
-const MD_EXTENSION = /\.md$/u;
-
-// Whether `files` lists wiki page `page` (`<wiki dir>/<page>.md`), with or
-// without its `.md`: a spec writer may name a page either way (#385).
-function listsWikiPage(files: readonly string[], page: string): boolean {
-  return (
-    matchAny(files, page) || matchAny(files, page.replace(MD_EXTENSION, ""))
-  );
-}
-
-// Only test files, stubs and wiki pages change, and `files` lists each.
+// Only test files, stubs and wiki pages change.
 function scopeFailure(facts: Facts): Failure | null {
   const { changed, tests, stubs, wikiPrefix } = facts;
   const outside = changed.find(
@@ -63,13 +50,6 @@ function scopeFailure(facts: Facts): Failure | null {
   if (outside !== undefined) {
     const reason = `${outside} changed, but it is not a test file (testPathGlobs), the stub of a new interface or a wiki page`;
     return { rule: "not-allowed", reason };
-  }
-  const unlisted =
-    changed.find((file) => !matchAny(facts.files, file)) ??
-    facts.wikiPages.find((page) => !listsWikiPage(facts.files, page));
-  if (unlisted !== undefined) {
-    const reason = `${unlisted} changed, but no entry of files matches it`;
-    return { rule: "not-in-files", reason };
   }
   return null;
 }
@@ -95,14 +75,14 @@ function testsChangedFailure(facts: Facts): Failure | null {
   return { rule: "tests-with-reason", reason };
 }
 
-// The change leaves something to do: a test, a wiki page or a code file.
+// The change leaves something to do: a test, a wiki page, or, unless the
+// reply says the wiki is the whole change, code for the implementer.
 function workFailure(facts: Facts): Failure | null {
-  const code = facts.files.filter((file) => !file.startsWith(facts.wikiPrefix));
-  if (facts.tests.length > 0 || facts.wikiPages.length > 0 || code.length > 0) {
+  if (facts.tests.length > 0 || facts.wikiPages.length > 0 || !facts.wikiOnly) {
     return null;
   }
   const reason =
-    "nothing to build: no test change, no wiki change and no code file in files";
+    "nothing to build: the reply says the wiki is the whole change, but no test and no wiki page changed";
   return { rule: "nothing-to-build", reason };
 }
 

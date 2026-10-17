@@ -19,14 +19,12 @@ const FIRST_TEST = "test/a.test.sh";
 const FIRST_TEXT = "# the first session's test\nexit 1\n";
 const SECOND_TEST = "test/b.test.sh";
 const STUB = "src/a.ts";
-const FILES = [FIRST_TEST, SECOND_TEST, STUB];
 // The first session commits one test; the second, the rest and the stub.
 const CODES = [
   { [FIRST_TEST]: FIRST_TEXT },
   { [SECOND_TEST]: "exit 1\n", [STUB]: "export function parseQuota() {}\n" },
 ];
 const READY = replyOf({
-  files: FILES,
   interfaces: [{ ...INTERFACE, where: STUB }],
 });
 const HANDOFF = { status: "handoff", summary: "Half done: a.test.sh." };

@@ -71,8 +71,8 @@ function readied(data: SpecData): SpecData {
   if (reply?.kind !== "ready") {
     return data;
   }
-  const { spec, files, interfaces, noTestsReason } = reply.reply;
-  return { ...data, spec, files, interfaces, noTestsReason };
+  const { spec, wikiOnly, interfaces, noTestsReason } = reply.reply;
+  return { ...data, spec, wikiOnly, interfaces, noTestsReason };
 }
 
 function testsCommitted(data: SpecData, reply: unknown): SpecData {

@@ -66,8 +66,6 @@ interface IssueState {
   // Where the full spec is (spec.md in the run dir), set only when `spec` was
   // clipped (#280).
   specFile?: string | null;
-  // The repo paths or globs the spec says the change will touch.
-  files?: string[] | null;
   // Whether the spec writer wrote the tests and stubs the spec documents, so
   // a restart that finds one missing stops (src/restart-spec.ts). The spec
   // stage sets it false; the spec writer that writes them (#305) sets it true.

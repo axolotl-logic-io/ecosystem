@@ -50,7 +50,6 @@ function replyOf(fields = {}) {
     decision: "ready",
     spec: `${SPEC}\n\n${SPEC_END}`,
     questions: [],
-    files: ["src/quota.ts"],
     subIssues: [],
     interfaces: [INTERFACE],
     noTestsReason: null,
@@ -58,9 +57,9 @@ function replyOf(fields = {}) {
   };
 }
 
-/** @param {string} title @returns {{ title: string, body: string, after: number[], files: string[] }} a part */
+/** @param {string} title @returns {{ title: string, body: string, after: number[] }} a part */
 function part(title) {
-  return { title, body: `${title}'s slice`, after: [], files: [] };
+  return { title, body: `${title}'s slice`, after: [] };
 }
 
 /** @param {Record<string, unknown>} fields @param {number} [depth] @returns {SpecReading} the reading of a reply with `fields` */

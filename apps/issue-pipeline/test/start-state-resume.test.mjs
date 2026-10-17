@@ -19,7 +19,18 @@ const { located } = await import("./spec-writer-role-test-kit.mjs");
 const PR = 50;
 const HEAD = "h1";
 const FINDINGS = [{ id: "f1", status: "resolved" }];
-// The issue stopped at `stage`, its branch at HEAD, reviewed there.
+const INTERFACES = [
+  {
+    name: "a",
+    kind: "function",
+    where: "src/a.ts",
+    status: "new",
+    signature: "a(): void",
+    behaviours: ["It works."],
+  },
+];
+// The issue stopped at `stage`, its branch at HEAD, reviewed there. Its state
+// was saved before #391, so it still holds the files the change touches.
 /** @param {string} stage @param {object} [fields] @returns {import("../src/state.ts").State} */
 function stoppedAt(stage, fields = {}) {
   return {
@@ -37,6 +48,7 @@ function stoppedAt(stage, fields = {}) {
     plan: "P",
     spec: "S",
     files: ["src/a.ts"],
+    interfaces: INTERFACES,
     triages: 2,
     continuations: { implement: 1 },
     round: 3,
@@ -86,14 +98,15 @@ for (const stage of [
     const { triages, continuations, round, ciFixes, syncs, conflictFixes } =
       resumed;
     const { securityRounds } = resumed;
-    const { plan, spec, files, findings, reviewedSha, verifiedSha } = resumed;
+    const { plan, spec, interfaces, findings, reviewedSha, verifiedSha } =
+      resumed;
     const { stopCode, stopReason, stoppedStage, log } = resumed;
     assert.deepEqual(
       {
         stage: resumed.stage,
         plan,
         spec,
-        files,
+        interfaces,
         findings,
         reviewedSha,
         verifiedSha,
@@ -113,7 +126,7 @@ for (const stage of [
         stage,
         plan: "P",
         spec: "S",
-        files: ["src/a.ts"],
+        interfaces: INTERFACES,
         findings: FINDINGS,
         reviewedSha: HEAD,
         verifiedSha: HEAD,

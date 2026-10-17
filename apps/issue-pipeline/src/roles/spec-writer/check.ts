@@ -1,8 +1,7 @@
 // The spec writer's commit check, `spec-tests-check` (the wiki's
 // Pipeline-Roles-Spec-Writer): the spec writer's commits hold only test files,
-// the stubs of the `new` interfaces its spec documents and wiki pages, each
-// listed in its `files`; the stubs exist, lint and type-check; the wiki change
-// is clean; and the new tests fail at the spec head but pass with the test
+// the stubs of the `new` interfaces its spec documents and wiki pages; the
+// stubs exist, lint and type-check; the wiki change is clean; and the new tests fail at the spec head but pass with the test
 // files put back as they were at the base, so the stubs broke nothing. With
 // `noTestsReason` set, no test or stub may change and the tests don't run.
 // It reads the commits through git and runs the configured commands in the
@@ -29,9 +28,9 @@ interface CheckedInterface {
 }
 
 // The spec writer's change: issue `number`'s worktree `wt`, checked out at the
-// spec head `sha` and set up, the `base` it started from, the reply's `files`,
-// `interfaces` and `noTestsReason`, the issue's wiki change, and where the
-// check's logs go.
+// spec head `sha` and set up, the `base` it started from, the reply's
+// `wikiOnly`, `interfaces` and `noTestsReason`, the issue's wiki change, and
+// where the check's logs go.
 interface SpecTestsChange {
   cfg: Config;
   number: number;
@@ -40,7 +39,7 @@ interface SpecTestsChange {
   sha: string;
   logDir: string;
   timeoutMs: number;
-  files: readonly string[];
+  wikiOnly: boolean;
   interfaces: readonly CheckedInterface[];
   noTestsReason: string | null;
   wiki: WikiChange | null;
@@ -59,8 +58,8 @@ interface SpecTestsSettings {
   };
 }
 
-// A pass says whether the change is wiki-only: `noTestsReason` is set and
-// every entry of `files` is a wiki page. A failure names the first rule the
+// A pass says whether the change is wiki-only: `noTestsReason` is set and the
+// reply says the wiki is the whole change. A failure names the first rule the
 // change breaks, and why.
 type SpecTestsResult =
   | { pass: true; wikiOnly: boolean }
@@ -81,7 +80,7 @@ function factsOf(change: SpecTestsChange, settings: SpecTestsSettings): Facts {
   const changed = changedFiles(change).filter((file) => file !== SPEC_DRAFT);
   return {
     changed,
-    files: change.files,
+    wikiOnly: change.wikiOnly,
     noTestsReason: change.noTestsReason,
     stubs: change.interfaces
       .filter((entry) => entry.status === "new")
@@ -205,9 +204,7 @@ function specTestsCheck(
   if (failed !== null) {
     return { pass: false, ...failed };
   }
-  const wikiOnly =
-    change.noTestsReason !== null &&
-    change.files.every((file) => file.startsWith(facts.wikiPrefix));
+  const wikiOnly = change.wikiOnly && change.noTestsReason !== null;
   return { pass: true, wikiOnly };
 }
 

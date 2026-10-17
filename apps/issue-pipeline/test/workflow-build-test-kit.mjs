@@ -144,14 +144,13 @@ function specTask(paths = PATHS) {
       "`spec` is GitHub markdown with these sections:",
       "- **Behaviour**: what is true when the issue is done, as checkable statements.",
       "- **Out of scope**: what this issue does not change.",
-      "- **Design**: the approach, the files to change with `file:line` anchors, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
+      "- **Design**: the approach, with `file:line` anchors to the code it builds on, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
       "- **Tests**: the tests to add or change, each naming the behaviour it pins down and why it fails today.",
       '- **Wiki updates**: wiki pages to add or change, or "None".',
       "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
-      "`files` lists the repo paths or globs the change will touch, relative to the repo root, without wiki pages (such as `src/a.ts` or `src/orchestrator/**`). The orchestrator holds back other changes that touch them.",
       "Keep it under about 150 lines. Set `decision` to ready, with `questions` and `subIssues` empty.",
       "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, put what you found so far in `spec`, and leave `subIssues` empty.",
-      `Only if one implementer session (at most ${SESSION_CAP} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec in its \`body\`, and in its \`files\` the paths from \`files\` it touches. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`,
+      `Only if one implementer session (at most ${SESSION_CAP} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`,
       `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
     ])
     .join("\n");

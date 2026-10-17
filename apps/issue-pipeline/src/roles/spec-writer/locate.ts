@@ -51,13 +51,13 @@ type SpecState =
 type SpecEntry = "claim" | "open-pr" | "close-old-pr";
 
 // What the run hands to the next role: the spec (or where the whole of it
-// is), the files it touches, its interfaces, the head with its tests
-// committed, why it has no tests, if it has none, that this role wrote the
-// tests, and the draft PR with its head, not yet implemented.
+// is), whether the wiki is the whole change, its interfaces, the head with
+// its tests committed, why it has no tests, if it has none, that this role
+// wrote the tests, and the draft PR with its head, not yet implemented.
 interface SpecHandoff {
   spec: string | undefined;
   specFile: string | null | undefined;
-  files: string[] | undefined;
+  wikiOnly: boolean | undefined;
   interfaces: SpecInterface[] | undefined;
   specTestsSha: string | undefined;
   noTestsReason: string | null | undefined;
@@ -135,15 +135,25 @@ function checkpointsOf(
   };
 }
 
-// The saved hand-off fields; a malformed one reads as missing.
-function handoffOf(saved: State): SpecHandoff {
-  const { spec, specFile, files, interfaces, specTestsSha, noTestsReason } =
-    saved;
-  const { specWritesTests, pr, headSha, implemented } = saved;
-  let kept: string[] | undefined;
-  if (isStrings(files)) {
-    kept = files;
+// The saved `wikiOnly`. A state saved before #391 has none, but may list
+// the `files` the change touches: then the wiki is the whole change when
+// every one is under the wiki's folder, as the commit check read it then.
+function savedWikiOnly(saved: State, paths: ItemPaths): boolean | undefined {
+  const { wikiOnly: said, files } = saved;
+  if (typeof said === "boolean") {
+    return said;
   }
+  if (!isStrings(files)) {
+    return undefined;
+  }
+  const prefix = `${wikiDirOf(paths)}/`;
+  return files.every((file) => file.startsWith(prefix));
+}
+
+// The saved hand-off fields; a malformed one reads as missing.
+function handoffOf(saved: State, paths: ItemPaths): SpecHandoff {
+  const { spec, specFile, interfaces, specTestsSha, noTestsReason } = saved;
+  const { specWritesTests, pr, headSha, implemented } = saved;
   let prNumber: number | null | undefined = nullOr(pr);
   if (typeof pr === "number") {
     prNumber = pr;
@@ -155,7 +165,7 @@ function handoffOf(saved: State): SpecHandoff {
   return {
     spec: textOr(spec, undefined),
     specFile: textOr(specFile, nullOr(specFile)),
-    files: kept,
+    wikiOnly: savedWikiOnly(saved, paths),
     interfaces: interfacesOf(interfaces),
     specTestsSha: textOr(specTestsSha, undefined),
     noTestsReason: textOr(noTestsReason, nullOr(noTestsReason)),
@@ -166,29 +176,24 @@ function handoffOf(saved: State): SpecHandoff {
   };
 }
 
-// Whether the change is wiki-only: it has no tests, and every file it
-// touches is a wiki page (the commit check's rule, check.ts).
+// Whether the change is wiki-only: it has no tests, and the reply said the
+// wiki is the whole change (the commit check's rule, check.ts).
 function wikiOnly(
-  handoff: Pick<SpecHandoff, "files" | "noTestsReason">,
-  paths: ItemPaths,
+  handoff: Pick<SpecHandoff, "wikiOnly" | "noTestsReason">,
 ): boolean {
-  const prefix = `${wikiDirOf(paths)}/`;
-  return (
-    typeof handoff.noTestsReason === "string" &&
-    (handoff.files ?? []).every((file) => file.startsWith(prefix))
-  );
+  return handoff.wikiOnly === true && typeof handoff.noTestsReason === "string";
 }
 
 // The state a run starts at: the PR's, once the spec is published with its
 // tests committed, and otherwise the claim.
-function startOf(handoff: SpecHandoff, paths: ItemPaths): SpecEntry {
+function startOf(handoff: SpecHandoff): SpecEntry {
   const published =
     filled(handoff.specTestsSha) &&
     (filled(handoff.spec) || filled(handoff.specFile));
   if (!published) {
     return "claim";
   }
-  if (wikiOnly(handoff, paths)) {
+  if (wikiOnly(handoff)) {
     return "close-old-pr";
   }
   return "open-pr";
@@ -200,7 +205,7 @@ function locate(
 ): MachineState<SpecState, SpecData> {
   const { issue, jobId, cfg, budgets, models, paths } = context;
   const { depth, plan, splitSuggested } = saved;
-  const handoff = handoffOf(saved);
+  const handoff = handoffOf(saved, paths);
   const by: Signature = {
     role: SPEC_ROLE,
     agent: SPEC_AGENT,
@@ -221,7 +226,7 @@ function locate(
     reply: null,
     checkOutput: null,
   };
-  return { at: startOf(handoff, paths), data };
+  return { at: startOf(handoff), data };
 }
 
 export type { SpecData, SpecHandoff, SpecState };

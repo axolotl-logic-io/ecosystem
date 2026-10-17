@@ -4,8 +4,10 @@
 // stubs, so when it wrote them, a missing one stops the issue rather than
 // going to the implementer or to a new spec. Until the spec writer writes
 // them (#305), the implementer does, so the missing ones are its unfinished
-// work. Pure: src/restart-spec.ts reads the spec and the branch's files.
+// work. Pure: src/restart-spec.ts reads the spec, its interfaces and the
+// branch's files.
 
+import type { SpecInterface } from "./roles/spec-writer/reply.ts";
 import { specSection } from "./spec-sections.ts";
 
 const CODE_SPAN = /`(?<text>[^`\s]+)`/gu;
@@ -29,19 +31,31 @@ function namedPaths(lines: readonly string[]): string[] {
   );
 }
 
+// The stub paths of the `new` interfaces in `interfaces`: each one's `where`,
+// without a line anchor, unless it is a glob or a folder.
+function stubPaths(interfaces: readonly SpecInterface[]): string[] {
+  return interfaces.flatMap(({ status, where }) => {
+    const path = where.replace(LINE_ANCHOR, "");
+    if (status !== "new" || GLOB.test(path) || path.endsWith("/")) {
+      return [];
+    }
+    return [path];
+  });
+}
+
 // The files `spec` documents: the test files its Tests section names, and the
-// paths (not globs) its `files` lists. Each path once, in the order found.
-// Pages under `wikiDir`, the wiki checkout's folder, are left out: they are
-// no test or stub, and the code checkout never tracks them.
+// stubs of its `new` `interfaces`. Each path once, in the order found. Pages
+// under `wikiDir`, the wiki checkout's folder, are left out: they are no test
+// or stub, and the code checkout never tracks them.
 function documentedFiles(
   spec: string,
-  files: readonly string[],
+  interfaces: readonly SpecInterface[],
   wikiDir: string,
 ): string[] {
-  const listed = files.filter(
-    (file) => !(GLOB.test(file) || file.endsWith("/")),
-  );
-  const named = [...namedPaths(specSection(spec, "Tests")), ...listed];
+  const named = [
+    ...namedPaths(specSection(spec, "Tests")),
+    ...stubPaths(interfaces),
+  ];
   const wikiPrefix = `${wikiDir}/`;
   return [...new Set(named.filter((file) => !file.startsWith(wikiPrefix)))];
 }
@@ -56,11 +70,11 @@ function isTracked(tracked: readonly string[], file: string): boolean {
 // commit, lacks; `wikiDir` is the wiki checkout's folder, as documentedFiles.
 function missingSpecFiles(
   spec: string,
-  files: readonly string[],
+  interfaces: readonly SpecInterface[],
   tracked: readonly string[],
   wikiDir: string,
 ): string[] {
-  return documentedFiles(spec, files, wikiDir).filter(
+  return documentedFiles(spec, interfaces, wikiDir).filter(
     (file) => !isTracked(tracked, file),
   );
 }

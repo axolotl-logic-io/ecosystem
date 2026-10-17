@@ -2,7 +2,10 @@
 // The spec writer's commit check, `spec-tests-check` (src/roles/spec-writer/
 // check.ts, #331), against a real repo: each rule that fails the spec
 // writer's commits, naming its cause, and the passes, with or without tests
-// and wiki-only. Every case leaves the worktree clean and no temp worktree.
+// and wiki-only. The change lists no files (#391): what may change is the
+// test files, the stubs, the spec draft and the wiki, and the reply's
+// `wikiOnly` says whether the wiki is the whole change. Every case leaves the
+// worktree clean and no temp worktree.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -36,12 +39,11 @@ const STUB_TEXT = "export function greet() {}\n";
 /** @type {CheckedInterface} */
 const GREET = { name: "greet", where: STUB, status: "new" };
 const REASON = "the change is to the docs alone";
-const PAGE = "wiki/Page.md";
 const NO_COMMAND = null;
 
 /**
  * @typedef {object} CaseOptions
- * @property {readonly string[]} [files]
+ * @property {boolean} [wikiOnly]
  * @property {readonly CheckedInterface[]} [interfaces]
  * @property {string | null} [noTestsReason]
  * @property {WikiChange | null} [wiki]
@@ -59,8 +61,7 @@ function wikiPage(text) {
 }
 
 // Runs the check on a branch with `files` committed, and returns its result
-// with what it left behind. `files` lists every committed file unless the
-// case says otherwise.
+// with what it left behind. The reply is not wiki-only unless the case says.
 /** @param {Files} files @param {CaseOptions} [options] @returns {Got} */
 function check(files, options = {}) {
   const { n, sha } = kit.branch(files);
@@ -75,7 +76,7 @@ function check(files, options = {}) {
     sha,
     logDir: path.join(kit.runDir(n), "spec-tests"),
     timeoutMs: TIMEOUT_MS,
-    files: options.files ?? Object.keys(files),
+    wikiOnly: options.wikiOnly ?? false,
     interfaces: options.interfaces ?? [],
     noTestsReason: options.noTestsReason ?? null,
     wiki: options.wiki ?? null,
@@ -120,39 +121,13 @@ test("a changed code file that is no test, stub or page fails", () => {
   assert.deepEqual(outcome(got, ["src/a.js"]), failed("not-allowed"));
 });
 
-test("a changed test file outside files fails", () => {
-  assert.deepEqual(
-    outcome(check(FAILING, { files: [] }), [TEST]),
-    failed("not-in-files"),
-  );
-});
-
-test("a changed wiki page outside files fails", () => {
+test("a failing test plus a wiki page that nothing lists passes", () => {
   const got = check(FAILING, { wiki: wikiPage("Text.\n") });
-  assert.deepEqual(outcome(got, [PAGE]), failed("not-in-files"));
-});
-
-// #385's spec writer listed its pages without `.md` and was stopped.
-for (const listed of [PAGE, "wiki/Page"]) {
-  test(`a failing test plus a wiki page listed as ${listed} passes`, () => {
-    const got = check(FAILING, {
-      files: [TEST, listed],
-      wiki: wikiPage("Text.\n"),
-    });
-    assert.deepEqual(outcome(got), passed(false));
-  });
-}
-
-test("a changed wiki page with only another page in files fails", () => {
-  const got = check(FAILING, {
-    files: [TEST, "wiki/Other", "wiki/Pages.md"],
-    wiki: wikiPage("Text.\n"),
-  });
-  assert.deepEqual(outcome(got, [PAGE]), failed("not-in-files"));
+  assert.deepEqual(outcome(got), passed(false));
 });
 
 test("a new interface whose stub file is absent fails", () => {
-  const got = check(FAILING, { files: [TEST, STUB], interfaces: [GREET] });
+  const got = check(FAILING, { interfaces: [GREET] });
   assert.deepEqual(outcome(got, [STUB, "greet"]), failed("stub-missing"));
 });
 
@@ -174,8 +149,8 @@ test("a changed test file with noTestsReason set fails", () => {
   assert.deepEqual(outcome(got, [TEST]), failed("tests-with-reason"));
 });
 
-test("no test, no wiki change and no code in files has nothing to build", () => {
-  const got = check({}, { files: [], noTestsReason: REASON });
+test("a wiki-only reply that changed no wiki page has nothing to build", () => {
+  const got = check({}, { wikiOnly: true, noTestsReason: REASON });
   assert.deepEqual(
     outcome(got, ["nothing to build"]),
     failed("nothing-to-build"),
@@ -203,10 +178,7 @@ test("a stub that doesn't type-check fails through typecheck", () => {
 });
 
 test("a changed wiki page with a broken link fails, naming page and link", () => {
-  const got = check(FAILING, {
-    files: [TEST, PAGE],
-    wiki: wikiPage("See [[Missing]].\n"),
-  });
+  const got = check(FAILING, { wiki: wikiPage("See [[Missing]].\n") });
   assert.deepEqual(outcome(got, ["Page", "Missing"]), failed("wiki"));
 });
 
@@ -255,23 +227,30 @@ test("a failing test through an existing interface, with no stub, passes", () =>
   );
 });
 
-test("noTestsReason with a code file in files passes without running the tests", () => {
+// A code change the spec writer can't test goes to the implementer with
+// nothing committed and nothing listed.
+test("noTestsReason with nothing committed, not wiki-only, passes without running the tests", () => {
+  const got = check({}, { noTestsReason: REASON, commands: { test: "false" } });
+  assert.deepEqual(outcome(got), passed(false));
+});
+
+test("noTestsReason with a wiki edit, not wiki-only, passes as a code change", () => {
   const got = check(
     {},
     {
-      files: ["src/a.js"],
       noTestsReason: REASON,
+      wiki: wikiPage("Text.\n"),
       commands: { test: "false" },
     },
   );
   assert.deepEqual(outcome(got), passed(false));
 });
 
-test("a clean wiki change with only wiki pages in files is wiki-only", () => {
+test("a clean wiki change from a wiki-only reply is wiki-only", () => {
   const got = check(
     {},
     {
-      files: [PAGE],
+      wikiOnly: true,
       noTestsReason: REASON,
       wiki: wikiPage("Text.\n"),
       commands: { test: "false" },
@@ -281,8 +260,8 @@ test("a clean wiki change with only wiki pages in files is wiki-only", () => {
 });
 
 // The draft leaves the branch once the spec is posted, so it never merges.
-test("a failing test plus the spec draft, which files leaves out, passes", () => {
+test("a failing test plus the spec draft passes", () => {
   const draft = { ".issue-pipeline/spec-draft.md": "## Behaviour\n" };
-  const got = check({ ...draft, ...FAILING }, { files: [TEST] });
+  const got = check({ ...draft, ...FAILING });
   assert.deepEqual(outcome(got), passed(false));
 });

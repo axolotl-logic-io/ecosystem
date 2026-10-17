@@ -4,9 +4,9 @@
 // PR on ready, found again on a rerun, a long spec saved to spec.md, the
 // resets on needs-info, split and no-work, which the job's exit push leaves
 // as they are and which delete the handoff (#335), the no-work check's three
-// answers, the wiki-only path, a failed start-pr, the retry, a stacked
-// issue's base, and the spec draft and the handoff, which a posted spec drops
-// (#335). Every run is made before the tests, because the fake gh's writes
+// answers, a failed start-pr, the retry, a stacked issue's base, and the spec
+// draft and the handoff, which a posted spec drops (#335). The wiki-only path
+// is in roles-spec-writer-wiki-only.test.mjs. Every run is made before the tests, because the fake gh's writes
 // are global.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -28,31 +28,22 @@ const CODE = {
   "src/quota.ts": "export function parseQuota() {}\n",
 };
 const WIKI = { "Quota.md": "Quota.\n", "Home.md": "base\nSee [[Quota]].\n" };
-const WIKI_FILES = ["wiki/Quota.md", "wiki/Home.md"];
-const FILES = ["test/quota.test.sh", "src/quota.ts", ...WIKI_FILES];
-const READY = { replies: [replyOf({ files: FILES })], code: CODE, wiki: WIKI };
+const READY = { replies: [replyOf()], code: CODE, wiki: WIKI };
 // The state's limit on a spec; a longer one goes to spec.md.
 const SPEC_LIMIT = 12_000;
 // Enough six-character sentences to pass the limit.
 const FILLER = 2500;
 const LONG_SPEC = `## Behaviour\n\n- It works.\n\n## Design\n\n${"Long. ".repeat(FILLER)}\n\n<!-- end of spec -->`;
-const EARLIER_PR = 41;
 const NEEDS_INFO = replyOf({ decision: "needs-info", questions: ["Why?"] });
 const SPLIT = replyOf({ decision: "split", subIssues: [part("A"), part("B")] });
-const NO_WORK = replyOf({ decision: "no-work", files: [] });
+const NO_WORK = replyOf({ decision: "no-work" });
 const PASSING = { "test/quota.test.sh": "exit 0\n" };
 // What the failing test prints, which the retry's session is shown.
 const FAILURE = "quota is unparsed";
 const FAILING = { "test/quota.test.sh": `echo ${FAILURE}\nexit 1\n` };
-const WIKI_ONLY = replyOf({
-  files: WIKI_FILES,
-  interfaces: [],
-  noTestsReason: "The change is to the wiki only.",
-});
 // The handoff an earlier session of the stage left.
 const EARLIER = "Earlier.\n";
 const GAP = replyOf({
-  files: FILES,
   interfaces: [{ ...INTERFACE, behaviours: ["Something else."] }],
 });
 
@@ -77,7 +68,7 @@ const rerun = await specWriter({
 });
 const long = await specWriter({
   ...READY,
-  replies: [replyOf({ files: FILES, spec: LONG_SPEC })],
+  replies: [replyOf({ spec: LONG_SPEC })],
 });
 const unready = {
   "needs-info": {
@@ -127,11 +118,6 @@ const noWorkUnchanged = await specWriter({
   testCommand: "exit 1",
 });
 const noWorkFails = await specWriter({ replies: [NO_WORK], code: FAILING });
-const wikiOnly = await specWriter({
-  replies: [WIKI_ONLY],
-  wiki: WIKI,
-  start: { pr: EARLIER_PR },
-});
 const prFails = await specWriter({
   ...READY,
   ops: { "start-pr": () => ({ reply: { ok: false, error: "gh failed" } }) },
@@ -146,14 +132,14 @@ const drafted = await specWriter({
   handoff: EARLIER,
 });
 
-test("a ready spec saves at implement with its PR, its tests' head and its interfaces", () => {
+test("a ready spec saves at implement with its PR, its tests' head and its interfaces, and no files", () => {
   const { end, saved, repo } = ready;
   const { specTestsSha, interfaces, noTestsReason } = saved;
   assert.deepEqual(end, { kind: "saved", stage: "implement" });
   assert.equal(saved.pr, PR);
   assert.equal(specTestsSha, refOf(repo.origin, BRANCH));
   assert.equal(saved.specWritesTests, true);
-  assert.deepEqual(saved.files, FILES);
+  assert.equal(Object.hasOwn(saved, "files"), false);
   assert.deepEqual(interfaces, [INTERFACE]);
   assert.equal(noTestsReason, null);
 });
@@ -238,15 +224,6 @@ test("needs-info, split and no-work end as their replies ask", () => {
   assert.equal(countOf(split.writes, "issue", "create"), 2);
   assert.ok(split.labels.includes("agent:split"));
   assert.deepEqual(noWork.end, { kind: "stopped", code: "no-work" });
-});
-
-test("a wiki-only spec closes the earlier PR and saves at review", () => {
-  assert.deepEqual(wikiOnly.end, { kind: "saved", stage: "review" });
-  const closes = wikiOnly.writes.filter(
-    ([cmd, sub]) => cmd === "pr" && sub === "close",
-  );
-  assert.deepEqual(closes, [["pr", "close", String(EARLIER_PR)]]);
-  assert.deepEqual(prBodies(wikiOnly.writes), []);
 });
 
 test("a failed start-pr stops the issue", () => {

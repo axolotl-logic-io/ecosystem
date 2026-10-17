@@ -1,6 +1,6 @@
 // The spec writer role's reply: its schema (SPEC_WRITER_SCHEMA, the spec
 // stage's SPEC_SCHEMA plus `no-work`, the test interfaces, the reason for
-// writing no tests, and the optional `handoff` status and its summary), and
+// writing no tests, whether the wiki is the whole change, and the optional `handoff` status and its summary), and
 // what the role reads from a reply: the decision `check-reply` routes on, a
 // handoff, a failed session, or a split it refuses. The
 // reader parses with zod: unlike the spec stage's reader (#178), it never
@@ -45,11 +45,13 @@ interface SpecWriterReply {
   // The spec, with its end marker removed.
   spec: string;
   questions: string[];
-  files: string[];
   subIssues: SpecPart[];
   interfaces: SpecInterface[];
   // Why the spec writer wrote no tests, or null when it wrote them.
   noTestsReason: string | null;
+  // Whether the wiki pages it changed are the whole change; false when the
+  // reply doesn't say.
+  wikiOnly: boolean;
 }
 
 // What the role reads from a reply: a decision with the reply, a handoff
@@ -115,6 +117,7 @@ const SPEC_WRITER_SCHEMA: JsonSchema = {
     decision: { enum: DECISIONS },
     interfaces: { type: "array", items: INTERFACE_SCHEMA },
     noTestsReason: { type: ["string", "null"] },
+    wikiOnly: { type: "boolean" },
     status: { enum: SPEC_STATUSES },
     summary: STR,
   },
@@ -122,6 +125,7 @@ const SPEC_WRITER_SCHEMA: JsonSchema = {
     ...(SPEC_SCHEMA.required ?? []),
     "interfaces",
     "noTestsReason",
+    "wikiOnly",
     "status",
     "summary",
   ],
@@ -131,7 +135,6 @@ const PART: z.ZodType<SpecPart> = z.strictObject({
   title: z.string(),
   body: z.string(),
   after: z.array(z.number()),
-  files: z.array(z.string()),
 });
 
 const INTERFACE: z.ZodType<SpecInterface> = z.strictObject({
@@ -149,10 +152,10 @@ const REPLY: z.ZodType<SpecWriterReply> = z.strictObject({
   decision: z.enum(DECISIONS),
   spec: z.string(),
   questions: z.array(z.string()).max(MOST_ITEMS),
-  files: z.array(z.string()),
   subIssues: z.array(PART).max(MOST_ITEMS),
   interfaces: INTERFACES,
   noTestsReason: z.string().nullable(),
+  wikiOnly: z.boolean().default(false),
   status: z.enum(SPEC_STATUSES).optional(),
   summary: z.string().optional(),
 });

@@ -1,8 +1,10 @@
 // @ts-check
-// What startState carries over a stop's restart: the spec's files, which the
-// orchestrator's file holds read, and its full-text path; the PR's
-// description; the tokens the issue's sessions reported; and, when the review
-// stands, the counter that numbers the next finding.
+// What startState carries over a stop's restart: the spec's interfaces, whose
+// `new` entries' stubs the restart checks and the orchestrator's implement
+// gate reads, and its full-text path, but not the `files` a state saved
+// before #391 may hold; the PR's description; the tokens the issue's sessions
+// reported; and, when the review stands, the counter that numbers the next
+// finding.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
@@ -15,7 +17,18 @@ setEnv("ISSUE_PIPELINE_ROOT", d);
 const { startState } = await import("../src/start-state.ts");
 
 const PR = 50;
+// A state saved before #391 holds the files the change touches.
 const FILES = ["apps/web/src/chats/**", "apps/web/drizzle/**"];
+const INTERFACES = [
+  {
+    name: "chatTitle",
+    kind: "function",
+    where: "apps/web/src/chats/title.ts",
+    status: "new",
+    signature: "chatTitle(chat: Chat): string",
+    behaviours: ["A chat has a title."],
+  },
+];
 const SPEC_FILE = "/runs/issue-7/spec.md";
 const PR_BY = { agent: "implementer", model: "m", run: "r" };
 const TOKENS = 225_171;
@@ -35,6 +48,7 @@ const stopped = {
   spec: "S",
   specFile: SPEC_FILE,
   files: FILES,
+  interfaces: INTERFACES,
   prTitle: "T",
   prBody: "B",
   prBy: PR_BY,
@@ -54,13 +68,30 @@ const ctx = {
   now: new Date("2026-10-16T23:43:00Z"),
 };
 
-test("a branch-changed stop's restart at review keeps the spec's files and full-text path", () => {
-  const { stage, files, specFile, spec } = startState(stopped, ctx);
+test("a branch-changed stop's restart at review keeps the spec's interfaces and full-text path", () => {
+  const { stage, interfaces, specFile, spec } = startState(stopped, ctx);
   assert.deepEqual(
-    { stage, files, specFile, spec },
-    { stage: "review", files: FILES, specFile: SPEC_FILE, spec: "S" },
+    { stage, interfaces, specFile, spec },
+    { stage: "review", interfaces: INTERFACES, specFile: SPEC_FILE, spec: "S" },
   );
 });
+
+// With no stage to resume, the restart builds a fresh state and carries the
+// work over: the interfaces, never the old files.
+const unresumable = { ...stopped, stoppedStage: null };
+for (const { hasWork, at } of [
+  { hasWork: true, at: "review" },
+  { hasWork: false, at: "implement" },
+]) {
+  test(`a restart at ${at} with no stage to resume carries the interfaces, not the old files`, () => {
+    const restarted = startState(unresumable, { ...ctx, hasWork });
+    const { stage, interfaces } = restarted;
+    assert.deepEqual(
+      { stage, interfaces, files: "files" in restarted },
+      { stage: at, interfaces: INTERFACES, files: false },
+    );
+  });
+}
 
 test("a restart at review keeps the PR's description and the reported tokens", () => {
   const { prTitle, prBody, prBy, reportedTokens } = startState(stopped, ctx);
@@ -86,15 +117,20 @@ test("a review that doesn't stand starts the findings and their numbers again", 
   );
 });
 
-test("answered questions with work drop the spec's files with the spec", () => {
+test("answered questions with work drop the spec's files and interfaces with the spec", () => {
   const restarted = startState(
     { ...stopped, stage: "triage", questionsAt: "x" },
     { ...ctx, answered: true },
   );
   const { reportedTokens } = restarted;
   assert.deepEqual(
-    ["files" in restarted, "specFile" in restarted, reportedTokens],
-    [false, false, TOKENS],
+    [
+      "files" in restarted,
+      "interfaces" in restarted,
+      "specFile" in restarted,
+      reportedTokens,
+    ],
+    [false, false, false, TOKENS],
   );
 });
 
@@ -107,10 +143,14 @@ test("a too-large stop's restart at implement keeps the reported tokens", () => 
 });
 
 test("a restart adds no key the stopped state lacked", () => {
-  const { files: _f, specFile: _s, prTitle: _t, ...bare } = stopped;
+  const { interfaces: _i, specFile: _s, prTitle: _t, ...bare } = stopped;
   const restarted = startState(bare, ctx);
   assert.deepEqual(
-    ["files" in restarted, "specFile" in restarted, "prTitle" in restarted],
+    [
+      "interfaces" in restarted,
+      "specFile" in restarted,
+      "prTitle" in restarted,
+    ],
     [false, false, false],
   );
 });

@@ -13,16 +13,12 @@ interface SpecPart {
   body: string;
   // The 0-based indexes of earlier parts that must merge first.
   after: number[];
-  // The repo paths or globs the part will touch.
-  files: string[];
 }
 
 interface SpecReply {
   decision: SpecDecision;
   spec: string;
   questions: string[];
-  // The repo paths or globs the change will touch.
-  files: string[];
   // The parts of a split; empty for any other decision.
   subIssues: SpecPart[];
 }
@@ -57,13 +53,12 @@ function isSpecPart(value: unknown): value is SpecPart {
   if (!isRecord(value)) {
     return false;
   }
-  const { title, body, after, files } = value;
+  const { title, body, after } = value;
   return (
     typeof title === "string" &&
     typeof body === "string" &&
     Array.isArray(after) &&
-    after.every((index) => typeof index === "number") &&
-    isStrings(files)
+    after.every((index) => typeof index === "number")
   );
 }
 
@@ -76,13 +71,12 @@ function specReplyOf(output: unknown): SpecRead | null {
   if (!isRecord(output)) {
     return null;
   }
-  const { decision, spec, questions, files, subIssues } = output;
+  const { decision, spec, questions, subIssues } = output;
   const known = SPEC_DECISIONS.find((entry) => entry === decision);
   if (
     known === undefined ||
     typeof spec !== "string" ||
     !isStrings(questions) ||
-    !isStrings(files) ||
     !isSpecParts(subIssues)
   ) {
     return null;
@@ -94,7 +88,7 @@ function specReplyOf(output: unknown): SpecRead | null {
   const whole = text.slice(0, -SPEC_END.length).trimEnd();
   return {
     complete: true,
-    reply: { decision: known, spec: whole, questions, files, subIssues },
+    reply: { decision: known, spec: whole, questions, subIssues },
   };
 }
 

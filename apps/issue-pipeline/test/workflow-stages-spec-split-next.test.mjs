@@ -26,13 +26,11 @@ const FIRST = {
   title: "First part",
   body: "Do the first part.",
   after: [],
-  files: ["src/a.ts", "test/a.test.mjs"],
 };
 const SECOND = {
   title: "Second part",
   body: "Do the second part.",
   after: [0],
-  files: ["src/b.ts"],
 };
 const PARTS = [FIRST, SECOND];
 
@@ -44,7 +42,6 @@ function splitInto(subIssues, fields = {}) {
     decision: "split",
     spec: SPEC_REPLY,
     questions: [],
-    files: ["src/a.ts", "src/b.ts", "test/a.test.mjs"],
     subIssues,
   };
   return afterSession(next, begun, SPEC_BY, {
@@ -60,7 +57,9 @@ function taskWith(fields) {
   return session?.task ?? "";
 }
 
-test("a split at depth 0 opens its parts through the split op, each with its files", () => {
+// A part's body goes out as the spec writer wrote it, with no Files line
+// (#391): it names entry points only where the part has stubs.
+test("a split at depth 0 opens its parts through the split op, each body as written", () => {
   const step = splitInto(PARTS);
   assert.equal(step.done, false);
   assert.deepEqual(opsRequests(step), [
@@ -72,12 +71,12 @@ test("a split at depth 0 opens its parts through the split op, each with its fil
         subIssues: [
           {
             title: "First part",
-            body: "Do the first part.\n\nFiles: `src/a.ts`, `test/a.test.mjs`",
+            body: "Do the first part.",
             after: [],
           },
           {
             title: "Second part",
-            body: "Do the second part.\n\nFiles: `src/b.ts`",
+            body: "Do the second part.",
             after: [0],
           },
         ],
@@ -92,28 +91,6 @@ test("a split at depth 0 opens its parts through the split op, each with its fil
   const posted = afterReply(next, step, { ok: true });
   assert.equal(posted.done, true);
   assert.deepEqual([posted.comments, posted.stop], [[], null]);
-});
-
-test("a part with no files gets no Files line", () => {
-  const step = splitInto([{ ...FIRST, files: [] }, SECOND]);
-  assert.deepEqual(opsRequests(step), [
-    {
-      op: "split",
-      payload: {
-        number: 7,
-        state: step.state.st,
-        subIssues: [
-          { title: "First part", body: "Do the first part.", after: [] },
-          {
-            title: "Second part",
-            body: "Do the second part.\n\nFiles: `src/b.ts`",
-            after: [0],
-          },
-        ],
-        by: SPEC_BY,
-      },
-    },
-  ]);
 });
 
 test("a split that fails to post aborts the sweep", () => {

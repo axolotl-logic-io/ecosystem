@@ -1,8 +1,8 @@
 // Spec's split: the spec writer cuts an issue too big for one session into 2
 // to 5 parts, which the split op opens as sub-issues under it (#267). Each
-// part's body names the files it touches. A sub-issue can't split again.
+// part's body goes out as the spec writer wrote it. A sub-issue can't split
+// again.
 
-import { filesLine } from "../files-line.ts";
 import type { Signature } from "../signing.ts";
 import type { SpecPart, SpecReply } from "./build-replies.ts";
 import { launchStep, stopStep } from "./step.ts";
@@ -18,13 +18,10 @@ interface SubIssue {
   after: number[];
 }
 
-// The part, its body ending with a line naming its files, if it has any.
+// The part as the split op opens it, its body unchanged.
 function subIssueOf(part: SpecPart): SubIssue {
-  const { title, body, after, files } = part;
-  if (files.length === 0) {
-    return { title, body, after };
-  }
-  return { title, body: `${body}\n\n${filesLine(files)}`, after };
+  const { title, body, after } = part;
+  return { title, body, after };
 }
 
 // Spec's step for a split reply, signed `by`: the split op opens the parts and

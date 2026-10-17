@@ -15,7 +15,7 @@ import type { IssueState } from "../types.ts";
 import type { SpecReply } from "./build-replies.ts";
 import { SPEC_END, specReplyOf } from "./build-replies.ts";
 import { isTransientSessionError, rateLimitStep } from "./rate-limit.ts";
-import { isRecord, isStrings, signatureOf } from "./reply-guards.ts";
+import { isRecord, signatureOf } from "./reply-guards.ts";
 import { splitStep } from "./spec-split.ts";
 import { ROLE, specTask } from "./spec-task.ts";
 import {
@@ -65,7 +65,6 @@ type SessionRead =
 // text is written to spec.md.
 interface ReadySpec {
   spec: string;
-  files: string[];
   by: Signature;
 }
 
@@ -121,7 +120,6 @@ function kept(
   const st: IssueState = {
     ...state.st,
     spec: clip(whole.spec, SPEC_LIMIT),
-    files: whole.files,
     // This spec writer leaves the spec's tests and stubs to the implementer;
     // #305's spec writer writes them and sets this true.
     specWritesTests: false,
@@ -139,7 +137,7 @@ function kept(
 // Keeps a spec that fits SPEC_LIMIT at once; saves a longer one whole to
 // spec.md first.
 function ready(state: StageState, reply: SpecReply, by: Signature): Step {
-  const spec: ReadySpec = { spec: reply.spec, files: reply.files, by };
+  const spec: ReadySpec = { spec: reply.spec, by };
   if (reply.spec.length <= SPEC_LIMIT) {
     return kept(state, spec, null);
   }
@@ -152,10 +150,10 @@ function ready(state: StageState, reply: SpecReply, by: Signature): Step {
 function readySpecOf(state: StageState): ReadySpec {
   const { carry } = state;
   if (isRecord(carry)) {
-    const { spec, files, by } = carry;
+    const { spec, by } = carry;
     const signature = signatureOf(by);
-    if (typeof spec === "string" && isStrings(files) && signature !== null) {
-      return { spec, files, by: signature };
+    if (typeof spec === "string" && signature !== null) {
+      return { spec, by: signature };
     }
   }
   throw new Error("spec: expected the spec to save");

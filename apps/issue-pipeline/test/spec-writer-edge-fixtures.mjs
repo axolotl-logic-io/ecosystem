@@ -88,7 +88,6 @@ const EDGES = [
     effect: "check:spec-tests-check",
     changes: {
       spec: readyReply?.spec,
-      files: readyReply?.files,
       interfaces: readyReply?.interfaces,
       noTestsReason: null,
     },

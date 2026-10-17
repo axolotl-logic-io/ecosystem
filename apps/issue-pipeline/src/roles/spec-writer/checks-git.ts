@@ -57,7 +57,7 @@ interface StartHeads {
 // What the spec writer committed, as the commit check reads it.
 interface SpecCommits {
   startSha: string | null;
-  files: readonly string[];
+  wikiOnly: boolean;
   interfaces: readonly CheckedInterface[];
   noTestsReason: string | null;
 }
@@ -178,7 +178,7 @@ function specTestsAtHead(
       sha,
       logDir: path.join(paths.runDir(cfg, n), `spec-tests-${short}`),
       timeoutMs: settings.commandTimeoutMinutes * MS_PER_MINUTE,
-      files: commits.files,
+      wikiOnly: commits.wikiOnly,
       interfaces: commits.interfaces,
       noTestsReason: commits.noTestsReason,
       wiki: readWikiChange(cfg, n),

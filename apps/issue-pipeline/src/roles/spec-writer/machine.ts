@@ -169,7 +169,7 @@ const SCRIPT_STATES = {
     "spec-tests-check",
     (data: SpecData) => ({
       startSha: data.startSha,
-      files: data.files,
+      wikiOnly: data.wikiOnly,
       interfaces: data.interfaces,
       noTestsReason: data.noTestsReason,
     }),
@@ -232,7 +232,7 @@ const SCRIPT_STATES = {
     (data: SpecData) => ({
       by: data.by,
       spec: data.spec,
-      files: data.files,
+      wikiOnly: data.wikiOnly,
       interfaces: data.interfaces,
       noTestsReason: data.noTestsReason,
     }),
@@ -284,7 +284,7 @@ const specWriterMachine: Machine<SpecState, SpecResult, SpecData> = {
   handoff: [
     "spec",
     "specFile",
-    "files",
+    "wikiOnly",
     "interfaces",
     "specTestsSha",
     "noTestsReason",

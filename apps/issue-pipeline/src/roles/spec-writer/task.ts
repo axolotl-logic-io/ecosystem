@@ -75,8 +75,8 @@ interface SpecSettings {
   models: Readonly<Record<ModelRole, string>>;
 }
 
-// The wiki checkout's folder relative to the worktree, as `files` names a
-// wiki page: `<dir>/<page>.md`.
+// The wiki checkout's folder relative to the worktree, as an old state's
+// `files` named a wiki page: `<dir>/<page>.md`.
 function wikiDirOf(paths: ItemPaths): string {
   const { wiki, worktree } = paths;
   const prefix = `${worktree}/`;
@@ -172,7 +172,7 @@ const SECTION_LINES: readonly string[] = [
   "`spec` is GitHub markdown with these sections:",
   "- **Behaviour**: what is true when the issue is done, as checkable statements.",
   "- **Out of scope**: what this issue does not change.",
-  "- **Design**: the approach, the files to change with `file:line` anchors, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and update that wiki page yourself.",
+  "- **Design**: the approach, with `file:line` anchors to the code it builds on, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and update that wiki page yourself.",
   "- **Test interfaces**: the public interfaces the tests drive, as in `interfaces`.",
   "- **Tests**: the test files you committed. Each test names the interface it drives, the Behaviour item it pins and why it fails today.",
   '- **Wiki updates**: the wiki pages you changed, or "None".',
@@ -182,12 +182,11 @@ const SECTION_LINES: readonly string[] = [
 ];
 
 function workLines(item: SpecItem, budgets: Budgets): string[] {
-  const dir = wikiDirOf(item.paths);
   return [
     `Keep your spec draft in \`${SPEC_DRAFT}\` on the issue's branch (\`repo/${SPEC_DRAFT}\` as a pathspec), and commit the tests, stubs, spec draft and wiki pages with \`pipeline_commit\` as you go, not only at the end. The draft never merges: the pipeline removes it once your spec is posted.`,
     "Before you reply, commit to the issue's branch a stub at its `where` for each `new` interface that doesn't exist yet (its call shape, with a body that only throws or returns a not-implemented error, so the code builds and type-checks), and failing tests for every Behaviour item through the listed interfaces, unless `noTestsReason` applies. Each test fails because the behaviour is missing, not on a syntax, import or type error.",
     "Make the spec's Wiki updates yourself, in the wiki checkout.",
-    `Change only test files, those stubs and wiki pages; write no behaviour. \`files\` lists every repo path or glob the change will touch, relative to the repo root, and each wiki page you changed as \`${dir}/<page>.md\`.`,
+    "Change only test files, those stubs and wiki pages; write no behaviour. `wikiOnly` is true only when the wiki pages you changed are the whole change, with `noTestsReason` set; otherwise false.",
     ...commitRulesOf("pipeline_commit", {
       unit: "step",
       when: "as soon as it builds",
@@ -203,7 +202,7 @@ function splitLine(depth: number, sessionCap: number): string {
   if (depth >= 1) {
     return "Don't set `decision` to split: this issue is already a sub-issue, so splitting is not allowed. Leave `subIssues` empty.";
   }
-  return `Only if one implementer session (at most ${sessionCap} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec, with its interfaces, in its \`body\`, and in its \`files\` the paths it touches. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Cut along file boundaries, order parts that must edit the same file with \`after\`, and prefer fewer parts.`;
+  return `Only if one implementer session (at most ${sessionCap} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec, with its interfaces, in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Cut along file boundaries, order parts that must edit the same file with \`after\`, and prefer fewer parts.`;
 }
 
 function decisionLines(item: SpecItem, settings: SpecSettings): string[] {

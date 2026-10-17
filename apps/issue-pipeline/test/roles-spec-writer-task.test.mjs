@@ -30,6 +30,9 @@ const AS_YOU_GO = /\bpipeline_commit\b[^\n]*\bas you go\b/u;
 const READ_IT_FIRST = /\bread it first\b/iu;
 const CONTINUES =
   /^A previous session ran out of room\. Read its handoff first: /u;
+const FILES_FIELD = /`files`/u;
+const DESIGN_ANCHORS =
+  "- **Design**: the approach, with `file:line` anchors to the code it builds on,";
 
 /** @returns {string} the task of a continuation, after a handoff */
 function continuedTask() {
@@ -79,6 +82,16 @@ test("the task names the practices files, every section, the fields, the commit 
   assert.match(task, EACH_TEST_NAMES);
   assert.match(task, MERGES_INTO_BASE);
   assert.match(task, NEVER_RELEASES);
+});
+
+// A spec names only its entry points, in its interfaces (#388, #391).
+test("the task asks for no file list, anchors Design to the code, and asks for wikiOnly", () => {
+  for (const depth of [0, 1]) {
+    const { task } = retried({ depth });
+    assert.doesNotMatch(task, FILES_FIELD);
+    assert.ok(task.includes(DESIGN_ANCHORS), task);
+    assert.ok(task.includes("`wikiOnly`"), task);
+  }
 });
 
 test("split is offered only at depth 0, and a suggested split opens with triage's reason", () => {

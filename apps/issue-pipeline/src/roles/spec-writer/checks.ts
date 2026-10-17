@@ -44,7 +44,7 @@ const INTERFACE = z.looseObject({
 });
 const READY = z.looseObject({
   spec: z.string(),
-  files: z.array(z.string()),
+  wikiOnly: z.boolean().default(false),
   interfaces: z.array(INTERFACE),
   noTestsReason: z.string().nullable(),
 });
@@ -75,7 +75,7 @@ function ok(): Promise<Outcome> {
 function readyFault(reply: unknown): string | null {
   const parsed = READY.safeParse(reply);
   if (!parsed.success) {
-    return "the ready reply has no spec, files or interfaces";
+    return "the ready reply has no spec or interfaces";
   }
   const { spec, interfaces, noTestsReason } = parsed.data;
   if (specSection(spec, "Behaviour").length === 0) {
@@ -137,8 +137,9 @@ async function publish(
   effects: JobEffects,
   payload: Payload,
 ): Promise<Outcome> {
-  const { issue: number, paths } = entry.context;
-  const { spec, files, noTestsReason } = READY.parse(payload);
+  const { issue: number } = entry.context;
+  const ready = READY.parse(payload);
+  const { spec } = ready;
   let specFile: string | null = null;
   if (spec.length > SPEC_LIMIT) {
     const saved = await op(effects, "save-spec", { number, spec });
@@ -156,7 +157,7 @@ async function publish(
   }
   dropLeftovers(job);
   let kind = "code";
-  if (wikiOnly({ files, noTestsReason }, paths)) {
+  if (wikiOnly(ready)) {
     kind = "wiki-only";
   }
   return answer(kind, { spec: clip(spec, SPEC_LIMIT), specFile });

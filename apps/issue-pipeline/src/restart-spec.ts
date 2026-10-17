@@ -3,6 +3,7 @@
 
 import fs from "node:fs";
 import { gitIn } from "./git-state.ts";
+import { interfacesOf } from "./roles/spec-writer/reply.ts";
 import { missingSpecFiles } from "./spec-files.ts";
 import type { State } from "./state.ts";
 
@@ -23,10 +24,11 @@ const AFTER_SPEC: ReadonlySet<unknown> = new Set([
 
 // The test and stub files the spec of a restart past spec documents that the
 // commit checked out at `wt` lacks; none for a start at an earlier stage. The
-// spec is read whole from spec.md when it was saved. Wiki pages, under
+// spec is read whole from spec.md when it was saved, and its stubs from its
+// saved `new` interfaces. Wiki pages, under
 // `wikiDir`, are not checked: the code checkout never tracks them.
 function specFilesMissing(wt: string, state: State, wikiDir: string): string[] {
-  const { spec, specFile, files, stage } = state;
+  const { spec, specFile, interfaces, stage } = state;
   if (!AFTER_SPEC.has(stage)) {
     return [];
   }
@@ -43,7 +45,12 @@ function specFilesMissing(wt: string, state: State, wikiDir: string): string[] {
   const tracked = gitIn(wt, ["ls-tree", "-r", "--name-only", "HEAD"])
     .split("\n")
     .filter((path) => path !== "");
-  return missingSpecFiles(text, files ?? [], tracked, wikiDir);
+  return missingSpecFiles(
+    text,
+    interfacesOf(interfaces) ?? [],
+    tracked,
+    wikiDir,
+  );
 }
 
 // What a restart's claim does with the files `missing` from the branch: a

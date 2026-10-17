@@ -2,7 +2,8 @@
 // The spec writer role's reply (#333): its schema, and what the pipeline
 // reads from each reply. The end marker, the split rules and needs-info
 // without questions are ported from the spec stage's tests
-// (workflow-stages-spec-next, -retry-next and -split-next).
+// (workflow-stages-spec-next, -retry-next and -split-next). A reply lists no
+// files (#391); its `wikiOnly` says whether the wiki is the whole change.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -29,9 +30,9 @@ const INTERFACE = {
   behaviours: ["It works."],
 };
 
-/** @param {string} title @returns {{ title: string, body: string, after: number[], files: string[] }} a part */
+/** @param {string} title @returns {{ title: string, body: string, after: number[] }} a part */
 function part(title) {
-  return { title, body: `${title}'s slice`, after: [], files: [] };
+  return { title, body: `${title}'s slice`, after: [] };
 }
 
 /**
@@ -45,7 +46,6 @@ function replyOf(fields = {}) {
     decision: "ready",
     spec: `${SPEC}\n\n${SPEC_END}\n`,
     questions: [],
-    files: ["src/quota.ts"],
     subIssues: [],
     interfaces: [INTERFACE],
     noTestsReason: null,
@@ -116,6 +116,42 @@ test("a whole ready reply reads as ready, without its end marker", () => {
   assert.equal(reading.reply.spec, SPEC);
 });
 
+test("the schema asks for no files, at the top or in a part, and for wikiOnly", () => {
+  const properties = propertiesOf(SPEC_WRITER_SCHEMA);
+  const parts = properties.get("subIssues")?.items ?? {};
+  assert.deepEqual(
+    [properties.has("files"), propertiesOf(parts).has("files")],
+    [false, false],
+  );
+  assert.deepEqual(properties.get("wikiOnly"), { type: "boolean" });
+  assert.ok(SPEC_WRITER_SCHEMA.required?.includes("wikiOnly"));
+});
+
+test("a reply without files reads as ready, wiki-only only when it says so", () => {
+  const reason = "Only a wiki page changes.";
+  const reply = {
+    decision: "ready",
+    spec: SPEC,
+    questions: [],
+    subIssues: [],
+    interfaces: [],
+    noTestsReason: reason,
+  };
+  const fields = { interfaces: [], noTestsReason: reason };
+  assert.deepEqual(
+    [
+      specReadingOf(replyOf(fields), 0),
+      specReadingOf(replyOf({ ...fields, wikiOnly: false }), 0),
+      specReadingOf(replyOf({ ...fields, wikiOnly: true }), 0),
+    ],
+    [
+      { kind: "ready", reply: { ...reply, wikiOnly: false } },
+      { kind: "ready", reply: { ...reply, wikiOnly: false } },
+      { kind: "ready", reply: { ...reply, wikiOnly: true } },
+    ],
+  );
+});
+
 test("a ready reading keeps its interfaces and noTestsReason", () => {
   const withInterfaces = specReadingOf(replyOf(), 0);
   assert.ok(withInterfaces.kind === "ready");
@@ -139,11 +175,12 @@ test("a spec without its end marker reads as a failed session", () => {
 });
 
 test("a reply that doesn't fit the schema reads as a failed session", () => {
-  const { files: _files, ...noFiles } = replyOf();
+  const { subIssues: _parts, ...noParts } = replyOf();
   const malformed = [
     null,
     "a spec",
-    noFiles,
+    noParts,
+    replyOf({ wikiOnly: "yes" }),
     replyOf({ decision: "maybe" }),
     replyOf({ interfaces: [{ ...INTERFACE, kind: "class" }] }),
     replyOf({ noTestsReason: 3 }),
