@@ -8,6 +8,9 @@ import type { Role } from "./types.ts";
 interface Budgets {
   roles: Readonly<Record<Role, number>>;
   sessionCap: number;
+  // The context past which a writer session wraps up and hands off, in
+  // tokens (contextLimits.soft).
+  softLimit: number;
   // The context no writer session may pass, in tokens (contextLimits.hard).
   hardLimit: number;
 }

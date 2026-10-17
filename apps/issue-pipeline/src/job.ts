@@ -28,9 +28,8 @@
 // token but its role's own; ops keep the job's env. --print-boundary prints
 // the stage job's boundary as one JSON line and starts nothing.
 //
-// A stage registered with a role (src/roles/registry.ts) runs that role on
-// the role runner instead of the sweep (src/job/role-run.ts) and prints
-// { issue, stage, end }; --resume is refused for it.
+// A stage with a registered role (src/roles/registry.ts) runs it on the role
+// runner (src/job/role-run.ts), printing { issue, stage, end }; no --resume.
 //
 // The job works in its own checkout, cloned from a bare mirror of the repo
 // (src/job/checkout.ts), where every pi session runs. On every exit it records
@@ -109,6 +108,7 @@ function hooksOf(
     record: status.record,
     ended: status.ended,
     contextLimits: cfg.contextLimits,
+    handoffFile: paths.handoff(cfg, args.issue),
     contextStopped: status.contextStopped,
     sessionEnded: contextLogOf(paths.runDir(cfg, args.issue), args, watch),
     env: (agent: string): Readonly<Record<string, string>> =>

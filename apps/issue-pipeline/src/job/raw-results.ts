@@ -48,11 +48,12 @@ interface ToolFailure {
   error: string;
 }
 
-// What a record tells: an assistant message's usage, and a tool call's end:
-// the tool, the length of its result's text, and its failure, or null when
-// it succeeded.
+// What a record tells: an assistant message's usage and text (null when it
+// has none), and a tool call's end: the tool, the length of its result's
+// text, and its failure, or null when it succeeded.
 interface RecordFacts {
   usage: Usage | null;
+  text: string | null;
   toolEnd: {
     tool: string;
     outputChars: number;
@@ -77,6 +78,7 @@ const MESSAGE_END = z.object({
   type: z.literal("message_end"),
   message: z.object({
     role: z.literal("assistant"),
+    content: z.array(z.unknown()).catch([]),
     usage: USAGE.optional(),
     errorMessage: z.string().optional(),
   }),
@@ -142,11 +144,7 @@ function eventOf(line: string): SessionEvent | null {
   } catch {
     return null;
   }
-  const event = EVENT.safeParse(parsed);
-  if (!event.success) {
-    return null;
-  }
-  return event.data;
+  return EVENT.safeParse(parsed).data ?? null;
 }
 
 // The two usages summed.
@@ -179,7 +177,7 @@ function addEvent(tally: SessionTally, event: SessionEvent): SessionTally {
   };
 }
 
-// The text parts of a tool result's content.
+// The text parts of a tool result's or an assistant message's content.
 function toolTexts(content: readonly unknown[]): string[] {
   return content.flatMap((part) => {
     const text = TOOL_TEXT.safeParse(part);
@@ -190,28 +188,30 @@ function toolTexts(content: readonly unknown[]): string[] {
   });
 }
 
-// What a record a session printed tells the job's status: the usage of an
+// What a record a session printed tells the job: the usage and text of an
 // assistant message, and which tool call ended, its output's length, and how
 // it failed.
 function recordFacts(record: unknown): RecordFacts {
   const message = MESSAGE_END.safeParse(record);
   const tool = TOOL_END.safeParse(record);
   let usage: Usage | null = null;
+  let text: string | null = null;
   if (message.success) {
     usage = message.data.message.usage ?? null;
+    text = toolTexts(message.data.message.content).join("\n").trim() || null;
   }
   if (!tool.success) {
-    return { usage, toolEnd: null };
+    return { usage, text, toolEnd: null };
   }
   const { toolName: name, isError, result } = tool.data;
   const texts = toolTexts(result.content);
-  const outputChars = texts.reduce((sum, text) => sum + text.length, 0);
+  const outputChars = texts.reduce((sum, part) => sum + part.length, 0);
   let failure: ToolFailure | null = null;
   if (isError) {
     const error = texts.join("\n").slice(0, TOOL_ERROR_CHARS);
     failure = { tool: name, error };
   }
-  return { usage, toolEnd: { tool: name, outputChars, failure } };
+  return { usage, text, toolEnd: { tool: name, outputChars, failure } };
 }
 
 function tallyOf(stdout: string, start: Usage): SessionTally {

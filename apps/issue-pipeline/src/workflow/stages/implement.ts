@@ -146,9 +146,9 @@ function implementTask(state: StageState, ctx: StageContext): string {
       "commit each step with `git add -A && git commit` and a clear message as soon as it builds and its tests pass, ending each message with the trailer line `Pipeline-Agent: implementer`",
     ),
     handoffRule(
-      budgets.hardLimit,
+      budgets,
       state.paths.handoffFile,
-      "commit what builds",
+      "make it build and commit it",
     ),
     "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
     "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",

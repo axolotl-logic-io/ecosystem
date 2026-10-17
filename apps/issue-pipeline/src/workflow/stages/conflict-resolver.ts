@@ -57,7 +57,7 @@ function resolverLaunch(
     commitOftenRule(
       "continue the rebase as soon as each stopped commit is resolved, and commit each fix after it on its own as soon as it works",
     ),
-    handoffRule(budgets.hardLimit, handoffFile, KEEP_REBASE),
+    handoffRule(budgets, handoffFile, KEEP_REBASE),
   );
   let name = `conflicts-${attempt}`;
   if (continuation) {

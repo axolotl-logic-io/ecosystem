@@ -78,7 +78,8 @@ function contextWith() {
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
-      hardLimit: 175_000,
+      softLimit: 175_000,
+      hardLimit: 225_000,
     },
     models: MODELS,
     now: () => NOW,
@@ -230,7 +231,7 @@ function fixTask(round, open, disputed = "none", spec = null) {
       `For each finding, either fix it (list its id in \`fixed\`) or, if you have concrete evidence it is wrong, dispute it (list it in \`disputed\` with the evidence). Findings already disputed once cannot be disputed again: ${disputed}.`,
       `Commit often, in small working steps: commit each fix with \`git add -A && git commit\` as soon as it works, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.`,
       "Make only the changes the findings need. Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
-      `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${PATHS.handoffFile} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
+      `Context limits: at 175000 tokens of context, if the work isn't done, wrap up: finish the edit you are in the middle of and start no new ones, make it build and commit it, then write ${PATHS.handoffFile} as a summary for the next round (what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass), and return status \`handoff\`. The next session starts from your summary alone. At 225000 tokens of context the session is stopped.`,
     ])
     .join("\n");
 }

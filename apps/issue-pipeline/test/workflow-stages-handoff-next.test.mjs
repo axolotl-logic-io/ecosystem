@@ -21,7 +21,7 @@ import {
 
 /** @import { Launch, StageContext, StageMachine, Step } from "../src/workflow/stages/types.ts" */
 
-const HARD_LIMIT = /\b175000 tokens\b/u;
+const HARD_LIMIT = /\b225000 tokens\b/u;
 const EFFORT_GUESS = /15 files|30 substantial tool calls/u;
 const LEAD = `A previous session ran out of room. Read its handoff first: ${PATHS.handoffFile}. Continue from the current branch state.`;
 const HANDOFF = { status: "handoff", summary: "Half done." };

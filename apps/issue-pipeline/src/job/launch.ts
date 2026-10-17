@@ -34,6 +34,7 @@ import { sessionRoleOf } from "./roles.ts";
 import type { RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart, ResumePoint } from "./status.ts";
+import { handoffStartOf, saveStoppedWork } from "./stop-handoff.ts";
 
 const OPS_CLI = path.join(ROOT, "ops.mjs");
 const OUTPUT_EXTENSION = path.join(ROOT, "structured-output.mjs");
@@ -56,6 +57,8 @@ interface LaunchHooks {
   ended: (key: string) => void;
   // The limits a writer session's context is held to.
   contextLimits: ContextLimits;
+  // Where a writer session of the job's issue writes its handoff.
+  handoffFile: string;
   // Writer session `key` passed the hard context limit and was stopped.
   contextStopped: (key: string, stop: ContextStop) => void;
   // Session `key` ended, after `ended` and any `contextStopped`, as `end`
@@ -199,7 +202,8 @@ async function runPi(
         tokenBudget: recordedBudgetOf(spec),
       };
       const live = { key, ...rpc };
-      watched.watch = watchContext(hooks.contextLimits, spec.agent, live);
+      const { contextLimits: limits, handoffFile } = hooks;
+      watched.watch = watchContext({ limits, handoffFile }, spec.agent, live);
       hooks.started(start, live);
     },
     onRecord: (record: unknown): void => {
@@ -212,7 +216,8 @@ async function runPi(
   if (stop !== null) {
     hooks.contextStopped(key, stop);
   }
-  return { raw: sessionRaw(spec, exit, usage), stop };
+  const lastText = watched.watch?.lastText() ?? null;
+  return { raw: sessionRaw(spec, exit, usage), stop, lastText };
 }
 
 // How a session that ran ended: handed off, when the watch stopped it or
@@ -244,13 +249,15 @@ async function runSession(
     const error = `agent ${spec.agent}: cannot prepare its session and schema files`;
     return failedSession(spec, error);
   }
-  const { raw, stop } = await runPi(spec, hooks, start);
+  const begun = handoffStartOf(hooks.cwd, hooks.handoffFile);
+  const { raw, stop, lastText } = await runPi(spec, hooks, start);
   const { budgetRole, agent, model } = spec;
   const ended = endedOf(raw, stop);
   hooks.sessionEnded(spec.key, { budgetRole, agent, model, ended });
   if (stop === null) {
     return raw;
   }
+  saveStoppedWork(hooks, { key: spec.key, stop, lastText, start: begun });
   return contextStopped(spec, stop, raw.results[0].usage);
 }
 

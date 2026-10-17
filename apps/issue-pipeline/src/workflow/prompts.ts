@@ -2,6 +2,7 @@
 // works, its limits, and the coding practices it reads; and how a writer
 // commits and hands off.
 
+import type { Budgets } from "./budget.ts";
 import type {
   IssueState,
   PracticesConfig,
@@ -96,11 +97,18 @@ function commitOftenRule(how: string): string {
   return `Commit often, in small working steps: ${how}. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.`;
 }
 
-// What a writer session does that has reached the hard context limit `limit`
-// (config contextLimits.hard): `keep` says what it keeps of its work, then it
-// writes the handoff file and returns `handoff` for a continuation (#269).
-function handoffRule(limit: number, handoffFile: string, keep: string): string {
-  return `Hard limit: ${limit} tokens of context. If this session passes it before the work is done, stop: ${keep}, write ${handoffFile} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`;
+// What a writer session does once its context passes `limits.softLimit`
+// (config contextLimits.soft) before the work is done (wrap-up-at-175k, Axlog,
+// 2026-10-17): it finishes the edit it is in, `keep` says what it keeps of its
+// work, then it writes the handoff file as the next round's summary and
+// returns `handoff` for a continuation (#269). Past `limits.hardLimit` the job
+// stops it.
+function handoffRule(
+  limits: Pick<Budgets, "softLimit" | "hardLimit">,
+  handoffFile: string,
+  keep: string,
+): string {
+  return `Context limits: at ${limits.softLimit} tokens of context, if the work isn't done, wrap up: finish the edit you are in the middle of and start no new ones, ${keep}, then write ${handoffFile} as a summary for the next round (what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass), and return status \`handoff\`. The next session starts from your summary alone. At ${limits.hardLimit} tokens of context the session is stopped.`;
 }
 
 // The first line of a continuation's task: where its predecessor's handoff is.

@@ -56,7 +56,8 @@ function contextWith(fields = {}) {
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
-      hardLimit: 175_000,
+      softLimit: 175_000,
+      hardLimit: 225_000,
     },
     models: modelsWith(MODELS),
     now: () => NOW,

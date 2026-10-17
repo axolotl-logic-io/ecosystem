@@ -9,18 +9,28 @@ import type { ModelRole, StageName, SweepConfig } from "./stages/types.ts";
 import type { Role } from "./types.ts";
 
 // Each role's context budget per session, unless the config's roleBudgets sets
-// it.
+// it. A writer's (WRITER_BUDGET_ROLES) is above the default contextLimits.hard,
+// so the job stops it before the watchdog kills it (wrap-up-at-175k, Axlog,
+// 2026-10-17).
 const ROLE_BUDGETS: Readonly<Record<Role, number>> = {
   triage: 50_000,
   spec: 80_000,
-  implementer: 150_000,
+  implementer: 300_000,
   reviewer: 60_000,
   aggregator: 20_000,
-  fixer: 100_000,
+  fixer: 300_000,
   rereviewer: 40_000,
-  ciFixer: 100_000,
+  ciFixer: 300_000,
   verifier: 60_000,
 };
+
+// The roles whose budgets writer sessions run on: the implementer's, the
+// fixer's (the conflict resolver's too) and the CI fixer's.
+const WRITER_BUDGET_ROLES: readonly Role[] = [
+  "implementer",
+  "fixer",
+  "ciFixer",
+];
 
 // Each role's model, unless the config's models sets it.
 const MODELS: Readonly<Record<ModelRole, string>> = {
@@ -218,6 +228,7 @@ function sweepSettings(cfg: SweepConfig): SweepSettings {
     budgets: {
       roles: { ...ROLE_BUDGETS, ...cfg.roleBudgets },
       sessionCap: cfg.sessionTokenCap,
+      softLimit: cfg.contextLimits.soft,
       hardLimit: cfg.contextLimits.hard,
     },
     models: { ...MODELS, ...cfg.models },
@@ -249,6 +260,7 @@ export {
   laneOf,
   PASSES_USED,
   passesOf,
+  ROLE_BUDGETS,
   runPinsOf,
   SAVE_BEFORE,
   STAGE_GROUPS,
@@ -257,5 +269,6 @@ export {
   spawnLimitOf,
   sweepSettings,
   sweepTargetOf,
+  WRITER_BUDGET_ROLES,
   within,
 };

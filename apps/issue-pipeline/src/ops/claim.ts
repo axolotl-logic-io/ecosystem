@@ -191,7 +191,7 @@ function claim(
       worktree: wt,
       runDir,
       issueFile: context.file,
-      handoffFile: path.join(runDir, "handoff.md"),
+      handoffFile: paths.handoff(cfg, n),
       wiki,
     },
   };

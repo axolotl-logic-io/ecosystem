@@ -71,7 +71,7 @@ function fixerLaunch(
       "commit each step with `git add -A && git commit` as soon as it works, ending each message with the trailer line `Pipeline-Agent: check fixer`",
     ),
     `Run the failing check locally, commit what is left and leave the worktree clean. Return \`cannot-fix\` if the failure is unrelated to this change (for example, a flaky or broken check on ${cfg.baseBranch}).`,
-    handoffRule(budgets.hardLimit, handoffFile, "commit what builds"),
+    handoffRule(budgets, handoffFile, "make it build and commit it"),
   ];
   if (job.continuation) {
     lines.unshift(handoffLead(handoffFile));

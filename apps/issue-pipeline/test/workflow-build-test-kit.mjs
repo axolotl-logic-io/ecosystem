@@ -64,7 +64,8 @@ function contextWith() {
     budgets: {
       roles: ROLES,
       sessionCap: SESSION_CAP,
-      hardLimit: 175_000,
+      softLimit: 175_000,
+      hardLimit: 225_000,
     },
     models: modelsWith({ spec: SPEC_MODEL, implementer: IMPL_MODEL }),
     now: () => NOW,
@@ -191,7 +192,7 @@ function implementTask(source) {
       "Change lockfiles only through the package manager, never by hand.",
       "",
       "Commit often, in small working steps: commit each step with `git add -A && git commit` and a clear message as soon as it builds and its tests pass, ending each message with the trailer line `Pipeline-Agent: implementer`. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.",
-      `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${HANDOFF} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
+      `Context limits: at 175000 tokens of context, if the work isn't done, wrap up: finish the edit you are in the middle of and start no new ones, make it build and commit it, then write ${HANDOFF} as a summary for the next round (what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass), and return status \`handoff\`. The next session starts from your summary alone. At 225000 tokens of context the session is stopped.`,
       "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
       "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
     ])

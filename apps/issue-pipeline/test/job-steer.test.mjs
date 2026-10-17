@@ -20,6 +20,8 @@ import {
 
 const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
 const MESSAGE = "Look at src/b.ts too.";
+// The launch key of an implementer session, a writer's.
+const WRITER_KEY = /^i7-implement-\d+$/u;
 
 /** @param {import("./job-test-kit.mjs").Place} place @param {string} key */
 function steer(place, key) {
@@ -47,6 +49,24 @@ test("--steer sends the message to the live session, which carries on", async ()
   assert.equal(end.status, 0, end.stderr);
   const ops = logOf(place, "ops.log").map(({ op }) => op);
   assert.ok(ops.includes("release"));
+});
+
+test("--steer reaches a live writer session too, as the wiki's Steering a running session says", async () => {
+  const place = setUp(repliesAt("implement"), {
+    events: ["wait", messageEnd(USAGE), outputEnd(READY_SPEC)],
+  });
+  const job = startJob(place, ["--stage", "implement"]);
+  await waitFor(() => piCommands(place).some(({ type }) => type === "prompt"));
+  const { key } = sessionOf(statusOf(place));
+  assert.match(key, WRITER_KEY);
+  const r = steer(place, key);
+  assert.equal(r.status, 0, r.stderr);
+  const steers = piCommands(place).filter(({ type }) => type === "steer");
+  assert.deepEqual(
+    steers.map(({ message }) => message),
+    [MESSAGE],
+  );
+  assert.equal((await job.end).status, 0);
 });
 
 test("--steer with no running job exits 1 with the reason", () => {

@@ -162,7 +162,7 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
         `commit each fix with \`git add -A && git commit\` as soon as it works, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\``,
       ),
       "Make only the changes the findings need. Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
-      handoffRule(budgets.hardLimit, handoffFile, "commit what builds"),
+      handoffRule(budgets, handoffFile, "make it build and commit it"),
     ])
     .join("\n");
 }

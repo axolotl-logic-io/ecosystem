@@ -21,11 +21,15 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   leaseHours: 3,
   // Caps each session's context budget, the context the orchestrator's
   // watchdog stops a writer session past; roleBudgets sets each role's. Budgets bound context, not spend (budgets-bound-context,
-  // Axlog, 2026-10-16).
-  sessionTokenCap: 150_000,
-  // No writer session may pass `hard` tokens of context; past it, it hands off,
-  // up to maxContinuations times per stage per issue (#264).
-  contextLimits: { soft: 150_000, hard: 175_000 },
+  // Axlog, 2026-10-16). 300000 puts a writer's kill above contextLimits.hard
+  // (wrap-up-at-175k, Axlog, 2026-10-17).
+  sessionTokenCap: 300_000,
+  // A writer session past `soft` tokens of context is told to wrap up and
+  // write its handoff, and one past `hard` is stopped; it hands off, up to
+  // maxContinuations times per stage per issue (#264). loadConfig refuses a
+  // `hard` at or above a writer's context budget, so the job's stop comes
+  // before the watchdog's kill (wrap-up-at-175k, Axlog, 2026-10-17).
+  contextLimits: { soft: 175_000, hard: 225_000 },
   maxContinuations: 1,
   maxFixRounds: 2,
   maxCiFixes: 2,

@@ -2,11 +2,13 @@
 // turn's context is the input, cache-read and cache-write tokens of one
 // assistant message's usage (output tokens and earlier turns don't count). A
 // writer session (an implementer, fixer, CI fixer or conflict resolver) past
-// `soft` gets one steer to hand off, and past `hard` is stopped, its result a
-// `handoff` reply that fits its launch's output schema. Any other session is
-// neither steered nor stopped (Axlog, 2026-10-16). This module alone knows
-// that rule, the limits' meaning, the steer's text and the stopped session's
-// result.
+// `soft` gets one steer to wrap up and write its handoff as the next round's
+// summary (wrap-up-at-175k, Axlog, 2026-10-17), and past `hard` is stopped,
+// its result a `handoff` reply that fits its launch's output schema (the
+// handoff file the job then writes for it is stop-handoff.ts's). Any other
+// session is neither steered nor stopped (Axlog, 2026-10-16). This module
+// alone knows that rule, the limits' meaning, the steer's text and the
+// stopped session's result.
 
 import type { JsonSchema } from "../workflow/schemas.ts";
 import type { LiveLaunch } from "./control.ts";
@@ -22,6 +24,13 @@ interface ContextLimits {
   hard: number;
 }
 
+// The limits a writer session is held to, and the handoff file the steer
+// tells it to write.
+interface WriterHold {
+  limits: ContextLimits;
+  handoffFile: string;
+}
+
 // A writer session stopped at turn context `context`.
 interface ContextStop {
   context: number;
@@ -33,13 +42,18 @@ interface ContextWatch {
   read: (record: unknown) => void;
   // The stop, once the writer passed `hard`; null until then.
   stopped: () => ContextStop | null;
+  // A writer's last assistant text, for the handoff the job writes once it
+  // stopped it; null until it gives one, and always for any other session.
+  lastText: () => string | null;
 }
 
-// How a watched session ended: the result its records give, and its stop,
-// null when the watch didn't stop it.
+// How a watched session ended: the result its records give, its stop, null
+// when the watch didn't stop it, and its last assistant text, null when it
+// gave none.
 interface WatchedEnd {
   raw: SessionRaw;
   stop: ContextStop | null;
+  lastText: string | null;
 }
 
 // The launch a stopped session ran for, with its reply's schema.
@@ -52,32 +66,41 @@ function turnContext(usage: Usage): number {
   return usage.input + usage.cacheRead + usage.cacheWrite;
 }
 
-function steerText(context: number): string {
-  return `Context is at ${context}. Stop now. Commit what builds, write the handoff file, and return \`handoff\`.`;
+// The steer a writer session gets once its turn context `context` passes
+// `soft`: finish the edit it is in, commit it building, and write the
+// handoff as the next round's only summary.
+function steerText(hold: WriterHold, context: number): string {
+  const { limits, handoffFile } = hold;
+  return `Context is at ${context} tokens, past the soft limit of ${limits.soft}. Wrap up now: finish the edit you are in the middle of, and don't start new ones. Make it build, and commit it. Then write ${handoffFile} as a summary for the next round: what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass. The next session starts from this summary alone. Then return status \`handoff\`. At ${limits.hard} tokens this session is stopped.`;
 }
 
 // The watch on a session the limits don't hold: it never steers or stops.
 const UNWATCHED: ContextWatch = {
   read: (): void => undefined,
   stopped: (): null => null,
+  lastText: (): null => null,
 };
 
-// Watches session `live` of installed agent `agent` against `limits`: steers
-// a writer once, the first time a turn passes `soft`, and stops it, once,
-// the first time a turn passes `hard`. Any other session goes unwatched.
+// Watches session `live` of installed agent `agent` against `hold.limits`:
+// steers a writer once, the first time a turn passes `soft`, and stops it,
+// once, the first time a turn passes `hard`. Any other session goes
+// unwatched.
 function watchContext(
-  limits: ContextLimits,
+  hold: WriterHold,
   agent: string,
   live: LiveLaunch,
 ): ContextWatch {
   if (sessionRoleOf(agent) !== "writer") {
     return UNWATCHED;
   }
+  const { limits } = hold;
   let steered = false;
   let stop: ContextStop | null = null;
+  let lastText: string | null = null;
   return {
     read: (record: unknown): void => {
-      const { usage } = recordFacts(record);
+      const { usage, text } = recordFacts(record);
+      lastText = text ?? lastText;
       if (usage === null || stop !== null) {
         return;
       }
@@ -88,11 +111,12 @@ function watchContext(
       } else if (context > limits.soft && !steered) {
         steered = true;
         live
-          .send({ type: "steer", message: steerText(context) })
+          .send({ type: "steer", message: steerText(hold, context) })
           .catch(() => null);
       }
     },
     stopped: (): ContextStop | null => stop,
+    lastText: (): string | null => lastText,
   };
 }
 
@@ -129,5 +153,11 @@ function contextStopped(
   return { ok: true, structuredOutput, error: null, key, agent, results };
 }
 
-export type { ContextLimits, ContextStop, ContextWatch, WatchedEnd };
+export type {
+  ContextLimits,
+  ContextStop,
+  ContextWatch,
+  WatchedEnd,
+  WriterHold,
+};
 export { contextStopped, turnContext, watchContext };

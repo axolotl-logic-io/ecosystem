@@ -8,6 +8,9 @@ import { z } from "zod";
 import { CONFIG_SCHEMA, DEFAULTS } from "./config-schema.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
 import { OpsError } from "./process.ts";
+import type { Budgets } from "./workflow/budget.ts";
+import { sessionBudget } from "./workflow/budget.ts";
+import { ROLE_BUDGETS, WRITER_BUDGET_ROLES } from "./workflow/sweep-config.ts";
 
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
 const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
@@ -104,6 +107,40 @@ function checkRequired(
   checkPractices(configPath, practices);
 }
 
+// What the writer budget check reads of a config; a value of another type is
+// left to the code that reads it.
+const WRITER_BUDGET_KEYS = z.object({
+  contextLimits: z.object({ soft: z.number(), hard: z.number() }),
+  sessionTokenCap: z.number().catch(Number.POSITIVE_INFINITY),
+  roleBudgets: z.record(z.string(), z.number()).nullish().catch(null),
+});
+
+// Refuses a config under which the job's own stop at contextLimits.hard could
+// never come before the watchdog's kill: a writer's context budget (its
+// role's budget, capped by sessionTokenCap) at or below `hard`
+// (wrap-up-at-175k, Axlog, 2026-10-17).
+function checkWriterBudgets(
+  configPath: string,
+  raw: Readonly<Record<string, unknown>>,
+): void {
+  const { contextLimits, sessionTokenCap, roleBudgets } =
+    WRITER_BUDGET_KEYS.parse(raw);
+  const budgets: Budgets = {
+    roles: { ...ROLE_BUDGETS, ...roleBudgets },
+    sessionCap: sessionTokenCap,
+    softLimit: contextLimits.soft,
+    hardLimit: contextLimits.hard,
+  };
+  for (const role of WRITER_BUDGET_ROLES) {
+    const budget = sessionBudget(budgets, role);
+    if (contextLimits.hard >= budget) {
+      throw new OpsError(
+        `config ${configPath}: contextLimits.hard (${contextLimits.hard}) must be below every writer's context budget, but ${role}'s is ${budget} (roleBudgets.${role}, capped by sessionTokenCap), so the watchdog would kill its sessions before the job stops them`,
+      );
+    }
+  }
+}
+
 function loadConfig(configPath: string | undefined): Config {
   const file = expand(configPath ?? "");
   if (file === "" || !fs.existsSync(file)) {
@@ -120,6 +157,7 @@ function loadConfig(configPath: string | undefined): Config {
       `config ${String(configPath)}: ${z.prettifyError(parsed.error)}`,
     );
   }
+  checkWriterBudgets(String(configPath), parsed.data);
   const { checkout: _fromFile, ...data } = parsed.data;
   return { ...data, slug: data.repo.replace("/", "__") };
 }
@@ -178,6 +216,10 @@ const paths = {
   // Stage job `stage`'s own checkout of issue `n`, cloned from the mirror.
   jobCheckout: (cfg: Config, n: number, stage: string): string =>
     path.join(ROOT, "work", cfg.slug, "jobs", `issue-${n}-${stage}`),
+  // Where a writer session of issue `n` that runs out of room writes its
+  // handoff, which the next session reads.
+  handoff: (cfg: Config, n: number): string =>
+    path.join(paths.runDir(cfg, n), "handoff.md"),
   jobLog: (cfg: Config, n: number): string =>
     path.join(paths.runDir(cfg, n), "job.log"),
   // The bare mirrors of the repo and its wiki that job checkouts clone.

@@ -25,7 +25,8 @@ const budgets = {
     verifier: 60_000,
   },
   sessionCap: SESSION_CAP,
-  hardLimit: 175_000,
+  softLimit: 175_000,
+  hardLimit: 225_000,
 };
 
 test("a session's budget is its role's, capped per session", () => {

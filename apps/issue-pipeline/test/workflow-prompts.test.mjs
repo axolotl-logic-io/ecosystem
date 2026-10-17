@@ -5,7 +5,11 @@
 // Running-the-Issue-Pipeline page promises.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { commitOftenRule, preamble } from "../src/workflow/prompts.ts";
+import {
+  commitOftenRule,
+  handoffRule,
+  preamble,
+} from "../src/workflow/prompts.ts";
 import { by, byStep } from "../src/workflow/signing.ts";
 
 const cfg = { repo: "o/r", baseBranch: "integration" };
@@ -51,6 +55,32 @@ test("a writer is told to commit small, working steps often, and how", () => {
   assert.ok(rule.startsWith("Commit often, in small working steps:"));
   assert.ok(rule.includes("commit each step with `git commit`"));
   assert.ok(rule.includes("Don't save your work for one commit at the end"));
+});
+
+test("a writer wraps up at soft into a handoff summary, and is stopped at hard (wrap-up-at-175k)", () => {
+  const limits = { softLimit: 175_000, hardLimit: 225_000 };
+  const rule = handoffRule(
+    limits,
+    "/runs/issue-7/handoff.md",
+    "make it build and commit it",
+  );
+  const promised = [
+    "175000",
+    "finish the edit you are in the middle of",
+    "make it build and commit it",
+    "/runs/issue-7/handoff.md",
+    "summary for the next round",
+    "what is done",
+    "what is left",
+    "decisions",
+    "traps and dead ends",
+    "branch state",
+    "`handoff`",
+    "225000",
+  ];
+  for (const part of promised) {
+    assert.ok(rule.includes(part), `${part} in: ${rule}`);
+  }
 });
 
 test("the preamble points at the wiki checkout only when there is one", () => {
