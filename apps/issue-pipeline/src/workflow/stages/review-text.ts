@@ -39,6 +39,23 @@ const SPEC_RULE_REVIEW =
 const SPEC_RULE_FIX =
   "Fix each finding in a way the spec allows. If a finding can only be met by breaking the spec, dispute it and quote the spec line.";
 
+// What a fixer in a stage job does with the wiki checkout, when it has one:
+// it makes the wiki updates the spec lists and findings ask for, which
+// `pipeline_commit` commits, until the spec writer makes them (#300 part 5d).
+function fixerWikiLines(ctx: StageContext, state: StageState): string[] {
+  const { wiki } = state.paths;
+  if (
+    ctx.committer !== "pipeline_commit" ||
+    typeof wiki !== "string" ||
+    wiki === ""
+  ) {
+    return [];
+  }
+  return [
+    `Make any wiki update the spec lists or a finding asks for in the wiki checkout ${wiki}: edit its pages and commit them with \`pipeline_commit\`, which commits the wiki checkout's changes too. Leave it clean too.`,
+  ];
+}
+
 // The issue's spec as lines of a task, followed by `rule`, which says what
 // the role does with it. No lines when no spec stage ran.
 function specSection(state: StageState, rule: string): string[] {
@@ -164,6 +181,7 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
         trailer: `Pipeline-Agent: fixer round ${round}`,
         clearMessage: false,
       }),
+      ...fixerWikiLines(ctx, state),
       "Make only the changes the findings need. Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
       handoffRule(budgets, handoffFile, "make it build and commit it"),
     ])

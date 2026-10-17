@@ -138,12 +138,13 @@ test("with no tokenEnv set, the role variables are ordinary and only gh's are hi
   assert.deepEqual(agentEnvOf(rolesOf({}), FROM), untouched);
 });
 
-test("only spec, merge and publish write the wiki, and every stage has a wiki access", () => {
+test("spec, merge and publish write the wiki, and, until the spec writer commits its updates, implement, fix and checks too; every stage has a wiki access", () => {
   const writers = Object.entries(STAGE_WIKI_ACCESS)
     .filter(([, access]) => access === "write")
     .map(([stage]) => stage)
     .sort();
-  assert.deepEqual(writers, ["merge", "publish", "spec"]);
+  const bridged = ["checks", "fix", "implement"];
+  assert.deepEqual(writers, [...bridged, "merge", "publish", "spec"].sort());
   assert.deepEqual(
     new Set(Object.keys(STAGE_WIKI_ACCESS)),
     new Set(STAGE_ORDER),

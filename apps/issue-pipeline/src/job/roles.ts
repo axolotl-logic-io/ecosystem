@@ -60,15 +60,19 @@ const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
 // Each stage's access to the issue's wiki checkout (Pipeline-Roles-Shared,
 // "Wiki provisioning"): the spec writer writes the wiki, as merge and publish
 // do when they rebase and publish its commits; every other stage reads it.
+// Until the spec writer commits the spec's wiki updates (#300 part 5d), a
+// bridge (2026-10-17): the implementer and fixer make them, as before #303,
+// and checks' CI fixer fixes the pages the wiki check fails, so implement,
+// fix and checks write it too.
 const STAGE_WIKI_ACCESS: Readonly<Record<StageName, WikiAccess>> = {
   triage: "read",
   spec: "write",
-  implement: "read",
+  implement: "write",
   "open-pr": "read",
   review: "read",
-  fix: "read",
+  fix: "write",
   sync: "read",
-  checks: "read",
+  checks: "write",
   accept: "read",
   security: "read",
   merge: "write",

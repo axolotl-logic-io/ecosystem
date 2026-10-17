@@ -40,7 +40,7 @@ It first builds `src/` into `dist/` (as `mise //apps/issue-pipeline:build` does)
 
 Merging a PR changes nothing that runs: only the operator's install does. That way an agent's PR can't change the code that checks its own work. Install from a checkout of a merged commit, between sweeps or with the lanes paused (`/pipeline-pause`). Every op reads `ops.mjs` fresh, but a schedule keeps the `workflow.js` text it was created with, so recreate the lanes after a change to it.
 
-Install `pipeline_commit` (#303) together with the spec writer's wiki commits (#305). From #303 on, a stage job's sessions commit only through `pipeline_commit`, and only the spec, merge and publish stages may write the wiki, so until #305 is installed too, no stage job commits a spec's wiki updates: the implementer only reads the wiki, and its edits there are dropped. Lanes are unaffected.
+From #303 on, a stage job's sessions commit only through `pipeline_commit`, and only the spec, merge and publish stages would write the wiki. Until the spec writer commits the spec's wiki updates, a bridge keeps the implement, fix and checks stages writing it too, so the implementer and fixer make those updates and commit them through `pipeline_commit`, and the CI fixer fixes the pages the wiki check fails, as they could before #303 (`STAGE_WIKI_ACCESS` in `src/job/roles.ts`). The spec writer's runner integration (#300, part 5d) sets those stages back to `read`. Lanes are unaffected.
 
 Each repo's config, its setup and teardown scripts and its token stay local in `$ISSUE_PIPELINE_ROOT/repos/` and `secrets/` (`per-repo-config-kept-local`), as do `clones/`, `work/` and `runs/`. The install never touches them.
 

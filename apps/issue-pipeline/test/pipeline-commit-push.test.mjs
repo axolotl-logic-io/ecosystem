@@ -25,11 +25,13 @@ const { closeJobCheckout, openJobCheckout } = await import(
   "../src/job/checkout.ts"
 );
 const { lastPush } = await import("../src/checkouts.ts");
+const { STAGE_WIKI_ACCESS } = await import("../src/job/roles.ts");
 
 /** @import { StageName } from "../src/workflow/stages/types.ts" */
 
 const PUSHED_BRANCH = "origin/agent/issue-7";
 const REFUSED_PUSH = /code push failed/u;
+const REFUSED_WIKI_PUSH = /wiki push failed/u;
 const NOTHING_COMMITTED = /git exited 1: .*nothing/su;
 const HOOK_REFUSES = /pipeline_commit/u;
 const MISSING_PATHSPEC = /pathspec 'missing\.txt' did not match/u;
@@ -140,8 +142,51 @@ test("nothing to commit fails with git's exit code and pushes nothing", async ()
   }
 });
 
-test("read wiki access commits code only, and the wiki edit is lost at teardown", async () => {
+test("an implement job's writer commits a wiki page with pipeline_commit, and it is pushed, until the spec writer makes the wiki updates", async () => {
   const job = await openJob("implement");
+  try {
+    write(job.dir, "README.md", "changed\n");
+    write(job.wikiDir, "Page.md", "new\n");
+    const result = await job.commit(["-am", "Code and its wiki page"]);
+    assert.equal(result.isError, false);
+    assert.equal(result.details.pushed, "both");
+    assert.equal(refOf(job.wikiOrigin, BRANCH), headOf(job.wikiDir));
+    const files = ["show", "--name-only", "--format=", "HEAD"];
+    assert.equal(git(job.wikiDir, files), "Page.md");
+  } finally {
+    job.close();
+  }
+});
+
+test("an implement job's wiki commit whose push was refused is pushed as the job exits", async () => {
+  const job = await openJob("implement");
+  const hook = path.join(job.wikiOrigin, "hooks", "pre-receive");
+  try {
+    fs.writeFileSync(hook, REFUSE_ALL, { mode: HOOK_MODE });
+    write(job.wikiDir, "Page.md", "new\n");
+    const result = await job.commit(["-m", "Wiki page", "--", "wiki/Page.md"]);
+    assert.equal(result.details.pushed, "none");
+    assert.match(result.details.pushError, REFUSED_WIKI_PUSH);
+  } finally {
+    job.close();
+  }
+  let exitPushes = 0;
+  const access = STAGE_WIKI_ACCESS.implement;
+  const lost = await closeJobCheckout(
+    job.cfg,
+    ISSUE,
+    { dir: job.dir, wiki: access },
+    () => {
+      exitPushes += 1;
+      return Promise.resolve();
+    },
+  );
+  assert.deepEqual(lost, []);
+  assert.equal(exitPushes, 1);
+});
+
+test("read wiki access commits code only, and the wiki edit is lost at teardown", async () => {
+  const job = await openJob("open-pr");
   try {
     write(job.dir, "README.md", "changed\n");
     write(job.wikiDir, "Page.md", "new\n");
