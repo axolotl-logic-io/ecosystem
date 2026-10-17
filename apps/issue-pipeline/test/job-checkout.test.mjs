@@ -17,11 +17,12 @@ import {
 } from "./job-git-test-kit.mjs";
 import {
   logOf,
+  PASS_VERDICT,
   piStarts,
-  READY_SPEC,
   repliesAt,
   runJob,
-  SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   setScript,
   setUp,
   startJob,
@@ -42,7 +43,7 @@ const PUSHING = { "exit-push": { ok: true, git: true } };
 // A session that commits a file, then waits until it is stopped.
 const COMMIT_AND_WAIT = {
   commit: "repo/work.txt",
-  events: [messageEnd(USAGE), "wait", outputEnd(READY_SPEC)],
+  events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
 };
 
 /** @import { Place } from "./job-test-kit.mjs" */
@@ -70,30 +71,35 @@ function spent(place) {
 }
 
 test("a job clones its checkout from the mirror, runs its session there and removes it on exit", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
-  const r = runJob(place, ["--stage", "spec"]);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
+  const r = runJob(place, ["--stage", SWEEP_STAGE]);
   assert.equal(r.status, 0, r.stderr);
   const mirror = path.join(place.root, "work/o__r/mirror.git");
   assert.equal(refOf(mirror, `refs/heads/${BASE}`), refOf(place.origin, BASE));
   const [start] = piStarts(place);
-  assert.equal(start.cwd, checkoutOf(fs.realpathSync(place.root), "spec"));
+  assert.equal(start.cwd, checkoutOf(fs.realpathSync(place.root), SWEEP_STAGE));
   assert.equal(start.head, refOf(place.origin, BASE));
-  assert.equal(fs.existsSync(checkoutOf(place.root, "spec")), false);
+  assert.equal(fs.existsSync(checkoutOf(place.root, SWEEP_STAGE)), false);
 });
 
 test("the checkout of an issue with a branch on origin starts at its head", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
   const earlier = branchOnOrigin(place.origin);
-  const r = runJob(place, ["--stage", "spec"]);
+  const r = runJob(place, ["--stage", SWEEP_STAGE]);
   assert.equal(r.status, 0, r.stderr);
   const [start] = piStarts(place);
   assert.equal(start.head, earlier);
 });
 
 test("a checkout made with --stack-on starts at the prerequisite's head, and the claim asks to stack", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
   const prereqHead = branchOnOrigin(place.origin, PREREQ);
-  const r = runJob(place, ["--stage", "spec", "--stack-on", String(PREREQ)]);
+  const r = runJob(place, [
+    "--stage",
+    SWEEP_STAGE,
+    "--stack-on",
+    String(PREREQ),
+  ]);
   assert.equal(r.status, 0, r.stderr);
   const [start] = piStarts(place);
   assert.equal(start.head, prereqHead);
@@ -105,16 +111,21 @@ test("a checkout made with --stack-on starts at the prerequisite's head, and the
 });
 
 test("a checkout made with --stack-on of an issue with its own branch starts on that branch", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
   branchOnOrigin(place.origin, PREREQ);
   const own = branchOnOrigin(place.origin);
-  const r = runJob(place, ["--stage", "spec", "--stack-on", String(PREREQ)]);
+  const r = runJob(place, [
+    "--stage",
+    SWEEP_STAGE,
+    "--stack-on",
+    String(PREREQ),
+  ]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(piStarts(place)[0].head, own);
 });
 
 test("a writer's stacked checkout with no commits of its own pushes nothing", () => {
-  const place = setUp(pushingRepliesAt("implement"), SPEC_SESSION);
+  const place = setUp(pushingRepliesAt("implement"), SWEEP_SESSION);
   branchOnOrigin(place.origin, PREREQ);
   const args = ["--stage", "implement", "--stack-on", String(PREREQ)];
   const r = runJob(place, args);
@@ -124,21 +135,21 @@ test("a writer's stacked checkout with no commits of its own pushes nothing", ()
 });
 
 test("a job stopped by SIGTERM exits 143 and removes its checkout", async () => {
-  const place = setUp(repliesAt("spec"), {
-    events: [messageEnd(USAGE), "wait", outputEnd(READY_SPEC)],
+  const place = setUp(repliesAt(SWEEP_STAGE), {
+    events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
   });
-  const job = startJob(place, ["--stage", "spec"]);
+  const job = startJob(place, ["--stage", SWEEP_STAGE]);
   await waitFor(() => spent(place));
-  assert.ok(fs.existsSync(checkoutOf(place.root, "spec")));
+  assert.ok(fs.existsSync(checkoutOf(place.root, SWEEP_STAGE)));
   job.child.kill("SIGTERM");
   const end = await job.end;
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
-  assert.equal(fs.existsSync(checkoutOf(place.root, "spec")), false);
+  assert.equal(fs.existsSync(checkoutOf(place.root, SWEEP_STAGE)), false);
 });
 
 test("a writer's commit reaches the issue's branch through the exit-push op before its checkout goes", () => {
   const place = setUp(pushingRepliesAt("implement"), {
-    ...SPEC_SESSION,
+    ...SWEEP_SESSION,
     commit: "repo/work.txt",
   });
   const r = runJob(place, ["--stage", "implement"]);
@@ -160,7 +171,7 @@ test("a writer's commit reaches the issue's branch through the exit-push op befo
 });
 
 test("a writer whose commits are all on the issue's branch already does not push", () => {
-  const place = setUp(pushingRepliesAt("implement"), SPEC_SESSION);
+  const place = setUp(pushingRepliesAt("implement"), SWEEP_SESSION);
   const earlier = branchOnOrigin(place.origin);
   const r = runJob(place, ["--stage", "implement"]);
   assert.equal(r.status, 0, r.stderr);
@@ -201,7 +212,7 @@ test("a writer stopped by SIGTERM still pushes its commit before its checkout go
 
 test("a writer's uncommitted files are recorded as lostChanges and dropped", () => {
   const place = setUp(repliesAt("implement"), {
-    ...SPEC_SESSION,
+    ...SWEEP_SESSION,
     untracked: "repo/left.txt",
   });
   const r = runJob(place, ["--stage", "implement"]);
@@ -212,11 +223,11 @@ test("a writer's uncommitted files are recorded as lostChanges and dropped", () 
 });
 
 test("a reader's commit is never pushed", () => {
-  const place = setUp(pushingRepliesAt("spec"), {
-    ...SPEC_SESSION,
+  const place = setUp(pushingRepliesAt(SWEEP_STAGE), {
+    ...SWEEP_SESSION,
     commit: "repo/work.txt",
   });
-  const r = runJob(place, ["--stage", "spec"]);
+  const r = runJob(place, ["--stage", SWEEP_STAGE]);
   assert.equal(r.status, 0, r.stderr);
   assert.notEqual(committed(place), "");
   assert.deepEqual(pushes(place), []);
@@ -225,11 +236,11 @@ test("a reader's commit is never pushed", () => {
 });
 
 test("every ops request the job makes names its checkout", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
-  runJob(place, ["--stage", "spec"]);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
+  runJob(place, ["--stage", SWEEP_STAGE]);
   const ops = logOf(place, "ops.log");
   assert.ok(ops.length > 0);
-  const checkout = { issue: ISSUE, dir: repoOf(place.root, "spec") };
+  const checkout = { issue: ISSUE, dir: repoOf(place.root, SWEEP_STAGE) };
   for (const request of ops) {
     assert.deepEqual(request.checkout, checkout, request.op);
   }
@@ -237,7 +248,7 @@ test("every ops request the job makes names its checkout", () => {
 
 test("a failed exit push is reported on stderr and the checkout still goes", () => {
   const place = setUp(repliesAt("implement"), {
-    ...SPEC_SESSION,
+    ...SWEEP_SESSION,
     commit: "repo/work.txt",
   });
   const r = runJob(place, ["--stage", "implement"]);
@@ -249,19 +260,19 @@ test("a failed exit push is reported on stderr and the checkout still goes", () 
 
 test("the job's wiki checkout comes from the wiki mirror, and its unpushed commits wait there", () => {
   const place = setUp(
-    repliesAt("spec"),
-    { ...SPEC_SESSION, commit: "docs/Page.md" },
+    repliesAt(SWEEP_STAGE),
+    { ...SWEEP_SESSION, commit: "docs/Page.md" },
     {},
     { wiki: true },
   );
-  const r = runJob(place, ["--stage", "spec"]);
+  const r = runJob(place, ["--stage", SWEEP_STAGE]);
   assert.equal(r.status, 0, r.stderr);
   const first = committed(place);
   const wikiMirror = path.join(place.root, "work/o__r/wiki-mirror.git");
   assert.equal(refOf(wikiMirror, BRANCH), first);
   assert.equal(refOf(String(place.wikiOrigin), BRANCH), "");
-  setScript(place, { ...SPEC_SESSION, commit: "docs/Other.md" });
-  const again = runJob(place, ["--stage", "spec"]);
+  setScript(place, { ...SWEEP_SESSION, commit: "docs/Other.md" });
+  const again = runJob(place, ["--stage", SWEEP_STAGE]);
   assert.equal(again.status, 0, again.stderr);
   assert.equal(refOf(wikiMirror, `${BRANCH}~1`), first);
   assert.equal(refOf(wikiMirror, BRANCH), committed(place));

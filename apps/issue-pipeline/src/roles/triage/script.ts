@@ -1,7 +1,7 @@
 // The triage role on the runner's linear mode: the session, then the comment
-// that announces its decision, then the draft PR for a ready issue, then an
-// end that saves the issue at spec, releases it with its questions asked, or
-// stops it. The job claims the issue, checks it out and writes issue.md, and
+// that announces its decision, then an end that saves the issue at spec,
+// releases it with its questions asked, or stops it. The spec writer opens
+// the draft PR, so triage opens no branch or PR. The job claims the issue, checks it out and writes issue.md, and
 // the end's save drops the lease, so none of those are steps. Every comment
 // is keyed, so a restart edits it rather than posting it again. Pure.
 
@@ -10,11 +10,10 @@ import type { AfterOp, Effect, End } from "../machine.ts";
 import type { LinearScript, LinearStep } from "../walk.ts";
 import type { TriageData, TriageStop } from "./locate.ts";
 import { locate } from "./locate.ts";
-import { decisionOf, startedPrOf, triageReplyOf } from "./reply.ts";
+import { decisionOf, triageReplyOf } from "./reply.ts";
 import {
   announcement,
   keptPlan,
-  prEvent,
   REJECTED,
   TRIAGE_FAILED,
   triageEvent,
@@ -22,8 +21,6 @@ import {
 
 // The key of triage's one comment on the issue.
 const COMMENT_KEY = "triage";
-// What a start-pr reply that names no PR logs.
-const NO_PR = "the reply named no PR";
 
 function noted(data: TriageData, text: string): TriageData {
   const next = { ...data };
@@ -130,46 +127,11 @@ const announceStep: LinearStep<TriageData> = {
   },
 };
 
-// Opens the draft PR of a ready issue that has none; a failure is only
-// logged, since open-pr opens it after implementation.
-const startPrStep: LinearStep<TriageData> = {
-  name: "start-pr",
-  kind: "script",
-  effect: (data: TriageData): Effect => {
-    const { reading, pr } = data;
-    const ready = reading.kind === "decided" && reading.decision === "ready";
-    if (!ready || (typeof pr === "number" && pr > 0)) {
-      return ending(data);
-    }
-    const payload = { number: data.issue, plan: data.plan };
-    return { kind: "op", op: "start-pr", payload };
-  },
-  apply: (data: TriageData, reply: unknown): TriageData => {
-    const started = startedPrOf(reply);
-    if (started === null) {
-      return noted(data, prEvent(null, NO_PR));
-    }
-    const { pr, headSha } = started;
-    const next = noted(data, prEvent(pr, null));
-    return { ...next, pr, headSha, implemented: false };
-  },
-  recover: (data: TriageData, error: string): TriageData =>
-    noted(data, prEvent(null, error)),
-};
-
 const triageScript: LinearScript<TriageData> = {
   locate,
-  steps: [triageStep, announceStep, startPrStep],
+  steps: [triageStep, announceStep],
   end: endOf,
-  handoff: [
-    "plan",
-    "splitSuggested",
-    "pr",
-    "headSha",
-    "implemented",
-    "triages",
-    "log",
-  ],
+  handoff: ["plan", "splitSuggested", "triages", "log"],
   checkpoints: [],
 };
 

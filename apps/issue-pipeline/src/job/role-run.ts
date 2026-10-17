@@ -233,6 +233,7 @@ async function runClaimed(
       stopping: control.stopping,
       step: status.step,
     },
+    cfg,
   );
   if (end.kind === "interrupted") {
     const state = { ...last, lease: null };

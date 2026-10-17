@@ -64,18 +64,35 @@ function testsCommitted(data: SpecData, reply: unknown): SpecData {
   return { ...data, specTestsSha: sha };
 }
 
-// The spec as published: the saved copy and where the whole of it is.
+// The spec as published: the saved copy and where the whole of it is, if
+// it was too long to keep, with its tests written by this role.
 function published(data: SpecData, reply: unknown): SpecData {
   if (!isRecord(reply)) {
     return data;
   }
   const { spec, specFile } = reply;
-  const next = { ...data };
+  const next: SpecData = { ...data, specFile: null, specWritesTests: true };
   if (typeof spec === "string") {
     next.spec = spec;
   }
   if (typeof specFile === "string") {
     next.specFile = specFile;
+  }
+  return next;
+}
+
+// The draft PR start-pr opened or found, which the implementor builds on.
+function prOpened(data: SpecData, reply: unknown): SpecData {
+  if (!isRecord(reply)) {
+    return data;
+  }
+  const { pr, headSha } = reply;
+  const next: SpecData = { ...data, implemented: false };
+  if (typeof pr === "number") {
+    next.pr = pr;
+  }
+  if (typeof headSha === "string") {
+    next.headSha = headSha;
   }
   return next;
 }
@@ -104,6 +121,7 @@ function refusal(data: SpecData): string {
 export {
   decided,
   failed,
+  prOpened,
   published,
   read,
   readied,

@@ -143,7 +143,7 @@ describe("in a stage job, every writer's task", () => {
   });
 });
 
-test("in a stage job, the implementer and fixer make the wiki updates and commit them with pipeline_commit", () => {
+test("in a stage job, the implementer and fixer get no wiki step, and a lane's implementer keeps it", () => {
   const implementer = taskOf(
     implement(
       withWiki(buildState("implement", { spec: "Do it." })),
@@ -158,16 +158,17 @@ test("in a stage job, the implementer and fixer make the wiki updates and commit
       [],
     ),
   );
-  assert.ok(implementer.includes("Make the wiki updates the spec lists"));
-  assert.ok(fixer.includes("Make any wiki update the spec lists"));
-  for (const task of [implementer, fixer]) {
-    assert.ok(
-      task.includes(
-        `in the wiki checkout ${WIKI}: edit its pages and commit them with \`pipeline_commit\``,
-      ),
-    );
-    assert.equal(task.includes("read-only"), false);
-  }
+  const lane = taskOf(
+    implement(
+      withWiki(buildState("implement", { spec: "Do it." })),
+      { ...BUILD_CTX, committer: "git" },
+      [],
+    ),
+  );
+  assert.equal(implementer.includes("Make the wiki updates"), false);
+  assert.equal(fixer.includes("Make any wiki update"), false);
+  assert.ok(lane.includes("Make the wiki updates the spec lists"));
+  assert.ok(lane.includes(`git -C ${WIKI} add -A`));
 });
 
 test("in a lane, the fixer gets no wiki step", () => {

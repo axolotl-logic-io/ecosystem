@@ -48,12 +48,37 @@ const READY_SPEC = {
 // A session that spends USAGE and ends with the ready spec.
 const SPEC_SESSION = { events: [messageEnd(USAGE), outputEnd(READY_SPEC)] };
 
+// The sweep stage the job tests run when any sweep reader stage will do:
+// acceptance, whose one reader session's pass releases the issue at
+// security. Since #334 spec runs the spec writer's role.
+const SWEEP_STAGE = "accept";
+// The stage a passed acceptance saves the issue at.
+const AFTER_SWEEP_STAGE = "security";
+// The acceptance verifier's pass.
+const PASS_VERDICT = { verdict: "pass", reason: "It does what #7 asks." };
+// A session that spends USAGE and ends with the pass.
+const SWEEP_SESSION = {
+  events: [messageEnd(USAGE), outputEnd(PASS_VERDICT)],
+};
+// The reviewed diff acceptance reads, at the verified head.
+const PREPARED_DIFF = {
+  ok: true,
+  headSha: TRIAGED.headSha,
+  diffPath: "/w/runs/o__r/issue-7/final.diff",
+  diffLines: "3",
+};
+
 /** @param {string} stage @returns {{ claim: object } & Record<string, unknown>} */
 function repliesAt(stage) {
+  let verified = {};
+  if (stage === SWEEP_STAGE) {
+    verified = { verifiedSha: TRIAGED.headSha };
+  }
   return {
     ...ROUTINE_OPS,
+    "prepare-review": PREPARED_DIFF,
     sweep: sweepReply({ items: [ISSUE] }),
-    claim: claimAt(stage, TRIAGED),
+    claim: claimAt(stage, { ...TRIAGED, ...verified }),
   };
 }
 
@@ -142,9 +167,15 @@ function setScript(place, script) {
  * @returns {NodeJS.ProcessEnv}
  */
 function jobEnv(place, extraEnv) {
-  const { PATH: searchPath } = process.env;
+  // A suite run inside a committing pipeline session leaves out that
+  // session's commit scope, which no test's job is given.
+  const {
+    PATH: searchPath,
+    ISSUE_PIPELINE_COMMIT_SCOPE: _sessionScope,
+    ...inherited
+  } = process.env;
   return {
-    ...process.env,
+    ...inherited,
     ...extraEnv,
     ...Object.fromEntries([
       ["PATH", `${place.bin}${path.delimiter}${searchPath}`],
@@ -289,15 +320,19 @@ function alive(pid) {
 }
 
 export {
+  AFTER_SWEEP_STAGE,
   alive,
   flagValue,
   logOf,
+  PASS_VERDICT,
   piCommands,
   piStarts,
   READY_SPEC,
   repliesAt,
   runJob,
   SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   sessionOf,
   setScript,
   setUp,

@@ -125,4 +125,13 @@ function docsOf(root, stage) {
   return path.join(checkoutOf(root, stage), "docs");
 }
 
-export { BASE, branchOnOrigin, checkoutOf, docsOf, refOf, repoOf, seedOrigins };
+export {
+  BASE,
+  branchOnOrigin,
+  checkoutOf,
+  docsOf,
+  refOf,
+  repoOf,
+  seedOrigins,
+  WIKI_BRANCH,
+};

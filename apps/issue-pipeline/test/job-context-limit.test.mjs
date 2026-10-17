@@ -22,10 +22,11 @@ import { fixReplyOf } from "../src/workflow/stages/review-replies.ts";
 import { outputEnd, turns } from "./fake-rpc-pi.mjs";
 import {
   logOf,
+  PASS_VERDICT,
   piCommands,
   piStarts,
-  READY_SPEC,
   repliesAt,
+  SWEEP_STAGE,
   sessionOf,
   setUp,
   startJob,
@@ -101,10 +102,10 @@ test(
   async () => {
     const events = [
       ...turns([STILL_PAST_SOFT, PAST_HARD]),
-      outputEnd(READY_SPEC),
+      outputEnd(PASS_VERDICT),
     ];
-    const place = setUp(repliesAt("spec"), { events }, LIMITS);
-    const end = await startJob(place, ["--stage", "spec"]).end;
+    const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
+    const end = await startJob(place, ["--stage", SWEEP_STAGE]).end;
     assert.equal(end.status, 0, end.stderr);
     assert.deepEqual(commandsOf(place, "abort"), []);
     assert.deepEqual(commandsOf(place, "steer"), []);
@@ -183,9 +184,9 @@ test(
   "a session under soft runs as before and records its peak",
   HANG_GUARD,
   async () => {
-    const events = [...turns([LOW, LOW_PEAK]), outputEnd(READY_SPEC)];
-    const place = setUp(repliesAt("spec"), { events }, LIMITS);
-    const end = await startJob(place, ["--stage", "spec"]).end;
+    const events = [...turns([LOW, LOW_PEAK]), outputEnd(PASS_VERDICT)];
+    const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
+    const end = await startJob(place, ["--stage", SWEEP_STAGE]).end;
     assert.equal(end.status, 0, end.stderr);
     assert.deepEqual(commandsOf(place, "steer"), []);
     assert.deepEqual(commandsOf(place, "abort"), []);

@@ -49,9 +49,6 @@ interface TriageData extends TriageLog {
   triages: number;
   plan: string | undefined;
   splitSuggested: string | null | undefined;
-  pr: number | null | undefined;
-  headSha: string | null | undefined;
-  implemented: boolean | undefined;
 }
 
 // Counts this run on a copy of `st`, and gives the stop that keeps the
@@ -102,24 +99,14 @@ function countedOf(saved: State): TriageLog & { triages: number } {
   return counted;
 }
 
-type TriageHandoff = Pick<
-  TriageData,
-  "plan" | "splitSuggested" | "pr" | "headSha" | "implemented"
->;
+type TriageHandoff = Pick<TriageData, "plan" | "splitSuggested">;
 
 // The saved hand-off fields; a malformed field reads as missing.
 function handoffOf(saved: State): TriageHandoff {
-  const { plan, splitSuggested, pr, headSha, implemented } = saved;
-  let done: boolean | undefined;
-  if (typeof implemented === "boolean") {
-    done = implemented;
-  }
+  const { plan, splitSuggested } = saved;
   return {
     plan: textOr(plan, undefined),
     splitSuggested: textOr(splitSuggested, nullOr(splitSuggested)),
-    pr: numberOr(pr, nullOr(pr)),
-    headSha: textOr(headSha, nullOr(headSha)),
-    implemented: done,
   };
 }
 

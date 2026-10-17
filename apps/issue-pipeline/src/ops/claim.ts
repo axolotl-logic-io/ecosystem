@@ -13,7 +13,7 @@ import type { LaneRequest } from "../claims.ts";
 import { laneOf, raceForClaim } from "../claims.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { paths } from "../config.ts";
+import { paths, wikiCfg } from "../config.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError, shell } from "../process.ts";
@@ -152,7 +152,7 @@ function take(
   }
   let missing: string[] = [];
   if (begun.restarted) {
-    missing = specFilesMissing(wt, leased);
+    missing = specFilesMissing(wt, leased, wikiCfg(cfg)?.dir ?? "wiki");
   }
   const checked = checkedSpecFiles(leased, missing, new Date());
   const { state, specMissing } = checked;

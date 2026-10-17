@@ -229,10 +229,22 @@ function openPr(cfg: Config, request: unknown): OpenReply {
   return { pr, ...pushed };
 }
 
+// gh's answer to a PR's state ("OPEN", "CLOSED" or "MERGED").
+const PR_STATE = z.looseObject({ state: z.string() });
+
+function isOpen(cfg: Config, pr: number): boolean {
+  const args = ["pr", "view", String(pr), "-R", cfg.repo, "--json", "state"];
+  return PR_STATE.safeParse(ghJson(cfg, args)).data?.state === "OPEN";
+}
+
 // Closes the draft PR of a change that lives only in the wiki, saying where
-// the change is.
+// the change is. A PR that isn't open is left as it is, so a second close
+// posts nothing.
 function closePr(cfg: Config, request: unknown): CloseReply {
   const req = parsed(CLOSE_REQUEST, "close-pr request", request);
+  if (!isOpen(cfg, req.pr)) {
+    return { pr: req.pr, closed: true };
+  }
   const branch = paths.branch(req.number);
   const text = `This change lives only in the wiki, on the wiki branch \`${branch}\`, so this PR has no code to merge and is closed. The pipeline reopens it if a later fix changes code.`;
   const comment = signed(COORDINATOR, text);

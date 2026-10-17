@@ -11,10 +11,11 @@ import { test } from "node:test";
 import { outputEnd, TURN_OUTPUT, turns } from "./fake-rpc-pi.mjs";
 import {
   flagValue,
+  PASS_VERDICT,
   piStarts,
-  READY_SPEC,
   repliesAt,
   runJob,
+  SWEEP_STAGE,
   sessionOf,
   setUp,
   startJob,
@@ -67,9 +68,9 @@ function contextLines(place) {
 }
 
 test("an ended session's line holds its role, stage, model, end, context measures and usage, and no text", () => {
-  const events = [...turns([FIRST, PEAK, LAST]), outputEnd(READY_SPEC)];
-  const place = setUp(repliesAt("spec"), { events }, LIMITS);
-  const r = runJob(place, ["--stage", "spec"]);
+  const events = [...turns([FIRST, PEAK, LAST]), outputEnd(PASS_VERDICT)];
+  const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
+  const r = runJob(place, ["--stage", SWEEP_STAGE]);
   assert.equal(r.status, 0, r.stderr);
   const [line, ...more] = contextLines(place);
   assert.deepEqual(more, []);
@@ -82,10 +83,10 @@ test("an ended session's line holds its role, stage, model, end, context measure
     {
       at: null,
       issue: ISSUE,
-      stage: "spec",
+      stage: SWEEP_STAGE,
       key: launch.key,
-      role: "spec",
-      agent: "issue-pipeline-specifier",
+      role: "verifier",
+      agent: "issue-pipeline-reader",
       model: flagValue(start.argv, "--model"),
       ended: "ok",
       peakContext: PEAK,
@@ -100,7 +101,7 @@ test("an ended session's line holds its role, stage, model, end, context measure
     path.join(place.runDir, "context.jsonl"),
     "utf8",
   );
-  assert.ok(!text.includes(READY_SPEC.spec), text);
+  assert.ok(!text.includes(PASS_VERDICT.reason), text);
 });
 
 test(
@@ -130,8 +131,8 @@ test(
   HANG_GUARD,
   async () => {
     const events = [...turns([FIRST]), "wait"];
-    const place = setUp(repliesAt("spec"), { events }, LIMITS);
-    const job = startJob(place, ["--stage", "spec"]);
+    const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
+    const job = startJob(place, ["--stage", SWEEP_STAGE]);
     await waitFor(() => sessionOf(statusOf(place))?.turns === 1);
     job.child.kill("SIGTERM");
     await job.end;
@@ -139,7 +140,7 @@ test(
     assert.deepEqual(more, []);
     assert.equal(line.key, sessionOf(statusOf(place)).key);
     assert.equal(line.ended, "killed");
-    assert.equal(line.role, "spec");
+    assert.equal(line.role, "verifier");
     assert.equal(line.turns, 1);
     assert.equal(line.firstContext, FIRST);
     assert.equal(line.peakContext, FIRST);

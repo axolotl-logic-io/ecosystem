@@ -8,9 +8,10 @@ import {
   agentEnvOf,
   boundaryOf,
   codeAccessOf,
+  commitsOf,
+  heldToLimits,
   rolesOf,
   STAGE_WIKI_ACCESS,
-  sessionRoleOf,
 } from "../src/job/roles.ts";
 import { STAGE_ORDER } from "../src/workflow/sweep-config.ts";
 
@@ -20,9 +21,9 @@ const COMMIT_SCOPE_ENV = "ISSUE_PIPELINE_COMMIT_SCOPE";
 // lists them under "Roles".
 /** @typedef {import("../src/workflow/stages/types.ts").StageName} StageName */
 /** @type {StageName[]} */
-const READER_STAGES = ["triage", "spec", "review", "accept", "security"];
+const READER_STAGES = ["triage", "review", "accept", "security"];
 /** @type {StageName[]} */
-const WRITER_STAGES = ["implement", "fix", "open-pr", "sync", "checks"];
+const WRITER_STAGES = ["spec", "implement", "fix", "open-pr", "sync", "checks"];
 /** @type {StageName[]} */
 const MERGER_STAGES = ["merge", "publish"];
 
@@ -101,15 +102,18 @@ test("each stage's boundary has the wiki's role, and no stage's session env name
   assert.deepEqual(new Set(listed), new Set(STAGE_ORDER));
 });
 
-test("only the writer agent's sessions run as writer", () => {
-  assert.equal(sessionRoleOf("issue-pipeline-writer"), "writer");
+test("the writer and specifier agents' sessions commit, and only the writer's are held to the context limits", () => {
+  assert.equal(commitsOf("issue-pipeline-writer"), true);
+  assert.equal(heldToLimits("issue-pipeline-writer"), true);
+  assert.equal(commitsOf("issue-pipeline-specifier"), true);
+  assert.equal(heldToLimits("issue-pipeline-specifier"), false);
   for (const agent of [
     "issue-pipeline-reader",
-    "issue-pipeline-specifier",
     "issue-pipeline-ops",
     "anything",
   ]) {
-    assert.equal(sessionRoleOf(agent), "reader", agent);
+    assert.equal(commitsOf(agent), false, agent);
+    assert.equal(heldToLimits(agent), false, agent);
   }
 });
 
@@ -146,13 +150,17 @@ test("no session env inherits a commit scope from the job's own env", () => {
   assert.deepEqual(agentEnvOf(rolesOf({}), scoped), PLAIN);
 });
 
-test("spec, merge and publish write the wiki, and, until the spec writer commits its updates, implement, fix and checks too; every stage at least reads it", () => {
+test("only spec, merge and publish write the wiki; every stage at least reads it", () => {
   const writers = Object.entries(STAGE_WIKI_ACCESS)
     .filter(([, access]) => access === "write")
     .map(([stage]) => stage)
     .sort();
-  const bridged = ["checks", "fix", "implement"];
-  assert.deepEqual(writers, [...bridged, "merge", "publish", "spec"].sort());
+  assert.deepEqual(writers, ["merge", "publish", "spec"]);
+  /** @type {StageName[]} */
+  const bridged = ["implement", "fix", "checks"];
+  for (const stage of bridged) {
+    assert.equal(STAGE_WIKI_ACCESS[stage], "read", stage);
+  }
   assert.deepEqual(
     new Set(Object.keys(STAGE_WIKI_ACCESS)),
     new Set(STAGE_ORDER),

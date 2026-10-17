@@ -1,9 +1,10 @@
 // @ts-check
 // What a role's locate reads besides the saved state (RoleContext), for issue
 // #7: a repo config with the sweep's settings, its budgets and models as a
-// job reads them, the claim's paths, and a fixed clock.
+// job reads them, the claim's paths, and a fixed clock; and the job's config.
 import { sweepSettings } from "../src/workflow/sweep-config.ts";
 
+/** @import { Config } from "../src/config.ts" */
 /** @import { RoleContext } from "../src/roles/walk.ts" */
 /** @import { SweepConfig } from "../src/workflow/stages/types.ts" */
 
@@ -47,4 +48,22 @@ function roleContext(fields = {}) {
   };
 }
 
-export { ROLE_CLOCK, roleContext };
+// The job's config a role's run reads, for a role whose checks read none.
+/** @type {Config} */
+const JOB_CONFIG = {
+  account: "bot",
+  allowedUsers: ["alice"],
+  baseBranch: "integration",
+  claimWaitSeconds: [0, 0],
+  commands: { test: "true" },
+  contextLimits: { soft: 150_000, hard: 175_000 },
+  leaseHours: 3,
+  maxContinuations: 1,
+  issueTokenBudget: 1_000_000,
+  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
+  practices: [],
+  repo: "o/r",
+  slug: "o__r",
+};
+
+export { JOB_CONFIG, ROLE_CLOCK, roleContext };

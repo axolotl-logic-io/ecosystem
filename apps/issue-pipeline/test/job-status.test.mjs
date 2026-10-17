@@ -13,10 +13,11 @@ import {
   turns,
 } from "./fake-rpc-pi.mjs";
 import {
+  PASS_VERDICT,
   piStarts,
-  READY_SPEC,
   repliesAt,
   runJob,
+  SWEEP_STAGE,
   sessionOf,
   setUp,
   startJob,
@@ -27,16 +28,17 @@ import {
 } from "./job-test-kit.mjs";
 import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
-const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
+const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
 const SPEC_BUDGET = 80_000;
 const FIRST_CONTEXT = 50_000;
 const LAST_CONTEXT = 51_000;
-// A spec writer's turn context past its 80k budget and under the hard limit.
-const OVER_SPEC_BUDGET = 90_000;
+// An acceptance verifier's turn context past its 60k budget and under the
+// hard limit.
+const OVER_VERIFIER_BUDGET = 90_000;
 const IMPLEMENTER_BUDGET = 150_000;
 
 test("while a session waits, job.json shows its pid, session, last event and tool failures", async () => {
-  const place = setUp(repliesAt("spec"), {
+  const place = setUp(repliesAt(SWEEP_STAGE), {
     events: [toolEnd(true), toolEnd(true), "wait"],
   });
   const job = startJob(place, STAGE_ARGS);
@@ -45,7 +47,7 @@ test("while a session waits, job.json shows its pid, session, last event and too
   assert.equal(status.version, 1);
   assert.equal(status.pid, job.child.pid);
   assert.equal(status.issue, ISSUE);
-  assert.equal(status.stage, "spec");
+  assert.equal(status.stage, SWEEP_STAGE);
   assert.equal(status.lane, "L");
   assert.equal(status.outcome, null);
   assert.ok(Date.parse(status.startedAt) > 0);
@@ -61,7 +63,7 @@ test("while a session waits, job.json shows its pid, session, last event and too
 });
 
 test("job.json counts consecutive failures of the same tool and keeps the last one's tool and error (#235)", async () => {
-  const place = setUp(repliesAt("spec"), {
+  const place = setUp(repliesAt(SWEEP_STAGE), {
     events: [
       toolEnd(true, "bash", "exit 1"),
       toolEnd(true, "read", "ENOENT: a.ts"),
@@ -84,11 +86,11 @@ test("job.json counts consecutive failures of the same tool and keeps the last o
 });
 
 test("a finished job's file counts only the last tool failures and records each outcome", () => {
-  const place = setUp(repliesAt("spec"), {
+  const place = setUp(repliesAt(SWEEP_STAGE), {
     events: [
       toolEnd(true),
       toolEnd(true),
-      outputEnd(READY_SPEC),
+      outputEnd(PASS_VERDICT),
       toolEnd(true),
       messageEnd(USAGE),
     ],
@@ -102,7 +104,7 @@ test("a finished job's file counts only the last tool failures and records each 
   assert.equal(launch.toolFailures, 1);
   assert.equal(launch.outcome, "ok");
   assert.deepEqual(launch.usage, USAGE);
-  // The spec writer is no writer session, so it has no watchdog max.
+  // The verifier is no writer session, so it has no watchdog max.
   assert.equal(launch.tokenBudget, null);
   assert.equal(launch.contextTokens, USAGE_TOTAL);
   const ops = status.launches.filter(
@@ -122,13 +124,13 @@ test("a finished job's file counts only the last tool failures and records each 
 });
 
 test("a non-writer session past its role's budget records no token budget, so the watchdog never stops it", () => {
-  const events = [...turns([OVER_SPEC_BUDGET]), outputEnd(READY_SPEC)];
-  const place = setUp(repliesAt("spec"), { events });
+  const events = [...turns([OVER_VERIFIER_BUDGET]), outputEnd(PASS_VERDICT)];
+  const place = setUp(repliesAt(SWEEP_STAGE), { events });
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
   const launch = sessionOf(statusOf(place));
   assert.equal(launch.outcome, "ok");
-  assert.equal(launch.contextTokens, OVER_SPEC_BUDGET + TURN_OUTPUT);
+  assert.equal(launch.contextTokens, OVER_VERIFIER_BUDGET + TURN_OUTPUT);
   assert.equal(launch.tokenBudget, null);
 });
 

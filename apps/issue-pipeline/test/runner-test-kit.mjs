@@ -7,8 +7,8 @@
 // write; a restart then runs again from the store alone, as a job started
 // afresh would. uninterrupted gives the reference run. Usage entries go to
 // the world's `usages`, outside `calls` and the kill count. A test may run
-// its own role over its own start state, context, sessions and op fakes; the
-// toys' are the defaults.
+// its own role over its own start state, context, sessions, and op and
+// check fakes; the toys' are the defaults.
 import { spawnSync } from "node:child_process";
 import { runLinear, runMachine } from "../src/job/runner.ts";
 import { installFakeGh } from "./fake-gh.mjs";
@@ -39,6 +39,7 @@ const gh = installFakeGh();
  * @property {() => State} [start] the store's state before the first run
  * @property {RoleContext} [context] what the role's locate reads besides the state
  * @property {Readonly<Record<string, OpFake>>} [ops] fakes for the ops they name; any other op is a toy post
+ * @property {Readonly<Record<string, OpFake>>} [checks] fakes for the checks they name; any other is the toy verify
  * @property {(saved: State) => boolean} [restarts] whether a killed run starts again, as the claim would decide
  */
 
@@ -132,8 +133,12 @@ function sessionReply(options, effect) {
   return session ?? REPLIED;
 }
 
-/** @param {WorldOptions} options @param {CheckEffect} effect @returns {Act} */
-function checkAct(options, effect) {
+/** @param {Store} store @param {WorldOptions} options @param {CheckEffect} effect @returns {Act} */
+function checkAct(store, options, effect) {
+  const { [effect.check]: fake } = options.checks ?? {};
+  if (fake !== undefined) {
+    return fake(store, effect.payload);
+  }
   if (options.verifyFails === true) {
     return { reply: { ok: false, error: "verify broke" } };
   }
@@ -216,7 +221,10 @@ function world(options = {}) {
         return run(entry, act);
       },
       check: (effect) =>
-        run({ kind: "check", name: effect.check }, checkAct(options, effect)),
+        run(
+          { kind: "check", name: effect.check },
+          checkAct(store, options, effect),
+        ),
       session: async (effect) => ({
         outcome: await run(
           { kind: "session", name: effect.name },

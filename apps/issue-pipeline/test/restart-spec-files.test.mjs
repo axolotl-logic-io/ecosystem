@@ -42,9 +42,10 @@ const FILES = ["src/thing.ts", "src/old/**", "docs/"];
 const ISSUE = 7;
 const NOW = new Date("2026-10-16T20:00:00Z");
 const MISSING = ["test/thing-kit.mjs", "src/thing.ts"];
+const WIKI_DIR = "wiki";
 
 test("the documented files are the Tests section's paths and the listed non-glob files", () => {
-  assert.deepEqual(documentedFiles(SPEC, FILES), [
+  assert.deepEqual(documentedFiles(SPEC, FILES, WIKI_DIR), [
     "test/thing.test.mjs",
     "test/thing-kit.mjs",
     "src/thing.ts",
@@ -53,13 +54,21 @@ test("the documented files are the Tests section's paths and the listed non-glob
 
 test("the missing files are those the branch lacks, by path or app-relative path", () => {
   const tracked = ["apps/issue-pipeline/test/thing.test.mjs", "README.md"];
-  assert.deepEqual(missingSpecFiles(SPEC, FILES, tracked), MISSING);
+  assert.deepEqual(missingSpecFiles(SPEC, FILES, tracked, WIKI_DIR), MISSING);
 });
 
-test("a branch's commit is checked for the documented files", () => {
-  const wt = path.join(d, "wt");
-  fs.mkdirSync(path.join(wt, "test"), { recursive: true });
-  fs.writeFileSync(path.join(wt, "test", "thing.test.mjs"), "");
+/**
+ * A git checkout at `name` whose one commit holds `files`, each empty.
+ * @param {string} name
+ * @param {readonly string[]} files
+ * @returns {string}
+ */
+function committed(name, files) {
+  const wt = path.join(d, name);
+  for (const file of files) {
+    fs.mkdirSync(path.dirname(path.join(wt, file)), { recursive: true });
+    fs.writeFileSync(path.join(wt, file), "");
+  }
   for (const args of [
     ["init", "-q"],
     ["add", "."],
@@ -67,9 +76,34 @@ test("a branch's commit is checked for the documented files", () => {
   ]) {
     spawnSync("git", ["-C", wt, ...args], { encoding: "utf8" });
   }
+  return wt;
+}
+
+test("a branch's commit is checked for the documented files", () => {
+  const wt = committed("wt", ["test/thing.test.mjs"]);
   const state = { stage: "review", spec: SPEC, files: FILES };
-  assert.deepEqual(specFilesMissing(wt, state), MISSING);
-  assert.deepEqual(specFilesMissing(wt, { ...state, stage: "spec" }), []);
+  assert.deepEqual(specFilesMissing(wt, state, WIKI_DIR), MISSING);
+  const atSpec = { ...state, stage: "spec" };
+  assert.deepEqual(specFilesMissing(wt, atSpec, WIKI_DIR), []);
+});
+
+test("a restart of a spec writer's spec that lists wiki pages is not stopped for them", () => {
+  const wt = committed("wt-wiki", ["test/thing.test.mjs", ...MISSING]);
+  const spec = SPEC.replace(
+    "## Out of scope",
+    "- `wiki/Tested.md`.\n\n## Out of scope",
+  );
+  const state = {
+    stage: "implement",
+    spec,
+    files: [...FILES, "wiki/Page.md"],
+    specWritesTests: true,
+  };
+  const missing = specFilesMissing(wt, state, WIKI_DIR);
+  assert.deepEqual(missing, []);
+  const { specMissing } = checkedSpecFiles(state, missing, NOW);
+  const step = claimStep(ISSUE, { ...claimAt("implement"), specMissing });
+  assert.equal(step.kind === "claimed" && step.stop, null);
 });
 
 test("missing files of a spec whose writer wrote its tests stop the restart", () => {

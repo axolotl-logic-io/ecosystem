@@ -31,11 +31,19 @@ function namedPaths(lines: readonly string[]): string[] {
 
 // The files `spec` documents: the test files its Tests section names, and the
 // paths (not globs) its `files` lists. Each path once, in the order found.
-function documentedFiles(spec: string, files: readonly string[]): string[] {
+// Pages under `wikiDir`, the wiki checkout's folder, are left out: they are
+// no test or stub, and the code checkout never tracks them.
+function documentedFiles(
+  spec: string,
+  files: readonly string[],
+  wikiDir: string,
+): string[] {
   const listed = files.filter(
     (file) => !(GLOB.test(file) || file.endsWith("/")),
   );
-  return [...new Set([...namedPaths(specSection(spec, "Tests")), ...listed])];
+  const named = [...namedPaths(specSection(spec, "Tests")), ...listed];
+  const wikiPrefix = `${wikiDir}/`;
+  return [...new Set(named.filter((file) => !file.startsWith(wikiPrefix)))];
 }
 
 // Whether `file` is in `tracked`, by its path from the repo root or, for a
@@ -45,13 +53,14 @@ function isTracked(tracked: readonly string[], file: string): boolean {
 }
 
 // The files `spec` documents that `tracked`, the paths of the branch's
-// commit, lacks.
+// commit, lacks; `wikiDir` is the wiki checkout's folder, as documentedFiles.
 function missingSpecFiles(
   spec: string,
   files: readonly string[],
   tracked: readonly string[],
+  wikiDir: string,
 ): string[] {
-  return documentedFiles(spec, files).filter(
+  return documentedFiles(spec, files, wikiDir).filter(
     (file) => !isTracked(tracked, file),
   );
 }

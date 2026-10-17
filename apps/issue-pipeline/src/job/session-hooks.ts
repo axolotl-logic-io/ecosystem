@@ -11,7 +11,7 @@ import type { Control, LiveLaunch } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { commitEnvOf } from "./pipeline-commit.ts";
 import type { EnvSource } from "./roles.ts";
-import { agentEnvOf, commitScopeOf, rolesOf, sessionRoleOf } from "./roles.ts";
+import { agentEnvOf, commitScopeOf, commitsOf, rolesOf } from "./roles.ts";
 import type { JobStatus, LaunchStart } from "./status.ts";
 
 // What the job's launches report to.
@@ -50,7 +50,7 @@ function hooksOf(
     contextStopped: status.contextStopped,
     sessionEnded: contextLogOf(paths.runDir(cfg, args.issue), args, watch),
     env: (agent: string, key: string): Readonly<Record<string, string>> => {
-      if (sessionRoleOf(agent) !== "writer") {
+      if (!commitsOf(agent)) {
         return shared;
       }
       const { socket } = control;

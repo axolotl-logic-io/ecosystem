@@ -15,7 +15,7 @@ import type { LiveLaunch } from "./control.ts";
 import { stopLaunch } from "./control.ts";
 import type { SessionLaunch, SessionRaw, Usage } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
-import { sessionRoleOf } from "./roles.ts";
+import { heldToLimits } from "./roles.ts";
 
 // The context a writer session may pass once, to be steered (`soft`), and
 // the one it may never pass (`hard`), in tokens.
@@ -90,7 +90,7 @@ function watchContext(
   agent: string,
   live: LiveLaunch,
 ): ContextWatch {
-  if (sessionRoleOf(agent) !== "writer") {
+  if (!heldToLimits(agent)) {
     return UNWATCHED;
   }
   const { limits } = hold;

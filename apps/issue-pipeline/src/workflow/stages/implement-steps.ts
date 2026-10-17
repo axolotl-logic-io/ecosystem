@@ -23,16 +23,12 @@ function commandsClause(commands: StageCommands): string {
   return clause;
 }
 
-// The step that commits the wiki updates, or "" when there is no wiki. A
-// stage job's implementer commits them with `pipeline_commit`, which commits
-// the wiki checkout's changes too, until the spec writer makes them (#300
-// part 5d).
+// The step that commits the wiki updates, or "" when there is no wiki or
+// the implementer runs in a stage job, where the spec writer commits them
+// and the implementer only reads the wiki.
 function wikiStep(wiki: string | null, committer: Committer): string {
-  if (!isSet(wiki)) {
+  if (!isSet(wiki) || committer === "pipeline_commit") {
     return "";
-  }
-  if (committer === "pipeline_commit") {
-    return `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout ${wiki}: edit its pages and commit them with \`pipeline_commit\`, which commits the wiki checkout's changes too (same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`;
   }
   return `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${wiki} add -A && git -C ${wiki} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`;
 }

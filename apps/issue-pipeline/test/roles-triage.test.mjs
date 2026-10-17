@@ -10,7 +10,6 @@ import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
 import {
   killedTriage,
-  PR,
   replyOf,
   TRIAGE_OPS,
   triage,
@@ -33,12 +32,10 @@ const LONG_PLAN = 5000;
 // The kept plan: its first PLAN_LIMIT characters and the clip's ellipsis.
 const CLIPPED_PLAN = `${"p".repeat(PLAN_LIMIT)}…`;
 const MAX_TRIAGES = 4;
-const OPENED_PR = 9;
 // reply, task, locate and script.
 const ROLE_MODULES = 4;
 const REJECT_COMMENT = /isn't one the pipeline should take on: far too big/u;
 const TAKING_COMMENT = /Taking this issue\. Small\./u;
-const PR_FAILED = /could not open the draft PR yet: gh down/u;
 
 /** @param {readonly string[][]} writes @returns {string[]} the triage-keyed comments posted */
 function triagePosts(writes) {
@@ -92,40 +89,19 @@ test("a sub-issue's split stops with triage-rejected and the reject comment", as
   assert.deepEqual(more, []);
 });
 
-test("a ready issue is taken, gets its draft PR, and is saved at spec", async () => {
-  /** @type {unknown[]} */
-  const seen = [];
+test("a ready issue is taken and saved at spec, with no start-pr and its pr unchanged", async () => {
   const plan = "p".repeat(LONG_PLAN);
   const run = await triage({
     reply: replyOf({ decision: "ready", reason: "Small.", plan }),
-    ops: { "start-pr": seeing(seen, TRIAGE_OPS["start-pr"]) },
   });
   assert.deepEqual(run.end, { kind: "saved", stage: "spec" });
   const { stage, plan: kept, pr, lease } = run.saved;
   assert.equal(stage, "spec");
   assert.equal(kept, CLIPPED_PLAN);
-  assert.equal(pr, PR);
+  assert.equal(pr, undefined);
   assert.equal(lease, null);
-  assert.deepEqual(seen, [{ number: 7, plan: CLIPPED_PLAN }]);
-  assert.match(String(triagePosts(run.writes)[0]), TAKING_COMMENT);
-});
-
-test("a ready issue with a PR opens none", async () => {
-  const reply = replyOf({ decision: "ready", reason: "Small." });
-  const run = await triage({ reply, start: { pr: OPENED_PR } });
-  assert.deepEqual(run.end, { kind: "saved", stage: "spec" });
   assert.equal(sent(run, "start-pr"), false);
-  assert.equal(run.saved.pr, OPENED_PR);
-});
-
-test("a failed draft PR is only logged, and the issue is still saved at spec", async () => {
-  const run = await triage({
-    reply: replyOf({ decision: "ready", reason: "Small." }),
-    ops: { "start-pr": () => ({ reply: { ok: false, error: "gh down" } }) },
-  });
-  assert.deepEqual(run.end, { kind: "saved", stage: "spec" });
-  const log = JSON.stringify(run.saved.log);
-  assert.match(log, PR_FAILED);
+  assert.match(String(triagePosts(run.writes)[0]), TAKING_COMMENT);
 });
 
 test("a large issue is saved at spec with its split suggested, and nothing opened", async () => {

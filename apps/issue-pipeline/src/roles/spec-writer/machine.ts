@@ -3,9 +3,11 @@
 // pure transition. Only `session` runs a model. Ops answer `ok`, the session
 // `replied` or `failed`, and a state that routes on what it found is a check
 // that names its result. The ops and checks are carried out by the job; this
-// module only names them with their payloads. Not registered yet (#334).
+// module only names them with their payloads. The registry runs it for
+// `--stage spec` (src/roles/registry.ts, #334).
 
 import type {
+  Edge,
   End,
   Guard,
   MachineState,
@@ -20,6 +22,7 @@ import type { Machine } from "../walk.ts";
 import {
   decided,
   failed,
+  prOpened,
   published,
   read,
   readied,
@@ -29,6 +32,7 @@ import {
 } from "./edges.ts";
 import type { SpecData, SpecState } from "./locate.ts";
 import { locate } from "./locate.ts";
+import { prBodyOf } from "./pr.ts";
 import { FAILED_TWICE, specSession } from "./task.ts";
 
 // The results the states answer with.
@@ -83,7 +87,7 @@ function check(
 function op(
   name: string,
   payload: (data: SpecData) => Payload,
-  next: SpecState,
+  edge: Edge<SpecState, SpecData>,
 ): Spec {
   return {
     kind: "script",
@@ -92,7 +96,7 @@ function op(
       op: name,
       payload: { number: data.issue, ...payload(data) },
     }),
-    on: { ok: { to: next } },
+    on: { ok: edge },
   };
 }
 
@@ -197,12 +201,12 @@ const SCRIPT_STATES = {
       const { questions, spec } = decided(data);
       return { by: data.by, questions, spec };
     },
-    "asked",
+    { to: "asked" },
   ),
   split: op(
     "split",
     (data: SpecData) => ({ by: data.by, subIssues: decided(data).subIssues }),
-    "split-opened",
+    { to: "split-opened" },
   ),
   "stop-no-work": op(
     "post",
@@ -211,7 +215,7 @@ const SCRIPT_STATES = {
       const body = decided(data).spec;
       return { comments: [{ number, by, body, key: NO_WORK_KEY }] };
     },
-    "no-work",
+    { to: "no-work" },
   ),
   "publish-spec": check(
     "publish-spec",
@@ -230,11 +234,9 @@ const SCRIPT_STATES = {
   "open-pr": op(
     "start-pr",
     (data: SpecData) => ({
-      spec: data.spec,
-      specFile: data.specFile,
-      files: data.files,
+      body: prBodyOf(data.issue, data.settings.cfg.repo, data.spec ?? ""),
     }),
-    "pr-opened",
+    { to: "pr-opened", apply: prOpened },
   ),
   "close-old-pr": check("close-old-pr", (data: SpecData) => ({ by: data.by }), {
     ok: { to: "wiki-only" },
@@ -284,6 +286,10 @@ const specWriterMachine: Machine<SpecState, SpecResult, SpecData> = {
     "interfaces",
     "specTestsSha",
     "noTestsReason",
+    "specWritesTests",
+    "pr",
+    "headSha",
+    "implemented",
   ],
   checkpoints: ["startSha", "startWikiSha", "attempts"],
 };

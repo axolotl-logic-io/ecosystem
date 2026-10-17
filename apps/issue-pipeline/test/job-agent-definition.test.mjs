@@ -187,6 +187,14 @@ test("the specifier runs pi in RPC mode as its definition says", () => {
   );
 });
 
+// It writes its failing tests, their stubs and the wiki edits (#334).
+test("the specifier may edit, write and run commands, and keeps the web tools", () => {
+  const { tools } = definitionOf("issue-pipeline-specifier");
+  for (const tool of ["edit", "write", "bash", "web_search"]) {
+    assert.ok(tools.includes(tool), tool);
+  }
+});
+
 test("a definition without project context or a tools list runs with -nc and pi's default tools", () => {
   const definition = parsed(
     "---\nname: x\ninheritProjectContext: false\ninheritSkills: true\n---\nBe brief.\n",

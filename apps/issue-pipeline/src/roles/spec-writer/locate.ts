@@ -48,14 +48,19 @@ type SpecEntry = "claim" | "open-pr" | "close-old-pr";
 
 // What the run hands to the next role: the spec (or where the whole of it
 // is), the files it touches, its interfaces, the head with its tests
-// committed, and why it has no tests, if it has none.
+// committed, why it has no tests, if it has none, that this role wrote the
+// tests, and the draft PR with its head, not yet implemented.
 interface SpecHandoff {
   spec: string | undefined;
-  specFile: string | undefined;
+  specFile: string | null | undefined;
   files: string[] | undefined;
   interfaces: SpecInterface[] | undefined;
   specTestsSha: string | undefined;
   noTestsReason: string | null | undefined;
+  specWritesTests: boolean | undefined;
+  pr: number | null | undefined;
+  headSha: string | null | undefined;
+  implemented: boolean | undefined;
 }
 
 // A start head: the sha, null for a branch this stage created, or
@@ -96,8 +101,8 @@ function nullOr(value: unknown): null | undefined {
   return undefined;
 }
 
-function filled(value: string | undefined): boolean {
-  return value !== undefined && value !== "";
+function filled(value: string | null | undefined): boolean {
+  return typeof value === "string" && value !== "";
 }
 
 // The saved checkpoints; a missing or malformed one reads as missing.
@@ -120,23 +125,39 @@ function checkpointsOf(
 function handoffOf(saved: State): SpecHandoff {
   const { spec, specFile, files, interfaces, specTestsSha, noTestsReason } =
     saved;
+  const { specWritesTests, pr, headSha, implemented } = saved;
   let kept: string[] | undefined;
   if (isStrings(files)) {
     kept = files;
   }
+  let prNumber: number | null | undefined = nullOr(pr);
+  if (typeof pr === "number") {
+    prNumber = pr;
+  }
+  let built: boolean | undefined;
+  if (typeof implemented === "boolean") {
+    built = implemented;
+  }
   return {
     spec: textOr(spec, undefined),
-    specFile: textOr(specFile, undefined),
+    specFile: textOr(specFile, nullOr(specFile)),
     files: kept,
     interfaces: interfacesOf(interfaces),
     specTestsSha: textOr(specTestsSha, undefined),
     noTestsReason: textOr(noTestsReason, nullOr(noTestsReason)),
+    specWritesTests,
+    pr: prNumber,
+    headSha: textOr(headSha, nullOr(headSha)),
+    implemented: built,
   };
 }
 
 // Whether the change is wiki-only: it has no tests, and every file it
 // touches is a wiki page (the commit check's rule, check.ts).
-function wikiOnly(handoff: SpecHandoff, paths: ItemPaths): boolean {
+function wikiOnly(
+  handoff: Pick<SpecHandoff, "files" | "noTestsReason">,
+  paths: ItemPaths,
+): boolean {
   const prefix = `${wikiDirOf(paths)}/`;
   return (
     typeof handoff.noTestsReason === "string" &&
@@ -188,4 +209,4 @@ function locate(
 }
 
 export type { SpecData, SpecHandoff, SpecState };
-export { locate };
+export { locate, wikiOnly };

@@ -93,19 +93,19 @@ test("a triage job gets docs/ to read, and its edits there are lost as docs/ pat
   assert.equal(fs.existsSync(checkoutOf(place.root, "triage")), false);
 });
 
-test("an implement job whose only commit is in docs/ still runs its exit push", () => {
+test("a spec job whose only commit is in docs/ still runs its exit push", () => {
   const place = setUp(
-    { ...repliesAt("implement"), ...EXIT_PUSH },
+    { ...repliesAt("spec"), ...EXIT_PUSH },
     { ...SPEC_SESSION, commit: "docs/Page.md" },
     {},
     { wiki: true },
   );
-  const r = runJob(place, ["--stage", "implement"]);
+  const r = runJob(place, ["--stage", "spec"]);
   assert.equal(r.status, 0, r.stderr);
   const [push] = pushes(place);
   assert.deepEqual(push?.checkout, {
     issue: ISSUE,
-    dir: repoOf(place.root, "implement"),
+    dir: repoOf(place.root, "spec"),
   });
   assert.deepEqual(statusOf(place).lostChanges, []);
 });
@@ -113,7 +113,7 @@ test("an implement job whose only commit is in docs/ still runs its exit push", 
 // A writer session's pipeline_commit routes repo/ and docs/ pathspecs from
 // its scope's root, so the root must be the job's folder (#338).
 const SCOPES = [
-  { wiki: true, docs: { dir: "docs", access: "write" }, name: "with" },
+  { wiki: true, docs: { dir: "docs", access: "read" }, name: "with" },
   { wiki: false, docs: null, name: "without" },
 ];
 for (const { wiki, docs, name } of SCOPES) {
@@ -137,8 +137,15 @@ const PREAMBLES = [
   {
     stage: "implement",
     script: SPEC_SESSION,
-    access: "write access",
+    access: "read access",
     facts: ["`git -C repo add -A`"],
+  },
+  // The registered role that writes the wiki.
+  {
+    stage: "spec",
+    script: SPEC_SESSION,
+    access: "write access",
+    facts: [],
   },
   // A stage that runs a registered role.
   {

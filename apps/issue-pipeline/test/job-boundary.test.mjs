@@ -9,7 +9,8 @@ import {
   piStarts,
   repliesAt,
   runJob,
-  SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   setUp,
 } from "./job-test-kit.mjs";
 
@@ -43,25 +44,25 @@ const BOUNDARY_ROLES = {
 // checkouts: the writer writes code, and the spec writer and merger write
 // the wiki.
 const EXPECTED = {
-  spec: {
+  accept: {
     role: "reader",
     network: ["api.anthropic.com"],
-    access: { repo: "read", docs: "write" },
+    access: { repo: "read", docs: "read" },
+  },
+  spec: {
+    role: "writer",
+    network: ["example.com"],
+    access: { repo: "write", docs: "write" },
   },
   implement: {
     role: "writer",
     network: ["example.com"],
-    access: { repo: "write", docs: "write" },
+    access: { repo: "write", docs: "read" },
   },
   merge: {
     role: "merger",
     network: ["api.github.com"],
     access: { repo: "read", docs: "write" },
-  },
-  review: {
-    role: "reader",
-    network: ["api.anthropic.com"],
-    access: { repo: "read", docs: "read" },
   },
 };
 const COMMIT_EXTENSION = /\/pipeline-commit\.mjs$/u;
@@ -89,12 +90,12 @@ function isSorted(names) {
 
 /** @param {object} jobRoles @param {string} stage */
 function placeAt(jobRoles, stage) {
-  return setUp(repliesAt(stage), SPEC_SESSION, { jobRoles });
+  return setUp(repliesAt(stage), SWEEP_SESSION, { jobRoles });
 }
 
 test("a reader session's pi gets none of the gh token variables nor a role's token", () => {
-  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "spec");
-  const r = runJob(place, ["--stage", "spec"], TOKENS_ENV);
+  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, SWEEP_STAGE);
+  const r = runJob(place, ["--stage", SWEEP_STAGE], TOKENS_ENV);
   assert.equal(r.status, 0, r.stderr);
   const [start] = piStarts(place);
   for (const name of [...GH_VARS, "W_TOKEN"]) {
@@ -125,9 +126,21 @@ test("a writer session's pi loads pipeline_commit with its commit scope", () => 
   assert.ok(start.env.includes(COMMIT_SCOPE_ENV));
 });
 
+test("a spec session's pi commits through pipeline_commit and gets no gh token", () => {
+  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "spec");
+  runJob(place, ["--stage", "spec"], TOKENS_ENV);
+  const [start] = piStarts(place);
+  assert.ok(toolsOf(start.argv).includes("pipeline_commit"));
+  assert.ok(start.env.includes(COMMIT_SCOPE_ENV));
+  assert.equal(start.ghToken, null);
+  for (const name of [...GH_VARS, "W_TOKEN"]) {
+    assert.ok(!start.env.includes(name), name);
+  }
+});
+
 test("a reader session's pi gets neither pipeline_commit nor a commit scope", () => {
-  const place = placeAt({}, "spec");
-  runJob(place, ["--stage", "spec"]);
+  const place = placeAt({}, SWEEP_STAGE);
+  runJob(place, ["--stage", SWEEP_STAGE]);
   const [start] = piStarts(place);
   assert.ok(
     !extensionsOf(start.argv).some((file) => COMMIT_EXTENSION.test(file)),
@@ -176,7 +189,7 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
 }
 
 test("--print-boundary with --steer is refused", () => {
-  const place = placeAt({}, "spec");
+  const place = placeAt({}, SWEEP_STAGE);
   const r = runJob(place, [
     "--print-boundary",
     "--steer",
@@ -190,8 +203,8 @@ test("--print-boundary with --steer is refused", () => {
 });
 
 test("a malformed jobRoles fails the job, naming jobRoles", () => {
-  const place = placeAt({ writer: { tokenEnv: "bad name" } }, "spec");
-  const r = runJob(place, ["--stage", "spec", "--print-boundary"]);
+  const place = placeAt({ writer: { tokenEnv: "bad name" } }, SWEEP_STAGE);
+  const r = runJob(place, ["--stage", SWEEP_STAGE, "--print-boundary"]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, NAMES_JOB_ROLES);
   assert.equal(r.stdout, "");

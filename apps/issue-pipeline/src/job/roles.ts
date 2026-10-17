@@ -1,10 +1,11 @@
-// The stage job's roles (sandbox-ready-jobs): the role each stage and each
-// model session runs as, each stage's access to its code and wiki checkouts
-// and what its writer sessions may commit, what each role may hold, the
-// environment a session's pi gets and the token budget its job.json records.
-// No session holds a GitHub token: only the job does, and its writer
-// sessions commit and push through it (`pipeline_commit`). No session runs
-// as merger. The networks are recorded, not enforced.
+// The stage job's roles (sandbox-ready-jobs): the role each stage runs as,
+// which sessions commit and which are held to the context limits, each
+// stage's access to its code and wiki checkouts and what its sessions may
+// commit, what each role may
+// hold, the environment a session's pi gets and the token budget its
+// job.json records. No session holds a GitHub token: only the job does, and
+// the sessions that commit push through it (`pipeline_commit`). The networks
+// are recorded, not enforced.
 
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -23,9 +24,6 @@ interface RoleSettings {
   tokenEnv: string | undefined;
   network: readonly string[];
 }
-
-// No model session runs as merger.
-type SessionRole = Exclude<JobRole, "merger">;
 
 type Roles = Readonly<Record<JobRole, RoleSettings>>;
 
@@ -50,13 +48,14 @@ interface Boundary {
   network: readonly string[];
 }
 
-// The role each stage's job runs as. sync and checks write because their
-// conflict resolver and CI fixer do. merge and publish run as merger; their
+// The role each stage's job runs as. spec writes because the spec writer
+// commits its tests, stubs and wiki updates; sync and checks write because
+// their conflict resolver and CI fixer do. merge and publish run as merger; their
 // wiki conflict resolvers' sessions run as writers, as every writer session
 // does.
 const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
   triage: "reader",
-  spec: "reader",
+  spec: "writer",
   implement: "writer",
   "open-pr": "writer",
   review: "reader",
@@ -73,19 +72,15 @@ const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
 // "Wiki provisioning"): every stage at least reads it (every-role-reads-wiki,
 // #338); the spec writer writes the wiki, as merge and publish do when they
 // rebase and publish its commits; every other stage reads it.
-// Until the spec writer commits the spec's wiki updates (#300 part 5d), a
-// bridge (2026-10-17): the implementer and fixer make them, as before #303,
-// and checks' CI fixer fixes the pages the wiki check fails, so implement,
-// fix and checks write it too.
 const STAGE_WIKI_ACCESS: Readonly<Record<StageName, Access>> = {
   triage: "read",
   spec: "write",
-  implement: "write",
+  implement: "read",
   "open-pr": "read",
   review: "read",
-  fix: "write",
+  fix: "read",
   sync: "read",
-  checks: "write",
+  checks: "read",
   accept: "read",
   security: "read",
   merge: "write",
@@ -101,8 +96,10 @@ const DEFAULT_ROLES: Roles = {
   merger: { tokenEnv: undefined, network: ["api.github.com"] },
 };
 
-// The installed agent whose sessions write.
+// The installed agent whose sessions write code.
 const WRITER_AGENT = "issue-pipeline-writer";
+// The installed agent whose sessions write the spec, its tests and stubs.
+const SPEC_AGENT = "issue-pipeline-specifier";
 // The variables gh reads a token from.
 const GH_TOKEN_VARS: readonly string[] = [
   "GH_TOKEN",
@@ -111,20 +108,24 @@ const GH_TOKEN_VARS: readonly string[] = [
   "GITHUB_ENTERPRISE_TOKEN",
 ];
 
-// The role a model session of installed agent `agent` runs as: writer for the
-// writer agent, reader for every other.
-function sessionRoleOf(agent: string): SessionRole {
-  if (agent === WRITER_AGENT) {
-    return "writer";
-  }
-  return "reader";
+// Whether a model session of installed agent `agent` commits, through
+// `pipeline_commit`: the writer's and the specifier's do, every other reads.
+function commitsOf(agent: string): boolean {
+  return agent === WRITER_AGENT || agent === SPEC_AGENT;
+}
+
+// Whether a session of `agent` is held to the config's `contextLimits` and
+// records a token budget: only the writer's, until the spec writer gets its
+// limits (#335).
+function heldToLimits(agent: string): boolean {
+  return agent === WRITER_AGENT;
 }
 
 // The token budget job.json records for `spec`'s session, which the
-// orchestrator's watchdog stops it past: its budget for a writer session, and
-// null, no watchdog max, for any other (Axlog, 2026-10-16).
+// orchestrator's watchdog stops it past: its budget for a session held to
+// the limits, and null, no watchdog max, for any other (Axlog, 2026-10-16).
 function recordedBudgetOf(spec: ChildSpec): number | null {
-  if (sessionRoleOf(spec.agent) === "writer") {
+  if (heldToLimits(spec.agent)) {
     return spec.tokenBudget;
   }
   return null;
@@ -152,7 +153,7 @@ function rolesOf(config: JobRolesConfig | null | undefined): Roles {
 
 // The environment every session runs with: the job's own `from`, less gh's
 // token variables, every role's tokenEnv and any commit scope the job itself
-// was given, so that only a writer session gets one, its own.
+// was given, so that only a committing session gets one, its own.
 function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
   const hidden = new Set([...GH_TOKEN_VARS, COMMIT_SCOPE_ENV]);
   for (const settings of Object.values(roles)) {
@@ -230,16 +231,16 @@ export type {
   JobRole,
   RoleSettings,
   Roles,
-  SessionRole,
 };
 export {
   agentEnvOf,
   boundaryOf,
   codeAccessOf,
   commitScopeOf,
+  commitsOf,
+  heldToLimits,
   recordedBudgetOf,
   rolesOf,
   STAGE_ROLES,
   STAGE_WIKI_ACCESS,
-  sessionRoleOf,
 };

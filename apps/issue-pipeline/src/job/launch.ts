@@ -30,7 +30,7 @@ import {
   sessionRaw,
   ZERO_USAGE,
 } from "./raw-results.ts";
-import { recordedBudgetOf, sessionRoleOf } from "./roles.ts";
+import { commitsOf, recordedBudgetOf } from "./roles.ts";
 import type { RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart, ResumePoint } from "./status.ts";
@@ -159,7 +159,7 @@ function prepareSession(
     return null;
   }
   let commit: string | null = null;
-  if (sessionRoleOf(spec.agent) === "writer") {
+  if (commitsOf(spec.agent)) {
     commit = COMMIT_EXTENSION;
   }
   const files = { session, extension: OUTPUT_EXTENSION, schema, commit };

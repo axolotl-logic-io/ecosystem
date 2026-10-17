@@ -135,7 +135,7 @@ test("checkout keeps the start heads an earlier start saved", () => {
   assert.equal(step.state.data.startWikiSha, "w0");
 });
 
-test("the machine hands off the spec's fields and checkpoints its start heads and attempts", () => {
+test("the machine hands off the spec's fields and its PR, and checkpoints its start heads and attempts", () => {
   assert.deepEqual(
     new Set(specWriterMachine.handoff),
     new Set([
@@ -145,6 +145,10 @@ test("the machine hands off the spec's fields and checkpoints its start heads an
       "interfaces",
       "specTestsSha",
       "noTestsReason",
+      "specWritesTests",
+      "pr",
+      "headSha",
+      "implemented",
     ]),
   );
   assert.deepEqual(
@@ -277,7 +281,7 @@ function foreignImports(file) {
   return found;
 }
 
-test("the spec writer role imports no other role's modules, and isn't registered", () => {
+test("the spec writer role imports no other role's modules, and runs the spec stage", () => {
   const files = readdirSync(SPEC_WRITER_DIR).filter((file) =>
     file.endsWith(".ts"),
   );
@@ -288,5 +292,8 @@ test("the spec writer role imports no other role's modules, and isn't registered
     foreignImports(path.join(SPEC_WRITER_DIR, file)),
   );
   assert.deepEqual(found, []);
-  assert.equal(roleOf("spec"), undefined);
+  assert.deepEqual(
+    { name: roleOf("spec")?.name, kind: roleOf("spec")?.kind },
+    { name: "spec-writer", kind: "machine" },
+  );
 });

@@ -2,7 +2,7 @@
 // A stage job whose session hits a model provider's rate limit
 // (`rate-limit-defers`) ends finished with `rateLimited` in job.json's
 // outcome, which the orchestrator backs off on, and stops nothing: a sweep
-// stage (spec) defers its issue with no retry, and a role stage (triage)
+// stage (accept) defers its issue with no retry, and a role stage (triage)
 // ends held, saving the issue at its stage with no attempt counted.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -11,6 +11,7 @@ import {
   piCommands,
   repliesAt,
   runJob,
+  SWEEP_STAGE,
   setUp,
   statusOf,
 } from "./job-test-kit.mjs";
@@ -29,9 +30,9 @@ function opsOf(place) {
   return logOf(place, "ops.log").map(({ op }) => op);
 }
 
-test("a spec job whose writer hits the rate limit defers with no retry and notes it in job.json", () => {
-  const place = setUp(repliesAt("spec"), { rejectPrompt: COOLING_DOWN });
-  const r = runJob(place, ["--stage", "spec", "--lane", "L"]);
+test("a sweep stage job whose session hits the rate limit defers with no retry and notes it in job.json", () => {
+  const place = setUp(repliesAt(SWEEP_STAGE), { rejectPrompt: COOLING_DOWN });
+  const r = runJob(place, ["--stage", SWEEP_STAGE, "--lane", "L"]);
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(
     piCommands(place).map(({ type }) => type),

@@ -5,11 +5,12 @@ import { test } from "node:test";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   logOf,
+  PASS_VERDICT,
   piCommands,
-  READY_SPEC,
   repliesAt,
   runJob,
-  SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   sessionOf,
   setUp,
   startJob,
@@ -18,7 +19,7 @@ import {
   waitFor,
 } from "./job-test-kit.mjs";
 
-const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
+const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
 const MESSAGE = "Look at src/b.ts too.";
 // The launch key of an implementer session, a writer's.
 const WRITER_KEY = /^i7-implement-\d+$/u;
@@ -29,8 +30,8 @@ function steer(place, key) {
 }
 
 test("--steer sends the message to the live session, which carries on", async () => {
-  const place = setUp(repliesAt("spec"), {
-    events: ["wait", messageEnd(USAGE), outputEnd(READY_SPEC)],
+  const place = setUp(repliesAt(SWEEP_STAGE), {
+    events: ["wait", messageEnd(USAGE), outputEnd(PASS_VERDICT)],
   });
   const job = startJob(place, STAGE_ARGS);
   await waitFor(() => piCommands(place).some(({ type }) => type === "prompt"));
@@ -53,7 +54,7 @@ test("--steer sends the message to the live session, which carries on", async ()
 
 test("--steer reaches a live writer session too, as the wiki's Steering a running session says", async () => {
   const place = setUp(repliesAt("implement"), {
-    events: ["wait", messageEnd(USAGE), outputEnd(READY_SPEC)],
+    events: ["wait", messageEnd(USAGE), outputEnd(PASS_VERDICT)],
   });
   const job = startJob(place, ["--stage", "implement"]);
   await waitFor(() => piCommands(place).some(({ type }) => type === "prompt"));
@@ -70,8 +71,8 @@ test("--steer reaches a live writer session too, as the wiki's Steering a runnin
 });
 
 test("--steer with no running job exits 1 with the reason", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
-  const before = steer(place, "i7-spec-3");
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
+  const before = steer(place, "i7-accept-3");
   assert.equal(before.status, 1);
   assert.notEqual(before.stderr, "");
   assert.equal(runJob(place, STAGE_ARGS).status, 0);
@@ -81,7 +82,7 @@ test("--steer with no running job exits 1 with the reason", () => {
 });
 
 test("--steer can't be combined with --resume", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
   const r = runJob(place, ["--steer", "k", "--message", "m", "--resume"]);
   assert.equal(r.status, 1);
   assert.notEqual(r.stderr, "");

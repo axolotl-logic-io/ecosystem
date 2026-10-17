@@ -26,6 +26,9 @@ const SPEC_AGENT = "issue-pipeline-specifier";
 const SPEC_ROLE = "spec writer";
 // The stop reason once the session has failed twice.
 const FAILED_TWICE = "the spec writer failed twice";
+// The trailer line that ends every commit of a spec writer session, which
+// marks it as the spec writer's own.
+const SPEC_TRAILER = "Pipeline-Agent: spec writer";
 // The wiki's folder in the checkout when it isn't under the worktree.
 const DEFAULT_WIKI_DIR = "wiki";
 
@@ -123,7 +126,7 @@ function workLines(item: SpecItem): string[] {
     ...commitRulesOf("pipeline_commit", {
       unit: "step",
       when: "as soon as it builds",
-      trailer: "Pipeline-Agent: spec writer",
+      trailer: SPEC_TRAILER,
       clearMessage: true,
     }),
   ];
@@ -176,4 +179,11 @@ function specSession(item: SpecItem, settings: SpecSettings): SessionEffect {
 }
 
 export type { SpecItem, SpecSettings };
-export { FAILED_TWICE, SPEC_AGENT, SPEC_ROLE, specSession, wikiDirOf };
+export {
+  FAILED_TWICE,
+  SPEC_AGENT,
+  SPEC_ROLE,
+  SPEC_TRAILER,
+  specSession,
+  wikiDirOf,
+};

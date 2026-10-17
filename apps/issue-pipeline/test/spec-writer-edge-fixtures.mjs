@@ -205,7 +205,11 @@ const EDGES = [
     reply: { spec: "s", specFile: "/runs/issue-7/spec.md" },
     next: "open-pr",
     effect: "op:start-pr",
-    changes: { spec: "s", specFile: "/runs/issue-7/spec.md" },
+    changes: {
+      spec: "s",
+      specFile: "/runs/issue-7/spec.md",
+      specWritesTests: true,
+    },
   },
   {
     at: "publish-spec",
@@ -213,12 +217,15 @@ const EDGES = [
     reply: { spec: "s" },
     next: "close-old-pr",
     effect: "check:close-old-pr",
-    changes: { spec: "s" },
+    data: { specFile: "/runs/issue-7/old-spec.md" },
+    changes: { spec: "s", specFile: null, specWritesTests: true },
   },
   {
     at: "open-pr",
     result: "ok",
+    reply: { ok: true, pr: 42, headSha: "h1" },
     next: "pr-opened",
+    changes: { pr: 42, headSha: "h1", implemented: false },
     effect: { kind: "saved", stage: "implement" },
   },
   {

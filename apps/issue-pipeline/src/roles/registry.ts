@@ -1,13 +1,16 @@
 // Which stages run a role on the role runner (src/job/runner.ts), and the
 // builders that make a role from a machine or a linear script. It registers
-// each built role as it loads, triage so far; a stage with no role runs the
-// sweep as before (src/job.ts).
+// each built role as it loads, triage and the spec writer so far; a stage
+// with no role runs the sweep as before (src/job.ts).
 // A role keeps its own types inside its `run`, so the registry holds one
 // non-generic shape for every role.
 
+import type { Config } from "../config.ts";
 import type { CheckEffect, Effects, Outcome } from "../job/run-step.ts";
 import type { Entry, RunEnd } from "../job/runner.ts";
 import { runLinear, runMachine } from "../job/runner.ts";
+import { specWriterChecks } from "./spec-writer/checks.ts";
+import { specWriterMachine } from "./spec-writer/machine.ts";
 import { triageScript } from "./triage/script.ts";
 import type { LinearScript, Machine } from "./walk.ts";
 
@@ -19,6 +22,11 @@ type JobEffects = Omit<Effects, "check">;
 type Checks = Readonly<
   Record<string, (payload: CheckEffect["payload"]) => Promise<Outcome>>
 >;
+
+// A role's script checks for one run: they may read the run's entry, run
+// ops through its effects, and read the job's config (its git, wiki and
+// command settings).
+type ChecksOf = (entry: Entry, effects: JobEffects, cfg: Config) => Checks;
 
 // The pipeline's roles (the wiki's Pipeline-Roles page).
 type RoleName =
@@ -39,7 +47,7 @@ const ROLE_NAMES: readonly RoleName[] = [
 interface Role {
   name: RoleName;
   kind: "machine" | "linear";
-  run: (entry: Entry, effects: JobEffects) => Promise<RunEnd>;
+  run: (entry: Entry, effects: JobEffects, cfg: Config) => Promise<RunEnd>;
 }
 
 const ROLES = new Map<string, Role>();
@@ -57,14 +65,16 @@ function checkOf(checks: Checks): Effects["check"] {
 
 function machineRole<S extends string, R extends string, D>(
   name: RoleName,
-  machine: Machine<S, R, D> & { checks?: Checks },
+  machine: Machine<S, R, D>,
+  checksOf: ChecksOf = (): Checks => ({}),
 ): Role {
-  const check = checkOf(machine.checks ?? {});
   return {
     name,
     kind: "machine",
-    run: (entry: Entry, effects: JobEffects): Promise<RunEnd> =>
-      runMachine(machine, entry, { ...effects, check }),
+    run: (entry: Entry, effects: JobEffects, cfg: Config): Promise<RunEnd> => {
+      const check = checkOf(checksOf(entry, effects, cfg));
+      return runMachine(machine, entry, { ...effects, check });
+    },
   };
 }
 
@@ -92,6 +102,10 @@ function roleOf(stage: string): Role | undefined {
 }
 
 registerRole("triage", linearRole("triage", triageScript));
+registerRole(
+  "spec",
+  machineRole("spec-writer", specWriterMachine, specWriterChecks),
+);
 
-export type { Checks, JobEffects, Role, RoleName };
+export type { Checks, ChecksOf, JobEffects, Role, RoleName };
 export { linearRole, machineRole, ROLE_NAMES, registerRole, roleOf };

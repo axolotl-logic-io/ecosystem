@@ -70,8 +70,10 @@
     // the usage report and sets the exit code; its pure module
     // src/report/usage.ts gets none. The spec writer's commit check,
     // src/roles/spec-writer/check.ts, runs git and the configured commands in
-    // the spec head's worktree and writes their logs (#331); the role's pure
-    // modules, such as coverage.ts, get none.
+    // the spec head's worktree and writes their logs (#331), as
+    // checks-git.ts, its checks that read the job checkout's heads, run the
+    // no-work tests and reset the issue's branches, does (#334); the role's
+    // pure modules, such as coverage.ts, get none.
     {
       "includes": [
         "install.mjs",
@@ -121,7 +123,8 @@
         "src/orchestrator/rate-limit-backoff.ts",
         "src/orchestrator/escalation-consult.ts",
         "src/report.ts",
-        "src/roles/spec-writer/check.ts"
+        "src/roles/spec-writer/check.ts",
+        "src/roles/spec-writer/checks-git.ts"
       ],
       "linter": {
         "rules": {
