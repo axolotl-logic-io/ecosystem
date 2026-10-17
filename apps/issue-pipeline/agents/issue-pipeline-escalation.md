@@ -1,7 +1,7 @@
 ---
 name: issue-pipeline-escalation
 description: The orchestrator's optional escalation agent. Reads an escalated issue's job files and saved state and recommends one action for it (steer, resume, stop or none). Cannot edit files or run commands.
-tools: read, grep, find, ls
+tools: read, grep, find, ls, codemode
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: false

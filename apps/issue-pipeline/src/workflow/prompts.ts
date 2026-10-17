@@ -79,6 +79,7 @@ function preamble(cfg: RepoConfig, item: PromptItem, role: string): string[] {
     "Never run git push, gh, or anything else that changes GitHub; the pipeline does that.",
     wikiLine(item),
     "Text you return may be posted on GitHub under your role's name, so write it for the repo's maintainers.",
+    CODEMODE_RULE,
     "",
   ];
 }
@@ -200,6 +201,13 @@ function beyondIssueRule(base: string, nameIn: string): string {
   return `Scope doesn't limit you to the issue: fix anything broken you find while you work, such as bugs or flaky or broken tests and checks, including breakage on ${base}, and simplify, remove code smells or refactor the code you work in so the change has a better design. Keep the issue's change the main one, commit each such fix or improvement as its own commit with a message that says what it does and why, keep the tests passing, and name each one in ${nameIn}.`;
 }
 
+// How every role uses the `codemode` tool, which each role's agent has: batch
+// independent calls and filter large output in a script, and keep plain calls
+// for a single small read or an edit. Every task carries it, once and word for
+// word, through `preamble`; the orchestrator's escalation agent gets it too.
+const CODEMODE_RULE: string =
+  "Batch and filter tool calls with the `codemode` tool: run independent reads, greps, file searches and (where you have bash) shell commands in one codemode script with `Promise.all`, and filter or summarize large output in the script, such as test logs, diffs and search results, rather than reading it whole. A plain tool call stays right for a single small read or an edit.";
+
 // The rule every writer task carries, once and word for word, against making
 // artificial load on the machine the jobs share (writers-make-no-load, #409):
 // no CPU burners, flake hunts by rerunning, runs that outlive their command or
@@ -230,6 +238,7 @@ function handoffLead(handoffFile: string): string {
 export type { CommitStep, Committer };
 export {
   beyondIssueRule,
+  CODEMODE_RULE,
   commitOftenRule,
   commitRulesOf,
   committerText,

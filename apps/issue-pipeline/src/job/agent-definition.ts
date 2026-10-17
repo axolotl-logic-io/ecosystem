@@ -110,7 +110,10 @@ function readDefinition(agent: string): DefinitionRead {
 }
 
 // The tools flag: the definition's tools and `added`, or, when it names
-// none, pi's default tools with `added` added.
+// none, pi's default tools with `added` added. A `codemode` script calls only
+// these tools, with one exception in pi: an allowlist that names no `mcp__`
+// tool keeps every MCP server's tools callable through codemode. No MCP server
+// is configured for pipeline sessions; one that is would widen every role.
 function toolsFlag(tools: readonly string[], added: readonly string[]): string {
   if (tools.length === 0) {
     return added.map((tool) => `+${tool}`).join(",");
