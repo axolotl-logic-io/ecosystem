@@ -3,9 +3,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
+import { alive, waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
-  alive,
   logOf,
   PASS_VERDICT,
   piCommands,
@@ -17,7 +17,6 @@ import {
   startJob,
   statusOf,
   USAGE,
-  waitFor,
 } from "./job-test-kit.mjs";
 
 const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
@@ -54,7 +53,10 @@ for (const [signal, code] of SIGNAL_CODES) {
       events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
     });
     const job = startJob(place, STAGE_ARGS);
-    await waitFor(() => sessionOf(statusOf(place))?.usage.input > 0);
+    await waitFor(
+      "the session's usage in job.json",
+      () => sessionOf(statusOf(place))?.usage.input > 0,
+    );
     job.child.kill(signal);
     const end = await job.end;
     assert.equal(end.status, code, end.stderr);
@@ -75,7 +77,9 @@ test("a session that ignores the abort is killed after the grace period, and the
     ignoreAbort: true,
   });
   const job = startJob(place, STAGE_ARGS);
-  await waitFor(() => piCommands(place).some(({ type }) => type === "prompt"));
+  await waitFor("pi got the prompt", () =>
+    piCommands(place).some(({ type }) => type === "prompt"),
+  );
   const [{ pid }] = piStarts(place);
   job.child.kill("SIGTERM");
   const end = await job.end;

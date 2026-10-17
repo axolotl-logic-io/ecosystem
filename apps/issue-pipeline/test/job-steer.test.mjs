@@ -1,7 +1,9 @@
 // Steering a running stage job's session with --steer: the message reaches
 // pi through the job's socket, and every way it can't fails with exit 1.
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
+import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   logOf,
@@ -16,17 +18,38 @@ import {
   startJob,
   statusOf,
   USAGE,
-  waitFor,
 } from "./job-test-kit.mjs";
+
+/** @import { Place } from "./job-test-kit.mjs" */
 
 const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
 const MESSAGE = "Look at src/b.ts too.";
 // The launch key of an implementer session, a writer's.
 const WRITER_KEY = /^i7-implement-\d+$/u;
 
-/** @param {import("./job-test-kit.mjs").Place} place @param {string} key */
+/** @param {Place} place @param {string} key */
 function steer(place, key) {
   return runJob(place, ["--steer", key, "--message", MESSAGE]);
+}
+
+/**
+ * Waits for each marker of a session that can take a steer, in the order the
+ * job writes them: its launch in job.json, the steer socket, and the prompt
+ * in pi.log.
+ * @param {Place} place
+ * @returns {Promise<void>}
+ */
+async function steerable(place) {
+  await waitFor(
+    "the session's launch in job.json",
+    () => sessionOf(statusOf(place)) !== null,
+  );
+  await waitFor("the steer socket", () =>
+    fs.existsSync(statusOf(place).socket),
+  );
+  await waitFor("pi got the prompt", () =>
+    piCommands(place).some(({ type }) => type === "prompt"),
+  );
 }
 
 test("--steer sends the message to the live session, which carries on", async () => {
@@ -34,7 +57,7 @@ test("--steer sends the message to the live session, which carries on", async ()
     events: ["wait", messageEnd(USAGE), outputEnd(PASS_VERDICT)],
   });
   const job = startJob(place, STAGE_ARGS);
-  await waitFor(() => piCommands(place).some(({ type }) => type === "prompt"));
+  await steerable(place);
   const { key } = sessionOf(statusOf(place));
   const missing = steer(place, "i7-nope-1");
   assert.equal(missing.status, 1);
@@ -57,7 +80,7 @@ test("--steer reaches a live writer session too, as the wiki's Steering a runnin
     events: ["wait", messageEnd(USAGE), outputEnd(PASS_VERDICT)],
   });
   const job = startJob(place, ["--stage", "implement"]);
-  await waitFor(() => piCommands(place).some(({ type }) => type === "prompt"));
+  await steerable(place);
   const { key } = sessionOf(statusOf(place));
   assert.match(key, WRITER_KEY);
   const r = steer(place, key);

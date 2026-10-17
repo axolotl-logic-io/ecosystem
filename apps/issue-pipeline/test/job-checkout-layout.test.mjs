@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import { checkoutOf, docsOf, repoOf } from "./job-git-test-kit.mjs";
 import {
@@ -21,7 +22,6 @@ import {
   startJob,
   statusOf,
   USAGE,
-  waitFor,
 } from "./job-test-kit.mjs";
 
 /** @import { Place } from "./job-test-kit.mjs" */
@@ -53,10 +53,10 @@ for (const stage of ["spec", "implement"]) {
   test(`the ${stage} job's folder holds repo/ and docs/ side by side, and is its session's cwd`, async () => {
     const place = setUp(repliesAt(stage), WAITING, {}, { wiki: true });
     const job = startJob(place, ["--stage", stage]);
-    await waitFor(() => spent(place));
     const root = checkoutOf(place.root, stage);
     const repo = repoOf(place.root, stage);
     try {
+      await waitFor("the session's spending in job.json", () => spent(place));
       assert.ok(fs.existsSync(path.join(repo, ".git")));
       assert.ok(fs.existsSync(path.join(docsOf(place.root, stage), ".git")));
       assert.equal(fs.existsSync(path.join(root, ".git")), false);

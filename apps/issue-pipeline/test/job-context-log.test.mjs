@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { waitFor } from "./bounded-test-kit.mjs";
 import { outputEnd, TURN_OUTPUT, turns } from "./fake-rpc-pi.mjs";
 import {
   flagValue,
@@ -20,7 +21,6 @@ import {
   setUp,
   startJob,
   statusOf,
-  waitFor,
 } from "./job-test-kit.mjs";
 import { ISSUE, sweepReply } from "./workflow-stages-fixtures.mjs";
 
@@ -133,7 +133,10 @@ test(
     const events = [...turns([FIRST]), "wait"];
     const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
     const job = startJob(place, ["--stage", SWEEP_STAGE]);
-    await waitFor(() => sessionOf(statusOf(place))?.turns === 1);
+    await waitFor(
+      "the session's first turn in job.json",
+      () => sessionOf(statusOf(place))?.turns === 1,
+    );
     job.child.kill("SIGTERM");
     await job.end;
     const [line, ...more] = contextLines(place);

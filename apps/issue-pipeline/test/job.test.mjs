@@ -5,10 +5,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { alive } from "./bounded-test-kit.mjs";
 import { checkoutOf } from "./job-git-test-kit.mjs";
 import {
   AFTER_SWEEP_STAGE,
-  alive,
   flagValue,
   logOf,
   piCommands,

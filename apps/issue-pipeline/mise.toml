@@ -14,7 +14,14 @@ run = [
   "node --check dist/orchestrate.mjs",
   "node --check dist/report.mjs",
   "node --check dist/pipeline-commit.mjs",
-  "node --test 'test/*.test.mjs'",
+  # Each test fails if it runs past --test-timeout, by its title, rather than
+  # hanging the run (#372). The slowest test measured took 51.3 s (the
+  # typecheck that fails on a type error, test/typecheck-config.test.mjs) in a
+  # full `node --test --test-reporter=spec` run beside three more in a copy of
+  # the checkout, at 1-minute load averages of up to 130 on 10 cores
+  # (2026-10-17). The timeout is over 3 times that. test/bounded-test-kit.mjs's
+  # waitFor deadline and test/job-test-kit.mjs's runJob bound sit below it.
+  "node --test --test-timeout=180000 'test/*.test.mjs'",
 ]
 
 [tasks.build]

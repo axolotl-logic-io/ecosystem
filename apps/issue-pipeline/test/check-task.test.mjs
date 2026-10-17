@@ -1,7 +1,8 @@
 // @ts-check
 // The typecheck `mise //apps/issue-pipeline:check` runs covers every test
-// file, with or without a `// @ts-check` line (README, #223). Fixtures go in a
-// temporary folder, never under test/.
+// file, with or without a `// @ts-check` line (README, #223), and its tests
+// each get a timeout (#372). Fixtures go in a temporary folder, never under
+// test/.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -14,6 +15,11 @@ import { test } from "node:test";
 const APP_DIR = new URL("..", import.meta.url).pathname;
 const REPO_ROOT = path.resolve(APP_DIR, "..", "..");
 const ARGUMENT_TYPE_ERROR = /fixture\.mjs\(\d+,\d+\): error TS2345:/u;
+// The check task's table in mise.toml, up to the next table.
+const CHECK_TASK = /^\[tasks\.check\]\n(?<task>[\s\S]*?)(?=^\[)/mu;
+// A run entry of the check task that runs node --test.
+const NODE_TEST_ENTRY = /^\s*"node --test (?<flags>[^"]*)",?$/mu;
+const TEST_TIMEOUT = /(?:^| )--test-timeout=(?<ms>\d+)(?: |$)/u;
 
 /**
  * Runs `body` with a fresh temporary folder, then removes the folder.
@@ -28,6 +34,15 @@ function inTempDir(body) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
+
+test("the check task's node --test gives each test a timeout", () => {
+  const toml = fs.readFileSync(path.join(APP_DIR, "mise.toml"), "utf8");
+  const { task = "" } = CHECK_TASK.exec(toml)?.groups ?? {};
+  const { flags = "" } = NODE_TEST_ENTRY.exec(task)?.groups ?? {};
+  assert.notEqual(flags, "", "the check task runs node --test");
+  const { ms = "0" } = TEST_TIMEOUT.exec(flags)?.groups ?? {};
+  assert.ok(Number(ms) > 0, `node --test ${flags} has no --test-timeout`);
+});
 
 test("a test file without @ts-check is type-checked", () => {
   inTempDir((dir) => {

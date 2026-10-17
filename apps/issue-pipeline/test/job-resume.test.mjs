@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   flagValue,
@@ -22,7 +23,6 @@ import {
   statusOf,
   USAGE,
   USAGE_SPENT,
-  waitFor,
 } from "./job-test-kit.mjs";
 
 const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
@@ -36,7 +36,10 @@ async function stoppedJob() {
     events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
   });
   const job = startJob(place, STAGE_ARGS);
-  await waitFor(() => sessionOf(statusOf(place))?.usage.input > 0);
+  await waitFor(
+    "the session's usage in job.json",
+    () => sessionOf(statusOf(place))?.usage.input > 0,
+  );
   job.child.kill("SIGTERM");
   const end = await job.end;
   setScript(place, SWEEP_SESSION);

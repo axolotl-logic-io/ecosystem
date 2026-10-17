@@ -2,12 +2,14 @@
 // The stage job's test kit: `node src/job.ts` with a fake ops.mjs in a
 // temporary pipeline root and a fake RPC `pi` first on PATH. Each logs what it
 // was asked, so the tests see the ops in order, every pi command line and
-// every RPC command pi got.
+// every RPC command pi got. A job startJob started, and every pi in the
+// place's pi.log, are no longer running once the test ends.
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { setTimeout as delay } from "node:timers/promises";
+import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
 import { FAKE_OPS, FAKE_PI, messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
 import {
@@ -19,8 +21,15 @@ import {
 
 const JOB = new URL("../src/job.ts", import.meta.url).pathname;
 const AGENTS = new URL("../agents/", import.meta.url).pathname;
-// How often waitFor looks at its file condition again.
-const POLL_MS = 20;
+// runJob's bound on a job's run. A spawnSync blocks the event loop, and the
+// per-test timeout with it, so this bound sits below that timeout
+// (`--test-timeout` in mise.toml's check task); a run past it is killed and
+// ends with a null status. It covers one job run to its end: the slowest
+// measured was 8.2 s (a spec stage in job-role-stage.test.mjs), in a full
+// `node --test` run beside three more in a copy of the checkout, at 1-minute
+// load averages of up to 130 on 10 cores (2026-10-17). It is over 3 times
+// that.
+const RUN_JOB_MS = 30_000;
 
 // Issue #7 after triage: its plan and draft PR.
 const TRIAGED = {
@@ -152,6 +161,12 @@ function setUp(replies, script, extraConfig = {}, options = {}) {
     wikiOrigin,
   };
   setScript(place, script);
+  endsWithTest(() => {
+    // Each fake pi leads its own process group.
+    for (const { pid } of piStarts(place)) {
+      killGroup(pid);
+    }
+  });
   return place;
 }
 
@@ -201,6 +216,8 @@ function runJob(place, args, extraEnv = {}) {
   return spawnSync(process.execPath, argvOf(place, args), {
     encoding: "utf8",
     env: jobEnv(place, extraEnv),
+    timeout: RUN_JOB_MS,
+    killSignal: "SIGKILL",
   });
 }
 
@@ -233,6 +250,12 @@ function startJob(place, args, extraEnv = {}) {
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
+  endsWithTest(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await once(child, "exit");
+    }
+  });
   /** @type {Promise<JobEnd>} */
   const end = new Promise((resolve) => {
     child.on("close", (status) => resolve({ status, stdout, stderr }));
@@ -241,7 +264,8 @@ function startJob(place, args, extraEnv = {}) {
 }
 
 /**
- * The JSON lines of the root's log `name`, or none if it isn't there.
+ * The complete JSON lines of the root's log `name`, or none if it isn't
+ * there; a line still being appended is left out.
  * @param {Place} place
  * @param {string} name
  * @returns {any[]}
@@ -251,10 +275,11 @@ function logOf(place, name) {
   if (!fs.existsSync(file)) {
     return [];
   }
-  return fs
-    .readFileSync(file, "utf8")
-    .trim()
+  const text = fs.readFileSync(file, "utf8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
+    .slice(0, -1)
     .map((line) => JSON.parse(line));
 }
 
@@ -280,19 +305,6 @@ function statusOf(place) {
 }
 
 /**
- * Resolves once `check` holds, looking again every POLL_MS.
- * @param {() => boolean} check
- * @returns {Promise<void>}
- */
-async function waitFor(check) {
-  if (check()) {
-    return;
-  }
-  await delay(POLL_MS);
-  await waitFor(check);
-}
-
-/**
  * @param {any} status a job.json, or null
  * @returns {any} its session's launch, or null
  */
@@ -309,19 +321,8 @@ function flagValue(argv, flag) {
   return String(argv[argv.indexOf(flag) + 1]);
 }
 
-/** @param {number} pid @returns {boolean} whether the process is running */
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export {
   AFTER_SWEEP_STAGE,
-  alive,
   flagValue,
   logOf,
   PASS_VERDICT,
@@ -341,5 +342,4 @@ export {
   USAGE,
   USAGE_SPENT,
   USAGE_TOTAL,
-  waitFor,
 };

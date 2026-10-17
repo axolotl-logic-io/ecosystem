@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { waitFor } from "./bounded-test-kit.mjs";
 import {
   messageEnd,
   outputEnd,
@@ -24,7 +25,6 @@ import {
   statusOf,
   USAGE,
   USAGE_TOTAL,
-  waitFor,
 } from "./job-test-kit.mjs";
 import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
@@ -42,7 +42,10 @@ test("while a session waits, job.json shows its pid, session, last event and too
     events: [toolEnd(true), toolEnd(true), "wait"],
   });
   const job = startJob(place, STAGE_ARGS);
-  await waitFor(() => sessionOf(statusOf(place))?.toolFailures === 2);
+  await waitFor(
+    "two tool failures in job.json",
+    () => sessionOf(statusOf(place))?.toolFailures === 2,
+  );
   const status = statusOf(place);
   assert.equal(status.version, 1);
   assert.equal(status.pid, job.child.pid);
@@ -73,6 +76,7 @@ test("job.json counts consecutive failures of the same tool and keeps the last o
   });
   const job = startJob(place, STAGE_ARGS);
   await waitFor(
+    "the last tool failure in job.json",
     () => sessionOf(statusOf(place))?.lastToolFailure?.error === "ENOENT: b.ts",
   );
   const launch = sessionOf(statusOf(place));
@@ -137,7 +141,10 @@ test("a non-writer session past its role's budget records no token budget, so th
 test("a writer session records its token budget, which the watchdog stops it past", async () => {
   const place = setUp(repliesAt("implement"), { events: ["wait"] });
   const job = startJob(place, ["--stage", "implement"]);
-  await waitFor(() => sessionOf(statusOf(place)) !== null);
+  await waitFor(
+    "the session's launch in job.json",
+    () => sessionOf(statusOf(place)) !== null,
+  );
   // The implementer's default budget at the default session cap.
   assert.equal(sessionOf(statusOf(place)).tokenBudget, IMPLEMENTER_BUDGET);
   job.child.kill("SIGTERM");

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   BASE,
@@ -28,7 +29,6 @@ import {
   startJob,
   statusOf,
   USAGE,
-  waitFor,
 } from "./job-test-kit.mjs";
 
 const STOPPED_BY_SIGTERM = 143;
@@ -139,7 +139,7 @@ test("a job stopped by SIGTERM exits 143 and removes its checkout", async () => 
     events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
   });
   const job = startJob(place, ["--stage", SWEEP_STAGE]);
-  await waitFor(() => spent(place));
+  await waitFor("the session's spending in job.json", () => spent(place));
   assert.ok(fs.existsSync(checkoutOf(place.root, SWEEP_STAGE)));
   job.child.kill("SIGTERM");
   const end = await job.end;
@@ -187,7 +187,7 @@ test("a writer whose commits are all on the issue's branch already does not push
 test("a writer whose origin is gone at exit reports it on stderr, stops on SIGTERM and removes its checkout", async () => {
   const place = setUp(repliesAt("implement"), COMMIT_AND_WAIT);
   const job = startJob(place, ["--stage", "implement"]);
-  await waitFor(() => spent(place));
+  await waitFor("the session's spending in job.json", () => spent(place));
   fs.renameSync(place.origin, `${place.origin}-gone`);
   job.child.kill("SIGTERM");
   const end = await job.end;
@@ -200,7 +200,7 @@ test("a writer whose origin is gone at exit reports it on stderr, stops on SIGTE
 test("a writer stopped by SIGTERM still pushes its commit before its checkout goes", async () => {
   const place = setUp(pushingRepliesAt("implement"), COMMIT_AND_WAIT);
   const job = startJob(place, ["--stage", "implement"]);
-  await waitFor(() => spent(place));
+  await waitFor("the session's spending in job.json", () => spent(place));
   job.child.kill("SIGTERM");
   const end = await job.end;
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
