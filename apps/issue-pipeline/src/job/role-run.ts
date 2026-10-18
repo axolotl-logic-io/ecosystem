@@ -3,9 +3,10 @@
 // on the role runner from the claim's state. This module and its launcher
 // alone know how a role's effects run in a job: ops and sessions as the job's
 // launches (src/job/role-launcher.ts), saves through the save-state op, the
-// stop from the job's control and each step in job.json. On a signal it saves
-// the issue at the stage it last saved, with no lease, as a sweep's stop does,
-// unless the run's end had saved it already.
+// stop from the job's control, and each step and the stage the run moved on
+// to in job.json. On a signal it saves the issue at the stage it last saved,
+// with no lease, as a sweep's stop does, unless the run's end had saved it
+// already.
 
 import type { Config } from "../config.ts";
 import { paths as configPaths } from "../config.ts";
@@ -131,6 +132,7 @@ async function runClaimed(
       clock: (): Date => new Date(),
       stopping: control.stopping,
       step: status.step,
+      moved: status.moved,
     },
     cfg,
   );

@@ -18,6 +18,7 @@ import {
   alive,
   endsWithTest,
   killGroup,
+  pidIn,
   waitFor,
 } from "./bounded-test-kit.mjs";
 
@@ -62,22 +63,6 @@ function tempDir() {
   const dir = fs.mkdtempSync("/tmp/issue-pipeline-shell-");
   endsWithTest(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
-}
-
-/**
- * The pid in `dir`'s file `name`, once its line is written, else null.
- * @param {string} dir @param {string} name @returns {number | null}
- */
-function pidIn(dir, name) {
-  const file = path.join(dir, name);
-  if (!fs.existsSync(file)) {
-    return null;
-  }
-  const text = fs.readFileSync(file, "utf8");
-  if (!text.endsWith("\n")) {
-    return null;
-  }
-  return Number(text);
 }
 
 /**

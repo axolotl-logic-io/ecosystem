@@ -1,7 +1,8 @@
 // @ts-check
 // A stage job at `fix` runs the implementor role's fix entry (#418): mock
 // model (the fake RPC pi), local git origins and fake ops. All findings
-// resolved saves at checks with the round's checkpoint and the patch id;
+// resolved saves at checks with the round's checkpoint and the patch id,
+// and the same job goes on to the checks entry (#424);
 // findings still open after maxFixRounds stop; a disputed acceptance finding
 // stops before any push; a reintroduced finding stops; a fix that adds code
 // to an issue whose PR is closed saves at open-pr; a state saved by today's
@@ -11,9 +12,14 @@ import { test } from "node:test";
 import { fixComment } from "../src/workflow/stages/review-text.ts";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
+  endOf,
+  fixReplies,
+  PR,
+  requestsOf,
+  savedAt,
+} from "./implementor-fix-job-test-kit.mjs";
+import {
   ACC,
-  DIFF_PATH,
-  F1,
   FIX_DISPUTES_ACC,
   FIX_DONE,
   PATCH_ID,
@@ -22,25 +28,15 @@ import {
   RESOLVED,
   REVIEWED,
   remainReason,
-  SPEC,
   UNRESOLVED,
 } from "./implementor-fix-test-kit.mjs";
-import { claimed, PUSHED } from "./implementor-job-test-kit.mjs";
-import {
-  logOf,
-  piStarts,
-  repliesAt,
-  runJob,
-  setUp,
-  USAGE,
-} from "./job-test-kit.mjs";
+import { PUSHED } from "./implementor-job-test-kit.mjs";
+import { logOf, piStarts, runJob, setUp, USAGE } from "./job-test-kit.mjs";
 
 /** @import { Place } from "./job-test-kit.mjs" */
 
 const RUN = ["--stage", "fix"];
 const PR_OPS = ["open-pr", "start-pr", "close-pr"];
-// The PR the claimed issue has.
-const PR = 42;
 const ONE_ROUND = { maxFixRounds: 1 };
 const DEFAULT_ROUNDS = 2;
 const TWO_SESSIONS = 2;
@@ -55,53 +51,6 @@ function session(reply) {
 /** @param {unknown[]} replies @returns {{ launches: object[][] }} one session per reply, in order */
 function sessions(replies) {
   return { launches: replies.map(session) };
-}
-
-/**
- * The replies for #7 claimed at fix after a review with F1 open, with
- * `fields` in its state: a push that changes code, and the re-review diff.
- * @param {Record<string, unknown>} [fields]
- * @returns {{ claim: { paths?: object } } & Record<string, unknown>}
- */
-function fixReplies(fields = {}) {
-  const replies = repliesAt("fix");
-  const state = {
-    spec: SPEC,
-    pr: PR,
-    headSha: REVIEWED,
-    reviewedSha: REVIEWED,
-    findings: [F1],
-    nextFindingId: 1,
-    resolvedHistory: [],
-    round: 0,
-    flows: { code: true, wiki: false },
-    ...fields,
-  };
-  const push = { ok: true, headSha: PUSHED, codeChanged: true, wikiAhead: 0 };
-  const prepared = {
-    ok: true,
-    headSha: PUSHED,
-    diffPath: DIFF_PATH,
-    diffLines: "4",
-    patchId: PATCH_ID,
-  };
-  return {
-    ...replies,
-    claim: claimed(replies.claim, state),
-    push,
-    "prepare-review": prepared,
-  };
-}
-
-/** @param {{ stdout: string }} r @returns {unknown} the job's end, from its summary line */
-function endOf(r) {
-  const [line = "{}"] = r.stdout.trim().split("\n").slice(-1);
-  return JSON.parse(line).end;
-}
-
-/** @param {Place} place @param {string} op @returns {any[]} the requests of `op` */
-function requestsOf(place, op) {
-  return logOf(place, "ops.log").filter((request) => request.op === op);
 }
 
 /** @param {Place} place @returns {any} the last state the job saved */
@@ -131,19 +80,18 @@ function postedComments(place) {
   return requestsOf(place, "post").flatMap(({ comments = [] }) => comments);
 }
 
-test("all findings resolved saves at checks with the round, the reviewed head and its patch id", () => {
+test("all findings resolved saves at checks with the round, the reviewed head and its patch id, then runs checks", () => {
   const place = setUp(fixReplies(), sessions([FIX_DONE, RESOLVED]));
   const r = runJob(place, RUN);
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(endOf(r), { kind: "saved", stage: "checks" });
+  assert.deepEqual(endOf(r), { kind: "saved", stage: "accept" });
   assert.equal(piStarts(place).length, TWO_SESSIONS);
   assert.equal(requestsOf(place, "push").length, 1);
   const [prepare] = requestsOf(place, "prepare-review");
   assert.equal(prepare?.sinceSha, REVIEWED);
   assert.equal(prepare?.tag, "r1");
   assert.deepEqual(prOpsOf(place), []);
-  const saved = lastSaved(place);
-  assert.equal(saved.stage, "checks");
+  const saved = savedAt(place, "checks");
   assert.equal(saved.reviewedSha, PUSHED);
   assert.equal(saved.reviewedPatchId, PATCH_ID);
   assert.equal(saved.testsOnly, false);

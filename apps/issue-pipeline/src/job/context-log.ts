@@ -71,10 +71,9 @@ interface ContextLine {
   reviewedSha: string | null;
 }
 
-// The job a line is for: its issue, its stage and its random id.
+// The job a line is for: its issue and its random id.
 interface ContextJob {
   issue: number;
-  stage: string;
   id: string;
 }
 
@@ -103,11 +102,11 @@ const UNRECORDED: Measures = {
   contextStop: null,
 };
 
-// The line for session `key` of `job`, measured as its `launch` record says
-// (unrecorded when it is null), ended as `end` says, or killed when the job
-// is stopping.
+// The line for session `key` of `job` at its stage, measured as its
+// `launch` record says (unrecorded when it is null), ended as `end` says, or
+// killed when the job is stopping.
 function contextLineOf(
-  job: ContextJob & { stopping: boolean },
+  job: ContextJob & { stage: string; stopping: boolean },
   ending: { key: string; launch: LaunchRecord | null; end: SessionEnd },
   at: Date,
 ): ContextLine {
@@ -156,21 +155,22 @@ function contextLineOf(
 }
 
 // The log of the ends of `job`'s sessions, in `runDir`: each line reads the
-// session's record from the job's status, and is `killed` while its control
-// is stopping.
+// session's record and the stage the job is at now from the job's status,
+// and is `killed` while its control is stopping.
 function contextLogOf(
   runDir: string,
   job: ContextJob,
   watch: {
-    status: Pick<JobStatus, "launch">;
+    status: Pick<JobStatus, "launch" | "currentStage">;
     control: Pick<Control, "stopping">;
   },
 ): (key: string, end: SessionEnd) => void {
   return (key: string, end: SessionEnd): void => {
     const launch = watch.status.launch(key);
     const stopping = watch.control.stopping() !== null;
+    const stage = watch.status.currentStage();
     const line = contextLineOf(
-      { ...job, stopping },
+      { ...job, stage, stopping },
       { key, launch, end },
       new Date(),
     );

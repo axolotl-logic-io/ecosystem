@@ -40,6 +40,7 @@ const EFFECTS = {
   clock: () => new Date(0),
   stopping: () => null,
   step: () => undefined,
+  moved: () => undefined,
 };
 
 /** @param {string} dir @param {string} file @param {string} text commits `file` holding `text` in `dir` */

@@ -1,7 +1,8 @@
 // The `fix` entry's end states (#418; the wiki's Pipeline-Roles-Implementor,
-// "Entry `fix`"): saved at checks once every finding is resolved (#424
-// makes it `next(checks)`), at open-pr to reopen a closed PR, and the stops
-// today's fix and rereview stages give. Pure.
+// "Entry `fix`"): once every finding is resolved, saved at checks and
+// carried on there in the same job (`next(checks)`, #424,
+// `implementor-one-job`); saved at open-pr to reopen a closed PR; and the
+// stops today's fix and rereview stages give. Pure.
 
 import {
   findingsStopCode,
@@ -66,7 +67,7 @@ function outOfRoom(data: ImplData): End {
 }
 
 const FIX_END_STATES: Readonly<Record<FixEnd, EndSpec>> = {
-  fixed: end(() => ({ kind: "saved", stage: "checks" })),
+  fixed: end(() => ({ kind: "next", stage: "checks" })),
   "fix-reopen": end(() => ({ kind: "saved", stage: "open-pr" })),
   "fix-no-code": end((data: ImplData) =>
     stopped(data, "not-doable", {

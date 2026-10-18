@@ -4,7 +4,10 @@
 // passed to `endsWithTest` runs once the test that registered it ends,
 // whether it passed, failed or timed out; and `waitFor` rejects, naming what
 // it waited for, when its condition hasn't held by its deadline, so a missed
-// event fails before the test timeout.
+// event fails before the test timeout. `pidIn` reads the pid a started
+// process wrote to a file, once its line is whole, for the test to wait on.
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { afterEach } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -118,4 +121,20 @@ function killGroup(pid) {
   }
 }
 
-export { alive, endsWithTest, killGroup, waitFor };
+/**
+ * The pid in `dir`'s file `name`, once its line is written, else null.
+ * @param {string} dir @param {string} name @returns {number | null}
+ */
+function pidIn(dir, name) {
+  const file = path.join(dir, name);
+  if (!fs.existsSync(file)) {
+    return null;
+  }
+  const text = fs.readFileSync(file, "utf8");
+  if (!text.endsWith("\n")) {
+    return null;
+  }
+  return Number(text);
+}
+
+export { alive, endsWithTest, killGroup, pidIn, waitFor };

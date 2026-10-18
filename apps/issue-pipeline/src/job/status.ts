@@ -1,6 +1,7 @@
 // A stage job's status file, `job.json` in the issue's run folder. While the
-// job runs it holds the job's pid, id, issue, stage, lane, start time and
-// steer socket, a record of every launch it started (src/job/launch-record.ts),
+// job runs it holds the job's pid, id, issue, the stage it started at and the
+// one it is at now (#424: a role's `next` end moves it on), lane, start time
+// and steer socket, a record of every launch it started (src/job/launch-record.ts),
 // and for a stage that runs a role, each step of the role's run (#301). On
 // exit it holds the job's outcome, which notes a sweep that deferred its
 // issue on a transient provider error for the orchestrator's backoff, the
@@ -55,7 +56,11 @@ const STATUS = z.object({
   // The job's id; missing from a file written before it was recorded.
   id: z.string().optional(),
   issue: z.number(),
+  // The stage the job started at (its `--stage`).
   stage: z.string(),
+  // The stage the job is at now; missing from a file written before #424,
+  // whose job never left the stage it started at.
+  currentStage: z.string().optional(),
   lane: z.string().nullable(),
   startedAt: z.string(),
   socket: z.string(),
@@ -116,8 +121,12 @@ interface JobStatus {
   settled: (key: string, outcome: LaunchOutcome) => void;
   // A role's step started, or the step it last started ended.
   step: (step: StepReport) => void;
+  // The job moved on to `stage`, in the same job.
+  moved: (stage: string) => void;
   // Launch `key`'s record as it stands, or null with none.
   launch: (key: string) => LaunchRecord | null;
+  // The stage the job is at now.
+  currentStage: () => string;
   // The job ended.
   finish: (outcome: JobOutcome) => void;
   // The uncommitted paths the job's checkout held at exit, which it dropped,
@@ -177,6 +186,23 @@ function withLaunch(
   });
 }
 
+// `launch` with `push` added.
+function withPush(launch: LaunchRecord, push: LaunchPush): LaunchRecord {
+  return { ...launch, pushes: [...launch.pushes, push] };
+}
+
+// `steps` with `step` added, in place of the last step when that one hasn't
+// ended: a step's end replaces its start.
+function withStep(
+  steps: readonly StepReport[],
+  step: StepReport,
+): StepReport[] {
+  if (steps.at(-1)?.endedAt === null) {
+    return [...steps.slice(0, -1), step];
+  }
+  return [...steps, step];
+}
+
 // Opens a fresh status file for the job in `runDir` and writes it.
 function openStatus(runDir: string, job: JobInfo): JobStatus {
   const file = statusFileOf(runDir);
@@ -184,9 +210,15 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     version: 1,
     pid: process.pid,
     ...job,
+    currentStage: job.stage,
     outcome: null,
     launches: [],
   };
+  // Sets `fields` in the file.
+  function set(fields: Partial<StatusFile>): void {
+    Object.assign(status, fields);
+    writeStatus(file, status);
+  }
   // Changes launch `key`.
   function update(
     key: string,
@@ -207,35 +239,19 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     contextStopped: (key: string, contextStop: ContextStop): void =>
       update(key, (launch) => ({ ...launch, contextStop })),
     pushed: (key: string, push: LaunchPush): void =>
-      update(key, (launch) => ({
-        ...launch,
-        pushes: [...launch.pushes, push],
-      })),
+      update(key, (launch) => withPush(launch, push)),
     settled: (key: string, outcome: LaunchOutcome): void =>
       update(key, (launch) => ({ ...launch, outcome })),
-    step: (step: StepReport): void => {
-      const steps = status.steps ?? [];
-      if (steps.at(-1)?.endedAt === null) {
-        steps.pop();
-      }
-      status.steps = [...steps, step];
-      writeStatus(file, status);
-    },
+    step: (step: StepReport): void =>
+      set({ steps: withStep(status.steps ?? [], step) }),
+    moved: (stage: string): void => set({ currentStage: stage }),
     launch: (key: string): LaunchRecord | null =>
       status.launches.find((l: LaunchRecord): boolean => l.key === key) ?? null,
-    finish: (outcome: JobOutcome): void => {
-      status.outcome = outcome;
-      status.endedAt = new Date().toISOString();
-      writeStatus(file, status);
-    },
-    lostChanges: (
-      paths: readonly string[],
-      patches: readonly string[],
-    ): void => {
-      status.lostChanges = [...paths];
-      status.droppedPatches = [...patches];
-      writeStatus(file, status);
-    },
+    currentStage: (): string => currentStageOf(status),
+    finish: (outcome: JobOutcome): void =>
+      set({ outcome, endedAt: new Date().toISOString() }),
+    lostChanges: (paths: readonly string[], patches: readonly string[]): void =>
+      set({ lostChanges: [...paths], droppedPatches: [...patches] }),
   };
 }
 
@@ -259,6 +275,11 @@ function resumePoints(runDir: string): (key: string) => ResumePoint | null {
   };
 }
 
+// The stage the job is at now, as its file names it.
+function currentStageOf(status: StatusFile): string {
+  return status.currentStage ?? status.stage;
+}
+
 // The steer socket the job in `runDir` recorded, or null with no file.
 function socketOf(runDir: string): string | null {
   return readStatus(runDir)?.socket ?? null;
@@ -272,4 +293,4 @@ export type {
   StatusFile,
   StopSignal,
 };
-export { openStatus, readStatus, resumePoints, socketOf };
+export { currentStageOf, openStatus, readStatus, resumePoints, socketOf };

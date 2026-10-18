@@ -254,3 +254,22 @@ test("an older job.json without a token budget or context size still parses, as 
   assert.equal(parsed?.tokenBudget, null);
   assert.equal(parsed?.contextTokens, 0);
 });
+
+test("job.json names the stage the job is at now: the stage it started at, then each stage it moved on to (#424)", async () => {
+  const { currentStageOf, openStatus, readStatus } = await import(
+    "../src/job/status.ts"
+  );
+  const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
+  process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
+  const status = openStatus(runDir, { ...JOB, stage: "fix" });
+  assert.equal(readStatus(runDir)?.currentStage, "fix");
+  status.moved("checks");
+  const moved = readStatus(runDir);
+  assert.equal(moved?.stage, "fix");
+  assert.equal(moved?.currentStage, "checks");
+  assert.equal(moved && currentStageOf(moved), "checks");
+  const { currentStage: _, ...older } = moved ?? {};
+  fs.writeFileSync(path.join(runDir, "job.json"), JSON.stringify(older));
+  const read = readStatus(runDir);
+  assert.equal(read && currentStageOf(read), "fix");
+});

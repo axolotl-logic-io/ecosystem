@@ -3,7 +3,8 @@
 // Pipeline-Roles-Implementor, "Entry `fix`"), as a state, a result, the
 // reply and data it is taken with, the next state, its effect (an op's,
 // check's or session's name, or the end) and the data it changes. The
-// limits are the machine's LIMITS: one continuation, two fix rounds.
+// limits are the machine's LIMITS: one continuation, two fix rounds. Every
+// finding resolved carries on at checks in the same job (#424).
 import { ACCEPTANCE_REASON, findingsText } from "../src/workflow/findings.ts";
 import { outOfRoomReason } from "../src/workflow/stages/continuation.ts";
 import { IN_ROUND, LENS_EDGES } from "./implementor-fix-lens-edges.mjs";
@@ -29,10 +30,14 @@ import { HANDOFF_FILE, stoppedWith } from "./implementor-role-test-kit.mjs";
 
 /** @import { EdgeCase } from "./implementor-edge-fixtures.mjs" */
 /** @import { Finding } from "./implementor-fix-test-kit.mjs" */
+/** @import { End } from "../src/roles/machine.ts" */
 
 const MAX_ROUNDS = 2;
 /** @type {Finding} */
 const RESOLVED_F1 = { ...F1, status: "resolved" };
+// The end once every finding is resolved: saved at checks, carried on there.
+/** @type {End} */
+const NEXT_CHECKS = { kind: "next", stage: "checks" };
 const DISPUTED_ACC = { ...ACC, disputed: true, dispute: DISPUTE.evidence };
 // What the push's `fix-flows` check answers with.
 const PUSHED_CODE = { headSha: FIXED_HEAD, flows: { code: true, wiki: false } };
@@ -91,7 +96,7 @@ const FIX_EDGES = [
     result: "none",
     data: { findings: [RESOLVED_F1] },
     next: "fixed",
-    effect: { kind: "saved", stage: "checks" },
+    effect: NEXT_CHECKS,
   },
   {
     at: "fixer",
@@ -211,7 +216,7 @@ const FIX_EDGES = [
     reply: updated([RESOLVED_F1]),
     data: { ...IN_ROUND, testsOnly: true },
     next: "fixed",
-    effect: { kind: "saved", stage: "checks" },
+    effect: NEXT_CHECKS,
     changes: {
       findings: [RESOLVED_F1],
       resolvedHistory: ["f1: Off by one"],

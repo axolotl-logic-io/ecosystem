@@ -11,7 +11,7 @@ import { leaseLane } from "../claims.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import type { StatusFile } from "../job/status.ts";
-import { readStatus } from "../job/status.ts";
+import { currentStageOf, readStatus } from "../job/status.ts";
 import { openIssues } from "../ops/sweep.ts";
 import type { IssueRow, SweepContext } from "../ops/sweep-verdict.ts";
 import { afterDeps, classify, liveLease } from "../ops/sweep-verdict.ts";
@@ -88,14 +88,15 @@ function verdictOf(
 }
 
 // The issue's job: its job.json while that job runs, or else the last job
-// the orchestrator started for it while that process runs.
+// the orchestrator started for it while that process runs. A job.json's job
+// is at the stage the file names now (#424).
 function jobOf(
   status: StatusFile | null,
   running: boolean,
   start: StartRecord | undefined,
 ): IssueJob | null {
   if (status !== null && running) {
-    return { live: true, stage: status.stage };
+    return { live: true, stage: currentStageOf(status) };
   }
   if (start !== undefined && isAlive(start.pid)) {
     return { live: true, stage: start.stage };
@@ -103,7 +104,7 @@ function jobOf(
   if (status === null) {
     return null;
   }
-  return { live: false, stage: status.stage };
+  return { live: false, stage: currentStageOf(status) };
 }
 
 function numberOr(value: unknown): number | null {

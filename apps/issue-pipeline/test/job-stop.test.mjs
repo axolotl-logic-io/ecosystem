@@ -3,13 +3,13 @@
 // with no lease, and exits 128 + the signal.
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import {
   alive,
   endsWithTest,
   killGroup,
+  pidIn,
   waitFor,
 } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
@@ -99,19 +99,6 @@ test("a session that ignores the abort is killed after the grace period, and the
   assert.deepEqual(stopSaveOf(place), SAVED_AT_STAGE);
 });
 
-/** @param {import("./job-test-kit.mjs").Place} place @param {string} name @returns {number | null} the pid in file `name` under the place's root, once written */
-function pidIn(place, name) {
-  const file = path.join(place.root, name);
-  if (!fs.existsSync(file)) {
-    return null;
-  }
-  const text = fs.readFileSync(file, "utf8");
-  if (!text.endsWith("\n")) {
-    return null;
-  }
-  return Number(text);
-}
-
 /** @param {import("./job-test-kit.mjs").Place} place @returns {any} the job's first launch, or null */
 function firstLaunchOf(place) {
   return statusOf(place)?.launches[0] ?? null;
@@ -137,8 +124,11 @@ test("a stop kills the process group of an ops launch still running (#371)", asy
       killGroup(pid);
     }
   });
-  await waitFor("the hung op's sleep", () => pidIn(place, HANG_PID) !== null);
-  const sleep = pidIn(place, HANG_PID);
+  await waitFor(
+    "the hung op's sleep",
+    () => pidIn(place.root, HANG_PID) !== null,
+  );
+  const sleep = pidIn(place.root, HANG_PID);
   const ops = firstLaunchOf(place);
   assert.equal(ops?.kind, "ops");
   job.child.kill("SIGTERM");
@@ -157,13 +147,13 @@ test("a session killed after the grace period loses its whole process group (#37
   });
   const job = startJob(place, STAGE_ARGS);
   endsWithTest(() => {
-    const sleep = pidIn(place, PI_CHILD_PID);
+    const sleep = pidIn(place.root, PI_CHILD_PID);
     if (sleep !== null && alive(sleep)) {
       process.kill(sleep, "SIGKILL");
     }
   });
-  await waitFor("pi's child", () => pidIn(place, PI_CHILD_PID) !== null);
-  const sleep = pidIn(place, PI_CHILD_PID);
+  await waitFor("pi's child", () => pidIn(place.root, PI_CHILD_PID) !== null);
+  const sleep = pidIn(place.root, PI_CHILD_PID);
   if (sleep === null) {
     throw new Error("pi-child.pid has no pid");
   }

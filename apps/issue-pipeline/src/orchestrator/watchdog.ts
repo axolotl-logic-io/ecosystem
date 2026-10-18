@@ -1,9 +1,10 @@
 // The orchestrator's watchdog (#235): what to do about each issue's stage
 // job before the scheduler decides anything. A dead job (no outcome, not
 // live, or one the watchdog stopped itself for silence) is restarted with
-// --resume, at most maxResumes times per issue and stage, and then the issue
-// is stopped; a restart the start gate (the scheduler's caps and rate limit)
-// holds waits for a later tick and isn't counted. A live job's session launch
+// --resume at the stage its job.json names now (#424), at most maxResumes
+// times per issue and stage, and then the issue is stopped; a restart the
+// start gate (the scheduler's caps and rate limit) holds waits for a later
+// tick and isn't counted. A live job's session launch
 // silent for silentMinutes is steered once, and its job stopped (SIGTERM)
 // when it stays silent as long again. A session whose calls of one tool
 // failed failureStreak times in a row is steered once per streak with the
@@ -14,6 +15,7 @@
 // memory (watchdog-memory.ts).
 
 import type { StatusFile } from "../job/status.ts";
+import { currentStageOf } from "../job/status.ts";
 import type { StartGate } from "./schedule.ts";
 import { budgetActions, isLiveSession } from "./watchdog-budget.ts";
 import type { WatchMemory } from "./watchdog-memory.ts";
@@ -80,7 +82,7 @@ function jobId(status: StatusFile): string {
 }
 
 function stageKey(status: StatusFile): string {
-  return `${status.issue} ${status.stage}`;
+  return `${status.issue} ${currentStageOf(status)}`;
 }
 
 // Dead: no outcome and not live, or stopped by the watchdog and not live.
@@ -99,7 +101,8 @@ function isDead(job: WatchedJob, killed: readonly string[]): boolean {
 type Working = WatchMemory & WatchSettings & { admit: StartGate };
 
 function revive(job: WatchedJob, memory: Working, at: string): WatchAction {
-  const { issue, stage } = job.status;
+  const { issue } = job.status;
+  const stage = currentStageOf(job.status);
   const key = stageKey(job.status);
   const count = memory.resumes[key] ?? 0;
   if (count >= memory.maxResumes) {
@@ -131,7 +134,7 @@ function silenceAction(
   const heard = Date.parse(launch.lastEventAt ?? launch.startedAt);
   const silentMs = memory.silentMinutes * MS_PER_MINUTE;
   const at = now.toISOString();
-  const base = { at, issue: status.issue, stage: status.stage };
+  const base = { at, issue: status.issue, stage: currentStageOf(status) };
   const reason: `silent:${string}` = `silent:${launch.key}`;
   const steered = memory.steers[id];
   if (steered !== undefined && heard <= Date.parse(steered)) {
@@ -192,7 +195,7 @@ function failureAction(
   return {
     at,
     issue: status.issue,
-    stage: status.stage,
+    stage: currentStageOf(status),
     action: "steered",
     reason: `failures:${launch.key}`,
     socket: status.socket,

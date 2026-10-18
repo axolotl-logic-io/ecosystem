@@ -233,6 +233,7 @@ async function runJob(place, job = {}) {
     clock: () => new Date("2026-10-18T12:00:00Z"),
     stopping: () => null,
     step: () => undefined,
+    moved: () => undefined,
   };
   const context = { ...roleContext(), issue: place.issue };
   const entry = { stage: "merge", saved: place.saved, context };

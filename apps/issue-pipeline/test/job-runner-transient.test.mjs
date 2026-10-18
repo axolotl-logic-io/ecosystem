@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runLinear, runMachine } from "../src/job/runner.ts";
 import { gh, runToy, uninterrupted, world } from "./runner-test-kit.mjs";
-import { TOY_SCRIPT, TOY_STATES, toyMachine } from "./runner-toys.mjs";
+import { TOY_SCRIPT, TOY_STATES, toyMachine, WORK } from "./runner-toys.mjs";
 
 /** @import { End } from "../src/roles/machine.ts" */
 /** @import { Outcome } from "../src/job/run-step.ts" */
@@ -206,6 +206,41 @@ test("a rate-limited run saves the counts it took back at their values when it b
     ),
   );
   assert.equal(triesOf(run.saved), 0);
+});
+
+// The toy machine whose `checks` stage runs a session, as the implementor's
+// CI fixer does after its fix entry moves on (#424).
+const CHECKS_SESSION = toyMachine({
+  states: {
+    ...TOY_STATES,
+    checks: {
+      kind: "session",
+      effect: () => WORK,
+      on: { replied: { to: "finished" } },
+    },
+  },
+});
+
+// The first entry's two sessions, then the checks session.
+const MOVED_SESSIONS = 3;
+
+/** @type {RoleRun} */
+function runChecksSession(entry, effects) {
+  return runMachine(CHECKS_SESSION, entry, effects);
+}
+
+test("a rate limit after a next end keeps the counts the stage it left saved", async () => {
+  // The first entry counts a failed verify, then moves on to `checks`,
+  // whose session hits the rate limit.
+  const run = await uninterrupted(runChecksSession, {
+    verify: (tries) => (tries === 0 && "fail") || "pass",
+    session: inTurn([REPLIED, REPLIED, { ok: false, error: RATE_LIMIT_ERROR }]),
+  });
+  assert.deepEqual(run.end, HELD);
+  assert.equal(sessions(run.calls), MOVED_SESSIONS);
+  assert.equal(triesOf(run.saved), 1);
+  const { lease, stage } = run.saved;
+  assert.deepEqual({ lease, stage }, { lease: null, stage: "checks" });
 });
 
 test("any other session failure still takes the state's failed edge, and a second one stops", async () => {

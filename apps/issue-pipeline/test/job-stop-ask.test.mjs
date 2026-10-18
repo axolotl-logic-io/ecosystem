@@ -7,13 +7,12 @@
 // each request; the issue's state is worked out from them, with the hung
 // ask's write taken as done, as the real op does it before it answers.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
 import {
   alive,
   endsWithTest,
   killGroup,
+  pidIn,
   waitFor,
 } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
@@ -74,19 +73,6 @@ function issueStateOf(place) {
   return state;
 }
 
-/** @param {Place} place @returns {number | null} the hung op's sleep's pid, once written */
-function hungPid(place) {
-  const file = path.join(place.root, HANG_PID);
-  if (!fs.existsSync(file)) {
-    return null;
-  }
-  const text = fs.readFileSync(file, "utf8");
-  if (!text.endsWith("\n")) {
-    return null;
-  }
-  return Number(text);
-}
-
 for (const { stage, reply } of ASKING_ROLES) {
   test(`a SIGTERM while the ${stage} role's end asks leaves the questions' time the ask wrote`, async () => {
     const replies = { ...repliesAt(stage), ask: { hang: true } };
@@ -94,13 +80,16 @@ for (const { stage, reply } of ASKING_ROLES) {
       events: [messageEnd(USAGE), outputEnd(reply)],
     });
     endsWithTest(() => {
-      const sleep = hungPid(place);
+      const sleep = pidIn(place.root, HANG_PID);
       if (sleep !== null && alive(sleep)) {
         killGroup(sleep);
       }
     });
     const job = startJob(place, ["--stage", stage]);
-    await waitFor("the hung ask's sleep", () => hungPid(place) !== null);
+    await waitFor(
+      "the hung ask's sleep",
+      () => pidIn(place.root, HANG_PID) !== null,
+    );
     job.child.kill("SIGTERM");
     const end = await job.end;
     assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);

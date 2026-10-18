@@ -57,6 +57,7 @@ function checksWith(replies = {}) {
     clock: () => ROLE_CLOCK,
     stopping: () => null,
     step: () => undefined,
+    moved: () => undefined,
   };
   const entry = { stage: "checks", saved: {}, context: implContext() };
   const checks = new Map(

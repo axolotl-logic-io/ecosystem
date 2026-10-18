@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { contextLogOf } from "../src/job/context-log.ts";
+import { openStatus } from "../src/job/status.ts";
 import { ZERO_USAGE } from "../src/job/token-usage.ts";
 import { waitFor } from "./bounded-test-kit.mjs";
 import { outputEnd, TURN_OUTPUT, turns } from "./fake-rpc-pi.mjs";
@@ -40,6 +41,15 @@ const PAST_SOFT = 1200;
 const PAST_HARD = 2100;
 // The job id the orchestrator would pass.
 const JOB_ID = "0b6f7c1e-2a3d-4e5f-8a9b-0c1d2e3f4a5b";
+// A job that starts at fix and moves on to checks.
+const MOVING_JOB = {
+  id: JOB_ID,
+  issue: ISSUE,
+  stage: "fix",
+  lane: null,
+  startedAt: "2026-10-17T12:00:00.000Z",
+  socket: "/s",
+};
 // What `turns` spends over FIRST, PEAK and LAST: a quarter of each context
 // as input and as cache writes, the rest as cache reads, and TURN_OUTPUT
 // output tokens a turn.
@@ -185,30 +195,38 @@ test(
   },
 );
 
-test("a session with no launch record is logged as unrecorded, with no file or measures", () => {
+const STEERS = { context: 0, socket: 0 };
+
+/**
+ * The line a reviewer session that ended ok is logged with, through the
+ * job's `status`, made in a fresh run folder by `statusIn`.
+ * @param {(runDir: string) => Pick<import("../src/job/status.ts").JobStatus, "launch" | "currentStage">} statusIn
+ * @returns {any}
+ */
+function loggedLine(statusIn) {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "context-log-"));
-  const watch = {
-    status: { launch: () => null },
-    control: { stopping: () => null },
-  };
-  const log = contextLogOf(
-    runDir,
-    { issue: ISSUE, stage: "review", id: JOB_ID },
-    watch,
-  );
-  const steers = { context: 0, socket: 0 };
+  const watch = { status: statusIn(runDir), control: { stopping: () => null } };
+  const log = contextLogOf(runDir, { issue: ISSUE, id: JOB_ID }, watch);
   log("i7-review-2", {
     budgetRole: "reviewer",
     agent: "issue-pipeline-reader",
     model: "anthropic/claude-opus-5-5",
     ended: "ok",
-    steers,
+    steers: STEERS,
     headSha: "abc1234",
     reviewedSha: "abc1234",
   });
   const lines = fs.readFileSync(path.join(runDir, "context.jsonl"), "utf8");
   const [line] = lines.split("\n").map((text) => text && JSON.parse(text));
   fs.rmSync(runDir, { recursive: true, force: true });
+  return line;
+}
+
+test("a session with no launch record is logged as unrecorded, with no file or measures", () => {
+  const line = loggedLine(() => ({
+    launch: () => null,
+    currentStage: () => "review",
+  }));
   assert.deepEqual(Object.keys(line), LINE_FIELDS);
   assert.deepEqual(
     { ...line, at: null },
@@ -230,9 +248,18 @@ test("a session with no launch record is logged as unrecorded, with no file or m
       turns: 0,
       usage: ZERO_USAGE,
       contextStop: null,
-      steers,
+      steers: STEERS,
       headSha: "abc1234",
       reviewedSha: "abc1234",
     },
   );
+});
+
+test("a session that ends once the job moved on is logged at the stage it moved to (#424)", () => {
+  const line = loggedLine((runDir) => {
+    const status = openStatus(runDir, MOVING_JOB);
+    status.moved("checks");
+    return status;
+  });
+  assert.equal(line.stage, "checks");
 });

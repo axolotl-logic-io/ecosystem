@@ -53,7 +53,7 @@ function hooksOf(
     contextStopped: status.contextStopped,
     sessionEnded: contextLogOf(
       paths.runDir(cfg, args.issue),
-      { issue: args.issue, stage: args.stage, id: job.id },
+      { issue: args.issue, id: job.id },
       watch,
     ),
     env: (agent: string, key: string): Readonly<Record<string, string>> => {

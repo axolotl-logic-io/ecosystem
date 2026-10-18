@@ -11,6 +11,7 @@
 // retry run after it (#272), so no live-session check counts either.
 
 import type { StatusFile } from "../job/status.ts";
+import { currentStageOf } from "../job/status.ts";
 import type { WatchAction, WatchedJob } from "./watchdog.ts";
 import type { OverBudget, WatchMemory } from "./watchdog-memory.ts";
 
@@ -54,7 +55,7 @@ function budgetActions(
 ): WatchAction[] | null {
   const { status } = job;
   const id = jobId(status);
-  const base = { at, issue: status.issue, stage: status.stage };
+  const base = { at, issue: status.issue, stage: currentStageOf(status) };
   const over = memory.overBudget[id];
   if (over !== undefined) {
     if (job.live || over.stopped) {

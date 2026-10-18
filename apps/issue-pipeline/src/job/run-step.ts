@@ -48,6 +48,8 @@ interface Effects {
   clock: () => Date;
   stopping: () => StopSignal | null;
   step: (step: StepReport) => void;
+  // The run moved on to `stage` in the same job, once its save there is done.
+  moved: (stage: string) => void;
 }
 
 type Performed =
