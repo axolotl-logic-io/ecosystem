@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld } from "./pipeline-flow-gh-world.mjs";
+import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
 import {
   BASE,
   bareGit,
@@ -19,7 +19,12 @@ import {
   WIKI_BRANCH,
 } from "./pipeline-flow-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
-import { jobLog, stagesUntilIdle, stopJobs } from "./pipeline-flow-run.mjs";
+import {
+  jobLog,
+  stagesUntilIdle,
+  stopJobs,
+  tick,
+} from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
   openFlowIssue,
@@ -47,6 +52,11 @@ let flow;
 let start;
 /** @type {string[]} every stage the flow started, until it went idle */
 let stages;
+
+/** @returns {number} how many sessions pi started */
+function sessionCount() {
+  return piLog(flow.piDir).filter((entry) => entry.start === true).length;
+}
 
 /** @returns {{ base: string, wiki: string }} */
 function heads() {
@@ -143,3 +153,43 @@ test("the wiki fast-forwards to the reviewed wiki commit, which holds the implem
   assert.match(page, PUBLISHED_PAGE);
 });
 
+// Runs last: it reopens the issue as if the completion's close was lost.
+test("a wiki-only completion replayed on a reopened done issue closes it again with no model, merging and publishing nothing new", async () => {
+  const done = heads();
+  const receipt = savedState(readWorld(flow.ghDir)).merged;
+  withWorld(flow.ghDir, (reopened) => {
+    const issue = reopened.issues.find(({ number }) => number === ISSUE);
+    Object.assign(issue ?? {}, {
+      state: "open",
+      stateReason: null,
+      labels: [],
+    });
+  });
+  const sessions = sessionCount();
+  const { started } = await tick(flow);
+  const world = readWorld(flow.ghDir);
+  const issue = world.issues.find(({ number }) => number === ISSUE);
+  assert.deepEqual(
+    {
+      started,
+      sessions: sessionCount(),
+      heads: heads(),
+      prs: world.prs.map((pr) => pr.state),
+      issue: [issue?.state, issue?.stateReason],
+      stage: savedState(world).stage,
+      merged: savedState(world).merged,
+      unsupported: world.unsupported,
+    },
+    {
+      started: ["merge"],
+      sessions,
+      heads: done,
+      prs: ["CLOSED"],
+      issue: ["closed", "completed"],
+      stage: "done",
+      merged: receipt,
+      unsupported: [],
+    },
+    jobLog(flow),
+  );
+});
