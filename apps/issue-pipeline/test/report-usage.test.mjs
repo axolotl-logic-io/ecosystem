@@ -185,7 +185,7 @@ test("each role lists the five tools with the most output", () => {
   const { tools } = usageReport([usageComment(lines)], OPTIONS, FLAGS);
   assert.deepEqual(tools, [
     {
-      role: "spec-writer",
+      role: "implementor",
       top: [
         { tool: "find", calls: 2, outputChars: 750 },
         { tool: "read", calls: 1, outputChars: 600 },

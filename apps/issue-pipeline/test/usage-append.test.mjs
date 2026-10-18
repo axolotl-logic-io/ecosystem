@@ -6,54 +6,21 @@
 // job record reaches jobs.jsonl in the issue's run folder, refused or not.
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { usageAppender } from "../src/job/usage-append.ts";
-import { parseUsageLine } from "../src/job/usage-log.ts";
-import { LAUNCH } from "./runner-test-kit.mjs";
-import { CONTEXT } from "./usage-fixtures.mjs";
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+import { CONTEXT, jobEntry, sessionEntry } from "./usage-fixtures.mjs";
+
+const { usageAppender } = await import("../src/job/usage-append.ts");
+const { parseUsageLine } = await import("../src/job/usage-log.ts");
 
 /** @import { UsageEntry } from "../src/job/run-usage.ts" */
 
-const AT = "2026-10-16T12:00:00.000Z";
 const PREFIXED_MODEL = "anthropic/claude-opus-5-5";
 const REFUSED_SESSION = /^job: usage: dropped the session record: model: /mu;
 const REFUSED_JOB = /^job: usage: dropped the job record: outcome: /mu;
-const ISSUE_TOKENS = 2640;
-
-/** @param {Record<string, unknown>} [over] @returns {UsageEntry} */
-function sessionEntry(over = {}) {
-  return /** @type {UsageEntry} */ ({
-    kind: "session",
-    at: AT,
-    key: "i7-spec-1",
-    stage: "spec",
-    state: "work",
-    name: "work",
-    agent: "toy-writer",
-    model: PREFIXED_MODEL,
-    attempt: 1,
-    taskChars: 16,
-    schema: {},
-    ended: "reply",
-    reply: null,
-    launch: LAUNCH,
-    ...over,
-  });
-}
-
-/** @type {UsageEntry} */
-const JOB_ENTRY = {
-  kind: "job",
-  at: AT,
-  stages: ["spec"],
-  outcome: "saved",
-  seconds: 30,
-  tokens: LAUNCH.tokens,
-  issueTokens: ISSUE_TOKENS,
-};
+const JOB_ENTRY = jobEntry();
 
 /**
  * Appends `entry` with a send that answers `answers` in turn (then true),
@@ -61,7 +28,7 @@ const JOB_ENTRY = {
  * @param {UsageEntry} entry @param {boolean[]} [answers]
  */
 async function appended(entry, answers = []) {
-  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "usage-append-"));
+  const runDir = fs.mkdtempSync(path.join(isolatedRoot, "usage-append-"));
   /** @type {string[]} */
   const sent = [];
   /** @param {string} line @returns {Promise<boolean>} */
@@ -90,7 +57,9 @@ async function appended(entry, answers = []) {
 }
 
 test("a session whose model id has a provider prefix reaches the usage op with it", async () => {
-  const { sent, stderr } = await appended(sessionEntry());
+  const { sent, stderr } = await appended(
+    sessionEntry({ model: PREFIXED_MODEL }),
+  );
   assert.equal(stderr, "");
   assert.equal(sent.length, 1);
   const record = parseUsageLine(sent[0] ?? "");
