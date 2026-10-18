@@ -8,7 +8,7 @@ import { z } from "zod";
 import { OpsError } from "../process.ts";
 import type { currentRevision } from "../revision.ts";
 import type { IssueState, Revision } from "../state.ts";
-import { approvalHolds } from "../state.ts";
+import { approvalHolds, approvedRevision, sameRevision } from "../state.ts";
 
 type CurrentRevision = ReturnType<typeof currentRevision>;
 
@@ -42,12 +42,8 @@ interface FinishRefusal {
   detail: string;
 }
 
-function sameRevision(a: Revision, b: Revision): boolean {
-  return a.code === b.code && a.wiki === b.wiki && a.inputs === b.inputs;
-}
-
 // A merge goes on only while the code head, wiki head and trusted inputs are
-// still the approved `revision`.
+// still the approved `revision` (approvedRevision).
 function mergeStale(
   revision: Revision,
   current: CurrentRevision,
@@ -99,8 +95,10 @@ function publishRefusal(
 // that GitHub reports, for the approved `revision`, or undefined. The
 // receipt is the issue saved at stage merge with `merged` naming GitHub's
 // merge commit and the approved wiki and inputs, its PR the same, and its
-// review approving the exact head GitHub merged. Only the saved state
-// counts: the request's state and the job's log are no proof.
+// approval (approvedRevision: the reviewed head, or the head the Reviewer's
+// own integration checked from it) permitting the exact head GitHub merged.
+// Only the saved state counts: the request's state and the job's log are no
+// proof.
 function receiptRefusal(
   saved: IssueState | null,
   state: IssueState,
@@ -113,14 +111,15 @@ function receiptRefusal(
       `#${state.number} has no saved code-merge receipt at stage merge`,
     );
   }
-  const { merged: receipt, review } = saved;
+  const { merged: receipt } = saved;
+  const approved = approvedRevision(saved);
   const holds =
     saved.pr === state.pr &&
     receipt.code === merged.mergeCommit &&
     receipt.wiki === revision.wiki &&
     receipt.inputs === revision.inputs &&
-    review.revision !== null &&
-    review.revision.code === revision.code &&
+    approved !== null &&
+    sameRevision(approved, revision) &&
     revision.code === merged.headSha;
   if (holds) {
     return undefined;
@@ -200,7 +199,7 @@ function publishGate(
   if (!approvalHolds(state, revision)) {
     return publishRefusal(
       "unapproved",
-      "the last review did not approve this exact revision",
+      "neither the last review nor the Reviewer's own integration of it approved this exact revision",
     );
   }
   if (current.revision.inputs !== revision.inputs) {

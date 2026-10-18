@@ -107,10 +107,18 @@ function mergeAndRelease(w, ops) {
   const asked = ask(w, { op: "current-revision", number: ISSUE, state }, ops);
   const current = CURRENT.parse(JSON.parse(asked));
   fakeGh.reply([issueListing(), claimListing(), ...prViews(w.sha)]);
+  // The merge op merges only the state's approved revision.
+  const review = {
+    round: 0,
+    verdict: "approve",
+    commentId: null,
+    findings: [],
+    revision: current.revision,
+  };
   const req = {
     op: "merge",
     number: ISSUE,
-    state,
+    state: { ...state, review },
     expectedSha: w.sha,
     revision: current.revision,
     mergeQueue: null,

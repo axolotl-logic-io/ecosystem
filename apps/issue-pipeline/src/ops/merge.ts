@@ -1,6 +1,7 @@
 // The decision to merge an issue's PR or refuse it: the checks that the
-// approved commit is still the PR's head and the approved revision is still
-// current, the merge order between issues, the base check, the squash merge
+// request's revision is the state's approved one (approvedRevision), that it
+// is still the PR's head and still current, the merge order between issues,
+// the base check, that the Reviewer marked the PR ready, the squash merge
 // itself and the merge receipt. A merge only merges code: publishing the
 // wiki (publish) and closing the issue (finish-wiki) are separate ops the
 // merge role runs after it saves the receipt (`merge-publish-finish-split`).
@@ -14,13 +15,13 @@ import { gh, ghJson, git } from "../github.ts";
 import type { RunResult } from "../process.ts";
 import { OpsError, parseRequest, run, tail } from "../process.ts";
 import { currentRevision } from "../revision.ts";
-import { ISSUE_STATE } from "../state.ts";
+import { approvalHolds, ISSUE_STATE } from "../state.ts";
+import { mergedText } from "./merge-comment.ts";
 import type { Queued } from "./merge-order.ts";
 import { queued } from "./merge-order.ts";
 import type { MergeStale } from "./publication-guard.ts";
 import { mergeStale, REVISION_REQUEST } from "./publication-guard.ts";
 
-const SHORT_SHA_LENGTH = 12;
 const REFUSAL_TAIL_LINES = 5;
 const BASE_MOVED =
   /base branch was modified|not up to date with the base|head branch is not up to date/iu;
@@ -48,7 +49,8 @@ const MERGE_REQUEST = z.looseObject({
   // lowest-PR order when given.
   mergeQueue: z.array(z.number().int()).nullish(),
   number: z.number().int(),
-  // The revision the review approved, which must still be current.
+  // The state's approved revision (approvedRevision), which must still be
+  // current.
   revision: REVISION_REQUEST,
   state: ISSUE_STATE.extend({ pr: z.number().int().positive() }),
   summary: z.string().nullish(),
@@ -74,6 +76,9 @@ type MergeReply =
   | { merged: true; byHand: true; mergeCommit: string; headSha: string }
   | { merged: false; reason: string }
   | { merged: false; reason: "head-changed"; headSha: string }
+  // The PR is still a draft: only ready-pr marks it ready, after the
+  // Reviewer's approval.
+  | { merged: false; reason: "draft" }
   | WikiRefusal
   | MergeStale
   | Queued;
@@ -104,9 +109,15 @@ function mergeCommitOf(pr: number, view: PrView): string {
   return oid;
 }
 
-// The PR view, once the request and PR are consistent: the expected head is
-// the approved code, and the PR is from the issue's branch.
+// The PR view, once the request and PR are consistent: the revision is the
+// state's approved one, the expected head is its code, and the PR is from
+// the issue's branch.
 function checkedView(cfg: Config, req: MergeRequest): PrView {
+  if (!approvalHolds(req.state, req.revision)) {
+    throw new OpsError(
+      `merge revision (code ${String(req.revision.code)}, wiki ${String(req.revision.wiki)}) is not #${req.number}'s approved revision`,
+    );
+  }
   if (req.expectedSha !== req.revision.code) {
     throw new OpsError(
       `merge expectedSha ${req.expectedSha} is not the approved code ${String(req.revision.code)}`,
@@ -182,7 +193,8 @@ function wikiBehind(cfg: Config, req: MergeRequest): WikiRefusal | undefined {
 
 // Why the open PR may not merge yet, or undefined when it may. The merge
 // order comes before the fresh revision and base checks, so only the issue
-// at the head of the queue is told to rebase (#422).
+// at the head of the queue is told to rebase (#422). A draft is refused, and
+// never marked ready here.
 function precheck(
   cfg: Config,
   req: MergeRequest,
@@ -208,6 +220,9 @@ function precheck(
   const behind = staleReason(cfg, req, view);
   if (behind !== undefined) {
     return { merged: false, reason: behind };
+  }
+  if (view.isDraft) {
+    return { merged: false, reason: "draft" };
   }
   return wikiBehind(cfg, req);
 }
@@ -251,10 +266,6 @@ function merge(cfg: Config, request: unknown): MergeReply {
   }
   // The account that opened the PR can't approve it, so there is no review
   // step; the signed comment below records the verdict instead.
-  // GitHub won't merge a draft. open-pr marks it ready, but make sure.
-  if (view.isDraft) {
-    gh(cfg, ["pr", "ready", String(pr), "-R", cfg.repo], { allowFail: true });
-  }
   const args = ["pr", "merge", String(pr), "-R", cfg.repo, "--squash"];
   args.push("--match-head-commit", req.expectedSha);
   const { mergeAdmin } = cfg;
@@ -272,12 +283,11 @@ function merge(cfg: Config, request: unknown): MergeReply {
     );
   }
   const mergeCommit = mergeCommitOf(pr, after);
-  const sha = req.expectedSha.slice(0, SHORT_SHA_LENGTH);
   comment(
     cfg,
     pr,
     { role: "merger" },
-    `Merged ${sha} as ${mergeCommit.slice(0, SHORT_SHA_LENGTH)}: every blocking review finding is resolved and every check passed on this commit.\n\n${req.summary ?? ""}`,
+    `${mergedText(req.state, req.expectedSha, mergeCommit)}\n\n${req.summary ?? ""}`,
   );
   return { merged: true, mergeCommit, headSha: req.expectedSha };
 }
