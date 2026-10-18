@@ -1,39 +1,38 @@
-// The author session's task.
+// The author session's task: the issue's facts and its current Gherkin. The
+// Author's behaviour is its wiki page (task-facts.ts). Pure.
 
+import { JOB_DOCS, JOB_REPO } from "../../job/layout.ts";
 import type { RoleContext } from "../../job/role-context.ts";
-import { standingRules } from "../prompt-rules.ts";
+import { header, replyLines } from "../task-facts.ts";
 
 function currentGherkin(ctx: RoleContext): string[] {
   const { gherkin } = ctx.inputs;
   if (gherkin === null) {
-    return ["The issue has no Gherkin comment yet: write its first revision."];
+    return ["The issue has no Gherkin comment yet.", ""];
   }
   return [
-    `The issue's Gherkin comment is at revision ${gherkin.rev}:`,
+    `## Current Gherkin (revision ${gherkin.rev})`,
+    "",
+    "The issue or its trusted comments changed since this revision.",
     "",
     "```gherkin",
     gherkin.gherkin,
     "```",
     "",
-    "The issue or its trusted comments changed since then. Update the Gherkin when the change needs it, and set `changed` to whether the behaviour differs; keep it as it is otherwise.",
   ];
 }
 
 function authorTask(ctx: RoleContext): string {
-  const lines = [
-    `# Author issue #${ctx.issue} in ${ctx.cfg.repo}`,
-    "",
-    `Read the issue in \`${ctx.issueFile}\`, the repo in \`repo/\` and the wiki in \`docs/\`. Then write the behaviour the issue asks for as Gherkin: one Feature with the Scenarios that pin it, in the words of the issue and the project.`,
+  return [
+    ...header(ctx, "authoring"),
+    `Read: the issue, the repo in \`${JOB_REPO}/\` and the wiki in \`${JOB_DOCS}/\`.`,
     "",
     ...currentGherkin(ctx),
-    "",
-    "List your own calls under `assumptions` and the wiki pages the change should update under `wikiPages`. If the issue can't be written as behaviour without an answer only its author can give, reply `needs-info` with up to five questions instead.",
-    "",
-    "Don't split the issue, approve your own Gherkin, or write tests, stubs or files: you only read.",
-    "",
-    ...standingRules(ctx.cfg.baseBranch, false),
-  ];
-  return lines.join("\n");
+    ...replyLines([
+      "`gherkin`, with the `gherkin` text, your `assumptions`, the `wikiPages` to update, and `changed`: whether the behaviour differs from the current Gherkin.",
+      "`needs-info`, with up to five `questions`.",
+    ]),
+  ].join("\n");
 }
 
 export { authorTask };
