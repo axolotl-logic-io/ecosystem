@@ -23,10 +23,10 @@ interface AfterOp {
 // `stage` and carried on there in the same job, stopped with a stop code,
 // released, or held for the next tick (`rateLimited` when a transient
 // provider error, a rate limit or a transport error, held it,
-// `rate-limit-defers`). A stop or a release may name the
-// op that carries it out on GitHub, such as `stop` or `ask`.
+// `rate-limit-defers`). A save, a stop or a release may name the op that
+// carries it out on GitHub, such as `stop` or `ask` (#457).
 type End =
-  | { kind: "saved"; stage: string }
+  | { kind: "saved"; stage: string; after?: AfterOp }
   | { kind: "next"; stage: string }
   | { kind: "stopped"; code: string; after?: AfterOp }
   | { kind: "released"; after?: AfterOp }

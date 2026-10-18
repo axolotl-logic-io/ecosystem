@@ -134,6 +134,15 @@ test("ask posts numbered questions, parks the issue and closes its claims", () =
   );
 });
 
+// #457: an ask with no state would leave the issue's state stripped to its
+// stage, questionsAt and lease, so it is refused before it posts.
+test("ask without a state is refused and changes nothing on GitHub", () => {
+  reply([]);
+  const request = { op: "ask", number: ASKED.n, questions: ["Which X?"] };
+  assert.partialDeepStrictEqual(askOps(request), { ok: false });
+  assert.deepEqual(writes(), []);
+});
+
 test("stop by code explains the control on the issue and its PR and swaps labels", () => {
   const { n, pr, claim } = STOPPED;
   reply([

@@ -5,9 +5,11 @@
 // session name (`check:reset`) or its end, and what `data` holds after.
 import {
   COMMITTED,
+  dataWith,
   OUT_OF_ROOM,
   READINGS,
   replyOf,
+  SPEC,
 } from "./spec-writer-role-test-kit.mjs";
 
 /** @import { End, Effect } from "../src/roles/machine.ts" */
@@ -16,6 +18,8 @@ import {
 /** @import { SpecReading, SpecWriterReply } from "../src/roles/spec-writer/reply.ts" */
 
 const ISSUE = 7;
+// The start heads a restarted run saved.
+const HEADS = { startSha: "s1", startWikiSha: "w1" };
 const SPLIT_TOO_SMALL = "the spec writer's split had fewer than 2 parts";
 
 /**
@@ -36,7 +40,7 @@ function stoppedWith(reason, detail) {
   return { kind: "stopped", code: "error", after: { op: "stop", payload } };
 }
 
-const { ready, refused, handoff } = READINGS;
+const { ready, refused, handoff, "needs-info": needsInfo } = READINGS;
 /** @param {SpecReading} reading @returns {SpecWriterReply | null} its reply, when it is ready */
 function readyOf(reading) {
   if (reading.kind === "ready") {
@@ -46,6 +50,12 @@ function readyOf(reading) {
 }
 
 const readyReply = readyOf(ready);
+
+/** @param {string[]} questions @returns {End} the end that saves at triage and asks `questions` with the kit's spec */
+function askedWith(questions) {
+  const payload = { number: ISSUE, by: dataWith().by, questions, spec: SPEC };
+  return { kind: "saved", stage: "triage", after: { op: "ask", payload } };
+}
 
 /** @type {EdgeCase[]} */
 const EDGES = [
@@ -181,12 +191,15 @@ const EDGES = [
     effect: "session:spec",
     changes: { attempts: 2 },
   },
+  // A return to triage starts a new budget; the start heads stay (#454). The
+  // ask runs after the end's save, on the state saved (#457).
   {
     at: "reset",
     result: "needs-info",
-    data: { reply: READINGS["needs-info"] },
-    next: "ask",
-    effect: "op:ask",
+    data: { ...HEADS, attempts: 2, continuations: 1, reply: needsInfo },
+    next: "asked",
+    effect: askedWith(["Why?"]),
+    changes: { ...HEADS, attempts: 0, continuations: 0 },
   },
   {
     at: "reset",
@@ -208,20 +221,6 @@ const EDGES = [
     data: { reply: refused },
     next: "split-refused",
     effect: stoppedWith(SPLIT_TOO_SMALL, null),
-  },
-  // A return to triage starts a new budget; the start heads stay (#454).
-  {
-    at: "ask",
-    result: "ok",
-    data: { attempts: 2, continuations: 1, startSha: "s1", startWikiSha: "w1" },
-    next: "asked",
-    effect: { kind: "saved", stage: "triage" },
-    changes: {
-      attempts: 0,
-      continuations: 0,
-      startSha: "s1",
-      startWikiSha: "w1",
-    },
   },
   {
     at: "split",

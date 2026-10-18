@@ -198,19 +198,11 @@ const SCRIPT_STATES = {
       reading: data.reply,
     }),
     {
-      "needs-info": { to: "ask" },
+      "needs-info": { to: "asked", apply: spent },
       split: { to: "split" },
       "no-work": { to: "stop-no-work" },
       refused: { to: "split-refused" },
     },
-  ),
-  ask: op(
-    "ask",
-    (data: SpecData) => {
-      const { questions, spec } = decided(data);
-      return { by: data.by, questions, spec };
-    },
-    { to: "asked", apply: spent },
   ),
   split: op(
     "split",

@@ -4,7 +4,7 @@
 
 import { outOfRoomReason } from "../../workflow/stages/continuation.ts";
 import type { End, StateSpec } from "../machine.ts";
-import { handoffSummary, refusal } from "./edges.ts";
+import { decided, handoffSummary, refusal } from "./edges.ts";
 import type { SpecData, SpecState } from "./locate.ts";
 import { FAILED_TWICE, SPEC_ROLE } from "./task.ts";
 
@@ -38,6 +38,14 @@ function outOfRoom(data: SpecData): End {
   return { kind: "stopped", code: TOO_LARGE, after: { op: "stop", payload } };
 }
 
+// Back to triage with the session's questions, which the ask posts once the
+// issue is saved there, on the state saved, so it keeps their time (#457).
+function asked(data: SpecData): End {
+  const { questions, spec } = decided(data);
+  const payload = { number: data.issue, by: data.by, questions, spec };
+  return { kind: "saved", stage: "triage", after: { op: "ask", payload } };
+}
+
 const END_STATES: Readonly<
   Record<
     | "released"
@@ -54,7 +62,7 @@ const END_STATES: Readonly<
 > = {
   released: end(() => ({ kind: "released" })),
   "split-opened": end(() => ({ kind: "released" })),
-  asked: end(() => ({ kind: "saved", stage: "triage" })),
+  asked: end(asked),
   "no-work": end(() => ({ kind: "stopped", code: NO_WORK_CODE })),
   "pr-opened": end(() => ({ kind: "saved", stage: "implement" })),
   "wiki-only": end(() => ({ kind: "saved", stage: "review" })),

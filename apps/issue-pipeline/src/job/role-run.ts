@@ -4,7 +4,8 @@
 // alone know how a role's effects run in a job: ops and sessions as the job's
 // launches (src/job/role-launcher.ts), saves through the save-state op, the
 // stop from the job's control and each step in job.json. On a signal it saves
-// the issue at the stage it last saved, with no lease, as a sweep's stop does.
+// the issue at the stage it last saved, with no lease, as a sweep's stop does,
+// unless the run's end had saved it already.
 
 import type { Config } from "../config.ts";
 import { paths as configPaths } from "../config.ts";
@@ -87,7 +88,8 @@ function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
 }
 
 // Runs the role from the claimed state, and on a signal saves the issue at
-// the stage it last saved with no lease.
+// the stage it last saved with no lease, unless the role's end had saved it
+// so before the signal came (#457).
 async function runClaimed(
   job: RoleJob,
   launcher: Launcher,
@@ -133,8 +135,10 @@ async function runClaimed(
     cfg,
   );
   if (end.kind === "interrupted") {
-    const state = { ...last, lease: null };
-    await launcher.op(opLaunchOf(issue, "save-state", { state }));
+    if (end.ended !== true) {
+      const state = { ...last, lease: null };
+      await launcher.op(opLaunchOf(issue, "save-state", { state }));
+    }
     return { kind: "stopped", signal: end.signal };
   }
   return { kind: "finished", summary: { issue, stage, end } };

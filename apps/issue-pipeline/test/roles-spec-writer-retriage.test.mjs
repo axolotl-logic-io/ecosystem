@@ -14,6 +14,7 @@ import { specWriterMachine } from "../src/roles/spec-writer/machine.ts";
 import { JOB_CONFIG } from "./role-context-fixtures.mjs";
 import { gh, runToy, uninterrupted, world } from "./runner-test-kit.mjs";
 import {
+  READINGS,
   replyOf,
   specContext,
   stepFrom,
@@ -158,14 +159,19 @@ const ASKING = [HANDOFF, READY, NEEDS_INFO];
 
 test("the asked end takes the spec writer's counts back to 0 and keeps its start heads", () => {
   const counts = { attempts: 2, continuations: 1 };
-  const step = stepFrom("ask", "ok", null, { ...counts, ...START });
+  const reply = READINGS["needs-info"];
+  const step = stepFrom("reset", "needs-info", null, {
+    ...counts,
+    ...START,
+    reply,
+  });
   assert.equal(step.state.at, "asked");
   const { attempts, continuations, startSha, startWikiSha } = step.state.data;
   assert.deepEqual(
     { attempts, continuations, startSha, startWikiSha },
     { attempts: 0, continuations: 0, ...START },
   );
-  assert.deepEqual(step.effect, {
+  assert.partialDeepStrictEqual(step.effect, {
     kind: "end",
     end: { kind: "saved", stage: "triage" },
   });

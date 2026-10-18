@@ -49,7 +49,10 @@ interface Entry {
   context: RoleContext;
 }
 
-type RunEnd = End | { kind: "interrupted"; signal: StopSignal };
+// A run a signal stopped; `ended` when it came at the end's own op, once the
+// end's save was done, so a stop saves nothing more over what the op wrote
+// (#457).
+type RunEnd = End | { kind: "interrupted"; signal: StopSignal; ended?: true };
 
 // A run's durable side: its stage, the state it last saved and the state
 // it began with.
@@ -86,6 +89,9 @@ function release<D>(
 
 // The end as the run returns it, without its own op.
 function bareEnd(end: End): End {
+  if (end.kind === "saved") {
+    return { kind: "saved", stage: end.stage };
+  }
   if (end.kind === "stopped") {
     return { kind: "stopped", code: end.code };
   }
@@ -98,7 +104,7 @@ function bareEnd(end: End): End {
 // Runs the end's own op, if it has one, on the state just saved, reported
 // as a step at `end`; its failure ends the run as a failed step would.
 async function settle<D>(run: Run<D>, end: End): Promise<RunEnd> {
-  if (!(end.kind === "stopped" || end.kind === "released")) {
+  if (end.kind === "next" || end.kind === "held") {
     return end;
   }
   const { after } = end;
@@ -109,7 +115,7 @@ async function settle<D>(run: Run<D>, end: End): Promise<RunEnd> {
   const effect: Effect = { kind: "op", op: after.op, payload };
   const done = await stepOf(run, { at: "end", effect });
   if (done.kind === "signal") {
-    return { kind: "interrupted", signal: done.signal };
+    return { kind: "interrupted", signal: done.signal, ended: true };
   }
   if (!done.outcome.ok) {
     return failedEnd(done.outcome.error);

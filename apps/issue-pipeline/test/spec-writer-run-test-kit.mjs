@@ -5,7 +5,7 @@
 // once through the fake gh and edits it after; `start-pr` opens PR #42 once
 // and sets its body after; `split` opens the sub-issues once; `close-pr`
 // closes the PR once; `ask` and `stop` save their own state and set their
-// labels. A killed run starts again only while the claim would: at spec.
+// labels; `ask` writes as the real op does, from its payload's `state`. A killed run starts again only while the claim would: at spec.
 import { spawnSync } from "node:child_process";
 
 /** @import { Act, OpFake } from "./runner-test-kit.mjs" */
@@ -14,6 +14,8 @@ import { spawnSync } from "node:child_process";
 const ISSUE = 7;
 const PR = 42;
 const SPEC_FILE = "/runs/issue-7/spec.md";
+// The time the fake `ask` saves as the questions' time.
+const ASKED_AT = "2026-10-18T04:26:32.000Z";
 /** @type {Act["reply"]} */
 const DONE = { ok: true, name: "ok", reply: { ok: true } };
 
@@ -117,11 +119,17 @@ function split(store, { subIssues }) {
   };
 }
 
-/** @type {OpFake} */
-function ask(store) {
+/** @type {OpFake} as the real op (src/ops/ask.ts) writes: the payload's state at triage, asked at ASKED_AT, with no lease (#457) */
+function ask(store, payload) {
   return {
     write: () => {
-      store.saved = { ...store.saved, stage: "triage", lease: null };
+      const { state } = payload;
+      store.saved = {
+        ...recordOf(state),
+        stage: "triage",
+        questionsAt: ASKED_AT,
+        lease: null,
+      };
       store.labels.add("agent:needs-info");
     },
     reply: DONE,
@@ -177,6 +185,7 @@ function specPosts(writes) {
 }
 
 export {
+  ASKED_AT,
   countOf,
   ISSUE,
   PR,

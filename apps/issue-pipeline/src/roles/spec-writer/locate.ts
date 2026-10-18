@@ -31,7 +31,6 @@ type SpecState =
   | "retry"
   | "resume"
   | "reset"
-  | "ask"
   | "split"
   | "stop-no-work"
   | "publish-spec"

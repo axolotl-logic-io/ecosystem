@@ -1,5 +1,7 @@
 // The ask op: posts triage's questions on the issue and parks it at
-// agent:needs-info until an allowed user answers.
+// agent:needs-info until an allowed user answers. It writes the request's
+// state with the questions' time, so a request without one is refused before
+// it posts (#457).
 
 import { z } from "zod";
 import { closeClaims } from "../claims.ts";
@@ -13,7 +15,7 @@ const ASK_REQUEST = z.looseObject({
   by: AUTHOR.nullish(),
   number: z.number(),
   questions: z.array(z.string()).nullish(),
-  state: z.record(z.string(), z.unknown()).nullish(),
+  state: z.record(z.string(), z.unknown()),
 });
 
 type AskRequest = z.infer<typeof ASK_REQUEST>;
