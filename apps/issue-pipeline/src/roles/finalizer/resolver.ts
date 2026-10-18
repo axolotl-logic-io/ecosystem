@@ -143,20 +143,19 @@ function finishEffect(data: FinalizerData): Effect {
   return { kind: "op", op: "finish-wiki-sync", payload };
 }
 
-// A resolver whose session failed with `error`. A transient provider error
-// gives back the attempt and continuations the run took, as the sweep's
-// rate-limit deferral does, so the save before the rebase's finish and the
-// rate-limited hold that follows count none (`rate-limit-defers`).
+// A resolver whose session failed with `error`.
 function sessionLost(data: FinalizerData, error: string): FinalizerData {
-  const failed: FinalizerData = {
-    ...data,
-    resolution: { kind: "settled", fix: null, error },
-  };
-  if (!isTransientSessionError(error)) {
-    return failed;
-  }
+  return { ...data, resolution: { kind: "settled", fix: null, error } };
+}
+
+// A resolver whose session failed with a transient provider error: its
+// rebase must be aborted before the run is held, so the step defers the
+// error itself, giving back the attempt and continuations the run took, so
+// the save before the rebase's finish and the rate-limited hold that
+// follows count none (`rate-limit-defers`).
+function sessionDeferred(data: FinalizerData, error: string): FinalizerData {
   const { conflictFixes = 0, continuations = {} } = data.st;
-  return { ...failed, conflictFixes, continuations };
+  return { ...sessionLost(data, error), conflictFixes, continuations };
 }
 
 // A resolver whose session failed: held for the next tick on a transient
@@ -262,6 +261,7 @@ const resolveStep: LinearStep<FinalizerData> = {
   effect: resolverEffect,
   apply: replied,
   recover: sessionLost,
+  defer: sessionDeferred,
   again: (data: FinalizerData): boolean =>
     data.resolution.kind === "continuing",
 };

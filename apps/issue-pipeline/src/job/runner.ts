@@ -1,10 +1,12 @@
 // The role runner (`role-state-machines` in the wiki's Pipeline-Roles-Shared
 // page): it runs a role's locate over the issue's saved state, then each
 // state's effect, then the role's transition, until an end, reporting every
-// step. It alone decides how a failure the role doesn't list ends (held on a
-// network error; held on a rate limit or transport error with the state it
-// last saved, counting no attempt (`rate-limit-defers`); stopped with the
-// step-failure code otherwise), refuses a session from a non-session state,
+// step. It alone decides how a failure the role doesn't list ends, and a
+// session's transient provider error even where the role lists one, unless
+// a linear step defers it itself (step-failure.ts, `Walk.takesFailure`): held on a network error; held on a rate limit or
+// transport error with the state it last saved and the counts it took put
+// back (`rate-limit-defers`); stopped with the step-failure code otherwise. It
+// refuses a session from a non-session state,
 // and decides what is saved and when: only the role's declared hand-off
 // fields and checkpoints, saved at every end and as soon as a checkpoint
 // changes, so a count is saved when it goes up. An end's own op runs after
@@ -25,19 +27,19 @@ import type {
 } from "../roles/walk.ts";
 import { linearWalk, machineWalk } from "../roles/walk.ts";
 import type { State } from "../state.ts";
-import { isNetworkError } from "../workflow/stages/network.ts";
-import { isTransientSessionError } from "../workflow/stages/rate-limit.ts";
-import { checkpointsChanged, writtenState } from "./role-state.ts";
+import {
+  checkpointsChanged,
+  releasedState,
+  writtenState,
+} from "./role-state.ts";
 import { runSession, runSessions } from "./run-sessions.ts";
 import type { Effects, Outcome, Performed } from "./run-step.ts";
 import { perform } from "./run-step.ts";
 import type { RunUsage } from "./run-usage.ts";
 import { runUsage } from "./run-usage.ts";
 import type { StopSignal } from "./status.ts";
+import { failedEnd, STEP_FAILED } from "./step-failure.ts";
 import { reportedStep } from "./step-report.ts";
-
-// The end of a failed step, with the step-failure stop code (src/stops.ts).
-const STEP_FAILED: End = { kind: "stopped", code: "error" };
 
 // Where a run starts: the job's stage, the issue's saved state and what
 // the role's locate reads besides it.
@@ -49,13 +51,15 @@ interface Entry {
 
 type RunEnd = End | { kind: "interrupted"; signal: StopSignal };
 
-// A run's durable side: its stage and the state it last saved.
+// A run's durable side: its stage, the state it last saved and the state
+// it began with.
 interface Run<D> {
   writes: Writes<D>;
   effects: Effects;
   context: RoleContext;
   stage: string;
   saved: State;
+  begun: State;
   usage: RunUsage;
 }
 
@@ -69,20 +73,15 @@ async function save<D>(run: Run<D>, data: D, end: boolean): Promise<Performed> {
 }
 
 // Saves the state the run last saved with no lease and what its sessions
-// spent, dropping all else the run did since, such as a count it took.
-function release<D>(run: Run<D>): Promise<Performed> {
-  const state = run.usage.counted({ ...run.saved, lease: null });
+// spent, dropping all else the run did since, and with `counts` it took put
+// back at their values when it began.
+function release<D>(
+  run: Run<D>,
+  counts: readonly string[],
+): Promise<Performed> {
+  const released = releasedState(run.saved, run.begun, counts);
+  const state = run.usage.counted(released);
   return perform(run.effects, () => run.effects.save(state));
-}
-
-function failedEnd(error: string): End {
-  if (isTransientSessionError(error)) {
-    return { kind: "held", rateLimited: true };
-  }
-  if (isNetworkError(error)) {
-    return { kind: "held" };
-  }
-  return STEP_FAILED;
 }
 
 // The end as the run returns it, without its own op.
@@ -132,7 +131,7 @@ async function finish<S extends string, D>(
   }
   let done: Performed;
   if (end.kind === "held" && end.rateLimited === true) {
-    done = await release(run);
+    done = await release(run, walk.counts);
   } else {
     done = await save(run, data, end.kind !== "next");
   }
@@ -212,7 +211,7 @@ async function advance<S extends string, D>(
   let result: Result<string> = { name: "failed", reply: null };
   if (outcome.ok) {
     result = { name: outcome.name, reply: outcome.reply };
-  } else if (walk.takesFailure(position)) {
+  } else if (walk.takesFailure(position, outcome.error)) {
     result = { name: "failed", reply: outcome.error };
   } else {
     return await finish(run, walk, data, failedEnd(outcome.error));
@@ -258,7 +257,8 @@ async function runWalk<S extends string, D>(
 ): Promise<RunEnd> {
   const { stage, saved, context } = entry;
   const usage = runUsage(stage, effects.clock(), saved);
-  const run: Run<D> = { writes, effects, context, stage, saved, usage };
+  const begun = saved;
+  const run: Run<D> = { writes, effects, context, stage, saved, begun, usage };
   const end = await enter(run, walk, saved);
   await effects.usage(usage.job(end, effects.clock()));
   return end;
