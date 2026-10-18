@@ -1,8 +1,7 @@
 // @ts-check
-// The stage job's roles: which role each of the four stages runs as, which
-// sessions each stage may run with which write authority (each session's
-// own, never its agent's), each stage's wiki and code access and commit
-// scope, the roles' merged settings, and the environment a session's pi
+// The stage job's roles: which role each of the four stages runs as (its
+// sessions are job-sessions.test.mjs's), each stage's wiki and code access
+// and commit scope, the roles' merged settings, and the environment a session's pi
 // gets, which holds no token (Pipeline-Roles-Shared, "No token in sessions").
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -15,10 +14,8 @@ const {
   boundaryOf,
   commitScopeOf,
   rolesOf,
-  STAGE_AGENTS,
   STAGE_CODE_ACCESS,
   STAGE_WIKI_ACCESS,
-  sessionRefusalOf,
 } = await import("../src/job/roles.ts");
 const { STAGES } = await import("../src/stages.ts");
 const { loadConfig } = await import("../src/config.ts");
@@ -104,95 +101,6 @@ test("each stage's boundary has its role, and no stage's session env names a tok
   const listed = [...READER_STAGES, ...WRITER_STAGES, ...MERGER_STAGES];
   assert.equal(listed.length, STAGES.length);
   assert.deepEqual(new Set(listed), new Set(STAGES));
-});
-
-const AUTHOR = "issue-pipeline-author";
-const IMPLEMENTOR = "issue-pipeline-implementor";
-const REVIEWER = "issue-pipeline-reviewer";
-
-test("each stage runs its one agent: the reviewer hardens, integrates and reviews security, so merge runs it too", () => {
-  const agents = Object.fromEntries(
-    Object.entries(STAGE_AGENTS).map(([stage, { agent, role }]) => [
-      stage,
-      { agent, role },
-    ]),
-  );
-  assert.deepEqual(agents, {
-    author: { agent: AUTHOR, role: "author" },
-    implement: { agent: IMPLEMENTOR, role: "implementor" },
-    review: { agent: REVIEWER, role: "reviewer" },
-    merge: { agent: REVIEWER, role: "reviewer" },
-  });
-});
-
-/** @type {[Stage, string, boolean][]} */
-const ALLOWED_SESSIONS = [
-  ["author", AUTHOR, false],
-  ["implement", IMPLEMENTOR, true],
-  ["review", REVIEWER, true],
-  ["review", REVIEWER, false],
-  ["merge", REVIEWER, true],
-  ["merge", REVIEWER, false],
-];
-/** @type {[Stage, string, boolean][]} */
-const REFUSED_AUTHORITY = [
-  ["author", AUTHOR, true],
-  ["implement", IMPLEMENTOR, false],
-];
-
-test("write authority is each session's own: the reviewer may commit or only read in review and in merge", () => {
-  for (const [stage, agent, commits] of ALLOWED_SESSIONS) {
-    const spec = { agent, commits };
-    assert.equal(sessionRefusalOf(stage, spec), null, `${stage} ${commits}`);
-  }
-  for (const [stage, agent, commits] of REFUSED_AUTHORITY) {
-    const refusal = sessionRefusalOf(stage, { agent, commits });
-    assert.ok(refusal?.includes(`commits ${commits}`), `${stage} ${commits}`);
-  }
-});
-
-test("a stage refuses any other agent's session, whatever its authority", () => {
-  /** @type {[Stage, string][]} */
-  const others = [
-    ["author", REVIEWER],
-    ["implement", REVIEWER],
-    ["review", IMPLEMENTOR],
-    ["merge", IMPLEMENTOR],
-    ["merge", AUTHOR],
-    ["review", "issue-pipeline-ops"],
-  ];
-  for (const [stage, agent] of others) {
-    for (const commits of [true, false]) {
-      const refusal = sessionRefusalOf(stage, { agent, commits });
-      assert.ok(refusal?.includes(`can't run ${agent}`), `${stage} ${agent}`);
-    }
-  }
-});
-
-test("a labelled phase must match its stage and its authority: hardening and integration commit, the final security review after merge's integration only reads", () => {
-  /** @type {[Stage, "hardening" | "security-review" | "integration", boolean][]} */
-  const allowed = [
-    ["review", "hardening", true],
-    ["merge", "integration", true],
-    ["merge", "security-review", false],
-  ];
-  for (const [stage, phase, commits] of allowed) {
-    const spec = { agent: REVIEWER, commits, phase };
-    assert.equal(sessionRefusalOf(stage, spec), null, phase);
-  }
-  /** @type {[Stage, "hardening" | "security-review" | "integration", boolean][]} */
-  const refused = [
-    ["review", "hardening", false],
-    ["review", "security-review", false],
-    ["review", "integration", true],
-    ["merge", "hardening", true],
-    ["merge", "integration", false],
-    ["merge", "security-review", true],
-  ];
-  for (const [stage, phase, commits] of refused) {
-    const spec = { agent: REVIEWER, commits, phase };
-    assert.notEqual(sessionRefusalOf(stage, spec), null, `${stage} ${phase}`);
-  }
 });
 
 test("the roles' defaults hold with no config, and a config network replaces one", () => {

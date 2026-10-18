@@ -86,41 +86,53 @@ const STAGE_WIKI_ACCESS: Readonly<Record<Stage, Access>> = {
   merge: "write",
 };
 
+// One kind of session a stage runs: the phase its spec names (null for
+// none) and the write authority that phase has.
+interface StageSession {
+  phase: SessionPhase | null;
+  commits: boolean;
+}
+
 // The installed agent a stage's sessions run as, the model role it plays,
-// and the write authority each of its sessions may be given.
+// and the sessions it runs.
 interface StageAgent {
   agent: AgentName;
   role: ModelRole;
-  commits: readonly boolean[];
+  sessions: readonly StageSession[];
 }
 
 const REVIEWER_AGENT = "issue-pipeline-reviewer";
 
-// The one installed agent each stage's sessions may run as: the author's
-// only read; the implementor's commit; the reviewer's commit while they
-// harden; and merge runs the reviewer as committing integration sessions
-// (its own final synchronization, conflict and check fixes) and then as the
-// read-only final security review of the integrated result. The review
-// stage also admits a read-only reviewer session, which can only lose
-// authority, so a role that still reviews before merge keeps running.
+// The one installed agent each stage's sessions may run as, and its
+// sessions: the author's only read; the implementor's commit; the reviewer
+// hardens, committing, in review; and merge runs the reviewer's committing
+// integration (its own final synchronization, conflict and check fixes) and
+// then its read-only security review of the merged result. A reviewer
+// session always names its phase; none reads before merge.
 const STAGE_AGENTS: Readonly<Record<Stage, StageAgent>> = {
-  author: { agent: "issue-pipeline-author", role: "author", commits: [false] },
+  author: {
+    agent: "issue-pipeline-author",
+    role: "author",
+    sessions: [{ phase: null, commits: false }],
+  },
   implement: {
     agent: "issue-pipeline-implementor",
     role: "implementor",
-    commits: [true],
+    sessions: [{ phase: null, commits: true }],
   },
-  review: { agent: REVIEWER_AGENT, role: "reviewer", commits: [true, false] },
-  merge: { agent: REVIEWER_AGENT, role: "reviewer", commits: [true, false] },
-};
-
-// The stage each reviewer phase runs in, and whether its sessions commit.
-const PHASES: Readonly<
-  Record<SessionPhase, { stage: Stage; commits: boolean }>
-> = {
-  hardening: { stage: "review", commits: true },
-  "security-review": { stage: "merge", commits: false },
-  integration: { stage: "merge", commits: true },
+  review: {
+    agent: REVIEWER_AGENT,
+    role: "reviewer",
+    sessions: [{ phase: "hardening", commits: true }],
+  },
+  merge: {
+    agent: REVIEWER_AGENT,
+    role: "reviewer",
+    sessions: [
+      { phase: "integration", commits: true },
+      { phase: "security-review", commits: false },
+    ],
+  },
 };
 
 const DEFAULT_ROLES: Roles = {
@@ -144,8 +156,10 @@ const GH_TOKEN_VARS: readonly string[] = [
 ];
 
 // Why session `spec` may not run in a `stage` job, or null when it may: the
-// stage runs only its one agent, with the write authority it allows, and a
-// labelled phase belongs to its stage and its authority.
+// stage runs only its one agent, and only the sessions it lists, each with
+// its phase's write authority. A spec the stage has no session for, such as a
+// reviewer session that names no phase, is refused, so its prompt and
+// authority are never guessed.
 function sessionRefusalOf(
   stage: Stage,
   spec: { agent: string } & Pick<SessionSpec, "commits" | "phase">,
@@ -154,18 +168,14 @@ function sessionRefusalOf(
   if (allowed.agent !== spec.agent) {
     return `the ${stage} stage can't run ${spec.agent}`;
   }
-  if (!allowed.commits.includes(spec.commits)) {
-    return `the ${stage} stage's ${spec.agent} sessions can't set commits ${spec.commits}`;
+  const phase = spec.phase ?? null;
+  const session = allowed.sessions.find((entry) => entry.phase === phase);
+  const named = phase ?? "unphased";
+  if (session === undefined) {
+    return `the ${stage} stage runs no ${named} session`;
   }
-  if (spec.phase === undefined) {
-    return null;
-  }
-  const phase = PHASES[spec.phase];
-  if (phase.stage !== stage) {
-    return `a ${spec.phase} session runs only in the ${phase.stage} stage, not ${stage}`;
-  }
-  if (phase.commits !== spec.commits) {
-    return `a ${spec.phase} session can't set commits ${spec.commits}`;
+  if (session.commits !== spec.commits) {
+    return `the ${stage} stage's ${named} session can't set commits ${spec.commits}`;
   }
   return null;
 }
