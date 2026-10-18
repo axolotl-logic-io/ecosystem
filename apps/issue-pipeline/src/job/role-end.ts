@@ -83,7 +83,9 @@ async function release(claimed: Claimed, state: IssueState): Promise<void> {
 
 // Applies `end` through the job's ops and returns the job's line. An ask
 // records the inputs revision its questions were asked at in the state it
-// asks and releases, so no later write loses it (#457).
+// asks and releases, so no later write loses it (#457): that state is the
+// run's last saved one from before the ask op runs, so a stop during the ask
+// saves it too.
 async function applyEnd(
   claimed: Claimed,
   end: RoleEnd,
@@ -104,6 +106,7 @@ async function applyEnd(
         ...end.state,
         asked: { inputs: inputs.revision },
       };
+      claimed.last = state;
       await jobOp(job, "ask", { questions: end.questions, by: ASKER, state });
       await release(claimed, state);
       return finished(job, { end: "ask" });

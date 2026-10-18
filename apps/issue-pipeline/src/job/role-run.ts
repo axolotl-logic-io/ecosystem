@@ -5,7 +5,9 @@
 // own ops: release for next and wait, ask then release, stop, and release
 // of the last saved state for a deferral. This module alone knows how a
 // role's effects become the job's launches and how an end is applied. On a
-// signal it saves the last saved state with no lease and applies no end.
+// signal it saves the last saved state with no lease and applies no end; a
+// signal while the end is applied, which ends the op it runs, does the same
+// in place of the op's failure.
 // An issue at another stage is released untouched, but a merge job runs its
 // role on a done issue with its merge recorded, to finish its completion.
 
@@ -31,7 +33,7 @@ import { opRunnerOf, postOf } from "./role-ops.ts";
 import { sessionRunnerOf } from "./role-session.ts";
 import { STAGE_AGENTS } from "./roles.ts";
 import { runUsage } from "./run-usage.ts";
-import type { JobStatus } from "./status.ts";
+import type { JobStatus, StopSignal } from "./status.ts";
 import { usageAppender } from "./usage-append.ts";
 import type { UsageRole } from "./usage-log.ts";
 
@@ -120,6 +122,20 @@ function contextOf(
   };
 }
 
+// The end of a run a signal stopped: its last saved state, saved with no
+// lease.
+async function stoppedAt(
+  claimed: Running,
+  signal: StopSignal,
+): Promise<RoleStageEnd> {
+  const saved = { ...claimed.last, lease: null };
+  const reply = await claimed.job.runOp("save-state", { state: saved });
+  if (!reply.ok) {
+    throw new Error(`the save-state op failed: ${reply.error}`);
+  }
+  return { kind: "stopped", signal };
+}
+
 // Runs the role from the claimed state to its applied end, or to a signal.
 async function runClaimed(
   claimed: Running,
@@ -138,14 +154,17 @@ async function runClaimed(
   }
   const signal = job.control.stopping();
   if (signal !== null) {
-    const saved = { ...claimed.last, lease: null };
-    const reply = await job.runOp("save-state", { state: saved });
-    if (!reply.ok) {
-      throw new Error(`the save-state op failed: ${reply.error}`);
-    }
-    return { kind: "stopped", signal };
+    return await stoppedAt(claimed, signal);
   }
-  return await applyEnd(claimed, end, inputs);
+  try {
+    return await applyEnd(claimed, end, inputs);
+  } catch (error: unknown) {
+    const late = job.control.stopping();
+    if (late === null) {
+      throw error;
+    }
+    return await stoppedAt(claimed, late);
+  }
 }
 
 // Claims the issue and runs the stage's role to its end or to a signal.
