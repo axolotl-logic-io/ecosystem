@@ -229,6 +229,7 @@ function prView(view) {
     when: "pr view 50",
     stdout: JSON.stringify({
       headRefName: "agent/issue-7",
+      baseRefName: "integration",
       isDraft: false,
       mergeable: "MERGEABLE",
       mergeStateStatus: "CLEAN",

@@ -8,6 +8,7 @@ import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
+import { assertPrBase } from "../pr-authority.ts";
 import { OpsError, parseRequest } from "../process.ts";
 import { currentRevision } from "../revision.ts";
 import { readState } from "../saved-state.ts";
@@ -36,9 +37,10 @@ const READY_VIEW = z.looseObject({
   headRefName: z.string(),
   headRefOid: z.string(),
   isCrossRepository: z.boolean(),
+  baseRefName: z.string(),
 });
 const READY_VIEW_FIELDS =
-  "number,state,isDraft,headRefName,headRefOid,isCrossRepository";
+  "number,state,isDraft,headRefName,headRefOid,isCrossRepository,baseRefName";
 // The saved stages an authorization ready-pr acts on is saved at: review,
 // as the Reviewer's hardening and integration end, or merge, when a merge
 // job readies a PR an interrupted Reviewer left a draft.
@@ -126,6 +128,7 @@ function assertReadyView(
   pr: number,
   { code, view }: { code: string; view: z.infer<typeof READY_VIEW> },
 ): void {
+  assertPrBase(cfg, pr, view.baseRefName);
   const branch = paths.branch(cfg, n);
   if (
     view.number !== pr ||

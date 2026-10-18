@@ -11,6 +11,7 @@ import { fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
 import { ghJson } from "./github.ts";
 import { trustedInputsHash, writeIssueContext } from "./issue-context.ts";
 import { openPrFor } from "./ops/prs.ts";
+import { assertPrBase } from "./pr-authority.ts";
 import { OpsError, run } from "./process.ts";
 import type { CodeMerged, IssueState, Revision } from "./state.ts";
 import { wikiAhead } from "./wiki.ts";
@@ -52,7 +53,7 @@ interface CurrentRevision {
 }
 
 // PR `pr` of issue `n` as GitHub reports it. A PR from another branch or
-// repo, one merged into another base, and a merged PR with no merge commit
+// repo, one targeting another base, and a merged PR with no merge commit
 // are refused; a failed read throws, so a merge is never assumed.
 function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
   const view = PR_VIEW.safeParse(
@@ -82,6 +83,7 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
       `PR #${pr} is not from ${cfg.repo}'s ${branch}, so it isn't #${n}'s PR`,
     );
   }
+  assertPrBase(cfg, pr, data.baseRefName);
   if (data.state !== "MERGED") {
     return {
       number: pr,
@@ -91,7 +93,7 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
     };
   }
   const oid = data.mergeCommit?.oid ?? "";
-  if (oid === "" || data.baseRefName !== cfg.baseBranch) {
+  if (oid === "") {
     throw new OpsError(
       `PR #${pr} merged into ${data.baseRefName} with merge commit "${oid}"; the pipeline needs a merge commit on ${cfg.baseBranch}`,
     );

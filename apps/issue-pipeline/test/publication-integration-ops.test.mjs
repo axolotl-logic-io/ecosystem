@@ -85,6 +85,7 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
   openAt(w, integrated);
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
+    prView({ headRefOid: w.sha }),
     { when: "pr merge 50" },
     prView({
       headRefOid: w.sha,
@@ -110,6 +111,7 @@ test("merge without an integration says hardening passed on the merged head", ()
   const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
   openAt(w, approved);
   fakeGh.reply([
+    prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
     { when: "pr merge 50" },
     prView({

@@ -33,6 +33,7 @@ const NOT_AT_AUTHORIZED = /not open at the authorized/u;
 const NOT_ISSUE_BRANCH = /not from o\/r's agent\/issue-7/u;
 const STILL_DRAFT = /GitHub shows a draft/u;
 const READY_FAILED = /gh pr ready/u;
+const TARGET_REFUSAL = /targets .+, not integration/u;
 
 /** @param {World} w @returns {Revision} */
 function reviewedOf(w) {
@@ -69,6 +70,7 @@ function readyView(view) {
       isDraft: true,
       headRefName: "agent/issue-7",
       isCrossRepository: false,
+      baseRefName: "integration",
       ...view,
     }),
   };
@@ -244,4 +246,34 @@ test("ready-pr refuses a PR GitHub shows at another head, closed or from another
     assert.throws(() => readyPr(w, state), NOT_ISSUE_BRANCH);
     assert.deepEqual(writes(), []);
   }
+});
+
+for (const baseRefName of ["main", "other"]) {
+  test(`ready-pr refuses exact authorized head retargeted to ${baseRefName} after revision read`, () => {
+    const w = world();
+    const approved = reviewedOf(w);
+    const state = hardenedApproval(approved);
+    current(approved);
+    fakeGh.reply([
+      savedListing(state),
+      readyView({ headRefOid: w.sha, baseRefName }),
+    ]);
+    assert.throws(() => readyPr(w, state), TARGET_REFUSAL);
+    assert.deepEqual(writes(), []);
+  });
+}
+
+test("ready-pr refuses a wrong-base readiness receipt", () => {
+  const w = world();
+  const approved = reviewedOf(w);
+  const state = hardenedApproval(approved);
+  current(approved);
+  fakeGh.reply([
+    savedListing(state),
+    readyView({ headRefOid: w.sha }),
+    { when: "pr ready 50" },
+    readyView({ headRefOid: w.sha, isDraft: false, baseRefName: "main" }),
+  ]);
+  assert.throws(() => readyPr(w, state), TARGET_REFUSAL);
+  assert.deepEqual(writes(), [READY_CALL]);
 });

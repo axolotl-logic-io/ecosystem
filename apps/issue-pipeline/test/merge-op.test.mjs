@@ -71,6 +71,7 @@ test("merge squash-merges at the approved head and returns GitHub's merge receip
   current(w);
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
+    prView({ headRefOid: w.sha }),
     { when: "pr merge 50" },
     prView({
       headRefOid: w.sha,
@@ -189,6 +190,7 @@ test("a stopped issue ahead in the queue doesn't hold the merge", () => {
       when: "issue view 3",
       stdout: '{"state":"OPEN","labels":[{"name":"agent:stopped-error"}]}',
     },
+    prView({ headRefOid: w.sha }),
     { when: "pr merge 50" },
     prView({
       headRefOid: w.sha,
@@ -261,6 +263,7 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
   });
   fakeGh.reply([
     ...older("review"),
+    prView({ headRefOid: w.sha }),
     { when: "pr merge 50" },
     prView({
       headRefOid: w.sha,

@@ -13,7 +13,7 @@ import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
-import { gh, ghJson, git } from "../github.ts";
+import { gh, git } from "../github.ts";
 import type { RunResult } from "../process.ts";
 import { OpsError, parseRequest, run, tail } from "../process.ts";
 import { currentRevision } from "../revision.ts";
@@ -21,6 +21,8 @@ import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { mergedText } from "./merge-comment.ts";
 import type { Queued } from "./merge-order.ts";
 import { queued } from "./merge-order.ts";
+import type { PrView } from "./pr-merge.ts";
+import { viewForMerge } from "./pr-merge.ts";
 import type { MergeStale } from "./publication-guard.ts";
 import { mergeStale, REVISION_REQUEST } from "./publication-guard.ts";
 
@@ -32,18 +34,6 @@ const NEEDS_APPROVAL =
 const APPROVAL_HINT =
   " Branch protection requires an approving review, which the pipeline's own account can't give. Drop the approval rule, give the account a bypass, or set mergeAdmin in the config.";
 
-// gh's answer to the PR view.
-const PR_VIEW = z.looseObject({
-  headRefName: z.string(),
-  headRefOid: z.string(),
-  isDraft: z.boolean(),
-  mergeable: z.string(),
-  mergeStateStatus: z.string(),
-  mergeCommit: z.looseObject({ oid: z.string() }).nullish(),
-  state: z.string(),
-});
-const PR_VIEW_FIELDS =
-  "headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit";
 const MERGE_REQUEST = z.looseObject({
   expectedSha: z.string().min(1),
   mergeOrder: z.boolean().nullish(),
@@ -58,7 +48,6 @@ const MERGE_REQUEST = z.looseObject({
   summary: z.string().nullish(),
 });
 
-type PrView = z.infer<typeof PR_VIEW>;
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
 // The merge receipt: GitHub's merge commit and the PR head it merged. byHand
@@ -84,20 +73,6 @@ type MergeReply =
   | WikiRefusal
   | MergeStale
   | Queued;
-
-function viewPr(cfg: Config, pr: number): PrView {
-  return PR_VIEW.parse(
-    ghJson(cfg, [
-      "pr",
-      "view",
-      String(pr),
-      "-R",
-      cfg.repo,
-      "--json",
-      PR_VIEW_FIELDS,
-    ]),
-  );
-}
 
 // The merge commit GitHub reports for a merged PR; a merged PR without one
 // is an error, never an empty receipt.
@@ -125,7 +100,7 @@ function checkedView(cfg: Config, req: MergeRequest): PrView {
       `merge expectedSha ${req.expectedSha} is not the approved code ${String(req.revision.code)}`,
     );
   }
-  const view = viewPr(cfg, req.state.pr);
+  const view = viewForMerge(cfg, req.state.pr);
   const branch = assignedBranch(cfg, req.number, req.state);
   if (view.headRefName !== branch) {
     throw new OpsError(
@@ -274,11 +249,24 @@ function merge(cfg: Config, request: unknown): MergeReply {
   if (mergeAdmin) {
     args.push("--admin");
   }
+  // Prechecks read inputs, the queue and Git refs. Check the actual PR again
+  // after those reads, but do not confuse this with an atomic target binding:
+  // GitHub policy must deny this credential writes to unauthorized branches.
+  const fresh = checkedView(cfg, req);
+  if (fresh.state !== "OPEN") {
+    return { merged: false, reason: `PR is ${fresh.state}` };
+  }
+  if (fresh.headRefOid !== req.expectedSha) {
+    return { merged: false, reason: "head-changed", headSha: fresh.headRefOid };
+  }
+  if (fresh.isDraft) {
+    return { merged: false, reason: "draft" };
+  }
   const result = gh(cfg, args, { allowFail: true });
   if (result.code !== 0) {
     return mergeRefusal(result);
   }
-  const after = viewPr(cfg, pr);
+  const after = viewForMerge(cfg, pr);
   if (after.state !== "MERGED" || after.headRefOid !== req.expectedSha) {
     throw new OpsError(
       `gh merged PR #${pr}, but GitHub shows it ${after.state} at ${after.headRefOid}`,
