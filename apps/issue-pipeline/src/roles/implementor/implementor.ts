@@ -121,15 +121,22 @@ async function pushWiki(
   return { ...state, headSha: pushed.headSha, flows: flowsOf(pushed) };
 }
 
-// The state after a new push: no hardening, approval or integration of an
-// earlier revision holds for it.
+// The state after a new push: no hardening, approval, integration or
+// security clearance of an earlier revision holds for it. A security
+// rejection stays: it binds the exact merged result it rejected, so that
+// result stops again however the issue comes back to it.
 function freshChange(state: IssueState): IssueState {
+  let { security } = state;
+  if (security?.finding === null) {
+    security = null;
+  }
   return {
     ...state,
     stage: "review",
     mergeReturn: null,
     hardened: null,
     integration: null,
+    security,
     review: { ...state.review, verdict: null },
   };
 }

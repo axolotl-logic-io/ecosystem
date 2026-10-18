@@ -4,6 +4,7 @@
 // (`one-review-session`): no reply-check framework sits behind it.
 
 import { z } from "zod";
+import { SECURITY_CATEGORY } from "../state.ts";
 
 const FEATURE = /^\s*Feature:/mu;
 const SCENARIO = /^\s*Scenario/mu;
@@ -42,13 +43,6 @@ const WRITER_REPLY = z.discriminatedUnion("outcome", [
   }),
 ]);
 
-const SECURITY_CATEGORY = z.enum([
-  "user-harm",
-  "rights",
-  "financial-harm",
-  "abuse-risk",
-]);
-
 // The Reviewer's final review, its one read-only session after hardening,
 // which judges security alone: hardening owns the design, the correctness
 // and the tests. A null `security` approves; a category stops the issue
@@ -63,7 +57,6 @@ const SECURITY_REVIEW_REPLY = z.object({
 type AuthorReply = z.infer<typeof AUTHOR_REPLY>;
 type WriterReply = z.infer<typeof WRITER_REPLY>;
 type SecurityReviewReply = z.infer<typeof SECURITY_REVIEW_REPLY>;
-type SecurityCategory = z.infer<typeof SECURITY_CATEGORY>;
 
-export type { AuthorReply, SecurityCategory, SecurityReviewReply, WriterReply };
+export type { AuthorReply, SecurityReviewReply, WriterReply };
 export { AUTHOR_REPLY, SECURITY_REVIEW_REPLY, WRITER_REPLY };

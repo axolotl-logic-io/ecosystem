@@ -33,6 +33,7 @@ const PUBLISHED = z.union([
   z.looseObject({
     published: z.literal(false),
     reason: z.string().optional(),
+    detail: z.string().optional(),
     conflicts: z.array(z.string()).optional(),
   }),
 ]);
@@ -75,7 +76,9 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
 
 // Pushes the wiki at exactly `revision.wiki`; null once published, else why
 // it waits. A refused publish changes nothing, and the next merge job
-// integrates the wiki again.
+// integrates the wiki again; a security refusal, the publish guard finding
+// no saved security receipt that clears exactly the merged result, stops
+// instead, since no retry of the same publish can pass it.
 async function publishWiki(
   ctx: RoleContext,
   state: IssueState,
@@ -95,6 +98,12 @@ async function publishWiki(
   }
   const why =
     reply.reason ?? `conflicts in ${(reply.conflicts ?? []).join(", ")}`;
+  if (reply.reason === "security") {
+    return failed(
+      state,
+      `the wiki publish was refused (security): ${reply.detail ?? "no security receipt clears the merged result"}`,
+    );
+  }
   return waiting(state, `the wiki publish was refused: ${why}`);
 }
 

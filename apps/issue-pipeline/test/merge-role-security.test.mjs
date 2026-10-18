@@ -48,6 +48,7 @@ const STOPPED_COMMENT =
   /^## Security review of the merged result: stopped \(user-harm\)/u;
 const NOT_THE_MERGE = /prepare-review read f{40}, not the merge commit e{40}/u;
 const DISCARDED = /moved during the security review/u;
+const SECURITY_REFUSED = /publish was refused \(security\): no review/u;
 const AFTER_PUBLISH = ["publish", "finish-wiki"];
 
 /** @type {import("../src/state.ts").Security} */
@@ -263,5 +264,18 @@ test("a change that lives only in the wiki with a security finding stops and nev
   });
   assert.equal(endCode(await mergeRole(ctx)), "abuse-risk");
   assert.ok(!opNames(calls).includes("publish"));
+  assert.ok(!opNames(calls).includes("finish-wiki"));
+});
+
+test("a publish the guard refuses for security stops with error instead of waiting to retry it", async () => {
+  const { ctx, calls } = merging({
+    ops: {
+      publish: [{ published: false, reason: "security", detail: "no review" }],
+    },
+  });
+  const end = await mergeRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.ok(end.kind === "stop");
+  assert.match(end.reason, SECURITY_REFUSED);
   assert.ok(!opNames(calls).includes("finish-wiki"));
 });

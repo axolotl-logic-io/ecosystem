@@ -65,12 +65,15 @@ test("the tests run under a temporary pipeline root", () => {
   assert.ok(TEMPORARY_ROOT.startsWith(os.tmpdir()));
 });
 
+const MERGED_RESULT = { code: shaOf("2"), wiki: null, inputs: INPUTS };
+const REJECTED = { category: /** @type {const} */ ("rights"), reason: "x" };
 const EARLIER = {
   hardened: { code: HEAD, wiki: null, inputs: INPUTS },
   integration: {
     reviewed: { code: HEAD, wiki: null, inputs: INPUTS },
     revision: { code: shaOf("1"), wiki: null, inputs: INPUTS },
   },
+  security: { revision: MERGED_RESULT, commentId: 9, finding: null },
   review: {
     round: 0,
     verdict: /** @type {const} */ ("approve"),
@@ -106,9 +109,18 @@ test("a clean run works, pushes the draft with no sync or verify, and goes to re
   assert.equal(end.state.verifiedSha, null);
   assert.equal(end.state.hardened, null);
   assert.equal(end.state.integration, null);
+  assert.equal(end.state.security, null);
   assert.equal(end.state.review.verdict, null);
   assert.deepEqual(end.state.flows, { code: true, wiki: true });
   assert.equal(end.state.mergeReturn, null);
+});
+
+test("a new push keeps a security rejection, which binds the exact merged result it rejected", async () => {
+  const security = { revision: MERGED_RESULT, commentId: 9, finding: REJECTED };
+  const { ctx } = fakeContext({ state: { ...EARLIER, security } });
+  const end = await implementorRole(ctx);
+  assert.ok(end.kind === "next");
+  assert.deepEqual(end.state.security, security);
 });
 
 test("the work task carries the facts: the Gherkin, the scope, the findings and the merge's return, no behaviour", async () => {
