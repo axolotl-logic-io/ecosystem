@@ -21,13 +21,20 @@ import {
 
 const { openJobCheckout } = await import("../src/job/checkout.ts");
 
-/** @import { StageName } from "../src/workflow/stages/types.ts" */
+/** @import { Stage } from "../src/stages.ts" */
 
-// A stage, a file in a checkout it only reads, and what the refusal names.
-/** @type {[StageName, string, RegExp][]} */
+const WIKI_READ_ONLY = /read access to the wiki checkout \(docs\/\)/u;
+const CODE_READ_ONLY = /read access to the code checkout \(repo\/\)/u;
+// A stage, a file in a checkout it only reads, and what the refusal names:
+// the reader stages read both checkouts, and merge, which writes the wiki it
+// publishes, only reads the code.
+/** @type {[Stage, string, RegExp][]} */
 const READ_ONLY_COMMITS = [
-  ["sync", "docs/Page.md", /read access to the wiki checkout \(docs\/\)/u],
-  ["merge", "repo/README.md", /read access to the code checkout \(repo\/\)/u],
+  ["author", "docs/Page.md", WIKI_READ_ONLY],
+  ["author", "repo/README.md", CODE_READ_ONLY],
+  ["review", "docs/Page.md", WIKI_READ_ONLY],
+  ["review", "repo/README.md", CODE_READ_ONLY],
+  ["merge", "repo/README.md", CODE_READ_ONLY],
 ];
 
 for (const [stage, file, refusal] of READ_ONLY_COMMITS) {

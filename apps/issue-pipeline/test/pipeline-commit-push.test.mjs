@@ -23,23 +23,12 @@ const { closeJobCheckout } = await import("../src/job/checkout.ts");
 const { lastPush } = await import("../src/checkouts.ts");
 const { STAGE_WIKI_ACCESS } = await import("../src/job/roles.ts");
 
-/** @import { StageName } from "../src/workflow/stages/types.ts" */
-
 const PUSHED_BRANCH = "origin/agent/issue-7";
 const REFUSED_PUSH = /code push failed/u;
 const REFUSED_WIKI_PUSH = /wiki push failed/u;
 const NOTHING_COMMITTED = /git exited 1: .*nothing/su;
 const HOOK_REFUSES = /pipeline_commit/u;
 const MISSING_PATHSPEC = /pathspec 'missing\.txt' did not match/u;
-// A stage that defers every push, with a file its job may commit, relative
-// to the job's folder: sync writes code, merge and publish (mergers) write
-// only the wiki.
-/** @type {[StageName, string][]} */
-const DEFERRED_COMMITS = [
-  ["sync", "repo/README.md"],
-  ["merge", "docs/Home.md"],
-  ["publish", "docs/Home.md"],
-];
 const REFUSE_ALL = "#!/bin/sh\nexit 1\n";
 const HOOK_MODE = 0o755;
 // The key closeJobCheckout names the job's dropped patches by.
@@ -51,12 +40,12 @@ const BREAK_ENV = Object.fromEntries([
 // The variable the checkouts' pre-commit hook lets a commit through with.
 const COMMIT_PASS = Object.fromEntries([["ISSUE_PIPELINE_COMMIT", "1"]]);
 
-// The tests that commit to both checkouts run the spec stage, the one
-// writer stage that writes the wiki: its spec writer commits tests, stubs
-// and wiki pages.
+// The tests that commit run the implement stage, the one stage whose sessions
+// commit: its implementor writes the code and its wiki updates
+// (`implementor-owns-the-change`).
 
 test("code and a new wiki page make two commits with one message, and both are pushed", async () => {
-  const job = await openJob("spec");
+  const job = await openJob("implement");
   try {
     write(job.repo, "README.md", "changed\n");
     write(job.docs, "Page.md", "new\n");
@@ -81,7 +70,7 @@ test("code and a new wiki page make two commits with one message, and both are p
 });
 
 test("a wiki-only change pushes only the wiki", async () => {
-  const job = await openJob("spec");
+  const job = await openJob("implement");
   try {
     write(job.docs, "Page.md", "new\n");
     const result = await job.commit(["-m", "Wiki page", "--", "docs/Page.md"]);
@@ -95,7 +84,7 @@ test("a wiki-only change pushes only the wiki", async () => {
 });
 
 test("a wiki-only change with no pathspec commits and pushes the wiki though the code repo had nothing to commit", async () => {
-  const job = await openJob("spec");
+  const job = await openJob("implement");
   try {
     write(job.docs, "Page.md", "new\n");
     const result = await job.commit(["-am", "Wiki page"]);
@@ -112,7 +101,7 @@ test("a wiki-only change with no pathspec commits and pushes the wiki though the
 });
 
 test("a git error in the code repo fails the call, and neither repo is pushed though the wiki committed", async () => {
-  const job = await openJob("spec");
+  const job = await openJob("implement");
   try {
     write(job.docs, "Page.md", "new\n");
     const args = ["-m", "Both", "--", "docs/Page.md", "repo/missing.txt"];
@@ -143,23 +132,8 @@ test("nothing to commit fails with git's exit code and pushes nothing", async ()
   }
 });
 
-test("an implement job reads the wiki: its writer's commit pushes the code only", async () => {
+test("an implement job's wiki commit whose push was refused is pushed as the job exits", async () => {
   const job = await openJob("implement");
-  try {
-    write(job.repo, "README.md", "changed\n");
-    write(job.docs, "Page.md", "new\n");
-    const result = await job.commit(["-am", "Code and its wiki page"]);
-    assert.equal(result.isError, false);
-    assert.equal(result.details.pushed, "code");
-    assert.equal(result.details.wiki, null);
-    assert.equal(refOf(job.wikiOrigin, BRANCH), "");
-  } finally {
-    job.close();
-  }
-});
-
-test("a spec job's wiki commit whose push was refused is pushed as the job exits", async () => {
-  const job = await openJob("spec");
   const hook = path.join(job.wikiOrigin, "hooks", "pre-receive");
   try {
     fs.writeFileSync(hook, REFUSE_ALL, { mode: HOOK_MODE });
@@ -171,7 +145,7 @@ test("a spec job's wiki commit whose push was refused is pushed as the job exits
     job.close();
   }
   let exitPushes = 0;
-  const access = STAGE_WIKI_ACCESS.spec;
+  const access = STAGE_WIKI_ACCESS.implement;
   const { lost } = await closeJobCheckout(
     job.cfg,
     ISSUE,
@@ -191,15 +165,10 @@ test("a spec job's wiki commit whose push was refused is pushed as the job exits
   assert.equal(exitPushes, 1);
 });
 
-test("read wiki access commits code only, and the wiki edit is lost at teardown", async () => {
-  const job = await openJob("open-pr");
+test("a reader stage's wiki edit is never pushed: teardown drops it as a patch", async () => {
+  const job = await openJob("review");
   try {
-    write(job.repo, "README.md", "changed\n");
     write(job.docs, "Page.md", "new\n");
-    const result = await job.commit(["-am", "Code"]);
-    assert.equal(result.details.pushed, "code");
-    assert.equal(result.details.wiki, null);
-    assert.equal(refOf(job.wikiOrigin, BRANCH), "");
   } finally {
     job.close();
   }
@@ -210,13 +179,14 @@ test("read wiki access commits code only, and the wiki edit is lost at teardown"
       root: job.root,
       repo: job.repo,
       docs: job.docs,
-      wiki: "read",
+      wiki: STAGE_WIKI_ACCESS.review,
       key: JOB_KEY,
     },
     null,
   );
   assert.deepEqual(lost, ["docs/Page.md"]);
   assert.deepEqual(patches, [`dropped/${JOB_KEY}-docs.patch`]);
+  assert.equal(refOf(job.wikiOrigin, BRANCH), "");
 });
 
 test("a refused push keeps the commit and reports it, and the next call pushes both commits", async () => {
@@ -259,23 +229,6 @@ test("a commit during a stopped rebase is deferred and the remote is unchanged",
     job.close();
   }
 });
-
-for (const [stage, file] of DEFERRED_COMMITS) {
-  test(`every push in the ${stage} stage is deferred and the remotes are unchanged`, async () => {
-    const job = await openJob(stage);
-    try {
-      write(job.root, file, "changed\n");
-      const result = await job.commit(["-m", "Deferred", "--", file]);
-      assert.equal(result.isError, false);
-      assert.equal(result.details.pushed, "deferred");
-      assert.equal(refOf(job.origin, BRANCH), "");
-      assert.equal(refOf(job.wikiOrigin, BRANCH), "");
-      assert.deepEqual(pushesOf(job), []);
-    } finally {
-      job.close();
-    }
-  });
-}
 
 test("a plain git commit is refused in the code and wiki checkouts, and passes with ISSUE_PIPELINE_COMMIT=1", async () => {
   const job = await openJob("implement");

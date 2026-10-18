@@ -1,31 +1,37 @@
-// The stage job's roles: which role each stage and each session runs as,
-// each stage's wiki and code access, the roles' merged settings, and the environment a
-// session's pi gets, which holds no token (Pipeline-Roles-Shared, "No token
-// in sessions").
+// @ts-check
+// The stage job's roles: which role each of the four stages runs as, which
+// installed agent's sessions commit, each stage's wiki and code access, the
+// roles' merged settings, and the environment a session's pi gets, which
+// holds no token (Pipeline-Roles-Shared, "No token in sessions").
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
-import {
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+
+const {
   agentEnvOf,
   boundaryOf,
   codeAccessOf,
   commitsOf,
-  heldToLimits,
   rolesOf,
+  STAGE_AGENTS,
   STAGE_WIKI_ACCESS,
-} from "../src/job/roles.ts";
-import { STAGE_ORDER } from "../src/workflow/sweep-config.ts";
+} = await import("../src/job/roles.ts");
+const { STAGES } = await import("../src/stages.ts");
+const { loadConfig } = await import("../src/config.ts");
 
 const COMMIT_SCOPE_ENV = "ISSUE_PIPELINE_COMMIT_SCOPE";
 
-// The stages each role runs, as the wiki's Issue-Pipeline "Job boundaries"
-// lists them under "Roles".
-/** @typedef {import("../src/workflow/stages/types.ts").StageName} StageName */
-/** @type {StageName[]} */
-const READER_STAGES = ["triage", "review", "accept", "security"];
-/** @type {StageName[]} */
-const WRITER_STAGES = ["spec", "implement", "fix", "open-pr", "sync", "checks"];
-/** @type {StageName[]} */
-const MERGER_STAGES = ["merge", "publish"];
+// The stages each role runs (Reimagined-Pipeline): the author and the
+// reviewer read, the implementor writes, and merge is code alone.
+/** @typedef {import("../src/stages.ts").Stage} Stage */
+/** @type {Stage[]} */
+const READER_STAGES = ["author", "review"];
+/** @type {Stage[]} */
+const WRITER_STAGES = ["implement"];
+/** @type {Stage[]} */
+const MERGER_STAGES = ["merge"];
 
 const GH_VARS = [
   "GH_TOKEN",
@@ -63,26 +69,22 @@ const JOB_ROLES = {
 const CONFIGURED = rolesOf(JOB_ROLES);
 const ISSUE = 7;
 
-/** @type {import("../src/config.ts").Config} */
-const CFG = {
-  account: "a",
-  allowedUsers: ["a"],
-  baseBranch: "integration",
-  claimWaitSeconds: [0, 0],
-  commands: { test: "true" },
-  contextLimits: { soft: 150_000, hard: 175_000 },
-  jobRoles: JOB_ROLES,
-  leaseHours: 1,
-  maxContinuations: 1,
-  issueTokenBudget: 1_000_000,
-  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
-  practices: [],
-  repo: "o/r",
-  slug: "o__r",
-};
+// A config as loadConfig reads it, with its defaults, from the isolated root.
+const CONFIG_FILE = path.join(isolatedRoot, "o__r.json");
+fs.writeFileSync(
+  CONFIG_FILE,
+  JSON.stringify({
+    repo: "o/r",
+    account: "a",
+    allowedUsers: ["a"],
+    commands: { test: "true" },
+    jobRoles: JOB_ROLES,
+  }),
+);
+const CFG = loadConfig(CONFIG_FILE);
 
-test("each stage's boundary has the wiki's role, and no stage's session env names a token", () => {
-  /** @type {[StageName[], string][]} */
+test("each stage's boundary has its role, and no stage's session env names a token", () => {
+  /** @type {[Stage[], string][]} */
   const groups = [
     [READER_STAGES, "reader"],
     [WRITER_STAGES, "writer"],
@@ -98,23 +100,29 @@ test("each stage's boundary has the wiki's role, and no stage's session env name
     }
   }
   const listed = [...READER_STAGES, ...WRITER_STAGES, ...MERGER_STAGES];
-  assert.equal(listed.length, STAGE_ORDER.length);
-  assert.deepEqual(new Set(listed), new Set(STAGE_ORDER));
+  assert.equal(listed.length, STAGES.length);
+  assert.deepEqual(new Set(listed), new Set(STAGES));
 });
 
-test("the writer and specifier agents' sessions commit and are held to the context limits", () => {
-  assert.equal(commitsOf("issue-pipeline-writer"), true);
-  assert.equal(heldToLimits("issue-pipeline-writer"), true);
-  assert.equal(commitsOf("issue-pipeline-specifier"), true);
-  assert.equal(heldToLimits("issue-pipeline-specifier"), true);
+test("only the implementor's sessions commit; the author, reviewer, ops and anything else don't", () => {
+  assert.equal(commitsOf("issue-pipeline-implementor"), true);
   for (const agent of [
-    "issue-pipeline-reader",
+    "issue-pipeline-author",
+    "issue-pipeline-reviewer",
     "issue-pipeline-ops",
     "anything",
   ]) {
     assert.equal(commitsOf(agent), false, agent);
-    assert.equal(heldToLimits(agent), false, agent);
   }
+});
+
+test("each model stage runs its one agent, and merge runs no model session", () => {
+  assert.deepEqual(STAGE_AGENTS, {
+    author: { agent: "issue-pipeline-author", role: "author" },
+    implement: { agent: "issue-pipeline-implementor", role: "implementor" },
+    review: { agent: "issue-pipeline-reviewer", role: "reviewer" },
+    merge: null,
+  });
 });
 
 test("the roles' defaults hold with no config, and a config network replaces one", () => {
@@ -150,21 +158,16 @@ test("no session env inherits a commit scope from the job's own env", () => {
   assert.deepEqual(agentEnvOf(rolesOf({}), scoped), PLAIN);
 });
 
-test("only spec, merge and publish write the wiki; every stage at least reads it", () => {
+test("only implement and merge write the wiki; every stage at least reads it", () => {
   const writers = Object.entries(STAGE_WIKI_ACCESS)
     .filter(([, access]) => access === "write")
     .map(([stage]) => stage)
     .sort();
-  assert.deepEqual(writers, ["merge", "publish", "spec"]);
-  /** @type {StageName[]} */
-  const bridged = ["implement", "fix", "checks"];
-  for (const stage of bridged) {
+  assert.deepEqual(writers, ["implement", "merge"]);
+  for (const stage of READER_STAGES) {
     assert.equal(STAGE_WIKI_ACCESS[stage], "read", stage);
   }
-  assert.deepEqual(
-    new Set(Object.keys(STAGE_WIKI_ACCESS)),
-    new Set(STAGE_ORDER),
-  );
+  assert.deepEqual(new Set(Object.keys(STAGE_WIKI_ACCESS)), new Set(STAGES));
   for (const access of Object.values(STAGE_WIKI_ACCESS)) {
     assert.ok(["read", "write"].includes(access), access);
   }

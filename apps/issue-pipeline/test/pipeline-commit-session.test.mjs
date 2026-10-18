@@ -20,7 +20,7 @@ import {
 } from "./pipeline-commit-test-kit.mjs";
 
 test("each pushed commit carries the session's trailer, and pushes.jsonl gets a line per push naming the session and job", async () => {
-  const job = await openJob("spec");
+  const job = await openJob("implement");
   try {
     write(job.repo, "README.md", "changed\n");
     write(job.docs, "Page.md", "new\n");
@@ -56,7 +56,7 @@ test("each pushed commit carries the session's trailer, and pushes.jsonl gets a 
 });
 
 test("a scope without the job's start commits and pushes code and wiki with no trailer", async () => {
-  const job = await openJob("spec", { withJobStart: false });
+  const job = await openJob("implement", { withJobStart: false });
   try {
     write(job.repo, "README.md", "changed\n");
     write(job.docs, "Page.md", "new\n");

@@ -3,22 +3,19 @@
 // a real job checkout (openJobCheckout), the job's control socket serving
 // pushes (openControl with pushServerOf), and the tool's default export
 // registered on a fake pi API (Pipeline-Roles-Shared, "pipeline_commit").
-// Importing it sets the pipeline root to a temp folder, so it comes before
-// anything a test imports from src/.
+// Importing it sets a temporary HOME and pipeline root (isolated-root-test-kit)
+// before it loads src, so it comes before anything a test imports from src/.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 
 /** @import { Config } from "../src/config.ts" */
-/** @import { StageName } from "../src/workflow/stages/types.ts" */
+/** @import { Stage } from "../src/stages.ts" */
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-commit-push-"));
-process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-setEnv("ISSUE_PIPELINE_ROOT", root);
 const { loadConfig, paths } = await import("../src/config.ts");
 const { openJobCheckout } = await import("../src/job/checkout.ts");
 const { openControl } = await import("../src/job/control.ts");
@@ -32,20 +29,14 @@ const { default: pipelineCommit } = await import(
   "../src/job/pipeline-commit-tool.ts"
 );
 
+// Every job folder and repo the tests make lives in the isolated root.
+const root = isolatedRoot;
 const ISSUE = 7;
 const BRANCH = "refs/heads/agent/issue-7";
 const KEY = "i7-launch-1";
 // The job's id and start, as the job's pushes and commits name them.
 const JOB_ID = "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b";
 const JOB_STARTED_AT = "2026-10-17T12:00:00.000Z";
-const ZERO = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  cacheWrite1h: 0,
-  cost: 0,
-};
 
 /**
  * One stage job's folder (root) with its code checkout (repo) and wiki
@@ -103,7 +94,7 @@ function registeredTool() {
 // launch KEY has started. With `withJobStart` false its commit scope lacks
 // the job's start, as a job started before the trailer (#402) sends it.
 /**
- * @param {StageName} stage
+ * @param {Stage} stage
  * @param {{ withJobStart?: boolean }} [options]
  * @returns {Promise<Job>}
  */
@@ -129,9 +120,6 @@ async function openJob(stage, { withJobStart = true } = {}) {
     kind: "session",
     pid: null,
     session: null,
-    resumed: false,
-    usage: ZERO,
-    tokenBudget: null,
   });
   /** @type {{ socket: string, key: string, root: string, jobStartedAt?: string }} */
   const scope = { socket: control.socket, key: KEY, root: dirs.root };
