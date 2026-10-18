@@ -1,12 +1,38 @@
 // @ts-check
 // Recorded queue snapshots for the orchestrator's scheduler tests: open
 // issues with their labels, saved states, trusted-inputs revisions and jobs,
-// built from small facts so each test names only what it is about.
-import { newIssueState } from "../src/state.ts";
+// built from small facts so each test names only what it is about. HOME and
+// the pipeline root are temporary folders set before any pipeline module
+// loads, so nothing here reads or writes the machine's installed root.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import process from "node:process";
+
+const home = fs.mkdtempSync(
+  path.join(os.tmpdir(), "issue-pipeline-orchestrator-home-"),
+);
+process.on("exit", () => fs.rmSync(home, { recursive: true, force: true }));
+const isolatedRoot = path.join(home, "root");
+// Environment variables are named by strings, as src/process.ts takes them.
+Object.assign(
+  process.env,
+  Object.fromEntries([
+    ["HOME", home],
+    ["ISSUE_PIPELINE_ROOT", isolatedRoot],
+  ]),
+);
+const { ROOT } = await import("../src/pipeline-root.ts");
+if (ROOT !== isolatedRoot) {
+  throw new Error("the pipeline root isn't the test's temporary folder");
+}
+const { newIssueState } = await import("../src/state.ts");
+const { schedule } = await import("../src/orchestrator/schedule.ts");
 
 /** @import { IssueJob, ScheduleSettings, Snapshot, SnapshotIssue } from "../src/orchestrator/queue.ts" */
 /** @import { IssueState } from "../src/state.ts" */
 /** @import { Stage } from "../src/stages.ts" */
+/** @import { Resumes } from "../src/orchestrator/watchdog.ts" */
 
 const NOW = new Date("2026-10-15T10:00:00.000Z");
 const MINUTE_MS = 60_000;
@@ -94,4 +120,40 @@ function failedAt(at) {
   return { kind: "failed", at };
 }
 
-export { failedAt, HOUR_MS, INPUTS, jobAt, NOW, SETTINGS, snapshotOf };
+/**
+ * @typedef {{ settings?: ScheduleSettings, gate?: string | null, resumes?: Resumes }} Run
+ */
+
+/** @param {Snapshot} snapshot @param {Run} [run] */
+function scheduled(snapshot, run = {}) {
+  return schedule(snapshot, run.settings ?? SETTINGS, {
+    now: NOW,
+    gate: run.gate ?? null,
+    resumes: run.resumes ?? {},
+  });
+}
+
+// Each decision as `#issue stage action reason`, with a merge's queue.
+/** @param {Snapshot} snapshot @param {Run} [run] @returns {string[]} */
+function decided(snapshot, run = {}) {
+  return scheduled(snapshot, run).decisions.map((decision) => {
+    const { issue, stage, action, reason } = decision;
+    let queue = "";
+    if (decision.action === "started" && decision.mergeQueue !== null) {
+      queue = ` [${decision.mergeQueue.join(",")}]`;
+    }
+    return `#${issue} ${stage} ${action} ${reason}${queue}`;
+  });
+}
+
+export {
+  decided,
+  failedAt,
+  HOUR_MS,
+  INPUTS,
+  jobAt,
+  NOW,
+  SETTINGS,
+  scheduled,
+  snapshotOf,
+};

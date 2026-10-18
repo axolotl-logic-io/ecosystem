@@ -7,47 +7,21 @@
 // as this pipeline's.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { schedule } from "../src/orchestrator/schedule.ts";
+// The fixtures set a temporary HOME and pipeline root before they load the
+// scheduler.
 import {
+  decided,
   failedAt,
   HOUR_MS,
   jobAt,
   NOW,
   SETTINGS,
+  scheduled,
   snapshotOf,
 } from "./orchestrator-fixtures.mjs";
 
-/** @import { ScheduleSettings, Snapshot } from "../src/orchestrator/queue.ts" */
 // An open issue the after mark names.
 const PREREQ = 9;
-
-/** @import { Resumes } from "../src/orchestrator/watchdog.ts" */
-
-/**
- * @typedef {{ settings?: ScheduleSettings, gate?: string | null, resumes?: Resumes }} Run
- */
-
-/** @param {Snapshot} snapshot @param {Run} [run] */
-function scheduled(snapshot, run = {}) {
-  return schedule(snapshot, run.settings ?? SETTINGS, {
-    now: NOW,
-    gate: run.gate ?? null,
-    resumes: run.resumes ?? {},
-  });
-}
-
-// Each decision as `#issue stage action reason`, with a merge's queue.
-/** @param {Snapshot} snapshot @param {Run} [run] @returns {string[]} */
-function decided(snapshot, run = {}) {
-  return scheduled(snapshot, run).decisions.map((decision) => {
-    const { issue, stage, action, reason } = decision;
-    let queue = "";
-    if (decision.action === "started" && decision.mergeQueue !== null) {
-      queue = ` [${decision.mergeQueue.join(",")}]`;
-    }
-    return `#${issue} ${stage} ${action} ${reason}${queue}`;
-  });
-}
 
 test("each stage starts, later stages first, then older issues", () => {
   const snapshot = snapshotOf([
