@@ -16,7 +16,9 @@
 //   read-only security review of the merged result decides whether the wiki
 //   publishes and the issue completes (publish.ts, security.ts);
 // - a done issue whose finish didn't finish only runs the finish op again,
-//   once a security receipt approves exactly what merged.
+//   once a security receipt approves exactly what merged;
+// - a merged result the security review rejected stops again, from its
+//   saved receipt, before anything else runs.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -30,6 +32,7 @@ import type { IntegrationNeed } from "./integration.ts";
 import { integrate } from "./integration.ts";
 import { afterOwnMerge, localChecks, publishOnly } from "./publish.ts";
 import { failed, toReview, waiting } from "./returns.ts";
+import { rejectedAgain } from "./security.ts";
 import { approvalGate } from "./source.ts";
 
 const CI_STATUS = z.union([
@@ -243,6 +246,10 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
     return await finishCompleted(ctx, ctx.state, merged);
   }
   const current = await currentRevision(ctx);
+  const rejected = rejectedAgain(ctx.state, current.revision);
+  if (rejected !== null) {
+    return rejected;
+  }
   const gate = approvalGate(ctx, ctx.state, current);
   if (gate !== null) {
     return gate;

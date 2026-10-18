@@ -46,6 +46,25 @@ function securityStop(state: IssueState, finding: Finding): RoleEnd {
   };
 }
 
+// The stop again of a saved security rejection of exactly `current`, the
+// issue's revision now, with no session: a rejected merged result never
+// gets a second review. A receipt of a change that merged no code binds no
+// code head. Null when no saved rejection is for `current`.
+function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
+  const saved = state.security;
+  if (saved === null || saved.finding === null) {
+    return null;
+  }
+  let compared = current;
+  if (saved.revision.code === null) {
+    compared = { ...current, code: null };
+  }
+  if (!sameRevision(saved.revision, compared)) {
+    return null;
+  }
+  return securityStop(state, saved.finding);
+}
+
 // The merged result the review reads, prepared for exactly `revision`.
 async function prepare(
   ctx: RoleContext,
@@ -199,4 +218,4 @@ async function securityReviewed(
 }
 
 export type { MergedResult };
-export { securityReviewed };
+export { rejectedAgain, securityReviewed };
