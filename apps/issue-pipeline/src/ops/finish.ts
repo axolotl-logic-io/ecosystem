@@ -141,9 +141,10 @@ function sameMerged(a: Revision | null, b: Revision | null): boolean {
 }
 
 // The completion cleanup, every step safe to repeat: the code branch, the
-// labels, the claims and the worktree, then the issue, closed last so a
-// crash before it leaves the issue open, done and merged, which the
-// orchestrator schedules again.
+// labels and the claims, then the issue, then the worktree. A crash before
+// the close leaves the issue open, done and merged, which the orchestrator
+// schedules again, with the checkout that proves the wiki publication still
+// there.
 function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
   const n = state.number;
   deleteBranch(cfg, n);
@@ -158,8 +159,9 @@ function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
     why = `PR #${state.pr} merged.`;
   }
   closeClaims(cfg, n, why);
+  const closed = closeIssue(cfg, n, closingText(cfg, state, merged));
   removeWorktree(cfg, n);
-  return closeIssue(cfg, n, closingText(cfg, state, merged));
+  return closed;
 }
 
 // Completes an issue whose merge role saved it done with the merged revision
