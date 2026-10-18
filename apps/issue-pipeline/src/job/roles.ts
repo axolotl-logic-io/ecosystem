@@ -222,9 +222,17 @@ function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
 // What a committing session of `stage` may commit: its code checkout and its
 // wiki checkout (null when the job has none, `hasWiki` false) as the stage's
 // access allows, and the code globs, relative to the code checkout, it may
-// commit there: any code path when the stage writes code, else none.
-function commitScopeOf(stage: Stage, hasWiki: boolean): PathScope {
-  const access = STAGE_CODE_ACCESS[stage];
+// commit there: any code path only while fresh authority permits code writes,
+// else none. This scopes the commit tool, not OS filesystem access.
+function commitScopeOf(
+  stage: Stage,
+  hasWiki: boolean,
+  codeWritable: boolean,
+): PathScope {
+  let access = STAGE_CODE_ACCESS[stage];
+  if (!codeWritable) {
+    access = "read";
+  }
   const allowed: string[] = [];
   if (access === "write") {
     allowed.push("**");

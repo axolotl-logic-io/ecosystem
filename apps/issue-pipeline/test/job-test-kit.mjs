@@ -11,7 +11,8 @@ import path from "node:path";
 import process from "node:process";
 import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
 import { writeBrain } from "./brain-test-kit.mjs";
-import { FAKE_OPS, FAKE_PI } from "./fake-rpc-pi.mjs";
+import { installJobAuthority } from "./fake-job-authority.mjs";
+import { FAKE_PI } from "./fake-rpc-pi.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
 
 const JOB = new URL("../src/job.ts", import.meta.url).pathname;
@@ -67,7 +68,7 @@ function setUp(replies, script, extraConfig = {}, options = {}) {
   for (const file of fs.readdirSync(AGENTS)) {
     fs.copyFileSync(path.join(AGENTS, file), path.join(agents, file));
   }
-  fs.writeFileSync(path.join(root, "ops.mjs"), FAKE_OPS);
+  installJobAuthority(root, bin, replies);
   fs.writeFileSync(path.join(bin, "pi"), FAKE_PI, { mode: 0o755 });
   const origins = seedOrigins(tmp, options.wiki === true);
   const config = path.join(root, "o__r.json");

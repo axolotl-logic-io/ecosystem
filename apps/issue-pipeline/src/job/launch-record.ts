@@ -5,6 +5,7 @@
 // it. The context figures are records, never limits (`no-session-budgets`).
 
 import { z } from "zod";
+import { PATH_SCOPE } from "./pipeline-commit.ts";
 import type { ToolFailure } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
 import { SESSION_PHASES } from "./role-context.ts";
@@ -33,6 +34,7 @@ const LAUNCH = z.object({
   // it was labelled with; null for an ops launch, for a session with no
   // phase, and in a file written before they were recorded.
   commits: z.boolean().nullable().default(null),
+  scope: PATH_SCOPE.nullable().default(null),
   phase: z.enum(SESSION_PHASES).nullable().default(null),
   // The brain page the session's prompt was pinned from and the sha256 of
   // its bytes (src/job/brain.ts); null for an ops launch and in a file
@@ -117,10 +119,11 @@ function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
 // write authority, phase and pinned prompt; an ops launch has none.
 function startedRecord(
   start: Pick<LaunchRecord, "key" | "kind" | "pid" | "session"> &
-    Partial<Pick<LaunchRecord, "commits" | "phase" | "prompt">>,
+    Partial<Pick<LaunchRecord, "commits" | "phase" | "prompt" | "scope">>,
 ): LaunchRecord {
   return {
     ...start,
+    scope: start.scope ?? null,
     commits: start.commits ?? null,
     phase: start.phase ?? null,
     prompt: start.prompt ?? null,

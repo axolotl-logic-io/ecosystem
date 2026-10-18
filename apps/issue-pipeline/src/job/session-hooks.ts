@@ -5,11 +5,13 @@
 // is the session's own, never its agent's.
 
 import type { Config } from "../config.ts";
-import { paths, wikiCfg } from "../config.ts";
+import { paths, wikiCfg, withCheckout } from "../config.ts";
+import { readWriteAuthority } from "../write-authority.ts";
 import type { RunArgs } from "./args.ts";
 import { contextLogOf } from "./context-log.ts";
 import type { Control, LiveHandle } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
+import type { PathScope } from "./pipeline-commit.ts";
 import { commitEnvOf } from "./pipeline-commit.ts";
 import type { EnvSource } from "./roles.ts";
 import { agentEnvOf, commitScopeOf, rolesOf } from "./roles.ts";
@@ -38,11 +40,16 @@ function hooksOf(
   const { status, control } = watch;
   const { cwd, repo, from, job } = where;
   const shared = agentEnvOf(rolesOf(cfg.jobRoles), from);
-  const scope = commitScopeOf(args.stage, wikiCfg(cfg) !== null);
+  const scopes = new Map<string, PathScope>();
+  const scoped = withCheckout(cfg, {
+    issue: args.issue,
+    dir: repo,
+    branch: args.branch,
+  });
   return {
     sessionFile: (key: string): string => paths.session(cfg, args.issue, key),
     started: (launch: LaunchStart, live: LiveHandle): void => {
-      status.started(launch);
+      status.started({ ...launch, scope: scopes.get(launch.key) ?? null });
       control.register(live);
     },
     record: status.record,
@@ -60,6 +67,18 @@ function hooksOf(
         return shared;
       }
       const { key } = launch;
+      const { state, codeWritable } = readWriteAuthority(scoped, args.issue);
+      if (state.stage !== args.stage) {
+        throw new Error(
+          `saved stage ${state.stage} cannot authorize a ${args.stage} writer session`,
+        );
+      }
+      const scope = commitScopeOf(
+        args.stage,
+        wikiCfg(cfg) !== null,
+        codeWritable,
+      );
+      scopes.set(key, scope);
       const { socket } = control;
       const { startedAt: jobStartedAt } = job;
       const session = { socket, key, jobStartedAt, root: cwd };

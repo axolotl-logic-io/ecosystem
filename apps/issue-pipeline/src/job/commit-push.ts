@@ -13,14 +13,15 @@
 
 import { pushHead } from "../checkouts.ts";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg, withCheckout } from "../config.ts";
+import { paths, withCheckout } from "../config.ts";
 import { run } from "../process.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { Stage } from "../stages.ts";
 import { pushWikiBranch } from "../wiki.ts";
+import { readWriteAuthority } from "../write-authority.ts";
 import type { Pushed, PushReply } from "./control-protocol.ts";
 import type { LaunchPush } from "./launch-record.ts";
-import { STAGE_WIKI_ACCESS } from "./roles.ts";
+import type { PathScope } from "./pipeline-commit.ts";
 import { appendRunLine } from "./run-log.ts";
 import type { JobStatus } from "./status.ts";
 
@@ -97,6 +98,63 @@ function pushRepo(
   }
 }
 
+// Pushes only the launch's bound checkouts, under fresh saved authority.
+function pushSession(
+  cfg: Config,
+  job: PushJob,
+  session: { key: string; scope: PathScope },
+  status: Pick<JobStatus, "pushed">,
+): PushReply {
+  const { key, scope } = session;
+  const { issue } = job;
+  const wikiDir = paths.wiki(cfg, issue);
+  const done: { pushes: LaunchPush[]; errors: string[] } = {
+    pushes: [],
+    errors: [],
+  };
+  const code = pushRepo(
+    job.checkout,
+    "code",
+    (): void => {
+      // Re-read at the credentialed mutation, not just at launch or request
+      // entry. A saved own-merge receipt closes the pre-claim window too.
+      const { codeWritable } = readWriteAuthority(cfg, issue);
+      if (!codeWritable || scope.repo.access !== "write") {
+        throw new Error(
+          "code is merged or read-only; local commits kept for operator recovery",
+        );
+      }
+      pushHead(cfg, issue, PIPELINE_COMMIT_OP);
+    },
+    done,
+  );
+  let wiki = false;
+  if (scope.docs?.access === "write") {
+    wiki = pushRepo(
+      wikiDir,
+      "wiki",
+      (): void => {
+        readWriteAuthority(cfg, issue);
+        pushWikiBranch(cfg, issue);
+      },
+      done,
+    );
+  }
+  for (const push of done.pushes) {
+    status.pushed(key, push);
+    appendRunLine(paths.runDir(cfg, issue), "pushes.jsonl", {
+      key,
+      job: job.id,
+      ...push,
+    });
+  }
+  let pushError: string | null = null;
+  if (done.errors.length > 0) {
+    pushError = done.errors.join("\n");
+  }
+  return { pushed: pushedOf(code, wiki), pushError };
+}
+
 // The push request handler of `job`, which records each push in `status`
 // and refuses a key whose launch `status` doesn't record as committing.
 // Synchronous, so the job answers one request at a time.
@@ -105,16 +163,25 @@ function pushServerOf(
   job: PushJob,
   status: Pick<JobStatus, "pushed" | "launch">,
 ): (key: string) => PushReply {
-  const { issue, stage, checkout, branch } = job;
-  const runDir = paths.runDir(cfg, issue);
+  const { issue, checkout, branch } = job;
   const jobCfg = withCheckout(cfg, { issue, dir: checkout, branch });
   const wikiDir = paths.wiki(jobCfg, issue);
-  const writesWiki =
-    STAGE_WIKI_ACCESS[stage] === "write" && wikiCfg(cfg) !== null;
   return (key: string): PushReply => {
-    if (status.launch(key)?.commits !== true) {
+    const launch = status.launch(key);
+    if (launch?.kind !== "session" || launch.commits !== true) {
       const pushError = `${key} is no session of this job that commits`;
       return { pushed: "none", pushError };
+    }
+    const { scope } = launch;
+    if (scope === null) {
+      return { pushed: "none", pushError: `${key} has no bound write scope` };
+    }
+    // No request fields or session environment supply this authority. Failure
+    // to confirm saved state refuses both checkouts, rather than guessing.
+    try {
+      readWriteAuthority(jobCfg, issue);
+    } catch (error: unknown) {
+      return { pushed: "none", pushError: messageOf(error) };
     }
     const rebasing = [checkout, wikiDir].some(
       (dir) => isRepo(dir) && rebaseInProgress(dir),
@@ -122,38 +189,7 @@ function pushServerOf(
     if (rebasing) {
       return { pushed: "deferred", pushError: null };
     }
-    const done: { pushes: LaunchPush[]; errors: string[] } = {
-      pushes: [],
-      errors: [],
-    };
-    const code = pushRepo(
-      checkout,
-      "code",
-      (): void => {
-        pushHead(jobCfg, issue, PIPELINE_COMMIT_OP);
-      },
-      done,
-    );
-    let wiki = false;
-    if (writesWiki) {
-      wiki = pushRepo(
-        wikiDir,
-        "wiki",
-        (): void => {
-          pushWikiBranch(jobCfg, issue);
-        },
-        done,
-      );
-    }
-    for (const push of done.pushes) {
-      status.pushed(key, push);
-      appendRunLine(runDir, "pushes.jsonl", { key, job: job.id, ...push });
-    }
-    let pushError: string | null = null;
-    if (done.errors.length > 0) {
-      pushError = done.errors.join("\n");
-    }
-    return { pushed: pushedOf(code, wiki), pushError };
+    return pushSession(jobCfg, job, { key, scope }, status);
   };
 }
 

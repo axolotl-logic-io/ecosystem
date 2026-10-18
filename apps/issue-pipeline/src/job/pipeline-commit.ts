@@ -27,14 +27,16 @@ const CHECKOUT_SCOPE = z.object({ dir: z.string(), access: ACCESS });
 // with no wiki), and the code globs, relative to the code checkout, it may
 // commit. A job started before the trailer (#402) sends no `jobStartedAt`,
 // and its sessions commit without the trailer.
-const COMMIT_SCOPE = z.object({
+const PATH_SCOPE = z.object({
+  repo: CHECKOUT_SCOPE,
+  docs: CHECKOUT_SCOPE.nullable(),
+  allowed: z.array(z.string()).readonly(),
+});
+const COMMIT_SCOPE = PATH_SCOPE.extend({
   socket: z.string(),
   key: z.string(),
   jobStartedAt: z.string().optional(),
   root: z.string(),
-  repo: CHECKOUT_SCOPE,
-  docs: CHECKOUT_SCOPE.nullable(),
-  allowed: z.array(z.string()).readonly(),
 });
 
 type Access = z.infer<typeof ACCESS>;
@@ -282,5 +284,6 @@ export {
   commitArgsOf,
   commitEnvOf,
   commitScopeIn,
+  PATH_SCOPE,
   sessionTrailer,
 };

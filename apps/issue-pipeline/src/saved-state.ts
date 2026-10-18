@@ -20,6 +20,19 @@ import {
   withLog,
 } from "./state.ts";
 
+// Mutation authority is deliberately stricter than the compatibility reader:
+// a missing receipt must not be confused with a malformed one caught as null.
+const WRITE_STATE = ISSUE_STATE.pick({
+  version: true,
+  number: true,
+  stage: true,
+}).extend({
+  branch: ISSUE_STATE.shape.branch.removeCatch(),
+  pr: ISSUE_STATE.shape.pr.removeCatch(),
+  codeMerged: ISSUE_STATE.shape.codeMerged.removeCatch(),
+  merged: ISSUE_STATE.shape.merged.removeCatch(),
+});
+
 const MARK_END = "-->";
 const MARK_END_PATTERN = /-->/gu;
 const ESCAPED_MARK_END = "--\\u003e";
@@ -115,17 +128,49 @@ function parseIssueState(raw: unknown, number: number): IssueState | null {
 // The state in a state comment's body, or null when it has none or it is
 // unreadable.
 function parseStateBody(body: string, number: number): IssueState | null {
-  const start = body.indexOf(STATE_MARK);
-  const end = body.indexOf(MARK_END, start);
-  if (start < 0 || end < 0) {
-    return null;
-  }
   try {
-    const raw: unknown = JSON.parse(body.slice(start + STATE_MARK.length, end));
-    return parseIssueState(raw, number);
+    return parseIssueState(rawStateBody(body), number);
   } catch {
     return null;
   }
+}
+
+function rawStateBody(body: string): unknown {
+  const start = body.indexOf(STATE_MARK);
+  const end = body.indexOf(MARK_END, start);
+  if (start < 0 || end < 0) {
+    throw new OpsError("saved write authority is unreadable");
+  }
+  return JSON.parse(body.slice(start + STATE_MARK.length, end));
+}
+
+function latestStateComment(
+  cfg: Config,
+  comments: readonly IssueComment[],
+): IssueComment | undefined {
+  return comments
+    .filter(
+      (item) =>
+        item.user?.login === cfg.account &&
+        (item.body ?? "").includes(STATE_MARK),
+    )
+    .at(-1);
+}
+
+// Fresh saved mutation authority, never a request's state. Legacy state must
+// first pass through claim migration/save. Invalid critical fields throw;
+// display/migration readers retain readState's tolerant behavior.
+function readWriteState(cfg: Config, number: number): IssueState {
+  const latest = latestStateComment(cfg, listComments(cfg, number));
+  if (latest === undefined) {
+    throw new OpsError(`#${number} has no saved write authority`);
+  }
+  const raw = rawStateBody(latest.body ?? "");
+  const critical = WRITE_STATE.safeParse(raw);
+  if (!critical.success || critical.data.number !== number) {
+    throw new OpsError(`#${number}'s saved write authority is invalid`);
+  }
+  return ISSUE_STATE.parse(raw);
 }
 
 function readState(
@@ -135,12 +180,7 @@ function readState(
 ): StoredState {
   // Only trust a state comment written by the pipeline's account. Anyone can
   // paste the marker.
-  const mine = (comments ?? listComments(cfg, number)).filter(
-    (item) =>
-      item.user?.login === cfg.account &&
-      (item.body ?? "").includes(STATE_MARK),
-  );
-  const latest = mine.at(-1);
+  const latest = latestStateComment(cfg, comments ?? listComments(cfg, number));
   if (latest === undefined) {
     return { id: null, state: null };
   }
@@ -184,6 +224,7 @@ export {
   parseIssueState,
   parseStateBody,
   readState,
+  readWriteState,
   stateBody,
   writeState,
 };

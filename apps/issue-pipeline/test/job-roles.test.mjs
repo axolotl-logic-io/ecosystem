@@ -165,7 +165,7 @@ test("only the author reads the code alone; the writers and merge's integration 
 test("a committing session of review or merge may commit any code path and the wiki; the author's scope commits nothing", () => {
   for (const stage of [...WRITER_STAGES, ...MERGER_STAGES]) {
     assert.deepEqual(
-      commitScopeOf(stage, true),
+      commitScopeOf(stage, true, true),
       {
         repo: { dir: "repo", access: "write" },
         docs: { dir: "docs", access: "write" },
@@ -174,7 +174,7 @@ test("a committing session of review or merge may commit any code path and the w
       stage,
     );
   }
-  assert.deepEqual(commitScopeOf("author", false), {
+  assert.deepEqual(commitScopeOf("author", false, true), {
     repo: { dir: "repo", access: "read" },
     docs: null,
     allowed: [],

@@ -12,10 +12,12 @@ import process from "node:process";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
+import { saveAuthority } from "./write-authority-test-kit.mjs";
 
 /** @import { Config } from "../src/config.ts" */
 /** @import { Stage } from "../src/stages.ts" */
 
+const { newIssueState } = await import("../src/state.ts");
 const { loadConfig, paths } = await import("../src/config.ts");
 const { openJobCheckout } = await import("../src/job/checkout.ts");
 const { openControl } = await import("../src/job/control.ts");
@@ -43,7 +45,7 @@ const JOB_STARTED_AT = "2026-10-17T12:00:00.000Z";
 /**
  * One stage job's folder (root) with its code checkout (repo) and wiki
  * checkout (docs), its control socket and its registered tool.
- * @typedef {{ cfg: Config, root: string, repo: string, docs: string, branch: string, origin: string, wikiOrigin: string, runDir: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
+ * @typedef {{ cfg: Config, root: string, repo: string, docs: string, branch: string, origin: string, wikiOrigin: string, runDir: string, socket: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
  */
 
 let repos = 0;
@@ -80,7 +82,13 @@ function configIn(tmp, wiki = true) {
     ...origins.config,
   };
   fs.writeFileSync(file, JSON.stringify(config));
-  return loadConfig(file);
+  const cfg = loadConfig(file);
+  saveAuthority(cfg, {
+    ...newIssueState(ISSUE),
+    stage: "implement",
+    branch: ISSUE_BRANCH,
+  });
+  return cfg;
 }
 
 // The tool pipelineCommit registers on a fake pi API.
@@ -98,10 +106,13 @@ function registeredTool() {
 // the job's start, as a job started before the trailer (#402) sends it.
 /**
  * @param {Stage} stage
- * @param {{ withJobStart?: boolean, commits?: boolean }} [options]
+ * @param {{ withJobStart?: boolean, commits?: boolean, bindScope?: boolean }} [options]
  * @returns {Promise<Job>}
  */
-async function openJob(stage, { withJobStart = true, commits = true } = {}) {
+async function openJob(
+  stage,
+  { withJobStart = true, commits = true, bindScope = true } = {},
+) {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp);
   const dirs = openJobCheckout(cfg, ISSUE, { stage, branch: ISSUE_BRANCH });
@@ -123,8 +134,11 @@ async function openJob(stage, { withJobStart = true, commits = true } = {}) {
     startedAt: JOB_STARTED_AT,
     prompts: [],
   });
-  const server = pushServerOf(cfg, job, status);
-  const control = await openControl(runDir, server);
+  const control = await openControl(runDir, pushServerOf(cfg, job, status));
+  let boundScope = null;
+  if (bindScope) {
+    boundScope = commitScopeOf(stage, true, true);
+  }
   status.started({
     key: KEY,
     kind: "session",
@@ -132,13 +146,14 @@ async function openJob(stage, { withJobStart = true, commits = true } = {}) {
     session: null,
     commits,
     phase: null,
+    scope: boundScope,
   });
   /** @type {{ socket: string, key: string, root: string, jobStartedAt?: string }} */
   const scope = { socket: control.socket, key: KEY, root: dirs.root };
   if (withJobStart) {
     scope.jobStartedAt = JOB_STARTED_AT;
   }
-  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true) });
+  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true, true) });
   const tool = registeredTool();
   return {
     cfg,
@@ -149,6 +164,7 @@ async function openJob(stage, { withJobStart = true, commits = true } = {}) {
     origin: path.join(tmp, "origin.git"),
     wikiOrigin: path.join(tmp, "wiki-origin.git"),
     runDir,
+    socket: control.socket,
     commit: async (args) => {
       setEnv(COMMIT_SCOPE_ENV, env[COMMIT_SCOPE_ENV] ?? "");
       return await tool.execute("call", { args });

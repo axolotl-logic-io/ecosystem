@@ -7,7 +7,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { assignedBranch } from "../branch-binding.ts";
 import type { PushResult } from "../checkouts.ts";
 import { branchChanges, push } from "../checkouts.ts";
 import type { Config } from "../config.ts";
@@ -15,9 +14,9 @@ import { paths, wikiCfg } from "../config.ts";
 import { assertClean, head, remoteHead } from "../git-state.ts";
 import { OpsError, parseRequest } from "../process.ts";
 import { pullRequest } from "../revision.ts";
-import { readState } from "../saved-state.ts";
 import type { CodeMerged } from "../state.ts";
 import { holdWikiPin, pushWikiBranch, wikiAhead } from "../wiki.ts";
+import { readWriteAuthority } from "../write-authority.ts";
 
 const PUSH_REQUEST = z.looseObject({
   number: z.number().int().positive(),
@@ -30,10 +29,10 @@ type PushOp = (cfg: Config, request: unknown) => PushResult;
 // Throws when issue `n`'s saved state records its code merged, since `op`
 // would push code.
 function refuseOnceMerged(cfg: Config, n: number, op: string): void {
-  const codeMerged = readState(cfg, n).state?.codeMerged ?? null;
-  if (codeMerged !== null) {
+  const { codeWritable } = readWriteAuthority(cfg, n);
+  if (!codeWritable) {
     throw new OpsError(
-      `#${n}'s code merged in PR #${codeMerged.pr}, so ${op} can't push code; push the wiki with push {wikiOnly: true}`,
+      `#${n}'s code merged, so ${op} can't push code; push the wiki with push {wikiOnly: true}`,
     );
   }
 }
@@ -104,10 +103,8 @@ function pushWikiOnly(
 // state bound to another branch than the assigned one pushes nothing.
 function pushFor(cfg: Config, request: unknown, op: string): PushResult {
   const { number, wikiOnly } = parseRequest(PUSH_REQUEST, op, request);
-  const { state } = readState(cfg, number);
-  assignedBranch(cfg, number, state);
-  const codeMerged = state?.codeMerged ?? null;
-  if (wikiOnly === true || codeMerged !== null) {
+  const { codeWritable, codeMerged } = readWriteAuthority(cfg, number);
+  if (wikiOnly === true || !codeWritable) {
     return pushWikiOnly(cfg, number, codeMerged);
   }
   return push(cfg, number, op);

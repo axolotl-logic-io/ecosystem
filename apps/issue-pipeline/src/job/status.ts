@@ -25,6 +25,7 @@ import type {
   LaunchRecord,
 } from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
+import type { PathScope } from "./pipeline-commit.ts";
 import type { SessionPhase } from "./role-context.ts";
 
 const STATUS_FILE = "job.json";
@@ -117,6 +118,7 @@ interface LaunchStart {
   pid: number | null;
   session: string | null;
   commits?: boolean;
+  scope?: PathScope | null;
   phase?: SessionPhase | null;
   prompt?: { page: string; sha256: string } | null;
 }
