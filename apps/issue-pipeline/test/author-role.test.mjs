@@ -5,7 +5,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
-import { ruleCount } from "./load-rule-test-kit.mjs";
 
 const { testConfig } = await import("./config-test-kit.mjs");
 const { authorRole: author } = await import("../src/roles/author/author.ts");
@@ -74,6 +73,10 @@ const reply = {
   changed: true,
 };
 
+const AUTHORING_TASK = /Task: `authoring`/u;
+// Behaviour is the wiki page's, never the task's.
+const BEHAVIOUR_WORDS = /AGENTS\.md|artificial load|allow-listed/iu;
+
 test("an authored Gherkin answers the questions asked before it", async () => {
   const asked = { inputs: EARLIER_INPUTS };
   const { ctx } = fakeContext({ ok: true, reply }, {}, { asked });
@@ -89,7 +92,10 @@ test("a first Gherkin posts revision 1 and goes to implement", async () => {
   assert.equal(sessions[0]?.agent, "issue-pipeline-author");
   assert.equal(sessions[0]?.commits, false);
   assert.equal(sessions[0]?.model, cfg.models.author);
-  assert.equal(ruleCount(sessions[0]?.task ?? ""), 1);
+  assert.equal(sessions[0]?.phase, undefined);
+  const task = sessions[0]?.task ?? "";
+  assert.match(task, AUTHORING_TASK);
+  assert.doesNotMatch(task, BEHAVIOUR_WORDS);
   assert.equal(posts.length, 1);
   assert.equal(posts[0]?.key, "gherkin");
   assert.equal(posts[0]?.role, "author");
