@@ -89,52 +89,84 @@ function publishRefusal(
   return { published: false, reason, detail };
 }
 
-// Why the saved state is not the partial code-merge receipt of the merge
-// that GitHub reports, for the authorized `revision`, or undefined. The
-// receipt is the issue saved at stage merge with `merged` naming GitHub's
-// merge commit and the authorized wiki and inputs, its PR the same, and its
-// merge authorization (mergeAuthorization: the hardened head, or the head
-// the Reviewer's own integration checked from it) permitting the exact head
-// GitHub merged.
-// Only the saved state counts: the request's state and the job's log are no
-// proof.
+// Whether the saved authorization permits GitHub's merged result. An own
+// merge keeps the original head authorization and needs its exact saved
+// receipt, even after a claim records codeMerged. Independently hardened
+// postmerge work instead authorizes the merge commit with codeMerged.
+// A done replay always needs the exact saved completion as well. Callers
+// first confirm the PR and codeMerged against GitHub through mergedPr.
+function mergedAuthorizationHolds(
+  saved: IssueState,
+  result: Revision,
+  merged: { mergeCommit: string; headSha: string },
+): boolean {
+  const authorized = mergeAuthorization(saved);
+  if (
+    authorized === null ||
+    result.code !== merged.mergeCommit ||
+    authorized.wiki !== result.wiki ||
+    authorized.inputs !== result.inputs
+  ) {
+    return false;
+  }
+  const hasReceipt =
+    (saved.stage === "merge" || saved.stage === "done") &&
+    saved.merged !== null &&
+    sameRevision(saved.merged, result);
+  if (authorized.code === merged.headSha) {
+    return hasReceipt;
+  }
+  return (
+    saved.codeMerged !== null &&
+    authorized.code === merged.mergeCommit &&
+    (saved.stage !== "done" || hasReceipt)
+  );
+}
+
+// Only a saved authorization and its applicable receipt count: neither the
+// request's state nor the job's log proves what GitHub merged. An own-merge
+// receipt is saved at merge; an exact done completion can later replay it.
 function receiptRefusal(
   saved: IssueState | null,
   state: IssueState,
   revision: Revision,
-  merged: { mergeCommit: string; headSha: string },
+  current: CurrentRevision,
 ): PublishRefusal | undefined {
-  if (saved === null || saved.stage !== "merge" || saved.merged === null) {
+  if (
+    saved === null ||
+    (saved.stage !== "merge" && saved.stage !== "done") ||
+    saved.number !== state.number ||
+    saved.pr !== state.pr ||
+    !approvalHolds(saved, revision)
+  ) {
     return publishRefusal(
       "no-receipt",
-      `#${state.number} has no saved code-merge receipt at stage merge`,
+      `#${state.number} has no matching saved merge authorization at merge or done`,
     );
   }
-  const { merged: receipt } = saved;
-  const authorized = mergeAuthorization(saved);
-  const holds =
-    saved.pr === state.pr &&
-    receipt.code === merged.mergeCommit &&
-    receipt.wiki === revision.wiki &&
-    receipt.inputs === revision.inputs &&
-    authorized !== null &&
-    sameRevision(authorized, revision) &&
-    revision.code === merged.headSha;
-  if (holds) {
+  // Validate saved codeMerged independently too, not just the request's.
+  const merged = mergedPr(saved, current);
+  if (merged === "open") {
+    return publishRefusal(
+      "not-merged",
+      `PR #${String(saved.pr)} has not merged`,
+    );
+  }
+  const result = { ...revision, code: merged.mergeCommit };
+  if (mergedAuthorizationHolds(saved, result, merged)) {
     return undefined;
   }
   return publishRefusal(
     "no-receipt",
-    `the saved receipt (code ${String(receipt.code)}, wiki ${String(receipt.wiki)}) is not PR #${String(state.pr)}'s merge ${merged.mergeCommit} of the authorized head ${String(revision.code)}`,
+    `the saved authorization and receipt are not PR #${String(state.pr)}'s merge ${merged.mergeCommit} of the authorized revision (code ${String(revision.code)}, wiki ${String(revision.wiki)}, inputs ${revision.inputs})`,
   );
 }
 
 // Why the code side forbids publishing `revision`, or undefined. With a PR,
-// GitHub must say it merged; a revision reviewed after the merge
-// (codeMerged) names the merge commit, and one reviewed before it, in the
-// job that merged it, names exactly the head GitHub merged and needs that
-// job's saved receipt. Without a PR, a change that lives only in the wiki
-// keeps the checkout at the reviewed code.
+// GitHub must say it merged; original-head authorization needs the saved
+// own-merge receipt, while postmerge authorization needs confirmed
+// codeMerged. Without a PR, a change that lives only in the wiki keeps the
+// checkout at the reviewed code.
 function codeRefusal(
   state: IssueState,
   saved: IssueState | null,
@@ -163,20 +195,16 @@ function codeRefusal(
   if (merged === "open") {
     return publishRefusal("not-merged", `PR #${state.pr} has not merged`);
   }
-  let expected = merged.headSha;
-  if (state.codeMerged !== null) {
-    expected = merged.mergeCommit;
+  if (revision.code === merged.headSha) {
+    return receiptRefusal(saved, state, revision, current);
   }
-  if (revision.code !== expected) {
+  if (state.codeMerged === null || revision.code !== merged.mergeCommit) {
     return publishRefusal(
       "code-mismatch",
-      `the approved code ${String(revision.code)} is not ${expected}, which PR #${state.pr} merged`,
+      `the approved code ${String(revision.code)} is neither the head ${merged.headSha} nor the confirmed merge commit ${merged.mergeCommit} of PR #${state.pr}`,
     );
   }
-  if (state.codeMerged === null) {
-    return receiptRefusal(saved, state, revision, merged);
-  }
-  return undefined;
+  return receiptRefusal(saved, state, revision, current);
 }
 
 // Why the wiki of `revision` may not be published, or undefined. The wiki
@@ -240,4 +268,10 @@ function mergedResult(
 }
 
 export type { CurrentRevision, MergeStale, PublishRefusal };
-export { mergedPr, mergeStale, publishGate, REVISION_REQUEST };
+export {
+  mergedAuthorizationHolds,
+  mergedPr,
+  mergeStale,
+  publishGate,
+  REVISION_REQUEST,
+};

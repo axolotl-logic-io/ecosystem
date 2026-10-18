@@ -7,10 +7,10 @@
 
 import { OpsError } from "../process.ts";
 import { securityRefusal } from "../security-clearance.ts";
-import type { IssueState } from "../state.ts";
+import type { IssueState, Revision } from "../state.ts";
 import { mergeAuthorization } from "../state.ts";
 import type { CurrentRevision } from "./publication-guard.ts";
-import { mergedPr } from "./publication-guard.ts";
+import { mergedAuthorizationHolds, mergedPr } from "./publication-guard.ts";
 
 interface FinishRefusal {
   finished: false;
@@ -18,21 +18,19 @@ interface FinishRefusal {
   detail: string;
 }
 
-// Throws unless the saved merge authorization's code is the head GitHub
-// merged (its merge commit, once codeMerged recorded it), checked apart from
-// the merge commit itself.
+// Throws unless the saved completion binds the authorized wiki and inputs
+// to GitHub's exact merge: either the original authorized head with its
+// own-merge receipt, or independently hardened postmerge work with confirmed
+// codeMerged. Recording codeMerged never changes which path authorized it.
 function unauthorizedHead(
   saved: IssueState,
+  merged: Revision,
   pr: { mergeCommit: string; headSha: string },
 ): void {
-  let expected = pr.headSha;
-  if (saved.codeMerged !== null) {
-    expected = pr.mergeCommit;
-  }
-  const authorized = mergeAuthorization(saved)?.code ?? null;
-  if (authorized !== expected) {
+  if (!mergedAuthorizationHolds(saved, merged, pr)) {
+    const authorized = mergeAuthorization(saved)?.code ?? null;
     throw new OpsError(
-      `#${saved.number}'s merge authorization ${String(authorized)} is not ${expected}, which PR #${String(saved.pr)} merged`,
+      `#${saved.number}'s merge authorization ${String(authorized)} is not bound to the saved result of head ${pr.headSha} as ${pr.mergeCommit}, which PR #${String(saved.pr)} merged`,
     );
   }
 }
@@ -66,7 +64,7 @@ function finishGate(
         `#${saved.number} is saved merged at ${String(merged.code)}, which is not PR #${saved.pr}'s merge commit`,
       );
     }
-    unauthorizedHead(saved, pr);
+    unauthorizedHead(saved, merged, pr);
   }
   if (current.revision.inputs !== merged.inputs) {
     return {

@@ -26,6 +26,7 @@ import {
 } from "./ops-publish-test-kit.mjs";
 
 const { merge } = await import("../src/ops/merge.ts");
+const { finishWiki } = await import("../src/ops/finish.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @typedef {{ code: string | null, wiki: string | null, inputs: string }} Revision */
@@ -189,6 +190,59 @@ test("publish after the merge of an integrated head publishes the integrated wik
   const reply = publishOf(w.cfg, publishRequest(integrated, state));
   assert.equal(reply.published, true);
   assert.equal(wikiRef(w, "master"), w.wikiSha);
+});
+
+test("a claimed own merge publishes and finishes with original hardening and integration intact, only after saved exact security", () => {
+  const w = world({ wiki: true });
+  const { reviewed, integrated } = chainOf(w);
+  const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
+  const state = integratedState(
+    reviewed,
+    { reviewed, revision: integrated },
+    {
+      codeMerged: { pr: PR, sha: MERGE_COMMIT },
+      merged: receipt,
+    },
+  );
+  const cleared = { ...state, security: securityOf(receipt) };
+  const before = structuredClone(cleared);
+  mergedAt(w);
+  fakeGh.reply([savedListing(state)]);
+  assert.equal(
+    refusalOf(w.cfg, publishRequest(integrated, cleared)),
+    "security",
+  );
+  assert.deepEqual(writes(), []);
+  assert.notEqual(wikiRef(w, "master"), w.wikiSha);
+
+  fakeGh.reply([savedListing(cleared)]);
+  assert.equal(
+    publishOf(w.cfg, publishRequest(integrated, cleared)).published,
+    true,
+  );
+  assert.equal(wikiRef(w, "master"), w.wikiSha);
+  assert.deepEqual(writes(), []);
+  const done = { ...cleared, stage: "done", lease: null };
+  fakeGh.reply([savedListing(done)]);
+  const replay = publishOf(w.cfg, publishRequest(integrated, done));
+  assert.ok(replay.published);
+  assert.equal(replay.alreadyPublished, true);
+  fakeGh.reply([
+    savedListing(done),
+    { when: "repos/o/r/issues/7 --jq {state}", stdout: '{"state":"open"}' },
+  ]);
+  assert.deepEqual(finishWiki(w.cfg, { number: 7, state: done }), {
+    finished: true,
+    closed: true,
+  });
+  assert.ok(
+    writes().some((args) => args.join(" ").startsWith("issue close 7 ")),
+  );
+  assert.equal(
+    writes().some((args) => args.join(" ").startsWith("pr merge ")),
+    false,
+  );
+  assert.deepEqual(cleared, before);
 });
 
 test("publish refuses an integrated head no receipt binds to the approval, in the request or the saved state", () => {

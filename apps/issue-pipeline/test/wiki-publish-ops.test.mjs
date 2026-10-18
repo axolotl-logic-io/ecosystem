@@ -141,7 +141,7 @@ test("publish refuses changed trusted inputs, an open PR and a revision hardenin
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
 });
 
-test("before codeMerged only the head GitHub merged is the approved code; after, only the merge commit", () => {
+test("publish needs the saved own-merge receipt for original-head authorization, or confirmed postmerge hardening", () => {
   const w = world({ wiki: true });
   merged(w);
   const other = { ...approvedOf(w), code: "0ther" };
@@ -151,13 +151,15 @@ test("before codeMerged only the head GitHub merged is the approved code; after,
   const late = request(premerge, {
     state: approvedState(premerge, { codeMerged }),
   });
-  assert.equal(refusalOf(w.cfg, late), "code-mismatch");
+  assert.equal(refusalOf(w.cfg, late), "no-receipt");
   const reviewed = { ...approvedOf(w), code: MERGE_COMMIT };
   const ok = request(reviewed, {
     state: approvedState(reviewed, { codeMerged }),
   });
   const security = securityOf(resultOf(reviewed));
-  fakeGh.reply([savedListing(approvedState(reviewed, { security }))]);
+  fakeGh.reply([
+    savedListing(approvedState(reviewed, { codeMerged, security })),
+  ]);
   assert.equal(publishOf(w.cfg, ok).published, true);
 });
 
