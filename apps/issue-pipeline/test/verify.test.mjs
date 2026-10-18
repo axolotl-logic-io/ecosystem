@@ -1,7 +1,9 @@
 // @ts-check
 // The verify op: its reply, check by check, for setup, the configured
 // commands, lockfiles and migrations, against local git repos. Every case
-// leaves the worktree clean and no temp worktree behind.
+// leaves the worktree clean and no temp worktree behind. Verify no longer
+// runs the new tests against the unfixed code (fails-before-fix): the
+// reviewer judges the tests (src/config-legacy.ts).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,11 +32,6 @@ const VERIFY_REPLY = z.looseObject({
   pass: z.boolean(),
   checks: z.array(z.unknown()),
 });
-const NO_NEW_TESTS = {
-  id: "fails-before-fix",
-  pass: true,
-  detail: "the change adds or edits no test files",
-};
 
 // Runs verify on a branch with `files` changed, and returns the reply, the
 // branch's head, where verify keeps its logs, what it left behind and the
@@ -122,7 +119,6 @@ test("each command's check gives its exit code, its log and, when it fails, its 
         log: log("typecheck"),
         tail: "",
       },
-      { ...NO_NEW_TESTS, pass: false },
     ],
   };
   // The reply is one JSON line.
@@ -143,7 +139,6 @@ test("a command that edits a tracked file has the edit undone", () => {
   assert.deepEqual(reply.checks, [
     passed("test", log("test")),
     passed("lint", log("lint")),
-    NO_NEW_TESTS,
   ]);
   assert.deepEqual(leftovers, CLEAN);
   const text = fs.readFileSync(path.join(worktree, "src/a.js"), "utf8");
@@ -168,7 +163,6 @@ test("a regenerated lockfile that matches passes, and the worktree stays clean",
     changedFiles: [LOCKFILE],
     checks: [
       passed("test", log("test")),
-      NO_NEW_TESTS,
       {
         id: `lockfile:${LOCKFILE}`,
         pass: true,
@@ -200,7 +194,6 @@ test("a regenerated lockfile that differs fails, and is restored", () => {
     changedFiles: [LOCKFILE],
     checks: [
       passed("test", log("test")),
-      NO_NEW_TESTS,
       {
         id: `lockfile:${LOCKFILE}`,
         pass: false,
@@ -222,16 +215,13 @@ function migrationCase(migrations) {
   const { reply, sha, log, leftovers } = verifyCase(
     MIGRATION,
     {},
-    {
-      requireNewTests: false,
-      migrations: { pathGlobs: ["migrations/**"], ...migrations },
-    },
+    { migrations: { pathGlobs: ["migrations/**"], ...migrations } },
   );
   const { checks, ...rest } = reply;
-  const [testCheck, failsBeforeFix, ...steps] = checks;
+  const [testCheck, ...steps] = checks;
   const got = {
     ...rest,
-    firstChecks: [testCheck, failsBeforeFix],
+    firstChecks: [testCheck],
     leftovers,
     steps,
   };
@@ -242,7 +232,7 @@ function migrationCase(migrations) {
     commentIds: [],
     headSha: sha,
     changedFiles: ["migrations/1.sql"],
-    firstChecks: [passed("test", log("test")), NO_NEW_TESTS],
+    firstChecks: [passed("test", log("test"))],
     leftovers: CLEAN,
   };
   return { got, want, log };

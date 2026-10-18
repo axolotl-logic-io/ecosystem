@@ -47,12 +47,14 @@ function sh(command) {
   return r.stdout.trim();
 }
 
-// This process's environment with ISSUE_PIPELINE_ROOT set to `root`.
+// This process's environment with ISSUE_PIPELINE_ROOT and HOME set to
+// `root`, so the ops child reads nothing from the real home.
 // Environment variables are named by strings, as src/process.ts takes them.
 /** @param {string} root @returns {NodeJS.ProcessEnv} */
 function withRoot(root) {
   const env = new Map(Object.entries(process.env));
   env.set("ISSUE_PIPELINE_ROOT", root);
+  env.set("HOME", root);
   return Object.fromEntries(env);
 }
 
