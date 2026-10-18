@@ -1,22 +1,22 @@
+// @ts-check
 // The stage job's agent definitions: the pi command line each of the repo's
-// definitions gives a session, and the failed launch a missing one gives.
+// definitions the four stages run (STAGE_AGENTS) gives a session, and the
+// failed session a missing one gives. The author and reviewer only read; the
+// implementor edits, writes and runs commands.
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 /** @import { AgentDefinition } from "../src/job/agent-definition.ts" */
-/** @import { LaunchHooks } from "../src/job/launch.ts" */
-/** @import { OpsRaw, SessionRaw } from "../src/job/raw-results.ts" */
-/** @import { ChildSpec } from "../src/workflow/launches.ts" */
+/** @import { LaunchHooks, SessionLaunch } from "../src/job/launch.ts" */
 
 // The job reads definitions from $PI_CODING_AGENT_DIR, fixed when its
 // modules load, so the variable is set before they are imported. Environment
 // variables are named by strings, as install.test.mjs names them.
-const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "job-agents-"));
-process.on("exit", () => fs.rmSync(agentDir, { recursive: true, force: true }));
+const agentDir = fs.mkdtempSync(path.join(isolatedRoot, "job-agents-"));
 Object.assign(
   process.env,
   Object.fromEntries([["PI_CODING_AGENT_DIR", agentDir]]),
@@ -24,7 +24,8 @@ Object.assign(
 const { parseDefinition, piArgs } = await import(
   "../src/job/agent-definition.ts"
 );
-const { runLaunch } = await import("../src/job/launch.ts");
+const { runSession } = await import("../src/job/launch.ts");
+const { STAGE_AGENTS } = await import("../src/job/roles.ts");
 
 const FRONTMATTER_FENCE = /^---/u;
 const NOBODY = /issue-pipeline-nobody/u;
@@ -34,13 +35,9 @@ const NOBODY = /issue-pipeline-nobody/u;
 function hooksIn(sessions) {
   return {
     sessionFile: (key) => path.join(sessions, `${key}.jsonl`),
-    resumePoint: () => null,
     started: () => undefined,
     record: () => undefined,
     ended: () => undefined,
-    contextLimits: { soft: 175_000, hard: 225_000 },
-    handoffFile: path.join(sessions, "handoff.md"),
-    contextStopped: () => undefined,
     sessionEnded: () => undefined,
     env: () => ({}),
     cwd: sessions,
@@ -49,37 +46,25 @@ function hooksIn(sessions) {
 }
 
 const FILES = {
-  session: "/r/runs/o__r/issue-7/sessions/i7-spec-4.jsonl",
+  session: "/r/runs/o__r/issue-7/sessions/author-1.jsonl",
   extension: "/r/structured-output.mjs",
-  schema: "/r/runs/o__r/issue-7/sessions/i7-spec-4.schema.json",
+  schema: "/r/runs/o__r/issue-7/sessions/author-1.schema.json",
   commit: null,
 };
 // A writer session's files, which load the pipeline_commit extension.
 const WRITER_FILES = { ...FILES, commit: "/r/pipeline-commit.mjs" };
 
-// A session's raw result, which a child launch always gives.
-/** @param {OpsRaw | SessionRaw} raw @returns {SessionRaw} */
-function sessionRawOf(raw) {
-  if (!("key" in raw)) {
-    throw new Error("a child launch gave an ops result");
-  }
-  return raw;
-}
-
-/** @param {string} agent @returns {ChildSpec} */
+// The author's session launch with installed agent `agent`.
+/** @param {string} agent @returns {SessionLaunch} */
 function specFor(agent) {
   return {
-    key: "i7-spec-4",
-    label: "Write the spec",
+    key: "author-1",
+    role: "author",
     agent,
     model: "anthropic/claude-opus-5-5",
-    cwd: agentDir,
-    task: "Write the spec.",
+    task: "Write the Gherkin.",
     outputSchema: { type: "object" },
     timeoutMs: 60_000,
-    budgetRole: "spec",
-    tokenBudget: 80_000,
-    intercomBridge: { mode: "off" },
   };
 }
 
@@ -151,7 +136,7 @@ function commandLineOf(args) {
 // spec's model, the definition's tools plus structured_output, its thinking,
 // prompt, extensions and context settings, and the job's session file,
 // output extension and schema.
-/** @param {AgentDefinition} definition @param {ChildSpec} spec @returns {CommandLine} */
+/** @param {AgentDefinition} definition @param {SessionLaunch} spec @returns {CommandLine} */
 function promisedCommandLine(definition, spec) {
   return {
     mode: "rpc",
@@ -167,43 +152,58 @@ function promisedCommandLine(definition, spec) {
   };
 }
 
-test("the reader runs pi in RPC mode as its definition says", () => {
-  const definition = definitionOf("issue-pipeline-reader");
-  const spec = specFor("issue-pipeline-reader");
-  assert.deepEqual(
-    commandLineOf(piArgs(definition, spec, FILES)),
-    promisedCommandLine(definition, spec),
-  );
-  assert.ok(definition.systemPrompt.length > 0);
-  assert.doesNotMatch(definition.systemPrompt, FRONTMATTER_FENCE);
+test("the pipeline root and agent folder the definitions load from are the test's temporary ones", () => {
+  assert.equal(fs.statSync(isolatedRoot).isDirectory(), true);
+  assert.ok(agentDir.startsWith(isolatedRoot));
 });
 
-test("the specifier runs pi in RPC mode as its definition says", () => {
-  const definition = definitionOf("issue-pipeline-specifier");
-  const spec = specFor("issue-pipeline-specifier");
-  assert.deepEqual(
-    commandLineOf(piArgs(definition, spec, FILES)),
-    promisedCommandLine(definition, spec),
-  );
+// The installed agent of each stage that runs a session.
+const SESSION_AGENTS = Object.values(STAGE_AGENTS).flatMap((entry) => {
+  if (entry === null) {
+    return [];
+  }
+  return [entry.agent];
 });
 
-// It writes its failing tests, their stubs and the wiki edits (#334).
-test("the specifier may edit, write and run commands, and keeps the web tools", () => {
-  const { tools } = definitionOf("issue-pipeline-specifier");
-  for (const tool of ["edit", "write", "bash", "web_search"]) {
+test("the author, implementor and reviewer stages run their own agents, and the merge runs none", () => {
+  assert.deepEqual(SESSION_AGENTS, [
+    "issue-pipeline-author",
+    "issue-pipeline-implementor",
+    "issue-pipeline-reviewer",
+  ]);
+  assert.equal(STAGE_AGENTS.merge, null);
+});
+
+for (const agent of SESSION_AGENTS) {
+  test(`${agent} runs pi in RPC mode as its definition says`, () => {
+    const definition = definitionOf(agent);
+    const spec = specFor(agent);
+    assert.deepEqual(
+      commandLineOf(piArgs(definition, spec, FILES)),
+      promisedCommandLine(definition, spec),
+    );
+    assert.ok(definition.systemPrompt.length > 0);
+    assert.doesNotMatch(definition.systemPrompt, FRONTMATTER_FENCE);
+  });
+}
+
+// The author writes only the Gherkin, and the reviewer only its findings:
+// neither edits, writes or runs commands.
+for (const agent of ["issue-pipeline-author", "issue-pipeline-reviewer"]) {
+  test(`${agent} only reads`, () => {
+    const { tools } = definitionOf(agent);
+    for (const tool of ["edit", "write", "bash"]) {
+      assert.equal(tools.includes(tool), false, tool);
+    }
+    assert.ok(tools.includes("read"));
+  });
+}
+
+test("the implementor may edit, write and run commands", () => {
+  const { tools } = definitionOf("issue-pipeline-implementor");
+  for (const tool of ["edit", "write", "bash"]) {
     assert.ok(tools.includes(tool), tool);
   }
-});
-
-// A spec names its entry points, not a list of files (#391).
-test("the specifier's prompt asks for the entry points, not the files", () => {
-  const { systemPrompt } = definitionOf("issue-pipeline-specifier");
-  assert.ok(
-    systemPrompt.includes(
-      "the behaviour, the entry points it builds on, and the tests",
-    ),
-  );
-  assert.ok(!systemPrompt.includes("the behaviour, the files, and the tests"));
 });
 
 test("a definition without project context or a tools list runs with -nc and pi's default tools", () => {
@@ -255,11 +255,12 @@ test("a writer session with pi's default tools adds both tools to them", () => {
 
 test("a missing agent definition fails its launch with an error naming the agent", async () => {
   const sessions = path.join(agentDir, "sessions");
-  const raw = sessionRawOf(
-    await runLaunch(specFor("issue-pipeline-nobody"), hooksIn(sessions)),
+  const raw = await runSession(
+    specFor("issue-pipeline-nobody"),
+    hooksIn(sessions),
   );
   assert.equal(raw.ok, false);
   assert.equal(raw.structuredOutput, null);
   assert.match(raw.error ?? "", NOBODY);
-  assert.equal(raw.key, "i7-spec-4");
+  assert.equal(raw.key, "author-1");
 });
