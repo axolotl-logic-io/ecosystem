@@ -32,10 +32,12 @@ const JOB = {
 };
 const PR = 70;
 const CLOSED = 99;
-// An issue's facts with none of its own: no files, PR, after mark, stop, job,
-// stack or prerequisite.
+// An issue's facts with none of its own: no stopped stage, stub files,
+// changed files, PR, after mark, stop, job, stack or prerequisite.
 const BASE = {
-  files: null,
+  stoppedStage: null,
+  stubs: [],
+  changed: null,
   pr: null,
   after: [],
   stopped: false,
@@ -52,6 +54,7 @@ const FRESH_PREREQ = {
   headSha: null,
   stacked: false,
   stopped: false,
+  behind: false,
 };
 
 /** @param {number} issue @param {number} pid @returns {StartRecord} */
@@ -59,7 +62,7 @@ function started(issue, pid) {
   return { issue, stage: "spec", pid, at: NOW.toISOString() };
 }
 
-test("each open issue carries the sweep's verdict, its saved stage, files and PR, and its open after marks", () => {
+test("each open issue carries the sweep's verdict, its saved stage and PR, and its open after marks, but no saved files", () => {
   openWith([
     { number: ISSUE.fresh },
     {
@@ -103,7 +106,6 @@ test("each open issue carries the sweep's verdict, its saved stage, files and PR
       number: ISSUE.elsewhere,
       verdict: { kind: "live-elsewhere", lane: "other" },
       stage: "implement",
-      files: ["src/a.ts"],
       pr: PR,
     },
     {
@@ -184,6 +186,17 @@ const STACK = {
   published: 25,
 };
 const HEAD = "cccccccccccccccc";
+// #20 as the prerequisite of #21 and #22: open at checks, stacked itself.
+const STACK_PREREQ = {
+  number: STACK.prereq,
+  status: "open",
+  stage: "checks",
+  openFindings: 1,
+  headSha: HEAD,
+  stacked: true,
+  stopped: false,
+  behind: false,
+};
 /** @param {number} issue @returns {{ issue: number, headSha: string }} */
 function stackedOn(issue) {
   return { issue, headSha: "aaaaaaaaaaaaaaaa" };
@@ -228,17 +241,8 @@ function prereqOf(issues, number) {
 
 test("each issue carries what it is stacked on and its prerequisite's facts", () => {
   const issues = readStacks([]);
-  const open = {
-    number: STACK.prereq,
-    status: "open",
-    stage: "checks",
-    openFindings: 1,
-    headSha: HEAD,
-    stacked: true,
-    stopped: false,
-  };
-  assert.deepEqual(prereqOf(issues, STACK.waiting), open);
-  assert.deepEqual(prereqOf(issues, STACK.stacked), open);
+  assert.deepEqual(prereqOf(issues, STACK.waiting), STACK_PREREQ);
+  assert.deepEqual(prereqOf(issues, STACK.stacked), STACK_PREREQ);
   assert.deepEqual(
     issues.find((issue) => issue.number === STACK.stacked)?.stackedOn,
     stackedOn(STACK.prereq),
@@ -287,13 +291,5 @@ test("a stacked issue whose closed prerequisite GitHub can't read has no prerequ
   ]);
   assert.equal(prereqOf(issues, STACK.onClosed), null);
   assert.equal(prereqOf(issues, STACK.prereq), null);
-  assert.deepEqual(prereqOf(issues, STACK.waiting), {
-    number: STACK.prereq,
-    status: "open",
-    stage: "checks",
-    openFindings: 1,
-    headSha: HEAD,
-    stacked: true,
-    stopped: false,
-  });
+  assert.deepEqual(prereqOf(issues, STACK.waiting), STACK_PREREQ);
 });

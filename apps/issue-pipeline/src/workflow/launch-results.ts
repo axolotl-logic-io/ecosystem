@@ -2,6 +2,7 @@
 // parsed from the ops child's output, and a session's result signed with its
 // launch's role, its reported tokens counted into the issue's state.
 
+import { rateTokens } from "./rate-tokens.ts";
 import type { LaunchMeta } from "./signing.ts";
 import { by } from "./signing.ts";
 import { isRecord } from "./stages/reply-guards.ts";
@@ -66,7 +67,8 @@ function parsedLine(line: string): Reply | null {
   }
 }
 
-// The tokens a session's result reports using, or null when it reports no usage.
+// The tokens a session's result reports spending (rateTokens: cache reads
+// left out), or null when it reports no usage.
 function usageTokens(raw: Reply): number | null {
   const { results } = raw;
   if (!Array.isArray(results)) {
@@ -81,9 +83,20 @@ function usageTokens(raw: Reply): number | null {
     return null;
   }
   const { input, output, cacheRead, cacheWrite } = usage;
-  return [input, output, cacheRead, cacheWrite]
-    .filter((count): count is number => typeof count === "number")
-    .reduce((sum, count) => sum + count, 0);
+  return rateTokens({
+    input: countOf(input),
+    output: countOf(output),
+    cacheRead: countOf(cacheRead),
+    cacheWrite: countOf(cacheWrite),
+  });
+}
+
+// A usage count, or 0 when it isn't a number.
+function countOf(count: unknown): number {
+  if (typeof count === "number") {
+    return count;
+  }
+  return 0;
 }
 
 // The fields of a session's result its signature reads, each only if it is text.
@@ -107,7 +120,7 @@ function signedFields(raw: Reply): {
 }
 
 // A session's result as its stage reads it, signed with its launch's role.
-// The tokens it reports are added to the state's reportedTokens.
+// The tokens it reports spending are added to the state's reportedTokens.
 function childResult(
   launch: ChildLaunch,
   raw: unknown,

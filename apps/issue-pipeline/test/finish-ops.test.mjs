@@ -74,9 +74,9 @@ test("close-parent with no sub-issues closes nothing", () => {
 test("close-parent with open sub-issues names them", () => {
   const w = world();
   const subs = [
-    { number: 3, state: "closed" },
-    { number: OPEN_SUB, state: "open" },
-    { number: LAST_OPEN_SUB, state: "open" },
+    { number: 3, state: "closed", reason: "completed", labels: [] },
+    { number: OPEN_SUB, state: "open", reason: null, labels: [] },
+    { number: LAST_OPEN_SUB, state: "open", reason: null, labels: [] },
   ];
   const want = {
     ok: true,
@@ -88,11 +88,11 @@ test("close-parent with open sub-issues names them", () => {
   assert.equal(closeParent(w, JSON.stringify(subs)), replyLine(want));
 });
 
-test("close-parent closes a parent whose sub-issues are all closed", () => {
+test("close-parent closes a parent whose sub-issues are all closed and one merged, then relabels it, then comments", () => {
   const w = world();
   const subs = [
-    { number: 3, state: "closed" },
-    { number: 4, state: "closed" },
+    { number: 3, state: "closed", reason: "completed", labels: [] },
+    { number: 4, state: "closed", reason: "not_planned", labels: [] },
   ];
   assert.equal(
     closeParent(w, JSON.stringify(subs)),
@@ -104,13 +104,43 @@ test("close-parent closes a parent whose sub-issues are all closed", () => {
     }),
   );
   assert.deepEqual(writes(), [
+    ["issue", "close", "7", "-R", "o/r"],
+    ...relabel(ISSUE, "agent:merged", "agent:split"),
     commentPost(
       ISSUE,
       signedBy("coordinator", "All sub-issues are closed (#3, #4). Closing."),
     ),
-    ["issue", "close", "7", "-R", "o/r"],
-    ...relabel(ISSUE, "agent:merged", "agent:split"),
   ]);
+});
+
+test("close-parent counts a sub-issue labelled agent:merged as merged", () => {
+  const w = world();
+  const subs = [
+    { number: 3, state: "closed", reason: null, labels: ["agent:merged"] },
+  ];
+  assert.equal(
+    closeParent(w, JSON.stringify(subs)),
+    replyLine({ ok: true, op: "close-parent", posted: 0, closed: true }),
+  );
+});
+
+test("close-parent leaves a parent open when its sub-issues are all closed but none merged", () => {
+  const w = world();
+  const subs = [
+    { number: 3, state: "closed", reason: "not_planned", labels: [] },
+    { number: 4, state: "closed", reason: null, labels: ["agent:split"] },
+  ];
+  assert.equal(
+    closeParent(w, JSON.stringify(subs)),
+    replyLine({
+      ok: true,
+      op: "close-parent",
+      posted: 0,
+      closed: false,
+      reason: "no sub-issue merged",
+    }),
+  );
+  assert.deepEqual(writes(), []);
 });
 
 test("post only posts the queued comments", () => {

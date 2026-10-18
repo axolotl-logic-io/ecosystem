@@ -2,14 +2,16 @@
 // aggregator, the fixer and the re-reviewers, and the comments the review and
 // fix rounds post on the PR.
 
-import { sessionBudget } from "../budget.ts";
 import { findingLines, findingsText } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
+import { practicesNote } from "../practices.ts";
 import {
+  beyondIssueRule,
+  commitRulesOf,
   handoffLead,
   handoffRule,
-  practicesNote,
+  NO_ARTIFICIAL_LOAD_RULE,
   preamble,
   specText,
 } from "../prompts.ts";
@@ -35,6 +37,11 @@ interface ReviewDiff {
 // What a reviewer or re-reviewer does with the spec.
 const SPEC_RULE_REVIEW =
   "A finding must not ask for a change the spec forbids.";
+// What a first reviewer returns, after its lens and what it reads.
+const LENS_OUTPUT_RULES: readonly string[] = [
+  "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
+  "Return an empty list if you find nothing. Do not edit files.",
+];
 // What the fixer does with the spec.
 const SPEC_RULE_FIX =
   "Fix each finding in a way the spec allows. If a finding can only be met by breaking the spec, dispute it and quote the spec line.";
@@ -60,16 +67,15 @@ function lensTask(
   lens: Lens,
   diff: ReviewDiff,
 ): string {
-  const { cfg, budgets } = ctx;
+  const { cfg } = ctx;
   const role = `reviewer (${lens})`;
-  return preamble(cfg, state, role, sessionBudget(budgets, "reviewer"))
+  return preamble(cfg, state, role)
     .concat([
       `Review only this concern: ${LENSES[lens]}`,
       practicesNote(cfg, state, "reviewer"),
       ...specSection(state, SPEC_RULE_REVIEW),
       `The diff against ${cfg.baseBranch} is at ${diff.path} (${diff.lines} lines). Read it, then read surrounding code only where needed.`,
-      "Mark a finding `blocking` only for a concrete defect you can show with evidence (file, line, and why). Style preferences and optional improvements are `nit`.",
-      "Return an empty list if you find nothing. Do not edit files.",
+      ...LENS_OUTPUT_RULES,
     ])
     .join("\n");
 }
@@ -104,13 +110,8 @@ function aggregateTask(
   state: StageState,
   raw: readonly RawFinding[],
 ): string {
-  const { cfg, budgets } = ctx;
-  return preamble(
-    cfg,
-    state,
-    "review aggregator",
-    sessionBudget(budgets, "aggregator"),
-  )
+  const { cfg } = ctx;
+  return preamble(cfg, state, "review aggregator")
     .concat([
       "Three reviewers reported these blocking findings. Merge duplicates (same defect at the same place) into one entry listing every lens that raised it. Keep every distinct finding; do not drop or downgrade any. Do not edit files.",
       "",
@@ -154,7 +155,7 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
   if (job.continuation) {
     lead.push(handoffLead(handoffFile));
   }
-  return preamble(cfg, state, role, sessionBudget(budgets, "fixer"))
+  return preamble(cfg, state, role)
     .concat([
       ...lead,
       practicesNote(cfg, state, "writer"),
@@ -163,8 +164,16 @@ function fixTask(ctx: StageContext, state: StageState, job: FixJob): string {
       findingsText(open),
       "",
       `For each finding, either fix it (list its id in \`fixed\`) or, if you have concrete evidence it is wrong, dispute it (list it in \`disputed\` with the evidence). Findings already disputed once cannot be disputed again: ${disputedIds(open)}.`,
-      `Make only the changes the findings need. Run the tests, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: fixer round ${round}\`) and leave the worktree clean. Return status \`done\` when you finish.`,
-      handoffRule(budgets.hardLimit, handoffFile, "commit what builds"),
+      ...commitRulesOf(ctx.committer, {
+        unit: "fix",
+        when: "as soon as it works",
+        trailer: `Pipeline-Agent: fixer round ${round}`,
+        clearMessage: false,
+      }),
+      beyondIssueRule(cfg.baseBranch, "`summary`, which is posted on the PR"),
+      NO_ARTIFICIAL_LOAD_RULE,
+      "Run the tests, commit what is left and leave the worktree clean. Return status `done` when you finish.",
+      handoffRule(budgets, handoffFile, "make it build and commit it"),
     ])
     .join("\n");
 }
@@ -209,9 +218,9 @@ function rereviewTask(
   state: StageState,
   { lens, diffPath, findings }: RereviewScope,
 ): string {
-  const { cfg, budgets } = ctx;
+  const { cfg } = ctx;
   const role = `re-reviewer (${lens})`;
-  return preamble(cfg, state, role, sessionBudget(budgets, "rereviewer"))
+  return preamble(cfg, state, role)
     .concat([
       `Concern: ${LENSES[lens]}`,
       ...specSection(state, SPEC_RULE_REVIEW),
@@ -269,8 +278,11 @@ export {
   findingIdsComment,
   fixComment,
   fixTask,
+  LENS_OUTPUT_RULES,
   lensComment,
   lensTask,
   rereviewComment,
   rereviewTask,
+  SPEC_RULE_REVIEW,
+  specSection,
 };

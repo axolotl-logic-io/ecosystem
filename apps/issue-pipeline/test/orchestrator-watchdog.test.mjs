@@ -1,11 +1,14 @@
 // @ts-check
 // The orchestrator's watchdog (#235), run through whole ticks over recorded
-// job.json files: a dead job is restarted with --resume up to maxResumes
-// times per issue and stage and its issue then stopped with
+// job.json files: a dead job is restarted with --resume (a stage that runs
+// a role, such as triage, without it, #304) up to maxResumes times per issue
+// and stage and its issue then stopped with
 // agent:stopped-job; finished, failed and stopped jobs and stopped issues are
 // left alone; a silent session is steered at silentMinutes, and its job sent
 // SIGTERM after as long again, then resumed once it has stopped. Each rule
-// fires at its threshold and not before, and every action is logged.
+// fires at its threshold and not before, and every action is logged: a
+// restart with its job's pid and id, an escalation with the attempt its
+// stage is at and the issue's tokens.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -20,6 +23,7 @@ import {
   MINUTE_MS,
   NOW,
   OTHERS_PID,
+  runFile,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
 
@@ -39,7 +43,11 @@ const ISSUE = {
   quiet: 67,
   ops: 68,
   restarted: 69,
+  deadTriage: 70,
+  escalatedAfterRestart: 71,
 };
+const ISSUE_TOKENS = 4321;
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/u;
 const PR_OF_CAPPED = 9;
 // The defaults, which the kit's config leaves to the watchdog.
 const SILENT_MINUTES = 30;
@@ -62,6 +70,17 @@ function heardAt(issue, minutes) {
   fs.writeFileSync(file, JSON.stringify(status));
 }
 
+// Every line orchestrator.log holds for `issue`, as written.
+/** @param {number} issue @returns {any[]} */
+function linesFor(issue) {
+  return fs
+    .readFileSync(runFile("orchestrator.log"), "utf8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line))
+    .filter((line) => line.issue === issue);
+}
+
 /** @param {number} issue @param {string} stage @returns {string[]} */
 function resumeArgv(issue, stage) {
   return [
@@ -78,27 +97,45 @@ function resumeArgv(issue, stage) {
 }
 
 test("a dead job is restarted as the same stage with --resume, and the scheduler starts nothing else for it", () => {
-  writeJob({ issue: ISSUE.dead, stage: "implement", pid: deadPid() });
+  writeJob({ issue: ISSUE.dead, stage: "fix", pid: deadPid() });
   const { spawned } = tickOver([
-    { number: ISSUE.dead, state: { stage: "implement" } },
+    { number: ISSUE.dead, state: { stage: "fix" } },
   ]);
-  assert.deepEqual(spawned, [resumeArgv(ISSUE.dead, "implement")]);
+  assert.deepEqual(spawned, [resumeArgv(ISSUE.dead, "fix")]);
   assert.deepEqual(loggedFor(ISSUE.dead), [
     {
       issue: ISSUE.dead,
-      stage: "implement",
+      stage: "fix",
       action: "resumed",
       reason: "dead",
     },
   ]);
 });
 
+test("a dead triage job is restarted without --resume, since its role restarts from its state", () => {
+  writeJob({ issue: ISSUE.deadTriage, stage: "triage", pid: deadPid() });
+  const { spawned } = tickOver([
+    { number: ISSUE.deadTriage, state: { stage: "triage" } },
+  ]);
+  const [argv, ...more] = spawned;
+  assert.deepEqual(more, []);
+  const stageAt = argv?.indexOf("--stage") ?? -1;
+  assert.equal(argv?.[stageAt + 1], "triage");
+  assert.equal(argv?.includes("--resume"), false);
+  assert.deepEqual(
+    loggedFor(ISSUE.deadTriage).map(
+      ({ action, reason }) => `${action} ${reason}`,
+    ),
+    ["resumed dead"],
+  );
+});
+
 test("a restarted job still running from its start record is not restarted again while its old job.json is dead", () => {
-  writeJob({ issue: ISSUE.restarted, stage: "implement", pid: deadPid() });
-  const issues = [{ number: ISSUE.restarted, state: { stage: "implement" } }];
+  writeJob({ issue: ISSUE.restarted, stage: "fix", pid: deadPid() });
+  const issues = [{ number: ISSUE.restarted, state: { stage: "fix" } }];
   const running = { spawnPid: OTHERS_PID };
   assert.deepEqual(tickOver(issues, 0, running).spawned, [
-    resumeArgv(ISSUE.restarted, "implement"),
+    resumeArgv(ISSUE.restarted, "fix"),
   ]);
   assert.deepEqual(tickOver(issues, 1, running).spawned, []);
   assert.deepEqual(
@@ -160,13 +197,13 @@ test("finished, failed and stopped jobs, and jobs of issues with a stop label, a
 });
 
 test("a session silent for silentMinutes is steered once, its job gets SIGTERM after as long again, and is resumed once stopped", () => {
-  const job = { issue: ISSUE.silent, stage: "implement", pid: OTHERS_PID };
+  const job = { issue: ISSUE.silent, stage: "fix", pid: OTHERS_PID };
   writeJob({ ...job, silentMinutes: SILENT_MINUTES - 1 });
-  const issues = [{ number: ISSUE.silent, state: { stage: "implement" } }];
+  const issues = [{ number: ISSUE.silent, state: { stage: "fix" } }];
   const early = tickOver(issues);
   assert.deepEqual([early.steered, early.terminated], [[], []]);
   const status = writeJob({ ...job, silentMinutes: SILENT_MINUTES });
-  const key = `i${ISSUE.silent}-implement-1`;
+  const key = `i${ISSUE.silent}-fix-1`;
   assert.deepEqual(tickOver(issues).steered, [
     [status.socket, key, SILENT_STEER],
   ]);
@@ -182,7 +219,7 @@ test("a session silent for silentMinutes is steered once, its job gets SIGTERM a
     outcome: STOPPED,
   });
   const resumed = tickOver(issues, SILENT_MINUTES + 2);
-  assert.deepEqual(resumed.spawned, [resumeArgv(ISSUE.silent, "implement")]);
+  assert.deepEqual(resumed.spawned, [resumeArgv(ISSUE.silent, "fix")]);
   assert.deepEqual(
     loggedFor(ISSUE.silent).map(({ action, reason }) => `${action} ${reason}`),
     [`steered silent:${key}`, `killed silent:${key}`, "resumed dead"],
@@ -203,4 +240,27 @@ test("a session heard from after its steer is not stopped, and ops launches are 
   const later = tickOver(issues, SILENT_MINUTES);
   assert.deepEqual([later.steered, later.terminated], [[], []]);
   assert.deepEqual(loggedFor(ISSUE.ops), []);
+});
+
+test("a restart's line names its job's pid and id, and a later stop's escalation the attempt its stopped stage is at and the issue's tokens", () => {
+  const issue = ISSUE.escalatedAfterRestart;
+  writeJob({ issue, stage: "review", pid: deadPid() });
+  const { spawned } = tickOver([
+    { number: issue, state: { stage: "review", reportedTokens: ISSUE_TOKENS } },
+  ]);
+  assert.equal(spawned.length, 1);
+  const state = {
+    stage: "stopped",
+    stoppedStage: "review",
+    reportedTokens: ISSUE_TOKENS,
+  };
+  tickOver([{ number: issue, labels: ["agent:stopped-error"], state }]);
+  const [resumed, escalated, ...more] = linesFor(issue);
+  assert.deepEqual(more, []);
+  assert.equal(resumed.action, "resumed");
+  assert.equal(typeof resumed.pid, "number");
+  assert.match(resumed.job, UUID);
+  assert.equal(escalated.action, "escalated");
+  assert.equal(escalated.attempt, 2);
+  assert.equal(escalated.issueTokens, ISSUE_TOKENS);
 });

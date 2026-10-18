@@ -9,7 +9,8 @@ import {
   piStarts,
   repliesAt,
   runJob,
-  SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   setUp,
 } from "./job-test-kit.mjs";
 
@@ -39,11 +40,48 @@ const BOUNDARY_ROLES = {
   writer: { tokenEnv: "W_TOKEN", network: ["example.com"] },
   merger: { tokenEnv: "M_TOKEN" },
 };
+// Each stage's role, network and access to its code (repo/) and wiki (docs/)
+// checkouts: the writer writes code, and the spec writer and merger write
+// the wiki.
 const EXPECTED = {
-  spec: { role: "reader", network: ["api.anthropic.com"], token: false },
-  implement: { role: "writer", network: ["example.com"], token: true },
-  merge: { role: "merger", network: ["api.github.com"], token: true },
+  accept: {
+    role: "reader",
+    network: ["api.anthropic.com"],
+    access: { repo: "read", docs: "read" },
+  },
+  spec: {
+    role: "writer",
+    network: ["example.com"],
+    access: { repo: "write", docs: "write" },
+  },
+  implement: {
+    role: "writer",
+    network: ["example.com"],
+    access: { repo: "write", docs: "read" },
+  },
+  merge: {
+    role: "merger",
+    network: ["api.github.com"],
+    access: { repo: "read", docs: "write" },
+  },
 };
+const COMMIT_EXTENSION = /\/pipeline-commit\.mjs$/u;
+// A --tools entry that adds a tool to pi's defaults starts with "+".
+const ADDED_TOOL = /^\+/u;
+const COMMIT_SCOPE_ENV = "ISSUE_PIPELINE_COMMIT_SCOPE";
+
+// The extensions pi's `argv` loads.
+/** @param {string[]} argv @returns {string[]} */
+function extensionsOf(argv) {
+  return argv.filter((_, at) => argv[at - 1] === "-e");
+}
+
+// The tools pi's `argv` names in --tools, without a leading "+".
+/** @param {string[]} argv @returns {string[]} */
+function toolsOf(argv) {
+  const list = argv[argv.indexOf("--tools") + 1] ?? "";
+  return list.split(",").map((tool) => tool.replace(ADDED_TOOL, ""));
+}
 
 /** @param {readonly string[]} names @returns {boolean} */
 function isSorted(names) {
@@ -52,12 +90,12 @@ function isSorted(names) {
 
 /** @param {object} jobRoles @param {string} stage */
 function placeAt(jobRoles, stage) {
-  return setUp(repliesAt(stage), SPEC_SESSION, { jobRoles });
+  return setUp(repliesAt(stage), SWEEP_SESSION, { jobRoles });
 }
 
 test("a reader session's pi gets none of the gh token variables nor a role's token", () => {
-  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "spec");
-  const r = runJob(place, ["--stage", "spec"], TOKENS_ENV);
+  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, SWEEP_STAGE);
+  const r = runJob(place, ["--stage", SWEEP_STAGE], TOKENS_ENV);
   assert.equal(r.status, 0, r.stderr);
   const [start] = piStarts(place);
   for (const name of [...GH_VARS, "W_TOKEN"]) {
@@ -67,21 +105,48 @@ test("a reader session's pi gets none of the gh token variables nor a role's tok
   assert.equal(start.ghToken, null);
 });
 
-test("a writer session's pi gets GH_TOKEN from the writer's tokenEnv only", () => {
+test("a writer session's pi gets no gh token, even its role's tokenEnv", () => {
   const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "implement");
   runJob(place, ["--stage", "implement"], TOKENS_ENV);
   const [start] = piStarts(place);
-  assert.equal(start.ghToken, "w-secret");
-  assert.ok(!start.env.includes("W_TOKEN"));
-  assert.ok(!start.env.includes("GITHUB_TOKEN"));
+  assert.equal(start.ghToken, null);
+  for (const name of [...GH_VARS, "W_TOKEN"]) {
+    assert.ok(!start.env.includes(name), name);
+  }
 });
 
-test("a writer with no tokenEnv gets no GH_TOKEN, even when the job has one", () => {
+test("a writer session's pi loads pipeline_commit with its commit scope", () => {
   const place = placeAt({}, "implement");
-  runJob(place, ["--stage", "implement"], GH_ENV);
+  runJob(place, ["--stage", "implement"]);
   const [start] = piStarts(place);
+  assert.ok(
+    extensionsOf(start.argv).some((file) => COMMIT_EXTENSION.test(file)),
+  );
+  assert.ok(toolsOf(start.argv).includes("pipeline_commit"));
+  assert.ok(start.env.includes(COMMIT_SCOPE_ENV));
+});
+
+test("a spec session's pi commits through pipeline_commit and gets no gh token", () => {
+  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "spec");
+  runJob(place, ["--stage", "spec"], TOKENS_ENV);
+  const [start] = piStarts(place);
+  assert.ok(toolsOf(start.argv).includes("pipeline_commit"));
+  assert.ok(start.env.includes(COMMIT_SCOPE_ENV));
   assert.equal(start.ghToken, null);
-  assert.ok(!start.env.includes("GH_TOKEN"));
+  for (const name of [...GH_VARS, "W_TOKEN"]) {
+    assert.ok(!start.env.includes(name), name);
+  }
+});
+
+test("a reader session's pi gets neither pipeline_commit nor a commit scope", () => {
+  const place = placeAt({}, SWEEP_STAGE);
+  runJob(place, ["--stage", SWEEP_STAGE]);
+  const [start] = piStarts(place);
+  assert.ok(
+    !extensionsOf(start.argv).some((file) => COMMIT_EXTENSION.test(file)),
+  );
+  assert.ok(!toolsOf(start.argv).includes("pipeline_commit"));
+  assert.ok(!start.env.includes(COMMIT_SCOPE_ENV));
 });
 
 for (const [stage, expected] of Object.entries(EXPECTED)) {
@@ -95,9 +160,10 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     // The wiki promises these fields, not their order.
     assert.deepEqual(
       new Set(Object.keys(boundary)),
-      new Set(["role", "checkout", "env", "network"]),
+      new Set(["role", "checkout", "access", "env", "network"]),
     );
     assert.equal(boundary.role, expected.role);
+    assert.deepEqual(boundary.access, expected.access);
     assert.equal(boundary.checkout, checkoutOf(place.root, stage));
     assert.ok(!fs.existsSync(boundary.checkout));
     assert.deepEqual(boundary.network, expected.network);
@@ -107,7 +173,9 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
         (/** @type {unknown} */ name) => typeof name === "string",
       ),
     );
-    assert.equal(boundary.env.includes("GH_TOKEN"), expected.token);
+    for (const name of GH_VARS) {
+      assert.ok(!boundary.env.includes(name), name);
+    }
     assert.ok(!boundary.env.includes("W_TOKEN"));
     assert.ok(!boundary.env.includes("M_TOKEN"));
     assert.ok(boundary.env.includes("PATH"));
@@ -121,7 +189,7 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
 }
 
 test("--print-boundary with --steer is refused", () => {
-  const place = placeAt({}, "spec");
+  const place = placeAt({}, SWEEP_STAGE);
   const r = runJob(place, [
     "--print-boundary",
     "--steer",
@@ -135,8 +203,8 @@ test("--print-boundary with --steer is refused", () => {
 });
 
 test("a malformed jobRoles fails the job, naming jobRoles", () => {
-  const place = placeAt({ writer: { tokenEnv: "bad name" } }, "spec");
-  const r = runJob(place, ["--stage", "spec", "--print-boundary"]);
+  const place = placeAt({ writer: { tokenEnv: "bad name" } }, SWEEP_STAGE);
+  const r = runJob(place, ["--stage", SWEEP_STAGE, "--print-boundary"]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, NAMES_JOB_ROLES);
   assert.equal(r.stdout, "");

@@ -1,23 +1,22 @@
 // Acceptance: a reader checks that the change, as a whole, does what the issue
 // (and its spec) asks. A pass moves the issue to the security review; a fail
 // becomes a blocking finding in the acceptance lens and sends the issue to fix.
+// A head whose changes have the patch id the last pass judged keeps that
+// verdict with no session (review-keeps-on-clean-rebase).
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding } from "../findings.ts";
 import { preamble, specText } from "../prompts.ts";
 import { ACCEPT_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
+import { byStep } from "../signing.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import type { AcceptReply } from "./replies.ts";
 import { acceptReplyOf } from "./replies.ts";
-import {
-  doneStep,
-  launchStep,
-  onlyChild,
-  onlyReply,
-  stopStep,
-} from "./step.ts";
+import { patchIdIn } from "./reply-guards.ts";
+import { doneStep, launchStep, onlyChild, onlyReply } from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
@@ -34,6 +33,7 @@ type AcceptPhase = "begin" | "review" | "decide" | "saved";
 const PHASES: readonly AcceptPhase[] = ["begin", "review", "decide", "saved"];
 
 const ACCEPT_MINUTES = 25;
+const SHORT_SHA = 12;
 
 function phaseOf(state: StageState): AcceptPhase {
   const phase = PHASES.find((entry) => entry === state.phase);
@@ -84,10 +84,9 @@ function acceptLaunch(
     model: models.verifier,
     schema: ACCEPT_SCHEMA,
     minutes: ACCEPT_MINUTES,
+    budgetRole: "verifier",
     tokenBudget: budget,
-    task: preamble(cfg, state, "acceptance verifier", budget)
-      .concat(lines)
-      .join("\n"),
+    task: preamble(cfg, state, "acceptance verifier").concat(lines).join("\n"),
   };
 }
 
@@ -98,7 +97,24 @@ function begin(state: StageState): Step {
   ]);
 }
 
-// Charges the verifier's session once the diff is ready, then launches it.
+// Moves to security with no session, saving first: the changes are those
+// the last pass judged.
+function kept(state: StageState, ctx: StageContext): Step {
+  const st = { ...state.st, stage: "security" };
+  const since = (st.acceptedSha ?? "").slice(0, SHORT_SHA);
+  const text = `acceptance kept: changes unchanged since ${since}`;
+  noteEvent(st, text, ctx.now());
+  const payload = { number: state.n, state: st };
+  const by = byStep("acceptance verifier");
+  return launchStep(
+    { ...state, st, phase: "saved" },
+    [{ kind: "op", name: "save", op: "save-state", payload }],
+    [{ by, body: `✅ ${text}.`, where: "pr" }],
+  );
+}
+
+// Launches the verifier's session once the diff is ready, unless the
+// changes have the patch id the last pass judged.
 function review(
   state: StageState,
   ctx: StageContext,
@@ -109,16 +125,12 @@ function review(
   if (!diff.ok) {
     return diff.step;
   }
-  const st = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "verifier", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(charged, charge.reason, charge.detail);
+  const patchId = patchIdIn(onlyReply(results));
+  if (patchId !== null && patchId === state.st.acceptedPatchId) {
+    return kept(state, ctx);
   }
-  return launchStep({ ...charged, phase: "decide" }, [
-    acceptLaunch(charged, ctx, diff.path),
+  return launchStep({ ...state, phase: "decide", carry: { patchId } }, [
+    acceptLaunch(state, ctx, diff.path),
   ]);
 }
 
@@ -156,8 +168,8 @@ function failed(
     ["acceptance"],
   );
   st.reviewedSha = st.verifiedSha ?? st.headSha ?? null;
-  // The fix brings new code, which is not a re-check after a rebase.
-  st.rechecking = false;
+  st.acceptedSha = null;
+  st.acceptedPatchId = null;
   st.stage = "fix";
   const payload = { number: state.n, state: st };
   return launchStep(
@@ -168,7 +180,8 @@ function failed(
 }
 
 // Logs and posts the verdict. The reason is kept in the state, since a merge
-// queued behind an older PR runs in a later sweep.
+// queued behind an older PR runs in a later sweep, and a pass records the
+// head and the patch id it judged.
 function decide(
   state: StageState,
   ctx: StageContext,
@@ -180,7 +193,8 @@ function decide(
     reply = acceptReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the acceptance verifier failed", result.error);
+    const reason = "the acceptance verifier failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const st = { ...state.st };
   noteEvent(st, `acceptance: ${reply.verdict} - ${reply.reason}`, ctx.now());
@@ -189,6 +203,8 @@ function decide(
     return failed({ ...state, st }, reply, comments);
   }
   st.acceptReason = reply.reason;
+  st.acceptedSha = st.verifiedSha ?? null;
+  st.acceptedPatchId = patchIdIn(state.carry);
   st.stage = "security";
   return doneStep({ ...state, st }, comments);
 }

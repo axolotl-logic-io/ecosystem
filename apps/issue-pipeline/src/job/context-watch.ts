@@ -1,50 +1,61 @@
-// How a stage job holds a model session to the config's contextLimits. A
-// turn's context is the input, cache-read and cache-write tokens of one
-// assistant message's usage (output tokens and earlier turns don't count). A
-// writer session past `soft` gets one steer to hand off; any session past
-// `hard` is stopped. A stopped writer's result is a `handoff` reply that fits
-// its launch's output schema; any other session is retried once, fresh, with
-// its task plus the read-in-parts line (retryTask), and its error stands only
-// if the retry passes `hard` too (retryResult). This module alone knows that
-// rule, the limits' meaning, the steer's and the retry's texts and the
-// stopped session's result.
+// How a stage job holds a writer or spec writer session to the config's
+// contextLimits. A turn's context is the input, cache-read and cache-write
+// tokens of one assistant message's usage (output tokens and earlier turns
+// don't count). A session held to the limits (an implementer, fixer, CI
+// fixer or conflict resolver, or the spec writer, #335) past `soft` gets one
+// steer to wrap up and write its handoff as the next round's summary
+// (wrap-up-at-175k, Axlog, 2026-10-17), and past `hard` is stopped, its
+// result a `handoff` reply that fits its launch's output schema (the handoff
+// file the job then writes for it is stop-handoff.ts's). Any other session
+// is neither steered nor stopped (Axlog, 2026-10-16). This module alone
+// knows that rule, the limits' meaning, the steer's text and the stopped
+// session's result.
 
 import type { JsonSchema } from "../workflow/schemas.ts";
 import type { LiveLaunch } from "./control.ts";
 import { stopLaunch } from "./control.ts";
-import type { SessionLaunch, SessionRaw, Usage } from "./raw-results.ts";
-import { addUsage, recordFacts } from "./raw-results.ts";
-import { sessionRoleOf } from "./roles.ts";
+import type { SessionLaunch, SessionRaw } from "./raw-results.ts";
+import { recordFacts } from "./raw-results.ts";
+import { heldToLimits, SPEC_AGENT } from "./roles.ts";
+import type { Usage } from "./token-usage.ts";
 
-// The context a session may pass once, to be steered (`soft`), and the one
-// it may never pass (`hard`), in tokens.
+// The context a writer session may pass once, to be steered (`soft`), and
+// the one it may never pass (`hard`), in tokens.
 interface ContextLimits {
   soft: number;
   hard: number;
 }
 
-// How a session past `hard` ends: as a writer's handoff or as an error.
-type StopResult = "handoff" | "error";
+// The limits a writer session is held to, and the handoff file the steer
+// tells it to write.
+interface WriterHold {
+  limits: ContextLimits;
+  handoffFile: string;
+}
 
-// A session stopped at turn context `context`, and how it ended.
+// A writer session stopped at turn context `context`.
 interface ContextStop {
   context: number;
-  result: StopResult;
 }
 
 // One session's watch, fed every record the session prints.
 interface ContextWatch {
   // Reads one of pi's RPC records, steering or stopping the session.
   read: (record: unknown) => void;
-  // The stop, once the session passed `hard`; null until then.
+  // The stop, once the writer passed `hard`; null until then.
   stopped: () => ContextStop | null;
+  // A writer's last assistant text, for the handoff the job writes once it
+  // stopped it; null until it gives one, and always for any other session.
+  lastText: () => string | null;
 }
 
-// How a watched session ended: the result its records give, and its stop,
-// null when the watch didn't stop it.
+// How a watched session ended: the result its records give, its stop, null
+// when the watch didn't stop it, and its last assistant text, null when it
+// gave none.
 interface WatchedEnd {
   raw: SessionRaw;
   stop: ContextStop | null;
+  lastText: string | null;
 }
 
 // The launch a stopped session ran for, with its reply's schema.
@@ -57,52 +68,85 @@ function turnContext(usage: Usage): number {
   return usage.input + usage.cacheRead + usage.cacheWrite;
 }
 
-// How a session of installed agent `agent` ends once stopped.
-function stopResultOf(agent: string): StopResult {
-  if (sessionRoleOf(agent) === "writer") {
-    return "handoff";
+// What the steer tells a session to keep of its work, and how to reply.
+interface WrapUp {
+  keep: string;
+  reply: string;
+}
+
+// A writer makes its work build and commits it.
+const WRITER_WRAP_UP: WrapUp = {
+  keep: "Make it build, and commit it.",
+  reply: "Then return status `handoff`.",
+};
+
+// The spec writer commits its tests, stubs and spec draft; its reply's
+// other fields are ignored once its status is `handoff`.
+const SPEC_WRAP_UP: WrapUp = {
+  keep: "Commit the tests, stubs and spec draft you have with `pipeline_commit`.",
+  reply:
+    "Then return status `handoff` with a `summary`; the reply's other fields are ignored.",
+};
+
+function wrapUpOf(agent: string): WrapUp {
+  if (agent === SPEC_AGENT) {
+    return SPEC_WRAP_UP;
   }
-  return "error";
+  return WRITER_WRAP_UP;
 }
 
-// The line a retried session's task gains (#272).
-const READ_IN_PARTS =
-  "Your earlier session on this task passed the context limit and was stopped: read the diff in parts, one file or line range at a time, and keep your context small.";
-
-function steerText(context: number): string {
-  return `Context is at ${context}. Stop now. Commit what builds, write the handoff file, and return \`handoff\`.`;
+// The steer a session of `agent` gets once its turn context `context` passes
+// `soft`: finish the edit it is in, keep its work, and write the handoff as
+// the next round's only summary.
+function steerText(hold: WriterHold, context: number, agent: string): string {
+  const { limits, handoffFile } = hold;
+  const { keep, reply } = wrapUpOf(agent);
+  return `Context is at ${context} tokens, past the soft limit of ${limits.soft}. Wrap up now: finish the edit you are in the middle of, and don't start new ones. ${keep} Then write ${handoffFile} as a summary for the next round: what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass. The next session starts from this summary alone. ${reply} At ${limits.hard} tokens this session is stopped.`;
 }
 
-// Watches session `live` of installed agent `agent` against `limits`: steers
-// a writer once, the first time a turn passes `soft`, and stops any session,
-// once, the first time a turn passes `hard`.
+// The watch on a session the limits don't hold: it never steers or stops.
+const UNWATCHED: ContextWatch = {
+  read: (): void => undefined,
+  stopped: (): null => null,
+  lastText: (): null => null,
+};
+
+// Watches session `live` of installed agent `agent` against `hold.limits`:
+// steers a session held to the limits once, the first time a turn passes
+// `soft`, and stops it, once, the first time a turn passes `hard`. Any other
+// session goes unwatched.
 function watchContext(
-  limits: ContextLimits,
+  hold: WriterHold,
   agent: string,
   live: LiveLaunch,
 ): ContextWatch {
-  const result = stopResultOf(agent);
-  // Only a writer can hand off, so only a writer is steered.
+  if (!heldToLimits(agent)) {
+    return UNWATCHED;
+  }
+  const { limits } = hold;
   let steered = false;
   let stop: ContextStop | null = null;
+  let lastText: string | null = null;
   return {
     read: (record: unknown): void => {
-      const { usage } = recordFacts(record);
+      const { usage, text } = recordFacts(record);
+      lastText = text ?? lastText;
       if (usage === null || stop !== null) {
         return;
       }
       const context = turnContext(usage);
       if (context > limits.hard) {
-        stop = { context, result };
+        stop = { context };
         stopLaunch(live).catch(() => null);
-      } else if (context > limits.soft && result === "handoff" && !steered) {
+      } else if (context > limits.soft && !steered) {
         steered = true;
         live
-          .send({ type: "steer", message: steerText(context) })
+          .send({ type: "steer", message: steerText(hold, context, agent) })
           .catch(() => null);
       }
     },
     stopped: (): ContextStop | null => stop,
+    lastText: (): string | null => lastText,
   };
 }
 
@@ -125,8 +169,8 @@ function handoffReply(
   return Object.fromEntries(reply);
 }
 
-// The result of `launch`'s session, stopped as `stop` says, having spent
-// `usage`: a writer's handoff, or any other session's error.
+// The result of writer `launch`'s session, stopped as `stop` says, having
+// spent `usage`: its handoff.
 function contextStopped(
   launch: StoppedLaunch,
   stop: ContextStop,
@@ -134,55 +178,16 @@ function contextStopped(
 ): SessionRaw {
   const { key, agent } = launch;
   const results: SessionRaw["results"] = [{ usage }];
-  const { context, result } = stop;
-  switch (result) {
-    case "handoff": {
-      const summary = `session hit the hard context limit (${context})`;
-      const structuredOutput = handoffReply(launch.outputSchema, summary);
-      return { ok: true, structuredOutput, error: null, key, agent, results };
-    }
-    case "error": {
-      const error = `context passed the hard limit (${context})`;
-      return { ok: false, structuredOutput: null, error, key, agent, results };
-    }
-    default: {
-      const unhandled: never = result;
-      return unhandled;
-    }
-  }
-}
-
-// The task of the retry of a session stopped with result `error`, whose task
-// was `task`.
-function retryTask(task: string): string {
-  return `${task}\n\n${READ_IN_PARTS}`;
-}
-
-// The result of `launch` once its retry ended as `retry`, its first session
-// having spent `before`: the retry's own, or, if the retry passed `hard`
-// too, an error naming the overflow; either way with both sessions' usage.
-function retryResult(
-  launch: SessionLaunch,
-  retry: WatchedEnd,
-  before: Usage,
-): SessionRaw {
-  const results: SessionRaw["results"] = [
-    { usage: addUsage(before, retry.raw.results[0].usage) },
-  ];
-  const { stop } = retry;
-  if (stop === null) {
-    return { ...retry.raw, results };
-  }
-  const { key, agent } = launch;
-  const error = `context passed the hard limit (${stop.context}) twice`;
-  return { ok: false, structuredOutput: null, error, key, agent, results };
+  const summary = `session hit the hard context limit (${stop.context})`;
+  const structuredOutput = handoffReply(launch.outputSchema, summary);
+  return { ok: true, structuredOutput, error: null, key, agent, results };
 }
 
 export type {
   ContextLimits,
   ContextStop,
   ContextWatch,
-  StopResult,
   WatchedEnd,
+  WriterHold,
 };
-export { contextStopped, retryResult, retryTask, turnContext, watchContext };
+export { contextStopped, turnContext, watchContext };

@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { configureClone, GH_HELPER } from "./clone-setup.ts";
+import { configureClone, GH_HELPER, updateSubmodules } from "./clone-setup.ts";
 import type { Config } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
 import {
@@ -18,7 +18,7 @@ import {
   uncommitted,
 } from "./git-state.ts";
 import { git } from "./github.ts";
-import { withCloneLock, withWikiLock } from "./locks.ts";
+import { withCloneLock } from "./locks.ts";
 import { OpsError, run, runFailure, shell } from "./process.ts";
 import type { StackedOn } from "./stack.ts";
 import { pushWikiBranch, wikiAhead } from "./wiki.ts";
@@ -26,6 +26,12 @@ import { pushWikiBranch, wikiAhead } from "./wiki.ts";
 const TEARDOWN_TIMEOUT_MS = 300_000;
 const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
 const PUSHED_FILE = "pushed.json";
+const MS_PER_MINUTE = 60_000;
+// The config keys setUpCheckout reads; loadConfig applied their defaults.
+const SETUP_SETTINGS = z.looseObject({
+  commandTimeoutMinutes: z.number(),
+  commands: z.looseObject({ setup: z.string().nullish() }),
+});
 // The part of the push record a claim reads.
 const PUSHED = z.object({ sha: z.string(), op: z.string() });
 
@@ -57,7 +63,9 @@ function ensureClone(cfg: Config): string {
     }
     configureClone(cfg, clone);
     fetchIn(cfg, clone, "--prune");
+    gitIn(clone, ["checkout", "--detach", `origin/${cfg.baseBranch}`]);
     gitIn(clone, ["worktree", "prune"]);
+    updateSubmodules(cfg, clone);
     return clone;
   });
 }
@@ -85,23 +93,8 @@ function ensureWorktree(
       start = `origin/${branch}`;
     }
     gitIn(clone, ["worktree", "add", "-B", branch, wt, start]);
+    updateSubmodules(cfg, wt);
     return wt;
-  });
-}
-
-function removeWikiCheckout(cfg: Config, number: number): void {
-  const wikiClone = paths.wikiClone(cfg);
-  if (wikiCfg(cfg) === null || !fs.existsSync(wikiClone)) {
-    return;
-  }
-  withWikiLock(cfg, () => {
-    for (const args of [
-      ["worktree", "remove", "--force", paths.wiki(cfg, number)],
-      ["worktree", "prune"],
-      ["branch", "-D", paths.branch(number)],
-    ]) {
-      run("git", ["-C", wikiClone, ...args], { allowFail: true });
-    }
   });
 }
 
@@ -116,12 +109,19 @@ function removeWorktree(cfg: Config, number: number): void {
     const log = path.join(dir, "teardown.log");
     shell(teardown, dir, log, TEARDOWN_TIMEOUT_MS);
   }
-  removeWikiCheckout(cfg, number);
   withCloneLock(cfg, () => {
     const clone = paths.clone(cfg);
     const wt = paths.worktree(cfg, number);
     if (fs.existsSync(wt)) {
-      const args = ["-C", clone, "worktree", "remove", "--force", wt];
+      const args = [
+        "-C",
+        clone,
+        "worktree",
+        "remove",
+        "--force",
+        "--force",
+        wt,
+      ];
       run("git", args, { allowFail: true });
     }
     const branch = paths.branch(number);
@@ -202,6 +202,18 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
   return { codeChanged: result.code === 1, wikiAhead: wikiAhead(cfg, n) };
 }
 
+// Pushes the issue's checkout's HEAD to its branch for `op`, recording the
+// push first, with --force-with-lease against the head it last pushed, and
+// returns the head pushed. A refused push throws.
+function pushHead(cfg: Config, n: number, op: string): string {
+  const wt = paths.worktree(cfg, n);
+  const headSha = head(wt);
+  const target = `HEAD:refs/heads/${paths.branch(n)}`;
+  recordPush(cfg, n, headSha, op);
+  git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
+  return headSha;
+}
+
 // Pushes the issue's branch for `op`, recording the push first, and its wiki
 // checkout's own commits to the wiki's branch of the same name, and returns
 // the code head and what the work changes. allowEmpty lets start-pr push the
@@ -228,15 +240,32 @@ function push(
     throw new OpsError("branch has no commits ahead of the base branch");
   }
   const changes = branchChanges(cfg, number);
-  const headSha = head(wt);
   if (allowEmpty !== true && !changes.codeChanged && changes.wikiAhead === 0) {
-    return { headSha, ...changes };
+    return { headSha: head(wt), ...changes };
   }
-  const target = `HEAD:refs/heads/${paths.branch(number)}`;
-  recordPush(cfg, number, headSha, op);
-  git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
+  const headSha = pushHead(cfg, number, op);
   pushWikiBranch(cfg, number);
   return { headSha, ...changes };
+}
+
+// Runs the repo's setup command (config `commands.setup`), if it sets one,
+// in issue `n`'s checkout `dir`, so the writer's own test runs get this
+// issue's database and ports instead of the shared defaults. It writes the
+// command's output to `logName` in the issue's run folder. A failure is only
+// logged: verify runs setup again and reports it.
+function setUpCheckout(
+  cfg: Config,
+  n: number,
+  dir: string,
+  logName: string,
+): void {
+  const { commandTimeoutMinutes, commands } = SETUP_SETTINGS.parse(cfg);
+  const { setup } = commands;
+  if (setup === undefined || setup === null || setup === "") {
+    return;
+  }
+  const log = path.join(paths.runDir(cfg, n), logName);
+  shell(setup, dir, log, commandTimeoutMinutes * MS_PER_MINUTE);
 }
 
 export type { BranchChanges, PushRecord, PushResult };
@@ -247,7 +276,9 @@ export {
   issueWorktrees,
   lastPush,
   push,
+  pushHead,
   recordPush,
   removeWorktree,
+  setUpCheckout,
   unsavedWork,
 };

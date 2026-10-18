@@ -1,20 +1,15 @@
-// Wiki checkouts. Each issue's worktree gets the wiki at <worktree>/wiki, a
-// worktree of a shared wiki clone on branch agent/issue-<n>. The code clone's
-// info/exclude hides it from the code repo. Agents read it and may commit to
-// it; each code push also keeps them on the wiki remote's agent/issue-<n>, so a
-// lane on a fresh machine rebuilds the checkout from there. prepare-review adds
-// those commits to the review diff, and wiki-publish.ts rebases them onto the
-// wiki's main branch and pushes them there after the PR merges. A wiki that
-// doesn't exist yet (GitHub creates it with the first page) is skipped.
+// The wiki is a submodule of the code checkout. With wiki publishing enabled,
+// each issue works on its own wiki branch; review includes its commits and
+// wiki-publish.ts publishes them after the code merges.
 
 import fs from "node:fs";
 import path from "node:path";
-import { configureClone, GH_HELPER } from "./clone-setup.ts";
+import { configureClone, updateSubmodules } from "./clone-setup.ts";
 import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
 import { uncommitted } from "./git-state.ts";
 import { git } from "./github.ts";
-import { withWikiLock } from "./locks.ts";
+import { withCloneLock, withWikiLock } from "./locks.ts";
 import { run } from "./process.ts";
 
 interface WikiDiff {
@@ -26,60 +21,50 @@ function gitIn(dir: string, args: readonly string[]): string {
   return run("git", ["-C", dir, ...args]).stdout;
 }
 
-// The shared wiki clone, or null when the repo has no wiki yet.
-function ensureWikiClone(cfg: Config, wiki: WikiSettings): string | null {
-  const clone = paths.wikiClone(cfg);
-  if (!fs.existsSync(path.join(clone, ".git"))) {
-    const url = wiki.url ?? `https://github.com/${cfg.repo}.wiki.git`;
-    const cloned = git(cfg, [...GH_HELPER, "clone", url, clone], {
-      allowFail: true,
-    });
-    if (cloned.code !== 0) {
-      return null;
-    }
+// The initialized wiki submodule, or null when this checkout declares none.
+// Wiki commits are published separately. Marking its gitlink assume-unchanged
+// keeps code status and git add -A from picking up its moving HEAD; ordinary
+// developer checkouts retain Git's default pin-tracking behaviour.
+function wikiCheckout(cfg: Config, parent: string): string | null {
+  const wiki = wikiCfg(cfg);
+  if (wiki === null) {
+    return null;
   }
-  configureClone(cfg, clone);
-  git(cfg, ["-C", clone, "fetch", "--prune", "origin"]);
-  gitIn(clone, ["worktree", "prune"]);
-  return clone;
+  const dir = path.join(parent, wiki.dir);
+  const entry = gitIn(parent, ["ls-files", "--stage", "--", wiki.dir]);
+  if (!entry.startsWith("160000 ")) {
+    return null;
+  }
+  if (!fs.existsSync(path.join(dir, ".git"))) {
+    updateSubmodules(cfg, parent);
+  }
+  gitIn(parent, ["update-index", "--assume-unchanged", "--", wiki.dir]);
+  configureClone(cfg, dir);
+  git(cfg, ["-C", dir, "fetch", "--prune", "origin"]);
+  return dir;
 }
 
-// True when the wiki remote's agent/issue-<n>, as last fetched into the shared
-// clone, has commits the wiki's main branch lacks.
-function wikiBranchWork(wiki: WikiSettings, clone: string, n: number): boolean {
+// True when the wiki remote's issue branch has unpublished commits.
+function wikiBranchWork(wiki: WikiSettings, dir: string, n: number): boolean {
   const ref = `refs/remotes/origin/${paths.branch(n)}`;
-  const verify = ["-C", clone, "rev-parse", "--verify", "--quiet", ref];
+  const verify = ["-C", dir, "rev-parse", "--verify", "--quiet", ref];
   if (run("git", verify, { allowFail: true }).code !== 0) {
     return false;
   }
   const range = `origin/${wiki.branch}..${ref}`;
-  return Number(gitIn(clone, ["rev-list", "--count", range]).trim()) > 0;
+  return Number(gitIn(dir, ["rev-list", "--count", range]).trim()) > 0;
 }
 
-// True when the wiki remote's agent/issue-<n> holds commits of the issue's that
-// the wiki's main branch doesn't; false with no wiki or no such branch.
+// False with no configured wiki submodule or no unpublished issue branch.
 function wikiBranchHasWork(cfg: Config, n: number): boolean {
   const wiki = wikiCfg(cfg);
   if (wiki === null) {
     return false;
   }
   return withWikiLock(cfg, () => {
-    const clone = ensureWikiClone(cfg, wiki);
-    return clone !== null && wikiBranchWork(wiki, clone, n);
+    const dir = withCloneLock(cfg, () => wikiCheckout(cfg, paths.clone(cfg)));
+    return dir !== null && wikiBranchWork(wiki, dir, n);
   });
-}
-
-function excludeFromCode(cfg: Config, wiki: WikiSettings): void {
-  const exclude = path.join(paths.clone(cfg), ".git", "info", "exclude");
-  const line = `/${wiki.dir}/`;
-  let excluded = "";
-  if (fs.existsSync(exclude)) {
-    excluded = fs.readFileSync(exclude, "utf8");
-  }
-  if (!excluded.split("\n").includes(line)) {
-    fs.mkdirSync(path.dirname(exclude), { recursive: true });
-    fs.appendFileSync(exclude, `\n${line}\n`);
-  }
 }
 
 // How many commits the issue's wiki checkout has that the wiki doesn't.
@@ -93,35 +78,32 @@ function wikiAhead(cfg: Config, n: number): number {
   return Number(gitIn(dir, ["rev-list", "--count", range]).trim());
 }
 
-// Returns the issue's wiki checkout, or null when the repo has no wiki. A
-// checkout with no commits of its own is moved to the wiki remote's
-// agent/issue-<n> when that has commits of its own, else to the wiki's latest
-// version.
+// Readies the existing wiki submodule for this issue, preserving local work.
+// A clean checkout with no commits of its own resumes the remote issue branch
+// when that has work, or starts at the wiki's latest published version.
 function ensureWiki(cfg: Config, n: number): string | null {
   const wiki = wikiCfg(cfg);
   if (wiki === null) {
     return null;
   }
-  excludeFromCode(cfg, wiki);
   return withWikiLock(cfg, () => {
-    const clone = ensureWikiClone(cfg, wiki);
-    if (clone === null) {
+    const dir = withCloneLock(cfg, () =>
+      wikiCheckout(cfg, paths.worktree(cfg, n)),
+    );
+    if (dir === null) {
       return null;
     }
-    const dir = paths.wiki(cfg, n);
     let base = `origin/${wiki.branch}`;
-    if (wikiBranchWork(wiki, clone, n)) {
+    if (wikiBranchWork(wiki, dir, n)) {
       base = `origin/${paths.branch(n)}`;
     }
-    if (!fs.existsSync(path.join(dir, ".git"))) {
-      gitIn(clone, ["worktree", "add", "-B", paths.branch(n), dir, base]);
-    } else if (
+    if (
       wikiAhead(cfg, n) === 0 &&
       gitIn(dir, ["status", "--porcelain"]).trim() === ""
     ) {
-      gitIn(dir, ["reset", "--hard", base]);
+      gitIn(dir, ["checkout", "-B", paths.branch(n), base]);
     }
-    return dir;
+    return paths.wiki(cfg, n);
   });
 }
 
@@ -154,9 +136,7 @@ function wikiDiff(cfg: Config, n: number): WikiDiff {
   return { diff, files };
 }
 
-// Why the issue's wiki checkout holds work the wiki lacks (uncommitted changes,
-// or commits not on the wiki's branch, such as an unpublished rebase's), or
-// null when it holds none or there is no checkout.
+// Why the wiki checkout holds unpublished work, or null when it holds none.
 function unsavedWiki(cfg: Config, n: number): string | null {
   const wiki = wikiCfg(cfg);
   const dir = paths.wiki(cfg, n);

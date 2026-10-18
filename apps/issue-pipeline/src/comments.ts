@@ -11,6 +11,10 @@ import type { Config } from "./config.ts";
 import { gh, ghLines } from "./github.ts";
 
 const STATE_MARK = "<!-- agent-pipeline:state";
+// The mark of an issue's n-th usage comment (src/job/usage-log.ts): the
+// first is `usage`, the next `usage-2`, and so on.
+const USAGE_MARK =
+  /<!-- issue-pipeline:(?<issue>\d+):usage(?:-(?<n>[2-9]|[1-9]\d+))? -->/u;
 const PIPELINE_MARK = /<!-- agent-pipeline:comment role=(?<role>[\w.:-]+) -->/u;
 const PARENT_MARK =
   /<!-- agent-pipeline:parent (?<parent>\d+) depth (?<depth>\d+) -->/u;
@@ -56,6 +60,14 @@ const AUTHOR = z.looseObject({
   run: AUTHOR_FIELD,
 });
 
+// A comment from a line of gh's `--jq '.[] | @json'`.
+function commentOf(line: unknown): IssueComment {
+  if (typeof line === "string") {
+    return COMMENT.parse(JSON.parse(line));
+  }
+  return COMMENT.parse(line);
+}
+
 function listComments(cfg: Config, number: number): IssueComment[] {
   const lines = ghLines(cfg, [
     "api",
@@ -64,12 +76,7 @@ function listComments(cfg: Config, number: number): IssueComment[] {
     "--jq",
     ".[] | @json",
   ]);
-  return lines.map((line) => {
-    if (typeof line === "string") {
-      return COMMENT.parse(JSON.parse(line));
-    }
-    return COMMENT.parse(line);
-  });
+  return lines.map(commentOf);
 }
 
 // Posts `body` exactly as given: no signature, no mark.
@@ -83,6 +90,32 @@ function rawComment(cfg: Config, number: number, body: string): void {
     `body=${body}`,
     "--silent",
   ]);
+}
+
+// Every comment on the repo's issues and PRs, or only those changed at or
+// after `since` (an ISO time), in one paged listing.
+function listRepoComments(cfg: Config, since: string | null): IssueComment[] {
+  let query = "per_page=100";
+  if (since !== null) {
+    query = `${query}&since=${since}`;
+  }
+  const lines = ghLines(cfg, [
+    "api",
+    "--paginate",
+    `repos/${cfg.repo}/issues/comments?${query}`,
+    "--jq",
+    ".[] | @json",
+  ]);
+  return lines.map(commentOf);
+}
+
+// The mark of issue `issue`'s n-th usage comment.
+function usageMark(issue: number, n: number): string {
+  let kind = "usage";
+  if (n > 1) {
+    kind = `usage-${n}`;
+  }
+  return `<!-- issue-pipeline:${issue}:${kind} -->`;
 }
 
 // `text`, or `fallback` when it is missing or empty.
@@ -141,6 +174,51 @@ function comment(
   rawComment(cfg, number, signed(by, body));
 }
 
+// Replaces comment `id`'s body; with `allowFail`, a failed edit is ignored.
+function editComment(
+  cfg: Config,
+  id: number,
+  body: string,
+  options: { allowFail?: boolean } = {},
+): void {
+  gh(
+    cfg,
+    [
+      "api",
+      "-X",
+      "PATCH",
+      `repos/${cfg.repo}/issues/comments/${id}`,
+      "-f",
+      `body=${body}`,
+      "--silent",
+    ],
+    options,
+  );
+}
+
+// Writes `body`, signed by `by`, as issue `number`'s one comment keyed
+// `key`: it edits the pipeline account's comment that carries the key's
+// hidden marker, and posts a new one only when there is none, so writing
+// it again posts nothing twice.
+function commentByKey(
+  cfg: Config,
+  number: number,
+  by: Author | undefined,
+  keyed: { body: string; key: string },
+): void {
+  const mark = `<!-- issue-pipeline:${number}:${keyed.key} -->`;
+  const text = `${signed(by, keyed.body)}\n${mark}`;
+  const mine = listComments(cfg, number).find(
+    (item) =>
+      item.user?.login === cfg.account && (item.body ?? "").includes(mark),
+  );
+  if (mine === undefined) {
+    rawComment(cfg, number, text);
+    return;
+  }
+  editComment(cfg, mine.id, text);
+}
+
 // The role of the pipeline agent that wrote a comment ("state" for the state
 // comment), or null when the pipeline didn't write it.
 function pipelineRole(cfg: Config, item: IssueComment): string | null {
@@ -166,7 +244,10 @@ export {
   CLAIM_MARK,
   COMMENT,
   comment,
+  commentByKey,
+  editComment,
   listComments,
+  listRepoComments,
   PARENT_MARK,
   PIPELINE_MARK,
   pipelineRole,
@@ -175,4 +256,6 @@ export {
   STATE_MARK,
   signature,
   signed,
+  USAGE_MARK,
+  usageMark,
 };

@@ -16,14 +16,19 @@ const ESCAPED_MARK_END = "--\\u003e";
 // Leaves room under GitHub's comment limit for the header and footer.
 const MAX_STATE_LENGTH = 60_000;
 
+const CHECKPOINTS = z.record(
+  z.string(),
+  z.union([z.number(), z.string(), z.null()]),
+);
+
 // The fields the ops modules read; the workflow owns the rest, which pass
 // through unchanged.
 const STATE = z.looseObject({
   depth: z.number().optional(),
-  files: z.array(z.string()).nullish(),
+  log: z.array(z.unknown()).nullish(),
+  specWritesTests: z.boolean().optional().catch(undefined),
   findings: z.array(z.looseObject({ status: z.unknown() })).nullish(),
   headSha: z.string().nullish(),
-  log: z.array(z.unknown()).nullish(),
   implemented: z.unknown().optional(),
   pr: z.unknown().optional(),
   reviewedSha: z.unknown().optional(),
@@ -31,6 +36,20 @@ const STATE = z.looseObject({
   // missing when it isn't stacked, and null when it is unreadable.
   stackedOn: STACKED_ON.nullish().catch(null),
   stage: z.string().optional(),
+  // The code of the stop the state is saved at, as stop.ts saves it; null
+  // or missing for none, and null when it is malformed.
+  stopCode: z.string().nullish().catch(null),
+  // The tokens the issue's sessions have spent (launch-results.ts); a
+  // malformed count reads as missing.
+  reportedTokens: z.number().optional().catch(undefined),
+  // The stage a stop saved at `stopped` stopped in, which a restart resumes
+  // at (`every-role-resumes`); null or missing for none, and null when it is
+  // malformed.
+  stoppedStage: z.string().nullish().catch(null),
+  // The values a role's run saved because a later start needs them and
+  // GitHub and git can't give them back, such as the counts that bound its
+  // loops (#301). A malformed record reads as missing.
+  checkpoints: CHECKPOINTS.optional().catch(undefined),
 });
 
 type State = z.infer<typeof STATE>;
@@ -116,11 +135,7 @@ function newState(number: number, depth: number): State {
     reviewedSha: null,
     verifiedSha: null,
     plan: null,
-    allocated: 0,
-    rebaseAllocated: 0,
-    rechecking: false,
     reportedTokens: 0,
-    sessions: [],
     triages: 0,
     continuations: {},
     round: 0,

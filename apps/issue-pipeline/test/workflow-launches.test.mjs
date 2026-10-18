@@ -32,6 +32,7 @@ const CHILD = {
   model: "anthropic/claude-opus-5-5",
   schema: { type: "object" },
   minutes: 0,
+  budgetRole: "triage",
   tokenBudget: TOKEN_BUDGET,
   task: "Triage.",
 };
@@ -39,9 +40,10 @@ const SEQ = 4;
 const OUTPUT_TAIL = 500;
 // More minutes than any default, asked for by a launch.
 const LONG_MINUTES = 60;
-// The state's tokens before a session, and after it reports 1 + 2 + 3 + 4.
+// The state's tokens before a session, and after it reports input 1, output
+// 2, cache reads 3 and cache writes 4: the cache reads don't count.
 const TOKENS_BEFORE = 10;
-const TOKENS_AFTER = 20;
+const TOKENS_AFTER = 17;
 const USAGE = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 };
 const WHERE = { n: 7, worktree: "/w/work/o__r/issue-7" };
 
@@ -58,7 +60,7 @@ function requestOf(spec) {
 // An issue at triage with no tokens reported yet.
 /** @returns {IssueState} */
 function triageState() {
-  return { stage: "triage", depth: 0, findings: [], allocated: 0 };
+  return { stage: "triage", depth: 0, findings: [] };
 }
 
 test("a failed ops child is an error with its detail", () => {
@@ -134,6 +136,7 @@ test("a session runs in the worktree with the bridge off, keyed by its issue", (
     cwd: "/w/work/o__r/issue-7",
     task: "Triage.",
     outputSchema: { type: "object" },
+    budgetRole: "triage",
     tokenBudget: TOKEN_BUDGET,
     intercomBridge: { mode: "off" },
   });
@@ -158,7 +161,7 @@ test("only a writer's session waives pi-subagents' acceptance", () => {
   assert.ok(writer.timeoutMs > reader.timeoutMs);
 });
 
-test("a session's reported tokens add to the state, and its result is signed", () => {
+test("a session's reported tokens, less its cache reads, add to the state, and its result is signed", () => {
   /** @type {Record<string, LaunchMeta>} */
   const meta = {};
   const spec = childSpec(SEQ, WHERE, CHILD, meta);

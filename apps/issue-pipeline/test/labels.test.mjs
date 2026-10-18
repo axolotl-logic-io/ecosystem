@@ -31,6 +31,7 @@ test("the stops keep their order and label names", () => {
       "triage-rejected",
       "triage-limit",
       "not-doable",
+      "spec-files",
       "too-large",
       "acceptance",
       "branch-changed",
@@ -60,5 +61,14 @@ test("a reason maps to its stop, and any other reason to error", () => {
     "conflict",
   );
   assert.equal(stopFor("the stage job kept dying: review")?.code, "job");
+  assert.equal(
+    stopFor("the check fixer can't fix the failing checks from the repo")?.code,
+    "checks-unrelated",
+  );
+  // The reason sweeps sent before unrelated-fixes-allowed.
+  assert.equal(
+    stopFor("the failing checks look unrelated to this change")?.code,
+    "checks-unrelated",
+  );
   assert.equal(stopFor("something else")?.code, "error");
 });

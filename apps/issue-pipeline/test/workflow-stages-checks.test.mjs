@@ -30,7 +30,6 @@ const REVIEWED = {
   reviewedSha: "ccccccc",
   implemented: true,
   spec: "## Behaviour\n\n1. src/a.ts does the thing.",
-  allocated: 620_000,
 };
 // Issue #7 rebased onto ddddddd, at checks.
 const SYNCED = { ...REVIEWED, headSha: "ddddddd" };
@@ -76,8 +75,6 @@ function issueSummary(fields) {
         stage: "checks",
         outcome: "in-progress",
         reason: null,
-        allocatedTokens: 620_000,
-        rebaseAllocatedTokens: 0,
         ...fields,
       },
     ],
@@ -129,10 +126,7 @@ test("a conflicting rebase is resolved by a writer, then held at checks", async 
   const state = releasedState(trace);
   assert.deepEqual([state.stage, state.headSha], ["checks", "ddddddd"]);
   // The resolver is charged to the rebase pool, not the issue budget.
-  assert.deepEqual(
-    summary,
-    issueSummary({ allocatedTokens: 620_000, rebaseAllocatedTokens: 100_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({}));
 });
 
 // Verification failing and then passing, and every op after it succeeding.
@@ -181,8 +175,6 @@ test("failing checks get a reviewed CI fix, then pass and go on to merge", async
     issueSummary({
       stage: "merge",
       outcome: "merged",
-      allocatedTokens: 920_000,
-      rebaseAllocatedTokens: 0,
     }),
   );
 });

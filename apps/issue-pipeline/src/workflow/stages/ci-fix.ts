@@ -2,7 +2,7 @@
 // the failing checks, the fix is pushed, and the correctness and scope lenses
 // review just its diff before the state is saved for the next round.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { findingLines } from "../findings.ts";
 import { LENSES } from "../lenses.ts";
@@ -11,6 +11,12 @@ import { REVIEW_SCHEMA } from "../review-schemas.ts";
 import type { IssueState, ListedFinding } from "../types.ts";
 import { blockingOf, fixOutputOf, preparedOf } from "./checks-reply.ts";
 import { attemptOf, handedOff } from "./ci-fixer.ts";
+import {
+  rateLimitedIn,
+  rateLimitStep,
+  sessionFailedStep,
+} from "./rate-limit.ts";
+import { isRecord, patchIdIn } from "./reply-guards.ts";
 import { prepareLaunch } from "./stacked.ts";
 import { launchStep, onlyChild, onlyReply, stopStep } from "./step.ts";
 import type {
@@ -44,7 +50,8 @@ function fixed(
   const result = onlyChild(results);
   const fix = fixOutputOf(result);
   if (fix === null) {
-    return stopStep(state, "the check-fixer session failed", result.error);
+    const reason = "the check-fixer session failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const attempt = attemptOf(state);
   const by = { ...result.by, role: `check fixer (attempt ${attempt})` };
@@ -53,7 +60,7 @@ function fixed(
     case "cannot-fix":
       return stopStep(
         state,
-        "the failing checks look unrelated to this change",
+        "the check fixer can't fix the failing checks from the repo",
         summary,
         [
           {
@@ -116,34 +123,33 @@ function lensLaunch(
     model: models[lens],
     schema: REVIEW_SCHEMA,
     minutes: REVIEW_MINUTES,
+    budgetRole: "rereviewer",
     tokenBudget: budget,
-    task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
+    task: preamble(cfg, state, role).concat(lines).join("\n"),
   };
 }
 
 // A check fix changes reviewed code, so the correctness and scope lenses look
-// at just its diff.
+// at just its diff. The carry keeps the patch id the diff's reply named, for
+// the review to record.
 function prepared(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const reply = preparedOf(onlyReply(results));
+  const replied = onlyReply(results);
+  const reply = preparedOf(replied);
   if (reply.kind === "failed") {
     return stopStep(state, "could not prepare the check-fix diff", reply.error);
   }
-  const st: IssueState = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "rereviewer", {
-    at: ctx.now(),
-    count: FIX_LENSES.length,
-  });
-  if (!charge.charged) {
-    return stopStep(state, charge.reason, charge.detail);
+  let kept: Readonly<Record<string, unknown>> = {};
+  if (isRecord(state.carry)) {
+    kept = state.carry;
   }
-  return launchStep({ ...charged, phase: "reviewed" }, [
-    lensLaunch(charged, ctx, "correctness", reply.value),
-    lensLaunch(charged, ctx, "scope", reply.value),
+  const carry = { ...kept, patchId: patchIdIn(replied) };
+  return launchStep({ ...state, phase: "reviewed", carry }, [
+    lensLaunch(state, ctx, "correctness", reply.value),
+    lensLaunch(state, ctx, "scope", reply.value),
   ]);
 }
 
@@ -176,8 +182,19 @@ function reviewBody(
 }
 
 // Posts every lens's comment, then stops on the first failure or blocking
-// finding in lens order, or saves the reviewed head.
-function reviewed(state: StageState, results: readonly LaunchResult[]): Step {
+// finding in lens order, or saves the reviewed head. A reviewer that hit a
+// transient provider error defers the issue to review instead: the pushed fix
+// still needs its review, and checks alone would pass it on without one.
+function reviewed(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
+  if (rateLimitedIn(results)) {
+    const st = { ...state.st, stage: "review" };
+    const why = "a check-fix reviewer failed";
+    return rateLimitStep({ ...state, st }, why, ctx.now());
+  }
   const comments: StageComment[] = [];
   const stops: StageStop[] = [];
   FIX_LENSES.forEach((lens, index) => {
@@ -205,6 +222,7 @@ function reviewed(state: StageState, results: readonly LaunchResult[]): Step {
   }
   const st: IssueState = { ...state.st };
   st.reviewedSha = st.headSha ?? null;
+  st.reviewedPatchId = patchIdIn(state.carry);
   const payload = { number: state.n, state: st };
   return launchStep(
     { ...state, st, phase: "saved" },

@@ -1,15 +1,21 @@
 // Implement: one writer session builds the issue to its spec, tests and
 // commits it. A session that runs out of room hands off to a continuation, up
 // to config maxContinuations; the sweep begins the stage again for each. A
-// done issue moves to open-pr.
+// done issue's commits are pushed, and the pushed head saved as its headSha,
+// before it moves to open-pr: the stage job's checkout is removed when the job
+// exits, and the next job's claim stops an issue whose branch moved past the
+// saved head (#315).
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
+import { practicesNote } from "../practices.ts";
 import {
+  beyondIssueRule,
+  commitRulesOf,
   handoffLead,
   handoffRule,
-  practicesNote,
+  NO_ARTIFICIAL_LOAD_RULE,
   preamble,
   specText,
 } from "../prompts.ts";
@@ -23,21 +29,36 @@ import {
   mayContinue,
   outOfRoomReason,
 } from "./continuation.ts";
-import { doneStep, launchStep, onlyChild, stopStep } from "./step.ts";
+import { commandsClause, wikiStep } from "./implement-steps.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
+import {
+  doneStep,
+  launchStep,
+  onlyChild,
+  onlyReply,
+  pushFailedStep,
+  replyError,
+  stopStep,
+} from "./step.ts";
 import type {
   ChildLaunch,
   LaunchResult,
-  StageCommands,
   StageComment,
   StageContext,
   StageState,
   Step,
 } from "./types.ts";
 
-// Where implement is: about to launch the session, or reading its reply.
-type ImplementPhase = "begin" | "decide";
+// Where implement is: about to launch the session, reading its reply, or
+// reading the reply of the push of a done session's commits (or its retry).
+type ImplementPhase = "begin" | "decide" | "pushed" | "repushed";
 
-const PHASES: readonly ImplementPhase[] = ["begin", "decide"];
+const PHASES: readonly ImplementPhase[] = [
+  "begin",
+  "decide",
+  "pushed",
+  "repushed",
+];
 
 const ROLE = "implementer";
 const IMPLEMENT_MINUTES = 90;
@@ -52,51 +73,37 @@ function phaseOf(state: StageState): ImplementPhase {
   return phase;
 }
 
-function isSet(text: string | null | undefined): text is string {
-  return typeof text === "string" && text !== "";
+// The spec's documented test and stub files the branch lacked at a restart,
+// as a lead for the session; "" when there are none.
+function unwrittenLead(st: StageState["st"]): string {
+  const files = st.unwrittenFiles ?? [];
+  if (files.length === 0) {
+    return "";
+  }
+  const named = files.map((file) => `\`${file}\``).join(", ");
+  return `The spec documents these test or stub files, which the branch lacks; write them as part of this work: ${named}.\n\n`;
 }
 
-// What the session works from: the handoff, the spec, or triage's plan.
+// What the session works from: the handoff, the spec (with the handoff of a
+// session before a restart, if any, `every-role-resumes`), or triage's plan,
+// after any files the spec documents that the branch lacks.
 function sourceLine(state: StageState): string {
+  return `${unwrittenLead(state.st)}${workSource(state)}`;
+}
+
+function workSource(state: StageState): string {
   const { st, paths } = state;
   if (continuationsOf(st, "implement") > 0) {
     return handoffLead(paths.handoffFile);
   }
   const spec = specText(st);
   if (spec !== "") {
-    return `Spec (also posted on the issue):\n${spec}`;
+    return `If ${paths.handoffFile} exists, an earlier implementer session of this issue wrote it before the issue stopped: read it and the commits on the branch first, and build on them.\n\nSpec (also posted on the issue):\n${spec}`;
   }
   return `Triage plan:\n${String(st.plan)}`;
 }
 
-// The configured commands the session runs, as a clause of step 3.
-function commandsClause(commands: StageCommands): string {
-  let clause = "";
-  if (isSet(commands.test)) {
-    clause += ` (\`${commands.test}\`)`;
-  }
-  if (isSet(commands.lint)) {
-    clause += `, lint (\`${commands.lint}\`)`;
-  }
-  if (isSet(commands.typecheck)) {
-    clause += `, and typecheck (\`${commands.typecheck}\`)`;
-  }
-  return clause;
-}
-
-// The step that commits the wiki updates, or "" when there is no wiki.
-function wikiStep(wiki: string | null): string {
-  if (!isSet(wiki)) {
-    return "";
-  }
-  return `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${wiki} add -A && git -C ${wiki} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`;
-}
-
-function implementTask(
-  state: StageState,
-  ctx: StageContext,
-  budget: number,
-): string {
+function implementTask(state: StageState, ctx: StageContext): string {
   const { cfg, budgets } = ctx;
   const lines = [
     practicesNote(cfg, state, "writer"),
@@ -104,21 +111,29 @@ function implementTask(
     "",
     "Do this:",
     "1. Write or update tests that specify the fix. They must fail without your change.",
-    "2. Implement the smallest change that resolves the issue. Do not refactor unrelated code.",
+    "2. Implement the change that resolves the issue.",
     `3. Run the tests${commandsClause(cfg.commands)} and fix failures.`,
-    "4. Commit everything with clear messages (`git add -A && git commit`), ending each message with the trailer line `Pipeline-Agent: implementer`. Leave the worktree clean.",
-    wikiStep(state.paths.wiki),
+    "4. Commit as you go (see below), and commit what is left at the end. Leave the worktree clean.",
+    wikiStep(state.paths.wiki, ctx.committer),
     "Change lockfiles only through the package manager, never by hand.",
+    beyondIssueRule(cfg.baseBranch, "`prBody`"),
+    NO_ARTIFICIAL_LOAD_RULE,
     "",
+    ...commitRulesOf(ctx.committer, {
+      unit: "step",
+      when: "as soon as it builds and its tests pass",
+      trailer: "Pipeline-Agent: implementer",
+      clearMessage: true,
+    }),
     handoffRule(
-      budgets.hardLimit,
+      budgets,
       state.paths.handoffFile,
-      "commit what builds",
+      "make it build and commit it",
     ),
     "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
-    "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
+    "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, how it is tested, and each fix or improvement beyond the issue).",
   ];
-  return preamble(cfg, state, ROLE, budget).concat(lines).join("\n");
+  return preamble(cfg, state, ROLE).concat(lines).join("\n");
 }
 
 function implementLaunch(state: StageState, ctx: StageContext): ChildLaunch {
@@ -133,23 +148,16 @@ function implementLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     schema: IMPL_SCHEMA,
     writer: true,
     minutes: IMPLEMENT_MINUTES,
+    budgetRole: "implementer",
     tokenBudget: budget,
-    task: implementTask(state, ctx, budget),
+    task: implementTask(state, ctx),
   };
 }
 
-// Charges the session, then launches it.
+// Launches the session.
 function begin(state: StageState, ctx: StageContext): Step {
-  const st = { ...state.st };
-  const charge = chargeSession(ctx.budgets, st, "implementer", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(state, charge.reason, charge.detail);
-  }
-  const charged = { ...state, st };
-  return launchStep({ ...charged, phase: "decide" }, [
-    implementLaunch(charged, ctx),
+  return launchStep({ ...state, phase: "decide" }, [
+    implementLaunch(state, ctx),
   ]);
 }
 
@@ -157,16 +165,31 @@ function issueComment(by: Signature, body: string): StageComment[] {
   return [{ by, body, where: "issue" }];
 }
 
-// Keeps the PR the implementer described and moves the issue to open-pr.
+// Keeps the PR the implementer described and pushes its commits.
 function finished(state: StageState, reply: ImplReply, by: Signature): Step {
   const st = {
     ...state.st,
     prTitle: clip(reply.prTitle, TITLE_LIMIT),
     prBody: clip(reply.prBody, BODY_LIMIT),
     prBy: by,
-    stage: "open-pr",
   };
-  return doneStep({ ...state, st });
+  return launchStep({ ...state, st, phase: "pushed" }, [
+    { kind: "op", name: "push", op: "push", payload: { number: state.n } },
+  ]);
+}
+
+// Saves the pushed head and moves the issue to open-pr. A failed push is
+// retried once unless git's push was rejected.
+function pushed(state: StageState, results: readonly LaunchResult[]): Step {
+  const { ok, error, headSha } = onlyReply(results);
+  if (ok !== true || typeof headSha !== "string") {
+    return pushFailedStep(
+      state,
+      "could not push the implementation",
+      replyError(error),
+    );
+  }
+  return doneStep({ ...state, st: { ...state.st, headSha, stage: "open-pr" } });
 }
 
 // Counts a handoff below the cap, so the next session continues from it. A
@@ -206,7 +229,8 @@ function decide(
     reply = implReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the implementer session failed", result.error);
+    const reason = "the implementer session failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const st = { ...state.st };
   noteEvent(st, `implement: ${reply.status} - ${reply.summary}`, ctx.now());
@@ -243,6 +267,9 @@ function next(
       return begin(state, ctx);
     case "decide":
       return decide(state, ctx, results);
+    case "pushed":
+    case "repushed":
+      return pushed(state, results);
     default: {
       const unhandled: never = phase;
       return unhandled;

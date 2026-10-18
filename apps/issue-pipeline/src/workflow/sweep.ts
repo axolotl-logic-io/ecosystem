@@ -12,6 +12,7 @@
 
 import { parseOps } from "./launch-results.ts";
 import {
+  committerOf,
   type LaunchSpec,
   type OpsFrame,
   opsFrame,
@@ -42,6 +43,7 @@ import {
 } from "./sweep-item.ts";
 import type { StageBatch, StagePhase } from "./sweep-stages.ts";
 import { afterClaim, stageResults, unreachable } from "./sweep-stages.ts";
+import type { IssueState, JobLayout, Sweep, SweepClock } from "./types.ts";
 
 // What the sweep awaits: the sweep op's reply, a candidate's claim, a stage
 // group's batch, the closing launches or the cleanup; or nothing, once done.
@@ -53,20 +55,6 @@ type Phase =
   | { kind: "finish"; run: SweepRun; parents: number }
   | { kind: "cleanup"; run: SweepRun }
   | { kind: "done"; run: SweepRun };
-
-// The sweep's id and its clock.
-interface SweepClock {
-  sweepId: string;
-  now: () => Date;
-}
-
-interface Sweep {
-  next: (raw: readonly unknown[]) => LaunchSpec[];
-  summary: () => SweepSummary;
-  // The save that leaves the claimed open issue at its stage with no lease
-  // when a stop cuts the stages short; null outside the stages.
-  interrupt: () => LaunchSpec | null;
-}
 
 interface Driver extends RunPins {
   frame: OpsFrame;
@@ -91,6 +79,7 @@ function runOf(driver: Driver, raw: unknown): SweepRun {
       now: driver.now,
       hasRoom: (stage: StageName): boolean => hasRoom(run, stage),
       mergeQueue: driver.mergeQueue,
+      committer: committerOf(driver.frame),
     },
     abandoned: [],
     item: null,
@@ -120,8 +109,14 @@ function claimBatch(
   return [opsLaunchSpec(run, claim)];
 }
 
-// The issue the claim reply for candidate `n` gives the sweep, if any.
-function claimedItem(run: SweepRun, n: number, raw: unknown): SweepItem | null {
+// The issue the claim reply for candidate `n` gives the sweep, if any, its
+// paths naming stage job folder `job` when there is one.
+function claimedItem(
+  run: SweepRun,
+  n: number,
+  claim: { raw: unknown; job: JobLayout | null },
+): SweepItem | null {
+  const { raw, job } = claim;
   const step = claimStep(n, parseOps(raw));
   if (step.kind === "lost") {
     run.abandoned.push(step.abandoned);
@@ -130,7 +125,11 @@ function claimedItem(run: SweepRun, n: number, raw: unknown): SweepItem | null {
   if (step.kind === "unclaimed") {
     return { ...step, n };
   }
-  const { st, paths, stop } = step;
+  const { st, stop } = step;
+  let { paths } = step;
+  if (job !== null) {
+    paths = { ...paths, job };
+  }
   const item: SweepItem = {
     kind: "claimed",
     n,
@@ -160,7 +159,7 @@ function claimed(
   raw: unknown,
 ): LaunchSpec[] {
   const n = run.reply.items[index]?.number ?? 0;
-  const item = claimedItem(run, n, raw);
+  const item = claimedItem(run, n, { raw, job: driver.job });
   if (item === null) {
     return claimBatch(driver, run, index + 1);
   }
@@ -280,8 +279,14 @@ function startSweep(args: SweepArgs, clock: SweepClock): Sweep {
       const launch = interruptLaunch(closingOf(phase.run.item));
       return launch && opsLaunchSpec(phase.run, launch);
     },
+    claimed: (): IssueState | null => {
+      const { phase } = driver;
+      if (!("run" in phase) || phase.run.item?.kind !== "claimed") {
+        return null;
+      }
+      return phase.run.item.st;
+    },
   };
 }
 
-export type { Sweep, SweepClock };
 export { startSweep };

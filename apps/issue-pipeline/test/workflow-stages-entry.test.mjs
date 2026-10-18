@@ -22,7 +22,6 @@ const ISSUE = 7;
 const PARENT = 5;
 const SWEEP_FAILED = /^Error: sweep failed: gh is down$/u;
 const MALFORMED = /^Error: sweep failed: the sweep reply was malformed$/u;
-const ALLOCATED = 5;
 const BRANCH_MOVED = "the PR branch changed outside the pipeline";
 
 // The state of a won claim at review, its head last seen at `headSha`.
@@ -197,14 +196,12 @@ test("the summary of a failed claim has no state", () => {
       stage: null,
       outcome: "claim-failed",
       reason: "x",
-      allocatedTokens: null,
-      rebaseAllocatedTokens: null,
     },
   ]);
 });
 
 test("the summary keeps a missing pr undefined and an unset outcome in progress", () => {
-  const { state } = claimAt("spec", { allocated: ALLOCATED });
+  const { state } = claimAt("spec");
   const { pr: _pr, ...st } = state;
   const [summary] = summaryOf({
     n: ISSUE,
@@ -218,5 +215,4 @@ test("the summary keeps a missing pr undefined and an unset outcome in progress"
   assert.equal(summary.stage, "spec");
   assert.equal(summary.outcome, "in-progress");
   assert.equal(summary.reason, null);
-  assert.equal(summary.allocatedTokens, ALLOCATED);
 });

@@ -175,8 +175,6 @@ test("a named sweep left stopped ends cleanly", () => {
       stage: null,
       outcome: "left-stopped",
       reason: "agent:stopped-budget",
-      allocatedTokens: null,
-      rebaseAllocatedTokens: null,
     },
   ]);
 });

@@ -1,47 +1,47 @@
 // One launch of the sweep, run as a child process by the stage job: an ops
-// request runs the installed ops.mjs with no model, and a model session runs
-// `pi` in RPC mode (src/job/rpc.ts) as the launch's installed agent, fresh or
-// resuming an interrupted session, held to the config's contextLimits
-// (src/job/context-watch.ts); one stopped there with an error runs once
-// more, fresh, as `<key>.retry`. Either way the launch resolves to the raw
-// result the sweep's driver reads; it never rejects. The job's hooks hear of
-// each session's start, records, stop at the hard limit and end, under the
-// session's own key.
+// request runs the installed ops.mjs with no model (src/job/ops-process.ts),
+// and a model session runs `pi` in RPC mode (src/job/rpc.ts) as the launch's
+// installed agent, fresh or resuming an interrupted session, a writer held to the config's
+// contextLimits (src/job/context-watch.ts). Either way the launch resolves to
+// the raw result the sweep's driver reads; it never rejects. The job's hooks
+// hear of each session's start, records, stop at the hard limit and end.
 
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { ROOT } from "../pipeline-root.ts";
 import type { ChildSpec, LaunchSpec } from "../workflow/launches.ts";
 import type { AgentDefinition } from "./agent-definition.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
+import type { SessionEnd, SessionEnded, Steers } from "./context-log.ts";
 import type {
   ContextLimits,
   ContextStop,
   ContextWatch,
   WatchedEnd,
 } from "./context-watch.ts";
-import {
-  contextStopped,
-  retryResult,
-  retryTask,
-  watchContext,
-} from "./context-watch.ts";
-import type { LiveLaunch } from "./control.ts";
-import type { OpsRaw, ProcessExit, SessionRaw } from "./raw-results.ts";
-import {
-  failedSession,
-  opsRaw,
-  sessionRaw,
-  ZERO_USAGE,
-} from "./raw-results.ts";
-import type { RpcProcess } from "./rpc.ts";
+import { contextStopped, watchContext } from "./context-watch.ts";
+import type { LiveHandle, LiveLaunch } from "./control.ts";
+import type { OpsProcess } from "./ops-process.ts";
+import { runOps } from "./ops-process.ts";
+import type { OpsRaw, SessionRaw } from "./raw-results.ts";
+import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
+import type { Read } from "./read-ledger.ts";
+import { readLedger } from "./read-ledger.ts";
+import { commitsOf, recordedBudgetOf } from "./roles.ts";
+import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart, ResumePoint } from "./status.ts";
+import {
+  appendReadLedger,
+  checkoutHead,
+  handoffStartOf,
+  saveStoppedWork,
+} from "./stop-handoff.ts";
+import { ZERO_USAGE } from "./token-usage.ts";
 
 const OPS_CLI = path.join(ROOT, "ops.mjs");
 const OUTPUT_EXTENSION = path.join(ROOT, "structured-output.mjs");
+const COMMIT_EXTENSION = path.join(ROOT, "pipeline-commit.mjs");
 const TIME_RADIX = 36;
 // The prompt that carries on an interrupted session.
 const RESUME_PROMPT =
@@ -53,100 +53,52 @@ interface LaunchHooks {
   sessionFile: (key: string) => string;
   // Where an interrupted session of launch `key` can carry on, if anywhere.
   resumePoint: (key: string) => ResumePoint | null;
-  // A launch started; `live` is its pi session, or null for an ops child.
-  started: (launch: LaunchStart, live: LiveLaunch | null) => void;
+  // A launch started; `live` is its pi session or its ops child.
+  started: (launch: LaunchStart, live: LiveHandle) => void;
   // Session `key` printed `record`.
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
   ended: (key: string) => void;
-  // The limits every session's context is held to.
+  // The limits a writer session's context is held to.
   contextLimits: ContextLimits;
-  // Session `key` (a launch's, or its retry's) passed the hard context
-  // limit and was stopped.
+  // Where a writer session of the job's issue writes its handoff.
+  handoffFile: string;
+  // Writer session `key` passed the hard context limit and was stopped.
   contextStopped: (key: string, stop: ContextStop) => void;
-  // The whole environment a session of installed agent `agent` runs with.
-  env: (agent: string) => Readonly<Record<string, string>>;
-  // Where every model session runs: the job's own checkout.
+  // Session `key` ended, after `ended` and any `contextStopped`, as `end`
+  // says.
+  sessionEnded: (key: string, end: SessionEnd) => void;
+  // The whole environment launch `key`'s session of installed agent `agent`
+  // runs with.
+  env: (agent: string, key: string) => Readonly<Record<string, string>>;
+  // Where every model session runs: the job's own folder.
   cwd: string;
+  // The job's code checkout, in its folder.
+  repo: string;
 }
 
-// An ops command to run: its arguments, stdin and time limit, and the hook
-// told its pid once it starts.
-interface Command {
+// Where a session starts: pi's arguments, the session file and the point it
+// resumes from, if any.
+interface SessionStart {
   args: readonly string[];
-  input: string;
-  timeoutMs: number;
-  started: (pid: number | null) => void;
-}
-
-// Runs ops.mjs, writing its input to stdin, and stops it with SIGTERM once
-// its time is up. A command that can't start ends with code null and the
-// reason on stderr.
-function runCommand(command: Command): Promise<ProcessExit> {
-  const { args, input, timeoutMs } = command;
-  const program = process.execPath;
-  return new Promise((resolve: (exit: ProcessExit) => void): void => {
-    const exit: ProcessExit = {
-      code: null,
-      stdout: "",
-      stderr: "",
-      timedOut: false,
-    };
-    const child = spawn(program, args, { stdio: "pipe", detached: true });
-    command.started(child.pid ?? null);
-    const timer = setTimeout((): void => {
-      exit.timedOut = true;
-      child.kill("SIGTERM");
-    }, timeoutMs);
-    function noteError(error: Error): void {
-      exit.stderr += `${program}: ${error.message}\n`;
-    }
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string): void => {
-      exit.stdout += chunk;
-    });
-    child.stderr.on("data", (chunk: string): void => {
-      exit.stderr += chunk;
-    });
-    child.stdin.on("error", noteError);
-    child.on("error", noteError);
-    child.on("close", (code: number | null): void => {
-      clearTimeout(timer);
-      resolve({ ...exit, code });
-    });
-    child.stdin.end(input);
-  });
-}
-
-// One session a launch runs: the key it is recorded under (the launch's, or
-// its retry's), the task it starts with when fresh, and the point it resumes
-// from, if any.
-interface Attempt {
-  key: string;
-  task: string;
+  session: string;
   resume: ResumePoint | null;
 }
 
-// Where a session starts: pi's arguments and the session file.
-interface SessionStart extends Attempt {
-  args: readonly string[];
-  session: string;
-}
-
-// Readies `spec`'s session `attempt` as installed agent `definition`:
+// Readies `spec`'s session, resuming from `resume` if it isn't null, as
+// installed agent `definition`:
 // creates the sessions folder, moves an earlier job's session at the same
 // path aside to `<key>.<time>.jsonl` unless it is being resumed (pi would
 // otherwise resume it, since launch keys repeat from job to job), and writes
-// the output schema beside it. Returns where it starts, or null if any of
-// that fails.
+// the output schema beside it. A writer session also loads pipeline_commit.
+// Returns where it starts, or null if any of that fails.
 function prepareSession(
   spec: ChildSpec,
   hooks: LaunchHooks,
   definition: AgentDefinition,
-  attempt: Attempt,
+  resume: ResumePoint | null,
 ): SessionStart | null {
-  const { key, resume } = attempt;
+  const { key } = spec;
   const session = resume?.session ?? hooks.sessionFile(key);
   const dir = path.dirname(session);
   const schema = path.join(dir, `${key}.schema.json`);
@@ -160,28 +112,53 @@ function prepareSession(
   } catch {
     return null;
   }
-  const files = { session, extension: OUTPUT_EXTENSION, schema };
-  return { ...attempt, args: piArgs(definition, spec, files), session };
+  let commit: string | null = null;
+  if (commitsOf(spec.agent)) {
+    commit = COMMIT_EXTENSION;
+  }
+  const files = { session, extension: OUTPUT_EXTENSION, schema, commit };
+  return { args: piArgs(definition, spec, files), session, resume };
+}
+
+// `live` with its steers counted in `steers` as `source`'s.
+function countingSteers(
+  live: LiveLaunch,
+  steers: Steers,
+  source: keyof Steers,
+): LiveLaunch {
+  return {
+    ...live,
+    send: (command: RpcCommand): Promise<RpcAnswer> => {
+      if (command.type === "steer") {
+        steers[source] += 1;
+      }
+      return live.send(command);
+    },
+  };
 }
 
 // Runs pi for `spec` from `from`, its context watched (context-watch.ts),
-// telling `hooks` of it under the session's own key.
+// telling `hooks` of it, and counts the steers the job sent it and gathers
+// the files it read (read-ledger.ts).
 async function runPi(
   spec: ChildSpec,
   hooks: LaunchHooks,
   from: SessionStart,
-): Promise<WatchedEnd> {
-  const { key, session, resume } = from;
+): Promise<WatchedEnd & { steers: Steers; reads: readonly Read[] }> {
+  const { key } = spec;
+  const { session, resume } = from;
   const usage = resume?.usage ?? ZERO_USAGE;
-  let prompt = from.task;
+  let prompt = spec.task;
   if (resume !== null) {
     prompt = RESUME_PROMPT;
   }
   const watched: { watch: ContextWatch | null } = { watch: null };
+  const steers: Steers = { context: 0, socket: 0 };
+  const ledger = readLedger();
   const exit = await runRpc({
     args: from.args,
     cwd: hooks.cwd,
-    env: hooks.env(spec.agent),
+    env: hooks.env(spec.agent, key),
     prompt,
     timeoutMs: spec.timeoutMs,
     onSpawn: (rpc: RpcProcess): void => {
@@ -194,15 +171,20 @@ async function runPi(
         session,
         resumed,
         usage,
-        tokenBudget: spec.tokenBudget,
+        tokenBudget: recordedBudgetOf(spec),
       };
       const live = { key, ...rpc };
-      watched.watch = watchContext(hooks.contextLimits, spec.agent, live);
-      hooks.started(start, live);
+      const { contextLimits: limits, handoffFile } = hooks;
+      const hold = { limits, handoffFile };
+      const watching = countingSteers(live, steers, "context");
+      watched.watch = watchContext(hold, spec.agent, watching);
+      const steered = countingSteers(live, steers, "socket");
+      hooks.started(start, { kind: "session", session: steered });
     },
     onRecord: (record: unknown): void => {
       hooks.record(key, record);
       watched.watch?.read(record);
+      ledger.record(record);
     },
   });
   hooks.ended(key);
@@ -210,16 +192,27 @@ async function runPi(
   if (stop !== null) {
     hooks.contextStopped(key, stop);
   }
-  return { raw: sessionRaw(spec, exit, usage), stop };
+  const lastText = watched.watch?.lastText() ?? null;
+  const raw = sessionRaw(spec, exit, usage);
+  return { raw, stop, lastText, steers, reads: ledger.reads() };
 }
 
-// The key launch `key`'s retry is recorded under.
-function retryKeyOf(key: string): string {
-  return `${key}.retry`;
+// How a session that ran ended: handed off, when the watch stopped it or
+// its reply says `handoff`, else ok or failed as its result says.
+function endedOf(raw: SessionRaw, stop: ContextStop | null): SessionEnded {
+  const { status } = raw.structuredOutput ?? {};
+  if (stop !== null || status === "handoff") {
+    return "handoff";
+  }
+  if (raw.ok) {
+    return "ok";
+  }
+  return "failed";
 }
 
-// Runs `spec`'s session, or resumes its interrupted retry as the retry, and
-// runs a session the watch stopped with an error once more, fresh.
+// Runs `spec`'s session, resuming it where `hooks.resumePoint` says, and
+// gives a writer the watch stopped a handoff for its result. A writer that
+// handed off gets its read ledger appended to the handoff.
 async function runSession(
   spec: ChildSpec,
   hooks: LaunchHooks,
@@ -228,37 +221,37 @@ async function runSession(
   if (read.kind === "missing") {
     return failedSession(spec, read.error);
   }
-  const { definition } = read;
-  async function run(attempt: Attempt): Promise<WatchedEnd> {
-    const start = prepareSession(spec, hooks, definition, attempt);
-    if (start === null) {
-      const error = `agent ${spec.agent}: cannot prepare its session and schema files`;
-      return { raw: failedSession(spec, error), stop: null };
-    }
-    return await runPi(spec, hooks, start);
-  }
-  const retry = { key: retryKeyOf(spec.key), task: retryTask(spec.task) };
-  const interrupted = hooks.resumePoint(retry.key);
-  if (interrupted !== null) {
-    const end = await run({ ...retry, resume: interrupted });
-    return retryResult(spec, end, ZERO_USAGE);
-  }
   const resume = hooks.resumePoint(spec.key);
-  const { raw, stop } = await run({ key: spec.key, task: spec.task, resume });
+  const start = prepareSession(spec, hooks, read.definition, resume);
+  if (start === null) {
+    const error = `agent ${spec.agent}: cannot prepare its session and schema files`;
+    return failedSession(spec, error);
+  }
+  const begun = handoffStartOf(hooks.repo, hooks.handoffFile);
+  const { raw, stop, lastText, steers, reads } = await runPi(
+    spec,
+    hooks,
+    start,
+  );
+  const { budgetRole, agent, model } = spec;
+  const ended = endedOf(raw, stop);
+  let reviewedSha: string | null = null;
+  if (!commitsOf(agent)) {
+    reviewedSha = begun.head;
+  }
+  const headSha = checkoutHead(hooks.repo);
+  const end = { budgetRole, agent, model, ended, steers };
+  hooks.sessionEnded(spec.key, { ...end, headSha, reviewedSha });
+  if (stop !== null) {
+    saveStoppedWork(hooks, { key: spec.key, stop, lastText, start: begun });
+  }
+  if (ended === "handoff" && commitsOf(agent)) {
+    appendReadLedger(hooks.handoffFile, spec.key, reads, hooks.cwd);
+  }
   if (stop === null) {
     return raw;
   }
-  const spent = raw.results[0].usage;
-  switch (stop.result) {
-    case "handoff":
-      return contextStopped(spec, stop, spent);
-    case "error":
-      return retryResult(spec, await run({ ...retry, resume: null }), spent);
-    default: {
-      const unhandled: never = stop.result;
-      return unhandled;
-    }
-  }
+  return contextStopped(spec, stop, raw.results[0].usage);
 }
 
 // Runs `spec` and resolves to its raw result, telling `hooks` of it. A model
@@ -272,21 +265,22 @@ async function runLaunch(
     return await runSession(spec, hooks);
   }
   const { key } = spec;
-  const exit = await runCommand({
+  const exit = await runOps({
+    key,
     args: [OPS_CLI],
     input: spec.task,
     timeoutMs: spec.timeoutMs,
-    started: (pid: number | null): void => {
+    started: (ops: OpsProcess): void => {
       const start: LaunchStart = {
         key,
         kind: "ops",
-        pid,
+        pid: ops.pid,
         session: null,
         resumed: false,
         usage: ZERO_USAGE,
         tokenBudget: null,
       };
-      hooks.started(start, null);
+      hooks.started(start, { kind: "ops", ops });
     },
   });
   hooks.ended(key);

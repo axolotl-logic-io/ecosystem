@@ -9,7 +9,7 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { fetchIn, remoteHead } from "./git-state.ts";
 import { ghJson } from "./github.ts";
-import { mergedPrFor } from "./ops/prs.ts";
+import { mergeCommitFor, mergedPrFor } from "./ops/prs.ts";
 import { OpsError, run } from "./process.ts";
 
 // The prerequisite issue and the head of its branch the stacked branch was
@@ -26,6 +26,10 @@ const ISSUE_CLOSE = z
   .nullable();
 
 type StackedOn = z.infer<typeof STACKED_ON>;
+
+// `git merge-base --is-ancestor`'s exit code when the commit isn't an
+// ancestor; any other failure is an error.
+const NOT_ANCESTOR = 1;
 
 // What a sync rebases: the commits after `upstream`, onto `onto`. `stackedOn`
 // is what the issue is stacked on once the sync is done, null when it isn't.
@@ -83,6 +87,43 @@ function prereqMerged(cfg: Config, issue: number): boolean {
   return closed?.state === "closed" && closed.reason === "completed";
 }
 
+// True when the branch on GitHub of open prerequisite `prereq` lacks the merge
+// commit of some issue in `merged` whose PR merged (#328). Each merge commit
+// is the base's head just after that PR merged, so later moves of the base
+// don't count. False when none of them has a merged PR, and when gh or git
+// can't tell, as when the prerequisite has no branch or there is no clone.
+function prereqBehind(
+  cfg: Config,
+  prereq: number,
+  merged: readonly number[],
+): boolean {
+  try {
+    const commits = merged.flatMap((n) => mergeCommitFor(cfg, n) ?? []);
+    if (commits.length === 0) {
+      return false;
+    }
+    const clone = paths.clone(cfg);
+    fetchIn(cfg, clone, cfg.baseBranch);
+    const head = fetchPrereq(cfg, clone, prereq);
+    if (head === null) {
+      return false;
+    }
+    return commits.some((commit) => {
+      const args = ["-C", clone, "merge-base", "--is-ancestor", commit, head];
+      return run("git", args, { allowFail: true }).code === NOT_ANCESTOR;
+    });
+  } catch (error: unknown) {
+    if (
+      error instanceof OpsError ||
+      error instanceof SyntaxError ||
+      error instanceof z.ZodError
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 // What a sync of the branch in `dir` rebases onto, with the base fetched:
 // the base when the issue isn't stacked or its prerequisite merged, and the
 // prerequisite's branch head otherwise. Only the commits after the saved
@@ -120,11 +161,13 @@ function syncTarget(
 // Moves a worktree with no commits of its own, on neither the base nor the
 // prerequisite it is stacked on, to where the issue starts: that
 // prerequisite's head, or the base's head on GitHub. It drops the edits. A
-// worktree with commits of its own is kept.
+// worktree with commits of its own is kept. Commits up to `unstackedHead`,
+// the head of a merged prerequisite the issue unstacked from, aren't its own.
 function resetToStart(
   cfg: Config,
   wt: string,
   stackedOn: StackedOn | null,
+  unstackedHead: string | null = null,
 ): void {
   const base = cfg.baseBranch;
   fetchIn(cfg, wt, `+refs/heads/${base}:refs/remotes/origin/${base}`);
@@ -134,6 +177,12 @@ function resetToStart(
     start = stackedOn.headSha;
     known.push(start);
   }
+  if (
+    unstackedHead !== null &&
+    gitSucceeds(wt, ["cat-file", "-e", `${unstackedHead}^{commit}`])
+  ) {
+    known.push(unstackedHead);
+  }
   const range = ["rev-list", "--count", "HEAD", "--not", ...known];
   if (Number(run("git", ["-C", wt, ...range]).stdout) !== 0) {
     return;
@@ -142,10 +191,19 @@ function resetToStart(
   run("git", ["-C", wt, "clean", "-fd"]);
 }
 
+// What a claimed issue is stacked on, and the merged prerequisite it
+// unstacked from, with the head the saved state last put it on, if any.
+interface ClaimedStack {
+  stackedOn: StackedOn | null;
+  unstacked: { issue: number; headSha: string | null } | null;
+}
+
 // What a claimed issue is stacked on. With no branch of its own on GitHub
 // (`remote` null), that is the prerequisite the claim (`stackOn`) or the
-// saved state names, at its branch's head now, fetched into `dir`; with one,
-// it is what the saved state says, and `stackOn` is ignored.
+// saved state names, at its branch's head now, fetched into `dir`, unless
+// that prerequisite has merged, its branch deleted or not: then the issue
+// unstacks and starts from the base. With a branch of its own, it is what
+// the saved state says, and `stackOn` is ignored; a sync unstacks it.
 function claimedStack(
   cfg: Config,
   dir: string,
@@ -154,13 +212,20 @@ function claimedStack(
     saved: StackedOn | null | undefined;
     stackOn: number | null | undefined;
   },
-): StackedOn | null {
+): ClaimedStack {
   const kept = claim.saved ?? null;
   const prereq = claim.stackOn ?? kept?.issue;
   if (claim.remote !== null || prereq === undefined) {
-    return kept;
+    return { stackedOn: kept, unstacked: null };
   }
-  return stackStart(cfg, dir, prereq);
+  if (prereqMerged(cfg, prereq)) {
+    let headSha: string | null = null;
+    if (kept?.issue === prereq) {
+      ({ headSha } = kept);
+    }
+    return { stackedOn: null, unstacked: { issue: prereq, headSha } };
+  }
+  return { stackedOn: stackStart(cfg, dir, prereq), unstacked: null };
 }
 
 // What the issue's own change is measured from: the prerequisite head it is
@@ -175,10 +240,11 @@ function measureFrom(
   return stackedOn.headSha;
 }
 
-export type { StackedOn, SyncTarget };
+export type { ClaimedStack, StackedOn, SyncTarget };
 export {
   claimedStack,
   measureFrom,
+  prereqBehind,
   prereqMerged,
   resetToStart,
   STACKED_ON,

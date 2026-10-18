@@ -19,7 +19,6 @@ const { startState } = await import("../src/start-state.ts");
 const { branchHasWork } = await import("../src/git-state.ts");
 const now = new Date("2026-10-15T03:00:00Z");
 const PR = 50;
-const ALLOCATED = 990_000;
 const base = {
   version: 1,
   number: 7,
@@ -30,7 +29,6 @@ const base = {
   verifiedSha: "h1",
   plan: "P",
   spec: "S",
-  allocated: ALLOCATED,
   round: 2,
   ciFixes: 2,
   syncs: 9,
@@ -46,6 +44,7 @@ const ctx = {
   pr: PR,
   hasWork: true,
   keptUnpushed: false,
+  patchId: null,
   answered: false,
   now,
 };
@@ -67,7 +66,6 @@ function budgetRestart() {
 test("budget stop -> review", () => {
   const {
     stage,
-    allocated,
     round,
     ciFixes,
     syncs,
@@ -82,7 +80,6 @@ test("budget stop -> review", () => {
   assert.deepEqual(
     [
       stage,
-      allocated,
       round,
       ciFixes,
       syncs,
@@ -94,7 +91,7 @@ test("budget stop -> review", () => {
       verifiedSha,
       headSha,
     ],
-    ["review", 0, 0, 0, 0, 0, "P", "S", PR, true, null, "h1"],
+    ["review", 0, 0, 0, 0, "P", "S", PR, true, null, "h1"],
   );
 });
 // The log records the restart, the stage it restarts at and the stop.
@@ -108,11 +105,11 @@ test("stopCode dropped", () => {
 });
 // review stands -> sync
 test("review stands -> sync", () => {
-  const { stage, reviewedSha, allocated } = startState(
+  const { stage, reviewedSha } = startState(
     { ...base, stage: "stopped", stopCode: "acceptance", reviewedSha: "h1" },
     ctx,
   );
-  assert.deepEqual([stage, reviewedSha, allocated], ["sync", "h1", 0]);
+  assert.deepEqual([stage, reviewedSha], ["sync", "h1"]);
 });
 test("open finding -> review", () => {
   const s = startState(
@@ -147,27 +144,38 @@ test("answered with work -> review, no plan/spec", () => {
 });
 // answered, no work -> triage, counters kept
 test("answered no work -> triage keeps triages", () => {
-  const { stage, triages, allocated } = startState(
+  const { stage, triages } = startState(
     { ...base, stage: "triage", triages: 2, pr: PR },
     { ...ctx, answered: true, hasWork: false },
   );
-  assert.deepEqual([stage, triages, allocated], ["triage", 2, ALLOCATED]);
+  assert.deepEqual([stage, triages], ["triage", 2]);
 });
-// stopped, no work (empty start-pr branch) -> triage fresh
-test("stopped no work -> triage fresh", () => {
-  const { stage, allocated, pr, implemented } = startState(
-    { ...base, stage: "stopped", stopCode: "error", implemented: false },
+// stopped, no work (empty start-pr branch), no spec -> triage fresh
+test("stopped no work and no spec -> triage fresh", () => {
+  const { stage, pr, implemented } = startState(
+    {
+      ...base,
+      stage: "stopped",
+      stopCode: "error",
+      implemented: false,
+      spec: null,
+    },
     { ...ctx, hasWork: false },
   );
-  assert.deepEqual(
-    [stage, allocated, pr, implemented],
-    ["triage", 0, PR, false],
+  assert.deepEqual([stage, pr, implemented], ["triage", PR, false]);
+});
+// stopped, no work, specced -> implement with the spec, not spec again
+test("stopped no work with a saved spec -> implement, keeping the spec", () => {
+  const { stage, spec, plan } = startState(
+    { ...base, stage: "stopped", stopCode: "error" },
+    { ...ctx, hasWork: false },
   );
+  assert.deepEqual([stage, spec, plan], ["implement", "S", "P"]);
 });
 // stopped, PR closed (pr null), branch exists -> triage, state.pr kept
 test("no open PR -> triage", () => {
   const { stage, pr } = startState(
-    { ...base, stage: "stopped", stopCode: "error" },
+    { ...base, stage: "stopped", stopCode: "error", spec: null },
     { ...ctx, pr: null, hasWork: false },
   );
   assert.deepEqual([stage, pr], ["triage", PR]);
@@ -259,6 +267,8 @@ const cfg = {
   contextLimits: { soft: 150_000, hard: 175_000 },
   leaseHours: 3,
   maxContinuations: 1,
+  issueTokenBudget: 1_000_000,
+  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
   practices: [],
   repo: "o/r",
   slug: "o__r",

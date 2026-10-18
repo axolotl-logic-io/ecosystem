@@ -127,7 +127,7 @@ function merged(
   ctx: StageContext,
   published: unknown,
 ): Step {
-  const st = { ...state.st, rebaseAllocated: 0, rechecking: false };
+  const st = { ...state.st };
   if (published === false) {
     st.stage = "publish";
     noteEvent(st, "merged; the wiki changes wait to be published", ctx.now());

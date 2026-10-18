@@ -1,5 +1,6 @@
-// What a stage job pushes as it exits: a writer runs the push op on the
-// commits its checkout holds; a reader or merger never pushes.
+// What a stage job pushes as it exits: a writer runs the exit-push op on the
+// commits its checkout holds, which the next claim may adopt as the saved
+// head (src/start-state.ts); a reader or merger never pushes.
 
 import process from "node:process";
 import { parseOps } from "../workflow/launch-results.ts";
@@ -30,7 +31,7 @@ function exitPushOf(
         const launch: OpLaunch = {
           kind: "op",
           name: "exit-push",
-          op: "push",
+          op: "exit-push",
           payload: { number: args.issue },
         };
         const spec = opsSpec(frame, 1, launch, null);

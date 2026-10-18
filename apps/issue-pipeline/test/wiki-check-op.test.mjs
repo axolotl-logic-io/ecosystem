@@ -23,6 +23,8 @@ const CFG = {
   contextLimits: { soft: 150_000, hard: 175_000 },
   leaseHours: 1,
   maxContinuations: 1,
+  issueTokenBudget: 1_000_000,
+  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
   practices: [],
   repo: "o/r",
   slug: "o__r",

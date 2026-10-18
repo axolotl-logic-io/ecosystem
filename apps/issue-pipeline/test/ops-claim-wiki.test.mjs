@@ -20,6 +20,8 @@ import {
   worktree,
 } from "./ops-cli-test-kit.mjs";
 
+import { addSubmodule } from "./submodule-test-kit.mjs";
+
 const ISSUE = 46;
 // The ids of the issue's claim and state comments.
 const CLAIM_ID = 16;
@@ -48,7 +50,13 @@ function wikiAheadOnBranch(n) {
   sh(`cd ${seed} && git push -q origin HEAD:master`);
   sh(`cd ${seed} && echo page > Page.md && git add . && git commit -qm page`);
   sh(`cd ${seed} && git push -q origin HEAD:refs/heads/agent/issue-${n}`);
-  const config = configWith({ wiki: { url: origin } });
+  addSubmodule(path.join(root, "seed"), origin);
+  sh(`git -C ${root}/seed push -q origin integration`);
+  sh(
+    `git -C ${root}/clones/o__r fetch -q origin && git -C ${root}/clones/o__r reset --hard origin/integration`,
+  );
+  sh(`git -C ${root}/clones/o__r submodule update --init --recursive`);
+  const config = configWith({ wiki: true });
   return { config, sha: sh(`git -C ${seed} rev-parse HEAD`) };
 }
 

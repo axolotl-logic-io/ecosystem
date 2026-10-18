@@ -5,33 +5,35 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { alive } from "./bounded-test-kit.mjs";
 import { checkoutOf } from "./job-git-test-kit.mjs";
 import {
-  alive,
+  AFTER_SWEEP_STAGE,
   flagValue,
   logOf,
   piCommands,
   piStarts,
   repliesAt,
   runJob,
-  SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   sessionOf,
   setUp,
   statusOf,
-  USAGE_TOTAL,
+  USAGE_SPENT,
 } from "./job-test-kit.mjs";
 import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
-const SESSION_KEY = /^i7-spec-\d+\.jsonl$/u;
-const SET_ASIDE_SESSION = /^i7-spec-\d+\.[0-9a-z]+\.jsonl$/u;
+const SESSION_KEY = /^i7-accept-\d+\.jsonl$/u;
+const SET_ASIDE_SESSION = /^i7-accept-\d+\.[0-9a-z]+\.jsonl$/u;
 const NAMES_REVIEW = /review/u;
-const NAMES_SPEC = /spec/u;
+const NAMES_ACCEPT = /accept/u;
 const STAGE_LIST = /--stage must be one of: triage, spec/u;
-const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
+const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
 const MODEL_NOT_FOUND = "Model not found: x/y";
 
-test("a stage job runs the spec stage, releases the issue at implement and prints one summary line", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+test("a stage job runs a sweep stage, releases the issue at the next stage and prints one summary line", () => {
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
   const ops = logOf(place, "ops.log");
@@ -39,12 +41,12 @@ test("a stage job runs the spec stage, releases the issue at implement and print
   assert.equal(sweep.only, ISSUE);
   assert.equal(sweep.lane, "L");
   const release = ops.find(({ op }) => op === "release");
-  assert.equal(release.state.stage, "implement");
-  assert.equal(release.state.reportedTokens, USAGE_TOTAL);
+  assert.equal(release.state.stage, AFTER_SWEEP_STAGE);
+  assert.equal(release.state.reportedTokens, USAGE_SPENT);
   const calls = piStarts(place);
   assert.equal(calls.length, 1);
   const [{ argv, cwd }] = calls;
-  assert.equal(cwd, checkoutOf(fs.realpathSync(place.root), "spec"));
+  assert.equal(cwd, checkoutOf(fs.realpathSync(place.root), SWEEP_STAGE));
   assert.equal(flagValue(argv, "--mode"), "rpc");
   const [prompt, ...others] = piCommands(place);
   assert.equal(prompt.type, "prompt");
@@ -62,11 +64,11 @@ test("a stage job runs the spec stage, releases the issue at implement and print
   const summary = JSON.parse(lines[0] ?? "");
   assert.equal(summary.lane, "L");
   assert.equal(summary.items[0].issue, ISSUE);
-  assert.equal(summary.items[0].stage, "implement");
+  assert.equal(summary.items[0].stage, AFTER_SWEEP_STAGE);
 });
 
 test("a second stage job for the same stage starts a fresh pi session and keeps the first aside", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
   for (const run of [runJob(place, STAGE_ARGS), runJob(place, STAGE_ARGS)]) {
     assert.equal(run.status, 0, run.stderr);
   }
@@ -101,11 +103,11 @@ test("a stage job for an issue saved at another stage releases it untouched as w
   const [item] = JSON.parse(r.stdout).items;
   assert.equal(item.outcome, "wrong-stage");
   assert.match(item.reason, NAMES_REVIEW);
-  assert.match(item.reason, NAMES_SPEC);
+  assert.match(item.reason, NAMES_ACCEPT);
 });
 
 test("a stage job with an unknown stage fails before any op", () => {
-  const place = setUp(repliesAt("spec"), { events: [] });
+  const place = setUp(repliesAt(SWEEP_STAGE), { events: [] });
   const r = runJob(place, ["--stage", "nope"]);
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, STAGE_LIST);
@@ -114,20 +116,20 @@ test("a stage job with an unknown stage fails before any op", () => {
 });
 
 test("a rejected prompt ends pi's session, and its error fails the launch", () => {
-  const place = setUp(repliesAt("spec"), { rejectPrompt: MODEL_NOT_FOUND });
+  const place = setUp(repliesAt(SWEEP_STAGE), {
+    rejectPrompt: MODEL_NOT_FOUND,
+  });
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
-  // One prompt per session: the spec stage tries a failed session once more
-  // (#280).
   assert.deepEqual(
     piCommands(place).map(({ type }) => type),
-    ["prompt", "prompt"],
+    ["prompt"],
   );
   // The fake pi exits only once its stdin closes.
   const starts = piStarts(place);
   assert.deepEqual(
     starts.map(({ pid }) => alive(pid)),
-    [false, false],
+    [false],
   );
   const stop = logOf(place, "ops.log").find(({ op }) => op === "stop");
   assert.equal(stop?.detail, MODEL_NOT_FOUND);

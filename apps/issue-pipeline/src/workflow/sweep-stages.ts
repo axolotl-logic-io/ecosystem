@@ -9,6 +9,7 @@
 import { launchResults } from "./launch-results.ts";
 import type { LaunchSpec } from "./launches.ts";
 import { STAGES } from "./stages/index.ts";
+import { RATE_LIMITED, withAttemptCounts } from "./stages/rate-limit.ts";
 import type {
   LaunchStep,
   OpLaunch,
@@ -31,6 +32,7 @@ import {
   stageState,
   stopIssue,
 } from "./sweep-item.ts";
+import type { IssueState } from "./types.ts";
 
 // What a stage group awaits: the stops posted after group `group` (-1 for
 // the claim), the save before a stage in it first begins, or a stage's
@@ -38,12 +40,14 @@ import {
 type StagePhase =
   | { kind: "flush"; group: number }
   | { kind: "save"; group: number }
-  | { kind: "stage"; group: number; machine: StageMachine; step: LaunchStep };
+  | ({ kind: "stage"; step: LaunchStep } & StageAt);
 
-// The group a stage runs in, and its machine.
+// The group a stage runs in, its machine, and the issue's state as the stage
+// began, whose attempt counts a rate-limit deferral puts back.
 interface StageAt {
   group: number;
   machine: StageMachine;
+  begun: IssueState;
 }
 
 interface StageBatch {
@@ -86,6 +90,9 @@ function stepBatch(
 ): StageBatch | null {
   const specs = applyStep(run, item, step);
   if (step.done) {
+    if (item.outcome === RATE_LIMITED && item.st.stage === at.begun.stage) {
+      item.st = withAttemptCounts(item.st, at.begun);
+    }
     return null;
   }
   return { phase: { kind: "stage", ...at, step }, specs };
@@ -93,7 +100,8 @@ function stepBatch(
 
 // The group's next batch: the save before the issue's stage first begins
 // (unless it was just made), or the launches of the stage's first step. A
-// stage done at once lets the next one begin. Null once no stage begins.
+// stage done at once lets the next one begin. Null once no stage begins, as
+// for an issue held until next sweep.
 function groupBatch(
   run: SweepRun,
   group: number,
@@ -114,6 +122,7 @@ function groupBatch(
     };
   }
   if (
+    item.held ||
     runs >= passesOf(stage, run.ctx.cfg.maxContinuations) ||
     !fits(run, item, stage)
   ) {
@@ -121,11 +130,9 @@ function groupBatch(
   }
   run.stagesRun = { ...run.stagesRun, [stage]: runs + 1 };
   const machine = STAGES[stage];
+  const at = { group, machine, begun: item.st };
   const step = machine.next(stageState(item, "begin", null), run.ctx, []);
-  return (
-    stepBatch(run, item, { group, machine }, step) ??
-    groupBatch(run, group, false)
-  );
+  return stepBatch(run, item, at, step) ?? groupBatch(run, group, false);
 }
 
 // Stops an issue still at a stage of the group whose passes are used up,
@@ -235,12 +242,12 @@ function stepResults(
   if (item?.kind !== "claimed") {
     return groupsFrom(run, phase.group, false);
   }
-  const { group, machine, step } = phase;
+  const { group, machine, begun, step } = phase;
   const results = launchResults(step.launches, raw, item.st, run.meta);
   const state = stageState(item, step.state.phase, step.state.carry);
   const nextStep = machine.next(state, run.ctx, results);
   return (
-    stepBatch(run, item, { group, machine }, nextStep) ??
+    stepBatch(run, item, { group, machine, begun }, nextStep) ??
     groupsFrom(run, group, false)
   );
 }

@@ -3,7 +3,7 @@
 // join the open ones. A finding that comes back after being resolved stops
 // the issue, since the fixes are undoing each other.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { launchBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding, openFindings } from "../findings.ts";
 import type { Lens } from "../lenses.ts";
@@ -11,6 +11,8 @@ import { ALL_LENSES } from "../lenses.ts";
 import { REREVIEW_SCHEMA, REREVIEW_SEC_SCHEMA } from "../review-schemas.ts";
 import type { JsonSchema } from "../schemas.ts";
 import type { Finding, IssueState } from "../types.ts";
+import { rateLimitedIn, rateLimitStep } from "./rate-limit.ts";
+import { patchIdIn } from "./reply-guards.ts";
 import type { NewFinding, RereviewReply } from "./review-replies.ts";
 import { rereviewReplyOf } from "./review-replies.ts";
 import { rereviewComment, rereviewTask } from "./review-text.ts";
@@ -99,7 +101,7 @@ function rereviewLaunch(
     model: ctx.models[lens],
     schema: schemaOf(lens),
     minutes: REREVIEW_MINUTES,
-    tokenBudget: sessionBudget(ctx.budgets, "rereviewer"),
+    ...launchBudget(ctx.budgets, "rereviewer"),
     task: rereviewTask(ctx, state, { lens, diffPath, findings }),
   };
 }
@@ -114,7 +116,9 @@ interface Rereviews {
 }
 
 // Resolves each open finding every verdict on it closes, records the head as
-// reviewed, moves to sync when none is open, then saves.
+// reviewed, moves to checks on the branch as it stands, with every check to
+// run, and records the patch id the round's diff named, when none is open,
+// then saves.
 function settle(
   state: StageState,
   ctx: StageContext,
@@ -135,21 +139,23 @@ function settle(
   }
   st.reviewedSha = st.headSha ?? null;
   if (openFindings({ st }).length === 0) {
-    st.stage = "sync";
-    const text = `fix round ${roundOf(state)}: all findings resolved`;
+    st.stage = "checks";
+    st.testsOnly = false;
+    st.reviewedPatchId = patchIdIn(state.carry);
+    const text = `fix round ${roundOf(state)}: all findings resolved; checks run without a rebase`;
     noteEvent(st, text, ctx.now());
   }
   return saveStep({ ...state, st, phase: "saved" }, comments);
 }
 
-// Charges a re-reviewer for each lens with open findings, then launches them
-// on the fix diff. With none to launch, the round settles at once.
+// Launches a re-reviewer for each lens with open findings on the fix diff. With none to launch, the round settles at once.
 function launchRereviews(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const { ok, error, diffPath } = onlyReply(results);
+  const reply = onlyReply(results);
+  const { ok, error, diffPath } = reply;
   if (ok !== true) {
     return stopStep(
       state,
@@ -159,25 +165,21 @@ function launchRereviews(
   }
   const lenses = openLenses(state);
   const st = copyState(state.st);
-  const charge = chargeSession(ctx.budgets, st, "rereviewer", {
-    at: ctx.now(),
-    count: lenses.length,
-  });
-  if (!charge.charged) {
-    return stopStep({ ...state, st }, charge.reason, charge.detail);
-  }
+  const prepared = { ...state, carry: { patchId: patchIdIn(reply) } };
   if (lenses.length === 0) {
-    return settle(state, ctx, {
+    return settle(prepared, ctx, {
       st,
       verdicts: new Map(),
       comments: [],
       stop: null,
     });
   }
-  const charged = { ...state, st, phase: "rereviewed" };
+  const rereviewing = { ...prepared, st, phase: "rereviewed" };
   return launchEach(
-    charged,
-    lenses.map((lens) => rereviewLaunch(ctx, charged, lens, String(diffPath))),
+    rereviewing,
+    lenses.map((lens) =>
+      rereviewLaunch(ctx, rereviewing, lens, String(diffPath)),
+    ),
   );
 }
 
@@ -241,6 +243,9 @@ function settleRereviews(
     comments: [],
     stop: null,
   };
+  if (rateLimitedIn(results)) {
+    return rateLimitStep(state, "a re-reviewer failed", ctx.now());
+  }
   for (const { name, result } of sessionsOf(openLenses(state), results)) {
     readRereview(rereviews, state, name, result);
     const { stop, st, comments } = rereviews;

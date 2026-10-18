@@ -8,10 +8,10 @@ import { stopFor } from "../src/stops.ts";
 import { next } from "../src/workflow/stages/implement.ts";
 import { asSessions, sessions } from "./stage-outcome-test-kit.mjs";
 import {
+  afterReply,
   afterSession,
   BUILD_CTX,
   buildState,
-  contextWith,
   HANDOFF,
   IMPL_BY,
   implementLaunch,
@@ -19,17 +19,16 @@ import {
   PLAN,
   SPEC,
   STAMP,
-  TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
 /** @import { StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
 /** @typedef {Readonly<Record<string, unknown>>} Reply */
 
-const IMPL_TOKENS = 150_000;
 const TITLE_LIMIT = 200;
-// An issue budget with room for triage but not for an implementer session.
-const SMALL_BUDGET = 150_000;
-const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first: ${HANDOFF}. Continue from the current branch state.`;
+// The lead a first session from a spec gets: a restart resumes implement
+// with the handoff of the session before the stop (`every-role-resumes`).
+const EARLIER_HANDOFF = `If ${HANDOFF} exists, an earlier implementer session of this issue wrote it before the issue stopped: read it and the commits on the branch first, and build on them.\n\n`;
+const HANDOFF_LINE = `A previous session ran out of room. Read its handoff first: ${HANDOFF}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 const CONTINUED =
   "This session ran out of room before finishing. Another implementer session continues from its handoff.";
 
@@ -93,13 +92,26 @@ test("the first call charges the implementer and launches a writer from the spec
   const step = next(given, BUILD_CTX, []);
   assert.deepEqual(
     sessions(step),
-    implementer(implementTask(`Spec (also posted on the issue):\n${SPEC}`)),
+    implementer(
+      implementTask(
+        `${EARLIER_HANDOFF}Spec (also posted on the issue):\n${SPEC}`,
+      ),
+    ),
   );
   assert.equal(sessions(step)[0]?.agent, "issue-pipeline-writer");
   assert.equal(step.state.phase, "decide");
-  assert.equal(step.state.st.allocated, TRIAGE_TOKENS + IMPL_TOKENS);
-  assert.deepEqual(step.state.st.sessions, ["triage", "implementer"]);
   assert.deepEqual(given, buildState("implement", { spec: SPEC }));
+});
+
+test("a restart's unwritten spec files lead the session's task", () => {
+  const files = ["test/a.test.mjs", "src/b.ts"];
+  const given = buildState("implement", { spec: SPEC, unwrittenFiles: files });
+  const [session] = sessions(next(given, BUILD_CTX, []));
+  assert.ok(
+    session?.task.includes(
+      "The spec documents these test or stub files, which the branch lacks; write them as part of this work: `test/a.test.mjs`, `src/b.ts`.",
+    ),
+  );
 });
 
 test("without a spec the session works from triage's plan", () => {
@@ -110,13 +122,7 @@ test("without a spec the session works from triage's plan", () => {
   );
 });
 
-test("a budget too small for the session stops", () => {
-  const step = next(buildState("implement"), contextWith(SMALL_BUDGET), []);
-  assert.equal(step.done, true);
-  assert.equal(step.stop?.reason, "issue token budget exhausted");
-});
-
-test("a handoff, then a continuation, then done moves the issue to open-pr", () => {
+test("a handoff, then a continuation, then done and its push moves the issue to open-pr", () => {
   const first = replied(buildState("implement", { spec: SPEC }), {
     status: "handoff",
     summary: "Half done.",
@@ -129,16 +135,17 @@ test("a handoff, then a continuation, then done moves the issue to open-pr", () 
     { by: IMPL_BY, body: `${CONTINUED}\n\nHalf done.`, where: "issue" },
   ]);
   assert.deepEqual(first.state.st.log, [
-    `${STAMP} charged implementer 150000 to issueTokenBudget`,
     `${STAMP} implement: handoff - Half done.`,
   ]);
   const again = begunAgain(first);
   assert.deepEqual(sessions(again), implementer(implementTask(HANDOFF_LINE)));
-  const done = afterSession(next, again, IMPL_BY, {
+  const pushing = afterSession(next, again, IMPL_BY, {
     ok: true,
     structuredOutput: replyOf({ prTitle: "t".repeat(TITLE_LIMIT + 1) }),
   });
+  const done = afterReply(next, pushing, { ok: true, headSha: "bbbbbbb" });
   assert.equal(done.done, true);
+  assert.equal(done.state.st.headSha, "bbbbbbb");
   assert.equal(done.stop, null);
   assert.equal(done.state.st.stage, "open-pr");
   assert.equal(done.state.st.prTitle, `${"t".repeat(TITLE_LIMIT)}…`);

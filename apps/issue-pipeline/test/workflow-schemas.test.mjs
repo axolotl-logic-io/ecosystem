@@ -61,14 +61,14 @@ test("the security re-review schema's new findings require a harm category", () 
   assert.ok(required.includes("category"));
 });
 
-test("the spec schema requires the files the change will touch, as strings", () => {
+// A spec names only its entry points, in its interfaces, not the files a
+// change touches (#388, #391).
+test("the spec schema neither lists nor requires files", () => {
   const { properties = {}, required = [] } = SPEC_SCHEMA;
-  const { files = {} } = properties;
-  assert.ok(required.includes("files"));
-  assert.deepEqual(plain(files), {
-    type: "array",
-    items: { type: "string" },
-  });
+  assert.deepEqual(
+    [Object.hasOwn(properties, "files"), required.includes("files")],
+    [false, false],
+  );
 });
 
 // Reply schema `schema`'s status: whether it is required, and its values.
@@ -93,7 +93,7 @@ test("a review fixer replies done or that it handed off (#269)", () => {
   });
 });
 
-test("the spec schema can split, into at most 5 parts with their files", () => {
+test("the spec schema can split, into at most 5 parts without files", () => {
   const { properties = {}, required = [] } = SPEC_SCHEMA;
   const { decision = {}, subIssues = {} } = properties;
   assert.ok(decision.enum?.includes("split"));
@@ -102,9 +102,12 @@ test("the spec schema can split, into at most 5 parts with their files", () => {
   assert.deepEqual([...(subIssues.items?.required ?? [])].toSorted(), [
     "after",
     "body",
-    "files",
     "title",
   ]);
+  assert.deepEqual(
+    new Set(Object.keys(subIssues.items?.properties ?? {})),
+    new Set(["after", "body", "title"]),
+  );
 });
 
 test("the triage schema has no sub-issues", () => {

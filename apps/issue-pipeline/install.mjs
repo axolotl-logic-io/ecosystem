@@ -3,9 +3,8 @@
 // Builds the issue pipeline from this folder's src/ into dist/ (build.ts; run
 // `npm ci` at the repo root first), then installs it where pi reads it:
 //
-//   dist/workflow.js, dist/ops.mjs            -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
-//   dist/job.mjs, dist/structured-output.mjs  -> $ISSUE_PIPELINE_ROOT (the stage job and its pi extension)
-//   dist/orchestrate.mjs                      -> $ISSUE_PIPELINE_ROOT (the orchestrator)
+//   dist/workflow.js, dist/*.mjs              -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
+//     (BUILT: the sweep, ops, the stage job and its pi extensions, the orchestrator and the reports)
 //   repos/example.json                        -> $ISSUE_PIPELINE_ROOT/repos/
 //   agents/*.md                               -> $PI_CODING_AGENT_DIR/agents/issue-pipeline/ (default ~/.pi/agent)
 //   prompts/*.md                              -> $PI_CODING_AGENT_DIR/prompts/
@@ -50,6 +49,17 @@ const STATUS_WIDTH = 8;
 const GITHUB_PREFIX = /^.*github\.com[:/]/u;
 const GIT_SUFFIX = /\.git$/u;
 const DATE_PUNCTUATION = /[-:]/gu;
+// The build's files in dist/, each installed under its own name in ROOT.
+const BUILT = [
+  "workflow.js",
+  "ops.mjs",
+  "shell-supervisor.mjs",
+  "job.mjs",
+  "orchestrate.mjs",
+  "report.mjs",
+  "structured-output.mjs",
+  "pipeline-commit.mjs",
+];
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const HOME = os.homedir();
@@ -108,23 +118,11 @@ function mdIn(dir) {
 /** @returns {Source[]} */
 function sources() {
   return [
-    {
-      from: "dist/workflow.js",
-      to: path.join(ROOT, "workflow.js"),
+    ...BUILT.map((f) => ({
+      from: `dist/${f}`,
+      to: path.join(ROOT, f),
       fill: false,
-    },
-    { from: "dist/ops.mjs", to: path.join(ROOT, "ops.mjs"), fill: false },
-    { from: "dist/job.mjs", to: path.join(ROOT, "job.mjs"), fill: false },
-    {
-      from: "dist/orchestrate.mjs",
-      to: path.join(ROOT, "orchestrate.mjs"),
-      fill: false,
-    },
-    {
-      from: "dist/structured-output.mjs",
-      to: path.join(ROOT, "structured-output.mjs"),
-      fill: false,
-    },
+    })),
     {
       from: "repos/example.json",
       to: path.join(ROOT, "repos/example.json"),

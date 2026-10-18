@@ -4,41 +4,45 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   flagValue,
   logOf,
+  PASS_VERDICT,
   piCommands,
   piStarts,
-  READY_SPEC,
   repliesAt,
   runJob,
-  SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   sessionOf,
   setScript,
   setUp,
   startJob,
   statusOf,
   USAGE,
-  USAGE_TOTAL,
-  waitFor,
+  USAGE_SPENT,
 } from "./job-test-kit.mjs";
 
-const STAGE_ARGS = ["--stage", "spec", "--lane", "L"];
+const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
 const INTERRUPTED = /interrupted/u;
 // SIGTERM's exit code: 128 + 15.
 const STOPPED_BY_SIGTERM = 143;
 
-// A spec job stopped while its session waits, after it spent USAGE.
+// A sweep stage job stopped while its session waits, after it spent USAGE.
 async function stoppedJob() {
-  const place = setUp(repliesAt("spec"), {
-    events: [messageEnd(USAGE), "wait", outputEnd(READY_SPEC)],
+  const place = setUp(repliesAt(SWEEP_STAGE), {
+    events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
   });
   const job = startJob(place, STAGE_ARGS);
-  await waitFor(() => sessionOf(statusOf(place))?.usage.input > 0);
+  await waitFor(
+    "the session's usage in job.json",
+    () => sessionOf(statusOf(place))?.usage.input > 0,
+  );
   job.child.kill("SIGTERM");
   const end = await job.end;
-  setScript(place, SPEC_SESSION);
+  setScript(place, SWEEP_SESSION);
   return { place, end };
 }
 
@@ -64,7 +68,7 @@ test("--resume reopens the interrupted session with the resume prompt and counts
     fs.readdirSync(path.dirname(session)).filter((f) => f.endsWith(".jsonl")),
     [path.basename(session)],
   );
-  assert.equal(releaseOf(place).state.reportedTokens, 2 * USAGE_TOTAL);
+  assert.equal(releaseOf(place).state.reportedTokens, 2 * USAGE_SPENT);
   const launch = sessionOf(statusOf(place));
   assert.equal(launch.resumed, true);
   assert.equal(launch.usage.input, 2 * USAGE.input);
@@ -81,14 +85,14 @@ test("--resume starts a launch whose session file is gone afresh", async () => {
   assert.equal(second.fresh, true);
   const prompts = piCommands(place).filter(({ type }) => type === "prompt");
   assert.equal(prompts[1].message, prompts[0].message);
-  assert.equal(releaseOf(place).state.reportedTokens, USAGE_TOTAL);
+  assert.equal(releaseOf(place).state.reportedTokens, USAGE_SPENT);
   assert.equal(sessionOf(statusOf(place)).resumed, false);
 });
 
 test("--resume with no earlier job.json runs the stage as a fresh job", () => {
-  const place = setUp(repliesAt("spec"), SPEC_SESSION);
+  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
   const r = runJob(place, [...STAGE_ARGS, "--resume"]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(piStarts(place)[0].fresh, true);
-  assert.equal(releaseOf(place).state.reportedTokens, USAGE_TOTAL);
+  assert.equal(releaseOf(place).state.reportedTokens, USAGE_SPENT);
 });

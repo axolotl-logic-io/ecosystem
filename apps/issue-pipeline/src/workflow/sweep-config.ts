@@ -1,4 +1,4 @@
-// The sweep's settings: the token budgets, models and spawn cap a repo config
+// The sweep's settings: the context budgets, models and spawn cap a repo config
 // may override, and the fixed facts about each stage that the sweep's driver
 // plans with (how many spawns a run of it can take, how often it may begin in
 // one sweep, which stages save first, and the order the stages run in).
@@ -6,20 +6,33 @@
 import type { JobCheckout } from "../config.ts";
 import type { Budgets } from "./budget.ts";
 import type { ModelRole, StageName, SweepConfig } from "./stages/types.ts";
-import type { Role } from "./types.ts";
+import type { JobLayout, Role } from "./types.ts";
 
-// Each role's token budget per session, unless the config's roleBudgets sets it.
+// Each role's context budget per session, unless the config's roleBudgets sets
+// it. A writer's or the spec writer's (WRITER_BUDGET_ROLES) is above the
+// default contextLimits.hard, so the job stops it before the watchdog kills it
+// (wrap-up-at-175k, Axlog, 2026-10-17; #335).
 const ROLE_BUDGETS: Readonly<Record<Role, number>> = {
   triage: 50_000,
-  spec: 80_000,
-  implementer: 150_000,
+  spec: 300_000,
+  implementer: 300_000,
   reviewer: 60_000,
   aggregator: 20_000,
-  fixer: 100_000,
+  fixer: 300_000,
   rereviewer: 40_000,
-  ciFixer: 100_000,
+  ciFixer: 300_000,
   verifier: 60_000,
 };
+
+// The roles whose budgets the sessions held to contextLimits run on: the spec
+// writer's, the implementer's, the fixer's (the conflict resolver's too) and
+// the CI fixer's.
+const WRITER_BUDGET_ROLES: readonly Role[] = [
+  "spec",
+  "implementer",
+  "fixer",
+  "ciFixer",
+];
 
 // Each role's model, unless the config's models sets it.
 const MODELS: Readonly<Record<ModelRole, string>> = {
@@ -46,7 +59,7 @@ const DEFAULT_SPAWN_LIMIT = 64;
 const STAGE_SPAWNS: Readonly<Record<StageName, number>> = {
   triage: 4,
   spec: 3,
-  implement: 1,
+  implement: 2,
   "open-pr": 3,
   review: 7,
   fix: 9,
@@ -98,12 +111,14 @@ function stageArgOf(name: string, value: unknown): StageName | null {
 // config's path, the lane, the one issue a human launched the run for, if
 // any, whether to take it even when stopped (takeStopped), the last stage
 // (through) or only stage (stage) it may begin, a stage job's checkout,
-// which every request then names, the merge order the orchestrator ranked
+// which every request then names, and its folder (job), which its prompts
+// name, the merge order the orchestrator ranked
 // (mergeQueue), and the issue whose branch a claimed issue with none starts
 // on (stackOn, #268).
 interface SweepArgs {
   config: string;
   checkout?: JobCheckout;
+  job?: JobLayout;
   lane?: unknown;
   issue?: unknown;
   takeStopped?: unknown;
@@ -172,10 +187,13 @@ interface RunPins {
   stage: StageName | null;
   mergeQueue: readonly number[] | null;
   stackOn: number | null;
+  // A stage job's folder, which the claimed issue's paths carry.
+  job: JobLayout | null;
 }
 
 function runPinsOf(args: SweepArgs): RunPins {
   return {
+    job: args.job ?? null,
     target: sweepTargetOf(args.issue, args.takeStopped),
     through: stageArgOf("through", args.through),
     stage: stageArgOf("stage", args.stage),
@@ -217,9 +235,8 @@ function sweepSettings(cfg: SweepConfig): SweepSettings {
     budgets: {
       roles: { ...ROLE_BUDGETS, ...cfg.roleBudgets },
       sessionCap: cfg.sessionTokenCap,
+      softLimit: cfg.contextLimits.soft,
       hardLimit: cfg.contextLimits.hard,
-      issueBudget: cfg.issueTokenBudget,
-      rebaseBudget: cfg.rebaseTokenBudget,
     },
     models: { ...MODELS, ...cfg.models },
     spawnLimit: spawnLimitOf(cfg.maxSpawnsPerRun),
@@ -250,6 +267,7 @@ export {
   laneOf,
   PASSES_USED,
   passesOf,
+  ROLE_BUDGETS,
   runPinsOf,
   SAVE_BEFORE,
   STAGE_GROUPS,
@@ -258,5 +276,6 @@ export {
   spawnLimitOf,
   sweepSettings,
   sweepTargetOf,
+  WRITER_BUDGET_ROLES,
   within,
 };

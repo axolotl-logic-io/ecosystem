@@ -4,6 +4,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { addSubmodule } from "./submodule-test-kit.mjs";
 
 // The base branch the job tests' config names.
 const BASE = "integration";
@@ -58,8 +59,10 @@ function seedOrigins(tmp, wiki) {
   }
   const wikiOrigin = path.join(tmp, "wiki-origin.git");
   seedBare(wikiOrigin, WIKI_BRANCH, "Home.md");
-  const wikiConfig = { url: wikiOrigin, branch: WIKI_BRANCH };
-  return { origin, wikiOrigin, config: { ...config, wiki: wikiConfig } };
+  const seed = `${origin}-seed`;
+  addSubmodule(seed, wikiOrigin);
+  git(["-C", seed, "push", "--quiet", origin, `HEAD:refs/heads/${BASE}`]);
+  return { origin, wikiOrigin, config: { ...config, wiki: true } };
 }
 
 /**
@@ -95,8 +98,8 @@ function branchOnOrigin(origin, issue = 7) {
 }
 
 /**
- * Where stage `stage`'s job for #7 keeps its checkout under the pipeline
- * root `root`.
+ * Where stage `stage`'s job for #7 keeps its folder, which holds its
+ * checkouts, under the pipeline root `root`.
  * @param {string} root
  * @param {string} stage
  * @returns {string}
@@ -105,4 +108,33 @@ function checkoutOf(root, stage) {
   return path.join(root, "work/o__r/jobs", `issue-7-${stage}`);
 }
 
-export { BASE, branchOnOrigin, checkoutOf, refOf, seedOrigins };
+/**
+ * Stage `stage`'s job's code checkout, repo/ in its folder.
+ * @param {string} root
+ * @param {string} stage
+ * @returns {string}
+ */
+function repoOf(root, stage) {
+  return path.join(checkoutOf(root, stage), "repo");
+}
+
+/**
+ * Stage `stage`'s job's wiki checkout, docs/ in its folder.
+ * @param {string} root
+ * @param {string} stage
+ * @returns {string}
+ */
+function docsOf(root, stage) {
+  return path.join(checkoutOf(root, stage), "docs");
+}
+
+export {
+  BASE,
+  branchOnOrigin,
+  checkoutOf,
+  docsOf,
+  refOf,
+  repoOf,
+  seedOrigins,
+  WIKI_BRANCH,
+};

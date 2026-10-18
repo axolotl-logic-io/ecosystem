@@ -1,8 +1,10 @@
 // @ts-check
 // Config `contextLimits` (the soft and hard context limits a writer session
 // works to, in tokens) and `maxContinuations` (handoffs each writer stage may
-// continue, per issue) default to 150000/175000 and 1 (#269), and loadConfig
-// refuses limits that are not positive whole numbers with soft below hard.
+// continue, per issue) default to 175000/225000 and 1 (#269,
+// wrap-up-at-175k), and loadConfig refuses limits that are not positive whole
+// numbers with soft below hard, and a hard limit at or above a writer's or
+// the spec writer's context budget, which the watchdog kills it past (#335).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,6 +17,15 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-limits-"));
 process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
 let files = 0;
 const SEVERAL = 3;
+// The default sessionTokenCap, a writer's watchdog budget.
+const WRITER_CAP = 300_000;
+// The default contextLimits.hard, and the spec writer's budget before #335.
+const DEFAULT_HARD = 225_000;
+const OLD_SPEC_BUDGET = 80_000;
+const BELOW_WRITER_BUDGETS =
+  /contextLimits\.hard \(225000\) must be below every writer's context budget, but ciFixer's is 100000/u;
+const BELOW_SPEC_BUDGET =
+  /contextLimits\.hard \(225000\) must be below every writer's context budget, but spec's is \d+/u;
 
 /** @param {object} extra @returns {string} */
 function configWith(extra) {
@@ -45,10 +56,50 @@ function refuses(extra) {
   return false;
 }
 
-test("context limits default to 150000 soft, 175000 hard, one continuation", () => {
+test("context limits default to 175000 soft, 225000 hard, one continuation, below the 300000 writer cap", () => {
   const cfg = loadConfig(configWith({}));
-  assert.deepEqual(cfg.contextLimits, { soft: 150_000, hard: 175_000 });
+  assert.deepEqual(cfg.contextLimits, { soft: 175_000, hard: 225_000 });
   assert.equal(cfg.maxContinuations, 1);
+  const { sessionTokenCap } = cfg;
+  assert.equal(sessionTokenCap, WRITER_CAP);
+});
+
+test("a hard limit at or above a writer's context budget is refused, naming the role", () => {
+  const writerBudgets = [
+    { sessionTokenCap: 225_000 },
+    { sessionTokenCap: 200_000 },
+    { roleBudgets: { implementer: 225_000 } },
+    { roleBudgets: { fixer: 200_000 } },
+    { roleBudgets: { ciFixer: 100_000 } },
+  ];
+  for (const bad of writerBudgets) {
+    assert.ok(refuses(bad), JSON.stringify(bad));
+  }
+  assert.throws(
+    () => loadConfig(configWith({ roleBudgets: { ciFixer: 100_000 } })),
+    BELOW_WRITER_BUDGETS,
+  );
+});
+
+test("a spec writer's budget at or below the hard limit is refused, naming spec, and the defaults load", () => {
+  for (const spec of [DEFAULT_HARD, OLD_SPEC_BUDGET]) {
+    assert.throws(
+      () => loadConfig(configWith({ roleBudgets: { spec } })),
+      BELOW_SPEC_BUDGET,
+    );
+  }
+  assert.equal(loadConfig(configWith({})).contextLimits.hard, DEFAULT_HARD);
+});
+
+test("a hard limit below every writer's budget loads, whatever a reader's budget is", () => {
+  const cfg = loadConfig(
+    configWith({
+      sessionTokenCap: 300_000,
+      roleBudgets: { implementer: 300_000, triage: 50_000, spec: 300_000 },
+      contextLimits: { soft: 175_000, hard: 225_000 },
+    }),
+  );
+  assert.deepEqual(cfg.contextLimits, { soft: 175_000, hard: 225_000 });
 });
 
 test("other positive limits with soft below hard are kept", () => {

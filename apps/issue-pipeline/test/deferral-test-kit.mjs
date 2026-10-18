@@ -18,7 +18,6 @@ function deferral(step) {
     launches: Object.hasOwn(step, "launches"),
     held: step.state.held,
     stage: st.stage,
-    allocated: st.allocated,
     log: st.log,
   };
 }
@@ -40,7 +39,6 @@ function deferredFrom(given, op, stamp) {
     launches: false,
     held: given.held,
     stage: given.st.stage,
-    allocated: given.st.allocated,
     log: [
       ...(given.st.log ?? []),
       `${stamp} deferred: network error during ${op}; will retry next sweep`,

@@ -11,11 +11,10 @@ import { CTX, ITEM, replied } from "./workflow-review-test-kit.mjs";
 
 /** @import { Launch, StageContext, StageState, Step } from "../src/workflow/stages/types.ts" */
 
-const FIXER_TOKENS = 100_000;
-const HARD_LIMIT = /\b175000 tokens\b/u;
+const HARD_LIMIT = /\b225000 tokens\b/u;
 const EFFORT_GUESS = /15 files|30 substantial tool calls/u;
 const HANDOFF = { ...FIXED, status: "handoff", summary: "Half fixed." };
-const LEAD = `A previous session ran out of room. Read its handoff first: ${ITEM.paths.handoffFile}. Continue from the current branch state.`;
+const LEAD = `A previous session ran out of room. Read its handoff first: ${ITEM.paths.handoffFile}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 
 /** @param {Step} step @returns {readonly [Launch, ...Launch[]]} */
 function launchesOf(step) {
@@ -55,7 +54,7 @@ test("the fixer's prompt states the hard limit in tokens, not an effort guess", 
   assert.equal(task.includes(LEAD), false);
 });
 
-test("a fixer's handoff launches a charged continuation in the same round", () => {
+test("a fixer's handoff launches a continuation in the same round", () => {
   const { begun, fixed } = fixedWith(fixState(), HANDOFF);
   const [continuation] = launchesOf(fixed);
   assert.equal(continuation.kind, "child");
@@ -64,7 +63,6 @@ test("a fixer's handoff launches a charged continuation in the same round", () =
   assert.notEqual(continuation.name, launchesOf(begun)[0].name);
   assert.equal(fixed.state.st.round, 1);
   assert.deepEqual(fixed.state.st.continuations, { fix: 1 });
-  assert.equal(fixed.state.st.allocated, 2 * FIXER_TOKENS);
 });
 
 test("a continuation that finishes pushes the fix", () => {

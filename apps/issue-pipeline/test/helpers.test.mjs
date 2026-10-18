@@ -19,9 +19,7 @@ Object.assign(
   process.env,
   Object.fromEntries([["ISSUE_PIPELINE_ROOT", "/opt/pipeline-root"]]),
 );
-const { fileSetsOverlap, globsOverlap, globToRegExp, matchAny } = await import(
-  "../src/globs.ts"
-);
+const { globToRegExp, matchAny } = await import("../src/globs.ts");
 const { signature, signed } = await import("../src/comments.ts");
 const { ghIsRead, redactGhArgs } = await import("../src/github.ts");
 const { redactLocalPaths, HOME } = await import("../src/pipeline-root.ts");
@@ -82,12 +80,53 @@ test("text posted to GitHub names local paths by variable", () => {
   );
 });
 
+// Text that names no address: times, a SHA and a version (#385).
+const NOT_ADDRESSES =
+  "at 01:02:03, 01:02Z and 2026-10-17T13:52:55.123Z, head ad7243c0123456789abcdef0123456789abcdef0, v1.2.3";
+
+test("text posted to GitHub hides IP addresses, with or without a port", () => {
+  assert.deepEqual(
+    redactGhArgs([
+      "api",
+      "repos/o/r/issues/7/comments",
+      "-f",
+      "body=read tcp 10.0.0.5:51234->1.2.3.4:443: read: connection reset",
+      "--title",
+      "from [2001:db8::1]:443, 2001:db8::1, fe80::1 and 2001:0db8:0000:0000:0000:ff00:0042:8329",
+      "--body",
+      NOT_ADDRESSES,
+    ]),
+    [
+      "api",
+      "repos/o/r/issues/7/comments",
+      "-f",
+      "body=read tcp [redacted]->[redacted]: read: connection reset",
+      "--title",
+      "from [redacted], [redacted], [redacted] and [redacted]",
+      "--body",
+      NOT_ADDRESSES,
+    ],
+  );
+});
+
 test("only GETs and list or view commands count as reads", () => {
   assert.equal(ghIsRead(["api", "repos/o/r/issues"]), true);
   assert.equal(ghIsRead(["api", "-X", "POST", "x"]), false);
   assert.equal(ghIsRead(["api", "x", "-f", "a=b"]), false);
   assert.equal(ghIsRead(["pr", "view", "1"]), true);
   assert.equal(ghIsRead(["pr", "merge", "1"]), false);
+});
+
+test("a state saved with the old spend fields still loads, keeping them", () => {
+  const state = {
+    ...newState(STATE_ISSUE, 1),
+    allocated: 1_990_000,
+    rebaseAllocated: 450_000,
+    rechecking: true,
+    sessions: ["triage", "spec"],
+  };
+  const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->\n<sub>x</sub>`;
+  assert.deepEqual(parseStateBody(body), state);
 });
 
 test("a state comment's body gives its state, or null", () => {
@@ -106,7 +145,6 @@ test("a state comment's body gives its state, or null", () => {
     "verifiedSha",
     "findings",
     "round",
-    "allocated",
   ];
   assert.deepEqual(
     promised.filter((key) => !(key in state)),
@@ -114,17 +152,17 @@ test("a state comment's body gives its state, or null", () => {
   );
 });
 
-test("a job checkout stands in for its own issue's worktree and wiki only", () => {
+test("a job checkout stands in for its own issue's worktree, with the wiki checkout docs/ beside it, and for its issue only", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-paths-"));
   process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "o__r.json");
-  const checkout = { issue: STATE_ISSUE, dir: "/jobs/issue-7-spec" };
+  const checkout = { issue: STATE_ISSUE, dir: "/jobs/issue-7-spec/repo" };
   const config = {
     repo: "o/r",
     account: "bot",
     allowedUsers: ["alice"],
     commands: { test: "true" },
-    wiki: { dir: "docs" },
+    wiki: { dir: "wiki" },
     checkout,
   };
   fs.writeFileSync(file, JSON.stringify(config));
@@ -132,26 +170,11 @@ test("a job checkout stands in for its own issue's worktree and wiki only", () =
   assert.equal(cfg.checkout, undefined);
   const work = "/opt/pipeline-root/work/o__r";
   assert.equal(paths.worktree(cfg, STATE_ISSUE), `${work}/issue-7`);
-  assert.equal(paths.wiki(cfg, STATE_ISSUE), `${work}/issue-7/docs`);
+  assert.equal(paths.wiki(cfg, STATE_ISSUE), `${work}/issue-7/wiki`);
   const scoped = withCheckout(cfg, checkout);
-  assert.equal(paths.worktree(scoped, STATE_ISSUE), "/jobs/issue-7-spec");
+  assert.equal(paths.worktree(scoped, STATE_ISSUE), "/jobs/issue-7-spec/repo");
   assert.equal(paths.wiki(scoped, STATE_ISSUE), "/jobs/issue-7-spec/docs");
   const other = STATE_ISSUE + 1;
   assert.equal(paths.worktree(scoped, other), `${work}/issue-${other}`);
   assert.equal(withCheckout(cfg, null), cfg);
-});
-
-test("globs overlap when equal, when one matches the other's path, or when their literal prefixes nest", () => {
-  assert.equal(globsOverlap("src/a.ts", "src/a.ts"), true);
-  assert.equal(globsOverlap("src/**", "src/a/b.ts"), true);
-  assert.equal(globsOverlap("src/a/b.ts", "src/**"), true);
-  assert.equal(globsOverlap("src/*.ts", "src/*.md"), true);
-  assert.equal(globsOverlap("src/**", "src/a/*.ts"), true);
-  assert.equal(globsOverlap("**", "docs/x.md"), true);
-  assert.equal(globsOverlap("src/a.ts", "docs/x.md"), false);
-  assert.equal(globsOverlap("src/*.ts", "docs/x.md"), false);
-  assert.equal(globsOverlap("src/**", "docs/**"), false);
-  assert.equal(fileSetsOverlap(["a.ts", "docs/**"], ["docs/x.md"]), true);
-  assert.equal(fileSetsOverlap(["a.ts"], ["b.ts", "c/**"]), false);
-  assert.equal(fileSetsOverlap([], ["**"]), false);
 });

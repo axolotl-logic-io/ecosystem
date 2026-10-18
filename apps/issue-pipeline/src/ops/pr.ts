@@ -1,7 +1,7 @@
 // The issue's pull request: start-pr opens it as a draft before any code is
-// written, open-pr fills it in and marks it ready (reopening a closed one),
-// close-pr closes the draft of a change that lives only in the wiki, and push
-// pushes the branch. How a PR links to its issue lives here.
+// written, or, given a body, sets the body of the one it finds; open-pr fills
+// it in and marks it ready (reopening a closed one), close-pr closes the draft
+// of a change that lives only in the wiki, and push pushes the branch. How a PR links to its issue lives here.
 
 import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
@@ -40,10 +40,12 @@ type Op = (
 const DRAFT_TEXT =
   "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.";
 const IMPLEMENTER: Author = { role: "implementer" };
+const COORDINATOR: Author = { role: "coordinator" };
 
 const START_REQUEST = z.looseObject({
   number: z.number().int(),
   plan: z.string().nullish(),
+  body: z.string().nullish(),
 });
 const OPEN_REQUEST = z.looseObject({
   number: z.number().int(),
@@ -136,28 +138,44 @@ function startBranch(cfg: Config, n: number): string {
   }
   assertClean(wt);
   const message = `Start work on #${n}\n\nPipeline-Agent: coordinator`;
-  run("git", ["-C", wt, "commit", "--allow-empty", "-m", message]);
+  // A job checkout's pre-commit hook passes only commits that say so.
+  const env = new Map([["ISSUE_PIPELINE_COMMIT", "1"]]);
+  run("git", ["-C", wt, "commit", "--allow-empty", "-m", message], { env });
   return push(cfg, n, "start-pr", { allowEmpty: true }).headSha;
 }
 
-// Open the issue's PR as a draft as soon as triage says ready, before any code is
-// written. open-pr later fills in the PR and marks it ready.
+// The PR body a start-pr request's `body` gives issue `n`, signed by the
+// coordinator, or undefined when it gives none (missing or empty).
+function givenBody(
+  n: number,
+  body: string | null | undefined,
+): string | undefined {
+  if (body === undefined || body === null || body === "") {
+    return undefined;
+  }
+  return signed(COORDINATOR, closesBody(n, body));
+}
+
+// Opens the issue's PR as a draft before any code is written, or finds the
+// branch's open PR, and labels it working. Given a body, the draft opens with
+// it, or the found PR's body becomes it, staying a draft or ready as it was.
+// open-pr later fills in the PR and marks it ready.
 function startPr(cfg: Config, request: unknown): PrReply {
-  const { number: n, plan } = parsed(
-    START_REQUEST,
-    "start-pr request",
-    request,
-  );
+  const req = parsed(START_REQUEST, "start-pr request", request);
+  const n = req.number;
   const reply = ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${n}`]);
   const issue = parsed(ISSUE, "gh issue reply", reply);
   const headSha = startBranch(cfg, n);
+  const given = givenBody(n, req.body);
   let pr = openPrFor(cfg, n);
   if (pr === undefined) {
-    const text = [DRAFT_TEXT, planDetails(plan)].join("\n");
+    const text = [DRAFT_TEXT, planDetails(req.plan)].join("\n");
     pr = createPr(cfg, n, ["--draft"], {
       title: titleFor(n, issue.title),
-      body: signed({ role: "coordinator" }, closesBody(n, text)),
+      body: given ?? signed(COORDINATOR, closesBody(n, text)),
     });
+  } else if (given !== undefined) {
+    gh(cfg, ["pr", "edit", String(pr), "-R", cfg.repo, "--body", given]);
   }
   setLabels(cfg, pr, [LABELS.working.name], []);
   return { pr, headSha };
@@ -211,13 +229,25 @@ function openPr(cfg: Config, request: unknown): OpenReply {
   return { pr, ...pushed };
 }
 
+// gh's answer to a PR's state ("OPEN", "CLOSED" or "MERGED").
+const PR_STATE = z.looseObject({ state: z.string() });
+
+function isOpen(cfg: Config, pr: number): boolean {
+  const args = ["pr", "view", String(pr), "-R", cfg.repo, "--json", "state"];
+  return PR_STATE.safeParse(ghJson(cfg, args)).data?.state === "OPEN";
+}
+
 // Closes the draft PR of a change that lives only in the wiki, saying where
-// the change is.
+// the change is. A PR that isn't open is left as it is, so a second close
+// posts nothing.
 function closePr(cfg: Config, request: unknown): CloseReply {
   const req = parsed(CLOSE_REQUEST, "close-pr request", request);
+  if (!isOpen(cfg, req.pr)) {
+    return { pr: req.pr, closed: true };
+  }
   const branch = paths.branch(req.number);
   const text = `This change lives only in the wiki, on the wiki branch \`${branch}\`, so this PR has no code to merge and is closed. The pipeline reopens it if a later fix changes code.`;
-  const comment = signed({ role: "coordinator" }, text);
+  const comment = signed(COORDINATOR, text);
   gh(cfg, [
     "pr",
     "close",
@@ -235,11 +265,20 @@ function pushOp(cfg: Config, request: unknown): PushReply {
   return push(cfg, number, "push");
 }
 
+// The push a writer's stage job makes as it exits, of commits its checkout
+// holds past the last state save (src/job/exit-push.ts). It is recorded as
+// "exit-push", which the next claim may adopt (src/start-state.ts).
+function exitPushOp(cfg: Config, request: unknown): PushReply {
+  const { number } = parsed(PUSH_REQUEST, "exit-push request", request);
+  return push(cfg, number, "exit-push");
+}
+
 const prOps: Readonly<Record<string, Op>> = {
   "start-pr": startPr,
   "open-pr": openPr,
   "close-pr": closePr,
   push: pushOp,
+  "exit-push": exitPushOp,
 };
 
 export { prOps };

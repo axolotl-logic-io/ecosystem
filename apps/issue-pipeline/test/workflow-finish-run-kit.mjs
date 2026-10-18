@@ -33,16 +33,14 @@ const CHECKED = {
   verifySummary: "test: passed",
   implemented: true,
   spec: "## Behaviour\n\n1. src/a.ts does the thing.",
-  allocated: 820_000,
 };
 // Issue #7 with acceptance passed.
 const ACCEPTED = {
   ...CHECKED,
   acceptReason: "Does what #7 asks.",
-  allocated: 880_000,
 };
-// Issue #7 with the security review passed.
-const SECURED = { ...ACCEPTED, allocated: 940_000 };
+// Issue #7 with the security review passed: its state is ACCEPTED's.
+const SECURED = ACCEPTED;
 
 // A run of issue #7 claimed at `stage` with `fields`, with ops and agents.
 /** @param {FinishRun} run @returns {Promise<{ trace: TraceEntry[], summary: unknown }>} */
@@ -76,7 +74,6 @@ function issueSummary(fields) {
         pr: 42,
         outcome: "in-progress",
         reason: null,
-        rebaseAllocatedTokens: 0,
         ...fields,
       },
     ],

@@ -2,7 +2,8 @@
 // Fixtures for driving the spec, implement and open-pr step machines directly:
 // a context with a fixed clock, issue #7's state at a stage, the signatures,
 // and the launches and tasks the sweep has always used.
-import { practicesNote, preamble } from "../src/workflow/prompts.ts";
+import { practicesNote } from "../src/workflow/practices.ts";
+import { NO_ARTIFICIAL_LOAD_RULE, preamble } from "../src/workflow/prompts.ts";
 import { IMPL_SCHEMA, SPEC_SCHEMA } from "../src/workflow/schemas.ts";
 import { hasRoom, modelsWith } from "./workflow-context-test-kit.mjs";
 
@@ -47,6 +48,9 @@ const ROLES = {
   verifier: 60_000,
 };
 const SESSION_CAP = 150_000;
+// contextLimits.soft, and the split bound: two implementer sessions (#413).
+const SOFT_LIMIT = 175_000;
+const SPLIT_BOUND = 2 * SOFT_LIMIT;
 const SPEC_MODEL = "anthropic/claude-opus-5-5";
 const IMPL_MODEL = "anthropic/claude-sonnet-5-5";
 const PLAN = "Change src/a.ts and test it.";
@@ -57,29 +61,25 @@ const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
 const SPEC_END = "<!-- end of spec -->";
 const SPEC_REPLY = `${SPEC}\n\n${SPEC_END}`;
 
-// Every kit's rebase pool (`rebaseTokenBudget`).
-const REBASE_BUDGET = 500_000;
-
-/** @param {number} issueBudget @returns {StageContext} */
-function contextWith(issueBudget) {
+/** @returns {StageContext} */
+function contextWith() {
   return {
     cfg: CFG,
     budgets: {
       roles: ROLES,
       sessionCap: SESSION_CAP,
-      hardLimit: 175_000,
-      issueBudget,
-      rebaseBudget: REBASE_BUDGET,
+      softLimit: SOFT_LIMIT,
+      hardLimit: 225_000,
     },
     models: modelsWith({ spec: SPEC_MODEL, implementer: IMPL_MODEL }),
     now: () => NOW,
     hasRoom,
     mergeQueue: null,
+    committer: "git",
   };
 }
 
-const ISSUE_BUDGET = 1_000_000;
-const BUILD_CTX = contextWith(ISSUE_BUDGET);
+const BUILD_CTX = contextWith();
 
 // Issue #7 at `stage`'s first call, after triage, with `fields` replacing its
 // saved state's.
@@ -99,8 +99,6 @@ function buildState(stage, fields = {}, paths = PATHS) {
       headSha: "aaaaaaa",
       implemented: false,
       plan: PLAN,
-      allocated: TRIAGE_TOKENS,
-      sessions: ["triage"],
       continuations: {},
       findings: [],
       log: [],
@@ -141,23 +139,23 @@ function specTask(paths = PATHS) {
   if (paths.wiki) {
     start = ` (start from ${paths.wiki}/Home.md)`;
   }
-  return preamble(CFG, item, "spec writer", ROLES.spec)
+  return preamble(CFG, item, "spec writer")
     .concat([
       `Triage found this issue ready. Its notes:\n${PLAN}`,
       "",
       `Write the spec the implementer will build to and the acceptance check will judge against. Read, in this order: the issue; the project's coding practices (below); the wiki pages that bear on it${start}; the code it touches; and, only for what the repo can't answer, the web (library APIs, standards, platform limits). Cite each source.`,
       practicesNote(CFG, item, "spec"),
+      NO_ARTIFICIAL_LOAD_RULE,
       "`spec` is GitHub markdown with these sections:",
       "- **Behaviour**: what is true when the issue is done, as checkable statements.",
       "- **Out of scope**: what this issue does not change.",
-      "- **Design**: the approach, the files to change with `file:line` anchors, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
+      "- **Design**: the approach, with `file:line` anchors to the code it builds on, and the coding practices and wiki decisions it follows. If it departs from a wiki decision, say which and why, and say the implementer must update that wiki page.",
       "- **Tests**: the tests to add or change, each naming the behaviour it pins down and why it fails today.",
       '- **Wiki updates**: wiki pages to add or change, or "None".',
       "- **Assumptions and risks**, then **Sources** (files, wiki pages, URLs).",
-      "`files` lists the repo paths or globs the change will touch, relative to the repo root, without wiki pages (such as `src/a.ts` or `src/orchestrator/**`). The orchestrator holds back other changes that touch them.",
       "Keep it under about 150 lines. Set `decision` to ready, with `questions` and `subIssues` empty.",
       "Only if the work can't be specified without a maintainer's answer, set `decision` to needs-info, ask at most 5 specific questions, put what you found so far in `spec`, and leave `subIssues` empty.",
-      `Only if one implementer session (at most ${SESSION_CAP} tokens of context) can't implement and test it, set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria. Put its slice of the spec in its \`body\`, and in its \`files\` the paths from \`files\` it touches. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`,
+      `Only if implementing and testing it would take more than two implementer sessions (more than ${SPLIT_BOUND} tokens of context, twice \`contextLimits.soft\`), set \`decision\` to split and give 2 to 5 \`subIssues\`, each a complete, independently testable change with its own acceptance criteria that two implementer sessions can implement and test. Put its slice of the spec in its \`body\`. Use \`after\` to list the 0-based indexes of earlier parts that must merge first. Parts without \`after\` run in parallel, and each merge makes the others rebase onto it, so two that edit the same file conflict and redo their checks. Cut along file boundaries: give each file to one part where you can. Where two must edit the same file, such as a shared index, registry or wiki page, put one \`after\` the other so they run in turn. Prefer fewer parts to many that share files.`,
       `Whatever the decision, end \`spec\` with the line \`${SPEC_END}\`, written last, after every section. A spec without it counts as one that stopped partway.`,
     ])
     .join("\n");
@@ -174,6 +172,7 @@ function specLaunch(task) {
     model: SPEC_MODEL,
     schema: SPEC_SCHEMA,
     minutes: 30,
+    budgetRole: "spec",
     tokenBudget: ROLES.spec,
     task,
   };
@@ -184,22 +183,25 @@ function specLaunch(task) {
 /** @param {string} source @returns {string} */
 function implementTask(source) {
   const item = { n: 7, paths: PATHS };
-  return preamble(CFG, item, "implementer", SESSION_CAP)
+  return preamble(CFG, item, "implementer")
     .concat([
       practicesNote(CFG, item, "writer"),
       source,
       "",
       "Do this:",
       "1. Write or update tests that specify the fix. They must fail without your change.",
-      "2. Implement the smallest change that resolves the issue. Do not refactor unrelated code.",
+      "2. Implement the change that resolves the issue.",
       "3. Run the tests (`npm test`), lint (`npm run lint`) and fix failures.",
-      "4. Commit everything with clear messages (`git add -A && git commit`), ending each message with the trailer line `Pipeline-Agent: implementer`. Leave the worktree clean.",
+      "4. Commit as you go (see below), and commit what is left at the end. Leave the worktree clean.",
       `5. Make the wiki updates the spec lists, and record any new design decision, in the wiki checkout: edit its pages, then commit there (\`git -C ${WIKI} add -A && git -C ${WIKI} commit\`, same trailer). Leave it clean too. Reviewers see those commits, and they reach the wiki when the PR merges.`,
       "Change lockfiles only through the package manager, never by hand.",
+      "Scope doesn't limit you to the issue: fix anything broken you find while you work, such as bugs or flaky or broken tests and checks, including breakage on integration, and simplify, remove code smells or refactor the code you work in so the change has a better design. Keep the issue's change the main one, commit each such fix or improvement as its own commit with a message that says what it does and why, keep the tests passing, and name each one in `prBody`.",
+      NO_ARTIFICIAL_LOAD_RULE,
       "",
-      `Hard limit: 175000 tokens of context. If this session passes it before the work is done, stop: commit what builds, write ${HANDOFF} (what is done, what is left, current branch state), and return status \`handoff\`. A new session continues from your handoff.`,
+      "Commit often, in small working steps: commit each step with `git add -A && git commit` and a clear message as soon as it builds and its tests pass, ending each message with the trailer line `Pipeline-Agent: implementer`. Don't save your work for one commit at the end; a session that is stopped or killed loses whatever it hasn't committed.",
+      `Context limits: at 175000 tokens of context, if the work isn't done, wrap up: finish the edit you are in the middle of and start no new ones, make it build and commit it, then write ${HANDOFF} as a summary for the next round (what is done; what is left, in order; the decisions you made and why; the traps and dead ends you found; and the branch state, with the last commit and whether the checks pass), and return status \`handoff\`. The next session starts from your summary alone. At 225000 tokens of context the session is stopped.`,
       "Return `blocked` only if the issue cannot be done as written; explain in `summary`.",
-      "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, and how it is tested).",
+      "`prTitle` and `prBody` describe the change for reviewers (body: what changed and why, how it is tested, and each fix or improvement beyond the issue).",
     ])
     .join("\n");
 }
@@ -216,6 +218,7 @@ function implementLaunch(task) {
     schema: IMPL_SCHEMA,
     writer: true,
     minutes: 90,
+    budgetRole: "implementer",
     tokenBudget: SESSION_CAP,
     task,
   };

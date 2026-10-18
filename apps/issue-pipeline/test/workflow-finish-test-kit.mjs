@@ -50,7 +50,6 @@ const MODELS = {
 const VERIFIED = "feedfacefeedfacefeedfacefeedfacefeedface";
 // The verified head as a comment names it.
 const SHORT_SHA = "feedfacefeed";
-const ISSUE_BUDGET = 1_000_000;
 const DIFF = {
   ok: true,
   headSha: VERIFIED,
@@ -65,28 +64,25 @@ const SIGNATURE = {
   run: "i7-accept-4",
 };
 
-// Every kit's rebase pool (`rebaseTokenBudget`).
-const REBASE_BUDGET = 500_000;
-
-/** @param {number} issueBudget @returns {StageContext} */
-function contextWith(issueBudget) {
+/** @returns {StageContext} */
+function contextWith() {
   return {
     cfg: CFG,
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
-      hardLimit: 175_000,
-      issueBudget,
-      rebaseBudget: REBASE_BUDGET,
+      softLimit: 175_000,
+      hardLimit: 225_000,
     },
     models: modelsWith(MODELS),
     now: () => NOW,
     hasRoom,
     mergeQueue: null,
+    committer: "git",
   };
 }
 
-const CTX = contextWith(ISSUE_BUDGET);
+const CTX = contextWith();
 
 // Issue #7, verified and at `stage`'s first call, with `fields` replacing its
 // saved state's and `item` the stage state's.
@@ -106,8 +102,6 @@ function stateWith(stage, fields = {}, item = {}) {
       headSha: VERIFIED,
       verifiedSha: VERIFIED,
       verifySummary: "test: ok",
-      allocated: 0,
-      sessions: [],
       findings: [],
       log: [],
       ...fields,
@@ -150,12 +144,10 @@ function decided(next, given, output) {
   return sessionEnded(next, step, { ok: true, structuredOutput: output });
 }
 
-// A child's whole task: the preamble for `role` and `cap`, then `lines`.
-/** @param {string} role @param {number} cap @param {readonly string[]} lines @returns {string} */
-function taskOf(role, cap, lines) {
-  return preamble(CFG, { n: 7, paths: PATHS }, role, cap)
-    .concat(lines)
-    .join("\n");
+// A child's whole task: the preamble for `role`, then `lines`.
+/** @param {string} role @param {readonly string[]} lines @returns {string} */
+function taskOf(role, lines) {
+  return preamble(CFG, { n: 7, paths: PATHS }, role).concat(lines).join("\n");
 }
 
 export {

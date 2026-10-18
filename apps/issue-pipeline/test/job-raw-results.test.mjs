@@ -8,7 +8,7 @@ import { launchResults, parseOps } from "../src/workflow/launch-results.ts";
 /** @import { ProcessExit } from "../src/job/raw-results.ts" */
 /** @import { ChildLaunch, ChildResult, LaunchResult } from "../src/workflow/stages/types.ts" */
 /** @import { IssueState } from "../src/workflow/types.ts" */
-/** @typedef {{ input: number, output: number, cacheRead: number, cacheWrite: number }} Usage */
+/** @import { Usage } from "../src/job/token-usage.ts" */
 
 const LAUNCH = { key: "i7-spec-4", agent: "issue-pipeline-specifier" };
 /** @type {ChildLaunch} */
@@ -21,6 +21,7 @@ const SPEC_LAUNCH = {
   model: "anthropic/claude-opus-5-5",
   schema: { type: "object" },
   minutes: 30,
+  budgetRole: "spec",
   tokenBudget: 80_000,
   task: "Write the spec.",
 };
@@ -45,7 +46,12 @@ function jsonl(events) {
 function assistantEnd(usage, extra = {}) {
   return {
     type: "message_end",
-    message: { role: "assistant", content: [], usage, ...extra },
+    message: {
+      role: "assistant",
+      content: [],
+      usage: piUsage(usage),
+      ...extra,
+    },
   };
 }
 
@@ -60,17 +66,47 @@ function outputEnd(details, isError = false) {
   };
 }
 
-const USAGE_A = { input: 100, output: 20, cacheRead: 300, cacheWrite: 40 };
-const USAGE_B = { input: 5, output: 6, cacheRead: 7, cacheWrite: 8 };
-const SUM_AB = { input: 105, output: 26, cacheRead: 307, cacheWrite: 48 };
+// pi's shape for `usage`: its cost a breakdown with its total.
+/** @param {Usage} usage @returns {object} */
+function piUsage({ cost, ...counts }) {
+  return { ...counts, cost: { input: 0, output: 0, total: cost } };
+}
+
+/** @type {Usage} */
+const USAGE_A = {
+  input: 100,
+  output: 20,
+  cacheRead: 300,
+  cacheWrite: 40,
+  cacheWrite1h: 40,
+  cost: 0.5,
+};
+/** @type {Usage} */
+const USAGE_B = {
+  input: 5,
+  output: 6,
+  cacheRead: 7,
+  cacheWrite: 8,
+  cacheWrite1h: 0,
+  cost: 0.25,
+};
+const SUM_AB = {
+  input: 105,
+  output: 26,
+  cacheRead: 307,
+  cacheWrite: 48,
+  cacheWrite1h: 40,
+  cost: 0.75,
+};
 // The tokens the issue had reported before the session.
 const EARLIER_TOKENS = 10;
 const CONFIG_NOT_FOUND = /boom: config not found/u;
 const TIMED_OUT = /timed out/u;
 
+// The tokens a session's usage counts as spent: cache reads are left out.
 /** @param {Usage} usage @returns {number} */
 function tokensOf(usage) {
-  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+  return usage.input + usage.output + usage.cacheWrite;
 }
 
 // An issue at spec that had reported `reportedTokens` before the session.
@@ -80,7 +116,6 @@ function specState(reportedTokens) {
     stage: "spec",
     depth: 0,
     findings: [],
-    allocated: 0,
     reportedTokens,
   };
 }
@@ -113,7 +148,7 @@ test("an ops child stopped by its timeout fails with a timeout message", () => {
   assert.match(raw.error, TIMED_OUT);
 });
 
-test("a session with structured output sums its usage and counts it as reported tokens", () => {
+test("a session with structured output sums its usage, its 1h cache writes and pi's cost total, and counts it, less cache reads, as reported tokens", () => {
   const details = { decision: "ready", spec: "## Behaviour", questions: [] };
   const stdout = jsonl([
     { type: "session", version: 3, id: "x" },
@@ -157,6 +192,17 @@ test("a failed session reports its error and usage, with no structured output", 
   assert.equal(st.reportedTokens, tokensOf(USAGE_A));
 });
 
+test("a message whose usage has no 1h cache writes or cost reads them as 0", () => {
+  const { cacheWrite1h: _1h, cost: _cost, ...counts } = USAGE_B;
+  const event = {
+    type: "message_end",
+    message: { role: "assistant", content: [], usage: counts },
+  };
+  const raw = sessionRaw(LAUNCH, exited(0, jsonl([event])));
+  const usage = { ...counts, cacheWrite1h: 0, cost: 0 };
+  assert.deepEqual(raw.results, [{ usage }]);
+});
+
 test("a session that ends without structured output fails, naming the stderr or the missing output", () => {
   const stdout = jsonl([assistantEnd(USAGE_B, { stopReason: "stop" })]);
   assert.equal(
@@ -182,8 +228,22 @@ test("a session whose prompt pi rejected fails with the response's error", () =>
 });
 
 test("a resumed session adds its earlier usage to its new events'", () => {
-  const earlier = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 };
-  const usage = { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 };
+  const earlier = {
+    input: 1,
+    output: 2,
+    cacheRead: 3,
+    cacheWrite: 4,
+    cacheWrite1h: 4,
+    cost: 0.25,
+  };
+  const usage = {
+    input: 10,
+    output: 20,
+    cacheRead: 30,
+    cacheWrite: 40,
+    cacheWrite1h: 0,
+    cost: 0.5,
+  };
   const stdout = jsonl([assistantEnd(usage), outputEnd({ decision: "ready" })]);
   const raw = sessionRaw(LAUNCH, exited(0, stdout), earlier);
   assert.equal(raw.ok, true);
@@ -192,5 +252,7 @@ test("a resumed session adds its earlier usage to its new events'", () => {
     output: 22,
     cacheRead: 33,
     cacheWrite: 44,
+    cacheWrite1h: 4,
+    cost: 0.75,
   });
 });

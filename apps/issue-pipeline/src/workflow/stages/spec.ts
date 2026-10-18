@@ -2,11 +2,11 @@
 // Autumn (2026-10-13): every issue gets a spec before implementation. It is
 // posted on the issue, and the implementer and the acceptance check work from
 // it. A spec that needs a maintainer's answer goes back to triage with its
-// questions, and an issue too big for one session is split into sub-issues
-// (spec-split.ts, #267). A failed spec session, including one whose spec stops partway, is
-// tried once more within the spec budget (#280).
+// questions, and an issue too big for two implementer sessions is split into
+// sub-issues (spec-split.ts, #267). A failed spec session, including one whose
+// spec stops partway, is tried once more (#280).
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import { SPEC_SCHEMA } from "../schemas.ts";
@@ -14,7 +14,8 @@ import type { Signature } from "../signing.ts";
 import type { IssueState } from "../types.ts";
 import type { SpecReply } from "./build-replies.ts";
 import { SPEC_END, specReplyOf } from "./build-replies.ts";
-import { isRecord, isStrings, signatureOf } from "./reply-guards.ts";
+import { isTransientSessionError, rateLimitStep } from "./rate-limit.ts";
+import { isRecord, signatureOf } from "./reply-guards.ts";
 import { splitStep } from "./spec-split.ts";
 import { ROLE, specTask } from "./spec-task.ts";
 import {
@@ -64,7 +65,6 @@ type SessionRead =
 // text is written to spec.md.
 interface ReadySpec {
   spec: string;
-  files: string[];
   by: Signature;
 }
 
@@ -79,26 +79,19 @@ function specLaunch(state: StageState, ctx: StageContext): ChildLaunch {
     model: ctx.models.spec,
     schema: SPEC_SCHEMA,
     minutes: SPEC_MINUTES,
+    budgetRole: "spec",
     tokenBudget: budget,
-    task: specTask(state, ctx, budget),
+    task: specTask(state, ctx),
   };
 }
 
-// Charges a spec session, then launches it, its reply read in `phase`.
+// Launches a spec session, its reply read in `phase`.
 function launchSession(
   state: StageState,
   ctx: StageContext,
   phase: DecidePhase,
 ): Step {
-  const st = { ...state.st };
-  const charge = chargeSession(ctx.budgets, st, "spec", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(state, charge.reason, charge.detail);
-  }
-  const charged = { ...state, st };
-  return launchStep({ ...charged, phase }, [specLaunch(charged, ctx)]);
+  return launchStep({ ...state, phase }, [specLaunch(state, ctx)]);
 }
 
 // Sends the questions back to triage, with what the spec writer found so far.
@@ -127,7 +120,9 @@ function kept(
   const st: IssueState = {
     ...state.st,
     spec: clip(whole.spec, SPEC_LIMIT),
-    files: whole.files,
+    // This spec writer leaves the spec's tests and stubs to the implementer;
+    // #305's spec writer writes them and sets this true.
+    specWritesTests: false,
     stage: "implement",
   };
   if (specFile !== null || typeof st.specFile === "string") {
@@ -142,7 +137,7 @@ function kept(
 // Keeps a spec that fits SPEC_LIMIT at once; saves a longer one whole to
 // spec.md first.
 function ready(state: StageState, reply: SpecReply, by: Signature): Step {
-  const spec: ReadySpec = { spec: reply.spec, files: reply.files, by };
+  const spec: ReadySpec = { spec: reply.spec, by };
   if (reply.spec.length <= SPEC_LIMIT) {
     return kept(state, spec, null);
   }
@@ -155,10 +150,10 @@ function ready(state: StageState, reply: SpecReply, by: Signature): Step {
 function readySpecOf(state: StageState): ReadySpec {
   const { carry } = state;
   if (isRecord(carry)) {
-    const { spec, files, by } = carry;
+    const { spec, by } = carry;
     const signature = signatureOf(by);
-    if (typeof spec === "string" && isStrings(files) && signature !== null) {
-      return { spec, files, by: signature };
+    if (typeof spec === "string" && signature !== null) {
+      return { spec, by: signature };
     }
   }
   throw new Error("spec: expected the spec to save");
@@ -195,7 +190,8 @@ function sessionRead(result: ChildResult): SessionRead {
 }
 
 // Acts on the spec writer's decision. Questions it didn't ask read as ready.
-// A failed session is tried once more; a second failure stops the issue.
+// A failed session is tried once more; a second failure stops the issue. A
+// session that hit a transient provider error defers it instead.
 function decide(
   state: StageState,
   ctx: StageContext,
@@ -205,6 +201,9 @@ function decide(
   const result = onlyChild(results);
   const read = sessionRead(result);
   if (!read.ok) {
+    if (isTransientSessionError(result.error)) {
+      return rateLimitStep(state, "the spec writer failed", ctx.now());
+    }
     if (phase === "decide") {
       return launchSession(state, ctx, "decide-again");
     }

@@ -11,7 +11,6 @@ import { opsRequests, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   aggregateTask,
   CTX,
-  contextWith,
   DIFF,
   failed,
   lensTask,
@@ -27,12 +26,11 @@ import {
 
 /** @import { Lens } from "../src/workflow/lenses.ts" */
 /** @import { LaunchResult, StageState, Step } from "../src/workflow/stages/types.ts" */
+/** @import { IssueState } from "../src/workflow/types.ts" */
 /** @import { OpsRequest } from "./stage-outcome-test-kit.mjs" */
 /** @typedef {{ findings?: unknown[], failed?: string }} LensOutput */
 /** @type {Lens[]} */
 const LENS_NAMES = ["correctness", "tests", "scope"];
-const REVIEWERS_TOKENS = 180_000;
-const AGGREGATOR_TOKENS = 20_000;
 const HEAD = "ccccccc";
 const PREPARED = {
   ok: true,
@@ -52,14 +50,13 @@ const READ_WHOLE = /Read the whole spec there/u;
 const NIT_SECTION =
   /\*\*Non-blocking\*\* \(the pipeline won't act on these\)\n\n- `src\/a.ts:3` Name it/u;
 const BLOCKING_SECTION = /\*\*Blocking\*\*\n\n- `src\/a.ts:3` Off by one/u;
-// An issue budget smaller than the three reviewers.
-const SMALL_BUDGET = 100_000;
 
 // The review's step after its reviewers reply with `outputs` by lens (no
-// findings for a lens not named), or with a failed result.
-/** @param {Partial<Record<Lens, LensOutput>>} [outputs] @returns {Step} */
-function reviewed(outputs = {}) {
-  const begun = next(stateWith("review"), CTX, []);
+// findings for a lens not named), or with a failed result, for a state saved
+// with `fields`.
+/** @param {Partial<Record<Lens, LensOutput>>} [outputs] @param {Partial<IssueState>} [fields] @returns {Step} */
+function reviewed(outputs = {}, fields = {}) {
+  const begun = next(stateWith("review", fields), CTX, []);
   const started = next(begun.state, CTX, [opReply(PREPARED)]);
   const results = LENS_NAMES.map((lens) => {
     const output = outputs[lens] ?? { findings: [] };
@@ -91,14 +88,13 @@ describe("a clean review", () => {
     assert.deepEqual(opsRequests(step), [
       { op: "prepare-review", payload: { number: 7, tag: "r0" } },
     ]);
-    assert.equal(step.state.st.allocated, REVIEWERS_TOKENS);
-    assert.deepEqual(step.state.st.sessions, ["reviewer"]);
     assert.deepEqual(given, stateWith("review"));
   });
 
-  test("posts each lens's comment, moves to sync, saves, then is done", () => {
+  test("posts each lens's comment, moves to checks, saves, then is done", () => {
     const nit = { ...OFF_BY_ONE, severity: "nit", title: "Name it" };
-    const step = reviewed({ tests: { findings: [nit] } });
+    // A stale flag from an earlier rebase must not skip acceptance (#340).
+    const step = reviewed({ tests: { findings: [nit] } }, { testsOnly: true });
     assert.deepEqual(
       step.comments.map(({ by }) => by),
       LENS_NAMES.map((lens) => ({
@@ -115,11 +111,11 @@ describe("a clean review", () => {
       where: "pr",
     });
     assert.match(step.comments.at(1)?.body ?? "", NIT_SECTION);
-    assert.equal(step.state.st.stage, "sync");
+    assert.equal(step.state.st.stage, "checks");
+    assert.equal(step.state.st.testsOnly, false);
     assert.equal(step.state.st.reviewedSha, HEAD);
     assert.deepEqual(step.state.st.log, [
-      `${STAMP} charged reviewer 180000 to issueTokenBudget`,
-      `${STAMP} review: no blocking findings`,
+      `${STAMP} review: no blocking findings; checks run without a rebase`,
     ]);
     assert.deepEqual(opsRequests(step), saveOf(step));
     const done = next(step.state, CTX, [opReply({ ok: true })]);
@@ -187,7 +183,6 @@ describe("a blocking finding", () => {
       },
     ]);
     assert.deepEqual(step.state.carry, RAW);
-    assert.equal(step.state.st.allocated, REVIEWERS_TOKENS + AGGREGATOR_TOKENS);
     assert.match(step.comments.at(0)?.body ?? "", BLOCKING_SECTION);
   });
 
@@ -263,20 +258,9 @@ describe("a review that stops", () => {
       code: null,
     });
   });
-
-  test("a budget smaller than the three reviewers stops before prep", () => {
-    const step = next(stateWith("review"), contextWith(SMALL_BUDGET), []);
-    assert.equal(step.done, true);
-    assert.deepEqual(step.stop, {
-      reason: "issue token budget exhausted",
-      detail:
-        "Allocated 0 of 100000 tokens (issueTokenBudget); the next step (reviewer) needs 180000.",
-      code: null,
-    });
-  });
 });
 
-test("a reviewer whose role budget is above the session cap gets the cap as its launch's token budget and in its preamble (#281)", () => {
+test("a reviewer whose role budget is above the session cap gets the cap as its launch's token budget, and no context budget in its prompt (#281)", () => {
   const cap = CTX.budgets.sessionCap;
   const roles = { ...CTX.budgets.roles, reviewer: cap * 2 };
   const ctx = { ...CTX, budgets: { ...CTX.budgets, roles } };
@@ -289,11 +273,11 @@ test("a reviewer whose role budget is above the session cap gets the cap as its 
     if (launch.kind !== "child") {
       throw new Error(`expected a session, got ops request ${launch.op}`);
     }
-    const shown = launch.task.includes(`well under ${cap} tokens`);
+    const shown = launch.task.includes("Context budget");
     return [launch.tokenBudget, shown];
   });
   assert.deepEqual(
     budgets,
-    LENS_NAMES.map(() => [cap, true]),
+    LENS_NAMES.map(() => [cap, false]),
   );
 });

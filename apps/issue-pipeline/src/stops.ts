@@ -74,10 +74,11 @@ const ROWS: readonly Omit<Stop, "label">[] = [
   },
   {
     code: "budget",
-    short: "Stopped: the issue's token budget ran out. See the stop comment.",
+    short:
+      "Stopped: a session's context went past its budget. See the stop comment.",
     test: /token budget/iu,
-    control: "token budget",
-    explain: `The next session would take the issue past its token budget ${settingRef("issueTokenBudget")}, or a re-check or conflict fix after a rebase past the rebase allowance ${settingRef("rebaseTokenBudget")}. Or a session's context went past its role's budget ${settingRef("roleBudgets")}, capped by ${settingRef("sessionTokenCap")}, and the orchestrator's watchdog stopped its job.`,
+    control: "session context budget",
+    explain: `A writer session's context went past its role's context budget ${settingRef("roleBudgets")}, capped by ${settingRef("sessionTokenCap")}, and the orchestrator's watchdog stopped its job. The budget bounds one session's context, not what the issue spends.`,
   },
   {
     code: "fix-loop",
@@ -101,11 +102,13 @@ const ROWS: readonly Omit<Stop, "label">[] = [
   {
     code: "checks-unrelated",
     short:
-      "Stopped: failing checks look unrelated to the change. See the stop comment.",
-    test: /look unrelated/iu,
+      "Stopped: the check fixer can't fix the failing checks from the repo. See the stop comment.",
+    // "look unrelated" is the reason sweeps sent before
+    // unrelated-fixes-allowed, which in-flight workflow.js copies still send.
+    test: /can't fix the failing checks|look unrelated/iu,
     control: "check fixer",
     explain:
-      "The check fixer judged the failing checks unrelated to this change and did not change them.",
+      "The check fixer found that no change in the repo can fix the failing checks, such as an outside service's outage, missing secrets or credentials, or something that needs the repo's owner.",
   },
   {
     code: "check-fixes",
@@ -152,13 +155,22 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "The implementer found the issue can't be done as written, or its work changed nothing: no files on the branch and no wiki commits.",
   },
   {
+    code: "spec-files",
+    short:
+      "Stopped: the spec's documented tests or stubs are missing from the branch. See the stop comment.",
+    test: /documented tests or stubs are missing/iu,
+    control: "spec's tests and stubs",
+    explain:
+      "A restart found that test or stub files the spec documents are missing from the branch. The spec writer is responsible for the spec, its tests and its stubs, so the pipeline neither hands them to the implementer nor writes a new spec.",
+  },
+  {
     code: "too-large",
     short:
       "Stopped: too large for its writer sessions; split it. See the stop comment.",
     test: /ran out of room|did not finish within its sessions/iu,
     control: "writer sessions",
     explain: limitText(
-      "A writer session (the implementer, fixer, CI fixer or conflict resolver) ran out of room, and so did each continuation its stage was allowed; the issue needs splitting",
+      "A writer session (the spec writer, implementer, fixer, CI fixer or conflict resolver) ran out of room, and so did each continuation its stage was allowed; the issue needs splitting",
       "maxContinuations",
     ),
   },
@@ -237,7 +249,8 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "Stopped: a pipeline step or agent session failed. See the stop comment.",
     test: /./u,
     control: "step failure",
-    explain: "A pipeline step or agent session failed.",
+    explain:
+      "A pipeline step or agent session failed, or the issue's claim failed with the same error `claimFailureStreak` times in a row.",
   },
 ];
 

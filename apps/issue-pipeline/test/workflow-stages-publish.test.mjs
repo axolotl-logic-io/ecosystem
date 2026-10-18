@@ -43,8 +43,6 @@ test("a merge whose wiki conflicts publishes after the resolver in the same swee
     issueSummary({
       stage: "done",
       outcome: "merged",
-      allocatedTokens: 940_000,
-      rebaseAllocatedTokens: 100_000,
     }),
   );
 });
@@ -63,7 +61,6 @@ test("an issue saved at publish publishes and is done", async () => {
     issueSummary({
       stage: "done",
       outcome: "merged",
-      allocatedTokens: 940_000,
     }),
   );
 });

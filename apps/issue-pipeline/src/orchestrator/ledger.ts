@@ -3,16 +3,17 @@
 // hourly rate limit can count them even after a job.json is overwritten, and
 // the jobs the orchestrator started, which cover the gap before a job writes
 // its own job.json. It keeps an hour of both. It alone knows the file's
-// layout; each save rewrites the whole file atomically.
+// layout; each save rewrites the whole file atomically. The tokens it counts
+// are `rateTokens` (../workflow/rate-tokens.ts), which leave out cache reads.
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import { usageTotal } from "../job/raw-results.ts";
 import type { StatusFile } from "../job/status.ts";
 import { ROOT } from "../pipeline-root.ts";
+import { rateTokens } from "../workflow/rate-tokens.ts";
 
 const LEDGER_FILE = "orchestrator.json";
 const HOUR_MS = 3_600_000;
@@ -106,7 +107,7 @@ function recordJobs(
   for (const job of jobs) {
     for (const launch of job.launches) {
       const id = `${job.startedAt} ${launch.key}`;
-      const total = usageTotal(launch.usage);
+      const total = rateTokens(launch.usage);
       // Each event that adds usage moves lastEventAt.
       const active = launch.lastEventAt ?? launch.startedAt;
       launches.set(id, recorded(launches.get(id), total, active, now));

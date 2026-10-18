@@ -6,15 +6,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { CONFIG_SCHEMA, DEFAULTS } from "./config-schema.ts";
+import { JOB_DOCS, JOB_REPO } from "./job/layout.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
 import { OpsError } from "./process.ts";
+import type { Budgets } from "./workflow/budget.ts";
+import { sessionBudget } from "./workflow/budget.ts";
+import { ROLE_BUDGETS, WRITER_BUDGET_ROLES } from "./workflow/sweep-config.ts";
 
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
 const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
 const PATH_SEPARATOR = /[\\/]/u;
 
 // A stage job's own checkout of issue `issue` (#250). While an ops request
-// that names it runs, the issue's worktree is `dir`; it never comes from the
+// that names it runs, the issue's worktree is `dir`, the job's code checkout,
+// and its wiki checkout is `dir`'s sibling (#338); it never comes from the
 // config file.
 interface JobCheckout {
   issue: number;
@@ -29,7 +34,6 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
 interface WikiSettings {
   branch: string;
   dir: string;
-  url: string | undefined;
 }
 
 function checkUsers(configPath: string, users: unknown): void {
@@ -56,10 +60,19 @@ function insideWorktree(entry: unknown): boolean {
   );
 }
 
-function checkPractices(configPath: string, practices: unknown): void {
+function checkPractices(
+  configPath: string,
+  practices: unknown,
+  digest: unknown,
+): void {
   if (!Array.isArray(practices)) {
     throw new OpsError(
       `config ${configPath}: practices must be a list of paths`,
+    );
+  }
+  if (digest !== null && digest !== undefined && !insideWorktree(digest)) {
+    throw new OpsError(
+      `config ${configPath}: practicesDigest ${JSON.stringify(digest)} must be null or a path inside the worktree`,
     );
   }
   for (const entry of practices) {
@@ -85,6 +98,7 @@ function checkRequired(
   raw: Readonly<Record<string, unknown>>,
 ): void {
   const { account, allowedUsers, commands, practices, repo } = raw;
+  const { practicesDigest } = raw;
   if (!present(repo)) {
     throw new OpsError(`config ${configPath} is missing "repo"`);
   }
@@ -101,7 +115,41 @@ function checkRequired(
     throw new OpsError(`bad repo "${String(repo)}"`);
   }
   checkUsers(configPath, allowedUsers);
-  checkPractices(configPath, practices);
+  checkPractices(configPath, practices, practicesDigest);
+}
+
+// What the writer budget check reads of a config; a value of another type is
+// left to the code that reads it.
+const WRITER_BUDGET_KEYS = z.object({
+  contextLimits: z.object({ soft: z.number(), hard: z.number() }),
+  sessionTokenCap: z.number().catch(Number.POSITIVE_INFINITY),
+  roleBudgets: z.record(z.string(), z.number()).nullish().catch(null),
+});
+
+// Refuses a config under which the job's own stop at contextLimits.hard could
+// never come before the watchdog's kill: a writer's context budget (its
+// role's budget, capped by sessionTokenCap) at or below `hard`
+// (wrap-up-at-175k, Axlog, 2026-10-17).
+function checkWriterBudgets(
+  configPath: string,
+  raw: Readonly<Record<string, unknown>>,
+): void {
+  const { contextLimits, sessionTokenCap, roleBudgets } =
+    WRITER_BUDGET_KEYS.parse(raw);
+  const budgets: Budgets = {
+    roles: { ...ROLE_BUDGETS, ...roleBudgets },
+    sessionCap: sessionTokenCap,
+    softLimit: contextLimits.soft,
+    hardLimit: contextLimits.hard,
+  };
+  for (const role of WRITER_BUDGET_ROLES) {
+    const budget = sessionBudget(budgets, role);
+    if (contextLimits.hard >= budget) {
+      throw new OpsError(
+        `config ${configPath}: contextLimits.hard (${contextLimits.hard}) must be below every writer's context budget, but ${role}'s is ${budget} (roleBudgets.${role}, capped by sessionTokenCap), so the watchdog would kill its sessions before the job stops them`,
+      );
+    }
+  }
 }
 
 function loadConfig(configPath: string | undefined): Config {
@@ -120,6 +168,7 @@ function loadConfig(configPath: string | undefined): Config {
       `config ${String(configPath)}: ${z.prettifyError(parsed.error)}`,
     );
   }
+  checkWriterBudgets(String(configPath), parsed.data);
   const { checkout: _fromFile, ...data } = parsed.data;
   return { ...data, slug: data.repo.replace("/", "__") };
 }
@@ -144,19 +193,18 @@ function tokenEnv(cfg: Config): ReadonlyMap<string, string> {
 }
 
 // The repo's GitHub wiki holds its docs and decisions (Autumn, 2026-10-13). Config
-// `wiki: true` or `{ dir, branch, url }` turns it on; it is off by default.
+// `wiki: true` or `{ dir, branch }` enables publishing its submodule; off by default.
 function wikiCfg(cfg: Config): WikiSettings | null {
   const { wiki } = cfg;
   if (wiki === undefined || wiki === null || wiki === false) {
     return null;
   }
   if (wiki === true) {
-    return { branch: "master", dir: "wiki", url: undefined };
+    return { branch: "master", dir: "wiki" };
   }
   return {
     branch: wiki.branch ?? "master",
     dir: wiki.dir ?? "wiki",
-    url: wiki.url,
   };
 }
 
@@ -175,12 +223,32 @@ function withCheckout(
 const paths = {
   branch: (n: number): string => `agent/issue-${n}`,
   clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
-  // Stage job `stage`'s own checkout of issue `n`, cloned from the mirror.
+  // Stage job `stage`'s own folder for issue `n`, which holds its code
+  // checkout and its wiki checkout side by side (#338).
   jobCheckout: (cfg: Config, n: number, stage: string): string =>
     path.join(ROOT, "work", cfg.slug, "jobs", `issue-${n}-${stage}`),
+  // The job's code checkout, cloned from the mirror.
+  jobRepo: (cfg: Config, n: number, stage: string): string =>
+    path.join(paths.jobCheckout(cfg, n, stage), JOB_REPO),
+  // The job's docs alias of the wiki submodule.
+  jobDocs: (cfg: Config, n: number, stage: string): string =>
+    path.join(paths.jobCheckout(cfg, n, stage), JOB_DOCS),
+  // Where a writer session of issue `n` that runs out of room writes its
+  // handoff, which the next session reads.
+  handoff: (cfg: Config, n: number): string =>
+    path.join(paths.runDir(cfg, n), "handoff.md"),
+  // Where stage job `key` of issue `n` saves what its checkout `checkout`
+  // left uncommitted, before it drops it (#369).
+  droppedPatch: (
+    cfg: Config,
+    n: number,
+    key: string,
+    checkout: "repo" | "docs",
+  ): string =>
+    path.join(paths.runDir(cfg, n), "dropped", `${key}-${checkout}.patch`),
   jobLog: (cfg: Config, n: number): string =>
     path.join(paths.runDir(cfg, n), "job.log"),
-  // The bare mirrors of the repo and its wiki that job checkouts clone.
+  // The bare code mirror that job checkouts clone.
   mirror: (cfg: Config): string =>
     path.join(ROOT, "work", cfg.slug, "mirror.git"),
   runDir: (cfg: Config, n: number): string =>
@@ -188,10 +256,14 @@ const paths = {
   // A stage job's model session for launch `key` on issue `n`, as JSONL.
   session: (cfg: Config, n: number, key: string): string =>
     path.join(paths.runDir(cfg, n), "sessions", `${key}.jsonl`),
-  wiki: (cfg: Config, n: number): string =>
-    path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki"),
-  wikiClone: (cfg: Config): string =>
-    path.join(ROOT, "clones", `${cfg.slug}.wiki`),
+  // The issue's wiki checkout: in a stage job, its code checkout's sibling;
+  // in a lane, a folder of its worktree.
+  wiki: (cfg: Config, n: number): string => {
+    if (cfg.checkout?.issue === n) {
+      return path.join(path.dirname(cfg.checkout.dir), JOB_DOCS);
+    }
+    return path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki");
+  },
   wikiMirror: (cfg: Config): string =>
     path.join(ROOT, "work", cfg.slug, "wiki-mirror.git"),
   worktree: (cfg: Config, n: number): string => {

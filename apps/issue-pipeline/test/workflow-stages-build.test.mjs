@@ -27,7 +27,6 @@ const TRIAGED = {
   pr: 42,
   headSha: "aaaaaaa",
   implemented: false,
-  allocated: 50_000,
 };
 
 // The spec writer and the implementer, each done.
@@ -36,7 +35,6 @@ const BUILD_AGENTS = {
     decision: "ready",
     spec: "## Behaviour\n\n1. src/a.ts does the thing.\n\n<!-- end of spec -->",
     questions: [],
-    files: ["src/a.ts"],
     subIssues: [],
   }),
   "i7-implement": replyWith({
@@ -50,13 +48,14 @@ const BUILD_AGENTS = {
 
 test("a spec is written, implemented and its PR opened, then held at review", async () => {
   // The save after triage runs for an issue already at spec. review needs 7
-  // spawns: 8 launched + 7 + a reserve of 4 passes 18.
+  // spawns: 9 launched + 7 + a reserve of 4 passes 19.
   const { trace, summary } = await runWorkflow({
     args: WORKFLOW_ARGS,
     ops: {
       ...ROUTINE_OPS,
       sweep: sweepReply({ items: [ISSUE], config: { maxSpawnsPerRun: 19 } }),
       claim: claimAt("spec", TRIAGED),
+      push: { ok: true, headSha: "bbbbbbb" },
       "open-pr": { ok: true, pr: 42, headSha: "bbbbbbb" },
     },
     agents: BUILD_AGENTS,
@@ -82,8 +81,6 @@ test("a spec is written, implemented and its PR opened, then held at review", as
           stage: "review",
           outcome: "in-progress",
           reason: null,
-          allocatedTokens: 280_000,
-          rebaseAllocatedTokens: 0,
         },
       ],
     }),

@@ -1,6 +1,7 @@
 // @ts-check
 // One orchestrator tick (#234): the jobs it spawns and with what arguments
-// (rule 10), the line it logs per decision (rule 11), the start records that
+// (rule 10), the line it logs per decision (rule 11), each start's with the
+// spawned job's pid and the job id it passed, the start records that
 // keep a spawned job live until it writes job.json, and the rate limit fed
 // from the ledger (rule 9).
 import assert from "node:assert/strict";
@@ -9,6 +10,7 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
+import { jobIdOf, withoutJobId } from "./orchestrator-job-id-kit.mjs";
 import {
   CONFIG,
   cfg,
@@ -31,12 +33,16 @@ const RATED = { spent: 50, waiting: 51 };
 const STACK = { prereq: 60, dependent: 61 };
 const PR = { merging: 1, accepting: 2 };
 const TOKENS_PER_HOUR = 1000;
+// Past the 2M an hour the orchestrator once held starts at by default.
+const PAST_OLD_HOURLY_LIMIT = 3_000_000;
 const LOG_LINE = z.strictObject({
   at: z.string(),
   issue: z.number(),
   stage: z.string(),
   action: z.enum(["started", "held"]),
   reason: z.string(),
+  pid: z.number().optional(),
+  job: z.uuid().optional(),
 });
 const LEDGER_STARTS = z.object({
   started: z.array(
@@ -82,17 +88,22 @@ const UNWATCHED = {
 };
 
 /**
- * A spawn that records each call and answers with `pid`.
+ * A spawn that records each call, less its job id, and answers with `pid`;
+ * `jobIds` holds each call's job id.
  * @param {number} pid
- * @returns {{ spawned: { argv: readonly string[], log: string }[], spawn: (argv: readonly string[], log: string) => number }}
+ * @returns {{ spawned: { argv: readonly string[], log: string }[], jobIds: string[], spawn: (argv: readonly string[], log: string) => number }}
  */
 function recordingSpawn(pid) {
   /** @type {{ argv: readonly string[], log: string }[]} */
   const spawned = [];
+  /** @type {string[]} */
+  const jobIds = [];
   return {
     spawned,
+    jobIds,
     spawn: (argv, log) => {
-      spawned.push({ argv, log });
+      spawned.push({ argv: withoutJobId(argv), log });
+      jobIds.push(jobIdOf(argv));
       return pid;
     },
   };
@@ -130,10 +141,10 @@ function jobLogOf(issue) {
   return path.join(root, "runs", cfg.slug, `issue-${issue}`, "job.log");
 }
 
-test("a tick spawns each start in the orchestrator lane, logs every decision and records the starts", () => {
+test("a tick spawns each start in the orchestrator lane with its own job id, logs every decision with the job's pid and id, and records the starts", () => {
   openWith(QUEUE);
-  const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(cfg, {
+  const { spawned, jobIds, spawn } = recordingSpawn(process.pid);
+  const { decisions } = tick(cfg, {
     configPath: CONFIG,
     now: () => NOW,
     spawn,
@@ -148,30 +159,20 @@ test("a tick spawns each start in the orchestrator lane, logs every decision and
     { argv: argvOf(ISSUE.accepting, "accept"), log: jobLogOf(ISSUE.accepting) },
     { argv: argvOf(ISSUE.fresh, "triage"), log: jobLogOf(ISSUE.fresh) },
   ]);
+  assert.equal(new Set(jobIds).size, jobIds.length);
   const at = NOW.toISOString();
+  const { pid } = process;
   const expected = [
-    {
-      at,
-      issue: ISSUE.merging,
-      stage: "merge",
-      action: "started",
-      reason: "merge-first",
-    },
-    {
-      at,
-      issue: ISSUE.accepting,
-      stage: "accept",
-      action: "started",
-      reason: "free",
-    },
-    {
-      at,
-      issue: ISSUE.fresh,
-      stage: "triage",
-      action: "started",
-      reason: "free",
-    },
-  ];
+    { issue: ISSUE.merging, stage: "merge", reason: "merge-first" },
+    { issue: ISSUE.accepting, stage: "accept", reason: "free" },
+    { issue: ISSUE.fresh, stage: "triage", reason: "free" },
+  ].map((start, n) => ({
+    at,
+    ...start,
+    action: "started",
+    pid,
+    job: jobIds[n],
+  }));
   assert.deepEqual(logLines(), expected);
   assert.equal(decisions.length, expected.length);
   const { started } = LEDGER_STARTS.parse(
@@ -193,7 +194,8 @@ test("the next tick starts nothing for a spawned job that still runs but has wri
   const { spawned, spawn } = recordingSpawn(process.pid);
   const before = logLines().length;
   assert.deepEqual(
-    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn, ...UNWATCHED }),
+    tick(cfg, { configPath: CONFIG, now: () => NOW, spawn, ...UNWATCHED })
+      .decisions,
     [],
   );
   assert.deepEqual(spawned, []);
@@ -214,7 +216,7 @@ test("once the jobs' tokens in the last hour reach tokensPerHour every start is 
     { number: RATED.waiting },
   ]);
   const { spawned, spawn } = recordingSpawn(process.pid);
-  const decisions = tick(rated, {
+  const { decisions } = tick(rated, {
     configPath: CONFIG,
     now: () => NOW,
     spawn,
@@ -228,6 +230,38 @@ test("once the jobs' tokens in the last hour reach tokensPerHour every start is 
       { issue: RATED.waiting, action: "held", reason: "rate-limit" },
     ],
   );
+});
+
+test("with tokensPerHour unset, the default, no start is held for the rate limit however many tokens the jobs used", () => {
+  const unrated = loadConfig(configWith({}));
+  const { tokensPerHour } = unrated;
+  assert.equal(tokensPerHour, null);
+  writeJob({
+    issue: RATED.spent,
+    stage: "review",
+    pid: process.pid,
+    ended: true,
+    tokens: PAST_OLD_HOURLY_LIMIT,
+  });
+  openWith([
+    { number: RATED.spent, state: { stage: "accept" } },
+    { number: RATED.waiting },
+  ]);
+  const { spawned, spawn } = recordingSpawn(process.pid);
+  const { decisions } = tick(unrated, {
+    configPath: CONFIG,
+    now: () => NOW,
+    spawn,
+    ...UNWATCHED,
+  });
+  assert.deepEqual(
+    decisions.map(({ issue, action }) => ({ issue, action })),
+    [
+      { issue: RATED.spent, action: "started" },
+      { issue: RATED.waiting, action: "started" },
+    ],
+  );
+  assert.equal(spawned.length, 2);
 });
 
 test("a waiting issue whose prerequisite is at checks starts stacked on it", () => {

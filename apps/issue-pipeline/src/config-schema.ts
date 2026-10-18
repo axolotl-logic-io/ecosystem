@@ -15,18 +15,28 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // Issues with any of these labels are never pipeline work, such as deploy tickets.
   skipLabels: [],
   // The files that hold the project's coding practices, relative to the worktree
-  // (wiki pages under the wiki's dir, such as "wiki/Decisions.md"). The spec writer
-  // reads each in full and specs to them (Autumn, 2026-10-15). Missing files are skipped.
+  // (wiki pages under the wiki's dir, such as "wiki/Decisions.md"). Writers and
+  // reviewers read each in full (Axlog, 2026-10-15); the spec writer reads their
+  // digest when there is one, and specs to them. Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
+  // A digest of the practices files, relative to the worktree like them (a
+  // wiki page under the wiki's dir is read in the wiki checkout). The spec
+  // writer reads it in place of the full files, and opens a full file only for
+  // a rule that bears on its work; with no digest, or none at that path, it
+  // reads them in full. null turns it off (spec-practices-digest, 2026-10-17).
+  practicesDigest: "wiki/Coding-Practices-Digest.md",
   leaseHours: 3,
-  issueTokenBudget: 1_000_000,
-  // The rebase pool per issue: conflict resolvers, and re-checks after a rebase
-  // the merge stage asked for (#201). Reset at merge and restart.
-  rebaseTokenBudget: 500_000,
-  sessionTokenCap: 150_000,
-  // No writer session may pass `hard` tokens of context; past it, it hands off,
-  // up to maxContinuations times per stage per issue (#264).
-  contextLimits: { soft: 150_000, hard: 175_000 },
+  // Caps each session's context budget, the context the orchestrator's
+  // watchdog stops a writer session past; roleBudgets sets each role's. Budgets bound context, not spend (budgets-bound-context,
+  // Axlog, 2026-10-16). 300000 puts a writer's kill above contextLimits.hard
+  // (wrap-up-at-175k, Axlog, 2026-10-17).
+  sessionTokenCap: 300_000,
+  // A writer session past `soft` tokens of context is told to wrap up and
+  // write its handoff, and one past `hard` is stopped; it hands off, up to
+  // maxContinuations times per stage per issue (#264). loadConfig refuses a
+  // `hard` at or above a writer's context budget, so the job's stop comes
+  // before the watchdog's kill (wrap-up-at-175k, Axlog, 2026-10-17).
+  contextLimits: { soft: 175_000, hard: 225_000 },
   maxContinuations: 1,
   maxFixRounds: 2,
   maxCiFixes: 2,
@@ -52,19 +62,25 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   lockfiles: [],
   migrations: null,
   // The orchestrator (#234): caps on live stage jobs, in all and per reader
-  // stage, the tokens its jobs may spend an hour, and its seconds between ticks.
+  // stage, an optional throttle on the tokens its jobs may use an hour (input,
+  // output and cache writes, not cache reads; null or 0, the default, means no
+  // limit, budgets-bound-context), and its seconds between ticks.
   maxJobs: 4,
   stageCaps: { triage: 2, spec: 2, review: 2, accept: 2, security: 2 },
-  tokensPerHour: 2_000_000,
+  tokensPerHour: null,
   orchestratorIntervalSeconds: 60,
+  // What the usage report (report.mjs usage) flags: a session whose first turn
+  // passed `firstContext` tokens of context, or whose largest tool output
+  // passed `toolOutputShare` of its peak context (#302).
+  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
 };
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 const OPTIONAL_TEXT = z.string().nullish();
 const TOKENS = z.number().int().positive();
-// What a stage job's role may hold (src/job/roles.ts): the job variable its
-// GH_TOKEN comes from, and the hosts it may reach.
+// What a stage job's role may hold (src/job/roles.ts): a job variable that
+// holds its token, which no session sees, and the hosts it may reach.
 const JOB_ROLE = z
   .object({
     tokenEnv: z.string().regex(ENV_NAME, "must be an env var name").optional(),
@@ -93,19 +109,31 @@ const CONFIG_SCHEMA = z.looseObject({
     ),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
+  // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue token
+  // budget that once stopped an issue. Accepted so older configs still load,
+  // and unused.
+  issueTokenBudget: z.unknown().optional(),
   jobRoles: JOB_ROLES.nullish(),
   leaseHours: z.number(),
   maxContinuations: z.number().int().nonnegative(),
   practices: z.array(z.string()),
+  practicesDigest: z.string().nullish(),
+  // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue
+  // rebase allowance (#201) that once stopped an issue. Accepted so older
+  // configs still load, and unused.
+  rebaseTokenBudget: z.unknown().optional(),
   repo: z.string(),
   tokenFile: OPTIONAL_TEXT,
+  usageFlags: z.object({
+    firstContext: TOKENS,
+    toolOutputShare: z.number().gt(0).max(1),
+  }),
   wiki: z
     .union([
       z.boolean(),
       z.looseObject({
         branch: z.string().optional(),
         dir: z.string().optional(),
-        url: z.string().optional(),
       }),
     ])
     .nullish(),

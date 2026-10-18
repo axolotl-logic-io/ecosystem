@@ -1,11 +1,13 @@
 // @ts-check
 // The watchdog's budget rule (#281), run through whole ticks over recorded
-// job.json files: a live job whose session's context (`contextTokens`) passes
-// its token budget gets SIGTERM once, and once it has exited its issue and PR
-// are stopped with agent:stopped-budget and it is never restarted. A launch at
-// its budget, one with no budget, an ops launch, a launch that ended, a
-// session stopped at the hard context limit while its retry runs (#272) and
-// a large cumulative usage are never stopped.
+// job.json files: a live job whose writer session's context
+// (`contextTokens`) passes its token budget gets SIGTERM once, and once it
+// has exited its issue and PR are stopped with agent:stopped-budget and it
+// is never restarted. A launch at its budget, one with no budget, a
+// non-writer session (which the job records with no budget), an ops launch,
+// a launch that ended, an older job's session stopped at the hard context
+// limit while its retry runs (#272) and a large cumulative usage are never
+// stopped.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -35,6 +37,7 @@ const ISSUE = {
   unended: 95,
   launchEnded: 96,
   retrying: 97,
+  nonWriter: 98,
 };
 const PR_OF_OVER = 19;
 const BUDGET = 60_000;
@@ -85,11 +88,11 @@ test("a session whose context reaches its budget exactly is left alone", () => {
   assert.deepEqual(loggedFor(ISSUE.atBudget), []);
 });
 
-test("a session whose context passes its budget gets SIGTERM once, then its issue and PR are stopped with agent:stopped-budget and never restarted", () => {
-  const job = { issue: ISSUE.over, stage: "review", pid: OTHERS_PID };
+test("a writer session whose context passes its budget gets SIGTERM once, then its issue and PR are stopped with agent:stopped-budget and never restarted", () => {
+  const job = { issue: ISSUE.over, stage: "fix", pid: OTHERS_PID };
   const facts = { tokenBudget: BUDGET, contextTokens: OVER_BUDGET };
   writeJob({ ...job, ...facts });
-  const issues = [openIssue(ISSUE.over, "review", PR_OF_OVER)];
+  const issues = [openIssue(ISSUE.over, "fix", PR_OF_OVER)];
   const first = tickOver(issues);
   assert.deepEqual(first.terminated, [OTHERS_PID]);
   assert.deepEqual(fakeGh.writes(ghIsRead), []);
@@ -102,7 +105,7 @@ test("a session whose context passes its budget gets SIGTERM once, then its issu
   const names = effectNames(effects);
   assert.ok(names.includes(`label #${ISSUE.over} agent:stopped-budget`));
   assert.ok(names.includes(`label #${PR_OF_OVER} agent:stopped-budget`));
-  const key = `i${ISSUE.over}-review-1`;
+  const key = `i${ISSUE.over}-fix-1`;
   const comment = effects.find(({ body }) => body.includes(key));
   assert.ok(comment?.body.includes("token budget"));
   assert.ok(comment?.body.includes(String(OVER_BUDGET)));
@@ -156,6 +159,20 @@ test("a huge cumulative usage with the context under budget, a launch with no bu
   }
 });
 
+test("a non-writer session, which its job records with no budget, is never stopped however far its context goes", () => {
+  writeJob({
+    issue: ISSUE.nonWriter,
+    stage: "review",
+    pid: OTHERS_PID,
+    tokenBudget: null,
+    contextTokens: HUGE_USAGE,
+  });
+  const ticked = tickOver([openIssue(ISSUE.nonWriter, "review")]);
+  assert.deepEqual([ticked.terminated, ticked.spawned], [[], []]);
+  assert.deepEqual(fakeGh.writes(ghIsRead), []);
+  assert.deepEqual(loggedFor(ISSUE.nonWriter), []);
+});
+
 test("a session launch that has ended is never stopped, whatever its context", () => {
   writeJob({
     issue: ISSUE.launchEnded,
@@ -174,7 +191,7 @@ test("a session launch that has ended is never stopped, whatever its context", (
 // A long-silent session's minutes, past both the silence steer and SIGTERM.
 const LONG_SILENT_MINUTES = 120;
 
-test("a session stopped at the hard context limit, past its budget and silent, is left alone while its retry runs", () => {
+test("an older job's session stopped at the hard context limit, past its budget and silent, is left alone while its retry runs", () => {
   const status = writeJob({
     issue: ISSUE.retrying,
     stage: "review",
@@ -204,10 +221,10 @@ test("a session stopped at the hard context limit, past its budget and silent, i
 });
 
 test("a job that ends with no outcome after its budget SIGTERM is stopped, not resumed", () => {
-  const job = { issue: ISSUE.unended, stage: "accept", pid: OTHERS_PID };
+  const job = { issue: ISSUE.unended, stage: "implement", pid: OTHERS_PID };
   const facts = { tokenBudget: BUDGET, contextTokens: BUDGET + 1 };
   writeJob({ ...job, ...facts });
-  const issues = [openIssue(ISSUE.unended, "accept")];
+  const issues = [openIssue(ISSUE.unended, "implement")];
   assert.deepEqual(tickOver(issues).terminated, [OTHERS_PID]);
   writeJob({ ...job, ...facts, pid: deadPid() });
   const after = tickOver(issues, 1);
@@ -215,7 +232,7 @@ test("a job that ends with no outcome after its budget SIGTERM is stopped, not r
   const names = effectNames(effectsOf(fakeGh.writes(ghIsRead)));
   assert.ok(names.includes(`label #${ISSUE.unended} agent:stopped-budget`));
   assert.deepEqual(actionsOf(ISSUE.unended), [
-    `killed budget:i${ISSUE.unended}-accept-1`,
+    `killed budget:i${ISSUE.unended}-implement-1`,
     "stopped budget",
   ]);
 });

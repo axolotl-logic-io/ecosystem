@@ -1,9 +1,9 @@
 // Review: the first review of the PR. Three reviewers each read the diff
 // through one lens; their blocking findings are merged by the aggregator and
-// numbered for the fixer. A clean review moves the issue to sync, one with
-// blocking findings to fix.
+// numbered for the fixer. A clean review moves the issue to checks on the
+// branch as it stands, one with blocking findings to fix.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { launchBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding } from "../findings.ts";
 import type { ReviewLens } from "../lenses.ts";
@@ -11,6 +11,8 @@ import { LENS_NAMES } from "../lenses.ts";
 import { AGG_SCHEMA, REVIEW_SCHEMA } from "../review-schemas.ts";
 import { byStep } from "../signing.ts";
 import type { Finding } from "../types.ts";
+import { rateLimitedIn, rateLimitStep } from "./rate-limit.ts";
+import { patchIdIn } from "./reply-guards.ts";
 import type {
   MergedFinding,
   RawFinding,
@@ -66,6 +68,8 @@ const PHASES: readonly ReviewPhase[] = [
 
 const REVIEW_MINUTES = 25;
 const AGGREGATE_MINUTES = 10;
+const NO_FINDINGS_NOTE =
+  "review: no blocking findings; checks run without a rebase";
 
 function phaseOf(state: StageState): ReviewPhase {
   const phase = PHASES.find((entry) => entry === state.phase);
@@ -75,19 +79,10 @@ function phaseOf(state: StageState): ReviewPhase {
   return phase;
 }
 
-// Charges the three reviewers, then prepares the diff.
-function begin(state: StageState, ctx: StageContext): Step {
-  const st = copyState(state.st);
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "reviewer", {
-    at: ctx.now(),
-    count: LENS_NAMES.length,
-  });
-  if (!charge.charged) {
-    return stopStep(charged, charge.reason, charge.detail);
-  }
-  return launchStep({ ...charged, phase: "prepared" }, [
-    prepareLaunch(charged, { tag: "r0" }),
+// Prepares the diff for the three reviewers.
+function begin(state: StageState): Step {
+  return launchStep({ ...state, phase: "prepared" }, [
+    prepareLaunch(state, { tag: "r0" }),
   ]);
 }
 
@@ -105,7 +100,7 @@ function lensLaunch(
     model: ctx.models[lens],
     schema: REVIEW_SCHEMA,
     minutes: REVIEW_MINUTES,
-    tokenBudget: sessionBudget(ctx.budgets, "reviewer"),
+    ...launchBudget(ctx.budgets, "reviewer"),
     task: lensTask(ctx, state, lens, diff),
   };
 }
@@ -116,7 +111,8 @@ function prepared(
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
-  const { ok, error, headSha, diffPath, diffLines } = onlyReply(results);
+  const reply = onlyReply(results);
+  const { ok, error, headSha, diffPath, diffLines } = reply;
   if (ok !== true || typeof headSha !== "string") {
     return stopStep(
       state,
@@ -125,7 +121,8 @@ function prepared(
     );
   }
   const st = { ...state.st, headSha, findings: [], round: 0 };
-  const started = { ...state, st, phase: "reviewed" };
+  const carry = { patchId: patchIdIn(reply) };
+  const started = { ...state, st, phase: "reviewed", carry };
   const diff = { path: String(diffPath), lines: String(diffLines) };
   return launchEach(
     started,
@@ -194,18 +191,21 @@ function aggregateLaunch(
     model: ctx.models.aggregator,
     schema: AGG_SCHEMA,
     minutes: AGGREGATE_MINUTES,
-    tokenBudget: sessionBudget(ctx.budgets, "aggregator"),
+    ...launchBudget(ctx.budgets, "aggregator"),
     task: aggregateTask(ctx, state, raw),
   };
 }
 
-// Posts each reviewer's comment. A clean review moves to sync; blocking
+// Posts each reviewer's comment. A clean review moves to checks; blocking
 // findings go to the aggregator, carrying the raw findings for its fallback.
 function reviewed(
   state: StageState,
   ctx: StageContext,
   results: readonly LaunchResult[],
 ): Step {
+  if (rateLimitedIn(results)) {
+    return rateLimitStep(state, "a reviewer failed", ctx.now());
+  }
   const { comments, raw, failed } = readReviews(
     state,
     sessionsOf(LENS_NAMES, results),
@@ -215,18 +215,18 @@ function reviewed(
   }
   const st = { ...state.st, reviewedSha: state.st.headSha ?? null };
   if (raw.length === 0) {
-    st.stage = "sync";
-    noteEvent(st, "review: no blocking findings", ctx.now());
+    st.stage = "checks";
+    st.testsOnly = false;
+    st.reviewedPatchId = patchIdIn(state.carry);
+    noteEvent(st, NO_FINDINGS_NOTE, ctx.now());
     return saveStep({ ...state, st, phase: "saved" }, comments);
   }
-  const charge = chargeSession(ctx.budgets, st, "aggregator", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep({ ...state, st }, charge.reason, charge.detail, comments);
-  }
-  const charged = { ...state, st, phase: "aggregated", carry: raw };
-  return launchStep(charged, [aggregateLaunch(ctx, charged, raw)], comments);
+  const aggregating = { ...state, st, phase: "aggregated", carry: raw };
+  return launchStep(
+    aggregating,
+    [aggregateLaunch(ctx, aggregating, raw)],
+    comments,
+  );
 }
 
 function lensesOf(finding: MergedFinding): string[] {
@@ -281,7 +281,7 @@ function next(
   const phase = phaseOf(state);
   switch (phase) {
     case "begin":
-      return begin(state, ctx);
+      return begin(state);
     case "prepared":
       return prepared(state, ctx, results);
     case "reviewed":

@@ -38,10 +38,13 @@ function hooksIn(sessions) {
     started: () => undefined,
     record: () => undefined,
     ended: () => undefined,
-    contextLimits: { soft: 150_000, hard: 175_000 },
+    contextLimits: { soft: 175_000, hard: 225_000 },
+    handoffFile: path.join(sessions, "handoff.md"),
     contextStopped: () => undefined,
+    sessionEnded: () => undefined,
     env: () => ({}),
     cwd: sessions,
+    repo: sessions,
   };
 }
 
@@ -49,7 +52,10 @@ const FILES = {
   session: "/r/runs/o__r/issue-7/sessions/i7-spec-4.jsonl",
   extension: "/r/structured-output.mjs",
   schema: "/r/runs/o__r/issue-7/sessions/i7-spec-4.schema.json",
+  commit: null,
 };
+// A writer session's files, which load the pipeline_commit extension.
+const WRITER_FILES = { ...FILES, commit: "/r/pipeline-commit.mjs" };
 
 // A session's raw result, which a child launch always gives.
 /** @param {OpsRaw | SessionRaw} raw @returns {SessionRaw} */
@@ -71,6 +77,7 @@ function specFor(agent) {
     task: "Write the spec.",
     outputSchema: { type: "object" },
     timeoutMs: 60_000,
+    budgetRole: "spec",
     tokenBudget: 80_000,
     intercomBridge: { mode: "off" },
   };
@@ -180,6 +187,25 @@ test("the specifier runs pi in RPC mode as its definition says", () => {
   );
 });
 
+// It writes its failing tests, their stubs and the wiki edits (#334).
+test("the specifier may edit, write and run commands, and keeps the web tools", () => {
+  const { tools } = definitionOf("issue-pipeline-specifier");
+  for (const tool of ["edit", "write", "bash", "web_search"]) {
+    assert.ok(tools.includes(tool), tool);
+  }
+});
+
+// A spec names its entry points, not a list of files (#391).
+test("the specifier's prompt asks for the entry points, not the files", () => {
+  const { systemPrompt } = definitionOf("issue-pipeline-specifier");
+  assert.ok(
+    systemPrompt.includes(
+      "the behaviour, the entry points it builds on, and the tests",
+    ),
+  );
+  assert.ok(!systemPrompt.includes("the behaviour, the files, and the tests"));
+});
+
 test("a definition without project context or a tools list runs with -nc and pi's default tools", () => {
   const definition = parsed(
     "---\nname: x\ninheritProjectContext: false\ninheritSkills: true\n---\nBe brief.\n",
@@ -203,6 +229,28 @@ test("a definition's thinking and extensions reach pi's command line", () => {
     new Set(["/x/ext-a", "/x/ext-b", FILES.extension]),
   );
   assert.equal(flagValue(args, "--tools"), "read,structured_output");
+});
+
+test("a writer session's files add the pipeline_commit extension and tool", () => {
+  const definition = parsed("---\nname: x\ntools: read,edit\n---\nBe brief.\n");
+  const args = piArgs(definition, specFor("x"), WRITER_FILES);
+  assert.deepEqual(
+    new Set(flagValues(args, "-e")),
+    new Set([FILES.extension, WRITER_FILES.commit]),
+  );
+  assert.equal(
+    flagValue(args, "--tools"),
+    "read,edit,structured_output,pipeline_commit",
+  );
+});
+
+test("a writer session with pi's default tools adds both tools to them", () => {
+  const definition = parsed("---\nname: x\n---\nBe brief.\n");
+  const args = piArgs(definition, specFor("x"), WRITER_FILES);
+  assert.equal(
+    flagValue(args, "--tools"),
+    "+structured_output,+pipeline_commit",
+  );
 });
 
 test("a missing agent definition fails its launch with an error naming the agent", async () => {

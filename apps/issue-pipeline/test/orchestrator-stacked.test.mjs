@@ -71,6 +71,32 @@ test("a waiting issue starts on its prerequisite's branch once that one is at ch
   );
 });
 
+test("#328: a waiting issue isn't stacked on a prerequisite whose branch lacks another merged prerequisite's merge commit", () => {
+  const behind = openPrereq({ behind: true });
+  assert.equal(
+    dependentDecision(waitingOn(behind)),
+    `#${DEPENDENT} triage held stacked-on-behind:#${PREREQ}`,
+  );
+  assert.equal(
+    dependentDecision(waitingOn(behind, { stage: "spec" })),
+    `#${DEPENDENT} spec held stacked-on-behind:#${PREREQ}`,
+  );
+});
+
+test("#328: a prerequisite that is behind but not yet stackable still holds its dependent as after", () => {
+  assert.equal(
+    dependentDecision(waitingOn(openPrereq({ behind: true, stage: "review" }))),
+    HELD_AFTER,
+  );
+});
+
+test("#328: once the prerequisite's branch holds the merged prerequisites, the dependent starts stacked on it", () => {
+  assert.equal(
+    dependentDecision(waitingOn(openPrereq({ behind: false }))),
+    `#${DEPENDENT} triage started free stack-on:#${PREREQ}`,
+  );
+});
+
 test("a second-level stack is refused: a prerequisite stacked itself holds its dependent", () => {
   const [decision] = schedule(
     waitingOn(openPrereq({ stacked: true })),
@@ -139,7 +165,7 @@ test("a prerequisite closed unmerged holds its stacked dependent", () => {
   ]);
 });
 
-test("a stacked issue's implement and fix aren't held by its prerequisite's overlapping files", () => {
+test("a stacked issue's implement and fix aren't held by its prerequisite's branch changing their stub", () => {
   assert.deepEqual(decided(overlapping("implement")), [
     `#${PREREQ} fix started free`,
     `#${DEPENDENT} implement started free`,
@@ -158,9 +184,9 @@ test("a prerequisite's checks aren't held by an older dependent stacked on it", 
 
 test("with no after mark and no stack, the decisions are as before and none stacks", () => {
   assert.deepEqual(decided(MERGE_OVER_CHAIN), [
-    "#83 merge held merge-order:#85",
+    "#83 merge started merge-first",
     "#85 sync started free",
-    "#84 fix held files-overlap:#83",
+    "#84 fix started free",
     "#86 spec started free",
   ]);
   const stacks = schedule(MERGE_OVER_CHAIN, SETTINGS, NOW).flatMap(
@@ -171,5 +197,5 @@ test("with no after mark and no stack, the decisions are as before and none stac
       return [];
     },
   );
-  assert.deepEqual(stacks, [null, null]);
+  assert.deepEqual(stacks, [null, null, null, null]);
 });

@@ -1,7 +1,7 @@
 // The replies sync and checks read: the ops replies of sync-base, finish-sync,
 // verify, ci-status, push and prepare-review, and the fixers' and check-fix
 // reviewers' structured output. Checked by hand rather than with zod, as in
-// triage-reply.ts. A reply that doesn't fit reads as a failure.
+// src/roles/triage/reply.ts. A reply that doesn't fit reads as a failure.
 
 import type { ListedFinding } from "../types.ts";
 import type { ChildResult } from "./types.ts";

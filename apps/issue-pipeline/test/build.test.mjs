@@ -1,8 +1,8 @@
 // @ts-check
 // build.ts into a temporary folder: the built workflow is still an async
-// function body with no imports, and the built ops CLI answers as src/ops.ts
-// does, and the built orchestrator's --once exits 0 after a tick and 1 after
-// one that throws. It builds into its own folder, so it never races install.test.mjs,
+// function body with no imports, the built ops CLI answers as src/ops.ts
+// does and its shell supervisor parses, the built orchestrator's --once exits 0 after a tick and 1 after
+// one that throws, and the built report names a missing --config. It builds into its own folder, so it never races install.test.mjs,
 // which builds dist/.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -97,6 +97,14 @@ test("the built ops parses and keeps its #! line", () => {
   );
 });
 
+test("the build writes the shell supervisor beside ops, and it parses", () => {
+  const supervisor = path.join(tmp, "shell-supervisor.mjs");
+  const r = spawnSync(process.execPath, ["--check", supervisor], {
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+});
+
 // Inputs the ops CLI answers without running an op, by name.
 /** @type {[name: string, input: string][]} */
 const ANSWERED_INPUTS = [
@@ -149,6 +157,22 @@ test("the built orchestrator parses and names a bad flag or a missing --config",
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, UNKNOWN_FLAG);
   const missing = run(["--once"]);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, NO_CONFIG);
+});
+
+test("the built report parses, keeps its #! line and names a missing --config", () => {
+  const report = path.join(tmp, "report.mjs");
+  const check = spawnSync(process.execPath, ["--check", report], {
+    encoding: "utf8",
+  });
+  assert.equal(check.status, 0, check.stderr);
+  const head = fs.readFileSync(report, "utf8");
+  assert.ok(head.startsWith("#!/usr/bin/env node\n"));
+  const missing = spawnSync(process.execPath, [report, "usage"], {
+    encoding: "utf8",
+    env: Object.fromEntries([[ROOT_VAR, tmp]]),
+  });
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, NO_CONFIG);
 });
@@ -215,7 +239,12 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   assert.match(failed.stderr, TICK_FAILED);
 });
 
-test("the built pi extension default-exports its factory", async () => {
-  const extension = await import(path.join(tmp, "structured-output.mjs"));
-  assert.equal(typeof extension.default, "function");
+test("the built pi extensions default-export their factories", async () => {
+  const files = ["structured-output.mjs", "pipeline-commit.mjs"];
+  const extensions = await Promise.all(
+    files.map((file) => import(path.join(tmp, file))),
+  );
+  for (const extension of extensions) {
+    assert.equal(typeof extension.default, "function");
+  }
 });

@@ -21,7 +21,6 @@ import {
 
 /** @import { SweepSummary } from "../src/workflow/stages/types.ts" */
 
-const IMPL_TOKENS = 150_000;
 const WRITER = "issue-pipeline-writer";
 
 // An implementer that always runs out of room.
@@ -52,9 +51,9 @@ function implementRun(config = {}) {
 }
 
 test("the spawn cap holds the continuation until the next sweep", async () => {
-  // A second implement session needs 1 spawn: 4 launched + 1 + a reserve of
-  // 4 passes 8.
-  const { trace, summary } = await implementRun({ maxSpawnsPerRun: 9 });
+  // A second implement session needs 2 spawns, its session and its push: 4
+  // launched + 2 + a reserve of 4 passes 9.
+  const { trace, summary } = await implementRun({ maxSpawnsPerRun: 10 });
   assert.deepEqual(sessionAgents(trace), [WRITER]);
   assert.deepEqual(
     summary,
@@ -66,8 +65,6 @@ test("the spawn cap holds the continuation until the next sweep", async () => {
           stage: "implement",
           outcome: "in-progress",
           reason: null,
-          allocatedTokens: IMPL_TOKENS,
-          rebaseAllocatedTokens: 0,
         },
       ],
     }),

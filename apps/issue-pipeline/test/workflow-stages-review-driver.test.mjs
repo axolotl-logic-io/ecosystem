@@ -86,7 +86,7 @@ function issueRun({ claim, ops, agents, config }) {
 }
 
 test("an issue claimed at open-pr is opened and reviewed in the same sweep", async () => {
-  // review fits: 4 launched + 7 + a reserve of 4 is 15; sync doesn't.
+  // review fits: 4 launched + 7 + a reserve of 4 is 15; checks doesn't.
   const { trace, summary } = await issueRun({
     claim: claimAt("open-pr", { prTitle: "T", prBody: "B", prBy: null }),
     ops: {
@@ -102,7 +102,7 @@ test("an issue claimed at open-pr is opened and reviewed in the same sweep", asy
   });
   assert.deepEqual(sessionAgents(trace), [READER, READER, READER]);
   const [item] = /** @type {SweepSummary} */ (summary).items;
-  assert.equal(item?.stage, "sync");
+  assert.equal(item?.stage, "checks");
   assert.equal(releasedState(trace).reviewedSha, "bbbbbbb");
 });
 

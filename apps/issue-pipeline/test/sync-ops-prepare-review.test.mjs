@@ -23,7 +23,11 @@ const ISSUE = {
   wiki: 24,
   prereq: 25,
   stacked: 26,
+  messages: 27,
 };
+// The two commits after sinceSha, oldest first.
+const COMMITS_IN_ORDER =
+  /^# Commits, oldest first\n\ncommit \w+\n\nfix a flaky check\n\ncommit \w+\n\nsimplify the parser\n\n$/u;
 // The reply fields the stacked test reads.
 const REVIEW_REPLY = z.looseObject({
   baseSha: z.string(),
@@ -51,20 +55,40 @@ function patch(dir, range) {
   return spawnSync("git", args, { encoding: "utf8" }).stdout;
 }
 
-/** @typedef {{ file: string, reply: { headSha: string, baseSha: string, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
+// The review file's code part: the range's commit messages, then its diff.
+/** @param {string} dir @param {string} range @returns {string} */
+function codePart(dir, range) {
+  const format = "--format=commit %h%n%n%B";
+  const log = gitIn(dir, `log --reverse '${format}' ${range}`);
+  return `# Commits, oldest first\n\n${log}\n\n# Diff\n\n${patch(dir, range)}`;
+}
+
+// git's verbatim patch id of the diff `range`, or null when it prints none
+// (#394).
+/** @param {string} dir @param {string} range @returns {string | null} */
+function patchIdIn(dir, range) {
+  const out = sh(
+    `git -C ${dir} diff --binary ${range} | git patch-id --verbatim`,
+  );
+  return out.split(" ")[0] || null;
+}
+
+/** @typedef {{ file: string, reply: { headSha: string, headTree: string, baseSha: string, patchId: string | null, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
 
 // What prepare-review should reply and write for the diff `from..HEAD`.
 /** @param {number} n @param {string | undefined} from @param {string} tag @param {{ diff: string, files: string[] }} [wiki] @returns {Review} */
 function review(n, from, tag, wiki = { diff: "", files: [] }) {
   const wt = worktree(n);
   const headSha = gitIn(wt, "rev-parse HEAD");
+  const headTree = gitIn(wt, `rev-parse ${headSha}^{tree}`);
   const baseSha = gitIn(wt, `merge-base ${BASE} HEAD`);
-  const code = patch(wt, `${from ?? baseSha}..${headSha}`);
+  const code = codePart(wt, `${from ?? baseSha}..${headSha}`);
   let file = code;
   if (wiki.diff !== "") {
     file = `${code}${WIKI_HEADING}${wiki.diff}`;
   }
   const names = gitIn(wt, `diff --name-only ${baseSha}..${headSha}`);
+  const patchId = patchIdIn(wt, `${baseSha} ${headSha}`);
   const diffPath = path.join(
     fx.root,
     "runs",
@@ -77,17 +101,30 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
   const diffLines = file.split("\n").length;
   return {
     file,
-    reply: { headSha, baseSha, diffPath, diffLines, changedFiles },
+    reply: {
+      headSha,
+      headTree,
+      baseSha,
+      patchId,
+      diffPath,
+      diffLines,
+      changedFiles,
+    },
   };
 }
 
-// What prepare-review replied and wrote, beside what it should have.
-/** @param {string} out @param {Review} want @returns {{ got: { out: string, file: string }, expected: { out: string, file: string } }} */
+// What prepare-review replied and wrote, beside what it should have. The
+// replies are compared as objects, since nothing promises their key order.
+// The bundle's fields are left out: sync-ops-prepare-review-bundle.test.mjs
+// checks them against the bundle it wrote (#415).
+/** @param {string} out @param {Review} want @returns {{ got: { reply: unknown, file: string }, expected: { reply: unknown, file: string } }} */
 function reviewOutcome(out, want) {
   const file = fs.readFileSync(want.reply.diffPath, "utf8");
+  const expected = JSON.parse(okLine("prepare-review", want.reply));
+  const { bundlePath, bundleLines, ...reply } = JSON.parse(out);
   return {
-    got: { out, file },
-    expected: { out: okLine("prepare-review", want.reply), file: want.file },
+    got: { reply, file },
+    expected: { reply: expected, file: want.file },
   };
 }
 
@@ -101,6 +138,18 @@ test("prepare-review diffs the branch from its merge base", () => {
   assert.deepEqual(want.reply.changedFiles, ["g", "h"]);
   const { got, expected } = reviewOutcome(out, want);
   assert.deepEqual(got, expected);
+});
+
+test("prepare-review lists the reviewed commits' messages, oldest first, above the diff", () => {
+  const n = ISSUE.messages;
+  const since = fx.startBranch(n, "g", "one");
+  fx.commitIn(n, "h", "two", "fix a flaky check");
+  fx.commitIn(n, "i", "three", "simplify the parser");
+  ask({ op: "prepare-review", number: n, sinceSha: since, tag: "r1" });
+  const file = fs.readFileSync(review(n, since, "r1").reply.diffPath, "utf8");
+  const top = file.slice(0, file.indexOf("# Diff"));
+  assert.match(top, COMMITS_IN_ORDER);
+  assert.ok(!top.includes("edit g"));
 });
 
 test("prepare-review diffs from sinceSha while it is in the branch", () => {

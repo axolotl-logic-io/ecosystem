@@ -15,7 +15,6 @@ import {
   afterSession,
   BUILD_CTX,
   buildState,
-  contextWith,
   PATHS,
   SPEC,
   SPEC_BY,
@@ -24,18 +23,13 @@ import {
   STAMP,
   specLaunch,
   specTask,
-  TRIAGE_TOKENS,
 } from "./workflow-build-test-kit.mjs";
 
 /** @import { Step } from "../src/workflow/stages/types.ts" */
 
-const SPEC_TOKENS = 80_000;
 const SPEC_LIMIT = 12_000;
-// An issue budget with room for triage but not for a spec session.
-const SMALL_BUDGET = 100_000;
 const START_FROM = /start from/u;
 const QUESTIONS = ["Which file holds the thing?"];
-const FILES = ["src/thing.ts", "test/**"];
 const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
 // Spec's step after its session ends with `result`.
 /** @param {Parameters<typeof afterSession>[3]} result @returns {Step} */
@@ -51,7 +45,6 @@ function replied(fields) {
     decision: "ready",
     spec: SPEC_REPLY,
     questions: [],
-    files: FILES,
     subIssues: [],
     ...fields,
   };
@@ -64,8 +57,6 @@ test("the first call charges the spec writer and launches its session", () => {
   assert.equal(step.done, false);
   assert.deepEqual(sessions(step), asSessions([specLaunch(specTask())]));
   assert.equal(step.state.phase, "decide");
-  assert.equal(step.state.st.allocated, TRIAGE_TOKENS + SPEC_TOKENS);
-  assert.deepEqual(step.state.st.sessions, ["triage", "spec"]);
   assert.deepEqual([step.comments, step.stop], [[], null]);
   assert.deepEqual(given, buildState("spec"));
 });
@@ -79,30 +70,17 @@ test("without a wiki the task names no wiki start page", () => {
   assert.doesNotMatch(session?.task ?? "", START_FROM);
 });
 
-test("a budget too small for the session stops", () => {
-  const step = next(buildState("spec"), contextWith(SMALL_BUDGET), []);
-  assert.equal(step.done, true);
-  assert.deepEqual(step.stop, {
-    reason: "issue token budget exhausted",
-    detail:
-      "Allocated 50000 of 100000 tokens (issueTokenBudget); the next step (spec) needs 80000.",
-    code: null,
-  });
-  assert.equal(step.state.st.allocated, TRIAGE_TOKENS);
-});
-
-test("a whole ready spec is kept without its marker, posted, and moves the issue to implement", () => {
+test("a whole ready spec is kept without its marker, posted, and moves the issue to implement, with no files", () => {
   const step = replied({ spec: `${SPEC_REPLY}\n  \n` });
   assert.equal(step.done, true);
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "implement");
   assert.equal(step.state.st.spec, SPEC);
   assert.equal(step.state.st.specFile, undefined);
-  assert.deepEqual(step.state.st.files, FILES);
-  assert.deepEqual(step.state.st.log, [
-    `${STAMP} charged spec 80000 to issueTokenBudget`,
-    `${STAMP} spec: ready`,
-  ]);
+  assert.equal(Object.hasOwn(step.state.st, "files"), false);
+  // This spec writer leaves the spec's tests to the implementer (#305).
+  assert.equal(step.state.st.specWritesTests, false);
+  assert.deepEqual(step.state.st.log, [`${STAMP} spec: ready`]);
   assert.deepEqual(step.comments, [
     {
       by: SPEC_BY,
@@ -131,7 +109,7 @@ test("a ready spec longer than 12,000 characters is saved whole to spec.md first
   assert.equal(saved.state.st.stage, "implement");
   assert.equal(saved.state.st.spec, `${long.slice(0, SPEC_LIMIT)}…`);
   assert.equal(saved.state.st.specFile, SPEC_FILE);
-  assert.deepEqual(saved.state.st.files, FILES);
+  assert.equal(Object.hasOwn(saved.state.st, "files"), false);
   assert.deepEqual(saved.comments, [
     {
       by: SPEC_BY,
@@ -175,10 +153,7 @@ test("questions close the issue and go back to triage with the spec so far", () 
     },
   ]);
   assert.equal(step.state.st.stage, "spec");
-  assert.deepEqual(step.state.st.log, [
-    `${STAMP} charged spec 80000 to issueTokenBudget`,
-    `${STAMP} spec: needs-info`,
-  ]);
+  assert.deepEqual(step.state.st.log, [`${STAMP} spec: needs-info`]);
 });
 
 test("posted questions finish the stage", () => {

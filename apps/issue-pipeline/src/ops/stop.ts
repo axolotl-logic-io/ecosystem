@@ -70,7 +70,7 @@ function nextStepText(control: Stop, req: StopRequest): string {
   if (stage === PUBLISH_STAGE) {
     return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next sweep publishes the wiki changes again, with every limit reset.`;
   }
-  return `To resume, fix what this names (push to the branch if you like), then remove \`${control.label.name}\`. The next sweep continues from the PR's branch at review, with every limit reset, the token budget included.`;
+  return `To resume, fix what this names (push to the branch if you like), then remove \`${control.label.name}\`. The next sweep continues at the stage that stopped, from the PR's branch, with every limit reset; a stage after review goes back to review if the branch moved since it.`;
 }
 
 function stopComment(

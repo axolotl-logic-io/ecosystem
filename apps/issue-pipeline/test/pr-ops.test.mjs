@@ -26,10 +26,6 @@ const EMPTY = { n: 8, pr: 58 };
 const REOPENED = { n: 11, pr: 61 };
 // What a branch with a code change and no wiki reports.
 const CODE = { codeChanged: true, wikiAhead: 0 };
-const CLOSED = { n: 10, pr: 60 };
-const COORDINATOR_SIGNATURE = /agent-pipeline:comment role=coordinator/u;
-const WIKI_ONLY = /lives only in the wiki/u;
-const WIKI_BRANCH_10 = /`agent\/issue-10`/u;
 
 // The gh calls since the last reply that change GitHub, by src/github.ts's
 // own read/write rule.
@@ -231,6 +227,23 @@ test("push pushes the branch after a real commit", () => {
   assert.deepEqual(fakeGh.calls(), []);
 });
 
+// A stage job's exit push records itself as "exit-push", which a claim may
+// adopt (#315).
+test("exit-push pushes the branch and records the push as exit-push", () => {
+  const { n } = PUSHED;
+  const sha = fx.commitIn(n, "h", "more work");
+  fakeGh.reply([]);
+  const out = ask({ op: "exit-push", number: 7 });
+  assert.equal(out, okLine("exit-push", { headSha: sha, ...CODE }));
+  assert.equal(originRef("agent/issue-7"), sha);
+  assert.deepEqual(pushRecord(fx.root, n), {
+    sha,
+    op: "exit-push",
+    dated: true,
+  });
+  assert.deepEqual(fakeGh.calls(), []);
+});
+
 test("push with no code change and no wiki commits pushes nothing and says so", () => {
   const { n, pr } = EMPTY;
   startPr(n, pr);
@@ -242,21 +255,6 @@ test("push with no code change and no wiki commits pushes nothing and says so", 
   assert.equal(out, okLine("push", nothing));
   assert.equal(originRef("agent/issue-8"), before);
   assert.deepEqual(pushRecord(fx.root, n), record);
-});
-
-test("close-pr closes the draft with a signed comment naming the wiki branch", () => {
-  const { n, pr } = CLOSED;
-  fakeGh.reply([]);
-  const out = ask({ op: "close-pr", number: n, pr });
-  assert.equal(out, okLine("close-pr", { pr, closed: true }));
-  const [call = [], ...rest] = writes();
-  assert.deepEqual(rest, []);
-  const [command, verb, closed] = call;
-  assert.deepEqual([command, verb, closed], ["pr", "close", String(pr)]);
-  const comment = call.at(call.indexOf("--comment") + 1) ?? "";
-  assert.match(comment, COORDINATOR_SIGNATURE);
-  assert.match(comment, WIKI_ONLY);
-  assert.match(comment, WIKI_BRANCH_10);
 });
 
 test("open-pr with reopen reopens the closed PR, fills it in and marks it ready", () => {

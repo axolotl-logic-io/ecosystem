@@ -82,7 +82,7 @@ function withRepoLock<T>(cfg: Config, name: string, fn: () => T): T {
 }
 
 function withWikiLock<T>(cfg: Config, fn: () => T): T {
-  return withLock(`${paths.wikiClone(cfg)}.lock`, fn);
+  return withLock(`${paths.wikiMirror(cfg)}.lock`, fn);
 }
 
 export { RESERVATION_MS, withCloneLock, withRepoLock, withWikiLock };

@@ -130,7 +130,7 @@ test("a stop in implement pushes the wiki checkout's commits", () => {
     `cd ${wiki} && echo page > Page.md && git add . && git ${COMMITTER} commit -qm page`,
   );
   const sha = sh(`git -C ${wiki} rev-parse HEAD`);
-  const config = configWith({ wiki: { url: wikiOrigin } });
+  const config = configWith({ wiki: true });
   assert.deepEqual(stopAt(WITH_WIKI, "implement", { config }), STOP_REPLY);
   assert.equal(headOf(wikiOrigin, `agent/issue-${WITH_WIKI}`), sha);
 });

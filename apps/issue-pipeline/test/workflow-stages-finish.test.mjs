@@ -39,10 +39,7 @@ test("passing acceptance moves to security, held by the spawn cap", async () => 
     [state.stage, state.acceptReason],
     ["security", "Does what #7 asks."],
   );
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "security", allocatedTokens: 880_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "security" }));
 });
 
 test("failing acceptance sends the issue to fix", async () => {
@@ -66,10 +63,7 @@ test("failing acceptance sends the issue to fix", async () => {
     [{ lenses: ["acceptance"], evidence: "Misses item 1.", status: "open" }],
   );
   assert.throws(() => requestFor(trace, "stop"), NO_STOP);
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "fix", allocatedTokens: 880_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "fix" }));
 });
 
 test("a security review with no findings moves to merge, held by the spawn cap", async () => {
@@ -83,10 +77,7 @@ test("a security review with no findings moves to merge, held by the spawn cap",
   });
   assert.deepEqual(sessionAgents(trace), ["issue-pipeline-reader"]);
   assert.equal(releasedState(trace).stage, "merge");
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "merge", allocatedTokens: 940_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "merge" }));
 });
 
 test("a security finding sends the issue back to fix, held by the spawn cap", async () => {
@@ -108,10 +99,7 @@ test("a security finding sends the issue back to fix, held by the spawn cap", as
   });
   assert.deepEqual(sessionAgents(trace), ["issue-pipeline-reader"]);
   assert.equal(releasedState(trace).stage, "fix");
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "fix", allocatedTokens: 940_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "fix" }));
 });
 
 test("an issue at merge is merged", async () => {
@@ -131,8 +119,6 @@ test("an issue at merge is merged", async () => {
     issueSummary({
       stage: "merge",
       outcome: "merged",
-      allocatedTokens: 940_000,
-      rebaseAllocatedTokens: 0,
     }),
   );
 });
@@ -156,8 +142,5 @@ test("a merge queued behind an older PR notes it and stays at merge", async () =
   assert.deepEqual(state.log, [
     "2026-10-15T12:00Z merge waits for #5 (older PR #40)",
   ]);
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "merge", allocatedTokens: 940_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "merge" }));
 });

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { startSweep } from "../src/workflow/sweep.ts";
 
 /** @import { LaunchSpec } from "../src/workflow/launches.ts" */
-/** @import { Sweep } from "../src/workflow/sweep.ts" */
+/** @import { Sweep } from "../src/workflow/types.ts" */
 /**
  * @typedef {object} Run
  * @property {string} stage
@@ -76,7 +76,6 @@ const NEEDS_INFO_RUN = {
       decision: "needs-info",
       spec: "So far.\n<!-- end of spec -->",
       questions: ["Which file?"],
-      files: [],
       subIssues: [],
     }),
   },

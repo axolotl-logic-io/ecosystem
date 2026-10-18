@@ -2,12 +2,14 @@
 // The stage job's test kit: `node src/job.ts` with a fake ops.mjs in a
 // temporary pipeline root and a fake RPC `pi` first on PATH. Each logs what it
 // was asked, so the tests see the ops in order, every pi command line and
-// every RPC command pi got.
+// every RPC command pi got. A job startJob started, and every pi in the
+// place's pi.log, are no longer running once the test ends.
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { setTimeout as delay } from "node:timers/promises";
+import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
 import { FAKE_OPS, FAKE_PI, messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
 import {
@@ -19,8 +21,15 @@ import {
 
 const JOB = new URL("../src/job.ts", import.meta.url).pathname;
 const AGENTS = new URL("../agents/", import.meta.url).pathname;
-// How often waitFor looks at its file condition again.
-const POLL_MS = 20;
+// runJob's bound on a job's run. A spawnSync blocks the event loop, and the
+// per-test timeout with it, so this bound sits below that timeout
+// (`--test-timeout` in mise.toml's check task); a run past it is killed and
+// ends with a null status. It covers one job run to its end: the slowest
+// measured was 8.2 s (a spec stage in job-role-stage.test.mjs), in a full
+// `node --test` run beside three more in a copy of the checkout, at 1-minute
+// load averages of up to 130 on 10 cores (2026-10-17). It is over 3 times
+// that.
+const RUN_JOB_MS = 30_000;
 
 // Issue #7 after triage: its plan and draft PR.
 const TRIAGED = {
@@ -28,12 +37,15 @@ const TRIAGED = {
   pr: 42,
   headSha: "aaaaaaa",
   implemented: false,
-  allocated: 50_000,
 };
 const SPEC = "## Behaviour\n\n1. src/a.ts does the thing.";
-const USAGE = { input: 1000, output: 200, cacheRead: 3000, cacheWrite: 400 };
+// Its cache writes all last an hour, and its cost is exact in binary.
+const TOKENS = { input: 1000, output: 200, cacheRead: 3000, cacheWrite: 400 };
+const USAGE = { ...TOKENS, cacheWrite1h: TOKENS.cacheWrite, cost: 0.125 };
 const USAGE_TOTAL =
   USAGE.input + USAGE.output + USAGE.cacheRead + USAGE.cacheWrite;
+// What USAGE counts as spent towards reportedTokens: cache reads left out.
+const USAGE_SPENT = USAGE.input + USAGE.output + USAGE.cacheWrite;
 
 // The structured output of a spec writer whose spec is ready.
 const READY_SPEC = {
@@ -47,12 +59,37 @@ const READY_SPEC = {
 // A session that spends USAGE and ends with the ready spec.
 const SPEC_SESSION = { events: [messageEnd(USAGE), outputEnd(READY_SPEC)] };
 
+// The sweep stage the job tests run when any sweep reader stage will do:
+// acceptance, whose one reader session's pass releases the issue at
+// security. Since #334 spec runs the spec writer's role.
+const SWEEP_STAGE = "accept";
+// The stage a passed acceptance saves the issue at.
+const AFTER_SWEEP_STAGE = "security";
+// The acceptance verifier's pass.
+const PASS_VERDICT = { verdict: "pass", reason: "It does what #7 asks." };
+// A session that spends USAGE and ends with the pass.
+const SWEEP_SESSION = {
+  events: [messageEnd(USAGE), outputEnd(PASS_VERDICT)],
+};
+// The reviewed diff acceptance reads, at the verified head.
+const PREPARED_DIFF = {
+  ok: true,
+  headSha: TRIAGED.headSha,
+  diffPath: "/w/runs/o__r/issue-7/final.diff",
+  diffLines: "3",
+};
+
 /** @param {string} stage @returns {{ claim: object } & Record<string, unknown>} */
 function repliesAt(stage) {
+  let verified = {};
+  if (stage === SWEEP_STAGE) {
+    verified = { verifiedSha: TRIAGED.headSha };
+  }
   return {
     ...ROUTINE_OPS,
+    "prepare-review": PREPARED_DIFF,
     sweep: sweepReply({ items: [ISSUE] }),
-    claim: claimAt(stage, TRIAGED),
+    claim: claimAt(stage, { ...TRIAGED, ...verified }),
   };
 }
 
@@ -126,6 +163,12 @@ function setUp(replies, script, extraConfig = {}, options = {}) {
     wikiOrigin,
   };
   setScript(place, script);
+  endsWithTest(() => {
+    // Each fake pi leads its own process group.
+    for (const { pid } of piStarts(place)) {
+      killGroup(pid);
+    }
+  });
   return place;
 }
 
@@ -141,9 +184,15 @@ function setScript(place, script) {
  * @returns {NodeJS.ProcessEnv}
  */
 function jobEnv(place, extraEnv) {
-  const { PATH: searchPath } = process.env;
+  // A suite run inside a committing pipeline session leaves out that
+  // session's commit scope, which no test's job is given.
+  const {
+    PATH: searchPath,
+    ISSUE_PIPELINE_COMMIT_SCOPE: _sessionScope,
+    ...inherited
+  } = process.env;
   return {
-    ...process.env,
+    ...inherited,
     ...extraEnv,
     ...Object.fromEntries([
       ["PATH", `${place.bin}${path.delimiter}${searchPath}`],
@@ -169,6 +218,8 @@ function runJob(place, args, extraEnv = {}) {
   return spawnSync(process.execPath, argvOf(place, args), {
     encoding: "utf8",
     env: jobEnv(place, extraEnv),
+    timeout: RUN_JOB_MS,
+    killSignal: "SIGKILL",
   });
 }
 
@@ -201,6 +252,12 @@ function startJob(place, args, extraEnv = {}) {
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
+  endsWithTest(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await once(child, "exit");
+    }
+  });
   /** @type {Promise<JobEnd>} */
   const end = new Promise((resolve) => {
     child.on("close", (status) => resolve({ status, stdout, stderr }));
@@ -209,7 +266,8 @@ function startJob(place, args, extraEnv = {}) {
 }
 
 /**
- * The JSON lines of the root's log `name`, or none if it isn't there.
+ * The complete JSON lines of the root's log `name`, or none if it isn't
+ * there; a line still being appended is left out.
  * @param {Place} place
  * @param {string} name
  * @returns {any[]}
@@ -219,10 +277,11 @@ function logOf(place, name) {
   if (!fs.existsSync(file)) {
     return [];
   }
-  return fs
-    .readFileSync(file, "utf8")
-    .trim()
+  const text = fs.readFileSync(file, "utf8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
+    .slice(0, -1)
     .map((line) => JSON.parse(line));
 }
 
@@ -248,19 +307,6 @@ function statusOf(place) {
 }
 
 /**
- * Resolves once `check` holds, looking again every POLL_MS.
- * @param {() => boolean} check
- * @returns {Promise<void>}
- */
-async function waitFor(check) {
-  if (check()) {
-    return;
-  }
-  await delay(POLL_MS);
-  await waitFor(check);
-}
-
-/**
  * @param {any} status a job.json, or null
  * @returns {any} its session's launch, or null
  */
@@ -277,32 +323,25 @@ function flagValue(argv, flag) {
   return String(argv[argv.indexOf(flag) + 1]);
 }
 
-/** @param {number} pid @returns {boolean} whether the process is running */
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export {
-  alive,
+  AFTER_SWEEP_STAGE,
   flagValue,
   logOf,
+  PASS_VERDICT,
   piCommands,
   piStarts,
   READY_SPEC,
   repliesAt,
   runJob,
   SPEC_SESSION,
+  SWEEP_SESSION,
+  SWEEP_STAGE,
   sessionOf,
   setScript,
   setUp,
   startJob,
   statusOf,
   USAGE,
+  USAGE_SPENT,
   USAGE_TOTAL,
-  waitFor,
 };

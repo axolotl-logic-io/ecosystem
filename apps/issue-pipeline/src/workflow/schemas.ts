@@ -4,7 +4,8 @@
 
 // The subset of JSON Schema the replies use.
 interface JsonSchema {
-  type?: string;
+  // One type, or a list of them, such as a string or null.
+  type?: string | readonly string[];
   additionalProperties?: boolean;
   properties?: Readonly<Record<string, JsonSchema>>;
   required?: readonly string[];
@@ -31,7 +32,8 @@ const FINDING: JsonSchema = {
   required: ["severity", "file", "line", "title", "evidence", "suggestion"],
 };
 
-// One part of a spec writer's split, with the files it touches.
+// One part of a spec writer's split: its title, its slice of the spec and
+// the earlier parts it waits on.
 const SUB_ISSUE: JsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -39,9 +41,8 @@ const SUB_ISSUE: JsonSchema = {
     title: STR,
     body: STR,
     after: { type: "array", items: INTEGER },
-    files: { type: "array", items: STR },
   },
-  required: ["title", "body", "after", "files"],
+  required: ["title", "body", "after"],
 };
 
 const TRIAGE_SCHEMA: JsonSchema = {
@@ -63,10 +64,9 @@ const SPEC_SCHEMA: JsonSchema = {
     decision: { enum: ["ready", "needs-info", "split"] },
     spec: STR,
     questions: { type: "array", items: STR, maxItems: 5 },
-    files: { type: "array", items: STR },
     subIssues: { type: "array", maxItems: 5, items: SUB_ISSUE },
   },
-  required: ["decision", "spec", "questions", "files", "subIssues"],
+  required: ["decision", "spec", "questions", "subIssues"],
 };
 
 const IMPL_SCHEMA: JsonSchema = {

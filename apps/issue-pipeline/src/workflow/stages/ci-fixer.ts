@@ -1,13 +1,16 @@
 // The CI fixer's sessions: a fixer for a check failure while the issue has
-// CI-fix attempts and budget left, and a continuation for the same failure
+// CI-fix attempts left, and a continuation for the same failure
 // when a fixer runs out of room and hands off, up to config maxContinuations
 // (#269). A continuation is not a CI-fix attempt.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
+import { practicesNote } from "../practices.ts";
 import {
+  beyondIssueRule,
+  commitRulesOf,
   handoffLead,
   handoffRule,
-  practicesNote,
+  NO_ARTIFICIAL_LOAD_RULE,
   preamble,
 } from "../prompts.ts";
 import { CIFIX_SCHEMA } from "../schemas.ts";
@@ -65,9 +68,17 @@ function fixerLaunch(
     "These checks failed:",
     job.failure,
     "",
-    "Find the cause and fix it with the smallest change. If `fails-before-fix` failed, the tests do not prove the change: strengthen them so they fail without the fix. If a lockfile check failed, regenerate the lockfile with the package manager.",
-    `Run the failing check locally, then commit (\`git add -A && git commit\`, ending each message with the trailer line \`Pipeline-Agent: check fixer\`) and leave the worktree clean. Return \`cannot-fix\` if the failure is unrelated to this change (for example, a flaky or broken check on ${cfg.baseBranch}).`,
-    handoffRule(budgets.hardLimit, handoffFile, "commit what builds"),
+    "Fix every failing check, whatever caused it, even when this change didn't: a flaky check is a failure, so fix its cause and never just re-run it. If `fails-before-fix` failed, the tests do not prove the change: strengthen them so they fail without the fix. If a lockfile check failed, regenerate the lockfile with the package manager.",
+    ...commitRulesOf(ctx.committer, {
+      unit: "step",
+      when: "as soon as it works",
+      trailer: "Pipeline-Agent: check fixer",
+      clearMessage: false,
+    }),
+    `Run the failing check locally, commit what is left and leave the worktree clean. Return \`cannot-fix\` only for a failure no change in the repo can fix: an outage of an outside service, missing secrets or credentials, or anything that needs the repo's owner. Say which in \`summary\`.`,
+    beyondIssueRule(cfg.baseBranch, "`summary`, which is posted on the PR"),
+    NO_ARTIFICIAL_LOAD_RULE,
+    handoffRule(budgets, handoffFile, "make it build and commit it"),
   ];
   if (job.continuation) {
     lines.unshift(handoffLead(handoffFile));
@@ -81,12 +92,13 @@ function fixerLaunch(
     schema: CIFIX_SCHEMA,
     writer: true,
     minutes: FIXER_MINUTES,
+    budgetRole: "ciFixer",
     tokenBudget: budget,
-    task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
+    task: preamble(cfg, state, role).concat(lines).join("\n"),
   };
 }
 
-// Charges a fixer session and launches it, after posting `comments`. The
+// Launches a fixer session, after posting `comments`. The
 // next phase, `fixed`, reads the failure back through `failureOf`; the rest
 // of the stage's carry, such as checks' round count, is kept.
 function launchFixer(
@@ -95,22 +107,14 @@ function launchFixer(
   job: FixerJob,
   comments: readonly StageComment[],
 ): Step {
-  const st: IssueState = { ...state.st };
-  const charge = chargeSession(ctx.budgets, st, "ciFixer", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(state, charge.reason, charge.detail, comments);
-  }
-  const charged = { ...state, st };
   let kept: Record<string, unknown> = {};
   if (isRecord(state.carry)) {
     kept = state.carry;
   }
   const carry = { ...kept, failure: job.failure };
   return launchStep(
-    { ...charged, phase: "fixed", carry },
-    [fixerLaunch(charged, ctx, job)],
+    { ...state, phase: "fixed", carry },
+    [fixerLaunch(state, ctx, job)],
     comments,
   );
 }
@@ -129,7 +133,7 @@ function failureOf(state: StageState): string {
 }
 
 // Launches a fixer for `failure`, after posting `comments`, while the issue
-// has CI-fix attempts and budget left.
+// has CI-fix attempts left.
 function startFix(
   state: StageState,
   ctx: StageContext,

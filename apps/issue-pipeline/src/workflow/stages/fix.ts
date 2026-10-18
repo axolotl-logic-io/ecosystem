@@ -7,7 +7,7 @@
 // hands off to a continuation in the same round, up to config
 // maxContinuations per issue (#269).
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { launchBudget } from "../budget.ts";
 import { clip } from "../clip.ts";
 import { noteEvent } from "../event-log.ts";
 import {
@@ -26,6 +26,7 @@ import {
   outOfRoomReason,
 } from "./continuation.ts";
 import { flowStep, prFlowed } from "./flow-step.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import {
   launchRereviews,
   prepareRereview,
@@ -107,14 +108,14 @@ function fixerLaunch(
     model: ctx.models.fixer,
     schema: FIX_SCHEMA,
     minutes: FIX_MINUTES,
-    tokenBudget: sessionBudget(ctx.budgets, "fixer"),
+    ...launchBudget(ctx.budgets, "fixer"),
     task: fixTask(ctx, state, { round, open, continuation }),
     writer: true,
   };
 }
 
-// Stops once the fix rounds are used up; otherwise charges the fixer, counts
-// the round and launches it.
+// Stops once the fix rounds are used up; otherwise counts the round and
+// launches the fixer.
 function begin(state: StageState, ctx: StageContext): Step {
   const { maxFixRounds } = ctx.cfg;
   const round = roundOf(state);
@@ -127,12 +128,6 @@ function begin(state: StageState, ctx: StageContext): Step {
     });
   }
   const st = copyState(state.st);
-  const charge = chargeSession(ctx.budgets, st, "fixer", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep({ ...state, st }, charge.reason, charge.detail);
-  }
   st.round = round + 1;
   const begun = { ...state, st, phase: "fixed" };
   return launchStep(begun, [fixerLaunch(ctx, begun)]);
@@ -168,10 +163,6 @@ function handedOff(
     );
   }
   const st = continued(copyState(state.st), "fix");
-  const charge = chargeSession(ctx.budgets, st, "fixer", { at: ctx.now() });
-  if (!charge.charged) {
-    return stopStep({ ...state, st }, charge.reason, charge.detail, [comment]);
-  }
   const continuing = { ...state, st, phase: "fixed" };
   return launchStep(
     continuing,
@@ -193,7 +184,8 @@ function fixed(
     reply = fixReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the fixer session failed", result.error);
+    const reason = "the fixer session failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const round = roundOf(state);
   const st = copyState(state.st);

@@ -4,6 +4,8 @@
 // token usage. It alone knows the shape of the records it reads.
 
 import { z } from "zod";
+import type { Usage } from "./token-usage.ts";
+import { addUsage, PI_USAGE, ZERO_USAGE } from "./token-usage.ts";
 
 // How much of a child's stderr an error keeps.
 const ERROR_TAIL = 500;
@@ -26,13 +28,6 @@ interface OpsRaw {
   error: string;
 }
 
-interface Usage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-}
-
 interface SessionRaw {
   ok: boolean;
   structuredOutput: Record<string, unknown> | null;
@@ -48,11 +43,17 @@ interface ToolFailure {
   error: string;
 }
 
-// What a record tells: an assistant message's usage, and a tool call's end,
-// which carries its failure or null when it succeeded.
+// What a record tells: an assistant message's usage and text (null when it
+// has none), and a tool call's end: the tool, the length of its result's
+// text, and its failure, or null when it succeeded.
 interface RecordFacts {
   usage: Usage | null;
-  toolEnd: { failure: ToolFailure | null } | null;
+  text: string | null;
+  toolEnd: {
+    tool: string;
+    outputChars: number;
+    failure: ToolFailure | null;
+  } | null;
 }
 
 // The launch a session ran for.
@@ -61,18 +62,12 @@ interface SessionLaunch {
   agent: string;
 }
 
-const COUNT = z.number().catch(0);
-const USAGE = z.object({
-  input: COUNT,
-  output: COUNT,
-  cacheRead: COUNT,
-  cacheWrite: COUNT,
-});
 const MESSAGE_END = z.object({
   type: z.literal("message_end"),
   message: z.object({
     role: z.literal("assistant"),
-    usage: USAGE.optional(),
+    content: z.array(z.unknown()).catch([]),
+    usage: PI_USAGE.optional(),
     errorMessage: z.string().optional(),
   }),
 });
@@ -101,7 +96,6 @@ const TOOL_END = z.object({
 });
 // How much of a failed tool call's error text the status keeps.
 const TOOL_ERROR_CHARS = 2000;
-const ZERO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 type SessionEvent = z.infer<typeof EVENT>;
 
@@ -137,26 +131,7 @@ function eventOf(line: string): SessionEvent | null {
   } catch {
     return null;
   }
-  const event = EVENT.safeParse(parsed);
-  if (!event.success) {
-    return null;
-  }
-  return event.data;
-}
-
-// The two usages summed.
-function addUsage(sum: Usage, usage: Usage): Usage {
-  return {
-    input: sum.input + usage.input,
-    output: sum.output + usage.output,
-    cacheRead: sum.cacheRead + usage.cacheRead,
-    cacheWrite: sum.cacheWrite + usage.cacheWrite,
-  };
-}
-
-// Every token the usage counts: input, output and both cache counts.
-function usageTotal(usage: Usage): number {
-  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+  return EVENT.safeParse(parsed).data ?? null;
 }
 
 function addEvent(tally: SessionTally, event: SessionEvent): SessionTally {
@@ -174,36 +149,41 @@ function addEvent(tally: SessionTally, event: SessionEvent): SessionTally {
   };
 }
 
-// The text parts of a tool result's content, joined and clipped.
-function toolErrorText(content: readonly unknown[]): string {
-  const texts = content.flatMap((part) => {
+// The text parts of a tool result's or an assistant message's content.
+function toolTexts(content: readonly unknown[]): string[] {
+  return content.flatMap((part) => {
     const text = TOOL_TEXT.safeParse(part);
     if (text.success) {
       return [text.data.text];
     }
     return [];
   });
-  return texts.join("\n").slice(0, TOOL_ERROR_CHARS);
 }
 
-// What a record a session printed tells the job's status: the usage of an
-// assistant message, and whether a tool call ended, and how it failed.
+// What a record a session printed tells the job: the usage and text of an
+// assistant message, and which tool call ended, its output's length, and how
+// it failed.
 function recordFacts(record: unknown): RecordFacts {
   const message = MESSAGE_END.safeParse(record);
   const tool = TOOL_END.safeParse(record);
   let usage: Usage | null = null;
+  let text: string | null = null;
   if (message.success) {
     usage = message.data.message.usage ?? null;
+    text = toolTexts(message.data.message.content).join("\n").trim() || null;
   }
   if (!tool.success) {
-    return { usage, toolEnd: null };
+    return { usage, text, toolEnd: null };
   }
-  const { toolName, isError, result } = tool.data;
-  if (!isError) {
-    return { usage, toolEnd: { failure: null } };
+  const { toolName: name, isError, result } = tool.data;
+  const texts = toolTexts(result.content);
+  const outputChars = texts.reduce((sum, part) => sum + part.length, 0);
+  let failure: ToolFailure | null = null;
+  if (isError) {
+    const error = texts.join("\n").slice(0, TOOL_ERROR_CHARS);
+    failure = { tool: name, error };
   }
-  const error = toolErrorText(result.content);
-  return { usage, toolEnd: { failure: { tool: toolName, error } } };
+  return { usage, text, toolEnd: { tool: name, outputChars, failure } };
 }
 
 function tallyOf(stdout: string, start: Usage): SessionTally {
@@ -271,21 +251,5 @@ function failedSession(launch: SessionLaunch, error: string): SessionRaw {
   });
 }
 
-export type {
-  OpsRaw,
-  ProcessExit,
-  SessionLaunch,
-  SessionRaw,
-  ToolFailure,
-  Usage,
-};
-export {
-  addUsage,
-  failedSession,
-  opsRaw,
-  recordFacts,
-  sessionRaw,
-  USAGE,
-  usageTotal,
-  ZERO_USAGE,
-};
+export type { OpsRaw, ProcessExit, SessionLaunch, SessionRaw, ToolFailure };
+export { failedSession, opsRaw, recordFacts, sessionRaw };

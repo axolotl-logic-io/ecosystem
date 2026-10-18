@@ -31,11 +31,11 @@ test("once the last hour's tokens reach tokensPerHour a dead job is held for the
   const rated = loadConfig(configWith({ tokensPerHour: TOKENS_PER_HOUR }));
   writeJob({
     issue: ISSUE.rated,
-    stage: "implement",
+    stage: "fix",
     pid: deadPid(),
     tokens: TOKENS_PER_HOUR,
   });
-  const issues = [{ number: ISSUE.rated, state: { stage: "implement" } }];
+  const issues = [{ number: ISSUE.rated, state: { stage: "fix" } }];
   for (let at = 0; at < HELD_TICKS; at += 1) {
     assert.deepEqual(tickOver(issues, 0, { config: rated }).spawned, []);
   }

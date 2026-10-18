@@ -1,7 +1,8 @@
 // The merge order between issues: which other issue's PR should merge before
 // this one's. A stacked issue always waits for its open prerequisite (#289).
-// Otherwise, by default the oldest ready PR goes first (decision
-// merge-order); the orchestrator can pass its own ranked queue instead (#234).
+// Otherwise a merge waits only for an issue at a holding stage: by default
+// the oldest PR at one goes first (decision merge-order); the orchestrator can
+// pass its own ranked queue instead (#234).
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -16,10 +17,20 @@ import { openPrFor } from "./prs.ts";
 const MS_PER_HOUR = 3_600_000;
 const WORKING_LIST_LIMIT = "100";
 
-// Stages after review, where an issue only waits to merge.
+// Stages after review, where an issue ranks for merge.
 const READY_STAGES: ReadonlySet<string> = new Set([
   "sync",
   "checks",
+  "accept",
+  "security",
+  "merge",
+]);
+
+// The ready stages whose issues hold the merges ranked after them (#358).
+// These are minutes from merging, so waiting for them keeps the merge order's
+// purpose; an issue at sync or checks, which can take 20 minutes or more,
+// still ranks but holds no merge.
+const HOLDING_STAGES: ReadonlySet<string> = new Set([
   "accept",
   "security",
   "merge",
@@ -73,8 +84,8 @@ interface Ahead {
   pr: number;
 }
 
-// The PR of issue #number when it should merge before PR `pr`: past review,
-// with an older PR and a lease that hasn't expired (a crashed sweep).
+// The PR of issue #number when it should merge before PR `pr`: at a holding
+// stage, with an older PR and a lease that hasn't expired (a crashed sweep).
 function readyPr(
   cfg: Config,
   number: number,
@@ -86,7 +97,7 @@ function readyPr(
     return undefined;
   }
   const { data } = parsed;
-  if (data.pr >= pr || !READY_STAGES.has(data.stage)) {
+  if (data.pr >= pr || !HOLDING_STAGES.has(data.stage)) {
     return undefined;
   }
   const at = data.lease?.at;
@@ -97,9 +108,9 @@ function readyPr(
   return data.pr;
 }
 
-// The open issue, other than #n, that should merge before PR `pr`: one past
-// review whose PR is older. Without this, a slow issue's long verify keeps
-// losing the merge to quick issues in the other slots.
+// The open issue, other than #n, that should merge before PR `pr`: one at a
+// holding stage whose PR is older. Without this, a slow issue's long verify
+// keeps losing the merge to quick issues in the other slots.
 function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
   const listed = ghJson(cfg, [
     "issue",
@@ -151,7 +162,7 @@ function openUnstopped(cfg: Config, n: number): boolean {
 }
 
 // The first issue ahead of #n in the orchestrator's ranked queue that is
-// open, not stopped and at a ready stage.
+// open, not stopped and at a holding stage.
 function aheadInQueue(
   cfg: Config,
   n: number,
@@ -161,7 +172,7 @@ function aheadInQueue(
   for (const number of queue.slice(0, Math.max(at, 0))) {
     if (openUnstopped(cfg, number)) {
       const ready = READY_STATE.safeParse(readState(cfg, number).state);
-      if (ready.success && READY_STAGES.has(ready.data.stage)) {
+      if (ready.success && HOLDING_STAGES.has(ready.data.stage)) {
         return { number, pr: ready.data.pr };
       }
     }
@@ -214,4 +225,4 @@ function stackedQueued(
 }
 
 export type { Queued, StackQueued };
-export { queued, READY_STAGES, stackedQueued };
+export { HOLDING_STAGES, queued, READY_STAGES, stackedQueued };

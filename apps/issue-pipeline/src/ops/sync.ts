@@ -11,22 +11,36 @@ import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
 import { branchChanges, recordPush } from "../checkouts.ts";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg } from "../config.ts";
-import { assertClean, fetchIn, head, remoteHead } from "../git-state.ts";
+import { paths } from "../config.ts";
+import {
+  assertClean,
+  fetchIn,
+  head,
+  patchIdOf,
+  remoteHead,
+} from "../git-state.ts";
 import { git } from "../github.ts";
 import { parseRequest, run } from "../process.ts";
 import { abortRebase, rebaseInProgress, unmergedFiles } from "../rebase.ts";
 import type { StackedOn, SyncTarget } from "../stack.ts";
 import { measureFrom, STACKED_ON, syncTarget } from "../stack.ts";
-import { wikiDiff } from "../wiki.ts";
+import { commitLog, reviewBundle, withWiki } from "./review-diff.ts";
 import { finishProblem } from "./sync-finish.ts";
 
+// headTree is the head's tree, the same for any head with the same code.
+// patchId is the id of the branch's changes, which a clean rebase keeps, or
+// null when there are none (review-keeps-on-clean-rebase). bundlePath is the
+// review bundle beside the diff: the diff, then the changed files' head texts.
 interface ReviewReply {
   headSha: string;
+  headTree: string;
   baseSha: string;
+  patchId: string | null;
   diffPath: string;
   diffLines: number;
   changedFiles: string[];
+  bundlePath: string;
+  bundleLines: number;
 }
 
 // A stacked sync's reply names what the branch is stacked on after it; an
@@ -120,32 +134,20 @@ function reviewFrom(
   return baseSha;
 }
 
-// Wiki commits come after the code diff. They are always the whole wiki change so
-// far, even in a re-review that shows only the code since the last review.
-function withWiki(
-  cfg: Config,
-  n: number,
-  diff: string,
-): { text: string; files: string[] } {
-  const wiki = wikiDiff(cfg, n);
-  const settings = wikiCfg(cfg);
-  if (wiki.diff === "" || settings === null) {
-    return { text: diff, files: wiki.files };
-  }
-  const heading = `# Wiki changes (paths under ${settings.dir}/; pushed to the wiki when the PR merges)`;
-  return { text: `${diff}\n\n${heading}\n\n${wiki.diff}`, files: wiki.files };
-}
-
 function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const req = parseRequest(REVIEW_REQUEST, "prepare-review", request);
   const n = req.number;
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);
   const headSha = head(wt);
-  const baseArgs = ["merge-base", measureFrom(req.stackedOn, cfg), "HEAD"];
+  const headTree = gitOut(wt, ["rev-parse", `${headSha}^{tree}`]).trim();
+  const measured = measureFrom(req.stackedOn, cfg);
+  const baseArgs = ["merge-base", measured, "HEAD"];
   const baseSha = gitOut(wt, baseArgs).trim();
   const from = reviewFrom(wt, req.sinceSha, { headSha, baseSha });
-  const diff = gitOut(wt, ["diff", "--stat", "--patch", `${from}..${headSha}`]);
+  const range = `${from}..${headSha}`;
+  const patch = gitOut(wt, ["diff", "--stat", "--patch", range]);
+  const diff = `${commitLog(wt, range)}${patch}`;
   const names = gitOut(wt, ["diff", "--name-only", `${baseSha}..${headSha}`]);
   const tag = `review-${textOr(req.tag, "r0")}`;
   const dir = path.join(paths.runDir(cfg, n), tag);
@@ -153,12 +155,19 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const diffPath = path.join(dir, "diff.patch");
   const full = withWiki(cfg, n, diff);
   fs.writeFileSync(diffPath, full.text);
+  const bundlePath = path.join(dir, "bundle.md");
+  const bundle = reviewBundle(wt, { from, head: headSha }, full.text);
+  fs.writeFileSync(bundlePath, bundle);
   return {
     headSha,
+    headTree,
     baseSha,
+    patchId: patchIdOf(wt, measured, headSha),
     diffPath,
     diffLines: full.text.split("\n").length,
     changedFiles: nonEmptyLines(names).concat(full.files),
+    bundlePath,
+    bundleLines: bundle.split("\n").length,
   };
 }
 

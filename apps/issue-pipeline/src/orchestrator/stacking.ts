@@ -39,6 +39,7 @@ function afterHold(prereq: Prereq): StackRule {
   return hold(`after:#${prereq.number}`);
 }
 
+// True when a waiting issue may start stacked on open prerequisite `prereq`.
 function stackable(prereq: OpenPrereq): boolean {
   return (
     !prereq.stacked &&
@@ -49,7 +50,9 @@ function stackable(prereq: OpenPrereq): boolean {
 
 // An issue that isn't stacked and waits on its after mark: it starts stacked
 // on its prerequisite once that one is far enough along, and only one level
-// deep. The usual verdict hold applies when it has no prerequisite.
+// deep, and not while that one's branch lacks the merge commit of another
+// merged prerequisite (#328). The usual verdict hold applies when it has no
+// prerequisite.
 function waitingRule(issue: SnapshotIssue): StackRule {
   const { prereq } = issue;
   const stage = runStage(issue);
@@ -62,6 +65,9 @@ function waitingRule(issue: SnapshotIssue): StackRule {
         return hold(`after:#${prereq.number}:stopped`);
       }
       if (stackable(prereq)) {
+        if (prereq.behind) {
+          return hold(`stacked-on-behind:#${prereq.number}`);
+        }
         return { kind: "run", stage, stackOn: prereq.number };
       }
       return afterHold(prereq);
@@ -158,4 +164,4 @@ function stackPartners(a: SnapshotIssue, b: SnapshotIssue): boolean {
 }
 
 export type { StackRule };
-export { stackPartners, stackRule };
+export { stackable, stackPartners, stackRule };

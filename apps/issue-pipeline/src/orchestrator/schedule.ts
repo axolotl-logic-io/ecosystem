@@ -3,17 +3,24 @@
 // held. Pure: the snapshot carries everything it reads, so recorded snapshots
 // test it with no clock, files or processes.
 
-import { fileSetsOverlap } from "../globs.ts";
-import type { ScheduleSettings, Snapshot, SnapshotIssue } from "./queue.ts";
+import type {
+  ScheduleSettings,
+  Snapshot,
+  SnapshotIssue,
+  StartReason,
+} from "./queue.ts";
 import {
   byAge,
-  fileSet,
+  byStageThenAge,
+  changesStub,
   isLive,
   isLiveImplementation,
   isStopped,
+  mergeHolders,
   mergeRank,
   runStage,
   stageIndex,
+  startReason,
   verdictHold,
   WRITERS,
 } from "./queue.ts";
@@ -25,7 +32,7 @@ type Decision =
       at: string;
       issue: number;
       stage: string;
-      reason: "free" | "merge-first";
+      reason: StartReason;
       mergeQueue: readonly number[] | null;
       // The prerequisite a first job starts the issue's branch on (#290).
       stackOn: number | null;
@@ -49,6 +56,7 @@ interface TickCount {
   implementations: SnapshotIssue[];
   mergeLive: number | null;
   queue: readonly number[];
+  holders: readonly number[];
 }
 
 function roleOf(stage: string): Role {
@@ -76,35 +84,24 @@ function capReason(
   return null;
 }
 
-// The issue's place in the merge queue, or infinity when it isn't queued.
-function queueRank(count: TickCount, issue: SnapshotIssue): number {
-  const at = count.queue.indexOf(issue.number);
-  if (at < 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return at;
-}
-
-// The oldest live implementation whose files overlap the issue's: any for an
-// implement, but for a live issue's fix, sync or checks only an older one that
-// doesn't merge after it. A queued issue's writer is never held by one queued
-// later or not queued, so the merge queue's top always moves, and a writer
-// hold and a merge-order hold can't form a cycle. An issue and its
-// prerequisite never hold each other.
+// For an implement, the oldest live implementation whose branch changes one
+// of its stub files (#390). Only an implement is gated on files: overlap that
+// shows up later is the start sync's and the conflict resolver's. An issue
+// and its prerequisite never hold each other.
 function overlapReason(
   count: TickCount,
   issue: SnapshotIssue,
   stage: string,
 ): string | null {
+  if (stage !== "implement") {
+    return null;
+  }
   const blocker = count.implementations
     .filter(
       (other) =>
         other.number !== issue.number &&
         !stackPartners(issue, other) &&
-        (stage === "implement" ||
-          (byAge(other, issue) < 0 &&
-            queueRank(count, other) <= queueRank(count, issue))) &&
-        fileSetsOverlap(fileSet(other), fileSet(issue)),
+        changesStub(issue, other),
     )
     .sort(byAge)
     .at(0);
@@ -114,10 +111,12 @@ function overlapReason(
   return `files-overlap:#${blocker.number}`;
 }
 
+// A merge waits for the first issue ranked ahead of it at a holding stage,
+// then for a live merge job.
 function mergeReason(count: TickCount, issue: SnapshotIssue): string | null {
-  const [top] = count.queue;
-  if (top !== issue.number) {
-    return `merge-order:#${String(top)}`;
+  const [first] = count.holders;
+  if (first !== undefined && first !== issue.number) {
+    return `merge-order:#${first}`;
   }
   if (count.mergeLive !== null) {
     return `merge-order:#${count.mergeLive}`;
@@ -147,7 +146,8 @@ function holdReason(
       throw new Error(`unknown role ${String(unknown)}`);
     }
   }
-  if (reason === null && count.spent >= count.settings.tokensPerHour) {
+  const limit = count.settings.tokensPerHour ?? 0; // null or 0: no limit
+  if (reason === null && limit > 0 && count.spent >= limit) {
     return "rate-limit";
   }
   return reason;
@@ -212,10 +212,8 @@ function decide(
     return { action: "held", at, issue: number, stage, reason };
   }
   countStart(count, issue, stage);
-  let why: "free" | "merge-first" = "free";
   let mergeQueue: readonly number[] | null = null;
   if (stage === "merge") {
-    why = "merge-first";
     mergeQueue = count.queue;
   }
   return {
@@ -223,7 +221,7 @@ function decide(
     at,
     issue: number,
     stage,
-    reason: why,
+    reason: startReason(issue, stage),
     mergeQueue,
     stackOn,
   };
@@ -248,12 +246,8 @@ function countOf(snapshot: Snapshot, settings: ScheduleSettings): TickCount {
     implementations: snapshot.issues.filter(isLiveImplementation),
     mergeLive,
     queue: mergeRank(snapshot.issues),
+    holders: mergeHolders(snapshot.issues),
   };
-}
-
-// Finish work first: the later stage first, then the older issue.
-function byStageThenAge(a: SnapshotIssue, b: SnapshotIssue): number {
-  return stageIndex(runStage(b)) - stageIndex(runStage(a)) || byAge(a, b);
 }
 
 // One decision for each issue that may run a stage: those stopped, done or

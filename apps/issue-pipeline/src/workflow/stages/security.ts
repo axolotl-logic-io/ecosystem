@@ -1,25 +1,30 @@
 // The security review: the last review before merge, of the full diff at the
 // verified head, for harm to the app's users and the operator. With no
 // findings the issue moves to merge; findings go back through fresh fix rounds,
-// until there have been more security rounds than fix rounds allow.
+// until there have been more security rounds than fix rounds allow. A head
+// whose tree is the one that last passed moves to merge with no session
+// (security-skip-unchanged).
 
-import { chargeSession, sessionBudget } from "../budget.ts";
+import { sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
 import { addFinding, findingsStop } from "../findings.ts";
 import { SECURITY_RULES } from "../lenses.ts";
 import { preamble } from "../prompts.ts";
 import { SECURITY_SCHEMA } from "../review-schemas.ts";
 import type { Signature } from "../signing.ts";
+import { byStep } from "../signing.ts";
 import type { Finding, IssueState } from "../types.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
+import { sessionFailedStep } from "./rate-limit.ts";
 import type { SecurityReply } from "./replies.ts";
 import { securityReplyOf } from "./replies.ts";
+import { isRecord } from "./reply-guards.ts";
 import {
   codedStopStep,
   doneStep,
   launchStep,
   onlyChild,
-  stopStep,
+  onlyReply,
 } from "./step.ts";
 import type {
   ChildLaunch,
@@ -62,8 +67,9 @@ function securityLaunch(
     model: models.security,
     schema: SECURITY_SCHEMA,
     minutes: SECURITY_MINUTES,
+    budgetRole: "reviewer",
     tokenBudget: budget,
-    task: preamble(cfg, state, "security reviewer", budget)
+    task: preamble(cfg, state, "security reviewer")
       .concat([
         `You are the last review before this PR merges. Review the full diff against ${cfg.baseBranch} at ${diff.path} (${diff.lines} lines), reading surrounding code where needed, for harm to the app's users and the operator.`,
       ])
@@ -87,36 +93,34 @@ function begin(state: StageState): Step {
   ]);
 }
 
-// Charges the reviewer's session once the diff is ready, then launches it.
-function review(
-  state: StageState,
-  ctx: StageContext,
-  results: readonly LaunchResult[],
-): Step {
-  const failure = "could not prepare the security review diff";
-  const diff = finalDiffOf(state, ctx, results, failure);
-  if (!diff.ok) {
-    return diff.step;
+// A head's tree, or null when `value` names none.
+function treeOf(value: unknown): string | null {
+  if (typeof value !== "string" || value === "") {
+    return null;
   }
-  const st = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "reviewer", {
-    at: ctx.now(),
-  });
-  if (!charge.charged) {
-    return stopStep(charged, charge.reason, charge.detail);
+  return value;
+}
+
+// The tree the reviewer was launched on, carried from the diff's reply.
+function carriedTree(state: StageState): string | null {
+  const { carry } = state;
+  if (!isRecord(carry)) {
+    return null;
   }
-  return launchStep({ ...charged, phase: "decide" }, [
-    securityLaunch(charged, ctx, diff),
-  ]);
+  const { headTree } = carry;
+  return treeOf(headTree);
+}
+
+// The part of a head a comment names, or "" for no head.
+function shortSha(sha: string | null | undefined): string {
+  if (typeof sha !== "string") {
+    return "";
+  }
+  return sha.slice(0, SHA_LENGTH);
 }
 
 function headOf(st: IssueState): string {
-  const { verifiedSha } = st;
-  if (typeof verifiedSha !== "string") {
-    return "";
-  }
-  return verifiedSha.slice(0, SHA_LENGTH);
+  return shortSha(st.verifiedSha);
 }
 
 // Saves the state before the stage ends, so the save comes before any later
@@ -130,8 +134,45 @@ function saved(state: StageState, by: Signature, body: string): Step {
   );
 }
 
-function cleared(state: StageState, ctx: StageContext, by: Signature): Step {
+// Moves to merge with no session: the code is what last passed.
+function skipped(state: StageState, ctx: StageContext): Step {
   const st = { ...state.st, stage: "merge" };
+  const text = `security skipped: code unchanged since ${shortSha(st.securitySha)}`;
+  noteEvent(st, text, ctx.now());
+  return saved({ ...state, st }, byStep("security review"), `🛡️ ${text}.`);
+}
+
+// Launches the reviewer's session once the diff is ready, unless the head's
+// tree is the one that last passed.
+function review(
+  state: StageState,
+  ctx: StageContext,
+  results: readonly LaunchResult[],
+): Step {
+  const failure = "could not prepare the security review diff";
+  const diff = finalDiffOf(state, ctx, results, failure);
+  if (!diff.ok) {
+    return diff.step;
+  }
+  const { headTree } = onlyReply(results);
+  const tree = treeOf(headTree);
+  if (tree !== null && tree === state.st.securityTree) {
+    return skipped(state, ctx);
+  }
+  const carry = { headTree: tree };
+  return launchStep({ ...state, phase: "decide", carry }, [
+    securityLaunch(state, ctx, diff),
+  ]);
+}
+
+// Records the head and the tree the review passed.
+function cleared(state: StageState, ctx: StageContext, by: Signature): Step {
+  const st = {
+    ...state.st,
+    stage: "merge",
+    securitySha: state.st.verifiedSha ?? null,
+    securityTree: carriedTree(state),
+  };
   noteEvent(st, "security review: no findings", ctx.now());
   const body = `🛡️ Security review of ${headOf(st)}: no harm to users, their rights or money, and no new abuse risk.`;
   return saved({ ...state, st }, by, body);
@@ -147,8 +188,7 @@ function findingList(added: readonly Finding[]): string {
 }
 
 // Stores the findings, then stops past the fix rounds, or sends the verified
-// head back through fresh fix rounds, then sync, checks, acceptance and this
-// review.
+// head back through fresh fix rounds, then checks, acceptance and this review.
 function found(
   state: StageState,
   ctx: StageContext,
@@ -171,8 +211,6 @@ function found(
   }
   st.reviewedSha = st.verifiedSha ?? null;
   st.round = 0;
-  // The fix brings new code, which is not a re-check after a rebase.
-  st.rechecking = false;
   st.stage = "fix";
   return saved({ ...state, st }, by, body);
 }
@@ -188,7 +226,8 @@ function decide(
     reply = securityReplyOf(result.structuredOutput);
   }
   if (reply === null) {
-    return stopStep(state, "the security reviewer failed", result.error);
+    const reason = "the security reviewer failed";
+    return sessionFailedStep(state, reason, result.error, ctx.now());
   }
   const by = { ...result.by, role: "security reviewer" };
   if (reply.findings.length === 0) {

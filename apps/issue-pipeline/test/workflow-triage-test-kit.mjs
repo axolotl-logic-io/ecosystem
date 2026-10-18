@@ -51,34 +51,30 @@ const SIGNATURE = {
   run: "i7-triage-3",
 };
 const SPLIT_ALLOWED =
-  "- split: too big for one session. Say why in `reason` and write `plan` as for ready; the spec writer decides how to cut it.";
+  "- split: needs more than two implementer sessions. Say why in `reason` and write `plan` as for ready; the spec writer decides how to cut it.";
 const SPLIT_FORBIDDEN =
   "- split: NOT allowed; this issue is already a sub-issue. If it is still too big, choose reject and say so.";
 const REJECTED = "triage rejected the issue for the agent pipeline";
 
-// Every kit's rebase pool (`rebaseTokenBudget`).
-const REBASE_BUDGET = 500_000;
-
-/** @param {number} issueBudget @returns {StageContext} */
-function contextWith(issueBudget) {
+/** @returns {StageContext} */
+function contextWith() {
   return {
     cfg: CFG,
     budgets: {
       roles: ROLES,
       sessionCap: 150_000,
-      hardLimit: 175_000,
-      issueBudget,
-      rebaseBudget: REBASE_BUDGET,
+      softLimit: 175_000,
+      hardLimit: 225_000,
     },
     models: modelsWith({ triage: MODEL }),
     now: () => NOW,
     hasRoom,
     mergeQueue: null,
+    committer: "git",
   };
 }
 
-const ISSUE_BUDGET = 1_000_000;
-const CTX = contextWith(ISSUE_BUDGET);
+const CTX = contextWith();
 
 // Issue #7 at triage's first call, with `fields` replacing its saved state's.
 /** @param {Partial<IssueState>} [fields] @returns {StageState} */
@@ -92,8 +88,6 @@ function stateWith(fields = {}) {
       pr: null,
       headSha: null,
       plan: null,
-      allocated: 0,
-      sessions: [],
       triages: 0,
       findings: [],
       log: [],
@@ -124,11 +118,11 @@ function replyOf(fields) {
 // The session's whole task, as the sweep has always written it.
 /** @param {string} splitLine @returns {string} */
 function expectedTask(splitLine) {
-  return preamble(CFG, { n: 7, paths: PATHS }, "triage", ROLES.triage)
+  return preamble(CFG, { n: 7, paths: PATHS }, "triage")
     .concat([
       "If /runs/issue-7/handoff.md exists, an earlier implementer session wrote it when it ran out of room: read it and the commits on `agent/issue-7` before you decide.",
       "Read the issue and as much of the code as you need to decide one of:",
-      "- ready: one implementer session (at most 150000 tokens of context) can implement and test it. Write `plan`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.",
+      "- ready: two implementer sessions (at most 350000 tokens of context) can implement and test it. Write `plan`: at most 15 lines naming the files and approach you found. A spec writer turns it into the full spec next.",
       "- needs-info: a competent engineer could not start without answers. Ask at most 5 specific questions. If earlier questions were answered in the comments, use the answers.",
       splitLine,
       "- reject: not suitable for an agent (design debate, production incident, needs production access, not a code change). Explain in `reason`. Issues that change CI workflows, auth, dependencies or migrations are suitable.",
@@ -147,6 +141,7 @@ function sessionLaunch(task) {
     model: MODEL,
     schema: TRIAGE_SCHEMA,
     minutes: 20,
+    budgetRole: "triage",
     tokenBudget: ROLES.triage,
     task,
   };

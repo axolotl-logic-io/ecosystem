@@ -23,12 +23,10 @@ import {
 } from "./stage-outcome-test-kit.mjs";
 import {
   CTX,
-  contextWith,
   DIFF,
   decided,
   MODELS,
   prepared,
-  ROLES,
   replied,
   SIGNATURE,
   STAMP,
@@ -47,7 +45,6 @@ const CLIPPED = "## Behaviour\n\n1. The clipped copy…";
 const SPEC_FILE = "/w/runs/o__r/issue-7/spec.md";
 const READ_WHOLE = /Read the whole spec there/u;
 // An issue budget smaller than one verifier session.
-const SMALL_BUDGET = 40_000;
 const BY = { ...SIGNATURE, role: "acceptance verifier" };
 const FIRST_PARENT = 5;
 const SECOND_PARENT = 9;
@@ -63,7 +60,7 @@ function acceptTask(spec) {
     specLine = `The spec it was built to (also on the issue):\n${spec}\n`;
     specNote = " and every Behaviour and Wiki update in the spec";
   }
-  return taskOf("acceptance verifier", ROLES.verifier, [
+  return taskOf("acceptance verifier", [
     "Decide whether the change, as a whole, does what the issue asks. Tests, lint, and CI already pass (test: ok); do not re-run them.",
     specLine,
     "Full diff against integration: /d.diff.",
@@ -86,7 +83,7 @@ function accepted(output) {
   return decided(next, stateWith("accept"), output);
 }
 
-test("acceptance prepares the final diff before charging the verifier", () => {
+test("acceptance prepares the final diff before launching the verifier", () => {
   const given = stateWith("accept");
   const step = next(given, CTX, []);
   assert.equal(step.done, false);
@@ -94,17 +91,14 @@ test("acceptance prepares the final diff before charging the verifier", () => {
     { op: "prepare-review", payload: { number: 7, tag: "final" } },
   ]);
   assert.equal(step.state.phase, "review");
-  assert.equal(step.state.st.allocated, 0);
   assert.deepEqual([step.comments, step.stop], [[], null]);
   assert.deepEqual(given, stateWith("accept"));
 });
 
-test("the verifier is charged, then reads the final diff and the checks' summary", () => {
+test("the verifier reads the final diff and the checks' summary", () => {
   const step = prepared(next, stateWith("accept"));
   assert.equal(step.done, false);
   assert.equal(step.state.phase, "decide");
-  assert.equal(step.state.st.allocated, ROLES.verifier);
-  assert.deepEqual(step.state.st.sessions, ["verifier"]);
   assert.deepEqual(sessions(step), [verifierSession(acceptTask(""))]);
 });
 
@@ -129,10 +123,7 @@ test("a pass keeps the reason and moves the issue to security", () => {
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "security");
   assert.equal(step.state.st.acceptReason, "Does it.");
-  assert.deepEqual(step.state.st.log, [
-    `${STAMP} charged verifier 60000 to issueTokenBudget`,
-    `${STAMP} acceptance: pass - Does it.`,
-  ]);
+  assert.deepEqual(step.state.st.log, [`${STAMP} acceptance: pass - Does it.`]);
   assert.deepEqual(step.comments, [
     {
       by: BY,
@@ -143,7 +134,7 @@ test("a pass keeps the reason and moves the issue to security", () => {
 });
 
 test("a fail stores an open acceptance finding and saves the issue at fix", () => {
-  const given = stateWith("accept", { round: 1, rechecking: true });
+  const given = stateWith("accept", { round: 1 });
   const step = decided(next, given, { verdict: "fail", reason: "Misses b." });
   assert.equal(step.done, false);
   assert.equal(step.stop, null);
@@ -158,7 +149,6 @@ test("a fail stores an open acceptance finding and saves the issue at fix", () =
     [{ lenses: ["acceptance"], evidence: "Misses b.", status: "open" }],
   );
   assert.equal(st.round, 1);
-  assert.equal(st.rechecking, false);
   assert.equal(st.reviewedSha, VERIFIED);
   assert.deepEqual(opsRequests(step), [
     { op: "save-state", payload: { number: 7, state: st } },
@@ -223,21 +213,6 @@ test("a failed session or a malformed reply stops", () => {
   assert.deepEqual(malformed.comments, []);
 });
 
-test("a verifier that doesn't fit the budget stops once the diff is ready", () => {
-  const small = contextWith(SMALL_BUDGET);
-  const begun = next(stateWith("accept"), small, []);
-  assert.equal(begun.stop, null);
-  const step = next(begun.state, small, [{ kind: "op", reply: DIFF }]);
-  assert.equal(step.done, true);
-  assert.deepEqual(step.stop, {
-    reason: "issue token budget exhausted",
-    detail:
-      "Allocated 0 of 40000 tokens (issueTokenBudget); the next step (verifier) needs 60000.",
-    code: null,
-  });
-  assert.equal(step.state.st.allocated, 0);
-});
-
 // Issue #7 at accept with `fields`, its diff ready for the verifier.
 /** @param {Parameters<typeof stateWith>[1]} fields @returns {Step} */
 function diffReady(fields) {
@@ -245,21 +220,20 @@ function diffReady(fields) {
   return next(begun.state, CTX, [{ kind: "op", reply: DIFF }]);
 }
 
-test("a re-check's verifier is charged to the rebase pool, and stops when it is spent", () => {
-  const rechecking = { rechecking: true, allocated: 0, rebaseAllocated: 0 };
-  const charged = diffReady(rechecking);
-  assert.deepEqual(
-    [charged.state.st.allocated, charged.state.st.rebaseAllocated],
-    [0, ROLES.verifier],
+test("a re-check far past the old issue budget and rebase allowance still gets its verifier", () => {
+  // Spend fields a state saved before budgets-bound-context holds, past the
+  // 2M issue budget and the 500k rebase allowance that once stopped it.
+  const spent = /** @type {Parameters<typeof stateWith>[1]} */ (
+    /** @type {unknown} */ ({
+      allocated: 2_500_000,
+      rebaseAllocated: 600_000,
+      rechecking: true,
+    })
   );
-  const spent = { ...rechecking, rebaseAllocated: 460_000 };
   const step = diffReady(spent);
-  assert.deepEqual(step.stop, {
-    reason: "rebase token budget exhausted",
-    detail:
-      "Allocated 460000 of 500000 rebase tokens (rebaseTokenBudget); the next step (verifier) needs 60000.",
-    code: null,
-  });
+  assert.equal(step.stop, null);
+  assert.equal(step.state.phase, "decide");
+  assert.deepEqual(sessions(step), [verifierSession(acceptTask(""))]);
 });
 
 test("each parent gets a close request for its number", () => {

@@ -16,13 +16,16 @@ import { openIssues } from "../ops/sweep.ts";
 import type { IssueRow, SweepContext } from "../ops/sweep-verdict.ts";
 import { afterDeps, classify, liveLease } from "../ops/sweep-verdict.ts";
 import { OpsError } from "../process.ts";
-import { prereqMerged } from "../stack.ts";
+import { interfacesOf } from "../roles/spec-writer/reply.ts";
+import { prereqBehind, prereqMerged } from "../stack.ts";
 import type { State } from "../state.ts";
 import { readState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
+import { readBranchChanges } from "./branch-changes.ts";
 import type { StartRecord } from "./ledger.ts";
 import type { IssueJob, IssueVerdict, Prereq, SnapshotIssue } from "./queue.ts";
 import { isStopped } from "./queue.ts";
+import { stackable } from "./stacking.ts";
 import type { WatchedJob } from "./watchdog.ts";
 
 // The lane every orchestrator job runs in, so the next job for the same
@@ -72,9 +75,10 @@ function verdictOf(
       const lease = liveLease(state, ctx.now, ctx.leaseMs);
       return { kind: "live-elsewhere", lane: String(leaseLane(lease)) };
     }
+    case "parent":
+      return { kind: "parent" };
     case "skip":
     case "skipped":
-    case "parent":
       return { kind: "skip" };
     default: {
       const unknown: never = verdict;
@@ -109,6 +113,14 @@ function numberOr(value: unknown): number | null {
   return null;
 }
 
+// The `where` of each `new` interface the saved state names, or none when it
+// names none or they are malformed.
+function stubsOf(state: State | null): string[] {
+  const { interfaces } = state ?? {};
+  const saved = interfacesOf(interfaces) ?? [];
+  return saved.filter((i) => i.status === "new").map((i) => i.where);
+}
+
 function issueOf(
   ctx: SweepContext,
   row: IssueRow,
@@ -124,7 +136,9 @@ function issueOf(
     createdAt: row.createdAt,
     verdict: verdictOf(ctx, row, state),
     stage: state?.stage ?? null,
-    files: state?.files ?? null,
+    stoppedStage: state?.stoppedStage ?? null,
+    stubs: stubsOf(state),
+    changed: null,
     pr: numberOr(state?.pr),
     after: afterDeps(row.body).filter((n) => ctx.openNumbers.has(n)),
     stopped: row.labels.some((label) => isStopLabel(label.name)),
@@ -161,7 +175,29 @@ function openPrereq(p: SnapshotIssue, state: State | null): Prereq {
     headSha: state?.headSha ?? null,
     stacked: p.stackedOn !== null,
     stopped: isStopped(p),
+    behind: false,
   };
+}
+
+// `prereq` with whether it is behind (#328), read only when the stacking rules
+// read it: `issue` waits on its after mark unstacked, and `prereq` is open and
+// stackable. `closed` are the issues its after mark names that aren't open.
+function withBehind(
+  cfg: Config,
+  issue: SnapshotIssue,
+  prereq: Prereq,
+  closed: readonly number[],
+): Prereq {
+  if (
+    issue.verdict.kind !== "waiting-on-after" ||
+    issue.stackedOn !== null ||
+    prereq.status !== "open" ||
+    !stackable(prereq) ||
+    closed.length === 0
+  ) {
+    return prereq;
+  }
+  return { ...prereq, behind: prereqBehind(cfg, prereq.number, closed) };
 }
 
 // Whether closed prerequisite `number` merged, as merge's stackedQueued asks
@@ -187,10 +223,12 @@ function closedPrereq(cfg: Config, number: number): Prereq | null {
 
 // The issue's prerequisite (#290): the issue it is stacked on, or with none
 // the only open issue its after mark names, or null when it can't be read.
+// `closed` are the issues its after mark names that aren't open.
 function prereqOf(
   cfg: Config,
   issue: SnapshotIssue,
   queue: Queue,
+  closed: readonly number[],
 ): Prereq | null {
   let number = issue.stackedOn?.issue;
   if (number === undefined && issue.after.length === 1) {
@@ -201,7 +239,8 @@ function prereqOf(
   }
   const open = queue.issues.find((p) => p.number === number);
   if (open !== undefined) {
-    return openPrereq(open, queue.states.get(number) ?? null);
+    const prereq = openPrereq(open, queue.states.get(number) ?? null);
+    return withBehind(cfg, issue, prereq, closed);
   }
   return closedPrereq(cfg, number);
 }
@@ -230,7 +269,12 @@ function readQueue(
     states: new Map(),
     labels: new Map(),
   };
+  const closedAfter = new Map<number, number[]>();
   for (const row of rows) {
+    closedAfter.set(
+      row.number,
+      afterDeps(row.body).filter((n) => !ctx.openNumbers.has(n)),
+    );
     const { issue, watched, state } = issueOf(ctx, row, started);
     queue.issues.push(issue);
     queue.states.set(row.number, state);
@@ -244,8 +288,10 @@ function readQueue(
     }
   }
   for (const issue of queue.issues) {
-    issue.prereq = prereqOf(cfg, issue, queue);
+    const closed = closedAfter.get(issue.number) ?? [];
+    issue.prereq = prereqOf(cfg, issue, queue, closed);
   }
+  readBranchChanges(cfg, queue.issues);
   return queue;
 }
 

@@ -19,6 +19,7 @@ import {
 
 const { loadConfig, paths } = await import("../src/config.ts");
 const { ghIsRead } = await import("../src/github.ts");
+const { CODEMODE_RULE } = await import("../src/workflow/prompts.ts");
 
 /** @import { ProcessExit } from "../src/job/raw-results.ts" */
 /** @import { AgentRunOptions, RunAgent } from "../src/orchestrator/escalation-consult.ts" */
@@ -39,7 +40,14 @@ const ISSUE = {
   stranger: 120,
 };
 const AGENT = "issue-pipeline-escalation";
-const READ_ONLY = ["read", "grep", "find", "ls", "structured_output"];
+const READ_ONLY = [
+  "read",
+  "grep",
+  "find",
+  "ls",
+  "codemode",
+  "structured_output",
+];
 const STEER = "Re-read the spec's Tests section and carry on.";
 
 /** @param {object} [extra] */
@@ -108,7 +116,7 @@ function flagOf(argv, flag) {
   return argv[argv.indexOf(flag) + 1];
 }
 
-test("a tick's new escalations run the agent once, read-only, and log a recommendation for each issue", () => {
+test("a tick's new escalations run the agent once, read-only with codemode and the codemode rule, and log a recommendation for each issue", () => {
   const config = agentConfig();
   const issues = [needsInfo(ISSUE.first), needsInfo(ISSUE.second)];
   const agent = fakeAgent(
@@ -129,7 +137,9 @@ test("a tick's new escalations run the agent once, read-only, and log a recommen
   assert.equal(flagOf(run.argv, "--mode"), "json");
   const tools = String(flagOf(run.argv, "--tools")).split(",");
   assert.ok(tools.every((tool) => READ_ONLY.includes(tool)));
+  assert.ok(tools.includes("codemode"));
   const prompt = String(run.argv.at(-1));
+  assert.equal(prompt.split(CODEMODE_RULE).length - 1, 1);
   for (const issue of [ISSUE.first, ISSUE.second]) {
     assert.ok(prompt.includes(`${paths.runDir(config, issue)}/job.json`));
   }

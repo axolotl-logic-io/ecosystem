@@ -74,9 +74,9 @@ interface SweepReply {
   stopped?: StoppedIssue;
 }
 
-// Reserves the split parents no other live sweep on this machine reserved, so
-// two sweeps don't close the same parent at once, and returns them. Runs
-// inside the repo's lock.
+// Reserves for `sweepId`, under the repo's sweep lock, the split parents no
+// other live sweep (or orchestrator) on this machine reserved, so no two close
+// one parent at once, and returns them. Its own reservations never block it.
 function reserveParents(
   cfg: Config,
   sweepId: unknown,
@@ -84,35 +84,37 @@ function reserveParents(
   now: number,
 ): number[] {
   const file = path.join(ROOT, "runs", cfg.slug, "reservations.json");
-  let held: Record<string, unknown> = {};
-  try {
-    held = RESERVATIONS.parse(JSON.parse(fs.readFileSync(file, "utf8")));
-  } catch {
-    // No reservations yet, or an unreadable file: nothing is held.
-  }
-  const others: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(held)) {
-    const reservation = RESERVATION.safeParse(entry).data;
-    if (
-      key.startsWith(PARENT_KEY) &&
-      reservation !== undefined &&
-      reservation.sweepId !== sweepId &&
-      now - Date.parse(reservation.at) < RESERVATION_MS
-    ) {
-      others[key] = entry;
+  return withRepoLock(cfg, "sweep", () => {
+    let held: Record<string, unknown> = {};
+    try {
+      held = RESERVATIONS.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+    } catch {
+      // No reservations yet, or an unreadable file: nothing is held.
     }
-  }
-  const mine = parents.filter((n) => !(`${PARENT_KEY}${n}` in others));
-  const at = new Date(now).toISOString();
-  const reserved = Object.fromEntries(
-    mine.map((n) => [`${PARENT_KEY}${n}`, { sweepId, at }]),
-  );
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(
-    file,
-    JSON.stringify({ ...others, ...reserved }, null, JSON_INDENT),
-  );
-  return mine;
+    const others: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(held)) {
+      const reservation = RESERVATION.safeParse(entry).data;
+      if (
+        key.startsWith(PARENT_KEY) &&
+        reservation !== undefined &&
+        reservation.sweepId !== sweepId &&
+        now - Date.parse(reservation.at) < RESERVATION_MS
+      ) {
+        others[key] = entry;
+      }
+    }
+    const mine = parents.filter((n) => !(`${PARENT_KEY}${n}` in others));
+    const at = new Date(now).toISOString();
+    const reserved = Object.fromEntries(
+      mine.map((n) => [`${PARENT_KEY}${n}`, { sweepId, at }]),
+    );
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ ...others, ...reserved }, null, JSON_INDENT),
+    );
+    return mine;
+  });
 }
 
 // The reply to a run named for one issue: its candidates, and the issue it
@@ -284,9 +286,7 @@ function sweep(cfg: Config, request: unknown): SweepReply {
   const { candidates, parents, liveElsewhere, skipped } = tally(ctx, issues);
   candidates.sort(byPriority);
   const items = candidates.slice(0, settings.claimCandidates);
-  const mine = withRepoLock(cfg, "sweep", () =>
-    reserveParents(cfg, req.sweepId, parents, ctx.now),
-  );
+  const mine = reserveParents(cfg, req.sweepId, parents, ctx.now);
   return {
     config: publicConfig(cfg),
     items,
@@ -297,4 +297,4 @@ function sweep(cfg: Config, request: unknown): SweepReply {
   };
 }
 
-export { openIssues, sweep };
+export { openIssues, reserveParents, sweep };

@@ -1,18 +1,25 @@
-// The conflict resolver's sessions, charged to the rebase pool: a resolver
+// The conflict resolver's sessions: a resolver
 // for a rebase that stopped on conflicts, and a continuation on the same
 // files, base and target when a resolver runs out of room and hands off, up
 // to config maxContinuations (#269). The rebase stays in progress between
 // them, and a continuation is not a conflict-fix attempt.
 
-import { chargeSession, sessionBudget } from "../budget.ts";
-import { handoffLead, handoffRule, preamble } from "../prompts.ts";
+import { sessionBudget } from "../budget.ts";
+import {
+  commitOftenRule,
+  committerText,
+  handoffLead,
+  handoffRule,
+  NO_ARTIFICIAL_LOAD_RULE,
+  preamble,
+} from "../prompts.ts";
 import { CIFIX_SCHEMA } from "../schemas.ts";
 import type { IssueState } from "../types.ts";
 import type { Conflict } from "./conflict-memo.ts";
 import { conflictOf } from "./conflict-memo.ts";
 import { resolverTask } from "./conflict-target.ts";
 import { continuationsOf, continued } from "./continuation.ts";
-import { launchStep, stopStep } from "./step.ts";
+import { launchStep } from "./step.ts";
 import type {
   ChildLaunch,
   StageComment,
@@ -43,12 +50,27 @@ function resolverLaunch(
   const { handoffFile } = state.paths;
   const attempt = state.st.conflictFixes ?? 0;
   const role = `conflict resolver, attempt ${attempt} of ${maxConflictFixes(ctx)}`;
-  const lines = resolverTask(state, conflict.target, {
-    base: cfg.baseBranch,
-    files: conflict.files,
-    baseSha: conflict.baseSha,
-  });
-  lines.push(handoffRule(budgets.hardLimit, handoffFile, KEEP_REBASE));
+  const lines = resolverTask(
+    state,
+    conflict.target,
+    {
+      base: cfg.baseBranch,
+      files: conflict.files,
+      baseSha: conflict.baseSha,
+    },
+    ctx.committer,
+  );
+  lines.push(
+    commitOftenRule(
+      committerText(
+        ctx.committer,
+        "continue the rebase as soon as each stopped commit is resolved, and commit each fix after it on its own as soon as it works",
+        "continue the rebase as soon as each stopped commit is resolved, and commit each fix after it on its own with `pipeline_commit` as soon as it works",
+      ),
+    ),
+    NO_ARTIFICIAL_LOAD_RULE,
+    handoffRule(budgets, handoffFile, KEEP_REBASE),
+  );
   let name = `conflicts-${attempt}`;
   if (continuation) {
     lines.unshift(handoffLead(handoffFile));
@@ -63,12 +85,13 @@ function resolverLaunch(
     schema: CIFIX_SCHEMA,
     writer: true,
     minutes: RESOLVER_MINUTES,
+    budgetRole: "fixer",
     tokenBudget: budget,
-    task: preamble(cfg, state, role, budget).concat(lines).join("\n"),
+    task: preamble(cfg, state, role).concat(lines).join("\n"),
   };
 }
 
-// Charges a resolver to the rebase pool and launches it on `conflict`; its
+// Launches a resolver on `conflict`; its
 // reply comes back at phase `resolved`. `handedOff` is the comment of the
 // resolver it continues from, posted first, or null for a first resolver.
 function launchResolver(
@@ -81,20 +104,11 @@ function launchResolver(
   if (handedOff !== null) {
     comments.push(handedOff);
   }
-  const st: IssueState = { ...state.st };
-  const charged = { ...state, st };
-  const charge = chargeSession(ctx.budgets, st, "fixer", {
-    at: ctx.now(),
-    pool: "rebase",
-  });
-  if (!charge.charged) {
-    return stopStep(charged, charge.reason, charge.detail, comments);
-  }
   const { files, target, baseSha } = conflict;
   const carry = { files, target, baseSha };
   return launchStep(
-    { ...charged, phase: "resolved", carry },
-    [resolverLaunch(charged, ctx, conflict, handedOff !== null)],
+    { ...state, phase: "resolved", carry },
+    [resolverLaunch(state, ctx, conflict, handedOff !== null)],
     comments,
   );
 }

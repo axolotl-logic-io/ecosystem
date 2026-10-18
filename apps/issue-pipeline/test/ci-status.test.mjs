@@ -45,6 +45,8 @@ const cfg = {
   contextLimits: { soft: 150_000, hard: 175_000 },
   leaseHours: 3,
   maxContinuations: 1,
+  issueTokenBudget: 1_000_000,
+  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
   practices: [],
   requireCi: true,
   ciWaitMinutes: 30,

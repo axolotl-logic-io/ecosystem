@@ -168,14 +168,15 @@ function leaseOf(lane) {
 }
 
 // Writes issue `issue`'s job.json: a `stage` job run by `pid`, ended or not
-// (`outcome` overrides `ended`), whose one launch, a session unless `kind`
-// says ops, spent `tokens` input tokens by the tick and was last heard from
-// `silentMinutes` before it, and whose last `failures.count` calls of
-// `failures.tool` failed, the last with `failures.error`, with a token budget
-// of `tokenBudget`, a live context of `contextTokens` tokens and the launch's
-// own `launchOutcome`.
+// (`outcome` overrides `ended`), at `endedAt` if given, whose one launch, a
+// session unless `kind` says ops, spent `tokens` input tokens by the tick and
+// was last heard from `silentMinutes` before it, and whose last
+// `failures.count` calls of `failures.tool` failed, the last with
+// `failures.error`, with a token budget of `tokenBudget`, a live context of
+// `contextTokens` tokens and the launch's own `launchOutcome`. The job
+// started when its launch was last heard from, unless `startedAt` says when.
 /** @typedef {{ count: number, tool: string, error: string }} Failures */
-/** @typedef {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number, outcome?: StatusFile["outcome"], kind?: "session" | "ops", silentMinutes?: number, failures?: Failures, tokenBudget?: number | null, contextTokens?: number, launchOutcome?: LaunchOutcome }} JobFacts */
+/** @typedef {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number, outcome?: StatusFile["outcome"], endedAt?: string, startedAt?: string, kind?: "session" | "ops", silentMinutes?: number, failures?: Failures, tokenBudget?: number | null, contextTokens?: number, launchOutcome?: LaunchOutcome }} JobFacts */
 /** @typedef {StatusFile["launches"][number]["outcome"]} LaunchOutcome */
 /** @param {JobFacts} job @returns {StatusFile} */
 function writeJob({
@@ -185,6 +186,8 @@ function writeJob({
   ended = false,
   tokens = 0,
   outcome,
+  endedAt,
+  startedAt,
   kind = "session",
   silentMinutes = 0,
   failures = { count: 0, tool: "", error: "" },
@@ -200,7 +203,7 @@ function writeJob({
     issue,
     stage,
     lane: "orchestrator",
-    startedAt: at,
+    startedAt: startedAt ?? at,
     socket: "/tmp/s.sock",
     outcome: null,
     launches: [
@@ -213,12 +216,22 @@ function writeJob({
         lastEventAt: at,
         toolFailures: failures.count,
         lastToolFailure: lastFailure(failures),
-        usage: { input: tokens, output: 0, cacheRead: 0, cacheWrite: 0 },
+        usage: {
+          input: tokens,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          cacheWrite1h: 0,
+          cost: 0,
+        },
         tokenBudget,
         contextTokens,
         peakContext: 0,
+        firstContext: null,
+        turns: 0,
         contextStop: null,
         resumed: false,
+        pushes: [],
         outcome: launchOutcome,
       },
     ],
@@ -228,6 +241,9 @@ function writeJob({
   }
   if (outcome !== undefined) {
     status.outcome = outcome;
+  }
+  if (endedAt !== undefined) {
+    status.endedAt = endedAt;
   }
   const dir = paths.runDir(cfg, issue);
   fs.mkdirSync(dir, { recursive: true });

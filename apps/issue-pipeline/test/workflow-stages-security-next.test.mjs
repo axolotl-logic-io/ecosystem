@@ -16,12 +16,10 @@ import {
 import { opsRequests, sessions } from "./stage-outcome-test-kit.mjs";
 import {
   CTX,
-  contextWith,
   DIFF,
   decided,
   MODELS,
   prepared,
-  ROLES,
   replied,
   SHORT_SHA,
   SIGNATURE,
@@ -49,11 +47,10 @@ const LEAK = {
 // The rounds before the last one maxFixRounds allows, and after it.
 const LAST_ROUND = 1;
 const PAST_ROUNDS = 2;
-const SMALL_BUDGET = 40_000;
 
 /** @returns {string} */
 function securityTask() {
-  return taskOf("security reviewer", ROLES.reviewer, [
+  return taskOf("security reviewer", [
     "You are the last review before this PR merges. Review the full diff against integration at /d.diff (12 lines), reading surrounding code where needed, for harm to the app's users and the operator.",
     ...SECURITY_RULES,
     "Cite file, line and concrete evidence for each finding. Return an empty list if you find nothing. Do not edit files.",
@@ -81,21 +78,18 @@ function reviewed(findings, fields = {}) {
   return decided(next, stateWith("security", fields), { findings });
 }
 
-test("the security review tags its diff by round before charging the reviewer", () => {
+test("the security review tags its diff by round before launching the reviewer", () => {
   const given = stateWith("security");
   const step = next(given, CTX, []);
   assert.deepEqual(opsRequests(step), [
     { op: "prepare-review", payload: { number: 7, tag: "security-1" } },
   ]);
-  assert.equal(step.state.st.allocated, 0);
   assert.equal(prepTag({ securityRounds: 2 }), "security-3");
   assert.deepEqual(given, stateWith("security"));
 });
 
-test("the reviewer is charged, then reads the full diff with the security rules", () => {
+test("the reviewer reads the full diff with the security rules", () => {
   const step = prepared(next, stateWith("security"));
-  assert.equal(step.state.st.allocated, ROLES.reviewer);
-  assert.deepEqual(step.state.st.sessions, ["reviewer"]);
   assert.deepEqual(sessions(step), [
     {
       agent: "issue-pipeline-reader",
@@ -112,7 +106,6 @@ test("no findings moves the issue to merge, then saves it", () => {
   assert.equal(step.stop, null);
   assert.equal(step.state.st.stage, "merge");
   assert.deepEqual(step.state.st.log, [
-    `${STAMP} charged reviewer 60000 to issueTokenBudget`,
     `${STAMP} security review: no findings`,
   ]);
   assert.deepEqual(step.comments, [
@@ -166,22 +159,6 @@ test("the last round's finding still goes back to fix", () => {
   const step = reviewed([LEAK], { securityRounds: LAST_ROUND });
   assert.equal(step.state.st.stage, "fix");
   assert.equal(step.stop, null);
-});
-
-test("a finding ends a re-check, since the fix is new code", () => {
-  const step = reviewed([LEAK], { rechecking: true });
-  assert.equal(step.state.st.stage, "fix");
-  assert.equal(step.state.st.rechecking, false);
-});
-
-test("a re-check charges the reviewer to the rebase pool", () => {
-  const given = stateWith("security", { rechecking: true, allocated: 0 });
-  const begun = next(given, CTX, []);
-  const step = next(begun.state, CTX, [{ kind: "op", reply: DIFF }]);
-  assert.deepEqual(
-    [step.state.st.allocated, step.state.st.rebaseAllocated],
-    [0, ROLES.reviewer],
-  );
 });
 
 test("a finding past the fix rounds stops with its harm as the code", () => {
@@ -241,19 +218,6 @@ test("a failed session or a malformed reply stops", () => {
   assert.deepEqual(malformed.stop, {
     reason: "the security reviewer failed",
     detail: null,
-    code: null,
-  });
-});
-
-test("a reviewer that doesn't fit the budget stops once the diff is ready", () => {
-  const small = contextWith(SMALL_BUDGET);
-  const begun = next(stateWith("security"), small, []);
-  assert.equal(begun.stop, null);
-  const step = next(begun.state, small, [{ kind: "op", reply: DIFF }]);
-  assert.deepEqual(step.stop, {
-    reason: "issue token budget exhausted",
-    detail:
-      "Allocated 0 of 40000 tokens (issueTokenBudget); the next step (reviewer) needs 60000.",
     code: null,
   });
 });

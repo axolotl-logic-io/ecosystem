@@ -1,6 +1,7 @@
 // gh and git as the config's account, and who that account trusts. Reads that
 // GitHub can safely repeat are retried through its transient failures; writes
-// run once, with this machine's paths taken out of the text they post.
+// run once, with this machine's paths and every IP address taken out of the
+// text they post.
 
 import { z } from "zod";
 import type { Config } from "./config.ts";
@@ -8,6 +9,7 @@ import { tokenEnv } from "./config.ts";
 import { redactLocalPaths } from "./pipeline-root.ts";
 import type { RunOptions, RunResult } from "./process.ts";
 import { OpsError, run, runFailure, sleepMs } from "./process.ts";
+import { redactAddresses } from "./redact-addresses.ts";
 
 type GhOptions = Omit<RunOptions, "env">;
 
@@ -38,12 +40,13 @@ function ghIsRead(args: readonly string[]): boolean {
   return args[1] === "list" || args[1] === "view";
 }
 
-// Only text arguments change (body=..., --body, --title); endpoints don't.
+// Only text arguments change (body=..., --body, --title), losing local paths
+// and IP addresses; endpoints don't.
 function redactGhArgs(args: readonly string[]): string[] {
   return args.map((arg, at) => {
     const flag = args[at - 1];
     if (arg.startsWith("body=") || flag === "--body" || flag === "--title") {
-      return redactLocalPaths(arg);
+      return redactAddresses(redactLocalPaths(arg));
     }
     return arg;
   });

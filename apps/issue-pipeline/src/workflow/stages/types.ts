@@ -5,7 +5,8 @@
 // carries and hands its launches to the loop that awaits them, so no stage
 // awaits anything. The sweep's entry (entry.ts) has its own steps here too.
 
-import type { Budgets } from "../budget.ts";
+import type { Budgets, LaunchBudget } from "../budget.ts";
+import type { Committer } from "../prompts.ts";
 import type { JsonSchema } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import type {
@@ -55,7 +56,7 @@ interface StageState {
 
 // A model session. The sweep keys it "i<n>-<name>-<seq>" and signs its result
 // with `role`, or `name` with no role. Its preamble shows `tokenBudget`.
-interface ChildLaunch {
+interface ChildLaunch extends LaunchBudget {
   kind: "child";
   name: string;
   role?: string;
@@ -65,7 +66,6 @@ interface ChildLaunch {
   schema: JsonSchema;
   minutes: number;
   task: string;
-  tokenBudget: number;
   // A session that changes the code, which the sweep's own checks verify.
   writer?: true;
 }
@@ -170,7 +170,8 @@ interface StageConfig extends RepoConfig, PracticesConfig, FixRoundsConfig {
 
 // What every stage reads besides the issue: the repo config, the token
 // budgets, the models, the clock, whether the spawn cap leaves room for a
-// stage, and the orchestrator's merge order, or null outside it (#234).
+// stage, the orchestrator's merge order, or null outside it (#234), and how
+// its writers commit.
 interface StageContext {
   cfg: StageConfig;
   budgets: Budgets;
@@ -178,15 +179,14 @@ interface StageContext {
   now: () => Date;
   hasRoom: (stage: StageName) => boolean;
   mergeQueue: readonly number[] | null;
+  committer: Committer;
 }
 
 // The repo config as the sweep reply carries it: what the stages read, the
-// token budgets, and the config's overrides of the sweep's defaults.
+// context budgets, and the config's overrides of the sweep's defaults.
 interface SweepConfig extends StageConfig {
   sessionTokenCap: number;
   contextLimits: { soft: number; hard: number };
-  issueTokenBudget: number;
-  rebaseTokenBudget: number;
   roleBudgets?: Readonly<Partial<Record<Role, number>>> | null;
   models?: Readonly<Partial<Record<ModelRole, string>>> | null;
   maxSpawnsPerRun?: number | null;
@@ -241,8 +241,6 @@ interface SummaryItem {
   stage: string | null;
   outcome: string;
   reason: string | null;
-  allocatedTokens: number | null;
-  rebaseAllocatedTokens: number | null;
 }
 
 // What the end-of-sweep cleanup did: ops' list of worktrees, or its error.

@@ -21,10 +21,9 @@ import {
 
 /** @import { Launch, StageContext, StageMachine, Step } from "../src/workflow/stages/types.ts" */
 
-const FIXER_TOKENS = 100_000;
-const HARD_LIMIT = /\b175000 tokens\b/u;
+const HARD_LIMIT = /\b225000 tokens\b/u;
 const EFFORT_GUESS = /15 files|30 substantial tool calls/u;
-const LEAD = `A previous session ran out of room. Read its handoff first: ${PATHS.handoffFile}. Continue from the current branch state.`;
+const LEAD = `A previous session ran out of room. Read its handoff first: ${PATHS.handoffFile}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 const HANDOFF = { status: "handoff", summary: "Half done." };
 const FIXED = { status: "fixed", summary: "Fixed." };
 const FAILED = { id: "test", pass: false, detail: "1 failed", tail: "3 != 2" };
@@ -93,7 +92,7 @@ describe("the writer prompts", () => {
 });
 
 describe("a CI fixer's handoff", () => {
-  test("launches a charged continuation for the same failure", () => {
+  test("launches a continuation for the same failure", () => {
     const fixing = ciFixing();
     const continuing = answered(checks, fixing, HANDOFF);
     const task = firstTask(continuing);
@@ -102,7 +101,6 @@ describe("a CI fixer's handoff", () => {
     assert.notEqual(launchesOf(continuing)[0].name, launchesOf(fixing)[0].name);
     assert.equal(continuing.state.st.ciFixes, 1);
     assert.deepEqual(continuing.state.st.continuations, { ciFix: 1 });
-    assert.equal(continuing.state.st.allocated, 2 * FIXER_TOKENS);
   });
 
   test("a continuation that fixes it pushes the fix", () => {
@@ -134,8 +132,6 @@ describe("a conflict resolver's handoff", () => {
     assert.ok(firstTask(continuing).includes("src/a.ts"));
     assert.equal(continuing.state.st.conflictFixes, 1);
     assert.deepEqual(continuing.state.st.continuations, { conflicts: 1 });
-    assert.equal(continuing.state.st.rebaseAllocated, 2 * FIXER_TOKENS);
-    assert.equal(continuing.state.st.allocated, 0);
   });
 
   test("past maxContinuations aborts the rebase, then stops as too large", () => {

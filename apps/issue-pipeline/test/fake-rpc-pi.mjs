@@ -5,38 +5,51 @@
 // context, so a script's context can rise turn by turn.
 
 // Answers each op from replies.json and logs the request to ops.log. A push
-// whose reply sets `git` pushes the request's checkout's HEAD to the
-// issue's branch on origin first, as the real push op would.
-const FAKE_OPS = `import { execFileSync } from "node:child_process";
+// or exit-push whose reply sets `git` pushes the request's checkout's HEAD to
+// the issue's branch on origin first, as the real op would. An op whose
+// reply sets `hang` never answers: it starts `sleep 600` in the op's own
+// process group, writes the sleep's pid to hang.pid and waits on it.
+const FAKE_OPS = `import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 const dir = import.meta.dirname;
 const input = fs.readFileSync(0, "utf8");
 const request = JSON.parse(input.split("BEGIN_OPS_REQUEST")[1].split("END_OPS_REQUEST")[0]);
 fs.appendFileSync(dir + "/ops.log", JSON.stringify(request) + "\\n");
 const replies = JSON.parse(fs.readFileSync(dir + "/replies.json", "utf8"));
-if (request.op === "push" && replies.push?.git) {
-  execFileSync("git", ["-C", request.checkout.dir, "push", "--quiet", "origin", "HEAD:refs/heads/agent/issue-7"], {
-    env: { ...process.env, ISSUE_PIPELINE_OPS: "1" },
-  });
+if (replies[request.op]?.hang) {
+  const sleep = spawn("sleep", ["600"], { stdio: "ignore" });
+  fs.writeFileSync(dir + "/hang.pid", sleep.pid + "\\n");
+} else {
+  if ((request.op === "push" || request.op === "exit-push") && replies[request.op]?.git) {
+    execFileSync("git", ["-C", request.checkout.dir, "push", "--quiet", "origin", "HEAD:refs/heads/agent/issue-7"], {
+      env: { ...process.env, ISSUE_PIPELINE_OPS: "1" },
+    });
+  }
+  process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(replies[request.op]) + "\\n");
 }
-process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(replies[request.op]) + "\\n");
 `;
 
-// A fake pi in RPC mode. It logs its argv, cwd, the HEAD there, pid, whether its session
-// file was new, its env's names and its GH_TOKEN to pi.log, then every command it reads, and answers each with
+// A fake pi in RPC mode. It logs its argv, cwd, the HEAD of the code
+// checkout there (repo/ when the cwd holds one, as a stage job's folder
+// does, else the cwd itself), pid, whether its session
+// file was new, its env's names, its GH_TOKEN and its parsed
+// ISSUE_PIPELINE_COMMIT_SCOPE (null when unset) to pi.log, then every command it reads, and answers each with
 // a response. On "prompt" it plays pi-script.json's events, writing each to
 // stdout and the session file as pi does, up to a "wait" mark, where it
 // pauses until "abort" (which settles it, aborted) or "steer" (which plays
 // the rest). A script with `launches`, a list of event lists, plays
 // launches[n] on the n-th prompt across every pi process, counted in
 // prompts.count under FAKE_PI_ROOT, its last entry repeating once the list
-// runs out. With ignoreAbort it never answers an abort. A rejectPrompt
+// runs out. With ignoreAbort it never answers an abort. A `child` script
+// starts `sleep 600` in pi's own process group on the prompt and writes its
+// pid to pi-child.pid under FAKE_PI_ROOT, as a tool pi runs would. A rejectPrompt
 // script rejects the prompt with that error. On the prompt, a `commit`
 // script first commits that file, relative to its cwd, in the repo holding
 // it, logging the commit's sha; an `untracked` script leaves that file
-// uncommitted. It exits when stdin closes.
+// uncommitted; a `handoff` script, `{ file, text }`, writes `text` to that
+// file, as a session writes its handoff. It exits when stdin closes.
 const FAKE_PI = `#!/usr/bin/env node
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 const root = process.env.FAKE_PI_ROOT;
@@ -45,12 +58,16 @@ const session = argv[argv.indexOf("--session") + 1];
 const fresh = !fs.existsSync(session);
 const log = (entry) => fs.appendFileSync(root + "/pi.log", JSON.stringify(entry) + "\\n");
 const script = JSON.parse(fs.readFileSync(root + "/pi-script.json", "utf8"));
-const git = (dir, args) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" }).trim();
+// It stands in for pipeline_commit, so its commits pass the checkout's pre-commit hook.
+const git = (dir, args) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8", env: { ...process.env, ISSUE_PIPELINE_COMMIT: "1" } }).trim();
 let head = null;
+const code = fs.existsSync(path.join(process.cwd(), "repo")) ? path.join(process.cwd(), "repo") : process.cwd();
 try {
-  head = git(process.cwd(), ["rev-parse", "HEAD"]);
+  head = git(code, ["rev-parse", "HEAD"]);
 } catch {}
-log({ argv, cwd: process.cwd(), head, pid: process.pid, fresh, env: Object.keys(process.env).sort(), ghToken: process.env.GH_TOKEN ?? null });
+const scope = process.env.ISSUE_PIPELINE_COMMIT_SCOPE;
+const commitScope = scope === undefined ? null : JSON.parse(scope);
+log({ argv, cwd: process.cwd(), head, pid: process.pid, fresh, env: Object.keys(process.env).sort(), ghToken: process.env.GH_TOKEN ?? null, commitScope });
 const print = (event) => {
   process.stdout.write(JSON.stringify(event) + "\\n");
   fs.appendFileSync(session, JSON.stringify(event) + "\\n");
@@ -65,6 +82,14 @@ const work = () => {
   }
   if (script.untracked) {
     fs.writeFileSync(path.join(process.cwd(), script.untracked), "left\\n");
+  }
+  if (script.handoff) {
+    fs.mkdirSync(path.dirname(script.handoff.file), { recursive: true });
+    fs.writeFileSync(script.handoff.file, script.handoff.text);
+  }
+  if (script.child) {
+    const sleep = spawn("sleep", ["600"], { stdio: "ignore" });
+    fs.writeFileSync(root + "/pi-child.pid", sleep.pid + "\\n");
   }
 };
 const promptEvents = () => {
@@ -124,11 +149,22 @@ process.stdin.on("data", (chunk) => {
 process.stdin.on("end", () => process.exit(0));
 `;
 
-/** @param {object} usage @returns {object} */
+/**
+ * An assistant message's end that spent `usage`, a usage as the job keeps
+ * it, printed as pi prints it: its cost a breakdown with its total.
+ * @param {import("../src/job/token-usage.ts").Usage} usage
+ * @returns {object}
+ */
 function messageEnd(usage) {
+  const { cost, ...counts } = usage;
   return {
     type: "message_end",
-    message: { role: "assistant", content: [], usage, stopReason: "toolUse" },
+    message: {
+      role: "assistant",
+      content: [],
+      usage: { ...counts, cost: { input: 0, total: cost } },
+      stopReason: "toolUse",
+    },
   };
 }
 
@@ -156,6 +192,8 @@ function turns(contexts) {
       output: TURN_OUTPUT,
       cacheRead,
       cacheWrite,
+      cacheWrite1h: 0,
+      cost: 0,
     });
   });
 }

@@ -15,6 +15,7 @@ import {
   isSweepConfig,
 } from "./entry-replies.ts";
 import { closeParentLaunches } from "./parents.ts";
+import { isStrings } from "./reply-guards.ts";
 import type {
   AbandonedClaim,
   ClaimStep,
@@ -116,9 +117,27 @@ function headStop(st: IssueState, remoteHead: unknown): StageStop | null {
   return { reason: BRANCH_MOVED, detail, code: null };
 }
 
+// The stop for a restart whose spec writer wrote the spec's tests and stubs
+// (specWritesTests) and some are missing from the branch. Writing them is the
+// spec writer's job (Axlog, 2026-10-16), so they go to neither the
+// implementer nor a new spec. The claim lists them only for such a spec,
+// which the spec writer of #305 writes; any other spec's go to the
+// implementer (src/restart-spec.ts).
+function specFilesStop(specMissing: unknown): StageStop | null {
+  if (!isStrings(specMissing) || specMissing.length === 0) {
+    return null;
+  }
+  const named = specMissing.map((file) => `\`${file}\``).join(", ");
+  const reason = `the spec's documented tests or stubs are missing from the branch: ${named}`;
+  const detail =
+    "The spec writer is responsible for the spec's tests and stubs. Add them to the branch, then remove the stop label to resume.";
+  return { reason, detail, code: "spec-files" };
+}
+
 // What candidate `n`'s claim reply means for the sweep.
 function claimStep(n: number, reply: Reply): ClaimStep {
-  const { ok, lost, waiting, error, state, paths, remoteHead } = reply;
+  const { ok, lost, waiting, error, state, paths, remoteHead, specMissing } =
+    reply;
   if (ok !== true) {
     return {
       kind: "unclaimed",
@@ -139,7 +158,7 @@ function claimStep(n: number, reply: Reply): ClaimStep {
   if (!(isIssueState(state) && isItemPaths(paths))) {
     return { kind: "unclaimed", outcome: "claim-failed", reason: NO_STATE };
   }
-  const stop = headStop(state, remoteHead);
+  const stop = headStop(state, remoteHead) ?? specFilesStop(specMissing);
   return { kind: "claimed", st: state, paths, stop };
 }
 
@@ -219,15 +238,6 @@ function prOf(st: IssueState | null): number | null | undefined {
   return st.pr;
 }
 
-// The tokens the state's rebases were given, 0 before any, or null with no
-// state.
-function rebaseAllocatedOf(st: IssueState | null): number | null {
-  if (st === null) {
-    return null;
-  }
-  return st.rebaseAllocated ?? 0;
-}
-
 function summaryItem({ n, st, outcome, reason }: SummarySource): SummaryItem {
   return {
     issue: n,
@@ -235,8 +245,6 @@ function summaryItem({ n, st, outcome, reason }: SummarySource): SummaryItem {
     stage: st?.stage ?? null,
     outcome: textOf(outcome) ?? "in-progress",
     reason: textOf(reason),
-    allocatedTokens: st?.allocated ?? null,
-    rebaseAllocatedTokens: rebaseAllocatedOf(st),
   };
 }
 

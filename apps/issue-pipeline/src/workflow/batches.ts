@@ -4,7 +4,7 @@
 // the chain once. Batches stay strictly sequential: each depends on the last.
 
 import type { LaunchSpec } from "./launches.ts";
-import type { Sweep } from "./sweep.ts";
+import type { Sweep } from "./types.ts";
 
 // Runs one batch of launches and resolves to their raw results, in its order:
 // workflow.js passes the sandbox's `runs.all`.

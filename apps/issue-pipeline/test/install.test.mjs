@@ -16,6 +16,17 @@ const BUILD_FAILED = /build failed/u;
 const PLACEHOLDER = /\{\{/u;
 const NOTHING_CHANGED = /0 pipeline file\(s\) changed/u;
 const INSIDE_ROOT = /inside the pipeline root/u;
+// The build's files, each installed under its own name in the root.
+const BUILT = [
+  "workflow.js",
+  "ops.mjs",
+  "shell-supervisor.mjs",
+  "job.mjs",
+  "structured-output.mjs",
+  "pipeline-commit.mjs",
+  "orchestrate.mjs",
+  "report.mjs",
+];
 const tmp = fs.mkdtempSync("/tmp/issue-pipeline-install-");
 process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
 const root = path.join(tmp, "agent/issue-pipeline");
@@ -61,24 +72,14 @@ test("installs the pipeline with local paths filled in", () => {
     "the install rebuilt dist/",
   );
   for (const f of [
-    "workflow.js",
-    "ops.mjs",
-    "job.mjs",
-    "structured-output.mjs",
-    "orchestrate.mjs",
+    ...BUILT,
     "repos/example.json",
     "README.md",
     "INSTALLED.json",
   ]) {
     assert.ok(fs.existsSync(path.join(root, f)), f);
   }
-  for (const f of [
-    "workflow.js",
-    "ops.mjs",
-    "job.mjs",
-    "structured-output.mjs",
-    "orchestrate.mjs",
-  ]) {
+  for (const f of BUILT) {
     assert.equal(
       fs.readFileSync(path.join(root, f), "utf8"),
       fs.readFileSync(path.join(dist, f), "utf8"),

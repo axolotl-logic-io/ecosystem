@@ -6,6 +6,7 @@
 import { issue, snapshotOf } from "./orchestrator-fixtures.mjs";
 
 /** @import { Prereq, Snapshot, SnapshotIssue } from "../src/orchestrator/queue.ts" */
+/** @import { IssueFields } from "./orchestrator-fixtures.mjs" */
 /** @typedef {Prereq & { status: "open" }} OpenPrereq */
 
 // The prerequisite, its dependent, and the head of the prerequisite's branch
@@ -20,7 +21,8 @@ const STACKED_ON = { issue: PREREQ, headSha: STACKED_HEAD };
 const PREREQ_LIVE = { live: true, stage: "review" };
 
 // The open prerequisite's facts: at checks with no open findings, on the
-// head the dependent was put on, not stacked or stopped, then `fields`.
+// head the dependent was put on, not stacked, stopped or behind, then
+// `fields`.
 /** @param {Partial<OpenPrereq>} [fields] @returns {OpenPrereq} */
 function openPrereq(fields = {}) {
   return {
@@ -31,12 +33,13 @@ function openPrereq(fields = {}) {
     headSha: STACKED_HEAD,
     stacked: false,
     stopped: false,
+    behind: false,
     ...fields,
   };
 }
 
 // The prerequisite's own row, its job live unless `fields` say otherwise.
-/** @param {Partial<SnapshotIssue>} [fields] @returns {SnapshotIssue} */
+/** @param {IssueFields} [fields] @returns {SnapshotIssue} */
 function prereqRow(fields = {}) {
   return issue({
     number: PREREQ,
@@ -86,17 +89,19 @@ function stackedAt(stage, prereq, others = []) {
 // Another issue ready to merge, with its own PR.
 const OTHER_AT_MERGE = issue({ number: OTHER, stage: "merge", pr: 70 });
 
-// The prerequisite at fix and older, its files over the dependent's, which is
-// stacked on it at `stage`: neither has a live job.
+// The prerequisite at fix and older, its branch changing the dependent's
+// stub, which the dependent's branch, stacked on it at `stage`, changes too:
+// neither has a live job.
 /** @param {string} stage @returns {Snapshot} */
 function overlapping(stage) {
   return snapshotOf([
-    prereqRow({ stage: "fix", job: null, files: ["src/**"] }),
+    prereqRow({ stage: "fix", job: null, changed: ["src/a.ts"] }),
     issue({
       number: DEPENDENT,
       verdict: { kind: "waiting-on-after" },
       stage,
-      files: ["src/a.ts"],
+      stubs: ["src/a.ts"],
+      changed: ["src/a.ts"],
       after: [PREREQ],
       stackedOn: STACKED_ON,
       prereq: openPrereq({ stage: "fix" }),
@@ -104,16 +109,21 @@ function overlapping(stage) {
   ]);
 }
 
-// The dependent, older than its prerequisite and past implement, overlaps the
-// prerequisite's checks.
+// The dependent, older than its prerequisite and past implement, changes the
+// stub of the prerequisite at checks.
 const OLDER_DEPENDENT = 99;
 const OLDER_DEPENDENT_AT_REVIEW = snapshotOf([
-  prereqRow({ stage: "checks", job: null, files: ["src/a.ts"] }),
+  prereqRow({
+    stage: "checks",
+    job: null,
+    stubs: ["src/a.ts"],
+    changed: ["src/a.ts"],
+  }),
   issue({
     number: OLDER_DEPENDENT,
     verdict: { kind: "waiting-on-after" },
     stage: "review",
-    files: ["src/**"],
+    changed: ["src/a.ts"],
     after: [PREREQ],
     stackedOn: STACKED_ON,
     prereq: openPrereq(),

@@ -12,6 +12,9 @@ const NETWORK = [
   "gh exited 1: HTTP 503: Service Unavailable",
   "gh exited 1: HTTP 504: Gateway Timeout",
   "fatal: unable to access: The requested URL returned error: 503",
+  // In any letter case (#385).
+  "read tcp 10.0.0.5:51234->1.2.3.4:443: read: connection reset by peer",
+  "fatal: unable to access: connection timed out",
 ];
 
 const NOT_NETWORK = [

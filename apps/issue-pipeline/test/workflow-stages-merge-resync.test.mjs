@@ -4,7 +4,11 @@
 // stage-outcome-test-kit.mjs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { releasedState, requestFor } from "./stage-outcome-test-kit.mjs";
+import {
+  releasedState,
+  requestFor,
+  sessionAgents,
+} from "./stage-outcome-test-kit.mjs";
 import {
   finishRun,
   issueSummary,
@@ -32,12 +36,13 @@ test("a merge refused as behind rebases, re-runs the tests and merges", async ()
   });
   const { testsOnly } = requestFor(trace, "verify");
   assert.equal(testsOnly, true);
+  // No acceptance or security session runs between the rebase and the merge.
+  assert.deepEqual(sessionAgents(trace), []);
   assert.deepEqual(
     summary,
     issueSummary({
       stage: "merge",
       outcome: "merged",
-      allocatedTokens: 940_000,
     }),
   );
 });
@@ -58,10 +63,7 @@ test("a second behind in one sweep waits at sync for the next sweep", async () =
   const now = notes.indexOf("merge deferred: behind; rebasing now");
   const later = notes.indexOf("merge deferred: behind; will rebase next sweep");
   assert.ok(now >= 0 && later > now, notes.join("\n"));
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "sync", allocatedTokens: 940_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "sync" }));
 });
 
 test("a merge refused as conflict waits at sync for the next sweep", async () => {
@@ -71,8 +73,5 @@ test("a merge refused as conflict waits at sync for the next sweep", async () =>
     ops: { merge: { ok: true, merged: false, reason: "conflict" } },
   });
   assert.equal(releasedState(trace).stage, "sync");
-  assert.deepEqual(
-    summary,
-    issueSummary({ stage: "sync", allocatedTokens: 940_000 }),
-  );
+  assert.deepEqual(summary, issueSummary({ stage: "sync" }));
 });
