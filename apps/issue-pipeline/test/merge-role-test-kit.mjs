@@ -2,7 +2,7 @@
 // The merge role's script for its tests: a hardened issue at merge whose
 // every op succeeds, the merge queue, the security review of the merged
 // result that finds nothing, and the replies after the merge.
-import { opNames } from "./reviewer-and-merge-role-calls-kit.mjs";
+import { opNames, sessionsOf } from "./reviewer-and-merge-role-calls-kit.mjs";
 import {
   current,
   fakeContext,
@@ -52,6 +52,24 @@ const PREPARED_MERGED = {
   diffPath: "/run/security/diff.patch",
   bundlePath: "/run/security/bundle.md",
   changedFiles: ["src/chat.ts", "wiki/Chats.md"],
+};
+
+// The Reviewer's own integration at merge: a failing CI check, the fix
+// session's reply, and the ops of an integration that ends in a push of
+// REBASED.
+const CI_FAIL = { status: "fail", failing: ["e2e"], logPath: "/run/ci.log" };
+const PUSHED = { headSha: REBASED, codeChanged: true, wikiAhead: 0 };
+const VERIFIED = { pass: true, headSha: REBASED, checks: [] };
+const AFTER_INTEGRATION = {
+  verify: [VERIFIED],
+  "wiki-check": [WIKI_PASS, WIKI_PASS],
+  push: [PUSHED],
+};
+const INTEGRATED = { ...REVISION, code: REBASED };
+/** @type {import("../src/job/role-context.ts").SessionResult} */
+const FIXED = {
+  ok: true,
+  reply: { outcome: "done", summary: "the e2e test waits for the list" },
 };
 
 /** @type {import("../src/job/role-context.ts").SessionResult} */
@@ -109,17 +127,27 @@ function merging(script = {}) {
   });
 }
 
+/** The integration's writer sessions. @param {Parameters<typeof opNames>[0]} calls */
+function integrationSessions(calls) {
+  return sessionsOf(calls).filter((spec) => spec.phase === "integration");
+}
+
 /** The mutating ops the role ran, in order. @param {Parameters<typeof opNames>[0]} calls */
 function mutationsOf(calls) {
   return opNames(calls).filter((name) => MUTATIONS.includes(name));
 }
 
 export {
+  AFTER_INTEGRATION,
   AFTER_MERGE,
+  CI_FAIL,
   CI_PASS,
   CODE_MERGED,
   FINISHED,
+  FIXED,
   finding,
+  INTEGRATED,
+  integrationSessions,
   MERGED,
   MERGED_PR,
   MERGED_REVISION,
@@ -128,8 +156,10 @@ export {
   NO_FINDING,
   PREPARED_MERGED,
   PUBLISHED,
+  PUSHED,
   QUEUE,
   REBASED,
+  VERIFIED,
   WIKI_PASS,
   WIKI_UNCHANGED,
 };
