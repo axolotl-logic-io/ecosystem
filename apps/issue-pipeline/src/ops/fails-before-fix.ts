@@ -4,6 +4,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { updateSubmodules } from "../clone-setup.ts";
 import { commentOnlyChange } from "../comment-only.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -81,7 +82,8 @@ function revert(tmp: string, base: string, code: readonly string[]): void {
     if (run("git", exists, { allowFail: true }).code === 0) {
       run("git", ["-C", tmp, "checkout", base, "--", file]);
     } else {
-      fs.rmSync(path.join(tmp, file), { force: true });
+      fs.rmSync(path.join(tmp, file), { force: true, recursive: true });
+      run("git", ["-C", tmp, "update-index", "--force-remove", "--", file]);
     }
   }
 }
@@ -98,13 +100,14 @@ function revertedTest(
     paths.runDir(cfg, reverted.number),
     `${label}-${sha.slice(0, SHORT_SHA_LENGTH)}`,
   );
-  const remove = ["-C", wt, "worktree", "remove", "--force", tmp];
+  const remove = ["-C", wt, "worktree", "remove", "--force", "--force", tmp];
   withCloneLock(cfg, () => {
     run("git", remove, { allowFail: true });
     run("git", ["-C", wt, "worktree", "add", "--detach", tmp, sha]);
   });
   try {
     revert(tmp, reverted.base, files);
+    updateSubmodules(cfg, tmp);
     const { setup, test } = reverted.commands;
     if (setup !== undefined && setup !== null && setup !== "") {
       shell(setup, tmp, path.join(logDir, `${label}-setup.log`), timeoutMs);

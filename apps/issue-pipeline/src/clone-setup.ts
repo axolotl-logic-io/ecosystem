@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Config } from "./config.ts";
+import { git } from "./github.ts";
 import { run } from "./process.ts";
 
 const CREDENTIAL_HELPER = "credential.https://github.com.helper";
@@ -48,7 +49,8 @@ function configureClone(cfg: Config, clone: string): void {
 }
 
 function writeHook(clone: string, name: string, script: string): void {
-  const hook = path.join(clone, ".git", "hooks", name);
+  const gitDir = gitIn(clone, ["rev-parse", "--absolute-git-dir"]).trim();
+  const hook = path.join(gitDir, "hooks", name);
   fs.mkdirSync(path.dirname(hook), { recursive: true });
   fs.writeFileSync(hook, script);
   fs.chmodSync(hook, HOOK_MODE);
@@ -61,4 +63,19 @@ function guardCommits(clone: string): void {
   writeHook(clone, "pre-commit", PRE_COMMIT_HOOK);
 }
 
-export { configureClone, GH_HELPER, guardCommits };
+// Fetches the submodule commits recorded by this checkout, recursively.
+// Command-scoped credentials also reach private and nested submodules.
+function updateSubmodules(cfg: Config, dir: string): void {
+  git(cfg, [...GH_HELPER, "-C", dir, "submodule", "sync", "--recursive"]);
+  git(cfg, [
+    ...GH_HELPER,
+    "-C",
+    dir,
+    "submodule",
+    "update",
+    "--init",
+    "--recursive",
+  ]);
+}
+
+export { configureClone, GH_HELPER, guardCommits, updateSubmodules };

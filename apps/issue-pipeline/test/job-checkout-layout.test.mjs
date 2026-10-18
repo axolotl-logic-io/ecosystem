@@ -58,7 +58,12 @@ for (const stage of ["spec", "implement"]) {
     try {
       await waitFor("the session's spending in job.json", () => spent(place));
       assert.ok(fs.existsSync(path.join(repo, ".git")));
-      assert.ok(fs.existsSync(path.join(docsOf(place.root, stage), ".git")));
+      const docs = docsOf(place.root, stage);
+      assert.ok(fs.existsSync(path.join(docs, ".git")));
+      assert.equal(
+        fs.realpathSync(docs),
+        fs.realpathSync(path.join(repo, "wiki")),
+      );
       assert.equal(fs.existsSync(path.join(root, ".git")), false);
       const exclude = path.join(repo, ".git", "info", "exclude");
       const lines = fs.readFileSync(exclude, "utf8").split("\n");

@@ -34,7 +34,6 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
 interface WikiSettings {
   branch: string;
   dir: string;
-  url: string | undefined;
 }
 
 function checkUsers(configPath: string, users: unknown): void {
@@ -194,19 +193,18 @@ function tokenEnv(cfg: Config): ReadonlyMap<string, string> {
 }
 
 // The repo's GitHub wiki holds its docs and decisions (Autumn, 2026-10-13). Config
-// `wiki: true` or `{ dir, branch, url }` turns it on; it is off by default.
+// `wiki: true` or `{ dir, branch }` enables publishing its submodule; off by default.
 function wikiCfg(cfg: Config): WikiSettings | null {
   const { wiki } = cfg;
   if (wiki === undefined || wiki === null || wiki === false) {
     return null;
   }
   if (wiki === true) {
-    return { branch: "master", dir: "wiki", url: undefined };
+    return { branch: "master", dir: "wiki" };
   }
   return {
     branch: wiki.branch ?? "master",
     dir: wiki.dir ?? "wiki",
-    url: wiki.url,
   };
 }
 
@@ -232,7 +230,7 @@ const paths = {
   // The job's code checkout, cloned from the mirror.
   jobRepo: (cfg: Config, n: number, stage: string): string =>
     path.join(paths.jobCheckout(cfg, n, stage), JOB_REPO),
-  // The job's wiki checkout, cloned from the wiki mirror.
+  // The job's docs alias of the wiki submodule.
   jobDocs: (cfg: Config, n: number, stage: string): string =>
     path.join(paths.jobCheckout(cfg, n, stage), JOB_DOCS),
   // Where a writer session of issue `n` that runs out of room writes its
@@ -250,7 +248,7 @@ const paths = {
     path.join(paths.runDir(cfg, n), "dropped", `${key}-${checkout}.patch`),
   jobLog: (cfg: Config, n: number): string =>
     path.join(paths.runDir(cfg, n), "job.log"),
-  // The bare mirrors of the repo and its wiki that job checkouts clone.
+  // The bare code mirror that job checkouts clone.
   mirror: (cfg: Config): string =>
     path.join(ROOT, "work", cfg.slug, "mirror.git"),
   runDir: (cfg: Config, n: number): string =>
@@ -266,8 +264,6 @@ const paths = {
     }
     return path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki");
   },
-  wikiClone: (cfg: Config): string =>
-    path.join(ROOT, "clones", `${cfg.slug}.wiki`),
   wikiMirror: (cfg: Config): string =>
     path.join(ROOT, "work", cfg.slug, "wiki-mirror.git"),
   worktree: (cfg: Config, n: number): string => {

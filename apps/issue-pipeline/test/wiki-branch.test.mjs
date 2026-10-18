@@ -5,12 +5,13 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
+import { addSubmodule } from "./submodule-test-kit.mjs";
 
 const fx = await opsFixture("wiki-branch");
 const { sh } = fx;
 const { loadConfig } = await import("../src/config.ts");
 const { ensureWiki, wikiBranchHasWork } = await import("../src/wiki.ts");
-const { ensureWorktree } = await import("../src/checkouts.ts");
+const { ensureClone, ensureWorktree } = await import("../src/checkouts.ts");
 const { ghIsRead } = await import("../src/github.ts");
 
 const wikiOrigin = path.join(fx.root, "wiki.git");
@@ -20,8 +21,13 @@ sh(`git clone -q ${wikiOrigin} ${seed} 2>/dev/null`);
 sh(`cd ${seed} && git config user.email a@b && git config user.name a`);
 sh(`cd ${seed} && echo home > Home.md && git add . && git commit -qm home`);
 sh(`cd ${seed} && git push -q origin HEAD:master && git fetch -q origin`);
-const config = fx.configWith("wiki-config.json", { wiki: { url: wikiOrigin } });
+addSubmodule(path.join(fx.root, "seed"), wikiOrigin);
+sh(`git -C ${fx.root}/seed push -q origin integration`);
+fx.fetchClone();
+sh(`git -C ${fx.root}/clones/o__r reset --hard origin/integration`);
+const config = fx.configWith("wiki-config.json", { wiki: true });
 const cfg = loadConfig(config);
+ensureClone(cfg);
 const noWiki = loadConfig(path.join(fx.root, "config.json"));
 // One issue per test, so no test sees another's branches.
 const PUSHED = 1;
@@ -33,6 +39,10 @@ const NO_BRANCH = 6;
 const AT_MASTER = 7;
 const WIKI_ONLY_PUSH = 8;
 const WIKI_ONLY_PR = { n: 9, pr: 69 };
+const DIRTY = 10;
+const LOCAL_WORK = 11;
+const PIN_UPDATE = 12;
+const CODE_COMMIT = 13;
 
 // The sha of a ref on the wiki origin, or "" when it has none.
 /** @param {string} ref @returns {string} */
@@ -43,6 +53,7 @@ function wikiRef(ref) {
 // Issue `n`'s wiki checkout, which the wiki-on config always has.
 /** @param {number} n @returns {string} */
 function wikiOf(n) {
+  ensureWorktree(cfg, n);
   const dir = ensureWiki(cfg, n);
   if (dir === null) {
     throw new Error("no wiki checkout");
@@ -124,6 +135,30 @@ test("wikiBranchHasWork", () => {
   assert.equal(wikiBranchHasWork(noWiki, WITH_WORK), false);
 });
 
+test("uncommitted wiki edits still refuse a code push", () => {
+  fx.startBranch(DIRTY, "g", "dirty");
+  const dir = wikiOf(DIRTY);
+  sh(`echo unstaged > ${dir}/Unstaged.md`);
+  fx.fakeGh.reply([]);
+  const out = JSON.parse(fx.ask({ op: "push", number: DIRTY }, config));
+  assert.equal(out.ok, false);
+  assert.ok(
+    String(out.error).includes("the wiki checkout has uncommitted changes"),
+  );
+  assert.equal(wikiRef(`agent/issue-${DIRTY}`), "");
+});
+
+test("another claim preserves unpublished wiki commits and uncommitted pages", () => {
+  const dir = wikiOf(LOCAL_WORK);
+  sh(`cd ${dir} && echo page > Local.md && git add . && git commit -qm local`);
+  const sha = headOf(dir);
+  sh(`echo unstaged > ${dir}/Unstaged.md`);
+  ensureWorktree(cfg, LOCAL_WORK);
+  assert.equal(ensureWiki(cfg, LOCAL_WORK), dir);
+  assert.equal(headOf(dir), sha);
+  assert.equal(sh(`git -C ${dir} status --porcelain`), "?? Unstaged.md");
+});
+
 // Gives issue `n` a code branch with only an empty commit and a wiki checkout
 // with one commit of its own.
 /** @param {number} n */
@@ -145,6 +180,25 @@ test("push of a wiki-only change pushes both branches and says the code is uncha
   assert.equal(out, okLine("push", want));
   assert.equal(fx.originRef(`agent/issue-${WIKI_ONLY_PUSH}`), headSha);
   assert.equal(wikiRef(`agent/issue-${WIKI_ONLY_PUSH}`), headOf(dir));
+});
+
+test("git add -A of code leaves the separately edited wiki pin unchanged", () => {
+  const { wt } = wikiOnlyWork(CODE_COMMIT);
+  const pin = sh(`git -C ${wt} rev-parse HEAD:wiki`);
+  sh(`cd ${wt} && echo code > code.txt && git add -A && git commit -qm code`);
+  assert.equal(sh(`git -C ${wt} rev-parse HEAD:wiki`), pin);
+  assert.equal(sh(`git -C ${wt}/wiki show HEAD:W${CODE_COMMIT}.md`), "w");
+});
+
+test("an explicitly committed wiki pin update is a code change", () => {
+  const { wt } = wikiOnlyWork(PIN_UPDATE);
+  sh(`git -C ${wt} update-index --no-assume-unchanged wiki`);
+  sh(`git -C ${wt} add wiki && git -C ${wt} commit -qm pin`);
+  fx.fakeGh.reply([]);
+  const out = JSON.parse(fx.ask({ op: "push", number: PIN_UPDATE }, config));
+  assert.equal(out.ok, true, out.error);
+  assert.equal(out.codeChanged, true);
+  assert.equal(out.wikiAhead, 1);
 });
 
 test("open-pr of a wiki-only change leaves the draft's title, body and draft status alone", () => {

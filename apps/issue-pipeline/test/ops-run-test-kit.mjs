@@ -51,11 +51,12 @@ function setEnv(name, value) {
  * @returns {NodeJS.ProcessEnv}
  */
 function opsEnv(root, home) {
-  const { PATH: searchPath } = process.env;
+  const { PATH: searchPath, GIT_ALLOW_PROTOCOL: gitProtocols } = process.env;
   /** @type {Map<string, string | undefined>} */
   const env = new Map([
     ["ISSUE_PIPELINE_ROOT", root],
     ["PATH", searchPath],
+    ["GIT_ALLOW_PROTOCOL", gitProtocols],
   ]);
   if (home !== undefined) {
     env.set("HOME", home);

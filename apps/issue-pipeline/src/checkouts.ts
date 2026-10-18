@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { configureClone, GH_HELPER } from "./clone-setup.ts";
+import { configureClone, GH_HELPER, updateSubmodules } from "./clone-setup.ts";
 import type { Config } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
 import {
@@ -18,7 +18,7 @@ import {
   uncommitted,
 } from "./git-state.ts";
 import { git } from "./github.ts";
-import { withCloneLock, withWikiLock } from "./locks.ts";
+import { withCloneLock } from "./locks.ts";
 import { OpsError, run, runFailure, shell } from "./process.ts";
 import type { StackedOn } from "./stack.ts";
 import { pushWikiBranch, wikiAhead } from "./wiki.ts";
@@ -63,7 +63,9 @@ function ensureClone(cfg: Config): string {
     }
     configureClone(cfg, clone);
     fetchIn(cfg, clone, "--prune");
+    gitIn(clone, ["checkout", "--detach", `origin/${cfg.baseBranch}`]);
     gitIn(clone, ["worktree", "prune"]);
+    updateSubmodules(cfg, clone);
     return clone;
   });
 }
@@ -91,23 +93,8 @@ function ensureWorktree(
       start = `origin/${branch}`;
     }
     gitIn(clone, ["worktree", "add", "-B", branch, wt, start]);
+    updateSubmodules(cfg, wt);
     return wt;
-  });
-}
-
-function removeWikiCheckout(cfg: Config, number: number): void {
-  const wikiClone = paths.wikiClone(cfg);
-  if (wikiCfg(cfg) === null || !fs.existsSync(wikiClone)) {
-    return;
-  }
-  withWikiLock(cfg, () => {
-    for (const args of [
-      ["worktree", "remove", "--force", paths.wiki(cfg, number)],
-      ["worktree", "prune"],
-      ["branch", "-D", paths.branch(number)],
-    ]) {
-      run("git", ["-C", wikiClone, ...args], { allowFail: true });
-    }
   });
 }
 
@@ -122,12 +109,19 @@ function removeWorktree(cfg: Config, number: number): void {
     const log = path.join(dir, "teardown.log");
     shell(teardown, dir, log, TEARDOWN_TIMEOUT_MS);
   }
-  removeWikiCheckout(cfg, number);
   withCloneLock(cfg, () => {
     const clone = paths.clone(cfg);
     const wt = paths.worktree(cfg, number);
     if (fs.existsSync(wt)) {
-      const args = ["-C", clone, "worktree", "remove", "--force", wt];
+      const args = [
+        "-C",
+        clone,
+        "worktree",
+        "remove",
+        "--force",
+        "--force",
+        wt,
+      ];
       run("git", args, { allowFail: true });
     }
     const branch = paths.branch(number);

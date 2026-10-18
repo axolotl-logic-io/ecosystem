@@ -134,7 +134,6 @@ const CONFIG_SCHEMA = z.looseObject({
       z.looseObject({
         branch: z.string().optional(),
         dir: z.string().optional(),
-        url: z.string().optional(),
       }),
     ])
     .nullish(),

@@ -4,6 +4,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { addSubmodule } from "./submodule-test-kit.mjs";
 
 // The base branch the job tests' config names.
 const BASE = "integration";
@@ -58,8 +59,10 @@ function seedOrigins(tmp, wiki) {
   }
   const wikiOrigin = path.join(tmp, "wiki-origin.git");
   seedBare(wikiOrigin, WIKI_BRANCH, "Home.md");
-  const wikiConfig = { url: wikiOrigin, branch: WIKI_BRANCH };
-  return { origin, wikiOrigin, config: { ...config, wiki: wikiConfig } };
+  const seed = `${origin}-seed`;
+  addSubmodule(seed, wikiOrigin);
+  git(["-C", seed, "push", "--quiet", origin, `HEAD:refs/heads/${BASE}`]);
+  return { origin, wikiOrigin, config: { ...config, wiki: true } };
 }
 
 /**

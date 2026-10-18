@@ -1,8 +1,7 @@
 // A stage job's own checkouts of its issue (#250), in a folder no other job
-// shares (separate-checkouts, #338): `repo/`, a full clone made from a bare
-// mirror of the repo, and, when the repo has a wiki, `docs/` beside it, a
-// clone made from a bare mirror of the wiki. Their origins are the real
-// remotes, so ops fetch and push there, and they are set up as the ops CLI
+// shares: `repo/`, a full clone with initialized submodules, and `docs/`,
+// an alias of its wiki submodule that keeps the stage's docs pathspecs. Their
+// origins are the real remotes, and they are set up as the ops CLI
 // sets up its clone. Closing them saves what they left uncommitted as
 // patches in the issue's run folder and drops it (dropped-changes-saved,
 // #369), lets a writer push its commits, keeps unpushed wiki commits in the
@@ -11,12 +10,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { configureClone, GH_HELPER, guardCommits } from "../clone-setup.ts";
+import {
+  configureClone,
+  GH_HELPER,
+  guardCommits,
+  updateSubmodules,
+} from "../clone-setup.ts";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg } from "../config.ts";
+import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
 import { run } from "../process.ts";
+import { ensureWiki } from "../wiki.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";
 import type { Access } from "./pipeline-commit.ts";
 
@@ -67,30 +72,23 @@ function hasGit(dir: string): boolean {
   return fs.existsSync(path.join(dir, ".git"));
 }
 
-// Makes the bare mirror of `url` at `mirror` if it is missing, and fetches
-// it. False when the remote can't be cloned and `optional` says that is no
-// error.
+// Makes the bare mirror of `url` at `mirror` if missing, then fetches it.
 function syncMirror(
   cfg: Config,
-  spec: { mirror: string; url: string; prune: boolean; optional: boolean },
-): boolean {
-  const { mirror, url, prune, optional } = spec;
+  spec: { mirror: string; url: string; prune: boolean },
+): void {
+  const { mirror, url, prune } = spec;
   if (!fs.existsSync(path.join(mirror, "HEAD"))) {
     fs.rmSync(mirror, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(mirror), { recursive: true });
     const clone = [...GH_HELPER, "clone", "--mirror", url, mirror];
-    const cloned = git(cfg, clone, { allowFail: optional });
-    if (cloned.code !== 0) {
-      fs.rmSync(mirror, { recursive: true, force: true });
-      return false;
-    }
+    git(cfg, clone);
   }
   const fetch = [...GH_HELPER, "-C", mirror, "fetch", "origin"];
   if (prune) {
     fetch.push("--prune");
   }
   git(cfg, fetch);
-  return true;
 }
 
 // Clones `spec.mirror` into `dir` on the issue's branch: at the mirror's
@@ -115,24 +113,29 @@ function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
   guardCommits(dir);
 }
 
-// Clones the wiki into `into`, and returns it; null when the repo has no
-// wiki yet.
-function openWiki(cfg: Config, issue: number, into: string): string | null {
+// Exposes the initialized wiki submodule as docs/, restoring unpublished work
+// from the previous job. The alias preserves the pipeline_commit scope.
+function openWiki(cfg: Config, issue: number, repo: string): string | null {
   const wiki = wikiCfg(cfg);
-  if (wiki === null) {
+  if (wiki === null || !hasGit(path.join(repo, wiki.dir))) {
     return null;
   }
+  const scoped = withCheckout(cfg, { issue, dir: repo });
+  const into = paths.wiki(scoped, issue);
+  const target = path.relative(path.dirname(into), path.join(repo, wiki.dir));
+  fs.symlinkSync(target, into, "dir");
+  ensureWiki(scoped, issue);
+  guardCommits(into);
   const mirror = paths.wikiMirror(cfg);
-  const url = wiki.url ?? `https://github.com/${cfg.repo}.wiki.git`;
-  const synced = withWikiLock(cfg, (): boolean =>
-    syncMirror(cfg, { mirror, url, prune: false, optional: true }),
-  );
-  if (!synced) {
-    return null;
-  }
-  const branch = paths.branch(issue);
-  const spec = { mirror, url, base: wiki.branch, branch, stackOn: null };
-  cloneInto(cfg, spec, into);
+  const url = gitIn(into, ["remote", "get-url", "origin"]).trim();
+  withWikiLock(cfg, (): void => {
+    syncMirror(cfg, { mirror, url, prune: false });
+    const branch = paths.branch(issue);
+    if (hasRef(mirror, `refs/heads/${branch}`)) {
+      gitIn(into, ["fetch", "--quiet", mirror, `refs/heads/${branch}`]);
+      gitIn(into, ["checkout", "--quiet", "-B", branch, "FETCH_HEAD"]);
+    }
+  });
   return into;
 }
 
@@ -148,16 +151,15 @@ function openJobCheckout(
   const { stage, stackOn } = job;
   const mirror = paths.mirror(cfg);
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
-  withCloneLock(cfg, (): boolean =>
-    syncMirror(cfg, { mirror, url, prune: true, optional: false }),
-  );
+  withCloneLock(cfg, (): void => syncMirror(cfg, { mirror, url, prune: true }));
   const root = paths.jobCheckout(cfg, issue, stage);
   fs.rmSync(root, { recursive: true, force: true });
   fs.mkdirSync(root, { recursive: true });
   const repo = paths.jobRepo(cfg, issue, stage);
   const branch = paths.branch(issue);
   cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch, stackOn }, repo);
-  const docs = openWiki(cfg, issue, paths.jobDocs(cfg, issue, stage));
+  updateSubmodules(cfg, repo);
+  const docs = openWiki(cfg, issue, repo);
   return { root, repo, docs };
 }
 

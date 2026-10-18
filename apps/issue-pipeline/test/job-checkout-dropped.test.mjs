@@ -86,7 +86,13 @@ function leaveChanges(dir, tracked) {
   write(dir, "notes.txt", "untracked\n");
   fs.writeFileSync(path.join(dir, "blob.bin"), BINARY);
   fs.writeFileSync(path.join(dir, "latin1.txt"), LATIN1);
-  fs.appendFileSync(path.join(dir, ".git/info/exclude"), "ignored.txt\n");
+  const exclude = git(dir, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    "info/exclude",
+  ]);
+  fs.appendFileSync(exclude, "ignored.txt\n");
   write(dir, "ignored.txt", "ignored\n");
   const files = new Map();
   for (const file of [tracked, ...LEFT]) {
