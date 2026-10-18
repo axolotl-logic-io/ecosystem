@@ -1,7 +1,7 @@
 // The configured integration branch is the only permitted PR target, even
 // when a PR still has the exact authorized head. This metadata check cannot
-// atomically bind GitHub's merge target: the credential must also be denied
-// writes to other branches by GitHub policy, without an admin bypass.
+// atomically bind current PR state. The merge mutation separately names
+// the configured destination and immutable authorized source.
 import type { Config } from "./config.ts";
 import { OpsError } from "./process.ts";
 

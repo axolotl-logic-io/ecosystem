@@ -2,7 +2,7 @@
 // completion (completion.ts), after a code merge or with no code to merge.
 //
 // `state.merged` means two things by stage. At merge it is this job's own
-// merge receipt, saved right after the head-matched code merge and before
+// merge receipt, saved right after the explicit-target code merge and before
 // the security review: `merged.code` is the merge commit, `merged.wiki` and
 // `merged.inputs` the authorized ones, and the authorized revision's code
 // (state.ts mergeAuthorization) the pre-merge head the merge matched. At
@@ -14,29 +14,18 @@
 // integration (integration.ts), before the security review.
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
-import type { CodeMerged, IssueState, Revision } from "../../state.ts";
+import type { IssueState, Revision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
-import type { Check, Conflict } from "../op-replies.ts";
-import {
-  opReply,
-  SYNC_REPLY,
-  VERIFY_REPLY,
-  WIKI_CHECK_REPLY,
-} from "../op-replies.ts";
+import type { Conflict } from "../op-replies.ts";
+import { opReply, SYNC_REPLY } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
 import { errorStop } from "../writer-session.ts";
+import { checkedMergedResult, localChecks } from "./checks.ts";
 import { reviewedAndPublished, stillAt } from "./completion.ts";
 import { integrate } from "./integration.ts";
-import { logged, toAuthor, toReview } from "./returns.ts";
+import { logged, toAuthor } from "./returns.ts";
 import { approvalGate } from "./source.ts";
-
-// What the merge job's local checks found: nothing to do, or what its own
-// integration needs.
-type LocalChecks =
-  | { kind: "ready"; state: IssueState }
-  | { kind: "integrate"; wikiConflict: Conflict | null; failing: Check[] }
-  | { kind: "moved"; headSha: string };
 
 function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
@@ -64,45 +53,7 @@ async function wikiSynced(
   return { changed: sync.changed, conflict: null };
 }
 
-// The merge job's own checks of the authorized head `code`: verify, unless
-// this head is already verified, and the wiki check. `codeMerged` is the
-// code merge to verify instead of the branch.
-async function localChecks(
-  ctx: RoleContext,
-  state: IssueState,
-  { code, codeMerged }: { code: string; codeMerged: CodeMerged | null },
-): Promise<LocalChecks> {
-  const failing: Check[] = [];
-  let checked = state;
-  if (state.verifiedSha !== code) {
-    let payload: object = { number: ctx.issue };
-    if (codeMerged !== null) {
-      payload = { number: ctx.issue, codeMerged };
-    }
-    const verified = await opReply(ctx, "verify", payload, VERIFY_REPLY);
-    if (verified.headSha !== code) {
-      return { kind: "moved", headSha: verified.headSha };
-    }
-    if (verified.pass) {
-      checked = { ...state, verifiedSha: code };
-    } else {
-      failing.push(...verified.checks.filter((check) => !check.pass));
-    }
-  }
-  const wiki = await opReply(
-    ctx,
-    "wiki-check",
-    { number: ctx.issue },
-    WIKI_CHECK_REPLY,
-  );
-  failing.push(...wiki.checks.filter((check) => !check.pass));
-  if (failing.length > 0 || !wiki.pass) {
-    return { kind: "integrate", wikiConflict: null, failing };
-  }
-  return { kind: "ready", state: checked };
-}
-
-// After this job's own head-matched merge of `authorized.code` as
+// After this job's own explicit-target merge of `authorized.code` as
 // `mergeCommit`: the receipt saved first; then, only while GitHub confirms
 // that merge and the wiki head and inputs are still the authorized ones,
 // the security review of the merged result, the publish and the completion.
@@ -137,18 +88,24 @@ async function afterOwnMerge(
     pr !== null &&
     pr.number === start.pr &&
     pr.state === "MERGED" &&
+    pr.headSha === authorized.code &&
     pr.mergeCommit === mergeCommit &&
     still(revision);
   if (start.pr === null || !receiptHolds) {
-    return toReview(
+    return errorStop(
       state,
-      `${merged}, but GitHub or the wiki no longer match it`,
+      `${merged}, but GitHub or the wiki no longer match it; merged truth is retained`,
     );
   }
-  return await reviewedAndPublished(ctx, state, {
+  const codeMerged = { pr: start.pr, sha: mergeCommit };
+  const checked = await checkedMergedResult(ctx, state, result, codeMerged);
+  if ("end" in checked) {
+    return checked.end;
+  }
+  return await reviewedAndPublished(ctx, checked.state, {
     merged: result,
     authorized,
-    codeMerged: { pr: start.pr, sha: mergeCommit },
+    codeMerged,
     still,
   });
 }
@@ -209,5 +166,4 @@ async function publishOnly(
   });
 }
 
-export type { LocalChecks };
-export { afterOwnMerge, localChecks, publishOnly };
+export { afterOwnMerge, publishOnly };

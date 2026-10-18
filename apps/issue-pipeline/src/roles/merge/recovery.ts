@@ -7,6 +7,7 @@
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { mergeAuthorization } from "../../state.ts";
 import type { CurrentRevision } from "../revision-source.ts";
+import { checkedMergedResult } from "./checks.ts";
 import { reviewedAndPublished, stillAt } from "./completion.ts";
 import { toAuthor } from "./returns.ts";
 
@@ -56,10 +57,15 @@ async function recoverOwnMerge(
   ) {
     return null;
   }
-  return await reviewedAndPublished(ctx, state, {
+  const receipt = { pr: pr.number, sha: merged.code };
+  const checked = await checkedMergedResult(ctx, state, merged, receipt);
+  if ("end" in checked) {
+    return checked.end;
+  }
+  return await reviewedAndPublished(ctx, checked.state, {
     merged,
     authorized,
-    codeMerged: { pr: pr.number, sha: merged.code },
+    codeMerged: receipt,
     still: stillAt(merged),
   });
 }

@@ -13,8 +13,9 @@ import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { opReply } from "../op-replies.ts";
 import { currentRevision } from "../revision-source.ts";
+import { checkedMergedResult } from "./checks.ts";
 import { failed, logged, toAuthor, waiting } from "./returns.ts";
-import { securityReviewed } from "./security.ts";
+import { rejectedAgain, securityReviewed } from "./security.ts";
 
 const FINISHED = z.union([
   z.looseObject({ finished: z.literal(true), closed: z.boolean() }),
@@ -124,6 +125,10 @@ async function reviewedAndPublished(
     still: (after: Revision) => boolean;
   },
 ): Promise<RoleEnd> {
+  const rejected = rejectedAgain(state, merged);
+  if (rejected !== null) {
+    return rejected;
+  }
   const security = await securityReviewed(ctx, state, {
     revision: merged,
     codeMerged,
@@ -180,7 +185,19 @@ async function finishCompleted(
   if (merged.code !== null && state.pr !== null) {
     codeMerged = { pr: state.pr, sha: merged.code };
   }
-  const security = await securityReviewed(ctx, state, {
+  const rejected = rejectedAgain(state, merged);
+  if (rejected !== null) {
+    return rejected;
+  }
+  let checked = state;
+  if (codeMerged !== null) {
+    const result = await checkedMergedResult(ctx, state, merged, codeMerged);
+    if ("end" in result) {
+      return result.end;
+    }
+    checked = result.state;
+  }
+  const security = await securityReviewed(ctx, checked, {
     revision: merged,
     codeMerged,
     still: (after: Revision): boolean =>

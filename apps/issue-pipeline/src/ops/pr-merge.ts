@@ -3,9 +3,12 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { ghJson } from "../github.ts";
 import { assertPrBase } from "../pr-authority.ts";
+import { OpsError } from "../process.ts";
 
 // gh's answer to the PR view.
 const PR_VIEW = z.looseObject({
+  number: z.number().int().positive(),
+  isCrossRepository: z.boolean(),
   baseRefName: z.string(),
   headRefName: z.string(),
   headRefOid: z.string(),
@@ -16,7 +19,7 @@ const PR_VIEW = z.looseObject({
   state: z.string(),
 });
 const PR_VIEW_FIELDS =
-  "baseRefName,headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit";
+  "number,isCrossRepository,baseRefName,headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit";
 
 type PrView = z.infer<typeof PR_VIEW>;
 
@@ -32,6 +35,9 @@ function viewForMerge(cfg: Config, pr: number): PrView {
       PR_VIEW_FIELDS,
     ]),
   );
+  if (view.number !== pr || view.isCrossRepository) {
+    throw new OpsError(`PR #${pr} is not the configured repository source PR`);
+  }
   assertPrBase(cfg, pr, view.baseRefName);
   return view;
 }

@@ -11,8 +11,9 @@
 //   Reviewer's own integration (integration.ts), in bounded writer
 //   sessions, counted against `maxSyncs`, with no review of its own work;
 // - otherwise the head is verified if it isn't yet, the wiki checked, CI
-//   waited for on exactly that head, and the PR squash-merged in merge-queue
-//   order with its head matched; then the receipt is saved, and the
+//   waited for on exactly that head, and an explicit-target branch merge
+//   uses immutable H in merge-queue order; then the receipt is saved, M is
+//   deterministically checked, and the
 //   read-only security review of the merged result decides whether the wiki
 //   publishes and the issue completes (publish.ts, security.ts);
 // - a done issue whose finish didn't finish only runs the finish op again,
@@ -27,10 +28,11 @@ import { SHORT_SHA } from "../change-task.ts";
 import { opReply, readyPr } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
+import { localChecks } from "./checks.ts";
 import { finishCompleted } from "./completion.ts";
 import type { IntegrationNeed } from "./integration.ts";
 import { integrate } from "./integration.ts";
-import { afterOwnMerge, localChecks, publishOnly } from "./publish.ts";
+import { afterOwnMerge, publishOnly } from "./publish.ts";
 import { recoverOwnMerge } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
@@ -46,6 +48,7 @@ const MERGE = z.union([
     merged: z.literal(true),
     mergeCommit: z.string().min(1),
     headSha: z.string().min(1),
+    byHand: z.boolean().optional(),
   }),
   z.looseObject({ merged: z.literal(false), reason: z.string().min(1) }),
 ]);
@@ -228,6 +231,12 @@ async function mergeCode(
   );
   if (!reply.merged) {
     return await refusedMerge(ctx, state, reply.reason);
+  }
+  if (reply.byHand === true) {
+    return waiting(
+      state,
+      "the PR merged outside this confirmed operation; a fresh claim and existing postmerge authorization are required",
+    );
   }
   if (reply.headSha !== code) {
     return toReview(

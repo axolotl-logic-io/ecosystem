@@ -10,7 +10,7 @@ import { mergeAuthorization, sameRevision } from "../state.ts";
 
 const SHORT_SHA_LENGTH = 12;
 const SECURITY_FOLLOWS =
-  "A read-only security review of the merged result follows; the issue completes only if it finds nothing.";
+  "Exact-result deterministic checks and a read-only security review of the merged result follow; the issue completes only if it finds nothing.";
 
 function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA_LENGTH) ?? "none";

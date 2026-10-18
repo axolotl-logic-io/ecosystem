@@ -1,7 +1,7 @@
 // The decision to merge an issue's PR or refuse it: the checks that the
 // request's revision is the state's authorized one (mergeAuthorization),
 // that it is still the PR's head and still current, the merge order between
-// issues, the base check, that the Reviewer marked the PR ready, the squash
+// issues, the base check, that the Reviewer marked the PR ready, the explicit-target branch
 // merge itself and the merge receipt. A merge only merges code: publishing
 // the wiki (publish) and closing the issue (finish-wiki) are separate ops
 // the merge role runs after it saves the receipt and the security review of
@@ -13,29 +13,22 @@ import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
-import { gh, git } from "../github.ts";
-import type { RunResult } from "../process.ts";
-import { OpsError, parseRequest, run, tail } from "../process.ts";
-import { currentRevision } from "../revision.ts";
+import { git } from "../github.ts";
+import { OpsError, parseRequest, run } from "../process.ts";
+import { confirmMerged, currentRevision } from "../revision.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
+import { branchMerge } from "./branch-merge.ts";
 import { mergedText } from "./merge-comment.ts";
 import type { Queued } from "./merge-order.ts";
 import { queued } from "./merge-order.ts";
+import { FULL_SHA, mergedParent } from "./merged-graph.ts";
 import type { PrView } from "./pr-merge.ts";
 import { viewForMerge } from "./pr-merge.ts";
 import type { MergeStale } from "./publication-guard.ts";
 import { mergeStale, REVISION_REQUEST } from "./publication-guard.ts";
 
-const REFUSAL_TAIL_LINES = 5;
-const BASE_MOVED =
-  /base branch was modified|not up to date with the base|head branch is not up to date/iu;
-const NEEDS_APPROVAL =
-  /approving review|review is required|reviews? required|approv/iu;
-const APPROVAL_HINT =
-  " Branch protection requires an approving review, which the pipeline's own account can't give. Drop the approval rule, give the account a bypass, or set mergeAdmin in the config.";
-
 const MERGE_REQUEST = z.looseObject({
-  expectedSha: z.string().min(1),
+  expectedSha: FULL_SHA,
   mergeOrder: z.boolean().nullish(),
   // The merge order the orchestrator ranked (#234), which replaces the
   // lowest-PR order when given.
@@ -204,24 +197,9 @@ function precheck(
   return wikiBehind(cfg, req);
 }
 
-// What a failed `gh pr merge` means for the issue.
-function mergeRefusal(result: RunResult): MergeReply {
-  const why = tail(result.stderr || result.stdout, REFUSAL_TAIL_LINES);
-  // Another PR merged first. The next sync rebases and the issue is
-  // reviewed again, as for "behind".
-  if (BASE_MOVED.test(why)) {
-    return { merged: false, reason: "behind" };
-  }
-  let hint = "";
-  if (NEEDS_APPROVAL.test(why)) {
-    hint = APPROVAL_HINT;
-  }
-  return { merged: false, reason: `merge refused: ${why}${hint}` };
-}
-
-// Squash-merges the issue's PR at the approved commit and returns GitHub's
-// merge receipt, or says why not. It writes no state, labels or wiki: the
-// role saves the receipt, then publishes and finishes.
+// Names the configured destination and immutable authorized source, not the
+// PR's mutable target/head refs. Observations below are not a transaction
+// with PR/input/wiki state or with concurrent integration changes.
 function merge(cfg: Config, request: unknown): MergeReply {
   const req = parseRequest(MERGE_REQUEST, "merge", request);
   const { pr } = req.state;
@@ -241,17 +219,8 @@ function merge(cfg: Config, request: unknown): MergeReply {
   if (refused !== undefined) {
     return refused;
   }
-  // The account that opened the PR can't approve it, so there is no review
-  // step; the signed comment below records the verdict instead.
-  const args = ["pr", "merge", String(pr), "-R", cfg.repo, "--squash"];
-  args.push("--match-head-commit", req.expectedSha);
-  const { mergeAdmin } = cfg;
-  if (mergeAdmin) {
-    args.push("--admin");
-  }
-  // Prechecks read inputs, the queue and Git refs. Check the actual PR again
-  // after those reads, but do not confuse this with an atomic target binding:
-  // GitHub policy must deny this credential writes to unauthorized branches.
+  // A last observation refuses an already invalid PR; it is not atomic
+  // current-PR authority. Retargeting cannot redirect the explicit request.
   const fresh = checkedView(cfg, req);
   if (fresh.state !== "OPEN") {
     return { merged: false, reason: `PR is ${fresh.state}` };
@@ -262,17 +231,55 @@ function merge(cfg: Config, request: unknown): MergeReply {
   if (fresh.isDraft) {
     return { merged: false, reason: "draft" };
   }
-  const result = gh(cfg, args, { allowFail: true });
-  if (result.code !== 0) {
-    return mergeRefusal(result);
+  return attemptedMerge(cfg, req);
+}
+
+// After entering the mutation boundary, errors must be a durable refusal,
+// not an OpsFailure that a generic transient handler could defer/retry.
+function attemptedMerge(cfg: Config, req: MergeRequest): MergeReply {
+  try {
+    const result = branchMerge(cfg, req.expectedSha);
+    if ("reason" in result) {
+      return result;
+    }
+    return ownReceipt(cfg, req, result.sha);
+  } catch (error) {
+    let detail = "unreadable result evidence";
+    if (error instanceof Error) {
+      detail = error.message;
+    }
+    return {
+      merged: false,
+      reason: `merge result cannot be confirmed; code may already have landed; stop for read-only reconciliation, not a mutation retry: ${detail}`,
+    };
   }
-  const after = viewForMerge(cfg, pr);
-  if (after.state !== "MERGED" || after.headRefOid !== req.expectedSha) {
+}
+
+// A response label is not evidence of shape, PR identity or reachability.
+// Failures here can follow a real landing; no second merge manufactures a
+// receipt. Saving this confirmed receipt belongs to the role.
+function ownReceipt(
+  cfg: Config,
+  req: MergeRequest,
+  mergeCommit: string,
+): MergeReply {
+  const { pr } = req.state;
+  const { expectedSha: head } = req;
+  const after = checkedView(cfg, req);
+  if (
+    after.state !== "MERGED" ||
+    after.headRefOid !== head ||
+    mergeCommitOf(pr, after) !== mergeCommit
+  ) {
     throw new OpsError(
-      `gh merged PR #${pr}, but GitHub shows it ${after.state} at ${after.headRefOid}`,
+      `branch merge returned ${mergeCommit}, but PR #${pr} is not MERGED at exactly that result and retained head ${head}; code may already have landed`,
     );
   }
-  const mergeCommit = mergeCommitOf(pr, after);
+  const wt = paths.worktree(cfg, req.number);
+  confirmMerged(cfg, req.number, { wt, codeMerged: { pr, sha: mergeCommit } });
+  // The API supplies no always-no-ff guarantee. Inspect fetched objects;
+  // unsupported results may already be on integration, but cannot complete.
+  mergedParent(wt, mergeCommit, head, true);
   comment(
     cfg,
     pr,

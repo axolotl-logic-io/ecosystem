@@ -15,10 +15,10 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertClean, fetchIn, gitIn, head } from "../git-state.ts";
 import { OpsError, parseRequest, run, shell } from "../process.ts";
-import { confirmMerged } from "../revision.ts";
 import { holdWikiPin } from "../wiki.ts";
 import type { VerifyReply } from "./checks.ts";
 import { changedFiles, present, runChecks, SETTINGS } from "./checks.ts";
+import { confirmedMergedParent } from "./merged-graph.ts";
 
 const TEARDOWN_TIMEOUT_MS = 300_000;
 
@@ -75,7 +75,7 @@ function verifyMerged(
 ): VerifyReply {
   const { sha } = codeMerged;
   const wt = paths.worktree(cfg, n);
-  confirmMerged(cfg, n, { wt, codeMerged });
+  const integrationParent = confirmedMergedParent(cfg, n, wt, codeMerged);
   const runDir = paths.runDir(cfg, n);
   fs.mkdirSync(runDir, { recursive: true });
   const parent = fs.mkdtempSync(path.join(runDir, "verify-merged-"));
@@ -91,7 +91,7 @@ function verifyMerged(
     if (at !== sha) {
       throw new OpsError(`the verify checkout is at ${at}, not ${sha}`);
     }
-    const changed = changedFiles(dir, `${sha}^1`, sha);
+    const changed = changedFiles(dir, integrationParent, sha);
     return runChecks(cfg, n, { dir, sha, changed });
   } finally {
     removeVerifyCheckout(wt, dir, teardown);

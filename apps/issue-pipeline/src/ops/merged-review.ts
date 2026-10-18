@@ -12,10 +12,10 @@
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { gitIn, head } from "../git-state.ts";
-import { OpsError, run, tail } from "../process.ts";
-import { confirmMerged } from "../revision.ts";
+import { OpsError, tail } from "../process.ts";
 import type { CodeMerged } from "../state.ts";
 import { holdWikiPin } from "../wiki.ts";
+import { confirmedMergedParent } from "./merged-graph.ts";
 import { commitLog } from "./review-diff.ts";
 
 // How many status lines a dirty-checkout refusal names.
@@ -35,19 +35,6 @@ interface MergedCode {
 
 function nonEmptyLines(text: string): string[] {
   return text.split("\n").filter((line) => line !== "");
-}
-
-// `sha`'s first parent, or a throw when it has none.
-function firstParent(wt: string, sha: string): string {
-  const args = ["-C", wt, "rev-parse", "--verify", "--quiet", `${sha}^1`];
-  const found = run("git", args, { allowFail: true });
-  const parent = found.stdout.trim();
-  if (found.code !== 0 || parent === "") {
-    throw new OpsError(
-      `merge commit ${sha} has no first parent, so its change can't be reviewed`,
-    );
-  }
-  return parent;
 }
 
 // Throws when the checkout `wt` holds uncommitted changes outside the wiki
@@ -102,9 +89,8 @@ function mergedCode(
   codeMerged: CodeMerged,
 ): MergedCode {
   const wt = paths.worktree(cfg, n);
-  confirmMerged(cfg, n, { wt, codeMerged });
+  const parent = confirmedMergedParent(cfg, n, wt, codeMerged);
   const { pr, sha } = codeMerged;
-  const parent = firstParent(wt, sha);
   const range = `${parent}..${sha}`;
   const files = nonEmptyLines(gitIn(wt, ["diff", "--name-only", range]));
   if (files.length === 0) {
@@ -114,7 +100,7 @@ function mergedCode(
   }
   detachAt(cfg, wt, sha);
   const patch = gitIn(wt, ["diff", "--stat", "--patch", range]);
-  const header = `# Code\n\nPR #${pr} merged as ${sha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, then the wiki change.\n\n`;
+  const header = `# Code\n\nPR #${pr} merged as ${sha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent. Then the wiki change.\n\n`;
   return {
     diff: `${header}${commitLog(wt, range)}${patch}`,
     range: { from: parent, head: sha },
