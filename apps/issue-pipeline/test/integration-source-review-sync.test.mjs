@@ -1,10 +1,12 @@
 // @ts-check
-// prepare-review once the code merged (src/ops/prepare-review.ts) and
-// finish-sync's abort (src/ops/sync.ts), through the ops CLI against a local
-// origin, a local wiki origin and the fake gh: GitHub's confirmed merge
-// commit is the reviewed head and only the wiki change is left to review; a
-// merge GitHub doesn't confirm, or a commit not on the base, writes nothing;
-// an aborted resolution leaves the worktree clean on the pushed branch.
+// prepare-review once the code merged (src/ops/prepare-review.ts,
+// merged-review.ts) and finish-sync's abort (src/ops/sync.ts), through the
+// ops CLI against a local origin, a local wiki origin and the fake gh:
+// GitHub's confirmed merge commit is the reviewed head, its change against
+// its first parent and the whole wiki change are reviewed, with the checkout
+// detached at it; a merge GitHub doesn't confirm, or a commit not on the
+// base, writes nothing; an aborted resolution leaves the worktree clean on
+// the pushed branch. merged-review-ops.test.mjs has the rest.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -109,7 +111,7 @@ function branchWithWikiPage(n) {
 const branchHead = branchWithWikiPage(ISSUE.merged);
 const mergeSha = mergeOnOrigin(ISSUE.merged);
 
-test("prepare-review with a confirmed code merge reviews the merge commit and only the wiki change", () => {
+test("prepare-review with a confirmed code merge reviews the merge commit's first-parent change and the wiki, at the merged checkout", () => {
   const merged = { state: "MERGED", mergeCommit: mergeSha, head: branchHead };
   fakeGh.reply([prView(ISSUE.merged, merged)]);
   const request = {
@@ -119,15 +121,17 @@ test("prepare-review with a confirmed code merge reviews the merge commit and on
     codeMerged: { pr: PR, sha: mergeSha },
   };
   const reply = REVIEW_REPLY.parse(parsed(fx.ask(request, wiki.file)));
-  assert.equal(reply.headSha, mergeSha);
-  assert.equal(reply.baseSha, mergeSha);
-  assert.equal(reply.patchId, null);
   const seed = path.join(fx.root, "seed");
+  const parent = sh(`git -C ${seed} rev-parse ${mergeSha}^1`);
+  assert.equal(reply.headSha, mergeSha);
+  assert.equal(reply.baseSha, parent);
+  assert.equal(reply.patchId, null);
+  assert.equal(sh(`git -C ${worktree(ISSUE.merged)} rev-parse HEAD`), mergeSha);
   assert.equal(
     reply.headTree,
     sh(`git -C ${seed} rev-parse ${mergeSha}^{tree}`),
   );
-  assert.deepEqual(reply.changedFiles, ["wiki/Page.md"]);
+  assert.deepEqual(reply.changedFiles, ["code.txt", "wiki/Page.md"]);
   assert.equal(
     reply.diffPath,
     path.join(reviewDir(ISSUE.merged, "r1"), "diff.patch"),
@@ -135,14 +139,15 @@ test("prepare-review with a confirmed code merge reviews the merge commit and on
   const diff = fs.readFileSync(reply.diffPath, "utf8");
   assert.ok(
     diff.startsWith(
-      `# Code\n\nThe code merged as ${mergeSha} (PR #${PR}); only the wiki change below remains.\n`,
+      `# Code\n\nPR #${PR} merged as ${mergeSha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, then the wiki change.\n`,
     ),
     diff,
   );
-  assert.ok(diff.includes(WIKI_HEADING), diff);
+  assert.ok(diff.includes("+feature line"), diff);
+  assert.ok(diff.indexOf("+feature line") < diff.indexOf(WIKI_HEADING), diff);
   assert.ok(diff.includes("+page"), diff);
-  assert.equal(diff.includes("feature line"), false, diff);
-  assert.equal(reply.bundleText.includes("feature line"), false);
+  assert.ok(reply.bundleText.startsWith(diff), "the bundle starts with it");
+  assert.ok(reply.bundleText.includes("\n## code.txt\n"), reply.bundleText);
   for (const call of fakeGh.calls()) {
     assert.deepEqual(call.slice(0, 2), ["pr", "view"], call.join(" "));
   }

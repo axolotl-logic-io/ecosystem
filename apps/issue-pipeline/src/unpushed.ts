@@ -19,8 +19,13 @@ const ISO_SEPARATORS = /[-:]|\.\d+/gu;
 const LOG_SHA_LENGTH = 8;
 const LOG_STAMP_LENGTH = 16;
 
-function commitsAhead(dir: string, range: string): number {
-  return Number(gitIn(dir, ["rev-list", "--count", range]).trim());
+// How many commits `range` has, less those reachable from each of `not`.
+function commitsAhead(dir: string, range: string, ...not: string[]): number {
+  const args = ["rev-list", "--count", range];
+  if (not.length > 0) {
+    args.push("--not", ...not);
+  }
+  return Number(gitIn(dir, args).trim());
 }
 
 // The head of the checkout at `dir`, or null when there is none.
@@ -39,6 +44,8 @@ function onlyLocal(what: string, sha: string): string {
 
 // Pushes the worktree's commits that the issue's branch on GitHub (or, with
 // no branch there, the base) lacks. Only fast-forwards an existing branch.
+// Commits already on the base are on GitHub, so a checkout at the base's
+// merge commit of the issue (merged-review.ts) pushes nothing.
 function pushCode(cfg: Config, n: number): string[] {
   const wt = paths.worktree(cfg, n);
   const sha = headOrNull(wt);
@@ -48,14 +55,14 @@ function pushCode(cfg: Config, n: number): string[] {
   try {
     const remote = remoteHead(cfg, n);
     const base = cfg.baseBranch;
-    let range = `origin/${base}..HEAD`;
-    if (remote === null) {
-      fetchIn(cfg, wt, `+refs/heads/${base}:refs/remotes/origin/${base}`);
-    } else {
+    const onBase = `origin/${base}`;
+    fetchIn(cfg, wt, `+refs/heads/${base}:refs/remotes/origin/${base}`);
+    let range = `${onBase}..HEAD`;
+    if (remote !== null) {
       fetchIn(cfg, wt, paths.branch(cfg, n));
       range = `${remote}..HEAD`;
     }
-    if (commitsAhead(wt, range) > 0) {
+    if (commitsAhead(wt, range, onBase) > 0) {
       const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
       git(cfg, ["-C", wt, "push", "origin", target]);
     }

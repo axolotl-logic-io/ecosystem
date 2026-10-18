@@ -1,8 +1,9 @@
 // prepare-review: the diff and bundle a review round reads. Before the code
 // merges, they hold the branch's code change since the last reviewed head
 // that is still in its history, then the whole wiki change. Once the code
-// merged, prepare-review confirms the merge on GitHub and writes only the
-// wiki change, which is all that remains to review.
+// merged, they hold the merge commit GitHub confirmed, as its change against
+// its first parent, then the whole wiki change, with the checkout detached
+// at the merge commit (merged-review.ts).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,7 +12,8 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { fetchIn, head, patchIdOf } from "../git-state.ts";
 import { parseRequest, run } from "../process.ts";
-import { confirmMerged } from "../revision.ts";
+import type { CodeMerged } from "../state.ts";
+import { mergedCode } from "./merged-review.ts";
 import { commitLog, reviewBundle, withWiki } from "./review-diff.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
@@ -115,29 +117,27 @@ function writeReview(
   };
 }
 
-// The review of a wiki change after the code merged as `codeMerged.sha`,
-// once GitHub confirms that merge: no code range, only the wiki change, read
-// against the merged code.
+// The review of the merged result after the code merged as
+// `codeMerged.sha`, once GitHub confirms that merge (merged-review.ts): the
+// merge commit's change against its first parent, then the whole wiki
+// change, with the bundle holding the merged files' texts.
 function prepareMergedReview(
   cfg: Config,
   n: number,
-  { tag, codeMerged }: { tag: string; codeMerged: { pr: number; sha: string } },
+  { tag, codeMerged }: { tag: string; codeMerged: CodeMerged },
 ): ReviewReply {
-  const wt = paths.worktree(cfg, n);
-  confirmMerged(cfg, n, { wt, codeMerged });
-  const { pr, sha } = codeMerged;
-  const diff = `# Code\n\nThe code merged as ${sha} (PR #${pr}); only the wiki change below remains.\n`;
+  const merged = mergedCode(cfg, n, codeMerged);
   const { wikiFiles, ...written } = writeReview(cfg, n, {
     tag,
-    diff,
-    range: { from: sha, head: sha },
+    diff: merged.diff,
+    range: merged.range,
   });
   return {
-    headSha: sha,
-    headTree: gitOut(wt, ["rev-parse", `${sha}^{tree}`]).trim(),
-    baseSha: sha,
+    headSha: codeMerged.sha,
+    headTree: merged.tree,
+    baseSha: merged.parent,
     patchId: null,
-    changedFiles: wikiFiles,
+    changedFiles: merged.files.concat(wikiFiles),
     ...written,
   };
 }

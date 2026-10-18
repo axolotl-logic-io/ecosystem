@@ -66,8 +66,9 @@ function authoritativeHead(
 }
 
 // Pushes only the issue's wiki commits, once its checkout's code head is
-// the authoritative one (authoritativeHead), so no local code commit is
-// pushed or left behind unnoticed. Once the code merged, no code changes.
+// the authoritative one (authoritativeHead) or, once the code merged, the
+// merge commit, so no local code commit is pushed or left behind unnoticed.
+// Once the code merged, no code changes.
 function pushWikiOnly(
   cfg: Config,
   n: number,
@@ -78,7 +79,10 @@ function pushWikiOnly(
   assertClean(wt, "worktree");
   const headSha = head(wt);
   const expected = authoritativeHead(cfg, n, codeMerged);
-  if (headSha !== expected) {
+  // A checkout prepare-review detached at the confirmed merge commit
+  // (merged-review.ts) holds GitHub's own code too.
+  const atMerge = codeMerged !== null && headSha === codeMerged.sha;
+  if (headSha !== expected && !atMerge) {
     throw new OpsError(
       `the checkout's code head ${headSha} isn't ${expected}, the issue's code head on GitHub; a wiki-only push never pushes or drops code`,
     );
