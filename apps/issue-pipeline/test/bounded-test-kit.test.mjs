@@ -11,10 +11,12 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { alive, waitFor } from "./bounded-test-kit.mjs";
-import { logOf, repliesAt, setUp } from "./job-test-kit.mjs";
+import { READER_STAGE, repliesAt } from "./job-fixtures.mjs";
+import { logOf, setUp } from "./job-test-kit.mjs";
 
 const BOUNDED_KIT = new URL("./bounded-test-kit.mjs", import.meta.url).href;
 const JOB_KIT = new URL("./job-test-kit.mjs", import.meta.url).href;
+const JOB_FIXTURES = new URL("./job-fixtures.mjs", import.meta.url).href;
 const HUNG_TEST = "a test whose job waits and that never resolves";
 // The fixture's per-test timeout. It covers setting up a place and the job
 // reaching pi's prompt, whose wait in the fixture took 3.2 s at worst, in a
@@ -41,10 +43,11 @@ const TIMED_OUT = new RegExp(
 const FIXTURE = `import fs from "node:fs";
 import { test } from "node:test";
 import { waitFor } from ${JSON.stringify(BOUNDED_KIT)};
-import { piCommands, piStarts, repliesAt, setUp, startJob, statusOf } from ${JSON.stringify(JOB_KIT)};
+import { READER_STAGE, repliesAt } from ${JSON.stringify(JOB_FIXTURES)};
+import { piCommands, piStarts, setUp, startJob, statusOf } from ${JSON.stringify(JOB_KIT)};
 test(${JSON.stringify(HUNG_TEST)}, async () => {
-  const place = setUp(repliesAt("spec"), { events: ["wait"] });
-  startJob(place, ["--stage", "spec", "--lane", "L"]);
+  const place = setUp(repliesAt(READER_STAGE), { events: ["wait"] });
+  startJob(place, ["--stage", READER_STAGE, "--lane", "L"]);
   await waitFor("pi got the prompt", () => piCommands(place).some(({ type }) => type === "prompt"));
   const pids = { job: statusOf(place).pid, pis: piStarts(place).map(({ pid }) => pid) };
   fs.writeFileSync(process.env.FIXTURE_PIDS, JSON.stringify(pids));
@@ -146,7 +149,7 @@ test("waitFor fails naming its condition when it never holds", {
 });
 
 test("logOf skips a line still being written", () => {
-  const place = setUp(repliesAt("spec"), { events: [] });
+  const place = setUp(repliesAt(READER_STAGE), { events: [] });
   const entry = { command: { type: "prompt" } };
   fs.writeFileSync(
     path.join(place.root, "pi.log"),
