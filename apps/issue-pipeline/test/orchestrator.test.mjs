@@ -10,6 +10,7 @@ import { test } from "node:test";
 import { schedule } from "../src/orchestrator/schedule.ts";
 import {
   failedAt,
+  HOUR_MS,
   jobAt,
   NOW,
   SETTINGS,
@@ -17,6 +18,9 @@ import {
 } from "./orchestrator-fixtures.mjs";
 
 /** @import { ScheduleSettings, Snapshot } from "../src/orchestrator/queue.ts" */
+// An open issue the after mark names.
+const PREREQ = 9;
+
 /** @import { Resumes } from "../src/orchestrator/watchdog.ts" */
 
 /**
@@ -94,9 +98,9 @@ test("starts past a stage's cap hold, and a legacy live job counts toward maxJob
 
 test("an open prerequisite in the after mark holds, and another lane's live lease holds", () => {
   const lease = { lane: "sweep-a", sweepId: "x", at: NOW.toISOString() };
-  const stale = new Date(NOW.getTime() - 4 * 3_600_000).toISOString();
+  const stale = new Date(NOW.getTime() - SETTINGS.leaseMs - HOUR_MS);
   const snapshot = snapshotOf([
-    { number: 1, stage: "implement", after: [9] },
+    { number: 1, stage: "implement", after: [PREREQ] },
     { number: 2, stage: "implement", state: { lease } },
     {
       number: 3,
@@ -106,7 +110,7 @@ test("an open prerequisite in the after mark holds, and another lane's live leas
     {
       number: 4,
       stage: "implement",
-      state: { lease: { ...lease, at: stale } },
+      state: { lease: { ...lease, at: stale.toISOString() } },
     },
   ]);
   assert.deepEqual(decided(snapshot), [

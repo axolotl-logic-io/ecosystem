@@ -8,8 +8,9 @@
 // revision. Only the pipeline account's signed Gherkin comment counts.
 
 import type { IssueComment } from "../comments.ts";
-import { AFTER_MARK, gherkinCommentOf } from "../comments.ts";
+import { AFTER_MARK } from "../comments.ts";
 import type { Config } from "../config.ts";
+import { gherkinCommentOf } from "../gherkin-comment.ts";
 import type { Issue } from "../issue-context.ts";
 import { trustedInputsHash } from "../issue-context.ts";
 import type { IssueState } from "../state.ts";

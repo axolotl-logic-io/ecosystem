@@ -229,10 +229,13 @@ function byOrder(
   holder: number | null,
   queue: readonly number[],
 ): (a: Planned, b: Planned) => number {
-  const rank = (one: Planned): number => {
+  function rank(one: Planned): number {
     const at = queue.indexOf(one.issue.number);
-    return at < 0 ? queue.length : at;
-  };
+    if (at < 0) {
+      return queue.length;
+    }
+    return at;
+  }
   return (a: Planned, b: Planned): number =>
     Number(b.issue.number === holder) - Number(a.issue.number === holder) ||
     STAGE_RANK[a.plan.stage] - STAGE_RANK[b.plan.stage] ||

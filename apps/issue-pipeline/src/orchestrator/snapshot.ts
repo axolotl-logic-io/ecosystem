@@ -14,7 +14,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { isAllowedUser } from "../github.ts";
 import type { StatusFile } from "../job/status.ts";
-import { currentStageOf, readStatus } from "../job/status.ts";
+import { currentStageOf, isPipelineJob, readStatus } from "../job/status.ts";
 import { LABELS } from "../labels.ts";
 import { openIssues } from "../ops/sweep.ts";
 import type { IssueRow } from "../ops/sweep-verdict.ts";
@@ -87,7 +87,7 @@ function jobOf(
   }
   const running = status.outcome === null && alive(status.pid);
   const stage = currentStageOf(status);
-  if (status.pipelineVersion !== 2 || !isStage(stage)) {
+  if (!(isPipelineJob(status) && isStage(stage))) {
     return { job: started, legacyLive: running };
   }
   if (!running && started !== null) {

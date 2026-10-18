@@ -14,6 +14,11 @@ const MINUTE_MS = 60_000;
 const ISSUE_SPAN = 1000;
 // The current trusted-inputs revision of every fixture issue, unless changed.
 const INPUTS = "inputs-1";
+const LEASE_HOURS = 3;
+const HOUR_MS = 60 * MINUTE_MS;
+// How long before the tick a fixture job started.
+const JOB_AGE_MINUTES = 30;
+const JOB_AGE_MS = JOB_AGE_MINUTES * MINUTE_MS;
 
 /** @type {ScheduleSettings} */
 const SETTINGS = {
@@ -22,7 +27,7 @@ const SETTINGS = {
   maxResumes: 2,
   skipLabels: ["wontfix"],
   takeNewWork: true,
-  leaseMs: 3 * 60 * MINUTE_MS,
+  leaseMs: LEASE_HOURS * HOUR_MS,
 };
 
 /**
@@ -46,9 +51,13 @@ function issueOf(facts) {
     };
   }
   const current = facts.current ?? INPUTS;
-  let gherkin = facts.gherkin;
+  // Past the author, an issue's Gherkin was written from its inputs.
+  let { gherkin } = facts;
   if (gherkin === undefined) {
-    gherkin = stage === undefined || stage === "author" ? null : current;
+    gherkin = null;
+    if (stage !== undefined && stage !== "author") {
+      gherkin = current;
+    }
   }
   return {
     number,
@@ -73,7 +82,7 @@ function snapshotOf(issues, mergeWindow = null) {
 // A job at `stage`: live, or ended as `end` says (null: died with no outcome).
 /** @param {Stage} stage @param {IssueJob["end"] | "live"} end @returns {IssueJob} */
 function jobAt(stage, end) {
-  const startedAt = new Date(NOW.getTime() - 30 * MINUTE_MS).toISOString();
+  const startedAt = new Date(NOW.getTime() - JOB_AGE_MS).toISOString();
   if (end === "live") {
     return { stage, startedAt, live: true, end: null };
   }
@@ -85,4 +94,4 @@ function failedAt(at) {
   return { kind: "failed", at };
 }
 
-export { failedAt, INPUTS, jobAt, NOW, SETTINGS, snapshotOf };
+export { failedAt, HOUR_MS, INPUTS, jobAt, NOW, SETTINGS, snapshotOf };

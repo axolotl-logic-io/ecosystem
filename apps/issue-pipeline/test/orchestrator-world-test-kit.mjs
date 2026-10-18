@@ -1,9 +1,12 @@
 // @ts-check
-// Shared setup for the tests that run the orchestrator's queue and tick
-// in-process (#234): a pipeline root with a bare origin and a config, the fake
-// gh answering the sweep's calls, and the issue rows, state comments and
-// job.json files the queue reads, and the repo's agent definitions installed
-// where the escalation agent (#282) reads them.
+// Shared setup for the tests that run the orchestrator's tick in-process: a
+// pipeline root with a bare origin and a config, the fake gh answering the
+// queue's reads, the issues' comments (state, Gherkin, trusted and visitor
+// comments) and job.json files the queue reads, and a tick whose spawn and
+// process checks are recorded fakes, so no stage job or model runs. A test
+// imports every src module through this kit, after it has set the pipeline
+// root: a module loaded first would fix the installed root for the run, so
+// the kit refuses to start unless the root is its own.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -11,22 +14,22 @@ import process from "node:process";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
-/** @import { StatusFile } from "../src/job/status.ts" */
+/** @import { TickResult } from "../src/orchestrator/tick.ts" */
 
 const ACCOUNT = "bot";
 const ALLOWED = "alice";
+const VISITOR = "mallory";
 // The tick's clock, which the leases and job times are written against.
 const NOW = new Date("2026-10-15T10:00:00.000Z");
 const MINUTE_MS = 60_000;
+// How long before the tick a written job started, unless it says.
+const JOB_AGE_MINUTES = 30;
+const JOB_AGE_MS = JOB_AGE_MINUTES * MINUTE_MS;
+// The pid the tick's first spawn gets; each later spawn gets the next.
+const FIRST_SPAWN_PID = 50_001;
 // Issue n was opened ISSUE_SPAN - n minutes before the tick.
 const ISSUE_SPAN = 1000;
-// A process that is alive but not the test's own: signal 0 to it fails with
-// EPERM unless the test runs as root, when it succeeds.
-const OTHERS_PID = 1;
-// A reader stage that runs the sweep, not a role, so the watchdog restarts its
-// dead job with --resume (a stage that runs a role restarts from its state,
-// #301). Review and fix run roles since #421 and #418.
-const SWEEP_STAGE = "security";
+const STATE_ID_BASE = 1000;
 const PIPELINE_LABELS = [
   "agent:working",
   "agent:needs-info",
@@ -36,38 +39,35 @@ const PIPELINE_LABELS = [
 
 const root = fs.mkdtempSync("/tmp/issue-pipeline-orchestrator-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-const agentDir = path.join(root, "agent");
-const installed = path.join(agentDir, "agents", "issue-pipeline");
-const AGENTS = new URL("../agents/", import.meta.url).pathname;
-fs.mkdirSync(installed, { recursive: true });
-for (const file of fs.readdirSync(AGENTS)) {
-  fs.copyFileSync(path.join(AGENTS, file), path.join(installed, file));
-}
 // Environment variables are named by strings, as src/process.ts takes them.
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["ISSUE_PIPELINE_ROOT", root],
-    ["PI_CODING_AGENT_DIR", agentDir],
-  ]),
-);
+Object.assign(process.env, Object.fromEntries([["ISSUE_PIPELINE_ROOT", root]]));
 
-/** @param {string} command @returns {string} */
-function sh(command) {
-  const r = spawnSync("bash", ["-c", command], { encoding: "utf8" });
-  if (r.status !== 0) {
-    throw new Error(`${command}\n${r.stderr}`);
-  }
-  return r.stdout.trim();
+const seeded = spawnSync(
+  "bash",
+  [
+    "-c",
+    `cd ${root} && git init -q --bare -b integration origin.git && git clone -q origin.git seed 2>/dev/null; cd seed && git -c user.email=a@b -c user.name=a commit -q --allow-empty -m base && git push -q origin HEAD:integration`,
+  ],
+  { encoding: "utf8" },
+);
+if (seeded.status !== 0) {
+  throw new Error(`seeding origin failed: ${seeded.stderr}`);
 }
-
-sh(
-  `cd ${root} && git init -q --bare -b integration origin.git && git clone -q origin.git seed 2>/dev/null; cd seed && git -c user.email=a@b -c user.name=a commit -q --allow-empty -m base && git push -q origin HEAD:integration`,
-);
 
 const fakeGh = installFakeGh();
+const { ROOT } = await import("../src/pipeline-root.ts");
+if (ROOT !== root) {
+  throw new Error(
+    `the pipeline root is ${ROOT}, not the test's: a test imported src before this kit`,
+  );
+}
+const { ghIsRead } = await import("../src/github.ts");
 const { STOPS } = await import("../src/stops.ts");
 const { loadConfig, paths } = await import("../src/config.ts");
+const { keyMark, signed } = await import("../src/comments.ts");
+const { gherkinBody } = await import("../src/gherkin-comment.ts");
+const { trustedInputsHash } = await import("../src/issue-context.ts");
+const { tick } = await import("../src/orchestrator/tick.ts");
 const labelNames = [
   ...PIPELINE_LABELS,
   ...STOPS.map((stop) => stop.label.name),
@@ -94,73 +94,98 @@ const CONFIG = configWith({});
 const cfg = loadConfig(CONFIG);
 
 /**
- * One open issue: its number, labels and body, its saved state (none when
- * left out), and how many times the queue reads its comments (twice for an
- * agent:working issue, whose lease classify reads again).
- * @typedef {{ number: number, labels?: string[], body?: string, state?: object, reads?: number }} OpenIssue
+ * One open issue: its number, labels, author and body, its saved state (none
+ * when left out), and its other comments, oldest first.
+ * @typedef {{ number: number, labels?: string[], author?: string, body?: string, state?: object, comments?: object[] }} OpenIssue
  */
 
-// Older issues have lower numbers.
 /** @param {number} number @returns {string} */
-function createdAt(number) {
-  return new Date(
-    NOW.getTime() - (ISSUE_SPAN - number) * MINUTE_MS,
-  ).toISOString();
+function titleOf(number) {
+  return `Issue ${number}`;
 }
 
 /** @param {OpenIssue} issue @returns {object} */
-function row({ number, labels = [], body = "" }) {
-  const named = labels.map((name) => ({ name }));
-  const author = { login: ALLOWED };
+function row({ number, labels = [], body = "", author = ALLOWED }) {
   return {
     number,
-    title: `Issue ${number}`,
-    author,
-    labels: named,
-    createdAt: createdAt(number),
+    title: titleOf(number),
+    author: { login: author },
+    labels: labels.map((name) => ({ name })),
+    createdAt: new Date(
+      NOW.getTime() - (ISSUE_SPAN - number) * MINUTE_MS,
+    ).toISOString(),
     body,
   };
 }
 
-/** @param {object} state @returns {object} */
-function stateComment(state) {
-  const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`;
+/** @param {number} id @param {string} login @param {string} body @returns {object} */
+function commentBy(id, login, body) {
   const at = NOW.toISOString();
-  return githubComment({
-    id: 1,
-    body,
-    login: ACCOUNT,
-    created: at,
-    updated: at,
-  });
+  return githubComment({ id, body, login, created: at, updated: at });
 }
 
-/** @param {OpenIssue} issue @returns {GhReply[]} */
-function commentReplies(issue) {
+// A comment the pipeline wrote, signed by `role`, which isn't trusted input.
+/** @param {number} id @param {string} role @param {string} body @returns {object} */
+function pipelineComment(id, role, body) {
+  return commentBy(id, ACCOUNT, signed({ role }, body));
+}
+
+// The pipeline's Gherkin comment on issue `number`, written from `inputs`.
+/** @param {number} id @param {number} number @param {string} inputs @returns {object} */
+function gherkinComment(id, number, inputs) {
+  const text = {
+    gherkin: "Feature: F\n  Scenario: S",
+    assumptions: [],
+    wikiPages: [],
+  };
+  const body = `${signed({ role: "author" }, gherkinBody(text, { rev: 1, inputs }))}\n${keyMark(number, "gherkin")}`;
+  return commentBy(id, ACCOUNT, body);
+}
+
+// The trusted-inputs revision of issue `issue` with its `comments`.
+/** @param {OpenIssue} issue @returns {string} */
+function inputsOf(issue) {
+  const comments = /** @type {import("../src/comments.ts").IssueComment[]} */ (
+    issue.comments ?? []
+  );
+  const title = titleOf(issue.number);
+  return trustedInputsHash(cfg, { title, body: issue.body ?? "" }, comments);
+}
+
+// Issue `number`'s state comment, whose id is STATE_ID_BASE + number.
+/** @param {number} number @param {object} state @returns {object} */
+function stateComment(number, state) {
+  const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`;
+  return commentBy(STATE_ID_BASE + number, ACCOUNT, body);
+}
+
+/** @param {OpenIssue} issue @returns {GhReply} */
+function commentReply(issue) {
   /** @type {object[]} */
-  const comments = [];
+  const comments = [...(issue.comments ?? [])];
   if (issue.state !== undefined) {
-    comments.push(stateComment(issue.state));
+    comments.unshift(stateComment(issue.number, issue.state));
   }
-  const one = {
+  return {
     when: `issues/${issue.number}/comments?per_page`,
     stdout: commentLines(comments),
+    keep: true,
   };
-  return Array.from({ length: issue.reads ?? 1 }, () => one);
 }
 
-// Queues gh's answers to one read of the queue holding `issues`, then
-// `others`, such as a closed issue's PR lookups.
+// Queues gh's answers to the reads of the queue holding `issues`, then
+// `others`, such as close-parent's reads.
 /** @param {readonly OpenIssue[]} issues @param {readonly GhReply[]} [others] @returns {void} */
 function openWith(issues, others = []) {
   fakeGh.reply([
-    { when: "api user", stdout: `${ACCOUNT}\n` },
+    { when: "api user", stdout: `${ACCOUNT}\n`, keep: true },
     {
       when: "label list",
       stdout: JSON.stringify(labelNames.map((name) => ({ name }))),
+      keep: true,
     },
     { when: "issue list", stdout: JSON.stringify(issues.map(row)) },
-    ...issues.flatMap(commentReplies),
+    ...issues.map(commentReply),
     ...others,
   ]);
 }
@@ -171,80 +196,35 @@ function leaseOf(lane) {
   return { lane, sweepId: "x", at: NOW.toISOString() };
 }
 
-// Writes issue `issue`'s job.json: a `stage` job run by `pid`, ended or not
-// (`outcome` overrides `ended`), at `endedAt` if given, whose one launch, a
-// session unless `kind` says ops, spent `tokens` input tokens by the tick and
-// was last heard from `silentMinutes` before it, and whose last
-// `failures.count` calls of `failures.tool` failed, the last with
-// `failures.error`, with a token budget of `tokenBudget`, a live context of
-// `contextTokens` tokens and the launch's own `launchOutcome`. The job
-// started when its launch was last heard from, unless `startedAt` says when.
-/** @typedef {{ count: number, tool: string, error: string }} Failures */
-/** @typedef {{ issue: number, stage: string, pid: number, ended?: boolean, tokens?: number, outcome?: StatusFile["outcome"], endedAt?: string, startedAt?: string, kind?: "session" | "ops", silentMinutes?: number, failures?: Failures, tokenBudget?: number | null, contextTokens?: number, launchOutcome?: LaunchOutcome }} JobFacts */
-/** @typedef {StatusFile["launches"][number]["outcome"]} LaunchOutcome */
-/** @param {JobFacts} job @returns {StatusFile} */
+// Writes issue `issue`'s job.json: a `stage` job run by `pid`, ended as
+// `outcome` says (null: no outcome), of this pipeline unless
+// `pipelineVersion` is left out by `legacy`.
+/** @typedef {{ kind: "finished", rateLimited?: boolean, claimError?: string } | { kind: "stopped" } | { kind: "failed", error: string }} Outcome */
+/** @typedef {{ issue: number, stage: string, pid: number, outcome?: Outcome | null, legacy?: boolean, startedAt?: string, endedAt?: string }} JobFacts */
+/** @param {JobFacts} job @returns {void} */
 function writeJob({
   issue,
   stage,
   pid,
-  ended = false,
-  tokens = 0,
-  outcome,
+  outcome = null,
+  legacy = false,
+  startedAt = new Date(NOW.getTime() - JOB_AGE_MS).toISOString(),
   endedAt,
-  startedAt,
-  kind = "session",
-  silentMinutes = 0,
-  failures = { count: 0, tool: "", error: "" },
-  tokenBudget = null,
-  contextTokens = 0,
-  launchOutcome = null,
 }) {
-  const at = new Date(NOW.getTime() - silentMinutes * MINUTE_MS).toISOString();
-  /** @type {StatusFile} */
+  /** @type {{ pipelineVersion?: number, endedAt?: string } & Record<string, unknown>} */
   const status = {
     version: 1,
     pid,
     issue,
     stage,
     lane: "orchestrator",
-    startedAt: startedAt ?? at,
+    startedAt,
     socket: "/tmp/s.sock",
-    outcome: null,
-    launches: [
-      {
-        key: `i${issue}-${stage}-1`,
-        kind,
-        pid,
-        session: null,
-        startedAt: at,
-        lastEventAt: at,
-        toolFailures: failures.count,
-        lastToolFailure: lastFailure(failures),
-        usage: {
-          input: tokens,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          cacheWrite1h: 0,
-          cost: 0,
-        },
-        tokenBudget,
-        contextTokens,
-        peakContext: 0,
-        firstContext: null,
-        turns: 0,
-        contextStop: null,
-        resumed: false,
-        pushes: [],
-        outcome: launchOutcome,
-      },
-    ],
+    outcome,
+    launches: [],
   };
-  if (ended) {
-    status.outcome = { kind: "finished" };
-  }
-  if (outcome !== undefined) {
-    status.outcome = outcome;
+  if (!legacy) {
+    status.pipelineVersion = 2;
   }
   if (endedAt !== undefined) {
     status.endedAt = endedAt;
@@ -252,25 +232,6 @@ function writeJob({
   const dir = paths.runDir(cfg, issue);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "job.json"), JSON.stringify(status));
-  return status;
-}
-
-/** @param {Failures} failures @returns {{ tool: string, error: string } | null} */
-function lastFailure({ count, tool, error }) {
-  if (count === 0) {
-    return null;
-  }
-  return { tool, error };
-}
-
-// A pid whose process has exited and been reaped.
-/** @returns {number} */
-function deadPid() {
-  const { pid } = spawnSync("true");
-  if (pid === undefined) {
-    throw new Error("true did not start");
-  }
-  return pid;
 }
 
 // A file in the config's runs folder, such as orchestrator.log.
@@ -279,19 +240,70 @@ function runFile(name) {
   return path.join(root, "runs", cfg.slug, name);
 }
 
+// The decision log's lines for issue `issue`, as `stage action reason`.
+/** @param {number} issue @returns {string[]} */
+function loggedFor(issue) {
+  if (!fs.existsSync(runFile("orchestrator.log"))) {
+    return [];
+  }
+  return fs
+    .readFileSync(runFile("orchestrator.log"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.issue === issue)
+    .map(({ stage, action, reason }) => `${stage} ${action} ${reason}`);
+}
+
+// Clears what earlier ticks left: job.json files, the orchestrator's
+// memory, start records, backoff and log.
+/** @returns {void} */
+function resetRuns() {
+  fs.rmSync(path.join(root, "runs"), { recursive: true, force: true });
+}
+
+/**
+ * One tick over the queue `openWith` set up, its processes faked: `live` are
+ * the pids that run, and each spawn gets the next pid from FIRST_SPAWN_PID and is
+ * recorded as its argv.
+ * @param {{ live?: readonly number[], at?: Date }} [run]
+ * @returns {{ result: TickResult, spawned: string[][] }}
+ */
+function tickOver(run = {}) {
+  /** @type {string[][]} */
+  const spawned = [];
+  const live = new Set(run.live ?? []);
+  const result = tick(cfg, {
+    configPath: CONFIG,
+    now: () => run.at ?? NOW,
+    spawn: (argv) => {
+      spawned.push([...argv]);
+      return FIRST_SPAWN_PID + spawned.length - 1;
+    },
+    alive: (pid) => live.has(pid),
+  });
+  return { result, spawned };
+}
+
 export {
+  ALLOWED,
   CONFIG,
   cfg,
-  configWith,
-  deadPid,
+  commentBy,
+  FIRST_SPAWN_PID,
   fakeGh,
+  gherkinComment,
+  ghIsRead,
+  inputsOf,
   leaseOf,
+  loggedFor,
   MINUTE_MS,
   NOW,
-  OTHERS_PID,
   openWith,
-  root,
+  pipelineComment,
+  resetRuns,
   runFile,
-  SWEEP_STAGE,
+  tickOver,
+  VISITOR,
   writeJob,
 };
