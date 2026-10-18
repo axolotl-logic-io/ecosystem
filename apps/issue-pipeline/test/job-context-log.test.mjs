@@ -1,51 +1,48 @@
+// @ts-check
 // The issue's context log, runs/<slug>/issue-N/context.jsonl (Axlog,
 // 2026-10-16): as each session ends the stage job appends one line of
 // numbers and names, which outlives job.json: the session file, the job's
 // id, its steers, cost and 1h cache writes, and the checkout's head. A
 // session the job's stop (SIGTERM, as the watchdog sends) ended is logged as
-// killed, and one with no launch record as unrecorded. Each async test has a
-// timeout so a session the job never stops fails the test instead of hanging
-// at the fake pi's "wait".
+// killed, and one with no launch record as unrecorded. A session's context
+// is recorded, never limited (`no-session-budgets`): the retired soft-limit
+// steer and hard-limit handoff are replaced by an implementor session past
+// both old limits logged as ending ok, with no steer. Each async test has a
+// timeout so a session the job never stops fails the test instead of
+// hanging at the fake pi's "wait".
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { contextLogOf } from "../src/job/context-log.ts";
-import { openStatus } from "../src/job/status.ts";
-import { ZERO_USAGE } from "../src/job/token-usage.ts";
-import { waitFor } from "./bounded-test-kit.mjs";
-import { outputEnd, TURN_OUTPUT, turns } from "./fake-rpc-pi.mjs";
-import { implementReplies } from "./implementor-job-test-kit.mjs";
-import {
-  CLEAN_REVIEW,
-  flagValue,
-  piStarts,
-  repliesAt,
-  runJob,
-  SWEEP_STAGE,
-  sessionOf,
-  setUp,
-  startJob,
-  statusOf,
-} from "./job-test-kit.mjs";
-import { ISSUE } from "./workflow-stages-fixtures.mjs";
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
+const { contextLogOf } = await import("../src/job/context-log.ts");
+const { openStatus } = await import("../src/job/status.ts");
+const { ZERO_USAGE } = await import("../src/job/token-usage.ts");
+const { waitFor } = await import("./bounded-test-kit.mjs");
+const { outputEnd, TURN_OUTPUT, turns } = await import("./fake-rpc-pi.mjs");
+const { AUTHORED, IMPLEMENTED, implementReplies, READER_STAGE, repliesAt } =
+  await import("./job-fixtures.mjs");
+const { flagValue, piStarts, runJob, sessionOf, setUp, startJob, statusOf } =
+  await import("./job-test-kit.mjs");
+
+// The issue job-fixtures.mjs claims.
+const ISSUE = 7;
 const HANG_GUARD = { timeout: 60_000 };
-const LIMITS = { contextLimits: { soft: 1000, hard: 2000 } };
-// Turn contexts: the first, the peak and the last, and one past hard.
+// Turn contexts: the first, the peak and the last.
 const FIRST = 600;
 const PEAK = 1800;
 const LAST = 1200;
+// Turn contexts past the retired soft and hard limits of 1000 and 2000.
 const PAST_SOFT = 1200;
 const PAST_HARD = 2100;
 // The job id the orchestrator would pass.
 const JOB_ID = "0b6f7c1e-2a3d-4e5f-8a9b-0c1d2e3f4a5b";
-// A job that starts at fix and moves on to checks.
+// A job that starts at implement and moves on to review.
 const MOVING_JOB = {
   id: JOB_ID,
   issue: ISSUE,
-  stage: "fix",
+  stage: "implement",
   lane: null,
   startedAt: "2026-10-17T12:00:00.000Z",
   socket: "/s",
@@ -69,7 +66,6 @@ const LINE_FIELDS = [
   "stage",
   "key",
   "session",
-  "resumed",
   "job",
   "role",
   "agent",
@@ -80,7 +76,6 @@ const LINE_FIELDS = [
   "firstContext",
   "turns",
   "usage",
-  "contextStop",
   "steers",
   "headSha",
   "reviewedSha",
@@ -99,10 +94,14 @@ function contextLines(place) {
     .map((line) => JSON.parse(line));
 }
 
-test("an ended session's line holds its file, job, role, stage, model, end, context measures, usage, steers and the head it reviewed, and no text", () => {
-  const events = [...turns([FIRST, PEAK, LAST]), outputEnd(CLEAN_REVIEW)];
-  const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
-  const r = runJob(place, ["--stage", SWEEP_STAGE, "--job-id", JOB_ID]);
+test("the root the job tests' modules read is the test's temporary one", () => {
+  assert.equal(fs.statSync(isolatedRoot).isDirectory(), true);
+});
+
+test("an ended author session's line holds its file, job, role, stage, model, end, context measures, usage, steers and the head it read, and no text", () => {
+  const events = [...turns([FIRST, PEAK, LAST]), outputEnd(AUTHORED)];
+  const place = setUp(repliesAt(READER_STAGE), { events });
+  const r = runJob(place, ["--stage", READER_STAGE, "--job-id", JOB_ID]);
   assert.equal(r.status, 0, r.stderr);
   const [line, ...more] = contextLines(place);
   assert.deepEqual(more, []);
@@ -115,13 +114,12 @@ test("an ended session's line holds its file, job, role, stage, model, end, cont
     {
       at: null,
       issue: ISSUE,
-      stage: SWEEP_STAGE,
-      key: launch.key,
+      stage: READER_STAGE,
+      key: "author-1",
       session: path.basename(launch.session),
-      resumed: false,
       job: JOB_ID,
-      role: "reviewer",
-      agent: "issue-pipeline-reader",
+      role: "author",
+      agent: "issue-pipeline-author",
       model: flagValue(start.argv, "--model"),
       ended: "ok",
       peakContext: PEAK,
@@ -129,8 +127,7 @@ test("an ended session's line holds its file, job, role, stage, model, end, cont
       firstContext: FIRST,
       turns: TURNS,
       usage: SPENT,
-      contextStop: null,
-      steers: { context: 0, socket: 0 },
+      steers: { socket: 0 },
       headSha: start.head,
       reviewedSha: start.head,
     },
@@ -139,34 +136,30 @@ test("an ended session's line holds its file, job, role, stage, model, end, cont
     path.join(place.runDir, "context.jsonl"),
     "utf8",
   );
-  assert.ok(!text.includes("security reviewer"), text);
+  assert.ok(!text.includes(AUTHORED.gherkin), text);
 });
 
 test(
-  "a writer steered at soft and stopped at hard is logged as a handoff with its steer and stop, and names no reviewed head",
+  "an implementor session past the retired soft and hard limits is never steered or handed off: it is logged as ending ok, naming no reviewed head",
   HANG_GUARD,
   async () => {
-    const events = [
-      ...turns([PAST_SOFT]),
-      "wait",
-      ...turns([PAST_HARD]),
-      "wait",
-    ];
-    // No continuations, so the first handoff stops the issue.
-    const once = { ...LIMITS, maxContinuations: 0 };
-    const place = setUp(implementReplies(), { events }, once);
+    const events = [...turns([PAST_SOFT, PAST_HARD]), outputEnd(IMPLEMENTED)];
+    const place = setUp(implementReplies(), { events });
     const end = await startJob(place, ["--stage", "implement"]).end;
     assert.equal(end.status, 0, end.stderr);
+    assert.equal(JSON.parse(end.stdout).end, "next");
     const [line, ...more] = contextLines(place);
     assert.deepEqual(more, []);
-    assert.equal(line.role, "implementer");
-    assert.equal(line.agent, "issue-pipeline-writer");
-    assert.equal(line.ended, "handoff");
-    assert.deepEqual(line.contextStop, { context: PAST_HARD });
+    assert.equal(line.key, "implementor-1");
+    assert.equal(line.role, "implementor");
+    assert.equal(line.agent, "issue-pipeline-implementor");
+    assert.equal(line.ended, "ok");
     assert.equal(line.peakContext, PAST_HARD);
-    assert.deepEqual(line.steers, { context: 1, socket: 0 });
+    assert.equal(line.contextTokens, PAST_HARD + TURN_OUTPUT);
+    assert.deepEqual(line.steers, { socket: 0 });
     assert.equal(line.headSha, piStarts(place)[0].head);
     assert.equal(line.reviewedSha, null);
+    assert.equal(line.stage, "implement");
     assert.equal(typeof line.job, "string");
   },
 );
@@ -176,8 +169,8 @@ test(
   HANG_GUARD,
   async () => {
     const events = [...turns([FIRST]), "wait"];
-    const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
-    const job = startJob(place, ["--stage", SWEEP_STAGE]);
+    const place = setUp(repliesAt(READER_STAGE), { events });
+    const job = startJob(place, ["--stage", READER_STAGE]);
     await waitFor(
       "the session's first turn in job.json",
       () => sessionOf(statusOf(place))?.turns === 1,
@@ -188,14 +181,14 @@ test(
     assert.deepEqual(more, []);
     assert.equal(line.key, sessionOf(statusOf(place)).key);
     assert.equal(line.ended, "killed");
-    assert.equal(line.role, "reviewer");
+    assert.equal(line.role, "author");
     assert.equal(line.turns, 1);
     assert.equal(line.firstContext, FIRST);
     assert.equal(line.peakContext, FIRST);
   },
 );
 
-const STEERS = { context: 0, socket: 0 };
+const STEERS = { socket: 0 };
 
 /**
  * The line a reviewer session that ended ok is logged with, through the
@@ -204,11 +197,11 @@ const STEERS = { context: 0, socket: 0 };
  * @returns {any}
  */
 function loggedLine(statusIn) {
-  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "context-log-"));
+  const runDir = fs.mkdtempSync(path.join(isolatedRoot, "context-log-"));
   const watch = { status: statusIn(runDir), control: { stopping: () => null } };
   const log = contextLogOf(runDir, { issue: ISSUE, id: JOB_ID }, watch);
-  log("i7-review-2", {
-    budgetRole: "reviewer",
+  log("reviewer-2", {
+    role: "reviewer",
     agent: "issue-pipeline-reader",
     model: "anthropic/claude-opus-5-5",
     ended: "ok",
@@ -234,9 +227,8 @@ test("a session with no launch record is logged as unrecorded, with no file or m
       at: null,
       issue: ISSUE,
       stage: "review",
-      key: "i7-review-2",
+      key: "reviewer-2",
       session: null,
-      resumed: null,
       job: JOB_ID,
       role: "reviewer",
       agent: "issue-pipeline-reader",
@@ -247,7 +239,6 @@ test("a session with no launch record is logged as unrecorded, with no file or m
       firstContext: null,
       turns: 0,
       usage: ZERO_USAGE,
-      contextStop: null,
       steers: STEERS,
       headSha: "abc1234",
       reviewedSha: "abc1234",
@@ -258,8 +249,8 @@ test("a session with no launch record is logged as unrecorded, with no file or m
 test("a session that ends once the job moved on is logged at the stage it moved to (#424)", () => {
   const line = loggedLine((runDir) => {
     const status = openStatus(runDir, MOVING_JOB);
-    status.moved("checks");
+    status.moved("review");
     return status;
   });
-  assert.equal(line.stage, "checks");
+  assert.equal(line.stage, "review");
 });

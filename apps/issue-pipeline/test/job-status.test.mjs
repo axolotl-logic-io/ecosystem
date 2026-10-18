@@ -1,5 +1,8 @@
 // A stage job's status file, runs/<slug>/issue-N/job.json: what it shows
-// while a session runs and once the job has finished.
+// while a session runs and once the job has finished. A session's context
+// figures are records, never limits (`no-session-budgets`): the retired
+// per-role token budget and its watchdog stop are replaced by a session
+// past any old budget running to its end with its context recorded.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,22 +17,28 @@ import {
   turns,
 } from "./fake-rpc-pi.mjs";
 import {
-  CLEAN_REVIEW,
-  piStarts,
+  AUTHORED,
+  IMPLEMENTED,
+  implementReplies,
+  READER_STAGE,
   repliesAt,
+  USAGE,
+  USAGE_TOTAL,
+} from "./job-fixtures.mjs";
+import {
+  piStarts,
   runJob,
-  SWEEP_STAGE,
   sessionOf,
   setUp,
   startJob,
   statusOf,
-  USAGE,
-  USAGE_TOTAL,
 } from "./job-test-kit.mjs";
-import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
-const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
-const SPEC_BUDGET = 80_000;
+const STAGE_ARGS = ["--stage", READER_STAGE, "--lane", "L"];
+// The issue job-fixtures.mjs claims.
+const ISSUE = 7;
+// A budget-era launch's token budget.
+const OLD_BUDGET = 80_000;
 // The job a status file is opened for, less its stage.
 const JOB = {
   id: "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b",
@@ -40,15 +49,12 @@ const JOB = {
 };
 const FIRST_CONTEXT = 50_000;
 const LAST_CONTEXT = 51_000;
-// A security reviewer's turn context past its 60k budget and under the
-// hard limit.
-const OVER_REVIEWER_BUDGET = 90_000;
-// The implementer's default budget at the default sessionTokenCap, both
-// 300k: the implementor role reads them from the job's config.
-const IMPLEMENTER_BUDGET = 300_000;
+// A turn's context past every retired session budget: the old reviewer's
+// 60k and the implementer's 300k.
+const PAST_OLD_BUDGETS = 400_000;
 
 test("while a session waits, job.json shows its pid, session, last event and tool failures", async () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
+  const place = setUp(repliesAt(READER_STAGE), {
     events: [toolEnd(true), toolEnd(true), "wait"],
   });
   const job = startJob(place, STAGE_ARGS);
@@ -58,9 +64,10 @@ test("while a session waits, job.json shows its pid, session, last event and too
   );
   const status = statusOf(place);
   assert.equal(status.version, 1);
+  assert.equal(status.pipelineVersion, 2);
   assert.equal(status.pid, job.child.pid);
   assert.equal(status.issue, ISSUE);
-  assert.equal(status.stage, SWEEP_STAGE);
+  assert.equal(status.stage, READER_STAGE);
   assert.equal(status.lane, "L");
   assert.equal(status.outcome, null);
   assert.ok(Date.parse(status.startedAt) > 0);
@@ -70,13 +77,13 @@ test("while a session waits, job.json shows its pid, session, last event and too
   assert.equal(launch.session, start.argv[start.argv.indexOf("--session") + 1]);
   assert.ok(Date.parse(launch.lastEventAt) > 0);
   assert.equal(launch.outcome, null);
-  assert.equal(launch.resumed, false);
+  assert.equal(launch.key, "author-1");
   job.child.kill("SIGTERM");
   await job.end;
 });
 
 test("job.json counts consecutive failures of the same tool and keeps the last one's tool and error (#235)", async () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
+  const place = setUp(repliesAt(READER_STAGE), {
     events: [
       toolEnd(true, "bash", "exit 1"),
       toolEnd(true, "read", "ENOENT: a.ts"),
@@ -100,11 +107,11 @@ test("job.json counts consecutive failures of the same tool and keeps the last o
 });
 
 test("a finished job's file counts only the last tool failures and records each outcome", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
+  const place = setUp(repliesAt(READER_STAGE), {
     events: [
       toolEnd(true),
       toolEnd(true),
-      outputEnd(CLEAN_REVIEW),
+      outputEnd(AUTHORED),
       toolEnd(true),
       messageEnd(USAGE),
     ],
@@ -118,8 +125,7 @@ test("a finished job's file counts only the last tool failures and records each 
   assert.equal(launch.toolFailures, 1);
   assert.equal(launch.outcome, "ok");
   assert.deepEqual(launch.usage, USAGE);
-  // The reviewer is no writer session, so it has no watchdog max.
-  assert.equal(launch.tokenBudget, null);
+  assert.equal("tokenBudget" in launch, false);
   assert.equal(launch.contextTokens, USAGE_TOTAL);
   const ops = status.launches.filter(
     (/** @type {{ kind: string }} */ { kind }) => kind === "ops",
@@ -128,7 +134,6 @@ test("a finished job's file counts only the last tool failures and records each 
   for (const op of ops) {
     assert.equal(op.session, null);
     assert.equal(op.outcome, "ok");
-    assert.equal(op.tokenBudget, null);
   }
   assert.deepEqual(fs.readdirSync(place.runDir).sort(), [
     "context.jsonl",
@@ -138,28 +143,36 @@ test("a finished job's file counts only the last tool failures and records each 
   ]);
 });
 
-test("a non-writer session past its role's budget records no token budget, so the watchdog never stops it", () => {
-  const events = [...turns([OVER_REVIEWER_BUDGET]), outputEnd(CLEAN_REVIEW)];
-  const place = setUp(repliesAt(SWEEP_STAGE), { events });
+test("an author session past every old session budget runs to its end with its context recorded", () => {
+  const events = [...turns([PAST_OLD_BUDGETS]), outputEnd(AUTHORED)];
+  const place = setUp(repliesAt(READER_STAGE), { events });
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).end, "next");
   const launch = sessionOf(statusOf(place));
   assert.equal(launch.outcome, "ok");
-  assert.equal(launch.contextTokens, OVER_REVIEWER_BUDGET + TURN_OUTPUT);
-  assert.equal(launch.tokenBudget, null);
+  assert.equal(launch.contextTokens, PAST_OLD_BUDGETS + TURN_OUTPUT);
+  // The peak is what the model read that turn, less its output.
+  assert.equal(launch.peakContext, PAST_OLD_BUDGETS);
+  assert.equal("tokenBudget" in launch, false);
 });
 
-test("a writer session records its token budget, which the watchdog stops it past", async () => {
-  const place = setUp(repliesAt("implement"), { events: ["wait"] });
-  const job = startJob(place, ["--stage", "implement"]);
-  await waitFor(
-    "the session's launch in job.json",
-    () => sessionOf(statusOf(place)) !== null,
-  );
-  // The implementer's default budget at the default session cap.
-  assert.equal(sessionOf(statusOf(place)).tokenBudget, IMPLEMENTER_BUDGET);
-  job.child.kill("SIGTERM");
-  await job.end;
+test("an implementor session past every old session budget is never stopped for it, and the job moves on to review", () => {
+  const events = [...turns([PAST_OLD_BUDGETS]), outputEnd(IMPLEMENTED)];
+  const place = setUp(implementReplies(), { events });
+  const r = runJob(place, ["--stage", "implement"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), {
+    issue: ISSUE,
+    stage: "implement",
+    end: "next",
+  });
+  const status = statusOf(place);
+  assert.equal(status.currentStage, "review");
+  const launch = sessionOf(status);
+  assert.equal(launch.key, "implementor-1");
+  assert.equal(launch.contextTokens, PAST_OLD_BUDGETS + TURN_OUTPUT);
+  assert.equal("tokenBudget" in launch, false);
 });
 
 test("job.json's lostChanges and droppedPatches round-trip through its schema", async () => {
@@ -194,36 +207,28 @@ function usageOf(input) {
   };
 }
 
-test("a launch records its token budget, and its context is the latest message's total, not the sum (#281)", async () => {
+test("a launch's context is the latest message's total, not the sum, and its peak, first context and turns are kept (#281)", async () => {
   const { openStatus, readStatus } = await import("../src/job/status.ts");
   const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
   process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
-  const job = { ...JOB, stage: "review" };
-  const status = openStatus(runDir, job);
-  const start = { pid: 1, session: "/s.jsonl", resumed: false };
-  const key = "i1-review-1";
-  const zero = usageOf(0);
-  status.started({
-    ...start,
-    key,
-    kind: "session",
-    usage: zero,
-    tokenBudget: SPEC_BUDGET,
-  });
+  const status = openStatus(runDir, { ...JOB, stage: "review" });
+  const key = "reviewer-1";
+  status.started({ key, kind: "session", pid: 1, session: "/s.jsonl" });
   assert.equal(readStatus(runDir)?.launches[0]?.contextTokens, 0);
-  // Each turn re-reads the context, so the sum passes the budget long before
-  // the context does.
-  status.record(key, messageEnd(usageOf(FIRST_CONTEXT)));
-  status.record(key, toolEnd(false, "read"));
+  // Each turn re-reads the context, so the sum is far past the context.
   status.record(key, messageEnd(usageOf(LAST_CONTEXT)));
+  status.record(key, toolEnd(false, "read"));
+  status.record(key, messageEnd(usageOf(FIRST_CONTEXT)));
   const launch = readStatus(runDir)?.launches[0];
-  assert.equal(launch?.tokenBudget, SPEC_BUDGET);
-  assert.equal(launch?.contextTokens, LAST_CONTEXT);
+  assert.equal(launch?.contextTokens, FIRST_CONTEXT);
+  assert.equal(launch?.peakContext, LAST_CONTEXT);
+  assert.equal(launch?.firstContext, LAST_CONTEXT);
+  assert.equal(launch?.turns, 2);
   assert.equal(launch?.usage.input, FIRST_CONTEXT + LAST_CONTEXT);
 });
 
-test("an older job.json without a token budget or context size still parses, as null and 0 (#281)", async () => {
-  const { readStatus } = await import("../src/job/status.ts");
+test("an older job.json without context figures, a pipeline version or budget-era fields still parses, and isn't this pipeline's (#281)", async () => {
+  const { isPipelineJob, readStatus } = await import("../src/job/status.ts");
   const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
   process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
   const launch = {
@@ -236,6 +241,7 @@ test("an older job.json without a token budget or context size still parses, as 
     toolFailures: 0,
     usage: USAGE,
     resumed: false,
+    tokenBudget: OLD_BUDGET,
     outcome: null,
   };
   const old = {
@@ -250,9 +256,12 @@ test("an older job.json without a token budget or context size still parses, as 
     launches: [launch],
   };
   fs.writeFileSync(path.join(runDir, "job.json"), JSON.stringify(old));
-  const parsed = readStatus(runDir)?.launches[0];
-  assert.equal(parsed?.tokenBudget, null);
+  const read = readStatus(runDir);
+  const parsed = read?.launches[0];
   assert.equal(parsed?.contextTokens, 0);
+  assert.equal(parsed?.peakContext, 0);
+  assert.equal(parsed?.firstContext, null);
+  assert.equal(read && isPipelineJob(read), false);
 });
 
 test("job.json names the stage the job is at now: the stage it started at, then each stage it moved on to (#424)", async () => {
@@ -261,15 +270,15 @@ test("job.json names the stage the job is at now: the stage it started at, then 
   );
   const runDir = fs.mkdtempSync("/tmp/issue-pipeline-status-");
   process.on("exit", () => fs.rmSync(runDir, { recursive: true, force: true }));
-  const status = openStatus(runDir, { ...JOB, stage: "fix" });
-  assert.equal(readStatus(runDir)?.currentStage, "fix");
-  status.moved("checks");
+  const status = openStatus(runDir, { ...JOB, stage: "author" });
+  assert.equal(readStatus(runDir)?.currentStage, "author");
+  status.moved("implement");
   const moved = readStatus(runDir);
-  assert.equal(moved?.stage, "fix");
-  assert.equal(moved?.currentStage, "checks");
-  assert.equal(moved && currentStageOf(moved), "checks");
+  assert.equal(moved?.stage, "author");
+  assert.equal(moved?.currentStage, "implement");
+  assert.equal(moved && currentStageOf(moved), "implement");
   const { currentStage: _, ...older } = moved ?? {};
   fs.writeFileSync(path.join(runDir, "job.json"), JSON.stringify(older));
   const read = readStatus(runDir);
-  assert.equal(read && currentStageOf(read), "fix");
+  assert.equal(read && currentStageOf(read), "author");
 });
