@@ -4,8 +4,11 @@
 // this test too.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LABELS } from "../src/labels.ts";
-import { STOPS, stopFor } from "../src/stops.ts";
+import "./isolated-root-test-kit.mjs";
+
+// src after the kit set a temporary root.
+const { LABELS } = await import("../src/labels.ts");
+const { isStopLabel, STOPS, stopFor } = await import("../src/stops.ts");
 
 test("the status labels keep their names", () => {
   assert.deepEqual(
@@ -13,6 +16,22 @@ test("the status labels keep their names", () => {
     ["agent:working", "agent:needs-info", "agent:split", "agent:merged"],
   );
 });
+
+// The controls the rewrite removed, with what removed them: the session
+// budgets (budget), the fix loop and unrelated-check fixer (fix-loop,
+// checks-unrelated), triage (triage-rejected, triage-limit), the spec writer
+// and its size and acceptance checks (spec-files, too-large, acceptance).
+// Their labels may still sit on issues, so they must still read as stops.
+const REMOVED_CODES = [
+  "budget",
+  "fix-loop",
+  "checks-unrelated",
+  "triage-rejected",
+  "triage-limit",
+  "spec-files",
+  "too-large",
+  "acceptance",
+];
 
 test("the stops keep their order and label names", () => {
   assert.deepEqual(
@@ -22,18 +41,10 @@ test("the stops keep their order and label names", () => {
       "rights",
       "financial-harm",
       "abuse-risk",
-      "budget",
-      "fix-loop",
       "review-rounds",
-      "checks-unrelated",
       "check-fixes",
       "no-ci",
-      "triage-rejected",
-      "triage-limit",
       "not-doable",
-      "spec-files",
-      "too-large",
-      "acceptance",
       "branch-changed",
       "wiki-check",
       "conflict",
@@ -46,12 +57,27 @@ test("the stops keep their order and label names", () => {
   );
 });
 
+test("a removed control's label still reads as a stop, and a status label doesn't", () => {
+  const removed = REMOVED_CODES.map((code) => `agent:stopped-${code}`);
+  assert.deepEqual(
+    removed.filter((name) => !isStopLabel(name)),
+    [],
+  );
+  const status = Object.values(LABELS).map((label) => label.name);
+  assert.deepEqual(status.filter(isStopLabel), []);
+});
+
 test("a reason maps to its stop, and any other reason to error", () => {
   assert.equal(stopFor("security review (rights) failed")?.code, "rights");
   assert.equal(stopFor("Security Check (user-harm)")?.code, "user-harm");
   assert.equal(stopFor("the push was rejected")?.code, "push-rejected");
-  assert.equal(stopFor("issue token budget exhausted")?.code, "budget");
-  assert.equal(stopFor("rebase token budget exhausted")?.code, "budget");
+  assert.equal(stopFor("blocking findings remain")?.code, "review-rounds");
+  assert.equal(stopFor("the checks still fail")?.code, "check-fixes");
+  assert.equal(
+    stopFor("the implementation changed nothing")?.code,
+    "not-doable",
+  );
+  assert.equal(stopFor("GitHub refused the merge")?.code, "merge-refused");
   assert.equal(
     stopFor("the wiki changes failed the wiki check")?.code,
     "wiki-check",
@@ -61,14 +87,7 @@ test("a reason maps to its stop, and any other reason to error", () => {
     "conflict",
   );
   assert.equal(stopFor("the stage job kept dying: review")?.code, "job");
-  assert.equal(
-    stopFor("the check fixer can't fix the failing checks from the repo")?.code,
-    "checks-unrelated",
-  );
-  // The reason sweeps sent before unrelated-fixes-allowed.
-  assert.equal(
-    stopFor("the failing checks look unrelated to this change")?.code,
-    "checks-unrelated",
-  );
+  // A removed control's reason is an error now.
+  assert.equal(stopFor("issue token budget exhausted")?.code, "error");
   assert.equal(stopFor("something else")?.code, "error");
 });

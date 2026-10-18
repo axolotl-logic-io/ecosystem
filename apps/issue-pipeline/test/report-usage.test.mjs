@@ -10,14 +10,17 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { COMMENT } from "../src/comments.ts";
-import { loadConfig } from "../src/config.ts";
-import { usageBody } from "../src/job/usage-comment.ts";
-import { serializeUsage } from "../src/job/usage-log.ts";
-import { OpsError } from "../src/process.ts";
-import { usageReport } from "../src/report/usage.ts";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
+import "./isolated-root-test-kit.mjs";
 import { sessionRecord } from "./usage-fixtures.mjs";
+
+// src after the kit set a temporary root.
+const { COMMENT } = await import("../src/comments.ts");
+const { loadConfig } = await import("../src/config.ts");
+const { usageBody } = await import("../src/job/usage-comment.ts");
+const { serializeUsage } = await import("../src/job/usage-log.ts");
+const { OpsError } = await import("../src/process.ts");
+const { usageReport } = await import("../src/report/usage.ts");
 
 /** @import { IssueComment } from "../src/comments.ts" */
 /** @import { ReportOptions, UsageFlags } from "../src/report/usage.ts" */
@@ -240,6 +243,7 @@ test("report usage --since reads the comments in one paged since listing", () =>
   const { PATH: searchPath } = process.env;
   const env = new Map([
     ["ISSUE_PIPELINE_ROOT", tmp],
+    ["HOME", tmp],
     ["PATH", searchPath],
   ]);
   const args = ["usage", "--config", configWith({}), "--since", SINCE];

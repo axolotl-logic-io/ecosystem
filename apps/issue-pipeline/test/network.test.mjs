@@ -1,7 +1,10 @@
 // Which op errors count as network failures, which a stage defers on.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isNetworkError } from "../src/job/transient.ts";
+import "./isolated-root-test-kit.mjs";
+
+// src after the kit set a temporary root.
+const { isNetworkError } = await import("../src/job/transient.ts");
 
 const NETWORK = [
   "git fetch exited 128: fatal: unable to access 'https://github.com/o/r/': Could not resolve host: github.com",

@@ -3,7 +3,10 @@
 // and which new pages nothing links to. Pure, over a hand-built WikiChange.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { wikiProblems } from "../src/wiki-check.ts";
+import "./isolated-root-test-kit.mjs";
+
+// src after the kit set a temporary root.
+const { wikiProblems } = await import("../src/wiki-check.ts");
 
 /** @typedef {import("../src/wiki-check.ts").WikiChange} WikiChange */
 /** @typedef {[file: string, text: string]} Edit */

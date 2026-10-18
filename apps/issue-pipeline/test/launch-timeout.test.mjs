@@ -9,14 +9,17 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { runOps } from "../src/job/ops-process.ts";
-import { runRpc } from "../src/job/rpc.ts";
 import {
   alive,
   endsWithTest,
   killGroup,
   waitFor,
 } from "./bounded-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+
+// src after the kit set a temporary root, which the launches inherit.
+const { runOps } = await import("../src/job/ops-process.ts");
+const { runRpc } = await import("../src/job/rpc.ts");
 
 // The launch: ignores SIGTERM, starts `sleep 600` in its own process group,
 // writes its pid and the sleep's to `pids` in the folder it is given, and

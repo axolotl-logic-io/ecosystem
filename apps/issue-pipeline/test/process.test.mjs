@@ -12,8 +12,6 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { shell } from "../src/process.ts";
-import { groupAlive } from "../src/process-group.ts";
 import {
   alive,
   endsWithTest,
@@ -21,6 +19,11 @@ import {
   pidIn,
   waitFor,
 } from "./bounded-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+
+// src after the kit set a temporary root, which the drivers inherit.
+const { shell } = await import("../src/process.ts");
+const { groupAlive } = await import("../src/process-group.ts");
 
 const PROCESS = new URL("../src/process.ts", import.meta.url).pathname;
 // The driver: runs shell() on the request in its argument, logging to

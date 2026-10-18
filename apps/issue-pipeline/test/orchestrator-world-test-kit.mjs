@@ -83,7 +83,6 @@ function configWith(extra) {
     allowedUsers: [ALLOWED],
     cloneUrl: path.join(root, "origin.git"),
     baseBranch: "integration",
-    claimWaitSeconds: [0, 0],
     commands: { test: "true" },
   };
   fs.writeFileSync(file, JSON.stringify({ ...base, ...extra }));
