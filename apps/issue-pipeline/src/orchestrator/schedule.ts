@@ -11,7 +11,8 @@
 //   its base in a loop; its jobs go first, and every other merge is held.
 //   With no holder the merge-ready issue ranked first opens the window: the
 //   one the most open issues wait on, then the lower PR, then the lower
-//   number. A merge job gets that ranking as its merge queue;
+//   number. A merge job gets that ranking as its merge queue. A completion's
+//   merge job never merges, so it has no part in the window or the queue;
 // - the caps: maxJobs live jobs in all, and stageCaps per stage, counting
 //   every live job, a legacy job's included;
 // - the watchdog (watchdog.ts): a start at the stage a dead job died at is a
@@ -20,7 +21,7 @@
 
 import type { Stage } from "../stages.ts";
 import type { IssuePlan, Reauthor, StartReason } from "./issue-plan.ts";
-import { planOf } from "./issue-plan.ts";
+import { isCompletion, planOf } from "./issue-plan.ts";
 import type { ScheduleSettings, Snapshot, SnapshotIssue } from "./queue.ts";
 import type { Resumes } from "./watchdog.ts";
 import { restartOf, withoutIssue, withRestart } from "./watchdog.ts";
@@ -42,7 +43,8 @@ type Decision =
       reason: StartReason | "restart";
       // The state to save before the start, for new trusted input.
       reauthor: Reauthor | null;
-      // A merge job's merge queue, holder first; null for other stages.
+      // A code merge's merge queue, holder first; null for other stages and
+      // for a completion's merge job.
       mergeQueue: readonly number[] | null;
     }
   | { action: "held"; at: string; issue: number; stage: Stage; reason: string }
@@ -79,16 +81,21 @@ function isWindowRun(planned: Planned | undefined): boolean {
   return planned?.plan.kind === "run" && WINDOW_STAGES.has(planned.plan.stage);
 }
 
-// The issue holding the merge window: one with a live merge job, else the
+// True for a job at `stage` that merges code: a merge, not a completion's.
+function isCodeMerge(stage: Stage, issue: SnapshotIssue): boolean {
+  return stage === "merge" && !isCompletion(issue.state);
+}
+
+// The issue holding the merge window: one with a live code merge, else the
 // last reserved holder while its live job or its next job is at review or
 // merge. A holder held for any other reason, sent back to the author or the
-// implementor, stopped or closed gives the window up.
+// implementor, stopped, closed or now a completion gives the window up.
 function holderOf(
   snapshot: Snapshot,
   planned: readonly Planned[],
 ): number | null {
   const liveMerge = snapshot.issues.find(
-    (open) => open.job?.live === true && open.job.stage === "merge",
+    (open) => open.job?.live === true && isCodeMerge(open.job.stage, open),
   );
   if (liveMerge !== undefined) {
     return liveMerge.number;
@@ -96,7 +103,7 @@ function holderOf(
   const reserved = snapshot.issues.find(
     ({ number }) => number === snapshot.mergeWindow,
   );
-  if (reserved === undefined) {
+  if (reserved === undefined || isCompletion(reserved.state)) {
     return null;
   }
   const { job } = reserved;
@@ -120,7 +127,10 @@ function mergeQueueOf(
   holder: number | null,
 ): number[] {
   const ready = planned
-    .filter(({ plan }) => plan.kind === "run" && plan.stage === "merge")
+    .filter(
+      ({ issue, plan }) =>
+        plan.kind === "run" && isCodeMerge(plan.stage, issue),
+    )
     .map(({ issue }) => ({
       number: issue.number,
       waiting: dependents(snapshot, issue.number),
@@ -160,13 +170,9 @@ function windowReason(count: Count, issue: number): string | null {
   return null;
 }
 
-function countStart(count: Count, issue: number, stage: Stage): void {
+function countStart(count: Count, stage: Stage): void {
   count.live += 1;
   count.liveAt.set(stage, (count.liveAt.get(stage) ?? 0) + 1);
-  if (stage === "merge") {
-    count.holder = issue;
-    count.memory.mergeWindow = issue;
-  }
 }
 
 function decide(
@@ -193,8 +199,9 @@ function decide(
       reason: "max-resumes",
     };
   }
+  const codeMerge = isCodeMerge(stage, issue);
   let reason: string | null = null;
-  if (stage === "merge") {
+  if (codeMerge) {
     reason = windowReason(count, number);
   }
   reason = run.gate ?? reason ?? capReason(count, stage);
@@ -206,9 +213,11 @@ function decide(
     count.memory.resumes = withRestart(resumes, number, stage, restart.attempt);
     started = "restart";
   }
-  countStart(count, number, stage);
+  countStart(count, stage);
   let mergeQueue: readonly number[] | null = null;
-  if (stage === "merge") {
+  if (codeMerge) {
+    count.holder = number;
+    count.memory.mergeWindow = number;
     mergeQueue = count.queue;
   }
   const { reauthor } = plan;

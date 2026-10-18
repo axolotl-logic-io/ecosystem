@@ -148,4 +148,4 @@ function reviewBundle(
   return bundle;
 }
 
-export { commitLog, reviewBundle, withWiki };
+export { commitLog, REVIEW_BUNDLE_MAX_CHARS, reviewBundle, withWiki };

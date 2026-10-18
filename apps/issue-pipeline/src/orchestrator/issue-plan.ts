@@ -215,4 +215,4 @@ function reauthoredState(
 }
 
 export type { IssuePlan, Reauthor, StartReason };
-export { ORCHESTRATOR_LANE, planOf, reauthoredState };
+export { isCompletion, ORCHESTRATOR_LANE, planOf, reauthoredState };

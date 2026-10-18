@@ -2,9 +2,11 @@
 // The scheduler's completion reconciliation (src/orchestrator/schedule.ts,
 // issue-plan.ts; `completion-reconciliation`): an open issue saved done with
 // what merged runs a merge job, with or without agent:merged and despite an
-// open prerequisite, within the merge window and the caps; a plain done, a
-// stopped completion and one with a live job run nothing. The pipeline root
-// is a temporary one before src/ loads.
+// open prerequisite. That job never merges, so it bypasses the merge window
+// and the merge queue and never opens, holds or blocks them for a code merge,
+// while the caps still count it; a plain done, a stopped completion and one
+// with a live job run nothing. The pipeline root is a temporary one before
+// src/ loads.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isolatedOpsFixture } from "./integration-source-test-kit.mjs";
@@ -27,6 +29,8 @@ const ISSUE = {
   waiting: 62,
   capped: 63,
   overGlobalCap: 64,
+  codeMerge: 65,
+  laterCodeMerge: 66,
 };
 // The open issue a completion's after mark names.
 const OPEN_PREREQUISITE = 99;
@@ -83,20 +87,52 @@ function completion(number) {
   };
 }
 
+/** @param {number} number @returns {IssueState} */
+function readyToMerge(number) {
+  return { ...newIssueState(number), stage: "merge", pr: number };
+}
+
 /**
- * The scheduler's decisions for `issues`, by issue, as action, stage and reason.
- * @param {SnapshotIssue[]} issues
- * @param {{ settings?: Partial<ScheduleSettings>, mergeWindow?: number | null }} [run]
+ * A live job at `stage`.
+ * @param {"review" | "merge"} stage
  */
-function decisionsFor(issues, run = {}) {
-  const { decisions } = schedule(
+function liveJob(stage) {
+  return { stage, startedAt: NOW.toISOString(), live: true, end: null };
+}
+
+/**
+ * @typedef {object} Run
+ * @property {Partial<ScheduleSettings>} [settings]
+ * @property {number | null} [mergeWindow]
+ */
+
+/** @param {SnapshotIssue[]} issues @param {Run} run */
+function scheduled(issues, run) {
+  return schedule(
     { issues, mergeWindow: run.mergeWindow ?? null },
     { ...SETTINGS, ...run.settings },
     { now: NOW, gate: null, resumes: {} },
   );
-  return Object.fromEntries(
-    decisions.map((d) => [d.issue, `${d.action} ${d.stage} ${d.reason}`]),
-  );
+}
+
+/**
+ * The scheduler's decisions for `issues`, by issue, as action, stage and
+ * reason, a started merge's queue after it, and the window it leaves.
+ * @param {SnapshotIssue[]} issues
+ * @param {Run} [run]
+ */
+function decisionsFor(issues, run = {}) {
+  const { decisions, memory } = scheduled(issues, run);
+  /** @type {Record<string, string>} */
+  const byIssue = {};
+  for (const d of decisions) {
+    let line = `${d.action} ${d.stage} ${d.reason}`;
+    if (d.action === "started" && d.mergeQueue !== null) {
+      line += ` queue:${d.mergeQueue.join(",")}`;
+    }
+    byIssue[d.issue] = line;
+  }
+  return { ...byIssue, window: memory.mergeWindow };
 }
 
 test("an open completion runs a merge job with or without agent:merged and despite a prerequisite", () => {
@@ -113,17 +149,24 @@ test("an open completion runs a merge job with or without agent:merged and despi
   ]) {
     assert.deepEqual(decisionsFor([issue]), {
       [issue.number]: "started merge free",
+      window: null,
     });
   }
 });
 
+test("several open completions all start at once, with no merge queue", () => {
+  const issues = [ISSUE.completion, ISSUE.mergedLabel, ISSUE.waiting].map((n) =>
+    openIssue(n, { state: completion(n) }),
+  );
+  assert.deepEqual(decisionsFor(issues), {
+    [ISSUE.completion]: "started merge free",
+    [ISSUE.mergedLabel]: "started merge free",
+    [ISSUE.waiting]: "started merge free",
+    window: null,
+  });
+});
+
 test("plain done, a stopped completion and one with a live job run nothing", () => {
-  const liveMerge = {
-    stage: /** @type {const} */ ("merge"),
-    startedAt: NOW.toISOString(),
-    live: true,
-    end: null,
-  };
   for (const issue of [
     openIssue(ISSUE.plainDone, {
       state: { ...newIssueState(ISSUE.plainDone), stage: "done" },
@@ -134,23 +177,21 @@ test("plain done, a stopped completion and one with a live job run nothing", () 
     }),
     openIssue(ISSUE.liveJob, {
       state: completion(ISSUE.liveJob),
-      job: liveMerge,
+      job: liveJob("merge"),
     }),
   ]) {
-    assert.deepEqual(decisionsFor([issue]), {}, String(issue.number));
+    assert.deepEqual(
+      decisionsFor([issue]),
+      { window: null },
+      String(issue.number),
+    );
   }
 });
 
-test("an open completion waits for the merge window's holder and the caps", () => {
-  const live = {
-    stage: /** @type {const} */ ("review"),
-    startedAt: NOW.toISOString(),
-    live: true,
-    end: null,
-  };
+test("an open completion bypasses a held merge window but not the caps", () => {
   const reviewing = openIssue(ISSUE.reviewing, {
     state: { ...newIssueState(ISSUE.reviewing), stage: "review" },
-    job: live,
+    job: liveJob("review"),
   });
   assert.deepEqual(
     decisionsFor(
@@ -158,11 +199,9 @@ test("an open completion waits for the merge window's holder and the caps", () =
         reviewing,
         openIssue(ISSUE.waiting, { state: completion(ISSUE.waiting) }),
       ],
-      {
-        mergeWindow: ISSUE.reviewing,
-      },
+      { mergeWindow: ISSUE.reviewing },
     ),
-    { [ISSUE.waiting]: `held merge merge-window:#${ISSUE.reviewing}` },
+    { [ISSUE.waiting]: "started merge free", window: ISSUE.reviewing },
   );
   assert.deepEqual(
     decisionsFor(
@@ -171,7 +210,7 @@ test("an open completion waits for the merge window's holder and the caps", () =
         settings: { stageCaps: { merge: 0 } },
       },
     ),
-    { [ISSUE.capped]: "held merge stage-cap" },
+    { [ISSUE.capped]: "held merge stage-cap", window: null },
   );
   assert.deepEqual(
     decisionsFor(
@@ -181,10 +220,73 @@ test("an open completion waits for the merge window's holder and the caps", () =
           state: completion(ISSUE.overGlobalCap),
         }),
       ],
-      {
-        settings: { maxJobs: 1 },
-      },
+      { settings: { maxJobs: 1 }, mergeWindow: ISSUE.reviewing },
     ),
-    { [ISSUE.overGlobalCap]: "held merge global-cap" },
+    { [ISSUE.overGlobalCap]: "held merge global-cap", window: ISSUE.reviewing },
+  );
+});
+
+test("a completion, starting or live, never opens, holds or joins the window a code merge needs", () => {
+  const codeMerge = openIssue(ISSUE.codeMerge, {
+    state: readyToMerge(ISSUE.codeMerge),
+  });
+  const waiting = openIssue(ISSUE.waiting, {
+    state: completion(ISSUE.waiting),
+  });
+  // Ranked first by creation, the completion still leaves the window and the
+  // queue to the code merge.
+  assert.deepEqual(decisionsFor([waiting, codeMerge]), {
+    [ISSUE.waiting]: "started merge free",
+    [ISSUE.codeMerge]: `started merge free queue:${ISSUE.codeMerge}`,
+    window: ISSUE.codeMerge,
+  });
+  const liveCompletion = openIssue(ISSUE.liveJob, {
+    state: completion(ISSUE.liveJob),
+    job: liveJob("merge"),
+  });
+  assert.deepEqual(decisionsFor([liveCompletion, codeMerge]), {
+    [ISSUE.codeMerge]: `started merge free queue:${ISSUE.codeMerge}`,
+    window: ISSUE.codeMerge,
+  });
+  // A window remembered for an issue that is now a completion is given up.
+  assert.deepEqual(
+    decisionsFor([waiting, codeMerge], { mergeWindow: ISSUE.waiting }),
+    {
+      [ISSUE.waiting]: "started merge free",
+      [ISSUE.codeMerge]: `started merge free queue:${ISSUE.codeMerge}`,
+      window: ISSUE.codeMerge,
+    },
+  );
+});
+
+test("code merges keep their window and order beside completions", () => {
+  const issues = [
+    openIssue(ISSUE.waiting, { state: completion(ISSUE.waiting) }),
+    openIssue(ISSUE.codeMerge, { state: readyToMerge(ISSUE.codeMerge) }),
+    openIssue(ISSUE.laterCodeMerge, {
+      state: readyToMerge(ISSUE.laterCodeMerge),
+    }),
+  ];
+  assert.deepEqual(decisionsFor(issues), {
+    [ISSUE.waiting]: "started merge free",
+    [ISSUE.codeMerge]: `started merge free queue:${ISSUE.codeMerge},${ISSUE.laterCodeMerge}`,
+    [ISSUE.laterCodeMerge]: `held merge merge-window:#${ISSUE.codeMerge}`,
+    window: ISSUE.codeMerge,
+  });
+  const liveCodeMerge = openIssue(ISSUE.codeMerge, {
+    state: readyToMerge(ISSUE.codeMerge),
+    job: liveJob("merge"),
+  });
+  assert.deepEqual(
+    decisionsFor([
+      liveCodeMerge,
+      openIssue(ISSUE.laterCodeMerge, {
+        state: readyToMerge(ISSUE.laterCodeMerge),
+      }),
+    ]),
+    {
+      [ISSUE.laterCodeMerge]: `held merge merge-window:#${ISSUE.codeMerge}`,
+      window: ISSUE.codeMerge,
+    },
   );
 });
