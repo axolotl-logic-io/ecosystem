@@ -16,8 +16,8 @@ import { readState } from "../saved-state.ts";
 import type { IssueState, Revision } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
 import { confirmWikiPublished } from "../wiki-publication.ts";
-import type { FinishRefusal } from "./publication-guard.ts";
-import { finishGate } from "./publication-guard.ts";
+import type { FinishRefusal } from "./finish-guard.ts";
+import { finishGate } from "./finish-guard.ts";
 
 const SUB_ISSUES_PER_PAGE = 100;
 const SHORT_SHA_LENGTH = 12;

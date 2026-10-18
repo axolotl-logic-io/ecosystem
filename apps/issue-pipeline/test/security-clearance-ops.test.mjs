@@ -30,6 +30,8 @@ const { finishWiki } = await import("../src/ops/finish.ts");
 /** @typedef {import("../src/state.ts").Security} Security */
 
 const DONE_WITH_CODE_BUT_NO_PR = /done with code .* but no PR/u;
+const NOT_THE_AUTHORIZED_HEAD =
+  /merge authorization .* is not .*, which PR #50 merged/u;
 /** @type {NonNullable<Security["finding"]>} */
 const FINDING = { category: "user-harm", reason: "leaks the users' tokens" };
 
@@ -143,4 +145,24 @@ test("finish-wiki fails on a change with no PR saved as merging code", () => {
     DONE_WITH_CODE_BUT_NO_PR,
   );
   assert.deepEqual(writes(), []);
+});
+
+test("finish-wiki fails on a completion whose merge authorization isn't the head GitHub merged, changing nothing", () => {
+  const w = world({ wiki: true });
+  const { approved, result } = chainOf(w);
+  merged(w);
+  for (const hardened of [null, { ...approved, code: "0ther" }]) {
+    const saved = {
+      ...approvedState(approved, { hardened }),
+      stage: "done",
+      merged: result,
+      security: securityOf(result),
+    };
+    fakeGh.reply([savedListing(saved)]);
+    assert.throws(
+      () => finishWiki(w.cfg, { number: 7 }),
+      NOT_THE_AUTHORIZED_HEAD,
+    );
+    assert.deepEqual(writes(), []);
+  }
 });

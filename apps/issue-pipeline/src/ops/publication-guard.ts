@@ -1,5 +1,5 @@
-// The gates between an authorized revision and what merge, publish and
-// finish-wiki may do to GitHub and the wiki, decided against a fresh
+// The gates between an authorized revision and what merge and publish (and,
+// through finish-guard.ts, finish-wiki) may do to GitHub and the wiki, decided against a fresh
 // current revision (src/revision.ts) and the issue's saved state rather
 // than any claim in a request. Publishing and finishing also need the saved
 // security review to have found nothing at exactly the merged result. Each
@@ -37,12 +37,6 @@ interface PublishRefusal {
     | "code-mismatch"
     | "no-receipt"
     | "security";
-  detail: string;
-}
-
-interface FinishRefusal {
-  finished: false;
-  reason: "inputs-changed" | "wiki-unpublished" | "wiki-changed" | "security";
   detail: string;
 }
 
@@ -245,49 +239,5 @@ function mergedResult(
   return { code, wiki: revision.wiki, inputs: revision.inputs };
 }
 
-// The saved completion finish-wiki may act on: done, with the merged
-// revision, its PR (if any) merged at merged.code (a change with no PR
-// merged no code), the trusted inputs unchanged since, and the saved
-// security review clear at exactly that merged revision. A state that isn't
-// such a completion throws; new trusted input refuses, so the issue stays
-// open for the author, and so does a security review that didn't clear it.
-function finishGate(
-  saved: IssueState,
-  current: CurrentRevision,
-): FinishRefusal | undefined {
-  const { merged } = saved;
-  if (saved.stage !== "done" || merged === null) {
-    throw new OpsError(
-      `finish-wiki needs #${saved.number}'s saved state done with a merged revision; it is ${saved.stage}`,
-    );
-  }
-  if (saved.pr === null) {
-    if (saved.flows?.code === true || merged.code !== null) {
-      throw new OpsError(
-        `#${saved.number} is done with code ${String(merged.code)} but no PR`,
-      );
-    }
-  } else {
-    const pr = mergedPr(saved, current);
-    if (pr === "open" || pr.mergeCommit !== merged.code) {
-      throw new OpsError(
-        `#${saved.number} is saved merged at ${String(merged.code)}, which is not PR #${saved.pr}'s merge commit`,
-      );
-    }
-  }
-  if (current.revision.inputs !== merged.inputs) {
-    return {
-      finished: false,
-      reason: "inputs-changed",
-      detail: `the trusted inputs changed since the merge (${current.revision.inputs})`,
-    };
-  }
-  const uncleared = securityRefusal(saved, merged);
-  if (uncleared !== undefined) {
-    return { finished: false, reason: "security", detail: uncleared };
-  }
-  return undefined;
-}
-
-export type { CurrentRevision, FinishRefusal, MergeStale, PublishRefusal };
-export { finishGate, mergeStale, publishGate, REVISION_REQUEST };
+export type { CurrentRevision, MergeStale, PublishRefusal };
+export { mergedPr, mergeStale, publishGate, REVISION_REQUEST };
