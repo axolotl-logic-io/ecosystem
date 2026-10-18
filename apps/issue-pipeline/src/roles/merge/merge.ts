@@ -1,39 +1,36 @@
-// The merge stage (`deterministic-merge-and-publish`): code only, with no
-// model session, since its job holds the merge credentials. It merges only
-// the exact revision the reviewer approved, read fresh before each mutation:
+// The merge stage (`deterministic-merge-and-publish`), the Reviewer's at the
+// caller's serialized merge turn. It merges only the revision the merge
+// authorization names (state.ts mergeAuthorization: the hardened revision,
+// or the Reviewer's own checked integration of it), read fresh before each
+// mutation:
 //
-// - a change to the trusted inputs goes to the author, and a new code or
-//   wiki head, the merge job's own clean rebase included, goes to review;
-// - a conflict or a failed check goes to implement, counted against
-//   `maxSyncs`;
-// - otherwise the wiki is rebased and checked, the head verified if it isn't
-//   yet, CI waited for, and the PR squash-merged in merge-queue order with
-//   its head matched; then the receipt is saved, the reviewed wiki
-//   published and the issue finished;
-// - a done issue whose finish didn't finish only runs the finish op again.
+// - a change to the trusted inputs goes to the author, and a code or wiki
+//   head that moved by anything but the Reviewer's own integration goes
+//   back to review, which hardens it;
+// - a base or wiki that moved, a conflict and a failed check get the
+//   Reviewer's own integration (integration.ts), in bounded writer
+//   sessions, counted against `maxSyncs`, with no review of its own work;
+// - otherwise the head is verified if it isn't yet, the wiki checked, CI
+//   waited for on exactly that head, and the PR squash-merged in merge-queue
+//   order with its head matched; then the receipt is saved, and the
+//   read-only security review of the merged result decides whether the wiki
+//   publishes and the issue completes (publish.ts, security.ts);
+// - a done issue whose finish didn't finish only runs the finish op again,
+//   once a security receipt approves exactly what merged.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState, Revision } from "../../state.ts";
-import {
-  afterOwnMerge,
-  finishCompleted,
-  publishOnly,
-  wikiReady,
-} from "./publish.ts";
-import {
-  counted,
-  failed,
-  implementWith,
-  toImplement,
-  toReview,
-  waiting,
-} from "./returns.ts";
-import type { CurrentRevision } from "./source.ts";
-import { approvalGate, currentRevision, opReply } from "./source.ts";
-import { verifyHead } from "./verify.ts";
-
-const SHORT_SHA_LENGTH = 12;
+import { SHORT_SHA } from "../change-task.ts";
+import { opReply, readyPr } from "../op-replies.ts";
+import type { CurrentRevision } from "../revision-source.ts";
+import { currentRevision } from "../revision-source.ts";
+import { finishCompleted } from "./completion.ts";
+import type { IntegrationNeed } from "./integration.ts";
+import { integrate } from "./integration.ts";
+import { afterOwnMerge, localChecks, publishOnly } from "./publish.ts";
+import { failed, toReview, waiting } from "./returns.ts";
+import { approvalGate } from "./source.ts";
 
 const CI_STATUS = z.union([
   z.looseObject({ status: z.enum(["pass", "pending", "head-changed"]) }),
@@ -41,82 +38,47 @@ const CI_STATUS = z.union([
   z.looseObject({ status: z.literal("fail"), failing: z.array(z.string()) }),
 ]);
 const MERGE = z.union([
-  z.looseObject({ merged: z.literal(true), mergeCommit: z.string().min(1) }),
+  z.looseObject({
+    merged: z.literal(true),
+    mergeCommit: z.string().min(1),
+    headSha: z.string().min(1),
+  }),
   z.looseObject({ merged: z.literal(false), reason: z.string().min(1) }),
 ]);
-const SYNC = z.union([
-  z.looseObject({
-    conflict: z.literal(false),
-    changed: z.boolean(),
-    headSha: z.string(),
-  }),
-  z.looseObject({ conflict: z.literal(true), conflicts: z.array(z.string()) }),
-]);
+
+const CHECKS_ONLY = { code: false, wiki: false };
 
 function short(sha: string | null): string {
-  return sha?.slice(0, SHORT_SHA_LENGTH) ?? "none";
+  return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The merge found the branch behind its base, or conflicting with it: rebase
-// it, counted as one sync, and verify the new head, which then goes to
-// review, never straight to merge.
-async function rebaseOntoBase(
-  ctx: RoleContext,
-  start: IssueState,
-): Promise<RoleEnd> {
-  const bound = counted(ctx, start, "sync");
-  if ("stop" in bound) {
-    return bound.stop;
-  }
-  let { state } = bound;
-  const sync = await opReply(ctx, "sync-base", {}, SYNC);
-  if (sync.conflict) {
-    const detail = `rebasing onto ${ctx.cfg.baseBranch} conflicted in ${sync.conflicts.join(", ")}`;
-    return implementWith(state, "conflict", detail);
-  }
-  if (!sync.changed) {
-    return waiting(
-      state,
-      "the merge found the branch behind its base, but the rebase found it up to date",
-    );
-  }
-  state = { ...state, headSha: sync.headSha };
-  const check = await verifyHead(ctx, state, {
-    expected: sync.headSha,
-    payload: {},
-  });
-  if (check.kind === "moved") {
-    return toReview(state, "the code head moved after the rebase");
-  }
-  if (check.kind === "failed") {
-    return implementWith(state, "retest", check.detail);
-  }
-  const why = `rebased cleanly onto ${ctx.cfg.baseBranch} as ${short(sync.headSha)} and verified`;
-  return toReview(check.state, why);
+function integration(
+  rebase: IntegrationNeed["rebase"],
+  why: string,
+): IntegrationNeed {
+  return { rebase, wikiConflict: null, failing: [], why };
 }
 
-// The checks before the merge, on the approved head `code`: the wiki, verify
-// when this head isn't verified yet, and CI. The state records the verify.
+// The checks before the merge, on the authorized head `code`: verify when
+// this head isn't verified yet, the wiki check, and CI on exactly this head.
 async function checksBeforeMerge(
   ctx: RoleContext,
-  current: CurrentRevision,
   { code, pr }: { code: string; pr: number },
 ): Promise<{ state: IssueState } | { end: RoleEnd }> {
-  let { state } = ctx;
-  const wiki = await wikiReady(ctx, state, current);
-  if (wiki !== null) {
-    return { end: wiki };
+  const local = await localChecks(ctx, ctx.state, { code, codeMerged: null });
+  if (local.kind === "moved") {
+    return { end: toReview(ctx.state, "the code head moved before verify") };
   }
-  if (state.verifiedSha !== code) {
-    const check = await verifyHead(ctx, state, { expected: code, payload: {} });
-    if (check.kind === "moved") {
-      return { end: toReview(state, "the code head moved before verify") };
-    }
-    if (check.kind === "failed") {
-      return { end: toImplement(ctx, state, "retest", check.detail) };
-    }
-    ({ state } = check);
+  if (local.kind === "integrate") {
+    const need: IntegrationNeed = {
+      rebase: CHECKS_ONLY,
+      wikiConflict: local.wikiConflict,
+      failing: local.failing,
+      why: "the authorized head's checks failed at merge",
+    };
+    return { end: await integrate(ctx, ctx.state, need) };
   }
+  const { state } = local;
   const ci = await opReply(
     ctx,
     "ci-status",
@@ -127,7 +89,9 @@ async function checksBeforeMerge(
     case "pass":
       return { state };
     case "pending":
-      return { end: waiting(state, "CI is still running on the head") };
+      return {
+        end: waiting(state, `CI is still running on ${short(code)}`),
+      };
     case "head-changed":
       return { end: toReview(state, "the PR head moved during CI") };
     case "no-checks":
@@ -139,21 +103,28 @@ async function checksBeforeMerge(
           state,
         },
       };
-    case "fail":
-      return {
-        end: toImplement(ctx, state, "ci", `failing: ${ci.failing.join(", ")}`),
+    case "fail": {
+      const failing = ci.failing.map((id) => ({
+        id: `ci: ${id}`,
+        pass: false,
+        detail: `the required CI check ${id} failed on ${code}`,
+      }));
+      const need: IntegrationNeed = {
+        rebase: CHECKS_ONLY,
+        wikiConflict: null,
+        failing,
+        why: `CI failed on ${short(code)}`,
       };
+      return { end: await integrate(ctx, state, need) };
+    }
     default:
       return { end: failed(state, "ci-status: unexpected status") };
   }
 }
 
-function mergeSummary(state: IssueState, revision: Revision): string {
-  return `Approved in review at code ${short(revision.code)}, wiki ${short(revision.wiki)} and trusted inputs ${short(revision.inputs)}; verified at ${short(state.verifiedSha)}; CI passed.`;
-}
-
-// What a refused merge means: wait for the queue, review a moved head,
-// rebase onto a moved base, or stop on GitHub's refusal.
+// What a refused merge means: wait for the queue, harden a moved head,
+// integrate a moved base or wiki, mark a draft ready, or stop on GitHub's
+// refusal.
 async function refusedMerge(
   ctx: RoleContext,
   state: IssueState,
@@ -169,16 +140,31 @@ async function refusedMerge(
     case "wiki-missing":
       return failed(
         state,
-        "the issue's wiki checkout doesn't hold the approved wiki commit, so the merge refused to merge code whose wiki it can't publish",
+        "the issue's wiki checkout doesn't hold the authorized wiki commit, so the merge refused to merge code whose wiki it can't publish",
       );
     case "wiki-behind":
-      return waiting(
+      return await integrate(
+        ctx,
         state,
-        "the wiki moved since its rebase; the next merge job rebases it again",
+        integration({ code: false, wiki: true }, "the wiki moved"),
       );
     case "behind":
     case "conflict":
-      return await rebaseOntoBase(ctx, state);
+      return await integrate(
+        ctx,
+        state,
+        integration(
+          { code: true, wiki: true },
+          `the branch is ${reason} ${ctx.cfg.baseBranch}`,
+        ),
+      );
+    case "draft": {
+      // An interrupted job left the PR a draft; the saved state is the
+      // authorization ready-pr checks.
+      await ctx.save(state);
+      await readyPr(ctx, state);
+      return waiting(state, "the PR was still a draft; it is marked ready now");
+    }
     default:
       return {
         kind: "stop",
@@ -189,7 +175,11 @@ async function refusedMerge(
   }
 }
 
-// The open PR's merge, at the approved code head.
+function mergeSummary(state: IssueState, authorized: Revision): string {
+  return `Merged at code ${short(authorized.code)}, wiki ${short(authorized.wiki)} and trusted inputs ${short(authorized.inputs)}; verified at ${short(state.verifiedSha)}; the wiki checked and CI passed on that head.`;
+}
+
+// The open PR's merge, at the authorized code head.
 async function mergeCode(
   ctx: RoleContext,
   current: CurrentRevision,
@@ -208,10 +198,7 @@ async function mergeCode(
   if (pr.state !== "OPEN") {
     return failed(ctx.state, `PR #${pr.number} is ${pr.state}`);
   }
-  const checked = await checksBeforeMerge(ctx, current, {
-    code,
-    pr: pr.number,
-  });
+  const checked = await checksBeforeMerge(ctx, { code, pr: pr.number });
   if ("end" in checked) {
     return checked.end;
   }
@@ -221,24 +208,33 @@ async function mergeCode(
   if (gate !== null) {
     return gate;
   }
-  const approved = fresh.revision;
+  const authorized = fresh.revision;
   const reply = await opReply(
     ctx,
     "merge",
     {
+      number: ctx.issue,
       state,
       expectedSha: code,
-      revision: approved,
+      revision: authorized,
       mergeQueue: ctx.mergeQueue,
-      summary: mergeSummary(state, approved),
+      summary: mergeSummary(state, authorized),
     },
     MERGE,
   );
   if (!reply.merged) {
     return await refusedMerge(ctx, state, reply.reason);
   }
-  const { mergeCommit } = reply;
-  return await afterOwnMerge(ctx, state, { approved, mergeCommit });
+  if (reply.headSha !== code) {
+    return toReview(
+      state,
+      `PR #${pr.number} merged at ${short(reply.headSha)}, not the authorized ${short(code)}`,
+    );
+  }
+  return await afterOwnMerge(ctx, state, {
+    authorized,
+    mergeCommit: reply.mergeCommit,
+  });
 }
 
 const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {

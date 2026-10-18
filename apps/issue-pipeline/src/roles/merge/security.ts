@@ -91,21 +91,13 @@ interface MergedResult {
   still: (after: Revision) => boolean;
 }
 
-// The security receipt for exactly `revision`: the saved one when it is for
-// this revision, or a fresh review's, saved before it returns. Ends with the
-// category's stop on a finding, the saved one included.
-async function securityReviewed(
+// A fresh security review of `result`, prepared after the code merge was
+// confirmed: discarded when the revision moved while it ran.
+async function freshReview(
   ctx: RoleContext,
   state: IssueState,
   { revision, codeMerged, still }: MergedResult,
-): Promise<Step<IssueState>> {
-  const saved = state.security;
-  if (saved !== null && sameRevision(saved.revision, revision)) {
-    if (saved.finding === null) {
-      return { ok: true, value: state };
-    }
-    return ended(securityStop(state, saved.finding));
-  }
+): Promise<Step<SecurityReviewReply>> {
   const prepared = await prepare(ctx, revision, codeMerged);
   if (codeMerged !== null && prepared.headSha !== codeMerged.sha) {
     return ended(
@@ -133,12 +125,12 @@ async function securityReviewed(
   }
   const reply = SECURITY_REVIEW_REPLY.parse(result.reply);
   const { revision: after } = await currentRevision(ctx);
+  if (after.inputs !== revision.inputs) {
+    return ended(
+      toAuthor(state, "the trusted inputs changed during the security review"),
+    );
+  }
   if (!still(after)) {
-    if (after.inputs !== revision.inputs) {
-      return ended(
-        toAuthor(state, "the trusted inputs changed during the security review"),
-      );
-    }
     return ended(
       waiting(
         logged(state, "security review discarded: the revision moved"),
@@ -146,12 +138,23 @@ async function securityReviewed(
       ),
     );
   }
+  return { ok: true, value: reply };
+}
+
+// The receipt of `reply`, the review of exactly `revision`: its comment
+// posted and the receipt saved, approval or rejection, before anything
+// publishes or stops.
+async function recorded(
+  ctx: RoleContext,
+  state: IssueState,
+  { revision, reply }: { revision: Revision; reply: SecurityReviewReply },
+): Promise<Step<IssueState>> {
   let on: "issue" | "pr" = "pr";
   if (state.pr === null) {
     on = "issue";
   }
   const commentId = await ctx.post({
-    key: `security-${short(revision.code ?? revision.wiki)}`,
+    key: `security-${short(revision.code)}-${short(revision.wiki)}`,
     on,
     role: "reviewer",
     body: reviewBody(reply, revision),
@@ -170,6 +173,29 @@ async function securityReviewed(
     return ended(securityStop(reviewed, finding));
   }
   return { ok: true, value: reviewed };
+}
+
+// The security receipt for exactly `result.revision`: the saved one when it
+// is for this revision, with no session, or a fresh review's. Ends with the
+// category's stop on a finding, the saved one included.
+async function securityReviewed(
+  ctx: RoleContext,
+  state: IssueState,
+  result: MergedResult,
+): Promise<Step<IssueState>> {
+  const { revision } = result;
+  const saved = state.security;
+  if (saved !== null && sameRevision(saved.revision, revision)) {
+    if (saved.finding === null) {
+      return { ok: true, value: state };
+    }
+    return ended(securityStop(state, saved.finding));
+  }
+  const reply = await freshReview(ctx, state, result);
+  if (!reply.ok) {
+    return reply;
+  }
+  return await recorded(ctx, state, { revision, reply: reply.value });
 }
 
 export type { MergedResult };

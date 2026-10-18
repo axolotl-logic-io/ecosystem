@@ -65,10 +65,5 @@ type WriterReply = z.infer<typeof WRITER_REPLY>;
 type SecurityReviewReply = z.infer<typeof SECURITY_REVIEW_REPLY>;
 type SecurityCategory = z.infer<typeof SECURITY_CATEGORY>;
 
-export type {
-  AuthorReply,
-  SecurityCategory,
-  SecurityReviewReply,
-  WriterReply,
-};
+export type { AuthorReply, SecurityCategory, SecurityReviewReply, WriterReply };
 export { AUTHOR_REPLY, SECURITY_REVIEW_REPLY, WRITER_REPLY };

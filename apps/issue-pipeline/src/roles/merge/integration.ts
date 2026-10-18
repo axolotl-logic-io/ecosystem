@@ -33,12 +33,12 @@ const LIMITS = z.looseObject({
   maxConflictFixes: z.number().int().nonnegative(),
 });
 
-// What an integration does: rebase the code branch onto its base and the
-// wiki branch onto the wiki's latest version (only at the head of the merge
-// queue), go on with a wiki rebase that already stopped on conflicts, and
+// What an integration does: rebase the code branch onto its base (only at
+// the head of the merge queue) and the wiki branch onto the wiki's latest
+// version, go on with a wiki rebase that already stopped on conflicts, and
 // fix checks that already failed.
 interface IntegrationNeed {
-  sync: boolean;
+  rebase: { code: boolean; wiki: boolean };
   wikiConflict: Conflict | null;
   failing: readonly Check[];
   // Why the integration runs, for the log.
@@ -57,7 +57,7 @@ async function synced(
 ): Promise<Step<IssueState>> {
   const { maxConflictFixes } = LIMITS.parse(ctx.cfg);
   let state = start;
-  if (mode.kind === "branch" && need.sync) {
+  if (mode.kind === "branch" && need.rebase.code) {
     const code = await syncSide(ctx, state, { side: "code", maxConflictFixes });
     if (!code.ok) {
       return code;
@@ -74,7 +74,7 @@ async function synced(
       first: need.wikiConflict,
     });
   }
-  if (!need.sync) {
+  if (!need.rebase.wiki) {
     return { ok: true, value: state };
   }
   return await syncSide(ctx, state, { side: "wiki", maxConflictFixes });
@@ -120,7 +120,12 @@ function receipt(
     from,
     revision,
     verified,
-  }: { hardened: Revision; from: Revision; revision: Revision; verified: string },
+  }: {
+    hardened: Revision;
+    from: Revision;
+    revision: Revision;
+    verified: string;
+  },
 ): RoleEnd {
   if (revision.inputs !== hardened.inputs) {
     return toAuthor(state, "the trusted inputs changed during the integration");

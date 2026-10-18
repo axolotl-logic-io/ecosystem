@@ -3,11 +3,7 @@
 // Reviewer writes while it hardens a change and while it integrates one at
 // merge. Every writing session commits only through `pipeline_commit`.
 
-import type {
-  RoleContext,
-  RoleEnd,
-  SessionSpec,
-} from "../job/role-context.ts";
+import type { RoleContext, RoleEnd, SessionSpec } from "../job/role-context.ts";
 import type { IssueState } from "../state.ts";
 import type { WriterReply } from "./replies.ts";
 import { WRITER_REPLY } from "./replies.ts";
@@ -26,7 +22,11 @@ function errorStop(state: IssueState, reason: string): RoleEnd {
   return { kind: "stop", code: "error", reason, state };
 }
 
-function specOf(ctx: RoleContext, phase: WriterPhase, task: string): SessionSpec {
+function specOf(
+  ctx: RoleContext,
+  phase: WriterPhase,
+  task: string,
+): SessionSpec {
   if (phase === "development") {
     return {
       agent: "issue-pipeline-implementor",

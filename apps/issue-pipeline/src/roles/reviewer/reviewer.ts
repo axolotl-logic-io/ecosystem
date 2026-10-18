@@ -187,7 +187,9 @@ async function harden(
   const state = pushed.value;
   const after = await currentRevision(ctx);
   if (after.revision.inputs !== before.inputs) {
-    return ended(toAuthor(state, "the trusted inputs changed during hardening"));
+    return ended(
+      toAuthor(state, "the trusted inputs changed during hardening"),
+    );
   }
   if (after.revision.code !== verified.value) {
     return ended({

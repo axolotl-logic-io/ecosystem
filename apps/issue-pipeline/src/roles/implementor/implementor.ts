@@ -170,7 +170,10 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
   }
   const head = state.headSha?.slice(0, SHORT_SHA) ?? "none";
   const entry = `pushed ${head}; on to review, which hardens it`;
-  return { kind: "next", state: withLog(freshChange(state), entry, new Date()) };
+  return {
+    kind: "next",
+    state: withLog(freshChange(state), entry, new Date()),
+  };
 }
 
 const implementorRole: Role = async (ctx: RoleContext) => {
