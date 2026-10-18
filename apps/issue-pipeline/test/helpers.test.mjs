@@ -7,23 +7,24 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 // A body longer than a GitHub comment, and the length signed() clips it to.
 const OVERLONG_BODY = 70_000;
 const COMMENT_LIMIT = 65_000;
-// The issue a new state is made for.
+// The issue a new state is made for, and its PR.
 const STATE_ISSUE = 7;
+const STATE_PR = 12;
+// The installed version's spend fields in an old state comment.
+const ALLOCATED = 1_990_000;
+const REBASE_ALLOCATED = 450_000;
 
-// Environment variables are named by strings, as src/process.ts takes them.
-Object.assign(
-  process.env,
-  Object.fromEntries([["ISSUE_PIPELINE_ROOT", "/opt/pipeline-root"]]),
-);
 const { globToRegExp, matchAny } = await import("../src/globs.ts");
 const { signature, signed } = await import("../src/comments.ts");
 const { ghIsRead, redactGhArgs } = await import("../src/github.ts");
 const { redactLocalPaths, HOME } = await import("../src/pipeline-root.ts");
-const { parseStateBody, newState } = await import("../src/state.ts");
+const { newIssueState } = await import("../src/state.ts");
+const { parseStateBody, stateBody } = await import("../src/saved-state.ts");
 const { loadConfig, paths, withCheckout } = await import("../src/config.ts");
 
 test("globs match within a segment, across segments, and any leading folders", () => {
@@ -57,21 +58,21 @@ test("a signature names the role, agent, model and run", () => {
 
 test("text posted to GitHub names local paths by variable", () => {
   assert.equal(
-    redactLocalPaths(`/opt/pipeline-root/runs and ${HOME}/x`),
+    redactLocalPaths(`${isolatedRoot}/runs and ${HOME}/x`),
     "$ISSUE_PIPELINE_ROOT/runs and ~/x",
   );
   assert.deepEqual(
     redactGhArgs([
       "api",
-      "/opt/pipeline-root",
+      isolatedRoot,
       "-f",
-      "body=/opt/pipeline-root/a",
+      `body=${isolatedRoot}/a`,
       "--title",
       `${HOME}/t`,
     ]),
     [
       "api",
-      "/opt/pipeline-root",
+      isolatedRoot,
       "-f",
       "body=$ISSUE_PIPELINE_ROOT/a",
       "--title",
@@ -117,34 +118,39 @@ test("only GETs and list or view commands count as reads", () => {
   assert.equal(ghIsRead(["pr", "merge", "1"]), false);
 });
 
-test("a state saved with the old spend fields still loads, keeping them", () => {
-  const state = {
-    ...newState(STATE_ISSUE, 1),
-    allocated: 1_990_000,
-    rebaseAllocated: 450_000,
+test("a saved state with the installed version's spend fields still loads, without them", () => {
+  const state = { ...newIssueState(STATE_ISSUE), pr: STATE_PR };
+  const withSpend = {
+    ...state,
+    allocated: ALLOCATED,
+    rebaseAllocated: REBASE_ALLOCATED,
     rechecking: true,
     sessions: ["triage", "spec"],
   };
-  const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->\n<sub>x</sub>`;
-  assert.deepEqual(parseStateBody(body), state);
+  const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(withSpend)}\n-->\n<sub>x</sub>`;
+  assert.deepEqual(parseStateBody(body, STATE_ISSUE), state);
 });
 
 test("a state comment's body gives its state, or null", () => {
-  const state = newState(STATE_ISSUE, 1);
-  const body = `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->\n<sub>x</sub>`;
-  assert.deepEqual(parseStateBody(body), state);
-  assert.equal(parseStateBody("no mark"), null);
-  assert.equal(parseStateBody("<!-- agent-pipeline:state {bad -->"), null);
+  const state = { ...newIssueState(STATE_ISSUE), pr: STATE_PR };
+  const body = stateBody(STATE_ISSUE, state);
+  assert.deepEqual(parseStateBody(body, STATE_ISSUE), state);
+  assert.equal(parseStateBody("no mark", STATE_ISSUE), null);
+  assert.equal(
+    parseStateBody("<!-- agent-pipeline:state {bad -->", STATE_ISSUE),
+    null,
+  );
   // What the wiki says the state comment holds, in any order.
   const promised = [
+    "version",
     "stage",
     "lease",
     "pr",
     "headSha",
-    "reviewedSha",
+    "gherkin",
+    "review",
     "verifiedSha",
-    "findings",
-    "round",
+    "codeMerged",
   ];
   assert.deepEqual(
     promised.filter((key) => !(key in state)),
@@ -168,7 +174,7 @@ test("a job checkout stands in for its own issue's worktree, with the wiki check
   fs.writeFileSync(file, JSON.stringify(config));
   const cfg = loadConfig(file);
   assert.equal(cfg.checkout, undefined);
-  const work = "/opt/pipeline-root/work/o__r";
+  const work = `${isolatedRoot}/work/o__r`;
   assert.equal(paths.worktree(cfg, STATE_ISSUE), `${work}/issue-7`);
   assert.equal(paths.wiki(cfg, STATE_ISSUE), `${work}/issue-7/wiki`);
   const scoped = withCheckout(cfg, checkout);

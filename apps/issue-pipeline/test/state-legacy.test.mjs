@@ -4,12 +4,26 @@
 // revision the reviewer saw (`approval-is-for-one-revision`).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  approvalHolds,
-  newIssueState,
-  parseIssueState,
-  resumeOf,
-} from "../src/state.ts";
+import "./isolated-root-test-kit.mjs";
+
+const { approvalHolds, newIssueState, resumeOf } = await import(
+  "../src/state.ts"
+);
+const { parseIssueState } = await import("../src/saved-state.ts");
+
+// The legacy issue, its PR and head; a short issue the stage tests use; and
+// a version 2 issue with its PR.
+const LEGACY_ISSUE = 475;
+const LEGACY_PR = 477;
+const LEGACY_HEAD = "abc123";
+const SMALL_ISSUE = 3;
+const OTHER_ISSUE = 9;
+const PUBLISH_PR = 4;
+const SAVED_ISSUE = 5;
+const SAVED_PR = 8;
+// Round counts a stop carried before it was lifted.
+const CONFLICT_FIXES = 2;
+const SYNCS = 3;
 
 const LEASE = {
   lane: "orchestrator",
@@ -21,11 +35,11 @@ const LEASE = {
 // writer's fields that the migration drops.
 const LEGACY_REVIEW = {
   version: 1,
-  number: 475,
+  number: LEGACY_ISSUE,
   stage: "review",
   lease: LEASE,
-  pr: 477,
-  headSha: "abc123",
+  pr: LEGACY_PR,
+  headSha: LEGACY_HEAD,
   flows: { code: true, wiki: true },
   specWritesTests: true,
   specTestsSha: "def456",
@@ -37,13 +51,13 @@ const LEGACY_REVIEW = {
 
 test("a legacy state past the spec goes to the author, then implement", () => {
   for (const stage of ["implement", "review", "checks", "accept", "merge"]) {
-    const state = parseIssueState({ ...LEGACY_REVIEW, stage }, 475);
+    const state = parseIssueState({ ...LEGACY_REVIEW, stage }, LEGACY_ISSUE);
     assert.ok(state !== null);
     assert.equal(state.version, 2);
     assert.equal(state.stage, "author");
     assert.equal(state.resumeStage, "implement");
-    assert.equal(state.pr, 477);
-    assert.equal(state.headSha, "abc123");
+    assert.equal(state.pr, LEGACY_PR);
+    assert.equal(state.headSha, LEGACY_HEAD);
     assert.deepEqual(state.lease, LEASE);
     assert.deepEqual(state.flows, { code: true, wiki: true });
     assert.equal(state.verifiedSha, null);
@@ -54,7 +68,7 @@ test("a legacy state past the spec goes to the author, then implement", () => {
 
 test("triage, spec and no stage go to the author alone", () => {
   for (const stage of ["triage", "spec", undefined]) {
-    const state = parseIssueState({ version: 1, stage }, 9);
+    const state = parseIssueState({ version: 1, stage }, OTHER_ISSUE);
     assert.equal(state?.stage, "author");
     assert.equal(state?.resumeStage, null);
   }
@@ -63,34 +77,44 @@ test("triage, spec and no stage go to the author alone", () => {
 test("stopped, done and publish keep their meaning", () => {
   const stopped = parseIssueState(
     { stage: "stopped", stoppedStage: "fix", stopCode: "conflict" },
-    3,
+    SMALL_ISSUE,
   );
   assert.equal(stopped?.stage, "stopped");
   assert.equal(stopped?.stoppedStage, "author");
   assert.equal(stopped?.resumeStage, "implement");
   assert.equal(stopped?.stopCode, "conflict");
-  assert.equal(parseIssueState({ stage: "done" }, 3)?.stage, "done");
-  const publish = parseIssueState({ stage: "publish", pr: 4 }, 3);
+  assert.equal(parseIssueState({ stage: "done" }, SMALL_ISSUE)?.stage, "done");
+  const publish = parseIssueState(
+    { stage: "publish", pr: PUBLISH_PR },
+    SMALL_ISSUE,
+  );
   assert.equal(publish?.stage, "author");
   assert.equal(publish?.resumeStage, "review");
 });
 
 test("a version 2 state reads back as saved, and a bad field as its default", () => {
-  const saved = { ...newIssueState(5), stage: "review", pr: 8 };
-  assert.deepEqual(parseIssueState(saved, 5), saved);
-  const bad = parseIssueState({ ...saved, pr: "eight", counts: null }, 5);
+  const saved = {
+    ...newIssueState(SAVED_ISSUE),
+    stage: "review",
+    pr: SAVED_PR,
+  };
+  assert.deepEqual(parseIssueState(saved, SAVED_ISSUE), saved);
+  const bad = parseIssueState(
+    { ...saved, pr: "eight", counts: null },
+    SAVED_ISSUE,
+  );
   assert.equal(bad?.pr, null);
   assert.deepEqual(bad?.counts, { conflictFixes: 0, syncs: 0 });
-  assert.equal(parseIssueState({ ...saved, stage: "fix" }, 5), null);
+  assert.equal(parseIssueState({ ...saved, stage: "fix" }, SAVED_ISSUE), null);
 });
 
 test("lifting a stop resumes the stage that stopped with its counts reset", () => {
   const stopped = {
-    ...newIssueState(5),
+    ...newIssueState(SAVED_ISSUE),
     stage: /** @type {const} */ ("stopped"),
     stoppedStage: /** @type {const} */ ("implement"),
     stopCode: "conflict",
-    counts: { conflictFixes: 2, syncs: 3 },
+    counts: { conflictFixes: CONFLICT_FIXES, syncs: SYNCS },
   };
   const lifted = resumeOf(stopped);
   assert.equal(lifted.stage, "implement");
@@ -100,7 +124,7 @@ test("lifting a stop resumes the stage that stopped with its counts reset", () =
 
 test("an approval holds only for the code, wiki and inputs revision reviewed", () => {
   const revision = { code: "c1", wiki: "w1", inputs: "i1" };
-  const state = newIssueState(5);
+  const state = newIssueState(SAVED_ISSUE);
   const approved = {
     ...state,
     review: {
