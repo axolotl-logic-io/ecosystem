@@ -1,13 +1,16 @@
 // @ts-check
 // prepare-review: its reply and the review diff it writes, run through the ops
 // CLI against a local origin. It never calls gh. Split from sync-ops.test.mjs,
-// which no longer fit in 300 lines.
+// which no longer fit in 300 lines. With no stacked branches (#268) the diff
+// is always from the branch's merge base with the base ("prepare-review diffs
+// the branch from its merge base"), so the stacked case is retired; an issue
+// whose prerequisite is open doesn't start (orchestrator.test "an open
+// prerequisite in the after mark holds…").
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { z } from "zod";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("sync-ops-prepare-review");
@@ -21,20 +24,11 @@ const ISSUE = {
   sinceSha: 22,
   rebasedSince: 23,
   wiki: 24,
-  prereq: 25,
-  stacked: 26,
   messages: 27,
 };
 // The two commits after sinceSha, oldest first.
 const COMMITS_IN_ORDER =
   /^# Commits, oldest first\n\ncommit \w+\n\nfix a flaky check\n\ncommit \w+\n\nsimplify the parser\n\n$/u;
-// The reply fields the stacked test reads.
-const REVIEW_REPLY = z.looseObject({
-  baseSha: z.string(),
-  diffPath: z.string(),
-  changedFiles: z.array(z.string()),
-});
-
 // Runs an op; returns its stdout and the gh calls it made.
 /** @param {object} request @param {string} [config] @returns {{ out: string, calls: string[][] }} */
 function ask(request, config) {
@@ -217,21 +211,4 @@ test("prepare-review appends the issue's wiki commits", () => {
   assert.deepEqual(want.reply.changedFiles, ["g", "wiki/Page.md"]);
   const { got, expected } = reviewOutcome(out, want);
   assert.deepEqual(got, expected);
-});
-
-test("prepare-review of a stacked branch diffs only its own change, from the prerequisite's head", () => {
-  const prereqHead = fx.startBranch(ISSUE.prereq, "prereq-file", "prereq");
-  const wt = worktree(ISSUE.stacked);
-  sh(
-    `git -C ${fx.root}/clones/o__r worktree add -q -B agent/issue-${ISSUE.stacked} ${wt} ${prereqHead}`,
-  );
-  fx.commitIn(ISSUE.stacked, "own-file", "own");
-  const stackedOn = { issue: ISSUE.prereq, headSha: prereqHead };
-  const request = { op: "prepare-review", number: ISSUE.stacked, stackedOn };
-  const reply = REVIEW_REPLY.parse(JSON.parse(ask(request).out));
-  assert.equal(reply.baseSha, prereqHead);
-  assert.deepEqual(reply.changedFiles, ["own-file"]);
-  const diff = fs.readFileSync(reply.diffPath, "utf8");
-  assert.ok(diff.includes("own-file"));
-  assert.ok(!diff.includes("prereq-file"));
 });

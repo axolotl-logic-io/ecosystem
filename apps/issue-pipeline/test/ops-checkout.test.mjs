@@ -6,10 +6,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
 import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("ops-checkout");
-const { ask, originRef, sh } = fx;
+const { ask, fakeGh, originRef, sh } = fx;
+// A push's reply: its head when it pushed, its error when it didn't.
+const PUSH_REPLY = z.looseObject({
+  ok: z.boolean(),
+  headSha: z.string().optional(),
+  error: z.string().optional(),
+});
 const NAMES_CHECKOUT = /^bad ops request: .*→ at checkout/su;
 // The issues each test pushes, and the issue another job's checkout names.
 const VIA_CHECKOUT = 11;
@@ -37,20 +44,20 @@ function jobClone(n, file) {
   return { dir, sha: sh(`git -C ${dir} rev-parse HEAD`) };
 }
 
-/** @param {string} stdout @returns {any} the ops reply */
-function replyOf(stdout) {
-  return JSON.parse(stdout);
+// The reply to a push `request`, with no saved state for its issue, so the
+// push reads an empty comment list.
+/** @param {object} request @returns {z.infer<typeof PUSH_REPLY>} */
+function pushed(request) {
+  fakeGh.reply([]);
+  return PUSH_REPLY.parse(JSON.parse(ask({ op: "push", ...request })));
 }
 
 test("push with a checkout pushes that clone's commit, not the issue's worktree", () => {
   const { dir, sha } = jobClone(VIA_CHECKOUT, "job.txt");
-  const reply = replyOf(
-    ask({
-      op: "push",
-      number: VIA_CHECKOUT,
-      checkout: { issue: VIA_CHECKOUT, dir },
-    }),
-  );
+  const reply = pushed({
+    number: VIA_CHECKOUT,
+    checkout: { issue: VIA_CHECKOUT, dir },
+  });
   assert.equal(reply.ok, true, reply.error);
   assert.equal(reply.headSha, sha);
   assert.equal(originRef(`agent/issue-${VIA_CHECKOUT}`), sha);
@@ -60,7 +67,7 @@ test("push with a checkout pushes that clone's commit, not the issue's worktree"
 test("push without a checkout pushes from the issue's worktree", () => {
   fx.startBranch(VIA_WORKTREE, "a.txt", "first");
   const sha = fx.commitIn(VIA_WORKTREE, "b.txt", "second");
-  const reply = replyOf(ask({ op: "push", number: VIA_WORKTREE }));
+  const reply = pushed({ number: VIA_WORKTREE });
   assert.equal(reply.ok, true, reply.error);
   assert.equal(originRef(`agent/issue-${VIA_WORKTREE}`), sha);
 });
@@ -69,13 +76,10 @@ test("a checkout naming another issue leaves the request's issue on its worktree
   const { dir } = jobClone(OTHER_ISSUE, "other.txt");
   fx.startBranch(BESIDE_CHECKOUT, "a.txt", "first");
   const sha = fx.commitIn(BESIDE_CHECKOUT, "b.txt", "second");
-  const reply = replyOf(
-    ask({
-      op: "push",
-      number: BESIDE_CHECKOUT,
-      checkout: { issue: OTHER_ISSUE, dir },
-    }),
-  );
+  const reply = pushed({
+    number: BESIDE_CHECKOUT,
+    checkout: { issue: OTHER_ISSUE, dir },
+  });
   assert.equal(reply.ok, true, reply.error);
   assert.equal(originRef(`agent/issue-${BESIDE_CHECKOUT}`), sha);
   assert.equal(originRef(`agent/issue-${OTHER_ISSUE}`), "");
@@ -87,8 +91,8 @@ test("a malformed checkout is refused, naming checkout", () => {
     { issue: MALFORMED, dir: "" },
   ];
   for (const checkout of malformed) {
-    const reply = replyOf(ask({ op: "push", number: MALFORMED, checkout }));
+    const reply = pushed({ number: MALFORMED, checkout });
     assert.equal(reply.ok, false);
-    assert.match(reply.error, NAMES_CHECKOUT);
+    assert.match(reply.error ?? "", NAMES_CHECKOUT);
   }
 });
