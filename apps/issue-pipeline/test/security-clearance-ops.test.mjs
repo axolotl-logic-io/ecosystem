@@ -15,6 +15,7 @@ import {
   fakeGh,
   MERGE_COMMIT,
   PR,
+  publishOf,
   refusalOf,
   savedListing,
   securityOf,
@@ -87,6 +88,45 @@ test("publish refuses a merged result its saved security review doesn't clear, w
     assert.equal(refusalOf(w.cfg, claimed), "security");
   }
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
+});
+
+// A done completion replayed, as on a reopened done issue: the claim
+// recorded GitHub's merge (codeMerged), and the revision is the merged one.
+test("a replayed publish of a done completion refuses as security unless its review cleared the merged result", () => {
+  const w = world({ wiki: true });
+  const { result } = chainOf(w);
+  merged(w);
+  const codeMerged = { pr: PR, sha: MERGE_COMMIT };
+  for (const security of unclearing(w, result)) {
+    const done = {
+      ...approvedState(result),
+      stage: "done",
+      codeMerged,
+      merged: result,
+      security,
+    };
+    fakeGh.reply([savedListing(done)]);
+    const replay = {
+      number: 7,
+      state: { ...done, security: securityOf(result) },
+      expectedWiki: result.wiki,
+      revision: result,
+    };
+    assert.equal(refusalOf(w.cfg, replay), "security");
+    assert.deepEqual(writes(), []);
+  }
+  assert.equal(wikiRef(w, "master") === w.wikiSha, false);
+  const cleared = {
+    ...approvedState(result),
+    stage: "done",
+    codeMerged,
+    merged: result,
+    security: securityOf(result),
+  };
+  fakeGh.reply([savedListing(cleared)]);
+  const request = { number: 7, state: cleared, expectedWiki: result.wiki };
+  assert.ok(publishOf(w.cfg, { ...request, revision: result }).published);
+  assert.equal(wikiRef(w, "master"), w.wikiSha);
 });
 
 test("publish of a change that lives only in the wiki needs a security review of no code", () => {
