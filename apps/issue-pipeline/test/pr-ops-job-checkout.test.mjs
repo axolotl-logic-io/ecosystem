@@ -23,10 +23,7 @@ function subjectOf(ref) {
 
 test("start-pr in a job checkout commits past its pre-commit hook and pushes the branch", () => {
   const cfg = loadConfig(`${root}/config.json`);
-  const { repo: dir } = openJobCheckout(cfg, ISSUE, {
-    stage: "triage",
-    stackOn: null,
-  });
+  const { repo: dir } = openJobCheckout(cfg, ISSUE, { stage: "implement" });
   fakeGh.reply([
     { when: `repos/o/r/issues/${ISSUE}`, stdout: '{"title":"T"}' },
     { when: "pr list", stdout: "[]" },

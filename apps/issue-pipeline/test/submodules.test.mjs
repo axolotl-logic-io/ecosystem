@@ -67,7 +67,7 @@ test("issue worktrees contain submodules and can be removed with them", () => {
 });
 
 test("stage jobs initialize submodules even without wiki publishing enabled", async () => {
-  const dirs = openJobCheckout(cfg, 2, { stage: "review", stackOn: null });
+  const dirs = openJobCheckout(cfg, 2, { stage: "review" });
   try {
     assert.deepEqual(pagesOf(dirs.repo), ["pinned\n", "pinned\n"]);
     assert.equal(dirs.docs, null);

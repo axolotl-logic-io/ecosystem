@@ -110,7 +110,7 @@ function registeredTool() {
 async function openJob(stage, { withJobStart = true } = {}) {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp);
-  const dirs = openJobCheckout(cfg, ISSUE, { stage, stackOn: null });
+  const dirs = openJobCheckout(cfg, ISSUE, { stage });
   if (dirs.docs === null) {
     throw new Error("the job has no wiki checkout");
   }

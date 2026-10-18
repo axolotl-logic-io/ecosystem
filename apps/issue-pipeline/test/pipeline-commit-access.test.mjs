@@ -54,10 +54,7 @@ for (const [stage, file, refusal] of READ_ONLY_COMMITS) {
 test("a repo with no wiki gets a job folder with repo/ and no docs/", () => {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp, false);
-  const dirs = openJobCheckout(cfg, ISSUE, {
-    stage: "implement",
-    stackOn: null,
-  });
+  const dirs = openJobCheckout(cfg, ISSUE, { stage: "implement" });
   assert.equal(dirs.docs, null);
   assert.ok(fs.existsSync(path.join(dirs.root, "repo", ".git")));
   assert.ok(!fs.existsSync(path.join(dirs.root, "docs")));

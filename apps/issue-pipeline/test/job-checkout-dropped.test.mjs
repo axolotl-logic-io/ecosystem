@@ -47,7 +47,7 @@ const LEFT = ["new.txt", "notes.txt", "blob.bin", "latin1.txt"];
 
 /** @param {Config} cfg @param {string} tmp @returns {Opened} */
 function openIn(cfg, tmp) {
-  const job = { stage: "implement", stackOn: null };
+  const job = { stage: "implement" };
   const dirs = openJobCheckout(cfg, ISSUE, job);
   if (dirs.docs === null) {
     throw new Error("the job has no wiki checkout");
