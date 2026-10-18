@@ -1,26 +1,14 @@
 #!/usr/bin/env node
 // @ts-check
-// Builds the issue pipeline from this folder's src/ into dist/ (build.ts; run
-// `npm ci` at the repo root first), then installs it where pi reads it:
-//
-//   dist/*.mjs                                -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
-//     (BUILT: ops, the stage job and its pi extensions, the orchestrator and the reports)
-//   repos/example.json                        -> $ISSUE_PIPELINE_ROOT/repos/
-//   agents/*.md                               -> $PI_CODING_AGENT_DIR/agents/issue-pipeline/ (default ~/.pi/agent)
-//     (the agents the stage jobs' sessions run as)
-//
-// In agents, {{ISSUE_PIPELINE_ROOT}} and {{PI_CODING_AGENT_DIR}}
-// become those absolute paths. It writes README.md and INSTALLED.json in the
-// root, naming the commit installed. Per-repo configs, setup and teardown
-// scripts, secrets, clones, worktrees and run logs are left alone.
-//
-// It also retires the files an older install left that this version no longer
-// has (install-retired.mjs): the old workflow.js, which an old lane schedule could still
-// run, the old agents and the old pi prompts.
-//
-// The running pipeline changes only here, never when a PR merges, so an agent's
-// PR can't change the code that checks its own work. Every file it replaces or
-// retires is copied first to <root>-backups/<timestamp>-install/.
+// Builds src/ into dist/ (build.ts; run `npm ci` at the repo root first) and
+// installs dist/*.mjs (BUILT) and repos/example.json in $ISSUE_PIPELINE_ROOT
+// and agents/*.md, placeholders filled, in $PI_CODING_AGENT_DIR's
+// agents/issue-pipeline/ (README.md). It names the commit in the root's
+// README.md and INSTALLED.json and retires the files an older install left
+// (retired()), leaving local configs, secrets and work alone. The running
+// pipeline changes only here, never when a PR merges, so an agent's PR can't
+// change the code that checks its own work. Every file it replaces or retires
+// is copied first to <root>-backups/<timestamp>-install/.
 //
 // Usage: node install.mjs [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
@@ -32,20 +20,15 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { backupPath, retireOldFiles } from "./install-retired.mjs";
 
-/**
- * A file to install: where it comes from (a path in this folder, or
- * GENERATED), where it goes, and its text.
- * @typedef {{ from: string, to: string, text: string }} InstallFile
- */
-/**
- * A file this folder holds; `fill` replaces its placeholders.
- * @typedef {{ from: string, to: string, fill: boolean }} Source
- */
-/** @typedef {"new" | "same" | "updated"} Status */
+// A file to install from a path here, GENERATED or RETIRED (text null: it is
+// removed); a Source is one this folder holds, `fill` to fill in.
+/** @typedef {{ from: string, to: string, text: string | null }} InstallFile */
+/** @typedef {{ from: string, to: string, fill: boolean }} Source */
+/** @typedef {"new" | "same" | "updated" | "retired"} Status */
 
 const GENERATED = "(generated)";
+const RETIRED = "(retired)";
 const SHORT_SHA_LENGTH = 7;
 // The backup folder's stamp: yyyymmdd-hhmmss.
 const BACKUP_STAMP_LENGTH = 15;
@@ -64,6 +47,10 @@ const BUILT = [
   "structured-output.mjs",
   "pipeline-commit.mjs",
 ];
+// The agents of the stages an older install had, which retired() retires
+// with its old workflow.js, which an old lane schedule could still run, and
+// its old pi prompts.
+const RETIRED_AGENTS = ["escalation", "ops", "reader", "specifier", "writer"];
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const HOME = os.homedir();
@@ -95,7 +82,6 @@ function git(...args) {
   return r.stdout.trim();
 }
 
-// The real path of `p`, or `p` when it doesn't exist.
 /** @param {string} p @returns {string} */
 function real(p) {
   if (!fs.existsSync(p)) {
@@ -167,9 +153,7 @@ function generated({ repo, commit, dirty, at, shortSha }) {
 
 Installed from \`apps/issue-pipeline/\` of ${repo || "the pipeline's repo"} at ${shortSha}, ${at}.
 
-Don't edit the code here: change it in the repo and run \`mise //apps/issue-pipeline:install\`, which overwrites these files. The per-repo configs in \`repos/\` (except \`example.json\`), their setup and teardown scripts, \`secrets/\`, \`clones/\`, \`work/\` and \`runs/\` are local and never installed.
-
-See \`apps/issue-pipeline/README.md\` in the repo for how it works.
+Don't edit the code here: change it in the repo and run \`mise //apps/issue-pipeline:install\`, which overwrites these files. The per-repo configs in \`repos/\` (except \`example.json\`), their setup and teardown scripts, \`secrets/\`, \`clones/\`, \`work/\` and \`runs/\` are local and never installed. See \`apps/issue-pipeline/README.md\` in the repo for how it works.
 `,
     },
     {
@@ -180,8 +164,11 @@ See \`apps/issue-pipeline/README.md\` in the repo for how it works.
   ];
 }
 
-/** @param {string | null} old @param {string} text @returns {Status} */
+/** @param {string | null} old @param {string | null} text @returns {Status} */
 function statusOf(old, text) {
+  if (text === null) {
+    return "retired";
+  }
   if (old === null) {
     return "new";
   }
@@ -195,13 +182,19 @@ function statusOf(old, text) {
 /** @param {InstallFile} f @param {string | null} old @param {string} backup @returns {void} */
 function write(f, old, backup) {
   if (old !== null && f.from !== GENERATED) {
-    fs.writeFileSync(backupPath(f.to, backup), old);
+    const copy = path.join(backup, path.relative(path.parse(f.to).root, f.to));
+    fs.mkdirSync(path.dirname(copy), { recursive: true });
+    fs.writeFileSync(copy, old);
+  }
+  if (f.text === null) {
+    fs.rmSync(f.to);
+    return;
   }
   fs.mkdirSync(path.dirname(f.to), { recursive: true });
   fs.writeFileSync(f.to, f.text);
 }
 
-// Lists each file's status and, unless a dry run, writes the changed ones.
+// Lists each file's status and, unless a dry run, writes or removes it.
 // Returns how many pipeline files (not generated ones) change.
 /** @param {InstallFile[]} files @param {string} backup @returns {number} */
 function install(files, backup) {
@@ -224,6 +217,22 @@ function install(files, backup) {
   return changed;
 }
 
+// The retired files present, never a folder or a file `files` installs.
+/** @param {InstallFile[]} files @returns {InstallFile[]} */
+function retired(files) {
+  const installed = new Set(files.map((f) => f.to));
+  const agents = path.join(AGENT_DIR, "agents/issue-pipeline");
+  return [
+    path.join(ROOT, "workflow.js"),
+    ...RETIRED_AGENTS.map((a) => path.join(agents, `issue-pipeline-${a}.md`)),
+    path.join(AGENT_DIR, "prompts/pipeline-start.md"),
+    path.join(AGENT_DIR, "prompts/pipeline-pause.md"),
+  ]
+    .filter((to) => !installed.has(to) && fs.existsSync(to))
+    .filter((to) => fs.lstatSync(to).isFile())
+    .map((to) => ({ from: RETIRED, to, text: null }));
+}
+
 /** @param {number} changed @param {string} shortSha @param {string} backup @returns {string} */
 function outcome(changed, shortSha, backup) {
   if (dryRun) {
@@ -241,7 +250,6 @@ function outcome(changed, shortSha, backup) {
 // the commit and the uncommitted changes.
 /** @returns {{ commit: string, dirty: string | null }} */
 function checkedBuild() {
-  // The pipeline's own worktrees live under the root, and agents work in them.
   if (real(SRC) === real(ROOT) || real(SRC).startsWith(real(ROOT) + path.sep)) {
     fail(
       `refusing to install from ${SRC}, inside the pipeline root; install from a checkout of your own`,
@@ -272,36 +280,25 @@ function main() {
   const repo = (git("remote", "get-url", "origin") ?? "")
     .replace(GITHUB_PREFIX, "")
     .replace(GIT_SUFFIX, "");
-
   const files = sources().map(read);
   for (const f of files) {
-    if (f.text.includes("{{")) {
+    if (f.text?.includes("{{")) {
       fail(`${f.from} has a placeholder this script doesn't know`);
     }
   }
-
+  files.push(...retired(files));
   const at = new Date().toISOString();
   let shortSha = commit.slice(0, SHORT_SHA_LENGTH);
   if (dirty) {
     shortSha += " (with uncommitted changes)";
   }
   files.push(...generated({ repo, commit, dirty, at, shortSha }));
-
   const stamp = at
     .replace(DATE_PUNCTUATION, "")
     .replace("T", "-")
     .slice(0, BACKUP_STAMP_LENGTH);
   const backup = path.join(`${ROOT}-backups`, `${stamp}-install`);
-  const installed = install(files, backup);
-  const retired = retireOldFiles({
-    root: ROOT,
-    agentDir: AGENT_DIR,
-    installed: new Set(files.map((f) => f.to)),
-    backup,
-    dryRun,
-    shown: (file) => file.replace(HOME, "~"),
-  });
-  const changed = installed + retired;
+  const changed = install(files, backup);
   console.log(outcome(changed, shortSha, backup));
 }
 

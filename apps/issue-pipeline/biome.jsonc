@@ -25,7 +25,6 @@
     {
       "includes": [
         "install.mjs",
-        "install-retired.mjs",
         "test/**",
         "build.ts",
         "src/ops.ts",

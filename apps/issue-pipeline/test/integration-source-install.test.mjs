@@ -1,5 +1,5 @@
 // @ts-check
-// install.mjs retires the files an older install left (install-retired.mjs)
+// install.mjs retires the files an older install left
 // in temporary roots: a dry run lists them and touches nothing, an install
 // backs each one up and removes it, and it leaves pi's other files and the
 // current agents in place.
