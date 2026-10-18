@@ -1,19 +1,21 @@
-// The job's verification of the implementor's work (`verify-runs-repo-checks`):
-// the repo's configured checks through `verify`, then `wiki-check`, never the
-// session's word. A failure gets a fix session, up to `maxCiFixes` of them in
-// a job, and stops with check-fixes after that, or as soon as a fix session
-// says no change in the repo can fix them. Once the code merged, verify
-// checks the merge commit itself, which wiki-only work can't change, so a
-// failure there stops with check-fixes without a fix session.
+// The pipeline's verification of a change (`verify-runs-repo-checks`): the
+// repo's configured checks through `verify`, then `wiki-check`, never a
+// session's word. The Reviewer runs it while it hardens a change and while
+// it integrates one at merge. A failure gets a fix session of that phase, up
+// to `maxCiFixes` of them in a job, and stops with check-fixes after that,
+// or as soon as a fix session says no change in the repo can fix them. Once
+// the code merged, verify checks the merge commit itself, which wiki-only
+// work can't change, so a failure there stops with check-fixes without a fix
+// session.
 
-import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
-import type { CodeMerged, IssueState } from "../../state.ts";
+import type { RoleContext, RoleEnd } from "../job/role-context.ts";
+import type { CodeMerged, IssueState } from "../state.ts";
+import type { Mode } from "./change-task.ts";
+import { fixTask } from "./change-task.ts";
 import type { Check } from "./op-replies.ts";
 import { opReply, VERIFY_REPLY, WIKI_CHECK_REPLY } from "./op-replies.ts";
-import type { Step } from "./session.ts";
-import { ended, errorStop, implementorSession } from "./session.ts";
-import type { Mode } from "./task.ts";
-import { fixTask } from "./task.ts";
+import type { Step, WriterPhase } from "./writer-session.ts";
+import { ended, errorStop, writerSession } from "./writer-session.ts";
 
 interface Verification {
   headSha: string;
@@ -22,11 +24,12 @@ interface Verification {
   failed: Check[];
 }
 
-// One job's verification loop: the state its stops keep, the mode and the
-// most fix sessions it may run.
+// One job's verification loop: the state its stops keep, the mode, the
+// phase its fix sessions run in and the most fix sessions it may run.
 interface Loop {
   state: IssueState;
   mode: Mode;
+  phase: WriterPhase;
   maxCiFixes: number;
 }
 
@@ -111,9 +114,10 @@ async function fixSession(
   loop: Loop,
   { failed, attempt }: { failed: readonly Check[]; attempt: number },
 ): Promise<Step<never> | null> {
-  const { state, mode, maxCiFixes: max } = loop;
+  const { state, mode, phase, maxCiFixes: max } = loop;
   const task = fixTask(ctx, mode, { failed, attempt, max });
-  const session = await implementorSession(ctx, state, {
+  const session = await writerSession(ctx, state, {
+    phase,
     task,
     what: "check fix",
   });
@@ -151,13 +155,36 @@ async function verifiedFrom(
 }
 
 // The verified code head: verify and wiki-check pass on it, after up to
-// `maxCiFixes` fix sessions.
+// `maxCiFixes` fix sessions of `phase`. Given `failing`, checks that already
+// failed elsewhere (CI), the first fix session fixes them before any verify.
 async function verifiedHead(
   ctx: RoleContext,
   state: IssueState,
-  { mode, maxCiFixes }: { mode: Mode; maxCiFixes: number },
+  {
+    mode,
+    phase,
+    maxCiFixes,
+    failing = [],
+  }: {
+    mode: Mode;
+    phase: WriterPhase;
+    maxCiFixes: number;
+    failing?: readonly Check[];
+  },
 ): Promise<Step<string>> {
-  return await verifiedFrom(ctx, { state, mode, maxCiFixes }, 1);
+  const loop: Loop = { state, mode, phase, maxCiFixes };
+  if (failing.length === 0) {
+    return await verifiedFrom(ctx, loop, 1);
+  }
+  if (maxCiFixes === 0) {
+    const reason = `checks failed and maxCiFixes allows no check-fix attempt: ${failedIds({ failed: failing })}`;
+    return ended(checksStop(state, reason));
+  }
+  const fixed = await fixSession(ctx, loop, { failed: failing, attempt: 1 });
+  if (fixed !== null) {
+    return fixed;
+  }
+  return await verifiedFrom(ctx, loop, 2);
 }
 
 export { verifiedHead };

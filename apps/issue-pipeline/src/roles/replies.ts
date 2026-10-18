@@ -29,11 +29,13 @@ const AUTHOR_REPLY = z.discriminatedUnion("outcome", [
   }),
 ]);
 
-const IMPLEMENTOR_REPLY = z.discriminatedUnion("outcome", [
+// The reply of every session that writes: the Developer's, and the
+// Reviewer's while it hardens or integrates a change.
+const WRITER_REPLY = z.discriminatedUnion("outcome", [
   // The job verifies the work; "done" is never taken as "checks pass".
   z.object({ outcome: z.literal("done"), summary: z.string().min(1) }),
   z.object({ outcome: z.literal("cannot"), reason: z.string().min(1) }),
-  // Resolver mode only: the task asked it to finish a stopped rebase.
+  // A resolver task only: it asked the session to finish a stopped rebase.
   z.object({
     outcome: z.enum(["conflict-resolved", "cannot-fix"]),
     summary: z.string().min(1),
@@ -47,29 +49,26 @@ const SECURITY_CATEGORY = z.enum([
   "abuse-risk",
 ]);
 
-// A finding as the reviewer reports it; the job numbers it (state.ts FINDING).
-const REVIEW_FINDING = z.object({
-  severity: z.enum(["blocking", "note"]),
-  text: z.string().min(1),
-  path: z.string().optional(),
-  line: z.number().int().positive().optional(),
-});
-
-// A non-null `security` stops the issue with that category's stop label,
-// whatever the verdict says.
-const REVIEWER_REPLY = z.object({
-  verdict: z.enum(["approve", "changes"]),
+// The Reviewer's final review, its one read-only session after hardening,
+// which judges security alone: hardening owns the design, the correctness
+// and the tests. A null `security` approves; a category stops the issue
+// with that category's stop label.
+const SECURITY_REVIEW_REPLY = z.object({
   summary: z.string().min(1),
-  findings: z.array(REVIEW_FINDING),
   security: z
     .object({ category: SECURITY_CATEGORY, reason: z.string().min(1) })
     .nullable(),
 });
 
 type AuthorReply = z.infer<typeof AUTHOR_REPLY>;
-type ImplementorReply = z.infer<typeof IMPLEMENTOR_REPLY>;
-type ReviewerReply = z.infer<typeof REVIEWER_REPLY>;
+type WriterReply = z.infer<typeof WRITER_REPLY>;
+type SecurityReviewReply = z.infer<typeof SECURITY_REVIEW_REPLY>;
 type SecurityCategory = z.infer<typeof SECURITY_CATEGORY>;
 
-export type { AuthorReply, ImplementorReply, ReviewerReply, SecurityCategory };
-export { AUTHOR_REPLY, IMPLEMENTOR_REPLY, REVIEW_FINDING, REVIEWER_REPLY };
+export type {
+  AuthorReply,
+  SecurityCategory,
+  SecurityReviewReply,
+  WriterReply,
+};
+export { AUTHOR_REPLY, SECURITY_REVIEW_REPLY, WRITER_REPLY };

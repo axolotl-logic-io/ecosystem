@@ -1,12 +1,13 @@
-// What the reviewer reviews, read fresh from the ops: the `current-revision`
-// op's code head, wiki head and trusted-inputs revision, and the issue's PR as
-// GitHub reports it. The reviewer reads it before and after its session, so a
-// verdict on a revision that moved while it read is never recorded.
+// The issue's revision as the Reviewer reads it, fresh from the
+// `current-revision` op: its code head, wiki head and trusted-inputs
+// revision, and its PR as GitHub reports it. The Reviewer reads it before
+// and after each step that binds a revision, so a verdict, a hardening or an
+// integration of a revision that moved meanwhile is never recorded.
 
 import { z } from "zod";
-import type { RoleContext } from "../../job/role-context.ts";
-import { unreadableReply } from "../../job/role-context.ts";
-import type { CodeMerged, Revision } from "../../state.ts";
+import type { RoleContext } from "../job/role-context.ts";
+import type { CodeMerged } from "../state.ts";
+import { opReply } from "./op-replies.ts";
 
 const CURRENT_REVISION = z.looseObject({
   revision: z.object({
@@ -27,16 +28,12 @@ const CURRENT_REVISION = z.looseObject({
 type CurrentRevision = z.infer<typeof CURRENT_REVISION>;
 
 async function currentRevision(ctx: RoleContext): Promise<CurrentRevision> {
-  const reply = await ctx.op("current-revision", { state: ctx.state });
-  const parsed = CURRENT_REVISION.safeParse(reply);
-  if (!parsed.success) {
-    throw unreadableReply("current-revision", z.prettifyError(parsed.error));
-  }
-  return parsed.data;
-}
-
-function sameRevision(a: Revision, b: Revision): boolean {
-  return a.code === b.code && a.wiki === b.wiki && a.inputs === b.inputs;
+  return await opReply(
+    ctx,
+    "current-revision",
+    { state: ctx.state },
+    CURRENT_REVISION,
+  );
 }
 
 // Whether GitHub confirms the code merge the claim recorded: the same PR,
@@ -56,4 +53,4 @@ function codeMergeConfirmed(
 }
 
 export type { CurrentRevision };
-export { codeMergeConfirmed, currentRevision, sameRevision };
+export { codeMergeConfirmed, currentRevision };

@@ -1,214 +1,56 @@
-// The reviewer (`one-review-session`): one read-only session per round over
-// the code and wiki change, the Gherkin, AGENTS.md and the previous findings.
-// Its verdict binds the exact revision it saw (`approval-is-for-one-revision`):
-// the role reads the code head, the wiki head and the trusted inputs before
-// and after the session and discards a verdict when any of them moved. A
-// security finding stops the issue whatever the verdict says.
+// The Reviewer's hardening, the review stage's one role. A writing session
+// owns the change's design, correctness and tests: it examines the
+// Developer's draft against the Gherkin, adds tests and fixes defects. The
+// pipeline then verifies the result (`verify-runs-repo-checks`), with fix
+// sessions within `maxCiFixes`, pushes it and checkpoints the exact revision
+// it hardened (`state.hardened`), which alone authorizes the merge
+// (`approval-is-for-one-revision`); only then is the draft PR marked ready.
+// Hardening never rebases or syncs the change: the merge stage integrates
+// it. The security review comes after the merge (src/roles/merge/).
 
 import { z } from "zod";
+import { flowsOf } from "../../flows.ts";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
-import { unreadableReply } from "../../job/role-context.ts";
-import type { CodeMerged, Finding, IssueState, Revision } from "../../state.ts";
-import { withLog } from "../../state.ts";
-import type { ReviewerReply } from "../replies.ts";
-import { REVIEWER_REPLY } from "../replies.ts";
-import type { CurrentRevision } from "./source.ts";
-import { codeMergeConfirmed, currentRevision, sameRevision } from "./source.ts";
-import type { PreparedReview } from "./task.ts";
-import { findingLine, reviewerTask } from "./task.ts";
+import type { IssueState, Revision } from "../../state.ts";
+import { approvalHolds, withLog } from "../../state.ts";
+import type { Mode } from "../change-task.ts";
+import { changeModeOf, SHORT_SHA } from "../change-task.ts";
+import { opReply, PUSH_REPLY, readyPr } from "../op-replies.ts";
+import type { CurrentRevision } from "../revision-source.ts";
+import { codeMergeConfirmed, currentRevision } from "../revision-source.ts";
+import { verifiedHead } from "../verification.ts";
+import type { Step } from "../writer-session.ts";
+import { ended, errorStop, writerSession } from "../writer-session.ts";
+import { hardeningTask } from "./task.ts";
 
-const SHORT_SHA_LENGTH = 12;
-
-const VERDICT_TITLES: Readonly<Record<Verdict, string>> = {
-  approve: "approved",
-  changes: "changes requested",
-};
-
-// The config's bound on review rounds; the config's defaults fill it in.
-const FIX_ROUNDS = z.looseObject({
-  maxFixRounds: z.number().int().nonnegative(),
+// The config's bound on a job's check-fix sessions; its defaults fill it in.
+const CHECK_FIXES = z.looseObject({
+  maxCiFixes: z.number().int().nonnegative(),
 });
-
-const PREPARED = z.looseObject({
-  headSha: z.string(),
-  diffPath: z.string().min(1),
-  bundlePath: z.string().min(1),
-  changedFiles: z.array(z.string()),
-});
-
-type Prepared = PreparedReview & { headSha: string };
-type Verdict = ReviewerReply["verdict"];
 
 function logged(state: IssueState, entry: string): IssueState {
   return withLog(state, entry, new Date());
 }
 
-// The state with the last verdict voided, keeping its revision for the record.
-function voided(state: IssueState): IssueState {
-  return { ...state, review: { ...state.review, verdict: null } };
+function short(sha: string | null): string {
+  return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
 // The trusted inputs moved past the Gherkin: the author goes first, and the
 // issue comes back to review.
 function toAuthor(state: IssueState, why: string): RoleEnd {
   const next: IssueState = {
-    ...voided(state),
+    ...state,
     stage: "author",
     resumeStage: "review",
+    hardened: null,
+    integration: null,
   };
   return { kind: "next", state: logged(next, `${why}; back to the author`) };
 }
 
-function failed(state: IssueState, reason: string): RoleEnd {
-  return { kind: "stop", code: "error", reason, state };
-}
-
-async function prepare(
-  ctx: RoleContext,
-  round: number,
-  codeMerged: CodeMerged | null,
-): Promise<Prepared> {
-  const reply = await ctx.op("prepare-review", {
-    tag: `r${round}`,
-    sinceSha: null,
-    codeMerged,
-  });
-  const parsed = PREPARED.safeParse(reply);
-  if (!parsed.success) {
-    throw unreadableReply("prepare-review", z.prettifyError(parsed.error));
-  }
-  return parsed.data;
-}
-
-// The reply's findings with ids, numbered on from the last round's.
-function numbered(
-  previous: readonly Finding[],
-  reply: ReviewerReply,
-): Finding[] {
-  const last = Math.max(0, ...previous.map((finding) => finding.id));
-  return reply.findings.map((finding, index) => ({
-    ...finding,
-    id: last + index + 1,
-  }));
-}
-
-function short(sha: string | null): string {
-  if (sha === null) {
-    return "none";
-  }
-  return `\`${sha.slice(0, SHORT_SHA_LENGTH)}\``;
-}
-
-function reviewBody(
-  round: number,
-  verdict: Verdict,
-  reply: ReviewerReply,
-  { findings, revision }: { findings: readonly Finding[]; revision: Revision },
-): string {
-  const lines = [
-    `## Review, round ${round}: ${VERDICT_TITLES[verdict]}`,
-    "",
-    reply.summary,
-    "",
-  ];
-  if (findings.length > 0) {
-    lines.push("### Findings", "", ...findings.map(findingLine), "");
-  }
-  lines.push(
-    `Reviewed code ${short(revision.code)}, wiki ${short(revision.wiki)} and trusted inputs ${short(revision.inputs)}. A change to any of them voids this verdict.`,
-  );
-  return lines.join("\n");
-}
-
-// A security finding stops the issue for a person, whatever the verdict, and
-// even when the head moved during the review: the finding is about code the
-// pipeline was about to merge.
-function securityStop(
-  state: IssueState,
-  reply: ReviewerReply,
-  revision: Revision,
-): RoleEnd | null {
-  if (reply.security === null) {
-    return null;
-  }
-  const { category, reason } = reply.security;
-  const round = state.review.round + 1;
-  const findings = numbered(state.review.findings, reply);
-  const stopped: IssueState = {
-    ...state,
-    review: { ...state.review, verdict: null, findings, revision },
-  };
-  return {
-    kind: "stop",
-    code: category,
-    reason: `security review (${category}): ${reason}`,
-    state: logged(stopped, `review round ${round}: security ${category}`),
-  };
-}
-
-// The verdict for exactly `revision`: approve to merge, or changes back to
-// implement until the fix rounds run out.
-async function recordVerdict(
-  ctx: RoleContext,
-  reply: ReviewerReply,
-  revision: Revision,
-): Promise<RoleEnd> {
-  const { state } = ctx;
-  const round = state.review.round + 1;
-  const findings = numbered(state.review.findings, reply);
-  const blocking = findings.some((finding) => finding.severity === "blocking");
-  // An approval with a blocking finding contradicts itself: it is changes.
-  let verdict: Verdict = "changes";
-  if (reply.verdict === "approve" && !blocking) {
-    verdict = "approve";
-  }
-  // A change that lives only in the wiki has no PR.
-  let on: "issue" | "pr" = "pr";
-  if (state.pr === null) {
-    on = "issue";
-  }
-  // One comment per round, keyed like the round's prepared review, so a
-  // round never overwrites an earlier one.
-  const commentId = await ctx.post({
-    key: `review-r${round}`,
-    on,
-    role: "reviewer",
-    body: reviewBody(round, verdict, reply, { findings, revision }),
-  });
-  if (verdict === "approve") {
-    const approved: IssueState = {
-      ...state,
-      stage: "merge",
-      review: { ...state.review, verdict, commentId, findings, revision },
-    };
-    return {
-      kind: "next",
-      state: logged(approved, `review round ${round}: approved; on to merge`),
-    };
-  }
-  const review = { ...state.review, verdict, commentId, findings, revision };
-  const { maxFixRounds } = FIX_ROUNDS.parse(ctx.cfg);
-  if (state.review.round >= maxFixRounds) {
-    return {
-      kind: "stop",
-      code: "review-rounds",
-      reason: `blocking findings remain after ${maxFixRounds} fix rounds`,
-      state: { ...state, review },
-    };
-  }
-  const changes: IssueState = {
-    ...state,
-    stage: "implement",
-    review: { ...review, round },
-  };
-  return {
-    kind: "next",
-    state: logged(changes, `review round ${round}: changes; back to implement`),
-  };
-}
-
-// Why `current` can't be reviewed now, or null when it can.
-function notReviewable(
+// Why `current` can't be hardened now, or null when it can.
+function notHardenable(
   ctx: RoleContext,
   current: CurrentRevision,
 ): RoleEnd | null {
@@ -219,71 +61,196 @@ function notReviewable(
   }
   const { codeMerged } = state;
   if (codeMerged !== null && !codeMergeConfirmed(current, codeMerged)) {
-    return failed(
+    return errorStop(
       state,
       `GitHub doesn't confirm PR #${codeMerged.pr} merged as ${codeMerged.sha}, as the claim recorded`,
     );
   }
   if (current.revision.code === null && current.revision.wiki === null) {
-    return failed(state, "nothing to review: no code head and no wiki commits");
+    return errorStop(
+      state,
+      "nothing to harden: no code head and no wiki commits",
+    );
   }
   return null;
 }
 
-const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
-  const { state } = ctx;
-  const before = await currentRevision(ctx);
-  const refused = notReviewable(ctx, before);
-  if (refused !== null || ctx.inputs.gherkin === null) {
-    return refused ?? toAuthor(state, "the issue has no Gherkin");
-  }
-  const round = state.review.round + 1;
-  const prepared = await prepare(ctx, round, state.codeMerged);
-  const { code } = before.revision;
-  if (state.codeMerged === null && code !== null && prepared.headSha !== code) {
-    return {
-      kind: "wait",
-      reason: "the code head moved while the review was prepared",
-      state: logged(voided(state), "review not run: the head moved"),
-    };
-  }
-  const result = await ctx.session({
-    agent: "issue-pipeline-reviewer",
-    model: ctx.cfg.models.reviewer,
-    task: reviewerTask(ctx, {
-      gherkin: ctx.inputs.gherkin,
-      prepared,
-      revision: before.revision,
-      round,
-      codeMergedSha: state.codeMerged?.sha ?? null,
-    }),
-    schema: REVIEWER_REPLY,
-    commits: false,
+// The hardening session; null when it says it is done.
+async function hardeningSession(
+  ctx: RoleContext,
+  state: IssueState,
+  mode: Mode,
+): Promise<Step<never> | null> {
+  const session = await writerSession(ctx, state, {
+    phase: "hardening",
+    task: hardeningTask(ctx, mode),
+    what: "hardening",
   });
-  if (!result.ok) {
-    if (result.transient) {
-      return { kind: "deferred", error: result.error };
-    }
-    return failed(state, `the reviewer's session failed: ${result.error}`);
+  if (!session.ok) {
+    return session;
   }
-  const reply = REVIEWER_REPLY.parse(result.reply);
-  const security = securityStop(state, reply, before.revision);
-  if (security !== null) {
-    return security;
+  const reply = session.value;
+  if (reply.outcome === "done") {
+    return null;
   }
+  if (reply.outcome === "cannot") {
+    const reason = `hardening found a question only a person can answer: ${reply.reason}`;
+    return ended({ kind: "stop", code: "not-doable", reason, state });
+  }
+  return ended(
+    errorStop(
+      state,
+      `the hardening session replied ${reply.outcome} to its hardening task`,
+    ),
+  );
+}
+
+// Pushes the verified head `verified`: the branch, or the wiki alone for a
+// change with no code to push. A push of anything else stops.
+async function pushHardened(
+  ctx: RoleContext,
+  state: IssueState,
+  { mode, verified }: { mode: Mode; verified: string },
+): Promise<Step<IssueState>> {
+  let payload: object = { number: ctx.issue };
+  if (mode.kind !== "branch") {
+    payload = { number: ctx.issue, wikiOnly: true };
+  }
+  const pushed = await opReply(ctx, "push", payload, PUSH_REPLY);
+  if (pushed.headSha !== verified) {
+    return ended(
+      errorStop(
+        state,
+        `the push left the code head at ${pushed.headSha}, not the verified ${verified}`,
+      ),
+    );
+  }
+  const flows = flowsOf(pushed);
+  if (mode.kind === "branch" && !flows.code) {
+    return ended(
+      errorStop(
+        state,
+        "after hardening the branch changes no code file, so its PR has nothing to merge",
+      ),
+    );
+  }
+  return {
+    ok: true,
+    value: { ...state, headSha: pushed.headSha, verifiedSha: verified, flows },
+  };
+}
+
+// The hardened state: `revision`, read after the push, is checkpointed as
+// the one revision the merge may take.
+function checkpoint(state: IssueState, revision: Revision): IssueState {
+  return {
+    ...state,
+    stage: "review",
+    hardened: revision,
+    integration: null,
+    mergeReturn: null,
+  };
+}
+
+interface Hardened {
+  state: IssueState;
+  revision: Revision;
+}
+
+// Hardens the revision `before` and checkpoints the result, or says why not.
+async function harden(
+  ctx: RoleContext,
+  start: IssueState,
+  before: Revision,
+): Promise<Step<Hardened>> {
+  const mode = changeModeOf(start);
+  const refused = await hardeningSession(ctx, start, mode);
+  if (refused !== null) {
+    return refused;
+  }
+  const { maxCiFixes } = CHECK_FIXES.parse(ctx.cfg);
+  const verified = await verifiedHead(ctx, start, {
+    mode,
+    phase: "hardening",
+    maxCiFixes,
+  });
+  if (!verified.ok) {
+    return verified;
+  }
+  const pushed = await pushHardened(ctx, start, {
+    mode,
+    verified: verified.value,
+  });
+  if (!pushed.ok) {
+    return pushed;
+  }
+  const state = pushed.value;
   const after = await currentRevision(ctx);
-  if (!sameRevision(before.revision, after.revision)) {
-    if (after.revision.inputs !== before.revision.inputs) {
-      return toAuthor(state, "the trusted inputs changed during the review");
-    }
-    return {
-      kind: "wait",
-      reason:
-        "the code or wiki head moved during the review, so its verdict is discarded; the next job reviews the new head",
-      state: logged(voided(state), "review discarded: the head moved"),
-    };
+  if (after.revision.inputs !== before.inputs) {
+    return ended(toAuthor(state, "the trusted inputs changed during hardening"));
   }
-  return await recordVerdict(ctx, reply, after.revision);
+  if (after.revision.code !== verified.value) {
+    return ended({
+      kind: "wait",
+      reason: `the code head moved to ${short(after.revision.code)} after hardening verified ${short(verified.value)}; the next job hardens the new head`,
+      state: logged(state, "hardening not checkpointed: the head moved"),
+    });
+  }
+  const { revision } = after;
+  const entry = `hardened code ${short(revision.code)}, wiki ${short(revision.wiki)}`;
+  const hardened = logged(checkpoint(state, revision), entry);
+  return { ok: true, value: { state: hardened, revision } };
+}
+
+// The hardening's own comment, on the PR or, with none, the issue. It says
+// only that hardening passed: no security review has run yet.
+async function postHardened(
+  ctx: RoleContext,
+  state: IssueState,
+  revision: Revision,
+): Promise<void> {
+  let on: "issue" | "pr" = "pr";
+  if (state.pr === null) {
+    on = "issue";
+  }
+  await ctx.post({
+    key: "hardening",
+    on,
+    role: "reviewer",
+    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\` and wiki \`${short(revision.wiki)}\`, and the pipeline's checks passed on them. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
+  });
+}
+
+// The checkpointed state goes on to merge, its PR marked ready first.
+async function toMerge(
+  ctx: RoleContext,
+  state: IssueState,
+  why: string,
+): Promise<RoleEnd> {
+  await readyPr(ctx, state);
+  const next: IssueState = { ...state, stage: "merge" };
+  return { kind: "next", state: logged(next, `${why}; on to merge`) };
+}
+
+const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
+  const before = await currentRevision(ctx);
+  const refused = notHardenable(ctx, before);
+  if (refused !== null) {
+    return refused;
+  }
+  // A hardening checkpointed for exactly this revision needs no session
+  // again: an interrupted job left its PR to mark ready.
+  if (approvalHolds(ctx.state, before.revision)) {
+    return await toMerge(ctx, ctx.state, "hardening already passed");
+  }
+  const hardened = await harden(ctx, ctx.state, before.revision);
+  if (!hardened.ok) {
+    return hardened.end;
+  }
+  const { state, revision } = hardened.value;
+  await ctx.save(state);
+  await postHardened(ctx, state, revision);
+  return await toMerge(ctx, state, "hardening passed");
 };
 
 export { reviewerRole };
