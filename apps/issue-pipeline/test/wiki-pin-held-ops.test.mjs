@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 import {
   addWiki,
@@ -96,8 +97,7 @@ test("start-pr opens a new branch's draft from a checkout whose wiki gitlink los
   fx.sh(`git -C ${wt} update-index --no-assume-unchanged -- wiki`);
   assert.equal(statusOf(wt), MOVED_WIKI);
   const reply = ask({ op: "start-pr", number: n }, [
-    // start-pr first reads the saved state: no comments, so no codeMerged.
-    { when: `issues/${n}/comments`, stdout: "" },
+    initialWriteStateReply(n),
     { when: `repos/o/r/issues/${n}`, stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${PR}\n` },

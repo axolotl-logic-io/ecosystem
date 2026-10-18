@@ -9,22 +9,21 @@
 // exit push the run's last saved state.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
 import { test } from "node:test";
+import { installFakeGh } from "./fake-gh.mjs";
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
-// The pipeline root and home are temporary before any module reads them.
-const tmp = fs.mkdtempSync("/tmp/issue-pipeline-role-run-");
-process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
-const TEMPORARY_ROOT = path.join(tmp, "root");
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["ISSUE_PIPELINE_ROOT", TEMPORARY_ROOT],
-    ["HOME", path.join(tmp, "home")],
-  ]),
-);
+const tmp = isolatedRoot;
+const fakeGh = installFakeGh();
+fakeGh.reply([
+  { when: "api repos/o/r/collaborators/alice", keep: true },
+  {
+    when: "",
+    code: 1,
+    stderr: "unexpected role-run fake gh request",
+    keep: true,
+  },
+]);
 const { ROOT } = await import("../src/pipeline-root.ts");
 const { runRoleStage } = await import("../src/job/role-run.ts");
 const { stateAt, ISSUE } = await import("./job-fixtures.mjs");
@@ -41,6 +40,8 @@ const SECOND_ID = 10;
 const CFG = {
   repo: "o/r",
   slug: "o__r",
+  account: "bot",
+  allowedUsers: ["alice"],
   models: { author: "m-a", implementor: "m-i", reviewer: "m-r" },
 };
 
@@ -128,7 +129,7 @@ function nextRole(state) {
 }
 
 test("the runner's pipeline root is a temporary one", () => {
-  assert.equal(ROOT, TEMPORARY_ROOT);
+  assert.equal(ROOT, isolatedRoot);
 });
 
 test("the role sees the claim's top-level issue file", async () => {

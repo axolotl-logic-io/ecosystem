@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 import {
   addWiki,
@@ -57,9 +58,9 @@ const SYNC_REPLY = z.looseObject({
   reason: z.string().optional(),
 });
 
-/** @param {object} request @returns {z.infer<typeof SYNC_REPLY>} the op's parsed reply */
+/** @param {{ number: number } & Record<string, unknown>} request @returns {z.infer<typeof SYNC_REPLY>} the op's parsed reply */
 function ask(request) {
-  fx.fakeGh.reply([]);
+  fx.fakeGh.reply([initialWriteStateReply(request.number)]);
   return SYNC_REPLY.parse(JSON.parse(fx.ask(request, config)));
 }
 

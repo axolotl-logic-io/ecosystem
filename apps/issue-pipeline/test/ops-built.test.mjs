@@ -84,8 +84,9 @@ function prViews(sha) {
   const merged = { ...pr, state: "MERGED", mergeCommit: { oid: MERGE_OID } };
   return [
     { when: "--json number", stdout: JSON.stringify(open), keep: true },
-    { when: "--json headRefName", stdout: JSON.stringify(open) },
-    { when: "--json headRefName", stdout: JSON.stringify(merged) },
+    { when: "--json baseRefName", stdout: JSON.stringify(open) },
+    { when: "--json baseRefName", stdout: JSON.stringify(open) },
+    { when: "--json baseRefName", stdout: JSON.stringify(merged) },
   ];
 }
 

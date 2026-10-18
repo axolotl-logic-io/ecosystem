@@ -11,6 +11,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { commentLines, githubComment } from "./fake-gh.mjs";
+import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("ops-checkout");
@@ -60,11 +61,10 @@ function jobClone(n, file, branch = `agent/issue-${n}`) {
   return { dir, branch, sha: sh(`git -C ${dir} rev-parse HEAD`) };
 }
 
-// The reply to a push `request`, with no saved state for its issue, so the
-// push reads an empty comment list.
-/** @param {object} request @returns {z.infer<typeof PUSH_REPLY>} */
-function pushed(request) {
-  fakeGh.reply([]);
+// The reply to a push with an explicitly saved initial premerge binding.
+/** @param {{ number: number, checkout?: unknown }} request @param {string} [boundBranch] @returns {z.infer<typeof PUSH_REPLY>} */
+function pushed(request, boundBranch) {
+  fakeGh.reply([initialWriteStateReply(request.number, boundBranch)]);
   return PUSH_REPLY.parse(JSON.parse(ask({ op: "push", ...request })));
 }
 
@@ -117,10 +117,13 @@ test("a malformed checkout is refused, naming checkout", () => {
 
 test("push with an assigned branch pushes the job's commit to exactly that branch", () => {
   const { dir, branch, sha } = jobClone(VIA_ASSIGNED, "assigned.txt", ASSIGNED);
-  const reply = pushed({
-    number: VIA_ASSIGNED,
-    checkout: { issue: VIA_ASSIGNED, dir, branch },
-  });
+  const reply = pushed(
+    {
+      number: VIA_ASSIGNED,
+      checkout: { issue: VIA_ASSIGNED, dir, branch },
+    },
+    ASSIGNED,
+  );
   assert.equal(reply.ok, true, reply.error);
   assert.equal(originRef(ASSIGNED), sha);
   assert.equal(originRef(`agent/issue-${VIA_ASSIGNED}`), "");

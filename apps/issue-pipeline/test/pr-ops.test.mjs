@@ -4,13 +4,13 @@
 // never marks a PR ready: only ready-pr does (ready-pr-op.test.mjs).
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture, stateReadCall } from "./ops-fixture.mjs";
 import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("pr-ops");
 const { AUTHOR, signed } = await import("../src/comments.ts");
 const { ghIsRead } = await import("../src/github.ts");
-const { newIssueState } = await import("../src/state.ts");
 const { fakeGh, ask, originRef } = fx;
 
 const DRAFT =
@@ -26,7 +26,6 @@ const NULL_AUTHOR = { n: 9, pr: 59 };
 const PUSHED = { n: 7, pr: 57 };
 const EMPTY = { n: 8, pr: 58 };
 const REOPENED = { n: 11, pr: 61 };
-const NO_HARDENED_AUTHORIZATION = /no hardened authorization/u;
 // What a branch with a code change and no wiki reports.
 const CODE = { codeChanged: true, wikiAhead: 0 };
 
@@ -74,8 +73,7 @@ function planDetails(plan) {
 /** @param {number} n @param {number} pr @param {object} [extra] @returns {string} */
 function startPr(n, pr, extra = {}) {
   fakeGh.reply([
-    // start-pr first reads the saved state: no comments, so no codeMerged.
-    { when: `issues/${n}/comments`, stdout: "" },
+    initialWriteStateReply(n),
     { when: `repos/o/r/issues/${n}`, stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${pr}\n` },
@@ -122,7 +120,7 @@ test("start-pr on an existing branch with an open PR only labels it", () => {
   fx.pushFrom(n);
   const before = originRef("agent/issue-3");
   fakeGh.reply([
-    { when: "issues/3/comments", stdout: "" },
+    initialWriteStateReply(n),
     { when: "repos/o/r/issues/3", stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: '[{"number":77}]' },
   ]);
@@ -143,7 +141,10 @@ test("open-pr fills in the draft and leaves it a draft", () => {
   const { n, pr } = DRAFTED;
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
-  fakeGh.reply([{ when: "pr list", stdout: '[{"number":54}]' }]);
+  fakeGh.reply([
+    initialWriteStateReply(n),
+    { when: "pr list", stdout: '[{"number":54}]' },
+  ]);
   const out = ask({ op: "open-pr", number: 4, title: null, body: null });
   const headSha = originRef("agent/issue-4");
   assert.equal(headSha, fx.sh(`git -C ${fx.worktree(n)} rev-parse HEAD`));
@@ -162,7 +163,10 @@ test("open-pr keeps a title and body that already name the issue", () => {
   const { n, pr } = NAMED;
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
-  fakeGh.reply([{ when: "pr list", stdout: '[{"number":55}]' }]);
+  fakeGh.reply([
+    initialWriteStateReply(n),
+    { when: "pr list", stdout: '[{"number":55}]' },
+  ]);
   const by = { role: "tester", agent: "x" };
   const title = "Fix the #5 bug";
   const text = "Fixes #5 by changing g.";
@@ -180,6 +184,7 @@ test("open-pr opens a draft PR when none is open", () => {
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
   fakeGh.reply([
+    initialWriteStateReply(n),
     { when: "pr create", stdout: "https://github.com/o/r/pull/66\n" },
   ]);
   const out = ask({ op: "open-pr", number: 6, title: "", body: "B" });
@@ -196,7 +201,10 @@ test("open-pr accepts the null author fields the workflow sends", () => {
   const { n, pr } = NULL_AUTHOR;
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
-  fakeGh.reply([{ when: "pr list", stdout: '[{"number":59}]' }]);
+  fakeGh.reply([
+    initialWriteStateReply(n),
+    { when: "pr list", stdout: '[{"number":59}]' },
+  ]);
   const by = {
     role: "implementer",
     agent: "issue-pipeline-writer",
@@ -224,7 +232,7 @@ test("push pushes the branch after a real commit", () => {
   const { n, pr } = PUSHED;
   startPr(n, pr);
   const sha = fx.commitIn(n, "g", "work");
-  fakeGh.reply([]);
+  fakeGh.reply([initialWriteStateReply(n)]);
   const out = ask({ op: "push", number: 7 });
   assert.equal(out, okLine("push", { headSha: sha, ...CODE }));
   assert.equal(originRef("agent/issue-7"), sha);
@@ -237,7 +245,7 @@ test("push pushes the branch after a real commit", () => {
 test("exit-push pushes the branch and records the push as exit-push", () => {
   const { n } = PUSHED;
   const sha = fx.commitIn(n, "h", "more work");
-  fakeGh.reply([]);
+  fakeGh.reply([initialWriteStateReply(n)]);
   const out = ask({ op: "exit-push", number: 7 });
   assert.equal(out, okLine("exit-push", { headSha: sha, ...CODE }));
   assert.equal(originRef("agent/issue-7"), sha);
@@ -254,7 +262,7 @@ test("push with no code change and no wiki commits pushes nothing and says so", 
   startPr(n, pr);
   const before = originRef("agent/issue-8");
   const record = pushRecord(fx.root, n);
-  fakeGh.reply([]);
+  fakeGh.reply([initialWriteStateReply(n)]);
   const out = ask({ op: "push", number: 8 });
   const nothing = { headSha: before, codeChanged: false, wikiAhead: 0 };
   assert.equal(out, okLine("push", nothing));
@@ -266,7 +274,7 @@ test("open-pr with reopen reopens the closed PR and fills it in, never marking i
   const { n, pr } = REOPENED;
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
-  fakeGh.reply([{ when: "pr list", stdout: "[]" }]);
+  fakeGh.reply([initialWriteStateReply(n), { when: "pr list", stdout: "[]" }]);
   const out = ask({
     op: "open-pr",
     number: n,
@@ -282,16 +290,4 @@ test("open-pr with reopen reopens the closed PR and fills it in, never marking i
     ...editCalls(pr, `T (#${n})`, body),
     labelCall(pr),
   ]);
-});
-
-// ready-pr's guards are in ready-pr-op.test.mjs; through the ops CLI it is a
-// PR op that fails, writing nothing, without a hardened authorization.
-test("ready-pr is an op, and refuses a state no hardening authorized, writing nothing", () => {
-  const { n, pr } = REOPENED;
-  fakeGh.reply([]);
-  const state = { ...newIssueState(n), pr };
-  const out = JSON.parse(ask({ op: "ready-pr", number: n, state }));
-  assert.equal(out.ok, false);
-  assert.match(out.error, NO_HARDENED_AUTHORIZATION);
-  assert.deepEqual(writes(), []);
 });

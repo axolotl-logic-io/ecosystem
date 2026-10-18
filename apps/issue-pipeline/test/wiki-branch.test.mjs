@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
+import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture, stateReadCall } from "./ops-fixture.mjs";
 import { addSubmodule } from "./submodule-test-kit.mjs";
 
@@ -83,7 +84,7 @@ function seedWikiBranch(n, page) {
 // stdout, what it should be, and the gh calls it made.
 /** @param {number} n @param {number} wikiAhead */
 function pushOp(n, wikiAhead) {
-  fx.fakeGh.reply([]);
+  fx.fakeGh.reply([initialWriteStateReply(n)]);
   const out = fx.ask({ op: "push", number: n }, config);
   const headSha = fx.originRef(`agent/issue-${n}`);
   const want = okLine("push", { headSha, codeChanged: true, wikiAhead });
@@ -139,7 +140,7 @@ test("uncommitted wiki edits still refuse a code push", () => {
   fx.startBranch(DIRTY, "g", "dirty");
   const dir = wikiOf(DIRTY);
   sh(`echo unstaged > ${dir}/Unstaged.md`);
-  fx.fakeGh.reply([]);
+  fx.fakeGh.reply([initialWriteStateReply(DIRTY)]);
   const out = JSON.parse(fx.ask({ op: "push", number: DIRTY }, config));
   assert.equal(out.ok, false);
   assert.ok(
@@ -173,7 +174,7 @@ function wikiOnlyWork(n) {
 
 test("push of a wiki-only change pushes both branches and says the code is unchanged", () => {
   const { wt, dir } = wikiOnlyWork(WIKI_ONLY_PUSH);
-  fx.fakeGh.reply([]);
+  fx.fakeGh.reply([initialWriteStateReply(WIKI_ONLY_PUSH)]);
   const out = fx.ask({ op: "push", number: WIKI_ONLY_PUSH }, config);
   const headSha = headOf(wt);
   const want = { headSha, codeChanged: false, wikiAhead: 1 };
@@ -194,7 +195,7 @@ test("an explicitly committed wiki pin update is a code change", () => {
   const { wt } = wikiOnlyWork(PIN_UPDATE);
   sh(`git -C ${wt} update-index --no-assume-unchanged wiki`);
   sh(`git -C ${wt} add wiki && git -C ${wt} commit -qm pin`);
-  fx.fakeGh.reply([]);
+  fx.fakeGh.reply([initialWriteStateReply(PIN_UPDATE)]);
   const out = JSON.parse(fx.ask({ op: "push", number: PIN_UPDATE }, config));
   assert.equal(out.ok, true, out.error);
   assert.equal(out.codeChanged, true);
@@ -204,7 +205,10 @@ test("an explicitly committed wiki pin update is a code change", () => {
 test("open-pr of a wiki-only change leaves the draft's title, body and draft status alone", () => {
   const { n, pr } = WIKI_ONLY_PR;
   const { wt } = wikiOnlyWork(n);
-  fx.fakeGh.reply([{ when: "pr list", stdout: `[{"number":${pr}}]` }]);
+  fx.fakeGh.reply([
+    initialWriteStateReply(n),
+    { when: "pr list", stdout: `[{"number":${pr}}]` },
+  ]);
   const out = fx.ask(
     { op: "open-pr", number: n, title: "T", body: "B" },
     config,

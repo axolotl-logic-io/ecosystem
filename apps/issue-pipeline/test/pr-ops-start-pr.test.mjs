@@ -4,6 +4,7 @@
 // open PR. Checked through the ops CLI's replies and gh writes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("pr-ops-start-pr");
@@ -62,8 +63,7 @@ function prBody(n, text) {
 /** @param {number} n @param {number} pr @param {string} listed @param {object} extra @returns {string} */
 function startPr(n, pr, listed, extra) {
   fakeGh.reply([
-    // start-pr first reads the saved state: no comments, so no codeMerged.
-    { when: `issues/${n}/comments`, stdout: "" },
+    initialWriteStateReply(n),
     { when: `repos/o/r/issues/${n}`, stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: listed },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${pr}\n` },

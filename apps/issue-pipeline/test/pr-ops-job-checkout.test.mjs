@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
+import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("pr-ops-job-checkout");
@@ -28,8 +29,7 @@ test("start-pr in a job checkout commits past its pre-commit hook and pushes the
     branch: `agent/issue-${ISSUE}`,
   });
   fakeGh.reply([
-    // start-pr first reads the saved state: no comments, so no codeMerged.
-    { when: `issues/${ISSUE}/comments`, stdout: "" },
+    initialWriteStateReply(ISSUE),
     { when: `repos/o/r/issues/${ISSUE}`, stdout: '{"title":"T"}' },
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${PR}\n` },
