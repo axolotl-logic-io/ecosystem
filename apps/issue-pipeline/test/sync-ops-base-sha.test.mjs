@@ -3,6 +3,11 @@
 // checked against that commit, so it is pushed even when the base moved during
 // the fix, and the branch is then behind the base, which the merge op refuses. A head not on that
 // commit, or a commit that isn't on the base, is refused and nothing is pushed.
+// sync-base always rebases onto the base now that branches aren't stacked on
+// a prerequisite's branch (#268; the prerequisite holds the issue instead,
+// orchestrator.test), so sync-ops-stacked.test.mjs is retired: the rebase is
+// sync-ops.test "sync-base rebases onto a moved base and pushes", and the
+// finish-sync check of the commit it rebased onto is this file's.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

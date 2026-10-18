@@ -3,7 +3,10 @@
 // commands, lockfiles and migrations, against local git repos. Every case
 // leaves the worktree clean and no temp worktree behind. Verify no longer
 // runs the new tests against the unfixed code (fails-before-fix): the
-// reviewer judges the tests (src/config-legacy.ts).
+// reviewer judges the tests (src/config-legacy.ts). With no stacked branches
+// (#268), changed files are measured from the base only, so
+// verify-stacked.test.mjs is retired; the changed files are each case's
+// changedFiles here.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

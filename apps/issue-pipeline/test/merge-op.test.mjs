@@ -3,6 +3,13 @@
 // head, the queue and the fresh revision, squash-merges at the approved head
 // and returns GitHub's merge receipt, writing no state, labels, wiki or
 // issue close (`merge-publish-finish-split`).
+// Branches are no longer stacked on a prerequisite's branch (#268): an issue
+// whose after mark names an open prerequisite doesn't start at all
+// (orchestrator.test "an open prerequisite in the after mark holds…"), so
+// merge-stacked-op.test.mjs is retired; a branch behind its base is refused
+// here ("merge refuses a head behind its base without merging") and the
+// queue's hold is "an issue ahead in the merge queue at review holds the
+// merge, whatever its verdict".
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
