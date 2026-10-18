@@ -5,5 +5,5 @@
     "checkJs": true,
     "noEmit": true
   },
-  "include": ["test/**/*.mjs", "install.mjs"]
+  "include": ["test/**/*.mjs", "install.mjs", "install-retired.mjs"]
 }

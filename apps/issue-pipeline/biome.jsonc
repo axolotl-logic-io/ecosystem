@@ -10,85 +10,22 @@
     "includes": ["**", "!AGENTS.md", "!dist"]
   },
   "overrides": [
-    // src/workflow.js runs as a function body in the pi-subagents sandbox,
-    // which provides `args` and `runs`, after the build's helpers bundle,
-    // which defines `workflowModules` (build.ts). This declares those globals
-    // for that one file; it turns no rule off.
-    {
-      "includes": ["src/workflow.js"],
-      "javascript": {
-        "globals": ["args", "runs", "workflowModules"]
-      }
-    },
     // The only exception to the policy (`best-practice-over-lint`): the
-    // pipeline's CLI entry points, the install, the build it runs and the ops
-    // CLI, whose entry is src/ops.ts. Each is a command run from the terminal,
-    // so it must read the process (its arguments, environment and stdin), the
-    // files and the terminal.
-    // The ops CLI's own modules are part of that boundary: they run git, gh
-    // and the configured commands, and keep the clones, worktrees, locks and
-    // logs on disk (#166), clone-setup among them (#213), wiki-publish, which
-    // rebases and publishes the wiki checkout, and rebase, the rebase checks
-    // it shares with the sync ops (#216), as do the ops that
-    // keep files themselves: the sweep's reservations and the claim's worktree checks and setup log
-    // (#183), the PR and sync ops, which run git in the worktree and write
-    // the review diff (#184), and the ops that run git, gh and the configured
-    // shell commands: verify, fails-before-fix and ci-status (#185). The pure
-    // modules (globs, stops, labels, comments, claims, state, start-state,
-    // git-state, and the ops in src/ops/ not listed here) get no exception.
-    // The tests and their kits, like the install, run commands and keep
-    // files, so they need node:test, node:fs, child_process and process (#219).
-    // The stage job (#232) is part of it too: its entry src/job.ts reads its
-    // arguments and writes its summary, src/job/launch.ts spawns ops.mjs and
-    // pi, src/job/agent-definition.ts reads the installed agent files, and the
-    // pi extension src/job/structured-output.ts reads its schema file (#232).
-    // src/job/args.ts reads the job's arguments, src/job/rpc.ts spawns pi in RPC mode, src/job/status.ts writes job.json
-    // and src/job/control.ts keeps the steer socket and the stop signals
-    // (#233). src/job/checkout.ts makes, closes and removes the job's own
-    // checkout and the bare mirrors it comes from with git, and
-    // src/job/exit-push.ts reports a failed exit push on stderr (#250).
-    // src/job/context-log.ts appends to the issue's context.jsonl, and
-    // src/job/stop-handoff.ts runs git in the checkout and writes the handoff
-    // of a writer the job stopped. src/job/reply-file.ts reads the file at
-    // the checkout's head that a session's reply points at
-    // (spec-practices-digest).
-    // src/job/dropped-patch.ts runs git in a checkout and writes the patch of
-    // the changes the job drops, and src/job/teardown.ts names those patches
-    // on stderr and reports a failed notice there (#369).
-    // src/restart-spec.ts reads a restart's spec.md.
-    // src/job/control-protocol.ts sends the steer and push requests over the
-    // job's control socket, and src/job/pipeline-commit-tool.ts, the pi
-    // extension behind `pipeline_commit`, reads its session's commit scope
-    // from the environment and checks the checkouts on disk (#303). The
-    // job's pure modules (raw-results, pool, roles, context-watch,
-    // launch-record, pipeline-commit, commit-options) get no exception, nor
-    // does commit-push, which runs git only through the ops' modules.
-    // The orchestrator (#234) too: its entry src/orchestrate.ts spawns the
-    // jobs and handles the stop signals, src/orchestrator/args.ts reads its
-    // arguments, snapshot.ts checks the jobs' pids, and ledger.ts and log.ts
-    // keep its files, as watchdog-memory.ts keeps the watchdog's (#235) and
-    // rate-limit-backoff.ts the rate-limit backoff's, and
-    // escalation-consult.ts keeps the escalation agent's reply schema and
-    // session folder and gives its pi the orchestrator's environment less
-    // the gh tokens (#282). Its pure modules (queue, schedule, tick,
-    // watchdog) get none. The report CLI's entry src/report.ts (#302) prints
-    // the usage report and sets the exit code; its pure module
-    // src/report/usage.ts gets none. The spec writer's commit check,
-    // src/roles/spec-writer/check.ts, runs git and the configured commands in
-    // the spec head's worktree and writes their logs (#331), as
-    // checks-git.ts, its checks that read the job checkout's heads and
-    // commits, run the no-work tests, drop the spec draft and the handoff
-    // file and reset the issue's branches, does (#334, #335); the role's pure
-    // modules, such as coverage.ts, get none.
-    // src/shell-supervisor.ts is the entry `shell` (process.ts) runs for each
-    // command: it spawns bash in a process group of its own, handles the
-    // stop signals and prints its report. src/process-group.ts signals and
-    // lists process groups, for it, rpc.ts and the job's ops runner, and
-    // src/job/ops-process.ts spawns ops.mjs (#371). Their pure protocol,
-    // src/shell-protocol.ts, gets none.
+    // modules at the pipeline's process boundary may read the process (its
+    // arguments, environment and stdin), the files and the terminal. They are
+    // the install, the build and the tests with their kits; the entries of
+    // the four CLIs (ops.ts, job.ts, orchestrate.ts, report.ts) and the shell
+    // supervisor; the ops modules that run git, gh and the configured
+    // commands or keep the clones, worktrees, locks and logs on disk; the
+    // stage job's modules that spawn ops.mjs and pi, keep its checkout,
+    // control socket, status and logs, or are pi extensions; and the
+    // orchestrator's modules that read its arguments, spawn and check the
+    // jobs and keep its log and memory. Every other module, such as the
+    // roles, the schedule, the saved state and the protocols, gets none.
     {
       "includes": [
         "install.mjs",
+        "install-retired.mjs",
         "test/**",
         "build.ts",
         "src/ops.ts",
@@ -97,7 +34,6 @@
         "src/process-group.ts",
         "src/shell-supervisor.ts",
         "src/config.ts",
-        "src/comment-only.ts",
         "src/locks.ts",
         "src/clone-setup.ts",
         "src/checkouts.ts",
@@ -105,7 +41,6 @@
         "src/wiki-publish.ts",
         "src/rebase.ts",
         "src/issue-context.ts",
-        "src/restart-spec.ts",
         "src/ops/claim.ts",
         "src/ops/claim-state.ts",
         "src/ops/pr.ts",
@@ -114,7 +49,6 @@
         "src/ops/verify.ts",
         "src/ops/checks.ts",
         "src/ops/push.ts",
-        "src/ops/fails-before-fix.ts",
         "src/ops/ci-status.ts",
         "src/job.ts",
         "src/job/launch.ts",
@@ -132,22 +66,16 @@
         "src/job/pipeline-commit-tool.ts",
         "src/job/checkout.ts",
         "src/job/exit-push.ts",
-        "src/job/stop-handoff.ts",
-        "src/job/reply-file.ts",
         "src/job/dropped-patch.ts",
         "src/job/teardown.ts",
         "src/orchestrate.ts",
         "src/orchestrator/args.ts",
         "src/orchestrator/snapshot.ts",
-        "src/orchestrator/ledger.ts",
         "src/orchestrator/log.ts",
         "src/orchestrator/start-job.ts",
         "src/orchestrator/watchdog-memory.ts",
         "src/orchestrator/rate-limit-backoff.ts",
-        "src/orchestrator/escalation-consult.ts",
-        "src/report.ts",
-        "src/roles/spec-writer/check.ts",
-        "src/roles/spec-writer/checks-git.ts"
+        "src/report.ts"
       ],
       "linter": {
         "rules": {

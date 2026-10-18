@@ -14,9 +14,13 @@
 // root, naming the commit installed. Per-repo configs, setup and teardown
 // scripts, secrets, clones, worktrees and run logs are left alone.
 //
+// It also retires the files an older install left that this version no longer
+// has (install-retired.mjs): the old workflow.js, which an old lane schedule could still
+// run, the old agents and the old pi prompts.
+//
 // The running pipeline changes only here, never when a PR merges, so an agent's
-// PR can't change the code that checks its own work. Every file it replaces is
-// copied first to <root>-backups/<timestamp>-install/.
+// PR can't change the code that checks its own work. Every file it replaces or
+// retires is copied first to <root>-backups/<timestamp>-install/.
 //
 // Usage: node install.mjs [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
@@ -28,6 +32,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { backupPath, retireOldFiles } from "./install-retired.mjs";
 
 /**
  * A file to install: where it comes from (a path in this folder, or
@@ -190,9 +195,7 @@ function statusOf(old, text) {
 /** @param {InstallFile} f @param {string | null} old @param {string} backup @returns {void} */
 function write(f, old, backup) {
   if (old !== null && f.from !== GENERATED) {
-    const copy = path.join(backup, path.relative(path.parse(f.to).root, f.to));
-    fs.mkdirSync(path.dirname(copy), { recursive: true });
-    fs.writeFileSync(copy, old);
+    fs.writeFileSync(backupPath(f.to, backup), old);
   }
   fs.mkdirSync(path.dirname(f.to), { recursive: true });
   fs.writeFileSync(f.to, f.text);
@@ -228,7 +231,7 @@ function outcome(changed, shortSha, backup) {
   }
   let where = "";
   if (changed) {
-    where = `; replaced files are in ${backup.replace(HOME, "~")}`;
+    where = `; replaced and retired files are in ${backup.replace(HOME, "~")}`;
   }
   return `installed ${shortSha}: ${changed} pipeline file(s) changed${where}`;
 }
@@ -289,7 +292,16 @@ function main() {
     .replace("T", "-")
     .slice(0, BACKUP_STAMP_LENGTH);
   const backup = path.join(`${ROOT}-backups`, `${stamp}-install`);
-  const changed = install(files, backup);
+  const installed = install(files, backup);
+  const retired = retireOldFiles({
+    root: ROOT,
+    agentDir: AGENT_DIR,
+    installed: new Set(files.map((f) => f.to)),
+    backup,
+    dryRun,
+    shown: (file) => file.replace(HOME, "~"),
+  });
+  const changed = installed + retired;
   console.log(outcome(changed, shortSha, backup));
 }
 
