@@ -8,6 +8,7 @@
 // the merged result (`merge-publish-finish-split`).
 
 import { z } from "zod";
+import { assignedBranch } from "../branch-binding.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
@@ -125,7 +126,7 @@ function checkedView(cfg: Config, req: MergeRequest): PrView {
     );
   }
   const view = viewPr(cfg, req.state.pr);
-  const branch = paths.branch(cfg, req.number);
+  const branch = assignedBranch(cfg, req.number, req.state);
   if (view.headRefName !== branch) {
     throw new OpsError(
       `PR #${req.state.pr} is from ${view.headRefName}, not ${branch}`,

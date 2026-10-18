@@ -6,6 +6,7 @@
 // pipeline, as a diagnostic.
 
 import { adoptPush } from "../adopt-push.ts";
+import { assignedBranch } from "../branch-binding.ts";
 import { lastPush } from "../checkouts.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
@@ -40,12 +41,22 @@ function startingState(
 ): IssueState {
   const { state: saved } = readState(cfg, n, comments);
   if (saved === null) {
-    return newIssueState(n);
+    return { ...newIssueState(n), branch: assignedBranch(cfg, n, null) };
   }
   if (saved.stage === "done" && saved.merged === null) {
     throw new OpsError(`#${n} is done`);
   }
-  return resumeOf(saved);
+  return { ...resumeOf(saved), branch: assignedBranch(cfg, n, saved) };
+}
+
+// Throws, before a claim writes anything, when the issue's saved state is
+// bound to another branch than the one assigned (branch-binding.ts).
+function assertBranchAssigned(
+  cfg: Config,
+  n: number,
+  comments: readonly IssueComment[],
+): void {
+  assignedBranch(cfg, n, readState(cfg, n, comments).state);
 }
 
 // `state` with its PR and code merge as GitHub reports them. A recorded
@@ -125,4 +136,4 @@ function claimedState(
 }
 
 export type { BranchChanged, ClaimedState };
-export { claimedState };
+export { assertBranchAssigned, claimedState };

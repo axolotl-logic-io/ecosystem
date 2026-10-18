@@ -3,11 +3,11 @@
 // and closing a parent whose sub-issues are all closed.
 
 import { z } from "zod";
+import { assignedBranch } from "../branch-binding.ts";
 import { removeWorktree } from "../checkouts.ts";
 import { closeClaims } from "../claims.ts";
 import { comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { paths } from "../config.ts";
 import { gh, ghJson, issueState } from "../github.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError, parseRequest } from "../process.ts";
@@ -57,15 +57,17 @@ function short(sha: string): string {
   return sha.slice(0, SHORT_SHA_LENGTH);
 }
 
-// Deletes the issue's code branch on GitHub, if it is there.
-function deleteBranch(cfg: Config, n: number): void {
+// Deletes the code branch `state` binds the issue to on GitHub, if it is
+// there.
+function deleteBranch(cfg: Config, state: IssueState): void {
+  const n = state.number;
   gh(
     cfg,
     [
       "api",
       "-X",
       "DELETE",
-      `repos/${cfg.repo}/git/refs/heads/${paths.branch(cfg, n)}`,
+      `repos/${cfg.repo}/git/refs/heads/${assignedBranch(cfg, n, state)}`,
       "--silent",
     ],
     { allowFail: true },
@@ -139,7 +141,7 @@ function sameMerged(a: Revision | null, b: Revision | null): boolean {
 // there.
 function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
   const n = state.number;
-  deleteBranch(cfg, n);
+  deleteBranch(cfg, state);
   if (state.pr !== null) {
     setLabels(cfg, state.pr, [LABELS.merged.name], [LABELS.working.name]);
     clearStopLabels(cfg, state.pr);

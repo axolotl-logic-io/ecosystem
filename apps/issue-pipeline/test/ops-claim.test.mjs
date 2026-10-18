@@ -12,13 +12,13 @@ import { test } from "node:test";
 import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
 import {
   CLAIM_MARK,
+  claimedFields,
   claimedState,
   claimReply,
   issueOf,
   issueReply,
   LANE,
   LAPSED,
-  LEASE,
   LIVE,
 } from "./ops-claim-test-kit.mjs";
 import {
@@ -145,7 +145,7 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
     commentsReply(ANSWERED_ISSUE, comments),
   ]);
   const got = askOps({ op: "claim", number: ANSWERED_ISSUE, ...LANE });
-  const state = { ...saved, lease: LEASE };
+  const state = { ...saved, ...claimedFields(ANSWERED_ISSUE) };
   assert.deepEqual(
     got,
     claimReply(ANSWERED_ISSUE, {

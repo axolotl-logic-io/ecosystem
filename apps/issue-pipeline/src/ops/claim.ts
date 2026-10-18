@@ -26,7 +26,7 @@ import { isStopLabel } from "../stops.ts";
 import { resetKeepingUnpushed } from "../unpushed.ts";
 import { ensureWiki } from "../wiki.ts";
 import type { BranchChanged } from "./claim-state.ts";
-import { claimedState } from "./claim-state.ts";
+import { assertBranchAssigned, claimedState } from "./claim-state.ts";
 
 const CLAIM_REQUEST = z.looseObject({
   lane: z.string().min(1),
@@ -123,6 +123,7 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
   if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
   }
+  assertBranchAssigned(cfg, n, context.comments);
   const race = raceForClaim(cfg, n, req, context.comments);
   if (!race.won || race.claimId === undefined) {
     return { lost: true, holder: race.holder ?? null, posted: race.posted };

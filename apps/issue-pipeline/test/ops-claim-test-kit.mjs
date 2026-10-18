@@ -48,11 +48,18 @@ function issueReply(n, extra = {}) {
 const CLAIM_MARK = "<!-- agent-pipeline:claim lane=me sweep=s1 -->";
 const LEASE = { lane: "me", sweepId: "s1", at: TIME };
 
+// What a claim by lane `me` sets on issue `n`'s state, with no job's
+// assignment: its lease, and the legacy branch it binds.
+/** @param {number} n @returns {{ lease: typeof LEASE, branch: string }} */
+function claimedFields(n) {
+  return { lease: LEASE, branch: `agent/issue-${n}` };
+}
+
 // The state a claim by lane `me` saves for issue `n`: a new issue's,
-// leased, with `extra` over it.
+// leased and bound, with `extra` over it.
 /** @param {number} n @param {Partial<IssueState>} [extra] @returns {IssueState} */
 function claimedState(n, extra = {}) {
-  return { ...newIssueState(n), lease: LEASE, ...extra };
+  return { ...newIssueState(n), ...claimedFields(n), ...extra };
 }
 
 // The paths a won claim of issue `n` replies with.
@@ -89,6 +96,7 @@ function claimReply(n, extra = {}) {
 
 export {
   CLAIM_MARK,
+  claimedFields,
   claimedState,
   claimReply,
   issueOf,

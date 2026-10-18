@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { assignedBranch } from "../branch-binding.ts";
 import type { PushResult } from "../checkouts.ts";
 import { branchChanges, push } from "../checkouts.ts";
 import type { Config } from "../config.ts";
@@ -95,10 +96,12 @@ function pushWikiOnly(
 }
 
 // Pushes the issue's work for `op`: its code and wiki, or only its wiki
-// when asked to or once the saved state records the code merged.
+// when asked to or once the saved state records the code merged. A saved
+// state bound to another branch than the assigned one pushes nothing.
 function pushFor(cfg: Config, request: unknown, op: string): PushResult {
   const { number, wikiOnly } = parseRequest(PUSH_REQUEST, op, request);
   const { state } = readState(cfg, number);
+  assignedBranch(cfg, number, state);
   const codeMerged = state?.codeMerged ?? null;
   if (wikiOnly === true || codeMerged !== null) {
     return pushWikiOnly(cfg, number, codeMerged);

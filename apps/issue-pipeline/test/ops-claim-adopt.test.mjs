@@ -27,7 +27,7 @@ import {
   recordPush,
   SHORT_SHA,
 } from "./ops-claim-adopt-test-kit.mjs";
-import { claimReply, LEASE } from "./ops-claim-test-kit.mjs";
+import { claimedFields, claimReply } from "./ops-claim-test-kit.mjs";
 import { runDir } from "./ops-cli-test-kit.mjs";
 
 // The issues: one with a matching push record, one whose record names another
@@ -51,7 +51,7 @@ test("a claim adopts the head this machine recorded pushing, keeping implement",
   assert.equal(log.length, 1);
   assert.match(log.join(""), ADOPTED_LOG);
   assert.ok(log.join("").includes(remote.slice(0, SHORT_SHA)));
-  const state = { ...saved, headSha: remote, log, lease: LEASE };
+  const state = { ...saved, headSha: remote, log, ...claimedFields(ADOPTED) };
   const claim = { id: ADOPTED * CLAIM_IDS, posted: false };
   const comments = heldComments(ADOPTED, saved);
   const remoteHead = remote;
@@ -64,7 +64,7 @@ test("a claim keeps the saved head when the record names another, reporting the 
   const { saved, remote } = movedBranch(OTHER_RECORD);
   recordPush(OTHER_RECORD, saved.headSha);
   const kept = claimSaved(OTHER_RECORD, saved);
-  assert.deepEqual(kept.state, { ...saved, lease: LEASE });
+  assert.deepEqual(kept.state, { ...saved, ...claimedFields(OTHER_RECORD) });
   assert.equal(kept.remoteHead, remote);
   assert.deepEqual(kept.branchChanged, { saved: saved.headSha, remote });
   assert.equal(head(OTHER_RECORD), saved.headSha);
@@ -73,12 +73,12 @@ test("a claim keeps the saved head when the record names another, reporting the 
 test("a claim keeps the saved head with no record or an unreadable one", () => {
   const { saved, remote } = movedBranch(NO_RECORD);
   const missing = claimSaved(NO_RECORD, saved);
-  assert.deepEqual(missing.state, { ...saved, lease: LEASE });
+  assert.deepEqual(missing.state, { ...saved, ...claimedFields(NO_RECORD) });
   assert.deepEqual(missing.branchChanged, { saved: saved.headSha, remote });
   fs.mkdirSync(runDir(NO_RECORD), { recursive: true });
   fs.writeFileSync(path.join(runDir(NO_RECORD), "pushed.json"), "{not json");
   const malformed = claimSaved(NO_RECORD, saved);
-  assert.deepEqual(malformed.state, { ...saved, lease: LEASE });
+  assert.deepEqual(malformed.state, { ...saved, ...claimedFields(NO_RECORD) });
   assert.deepEqual(malformed.branchChanged, { saved: saved.headSha, remote });
   assert.equal(head(NO_RECORD), saved.headSha);
 });
@@ -109,7 +109,7 @@ test("a claim adopts a push at review with its verdict and verification voided, 
     verifiedSha: null,
     review: { ...review, verdict: null },
     log,
-    lease: LEASE,
+    ...claimedFields(AT_REVIEW),
   };
   assert.deepEqual(got.state, state);
   assert.equal(got.branchChanged, undefined);
@@ -124,7 +124,12 @@ test("a claim adopts a pipeline_commit push at implement, keeping the stage", ()
   const got = claimSaved(COMMIT_PUSHED, moved.saved);
   const { log } = LOGGED.parse(got.state);
   assert.match(log.join(""), ADOPTED_LOG);
-  const state = { ...moved.saved, headSha: moved.remote, log, lease: LEASE };
+  const state = {
+    ...moved.saved,
+    headSha: moved.remote,
+    log,
+    ...claimedFields(COMMIT_PUSHED),
+  };
   assert.deepEqual(got.state, state);
   assert.equal(head(COMMIT_PUSHED), moved.remote);
 });

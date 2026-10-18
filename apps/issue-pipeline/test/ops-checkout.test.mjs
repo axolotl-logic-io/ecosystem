@@ -10,10 +10,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { commentLines, githubComment } from "./fake-gh.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("ops-checkout");
 const { ask, fakeGh, originRef, sh } = fx;
+const { newIssueState } = await import("../src/state.ts");
 // A push's reply: its head when it pushed, its error when it didn't.
 const PUSH_REPLY = z.looseObject({
   ok: z.boolean(),
@@ -23,6 +25,8 @@ const PUSH_REPLY = z.looseObject({
 const NAMES_CHECKOUT = /^bad ops request: .*→ at checkout/su;
 const NOT_LITERAL = /is not a literal branch name/u;
 const BASE_OR_WIKI = /is the base or wiki branch/u;
+const BOUND_ELSEWHERE =
+  /#16's work is on x\/y, not the assigned feature\/bound-16/u;
 const ASSIGNED = "feature/assigned-11";
 // The issues each test pushes, and the issue another job's checkout names.
 const VIA_CHECKOUT = 11;
@@ -31,6 +35,8 @@ const BESIDE_CHECKOUT = 13;
 const OTHER_ISSUE = 99;
 const VIA_ASSIGNED = 14;
 const UNSAFE = 15;
+const BOUND = 16;
+const STATE_COMMENT = 30;
 const MALFORMED = 7;
 
 /**
@@ -143,4 +149,37 @@ test("a checkout's branch that is a ref expression, an option, or the base or wi
   }
   assert.equal(originRef("integration") === sha, false);
   assert.equal(originRef("feature/unsafe-15"), "");
+});
+
+test("push refuses a saved state bound to another branch than the checkout's, pushing nothing", () => {
+  const { dir, branch } = jobClone(BOUND, "bound.txt", "feature/bound-16");
+  const saved = { ...newIssueState(BOUND), branch: "x/y" };
+  const body = `<!-- agent-pipeline:state\n${JSON.stringify(saved)}\n-->`;
+  const at = "2026-10-15T01:00:00Z";
+  const comment = githubComment({
+    id: STATE_COMMENT,
+    body,
+    login: "a",
+    created: at,
+    updated: at,
+  });
+  fakeGh.reply([
+    {
+      when: `issues/${BOUND}/comments?per_page`,
+      stdout: commentLines([comment]),
+    },
+  ]);
+  const reply = PUSH_REPLY.parse(
+    JSON.parse(
+      ask({
+        op: "push",
+        number: BOUND,
+        checkout: { issue: BOUND, dir, branch },
+      }),
+    ),
+  );
+  assert.equal(reply.ok, false);
+  assert.match(reply.error ?? "", BOUND_ELSEWHERE);
+  assert.equal(originRef("feature/bound-16"), "");
+  assert.equal(originRef("x/y"), "");
 });

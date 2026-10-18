@@ -4,6 +4,7 @@
 // and merge never mark a PR ready.
 
 import { z } from "zod";
+import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
@@ -106,6 +107,7 @@ function readyApproval(
       `#${n}'s saved state doesn't hold PR #${pr}'s hardened authorization of ${authorized.code} at review or merge; save it before ready-pr`,
     );
   }
+  assignedBranch(cfg, n, saved);
   const current = currentRevision(cfg, n, state);
   if (!approvalHolds(state, current.revision)) {
     const { code, wiki, inputs } = current.revision;

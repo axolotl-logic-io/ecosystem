@@ -1,10 +1,9 @@
 // An issue's state, which saved-state.ts keeps on GitHub. This module owns
 // the state's schema (version 2), its log, and the merge authorization rule:
-// a merge is authorized only for the exact revision that passed the
-// Reviewer's hardening (`approval-is-for-one-revision`), or for the one
-// revision the Reviewer's own integration checked from it. The read-only
-// security review of the merged result comes after the merge, and its
-// receipt (security) is what lets the issue complete.
+// only the exact revision that passed the Reviewer's hardening
+// (`approval-is-for-one-revision`), or the one revision the Reviewer's own
+// integration checked from it. The security review of the merged result
+// comes after the merge, and lets the issue complete (security).
 
 import { z } from "zod";
 import type { Status } from "./stages.ts";
@@ -76,8 +75,7 @@ const INTEGRATION = z
   .object({ reviewed: REVISION, revision: REVISION })
   .refine((receipt) => receipt.reviewed.inputs === receipt.revision.inputs);
 
-// The categories a security review stops an issue for (stops.ts names
-// their stop codes).
+// The categories a security review stops an issue for (stops.ts codes).
 const SECURITY_CATEGORY = z.enum([
   "user-harm",
   "rights",
@@ -139,6 +137,9 @@ const ISSUE_STATE = z.object({
   resumeStage: STAGE.nullable().catch(null),
   lease: LEASE.nullable().catch(null),
   pr: z.number().int().positive().nullable().catch(null),
+  // The branch the issue is bound to (branch-binding.ts); null in a state
+  // saved before assignments, whose work is on agent/issue-<n>.
+  branch: z.string().min(1).nullable().catch(null),
   // The last code head the pipeline pushed, which adopt-push moves on.
   headSha: z.string().nullable().catch(null),
   flows: FLOWS.nullable().catch(null),
@@ -200,6 +201,7 @@ function newIssueState(number: number): IssueState {
     resumeStage: null,
     lease: null,
     pr: null,
+    branch: null,
     headSha: null,
     flows: null,
     gherkin: null,
@@ -238,10 +240,9 @@ function sameRevision(a: Revision, b: Revision): boolean {
 }
 
 // The revision the issue may merge, or null when nothing is authorized: the
-// revision that passed hardening, or the revision the Reviewer's own
-// integration checked from exactly that hardened revision. A receipt for
-// another revision is ignored, never an authorization of its head; the
-// review verdict plays no part.
+// hardened revision, or the revision the Reviewer's own integration checked
+// from exactly it. A receipt for another revision is ignored, never an
+// authorization of its head; the review verdict plays no part.
 function mergeAuthorization(state: IssueState): Revision | null {
   const { hardened, integration } = state;
   if (hardened === null) {
