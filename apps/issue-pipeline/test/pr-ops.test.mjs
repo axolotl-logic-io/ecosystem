@@ -26,7 +26,7 @@ const NULL_AUTHOR = { n: 9, pr: 59 };
 const PUSHED = { n: 7, pr: 57 };
 const EMPTY = { n: 8, pr: 58 };
 const REOPENED = { n: 11, pr: 61 };
-const NO_HARDENED_APPROVAL = /no hardened approval/u;
+const NO_HARDENED_AUTHORIZATION = /no hardened authorization/u;
 // What a branch with a code change and no wiki reports.
 const CODE = { codeChanged: true, wikiAhead: 0 };
 
@@ -285,13 +285,13 @@ test("open-pr with reopen reopens the closed PR and fills it in, never marking i
 });
 
 // ready-pr's guards are in ready-pr-op.test.mjs; through the ops CLI it is a
-// PR op that fails, writing nothing, without an approval to mark ready.
-test("ready-pr is an op, and refuses a state with no approval, writing nothing", () => {
+// PR op that fails, writing nothing, without a hardened authorization.
+test("ready-pr is an op, and refuses a state no hardening authorized, writing nothing", () => {
   const { n, pr } = REOPENED;
   fakeGh.reply([]);
   const state = { ...newIssueState(n), pr };
   const out = JSON.parse(ask({ op: "ready-pr", number: n, state }));
   assert.equal(out.ok, false);
-  assert.match(out.error, NO_HARDENED_APPROVAL);
+  assert.match(out.error, NO_HARDENED_AUTHORIZATION);
   assert.deepEqual(writes(), []);
 });

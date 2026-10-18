@@ -1,15 +1,16 @@
 // @ts-check
-// The approval chain (src/state.ts): an approval permits the revision the
-// final review approved, or the one revision the Reviewer's own integration
-// checked from exactly that approval (state.integration), never a receipt's
-// head for another review or other trusted inputs. The original
-// review.revision is kept as the review saw it, and a state saved before
-// `hardened` and `integration` existed reads them as null.
+// The merge authorization chain (src/state.ts): a merge is authorized for
+// the revision that passed the Reviewer's hardening, or the one revision the
+// Reviewer's own integration checked from exactly that hardened revision
+// (state.integration), never a receipt's head for another revision or other
+// trusted inputs, and never by a review verdict alone. The security review
+// of the merged result (state.security) parses as saved, its finding
+// included. A state saved before these fields existed reads them as null.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
 
-const { approvalHolds, approvedRevision, ISSUE_STATE, newIssueState } =
+const { approvalHolds, mergeAuthorization, ISSUE_STATE, newIssueState } =
   await import("../src/state.ts");
 const { parseIssueState, stateBody, parseStateBody } = await import(
   "../src/saved-state.ts"
@@ -20,128 +21,150 @@ const { parseIssueState, stateBody, parseStateBody } = await import(
 
 const ISSUE = 12;
 const PR = 3;
+const SECURITY_COMMENT = 44;
 /** @type {Revision} */
-const REVIEWED = { code: "c1", wiki: "w1", inputs: "i1" };
+const HARDENED = { code: "c1", wiki: "w1", inputs: "i1" };
 /** @type {Revision} */
 const INTEGRATED = { code: "c2", wiki: "w2", inputs: "i1" };
 
-/** @param {"approve" | "changes" | null} verdict @param {object} [extra] @returns {IssueState} */
-function reviewed(verdict, extra = {}) {
+/** @param {object} [extra] @returns {IssueState} */
+function hardenedState(extra = {}) {
   return {
     ...newIssueState(ISSUE),
     stage: "merge",
     pr: PR,
-    review: {
-      round: 0,
-      verdict,
-      commentId: null,
-      findings: [],
-      revision: REVIEWED,
-    },
-    hardened: REVIEWED,
+    hardened: HARDENED,
     ...extra,
   };
 }
 
-test("a new state has no hardening checkpoint and no integration receipt", () => {
+test("a new state has no hardening, no integration receipt and no security review", () => {
   const state = newIssueState(ISSUE);
   assert.equal(state.hardened, null);
   assert.equal(state.integration, null);
-  assert.equal(approvedRevision(state), null);
+  assert.equal(state.security, null);
+  assert.equal(mergeAuthorization(state), null);
 });
 
-test("a version 2 state saved before hardened and integration existed reads them as null", () => {
-  const { hardened: _h, integration: _i, ...older } = reviewed("approve");
+test("a version 2 state saved before hardened, integration and security existed reads them as null and authorizes nothing", () => {
+  const {
+    hardened: _h,
+    integration: _i,
+    security: _s,
+    ...older
+  } = hardenedState({
+    review: {
+      round: 0,
+      verdict: "approve",
+      commentId: null,
+      findings: [],
+      revision: HARDENED,
+    },
+  });
   const parsed = parseIssueState(older, ISSUE);
   assert.ok(parsed !== null);
   assert.equal(parsed.hardened, null);
   assert.equal(parsed.integration, null);
-  assert.deepEqual(approvedRevision(parsed), REVIEWED);
+  assert.equal(parsed.security, null);
+  assert.equal(mergeAuthorization(parsed), null);
+  assert.equal(approvalHolds(parsed, HARDENED), false);
 });
 
-test("the approved revision is the reviewed one when nothing integrated it", () => {
-  const state = reviewed("approve");
-  assert.deepEqual(approvedRevision(state), REVIEWED);
-  assert.equal(approvalHolds(state, REVIEWED), true);
+test("the authorized revision is the hardened one when nothing integrated it, whatever the review verdict", () => {
+  const state = hardenedState();
+  assert.deepEqual(mergeAuthorization(state), HARDENED);
+  assert.equal(approvalHolds(state, HARDENED), true);
   assert.equal(approvalHolds(state, INTEGRATED), false);
+  assert.equal(approvalHolds(state, { ...HARDENED, inputs: "i2" }), false);
 });
 
-test("the Reviewer's own integration moves the approval to its checked revision and keeps the review's", () => {
-  const state = reviewed("approve", {
-    integration: { reviewed: REVIEWED, revision: INTEGRATED },
+test("the Reviewer's own integration moves the authorization to its checked revision and keeps the hardened one", () => {
+  const state = hardenedState({
+    integration: { reviewed: HARDENED, revision: INTEGRATED },
   });
-  assert.deepEqual(approvedRevision(state), INTEGRATED);
+  assert.deepEqual(mergeAuthorization(state), INTEGRATED);
   assert.equal(approvalHolds(state, INTEGRATED), true);
-  assert.equal(approvalHolds(state, REVIEWED), false);
-  assert.deepEqual(state.review.revision, REVIEWED);
+  assert.equal(approvalHolds(state, HARDENED), false);
   const saved = parseStateBody(stateBody(ISSUE, state), ISSUE);
   assert.deepEqual(saved?.integration, {
-    reviewed: REVIEWED,
+    reviewed: HARDENED,
     revision: INTEGRATED,
   });
-  assert.deepEqual(saved?.review.revision, REVIEWED);
+  assert.deepEqual(saved?.hardened, HARDENED);
 });
 
-test("a receipt bound to another review's revision approves nothing new", () => {
-  const forged = reviewed("approve", {
-    integration: {
-      reviewed: { ...REVIEWED, code: "c0" },
-      revision: INTEGRATED,
-    },
+test("a receipt bound to another revision than the hardened one authorizes nothing new", () => {
+  for (const reviewed of [
+    { ...HARDENED, code: "c0" },
+    { ...HARDENED, wiki: "w0" },
+  ]) {
+    const forged = hardenedState({
+      integration: { reviewed, revision: INTEGRATED },
+    });
+    assert.deepEqual(mergeAuthorization(forged), HARDENED);
+    assert.equal(approvalHolds(forged, INTEGRATED), false);
+  }
+  const unhardened = hardenedState({
+    hardened: null,
+    integration: { reviewed: HARDENED, revision: INTEGRATED },
   });
-  assert.deepEqual(approvedRevision(forged), REVIEWED);
-  assert.equal(approvalHolds(forged, INTEGRATED), false);
-  const otherWiki = reviewed("approve", {
-    integration: {
-      reviewed: { ...REVIEWED, wiki: "w0" },
-      revision: INTEGRATED,
-    },
-  });
-  assert.equal(approvalHolds(otherWiki, INTEGRATED), false);
+  assert.equal(mergeAuthorization(unhardened), null);
+  assert.equal(approvalHolds(unhardened, INTEGRATED), false);
 });
 
 test("a receipt that changes the trusted inputs reads as none", () => {
-  const raw = reviewed("approve", {
+  const raw = hardenedState({
     integration: {
-      reviewed: REVIEWED,
+      reviewed: HARDENED,
       revision: { ...INTEGRATED, inputs: "i2" },
     },
   });
   const parsed = ISSUE_STATE.parse(raw);
   assert.equal(parsed.integration, null);
-  assert.deepEqual(approvedRevision(parsed), REVIEWED);
+  assert.deepEqual(mergeAuthorization(parsed), HARDENED);
   assert.equal(approvalHolds(parsed, { ...INTEGRATED, inputs: "i2" }), false);
 });
 
-test("no receipt approves a revision once the verdict is changes or the review is gone", () => {
-  const integration = { reviewed: REVIEWED, revision: INTEGRATED };
-  for (const verdict of /** @type {const} */ (["changes", null])) {
-    const state = reviewed(verdict, { integration });
-    assert.equal(approvedRevision(state), null);
-    assert.equal(approvalHolds(state, INTEGRATED), false);
-    assert.equal(approvalHolds(state, REVIEWED), false);
+test("a security review saves its exact revision and its finding, or none", () => {
+  const merged = { ...INTEGRATED, code: "m1" };
+  const finding = { category: "rights", reason: "copies a licensed text" };
+  for (const security of [
+    { revision: merged, commentId: SECURITY_COMMENT, finding: null },
+    { revision: merged, commentId: SECURITY_COMMENT, finding },
+  ]) {
+    const saved = parseStateBody(
+      stateBody(ISSUE, hardenedState({ security })),
+      ISSUE,
+    );
+    assert.deepEqual(saved?.security, security);
   }
-  const unreviewed = reviewed("approve", { integration });
-  const gone = {
-    ...unreviewed,
-    review: { ...unreviewed.review, revision: null },
-  };
-  assert.equal(approvedRevision(gone), null);
-  assert.equal(approvalHolds(gone, INTEGRATED), false);
 });
 
-test("a malformed hardened or integration field reads as null and keeps the rest", () => {
-  const parsed = parseIssueState(
+test("a malformed hardened, integration or security field reads as null and keeps the rest", () => {
+  const revision = INTEGRATED;
+  for (const security of [
+    { revision, commentId: null, finding: null },
+    { revision, commentId: SECURITY_COMMENT },
     {
-      ...reviewed("approve"),
-      hardened: { code: 1 },
-      integration: { reviewed: REVIEWED },
+      revision,
+      commentId: SECURITY_COMMENT,
+      finding: { category: "style", reason: "x" },
     },
-    ISSUE,
-  );
-  assert.ok(parsed !== null);
-  assert.equal(parsed.hardened, null);
-  assert.equal(parsed.integration, null);
-  assert.equal(parsed.pr, PR);
-  assert.deepEqual(approvedRevision(parsed), REVIEWED);
+    { revision, commentId: SECURITY_COMMENT, finding: { category: "rights" } },
+  ]) {
+    const parsed = parseIssueState(
+      {
+        ...hardenedState(),
+        hardened: { code: 1 },
+        integration: { reviewed: HARDENED },
+        security,
+      },
+      ISSUE,
+    );
+    assert.ok(parsed !== null);
+    assert.equal(parsed.hardened, null);
+    assert.equal(parsed.integration, null);
+    assert.equal(parsed.security, null);
+    assert.equal(parsed.pr, PR);
+  }
 });

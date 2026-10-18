@@ -1,7 +1,9 @@
 // @ts-check
 // The publish op (src/ops/publish.ts, src/wiki-publication.ts): after fresh
-// source and merged-PR gates it fast-forwards the wiki to exactly the
-// approved wiki head, never rebasing, and changes nothing on GitHub.
+// source and merged-PR gates, and a saved security review that found
+// nothing at exactly the merged result, it fast-forwards the wiki to
+// exactly the authorized wiki head, never rebasing, and changes nothing on
+// GitHub.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
@@ -14,6 +16,7 @@ import {
   publishOf,
   refusalOf,
   savedListing,
+  securityOf,
   sh,
   wikiRef,
   world,
@@ -45,18 +48,22 @@ function merged(w, { inputs = "inputs-1", state = "MERGED" } = {}) {
   });
 }
 
+// The merged result of `approved`: GitHub's merge commit, the wiki head and
+// the inputs, which the security review must clear.
+/** @param {Revision} approved @returns {Revision} */
+function resultOf(approved) {
+  return { code: MERGE_COMMIT, wiki: approved.wiki, inputs: approved.inputs };
+}
+
 // The job's own merge saved its partial receipt: still at stage merge, its
-// merged naming GitHub's merge commit with the approved wiki and inputs.
+// merged naming GitHub's merge commit with the approved wiki and inputs, and
+// the security review of the merged result found nothing.
 /** @param {Revision} approved @param {object} [receipt] @returns {void} */
 function savedReceipt(approved, receipt = {}) {
-  const receiptMerged = {
-    code: MERGE_COMMIT,
-    wiki: approved.wiki,
-    inputs: approved.inputs,
-    ...receipt,
-  };
+  const security = securityOf(resultOf(approved));
+  const receiptMerged = { ...resultOf(approved), ...receipt };
   fakeGh.reply([
-    savedListing(approvedState(approved, { merged: receiptMerged })),
+    savedListing(approvedState(approved, { merged: receiptMerged, security })),
   ]);
 }
 
@@ -115,7 +122,7 @@ test("publish refuses a wiki that moved past the approved head, and never rebase
   assert.equal(sh(`git -C ${w.wikiDir} rev-parse HEAD`), w.wikiSha);
 });
 
-test("publish refuses changed trusted inputs, an open PR and an unapproved revision", () => {
+test("publish refuses changed trusted inputs, an open PR and a revision hardening didn't authorize", () => {
   const w = world({ wiki: true });
   const approved = approvedOf(w);
   merged(w, { inputs: "inputs-2" });
@@ -124,9 +131,13 @@ test("publish refuses changed trusted inputs, an open PR and an unapproved revis
   assert.equal(refusalOf(w.cfg, request(approved)), "not-merged");
   merged(w);
   const unapproved = request(approved, {
-    state: { ...approvedState(approved), review: { verdict: "changes" } },
+    state: approvedState(approved, { hardened: null }),
   });
   assert.equal(refusalOf(w.cfg, unapproved), "unapproved");
+  const otherHardened = request(approved, {
+    state: approvedState(approved, { hardened: { ...approved, code: "0ld" } }),
+  });
+  assert.equal(refusalOf(w.cfg, otherHardened), "unapproved");
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
 });
 
@@ -145,6 +156,8 @@ test("before codeMerged only the head GitHub merged is the approved code; after,
   const ok = request(reviewed, {
     state: approvedState(reviewed, { codeMerged }),
   });
+  const security = securityOf(resultOf(reviewed));
+  fakeGh.reply([savedListing(approvedState(reviewed, { security }))]);
   assert.equal(publishOf(w.cfg, ok).published, true);
 });
 
@@ -167,6 +180,8 @@ test("publish of a change that lives only in the wiki needs no PR", () => {
     pr: null,
     flows: { code: false, wiki: true },
   };
+  const result = { ...approved, code: null };
+  fakeGh.reply([savedListing({ ...state, security: securityOf(result) })]);
   const reply = publishOf(w.cfg, request(approved, { state }));
   assert.equal(reply.published, true);
   assert.equal(wikiRef(w, "master"), w.wikiSha);
@@ -239,20 +254,15 @@ test("publish refuses a saved receipt that isn't GitHub's merge of the approved 
     savedReceipt(approved, receipt);
     assert.equal(refusalOf(w.cfg, request(approved)), "no-receipt");
   }
-  const reviewedElsewhere = { ...approved, code: "0ther" };
+  const hardenedElsewhere = { ...approved, code: "0ther" };
   fakeGh.reply([
-    savedListing({
-      ...approvedState(approved, {
-        merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
+    savedListing(
+      approvedState(approved, {
+        merged: resultOf(approved),
+        hardened: hardenedElsewhere,
+        security: securityOf(resultOf(approved)),
       }),
-      review: {
-        round: 0,
-        verdict: "approve",
-        commentId: null,
-        findings: [],
-        revision: reviewedElsewhere,
-      },
-    }),
+    ),
   ]);
   assert.equal(refusalOf(w.cfg, request(approved)), "no-receipt");
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);

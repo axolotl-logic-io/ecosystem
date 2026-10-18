@@ -1,18 +1,21 @@
-// The gates between a reviewed revision and what merge, publish and
+// The gates between an authorized revision and what merge, publish and
 // finish-wiki may do to GitHub and the wiki, decided against a fresh
-// current revision (src/revision.ts) rather than any saved claim. Each gate
-// is pure: an inconsistent request or GitHub answer throws, a revision that
-// moved returns a refusal, and undefined lets the op go on.
+// current revision (src/revision.ts) and the issue's saved state rather
+// than any claim in a request. Publishing and finishing also need the saved
+// security review to have found nothing at exactly the merged result. Each
+// gate is pure: an inconsistent request or GitHub answer throws, a revision
+// that moved returns a refusal, and undefined lets the op go on.
 
 import { z } from "zod";
 import { OpsError } from "../process.ts";
 import type { currentRevision } from "../revision.ts";
+import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
-import { approvalHolds, approvedRevision, sameRevision } from "../state.ts";
+import { approvalHolds, mergeAuthorization, sameRevision } from "../state.ts";
 
 type CurrentRevision = ReturnType<typeof currentRevision>;
 
-// A revision a request names: what the review approved (state.ts's Revision).
+// A revision a request names: what hardening authorized (state.ts's Revision).
 const REVISION_REQUEST = z.object({
   code: z.string().nullable(),
   wiki: z.string().nullable(),
@@ -32,18 +35,19 @@ interface PublishRefusal {
     | "stale"
     | "not-merged"
     | "code-mismatch"
-    | "no-receipt";
+    | "no-receipt"
+    | "security";
   detail: string;
 }
 
 interface FinishRefusal {
   finished: false;
-  reason: "inputs-changed" | "wiki-unpublished" | "wiki-changed";
+  reason: "inputs-changed" | "wiki-unpublished" | "wiki-changed" | "security";
   detail: string;
 }
 
 // A merge goes on only while the code head, wiki head and trusted inputs are
-// still the approved `revision` (approvedRevision).
+// still the authorized `revision` (mergeAuthorization).
 function mergeStale(
   revision: Revision,
   current: CurrentRevision,
@@ -92,11 +96,12 @@ function publishRefusal(
 }
 
 // Why the saved state is not the partial code-merge receipt of the merge
-// that GitHub reports, for the approved `revision`, or undefined. The
+// that GitHub reports, for the authorized `revision`, or undefined. The
 // receipt is the issue saved at stage merge with `merged` naming GitHub's
-// merge commit and the approved wiki and inputs, its PR the same, and its
-// approval (approvedRevision: the reviewed head, or the head the Reviewer's
-// own integration checked from it) permitting the exact head GitHub merged.
+// merge commit and the authorized wiki and inputs, its PR the same, and its
+// merge authorization (mergeAuthorization: the hardened head, or the head
+// the Reviewer's own integration checked from it) permitting the exact head
+// GitHub merged.
 // Only the saved state counts: the request's state and the job's log are no
 // proof.
 function receiptRefusal(
@@ -112,21 +117,21 @@ function receiptRefusal(
     );
   }
   const { merged: receipt } = saved;
-  const approved = approvedRevision(saved);
+  const authorized = mergeAuthorization(saved);
   const holds =
     saved.pr === state.pr &&
     receipt.code === merged.mergeCommit &&
     receipt.wiki === revision.wiki &&
     receipt.inputs === revision.inputs &&
-    approved !== null &&
-    sameRevision(approved, revision) &&
+    authorized !== null &&
+    sameRevision(authorized, revision) &&
     revision.code === merged.headSha;
   if (holds) {
     return undefined;
   }
   return publishRefusal(
     "no-receipt",
-    `the saved receipt (code ${String(receipt.code)}, wiki ${String(receipt.wiki)}) is not PR #${String(state.pr)}'s merge ${merged.mergeCommit} of the approved head ${String(revision.code)}`,
+    `the saved receipt (code ${String(receipt.code)}, wiki ${String(receipt.wiki)}) is not PR #${String(state.pr)}'s merge ${merged.mergeCommit} of the authorized head ${String(revision.code)}`,
   );
 }
 
@@ -199,22 +204,53 @@ function publishGate(
   if (!approvalHolds(state, revision)) {
     return publishRefusal(
       "unapproved",
-      "neither the last review nor the Reviewer's own integration of it approved this exact revision",
+      "neither the Reviewer's hardening nor its own integration of it authorized this exact revision",
     );
   }
   if (current.revision.inputs !== revision.inputs) {
     return publishRefusal(
       "stale",
-      `the trusted inputs changed since the approval (${current.revision.inputs})`,
+      `the trusted inputs changed since hardening (${current.revision.inputs})`,
     );
   }
-  return codeRefusal(state, saved, revision, current);
+  const refused = codeRefusal(state, saved, revision, current);
+  if (refused !== undefined) {
+    return refused;
+  }
+  const result = mergedResult(state, revision, current);
+  const uncleared = securityRefusal(saved, result);
+  if (uncleared !== undefined) {
+    return publishRefusal("security", uncleared);
+  }
+  return undefined;
+}
+
+// The merged result a security review must have cleared before `revision`'s
+// wiki is published: GitHub's merge commit of the issue's PR (null for a
+// change that lives only in the wiki, with no PR), the wiki head and the
+// trusted inputs. Only called once codeRefusal found the PR merged.
+function mergedResult(
+  state: IssueState,
+  revision: Revision,
+  current: CurrentRevision,
+): Revision {
+  let code: string | null = null;
+  if (state.pr !== null) {
+    const merged = mergedPr(state, current);
+    if (merged === "open") {
+      throw new OpsError(`PR #${state.pr} has not merged`);
+    }
+    code = merged.mergeCommit;
+  }
+  return { code, wiki: revision.wiki, inputs: revision.inputs };
 }
 
 // The saved completion finish-wiki may act on: done, with the merged
-// revision, its PR (if any) merged at merged.code, and the trusted inputs
-// unchanged since. A state that isn't such a completion throws; new trusted
-// input refuses, so the issue stays open for the author.
+// revision, its PR (if any) merged at merged.code (a change with no PR
+// merged no code), the trusted inputs unchanged since, and the saved
+// security review clear at exactly that merged revision. A state that isn't
+// such a completion throws; new trusted input refuses, so the issue stays
+// open for the author, and so does a security review that didn't clear it.
 function finishGate(
   saved: IssueState,
   current: CurrentRevision,
@@ -226,8 +262,10 @@ function finishGate(
     );
   }
   if (saved.pr === null) {
-    if (saved.flows?.code === true) {
-      throw new OpsError(`#${saved.number} is done with a code flow but no PR`);
+    if (saved.flows?.code === true || merged.code !== null) {
+      throw new OpsError(
+        `#${saved.number} is done with code ${String(merged.code)} but no PR`,
+      );
     }
   } else {
     const pr = mergedPr(saved, current);
@@ -243,6 +281,10 @@ function finishGate(
       reason: "inputs-changed",
       detail: `the trusted inputs changed since the merge (${current.revision.inputs})`,
     };
+  }
+  const uncleared = securityRefusal(saved, merged);
+  if (uncleared !== undefined) {
+    return { finished: false, reason: "security", detail: uncleared };
   }
   return undefined;
 }

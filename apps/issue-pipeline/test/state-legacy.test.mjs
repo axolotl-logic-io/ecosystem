@@ -1,7 +1,7 @@
 // @ts-check
 // State version 2: a legacy (version 1) state migrates to the author, keeping
-// its PR, head, lease and flows, and an approval holds only for the exact
-// revision the reviewer saw (`approval-is-for-one-revision`).
+// its PR, head, lease and flows, and a merge authorization holds only for
+// the exact revision hardening saw (`approval-is-for-one-revision`).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
@@ -122,10 +122,16 @@ test("lifting a stop resumes the stage that stopped with its counts reset", () =
   assert.deepEqual(lifted.counts, { conflictFixes: 0, syncs: 0 });
 });
 
-test("an approval holds only for the code, wiki and inputs revision reviewed", () => {
+test("a merge authorization holds only for the code, wiki and inputs revision hardened", () => {
   const revision = { code: "c1", wiki: "w1", inputs: "i1" };
   const state = newIssueState(SAVED_ISSUE);
-  const approved = {
+  const hardened = { ...state, hardened: revision };
+  assert.equal(approvalHolds(hardened, revision), true);
+  assert.equal(approvalHolds(hardened, { ...revision, code: "c2" }), false);
+  assert.equal(approvalHolds(hardened, { ...revision, wiki: "w2" }), false);
+  assert.equal(approvalHolds(hardened, { ...revision, inputs: "i2" }), false);
+  // A review's approval, with no hardening, authorizes no merge.
+  const reviewedOnly = {
     ...state,
     review: {
       ...state.review,
@@ -133,13 +139,5 @@ test("an approval holds only for the code, wiki and inputs revision reviewed", (
       revision,
     },
   };
-  assert.equal(approvalHolds(approved, revision), true);
-  assert.equal(approvalHolds(approved, { ...revision, code: "c2" }), false);
-  assert.equal(approvalHolds(approved, { ...revision, wiki: "w2" }), false);
-  assert.equal(approvalHolds(approved, { ...revision, inputs: "i2" }), false);
-  const changes = {
-    ...approved,
-    review: { ...approved.review, verdict: /** @type {const} */ ("changes") },
-  };
-  assert.equal(approvalHolds(changes, revision), false);
+  assert.equal(approvalHolds(reviewedOnly, revision), false);
 });

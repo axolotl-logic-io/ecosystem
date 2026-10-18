@@ -22,6 +22,7 @@ const REPO = "o/r";
 const ISSUE = 7;
 const PR = 50;
 const MERGE_COMMIT = "4e1d0c0ffee0000000000000000000000000beef";
+const SECURITY_COMMENT = 901;
 const GIT_USER = "-c user.email=a@b -c user.name=a";
 
 const root = fs.mkdtempSync("/tmp/issue-pipeline-publication-ops-");
@@ -156,7 +157,8 @@ function wikiRef(w, ref) {
 }
 
 /**
- * Issue #7's state at merge: PR #50, approved at `approved`, with `extra`.
+ * Issue #7's state at merge: PR #50, hardened (and approved, as a legacy
+ * review) at `approved`, with `extra`.
  * @param {{ code: string | null, wiki: string | null, inputs: string }} approved
  * @param {object} [extra]
  * @returns {import("../src/state.ts").IssueState}
@@ -174,8 +176,20 @@ function approvedState(approved, extra = {}) {
       findings: [],
       revision: approved,
     },
+    hardened: approved,
     ...extra,
   };
+}
+
+// A security review of the merged result `result` that found nothing, or
+// `finding` when given.
+/**
+ * @param {import("../src/state.ts").Revision} result
+ * @param {import("../src/state.ts").Security["finding"]} [finding]
+ * @returns {import("../src/state.ts").Security}
+ */
+function securityOf(result, finding = null) {
+  return { revision: result, commentId: SECURITY_COMMENT, finding };
 }
 
 // gh's answer to listing #7's comments, every time: the pipeline's state
@@ -265,6 +279,7 @@ export {
   REPO,
   refusalOf,
   savedListing,
+  securityOf,
   sh,
   wikiRef,
   world,

@@ -1,8 +1,10 @@
 // An issue's state, which saved-state.ts keeps on GitHub. This module owns
-// the state's schema (version 2), its log, and the approval rule that an
-// approval holds only for the exact revision the reviewer saw
-// (`approval-is-for-one-revision`), or for the one revision the Reviewer's
-// own integration checked from it.
+// the state's schema (version 2), its log, and the merge authorization rule:
+// a merge is authorized only for the exact revision that passed the
+// Reviewer's hardening (`approval-is-for-one-revision`), or for the one
+// revision the Reviewer's own integration checked from it. The read-only
+// security review of the merged result comes after the merge, and its
+// receipt (security) is what lets the issue complete.
 
 import { z } from "zod";
 import type { Status } from "./stages.ts";
@@ -65,14 +67,36 @@ const REVIEW = z.object({
   revision: REVISION.nullable().catch(null),
 });
 
-// The Reviewer's own integration of an approved revision: `reviewed` is the
-// revision the final review approved, kept as review.revision says it, and
-// `revision` the revision the integration produced and checked. An
-// integration never changes the trusted inputs, so a receipt that names two
-// inputs revisions reads as none.
+// The Reviewer's own integration of a hardened revision: `reviewed` is the
+// revision that passed hardening, as `hardened` names it, and `revision` the
+// revision the integration produced and checked. An integration never
+// changes the trusted inputs, so a receipt that names two inputs revisions
+// reads as none.
 const INTEGRATION = z
   .object({ reviewed: REVISION, revision: REVISION })
   .refine((receipt) => receipt.reviewed.inputs === receipt.revision.inputs);
+
+// The categories a security review stops an issue for (stops.ts names
+// their stop codes).
+const SECURITY_CATEGORY = z.enum([
+  "user-harm",
+  "rights",
+  "financial-harm",
+  "abuse-risk",
+]);
+
+// The read-only security review of the merged result: `revision` is exactly
+// what it reviewed (code: GitHub's merge commit, null with no PR; wiki: the
+// head to publish), `commentId` its comment, and `finding` null when it
+// found nothing, or why it rejected that exact revision, so a lifted stop
+// can't review the same unsafe result again for another answer.
+const SECURITY = z.object({
+  revision: REVISION,
+  commentId: z.number().int().positive(),
+  finding: z
+    .object({ category: SECURITY_CATEGORY, reason: z.string().min(1) })
+    .nullable(),
+});
 
 const MERGE_RETURN = z.object({
   reason: z.enum(["conflict", "retest", "ci", "wiki-check", "wiki-conflict"]),
@@ -120,11 +144,13 @@ const ISSUE_STATE = z.object({
   flows: FLOWS.nullable().catch(null),
   gherkin: GHERKIN_REF.nullable().catch(null),
   review: REVIEW.catch(EMPTY_REVIEW),
-  // The exact revision that passed the Reviewer's hardening: the final
-  // review runs on it, and any other revision is hardened first.
+  // The exact revision that passed the Reviewer's hardening, which
+  // authorizes its merge; any other revision is hardened first.
   hardened: REVISION.nullable().catch(null),
-  // The receipt of the Reviewer's own integration of the approved revision.
+  // The receipt of the Reviewer's own integration of the hardened revision.
   integration: INTEGRATION.nullable().catch(null),
+  // The security review of the merged result (security-clearance.ts).
+  security: SECURITY.nullable().catch(null),
   // The code head whose verification last passed.
   verifiedSha: z.string().nullable().catch(null),
   mergeReturn: MERGE_RETURN.nullable().catch(null),
@@ -143,6 +169,8 @@ type MergeReturn = z.infer<typeof MERGE_RETURN>;
 type CodeMerged = z.infer<typeof CODE_MERGED>;
 type Asked = z.infer<typeof ASKED>;
 type Integration = z.infer<typeof INTEGRATION>;
+type Security = z.infer<typeof SECURITY>;
+type SecurityCategory = z.infer<typeof SECURITY_CATEGORY>;
 
 function stamp(now: Date): string {
   return `${now.toISOString().slice(0, STAMP_LENGTH)}Z`;
@@ -178,6 +206,7 @@ function newIssueState(number: number): IssueState {
     review: { ...EMPTY_REVIEW, findings: [] },
     hardened: null,
     integration: null,
+    security: null,
     verifiedSha: null,
     mergeReturn: null,
     merged: null,
@@ -208,32 +237,33 @@ function sameRevision(a: Revision, b: Revision): boolean {
   return a.code === b.code && a.wiki === b.wiki && a.inputs === b.inputs;
 }
 
-// The revision the issue's approval permits, or null when it has none: the
-// revision the last review approved, or the revision the Reviewer's own
-// integration checked from exactly that approved revision. A receipt for
-// another review's revision is ignored, never an approval of its head.
-function approvedRevision(state: IssueState): Revision | null {
-  const { verdict, revision: reviewed } = state.review;
-  if (verdict !== "approve" || reviewed === null) {
+// The revision the issue may merge, or null when nothing is authorized: the
+// revision that passed hardening, or the revision the Reviewer's own
+// integration checked from exactly that hardened revision. A receipt for
+// another revision is ignored, never an authorization of its head; the
+// review verdict plays no part.
+function mergeAuthorization(state: IssueState): Revision | null {
+  const { hardened, integration } = state;
+  if (hardened === null) {
     return null;
   }
-  const { integration } = state;
-  if (integration !== null && sameRevision(integration.reviewed, reviewed)) {
+  if (integration !== null && sameRevision(integration.reviewed, hardened)) {
     return integration.revision;
   }
-  return reviewed;
+  return hardened;
 }
 
-// Whether the issue's approval holds for `current`: it is exactly the
-// approved revision (approvedRevision), and the trusted inputs are still the
-// ones the review saw. Any other change after the review, a clean rebase
-// outside the Reviewer's own integration included, voids it.
+// Whether the issue's merge authorization holds for `current`: it is
+// exactly the authorized revision (mergeAuthorization), and the trusted
+// inputs are still the ones hardening saw. Any other change after
+// hardening, a clean rebase outside the Reviewer's own integration
+// included, voids it.
 function approvalHolds(state: IssueState, current: Revision): boolean {
-  const approved = approvedRevision(state);
+  const authorized = mergeAuthorization(state);
   return (
-    approved !== null &&
-    sameRevision(approved, current) &&
-    state.review.revision?.inputs === current.inputs
+    authorized !== null &&
+    sameRevision(authorized, current) &&
+    state.hardened?.inputs === current.inputs
   );
 }
 
@@ -249,18 +279,21 @@ export type {
   IssueState,
   MergeReturn,
   Revision,
+  Security,
+  SecurityCategory,
 };
 export {
   approvalHolds,
-  approvedRevision,
   clippedLog,
   FINDING,
   FLOWS,
   ISSUE_STATE,
   isStatus,
   LEASE,
+  mergeAuthorization,
   newIssueState,
   resumeOf,
+  SECURITY_CATEGORY,
   sameRevision,
   withLog,
 };

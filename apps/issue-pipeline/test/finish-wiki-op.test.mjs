@@ -2,7 +2,9 @@
 // The finish-wiki op (src/ops/finish.ts): completes an issue only from its
 // saved done+merged state, after fresh proof that the PR merged at
 // merged.code, the wiki holds merged.wiki and the trusted inputs are
-// unchanged; it publishes and merges nothing, and is safe to repeat.
+// unchanged, and with a saved security review that found nothing at exactly
+// that merged revision; it publishes and merges nothing, and is safe to
+// repeat.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
@@ -14,6 +16,7 @@ import {
   publishOf,
   REPO,
   savedListing,
+  securityOf,
   wikiRef,
   world,
   writes,
@@ -33,14 +36,18 @@ const NOT_SAVED_COMPLETION = /not the saved completion/u;
 const NOT_THE_MERGE_COMMIT = /not PR #50's merge commit/u;
 const WIKI_ONLY_CLOSE = /lives only in the wiki/u;
 
+// #7 saved done, merged as MERGE_COMMIT with its wiki head, the security
+// review of that merged result clear.
 /** @param {World} w @param {object} [extra] @returns {import("../src/state.ts").IssueState} */
 function doneState(w, extra = {}) {
   const approved = { code: w.sha, wiki: w.wikiSha, inputs: "inputs-1" };
+  const merged = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
   return {
     ...approvedState(approved),
     stage: "done",
     lease: null,
-    merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
+    merged,
+    security: securityOf(merged),
     ...extra,
   };
 }
@@ -73,8 +80,10 @@ function published(w) {
       headSha: w.sha,
     },
   });
+  const merged = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
   const receipt = approvedState(approved, {
-    merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
+    merged,
+    security: securityOf(merged),
   });
   fakeGh.reply([savedListing(receipt)]);
   const reply = publishOf(w.cfg, {
@@ -217,7 +226,10 @@ test("finish-wiki completes a change that lives only in the wiki, with no PR", (
     pr: null,
     flows: { code: false, wiki: true },
   };
-  fakeGh.reply([]);
+  // A change with no PR merged no code: its security review is of the wiki.
+  const merged = { ...approved, code: null };
+  const security = securityOf(merged);
+  fakeGh.reply([savedListing({ ...state, security })]);
   const reply = publishOf(w.cfg, {
     number: 7,
     state,
@@ -225,7 +237,7 @@ test("finish-wiki completes a change that lives only in the wiki, with no PR", (
     revision: approved,
   });
   assert.equal(reply.published, true);
-  const saved = { ...state, stage: "done", merged: approved };
+  const saved = { ...state, stage: "done", merged, security };
   fakeGh.reply([savedListing(saved), issueIs("open")]);
   assert.deepEqual(finishWiki(w.cfg, { number: 7 }), {
     finished: true,

@@ -1,11 +1,12 @@
 // @ts-check
 // The merge and publish ops (src/ops/merge.ts, src/ops/publication-guard.ts)
 // with the Reviewer's own integration: they merge and publish only the
-// state's approved revision (approvedRevision), which a receipt bound to the
-// exact reviewed revision moves to the integrated, checked one; a receipt
-// bound to anything else approves nothing. The merge comment keeps the
-// reviewed head apart from the integrated one, and the merge op refuses a
-// draft rather than marking it ready.
+// state's authorized revision (mergeAuthorization), which a receipt bound to
+// the exact hardened revision moves to the integrated, checked one; a
+// receipt bound to anything else authorizes nothing, and no review verdict
+// authorizes a merge. The merge comment keeps the hardened head apart from
+// the integrated one and says the security review follows, and the merge
+// op refuses a draft rather than marking it ready.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
@@ -18,6 +19,7 @@ import {
   publishOf,
   refusalOf,
   savedListing,
+  securityOf,
   wikiRef,
   world,
   writes,
@@ -29,16 +31,18 @@ const { merge } = await import("../src/ops/merge.ts");
 /** @typedef {{ code: string | null, wiki: string | null, inputs: string }} Revision */
 
 const SHORT_SHA_LENGTH = 12;
+const SECURITY_FOLLOWS =
+  "A read-only security review of the merged result follows";
 const REVIEWED_CODE = "c0ffee00000000000000000000000000000000aa";
-const NOT_APPROVED_REVISION = /is not #7's approved revision/u;
+const NOT_AUTHORIZED_REVISION = /is not #7's authorized revision/u;
 
 /** @param {string | null} sha @returns {string} */
 function short(sha) {
   return String(sha).slice(0, SHORT_SHA_LENGTH);
 }
 
-// The final review approved REVIEWED_CODE; the Reviewer's own integration
-// then checked the world's head (and wiki head) from it.
+// Hardening passed REVIEWED_CODE; the Reviewer's own integration then
+// checked the world's head (and wiki head) from it.
 /** @param {World} w @returns {{ reviewed: Revision, integrated: Revision }} */
 function chainOf(w) {
   return {
@@ -49,11 +53,7 @@ function chainOf(w) {
 
 /** @param {Revision} reviewed @param {{ reviewed: Revision, revision: Revision } | null} integration @param {object} [extra] */
 function integratedState(reviewed, integration, extra = {}) {
-  return approvedState(reviewed, {
-    hardened: reviewed,
-    integration,
-    ...extra,
-  });
+  return approvedState(reviewed, { integration, ...extra });
 }
 
 /** @param {World} w @param {Revision} revision @returns {void} */
@@ -77,7 +77,7 @@ function mergeRequest(w, revision, state) {
   };
 }
 
-test("merge merges the Reviewer's integrated head and its comment names the reviewed head apart", () => {
+test("merge merges the Reviewer's integrated head and its comment names the hardened head apart", () => {
   const w = world();
   const { reviewed, integrated } = chainOf(w);
   const state = integratedState(reviewed, { reviewed, revision: integrated });
@@ -98,12 +98,13 @@ test("merge merges the Reviewer's integrated head and its comment names the revi
     headSha: w.sha,
   });
   const body = writes()[1]?.join(" ") ?? "";
-  assert.ok(body.includes(`final review approved ${short(REVIEWED_CODE)}`));
+  assert.ok(body.includes(`hardening passed on ${short(REVIEWED_CODE)}`));
   assert.ok(body.includes(`integrated it as ${short(w.sha)}`));
   assert.ok(body.includes("with no further review"));
+  assert.ok(body.includes(SECURITY_FOLLOWS));
 });
 
-test("merge without an integration says the merged head is the reviewed one", () => {
+test("merge without an integration says hardening passed on the merged head", () => {
   const w = world();
   const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
   openAt(w, approved);
@@ -118,11 +119,12 @@ test("merge without an integration says the merged head is the reviewed one", ()
   ]);
   merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
   const body = writes()[1]?.join(" ") ?? "";
-  assert.ok(body.includes("every blocking review finding is resolved"));
+  assert.ok(body.includes("hardening passed on this commit"));
+  assert.ok(body.includes(SECURITY_FOLLOWS));
   assert.equal(body.includes("integrated"), false);
 });
 
-test("merge refuses a revision the state doesn't approve, a forged receipt's head included, writing nothing", () => {
+test("merge refuses a revision the state doesn't authorize, a forged receipt's or a reviewed head included, writing nothing", () => {
   const w = world();
   const { reviewed, integrated } = chainOf(w);
   openAt(w, integrated);
@@ -131,11 +133,13 @@ test("merge refuses a revision the state doesn't approve, a forged receipt's hea
     revision: integrated,
   });
   const unbound = integratedState(reviewed, null);
-  for (const state of [forged, unbound]) {
+  // A review that approved the head, with no hardening, authorizes nothing.
+  const unhardened = approvedState(integrated, { hardened: null });
+  for (const state of [forged, unbound, unhardened]) {
     fakeGh.reply([prView({ headRefOid: w.sha })]);
     assert.throws(
       () => merge(w.cfg, mergeRequest(w, integrated, state)),
-      NOT_APPROVED_REVISION,
+      NOT_AUTHORIZED_REVISION,
     );
     assert.deepEqual(writes(), []);
   }
@@ -180,7 +184,8 @@ test("publish after the merge of an integrated head publishes the integrated wik
   const state = integratedState(reviewed, { reviewed, revision: integrated });
   const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
   mergedAt(w);
-  fakeGh.reply([savedListing({ ...state, merged: receipt })]);
+  const security = securityOf(receipt);
+  fakeGh.reply([savedListing({ ...state, merged: receipt, security })]);
   const reply = publishOf(w.cfg, publishRequest(integrated, state));
   assert.equal(reply.published, true);
   assert.equal(wikiRef(w, "master"), w.wikiSha);
@@ -195,17 +200,35 @@ test("publish refuses an integrated head no receipt binds to the approval, in th
     revision: integrated,
   });
   const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
+  const security = securityOf(receipt);
   mergedAt(w);
-  fakeGh.reply([savedListing({ ...forged, merged: receipt })]);
+  fakeGh.reply([savedListing({ ...forged, merged: receipt, security })]);
   assert.equal(
     refusalOf(w.cfg, publishRequest(integrated, forged)),
     "unapproved",
   );
   for (const saved of [forged, integratedState(reviewed, null)]) {
-    fakeGh.reply([savedListing({ ...saved, merged: receipt })]);
+    fakeGh.reply([savedListing({ ...saved, merged: receipt, security })]);
     assert.equal(
       refusalOf(w.cfg, publishRequest(integrated, bound)),
       "no-receipt",
+    );
+  }
+  assert.equal(wikiRef(w, "master") === w.wikiSha, false);
+});
+
+test("publish of an integrated head refuses a security review of the pre-merge head instead of the merge commit", () => {
+  const w = world({ wiki: true });
+  const { reviewed, integrated } = chainOf(w);
+  const state = integratedState(reviewed, { reviewed, revision: integrated });
+  const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
+  mergedAt(w);
+  for (const revision of [integrated, reviewed]) {
+    const security = securityOf(revision);
+    fakeGh.reply([savedListing({ ...state, merged: receipt, security })]);
+    assert.equal(
+      refusalOf(w.cfg, publishRequest(integrated, state)),
+      "security",
     );
   }
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);

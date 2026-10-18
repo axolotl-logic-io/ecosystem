@@ -1,10 +1,11 @@
 // The decision to merge an issue's PR or refuse it: the checks that the
-// request's revision is the state's approved one (approvedRevision), that it
-// is still the PR's head and still current, the merge order between issues,
-// the base check, that the Reviewer marked the PR ready, the squash merge
-// itself and the merge receipt. A merge only merges code: publishing the
-// wiki (publish) and closing the issue (finish-wiki) are separate ops the
-// merge role runs after it saves the receipt (`merge-publish-finish-split`).
+// request's revision is the state's authorized one (mergeAuthorization),
+// that it is still the PR's head and still current, the merge order between
+// issues, the base check, that the Reviewer marked the PR ready, the squash
+// merge itself and the merge receipt. A merge only merges code: publishing
+// the wiki (publish) and closing the issue (finish-wiki) are separate ops
+// the merge role runs after it saves the receipt and the security review of
+// the merged result (`merge-publish-finish-split`).
 
 import { z } from "zod";
 import { comment } from "../comments.ts";
@@ -49,8 +50,8 @@ const MERGE_REQUEST = z.looseObject({
   // lowest-PR order when given.
   mergeQueue: z.array(z.number().int()).nullish(),
   number: z.number().int(),
-  // The state's approved revision (approvedRevision), which must still be
-  // current.
+  // The state's authorized revision (mergeAuthorization), which must still
+  // be current.
   revision: REVISION_REQUEST,
   state: ISSUE_STATE.extend({ pr: z.number().int().positive() }),
   summary: z.string().nullish(),
@@ -77,7 +78,7 @@ type MergeReply =
   | { merged: false; reason: string }
   | { merged: false; reason: "head-changed"; headSha: string }
   // The PR is still a draft: only ready-pr marks it ready, after the
-  // Reviewer's approval.
+  // Reviewer's hardening authorized it.
   | { merged: false; reason: "draft" }
   | WikiRefusal
   | MergeStale
@@ -110,12 +111,12 @@ function mergeCommitOf(pr: number, view: PrView): string {
 }
 
 // The PR view, once the request and PR are consistent: the revision is the
-// state's approved one, the expected head is its code, and the PR is from
+// state's authorized one, the expected head is its code, and the PR is from
 // the issue's branch.
 function checkedView(cfg: Config, req: MergeRequest): PrView {
   if (!approvalHolds(req.state, req.revision)) {
     throw new OpsError(
-      `merge revision (code ${String(req.revision.code)}, wiki ${String(req.revision.wiki)}) is not #${req.number}'s approved revision`,
+      `merge revision (code ${String(req.revision.code)}, wiki ${String(req.revision.wiki)}) is not #${req.number}'s authorized revision`,
     );
   }
   if (req.expectedSha !== req.revision.code) {
