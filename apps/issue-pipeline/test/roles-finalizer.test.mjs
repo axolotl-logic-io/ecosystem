@@ -3,7 +3,8 @@
 // fake ops: the open-findings gate, the merge at the verified head in merge
 // order with the orchestrator's queue, a change that lives only in the wiki,
 // and what each merge reply does to the issue, as today's merge stage does
-// (src/workflow/stages/merge.ts).
+// (src/workflow/stages/merge.ts). A merge deferred to a rebase is tested
+// against local git in roles-finalizer-rebase.test.mjs (#422).
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -41,7 +42,6 @@ const WAIT_NOTE = "merge waits for #9 (older PR #40)";
 const REFUSED = "GitHub refused the merge";
 const NETWORK_DOWN = "Could not resolve host: api.github.com";
 const CHECKS_SUMMARY = /tests pass/u;
-const DEFERRED = /merge deferred/u;
 // An open finding from the acceptance check.
 const ACCEPTANCE_FINDING = {
   id: "a1",
@@ -107,20 +107,6 @@ test("a queued merge ends held at merge, and its wait is logged once", async () 
   assert.deepEqual(again.end, { kind: "held" });
   assert.equal(linesWith(again.saved.log, WAIT_NOTE), 1);
 });
-
-for (const reason of ["behind", "conflict"]) {
-  test(`a ${reason} merge saves the issue at sync with its passed head kept`, async () => {
-    const run = await finalize({ merge: { merged: false, reason } });
-    assert.deepEqual(run.end, { kind: "saved", stage: "sync" });
-    const { stage, passedSha, log } = run.saved;
-    assert.equal(stage, "sync");
-    assert.equal(passedSha, VERIFIED);
-    assert.equal(linesWith(log, reason) > 0, true);
-    assert.match(String(log), DEFERRED);
-    assert.equal(prMerges(run.writes), 0);
-    assert.deepEqual(run.labels, []);
-  });
-}
 
 test("a merge GitHub refuses stops the issue with merge-refused", async () => {
   const run = await finalize({

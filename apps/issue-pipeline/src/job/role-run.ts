@@ -118,7 +118,9 @@ async function runClaimed(
     {
       op: async (effect: OpEffect): Promise<Outcome> =>
         opOutcome(
-          await launcher.op(opLaunchOf(issue, effect.op, effect.payload)),
+          await launcher.op(
+            opLaunchOf(issue, effect.op, effect.payload, effect.minutes),
+          ),
         ),
       session: launcher.session,
       sessions: launcher.sessions,

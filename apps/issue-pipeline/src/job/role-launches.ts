@@ -1,6 +1,7 @@
 // How a role's effects become a stage job's launches (src/job/role-run.ts):
-// an op effect as the op's launch for the issue, a session effect as the
-// sweep would launch it, and an op's reply as the effect's outcome.
+// an op effect as the op's launch for the issue, with its timeout, a session
+// effect as the sweep would launch it, and an op's reply as the effect's
+// outcome.
 
 import type { SessionEffect } from "../roles/machine.ts";
 import type { ChildLaunch, OpLaunch } from "../workflow/stages/types.ts";
@@ -51,13 +52,23 @@ function sessionLaunchOf(effect: SessionEffect): ChildLaunch {
   return child;
 }
 
-function opLaunchOf(issue: number, op: string, payload: Reply): OpLaunch {
-  return {
+// The launch of op `op` for the issue, timed out after `minutes` when given.
+function opLaunchOf(
+  issue: number,
+  op: string,
+  payload: Reply,
+  minutes?: number,
+): OpLaunch {
+  const launch: OpLaunch = {
     kind: "op",
     name: `i${issue}-${op}`,
     op,
     payload: { ...payload, number: issue },
   };
+  if (minutes !== undefined) {
+    launch.minutes = minutes;
+  }
+  return launch;
 }
 
 export type { Reply };

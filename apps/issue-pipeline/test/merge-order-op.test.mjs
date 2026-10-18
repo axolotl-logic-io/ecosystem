@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  advanceBase,
   ask,
   fakeGh,
   finishReplies,
@@ -103,3 +104,24 @@ for (const stage of ["accept", "security", "merge"]) {
     assert.deepEqual(writes(), []);
   });
 }
+
+// The merge-order wait comes before the rebase, so only the issue at the
+// head of the queue rebases (#422).
+test("a branch behind its base waits behind an older PR at merge rather than rebasing", () => {
+  const w = world();
+  advanceBase(w);
+  const out = mergeBeside(w, "merge", []);
+  assert.equal(
+    out,
+    replyLine({
+      ok: true,
+      op: "merge",
+      posted: 0,
+      merged: false,
+      reason: "queued",
+      waitingFor: AHEAD,
+      waitingForPr: AHEAD_PR,
+    }),
+  );
+  assert.deepEqual(writes(), []);
+});

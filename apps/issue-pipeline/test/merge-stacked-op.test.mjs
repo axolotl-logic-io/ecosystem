@@ -1,7 +1,8 @@
 // @ts-check
 // The merge op for a stacked issue (#288, #289): while its prerequisite is
 // open the merge waits for it, whatever the merge order, and once the
-// prerequisite merged it is behind until the sync unstacks it.
+// prerequisite merged it is behind until the sync unstacks it, once no ready
+// issue ahead of it in the merge order holds it (#422).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -12,6 +13,7 @@ import {
   LANE,
   replyLine,
   SWEEP,
+  stateListing,
   world,
   writes,
 } from "./ops-test-kit.mjs";
@@ -24,6 +26,9 @@ const ISSUE = 7;
 const PR = 50;
 const PREREQ = 9;
 const PREREQ_PR = 41;
+// An issue ahead of #7 in the merge queue, and its PR.
+const AHEAD = 14;
+const AHEAD_PR = 60;
 const STATE = {
   pr: PR,
   stage: "merge",
@@ -120,6 +125,31 @@ test("#288: a PR stacked on a merged prerequisite is behind, with no merge", () 
   const stackedOn = { issue: PREREQ, headSha: w.sha };
   const out = runMerge(w, stackedOn, [MERGED]);
   assert.equal(out, mergeLine({ merged: false, reason: "behind" }));
+  assert.deepEqual(writes(), []);
+});
+
+// #422: only the issue at the head of the merge queue is told to rebase.
+test("a PR stacked on a merged prerequisite waits behind a ready issue ahead in the queue rather than rebasing", () => {
+  const w = world();
+  const stackedOn = { issue: PREREQ, headSha: w.sha };
+  const aheadView = {
+    when: `issue view ${AHEAD} `,
+    stdout: JSON.stringify({ state: "OPEN", labels: [] }),
+  };
+  const ahead = stateListing(AHEAD, { pr: AHEAD_PR, stage: "merge" });
+  const out = runMerge(w, stackedOn, [MERGED, aheadView, ahead], {
+    mergeOrder: true,
+    mergeQueue: [AHEAD, ISSUE],
+  });
+  assert.equal(
+    out,
+    mergeLine({
+      merged: false,
+      reason: "queued",
+      waitingFor: AHEAD,
+      waitingForPr: AHEAD_PR,
+    }),
+  );
   assert.deepEqual(writes(), []);
 });
 

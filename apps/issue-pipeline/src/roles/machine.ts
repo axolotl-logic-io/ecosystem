@@ -58,10 +58,11 @@ interface SessionEffect {
   writer?: true;
 }
 
-// What a state does: run an op or a script check with its payload, run a
-// model session or several together, or end the run.
+// What a state does: run an op (its `minutes` the timeout, the ops default
+// without them) or a script check with its payload, run a model session or
+// several together, or end the run.
 type Effect =
-  | { kind: "op"; op: string; payload: Readonly<Record<string, unknown>> }
+  | (AfterOp & { kind: "op"; minutes?: number })
   | { kind: "check"; check: string; payload: Readonly<Record<string, unknown>> }
   | SessionEffect
   | SessionsEffect

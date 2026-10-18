@@ -56,7 +56,34 @@ type MergeReply =
   | Queued
   | StackQueued;
 
-// Why the open PR may not merge yet, or undefined when it may.
+// Whether the verified commit lacks the current base: GitHub calls the PR
+// conflicting or behind, or, since without branch protection GitHub merges
+// a stale branch without complaint, the commit lacks the base's latest
+// commit locally.
+function staleReason(
+  cfg: Config,
+  req: MergeRequest,
+  view: PrView,
+): "conflict" | "behind" | undefined {
+  if (view.mergeable === "CONFLICTING") {
+    return "conflict";
+  }
+  if (view.mergeStateStatus === "BEHIND") {
+    return "behind";
+  }
+  const wt = paths.worktree(cfg, req.number);
+  fetchIn(cfg, wt, cfg.baseBranch);
+  const base = `origin/${cfg.baseBranch}`;
+  const args = ["-C", wt, "merge-base", "--is-ancestor", base, req.expectedSha];
+  if (run("git", args, { allowFail: true }).code !== 0) {
+    return "behind";
+  }
+  return undefined;
+}
+
+// Why the open PR may not merge yet, or undefined when it may. The merge
+// order comes before the base check, so only the issue at the head of the
+// queue is told to rebase (#422).
 function precheck(
   cfg: Config,
   req: MergeRequest,
@@ -68,30 +95,27 @@ function precheck(
   // A stacked branch (stack.ts) still holds its prerequisite's commits, which
   // its reviews never measured. It waits (queued) while the prerequisite is
   // open; once the prerequisite merged it is behind, like a branch behind its
-  // base, until the sync moves it onto the base.
+  // base, until the sync moves it onto the base, and like one it waits its
+  // turn in the merge order before being told so.
   const { stackedOn } = req.state;
   if (stackedOn !== null && stackedOn !== undefined) {
-    return stackedQueued(cfg, stackedOn) ?? { merged: false, reason: "behind" };
+    return (
+      stackedQueued(cfg, stackedOn) ??
+      queued(cfg, req) ?? { merged: false, reason: "behind" }
+    );
   }
   if (view.headRefOid !== req.expectedSha) {
     return { merged: false, reason: "head-changed", headSha: view.headRefOid };
   }
-  if (view.mergeable === "CONFLICTING") {
-    return { merged: false, reason: "conflict" };
+  const waits = queued(cfg, req);
+  if (waits !== undefined) {
+    return waits;
   }
-  if (view.mergeStateStatus === "BEHIND") {
-    return { merged: false, reason: "behind" };
+  const stale = staleReason(cfg, req, view);
+  if (stale !== undefined) {
+    return { merged: false, reason: stale };
   }
-  // Without branch protection GitHub merges a stale branch without complaint,
-  // so check here that the verified commit already contains the current base.
-  const wt = paths.worktree(cfg, req.number);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const base = `origin/${cfg.baseBranch}`;
-  const args = ["-C", wt, "merge-base", "--is-ancestor", base, req.expectedSha];
-  if (run("git", args, { allowFail: true }).code !== 0) {
-    return { merged: false, reason: "behind" };
-  }
-  return queued(cfg, req);
+  return undefined;
 }
 
 // What a failed `gh pr merge` means for the issue.

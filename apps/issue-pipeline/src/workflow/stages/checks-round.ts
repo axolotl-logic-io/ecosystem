@@ -127,4 +127,11 @@ function wikiChecked(
   return verifyRound(state, ctx);
 }
 
-export { ciLaunch, failureLine, startRound, wikiChecked };
+export {
+  CI_MARGIN_MINUTES,
+  ciLaunch,
+  failureLine,
+  startRound,
+  VERIFY_MINUTES,
+  wikiChecked,
+};
