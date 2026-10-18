@@ -1,7 +1,7 @@
 // What a stage job does with its checkouts as it exits, on every exit: it
-// closes them (src/job/checkout.ts), which saves what they left uncommitted
-// as patches in the issue's run folder, drops it, lets a writer push and
-// removes the folder; records the dropped paths and the patches in job.json;
+// closes them (checkout-close.ts), saving uncommitted patches and unpushed
+// code recovery bundles before removal (or retaining the checkout if recovery
+// fails); records the dropped paths and the patches in job.json;
 // names the patches on stderr, which goes to job.log; and, when the run
 // stopped, posts one keyed coordinator comment on the issue that says the
 // patches were saved and where, naming only the job key, never a local path
@@ -12,7 +12,7 @@ import process from "node:process";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import type { JobDirs } from "./checkout.ts";
-import { closeJobCheckout } from "./checkout.ts";
+import { closeJobCheckout } from "./checkout-close.ts";
 import type { RunOp } from "./ops-request.ts";
 import type { Access } from "./pipeline-commit.ts";
 import type { JobLine } from "./role-end.ts";

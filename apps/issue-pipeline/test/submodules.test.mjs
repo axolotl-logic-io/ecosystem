@@ -16,9 +16,8 @@ const { ensureClone, ensureWorktree, removeWorktree } = await import(
   "../src/checkouts.ts"
 );
 const { loadConfig } = await import("../src/config.ts");
-const { openJobCheckout, closeJobCheckout } = await import(
-  "../src/job/checkout.ts"
-);
+const { closeJobCheckout } = await import("../src/job/checkout-close.ts");
+const { openJobCheckout } = await import("../src/job/checkout.ts");
 const { sh } = fx;
 // Only these tests' local fixture repositories may be fetched.
 setEnv("GIT_ALLOW_PROTOCOL", "file");

@@ -4,12 +4,13 @@
 // wiki checkout's when the stage writes the wiki, and records each push under
 // the session's launch in job.json and as a line of `pushes.jsonl` in the
 // issue's run folder, `{key, job, repo, sha, at}`, which outlives job.json.
-// It pushes only for a launch of the job recorded as given commit authority,
-// so a read-only session that reached the socket pushes nothing.
+// Only a launch with a job-bound write scope can push. Fresh saved receipts
+// and live PR authority independently forbid code after merge, even when a
+// session forges its tool environment. Wiki writes keep their bound scope.
 // It defers while a rebase is stopped in
 // either checkout, whose ops push the rebased branch only after its checks.
 // A refused push keeps the commits and is reported, never thrown; the next
-// request pushes whatever is still unpushed.
+// request rechecks authority for whatever is still unpushed.
 
 import { pushHead } from "../checkouts.ts";
 import type { Config } from "../config.ts";

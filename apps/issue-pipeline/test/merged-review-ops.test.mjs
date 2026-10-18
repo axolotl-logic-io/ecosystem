@@ -21,7 +21,7 @@ const { fakeGh, sh, worktree, originRef } = fx;
 const { loadConfig, paths } = await import("../src/config.ts");
 const { pushUnpushed } = await import("../src/unpushed.ts");
 const { currentRevision } = await import("../src/revision.ts");
-const { closeJobCheckout } = await import("../src/job/checkout.ts");
+const { closeJobCheckout } = await import("../src/job/checkout-close.ts");
 const { newIssueState } = await import("../src/state.ts");
 
 const ISSUE = {

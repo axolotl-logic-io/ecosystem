@@ -24,16 +24,15 @@ import {
 } from "./wiki-pin-test-kit.mjs";
 
 const { paths } = await import("../src/config.ts");
-const { closeJobCheckout, openJobCheckout } = await import(
-  "../src/job/checkout.ts"
-);
+const { closeJobCheckout } = await import("../src/job/checkout-close.ts");
+const { openJobCheckout } = await import("../src/job/checkout.ts");
 
 /** @import { Config } from "../src/config.ts" */
 
 const KEY = "implement-1";
 const LATER_KEY = "implement-2";
 const BASE_LINE = /^Base: (?<sha>[0-9a-f]{40})$/mu;
-const EXIT_STEP_FAILED = /job: exit: /u;
+const RECOVERY_RETAINED = /recovery incomplete; checkout retained/u;
 const FIRST_FILE = /first\.txt/u;
 const SECOND_FILE = /second\.txt/u;
 // Every byte value, so the patch must carry a binary file whole.
@@ -196,7 +195,7 @@ test("a later job of the same stage saves its patch beside the earlier one's", a
   assert.match(fs.readFileSync(next, "utf8"), SECOND_FILE);
 });
 
-test("a patch that can't be saved is reported, and the changes are still dropped and the folder removed", async () => {
+test("a failed patch save retains the checkout and original dirty content for operator recovery", async () => {
   const job = openFresh();
   write(job.repo, "left.txt", "left\n");
   const runDir = paths.runDir(job.cfg, ISSUE);
@@ -209,14 +208,15 @@ test("a patch that can't be saved is reported, and the changes are still dropped
     errors.push(String(chunk));
     return true;
   };
-  let closed;
   try {
-    closed = await close(job, KEY);
+    await assert.rejects(close(job, KEY));
   } finally {
     process.stderr.write = writeErr;
   }
-  assert.match(errors.join(""), EXIT_STEP_FAILED);
-  assert.deepEqual(closed.lost, ["repo/left.txt"]);
-  assert.deepEqual(closed.patches, []);
-  assert.equal(fs.existsSync(job.root), false);
+  assert.match(errors.join(""), RECOVERY_RETAINED);
+  assert.equal(fs.existsSync(job.root), true);
+  assert.equal(
+    fs.readFileSync(path.join(job.repo, "left.txt"), "utf8"),
+    "left\n",
+  );
 });

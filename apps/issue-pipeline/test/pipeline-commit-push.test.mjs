@@ -19,7 +19,7 @@ import {
   write,
 } from "./pipeline-commit-test-kit.mjs";
 
-const { closeJobCheckout } = await import("../src/job/checkout.ts");
+const { closeJobCheckout } = await import("../src/job/checkout-close.ts");
 const { lastPush } = await import("../src/checkouts.ts");
 const { STAGE_WIKI_ACCESS } = await import("../src/job/roles.ts");
 

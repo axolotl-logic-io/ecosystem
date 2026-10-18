@@ -65,6 +65,8 @@
         "src/job/control-protocol.ts",
         "src/job/pipeline-commit-tool.ts",
         "src/job/checkout.ts",
+        "src/job/checkout-close.ts",
+        "src/job/code-recovery.ts",
         "src/job/exit-push.ts",
         "src/job/dropped-patch.ts",
         "src/job/teardown.ts",
