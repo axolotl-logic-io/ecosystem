@@ -1,13 +1,14 @@
 // What the implementor's states are built from (the wiki's
 // Pipeline-Roles-Implementor, "Lifecycle"): the results they answer with, a
-// state's spec, and the script state that runs a check. Each entry's module
-// (start.ts, sync.ts, implement.ts, fix.ts) builds its states from these, and machine.ts
-// joins them. Pure.
+// state's spec, and the script states that run a check or an op. Each
+// entry's module (start.ts, sync.ts, implement.ts, fix.ts, checks-entry.ts)
+// builds its states from these, and machine.ts joins them. Pure.
 
-import type { StateSpec } from "../machine.ts";
+import type { Edge, StateSpec } from "../machine.ts";
 import type { ImplData, ImplState } from "./locate.ts";
 
-// The results the states answer with.
+// The results the states answer with. `failed` is also what the walk gives
+// an effect that failed (walk.ts).
 type ImplResult =
   | "ok"
   | "replied"
@@ -38,7 +39,17 @@ type ImplResult =
   | "aborted"
   | "failed"
   | "moved"
-  | "same";
+  | "same"
+  // The `checks` entry's (#420), beside the ones above it shares.
+  | "checks"
+  | "verified"
+  | "pass"
+  | "wiki-only"
+  | "fail"
+  | "green"
+  | "pending"
+  | "no-checks"
+  | "blocking";
 
 type ImplSpec = StateSpec<ImplState, ImplResult, ImplData>;
 
@@ -65,5 +76,23 @@ function check(
   };
 }
 
+// A script state that runs op `name` with `payload` and the issue, and goes
+// on by `ok` once it is done; the runner ends a run whose op failed.
+function op(
+  name: string,
+  payload: (data: ImplData) => Payload,
+  ok: Edge<ImplState, ImplData>,
+): ImplSpec {
+  return {
+    kind: "script",
+    effect: (data: ImplData) => ({
+      kind: "op",
+      op: name,
+      payload: { number: data.issue, ...payload(data) },
+    }),
+    on: { ok },
+  };
+}
+
 export type { ImplResult, ImplSpec, ImplStates };
-export { check };
+export { check, op };

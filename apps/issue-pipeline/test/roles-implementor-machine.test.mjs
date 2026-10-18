@@ -16,6 +16,8 @@ import {
   handoffLead,
   NO_ARTIFICIAL_LOAD_RULE,
 } from "../src/workflow/prompts.ts";
+import { CHECKS_EDGES } from "./implementor-checks-edge-fixtures.mjs";
+import { FIX_EDGES as CHECKS_FIX_EDGES } from "./implementor-checks-fix-edge-fixtures.mjs";
 import { EDGES } from "./implementor-edge-fixtures.mjs";
 import { FIX_EDGES } from "./implementor-fix-edge-fixtures.mjs";
 import {
@@ -88,20 +90,31 @@ test("every edge of the implement entry gives its next state, effect and data", 
 });
 
 // The states that run a model: the implementer, the fixer, a re-reviewer
-// for each lens (#418) and the conflict resolver (#419).
+// for each lens (#418), the conflict resolver (#419), and the checks entry's
+// CI fixer and check-fix reviewers (#420).
 const SESSIONS = new Set([
   "implementer",
   "fixer",
   "resolver",
   ...ALL_LENSES.map((lens) => `rereview-${lens}`),
+  "ci-fixer",
+  "check-fix-correctness",
+  "check-fix-scope",
 ]);
 
-test("every listed edge is covered, only the implementer, the fixer, the re-reviewers and the conflict resolver run a model, and no state sends a PR op", () => {
-  const edges = [...EDGES, ...FIX_EDGES, ...SYNC_EDGES];
+test("every listed edge is covered, only the implementer, the fixers, the conflict resolver and the reviewers inside the role run a model, and no state sends a PR op", () => {
+  /** @type {{ at: string, result: string }[]} */
+  const listedEdges = [
+    ...EDGES,
+    ...FIX_EDGES,
+    ...SYNC_EDGES,
+    ...CHECKS_EDGES,
+    ...CHECKS_FIX_EDGES,
+  ];
   for (const [name, spec] of Object.entries(TABLE.states)) {
     assert.equal(spec.kind === "session", SESSIONS.has(name), name);
     for (const result of Object.keys(spec.on)) {
-      const listed = edges.some(
+      const listed = listedEdges.some(
         (edge) => edge.at === name && edge.result === result,
       );
       assert.ok(listed, `${name} ${result}`);
@@ -122,6 +135,7 @@ test("the table has no faults under its limits", () => {
     maxFixRounds: 2,
     maxConflictFixes: 2,
     maxSyncs: 3,
+    maxCiFixes: 2,
   });
   assert.deepEqual(checkTable(TABLE, LIMITS, dataWith()), []);
 });
@@ -163,18 +177,18 @@ test("a reply that doesn't read stops the issue as a failed session", () => {
   assert.equal(effect.end.code, "error");
 });
 
-test("the limits on continuations and fix rounds are the config's maxContinuations and maxFixRounds", () => {
+test("the limits on continuations, fix rounds and CI fixes are the config's maxContinuations, maxFixRounds and maxCiFixes", () => {
   const { limitsOf } = implementorMachine;
   assert.ok(limitsOf !== undefined);
   const { cfg } = implContext({ maxContinuations: 3, maxFixRounds: 4 });
-  const { maxContinuations, maxFixRounds } = limitsOf(cfg);
+  const { maxContinuations, maxFixRounds, maxCiFixes } = limitsOf(cfg);
   assert.deepEqual(
-    { maxContinuations, maxFixRounds },
-    { maxContinuations: 3, maxFixRounds: 4 },
+    { maxContinuations, maxFixRounds, maxCiFixes },
+    { maxContinuations: 3, maxFixRounds: 4, maxCiFixes: cfg.maxCiFixes },
   );
 });
 
-test("the machine checkpoints its counts and the synced head, and hands off the head, the flows, the reply, the findings, the re-review's fields and the spec's tests", () => {
+test("the machine checkpoints its counts and the synced head, and hands off the head, the flows, the reply, the findings, the re-review's fields, the spec's tests and the checks entry's", () => {
   assert.deepEqual(
     new Set(implementorMachine.checkpoints),
     new Set([
@@ -184,6 +198,7 @@ test("the machine checkpoints its counts and the synced head, and hands off the 
       "conflictFixes",
       "ciFixRounds",
       "syncedHead",
+      "ciFixContinuations",
     ]),
   );
   assert.deepEqual(
@@ -204,6 +219,9 @@ test("the machine checkpoints its counts and the synced head, and hands off the 
       "syncs",
       "passedSha",
       "specTestsSha",
+      "verifiedSha",
+      "verifySummary",
+      "pr",
     ]),
   );
   assert.equal(implementorMachine.table, TABLE);

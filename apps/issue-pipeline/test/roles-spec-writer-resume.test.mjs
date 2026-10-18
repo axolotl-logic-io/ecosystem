@@ -12,13 +12,18 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
-import {
-  HANDOFF as IMPL_HANDOFF,
-  located,
-  stepFrom,
-} from "./implementor-role-test-kit.mjs";
 import { BRANCH, specWriter } from "./spec-writer-git-test-kit.mjs";
 import { INTERFACE, replyOf } from "./spec-writer-role-test-kit.mjs";
+
+// The implementor's kit imports src/, so it is imported after the spec
+// writer's git kit has set the pipeline root to a temp folder; a static
+// import would load src/ first, and the run's mirrors would land in the
+// real pipeline root, shared with every other run.
+const {
+  HANDOFF: IMPL_HANDOFF,
+  located,
+  stepFrom,
+} = await import("./implementor-role-test-kit.mjs");
 
 /** @typedef {Awaited<ReturnType<typeof specWriter>>} Ran */
 

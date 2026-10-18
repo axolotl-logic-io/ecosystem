@@ -37,6 +37,12 @@ const { closeJobCheckout, openJobCheckout } = await import(
   "../src/job/checkout.ts"
 );
 const { roleOf } = await import("../src/roles/registry.ts");
+const { ROOT } = await import("../src/pipeline-root.ts");
+if (ROOT !== root) {
+  throw new Error(
+    `src/ was imported before this kit set the pipeline root, which is ${ROOT}: import this kit first`,
+  );
+}
 
 const ISSUE = 7;
 // The issue a stacked #7 is stacked on.

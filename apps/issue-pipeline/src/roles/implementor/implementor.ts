@@ -11,9 +11,14 @@ import { locate } from "./locate.ts";
 import type { ImplResult } from "./machine.ts";
 import { LIMITS, TABLE } from "./machine.ts";
 
-// The stages the implementor runs in stage jobs; a later part adds checks.
-// The lanes' workflow.js keeps today's sync stage code.
-const IMPLEMENTOR_STAGES: readonly string[] = ["implement", "fix", "sync"];
+// The stages the implementor runs in stage jobs. The lanes' workflow.js
+// keeps today's sync and checks stage code.
+const IMPLEMENTOR_STAGES: readonly string[] = [
+  "implement",
+  "fix",
+  "sync",
+  "checks",
+];
 
 const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
   table: TABLE,
@@ -23,6 +28,7 @@ const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
     maxFixRounds: cfg.maxFixRounds,
     maxConflictFixes: maxConflictFixes({ cfg }),
     maxSyncs: cfg.maxSyncs,
+    maxCiFixes: cfg.maxCiFixes,
   }),
   locate,
   handoff: [
@@ -41,6 +47,9 @@ const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
     "syncs",
     "passedSha",
     "specTestsSha",
+    "verifiedSha",
+    "verifySummary",
+    "pr",
   ],
   checkpoints: [
     "continuations",
@@ -49,6 +58,7 @@ const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
     "conflictFixes",
     "ciFixRounds",
     "syncedHead",
+    "ciFixContinuations",
   ],
 };
 

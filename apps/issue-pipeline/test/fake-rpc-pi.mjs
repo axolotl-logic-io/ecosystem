@@ -13,7 +13,9 @@
 // conflict stopped for a resolver with keepConflict) and pushes a clean rebase; finish-sync
 // aborts, rejects a rebase still in progress, or pushes. An op whose
 // reply sets `hang` never answers: it starts `sleep 600` in the op's own
-// process group, writes the sleep's pid to hang.pid and waits on it.
+// process group, writes the sleep's pid to hang.pid and waits on it. A
+// reply `{ sequence: [r1, r2, ...] }` answers r1, then r2, and so on, its
+// last entry repeating once the list runs out (#420).
 const FAKE_OPS = `import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 const dir = import.meta.dirname;
@@ -21,6 +23,15 @@ const input = fs.readFileSync(0, "utf8");
 const request = JSON.parse(input.split("BEGIN_OPS_REQUEST")[1].split("END_OPS_REQUEST")[0]);
 fs.appendFileSync(dir + "/ops.log", JSON.stringify(request) + "\\n");
 const replies = JSON.parse(fs.readFileSync(dir + "/replies.json", "utf8"));
+const sequence = replies[request.op]?.sequence;
+if (Array.isArray(sequence)) {
+  replies[request.op] = sequence[0];
+  if (sequence.length > 1) {
+    const rest = JSON.parse(fs.readFileSync(dir + "/replies.json", "utf8"));
+    rest[request.op] = { sequence: sequence.slice(1) };
+    fs.writeFileSync(dir + "/replies.json", JSON.stringify(rest));
+  }
+}
 if (replies[request.op]?.hang) {
   const sleep = spawn("sleep", ["600"], { stdio: "ignore" });
   fs.writeFileSync(dir + "/hang.pid", sleep.pid + "\\n");

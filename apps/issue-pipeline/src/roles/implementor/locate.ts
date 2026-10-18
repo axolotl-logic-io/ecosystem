@@ -5,7 +5,9 @@
 // state alone can't tell a branch with work from one without. It reads back
 // the checkpoints (the counts that bound the entries' loops) and the
 // hand-off fields. A state saved by today's implement stage keeps its
-// continuation count, read through stages/continuation.ts. Pure.
+// continuation count, one saved by today's fix stage its round and the
+// fixer's continuations, and one saved by today's checks stage its CI-fix
+// count and continuations, read through stages/continuation.ts. Pure.
 
 import { z } from "zod";
 import type { State } from "../../state.ts";
@@ -13,12 +15,15 @@ import type { Budgets } from "../../workflow/budget.ts";
 import type { Flows } from "../../workflow/flows.ts";
 import type { Lens } from "../../workflow/lenses.ts";
 import type { Signature } from "../../workflow/signing.ts";
+import type { ContinuationStage } from "../../workflow/stages/continuation.ts";
 import { continuationsOf } from "../../workflow/stages/continuation.ts";
 import { isStrings } from "../../workflow/stages/reply-guards.ts";
 import type { ModelRole, SweepConfig } from "../../workflow/stages/types.ts";
 import type { ItemPaths } from "../../workflow/types.ts";
 import type { MachineState } from "../machine.ts";
 import type { RoleContext } from "../walk.ts";
+import type { ChecksHandoff, ChecksRun, ChecksState } from "./checks-data.ts";
+import { checksHandoffOf, checksRunOf } from "./checks-data.ts";
 import type { FixFields } from "./fix-data.ts";
 import { fixFieldsOf } from "./fix-data.ts";
 import type { ImplReading } from "./reply.ts";
@@ -26,7 +31,8 @@ import type { SyncFields } from "./sync-data.ts";
 import { syncFieldsOf } from "./sync-data.ts";
 
 // The machine's states: the shared start, the start sync's (#419), the
-// `implement` entry's states (the wiki's Lifecycle table), then its ends.
+// `implement` entry's states (the wiki's Lifecycle table) and its ends, then
+// the `fix` entry's and the `checks` entry's.
 type ImplState =
   | "start"
   | "sync-work?"
@@ -78,10 +84,12 @@ type ImplState =
   | "reintroduced"
   | "rereview-bad"
   | "fixer-bad-reply"
-  | "fixer-out-of-room";
+  | "fixer-out-of-room"
+  // The `checks` entry's states and ends (#420).
+  | ChecksState;
 
-// The entries a run can take; a later part adds `checks`.
-type ImplEntry = "implement" | "fix" | "sync";
+// The entries a run can take, by the stage it was saved at.
+type ImplEntry = "implement" | "fix" | "sync" | "checks";
 
 // What the session's task is built from.
 interface ImplSettings {
@@ -93,7 +101,7 @@ interface ImplSettings {
 
 // What the spec writer handed over, and what the run hands to the
 // reviewer.
-interface ImplHandoff {
+interface ImplHandoff extends ChecksHandoff {
   spec: string | undefined;
   specFile: string | null | undefined;
   plan: string | undefined;
@@ -109,7 +117,6 @@ interface ImplHandoff {
   implemented: boolean | undefined;
   // As saved; the fix entry reads them through findingsOf (fix-data.ts).
   findings: unknown[];
-  verifiedSha: string | null;
 }
 
 // The counts the entries bound their loops with.
@@ -120,9 +127,16 @@ interface ImplCounts {
   fixRounds: number;
   conflictFixes: number;
   ciFixRounds: number;
+  // The CI fixer's continuations, counted across its rounds.
+  ciFixContinuations: number;
 }
 
-interface ImplData extends ImplHandoff, ImplCounts, FixFields, SyncFields {
+interface ImplData
+  extends ImplHandoff,
+    ImplCounts,
+    FixFields,
+    SyncFields,
+    ChecksRun {
   issue: number;
   entry: ImplEntry;
   // Who signs the run's comments.
@@ -181,8 +195,8 @@ function prOf(value: unknown): number | null | undefined {
   return nullOr(value);
 }
 
-// The continuations today's `stage` stage saved, 0 when it saved none.
-function oldContinuations(saved: State, stage: "implement" | "fix"): number {
+// The continuations today's `stage` saved, 0 when it saved none.
+function oldContinuations(saved: State, stage: ContinuationStage): number {
   const { continuations } = saved;
   const parsed = OLD_CONTINUATIONS.safeParse(continuations);
   if (!parsed.success) {
@@ -191,16 +205,17 @@ function oldContinuations(saved: State, stage: "implement" | "fix"): number {
   return continuationsOf({ continuations: parsed.data }, stage);
 }
 
-// The saved counts; the role's own checkpoint wins over the old field (today's
-// sync stage saved `conflictFixes` at the top level), and a missing or
-// malformed one reads as 0. Today's fix stage
-// counts its rounds in `round` and the fixer's continuations apart, so
-// either count is the higher of the checkpoint and today's.
+// The saved counts; the role's own checkpoints win over today's fields
+// (today's sync stage saved `conflictFixes` at the top level, and today's
+// checks stage `ciFixes`), and a missing or malformed one reads as 0. Today's
+// fix stage counts its rounds in `round` and the fixer's continuations
+// apart, so either count is the higher of the checkpoint and today's.
 function countsOf(saved: State): ImplCounts {
   const { continuations, fixContinuations, fixRounds } =
     saved.checkpoints ?? {};
-  const { conflictFixes, ciFixRounds } = saved.checkpoints ?? {};
-  const { round, conflictFixes: oldConflictFixes } = saved;
+  const { conflictFixes, ciFixRounds, ciFixContinuations } =
+    saved.checkpoints ?? {};
+  const { round, conflictFixes: oldConflictFixes, ciFixes } = saved;
   return {
     continuations: countOr(continuations, oldContinuations(saved, "implement")),
     fixContinuations: Math.max(
@@ -209,7 +224,11 @@ function countsOf(saved: State): ImplCounts {
     ),
     fixRounds: Math.max(countOr(fixRounds, 0), countOr(round, 0)),
     conflictFixes: countOr(conflictFixes, countOr(oldConflictFixes, 0)),
-    ciFixRounds: countOr(ciFixRounds, 0),
+    ciFixRounds: countOr(ciFixRounds, countOr(ciFixes, 0)),
+    ciFixContinuations: countOr(
+      ciFixContinuations,
+      oldContinuations(saved, "ciFix"),
+    ),
   };
 }
 
@@ -217,12 +236,12 @@ function countsOf(saved: State): ImplCounts {
 function handoffOf(saved: State): ImplHandoff {
   const { spec, specFile, plan, specTestsSha, wikiOnly, noTestsReason } = saved;
   const { pr, unwrittenFiles, headSha, flows, implemented } = saved;
-  const { verifiedSha } = saved;
   let unwritten: readonly string[] = [];
   if (isStrings(unwrittenFiles)) {
     unwritten = unwrittenFiles;
   }
   return {
+    ...checksHandoffOf(saved),
     spec: textOr(spec, undefined),
     specFile: textOr(specFile, nullOr(specFile)),
     plan: textOr(plan, undefined),
@@ -235,14 +254,14 @@ function handoffOf(saved: State): ImplHandoff {
     flows: FLOWS.safeParse(flows).data,
     implemented: booleanOr(implemented),
     findings: saved.findings ?? [],
-    verifiedSha: textOr(verifiedSha, null),
   };
 }
 
-// The entry a state saved at `fix` or `sync` takes; any other, `implement`.
+// The entry a state saved at `fix`, `sync` or `checks` takes; any other,
+// `implement`.
 function entryOf(saved: State): ImplEntry {
   const { stage } = saved;
-  if (stage === "fix" || stage === "sync") {
+  if (stage === "fix" || stage === "sync" || stage === "checks") {
     return stage;
   }
   return "implement";
@@ -265,6 +284,7 @@ function locate(
     ...counts,
     ...fixFieldsOf(saved, counts.fixRounds, cfg.maxFixRounds),
     ...syncFieldsOf(saved, cfg),
+    ...checksRunOf(cfg),
     issue,
     entry: entryOf(saved),
     by,

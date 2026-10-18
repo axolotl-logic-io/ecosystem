@@ -14,6 +14,7 @@ import type { CheckEffect, Outcome } from "../../job/run-step.ts";
 import type { Entry } from "../../job/runner.ts";
 import { flowsOf } from "../../workflow/flows.ts";
 import type { Checks, JobEffects } from "../registry.ts";
+import { checksEntryChecks } from "./checks-ops.ts";
 import { codeChangedSince } from "./code-change.ts";
 import { fixChecks } from "./fix-checks.ts";
 import { answer, guarded } from "./outcome.ts";
@@ -22,7 +23,9 @@ import { syncChecks } from "./sync-checks.ts";
 
 type Payload = CheckEffect["payload"];
 
-const START = z.looseObject({ entry: z.enum(["implement", "fix", "sync"]) });
+const START = z.looseObject({
+  entry: z.enum(["implement", "fix", "sync", "checks"]),
+});
 const WORK = z.looseObject({
   specTestsSha: z.string().nullable(),
   wikiOnly: z.boolean(),
@@ -104,6 +107,7 @@ function implementorChecks(
     flows: () => guarded(() => pushed(effects, issue)),
     ...fixChecks(effects, () => pushed(effects, issue)),
     ...syncChecks(effects, cfg, { issue, dir }),
+    ...checksEntryChecks(entry, effects),
   };
 }
 

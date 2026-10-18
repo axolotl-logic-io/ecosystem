@@ -72,14 +72,12 @@ test("each entry's states have their own module, which machine.ts joins", () => 
   }
 });
 
-test("the registry runs the implementor for each stage in its list: implement, fix and sync (#419), and not open-pr", () => {
-  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement", "fix", "sync"]);
+test("the registry runs the implementor for each stage in its list: implement, fix, sync (#419) and checks (#420), and not open-pr", () => {
+  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement", "fix", "sync", "checks"]);
   for (const stage of IMPLEMENTOR_STAGES) {
     const role = roleOf(stage);
     assert.equal(role?.name, "implementor", stage);
     assert.equal(role?.kind, "machine", stage);
   }
-  for (const stage of ["open-pr", "checks"]) {
-    assert.equal(roleOf(stage), undefined, stage);
-  }
+  assert.equal(roleOf("open-pr"), undefined, "open-pr");
 });

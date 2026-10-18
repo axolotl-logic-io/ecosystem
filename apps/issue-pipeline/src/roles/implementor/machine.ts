@@ -1,14 +1,17 @@
 // The implementor role as a state machine (`role-state-machines`; the wiki's
 // Pipeline-Roles-Implementor, "Lifecycle"): its table, its limits and its
 // pure transition. Every run enters at the shared `start`, then passes
-// through the start sync (#419); each entry's states live in their own
+// through the start sync (#419), except a `checks` entry, which goes
+// straight to its first state; each entry's states live in their own
 // module, which TABLE spreads in, so a later entry adds one module and one
-// line here. The sessions are the implementer, the fixer, the re-reviewers
-// and the conflict resolver. The ops and checks are carried out by the job
-// (checks.ts); this module only names them with their payloads.
+// line here. The sessions are the implementer, the fixer, the re-reviewers,
+// the conflict resolver, and the CI fixer and the check-fix reviewers. The
+// ops and checks are carried out by the job (checks.ts); this module only
+// names them with their payloads.
 
 import type { Limits, MachineState, Result, Step, Table } from "../machine.ts";
 import { transitionOf } from "../machine.ts";
+import { CHECKS_STATES } from "./checks-entry.ts";
 import { END_STATES } from "./ends.ts";
 import { FIX_STATES } from "./fix.ts";
 import { IMPLEMENT_STATES } from "./implement.ts";
@@ -19,13 +22,14 @@ import { SYNC_STATES } from "./sync.ts";
 
 // A continuation after each handoff, up to the config's maxContinuations,
 // fix rounds up to its maxFixRounds, conflict resolutions up to its
-// maxConflictFixes and the sync entry's rebases up to its maxSyncs
-// (limitsOf): 1, 2, 2 and 3 by default.
+// maxConflictFixes, the sync entry's rebases up to its maxSyncs and CI-fix
+// rounds up to its maxCiFixes (limitsOf): 1, 2, 2, 3 and 2 by default.
 const LIMITS: Limits = {
   maxContinuations: 1,
   maxFixRounds: 2,
   maxConflictFixes: 2,
   maxSyncs: 3,
+  maxCiFixes: 2,
 };
 
 const TABLE: Table<ImplState, ImplResult, ImplData> = {
@@ -35,6 +39,7 @@ const TABLE: Table<ImplState, ImplResult, ImplData> = {
     ...SYNC_STATES,
     ...IMPLEMENT_STATES,
     ...FIX_STATES,
+    ...CHECKS_STATES,
     ...END_STATES,
   },
 };

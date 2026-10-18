@@ -254,11 +254,11 @@ function findingsOf(output: unknown): unknown[] | null {
   return findings;
 }
 
-// A check-fix reviewer's blocking findings (REVIEW_SCHEMA), or null when its
-// session failed.
-function blockingOf(result: ChildResult): ListedFinding[] | null {
-  const findings = findingsOf(result.structuredOutput);
-  if (!result.ok || findings === null) {
+// A check-fix reviewer's blocking findings in its reply (REVIEW_SCHEMA), or
+// null when the reply doesn't fit.
+function blockingIn(output: unknown): ListedFinding[] | null {
+  const findings = findingsOf(output);
+  if (findings === null) {
     return null;
   }
   const blocking: ListedFinding[] = [];
@@ -273,8 +273,17 @@ function blockingOf(result: ChildResult): ListedFinding[] | null {
   return blocking;
 }
 
+// A check-fix reviewer's blocking findings, or null when its session failed.
+function blockingOf(result: ChildResult): ListedFinding[] | null {
+  if (!result.ok) {
+    return null;
+  }
+  return blockingIn(result.structuredOutput);
+}
+
 export type { Check, FinishReply, FixOutput, SyncReply };
 export {
+  blockingIn,
   blockingOf,
   checksOf,
   ciReplyOf,

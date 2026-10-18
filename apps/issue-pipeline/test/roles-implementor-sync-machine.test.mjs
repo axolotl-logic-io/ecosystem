@@ -68,6 +68,7 @@ test("the limits bound conflict fixes at 2 and the sync entry's rebases at 3 by 
     maxFixRounds: 2,
     maxConflictFixes: 2,
     maxSyncs: 3,
+    maxCiFixes: 2,
   });
   const { limitsOf } = implementorMachine;
   assert.ok(limitsOf !== undefined);
@@ -76,12 +77,14 @@ test("the limits bound conflict fixes at 2 and the sync entry's rebases at 3 by 
     maxFixRounds: 6,
     maxConflictFixes: 4,
     maxSyncs: 5,
+    maxCiFixes: 7,
   });
   assert.deepEqual(limitsOf(set.cfg), {
     maxContinuations: 3,
     maxFixRounds: 6,
     maxConflictFixes: 4,
     maxSyncs: 5,
+    maxCiFixes: 7,
   });
   const unset = implContext({ maxConflictFixes: null });
   const { maxConflictFixes } = limitsOf(unset.cfg);
@@ -92,8 +95,8 @@ test("the limits bound conflict fixes at 2 and the sync entry's rebases at 3 by 
   );
 });
 
-test("the implementor runs the implement, fix and sync stages, and hands off the sync's fields", () => {
-  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement", "fix", "sync"]);
+test("the implementor runs the implement, fix, sync and checks stages, and hands off the sync's fields", () => {
+  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement", "fix", "sync", "checks"]);
   /** @type {Set<string>} */
   const handoff = new Set(implementorMachine.handoff);
   for (const field of [
