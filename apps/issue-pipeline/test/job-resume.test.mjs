@@ -1,5 +1,9 @@
-// Resuming a stopped stage job with --resume: an interrupted session with
-// its file on disk is reopened, and one without it starts fresh.
+// @ts-check
+// A restarted stage job is always fresh (Reimagined-Pipeline): the job that
+// follows one stopped mid-session claims the issue again and starts its
+// session anew with the stage's own task, keeping the stopped session's file
+// aside and counting only its own session's usage. The retired --resume and
+// --stack-on flags are refused before any op.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -7,33 +11,36 @@ import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
-  CLEAN_REVIEW,
+  AUTHOR_SESSION,
+  AUTHORED,
+  READER_STAGE,
+  repliesAt,
+  USAGE,
+} from "./job-fixtures.mjs";
+import {
   flagValue,
   logOf,
   piCommands,
   piStarts,
-  repliesAt,
   runJob,
-  SWEEP_SESSION,
-  SWEEP_STAGE,
   sessionOf,
   setScript,
   setUp,
   startJob,
   statusOf,
-  USAGE,
-  USAGE_SPENT,
 } from "./job-test-kit.mjs";
 
-const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
-const INTERRUPTED = /interrupted/u;
+const STAGE_ARGS = ["--stage", READER_STAGE, "--lane", "L"];
 // SIGTERM's exit code: 128 + 15.
 const STOPPED_BY_SIGTERM = 143;
+const UNKNOWN_OPTION = /Unknown option '--(?:resume|stack-on)'/u;
+const SET_ASIDE = /^author-1\.[0-9a-z]+\.jsonl$/u;
 
-// A sweep stage job stopped while its session waits, after it spent USAGE.
+// An author job stopped while its session waits, after it spent USAGE; its
+// next run's session ends with the Gherkin.
 async function stoppedJob() {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
-    events: [messageEnd(USAGE), "wait", outputEnd(CLEAN_REVIEW)],
+  const place = setUp(repliesAt(READER_STAGE), {
+    events: [messageEnd(USAGE), "wait", outputEnd(AUTHORED)],
   });
   const job = startJob(place, STAGE_ARGS);
   await waitFor(
@@ -42,57 +49,42 @@ async function stoppedJob() {
   );
   job.child.kill("SIGTERM");
   const end = await job.end;
-  setScript(place, SWEEP_SESSION);
+  setScript(place, AUTHOR_SESSION);
   return { place, end };
 }
 
-/** @param {import("./job-test-kit.mjs").Place} place */
-function releaseOf(place) {
-  return logOf(place, "ops.log").find(({ op }) => op === "release");
-}
-
-test("--resume reopens the interrupted session with the resume prompt and counts its tokens once", async () => {
+test("the job after a stopped one starts its session fresh with the stage's task and keeps the stopped one aside", async () => {
   const { place, end } = await stoppedJob();
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
-  const r = runJob(place, [...STAGE_ARGS, "--resume"]);
+  const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).end, "next");
   const [first, second] = piStarts(place);
   const session = flagValue(first.argv, "--session");
   assert.equal(flagValue(second.argv, "--session"), session);
-  assert.equal(second.fresh, false);
+  assert.deepEqual([first.fresh, second.fresh], [true, true]);
   const prompts = piCommands(place).filter(({ type }) => type === "prompt");
   assert.equal(prompts.length, 2);
-  assert.match(prompts[1].message, INTERRUPTED);
-  assert.notEqual(prompts[1].message, prompts[0].message);
-  assert.deepEqual(
-    fs.readdirSync(path.dirname(session)).filter((f) => f.endsWith(".jsonl")),
-    [path.basename(session)],
-  );
-  assert.equal(releaseOf(place).state.reportedTokens, 2 * USAGE_SPENT);
-  const launch = sessionOf(statusOf(place));
-  assert.equal(launch.resumed, true);
-  assert.equal(launch.usage.input, 2 * USAGE.input);
-});
-
-test("--resume starts a launch whose session file is gone afresh", async () => {
-  const { place, end } = await stoppedJob();
-  assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
-  const { session } = sessionOf(statusOf(place));
-  fs.rmSync(session);
-  const r = runJob(place, [...STAGE_ARGS, "--resume"]);
-  assert.equal(r.status, 0, r.stderr);
-  const [, second] = piStarts(place);
-  assert.equal(second.fresh, true);
-  const prompts = piCommands(place).filter(({ type }) => type === "prompt");
   assert.equal(prompts[1].message, prompts[0].message);
-  assert.equal(releaseOf(place).state.reportedTokens, USAGE_SPENT);
-  assert.equal(sessionOf(statusOf(place)).resumed, false);
+  const aside = fs
+    .readdirSync(path.dirname(session))
+    .filter((name) => SET_ASIDE.test(name));
+  assert.equal(aside.length, 1);
+  const claims = logOf(place, "ops.log").filter(({ op }) => op === "claim");
+  assert.equal(claims.length, 2);
+  const launch = sessionOf(statusOf(place));
+  assert.equal("resumed" in launch, false);
+  assert.deepEqual(launch.usage, USAGE);
 });
 
-test("--resume with no earlier job.json runs the stage as a fresh job", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
-  const r = runJob(place, [...STAGE_ARGS, "--resume"]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.equal(piStarts(place)[0].fresh, true);
-  assert.equal(releaseOf(place).state.reportedTokens, USAGE_SPENT);
-});
+for (const flag of ["--resume", "--stack-on"]) {
+  test(`a stage job refuses the retired ${flag} before any op`, () => {
+    const place = setUp(repliesAt(READER_STAGE), AUTHOR_SESSION);
+    const r = runJob(place, [...STAGE_ARGS, flag, "3"]);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, UNKNOWN_OPTION);
+    assert.equal(r.stdout, "");
+    assert.deepEqual(logOf(place, "ops.log"), []);
+    assert.deepEqual(piStarts(place), []);
+  });
+}

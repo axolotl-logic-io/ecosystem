@@ -8,26 +8,30 @@ import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
-  CLEAN_REVIEW,
+  AUTHOR_SESSION,
+  AUTHORED,
+  IMPLEMENTED,
+  implementReplies,
+  READER_STAGE,
+  repliesAt,
+  USAGE,
+} from "./job-fixtures.mjs";
+import {
   logOf,
   piCommands,
-  repliesAt,
   runJob,
-  SWEEP_SESSION,
-  SWEEP_STAGE,
   sessionOf,
   setUp,
   startJob,
   statusOf,
-  USAGE,
 } from "./job-test-kit.mjs";
 
 /** @import { Place } from "./job-test-kit.mjs" */
 
-const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
+const STAGE_ARGS = ["--stage", READER_STAGE, "--lane", "L"];
 const MESSAGE = "Look at src/b.ts too.";
-// The launch key of an implementer session, a writer's.
-const WRITER_KEY = /^i7-implement-\d+$/u;
+// The launch key of the implementor's session, a writer's.
+const WRITER_KEY = "implementor-1";
 
 /** @param {Place} place @param {string} key */
 function steer(place, key) {
@@ -55,13 +59,13 @@ async function steerable(place) {
 }
 
 test("--steer sends the message to the live session, which carries on, and its context line counts the steer and keeps pi's cost and 1h cache writes", async () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
-    events: ["wait", messageEnd(USAGE), outputEnd(CLEAN_REVIEW)],
+  const place = setUp(repliesAt(READER_STAGE), {
+    events: ["wait", messageEnd(USAGE), outputEnd(AUTHORED)],
   });
   const job = startJob(place, STAGE_ARGS);
   await steerable(place);
   const { key } = sessionOf(statusOf(place));
-  const missing = steer(place, "i7-nope-1");
+  const missing = steer(place, "author-9");
   assert.equal(missing.status, 1);
   assert.notEqual(missing.stderr, "");
   const r = steer(place, key);
@@ -77,18 +81,18 @@ test("--steer sends the message to the live session, which carries on, and its c
   assert.ok(ops.includes("release"));
   const log = fs.readFileSync(path.join(place.runDir, "context.jsonl"), "utf8");
   const line = JSON.parse(log);
-  assert.deepEqual(line.steers, { context: 0, socket: 1 });
+  assert.deepEqual(line.steers, { socket: 1 });
   assert.deepEqual(line.usage, USAGE);
 });
 
 test("--steer reaches a live writer session too, as the wiki's Steering a running session says", async () => {
-  const place = setUp(repliesAt("implement"), {
-    events: ["wait", messageEnd(USAGE), outputEnd(CLEAN_REVIEW)],
+  const place = setUp(implementReplies(), {
+    events: ["wait", messageEnd(USAGE), outputEnd(IMPLEMENTED)],
   });
   const job = startJob(place, ["--stage", "implement"]);
   await steerable(place);
   const { key } = sessionOf(statusOf(place));
-  assert.match(key, WRITER_KEY);
+  assert.equal(key, WRITER_KEY);
   const r = steer(place, key);
   assert.equal(r.status, 0, r.stderr);
   const steers = piCommands(place).filter(({ type }) => type === "steer");
@@ -96,12 +100,14 @@ test("--steer reaches a live writer session too, as the wiki's Steering a runnin
     steers.map(({ message }) => message),
     [MESSAGE],
   );
-  assert.equal((await job.end).status, 0);
+  const end = await job.end;
+  assert.equal(end.status, 0, end.stderr);
+  assert.equal(JSON.parse(end.stdout).end, "next");
 });
 
 test("--steer with no running job exits 1 with the reason", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
-  const before = steer(place, "i7-security-3");
+  const place = setUp(repliesAt(READER_STAGE), AUTHOR_SESSION);
+  const before = steer(place, "author-1");
   assert.equal(before.status, 1);
   assert.notEqual(before.stderr, "");
   assert.equal(runJob(place, STAGE_ARGS).status, 0);
@@ -110,9 +116,15 @@ test("--steer with no running job exits 1 with the reason", () => {
   assert.notEqual(after.stderr, "");
 });
 
-test("--steer can't be combined with --resume", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
-  const r = runJob(place, ["--steer", "k", "--message", "m", "--resume"]);
+test("--steer can't be combined with --print-boundary", () => {
+  const place = setUp(repliesAt(READER_STAGE), AUTHOR_SESSION);
+  const r = runJob(place, [
+    "--steer",
+    "k",
+    "--message",
+    "m",
+    "--print-boundary",
+  ]);
   assert.equal(r.status, 1);
   assert.notEqual(r.stderr, "");
   assert.deepEqual(logOf(place, "ops.log"), []);

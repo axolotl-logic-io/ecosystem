@@ -1,6 +1,7 @@
 // Stopping a stage job with SIGTERM or SIGINT: it aborts its pi sessions,
 // ends its running ops' process groups (#371), saves the issue at its stage
-// with no lease, and exits 128 + the signal.
+// with no lease, logs the aborted session as killed, and exits 128 + the
+// signal.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import process from "node:process";
@@ -13,21 +14,18 @@ import {
   waitFor,
 } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
+import { AUTHORED, READER_STAGE, repliesAt, USAGE } from "./job-fixtures.mjs";
 import {
-  CLEAN_REVIEW,
   logOf,
   piCommands,
   piStarts,
-  repliesAt,
-  SWEEP_STAGE,
   sessionOf,
   setUp,
   startJob,
   statusOf,
-  USAGE,
 } from "./job-test-kit.mjs";
 
-const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
+const STAGE_ARGS = ["--stage", READER_STAGE, "--lane", "L"];
 // Where the fakes write the pids of the sleeps they start.
 const HANG_PID = "hang.pid";
 const PI_CHILD_PID = "pi-child.pid";
@@ -43,7 +41,7 @@ const SIGNAL_CODES = [
 // A stop saves the issue at its stage with no lease, through save-state only.
 const SAVED_AT_STAGE = {
   released: false,
-  saved: { stage: SWEEP_STAGE, lease: null },
+  saved: { stage: READER_STAGE, lease: null },
 };
 
 // Whether the stopped job released the issue, which would renew its lease,
@@ -60,8 +58,8 @@ function stopSaveOf(place) {
 
 for (const [signal, code] of SIGNAL_CODES) {
   test(`${signal} aborts the session, saves the issue at its stage with no lease and exits ${code}`, async () => {
-    const place = setUp(repliesAt(SWEEP_STAGE), {
-      events: [messageEnd(USAGE), "wait", outputEnd(CLEAN_REVIEW)],
+    const place = setUp(repliesAt(READER_STAGE), {
+      events: [messageEnd(USAGE), "wait", outputEnd(AUTHORED)],
     });
     const job = startJob(place, STAGE_ARGS);
     await waitFor(
@@ -77,13 +75,18 @@ for (const [signal, code] of SIGNAL_CODES) {
     assert.deepEqual(stopSaveOf(place), SAVED_AT_STAGE);
     const status = statusOf(place);
     assert.deepEqual(status.outcome, { kind: "stopped", signal });
-    assert.equal(sessionOf(status).outcome, null);
+    // The aborted session's result went back to the role as a failure, and
+    // its context line says the stop killed it.
+    assert.equal(sessionOf(status).outcome, "failed");
+    const [line] = logOf(place, "runs/o__r/issue-7/context.jsonl");
+    assert.equal(line.ended, "killed");
+    assert.deepEqual(line.usage, USAGE);
     assert.equal(fs.existsSync(status.socket), false);
   });
 }
 
 test("a session that ignores the abort is killed after the grace period, and the job still saves", async () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
+  const place = setUp(repliesAt(READER_STAGE), {
     events: ["wait"],
     ignoreAbort: true,
   });
@@ -105,12 +108,8 @@ function firstLaunchOf(place) {
 }
 
 test("a stop kills the process group of an ops launch still running (#371)", async () => {
-  const replies = repliesAt(SWEEP_STAGE);
-  const { sweep } = replies;
-  const hung = {
-    ...replies,
-    sweep: { .../** @type {object} */ (sweep), hang: true },
-  };
+  const replies = repliesAt(READER_STAGE);
+  const hung = { ...replies, claim: { ...replies.claim, hang: true } };
   const place = setUp(hung, { events: ["wait"] });
   const job = startJob(place, STAGE_ARGS);
   let exited = false;
@@ -140,7 +139,7 @@ test("a stop kills the process group of an ops launch still running (#371)", asy
 });
 
 test("a session killed after the grace period loses its whole process group (#371)", async () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
+  const place = setUp(repliesAt(READER_STAGE), {
     events: ["wait"],
     ignoreAbort: true,
     child: true,
