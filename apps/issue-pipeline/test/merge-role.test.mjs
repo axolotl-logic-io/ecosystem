@@ -27,7 +27,6 @@ import {
   stateOf,
 } from "./reviewer-and-merge-role-calls-kit.mjs";
 import {
-  COMMENT_ID,
   cfg,
   current,
   gherkinComment,
@@ -40,7 +39,6 @@ import {
   REVISION,
   SHORT_SHA_LENGTH,
   sha,
-  WIKI,
 } from "./reviewer-and-merge-role-kit.mjs";
 
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
@@ -68,6 +66,9 @@ test("a hardened revision merges with its head matched, then the security review
     "merge",
     "save",
     "current-revision",
+    "verify",
+    "wiki-check",
+    "save",
     "prepare-review",
     "session",
     "current-revision",
@@ -84,26 +85,12 @@ test("a hardened revision merges with its head matched, then the security review
   assert.deepEqual(revision, REVISION);
   assert.deepEqual(mergeQueue, QUEUE);
   assert.ok(freshBefore(calls, "merge"));
-  assert.ok(freshBefore(calls, "prepare-review"));
-  const saves = savesOf(calls);
-  // The merge receipt, saved before anything is reviewed or published.
-  assert.equal(saves[0]?.stage, "merge");
-  assert.deepEqual(saves[0]?.merged, MERGED_REVISION);
-  assert.equal(saves[0]?.security, null);
-  // The security receipt binds exactly the merged result.
-  assert.deepEqual(saves[1]?.security, {
-    revision: MERGED_REVISION,
-    commentId: COMMENT_ID,
-    finding: null,
-  });
-  const publish = firstPayload(calls, "publish");
-  const { expectedWiki, revision: published, state: publishing } = publish;
-  assert.equal(expectedWiki, WIKI);
-  assert.deepEqual(published, REVISION);
-  assert.deepEqual(publishing, saves[1]);
-  assert.equal(saves[2]?.stage, "done");
-  const { state: finished } = firstPayload(calls, "finish-wiki");
-  assert.deepEqual(finished, saves[2]);
+  const preparation = callNames(calls).indexOf("prepare-review");
+  const checked = ["current-revision", "verify", "wiki-check", "save"];
+  assert.deepEqual(
+    callNames(calls).slice(preparation - checked.length, preparation),
+    checked,
+  );
 });
 
 test("the security review is a fresh read-only Reviewer session over the merge commit GitHub confirmed", async () => {
@@ -253,7 +240,7 @@ test("a merge of another head than the authorized one is never reviewed or publi
   assert.equal(sessionsOf(calls).length, 0);
 });
 
-test("after its own merge, a wiki that moved goes to review with no security review or publish", async () => {
+test("after its own merge, a wiki that moved stops with no security review or publish", async () => {
   const { ctx, calls } = merging({
     ops: {
       "current-revision": [
@@ -263,8 +250,10 @@ test("after its own merge, a wiki that moved goes to review with no security rev
       ],
     },
   });
-  const state = stateOf(await mergeRole(ctx), "next");
-  assert.equal(state.stage, "review");
+  const end = await mergeRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.ok(end.kind === "stop");
+  assert.deepEqual(end.state.merged, MERGED_REVISION);
   assert.ok(!opNames(calls).includes("prepare-review"));
   assert.ok(!opNames(calls).includes("publish"));
   assert.deepEqual(savesOf(calls)[0]?.merged, MERGED_REVISION);
@@ -282,8 +271,9 @@ test("after its own merge, GitHub must confirm the merge commit before any secur
   );
   const ends = await Promise.all(runs.map(({ ctx }) => mergeRole(ctx)));
   for (const [index, end] of ends.entries()) {
-    const state = stateOf(end, "next");
-    assert.equal(state.stage, "review");
+    assert.equal(endCode(end), "error");
+    assert.ok(end.kind === "stop");
+    assert.deepEqual(end.state.merged, MERGED_REVISION);
     const names = opNames(runs[index]?.calls ?? []);
     for (const name of ["prepare-review", "publish", "finish-wiki"]) {
       assert.ok(!names.includes(name), `ran ${name}`);

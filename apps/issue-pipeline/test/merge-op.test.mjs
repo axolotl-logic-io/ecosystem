@@ -1,7 +1,7 @@
 // @ts-check
 // The merge op (src/ops/merge.ts) only merges code: it checks the approved
-// head, the queue and the fresh revision, squash-merges at the approved head
-// and returns GitHub's merge receipt, writing no state, labels, wiki or
+// head, the queue and the fresh revision, names the target and exact source
+// and returns GitHub's genuine merge receipt, writing no state, labels, wiki or
 // issue close (`merge-publish-finish-split`).
 // Branches are no longer stacked on a prerequisite's branch (#268): an issue
 // whose after mark names an open prerequisite doesn't start at all
@@ -12,12 +12,12 @@
 // merge, whatever its verdict".
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { branchMergeReply, mergeCommentReplies } from "./merge-op-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
   approvedState,
   fakeGh,
   ISSUE,
-  MERGE_COMMIT,
   PR,
   prView,
   REPO,
@@ -35,6 +35,7 @@ const NO_MERGE_COMMIT = /no merge commit/u;
 const NOT_APPROVED_CODE = /not the approved code/u;
 const NOT_ISSUE_BRANCH = /not agent\/issue-7/u;
 // An older issue's merge queued ahead of #7.
+const FULL_SHA_LENGTH = 40;
 const EARLIER = 3;
 const QUEUE = [EARLIER, ISSUE];
 
@@ -66,35 +67,37 @@ function current(w) {
   });
 }
 
-test("merge squash-merges at the approved head and returns GitHub's merge receipt, writing nothing else", () => {
+test("merge binds the configured target and approved head and returns GitHub's merge receipt, writing nothing else", () => {
   const w = world();
   current(w);
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
-    { when: "pr merge 50" },
+    branchMergeReply(w),
+    ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: MERGE_COMMIT },
+      mergeCommit: { oid: w.mergeSha },
     }),
   ]);
   const reply = merge(w.cfg, request(w));
   assert.deepEqual(reply, {
     merged: true,
-    mergeCommit: MERGE_COMMIT,
+    mergeCommit: w.mergeSha,
     headSha: w.sha,
   });
   const done = writes();
   assert.deepEqual(done[0], [
-    "pr",
-    "merge",
-    "50",
-    "-R",
-    REPO,
-    "--squash",
-    "--match-head-commit",
-    w.sha,
+    "api",
+    `repos/${REPO}/merges`,
+    "--method",
+    "POST",
+    "--include",
+    "-f",
+    "base=integration",
+    "-f",
+    `head=${w.sha}`,
   ]);
   assert.equal(done.length, 2);
   assert.match(done[1]?.join(" ") ?? "", COMMENTS_ON_PR);
@@ -106,14 +109,14 @@ test("merge of a PR merged by hand returns the authoritative receipt and merges 
     prView({
       headRefOid: "f00d",
       state: "MERGED",
-      mergeCommit: { oid: MERGE_COMMIT },
+      mergeCommit: { oid: w.mergeSha },
     }),
   ]);
   const reply = merge(w.cfg, request(w));
   assert.deepEqual(reply, {
     merged: true,
     byHand: true,
-    mergeCommit: MERGE_COMMIT,
+    mergeCommit: w.mergeSha,
     headSha: "f00d",
   });
   assert.deepEqual(writes(), []);
@@ -135,7 +138,8 @@ test("merge refuses a moved head, and an expectedSha other than the approved cod
     headSha: "0ther",
   });
   assert.throws(
-    () => merge(w.cfg, request(w, { expectedSha: "0ther" })),
+    () =>
+      merge(w.cfg, request(w, { expectedSha: "a".repeat(FULL_SHA_LENGTH) })),
     NOT_APPROVED_CODE,
   );
   assert.deepEqual(writes(), []);
@@ -191,11 +195,12 @@ test("a stopped issue ahead in the queue doesn't hold the merge", () => {
       stdout: '{"state":"OPEN","labels":[{"name":"agent:stopped-error"}]}',
     },
     prView({ headRefOid: w.sha }),
-    { when: "pr merge 50" },
+    branchMergeReply(w),
+    ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: MERGE_COMMIT },
+      mergeCommit: { oid: w.mergeSha },
     }),
   ]);
   const reply = merge(w.cfg, request(w, { mergeQueue: QUEUE }));
@@ -264,11 +269,12 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
   fakeGh.reply([
     ...older("review"),
     prView({ headRefOid: w.sha }),
-    { when: "pr merge 50" },
+    branchMergeReply(w),
+    ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: MERGE_COMMIT },
+      mergeCommit: { oid: w.mergeSha },
     }),
   ]);
   assert.equal(merge(w.cfg, request(w, { mergeOrder: true })).merged, true);

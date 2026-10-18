@@ -28,6 +28,7 @@ const CALL_ARGS = z.array(z.string());
  * @property {number} [code]
  * @property {boolean} [keep] answer every matching call, not only the first
  * @property {boolean} [persistState] apply real state PATCHes to this saved comment fixture
+ * @property {{ origin: string, base: string, head: string, sha: string }} [branchMerge] exact local merge mutation
  * @property {{ repo: string, ref: string }} [headRef] local origin of this OPEN PR's actual head
  */
 
@@ -63,6 +64,15 @@ const at = replies.findIndex((reply) => text.includes(reply.when));
 if (at >= 0) {
   const reply = replies[at];
   let stdout = reply.stdout ?? "";
+  if (reply.branchMerge) {
+    const { origin, base, head, sha } = reply.branchMerge;
+    const expected = ["api", "repos/o/r/merges", "--method", "POST", "--include", "-f", "base=" + base, "-f", "head=" + head];
+    if (JSON.stringify(args) !== JSON.stringify(expected)) throw new Error("unsupported local branch merge");
+    const git = (...argv) => execFileSync("git", ["--git-dir", origin, ...argv], { encoding: "utf8" }).trim();
+    const parent = git("rev-parse", "refs/heads/" + base);
+    if (git("show", "-s", "--format=%P", sha) !== parent + " " + head) throw new Error("invalid local branch merge graph");
+    git("update-ref", "refs/heads/" + base, sha, parent);
+  }
   if (reply.headRef) {
     const view = JSON.parse(stdout);
     view.headRefOid = execFileSync("git", ["-C", reply.headRef.repo, "rev-parse", reply.headRef.ref], { encoding: "utf8" }).trim();

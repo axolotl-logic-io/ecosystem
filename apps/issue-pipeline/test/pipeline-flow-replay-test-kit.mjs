@@ -31,9 +31,10 @@ const NO_WRITER_OPS = [
   "sync-base",
   "wiki-sync",
   "ready-pr",
-  "verify",
   "exit-push",
 ];
+const VERIFIED = z.object({ pass: z.boolean(), headSha: z.string() });
+const WIKI_CHECKED = z.object({ pass: z.boolean() });
 const CLAIM = z.object({
   state: z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
@@ -47,7 +48,8 @@ function sessions(flow) {
 /** @param {Flow} flow @returns {string[][]} */
 function merges(flow) {
   return ghCalls(flow.ghDir).filter(
-    ([command, sub]) => command === "pr" && sub === "merge",
+    ([command, endpoint]) =>
+      command === "api" && endpoint === "repos/o/r/merges",
   );
 }
 
@@ -79,6 +81,12 @@ function replayFacts(flow, traceStart) {
       .map(({ request }) => request.op)
       .filter((op) => NO_WRITER_OPS.includes(op)),
     merges: merges(flow).length,
+    verified: trace
+      .filter(({ request }) => request.op === "verify")
+      .map(({ reply }) => VERIFIED.parse(reply)),
+    wikiChecked: trace
+      .filter(({ request }) => request.op === "wiki-check")
+      .map(({ reply }) => WIKI_CHECKED.parse(reply)),
     base: refIn(flow.origin, `refs/heads/${BASE}`),
     hardened: state.hardened,
     integration: state.integration,

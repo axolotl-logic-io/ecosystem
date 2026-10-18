@@ -92,7 +92,11 @@ function mergedView(n, sha, head) {
 // returns its head and the merge commit.
 /** @param {number} n @param {string} file @returns {{ head: string, sha: string }} */
 function mergedBranch(n, file) {
-  const head = fx.startBranch(n, file, `${file} line`);
+  fx.startBranch(n, file, `${file} line`);
+  const wt = worktree(n);
+  fs.appendFileSync(path.join(wt, file), "\nsecond feature line\n");
+  sh(`git -C ${wt} commit -qam "second feature commit"`);
+  const head = fx.pushFrom(n);
   return { head, sha: mergeOnOrigin(n) };
 }
 
@@ -136,6 +140,11 @@ test("prepare-review detaches the checkout at the merge commit, and again gives 
   assert.equal(first.headSha, merged.sha);
   assert.equal(headOf(worktree(ISSUE.merged)), merged.sha);
   assert.ok(first.bundleText.includes("merged.txt line"), first.bundleText);
+  assert.ok(
+    first.bundleText.includes("+second feature line"),
+    first.bundleText,
+  );
+  assert.ok(first.bundleText.includes("+merged.txt line"), first.bundleText);
   const again = REVIEW_REPLY.parse(prepare(ISSUE.merged, merged, "r2"));
   assert.equal(again.headSha, merged.sha);
   assert.equal(again.bundleText, first.bundleText);

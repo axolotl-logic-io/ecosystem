@@ -196,7 +196,7 @@ test("a failed review stops with error and a transient one defers, neither publi
   }
 });
 
-test("a done completion with no receipt is reviewed before its finish; a clear one only finishes", async () => {
+test("a done completion rechecks M before reviewing missing security or reusing exact clearance", async () => {
   const done = {
     ...merging().ctx.state,
     stage: /** @type {const} */ ("done"),
@@ -209,12 +209,16 @@ test("a done completion with no receipt is reviewed before its finish; a clear o
       "current-revision": [AFTER_MERGE, AFTER_MERGE],
       "prepare-review": [PREPARED_MERGED],
       "finish-wiki": [FINISHED],
+      verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
+      "wiki-check": [{ pass: true, checks: [] }],
     },
     sessions: [NO_FINDING],
   });
   stateOf(await mergeRole(unreviewed.ctx), "next");
   assert.deepEqual(opNames(unreviewed.calls), [
     "current-revision",
+    "verify",
+    "wiki-check",
     "prepare-review",
     "current-revision",
     "finish-wiki",
@@ -228,10 +232,17 @@ test("a done completion with no receipt is reviewed before its finish; a clear o
     ops: {
       "current-revision": [AFTER_MERGE],
       "finish-wiki": [FINISHED],
+      verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
+      "wiki-check": [{ pass: true, checks: [] }],
     },
   });
   stateOf(await mergeRole(cleared.ctx), "next");
-  assert.deepEqual(opNames(cleared.calls), ["current-revision", "finish-wiki"]);
+  assert.deepEqual(opNames(cleared.calls), [
+    "current-revision",
+    "verify",
+    "wiki-check",
+    "finish-wiki",
+  ]);
   assert.equal(sessionsOf(cleared.calls).length, 0);
 });
 

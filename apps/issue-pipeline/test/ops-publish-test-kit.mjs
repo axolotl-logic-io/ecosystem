@@ -10,12 +10,12 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
-import process from "node:process";
 import { z } from "zod";
 import { githubComment, installFakeGh } from "./fake-gh.mjs";
+import { home, root } from "./ops-publish-environment.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
-/** @typedef {{ cfg: import("../src/config.ts").Config, root: string, sha: string, worktree: string, wikiDir: string, wikiOrigin: string, wikiSha: string | null }} World */
+/** @typedef {{ cfg: import("../src/config.ts").Config, root: string, sha: string, mergeSha: string, worktree: string, wikiDir: string, wikiOrigin: string, wikiSha: string | null }} World */
 
 const ACCOUNT = "bot";
 const REPO = "o/r";
@@ -25,19 +25,8 @@ const MERGE_COMMIT = "4e1d0c0ffee0000000000000000000000000beef";
 const SECURITY_COMMENT = 901;
 const GIT_USER = "-c user.email=a@b -c user.name=a";
 
-const root = fs.mkdtempSync("/tmp/issue-pipeline-publication-ops-");
-process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-const home = path.join(root, "home");
-fs.mkdirSync(home);
-// Environment variables are named by strings, as src/process.ts takes them.
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["ISSUE_PIPELINE_ROOT", root],
-    ["HOME", home],
-  ]),
-);
 const fakeGh = installFakeGh();
+fakeGh.requireReplies();
 
 const SRC = new URL("../src/", import.meta.url).href;
 const DOUBLE = new URL("./ops-publish-revision-double.mjs", import.meta.url)
@@ -114,9 +103,15 @@ function world({ wiki = false } = {}) {
     `cd ${root} && git init -q --bare -b integration origin.git && git clone -q origin.git seed 2>/dev/null && cd seed && git ${GIT_USER} commit -q --allow-empty -m base && git push -q origin HEAD:integration`,
   );
   sh(
-    `git clone -q ${root}/origin.git ${clone} && git -C ${clone} worktree add -q -b agent/issue-7 ${worktree} origin/integration && git -C ${worktree} ${GIT_USER} commit -q --allow-empty -m work`,
+    `git clone -q ${root}/origin.git ${clone} && git -C ${clone} worktree add -q -b agent/issue-7 ${worktree} origin/integration && echo first > ${worktree}/first.txt && git -C ${worktree} add first.txt && git -C ${worktree} ${GIT_USER} commit -q -m first && echo second > ${worktree}/second.txt && git -C ${worktree} add second.txt && git -C ${worktree} ${GIT_USER} commit -q -m second`,
   );
   const sha = sh(`git -C ${worktree} rev-parse HEAD`);
+  sh(`git -C ${worktree} push -q origin HEAD:agent/issue-7`);
+  const tree = sh(`git -C ${worktree} rev-parse HEAD^{tree}`);
+  const mergeSha = sh(
+    `git -C ${worktree} ${GIT_USER} commit-tree ${tree} -p origin/integration -p ${sha} -m merged`,
+  );
+  sh(`git -C ${worktree} push -q origin ${mergeSha}:refs/fixture/result`);
   const wikiOrigin = path.join(root, "wiki.git");
   const wikiDir = path.join(worktree, "wiki");
   let wikiSha = null;
@@ -134,6 +129,7 @@ function world({ wiki = false } = {}) {
     cfg: loadConfig(config),
     root,
     sha,
+    mergeSha,
     worktree,
     wikiDir,
     wikiOrigin,
@@ -223,11 +219,14 @@ function savedListing(state, { claim = false } = {}) {
   };
 }
 
-/** @param {object} view @returns {GhReply} */
+/** @param {Partial<import("../src/ops/pr-merge.ts").PrView>} view @returns {GhReply} */
 function prView(view) {
   return {
     when: "pr view 50",
+    keep: view.state === "MERGED",
     stdout: JSON.stringify({
+      number: PR,
+      isCrossRepository: false,
       headRefName: "agent/issue-7",
       baseRefName: "integration",
       isDraft: false,

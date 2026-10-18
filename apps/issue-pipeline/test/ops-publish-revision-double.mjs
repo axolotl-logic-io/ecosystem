@@ -1,8 +1,9 @@
 // @ts-check
-// The publication ops tests' stand-in for core's src/revision.ts, which
-// ops-publish-test-kit.mjs resolves in its place: currentRevision answers
-// what the test set, and records each call, so the merge, publish and
-// finish-wiki gates are tested apart from how the current revision is read.
+// Only currentRevision is doubled. Graph gates retain real fresh PR and
+// ancestry evidence, loaded after the shared fixture establishes HOME/root.
+import "./ops-publish-environment.mjs";
+
+const { confirmMerged, pullRequest } = await import("../src/revision.ts");
 
 /**
  * @typedef {{ code: string | null, wiki: string | null, inputs: string }} Revision
@@ -43,4 +44,10 @@ function currentRevision(_cfg, n, state) {
   return answer;
 }
 
-export { currentRevision, currentRevisionCalls, setCurrentRevision };
+export {
+  confirmMerged,
+  currentRevision,
+  currentRevisionCalls,
+  pullRequest,
+  setCurrentRevision,
+};

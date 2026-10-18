@@ -120,7 +120,8 @@ function merging(script = {}) {
     config: script.config,
     ops: {
       "current-revision": [current(), current(), AFTER_MERGE, AFTER_MERGE],
-      "wiki-check": [WIKI_PASS],
+      verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
+      "wiki-check": [WIKI_PASS, WIKI_PASS],
       "ci-status": [CI_PASS],
       merge: [MERGED],
       "prepare-review": [PREPARED_MERGED],

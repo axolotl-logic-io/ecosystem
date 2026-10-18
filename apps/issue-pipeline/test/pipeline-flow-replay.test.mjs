@@ -1,6 +1,6 @@
 // @ts-check
 // The real roles, claims, publication and finish ops replay an interrupted
-// own squash merge. Git and the built programs are real; GitHub and pi are
+// own explicit-target branch merge. Git and the built programs are real; GitHub and pi are
 // local fakes. The caller assigns one issue, branch, stage and pinned brain.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -38,13 +38,24 @@ let interruptedWorld;
 /** @type {string | null} */
 let originalWiki;
 
-function expectedReplay() {
+/** @param {boolean} [checked] */
+function expectedReplay(checked = true) {
   const state = savedState(interruptedWorld);
   const codeMerged = { pr: state.pr, sha: state.merged.code };
+  /** @type {{ pass: boolean, headSha: string }[]} */
+  let verified = [];
+  /** @type {{ pass: boolean }[]} */
+  let wikiChecked = [];
+  if (checked) {
+    verified = [{ pass: true, headSha: state.merged.code }];
+    wikiChecked = [{ pass: true }];
+  }
   return {
     claimCodeMerged: codeMerged,
     forbidden: [],
     merges: 1,
+    verified,
+    wikiChecked,
     base: state.merged.code,
     hardened: state.hardened,
     integration: state.integration,
@@ -69,6 +80,7 @@ test("the interrupted own merge saved original hardening/integration and its act
   assert.equal(state.stage, "merge");
   assert.equal(state.security, null);
   assert.equal(state.codeMerged, null);
+  assert.equal(state.verifiedSha, state.merged.code);
   assert.notEqual(state.hardened.code, state.integration.revision.code);
   assert.notEqual(state.merged.code, state.integration.revision.code);
   assert.equal(
@@ -152,7 +164,7 @@ test("a saved rejection on the actual merged result re-stops without a model, wr
   const traceStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "stop");
   assert.equal(sessions(flow), starts);
-  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay());
+  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay(false));
   const world = readWorld(flow.ghDir);
   const issue = world.issues.find(({ number }) => number === ISSUE);
   assert.equal(issue?.state, "open");

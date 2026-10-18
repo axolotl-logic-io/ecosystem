@@ -3,9 +3,9 @@
 // publish when no code is left to merge (merged before this job, or a
 // change that lives only in the wiki), the completion saved before the
 // finish op, a refused publish that completes nothing, and the finish
-// reconciliation of a saved completion, which runs only the finish op once
-// its security receipt clears exactly what merged, never a merge or a
-// publish.
+// reconciliation of a saved completion, which rechecks actual M and the
+// wiki before finishing once its security receipt clears exactly what
+// merged, never another merge or publish.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -161,7 +161,7 @@ test("a change that lives only in the wiki takes the same security review, then 
   ]);
 });
 
-test("a saved completion whose finish crashed only runs the finish op again", async () => {
+test("a saved completion whose finish crashed rechecks M and the wiki before finishing again", async () => {
   const crashed = merging({
     ops: { "finish-wiki": [() => Promise.reject(new Error("gh: network"))] },
   });
@@ -172,15 +172,25 @@ test("a saved completion whose finish crashed only runs the finish op again", as
     stage: "merge",
     state: saved,
     mergeQueue: QUEUE,
-    ops: { "current-revision": [AFTER_MERGE], "finish-wiki": [FINISHED] },
+    ops: {
+      "current-revision": [AFTER_MERGE],
+      "finish-wiki": [FINISHED],
+      verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
+      "wiki-check": [{ pass: true, checks: [] }],
+    },
   });
   const state = stateOf(await mergeRole(replay.ctx), "next");
   assert.deepEqual(state, saved);
-  assert.deepEqual(opNames(replay.calls), ["current-revision", "finish-wiki"]);
+  assert.deepEqual(opNames(replay.calls), [
+    "current-revision",
+    "verify",
+    "wiki-check",
+    "finish-wiki",
+  ]);
   const { state: finished } = firstPayload(replay.calls, "finish-wiki");
   assert.deepEqual(finished, saved);
   assert.equal(sessionsOf(replay.calls).length, 0);
-  assert.equal(savesOf(replay.calls).length, 0);
+  assert.deepEqual(savesOf(replay.calls), [saved]);
 });
 
 test("a completion of a change that lives only in the wiki finishes with no PR", async () => {
@@ -249,12 +259,14 @@ test("a completion whose published wiki the finish op can't prove stops, never d
   assert.equal(endCode(await mergeRole(unpublished.ctx)), "error");
   assert.deepEqual(opNames(unpublished.calls), [
     "current-revision",
+    "verify",
+    "wiki-check",
     "finish-wiki",
   ]);
-  assert.equal(savesOf(unpublished.calls).length, 0);
+  assert.equal(savesOf(unpublished.calls).length, 1);
   const changed = refusedFinish("wiki-changed");
   assert.equal(endCode(await mergeRole(changed.ctx)), "error");
-  assert.equal(savesOf(changed.calls).length, 0);
+  assert.equal(savesOf(changed.calls).length, 1);
 });
 
 test("a finish op reply outside its schema fails as an op, so the job stops instead of crashing", async () => {

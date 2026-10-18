@@ -37,14 +37,7 @@ const CLEARED = {
   commentId: COMMENT_ID,
   finding: null,
 };
-const FORBIDDEN = [
-  "merge",
-  "push",
-  "sync-base",
-  "wiki-sync",
-  "ready-pr",
-  "verify",
-];
+const FORBIDDEN = ["merge", "push", "sync-base", "wiki-sync", "ready-pr"];
 
 for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
   test(`an interrupted own merge resumes missing security with codeMerged ${String(codeMerged?.sha ?? null)}, no writer or second merge`, async () => {
@@ -78,10 +71,18 @@ for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
     assert.deepEqual(preparedMerge, { pr: PR, sha: MERGE_COMMIT });
     const { revision, state: published } = firstPayload(calls, "publish");
     assert.deepEqual(revision, REVISION);
-    assert.deepEqual(published, savesOf(calls)[0]);
+    assert.deepEqual(
+      published,
+      savesOf(calls).find((state) => state.security !== null),
+    );
     const { state: finished } = firstPayload(calls, "finish-wiki");
     assert.deepEqual(finished, done);
-    assert.deepEqual(savesOf(calls)[0]?.security, CLEARED);
+    assert.equal(savesOf(calls)[0]?.verifiedSha, MERGE_COMMIT);
+    assert.deepEqual(savesOf(calls).at(-2)?.security, CLEARED);
+    assert.deepEqual(firstPayload(calls, "verify"), {
+      number: ctx.issue,
+      codeMerged: { pr: PR, sha: MERGE_COMMIT },
+    });
     assert.ok(savesOf(calls).every((state) => state.codeMerged === codeMerged));
   });
 }

@@ -2,6 +2,7 @@
 // Exact head authorization does not authorize a different PR target.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { branchMergeReply } from "./merge-op-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
   approvedState,
@@ -75,7 +76,7 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
-    { when: "pr merge 50" },
+    branchMergeReply(w),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
@@ -83,7 +84,10 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
       mergeCommit: { oid: MERGE_COMMIT },
     }),
   ]);
-  assert.throws(() => merge(w.cfg, request(w)), TARGET_REFUSAL);
+  const result = merge(w.cfg, request(w));
+  assert.equal(result.merged, false);
+  assert.ok("reason" in result);
+  assert.match(result.reason, TARGET_REFUSAL);
   assert.equal(writes().length, 1);
-  assert.equal(writes()[0]?.[1], "merge");
+  assert.equal(writes()[0]?.[1], "repos/o/r/merges");
 });

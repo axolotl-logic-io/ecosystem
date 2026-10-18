@@ -1,9 +1,7 @@
 // @ts-check
 // The fake GitHub's entry and its `gh pr`, `gh issue` and `gh label`
 // commands. A PR's head is read from the bare origin when GitHub is asked;
-// its squash merge is a real commit on the base whose parent is the base
-// and whose tree merges the head onto it, refused unless the head is still
-// `--match-head-commit`'s. Every PR has one required check, which passes.
+// the explicit REST merge creates real ordered [P,H] parents. Every PR has one required check, which passes.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -11,7 +9,6 @@ import { api } from "./pipeline-flow-gh-api.mjs";
 import {
   branchHead,
   flagValue,
-  gitIn,
   gitSucceeds,
   issueOf,
   jsonAnswer,
@@ -25,7 +22,6 @@ import {
 /** @typedef {import("./pipeline-flow-gh-world.mjs").Answer} Answer */
 
 const UNSUPPORTED = "fake-gh: unsupported";
-const NOT_MERGEABLE = "GraphQL: Pull request is not mergeable";
 
 /**
  * GitHub's mergeability of an open PR: clean on the base, behind it, or
@@ -71,58 +67,6 @@ function viewOf(world, change) {
     mergeCommit,
     ...mergeability(world, change, live),
   };
-}
-
-/**
- * Squash-merges `change` at `expected`, or refuses as GitHub does.
- * @param {World} world @param {FlowPr} change @param {string | null} expected
- * @returns {Answer}
- */
-function squash(world, change, expected) {
-  const head = branchHead(world.origin, change.head);
-  const base = branchHead(world.origin, change.base);
-  if (
-    change.state !== "OPEN" ||
-    change.isDraft ||
-    head === null ||
-    base === null
-  ) {
-    return { code: 1, stderr: NOT_MERGEABLE };
-  }
-  if (head !== expected) {
-    return {
-      code: 1,
-      stderr:
-        "GraphQL: Head branch was modified. Review and try the merge again.",
-    };
-  }
-  const tree = ["merge-tree", "--write-tree", base, head];
-  if (!gitSucceeds(world.origin, tree)) {
-    return { code: 1, stderr: NOT_MERGEABLE };
-  }
-  const [treeId = ""] = gitIn(world.origin, tree).split("\n");
-  const message = `${change.title} (#${change.number})`;
-  const commit = gitIn(world.origin, [
-    "commit-tree",
-    treeId,
-    "-p",
-    base,
-    "-m",
-    message,
-  ]);
-  gitIn(world.origin, [
-    "update-ref",
-    `refs/heads/${change.base}`,
-    commit,
-    base,
-  ]);
-  Object.assign(change, {
-    state: "MERGED",
-    mergeOid: commit,
-    mergedHead: head,
-  });
-  issueOf(world, change.number).state = "closed";
-  return { stdout: "" };
 }
 
 /** @param {World} world @param {readonly string[]} args @returns {Answer} */
@@ -211,8 +155,6 @@ function pr(world, args) {
       change.state = "CLOSED";
       issueOf(world, change.number).state = "closed";
       return { stdout: "" };
-    case "merge":
-      return squash(world, change, flagValue(args, "--match-head-commit"));
     default:
       throw new Error(`${UNSUPPORTED} pr ${sub}`);
   }

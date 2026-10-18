@@ -2,6 +2,7 @@
 // The fake GitHub's `gh api` routes: only the REST calls the pipeline makes,
 // each served from the world, and `--jq` only for the filters it passes.
 // Any other route or filter is refused as unsupported.
+import { branchMerge } from "./pipeline-flow-gh-merge.mjs";
 import {
   branchHead,
   gitIn,
@@ -205,6 +206,9 @@ function deleteBranch(world, call) {
  * @returns {Answer}
  */
 function api(world, args) {
+  if (args[0] === `repos/${world.repo}/merges`) {
+    return branchMerge(world, args);
+  }
   const call = callOf(world, args);
   const [kind, second] = call.route;
   if (kind === "user") {

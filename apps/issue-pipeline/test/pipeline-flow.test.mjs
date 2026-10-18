@@ -175,7 +175,7 @@ test("hardening, integration and final security get pinned pages and truthful re
   }
 });
 
-test("GitHub ends with the issue closed as merged, the PR squash-merged at the approved head, and the state done with its merge receipt", () => {
+test("GitHub ends with the issue closed as merged, the PR merged at the approved head, and the state done with its merge receipt", () => {
   const world = readWorld(flow.ghDir);
   const state = savedState(world);
   assert.equal(world.prs.length, 1);
@@ -209,25 +209,36 @@ test("GitHub ends with the issue closed as merged, the PR squash-merged at the a
   );
 });
 
-test("the one merge call squash-merges only the checked integration head", () => {
-  const { integration, pr } = savedState(readWorld(flow.ghDir));
+test("the one branch POST names only integration and the checked full source head", () => {
+  const { integration } = savedState(readWorld(flow.ghDir));
   const merges = ghCalls(flow.ghDir).filter(
-    ([command, sub]) => command === "pr" && sub === "merge",
+    ([command, endpoint]) =>
+      command === "api" && endpoint === "repos/o/r/merges",
   );
-  assert.equal(merges.length, 1);
-  const [merge = []] = merges;
-  const at = merge.indexOf("--match-head-commit");
-  assert.deepEqual(
-    { pr: merge[2], squash: merge.includes("--squash"), head: merge[at + 1] },
-    { pr: String(pr), squash: true, head: integration.revision.code },
-  );
+  assert.deepEqual(merges, [
+    [
+      "api",
+      "repos/o/r/merges",
+      "--method",
+      "POST",
+      "--include",
+      "-f",
+      "base=integration",
+      "-f",
+      `head=${integration.revision.code}`,
+    ],
+  ]);
 });
 
-test("git ends with one squash commit of the approved change on the base and the wiki fast-forwarded to the reviewed commit", () => {
+test("git ends with ordered parents covering the whole approved change on the base and the wiki fast-forwarded to the reviewed commit", () => {
   const { base, wiki } = heads();
   const { merged, integration } = savedState(readWorld(flow.ghDir));
   assert.equal(base, merged.code);
-  assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^`]), start.base);
+  assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^1`]), start.base);
+  assert.equal(
+    bareGit(flow.origin, ["rev-parse", `${base}^2`]),
+    integration.revision.code,
+  );
   const greeting = bareGit(flow.origin, ["show", `${base}:greet.txt`]);
   assert.equal(greeting, "Hello, world!");
   assert.equal(wiki, integration.revision.wiki);
