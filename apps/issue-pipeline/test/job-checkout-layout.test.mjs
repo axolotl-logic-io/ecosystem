@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
+import { pageTextOf } from "./brain-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   AUTHOR_SESSION,
@@ -142,37 +143,36 @@ for (const { wiki, docs, name } of SCOPES) {
   });
 }
 
-// What a stage job's session is told of its folder (#338). The retired
-// job preamble's facts now come from the role: the session's cwd is the
-// job's folder (above), the author's task names repo/ and docs/ and says it
-// only reads, and the implementor's agent definition, its system prompt,
-// names repo/ on the issue's branch and docs/ on its wiki branch.
+// Checkouts are assignment facts in the task; behavior comes from the
+// pinned wiki page, not duplicated instructions in a bundled definition.
 const TOLD = [
   {
     stage: READER_STAGE,
     script: AUTHOR_SESSION,
-    facts: ["the repo in `repo/`", "the wiki in `docs/`", "you only read"],
+    page: "Pipeline-Prompt-Author.md",
   },
   {
     stage: "implement",
     script: IMPLEMENTOR_SESSION,
-    facts: [
-      "You work in a stage job's folder, your current directory.",
-      "The code checkout is `repo/`, on the issue's branch.",
-      "is `docs/`, on the issue's wiki branch.",
-    ],
+    page: "Pipeline-Prompt-Developer.md",
   },
 ];
-for (const { stage, script, facts } of TOLD) {
-  test(`the ${stage} job's session is told its folder's repo/ and docs/`, () => {
+for (const { stage, script, page } of TOLD) {
+  test(`the ${stage} job's session gets its checkout facts and pinned wiki behavior`, () => {
     const place = setUp(repliesFor(stage), script, {}, { wiki: true });
     const r = runJob(place, ["--stage", stage]);
     assert.equal(r.status, 0, r.stderr);
     const prompt = piCommands(place).find(({ type }) => type === "prompt");
     const [start] = piStarts(place);
-    const system = flagValue(start.argv, "--system-prompt");
-    const text = `${system}\n${String(prompt?.message)}`;
-    for (const fact of facts) {
+    assert.equal(
+      flagValue(start.argv, "--append-system-prompt"),
+      pageTextOf(page),
+    );
+    const text = String(prompt?.message);
+    for (const fact of [
+      "Code checkout: `repo/`, on the issue's branch",
+      "Wiki checkout: `docs/`, on the issue's wiki branch",
+    ]) {
       assert.ok(text.includes(fact), `${fact} missing from:\n${text}`);
     }
   });

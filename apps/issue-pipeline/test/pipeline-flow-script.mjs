@@ -48,25 +48,14 @@ function implementorTurn(greeting, message) {
   };
 }
 
-/**
- * A reviewer's turn: approve with no findings, or changes with one blocking
- * finding `finding` on greet.txt.
- * @param {string | null} finding
- */
-function reviewerTurn(finding) {
-  if (finding === null) {
-    const output = { verdict: "approve", summary: "Looks right" };
-    return { output: { ...output, findings: [], security: null } };
-  }
-  const blocking = { severity: "blocking", text: finding, path: "greet.txt" };
-  return {
-    output: {
-      verdict: "changes",
-      summary: "Needs a fix",
-      findings: [{ ...blocking, line: 1 }],
-      security: null,
-    },
-  };
+/** The fresh read-only security assessment of the merged result. */
+function securityTurn() {
+  return { output: { summary: "No security finding", security: null } };
+}
+
+/** A writable Reviewer session with no additional edits. */
+function hardeningTurn() {
+  return { output: { outcome: "done", summary: "Hardened the change" } };
 }
 
 /**
@@ -85,4 +74,11 @@ function savedState(world) {
   return JSON.parse(json);
 }
 
-export { authorTurn, implementorTurn, openFlowIssue, reviewerTurn, savedState };
+export {
+  authorTurn,
+  hardeningTurn,
+  implementorTurn,
+  openFlowIssue,
+  savedState,
+  securityTurn,
+};

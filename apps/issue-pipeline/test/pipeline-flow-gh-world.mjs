@@ -58,6 +58,7 @@ import process from "node:process";
  * @property {FlowComment[]} comments
  * @property {string[]} repoLabels
  * @property {FlowPr[]} prs
+ * @property {string | null} [failedHead] exact head with a scripted CI failure
  * @property {string[][]} unsupported the calls the fake refused
  */
 

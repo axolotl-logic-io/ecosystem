@@ -68,7 +68,7 @@ const STOPPING_FAILURES = [
     "another api_error",
     "implement",
     SERVER_ERROR,
-    `the implementor's session failed: ${SERVER_ERROR.error}`,
+    `the developer's session failed: ${SERVER_ERROR.error}`,
   ],
   [
     "the session's own timeout",

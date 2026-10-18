@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+import { pageTextOf } from "./brain-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   AFTER_READER_STAGE,
@@ -40,7 +41,7 @@ const SCHEMA_REFUSAL = /doesn't match its schema/u;
 const NETWORK = "error connecting to api.github.com";
 const NETWORK_DEFERRAL = /the post op failed: error connecting/u;
 const NOT_A_STRING = /must be a string/u;
-const AUTHOR_PROMPT = /You are the author/u;
+const AUTHOR_PROMPT = /You are the issue pipeline's Author/u;
 // Where job-test-kit.mjs makes each job's pipeline root.
 const TEMPORARY_ROOT = "/tmp/issue-pipeline-job-";
 
@@ -85,6 +86,10 @@ test("the author's one session runs as its agent with no token, no commit tool a
     false,
   );
   assert.match(flagValue(argv, "--system-prompt"), AUTHOR_PROMPT);
+  assert.equal(
+    flagValue(argv, "--append-system-prompt"),
+    pageTextOf("Pipeline-Prompt-Author.md"),
+  );
   const [prompt] = piCommands(place).filter(({ type }) => type === "prompt");
   assert.ok(prompt.message.includes(ISSUE_FILE), prompt.message);
   // A reader commits and pushes nothing.

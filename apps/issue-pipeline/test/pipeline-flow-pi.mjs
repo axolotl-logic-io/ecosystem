@@ -25,6 +25,7 @@ import { pathToFileURL } from "node:url";
  * @typedef {object} FlowTurn
  * @property {Record<string, string>} [files]
  * @property {string[][]} [commits]
+ * @property {string} [rejectPrompt]
  * @property {Record<string, unknown>} output
  */
 
@@ -247,8 +248,13 @@ async function handle({ dir, role, tools, out }, command) {
     respond(command, { success: command.type === "abort" });
     return;
   }
-  respond(command, { success: true, data: { disposition: "started" } });
   const turn = nextTurn(dir, role);
+  if (turn?.rejectPrompt !== undefined) {
+    out.log({ prompt: command.message ?? "", rejected: true });
+    respond(command, { success: false, error: turn.rejectPrompt });
+    return;
+  }
+  respond(command, { success: true, data: { disposition: "started" } });
   out.log({ prompt: command.message ?? "", turn: turn !== null });
   if (turn !== null) {
     await play(turn, tools, out);
@@ -292,6 +298,7 @@ async function runFlowPi(roleOfModel) {
   out.log({
     start: true,
     model,
+    argv,
     cwd: process.cwd(),
     extensions: valuesOf(argv, "-e").map((file) => path.basename(file)),
     ghToken: ghToken ?? githubToken,

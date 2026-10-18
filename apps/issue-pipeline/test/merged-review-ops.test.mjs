@@ -262,7 +262,7 @@ test("a stage job's teardown of a checkout detached at the merge drops and pushe
   const dropped = await closeJobCheckout(
     cfg,
     ISSUE.job,
-    { root, repo, docs: null, wiki: "read", key: "review-1" },
+    { root, repo, docs: null, wiki: "read", key: "review-1", branch: name },
     () => {
       pushes += 1;
       return Promise.resolve();

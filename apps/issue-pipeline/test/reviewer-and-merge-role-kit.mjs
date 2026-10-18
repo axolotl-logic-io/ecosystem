@@ -43,7 +43,6 @@ const { cfg } = testConfig();
 const LIMITS = z
   .looseObject({
     maxSyncs: z.number().int().nonnegative(),
-    maxFixRounds: z.number().int().nonnegative(),
     maxCiFixes: z.number().int().nonnegative(),
     maxConflictFixes: z.number().int().nonnegative(),
   })

@@ -104,6 +104,38 @@ async function tick(flow) {
 }
 
 /**
+ * Runs exactly the caller's assigned issue/stage/branch; no discovery or sweep.
+ * @param {import("./pipeline-flow-kit.mjs").Flow} flow
+ * @param {string} stage
+ * @returns {{ issue: number, stage: string, end: string }}
+ */
+function runStage(flow, stage) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(flow.root, "job.mjs"),
+      "--config",
+      flow.config,
+      "--issue",
+      String(ISSUE),
+      "--branch",
+      `agent/issue-${ISSUE}`,
+      "--brain-path",
+      flow.brain,
+      "--stage",
+      stage,
+      "--lane",
+      "flow-caller",
+    ],
+    { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
+  );
+  if (result.status !== 0) {
+    throw new Error(`job exited ${result.status}: ${result.stderr}`);
+  }
+  return JSON.parse(result.stdout);
+}
+
+/**
  * Ticks until a tick starts no job, giving every stage started, in order.
  * @param {import("./pipeline-flow-kit.mjs").Flow} flow
  * @param {number} [limit] the most ticks that may start a job
@@ -143,4 +175,4 @@ function stopJobs(flow) {
   }
 }
 
-export { jobLog, stagesUntilIdle, stopJobs, tick };
+export { jobLog, runStage, stagesUntilIdle, stopJobs, tick };

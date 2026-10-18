@@ -191,7 +191,13 @@ function pr(world, args) {
       return jsonAnswer(viewOf(world, change), flagValue(args, "--json"));
     case "checks": {
       const link = `https://github.com/${world.repo}/actions/runs/1/job/1`;
-      const check = { name: "test", state: "SUCCESS", bucket: "pass", link };
+      let state = "SUCCESS";
+      let bucket = "pass";
+      if (world.failedHead === branchHead(world.origin, change.head)) {
+        state = "FAILURE";
+        bucket = "fail";
+      }
+      const check = { name: "test", state, bucket, link };
       return { stdout: `${JSON.stringify([check])}\n` };
     }
     case "edit":
@@ -270,6 +276,8 @@ function answer(world, args) {
       return pr(world, args);
     case "issue":
       return issueCommand(world, args);
+    case "run":
+      return { stdout: "The greeting CI check failed on this head" };
     case "label":
       return labelCommand(world, args);
     default:

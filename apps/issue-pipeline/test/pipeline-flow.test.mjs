@@ -6,9 +6,11 @@
 // pipeline_commit extensions. Nothing here calls a role function directly.
 // Faked: GitHub (pipeline-flow-gh.mjs) and the model (pipeline-flow-pi.mjs).
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
+import { pageTextOf } from "./brain-test-kit.mjs";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
 import {
@@ -32,16 +34,14 @@ import {
   authorTurn,
   implementorTurn,
   openFlowIssue,
-  reviewerTurn,
   savedState,
+  securityTurn,
 } from "./pipeline-flow-script.mjs";
 
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    When they arrive\n    Then they see a polite greeting";
-const FINDING_IN_PROMPT = /\[blocking\] \(greet\.txt:1\) Capitalize/u;
-const ROUND_2 = /round 2/u;
+const SECURITY_TAG_LENGTH = 12;
 const GHERKIN_IN_PROMPT = /Then they see a polite greeting/u;
-const MERGE_JOB = /-merge$/u;
 const PUBLISHED_PAGE = /Greetings say Hello, world!/u;
 const REVIEWED_CODE = /\+Hello, world!/u;
 const REVIEWED_WIKI = /\+Greetings say Hello, world!/u;
@@ -78,7 +78,7 @@ function heads() {
  * @param {boolean} writes
  */
 function powersOf(writes) {
-  return { ghToken: null, commitScope: writes, commits: writes, merge: false };
+  return { ghToken: null, commitScope: writes, commits: writes };
 }
 
 before(async () => {
@@ -87,49 +87,92 @@ before(async () => {
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
   scriptPi(flow, {
     author: [authorTurn(GHERKIN, true)],
-    implementor: [
-      implementorTurn("hello, world", "Greet with hello, world"),
-      implementorTurn("Hello, world!", "Capitalize the greeting"),
+    implementor: [implementorTurn("hello, world", "Greet with hello, world")],
+    reviewer: [
+      implementorTurn("Hello, world", "Hardening capitalizes the greeting"),
+      implementorTurn("Hello, world!", "Integration fixes the failed CI check"),
+      securityTurn(),
     ],
-    reviewer: [reviewerTurn("Capitalize the greeting"), reviewerTurn(null)],
   });
-  stages = await stagesUntilIdle(flow);
+  const authored = await tick(flow);
+  const developed = await tick(flow);
+  const reviewed = await tick(flow);
+  stages = [...authored.started, ...developed.started, ...reviewed.started];
+  const hardened = savedState(readWorld(flow.ghDir));
+  withWorld(flow.ghDir, (world) => {
+    world.failedHead = hardened.hardened.code;
+  });
+  stages.push(...(await stagesUntilIdle(flow)));
 });
 after(() => stopJobs(flow));
 
-test("the orchestrator's ticks take the issue through author, implement, a review asking for changes, implement, an approving review and merge, then start nothing", () => {
+test("legacy ticks run development, hardening, bounded integration and security without a Developer fix round", () => {
   assert.deepEqual(
     stages,
-    ["author", "implement", "review", "implement", "review", "merge"],
+    ["author", "implement", "review", "merge", "merge"],
     jobLog(flow),
   );
 });
 
-test("each model role runs with its own model and no GitHub token, only the implementor may commit, and the merge runs no model", () => {
+test("each phase gets its configured model and exact write authority without a GitHub token", () => {
   const starts = piStarts();
   assert.deepEqual(
     starts.map((each) => each.role),
-    ["author", "implementor", "reviewer", "implementor", "reviewer"],
+    ["author", "implementor", "reviewer", "reviewer", "reviewer"],
   );
   const powers = starts.map((each) => ({
     ghToken: each.ghToken,
     commitScope: each.commitScope,
     commits: each.extensions.includes("pipeline-commit.mjs"),
-    merge: MERGE_JOB.test(each.cwd),
   }));
-  assert.deepEqual(powers, [false, true, false, true, false].map(powersOf));
+  assert.deepEqual(powers, [false, true, true, true, false].map(powersOf));
 });
 
-test("the second implementor round gets the blocking finding, and the second review the round and the Gherkin", () => {
-  const [, , , fix, reReview] = prompts();
-  assert.match(String(fix?.prompt), FINDING_IN_PROMPT);
-  assert.match(String(reReview?.prompt), ROUND_2);
-  assert.match(String(reReview?.prompt), GHERKIN_IN_PROMPT);
-  const run = path.join(flow.root, "runs", SLUG, `issue-${ISSUE}`);
-  const diff = path.join(run, "review-r2", "diff.patch");
+test("hardening, integration and final security get pinned pages and truthful revision provenance", () => {
+  const starts = piStarts();
+  const pages = ["Author", "Developer", "Hardening", "Integration", "Security"];
+  for (const [at, name] of pages.entries()) {
+    const launched = starts[at];
+    assert.ok(launched !== undefined);
+    const flag = launched.argv.indexOf("--append-system-prompt");
+    const page = `Pipeline-Prompt-${name}.md`;
+    assert.equal(launched.argv[flag + 1], pageTextOf(page));
+    const sha256 = createHash("sha256").update(pageTextOf(page)).digest("hex");
+    const usage = readWorld(flow.ghDir)
+      .comments.map(({ body }) => body)
+      .join("\n");
+    assert.ok(usage.includes(sha256), `missing usage provenance for ${page}`);
+  }
+  const [, , harden, integrate, security] = prompts();
+  assert.match(String(harden?.prompt), GHERKIN_IN_PROMPT);
+  assert.match(String(integrate?.prompt), GHERKIN_IN_PROMPT);
+  const state = savedState(readWorld(flow.ghDir));
+  assert.ok(String(security?.prompt).includes(state.merged.code));
+  assert.ok(String(security?.prompt).includes(state.merged.wiki));
+  assert.deepEqual(state.integration.reviewed, state.hardened);
+  assert.notEqual(state.integration.revision.code, state.hardened.code);
+  assert.deepEqual(state.security.revision, state.merged);
+  assert.equal(state.security.finding, null);
+  assert.ok(state.security.commentId > 0);
+  const tag = `review-security-${state.merged.code.slice(0, SECURITY_TAG_LENGTH)}`;
+  const diff = path.join(
+    flow.root,
+    "runs",
+    SLUG,
+    `issue-${ISSUE}`,
+    tag,
+    "diff.patch",
+  );
   const reviewed = fs.readFileSync(diff, "utf8");
   assert.match(reviewed, REVIEWED_CODE);
   assert.match(reviewed, REVIEWED_WIKI);
+  const [, , , , securityStart] = starts;
+  assert.ok(securityStart !== undefined);
+  const tools =
+    securityStart.argv[securityStart.argv.indexOf("--tools") + 1].split(",");
+  for (const tool of ["write", "edit", "bash", "pipeline_commit"]) {
+    assert.equal(tools.includes(tool), false);
+  }
 });
 
 test("GitHub ends with the issue closed as merged, the PR squash-merged at the approved head, and the state done with its merge receipt", () => {
@@ -137,6 +180,7 @@ test("GitHub ends with the issue closed as merged, the PR squash-merged at the a
   const state = savedState(world);
   assert.equal(world.prs.length, 1);
   const [pr] = world.prs;
+  assert.ok(pr !== undefined);
   const issue = world.issues.find(({ number }) => number === ISSUE);
   const reviews = world.comments.filter(({ body }) =>
     body.includes("role=reviewer"),
@@ -154,10 +198,10 @@ test("GitHub ends with the issue closed as merged, the PR squash-merged at the a
     },
     {
       stage: "done",
-      verdict: "approve",
+      verdict: null,
       pr: "MERGED",
-      mergedHead: state.review.revision.code,
-      merged: { ...state.review.revision, code: pr?.mergeOid },
+      mergedHead: state.integration.revision.code,
+      merged: { ...state.integration.revision, code: pr.mergeOid },
       issue: ["closed", "completed", ["agent:merged"]],
       reviews: 2,
       unsupported: [],
@@ -165,8 +209,8 @@ test("GitHub ends with the issue closed as merged, the PR squash-merged at the a
   );
 });
 
-test("the one merge call squash-merges the PR only at the head the second review approved", () => {
-  const { review, pr } = savedState(readWorld(flow.ghDir));
+test("the one merge call squash-merges only the checked integration head", () => {
+  const { integration, pr } = savedState(readWorld(flow.ghDir));
   const merges = ghCalls(flow.ghDir).filter(
     ([command, sub]) => command === "pr" && sub === "merge",
   );
@@ -175,18 +219,18 @@ test("the one merge call squash-merges the PR only at the head the second review
   const at = merge.indexOf("--match-head-commit");
   assert.deepEqual(
     { pr: merge[2], squash: merge.includes("--squash"), head: merge[at + 1] },
-    { pr: String(pr), squash: true, head: review.revision.code },
+    { pr: String(pr), squash: true, head: integration.revision.code },
   );
 });
 
 test("git ends with one squash commit of the approved change on the base and the wiki fast-forwarded to the reviewed commit", () => {
   const { base, wiki } = heads();
-  const { merged, review } = savedState(readWorld(flow.ghDir));
+  const { merged, integration } = savedState(readWorld(flow.ghDir));
   assert.equal(base, merged.code);
   assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^`]), start.base);
   const greeting = bareGit(flow.origin, ["show", `${base}:greet.txt`]);
   assert.equal(greeting, "Hello, world!");
-  assert.equal(wiki, review.revision.wiki);
+  assert.equal(wiki, integration.revision.wiki);
   const ancestry = ["merge-base", "--is-ancestor", start.wiki, wiki];
   assert.doesNotThrow(() => bareGit(flow.wikiOrigin, ancestry));
   const page = bareGit(flow.wikiOrigin, ["show", `${wiki}:Home.md`]);

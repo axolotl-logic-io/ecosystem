@@ -27,9 +27,10 @@ import {
 } from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
+  hardeningTurn,
   openFlowIssue,
-  reviewerTurn,
   savedState,
+  securityTurn,
 } from "./pipeline-flow-script.mjs";
 
 const GHERKIN =
@@ -73,7 +74,7 @@ before(async () => {
   scriptPi(flow, {
     author: [authorTurn(GHERKIN, true)],
     implementor: [DOCS_ONLY_TURN],
-    reviewer: [reviewerTurn(null)],
+    reviewer: [hardeningTurn(), securityTurn()],
   });
   stages = await stagesUntilIdle(flow);
 });
@@ -88,7 +89,7 @@ test("a wiki-only change goes through author, implement, an approving review and
   const roles = piLog(flow.piDir)
     .filter((entry) => entry.start === true)
     .map((entry) => entry.role);
-  assert.deepEqual(roles, ["author", "implementor", "reviewer"]);
+  assert.deepEqual(roles, ["author", "implementor", "reviewer", "reviewer"]);
 });
 
 test("GitHub ends with the draft PR closed, unmerged and named by no state, the approval on the issue, and the issue closed as completed", () => {
@@ -107,7 +108,7 @@ test("GitHub ends with the draft PR closed, unmerged and named by no state, the 
     },
     {
       prs: [["CLOSED", true, null]],
-      reviewsOn: [ISSUE],
+      reviewsOn: [ISSUE, ISSUE],
       issue: ["closed", "completed", ["agent:merged"]],
       unsupported: [],
     },
@@ -126,9 +127,9 @@ test("GitHub ends with the draft PR closed, unmerged and named by no state, the 
       stage: "done",
       pr: null,
       flows: { code: false, wiki: true },
-      verdict: "approve",
+      verdict: null,
       codeMerged: null,
-      merged: { ...state.review.revision, code: null },
+      merged: { ...state.hardened, code: null },
     },
   );
 });
@@ -143,9 +144,12 @@ test("no code merges: GitHub gets no merge call and the base is where it started
 
 test("the wiki fast-forwards to the reviewed wiki commit, which holds the implementor's page", () => {
   const { wiki } = heads();
-  const { review, merged } = savedState(readWorld(flow.ghDir));
-  assert.equal(wiki, review.revision.wiki);
+  const { hardened, security, merged } = savedState(readWorld(flow.ghDir));
+  assert.equal(wiki, hardened.wiki);
   assert.equal(merged.wiki, wiki);
+  assert.deepEqual(security.revision, merged);
+  assert.equal(security.finding, null);
+  assert.ok(security.commentId > 0);
   assert.notEqual(wiki, start.wiki);
   const ancestry = ["merge-base", "--is-ancestor", start.wiki, wiki];
   assert.doesNotThrow(() => bareGit(flow.wikiOrigin, ancestry));
