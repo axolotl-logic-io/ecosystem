@@ -239,7 +239,8 @@ async function main(): Promise<void> {
       await steer(args, cfg);
       return;
     }
-    const refusal = branchRefusalOf(cfg, args.branch, args.kind === "run");
+    const { issue, branch, kind } = args;
+    const refusal = branchRefusalOf(cfg, issue, branch, kind === "run");
     if (refusal !== null) {
       throw new Error(refusal);
     }

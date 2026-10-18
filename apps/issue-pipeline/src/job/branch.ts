@@ -1,29 +1,38 @@
 // The issue branch a stage job's caller assigns it (`--branch`): checked
 // before the job claims, clones or changes anything. A branch is refused
-// when git wouldn't take it literally as a branch name, or when it is one
-// the repo protects: its configured base, its wiki's branch, or the remote's
-// default branch. Whether the issue's saved state is bound to another branch
-// is the claim's to refuse, since only it reads that state.
+// when it isn't one an issue may work on (paths.branch in src/config.ts,
+// which every op applies too: a literal branch name, neither the configured
+// base nor the wiki's branch), when git would rewrite it as a branch name,
+// or when it is the remote's default branch. Whether the issue's saved state
+// is bound to another branch is the claim's to refuse, since only it reads
+// that state.
 
 import { GH_HELPER } from "../clone-setup.ts";
 import type { Config } from "../config.ts";
-import { wikiCfg } from "../config.ts";
-import { run } from "../process.ts";
+import { paths, withCheckout } from "../config.ts";
+import { OpsError, run } from "../process.ts";
 
 // The symbolic HEAD line `git ls-remote --symref` prints.
 const SYMREF_HEAD = /^ref: refs\/heads\/(?<name>\S+)\tHEAD$/mu;
 // How long reading the remote's default branch may take.
 const LS_REMOTE_MS = 60_000;
 
-// Why `branch` isn't a branch name git takes as it is written, or null. `git
-// check-ref-format --branch` expands `@{-1}` and similar, so a name it
-// rewrites is refused too.
-function syntaxRefusal(branch: string): string | null {
-  if (branch.startsWith("-") || branch.startsWith("refs/")) {
-    return `--branch ${branch} must be a plain branch name`;
-  }
-  if (branch === "HEAD") {
-    return "--branch HEAD names no branch";
+// Why issue `issue` may not work on `branch` by the rule every op applies
+// (paths.branch), or null. Past that rule, a name `git check-ref-format
+// --branch` refuses or rewrites (it expands `@{-1}` and similar) is refused
+// too.
+function nameRefusal(
+  cfg: Config,
+  issue: number,
+  branch: string,
+): string | null {
+  try {
+    paths.branch(withCheckout(cfg, { issue, dir: "", branch }), issue);
+  } catch (error: unknown) {
+    if (error instanceof OpsError) {
+      return `--branch: ${error.message}`;
+    }
+    throw error;
   }
   const checked = run("git", ["check-ref-format", "--branch", branch], {
     allowFail: true,
@@ -52,25 +61,18 @@ function remoteDefaultOf(cfg: Config): string | null {
   return name ?? null;
 }
 
-// Why a job may not work on `branch`, or null when it may. With `remote` it
-// also reads the remote's default branch, and refuses when it can't; without,
-// it checks only what the config and git know locally.
+// Why a job on issue `issue` may not work on `branch`, or null when it may.
+// With `remote` it also reads the remote's default branch, and refuses when
+// it can't; without, it checks only what the config and git know locally.
 function branchRefusalOf(
   cfg: Config,
+  issue: number,
   branch: string,
   remote: boolean,
 ): string | null {
-  const syntax = syntaxRefusal(branch);
-  if (syntax !== null) {
-    return syntax;
-  }
-  const protectedNames = [cfg.baseBranch];
-  const wiki = wikiCfg(cfg);
-  if (wiki !== null) {
-    protectedNames.push(wiki.branch);
-  }
-  if (protectedNames.includes(branch)) {
-    return `--branch ${branch} is a protected branch of ${cfg.repo}`;
+  const name = nameRefusal(cfg, issue, branch);
+  if (name !== null) {
+    return name;
   }
   if (!remote) {
     return null;
