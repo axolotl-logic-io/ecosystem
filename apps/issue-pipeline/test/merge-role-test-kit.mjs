@@ -22,7 +22,12 @@ const QUEUE_NEXT = 12;
 
 const REBASED = sha("1");
 const QUEUE = [QUEUE_HEAD, QUEUE_NEXT];
-const MERGED_PR = { number: PR, state: "MERGED", mergeCommit: MERGE_COMMIT };
+const MERGED_PR = {
+  number: PR,
+  state: "MERGED",
+  mergeCommit: MERGE_COMMIT,
+  headSha: HEAD,
+};
 // After the merge, current-revision gives the merge commit as the code.
 const AFTER_MERGE = current({ code: MERGE_COMMIT }, MERGED_PR);
 const MERGED_REVISION = { code: MERGE_COMMIT, wiki: WIKI, inputs: INPUTS };

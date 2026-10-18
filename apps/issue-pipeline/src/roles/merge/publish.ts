@@ -106,11 +106,10 @@ async function localChecks(
 // `mergeCommit`: the receipt saved first; then, only while GitHub confirms
 // that merge and the wiki head and inputs are still the authorized ones,
 // the security review of the merged result, the publish and the completion.
-// Anything else goes back to review. So does a merge job interrupted after
-// the merge: once the claim records the code merge, the hardened pre-merge
-// head no longer authorizes anything, so review hardens the wiki against the
-// merged code, and this module then takes the path of a change whose code
-// merged, the security review included.
+// Anything else goes back to review. An interrupted job resumes an exact
+// saved own-merge receipt through recovery.ts, preserving its original
+// authorization; changed work instead needs hardening against the merged
+// code before this module takes its publish-only path.
 async function afterOwnMerge(
   ctx: RoleContext,
   start: IssueState,

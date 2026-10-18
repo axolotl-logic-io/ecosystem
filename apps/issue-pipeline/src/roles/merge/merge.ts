@@ -31,6 +31,7 @@ import { finishCompleted } from "./completion.ts";
 import type { IntegrationNeed } from "./integration.ts";
 import { integrate } from "./integration.ts";
 import { afterOwnMerge, localChecks, publishOnly } from "./publish.ts";
+import { recoverOwnMerge } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
 import { approvalGate } from "./source.ts";
@@ -249,6 +250,10 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   const rejected = rejectedAgain(ctx.state, current.revision);
   if (rejected !== null) {
     return rejected;
+  }
+  const recovered = await recoverOwnMerge(ctx, current);
+  if (recovered !== null) {
+    return recovered;
   }
   const gate = approvalGate(ctx, ctx.state, current);
   if (gate !== null) {

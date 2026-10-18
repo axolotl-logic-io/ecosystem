@@ -21,6 +21,7 @@ const CURRENT_REVISION = z.looseObject({
       number: z.number().int().positive(),
       state: z.string(),
       mergeCommit: z.string().nullable(),
+      headSha: z.string().min(1),
     })
     .nullable(),
 });

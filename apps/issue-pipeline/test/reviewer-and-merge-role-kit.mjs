@@ -89,11 +89,11 @@ const REVISION = { code: HEAD, wiki: WIKI, inputs: INPUTS };
 /**
  * The current-revision op's reply.
  * @param {Partial<import("../src/state.ts").Revision>} [revision]
- * @param {{ number: number, state: string, mergeCommit: string | null } | null} [pr]
+ * @param {{ number: number, state: string, mergeCommit: string | null, headSha: string } | null} [pr]
  */
 function current(
   revision = {},
-  pr = { number: PR, state: "OPEN", mergeCommit: null },
+  pr = { number: PR, state: "OPEN", mergeCommit: null, headSha: HEAD },
 ) {
   return { revision: { ...REVISION, ...revision }, baseSha: sha("b"), pr };
 }

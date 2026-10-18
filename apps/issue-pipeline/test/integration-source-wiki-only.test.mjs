@@ -74,7 +74,15 @@ function currentFor({ state }) {
   if (state.pr === null) {
     return current({}, null);
   }
-  return current({}, { number: state.pr, state: "CLOSED", mergeCommit: null });
+  return current(
+    {},
+    {
+      number: state.pr,
+      state: "CLOSED",
+      mergeCommit: null,
+      headSha: HEAD,
+    },
+  );
 }
 
 /**

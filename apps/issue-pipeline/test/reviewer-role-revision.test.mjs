@@ -38,7 +38,12 @@ const WIKI_CHANGE_SCOPE =
   /Scope: the wiki in `docs\/` only\. The change lives only in the wiki/u;
 const BRANCH_HEAD = HEAD;
 
-const MERGED_PR = { number: PR, state: "MERGED", mergeCommit: MERGE_COMMIT };
+const MERGED_PR = {
+  number: PR,
+  state: "MERGED",
+  mergeCommit: MERGE_COMMIT,
+  headSha: HEAD,
+};
 const CODE_MERGED = { pr: PR, sha: MERGE_COMMIT };
 
 test("a head that moved after the push waits, saving and posting nothing", async () => {

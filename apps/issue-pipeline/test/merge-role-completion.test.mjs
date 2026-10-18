@@ -268,11 +268,11 @@ test("a finish op reply outside its schema fails as an op, so the job stops inst
   });
 });
 
-test("a merge receipt saved at merge is not a completion: the next merge job sends the pre-merge hardening to review, never finishing", async () => {
+test("a merge receipt for another wiki cannot resume the own merge: it returns to review, never finishing", async () => {
   const { ctx, calls } = merging({
     state: {
       ...CODE_MERGED,
-      merged: { code: MERGE_COMMIT, wiki: WIKI, inputs: INPUTS },
+      merged: { code: MERGE_COMMIT, wiki: MOVED, inputs: INPUTS },
     },
     ops: { "current-revision": [AFTER_MERGE] },
   });
