@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { parseRequest } from "../process.ts";
 import { currentRevision } from "../revision.ts";
-import { ISSUE_STATE } from "../state.ts";
+import { ISSUE_STATE, readState } from "../state.ts";
 import type { WikiPublish } from "../wiki-publication.ts";
 import { publishReviewedWiki } from "../wiki-publication.ts";
 import type { WikiFinishReply, WikiSyncReply } from "../wiki-publish.ts";
@@ -51,12 +51,13 @@ function finishWikiSyncOp(cfg: Config, request: unknown): WikiFinishReply {
 }
 
 // Publishes the approved wiki head after the fresh gates (publication-guard)
-// pass, or says why not. Safe to repeat: a wiki that already holds the head
+// pass against GitHub and the saved state, or says why not. Safe to repeat: a wiki that already holds the head
 // is a success.
 function publishOp(cfg: Config, request: unknown): PublishReply {
   const req = parseRequest(PUBLISH_REQUEST, "publish", request);
   const current = currentRevision(cfg, req.number, req.state);
-  const refused = publishGate(req.state, req, current);
+  const { state: saved } = readState(cfg, req.number);
+  const refused = publishGate(req.state, saved, req, current);
   if (refused !== undefined) {
     return refused;
   }

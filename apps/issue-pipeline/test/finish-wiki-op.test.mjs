@@ -63,7 +63,10 @@ function published(w) {
       headSha: w.sha,
     },
   });
-  fakeGh.reply([]);
+  const receipt = approvedState(approved, {
+    merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
+  });
+  fakeGh.reply([savedListing(receipt)]);
   const reply = publishOps["publish"]?.(w.cfg, {
     number: 7,
     state: approvedState(approved),

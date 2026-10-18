@@ -11,6 +11,7 @@ import {
   MERGE_COMMIT,
   moveWiki,
   PR,
+  savedListing,
   sh,
   wikiRef,
   world,
@@ -45,6 +46,19 @@ function merged(w, { inputs = "inputs-1", state = "MERGED" } = {}) {
   });
 }
 
+// The job's own merge saved its partial receipt: still at stage merge, its
+// merged naming GitHub's merge commit with the approved wiki and inputs.
+/** @param {Revision} approved @param {object} [receipt] @returns {void} */
+function savedReceipt(approved, receipt = {}) {
+  const merged = {
+    code: MERGE_COMMIT,
+    wiki: approved.wiki,
+    inputs: approved.inputs,
+    ...receipt,
+  };
+  fakeGh.reply([savedListing(approvedState(approved, { merged }))]);
+}
+
 /** @param {World} w @param {Revision} approved @param {object} [extra] @returns {object} */
 function request(w, approved, extra = {}) {
   return {
@@ -59,7 +73,7 @@ function request(w, approved, extra = {}) {
 test("publish after the job's own merge fast-forwards the wiki to the approved head and deletes agent/issue-7", () => {
   const w = world({ wiki: true });
   merged(w);
-  fakeGh.reply([]);
+  savedReceipt(approvedOf(w));
   const reply = publish(w.cfg, request(w, approvedOf(w)));
   const short = String(w.wikiSha).slice(0, 12);
   assert.deepEqual(reply, {
@@ -76,7 +90,7 @@ test("publish after the job's own merge fast-forwards the wiki to the approved h
 test("publish again after a crash succeeds without pushing anything new", () => {
   const w = world({ wiki: true });
   merged(w);
-  fakeGh.reply([]);
+  savedReceipt(approvedOf(w));
   publish(w.cfg, request(w, approvedOf(w)));
   const again = publish(w.cfg, request(w, approvedOf(w)));
   assert.deepEqual(again, {
@@ -92,6 +106,7 @@ test("publish refuses a wiki that moved past the approved head, and never rebase
   const w = world({ wiki: true });
   const moved = moveWiki(w);
   merged(w);
+  savedReceipt(approvedOf(w));
   const reply = publish(w.cfg, request(w, approvedOf(w)));
   assert.equal(reply.published, false);
   assert.equal("reason" in reply && reply.reason, "wiki-behind");
@@ -169,6 +184,7 @@ test("publish with no approved wiki commits publishes nothing", () => {
       headSha: w.sha,
     },
   });
+  savedReceipt(approved);
   assert.deepEqual(publish(w.cfg, request(w, approved)), {
     published: true,
     sha: null,
@@ -181,7 +197,62 @@ test("publish refuses wiki commits the approval didn't include", () => {
   const w = world({ wiki: true });
   const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
   merged(w);
+  savedReceipt(approved);
   const reply = publish(w.cfg, request(w, approved));
   assert.equal("reason" in reply && reply.reason, "stale");
+  assert.equal(wikiRef(w, "master") === w.wikiSha, false);
+});
+
+test("publish after the job's own merge refuses without the saved receipt, whatever the request says", () => {
+  const w = world({ wiki: true });
+  const approved = approvedOf(w);
+  merged(w);
+  fakeGh.reply([]);
+  const claimed = request(w, approved, {
+    state: approvedState(approved, {
+      merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
+    }),
+  });
+  assert.equal(publish(w.cfg, claimed).reason, "no-receipt");
+  fakeGh.reply([
+    savedListing({
+      ...approvedState(approved, {
+        merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
+      }),
+      stage: "review",
+    }),
+  ]);
+  assert.equal(publish(w.cfg, claimed).reason, "no-receipt");
+  assert.equal(wikiRef(w, "master") === w.wikiSha, false);
+});
+
+test("publish refuses a saved receipt that isn't GitHub's merge of the approved revision", () => {
+  const w = world({ wiki: true });
+  const approved = approvedOf(w);
+  merged(w);
+  for (const receipt of [
+    { code: "0ther" },
+    { wiki: "0ther" },
+    { inputs: "inputs-0" },
+  ]) {
+    savedReceipt(approved, receipt);
+    assert.equal(publish(w.cfg, request(w, approved)).reason, "no-receipt");
+  }
+  const reviewedElsewhere = { ...approved, code: "0ther" };
+  fakeGh.reply([
+    savedListing({
+      ...approvedState(approved, {
+        merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
+      }),
+      review: {
+        round: 0,
+        verdict: "approve",
+        commentId: null,
+        findings: [],
+        revision: reviewedElsewhere,
+      },
+    }),
+  ]);
+  assert.equal(publish(w.cfg, request(w, approved)).reason, "no-receipt");
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
 });

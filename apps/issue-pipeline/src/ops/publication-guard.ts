@@ -27,7 +27,12 @@ interface MergeStale {
 
 interface PublishRefusal {
   published: false;
-  reason: "unapproved" | "stale" | "not-merged" | "code-mismatch";
+  reason:
+    | "unapproved"
+    | "stale"
+    | "not-merged"
+    | "code-mismatch"
+    | "no-receipt";
   detail: string;
 }
 
@@ -90,13 +95,51 @@ function publishRefusal(
   return { published: false, reason, detail };
 }
 
+// Why the saved state is not the partial code-merge receipt of the merge
+// that GitHub reports, for the approved `revision`, or undefined. The
+// receipt is the issue saved at stage merge with `merged` naming GitHub's
+// merge commit and the approved wiki and inputs, its PR the same, and its
+// review approving the exact head GitHub merged. Only the saved state
+// counts: the request's state and the job's log are no proof.
+function receiptRefusal(
+  saved: IssueState | null,
+  state: IssueState,
+  revision: Revision,
+  merged: { mergeCommit: string; headSha: string },
+): PublishRefusal | undefined {
+  if (saved === null || saved.stage !== "merge" || saved.merged === null) {
+    return publishRefusal(
+      "no-receipt",
+      `#${state.number} has no saved code-merge receipt at stage merge`,
+    );
+  }
+  const { merged: receipt, review } = saved;
+  const holds =
+    saved.pr === state.pr &&
+    receipt.code === merged.mergeCommit &&
+    receipt.wiki === revision.wiki &&
+    receipt.inputs === revision.inputs &&
+    review.revision !== null &&
+    review.revision.code === revision.code &&
+    revision.code === merged.headSha;
+  if (holds) {
+    return undefined;
+  }
+  return publishRefusal(
+    "no-receipt",
+    `the saved receipt (code ${String(receipt.code)}, wiki ${String(receipt.wiki)}) is not PR #${String(state.pr)}'s merge ${merged.mergeCommit} of the approved head ${String(revision.code)}`,
+  );
+}
+
 // Why the code side forbids publishing `revision`, or undefined. With a PR,
 // GitHub must say it merged; a revision reviewed after the merge
 // (codeMerged) names the merge commit, and one reviewed before it, in the
-// job that merged it, names exactly the head GitHub merged. Without a PR, a
-// change that lives only in the wiki keeps the checkout at the reviewed code.
+// job that merged it, names exactly the head GitHub merged and needs that
+// job's saved receipt. Without a PR, a change that lives only in the wiki
+// keeps the checkout at the reviewed code.
 function codeRefusal(
   state: IssueState,
+  saved: IssueState | null,
   revision: Revision,
   current: CurrentRevision,
 ): PublishRefusal | undefined {
@@ -132,14 +175,19 @@ function codeRefusal(
       `the approved code ${String(revision.code)} is not ${expected}, which PR #${state.pr} merged`,
     );
   }
+  if (state.codeMerged === null) {
+    return receiptRefusal(saved, state, revision, merged);
+  }
   return undefined;
 }
 
 // Why the wiki of `revision` may not be published, or undefined. The wiki
 // head itself is checked by the publish (wiki-publish.ts), since a retry
-// after a publish sees the wiki no longer ahead.
+// after a publish sees the wiki no longer ahead. `saved` is the issue's
+// saved state, read fresh.
 function publishGate(
   state: IssueState,
+  saved: IssueState | null,
   request: { expectedWiki: string | null; revision: Revision },
   current: CurrentRevision,
 ): PublishRefusal | undefined {
@@ -161,7 +209,7 @@ function publishGate(
       `the trusted inputs changed since the approval (${current.revision.inputs})`,
     );
   }
-  return codeRefusal(state, revision, current);
+  return codeRefusal(state, saved, revision, current);
 }
 
 // The saved completion finish-wiki may act on: done, with the merged
