@@ -95,11 +95,10 @@ function opOutcome(reply: Reply): Outcome {
 
 function childOf(effect: SessionEffect): ChildLaunch {
   const { name, agent, model, schema, task, tokenBudget, budgetRole } = effect;
-  const label = `Run ${name} session`;
   return {
     kind: "child",
     name,
-    label,
+    label: `Run ${name} session`,
     agent,
     model,
     schema,
@@ -196,8 +195,7 @@ function opLaunchOf(issue: number, op: string, payload: Reply): OpLaunch {
 
 // What the role's locate reads besides the claimed state: the claim's paths,
 // with the job's code checkout as the worktree and its folder, and the
-// config's settings. The
-// loaded config always has them, from its defaults.
+// config's settings. The loaded config always has them, from its defaults.
 function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
   const { cfg } = job;
   if (!isSweepConfig(cfg)) {
