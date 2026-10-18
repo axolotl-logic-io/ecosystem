@@ -7,9 +7,9 @@
   "takeNewWork": true,
   "skipLabels": ["deploy"],
   "models": {
-    "author": "anthropic/claude-opus-5-5",
-    "implementor": "anthropic/claude-opus-5-5",
-    "reviewer": "anthropic/claude-opus-5-5"
+    "author": "openai/gpt-6.1-sol",
+    "implementor": "openai/gpt-6.1-sol",
+    "reviewer": "openai/gpt-6.1-sol"
   },
   "commands": {
     "setup": "npm ci",
@@ -39,7 +39,6 @@
   "ciWaitMinutes": 30,
   "commandTimeoutMinutes": 20,
   "leaseHours": 3,
-  "maxFixRounds": 2,
   "maxCiFixes": 2,
   "maxSyncs": 3,
   "maxConflictFixes": 2,

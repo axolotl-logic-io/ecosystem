@@ -7,9 +7,8 @@ import { z } from "zod";
 type ModelRole = "author" | "implementor" | "reviewer";
 
 // The model a role gets when the config names none for it, or for the
-// installed version's roles it maps from: the installed version's default for
-// its spec writer, implementer and correctness and security reviewers.
-const DEFAULT_MODEL = "anthropic/claude-opus-5-5";
+// installed version's roles it maps from. Explicit configured models stay unchanged.
+const DEFAULT_MODEL = "openai/gpt-6.1-sol";
 
 // The installed version's model roles each role reads, in order, when the
 // config's models doesn't name the role itself.
@@ -38,6 +37,7 @@ const REMOVED_FIELDS: Readonly<Record<string, string>> = {
   failureStreak: ORCHESTRATOR_EXTRAS,
   issueTokenBudget: SESSION_BUDGETS,
   maxContinuations: SESSION_BUDGETS,
+  maxFixRounds: "hardening owns fixes; review rounds were removed",
   maxSpawnsPerRun: ORCHESTRATOR_EXTRAS,
   maxTriages: OLD_ROLES,
   nonCodePathGlobs: TEST_RULES,

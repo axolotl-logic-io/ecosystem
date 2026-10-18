@@ -15,7 +15,6 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // reviewers read each in full (Axlog, 2026-10-15). Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
-  maxFixRounds: 2,
   maxCiFixes: 2,
   maxSyncs: 3,
   maxConflictFixes: 2,

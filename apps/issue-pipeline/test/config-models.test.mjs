@@ -10,7 +10,7 @@ const { testConfig } = await import("./config-test-kit.mjs");
 
 const { chooseModels } = await import("../src/config-legacy.ts");
 
-const OPUS = "anthropic/claude-opus-5-5";
+const DEFAULT_MODEL = "openai/gpt-6.1-sol";
 const SOFT = 1;
 const HARD = 2;
 // The removed claim race waited this many seconds before and after posting.
@@ -20,7 +20,11 @@ const WAITS = [FIRST_WAIT, SECOND_WAIT];
 
 test("each role's own key wins over the installed version's roles", () => {
   const { models } = chooseModels({ author: "a", spec: "s", reviewer: "r" });
-  assert.deepEqual(models, { author: "a", implementor: OPUS, reviewer: "r" });
+  assert.deepEqual(models, {
+    author: "a",
+    implementor: DEFAULT_MODEL,
+    reviewer: "r",
+  });
 });
 
 test("installed-version roles map to the new roles in their documented order", () => {
@@ -42,25 +46,27 @@ test("installed-version roles map to the new roles in their documented order", (
   );
 });
 
-test("no models at all gives every role the installed default", () => {
+test("no models at all gives every role the OpenAI default", () => {
   assert.deepEqual(chooseModels(undefined).models, {
-    author: OPUS,
-    implementor: OPUS,
-    reviewer: OPUS,
+    author: DEFAULT_MODEL,
+    implementor: DEFAULT_MODEL,
+    reviewer: DEFAULT_MODEL,
   });
 });
 
 test("a config with removed keys loads, warning once for each", () => {
   const { cfg, warnings } = testConfig({
     contextLimits: { soft: SOFT, hard: HARD },
+    maxFixRounds: 2,
     roleBudgets: {},
     claimWaitSeconds: WAITS,
     escalationAgentActs: true,
     models: { scope: "anthropic/claude-sonnet-5-5" },
   });
-  assert.equal(cfg.models.reviewer, OPUS);
+  assert.equal(cfg.models.reviewer, DEFAULT_MODEL);
   for (const key of [
     "contextLimits",
+    "maxFixRounds",
     "roleBudgets",
     "claimWaitSeconds",
     "escalationAgentActs",
@@ -71,4 +77,16 @@ test("a config with removed keys loads, warning once for each", () => {
     );
     assert.equal(key in cfg, false);
   }
+});
+
+test("explicit models survive the default switch without a fallback", () => {
+  const configured = {
+    author: "custom/a",
+    implementor: "anthropic/explicit",
+    reviewer: "custom/r",
+  };
+  assert.deepEqual(chooseModels(configured), {
+    models: configured,
+    warnings: [],
+  });
 });

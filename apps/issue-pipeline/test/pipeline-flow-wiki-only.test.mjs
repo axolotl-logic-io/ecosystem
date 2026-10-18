@@ -2,8 +2,8 @@
 // An issue whose change lives only in the wiki, taken through the whole
 // pipeline as built (pipeline-flow-kit.mjs): the implementor commits to the
 // wiki checkout alone, so its draft PR is closed and the issue names no PR;
-// the reviewer approves on the issue; the merge job merges no code and
-// publishes the reviewed wiki commit, then closes the issue as completed.
+// the Reviewer hardens it and then security-reviews the final wiki; merge
+// publishes only the exactly cleared wiki and closes the issue as completed.
 // Faked: GitHub (pipeline-flow-gh.mjs) and the model (pipeline-flow-pi.mjs).
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -80,7 +80,7 @@ before(async () => {
 });
 after(() => stopJobs(flow));
 
-test("a wiki-only change goes through author, implement, an approving review and merge, then starts nothing", () => {
+test("a wiki-only change goes through author, implement, hardening and final security at merge, then starts nothing", () => {
   assert.deepEqual(
     stages,
     ["author", "implement", "review", "merge"],
@@ -92,7 +92,7 @@ test("a wiki-only change goes through author, implement, an approving review and
   assert.deepEqual(roles, ["author", "implementor", "reviewer", "reviewer"]);
 });
 
-test("GitHub ends with the draft PR closed, unmerged and named by no state, the approval on the issue, and the issue closed as completed", () => {
+test("GitHub ends with the draft PR closed, unmerged and named by no state, hardening and security on the issue, and the issue closed as completed", () => {
   const world = readWorld(flow.ghDir);
   const state = savedState(world);
   const issue = world.issues.find(({ number }) => number === ISSUE);
@@ -142,7 +142,7 @@ test("no code merges: GitHub gets no merge call and the base is where it started
   assert.equal(heads().base, start.base);
 });
 
-test("the wiki fast-forwards to the reviewed wiki commit, which holds the implementor's page", () => {
+test("the wiki fast-forwards to the hardened and security-cleared wiki commit, which holds the implementor's page", () => {
   const { wiki } = heads();
   const { hardened, security, merged } = savedState(readWorld(flow.ghDir));
   assert.equal(wiki, hardened.wiki);

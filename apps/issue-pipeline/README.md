@@ -1,68 +1,121 @@
 # Issue pipeline
 
-The issue pipeline takes each allowed user's GitHub issue to a merged pull request with no human in the loop. An issue moves through four stages, each run by one stage job, and only three of them use a model. The wiki's [Reimagined pipeline](https://github.com/axolotl-logic/project-buddy/wiki/Reimagined-Pipeline) page is the design this code implements: its rules, and what it removed from the version before it.
+The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, integration turns, stops and restarts. The executor never selects another issue. The wiki's [Reimagined pipeline](https://github.com/axolotl-logic/project-buddy/wiki/Reimagined-Pipeline) describes the design.
 
-A merge changes nothing that runs. Only the operator's install does (see Install).
+A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
 ## Stages and model roles
 
 ```text
-author ──Gherkin──> implement ──verified, pushed──> review ──approve──> merge ──merged, published──> done
+author -> implement (draft) -> review (hardening) -> merge (integration -> squash -> security -> publish/close) -> done
 ```
 
-| Stage | Who works | What it produces |
+| Stage / phase | Session authority | Result |
 |---|---|---|
-| `author` | The **author** model, which only reads | One signed Gherkin comment on the issue, edited in place when the issue changes, or questions and `agent:needs-info` |
-| `implement` | The **implementor** model, which writes | Commits on the issue's code and wiki branches, made only through `pipeline_commit`, verified by the repo's commands and pushed by the job |
-| `review` | The **reviewer** model hardening the change, committing through `pipeline_commit` | The hardened head, with one signed review comment bound to the code head, wiki head and trusted inputs it saw |
-| `merge` | The **reviewer** model integrating the change, committing, then reviewing the integrated result's security, only reading | The squash merge of the authorized head, the published wiki commits and the closed issue; a security finding blocks completion and publication |
+| `author` | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
+| `implement` | Developer (`implementor` in config), writable | Preserved issue work plus code/tests/wiki commits through `pipeline_commit`, pushed as a **draft**; no entry/resume base synchronization or mandatory verification/fix loop |
+| `review` / `hardening` | Reviewer, writable | Design/correctness/test fixes and bounded configured verification/wiki-check fixes, without synchronization. Saves exact `hardened` before guarded draft readiness; an exact checkpoint resumes without another writer |
+| `merge` / `integration` | Reviewer, writable only when integration needs fixes | At the caller's serialized merge turn, bounded synchronization/conflict/check/CI fixes. Saves checked integration linked to original hardening; no extra design re-review of its own checked work |
+| `merge` / `security-review` | Fresh Reviewer, **read-only** | Security only (`user-harm`, `rights`, `financial-harm`, `abuse-risk`) over the **actual squash merge's first-parent diff**, readable merged tree and final wiki/inputs, after deterministic code merge |
+| completion | Deterministic ops | Only an exact durable clear security receipt permits wiki publication and issue completion/closure |
 
-An issue goes back when something changes: review's `changes` to implement, a failed merge check to implement, any new head after approval to review, and new trusted input from any stage to author. Every loop has a limit (`maxFixRounds`, `maxCiFixes`, `maxSyncs`, `maxConflictFixes`, `maxResumes`), and a stop is an `agent:stopped-<control>` label with a comment naming the control and how to resume. A provider's rate limit or a transport error defers the issue and backs the orchestrator off; it never stops it.
+Hardening authorizes integration, not a fictitious premerge security approval. `hardened`, `integration`, actual `merged`/`codeMerged` and `security` have separate provenance. Unexpected external heads return to hardening; trusted-input movement returns to Author. Integration's own locally checked changes do not require another design review. CI is required on the exact authorized head when configured. No stage moves or deploys `main`.
 
-Each stage's role is in `src/roles/` (`author/`, `implementor/`, `reviewer/`, `merge/`), registered in `src/roles/registry.ts`. The agents the model sessions run as are in `agents/`: `issue-pipeline-author`, `-implementor` and `-reviewer`.
+A security rejection leaves code **already merged**, but wiki unpublished and issue stopped. It is not a rollback. Lifting the stop cannot reroll the same rejected revision: it re-stops without a model. Remediation may need a separate issue or operator action. Missing/stale security cannot authorize completion. After interruption, an exact saved own-merge receipt and original authorization resume only missing security, or reuse its exact approval; they do not rerun writers, push code or merge again. Independently hardened wiki-only work after a previous code merge remains supported. A wiki-only issue merges no code and passes the same final security/publication gate.
 
-Each session's behavioral prompt is a page of the wiki clone the job's `--brain-path` names, chosen by the session's stage and phase: `Pipeline-Prompt-Author.md` (author), `-Developer.md` (implement), `-Hardening.md` (review, hardening), `-Integration.md` (merge, integration) and `-Security.md` (merge, security review). The job pins its stage's pages before it changes anything, recording each page's path, sha256 and the clone's HEAD in `job.json` (the usage records name the page, sha256 and HEAD), and pi gets a session's pinned text appended to its agent's system prompt (`--append-system-prompt`), so an edit to the clone mid-job changes no session. A missing or unreadable page fails the job; there is no bundled copy. Any other session, such as a reviewer session that names no phase, never starts. A page grants nothing: tools, tokens and commit scope come only from the session's spec (`commits` and `phase`, checked against `STAGE_AGENTS` in `src/job/roles.ts`).
+`maxCiFixes`, `maxSyncs` and `maxConflictFixes` bound the corresponding fix loops. Stops have `agent:stopped-<control>` labels and a comment naming the control and recovery. Rate limits/transport errors defer rather than stop; the caller must back off before restarting. **`maxFixRounds` is obsolete, warned about and ignored**; the historical `review-rounds` stop is retained for old state/labels, not repurposed as a new limit. Caller-owned restarts must also be bounded; legacy scheduler `maxResumes` is not a new caller scheduler.
+
+Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-implementor` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
+
+## Caller invocation and concurrency
+
+Run installed `job.mjs`, once per stage, with **one `--issue`, required `--branch` and required `--brain-path`**, including boundary prints:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
+  --issue 479 --branch feature/issue-479-query --brain-path /path/to/wiki-clone \
+  --lane caller-query --stage author --print-boundary
+
+node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
+  --issue 479 --branch feature/issue-479-query --brain-path /path/to/wiki-clone \
+  --lane caller-query --stage author
+```
+
+The caller reads the one-line JSON result and saved issue state, then invokes the indicated next stage on the **same branch and stable `--lane`**. A lane owns the live claim across stages; omitting it gives each job a new claimant id, which cannot take a still-live earlier claim. A stage mismatch releases preserved state without running its model. Do not blindly loop on `unclaimed`, `wait`, `deferred` or `stop`. Do not use the retained autonomous orchestrator for this caller-owned workflow.
+
+Issue/branch binding is persisted at first claim. A changed branch on resume is refused; legacy `branch:null` binds the old canonical `agent/issue-N`, not an arbitrary new branch. Protected base/wiki/remote-default branches and nonliteral/invalid refs are refused before mutation. A fresh explicit job initializes its metadata clone before posting a claim; there is no sweep prerequisite. Existing clone and issue work are reused. `--print-boundary` pins/validates prompts and prints role/checkouts/environment/network without cloning, claiming or launching pi.
+
+Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. The caller serializes integration/merge turns (one at a time); existing claim/lease/head/merge-queue guards still apply. `--merge-queue N,...` carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
+
+## Wiki prompt source and pinning
+
+`--brain-path` is a local clone of the wiki, distinct from mutable issue docs. Behavioral instructions come **only** from these pages, selected by `(stage, phase)`:
+
+| Stage / phase | File |
+|---|---|
+| author / none | `Pipeline-Prompt-Author.md` |
+| implement / none | `Pipeline-Prompt-Developer.md` |
+| review / hardening | `Pipeline-Prompt-Hardening.md` |
+| merge / integration | `Pipeline-Prompt-Integration.md` |
+| merge / security-review | `Pipeline-Prompt-Security.md` |
+
+Before any mutation the job snapshots the pages needed by its stage. Missing/unreadable/nonplain/symlink, invalid UTF-8, NUL-containing, blank, single-line or oversized pages fail explicitly; there is **no bundled/installed/network fallback**. Each page must be multiline and at most 131071 bytes. `job.json` records path, page, SHA-256 and wiki HEAD; session launch/usage provenance records the page/hash (usage also HEAD). The exact pinned text is appended to pi's thin identity prompt with `--append-system-prompt`, so editing the clone mid-job changes no session's policy. An unmapped stage/phase cannot start. Wiki text cannot grant tools, tokens or commit permission; code checks each session's `commits` and `phase` against `STAGE_AGENTS` in `src/job/roles.ts`.
 
 ## Programs
 
-The build (`build.ts`) bundles each program in `src/` into one Node module in `dist/`, which the install copies to the pipeline root.
+`build.ts` bundles the entry points into `dist/`; install copies them to the pipeline root.
 
-| Program | Source | What it does |
-|---|---|---|
-| `orchestrate.mjs` | `src/orchestrate.ts`, `src/orchestrator/` | `node orchestrate.mjs --config <path> --brain-path <wiki clone> [--once]`. The only process that starts stage jobs for its repo, so its jobs are the only claimants. Each tick it reads the open issues, schedules stage jobs within `maxJobs`, `stageCaps` and the merge window (one issue merges at a time), restarts dead jobs up to `maxResumes`, backs off after a rate limit, and logs each decision to `runs/<slug>/orchestrator.log`. An open issue saved `done` with what merged gets a merge job that only finishes it. |
-| `job.mjs` | `src/job.ts`, `src/job/` | `node job.mjs --config <path> --issue N --stage <stage> --branch <name> --brain-path <wiki clone>`: one stage of one issue, on the branch its caller assigns, in its own checkout under `work/<slug>/jobs/`. It refuses a protected branch (the base, the wiki's branch, the remote's default) and pins each of its sessions' behavioral prompts from the wiki clone's `Pipeline-Prompt-*.md` pages before it changes anything, then claims the issue, runs the stage's role, saves the state, and prints one JSON line. `--steer <launch key> --message <text>` steers a running session; `--print-boundary` prints the stage's role, checkouts, environment and network and starts nothing. |
-| `ops.mjs` | `src/ops.ts`, `src/ops/` | The only code that runs `git` and `gh` with the account's token. It reads one framed JSON request on stdin (`BEGIN_OPS_REQUEST` … `END_OPS_REQUEST`, naming the `op` and the `config`) and prints one JSON reply. The stage jobs run it; no model session holds a GitHub token. |
-| `report.mjs` | `src/report.ts`, `src/report/` | `node report.mjs usage --config <path> [--since <date>] [--role <role>] [--issue <n>]`: the usage report from the sessions' usage records. The records are telemetry; nothing stops a session for what it spends. |
-| `shell-supervisor.mjs` | `src/shell-supervisor.ts` | Runs each configured command in a process group of its own, so no command leaves a process behind. |
-| `structured-output.mjs`, `pipeline-commit.mjs` | `src/job/structured-output.ts`, `src/job/pipeline-commit-tool.ts` | The pi extensions that give a session its schema-checked reply and its `pipeline_commit` tool. |
+| Program | Purpose |
+|---|---|
+| `job.mjs` | Explicit one-stage invocation above; `--steer <launch key> --message <text>` steers a running session |
+| `ops.mjs` | Credentialed deterministic operations; framed JSON stdin (`BEGIN_OPS_REQUEST` … `END_OPS_REQUEST`, with `op` and `config`), one JSON reply |
+| `report.mjs` | `usage --config <path> [--since <date>] [--role <role>] [--issue <n>]`; telemetry, not spending limits |
+| `shell-supervisor.mjs` | Configured commands in owned process groups, cleaned on exit |
+| `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commit tool extensions |
+| `orchestrate.mjs` | Retained legacy discovery/scheduling compatibility only; `--config <path> --brain-path <wiki clone> [--once]`. Not the caller-owned entry point; do not run it alongside caller-managed jobs |
 
-GitHub holds the state: the signed state comment on each issue, and the claim, Gherkin and review comments. Local files under the root (`clones/`, `work/`, `runs/`) are a disposable cache.
+Signed GitHub state, claim, Gherkin, hardening and security comments are authoritative. `clones/`, `work/` and `runs/` are local caches/recovery artifacts: retain them and saved patches through upgrades until preserved work is confirmed safe.
 
-## Config
+## Config and model cutover
 
-Each repo has a config in `$ISSUE_PIPELINE_ROOT/repos/`. `repos/example.json` sets every field the pipeline reads; `src/config-schema.ts` holds their defaults and shape. `models` names the model of each role: `author`, `implementor` and `reviewer`. A config written for the previous version still loads: its removed fields are ignored with a warning, and its old model roles map to the new ones as `src/config-legacy.ts` documents. With `wiki` set, the wiki is the repo's wiki submodule at `wiki.dir`, published to `wiki.branch` after the code merges.
+Per-repo config lives in `$ISSUE_PIPELINE_ROOT/repos/`; `repos/example.json` shows configuration, `src/config-schema.ts` its shape/defaults. `wiki` uses the repo's submodule at `wiki.dir`, published to `wiki.branch` only after final security approval. Removed config fields load with warnings; old model-role mappings are in `src/config-legacy.ts`.
 
-## Install
+The default and example role models are `openai/gpt-6.1-sol`. **For the upcoming cutover explicitly set all three project roles**, rather than relying on defaults or old-role aliases:
 
-The pipeline runs from an installed copy, never from this folder. Run `npm ci` at the repo root first, since the build needs esbuild:
-
-```bash
-npm ci                                      # at the repo root
-mise //apps/issue-pipeline:install:dry-run  # list what would change, writing nothing outside dist/
-mise //apps/issue-pipeline:install          # build and install
+```json
+{
+  "models": {
+    "author": "openai/gpt-6.1-sol",
+    "implementor": "openai/gpt-6.1-sol",
+    "reviewer": "openai/gpt-6.1-sol"
+  }
+}
 ```
 
-The install builds `src/` into `dist/` and stops if the build fails. It copies the programs and `repos/example.json` to `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`) and the agents to `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`), filling in `{{ISSUE_PIPELINE_ROOT}}` and `{{PI_CODING_AGENT_DIR}}`. It retires the files the previous version installed and this one no longer has: the old `workflow.js`, the old `issue-pipeline-escalation`, `-ops`, `-reader`, `-specifier` and `-writer` agents, and the `pipeline-start` and `pipeline-pause` prompts. Every file it replaces or retires is first copied to `$ISSUE_PIPELINE_ROOT-backups/<timestamp>-install/`, and a dry run lists them as `retired`. It records the commit in `INSTALLED.json`, refuses uncommitted changes in this folder unless given `--allow-dirty`, and refuses to install from inside the pipeline root.
+Explicit configured models remain supported and pass unchanged to pi's `--model`; this default change never rewrites an external operator config. There is no automatic Claude fallback. The operator must verify all three roles at the gated install. Use the existing inherited **pi-cliproxyapi** extension/provider setup; the pipeline does not install providers or alter global extension/configuration. Pi still loads inherited extensions, plus the pipeline's per-session extensions. Never put provider/GitHub tokens in prompts, repo files or logs. Tests exercise selection/launch with fake pi only, not real providers.
 
-Per-repo configs, their setup and teardown scripts, `secrets/`, `clones/`, `work/` and `runs/` stay local, and the install never touches them.
+## Install and safe upgrades
+
+The pipeline runs from an installed copy, not this source folder. Operator commands (not an automatic release step):
+
+```bash
+npm ci                                      # monorepo root, unchanged lockfile
+mise //apps/issue-pipeline:check              # exact-head combined gate
+mise //apps/issue-pipeline:install:dry-run    # inspect after independent review
+mise //apps/issue-pipeline:install            # operator-authorized cutover only
+```
+
+Before upgrading: stop dispatch, drain all old-version jobs (prefer completing an active integration turn), verify no old job/session remains, snapshot installed config and signed state/recovery artifacts, pass the **exact source HEAD** full gate and independent security review, publish/verify the five wiki prompt pages and pin the intended wiki clone, inspect dry-run, then perform a controlled install and resume one explicitly assigned issue/stage at a time. Never mix live old/new jobs or reset branches, hardening, integration, security rejections or code-merge receipts to make an upgrade pass. Unknown moved heads return conservatively to hardening; code already merged stays merged. Install/rollback of binaries does not undo code merges or publish rejected wiki work.
+
+Install builds first, then copies programs and example config into `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`) and thin agents into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`), filling root placeholders. It backs up replaced/retired installed files under `$ISSUE_PIPELINE_ROOT-backups/<timestamp>-install/`, records the commit in `INSTALLED.json`, refuses dirty source unless explicitly overridden and refuses installing from inside the pipeline root. The retired old `workflow.js`, escalation/ops/reader/specifier/writer agents and start/pause prompts are listed by dry-run. Per-repo operator configs, setup/teardown scripts, secrets, clones, work and runs are not rewritten by install. Wiki publication and model-config cutover remain explicit operator responsibilities.
 
 ## Tests
 
 ```bash
-mise //apps/issue-pipeline:check      # typecheck, lint, build, then every test
-mise //apps/issue-pipeline:typecheck  # tsc on src/ and build.ts, then on install.mjs and the tests as checked JavaScript
-mise //apps/issue-pipeline:lint       # Biome with the repo's policy
-mise //apps/issue-pipeline:build      # build src/ into dist/
+mise //apps/issue-pipeline:check      # source + checked-JS test types, Biome, build, syntax, every test
+mise //apps/issue-pipeline:typecheck
+mise //apps/issue-pipeline:lint
+mise //apps/issue-pipeline:build
 ```
 
-The tests run against temporary pipeline roots, local bare git origins, a fake `gh` (`test/fake-gh.mjs`) and a fake pi (`test/fake-rpc-pi.mjs`), never a real model or GitHub. A test sets its temporary root, and HOME where it matters, before it imports anything from `src/`, since the root is read once on import.
+Tests use temporary HOME/pipeline roots, local bare git origins, fake GitHub and fake pi, never real GitHub/models or production data. Create/assert the temporary ROOT and set HOME/ISSUE_PIPELINE_ROOT **before dynamic source imports**: root resolution happens once on import. Full-flow regressions cover writable hardening/integration, final read-only security, wiki-only completion, explicit fresh-root invocation and claim-populated interrupted-merge replay. Legacy scheduling safety tests remain compatibility coverage, not a live dispatch recommendation. A failure or flake blocks acceptance; fix its cause rather than rerunning for a pass.
