@@ -32,13 +32,14 @@ type End =
 
 // A model session: its name, agent and model, the schema of its reply, its
 // task, its context budget, the role it is the budget of (its context log
-// line's role), its attempt: the retry, continuation or round number,
-// from 1, as the role counts it, and, optionally, the role's check that its
-// reply is put through before the session ends: the check's name and its
-// payload, to which the reply is added as `reply` (src/job/reply-checks.ts);
-// and, optionally, a file of the job's code checkout whose text at its head
-// the job puts in the reply's `field` when the reply sets `flag` to true,
-// before the reply check or the role reads it (src/job/reply-file.ts).
+// line's role), its attempt: the retry, continuation or round number, from 1,
+// as the role counts it; optionally, the role's check its reply is put
+// through before the session ends: the check's name and its payload, to which
+// the reply is added as `reply` (src/job/reply-checks.ts), and a file of the
+// job's code checkout whose text at its head the job puts in the reply's
+// `field` when the reply sets `flag` to true, before the reply check or the
+// role reads it (src/job/reply-file.ts); and, for a writer session, which
+// changes a checkout, `writer` and its timeout in `minutes`.
 interface SessionEffect {
   kind: "session";
   name: string;
@@ -49,11 +50,10 @@ interface SessionEffect {
   tokenBudget: number;
   budgetRole: BudgetRole;
   attempt: number;
-  replyCheck?: {
-    check: string;
-    payload: Readonly<Record<string, unknown>>;
-  };
+  replyCheck?: { check: string; payload: Readonly<Record<string, unknown>> };
   replyFile?: { path: string; field: string; flag: string };
+  minutes?: number;
+  writer?: true;
 }
 
 // What a state does: run an op or a script check with its payload, run a

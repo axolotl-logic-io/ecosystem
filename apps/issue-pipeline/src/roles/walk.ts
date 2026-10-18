@@ -21,7 +21,9 @@ import { transitionOf } from "./machine.ts";
 // What a role's locate reads besides the saved state: the issue, the job's
 // random id, which signs the role's comments, the repo config, the token
 // budgets and models, the claim's paths with the job's checkout as the
-// worktree, and the time the run started.
+// worktree, the time the run started and the merge queue.
+// `mergeQueue` is the merge queue the orchestrator passed (`--merge-queue`),
+// or null when it passed none.
 interface RoleContext {
   issue: number;
   jobId: string;
@@ -30,6 +32,7 @@ interface RoleContext {
   models: Readonly<Record<ModelRole, string>>;
   paths: ItemPaths;
   now: Date;
+  mergeQueue: readonly number[] | null;
 }
 
 // The `data` keys a role may write to the issue's state.
@@ -49,17 +52,22 @@ interface Machine<S extends string, R extends string, D> extends Writes<D> {
 
 // A linear role's step: what it runs, how its reply changes `data`, and,
 // for a step whose failure the role takes, how the error changes `data`
-// before the run goes on.
+// before the run goes on. A step whose `skip` holds for the `data` the run
+// reaches it with is passed over; one whose `again` holds for the `data` its
+// result left runs once more, which the role bounds.
 interface LinearStep<D> {
   name: string;
   kind: "script" | "session";
   effect: (data: D) => Effect;
   apply?: (data: D, reply: unknown) => D;
   recover?: (data: D, error: string) => D;
+  skip?: (data: D) => boolean;
+  again?: (data: D) => boolean;
 }
 
 // A linear role: its locate picks the step to start at (a name no step has
-// starts at the end), then the steps run in order, then `end`.
+// starts at the end), then the steps run in order, each skipped or repeated
+// as it says, then `end`.
 interface LinearScript<D> extends Writes<D> {
   locate: (saved: State, context: RoleContext) => MachineState<string, D>;
   steps: readonly LinearStep<D>[];
@@ -127,7 +135,12 @@ function linearWalk<D>(script: LinearScript<D>): Walk<string, D> {
   function indexOf(at: string): number {
     return steps.findIndex((step: LinearStep<D>): boolean => step.name === at);
   }
-  function positionAt(index: number, data: D): Position<string, D> {
+  // The position at the first step from `from` that `data` doesn't skip.
+  function positionAt(from: number, data: D): Position<string, D> {
+    let index = from;
+    while (steps[index]?.skip?.(data) === true) {
+      index += 1;
+    }
     const step = steps[index];
     if (step === undefined) {
       const effect: Effect = { kind: "end", end: script.end(data) };
@@ -151,6 +164,9 @@ function linearWalk<D>(script: LinearScript<D>): Walk<string, D> {
         data = step.recover(data, String(result.reply));
       } else if (step?.apply !== undefined) {
         data = step.apply(data, result.reply);
+      }
+      if (step?.again?.(data) === true) {
+        return positionAt(index, data);
       }
       return positionAt(index + 1, data);
     },

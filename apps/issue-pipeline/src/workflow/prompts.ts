@@ -193,7 +193,7 @@ function handoffLead(handoffFile: string): string {
   return `A previous session ran out of room. Read its handoff first: ${handoffFile}. Where it lists the files and lines earlier sessions read, reread only what you need. Continue from the current branch state.`;
 }
 
-export type { CommitStep, Committer };
+export type { CommitStep, Committer, PromptItem };
 export {
   beyondIssueRule,
   CODEMODE_RULE,

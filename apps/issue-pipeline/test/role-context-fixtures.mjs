@@ -48,6 +48,7 @@ function roleContext(fields = {}) {
       handoffFile: "/runs/issue-7/handoff.md",
     },
     now: ROLE_CLOCK,
+    mergeQueue: null,
   };
 }
 

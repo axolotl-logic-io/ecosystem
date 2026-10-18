@@ -19,7 +19,7 @@ import { childSpec, opsSpec } from "../workflow/launches.ts";
 import type { LaunchMeta } from "../workflow/signing.ts";
 import { claimLaunch, claimStep } from "../workflow/stages/entry.ts";
 import { isSweepConfig } from "../workflow/stages/entry-replies.ts";
-import type { ChildLaunch, OpLaunch } from "../workflow/stages/types.ts";
+import type { OpLaunch } from "../workflow/stages/types.ts";
 import { sweepSettings } from "../workflow/sweep-config.ts";
 import type { ItemPaths, JobLayout } from "../workflow/types.ts";
 import type { ContextStop } from "./context-watch.ts";
@@ -27,6 +27,13 @@ import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runLaunch } from "./launch.ts";
 import { replyFiller } from "./reply-file.ts";
+import type { Reply } from "./role-launches.ts";
+import {
+  opLaunchOf,
+  opOutcome,
+  sessionLaunchOf,
+  succeeded,
+} from "./role-launches.ts";
 import type { OpEffect, Outcome, ReplyCheck } from "./run-step.ts";
 import { sessionOutcome } from "./run-usage.ts";
 import type { RunEnd } from "./runner.ts";
@@ -61,6 +68,8 @@ interface RoleJob {
   issue: number;
   stage: string;
   stackOn: number | null;
+  // The merge order the orchestrator passed (`--merge-queue`), or null.
+  mergeQueue: readonly number[] | null;
   frame: OpsFrame;
   // The job's code checkout.
   repo: string;
@@ -69,44 +78,6 @@ interface RoleJob {
   hooks: LaunchHooks;
   status: JobStatus;
   control: Control;
-}
-
-type Reply = Readonly<Record<string, unknown>>;
-
-function succeeded(reply: Reply): boolean {
-  const { ok } = reply;
-  return ok === true;
-}
-
-function errorOf(reply: Reply): string {
-  const { error } = reply;
-  if (typeof error === "string") {
-    return error;
-  }
-  return "the op failed with no error";
-}
-
-function opOutcome(reply: Reply): Outcome {
-  if (succeeded(reply)) {
-    return { ok: true, name: "ok", reply };
-  }
-  return { ok: false, error: errorOf(reply) };
-}
-
-function childOf(effect: SessionEffect): ChildLaunch {
-  const { name, agent, model, schema, task, tokenBudget, budgetRole } = effect;
-  return {
-    kind: "child",
-    name,
-    label: `Run ${name} session`,
-    agent,
-    model,
-    schema,
-    minutes: 0,
-    task,
-    tokenBudget,
-    budgetRole,
-  };
 }
 
 // The job's launches for the role: each op and session gets the next
@@ -160,7 +131,7 @@ function launcherOf(job: RoleJob): Launcher {
     ): Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }> => {
       seq += 1;
       const item = { n: job.issue, worktree: job.repo };
-      const spec = childSpec(seq, item, childOf(effect), meta);
+      const spec = childSpec(seq, item, sessionLaunchOf(effect), meta);
       const tally = usageTally(job.hooks.contextLimits.soft);
       const startedAt = Date.now();
       const fill = replyFiller(job.repo, effect.replyFile);
@@ -184,18 +155,10 @@ function launcherOf(job: RoleJob): Launcher {
   };
 }
 
-function opLaunchOf(issue: number, op: string, payload: Reply): OpLaunch {
-  return {
-    kind: "op",
-    name: `i${issue}-${op}`,
-    op,
-    payload: { ...payload, number: issue },
-  };
-}
-
 // What the role's locate reads besides the claimed state: the claim's paths,
-// with the job's code checkout as the worktree and its folder, and the
-// config's settings. The loaded config always has them, from its defaults.
+// with the job's code checkout as the worktree and its folder, the config's
+// settings and the job's merge queue. The loaded config always has the
+// settings, from its defaults.
 function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
   const { cfg } = job;
   if (!isSweepConfig(cfg)) {
@@ -210,6 +173,7 @@ function contextOf(job: RoleJob, paths: ItemPaths): RoleContext {
     models,
     paths: { ...paths, worktree: job.repo, job: job.layout },
     now: new Date(),
+    mergeQueue: job.mergeQueue,
   };
 }
 

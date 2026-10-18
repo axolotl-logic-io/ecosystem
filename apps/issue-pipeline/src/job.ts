@@ -128,6 +128,7 @@ function drivenRun(cfg: Config, args: RunArgs, run: StageRun): Promise<RunEnd> {
 
 async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const { issue, stage, lane = null, stackOn = null } = args;
+  const { mergeQueue = null } = args;
   const key = jobKeyOf(stage, new Date());
   const role = roleOf(stage);
   if (role !== undefined && args.resume === true) {
@@ -167,9 +168,16 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     const run = { watched, frame, sweepId, checkout, layout, runDir };
     ending = drivenRun(cfg, args, { ...run, identity });
   } else {
-    const roleJob = { role, cfg, issue, stage, stackOn, frame, repo, layout };
+    const roleJob = { role, cfg, issue, stage, stackOn, mergeQueue, frame };
+    const checkouts = { repo, layout };
     const jobStartedAt = identity.startedAt;
-    ending = runRoleStage({ ...roleJob, ...watched, jobId: id, jobStartedAt });
+    ending = runRoleStage({
+      ...roleJob,
+      ...checkouts,
+      ...watched,
+      jobId: id,
+      jobStartedAt,
+    });
   }
   return await settle(cfg, ending, { ...exiting, control });
 }

@@ -155,7 +155,7 @@ function wikiTask(wiki: string, branch: string, stopped: Stopped): string[] {
 // The resolver's instructions, after its preamble, for a resolver that
 // commits with `committer`.
 function resolverTask(
-  state: StageState,
+  item: Pick<StageState, "paths">,
   target: ConflictTarget,
   conflict: { base: string; files: readonly string[]; baseSha: unknown },
   committer: Committer,
@@ -169,7 +169,7 @@ function resolverTask(
     case "code":
       return codeTask(conflict.base, stopped);
     case "wiki":
-      return wikiTask(String(state.paths.wiki), target.branch, stopped);
+      return wikiTask(String(item.paths.wiki), target.branch, stopped);
     default: {
       const unhandled: never = target;
       return unhandled;
