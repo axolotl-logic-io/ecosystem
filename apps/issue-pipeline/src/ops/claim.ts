@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ensureWorktree, setUpCheckout } from "../checkouts.ts";
+import { ensureClone, ensureWorktree, setUpCheckout } from "../checkouts.ts";
 import { laneOf, raceForClaim } from "../claims.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
@@ -124,6 +124,11 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
     throw new OpsError(`#${n} is not open`);
   }
   assertBranchAssigned(cfg, n, context.comments);
+  // Explicit stage jobs need the same metadata clone that legacy discovery
+  // initialized. Do this before posting a claim; failure leaves no lease.
+  if (!fs.existsSync(path.join(paths.clone(cfg), ".git"))) {
+    ensureClone(cfg);
+  }
   const race = raceForClaim(cfg, n, req, context.comments);
   if (!race.won || race.claimId === undefined) {
     return { lost: true, holder: race.holder ?? null, posted: race.posted };
