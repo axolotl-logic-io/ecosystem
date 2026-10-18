@@ -3,7 +3,8 @@
 // file the installed version wrote lacks, so its overlapping stage names
 // are never taken for this pipeline's), the job's pid, id, issue, the stage
 // it started at and the one it is at now, lane, start time and steer socket,
-// and a record of every launch it started (src/job/launch-record.ts). On
+// the brain pages it pinned its prompts from (src/job/brain.ts), and a
+// record of every launch it started (src/job/launch-record.ts). On
 // exit it holds the job's outcome: how the role's stage ended, whether the
 // issue deferred on a transient provider or transport error for the
 // orchestrator's backoff, the error of a claim that failed, the uncommitted
@@ -17,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import type { PromptProvenance } from "./brain.ts";
 import type {
   LaunchOutcome,
   LaunchPush,
@@ -69,6 +71,18 @@ const STATUS = z.object({
   lane: z.string().nullable(),
   startedAt: z.string(),
   socket: z.string(),
+  // The brain pages the job pinned its sessions' prompts from
+  // (src/job/brain.ts); absent from a file written before they were.
+  prompts: z
+    .array(
+      z.object({
+        page: z.string(),
+        path: z.string(),
+        sha256: z.string(),
+        head: z.string().nullable(),
+      }),
+    )
+    .optional(),
   outcome: JOB_OUTCOME.nullable(),
   endedAt: z.string().optional(),
   launches: z.array(LAUNCH),
@@ -82,7 +96,8 @@ type JobOutcome = z.infer<typeof JOB_OUTCOME>;
 type StatusFile = z.infer<typeof STATUS>;
 
 // The job as its file names it: its random id and its start, as its usage
-// records and its commits' trailers name them, too.
+// records and its commits' trailers name them, too, and the brain pages it
+// pinned.
 interface JobInfo {
   id: string;
   issue: number;
@@ -90,10 +105,12 @@ interface JobInfo {
   lane: string | null;
   startedAt: string;
   socket: string;
+  prompts: readonly PromptProvenance[];
 }
 
-// A launch as it starts: a pi session with its file, its write authority
-// and its reviewer phase, or an ops child.
+// A launch as it starts: a pi session with its file, its write authority,
+// its reviewer phase and the brain page its prompt was pinned from, or an ops
+// child.
 interface LaunchStart {
   key: string;
   kind: "session" | "ops";
@@ -101,6 +118,7 @@ interface LaunchStart {
   session: string | null;
   commits?: boolean;
   phase?: SessionPhase | null;
+  prompt?: { page: string; sha256: string } | null;
 }
 
 // The job's status file, kept current as the job reports what happens.
@@ -193,6 +211,7 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     pipelineVersion: PIPELINE_VERSION,
     pid: process.pid,
     ...job,
+    prompts: [...job.prompts],
     currentStage: job.stage,
     outcome: null,
     launches: [],

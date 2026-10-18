@@ -46,6 +46,7 @@ const JOB = {
   lane: null,
   startedAt: "2026-10-17T12:00:00.000Z",
   socket: "/s",
+  prompts: [],
 };
 const FIRST_CONTEXT = 50_000;
 const LAST_CONTEXT = 51_000;

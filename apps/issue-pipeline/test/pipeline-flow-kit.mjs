@@ -11,6 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { writeBrain } from "./brain-test-kit.mjs";
 import { installFlowGh } from "./pipeline-flow-gh.mjs";
 import { installFlowPi } from "./pipeline-flow-pi.mjs";
 
@@ -51,6 +52,7 @@ const SEED_ID = [
  * @property {string} config
  * @property {string} origin
  * @property {string} wikiOrigin
+ * @property {string} brain the wiki clone the jobs pin their prompts from
  * @property {string} ghDir
  * @property {string} piDir
  * @property {NodeJS.ProcessEnv} env
@@ -218,6 +220,7 @@ function setUpFlow() {
     config,
     origin,
     wikiOrigin,
+    brain: writeBrain(path.join(tmp, "brain")),
     ghDir: String(ghDir),
     piDir: String(piDir),
     env,

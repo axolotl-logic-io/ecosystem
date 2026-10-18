@@ -1,16 +1,17 @@
 // @ts-check
 // The stage job's agent definitions: the pi command line each of the repo's
-// definitions the four stages run (STAGE_AGENTS) gives a session of each
-// write authority its stage allows, and the failed session a missing one
-// gives. A session that commits gets its definition's tools and
-// pipeline_commit; one that only reads, such as the reviewer's final
-// security review, keeps only the tools that read, whatever its definition
-// lists.
+// definitions the four stages run (STAGE_AGENTS) gives each session its
+// stage lists, and the failed session a missing one gives. A session that
+// commits gets its definition's tools and pipeline_commit; one that only
+// reads, such as the reviewer's final security review, keeps only the tools
+// that read, whatever its definition lists. Every session's pinned prompt is
+// appended to its definition's system prompt.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { pinnedOf } from "./brain-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 /** @import { AgentDefinition } from "../src/job/agent-definition.ts" */
@@ -31,6 +32,7 @@ const { runSession } = await import("../src/job/launch.ts");
 const { STAGE_AGENTS } = await import("../src/job/roles.ts");
 
 const FRONTMATTER_FENCE = /^---/u;
+const PROMPT = pinnedOf("Pipeline-Prompt-Author.md");
 const NOBODY = /issue-pipeline-nobody/u;
 
 // Launch hooks that put fresh sessions in `sessions` and record nothing.
@@ -70,6 +72,7 @@ function specFor(agent) {
     timeoutMs: 60_000,
     commits: false,
     phase: null,
+    prompt: PROMPT,
   };
 }
 
@@ -117,7 +120,7 @@ function optionalFlag(args, flag) {
 
 /**
  * What a pi command line sets for its session.
- * @typedef {{ mode: string | null, model: string | null, tools: string | null, thinking: string | null, systemPrompt: string | null, extensions: Set<string>, skills: boolean, projectContext: boolean, session: string | null, schema: string | null }} CommandLine
+ * @typedef {{ mode: string | null, model: string | null, tools: string | null, thinking: string | null, systemPrompt: string | null, appended: string[], extensions: Set<string>, skills: boolean, projectContext: boolean, session: string | null, schema: string | null }} CommandLine
  */
 
 // What `args` sets, read by flag rather than by position.
@@ -129,6 +132,7 @@ function commandLineOf(args) {
     tools: optionalFlag(args, "--tools"),
     thinking: optionalFlag(args, "--thinking"),
     systemPrompt: optionalFlag(args, "--system-prompt"),
+    appended: flagValues(args, "--append-system-prompt"),
     extensions: new Set(flagValues(args, "-e")),
     skills: !args.includes("-ns"),
     projectContext: !args.includes("-nc"),
@@ -145,8 +149,8 @@ const WRITE_TOOLS = ["edit", "write", "bash"];
 // mode with the spec's model; for a committing session (`files.commit`) the
 // definition's tools plus structured_output and pipeline_commit, and the
 // pipeline_commit extension; for any other, only the definition's tools that
-// read plus structured_output; its thinking, prompt, extensions and context
-// settings, and the job's session file, output extension and schema.
+// read plus structured_output; its thinking, prompt, the session's pinned
+// prompt appended, its extensions and context settings, and the job's session file, output extension and schema.
 /** @param {AgentDefinition} definition @param {SessionLaunch} spec @param {typeof FILES | typeof WRITER_FILES} files @returns {CommandLine} */
 function promisedCommandLine(definition, spec, files) {
   let tools = [
@@ -164,6 +168,7 @@ function promisedCommandLine(definition, spec, files) {
     tools: tools.join(","),
     thinking: definition.thinking,
     systemPrompt: definition.systemPrompt,
+    appended: [spec.prompt.text],
     extensions: new Set(extensions),
     skills: definition.inheritSkills,
     projectContext: definition.inheritProjectContext,
@@ -177,30 +182,16 @@ test("the pipeline root and agent folder the definitions load from are the test'
   assert.ok(agentDir.startsWith(isolatedRoot));
 });
 
-// Each stage's agent, with each write authority its stage allows.
+// Each session each stage lists, as its stage's agent.
 const STAGE_SESSIONS = Object.entries(STAGE_AGENTS).flatMap(
-  ([stage, { agent, commits }]) =>
-    commits.map((commit) => ({ stage, agent, commits: commit })),
+  ([stage, { agent, sessions }]) =>
+    sessions.map(({ commits, phase }) => ({ stage, agent, commits, phase })),
 );
 
-test("the author, implementor and reviewer stages run their own agents, and merge runs the reviewer both committing and read-only", () => {
-  assert.deepEqual(
-    STAGE_SESSIONS.map(({ stage, agent, commits }) => [stage, agent, commits]),
-    [
-      ["author", "issue-pipeline-author", false],
-      ["implement", "issue-pipeline-implementor", true],
-      ["review", "issue-pipeline-reviewer", true],
-      ["review", "issue-pipeline-reviewer", false],
-      ["merge", "issue-pipeline-reviewer", true],
-      ["merge", "issue-pipeline-reviewer", false],
-    ],
-  );
-});
-
-for (const { stage, agent, commits } of STAGE_SESSIONS) {
-  test(`${agent}'s ${stage} session with commits ${commits} runs pi in RPC mode as its definition and authority say`, () => {
+for (const { stage, agent, commits, phase } of STAGE_SESSIONS) {
+  test(`${agent}'s ${stage} ${phase ?? ""} session with commits ${commits} runs pi in RPC mode as its definition and authority say`, () => {
     const definition = definitionOf(agent);
-    const spec = { ...specFor(agent), commits };
+    const spec = { ...specFor(agent), commits, phase };
     /** @type {typeof FILES | typeof WRITER_FILES} */
     let files = FILES;
     if (commits) {

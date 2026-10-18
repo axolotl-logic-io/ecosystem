@@ -2,18 +2,22 @@
 // The stage job: one job pinned to one issue that runs only one stage.
 //
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
-//     [--lane L] [--merge-queue n1,n2,…] [--job-id <uuid>]
+//     --brain-path <wiki clone> [--lane L] [--merge-queue n1,n2,…]
+//     [--job-id <uuid>]
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
-//     --print-boundary
+//     --brain-path <wiki clone> --print-boundary
 //
 // Its caller assigns it the issue and the issue's branch; it never picks
 // another issue. Before it claims or clones anything it refuses a branch git
 // wouldn't take literally and one the repo protects: its base, its wiki's
 // branch, the remote's default (src/job/branch.ts). Both checkouts, every
 // ops request and every push name that branch; the claim refuses one the
-// issue's saved state isn't bound to. It claims #N and runs the stage's role
-// (src/roles/registry.ts) on the role
+// issue's saved state isn't bound to. It then pins, from the wiki clone
+// --brain-path names, the behavioral prompt page of each session its stage
+// runs, failing on one it can't read (src/job/brain.ts); pi appends a
+// session's page to its agent's system prompt, and it grants nothing. It
+// claims #N and runs the stage's role (src/roles/registry.ts) on the role
 // runner (src/job/role-run.ts), always fresh: a restarted job starts the
 // stage again from what is saved. An issue saved at another stage is released
 // untouched, but a merge job finishes a done issue's recorded completion.
@@ -26,7 +30,8 @@
 // {issue, stage, end, reason?, claimError?}, and exits 0, even when the stage
 // stops the issue; it exits 1, with the reason on stderr, only when the job
 // itself fails: bad arguments, a config loadConfig refuses, a refused
-// branch, a stage with no role, or an op of its own that failed.
+// branch, a prompt page it can't pin, a stage with no role, or an op of its
+// own that failed.
 //
 // SIGTERM or SIGINT stops it: it aborts its sessions, saves a claimed issue
 // at its last saved state with no lease, and exits 128 + the signal's number
@@ -39,8 +44,8 @@
 // No pi session gets a gh token (src/job/roles.ts); ops keep the job's env.
 // The sessions given commit authority commit through pipeline_commit, which
 // asks the job over its control socket to push (src/job/commit-push.ts).
-// --print-boundary prints the stage job's boundary as one JSON line and
-// starts nothing.
+// --print-boundary checks the branch and the prompt pages as a run would,
+// prints the stage job's boundary as one JSON line and starts nothing.
 //
 // The job works in its own folder, where every pi session runs, holding its
 // code checkout, cloned from a bare mirror of the repo, and its wiki checkout
@@ -59,6 +64,8 @@ import type { Config } from "./config.ts";
 import { loadConfig, paths } from "./config.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
+import type { Brain } from "./job/brain.ts";
+import { openBrain } from "./job/brain.ts";
 import { branchRefusalOf } from "./job/branch.ts";
 import { openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
@@ -84,15 +91,18 @@ const SWEEP_ID_RADIX = 36;
 // A process a signal ended exits with 128 + the signal's number.
 const SIGNAL_EXIT_BASE = 128;
 
-async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
-  const { issue, stage, mergeQueue = null } = args;
+async function runStage(
+  args: RunArgs,
+  cfg: Config,
+  brain: Brain,
+): Promise<RunEnd> {
+  const { issue, stage, branch, mergeQueue = null } = args;
   const role = roleOf(stage);
   if (role === undefined) {
     throw new Error(`no role for stage ${stage}`);
   }
   const key = jobKeyOf(stage, new Date());
   const wiki = STAGE_WIKI_ACCESS[stage];
-  const { branch } = args;
   const dirs = openJobCheckout(cfg, issue, { stage, branch });
   const { root, repo } = dirs;
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
@@ -100,7 +110,8 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const id = args.jobId ?? randomUUID();
   const identity = { id, startedAt: new Date().toISOString() };
   const lane = args.lane ?? null;
-  const job = { issue, stage, lane, socket: socketPathOf(runDir) };
+  const socket = socketPathOf(runDir);
+  const job = { issue, stage, lane, socket, prompts: brain.pinned };
   const status = openStatus(runDir, { ...job, ...identity });
   const control = await openControl(
     runDir,
@@ -130,6 +141,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     stage,
     mergeQueue,
     dirs,
+    brain,
     identity,
     runOp,
     hooks,
@@ -231,12 +243,13 @@ async function main(): Promise<void> {
     if (refusal !== null) {
       throw new Error(refusal);
     }
+    const brain = openBrain(args.brainPath, args.stage);
     if (args.kind === "boundary") {
       const boundary = boundaryOf(cfg, args.issue, args.stage, process.env);
       process.stdout.write(`${JSON.stringify(boundary)}\n`);
       return;
     }
-    const end = await runStage(args, cfg);
+    const end = await runStage(args, cfg, brain);
     if (end.kind === "finished") {
       process.stdout.write(`${JSON.stringify(end.summary)}\n`);
       return;

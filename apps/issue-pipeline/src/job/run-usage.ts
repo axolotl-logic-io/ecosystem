@@ -5,6 +5,7 @@
 
 import type { ModelRole } from "../config-legacy.ts";
 import type { Status } from "../stages.ts";
+import type { PromptProvenance } from "./brain.ts";
 import type { SessionPhase } from "./role-context.ts";
 import type { Usage } from "./token-usage.ts";
 import { addUsage, ZERO_USAGE } from "./token-usage.ts";
@@ -26,6 +27,9 @@ interface SessionEntry {
   model: string;
   attempt: number;
   taskChars: number;
+  // The brain page its prompt was pinned from, its sha256 and the brain's
+  // HEAD.
+  prompt: Omit<PromptProvenance, "path">;
   ended: Ended;
   reply: unknown;
   launch: LaunchUsage;
@@ -45,7 +49,7 @@ type UsageEntry = SessionEntry | JobEntry;
 
 // A session as it finished: when, its launch key, the role it played as
 // which agent and model at which stage and in which reviewer phase (null
-// for none), its task's length, whether it
+// for none), its task's length, its pinned prompt's provenance, whether it
 // replied and its schema-checked reply, its usage, and whether a signal
 // came while it ran.
 interface FinishedSession {
@@ -57,6 +61,7 @@ interface FinishedSession {
   agent: string;
   model: string;
   taskChars: number;
+  prompt: PromptProvenance;
   ok: boolean;
   reply: unknown;
   launch: LaunchUsage;
@@ -94,6 +99,7 @@ function runUsage(stage: string, startedAt: Date): RunUsage {
   return {
     session: (finished: FinishedSession): SessionEntry => {
       const { launch, role } = finished;
+      const { page, sha256, head } = finished.prompt;
       tokens = addUsage(tokens, launch.tokens);
       const attempt = (attempts.get(role) ?? 0) + 1;
       attempts.set(role, attempt);
@@ -112,6 +118,7 @@ function runUsage(stage: string, startedAt: Date): RunUsage {
         model: finished.model,
         attempt,
         taskChars: finished.taskChars,
+        prompt: { page, sha256, head },
         ended: endedOf(finished),
         reply,
         launch,

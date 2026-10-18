@@ -1,8 +1,9 @@
 // A role's model sessions in a stage job (src/job/role-run.ts): each runs as
 // one of the job's launches (src/job/launch.ts), as the one installed agent
 // the stage may run, with the write authority its spec asks for and the stage
-// allows (sessionRefusalOf in roles.ts), always fresh and bounded only by its
-// wall-clock timeout. Its reply is the structured_output tool's,
+// allows (sessionRefusalOf in roles.ts), with the behavioral prompt the job
+// pinned for its stage and phase (src/job/brain.ts), always fresh and
+// bounded only by its wall-clock timeout. Its reply is the structured_output tool's,
 // parsed once more by the role's schema here, the only reply check
 // (`one-review-session`). Every finished session's usage goes to the usage
 // log, and its outcome to job.json.
@@ -10,6 +11,7 @@
 import { z } from "zod";
 import type { ModelRole } from "../config-legacy.ts";
 import type { Stage } from "../stages.ts";
+import type { Brain, PinnedPrompt } from "./brain.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runSession } from "./launch.ts";
 import type { SessionRaw } from "./raw-results.ts";
@@ -36,6 +38,7 @@ const STOPPING = "the job is stopping";
 // What the sessions read of their job.
 interface SessionJob {
   stage: Stage;
+  brain: Brain;
   hooks: LaunchHooks;
   status: Pick<JobStatus, "settled">;
   stopping: () => unknown;
@@ -62,13 +65,14 @@ function resultOf(raw: SessionRaw, schema: z.ZodType): SessionResult {
   return { ok: true, reply: parsed.data };
 }
 
-// Runs `spec` as launch `key` for `role` and records its outcome and usage.
+// Runs `spec` as launch `key` for `role` with `prompt` and records its
+// outcome and usage.
 async function runAs(
   job: SessionJob,
   spec: SessionSpec,
-  launch: { key: string; role: ModelRole },
+  launch: { key: string; role: ModelRole; prompt: PinnedPrompt },
 ): Promise<SessionResult> {
-  const { key, role } = launch;
+  const { key, role, prompt } = launch;
   const tally = usageTally();
   const hooks: LaunchHooks = {
     ...job.hooks,
@@ -83,7 +87,18 @@ async function runAs(
   const outputSchema = z.toJSONSchema(schema);
   const timeoutMs = SESSION_MINUTES[role] * MINUTE_MS;
   const raw = await runSession(
-    { key, role, agent, model, task, outputSchema, timeoutMs, commits, phase },
+    {
+      key,
+      role,
+      agent,
+      model,
+      task,
+      outputSchema,
+      timeoutMs,
+      commits,
+      phase,
+      prompt,
+    },
     hooks,
   );
   const result = resultOf(raw, schema);
@@ -104,6 +119,7 @@ async function runAs(
     agent,
     model,
     taskChars: task.length,
+    prompt: prompt.provenance,
     ok: result.ok,
     reply,
     launch: tally.usage(seconds),
@@ -113,8 +129,9 @@ async function runAs(
   return result;
 }
 
-// The job's session runner. A spec the stage may not run fails without
-// starting, and so does one asked for once the job's stop began. Keys are
+// The job's session runner. A spec the stage may not run, or one the job
+// pinned no prompt for, fails without starting, and so does one asked for
+// once the job's stop began. Keys are
 // `<role>-<n>`, counting each role's sessions in the job.
 function sessionRunnerOf(
   job: SessionJob,
@@ -125,13 +142,17 @@ function sessionRunnerOf(
     if (refusal !== null) {
       return refused(refusal);
     }
+    const prompt = job.brain.promptFor(job.stage, spec.phase ?? null);
+    if (prompt === null) {
+      return refused(`the job pinned no prompt for this ${job.stage} session`);
+    }
     if (job.stopping() !== null) {
       return { ok: false, transient: true, error: STOPPING };
     }
     const { role } = STAGE_AGENTS[job.stage];
     const n = (counts.get(role) ?? 0) + 1;
     counts.set(role, n);
-    return await runAs(job, spec, { key: `${role}-${n}`, role });
+    return await runAs(job, spec, { key: `${role}-${n}`, role, prompt });
   };
 }
 

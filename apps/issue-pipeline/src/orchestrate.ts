@@ -3,7 +3,7 @@
 // its repo, that starts stage jobs (author, implement, review, merge) as the
 // open issues need them.
 //
-//   node orchestrate.mjs --config <path> [--once]
+//   node orchestrate.mjs --config <path> --brain-path <wiki clone> [--once]
 //
 // Each tick it reads the queue, starts the jobs the scheduler chose as
 // detached `job.mjs` processes (src/orchestrator/tick.ts) and logs every
@@ -124,6 +124,7 @@ function main(argv: readonly string[]): number {
   }
   const deps: TickDeps = {
     configPath: args.config,
+    brainPath: args.brainPath,
     now: () => new Date(),
     spawn: spawnJob,
     alive: isStageJob,

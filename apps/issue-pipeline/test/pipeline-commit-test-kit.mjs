@@ -121,6 +121,7 @@ async function openJob(stage, { withJobStart = true, commits = true } = {}) {
     lane: null,
     socket: "",
     startedAt: JOB_STARTED_AT,
+    prompts: [],
   });
   const server = pushServerOf(cfg, job, status);
   const control = await openControl(runDir, server);

@@ -80,7 +80,14 @@ async function tick(flow) {
   const orchestrate = path.join(flow.root, "orchestrate.mjs");
   const result = spawnSync(
     process.execPath,
-    [orchestrate, "--config", flow.config, "--once"],
+    [
+      orchestrate,
+      "--config",
+      flow.config,
+      "--brain-path",
+      flow.brain,
+      "--once",
+    ],
     { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
   );
   if (result.status !== 0) {

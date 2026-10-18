@@ -46,6 +46,7 @@ const MOVING_JOB = {
   lane: null,
   startedAt: "2026-10-17T12:00:00.000Z",
   socket: "/s",
+  prompts: [],
 };
 // What `turns` spends over FIRST, PEAK and LAST: a quarter of each context
 // as input and as cache writes, the rest as cache reads, and TURN_OUTPUT

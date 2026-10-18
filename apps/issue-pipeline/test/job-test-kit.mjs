@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
+import { writeBrain } from "./brain-test-kit.mjs";
 import { FAKE_OPS, FAKE_PI } from "./fake-rpc-pi.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
 
@@ -36,11 +37,13 @@ const TEMPORARY_ROOT = "/tmp/issue-pipeline-job-";
  * @property {string} runDir
  * @property {string} origin the repo's bare origin
  * @property {string | null} wikiOrigin the wiki's bare origin, if any
+ * @property {string} brain the caller's wiki clone, holding every prompt page
  */
 
 /**
  * A fresh pipeline root, agent dir, worktree, fake bin and bare origin
- * seeded with a base commit for one job; with `wiki`, a wiki origin too.
+ * seeded with a base commit for one job, and a brain holding every prompt
+ * page; with `wiki`, a wiki origin too.
  * @param {Record<string, unknown>} replies
  * @param {object} script
  * @param {Record<string, unknown>} [extraConfig] more config keys
@@ -91,6 +94,7 @@ function setUp(replies, script, extraConfig = {}, options = {}) {
     runDir,
     origin,
     wikiOrigin,
+    brain: writeBrain(path.join(tmp, "brain")),
   };
   setScript(place, script);
   endsWithTest(() => {
@@ -143,14 +147,19 @@ function jobEnv(place, extraEnv) {
 // The branch the job tests assign issue #7: its own.
 const ISSUE_BRANCH = "agent/issue-7";
 
-// The job's argv for issue #7 with `args`, which assign it ISSUE_BRANCH with
-// a stage unless they name a branch.
+// The job's argv for issue #7 with `args`, which with a stage assign it
+// ISSUE_BRANCH and the place's brain unless they name their own.
 /** @param {Place} place @param {readonly string[]} args @returns {string[]} */
 function argvOf(place, args) {
   const argv = [JOB, "--config", place.config, "--issue", "7", ...args];
-  const named = args.some((arg) => arg.startsWith("--branch"));
-  if (args.includes("--stage") && !named) {
+  if (!args.includes("--stage")) {
+    return argv;
+  }
+  if (!args.some((arg) => arg.startsWith("--branch"))) {
     argv.push("--branch", ISSUE_BRANCH);
+  }
+  if (!args.some((arg) => arg.startsWith("--brain-path"))) {
+    argv.push("--brain-path", place.brain);
   }
   return argv;
 }

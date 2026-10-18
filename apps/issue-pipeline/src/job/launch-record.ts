@@ -34,6 +34,13 @@ const LAUNCH = z.object({
   // phase, and in a file written before they were recorded.
   commits: z.boolean().nullable().default(null),
   phase: z.enum(SESSION_PHASES).nullable().default(null),
+  // The brain page the session's prompt was pinned from and the sha256 of
+  // its bytes (src/job/brain.ts); null for an ops launch and in a file
+  // written before it was recorded.
+  prompt: z
+    .object({ page: z.string(), sha256: z.string() })
+    .nullable()
+    .default(null),
   startedAt: z.string(),
   lastEventAt: z.string().nullable(),
   // Consecutive failed calls of the tool that failed last; a success or
@@ -107,15 +114,16 @@ function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
 }
 
 // A launch's record as it starts, before any event. A session names its
-// write authority and phase; an ops launch has neither.
+// write authority, phase and pinned prompt; an ops launch has none.
 function startedRecord(
   start: Pick<LaunchRecord, "key" | "kind" | "pid" | "session"> &
-    Partial<Pick<LaunchRecord, "commits" | "phase">>,
+    Partial<Pick<LaunchRecord, "commits" | "phase" | "prompt">>,
 ): LaunchRecord {
   return {
     ...start,
     commits: start.commits ?? null,
     phase: start.phase ?? null,
+    prompt: start.prompt ?? null,
     usage: ZERO_USAGE,
     startedAt: new Date().toISOString(),
     lastEventAt: null,

@@ -14,6 +14,7 @@ import type { ModelRole } from "../config-legacy.ts";
 import { head } from "../git-state.ts";
 import { ROOT } from "../pipeline-root.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
+import type { PinnedPrompt } from "./brain.ts";
 import type { SessionEnd, Steers } from "./context-log.ts";
 import type { LiveHandle } from "./control.ts";
 import type { OpsProcess } from "./ops-process.ts";
@@ -63,8 +64,9 @@ interface OpsLaunch {
 
 // One model session: its key, the model role it plays, its installed agent
 // and model, its task, the JSON Schema of its reply, its timeout, whether it
-// commits (its own write authority) and the reviewer phase it is labelled
-// with (null for none).
+// commits (its own write authority), the reviewer phase it is labelled with
+// (null for none) and its behavioral prompt, pinned from the brain, which
+// pi appends to its agent's system prompt and which grants it nothing.
 interface SessionLaunch {
   key: string;
   role: ModelRole;
@@ -75,6 +77,7 @@ interface SessionLaunch {
   timeoutMs: number;
   commits: boolean;
   phase: SessionPhase | null;
+  prompt: PinnedPrompt;
 }
 
 // The code checkout's head, or null when it has none to read.
@@ -132,14 +135,15 @@ function countingSteers(live: LiveHandle, steers: Steers): LiveHandle {
 }
 
 // What tells the job that `launch`'s pi, writing `session`, started: its
-// record names the session's write authority and phase, and its steers are
-// counted in `steers`.
+// record names the session's write authority, phase and pinned prompt, and
+// its steers are counted in `steers`.
 function spawnedOf(
   launch: SessionLaunch,
   session: string,
   watch: { hooks: LaunchHooks; steers: Steers },
 ): (rpc: RpcProcess) => void {
   const { key, commits, phase } = launch;
+  const { page, sha256 } = launch.prompt.provenance;
   return (rpc: RpcProcess): void => {
     const start: LaunchStart = {
       key,
@@ -148,6 +152,7 @@ function spawnedOf(
       session,
       commits,
       phase,
+      prompt: { page, sha256 },
     };
     const live: LiveHandle = { kind: "session", session: { key, ...rpc } };
     watch.hooks.started(start, countingSteers(live, watch.steers));

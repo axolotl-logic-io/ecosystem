@@ -16,6 +16,7 @@ import { paths } from "../config.ts";
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
+import type { Brain } from "./brain.ts";
 import type { JobDirs } from "./checkout.ts";
 import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
@@ -58,6 +59,8 @@ interface RoleJob extends EndingJob {
   role: Role;
   mergeQueue: readonly number[] | null;
   dirs: JobDirs;
+  // The behavioral prompts the job pinned for its stage's sessions.
+  brain: Brain;
   // The job's random id and start, which its usage records and commits'
   // trailers name.
   identity: { id: string; startedAt: string };
@@ -113,6 +116,7 @@ function contextOf(
     op,
     session: sessionRunnerOf({
       stage: job.stage,
+      brain: job.brain,
       hooks: job.hooks,
       status: job.status,
       stopping: job.control.stopping,

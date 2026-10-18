@@ -18,6 +18,8 @@ const NAME = /^[A-Za-z0-9][\w.:-]{0,99}$/u;
 // `/`, as in `anthropic/claude-opus-5-5`.
 const MODEL = /^[A-Za-z0-9][\w.:-]{0,99}(?:\/[A-Za-z0-9][\w.:-]{0,99})?$/u;
 const REPO = /^[\w.-]+\/[\w.-]+$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
+const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 const WHITESPACE = /\s/u;
 // The name a tool whose name isn't a NAME is counted under.
 const OTHER_TOOL = "other";
@@ -131,6 +133,16 @@ const SESSION_RECORD = z.strictObject({
     steered: z.boolean().optional(),
   }),
   task: z.strictObject({ chars: COUNT, files: z.record(RELATIVE_PATH, COUNT) }),
+  // The brain page the session's behavioral prompt was pinned from, the
+  // sha256 of its bytes and the brain's HEAD (null when it had none);
+  // absent from records written before it was recorded.
+  prompt: z
+    .strictObject({
+      page: NAMED,
+      sha256: z.string().regex(SHA256),
+      head: z.string().regex(COMMIT_ID).nullable(),
+    })
+    .optional(),
   tools: z.record(NAMED, z.strictObject({ calls: COUNT, outputChars: COUNT })),
   largestToolOutput: z.strictObject({ tool: NAMED, chars: COUNT }).nullable(),
 });
@@ -226,6 +238,7 @@ function usageRecord(
       window: null,
     },
     task: { chars: launch.taskChars, files: {} },
+    prompt: launch.prompt,
     tools: toolsOf(used.tools),
     largestToolOutput,
   };

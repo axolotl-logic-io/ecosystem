@@ -146,8 +146,9 @@ function readOnlyToolsFlag(
 }
 
 // The `pi` arguments that run a session on `spec.model` as `definition` in
-// RPC mode, which
-// takes its prompt as a command on stdin, writing its session to
+// RPC mode, which takes its task as a command on stdin, with `spec.prompt`'s
+// text, its behavioral prompt, appended to the definition's system prompt as text
+// (`--append-system-prompt`), writing its session to
 // `files.session` and ending on the structured_output tool. A session given
 // `files.commit` commits: it also gets the pipeline_commit tool. Any other
 // only reads: of its definition's tools it keeps only those that read, so a
@@ -155,7 +156,7 @@ function readOnlyToolsFlag(
 // run a command.
 function piArgs(
   definition: AgentDefinition,
-  spec: { model: string },
+  spec: { model: string; prompt: { text: string } },
   files: SessionFiles,
 ): string[] {
   const args = ["--mode", "rpc", "--model", spec.model];
@@ -169,6 +170,7 @@ function piArgs(
     args.push("--tools", toolsFlag(definition.tools, added));
   }
   args.push("--system-prompt", definition.systemPrompt);
+  args.push("--append-system-prompt", spec.prompt.text);
   for (const extension of definition.extensions) {
     args.push("-e", extension);
   }

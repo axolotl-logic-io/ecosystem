@@ -54,6 +54,8 @@ const TICK_SETTINGS = z.looseObject({
 interface TickDeps {
   // The repo config's path, as the jobs are given it.
   configPath: string;
+  // The wiki clone the jobs pin their prompts from (job.mjs --brain-path).
+  brainPath: string;
   now: () => Date;
   // Starts a detached job.mjs with `argv`, its stdout and stderr appended to
   // `log`, and returns its pid.
@@ -165,8 +167,9 @@ function carryOut(run: Run, decision: Decision): Decision {
     const code = state?.stopCode ?? "stopped";
     run.lines.push({ at, issue, stage, action: "lifted", reason: code });
   }
-  const { configPath, spawn } = run.deps;
-  const started = startJob({ cfg: run.cfg, configPath, spawn }, done);
+  const { configPath, brainPath, spawn } = run.deps;
+  const starter = { cfg: run.cfg, configPath, brainPath, spawn };
+  const started = startJob(starter, done);
   run.starts.push(started);
   run.lines.push({ ...line, pid: started.pid, job: started.job });
   return done;

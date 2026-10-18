@@ -5,6 +5,8 @@
 // override, and the context a role job gives its records. The records are
 // what usageRecord and jobRecord make of the entries under CONTEXT.
 
+import { pinnedOf } from "./brain-test-kit.mjs";
+
 /** @import { UsageContext } from "../src/job/usage-log.ts" */
 /** @import { JobEntry, SessionEntry } from "../src/job/run-usage.ts" */
 /** @import { LaunchUsage } from "../src/job/usage-tally.ts" */
@@ -15,6 +17,10 @@ const AT = "2026-10-16T12:00:00.000Z";
 const ISSUE = 7;
 const TASK_CHARS = 16;
 const JOB_SECONDS = 30;
+// The implementor's pinned prompt, as a session's entry and record name it.
+const { path: _pinnedAt, ...PROMPT } = pinnedOf(
+  "Pipeline-Prompt-Developer.md",
+).provenance;
 
 /** @type {LaunchUsage} */
 const LAUNCH = {
@@ -61,6 +67,7 @@ function sessionEntry(over = {}) {
     model: "mock",
     attempt: 1,
     taskChars: TASK_CHARS,
+    prompt: PROMPT,
     ended: "reply",
     reply: { outcome: "done" },
     launch: LAUNCH,
@@ -119,6 +126,7 @@ function sessionRecord(over = {}) {
       window: null,
     },
     task: { chars: TASK_CHARS, files: {} },
+    prompt: PROMPT,
     tools: LAUNCH.tools,
     largestToolOutput: LAUNCH.largest,
     ...over,

@@ -5,14 +5,17 @@
 // review, with the same installed agent, whose definition edits, writes and
 // runs commands. Only the committing session gets pipeline_commit, a commit
 // scope and those tools; neither gets a GitHub token; job.json and the usage
-// records name each session's authority and phase; and a session the stage
-// doesn't allow never starts pi.
+// records name each session's authority and phase; each session's pi gets
+// its phase's pinned prompt page appended to its system prompt, byte for
+// byte, though the page changed after it was pinned; and a session the stage
+// doesn't allow, or one the job pinned no prompt for, never starts pi.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
+import { pageTextOf, writeBrain } from "./brain-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 const { AGENT_DIR } = await import("../src/pipeline-root.ts");
@@ -40,6 +43,7 @@ Object.assign(
 
 const { FAKE_PI, outputEnd } = await import("./fake-rpc-pi.mjs");
 const { loadConfig, paths } = await import("../src/config.ts");
+const { openBrain } = await import("../src/job/brain.ts");
 const { openControl } = await import("../src/job/control.ts");
 const { COMMIT_SCOPE_ENV } = await import("../src/job/pipeline-commit.ts");
 const { sessionRunnerOf } = await import("../src/job/role-session.ts");
@@ -52,11 +56,15 @@ const { openStatus } = await import("../src/job/status.ts");
 /** @import { RunArgs } from "../src/job/args.ts" */
 
 const ISSUE = 7;
+/** @type {import("../src/stages.ts").Stage} */
 const STAGE = "merge";
 const REVIEWER = "issue-pipeline-reviewer";
 const WRITES = ["bash", "edit", "write", "pipeline_commit"];
 const REPLY = { outcome: "done" };
 const REFUSED_PHASE = /security-review session can't set commits true/u;
+const NO_PROMPT = /pinned no prompt for this merge session/u;
+const INTEGRATION_PAGE = "Pipeline-Prompt-Integration.md";
+const SECURITY_PAGE = "Pipeline-Prompt-Security.md";
 
 // A reviewer definition that edits, writes and runs commands, as the
 // reviewer's hardening and integration need.
@@ -94,13 +102,26 @@ function piStarts() {
     .filter((entry) => "argv" in entry);
 }
 
+/** @param {readonly string[]} argv @returns {string[]} what pi appends */
+function appendedOf(argv) {
+  return argv.flatMap((arg, i) => {
+    if (argv[i - 1] === "--append-system-prompt") {
+      return [arg];
+    }
+    return [];
+  });
+}
+
 /** @param {readonly string[]} argv @returns {string[]} the --tools list */
 function toolsOf(argv) {
   return String(argv[argv.indexOf("--tools") + 1]).split(",");
 }
 
-// A merge job's session runner, with its status, control and usage entries.
-async function openMergeJob() {
+// A merge job's session runner, with its status, control, usage entries and
+// brain, its prompts pinned from that brain as a `pinnedAs` job pins them.
+async function openMergeJob(pinnedAs = STAGE) {
+  const brainDir = writeBrain(fs.mkdtempSync(path.join(tmp, "brain-")));
+  const brain = openBrain(brainDir, pinnedAs);
   const cfg = loadConfig(configFile);
   const runDir = paths.runDir(cfg, ISSUE);
   const cwd = fs.mkdtempSync(path.join(tmp, "job-"));
@@ -111,6 +132,7 @@ async function openMergeJob() {
     stage: STAGE,
     lane: null,
     socket: "",
+    prompts: brain.pinned,
   });
   const control = await openControl(runDir, () => ({
     pushed: "none",
@@ -123,6 +145,7 @@ async function openMergeJob() {
     issue: ISSUE,
     stage: STAGE,
     branch: "agent/issue-7",
+    brainPath: brainDir,
   };
   const where = { cwd, repo: cwd, from: process.env, job: identity };
   const hooks = hooksOf(cfg, args, { status, control }, where);
@@ -130,6 +153,7 @@ async function openMergeJob() {
   const appended = [];
   const session = sessionRunnerOf({
     stage: STAGE,
+    brain,
     hooks,
     status,
     stopping: control.stopping,
@@ -139,7 +163,7 @@ async function openMergeJob() {
       return Promise.resolve();
     },
   });
-  return { session, runDir, control, appended };
+  return { session, runDir, control, appended, brainDir };
 }
 
 /** @param {boolean} commits @param {SessionPhase} [phase] @returns {SessionSpec} */
@@ -205,7 +229,7 @@ test("the merge job's integration session commits and its final security review 
   }
 });
 
-test("a session whose authority its phase or stage forbids is refused before pi starts", async () => {
+test("a session whose authority its phase or stage forbids, or that the job pinned no prompt for, is refused before pi starts", async () => {
   const job = await openMergeJob();
   const before = piStarts().length;
   try {
@@ -217,7 +241,58 @@ test("a session whose authority its phase or stage forbids is refused before pi 
       agent: "issue-pipeline-author",
     });
     assert.equal(other.ok, false);
+    const unpinned = await openMergeJob("author");
+    const unprompted = await unpinned.session(
+      reviewerSpec(true, "integration"),
+    );
+    unpinned.control.close();
+    assert.ok(!unprompted.ok);
+    assert.match(unprompted.error, NO_PROMPT);
     assert.equal(piStarts().length, before);
+  } finally {
+    job.control.close();
+  }
+});
+
+test("each session's pi gets its phase's page appended to its system prompt as pinned, though the page changed after", async () => {
+  const job = await openMergeJob();
+  const before = piStarts().length;
+  fs.writeFileSync(path.join(job.brainDir, INTEGRATION_PAGE), "Edited.\n");
+  try {
+    await job.session(reviewerSpec(true, "integration"));
+    await job.session(reviewerSpec(false, "security-review"));
+    const starts = piStarts().slice(before);
+    assert.deepEqual(
+      starts.map(({ argv }) => appendedOf(argv)),
+      [[pageTextOf(INTEGRATION_PAGE)], [pageTextOf(SECURITY_PAGE)]],
+    );
+    const status = JSON.parse(
+      fs.readFileSync(path.join(job.runDir, "job.json"), "utf8"),
+    );
+    /** @type {{ page: string, sha256: string }[]} */
+    const pages = status.prompts.map((/** @type {any} */ { page, sha256 }) => ({
+      page,
+      sha256,
+    }));
+    assert.deepEqual(
+      pages.map(({ page }) => page),
+      [INTEGRATION_PAGE, SECURITY_PAGE],
+    );
+    const launched = status.launches.slice(-2);
+    assert.deepEqual(
+      launched.map((/** @type {any} */ l) => l.prompt),
+      pages,
+    );
+    const used = job.appended.flatMap((entry) => {
+      if (entry.kind === "session") {
+        return [entry.prompt.sha256];
+      }
+      return [];
+    });
+    assert.deepEqual(
+      used,
+      pages.map(({ sha256 }) => sha256),
+    );
   } finally {
     job.control.close();
   }

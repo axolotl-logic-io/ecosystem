@@ -36,11 +36,13 @@ const START_RECORDS = z.array(START_RECORD);
 type StartRecord = z.infer<typeof START_RECORD>;
 type Start = Extract<Decision, { action: "started" }>;
 
-// What starting a job takes: the repo config's path, as the jobs are given
-// it, and the spawn of a detached job.mjs, which gives its pid.
+// What starting a job takes: the repo config's path and the wiki clone, as
+// the jobs are given them, and the spawn of a detached job.mjs, which gives
+// its pid.
 interface Starter {
   cfg: Config;
   configPath: string;
+  brainPath: string;
   spawn: (argv: readonly string[], log: string) => number;
 }
 
@@ -78,7 +80,7 @@ function saveStarts(
 
 // The command line of `start`'s job, on the issue's legacy canonical branch.
 function jobArgv(starter: Starter, start: Start, job: string): string[] {
-  const { configPath, cfg } = starter;
+  const { configPath, brainPath, cfg } = starter;
   const branch = paths.branch(cfg, start.issue);
   const argv = [
     "--config",
@@ -89,6 +91,8 @@ function jobArgv(starter: Starter, start: Start, job: string): string[] {
     start.stage,
     "--branch",
     branch,
+    "--brain-path",
+    brainPath,
     "--lane",
     ORCHESTRATOR_LANE,
     "--job-id",
