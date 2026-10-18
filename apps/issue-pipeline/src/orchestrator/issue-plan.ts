@@ -4,6 +4,10 @@
 // - Not scheduled: a stop label, agent:merged, a skipLabels label, an author
 //   who isn't an allowed collaborator, a split parent (the tick closes it), a
 //   state at `done`, a live job, or new work while takeNewWork is false.
+// - A completion (`completion-reconciliation`): an open issue saved `done`
+//   with its merged revision, which finish-wiki hasn't closed, runs a merge
+//   job that only finishes it, even with agent:merged already set. The
+//   merge role, not a re-author here, sends new trusted input to the author.
 // - Held: a legacy job still running, another lane's live lease, an open
 //   prerequisite in its after mark (`prerequisite-holds`), or questions asked
 //   on the trusted inputs it still has (`agent:needs-info`).
@@ -46,19 +50,25 @@ type IssuePlan =
 
 const NONE: IssuePlan = { kind: "none" };
 
+// True for a completion the merge role saved: done, with what merged.
+function isCompletion(state: IssueState | null): boolean {
+  return state?.stage === "done" && state.merged !== null;
+}
+
 // True when the issue isn't the orchestrator's to schedule at all.
 function unscheduled(
   issue: SnapshotIssue,
   settings: ScheduleSettings,
 ): boolean {
   const labels = new Set(issue.labels);
+  const completion = isCompletion(issue.state);
   return (
     issue.labels.some(isStopLabel) ||
-    labels.has(LABELS.merged.name) ||
+    (labels.has(LABELS.merged.name) && !completion) ||
     labels.has(LABELS.split.name) ||
     settings.skipLabels.some((label) => labels.has(label)) ||
     !issue.authorAllowed ||
-    issue.state?.stage === "done" ||
+    (issue.state?.stage === "done" && !completion) ||
     issue.job?.live === true ||
     (issue.state === null && !settings.takeNewWork)
   );
@@ -99,10 +109,14 @@ function resumeStageFor(
 }
 
 // The stage the issue's next job runs: author with no state, the stopped
-// stage of a lifted stop, else its saved stage; null for a saved `done`.
+// stage of a lifted stop, merge for a completion, else its saved stage;
+// null for a saved `done` with nothing merged.
 function stageOf(state: IssueState | null): Stage | null {
   if (state === null) {
     return "author";
+  }
+  if (isCompletion(state)) {
+    return "merge";
   }
   const { stage } = resumeOf(state);
   if (isStage(stage)) {
@@ -125,7 +139,7 @@ function holdReason(
     return `lease:${lane}`;
   }
   const [prereq] = issue.after;
-  if (prereq !== undefined) {
+  if (prereq !== undefined && !isCompletion(issue.state)) {
     return `after:#${prereq}`;
   }
   return null;
@@ -150,6 +164,9 @@ function planOf(
     return { kind: "held", stage, reason: held };
   }
   let reason: StartReason = "free";
+  if (isCompletion(state)) {
+    return { kind: "run", stage, reason, reauthor: null };
+  }
   if (state?.stage === "stopped") {
     reason = "lifted";
   }
