@@ -106,7 +106,9 @@ async function hardeningSession(
 }
 
 // Pushes the verified head `verified`: the branch, or the wiki alone for a
-// change with no code to push. A push of anything else stops.
+// change with no code to push. A push of anything else stops. Once the code
+// merged, `verified` is the merge commit and the push, which refuses a
+// checkout off the issue's authoritative code head, pushes no code.
 async function pushHardened(
   ctx: RoleContext,
   state: IssueState,
@@ -117,7 +119,7 @@ async function pushHardened(
     payload = { number: ctx.issue, wikiOnly: true };
   }
   const pushed = await opReply(ctx, "push", payload, PUSH_REPLY);
-  if (pushed.headSha !== verified) {
+  if (mode.kind !== "wiki-only" && pushed.headSha !== verified) {
     return ended(
       errorStop(
         state,

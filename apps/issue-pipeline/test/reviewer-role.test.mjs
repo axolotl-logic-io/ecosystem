@@ -1,177 +1,232 @@
 // @ts-check
-// The reviewer role through a fake RoleContext: one read-only session per
-// round, a verdict bound to the exact revision it saw, posted in the round's
-// own comment, a security finding that stops whatever the verdict, numbered
-// findings and the fix-round bound.
+// The Reviewer's hardening (the reviewer role) through a fake RoleContext:
+// one writing session in the hardening phase, the pipeline's verification,
+// a push of exactly the verified head, then the hardened revision saved
+// before the PR is marked ready and the issue goes to merge. A hardening
+// already saved for exactly this revision goes on with no session; the
+// stage never syncs, merges or reviews security.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  callNames,
   endCode,
-  firstPayload,
   opNames,
   postsOf,
+  savesOf,
   sessionsOf,
   stateOf,
 } from "./reviewer-and-merge-role-calls-kit.mjs";
 import {
-  approvedReview,
-  COMMENT_ID,
   cfg,
   current,
-  GHERKIN_TEXT,
+  fakeContext,
   HEAD,
-  LIMITS,
+  issueState,
   MOVED,
+  PR,
   REVISION,
   reviewerRole,
-  SHORT_SHA_LENGTH,
+  sha,
 } from "./reviewer-and-merge-role-kit.mjs";
-import {
-  BLOCKING,
-  BLOCKING_LINE,
-  PREPARED,
-  review,
-  verdict,
-} from "./reviewer-role-test-kit.mjs";
+import { hardening, PUSHED, WIKI_PASS } from "./reviewer-role-test-kit.mjs";
 
-test("an approval runs one reviewer session and binds the revision it saw", async () => {
-  const { ctx, calls } = review();
-  const state = stateOf(await reviewerRole(ctx), "next");
-  const sessions = sessionsOf(calls);
-  assert.equal(sessions.length, 1);
-  assert.equal(sessions[0]?.agent, "issue-pipeline-reviewer");
-  assert.equal(sessions[0]?.model, cfg.models.reviewer);
-  assert.equal(sessions[0]?.commits, false);
-  const task = sessions[0]?.task ?? "";
-  for (const part of [
-    GHERKIN_TEXT,
-    PREPARED.bundlePath,
-    "AGENTS.md",
-    "user-harm",
-    "rights",
-    "financial-harm",
-    "abuse-risk",
-    "the list is newest first",
-  ]) {
-    assert.ok(task.includes(part), `the task lacks ${part}`);
-  }
-  assert.deepEqual(opNames(calls), [
+const FIXED = sha("9");
+const OLDER = { ...REVISION, code: sha("8") };
+const FAILING = {
+  pass: false,
+  headSha: HEAD,
+  checks: [{ id: "test", pass: false, detail: "exit 1" }],
+};
+// The ops hardening never runs: syncing and merging are the merge stage's.
+const MERGE_STAGE_OPS = new Set([
+  "sync-base",
+  "wiki-sync",
+  "ci-status",
+  "merge",
+  "prepare-review",
+  "publish",
+  "finish-wiki",
+]);
+
+const HARDENING_TASK = /Task: `hardening`/u;
+const BRANCH_SCOPE =
+  /Scope: the code branch in `repo\/` and the wiki in `docs\/`\. The change: `git -C repo diff origin\/\S+\.\.\.HEAD`/u;
+const GHERKIN = /Scenario: list/u;
+// Behaviour is the wiki page's, never the task's.
+const BEHAVIOUR_WORDS =
+  /AGENTS\.md|pipeline_commit|artificial load|adversarial/iu;
+const HARDENING_PASSED = /^## Hardening passed/u;
+const NO_INVENTED_APPROVAL = /approv|security review passed/iu;
+const NOT_DOABLE = /question only a person can answer: is the list paged\?/u;
+const NOT_VERIFIED = /not the verified/u;
+const NO_CODE = /changes no code file/u;
+
+test("hardening runs one Reviewer session, verifies, pushes, saves the hardened revision, then readies the PR and goes to merge", async () => {
+  const { ctx, calls } = hardening();
+  const end = await reviewerRole(ctx);
+  assert.deepEqual(callNames(calls), [
     "current-revision",
-    "prepare-review",
+    "session",
+    "verify",
+    "wiki-check",
+    "push",
     "current-revision",
+    "save",
+    "post",
+    "ready-pr",
   ]);
-  const sessionAt = calls.findIndex((call) => call.kind === "session");
-  const lastRead = calls.findLastIndex(
-    (call) => call.kind === "op" && call.name === "current-revision",
-  );
-  assert.ok(
-    lastRead > sessionAt,
-    "the revision is read again after the session",
-  );
+  const [spec] = sessionsOf(calls);
+  assert.equal(spec?.agent, "issue-pipeline-reviewer");
+  assert.equal(spec?.model, cfg.models.reviewer);
+  assert.equal(spec?.phase, "hardening");
+  assert.equal(spec?.commits, true);
+  const [saved] = savesOf(calls);
+  assert.deepEqual(saved?.hardened, REVISION);
+  assert.equal(saved?.integration, null);
+  assert.equal(saved?.stage, "review");
+  assert.equal(saved?.verifiedSha, HEAD);
+  const state = stateOf(end, "next");
   assert.equal(state.stage, "merge");
-  assert.equal(state.review.verdict, "approve");
-  assert.deepEqual(state.review.revision, REVISION);
-  assert.equal(state.review.commentId, COMMENT_ID);
-  const posts = postsOf(calls);
-  assert.equal(posts.length, 1);
-  assert.equal(posts[0]?.key, "review-r1");
-  const { tag } = firstPayload(calls, "prepare-review");
-  assert.equal(tag, "r1");
-  assert.equal(posts[0]?.on, "pr");
-  assert.equal(posts[0]?.role, "reviewer");
-  assert.ok(posts[0]?.body.includes(HEAD.slice(0, SHORT_SHA_LENGTH)));
+  assert.deepEqual(state.hardened, REVISION);
 });
 
-test("a security finding stops with its category even when the verdict approves", async () => {
-  const { ctx, calls } = review({
-    result: verdict({
-      security: { category: "rights", reason: "It shares chats publicly." },
+test("the hardening task carries the facts: kind, scope and Gherkin, no behaviour", async () => {
+  const { ctx, calls } = hardening();
+  await reviewerRole(ctx);
+  const task = sessionsOf(calls)[0]?.task ?? "";
+  assert.match(task, HARDENING_TASK);
+  assert.match(task, BRANCH_SCOPE);
+  assert.match(task, GHERKIN);
+  assert.doesNotMatch(task, BEHAVIOUR_WORDS);
+});
+
+test("the comment says only that hardening passed, never that anything was approved", async () => {
+  const { ctx, calls } = hardening();
+  await reviewerRole(ctx);
+  const [post] = postsOf(calls);
+  assert.equal(post?.key, "hardening");
+  assert.equal(post?.on, "pr");
+  assert.match(post?.body ?? "", HARDENING_PASSED);
+  assert.doesNotMatch(post?.body ?? "", NO_INVENTED_APPROVAL);
+});
+
+test("a hardening saved for exactly this revision goes on to merge with no session", async () => {
+  const runs = [
+    { hardened: REVISION, integration: null },
+    { hardened: OLDER, integration: { reviewed: OLDER, revision: REVISION } },
+  ];
+  const contexts = runs.map((saved) =>
+    fakeContext({
+      stage: "review",
+      state: issueState({ stage: "review", ...saved }),
+      ops: {
+        "current-revision": [current()],
+        "ready-pr": [{ pr: PR, ready: true }],
+      },
     }),
-    after: current({ code: MOVED }),
+  );
+  const ends = await Promise.all(contexts.map(({ ctx }) => reviewerRole(ctx)));
+  for (const [at, { calls }] of contexts.entries()) {
+    const state = stateOf(
+      ends[at] ?? { kind: "deferred", error: "none" },
+      "next",
+    );
+    assert.deepEqual(opNames(calls), ["current-revision", "ready-pr"]);
+    assert.equal(sessionsOf(calls).length, 0);
+    assert.equal(state.stage, "merge");
+  }
+});
+
+test("a hardening of an earlier revision is redone on the current one", async () => {
+  const { ctx, calls } = hardening({ state: { hardened: OLDER } });
+  const state = stateOf(await reviewerRole(ctx), "next");
+  assert.equal(sessionsOf(calls).length, 1);
+  assert.deepEqual(state.hardened, REVISION);
+});
+
+test("a ready-pr that fails leaves the hardened revision saved, so the next job only readies the PR", async () => {
+  const failure = new Error("gh pr ready failed");
+  const { ctx, calls } = hardening({ ops: { "ready-pr": [failure] } });
+  await assert.rejects(reviewerRole(ctx));
+  const names = callNames(calls);
+  assert.ok(names.indexOf("save") < names.indexOf("ready-pr"));
+  assert.deepEqual(savesOf(calls)[0]?.hardened, REVISION);
+});
+
+test("cannot stops not-doable with nothing verified, pushed or saved", async () => {
+  const { ctx, calls } = hardening({
+    sessions: [
+      {
+        ok: true,
+        reply: { outcome: "cannot", reason: "is the list paged?" },
+      },
+    ],
   });
   const end = await reviewerRole(ctx);
-  const state = stateOf(end, "stop");
-  assert.equal(endCode(end), "rights");
-  assert.ok(JSON.stringify(end).includes("It shares chats publicly."));
-  assert.equal(state.review.verdict, null);
-  assert.equal(state.stage, "review");
-  assert.equal(postsOf(calls).length, 0);
+  assert.equal(endCode(end), "not-doable");
+  assert.ok(end.kind === "stop");
+  assert.match(end.reason, NOT_DOABLE);
+  assert.deepEqual(opNames(calls), ["current-revision"]);
+  assert.equal(savesOf(calls).length, 0);
 });
 
-test("changes number the findings on from the last round's, in the round's own comment, and go back to implement", async () => {
-  const previous = ["old 1", "old 2", "old 3"].map((text, index) => ({
-    id: index + 1,
-    severity: /** @type {const} */ ("blocking"),
-    text,
-  }));
-  const { ctx, calls } = review({
-    state: {
-      review: {
-        ...approvedReview(),
-        verdict: "changes",
-        round: 1,
-        findings: previous,
-      },
+test("a failing check gets a hardening-phase fix session and the fixed head is the one pushed", async () => {
+  const { ctx, calls } = hardening({
+    after: current({ code: FIXED }),
+    ops: {
+      verify: [FAILING, { pass: true, headSha: FIXED, checks: [] }],
+      "wiki-check": [WIKI_PASS, WIKI_PASS],
+      push: [{ ...PUSHED, headSha: FIXED }],
     },
-    result: verdict({
-      verdict: "changes",
-      findings: [
-        BLOCKING,
-        { severity: "note", text: "A name could be clearer." },
-      ],
-    }),
+    sessions: [
+      { ok: true, reply: { outcome: "done", summary: "hardened" } },
+      { ok: true, reply: { outcome: "done", summary: "fixed" } },
+    ],
   });
   const state = stateOf(await reviewerRole(ctx), "next");
-  assert.equal(state.stage, "implement");
-  assert.equal(state.review.round, 2);
-  assert.equal(state.review.verdict, "changes");
-  assert.deepEqual(
-    state.review.findings.map((finding) => finding.id),
-    [previous.length + 1, previous.length + 2],
-  );
-  assert.ok(sessionsOf(calls)[0]?.task.includes("#3 [blocking] old 3"));
-  assert.ok(
-    postsOf(calls)[0]?.body.includes(
-      `#4 [blocking] (src/chat.ts:${BLOCKING_LINE})`,
-    ),
-  );
-  // Round 2 posts its own comment, never editing round 1's.
-  assert.equal(postsOf(calls)[0]?.key, "review-r2");
-  const { tag } = firstPayload(calls, "prepare-review");
-  assert.equal(tag, "r2");
+  const specs = sessionsOf(calls);
+  assert.equal(specs.length, 2);
+  assert.ok(specs.every((spec) => spec.phase === "hardening"));
+  assert.equal(state.verifiedSha, FIXED);
+  assert.equal(state.hardened?.code, FIXED);
 });
 
-test("an approval with a blocking finding counts as changes", async () => {
-  const { ctx } = review({ result: verdict({ findings: [BLOCKING] }) });
-  const state = stateOf(await reviewerRole(ctx), "next");
-  assert.equal(state.stage, "implement");
-  assert.equal(state.review.verdict, "changes");
+test("a push of anything but the verified head stops with error and saves nothing", async () => {
+  const { ctx, calls } = hardening({
+    ops: { push: [{ ...PUSHED, headSha: MOVED }] },
+  });
+  const end = await reviewerRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.ok(end.kind === "stop");
+  assert.match(end.reason, NOT_VERIFIED);
+  assert.equal(savesOf(calls).length, 0);
+  assert.ok(!opNames(calls).includes("ready-pr"));
 });
 
-test("changes are allowed for exactly maxFixRounds rounds, then stop", async () => {
-  const changes = verdict({ verdict: "changes", findings: [BLOCKING] });
-  const lastRound = LIMITS.maxFixRounds - 1;
-  const last = review({
-    state: {
-      review: { ...approvedReview(), verdict: "changes", round: lastRound },
-    },
-    result: changes,
+test("a branch left with no code after hardening stops, never going to merge", async () => {
+  const { ctx, calls } = hardening({
+    ops: { push: [{ ...PUSHED, codeChanged: false }] },
   });
-  assert.equal(
-    stateOf(await reviewerRole(last.ctx), "next").review.round,
-    LIMITS.maxFixRounds,
-  );
-  const past = review({
-    state: {
-      review: {
-        ...approvedReview(),
-        verdict: "changes",
-        round: LIMITS.maxFixRounds,
-      },
-    },
-    result: changes,
-  });
-  const end = await reviewerRole(past.ctx);
-  stateOf(end, "stop");
-  assert.equal(endCode(end), "review-rounds");
+  const end = await reviewerRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.ok(end.kind === "stop");
+  assert.match(end.reason, NO_CODE);
+  assert.equal(savesOf(calls).length, 0);
+});
+
+test("hardening never syncs, merges, reviews security or publishes", async () => {
+  const runs = [
+    hardening(),
+    hardening({ state: { hardened: REVISION } }),
+    hardening({ after: current({ code: MOVED }) }),
+  ];
+  await Promise.all(runs.map(({ ctx }) => reviewerRole(ctx)));
+  for (const { calls } of runs) {
+    for (const name of opNames(calls)) {
+      assert.ok(!MERGE_STAGE_OPS.has(name), `ran ${name}`);
+    }
+    for (const spec of sessionsOf(calls)) {
+      assert.equal(spec.phase, "hardening");
+    }
+  }
 });
