@@ -1,0 +1,138 @@
+// The contract between a stage job and the role it runs (`src/roles/`): a
+// role is a plain async function of one RoleContext that returns how the
+// stage ended. The job owns everything around it: the claim, the checkouts,
+// stop and steer, job.json, applying the end (save-state, stop, ask,
+// release), the exit push and teardown. A role never claims or releases,
+// never runs git or gh itself, and imports no other role's modules.
+
+import type { z } from "zod";
+import type { GherkinComment, IssueComment } from "../comments.ts";
+import type { Config, ModelRole } from "../config.ts";
+import type { Issue } from "../issue-context.ts";
+import type { Stage } from "../stages.ts";
+import type { IssueState } from "../state.ts";
+
+// The ops a role may ask for; each runs in its own `ops.mjs` process, the
+// only code that holds a token.
+type OpName =
+  | "post"
+  | "start-pr"
+  | "open-pr"
+  | "close-pr"
+  | "push"
+  | "sync-base"
+  | "finish-sync"
+  | "prepare-review"
+  | "verify"
+  | "wiki-check"
+  | "ci-status"
+  | "merge"
+  | "wiki-sync"
+  | "finish-wiki-sync"
+  | "publish"
+  | "finish-wiki"
+  | "cleanup";
+
+type AgentName =
+  | "issue-pipeline-author"
+  | "issue-pipeline-implementor"
+  | "issue-pipeline-reviewer";
+
+// The role a comment is signed with.
+type CommentRole = ModelRole | "merger";
+
+// The issue's trusted inputs as the job read them at its start.
+interface RoleInputs {
+  issue: Issue;
+  comments: readonly IssueComment[];
+  // trustedInputsHash over them (issue-context.ts).
+  revision: string;
+  // The issue's Gherkin comment, or null before the author's first.
+  gherkin: GherkinComment | null;
+}
+
+// One `pi --mode rpc` session as `agent`. `schema` is the reply's schema,
+// which the session's structured_output tool enforces; only a session with
+// `commits` gets `pipeline_commit`.
+interface SessionSpec {
+  agent: AgentName;
+  model: string;
+  task: string;
+  schema: z.ZodType;
+  commits: boolean;
+}
+
+// A session's reply, already checked against its schema; or why it failed,
+// `transient` for a provider's rate limit or a transport error.
+type SessionResult =
+  | { ok: true; reply: unknown }
+  | { ok: false; transient: boolean; error: string };
+
+interface PostedComment {
+  // The keyed comment's key: posting the same key again edits it in place.
+  key: string;
+  on: "issue" | "pr";
+  role: CommentRole;
+  body: string;
+}
+
+class OpsFailure extends Error {
+  readonly code: number;
+  readonly op: OpName;
+
+  constructor(op: OpName, code: number, message: string) {
+    super(message);
+    this.name = "OpsFailure";
+    this.code = code;
+    this.op = op;
+  }
+}
+
+interface RoleContext {
+  cfg: Config;
+  issue: number;
+  stage: Stage;
+  // The claimed state.
+  state: IssueState;
+  // The job's folder, its code checkout repo/ and its wiki checkout docs/
+  // (null when the repo has no wiki).
+  dirs: { job: string; repo: string; docs: string | null };
+  // The filtered issue file: the issue and its trusted comments.
+  issueFile: string;
+  inputs: RoleInputs;
+  // Runs one op and returns its reply; throws OpsFailure when it fails.
+  op: (name: OpName, payload: object) => Promise<unknown>;
+  session: (spec: SessionSpec) => Promise<SessionResult>;
+  // A signed, keyed comment, created or edited in place; returns its id.
+  post: (comment: PostedComment) => Promise<number>;
+  // Saves the state mid-run, as a checkpoint after a push.
+  save: (state: IssueState) => Promise<void>;
+}
+
+// How a role's stage ended; the job applies it.
+type RoleEnd =
+  // `state.stage` is already the next stage, or "done".
+  | { kind: "next"; state: IssueState }
+  | { kind: "stop"; code: string; reason: string; state: IssueState }
+  // Post the questions, label the issue agent:needs-info and wait at author.
+  | { kind: "ask"; questions: readonly string[]; state: IssueState }
+  // Stay at this stage for the next job, such as a queued merge.
+  | { kind: "wait"; reason: string; state: IssueState }
+  // A transient failure: nothing is counted and the orchestrator backs off.
+  | { kind: "deferred"; error: string };
+
+type Role = (ctx: RoleContext) => Promise<RoleEnd>;
+
+export type {
+  AgentName,
+  CommentRole,
+  OpName,
+  PostedComment,
+  Role,
+  RoleContext,
+  RoleEnd,
+  RoleInputs,
+  SessionResult,
+  SessionSpec,
+};
+export { OpsFailure };

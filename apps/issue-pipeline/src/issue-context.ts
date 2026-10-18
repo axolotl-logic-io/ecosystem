@@ -1,7 +1,9 @@
 // The issue as its agents read it: issue.md in the run dir holds the issue and
-// the comments of the pipeline and of allowed users only (Autumn, 2026-10-14),
-// and spec.md beside it holds a spec too long for the saved state (#280).
+// the comments of the pipeline and of allowed users only (Autumn, 2026-10-14).
+// This module also owns the trusted-inputs revision (`trusted-inputs-revision`):
+// the hash of the inputs only an allowed person can change.
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -100,14 +102,35 @@ function writeIssueContext(cfg: Config, number: number): IssueContext {
   return { comments, file, issue };
 }
 
-// Writes issue `number`'s full spec to spec.md in its run dir and returns the
-// file's absolute path.
-function writeSpecFile(cfg: Config, number: number, spec: string): string {
-  const file = path.resolve(paths.runDir(cfg, number), "spec.md");
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, spec);
-  return file;
+// Whether `item` is a trusted person's input: a comment by an allowed user who
+// is still a collaborator, and not one the pipeline wrote (its state, claim,
+// usage, Gherkin, review and stop comments, and the installed version's
+// markers). A comment an allowed user posts without the pipeline's marker,
+// such as an answer from their own operating session, stays theirs.
+function isTrustedInput(cfg: Config, item: IssueComment): boolean {
+  return (
+    pipelineRole(cfg, item) === null && isAllowedUser(cfg, item.user?.login)
+  );
+}
+
+// The trusted-inputs revision: sha256 over the issue's title and body and the
+// bodies of its trusted comments, in id order. Visitor and pipeline comments
+// never change it, so they can't send an issue back to the author.
+function trustedInputsHash(
+  cfg: Config,
+  issue: Pick<Issue, "title" | "body">,
+  comments: readonly IssueComment[],
+): string {
+  const hash = createHash("sha256");
+  hash.update(JSON.stringify(["issue", issue.title, issue.body ?? ""]));
+  const trusted = comments
+    .filter((item) => isTrustedInput(cfg, item))
+    .toSorted((a, b) => a.id - b.id);
+  for (const item of trusted) {
+    hash.update(JSON.stringify(["comment", item.id, item.body ?? ""]));
+  }
+  return hash.digest("hex");
 }
 
 export type { Issue, IssueContext };
-export { writeIssueContext, writeSpecFile };
+export { ISSUE, isTrustedInput, trustedInputsHash, writeIssueContext };

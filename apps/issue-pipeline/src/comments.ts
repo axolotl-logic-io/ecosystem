@@ -205,23 +205,133 @@ function commentByKey(
   number: number,
   by: Author | undefined,
   keyed: { body: string; key: string },
-): void {
-  const mark = `<!-- issue-pipeline:${number}:${keyed.key} -->`;
+): number {
+  const mark = keyMark(number, keyed.key);
   const text = `${signed(by, keyed.body)}\n${mark}`;
   const mine = listComments(cfg, number).find(
     (item) =>
       item.user?.login === cfg.account && (item.body ?? "").includes(mark),
   );
   if (mine === undefined) {
-    rawComment(cfg, number, text);
-    return;
+    const posted = gh(cfg, [
+      "api",
+      "-X",
+      "POST",
+      `repos/${cfg.repo}/issues/${number}/comments`,
+      "-f",
+      `body=${text}`,
+      "--jq",
+      ".id",
+    ]);
+    return Number(posted.stdout.trim());
   }
   editComment(cfg, mine.id, text);
+  return mine.id;
 }
 
-// The role of the pipeline agent that wrote a comment ("state" for the state
-// comment, "usage" for the usage comments that hold its usage records), or
-// null when the pipeline didn't write it.
+// The hidden mark of a keyed comment, which `commentByKey` finds it by.
+function keyMark(number: number, key: string): string {
+  return `<!-- issue-pipeline:${number}:${key} -->`;
+}
+
+// The issue's Gherkin comment (`author-maintains-gherkin`): signed by the
+// author, keyed `gherkin`, and edited in place on every revision, so GitHub
+// keeps its history. Its mark records the revision and the trusted-inputs
+// revision it was written from.
+const GHERKIN_KEY = "gherkin";
+const GHERKIN_MARK =
+  /<!-- issue-pipeline:gherkin rev=(?<rev>[1-9]\d*) inputs=(?<inputs>[0-9a-f]{64}) -->/u;
+const GHERKIN_BLOCK = /```gherkin\n(?<gherkin>[\s\S]*?)\n```/u;
+
+interface GherkinText {
+  gherkin: string;
+  assumptions: readonly string[];
+  wikiPages: readonly string[];
+}
+
+interface GherkinComment extends GherkinText {
+  id: number;
+  rev: number;
+  inputs: string;
+}
+
+function bulletSection(heading: string, items: readonly string[]): string[] {
+  if (items.length === 0) {
+    return [];
+  }
+  return ["", `### ${heading}`, "", ...items.map((item) => `- ${item}`)];
+}
+
+function bullets(body: string, heading: string): string[] {
+  const start = body.indexOf(`### ${heading}\n`);
+  if (start < 0) {
+    return [];
+  }
+  const rest = body.slice(start).split("\n").slice(1);
+  const items: string[] = [];
+  for (const line of rest) {
+    if (line.startsWith("- ")) {
+      items.push(line.slice(2));
+    } else if (line !== "") {
+      break;
+    }
+  }
+  return items;
+}
+
+// The Gherkin comment's body, before the signature and the key's mark.
+function gherkinBody(
+  text: GherkinText,
+  revision: { rev: number; inputs: string },
+): string {
+  return [
+    "## Behaviour",
+    "",
+    "```gherkin",
+    text.gherkin.trim(),
+    "```",
+    ...bulletSection("Assumptions", text.assumptions),
+    ...bulletSection("Wiki pages", text.wikiPages),
+    "",
+    `<sub>Revision ${revision.rev}. The pipeline keeps this up to date from the issue and the comments of allowed users; reply on the issue to change it.</sub>`,
+    `<!-- issue-pipeline:gherkin rev=${revision.rev} inputs=${revision.inputs} -->`,
+  ].join("\n");
+}
+
+// The issue's Gherkin comment, or null when it has none. Only a comment the
+// pipeline's account wrote, signed by the author, with the key's mark and the
+// Gherkin mark, counts: anyone can paste the marks.
+function gherkinCommentOf(
+  cfg: Config,
+  number: number,
+  comments: readonly IssueComment[],
+): GherkinComment | null {
+  const mark = keyMark(number, GHERKIN_KEY);
+  const found = comments.find(
+    (item) =>
+      pipelineRole(cfg, item) === "author" && (item.body ?? "").includes(mark),
+  );
+  const body = found?.body ?? "";
+  const { rev, inputs } = GHERKIN_MARK.exec(body)?.groups ?? {};
+  const { gherkin } = GHERKIN_BLOCK.exec(body)?.groups ?? {};
+  if (
+    found === undefined ||
+    rev === undefined ||
+    inputs === undefined ||
+    gherkin === undefined
+  ) {
+    return null;
+  }
+  return {
+    id: found.id,
+    rev: Number(rev),
+    inputs,
+    gherkin,
+    assumptions: bullets(body, "Assumptions"),
+    wikiPages: bullets(body, "Wiki pages"),
+  };
+}
+
 function pipelineRole(cfg: Config, item: IssueComment): string | null {
   if (item.user?.login !== cfg.account) {
     return null;
@@ -240,7 +350,7 @@ function pipelineRole(cfg: Config, item: IssueComment): string | null {
   return null;
 }
 
-export type { Author, IssueComment };
+export type { Author, GherkinComment, GherkinText, IssueComment };
 export {
   AFTER_MARK,
   AUTHOR,
@@ -249,6 +359,10 @@ export {
   comment,
   commentByKey,
   editComment,
+  GHERKIN_KEY,
+  gherkinBody,
+  gherkinCommentOf,
+  keyMark,
   listComments,
   listRepoComments,
   PARENT_MARK,

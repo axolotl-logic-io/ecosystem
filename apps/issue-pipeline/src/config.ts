@@ -9,9 +9,6 @@ import { CONFIG_SCHEMA, DEFAULTS } from "./config-schema.ts";
 import { JOB_DOCS, JOB_REPO } from "./job/layout.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
 import { OpsError } from "./process.ts";
-import type { Budgets } from "./workflow/budget.ts";
-import { sessionBudget } from "./workflow/budget.ts";
-import { ROLE_BUDGETS, WRITER_BUDGET_ROLES } from "./workflow/sweep-config.ts";
 
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
 const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
@@ -60,19 +57,10 @@ function insideWorktree(entry: unknown): boolean {
   );
 }
 
-function checkPractices(
-  configPath: string,
-  practices: unknown,
-  digest: unknown,
-): void {
+function checkPractices(configPath: string, practices: unknown): void {
   if (!Array.isArray(practices)) {
     throw new OpsError(
       `config ${configPath}: practices must be a list of paths`,
-    );
-  }
-  if (digest !== null && digest !== undefined && !insideWorktree(digest)) {
-    throw new OpsError(
-      `config ${configPath}: practicesDigest ${JSON.stringify(digest)} must be null or a path inside the worktree`,
     );
   }
   for (const entry of practices) {
@@ -98,7 +86,6 @@ function checkRequired(
   raw: Readonly<Record<string, unknown>>,
 ): void {
   const { account, allowedUsers, commands, practices, repo } = raw;
-  const { practicesDigest } = raw;
   if (!present(repo)) {
     throw new OpsError(`config ${configPath} is missing "repo"`);
   }
@@ -115,41 +102,125 @@ function checkRequired(
     throw new OpsError(`bad repo "${String(repo)}"`);
   }
   checkUsers(configPath, allowedUsers);
-  checkPractices(configPath, practices, practicesDigest);
+  checkPractices(configPath, practices);
 }
 
 // What the writer budget check reads of a config; a value of another type is
 // left to the code that reads it.
-const WRITER_BUDGET_KEYS = z.object({
-  contextLimits: z.object({ soft: z.number(), hard: z.number() }),
-  sessionTokenCap: z.number().catch(Number.POSITIVE_INFINITY),
-  roleBudgets: z.record(z.string(), z.number()).nullish().catch(null),
-});
+type ModelRole = "author" | "implementor" | "reviewer";
 
-// Refuses a config under which the job's own stop at contextLimits.hard could
-// never come before the watchdog's kill: a writer's context budget (its
-// role's budget, capped by sessionTokenCap) at or below `hard`
-// (wrap-up-at-175k, Axlog, 2026-10-17).
-function checkWriterBudgets(
-  configPath: string,
-  raw: Readonly<Record<string, unknown>>,
-): void {
-  const { contextLimits, sessionTokenCap, roleBudgets } =
-    WRITER_BUDGET_KEYS.parse(raw);
-  const budgets: Budgets = {
-    roles: { ...ROLE_BUDGETS, ...roleBudgets },
-    sessionCap: sessionTokenCap,
-    softLimit: contextLimits.soft,
-    hardLimit: contextLimits.hard,
+// The model a role gets when the config names none for it, or for the
+// installed version's roles it maps from: the installed version's default for
+// its spec writer, implementer and correctness and security reviewers.
+const DEFAULT_MODEL = "anthropic/claude-opus-5-5";
+
+// The installed version's model roles each role reads, in order, when the
+// config's models doesn't name the role itself (`three-configurable-models`).
+const LEGACY_MODEL_ROLES: Readonly<Record<ModelRole, readonly string[]>> = {
+  author: ["spec", "triage"],
+  implementor: ["implementer", "fixer"],
+  reviewer: ["correctness", "security", "tests"],
+};
+
+const MODEL_ROLES: readonly ModelRole[] = ["author", "implementor", "reviewer"];
+
+// Keys the pipeline no longer reads: the session budgets and handoffs, the
+// old roles, the claim race, the mechanical test rules and the orchestrator's
+// removed extras. A config that sets one still loads, with a warning.
+const REMOVED_KEYS: ReadonlySet<string> = new Set([
+  "contextLimits",
+  "sessionTokenCap",
+  "roleBudgets",
+  "maxContinuations",
+  "issueTokenBudget",
+  "rebaseTokenBudget",
+  "tokensPerHour",
+  "maxTriages",
+  "practicesDigest",
+  "claimWaitSeconds",
+  "claimCandidates",
+  "requireNewTests",
+  "testPathGlobs",
+  "nonCodePathGlobs",
+  "orchestratorRoles",
+  "silentMinutes",
+  "failureStreak",
+  "maxSpawnsPerRun",
+]);
+const REMOVED_PREFIX = "escalationAgent";
+
+const MODEL_IDS = z.record(z.string(), z.unknown()).catch({});
+
+interface ModelChoice {
+  models: Record<ModelRole, string>;
+  warnings: string[];
+}
+
+function textModel(value: unknown): string | null {
+  if (typeof value === "string" && value !== "") {
+    return value;
+  }
+  return null;
+}
+
+// Each role's model from the config's `models`: the role's own key, else the
+// first installed-version role it maps from, else DEFAULT_MODEL. Every key it
+// didn't use is named in a warning.
+function chooseModels(raw: unknown): ModelChoice {
+  const given = MODEL_IDS.parse(raw ?? {});
+  const used = new Set<string>();
+  const warnings: string[] = [];
+  const models: Record<ModelRole, string> = {
+    author: DEFAULT_MODEL,
+    implementor: DEFAULT_MODEL,
+    reviewer: DEFAULT_MODEL,
   };
-  for (const role of WRITER_BUDGET_ROLES) {
-    const budget = sessionBudget(budgets, role);
-    if (contextLimits.hard >= budget) {
-      throw new OpsError(
-        `config ${configPath}: contextLimits.hard (${contextLimits.hard}) must be below every writer's context budget, but ${role}'s is ${budget} (roleBudgets.${role}, capped by sessionTokenCap), so the watchdog would kill its sessions before the job stops them`,
+  for (const role of MODEL_ROLES) {
+    const key = [role, ...LEGACY_MODEL_ROLES[role]].find(
+      (name) => textModel(given[name]) !== null,
+    );
+    if (key === undefined) {
+      continue;
+    }
+    used.add(key);
+    models[role] = textModel(given[key]) ?? DEFAULT_MODEL;
+    if (key !== role) {
+      warnings.push(
+        `models.${key} is the installed version's role; the ${role} uses its model ${models[role]} (set models.${role} to choose)`,
       );
     }
   }
+  for (const key of Object.keys(given).filter((name) => !used.has(name))) {
+    warnings.push(`models.${key} is no longer read; ignoring it`);
+  }
+  return { models, warnings };
+}
+
+function isRemovedKey(key: string): boolean {
+  return REMOVED_KEYS.has(key) || key.startsWith(REMOVED_PREFIX);
+}
+
+// The config's keys without the removed ones, and a warning for each removed
+// key and each model key it maps or ignores.
+function withoutRemovedKeys(raw: Readonly<Record<string, unknown>>): {
+  kept: Record<string, unknown>;
+  warnings: string[];
+} {
+  const kept: Record<string, unknown> = {};
+  const warnings: string[] = [];
+  for (const [key, value] of Object.entries(raw)) {
+    if (isRemovedKey(key)) {
+      warnings.push(`${key} is no longer read; ignoring it`);
+    } else {
+      kept[key] = value;
+    }
+  }
+  const { models } = raw;
+  const choice = chooseModels(models);
+  return {
+    kept: { ...kept, models: choice.models },
+    warnings: [...warnings, ...choice.warnings],
+  };
 }
 
 function loadConfig(configPath: string | undefined): Config {
@@ -157,18 +228,21 @@ function loadConfig(configPath: string | undefined): Config {
   if (file === "" || !fs.existsSync(file)) {
     throw new OpsError(`config not found: ${String(configPath)}`);
   }
-  const raw = RAW.parse({
+  const fromFile = RAW.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+  const { kept: raw, warnings } = withoutRemovedKeys({
     ...DEFAULTS,
-    ...RAW.parse(JSON.parse(fs.readFileSync(file, "utf8"))),
+    ...fromFile,
   });
   checkRequired(String(configPath), raw);
+  for (const warning of warnings) {
+    process.stderr.write(`config ${String(configPath)}: ${warning}\n`);
+  }
   const parsed = CONFIG_SCHEMA.safeParse(raw);
   if (!parsed.success) {
     throw new OpsError(
       `config ${String(configPath)}: ${z.prettifyError(parsed.error)}`,
     );
   }
-  checkWriterBudgets(String(configPath), parsed.data);
   const { checkout: _fromFile, ...data } = parsed.data;
   return { ...data, slug: data.repo.replace("/", "__") };
 }
@@ -235,8 +309,6 @@ const paths = {
     path.join(paths.jobCheckout(cfg, n, stage), JOB_DOCS),
   // Where a writer session of issue `n` that runs out of room writes its
   // handoff, which the next session reads.
-  handoff: (cfg: Config, n: number): string =>
-    path.join(paths.runDir(cfg, n), "handoff.md"),
   // Where stage job `key` of issue `n` saves what its checkout `checkout`
   // left uncommitted, before it drops it (#369).
   droppedPatch: (
@@ -274,5 +346,13 @@ const paths = {
   },
 };
 
-export type { Config, JobCheckout, WikiSettings };
-export { loadConfig, paths, publicConfig, tokenEnv, wikiCfg, withCheckout };
+export type { Config, JobCheckout, ModelRole, WikiSettings };
+export {
+  chooseModels,
+  loadConfig,
+  paths,
+  publicConfig,
+  tokenEnv,
+  wikiCfg,
+  withCheckout,
+};
