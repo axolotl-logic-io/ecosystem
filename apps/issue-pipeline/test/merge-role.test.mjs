@@ -97,11 +97,13 @@ test("a hardened revision merges with its head matched, then the security review
     finding: null,
   });
   const publish = firstPayload(calls, "publish");
-  assert.equal(publish.expectedWiki, WIKI);
-  assert.deepEqual(publish.revision, REVISION);
-  assert.deepEqual(publish.state, saves[1]);
+  const { expectedWiki, revision: published, state: publishing } = publish;
+  assert.equal(expectedWiki, WIKI);
+  assert.deepEqual(published, REVISION);
+  assert.deepEqual(publishing, saves[1]);
   assert.equal(saves[2]?.stage, "done");
-  assert.deepEqual(firstPayload(calls, "finish-wiki").state, saves[2]);
+  const { state: finished } = firstPayload(calls, "finish-wiki");
+  assert.deepEqual(finished, saves[2]);
 });
 
 test("the security review is a fresh read-only Reviewer session over the merge commit GitHub confirmed", async () => {
@@ -146,7 +148,8 @@ test("the Reviewer's own integration of the hardened revision authorizes the mer
   });
   const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(state.stage, "done");
-  assert.equal(firstPayload(calls, "merge").expectedSha, HEAD);
+  const { expectedSha } = firstPayload(calls, "merge");
+  assert.equal(expectedSha, HEAD);
 });
 
 test("no authorization for the current revision goes to review without a mutation", async () => {
@@ -218,7 +221,8 @@ test("a PR still a draft is marked ready from the saved authorization, then wait
   assert.equal(state.stage, "merge");
   const names = callNames(calls);
   assert.ok(names.indexOf("save") < names.indexOf("ready-pr"));
-  assert.deepEqual(firstPayload(calls, "ready-pr").state, savesOf(calls)[0]);
+  const { state: readied } = firstPayload(calls, "ready-pr");
+  assert.deepEqual(readied, savesOf(calls)[0]);
   assert.equal(sessionsOf(calls).length, 0);
 });
 

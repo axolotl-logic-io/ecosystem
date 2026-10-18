@@ -149,7 +149,8 @@ test("a rebase conflict gets a Reviewer resolver session of the integration phas
   assert.equal(spec?.agent, "issue-pipeline-reviewer");
   assert.equal(spec?.commits, true);
   assert.match(spec?.task ?? "", CONFLICT_TASK);
-  assert.equal(firstPayload(calls, "finish-sync").baseSha, MOVED);
+  const { baseSha } = firstPayload(calls, "finish-sync");
+  assert.equal(baseSha, MOVED);
   assert.equal(state.counts.syncs, 1);
   assert.equal(state.counts.conflictFixes, 1);
   assert.deepEqual(state.integration?.revision, INTEGRATED);

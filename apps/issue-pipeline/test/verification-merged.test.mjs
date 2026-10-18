@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import { test } from "node:test";
+import { z } from "zod";
 import {
   BASE,
   fakeContext,
@@ -19,6 +20,8 @@ import {
   TEMPORARY_ROOT,
 } from "./implementor-test-kit.mjs";
 
+// The config bound the callers pass in; its defaults fill it in.
+const CI_LIMIT = z.looseObject({ maxCiFixes: z.number().int().nonnegative() });
 const { implementorRole } = await import(
   "../src/roles/implementor/implementor.ts"
 );
@@ -73,7 +76,7 @@ function verified(run) {
   return verifiedHead(run.ctx, run.ctx.state, {
     mode: { kind: "wiki-only", merged: CODE_MERGED },
     phase: "hardening",
-    maxCiFixes: run.ctx.cfg.maxCiFixes,
+    maxCiFixes: CI_LIMIT.parse(run.ctx.cfg).maxCiFixes,
   });
 }
 

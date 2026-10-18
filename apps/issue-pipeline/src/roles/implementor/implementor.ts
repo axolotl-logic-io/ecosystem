@@ -64,7 +64,7 @@ async function work(
 }
 
 // Pushes the branch and fills in the PR, which stays a draft until the
-// Reviewer approves it. A change that lives only in the wiki closes the
+// Reviewer's hardening marks it ready. A change that lives only in the wiki closes the
 // draft, and once it is closed the issue has no PR; one that changes
 // nothing goes to review as it is, saying so.
 async function pushBranch(

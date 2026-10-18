@@ -99,8 +99,10 @@ test("after the code merged, wiki-only hardening verifies the merge commit, push
   });
   const state = stateOf(await reviewerRole(ctx), "next");
   assert.match(sessionsOf(calls)[0]?.task ?? "", MERGED_SCOPE);
-  assert.deepEqual(firstPayload(calls, "verify").codeMerged, CODE_MERGED);
-  assert.equal(firstPayload(calls, "push").wikiOnly, true);
+  const { codeMerged } = firstPayload(calls, "verify");
+  assert.deepEqual(codeMerged, CODE_MERGED);
+  const { wikiOnly } = firstPayload(calls, "push");
+  assert.equal(wikiOnly, true);
   assert.ok(!opNames(calls).includes("ready-pr"));
   assert.equal(state.stage, "merge");
   assert.equal(state.verifiedSha, MERGE_COMMIT);
@@ -131,7 +133,8 @@ test("a change that lives only in the wiki is hardened in docs/, pushed alone an
   });
   const state = stateOf(await reviewerRole(ctx), "next");
   assert.match(sessionsOf(calls)[0]?.task ?? "", WIKI_CHANGE_SCOPE);
-  assert.equal(firstPayload(calls, "push").wikiOnly, true);
+  const { wikiOnly } = firstPayload(calls, "push");
+  assert.equal(wikiOnly, true);
   assert.equal(postsOf(calls)[0]?.on, "issue");
   assert.ok(!opNames(calls).includes("ready-pr"));
   assert.equal(state.stage, "merge");

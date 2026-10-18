@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import { test } from "node:test";
+import { z } from "zod";
 import {
   DONE,
   fakeContext,
@@ -17,6 +18,8 @@ import {
   TEMPORARY_ROOT,
 } from "./implementor-test-kit.mjs";
 
+// The config bound the callers pass in; its defaults fill it in.
+const CI_LIMIT = z.looseObject({ maxCiFixes: z.number().int().nonnegative() });
 const { verifiedHead } = await import("../src/roles/verification.ts");
 
 const FIXED = shaOf("9");
@@ -57,7 +60,7 @@ function verified(run, { phase = "hardening", failing = [] } = {}) {
   return verifiedHead(run.ctx, run.ctx.state, {
     mode: { kind: "branch" },
     phase,
-    maxCiFixes: run.ctx.cfg.maxCiFixes,
+    maxCiFixes: CI_LIMIT.parse(run.ctx.cfg).maxCiFixes,
     failing,
   });
 }

@@ -1,8 +1,9 @@
 // @ts-check
-// A change that lives only in the wiki, across the roles: the implementor's
-// own end state, as the next claims hand it on, goes through an approving
-// review and the merge to a publish and finish, with no code merge. The
-// implementor closes its draft PR, so no PR is the issue's any more; the
+// A change that lives only in the wiki, across the roles: the Developer's
+// own end state, as the next claims hand it on, goes through the Reviewer's
+// hardening and the merge, whose security review of the result clears it,
+// to a publish and finish, with no code merge. The Developer closes its
+// draft PR, so no PR is the issue's any more; the
 // fake current-revision answers as the real op reads the PR (revision.ts
 // issuePullRequest): the state's PR by number, else the branch's open PR,
 // of which there is none once the draft is closed. The claim keeps the same
@@ -11,7 +12,11 @@
 // pipeline module loads.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FINISHED } from "./merge-role-test-kit.mjs";
+import {
+  FINISHED,
+  NO_FINDING,
+  PREPARED_MERGED,
+} from "./merge-role-test-kit.mjs";
 import {
   firstPayload,
   opNames,
@@ -30,33 +35,35 @@ import {
   reviewerRole,
   WIKI,
 } from "./reviewer-and-merge-role-kit.mjs";
-import { verdict } from "./reviewer-role-test-kit.mjs";
+import {
+  HARDENED,
+  PUSHED,
+  VERIFIED,
+  WIKI_PASS,
+} from "./reviewer-role-test-kit.mjs";
 
 const { implementorRole } = await import(
   "../src/roles/implementor/implementor.ts"
 );
 
 const WIKI_PAGE = "wiki/Chats.md";
-// The implementor's ops for a branch whose only commits are the wiki's.
+// The Developer's ops for a branch whose only commits are the wiki's: the
+// draft and its push, with no sync and no verification.
 const IMPLEMENT_OPS = {
   "start-pr": [{ pr: PR, headSha: HEAD }],
-  "sync-base": [{ changed: false, conflict: false, headSha: HEAD }],
-  "wiki-sync": [{ changed: false, conflict: false, headSha: WIKI }],
-  verify: [{ pass: true, headSha: HEAD, changedFiles: [], checks: [] }],
-  "wiki-check": [{ pass: true, checks: [] }],
   "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: false, wikiAhead: 1 }],
   "close-pr": [{ pr: PR, closed: true }],
 };
+// The security review's bundle of a change that merged no code.
 const PREPARED = {
+  ...PREPARED_MERGED,
   headSha: HEAD,
-  diffPath: "/run/review-r1/diff.patch",
-  bundlePath: "/run/review-r1/bundle.md",
   changedFiles: [WIKI_PAGE],
 };
 const WIKI_UNCHANGED = { conflict: false, changed: false, headSha: WIKI };
 const PUBLISHED = { published: true, sha: WIKI, commits: [] };
-// The ops that merge code, which a wiki-only change never runs.
-const CODE_MERGE_OPS = ["merge", "ci-status", "sync-base"];
+// The ops that merge code or ready a PR, which a wiki-only change never runs.
+const CODE_MERGE_OPS = ["merge", "ci-status", "sync-base", "ready-pr"];
 
 /**
  * current-revision as the real op answers it for the state it is given:
@@ -71,7 +78,7 @@ function currentFor({ state }) {
 }
 
 /**
- * The implementor's end, and the calls it made, for a branch that open-pr
+ * The Developer's end, and the calls it made, for a branch that open-pr
  * reports as `changes` (a wiki-only change by default).
  * @param {{ codeChanged: boolean, wikiAhead: number }} [changes]
  * @param {Record<string, unknown[]>} [ops] replies over IMPLEMENT_OPS'
@@ -101,51 +108,76 @@ async function implemented(
   return { end: await implementorRole(ctx), calls };
 }
 
-test("the implementor's wiki-only end names no PR, so review and merge publish it with no code merge", async () => {
+/**
+ * The Reviewer's hardening of `state`, a wiki-only change with no PR: its
+ * end and the calls it made.
+ * @param {import("../src/state.ts").IssueState} state
+ */
+async function hardenedFrom(state) {
+  const { ctx, calls } = fakeContext({
+    stage: "review",
+    state,
+    ops: {
+      "current-revision": [currentFor, currentFor],
+      verify: [VERIFIED],
+      "wiki-check": [WIKI_PASS],
+      push: [{ ...PUSHED, codeChanged: false }],
+    },
+    sessions: [HARDENED],
+  });
+  return { end: await reviewerRole(ctx), calls };
+}
+
+test("the Developer's wiki-only end names no PR, so hardening, merge and its security review publish it with no code merge", async () => {
   const implementing = await implemented();
-  assert.equal(opNames(implementing.calls).at(-1), "close-pr");
+  assert.deepEqual(opNames(implementing.calls), [
+    "start-pr",
+    "open-pr",
+    "close-pr",
+  ]);
   const afterImplement = stateOf(implementing.end, "next");
   assert.equal(afterImplement.stage, "review");
   assert.equal(afterImplement.pr, null);
   assert.deepEqual(afterImplement.flows, { code: false, wiki: true });
 
-  const reviewing = fakeContext({
-    stage: "review",
-    state: afterImplement,
-    ops: {
-      "current-revision": [currentFor, currentFor],
-      "prepare-review": [PREPARED],
-    },
-    sessions: [verdict()],
-  });
-  const afterReview = stateOf(await reviewerRole(reviewing.ctx), "next");
+  const reviewing = await hardenedFrom(afterImplement);
+  const afterReview = stateOf(reviewing.end, "next");
   assert.equal(postsOf(reviewing.calls)[0]?.on, "issue");
+  const { wikiOnly } = firstPayload(reviewing.calls, "push");
+  assert.equal(wikiOnly, true);
   assert.equal(afterReview.stage, "merge");
-  assert.equal(afterReview.review.verdict, "approve");
-  assert.deepEqual(afterReview.review.revision, REVISION);
+  assert.deepEqual(afterReview.hardened, REVISION);
   assert.equal(afterReview.pr, null);
 
   const merging = fakeContext({
     stage: "merge",
     state: afterReview,
     ops: {
-      "current-revision": [currentFor, currentFor],
+      "current-revision": [currentFor, currentFor, currentFor],
       "wiki-sync": [WIKI_UNCHANGED],
-      "wiki-check": [{ pass: true, checks: [] }],
+      "wiki-check": [WIKI_PASS],
+      "prepare-review": [PREPARED],
       publish: [PUBLISHED],
       "finish-wiki": [FINISHED],
     },
+    sessions: [NO_FINDING],
   });
   const done = stateOf(await mergeRole(merging.ctx), "next");
-  const ran = opNames(merging.calls);
+  const ran = opNames([...reviewing.calls, ...merging.calls]);
   for (const name of CODE_MERGE_OPS) {
     assert.ok(!ran.includes(name), `ran ${name}`);
   }
-  assert.ok(ran.indexOf("publish") < ran.indexOf("finish-wiki"));
+  const merged = opNames(merging.calls);
+  assert.ok(merged.indexOf("prepare-review") < merged.indexOf("publish"));
+  assert.ok(merged.indexOf("publish") < merged.indexOf("finish-wiki"));
+  const { codeMerged } = firstPayload(merging.calls, "prepare-review");
+  assert.equal(codeMerged, null);
   assert.equal(done.stage, "done");
   assert.equal(done.pr, null);
   assert.equal(done.codeMerged, null);
   assert.deepEqual(done.merged, { ...REVISION, code: null });
+  assert.deepEqual(done.security?.revision, { ...REVISION, code: null });
+  assert.equal(done.security?.finding, null);
   const { state: finished } = firstPayload(merging.calls, "finish-wiki");
   assert.deepEqual(finished, done);
 });

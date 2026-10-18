@@ -28,6 +28,7 @@ import {
   REVISION,
 } from "./reviewer-and-merge-role-kit.mjs";
 
+/** @type {import("../src/job/role-context.ts").SessionResult} */
 const CANNOT = {
   ok: true,
   reply: { outcome: "cannot", reason: "the e2e runner is down" },

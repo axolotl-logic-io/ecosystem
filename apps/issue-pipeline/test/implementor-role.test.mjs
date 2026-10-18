@@ -44,7 +44,7 @@ const OPEN_PR_AT = 1;
 
 const DEVELOPMENT_TASK = /Task: `development`/u;
 const ISSUE_FILE = /Issue file: `\/job\/issue\.md`/u;
-const GHERKIN_REVISION = /Gherkin \(revision 2\)/u;
+const GHERKIN_REVISION = /## Behaviour \(Gherkin revision 2\)/u;
 const SCENARIO = /Scenario: list/u;
 const ASSUMPTION = /Chats are sorted newest first/u;
 const FINDING = /1\. \[blocking\] \(a\.ts:3\) Sort is wrong/u;

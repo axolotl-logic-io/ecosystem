@@ -217,7 +217,8 @@ test("a rebase the merge's own checks already started goes on from its conflict,
     ops: { "wiki-sync": [] },
     sessions: [RESOLVED],
   });
-  const first = { ...CONFLICT, conflicts: ["Chats.md"] };
+  /** @type {import("../src/roles/op-replies.ts").Conflict} */
+  const first = { ...CONFLICT, conflict: true, conflicts: ["Chats.md"] };
   const end = await syncSide(ctx, ctx.state, {
     side: "wiki",
     maxConflictFixes: 2,

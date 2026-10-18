@@ -26,7 +26,6 @@ import {
   firstPayload,
   freshBefore,
   opNames,
-  opPayloads,
   postsOf,
   savesOf,
   sessionsOf,
@@ -105,14 +104,10 @@ test("after a confirmed code merge, the merge commit is verified, the hardened w
   assert.deepEqual(state.merged, MERGED_REVISION);
   assert.deepEqual(state.security?.revision, MERGED_REVISION);
   assert.ok(!opNames(calls).includes("merge"));
-  assert.deepEqual(
-    opPayloads(calls, "verify")[0]?.codeMerged,
-    CODE_MERGED.codeMerged,
-  );
-  assert.deepEqual(
-    firstPayload(calls, "prepare-review").codeMerged,
-    CODE_MERGED.codeMerged,
-  );
+  const { codeMerged: verifiedMerge } = firstPayload(calls, "verify");
+  assert.deepEqual(verifiedMerge, CODE_MERGED.codeMerged);
+  const { codeMerged: reviewedMerge } = firstPayload(calls, "prepare-review");
+  assert.deepEqual(reviewedMerge, CODE_MERGED.codeMerged);
   const { expectedWiki } = firstPayload(calls, "publish");
   assert.equal(expectedWiki, WIKI);
   assert.ok(freshBefore(calls, "prepare-review"));
@@ -154,7 +149,8 @@ test("a change that lives only in the wiki takes the same security review, then 
   assert.equal(state.stage, "done");
   assert.deepEqual(state.merged, { ...REVISION, code: null });
   assert.deepEqual(state.security?.revision, { ...REVISION, code: null });
-  assert.equal(firstPayload(calls, "prepare-review").codeMerged, null);
+  const { codeMerged } = firstPayload(calls, "prepare-review");
+  assert.equal(codeMerged, null);
   assert.equal(sessionsOf(calls)[0]?.phase, "security-review");
   assert.equal(postsOf(calls)[0]?.on, "issue");
   assert.ok(!opNames(calls).includes("merge"));

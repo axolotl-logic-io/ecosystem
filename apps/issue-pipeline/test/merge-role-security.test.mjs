@@ -50,6 +50,7 @@ const NOT_THE_MERGE = /prepare-review read f{40}, not the merge commit e{40}/u;
 const DISCARDED = /moved during the security review/u;
 const AFTER_PUBLISH = ["publish", "finish-wiki"];
 
+/** @type {import("../src/state.ts").Security} */
 const REJECTION = {
   revision: MERGED_REVISION,
   commentId: COMMENT_ID,

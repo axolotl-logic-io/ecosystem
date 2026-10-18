@@ -57,7 +57,7 @@ function gherkinLines(ctx: RoleContext): string[] {
     return [];
   }
   const lines = [
-    `## Gherkin (revision ${gherkin.rev})`,
+    `## Behaviour (Gherkin revision ${gherkin.rev})`,
     "",
     "```gherkin",
     gherkin.gherkin,
