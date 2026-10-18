@@ -96,6 +96,9 @@ interface PostedComment {
 // `opError` is the op's own reply error, unchanged, which alone decides
 // whether the failure is transient (src/job/transient.ts); it is null for a
 // failure the job found itself, such as a reply missing a field.
+// The code of every OpsFailure.
+const OPS_FAILED = 1;
+
 class OpsFailure extends Error {
   readonly code: number;
   readonly op: OpName | JobOpName;
@@ -152,6 +155,16 @@ type RoleEnd =
 
 type Role = (ctx: RoleContext) => Promise<RoleEnd>;
 
+// The failure for an op reply that isn't what a role reads. The job found
+// it itself, so it is never transient: the job stops with `error`.
+function unreadableReply(op: OpName, detail: string): OpsFailure {
+  return new OpsFailure(
+    op,
+    OPS_FAILED,
+    `its reply is not what the role reads: ${detail}`,
+  );
+}
+
 export type {
   AgentName,
   CommentRole,
@@ -165,4 +178,4 @@ export type {
   SessionResult,
   SessionSpec,
 };
-export { OpsFailure };
+export { OPS_FAILED, OpsFailure, unreadableReply };

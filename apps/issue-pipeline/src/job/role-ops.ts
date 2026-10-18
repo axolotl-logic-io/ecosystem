@@ -15,11 +15,9 @@ import type {
   OpName,
   PostedComment,
 } from "./role-context.ts";
-import { OpsFailure } from "./role-context.ts";
+import { OPS_FAILED, OpsFailure } from "./role-context.ts";
 import { STAGE_AGENTS } from "./roles.ts";
 
-// The code of every OpsFailure the job throws (role-context.ts).
-const OPS_FAILED = 1;
 // The minutes an op may run when it waits on checks: verify runs the repo's
 // commands, ci-status waits for CI and cleanup frees worktrees; every other
 // op has the runner's 10.

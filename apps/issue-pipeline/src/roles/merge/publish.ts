@@ -41,6 +41,14 @@ const WIKI_CHECK = z.looseObject({
   pass: z.boolean(),
   checks: z.array(z.looseObject({ id: z.string(), detail: z.string() })),
 });
+const FINISHED = z.union([
+  z.looseObject({ finished: z.literal(true), closed: z.boolean() }),
+  z.looseObject({
+    finished: z.literal(false),
+    reason: z.string(),
+    detail: z.string().optional(),
+  }),
+]);
 const PUBLISHED = z.union([
   z.looseObject({
     published: z.literal(true),
@@ -103,8 +111,23 @@ async function complete(
     entry,
   );
   await ctx.save(done);
-  await ctx.op("finish-wiki", { state: done });
-  return { kind: "next", state: done };
+  return await finish(ctx, done);
+}
+
+// The finish op on the saved completion `done`. Done only when it finished;
+// new trusted inputs go to the author, and any other refusal (the wiki not
+// holding the published head, or changed past it) stops, so no job retries a
+// completion that can't finish.
+async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
+  const finished = await opReply(ctx, "finish-wiki", { state: done }, FINISHED);
+  if (finished.finished) {
+    return { kind: "next", state: done };
+  }
+  const detail = `finish-wiki refused (${finished.reason}): ${finished.detail ?? "no detail"}`;
+  if (finished.reason === "inputs-changed") {
+    return toAuthor(done, detail);
+  }
+  return failed(done, detail);
 }
 
 // Pushes the wiki at exactly `revision.wiki`; null once published, else why
@@ -253,8 +276,7 @@ async function finishCompleted(
       `the completion records code ${merged.code} merged, and GitHub doesn't confirm PR #${state.pr} merged as it`,
     );
   }
-  await ctx.op("finish-wiki", { state });
-  return { kind: "next", state };
+  return await finish(ctx, state);
 }
 
 export { afterOwnMerge, finishCompleted, publishOnly, wikiReady };

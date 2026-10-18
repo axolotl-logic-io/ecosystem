@@ -88,7 +88,8 @@ function stopComment(
 }
 
 // `state` stopped by `control` for `reason`: a lifted stop resumes at the
-// stage that stopped.
+// stage that stopped. A completion (done) that stopped resumes at merge,
+// whose job reconciles it again.
 function stoppedState(
   state: IssueState,
   control: Stop,
@@ -96,7 +97,9 @@ function stoppedState(
 ): IssueState {
   const { stage, stoppedStage: savedStoppedStage } = state;
   let stoppedStage = savedStoppedStage;
-  if (stage !== "stopped" && stage !== "done") {
+  if (stage === "done") {
+    stoppedStage = "merge";
+  } else if (stage !== "stopped") {
     stoppedStage = stage;
   }
   const stopped: IssueState = {

@@ -17,8 +17,8 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 import { listRepoComments } from "./comments.ts";
 import { loadConfig } from "./config.ts";
-import { formatReport, usageReport } from "./report/usage.ts";
 import { USAGE_ROLES } from "./job/usage-log.ts";
+import { formatReport, usageReport } from "./report/usage.ts";
 
 const NO_CONFIG = "--config must name a repo config file";
 const USAGE_ARGS = z.object({

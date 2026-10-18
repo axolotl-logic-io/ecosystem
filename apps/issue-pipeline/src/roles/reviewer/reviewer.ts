@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { unreadableReply } from "../../job/role-context.ts";
 import type { CodeMerged, Finding, IssueState, Revision } from "../../state.ts";
 import { withLog } from "../../state.ts";
 import type { ReviewerReply } from "../replies.ts";
@@ -74,9 +75,7 @@ async function prepare(
   });
   const parsed = PREPARED.safeParse(reply);
   if (!parsed.success) {
-    throw new Error(
-      `prepare-review: unexpected reply: ${parsed.error.message}`,
-    );
+    throw unreadableReply("prepare-review", z.prettifyError(parsed.error));
   }
   return parsed.data;
 }

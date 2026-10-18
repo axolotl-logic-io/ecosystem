@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type { RoleContext } from "../../job/role-context.ts";
+import { unreadableReply } from "../../job/role-context.ts";
 import type { CodeMerged, Revision } from "../../state.ts";
 
 const CURRENT_REVISION = z.looseObject({
@@ -29,9 +30,7 @@ async function currentRevision(ctx: RoleContext): Promise<CurrentRevision> {
   const reply = await ctx.op("current-revision", { state: ctx.state });
   const parsed = CURRENT_REVISION.safeParse(reply);
   if (!parsed.success) {
-    throw new Error(
-      `current-revision: unexpected reply: ${parsed.error.message}`,
-    );
+    throw unreadableReply("current-revision", z.prettifyError(parsed.error));
   }
   return parsed.data;
 }

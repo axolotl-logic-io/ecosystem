@@ -43,7 +43,7 @@ const NOT_DOABLE_REASON = /could not do the issue as written: no API/u;
 const BAD_REPLY = /bad reply/u;
 const NOT_VERIFIED_HEAD = /not the verified head/u;
 const CHANGES_NOTHING = /changes no file.*Lists chats/u;
-const MALFORMED_VERIFY = /verify op's reply/u;
+const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const COMMIT_NOTHING = /commit nothing and say so/u;
 
 test("the tests run under a temporary pipeline root", () => {
@@ -247,7 +247,11 @@ test("a failed op propagates as its OpsFailure, and a malformed reply fails", as
   const failed = fakeContext({ ops: { verify: [failure] } });
   await assert.rejects(implementorRole(failed.ctx), failure);
   const malformed = fakeContext({ ops: { verify: [{ pass: true }] } });
-  await assert.rejects(implementorRole(malformed.ctx), MALFORMED_VERIFY);
+  await assert.rejects(implementorRole(malformed.ctx), {
+    name: "OpsFailure",
+    op: "verify",
+    message: UNREADABLE_REPLY,
+  });
 });
 
 test("the role never runs a merge or publish op", async () => {

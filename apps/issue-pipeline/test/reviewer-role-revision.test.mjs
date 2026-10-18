@@ -29,7 +29,7 @@ import {
 } from "./reviewer-and-merge-role-kit.mjs";
 import { PREPARED, review } from "./reviewer-role-test-kit.mjs";
 
-const UNEXPECTED_REVISION = /current-revision: unexpected reply/u;
+const UNREADABLE_REPLY = /reply is not what the role reads/u;
 
 test("a head that moved during the session discards the verdict", async () => {
   const { ctx, calls } = review({
@@ -137,6 +137,10 @@ test("a failed session stops with error, and a transient one defers", async () =
 
 test("an op reply of an unexpected shape is an error, not a review", async () => {
   const { ctx, calls } = review({ before: { revision: { code: HEAD } } });
-  await assert.rejects(reviewerRole(ctx), UNEXPECTED_REVISION);
+  await assert.rejects(reviewerRole(ctx), {
+    name: "OpsFailure",
+    op: "current-revision",
+    message: UNREADABLE_REPLY,
+  });
   assert.equal(sessionsOf(calls).length, 0);
 });

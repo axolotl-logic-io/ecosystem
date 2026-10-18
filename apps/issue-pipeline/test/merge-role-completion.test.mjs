@@ -9,6 +9,7 @@ import { test } from "node:test";
 import {
   AFTER_MERGE,
   CODE_MERGED,
+  FINISHED,
   MERGED_PR,
   MERGED_REVISION,
   merging,
@@ -130,7 +131,7 @@ test("a saved completion whose finish crashed only runs the finish op again", as
     stage: "merge",
     state: saved,
     mergeQueue: QUEUE,
-    ops: { "current-revision": [AFTER_MERGE], "finish-wiki": [{}] },
+    ops: { "current-revision": [AFTER_MERGE], "finish-wiki": [FINISHED] },
   });
   const state = stateOf(await mergeRole(replay.ctx), "next");
   assert.deepEqual(state, saved);
@@ -178,6 +179,48 @@ test("a completion is not finished on new inputs or a merge GitHub doesn't confi
   });
   assert.equal(endCode(await mergeRole(unconfirmed.ctx)), "error");
   assert.deepEqual(opNames(unconfirmed.calls), ["current-revision"]);
+});
+
+// A saved completion whose finish op refuses for `reason`.
+/** @param {string} reason */
+function refusedFinish(reason) {
+  return merging({
+    state: DONE,
+    ops: {
+      "current-revision": [AFTER_MERGE],
+      "finish-wiki": [{ finished: false, reason, detail: "why" }],
+    },
+  });
+}
+
+test("a completion the finish op refuses for new inputs goes to the author", async () => {
+  const { ctx } = refusedFinish("inputs-changed");
+  const author = stateOf(await mergeRole(ctx), "next");
+  assert.equal(author.stage, "author");
+});
+
+test("a completion whose published wiki the finish op can't prove stops, never done", async () => {
+  const unpublished = refusedFinish("wiki-unpublished");
+  assert.equal(endCode(await mergeRole(unpublished.ctx)), "error");
+  assert.deepEqual(opNames(unpublished.calls), [
+    "current-revision",
+    "finish-wiki",
+  ]);
+  assert.equal(savesOf(unpublished.calls).length, 0);
+  const changed = refusedFinish("wiki-changed");
+  assert.equal(endCode(await mergeRole(changed.ctx)), "error");
+  assert.equal(savesOf(changed.calls).length, 0);
+});
+
+test("a finish op reply outside its schema fails as an op, so the job stops instead of crashing", async () => {
+  const { ctx } = merging({
+    state: DONE,
+    ops: { "current-revision": [AFTER_MERGE], "finish-wiki": [{}] },
+  });
+  await assert.rejects(mergeRole(ctx), {
+    name: "OpsFailure",
+    op: "finish-wiki",
+  });
 });
 
 test("a receipt saved at merge is not a completion: the next merge job reviews, never finishes", async () => {

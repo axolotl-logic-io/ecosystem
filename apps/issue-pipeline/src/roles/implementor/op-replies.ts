@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import type { OpName, RoleContext } from "../../job/role-context.ts";
+import { unreadableReply } from "../../job/role-context.ts";
 
 const SHA = z.string().min(1);
 
@@ -75,9 +76,7 @@ async function opReply<T>(
   const reply = await ctx.op(name, payload);
   const parsed = schema.safeParse(reply);
   if (!parsed.success) {
-    throw new Error(
-      `the ${name} op's reply is not what the implementor reads: ${z.prettifyError(parsed.error)}`,
-    );
+    throw unreadableReply(name, z.prettifyError(parsed.error));
   }
   return parsed.data;
 }

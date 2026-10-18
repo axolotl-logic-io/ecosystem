@@ -36,7 +36,7 @@ import {
   WIKI,
 } from "./reviewer-and-merge-role-kit.mjs";
 
-const UNEXPECTED_MERGE = /merge: unexpected reply/u;
+const UNREADABLE_REPLY = /reply is not what the role reads/u;
 
 test("an approved revision merges with its head matched, then publishes exactly the reviewed wiki", async () => {
   const { ctx, calls } = merging();
@@ -149,7 +149,11 @@ test("GitHub's refusal stops with merge-refused; a merged reply with no merge co
   });
   assert.equal(endCode(await mergeRole(refused.ctx)), "merge-refused");
   const blind = merging({ ops: { merge: [{ merged: true, byHand: true }] } });
-  await assert.rejects(mergeRole(blind.ctx), UNEXPECTED_MERGE);
+  await assert.rejects(mergeRole(blind.ctx), {
+    name: "OpsFailure",
+    op: "merge",
+    message: UNREADABLE_REPLY,
+  });
   assert.ok(!opNames(blind.calls).includes("publish"));
   assert.equal(savesOf(blind.calls).length, 0);
 });

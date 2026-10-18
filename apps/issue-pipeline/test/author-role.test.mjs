@@ -157,8 +157,13 @@ test("a failed session stops with error, and a transient one defers", async () =
   assert.equal(deferred.kind, "deferred");
 });
 
-test("only the author's stage has a role so far", () => {
-  for (const stage of /** @type {const} */ (["implement", "review", "merge"])) {
-    assert.equal(roleOf(stage), undefined);
-  }
+test("every stage runs its own role", async () => {
+  const { implementorRole } = await import(
+    "../src/roles/implementor/implementor.ts"
+  );
+  const { reviewerRole } = await import("../src/roles/reviewer/reviewer.ts");
+  const { mergeRole } = await import("../src/roles/merge/merge.ts");
+  assert.equal(roleOf("implement"), implementorRole);
+  assert.equal(roleOf("review"), reviewerRole);
+  assert.equal(roleOf("merge"), mergeRole);
 });

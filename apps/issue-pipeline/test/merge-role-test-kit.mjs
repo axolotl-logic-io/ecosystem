@@ -27,6 +27,7 @@ const MERGED_REVISION = { code: MERGE_COMMIT, wiki: WIKI, inputs: INPUTS };
 const CODE_MERGED = { codeMerged: { pr: PR, sha: MERGE_COMMIT } };
 const MUTATIONS = ["merge", "publish", "finish-wiki", "sync-base", "wiki-sync"];
 
+const FINISHED = { finished: true, closed: true };
 const WIKI_UNCHANGED = { conflict: false, changed: false, headSha: WIKI };
 const WIKI_PASS = { pass: true, checks: [] };
 const CI_PASS = { status: "pass", checks: ["ci"] };
@@ -62,7 +63,7 @@ function merging(script = {}) {
       "ci-status": [CI_PASS],
       merge: [{ merged: true, mergeCommit: MERGE_COMMIT }],
       publish: [PUBLISHED],
-      "finish-wiki": [{}],
+      "finish-wiki": [FINISHED],
       ...script.ops,
     },
   });
@@ -76,6 +77,7 @@ function mutationsOf(calls) {
 export {
   AFTER_MERGE,
   CODE_MERGED,
+  FINISHED,
   MERGED_PR,
   MERGED_REVISION,
   merging,

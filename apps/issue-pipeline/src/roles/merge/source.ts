@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import type { OpName, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { unreadableReply } from "../../job/role-context.ts";
 import type { CodeMerged, IssueState } from "../../state.ts";
 import { approvalHolds } from "../../state.ts";
 import { failed, toAuthor, toReview } from "./returns.ts";
@@ -39,7 +40,7 @@ async function opReply<T extends z.ZodType>(
   const reply = await ctx.op(name, payload);
   const parsed = schema.safeParse(reply);
   if (!parsed.success) {
-    throw new Error(`${name}: unexpected reply: ${parsed.error.message}`);
+    throw unreadableReply(name, z.prettifyError(parsed.error));
   }
   return parsed.data;
 }
