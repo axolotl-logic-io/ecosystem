@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Deterministic git and GitHub operations for the issue pipeline.
 //
-// The workflow script has no shell, so it runs this file through the
-// `issue-pipeline-ops` external-cli agent. The request is one JSON object
-// between BEGIN_OPS_REQUEST and END_OPS_REQUEST on stdin. The reply is one
+// Each stage job runs this file, installed as ops.mjs, as a child process
+// (src/job/ops-process.ts). The request is one JSON object between
+// BEGIN_OPS_REQUEST and END_OPS_REQUEST on stdin. The reply is one
 // JSON line on stdout. Handled failures exit 0 with {"ok":false,...}; only
 // crashes exit non-zero.
 //
