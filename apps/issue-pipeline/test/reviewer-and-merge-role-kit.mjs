@@ -4,38 +4,72 @@
 // a test can assert what the role did, and what came right before a
 // mutation, without pinning the rest of the order. The pipeline's root and
 // home are a temporary folder, set before any pipeline module is imported.
-import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { z } from "zod";
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "review-merge-role-"));
-process.env.HOME = sandbox;
-process.env.ISSUE_PIPELINE_ROOT = path.join(sandbox, "root");
-process.env.PI_CODING_AGENT_DIR = path.join(sandbox, "agent");
+// Names are the environment's own, set as entries.
+Object.assign(
+  process.env,
+  Object.fromEntries([
+    ["HOME", sandbox],
+    ["ISSUE_PIPELINE_ROOT", path.join(sandbox, "root")],
+    ["PI_CODING_AGENT_DIR", path.join(sandbox, "agent")],
+  ]),
+);
 process.on("exit", () => {
   fs.rmSync(sandbox, { recursive: true, force: true });
 });
 
 const { ROOT } = await import("../src/pipeline-root.ts");
-assert.ok(
-  ROOT.startsWith(sandbox),
-  `the pipeline root ${ROOT} is not the test's temporary folder`,
-);
+if (!ROOT.startsWith(sandbox)) {
+  throw new Error(
+    `the pipeline root ${ROOT} is not the test's temporary folder`,
+  );
+}
 const { testConfig } = await import("./config-test-kit.mjs");
 const { newIssueState } = await import("../src/state.ts");
 const { reviewerRole } = await import("../src/roles/reviewer/reviewer.ts");
 const { mergeRole } = await import("../src/roles/merge/merge.ts");
 
 const { cfg } = testConfig();
+// The loop bounds the roles read from the config, which its defaults fill in.
+const LIMITS = z
+  .looseObject({
+    maxSyncs: z.number().int().nonnegative(),
+    maxFixRounds: z.number().int().nonnegative(),
+  })
+  .parse(cfg);
 
 const ISSUE = 7;
 const PR = 90;
-const HEAD = "c".repeat(40);
-const WIKI = "d".repeat(40);
-const INPUTS = "a".repeat(64);
-const MERGE_COMMIT = "e".repeat(40);
+const COMMENT_ID = 51;
+const APPROVAL_COMMENT_ID = 5;
+const GHERKIN_COMMENT_ID = 41;
+const GHERKIN_REV = 2;
+const SHA_LENGTH = 40;
+const INPUTS_LENGTH = 64;
+const SHORT_SHA_LENGTH = 12;
+
+/** A commit oid of one repeated character. @param {string} char */
+function sha(char) {
+  return char.repeat(SHA_LENGTH);
+}
+
+/** A trusted-inputs revision of one repeated character. @param {string} char */
+function inputsRevision(char) {
+  return char.repeat(INPUTS_LENGTH);
+}
+
+const HEAD = sha("c");
+const WIKI = sha("d");
+const MOVED = sha("f");
+const MERGE_COMMIT = sha("e");
+const INPUTS = inputsRevision("a");
+const NEW_INPUTS = inputsRevision("9");
 const GHERKIN_TEXT =
   "Feature: Chats\n  Scenario: list\n    Given a chat\n    Then it is listed";
 
@@ -43,11 +77,8 @@ const GHERKIN_TEXT =
 const REVISION = { code: HEAD, wiki: WIKI, inputs: INPUTS };
 
 /**
- * @typedef {{ kind: "op", name: string, payload: any }
- *   | { kind: "session", spec: import("../src/job/role-context.ts").SessionSpec }
- *   | { kind: "post", comment: import("../src/job/role-context.ts").PostedComment }
- *   | { kind: "save", state: import("../src/state.ts").IssueState }} Call
- * @typedef {(payload: any) => unknown} OpReply
+ * @typedef {import("./reviewer-and-merge-role-calls-kit.mjs").Call} Call
+ * @typedef {import("../src/job/role-context.ts").RoleContext} RoleContext
  */
 
 /**
@@ -55,8 +86,11 @@ const REVISION = { code: HEAD, wiki: WIKI, inputs: INPUTS };
  * @param {Partial<import("../src/state.ts").Revision>} [revision]
  * @param {{ number: number, state: string, mergeCommit: string | null } | null} [pr]
  */
-function current(revision = {}, pr = { number: PR, state: "OPEN", mergeCommit: null }) {
-  return { revision: { ...REVISION, ...revision }, baseSha: "b".repeat(40), pr };
+function current(
+  revision = {},
+  pr = { number: PR, state: "OPEN", mergeCommit: null },
+) {
+  return { revision: { ...REVISION, ...revision }, baseSha: sha("b"), pr };
 }
 
 /**
@@ -79,7 +113,7 @@ function approvedReview(review = {}) {
   return {
     round: 0,
     verdict: /** @type {const} */ ("approve"),
-    commentId: 5,
+    commentId: APPROVAL_COMMENT_ID,
     findings: [],
     revision: REVISION,
     ...review,
@@ -89,8 +123,8 @@ function approvedReview(review = {}) {
 /** @param {Partial<import("../src/gherkin-comment.ts").GherkinComment>} [gherkin] */
 function gherkinComment(gherkin = {}) {
   return {
-    id: 41,
-    rev: 2,
+    id: GHERKIN_COMMENT_ID,
+    rev: GHERKIN_REV,
     inputs: INPUTS,
     gherkin: GHERKIN_TEXT,
     assumptions: ["the list is newest first"],
@@ -100,28 +134,77 @@ function gherkinComment(gherkin = {}) {
 }
 
 /**
- * A fake RoleContext. `ops` gives each op's replies in turn: a value, or a
- * function of the payload. An op with no reply left fails the test, so an
- * unexpected op, a mutation above all, never passes unseen.
+ * Op replies in turn: a value, or a function of the payload. An op with no
+ * reply left fails the test, so an unexpected op, a mutation above all,
+ * never passes unseen.
+ * @param {Record<string, unknown[]>} script @param {Call[]} calls
+ * @returns {RoleContext["op"]}
+ */
+function scriptedOps(script, calls) {
+  /** @type {Map<string, unknown[]>} */
+  const ops = new Map(
+    Object.entries(script).map(([name, replies]) => [name, [...replies]]),
+  );
+  return (name, payload) => {
+    calls.push({ kind: "op", name, payload });
+    const replies = ops.get(name) ?? [];
+    if (replies.length === 0) {
+      return Promise.reject(new Error(`unexpected op ${name}`));
+    }
+    const reply = replies.shift();
+    if (typeof reply === "function") {
+      return Promise.resolve().then(() => reply(payload));
+    }
+    return Promise.resolve(reply);
+  };
+}
+
+/**
+ * Session results in turn; a session with none left fails the test.
+ * @param {import("../src/job/role-context.ts").SessionResult[]} script
+ * @param {Call[]} calls
+ * @returns {RoleContext["session"]}
+ */
+function scriptedSessions(script, calls) {
+  const sessions = [...script];
+  return (spec) => {
+    calls.push({ kind: "session", spec });
+    const result = sessions.shift();
+    if (result === undefined) {
+      return Promise.reject(new Error("unexpected session"));
+    }
+    return Promise.resolve(result);
+  };
+}
+
+/**
+ * The job's Gherkin: the script's, which may be null, or the default
+ * comment when the script names none.
+ * @param {import("../src/gherkin-comment.ts").GherkinComment | null | undefined} gherkin
+ */
+function gherkinOf(gherkin) {
+  if (gherkin === undefined) {
+    return gherkinComment();
+  }
+  return gherkin;
+}
+
+/**
+ * A fake RoleContext, with the runtime's `mergeQueue`, logging every call.
  * @param {{
  *   stage: import("../src/stages.ts").Stage,
  *   state: import("../src/state.ts").IssueState,
  *   ops?: Record<string, unknown[]>,
  *   sessions?: import("../src/job/role-context.ts").SessionResult[],
- *   gherkin?: ReturnType<typeof gherkinComment> | null,
+ *   gherkin?: import("../src/gherkin-comment.ts").GherkinComment | null | undefined,
  *   mergeQueue?: readonly number[] | null,
- *   config?: Record<string, unknown>,
+ *   config?: Partial<import("../src/config.ts").Config> | undefined,
  * }} script
  */
 function fakeContext(script) {
   /** @type {Call[]} */
   const calls = [];
-  /** @type {Record<string, unknown[]>} */
-  const ops = Object.fromEntries(
-    Object.entries(script.ops ?? {}).map(([name, replies]) => [name, [...replies]]),
-  );
-  const sessions = [...(script.sessions ?? [])];
-  /** @type {any} */
+  /** @type {RoleContext & { mergeQueue: readonly number[] | null }} */
   const ctx = {
     cfg: { ...cfg, ...script.config },
     issue: ISSUE,
@@ -133,121 +216,43 @@ function fakeContext(script) {
       issue: { title: "T", body: "B", user: { login: "owner" } },
       comments: [],
       revision: INPUTS,
-      gherkin: script.gherkin === undefined ? gherkinComment() : script.gherkin,
+      gherkin: gherkinOf(script.gherkin),
     },
-    mergeQueue: script.mergeQueue === undefined ? null : script.mergeQueue,
-    /** @param {string} name @param {any} payload */
-    op: (name, payload) => {
-      calls.push({ kind: "op", name, payload });
-      const replies = ops[name];
-      if (replies === undefined || replies.length === 0) {
-        return Promise.reject(new Error(`unexpected op ${name}`));
-      }
-      const reply = replies.shift();
-      if (typeof reply === "function") {
-        return Promise.resolve().then(() => reply(payload));
-      }
-      return Promise.resolve(reply);
-    },
-    /** @param {import("../src/job/role-context.ts").SessionSpec} spec */
-    session: (spec) => {
-      calls.push({ kind: "session", spec });
-      const result = sessions.shift();
-      if (result === undefined) {
-        return Promise.reject(new Error("unexpected session"));
-      }
-      return Promise.resolve(result);
-    },
-    /** @param {import("../src/job/role-context.ts").PostedComment} comment */
+    mergeQueue: script.mergeQueue ?? null,
+    op: scriptedOps(script.ops ?? {}, calls),
+    session: scriptedSessions(script.sessions ?? [], calls),
     post: (comment) => {
       calls.push({ kind: "post", comment });
-      return Promise.resolve(51);
+      return Promise.resolve(COMMENT_ID);
     },
-    /** @param {import("../src/state.ts").IssueState} state */
     save: (state) => {
       calls.push({ kind: "save", state });
       return Promise.resolve();
     },
   };
-  /** @type {import("../src/job/role-context.ts").RoleContext} */
-  const roleContext = ctx;
-  return { ctx: roleContext, calls };
-}
-
-/** @param {Call[]} calls */
-function opNames(calls) {
-  return calls.flatMap((call) => (call.kind === "op" ? [call.name] : []));
-}
-
-/** @param {Call[]} calls @param {string} name */
-function opPayloads(calls, name) {
-  return calls.flatMap((call) =>
-    call.kind === "op" && call.name === name ? [call.payload] : [],
-  );
-}
-
-/**
- * Asserts the call right before each `name` op was a current-revision op:
- * the mutation's fresh precondition.
- * @param {Call[]} calls @param {string} name
- */
-function assertFreshBefore(calls, name) {
-  const at = calls.findIndex((call) => call.kind === "op" && call.name === name);
-  assert.ok(at > 0, `no ${name} op`);
-  const before = calls[at - 1];
-  assert.ok(
-    before?.kind === "op" && before.name === "current-revision",
-    `the call before ${name} was not current-revision`,
-  );
-}
-
-/** @param {Call[]} calls */
-function sessionsOf(calls) {
-  return calls.flatMap((call) => (call.kind === "session" ? [call.spec] : []));
-}
-
-/** @param {Call[]} calls */
-function postsOf(calls) {
-  return calls.flatMap((call) => (call.kind === "post" ? [call.comment] : []));
-}
-
-/** @param {Call[]} calls */
-function savesOf(calls) {
-  return calls.flatMap((call) => (call.kind === "save" ? [call.state] : []));
-}
-
-/**
- * The end's state, failing unless the end is `kind`.
- * @param {import("../src/job/role-context.ts").RoleEnd} end
- * @param {"next" | "stop" | "ask" | "wait"} kind
- */
-function stateOf(end, kind) {
-  assert.equal(end.kind, kind, JSON.stringify(end));
-  assert.ok(end.kind !== "deferred");
-  return end.state;
+  return { ctx, calls };
 }
 
 export {
   approvedReview,
-  assertFreshBefore,
+  COMMENT_ID,
   cfg,
   current,
   fakeContext,
-  gherkinComment,
   GHERKIN_TEXT,
+  gherkinComment,
   HEAD,
   INPUTS,
   issueState,
+  LIMITS,
   MERGE_COMMIT,
+  MOVED,
   mergeRole,
-  opNames,
-  opPayloads,
+  NEW_INPUTS,
   PR,
-  postsOf,
   REVISION,
   reviewerRole,
-  savesOf,
-  sessionsOf,
-  stateOf,
+  SHORT_SHA_LENGTH,
+  sha,
   WIKI,
 };

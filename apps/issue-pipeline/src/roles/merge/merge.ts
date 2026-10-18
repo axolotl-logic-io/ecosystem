@@ -8,18 +8,23 @@
 //   `maxSyncs`;
 // - otherwise the wiki is rebased and checked, the head verified if it isn't
 //   yet, CI waited for, and the PR squash-merged in merge-queue order with
-//   its head matched; then the reviewed wiki is published and the issue
-//   finished.
+//   its head matched; then the receipt is saved, the reviewed wiki
+//   published and the issue finished;
+// - a done issue whose finish didn't finish only runs the finish op again.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState, Revision } from "../../state.ts";
-import { afterOwnMerge, publishOnly, wikiReady } from "./publish.ts";
+import {
+  afterOwnMerge,
+  finishCompleted,
+  publishOnly,
+  wikiReady,
+} from "./publish.ts";
 import {
   counted,
   failed,
   implementWith,
-  logged,
   toImplement,
   toReview,
   waiting,
@@ -205,7 +210,7 @@ async function mergeCode(
   if ("end" in checked) {
     return checked.end;
   }
-  let { state } = checked;
+  const { state } = checked;
   const fresh = await currentRevision(ctx);
   const gate = approvalGate(ctx, state, fresh);
   if (gate !== null) {
@@ -228,16 +233,14 @@ async function mergeCode(
     return await refusedMerge(ctx, state, reply.reason);
   }
   const { mergeCommit } = reply;
-  // The merge receipt, saved before anything else can fail.
-  state = logged(
-    state,
-    `merged PR #${pr.number} at ${approved.code} as ${mergeCommit}`,
-  );
-  await ctx.save(state);
   return await afterOwnMerge(ctx, state, { approved, mergeCommit });
 }
 
 const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
+  const { merged } = ctx.state;
+  if (ctx.state.stage === "done" && merged !== null) {
+    return await finishCompleted(ctx, ctx.state, merged);
+  }
   const current = await currentRevision(ctx);
   const gate = approvalGate(ctx, ctx.state, current);
   if (gate !== null) {

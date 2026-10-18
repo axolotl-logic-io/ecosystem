@@ -3,6 +3,13 @@
 // publish of exactly the reviewed wiki head, and the completion, saved as
 // done with what merged before the finish op labels and closes the issue, so
 // a finish that fails can be run again from the saved completion.
+//
+// `state.merged` means two things by stage. At merge it is this job's own
+// merge receipt, saved right after the head-matched code merge and before
+// the publish: `merged.code` is the merge commit, `merged.wiki` and
+// `merged.inputs` the approved ones, and the unchanged `review.revision.code`
+// the pre-merge head the merge matched. At done it is the completion: the
+// merged code and the published wiki.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -126,18 +133,25 @@ async function publishWiki(
 }
 
 // After this job's own head-matched merge of `approved.code` as
-// `mergeCommit`: publish the approved wiki only while GitHub confirms that
-// merge and the wiki head and inputs are still the approved ones. Anything
-// else waits for the next claim to confirm the merge and for a review.
+// `mergeCommit`: the receipt saved first, then the approved wiki published
+// only while GitHub confirms that merge and the wiki head and inputs are
+// still the approved ones. The code head may read as the merge commit or as
+// the exact pre-merge head the merge matched, nothing else. Anything else
+// waits for the next claim to confirm the merge and for a review.
 async function afterOwnMerge(
   ctx: RoleContext,
-  state: IssueState,
+  start: IssueState,
   { approved, mergeCommit }: { approved: Revision; mergeCommit: string },
 ): Promise<RoleEnd> {
+  const merged = `PR #${start.pr} merged as ${short(mergeCommit)}`;
+  const state = logged(
+    { ...start, merged: { ...approved, code: mergeCommit } },
+    `merged PR #${start.pr} at ${approved.code} as ${mergeCommit}`,
+  );
+  await ctx.save(state);
   const fresh = await currentRevision(ctx);
   const { gherkin } = ctx.inputs;
   const { revision, pr } = fresh;
-  const merged = `PR #${state.pr} merged as ${short(mergeCommit)}`;
   if (
     gherkin === null ||
     revision.inputs !== approved.inputs ||
@@ -147,9 +161,10 @@ async function afterOwnMerge(
   }
   const receiptHolds =
     pr !== null &&
+    pr.number === state.pr &&
     pr.state === "MERGED" &&
     pr.mergeCommit === mergeCommit &&
-    revision.code === mergeCommit &&
+    (revision.code === mergeCommit || revision.code === approved.code) &&
     revision.wiki === approved.wiki;
   if (!receiptHolds) {
     return toReview(
@@ -208,4 +223,38 @@ async function publishOnly(
   return await complete(ctx, state, { ...fresh.revision, code });
 }
 
-export { afterOwnMerge, publishOnly, wikiReady };
+// A done issue with its completion saved, back at merge because the finish
+// op didn't finish it: the finish op again, and nothing else, once the
+// trusted inputs are still the merged ones and GitHub still confirms the
+// merged code. New inputs go to the author rather than close a new request.
+async function finishCompleted(
+  ctx: RoleContext,
+  state: IssueState,
+  merged: Revision,
+): Promise<RoleEnd> {
+  const { revision, pr } = await currentRevision(ctx);
+  const { gherkin } = ctx.inputs;
+  if (
+    gherkin === null ||
+    gherkin.inputs !== revision.inputs ||
+    merged.inputs !== revision.inputs
+  ) {
+    return toAuthor(state, "the trusted inputs changed since the merge");
+  }
+  const codeConfirmed =
+    merged.code === null ||
+    (pr !== null &&
+      pr.number === state.pr &&
+      pr.state === "MERGED" &&
+      pr.mergeCommit === merged.code);
+  if (!codeConfirmed) {
+    return failed(
+      state,
+      `the completion records code ${merged.code} merged, and GitHub doesn't confirm PR #${state.pr} merged as it`,
+    );
+  }
+  await ctx.op("finish-wiki", { state });
+  return { kind: "next", state };
+}
+
+export { afterOwnMerge, finishCompleted, publishOnly, wikiReady };

@@ -168,8 +168,10 @@ async function recordVerdict(
   if (state.pr === null) {
     on = "issue";
   }
+  // One comment per round, keyed like the round's prepared review, so a
+  // round never overwrites an earlier one.
   const commentId = await ctx.post({
-    key: "review",
+    key: `review-r${round}`,
     on,
     role: "reviewer",
     body: reviewBody(round, verdict, reply, { findings, revision }),
@@ -243,7 +245,7 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
     return {
       kind: "wait",
       reason: "the code head moved while the review was prepared",
-      state,
+      state: logged(voided(state), "review not run: the head moved"),
     };
   }
   const result = await ctx.session({

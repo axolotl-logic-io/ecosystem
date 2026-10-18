@@ -1,7 +1,9 @@
 // Where the merge job sends an issue it doesn't merge. A changed input goes
 // to the author, a changed code or wiki head to review, and a conflict or a
 // failed check to implement. Each return the merge job causes counts one
-// sync, and the one past `maxSyncs` stops the issue instead.
+// sync, and the one past `maxSyncs` stops the issue instead; only the
+// implementor's resolver sessions count `conflictFixes`, so a conflict is
+// never charged twice.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
