@@ -1,13 +1,19 @@
 // @ts-check
 // A loaded pipeline config for tests of the modules that take one, written to
 // a temporary file, with the warnings loadConfig printed while loading it.
-// It isolates the pipeline root before src loads (isolated-root-test-kit.mjs).
+// A test isolates the pipeline root first (isolated-root-test-kit.mjs or its
+// own kit) and imports this kit dynamically after it; the kit refuses to load
+// unless src's root is that temporary root.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import "./isolated-root-test-kit.mjs";
 
+const { ROOT } = await import("../src/pipeline-root.ts");
+const { ISSUE_PIPELINE_ROOT: isolated } = process.env;
+if (isolated === undefined || ROOT !== isolated || !fs.existsSync(ROOT)) {
+  throw new Error("config-test-kit loaded before the test isolated its root");
+}
 const { loadConfig } = await import("../src/config.ts");
 
 const BASE = {

@@ -4,7 +4,9 @@
 // removed keys load with a warning rather than failing.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { testConfig } from "./config-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+
+const { testConfig } = await import("./config-test-kit.mjs");
 
 const { chooseModels } = await import("../src/config-legacy.ts");
 

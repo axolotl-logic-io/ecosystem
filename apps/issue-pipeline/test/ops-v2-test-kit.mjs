@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { z } from "zod";
 import { setEnv } from "./ops-run-test-kit.mjs";
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-v2-home-"));
@@ -17,6 +18,9 @@ const kit = await import("./ops-cli-test-kit.mjs");
 const { ACCOUNT, root, sh, writes } = kit;
 
 const STATE_JSON = /<!-- agent-pipeline:state\n(?<json>.*)\n-->/u;
+const STATE_GROUPS = z.object({ json: z.string() });
+// The length of a full git object id.
+const SHA_LENGTH = 40;
 const LIVE = new Date().toISOString();
 const LANE = { lane: "me", sweepId: "s1" };
 
@@ -61,7 +65,7 @@ function prView(n, pr, extra = {}) {
     state: "OPEN",
     mergeCommit: null,
     headRefName: `agent/issue-${n}`,
-    headRefOid: "0".repeat(40),
+    headRefOid: "0".repeat(SHA_LENGTH),
     baseRefName: "integration",
     isCrossRepository: false,
     ...extra,
@@ -98,11 +102,11 @@ function everyCommentsRead(n, comments) {
 function savedStates() {
   return writes().flatMap((args) => {
     const body = args.find((arg) => arg.startsWith("body="));
-    const json = STATE_JSON.exec(body ?? "")?.groups?.json;
-    if (json === undefined) {
+    const groups = STATE_GROUPS.safeParse(STATE_JSON.exec(body ?? "")?.groups);
+    if (!groups.success) {
       return [];
     }
-    return [JSON.parse(json)];
+    return [JSON.parse(groups.data.json)];
   });
 }
 

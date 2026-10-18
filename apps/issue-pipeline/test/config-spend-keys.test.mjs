@@ -8,7 +8,9 @@
 // to null and could be set).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { testConfig } from "./config-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+
+const { testConfig } = await import("./config-test-kit.mjs");
 
 const HOURLY = 500_000;
 const ISSUE_BUDGET = 1_000_000;

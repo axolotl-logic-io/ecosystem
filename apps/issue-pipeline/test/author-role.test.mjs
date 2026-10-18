@@ -4,14 +4,26 @@
 // was sent from; needs-info asks; a failed session stops or defers.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { roleOf } from "../src/roles/registry.ts";
-import { newIssueState } from "../src/state.ts";
-import { testConfig } from "./config-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+
+const { testConfig } = await import("./config-test-kit.mjs");
+const { authorRole: author } = await import("../src/roles/author/author.ts");
+const { roleOf } = await import("../src/roles/registry.ts");
+const { newIssueState } = await import("../src/state.ts");
 
 const { cfg } = testConfig();
 const GHERKIN =
   "Feature: Chats\n  Scenario: list\n    Given a chat\n    Then it is listed";
-const INPUTS = "a".repeat(64);
+// A trusted-inputs revision is a sha-256 in hex.
+const INPUTS_LENGTH = 64;
+const INPUTS = "a".repeat(INPUTS_LENGTH);
+const EARLIER_INPUTS = "b".repeat(INPUTS_LENGTH);
+const ISSUE = 7;
+// The id ctx.post gives the Gherkin comment.
+const GHERKIN_COMMENT = 41;
+// The revision of an earlier Gherkin, and the one a change makes from it.
+const EARLIER_REV = 3;
+const CHANGED_REV = 4;
 
 /**
  * @param {import("../src/job/role-context.ts").SessionResult} result
@@ -26,9 +38,9 @@ function fakeContext(result, inputs = {}, state = {}) {
   /** @type {import("../src/job/role-context.ts").RoleContext} */
   const ctx = {
     cfg,
-    issue: 7,
+    issue: ISSUE,
     stage: "author",
-    state: { ...newIssueState(7), ...state },
+    state: { ...newIssueState(ISSUE), ...state },
     dirs: { job: "/job", repo: "/job/repo", docs: "/job/docs" },
     issueFile: "/run/issue.md",
     mergeQueue: null,
@@ -46,15 +58,13 @@ function fakeContext(result, inputs = {}, state = {}) {
     },
     post: (comment) => {
       posts.push(comment);
-      return Promise.resolve(41);
+      return Promise.resolve(GHERKIN_COMMENT);
     },
     save: () => Promise.resolve(),
   };
   return { ctx, sessions, posts };
 }
 
-const author = roleOf("author");
-assert.ok(author !== undefined);
 const reply = {
   outcome: "gherkin",
   gherkin: GHERKIN,
@@ -64,7 +74,7 @@ const reply = {
 };
 
 test("an authored Gherkin answers the questions asked before it", async () => {
-  const asked = { inputs: "b".repeat(64) };
+  const asked = { inputs: EARLIER_INPUTS };
   const { ctx } = fakeContext({ ok: true, reply }, {}, { asked });
   const end = await author(ctx);
   assert.ok(end.kind === "next");
@@ -86,7 +96,7 @@ test("a first Gherkin posts revision 1 and goes to implement", async () => {
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "implement");
   assert.deepEqual(end.state.gherkin, {
-    commentId: 41,
+    commentId: GHERKIN_COMMENT,
     rev: 1,
     inputs: INPUTS,
   });
@@ -94,9 +104,9 @@ test("a first Gherkin posts revision 1 and goes to implement", async () => {
 
 test("an unchanged Gherkin keeps its revision and returns to resumeStage", async () => {
   const gherkin = {
-    id: 41,
-    rev: 3,
-    inputs: "b".repeat(64),
+    id: GHERKIN_COMMENT,
+    rev: EARLIER_REV,
+    inputs: EARLIER_INPUTS,
     gherkin: GHERKIN,
     assumptions: [],
     wikiPages: [],
@@ -110,14 +120,14 @@ test("an unchanged Gherkin keeps its revision and returns to resumeStage", async
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
   assert.equal(end.state.resumeStage, null);
-  assert.ok(posts[0]?.body.includes(`rev=3 inputs=${INPUTS}`));
+  assert.ok(posts[0]?.body.includes(`rev=${EARLIER_REV} inputs=${INPUTS}`));
 });
 
 test("a changed Gherkin goes back to implement from any later stage", async () => {
   const gherkin = {
-    id: 41,
-    rev: 3,
-    inputs: "b".repeat(64),
+    id: GHERKIN_COMMENT,
+    rev: EARLIER_REV,
+    inputs: EARLIER_INPUTS,
     gherkin: "Feature: old\n  Scenario: x",
     assumptions: [],
     wikiPages: [],
@@ -130,7 +140,7 @@ test("a changed Gherkin goes back to implement from any later stage", async () =
   const end = await author(ctx);
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "implement");
-  assert.equal(end.state.gherkin?.rev, 4);
+  assert.equal(end.state.gherkin?.rev, CHANGED_REV);
 });
 
 test("needs-info asks and stays at author, posting no Gherkin", async () => {
@@ -163,6 +173,7 @@ test("every stage runs its own role", async () => {
   );
   const { reviewerRole } = await import("../src/roles/reviewer/reviewer.ts");
   const { mergeRole } = await import("../src/roles/merge/merge.ts");
+  assert.equal(roleOf("author"), author);
   assert.equal(roleOf("implement"), implementorRole);
   assert.equal(roleOf("review"), reviewerRole);
   assert.equal(roleOf("merge"), mergeRole);

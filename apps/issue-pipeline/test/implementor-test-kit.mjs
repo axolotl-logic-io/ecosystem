@@ -14,6 +14,8 @@ import process from "node:process";
 const place = fs.mkdtempSync(path.join(os.tmpdir(), "implementor-kit-"));
 process.on("exit", () => fs.rmSync(place, { recursive: true, force: true }));
 const TEMPORARY_ROOT = path.join(place, "root");
+// src runs its commands in the root, so it must exist.
+fs.mkdirSync(TEMPORARY_ROOT);
 // Environment names aren't camelCase, so they go in as entries, as in
 // job-test-kit.mjs.
 Object.assign(
@@ -171,6 +173,7 @@ function fakeContext(script = {}) {
     cfg: configOf(script.config),
     issue: ISSUE,
     stage: "implement",
+    mergeQueue: null,
     state: { ...newIssueState(ISSUE), stage: "implement", ...script.state },
     dirs: { job: "/job", repo: "/job/repo", docs },
     issueFile: "/job/issue.md",

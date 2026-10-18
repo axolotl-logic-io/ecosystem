@@ -9,7 +9,9 @@
 // is no longer read; and none reaches the loaded config.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { testConfig } from "./config-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+
+const { testConfig } = await import("./config-test-kit.mjs");
 
 const REMOVAL = "session budgets and handoffs were removed";
 const SOFT = 175_000;

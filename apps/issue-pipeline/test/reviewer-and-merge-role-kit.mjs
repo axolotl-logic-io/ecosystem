@@ -11,12 +11,15 @@ import process from "node:process";
 import { z } from "zod";
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "review-merge-role-"));
+const sandboxRoot = path.join(sandbox, "root");
+// src runs its commands in the root, so it must exist.
+fs.mkdirSync(sandboxRoot);
 // Names are the environment's own, set as entries.
 Object.assign(
   process.env,
   Object.fromEntries([
     ["HOME", sandbox],
-    ["ISSUE_PIPELINE_ROOT", path.join(sandbox, "root")],
+    ["ISSUE_PIPELINE_ROOT", sandboxRoot],
     ["PI_CODING_AGENT_DIR", path.join(sandbox, "agent")],
   ]),
 );
@@ -25,7 +28,7 @@ process.on("exit", () => {
 });
 
 const { ROOT } = await import("../src/pipeline-root.ts");
-if (!ROOT.startsWith(sandbox)) {
+if (ROOT !== sandboxRoot) {
   throw new Error(
     `the pipeline root ${ROOT} is not the test's temporary folder`,
   );
