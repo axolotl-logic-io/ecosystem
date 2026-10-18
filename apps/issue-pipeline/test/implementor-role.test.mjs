@@ -184,7 +184,7 @@ test("a push of anything but the verified head saves no verified head", async ()
   assert.equal(end.state.verifiedSha, null);
 });
 
-test("a change that lives only in the wiki closes the draft PR", async () => {
+test("a change that lives only in the wiki closes the draft PR and saves no PR", async () => {
   const { ctx, ops } = fakeContext({
     ops: {
       "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: false, wikiAhead: 2 }],
@@ -195,6 +195,7 @@ test("a change that lives only in the wiki closes the draft PR", async () => {
   assert.deepEqual(ops.at(-1)?.payload, { number: ISSUE, pr: PR });
   assert.ok(end.kind === "next");
   assert.deepEqual(end.state.flows, { code: false, wiki: true });
+  assert.equal(end.state.pr, null);
 });
 
 test("a branch that changes nothing still goes to review, and says so", async () => {
