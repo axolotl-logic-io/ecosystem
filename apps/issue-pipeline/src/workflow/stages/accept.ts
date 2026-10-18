@@ -11,6 +11,7 @@ import { preamble, specText } from "../prompts.ts";
 import { ACCEPT_SCHEMA } from "../schemas.ts";
 import type { Signature } from "../signing.ts";
 import { byStep } from "../signing.ts";
+import type { IssueState, RepoConfig, ReportedFinding } from "../types.ts";
 import { finalDiffLaunch, finalDiffOf } from "./final-diff.ts";
 import { sessionFailedStep } from "./rate-limit.ts";
 import type { AcceptReply } from "./replies.ts";
@@ -33,6 +34,8 @@ type AcceptPhase = "begin" | "review" | "decide" | "saved";
 const PHASES: readonly AcceptPhase[] = ["begin", "review", "decide", "saved"];
 
 const ACCEPT_MINUTES = 25;
+// The role the verifier signs its comments as.
+const ACCEPT_ROLE = "acceptance verifier";
 const SHORT_SHA = 12;
 
 function phaseOf(state: StageState): AcceptPhase {
@@ -62,6 +65,31 @@ function specRequirements(spec: string): string {
   return SPEC_REQUIREMENTS;
 }
 
+// What the verifier's task reads of the issue: its number, paths, spec and
+// the checks' summary. A stage gives its own state; the reviewer role gives
+// just these (#423).
+interface AcceptTaskItem {
+  n: number;
+  paths: StageState["paths"];
+  st: Pick<IssueState, "spec" | "specFile" | "verifySummary">;
+}
+
+// The acceptance verifier's task over the final diff at `diffPath`.
+function acceptTask(
+  cfg: RepoConfig,
+  item: AcceptTaskItem,
+  diffPath: string,
+): string {
+  const spec = specText(item.st);
+  const lines = [
+    `Decide whether the change, as a whole, does what the issue asks. Tests, lint, and CI already pass (${item.st.verifySummary ?? ""}); do not re-run them.`,
+    specLine(spec),
+    `Full diff against ${cfg.baseBranch}: ${diffPath}.`,
+    `Return \`pass\` only if every requirement in the issue${specRequirements(spec)} is met and nothing in the diff works against the issue. Otherwise \`fail\` with the unmet requirement. Do not edit files.`,
+  ];
+  return preamble(cfg, item, ACCEPT_ROLE).concat(lines).join("\n");
+}
+
 function acceptLaunch(
   state: StageState,
   ctx: StageContext,
@@ -69,13 +97,6 @@ function acceptLaunch(
 ): ChildLaunch {
   const { cfg, budgets, models } = ctx;
   const budget = sessionBudget(budgets, "verifier");
-  const spec = specText(state.st);
-  const lines = [
-    `Decide whether the change, as a whole, does what the issue asks. Tests, lint, and CI already pass (${state.st.verifySummary ?? ""}); do not re-run them.`,
-    specLine(spec),
-    `Full diff against ${cfg.baseBranch}: ${diffPath}.`,
-    `Return \`pass\` only if every requirement in the issue${specRequirements(spec)} is met and nothing in the diff works against the issue. Otherwise \`fail\` with the unmet requirement. Do not edit files.`,
-  ];
   return {
     kind: "child",
     name: "accept",
@@ -86,7 +107,7 @@ function acceptLaunch(
     minutes: ACCEPT_MINUTES,
     budgetRole: "verifier",
     tokenBudget: budget,
-    task: preamble(cfg, state, "acceptance verifier").concat(lines).join("\n"),
+    task: acceptTask(cfg, state, diffPath),
   };
 }
 
@@ -97,15 +118,20 @@ function begin(state: StageState): Step {
   ]);
 }
 
+// What a kept verdict logs and comments: the head the last pass judged.
+function keptText(acceptedSha: string | null | undefined): string {
+  const since = (acceptedSha ?? "").slice(0, SHORT_SHA);
+  return `acceptance kept: changes unchanged since ${since}`;
+}
+
 // Moves to security with no session, saving first: the changes are those
 // the last pass judged.
 function kept(state: StageState, ctx: StageContext): Step {
   const st = { ...state.st, stage: "security" };
-  const since = (st.acceptedSha ?? "").slice(0, SHORT_SHA);
-  const text = `acceptance kept: changes unchanged since ${since}`;
+  const text = keptText(st.acceptedSha);
   noteEvent(st, text, ctx.now());
   const payload = { number: state.n, state: st };
-  const by = byStep("acceptance verifier");
+  const by = byStep(ACCEPT_ROLE);
   return launchStep(
     { ...state, st, phase: "saved" },
     [{ kind: "op", name: "save", op: "save-state", payload }],
@@ -134,15 +160,33 @@ function review(
   ]);
 }
 
-function verdictComment(reply: AcceptReply, by: Signature): StageComment {
+// The verdict's comment text.
+function verdictText(reply: AcceptReply): string {
   let opening = "❌ The change doesn't fully resolve the issue. ";
   if (reply.verdict === "pass") {
     opening = "✅ The change does what the issue asks. ";
   }
+  return `${opening}${reply.reason}`;
+}
+
+function verdictComment(reply: AcceptReply, by: Signature): StageComment {
   return {
-    by: { ...by, role: "acceptance verifier" },
-    body: `${opening}${reply.reason}`,
+    by: { ...by, role: ACCEPT_ROLE },
+    body: verdictText(reply),
     where: "pr",
+  };
+}
+
+// The open finding a fail stores in the acceptance lens: the unmet
+// requirement, the verifier's `reason`, as its evidence.
+function acceptanceFinding(reason: string): ReportedFinding {
+  return {
+    file: "",
+    line: 0,
+    title: "acceptance: issue not fully resolved",
+    evidence: reason,
+    suggestion:
+      "Change the code, tests or docs so the issue and spec requirement named in the evidence is met.",
   };
 }
 
@@ -155,18 +199,7 @@ function failed(
   comments: readonly StageComment[],
 ): Step {
   const st = { ...state.st, findings: [...state.st.findings] };
-  addFinding(
-    { st },
-    {
-      file: "",
-      line: 0,
-      title: "acceptance: issue not fully resolved",
-      evidence: reply.reason,
-      suggestion:
-        "Change the code, tests or docs so the issue and spec requirement named in the evidence is met.",
-    },
-    ["acceptance"],
-  );
+  addFinding({ st }, acceptanceFinding(reply.reason), ["acceptance"]);
   st.reviewedSha = st.verifiedSha ?? st.headSha ?? null;
   st.acceptedSha = null;
   st.acceptedPatchId = null;
@@ -233,4 +266,11 @@ function next(
   }
 }
 
-export { next };
+export {
+  ACCEPT_ROLE,
+  acceptanceFinding,
+  acceptTask,
+  keptText,
+  next,
+  verdictText,
+};

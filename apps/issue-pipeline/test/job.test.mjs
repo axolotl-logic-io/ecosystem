@@ -24,10 +24,10 @@ import {
 } from "./job-test-kit.mjs";
 import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
-const SESSION_KEY = /^i7-accept-\d+\.jsonl$/u;
-const SET_ASIDE_SESSION = /^i7-accept-\d+\.[0-9a-z]+\.jsonl$/u;
+const SESSION_KEY = /^i7-security-\d+\.jsonl$/u;
+const SET_ASIDE_SESSION = /^i7-security-\d+\.[0-9a-z]+\.jsonl$/u;
 const NAMES_REVIEW = /review/u;
-const NAMES_ACCEPT = /accept/u;
+const NAMES_SECURITY = /security/u;
 const STAGE_LIST = /--stage must be one of: triage, spec/u;
 const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
 const MODEL_NOT_FOUND = "Model not found: x/y";
@@ -103,7 +103,7 @@ test("a stage job for an issue saved at another stage releases it untouched as w
   const [item] = JSON.parse(r.stdout).items;
   assert.equal(item.outcome, "wrong-stage");
   assert.match(item.reason, NAMES_REVIEW);
-  assert.match(item.reason, NAMES_ACCEPT);
+  assert.match(item.reason, NAMES_SECURITY);
 });
 
 test("a stage job with an unknown stage fails before any op", () => {

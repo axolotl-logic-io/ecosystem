@@ -2,7 +2,7 @@
 // A stage job whose claim fails (#430) ends finished, and records the claim's
 // error as `claimError` in job.json's outcome, for the orchestrator to stop
 // the issue on once it repeats: a role stage (triage) and a sweep stage
-// (accept) alike. A claim that passes records none (job-rate-limit.test.mjs
+// (security) alike. A claim that passes records none (job-rate-limit.test.mjs
 // pins a passing claim's whole outcome).
 import assert from "node:assert/strict";
 import { test } from "node:test";

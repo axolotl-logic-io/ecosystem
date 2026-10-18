@@ -60,18 +60,18 @@ const READY_SPEC = {
 const SPEC_SESSION = { events: [messageEnd(USAGE), outputEnd(READY_SPEC)] };
 
 // The sweep stage the job tests run when any sweep reader stage will do:
-// acceptance, whose one reader session's pass releases the issue at
-// security. Since #334 spec runs the spec writer's role.
-const SWEEP_STAGE = "accept";
-// The stage a passed acceptance saves the issue at.
-const AFTER_SWEEP_STAGE = "security";
-// The acceptance verifier's pass.
-const PASS_VERDICT = { verdict: "pass", reason: "It does what #7 asks." };
-// A session that spends USAGE and ends with the pass.
+// security, whose one reader session's clean reply releases the issue at
+// merge. Spec (#334) and accept (#423) run roles.
+const SWEEP_STAGE = "security";
+// The stage a clean security review saves the issue at.
+const AFTER_SWEEP_STAGE = "merge";
+// The security reviewer's clean reply: no findings.
+const CLEAN_REVIEW = { findings: [] };
+// A session that spends USAGE and ends with the clean reply.
 const SWEEP_SESSION = {
-  events: [messageEnd(USAGE), outputEnd(PASS_VERDICT)],
+  events: [messageEnd(USAGE), outputEnd(CLEAN_REVIEW)],
 };
-// The reviewed diff acceptance reads, at the verified head.
+// The final diff the security review reads, at the verified head.
 const PREPARED_DIFF = {
   ok: true,
   headSha: TRIAGED.headSha,
@@ -325,9 +325,9 @@ function flagValue(argv, flag) {
 
 export {
   AFTER_SWEEP_STAGE,
+  CLEAN_REVIEW,
   flagValue,
   logOf,
-  PASS_VERDICT,
   piCommands,
   piStarts,
   READY_SPEC,

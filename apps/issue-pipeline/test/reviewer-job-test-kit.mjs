@@ -1,8 +1,9 @@
 // @ts-check
-// The reviewer role's stage job for issue #7 at `review` (#421): the job
-// with the fake ops and the fake pi (job-test-kit.mjs), the issue claimed
-// as today's `review` stage saved it, on draft PR #42, and a prepare-review
-// reply that holds a review bundle. Each lens and the aggregator are
+// The reviewer role's stage job for issue #7 at `review` (#421) and at
+// `accept` (#423): the job with the fake ops and the fake pi
+// (job-test-kit.mjs), the issue claimed as today's stage saved it, on draft
+// PR #42, and a prepare-review reply (at `review`, one that holds a review
+// bundle). Each lens and the aggregator are
 // scripted by their launch's name, so they may start in any order.
 import fs from "node:fs";
 import path from "node:path";
@@ -26,6 +27,8 @@ const PR = 42;
 const HEAD = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const SHA_LENGTH = 40;
 const PATCH_ID = "f".repeat(SHA_LENGTH);
+// The head the checks verified, which acceptance judges.
+const VERIFIED = "e".repeat(SHA_LENGTH);
 // The findings the issue numbered before: the next one is f3.
 const NEXT_FINDING_ID = 2;
 const BUNDLE_TEXT =
@@ -76,25 +79,68 @@ function reviewJob(sessions, prepared = {}, script = {}) {
     { ...repliesAt("review"), claim },
     { sessions, ...script },
   );
-  const file = path.join(place.root, "replies.json");
-  const replies = JSON.parse(fs.readFileSync(file, "utf8"));
-  replies["prepare-review"] = {
+  return runAt(place, "review", {
+    ...preparedAt(place, HEAD),
+    bundlePath: path.join(place.root, "bundle.md"),
+    bundleLines: 1,
+    bundleText: BUNDLE_TEXT,
+    ...prepared,
+  });
+}
+
+/** @param {Place} place @param {string} headSha @returns {Record<string, unknown>} prepare-review's reply at `headSha`, with no bundle */
+function preparedAt(place, headSha) {
+  return {
     ok: true,
-    headSha: HEAD,
+    headSha,
     headTree: "cccccccccccccccccccccccccccccccccccccccc",
     baseSha: "dddddddddddddddddddddddddddddddddddddddd",
     patchId: PATCH_ID,
     diffPath: path.join(place.root, "diff.patch"),
     diffLines: "3",
     changedFiles: ["src/a.ts"],
-    bundlePath: path.join(place.root, "bundle.md"),
-    bundleLines: 1,
-    bundleText: BUNDLE_TEXT,
-    ...prepared,
   };
+}
+
+/**
+ * Runs the stage job at `stage` with `prepared` as prepare-review's reply.
+ * @param {Place} place
+ * @param {string} stage
+ * @param {Record<string, unknown>} prepared
+ */
+function runAt(place, stage, prepared) {
+  const file = path.join(place.root, "replies.json");
+  const replies = JSON.parse(fs.readFileSync(file, "utf8"));
+  replies["prepare-review"] = prepared;
   fs.writeFileSync(file, JSON.stringify(replies));
-  const r = runJob(place, ["--stage", "review"]);
+  const r = runJob(place, ["--stage", stage]);
   return { place, r, ...outcomeOf(place, r.stdout) };
+}
+
+/**
+ * Runs the stage job at `accept` (#423), the issue verified at VERIFIED
+ * with `fields` added to its saved state, `sessions` scripted by launch
+ * name, and `prepared` replacing fields of prepare-review's reply at the
+ * verified head.
+ * @param {Record<string, readonly object[]>} sessions
+ * @param {Record<string, unknown>} [fields]
+ * @param {Record<string, unknown>} [prepared]
+ */
+function acceptJob(sessions, fields = {}, prepared = {}) {
+  const claim = claimAt("accept", {
+    pr: PR,
+    headSha: VERIFIED,
+    verifiedSha: VERIFIED,
+    verifySummary: "checks passed: npm test",
+    plan: "Change src/a.ts and test it.",
+    nextFindingId: NEXT_FINDING_ID,
+    ...fields,
+  });
+  const place = setUp({ ...repliesAt("accept"), claim }, { sessions });
+  return runAt(place, "accept", {
+    ...preparedAt(place, VERIFIED),
+    ...prepared,
+  });
 }
 
 /** @param {Place} place @param {string} stdout */
@@ -160,6 +206,7 @@ function commonPrefix(texts) {
 }
 
 export {
+  acceptJob,
   BUNDLE_TEXT,
   CLEAN,
   commonPrefix,
@@ -175,4 +222,5 @@ export {
   reviewJob,
   SHA_LENGTH,
   tasksOf,
+  VERIFIED,
 };

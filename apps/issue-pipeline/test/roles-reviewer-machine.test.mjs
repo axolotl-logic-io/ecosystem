@@ -4,6 +4,7 @@
 // effect, a clean table, the lenses as one sessions effect on their models
 // with the shared prefix, locate on a state today's stage saved, the stage
 // it is registered for, its layout and its isolation from the other roles.
+// The `accept` entry's edges are in roles-reviewer-accept-machine.test.mjs.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -76,7 +77,7 @@ test("claim, checkout and prepare route as the Lifecycle table says", () => {
   assert.equal(stepFrom("claim", "ok").state.at, "checkout");
   assert.equal(seen(stepFrom("claim", "ok").effect).check, "checkout");
   assert.equal(endOf(stepFrom("claim", "not-ours").effect).kind, "released");
-  assert.equal(seen(stepFrom("checkout", "ok").effect).check, "prepare");
+  assert.equal(seen(stepFrom("checkout", "review").effect).check, "prepare");
   const empty = endOf(stepFrom("prepare", "empty").effect);
   assert.equal(empty.kind, "stopped");
   assert.equal(empty.after?.op, "stop");
@@ -168,10 +169,9 @@ test("the table is clean, enters at claim and hands off the review fields", () =
   }
 });
 
-test("the reviewer runs review stage jobs; accept and security keep their stage code", () => {
+test("the reviewer runs review stage jobs; security keeps its stage code", () => {
   assert.equal(roleOf("review")?.name, "reviewer");
   assert.equal(roleOf("review")?.kind, "machine");
-  assert.equal(roleOf("accept"), undefined);
   assert.equal(roleOf("security"), undefined);
 });
 

@@ -90,16 +90,18 @@ function preparedData() {
 
 /**
  * An effect as the tests read it, whatever its kind: a check's name, an
- * end, the sessions of a sessions effect, or a session's name, model and
- * schema.
+ * end, the sessions of a sessions effect, or a session's name, agent,
+ * model, schema and task.
  * @typedef {object} SeenEffect
  * @property {string} kind
  * @property {string} [check]
  * @property {End} [end]
  * @property {readonly SessionEffect[]} [sessions]
  * @property {string} [name]
+ * @property {string} [agent]
  * @property {string} [model]
  * @property {unknown} [schema]
+ * @property {string} [task]
  */
 
 /** @param {Effect} effect @returns {SeenEffect} */

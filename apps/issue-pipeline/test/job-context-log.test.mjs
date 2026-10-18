@@ -17,8 +17,8 @@ import { waitFor } from "./bounded-test-kit.mjs";
 import { outputEnd, TURN_OUTPUT, turns } from "./fake-rpc-pi.mjs";
 import { implementReplies } from "./implementor-job-test-kit.mjs";
 import {
+  CLEAN_REVIEW,
   flagValue,
-  PASS_VERDICT,
   piStarts,
   repliesAt,
   runJob,
@@ -90,7 +90,7 @@ function contextLines(place) {
 }
 
 test("an ended session's line holds its file, job, role, stage, model, end, context measures, usage, steers and the head it reviewed, and no text", () => {
-  const events = [...turns([FIRST, PEAK, LAST]), outputEnd(PASS_VERDICT)];
+  const events = [...turns([FIRST, PEAK, LAST]), outputEnd(CLEAN_REVIEW)];
   const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
   const r = runJob(place, ["--stage", SWEEP_STAGE, "--job-id", JOB_ID]);
   assert.equal(r.status, 0, r.stderr);
@@ -110,7 +110,7 @@ test("an ended session's line holds its file, job, role, stage, model, end, cont
       session: path.basename(launch.session),
       resumed: false,
       job: JOB_ID,
-      role: "verifier",
+      role: "reviewer",
       agent: "issue-pipeline-reader",
       model: flagValue(start.argv, "--model"),
       ended: "ok",
@@ -129,7 +129,7 @@ test("an ended session's line holds its file, job, role, stage, model, end, cont
     path.join(place.runDir, "context.jsonl"),
     "utf8",
   );
-  assert.ok(!text.includes(PASS_VERDICT.reason), text);
+  assert.ok(!text.includes("security reviewer"), text);
 });
 
 test(
@@ -178,7 +178,7 @@ test(
     assert.deepEqual(more, []);
     assert.equal(line.key, sessionOf(statusOf(place)).key);
     assert.equal(line.ended, "killed");
-    assert.equal(line.role, "verifier");
+    assert.equal(line.role, "reviewer");
     assert.equal(line.turns, 1);
     assert.equal(line.firstContext, FIRST);
     assert.equal(line.peakContext, FIRST);

@@ -27,8 +27,8 @@ import { fixReplyOf } from "../src/workflow/stages/review-replies.ts";
 import { outputEnd, turns } from "./fake-rpc-pi.mjs";
 import { implementReplies } from "./implementor-job-test-kit.mjs";
 import {
+  CLEAN_REVIEW,
   logOf,
-  PASS_VERDICT,
   piCommands,
   piStarts,
   repliesAt,
@@ -114,7 +114,7 @@ test(
   async () => {
     const events = [
       ...turns([STILL_PAST_SOFT, PAST_HARD]),
-      outputEnd(PASS_VERDICT),
+      outputEnd(CLEAN_REVIEW),
     ];
     const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
     const end = await startJob(place, ["--stage", SWEEP_STAGE]).end;
@@ -196,7 +196,7 @@ test(
   "a session under soft runs as before and records its peak",
   HANG_GUARD,
   async () => {
-    const events = [...turns([LOW, LOW_PEAK]), outputEnd(PASS_VERDICT)];
+    const events = [...turns([LOW, LOW_PEAK]), outputEnd(CLEAN_REVIEW)];
     const place = setUp(repliesAt(SWEEP_STAGE), { events }, LIMITS);
     const end = await startJob(place, ["--stage", SWEEP_STAGE]).end;
     assert.equal(end.status, 0, end.stderr);

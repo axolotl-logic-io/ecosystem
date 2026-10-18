@@ -14,7 +14,7 @@ import {
   turns,
 } from "./fake-rpc-pi.mjs";
 import {
-  PASS_VERDICT,
+  CLEAN_REVIEW,
   piStarts,
   repliesAt,
   runJob,
@@ -40,9 +40,9 @@ const JOB = {
 };
 const FIRST_CONTEXT = 50_000;
 const LAST_CONTEXT = 51_000;
-// An acceptance verifier's turn context past its 60k budget and under the
+// A security reviewer's turn context past its 60k budget and under the
 // hard limit.
-const OVER_VERIFIER_BUDGET = 90_000;
+const OVER_REVIEWER_BUDGET = 90_000;
 // The implementer's default budget at the default sessionTokenCap, both
 // 300k: the implementor role reads them from the job's config.
 const IMPLEMENTER_BUDGET = 300_000;
@@ -104,7 +104,7 @@ test("a finished job's file counts only the last tool failures and records each 
     events: [
       toolEnd(true),
       toolEnd(true),
-      outputEnd(PASS_VERDICT),
+      outputEnd(CLEAN_REVIEW),
       toolEnd(true),
       messageEnd(USAGE),
     ],
@@ -118,7 +118,7 @@ test("a finished job's file counts only the last tool failures and records each 
   assert.equal(launch.toolFailures, 1);
   assert.equal(launch.outcome, "ok");
   assert.deepEqual(launch.usage, USAGE);
-  // The verifier is no writer session, so it has no watchdog max.
+  // The reviewer is no writer session, so it has no watchdog max.
   assert.equal(launch.tokenBudget, null);
   assert.equal(launch.contextTokens, USAGE_TOTAL);
   const ops = status.launches.filter(
@@ -139,13 +139,13 @@ test("a finished job's file counts only the last tool failures and records each 
 });
 
 test("a non-writer session past its role's budget records no token budget, so the watchdog never stops it", () => {
-  const events = [...turns([OVER_VERIFIER_BUDGET]), outputEnd(PASS_VERDICT)];
+  const events = [...turns([OVER_REVIEWER_BUDGET]), outputEnd(CLEAN_REVIEW)];
   const place = setUp(repliesAt(SWEEP_STAGE), { events });
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
   const launch = sessionOf(statusOf(place));
   assert.equal(launch.outcome, "ok");
-  assert.equal(launch.contextTokens, OVER_VERIFIER_BUDGET + TURN_OUTPUT);
+  assert.equal(launch.contextTokens, OVER_REVIEWER_BUDGET + TURN_OUTPUT);
   assert.equal(launch.tokenBudget, null);
 });
 

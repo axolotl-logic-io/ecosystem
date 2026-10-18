@@ -24,10 +24,9 @@ import {
   stored,
 } from "../edges.ts";
 import type { ReviewerData } from "../locate.ts";
+import { READER } from "../posting.ts";
 import type { ReviewerSpec } from "../states.ts";
 import { check } from "../states.ts";
-
-const READER = "issue-pipeline-reader";
 
 // What the lenses read before prepare has run: no diff at all. Only a
 // table check builds the lenses' effect from such data.

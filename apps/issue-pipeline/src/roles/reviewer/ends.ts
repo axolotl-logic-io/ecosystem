@@ -31,7 +31,13 @@ const END_STATES: Readonly<
     | "nothing-to-review"
     | "lens-failed"
     | "clean"
-    | "findings-stored",
+    | "findings-stored"
+    | "accept-deferred"
+    | "accept-prep-failed"
+    | "accept-moved"
+    | "verifier-failed"
+    | "accepted"
+    | "acceptance-failed",
     EndSpec
   >
 > = {
@@ -43,6 +49,15 @@ const END_STATES: Readonly<
   // (#340).
   clean: end(() => ({ kind: "saved", stage: "checks" })),
   "findings-stored": end(() => ({ kind: "saved", stage: "fix" })),
+  // The `accept` entry's ends (#423): a network failure holds the issue at
+  // accept for the next tick; a kept verdict or a pass goes on to the
+  // security review, and a fail to the fixer.
+  "accept-deferred": end(() => ({ kind: "held" })),
+  "accept-prep-failed": stopped("could not prepare the final diff"),
+  "accept-moved": stopped("the branch changed after verification"),
+  "verifier-failed": stopped("the acceptance verifier failed"),
+  accepted: end(() => ({ kind: "saved", stage: "security" })),
+  "acceptance-failed": end(() => ({ kind: "saved", stage: "fix" })),
 };
 
 export { END_STATES };

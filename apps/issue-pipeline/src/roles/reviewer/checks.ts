@@ -1,9 +1,11 @@
 // The reviewer's script checks (#421; the wiki's Pipeline-Roles-Reviewer,
 // "Entry `review`"): claim and checkout, `prepare` (the prepare-review op and
 // the bundle it replies, prepare.ts), `post-lenses` (one signed, keyed comment
-// per lens) and `store-findings` (numbering with addFinding). Each answers
-// with one of the machine's result names. The job has already claimed the
-// issue and checked out its branch, so the claim and the checkout answer ok.
+// per lens) and `store-findings` (numbering with addFinding), and the
+// `accept` entry's checks (accept-checks.ts, #423). Each answers with one of
+// the machine's result names. The job has already claimed the issue and
+// checked out its branch, so the claim answers ok and the checkout answers
+// with the entry the run takes.
 // The registry passes them to machineRole for every stage in
 // REVIEWER_STAGES.
 
@@ -14,7 +16,6 @@ import type { Entry } from "../../job/runner.ts";
 import { addFinding } from "../../workflow/findings.ts";
 import type { ReviewLens } from "../../workflow/lenses.ts";
 import { LENS_NAMES } from "../../workflow/lenses.ts";
-import type { Signature } from "../../workflow/signing.ts";
 import { byStep } from "../../workflow/signing.ts";
 import type {
   MergedFinding,
@@ -34,12 +35,14 @@ import type { Finding, IssueState } from "../../workflow/types.ts";
 import type { Checks, JobEffects } from "../registry.ts";
 import type { SessionsReply } from "../sessions.ts";
 import { sessionsReplyOf } from "../sessions.ts";
+import { acceptChecks } from "./accept-checks.ts";
+import type { Comment } from "./posting.ts";
+import { answer, guarded, ok, post, READER } from "./posting.ts";
 import { prepare } from "./prepare.ts";
 
 type Payload = CheckEffect["payload"];
 
-const READER = "issue-pipeline-reader";
-
+const ENTERED = z.looseObject({ entry: z.enum(["review", "accept"]) });
 const ON_ISSUE = z.looseObject({
   number: z.number(),
   pr: z.number().nullable(),
@@ -53,13 +56,6 @@ const STORE = ON_ISSUE.extend({
   raw: z.unknown(),
   merged: z.unknown(),
 });
-
-interface Comment {
-  number: number;
-  by: Signature;
-  body: string;
-  key?: string;
-}
 
 // What the lenses said: each one's comment, the blocking findings with their
 // lens, and the first failure.
@@ -75,31 +71,6 @@ interface ReviewJob {
   effects: JobEffects;
   // The PR comments go on, or the issue when there is none.
   number: number;
-}
-
-function answer(name: string, reply: unknown = null): Outcome {
-  return { ok: true, name, reply };
-}
-
-function ok(): Promise<Outcome> {
-  return Promise.resolve(answer("ok"));
-}
-
-async function guarded(
-  act: () => Promise<Outcome> | Outcome,
-): Promise<Outcome> {
-  try {
-    return await act();
-  } catch (error) {
-    return { ok: false, error: String(error) };
-  }
-}
-
-function post(effects: JobEffects, comments: Comment[]): Promise<Outcome> {
-  if (comments.length === 0) {
-    return ok();
-  }
-  return effects.op({ kind: "op", op: "post", payload: { comments } });
 }
 
 // The lens's findings, or why it has none.
@@ -219,12 +190,15 @@ function reviewerChecks(
   }
   return {
     claim: ok,
-    checkout: ok,
+    // The checkout answers with the entry the run takes.
+    checkout: (payload: Payload) =>
+      guarded(() => answer(ENTERED.parse(payload).entry)),
     prepare: () => guarded(() => prepare(entry, effects)),
     "post-lenses": (payload: Payload) =>
       guarded(() => postLenses(jobOn(payload), POSTED.parse(payload))),
     "store-findings": (payload: Payload) =>
       guarded(() => storeFindings(jobOn(payload), STORE.parse(payload))),
+    ...acceptChecks(entry, effects),
   };
 }
 

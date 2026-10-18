@@ -14,8 +14,8 @@ import {
 } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
+  CLEAN_REVIEW,
   logOf,
-  PASS_VERDICT,
   piCommands,
   piStarts,
   repliesAt,
@@ -61,7 +61,7 @@ function stopSaveOf(place) {
 for (const [signal, code] of SIGNAL_CODES) {
   test(`${signal} aborts the session, saves the issue at its stage with no lease and exits ${code}`, async () => {
     const place = setUp(repliesAt(SWEEP_STAGE), {
-      events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
+      events: [messageEnd(USAGE), "wait", outputEnd(CLEAN_REVIEW)],
     });
     const job = startJob(place, STAGE_ARGS);
     await waitFor(

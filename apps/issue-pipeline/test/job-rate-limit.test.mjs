@@ -2,7 +2,7 @@
 // A stage job whose session hits a model provider's rate limit
 // (`rate-limit-defers`) ends finished with `rateLimited` in job.json's
 // outcome, which the orchestrator backs off on, and stops nothing: a sweep
-// stage (accept) defers its issue with no retry, and a role stage (triage,
+// stage (security) defers its issue with no retry, and a role stage (triage,
 // and the spec writer, whose session state takes its own failures, #446)
 // ends held, saving the issue at its stage with no attempt counted.
 import assert from "node:assert/strict";

@@ -119,6 +119,7 @@ export {
   cleaned,
   failed,
   lensesReplied,
+  noted,
   prepared,
   stored,
 };

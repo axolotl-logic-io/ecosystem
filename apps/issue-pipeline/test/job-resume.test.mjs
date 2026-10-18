@@ -7,9 +7,9 @@ import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
+  CLEAN_REVIEW,
   flagValue,
   logOf,
-  PASS_VERDICT,
   piCommands,
   piStarts,
   repliesAt,
@@ -33,7 +33,7 @@ const STOPPED_BY_SIGTERM = 143;
 // A sweep stage job stopped while its session waits, after it spent USAGE.
 async function stoppedJob() {
   const place = setUp(repliesAt(SWEEP_STAGE), {
-    events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
+    events: [messageEnd(USAGE), "wait", outputEnd(CLEAN_REVIEW)],
   });
   const job = startJob(place, STAGE_ARGS);
   await waitFor(

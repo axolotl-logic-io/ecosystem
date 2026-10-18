@@ -17,8 +17,8 @@ import {
   repoOf,
 } from "./job-git-test-kit.mjs";
 import {
+  CLEAN_REVIEW,
   logOf,
-  PASS_VERDICT,
   piStarts,
   repliesAt,
   runJob,
@@ -43,7 +43,7 @@ const PUSHING = { "exit-push": { ok: true, git: true } };
 // A session that commits a file, then waits until it is stopped.
 const COMMIT_AND_WAIT = {
   commit: "repo/work.txt",
-  events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
+  events: [messageEnd(USAGE), "wait", outputEnd(CLEAN_REVIEW)],
 };
 
 /** @import { Place } from "./job-test-kit.mjs" */
@@ -136,7 +136,7 @@ test("a writer's stacked checkout with no commits of its own pushes nothing", ()
 
 test("a job stopped by SIGTERM exits 143 and removes its checkout", async () => {
   const place = setUp(repliesAt(SWEEP_STAGE), {
-    events: [messageEnd(USAGE), "wait", outputEnd(PASS_VERDICT)],
+    events: [messageEnd(USAGE), "wait", outputEnd(CLEAN_REVIEW)],
   });
   const job = startJob(place, ["--stage", SWEEP_STAGE]);
   await waitFor("the session's spending in job.json", () => spent(place));
