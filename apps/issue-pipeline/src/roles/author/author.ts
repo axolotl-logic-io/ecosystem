@@ -50,17 +50,20 @@ async function postGherkin(
     stage,
     resumeStage: null,
     gherkin: { commentId, rev, inputs },
+    // The questions, if any were asked, are answered by this Gherkin.
+    asked: null,
   };
-  const what = changed
-    ? `wrote Gherkin revision ${rev}`
-    : `kept Gherkin revision ${rev}`;
+  let what = `kept Gherkin revision ${rev}`;
+  if (changed) {
+    what = `wrote Gherkin revision ${rev}`;
+  }
   return {
     kind: "next",
     state: withLog(state, `${what}; on to ${stage}`, new Date()),
   };
 }
 
-const authorRole: Role = async (ctx) => {
+const authorRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   const result = await ctx.session({
     agent: "issue-pipeline-author",
     model: ctx.cfg.models.author,
@@ -81,6 +84,7 @@ const authorRole: Role = async (ctx) => {
   }
   const reply = AUTHOR_REPLY.parse(result.reply);
   if (reply.outcome === "needs-info") {
+    // The job records the inputs revision the questions are asked at.
     return {
       kind: "ask",
       questions: reply.questions,

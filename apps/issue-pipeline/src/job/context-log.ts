@@ -75,7 +75,12 @@ interface ContextJob {
 // What a line takes from the session's launch record.
 type Measures = Pick<
   ContextLine,
-  "session" | "peakContext" | "contextTokens" | "firstContext" | "turns" | "usage"
+  | "session"
+  | "peakContext"
+  | "contextTokens"
+  | "firstContext"
+  | "turns"
+  | "usage"
 >;
 
 // What a session with no launch record measured: nothing.

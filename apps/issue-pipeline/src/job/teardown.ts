@@ -15,7 +15,7 @@ import type { JobDirs } from "./checkout.ts";
 import { closeJobCheckout } from "./checkout.ts";
 import type { RunOp } from "./ops-request.ts";
 import type { Access } from "./pipeline-commit.ts";
-import type { JobLine } from "./role-run.ts";
+import type { JobLine } from "./role-end.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 
 // The separators an ISO time has that a job key leaves out.

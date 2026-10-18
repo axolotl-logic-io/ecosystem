@@ -5,7 +5,7 @@
 // the session's launch in job.json and as a line of `pushes.jsonl` in the
 // issue's run folder, `{key, job, repo, sha, at}`, which outlives job.json.
 // It defers while a rebase is stopped in
-// either checkout, and in the stages whose ops push only after their checks.
+// either checkout, whose ops push the rebased branch only after its checks.
 // A refused push keeps the commits and is reported, never thrown; the next
 // request pushes whatever is still unpushed.
 
@@ -14,8 +14,8 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { run } from "../process.ts";
 import { rebaseInProgress } from "../rebase.ts";
+import type { Stage } from "../stages.ts";
 import { pushWikiBranch } from "../wiki.ts";
-import type { StageName } from "../workflow/stages/types.ts";
 import type { Pushed, PushReply } from "./control-protocol.ts";
 import type { LaunchPush } from "./launch-record.ts";
 import { STAGE_WIKI_ACCESS } from "./roles.ts";
@@ -24,18 +24,10 @@ import { appendRunLine } from "./run-log.ts";
 // The op a push for `pipeline_commit` is recorded as in pushed.json, which a
 // claim adopts as the pipeline's own push (src/adopt-push.ts).
 const PIPELINE_COMMIT_OP = "pipeline-commit";
-// Stages whose ops push only after their checks: finish-sync, finish-wiki
-// and publish.
-const DEFERRING_STAGES: ReadonlySet<StageName> = new Set<StageName>([
-  "sync",
-  "merge",
-  "publish",
-]);
-
 // The job a push server pushes for, and its random id.
 interface PushJob {
   issue: number;
-  stage: StageName;
+  stage: Stage;
   checkout: string;
   id: string;
 }
@@ -117,7 +109,7 @@ function pushServerOf(
     const rebasing = [checkout, wikiDir].some(
       (dir) => isRepo(dir) && rebaseInProgress(dir),
     );
-    if (DEFERRING_STAGES.has(stage) || rebasing) {
+    if (rebasing) {
       return { pushed: "deferred", pushError: null };
     }
     const done: { pushes: LaunchPush[]; errors: string[] } = {

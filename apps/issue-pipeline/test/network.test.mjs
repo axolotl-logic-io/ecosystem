@@ -1,7 +1,7 @@
 // Which op errors count as network failures, which a stage defers on.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isNetworkError } from "../src/workflow/stages/network.ts";
+import { isNetworkError } from "../src/job/transient.ts";
 
 const NETWORK = [
   "git fetch exited 128: fatal: unable to access 'https://github.com/o/r/': Could not resolve host: github.com",

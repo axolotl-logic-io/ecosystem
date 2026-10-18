@@ -31,6 +31,7 @@ function fakeContext(result, inputs = {}, state = {}) {
     state: { ...newIssueState(7), ...state },
     dirs: { job: "/job", repo: "/job/repo", docs: "/job/docs" },
     issueFile: "/run/issue.md",
+    mergeQueue: null,
     inputs: {
       issue: { title: "T", body: "B", user: { login: "owner" } },
       comments: [],
@@ -61,6 +62,14 @@ const reply = {
   wikiPages: [],
   changed: true,
 };
+
+test("an authored Gherkin answers the questions asked before it", async () => {
+  const asked = { inputs: "b".repeat(64) };
+  const { ctx } = fakeContext({ ok: true, reply }, {}, { asked });
+  const end = await author(ctx);
+  assert.ok(end.kind === "next");
+  assert.equal(end.state.asked, null);
+});
 
 test("a first Gherkin posts revision 1 and goes to implement", async () => {
   const { ctx, sessions, posts } = fakeContext({ ok: true, reply });

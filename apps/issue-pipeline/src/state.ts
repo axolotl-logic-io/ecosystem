@@ -89,6 +89,11 @@ const CODE_MERGED = z.object({
   sha: z.string().min(1),
 });
 
+// The trusted-inputs revision the author's questions were asked at: the
+// issue waits at needs-info while its inputs still hash to it. The job's ask
+// end sets it and the author's Gherkin clears it.
+const ASKED = z.object({ inputs: z.string().min(1) });
+
 const ZERO_COUNTS = { conflictFixes: 0, syncs: 0 };
 
 const COUNTS = z.object({
@@ -122,6 +127,7 @@ const ISSUE_STATE = z.object({
   // The revision the merge job merged and published.
   merged: REVISION.nullable().catch(null),
   codeMerged: CODE_MERGED.nullable().catch(null),
+  asked: ASKED.nullable().catch(null),
   counts: COUNTS.catch(ZERO_COUNTS),
   log: z.array(z.string()).catch([]),
 });
@@ -131,6 +137,7 @@ type Revision = z.infer<typeof REVISION>;
 type Finding = z.infer<typeof FINDING>;
 type MergeReturn = z.infer<typeof MERGE_RETURN>;
 type CodeMerged = z.infer<typeof CODE_MERGED>;
+type Asked = z.infer<typeof ASKED>;
 
 interface StoredState {
   id: number | null;
@@ -189,6 +196,7 @@ function newIssueState(number: number): IssueState {
     mergeReturn: null,
     merged: null,
     codeMerged: null,
+    asked: null,
     counts: { ...ZERO_COUNTS },
     log: [],
   };
@@ -360,6 +368,7 @@ function isStatus(value: unknown): value is Status {
 }
 
 export type {
+  Asked,
   CodeMerged,
   Finding,
   IssueState,

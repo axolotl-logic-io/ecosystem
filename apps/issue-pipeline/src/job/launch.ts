@@ -20,7 +20,7 @@ import { runOps } from "./ops-process.ts";
 import type { OpsRaw, SessionRaw } from "./raw-results.ts";
 import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
 import { commitsOf } from "./roles.ts";
-import type { RpcAnswer, RpcCommand } from "./rpc.ts";
+import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart } from "./status.ts";
 
@@ -162,7 +162,7 @@ async function runSession(
     env: hooks.env(agent, key),
     prompt: launch.task,
     timeoutMs: launch.timeoutMs,
-    onSpawn: (rpc): void => {
+    onSpawn: (rpc: RpcProcess): void => {
       const start: LaunchStart = {
         key,
         kind: "session",
@@ -205,7 +205,12 @@ async function runOpsLaunch(
     input: launch.request,
     timeoutMs: launch.timeoutMs,
     started: (ops: OpsProcess): void => {
-      const start: LaunchStart = { key, kind: "ops", pid: ops.pid, session: null };
+      const start: LaunchStart = {
+        key,
+        kind: "ops",
+        pid: ops.pid,
+        session: null,
+      };
       hooks.started(start, { kind: "ops", ops });
     },
   });

@@ -26,14 +26,12 @@ import { saveDroppedPatch } from "./dropped-patch.ts";
 import type { Access } from "./pipeline-commit.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
-// base branch, the branch the issue's work is on, and the issue whose branch
-// it is stacked on (#268), or null.
+// base branch and the branch the issue's work is on.
 interface CloneSpec {
   mirror: string;
   url: string;
   base: string;
   branch: string;
-  stackOn: number | null;
 }
 
 // A stage job's folder, its code checkout and its wiki checkout (null when
@@ -92,20 +90,14 @@ function syncMirror(
 }
 
 // Clones `spec.mirror` into `dir` on the issue's branch: at the mirror's
-// branch head when it has one, otherwise at the head of the branch it is
-// stacked on when the mirror has that, and at the base otherwise. Only
+// branch head when it has one, and at the base otherwise. Only
 // pipeline_commit and the ops commit there.
 function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
-  const { mirror, url, base, branch, stackOn } = spec;
+  const { mirror, url, base, branch } = spec;
   run("git", ["clone", "--quiet", "--no-checkout", mirror, dir]);
   let start = `origin/${base}`;
   if (hasRef(mirror, `refs/heads/${branch}`)) {
     start = `origin/${branch}`;
-  } else if (
-    stackOn !== null &&
-    hasRef(mirror, `refs/heads/${paths.branch(stackOn)}`)
-  ) {
-    start = `origin/${paths.branch(stackOn)}`;
   }
   gitIn(dir, ["checkout", "--quiet", "-B", branch, start]);
   gitIn(dir, ["remote", "set-url", "origin", url]);
@@ -141,14 +133,13 @@ function openWiki(cfg: Config, issue: number, repo: string): string | null {
 
 // Makes stage job `stage`'s folder for issue `issue`, replacing one an
 // earlier job left: its code checkout from the freshly fetched mirror, and
-// its wiki checkout whenever the repo has a wiki. With `stackOn`, an issue
-// with no branch yet starts on that issue's branch.
+// its wiki checkout whenever the repo has a wiki.
 function openJobCheckout(
   cfg: Config,
   issue: number,
-  job: { stage: string; stackOn: number | null },
+  job: { stage: string },
 ): JobDirs {
-  const { stage, stackOn } = job;
+  const { stage } = job;
   const mirror = paths.mirror(cfg);
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
   withCloneLock(cfg, (): void => syncMirror(cfg, { mirror, url, prune: true }));
@@ -157,7 +148,7 @@ function openJobCheckout(
   fs.mkdirSync(root, { recursive: true });
   const repo = paths.jobRepo(cfg, issue, stage);
   const branch = paths.branch(issue);
-  cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch, stackOn }, repo);
+  cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch }, repo);
   updateSubmodules(cfg, repo);
   const docs = openWiki(cfg, issue, repo);
   return { root, repo, docs };
@@ -194,7 +185,7 @@ function dropChanges(
 }
 
 // How many commits the checkout has that no branch on the remote has, so
-// that a branch stacked on another issue's (#268) holds none of that issue's.
+// that commits another branch on the remote already holds count as pushed.
 function unpushed(cfg: Config, dir: string): number {
   git(cfg, ["-C", dir, "fetch", "--quiet", "--prune", "origin"]);
   const range = ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"];

@@ -5,13 +5,14 @@
 // the sessions that commit push through it (`pipeline_commit`). The networks
 // are recorded, not enforced.
 
-import type { Config } from "../config.ts";
+import type { Config, ModelRole } from "../config.ts";
 import { paths } from "../config.ts";
 import type { JobRolesConfig } from "../config-schema.ts";
 import type { Stage } from "../stages.ts";
 import { JOB_DOCS, JOB_REPO } from "./layout.ts";
 import type { Access, PathScope } from "./pipeline-commit.ts";
 import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
+import type { AgentName } from "./role-context.ts";
 
 type JobRole = "reader" | "writer" | "merger";
 
@@ -63,6 +64,17 @@ const STAGE_WIKI_ACCESS: Readonly<Record<Stage, Access>> = {
   implement: "write",
   review: "read",
   merge: "write",
+};
+
+// The one installed agent each stage's sessions may run as, and the model
+// role it plays; a merge job runs no model session (`merge-is-code`).
+const STAGE_AGENTS: Readonly<
+  Record<Stage, { agent: AgentName; role: ModelRole } | null>
+> = {
+  author: { agent: "issue-pipeline-author", role: "author" },
+  implement: { agent: "issue-pipeline-implementor", role: "implementor" },
+  review: { agent: "issue-pipeline-reviewer", role: "reviewer" },
+  merge: null,
 };
 
 const DEFAULT_ROLES: Roles = {
@@ -199,6 +211,7 @@ export {
   commitsOf,
   IMPLEMENTOR_AGENT,
   rolesOf,
+  STAGE_AGENTS,
   STAGE_ROLES,
   STAGE_WIKI_ACCESS,
 };

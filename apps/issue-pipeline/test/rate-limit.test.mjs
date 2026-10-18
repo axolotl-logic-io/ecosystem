@@ -6,7 +6,7 @@ import { test } from "node:test";
 import {
   isRateLimitError,
   isTransientSessionError,
-} from "../src/workflow/stages/rate-limit.ts";
+} from "../src/job/transient.ts";
 
 const RATE_LIMITED = [
   '429 {"type":"error","error":{"type":"rate_limit_error","message":"All credentials for model claude-opus-5-5 are cooling down via provider claude"}}',

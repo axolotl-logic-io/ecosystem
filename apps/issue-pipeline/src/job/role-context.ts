@@ -7,15 +7,19 @@
 
 import type { z } from "zod";
 import type { IssueComment } from "../comments.ts";
-import type { GherkinComment } from "../gherkin-comment.ts";
 import type { Config, ModelRole } from "../config.ts";
+import type { GherkinComment } from "../gherkin-comment.ts";
 import type { Issue } from "../issue-context.ts";
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 
 // The ops a role may ask for; each runs in its own `ops.mjs` process, the
-// only code that holds a token.
+// only code that holds a token. The job alone runs claim, save-state, stop,
+// ask, release, usage and exit-push. `current-revision` reads the issue's
+// trusted inputs, the checkouts' code and wiki heads and the PR afresh from
+// GitHub (shared-ops-contract.md).
 type OpName =
+  | "current-revision"
   | "post"
   | "start-pr"
   | "open-pr"
@@ -33,6 +37,16 @@ type OpName =
   | "publish"
   | "finish-wiki"
   | "cleanup";
+
+// The ops only the job runs, around and after the role.
+type JobOpName =
+  | "claim"
+  | "save-state"
+  | "stop"
+  | "ask"
+  | "release"
+  | "usage"
+  | "exit-push";
 
 type AgentName =
   | "issue-pipeline-author"
@@ -77,11 +91,13 @@ interface PostedComment {
   body: string;
 }
 
+// A failed op: its name, and its error as the message. The job's ops replies
+// carry no exit code, so `code` is always 1 (OPS_FAILED in role-ops.ts).
 class OpsFailure extends Error {
   readonly code: number;
-  readonly op: OpName;
+  readonly op: OpName | JobOpName;
 
-  constructor(op: OpName, code: number, message: string) {
+  constructor(op: OpName | JobOpName, code: number, message: string) {
     super(message);
     this.name = "OpsFailure";
     this.code = code;
@@ -101,6 +117,8 @@ interface RoleContext {
   // The filtered issue file: the issue and its trusted comments.
   issueFile: string;
   inputs: RoleInputs;
+  // The merge order the orchestrator ranked (`--merge-queue`), or null.
+  mergeQueue: readonly number[] | null;
   // Runs one op and returns its reply; throws OpsFailure when it fails.
   op: (name: OpName, payload: object) => Promise<unknown>;
   session: (spec: SessionSpec) => Promise<SessionResult>;
@@ -127,6 +145,7 @@ type Role = (ctx: RoleContext) => Promise<RoleEnd>;
 export type {
   AgentName,
   CommentRole,
+  JobOpName,
   OpName,
   PostedComment,
   Role,

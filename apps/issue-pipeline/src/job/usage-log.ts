@@ -6,12 +6,7 @@
 // does no I/O.
 
 import { z } from "zod";
-import type { RoleName } from "../roles/registry.ts";
-import { ROLE_NAMES } from "../roles/registry.ts";
-import type { JsonSchema } from "../workflow/schemas.ts";
-import { isRecord } from "../workflow/stages/reply-guards.ts";
-import { STAGE_ORDER } from "../workflow/sweep-config.ts";
-import type { ContextLimits } from "./context-watch.ts";
+import { STAGES } from "../stages.ts";
 import type { JobEntry, SessionEntry } from "./run-usage.ts";
 import { BLOCK_END } from "./usage-comment.ts";
 import type { ToolOutput, ToolUse } from "./usage-tally.ts";
@@ -27,31 +22,55 @@ const WHITESPACE = /\s/u;
 // The name a tool whose name isn't a NAME is counted under.
 const OTHER_TOOL = "other";
 
-type Ended = "reply" | "handoff" | "context-stop" | "error" | "aborted";
+// How a session ended: with its reply, failed, or aborted by a signal. The
+// installed version's records also hold "handoff" and "context-stop", which
+// its session budgets caused; they still parse.
+type Ended = "reply" | "error" | "aborted";
 
-const ENDED: readonly Ended[] = [
-  "reply",
-  "handoff",
-  "context-stop",
-  "error",
-  "aborted",
-];
+const ENDED = ["reply", "error", "aborted", "handoff", "context-stop"] as const;
 
-// The job's identity and settings a record carries: `job` is its random id
-// and `jobStartedAt` its start, which its commits' Pipeline-Session trailers
+// The role a record is for: a model role, the merger (a merge job has no
+// session, only its job record), or a role of the installed version, whose
+// records the report still reads.
+const USAGE_ROLES = [
+  "author",
+  "implementor",
+  "reviewer",
+  "merger",
+  "triage",
+  "spec-writer",
+  "finalizer",
+] as const;
+
+type UsageRole = (typeof USAGE_ROLES)[number];
+
+// The installed version's stages, which its records name.
+const LEGACY_STAGES = [
+  "triage",
+  "spec",
+  "open-pr",
+  "fix",
+  "sync",
+  "checks",
+  "accept",
+  "security",
+  "publish",
+] as const;
+
+// The job's identity a record carries: `job` is its random id and
+// `jobStartedAt` its start, which its commits' Pipeline-Session trailers
 // name.
 interface UsageContext {
   repo: string;
   issue: number;
   job: string;
   jobStartedAt: string;
-  role: RoleName;
-  limits: ContextLimits;
+  role: UsageRole;
 }
 
 const COUNT = z.number().nonnegative();
 const NAMED = z.string().regex(NAME);
-const STAGE = z.enum([...STAGE_ORDER, "done"]);
+const STAGE = z.enum([...STAGES, ...LEGACY_STAGES, "done"]);
 const RELATIVE_PATH = z
   .string()
   .min(1)
@@ -67,7 +86,10 @@ const RELATIVE_PATH = z
   );
 // The cache writes that last an hour and the cost in US dollars are missing
 // from the records written before they were recorded, as are a record's
-// `jobStartedAt` and a session record's `key`.
+// `jobStartedAt` and a session record's `key`. The context thresholds
+// (`soft`, `hard`) and `steered` are only in the installed version's
+// records, whose session budgets set them; a job record's `issueTokens`
+// likewise.
 const TOKENS = z.strictObject({
   input: COUNT,
   output: COUNT,
@@ -82,7 +104,7 @@ const IDENTITY = {
   issue: z.number().int().positive(),
   job: z.uuid(),
   jobStartedAt: z.iso.datetime().optional(),
-  role: z.enum(ROLE_NAMES),
+  role: z.enum(USAGE_ROLES),
 };
 const SESSION_RECORD = z.strictObject({
   kind: z.literal("session"),
@@ -103,10 +125,10 @@ const SESSION_RECORD = z.strictObject({
     first: COUNT,
     peak: COUNT,
     atFinish: COUNT,
-    soft: COUNT,
-    hard: COUNT,
+    soft: COUNT.optional(),
+    hard: COUNT.optional(),
     window: COUNT.nullable(),
-    steered: z.boolean(),
+    steered: z.boolean().optional(),
   }),
   task: z.strictObject({ chars: COUNT, files: z.record(RELATIVE_PATH, COUNT) }),
   tools: z.record(NAMED, z.strictObject({ calls: COUNT, outputChars: COUNT })),
@@ -116,12 +138,15 @@ const JOB_RECORD = z.strictObject({
   kind: z.literal("job"),
   ...IDENTITY,
   stages: z.array(STAGE),
-  // A role run's end (runner.ts), or a sweep's outcome for its issue.
+  // How the job's stage ended (role-run.ts JobEnd), or the installed
+  // version's run end or sweep outcome.
   outcome: NAMED,
   seconds: COUNT,
   tokens: TOKENS,
-  issueTokens: COUNT,
+  issueTokens: COUNT.optional(),
 });
+const REPLY_NAME = z.string().regex(NAME).optional().catch(undefined);
+const REPLY_NAMES = z.looseObject({ outcome: REPLY_NAME, verdict: REPLY_NAME });
 const USAGE_RECORD = z.discriminatedUnion("kind", [SESSION_RECORD, JOB_RECORD]);
 
 type UsageRecord = z.infer<typeof USAGE_RECORD>;
@@ -154,30 +179,12 @@ function toolsOf(
   return Object.fromEntries(named);
 }
 
-// The reply's decision, verdict or status, when its value is one its
-// property's enum in `schema` lists.
-function replyOf(reply: unknown, schema: JsonSchema): string | null {
-  if (!isRecord(reply)) {
-    return null;
-  }
-  const { decision, verdict, status } = reply;
-  const { properties = {} } = schema;
-  const {
-    decision: decisionSchema,
-    verdict: verdictSchema,
-    status: statusSchema,
-  } = properties;
-  const fields: [unknown, JsonSchema | undefined][] = [
-    [decision, decisionSchema],
-    [verdict, verdictSchema],
-    [status, statusSchema],
-  ];
-  for (const [value, property] of fields) {
-    if (typeof value === "string" && property?.enum?.includes(value)) {
-      return value;
-    }
-  }
-  return null;
+// The reply's outcome or verdict, which every role's reply schema
+// (src/roles/replies.ts) makes one of a fixed set; null with neither.
+function replyOf(reply: unknown): string | null {
+  const { outcome = null, verdict = null } =
+    REPLY_NAMES.safeParse(reply).data ?? {};
+  return outcome ?? verdict;
 }
 
 // The `session` record of a finished session.
@@ -185,7 +192,7 @@ function usageRecord(
   launch: SessionEntry,
   context: UsageContext,
 ): Unchecked<SessionRecord> {
-  const { repo, issue, job, jobStartedAt, role, limits } = context;
+  const { repo, issue, job, jobStartedAt, role } = context;
   const { launch: used } = launch;
   let largestToolOutput: ToolOutput | null = null;
   if (used.largest !== null) {
@@ -208,7 +215,7 @@ function usageRecord(
     model: launch.model,
     attempt: launch.attempt,
     ended: launch.ended,
-    reply: replyOf(launch.reply, launch.schema),
+    reply: replyOf(launch.reply),
     seconds: used.seconds,
     turns: used.turns,
     tokens: used.tokens,
@@ -216,10 +223,7 @@ function usageRecord(
       first: used.first,
       peak: used.peak,
       atFinish: used.atFinish,
-      soft: limits.soft,
-      hard: limits.hard,
       window: null,
-      steered: used.steered,
     },
     task: { chars: launch.taskChars, files: {} },
     tools: toolsOf(used.tools),
@@ -233,7 +237,7 @@ function jobRecord(
   context: UsageContext,
 ): Unchecked<z.infer<typeof JOB_RECORD>> {
   const { repo, issue, jobStartedAt, role } = context;
-  const { at, outcome, seconds, tokens, issueTokens } = job;
+  const { at, outcome, seconds, tokens } = job;
   const stages = [...job.stages];
   return {
     kind: "job",
@@ -247,7 +251,6 @@ function jobRecord(
     outcome,
     seconds,
     tokens,
-    issueTokens,
   };
 }
 
@@ -276,5 +279,5 @@ function parseUsageLine(line: string): UsageRecord | undefined {
   return parsed.data;
 }
 
-export type { Ended, UsageContext, UsageRecord };
-export { jobRecord, parseUsageLine, serializeUsage, usageRecord };
+export type { Ended, UsageContext, UsageRecord, UsageRole };
+export { jobRecord, parseUsageLine, serializeUsage, USAGE_ROLES, usageRecord };

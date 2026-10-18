@@ -66,7 +66,10 @@ function lineReply(line: string): OpsReply | null {
 // opens like one but doesn't parse.
 function replyOf(raw: OpsRaw): OpsReply {
   if (!raw.ok) {
-    return { ok: false, error: `ops child failed: ${raw.error || "no detail"}` };
+    return {
+      ok: false,
+      error: `ops child failed: ${raw.error || "no detail"}`,
+    };
   }
   const lines = raw.output.trim().split("\n").reverse();
   const object = lines
