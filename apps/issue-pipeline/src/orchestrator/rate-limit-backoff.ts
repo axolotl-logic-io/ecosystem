@@ -1,14 +1,14 @@
 // The orchestrator's backoff after a transient provider error, a model
 // provider's rate limit or a transport error reaching it
-// (`rate-limit-defers`): once a stage job ends with its issue deferred on one
-// (job.json's outcome `rateLimited`), the tick starts no stage
-// job, and admits no restart, for rateLimitBackoffMinutes, logging each as
-// held with reason `rate-limited`. Each rate-limited end after a backoff has
+// (`rate-limit-defers`): once a stage job of this pipeline ends with its
+// issue deferred on one (job.json's outcome `rateLimited`), the tick starts
+// no stage job, and admits no restart, for rateLimitBackoffMinutes, logging
+// each as held with reason `rate-limited`. A legacy job.json never counts. Each rate-limited end after a backoff has
 // passed doubles the next, up to MAX_BACKOFF_MINUTES (or the configured
 // minutes, if more); a job that finishes without one after a backoff has
-// passed starts the next from the configured minutes again. Every stage but
-// open-pr can launch a session (merge and publish resolve wiki conflicts), so
-// the backoff holds every stage. `runs/<slug>/backoff.json` keeps it between
+// passed starts the next from the configured minutes again. The backoff
+// holds every stage, merge included, so a model or GitHub outage isn't hit
+// again by the next job. `runs/<slug>/backoff.json` keeps it between
 // ticks; this module alone knows the file, a missing or malformed one reads
 // as no backoff, and each save rewrites it atomically.
 
@@ -17,9 +17,8 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { Config } from "../config.ts";
-import type { StatusFile } from "../job/status.ts";
 import { ROOT } from "../pipeline-root.ts";
-import type { Decision, StartGate } from "./schedule.ts";
+import type { JobEnd } from "./queue.ts";
 
 const BACKOFF_FILE = "backoff.json";
 const JSON_INDENT = 2;
@@ -48,7 +47,7 @@ type Backoff = z.infer<typeof BACKOFF>;
 
 // A finished job's end, and whether its issue deferred on a transient
 // provider error.
-interface JobEnd {
+interface FinishedEnd {
   at: number;
   rateLimited: boolean;
 }
@@ -79,15 +78,13 @@ function saveBackoff(cfg: Config, backoff: Backoff): void {
 }
 
 // The finished jobs' ends, earliest first.
-function endsOf(jobs: readonly StatusFile[]): JobEnd[] {
-  return jobs
-    .flatMap(({ outcome, endedAt }): JobEnd[] => {
-      if (outcome?.kind !== "finished" || endedAt === undefined) {
+function endsOf(ends: readonly JobEnd[]): FinishedEnd[] {
+  return ends
+    .flatMap((end): FinishedEnd[] => {
+      if (end.kind !== "finished") {
         return [];
       }
-      return [
-        { at: Date.parse(endedAt), rateLimited: outcome.rateLimited === true },
-      ];
+      return [{ at: Date.parse(end.at), rateLimited: end.rateLimited }];
     })
     .sort((a, b) => a.at - b.at);
 }
@@ -100,7 +97,11 @@ function timeOf(at: string | null): number {
 }
 
 // The backoff after `end`, from `backoff` and the configured `minutes`.
-function backoffAfter(backoff: Backoff, end: JobEnd, minutes: number): Backoff {
+function backoffAfter(
+  backoff: Backoff,
+  end: FinishedEnd,
+  minutes: number,
+): Backoff {
   const until = timeOf(backoff.until);
   if (!end.rateLimited) {
     if (end.at > until) {
@@ -127,44 +128,24 @@ function backoffAfter(backoff: Backoff, end: JobEnd, minutes: number): Backoff {
   return { lastAt, until: ends, minutes: next };
 }
 
-// What the tick does while it backs off: the start gate that holds every
-// restart, and the decisions with every start held.
-interface RateLimitBackoff {
-  gate: (admit: StartGate) => StartGate;
-  hold: (decisions: readonly Decision[]) => Decision[];
-}
-
-// Reads the backoff, adds the ends of `jobs`, saves it and returns what the
-// tick does with it at `now`.
+// Reads the backoff, adds the ends of this pipeline's jobs in `ends`, saves
+// it and returns the reason every start and restart is held for at `now`,
+// or null when no backoff runs.
 function openBackoff(
   cfg: Config,
-  jobs: readonly StatusFile[],
+  ends: readonly JobEnd[],
   now: Date,
-): RateLimitBackoff {
+): typeof HELD_REASON | null {
   const { rateLimitBackoffMinutes } = BACKOFF_SETTINGS.parse(cfg);
-  const backoff = endsOf(jobs).reduce(
+  const backoff = endsOf(ends).reduce(
     (current, end) => backoffAfter(current, end, rateLimitBackoffMinutes),
     readBackoff(cfg),
   );
   saveBackoff(cfg, backoff);
   if (now.getTime() >= timeOf(backoff.until)) {
-    return {
-      gate: (admit: StartGate): StartGate => admit,
-      hold: (decisions: readonly Decision[]): Decision[] => [...decisions],
-    };
+    return null;
   }
-  return {
-    gate: (): StartGate => (): string => HELD_REASON,
-    hold: (decisions: readonly Decision[]): Decision[] =>
-      decisions.map((decision): Decision => {
-        if (decision.action !== "started") {
-          return decision;
-        }
-        const { at, issue, stage } = decision;
-        return { action: "held", at, issue, stage, reason: HELD_REASON };
-      }),
-  };
+  return HELD_REASON;
 }
 
-export type { RateLimitBackoff };
 export { openBackoff };

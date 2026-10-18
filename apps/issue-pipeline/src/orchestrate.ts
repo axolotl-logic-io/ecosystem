@@ -1,24 +1,17 @@
 #!/usr/bin/env node
-// The orchestrator (#234): a long-lived process that starts stage jobs as
-// the open issues need them and as their files allow.
+// The orchestrator: a long-lived process, the only one that claims issues for
+// its repo, that starts stage jobs (author, implement, review, merge) as the
+// open issues need them.
 //
-//   node orchestrate.mjs --config <path> [--once] [--roles <role,…>]
-//                        [--print-roles]
-//
-// It runs only the roles --roles names, else the config's orchestratorRoles,
-// else all five (#417), and logs them once at its start, as an
-// `action: "roles"` line; an issue whose next stage belongs to a role that
-// isn't running is held `role-off:<role>`. With --print-roles it prints each
-// stage's role and the roles chosen, then exits 0 without a tick.
+//   node orchestrate.mjs --config <path> [--once]
 //
 // Each tick it reads the queue, starts the jobs the scheduler chose as
 // detached `job.mjs` processes (src/orchestrator/tick.ts) and logs every
 // decision to runs/<slug>/orchestrator.log. Without --once it ticks every
 // orchestratorIntervalSeconds until SIGTERM or SIGINT, and a tick that throws
 // is reported on stderr and retried at the next interval. With --once it runs
-// one tick and exits 0, or 1 when the tick throws. Bad arguments, a config
-// loadConfig refuses or an unknown or empty role name exit 1, naming the
-// problem, before any tick.
+// one tick and exits 0, or 1 when the tick throws. Bad arguments or a config
+// loadConfig refuses exit 1, naming the problem, before any tick.
 
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -27,23 +20,14 @@ import process from "node:process";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { loadConfig } from "./config.ts";
-import { steerJob } from "./job/control-protocol.ts";
-import type { ProcessExit } from "./job/raw-results.ts";
-import type { OrchestratorArgs } from "./orchestrator/args.ts";
 import { orchestratorArgsOf } from "./orchestrator/args.ts";
-import type { AgentRunOptions } from "./orchestrator/escalation-consult.ts";
-import { logRoles } from "./orchestrator/log.ts";
-import { roleOfStage, rolesOf } from "./orchestrator/roles.ts";
 import type { TickDeps } from "./orchestrator/tick.ts";
 import { tick } from "./orchestrator/tick.ts";
 import { ROOT } from "./pipeline-root.ts";
-import type { RoleName } from "./roles/registry.ts";
-import { STAGE_ORDER } from "./workflow/sweep-config.ts";
 
 const MS_PER_SECOND = 1000;
-// The escalation agent's output can be long: pi's JSON mode prints every
-// event of its session.
-const AGENT_OUTPUT_BYTES = 67_108_864; // 64 MiB
+// How a stage job's command line names its entry.
+const JOB_ENTRY = "job.mjs";
 const INTERVAL = z.looseObject({
   orchestratorIntervalSeconds: z.number().positive(),
 });
@@ -61,15 +45,15 @@ function spawnJob(argv: readonly string[], log: string): number {
   try {
     const child = spawn(
       process.execPath,
-      [path.join(ROOT, "job.mjs"), ...argv],
+      [path.join(ROOT, JOB_ENTRY), ...argv],
       { detached: true, stdio: ["ignore", out, out] },
     );
     child.on("error", (error: Error): void => {
-      process.stderr.write(`orchestrate: job.mjs: ${error.message}\n`);
+      process.stderr.write(`orchestrate: ${JOB_ENTRY}: ${error.message}\n`);
     });
     child.unref();
     if (child.pid === undefined) {
-      throw new Error(`could not start job.mjs ${argv.join(" ")}`);
+      throw new Error(`could not start ${JOB_ENTRY} ${argv.join(" ")}`);
     }
     return child.pid;
   } finally {
@@ -77,52 +61,27 @@ function spawnJob(argv: readonly string[], log: string): number {
   }
 }
 
-// Steers a silent session; a steer pi refuses is reported on stderr.
-function steerSession(socket: string, key: string, message: string): void {
-  steerJob(socket, key, message).then(
-    (error: string | null): void => {
-      if (error !== null) {
-        process.stderr.write(`orchestrate: steer ${key}: ${error}\n`);
-      }
-    },
-    (error: unknown): void => {
-      process.stderr.write(`orchestrate: steer ${key}: ${messageOf(error)}\n`);
-    },
-  );
-}
-
-// Asks job `pid` to stop; one already gone is left alone.
-function terminateJob(pid: number): void {
+// True while process `pid` runs a stage job: signal 0 checks it exists
+// without sending, and its command line must name job.mjs, so a pid the
+// system reused for another program doesn't hold or count an issue. When
+// `ps` can't say, an existing process counts.
+function isStageJob(pid: number): boolean {
   try {
-    process.kill(pid, "SIGTERM");
+    process.kill(pid, 0);
   } catch (error: unknown) {
-    process.stderr.write(`orchestrate: SIGTERM ${pid}: ${messageOf(error)}\n`);
+    if (
+      !(error instanceof Error && "code" in error && error.code === "EPERM")
+    ) {
+      return false;
+    }
   }
-}
-
-// Runs the escalation agent's pi to its end or its timeout (#282).
-function runAgent(
-  argv: readonly string[],
-  options: AgentRunOptions,
-): ProcessExit {
-  const result = spawnSync("pi", argv, {
+  const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], {
     encoding: "utf8",
-    timeout: options.timeoutMs,
-    cwd: options.cwd,
-    env: options.env,
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: AGENT_OUTPUT_BYTES,
   });
-  const timedOut =
-    result.error !== undefined &&
-    "code" in result.error &&
-    result.error.code === "ETIMEDOUT";
-  return {
-    code: result.status,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    timedOut,
-  };
+  if (ps.status !== 0 || ps.error !== undefined) {
+    return true;
+  }
+  return ps.stdout.includes(JOB_ENTRY);
 }
 
 // Runs one tick; false when it threw, which it reports on stderr.
@@ -153,38 +112,21 @@ function loop(cfg: Config, deps: TickDeps): void {
   run();
 }
 
-// The stage-to-role table, a line `<stage>\t<role>` per stage, then the
-// roles chosen, as --print-roles prints them.
-function rolesText(roles: readonly RoleName[]): string {
-  const table = STAGE_ORDER.map((stage) => `${stage}\t${roleOfStage(stage)}`);
-  return `${[...table, `roles: ${roles.join(",")}`].join("\n")}\n`;
-}
-
 function main(argv: readonly string[]): number {
   let cfg: Config;
-  let args: OrchestratorArgs;
-  let roles: RoleName[];
+  let args: ReturnType<typeof orchestratorArgsOf>;
   try {
     args = orchestratorArgsOf(argv);
     cfg = loadConfig(args.config);
-    roles = rolesOf(args, cfg);
   } catch (error: unknown) {
     process.stderr.write(`orchestrate: ${messageOf(error)}\n`);
     return 1;
   }
-  if (args.printRoles === true) {
-    process.stdout.write(rolesText(roles));
-    return 0;
-  }
-  logRoles(cfg, new Date().toISOString(), roles);
   const deps: TickDeps = {
     configPath: args.config,
     now: () => new Date(),
     spawn: spawnJob,
-    steer: steerSession,
-    terminate: terminateJob,
-    runAgent,
-    roles,
+    alive: isStageJob,
   };
   if (args.once === true) {
     return Number(!tickOnce(cfg, deps));

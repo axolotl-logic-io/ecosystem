@@ -3,37 +3,41 @@
 // `claimError`), the issue is stopped with that error, at the stage the jobs
 // ran. A job that ends with a different error starts the count again at 1,
 // and one that ends any other way clears it. While the issue has a stop
-// label, and right after this rule's stop, the count is 0, and the job.json
-// that was there is not counted again, so a lifted issue is tried anew. The
-// rule counts a lifted issue saved at `stopped` too, unlike the watchdog's
-// other rules: its failing claims never get to save another state. Pure: the
-// tick carries out its actions and keeps the memory (watchdog-memory.ts).
+// label, and right after this rule's stop, the count is 0, and the job that
+// was there is not counted again, so a lifted issue is tried anew. Only jobs
+// of this pipeline count: a legacy job.json is never an IssueJob. Pure: the
+// tick carries out its stops and keeps the memory (watchdog-memory.ts).
 
-import type { WatchAction, WatchedJob } from "./watchdog.ts";
-import type { ClaimFailure, WatchMemory } from "./watchdog-memory.ts";
+import type { Stage } from "../stages.ts";
+import { isStopLabel } from "../stops.ts";
+import type { IssueJob, SnapshotIssue } from "./queue.ts";
+import type { ClaimFailure } from "./watchdog-memory.ts";
 
-interface ClaimFailureRun {
-  claimFailureStreak: number;
-  now: Date;
+// A stop this rule takes: the issue, the stage its jobs ran, and the stop
+// comment's reason.
+interface ClaimStop {
+  issue: number;
+  stage: Stage;
+  detail: string;
 }
 
-// The claim error job.json records for `job`, or null for any other end.
-function claimErrorOf(job: WatchedJob): string | null {
-  const { outcome } = job.status;
-  if (outcome?.kind !== "finished" || outcome.claimError === undefined) {
+// The claim error the ended `job` records, or null for any other end.
+function claimErrorOf(job: IssueJob): string | null {
+  const { end } = job;
+  if (end?.kind !== "finished" || end.claimError === "") {
     return null;
   }
-  return outcome.claimError || null;
+  return end.claimError;
 }
 
 // The streak ended job `job` leaves after `before`, or null when it ends one.
 // A job counted already leaves it as it is.
 function nextStreak(
-  job: WatchedJob,
+  job: IssueJob,
   before: ClaimFailure | undefined,
   stopLabelled: boolean,
 ): ClaimFailure | null {
-  const { startedAt } = job.status;
+  const { startedAt } = job;
   if (stopLabelled) {
     return { error: before?.error ?? "", count: 0, job: startedAt };
   }
@@ -51,43 +55,45 @@ function nextStreak(
   return { error, count, job: startedAt };
 }
 
-// The stops the failing-claim rule takes on `jobs` as of `run.now`, given
-// the issues that carry a stop label, and its memory after. The memory keeps
-// only the streaks of issues with a watched job.
-function claimFailureActions(
-  jobs: readonly WatchedJob[],
-  stopLabelled: ReadonlySet<number>,
-  memory: WatchMemory,
-  run: ClaimFailureRun,
-): { actions: WatchAction[]; memory: WatchMemory } {
-  const streaks: Record<string, ClaimFailure> = {};
-  const actions: WatchAction[] = [];
-  const at = run.now.toISOString();
-  for (const job of jobs) {
-    const { issue, stage } = job.status;
-    const key = String(issue);
-    const before = memory.claimFailures[key];
+// The stops the failing-claim rule takes on the jobs of `issues`, and its
+// memory after: only the streaks of issues with a job.
+function claimFailureStops(
+  issues: readonly SnapshotIssue[],
+  streaks: Readonly<Record<string, ClaimFailure>>,
+  claimFailureStreak: number,
+): { stops: ClaimStop[]; streaks: Record<string, ClaimFailure> } {
+  const kept: Record<string, ClaimFailure> = {};
+  const stops: ClaimStop[] = [];
+  const watched = issues.flatMap(({ number, job, labels }) => {
+    if (job === null) {
+      return [];
+    }
+    return [{ number, job, labels }];
+  });
+  for (const { number, job, labels } of watched) {
+    const key = String(number);
+    const before = streaks[key];
     let streak = before ?? null;
-    if (!job.live && job.status.outcome !== null) {
-      streak = nextStreak(job, before, stopLabelled.has(issue));
+    if (!job.live && job.end !== null) {
+      streak = nextStreak(job, before, labels.some(isStopLabel));
     }
     // Only a job counted this tick stops the issue.
     if (
       streak !== null &&
       streak !== before &&
-      streak.count >= run.claimFailureStreak
+      streak.count >= claimFailureStreak
     ) {
       const { count, error } = streak;
       const detail = `claim failed ${count} times in a row: ${error}`;
-      const reason = "claim-failed";
-      actions.push({ at, issue, stage, action: "stopped", reason, detail });
+      stops.push({ issue: number, stage: job.stage, detail });
       streak = { ...streak, count: 0 };
     }
     if (streak !== null) {
-      streaks[key] = streak;
+      kept[key] = streak;
     }
   }
-  return { actions, memory: { ...memory, claimFailures: streaks } };
+  return { stops, streaks: kept };
 }
 
-export { claimFailureActions };
+export type { ClaimStop };
+export { claimFailureStops };

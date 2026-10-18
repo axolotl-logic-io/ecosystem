@@ -1,39 +1,79 @@
-// How the orchestrator's tick (tick.ts) starts a stage job: the job's argv,
-// with the random id it makes for the job (`--job-id`), which its usage
-// records, context log and pushes carry too, the detached process, the
-// ledger's note of it, and the start's log line, which names the job's pid
-// and id. A start that lifts a stopped issue logs a `lifted` line before it.
+// How the orchestrator's tick starts a stage job: the job's argv, with the
+// random id it makes for the job (`--job-id`), which its usage records,
+// context log and pushes carry too; the detached process; and the record of
+// each start, `runs/<slug>/starts.json`, which keeps a spawned job live
+// until it writes its job.json. Every job claims in the orchestrator's lane.
+// A restart is a fresh job at the stage the dead job was at: no job is
+// given `--resume`, and none starts on another issue's branch. A merge job
+// gets the merge queue (`--merge-queue`), which its merge-order check reads.
+// This module alone knows the start records' file; a missing or malformed
+// one reads as no starts, and each save rewrites it atomically.
 
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { roleOf } from "../roles/registry.ts";
-import type { State } from "../state.ts";
-import type { Ledger } from "./ledger.ts";
-import type { LogEntry } from "./log.ts";
+import { ROOT } from "../pipeline-root.ts";
+import { STAGES } from "../stages.ts";
+import { ORCHESTRATOR_LANE } from "./issue-plan.ts";
 import type { Decision } from "./schedule.ts";
-import { LANE } from "./snapshot.ts";
 
-interface Start {
-  issue: number;
-  stage: string;
-  mergeQueue: readonly number[] | null;
-  stackOn: number | null;
-}
+const STARTS_FILE = "starts.json";
+const JSON_INDENT = 2;
+// The latest start of each issue's job: its stage, process, id and time.
+const START_RECORD = z.object({
+  issue: z.number(),
+  stage: z.enum(STAGES),
+  pid: z.number(),
+  job: z.string(),
+  at: z.string(),
+});
+const START_RECORDS = z.array(START_RECORD);
 
-// A started job: its process and its id.
-interface StartedJob {
-  pid: number;
-  job: string;
-}
+type StartRecord = z.infer<typeof START_RECORD>;
+type Start = Extract<Decision, { action: "started" }>;
 
 // What starting a job takes: the repo config's path, as the jobs are given
-// it, the spawn of a detached job.mjs, and the ledger the start is noted in.
+// it, and the spawn of a detached job.mjs, which gives its pid.
 interface Starter {
   cfg: Config;
   configPath: string;
   spawn: (argv: readonly string[], log: string) => number;
-  ledger: Ledger;
+}
+
+function startsFileOf(cfg: Config): string {
+  return path.join(ROOT, "runs", cfg.slug, STARTS_FILE);
+}
+
+function readStarts(cfg: Config): StartRecord[] {
+  try {
+    const text = fs.readFileSync(startsFileOf(cfg), "utf8");
+    const parsed = START_RECORDS.safeParse(JSON.parse(text));
+    if (parsed.success) {
+      return parsed.data;
+    }
+  } catch {
+    // A missing or unreadable file holds no starts.
+  }
+  return [];
+}
+
+// Saves the latest start of each issue in `open`.
+function saveStarts(
+  cfg: Config,
+  starts: readonly StartRecord[],
+  open: ReadonlySet<number>,
+): void {
+  const latest = new Map(starts.map((start) => [start.issue, start]));
+  const kept = [...latest.values()].filter(({ issue }) => open.has(issue));
+  const file = startsFileOf(cfg);
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(temp, `${JSON.stringify(kept, null, JSON_INDENT)}\n`);
+  fs.renameSync(temp, file);
 }
 
 function jobArgv(configPath: string, start: Start, job: string): string[] {
@@ -45,60 +85,25 @@ function jobArgv(configPath: string, start: Start, job: string): string[] {
     "--stage",
     start.stage,
     "--lane",
-    LANE,
+    ORCHESTRATOR_LANE,
     "--job-id",
     job,
   ];
   if (start.mergeQueue !== null) {
     argv.push("--merge-queue", start.mergeQueue.join(","));
   }
-  if (start.stackOn !== null) {
-    argv.push("--stack-on", String(start.stackOn));
-  }
   return argv;
 }
 
-function startJob(
-  starter: Starter,
-  start: Start & { at: string; resume: boolean },
-): StartedJob {
+// Spawns the job `start` decided and gives its start record.
+function startJob(starter: Starter, start: Start): StartRecord {
   const job = randomUUID();
   const argv = jobArgv(starter.configPath, start, job);
-  // A stage that runs a role refuses --resume: it restarts from its state.
-  if (start.resume && roleOf(start.stage) === undefined) {
-    argv.push("--resume");
-  }
   const { cfg } = starter;
   const pid = starter.spawn(argv, paths.jobLog(cfg, start.issue));
   const { issue, stage, at } = start;
-  starter.ledger.launched({ issue, stage, pid, at });
-  return { pid, job };
+  return { issue, stage, pid, job, at };
 }
 
-// The log lines of the scheduler's `decisions`, those it started with their
-// job's pid and id from `started`, and each start of a lifted issue after a
-// `lifted` line at its stopped stage, its reason the stop's code as the
-// issue's saved state in `states` names it ("stopped" when it names none).
-function decisionLines(
-  decisions: readonly Decision[],
-  started: ReadonlyMap<Decision, StartedJob>,
-  states: ReadonlyMap<number, State | null>,
-): LogEntry[] {
-  return decisions.flatMap((decision): LogEntry[] => {
-    const { at, issue, stage, action, reason } = decision;
-    const line: LogEntry = { at, issue, stage, action, reason };
-    const job = started.get(decision);
-    if (job === undefined) {
-      return [line];
-    }
-    const start = { ...line, ...job };
-    if (reason !== "lifted") {
-      return [start];
-    }
-    const stop = states.get(issue)?.stopCode ?? "stopped";
-    return [{ at, issue, stage, action: "lifted", reason: stop }, start];
-  });
-}
-
-export type { Start, StartedJob, Starter };
-export { decisionLines, startJob };
+export type { Starter, StartRecord };
+export { readStarts, saveStarts, startJob };

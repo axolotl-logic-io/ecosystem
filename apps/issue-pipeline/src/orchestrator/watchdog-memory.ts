@@ -1,8 +1,11 @@
-// The watchdog's memory between ticks (#235), `runs/<slug>/watchdog.json`:
-// the restarts per issue and stage, the steers sent to silent sessions and
-// to failing ones, the jobs stopped for silence, the jobs stopped for their
-// budget, what is escalated, and each issue's streak of failed claims. This module alone knows the file; a missing
-// or malformed one reads as empty, and each save rewrites it atomically.
+// What the orchestrator remembers between ticks,
+// `runs/<slug>/orchestrator-memory.json`: the watchdog's restarts per issue
+// and stage, each issue's streak of failed claims, and the issue holding the
+// merge window. It is a cache: GitHub stays the source of truth, and losing
+// the file loses only these counts and the window's holder. The installed
+// version's `watchdog.json` is not read, so its counts never carry over.
+// This module alone knows the file; a missing or malformed one reads as
+// empty, and each save rewrites it atomically.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,16 +14,8 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { ROOT } from "../pipeline-root.ts";
 
-const MEMORY_FILE = "watchdog.json";
+const MEMORY_FILE = "orchestrator-memory.json";
 const JSON_INDENT = 2;
-// A job the budget rule sent SIGTERM (watchdog-budget.ts): the launch past
-// its budget, its context size and budget, and whether the issue is stopped.
-const OVER_BUDGET = z.object({
-  key: z.string(),
-  contextTokens: z.number(),
-  tokenBudget: z.number(),
-  stopped: z.boolean(),
-});
 // An issue's streak of jobs whose claim failed with one error
 // (claim-failures.ts): the error, how many in a row, and the startedAt of the
 // last job counted.
@@ -30,33 +25,28 @@ const CLAIM_FAILURE = z.object({
   job: z.string(),
 });
 const MEMORY = z.object({
-  // Restarts so far, by `<issue> <stage>`.
-  resumes: z.record(z.string(), z.number()),
-  // When each silent session was steered, by `<job startedAt> <launch key>`.
-  steers: z.record(z.string(), z.string()),
-  // The jobs it sent SIGTERM for silence, as `<issue> <job startedAt>`.
-  killed: z.array(z.string()),
-  // The failure count each streak was steered at, by `<job startedAt>
-  // <launch key>`.
-  failureSteers: z.record(z.string(), z.number()).default({}),
-  // The jobs it sent SIGTERM for their budget, by `<issue> <job startedAt>`.
-  overBudget: z.record(z.string(), OVER_BUDGET).default({}),
-  // What is escalated (escalate.ts), as `<issue> <label>`.
-  escalated: z.array(z.string()).default([]),
+  // Restarts so far, by `<issue> <stage>` (watchdog.ts).
+  resumes: z.record(z.string(), z.number()).catch({}),
   // The streaks of failed claims, by issue number.
-  claimFailures: z.record(z.string(), CLAIM_FAILURE).default({}),
+  claimFailures: z.record(z.string(), CLAIM_FAILURE).catch({}),
+  // The issue holding the merge window (schedule.ts), or null.
+  mergeWindow: z.number().int().positive().nullable().catch(null),
 });
 
-// What the watchdog remembers between ticks.
-type WatchMemory = z.infer<typeof MEMORY>;
-type OverBudget = z.infer<typeof OVER_BUDGET>;
+type OrchestratorMemory = z.infer<typeof MEMORY>;
 type ClaimFailure = z.infer<typeof CLAIM_FAILURE>;
+
+const EMPTY: OrchestratorMemory = {
+  resumes: {},
+  claimFailures: {},
+  mergeWindow: null,
+};
 
 function memoryFileOf(cfg: Config): string {
   return path.join(ROOT, "runs", cfg.slug, MEMORY_FILE);
 }
 
-function readWatchMemory(cfg: Config): WatchMemory {
+function readMemory(cfg: Config): OrchestratorMemory {
   try {
     const text = fs.readFileSync(memoryFileOf(cfg), "utf8");
     const parsed = MEMORY.safeParse(JSON.parse(text));
@@ -66,18 +56,10 @@ function readWatchMemory(cfg: Config): WatchMemory {
   } catch {
     // A missing or unreadable file starts with nothing remembered.
   }
-  return {
-    resumes: {},
-    steers: {},
-    killed: [],
-    failureSteers: {},
-    overBudget: {},
-    escalated: [],
-    claimFailures: {},
-  };
+  return { ...EMPTY };
 }
 
-function saveWatchMemory(cfg: Config, memory: WatchMemory): void {
+function saveMemory(cfg: Config, memory: OrchestratorMemory): void {
   const file = memoryFileOf(cfg);
   const temp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -85,5 +67,5 @@ function saveWatchMemory(cfg: Config, memory: WatchMemory): void {
   fs.renameSync(temp, file);
 }
 
-export type { ClaimFailure, OverBudget, WatchMemory };
-export { readWatchMemory, saveWatchMemory };
+export type { ClaimFailure, OrchestratorMemory };
+export { readMemory, saveMemory };

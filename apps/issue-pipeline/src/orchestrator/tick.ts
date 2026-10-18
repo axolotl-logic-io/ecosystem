@@ -1,63 +1,53 @@
-// One orchestrator tick (#234): read the queue, add what the jobs spent to
-// the ledger, note a rate-limited job's backoff, let the watchdog act on the
-// jobs, stop an issue whose claim keeps failing (claim-failures.ts, #430),
-// write the escalations (#235), ask the escalation agent about them
-// (#282), decide with the scheduler, hold every start during a backoff, start
-// the jobs it chose (start-job.ts), log every action and decision, then close
-// the split parents that are done (#378). Starts and restarts of a stage whose
-// role isn't running are held (#417); every other action runs for every job.
-// The processes, the steers, the agent's run, the roles and the clock come
+// One orchestrator tick: read the queue (snapshot.ts), stop each issue whose
+// claim keeps failing (claim-failures.ts), note a backoff after a rate limit
+// or transport error (rate-limit-backoff.ts), let the scheduler decide
+// (schedule.ts), carry out its decisions, keep what it remembers and log
+// every decision, then close the split parents that are done (parents.ts).
+// A start on new trusted input first saves the issue at `author`, from its
+// state read again just then, and is held instead when that state changed
+// or another claimant's lease went live. The processes and the clock come
 // from the caller.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { stop } from "../ops/stop.ts";
-import type { RoleName } from "../roles/registry.ts";
-import type { State } from "../state.ts";
-import { claimFailureActions } from "./claim-failures.ts";
-import type { AdviceContext, Resumed } from "./escalation-agent.ts";
-import { escalateOpenIssues } from "./escalation-agent.ts";
-import type { RunAgent } from "./escalation-consult.ts";
-import type { Ledger } from "./ledger.ts";
-import { openLedger } from "./ledger.ts";
+import type { Stage } from "../stages.ts";
+import { STAGES } from "../stages.ts";
+import type { IssueState } from "../state.ts";
+import { newIssueState, readState, writeState } from "../state.ts";
+import { claimFailureStops } from "./claim-failures.ts";
+import { reauthoredState } from "./issue-plan.ts";
 import type { LogEntry } from "./log.ts";
 import { logDecisions } from "./log.ts";
 import type { ParentOutcome } from "./parents.ts";
-import { closeParents } from "./parents.ts";
-import type { SnapshotIssue } from "./queue.ts";
+import { closeParents, parentLines } from "./parents.ts";
+import type { ScheduleSettings } from "./queue.ts";
 import { openBackoff } from "./rate-limit-backoff.ts";
-import { rolesOf } from "./roles.ts";
-import type { Decision, StartGate } from "./schedule.ts";
-import { schedule, startGate } from "./schedule.ts";
+import type { Decision } from "./schedule.ts";
+import { schedule } from "./schedule.ts";
+import type { Queue } from "./snapshot.ts";
 import { readQueue } from "./snapshot.ts";
-import type { StartedJob } from "./start-job.ts";
-import { decisionLines, startJob } from "./start-job.ts";
-import type { WatchAction, WatchedJob } from "./watchdog.ts";
-import { watch } from "./watchdog.ts";
-import type { WatchMemory } from "./watchdog-memory.ts";
-import { readWatchMemory } from "./watchdog-memory.ts";
+import type { StartRecord } from "./start-job.ts";
+import { readStarts, saveStarts, startJob } from "./start-job.ts";
+import { readMemory, saveMemory } from "./watchdog-memory.ts";
 
-// The config keys only the orchestrator reads; loadConfig applied their
-// defaults.
-const ORCHESTRATOR_SETTINGS = z.looseObject({
+const MS_PER_HOUR = 3_600_000;
+const DEFAULT_MAX_RESUMES = 2;
+const DEFAULT_CLAIM_FAILURE_STREAK = 3;
+// The config keys only the orchestrator reads; loadConfig applied the
+// defaults of those it knows.
+const TICK_SETTINGS = z.looseObject({
   maxJobs: z.number().int().positive(),
   stageCaps: z.record(z.string(), z.number().int().nonnegative()),
-  // An optional throttle; null or 0 means no hourly limit.
-  tokensPerHour: z.number().nonnegative().nullable(),
-});
-// The watchdog's keys (#235) and their defaults, kept with the one module
-// that reads them, as config.ts is at its line limit.
-const DEFAULT_MAX_RESUMES = 2;
-const DEFAULT_SILENT_MINUTES = 30;
-const DEFAULT_FAILURE_STREAK = 3;
-const DEFAULT_CLAIM_FAILURE_STREAK = 3;
-// How many in a row make a streak.
-const STREAK = z.number().int().positive();
-const WATCH_SETTINGS = z.looseObject({
   maxResumes: z.number().int().nonnegative().default(DEFAULT_MAX_RESUMES),
-  silentMinutes: z.number().positive().default(DEFAULT_SILENT_MINUTES),
-  failureStreak: STREAK.default(DEFAULT_FAILURE_STREAK),
-  claimFailureStreak: STREAK.default(DEFAULT_CLAIM_FAILURE_STREAK),
+  claimFailureStreak: z
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_CLAIM_FAILURE_STREAK),
+  skipLabels: z.array(z.string()).nullish(),
+  takeNewWork: z.unknown().optional(),
+  leaseHours: z.number().positive(),
 });
 
 interface TickDeps {
@@ -67,231 +57,176 @@ interface TickDeps {
   // Starts a detached job.mjs with `argv`, its stdout and stderr appended to
   // `log`, and returns its pid.
   spawn: (argv: readonly string[], log: string) => number;
-  // Sends `message` to session `key` of the job listening on `socket`.
-  steer: (socket: string, key: string, message: string) => void;
-  // Sends SIGTERM to job process `pid`.
-  terminate: (pid: number) => void;
-  // Runs the escalation agent's `pi` to its end or its timeout.
-  runAgent: RunAgent;
-  // The pipeline roles to run (#417); unset, the config's orchestratorRoles,
-  // else all of them.
-  roles?: readonly RoleName[];
+  // True while `pid` is a running stage job.
+  alive: (pid: number) => boolean;
 }
 
-// What a tick acts with: the config, the caller's processes and the ledger.
-interface TickRun {
-  cfg: Config;
-  deps: TickDeps;
-  ledger: Ledger;
-}
-
-// Starts a job for `start` with the tick's processes and ledger.
-function startOf(
-  { cfg, deps, ledger }: TickRun,
-  start: Parameters<typeof startJob>[1],
-): StartedJob {
-  const { configPath, spawn } = deps;
-  return startJob({ cfg, configPath, spawn, ledger }, start);
-}
-
-// The stop code and the comment's reason for a watchdog stop.
-function stopOf(action: WatchAction & { action: "stopped" }): {
-  code: "job" | "budget" | "error";
-  reason: string;
-} {
-  switch (action.reason) {
-    case "max-resumes":
-      return {
-        code: "job",
-        reason: `the stage job kept dying: its ${action.stage} job died with no outcome after the most restarts allowed`,
-      };
-    case "budget":
-      return { code: "budget", reason: action.detail };
-    case "claim-failed":
-      return { code: "error", reason: action.detail };
-    default: {
-      const unknown: never = action;
-      throw new Error(`unknown watchdog stop ${JSON.stringify(unknown)}`);
-    }
-  }
-}
-
-// Carries out one watchdog action, and notes its effect on `issue`: a
-// restarted job is live, a stopped issue is stopped. A held restart does
-// nothing; the tick leaves its issue to a later tick. Gives the restarted
-// job's pid and id, or null for any other action.
-function act(
-  run: TickRun,
-  action: WatchAction,
-  issue: { row: SnapshotIssue | undefined; state: State | null },
-): StartedJob | null {
-  switch (action.action) {
-    case "resumed": {
-      const { stage } = action;
-      const started = startOf(run, {
-        ...action,
-        mergeQueue: null,
-        stackOn: null,
-        resume: true,
-      });
-      if (issue.row !== undefined) {
-        issue.row.job = { live: true, stage };
-      }
-      return started;
-    }
-    case "stopped": {
-      let state = { ...issue.state };
-      if (action.reason === "claim-failed") {
-        // The failing jobs' stage, as a lifted issue is saved at `stopped`.
-        state = { ...state, stage: action.stage };
-      }
-      stop(run.cfg, { ...stopOf(action), number: action.issue, state });
-      if (issue.row !== undefined) {
-        issue.row.stopped = true;
-      }
-      return null;
-    }
-    case "held":
-      return null;
-    case "steered":
-      run.deps.steer(action.socket, action.key, action.message);
-      return null;
-    case "killed":
-      run.deps.terminate(action.pid);
-      return null;
-    default: {
-      const unknown: never = action;
-      throw new Error(`unknown watchdog action ${JSON.stringify(unknown)}`);
-    }
-  }
-}
-
-// What the escalation agent reads, and the watchdog's commands its
-// recommendations go through: the steer, a restart behind the start gate,
-// and the stop op.
-function adviceOf(
-  run: TickRun,
-  issues: readonly SnapshotIssue[],
-  view: Omit<AdviceContext, "act" | "runAgent"> & { admit: StartGate },
-): AdviceContext {
-  function rowOf(n: number): SnapshotIssue | undefined {
-    return issues.find((issue) => issue.number === n);
-  }
-  const { admit, ...seen } = view;
-  const commands: AdviceContext["act"] = {
-    steer: run.deps.steer,
-    resume: (issue: number, stage: string): Resumed => {
-      const row = rowOf(issue);
-      if (row?.job?.live === true) {
-        return { kind: "held", reason: "live" };
-      }
-      const held = admit(issue, stage);
-      if (held !== null) {
-        return { kind: "held", reason: held };
-      }
-      const at = view.now.toISOString();
-      const restart = { issue, stage, at, mergeQueue: null, stackOn: null };
-      const started = startOf(run, { ...restart, resume: true });
-      if (row !== undefined) {
-        row.job = { live: true, stage };
-      }
-      return { kind: "started", ...started };
-    },
-    stop: (issue: number, code: string, reason: string): void => {
-      const state = { ...view.states.get(issue) };
-      stop(run.cfg, { code, reason, number: issue, state });
-      const row = rowOf(issue);
-      if (row !== undefined) {
-        row.stopped = true;
-      }
-    },
-  };
-  return { ...seen, runAgent: run.deps.runAgent, act: commands };
-}
-
-// The scheduler's decisions less those for issues whose restart the watchdog
-// held: such an issue waits for its restart rather than starting anew.
-function withoutHeld(
-  decisions: readonly Decision[],
-  done: readonly WatchAction[],
-): Decision[] {
-  const waiting = new Set(
-    done.filter(({ action }) => action === "held").map(({ issue }) => issue),
-  );
-  return decisions.filter(({ issue }) => !waiting.has(issue));
-}
-
-// The watchdog's and the failing-claim rule's actions on the `watched` jobs
-// of `issues`, and the memory after both.
-function watchJobs(
-  cfg: Config,
-  queue: { issues: readonly SnapshotIssue[]; watched: readonly WatchedJob[] },
-  gate: { now: Date; admit: StartGate },
-): { actions: WatchAction[]; memory: WatchMemory } {
-  const settings = WATCH_SETTINGS.parse(cfg);
-  const { issues, watched } = queue;
-  const memory = readWatchMemory(cfg);
-  const watchdog = watch(watched, memory, { ...settings, ...gate });
-  const labelled = new Set(
-    issues.filter(({ stopped }) => stopped).map(({ number }) => number),
-  );
-  const run = { ...settings, now: gate.now };
-  const claims = claimFailureActions(watched, labelled, watchdog.memory, run);
-  const actions = [...watchdog.actions, ...claims.actions];
-  return { actions, memory: claims.memory };
-}
-
-// What a tick did: the scheduler's decisions, and what became of each open
-// split parent, for which the scheduler makes no decision.
+// What a tick did: the scheduler's decisions as carried out, and what became
+// of each open split parent.
 interface TickResult {
   decisions: Decision[];
   parents: ParentOutcome[];
 }
 
+function settingsOf(
+  cfg: Config,
+): ScheduleSettings & { claimFailureStreak: number } {
+  const parsed = TICK_SETTINGS.parse(cfg);
+  const stageCaps: Partial<Record<Stage, number>> = {};
+  for (const stage of STAGES) {
+    const { [stage]: cap } = parsed.stageCaps;
+    if (cap !== undefined) {
+      stageCaps[stage] = cap;
+    }
+  }
+  return {
+    maxJobs: parsed.maxJobs,
+    stageCaps,
+    maxResumes: parsed.maxResumes,
+    claimFailureStreak: parsed.claimFailureStreak,
+    skipLabels: parsed.skipLabels ?? [],
+    takeNewWork: parsed.takeNewWork !== false,
+    leaseMs: parsed.leaseHours * MS_PER_HOUR,
+  };
+}
+
+// Stops issue `number` at `stage` with the stop op, from its saved state.
+function stopAt(
+  cfg: Config,
+  number: number,
+  state: IssueState | null,
+  stopping: { code: "job" | "error"; reason: string; stage: Stage },
+): void {
+  const base = state ?? newIssueState(number);
+  const { code, reason, stage } = stopping;
+  stop(cfg, { code, reason, number, state: { ...base, stage } });
+}
+
+// What carrying out the decisions takes and gives.
+interface Run {
+  cfg: Config;
+  deps: TickDeps;
+  queue: Queue;
+  settings: ScheduleSettings;
+  now: Date;
+  starts: StartRecord[];
+  lines: LogEntry[];
+}
+
+type Start = Extract<Decision, { action: "started" }>;
+
+// Saves a re-authored issue at `author`; the decision as carried out.
+function reauthorFirst(run: Run, start: Start): Decision {
+  const { cfg, now } = run;
+  const { reauthor, issue } = start;
+  if (reauthor === null) {
+    return start;
+  }
+  const fresh = readState(cfg, issue).state;
+  const seen = run.queue.states.get(issue) ?? null;
+  const { leaseMs } = run.settings;
+  const result = reauthoredState({ fresh, seen }, reauthor, { now, leaseMs });
+  if (result.kind === "held") {
+    const { at, stage } = start;
+    return { action: "held", at, issue, stage, reason: result.reason };
+  }
+  writeState(cfg, issue, result.state);
+  run.lines.push({
+    at: start.at,
+    issue,
+    stage: start.stage,
+    action: "reauthor",
+    reason: reauthor.resumeStage ?? "none",
+  });
+  return start;
+}
+
+// Carries out one decision and logs it; the decision as carried out.
+function carryOut(run: Run, decision: Decision): Decision {
+  const { at, issue, stage, action, reason } = decision;
+  const line: LogEntry = { at, issue, stage, action, reason };
+  if (action === "held") {
+    run.lines.push(line);
+    return decision;
+  }
+  const state = run.queue.states.get(issue) ?? null;
+  if (action === "stopped") {
+    const why = `the stage job kept dying: its ${stage} job died or failed after the most restarts allowed`;
+    stopAt(run.cfg, issue, state, { code: "job", reason: why, stage });
+    run.lines.push(line);
+    return decision;
+  }
+  const done = reauthorFirst(run, decision);
+  if (done.action !== "started") {
+    return carryOut(run, done);
+  }
+  if (reason === "lifted") {
+    const code = state?.stopCode ?? "stopped";
+    run.lines.push({ at, issue, stage, action: "lifted", reason: code });
+  }
+  const { configPath, spawn } = run.deps;
+  const started = startJob({ cfg: run.cfg, configPath, spawn }, done);
+  run.starts.push(started);
+  run.lines.push({ ...line, pid: started.pid, job: started.job });
+  return done;
+}
+
 // Runs one tick and returns what it did.
 function tick(cfg: Config, deps: TickDeps): TickResult {
-  const roles = deps.roles ?? rolesOf({}, cfg);
-  const settings = { ...ORCHESTRATOR_SETTINGS.parse(cfg), roles };
-  const ledger = openLedger(cfg);
   const now = deps.now();
-  const queue = readQueue(cfg, ledger.started(), now);
-  const { issues, jobs, watched, states, labels } = queue;
-  ledger.record(jobs, now);
-  const spentLastHour = ledger.spentLastHour(now);
-  const backoff = openBackoff(cfg, jobs, now);
-  const admit = backoff.gate(startGate({ issues, spentLastHour }, settings));
-  const watchdog = watchJobs(cfg, { issues, watched }, { now, admit });
-  const run: TickRun = { cfg, deps, ledger };
-  const done: WatchAction[] = [];
-  const restarted: LogEntry[] = [];
-  const started = new Map<Decision, StartedJob>();
-  let decisions: Decision[] = [];
+  const at = now.toISOString();
+  const settings = settingsOf(cfg);
+  const memory = readMemory(cfg);
+  const starts = readStarts(cfg);
+  const { alive } = deps;
+  const { mergeWindow } = memory;
+  const queue = readQueue(cfg, { alive, starts, mergeWindow });
+  const { issues } = queue.snapshot;
+  const run: Run = { cfg, deps, queue, settings, now, starts, lines: [] };
+  const claims = claimFailureStops(
+    issues,
+    memory.claimFailures,
+    settings.claimFailureStreak,
+  );
+  const decisions: Decision[] = [];
   try {
-    for (const action of watchdog.actions) {
-      const row = issues.find((issue) => issue.number === action.issue);
-      const state = states.get(action.issue) ?? null;
-      const job = act(run, action, { row, state });
-      done.push(action);
-      restarted.push({ ...action, ...job });
+    for (const { issue, stage, detail } of claims.stops) {
+      const state = queue.states.get(issue) ?? null;
+      stopAt(cfg, issue, state, { code: "error", reason: detail, stage });
+      run.lines.push({
+        at,
+        issue,
+        stage,
+        action: "stopped",
+        reason: "claim-failed",
+      });
     }
-    const view = { watched, states, admit, now };
-    const advice = adviceOf(run, issues, view);
-    escalateOpenIssues(cfg, { issues, labels }, watchdog.memory, advice);
-    const scheduled = schedule({ issues, spentLastHour }, settings, now);
-    decisions = backoff.hold(withoutHeld(scheduled, done));
-    for (const decision of decisions) {
-      if (decision.action === "started") {
-        started.set(decision, startOf(run, { ...decision, resume: false }));
-      }
+    const stopped = new Set(claims.stops.map(({ issue }) => issue));
+    const gate = openBackoff(cfg, queue.ends, now);
+    const scheduled = schedule(
+      {
+        issues: issues.filter(({ number }) => !stopped.has(number)),
+        mergeWindow,
+      },
+      settings,
+      { now, gate, resumes: memory.resumes },
+    );
+    memory.resumes = scheduled.memory.resumes;
+    memory.mergeWindow = scheduled.memory.mergeWindow;
+    for (const decision of scheduled.decisions) {
+      decisions.push(carryOut(run, decision));
     }
   } finally {
-    ledger.save(now);
-    logDecisions(cfg, restarted);
+    memory.claimFailures = claims.streaks;
+    saveMemory(cfg, memory);
+    saveStarts(cfg, starts, new Set(issues.map(({ number }) => number)));
+    logDecisions(cfg, run.lines);
   }
-  logDecisions(cfg, decisionLines(decisions, started, states));
-  const split = issues.filter(({ verdict }) => verdict.kind === "parent");
-  const splitNumbers = split.map(({ number }) => number);
-  const parents = closeParents(cfg, splitNumbers, now);
+  const parents = closeParents(cfg, queue.parents);
+  logDecisions(
+    cfg,
+    parents.flatMap((outcome) => parentLines(outcome, at)),
+  );
   return { decisions, parents };
 }
 

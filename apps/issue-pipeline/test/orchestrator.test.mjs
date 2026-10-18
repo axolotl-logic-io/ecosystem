@@ -1,267 +1,281 @@
 // @ts-check
-// The orchestrator's scheduler (#234) on recorded queue snapshots: readers
-// run in parallel up to the caps, an implement waits on a live branch that
-// changes its stub files (#390), merges go in the order of what they
-// unblock, and the rate limit holds every start.
+// The orchestrator's scheduler on recorded queue snapshots: the four stages
+// start up to the live-job caps, new trusted input sends an issue back to the
+// author, needs-info and after marks hold, one merge window keeps its holder
+// while its changed head is reviewed again, a dead job restarts a bounded
+// number of times, and a legacy job holds its issue without being counted
+// as this pipeline's.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeRank } from "../src/orchestrator/queue.ts";
 import { schedule } from "../src/orchestrator/schedule.ts";
 import {
-  CAPPED,
-  IMPLEMENTS,
-  MERGE_BY_AFTER,
-  MERGE_BY_NEITHER,
-  MERGE_BY_STUBS,
-  MERGE_LIVE,
-  MERGE_NOT_WAITING,
-  MERGE_OVER_CHAIN,
-  MERGE_OVER_WRITER,
-  MERGE_PAST_CHECKS,
-  MERGE_TIE,
-  mergeBehind,
-  NO_RUN,
+  failedAt,
+  jobAt,
   NOW,
-  READERS,
   SETTINGS,
-  SPECS,
   snapshotOf,
-  TOKENS_PER_HOUR,
 } from "./orchestrator-fixtures.mjs";
 
 /** @import { ScheduleSettings, Snapshot } from "../src/orchestrator/queue.ts" */
+/** @import { Resumes } from "../src/orchestrator/watchdog.ts" */
 
-// Each decision as `#issue stage action reason`, and a merge's queue, in the
-// order made.
-/** @param {Snapshot} snapshot @param {ScheduleSettings} [settings] @returns {string[]} */
-function decided(snapshot, settings = SETTINGS) {
-  return schedule(snapshot, settings, NOW).map((decision) => {
+/**
+ * @typedef {{ settings?: ScheduleSettings, gate?: string | null, resumes?: Resumes }} Run
+ */
+
+/** @param {Snapshot} snapshot @param {Run} [run] */
+function scheduled(snapshot, run = {}) {
+  return schedule(snapshot, run.settings ?? SETTINGS, {
+    now: NOW,
+    gate: run.gate ?? null,
+    resumes: run.resumes ?? {},
+  });
+}
+
+// Each decision as `#issue stage action reason`, with a merge's queue.
+/** @param {Snapshot} snapshot @param {Run} [run] @returns {string[]} */
+function decided(snapshot, run = {}) {
+  return scheduled(snapshot, run).decisions.map((decision) => {
     const { issue, stage, action, reason } = decision;
     let queue = "";
     if (decision.action === "started" && decision.mergeQueue !== null) {
-      queue = ` queue:${ranked(decision.mergeQueue).join(",")}`;
+      queue = ` [${decision.mergeQueue.join(",")}]`;
     }
     return `#${issue} ${stage} ${action} ${reason}${queue}`;
   });
 }
 
-/** @param {readonly number[]} numbers @returns {string[]} */
-function ranked(numbers) {
-  return numbers.map((n) => `#${n}`);
-}
-
-test("readers at every reader stage start together, the later stage first", () => {
-  assert.deepEqual(decided(READERS), [
-    "#5 security started free",
-    "#4 accept started free",
+test("each stage starts, later stages first, then older issues", () => {
+  const snapshot = snapshotOf([
+    { number: 1 },
+    { number: 2, stage: "implement" },
+    { number: 3, stage: "review" },
+    { number: 4, stage: "merge", pr: 40 },
+  ]);
+  assert.deepEqual(decided(snapshot), [
+    "#4 merge started free [4]",
     "#3 review started free",
-    "#2 spec started free",
-    "#1 triage started free",
+    "#2 implement started free",
+    "#1 author started free",
   ]);
 });
 
-test("each decision carries its time, and a reader's start no merge queue", () => {
-  const [first] = schedule(READERS, SETTINGS, NOW);
-  assert.deepEqual(first, {
-    action: "started",
-    at: NOW.toISOString(),
-    issue: 5,
-    stage: "security",
-    reason: "free",
-    mergeQueue: null,
-    stackOn: null,
+test("starts past maxJobs hold at the global cap, counting live jobs", () => {
+  const snapshot = snapshotOf([
+    { number: 1, stage: "implement", job: jobAt("implement", "live") },
+    { number: 2, stage: "implement", job: jobAt("implement", "live") },
+    { number: 3, stage: "implement", job: jobAt("implement", "live") },
+    { number: 4, stage: "implement" },
+    { number: 5, stage: "implement" },
+  ]);
+  assert.deepEqual(decided(snapshot), [
+    "#4 implement started free",
+    "#5 implement held global-cap",
+  ]);
+});
+
+test("starts past a stage's cap hold, and a legacy live job counts toward maxJobs", () => {
+  const snapshot = snapshotOf([
+    { number: 1, stage: "review", job: jobAt("review", "live") },
+    { number: 2, stage: "review" },
+    { number: 3, stage: "review" },
+    { number: 4, legacyLive: true, stage: "implement" },
+    { number: 5, stage: "implement" },
+    { number: 6, stage: "implement" },
+  ]);
+  assert.deepEqual(decided(snapshot), [
+    "#2 review started free",
+    "#3 review held stage-cap",
+    "#4 implement held legacy-job-live",
+    "#5 implement started free",
+    "#6 implement held global-cap",
+  ]);
+});
+
+test("an open prerequisite in the after mark holds, and another lane's live lease holds", () => {
+  const lease = { lane: "sweep-a", sweepId: "x", at: NOW.toISOString() };
+  const stale = new Date(NOW.getTime() - 4 * 3_600_000).toISOString();
+  const snapshot = snapshotOf([
+    { number: 1, stage: "implement", after: [9] },
+    { number: 2, stage: "implement", state: { lease } },
+    {
+      number: 3,
+      stage: "implement",
+      state: { lease: { ...lease, lane: "orchestrator" } },
+    },
+    {
+      number: 4,
+      stage: "implement",
+      state: { lease: { ...lease, at: stale } },
+    },
+  ]);
+  assert.deepEqual(decided(snapshot), [
+    "#1 implement held after:#9",
+    "#2 implement held lease:sweep-a",
+    "#3 implement started free",
+    "#4 implement started free",
+  ]);
+});
+
+test("stop labels, merged, split, skipLabels, untrusted authors, done, live jobs and new work off get no decision", () => {
+  const snapshot = snapshotOf([
+    { number: 1, stage: "implement", labels: ["agent:stopped-error"] },
+    { number: 2, stage: "merge", labels: ["agent:merged"] },
+    { number: 3, labels: ["agent:split"] },
+    { number: 4, stage: "implement", labels: ["wontfix"] },
+    { number: 5, authorAllowed: false },
+    { number: 6, stage: "done" },
+    { number: 7, stage: "review", job: jobAt("review", "live") },
+    { number: 8 },
+  ]);
+  const settings = { ...SETTINGS, takeNewWork: false };
+  assert.deepEqual(decided(snapshot, { settings }), []);
+});
+
+test("a stopped issue whose stop label is gone starts at the stage it stopped in", () => {
+  const snapshot = snapshotOf([
+    {
+      number: 1,
+      stage: "stopped",
+      state: { stoppedStage: "review", stopCode: "error" },
+    },
+  ]);
+  assert.deepEqual(decided(snapshot), ["#1 review started lifted"]);
+});
+
+test("changed trusted input sends implement back to implement and review or merge back to review", () => {
+  const snapshot = snapshotOf([
+    { number: 1, stage: "implement", gherkin: "inputs-0" },
+    { number: 2, stage: "review", gherkin: "inputs-0" },
+    { number: 3, stage: "merge", gherkin: "inputs-0" },
+    { number: 4, stage: "review", gherkin: null },
+    { number: 5, stage: "review" },
+  ]);
+  const settings = { ...SETTINGS, maxJobs: 9, stageCaps: {} };
+  const starts = scheduled(snapshot, { settings }).decisions.map((decision) => {
+    assert.equal(decision.action, "started");
+    return `#${decision.issue} ${decision.stage} ${decision.reason} ${decision.reauthor?.resumeStage}`;
   });
-});
-
-test("a spec beyond its stage cap is held, counting the live spec job", () => {
-  assert.deepEqual(decided(SPECS), [
-    "#7 spec started free",
-    "#8 spec held stage-cap",
+  assert.deepEqual(starts, [
+    "#5 review free undefined",
+    "#1 author reauthor implement",
+    "#2 author reauthor review",
+    "#3 author reauthor review",
+    "#4 author reauthor review",
   ]);
 });
 
-test("starts beyond maxJobs are held at the global cap", () => {
-  assert.deepEqual(decided(READERS, CAPPED), [
-    "#5 security started free",
-    "#4 accept started free",
-    "#3 review held global-cap",
-    "#2 spec held global-cap",
-    "#1 triage held global-cap",
+test("needs-info holds while the input is the one asked on, and the author starts once it changes", () => {
+  const asked = {
+    stage: /** @type {const} */ ("author"),
+    labels: ["agent:needs-info"],
+  };
+  const snapshot = snapshotOf([
+    { number: 1, ...asked, asked: "inputs-1" },
+    { number: 2, ...asked, asked: "inputs-0" },
+    // A needs-info issue from before `asked` existed gets one author run.
+    { number: 3, ...asked, asked: null },
+  ]);
+  assert.deepEqual(decided(snapshot), [
+    "#1 author held needs-info",
+    "#2 author started free",
+    "#3 author started free",
   ]);
 });
 
-test("an implement whose stub a live branch changes waits; one whose stubs no branch changes starts", () => {
-  assert.deepEqual(decided(IMPLEMENTS), [
-    "#10 review started free",
-    "#11 implement held files-overlap:#10",
-    "#12 implement started free",
-  ]);
-});
-
-test("the merge an issue's after mark waits for ranks first", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_BY_AFTER.issues)), ["#40", "#41"]);
-  const merges = decided(MERGE_BY_AFTER).filter((line) =>
-    line.includes(" merge "),
+test("the merge window's holder keeps it while its changed head is reviewed again", () => {
+  const snapshot = snapshotOf(
+    [
+      { number: 1, stage: "merge", pr: 10 },
+      { number: 2, stage: "review", pr: 20 },
+    ],
+    2,
   );
-  assert.deepEqual(merges, [
-    "#40 merge started merge-first queue:#40,#41",
-    "#41 merge held merge-order:#40",
+  assert.deepEqual(decided(snapshot), [
+    "#2 review started free",
+    "#1 merge held merge-window:#2",
   ]);
+  const { memory } = scheduled(snapshot);
+  assert.equal(memory.mergeWindow, 2);
 });
 
-test("the merge whose branch changes a waiting issue's stub ranks first", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_BY_STUBS.issues)), ["#40", "#41"]);
-});
-
-test("a waiting issue whose stubs no ranked branch changes adds to no merge's rank", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_BY_NEITHER.issues)), ["#41", "#40"]);
-});
-
-test("issues past implement, stopped or live don't count toward a merge's rank", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_NOT_WAITING.issues)), ["#41", "#40"]);
-});
-
-test("merge candidates nothing depends on rank by the lower PR", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_TIE.issues)), ["#51", "#50"]);
-  assert.deepEqual(decided(MERGE_TIE), [
-    "#50 merge held merge-order:#51",
-    "#51 accept started free",
+test("with no holder the merge most issues wait on opens the window, then the lower PR", () => {
+  const snapshot = snapshotOf([
+    { number: 1, stage: "merge", pr: 10 },
+    { number: 2, stage: "merge", pr: 30 },
+    { number: 3, stage: "merge", pr: 20 },
+    { number: 4, stage: "implement", after: [2] },
   ]);
-});
-
-test("no merge starts while another merge job runs, even the first in the queue", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_LIVE.issues)), ["#61", "#60"]);
-  assert.deepEqual(decided(MERGE_LIVE), ["#61 merge held merge-order:#60"]);
-});
-
-test("an older merge doesn't hold the writer ranked ahead of it", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_OVER_WRITER.issues)), ["#81", "#80"]);
-  assert.deepEqual(decided(MERGE_OVER_WRITER), [
-    "#80 merge started merge-first queue:#81,#80",
-    "#81 sync started free",
-    "#82 spec started free",
+  assert.deepEqual(decided(snapshot), [
+    "#2 merge started free [2,1,3]",
+    "#1 merge held merge-window:#2",
+    "#3 merge held merge-window:#2",
+    "#4 implement held after:#2",
   ]);
+  assert.equal(scheduled(snapshot).memory.mergeWindow, 2);
 });
 
-test("a fix isn't held by an older live branch that changes its stub, so no chain deadlocks", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_OVER_CHAIN.issues)), ["#85", "#83"]);
-  assert.deepEqual(decided(MERGE_OVER_CHAIN), [
-    "#83 merge started merge-first queue:#85,#83",
-    "#85 sync started free",
-    "#84 fix started free",
-    "#86 spec started free",
+test("a live merge job holds the window, and a holder sent back to the author gives it up", () => {
+  const live = snapshotOf([
+    { number: 1, stage: "merge", job: jobAt("merge", "live") },
+    { number: 2, stage: "merge" },
   ]);
-});
-
-for (const stage of ["sync", "checks"]) {
-  test(`an issue ranked ahead at ${stage} doesn't hold a merge, but stays in its queue`, () => {
-    assert.deepEqual(decided(mergeBehind(stage)), [
-      "#90 merge started merge-first queue:#91,#90",
-      `#91 ${stage} started free`,
-    ]);
-  });
-}
-
-for (const stage of ["accept", "security"]) {
-  test(`an issue ranked ahead at ${stage} holds a merge`, () => {
-    assert.deepEqual(decided(mergeBehind(stage)), [
-      "#90 merge held merge-order:#91",
-      `#91 ${stage} started free`,
-    ]);
-  });
-}
-
-test("an issue ranked ahead at merge holds a merge and merges first", () => {
-  assert.deepEqual(decided(mergeBehind("merge")), [
-    "#90 merge held merge-order:#91",
-    "#91 merge started merge-first queue:#91,#90",
-  ]);
-});
-
-test("a merge waits for the first issue at a holding stage, not the queue's top at checks", () => {
-  assert.deepEqual(ranked(mergeRank(MERGE_PAST_CHECKS.issues)), [
-    "#92",
-    "#93",
-    "#94",
-  ]);
-  assert.ok(
-    decided(MERGE_PAST_CHECKS).includes("#94 merge held merge-order:#93"),
+  assert.deepEqual(decided(live), ["#2 merge held merge-window:#1"]);
+  const reauthored = snapshotOf(
+    [
+      { number: 1, stage: "review", gherkin: "inputs-0" },
+      { number: 2, stage: "merge" },
+    ],
+    1,
   );
-});
-
-// Every merge fixture, and each stage an issue ranked ahead of a merge is at.
-const MERGE_SNAPSHOTS = [
-  MERGE_BY_AFTER,
-  MERGE_BY_STUBS,
-  MERGE_BY_NEITHER,
-  MERGE_NOT_WAITING,
-  MERGE_TIE,
-  MERGE_LIVE,
-  MERGE_OVER_WRITER,
-  MERGE_OVER_CHAIN,
-  MERGE_PAST_CHECKS,
-  ...["sync", "checks", "accept", "security", "merge"].map(mergeBehind),
-];
-const MERGE_ORDER = /^merge-order:#(?<held>\d+)$/u;
-
-// The merge-order holds in the snapshot's decisions that name neither an
-// issue ranked before the held one nor the live merge, and the merges started
-// beyond the first.
-/** @param {Snapshot} snapshot @returns {string[]} */
-function orderBreaks(snapshot) {
-  const rank = mergeRank(snapshot.issues);
-  const live = snapshot.issues
-    .filter(({ job }) => job?.live === true && job.stage === "merge")
-    .map(({ number }) => number);
-  const decisions = schedule(snapshot, SETTINGS, NOW);
-  const holds = decisions.filter(({ action, issue, reason }) => {
-    const { held } = MERGE_ORDER.exec(reason)?.groups ?? {};
-    if (action !== "held" || held === undefined) {
-      return false;
-    }
-    const at = rank.indexOf(Number(held));
-    const own = rank.indexOf(issue);
-    const earlier = at >= 0 && (own < 0 || at < own);
-    return !(earlier || live.includes(Number(held)));
-  });
-  const starts = decisions.filter(
-    ({ action, stage }) => action === "started" && stage === "merge",
-  );
-  return [...holds, ...starts.slice(1)].map(
-    ({ issue, action, reason }) => `#${issue} ${action} ${reason}`,
-  );
-}
-
-test("merge-order holds name an issue ranked earlier or the live merge, and one merge starts a tick", () => {
-  for (const snapshot of MERGE_SNAPSHOTS) {
-    assert.deepEqual(orderBreaks(snapshot), []);
-  }
-});
-
-test("live, stopped, done and skipped issues get no decision; after marks and other lanes hold", () => {
-  assert.deepEqual(decided(NO_RUN), [
-    "#76 review held lane:L2",
-    "#75 triage held after:#70",
-    "#77 triage started free",
-    "#78 triage started free",
+  assert.deepEqual(decided(reauthored), [
+    "#2 merge started free [2]",
+    "#1 author started reauthor",
   ]);
 });
 
-test("once the last hour's tokens reach the rate limit, every start is held", () => {
-  const spent = snapshotOf([...IMPLEMENTS.issues], TOKENS_PER_HOUR);
-  assert.deepEqual(decided(spent), [
-    "#10 review held rate-limit",
-    "#11 implement held files-overlap:#10",
-    "#12 implement held rate-limit",
+test("a dead job restarts at its stage up to maxResumes, then the issue stops", () => {
+  const died = jobAt("review", null);
+  const snapshot = snapshotOf([
+    { number: 1, stage: "review", job: died },
+    {
+      number: 2,
+      stage: "implement",
+      job: jobAt("implement", failedAt(NOW.toISOString())),
+    },
+    { number: 3, stage: "review", job: jobAt("implement", null) },
   ]);
-  const under = snapshotOf([...IMPLEMENTS.issues], TOKENS_PER_HOUR - 1);
-  assert.deepEqual(decided(under), decided(IMPLEMENTS));
+  const first = scheduled(snapshot);
+  assert.deepEqual(
+    first.decisions.map(
+      ({ issue, action, reason }) => `#${issue} ${action} ${reason}`,
+    ),
+    ["#1 started restart", "#3 started free", "#2 started restart"],
+  );
+  assert.deepEqual(first.memory.resumes, { "1 review": 1, "2 implement": 1 });
+  const resumes = { "1 review": 2 };
+  const last = scheduled(
+    snapshotOf([{ number: 1, stage: "review", job: died }]),
+    {
+      resumes,
+    },
+  );
+  assert.deepEqual(
+    last.decisions.map(({ action, reason }) => `${action} ${reason}`),
+    ["stopped max-resumes"],
+  );
+  assert.deepEqual(last.memory.resumes, {});
 });
 
-test("a tokensPerHour of null or 0 holds no start for the rate limit", () => {
-  const spent = snapshotOf([...IMPLEMENTS.issues], TOKENS_PER_HOUR * 2);
-  for (const tokensPerHour of [null, 0]) {
-    const settings = { ...SETTINGS, tokensPerHour };
-    assert.deepEqual(decided(spent, settings), decided(IMPLEMENTS));
-  }
+test("a backoff holds every start and admits no restart", () => {
+  const snapshot = snapshotOf([
+    { number: 1, stage: "merge" },
+    { number: 2, stage: "review", job: jobAt("review", null) },
+  ]);
+  const run = { gate: "rate-limited" };
+  assert.deepEqual(decided(snapshot, run), [
+    "#1 merge held rate-limited",
+    "#2 review held rate-limited",
+  ]);
+  assert.deepEqual(scheduled(snapshot, run).memory.resumes, {});
 });

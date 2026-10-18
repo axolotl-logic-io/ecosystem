@@ -1,300 +1,284 @@
-// The orchestrator's rules (#234): given a snapshot of the open issues and
-// their jobs, which stage jobs start now and why each other runnable issue is
-// held. Pure: the snapshot carries everything it reads, so recorded snapshots
-// test it with no clock, files or processes.
+// The orchestrator's scheduler: given a snapshot of the open issues and their
+// jobs, which stage jobs start now, which issues stop, and why each other
+// issue that needs a job is held. Pure.
+//
+// Each issue's plan (issue-plan.ts) comes first. A start then passes:
+// - the backoff gate, which holds every start while a rate-limit or
+//   transport backoff runs (rate-limit-backoff.ts);
+// - the merge window: one issue at a time rebases, verifies, is reviewed
+//   again when its head changed, and merges. The issue that holds it keeps
+//   it while it is at review or merge, so other merges never push it behind
+//   its base in a loop; its jobs go first, and every other merge is held.
+//   With no holder the merge-ready issue ranked first opens the window: the
+//   one the most open issues wait on, then the lower PR, then the lower
+//   number. A merge job gets that ranking as its merge queue;
+// - the caps: maxJobs live jobs in all, and stageCaps per stage, counting
+//   every live job, a legacy job's included;
+// - the watchdog (watchdog.ts): a start at the stage a dead job died at is a
+//   restart, counted, and past maxResumes the issue stops instead.
+// Later stages go first, then older issues.
 
-import type {
-  ScheduleSettings,
-  Snapshot,
-  SnapshotIssue,
-  StartReason,
-} from "./queue.ts";
-import {
-  byAge,
-  byStageThenAge,
-  changesStub,
-  isLive,
-  isLiveImplementation,
-  isStopped,
-  mergeHolders,
-  mergeRank,
-  runStage,
-  stageIndex,
-  startReason,
-  verdictHold,
-  WRITERS,
-} from "./queue.ts";
-import { roleOffReason } from "./roles.ts";
-import { stackPartners, stackRule } from "./stacking.ts";
+import type { Stage } from "../stages.ts";
+import type { IssuePlan, Reauthor, StartReason } from "./issue-plan.ts";
+import { planOf } from "./issue-plan.ts";
+import type { ScheduleSettings, Snapshot, SnapshotIssue } from "./queue.ts";
+import type { Resumes } from "./watchdog.ts";
+import { restartOf, withoutIssue, withRestart } from "./watchdog.ts";
+
+const STAGE_RANK: Readonly<Record<Stage, number>> = {
+  merge: 0,
+  review: 1,
+  implement: 2,
+  author: 3,
+};
+const WINDOW_STAGES: ReadonlySet<Stage> = new Set(["review", "merge"]);
 
 type Decision =
   | {
       action: "started";
       at: string;
       issue: number;
-      stage: string;
-      reason: StartReason;
+      stage: Stage;
+      reason: StartReason | "restart";
+      // The state to save before the start, for new trusted input.
+      reauthor: Reauthor | null;
+      // A merge job's merge queue, holder first; null for other stages.
       mergeQueue: readonly number[] | null;
-      // The prerequisite a first job starts the issue's branch on (#290).
-      stackOn: number | null;
     }
+  | { action: "held"; at: string; issue: number; stage: Stage; reason: string }
   | {
-      action: "held";
+      action: "stopped";
       at: string;
       issue: number;
-      stage: string;
-      reason: string;
+      stage: Stage;
+      reason: "max-resumes";
     };
 
-// The gates a stage passes besides the caps: file overlaps or merge order.
-type Gates = "reader" | "writer" | "merge";
-
-// What a tick has decided so far, which later decisions read.
-interface TickCount {
-  settings: ScheduleSettings;
-  spent: number;
-  live: number;
-  liveAt: Map<string, number>;
-  implementations: SnapshotIssue[];
-  mergeLive: number | null;
-  queue: readonly number[];
-  holders: readonly number[];
+// What the scheduler remembers between ticks.
+interface ScheduleMemory {
+  resumes: Resumes;
+  mergeWindow: number | null;
 }
 
-function gatesOf(stage: string): Gates {
-  if (stage === "merge") {
-    return "merge";
+interface Planned {
+  issue: SnapshotIssue;
+  plan: Exclude<IssuePlan, { kind: "none" }>;
+}
+
+// What a tick has decided so far, which later decisions read.
+interface Count {
+  settings: ScheduleSettings;
+  live: number;
+  liveAt: Map<Stage, number>;
+  holder: number | null;
+  queue: readonly number[];
+  memory: ScheduleMemory;
+}
+
+function isWindowRun(planned: Planned | undefined): boolean {
+  return planned?.plan.kind === "run" && WINDOW_STAGES.has(planned.plan.stage);
+}
+
+// The issue holding the merge window: one with a live merge job, else the
+// last reserved holder while its live job or its next job is at review or
+// merge. A holder held for any other reason, sent back to the author or the
+// implementor, stopped or closed gives the window up.
+function holderOf(
+  snapshot: Snapshot,
+  planned: readonly Planned[],
+): number | null {
+  const liveMerge = snapshot.issues.find(
+    (open) => open.job?.live === true && open.job.stage === "merge",
+  );
+  if (liveMerge !== undefined) {
+    return liveMerge.number;
   }
-  if (WRITERS.has(stage)) {
-    return "writer";
+  const reserved = snapshot.issues.find(
+    ({ number }) => number === snapshot.mergeWindow,
+  );
+  if (reserved === undefined) {
+    return null;
   }
-  return "reader";
+  const { job } = reserved;
+  const liveInWindow = job?.live === true && WINDOW_STAGES.has(job.stage);
+  const next = planned.find(({ issue }) => issue.number === reserved.number);
+  if (liveInWindow || isWindowRun(next)) {
+    return reserved.number;
+  }
+  return null;
+}
+
+// The open issues whose after mark names `number`.
+function dependents(snapshot: Snapshot, number: number): number {
+  return snapshot.issues.filter(({ after }) => after.includes(number)).length;
+}
+
+// The merge-ready issues in merge order, the window's holder first.
+function mergeQueueOf(
+  snapshot: Snapshot,
+  planned: readonly Planned[],
+  holder: number | null,
+): number[] {
+  const ready = planned
+    .filter(({ plan }) => plan.kind === "run" && plan.stage === "merge")
+    .map(({ issue }) => ({
+      number: issue.number,
+      waiting: dependents(snapshot, issue.number),
+      pr: issue.state?.pr ?? Number.POSITIVE_INFINITY,
+    }))
+    .sort((a, b) => b.waiting - a.waiting || a.pr - b.pr || a.number - b.number)
+    .map(({ number }) => number);
+  if (holder === null) {
+    return ready;
+  }
+  return [holder, ...ready.filter((number) => number !== holder)];
 }
 
 function capReason(
-  count: TickCount,
-  stage: string,
+  count: Count,
+  stage: Stage,
 ): "global-cap" | "stage-cap" | null {
-  const { maxJobs, stageCaps } = count.settings;
-  if (count.live >= maxJobs) {
+  if (count.live >= count.settings.maxJobs) {
     return "global-cap";
   }
-  const { [stage]: cap = Number.POSITIVE_INFINITY } = stageCaps;
+  const { [stage]: cap = Number.POSITIVE_INFINITY } = count.settings.stageCaps;
   if ((count.liveAt.get(stage) ?? 0) >= cap) {
     return "stage-cap";
   }
   return null;
 }
 
-// For an implement, the oldest live implementation whose branch changes one
-// of its stub files (#390). Only an implement is gated on files: overlap that
-// shows up later is the start sync's and the conflict resolver's. An issue
-// and its prerequisite never hold each other.
-function overlapReason(
-  count: TickCount,
-  issue: SnapshotIssue,
-  stage: string,
-): string | null {
-  if (stage !== "implement") {
-    return null;
+// Why a merge of `issue` waits for the window, or null when it may run.
+function windowReason(count: Count, issue: number): string | null {
+  if (count.holder !== null && count.holder !== issue) {
+    return `merge-window:#${count.holder}`;
   }
-  const blocker = count.implementations
-    .filter(
-      (other) =>
-        other.number !== issue.number &&
-        !stackPartners(issue, other) &&
-        changesStub(issue, other),
-    )
-    .sort(byAge)
-    .at(0);
-  if (blocker === undefined) {
-    return null;
-  }
-  return `files-overlap:#${blocker.number}`;
-}
-
-// A merge waits for the first issue ranked ahead of it at a holding stage,
-// then for a live merge job.
-function mergeReason(count: TickCount, issue: SnapshotIssue): string | null {
-  const [first] = count.holders;
-  if (first !== undefined && first !== issue.number) {
+  const [first] = count.queue;
+  if (first !== undefined && first !== issue) {
     return `merge-order:#${first}`;
-  }
-  if (count.mergeLive !== null) {
-    return `merge-order:#${count.mergeLive}`;
   }
   return null;
 }
 
-function holdReason(
-  count: TickCount,
-  issue: SnapshotIssue,
-  stage: string,
-): string | null {
-  const off = roleOffReason(count.settings.roles, stage);
-  if (off !== null) {
-    return off;
-  }
-  const gates = gatesOf(stage);
-  let reason: string | null;
-  switch (gates) {
-    case "reader":
-      reason = capReason(count, stage);
-      break;
-    case "writer":
-      reason = overlapReason(count, issue, stage) ?? capReason(count, stage);
-      break;
-    case "merge":
-      reason = mergeReason(count, issue) ?? capReason(count, stage);
-      break;
-    default: {
-      const unknown: never = gates;
-      throw new Error(`unknown gates ${String(unknown)}`);
-    }
-  }
-  const limit = count.settings.tokensPerHour ?? 0; // null or 0: no limit
-  if (reason === null && limit > 0 && count.spent >= limit) {
-    return "rate-limit";
-  }
-  return reason;
-}
-
-// Counts a started job as live for the rest of the tick.
-function countStart(
-  count: TickCount,
-  issue: SnapshotIssue,
-  stage: string,
-): void {
+function countStart(count: Count, issue: number, stage: Stage): void {
   count.live += 1;
   count.liveAt.set(stage, (count.liveAt.get(stage) ?? 0) + 1);
-  if (stage === "implement") {
-    count.implementations.push(issue);
-  }
   if (stage === "merge") {
-    count.mergeLive = issue.number;
-  }
-}
-
-// The stage the issue's next job runs, what holds it before the caps and
-// gates, and what its branch starts on; null for no decision. The stacking
-// rules come first, then the classify verdict's hold.
-function planOf(
-  issue: SnapshotIssue,
-): { stage: string; held: string | null; stackOn: number | null } | null {
-  const rule = stackRule(issue);
-  const stage = runStage(issue);
-  switch (rule.kind) {
-    case "run":
-      return { stage: rule.stage, held: null, stackOn: rule.stackOn };
-    case "hold":
-      return { stage, held: rule.reason, stackOn: null };
-    case "none": {
-      const held = verdictHold(issue);
-      if (held === undefined) {
-        return null;
-      }
-      return { stage, held, stackOn: null };
-    }
-    default: {
-      const unknown: never = rule;
-      throw new Error(`unknown stack rule ${JSON.stringify(unknown)}`);
-    }
+    count.holder = issue;
+    count.memory.mergeWindow = issue;
   }
 }
 
 function decide(
-  count: TickCount,
-  issue: SnapshotIssue,
-  at: string,
-): Decision | null {
-  const plan = planOf(issue);
-  if (plan === null) {
-    return null;
-  }
-  const { stage, stackOn } = plan;
-  const reason = plan.held ?? holdReason(count, issue, stage);
+  count: Count,
+  { issue, plan }: Planned,
+  run: { at: string; gate: string | null },
+): Decision {
+  const { at } = run;
   const { number } = issue;
+  const { stage } = plan;
+  if (plan.kind === "held") {
+    return { action: "held", at, issue: number, stage, reason: plan.reason };
+  }
+  const { maxResumes } = count.settings;
+  const { resumes } = count.memory;
+  const restart = restartOf(number, issue.job, stage, { resumes, maxResumes });
+  if (restart.kind === "stop") {
+    count.memory.resumes = withoutIssue(resumes, number);
+    return {
+      action: "stopped",
+      at,
+      issue: number,
+      stage,
+      reason: "max-resumes",
+    };
+  }
+  let reason: string | null = null;
+  if (stage === "merge") {
+    reason = windowReason(count, number);
+  }
+  reason = run.gate ?? reason ?? capReason(count, stage);
   if (reason !== null) {
     return { action: "held", at, issue: number, stage, reason };
   }
-  countStart(count, issue, stage);
+  let started: StartReason | "restart" = plan.reason;
+  if (restart.kind === "restart") {
+    count.memory.resumes = withRestart(resumes, number, stage, restart.attempt);
+    started = "restart";
+  }
+  countStart(count, number, stage);
   let mergeQueue: readonly number[] | null = null;
   if (stage === "merge") {
     mergeQueue = count.queue;
   }
+  const { reauthor } = plan;
   return {
     action: "started",
     at,
     issue: number,
     stage,
-    reason: startReason(issue, stage),
+    reason: started,
+    reauthor,
     mergeQueue,
-    stackOn,
   };
 }
 
-function countOf(snapshot: Snapshot, settings: ScheduleSettings): TickCount {
-  const liveAt = new Map<string, number>();
-  let mergeLive: number | null = null;
-  for (const { job, number } of snapshot.issues) {
-    if (job?.live === true) {
-      liveAt.set(job.stage, (liveAt.get(job.stage) ?? 0) + 1);
-      if (job.stage === "merge") {
-        mergeLive = number;
-      }
-    }
-  }
-  return {
-    settings,
-    spent: snapshot.spentLastHour,
-    live: snapshot.issues.filter(isLive).length,
-    liveAt,
-    implementations: snapshot.issues.filter(isLiveImplementation),
-    mergeLive,
-    queue: mergeRank(snapshot.issues),
-    holders: mergeHolders(snapshot.issues),
+// The window's holder first, then the later stage, merges in the merge
+// queue's order, then the older issue.
+function byOrder(
+  holder: number | null,
+  queue: readonly number[],
+): (a: Planned, b: Planned) => number {
+  const rank = (one: Planned): number => {
+    const at = queue.indexOf(one.issue.number);
+    return at < 0 ? queue.length : at;
   };
+  return (a: Planned, b: Planned): number =>
+    Number(b.issue.number === holder) - Number(a.issue.number === holder) ||
+    STAGE_RANK[a.plan.stage] - STAGE_RANK[b.plan.stage] ||
+    rank(a) - rank(b) ||
+    Date.parse(a.issue.createdAt) - Date.parse(b.issue.createdAt) ||
+    a.issue.number - b.issue.number;
 }
 
-// One decision for each issue that may run a stage: those stopped, done or
-// with a live job get none.
+// The tick's decisions as of `now`, and the memory after them. `gate` is
+// the reason every start is held for, or null when none is.
 function schedule(
   snapshot: Snapshot,
   settings: ScheduleSettings,
-  now: Date,
-): Decision[] {
-  const count = countOf(snapshot, settings);
-  const at = now.toISOString();
-  return snapshot.issues
-    .filter(
-      (issue) =>
-        !(isStopped(issue) || isLive(issue)) &&
-        stageIndex(runStage(issue)) >= 0,
-    )
-    .sort(byStageThenAge)
-    .flatMap((issue) => decide(count, issue, at) ?? []);
-}
-
-// Why a restart of `stage` for issue `number` is held now, or null once it
-// is admitted: a restart passes the same role check, caps, file overlaps,
-// merge order and rate limit as a start, and counts against them for the
-// later ones.
-type StartGate = (number: number, stage: string) => string | null;
-
-function startGate(snapshot: Snapshot, settings: ScheduleSettings): StartGate {
-  const count = countOf(snapshot, settings);
-  return (number: number, stage: string): string | null => {
-    const issue = snapshot.issues.find((open) => open.number === number);
-    if (issue === undefined) {
-      return "not-open";
+  run: { now: Date; gate: string | null; resumes: Readonly<Resumes> },
+): { decisions: Decision[]; memory: ScheduleMemory } {
+  const planned = snapshot.issues.flatMap((issue): Planned[] => {
+    const plan = planOf(issue, settings, run.now);
+    if (plan.kind === "none") {
+      return [];
     }
-    const reason = holdReason(count, issue, stage);
-    if (reason === null) {
-      countStart(count, issue, stage);
+    return [{ issue, plan }];
+  });
+  const holder = holderOf(snapshot, planned);
+  const liveAt = new Map<Stage, number>();
+  let live = 0;
+  for (const { job, legacyLive } of snapshot.issues) {
+    if (job?.live === true) {
+      live += 1;
+      liveAt.set(job.stage, (liveAt.get(job.stage) ?? 0) + 1);
     }
-    return reason;
+    live += Number(legacyLive);
+  }
+  const count: Count = {
+    settings,
+    live,
+    liveAt,
+    holder,
+    queue: mergeQueueOf(snapshot, planned, holder),
+    memory: { resumes: { ...run.resumes }, mergeWindow: holder },
   };
+  const at = run.now.toISOString();
+  const decisions = planned
+    .sort(byOrder(holder, count.queue))
+    .map((one) => decide(count, one, { at, gate: run.gate }));
+  return { decisions, memory: count.memory };
 }
 
-export type { Decision, StartGate };
-export { schedule, startGate };
+export type { Decision, ScheduleMemory };
+export { schedule };
