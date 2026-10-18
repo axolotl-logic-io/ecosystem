@@ -5,9 +5,7 @@
 // Importing this kit first points HOME and ISSUE_PIPELINE_ROOT at a fresh
 // temporary folder, since the pipeline's modules read the root once, on
 // import. A test then imports the pipeline's modules dynamically, after this
-// kit, and checks with `assertTemporaryRoot` that the root they read is that
-// folder.
-import assert from "node:assert/strict";
+// kit, and checks that the root they read, `ROOT`, is `TEMPORARY_ROOT`.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,8 +13,16 @@ import process from "node:process";
 
 const place = fs.mkdtempSync(path.join(os.tmpdir(), "implementor-kit-"));
 process.on("exit", () => fs.rmSync(place, { recursive: true, force: true }));
-process.env["HOME"] = place;
-process.env["ISSUE_PIPELINE_ROOT"] = path.join(place, "root");
+const TEMPORARY_ROOT = path.join(place, "root");
+// Environment names aren't camelCase, so they go in as entries, as in
+// job-test-kit.mjs.
+Object.assign(
+  process.env,
+  Object.fromEntries([
+    ["HOME", place],
+    ["ISSUE_PIPELINE_ROOT", TEMPORARY_ROOT],
+  ]),
+);
 
 const { ROOT } = await import("../src/pipeline-root.ts");
 const { testConfig } = await import("./config-test-kit.mjs");
@@ -37,9 +43,18 @@ const { OpsFailure } = await import("../src/job/role-context.ts");
  */
 
 const ISSUE = 7;
-const HEAD = "a".repeat(40);
-const BASE = "b".repeat(40);
-const INPUTS = "c".repeat(64);
+const PR = 12;
+const SHA_LENGTH = 40;
+const INPUTS_LENGTH = 64;
+
+/** A full commit sha of one repeated hex digit. @param {string} digit */
+function shaOf(digit) {
+  return digit.repeat(SHA_LENGTH);
+}
+
+const HEAD = shaOf("a");
+const BASE = shaOf("b");
+const INPUTS = "c".repeat(INPUTS_LENGTH);
 
 /** @type {GherkinComment} */
 const GHERKIN = {
@@ -55,18 +70,19 @@ const GHERKIN = {
 // The ops of a clean run: no conflicts, every check passing, code pushed.
 /** @type {OpScript} */
 const CLEAN_OPS = {
-  "start-pr": [{ pr: 12, headSha: HEAD }],
+  "start-pr": [{ pr: PR, headSha: HEAD }],
   "sync-base": [{ changed: false, conflict: false, headSha: HEAD }],
   "wiki-sync": [{ changed: false, conflict: false, headSha: "" }],
   verify: [{ pass: true, headSha: HEAD, changedFiles: ["a.ts"], checks: [] }],
   "wiki-check": [{ pass: true, checks: [] }],
-  "open-pr": [{ pr: 12, headSha: HEAD, codeChanged: true, wikiAhead: 1 }],
+  "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: true, wikiAhead: 1 }],
   push: [{ headSha: HEAD, codeChanged: true, wikiAhead: 1 }],
   "finish-sync": [{ resolved: true, headSha: HEAD }],
-  "finish-wiki-sync": [{ resolved: true, headSha: "d".repeat(40) }],
-  "close-pr": [{ pr: 12, closed: true }],
+  "finish-wiki-sync": [{ resolved: true, headSha: shaOf("d") }],
+  "close-pr": [{ pr: PR, closed: true }],
 };
 
+/** @type {SessionResult} */
 const DONE = { ok: true, reply: { outcome: "done", summary: "Lists chats" } };
 
 /**
@@ -74,6 +90,63 @@ const DONE = { ok: true, reply: { outcome: "done", summary: "Lists chats" } };
  */
 function configOf(extra = {}) {
   return testConfig({ maxCiFixes: 2, maxConflictFixes: 2, ...extra }).cfg;
+}
+
+/**
+ * The fake `op`, answering from `script` over the clean run's replies, and
+ * the calls it records.
+ * @param {OpScript} [script]
+ */
+function scriptedOps(script = {}) {
+  /** @type {OpCall[]} */
+  const ops = [];
+  /** @type {OpScript} */
+  const replies = { ...CLEAN_OPS, ...script };
+  /** @type {Partial<Record<OpName, number>>} */
+  const used = {};
+  /**
+   * @param {OpName} name
+   * @param {object} payload
+   * @returns {Promise<unknown>}
+   */
+  function op(name, payload) {
+    ops.push({ name, payload: { ...payload } });
+    const list = replies[name];
+    if (list === undefined || list.length === 0) {
+      return Promise.reject(new OpsFailure(name, 1, `unscripted op ${name}`));
+    }
+    const at = used[name] ?? 0;
+    used[name] = at + 1;
+    const reply = list[Math.min(at, list.length - 1)];
+    if (reply instanceof Error) {
+      return Promise.reject(reply);
+    }
+    return Promise.resolve(reply);
+  }
+  return { op, ops };
+}
+
+/**
+ * The fake `session`, answering `results` in order and the last one again
+ * once they run out, and the specs it records.
+ * @param {SessionResult[]} results
+ */
+function scriptedSessions(results) {
+  /** @type {SessionSpec[]} */
+  const sessions = [];
+  /**
+   * @param {SessionSpec} spec
+   * @returns {Promise<SessionResult>}
+   */
+  function session(spec) {
+    sessions.push(spec);
+    const result = results[Math.min(sessions.length - 1, results.length - 1)];
+    if (result === undefined) {
+      return Promise.reject(new Error("no scripted session result"));
+    }
+    return Promise.resolve(result);
+  }
+  return { session, sessions };
 }
 
 /**
@@ -87,55 +160,28 @@ function configOf(extra = {}) {
  * }} [script]
  */
 function fakeContext(script = {}) {
-  /** @type {OpCall[]} */
-  const ops = [];
-  /** @type {SessionSpec[]} */
-  const sessions = [];
+  const { op, ops } = scriptedOps(script.ops);
+  const { session, sessions } = scriptedSessions(script.sessions ?? [DONE]);
   /** @type {IssueState[]} */
   const saves = [];
-  /** @type {OpScript} */
-  const replies = { ...CLEAN_OPS, ...script.ops };
-  /** @type {Partial<Record<OpName, number>>} */
-  const used = {};
-  const results = script.sessions ?? [DONE];
+  // A null docs or Gherkin is the test's own; only a missing one defaults.
+  const { docs = "/job/docs", gherkin = GHERKIN } = script;
   /** @type {RoleContext} */
   const ctx = {
     cfg: configOf(script.config),
     issue: ISSUE,
     stage: "implement",
     state: { ...newIssueState(ISSUE), stage: "implement", ...script.state },
-    dirs: {
-      job: "/job",
-      repo: "/job/repo",
-      docs: script.docs === undefined ? "/job/docs" : script.docs,
-    },
+    dirs: { job: "/job", repo: "/job/repo", docs },
     issueFile: "/job/issue.md",
     inputs: {
       issue: { title: "List chats", body: "B", user: { login: "owner" } },
       comments: [],
       revision: INPUTS,
-      gherkin: script.gherkin === undefined ? GHERKIN : script.gherkin,
+      gherkin,
     },
-    op: (name, payload) => {
-      ops.push({ name, payload: { ...payload } });
-      const list = replies[name];
-      if (list === undefined || list.length === 0) {
-        return Promise.reject(new OpsFailure(name, 1, `unscripted op ${name}`));
-      }
-      const at = used[name] ?? 0;
-      used[name] = at + 1;
-      const reply = list[Math.min(at, list.length - 1)];
-      if (reply instanceof Error) {
-        return Promise.reject(reply);
-      }
-      return Promise.resolve(reply);
-    },
-    session: (spec) => {
-      sessions.push(spec);
-      const result = results[Math.min(sessions.length - 1, results.length - 1)];
-      assert.ok(result !== undefined, "a scripted session result");
-      return Promise.resolve(result);
-    },
+    op,
+    session,
     post: () => Promise.reject(new Error("the implementor posts no comment")),
     save: (state) => {
       saves.push(state);
@@ -150,13 +196,7 @@ function opNames(ops) {
   return ops.map((call) => call.name);
 }
 
-function assertTemporaryRoot() {
-  assert.equal(ROOT, path.join(place, "root"));
-  assert.ok(ROOT.startsWith(os.tmpdir()), `${ROOT} is not temporary`);
-}
-
 export {
-  assertTemporaryRoot,
   BASE,
   CLEAN_OPS,
   DONE,
@@ -166,5 +206,8 @@ export {
   INPUTS,
   ISSUE,
   opNames,
-  place,
+  PR,
+  ROOT,
+  shaOf,
+  TEMPORARY_ROOT,
 };

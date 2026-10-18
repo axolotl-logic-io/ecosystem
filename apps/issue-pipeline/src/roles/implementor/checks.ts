@@ -1,9 +1,10 @@
 // The job's verification of the implementor's work (`verify-runs-repo-checks`):
 // the repo's configured checks through `verify`, then `wiki-check`, never the
 // session's word. A failure gets a fix session, up to `maxCiFixes` of them in
-// a job, and stops with check-fixes after that. Once the code merged, verify
+// a job, and stops with check-fixes after that, or as soon as a fix session
+// says no change in the repo can fix them. Once the code merged, verify
 // checks the merge commit itself, which wiki-only work can't change, so a
-// failure there stops without a fix session.
+// failure there stops with check-fixes without a fix session.
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { CodeMerged, IssueState } from "../../state.ts";
@@ -64,8 +65,8 @@ async function verifyOnce(ctx: RoleContext, mode: Mode): Promise<Verification> {
   };
 }
 
-function failedIds(verification: Verification): string {
-  const ids = verification.failed.map((check) => check.id);
+function failedIds({ failed }: { failed: readonly Check[] }): string {
+  const ids = failed.map((check) => check.id);
   if (ids.length === 0) {
     return "no check named";
   }
@@ -102,7 +103,9 @@ function judged(
   return null;
 }
 
-// Fix attempt `attempt`'s session: null when it says it fixed the checks.
+// Fix attempt `attempt`'s session: null when it says it fixed the checks. A
+// fixer that says it can't fix them ends the check fixes early, under the
+// same control as running out of attempts.
 async function fixSession(
   ctx: RoleContext,
   loop: Loop,
@@ -122,8 +125,8 @@ async function fixSession(
     return null;
   }
   if (reply.outcome === "cannot") {
-    const reason = `the implementor can't fix the failing checks: ${reply.reason}`;
-    return ended({ kind: "stop", code: "checks-unrelated", reason, state });
+    const reason = `fix attempt ${attempt} of ${max} found no change in the repo that fixes the failing checks (${failedIds({ failed })}): ${reply.reason}`;
+    return ended(checksStop(state, reason));
   }
   const reason = `the check fix session replied ${reply.outcome}, not done or cannot`;
   return ended(errorStop(state, reason));

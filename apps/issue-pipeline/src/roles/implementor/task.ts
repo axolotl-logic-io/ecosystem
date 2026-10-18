@@ -210,7 +210,7 @@ function resolverTask(
     "",
     `For each stopped commit, read what ${onto} changed in the conflicting files and what the stopped commit changed (\`git -C ${dir} show REBASE_HEAD\`), and write a resolution that keeps the intent of both, with no conflict markers left. Then stage only the files you resolved, with \`git -C ${dir} add -- <file>\`, and run \`GIT_EDITOR=true git -C ${dir} rebase --continue\`. Repeat until the rebase finishes.`,
     "",
-    "Those two are the only git commands you may run, and only for this rebase: replaying the stopped commits is not leave to make any other commit. Never skip, abort or reset the rebase, and never pass `--no-verify`. Make no other change here; the work session after the sync does that.",
+    "Besides reading commands such as `git show`, those two are the only git commands you may run, and only for this rebase: replaying the stopped commits is not leave to make any other commit. Never skip, abort or reset the rebase, and never pass `--no-verify`. Make no other change here; the work session after the sync does that.",
     "",
     `No human resolves conflicts, so decide them yourself. When the two sides contradict each other, keep what ${onto} now does and re-apply the branch's change on top of it as far as it still makes sense, and say in your summary what you chose.`,
     "",
