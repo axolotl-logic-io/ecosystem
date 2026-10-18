@@ -55,7 +55,8 @@ function claimedState(n, extra = {}) {
   return { ...newIssueState(n), lease: LEASE, ...extra };
 }
 
-/** @param {number} n @param {string | null} [wiki] @returns {object} */
+// The paths a won claim of issue `n` replies with.
+/** @param {number} n @param {string | null} [wiki] @returns {{ worktree: string, runDir: string, issueFile: string, wiki: string | null }} */
 function claimPaths(n, wiki = null) {
   const issueFile = path.join(runDir(n), "issue.md");
   return { worktree: worktree(n), runDir: runDir(n), issueFile, wiki };

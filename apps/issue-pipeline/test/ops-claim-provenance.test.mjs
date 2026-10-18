@@ -6,6 +6,7 @@
 // reconcile its completion.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { z } from "zod";
 import {
   commitOnOrigin,
   everyCommentsRead,
@@ -20,8 +21,13 @@ import {
 } from "./ops-v2-test-kit.mjs";
 
 const { askOps, reply, stateComment, writes } = kit;
-const MERGE_OID = "a".repeat(40);
+const SHA_LENGTH = 40;
+const MERGE_OID = "a".repeat(SHA_LENGTH);
 const PR = 7;
+// What the claim's refusals say.
+const OTHER_BRANCH = /isn't #302's PR/u;
+const UNRESOLVED = /Could not resolve/u;
+const UNCONFIRMED = /doesn't confirm/u;
 
 // Queues the reads of a claim of issue `n` that this lane already holds,
 // with `saved` as its saved state, and `more` replies.
@@ -34,29 +40,42 @@ function claimWorld(n, saved, more = []) {
   ]);
 }
 
-/** @param {unknown} value @returns {Record<string, unknown>} */
-function record(value) {
-  assert.equal(typeof value, "object");
-  assert.notEqual(value, null);
-  return /** @type {Record<string, unknown>} */ (value);
-}
+// The parts of a claim's reply, and of a saved state, the tests read.
+const STATE = z.looseObject({
+  stage: z.string(),
+  headSha: z.string().nullable(),
+  verifiedSha: z.string().nullable(),
+  codeMerged: z.unknown(),
+  merged: z.unknown(),
+  review: z.looseObject({ verdict: z.string().nullable() }),
+});
+const CLAIMED = z.looseObject({
+  ok: z.boolean(),
+  state: STATE,
+  claim: z.unknown(),
+  issueFile: z.unknown(),
+  remoteHead: z.unknown(),
+  branchChanged: z.unknown().optional(),
+  lost: z.unknown().optional(),
+});
+const FAILED = z.looseObject({ ok: z.boolean(), error: z.string() });
 
 test("a claim records the code merge GitHub reports for the issue's own PR", () => {
   const n = 301;
   claimWorld(
     n,
-    v2State(n, { stage: "merge", pr: PR, headSha: "b".repeat(40) }),
+    v2State(n, { stage: "merge", pr: PR, headSha: "b".repeat(SHA_LENGTH) }),
     [prView(n, PR, { state: "MERGED", mergeCommit: { oid: MERGE_OID } })],
   );
-  const won = record(askOps({ op: "claim", number: n, ...LANE }));
+  const won = CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(won.ok, true);
-  const state = record(won.state);
+  const { state } = won;
   assert.deepEqual(state.codeMerged, { pr: PR, sha: MERGE_OID });
   assert.equal(state.stage, "merge");
   assert.equal(won.branchChanged, undefined);
-  assert.deepEqual(record(won.claim), { id: 2, posted: false });
+  assert.deepEqual(won.claim, { id: 2, posted: false });
   assert.equal(typeof won.issueFile, "string");
-  assert.deepEqual(record(savedStates().at(-1)).codeMerged, {
+  assert.deepEqual(STATE.parse(savedStates().at(-1)).codeMerged, {
     pr: PR,
     sha: MERGE_OID,
   });
@@ -71,9 +90,9 @@ test("a claim refuses a PR from another branch as the issue's merge", () => {
       headRefName: "agent/issue-999",
     }),
   ]);
-  const failed = record(askOps({ op: "claim", number: n, ...LANE }));
+  const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
-  assert.match(String(failed.error), /isn't #302's PR/u);
+  assert.match(failed.error, OTHER_BRANCH);
   assert.deepEqual(savedStates(), []);
 });
 
@@ -86,7 +105,7 @@ test("a claim refuses a fork's PR of the same branch name", () => {
       isCrossRepository: true,
     }),
   ]);
-  const failed = record(askOps({ op: "claim", number: n, ...LANE }));
+  const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.deepEqual(savedStates(), []);
 });
@@ -102,9 +121,9 @@ test("a claim fails, never assuming a merge, when GitHub can't say", () => {
       keep: true,
     },
   ]);
-  const failed = record(askOps({ op: "claim", number: n, ...LANE }));
+  const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
-  assert.match(String(failed.error), /Could not resolve/u);
+  assert.match(failed.error, UNRESOLVED);
   assert.deepEqual(writes(), []);
 });
 
@@ -113,7 +132,7 @@ test("a claim refuses a merged PR without a merge commit", () => {
   claimWorld(n, v2State(n, { pr: PR }), [
     prView(n, PR, { state: "MERGED", mergeCommit: null }),
   ]);
-  const failed = record(askOps({ op: "claim", number: n, ...LANE }));
+  const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.deepEqual(savedStates(), []);
 });
@@ -126,9 +145,9 @@ test("a claim refuses a recorded code merge GitHub no longer confirms", () => {
     codeMerged: { pr: PR, sha: MERGE_OID },
   });
   claimWorld(n, saved, [prView(n, PR)]);
-  const failed = record(askOps({ op: "claim", number: n, ...LANE }));
+  const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
-  assert.match(String(failed.error), /doesn't confirm/u);
+  assert.match(failed.error, UNCONFIRMED);
   assert.deepEqual(savedStates(), []);
 });
 
@@ -152,13 +171,13 @@ test("a claim adopts the pipeline's own unsaved push and sends a merge back to r
       },
     }),
   );
-  const won = record(askOps({ op: "claim", number: n, ...LANE }));
+  const won = CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(won.ok, true);
-  const state = record(won.state);
+  const { state } = won;
   assert.equal(state.stage, "review");
   assert.equal(state.headSha, pushed);
   assert.equal(state.verifiedSha, null);
-  assert.equal(record(state.review).verdict, null);
+  assert.equal(state.review.verdict, null);
   assert.equal(won.remoteHead, pushed);
   assert.equal(won.branchChanged, undefined);
 });
@@ -168,11 +187,11 @@ test("a claim reports a branch head the pipeline didn't push, leaving the state"
   const saved = commitOnOrigin(`agent/issue-${n}`, "f308a");
   const foreign = commitOnOrigin(`agent/issue-${n}`, "f308b");
   claimWorld(n, v2State(n, { stage: "review", headSha: saved }));
-  const won = record(askOps({ op: "claim", number: n, ...LANE }));
+  const won = CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(won.ok, true);
   assert.equal(won.lost, undefined);
   assert.deepEqual(won.branchChanged, { saved, remote: foreign });
-  const state = record(won.state);
+  const { state } = won;
   assert.equal(state.stage, "review");
   assert.equal(state.headSha, saved);
 });
@@ -190,9 +209,9 @@ test("a claim of a done issue that saved its merge reconciles it, done and unlab
     }),
     [prView(n, PR, { state: "MERGED", mergeCommit: { oid: MERGE_OID } })],
   );
-  const won = record(askOps({ op: "claim", number: n, ...LANE }));
+  const won = CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(won.ok, true);
-  const state = record(won.state);
+  const { state } = won;
   assert.equal(state.stage, "done");
   assert.deepEqual(state.merged, merged);
   assert.equal(
@@ -204,7 +223,7 @@ test("a claim of a done issue that saved its merge reconciles it, done and unlab
 test("a claim of a done issue with no saved merge fails", () => {
   const n = 310;
   claimWorld(n, v2State(n, { stage: "done" }));
-  const failed = record(askOps({ op: "claim", number: n, ...LANE }));
+  const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.deepEqual(failed, { ok: false, error: "#310 is done" });
   assert.deepEqual(writes(), []);
 });

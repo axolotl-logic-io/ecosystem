@@ -58,8 +58,12 @@ function movedBranch(n) {
     `cd ${root}/seed && git checkout -qb agent/issue-${n} integration && echo ${n} > a${n} && git add a${n} && git commit -qm work && git push -q origin agent/issue-${n}`,
   );
   const remote = sh(`git -C ${root}/seed rev-parse HEAD`);
-  const saved = { ...newIssueState(n), stage: "implement", headSha: old };
-  return { saved: /** @type {const} */ (saved), remote };
+  const saved = {
+    ...newIssueState(n),
+    stage: /** @type {const} */ ("implement"),
+    headSha: old,
+  };
+  return { saved, remote };
 }
 
 // Records, as the ops would before a push, that `sha` was pushed for `n`.
