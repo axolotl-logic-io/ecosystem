@@ -140,9 +140,19 @@ function jobEnv(place, extraEnv) {
   };
 }
 
+// The branch the job tests assign issue #7: its own.
+const ISSUE_BRANCH = "agent/issue-7";
+
+// The job's argv for issue #7 with `args`, which assign it ISSUE_BRANCH with
+// a stage unless they name a branch.
 /** @param {Place} place @param {readonly string[]} args @returns {string[]} */
 function argvOf(place, args) {
-  return [JOB, "--config", place.config, "--issue", "7", ...args];
+  const argv = [JOB, "--config", place.config, "--issue", "7", ...args];
+  const named = args.some((arg) => arg.startsWith("--branch"));
+  if (args.includes("--stage") && !named) {
+    argv.push("--branch", ISSUE_BRANCH);
+  }
+  return argv;
 }
 
 /**

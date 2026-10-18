@@ -129,6 +129,7 @@ test("a writer's commit reaches the issue's branch through the exit-push op befo
   assert.deepEqual(push.checkout, {
     issue: ISSUE,
     dir: repoOf(place.root, "implement"),
+    branch: "agent/issue-7",
   });
   const launches = statusOf(place).launches.map(
     (/** @type {{ key: string }} */ launch) => launch.key,
@@ -228,7 +229,11 @@ test("every ops request the job makes names its checkout", () => {
   runJob(place, ["--stage", READER_STAGE]);
   const ops = logOf(place, "ops.log");
   assert.ok(ops.length > 0);
-  const checkout = { issue: ISSUE, dir: repoOf(place.root, READER_STAGE) };
+  const checkout = {
+    issue: ISSUE,
+    dir: repoOf(place.root, READER_STAGE),
+    branch: "agent/issue-7",
+  };
   for (const request of ops) {
     assert.deepEqual(request.checkout, checkout, request.op);
   }

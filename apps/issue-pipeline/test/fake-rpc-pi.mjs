@@ -86,7 +86,7 @@ function finishSync() {
 
 // A fake pi in RPC mode. It logs its argv, cwd, the HEAD of the code
 // checkout there (repo/ when the cwd holds one, as a stage job's folder
-// does, else the cwd itself), pid, whether its session
+// does, else the cwd itself) and its branch, pid, whether its session
 // file was new, its env's names, its GH_TOKEN and its parsed
 // ISSUE_PIPELINE_COMMIT_SCOPE (null when unset) to pi.log, then every command it reads, and answers each with
 // a response. On "prompt" it plays pi-script.json's events, writing each to
@@ -123,13 +123,15 @@ const script = JSON.parse(fs.readFileSync(root + "/pi-script.json", "utf8"));
 // It stands in for pipeline_commit, so its commits pass the checkout's pre-commit hook.
 const git = (dir, args) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8", env: { ...process.env, ISSUE_PIPELINE_COMMIT: "1" } }).trim();
 let head = null;
+let branch = null;
 const code = fs.existsSync(path.join(process.cwd(), "repo")) ? path.join(process.cwd(), "repo") : process.cwd();
 try {
   head = git(code, ["rev-parse", "HEAD"]);
+  branch = git(code, ["rev-parse", "--abbrev-ref", "HEAD"]);
 } catch {}
 const scope = process.env.ISSUE_PIPELINE_COMMIT_SCOPE;
 const commitScope = scope === undefined ? null : JSON.parse(scope);
-log({ argv, cwd: process.cwd(), head, pid: process.pid, fresh, env: Object.keys(process.env).sort(), ghToken: process.env.GH_TOKEN ?? null, commitScope });
+log({ argv, cwd: process.cwd(), head, branch, pid: process.pid, fresh, env: Object.keys(process.env).sort(), ghToken: process.env.GH_TOKEN ?? null, commitScope });
 const print = (event) => {
   process.stdout.write(JSON.stringify(event) + "\\n");
   fs.appendFileSync(session, JSON.stringify(event) + "\\n");

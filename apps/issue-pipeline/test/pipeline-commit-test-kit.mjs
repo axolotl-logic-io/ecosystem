@@ -33,6 +33,8 @@ const { default: pipelineCommit } = await import(
 const root = isolatedRoot;
 const ISSUE = 7;
 const BRANCH = "refs/heads/agent/issue-7";
+// The issue branch the job is assigned.
+const ISSUE_BRANCH = "agent/issue-7";
 const KEY = "i7-launch-1";
 // The job's id and start, as the job's pushes and commits name them.
 const JOB_ID = "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b";
@@ -41,7 +43,7 @@ const JOB_STARTED_AT = "2026-10-17T12:00:00.000Z";
 /**
  * One stage job's folder (root) with its code checkout (repo) and wiki
  * checkout (docs), its control socket and its registered tool.
- * @typedef {{ cfg: Config, root: string, repo: string, docs: string, origin: string, wikiOrigin: string, runDir: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
+ * @typedef {{ cfg: Config, root: string, repo: string, docs: string, branch: string, origin: string, wikiOrigin: string, runDir: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
  */
 
 let repos = 0;
@@ -102,12 +104,18 @@ function registeredTool() {
 async function openJob(stage, { withJobStart = true, commits = true } = {}) {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp);
-  const dirs = openJobCheckout(cfg, ISSUE, { stage });
+  const dirs = openJobCheckout(cfg, ISSUE, { stage, branch: ISSUE_BRANCH });
   if (dirs.docs === null) {
     throw new Error("the job has no wiki checkout");
   }
   const runDir = paths.runDir(cfg, ISSUE);
-  const job = { issue: ISSUE, stage, checkout: dirs.repo, id: JOB_ID };
+  const job = {
+    issue: ISSUE,
+    stage,
+    checkout: dirs.repo,
+    branch: ISSUE_BRANCH,
+    id: JOB_ID,
+  };
   const status = openStatus(runDir, {
     ...job,
     lane: null,
@@ -136,6 +144,7 @@ async function openJob(stage, { withJobStart = true, commits = true } = {}) {
     root: dirs.root,
     repo: dirs.repo,
     docs: dirs.docs,
+    branch: dirs.branch,
     origin: path.join(tmp, "origin.git"),
     wikiOrigin: path.join(tmp, "wiki-origin.git"),
     runDir,

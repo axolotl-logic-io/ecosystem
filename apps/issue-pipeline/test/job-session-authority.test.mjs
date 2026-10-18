@@ -117,7 +117,13 @@ async function openMergeJob() {
     pushError: null,
   }));
   /** @type {RunArgs} */
-  const args = { kind: "run", config: configFile, issue: ISSUE, stage: STAGE };
+  const args = {
+    kind: "run",
+    config: configFile,
+    issue: ISSUE,
+    stage: STAGE,
+    branch: "agent/issue-7",
+  };
   const where = { cwd, repo: cwd, from: process.env, job: identity };
   const hooks = hooksOf(cfg, args, { status, control }, where);
   /** @type {UsageEntry[]} */

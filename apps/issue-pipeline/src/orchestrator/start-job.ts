@@ -76,7 +76,10 @@ function saveStarts(
   fs.renameSync(temp, file);
 }
 
-function jobArgv(configPath: string, start: Start, job: string): string[] {
+// The command line of `start`'s job, on the issue's legacy canonical branch.
+function jobArgv(starter: Starter, start: Start, job: string): string[] {
+  const { configPath, cfg } = starter;
+  const branch = paths.branch(cfg, start.issue);
   const argv = [
     "--config",
     configPath,
@@ -84,6 +87,8 @@ function jobArgv(configPath: string, start: Start, job: string): string[] {
     String(start.issue),
     "--stage",
     start.stage,
+    "--branch",
+    branch,
     "--lane",
     ORCHESTRATOR_LANE,
     "--job-id",
@@ -98,7 +103,7 @@ function jobArgv(configPath: string, start: Start, job: string): string[] {
 // Spawns the job `start` decided and gives its start record.
 function startJob(starter: Starter, start: Start): StartRecord {
   const job = randomUUID();
-  const argv = jobArgv(starter.configPath, start, job);
+  const argv = jobArgv(starter, start, job);
   const { cfg } = starter;
   const pid = starter.spawn(argv, paths.jobLog(cfg, start.issue));
   const { issue, stage, at } = start;

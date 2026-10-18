@@ -16,7 +16,7 @@ import {
   guardCommits,
   updateSubmodules,
 } from "../clone-setup.ts";
-import type { Config } from "../config.ts";
+import type { Config, JobCheckout } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
@@ -40,6 +40,8 @@ interface JobDirs {
   root: string;
   repo: string;
   docs: string | null;
+  // The issue branch the job's caller assigned, which both checkouts are on.
+  branch: string;
 }
 
 // What closing a job's checkouts dropped: the uncommitted paths, each under
@@ -105,24 +107,24 @@ function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
   guardCommits(dir);
 }
 
-// Exposes the initialized wiki submodule as docs/, restoring unpublished work
-// from the previous job. The alias preserves the pipeline_commit scope.
-function openWiki(cfg: Config, issue: number, repo: string): string | null {
+// Exposes `checkout`'s wiki submodule as docs/ (`cfg` is scoped to it),
+// restoring the previous job's unpublished work, for pipeline_commit's scope.
+function openWiki(cfg: Config, checkout: JobCheckout): string | null {
+  const { issue, dir: repo } = checkout;
   const wiki = wikiCfg(cfg);
   if (wiki === null || !hasGit(path.join(repo, wiki.dir))) {
     return null;
   }
-  const scoped = withCheckout(cfg, { issue, dir: repo });
-  const into = paths.wiki(scoped, issue);
+  const into = paths.wiki(cfg, issue);
   const target = path.relative(path.dirname(into), path.join(repo, wiki.dir));
   fs.symlinkSync(target, into, "dir");
-  ensureWiki(scoped, issue);
+  ensureWiki(cfg, issue);
   guardCommits(into);
   const mirror = paths.wikiMirror(cfg);
   const url = gitIn(into, ["remote", "get-url", "origin"]).trim();
   withWikiLock(cfg, (): void => {
     syncMirror(cfg, { mirror, url, prune: false });
-    const branch = paths.branch(issue);
+    const branch = paths.branch(cfg, issue);
     if (hasRef(mirror, `refs/heads/${branch}`)) {
       gitIn(into, ["fetch", "--quiet", mirror, `refs/heads/${branch}`]);
       gitIn(into, ["checkout", "--quiet", "-B", branch, "FETCH_HEAD"]);
@@ -133,11 +135,11 @@ function openWiki(cfg: Config, issue: number, repo: string): string | null {
 
 // Makes stage job `stage`'s folder for issue `issue`, replacing one an
 // earlier job left: its code checkout from the freshly fetched mirror, and
-// its wiki checkout whenever the repo has a wiki.
+// its wiki checkout when the repo has a wiki, both on `job.branch` (branch.ts).
 function openJobCheckout(
   cfg: Config,
   issue: number,
-  job: { stage: string },
+  job: { stage: string; branch: string },
 ): JobDirs {
   const { stage } = job;
   const mirror = paths.mirror(cfg);
@@ -147,11 +149,13 @@ function openJobCheckout(
   fs.rmSync(root, { recursive: true, force: true });
   fs.mkdirSync(root, { recursive: true });
   const repo = paths.jobRepo(cfg, issue, stage);
-  const branch = paths.branch(issue);
+  const checkout = { issue, dir: repo, branch: job.branch };
+  const scoped = withCheckout(cfg, checkout);
+  const branch = paths.branch(scoped, issue);
   cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch }, repo);
   updateSubmodules(cfg, repo);
-  const docs = openWiki(cfg, issue, repo);
-  return { root, repo, docs };
+  const docs = openWiki(scoped, checkout);
+  return { root, repo, docs, branch };
 }
 
 // The paths `dir` holds uncommitted, each after `prefix`, which it then
@@ -209,7 +213,7 @@ function saveWiki(cfg: Config, issue: number, wikiDir: string): void {
   if (wiki === null || !hasGit(wikiDir) || !fs.existsSync(mirror)) {
     return;
   }
-  const ref = `refs/heads/${paths.branch(issue)}`;
+  const ref = `refs/heads/${paths.branch(cfg, issue)}`;
   const range = `origin/${wiki.branch}..HEAD`;
   const ahead = Number(gitIn(wikiDir, ["rev-list", "--count", range]).trim());
   withWikiLock(cfg, (): void => {
@@ -279,7 +283,12 @@ async function closeJobCheckout(
       await push();
     }
     if (docs !== null) {
-      reported((): void => saveWiki(cfg, issue, docs), undefined);
+      const scoped = withCheckout(cfg, {
+        issue,
+        dir: repo,
+        branch: job.branch,
+      });
+      reported((): void => saveWiki(scoped, issue, docs), undefined);
     }
     return dropped;
   } finally {

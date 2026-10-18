@@ -117,6 +117,7 @@ test("an implement job whose only commit is in docs/ still runs its exit push", 
   assert.deepEqual(push?.checkout, {
     issue: ISSUE,
     dir: repoOf(place.root, "implement"),
+    branch: "agent/issue-7",
   });
   assert.deepEqual(statusOf(place).lostChanges, []);
 });

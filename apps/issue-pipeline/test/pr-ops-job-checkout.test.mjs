@@ -23,7 +23,10 @@ function subjectOf(ref) {
 
 test("start-pr in a job checkout commits past its pre-commit hook and pushes the branch", () => {
   const cfg = loadConfig(`${root}/config.json`);
-  const { repo: dir } = openJobCheckout(cfg, ISSUE, { stage: "implement" });
+  const { repo: dir } = openJobCheckout(cfg, ISSUE, {
+    stage: "implement",
+    branch: `agent/issue-${ISSUE}`,
+  });
   fakeGh.reply([
     // start-pr first reads the saved state: no comments, so no codeMerged.
     { when: `issues/${ISSUE}/comments`, stdout: "" },

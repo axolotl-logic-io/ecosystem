@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 // The stage job: one job pinned to one issue that runs only one stage.
 //
-//   node job.mjs --config <path> --issue N --stage <stage> [--lane L]
-//     [--merge-queue n1,n2,…] [--job-id <uuid>]
+//   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
+//     [--lane L] [--merge-queue n1,n2,…] [--job-id <uuid>]
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
-//   node job.mjs --config <path> --issue N --stage <stage> --print-boundary
+//   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
+//     --print-boundary
 //
-// It claims #N and runs the stage's role (src/roles/registry.ts) on the role
+// Its caller assigns it the issue and the issue's branch; it never picks
+// another issue. Before it claims or clones anything it refuses a branch git
+// wouldn't take literally and one the repo protects: its base, its wiki's
+// branch, the remote's default (src/job/branch.ts). Both checkouts, every
+// ops request and every push name that branch; the claim refuses one the
+// issue's saved state isn't bound to. It claims #N and runs the stage's role
+// (src/roles/registry.ts) on the role
 // runner (src/job/role-run.ts), always fresh: a restarted job starts the
 // stage again from what is saved. An issue saved at another stage is released
 // untouched, but a merge job finishes a done issue's recorded completion.
@@ -18,8 +25,8 @@
 // (control.ts). It prints one JSON line, the role run's JobLine
 // {issue, stage, end, reason?, claimError?}, and exits 0, even when the stage
 // stops the issue; it exits 1, with the reason on stderr, only when the job
-// itself fails: bad arguments, a config loadConfig refuses, a stage with no
-// role, or an op of its own that failed.
+// itself fails: bad arguments, a config loadConfig refuses, a refused
+// branch, a stage with no role, or an op of its own that failed.
 //
 // SIGTERM or SIGINT stops it: it aborts its sessions, saves a claimed issue
 // at its last saved state with no lease, and exits 128 + the signal's number
@@ -30,8 +37,8 @@
 // job's start (src/job/pipeline-commit.ts).
 //
 // No pi session gets a gh token (src/job/roles.ts); ops keep the job's env.
-// The implementor's sessions commit through pipeline_commit, which asks the
-// job over its control socket to push (src/job/commit-push.ts).
+// The sessions given commit authority commit through pipeline_commit, which
+// asks the job over its control socket to push (src/job/commit-push.ts).
 // --print-boundary prints the stage job's boundary as one JSON line and
 // starts nothing.
 //
@@ -52,6 +59,7 @@ import type { Config } from "./config.ts";
 import { loadConfig, paths } from "./config.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
+import { branchRefusalOf } from "./job/branch.ts";
 import { openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
 import type { Control } from "./job/control.ts";
@@ -84,7 +92,8 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   }
   const key = jobKeyOf(stage, new Date());
   const wiki = STAGE_WIKI_ACCESS[stage];
-  const dirs = openJobCheckout(cfg, issue, { stage });
+  const { branch } = args;
+  const dirs = openJobCheckout(cfg, issue, { stage, branch });
   const { root, repo } = dirs;
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const runDir = paths.runDir(cfg, issue);
@@ -95,7 +104,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const status = openStatus(runDir, { ...job, ...identity });
   const control = await openControl(
     runDir,
-    pushServerOf(cfg, { issue, stage, checkout: repo, id }, status),
+    pushServerOf(cfg, { issue, stage, checkout: repo, branch, id }, status),
   );
   const where = { cwd: root, repo, from: process.env, job: identity };
   const hooks = hooksOf(cfg, args, { status, control }, where);
@@ -103,7 +112,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     config: args.config,
     sweepId,
     lane: args.lane ?? sweepId,
-    checkout: { issue, dir: repo },
+    checkout: { issue, dir: repo, branch },
   };
   const runOp = opsRunnerOf(issue, frame, { hooks, status });
   let claimed: (() => IssueState) | null = null;
@@ -217,6 +226,10 @@ async function main(): Promise<void> {
     if (args.kind === "steer") {
       await steer(args, cfg);
       return;
+    }
+    const refusal = branchRefusalOf(cfg, args.branch, args.kind === "run");
+    if (refusal !== null) {
+      throw new Error(refusal);
     }
     if (args.kind === "boundary") {
       const boundary = boundaryOf(cfg, args.issue, args.stage, process.env);

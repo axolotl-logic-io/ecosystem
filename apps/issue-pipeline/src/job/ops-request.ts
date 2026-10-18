@@ -20,7 +20,7 @@ const REPLY = z.looseObject({ ok: z.boolean(), error: z.string().optional() });
 
 // What every request names besides its op: the repo config's path, the
 // claimant (`sweepId` and `lane`, which the claim's lease records) and the
-// job's own checkout.
+// job's own checkout, with the issue branch its caller assigned.
 interface OpsFrame {
   config: string;
   sweepId: string;

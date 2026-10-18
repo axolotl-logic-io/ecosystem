@@ -79,7 +79,10 @@ for (const stage of HARDENING_STAGES) {
 test("a repo with no wiki gets a job folder with repo/ and no docs/", () => {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp, false);
-  const dirs = openJobCheckout(cfg, ISSUE, { stage: "implement" });
+  const dirs = openJobCheckout(cfg, ISSUE, {
+    stage: "implement",
+    branch: `agent/issue-${ISSUE}`,
+  });
   assert.equal(dirs.docs, null);
   assert.ok(fs.existsSync(path.join(dirs.root, "repo", ".git")));
   assert.ok(!fs.existsSync(path.join(dirs.root, "docs")));

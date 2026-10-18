@@ -27,11 +27,13 @@ import type { JobStatus } from "./status.ts";
 // The op a push for `pipeline_commit` is recorded as in pushed.json, which a
 // claim adopts as the pipeline's own push (src/adopt-push.ts).
 const PIPELINE_COMMIT_OP = "pipeline-commit";
-// The job a push server pushes for, and its random id.
+// The job a push server pushes for: its code checkout, the issue branch its
+// caller assigned, and its random id.
 interface PushJob {
   issue: number;
   stage: Stage;
   checkout: string;
+  branch: string;
   id: string;
 }
 
@@ -103,9 +105,9 @@ function pushServerOf(
   job: PushJob,
   status: Pick<JobStatus, "pushed" | "launch">,
 ): (key: string) => PushReply {
-  const { issue, stage, checkout } = job;
+  const { issue, stage, checkout, branch } = job;
   const runDir = paths.runDir(cfg, issue);
-  const jobCfg = withCheckout(cfg, { issue, dir: checkout });
+  const jobCfg = withCheckout(cfg, { issue, dir: checkout, branch });
   const wikiDir = paths.wiki(jobCfg, issue);
   const writesWiki =
     STAGE_WIKI_ACCESS[stage] === "write" && wikiCfg(cfg) !== null;

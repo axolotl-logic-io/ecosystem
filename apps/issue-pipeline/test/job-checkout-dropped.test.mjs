@@ -43,11 +43,11 @@ const LATIN1 = Buffer.from("café\n", "latin1");
 // The files each checkout is left holding besides its tracked file.
 const LEFT = ["new.txt", "notes.txt", "blob.bin", "latin1.txt"];
 
-/** @typedef {{ cfg: Config, root: string, repo: string, docs: string, origin: string, wikiOrigin: string }} Opened */
+/** @typedef {{ cfg: Config, root: string, repo: string, docs: string, branch: string, origin: string, wikiOrigin: string }} Opened */
 
 /** @param {Config} cfg @param {string} tmp @returns {Opened} */
 function openIn(cfg, tmp) {
-  const job = { stage: "implement" };
+  const job = { stage: "implement", branch: `agent/issue-${ISSUE}` };
   const dirs = openJobCheckout(cfg, ISSUE, job);
   if (dirs.docs === null) {
     throw new Error("the job has no wiki checkout");
@@ -57,6 +57,7 @@ function openIn(cfg, tmp) {
     root: dirs.root,
     repo: dirs.repo,
     docs: dirs.docs,
+    branch: dirs.branch,
     origin: path.join(tmp, "origin.git"),
     wikiOrigin: path.join(tmp, "wiki-origin.git"),
   };
@@ -70,8 +71,8 @@ function openFresh() {
 
 /** @param {Opened} job @param {string} key */
 async function close(job, key) {
-  const { cfg, repo, docs } = job;
-  const dirs = { root: job.root, repo, docs, key };
+  const { cfg, repo, docs, branch } = job;
+  const dirs = { root: job.root, repo, docs, branch, key };
   return await closeJobCheckout(cfg, ISSUE, { ...dirs, wiki: "write" }, null);
 }
 
