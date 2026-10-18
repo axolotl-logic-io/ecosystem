@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
 import { opsFixture } from "./ops-fixture.mjs";
 import {
   addWiki,
@@ -45,10 +46,21 @@ const MOVED_PIN = /the head pins wiki commit [0-9a-f]+, not [0-9a-f]+/u;
 // The commits a resolver makes itself, as the stage path's does.
 const RESOLVER = "-c user.name=Seed -c user.email=seed@example.com";
 
-/** @param {object} request @returns {any} the op's parsed reply */
+// The parts of sync-base's, finish-sync's and push's replies the tests read.
+const SYNC_REPLY = z.looseObject({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  changed: z.boolean().optional(),
+  conflict: z.boolean().optional(),
+  inRebase: z.boolean().optional(),
+  resolved: z.boolean().optional(),
+  reason: z.string().optional(),
+});
+
+/** @param {object} request @returns {z.infer<typeof SYNC_REPLY>} the op's parsed reply */
 function ask(request) {
   fx.fakeGh.reply([]);
-  return JSON.parse(fx.ask(request, config));
+  return SYNC_REPLY.parse(JSON.parse(fx.ask(request, config)));
 }
 
 /**
@@ -190,7 +202,7 @@ test("finish-sync rejects a head that pins the wiki checkout's moved head, and p
   resolveAndContinue(wt, file);
   const finish = ask({ op: "finish-sync", number: n });
   assert.equal(finish.resolved, false);
-  assert.match(finish.reason, MOVED_PIN);
+  assert.match(finish.reason ?? "", MOVED_PIN);
   assert.equal(fx.originRef(`agent/issue-${n}`), before);
 });
 

@@ -6,6 +6,7 @@
 // change. Through the ops CLI against local origins and the fake gh.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { z } from "zod";
 import { opsFixture } from "./ops-fixture.mjs";
 import {
   addWiki,
@@ -33,10 +34,19 @@ const PR = 183;
 // `git status --porcelain`, trimmed, of a moved wiki checkout.
 const MOVED_WIKI = "M wiki";
 
-/** @param {object} request @param {import("./fake-gh.mjs").GhReply[]} [replies] @returns {any} the op's parsed reply */
+// The parts of verify's and start-pr's replies the tests read.
+const OP_REPLY = z.looseObject({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  pass: z.boolean().optional(),
+  checks: z.array(z.unknown()).optional(),
+  pr: z.number().optional(),
+});
+
+/** @param {object} request @param {import("./fake-gh.mjs").GhReply[]} [replies] @returns {z.infer<typeof OP_REPLY>} the op's parsed reply */
 function ask(request, replies = []) {
   fx.fakeGh.reply(replies);
-  return JSON.parse(fx.ask(request, config));
+  return OP_REPLY.parse(JSON.parse(fx.ask(request, config)));
 }
 
 /**
