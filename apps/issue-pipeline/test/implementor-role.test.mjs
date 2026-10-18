@@ -18,6 +18,7 @@ import {
   shaOf,
   TEMPORARY_ROOT,
 } from "./implementor-test-kit.mjs";
+import { ruleCount } from "./load-rule-test-kit.mjs";
 
 const { implementorRole } = await import(
   "../src/roles/implementor/implementor.ts"
@@ -118,6 +119,7 @@ test("the work task carries the Gherkin, the findings, the merge's return and th
   assert.match(task, PIPELINE_COMMIT);
   assert.match(task, DOCS_DIR);
   assert.doesNotMatch(task, BUDGET_WORDS);
+  assert.equal(ruleCount(task), 1);
 });
 
 test("an issue with no Gherkin goes to the author and comes back to implement", async () => {

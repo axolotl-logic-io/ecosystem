@@ -1,5 +1,9 @@
 // @ts-check
 // Every checkout includes the pinned submodule tree, including nested modules.
+// The fails-before-fix reverted test run and its two submodule tests went
+// with the mechanical test rules (src/config-legacy.ts: the reviewer judges
+// tests); the clone, worktree and stage-job checkouts below keep the
+// pinned-submodule guarantee.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,10 +19,7 @@ const { loadConfig } = await import("../src/config.ts");
 const { openJobCheckout, closeJobCheckout } = await import(
   "../src/job/checkout.ts"
 );
-const { revertedTest } = await import("../src/ops/fails-before-fix.ts");
 const { sh } = fx;
-const REVERTED_ISSUE = 3;
-const SHORT_SHA_LENGTH = 8;
 // Only these tests' local fixture repositories may be fetched.
 setEnv("GIT_ALLOW_PROTOCOL", "file");
 
@@ -43,7 +44,6 @@ function seedModule() {
   sh(`git -C ${module} commit -qam newer`);
 }
 
-const initialBase = fx.originRef("integration");
 seedModule();
 const cfg = loadConfig(fx.configWith("submodules.json", { repo: "o/modules" }));
 
@@ -80,56 +80,6 @@ test("stage jobs initialize submodules even without wiki publishing enabled", as
     );
   }
   assert.equal(fs.existsSync(dirs.root), false);
-});
-
-test("the reverted test run has the pinned submodules and removes its worktree", () => {
-  const wt = ensureWorktree(cfg, REVERTED_ISSUE);
-  const sha = sh(`git -C ${wt} rev-parse HEAD`);
-  const logDir = path.join(fx.root, "logs");
-  fs.mkdirSync(logDir);
-  const result = revertedTest(
-    {
-      cfg,
-      number: 3,
-      wt,
-      sha,
-      base: sha,
-      logDir,
-      timeoutMs: 30_000,
-      label: "submodule-test",
-      commands: {
-        test: "test -f reference/page.md && test -f reference/nested/page.md",
-      },
-    },
-    [],
-  );
-  assert.equal(result.code, 0);
-  const removed = path.join(
-    fx.root,
-    "runs/o__modules/issue-3",
-    `submodule-test-${sha.slice(0, SHORT_SHA_LENGTH)}`,
-  );
-  assert.equal(fs.existsSync(removed), false);
-});
-
-test("reverting a newly added submodule does not fetch its removed gitlink", () => {
-  const wt = ensureWorktree(cfg, REVERTED_ISSUE);
-  const sha = sh(`git -C ${wt} rev-parse HEAD`);
-  const result = revertedTest(
-    {
-      cfg,
-      number: REVERTED_ISSUE,
-      wt,
-      sha,
-      base: initialBase,
-      logDir: path.join(fx.root, "logs"),
-      timeoutMs: 30_000,
-      label: "without-module",
-      commands: { test: "test ! -e reference && test ! -e .gitmodules" },
-    },
-    [".gitmodules", "reference"],
-  );
-  assert.equal(result.code, 0);
 });
 
 test("the shared clone refreshes submodule pins when the base branch advances", () => {

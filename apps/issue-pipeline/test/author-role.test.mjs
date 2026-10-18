@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
+import { ruleCount } from "./load-rule-test-kit.mjs";
 
 const { testConfig } = await import("./config-test-kit.mjs");
 const { authorRole: author } = await import("../src/roles/author/author.ts");
@@ -88,6 +89,7 @@ test("a first Gherkin posts revision 1 and goes to implement", async () => {
   assert.equal(sessions[0]?.agent, "issue-pipeline-author");
   assert.equal(sessions[0]?.commits, false);
   assert.equal(sessions[0]?.model, cfg.models.author);
+  assert.equal(ruleCount(sessions[0]?.task ?? ""), 1);
   assert.equal(posts.length, 1);
   assert.equal(posts[0]?.key, "gherkin");
   assert.equal(posts[0]?.role, "author");
