@@ -36,6 +36,7 @@ test("a stop whose reason and detail name IP addresses posts neither address", (
     ok: true,
     op: "stop",
     posted: 0,
+    commentIds: [],
     code: "error",
     label: "agent:stopped-error",
   });

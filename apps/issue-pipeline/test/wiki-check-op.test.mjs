@@ -136,6 +136,7 @@ test("the ops CLI runs wiki-check and rejects a request with no number", () => {
     ok: true,
     op: "wiki-check",
     posted: 0,
+    commentIds: [],
     ...CLEAN,
   });
   const bad = JSON.parse(fx.ask({ op: "wiki-check" }));

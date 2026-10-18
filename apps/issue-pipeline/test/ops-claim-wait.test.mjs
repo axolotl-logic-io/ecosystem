@@ -82,6 +82,7 @@ test("a claim of a needs-info issue with no answer waits and changes nothing", (
     ok: true,
     op: "claim",
     posted: 0,
+    commentIds: [],
     waiting: "answer",
   });
   assert.deepEqual(writes(), []);
@@ -107,6 +108,7 @@ test("a claim of an asked issue whose only comment since is from before its ques
     ok: true,
     op: "claim",
     posted: 0,
+    commentIds: [],
     waiting: "answer",
   });
   assert.deepEqual(writes(), []);

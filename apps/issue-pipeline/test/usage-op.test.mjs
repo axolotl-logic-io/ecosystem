@@ -72,6 +72,7 @@ test("an append edits the account's usage comment in place, keeping its lines", 
     ok: true,
     op: "usage",
     posted: 0,
+    commentIds: [],
     usageComment: 1,
     edited: true,
   });
@@ -113,6 +114,7 @@ test("a full comment makes the append post usage-2", () => {
     ok: true,
     op: "usage",
     posted: 0,
+    commentIds: [],
     usageComment: SECOND,
     edited: false,
   });

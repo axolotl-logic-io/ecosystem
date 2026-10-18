@@ -71,6 +71,7 @@ function claimReply(n, extra) {
     ok: true,
     op: "claim",
     posted: 0,
+    commentIds: [],
     remoteHead: null,
     paths: claimPaths(n),
     ...extra,

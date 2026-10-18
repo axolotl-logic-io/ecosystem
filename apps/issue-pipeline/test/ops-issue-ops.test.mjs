@@ -28,7 +28,7 @@ const LIVE = new Date().toISOString();
 const CLAIM_MARK = "<!-- agent-pipeline:claim-closed lane=me sweep=s1 -->";
 // Each test's issue, and the comments and PRs it meets.
 const SAVED = { n: 50 };
-const SAVE_REPLY = { ok: true, op: "save-state", posted: 0 };
+const SAVE_REPLY = { ok: true, op: "save-state", posted: 0, commentIds: [] };
 const SPEC_SAVED = { n: 55 };
 const ASKED = { n: 51, state: 5, claim: 6 };
 const STOPPED = { n: 53, pr: 70, claim: 8 };
@@ -94,6 +94,7 @@ test("save-spec writes the full spec to spec.md in the run dir and replies with 
     ok: true,
     op: "save-spec",
     posted: 0,
+    commentIds: [],
     specFile,
   });
   assert.ok(path.isAbsolute(specFile));
@@ -112,7 +113,12 @@ test("ask posts numbered questions, parks the issue and closes its claims", () =
     state: { stage: "plan", pr: null },
     by: null,
   };
-  assert.deepEqual(askOps(request), { ok: true, op: "ask", posted: 0 });
+  assert.deepEqual(askOps(request), {
+    ok: true,
+    op: "ask",
+    posted: 0,
+    commentIds: [],
+  });
   const asked = effects();
   assert.deepEqual(effectNames(asked), [
     `comment #${n} role=triage`,
@@ -166,6 +172,7 @@ test("stop by code explains the control on the issue and its PR and swaps labels
     ok: true,
     op: "stop",
     posted: 0,
+    commentIds: [],
     code: "budget",
     label,
   });
@@ -216,6 +223,7 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     ok: true,
     op: "stop",
     posted: 0,
+    commentIds: [],
     code: "push-rejected",
     label,
   });
@@ -256,6 +264,7 @@ test("a stop at publish keeps its stage and says the wiki is published again", (
     ok: true,
     op: "stop",
     posted: 0,
+    commentIds: [],
     code: "conflict",
     label,
   });

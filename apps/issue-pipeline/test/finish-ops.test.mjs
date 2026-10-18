@@ -46,7 +46,7 @@ const RELEASE_WRITES = 2;
 const STATE_GROUPS = z.object({ json: z.string() });
 const LEASED = z.looseObject({ lease: z.looseObject({ at: z.string() }) });
 const FAILED_REPLY = z.object({ ok: z.boolean(), error: z.string() });
-const RELEASED = { ok: true, op: "release", posted: 0 };
+const RELEASED = { ok: true, op: "release", posted: 0, commentIds: [] };
 
 /** @param {World} w @param {string} subs @returns {string} */
 function closeParent(w, subs) {
@@ -63,6 +63,7 @@ test("close-parent with no sub-issues closes nothing", () => {
         ok: true,
         op: "close-parent",
         posted: 0,
+        commentIds: [],
         closed: false,
         reason: "no sub-issues found",
       }),
@@ -82,6 +83,7 @@ test("close-parent with open sub-issues names them", () => {
     ok: true,
     op: "close-parent",
     posted: 0,
+    commentIds: [],
     closed: false,
     open: [OPEN_SUB, LAST_OPEN_SUB],
   };
@@ -100,6 +102,7 @@ test("close-parent closes a parent whose sub-issues are all closed and one merge
       ok: true,
       op: "close-parent",
       posted: 0,
+      commentIds: [],
       closed: true,
     }),
   );
@@ -120,7 +123,13 @@ test("close-parent counts a sub-issue labelled agent:merged as merged", () => {
   ];
   assert.equal(
     closeParent(w, JSON.stringify(subs)),
-    replyLine({ ok: true, op: "close-parent", posted: 0, closed: true }),
+    replyLine({
+      ok: true,
+      op: "close-parent",
+      posted: 0,
+      commentIds: [],
+      closed: true,
+    }),
   );
 });
 
@@ -136,6 +145,7 @@ test("close-parent leaves a parent open when its sub-issues are all closed but n
       ok: true,
       op: "close-parent",
       posted: 0,
+      commentIds: [],
       closed: false,
       reason: "no sub-issue merged",
     }),

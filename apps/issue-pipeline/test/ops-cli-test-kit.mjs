@@ -128,6 +128,13 @@ function commentsReply(n, comments) {
   };
 }
 
+// gh's reply to posting a new comment on issue `n`: the id GitHub gave it,
+// which the ops reply's commentIds carries.
+/** @param {number} n @param {number} id @returns {GhReply} */
+function postedCommentReply(n, id) {
+  return { when: `issues/${n}/comments -f`, stdout: `${id}\n` };
+}
+
 /** @type {GhReply} */
 const labelsReply = {
   when: "label list",
@@ -169,6 +176,7 @@ export {
   effects,
   issueComment,
   labelsReply,
+  postedCommentReply,
   publicConfigOf,
   reply,
   root,

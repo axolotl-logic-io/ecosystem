@@ -47,7 +47,7 @@ function pushAsPullHead(w) {
 
 /** @param {object[]} worktrees @returns {object} */
 function cleanupReply(worktrees) {
-  return { ok: true, op: "cleanup", posted: 0, worktrees };
+  return { ok: true, op: "cleanup", posted: 0, commentIds: [], worktrees };
 }
 
 /** @param {string} why @returns {object} */

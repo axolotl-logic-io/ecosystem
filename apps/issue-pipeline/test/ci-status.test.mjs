@@ -78,7 +78,7 @@ function request(extra) {
 
 /** @param {object} extra @returns {object} */
 function reply(extra) {
-  return { ok: true, op: "ci-status", posted: 0, ...extra };
+  return { ok: true, op: "ci-status", posted: 0, commentIds: [], ...extra };
 }
 
 /** @param {object} body @returns {unknown} */

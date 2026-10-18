@@ -9,15 +9,23 @@ import {
   commentsReply,
   effects,
   issueComment,
+  postedCommentReply,
   reply,
 } from "./ops-cli-test-kit.mjs";
 
 const ISSUE = 7;
 const MARK = `<!-- issue-pipeline:${ISSUE}:triage -->`;
-const POSTED = { ok: true, op: "post", posted: 1 };
-// The id of the keyed comment, and of another account's copy of it.
+// The id of the keyed comment, of another account's copy of it, and the ids
+// GitHub gives new comments.
 const OWN_ID = 901;
 const OTHER_ID = 902;
+const NEW_ID = 903;
+const SECOND_NEW_ID = 904;
+
+/** @param {number} id @returns {object} the post op's reply for one comment */
+function postedAs(id) {
+  return { ok: true, op: "post", posted: 1, commentIds: [id] };
+}
 
 /** @returns {string[]} the GitHub-visible effects of the writes, in order */
 function madeInOrder() {
@@ -39,9 +47,13 @@ function marked(id, login) {
 }
 
 test("a keyed comment sent twice is posted once and then edited", () => {
-  reply([commentsReply(ISSUE, []), commentsReply(ISSUE, [marked(OWN_ID)])]);
-  assert.deepEqual(askOps(postOf("triage")), POSTED);
-  assert.deepEqual(askOps(postOf("triage")), POSTED);
+  reply([
+    commentsReply(ISSUE, []),
+    postedCommentReply(ISSUE, OWN_ID),
+    commentsReply(ISSUE, [marked(OWN_ID)]),
+  ]);
+  assert.deepEqual(askOps(postOf("triage")), postedAs(OWN_ID));
+  assert.deepEqual(askOps(postOf("triage")), postedAs(OWN_ID));
   assert.deepEqual(madeInOrder(), [
     `comment #${ISSUE} role=triage`,
     `edit comment ${OWN_ID} role=triage`,
@@ -52,18 +64,23 @@ test("a keyed comment sent twice is posted once and then edited", () => {
 });
 
 test("a keyed comment never edits another account's comment with its marker", () => {
-  reply([commentsReply(ISSUE, [marked(OTHER_ID, "mallory")])]);
-  assert.deepEqual(askOps(postOf("triage")), POSTED);
+  reply([
+    commentsReply(ISSUE, [marked(OTHER_ID, "mallory")]),
+    postedCommentReply(ISSUE, NEW_ID),
+  ]);
+  assert.deepEqual(askOps(postOf("triage")), postedAs(NEW_ID));
   assert.deepEqual(madeInOrder(), [`comment #${ISSUE} role=triage`]);
 });
 
 test("a comment with no key is posted every time", () => {
   reply([
     commentsReply(ISSUE, [marked(OWN_ID)]),
+    postedCommentReply(ISSUE, NEW_ID),
     commentsReply(ISSUE, [marked(OWN_ID)]),
+    postedCommentReply(ISSUE, SECOND_NEW_ID),
   ]);
-  assert.deepEqual(askOps(postOf(undefined)), POSTED);
-  assert.deepEqual(askOps(postOf(undefined)), POSTED);
+  assert.deepEqual(askOps(postOf(undefined)), postedAs(NEW_ID));
+  assert.deepEqual(askOps(postOf(undefined)), postedAs(SECOND_NEW_ID));
   assert.deepEqual(madeInOrder(), [
     `comment #${ISSUE} role=triage`,
     `comment #${ISSUE} role=triage`,

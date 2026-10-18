@@ -84,6 +84,7 @@ const STOP_REPLY = {
   ok: true,
   op: "stop",
   posted: 0,
+  commentIds: [],
   code: "too-large",
   label: LABEL,
 };
