@@ -88,4 +88,5 @@ const END_STATES: Readonly<
   "out-of-room": end(outOfRoom),
 };
 
-export { END_STATES };
+export type { EndSpec };
+export { END_STATES, end, stopped };

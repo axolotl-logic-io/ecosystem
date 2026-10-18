@@ -4,19 +4,13 @@
 // maxContinuations, and push. Every `blocked` stops the issue; no state
 // touches the PR. Pure.
 
-import { z } from "zod";
 import type { Guard } from "../machine.ts";
 import type { ImplData, ImplState } from "./locate.ts";
+import { PUSHED } from "./outcome.ts";
 import { implReadingOf } from "./reply.ts";
 import type { ImplStates } from "./states.ts";
 import { check } from "./states.ts";
 import { implementerSession } from "./task.ts";
-
-// What the `flows` check answers with after the push.
-const PUSHED = z.looseObject({
-  headSha: z.string(),
-  flows: z.object({ code: z.boolean(), wiki: z.boolean() }),
-});
 
 const CONTINUATIONS: Guard<ImplState, ImplData> = {
   field: "continuations",
@@ -86,4 +80,4 @@ const IMPLEMENT_STATES: ImplStates<
   }),
 };
 
-export { IMPLEMENT_STATES };
+export { IMPLEMENT_STATES, pushed };

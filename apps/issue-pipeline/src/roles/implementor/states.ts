@@ -19,7 +19,15 @@ type ImplResult =
   | "handoff"
   | "blocked"
   | "bad"
-  | "code";
+  | "code"
+  // The `fix` entry's (#418).
+  | "fix"
+  | "open"
+  | "acceptance"
+  | "go"
+  | "reopen"
+  | "resolved"
+  | "reintroduced";
 
 type ImplSpec = StateSpec<ImplState, ImplResult, ImplData>;
 

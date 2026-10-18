@@ -10,11 +10,13 @@ import { LIMITS, TABLE } from "../src/roles/implementor/machine.ts";
 import { IMPL_SCHEMA } from "../src/roles/implementor/reply.ts";
 import { checkTable } from "../src/roles/machine.ts";
 import { sessionBudget } from "../src/workflow/budget.ts";
+import { ALL_LENSES } from "../src/workflow/lenses.ts";
 import {
   handoffLead,
   NO_ARTIFICIAL_LOAD_RULE,
 } from "../src/workflow/prompts.ts";
 import { EDGES } from "./implementor-edge-fixtures.mjs";
+import { FIX_EDGES } from "./implementor-fix-edge-fixtures.mjs";
 import {
   DONE,
   dataWith,
@@ -83,11 +85,20 @@ test("every edge of the start and the implement entry gives its next state, effe
   }
 });
 
-test("every listed edge is covered, only the implementer runs a model, and no state sends a PR op", () => {
+// The states that run a model: the implementer, the fixer and a re-reviewer
+// for each lens (#418).
+const SESSIONS = new Set([
+  "implementer",
+  "fixer",
+  ...ALL_LENSES.map((lens) => `rereview-${lens}`),
+]);
+
+test("every listed edge is covered, only the implementer, the fixer and the re-reviewers run a model, and no state sends a PR op", () => {
+  const edges = [...EDGES, ...FIX_EDGES];
   for (const [name, spec] of Object.entries(TABLE.states)) {
-    assert.equal(spec.kind === "session", name === "implementer", name);
+    assert.equal(spec.kind === "session", SESSIONS.has(name), name);
     for (const result of Object.keys(spec.on)) {
-      const listed = EDGES.some(
+      const listed = edges.some(
         (edge) => edge.at === name && edge.result === result,
       );
       assert.ok(listed, `${name} ${result}`);
@@ -103,7 +114,7 @@ test("every listed edge is covered, only the implementer runs a model, and no st
 });
 
 test("the table has no faults under its limits", () => {
-  assert.deepEqual(LIMITS, { maxContinuations: 1 });
+  assert.deepEqual(LIMITS, { maxContinuations: 1, maxFixRounds: 2 });
   assert.deepEqual(checkTable(TABLE, LIMITS, dataWith()), []);
 });
 
@@ -144,21 +155,39 @@ test("a reply that doesn't read stops the issue as a failed session", () => {
   assert.equal(effect.end.code, "error");
 });
 
-test("the limit on continuations is the config's maxContinuations", () => {
+test("the limits on continuations and fix rounds are the config's maxContinuations and maxFixRounds", () => {
   const { limitsOf } = implementorMachine;
   assert.ok(limitsOf !== undefined);
-  const { cfg } = implContext({ maxContinuations: 3 });
-  assert.deepEqual(limitsOf(cfg), { maxContinuations: 3 });
+  const { cfg } = implContext({ maxContinuations: 3, maxFixRounds: 4 });
+  assert.deepEqual(limitsOf(cfg), { maxContinuations: 3, maxFixRounds: 4 });
 });
 
-test("the machine checkpoints its four counts and hands off the head, the flows, the reply and the findings", () => {
+test("the machine checkpoints its counts and hands off the head, the flows, the reply, the findings and the re-review's fields", () => {
   assert.deepEqual(
     new Set(implementorMachine.checkpoints),
-    new Set(["continuations", "fixRounds", "conflictFixes", "ciFixRounds"]),
+    new Set([
+      "continuations",
+      "fixContinuations",
+      "fixRounds",
+      "conflictFixes",
+      "ciFixRounds",
+    ]),
   );
   assert.deepEqual(
     new Set(implementorMachine.handoff),
-    new Set(["headSha", "flows", "implemented", "reply", "findings"]),
+    new Set([
+      "headSha",
+      "flows",
+      "implemented",
+      "reply",
+      "findings",
+      "round",
+      "reviewedSha",
+      "reviewedPatchId",
+      "nextFindingId",
+      "resolvedHistory",
+      "testsOnly",
+    ]),
   );
   assert.equal(implementorMachine.table, TABLE);
 });

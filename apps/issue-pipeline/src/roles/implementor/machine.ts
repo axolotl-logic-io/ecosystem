@@ -9,18 +9,24 @@
 import type { Limits, MachineState, Result, Step, Table } from "../machine.ts";
 import { transitionOf } from "../machine.ts";
 import { END_STATES } from "./ends.ts";
+import { FIX_STATES } from "./fix.ts";
 import { IMPLEMENT_STATES } from "./implement.ts";
 import type { ImplData, ImplState } from "./locate.ts";
 import { START_STATES } from "./start.ts";
 import type { ImplResult } from "./states.ts";
 
-// A continuation after each handoff, up to the config's maxContinuations
-// (limitsOf), 1 by default.
-const LIMITS: Limits = { maxContinuations: 1 };
+// A continuation after each handoff, up to the config's maxContinuations,
+// and fix rounds up to its maxFixRounds (limitsOf), 1 and 2 by default.
+const LIMITS: Limits = { maxContinuations: 1, maxFixRounds: 2 };
 
 const TABLE: Table<ImplState, ImplResult, ImplData> = {
   entries: ["start"],
-  states: { ...START_STATES, ...IMPLEMENT_STATES, ...END_STATES },
+  states: {
+    ...START_STATES,
+    ...IMPLEMENT_STATES,
+    ...FIX_STATES,
+    ...END_STATES,
+  },
 };
 
 const transition: (

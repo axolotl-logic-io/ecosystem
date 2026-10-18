@@ -3,8 +3,8 @@
 // src/roles/implementor/ import nothing from the triage, spec writer or
 // reviewer roles; each entry's states have their own module beside
 // machine.ts; and the registry runs the role for each stage in its one
-// list, `implement` so far, leaving open-pr and the later stages to the
-// sweep.
+// list, `implement` and `fix` (#418), leaving open-pr and the later
+// stages to the sweep.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -41,7 +41,7 @@ function otherRoleImports(file) {
 test("the implementor's modules import nothing from the triage, spec writer or reviewer roles", () => {
   const files = sourcesUnder(IMPLEMENTOR_DIR);
   const names = files.map((file) => path.basename(file));
-  for (const module of ["machine.ts", "start.ts", "implement.ts"]) {
+  for (const module of ["machine.ts", "start.ts", "implement.ts", "fix.ts"]) {
     assert.ok(names.includes(module), `scans ${module}`);
   }
   assert.deepEqual(files.flatMap(otherRoleImports), []);
@@ -49,26 +49,26 @@ test("the implementor's modules import nothing from the triage, spec writer or r
 
 test("each entry's states have their own module, which machine.ts joins", () => {
   const files = readdirSync(IMPLEMENTOR_DIR);
-  for (const file of ["machine.ts", "start.ts", "implement.ts"]) {
+  for (const file of ["machine.ts", "start.ts", "implement.ts", "fix.ts"]) {
     assert.ok(files.includes(file), `src/roles/implementor/${file}`);
   }
   const machine = readFileSync(
     path.join(IMPLEMENTOR_DIR, "machine.ts"),
     "utf8",
   );
-  for (const entry of ["./start.ts", "./implement.ts"]) {
+  for (const entry of ["./start.ts", "./implement.ts", "./fix.ts"]) {
     assert.ok(machine.includes(`"${entry}"`), `machine.ts imports ${entry}`);
   }
 });
 
-test("the registry runs the implementor for each stage in its list: implement, and not open-pr", () => {
-  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement"]);
+test("the registry runs the implementor for each stage in its list: implement and fix, and not open-pr", () => {
+  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement", "fix"]);
   for (const stage of IMPLEMENTOR_STAGES) {
     const role = roleOf(stage);
     assert.equal(role?.name, "implementor", stage);
     assert.equal(role?.kind, "machine", stage);
   }
-  for (const stage of ["open-pr", "fix", "sync", "checks"]) {
+  for (const stage of ["open-pr", "sync", "checks"]) {
     assert.equal(roleOf(stage), undefined, stage);
   }
 });

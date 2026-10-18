@@ -118,6 +118,9 @@ interface IssueState {
   acceptReason?: string;
   // The fix rounds run since the first review.
   round?: number;
+  // The values a role's run saved (state.ts `checkpoints`), such as the
+  // implementor's `fixRounds`, which a new review cycle zeroes with `round`.
+  checkpoints?: Readonly<Record<string, number | string | null>>;
   // The head the last review or re-review saw.
   reviewedSha?: string | null;
   // The patch id of the changes the last passing review saw; a restart on a

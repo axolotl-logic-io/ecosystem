@@ -75,6 +75,17 @@ function openSecurityFinding(item: FindingsItem): Finding | undefined {
   return openFindings(item).find(hasCategory);
 }
 
+// `st` as a new review cycle starts it: `round` 0, and the implementor
+// role's fixRounds checkpoint 0 too, since its fix entry counts the higher
+// of the two (#418); other checkpoints stay.
+function freshRounds<T extends IssueState>(st: T): T {
+  const { checkpoints } = st;
+  if (checkpoints === undefined) {
+    return { ...st, round: 0 };
+  }
+  return { ...st, round: 0, checkpoints: { ...checkpoints, fixRounds: 0 } };
+}
+
 // Why a failed acceptance check stops the issue.
 const ACCEPTANCE_REASON: string =
   "the acceptance verifier found the issue is not fully resolved";
@@ -197,5 +208,6 @@ export {
   findingsStopCode,
   findingsStopReason,
   findingsText,
+  freshRounds,
   openFindings,
 };

@@ -5,7 +5,7 @@
 
 import { launchBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
-import { addFinding } from "../findings.ts";
+import { addFinding, freshRounds } from "../findings.ts";
 import type { ReviewLens } from "../lenses.ts";
 import { LENS_NAMES } from "../lenses.ts";
 import { AGG_SCHEMA, REVIEW_SCHEMA } from "../review-schemas.ts";
@@ -120,7 +120,7 @@ function prepared(
       replyError(error),
     );
   }
-  const st = { ...state.st, headSha, findings: [], round: 0 };
+  const st = freshRounds({ ...state.st, headSha, findings: [] });
   const carry = { patchId: patchIdIn(reply) };
   const started = { ...state, st, phase: "reviewed", carry };
   const diff = { path: String(diffPath), lines: String(diffLines) };

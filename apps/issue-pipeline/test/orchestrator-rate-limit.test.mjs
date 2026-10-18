@@ -51,14 +51,14 @@ const DOUBLED = [
 
 // Issue `limited`'s `stage` job ended `minutes` after NOW with `outcome`.
 /** @param {number} limited @param {number} minutes @param {StatusFile["outcome"]} [outcome] @param {string} [stage] @returns {void} */
-function endedAt(limited, minutes, outcome = RATE_LIMITED, stage = "fix") {
+function endedAt(limited, minutes, outcome = RATE_LIMITED, stage = "review") {
   const at = new Date(NOW.getTime() + minutes * MINUTE_MS).toISOString();
   writeJob({ issue: limited, stage, pid: deadPid(), outcome, endedAt: at });
 }
 
 /** @param {{ limited: number, waiting: number }} pair @returns {OpenIssue[]} */
 function queueOf({ limited, waiting }) {
-  return [{ number: limited, state: { stage: "fix" } }, { number: waiting }];
+  return [{ number: limited, state: { stage: "review" } }, { number: waiting }];
 }
 
 // What ticks over the pair's issues do the minute before `backoff` minutes
@@ -135,16 +135,16 @@ test("rateLimitBackoffMinutes sets the backoff", () => {
 test("a dead job's restart is held as rate-limited during a backoff", () => {
   noBackoff();
   endedAt(RESTART.limited, 0, RATE_LIMITED, "spec");
-  writeJob({ issue: RESTART.dead, stage: "fix", pid: deadPid() });
+  writeJob({ issue: RESTART.dead, stage: "review", pid: deadPid() });
   const issues = [
     { number: RESTART.limited, state: { stage: "spec" } },
-    { number: RESTART.dead, state: { stage: "fix" } },
+    { number: RESTART.dead, state: { stage: "review" } },
   ];
   assert.deepEqual(tickOver(issues, 0).spawned, []);
   assert.deepEqual(loggedFor(RESTART.dead), [
     {
       issue: RESTART.dead,
-      stage: "fix",
+      stage: "review",
       action: "held",
       reason: "rate-limited",
     },

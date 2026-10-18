@@ -89,4 +89,4 @@ function draftRemovedOnOrigin(origin) {
   return specTestsSha;
 }
 
-export { claimWith, draftRemovedOnOrigin, implementReplies, PUSHED };
+export { claimed, claimWith, draftRemovedOnOrigin, implementReplies, PUSHED };

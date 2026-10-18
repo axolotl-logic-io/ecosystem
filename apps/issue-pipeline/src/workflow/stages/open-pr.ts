@@ -22,11 +22,21 @@ function phaseOf(state: StageState): OpenPrPhase {
   return phase;
 }
 
+// Asks for the PR, reopening the one a wiki-only change closed (#418).
 function begin(state: StageState): Step {
-  const { prTitle, prBody, prBy } = state.st;
+  const { prTitle, prBody, prBy, prClosed, pr } = state.st;
+  let reopen = {};
+  if (prClosed === true) {
+    reopen = { reopen: pr };
+  }
   const payload = { number: state.n, title: prTitle, body: prBody, by: prBy };
   return launchStep({ ...state, phase: "opened" }, [
-    { kind: "op", name: "openpr", op: "open-pr", payload },
+    {
+      kind: "op",
+      name: "openpr",
+      op: "open-pr",
+      payload: { ...payload, ...reopen },
+    },
   ]);
 }
 
@@ -60,6 +70,10 @@ function opened(
     return stopStep(state, "could not open the PR", errorOf(error));
   }
   const st = { ...state.st, pr, headSha, implemented: true };
+  if (st.prClosed === true) {
+    // begin reopened it.
+    st.prClosed = false;
+  }
   return flowStep({ ...state, st }, ctx, reply, {
     phase: "flowed",
     goOn: toReview,

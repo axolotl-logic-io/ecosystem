@@ -9,6 +9,7 @@ import { check } from "./states.ts";
 const START_STATES: ImplStates<"start"> = {
   start: check("start", (data: ImplData) => ({ entry: data.entry }), {
     implement: { to: "implement-work?" },
+    fix: { to: "fix-work?" },
   }),
 };
 

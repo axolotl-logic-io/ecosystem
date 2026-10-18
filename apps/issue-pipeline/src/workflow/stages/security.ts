@@ -7,7 +7,7 @@
 
 import { sessionBudget } from "../budget.ts";
 import { noteEvent } from "../event-log.ts";
-import { addFinding, findingsStop } from "../findings.ts";
+import { addFinding, findingsStop, freshRounds } from "../findings.ts";
 import { SECURITY_RULES } from "../lenses.ts";
 import { preamble } from "../prompts.ts";
 import { SECURITY_SCHEMA } from "../review-schemas.ts";
@@ -210,9 +210,8 @@ function found(
     );
   }
   st.reviewedSha = st.verifiedSha ?? null;
-  st.round = 0;
   st.stage = "fix";
-  return saved({ ...state, st }, by, body);
+  return saved({ ...state, st: freshRounds(st) }, by, body);
 }
 
 function decide(

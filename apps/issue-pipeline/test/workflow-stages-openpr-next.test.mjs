@@ -129,3 +129,29 @@ test("a change that changed nothing stops as not doable", () => {
     code: null,
   });
 });
+
+// The PR a wiki-only issue closed, which a later fix's code reopens.
+const CLOSED_PR = 42;
+
+test("an issue whose PR was closed reopens it, and goes to review once it is open", () => {
+  const closed = { ...IMPLEMENTED, pr: CLOSED_PR, prClosed: true };
+  const begin = next(buildState("open-pr", closed), BUILD_CTX, []);
+  const [request] = opsRequests(begin);
+  assert.equal(request?.op, "open-pr");
+  const { reopen } = request?.payload ?? {};
+  assert.equal(reopen, CLOSED_PR);
+  const reply = {
+    ok: true,
+    pr: CLOSED_PR,
+    headSha: "bbbbbbb",
+    codeChanged: true,
+  };
+  const step = afterReply(next, begin, { ...reply, wikiAhead: 1 });
+  assert.equal(step.done, true);
+  assert.equal(step.stop, null);
+  const { pr, prClosed, stage } = step.state.st;
+  assert.deepEqual(
+    { pr, prClosed, stage },
+    { pr: CLOSED_PR, prClosed: false, stage: "review" },
+  );
+});

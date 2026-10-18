@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { State } from "../../state.ts";
 import type { Budgets } from "../../workflow/budget.ts";
 import type { Flows } from "../../workflow/flows.ts";
+import type { Lens } from "../../workflow/lenses.ts";
 import type { Signature } from "../../workflow/signing.ts";
 import { continuationsOf } from "../../workflow/stages/continuation.ts";
 import { isStrings } from "../../workflow/stages/reply-guards.ts";
@@ -18,6 +19,8 @@ import type { ModelRole, SweepConfig } from "../../workflow/stages/types.ts";
 import type { ItemPaths } from "../../workflow/types.ts";
 import type { MachineState } from "../machine.ts";
 import type { RoleContext } from "../walk.ts";
+import type { FixFields } from "./fix-data.ts";
+import { fixFieldsOf } from "./fix-data.ts";
 import type { ImplReading } from "./reply.ts";
 
 // The machine's states: the shared start, the `implement` entry's states
@@ -34,10 +37,30 @@ type ImplState =
   | "blocked"
   | "changed-nothing"
   | "bad-reply"
-  | "out-of-room";
+  | "out-of-room"
+  // The `fix` entry's states (#418): the fixer, the push, the re-review
+  // diff, a check and a session for each lens in ALL_LENSES order, the
+  // findings' update, and its ends.
+  | "fix-work?"
+  | "fixer"
+  | "fixer-reply"
+  | "fix-flows"
+  | "prepare-rereview"
+  | `rereview-${Lens}?`
+  | `rereview-${Lens}`
+  | "update-findings"
+  | "fixed"
+  | "fix-reopen"
+  | "fix-no-code"
+  | "findings-open"
+  | "acceptance-disputed"
+  | "reintroduced"
+  | "rereview-bad"
+  | "fixer-bad-reply"
+  | "fixer-out-of-room";
 
-// The entries a run can take; later parts add `fix` and `checks`.
-type ImplEntry = "implement";
+// The entries a run can take; a later part adds `checks`.
+type ImplEntry = "implement" | "fix";
 
 // What the session's task is built from.
 interface ImplSettings {
@@ -63,6 +86,7 @@ interface ImplHandoff {
   headSha: string | null | undefined;
   flows: Flows | undefined;
   implemented: boolean | undefined;
+  // As saved; the fix entry reads them through findingsOf (fix-data.ts).
   findings: unknown[];
   verifiedSha: string | null;
 }
@@ -70,12 +94,14 @@ interface ImplHandoff {
 // The counts the entries bound their loops with.
 interface ImplCounts {
   continuations: number;
+  // The fixer's continuations, counted apart from the implementer's.
+  fixContinuations: number;
   fixRounds: number;
   conflictFixes: number;
   ciFixRounds: number;
 }
 
-interface ImplData extends ImplHandoff, ImplCounts {
+interface ImplData extends ImplHandoff, ImplCounts, FixFields {
   issue: number;
   entry: ImplEntry;
   // Who signs the run's comments.
@@ -134,24 +160,32 @@ function prOf(value: unknown): number | null | undefined {
   return nullOr(value);
 }
 
-// The continuations today's implement stage saved, 0 when it saved none.
-function oldContinuations(saved: State): number {
+// The continuations today's `stage` stage saved, 0 when it saved none.
+function oldContinuations(saved: State, stage: "implement" | "fix"): number {
   const { continuations } = saved;
   const parsed = OLD_CONTINUATIONS.safeParse(continuations);
   if (!parsed.success) {
     return 0;
   }
-  return continuationsOf({ continuations: parsed.data }, "implement");
+  return continuationsOf({ continuations: parsed.data }, stage);
 }
 
 // The saved counts; the role's own continuations checkpoint wins over the
-// old field, and a missing or malformed one reads as 0.
+// old field, and a missing or malformed one reads as 0. Today's fix stage
+// counts its rounds in `round` and the fixer's continuations apart, so
+// either count is the higher of the checkpoint and today's.
 function countsOf(saved: State): ImplCounts {
-  const { continuations, fixRounds, conflictFixes, ciFixRounds } =
+  const { continuations, fixContinuations, fixRounds } =
     saved.checkpoints ?? {};
+  const { conflictFixes, ciFixRounds } = saved.checkpoints ?? {};
+  const { round } = saved;
   return {
-    continuations: countOr(continuations, oldContinuations(saved)),
-    fixRounds: countOr(fixRounds, 0),
+    continuations: countOr(continuations, oldContinuations(saved, "implement")),
+    fixContinuations: Math.max(
+      countOr(fixContinuations, 0),
+      oldContinuations(saved, "fix"),
+    ),
+    fixRounds: Math.max(countOr(fixRounds, 0), countOr(round, 0)),
     conflictFixes: countOr(conflictFixes, 0),
     ciFixRounds: countOr(ciFixRounds, 0),
   };
@@ -161,7 +195,7 @@ function countsOf(saved: State): ImplCounts {
 function handoffOf(saved: State): ImplHandoff {
   const { spec, specFile, plan, specTestsSha, wikiOnly, noTestsReason } = saved;
   const { pr, unwrittenFiles, headSha, flows, implemented } = saved;
-  const { findings, verifiedSha } = saved;
+  const { verifiedSha } = saved;
   let unwritten: readonly string[] = [];
   if (isStrings(unwrittenFiles)) {
     unwritten = unwrittenFiles;
@@ -178,7 +212,7 @@ function handoffOf(saved: State): ImplHandoff {
     headSha: textOr(headSha, nullOr(headSha)),
     flows: FLOWS.safeParse(flows).data,
     implemented: booleanOr(implemented),
-    findings: findings ?? [],
+    findings: saved.findings ?? [],
     verifiedSha: textOr(verifiedSha, null),
   };
 }
@@ -194,11 +228,17 @@ function locate(
     model: models.implementer,
     run: jobId,
   };
+  const counts = countsOf(saved);
+  let entry: ImplEntry = "implement";
+  if (saved.stage === "fix") {
+    entry = "fix";
+  }
   const data: ImplData = {
     ...handoffOf(saved),
-    ...countsOf(saved),
+    ...counts,
+    ...fixFieldsOf(saved, counts.fixRounds, cfg.maxFixRounds),
     issue,
-    entry: "implement",
+    entry,
     by,
     settings: { cfg, budgets, models, paths },
     maxContinuations: cfg.maxContinuations,
