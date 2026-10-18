@@ -109,8 +109,10 @@ function liveLease(
 }
 
 // True when an allowed user commented after the pipeline asked its questions
-// (the saved state's questionsAt). It judges by the signature, not the
-// author: the pipeline's account may be the person answering.
+// (the saved state's questionsAt). It judges by the pipeline's marks, not the
+// author: the pipeline's own comments, its usage comments included, never
+// answer, while an unmarked comment by its account does, since the account
+// may be the person answering.
 function answeredSince(
   cfg: Config,
   comments: readonly IssueComment[],

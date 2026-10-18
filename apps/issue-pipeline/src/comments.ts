@@ -220,7 +220,8 @@ function commentByKey(
 }
 
 // The role of the pipeline agent that wrote a comment ("state" for the state
-// comment), or null when the pipeline didn't write it.
+// comment, "usage" for the usage comments that hold its usage records), or
+// null when the pipeline didn't write it.
 function pipelineRole(cfg: Config, item: IssueComment): string | null {
   if (item.user?.login !== cfg.account) {
     return null;
@@ -229,12 +230,14 @@ function pipelineRole(cfg: Config, item: IssueComment): string | null {
   if (body.includes(STATE_MARK)) {
     return "state";
   }
-  const groups = PIPELINE_MARK.exec(body)?.groups;
-  if (groups === undefined) {
-    return null;
+  const { role } = PIPELINE_MARK.exec(body)?.groups ?? {};
+  if (role !== undefined) {
+    return role;
   }
-  const { role } = groups;
-  return role ?? null;
+  if (USAGE_MARK.test(body)) {
+    return "usage";
+  }
+  return null;
 }
 
 export type { Author, IssueComment };

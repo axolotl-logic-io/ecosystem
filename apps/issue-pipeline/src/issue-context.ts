@@ -27,7 +27,8 @@ interface IssueContext {
 }
 
 // How issue.md shows a comment: under a heading naming its author, hidden
-// (the state and claim comments), or withheld because its author isn't trusted.
+// (the state, claim and usage comments, which are the pipeline's records), or
+// withheld because its author isn't trusted.
 type Shown =
   | { kind: "shown"; heading: string }
   | { kind: "hidden" }
@@ -37,7 +38,7 @@ function shownAs(cfg: Config, item: IssueComment): Shown {
   const login = item.user?.login;
   const role = pipelineRole(cfg, item);
   const at = item.created_at;
-  if (role === "state" || role === "claim") {
+  if (role === "state" || role === "claim" || role === "usage") {
     return { kind: "hidden" };
   }
   if (role !== null) {
