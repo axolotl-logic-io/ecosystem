@@ -22,11 +22,32 @@ import type { RoleContext } from "../walk.ts";
 import type { FixFields } from "./fix-data.ts";
 import { fixFieldsOf } from "./fix-data.ts";
 import type { ImplReading } from "./reply.ts";
+import type { SyncFields } from "./sync-data.ts";
+import { syncFieldsOf } from "./sync-data.ts";
 
-// The machine's states: the shared start, the `implement` entry's states
-// (the wiki's Lifecycle table), then its ends.
+// The machine's states: the shared start, the start sync's (#419), the
+// `implement` entry's states (the wiki's Lifecycle table), then its ends.
 type ImplState =
   | "start"
+  | "sync-work?"
+  | "rebase"
+  | "resolver"
+  | "resolver-reply"
+  | "continue"
+  | "finish-sync"
+  | "abort-cannot-fix"
+  | "abort-conflicts"
+  | "abort-out-of-room"
+  | "abort-failed"
+  // The `sync` entry's state and the start sync's ends.
+  | "sync-moved?"
+  | "synced"
+  | "too-many-syncs"
+  | "rejected"
+  | "cannot-fix"
+  | "conflicts"
+  | "resolver-out-of-room"
+  | "resolver-failed"
   | "implement-work?"
   | "setup"
   | "implementer"
@@ -60,7 +81,7 @@ type ImplState =
   | "fixer-out-of-room";
 
 // The entries a run can take; a later part adds `checks`.
-type ImplEntry = "implement" | "fix";
+type ImplEntry = "implement" | "fix" | "sync";
 
 // What the session's task is built from.
 interface ImplSettings {
@@ -101,7 +122,7 @@ interface ImplCounts {
   ciFixRounds: number;
 }
 
-interface ImplData extends ImplHandoff, ImplCounts, FixFields {
+interface ImplData extends ImplHandoff, ImplCounts, FixFields, SyncFields {
   issue: number;
   entry: ImplEntry;
   // Who signs the run's comments.
@@ -170,15 +191,16 @@ function oldContinuations(saved: State, stage: "implement" | "fix"): number {
   return continuationsOf({ continuations: parsed.data }, stage);
 }
 
-// The saved counts; the role's own continuations checkpoint wins over the
-// old field, and a missing or malformed one reads as 0. Today's fix stage
+// The saved counts; the role's own checkpoint wins over the old field (today's
+// sync stage saved `conflictFixes` at the top level), and a missing or
+// malformed one reads as 0. Today's fix stage
 // counts its rounds in `round` and the fixer's continuations apart, so
 // either count is the higher of the checkpoint and today's.
 function countsOf(saved: State): ImplCounts {
   const { continuations, fixContinuations, fixRounds } =
     saved.checkpoints ?? {};
   const { conflictFixes, ciFixRounds } = saved.checkpoints ?? {};
-  const { round } = saved;
+  const { round, conflictFixes: oldConflictFixes } = saved;
   return {
     continuations: countOr(continuations, oldContinuations(saved, "implement")),
     fixContinuations: Math.max(
@@ -186,7 +208,7 @@ function countsOf(saved: State): ImplCounts {
       oldContinuations(saved, "fix"),
     ),
     fixRounds: Math.max(countOr(fixRounds, 0), countOr(round, 0)),
-    conflictFixes: countOr(conflictFixes, 0),
+    conflictFixes: countOr(conflictFixes, countOr(oldConflictFixes, 0)),
     ciFixRounds: countOr(ciFixRounds, 0),
   };
 }
@@ -217,6 +239,15 @@ function handoffOf(saved: State): ImplHandoff {
   };
 }
 
+// The entry a state saved at `fix` or `sync` takes; any other, `implement`.
+function entryOf(saved: State): ImplEntry {
+  const { stage } = saved;
+  if (stage === "fix" || stage === "sync") {
+    return stage;
+  }
+  return "implement";
+}
+
 function locate(
   saved: State,
   context: RoleContext,
@@ -229,16 +260,13 @@ function locate(
     run: jobId,
   };
   const counts = countsOf(saved);
-  let entry: ImplEntry = "implement";
-  if (saved.stage === "fix") {
-    entry = "fix";
-  }
   const data: ImplData = {
     ...handoffOf(saved),
     ...counts,
     ...fixFieldsOf(saved, counts.fixRounds, cfg.maxFixRounds),
+    ...syncFieldsOf(saved, cfg),
     issue,
-    entry,
+    entry: entryOf(saved),
     by,
     settings: { cfg, budgets, models, paths },
     maxContinuations: cfg.maxContinuations,

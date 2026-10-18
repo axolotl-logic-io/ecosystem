@@ -49,26 +49,37 @@ test("the implementor's modules import nothing from the triage, spec writer or r
 
 test("each entry's states have their own module, which machine.ts joins", () => {
   const files = readdirSync(IMPLEMENTOR_DIR);
-  for (const file of ["machine.ts", "start.ts", "implement.ts", "fix.ts"]) {
+  for (const file of [
+    "machine.ts",
+    "start.ts",
+    "implement.ts",
+    "fix.ts",
+    "sync.ts",
+  ]) {
     assert.ok(files.includes(file), `src/roles/implementor/${file}`);
   }
   const machine = readFileSync(
     path.join(IMPLEMENTOR_DIR, "machine.ts"),
     "utf8",
   );
-  for (const entry of ["./start.ts", "./implement.ts", "./fix.ts"]) {
+  for (const entry of [
+    "./start.ts",
+    "./implement.ts",
+    "./fix.ts",
+    "./sync.ts",
+  ]) {
     assert.ok(machine.includes(`"${entry}"`), `machine.ts imports ${entry}`);
   }
 });
 
-test("the registry runs the implementor for each stage in its list: implement and fix, and not open-pr", () => {
-  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement", "fix"]);
+test("the registry runs the implementor for each stage in its list: implement, fix and sync (#419), and not open-pr", () => {
+  assert.deepEqual(IMPLEMENTOR_STAGES, ["implement", "fix", "sync"]);
   for (const stage of IMPLEMENTOR_STAGES) {
     const role = roleOf(stage);
     assert.equal(role?.name, "implementor", stage);
     assert.equal(role?.kind, "machine", stage);
   }
-  for (const stage of ["open-pr", "sync", "checks"]) {
+  for (const stage of ["open-pr", "checks"]) {
     assert.equal(roleOf(stage), undefined, stage);
   }
 });

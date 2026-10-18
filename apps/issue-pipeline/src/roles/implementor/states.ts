@@ -1,7 +1,7 @@
 // What the implementor's states are built from (the wiki's
 // Pipeline-Roles-Implementor, "Lifecycle"): the results they answer with, a
 // state's spec, and the script state that runs a check. Each entry's module
-// (start.ts, implement.ts) builds its states from these, and machine.ts
+// (start.ts, sync.ts, implement.ts, fix.ts) builds its states from these, and machine.ts
 // joins them. Pure.
 
 import type { StateSpec } from "../machine.ts";
@@ -27,7 +27,18 @@ type ImplResult =
   | "go"
   | "reopen"
   | "resolved"
-  | "reintroduced";
+  | "reintroduced"
+  // The start sync's and the `sync` entry's (#419).
+  | "sync"
+  | "clean"
+  | "conflict"
+  | "fixed"
+  | "cannot-fix"
+  | "rejected"
+  | "aborted"
+  | "failed"
+  | "moved"
+  | "same";
 
 type ImplSpec = StateSpec<ImplState, ImplResult, ImplData>;
 

@@ -63,13 +63,9 @@ function updated(findings, stop = null) {
 }
 
 /** @type {EdgeCase[]} */
+// The shared start's edges are the start sync's (#419), in
+// implementor-sync-edge-fixtures.mjs.
 const FIX_EDGES = [
-  {
-    at: "start",
-    result: "fix",
-    next: "fix-work?",
-    effect: "check:fix-work?",
-  },
   {
     at: "fix-work?",
     result: "open",

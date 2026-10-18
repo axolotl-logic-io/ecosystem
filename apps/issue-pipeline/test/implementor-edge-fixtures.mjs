@@ -1,5 +1,5 @@
 // @ts-check
-// Every edge of the implementor's shared start and its `implement` entry
+// Every edge of the implementor's `implement` entry
 // (#414; the wiki's Pipeline-Roles-Implementor, "Lifecycle"), as a state,
 // a result, the reply and data it is taken with, the next state, its effect
 // (an op's, check's or session's name, or the end) and the data it changes.
@@ -32,13 +32,9 @@ import {
  */
 
 /** @type {EdgeCase[]} */
+// The shared start's edges are the start sync's (#419), in
+// implementor-sync-edge-fixtures.mjs.
 const EDGES = [
-  {
-    at: "start",
-    result: "implement",
-    next: "implement-work?",
-    effect: "check:implement-work?",
-  },
   {
     at: "implement-work?",
     result: "work",

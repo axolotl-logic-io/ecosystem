@@ -1,7 +1,8 @@
 // @ts-check
-// The implementor role's machine (#414): every edge of the shared start and
-// the `implement` entry as a state and a result (the wiki's
-// Pipeline-Roles-Implementor, "Lifecycle"), the table's faults, its limits,
+// The implementor role's machine (#414): every edge of the `implement` entry
+// as a state and a result (the wiki's Pipeline-Roles-Implementor,
+// "Lifecycle"; the start sync's, #419, are in
+// roles-implementor-sync-machine.test.mjs), the table's faults, its limits,
 // what it writes, and the implementer's session and task.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -29,6 +30,7 @@ import {
   SPEC,
   stepFrom,
 } from "./implementor-role-test-kit.mjs";
+import { SYNC_EDGES } from "./implementor-sync-edge-fixtures.mjs";
 
 /** @import { ImplData, ImplState } from "../src/roles/implementor/locate.ts" */
 /** @import { ImplResult } from "../src/roles/implementor/machine.ts" */
@@ -65,7 +67,7 @@ function pinned(edge, effect) {
   return effect;
 }
 
-test("every edge of the start and the implement entry gives its next state, effect and data", () => {
+test("every edge of the implement entry gives its next state, effect and data", () => {
   for (const edge of EDGES) {
     const label = `${edge.at} ${edge.result}`;
     const step = stepFrom(edge.at, edge.result, edge.reply, edge.data);
@@ -85,16 +87,17 @@ test("every edge of the start and the implement entry gives its next state, effe
   }
 });
 
-// The states that run a model: the implementer, the fixer and a re-reviewer
-// for each lens (#418).
+// The states that run a model: the implementer, the fixer, a re-reviewer
+// for each lens (#418) and the conflict resolver (#419).
 const SESSIONS = new Set([
   "implementer",
   "fixer",
+  "resolver",
   ...ALL_LENSES.map((lens) => `rereview-${lens}`),
 ]);
 
-test("every listed edge is covered, only the implementer, the fixer and the re-reviewers run a model, and no state sends a PR op", () => {
-  const edges = [...EDGES, ...FIX_EDGES];
+test("every listed edge is covered, only the implementer, the fixer, the re-reviewers and the conflict resolver run a model, and no state sends a PR op", () => {
+  const edges = [...EDGES, ...FIX_EDGES, ...SYNC_EDGES];
   for (const [name, spec] of Object.entries(TABLE.states)) {
     assert.equal(spec.kind === "session", SESSIONS.has(name), name);
     for (const result of Object.keys(spec.on)) {
@@ -114,7 +117,12 @@ test("every listed edge is covered, only the implementer, the fixer and the re-r
 });
 
 test("the table has no faults under its limits", () => {
-  assert.deepEqual(LIMITS, { maxContinuations: 1, maxFixRounds: 2 });
+  assert.deepEqual(LIMITS, {
+    maxContinuations: 1,
+    maxFixRounds: 2,
+    maxConflictFixes: 2,
+    maxSyncs: 3,
+  });
   assert.deepEqual(checkTable(TABLE, LIMITS, dataWith()), []);
 });
 
@@ -159,10 +167,14 @@ test("the limits on continuations and fix rounds are the config's maxContinuatio
   const { limitsOf } = implementorMachine;
   assert.ok(limitsOf !== undefined);
   const { cfg } = implContext({ maxContinuations: 3, maxFixRounds: 4 });
-  assert.deepEqual(limitsOf(cfg), { maxContinuations: 3, maxFixRounds: 4 });
+  const { maxContinuations, maxFixRounds } = limitsOf(cfg);
+  assert.deepEqual(
+    { maxContinuations, maxFixRounds },
+    { maxContinuations: 3, maxFixRounds: 4 },
+  );
 });
 
-test("the machine checkpoints its counts and hands off the head, the flows, the reply, the findings and the re-review's fields", () => {
+test("the machine checkpoints its counts and the synced head, and hands off the head, the flows, the reply, the findings, the re-review's fields and the spec's tests", () => {
   assert.deepEqual(
     new Set(implementorMachine.checkpoints),
     new Set([
@@ -171,6 +183,7 @@ test("the machine checkpoints its counts and hands off the head, the flows, the 
       "fixRounds",
       "conflictFixes",
       "ciFixRounds",
+      "syncedHead",
     ]),
   );
   assert.deepEqual(
@@ -187,6 +200,10 @@ test("the machine checkpoints its counts and hands off the head, the flows, the 
       "nextFindingId",
       "resolvedHistory",
       "testsOnly",
+      "stackedOn",
+      "syncs",
+      "passedSha",
+      "specTestsSha",
     ]),
   );
   assert.equal(implementorMachine.table, TABLE);

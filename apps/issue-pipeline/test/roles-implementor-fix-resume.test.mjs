@@ -22,6 +22,7 @@ import {
   located,
   stoppedWith,
 } from "./implementor-role-test-kit.mjs";
+import { UNCHANGED } from "./implementor-sync-test-kit.mjs";
 
 /** @import { State } from "../src/state.ts" */
 
@@ -41,13 +42,15 @@ const OLD_PHASES = [
   "saved",
 ];
 
-test("a run saved at fix starts at start with the fix entry, whatever phase it was in, and goes to fix-work?", () => {
+test("a run saved at fix starts at start with the fix entry, whatever phase it was in, and goes to fix-work? through the start sync (#419)", () => {
   for (const phase of [undefined, ...OLD_PHASES]) {
     const { at, data } = fixLocated({ phase });
     assert.equal(at, "start", String(phase));
     assert.equal(data.entry, "fix", String(phase));
     const step = fixStepFrom("start", "fix", null, data);
-    assert.equal(step.state.at, "fix-work?", String(phase));
+    assert.equal(step.state.at, "sync-work?", String(phase));
+    const synced = fixStepFrom("sync-work?", "fix", UNCHANGED, data);
+    assert.equal(synced.state.at, "fix-work?", String(phase));
   }
   assert.equal(located().data.entry, "implement");
 });

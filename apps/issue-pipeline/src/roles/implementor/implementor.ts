@@ -2,6 +2,7 @@
 // its machine takes over, which registry.ts registers in one line, and the
 // machine with its limits and what it writes.
 
+import { maxConflictFixes } from "../../workflow/stages/conflict-resolver.ts";
 import type { SweepConfig } from "../../workflow/stages/types.ts";
 import type { Limits } from "../machine.ts";
 import type { Machine } from "../walk.ts";
@@ -10,8 +11,9 @@ import { locate } from "./locate.ts";
 import type { ImplResult } from "./machine.ts";
 import { LIMITS, TABLE } from "./machine.ts";
 
-// The stages the implementor runs; later parts add theirs.
-const IMPLEMENTOR_STAGES: readonly string[] = ["implement", "fix"];
+// The stages the implementor runs in stage jobs; a later part adds checks.
+// The lanes' workflow.js keeps today's sync stage code.
+const IMPLEMENTOR_STAGES: readonly string[] = ["implement", "fix", "sync"];
 
 const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
   table: TABLE,
@@ -19,6 +21,8 @@ const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
   limitsOf: (cfg: SweepConfig): Limits => ({
     maxContinuations: cfg.maxContinuations,
     maxFixRounds: cfg.maxFixRounds,
+    maxConflictFixes: maxConflictFixes({ cfg }),
+    maxSyncs: cfg.maxSyncs,
   }),
   locate,
   handoff: [
@@ -33,6 +37,10 @@ const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
     "nextFindingId",
     "resolvedHistory",
     "testsOnly",
+    "stackedOn",
+    "syncs",
+    "passedSha",
+    "specTestsSha",
   ],
   checkpoints: [
     "continuations",
@@ -40,6 +48,7 @@ const implementorMachine: Machine<ImplState, ImplResult, ImplData> = {
     "fixRounds",
     "conflictFixes",
     "ciFixRounds",
+    "syncedHead",
   ],
 };
 

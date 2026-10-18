@@ -6,7 +6,12 @@
 
 // Answers each op from replies.json and logs the request to ops.log. A push
 // or exit-push whose reply sets `git` pushes the request's checkout's HEAD to
-// the issue's branch on origin first, as the real op would. An op whose
+// the issue's branch on origin first, as the real op would. A sync-base or
+// finish-sync whose reply sets `git` does its work in the request's checkout
+// with local git, as src/ops/sync.ts does, and answers from that: sync-base
+// rebases onto origin/integration unless the branch has its head (leaving a
+// conflict stopped for a resolver with keepConflict) and pushes a clean rebase; finish-sync
+// aborts, rejects a rebase still in progress, or pushes. An op whose
 // reply sets `hang` never answers: it starts `sleep 600` in the op's own
 // process group, writes the sleep's pid to hang.pid and waits on it.
 const FAKE_OPS = `import { execFileSync, spawn } from "node:child_process";
@@ -25,7 +30,46 @@ if (replies[request.op]?.hang) {
       env: { ...process.env, ISSUE_PIPELINE_OPS: "1" },
     });
   }
-  process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(replies[request.op]) + "\\n");
+  let reply = replies[request.op];
+  if ((request.op === "sync-base" || request.op === "finish-sync") && reply?.git) {
+    reply = request.op === "sync-base" ? syncBase() : finishSync();
+  }
+  process.stdout.write("ops: " + request.op + "\\n" + JSON.stringify(reply) + "\\n");
+}
+function sh(args) {
+  const id = ["-c", "user.name=Ops", "-c", "user.email=ops@example.com", "-c", "commit.gpgsign=false"];
+  const env = { ...process.env, ISSUE_PIPELINE_OPS: "1", ISSUE_PIPELINE_COMMIT: "1", GIT_EDITOR: "true" };
+  return execFileSync("git", ["-C", request.checkout.dir, ...id, ...args], { encoding: "utf8", env, stdio: "pipe" }).trim();
+}
+function ok(args) {
+  try { sh(args); return true; } catch { return false; }
+}
+function pushed(fields) {
+  sh(["push", "--quiet", "--force", "origin", "HEAD:refs/heads/agent/issue-7"]);
+  return { ok: true, headSha: sh(["rev-parse", "HEAD"]), codeChanged: true, wikiAhead: 0, ...fields };
+}
+function syncBase() {
+  sh(["fetch", "--quiet", "origin", "integration"]);
+  const baseSha = sh(["rev-parse", "origin/integration"]);
+  if (ok(["merge-base", "--is-ancestor", baseSha, "HEAD"])) {
+    return { ok: true, changed: false, conflict: false, headSha: sh(["rev-parse", "HEAD"]), codeChanged: true, wikiAhead: 0 };
+  }
+  if (!ok(["rebase", "--quiet", baseSha])) {
+    const conflicts = sh(["diff", "--name-only", "--diff-filter=U"]).split("\\n").filter(Boolean);
+    const inRebase = request.keepConflict === true;
+    if (!inRebase) ok(["rebase", "--abort"]);
+    return { ok: true, changed: false, conflict: true, inRebase, conflicts, baseSha };
+  }
+  return pushed({ changed: true, conflict: false });
+}
+function finishSync() {
+  const gitDir = sh(["rev-parse", "--absolute-git-dir"]);
+  const inRebase = fs.existsSync(gitDir + "/rebase-merge") || fs.existsSync(gitDir + "/rebase-apply");
+  if (request.abort === true || inRebase) {
+    ok(["rebase", "--abort"]);
+    return { ok: true, resolved: false, reason: request.reason ?? "the rebase is still in progress" };
+  }
+  return pushed({ resolved: true });
 }
 `;
 
