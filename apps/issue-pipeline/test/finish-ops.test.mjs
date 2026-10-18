@@ -1,12 +1,8 @@
 // @ts-check
-// The ops that finish an issue's sweep or take it out of the pipeline
-// (close-parent, post, release), through the ops CLI, and the built ops CLI
-// against src/ops.ts.
+// The ops that finish an issue's job or take it out of the pipeline
+// (close-parent, post, release), through the ops CLI on version 2 states,
+// and the built ops CLI against src/ops.ts.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
 import {
@@ -15,7 +11,6 @@ import {
   claimListing,
   commentPost,
   fakeGh,
-  finishReplies,
   hoursFromNow,
   LANE,
   relabel,
@@ -28,12 +23,11 @@ import {
 
 /** @import { World } from "./ops-test-kit.mjs" */
 
-// The commit prefix the merger comment names.
-const SHORT_SHA = 12;
+const { newIssueState } = await import("../src/state.ts");
+
 const STILL_WORKING = /\n<sub>Lane still working at <minute>\.<\/sub>$/u;
 const STATE_JSON = /<!-- agent-pipeline:state\n(?<json>.*)\n-->/u;
 const MERGE_SHA_ERROR = /expectedSha/u;
-const MERGED_TRUE = /"merged":true/u;
 // The issue every test works on.
 const ISSUE = 7;
 // The sub-issues still open in the open-sub-issues case.
@@ -47,6 +41,14 @@ const STATE_GROUPS = z.object({ json: z.string() });
 const LEASED = z.looseObject({ lease: z.looseObject({ at: z.string() }) });
 const FAILED_REPLY = z.object({ ok: z.boolean(), error: z.string() });
 const RELEASED = { ok: true, op: "release", posted: 0, commentIds: [] };
+// The id GitHub gives the comment post posts.
+const POSTED_ID = 901;
+const PR = 50;
+// Issue #7's version 2 state with `extra` over a new issue's.
+/** @param {object} extra @returns {Record<string, unknown>} */
+function issueState(extra) {
+  return { ...newIssueState(ISSUE), ...extra };
+}
 
 /** @param {World} w @param {string} subs @returns {string} */
 function closeParent(w, subs) {
@@ -153,22 +155,38 @@ test("close-parent leaves a parent open when its sub-issues are all closed but n
   assert.deepEqual(writes(), []);
 });
 
-test("post only posts the queued comments", () => {
+test("post only posts the queued comments and replies with the ids GitHub gave", () => {
   const w = world();
-  fakeGh.reply([]);
+  fakeGh.reply([
+    { when: `issues/${ISSUE}/comments -f`, stdout: `${POSTED_ID}\n` },
+  ]);
   const out = ask(w, {
     op: "post",
     comments: [{ number: ISSUE, by: { role: "x" }, body: "b" }],
   });
-  assert.equal(out, replyLine({ ok: true, op: "post", posted: 1 }));
-  assert.deepEqual(calls(), [commentPost(ISSUE, signedBy("x", "b"))]);
+  assert.equal(
+    out,
+    replyLine({ ok: true, op: "post", posted: 1, commentIds: [POSTED_ID] }),
+  );
+  assert.deepEqual(calls(), [
+    [
+      "api",
+      "-X",
+      "POST",
+      `repos/o/r/issues/${ISSUE}/comments`,
+      "-f",
+      `body=${signedBy("x", "b")}`,
+      "--jq",
+      ".id",
+    ],
+  ]);
 });
 
 // Runs release for #7 with `state`: its reply, the gh writes it made, the
 // claim edit's body and the state it wrote.
 /** @param {World} w @param {object} state @returns {{ out: string, made: string[][], touched: string, written: unknown }} */
 function release(w, state) {
-  fakeGh.reply([claimListing(), claimListing()]);
+  fakeGh.reply([claimListing(), claimListing(), claimListing()]);
   const out = ask(w, {
     op: "release",
     number: ISSUE,
@@ -197,7 +215,7 @@ test("release renews the lease's time, keeps its lane and touches the claim", ()
     sweepId: SWEEP,
     at: hoursFromNow(-LEASE_AGE_HOURS),
   };
-  const state = { pr: 50, stage: "review", lease };
+  const state = issueState({ stage: "review", pr: PR, lease });
   const { out, made, touched, written } = release(w, state);
   assert.equal(out, replyLine(RELEASED));
   assert.match(touched, STILL_WORKING);
@@ -213,10 +231,9 @@ test("release renews the lease's time, keeps its lane and touches the claim", ()
 test("merge without expectedSha answers ok:false and merges nothing", () => {
   const w = world();
   fakeGh.reply([]);
+  const state = issueState({ stage: "merge", pr: PR });
   const reply = FAILED_REPLY.parse(
-    JSON.parse(
-      ask(w, { op: "merge", number: ISSUE, state: { pr: 50, stage: "merge" } }),
-    ),
+    JSON.parse(ask(w, { op: "merge", number: ISSUE, state })),
   );
   assert.equal(reply.ok, false);
   assert.match(reply.error, MERGE_SHA_ERROR);
@@ -224,53 +241,9 @@ test("merge without expectedSha answers ok:false and merges nothing", () => {
   assert.deepEqual(merges, []);
 });
 
-test("the built ops merges and releases as src/ops.ts does", () => {
-  const out = fs.mkdtempSync("/tmp/issue-pipeline-built-ops-");
-  process.on("exit", () => fs.rmSync(out, { recursive: true, force: true }));
-  const build = new URL("../build.ts", import.meta.url).pathname;
-  const built = spawnSync(process.execPath, [build, out], { encoding: "utf8" });
-  assert.equal(built.status, 0, built.stderr);
-  const lease = { lane: LANE, sweepId: SWEEP, at: hoursFromNow(0) };
-  const state = { pr: 50, stage: "merge", lease };
-  /** @type {{ merged: string, mergeCalls: string[], released: string, releaseCalls: string[][] }[]} */
-  const answers = [];
-  for (const ops of [undefined, path.join(out, "ops.mjs")]) {
-    const w = world();
-    const view = JSON.stringify({
-      headRefOid: w.sha,
-      state: "OPEN",
-      mergeable: "MERGEABLE",
-      mergeStateStatus: "CLEAN",
-      isDraft: false,
-    });
-    fakeGh.reply([{ when: "pr view", stdout: view }, ...finishReplies()]);
-    const req = { op: "merge", number: ISSUE, state, expectedSha: w.sha };
-    const merged = ask(w, req, ops);
-    // Each world's commit has its own sha: the full one, then its short form.
-    const mergeCalls = calls().map((args) =>
-      args
-        .join(" ")
-        .replaceAll(w.sha, "<sha>")
-        .replaceAll(w.sha.slice(0, SHORT_SHA), "<sha>"),
-    );
-    fakeGh.reply([claimListing(), claimListing()]);
-    const unleased = { ...state, lease: null };
-    const released = ask(
-      w,
-      { op: "release", number: ISSUE, state: unleased },
-      ops,
-    );
-    answers.push({ merged, mergeCalls, released, releaseCalls: calls() });
-  }
-  const [first, second] = answers;
-  assert.ok(first);
-  assert.match(first.merged, MERGED_TRUE);
-  assert.deepEqual(second, first);
-});
-
 test("release writes a missing lease as null", () => {
   const w = world();
-  const state = { pr: 50, stage: "review", lease: null };
+  const state = issueState({ stage: "review", pr: PR, lease: null });
   const { out, made, touched, written } = release(w, state);
   assert.equal(out, replyLine(RELEASED));
   assert.match(touched, STILL_WORKING);

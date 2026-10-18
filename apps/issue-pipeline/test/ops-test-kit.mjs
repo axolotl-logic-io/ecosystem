@@ -7,9 +7,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { ghIsRead } from "../src/github.ts";
 import { githubComment, installFakeGh } from "./fake-gh.mjs";
-import { runOps } from "./ops-run-test-kit.mjs";
+import { runOps, setEnv } from "./ops-run-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
 /** @typedef {{ config: string, root: string, sha: string, worktree: string }} World */
@@ -31,6 +30,18 @@ const CONFIG = {
   baseBranch: "integration",
 };
 const GIT_USER = "-c user.email=a@b -c user.name=a";
+
+// This process's pipeline modules read a temporary root and HOME, set before
+// any of them loads; each world's ops child gets the world's own.
+const kitRoot = fs.mkdtempSync("/tmp/issue-pipeline-ops-kit-");
+process.on("exit", () => fs.rmSync(kitRoot, { recursive: true, force: true }));
+setEnv("ISSUE_PIPELINE_ROOT", kitRoot);
+setEnv("HOME", kitRoot);
+const pipelineRoot = await import("../src/pipeline-root.ts");
+if (pipelineRoot.ROOT !== kitRoot || pipelineRoot.HOME !== kitRoot) {
+  throw new Error("the pipeline root isn't the ops tests' temporary folder");
+}
+const { ghIsRead } = await import("../src/github.ts");
 
 const fakeGh = installFakeGh();
 
@@ -87,7 +98,7 @@ function advanceBase(w) {
  * @returns {string}
  */
 function ask(w, request, ops) {
-  const where = { config: w.config, request, root: w.root };
+  const where = { config: w.config, request, root: w.root, home: w.root };
   if (ops === undefined) {
     return runOps(where);
   }
