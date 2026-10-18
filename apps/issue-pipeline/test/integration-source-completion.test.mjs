@@ -54,7 +54,14 @@ test("removeWorktree leaves a live stage job's own checkout and removes the issu
     `git -C ${paths.clone(cfg)} worktree add -q --detach ${jobDir} agent/issue-${ISSUE.job}`,
   );
   removeWorktree(
-    { ...cfg, checkout: { issue: ISSUE.job, dir: jobDir } },
+    {
+      ...cfg,
+      checkout: {
+        issue: ISSUE.job,
+        dir: jobDir,
+        branch: `agent/issue-${ISSUE.job}`,
+      },
+    },
     ISSUE.job,
   );
   assert.ok(fs.existsSync(path.join(jobDir, ".git")), "the job's checkout");
@@ -62,7 +69,14 @@ test("removeWorktree leaves a live stage job's own checkout and removes the issu
   assert.ok(cloneHasBranch(`agent/issue-${ISSUE.job}`));
   // A job's checkout of another issue guards nothing here.
   removeWorktree(
-    { ...cfg, checkout: { issue: ISSUE.other, dir: jobDir } },
+    {
+      ...cfg,
+      checkout: {
+        issue: ISSUE.other,
+        dir: jobDir,
+        branch: `agent/issue-${ISSUE.other}`,
+      },
+    },
     ISSUE.job,
   );
   assert.equal(fs.existsSync(worktree(ISSUE.job)), false);

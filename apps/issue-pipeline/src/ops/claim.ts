@@ -102,7 +102,7 @@ function readyCheckouts(
   if (!claimed.adopted || claimed.remote === null) {
     return { wiki, entry: null };
   }
-  fetchIn(cfg, wt, paths.branch(n));
+  fetchIn(cfg, wt, paths.branch(cfg, n));
   return { wiki, entry: resetKeepingUnpushed(wt, n, claimed.remote, now) };
 }
 

@@ -75,7 +75,7 @@ function ensureWorktree(cfg: Config, number: number): string {
   return withCloneLock(cfg, () => {
     const clone = paths.clone(cfg);
     const wt = paths.worktree(cfg, number);
-    const branch = paths.branch(number);
+    const branch = paths.branch(cfg, number);
     if (fs.existsSync(path.join(wt, ".git"))) {
       return wt;
     }
@@ -126,7 +126,7 @@ function removeWorktree(cfg: Config, number: number): void {
       ];
       run("git", args, { allowFail: true });
     }
-    const branch = paths.branch(number);
+    const branch = paths.branch(cfg, number);
     run("git", ["-C", clone, "branch", "-D", branch], { allowFail: true });
   });
 }
@@ -212,7 +212,7 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
 function pushHead(cfg: Config, n: number, op: string): string {
   const wt = paths.worktree(cfg, n);
   const headSha = head(wt);
-  const target = `HEAD:refs/heads/${paths.branch(n)}`;
+  const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
   recordPush(cfg, n, headSha, op);
   git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
   return headSha;

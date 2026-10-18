@@ -1,7 +1,10 @@
 // @ts-check
 // An ops request's `checkout` (#250): a stage job's own clone, which stands
-// in for the named issue's worktree while the request runs. Other issues,
-// and requests without it, keep their issue-N worktrees.
+// in for the named issue's worktree while the request runs, and the branch
+// the caller assigned the issue, which its pushes go to. Other issues, and
+// requests without it, keep their issue-N worktrees and agent/issue-N
+// branches. A branch that isn't one literal name, or is the base or wiki
+// branch, is refused before anything moves.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -18,30 +21,37 @@ const PUSH_REPLY = z.looseObject({
   error: z.string().optional(),
 });
 const NAMES_CHECKOUT = /^bad ops request: .*→ at checkout/su;
+const NOT_LITERAL = /is not a literal branch name/u;
+const BASE_OR_WIKI = /is the base or wiki branch/u;
+const ASSIGNED = "feature/assigned-11";
 // The issues each test pushes, and the issue another job's checkout names.
 const VIA_CHECKOUT = 11;
 const VIA_WORKTREE = 12;
 const BESIDE_CHECKOUT = 13;
 const OTHER_ISSUE = 99;
+const VIA_ASSIGNED = 14;
+const UNSAFE = 15;
 const MALFORMED = 7;
 
 /**
- * A separate clone of origin on issue `n`'s branch holding one commit of
- * `file`, as a stage job's checkout would; returns it and its head.
+ * A separate clone of origin on `branch` (issue `n`'s agent/issue-N unless
+ * given) holding one commit of `file`, as a stage job's checkout would;
+ * returns it, its branch and its head.
  * @param {number} n
  * @param {string} file
- * @returns {{ dir: string, sha: string }}
+ * @param {string} [branch]
+ * @returns {{ dir: string, branch: string, sha: string }}
  */
-function jobClone(n, file) {
+function jobClone(n, file, branch = `agent/issue-${n}`) {
   const dir = path.join(fx.root, `job-${n}`);
   sh(`git clone -q ${path.join(fx.root, "origin.git")} ${dir}`);
-  sh(`git -C ${dir} checkout -qb agent/issue-${n}`);
+  sh(`git -C ${dir} checkout -qb ${branch}`);
   fs.writeFileSync(path.join(dir, file), "job\n");
   sh(`git -C ${dir} add ${file}`);
   sh(
     `git -C ${dir} -c user.name=J -c user.email=j@example.com -c commit.gpgsign=false commit -qm job`,
   );
-  return { dir, sha: sh(`git -C ${dir} rev-parse HEAD`) };
+  return { dir, branch, sha: sh(`git -C ${dir} rev-parse HEAD`) };
 }
 
 // The reply to a push `request`, with no saved state for its issue, so the
@@ -53,10 +63,10 @@ function pushed(request) {
 }
 
 test("push with a checkout pushes that clone's commit, not the issue's worktree", () => {
-  const { dir, sha } = jobClone(VIA_CHECKOUT, "job.txt");
+  const { dir, branch, sha } = jobClone(VIA_CHECKOUT, "job.txt");
   const reply = pushed({
     number: VIA_CHECKOUT,
-    checkout: { issue: VIA_CHECKOUT, dir },
+    checkout: { issue: VIA_CHECKOUT, dir, branch },
   });
   assert.equal(reply.ok, true, reply.error);
   assert.equal(reply.headSha, sha);
@@ -73,12 +83,12 @@ test("push without a checkout pushes from the issue's worktree", () => {
 });
 
 test("a checkout naming another issue leaves the request's issue on its worktree", () => {
-  const { dir } = jobClone(OTHER_ISSUE, "other.txt");
+  const { dir, branch } = jobClone(OTHER_ISSUE, "other.txt");
   fx.startBranch(BESIDE_CHECKOUT, "a.txt", "first");
   const sha = fx.commitIn(BESIDE_CHECKOUT, "b.txt", "second");
   const reply = pushed({
     number: BESIDE_CHECKOUT,
-    checkout: { issue: OTHER_ISSUE, dir },
+    checkout: { issue: OTHER_ISSUE, dir, branch },
   });
   assert.equal(reply.ok, true, reply.error);
   assert.equal(originRef(`agent/issue-${BESIDE_CHECKOUT}`), sha);
@@ -87,12 +97,50 @@ test("a checkout naming another issue leaves the request's issue on its worktree
 
 test("a malformed checkout is refused, naming checkout", () => {
   const malformed = [
-    { issue: String(MALFORMED), dir: "/x" },
-    { issue: MALFORMED, dir: "" },
+    { issue: String(MALFORMED), dir: "/x", branch: "b" },
+    { issue: MALFORMED, dir: "", branch: "b" },
+    { issue: MALFORMED, dir: "/x" },
+    { issue: MALFORMED, dir: "/x", branch: "" },
   ];
   for (const checkout of malformed) {
     const reply = pushed({ number: MALFORMED, checkout });
     assert.equal(reply.ok, false);
     assert.match(reply.error ?? "", NAMES_CHECKOUT);
   }
+});
+
+test("push with an assigned branch pushes the job's commit to exactly that branch", () => {
+  const { dir, branch, sha } = jobClone(VIA_ASSIGNED, "assigned.txt", ASSIGNED);
+  const reply = pushed({
+    number: VIA_ASSIGNED,
+    checkout: { issue: VIA_ASSIGNED, dir, branch },
+  });
+  assert.equal(reply.ok, true, reply.error);
+  assert.equal(originRef(ASSIGNED), sha);
+  assert.equal(originRef(`agent/issue-${VIA_ASSIGNED}`), "");
+});
+
+test("a checkout's branch that is a ref expression, an option, or the base or wiki branch pushes nothing", () => {
+  const { dir, sha } = jobClone(UNSAFE, "unsafe.txt", "feature/unsafe-15");
+  /** @type {[string, RegExp][]} */
+  const refused = [
+    ["-f", NOT_LITERAL],
+    ["refs/heads/x", NOT_LITERAL],
+    ["HEAD", NOT_LITERAL],
+    ["a..b", NOT_LITERAL],
+    ["x@{1}", NOT_LITERAL],
+    ["a b", NOT_LITERAL],
+    ["x.lock", NOT_LITERAL],
+    ["integration", BASE_OR_WIKI],
+  ];
+  for (const [branch, why] of refused) {
+    const reply = pushed({
+      number: UNSAFE,
+      checkout: { issue: UNSAFE, dir, branch },
+    });
+    assert.equal(reply.ok, false, branch);
+    assert.match(reply.error ?? "", why);
+  }
+  assert.equal(originRef("integration") === sha, false);
+  assert.equal(originRef("feature/unsafe-15"), "");
 });

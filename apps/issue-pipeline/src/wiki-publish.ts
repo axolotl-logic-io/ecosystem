@@ -114,7 +114,7 @@ function syncWiki(cfg: Config, n: number): WikiSyncReply {
 // half-done rebase.
 function resetToWikiBranch(cfg: Config, { dir }: Checkout, n: number): void {
   abortRebase(dir);
-  const branch = paths.branch(n);
+  const branch = paths.branch(cfg, n);
   const refspec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
   git(cfg, ["-C", dir, "fetch", "origin", refspec], { allowFail: true });
   const ref = `refs/remotes/origin/${branch}`;
@@ -150,7 +150,7 @@ function finishWikiSync(
 
 // Deletes the wiki remote's agent/issue-<n>, when it exists.
 function deleteWikiBranch(cfg: Config, dir: string, n: number): void {
-  const branch = paths.branch(n);
+  const branch = paths.branch(cfg, n);
   const listed = ["-C", dir, "ls-remote", "--exit-code", "--heads", "origin"];
   if (git(cfg, [...listed, branch], { allowFail: true }).code === 0) {
     git(cfg, ["-C", dir, "push", "origin", "--delete", branch]);

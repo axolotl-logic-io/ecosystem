@@ -14,14 +14,20 @@ import { OpsError } from "./process.ts";
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
 const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
 const PATH_SEPARATOR = /[\\/]/u;
+// Branch names that are an option, a ref path, a ref expression or a name
+// git refuses (git-check-ref-format), rather than one literal branch.
+const UNSAFE_BRANCH =
+  /^[-/.]|^refs\/|^HEAD$|^@$|\.\.|@\{|\/\/|[/.]$|\.lock$|\/\.|[\s~^:?*[\\\p{Cc}]/u;
 
 // A stage job's own checkout of issue `issue` (#250). While an ops request
 // that names it runs, the issue's worktree is `dir`, the job's code checkout,
-// and its wiki checkout is `dir`'s sibling (#338); it never comes from the
-// config file.
+// and its wiki checkout is `dir`'s sibling (#338); `branch` is the branch
+// the caller assigned the issue, for its code and its wiki. It never comes
+// from the config file.
 interface JobCheckout {
   issue: number;
   dir: string;
+  branch: string;
 }
 
 type Config = z.infer<typeof CONFIG_SCHEMA> & {
@@ -178,7 +184,30 @@ function withCheckout(
 }
 
 const paths = {
-  branch: (n: number): string => `agent/issue-${n}`,
+  // The branch issue `n` works on, for its code and its wiki: the one its
+  // job was assigned (cfg.checkout), else the legacy `agent/issue-<n>`. A
+  // branch that isn't one safe literal name, or is the configured base or
+  // wiki branch, throws, so no op can push, reset or delete it as an issue's.
+  branch: (cfg: Config, n: number): string => {
+    let branch: string = paths.legacyBranch(n);
+    if (cfg.checkout?.issue === n) {
+      ({ branch } = cfg.checkout);
+    }
+    if (UNSAFE_BRANCH.test(branch)) {
+      throw new OpsError(
+        `#${n}'s branch ${JSON.stringify(branch)} is not a literal branch name`,
+      );
+    }
+    if (branch === cfg.baseBranch || branch === wikiCfg(cfg)?.branch) {
+      throw new OpsError(
+        `#${n}'s branch ${JSON.stringify(branch)} is the base or wiki branch, which no issue works on`,
+      );
+    }
+    return branch;
+  },
+  // The branch of an issue no caller assigned one: a state saved before
+  // assignments, whose branch is null, works here.
+  legacyBranch: (n: number): string => `agent/issue-${n}`,
   clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
   // Stage job `stage`'s own folder for issue `n`, which holds its code
   // checkout and its wiki checkout side by side (#338).

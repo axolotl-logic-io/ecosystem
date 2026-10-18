@@ -133,9 +133,13 @@ function wikiCheckout(cfg: Config, parent: string): string | null {
   return dir;
 }
 
-// True when the wiki remote's issue branch has unpublished commits.
-function wikiBranchWork(wiki: WikiSettings, dir: string, n: number): boolean {
-  const ref = `refs/remotes/origin/${paths.branch(n)}`;
+// True when the wiki remote's issue branch `branch` has unpublished commits.
+function wikiBranchWork(
+  wiki: WikiSettings,
+  dir: string,
+  branch: string,
+): boolean {
+  const ref = `refs/remotes/origin/${branch}`;
   const verify = ["-C", dir, "rev-parse", "--verify", "--quiet", ref];
   if (run("git", verify, { allowFail: true }).code !== 0) {
     return false;
@@ -152,7 +156,7 @@ function wikiBranchHasWork(cfg: Config, n: number): boolean {
   }
   return withWikiLock(cfg, () => {
     const dir = withCloneLock(cfg, () => wikiCheckout(cfg, paths.clone(cfg)));
-    return dir !== null && wikiBranchWork(wiki, dir, n);
+    return dir !== null && wikiBranchWork(wiki, dir, paths.branch(cfg, n));
   });
 }
 
@@ -183,14 +187,14 @@ function ensureWiki(cfg: Config, n: number): string | null {
       return null;
     }
     let base = `origin/${wiki.branch}`;
-    if (wikiBranchWork(wiki, dir, n)) {
-      base = `origin/${paths.branch(n)}`;
+    if (wikiBranchWork(wiki, dir, paths.branch(cfg, n))) {
+      base = `origin/${paths.branch(cfg, n)}`;
     }
     if (
       wikiAhead(cfg, n) === 0 &&
       gitIn(dir, ["status", "--porcelain"]).trim() === ""
     ) {
-      gitIn(dir, ["checkout", "-B", paths.branch(n), base]);
+      gitIn(dir, ["checkout", "-B", paths.branch(cfg, n), base]);
     }
     return paths.wiki(cfg, n);
   });
@@ -203,7 +207,7 @@ function pushWikiBranch(cfg: Config, n: number): void {
     return;
   }
   const dir = paths.wiki(cfg, n);
-  const target = `HEAD:refs/heads/${paths.branch(n)}`;
+  const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
   withWikiLock(cfg, () =>
     git(cfg, ["-C", dir, "push", "--force-with-lease", "origin", target]),
   );

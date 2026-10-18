@@ -125,7 +125,7 @@ function checkedView(cfg: Config, req: MergeRequest): PrView {
     );
   }
   const view = viewPr(cfg, req.state.pr);
-  const branch = paths.branch(req.number);
+  const branch = paths.branch(cfg, req.number);
   if (view.headRefName !== branch) {
     throw new OpsError(
       `PR #${req.state.pr} is from ${view.headRefName}, not ${branch}`,

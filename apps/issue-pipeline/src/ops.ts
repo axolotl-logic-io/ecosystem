@@ -102,9 +102,14 @@ const ENVELOPE = z.looseObject({
   comments: z.array(QUEUED_COMMENT).nullish(),
   config: z.string().nullish(),
   op: z.string(),
-  // A stage job's own checkout, which stands in for its issue's worktree.
+  // A stage job's own checkout, which stands in for its issue's worktree,
+  // and the branch the caller assigned the issue (config.ts's JobCheckout).
   checkout: z
-    .object({ issue: z.number().int(), dir: z.string().min(1) })
+    .object({
+      issue: z.number().int(),
+      dir: z.string().min(1),
+      branch: z.string().min(1),
+    })
     .nullish(),
 });
 

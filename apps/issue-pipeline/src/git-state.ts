@@ -27,7 +27,7 @@ function fetchIn(cfg: Config, dir: string, ...refs: string[]): RunResult {
 
 // The issue branch's head on GitHub, or null when it has none.
 function remoteHead(cfg: Config, number: number): string | null {
-  const ref = `refs/heads/${paths.branch(number)}`;
+  const ref = `refs/heads/${paths.branch(cfg, number)}`;
   const listed = git(cfg, ["-C", paths.clone(cfg), "ls-remote", "origin", ref]);
   const [sha] = listed.stdout.trim().split(WHITESPACE);
   return sha || null;
@@ -63,7 +63,7 @@ function refExists(dir: string, ref: string): boolean {
 // commits after the branch is deleted.
 function commitsOffGitHub(cfg: Config, n: number, pr: number | null): number {
   const clone = paths.clone(cfg);
-  const branch = paths.branch(n);
+  const branch = paths.branch(cfg, n);
   const base = cfg.baseBranch;
   const refspecs = [`+refs/heads/${base}:refs/remotes/origin/${base}`];
   if (remoteHead(cfg, n) !== null) {
@@ -87,7 +87,7 @@ function commitsOffGitHub(cfg: Config, n: number, pr: number | null): number {
 // holds work and not only start-pr's empty commit.
 function branchHasWork(cfg: Config, n: number, remote: string): boolean {
   const clone = paths.clone(cfg);
-  const branch = paths.branch(n);
+  const branch = paths.branch(cfg, n);
   const base = cfg.baseBranch;
   fetchIn(
     cfg,

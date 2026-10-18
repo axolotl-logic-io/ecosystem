@@ -31,7 +31,7 @@ test("start-pr in a job checkout commits past its pre-commit hook and pushes the
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${PR}\n` },
   ]);
-  const checkout = { issue: ISSUE, dir };
+  const checkout = { issue: ISSUE, dir, branch: `agent/issue-${ISSUE}` };
   const out = ask({ op: "start-pr", number: ISSUE, checkout });
   const headSha = originRef(`agent/issue-${ISSUE}`);
   assert.equal(out, okLine("start-pr", { pr: PR, headSha }));

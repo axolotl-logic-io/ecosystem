@@ -124,7 +124,7 @@ function assertReadyView(
   pr: number,
   { code, view }: { code: string; view: z.infer<typeof READY_VIEW> },
 ): void {
-  const branch = paths.branch(n);
+  const branch = paths.branch(cfg, n);
   if (
     view.number !== pr ||
     view.headRefName !== branch ||

@@ -52,7 +52,7 @@ function authoritativeHead(
   }
   if (codeMerged === null) {
     throw new OpsError(
-      `${paths.branch(n)} isn't on GitHub, so the checkout's code head can't be confirmed`,
+      `${paths.branch(cfg, n)} isn't on GitHub, so the checkout's code head can't be confirmed`,
     );
   }
   const pr = pullRequest(cfg, n, codeMerged.pr);

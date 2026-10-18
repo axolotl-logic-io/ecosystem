@@ -72,7 +72,7 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
     );
   }
   const { data } = view;
-  const branch = paths.branch(n);
+  const branch = paths.branch(cfg, n);
   if (
     data.number !== pr ||
     data.headRefName !== branch ||

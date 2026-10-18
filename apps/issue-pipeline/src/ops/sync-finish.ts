@@ -73,7 +73,7 @@ function resetToRemote(cfg: Config, n: number): void {
 // Pushes the worktree's head as the issue's branch for `op`, recording the
 // push first.
 function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
-  const target = `HEAD:refs/heads/${paths.branch(n)}`;
+  const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
   recordPush(cfg, n, head(wt), op);
   git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", target]);
 }

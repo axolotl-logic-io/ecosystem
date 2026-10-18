@@ -52,11 +52,11 @@ function pushCode(cfg: Config, n: number): string[] {
     if (remote === null) {
       fetchIn(cfg, wt, `+refs/heads/${base}:refs/remotes/origin/${base}`);
     } else {
-      fetchIn(cfg, wt, paths.branch(n));
+      fetchIn(cfg, wt, paths.branch(cfg, n));
       range = `${remote}..HEAD`;
     }
     if (commitsAhead(wt, range) > 0) {
-      const target = `HEAD:refs/heads/${paths.branch(n)}`;
+      const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
       git(cfg, ["-C", wt, "push", "origin", target]);
     }
     return [];

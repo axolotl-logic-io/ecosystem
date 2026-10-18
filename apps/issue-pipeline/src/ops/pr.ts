@@ -114,7 +114,7 @@ function createPr(
     "--base",
     cfg.baseBranch,
     "--head",
-    paths.branch(n),
+    paths.branch(cfg, n),
     "--title",
     text.title,
     "--body",
@@ -249,7 +249,7 @@ function closePr(cfg: Config, request: unknown): CloseReply {
   if (!isOpen(cfg, req.pr)) {
     return { pr: req.pr, closed: true };
   }
-  const branch = paths.branch(req.number);
+  const branch = paths.branch(cfg, req.number);
   const text = `This change lives only in the wiki, on the wiki branch \`${branch}\`, so this PR has no code to merge and is closed. The pipeline reopens it if a later fix changes code.`;
   const comment = signed(COORDINATOR, text);
   gh(cfg, [

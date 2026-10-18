@@ -65,7 +65,7 @@ function deleteBranch(cfg: Config, n: number): void {
       "api",
       "-X",
       "DELETE",
-      `repos/${cfg.repo}/git/refs/heads/${paths.branch(n)}`,
+      `repos/${cfg.repo}/git/refs/heads/${paths.branch(cfg, n)}`,
       "--silent",
     ],
     { allowFail: true },

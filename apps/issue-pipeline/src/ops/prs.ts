@@ -25,7 +25,7 @@ function prFor(cfg: Config, n: number, state: string): PrRow | undefined {
     "-R",
     cfg.repo,
     "--head",
-    paths.branch(n),
+    paths.branch(cfg, n),
     "--state",
     state,
     "--json",
