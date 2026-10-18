@@ -30,6 +30,7 @@ function v2State(n, extra = {}) {
     resumeStage: null,
     lease: null,
     pr: null,
+    branch: null,
     headSha: null,
     flows: null,
     gherkin: null,
