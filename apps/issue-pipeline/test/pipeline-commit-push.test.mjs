@@ -28,6 +28,7 @@ const REFUSED_PUSH = /code push failed/u;
 const REFUSED_WIKI_PUSH = /wiki push failed/u;
 const NOTHING_COMMITTED = /git exited 1: .*nothing/su;
 const HOOK_REFUSES = /pipeline_commit/u;
+const NO_COMMITTING_SESSION = /no session of this job that commits/u;
 const MISSING_PATHSPEC = /pathspec 'missing\.txt' did not match/u;
 const REFUSE_ALL = "#!/bin/sh\nexit 1\n";
 const HOOK_MODE = 0o755;
@@ -40,9 +41,8 @@ const BREAK_ENV = Object.fromEntries([
 // The variable the checkouts' pre-commit hook lets a commit through with.
 const COMMIT_PASS = Object.fromEntries([["ISSUE_PIPELINE_COMMIT", "1"]]);
 
-// The tests that commit run the implement stage, the one stage whose sessions
-// commit: its implementor writes the code and its wiki updates
-// (`implementor-owns-the-change`).
+// Most tests that commit run the implement stage, whose implementor writes
+// the code and its wiki updates (`implementor-owns-the-change`).
 
 test("code and a new wiki page make two commits with one message, and both are pushed", async () => {
   const job = await openJob("implement");
@@ -166,7 +166,7 @@ test("an implement job's wiki commit whose push was refused is pushed as the job
 });
 
 test("a reader stage's wiki edit is never pushed: teardown drops it as a patch", async () => {
-  const job = await openJob("review");
+  const job = await openJob("author");
   try {
     write(job.docs, "Page.md", "new\n");
   } finally {
@@ -179,7 +179,7 @@ test("a reader stage's wiki edit is never pushed: teardown drops it as a patch",
       root: job.root,
       repo: job.repo,
       docs: job.docs,
-      wiki: STAGE_WIKI_ACCESS.review,
+      wiki: STAGE_WIKI_ACCESS.author,
       key: JOB_KEY,
     },
     null,
@@ -187,6 +187,32 @@ test("a reader stage's wiki edit is never pushed: teardown drops it as a patch",
   assert.deepEqual(lost, ["docs/Page.md"]);
   assert.deepEqual(patches, [`dropped/${JOB_KEY}-docs.patch`]);
   assert.equal(refOf(job.wikiOrigin, BRANCH), "");
+});
+
+test("the job pushes nothing for a launch not given commit authority, so the commit stays local", async () => {
+  const job = await openJob("review", { commits: false });
+  try {
+    write(job.repo, "README.md", "unauthorized\n");
+    const result = await job.commit(["-am", "Unauthorized"]);
+    assert.equal(result.details.pushed, "none");
+    assert.match(result.details.pushError, NO_COMMITTING_SESSION);
+    assert.equal(refOf(job.origin, BRANCH), "");
+    assert.deepEqual(pushesOf(job), []);
+  } finally {
+    job.close();
+  }
+});
+
+test("a reviewer's hardening commit in a review job is pushed like the implementor's", async () => {
+  const job = await openJob("review");
+  try {
+    write(job.repo, "README.md", "hardened\n");
+    const result = await job.commit(["-am", "Harden"]);
+    assert.equal(result.details.pushed, "code");
+    assert.equal(refOf(job.origin, BRANCH), headOf(job.repo));
+  } finally {
+    job.close();
+  }
 });
 
 test("a refused push keeps the commit and reports it, and the next call pushes both commits", async () => {

@@ -1,5 +1,5 @@
 // A launch's record in job.json (src/job/status.ts): its pid, session file,
-// last event, consecutive failures of one tool and the last one's error,
+// a session's write authority and reviewer phase, last event, consecutive failures of one tool and the last one's error,
 // token usage, context size, peak and first turn context, turns, the pushes
 // its commits made, and outcome, and how a record a session prints changes
 // it. The context figures are records, never limits (`no-session-budgets`).
@@ -7,6 +7,7 @@
 import { z } from "zod";
 import type { ToolFailure } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
+import { SESSION_PHASES } from "./role-context.ts";
 import {
   addUsage,
   turnContext,
@@ -28,6 +29,11 @@ const LAUNCH = z.object({
   kind: z.enum(["session", "ops"]),
   pid: z.number().nullable(),
   session: z.string().nullable(),
+  // Whether the session was given commit authority, and the reviewer phase
+  // it was labelled with; null for an ops launch, for a session with no
+  // phase, and in a file written before they were recorded.
+  commits: z.boolean().nullable().default(null),
+  phase: z.enum(SESSION_PHASES).nullable().default(null),
   startedAt: z.string(),
   lastEventAt: z.string().nullable(),
   // Consecutive failed calls of the tool that failed last; a success or
@@ -100,12 +106,16 @@ function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
   };
 }
 
-// A launch's record as it starts, before any event.
+// A launch's record as it starts, before any event. A session names its
+// write authority and phase; an ops launch has neither.
 function startedRecord(
-  start: Pick<LaunchRecord, "key" | "kind" | "pid" | "session">,
+  start: Pick<LaunchRecord, "key" | "kind" | "pid" | "session"> &
+    Partial<Pick<LaunchRecord, "commits" | "phase">>,
 ): LaunchRecord {
   return {
     ...start,
+    commits: start.commits ?? null,
+    phase: start.phase ?? null,
     usage: ZERO_USAGE,
     startedAt: new Date().toISOString(),
     lastEventAt: null,

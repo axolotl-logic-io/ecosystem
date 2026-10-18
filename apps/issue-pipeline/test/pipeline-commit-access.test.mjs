@@ -1,7 +1,8 @@
 // @ts-check
 // pipeline_commit refuses a commit to a checkout the stage only reads
-// (commit-needs-write-access, #338), and a repo with no wiki gets no docs/
-// (Pipeline-Roles-Shared, "pipeline_commit" and "Wiki provisioning").
+// (commit-needs-write-access, #338), lets the reviewer's hardening and
+// merge's integration commit both checkouts, and a repo with no wiki gets no
+// docs/ (Pipeline-Roles-Shared, "pipeline_commit" and "Wiki provisioning").
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,16 +27,16 @@ const { openJobCheckout } = await import("../src/job/checkout.ts");
 const WIKI_READ_ONLY = /read access to the wiki checkout \(docs\/\)/u;
 const CODE_READ_ONLY = /read access to the code checkout \(repo\/\)/u;
 // A stage, a file in a checkout it only reads, and what the refusal names:
-// the reader stages read both checkouts, and merge, which writes the wiki it
-// publishes, only reads the code.
+// the author, the one reader stage, reads both checkouts.
 /** @type {[Stage, string, RegExp][]} */
 const READ_ONLY_COMMITS = [
   ["author", "docs/Page.md", WIKI_READ_ONLY],
   ["author", "repo/README.md", CODE_READ_ONLY],
-  ["review", "docs/Page.md", WIKI_READ_ONLY],
-  ["review", "repo/README.md", CODE_READ_ONLY],
-  ["merge", "repo/README.md", CODE_READ_ONLY],
 ];
+// The stages besides the implement stage whose committing sessions commit
+// both checkouts: the reviewer's hardening and merge's integration.
+/** @type {Stage[]} */
+const HARDENING_STAGES = ["review", "merge"];
 
 for (const [stage, file, refusal] of READ_ONLY_COMMITS) {
   test(`the ${stage} stage's commit of ${file} is refused, naming the checkout and the access, and changes nothing`, async () => {
@@ -52,6 +53,23 @@ for (const [stage, file, refusal] of READ_ONLY_COMMITS) {
       assert.equal(refOf(job.origin, BRANCH), "");
       assert.equal(refOf(job.wikiOrigin, BRANCH), "");
       assert.deepEqual(pushesOf(job), []);
+    } finally {
+      job.close();
+    }
+  });
+}
+
+for (const stage of HARDENING_STAGES) {
+  test(`the ${stage} stage's committing session commits code and the wiki`, async () => {
+    const job = await openJob(stage);
+    try {
+      write(job.repo, "README.md", "hardened\n");
+      write(job.docs, "Page.md", "hardened\n");
+      const result = await job.commit(["-am", "Harden"]);
+      assert.equal(result.isError, false);
+      assert.equal(result.details.pushed, "both");
+      assert.equal(refOf(job.origin, BRANCH), headOf(job.repo));
+      assert.equal(refOf(job.wikiOrigin, BRANCH), headOf(job.docs));
     } finally {
       job.close();
     }

@@ -1,7 +1,8 @@
 // One launch of a stage job, run as a child process: an ops request runs the
 // installed ops.mjs with no model (src/job/ops-process.ts), and a model
 // session runs `pi` in RPC mode (src/job/rpc.ts) as the launch's installed
-// agent (src/job/agent-definition.ts), always fresh. Either way the launch
+// agent (src/job/agent-definition.ts), always fresh, with the write authority
+// the launch itself carries. Either way the launch
 // resolves to its raw result (src/job/raw-results.ts); it never rejects. The
 // job's hooks hear of each launch's start, records and end. Nothing here
 // limits a session's context or spend (`no-session-budgets`): the wall-clock
@@ -19,7 +20,7 @@ import type { OpsProcess } from "./ops-process.ts";
 import { runOps } from "./ops-process.ts";
 import type { OpsRaw, SessionRaw } from "./raw-results.ts";
 import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
-import { commitsOf } from "./roles.ts";
+import type { SessionPhase } from "./role-context.ts";
 import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
 import type { LaunchStart } from "./status.ts";
@@ -41,9 +42,12 @@ interface LaunchHooks {
   ended: (key: string) => void;
   // Session `key` ended, after `ended`, as `end` says.
   sessionEnded: (key: string, end: SessionEnd) => void;
-  // The whole environment launch `key`'s session of installed agent `agent`
-  // runs with.
-  env: (agent: string, key: string) => Readonly<Record<string, string>>;
+  // The whole environment launch `key`'s session runs with: a commit scope
+  // only when the session `commits`, and never a token.
+  env: (launch: {
+    key: string;
+    commits: boolean;
+  }) => Readonly<Record<string, string>>;
   // Where every model session runs: the job's own folder.
   cwd: string;
   // The job's code checkout, in its folder.
@@ -58,7 +62,9 @@ interface OpsLaunch {
 }
 
 // One model session: its key, the model role it plays, its installed agent
-// and model, its task, the JSON Schema of its reply and its timeout.
+// and model, its task, the JSON Schema of its reply, its timeout, whether it
+// commits (its own write authority) and the reviewer phase it is labelled
+// with (null for none).
 interface SessionLaunch {
   key: string;
   role: ModelRole;
@@ -67,6 +73,8 @@ interface SessionLaunch {
   task: string;
   outputSchema: unknown;
   timeoutMs: number;
+  commits: boolean;
+  phase: SessionPhase | null;
 }
 
 // The code checkout's head, or null when it has none to read.
@@ -123,10 +131,34 @@ function countingSteers(live: LiveHandle, steers: Steers): LiveHandle {
   };
 }
 
+// What tells the job that `launch`'s pi, writing `session`, started: its
+// record names the session's write authority and phase, and its steers are
+// counted in `steers`.
+function spawnedOf(
+  launch: SessionLaunch,
+  session: string,
+  watch: { hooks: LaunchHooks; steers: Steers },
+): (rpc: RpcProcess) => void {
+  const { key, commits, phase } = launch;
+  return (rpc: RpcProcess): void => {
+    const start: LaunchStart = {
+      key,
+      kind: "session",
+      pid: rpc.pid,
+      session,
+      commits,
+      phase,
+    };
+    const live: LiveHandle = { kind: "session", session: { key, ...rpc } };
+    watch.hooks.started(start, countingSteers(live, watch.steers));
+  };
+}
+
 // Runs `launch`'s session as its installed agent and resolves to its raw
-// result. Only an agent that commits (src/job/roles.ts) gets
-// pipeline_commit. The context log hears how it ended, with the head it
-// ran on for a session that can't commit.
+// result. Only a launch that commits gets pipeline_commit, a commit scope and
+// tools that edit or run commands; any other reads only, whatever its
+// agent's definition lists (piArgs). The context log hears how it ended,
+// with the head it ran on for a session that can't commit.
 async function runSession(
   launch: SessionLaunch,
   hooks: LaunchHooks,
@@ -140,8 +172,7 @@ async function runSession(
     const error = `agent ${launch.agent}: cannot prepare its session and schema files`;
     return failedSession(launch, error);
   }
-  const { key, agent, model, role } = launch;
-  const commits = commitsOf(agent);
+  const { key, agent, model, role, commits } = launch;
   let commit: string | null = null;
   if (commits) {
     commit = COMMIT_EXTENSION;
@@ -159,19 +190,10 @@ async function runSession(
   const exit = await runRpc({
     args,
     cwd: hooks.cwd,
-    env: hooks.env(agent, key),
+    env: hooks.env({ key, commits }),
     prompt: launch.task,
     timeoutMs: launch.timeoutMs,
-    onSpawn: (rpc: RpcProcess): void => {
-      const start: LaunchStart = {
-        key,
-        kind: "session",
-        pid: rpc.pid,
-        session: files.session,
-      };
-      const live: LiveHandle = { kind: "session", session: { key, ...rpc } };
-      hooks.started(start, countingSteers(live, steers));
-    },
+    onSpawn: spawnedOf(launch, files.session, { hooks, steers }),
     onRecord: (record: unknown): void => hooks.record(key, record),
   });
   hooks.ended(key);

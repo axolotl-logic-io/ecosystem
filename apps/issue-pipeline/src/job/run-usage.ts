@@ -5,6 +5,7 @@
 
 import type { ModelRole } from "../config-legacy.ts";
 import type { Status } from "../stages.ts";
+import type { SessionPhase } from "./role-context.ts";
 import type { Usage } from "./token-usage.ts";
 import { addUsage, ZERO_USAGE } from "./token-usage.ts";
 import type { Ended } from "./usage-log.ts";
@@ -43,13 +44,15 @@ interface JobEntry {
 type UsageEntry = SessionEntry | JobEntry;
 
 // A session as it finished: when, its launch key, the role it played as
-// which agent and model at which stage, its task's length, whether it
+// which agent and model at which stage and in which reviewer phase (null
+// for none), its task's length, whether it
 // replied and its schema-checked reply, its usage, and whether a signal
 // came while it ran.
 interface FinishedSession {
   at: Date;
   key: string;
   stage: string;
+  phase: SessionPhase | null;
   role: ModelRole;
   agent: string;
   model: string;
@@ -82,7 +85,8 @@ function endedOf(finished: Pick<FinishedSession, "ok" | "signalled">): Ended {
 }
 
 // The bookkeeping of a job that starts at `stage` at `startedAt`. Sessions
-// of the same role count up as attempts 1, 2, …
+// of the same role count up as attempts 1, 2, … A session's record names its
+// reviewer phase as its state, else its stage.
 function runUsage(stage: string, startedAt: Date): RunUsage {
   const stages = [stage];
   const attempts = new Map<string, number>();
@@ -102,7 +106,7 @@ function runUsage(stage: string, startedAt: Date): RunUsage {
         at: finished.at.toISOString(),
         key: finished.key,
         stage: finished.stage,
-        state: finished.stage,
+        state: finished.phase ?? finished.stage,
         name: role,
         agent: finished.agent,
         model: finished.model,

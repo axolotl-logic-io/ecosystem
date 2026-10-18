@@ -1,8 +1,11 @@
 // @ts-check
 // The stage job's agent definitions: the pi command line each of the repo's
-// definitions the four stages run (STAGE_AGENTS) gives a session, and the
-// failed session a missing one gives. The author and reviewer only read; the
-// implementor edits, writes and runs commands.
+// definitions the four stages run (STAGE_AGENTS) gives a session of each
+// write authority its stage allows, and the failed session a missing one
+// gives. A session that commits gets its definition's tools and
+// pipeline_commit; one that only reads, such as the reviewer's final
+// security review, keeps only the tools that read, whatever its definition
+// lists.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -65,6 +68,8 @@ function specFor(agent) {
     task: "Write the Gherkin.",
     outputSchema: { type: "object" },
     timeoutMs: 60_000,
+    commits: false,
+    phase: null,
   };
 }
 
@@ -132,19 +137,34 @@ function commandLineOf(args) {
   };
 }
 
-// What the job promises `definition` runs `spec` with: RPC mode with the
-// spec's model, the definition's tools plus structured_output, its thinking,
-// prompt, extensions and context settings, and the job's session file,
-// output extension and schema.
-/** @param {AgentDefinition} definition @param {SessionLaunch} spec @returns {CommandLine} */
-function promisedCommandLine(definition, spec) {
+// The tools that only read.
+const READ_TOOLS = ["read", "grep", "find", "ls", "codemode"];
+const WRITE_TOOLS = ["edit", "write", "bash"];
+
+// What the job promises `definition` runs `spec` with, given `files`: RPC
+// mode with the spec's model; for a committing session (`files.commit`) the
+// definition's tools plus structured_output and pipeline_commit, and the
+// pipeline_commit extension; for any other, only the definition's tools that
+// read plus structured_output; its thinking, prompt, extensions and context
+// settings, and the job's session file, output extension and schema.
+/** @param {AgentDefinition} definition @param {SessionLaunch} spec @param {typeof FILES | typeof WRITER_FILES} files @returns {CommandLine} */
+function promisedCommandLine(definition, spec, files) {
+  let tools = [
+    ...definition.tools.filter((tool) => READ_TOOLS.includes(tool)),
+    "structured_output",
+  ];
+  const extensions = [...definition.extensions, FILES.extension];
+  if (files.commit !== null) {
+    tools = [...definition.tools, "structured_output", "pipeline_commit"];
+    extensions.push(files.commit);
+  }
   return {
     mode: "rpc",
     model: spec.model,
-    tools: [...definition.tools, "structured_output"].join(","),
+    tools: tools.join(","),
     thinking: definition.thinking,
     systemPrompt: definition.systemPrompt,
-    extensions: new Set([...definition.extensions, FILES.extension]),
+    extensions: new Set(extensions),
     skills: definition.inheritSkills,
     projectContext: definition.inheritProjectContext,
     session: FILES.session,
@@ -157,47 +177,53 @@ test("the pipeline root and agent folder the definitions load from are the test'
   assert.ok(agentDir.startsWith(isolatedRoot));
 });
 
-// The installed agent of each stage that runs a session.
-const SESSION_AGENTS = Object.values(STAGE_AGENTS).flatMap((entry) => {
-  if (entry === null) {
-    return [];
-  }
-  return [entry.agent];
+// Each stage's agent, with each write authority its stage allows.
+const STAGE_SESSIONS = Object.entries(STAGE_AGENTS).flatMap(
+  ([stage, { agent, commits }]) =>
+    commits.map((commit) => ({ stage, agent, commits: commit })),
+);
+
+test("the author, implementor and reviewer stages run their own agents, and merge runs the reviewer both committing and read-only", () => {
+  assert.deepEqual(
+    STAGE_SESSIONS.map(({ stage, agent, commits }) => [stage, agent, commits]),
+    [
+      ["author", "issue-pipeline-author", false],
+      ["implement", "issue-pipeline-implementor", true],
+      ["review", "issue-pipeline-reviewer", true],
+      ["review", "issue-pipeline-reviewer", false],
+      ["merge", "issue-pipeline-reviewer", true],
+      ["merge", "issue-pipeline-reviewer", false],
+    ],
+  );
 });
 
-test("the author, implementor and reviewer stages run their own agents, and the merge runs none", () => {
-  assert.deepEqual(SESSION_AGENTS, [
-    "issue-pipeline-author",
-    "issue-pipeline-implementor",
-    "issue-pipeline-reviewer",
-  ]);
-  assert.equal(STAGE_AGENTS.merge, null);
-});
-
-for (const agent of SESSION_AGENTS) {
-  test(`${agent} runs pi in RPC mode as its definition says`, () => {
+for (const { stage, agent, commits } of STAGE_SESSIONS) {
+  test(`${agent}'s ${stage} session with commits ${commits} runs pi in RPC mode as its definition and authority say`, () => {
     const definition = definitionOf(agent);
-    const spec = specFor(agent);
+    const spec = { ...specFor(agent), commits };
+    /** @type {typeof FILES | typeof WRITER_FILES} */
+    let files = FILES;
+    if (commits) {
+      files = WRITER_FILES;
+    }
     assert.deepEqual(
-      commandLineOf(piArgs(definition, spec, FILES)),
-      promisedCommandLine(definition, spec),
+      commandLineOf(piArgs(definition, spec, files)),
+      promisedCommandLine(definition, spec, files),
     );
     assert.ok(definition.systemPrompt.length > 0);
     assert.doesNotMatch(definition.systemPrompt, FRONTMATTER_FENCE);
   });
 }
 
-// The author writes only the Gherkin, and the reviewer only its findings:
-// neither edits, writes or runs commands.
-for (const agent of ["issue-pipeline-author", "issue-pipeline-reviewer"]) {
-  test(`${agent} only reads`, () => {
-    const { tools } = definitionOf(agent);
-    for (const tool of ["edit", "write", "bash"]) {
-      assert.equal(tools.includes(tool), false, tool);
-    }
-    assert.ok(tools.includes("read"));
-  });
-}
+// The author writes only the Gherkin: its definition neither edits, writes
+// nor runs commands.
+test("issue-pipeline-author only reads", () => {
+  const { tools } = definitionOf("issue-pipeline-author");
+  for (const tool of WRITE_TOOLS) {
+    assert.equal(tools.includes(tool), false, tool);
+  }
+  assert.ok(tools.includes("read"));
+});
 
 test("the implementor may edit, write and run commands", () => {
   const { tools } = definitionOf("issue-pipeline-implementor");
@@ -206,7 +232,7 @@ test("the implementor may edit, write and run commands", () => {
   }
 });
 
-test("a definition without project context or a tools list runs with -nc and pi's default tools", () => {
+test("a definition without project context or a tools list runs with -nc, and a read-only session gets only the tools that read", () => {
   const definition = parsed(
     "---\nname: x\ninheritProjectContext: false\ninheritSkills: true\n---\nBe brief.\n",
   );
@@ -214,7 +240,10 @@ test("a definition without project context or a tools list runs with -nc and pi'
   assert.ok(args.includes("-nc"));
   assert.ok(!args.includes("-ns"));
   assert.ok(!args.includes("--thinking"));
-  assert.equal(flagValue(args, "--tools"), "+structured_output");
+  assert.equal(
+    flagValue(args, "--tools"),
+    [...READ_TOOLS, "structured_output"].join(","),
+  );
   assert.equal(flagValue(args, "--system-prompt"), "Be brief.");
 });
 

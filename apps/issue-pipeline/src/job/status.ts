@@ -23,6 +23,7 @@ import type {
   LaunchRecord,
 } from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
+import type { SessionPhase } from "./role-context.ts";
 
 const STATUS_FILE = "job.json";
 // The pipeline version a job of this pipeline records in its file.
@@ -91,12 +92,15 @@ interface JobInfo {
   socket: string;
 }
 
-// A launch as it starts: a pi session with its file, or an ops child.
+// A launch as it starts: a pi session with its file, its write authority
+// and its reviewer phase, or an ops child.
 interface LaunchStart {
   key: string;
   kind: "session" | "ops";
   pid: number | null;
   session: string | null;
+  commits?: boolean;
+  phase?: SessionPhase | null;
 }
 
 // The job's status file, kept current as the job reports what happens.

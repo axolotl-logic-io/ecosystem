@@ -95,7 +95,7 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
   const status = openStatus(runDir, { ...job, ...identity });
   const control = await openControl(
     runDir,
-    pushServerOf(cfg, { issue, stage, checkout: repo, id }, status.pushed),
+    pushServerOf(cfg, { issue, stage, checkout: repo, id }, status),
   );
   const where = { cwd: root, repo, from: process.env, job: identity };
   const hooks = hooksOf(cfg, args, { status, control }, where);

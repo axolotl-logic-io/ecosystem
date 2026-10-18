@@ -31,7 +31,7 @@ import {
 import { inputsOf } from "./role-inputs.ts";
 import { opRunnerOf, postOf } from "./role-ops.ts";
 import { sessionRunnerOf } from "./role-session.ts";
-import { STAGE_AGENTS } from "./roles.ts";
+import { STAGE_AGENTS, STAGE_ROLES } from "./roles.ts";
 import { runUsage } from "./run-usage.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 import { usageAppender } from "./usage-append.ts";
@@ -77,9 +77,14 @@ function reconcilesCompletion(stage: Stage, state: IssueState): boolean {
   return stage === "merge" && state.stage === "done" && state.merged !== null;
 }
 
-// The model role a stage's usage records name; merge's is the merger.
+// The role a stage's usage records name: its agent's model role, or the
+// merger for a merge job, whose integration sessions' records name the
+// reviewer as the session's `name`.
 function usageRoleOf(stage: Stage): UsageRole {
-  return STAGE_AGENTS[stage]?.role ?? "merger";
+  if (STAGE_ROLES[stage] === "merger") {
+    return "merger";
+  }
+  return STAGE_AGENTS[stage].role;
 }
 
 // What one claimed run holds while it runs (Claimed in role-end.ts) and

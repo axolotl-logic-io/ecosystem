@@ -31,6 +31,7 @@ function finished(over = {}) {
     at: STARTED,
     key: "i7-implementor-1",
     stage: "implement",
+    phase: null,
     role: "implementor",
     agent: "issue-pipeline-implementor",
     model: "mock",
@@ -71,6 +72,22 @@ for (const [how, over, ended] of ENDINGS) {
     assert.deepEqual(entry.launch, LAUNCH);
   });
 }
+
+test("a reviewer session's record names its phase as its state, and its stage still as its stage", () => {
+  const usage = runUsage("merge", STARTED);
+  /** @type {readonly ("integration" | "security-review")[]} */
+  const phases = ["integration", "security-review"];
+  const states = phases.map((phase) => {
+    const entry = usage.session(
+      finished({ stage: "merge", phase, role: "reviewer" }),
+    );
+    return [entry.stage, entry.state, entry.name];
+  });
+  assert.deepEqual(states, [
+    ["merge", "integration", "reviewer"],
+    ["merge", "security-review", "reviewer"],
+  ]);
+});
 
 test("a session's reply is kept only when it replied", () => {
   const usage = runUsage("implement", STARTED);

@@ -1,9 +1,14 @@
 // The stage job's roles (sandbox-ready-jobs): the role each stage runs as,
-// which sessions commit, each stage's access to its code and wiki checkouts
-// and what its sessions may commit, what each role may hold, and the
-// environment a session's pi gets. No session holds a GitHub token: only the job does, and
-// the sessions that commit push through it (`pipeline_commit`). The networks
-// are recorded, not enforced.
+// the sessions each stage may run and which of them commit, each stage's
+// access to its code and wiki checkouts and what its committing sessions may
+// commit, what each role may hold, and the environment a session's pi gets.
+// Write authority is each session's own (`SessionSpec.commits`), never its
+// agent's: the reviewer commits while it hardens or integrates and only
+// reads in its final security review of the integrated result. No session
+// holds a GitHub token: only the job does, and the sessions that commit push
+// through it (`pipeline_commit`).
+// The networks are recorded, not enforced, and nothing here isolates a
+// session's files or keyring from the OS user it runs as.
 
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -13,7 +18,7 @@ import type { Stage } from "../stages.ts";
 import { JOB_DOCS, JOB_REPO } from "./layout.ts";
 import type { Access, PathScope } from "./pipeline-commit.ts";
 import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
-import type { AgentName } from "./role-context.ts";
+import type { AgentName, SessionPhase, SessionSpec } from "./role-context.ts";
 
 type JobRole = "reader" | "writer" | "merger";
 
@@ -37,8 +42,10 @@ interface CheckoutAccess {
 }
 
 // What a stage job declares about itself for a sandbox: its role, the
-// folder it works in, its access to each checkout there, the names of its
-// sessions' env, and its network.
+// folder it works in, its access to each checkout there (what its committing
+// sessions may commit; a read-only session, such as the reviewer's final
+// security review, commits nothing), the names of its sessions' env, and its
+// network.
 interface Boundary {
   role: JobRole;
   checkout: string;
@@ -47,35 +54,73 @@ interface Boundary {
   network: readonly string[];
 }
 
-// The role each stage's job runs as (Reimagined-Pipeline): the author and
-// the reviewer only read; the implementor writes both checkouts; merge is
-// code alone, with no model session, and writes the wiki it publishes.
+// The role each stage's job runs as (Reimagined-Pipeline): the author only
+// reads; the implementor and the reviewer, which hardens the change, write;
+// merge holds the credentials for its deterministic merge and publication,
+// and its model sessions, which integrate the change and then review its
+// security, never get them.
 const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
   author: "reader",
   implement: "writer",
-  review: "reader",
+  review: "writer",
   merge: "merger",
 };
 
-// Each stage's access to the issue's wiki checkout: every stage reads it;
-// the implementor writes its wiki updates, and merge rebases and publishes
-// them (`implementor-owns-the-change`).
-const STAGE_WIKI_ACCESS: Readonly<Record<Stage, Access>> = {
+// Each stage's access to the issue's code checkout, which its committing
+// sessions get: the author only reads it; the implementor writes it, the
+// reviewer hardens it, and merge's integration rebases and fixes it.
+const STAGE_CODE_ACCESS: Readonly<Record<Stage, Access>> = {
   author: "read",
   implement: "write",
-  review: "read",
+  review: "write",
   merge: "write",
 };
 
-// The one installed agent each stage's sessions may run as, and the model
-// role it plays; a merge job runs no model session (`merge-is-code`).
-const STAGE_AGENTS: Readonly<
-  Record<Stage, { agent: AgentName; role: ModelRole } | null>
+// Each stage's access to the issue's wiki checkout: every stage reads it;
+// the implementor writes its wiki updates, the reviewer hardens them, and
+// merge rebases and publishes them.
+const STAGE_WIKI_ACCESS: Readonly<Record<Stage, Access>> = {
+  author: "read",
+  implement: "write",
+  review: "write",
+  merge: "write",
+};
+
+// The installed agent a stage's sessions run as, the model role it plays,
+// and the write authority each of its sessions may be given.
+interface StageAgent {
+  agent: AgentName;
+  role: ModelRole;
+  commits: readonly boolean[];
+}
+
+const REVIEWER_AGENT = "issue-pipeline-reviewer";
+
+// The one installed agent each stage's sessions may run as: the author's
+// only read; the implementor's commit; the reviewer's commit while they
+// harden; and merge runs the reviewer as committing integration sessions
+// (its own final synchronization, conflict and check fixes) and then as the
+// read-only final security review of the integrated result. The review
+// stage also admits a read-only reviewer session, which can only lose
+// authority, so a role that still reviews before merge keeps running.
+const STAGE_AGENTS: Readonly<Record<Stage, StageAgent>> = {
+  author: { agent: "issue-pipeline-author", role: "author", commits: [false] },
+  implement: {
+    agent: "issue-pipeline-implementor",
+    role: "implementor",
+    commits: [true],
+  },
+  review: { agent: REVIEWER_AGENT, role: "reviewer", commits: [true, false] },
+  merge: { agent: REVIEWER_AGENT, role: "reviewer", commits: [true, false] },
+};
+
+// The stage each reviewer phase runs in, and whether its sessions commit.
+const PHASES: Readonly<
+  Record<SessionPhase, { stage: Stage; commits: boolean }>
 > = {
-  author: { agent: "issue-pipeline-author", role: "author" },
-  implement: { agent: "issue-pipeline-implementor", role: "implementor" },
-  review: { agent: "issue-pipeline-reviewer", role: "reviewer" },
-  merge: null,
+  hardening: { stage: "review", commits: true },
+  "security-review": { stage: "merge", commits: false },
+  integration: { stage: "merge", commits: true },
 };
 
 const DEFAULT_ROLES: Roles = {
@@ -84,11 +129,12 @@ const DEFAULT_ROLES: Roles = {
     tokenEnv: undefined,
     network: ["api.anthropic.com", "registry.npmjs.org"],
   },
-  merger: { tokenEnv: undefined, network: ["api.github.com"] },
+  merger: {
+    tokenEnv: undefined,
+    network: ["api.github.com", "api.anthropic.com", "registry.npmjs.org"],
+  },
 };
 
-// The installed agent whose sessions write code and the wiki.
-const IMPLEMENTOR_AGENT = "issue-pipeline-implementor";
 // The variables gh reads a token from.
 const GH_TOKEN_VARS: readonly string[] = [
   "GH_TOKEN",
@@ -97,10 +143,31 @@ const GH_TOKEN_VARS: readonly string[] = [
   "GITHUB_ENTERPRISE_TOKEN",
 ];
 
-// Whether a model session of installed agent `agent` commits, through
-// `pipeline_commit`: only the implementor's does; the others only read.
-function commitsOf(agent: string): boolean {
-  return agent === IMPLEMENTOR_AGENT;
+// Why session `spec` may not run in a `stage` job, or null when it may: the
+// stage runs only its one agent, with the write authority it allows, and a
+// labelled phase belongs to its stage and its authority.
+function sessionRefusalOf(
+  stage: Stage,
+  spec: { agent: string } & Pick<SessionSpec, "commits" | "phase">,
+): string | null {
+  const allowed = STAGE_AGENTS[stage];
+  if (allowed.agent !== spec.agent) {
+    return `the ${stage} stage can't run ${spec.agent}`;
+  }
+  if (!allowed.commits.includes(spec.commits)) {
+    return `the ${stage} stage's ${spec.agent} sessions can't set commits ${spec.commits}`;
+  }
+  if (spec.phase === undefined) {
+    return null;
+  }
+  const phase = PHASES[spec.phase];
+  if (phase.stage !== stage) {
+    return `a ${spec.phase} session runs only in the ${phase.stage} stage, not ${stage}`;
+  }
+  if (phase.commits !== spec.commits) {
+    return `a ${spec.phase} session can't set commits ${spec.commits}`;
+  }
+  return null;
 }
 
 function mergedRole(
@@ -142,25 +209,17 @@ function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
   return Object.fromEntries(env);
 }
 
-// A stage's access to its code checkout: a writer stage writes it, and a
-// reader or merger stage only reads it.
-function codeAccessOf(stage: Stage): Access {
-  if (STAGE_ROLES[stage] === "writer") {
-    return "write";
-  }
-  return "read";
-}
-
-// What a writer session of `stage` may commit: its code checkout and its
+// What a committing session of `stage` may commit: its code checkout and its
 // wiki checkout (null when the job has none, `hasWiki` false) as the stage's
 // access allows, and the code globs, relative to the code checkout, it may
-// commit there: any code path, but none for a merger stage.
+// commit there: any code path when the stage writes code, else none.
 function commitScopeOf(stage: Stage, hasWiki: boolean): PathScope {
+  const access = STAGE_CODE_ACCESS[stage];
   const allowed: string[] = [];
-  if (STAGE_ROLES[stage] !== "merger") {
+  if (access === "write") {
     allowed.push("**");
   }
-  const repo = { dir: JOB_REPO, access: codeAccessOf(stage) };
+  const repo = { dir: JOB_REPO, access };
   let docs: PathScope["docs"] = null;
   if (hasWiki) {
     docs = { dir: JOB_DOCS, access: STAGE_WIKI_ACCESS[stage] };
@@ -190,7 +249,7 @@ function boundaryOf(
   return {
     role,
     checkout: paths.jobCheckout(cfg, issue, stage),
-    access: { repo: codeAccessOf(stage), docs: STAGE_WIKI_ACCESS[stage] },
+    access: { repo: STAGE_CODE_ACCESS[stage], docs: STAGE_WIKI_ACCESS[stage] },
     env: Object.keys(agentEnvOf(roles, from)).sort(byName),
     network: roles[role].network,
   };
@@ -203,16 +262,16 @@ export type {
   JobRole,
   RoleSettings,
   Roles,
+  StageAgent,
 };
 export {
   agentEnvOf,
   boundaryOf,
-  codeAccessOf,
   commitScopeOf,
-  commitsOf,
-  IMPLEMENTOR_AGENT,
   rolesOf,
   STAGE_AGENTS,
+  STAGE_CODE_ACCESS,
   STAGE_ROLES,
   STAGE_WIKI_ACCESS,
+  sessionRefusalOf,
 };

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { waitFor } from "./bounded-test-kit.mjs";
+import { alive, waitFor } from "./bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   AUTHOR_SESSION,
@@ -169,7 +169,7 @@ test("a writer whose origin is gone at exit reports it on stderr, stops on SIGTE
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
 });
 
-test("a writer stopped by SIGTERM still saves, logs the job's usage and pushes its commit before its checkout goes", async () => {
+test("a writer stopped by SIGTERM still saves with no lease, logs the job's usage and pushes its commit before its checkout goes, leaving no pi", async () => {
   const place = setUp(pushingImplementReplies(), COMMIT_AND_WAIT);
   const job = startJob(place, ["--stage", "implement"]);
   await waitFor("the session's spending in job.json", () => spent(place));
@@ -177,10 +177,21 @@ test("a writer stopped by SIGTERM still saves, logs the job's usage and pushes i
   const end = await job.end;
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
   assert.equal(refOf(place.origin, BRANCH), committed(place));
-  const ops = logOf(place, "ops.log").map(({ op }) => op);
+  const ops = logOf(place, "ops.log");
   // The stop saves the issue, then the job logs its usage; the push is last.
   const last = ["save-state", "usage", "exit-push"];
-  assert.deepEqual(ops.slice(-last.length), last);
+  assert.deepEqual(
+    ops.slice(-last.length).map(({ op }) => op),
+    last,
+  );
+  const [save] = ops.slice(-last.length);
+  assert.deepEqual([save.state.stage, save.state.lease], ["implement", null]);
+  assert.equal(
+    ops.some(({ op }) => op === "release"),
+    false,
+  );
+  const [{ pid }] = piStarts(place);
+  assert.equal(alive(pid), false);
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
 });
 

@@ -16,6 +16,15 @@ const FIELD = /^(?<key>[A-Za-z]\w*):\s*(?<value>.*)$/u;
 const LINE_BREAK = /\r?\n/u;
 const LIST_SEPARATOR = /\s*,\s*/u;
 const OUTPUT_TOOL = "structured_output";
+// The tools a session that only reads may have: none edits, writes or runs
+// a command. A codemode script calls only the session's other tools.
+const READ_ONLY_TOOLS: readonly string[] = [
+  "read",
+  "grep",
+  "find",
+  "ls",
+  "codemode",
+];
 
 const SETTING = z.enum(["true", "false"]).optional();
 const FIELDS = z.looseObject({
@@ -43,7 +52,8 @@ type DefinitionRead =
 
 // The files a session uses: its JSONL session, the structured-output
 // extension, the JSON Schema file that extension reads, and the
-// pipeline_commit extension a writer session loads (null for any other).
+// pipeline_commit extension a committing session loads (null for a session
+// that only reads).
 interface SessionFiles {
   session: string;
   extension: string;
@@ -120,11 +130,29 @@ function toolsFlag(tools: readonly string[], added: readonly string[]): string {
   return [...tools, ...added].join(",");
 }
 
+// The tools flag of a session that only reads, for a definition that lists
+// `tools`: those of them that only read, or all READ_ONLY_TOOLS when the
+// definition lists none, since pi's defaults edit, write and run commands;
+// and `added`. The list is always explicit, never added to pi's defaults.
+function readOnlyToolsFlag(
+  tools: readonly string[],
+  added: readonly string[],
+): string {
+  let kept = READ_ONLY_TOOLS;
+  if (tools.length > 0) {
+    kept = tools.filter((tool) => READ_ONLY_TOOLS.includes(tool));
+  }
+  return [...kept, ...added].join(",");
+}
+
 // The `pi` arguments that run a session on `spec.model` as `definition` in
 // RPC mode, which
 // takes its prompt as a command on stdin, writing its session to
 // `files.session` and ending on the structured_output tool. A session given
-// `files.commit` also gets the pipeline_commit tool.
+// `files.commit` commits: it also gets the pipeline_commit tool. Any other
+// only reads: of its definition's tools it keeps only those that read, so a
+// definition shared with committing sessions never lets it edit, write or
+// run a command.
 function piArgs(
   definition: AgentDefinition,
   spec: { model: string },
@@ -134,11 +162,12 @@ function piArgs(
   if (definition.thinking !== null) {
     args.push("--thinking", definition.thinking);
   }
-  const added = [OUTPUT_TOOL];
-  if (files.commit !== null) {
-    added.push(COMMIT_TOOL);
+  if (files.commit === null) {
+    args.push("--tools", readOnlyToolsFlag(definition.tools, [OUTPUT_TOOL]));
+  } else {
+    const added = [OUTPUT_TOOL, COMMIT_TOOL];
+    args.push("--tools", toolsFlag(definition.tools, added));
   }
-  args.push("--tools", toolsFlag(definition.tools, added));
   args.push("--system-prompt", definition.systemPrompt);
   for (const extension of definition.extensions) {
     args.push("-e", extension);
@@ -158,4 +187,4 @@ function piArgs(
 }
 
 export type { AgentDefinition, DefinitionRead, SessionFiles };
-export { parseDefinition, piArgs, readDefinition };
+export { parseDefinition, piArgs, READ_ONLY_TOOLS, readDefinition };

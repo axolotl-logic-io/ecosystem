@@ -2,7 +2,8 @@
 // A stage job's exit push (src/job/exit-push.ts) on a fake op runner: a
 // writer pushes its commits through exit-push, only its wiki through
 // `push {wikiOnly}` once the code is merged, and nothing before its claim
-// won; a reader or merger never pushes.
+// won; the reviewer's job, whose hardening commits, is a writer; a reader or
+// merger never pushes.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -42,10 +43,10 @@ test("the exit push's pipeline root is a temporary one", () => {
   assert.equal(ROOT, TEMPORARY_ROOT);
 });
 
-/** @param {any} state */
-async function exitPushAt(state) {
+/** @param {any} state @param {"implement" | "review"} [stage] */
+async function exitPushAt(state, stage = "implement") {
   const { calls, runOp } = fakeOps();
-  const push = exitPushOf("implement", runOp, () => state);
+  const push = exitPushOf(stage, runOp, () => state);
   if (push === null) {
     throw new Error("a writer's job has no exit push");
   }
@@ -59,6 +60,12 @@ test("a writer's exit push pushes only the wiki once the code is merged", async 
     { op: "push", payload: { wikiOnly: true } },
   ]);
   assert.deepEqual(await exitPushAt(stateAt("implement")), [
+    { op: "exit-push", payload: {} },
+  ]);
+});
+
+test("a reviewer job interrupted mid-hardening pushes its commits as it exits", async () => {
+  assert.deepEqual(await exitPushAt(stateAt("review"), "review"), [
     { op: "exit-push", payload: {} },
   ]);
 });

@@ -37,6 +37,7 @@ type OpName =
   | "finish-wiki-sync"
   | "publish"
   | "finish-wiki"
+  | "ready-pr"
   | "cleanup";
 
 // The ops only the job runs, around and after the role.
@@ -67,15 +68,26 @@ interface RoleInputs {
   gherkin: GherkinComment | null;
 }
 
+// The reviewer's states a session may be labelled with: hardening (review
+// stage) and integration (merge stage) commit; the security review, in the
+// merge stage after integration, only reads.
+const SESSION_PHASES = ["hardening", "security-review", "integration"] as const;
+
+type SessionPhase = (typeof SESSION_PHASES)[number];
+
 // One `pi --mode rpc` session as `agent`. `schema` is the reply's schema,
-// which the session's structured_output tool enforces; only a session with
-// `commits` gets `pipeline_commit`.
+// which the session's structured_output tool enforces. `commits` is this
+// session's own write authority, whatever its agent: only a session with
+// `commits` gets `pipeline_commit`, its commit scope and tools that edit or
+// run commands. `phase`, when given, labels its records and must agree with
+// `commits` and the stage (sessionRefusalOf in roles.ts).
 interface SessionSpec {
   agent: AgentName;
   model: string;
   task: string;
   schema: z.ZodType;
   commits: boolean;
+  phase?: SessionPhase;
 }
 
 // A session's reply, already checked against its schema; or why it failed,
@@ -176,7 +188,8 @@ export type {
   RoleContext,
   RoleEnd,
   RoleInputs,
+  SessionPhase,
   SessionResult,
   SessionSpec,
 };
-export { OPS_FAILED, OpsFailure, unreadableReply };
+export { OPS_FAILED, OpsFailure, SESSION_PHASES, unreadableReply };

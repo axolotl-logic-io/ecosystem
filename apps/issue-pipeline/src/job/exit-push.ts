@@ -2,8 +2,11 @@
 // the exit-push op on the commits its checkout holds, which the next claim
 // may adopt as the saved head (src/adopt-push.ts); once the issue's code is
 // merged (`codeMerged`) it pushes only its wiki, through `push {wikiOnly}`,
-// so no writer's unmerged code reaches the branch. A reader or merger never
-// pushes, and neither does a job that never claimed the issue.
+// so no writer's unmerged code reaches the branch. The writers are the
+// implementor's and the reviewer's (whose hardening commits) jobs. A reader
+// never pushes, and neither does a merger: its integration's rebased or
+// fixed head reaches the branch only through its role's own ops, never half
+// done at exit. Neither does a job that never claimed the issue.
 
 import process from "node:process";
 import type { Stage } from "../stages.ts";

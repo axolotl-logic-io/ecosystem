@@ -84,7 +84,7 @@ function opRunnerOf(job: OpsJob): RoleOpRunner {
 // merger, which runs none.
 function signerOf(role: CommentRole): Signer {
   const stage = Object.values(STAGE_AGENTS).find(
-    (entry) => entry?.role === role,
+    (entry) => entry.role === role,
   );
   return { role, agent: stage?.agent ?? null, model: null, run: null };
 }

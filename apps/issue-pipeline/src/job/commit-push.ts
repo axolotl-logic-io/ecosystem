@@ -4,6 +4,8 @@
 // wiki checkout's when the stage writes the wiki, and records each push under
 // the session's launch in job.json and as a line of `pushes.jsonl` in the
 // issue's run folder, `{key, job, repo, sha, at}`, which outlives job.json.
+// It pushes only for a launch of the job recorded as given commit authority,
+// so a read-only session that reached the socket pushes nothing.
 // It defers while a rebase is stopped in
 // either checkout, whose ops push the rebased branch only after its checks.
 // A refused push keeps the commits and is reported, never thrown; the next
@@ -20,6 +22,7 @@ import type { Pushed, PushReply } from "./control-protocol.ts";
 import type { LaunchPush } from "./launch-record.ts";
 import { STAGE_WIKI_ACCESS } from "./roles.ts";
 import { appendRunLine } from "./run-log.ts";
+import type { JobStatus } from "./status.ts";
 
 // The op a push for `pipeline_commit` is recorded as in pushed.json, which a
 // claim adopts as the pipeline's own push (src/adopt-push.ts).
@@ -92,12 +95,13 @@ function pushRepo(
   }
 }
 
-// The push request handler of `job`, which records each push through
-// `pushed`. Synchronous, so the job answers one request at a time.
+// The push request handler of `job`, which records each push in `status`
+// and refuses a key whose launch `status` doesn't record as committing.
+// Synchronous, so the job answers one request at a time.
 function pushServerOf(
   cfg: Config,
   job: PushJob,
-  pushed: (key: string, push: LaunchPush) => void,
+  status: Pick<JobStatus, "pushed" | "launch">,
 ): (key: string) => PushReply {
   const { issue, stage, checkout } = job;
   const runDir = paths.runDir(cfg, issue);
@@ -106,6 +110,10 @@ function pushServerOf(
   const writesWiki =
     STAGE_WIKI_ACCESS[stage] === "write" && wikiCfg(cfg) !== null;
   return (key: string): PushReply => {
+    if (status.launch(key)?.commits !== true) {
+      const pushError = `${key} is no session of this job that commits`;
+      return { pushed: "none", pushError };
+    }
     const rebasing = [checkout, wikiDir].some(
       (dir) => isRepo(dir) && rebaseInProgress(dir),
     );
@@ -136,7 +144,7 @@ function pushServerOf(
       );
     }
     for (const push of done.pushes) {
-      pushed(key, push);
+      status.pushed(key, push);
       appendRunLine(runDir, "pushes.jsonl", { key, job: job.id, ...push });
     }
     let pushError: string | null = null;
