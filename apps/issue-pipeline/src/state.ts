@@ -1,6 +1,8 @@
 // An issue's state, which saved-state.ts keeps on GitHub. This module owns
-// the state's schema (version 2), its log, and the approval rule that an approval holds only
-// for the exact revision the reviewer saw (`approval-is-for-one-revision`).
+// the state's schema (version 2), its log, and the approval rule that an
+// approval holds only for the exact revision the reviewer saw
+// (`approval-is-for-one-revision`), or for the one revision the Reviewer's
+// own integration checked from it.
 
 import { z } from "zod";
 import type { Status } from "./stages.ts";
@@ -63,6 +65,15 @@ const REVIEW = z.object({
   revision: REVISION.nullable().catch(null),
 });
 
+// The Reviewer's own integration of an approved revision: `reviewed` is the
+// revision the final review approved, kept as review.revision says it, and
+// `revision` the revision the integration produced and checked. An
+// integration never changes the trusted inputs, so a receipt that names two
+// inputs revisions reads as none.
+const INTEGRATION = z
+  .object({ reviewed: REVISION, revision: REVISION })
+  .refine((receipt) => receipt.reviewed.inputs === receipt.revision.inputs);
+
 const MERGE_RETURN = z.object({
   reason: z.enum(["conflict", "retest", "ci", "wiki-check", "wiki-conflict"]),
   detail: z.string(),
@@ -109,6 +120,11 @@ const ISSUE_STATE = z.object({
   flows: FLOWS.nullable().catch(null),
   gherkin: GHERKIN_REF.nullable().catch(null),
   review: REVIEW.catch(EMPTY_REVIEW),
+  // The exact revision that passed the Reviewer's hardening: the final
+  // review runs on it, and any other revision is hardened first.
+  hardened: REVISION.nullable().catch(null),
+  // The receipt of the Reviewer's own integration of the approved revision.
+  integration: INTEGRATION.nullable().catch(null),
   // The code head whose verification last passed.
   verifiedSha: z.string().nullable().catch(null),
   mergeReturn: MERGE_RETURN.nullable().catch(null),
@@ -126,6 +142,7 @@ type Finding = z.infer<typeof FINDING>;
 type MergeReturn = z.infer<typeof MERGE_RETURN>;
 type CodeMerged = z.infer<typeof CODE_MERGED>;
 type Asked = z.infer<typeof ASKED>;
+type Integration = z.infer<typeof INTEGRATION>;
 
 function stamp(now: Date): string {
   return `${now.toISOString().slice(0, STAMP_LENGTH)}Z`;
@@ -159,6 +176,8 @@ function newIssueState(number: number): IssueState {
     flows: null,
     gherkin: null,
     review: { ...EMPTY_REVIEW, findings: [] },
+    hardened: null,
+    integration: null,
     verifiedSha: null,
     mergeReturn: null,
     merged: null,
@@ -189,15 +208,32 @@ function sameRevision(a: Revision, b: Revision): boolean {
   return a.code === b.code && a.wiki === b.wiki && a.inputs === b.inputs;
 }
 
-// Whether the issue's approval holds for `current`: the last review approved
-// exactly this code head, wiki head and inputs revision. Any change after the
-// review, a clean rebase included, voids it.
+// The revision the issue's approval permits, or null when it has none: the
+// revision the last review approved, or the revision the Reviewer's own
+// integration checked from exactly that approved revision. A receipt for
+// another review's revision is ignored, never an approval of its head.
+function approvedRevision(state: IssueState): Revision | null {
+  const { verdict, revision: reviewed } = state.review;
+  if (verdict !== "approve" || reviewed === null) {
+    return null;
+  }
+  const { integration } = state;
+  if (integration !== null && sameRevision(integration.reviewed, reviewed)) {
+    return integration.revision;
+  }
+  return reviewed;
+}
+
+// Whether the issue's approval holds for `current`: it is exactly the
+// approved revision (approvedRevision), and the trusted inputs are still the
+// ones the review saw. Any other change after the review, a clean rebase
+// outside the Reviewer's own integration included, voids it.
 function approvalHolds(state: IssueState, current: Revision): boolean {
-  const { verdict, revision } = state.review;
+  const approved = approvedRevision(state);
   return (
-    verdict === "approve" &&
-    revision !== null &&
-    sameRevision(revision, current)
+    approved !== null &&
+    sameRevision(approved, current) &&
+    state.review.revision?.inputs === current.inputs
   );
 }
 
@@ -205,9 +241,18 @@ function isStatus(value: unknown): value is Status {
   return STATUS.safeParse(value).success;
 }
 
-export type { Asked, CodeMerged, Finding, IssueState, MergeReturn, Revision };
+export type {
+  Asked,
+  CodeMerged,
+  Finding,
+  Integration,
+  IssueState,
+  MergeReturn,
+  Revision,
+};
 export {
   approvalHolds,
+  approvedRevision,
   clippedLog,
   FINDING,
   FLOWS,
@@ -216,5 +261,6 @@ export {
   LEASE,
   newIssueState,
   resumeOf,
+  sameRevision,
   withLog,
 };
