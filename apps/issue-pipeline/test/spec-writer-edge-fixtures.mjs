@@ -209,11 +209,19 @@ const EDGES = [
     next: "split-refused",
     effect: stoppedWith(SPLIT_TOO_SMALL, null),
   },
+  // A return to triage starts a new budget; the start heads stay (#454).
   {
     at: "ask",
     result: "ok",
+    data: { attempts: 2, continuations: 1, startSha: "s1", startWikiSha: "w1" },
     next: "asked",
     effect: { kind: "saved", stage: "triage" },
+    changes: {
+      attempts: 0,
+      continuations: 0,
+      startSha: "s1",
+      startWikiSha: "w1",
+    },
   },
   {
     at: "split",

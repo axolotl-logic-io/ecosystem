@@ -111,6 +111,13 @@ function published(data: SpecData, reply: unknown): SpecData {
   return next;
 }
 
+// The spec writer's counts after it asks and hands the issue back to triage:
+// both at 0, so the spec run after triage starts with a new budget (#454),
+// while the start heads, which the reset before asking went back to, stay.
+function spent(data: SpecData): SpecData {
+  return { ...data, attempts: 0, continuations: 0 };
+}
+
 // The draft PR start-pr opened or found, which the implementor builds on.
 function prOpened(data: SpecData, reply: unknown): SpecData {
   if (!isRecord(reply)) {
@@ -167,6 +174,7 @@ export {
   read,
   readied,
   refusal,
+  spent,
   started,
   testsCommitted,
 };

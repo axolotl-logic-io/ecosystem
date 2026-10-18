@@ -28,6 +28,7 @@ import {
   published,
   read,
   readied,
+  spent,
   started,
   testsCommitted,
 } from "./edges.ts";
@@ -58,16 +59,14 @@ type SpecResult =
 type Spec = StateSpec<SpecState, SpecResult, SpecData>;
 type Payload = Readonly<Record<string, unknown>>;
 
-// At most 2 sessions per issue, counted across crash restarts (a lifted
-// stop's restart resets the counts), besides the continuations after a
-// handoff: the config's maxContinuations (limitsOf), 1 by default.
+// At most 2 sessions per spec stage, counted across crash restarts (a
+// lifted stop's restart and a return to triage reset the counts), besides
+// the continuations after a handoff: the config's maxContinuations
+// (limitsOf), 1 by default.
 const LIMITS: Readonly<Record<string, number>> = {
   specAttempts: 2,
   specContinuations: 1,
 };
-
-// The no-work comment's key.
-const NO_WORK_KEY = "no-work";
 
 const ATTEMPTS: Guard<SpecState, SpecData> = {
   field: "attempts",
@@ -211,7 +210,7 @@ const SCRIPT_STATES = {
       const { questions, spec } = decided(data);
       return { by: data.by, questions, spec };
     },
-    { to: "asked" },
+    { to: "asked", apply: spent },
   ),
   split: op(
     "split",
@@ -223,7 +222,7 @@ const SCRIPT_STATES = {
     (data: SpecData) => {
       const { issue: number, by } = data;
       const body = decided(data).spec;
-      return { comments: [{ number, by, body, key: NO_WORK_KEY }] };
+      return { comments: [{ number, by, body, key: "no-work" }] };
     },
     { to: "no-work" },
   ),
