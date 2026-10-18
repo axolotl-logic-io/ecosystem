@@ -1,31 +1,11 @@
 // @ts-check
 // Recorded queue snapshots for the orchestrator's scheduler tests: open
 // issues with their labels, saved states, trusted-inputs revisions and jobs,
-// built from small facts so each test names only what it is about. HOME and
-// the pipeline root are temporary folders set before any pipeline module
-// loads, so nothing here reads or writes the machine's installed root.
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import process from "node:process";
+// built from small facts so each test names only what it is about. The
+// isolated-root kit sets a temporary HOME and pipeline root before any
+// pipeline module loads, so nothing here reads the machine's installed root.
+import "./isolated-root-test-kit.mjs";
 
-const home = fs.mkdtempSync(
-  path.join(os.tmpdir(), "issue-pipeline-orchestrator-home-"),
-);
-process.on("exit", () => fs.rmSync(home, { recursive: true, force: true }));
-const isolatedRoot = path.join(home, "root");
-// Environment variables are named by strings, as src/process.ts takes them.
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["HOME", home],
-    ["ISSUE_PIPELINE_ROOT", isolatedRoot],
-  ]),
-);
-const { ROOT } = await import("../src/pipeline-root.ts");
-if (ROOT !== isolatedRoot) {
-  throw new Error("the pipeline root isn't the test's temporary folder");
-}
 const { newIssueState } = await import("../src/state.ts");
 const { schedule } = await import("../src/orchestrator/schedule.ts");
 

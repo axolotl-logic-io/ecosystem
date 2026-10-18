@@ -1,7 +1,9 @@
 // @ts-check
 // The pipeline's usage comments are its own records (#459): pipelineRole
-// claims them for the pipeline, and they never answer its questions, while a
-// comment by the same account with no pipeline mark still does.
+// claims them for the pipeline, and they are never trusted input, so they
+// never change the trusted-inputs revision that answers its questions and
+// re-runs the author, while a comment by the same account with no pipeline
+// mark still does.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ALLOWED, CONFIG, issueComment, reply } from "./ops-cli-test-kit.mjs";
@@ -11,13 +13,12 @@ import { ALLOWED, CONFIG, issueComment, reply } from "./ops-cli-test-kit.mjs";
 // src loads after the kit has put the fake gh first on PATH.
 const { COMMENT, pipelineRole } = await import("../src/comments.ts");
 const { loadConfig } = await import("../src/config.ts");
-const { answeredSince } = await import("../src/ops/sweep-verdict.ts");
+const { trustedInputsHash } = await import("../src/issue-context.ts");
 
 const cfg = loadConfig(CONFIG);
 const ISSUE = 9;
-const ASKED_AT = "2026-10-18T08:00:00Z";
 const LATER = "2026-10-18T08:02:00Z";
-const STATE = { stage: "triage", questionsAt: ASKED_AT };
+const TITLE_AND_BODY = { title: "T", body: "B" };
 
 // The body of the issue's `kind` usage comment (`usage`, `usage-2`, ...), as
 // src/job/usage-comment.ts lays it out.
@@ -53,15 +54,15 @@ test("a signed pipeline comment that quotes a usage mark keeps its role", () => 
   assert.equal(pipelineRole(cfg, comment(body)), "spec-writer");
 });
 
-test("usage comments posted after the questions don't answer them (#459)", () => {
+test("usage comments posted after the questions don't change the trusted-inputs revision (#459)", () => {
+  const before = trustedInputsHash(cfg, TITLE_AND_BODY, []);
   const comments = [comment(usageBody("usage")), comment(usageBody("usage-2"))];
-  assert.equal(answeredSince(cfg, comments, STATE), false);
+  assert.equal(trustedInputsHash(cfg, TITLE_AND_BODY, comments), before);
 });
 
-test("an unmarked comment by the account after the questions answers them", () => {
-  const comments = [
-    comment(usageBody("usage-2")),
-    comment("Yes, keep the old behaviour."),
-  ];
-  assert.equal(answeredSince(cfg, comments, STATE), true);
+test("an unmarked comment by the account after the questions changes it", () => {
+  const usage = [comment(usageBody("usage-2"))];
+  const before = trustedInputsHash(cfg, TITLE_AND_BODY, usage);
+  const answered = [...usage, comment("Yes, keep the old behaviour.")];
+  assert.notEqual(trustedInputsHash(cfg, TITLE_AND_BODY, answered), before);
 });
