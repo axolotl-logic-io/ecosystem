@@ -42,6 +42,7 @@ function v2State(n, extra = {}) {
     },
     hardened: null,
     integration: null,
+    security: null,
     verifiedSha: null,
     mergeReturn: null,
     merged: null,
