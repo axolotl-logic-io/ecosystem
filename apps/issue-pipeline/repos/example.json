@@ -1,47 +1,16 @@
 {
   "repo": "OWNER/REPO",
   "baseBranch": "main",
-  "account": "axolotl-logic",
-  "allowedUsers": ["axolotl-logic"],
-  "practices": ["AGENTS.md", "CONTRIBUTING.md", "wiki/Decisions.md"],
-  "practicesDigest": "wiki/Coding-Practices-Digest.md",
+  "account": "PIPELINE-ACCOUNT",
+  "allowedUsers": ["MAINTAINER"],
   "tokenFile": "~/.pi/agent/issue-pipeline/secrets/OWNER__REPO.token",
-  "mergeAdmin": false,
-  "leaseHours": 3,
-  "claimWaitSeconds": [5, 20],
-  "claimCandidates": 5,
-  "sessionTokenCap": 300000,
-  "contextLimits": { "soft": 175000, "hard": 225000 },
-  "maxContinuations": 1,
-  "maxFixRounds": 2,
-  "maxCiFixes": 2,
-  "maxSyncs": 3,
-  "maxTriages": 3,
-  "requireCi": true,
-  "requireNewTests": true,
-  "ciWaitMinutes": 30,
-  "commandTimeoutMinutes": 20,
-  "maxJobs": 4,
-  "stageCaps": {
-    "triage": 2,
-    "spec": 2,
-    "review": 2,
-    "accept": 2,
-    "security": 2
+  "takeNewWork": true,
+  "skipLabels": ["deploy"],
+  "models": {
+    "author": "anthropic/claude-opus-5-5",
+    "implementor": "anthropic/claude-opus-5-5",
+    "reviewer": "anthropic/claude-opus-5-5"
   },
-  "tokensPerHour": null,
-  "orchestratorIntervalSeconds": 60,
-  "orchestratorRoles": null,
-  "usageFlags": { "firstContext": 40000, "toolOutputShare": 0.25 },
-  "maxResumes": 2,
-  "silentMinutes": 30,
-  "failureStreak": 3,
-  "claimFailureStreak": 3,
-  "rateLimitBackoffMinutes": 5,
-  "escalationAgent": null,
-  "escalationAgentActs": false,
-  "escalationAgentTimeoutSeconds": 300,
-  "escalationAgentModel": "anthropic/claude-sonnet-5-5",
   "commands": {
     "setup": "npm ci",
     "test": "npm test",
@@ -49,14 +18,6 @@
     "typecheck": "npx tsc --noEmit",
     "teardown": "echo nothing to free"
   },
-  "testPathGlobs": [
-    "test/**",
-    "tests/**",
-    "**/__tests__/**",
-    "**/*.test.*",
-    "**/*.spec.*"
-  ],
-  "nonCodePathGlobs": ["**/*.md", "docs/**"],
   "lockfiles": [
     {
       "path": "package-lock.json",
@@ -69,12 +30,24 @@
     "up": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:up",
     "down": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:down"
   },
-  "models": {
-    "scope": "anthropic/claude-sonnet-5-5"
-  },
-  "roleBudgets": {},
   "wiki": {
     "dir": "wiki",
     "branch": "master"
-  }
+  },
+  "mergeAdmin": false,
+  "requireCi": true,
+  "ciWaitMinutes": 30,
+  "commandTimeoutMinutes": 20,
+  "leaseHours": 3,
+  "maxFixRounds": 2,
+  "maxCiFixes": 2,
+  "maxSyncs": 3,
+  "maxConflictFixes": 2,
+  "maxJobs": 4,
+  "stageCaps": { "author": 2, "review": 2 },
+  "maxResumes": 2,
+  "claimFailureStreak": 3,
+  "rateLimitBackoffMinutes": 5,
+  "orchestratorIntervalSeconds": 60,
+  "usageFlags": { "firstContext": 40000, "toolOutputShare": 0.25 }
 }

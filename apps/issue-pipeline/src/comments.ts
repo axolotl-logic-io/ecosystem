@@ -154,8 +154,8 @@ function metaLine(by: Author | undefined): string {
 }
 
 // Header naming the agent that wrote the text, e.g.
-//   **🤖 issue-pipeline · reviewer (scope)**
-//   <sub>agent issue-pipeline-reader · model claude-sonnet-5-5 · run i7-review-scope-12</sub>
+//   **🤖 issue-pipeline · reviewer**
+//   <sub>agent `issue-pipeline-reviewer` · model `claude-opus-5-5` · run `i7-review-12`</sub>
 function signature(by: Author | undefined): string {
   const role = textOr(by?.role, DEFAULT_ROLE);
   return `**🤖 issue-pipeline · ${role}**\n<sub>${metaLine(by)}</sub>\n<!-- agent-pipeline:comment role=${roleSlug(role)} -->`;
