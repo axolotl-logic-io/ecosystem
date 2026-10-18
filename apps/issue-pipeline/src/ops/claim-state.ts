@@ -49,8 +49,9 @@ function startingState(
 }
 
 // `state` with its PR and code merge as GitHub reports them. A recorded
-// code merge GitHub doesn't confirm, or a completed merge at another merge
-// commit, throws: the claim never clears or replaces a merge it recorded.
+// code merge GitHub doesn't confirm, or a completion GitHub reports another
+// code merge for (none, for a change that lives only in the wiki), throws:
+// the claim never clears or replaces a merge it recorded.
 function reconciled(
   cfg: Config,
   n: number,
@@ -72,7 +73,7 @@ function reconciled(
   }
   if (
     state.stage === "done" &&
-    (codeMerged === null || state.merged?.code !== codeMerged.sha)
+    state.merged?.code !== (codeMerged?.sha ?? null)
   ) {
     throw new OpsError(
       `#${n} is done, but GitHub doesn't confirm the merge it saved`,
