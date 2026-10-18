@@ -15,7 +15,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertClean, fetchIn, gitIn, head } from "../git-state.ts";
 import { OpsError, parseRequest, run, shell } from "../process.ts";
-import { pullRequest } from "../revision.ts";
+import { confirmMerged } from "../revision.ts";
 import { holdWikiPin } from "../wiki.ts";
 import type { VerifyReply } from "./checks.ts";
 import { changedFiles, present, runChecks, SETTINGS } from "./checks.ts";
@@ -73,24 +73,9 @@ function verifyMerged(
   n: number,
   codeMerged: { pr: number; sha: string },
 ): VerifyReply {
-  const { pr, sha } = codeMerged;
-  const found = pullRequest(cfg, n, pr);
-  if (found.state !== "MERGED" || found.mergeCommit !== sha) {
-    throw new OpsError(
-      `GitHub doesn't report PR #${pr} merged as ${sha} (${found.state}, merge commit ${found.mergeCommit ?? "none"})`,
-    );
-  }
+  const { sha } = codeMerged;
   const wt = paths.worktree(cfg, n);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const base = `origin/${cfg.baseBranch}`;
-  const reachable = run(
-    "git",
-    ["-C", wt, "merge-base", "--is-ancestor", sha, base],
-    { allowFail: true },
-  );
-  if (reachable.code !== 0) {
-    throw new OpsError(`merge commit ${sha} is not on ${base}`);
-  }
+  confirmMerged(cfg, n, { wt, codeMerged });
   const runDir = paths.runDir(cfg, n);
   fs.mkdirSync(runDir, { recursive: true });
   const parent = fs.mkdtempSync(path.join(runDir, "verify-merged-"));

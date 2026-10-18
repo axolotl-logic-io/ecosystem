@@ -104,6 +104,33 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
   };
 }
 
+// Confirms on GitHub that issue `n`'s PR `codeMerged.pr` merged as
+// `codeMerged.sha`, and that the commit is on the base branch fetched into
+// the worktree `wt`; throws otherwise, so a merge is never assumed.
+function confirmMerged(
+  cfg: Config,
+  n: number,
+  { wt, codeMerged }: { wt: string; codeMerged: CodeMerged },
+): void {
+  const { pr, sha } = codeMerged;
+  const found = pullRequest(cfg, n, pr);
+  if (found.state !== "MERGED" || found.mergeCommit !== sha) {
+    throw new OpsError(
+      `GitHub doesn't report PR #${pr} merged as ${sha} (${found.state}, merge commit ${found.mergeCommit ?? "none"})`,
+    );
+  }
+  fetchIn(cfg, wt, cfg.baseBranch);
+  const base = `origin/${cfg.baseBranch}`;
+  const reachable = run(
+    "git",
+    ["-C", wt, "merge-base", "--is-ancestor", sha, base],
+    { allowFail: true },
+  );
+  if (reachable.code !== 0) {
+    throw new OpsError(`merge commit ${sha} is not on ${base}`);
+  }
+}
+
 // The issue's PR: `state`'s, or else the open PR from the issue's branch;
 // null when it has neither.
 function issuePullRequest(
@@ -182,4 +209,10 @@ function currentRevision(
 }
 
 export type { CurrentRevision, PullRequest };
-export { codeMergedOf, currentRevision, issuePullRequest, pullRequest };
+export {
+  codeMergedOf,
+  confirmMerged,
+  currentRevision,
+  issuePullRequest,
+  pullRequest,
+};

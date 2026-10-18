@@ -9,30 +9,22 @@ import { head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
 import { run } from "../process.ts";
 import { abortRebase, rebaseProblem } from "../rebase.ts";
-import type { StackedOn } from "../stack.ts";
-import { measureFrom } from "../stack.ts";
 import { holdWikiPin, wikiPinProblem } from "../wiki.ts";
 
-// The commit sync-base rebased onto (its reply's baseSha, #279) and what the
-// branch is stacked on after that sync.
+// The commit sync-base rebased onto (its reply's baseSha, #279).
 interface FinishAgainst {
   baseSha?: string | null | undefined;
-  stackedOn?: StackedOn | null | undefined;
 }
 
 // What the resolved rebase in `wt` is checked against, or why it can't be.
-// A stacked branch is checked against the prerequisite head its sync
-// targeted. Otherwise, with a baseSha it is checked against that commit,
+// With a baseSha it is checked against that commit,
 // which must be on the base, so a base that moved during the fix doesn't
 // throw the resolution away.
 function finishTarget(
   cfg: Config,
   wt: string,
-  { baseSha, stackedOn }: FinishAgainst,
+  { baseSha }: FinishAgainst,
 ): { onto: string } | { problem: string } {
-  if (stackedOn !== null && stackedOn !== undefined) {
-    return { onto: measureFrom(stackedOn, cfg) };
-  }
   const base = `origin/${cfg.baseBranch}`;
   if (baseSha === null || baseSha === undefined || baseSha === "") {
     return { onto: base };

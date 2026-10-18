@@ -2,8 +2,9 @@
 // pass. Each control has its own label, agent:stopped-<code>, and every stop
 // posts a comment naming the control, the reason and how to resume. The wiki
 // page Agent-Labels (axolotl-logic/project-buddy) documents every label; keep
-// it in step with this table. The workflow sends a free-text reason; the first
-// matching control below names it.
+// it in step with this table. A stop's reason is free text; the first
+// matching control below names it. A label of a removed control, such as
+// agent:stopped-budget, still reads as a stop (isStopLabel).
 
 interface GitHubLabel {
   name: string;
@@ -73,22 +74,6 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "The security review found the change would introduce a risk of abuse, for example missing auth or rate limits, privilege escalation or injection.",
   },
   {
-    code: "budget",
-    short:
-      "Stopped: a session's context went past its budget. See the stop comment.",
-    test: /token budget/iu,
-    control: "session context budget",
-    explain: `A writer session's context went past its role's context budget ${settingRef("roleBudgets")}, capped by ${settingRef("sessionTokenCap")}, and the orchestrator's watchdog stopped its job. The budget bounds one session's context, not what the issue spends.`,
-  },
-  {
-    code: "fix-loop",
-    short: "Stopped: a fixed review finding came back. See the stop comment.",
-    test: /reintroduced finding|undoing each other/iu,
-    control: "recurring finding",
-    explain:
-      "A review finding came back after a fix had resolved it, so the fixes are undoing each other.",
-  },
-  {
     code: "review-rounds",
     short:
       "Stopped: blocking findings remain after the fix rounds. See the stop comment.",
@@ -98,17 +83,6 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "Blocking review findings were still open after the allowed fix rounds",
       "maxFixRounds",
     ),
-  },
-  {
-    code: "checks-unrelated",
-    short:
-      "Stopped: the check fixer can't fix the failing checks from the repo. See the stop comment.",
-    // "look unrelated" is the reason sweeps sent before
-    // unrelated-fixes-allowed, which in-flight workflow.js copies still send.
-    test: /can't fix the failing checks|look unrelated/iu,
-    control: "check fixer",
-    explain:
-      "The check fixer found that no change in the repo can fix the failing checks, such as an outside service's outage, missing secrets or credentials, or something that needs the repo's owner.",
   },
   {
     code: "check-fixes",
@@ -131,21 +105,6 @@ const ROWS: readonly Omit<Stop, "label">[] = [
       "The config requires CI checks (`requireCi`), and the PR has none.",
   },
   {
-    code: "triage-rejected",
-    short: "Stopped: triage judged the issue unsuitable. See the stop comment.",
-    test: /triage rejected/iu,
-    control: "triage",
-    explain: "Triage judged the issue unsuitable for the pipeline.",
-  },
-  {
-    code: "triage-limit",
-    short: "Stopped: triage ran out of attempts. See the stop comment.",
-    test: /triage ran/iu,
-    control: "triage attempts",
-    explain:
-      "Triage ran the allowed number of times (`maxTriages`) without a decision the pipeline can act on.",
-  },
-  {
     code: "not-doable",
     short:
       "Stopped: the implementer can't do the issue as written. See the stop comment.",
@@ -153,35 +112,6 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     control: "implementer",
     explain:
       "The implementer found the issue can't be done as written, or its work changed nothing: no files on the branch and no wiki commits.",
-  },
-  {
-    code: "spec-files",
-    short:
-      "Stopped: the spec's documented tests or stubs are missing from the branch. See the stop comment.",
-    test: /documented tests or stubs are missing/iu,
-    control: "spec's tests and stubs",
-    explain:
-      "A restart found that test or stub files the spec documents are missing from the branch. The spec writer is responsible for the spec, its tests and its stubs, so the pipeline neither hands them to the implementer nor writes a new spec.",
-  },
-  {
-    code: "too-large",
-    short:
-      "Stopped: too large for its writer sessions; split it. See the stop comment.",
-    test: /ran out of room|did not finish within its sessions/iu,
-    control: "writer sessions",
-    explain: limitText(
-      "A writer session (the spec writer, implementer, fixer, CI fixer or conflict resolver) ran out of room, and so did each continuation its stage was allowed; the issue needs splitting",
-      "maxContinuations",
-    ),
-  },
-  {
-    code: "acceptance",
-    short:
-      "Stopped: the change doesn't fully do what the issue asks. See the stop comment.",
-    test: /not fully resolved/iu,
-    control: "acceptance check",
-    explain:
-      "The acceptance verifier found the change doesn't fully do what the issue asks.",
   },
   {
     code: "branch-changed",

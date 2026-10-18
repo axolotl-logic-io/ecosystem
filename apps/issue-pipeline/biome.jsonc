@@ -110,6 +110,7 @@
         "src/ops/claim-state.ts",
         "src/ops/pr.ts",
         "src/ops/sync.ts",
+        "src/ops/prepare-review.ts",
         "src/ops/verify.ts",
         "src/ops/checks.ts",
         "src/ops/push.ts",

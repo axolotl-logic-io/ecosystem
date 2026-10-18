@@ -20,7 +20,6 @@ import {
 import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError, run, runFailure, shell } from "./process.ts";
-import type { StackedOn } from "./stack.ts";
 import { holdWikiPin, pushWikiBranch, wikiAhead } from "./wiki.ts";
 
 const TEARDOWN_TIMEOUT_MS = 300_000;
@@ -71,13 +70,8 @@ function ensureClone(cfg: Config): string {
 }
 
 // Issue `number`'s worktree, made if it is missing: on its branch's head on
-// GitHub, or with no branch there, on the head of the branch it is stacked
-// on, fetched into the clone (stack.ts), or the base's.
-function ensureWorktree(
-  cfg: Config,
-  number: number,
-  stackedOn: StackedOn | null = null,
-): string {
+// GitHub, or with no branch there, on the base's.
+function ensureWorktree(cfg: Config, number: number): string {
   return withCloneLock(cfg, () => {
     const clone = paths.clone(cfg);
     const wt = paths.worktree(cfg, number);
@@ -86,7 +80,7 @@ function ensureWorktree(
       return wt;
     }
     fs.mkdirSync(path.dirname(wt), { recursive: true });
-    let start = stackedOn?.headSha ?? `origin/${cfg.baseBranch}`;
+    let start = `origin/${cfg.baseBranch}`;
     if (remoteHead(cfg, number) !== null) {
       const refspec = `${branch}:refs/remotes/origin/${branch}`;
       git(cfg, ["-C", clone, "fetch", "origin", refspec]);

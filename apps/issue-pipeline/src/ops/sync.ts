@@ -1,57 +1,26 @@
-// The issue branch against its base: prepare-review writes the diff a review
-// reads, sync-base rebases the branch onto the moved base, and finish-sync
-// checks a rebase a writer resolved against the base sync-base rebased onto
-// and pushes it. A stacked branch (stack.ts) is measured against, and rebased
-// onto, its prerequisite's branch instead; only a stacked sync-base reads
-// GitHub, to learn whether that has merged.
+// The issue branch against its base: prepare-review (prepare-review.ts)
+// writes the diff a review reads, sync-base rebases the branch onto the moved
+// base, and finish-sync checks a rebase a writer resolved against the base
+// sync-base rebased onto and pushes it.
 
-import fs from "node:fs";
-import path from "node:path";
 import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
 import { branchChanges } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { assertClean, fetchIn, head, patchIdOf } from "../git-state.ts";
+import { assertClean, fetchIn, head } from "../git-state.ts";
 import { parseRequest, run } from "../process.ts";
 import { rebaseInProgress, unmergedFiles } from "../rebase.ts";
-import type { StackedOn, SyncTarget } from "../stack.ts";
-import { measureFrom, STACKED_ON, syncTarget } from "../stack.ts";
 import { holdWikiPin } from "../wiki.ts";
-import { commitLog, reviewBundle, withWiki } from "./review-diff.ts";
+import type { ReviewReply } from "./prepare-review.ts";
+import { prepareReview } from "./prepare-review.ts";
 import { finishProblem, pushBranch, resetToRemote } from "./sync-finish.ts";
 
-// headTree is the head's tree, the same for any head with the same code.
-// patchId is the id of the branch's changes, which a clean rebase keeps, or
-// null when there are none (review-keeps-on-clean-rebase). bundlePath is the
-// review bundle beside the diff: the diff, then the changed files' head texts;
-// bundleText is its text, so a review's tasks can hold it without reading the
-// file back (#421).
-interface ReviewReply {
-  headSha: string;
-  headTree: string;
-  baseSha: string;
-  patchId: string | null;
-  diffPath: string;
-  diffLines: number;
-  changedFiles: string[];
-  bundlePath: string;
-  bundleLines: number;
-  bundleText: string;
-}
-
-// A stacked sync's reply names what the branch is stacked on after it; an
-// unstacked one has no stackedOn.
-interface Stacked {
-  stackedOn?: StackedOn | null;
-}
-
 type SyncReply =
-  | ({ changed: boolean; conflict: false; headSha: string } & BranchChanges &
-      Stacked)
+  | ({ changed: boolean; conflict: false; headSha: string } & BranchChanges)
   | SyncConflict;
 
-interface SyncConflict extends Stacked {
+interface SyncConflict {
   changed: false;
   conflict: true;
   inRebase: boolean;
@@ -70,16 +39,9 @@ type Op = (
 
 const COMMIT_SHA = /^[0-9a-f]{40,64}$/u;
 
-const REVIEW_REQUEST = z.looseObject({
-  number: z.number().int(),
-  sinceSha: z.string().nullish(),
-  tag: z.string().nullish(),
-  stackedOn: STACKED_ON.nullish(),
-});
 const SYNC_REQUEST = z.looseObject({
   number: z.number().int(),
   keepConflict: z.boolean().nullish(),
-  stackedOn: STACKED_ON.nullish(),
 });
 const FINISH_REQUEST = z.looseObject({
   number: z.number().int(),
@@ -87,7 +49,6 @@ const FINISH_REQUEST = z.looseObject({
   reason: z.string().nullish(),
   // The commit sync-base rebased onto (its reply's baseSha), #279.
   baseSha: z.string().regex(COMMIT_SHA).nullish(),
-  stackedOn: STACKED_ON.nullish(),
 });
 
 function present(text: string | null | undefined): text is string {
@@ -110,83 +71,8 @@ function gitSucceeds(wt: string, args: readonly string[]): boolean {
   return run("git", ["-C", wt, ...args], { allowFail: true }).code === 0;
 }
 
-function nonEmptyLines(text: string): string[] {
-  return text.split("\n").filter((line) => line !== "");
-}
-
-// A sync rebases the branch, so an earlier reviewed commit may no longer be in its
-// history. Diffing from it would then show everything the base gained since, so
-// review the whole branch instead.
-function reviewFrom(
-  wt: string,
-  sinceSha: string | null | undefined,
-  { headSha, baseSha }: { headSha: string; baseSha: string },
-): string {
-  if (!present(sinceSha)) {
-    return baseSha;
-  }
-  if (gitSucceeds(wt, ["merge-base", "--is-ancestor", sinceSha, headSha])) {
-    return sinceSha;
-  }
-  return baseSha;
-}
-
-function prepareReview(cfg: Config, request: unknown): ReviewReply {
-  const req = parseRequest(REVIEW_REQUEST, "prepare-review", request);
-  const n = req.number;
-  const wt = paths.worktree(cfg, n);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const headSha = head(wt);
-  const headTree = gitOut(wt, ["rev-parse", `${headSha}^{tree}`]).trim();
-  const measured = measureFrom(req.stackedOn, cfg);
-  const baseArgs = ["merge-base", measured, "HEAD"];
-  const baseSha = gitOut(wt, baseArgs).trim();
-  const from = reviewFrom(wt, req.sinceSha, { headSha, baseSha });
-  const range = `${from}..${headSha}`;
-  const patch = gitOut(wt, ["diff", "--stat", "--patch", range]);
-  const diff = `${commitLog(wt, range)}${patch}`;
-  const names = gitOut(wt, ["diff", "--name-only", `${baseSha}..${headSha}`]);
-  const tag = `review-${textOr(req.tag, "r0")}`;
-  const dir = path.join(paths.runDir(cfg, n), tag);
-  fs.mkdirSync(dir, { recursive: true });
-  const diffPath = path.join(dir, "diff.patch");
-  const full = withWiki(cfg, n, diff);
-  fs.writeFileSync(diffPath, full.text);
-  const bundlePath = path.join(dir, "bundle.md");
-  const bundle = reviewBundle(wt, { from, head: headSha }, full.text);
-  fs.writeFileSync(bundlePath, bundle);
-  return {
-    headSha,
-    headTree,
-    baseSha,
-    patchId: patchIdOf(wt, measured, headSha),
-    diffPath,
-    diffLines: full.text.split("\n").length,
-    changedFiles: nonEmptyLines(names).concat(full.files),
-    bundlePath,
-    bundleLines: bundle.split("\n").length,
-    bundleText: bundle,
-  };
-}
-
-// The reply's stackedOn for a sync of a branch that was stacked when the
-// request came; nothing for one that wasn't.
-function stackedReply(
-  stacked: StackedOn | null | undefined,
-  target: SyncTarget,
-): Stacked {
-  if (stacked === null || stacked === undefined) {
-    return {};
-  }
-  return { stackedOn: target.stackedOn };
-}
-
 // The conflicting rebase's files. Unless kept, the rebase is aborted.
-function conflictReply(
-  wt: string,
-  onto: string,
-  keep: boolean,
-): Omit<SyncConflict, "stackedOn"> {
+function conflictReply(wt: string, onto: string, keep: boolean): SyncConflict {
   const conflicts = unmergedFiles(wt);
   const inRebase = keep && rebaseInProgress(wt);
   if (!inRebase) {
@@ -212,22 +98,20 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   }
   holdWikiPin(cfg, wt);
   assertClean(wt);
-  const target = syncTarget(cfg, wt, req.stackedOn);
-  const stacked = stackedReply(req.stackedOn, target);
-  const { onto, upstream } = target;
+  fetchIn(cfg, wt, cfg.baseBranch);
+  const onto = `origin/${cfg.baseBranch}`;
   if (gitSucceeds(wt, ["merge-base", "--is-ancestor", onto, "HEAD"])) {
     const changes = branchChanges(cfg, n);
-    const headSha = head(wt);
-    return { changed: false, conflict: false, headSha, ...changes, ...stacked };
+    return { changed: false, conflict: false, headSha: head(wt), ...changes };
   }
   const before = head(wt);
-  const rebased = gitSucceeds(wt, ["rebase", "--onto", onto, upstream]);
+  const rebased = gitSucceeds(wt, ["rebase", onto]);
   if (!rebased) {
     const keep = req.keepConflict === true;
     const conflict = conflictReply(wt, onto, keep);
     // The stopped rebase may have replayed commits that move the wiki pin.
     holdWikiPin(cfg, wt);
-    return { ...conflict, ...stacked };
+    return conflict;
   }
   holdWikiPin(cfg, wt);
   try {
@@ -244,7 +128,6 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     conflict: false,
     headSha: head(wt),
     ...changes,
-    ...stacked,
   };
 }
 
