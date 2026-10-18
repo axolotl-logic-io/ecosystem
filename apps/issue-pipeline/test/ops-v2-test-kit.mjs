@@ -1,20 +1,14 @@
 // @ts-check
-// The version 2 core ops' fixtures: a temporary HOME and pipeline root set
-// before any pipeline module loads, the ops CLI harness (ops-cli-test-kit.mjs)
-// on a fake gh, version 2 states, GitHub's PR views, and the states and
-// comments the ops wrote.
+// The version 2 core ops' fixtures: the ops CLI harness
+// (ops-cli-test-kit.mjs, which sets a temporary HOME and pipeline root before
+// any pipeline module loads) on a fake gh, version 2 states, GitHub's PR
+// views, and the states and comments the ops wrote.
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import { setEnv } from "./ops-run-test-kit.mjs";
-
-const home = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-v2-home-"));
-process.on("exit", () => fs.rmSync(home, { recursive: true, force: true }));
-setEnv("HOME", home);
-setEnv("ISSUE_PIPELINE_ROOT", path.join(home, "root"));
 
 const kit = await import("./ops-cli-test-kit.mjs");
+
 const { ACCOUNT, root, sh, writes } = kit;
 
 const STATE_JSON = /<!-- agent-pipeline:state\n(?<json>.*)\n-->/u;

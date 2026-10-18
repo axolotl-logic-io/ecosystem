@@ -1,5 +1,7 @@
-// The claim op with the wiki on: commits on the wiki's agent/issue-<n> count
-// as the issue's work when it restarts.
+// The claim op with the wiki on: it readies the issue's wiki checkout at the
+// wiki's agent/issue-<n>, so a stopped issue whose only work is on the wiki
+// resumes the stage it stopped at with that work. (Version 2 saves the stage
+// a stop came from, so the claim no longer infers review from wiki commits.)
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
@@ -22,6 +24,8 @@ import {
 
 import { addSubmodule } from "./submodule-test-kit.mjs";
 
+const { newIssueState } = await import("../src/state.ts");
+
 const ISSUE = 46;
 // The ids of the issue's claim and state comments.
 const CLAIM_ID = 16;
@@ -34,7 +38,7 @@ const CLAIM_REPLY = z.object({
   paths: z.looseObject({ wiki: z.string() }),
 });
 
-// A claim runs after a sweep, which made the clone.
+// The clone a sweep used to make, which a claim reads.
 sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
 
 // A wiki origin with a master seed commit, and its agent/issue-<n> one commit
@@ -60,19 +64,21 @@ function wikiAheadOnBranch(n) {
   return { config, sha: sh(`git -C ${seed} rev-parse HEAD`) };
 }
 
-test("a claim restarts a stopped issue with only wiki work at review", () => {
+test("a claim lifts a stopped issue with only wiki work to its stage, with the wiki checkout at its branch", () => {
   const { config, sha } = wikiAheadOnBranch(ISSUE);
   const comments = [
     claimComment(CLAIM_ID, "me", "s0", LIVE),
     stateComment(STATE_ID, {
+      ...newIssueState(ISSUE),
       stage: "stopped",
-      lease: null,
-      pr: null,
-      log: [`${TIME} stopped: budget`],
+      stoppedStage: "review",
+      stopCode: "wiki-check",
+      flows: { code: false, wiki: true },
+      log: [`${TIME} stopped (wiki-check)`],
     }),
   ];
   reply([
-    issueReply(ISSUE, { labels: [{ name: "agent:stopped-budget" }] }),
+    issueReply(ISSUE, { labels: [{ name: "agent:stopped-wiki-check" }] }),
     commentsReply(ISSUE, comments),
     commentsReply(ISSUE, comments),
   ]);
@@ -80,8 +86,11 @@ test("a claim restarts a stopped issue with only wiki work at review", () => {
     askOps({ op: "claim", config, number: ISSUE, ...LANE }),
   );
   assert.equal(out.ok, true);
-  const { stage, pr, implemented } = out.state;
-  assert.deepEqual([stage, pr, implemented], ["review", null, true]);
+  const { stage, stopCode, flows } = out.state;
+  assert.deepEqual(
+    [stage, stopCode, flows],
+    ["review", null, { code: false, wiki: true }],
+  );
   const wiki = path.join(worktree(ISSUE), "wiki");
   assert.equal(out.paths.wiki, wiki);
   assert.equal(sh(`git -C ${wiki} rev-parse HEAD`), sha);
@@ -90,7 +99,7 @@ test("a claim restarts a stopped issue with only wiki work at review", () => {
     `edit comment ${STATE_ID} state`,
     `label #${ISSUE} agent:working`,
     `unlabel #${ISSUE} agent:needs-info`,
-    `unlabel #${ISSUE} agent:stopped-budget`,
+    `unlabel #${ISSUE} agent:stopped-wiki-check`,
   ]);
   assert.deepEqual(
     stateOf(claimed, `edit comment ${STATE_ID} state`),

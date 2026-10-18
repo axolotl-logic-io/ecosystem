@@ -1,6 +1,10 @@
-// The claim op's reset, at a start, of a worktree whose issue has no branch
-// on GitHub: one with no commits of its own moves to the fetched base, and
-// one with commits past the base is kept (#243).
+// The claim op never drops a lane worktree's commits: a worktree whose issue
+// has no branch on GitHub, with commits past the base, is kept (#243). The
+// claim no longer moves a worktree to a moved base: stage jobs work in their
+// own checkout, cloned from the freshly fetched mirror at every start
+// (src/job/checkout.ts openJobCheckout; pr-ops-job-checkout.test.mjs,
+// job-checkout-dropped.test.mjs), and a claim moves a lane worktree only to
+// a push of the pipeline's own it adopts (ops-claim-rescue.test.mjs).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
@@ -16,19 +20,16 @@ import {
 } from "./ops-cli-test-kit.mjs";
 
 const COMMITTER = "-c user.email=a@b -c user.name=a";
-// The issue whose worktree has no commits of its own, the one whose worktree
-// has, and the ids of their claim comments.
-const BARE = 46;
+// The issue whose worktree has commits of its own, and its claim comment.
 const OWN = 48;
-const BARE_CLAIM = 102;
 const OWN_CLAIM = 103;
 
-// A claim runs after a sweep, which made the clone.
+// The clone a sweep used to make, which a claim reads.
 sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
 
 // Adds issue `n`'s worktree at the base, then moves the base on GitHub, with
-// no branch for the issue there. Returns the base's new head.
-/** @param {number} n @returns {string} */
+// no branch for the issue there.
+/** @param {number} n @returns {void} */
 function worktreeBehindBase(n) {
   sh(
     `git -C ${root}/clones/o__r worktree add -q -B agent/issue-${n} ${worktree(n)} origin/integration`,
@@ -36,7 +37,6 @@ function worktreeBehindBase(n) {
   sh(
     `cd ${root}/seed && git checkout -q integration && echo ${n} > base-${n} && git add base-${n} && git commit -qm "base moves" && git push -q origin integration`,
   );
-  return sh(`git -C ${root}/seed rev-parse HEAD`);
 }
 
 // The part of a claim's reply these tests read.
@@ -54,14 +54,6 @@ function claimNew(n, claimId) {
   ]);
   return CLAIM_REPLY.parse(askOps({ op: "claim", number: n, ...LANE }));
 }
-
-test("a claim resets a worktree with no work of its own to the moved base", () => {
-  const base = worktreeBehindBase(BARE);
-  sh(`echo stray > ${worktree(BARE)}/stray`);
-  assert.equal(claimNew(BARE, BARE_CLAIM).ok, true);
-  assert.equal(sh(`git -C ${worktree(BARE)} rev-parse HEAD`), base);
-  assert.equal(sh(`git -C ${worktree(BARE)} status --porcelain`), "");
-});
 
 test("a claim keeps a worktree that has commits past the base", () => {
   worktreeBehindBase(OWN);

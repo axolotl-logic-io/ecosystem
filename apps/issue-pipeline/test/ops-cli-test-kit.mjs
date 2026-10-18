@@ -10,7 +10,7 @@ import path from "node:path";
 import process from "node:process";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 import { effectsOf } from "./gh-effects.mjs";
-import { runOps } from "./ops-run-test-kit.mjs";
+import { runOps, setEnv } from "./ops-run-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
 /** @import { GhEffect } from "./gh-effects.mjs" */
@@ -43,6 +43,16 @@ sh(
   `cd ${root} && git init -q --bare -b integration origin.git && git clone -q origin.git seed 2>/dev/null; cd seed && git config user.email a@b && git config user.name a && echo 1 > f && git add f && git commit -qm base && git push -q origin HEAD:integration`,
 );
 
+// The ops child runs with this root and HOME (askOps); this process's
+// pipeline modules read the same, set before any of them loads.
+setEnv("ISSUE_PIPELINE_ROOT", root);
+setEnv("HOME", root);
+const pipelineRoot = await import("../src/pipeline-root.ts");
+if (pipelineRoot.ROOT !== root || pipelineRoot.HOME !== root) {
+  throw new Error(
+    "the pipeline root isn't the ops CLI tests' temporary folder",
+  );
+}
 const fakeGh = installFakeGh();
 const { STOPS } = await import("../src/stops.ts");
 const { ghIsRead } = await import("../src/github.ts");
@@ -60,7 +70,6 @@ function configWith(extra) {
     allowedUsers: [ALLOWED],
     cloneUrl: path.join(root, "origin.git"),
     baseBranch: "integration",
-    claimWaitSeconds: [0, 0],
     commands: { test: "true" },
   };
   fs.writeFileSync(file, JSON.stringify({ ...base, ...extra }));
@@ -74,6 +83,7 @@ function publicConfigOf(file) {
   return publicConfig(loadConfig(file));
 }
 
+// `text` with its times replaced by TIME, as replies and writes are.
 /** @param {string} text @returns {string} */
 function timeless(text) {
   return text.replace(ISO_TIME, TIME);
@@ -184,6 +194,7 @@ export {
   sh,
   stateComment,
   TIME,
+  timeless,
   worktree,
   writes,
 };

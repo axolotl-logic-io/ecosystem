@@ -1,30 +1,32 @@
 // @ts-check
-// The claim op through the ops CLI: its replies, the worktrees it makes, and
-// what it shows on GitHub (the claim and state comments and the labels).
+// The version 2 claim through the ops CLI: its replies, the worktrees it
+// makes, and what it shows on GitHub (the claim and state comments and the
+// labels). It carries the saved state on, with only its stop lifted and this
+// lane's lease; resetting a worktree to an adopted push is
+// ops-claim-adopt.test.mjs's, and the code merge it records
+// ops-claim-provenance.test.mjs's.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { z } from "zod";
 import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
 import {
   CLAIM_MARK,
+  claimedState,
   claimReply,
+  issueOf,
   issueReply,
   LANE,
   LAPSED,
   LEASE,
   LIVE,
-  NEW_STATE,
 } from "./ops-claim-test-kit.mjs";
 import {
-  ALLOWED,
   askOps,
   claimComment,
   commentsReply,
   configWith,
   effects,
-  issueComment,
   reply,
   root,
   runDir,
@@ -34,6 +36,9 @@ import {
   worktree,
   writes,
 } from "./ops-cli-test-kit.mjs";
+import { prView } from "./ops-v2-test-kit.mjs";
+
+const { newIssueState } = await import("../src/state.ts");
 
 const SETUP_MARK = "setup-ran";
 // Each test's issue, and the ids of the claim and state comments on it.
@@ -53,15 +58,12 @@ const RIVAL_LAPSED_CLAIM = 13;
 const STOPPED_ISSUE = 45;
 const STOPPED_CLAIM = 14;
 const STOPPED_STATE = 15;
-const ANSWER = 16;
-const RESTART_LOG = /restarted .*at review/u;
-// The part of a claim's reply that holds the state's log.
-const LOGGED_REPLY = z.looseObject({
-  state: z.looseObject({ log: z.array(z.string()) }),
-});
-
-// A claim runs after a sweep, which made the clone.
-sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
+// The rounds a stopped issue had used before its stop.
+const STOPPED_ROUND = 3;
+const STOPPED_SYNCS = 2;
+// The trusted-inputs revision an answered issue's questions were asked at.
+const INPUTS_LENGTH = 64;
+const ASKED_INPUTS = "a".repeat(INPUTS_LENGTH);
 
 test("a claim loses to another lane's live claim", () => {
   reply([
@@ -72,6 +74,7 @@ test("a claim loses to another lane's live claim", () => {
     ok: true,
     op: "claim",
     posted: false,
+    commentIds: [],
     lost: true,
     holder: "other",
   });
@@ -98,13 +101,10 @@ test("a claim of new work posts its claim, makes the worktree and runs setup", (
     { when: "issues/42/comments -f", stdout: JSON.stringify(mine) },
     commentsReply(NEW_ISSUE, [mine]),
   ]);
-  const state = { ...NEW_STATE, number: 42 };
+  const state = claimedState(NEW_ISSUE);
   assert.deepEqual(
-    askOps({ op: "claim", config, number: 42, ...LANE }),
-    claimReply(NEW_ISSUE, {
-      state,
-      claim: { id: 100, posted: true, waited: 0 },
-    }),
+    askOps({ op: "claim", config, number: NEW_ISSUE, ...LANE }),
+    claimReply(NEW_ISSUE, { state, claim: { id: NEW_CLAIM, posted: true } }),
   );
   const claimed = effects();
   assert.deepEqual(effectNames(claimed), [
@@ -119,53 +119,41 @@ test("a claim of new work posts its claim, makes the worktree and runs setup", (
   assert.ok(fs.existsSync(path.join(runDir(NEW_ISSUE), "setup-at-claim.log")));
 });
 
-// startState's restart of #43 at review, on its PR's branch at `sha`.
-/** @param {string} sha @returns {object} */
-function answeredState(sha) {
-  return {
-    ...NEW_STATE,
-    number: 43,
-    stage: "review",
-    pr: 50,
-    headSha: sha,
-    implemented: true,
-  };
-}
-
 test("a claim of an answered issue with a PR clears its labels and labels the PR", () => {
-  sh(
-    `cd ${root}/seed && git checkout -qb agent/issue-43 integration && echo 2 > g && git add g && git commit -qm work && git push -q origin agent/issue-43`,
+  const sha = sh(
+    `cd ${root}/seed && git checkout -qb agent/issue-43 integration && echo 2 > g && git add g && git commit -qm work && git push -q origin agent/issue-43 && git rev-parse HEAD`,
   );
+  const saved = {
+    ...newIssueState(ANSWERED_ISSUE),
+    stage: /** @type {const} */ ("author"),
+    asked: { inputs: ASKED_INPUTS },
+    pr: ANSWERED_PR,
+    headSha: sha,
+  };
   const comments = [
     claimComment(ANSWERED_CLAIM, "me", "s0", LIVE),
-    stateComment(ANSWERED_STATE, {
-      stage: "triage",
-      questionsAt: LAPSED,
-      lease: null,
-      pr: 50,
-    }),
-    issueComment(ANSWER, "answer", ALLOWED, LIVE),
+    stateComment(ANSWERED_STATE, saved),
+  ];
+  const labels = [
+    { name: "agent:needs-info" },
+    { name: "agent:stopped-conflict" },
   ];
   reply([
-    issueReply(ANSWERED_ISSUE, {
-      labels: [{ name: "agent:needs-info" }, { name: "agent:stopped-budget" }],
-    }),
+    issueReply(ANSWERED_ISSUE, { labels }),
     commentsReply(ANSWERED_ISSUE, comments),
-    { when: "pr list", stdout: JSON.stringify([{ number: 50 }]) },
+    prView(ANSWERED_ISSUE, ANSWERED_PR, { headRefOid: sha }),
     commentsReply(ANSWERED_ISSUE, comments),
   ]);
-  const sha = sh(`git -C ${root}/seed rev-parse HEAD`);
-  const got = askOps({ op: "claim", number: 43, ...LANE });
-  const { log } = LOGGED_REPLY.parse(got).state;
-  assert.equal(log.length, 1);
-  assert.match(log.join(""), RESTART_LOG);
-  const state = { ...answeredState(sha), log };
+  const got = askOps({ op: "claim", number: ANSWERED_ISSUE, ...LANE });
+  const state = { ...saved, lease: LEASE };
   assert.deepEqual(
     got,
     claimReply(ANSWERED_ISSUE, {
       state,
-      claim: { id: 10, posted: false },
+      claim: { id: ANSWERED_CLAIM, posted: false },
       remoteHead: sha,
+      issue: issueOf(ANSWERED_ISSUE, { labels }),
+      comments,
     }),
   );
   const claimed = effects();
@@ -174,7 +162,7 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
     `label #${ANSWERED_ISSUE} agent:working`,
     `label #${ANSWERED_PR} agent:working`,
     `unlabel #${ANSWERED_ISSUE} agent:needs-info`,
-    `unlabel #${ANSWERED_ISSUE} agent:stopped-budget`,
+    `unlabel #${ANSWERED_ISSUE} agent:stopped-conflict`,
   ]);
   assert.deepEqual(
     stateOf(claimed, `edit comment ${ANSWERED_STATE} state`),
@@ -186,28 +174,30 @@ test("a claim that resumes a lapsed lease keeps its stage and its worktree", () 
   sh(
     `git -C ${root}/clones/o__r worktree add -q -B agent/issue-44 ${worktree(LAPSED_ISSUE)} origin/integration && touch ${worktree(LAPSED_ISSUE)}/wip`,
   );
-  const state = stateComment(LAPSED_STATE, {
-    stage: "implement",
+  const saved = {
+    ...newIssueState(LAPSED_ISSUE),
+    stage: /** @type {const} */ ("implement"),
     lease: { lane: "other", sweepId: "s0", at: LAPSED },
-    pr: null,
-  });
+  };
+  const state = stateComment(LAPSED_STATE, saved);
+  const rival = claimComment(RIVAL_LAPSED_CLAIM, "other", "s0", LAPSED);
   const mine = claimComment(LAPSED_CLAIM, "me", "s0", LIVE);
+  const labels = [{ name: "agent:working" }];
   reply([
-    issueReply(LAPSED_ISSUE, { labels: [{ name: "agent:working" }] }),
-    commentsReply(LAPSED_ISSUE, [
-      claimComment(RIVAL_LAPSED_CLAIM, "other", "s0", LAPSED),
-      state,
-    ]),
+    issueReply(LAPSED_ISSUE, { labels }),
+    commentsReply(LAPSED_ISSUE, [rival, state]),
     { when: "issues/44/comments -f", stdout: JSON.stringify(mine) },
     commentsReply(LAPSED_ISSUE, [mine]),
     commentsReply(LAPSED_ISSUE, [state]),
   ]);
-  const kept = { pr: null, stage: "implement", lease: LEASE };
+  const kept = claimedState(LAPSED_ISSUE, { stage: "implement" });
   assert.deepEqual(
-    askOps({ op: "claim", number: 44, ...LANE }),
+    askOps({ op: "claim", number: LAPSED_ISSUE, ...LANE }),
     claimReply(LAPSED_ISSUE, {
       state: kept,
-      claim: { id: 101, posted: true, waited: 0 },
+      claim: { id: LAPSED_CLAIM, posted: true },
+      issue: issueOf(LAPSED_ISSUE, { labels }),
+      comments: [rival, state],
     }),
   );
   const claimed = effects();
@@ -224,44 +214,38 @@ test("a claim that resumes a lapsed lease keeps its stage and its worktree", () 
   assert.ok(fs.existsSync(path.join(worktree(LAPSED_ISSUE), "wip")));
 });
 
-// A stopped #45 whose worktree has uncommitted edits, and whose branch on
-// GitHub has a commit the worktree lacks.
-/** @returns {string} */
-function stoppedWithStaleWorktree() {
-  sh(
-    `git -C ${root}/clones/o__r worktree add -q -B agent/issue-45 ${worktree(STOPPED_ISSUE)} origin/integration && echo edit > ${worktree(STOPPED_ISSUE)}/f && touch ${worktree(STOPPED_ISSUE)}/wip`,
-  );
-  sh(
-    `cd ${root}/seed && git checkout -qb agent/issue-45 integration && echo 3 > h && git add h && git commit -qm work && git push -q origin agent/issue-45`,
-  );
-  return sh(`git -C ${root}/seed rev-parse HEAD`);
-}
-
-test("a claim restarts a stopped issue and resets its worktree to the branch", () => {
-  const sha = stoppedWithStaleWorktree();
-  const stoppedAt = `${TIME} stopped: budget`;
+test("a claim lifts a stopped issue's stop, resuming its stage with its counts reset", () => {
+  const fresh = newIssueState(STOPPED_ISSUE);
+  const saved = {
+    ...fresh,
+    stage: /** @type {const} */ ("stopped"),
+    stoppedStage: /** @type {const} */ ("implement"),
+    stopCode: "conflict",
+    review: { ...fresh.review, round: STOPPED_ROUND },
+    counts: { conflictFixes: 1, syncs: STOPPED_SYNCS },
+    log: [`${TIME} stopped (conflict): the branch conflicts`],
+  };
   const comments = [
     claimComment(STOPPED_CLAIM, "me", "s0", LIVE),
-    stateComment(STOPPED_STATE, {
-      stage: "stopped",
-      lease: null,
-      pr: null,
-      log: [stoppedAt],
-    }),
+    stateComment(STOPPED_STATE, saved),
   ];
+  const labels = [{ name: "agent:stopped-conflict" }];
   reply([
-    issueReply(STOPPED_ISSUE, { labels: [{ name: "agent:stopped-budget" }] }),
+    issueReply(STOPPED_ISSUE, { labels }),
     commentsReply(STOPPED_ISSUE, comments),
-    { when: "pr list", stdout: "[]" },
     commentsReply(STOPPED_ISSUE, comments),
   ]);
-  const state = { ...NEW_STATE, number: 45, headSha: sha, log: [stoppedAt] };
+  const state = claimedState(STOPPED_ISSUE, {
+    stage: "implement",
+    log: saved.log,
+  });
   assert.deepEqual(
-    askOps({ op: "claim", number: 45, ...LANE }),
+    askOps({ op: "claim", number: STOPPED_ISSUE, ...LANE }),
     claimReply(STOPPED_ISSUE, {
       state,
-      claim: { id: 14, posted: false },
-      remoteHead: sha,
+      claim: { id: STOPPED_CLAIM, posted: false },
+      issue: issueOf(STOPPED_ISSUE, { labels }),
+      comments,
     }),
   );
   const claimed = effects();
@@ -269,12 +253,10 @@ test("a claim restarts a stopped issue and resets its worktree to the branch", (
     `edit comment ${STOPPED_STATE} state`,
     `label #${STOPPED_ISSUE} agent:working`,
     `unlabel #${STOPPED_ISSUE} agent:needs-info`,
-    `unlabel #${STOPPED_ISSUE} agent:stopped-budget`,
+    `unlabel #${STOPPED_ISSUE} agent:stopped-conflict`,
   ]);
   assert.deepEqual(
     stateOf(claimed, `edit comment ${STOPPED_STATE} state`),
     state,
   );
-  assert.equal(sh(`git -C ${worktree(STOPPED_ISSUE)} rev-parse HEAD`), sha);
-  assert.equal(sh(`git -C ${worktree(STOPPED_ISSUE)} status --porcelain`), "");
 });

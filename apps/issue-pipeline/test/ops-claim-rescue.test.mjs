@@ -1,44 +1,45 @@
-// The claim op's reset, at a restart, of a worktree whose head has commits
-// that the issue's branch on GitHub lacks: they are saved under
-// refs/pipeline/rescue/<n>/<stamp>, and HEAD is kept, or reset to the branch
-// when someone pushed to it since (#283).
+// @ts-check
+// The claim op's move of a worktree to the pipeline's own push it adopts,
+// when the worktree's head has commits the issue's branch on GitHub lacks:
+// they are saved under refs/pipeline/rescue/<n>/<stamp>, and HEAD is kept,
+// or reset to the branch when the push and the worktree diverged (#283). A
+// claim adopts nothing else (ops-claim-provenance.test.mjs), so it moves no
+// other worktree.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { stateOf } from "./gh-effects.mjs";
-import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
-  askOps,
-  claimComment,
-  commentsReply,
-  effects,
-  reply,
-  root,
-  sh,
-  stateComment,
-  TIME,
-  worktree,
-} from "./ops-cli-test-kit.mjs";
+  everyCommentsRead,
+  kit,
+  LANE,
+  myClaim,
+  openIssue,
+  recordPipelinePush,
+  v2State,
+} from "./ops-v2-test-kit.mjs";
+
+const { askOps, reply, root, sh, stateComment, worktree } = kit;
 
 const COMMITTER = "-c user.email=a@b -c user.name=a";
 const CLONE = `${root}/clones/o__r`;
-// The issue whose worktree is ahead of its branch, the one whose worktree
-// and branch have diverged, and the ids of their claim and state comments.
+// The issue whose worktree is ahead of the adopted push, the one whose
+// worktree and the adopted push diverged, and the one approved at merge.
 const AHEAD = 70;
 const DIVERGED = 71;
-const AHEAD_IDS = { claim: 170, state: 180 };
-const DIVERGED_IDS = { claim: 171, state: 181 };
-// The issue whose review stands on its branch while its worktree is ahead.
 const REVIEWED = 72;
-const REVIEWED_IDS = { claim: 172, state: 182 };
-const REVIEWED_PR = 572;
+const STATE_ID = 1;
+const CLAIM_ID = 2;
 
-const CLAIM_REPLY = z.looseObject({ ok: z.literal(true) });
-const LOG = z.array(z.string());
-const STAGE = z.looseObject({ stage: z.string() });
-
-// A claim runs after a sweep, which made the clone.
-sh(`git clone -q ${root}/origin.git ${CLONE}`);
+// The part of a claim's reply these tests read.
+const CLAIMED = z.looseObject({
+  ok: z.literal(true),
+  state: z.looseObject({
+    stage: z.string(),
+    headSha: z.string().nullable(),
+    review: z.looseObject({ verdict: z.string().nullable() }),
+    log: z.array(z.string()),
+  }),
+});
 
 // Pushes a commit to issue `n`'s branch on origin; returns its head.
 /** @param {number} n @returns {string} */
@@ -53,10 +54,10 @@ function pushToBranch(n) {
 }
 
 // Gives issue `n` a branch on origin and a worktree with one commit on top
-// of it. Returns the worktree's head.
-/** @param {number} n @returns {string} */
+// of it. Returns the branch's head and the worktree's.
+/** @param {number} n @returns {{ branch: string, local: string }} */
 function worktreeAheadOfBranch(n) {
-  pushToBranch(n);
+  const branch = pushToBranch(n);
   sh(`git -C ${CLONE} fetch -q origin`);
   sh(
     `git -C ${CLONE} worktree add -q -B agent/issue-${n} ${worktree(n)} origin/agent/issue-${n}`,
@@ -64,7 +65,7 @@ function worktreeAheadOfBranch(n) {
   sh(
     `cd ${worktree(n)} && echo mine > mine && git add mine && git ${COMMITTER} commit -qm mine`,
   );
-  return sh(`git -C ${worktree(n)} rev-parse HEAD`);
+  return { branch, local: sh(`git -C ${worktree(n)} rev-parse HEAD`) };
 }
 
 // The rescue refs of issue `n`, as `<sha> <ref>` lines.
@@ -76,68 +77,71 @@ function rescueRefs(n) {
   return listed.split("\n").filter((line) => line !== "");
 }
 
-// Claims issue `n`, stopped too large, whose claim and state comments have
-// the ids `ids`; returns the state's saved log.
-/** @param {number} n @param {{ claim: number, state: number }} ids @returns {string[]} */
-function claimStopped(n, ids) {
-  const saved = claimSaved(n, ids, { stopCode: "too-large" }, []);
-  return LOG.parse(z.looseObject({ log: z.unknown() }).parse(saved).log);
-}
-
-// Claims issue `n`, stopped with the state fields `stopped` and the open PRs
-// `prs`, whose claim and state comments have the ids `ids`; returns the saved
-// state.
-/** @param {number} n @param {{ claim: number, state: number }} ids @param {{ stopCode: string } & Record<string, unknown>} stopped @param {{ number: number }[]} prs @returns {unknown} */
-function claimSaved(n, ids, stopped, prs) {
-  const comments = [
-    claimComment(ids.claim, "me", "s0", LIVE),
-    stateComment(ids.state, {
-      stage: "stopped",
-      lease: null,
-      pr: null,
-      log: [`${TIME} stopped`],
-      ...stopped,
-    }),
-  ];
+// Claims issue `n`, which this lane holds, saved as `saved`.
+/** @param {number} n @param {object} saved */
+function claimSaved(n, saved) {
   reply([
-    issueReply(n, { labels: [{ name: `agent:stopped-${stopped.stopCode}` }] }),
-    commentsReply(n, comments),
-    { when: "pr list", stdout: JSON.stringify(prs) },
-    commentsReply(n, comments),
+    openIssue(n),
+    everyCommentsRead(n, [stateComment(STATE_ID, saved), myClaim(CLAIM_ID)]),
   ]);
-  CLAIM_REPLY.parse(askOps({ op: "claim", number: n, ...LANE }));
-  return stateOf(effects(), `edit comment ${ids.state} state`);
+  return CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE })).state;
 }
 
-test("a claim keeps a worktree ahead of its branch and saves a rescue ref", () => {
-  const sha = worktreeAheadOfBranch(AHEAD);
-  const log = claimStopped(AHEAD, AHEAD_IDS);
-  assert.equal(sh(`git -C ${worktree(AHEAD)} rev-parse HEAD`), sha);
-  const refs = rescueRefs(AHEAD);
-  assert.equal(refs.length, 1);
-  const [rescueSha, ref] = String(refs[0]).split(" ");
-  assert.equal(rescueSha, sha);
-  assert.ok(log.some((line) => line.includes(String(ref))));
+// What issue `n`'s rescue refs saved, and whether `log` names each of them.
+/** @param {number} n @param {readonly string[]} log @returns {{ saved: string[], named: boolean }} */
+function rescued(n, log) {
+  const refs = rescueRefs(n).map((line) => line.split(" "));
+  return {
+    saved: refs.map(([sha]) => String(sha)),
+    named: refs.every(([, ref]) =>
+      log.some((line) => line.includes(String(ref))),
+    ),
+  };
+}
+
+test("a claim that adopts a push keeps a worktree ahead of it and saves a rescue ref", () => {
+  const base = sh(`git -C ${root}/seed rev-parse integration`);
+  const { branch, local } = worktreeAheadOfBranch(AHEAD);
+  recordPipelinePush(AHEAD, branch, "push");
+  const state = claimSaved(AHEAD, v2State(AHEAD, { headSha: base }));
+  assert.equal(state.headSha, branch);
+  assert.equal(sh(`git -C ${worktree(AHEAD)} rev-parse HEAD`), local);
+  assert.deepEqual(rescued(AHEAD, state.log), { saved: [local], named: true });
 });
 
-test("a claim resets a worktree that diverged from its branch, keeping a rescue ref", () => {
-  const sha = worktreeAheadOfBranch(DIVERGED);
+test("a claim resets a worktree that diverged from the push it adopts, keeping a rescue ref", () => {
+  const { branch, local } = worktreeAheadOfBranch(DIVERGED);
   const pushed = pushToBranch(DIVERGED);
-  const log = claimStopped(DIVERGED, DIVERGED_IDS);
+  recordPipelinePush(DIVERGED, pushed, "push");
+  const state = claimSaved(DIVERGED, v2State(DIVERGED, { headSha: branch }));
+  assert.equal(state.headSha, pushed);
   assert.equal(sh(`git -C ${worktree(DIVERGED)} rev-parse HEAD`), pushed);
-  const refs = rescueRefs(DIVERGED);
-  assert.equal(refs.length, 1);
-  const [rescueSha, ref] = String(refs[0]).split(" ");
-  assert.equal(rescueSha, sha);
-  assert.ok(log.some((line) => line.includes(String(ref))));
+  assert.deepEqual(rescued(DIVERGED, state.log), {
+    saved: [local],
+    named: true,
+  });
 });
 
-test("a claim that keeps unpushed commits sends a standing review back to review", () => {
-  worktreeAheadOfBranch(REVIEWED);
-  const remote = sh(`git -C ${CLONE} rev-parse origin/agent/issue-${REVIEWED}`);
-  const stopped = { stopCode: "budget", reviewedSha: remote, findings: [] };
-  const saved = claimSaved(REVIEWED, REVIEWED_IDS, stopped, [
-    { number: REVIEWED_PR },
-  ]);
-  assert.equal(STAGE.parse(saved).stage, "review");
+test("a claim that adopts a push past an approval sends it back to review, keeping unpushed commits", () => {
+  const base = sh(`git -C ${root}/seed rev-parse integration`);
+  const { branch, local } = worktreeAheadOfBranch(REVIEWED);
+  recordPipelinePush(REVIEWED, branch, "push");
+  const approved = v2State(REVIEWED, {
+    stage: "merge",
+    headSha: base,
+    review: {
+      round: 1,
+      verdict: "approve",
+      commentId: null,
+      findings: [],
+      revision: null,
+    },
+  });
+  const state = claimSaved(REVIEWED, approved);
+  assert.equal(state.stage, "review");
+  assert.equal(state.review.verdict, null);
+  assert.deepEqual(rescued(REVIEWED, state.log), {
+    saved: [local],
+    named: true,
+  });
 });
