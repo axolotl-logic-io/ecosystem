@@ -23,6 +23,8 @@ const AGENTS = new URL("../agents/", import.meta.url).pathname;
 // copy of the checkout, at 1-minute load averages of up to 130 on 10 cores
 // (2026-10-17). It is over 3 times that.
 const RUN_JOB_MS = 30_000;
+// Where setUp makes each job's temporary folder, and its pipeline root.
+const TEMPORARY_ROOT = "/tmp/issue-pipeline-job-";
 
 /**
  * @typedef {object} Place
@@ -46,14 +48,18 @@ const RUN_JOB_MS = 30_000;
  * @returns {Place}
  */
 function setUp(replies, script, extraConfig = {}, options = {}) {
-  const tmp = fs.mkdtempSync("/tmp/issue-pipeline-job-");
+  const tmp = fs.mkdtempSync(TEMPORARY_ROOT);
   process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
   const root = path.join(tmp, "root");
   const bin = path.join(tmp, "bin");
   const agents = path.join(tmp, "agent", "agents", "issue-pipeline");
   const worktree = path.join(tmp, "work");
-  for (const dir of [root, bin, agents, worktree]) {
+  for (const dir of [root, bin, agents, worktree, homeOf(tmp)]) {
     fs.mkdirSync(dir, { recursive: true });
+  }
+  // The job runs in this root, never the machine's installed one.
+  if (!(root.startsWith(TEMPORARY_ROOT) && fs.statSync(root).isDirectory())) {
+    throw new Error(`the job's root ${root} isn't a temporary folder`);
   }
   for (const file of fs.readdirSync(AGENTS)) {
     fs.copyFileSync(path.join(AGENTS, file), path.join(agents, file));
@@ -96,6 +102,12 @@ function setUp(replies, script, extraConfig = {}, options = {}) {
   return place;
 }
 
+// The job's HOME, a folder of its own in the place's temporary folder.
+/** @param {string} tmp @returns {string} */
+function homeOf(tmp) {
+  return path.join(tmp, "home");
+}
+
 /** @param {Place} place @param {object} script */
 function setScript(place, script) {
   const file = path.join(place.root, "pi-script.json");
@@ -120,6 +132,7 @@ function jobEnv(place, extraEnv) {
     ...extraEnv,
     ...Object.fromEntries([
       ["PATH", `${place.bin}${path.delimiter}${searchPath}`],
+      ["HOME", homeOf(place.tmp)],
       ["ISSUE_PIPELINE_ROOT", place.root],
       ["PI_CODING_AGENT_DIR", path.join(place.tmp, "agent")],
       ["FAKE_PI_ROOT", place.root],

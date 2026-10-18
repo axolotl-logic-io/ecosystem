@@ -6,47 +6,44 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { alive } from "./bounded-test-kit.mjs";
+import {
+  AFTER_READER_STAGE,
+  AUTHOR_SESSION,
+  READER_STAGE,
+  repliesAt,
+} from "./job-fixtures.mjs";
 import { checkoutOf } from "./job-git-test-kit.mjs";
 import {
-  AFTER_SWEEP_STAGE,
   flagValue,
   logOf,
   piCommands,
   piStarts,
-  repliesAt,
   runJob,
-  SWEEP_SESSION,
-  SWEEP_STAGE,
   sessionOf,
   setUp,
   statusOf,
-  USAGE_SPENT,
 } from "./job-test-kit.mjs";
-import { ISSUE } from "./workflow-stages-fixtures.mjs";
 
-const SESSION_KEY = /^i7-security-\d+\.jsonl$/u;
-const SET_ASIDE_SESSION = /^i7-security-\d+\.[0-9a-z]+\.jsonl$/u;
-const NAMES_REVIEW = /review/u;
-const NAMES_SECURITY = /security/u;
-const STAGE_LIST = /--stage must be one of: triage, spec/u;
-const STAGE_ARGS = ["--stage", SWEEP_STAGE, "--lane", "L"];
+const SESSION_KEY = /^author-1\.jsonl$/u;
+const SET_ASIDE_SESSION = /^author-1\.[0-9a-z]+\.jsonl$/u;
+const AT_REVIEW = "the issue is at review, not author";
+const STAGE_LIST = /--stage must be one of: author, implement, review, merge/u;
+const STAGE_ARGS = ["--stage", READER_STAGE, "--lane", "L"];
 const MODEL_NOT_FOUND = "Model not found: x/y";
 
-test("a stage job runs a sweep stage, releases the issue at the next stage and prints one summary line", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
+test("a stage job claims its issue, runs the stage's role, releases the issue at the next stage and prints one line", () => {
+  const place = setUp(repliesAt(READER_STAGE), AUTHOR_SESSION);
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
   const ops = logOf(place, "ops.log");
-  const sweep = ops.find(({ op }) => op === "sweep");
-  assert.equal(sweep.only, ISSUE);
-  assert.equal(sweep.lane, "L");
+  assert.equal(ops[0].op, "claim");
+  assert.equal(ops[0].lane, "L");
   const release = ops.find(({ op }) => op === "release");
-  assert.equal(release.state.stage, AFTER_SWEEP_STAGE);
-  assert.equal(release.state.reportedTokens, USAGE_SPENT);
+  assert.equal(release.state.stage, AFTER_READER_STAGE);
   const calls = piStarts(place);
   assert.equal(calls.length, 1);
   const [{ argv, cwd }] = calls;
-  assert.equal(cwd, checkoutOf(fs.realpathSync(place.root), SWEEP_STAGE));
+  assert.equal(cwd, checkoutOf(fs.realpathSync(place.root), READER_STAGE));
   assert.equal(flagValue(argv, "--mode"), "rpc");
   const [prompt, ...others] = piCommands(place);
   assert.equal(prompt.type, "prompt");
@@ -61,14 +58,15 @@ test("a stage job runs a sweep stage, releases the issue at the next stage and p
   assert.ok(fs.existsSync(flagValue(argv, "--output-schema")));
   const lines = r.stdout.trim().split("\n");
   assert.equal(lines.length, 1);
-  const summary = JSON.parse(lines[0] ?? "");
-  assert.equal(summary.lane, "L");
-  assert.equal(summary.items[0].issue, ISSUE);
-  assert.equal(summary.items[0].stage, AFTER_SWEEP_STAGE);
+  assert.deepEqual(JSON.parse(lines[0] ?? ""), {
+    issue: 7,
+    stage: READER_STAGE,
+    end: "next",
+  });
 });
 
 test("a second stage job for the same stage starts a fresh pi session and keeps the first aside", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), SWEEP_SESSION);
+  const place = setUp(repliesAt(READER_STAGE), AUTHOR_SESSION);
   for (const run of [runJob(place, STAGE_ARGS), runJob(place, STAGE_ARGS)]) {
     assert.equal(run.status, 0, run.stderr);
   }
@@ -92,7 +90,7 @@ test("a second stage job for the same stage starts a fresh pi session and keeps 
   );
 });
 
-test("a stage job for an issue saved at another stage releases it untouched as wrong-stage", () => {
+test("a stage job for an issue saved at another stage releases it untouched and runs no session", () => {
   const place = setUp(repliesAt("review"), { events: [] });
   const r = runJob(place, STAGE_ARGS);
   assert.equal(r.status, 0, r.stderr);
@@ -100,14 +98,16 @@ test("a stage job for an issue saved at another stage releases it untouched as w
   assert.ok(ops.includes("release"), ops.join(","));
   assert.ok(!ops.includes("save-state"), ops.join(","));
   assert.deepEqual(logOf(place, "pi.log"), []);
-  const [item] = JSON.parse(r.stdout).items;
-  assert.equal(item.outcome, "wrong-stage");
-  assert.match(item.reason, NAMES_REVIEW);
-  assert.match(item.reason, NAMES_SECURITY);
+  assert.deepEqual(JSON.parse(r.stdout), {
+    issue: 7,
+    stage: READER_STAGE,
+    end: "unclaimed",
+    reason: AT_REVIEW,
+  });
 });
 
 test("a stage job with an unknown stage fails before any op", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), { events: [] });
+  const place = setUp(repliesAt(READER_STAGE), { events: [] });
   const r = runJob(place, ["--stage", "nope"]);
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, STAGE_LIST);
@@ -116,7 +116,7 @@ test("a stage job with an unknown stage fails before any op", () => {
 });
 
 test("a rejected prompt ends pi's session, and its error fails the launch", () => {
-  const place = setUp(repliesAt(SWEEP_STAGE), {
+  const place = setUp(repliesAt(READER_STAGE), {
     rejectPrompt: MODEL_NOT_FOUND,
   });
   const r = runJob(place, STAGE_ARGS);
@@ -132,7 +132,8 @@ test("a rejected prompt ends pi's session, and its error fails the launch", () =
     [false],
   );
   const stop = logOf(place, "ops.log").find(({ op }) => op === "stop");
-  assert.equal(stop?.detail, MODEL_NOT_FOUND);
+  assert.equal(stop?.code, "error");
+  assert.equal(stop?.reason, `the author's session failed: ${MODEL_NOT_FOUND}`);
   const session = sessionOf(statusOf(place));
   assert.equal(session.outcome, "failed");
 });
