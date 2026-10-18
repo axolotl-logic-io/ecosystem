@@ -49,8 +49,35 @@ const TIMED_OUT = { ok: false, error: "the session timed out" };
  */
 
 /** @param {Place} place @returns {string[]} the ops the job asked for */
-function opsOf(place) {
+function jobOpsOf(place) {
   return logOf(place, "ops.log").map(({ op }) => op);
+}
+
+// The ops a run's `trace` of requests asked for, in order. Kept for
+// ops-claim-adopt-review.test.mjs.
+/** @param {readonly { request?: unknown }[]} trace @returns {string[]} */
+function opsOf(trace) {
+  return trace.flatMap(({ request }) => {
+    if (request === undefined) {
+      return [];
+    }
+    return [/** @type {{ op: string }} */ (request).op];
+  });
+}
+
+// The stage and outcome of a run summary's one item. Kept for
+// ops-claim-adopt-review.test.mjs.
+/** @param {unknown} summary @returns {{ stage: string | null, outcome: string }} */
+function itemOf(summary) {
+  const { items } =
+    /** @type {{ items: { stage: string | null, outcome: string }[] }} */ (
+      summary
+    );
+  const [item] = items;
+  if (item === undefined) {
+    throw new Error("the summary has no item");
+  }
+  return { stage: item.stage, outcome: item.outcome };
 }
 
 /** @param {Place} place @param {string} op @returns {any[]} */
@@ -78,7 +105,7 @@ function failedSessionJob(stage, failure) {
   return {
     place,
     line: JSON.parse(r.stdout),
-    ops: opsOf(place),
+    ops: jobOpsOf(place),
     outcome: statusOf(place)?.outcome,
   };
 }
@@ -95,7 +122,7 @@ function failedPostJob(error) {
   return {
     place,
     line: JSON.parse(r.stdout),
-    ops: opsOf(place),
+    ops: jobOpsOf(place),
     outcome: statusOf(place)?.outcome,
   };
 }
@@ -105,6 +132,7 @@ export {
   COOLING_DOWN,
   failedPostJob,
   failedSessionJob,
+  itemOf,
   OVERLOADED,
   opsOf,
   requestsOf,
