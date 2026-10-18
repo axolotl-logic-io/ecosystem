@@ -92,6 +92,11 @@ function ensureWorktree(cfg: Config, number: number): string {
   });
 }
 
+// Runs the configured teardown for issue `number`, then removes its lane
+// worktree and local branch. A stage job's own checkout (`cfg.checkout`) is
+// never removed here: the job is still running in it, and closes it itself
+// as it exits (job/teardown.ts), so the checkout that proves a completion
+// stays until then.
 function removeWorktree(cfg: Config, number: number): void {
   // Frees what setup made outside the worktree, such as a per-issue test
   // database. Runs in the issue's run dir, whose path names the issue. A
@@ -102,6 +107,9 @@ function removeWorktree(cfg: Config, number: number): void {
     fs.mkdirSync(dir, { recursive: true });
     const log = path.join(dir, "teardown.log");
     shell(teardown, dir, log, TEARDOWN_TIMEOUT_MS);
+  }
+  if (cfg.checkout?.issue === number) {
+    return;
   }
   withCloneLock(cfg, () => {
     const clone = paths.clone(cfg);

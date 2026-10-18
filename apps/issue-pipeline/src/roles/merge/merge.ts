@@ -166,6 +166,11 @@ async function refusedMerge(
       return toReview(state, "the PR head moved before the merge");
     case "stale":
       return toReview(state, "the revision moved before the merge");
+    case "wiki-missing":
+      return failed(
+        state,
+        "the issue's wiki checkout doesn't hold the approved wiki commit, so the merge refused to merge code whose wiki it can't publish",
+      );
     case "wiki-behind":
       return waiting(
         state,

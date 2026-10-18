@@ -132,7 +132,8 @@ function sameMerged(a: Revision | null, b: Revision | null): boolean {
 }
 
 // The completion cleanup, every step safe to repeat: the code branch, the
-// labels and the claims, then the issue, then the worktree. A crash before
+// labels and the claims, then the issue, then the worktree (in a stage job,
+// only the teardown: the job removes its own checkout as it exits). A crash before
 // the close leaves the issue open, done and merged, which the orchestrator
 // schedules again, with the checkout that proves the wiki publication still
 // there.

@@ -60,12 +60,21 @@ type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 // The merge receipt: GitHub's merge commit and the PR head it merged. byHand
 // when the PR had merged before this op, so the head may not be the approved
 // one; the role compares headSha with its approval.
+// The approved wiki head can't be published as approved after the merge:
+// the wiki's branch moved past it (wiki-behind), or the issue's wiki
+// checkout doesn't hold it (wiki-missing).
+interface WikiRefusal {
+  merged: false;
+  reason: "wiki-behind" | "wiki-missing";
+  detail: string;
+}
+
 type MergeReply =
   | { merged: true; mergeCommit: string; headSha: string }
   | { merged: true; byHand: true; mergeCommit: string; headSha: string }
   | { merged: false; reason: string }
   | { merged: false; reason: "head-changed"; headSha: string }
-  | { merged: false; reason: "wiki-behind"; detail: string }
+  | WikiRefusal
   | MergeStale
   | Queued;
 
@@ -138,19 +147,25 @@ function staleReason(
   return undefined;
 }
 
-// Whether the approved wiki head still fast-forwards the wiki's branch, so
-// the publish after the merge needs no unreviewed rebase. Merging code whose
-// wiki can't then be published as approved would leave it half done.
-function wikiBehind(
-  cfg: Config,
-  req: MergeRequest,
-): { merged: false; reason: "wiki-behind"; detail: string } | undefined {
+// Whether the issue's wiki checkout holds the approved wiki head, and it
+// still fast-forwards the wiki's branch, so the publish after the merge needs
+// no unreviewed rebase. Merging code whose wiki can't then be published as
+// approved would leave it half done.
+function wikiBehind(cfg: Config, req: MergeRequest): WikiRefusal | undefined {
   const wiki = wikiCfg(cfg);
   const approved = req.revision.wiki;
   if (wiki === null || approved === null) {
     return undefined;
   }
   const dir = paths.wiki(cfg, req.number);
+  const holds = ["-C", dir, "cat-file", "-e", `${approved}^{commit}`];
+  if (run("git", holds, { allowFail: true }).code !== 0) {
+    return {
+      merged: false,
+      reason: "wiki-missing",
+      detail: `the issue's wiki checkout doesn't hold the approved wiki commit ${approved}, so nothing was merged or published`,
+    };
+  }
   const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
   git(cfg, ["-C", dir, "fetch", "origin", refspec]);
   const base = `origin/${wiki.branch}`;
