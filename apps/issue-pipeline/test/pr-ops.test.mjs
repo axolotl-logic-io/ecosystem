@@ -1,6 +1,7 @@
 // @ts-check
 // start-pr, open-pr and push: their replies, gh writes and branch on origin,
-// run through the ops CLI against a local origin and the fake gh.
+// run through the ops CLI against a local origin and the fake gh. open-pr
+// never marks a PR ready: only ready-pr does (ready-pr-op.test.mjs).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { okLine, opsFixture, stateReadCall } from "./ops-fixture.mjs";
@@ -9,10 +10,11 @@ import { pushRecord } from "./push-record-test-kit.mjs";
 const fx = await opsFixture("pr-ops");
 const { AUTHOR, signed } = await import("../src/comments.ts");
 const { ghIsRead } = await import("../src/github.ts");
+const { newIssueState } = await import("../src/state.ts");
 const { fakeGh, ask, originRef } = fx;
 
 const DRAFT =
-  "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.";
+  "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description once the change is pushed, and marks it ready for review once the Reviewer approves it.";
 // Each test's issue, the draft PR start-pr opens for it, and any other PR.
 const NEW_BRANCH = { n: 1, pr: 51 };
 const PLANNED = { n: 2, pr: 52 };
@@ -24,6 +26,7 @@ const NULL_AUTHOR = { n: 9, pr: 59 };
 const PUSHED = { n: 7, pr: 57 };
 const EMPTY = { n: 8, pr: 58 };
 const REOPENED = { n: 11, pr: 61 };
+const NO_HARDENED_APPROVAL = /no hardened approval/u;
 // What a branch with a code change and no wiki reports.
 const CODE = { codeChanged: true, wikiAhead: 0 };
 
@@ -133,11 +136,10 @@ test("start-pr on an existing branch with an open PR only labels it", () => {
 function editCalls(pr, title, body) {
   return [
     ["pr", "edit", String(pr), "-R", "o/r", "--title", title, "--body", body],
-    ["pr", "ready", String(pr), "-R", "o/r"],
   ];
 }
 
-test("open-pr fills in the draft and marks it ready", () => {
+test("open-pr fills in the draft and leaves it a draft", () => {
   const { n, pr } = DRAFTED;
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
@@ -173,7 +175,7 @@ test("open-pr keeps a title and body that already name the issue", () => {
   ]);
 });
 
-test("open-pr opens a ready PR when none is open", () => {
+test("open-pr opens a draft PR when none is open", () => {
   const { n, pr, opened } = UNOPENED;
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
@@ -185,7 +187,7 @@ test("open-pr opens a ready PR when none is open", () => {
   assert.equal(out, okLine("open-pr", { pr: opened, headSha, ...CODE }));
   const body = signed({ role: "implementer" }, "Closes #6\n\nB");
   assert.deepEqual(writes(), [
-    createCall(n, [], "Fix #6", body),
+    createCall(n, ["--draft"], "Fix #6", body),
     labelCall(opened),
   ]);
 });
@@ -260,7 +262,7 @@ test("push with no code change and no wiki commits pushes nothing and says so", 
   assert.deepEqual(pushRecord(fx.root, n), record);
 });
 
-test("open-pr with reopen reopens the closed PR, fills it in and marks it ready", () => {
+test("open-pr with reopen reopens the closed PR and fills it in, never marking it ready", () => {
   const { n, pr } = REOPENED;
   startPr(n, pr);
   fx.commitIn(n, "g", "work");
@@ -280,4 +282,16 @@ test("open-pr with reopen reopens the closed PR, fills it in and marks it ready"
     ...editCalls(pr, `T (#${n})`, body),
     labelCall(pr),
   ]);
+});
+
+// ready-pr's guards are in ready-pr-op.test.mjs; through the ops CLI it is a
+// PR op that fails, writing nothing, without an approval to mark ready.
+test("ready-pr is an op, and refuses a state with no approval, writing nothing", () => {
+  const { n, pr } = REOPENED;
+  fakeGh.reply([]);
+  const state = { ...newIssueState(n), pr };
+  const out = JSON.parse(ask({ op: "ready-pr", number: n, state }));
+  assert.equal(out.ok, false);
+  assert.match(out.error, NO_HARDENED_APPROVAL);
+  assert.deepEqual(writes(), []);
 });

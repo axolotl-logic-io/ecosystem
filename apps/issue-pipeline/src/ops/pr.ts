@@ -1,8 +1,10 @@
 // The issue's pull request: start-pr opens it as a draft before any code is
 // written, or, given a body, sets the body of the one it finds; open-pr fills
-// it in and marks it ready (reopening a closed one), close-pr closes the draft
-// of a change that lives only in the wiki. How a PR links to its issue lives
-// here. Once the saved state records the code merged, neither pushes code.
+// it in, still a draft (reopening a closed one); ready-pr marks it ready once
+// the Reviewer approved its exact revision; close-pr closes the draft of a
+// change that lives only in the wiki. How a PR links to its issue lives
+// here. Once the saved state records the code merged, neither start-pr nor
+// open-pr pushes code.
 
 import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
@@ -18,6 +20,8 @@ import { OpsError, run } from "../process.ts";
 import { holdWikiPin } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
 import { refuseOnceMerged } from "./push.ts";
+import type { ReadyReply } from "./ready-pr.ts";
+import { readyPr } from "./ready-pr.ts";
 
 interface PrReply {
   pr: number;
@@ -31,10 +35,13 @@ interface CloseReply {
   closed: true;
 }
 
-type Op = (cfg: Config, request: unknown) => PrReply | OpenReply | CloseReply;
+type Op = (
+  cfg: Config,
+  request: unknown,
+) => PrReply | OpenReply | CloseReply | ReadyReply;
 
 const DRAFT_TEXT =
-  "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.";
+  "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description once the change is pushed, and marks it ready for review once the Reviewer approves it.";
 const IMPLEMENTER: Author = { role: "implementer" };
 const COORDINATOR: Author = { role: "coordinator" };
 
@@ -155,7 +162,7 @@ function givenBody(
 // Opens the issue's PR as a draft before any code is written, or finds the
 // branch's open PR, and labels it working. Given a body, the draft opens with
 // it, or the found PR's body becomes it, staying a draft or ready as it was.
-// open-pr later fills in the PR and marks it ready.
+// open-pr later fills in the PR, and ready-pr marks it ready.
 function startPr(cfg: Config, request: unknown): PrReply {
   const req = parsed(START_REQUEST, "start-pr request", request);
   const n = req.number;
@@ -195,9 +202,10 @@ function existingPr(
   return undefined;
 }
 
-// Pushes the branch, then fills in the issue's PR and marks it ready when the
-// branch changes files. A change that lives only in the wiki leaves the draft
-// as it is.
+// Pushes the branch, then fills in the issue's PR when the branch changes
+// files, leaving it a draft: a new PR opens as one, and a found or reopened
+// one keeps its draft status. A change that lives only in the wiki leaves
+// the draft as it is.
 function openPr(cfg: Config, request: unknown): OpenReply {
   const req = parsed(OPEN_REQUEST, "open-pr request", request);
   const n = req.number;
@@ -215,13 +223,11 @@ function openPr(cfg: Config, request: unknown): OpenReply {
   }
   let pr = existingPr(cfg, n, req.reopen);
   if (pr === undefined) {
-    pr = createPr(cfg, n, [], { title, body });
+    pr = createPr(cfg, n, ["--draft"], { title, body });
   } else {
-    // The draft from start-pr, or a reopened PR: fill it in and mark it ready.
-    const number = String(pr);
+    // The draft from start-pr, or a reopened PR: fill it in.
     const edit = ["--title", title, "--body", body];
-    gh(cfg, ["pr", "edit", number, "-R", cfg.repo, ...edit]);
-    gh(cfg, ["pr", "ready", number, "-R", cfg.repo], { allowFail: true });
+    gh(cfg, ["pr", "edit", String(pr), "-R", cfg.repo, ...edit]);
   }
   setLabels(cfg, pr, [LABELS.working.name], []);
   return { pr, ...pushed };
@@ -261,6 +267,7 @@ function closePr(cfg: Config, request: unknown): CloseReply {
 const prOps: Readonly<Record<string, Op>> = {
   "start-pr": startPr,
   "open-pr": openPr,
+  "ready-pr": readyPr,
   "close-pr": closePr,
 };
 
