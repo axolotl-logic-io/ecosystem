@@ -11,10 +11,11 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { stop } from "../ops/stop.ts";
+import { readState, writeState } from "../saved-state.ts";
 import type { Stage } from "../stages.ts";
 import { STAGES } from "../stages.ts";
 import type { IssueState } from "../state.ts";
-import { newIssueState, readState, writeState } from "../state.ts";
+import { newIssueState } from "../state.ts";
 import { claimFailureStops } from "./claim-failures.ts";
 import { reauthoredState } from "./issue-plan.ts";
 import type { LogEntry } from "./log.ts";

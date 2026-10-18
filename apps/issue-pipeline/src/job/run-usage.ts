@@ -3,7 +3,7 @@
 // as the usage log's entries (src/job/usage-log.ts). It is telemetry only;
 // nothing here limits a session. It does no I/O.
 
-import type { ModelRole } from "../config.ts";
+import type { ModelRole } from "../config-legacy.ts";
 import type { Status } from "../stages.ts";
 import type { Usage } from "./token-usage.ts";
 import { addUsage, ZERO_USAGE } from "./token-usage.ts";

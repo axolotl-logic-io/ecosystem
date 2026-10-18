@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { withoutRemovedKeys } from "./config-legacy.ts";
 import { CONFIG_SCHEMA, DEFAULTS } from "./config-schema.ts";
 import { JOB_DOCS, JOB_REPO } from "./job/layout.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
@@ -103,124 +104,6 @@ function checkRequired(
   }
   checkUsers(configPath, allowedUsers);
   checkPractices(configPath, practices);
-}
-
-// What the writer budget check reads of a config; a value of another type is
-// left to the code that reads it.
-type ModelRole = "author" | "implementor" | "reviewer";
-
-// The model a role gets when the config names none for it, or for the
-// installed version's roles it maps from: the installed version's default for
-// its spec writer, implementer and correctness and security reviewers.
-const DEFAULT_MODEL = "anthropic/claude-opus-5-5";
-
-// The installed version's model roles each role reads, in order, when the
-// config's models doesn't name the role itself (`three-configurable-models`).
-const LEGACY_MODEL_ROLES: Readonly<Record<ModelRole, readonly string[]>> = {
-  author: ["spec", "triage"],
-  implementor: ["implementer", "fixer"],
-  reviewer: ["correctness", "security", "tests"],
-};
-
-const MODEL_ROLES: readonly ModelRole[] = ["author", "implementor", "reviewer"];
-
-// Keys the pipeline no longer reads: the session budgets and handoffs, the
-// old roles, the claim race, the mechanical test rules and the orchestrator's
-// removed extras. A config that sets one still loads, with a warning.
-const REMOVED_KEYS: ReadonlySet<string> = new Set([
-  "contextLimits",
-  "sessionTokenCap",
-  "roleBudgets",
-  "maxContinuations",
-  "issueTokenBudget",
-  "rebaseTokenBudget",
-  "tokensPerHour",
-  "maxTriages",
-  "practicesDigest",
-  "claimWaitSeconds",
-  "claimCandidates",
-  "requireNewTests",
-  "testPathGlobs",
-  "nonCodePathGlobs",
-  "orchestratorRoles",
-  "silentMinutes",
-  "failureStreak",
-  "maxSpawnsPerRun",
-]);
-const REMOVED_PREFIX = "escalationAgent";
-
-const MODEL_IDS = z.record(z.string(), z.unknown()).catch({});
-
-interface ModelChoice {
-  models: Record<ModelRole, string>;
-  warnings: string[];
-}
-
-function textModel(value: unknown): string | null {
-  if (typeof value === "string" && value !== "") {
-    return value;
-  }
-  return null;
-}
-
-// Each role's model from the config's `models`: the role's own key, else the
-// first installed-version role it maps from, else DEFAULT_MODEL. Every key it
-// didn't use is named in a warning.
-function chooseModels(raw: unknown): ModelChoice {
-  const given = MODEL_IDS.parse(raw ?? {});
-  const used = new Set<string>();
-  const warnings: string[] = [];
-  const models: Record<ModelRole, string> = {
-    author: DEFAULT_MODEL,
-    implementor: DEFAULT_MODEL,
-    reviewer: DEFAULT_MODEL,
-  };
-  for (const role of MODEL_ROLES) {
-    const key = [role, ...LEGACY_MODEL_ROLES[role]].find(
-      (name) => textModel(given[name]) !== null,
-    );
-    if (key === undefined) {
-      continue;
-    }
-    used.add(key);
-    models[role] = textModel(given[key]) ?? DEFAULT_MODEL;
-    if (key !== role) {
-      warnings.push(
-        `models.${key} is the installed version's role; the ${role} uses its model ${models[role]} (set models.${role} to choose)`,
-      );
-    }
-  }
-  for (const key of Object.keys(given).filter((name) => !used.has(name))) {
-    warnings.push(`models.${key} is no longer read; ignoring it`);
-  }
-  return { models, warnings };
-}
-
-function isRemovedKey(key: string): boolean {
-  return REMOVED_KEYS.has(key) || key.startsWith(REMOVED_PREFIX);
-}
-
-// The config's keys without the removed ones, and a warning for each removed
-// key and each model key it maps or ignores.
-function withoutRemovedKeys(raw: Readonly<Record<string, unknown>>): {
-  kept: Record<string, unknown>;
-  warnings: string[];
-} {
-  const kept: Record<string, unknown> = {};
-  const warnings: string[] = [];
-  for (const [key, value] of Object.entries(raw)) {
-    if (isRemovedKey(key)) {
-      warnings.push(`${key} is no longer read; ignoring it`);
-    } else {
-      kept[key] = value;
-    }
-  }
-  const { models } = raw;
-  const choice = chooseModels(models);
-  return {
-    kept: { ...kept, models: choice.models },
-    warnings: [...warnings, ...choice.warnings],
-  };
 }
 
 function loadConfig(configPath: string | undefined): Config {
@@ -346,13 +229,5 @@ const paths = {
   },
 };
 
-export type { Config, JobCheckout, ModelRole, WikiSettings };
-export {
-  chooseModels,
-  loadConfig,
-  paths,
-  publicConfig,
-  tokenEnv,
-  wikiCfg,
-  withCheckout,
-};
+export type { Config, JobCheckout, WikiSettings };
+export { loadConfig, paths, publicConfig, tokenEnv, wikiCfg, withCheckout };

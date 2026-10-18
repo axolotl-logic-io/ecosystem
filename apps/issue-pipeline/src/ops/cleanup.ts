@@ -10,7 +10,7 @@ import type { Config } from "../config.ts";
 import { issueState } from "../github.ts";
 import { withCloneLock } from "../locks.ts";
 import { parseRequest } from "../process.ts";
-import { readState } from "../state.ts";
+import { readState } from "../saved-state.ts";
 import { unsavedWiki } from "../wiki.ts";
 
 // `skip` is the sweep's own issue, which its lane may still be using.

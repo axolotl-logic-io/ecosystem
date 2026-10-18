@@ -9,7 +9,7 @@
 // knows the line's layout.
 
 import path from "node:path";
-import type { ModelRole } from "../config.ts";
+import type { ModelRole } from "../config-legacy.ts";
 import type { Control } from "./control.ts";
 import { appendRunLine } from "./run-log.ts";
 import type { JobStatus, StatusFile } from "./status.ts";

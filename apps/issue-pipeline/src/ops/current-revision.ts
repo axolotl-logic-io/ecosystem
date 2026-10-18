@@ -6,7 +6,8 @@ import type { Config } from "../config.ts";
 import { parseRequest } from "../process.ts";
 import type { CurrentRevision } from "../revision.ts";
 import { currentRevision } from "../revision.ts";
-import { ISSUE_STATE, readState } from "../state.ts";
+import { readState } from "../saved-state.ts";
+import { ISSUE_STATE } from "../state.ts";
 
 const CURRENT_REVISION_REQUEST = z.looseObject({
   number: z.number().int().positive(),

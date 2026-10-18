@@ -12,8 +12,9 @@ import type { Config } from "../config.ts";
 import { remoteHead } from "../git-state.ts";
 import { OpsError } from "../process.ts";
 import { codeMergedOf, issuePullRequest } from "../revision.ts";
+import { readState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
-import { newIssueState, readState, resumeOf, withLog } from "../state.ts";
+import { newIssueState, resumeOf, withLog } from "../state.ts";
 
 // A branch head on GitHub that is neither the saved one nor the pipeline's
 // own push.

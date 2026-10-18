@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { ghJson } from "../github.ts";
 import { LABELS } from "../labels.ts";
-import { readState } from "../state.ts";
+import { readState } from "../saved-state.ts";
 import { isStopLabel } from "../stops.ts";
 
 const MS_PER_HOUR = 3_600_000;

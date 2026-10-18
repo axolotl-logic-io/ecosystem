@@ -7,7 +7,8 @@
 
 import type { z } from "zod";
 import type { IssueComment } from "../comments.ts";
-import type { Config, ModelRole } from "../config.ts";
+import type { Config } from "../config.ts";
+import type { ModelRole } from "../config-legacy.ts";
 import type { GherkinComment } from "../gherkin-comment.ts";
 import type { Issue } from "../issue-context.ts";
 import type { Stage } from "../stages.ts";

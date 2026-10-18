@@ -5,8 +5,9 @@
 // the sessions that commit push through it (`pipeline_commit`). The networks
 // are recorded, not enforced.
 
-import type { Config, ModelRole } from "../config.ts";
+import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import type { ModelRole } from "../config-legacy.ts";
 import type { JobRolesConfig } from "../config-schema.ts";
 import type { Stage } from "../stages.ts";
 import { JOB_DOCS, JOB_REPO } from "./layout.ts";

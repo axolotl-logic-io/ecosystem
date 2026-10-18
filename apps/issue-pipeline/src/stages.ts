@@ -8,8 +8,10 @@ type Stage = (typeof STAGES)[number];
 
 type Status = Stage | "stopped" | "done";
 
+const STAGE_SET: ReadonlySet<unknown> = new Set(STAGES);
+
 function isStage(value: unknown): value is Stage {
-  return STAGES.some((stage) => stage === value);
+  return STAGE_SET.has(value);
 }
 
 export type { Stage, Status };

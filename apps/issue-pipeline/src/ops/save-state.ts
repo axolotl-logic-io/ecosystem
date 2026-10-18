@@ -8,8 +8,9 @@ import { z } from "zod";
 import { touchClaim } from "../claims.ts";
 import type { Config } from "../config.ts";
 import { OpsError, parseRequest } from "../process.ts";
+import { readState, writeState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
-import { ISSUE_STATE, readState, writeState } from "../state.ts";
+import { ISSUE_STATE } from "../state.ts";
 
 const SAVE_REQUEST = z.looseObject({
   number: z.number().int().positive(),

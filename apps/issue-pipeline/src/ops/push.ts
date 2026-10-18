@@ -14,8 +14,8 @@ import { paths, wikiCfg } from "../config.ts";
 import { assertClean, head, remoteHead } from "../git-state.ts";
 import { OpsError, parseRequest } from "../process.ts";
 import { pullRequest } from "../revision.ts";
+import { readState } from "../saved-state.ts";
 import type { CodeMerged } from "../state.ts";
-import { readState } from "../state.ts";
 import { holdWikiPin, pushWikiBranch, wikiAhead } from "../wiki.ts";
 
 const PUSH_REQUEST = z.looseObject({

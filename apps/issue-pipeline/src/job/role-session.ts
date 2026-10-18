@@ -7,7 +7,7 @@
 // log, and its outcome to job.json.
 
 import { z } from "zod";
-import type { ModelRole } from "../config.ts";
+import type { ModelRole } from "../config-legacy.ts";
 import type { Stage } from "../stages.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runSession } from "./launch.ts";
