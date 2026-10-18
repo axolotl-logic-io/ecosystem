@@ -13,10 +13,9 @@ import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("sync-ops-prepare-review-bundle");
 const { fakeGh, sh, worktree } = fx;
-// src/ops/review-diff.ts's REVIEW_BUNDLE_MAX_CHARS, the review bundle's cap
-// on its inline diff. This branch's src doesn't export it; main exports it
-// (32e9b52), and this copy gives way to that import at the final integration.
-const REVIEW_BUNDLE_MAX_CHARS = 200_000;
+// The review bundle's cap on its inline diff, loaded once the fixture has
+// isolated the root.
+const { REVIEW_BUNDLE_MAX_CHARS } = await import("../src/ops/review-diff.ts");
 const BASE = "integration";
 // Each test's issue.
 const ISSUE = { order: 41, again: 42, bound: 43, pathOnly: 44, wiki: 45 };
