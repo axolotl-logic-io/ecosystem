@@ -93,15 +93,25 @@ interface PostedComment {
 
 // A failed op: its name, and its error as the message. The job's ops replies
 // carry no exit code, so `code` is always 1 (OPS_FAILED in role-ops.ts).
+// `opError` is the op's own reply error, unchanged, which alone decides
+// whether the failure is transient (src/job/transient.ts); it is null for a
+// failure the job found itself, such as a reply missing a field.
 class OpsFailure extends Error {
   readonly code: number;
   readonly op: OpName | JobOpName;
+  readonly opError: string | null;
 
-  constructor(op: OpName | JobOpName, code: number, message: string) {
+  constructor(
+    op: OpName | JobOpName,
+    code: number,
+    message: string,
+    opError: string | null = null,
+  ) {
     super(message);
     this.name = "OpsFailure";
     this.code = code;
     this.op = op;
+    this.opError = opError;
   }
 }
 

@@ -3,13 +3,13 @@
 // Builds the issue pipeline from this folder's src/ into dist/ (build.ts; run
 // `npm ci` at the repo root first), then installs it where pi reads it:
 //
-//   dist/workflow.js, dist/*.mjs              -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
-//     (BUILT: the sweep, ops, the stage job and its pi extensions, the orchestrator and the reports)
+//   dist/*.mjs                                -> $ISSUE_PIPELINE_ROOT (default ~/.pi/agent/issue-pipeline)
+//     (BUILT: ops, the stage job and its pi extensions, the orchestrator and the reports)
 //   repos/example.json                        -> $ISSUE_PIPELINE_ROOT/repos/
 //   agents/*.md                               -> $PI_CODING_AGENT_DIR/agents/issue-pipeline/ (default ~/.pi/agent)
-//   prompts/*.md                              -> $PI_CODING_AGENT_DIR/prompts/
+//     (the agents the stage jobs' sessions run as)
 //
-// In agents and prompts, {{ISSUE_PIPELINE_ROOT}} and {{PI_CODING_AGENT_DIR}}
+// In agents, {{ISSUE_PIPELINE_ROOT}} and {{PI_CODING_AGENT_DIR}}
 // become those absolute paths. It writes README.md and INSTALLED.json in the
 // root, naming the commit installed. Per-repo configs, setup and teardown
 // scripts, secrets, clones, worktrees and run logs are left alone.
@@ -51,7 +51,6 @@ const GIT_SUFFIX = /\.git$/u;
 const DATE_PUNCTUATION = /[-:]/gu;
 // The build's files in dist/, each installed under its own name in ROOT.
 const BUILT = [
-  "workflow.js",
   "ops.mjs",
   "shell-supervisor.mjs",
   "job.mjs",
@@ -131,11 +130,6 @@ function sources() {
     ...mdIn("agents").map((f) => ({
       from: `agents/${f}`,
       to: path.join(AGENT_DIR, "agents/issue-pipeline", f),
-      fill: true,
-    })),
-    ...mdIn("prompts").map((f) => ({
-      from: `prompts/${f}`,
-      to: path.join(AGENT_DIR, "prompts", f),
       fill: true,
     })),
   ];

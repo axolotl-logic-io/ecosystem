@@ -1,6 +1,7 @@
 // @ts-check
-// install.mjs into temporary roots: every file lands, the workflow and ops are
-// the ones it built into dist/, placeholders are filled, a second install
+// install.mjs into temporary roots: every file lands, the executables are
+// the ones it built into dist/, every stage's agent is installed with its
+// placeholders filled, a second install
 // replaces nothing and backs nothing up, and a failed build installs nothing.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -12,13 +13,18 @@ import { test } from "node:test";
 const script = new URL("../install.mjs", import.meta.url).pathname;
 const dist = new URL("../dist/", import.meta.url).pathname;
 const BUILD_FAILED = /build failed/u;
+// The agents the stage jobs' sessions run as (src/job/roles.ts).
+const STAGE_AGENT_FILES = [
+  "issue-pipeline-author.md",
+  "issue-pipeline-implementor.md",
+  "issue-pipeline-reviewer.md",
+];
 // What a template still holds when a placeholder is left unfilled.
 const PLACEHOLDER = /\{\{/u;
 const NOTHING_CHANGED = /0 pipeline file\(s\) changed/u;
 const INSIDE_ROOT = /inside the pipeline root/u;
 // The build's files, each installed under its own name in the root.
 const BUILT = [
-  "workflow.js",
   "ops.mjs",
   "shell-supervisor.mjs",
   "job.mjs",
@@ -68,7 +74,7 @@ test("installs the pipeline with local paths filled in", () => {
   const r = install();
   assert.equal(r.status, 0, r.stderr);
   assert.ok(
-    fs.existsSync(path.join(dist, "workflow.js")),
+    fs.existsSync(path.join(dist, "job.mjs")),
     "the install rebuilt dist/",
   );
   for (const f of [
@@ -86,16 +92,14 @@ test("installs the pipeline with local paths filled in", () => {
       f,
     );
   }
-  const ops = fs.readFileSync(
-    path.join(tmp, "agent/agents/issue-pipeline/issue-pipeline-ops.md"),
-    "utf8",
-  );
-  assert.match(ops, new RegExp(`"${root}/ops.mjs"`, "u"));
-  const start = fs.readFileSync(
-    path.join(tmp, "agent/prompts/pipeline-start.md"),
-    "utf8",
-  );
-  assert.doesNotMatch(start, PLACEHOLDER);
+  assert.equal(fs.existsSync(path.join(root, "workflow.js")), false);
+  for (const f of STAGE_AGENT_FILES) {
+    const agent = fs.readFileSync(
+      path.join(tmp, "agent/agents/issue-pipeline", f),
+      "utf8",
+    );
+    assert.doesNotMatch(agent, PLACEHOLDER, f);
+  }
   assert.equal(
     fs.readFileSync(path.join(root, "repos/local.json"), "utf8"),
     "{}",

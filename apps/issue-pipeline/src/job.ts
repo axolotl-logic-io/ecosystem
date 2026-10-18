@@ -9,7 +9,8 @@
 // It claims #N and runs the stage's role (src/roles/registry.ts) on the role
 // runner (src/job/role-run.ts), always fresh: a restarted job starts the
 // stage again from what is saved. An issue saved at another stage is released
-// untouched. Ops run the installed ops.mjs and model sessions
+// untouched, but a merge job finishes a done issue's recorded completion.
+// Ops run the installed ops.mjs and model sessions
 // `pi --mode rpc` (src/job/launch.ts), bounded only by their timeouts. It
 // keeps job.json current (status.ts), logs each ended session to
 // context.jsonl (context-log.ts), appends a usage record for each session and
@@ -39,7 +40,8 @@
 // (src/job/checkout.ts). On every exit (src/job/teardown.ts) it saves what
 // the checkouts left uncommitted as patches in the run folder
 // (droppedPatches), records and drops it (lostChanges), the implementor's
-// job pushes what the remotes lack (src/job/exit-push.ts), and the folder is
+// job pushes what the remotes lack, only the wiki once the code is merged
+// (src/job/exit-push.ts), and the folder is
 // removed; a run that stopped with saved patches posts a comment saying so
 // (#369).
 
@@ -66,6 +68,7 @@ import type { ExitingJob, RunEnd } from "./job/teardown.ts";
 import { jobKeyOf, tearDown } from "./job/teardown.ts";
 import { isTransientSessionError } from "./job/transient.ts";
 import { roleOf } from "./roles/registry.ts";
+import type { IssueState } from "./state.ts";
 
 // A job's claimant id is "s" and its start time in base 36, as a sweep's
 // was; its lease names it.
@@ -103,7 +106,13 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     checkout: { issue, dir: repo },
   };
   const runOp = opsRunnerOf(issue, frame, { hooks, status });
-  const push = exitPushOf(stage, runOp);
+  let claimed: (() => IssueState) | null = null;
+  const push = exitPushOf(stage, runOp, (): IssueState | null => {
+    if (claimed === null) {
+      return null;
+    }
+    return claimed();
+  });
   const exiting = { issue, key, dirs, wiki, push, runOp, status };
   const ending = runRoleStage({
     role,
@@ -112,12 +121,14 @@ async function runStage(args: RunArgs, cfg: Config): Promise<RunEnd> {
     stage,
     mergeQueue,
     dirs,
-    key,
     identity,
     runOp,
     hooks,
     status,
     control,
+    onClaimed: (last: () => IssueState): void => {
+      claimed = last;
+    },
   });
   return await settle(cfg, ending, { ...exiting, control });
 }

@@ -6,15 +6,19 @@
 
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
-import type { RoleEnd, RoleInputs } from "./role-context.ts";
+import type { AgentName, RoleEnd, RoleInputs } from "./role-context.ts";
 import { OpsFailure } from "./role-context.ts";
 import type { OpsJob } from "./role-ops.ts";
-import { postOf } from "./role-ops.ts";
 import type { RunUsage } from "./run-usage.ts";
 import type { JobEnd, JobStatus, StopSignal } from "./status.ts";
-import { isNetworkError } from "./transient.ts";
+import { isTransientOpError } from "./transient.ts";
 
 const BRANCH_MOVED = "the PR branch changed outside the pipeline";
+// Who asks an ask's questions: the author, as its installed agent.
+const ASKER: { role: "author"; agent: AgentName } = {
+  role: "author",
+  agent: "issue-pipeline-author",
+};
 
 // What a stage job prints as its one stdout line: the issue, the stage it
 // started at, how the stage ended, why (a stop's, wait's or deferral's
@@ -100,12 +104,7 @@ async function applyEnd(
         ...end.state,
         asked: { inputs: inputs.revision },
       };
-      const { by } = postOf(job, () => claimed.last);
-      await jobOp(job, "ask", {
-        questions: end.questions,
-        by: by("author"),
-        state,
-      });
+      await jobOp(job, "ask", { questions: end.questions, by: ASKER, state });
       await release(claimed, state);
       return finished(job, { end: "ask" });
     }
@@ -125,14 +124,14 @@ async function applyEnd(
   }
 }
 
-// The end of a role that threw: a failed op deferred on a network error,
-// or stopped as an error; anything else fails the job.
+// The end of a role that threw: a failed op deferred when its own reply
+// error is transient, or stopped as an error; anything else fails the job.
 function thrownEnd(error: unknown, state: IssueState): RoleEnd {
   if (!(error instanceof OpsFailure)) {
     throw error;
   }
   const reason = `the ${error.op} op failed: ${error.message}`;
-  if (isNetworkError(error.message)) {
+  if (isTransientOpError(error.opError)) {
     return { kind: "deferred", error: reason };
   }
   return { kind: "stop", code: "error", reason, state };

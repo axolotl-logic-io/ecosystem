@@ -9,6 +9,7 @@ import type { Config } from "../config.ts";
 import type { IssueState } from "../state.ts";
 import type { RunOp } from "./ops-request.ts";
 import type {
+  AgentName,
   CommentRole,
   JobOpName,
   OpName,
@@ -35,16 +36,17 @@ const POSTED = z.looseObject({
 interface OpsJob {
   cfg: Config;
   issue: number;
-  key: string;
   runOp: RunOp;
 }
 
-// A comment's signer, as the post and ask ops take it.
+// A comment's signer, as the post op takes it: the role and its installed
+// agent (null for the merger, which runs none). The job names no model or
+// run, so a comment never claims a model the session may not have used.
 interface Signer {
   role: CommentRole;
-  agent: string | null;
-  model: string | null;
-  run: string;
+  agent: AgentName | null;
+  model: null;
+  run: null;
 }
 
 function minutesOf(cfg: Config, op: OpName | JobOpName): number | undefined {
@@ -74,40 +76,30 @@ function opRunnerOf(job: OpsJob): RoleOpRunner {
   return async (op: OpName | JobOpName, payload: object): Promise<OpFields> => {
     const reply = await job.runOp(op, payload, minutesOf(job.cfg, op));
     if (!reply.ok) {
-      throw new OpsFailure(op, OPS_FAILED, reply.error);
+      throw new OpsFailure(op, OPS_FAILED, reply.error, reply.error);
     }
     return reply.reply;
   };
 }
 
-// The signer of `role`'s comments in the job: a model role's agent and
-// configured model, or the merger, which runs none; and the job's key.
-function signerOf(job: OpsJob, role: CommentRole): Signer {
-  let agent: string | null = null;
-  let model: string | null = null;
+// The signer of `role`'s comments: a model role's installed agent, or the
+// merger, which runs none.
+function signerOf(role: CommentRole): Signer {
   const stage = Object.values(STAGE_AGENTS).find(
     (entry) => entry?.role === role,
   );
-  if (stage !== undefined && stage !== null) {
-    ({ agent } = stage);
-    model = job.cfg.models[stage.role];
-  }
-  return { role, agent, model, run: job.key };
+  return { role, agent: stage?.agent ?? null, model: null, run: null };
 }
 
 // The job's comment poster: `post` writes `comment` on the issue, or on the
 // PR the state `current()` names (a role with no PR yet gets OpsFailure),
-// and returns its id; `by` is a role's signer.
+// and returns its id.
 function postOf(
   job: OpsJob,
   current: () => IssueState,
-): {
-  post: (comment: PostedComment) => Promise<number>;
-  by: (role: CommentRole) => Signer;
-} {
+): { post: (comment: PostedComment) => Promise<number> } {
   const run = opRunnerOf(job);
   return {
-    by: (role: CommentRole): Signer => signerOf(job, role),
     post: async (comment: PostedComment): Promise<number> => {
       let number = job.issue;
       if (comment.on === "pr") {
@@ -122,7 +114,7 @@ function postOf(
         number = pr;
       }
       const { key, body } = comment;
-      const by = signerOf(job, comment.role);
+      const by = signerOf(comment.role);
       const reply = await run("post", {
         comments: [{ number, key, body, by }],
       });

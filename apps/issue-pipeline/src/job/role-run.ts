@@ -6,6 +6,8 @@
 // of the last saved state for a deferral. This module alone knows how a
 // role's effects become the job's launches and how an end is applied. On a
 // signal it saves the last saved state with no lease and applies no end.
+// An issue at another stage is released untouched, but a merge job runs its
+// role on a done issue with its merge recorded, to finish its completion.
 
 import { z } from "zod";
 import { paths } from "../config.ts";
@@ -42,7 +44,7 @@ const WAITING = "the issue waits for an answer to its questions";
 const CLAIM_WON = z.looseObject({
   state: ISSUE_STATE,
   remoteHead: z.string().min(1).nullable(),
-  paths: z.looseObject({ issueFile: z.string().min(1) }),
+  issueFile: z.string().min(1),
 });
 const CLAIM_LOST = z.looseObject({
   lost: z.literal(true),
@@ -60,6 +62,17 @@ interface RoleJob extends EndingJob {
   hooks: LaunchHooks;
   status: JobStatus;
   control: Pick<Control, "stopping">;
+  // Called once the claim won, with what reads the run's last saved state,
+  // for the exit push (src/job/exit-push.ts).
+  onClaimed: (last: () => IssueState) => void;
+}
+
+// Whether a `stage` job runs its role on an issue saved at another stage:
+// only a merge job, on a done issue whose merge it recorded (`merged`), to
+// reconcile the completion its finish didn't finish (the merge role's
+// finish-only path).
+function reconcilesCompletion(stage: Stage, state: IssueState): boolean {
+  return stage === "merge" && state.stage === "done" && state.merged !== null;
 }
 
 // The model role a stage's usage records name; merge's is the merger.
@@ -114,7 +127,7 @@ async function runClaimed(
 ): Promise<RoleStageEnd> {
   const { job } = claimed;
   const inputs = inputsOf(job.cfg, job.issue, claim);
-  const ctx = contextOf(claimed, inputs, claim.paths.issueFile);
+  const ctx = contextOf(claimed, inputs, claim.issueFile);
   let end = branchMoved(claimed.last, claim.remoteHead);
   if (end === null) {
     try {
@@ -136,7 +149,8 @@ async function runClaimed(
 }
 
 // Claims the issue and runs the stage's role to its end or to a signal.
-// An issue saved at another stage is released untouched.
+// An issue saved at another stage is released untouched, except a done one
+// a merge job reconciles (reconcilesCompletion).
 async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
   const reply = await job.runOp("claim", {});
   const signal = job.control.stopping();
@@ -184,7 +198,8 @@ async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
       },
     ),
   };
-  if (state.stage !== job.stage) {
+  job.onClaimed((): IssueState => claimed.last);
+  if (state.stage !== job.stage && !reconcilesCompletion(job.stage, state)) {
     await release(claimed, state);
     const reason = `the issue is at ${state.stage}, not ${job.stage}`;
     return finished(job, { end: "unclaimed", reason });

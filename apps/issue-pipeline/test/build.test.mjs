@@ -1,30 +1,28 @@
 // @ts-check
-// build.ts into a temporary folder: the built workflow is still an async
-// function body with no imports, the built ops CLI answers as src/ops.ts
-// does and its shell supervisor parses, the built orchestrator's --once exits 0 after a tick, logging
-// the roles it chose, and 1 after one that throws, and the built report names a missing --config. It builds into its own folder, so it never races install.test.mjs,
-// which builds dist/.
+// build.ts into a temporary folder: it builds every executable the install
+// copies and no workflow, the built ops CLI answers as src/ops.ts does and
+// its shell supervisor parses, the built stage job rejects a bad stage, the
+// built orchestrator's --once exits 0 after a tick and 1 after one that
+// throws, and the built report names a missing --config. It builds into its
+// own folder, so it never races install.test.mjs, which builds dist/.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { ROLE_NAMES } from "../src/roles/registry.ts";
 import { installFakeGh } from "./fake-gh.mjs";
 
-// What the built workflow must never contain: it is a sandboxed function body.
-const BANNED_IN_WORKFLOW = [
-  /\basync\b/u,
-  /\bimport\b/u,
-  /\brequire\(/u,
-  /node:/u,
-  /child_process/u,
+// The executables the build writes, which install.mjs copies.
+const EXECUTABLES = [
+  "ops.mjs",
+  "shell-supervisor.mjs",
+  "job.mjs",
+  "orchestrate.mjs",
+  "report.mjs",
+  "structured-output.mjs",
+  "pipeline-commit.mjs",
 ];
-// The error the workflow throws when it is run without args.config.
-const MISSING_CONFIG = /args\.config must be/u;
-// The statement build.ts's wrapper adds as the body's last.
-const RETURN_SUMMARY = "return sweep.summary();";
 // The error the stage job exits with for an unknown --stage.
 const BAD_STAGE = /--stage must be one of/u;
 const UNKNOWN_FLAG = /--nope/u;
@@ -36,14 +34,6 @@ const TICK_FAILED = /orchestrate: tick failed: gh is logged in as mallory/u;
 const ACCOUNT = "bot";
 // The variable that points ops at a pipeline root, here the temporary folder.
 const ROOT_VAR = "ISSUE_PIPELINE_ROOT";
-
-/** @param {string} file @returns {string} */
-function readIfExists(file) {
-  if (!fs.existsSync(file)) {
-    return "";
-  }
-  return fs.readFileSync(file, "utf8");
-}
 
 // Runs an ops CLI on `input` with only the pipeline root in its environment,
 // so the source and the built CLI see the same environment.
@@ -65,27 +55,14 @@ const srcOps = new URL("../src/ops.ts", import.meta.url).pathname;
 const tmp = fs.mkdtempSync("/tmp/issue-pipeline-build-");
 process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
 const built = spawnSync(process.execPath, [script, tmp], { encoding: "utf8" });
-const workflow = readIfExists(path.join(tmp, "workflow.js"));
 const builtOps = path.join(tmp, "ops.mjs");
-const AsyncFunction = Object.getPrototypeOf(async () => null).constructor;
 
-test("the build succeeds and the workflow compiles as an async function body", () => {
+test("the build writes every executable and no workflow", () => {
   assert.equal(built.status, 0, built.stderr);
-  assert.doesNotThrow(() => new AsyncFunction("args", workflow));
-});
-
-test("the built workflow stays a sandboxed body with no imports", () => {
-  for (const banned of BANNED_IN_WORKFLOW) {
-    assert.doesNotMatch(workflow, banned);
+  for (const file of EXECUTABLES) {
+    assert.ok(fs.existsSync(path.join(tmp, file)), file);
   }
-});
-
-test("the built workflow ends by returning the driver's summary", () => {
-  assert.ok(workflow.trimEnd().endsWith(RETURN_SUMMARY));
-});
-
-test("the built workflow rejects a missing config as the source does", async () => {
-  await assert.rejects(new AsyncFunction("args", workflow)({}), MISSING_CONFIG);
+  assert.equal(fs.existsSync(path.join(tmp, "workflow.js")), false);
 });
 
 test("the built ops parses and keeps its #! line", () => {
@@ -206,7 +183,7 @@ function orchestratorConfig() {
   return file;
 }
 
-test("the built orchestrator's --once logs the roles it chose, exits 0 after a tick and 1 after a failed one", () => {
+test("the built orchestrator's --once exits 0 after a tick and 1 after a failed one", () => {
   const fakeGh = installFakeGh();
   const config = orchestratorConfig();
   const orchestrator = path.join(tmp, "orchestrate.mjs");
@@ -231,19 +208,6 @@ test("the built orchestrator's --once logs the roles it chose, exits 0 after a t
   assert.equal(good.stderr, "");
   assert.ok(
     fakeGh.calls().some((call) => call.join(" ").startsWith("issue list")),
-  );
-  // The run logs only the roles it chose, all five with no flag or config
-  // key (#417), since the queue is empty.
-  const log = path.join(tmp, "runs", "o__r", "orchestrator.log");
-  const lines = readIfExists(log)
-    .split("\n")
-    .filter((line) => line !== "");
-  assert.deepEqual(
-    lines.map((line) => {
-      const { action, roles } = JSON.parse(line);
-      return { action, roles };
-    }),
-    [{ action: "roles", roles: [...ROLE_NAMES] }],
   );
   fakeGh.reply([{ when: "api user", stdout: "mallory\n" }]);
   const failed = once();

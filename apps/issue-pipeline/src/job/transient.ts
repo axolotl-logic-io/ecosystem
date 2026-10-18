@@ -48,4 +48,16 @@ function isNetworkError(text: string | null): boolean {
   return NETWORK_ERROR.test(text);
 }
 
-export { isNetworkError, isRateLimitError, isTransientSessionError };
+// Whether a failed op's own reply error, if any, is transient: a network
+// failure of its gh or git, or a provider's rate limit or transport error
+// passed through. An error the job found itself (null) never is.
+function isTransientOpError(text: string | null): boolean {
+  return isNetworkError(text) || isTransientSessionError(text);
+}
+
+export {
+  isNetworkError,
+  isRateLimitError,
+  isTransientOpError,
+  isTransientSessionError,
+};
