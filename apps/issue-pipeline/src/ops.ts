@@ -27,8 +27,11 @@ import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
+import { closeParent, finishWiki } from "./ops/finish.ts";
+import { merge } from "./ops/merge.ts";
 import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
 import { prOps } from "./ops/pr.ts";
+import { publishOps } from "./ops/publish.ts";
 import { pushOps } from "./ops/push.ts";
 import { release, saveState } from "./ops/save-state.ts";
 import { stop } from "./ops/stop.ts";
@@ -57,13 +60,17 @@ interface ErrorReply {
   error: string;
 }
 
-// The code merge, wiki publish and completion ops (merge, publish,
-// finish-wiki, wiki-sync, finish-wiki-sync) are their own module's to
-// register once they read the version 2 state.
 const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ...Object.entries(prOps),
   ...Object.entries(pushOps),
   ...Object.entries(syncOps),
+  // publish, wiki-sync and finish-wiki-sync.
+  ...Object.entries(publishOps),
+  // Merges the code only: never the wiki, state, labels or the issue.
+  ["merge", merge],
+  // Completes an issue its merge role saved done and merged.
+  ["finish-wiki", finishWiki],
+  ["close-parent", closeParent],
   ["claim", claim],
   // Writes state and nothing else; queued comments ride along on every op (see main).
   ["save-state", saveState],

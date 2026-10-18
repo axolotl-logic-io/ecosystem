@@ -1,11 +1,10 @@
 // What happens once an issue leaves the pipeline or ends a job: completing
 // an issue after its merge role saved it done and merged (finish-wiki),
-// closing a parent whose sub-issues are all closed, posting queued comments,
-// and keeping an unfinished issue's lease.
+// and closing a parent whose sub-issues are all closed.
 
 import { z } from "zod";
 import { removeWorktree } from "../checkouts.ts";
-import { closeClaims, touchClaim } from "../claims.ts";
+import { closeClaims } from "../claims.ts";
 import { comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -14,7 +13,7 @@ import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError, parseRequest } from "../process.ts";
 import { currentRevision } from "../revision.ts";
 import type { IssueState, Revision } from "../state.ts";
-import { ISSUE_STATE, readState, writeState } from "../state.ts";
+import { ISSUE_STATE, readState } from "../state.ts";
 import { confirmWikiPublished } from "../wiki-publication.ts";
 import type { FinishRefusal } from "./publication-guard.ts";
 import { finishGate } from "./publication-guard.ts";
@@ -44,20 +43,11 @@ const FINISH_WIKI_REQUEST = z.looseObject({
   number: z.number().int(),
   state: ISSUE_STATE.optional(),
 });
-// The lane fields are whatever the workflow sent (LaneRequest in claims.ts).
-const RELEASE_REQUEST = z.looseObject({
-  lane: z.unknown().optional(),
-  number: z.number().int(),
-  state: ISSUE_STATE,
-  sweepId: z.unknown().optional(),
-});
 
 type CloseParentReply =
   | { closed: false; reason: string }
   | { closed: false; open: number[] }
   | { closed: true };
-
-type EmptyReply = Record<string, never>;
 
 // `closed` is false when the issue was already closed, as on a retry.
 type FinishWikiReply = { finished: true; closed: boolean } | FinishRefusal;
@@ -243,29 +233,5 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   return { closed: true };
 }
 
-// Only posts the queued comments (the ops CLI does that before any op).
-function post(): EmptyReply {
-  return {};
-}
-
-// The lease with its time renewed, or null when there is none.
-function renewed(lease: unknown): { at: string } | null {
-  if (typeof lease !== "object" || lease === null) {
-    return null;
-  }
-  return { ...lease, at: new Date().toISOString() };
-}
-
-// The sweep ends with the issue unfinished. Its lane keeps the lease and its
-// claim, and its next sweep continues the issue. If the lane never comes back,
-// the lease and claim expire after leaseHours and another lane may take it.
-function release(cfg: Config, request: unknown): EmptyReply {
-  const req = parseRequest(RELEASE_REQUEST, "release", request);
-  const { lease } = req.state;
-  writeState(cfg, req.number, { ...req.state, lease: renewed(lease) });
-  touchClaim(cfg, req.number, req);
-  return {};
-}
-
 export type { CloseParentReply, FinishWikiReply };
-export { closeParent, finishWiki, post, release };
+export { closeParent, finishWiki };

@@ -7,9 +7,8 @@
 import type { IssueComment } from "../comments.ts";
 import { USAGE_MARK } from "../comments.ts";
 import { usageLines } from "../job/usage-comment.ts";
-import type { UsageRecord } from "../job/usage-log.ts";
+import type { UsageRecord, UsageRole } from "../job/usage-log.ts";
 import { parseUsageLine } from "../job/usage-log.ts";
-import type { RoleName } from "../roles/registry.ts";
 
 const MEDIAN = 0.5;
 const P90 = 0.9;
@@ -22,7 +21,7 @@ type SessionRecord = Extract<UsageRecord, { kind: "session" }>;
 // time.
 interface ReportOptions {
   account: string;
-  role: RoleName | null;
+  role: UsageRole | null;
   issue: number | null;
   since: string | null;
 }
@@ -42,7 +41,7 @@ interface Spread {
 }
 
 interface Group {
-  role: RoleName;
+  role: UsageRole;
   state: string;
   model: string;
   count: number;
@@ -52,13 +51,14 @@ interface Group {
 }
 
 // Why a session is flagged: its first turn's context passed firstContext,
-// its peak passed `soft`, its largest tool output passed toolOutputShare of
+// its peak passed `soft` (only the installed version's records have one),
+// its largest tool output passed toolOutputShare of
 // the peak, or its first turn's context grew from the previous attempt's.
 type FlagReason = "first-context" | "past-soft" | "tool-output" | "first-grew";
 
 interface Flagged {
   issue: number;
-  role: RoleName;
+  role: UsageRole;
   state: string;
   attempt: number;
   at: string;
@@ -74,7 +74,7 @@ interface ToolTotal {
 interface Report {
   groups: Group[];
   flagged: Flagged[];
-  tools: { role: RoleName; top: ToolTotal[] }[];
+  tools: { role: UsageRole; top: ToolTotal[] }[];
 }
 
 // The value at nearest rank `p` of `values`, sorted ascending.
@@ -164,7 +164,7 @@ function reasonsOf(
   if (first > flags.firstContext) {
     reasons.push("first-context");
   }
-  if (peak > soft) {
+  if (soft !== undefined && peak > soft) {
     reasons.push("past-soft");
   }
   const largest = session.largestToolOutput?.chars ?? 0;
@@ -202,7 +202,7 @@ function flaggedOf(
 }
 
 function toolsOf(sessions: readonly SessionRecord[]): Report["tools"] {
-  const byRole = new Map<RoleName, Map<string, ToolTotal>>();
+  const byRole = new Map<UsageRole, Map<string, ToolTotal>>();
   for (const { role, tools } of sessions) {
     const totals = byRole.get(role) ?? new Map<string, ToolTotal>();
     for (const [tool, use] of Object.entries(tools)) {

@@ -16,13 +16,13 @@ import { isAllowedUser } from "../github.ts";
 import type { StatusFile } from "../job/status.ts";
 import { currentStageOf, isPipelineJob, readStatus } from "../job/status.ts";
 import { LABELS } from "../labels.ts";
-import { openIssues } from "../ops/sweep.ts";
-import type { IssueRow } from "../ops/sweep-verdict.ts";
 import { isStage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 import { readState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import { afterMarkOf, inputRevisionsOf } from "./inputs.ts";
+import type { IssueRow } from "./open-issues.ts";
+import { openIssues } from "./open-issues.ts";
 import type { IssueJob, JobEnd, Snapshot, SnapshotIssue } from "./queue.ts";
 import type { StartRecord } from "./start-job.ts";
 

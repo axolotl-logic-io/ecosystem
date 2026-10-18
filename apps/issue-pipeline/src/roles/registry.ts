@@ -4,9 +4,15 @@
 import type { Role } from "../job/role-context.ts";
 import type { Stage } from "../stages.ts";
 import { authorRole } from "./author/author.ts";
+import { implementorRole } from "./implementor/implementor.ts";
+import { mergeRole } from "./merge/merge.ts";
+import { reviewerRole } from "./reviewer/reviewer.ts";
 
 const ROLES: Readonly<Partial<Record<Stage, Role>>> = {
   author: authorRole,
+  implement: implementorRole,
+  review: reviewerRole,
+  merge: mergeRole,
 };
 
 // The stage's role, or undefined when none is registered.

@@ -18,7 +18,7 @@ import { z } from "zod";
 import { listRepoComments } from "./comments.ts";
 import { loadConfig } from "./config.ts";
 import { formatReport, usageReport } from "./report/usage.ts";
-import { ROLE_NAMES } from "./roles/registry.ts";
+import { USAGE_ROLES } from "./job/usage-log.ts";
 
 const NO_CONFIG = "--config must name a repo config file";
 const USAGE_ARGS = z.object({
@@ -30,7 +30,7 @@ const USAGE_ARGS = z.object({
     })
     .transform((since) => new Date(since).toISOString())
     .nullable(),
-  role: z.enum(ROLE_NAMES).nullable(),
+  role: z.enum(USAGE_ROLES).nullable(),
   issue: z.coerce.number().int().positive().nullable(),
 });
 
