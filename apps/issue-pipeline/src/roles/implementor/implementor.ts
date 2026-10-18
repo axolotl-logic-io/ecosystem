@@ -72,7 +72,8 @@ async function work(
 
 // Pushes the branch and fills in the PR, which open-pr marks ready when the
 // branch changes code. A change that lives only in the wiki closes the
-// draft; one that changes nothing goes to review as it is, saying so.
+// draft, and once it is closed the issue has no PR; one that changes nothing
+// goes to review as it is, saying so.
 async function pushBranch(
   ctx: RoleContext,
   state: IssueState,
@@ -99,12 +100,14 @@ async function pushBranch(
     );
   }
   const flows = flowsOf(opened);
+  let pr: number | null = opened.pr;
   if (!flows.code && flows.wiki) {
     await ctx.op("close-pr", { number: ctx.issue, pr: opened.pr });
+    pr = null;
   }
   let next: IssueState = {
     ...state,
-    pr: opened.pr,
+    pr,
     headSha: opened.headSha,
     verifiedSha: verified,
     flows,
