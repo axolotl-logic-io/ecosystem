@@ -3,6 +3,7 @@
 // result set aside, once a stop signal is pending.
 
 import type { Effect, SessionEffect } from "../roles/machine.ts";
+import type { SessionsEffect } from "../roles/sessions.ts";
 import type { State } from "../state.ts";
 import type { UsageEntry } from "./run-usage.ts";
 import type { StopSignal } from "./status.ts";
@@ -21,16 +22,26 @@ type Outcome =
   | { ok: true; name: string; reply: unknown }
   | { ok: false; error: string };
 
+// How a session ran: its outcome, its usage and its launch key.
+interface SessionRun {
+  outcome: Outcome;
+  launch: LaunchUsage;
+  key: string;
+}
+
 interface Effects {
   op: (effect: OpEffect) => Promise<Outcome>;
   check: (effect: CheckEffect) => Promise<Outcome>;
-  // Runs the session, giving its outcome, its usage and its launch key. With
-  // `replyCheck`, the session's reply is checked before the session ends, so
-  // it can fix what the check finds (src/job/control.ts).
+  // Runs the session, giving how it ran. With `replyCheck`, the session's
+  // reply is checked before the session ends, so it can fix what the check
+  // finds (src/job/control.ts).
   session: (
     effect: SessionEffect,
     replyCheck?: ReplyCheck,
-  ) => Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }>;
+  ) => Promise<SessionRun>;
+  // Runs the sessions together in their cache order (src/roles/sessions.ts),
+  // giving how each ran, in the effect's order.
+  sessions: (effect: SessionsEffect) => Promise<readonly SessionRun[]>;
   // Appends a usage entry; it never rejects.
   usage: (entry: UsageEntry) => Promise<void>;
   save: (state: State) => Promise<Outcome>;
@@ -61,5 +72,13 @@ async function perform(
   return { kind: "done", outcome };
 }
 
-export type { CheckEffect, Effects, OpEffect, Outcome, Performed, ReplyCheck };
+export type {
+  CheckEffect,
+  Effects,
+  OpEffect,
+  Outcome,
+  Performed,
+  ReplyCheck,
+  SessionRun,
+};
 export { perform };

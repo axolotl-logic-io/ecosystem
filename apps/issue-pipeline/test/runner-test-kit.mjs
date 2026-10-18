@@ -15,7 +15,7 @@ import { installFakeGh } from "./fake-gh.mjs";
 import { roleContext } from "./role-context-fixtures.mjs";
 import { ISSUE, startState, TOY_SCRIPT, toyMachine } from "./runner-toys.mjs";
 
-/** @import { CheckEffect, Effects, OpEffect, Outcome } from "../src/job/run-step.ts" */
+/** @import { CheckEffect, Effects, OpEffect, Outcome, SessionRun } from "../src/job/run-step.ts" */
 /** @import { Entry, RunEnd } from "../src/job/runner.ts" */
 /** @import { UsageEntry } from "../src/job/run-usage.ts" */
 /** @import { LaunchUsage } from "../src/job/usage-tally.ts" */
@@ -182,6 +182,24 @@ function storeOf(options) {
 }
 
 /**
+ * A session's run through `run`, the world's call recorder.
+ * @param {(entry: Call, act: Act) => Promise<Outcome>} run
+ * @param {WorldOptions} options
+ * @param {SessionEffect} effect
+ * @returns {Promise<SessionRun>}
+ */
+async function sessionCall(run, options, effect) {
+  return {
+    outcome: await run(
+      { kind: "session", name: effect.name },
+      { reply: sessionReply(options, effect) },
+    ),
+    launch: { ...LAUNCH, stopped: options.contextStop === true },
+    key: `i7-${effect.name}-1`,
+  };
+}
+
+/**
  * A world: the durable store, every call made, and fresh effects over it.
  * @param {WorldOptions} [options]
  */
@@ -232,14 +250,11 @@ function world(options = {}) {
           { kind: "check", name: effect.check },
           checkAct(store, options, effect),
         ),
-      session: async (effect) => ({
-        outcome: await run(
-          { kind: "session", name: effect.name },
-          { reply: sessionReply(options, effect) },
+      session: (effect) => sessionCall(run, options, effect),
+      sessions: (effect) =>
+        Promise.all(
+          effect.sessions.map((session) => sessionCall(run, options, session)),
         ),
-        launch: { ...LAUNCH, stopped: options.contextStop === true },
-        key: `i7-${effect.name}-1`,
-      }),
       usage: appendTo(usages),
       save: (state) =>
         run(

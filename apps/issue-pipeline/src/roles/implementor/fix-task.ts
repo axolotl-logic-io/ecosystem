@@ -16,7 +16,7 @@ import type { JsonSchema } from "../../workflow/schemas.ts";
 import type {
   TaskContext,
   TaskItem,
-} from "../../workflow/stages/review-text.ts";
+} from "../../workflow/stages/review-task-types.ts";
 import { fixTask, rereviewTask } from "../../workflow/stages/review-text.ts";
 import type { Finding } from "../../workflow/types.ts";
 import type { SessionEffect } from "../machine.ts";

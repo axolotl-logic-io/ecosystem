@@ -14,6 +14,7 @@ import {
   deadPid,
   fakeGh,
   OTHERS_PID,
+  SWEEP_STAGE,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
 
@@ -186,7 +187,7 @@ test("a steer is only logged by default, and with escalationAgentActs it reaches
 test("with escalationAgentActs, a resume restarts a dead job at its stage and a stop labels the issue", () => {
   writeJob({
     issue: ISSUE.resumed,
-    stage: "review",
+    stage: SWEEP_STAGE,
     pid: deadPid(),
     ended: true,
   });
@@ -211,7 +212,7 @@ test("with escalationAgentActs, a resume restarts a dead job at its stage and a 
     (argv) => flagOf(argv, "--issue") === String(ISSUE.resumed),
   );
   assert.equal(resumes.length, 1);
-  assert.equal(flagOf(resumes[0] ?? [], "--stage"), "review");
+  assert.equal(flagOf(resumes[0] ?? [], "--stage"), SWEEP_STAGE);
   assert.ok(resumes[0]?.includes("--resume"));
   assert.ok(linesOf(ISSUE.resumed).includes("resumed agent"));
   const names = effectNames(effectsOf(fakeGh.writes(ghIsRead)));

@@ -7,6 +7,8 @@
 
 import type { JsonSchema } from "../workflow/schemas.ts";
 import type { Role as BudgetRole } from "../workflow/types.ts";
+import type { SessionsEffect } from "./sessions.ts";
+import { runsModel } from "./sessions.ts";
 
 type StateKind = "script" | "session" | "end";
 
@@ -57,11 +59,12 @@ interface SessionEffect {
 }
 
 // What a state does: run an op or a script check with its payload, run a
-// model session, or end the run.
+// model session or several together, or end the run.
 type Effect =
   | { kind: "op"; op: string; payload: Readonly<Record<string, unknown>> }
   | { kind: "check"; check: string; payload: Readonly<Record<string, unknown>> }
   | SessionEffect
+  | SessionsEffect
   | { kind: "end"; end: End };
 
 // The `data` fields that hold a number: the only ones a count may name.
@@ -217,14 +220,11 @@ function kindViolation(
   kind: StateKind,
   effect: Effect,
 ): string[] {
-  const found: string[] = [];
-  if ((effect.kind === "session") !== (kind === "session")) {
-    found.push(`${name}: a ${kind} state with a ${effect.kind} effect`);
+  const model = runsModel(effect) !== (kind === "session");
+  if (model || (effect.kind === "end") !== (kind === "end")) {
+    return [`${name}: a ${kind} state with a ${effect.kind} effect`];
   }
-  if ((effect.kind === "end") !== (kind === "end")) {
-    found.push(`${name}: a ${kind} state with a ${effect.kind} effect`);
-  }
-  return found.slice(0, 1);
+  return [];
 }
 
 // The states reachable from `starts` along `edges`.

@@ -47,7 +47,14 @@ if (replies[request.op]?.hang) {
 // script first commits that file, relative to its cwd, in the repo holding
 // it, logging the commit's sha; an `untracked` script leaves that file
 // uncommitted; a `handoff` script, `{ file, text }`, writes `text` to that
-// file, as a session writes its handoff. It exits when stdin closes.
+// file, as a session writes its handoff. A script with `sessions`, a map
+// from a launch's name (its session file's name less `i<n>-` and `-<seq>`,
+// such as review-tests) to an event list, plays that list for that launch,
+// whatever the order the launches start in (#421). Its list may hold two
+// pseudo-events, played in order and never printed: `{ fakeMark: label }`
+// logs `{ mark: label }` to pi.log and leaves the mark under FAKE_PI_ROOT's
+// marks/, and `{ fakeHold: label }` waits until that mark is there. It
+// exits when stdin closes.
 const FAKE_PI = `#!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -101,6 +108,30 @@ const promptEvents = () => {
   fs.writeFileSync(counter, String(n + 1));
   return script.launches[Math.min(n, script.launches.length - 1)];
 };
+const named = /^i\\d+-(.+)-\\d+\\.jsonl$/u.exec(path.basename(session))?.[1];
+const marks = path.join(root, "marks");
+const held = (label) => new Promise((resolve) => {
+  const timer = setInterval(() => {
+    if (fs.existsSync(path.join(marks, label))) {
+      clearInterval(timer);
+      resolve();
+    }
+  }, 20);
+});
+const playNamed = async (events) => {
+  for (const event of events) {
+    if (event.fakeMark !== undefined) {
+      log({ mark: event.fakeMark, name: named });
+      fs.mkdirSync(marks, { recursive: true });
+      fs.writeFileSync(path.join(marks, event.fakeMark), "");
+    } else if (event.fakeHold !== undefined) {
+      await held(event.fakeHold);
+    } else {
+      print(event);
+    }
+  }
+  print({ type: "agent_settled", aborted: false });
+};
 let rest = null;
 const play = (events) => {
   const at = events.indexOf("wait");
@@ -115,13 +146,17 @@ const play = (events) => {
 const respond = (command, fields) =>
   process.stdout.write(JSON.stringify({ id: command.id, type: "response", command: command.type, ...fields }) + "\\n");
 const handle = (command) => {
-  log({ command });
+  log({ command, name: named });
   if (command.type === "prompt" && script.rejectPrompt) {
     respond(command, { success: false, error: script.rejectPrompt });
   } else if (command.type === "prompt") {
     respond(command, { success: true, data: { disposition: "started" } });
     work();
-    play(promptEvents());
+    if (script.sessions?.[named] !== undefined) {
+      playNamed(script.sessions[named]);
+    } else {
+      play(promptEvents());
+    }
   } else if (command.type === "abort" && !script.ignoreAbort) {
     respond(command, { success: true });
     if (rest !== null) {

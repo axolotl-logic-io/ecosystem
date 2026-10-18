@@ -10,9 +10,11 @@
 // changes, so a count is saved when it goes up. An end's own op runs after
 // the end's save, on the state just saved. It reads nothing but the saved
 // state and context it is given (`every-role-resumes`). It appends a usage
-// entry per ended session and run, and saves reportedTokens with its spend.
+// entry per ended session (src/job/run-sessions.ts) and run, and saves
+// reportedTokens with its spend.
 
-import type { Effect, End, Result, SessionEffect } from "../roles/machine.ts";
+import type { Effect, End, Result } from "../roles/machine.ts";
+import { runsModel } from "../roles/sessions.ts";
 import type {
   LinearScript,
   Machine,
@@ -26,6 +28,7 @@ import type { State } from "../state.ts";
 import { isNetworkError } from "../workflow/stages/network.ts";
 import { isTransientSessionError } from "../workflow/stages/rate-limit.ts";
 import { checkpointsChanged, writtenState } from "./role-state.ts";
+import { runSession, runSessions } from "./run-sessions.ts";
 import type { Effects, Outcome, Performed } from "./run-step.ts";
 import { perform } from "./run-step.ts";
 import type { RunUsage } from "./run-usage.ts";
@@ -159,21 +162,6 @@ async function enter<S extends string, D>(
   return await advance(run, walk, position);
 }
 
-// Runs session `effect` at `state` and appends its usage entry.
-async function session<D>(
-  run: Run<D>,
-  state: string,
-  effect: SessionEffect,
-): Promise<Outcome> {
-  const { effects } = run;
-  const { outcome, launch, key } = await effects.session(effect);
-  const signalled = effects.stopping() !== null;
-  const { stage } = run;
-  const finished = { at: effects.clock(), key, stage, state, effect, launch };
-  await effects.usage(run.usage.session({ ...finished, outcome, signalled }));
-  return outcome;
-}
-
 function execute<D>(run: Run<D>, at: string, effect: Effect): Promise<Outcome> {
   const { effects } = run;
   switch (effect.kind) {
@@ -182,7 +170,9 @@ function execute<D>(run: Run<D>, at: string, effect: Effect): Promise<Outcome> {
     case "check":
       return effects.check(effect);
     case "session":
-      return session(run, at, effect);
+      return runSession(run, at, effect);
+    case "sessions":
+      return runSessions(run, at, effect);
     case "end":
       return Promise.resolve({ ok: false, error: "an end isn't run" });
     default:
@@ -211,7 +201,7 @@ async function advance<S extends string, D>(
   if (effect.kind === "end") {
     return await finish(run, walk, data, effect.end);
   }
-  if (effect.kind === "session" && position.kind !== "session") {
+  if (runsModel(effect) && position.kind !== "session") {
     return await finish(run, walk, data, STEP_FAILED);
   }
   const done = await stepOf(run, position);

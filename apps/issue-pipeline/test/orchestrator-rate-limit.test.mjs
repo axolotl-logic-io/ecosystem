@@ -17,6 +17,7 @@ import {
   MINUTE_MS,
   NOW,
   runFile,
+  SWEEP_STAGE,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
 
@@ -135,16 +136,16 @@ test("rateLimitBackoffMinutes sets the backoff", () => {
 test("a dead job's restart is held as rate-limited during a backoff", () => {
   noBackoff();
   endedAt(RESTART.limited, 0, RATE_LIMITED, "spec");
-  writeJob({ issue: RESTART.dead, stage: "review", pid: deadPid() });
+  writeJob({ issue: RESTART.dead, stage: SWEEP_STAGE, pid: deadPid() });
   const issues = [
     { number: RESTART.limited, state: { stage: "spec" } },
-    { number: RESTART.dead, state: { stage: "review" } },
+    { number: RESTART.dead, state: { stage: SWEEP_STAGE } },
   ];
   assert.deepEqual(tickOver(issues, 0).spawned, []);
   assert.deepEqual(loggedFor(RESTART.dead), [
     {
       issue: RESTART.dead,
-      stage: "review",
+      stage: SWEEP_STAGE,
       action: "held",
       reason: "rate-limited",
     },

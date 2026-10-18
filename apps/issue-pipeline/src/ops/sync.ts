@@ -30,7 +30,9 @@ import { finishProblem } from "./sync-finish.ts";
 // headTree is the head's tree, the same for any head with the same code.
 // patchId is the id of the branch's changes, which a clean rebase keeps, or
 // null when there are none (review-keeps-on-clean-rebase). bundlePath is the
-// review bundle beside the diff: the diff, then the changed files' head texts.
+// review bundle beside the diff: the diff, then the changed files' head texts;
+// bundleText is its text, so a review's tasks can hold it without reading the
+// file back (#421).
 interface ReviewReply {
   headSha: string;
   headTree: string;
@@ -41,6 +43,7 @@ interface ReviewReply {
   changedFiles: string[];
   bundlePath: string;
   bundleLines: number;
+  bundleText: string;
 }
 
 // A stacked sync's reply names what the branch is stacked on after it; an
@@ -168,6 +171,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
     changedFiles: nonEmptyLines(names).concat(full.files),
     bundlePath,
     bundleLines: bundle.split("\n").length,
+    bundleText: bundle,
   };
 }
 

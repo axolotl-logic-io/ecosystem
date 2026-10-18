@@ -43,7 +43,7 @@ const JOB_OUTCOME = z.discriminatedUnion("kind", [
 // A step of a role's run (src/job/runner.ts); null fields while it runs.
 const STEP = z.object({
   at: z.string(),
-  effect: z.enum(["op", "check", "session", "end"]),
+  effect: z.enum(["op", "check", "session", "sessions", "end"]),
   name: z.string(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),

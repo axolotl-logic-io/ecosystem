@@ -23,6 +23,10 @@ const ISSUE_SPAN = 1000;
 // A process that is alive but not the test's own: signal 0 to it fails with
 // EPERM unless the test runs as root, when it succeeds.
 const OTHERS_PID = 1;
+// A reader stage that runs the sweep, not a role, so the watchdog restarts its
+// dead job with --resume (a stage that runs a role restarts from its state,
+// #301). Review and fix run roles since #421 and #418.
+const SWEEP_STAGE = "security";
 const PIPELINE_LABELS = [
   "agent:working",
   "agent:needs-info",
@@ -288,5 +292,6 @@ export {
   openWith,
   root,
   runFile,
+  SWEEP_STAGE,
   writeJob,
 };

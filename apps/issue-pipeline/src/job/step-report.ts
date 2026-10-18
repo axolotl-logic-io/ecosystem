@@ -32,6 +32,8 @@ function nameOf(effect: Effect): string {
       return effect.check;
     case "session":
       return effect.name;
+    case "sessions":
+      return "sessions";
     case "end":
       return effect.end.kind;
     default:

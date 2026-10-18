@@ -24,6 +24,7 @@ import {
   NOW,
   OTHERS_PID,
   runFile,
+  SWEEP_STAGE,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
 
@@ -97,15 +98,15 @@ function resumeArgv(issue, stage) {
 }
 
 test("a dead job is restarted as the same stage with --resume, and the scheduler starts nothing else for it", () => {
-  writeJob({ issue: ISSUE.dead, stage: "review", pid: deadPid() });
+  writeJob({ issue: ISSUE.dead, stage: SWEEP_STAGE, pid: deadPid() });
   const { spawned } = tickOver([
-    { number: ISSUE.dead, state: { stage: "review" } },
+    { number: ISSUE.dead, state: { stage: SWEEP_STAGE } },
   ]);
-  assert.deepEqual(spawned, [resumeArgv(ISSUE.dead, "review")]);
+  assert.deepEqual(spawned, [resumeArgv(ISSUE.dead, SWEEP_STAGE)]);
   assert.deepEqual(loggedFor(ISSUE.dead), [
     {
       issue: ISSUE.dead,
-      stage: "review",
+      stage: SWEEP_STAGE,
       action: "resumed",
       reason: "dead",
     },
@@ -131,11 +132,11 @@ test("a dead triage job is restarted without --resume, since its role restarts f
 });
 
 test("a restarted job still running from its start record is not restarted again while its old job.json is dead", () => {
-  writeJob({ issue: ISSUE.restarted, stage: "review", pid: deadPid() });
-  const issues = [{ number: ISSUE.restarted, state: { stage: "review" } }];
+  writeJob({ issue: ISSUE.restarted, stage: SWEEP_STAGE, pid: deadPid() });
+  const issues = [{ number: ISSUE.restarted, state: { stage: SWEEP_STAGE } }];
   const running = { spawnPid: OTHERS_PID };
   assert.deepEqual(tickOver(issues, 0, running).spawned, [
-    resumeArgv(ISSUE.restarted, "review"),
+    resumeArgv(ISSUE.restarted, SWEEP_STAGE),
   ]);
   assert.deepEqual(tickOver(issues, 1, running).spawned, []);
   assert.deepEqual(
@@ -147,9 +148,9 @@ test("a restarted job still running from its start record is not restarted again
 });
 
 test("after maxResumes restarts of a stage a dead job stops its issue and PR with agent:stopped-job", () => {
-  writeJob({ issue: ISSUE.capped, stage: "review", pid: deadPid() });
+  writeJob({ issue: ISSUE.capped, stage: SWEEP_STAGE, pid: deadPid() });
   const issues = [
-    { number: ISSUE.capped, state: { stage: "review", pr: PR_OF_CAPPED } },
+    { number: ISSUE.capped, state: { stage: SWEEP_STAGE, pr: PR_OF_CAPPED } },
   ];
   assert.equal(tickOver(issues).spawned.length, 1);
   assert.equal(tickOver(issues).spawned.length, 1);
@@ -170,15 +171,15 @@ test("finished, failed and stopped jobs, and jobs of issues with a stop label, a
   writeJob({ issue: ISSUE.failed, stage: "spec", pid: gone, outcome: FAILED });
   writeJob({
     issue: ISSUE.stoppedJob,
-    stage: "review",
+    stage: SWEEP_STAGE,
     pid: gone,
     outcome: STOPPED,
   });
-  writeJob({ issue: ISSUE.labelled, stage: "review", pid: gone });
+  writeJob({ issue: ISSUE.labelled, stage: SWEEP_STAGE, pid: gone });
   const { spawned } = tickOver([
     { number: ISSUE.finished, state: { stage: "spec" } },
     { number: ISSUE.failed, state: { stage: "spec" } },
-    { number: ISSUE.stoppedJob, state: { stage: "review" } },
+    { number: ISSUE.stoppedJob, state: { stage: SWEEP_STAGE } },
     {
       number: ISSUE.labelled,
       labels: ["agent:stopped-error"],
@@ -197,13 +198,13 @@ test("finished, failed and stopped jobs, and jobs of issues with a stop label, a
 });
 
 test("a session silent for silentMinutes is steered once, its job gets SIGTERM after as long again, and is resumed once stopped", () => {
-  const job = { issue: ISSUE.silent, stage: "review", pid: OTHERS_PID };
+  const job = { issue: ISSUE.silent, stage: SWEEP_STAGE, pid: OTHERS_PID };
   writeJob({ ...job, silentMinutes: SILENT_MINUTES - 1 });
-  const issues = [{ number: ISSUE.silent, state: { stage: "review" } }];
+  const issues = [{ number: ISSUE.silent, state: { stage: SWEEP_STAGE } }];
   const early = tickOver(issues);
   assert.deepEqual([early.steered, early.terminated], [[], []]);
   const status = writeJob({ ...job, silentMinutes: SILENT_MINUTES });
-  const key = `i${ISSUE.silent}-review-1`;
+  const key = `i${ISSUE.silent}-${SWEEP_STAGE}-1`;
   assert.deepEqual(tickOver(issues).steered, [
     [status.socket, key, SILENT_STEER],
   ]);
@@ -219,7 +220,7 @@ test("a session silent for silentMinutes is steered once, its job gets SIGTERM a
     outcome: STOPPED,
   });
   const resumed = tickOver(issues, SILENT_MINUTES + 2);
-  assert.deepEqual(resumed.spawned, [resumeArgv(ISSUE.silent, "review")]);
+  assert.deepEqual(resumed.spawned, [resumeArgv(ISSUE.silent, SWEEP_STAGE)]);
   assert.deepEqual(
     loggedFor(ISSUE.silent).map(({ action, reason }) => `${action} ${reason}`),
     [`steered silent:${key}`, `killed silent:${key}`, "resumed dead"],
@@ -244,14 +245,17 @@ test("a session heard from after its steer is not stopped, and ops launches are 
 
 test("a restart's line names its job's pid and id, and a later stop's escalation the attempt its stopped stage is at and the issue's tokens", () => {
   const issue = ISSUE.escalatedAfterRestart;
-  writeJob({ issue, stage: "review", pid: deadPid() });
+  writeJob({ issue, stage: SWEEP_STAGE, pid: deadPid() });
   const { spawned } = tickOver([
-    { number: issue, state: { stage: "review", reportedTokens: ISSUE_TOKENS } },
+    {
+      number: issue,
+      state: { stage: SWEEP_STAGE, reportedTokens: ISSUE_TOKENS },
+    },
   ]);
   assert.equal(spawned.length, 1);
   const state = {
     stage: "stopped",
-    stoppedStage: "review",
+    stoppedStage: SWEEP_STAGE,
     reportedTokens: ISSUE_TOKENS,
   };
   tickOver([{ number: issue, labels: ["agent:stopped-error"], state }]);

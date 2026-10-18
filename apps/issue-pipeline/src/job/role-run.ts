@@ -1,48 +1,32 @@
 // A registered stage's run in a stage job (src/job.ts): it claims the issue
 // through the claim op, then runs the stage's role (src/roles/registry.ts)
-// on the role runner from the claim's state. This module alone knows how a
-// role's effects run in a job: ops and sessions as the job's launches
-// (src/job/launch.ts), saves through the save-state op, the stop from the
-// job's control and each step in job.json. On a signal it saves the issue at
-// the stage it last saved, with no lease, as a sweep's stop does.
+// on the role runner from the claim's state. This module and its launcher
+// alone know how a role's effects run in a job: ops and sessions as the job's
+// launches (src/job/role-launcher.ts), saves through the save-state op, the
+// stop from the job's control and each step in job.json. On a signal it saves
+// the issue at the stage it last saved, with no lease, as a sweep's stop does.
 
 import type { Config } from "../config.ts";
 import { paths as configPaths } from "../config.ts";
-import type { SessionEffect } from "../roles/machine.ts";
 import type { Role } from "../roles/registry.ts";
 import type { RoleContext } from "../roles/walk.ts";
 import type { State } from "../state.ts";
 import { STATE } from "../state.ts";
-import { parseOps } from "../workflow/launch-results.ts";
 import type { OpsFrame } from "../workflow/launches.ts";
-import { childSpec, opsSpec } from "../workflow/launches.ts";
-import type { LaunchMeta } from "../workflow/signing.ts";
 import { claimLaunch, claimStep } from "../workflow/stages/entry.ts";
 import { isSweepConfig } from "../workflow/stages/entry-replies.ts";
-import type { OpLaunch } from "../workflow/stages/types.ts";
 import { sweepSettings } from "../workflow/sweep-config.ts";
 import type { ItemPaths, JobLayout } from "../workflow/types.ts";
-import type { ContextStop } from "./context-watch.ts";
 import type { Control } from "./control.ts";
 import type { LaunchHooks } from "./launch.ts";
-import { runLaunch } from "./launch.ts";
-import { replyFiller } from "./reply-file.ts";
-import type { Reply } from "./role-launches.ts";
-import {
-  opLaunchOf,
-  opOutcome,
-  sessionLaunchOf,
-  succeeded,
-} from "./role-launches.ts";
-import type { OpEffect, Outcome, ReplyCheck } from "./run-step.ts";
-import { sessionOutcome } from "./run-usage.ts";
+import type { Launcher } from "./role-launcher.ts";
+import { launcherOf } from "./role-launcher.ts";
+import { opLaunchOf, opOutcome, succeeded } from "./role-launches.ts";
+import type { OpEffect, Outcome } from "./run-step.ts";
 import type { RunEnd } from "./runner.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 import { usageAppender } from "./usage-append.ts";
-import type { LaunchUsage, UsageTally } from "./usage-tally.ts";
-import { usageTally } from "./usage-tally.ts";
 
-const MS_PER_SECOND = 1000;
 // The reason of a claim that passed with a state the role can't run from.
 const BAD_STATE = "the claim's state for the issue doesn't parse";
 
@@ -78,81 +62,6 @@ interface RoleJob {
   hooks: LaunchHooks;
   status: JobStatus;
   control: Control;
-}
-
-// The job's launches for the role: each op and session gets the next
-// sequence number in its key, and its outcome in job.json. A session's reply
-// check answers on the job's control socket while the session runs; both it
-// and the role read the reply with its reply file filled in.
-interface Launcher {
-  op: (launch: OpLaunch) => Promise<Reply>;
-  session: (
-    effect: SessionEffect,
-    replyCheck?: ReplyCheck,
-  ) => Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }>;
-}
-
-// The job's hooks, which also feed every record and stop to `tally`.
-function tallied(hooks: LaunchHooks, tally: UsageTally): LaunchHooks {
-  return {
-    ...hooks,
-    record: (key: string, record: unknown): void => {
-      tally.record(key, record);
-      hooks.record(key, record);
-    },
-    contextStopped: (key: string, stop: ContextStop): void => {
-      tally.contextStopped(key);
-      hooks.contextStopped(key, stop);
-    },
-  };
-}
-
-function launcherOf(job: RoleJob): Launcher {
-  let seq = 0;
-  const meta: Record<string, LaunchMeta> = {};
-  function settled(key: string, ok: boolean): void {
-    let outcome: "ok" | "failed" = "failed";
-    if (ok) {
-      outcome = "ok";
-    }
-    job.status.settled(key, outcome);
-  }
-  return {
-    op: async (launch: OpLaunch): Promise<Reply> => {
-      seq += 1;
-      const spec = opsSpec(job.frame, seq, launch, null);
-      const reply = parseOps(await runLaunch(spec, job.hooks));
-      settled(spec.key, succeeded(reply));
-      return reply;
-    },
-    session: async (
-      effect: SessionEffect,
-      replyCheck?: ReplyCheck,
-    ): Promise<{ outcome: Outcome; launch: LaunchUsage; key: string }> => {
-      seq += 1;
-      const item = { n: job.issue, worktree: job.repo };
-      const spec = childSpec(seq, item, sessionLaunchOf(effect), meta);
-      const tally = usageTally(job.hooks.contextLimits.soft);
-      const startedAt = Date.now();
-      const fill = replyFiller(job.repo, effect.replyFile);
-      let release: (() => void) | null = null;
-      if (replyCheck !== undefined) {
-        release = job.control.checkReplies(spec.key, (reply: unknown) =>
-          replyCheck(fill(reply)),
-        );
-      }
-      const raw = await runLaunch(spec, tallied(job.hooks, tally));
-      release?.();
-      settled(spec.key, raw.ok);
-      const seconds = (Date.now() - startedAt) / MS_PER_SECOND;
-      const launch = tally.usage(seconds);
-      const outcome = sessionOutcome(raw);
-      if (outcome.ok) {
-        outcome.reply = fill(outcome.reply);
-      }
-      return { outcome, launch, key: spec.key };
-    },
-  };
 }
 
 // What the role's locate reads besides the claimed state: the claim's paths,
@@ -212,6 +121,7 @@ async function runClaimed(
           await launcher.op(opLaunchOf(issue, effect.op, effect.payload)),
         ),
       session: launcher.session,
+      sessions: launcher.sessions,
       usage,
       save,
       clock: (): Date => new Date(),
@@ -260,4 +170,4 @@ async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
 }
 
 export type { RoleJob, RoleLine, RoleStageEnd };
-export { runRoleStage, tallied };
+export { runRoleStage };

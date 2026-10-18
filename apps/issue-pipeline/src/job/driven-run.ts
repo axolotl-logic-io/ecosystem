@@ -21,7 +21,7 @@ import type { LaunchHooks } from "./launch.ts";
 import { runLaunch } from "./launch.ts";
 import { runAll } from "./pool.ts";
 import type { OpsRaw, SessionRaw } from "./raw-results.ts";
-import { tallied } from "./role-run.ts";
+import { tallied } from "./role-launcher.ts";
 import type { UsageEntry } from "./run-usage.ts";
 import { endedOf, sessionOutcome } from "./run-usage.ts";
 import type { JobStatus, StopSignal } from "./status.ts";

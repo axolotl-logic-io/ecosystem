@@ -26,12 +26,13 @@ const BUNDLE_REPLY = z.looseObject({
   diffPath: z.string(),
   bundlePath: z.string().optional(),
   bundleLines: z.unknown().optional(),
+  bundleText: z.unknown().optional(),
 });
 
 // A file git counts as binary, since it holds NUL bytes.
 const BINARY = Buffer.from("\u0089PNG\u0000\u0000binary-415\n", "latin1");
 
-/** @typedef {{ diffPath: string, bundlePath?: string | undefined, bundleLines?: unknown }} BundleReply */
+/** @typedef {{ diffPath: string, bundlePath?: string | undefined, bundleLines?: unknown, bundleText?: unknown }} BundleReply */
 /** @typedef {{ reply: BundleReply, diff: string, bundle: string }} Prepared */
 
 // prepare-review for issue `n` with `config`: its reply, the diff it wrote and
@@ -106,6 +107,7 @@ test("prepare-review writes bundle.md beside the diff: the commits and the diff 
   assert.ok(bravo >= 0, `b-file's head text missing from:\n${files}`);
   assert.ok(alpha < bravo, "the files are not in path order");
   assert.equal(reply.bundleLines, bundle.split("\n").length);
+  assert.equal(reply.bundleText, bundle, "the reply holds the bundle's text");
 });
 
 test("a second prepare-review at the same head writes the same bundle, byte for byte", () => {

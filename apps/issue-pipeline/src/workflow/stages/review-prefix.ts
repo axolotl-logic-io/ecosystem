@@ -8,6 +8,7 @@ import type { ReviewLens } from "../lenses.ts";
 import { LENSES } from "../lenses.ts";
 import { practicesNote } from "../practices.ts";
 import { preamble } from "../prompts.ts";
+import type { ReviewTaskContext, ReviewTaskItem } from "./review-task-types.ts";
 import type { ReviewDiff } from "./review-text.ts";
 import {
   LENS_OUTPUT_RULES,
@@ -15,7 +16,6 @@ import {
   SPEC_RULE_REVIEW,
   specSection,
 } from "./review-text.ts";
-import type { StageContext, StageState } from "./types.ts";
 
 // The review bundle's size bound, in characters (#415): changed files' head
 // texts go into the bundle, in path order, while it stays within this; the
@@ -35,8 +35,8 @@ interface ReviewBundle {
 // The lines every lens's task over `bundle` starts with. Nothing in them
 // names a lens: the preamble's role is the plain "reviewer".
 function sharedPrefix(
-  ctx: StageContext,
-  state: StageState,
+  ctx: ReviewTaskContext,
+  state: ReviewTaskItem,
   bundle: ReviewBundle,
 ): string[] {
   const { cfg } = ctx;
@@ -51,8 +51,8 @@ function sharedPrefix(
 // The first reviewer's task for `lens`: the shared prefix, then the lens's
 // part, when `review` is a bundle; today's diff-path task when it is a diff.
 function lensTaskShared(
-  ctx: StageContext,
-  state: StageState,
+  ctx: ReviewTaskContext,
+  state: ReviewTaskItem,
   lens: ReviewLens,
   review: ReviewDiff | ReviewBundle,
 ): string {

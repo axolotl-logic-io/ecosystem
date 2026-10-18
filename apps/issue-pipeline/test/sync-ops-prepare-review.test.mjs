@@ -121,7 +121,7 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
 function reviewOutcome(out, want) {
   const file = fs.readFileSync(want.reply.diffPath, "utf8");
   const expected = JSON.parse(okLine("prepare-review", want.reply));
-  const { bundlePath, bundleLines, ...reply } = JSON.parse(out);
+  const { bundlePath, bundleLines, bundleText, ...reply } = JSON.parse(out);
   return {
     got: { reply, file },
     expected: { reply: expected, file: want.file },

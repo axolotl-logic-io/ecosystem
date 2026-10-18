@@ -12,6 +12,7 @@ import {
   configWith,
   deadPid,
   OTHERS_PID,
+  SWEEP_STAGE,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
 
@@ -31,11 +32,11 @@ test("once the last hour's tokens reach tokensPerHour a dead job is held for the
   const rated = loadConfig(configWith({ tokensPerHour: TOKENS_PER_HOUR }));
   writeJob({
     issue: ISSUE.rated,
-    stage: "review",
+    stage: SWEEP_STAGE,
     pid: deadPid(),
     tokens: TOKENS_PER_HOUR,
   });
-  const issues = [{ number: ISSUE.rated, state: { stage: "review" } }];
+  const issues = [{ number: ISSUE.rated, state: { stage: SWEEP_STAGE } }];
   for (let at = 0; at < HELD_TICKS; at += 1) {
     assert.deepEqual(tickOver(issues, 0, { config: rated }).spawned, []);
   }
