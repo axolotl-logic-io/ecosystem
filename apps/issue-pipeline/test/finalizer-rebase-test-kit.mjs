@@ -47,6 +47,7 @@ const OK_SAVE = { ok: true, name: "ok", reply: { ok: true } };
  * @property {string} [test] the repo's test command (default "true")
  * @property {Record<string, unknown>} [start] fields over the state at merge
  * @property {string} [mergeable] GitHub's mergeable for the PR (default MERGEABLE)
+ * @property {Record<string, unknown>} [config] settings over the repo config's
  */
 
 /**
@@ -65,7 +66,10 @@ function placeOf(setup) {
     base = fx.advanceBase(`f${issue}`, "branch");
   }
   const commands = { test: setup.test ?? "true" };
-  const config = fx.configWith(`config-${issue}.json`, { commands });
+  const config = fx.configWith(`config-${issue}.json`, {
+    commands,
+    ...setup.config,
+  });
   const pr = PR_OFFSET + issue;
   /** @type {State} */
   const saved = {

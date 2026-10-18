@@ -14,6 +14,7 @@ import { assertClean, remoteHead } from "../git-state.ts";
 import { gh, ghJson } from "../github.ts";
 import { LABELS, setLabels } from "../labels.ts";
 import { OpsError, run } from "../process.ts";
+import { holdWikiPin } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
 
 interface PrReply {
@@ -136,6 +137,7 @@ function startBranch(cfg: Config, n: number): string {
   if (remote !== null) {
     return remote;
   }
+  holdWikiPin(cfg, wt);
   assertClean(wt);
   const message = `Start work on #${n}\n\nPipeline-Agent: coordinator`;
   // A job checkout's pre-commit hook passes only commits that say so.

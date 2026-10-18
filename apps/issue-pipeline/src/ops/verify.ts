@@ -13,6 +13,7 @@ import { matchAny } from "../globs.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 import { measureFrom, STACKED_ON } from "../stack.ts";
+import { holdWikiPin } from "../wiki.ts";
 import type { Change } from "./fails-before-fix.ts";
 import { failsBeforeFix } from "./fails-before-fix.ts";
 
@@ -215,6 +216,9 @@ function verify(cfg: Config, request: unknown): VerifyReply {
   const { number, testsOnly, stackedOn } = REQUEST.parse(request);
   const settings = SETTINGS.parse(cfg);
   const wt = paths.worktree(cfg, number);
+  // The finalizer's rebase (#422), or a writer's own reset, may have
+  // replayed commits that move the wiki pin.
+  holdWikiPin(cfg, wt);
   assertClean(wt);
   fetchIn(cfg, wt, cfg.baseBranch);
   const sha = head(wt);

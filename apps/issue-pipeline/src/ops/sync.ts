@@ -9,23 +9,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
-import { branchChanges, recordPush } from "../checkouts.ts";
+import { branchChanges } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import {
-  assertClean,
-  fetchIn,
-  head,
-  patchIdOf,
-  remoteHead,
-} from "../git-state.ts";
-import { git } from "../github.ts";
+import { assertClean, fetchIn, head, patchIdOf } from "../git-state.ts";
 import { parseRequest, run } from "../process.ts";
-import { abortRebase, rebaseInProgress, unmergedFiles } from "../rebase.ts";
+import { rebaseInProgress, unmergedFiles } from "../rebase.ts";
 import type { StackedOn, SyncTarget } from "../stack.ts";
 import { measureFrom, STACKED_ON, syncTarget } from "../stack.ts";
+import { holdWikiPin } from "../wiki.ts";
 import { commitLog, reviewBundle, withWiki } from "./review-diff.ts";
-import { finishProblem } from "./sync-finish.ts";
+import { finishProblem, pushBranch, resetToRemote } from "./sync-finish.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
 // patchId is the id of the branch's changes, which a clean rebase keeps, or
@@ -175,25 +169,6 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   };
 }
 
-// Puts the worktree back on the pushed branch, dropping a half-done rebase.
-function resetToRemote(cfg: Config, n: number): void {
-  const wt = paths.worktree(cfg, n);
-  abortRebase(wt);
-  const remote = remoteHead(cfg, n);
-  if (remote !== null) {
-    run("git", ["-C", wt, "reset", "--hard", remote]);
-  }
-  run("git", ["-C", wt, "clean", "-fd"]);
-}
-
-// Pushes the worktree's head as the issue's branch for `op`, recording the
-// push first.
-function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
-  const target = `HEAD:refs/heads/${paths.branch(n)}`;
-  recordPush(cfg, n, head(wt), op);
-  git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", target]);
-}
-
 // The reply's stackedOn for a sync of a branch that was stacked when the
 // request came; nothing for one that wasn't.
 function stackedReply(
@@ -235,6 +210,7 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   if (rebaseInProgress(wt)) {
     resetToRemote(cfg, n); // left over from a crashed run
   }
+  holdWikiPin(cfg, wt);
   assertClean(wt);
   const target = syncTarget(cfg, wt, req.stackedOn);
   const stacked = stackedReply(req.stackedOn, target);
@@ -245,10 +221,15 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     return { changed: false, conflict: false, headSha, ...changes, ...stacked };
   }
   const before = head(wt);
-  if (!gitSucceeds(wt, ["rebase", "--onto", onto, upstream])) {
+  const rebased = gitSucceeds(wt, ["rebase", "--onto", onto, upstream]);
+  if (!rebased) {
     const keep = req.keepConflict === true;
-    return { ...conflictReply(wt, onto, keep), ...stacked };
+    const conflict = conflictReply(wt, onto, keep);
+    // The stopped rebase may have replayed commits that move the wiki pin.
+    holdWikiPin(cfg, wt);
+    return { ...conflict, ...stacked };
   }
+  holdWikiPin(cfg, wt);
   try {
     pushBranch(cfg, n, wt, "sync-base");
   } catch (error: unknown) {
@@ -279,7 +260,9 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
   if (req.abort === true) {
     reason = textOr(req.reason, "aborted");
   } else {
-    reason = finishProblem(cfg, wt, req);
+    // The resolver's own rebase --continue may have replayed pin commits.
+    holdWikiPin(cfg, wt);
+    reason = finishProblem(cfg, n, req);
   }
   if (reason !== undefined) {
     resetToRemote(cfg, n);

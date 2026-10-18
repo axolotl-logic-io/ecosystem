@@ -21,7 +21,7 @@ import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError, run, runFailure, shell } from "./process.ts";
 import type { StackedOn } from "./stack.ts";
-import { pushWikiBranch, wikiAhead } from "./wiki.ts";
+import { holdWikiPin, pushWikiBranch, wikiAhead } from "./wiki.ts";
 
 const TEARDOWN_TIMEOUT_MS = 300_000;
 const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
@@ -154,6 +154,8 @@ function unsavedWork(cfg: Config, n: number, pr: number | null): string | null {
   if (!fs.existsSync(path.join(wt, ".git"))) {
     return "not a git worktree";
   }
+  // The wiki checkout's own work is unsavedWiki's to judge.
+  holdWikiPin(cfg, wt);
   const dirty = uncommitted(wt, "the worktree");
   if (dirty !== null) {
     return dirty;
@@ -227,6 +229,7 @@ function push(
   { allowEmpty = false }: { allowEmpty?: boolean } = {},
 ): PushResult {
   const wt = paths.worktree(cfg, number);
+  holdWikiPin(cfg, wt);
   assertClean(wt, "worktree");
   const wiki = paths.wiki(cfg, number);
   if (wikiCfg(cfg) !== null && fs.existsSync(path.join(wiki, ".git"))) {

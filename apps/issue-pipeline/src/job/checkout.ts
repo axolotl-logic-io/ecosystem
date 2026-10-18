@@ -21,7 +21,7 @@ import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
 import { run } from "../process.ts";
-import { ensureWiki } from "../wiki.ts";
+import { ensureWiki, holdWikiPin } from "../wiki.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";
 import type { Access } from "./pipeline-commit.ts";
 
@@ -261,6 +261,8 @@ async function closeJobCheckout(
   const { root, repo, docs, wiki } = job;
   try {
     const dropped = reported((): DroppedChanges => {
+      // A moved wiki checkout is no change of the code checkout's.
+      holdWikiPin(cfg, repo);
       const lost: string[] = [];
       const patches: string[] = [];
       for (const name of CHECKOUTS) {

@@ -48,9 +48,11 @@ function configureClone(cfg: Config, clone: string): void {
   writeHook(clone, "pre-push", PRE_PUSH_HOOK);
 }
 
+// Writes git hook `name` of `clone`. A worktree's hooks are its clone's,
+// so one written from a worktree runs in every worktree of that clone.
 function writeHook(clone: string, name: string, script: string): void {
-  const gitDir = gitIn(clone, ["rev-parse", "--absolute-git-dir"]).trim();
-  const hook = path.join(gitDir, "hooks", name);
+  const hooks = gitIn(clone, ["rev-parse", "--git-path", "hooks"]).trim();
+  const hook = path.resolve(clone, hooks, name);
   fs.mkdirSync(path.dirname(hook), { recursive: true });
   fs.writeFileSync(hook, script);
   fs.chmodSync(hook, HOOK_MODE);
@@ -78,4 +80,4 @@ function updateSubmodules(cfg: Config, dir: string): void {
   ]);
 }
 
-export { configureClone, GH_HELPER, guardCommits, updateSubmodules };
+export { configureClone, GH_HELPER, guardCommits, updateSubmodules, writeHook };

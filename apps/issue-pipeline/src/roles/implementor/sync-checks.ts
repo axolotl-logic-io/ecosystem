@@ -13,6 +13,7 @@ import type { CheckEffect, Outcome } from "../../job/run-step.ts";
 import { run } from "../../process.ts";
 import { rebaseInProgress, unmergedFiles } from "../../rebase.ts";
 import { syncTarget } from "../../stack.ts";
+import { holdWikiPin } from "../../wiki.ts";
 import { flowsOf } from "../../workflow/flows.ts";
 import {
   finishReplyOf,
@@ -154,9 +155,12 @@ function resolverAnswer(payload: Payload): Outcome {
 }
 
 // Continues the resolved rebase in `dir`: `clean` once it finishes, or
-// `conflict` with the files of the next commit that stops.
-function continued(dir: string): Outcome {
+// `conflict` with the files of the next commit that stops. The commits it
+// replays may move the wiki pin, so the next resolver's checkout has the
+// pin held again.
+function continued(cfg: Config, dir: string): Outcome {
   git(dir, ["rebase", "--continue"]);
+  holdWikiPin(cfg, dir);
   if (rebaseInProgress(dir)) {
     return answer("conflict", { files: unmergedFiles(dir) });
   }
@@ -234,7 +238,7 @@ function syncChecks(
     rebase: (payload: Payload) => guarded(() => rebased(effects, payload)),
     "resolver-reply": (payload: Payload) =>
       guarded(() => resolverAnswer(payload)),
-    continue: () => guarded(() => continued(dir)),
+    continue: () => guarded(() => continued(jobCfg, dir)),
     "finish-sync": (payload: Payload) =>
       guarded(() => finished(effects, payload)),
     abort: (payload: Payload) => guarded(() => aborted(effects, payload)),
