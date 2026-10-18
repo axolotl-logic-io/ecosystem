@@ -38,6 +38,7 @@ import {
   NEW_INPUTS,
   PR,
   REVISION,
+  SHORT_SHA_LENGTH,
   sha,
   WIKI,
 } from "./reviewer-and-merge-role-kit.mjs";
@@ -107,7 +108,7 @@ test("the security review is a fresh read-only Reviewer session over the merge c
   const { ctx, calls } = merging();
   await mergeRole(ctx);
   assert.deepEqual(firstPayload(calls, "prepare-review"), {
-    tag: `security-${MERGE_COMMIT.slice(0, 12)}`,
+    tag: `security-${MERGE_COMMIT.slice(0, SHORT_SHA_LENGTH)}`,
     sinceSha: null,
     codeMerged: { pr: PR, sha: MERGE_COMMIT },
   });

@@ -1,9 +1,11 @@
 // @ts-check
-// The merge role's end through a fake RoleContext: the publish when no code
-// is left to merge (merged before this job, or a change that lives only in
-// the wiki), the completion saved before the finish op, a refused publish
-// that completes nothing, and the finish reconciliation of a saved
-// completion, which runs only the finish op, never a merge or a publish.
+// The merge role's end through a fake RoleContext: the security review and
+// publish when no code is left to merge (merged before this job, or a
+// change that lives only in the wiki), the completion saved before the
+// finish op, a refused publish that completes nothing, and the finish
+// reconciliation of a saved completion, which runs only the finish op once
+// its security receipt clears exactly what merged, never a merge or a
+// publish.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -14,20 +16,24 @@ import {
   MERGED_REVISION,
   merging,
   mutationsOf,
+  PREPARED_MERGED,
   QUEUE,
+  WIKI_UNCHANGED,
 } from "./merge-role-test-kit.mjs";
 import {
+  callNames,
   endCode,
   firstPayload,
   freshBefore,
   opNames,
   opPayloads,
+  postsOf,
   savesOf,
   sessionsOf,
   stateOf,
 } from "./reviewer-and-merge-role-calls-kit.mjs";
 import {
-  approvedReview,
+  COMMENT_ID,
   current,
   fakeContext,
   gherkinComment,
@@ -42,11 +48,25 @@ import {
 } from "./reviewer-and-merge-role-kit.mjs";
 
 const NETWORK = /network/u;
+const CLEARED = {
+  revision: MERGED_REVISION,
+  commentId: COMMENT_ID,
+  finding: null,
+};
 const DONE = {
   stage: /** @type {const} */ ("done"),
   merged: MERGED_REVISION,
-  review: approvedReview(),
+  security: CLEARED,
 };
+
+// What runs between the security review session and the publish: the
+// revision read fresh after the session, the receipt's comment and its save,
+// and nothing that could move a head.
+/** @param {Parameters<typeof callNames>[0]} calls */
+function betweenSessionAndPublish(calls) {
+  const names = callNames(calls);
+  return names.slice(names.indexOf("session") + 1, names.indexOf("publish"));
+}
 
 test("a finish that fails leaves the completion saved for a retry", async () => {
   const { ctx, calls } = merging({
@@ -67,29 +87,43 @@ test("a refused publish waits and records no completion", async () => {
   assert.ok(savesOf(calls).every((saved) => saved.stage !== "done"));
 });
 
-test("after a confirmed code merge, the merge commit is verified and only the reviewed wiki checked and published", async () => {
+test("after a confirmed code merge, the merge commit is verified, the hardened wiki checked, reviewed for security and published", async () => {
   const { ctx, calls } = merging({
     state: {
       ...CODE_MERGED,
       verifiedSha: HEAD,
-      review: approvedReview({ revision: MERGED_REVISION }),
+      hardened: MERGED_REVISION,
     },
     ops: {
-      "current-revision": [AFTER_MERGE, AFTER_MERGE],
+      "current-revision": [AFTER_MERGE, AFTER_MERGE, AFTER_MERGE],
+      "wiki-sync": [WIKI_UNCHANGED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
   });
   const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(state.stage, "done");
   assert.deepEqual(state.merged, MERGED_REVISION);
+  assert.deepEqual(state.security?.revision, MERGED_REVISION);
   assert.ok(!opNames(calls).includes("merge"));
-  assert.deepEqual(opPayloads(calls, "verify")[0], CODE_MERGED);
+  assert.deepEqual(
+    opPayloads(calls, "verify")[0]?.codeMerged,
+    CODE_MERGED.codeMerged,
+  );
+  assert.deepEqual(
+    firstPayload(calls, "prepare-review").codeMerged,
+    CODE_MERGED.codeMerged,
+  );
   const { expectedWiki } = firstPayload(calls, "publish");
   assert.equal(expectedWiki, WIKI);
-  assert.ok(freshBefore(calls, "publish"));
+  assert.ok(freshBefore(calls, "prepare-review"));
+  assert.deepEqual(betweenSessionAndPublish(calls), [
+    "current-revision",
+    "post",
+    "save",
+  ]);
 });
 
-test("a code merge needs a review of the merge commit, and GitHub's confirmation", async () => {
+test("a code merge needs a hardening of the merge commit, and GitHub's confirmation", async () => {
   const stale = merging({
     state: { ...CODE_MERGED },
     ops: { "current-revision": [AFTER_MERGE] },
@@ -98,26 +132,37 @@ test("a code merge needs a review of the merge commit, and GitHub's confirmation
   assert.equal(reviewed.stage, "review");
   assert.deepEqual(mutationsOf(stale.calls), []);
   const unconfirmed = merging({
-    state: {
-      ...CODE_MERGED,
-      review: approvedReview({ revision: MERGED_REVISION }),
-    },
+    state: { ...CODE_MERGED, hardened: MERGED_REVISION },
     ops: { "current-revision": [current({ code: MERGE_COMMIT })] },
   });
   assert.equal(endCode(await mergeRole(unconfirmed.ctx)), "error");
   assert.deepEqual(mutationsOf(unconfirmed.calls), []);
 });
 
-test("a change that lives only in the wiki publishes with no code merge and no PR", async () => {
+test("a change that lives only in the wiki takes the same security review, then publishes with no code merge and no PR", async () => {
+  const wikiOnly = current({}, null);
   const { ctx, calls } = merging({
     state: { pr: null, flows: { code: false, wiki: true } },
-    ops: { "current-revision": [current({}, null), current({}, null)] },
+    ops: {
+      "current-revision": [wikiOnly, wikiOnly, wikiOnly],
+      "wiki-sync": [WIKI_UNCHANGED],
+      verify: [{ pass: true, headSha: REVISION.code, checks: [] }],
+      "prepare-review": [{ ...PREPARED_MERGED, headSha: REVISION.code }],
+    },
   });
   const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(state.stage, "done");
   assert.deepEqual(state.merged, { ...REVISION, code: null });
+  assert.deepEqual(state.security?.revision, { ...REVISION, code: null });
+  assert.equal(firstPayload(calls, "prepare-review").codeMerged, null);
+  assert.equal(sessionsOf(calls)[0]?.phase, "security-review");
+  assert.equal(postsOf(calls)[0]?.on, "issue");
   assert.ok(!opNames(calls).includes("merge"));
-  assert.ok(freshBefore(calls, "publish"));
+  assert.deepEqual(betweenSessionAndPublish(calls), [
+    "current-revision",
+    "post",
+    "save",
+  ]);
 });
 
 test("a saved completion whose finish crashed only runs the finish op again", async () => {
@@ -149,6 +194,10 @@ test("a completion of a change that lives only in the wiki finishes with no PR",
       pr: null,
       flows: { code: false, wiki: true },
       merged: { ...MERGED_REVISION, code: null },
+      security: {
+        ...CLEARED,
+        revision: { ...MERGED_REVISION, code: null },
+      },
     },
     ops: { "current-revision": [current({ code: null }, null)] },
   });
@@ -223,18 +272,17 @@ test("a finish op reply outside its schema fails as an op, so the job stops inst
   });
 });
 
-test("a receipt saved at merge is not a completion: the next merge job reviews, never finishes", async () => {
+test("a merge receipt saved at merge is not a completion: the next merge job sends the pre-merge hardening to review, never finishing", async () => {
   const { ctx, calls } = merging({
     state: {
       ...CODE_MERGED,
       merged: { code: MERGE_COMMIT, wiki: WIKI, inputs: INPUTS },
-      review: approvedReview(),
     },
     ops: { "current-revision": [AFTER_MERGE] },
   });
   const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(state.stage, "review");
-  assert.equal(state.review.verdict, null);
-  assert.deepEqual(state.review.revision, REVISION);
+  assert.equal(state.hardened, null);
   assert.deepEqual(mutationsOf(calls), []);
+  assert.equal(sessionsOf(calls).length, 0);
 });
