@@ -8,11 +8,13 @@ import type { Author } from "../comments.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
-import { OpsError } from "../process.ts";
-import { writeState } from "../state.ts";
+import { OpsError, parseRequest } from "../process.ts";
+import type { IssueState } from "../state.ts";
+import { ISSUE_STATE, withLog } from "../state.ts";
 import type { Stop } from "../stops.ts";
 import { STOPS, stopFor } from "../stops.ts";
 import { pushUnpushed } from "../unpushed.ts";
+import { saveIssueState } from "./save-state.ts";
 
 // The catch-all stop, for a reason no other control names.
 const ERROR_CODE = "error";
@@ -21,19 +23,14 @@ const STOP_REQUEST = z.looseObject({
   code: z.string().nullish(),
   detail: z.string().nullish(),
   nextStep: z.string().nullish(),
-  number: z.number(),
-  reason: z.string().nullish(),
-  state: z.record(z.string(), z.unknown()).nullish(),
+  number: z.number().int().positive(),
+  reason: z.string().min(1),
+  state: ISSUE_STATE,
 });
-
-const PR = z.number().nullish();
 
 // The stage whose commits a stop pushes first, since only open-pr pushes
 // them otherwise (#283).
 const IMPLEMENT_STAGE = "implement";
-
-// The stage after the merge, which a start resumes at (start-state.ts).
-const PUBLISH_STAGE = "publish";
 
 type StopRequest = z.infer<typeof STOP_REQUEST>;
 
@@ -66,9 +63,8 @@ function nextStepText(control: Stop, req: StopRequest): string {
   if (nextStep !== undefined && nextStep !== null && nextStep !== "") {
     return nextStep;
   }
-  const { stage } = req.state ?? {};
-  if (stage === PUBLISH_STAGE) {
-    return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next sweep publishes the wiki changes again, with every limit reset.`;
+  if (req.state.codeMerged !== null) {
+    return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next job reviews and publishes the wiki changes again, with every limit reset.`;
   }
   return `To resume, fix what this names (push to the branch if you like), then remove \`${control.label.name}\`. The next sweep continues at the stage that stopped, from the PR's branch, with every limit reset; a stage after review goes back to review if the branch moved since it.`;
 }
@@ -91,21 +87,37 @@ function stopComment(
   ].join("\n");
 }
 
-function stop(cfg: Config, request: unknown): { code: string; label: string } {
-  const req = STOP_REQUEST.parse(request);
+// `state` stopped by `control` for `reason`: a lifted stop resumes at the
+// stage that stopped.
+function stoppedState(
+  state: IssueState,
+  control: Stop,
+  reason: string,
+): IssueState {
+  const { stage, stoppedStage: savedStoppedStage } = state;
+  let stoppedStage = savedStoppedStage;
+  if (stage !== "stopped" && stage !== "done") {
+    stoppedStage = stage;
+  }
+  const stopped: IssueState = {
+    ...state,
+    stage: "stopped",
+    stoppedStage,
+    lease: null,
+    stopCode: control.code,
+  };
+  return withLog(stopped, `stopped (${control.code}): ${reason}`, new Date());
+}
+
+function stop(
+  cfg: Config,
+  request: unknown,
+): { code: string; label: string; state: IssueState } {
+  const req = parseRequest(STOP_REQUEST, "stop", request);
   const n = req.number;
   const found = stopOf(req.code, req.reason);
-  const { stage } = req.state ?? {};
-  const state = {
-    ...req.state,
-    stage: "stopped",
-    stoppedStage: stage ?? null,
-    lease: null,
-    stopCode: found.code,
-    stopReason: req.reason,
-  };
-  const { pr } = req.state ?? {};
-  const prNumber = PR.parse(pr) ?? 0;
+  const { stage } = req.state;
+  const prNumber = req.state.pr ?? 0;
   let unpushed: string[] = [];
   if (stage === IMPLEMENT_STAGE) {
     unpushed = pushUnpushed(cfg, n);
@@ -115,7 +127,11 @@ function stop(cfg: Config, request: unknown): { code: string; label: string } {
   if (prNumber !== 0) {
     comment(cfg, prNumber, COORDINATOR, body);
   }
-  writeState(cfg, n, state);
+  const state = saveIssueState(
+    cfg,
+    n,
+    stoppedState(req.state, found, req.reason),
+  );
   for (const target of [n, prNumber].filter((number) => number !== 0)) {
     clearStopLabels(cfg, target);
     setLabels(cfg, target, [found.label.name], [LABELS.working.name]);
@@ -125,7 +141,7 @@ function stop(cfg: Config, request: unknown): { code: string; label: string } {
     n,
     `the issue stopped (\`${found.label.name}\`); removing the label puts it back in the queue.`,
   );
-  return { code: found.code, label: found.label.name };
+  return { code: found.code, label: found.label.name, state };
 }
 
 export { stop };

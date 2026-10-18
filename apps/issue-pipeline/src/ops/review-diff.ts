@@ -6,7 +6,11 @@ import type { Config } from "../config.ts";
 import { wikiCfg } from "../config.ts";
 import { run } from "../process.ts";
 import { wikiDiff } from "../wiki.ts";
-import { REVIEW_BUNDLE_MAX_CHARS } from "../workflow/stages/review-prefix.ts";
+
+// Changed files' whole texts go into the review bundle, in path order, while
+// it stays within this; about 57k tokens at 3.5 characters a token, so a
+// review that starts with the bundle keeps most of its context.
+const REVIEW_BUNDLE_MAX_CHARS = 200_000;
 
 // The heading over the bundle's changed files.
 const FILES_HEADING = "# Changed files at the head, in path order";

@@ -1,182 +1,160 @@
 // The claim op: races other lanes for an issue (see raceForClaim) and, when
-// this lane wins, leases the issue to it and readies its worktree. A start
-// (new work, a removed agent:stopped-* label, or answered questions) restarts
-// the state from the issue's branch; a lane picking up a lapsed lease carries
-// on at the saved stage. A claim of an agent:needs-info issue that no allowed
-// user has answered changes nothing and replies that it waits for an answer.
+// this lane wins, leases the issue to it with the state it carries on from
+// (claim-state.ts), readies its checkouts and saves the state. Its reply
+// carries the issue and comments it read and the issue file it wrote from
+// them, so the job's trusted-inputs revision is exactly what it was shown.
+// A done issue is claimed only to reconcile its completion: its state stays
+// done, and nothing is labelled, reset or set up.
 
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { ensureWorktree, setUpCheckout } from "../checkouts.ts";
-import type { LaneRequest } from "../claims.ts";
 import { laneOf, raceForClaim } from "../claims.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg } from "../config.ts";
+import { paths } from "../config.ts";
+import { fetchIn } from "../git-state.ts";
+import type { Issue } from "../issue-context.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
-import { OpsError } from "../process.ts";
-import { checkedSpecFiles, specFilesMissing } from "../restart-spec.ts";
-import type { State } from "../state.ts";
-import { readState, writeState } from "../state.ts";
+import { OpsError, parseRequest } from "../process.ts";
+import type { IssueState } from "../state.ts";
+import { withLog, writeState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
+import { resetKeepingUnpushed } from "../unpushed.ts";
 import { ensureWiki } from "../wiki.ts";
-import type { ClaimedIssue, Prereq } from "./claim-state.ts";
-import { CLAIMED_ISSUE, claimedState, hasNeedsInfo } from "./claim-state.ts";
-import { answeredSince } from "./sweep-verdict.ts";
+import type { BranchChanged } from "./claim-state.ts";
+import { claimedState } from "./claim-state.ts";
 
 const CLAIM_REQUEST = z.looseObject({
-  lane: z.unknown().optional(),
-  number: z.number(),
-  // The issue whose branch this one starts on, if it has none yet (#268).
-  stackOn: z.number().int().positive().nullish(),
-  sweepId: z.unknown().optional(),
+  lane: z.string().min(1),
+  number: z.number().int().positive(),
+  sweepId: z.string().min(1),
 });
 
-const PR = z.number().nullish();
+// The issue's fields the claim reads beyond those issue-context reads.
+const CLAIMED_ISSUE = z.looseObject({
+  labels: z.array(z.looseObject({ name: z.string() })),
+  state: z.string(),
+});
 
 interface ClaimLost {
   lost: true;
-  holder: string | null | undefined;
+  holder: string | null;
   posted: boolean;
-  waited: number | undefined;
 }
 
 interface ClaimWon {
-  state: State;
-  // The test and stub files a restart's spec documents that the branch
-  // lacks, when there are any.
-  specMissing?: string[];
-  claim: {
-    id: number | undefined;
-    posted: boolean;
-    waited: number | undefined;
-  };
+  state: IssueState;
+  claim: { id: number; posted: boolean };
   remoteHead: string | null;
+  // Present when GitHub's branch head is neither the saved head nor the
+  // pipeline's own push; the job decides what that means.
+  branchChanged?: BranchChanged;
+  issueFile: string;
+  issue: Issue;
+  comments: IssueComment[];
   paths: {
     worktree: string;
     runDir: string;
     issueFile: string;
-    handoffFile: string;
     wiki: string | null;
   };
 }
 
-// The reply for an issue whose questions no allowed user has answered.
-interface ClaimWaiting {
-  waiting: "answer";
-}
-
-// True when the issue's questions are open and no allowed user has answered.
-function awaitsAnswer(
-  cfg: Config,
-  n: number,
-  issue: ClaimedIssue,
-  comments: readonly IssueComment[],
-): boolean {
-  const { state } = readState(cfg, n, comments);
-  return hasNeedsInfo(issue) && !answeredSince(cfg, comments, state);
-}
+type ClaimRequest = z.infer<typeof CLAIM_REQUEST>;
 
 // Labels the issue, and its PR if it has one, as worked on, and clears the
 // labels that parked or stopped it.
 function labelWorking(
   cfg: Config,
   n: number,
-  issue: ClaimedIssue,
-  state: State,
+  labels: readonly { name: string }[],
+  pr: number | null,
 ): void {
-  const stops = issue.labels.map((label) => label.name).filter(isStopLabel);
+  const stops = labels.map((label) => label.name).filter(isStopLabel);
   setLabels(cfg, n, [LABELS.working.name], [LABELS.needsInfo.name, ...stops]);
-  const pr = PR.safeParse(state.pr).data;
-  if (pr !== undefined && pr !== null && pr !== 0) {
+  if (pr !== null) {
     setLabels(cfg, pr, [LABELS.working.name]);
     clearStopLabels(cfg, pr);
   }
 }
 
-interface Taken {
-  state: State;
-  remote: string | null;
-  wt: string;
-  wiki: string | null;
-  specMissing: string[];
+// Readies the issue's code and wiki checkouts and returns the wiki's path.
+// A new checkout is set up for the writer's own test runs; an existing one
+// moves to an adopted push's head, keeping any commits the branch lacks.
+function readyCheckouts(
+  cfg: Config,
+  n: number,
+  claimed: { remote: string | null; adopted: boolean },
+  now: Date,
+): { wiki: string | null; entry: string | null } {
+  const wt = paths.worktree(cfg, n);
+  const existed = fs.existsSync(path.join(wt, ".git"));
+  ensureWorktree(cfg, n);
+  const wiki = ensureWiki(cfg, n);
+  if (!existed) {
+    setUpCheckout(cfg, n, wt, "setup-at-claim.log");
+    return { wiki, entry: null };
+  }
+  if (!claimed.adopted || claimed.remote === null) {
+    return { wiki, entry: null };
+  }
+  fetchIn(cfg, wt, paths.branch(n));
+  return { wiki, entry: resetKeepingUnpushed(wt, n, claimed.remote, now) };
 }
 
-// Leases the issue to this lane and readies its worktree and wiki. A restart
-// past spec checks the test and stub files its spec documents against the
-// branch (checkedSpecFiles).
-function take(
-  cfg: Config,
-  req: LaneRequest & { number: number; stackOn?: Prereq },
-  issue: ClaimedIssue,
-  comments: readonly IssueComment[],
-): Taken {
-  const n = req.number;
-  const context = { comments, stackOn: req.stackOn };
-  const begun = claimedState(cfg, n, issue, context);
-  const { state: claimed, remote } = begun;
+function leased(state: IssueState, req: ClaimRequest, now: Date): IssueState {
   const lease = {
     lane: laneOf(req),
     sweepId: req.sweepId,
-    at: new Date().toISOString(),
+    at: now.toISOString(),
   };
-  const leased = { ...claimed, lease };
-  const newWorktree = !fs.existsSync(path.join(paths.worktree(cfg, n), ".git"));
-  const wt = ensureWorktree(cfg, n, claimed.stackedOn ?? null);
-  const wiki = ensureWiki(cfg, n);
-  if (newWorktree) {
-    // Set up now, not only at verify, for the writer's own test runs.
-    setUpCheckout(cfg, n, wt, "setup-at-claim.log");
-  }
-  let missing: string[] = [];
-  if (begun.restarted) {
-    missing = specFilesMissing(wt, leased, wikiCfg(cfg)?.dir ?? "wiki");
-  }
-  const checked = checkedSpecFiles(leased, missing, new Date());
-  const { state, specMissing } = checked;
-  labelWorking(cfg, n, issue, state);
-  writeState(cfg, n, state);
-  return { state, remote, wt, wiki, specMissing };
+  return { ...state, lease };
 }
 
-function claim(
-  cfg: Config,
-  request: unknown,
-): ClaimLost | ClaimWon | ClaimWaiting {
-  const req = CLAIM_REQUEST.parse(request);
+function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
+  const req = parseRequest(CLAIM_REQUEST, "claim", request);
   const n = req.number;
   const context = writeIssueContext(cfg, n);
   const issue = CLAIMED_ISSUE.parse(context.issue);
   if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
   }
-  if (awaitsAnswer(cfg, n, issue, context.comments)) {
-    return { waiting: "answer" };
-  }
   const race = raceForClaim(cfg, n, req, context.comments);
-  const { posted, waited } = race;
-  if (!race.won) {
-    return { lost: true, holder: race.holder, posted, waited };
+  if (!race.won || race.claimId === undefined) {
+    return { lost: true, holder: race.holder ?? null, posted: race.posted };
   }
-  const taken = take(cfg, req, issue, context.comments);
-  const { state, remote, wt, wiki, specMissing } = taken;
-  const runDir = paths.runDir(cfg, n);
+  const now = new Date();
+  const claimed = claimedState(cfg, n, context.comments, now);
+  let state = leased(claimed.state, req, now);
+  let wiki: string | null = null;
+  if (state.stage !== "done") {
+    const ready = readyCheckouts(cfg, n, claimed, now);
+    ({ wiki } = ready);
+    if (ready.entry !== null) {
+      state = withLog(state, ready.entry, now);
+    }
+    labelWorking(cfg, n, issue.labels, state.pr);
+  }
+  writeState(cfg, n, state);
   const won: ClaimWon = {
     state,
-    claim: { id: race.claimId, posted, waited },
-    remoteHead: remote,
+    claim: { id: race.claimId, posted: race.posted },
+    remoteHead: claimed.remote,
+    issueFile: context.file,
+    issue: context.issue,
+    comments: context.comments,
     paths: {
-      worktree: wt,
-      runDir,
+      worktree: paths.worktree(cfg, n),
+      runDir: paths.runDir(cfg, n),
       issueFile: context.file,
-      handoffFile: paths.handoff(cfg, n),
       wiki,
     },
   };
-  if (specMissing.length > 0) {
-    won.specMissing = specMissing;
+  if (claimed.branchChanged !== null) {
+    won.branchChanged = claimed.branchChanged;
   }
   return won;
 }

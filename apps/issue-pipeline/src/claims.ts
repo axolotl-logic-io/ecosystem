@@ -1,7 +1,6 @@
 // Claim comments. Lanes may run on different machines, so they coordinate on
-// GitHub. A lane claims an issue by commenting, waits a random time so that
-// every racing lane's comment has landed, and proceeds only if its claim is the
-// earliest live one. A claim is live until it is closed (edited to
+// GitHub. A lane claims an issue by commenting, reads the issue's comments
+// back, and proceeds only if its claim is the earliest live one. A claim is live until it is closed (edited to
 // `claim-closed`) or goes leaseHours without an edit. The winner's claim stays
 // live while its lane works the issue, across sweeps: each sweep's release
 // edits it (touchClaim). It is closed when the issue leaves the pipeline:
@@ -19,10 +18,8 @@ import {
 import type { Config } from "./config.ts";
 import { ghJson } from "./github.ts";
 import { LABELS, setLabels } from "./labels.ts";
-import { sleepMs } from "./process.ts";
 
 const MS_PER_HOUR = 3_600_000;
-const MS_PER_SECOND = 1000;
 const STAMP_LENGTH = 16;
 const STILL_WORKING_AT_END = /\n<sub>Lane still working at [^<]*<\/sub>$/u;
 const STILL_WORKING = /<sub>Lane still working at [^<]*<\/sub>$/u;
@@ -49,7 +46,6 @@ interface ClaimRace {
   claimId?: number;
   holder?: string | null;
   posted: boolean;
-  waited?: number;
 }
 
 function laneOf(req: LaneRequest): string {
@@ -158,11 +154,6 @@ function postClaim(cfg: Config, n: number, req: LaneRequest): Claim {
   return { body: posted.body ?? body, id: posted.id, lane, sweep };
 }
 
-function randomWaitSeconds(cfg: Config): number {
-  const [shortest, longest] = cfg.claimWaitSeconds;
-  return shortest + Math.random() * (longest - shortest);
-}
-
 // Returns { won } and, when another lane holds the issue, { holder, posted }.
 function raceForClaim(
   cfg: Config,
@@ -182,11 +173,9 @@ function raceForClaim(
   }
   const mine = postClaim(cfg, n, req);
   setLabels(cfg, n, [LABELS.working.name]);
-  const waited = randomWaitSeconds(cfg);
-  sleepMs(waited * MS_PER_SECOND);
   const [first] = liveClaims(cfg, listComments(cfg, n));
   if (first?.id === mine.id) {
-    return { won: true, claimId: mine.id, posted: true, waited };
+    return { won: true, claimId: mine.id, posted: true };
   }
   // An earlier claim won, or this lane can't see its own claim yet; either
   // way, back off.
@@ -200,7 +189,7 @@ function raceForClaim(
     mine,
     `Abandoned ${minuteStamp()}: ${why}. This lane takes another issue.`,
   );
-  return { won: false, holder, posted: true, waited };
+  return { won: false, holder, posted: true };
 }
 
 export type { Claim, ClaimRace, LaneRequest };

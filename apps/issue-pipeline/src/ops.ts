@@ -20,22 +20,18 @@ import fs from "node:fs";
 import process from "node:process";
 import { text } from "node:stream/consumers";
 import { z } from "zod";
-import { AUTHOR, comment, commentByKey } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { loadConfig, withCheckout } from "./config.ts";
 import { ask } from "./ops/ask.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
-import { closeParent, finishWiki, post, release } from "./ops/finish.ts";
-import { merge } from "./ops/merge.ts";
+import { currentRevisionOp } from "./ops/current-revision.ts";
+import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
 import { prOps } from "./ops/pr.ts";
-import { publishOps } from "./ops/publish.ts";
-import { saveSpec } from "./ops/save-spec.ts";
-import { saveState } from "./ops/save-state.ts";
-import { split } from "./ops/split.ts";
+import { pushOps } from "./ops/push.ts";
+import { release, saveState } from "./ops/save-state.ts";
 import { stop } from "./ops/stop.ts";
-import { sweep } from "./ops/sweep.ts";
 import { syncOps } from "./ops/sync.ts";
 import { usage } from "./ops/usage.ts";
 import { verify } from "./ops/verify.ts";
@@ -46,12 +42,14 @@ import { OpsError, parseRequest } from "./process.ts";
 // An op reads its own fields from the whole request and returns its reply.
 type Op = (cfg: Config, request: unknown) => object;
 
-// The line printed for a request: the op's own reply follows ok, op and
-// posted, or the error says why there is none.
+// The line printed for a request: the op's own reply follows ok, op, how
+// many queued comments it posted and their ids in the request's order, or
+// the error says why there is none.
 interface OpsReply {
   ok: true;
   op: string;
   posted: number;
+  commentIds: number[];
 }
 
 interface ErrorReply {
@@ -59,27 +57,24 @@ interface ErrorReply {
   error: string;
 }
 
+// The code merge, wiki publish and completion ops (merge, publish,
+// finish-wiki, wiki-sync, finish-wiki-sync) are their own module's to
+// register once they read the version 2 state.
 const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ...Object.entries(prOps),
+  ...Object.entries(pushOps),
   ...Object.entries(syncOps),
-  ["sweep", sweep],
   ["claim", claim],
   // Writes state and nothing else; queued comments ride along on every op (see main).
   ["save-state", saveState],
-  // Writes a spec too long for the saved state to spec.md in the run dir (#280).
-  ["save-spec", saveSpec],
   ["ask", ask],
-  ["split", split],
   // Stop an issue at a failed control: label it agent:stopped-<code>, and explain
   // on the issue and its PR which control stopped it, why, and how to resume.
   ["stop", stop],
+  ["current-revision", currentRevisionOp],
   ["verify", verify],
   ["wiki-check", wikiCheck],
   ["ci-status", ciStatus],
-  ["merge", merge],
-  ...Object.entries(publishOps),
-  ["close-parent", closeParent],
-  ["finish-wiki", finishWiki],
   ["post", post],
   ["release", release],
   // Frees closed issues' worktrees once nothing local is unsaved (#174).
@@ -97,18 +92,7 @@ const MAX_ERROR_LENGTH = 4000;
 // path, the signed comments the workflow queued for the issue and, from a
 // stage job, its checkout.
 const ENVELOPE = z.looseObject({
-  comments: z
-    .array(
-      z.looseObject({
-        body: z.string(),
-        by: AUTHOR.nullish(),
-        // A keyed comment is written once: a later one with the same key
-        // edits it (commentByKey).
-        key: z.string().nullish(),
-        number: z.number().int(),
-      }),
-    )
-    .nullish(),
+  comments: z.array(QUEUED_COMMENT).nullish(),
   config: z.string().nullish(),
   op: z.string(),
   // A stage job's own checkout, which stands in for its issue's worktree.
@@ -147,16 +131,9 @@ function runRequest(request: unknown): OpsReply {
   fs.mkdirSync(ROOT, { recursive: true });
   // Post the signed comments the workflow queued for this issue before running the op,
   // so they land in order and aren't lost if the op fails.
-  let posted = 0;
-  for (const { body, by, key, number } of comments ?? []) {
-    if (typeof key === "string") {
-      commentByKey(cfg, number, by ?? undefined, { body, key });
-    } else {
-      comment(cfg, number, by ?? undefined, body);
-    }
-    posted += 1;
-  }
-  return { ok: true, op, posted, ...handler(cfg, request) };
+  const commentIds = postComments(cfg, comments ?? []);
+  const posted = commentIds.length;
+  return { ok: true, op, posted, commentIds, ...handler(cfg, request) };
 }
 
 function messageOf(error: unknown): string {

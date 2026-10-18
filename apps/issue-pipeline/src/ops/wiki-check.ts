@@ -9,7 +9,7 @@ import type { Config } from "../config.ts";
 import { parseRequest } from "../process.ts";
 import type { WikiProblem } from "../wiki-check.ts";
 import { readWikiChange, wikiProblems } from "../wiki-check.ts";
-import type { Check } from "./verify.ts";
+import type { Check } from "./checks.ts";
 
 // pass is true exactly when checks is empty: every check here is a failure.
 interface WikiCheckReply {

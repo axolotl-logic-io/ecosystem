@@ -1,7 +1,8 @@
 // The issue's pull request: start-pr opens it as a draft before any code is
 // written, or, given a body, sets the body of the one it finds; open-pr fills
 // it in and marks it ready (reopening a closed one), close-pr closes the draft
-// of a change that lives only in the wiki, and push pushes the branch. How a PR links to its issue lives here.
+// of a change that lives only in the wiki. How a PR links to its issue lives
+// here. Once the saved state records the code merged, neither pushes code.
 
 import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
@@ -16,6 +17,7 @@ import { LABELS, setLabels } from "../labels.ts";
 import { OpsError, run } from "../process.ts";
 import { holdWikiPin } from "../wiki.ts";
 import { openPrFor } from "./prs.ts";
+import { refuseOnceMerged } from "./push.ts";
 
 interface PrReply {
   pr: number;
@@ -24,19 +26,12 @@ interface PrReply {
 
 interface OpenReply extends PrReply, BranchChanges {}
 
-interface PushReply extends BranchChanges {
-  headSha: string;
-}
-
 interface CloseReply {
   pr: number;
   closed: true;
 }
 
-type Op = (
-  cfg: Config,
-  request: unknown,
-) => PrReply | OpenReply | PushReply | CloseReply;
+type Op = (cfg: Config, request: unknown) => PrReply | OpenReply | CloseReply;
 
 const DRAFT_TEXT =
   "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description and marks it ready for review once the change is pushed.";
@@ -59,7 +54,6 @@ const CLOSE_REQUEST = z.looseObject({
   number: z.number().int(),
   pr: z.number().int(),
 });
-const PUSH_REQUEST = z.looseObject({ number: z.number().int() });
 const ISSUE = z.looseObject({ title: z.string() });
 
 // The value `schema` parses from `value`, or an OpsError naming `what`.
@@ -165,6 +159,7 @@ function givenBody(
 function startPr(cfg: Config, request: unknown): PrReply {
   const req = parsed(START_REQUEST, "start-pr request", request);
   const n = req.number;
+  refuseOnceMerged(cfg, n, "start-pr");
   const reply = ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${n}`]);
   const issue = parsed(ISSUE, "gh issue reply", reply);
   const headSha = startBranch(cfg, n);
@@ -206,6 +201,7 @@ function existingPr(
 function openPr(cfg: Config, request: unknown): OpenReply {
   const req = parsed(OPEN_REQUEST, "open-pr request", request);
   const n = req.number;
+  refuseOnceMerged(cfg, n, "open-pr");
   const pushed = push(cfg, n, "open-pr");
   const title = titleFor(n, textOr(req.title, `Fix #${n}`));
   const body = signed(
@@ -262,25 +258,10 @@ function closePr(cfg: Config, request: unknown): CloseReply {
   return { pr: req.pr, closed: true };
 }
 
-function pushOp(cfg: Config, request: unknown): PushReply {
-  const { number } = parsed(PUSH_REQUEST, "push request", request);
-  return push(cfg, number, "push");
-}
-
-// The push a writer's stage job makes as it exits, of commits its checkout
-// holds past the last state save (src/job/exit-push.ts). It is recorded as
-// "exit-push", which the next claim may adopt (src/start-state.ts).
-function exitPushOp(cfg: Config, request: unknown): PushReply {
-  const { number } = parsed(PUSH_REQUEST, "exit-push request", request);
-  return push(cfg, number, "exit-push");
-}
-
 const prOps: Readonly<Record<string, Op>> = {
   "start-pr": startPr,
   "open-pr": openPr,
   "close-pr": closePr,
-  push: pushOp,
-  "exit-push": exitPushOp,
 };
 
 export { prOps };

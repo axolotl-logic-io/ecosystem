@@ -112,6 +112,8 @@
         "src/ops/pr.ts",
         "src/ops/sync.ts",
         "src/ops/verify.ts",
+        "src/ops/checks.ts",
+        "src/ops/push.ts",
         "src/ops/fails-before-fix.ts",
         "src/ops/ci-status.ts",
         "src/job.ts",

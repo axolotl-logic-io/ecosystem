@@ -1,184 +1,126 @@
-// The state a claim carries on from: the saved one mid-stage, or a start's
-// (start-state.ts) from the issue's branch, with the worktree put back at the
-// branch's head first. The claim op (claim.ts) leases the issue with it.
+// The state a claim carries on from: the saved one (a new issue's first, a
+// stopped one's with its stop lifted), with the pipeline's own unsaved push
+// adopted (adopt-push.ts) and then its code merge reconciled against GitHub
+// (revision.ts). The branch-changed defense is the caller's: this module
+// only reports a branch head that moved past the saved one without the
+// pipeline, as a diagnostic.
 
-import fs from "node:fs";
-import path from "node:path";
-import { z } from "zod";
 import { adoptPush } from "../adopt-push.ts";
 import { lastPush } from "../checkouts.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { paths } from "../config.ts";
-import {
-  branchHasWork,
-  fetchIn,
-  head,
-  patchIdOf,
-  remoteHead,
-} from "../git-state.ts";
-import { LABELS } from "../labels.ts";
-import type { ClaimedStack, StackedOn } from "../stack.ts";
-import { claimedStack, measureFrom, resetToStart } from "../stack.ts";
-import { startState } from "../start-state.ts";
-import type { State } from "../state.ts";
-import { readState } from "../state.ts";
-import { resetKeepingUnpushed } from "../unpushed.ts";
-import { wikiBranchHasWork } from "../wiki.ts";
-import { openPrFor } from "./prs.ts";
-import { answeredSince, issueDepth } from "./sweep-verdict.ts";
+import { remoteHead } from "../git-state.ts";
+import { OpsError } from "../process.ts";
+import { codeMergedOf, issuePullRequest } from "../revision.ts";
+import type { IssueState } from "../state.ts";
+import { newIssueState, readState, resumeOf, withLog } from "../state.ts";
 
-// The issue's fields the claim reads, beyond those issue-context reads.
-const CLAIMED_ISSUE = z.looseObject({
-  body: z.string().nullish(),
-  labels: z.array(z.looseObject({ name: z.string() })),
-  state: z.string().nullish(),
-});
-
-type ClaimedIssue = z.infer<typeof CLAIMED_ISSUE>;
-type Prereq = number | null | undefined;
-
-const STAMP_LENGTH = 16;
-
-function stamp(now: Date): string {
-  return `${now.toISOString().slice(0, STAMP_LENGTH)}Z`;
+// A branch head on GitHub that is neither the saved one nor the pipeline's
+// own push.
+interface BranchChanged {
+  saved: string;
+  remote: string;
 }
 
-// The open (or draft) PR from the issue's branch, and whether the issue holds
-// work: code changes on a branch with an open PR, or commits on the wiki's
-// agent/issue-<n> that the wiki lacks, with or without a PR or code branch.
-function branchWork(
+interface ClaimedState {
+  state: IssueState;
+  remote: string | null;
+  // Whether a push of the pipeline's own was adopted.
+  adopted: boolean;
+  branchChanged: BranchChanged | null;
+}
+
+// The saved state the claim starts from. A done issue is claimed only to
+// reconcile its completion: it must have saved what merged.
+function startingState(
   cfg: Config,
   n: number,
-  remote: string | null,
-): { pr: number | null; hasWork: boolean } {
-  let pr: number | null = null;
-  let codeWork = false;
-  if (remote !== null) {
-    pr = openPrFor(cfg, n) ?? null;
-    codeWork = pr !== null && branchHasWork(cfg, n, remote);
+  comments: readonly IssueComment[],
+): IssueState {
+  const { state: saved } = readState(cfg, n, comments);
+  if (saved === null) {
+    return newIssueState(n);
   }
-  return { pr, hasWork: codeWork || wikiBranchHasWork(cfg, n) };
+  if (saved.stage === "done" && saved.merged === null) {
+    throw new OpsError(`#${n} is done`);
+  }
+  return resumeOf(saved);
 }
 
-// The patch id of the changes the branch's head on GitHub makes against its
-// base or prerequisite, which a clean rebase keeps
-// (review-keeps-on-clean-rebase); null when it has no head there.
-function branchPatchId(
-  cfg: Config,
-  remote: string | null,
-  stackedOn: StackedOn | null,
-): string | null {
-  if (remote === null) {
-    return null;
-  }
-  return patchIdOf(paths.clone(cfg), measureFrom(stackedOn, cfg), remote);
-}
-
-// Puts an existing worktree back at the branch head on GitHub or, when the
-// issue has no branch there, where it starts (stack.ts) unless it holds
-// commits of its own.
-// Commits the branch lacks are never dropped (#283); returns the log entry
-// saying where they were kept, or null when there were none, and whether
-// HEAD stayed past the branch with them.
-function resetWorktree(
+// `state` with its PR and code merge as GitHub reports them. A recorded
+// code merge GitHub doesn't confirm, or a completed merge at another merge
+// commit, throws: the claim never clears or replaces a merge it recorded.
+function reconciled(
   cfg: Config,
   n: number,
-  start: { remote: string | null } & ClaimedStack,
-): { entry: string | null; kept: boolean } {
-  const { remote, stackedOn, unstacked } = start;
-  const wt = paths.worktree(cfg, n);
-  if (!fs.existsSync(path.join(wt, ".git"))) {
-    return { entry: null, kept: false };
-  }
-  if (remote === null) {
-    resetToStart(cfg, wt, stackedOn, unstacked?.headSha ?? null);
-    return { entry: null, kept: false };
-  }
-  fetchIn(cfg, wt, paths.branch(n));
-  const entry = resetKeepingUnpushed(wt, n, remote, new Date());
-  return { entry, kept: head(wt) !== remote };
-}
-
-// `state` with the reset's log entry, if it has one, and what the issue is
-// stacked on, if it is. An issue that unstacked from a merged prerequisite
-// has its stackedOn cleared and a log entry saying so.
-function withEntry(
-  state: State,
-  entry: string | null,
-  stack: ClaimedStack & { base: string; now: Date },
-): State {
-  const next: State = { ...state };
-  const entries: string[] = [];
-  if (stack.stackedOn !== null) {
-    next.stackedOn = stack.stackedOn;
-  }
-  if (stack.unstacked !== null) {
-    next.stackedOn = null;
-    entries.push(
-      `${stamp(stack.now)} unstacked from #${stack.unstacked.issue}, which has merged; starts from ${stack.base}`,
+  state: IssueState,
+  now: Date,
+): IssueState {
+  const pr = issuePullRequest(cfg, n, state);
+  const codeMerged = codeMergedOf(pr);
+  const recorded = state.codeMerged ?? null;
+  if (
+    recorded !== null &&
+    (codeMerged === null ||
+      codeMerged.pr !== recorded.pr ||
+      codeMerged.sha !== recorded.sha)
+  ) {
+    throw new OpsError(
+      `GitHub doesn't confirm #${n}'s recorded code merge (PR #${recorded.pr} at ${recorded.sha})`,
     );
   }
-  if (entry !== null) {
-    entries.push(entry);
+  if (
+    state.stage === "done" &&
+    (codeMerged === null || state.merged?.code !== codeMerged.sha)
+  ) {
+    throw new OpsError(
+      `#${n} is done, but GitHub doesn't confirm the merge it saved`,
+    );
   }
-  if (entries.length > 0) {
-    next.log = [...(state.log ?? []), ...entries];
+  const next: IssueState = { ...state, pr: pr?.number ?? null, codeMerged };
+  if (recorded === null && codeMerged !== null) {
+    return withLog(
+      next,
+      `GitHub reports PR #${codeMerged.pr} merged as ${codeMerged.sha}`,
+      now,
+    );
   }
   return next;
 }
 
-// True when the issue has questions open (agent:needs-info).
-function hasNeedsInfo(issue: ClaimedIssue): boolean {
-  return issue.labels.some((label) => label.name === LABELS.needsInfo.name);
+// The branch head GitHub has that the saved state doesn't, unless the code
+// merged, which leaves the branch head no longer the code's revision.
+function branchChangedOf(
+  state: IssueState,
+  remote: string | null,
+): BranchChanged | null {
+  const { headSha, codeMerged } = state;
+  if (codeMerged !== null || headSha === null || remote === null) {
+    return null;
+  }
+  if (remote === headSha) {
+    return null;
+  }
+  return { saved: headSha, remote };
 }
 
-// The state this claim carries on from, the saved one mid-stage or a restart
-// from the issue's branch, the branch's head on GitHub, and whether it
-// restarted. An issue with no branch that is stacked, or asked to be, starts
-// on its prerequisite's head, or on the base once that prerequisite merged.
 function claimedState(
   cfg: Config,
   n: number,
-  issue: ClaimedIssue,
-  context: { comments: readonly IssueComment[]; stackOn: Prereq },
-): { state: State; remote: string | null; restarted: boolean } {
-  const { comments, stackOn } = context;
-  const { state: saved } = readState(cfg, n, comments);
+  comments: readonly IssueComment[],
+  now: Date,
+): ClaimedState {
+  const start = startingState(cfg, n, comments);
   const remote = remoteHead(cfg, n);
-  // Fetched into the worktree or, before it has one, the clone.
-  let dir = paths.worktree(cfg, n);
-  if (!fs.existsSync(path.join(dir, ".git"))) {
-    dir = paths.clone(cfg);
-  }
-  const stack = { remote, saved: saved?.stackedOn, stackOn };
-  const claimed = claimedStack(cfg, dir, stack);
-  const { stackedOn, unstacked } = claimed;
-  const now = new Date();
-  const logged = { ...claimed, base: `origin/${cfg.baseBranch}`, now };
-  const answered = hasNeedsInfo(issue) && answeredSince(cfg, comments, saved);
-  const ended = saved?.stage === "stopped" || saved?.stage === "done";
-  if (saved !== null && !ended && !answered) {
-    const adopted = adoptPush(saved, remote, lastPush(cfg, n), now);
-    const restacked = remote === null && stackedOn !== null;
-    if (adopted === null && !restacked && unstacked === null) {
-      return { state: saved, remote, restarted: false };
-    }
-    const { entry } = resetWorktree(cfg, n, { remote, ...claimed });
-    const state = withEntry(adopted ?? saved, entry, logged);
-    return { state, remote, restarted: false };
-  }
-  const { pr, hasWork } = branchWork(cfg, n, remote);
-  const depth = issueDepth(issue.body);
-  const reset = resetWorktree(cfg, n, { remote, ...claimed });
-  const keptUnpushed = reset.kept;
-  const patchId = branchPatchId(cfg, remote, stackedOn);
-  const facts = { remote, patchId, keptUnpushed, answered };
-  const start = { n, depth, pr, hasWork, now, ...facts };
-  const begun = startState(saved, start);
-  const state = withEntry(begun, reset.entry, logged);
-  return { state, remote, restarted: true };
+  const adoptedState = adoptPush(start, remote, lastPush(cfg, n), now);
+  const state = reconciled(cfg, n, adoptedState ?? start, now);
+  return {
+    state,
+    remote,
+    adopted: adoptedState !== null,
+    branchChanged: branchChangedOf(state, remote),
+  };
 }
 
-export type { ClaimedIssue, Prereq };
-export { CLAIMED_ISSUE, claimedState, hasNeedsInfo };
+export type { BranchChanged, ClaimedState };
+export { claimedState };
