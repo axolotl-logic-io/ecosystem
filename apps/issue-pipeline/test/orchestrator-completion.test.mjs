@@ -46,7 +46,7 @@ test("a completion is never sent back to the author by new trusted input; the me
   const snapshot = snapshotOf([
     { number: 1, ...COMPLETED, gherkin: "inputs-0" },
   ]);
-  assert.deepEqual(decided(snapshot), ["#1 merge started free [1]"]);
+  assert.deepEqual(decided(snapshot), ["#1 merge started free"]);
 });
 
 test("a plain done issue, and a completion with a stop label, skip label, untrusted author or live job, get no decision", () => {
