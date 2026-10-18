@@ -115,7 +115,7 @@ test("a claim of a state bound to another branch is refused before it writes any
 });
 
 test("a state saved before assignments keeps its legacy branch: another assignment is refused, the legacy one bound", () => {
-  const { branch: _branch, ...legacy } = {
+  const legacy = {
     ...newIssueState(LEGACY),
     stage: "implement",
   };

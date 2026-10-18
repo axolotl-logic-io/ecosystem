@@ -5,10 +5,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { commentWriteReplies, labelReplies } from "./gh-mutation-fixtures.mjs";
+import { releaseReplies } from "./ops-release-test-kit.mjs";
 import {
   ask,
   calls,
-  claimListing,
   commentPost,
   fakeGh,
   hoursFromNow,
@@ -23,6 +24,7 @@ import {
 
 /** @import { World } from "./ops-test-kit.mjs" */
 
+fakeGh.requireReplies();
 const { newIssueState } = await import("../src/state.ts");
 
 const STILL_WORKING = /\n<sub>Lane still working at <minute>\.<\/sub>$/u;
@@ -52,7 +54,12 @@ function issueState(extra) {
 
 /** @param {World} w @param {string} subs @returns {string} */
 function closeParent(w, subs) {
-  fakeGh.reply([{ when: "sub_issues", stdout: subs }]);
+  fakeGh.reply([
+    { when: "sub_issues", stdout: subs },
+    { when: "issue close 7 -R o/r", stdout: "" },
+    ...labelReplies("o/r", ISSUE, ["agent:merged"], ["agent:split"]),
+    ...commentWriteReplies("o/r", ISSUE, []),
+  ]);
   return ask(w, { op: "close-parent", number: ISSUE });
 }
 
@@ -186,7 +193,7 @@ test("post only posts the queued comments and replies with the ids GitHub gave",
 // claim edit's body and the state it wrote.
 /** @param {World} w @param {object} state @returns {{ out: string, made: string[][], touched: string, written: unknown }} */
 function release(w, state) {
-  fakeGh.reply([claimListing(), claimListing(), claimListing()]);
+  fakeGh.reply(releaseReplies(state));
   const out = ask(w, {
     op: "release",
     number: ISSUE,

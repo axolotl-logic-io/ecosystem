@@ -13,7 +13,7 @@ import type { Config } from "../config.ts";
 import { remoteHead } from "../git-state.ts";
 import { OpsError } from "../process.ts";
 import { codeMergedOf, issuePullRequest } from "../revision.ts";
-import { readState } from "../saved-state.ts";
+import { readClaimState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { newIssueState, resumeOf, withLog } from "../state.ts";
 
@@ -39,7 +39,7 @@ function startingState(
   n: number,
   comments: readonly IssueComment[],
 ): IssueState {
-  const { state: saved } = readState(cfg, n, comments);
+  const saved = readClaimState(cfg, n, comments);
   if (saved === null) {
     return { ...newIssueState(n), branch: assignedBranch(cfg, n, null) };
   }
@@ -56,7 +56,7 @@ function assertBranchAssigned(
   n: number,
   comments: readonly IssueComment[],
 ): void {
-  assignedBranch(cfg, n, readState(cfg, n, comments).state);
+  assignedBranch(cfg, n, readClaimState(cfg, n, comments));
 }
 
 // `state` with its PR and code merge as GitHub reports them. A recorded

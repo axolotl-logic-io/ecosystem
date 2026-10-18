@@ -9,6 +9,11 @@ import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
 import {
+  collaboratorReply,
+  commentWriteReplies,
+} from "./gh-mutation-fixtures.mjs";
+import { releaseReplies } from "./ops-release-test-kit.mjs";
+import {
   ask,
   calls,
   claimListing,
@@ -21,6 +26,7 @@ import {
 
 /** @import { World } from "./ops-test-kit.mjs" */
 
+fakeGh.requireReplies();
 const { newIssueState } = await import("../src/state.ts");
 
 // The issue every test works on, and its PR.
@@ -104,10 +110,30 @@ function mergeAndRelease(w, ops) {
   }
   const lease = { lane: LANE, sweepId: SWEEP, at: hoursFromNow(0) };
   const state = issueState({ stage: "merge", pr: PR, lease });
-  fakeGh.reply([issueListing(), claimListing(), ...prViews(w.sha)]);
+  fakeGh.reply([
+    collaboratorReply("o/r", "bot"),
+    issueListing(),
+    { ...claimListing(), keep: true },
+    ...prViews(w.sha),
+    {
+      when: `pr merge ${PR} -R o/r --squash --match-head-commit ${w.sha}`,
+      stdout: "",
+    },
+    ...commentWriteReplies("o/r", PR, []),
+  ]);
   const asked = ask(w, { op: "current-revision", number: ISSUE, state }, ops);
   const current = CURRENT.parse(JSON.parse(asked));
-  fakeGh.reply([issueListing(), claimListing(), ...prViews(w.sha)]);
+  fakeGh.reply([
+    collaboratorReply("o/r", "bot"),
+    issueListing(),
+    { ...claimListing(), keep: true },
+    ...prViews(w.sha),
+    {
+      when: `pr merge ${PR} -R o/r --squash --match-head-commit ${w.sha}`,
+      stdout: "",
+    },
+    ...commentWriteReplies("o/r", PR, []),
+  ]);
   // The merge op merges only the revision hardening authorized.
   const req = {
     op: "merge",
@@ -119,7 +145,9 @@ function mergeAndRelease(w, ops) {
   };
   const merged = constant(ask(w, req, ops));
   const mergeCalls = calls().map((args) => constant(args.join(" ")));
-  fakeGh.reply([claimListing(), claimListing(), claimListing()]);
+  fakeGh.reply(
+    releaseReplies({ ...state, codeMerged: { pr: PR, sha: MERGE_OID } }),
+  );
   const release_ = { op: "release", number: ISSUE, lane: LANE, sweepId: SWEEP };
   const released = ask(
     w,
@@ -138,6 +166,11 @@ test("the built ops merges and releases as src/ops.ts does", () => {
   assert.equal(built.status, 0, built.stderr);
   const fromSrc = mergeAndRelease(world(), undefined);
   assert.match(fromSrc.merged, MERGED_TRUE);
+  assert.equal(
+    z.looseObject({ ok: z.literal(true) }).parse(JSON.parse(fromSrc.released))
+      .ok,
+    true,
+  );
   assert.ok(fromSrc.mergeCalls.includes(SQUASH_MERGE), "it squash-merged");
   const fromBuild = mergeAndRelease(world(), path.join(out, "ops.mjs"));
   assert.deepEqual(fromBuild, fromSrc);

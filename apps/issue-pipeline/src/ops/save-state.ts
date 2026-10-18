@@ -8,7 +8,7 @@ import { z } from "zod";
 import { touchClaim } from "../claims.ts";
 import type { Config } from "../config.ts";
 import { OpsError, parseRequest } from "../process.ts";
-import { readState, writeState } from "../saved-state.ts";
+import { readWriteState, writeState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
 
@@ -35,8 +35,8 @@ function withSavedCodeMerge(
   if (state.number !== n) {
     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
   }
-  const { state: saved } = readState(cfg, n);
-  return { ...state, codeMerged: saved?.codeMerged ?? null };
+  const saved = readWriteState(cfg, n);
+  return { ...state, codeMerged: saved.codeMerged };
 }
 
 // Writes issue `n`'s state, with the code merge it has saved.

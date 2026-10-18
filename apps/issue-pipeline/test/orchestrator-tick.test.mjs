@@ -9,6 +9,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { beforeEach, test } from "node:test";
 import { effectNames, effectsOf, stateOf } from "./gh-effects.mjs";
+import {
+  collaboratorReply,
+  commentWriteReplies,
+} from "./gh-mutation-fixtures.mjs";
 import { withoutJobId } from "./orchestrator-job-id-kit.mjs";
 import {
   ALLOWED,
@@ -22,14 +26,18 @@ import {
   inputsOf,
   leaseOf,
   loggedFor,
-  openWith,
+  openWith as openQueue,
   pipelineComment,
   resetRuns,
   runFile,
+  STATE_ID_BASE,
   tickOver,
   VISITOR,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
+
+fakeGh.requireReplies();
+const { newIssueState } = await import("../src/state.ts");
 
 /** @import { OpenIssue } from "./orchestrator-world-test-kit.mjs" */
 
@@ -45,7 +53,12 @@ const SECOND_ID = 92;
 const CLOSE_WORDS = 3;
 const DEAD_PID = 4343;
 
-beforeEach(resetRuns);
+beforeEach(resetTick);
+
+function resetTick() {
+  resetRuns();
+  fakeGh.reply([collaboratorReply("o/r", ALLOWED)]);
+}
 
 // Issue `number` at `stage` with PR 70, whose Gherkin was written from its
 // trusted inputs with `before` as its comments, and which now has `after`.
@@ -54,7 +67,7 @@ function written(number, stage, { before = [], after = [], state = {} } = {}) {
   const inputs = inputsOf({ number, comments: before });
   return {
     number,
-    state: { version: 2, number, stage, pr: PR, ...state },
+    state: { ...newIssueState(number), number, stage, pr: PR, ...state },
     comments: [...before, gherkinComment(GHERKIN_ID, number, inputs), ...after],
   };
 }
@@ -62,6 +75,17 @@ function written(number, stage, { before = [], after = [], state = {} } = {}) {
 /** @param {readonly string[][]} spawned @returns {string[]} */
 function argvs(spawned) {
   return spawned.map((argv) => withoutJobId(argv).join(" "));
+}
+
+/** @param {readonly OpenIssue[]} issues @param {readonly import("./fake-gh.mjs").GhReply[]} [others] */
+function openWith(issues, others = []) {
+  openQueue(issues, [
+    ...others,
+    collaboratorReply("o/r", ALLOWED),
+    ...issues.flatMap(({ number }) =>
+      commentWriteReplies("o/r", number, [STATE_ID_BASE + number]),
+    ),
+  ]);
 }
 
 test("a visitor's or the pipeline's comment never wakes the author", () => {
@@ -125,7 +149,7 @@ test("new input at implement returns to implement, and another lane's lease hold
 test("needs-info holds on the input asked on, and an answer that landed before the first read starts the author", () => {
   const labels = ["agent:needs-info"];
   const asked = { inputs: inputsOf({ number: 1 }) };
-  const state = { version: 2, stage: "author", asked };
+  const state = { ...newIssueState(1), stage: "author", asked };
   openWith([
     { number: 1, labels, state: { ...state, number: 1 } },
     {
@@ -228,7 +252,23 @@ test("a split parent whose sub-issues are closed, one merged, is closed", () => 
   ];
   openWith(
     [{ number: 1, labels: ["agent:split"] }],
-    [{ when: "issues/1/sub_issues", stdout: JSON.stringify(subs) }],
+    [
+      { when: "issues/1/sub_issues", stdout: JSON.stringify(subs) },
+      { when: "issue close 1 -R o/r", stdout: "" },
+      {
+        when: "api repos/o/r/issues/1 --jq {state}",
+        stdout: JSON.stringify({ state: "open" }),
+      },
+      {
+        when: "api -X POST repos/o/r/issues/1/labels --silent -f labels[]=agent:merged",
+        stdout: "",
+      },
+      { when: "api repos/o/r/issues/1/labels", stdout: "[]" },
+      {
+        when: "api -X DELETE repos/o/r/issues/1/labels/agent%3Asplit --silent",
+        stdout: "",
+      },
+    ],
   );
   const { result, spawned } = tickOver();
   assert.deepEqual(spawned, []);

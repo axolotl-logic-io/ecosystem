@@ -4,17 +4,30 @@
 // agent:stopped-error at the stage they ran, a different error starts the
 // count again, and a claim that passes clears it.
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { beforeEach, test } from "node:test";
-import { bodyOf, effectNames, effectsOf } from "./gh-effects.mjs";
+import { z } from "zod";
+import { bodyOf, effectNames, effectsOf, stateOf } from "./gh-effects.mjs";
+import {
+  collaboratorReply,
+  stopMutationReplies,
+} from "./gh-mutation-fixtures.mjs";
 import {
   fakeGh,
   ghIsRead,
   NOW,
   openWith,
+  recordedSpawns,
   resetRuns,
+  STATE_ID_BASE,
   tickOver,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
+import { git, heldCheckout } from "./orchestrator-write-authority-test-kit.mjs";
+
+fakeGh.requireReplies();
+const { newIssueState } = await import("../src/state.ts");
 
 /** @import { GhEffect } from "./gh-effects.mjs" */
 
@@ -22,17 +35,31 @@ const STAGE = "implement";
 const STOP_LABEL = "agent:stopped-error";
 const MS_PER_SECOND = 1000;
 const DEAD_PID = 4343;
-const THREW = "claim threw: the saved state comment doesn't parse";
+const MISSING_ISSUE = 3;
+const MALFORMED_ISSUE = 4;
+const THREW = "claim threw: GitHub returned a temporary read failure";
 const OTHER = "claim threw: gh is not logged in";
 
+const STOPPED = z.looseObject({
+  stage: z.literal("stopped"),
+  stoppedStage: z.literal("implement"),
+  lease: z.null(),
+  stopCode: z.literal("error"),
+});
+const REFUSED =
+  /has no saved write authority|saved write authority is invalid/u;
 let jobsEnded = 0;
 
 beforeEach(resetRuns);
 
 // One tick after issue `number`'s next job ended, its claim failed with
 // `claimError`, or passed when that is null.
-/** @param {number} number @param {string | null} claimError @returns {{ spawned: string[][], effects: GhEffect[] }} */
-function tickAfterJob(number, claimError) {
+/** @param {number} number @param {string | null} claimError @param {object | null} [saved] @returns {{ spawned: string[][], effects: GhEffect[] }} */
+function tickAfterJob(
+  number,
+  claimError,
+  saved = { ...newIssueState(number), stage: STAGE },
+) {
   jobsEnded += 1;
   /** @type {{ kind: "finished", claimError?: string }} */
   const outcome = { kind: "finished" };
@@ -48,7 +75,21 @@ function tickAfterJob(number, claimError) {
       NOW.getTime() + jobsEnded * MS_PER_SECOND,
     ).toISOString(),
   });
-  openWith([{ number, state: { version: 2, number, stage: STAGE } }]);
+  const issue = { number };
+  if (saved !== null) {
+    Object.assign(issue, { state: saved });
+  }
+  openWith(
+    [issue],
+    [
+      collaboratorReply("o/r", "alice"),
+      ...stopMutationReplies(number, {
+        stateId: STATE_ID_BASE + number,
+        pr: null,
+        code: "error",
+      }),
+    ],
+  );
   const { spawned } = tickOver();
   return { spawned, effects: effectsOf(fakeGh.writes(ghIsRead)) };
 }
@@ -69,6 +110,11 @@ test("a claim failing with one error three times in a row stops the issue with t
   const text = bodyOf(third.effects, "comment #1 role=coordinator");
   assert.ok(text.includes("claim failed 3 times in a row"), text);
   assert.ok(text.includes(THREW), text);
+  const saved = STOPPED.parse(
+    stateOf(third.effects, "edit comment 1001 state"),
+  );
+  assert.equal(saved.stoppedStage, STAGE);
+  assert.equal(saved.lease, null);
 });
 
 test("a different error starts the count again, and a passing claim clears it", () => {
@@ -78,4 +124,60 @@ test("a different error starts the count again, and a passing claim clears it", 
   tickAfterJob(2, null);
   tickAfterJob(2, OTHER);
   assert.equal(stopped(2, tickAfterJob(2, OTHER)), false);
+});
+
+for (const malformed of [false, true]) {
+  test(`orchestrator stop refuses missing/malformed authority=${malformed} without writes and retains exact local work`, () => {
+    let number = MISSING_ISSUE;
+    /** @type {object | null} */
+    let saved = null;
+    if (malformed) {
+      number = MALFORMED_ISSUE;
+      saved = { version: 2, number, stage: STAGE };
+    }
+    const { wt, origin, local, index, before, refs } = heldCheckout(number);
+    for (const initial of [
+      tickAfterJob(number, THREW),
+      tickAfterJob(number, THREW),
+    ]) {
+      assert.equal(initial.spawned.length, 1);
+    }
+    assert.throws(() => tickAfterJob(number, THREW, saved), REFUSED);
+    assert.deepEqual(fakeGh.writes(ghIsRead), []);
+    assert.deepEqual(recordedSpawns, []);
+    assert.equal(git(["-C", origin, "show-ref"]), refs);
+    assert.equal(git(["-C", wt, "rev-parse", "HEAD"]), local);
+    assert.equal(git(["-C", wt, "show", "HEAD:held.txt"]), "local commit");
+    assert.deepEqual(fs.readFileSync(index), before);
+    assert.equal(
+      fs.readFileSync(path.join(wt, "held.txt"), "utf8"),
+      "staged\nunstaged\n",
+    );
+    assert.equal(
+      fs.readFileSync(path.join(wt, "dirty.txt"), "utf8"),
+      "untracked bytes\n",
+    );
+  });
+}
+
+test("the first malformed-state reauthor attempt cannot launder critical authority or spawn a job", () => {
+  const number = 5;
+  const { wt, origin, local, index, before, refs } = heldCheckout(number);
+  assert.throws(
+    () => tickAfterJob(number, THREW, { version: 2, number, stage: STAGE }),
+    REFUSED,
+  );
+  assert.deepEqual(fakeGh.writes(ghIsRead), []);
+  assert.deepEqual(recordedSpawns, []);
+  assert.equal(git(["-C", origin, "show-ref"]), refs);
+  assert.equal(git(["-C", wt, "rev-parse", "HEAD"]), local);
+  assert.deepEqual(fs.readFileSync(index), before);
+  assert.equal(
+    fs.readFileSync(path.join(wt, "held.txt"), "utf8"),
+    "staged\nunstaged\n",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(wt, "dirty.txt"), "utf8"),
+    "untracked bytes\n",
+  );
 });

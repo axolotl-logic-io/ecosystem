@@ -12,6 +12,7 @@ import { commentLines, githubComment } from "./fake-gh.mjs";
 import { isolatedOpsFixture } from "./integration-source-test-kit.mjs";
 
 const fx = await isolatedOpsFixture("integration-source-completion");
+fx.fakeGh.requireReplies();
 const { fakeGh, sh, worktree } = fx;
 const { loadConfig, paths } = await import("../src/config.ts");
 const { removeWorktree } = await import("../src/checkouts.ts");
@@ -99,6 +100,11 @@ function savedStateComment(n, saved) {
       when: `issues/${n}/comments?per_page`,
       stdout: commentLines([comment]),
       keep: true,
+      persistState: true,
+    },
+    {
+      when: `api -X PATCH repos/${cfg.repo}/issues/comments/${COMMENT_ID_BASE + n} -f`,
+      stdout: "",
     },
   ]);
 }

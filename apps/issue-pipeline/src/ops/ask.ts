@@ -9,6 +9,7 @@ import { AUTHOR, comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { LABELS, setLabels } from "../labels.ts";
 import { parseRequest } from "../process.ts";
+import { readWriteState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
 import { saveIssueState } from "./save-state.ts";
@@ -23,6 +24,7 @@ const ASK_REQUEST = z.looseObject({
 function ask(cfg: Config, request: unknown): { state: IssueState } {
   const req = parseRequest(ASK_REQUEST, "ask", request);
   const n = req.number;
+  readWriteState(cfg, n);
   const numbered = req.questions
     .map((question, index) => `${index + 1}. ${question}`)
     .join("\n");

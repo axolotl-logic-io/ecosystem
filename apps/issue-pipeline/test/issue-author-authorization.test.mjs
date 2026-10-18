@@ -5,6 +5,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import {
+  claimMutationReplies,
+  collaboratorReply,
+} from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
 import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
   ALLOWED,
@@ -14,10 +19,12 @@ import {
   commentsReply,
   configWith,
   reply,
+  requireGhReplies,
   runDir,
   writes,
 } from "./ops-cli-test-kit.mjs";
 
+requireGhReplies();
 const { loadConfig, paths } = await import("../src/config.ts");
 const { trustedInputsHash, writeIssueContext } = await import(
   "../src/issue-context.ts"
@@ -61,7 +68,10 @@ test("author revocation between jobs refuses the next claim and preserves earlie
     issueReply(NUMBER, { user: { login: ALLOWED } }),
     commentsReply(NUMBER, []),
     { when: `issues/${NUMBER}/comments -f`, stdout: JSON.stringify(mine) },
-    commentsReply(NUMBER, [mine]),
+    { ...commentsReply(NUMBER, [mine]), keep: true },
+    historyReply(NUMBER),
+    collaboratorReply("o/r", ALLOWED),
+    ...claimMutationReplies(NUMBER, CLAIM_ID, null),
   ]);
   const initial = SUCCESS.parse(
     askOps({ op: "claim", number: NUMBER, ...LANE }),
@@ -93,7 +103,11 @@ test("author revocation between jobs refuses the next claim and preserves earlie
 
 test("a stage input refresh observes collaborator revocation before writing or hashing edited requirements", () => {
   const n = NUMBER + 1;
-  reply([issueReply(n, { user: { login: ALLOWED } }), commentsReply(n, [])]);
+  reply([
+    collaboratorReply("o/r", ALLOWED),
+    issueReply(n, { user: { login: ALLOWED } }),
+    commentsReply(n, []),
+  ]);
   const context = writeIssueContext(cfg, n);
   const before = fs.readFileSync(context.file, "utf8");
   assert.equal(
@@ -131,7 +145,7 @@ test("claimed input snapshots cannot expose requirements to a role after author 
     },
     comments: [],
   };
-  reply([]);
+  reply([collaboratorReply("o/r", ALLOWED)]);
   assert.equal(roleInputsOf(cfg, NUMBER, snapshot).issue.user.login, ALLOWED);
   reply([{ when: `collaborators/${ALLOWED}`, code: 1, keep: true }]);
   assert.throws(() => roleInputsOf(cfg, NUMBER, snapshot), REFUSED);

@@ -49,6 +49,8 @@ if (seeded.status !== 0) {
   throw new Error(`seeding origin failed: ${seeded.stderr}`);
 }
 
+/** @type {string[][]} */
+const recordedSpawns = [];
 const fakeGh = installFakeGh();
 fakeGh.reply([]);
 const { ghIsRead } = await import("../src/github.ts");
@@ -89,16 +91,11 @@ const cfg = loadConfig(CONFIG);
  * @typedef {{ number: number, labels?: string[], author?: string, body?: string, state?: object, comments?: object[] }} OpenIssue
  */
 
-/** @param {number} number @returns {string} */
-function titleOf(number) {
-  return `Issue ${number}`;
-}
-
-/** @param {OpenIssue} issue @returns {object} */
+/** @param {OpenIssue} issue @returns {{number: number, title: string, author: {login: string}, labels: {name: string}[], createdAt: string, body: string}} */
 function row({ number, labels = [], body = "", author = ALLOWED }) {
   return {
     number,
-    title: titleOf(number),
+    title: `Issue ${number}`,
     author: { login: author },
     labels: labels.map((name) => ({ name })),
     createdAt: new Date(
@@ -138,7 +135,7 @@ function inputsOf(issue) {
   const comments = /** @type {import("../src/comments.ts").IssueComment[]} */ (
     issue.comments ?? []
   );
-  const title = titleOf(issue.number);
+  const { title } = row(issue);
   return trustedInputsHash(
     cfg,
     { title, body: issue.body ?? "", user: { login: issue.author ?? ALLOWED } },
@@ -179,8 +176,8 @@ function openWith(issues, others = []) {
       keep: true,
     },
     { when: "issue list", stdout: JSON.stringify(issues.map(row)) },
-    ...issues.map(commentReply),
     ...others,
+    ...issues.map(commentReply),
   ]);
 }
 
@@ -263,6 +260,7 @@ function resetRuns() {
  * @returns {{ result: TickResult, spawned: string[][] }}
  */
 function tickOver(run = {}) {
+  recordedSpawns.length = 0;
   /** @type {string[][]} */
   const spawned = [];
   const live = new Set(run.live ?? []);
@@ -272,6 +270,7 @@ function tickOver(run = {}) {
     now: () => run.at ?? NOW,
     spawn: (argv) => {
       spawned.push([...argv]);
+      recordedSpawns.push([...argv]);
       return FIRST_SPAWN_PID + spawned.length - 1;
     },
     alive: (pid) => live.has(pid),
@@ -296,8 +295,11 @@ export {
   NOW,
   openWith,
   pipelineComment,
+  recordedSpawns,
   resetRuns,
   runFile,
+  STATE_ID_BASE,
+  stateComment,
   tickOver,
   VISITOR,
   writeJob,

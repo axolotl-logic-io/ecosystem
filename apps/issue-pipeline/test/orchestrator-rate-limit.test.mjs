@@ -5,14 +5,23 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import {
+  collaboratorReply,
+  commentWriteReplies,
+} from "./gh-mutation-fixtures.mjs";
+import {
+  fakeGh,
   loggedFor,
   MINUTE_MS,
   NOW,
   openWith,
   resetRuns,
+  STATE_ID_BASE,
   tickOver,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
+
+fakeGh.requireReplies();
+const { newIssueState } = await import("../src/state.ts");
 
 /** @import { OpenIssue } from "./orchestrator-world-test-kit.mjs" */
 
@@ -24,7 +33,7 @@ beforeEach(resetRuns);
 
 /** @type {OpenIssue[]} */
 const QUEUE = [
-  { number: 1, state: { version: 2, number: 1, stage: "implement" } },
+  { number: 1, state: { ...newIssueState(1), stage: "implement" } },
   { number: 2 },
 ];
 
@@ -36,10 +45,16 @@ test("a rate-limited end holds every start until the backoff passes", () => {
     outcome: { kind: "finished", rateLimited: true },
     endedAt: NOW.toISOString(),
   });
-  openWith(QUEUE);
+  openWith(QUEUE, [
+    collaboratorReply("o/r", "alice"),
+    ...commentWriteReplies("o/r", 1, [STATE_ID_BASE + 1]),
+  ]);
   assert.deepEqual(tickOver().spawned, []);
   assert.deepEqual(loggedFor(2), ["author held rate-limited"]);
-  openWith(QUEUE);
+  openWith(QUEUE, [
+    collaboratorReply("o/r", "alice"),
+    ...commentWriteReplies("o/r", 1, [STATE_ID_BASE + 1]),
+  ]);
   const later = new Date(NOW.getTime() + BACKOFF_MINUTES * MINUTE_MS);
   assert.equal(tickOver({ at: later }).spawned.length, 2);
 });

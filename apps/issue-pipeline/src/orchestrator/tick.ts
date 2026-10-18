@@ -11,7 +11,7 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { stop } from "../ops/stop.ts";
-import { readState, writeState } from "../saved-state.ts";
+import { readWriteState, writeState } from "../saved-state.ts";
 import type { Stage } from "../stages.ts";
 import { STAGES } from "../stages.ts";
 import type { IssueState } from "../state.ts";
@@ -125,7 +125,7 @@ function reauthorFirst(run: Run, start: Start): Decision {
   if (reauthor === null) {
     return start;
   }
-  const fresh = readState(cfg, issue).state;
+  const fresh = readWriteState(cfg, issue);
   const seen = run.queue.states.get(issue) ?? null;
   const { leaseMs } = run.settings;
   const result = reauthoredState({ fresh, seen }, reauthor, { now, leaseMs });

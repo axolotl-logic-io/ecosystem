@@ -36,6 +36,9 @@ const WRITE_STATE = ISSUE_STATE.pick({
   stoppedStage: ISSUE_STATE.shape.stoppedStage.removeCatch(),
   stopCode: ISSUE_STATE.shape.stopCode.removeCatch(),
   branch: ISSUE_STATE.shape.branch.removeCatch(),
+  headSha: ISSUE_STATE.shape.headSha.removeCatch(),
+  flows: ISSUE_STATE.shape.flows.removeCatch(),
+  lease: ISSUE_STATE.shape.lease.removeCatch(),
   pr: ISSUE_STATE.shape.pr.removeCatch(),
   codeMerged: ISSUE_STATE.shape.codeMerged.removeCatch(),
   merged: ISSUE_STATE.shape.merged.removeCatch(),
@@ -62,6 +65,38 @@ const LEGACY_STATE = z.looseObject({
   headSha: z.string().nullish().catch(null),
   flows: FLOWS.nullish().catch(null),
   log: z.array(z.unknown()).nullish().catch(null),
+});
+
+// Claim alone may migrate an explicit, identifiable installed-version state.
+// Unknown versions/empty objects and v2 receipts cannot become a fresh v1 state.
+const CLAIM_LEGACY_STATE = LEGACY_STATE.extend({
+  version: z.literal(1),
+  number: z.number().int().positive(),
+  stage: z.enum([
+    "triage",
+    "spec",
+    "implement",
+    "review",
+    "checks",
+    "accept",
+    "merge",
+    "publish",
+    "fix",
+    "stopped",
+    "done",
+  ]),
+  stoppedStage: LEGACY_STATE.shape.stoppedStage.removeCatch(),
+  stopCode: LEGACY_STATE.shape.stopCode.removeCatch(),
+  lease: LEGACY_STATE.shape.lease.removeCatch(),
+  pr: LEGACY_STATE.shape.pr.removeCatch(),
+  headSha: LEGACY_STATE.shape.headSha.removeCatch(),
+  flows: LEGACY_STATE.shape.flows.removeCatch(),
+  codeMerged: z.never().optional(),
+  merged: z.never().optional(),
+  hardened: z.never().optional(),
+  integration: z.never().optional(),
+  security: z.never().optional(),
+  gherkin: z.never().optional(),
 });
 
 // Legacy stages before any code work, which go to the author alone.
@@ -177,11 +212,34 @@ function readWriteState(cfg: Config, number: number): IssueState {
     throw new OpsError(`#${number} has no saved write authority`);
   }
   const raw = rawStateBody(latest.body ?? "");
+  return validatedWriteState(raw, number);
+}
+
+function validatedWriteState(raw: unknown, number: number): IssueState {
   const critical = WRITE_STATE.safeParse(raw);
   if (!critical.success || critical.data.number !== number) {
     throw new OpsError(`#${number}'s saved write authority is invalid`);
   }
   return ISSUE_STATE.parse(raw);
+}
+
+// Claim may initialize genuinely absent state or migrate explicit v1 state.
+// Every existing v2 state uses the same strict validator as credentialed writes.
+function readClaimState(
+  cfg: Config,
+  number: number,
+  comments: readonly IssueComment[],
+): IssueState | null {
+  const latest = latestStateComment(cfg, comments);
+  if (latest === undefined) {
+    return null;
+  }
+  const raw = rawStateBody(latest.body ?? "");
+  const legacy = CLAIM_LEGACY_STATE.safeParse(raw);
+  if (legacy.success && legacy.data.number === number) {
+    return parseIssueState(legacy.data, number);
+  }
+  return validatedWriteState(raw, number);
 }
 
 function readState(
@@ -234,6 +292,7 @@ export {
   migrateLegacyState,
   parseIssueState,
   parseStateBody,
+  readClaimState,
   readState,
   readWriteState,
   stateBody,

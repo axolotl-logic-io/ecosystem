@@ -285,6 +285,7 @@ function finishWrites(state, published = []) {
 export {
   advanceBase,
   ask,
+  CLAIM_ID,
   calls,
   claimListing,
   commentPost,
@@ -293,8 +294,10 @@ export {
   finishWrites,
   GIT_USER,
   hoursFromNow,
+  ISSUE,
   LANE,
   listCall,
+  REPO,
   relabel,
   replyLine,
   SWEEP,
