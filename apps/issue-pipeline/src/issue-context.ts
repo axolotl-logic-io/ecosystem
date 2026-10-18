@@ -12,6 +12,7 @@ import { listComments, pipelineRole } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { ghJson, isAllowedUser } from "./github.ts";
+import { OpsError } from "./process.ts";
 
 // An issue as GitHub's REST API gives it.
 const ISSUE = z.looseObject({
@@ -73,12 +74,30 @@ function commentParts(
   return { dropped, parts };
 }
 
-// Writes issue.md for issue `number` and returns its path, the issue and its
-// comments.
-function writeIssueContext(cfg: Config, number: number): IssueContext {
+// Explicit assignment is not a trust override. Recheck at each input boundary,
+// before exposing requirements or creating any issue/claim artifacts.
+function assertIssueAuthor(cfg: Config, issue: Pick<Issue, "user">): void {
+  if (!isAllowedUser(cfg, issue.user.login)) {
+    throw new OpsError(
+      `issue author @${issue.user.login} is not on allowedUsers or not a collaborator`,
+    );
+  }
+}
+
+// Reads fresh issue requirements only when the actual author is still an
+// allowed collaborator. Creates no checkout, claim, lease or issue file.
+function authorizedIssue(cfg: Config, number: number): Issue {
   const issue = ISSUE.parse(
     ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${number}`]),
   );
+  assertIssueAuthor(cfg, issue);
+  return issue;
+}
+
+// Writes issue.md for issue `number` and returns its path, the issue and its
+// comments.
+function writeIssueContext(cfg: Config, number: number): IssueContext {
+  const issue = authorizedIssue(cfg, number);
   const comments = listComments(cfg, number);
   const { dropped, parts } = commentParts(cfg, comments);
   const lines = [
@@ -118,9 +137,10 @@ function isTrustedInput(cfg: Config, item: IssueComment): boolean {
 // never change it, so they can't send an issue back to the author.
 function trustedInputsHash(
   cfg: Config,
-  issue: Pick<Issue, "title" | "body">,
+  issue: Pick<Issue, "title" | "body" | "user">,
   comments: readonly IssueComment[],
 ): string {
+  assertIssueAuthor(cfg, issue);
   const hash = createHash("sha256");
   hash.update(JSON.stringify(["issue", issue.title, issue.body ?? ""]));
   const trusted = comments
@@ -133,4 +153,10 @@ function trustedInputsHash(
 }
 
 export type { Issue, IssueContext };
-export { ISSUE, isTrustedInput, trustedInputsHash, writeIssueContext };
+export {
+  authorizedIssue,
+  ISSUE,
+  isTrustedInput,
+  trustedInputsHash,
+  writeIssueContext,
+};

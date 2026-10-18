@@ -18,7 +18,7 @@ const { trustedInputsHash } = await import("../src/issue-context.ts");
 const cfg = loadConfig(CONFIG);
 const ISSUE = 9;
 const LATER = "2026-10-18T08:02:00Z";
-const TITLE_AND_BODY = { title: "T", body: "B" };
+const TITLE_AND_BODY = { title: "T", body: "B", user: { login: ALLOWED } };
 
 // The body of the issue's `kind` usage comment (`usage`, `usage-2`, ...), as
 // src/job/usage-comment.ts lays it out.

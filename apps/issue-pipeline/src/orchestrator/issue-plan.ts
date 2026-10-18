@@ -155,6 +155,9 @@ function planOf(
     return NONE;
   }
   const { state, inputs } = issue;
+  if (inputs === null) {
+    return NONE;
+  }
   const stage = stageOf(state);
   if (stage === null) {
     return NONE;

@@ -18,7 +18,7 @@ const { testConfig } = await import("./config-test-kit.mjs");
 const gh = installFakeGh();
 gh.reply([{ when: "collaborators/lapsed", code: 1, keep: true }]);
 const { cfg } = testConfig({ allowedUsers: ["owner", "lapsed"] });
-const ISSUE = { title: "Title", body: "Body" };
+const ISSUE = { title: "Title", body: "Body", user: { login: "owner" } };
 const NUMBER = 7;
 const GHERKIN_REV = 2;
 const GHERKIN_ID = 9;

@@ -23,7 +23,13 @@ import { isStopLabel } from "../stops.ts";
 import { afterMarkOf, inputRevisionsOf } from "./inputs.ts";
 import type { IssueRow } from "./open-issues.ts";
 import { openIssues } from "./open-issues.ts";
-import type { IssueJob, JobEnd, Snapshot, SnapshotIssue } from "./queue.ts";
+import type {
+  InputRevisions,
+  IssueJob,
+  JobEnd,
+  Snapshot,
+  SnapshotIssue,
+} from "./queue.ts";
 import type { StartRecord } from "./start-job.ts";
 
 // The queue as of one read: the snapshot the scheduler reads, each issue's
@@ -108,14 +114,25 @@ function issueOf(
   const { state } = readState(cfg, number, comments);
   const status = readStatus(paths.runDir(cfg, number));
   const start = read.starts.findLast((s) => s.issue === number);
+  const login = row.author?.login;
+  const authorAllowed = isAllowedUser(cfg, login);
+  let inputs: InputRevisions | null = null;
+  if (authorAllowed && typeof login === "string") {
+    inputs = inputRevisionsOf(
+      cfg,
+      number,
+      { title: row.title, body: row.body, user: { login } },
+      { comments, state },
+    );
+  }
   const issue: SnapshotIssue = {
     number,
     createdAt: row.createdAt,
     labels: row.labels.map((label) => label.name),
-    authorAllowed: isAllowedUser(cfg, row.author?.login),
+    authorAllowed,
     state,
     after: afterMarkOf(row.body).filter((n) => read.open.has(n)),
-    inputs: inputRevisionsOf(cfg, number, row, { comments, state }),
+    inputs,
     ...jobOf(status, start, read.alive),
   };
   return { issue, state };

@@ -145,18 +145,10 @@ function git(
   });
 }
 
-const collaborators = new Map<string, boolean>();
-
+// Authorization reads must observe revocation during a long-lived job too.
 function isCollaborator(cfg: Config, login: string): boolean {
-  const known = collaborators.get(login);
-  if (known !== undefined) {
-    return known;
-  }
   const endpoint = `repos/${cfg.repo}/collaborators/${login}`;
-  const result = gh(cfg, ["api", endpoint, "--silent"], { allowFail: true });
-  const isOne = result.code === 0;
-  collaborators.set(login, isOne);
-  return isOne;
+  return gh(cfg, ["api", endpoint, "--silent"], { allowFail: true }).code === 0;
 }
 
 // A login counts only if it is on the config's allowedUsers (or is the account)

@@ -51,7 +51,8 @@ interface SnapshotIssue {
   state: IssueState | null;
   // The open issues its after mark names.
   after: readonly number[];
-  inputs: InputRevisions;
+  // Absent when the issue author is not currently trusted.
+  inputs: InputRevisions | null;
   job: IssueJob | null;
   // A legacy job.json (no `pipelineVersion: 2`) whose process still runs.
   legacyLive: boolean;

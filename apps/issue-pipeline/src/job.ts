@@ -62,6 +62,7 @@ import os from "node:os";
 import process from "node:process";
 import type { Config } from "./config.ts";
 import { loadConfig, paths } from "./config.ts";
+import { authorizedIssue } from "./issue-context.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
 import type { Brain } from "./job/brain.ts";
@@ -250,6 +251,7 @@ async function main(): Promise<void> {
       process.stdout.write(`${JSON.stringify(boundary)}\n`);
       return;
     }
+    authorizedIssue(cfg, args.issue);
     const end = await runStage(args, cfg, brain);
     if (end.kind === "finished") {
       process.stdout.write(`${JSON.stringify(end.summary)}\n`);

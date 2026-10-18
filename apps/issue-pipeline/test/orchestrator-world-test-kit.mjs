@@ -10,8 +10,8 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
+import { isolatedRoot as root } from "./isolated-root-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
 /** @import { TickResult } from "../src/orchestrator/tick.ts" */
@@ -37,11 +37,6 @@ const PIPELINE_LABELS = [
   "agent:merged",
 ];
 
-const root = fs.mkdtempSync("/tmp/issue-pipeline-orchestrator-");
-process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-// Environment variables are named by strings, as src/process.ts takes them.
-Object.assign(process.env, Object.fromEntries([["ISSUE_PIPELINE_ROOT", root]]));
-
 const seeded = spawnSync(
   "bash",
   [
@@ -55,12 +50,7 @@ if (seeded.status !== 0) {
 }
 
 const fakeGh = installFakeGh();
-const { ROOT } = await import("../src/pipeline-root.ts");
-if (ROOT !== root) {
-  throw new Error(
-    `the pipeline root is ${ROOT}, not the test's: a test imported src before this kit`,
-  );
-}
+fakeGh.reply([]);
 const { ghIsRead } = await import("../src/github.ts");
 const { STOPS } = await import("../src/stops.ts");
 const { loadConfig, paths } = await import("../src/config.ts");
@@ -149,7 +139,11 @@ function inputsOf(issue) {
     issue.comments ?? []
   );
   const title = titleOf(issue.number);
-  return trustedInputsHash(cfg, { title, body: issue.body ?? "" }, comments);
+  return trustedInputsHash(
+    cfg,
+    { title, body: issue.body ?? "", user: { login: issue.author ?? ALLOWED } },
+    comments,
+  );
 }
 
 // Issue `number`'s state comment, whose id is STATE_ID_BASE + number.

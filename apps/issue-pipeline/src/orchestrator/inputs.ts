@@ -21,7 +21,7 @@ import type { InputRevisions } from "./queue.ts";
 function inputRevisionsOf(
   cfg: Config,
   number: number,
-  issue: Pick<Issue, "title" | "body">,
+  issue: Pick<Issue, "title" | "body" | "user">,
   read: { comments: readonly IssueComment[]; state: IssueState | null },
 ): InputRevisions {
   const { comments, state } = read;
