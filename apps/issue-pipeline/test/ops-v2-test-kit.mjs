@@ -40,6 +40,8 @@ function v2State(n, extra = {}) {
       findings: [],
       revision: null,
     },
+    hardened: null,
+    integration: null,
     verifiedSha: null,
     mergeReturn: null,
     merged: null,
