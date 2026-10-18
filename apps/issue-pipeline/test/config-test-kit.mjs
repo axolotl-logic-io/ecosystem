@@ -1,11 +1,14 @@
 // @ts-check
 // A loaded pipeline config for tests of the modules that take one, written to
 // a temporary file, with the warnings loadConfig printed while loading it.
+// It isolates the pipeline root before src loads (isolated-root-test-kit.mjs).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { loadConfig } from "../src/config.ts";
+import "./isolated-root-test-kit.mjs";
+
+const { loadConfig } = await import("../src/config.ts");
 
 const BASE = {
   repo: "example/repo",

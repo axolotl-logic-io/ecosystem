@@ -2,29 +2,16 @@
 // liveClaims from ops.mjs: which comments count as a lane's claim on an issue.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { liveClaims } from "../src/claims.ts";
-import { COMMENT } from "../src/comments.ts";
+import { configFixture } from "./config-fixtures.mjs";
 import { githubComment } from "./fake-gh.mjs";
+import "./isolated-root-test-kit.mjs";
 
-/** @import { Config } from "../src/config.ts" */
 /** @import { IssueComment } from "../src/comments.ts" */
 
-/** @type {Config} */
-const cfg = {
-  account: "bot",
-  allowedUsers: ["alice"],
-  baseBranch: "integration",
-  claimWaitSeconds: [0, 0],
-  commands: { test: "true" },
-  contextLimits: { soft: 150_000, hard: 175_000 },
-  leaseHours: 3,
-  maxContinuations: 1,
-  issueTokenBudget: 1_000_000,
-  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
-  practices: [],
-  repo: "o/r",
-  slug: "o__r",
-};
+const { liveClaims } = await import("../src/claims.ts");
+const { COMMENT } = await import("../src/comments.ts");
+
+const cfg = configFixture();
 const now = new Date().toISOString();
 const MS_PER_HOUR = 3_600_000;
 // Past the config's three-hour lease.

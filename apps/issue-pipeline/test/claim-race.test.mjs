@@ -3,44 +3,22 @@
 // closeClaims), run against a fake gh: which claims they post, edit, close
 // and label, and the markers and notes the wiki promises on them.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { test } from "node:test";
-import { COMMENT } from "../src/comments.ts";
+import { configFixture } from "./config-fixtures.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 import { bodyOf, effectNames, effectsOf } from "./gh-effects.mjs";
-import { setEnv } from "./ops-run-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
 
-/** @import { Config } from "../src/config.ts" */
 /** @import { GhEffect } from "./gh-effects.mjs" */
 
-setEnv(
-  "ISSUE_PIPELINE_ROOT",
-  fs.mkdtempSync(path.join(os.tmpdir(), "claim-race-")),
-);
 const fakeGh = installFakeGh();
+const { COMMENT } = await import("../src/comments.ts");
 const { closeClaims, raceForClaim, touchClaim } = await import(
   "../src/claims.ts"
 );
 const { ghIsRead } = await import("../src/github.ts");
 
-/** @type {Config} */
-const cfg = {
-  account: "bot",
-  allowedUsers: ["alice"],
-  baseBranch: "integration",
-  claimWaitSeconds: [0, 0],
-  commands: { test: "true" },
-  contextLimits: { soft: 150_000, hard: 175_000 },
-  leaseHours: 3,
-  maxContinuations: 1,
-  issueTokenBudget: 1_000_000,
-  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
-  practices: [],
-  repo: "o/r",
-  slug: "o__r",
-};
+const cfg = configFixture();
 const req = { lane: "me", sweepId: "s9" };
 const now = new Date().toISOString();
 // The issue every test claims, this lane's claim on it, and the earlier
@@ -114,7 +92,6 @@ test("a lane whose claim is the earliest live one wins, and labels the issue wor
     won: true,
     claimId: 7,
     posted: true,
-    waited: 0,
   });
   const won = effects();
   assert.deepEqual(effectNames(won), [
@@ -139,7 +116,6 @@ test("a lane that sees an earlier claim after posting abandons its own", () => {
     won: false,
     holder: "a",
     posted: true,
-    waited: 0,
   });
   const abandoned = effects();
   assert.deepEqual(effectNames(abandoned), [
@@ -159,7 +135,6 @@ test("a lane that can't see its own claim after posting abandons it", () => {
     won: false,
     holder: null,
     posted: true,
-    waited: 0,
   });
   const edit = bodyOf(effects(), "edit comment 7 role=claim");
   assert.ok(edit.includes(CLOSED_MARK));

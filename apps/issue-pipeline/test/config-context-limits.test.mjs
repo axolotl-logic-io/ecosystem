@@ -1,132 +1,74 @@
 // @ts-check
-// Config `contextLimits` (the soft and hard context limits a writer session
-// works to, in tokens) and `maxContinuations` (handoffs each writer stage may
-// continue, per issue) default to 175000/225000 and 1 (#269,
-// wrap-up-at-175k), and loadConfig refuses limits that are not positive whole
-// numbers with soft below hard, and a hard limit at or above a writer's or
-// the spec writer's context budget, which the watchdog kills it past (#335).
+// Session budgets and handoffs were removed (src/config-legacy.ts's
+// REMOVED_FIELDS): the context limits a writer worked to (`contextLimits`,
+// #269), the handoffs it could continue (`maxContinuations`) and the context
+// budgets the watchdog held it to (`sessionTokenCap`, `roleBudgets`, #335).
+// What replaces the tests of their defaults and refusals: a config written
+// for the installed version still loads, whatever it set them to, even the
+// values loadConfig once refused; each is named in a warning saying why it
+// is no longer read; and none reaches the loaded config.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { test } from "node:test";
-import { loadConfig } from "../src/config.ts";
-import { OpsError } from "../src/process.ts";
+import { testConfig } from "./config-test-kit.mjs";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-limits-"));
-process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
-let files = 0;
-const SEVERAL = 3;
-// The default sessionTokenCap, a writer's watchdog budget.
+const REMOVAL = "session budgets and handoffs were removed";
+const SOFT = 175_000;
+const HARD = 225_000;
 const WRITER_CAP = 300_000;
-// The default contextLimits.hard, and the spec writer's budget before #335.
-const DEFAULT_HARD = 225_000;
-const OLD_SPEC_BUDGET = 80_000;
-const BELOW_WRITER_BUDGETS =
-  /contextLimits\.hard \(225000\) must be below every writer's context budget, but ciFixer's is 100000/u;
-const BELOW_SPEC_BUDGET =
-  /contextLimits\.hard \(225000\) must be below every writer's context budget, but spec's is \d+/u;
+const CI_FIXER_BUDGET = 100_000;
+const SEVERAL = 3;
 
-/** @param {object} extra @returns {string} */
-function configWith(extra) {
-  files += 1;
-  const file = path.join(tmp, `config-${files}.json`);
-  fs.writeFileSync(
-    file,
-    JSON.stringify({
-      repo: "o/r",
-      account: "a",
-      allowedUsers: ["a"],
-      commands: { test: "true" },
-      ...extra,
-    }),
-  );
-  return file;
-}
-
-// Whether loading a config with `extra` throws an OpsError naming its file.
-/** @param {object} extra @returns {boolean} */
-function refuses(extra) {
-  const file = configWith(extra);
-  try {
-    loadConfig(file);
-  } catch (err) {
-    return err instanceof OpsError && err.message.includes(file);
-  }
-  return false;
-}
-
-test("context limits default to 175000 soft, 225000 hard, one continuation, below the 300000 writer cap", () => {
-  const cfg = loadConfig(configWith({}));
-  assert.deepEqual(cfg.contextLimits, { soft: 175_000, hard: 225_000 });
-  assert.equal(cfg.maxContinuations, 1);
-  const { sessionTokenCap } = cfg;
-  assert.equal(sessionTokenCap, WRITER_CAP);
-});
-
-test("a hard limit at or above a writer's context budget is refused, naming the role", () => {
-  const writerBudgets = [
-    { sessionTokenCap: 225_000 },
-    { sessionTokenCap: 200_000 },
-    { roleBudgets: { implementer: 225_000 } },
-    { roleBudgets: { fixer: 200_000 } },
-    { roleBudgets: { ciFixer: 100_000 } },
-  ];
-  for (const bad of writerBudgets) {
-    assert.ok(refuses(bad), JSON.stringify(bad));
-  }
-  assert.throws(
-    () => loadConfig(configWith({ roleBudgets: { ciFixer: 100_000 } })),
-    BELOW_WRITER_BUDGETS,
-  );
-});
-
-test("a spec writer's budget at or below the hard limit is refused, naming spec, and the defaults load", () => {
-  for (const spec of [DEFAULT_HARD, OLD_SPEC_BUDGET]) {
-    assert.throws(
-      () => loadConfig(configWith({ roleBudgets: { spec } })),
-      BELOW_SPEC_BUDGET,
+// What is wrong with how a config setting the `removed` keys loads: a key
+// with no warning naming its removal, or one the loaded config still has.
+/** @param {Record<string, unknown>} removed @returns {string[]} */
+function ignoredProblems(removed) {
+  const { cfg, warnings } = testConfig(removed);
+  /** @type {string[]} */
+  const problems = [];
+  for (const key of Object.keys(removed)) {
+    const warned = warnings.some((line) =>
+      line.includes(`${key} is no longer read (${REMOVAL})`),
     );
+    if (!warned) {
+      problems.push(`${key} has no warning`);
+    }
+    if (key in cfg) {
+      problems.push(`${key} is in the config`);
+    }
   }
-  assert.equal(loadConfig(configWith({})).contextLimits.hard, DEFAULT_HARD);
+  return problems;
+}
+
+test("a config that sets the removed context limits, continuations and budgets loads, warning for each", () => {
+  const problems = ignoredProblems({
+    contextLimits: { soft: SOFT, hard: HARD },
+    maxContinuations: SEVERAL,
+    sessionTokenCap: WRITER_CAP,
+    roleBudgets: { implementer: WRITER_CAP },
+  });
+  assert.deepEqual(problems, []);
 });
 
-test("a hard limit below every writer's budget loads, whatever a reader's budget is", () => {
-  const cfg = loadConfig(
-    configWith({
-      sessionTokenCap: 300_000,
-      roleBudgets: { implementer: 300_000, triage: 50_000, spec: 300_000 },
-      contextLimits: { soft: 175_000, hard: 225_000 },
-    }),
-  );
-  assert.deepEqual(cfg.contextLimits, { soft: 175_000, hard: 225_000 });
-});
-
-test("other positive limits with soft below hard are kept", () => {
-  const cfg = loadConfig(
-    configWith({
-      contextLimits: { soft: 90_000, hard: 120_000 },
-      maxContinuations: 0,
-    }),
-  );
-  assert.deepEqual(cfg.contextLimits, { soft: 90_000, hard: 120_000 });
-  assert.equal(cfg.maxContinuations, 0);
-  assert.equal(
-    loadConfig(configWith({ maxContinuations: SEVERAL })).maxContinuations,
-    SEVERAL,
-  );
-});
-
-test("bad context limits throw naming the config file", () => {
-  for (const bad of [
-    { contextLimits: { soft: 175_000, hard: 175_000 } },
-    { contextLimits: { soft: 180_000, hard: 175_000 } },
-    { contextLimits: { soft: 150_000 } },
-    { contextLimits: { soft: 0, hard: 175_000 } },
-    { contextLimits: { soft: 1.5, hard: 175_000 } },
+test("values loadConfig once refused no longer stop a config loading", () => {
+  const once = [
+    { contextLimits: { soft: HARD, hard: SOFT } },
+    { contextLimits: { soft: 0 } },
     { maxContinuations: -1 },
-    { maxContinuations: 0.5 },
+    { sessionTokenCap: HARD, contextLimits: { soft: SOFT, hard: HARD } },
+    { roleBudgets: { ciFixer: CI_FIXER_BUDGET } },
+  ];
+  assert.deepEqual(once.flatMap(ignoredProblems), []);
+});
+
+test("a config without them loads with no warning", () => {
+  const { cfg, warnings } = testConfig({});
+  assert.deepEqual(warnings, []);
+  for (const key of [
+    "contextLimits",
+    "maxContinuations",
+    "sessionTokenCap",
+    "roleBudgets",
   ]) {
-    assert.ok(refuses(bad), JSON.stringify(bad));
+    assert.equal(key in cfg, false, key);
   }
 });

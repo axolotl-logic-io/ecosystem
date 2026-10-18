@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { configFixture } from "./config-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("wiki-check");
@@ -13,24 +14,13 @@ const { wikiCheck } = await import("../src/ops/wiki-check.ts");
 
 const ISSUE = 7;
 const GIT_USER = "-c user.email=a@b -c user.name=a";
-/** @type {import("../src/config.ts").Config} */
-const CFG = {
+const CFG = configFixture({ account: "a", allowedUsers: ["a"], leaseHours: 1 });
+const WIKI_CFG = configFixture({
   account: "a",
   allowedUsers: ["a"],
-  baseBranch: "integration",
-  claimWaitSeconds: [0, 0],
-  commands: { test: "true" },
-  contextLimits: { soft: 150_000, hard: 175_000 },
   leaseHours: 1,
-  maxContinuations: 1,
-  issueTokenBudget: 1_000_000,
-  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
-  practices: [],
-  repo: "o/r",
-  slug: "o__r",
-};
-/** @type {import("../src/config.ts").Config} */
-const WIKI_CFG = { ...CFG, wiki: true };
+  wiki: true,
+});
 const BAD_REQUEST = /bad wiki-check request/u;
 const CLEAN = { checks: [], pass: true };
 

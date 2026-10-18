@@ -6,21 +6,18 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
+import { configFixture } from "./config-fixtures.mjs";
 import { installFakeGh } from "./fake-gh.mjs";
-import { setEnv } from "./ops-run-test-kit.mjs";
+import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { askRaw } from "./verify-test-kit.mjs";
 
-/** @import { Config } from "../src/config.ts" */
 /** @import { Clock } from "../src/ops/ci-status.ts" */
 /** @import { GhReply } from "./fake-gh.mjs" */
 
-const root = fs.mkdtempSync("/tmp/issue-pipeline-ci-status-");
-process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-// The pipeline root is read once, on import, so it is set first.
-setEnv("ISSUE_PIPELINE_ROOT", root);
+const root = isolatedRoot;
+// isolated-root-test-kit.mjs isolated the pipeline root before src loads.
 const { ciStatus } = await import("../src/ops/ci-status.ts");
 const fakeGh = installFakeGh();
 
@@ -34,24 +31,7 @@ fs.writeFileSync(
     commands: { test: "true" },
   }),
 );
-/** @type {Config} */
-const cfg = {
-  repo: "o/r",
-  account: "a",
-  allowedUsers: ["a"],
-  baseBranch: "integration",
-  claimWaitSeconds: [0, 0],
-  commands: { test: "true" },
-  contextLimits: { soft: 150_000, hard: 175_000 },
-  leaseHours: 3,
-  maxContinuations: 1,
-  issueTokenBudget: 1_000_000,
-  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
-  practices: [],
-  requireCi: true,
-  ciWaitMinutes: 30,
-  slug: "o__r",
-};
+const cfg = configFixture({ account: "a", allowedUsers: ["a"] });
 const ISSUE = 3;
 const PR = 9;
 const DIRECT = { number: ISSUE, pr: PR };

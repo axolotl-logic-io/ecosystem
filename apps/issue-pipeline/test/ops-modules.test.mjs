@@ -1,47 +1,31 @@
 // @ts-check
 // The strict-TS ops modules in-process, against a fake gh: openPrFor's
-// lookup, stop's fallback to the catch-all `error` stop, and save-state with
-// no state (#183).
+// lookup, stop's fallback to the catch-all `error` stop, and the refusals of a
+// stop with no reason and a save-state with no state, which write nothing
+// (#183; v2 requests need a reason and a state).
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { test } from "node:test";
+import { configFixture } from "./config-fixtures.mjs";
 import { installFakeGh } from "./fake-gh.mjs";
-import { setEnv } from "./ops-run-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
 
-/** @import { Config } from "../src/config.ts" */
-setEnv(
-  "ISSUE_PIPELINE_ROOT",
-  fs.mkdtempSync(path.join(os.tmpdir(), "ops-modules-")),
-);
 const fakeGh = installFakeGh();
 const { openPrFor } = await import("../src/ops/prs.ts");
 const { stop } = await import("../src/ops/stop.ts");
 const { saveState } = await import("../src/ops/save-state.ts");
 const { ghIsRead } = await import("../src/github.ts");
+const { newIssueState } = await import("../src/state.ts");
 
-/** @type {Config} */
-const cfg = {
-  account: "bot",
-  allowedUsers: ["alice"],
-  baseBranch: "integration",
-  claimWaitSeconds: [0, 0],
-  commands: { test: "true" },
-  contextLimits: { soft: 150_000, hard: 175_000 },
-  leaseHours: 3,
-  maxContinuations: 1,
-  issueTokenBudget: 1_000_000,
-  usageFlags: { firstContext: 40_000, toolOutputShare: 0.25 },
-  practices: [],
-  repo: "o/r",
-  slug: "o__r",
-};
+const cfg = configFixture();
 // The issue openPrFor looks up, and the PR gh lists for its branch.
 const ISSUE = 7;
 const PR = 12;
 const STOPPED_ISSUE = 8;
 const SAVED_ISSUE = 9;
+// The id GitHub gives the stop's comment.
+const STOP_COMMENT = 31;
+const BAD_STOP = /bad stop request/u;
+const BAD_SAVE = /bad save-state request/u;
 // gh answers only a lookup that names the issue's branch, agent/issue-<n>.
 test("openPrFor reads the issue branch's open PR", () => {
   fakeGh.reply([{ when: "agent/issue-7 ", stdout: '[{"number":12}]' }]);
@@ -53,21 +37,39 @@ test("openPrFor finds no PR when gh lists none", () => {
   assert.equal(openPrFor(cfg, ISSUE), undefined);
 });
 
-test("stop with an empty reason and no code is the error stop", () => {
+test("stop with a reason no stop names and no code is the error stop", () => {
+  fakeGh.reply([{ when: "comments -f", stdout: `${STOP_COMMENT}\n` }]);
+  const request = {
+    number: STOPPED_ISSUE,
+    reason: "something no stop names",
+    state: newIssueState(STOPPED_ISSUE),
+  };
+  const { code, label, state } = stop(cfg, request);
+  assert.deepEqual(
+    { code, label, stage: state.stage, stopCode: state.stopCode },
+    {
+      code: "error",
+      label: "agent:stopped-error",
+      stage: "stopped",
+      stopCode: "error",
+    },
+  );
+  assert.equal(state.stoppedStage, "author");
+});
+
+test("stop with an empty reason is refused, writing nothing", () => {
   fakeGh.reply([]);
   const request = {
     number: STOPPED_ISSUE,
     reason: "",
-    state: { stage: "plan" },
+    state: newIssueState(STOPPED_ISSUE),
   };
-  assert.deepEqual(stop(cfg, request), {
-    code: "error",
-    label: "agent:stopped-error",
-  });
+  assert.throws(() => stop(cfg, request), BAD_STOP);
+  assert.deepEqual(fakeGh.writes(ghIsRead), []);
 });
 
-test("save-state with no state writes nothing", () => {
+test("save-state with no state is refused, writing nothing", () => {
   fakeGh.reply([]);
-  assert.deepEqual(saveState(cfg, { number: SAVED_ISSUE }), {});
+  assert.throws(() => saveState(cfg, { number: SAVED_ISSUE }), BAD_SAVE);
   assert.deepEqual(fakeGh.writes(ghIsRead), []);
 });

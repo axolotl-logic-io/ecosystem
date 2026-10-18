@@ -9,6 +9,7 @@ import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
   approvedState,
   fakeGh,
+  ISSUE,
   MERGE_COMMIT,
   PR,
   prView,
@@ -39,7 +40,7 @@ function approvedOf(w) {
 function request(w, extra = {}) {
   const approved = approvedOf(w);
   return {
-    number: 7,
+    number: ISSUE,
     state: approvedState(approved),
     expectedSha: w.sha,
     revision: approved,

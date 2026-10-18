@@ -207,7 +207,14 @@ function gitHelpers(r) {
 async function opsFixture(name) {
   const root = fs.mkdtempSync(`/tmp/issue-pipeline-${name}-`);
   process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, "home");
+  fs.mkdirSync(home);
   setEnv("ISSUE_PIPELINE_ROOT", root);
+  setEnv("HOME", home);
+  const pipelineRoot = await import("../src/pipeline-root.ts");
+  if (pipelineRoot.ROOT !== root || pipelineRoot.HOME !== home) {
+    throw new Error("src took a pipeline root outside the fixture's folder");
+  }
   const fakeGh = installFakeGh();
   const origin = path.join(root, "origin.git");
   const seed = path.join(root, "seed");
