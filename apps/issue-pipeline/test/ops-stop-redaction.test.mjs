@@ -1,14 +1,20 @@
 // @ts-check
 // The stop op through the ops CLI hides IP addresses in what it posts
-// (#385): the stop comment and the state comment, whose stop reason it
-// saves, name neither an IPv6 nor an IPv4 address, each with its port, and
+// (#385): the stop comment and the state comment, whose log saves the stop
+// reason, name neither an IPv6 nor an IPv4 address, each with its port, and
 // show `[redacted]` in their place.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { z } from "zod";
 import { bodyOf, stateOf } from "./gh-effects.mjs";
-import { askOps, effects, reply } from "./ops-cli-test-kit.mjs";
+import { kit, v2State } from "./ops-v2-test-kit.mjs";
+
+const { askOps, effects, reply, TIME } = kit;
 
 const STOPPED = { n: 60 };
+const STOP_REPLY = z.looseObject({
+  state: z.looseObject({ stage: z.string() }),
+});
 const ADDRESSES = ["2001:db8::1", "192.168.1.10"];
 const REASON = "the provider at [2001:db8::1]:443 refused 192.168.1.10:51234";
 const REDACTED_REASON = "the provider at [redacted] refused [redacted]";
@@ -30,9 +36,19 @@ test("a stop whose reason and detail name IP addresses posts neither address", (
     reason: REASON,
     detail: DETAIL,
     nextStep: null,
-    state: { stage: "implement" },
+    state: v2State(n),
   };
-  assert.deepEqual(askOps(request), {
+  const stoppedState = {
+    ...v2State(n),
+    stage: "stopped",
+    stoppedStage: "implement",
+    stopCode: "error",
+    log: [`${TIME} stopped (error): ${REDACTED_REASON}`],
+  };
+  // The reply goes only to the job that asked, so only what GitHub shows
+  // is checked for addresses.
+  const { state, ...stop } = STOP_REPLY.parse(askOps(request));
+  assert.deepEqual(stop, {
     ok: true,
     op: "stop",
     posted: 0,
@@ -40,6 +56,7 @@ test("a stop whose reason and detail name IP addresses posts neither address", (
     code: "error",
     label: "agent:stopped-error",
   });
+  assert.equal(state.stage, "stopped");
   const stopped = effects();
   const body = bodyOf(stopped, `comment #${n} role=coordinator`);
   assert.deepEqual(addressesIn(body), []);
@@ -48,11 +65,5 @@ test("a stop whose reason and detail name IP addresses posts neither address", (
     body.includes("upstream [redacted] rejected [redacted]"),
     "the detail shows [redacted] for each address",
   );
-  assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
-    stage: "stopped",
-    stoppedStage: "implement",
-    lease: null,
-    stopCode: "error",
-    stopReason: REDACTED_REASON,
-  });
+  assert.deepEqual(stateOf(stopped, `comment #${n} state`), stoppedState);
 });

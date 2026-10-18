@@ -1,40 +1,40 @@
 // @ts-check
-// The save-state, save-spec, ask and stop ops through the ops CLI: their replies, and
-// what each shows on GitHub (comments, the state comment, labels, closed
-// claims). The split op is in ops-split.test.mjs.
+// The ask and stop ops through the ops CLI on version 2 states:
+// their replies, and what each shows on GitHub (comments, the state comment,
+// labels, closed claims). The save-spec op went with the spec writer: the
+// author posts the Gherkin itself (author-role.test.mjs). save-state is in
+// ops-save-state.test.mjs.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
-import { STOPS } from "../src/stops.ts";
 import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
-import {
+import { kit, v2State } from "./ops-v2-test-kit.mjs";
+
+const { STOPS } = await import("../src/stops.ts");
+const {
   askOps,
   claimComment,
   commentsReply,
   effects,
   reply,
-  root,
-  runDir,
-  sh,
   stateComment,
   TIME,
   writes,
-} from "./ops-cli-test-kit.mjs";
+} = kit;
 
 /** @import { Stop } from "../src/stops.ts" */
 
 const LIVE = new Date().toISOString();
 const CLAIM_MARK = "<!-- agent-pipeline:claim-closed lane=me sweep=s1 -->";
 // Each test's issue, and the comments and PRs it meets.
-const SAVED = { n: 50 };
-const SAVE_REPLY = { ok: true, op: "save-state", posted: 0, commentIds: [] };
-const SPEC_SAVED = { n: 55 };
 const ASKED = { n: 51, state: 5, claim: 6 };
+// The trusted-inputs revision the job records the questions were asked at.
+const INPUTS_LENGTH = 64;
+const ASKED_INPUTS = { inputs: "a".repeat(INPUTS_LENGTH) };
 const STOPPED = { n: 53, pr: 70, claim: 8 };
 const STOPPED_BY_REASON = { n: 54 };
-
-sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
+const MERGED_STOP = { n: 56, pr: 9, state: 12 };
+const SHA_LENGTH = 40;
+const CODE_MERGED = { pr: MERGED_STOP.pr, sha: "b".repeat(SHA_LENGTH) };
 
 /** @param {number} id @returns {object} */
 function myClaim(id) {
@@ -72,79 +72,69 @@ function missingStopFacts(body, code, reason) {
   return missing;
 }
 
-test("save-state writes the state it is given, and nothing without one", () => {
-  const { n } = SAVED;
-  const state = { stage: "plan", pr: null };
-  reply([]);
-  assert.deepEqual(askOps({ op: "save-state", number: n, state }), SAVE_REPLY);
-  const saved = effects();
-  assert.deepEqual(effectNames(saved), [`comment #${n} state`]);
-  assert.deepEqual(stateOf(saved, `comment #${n} state`), state);
-  reply([]);
-  assert.deepEqual(askOps({ op: "save-state", number: n }), SAVE_REPLY);
-  assert.deepEqual(writes(), []);
-});
-
-test("save-spec writes the full spec to spec.md in the run dir and replies with its path", () => {
-  const { n } = SPEC_SAVED;
-  const spec = "## Behaviour\n\n1. Every rule.\n";
-  reply([]);
-  const specFile = path.join(runDir(n), "spec.md");
-  assert.deepEqual(askOps({ op: "save-spec", number: n, spec }), {
-    ok: true,
-    op: "save-spec",
-    posted: 0,
-    commentIds: [],
-    specFile,
+// Issue `n`'s state stopped at review by `code` for `reason`, with `extra`
+// over it.
+/** @param {number} n @param {string} code @param {string} reason @param {object} [extra] @returns {Record<string, unknown>} */
+function stoppedAt(n, code, reason, extra = {}) {
+  return v2State(n, {
+    stage: "stopped",
+    stoppedStage: "review",
+    stopCode: code,
+    log: [`${TIME} stopped (${code}): ${reason}`],
+    ...extra,
   });
-  assert.ok(path.isAbsolute(specFile));
-  assert.equal(fs.readFileSync(specFile, "utf8"), spec);
-  assert.deepEqual(writes(), []);
-});
+}
 
-test("ask posts numbered questions, parks the issue and closes its claims", () => {
+test("ask posts numbered questions as the author, parks the issue at the author and closes its claims", () => {
   const { n, state, claim } = ASKED;
-  const comments = [stateComment(state, { stage: "plan" }), myClaim(claim)];
+  const before = v2State(n, {
+    stage: "author",
+    lease: { lane: "me", sweepId: "s1", at: TIME },
+  });
+  const comments = [stateComment(state, before), myClaim(claim)];
   reply([{ ...commentsReply(n, comments), keep: true }]);
+  const given = { ...before, asked: ASKED_INPUTS };
   const request = {
     op: "ask",
     number: n,
     questions: ["Which X?", "Why Y?"],
-    state: { stage: "plan", pr: null },
-    by: null,
+    state: given,
+    by: { role: "author", agent: null, model: null, run: null },
   };
+  const parked = { ...given, lease: null };
   assert.deepEqual(askOps(request), {
     ok: true,
     op: "ask",
     posted: 0,
     commentIds: [],
+    state: parked,
   });
   const asked = effects();
   assert.deepEqual(effectNames(asked), [
-    `comment #${n} role=triage`,
+    `comment #${n} role=author`,
     `edit comment ${state} state`,
     `edit comment ${claim} role=claim`,
     `label #${n} agent:needs-info`,
     `unlabel #${n} agent:working`,
   ]);
-  const questions = bodyOf(asked, `comment #${n} role=triage`);
+  const questions = bodyOf(asked, `comment #${n} role=author`);
   assert.ok(questions.includes("1. Which X?\n2. Why Y?"));
-  assert.deepEqual(stateOf(asked, `edit comment ${state} state`), {
-    stage: "triage",
-    pr: null,
-    questionsAt: TIME,
-    lease: null,
-  });
+  assert.deepEqual(stateOf(asked, `edit comment ${state} state`), parked);
   assert.ok(
     bodyOf(asked, `edit comment ${claim} role=claim`).includes(CLAIM_MARK),
   );
 });
 
-// #457: an ask with no state would leave the issue's state stripped to its
-// stage, questionsAt and lease, so it is refused before it posts.
+// #457: an ask with no state would leave the issue's state stripped, so it
+// is refused before it posts.
 test("ask without a state is refused and changes nothing on GitHub", () => {
   reply([]);
-  const request = { op: "ask", number: ASKED.n, questions: ["Which X?"] };
+  const request = {
+    op: "ask",
+    number: ASKED.n,
+    questions: ["Which X?"],
+    by: { role: "author" },
+  };
   assert.partialDeepStrictEqual(askOps(request), { ok: false });
   assert.deepEqual(writes(), []);
 });
@@ -161,20 +151,22 @@ test("stop by code explains the control on the issue and its PR and swaps labels
   const request = {
     op: "stop",
     number: n,
-    code: "budget",
-    reason: "over budget",
+    code: "review-rounds",
+    reason: "too many rounds",
     detail: "the details",
     nextStep: "the next step",
-    state: { stage: "review", pr },
+    state: v2State(n, { stage: "review", pr }),
   };
-  const label = "agent:stopped-budget";
+  const label = "agent:stopped-review-rounds";
+  const state = stoppedAt(n, "review-rounds", "too many rounds", { pr });
   assert.deepEqual(askOps(request), {
     ok: true,
     op: "stop",
     posted: 0,
     commentIds: [],
-    code: "budget",
+    code: "review-rounds",
     label,
+    state,
   });
   const stopped = effects();
   assert.deepEqual(effectNames(stopped), [
@@ -190,17 +182,13 @@ test("stop by code explains the control on the issue and its PR and swaps labels
   ]);
   for (const target of [n, pr]) {
     const body = bodyOf(stopped, `comment #${target} role=coordinator`);
-    assert.deepEqual(missingStopFacts(body, "budget", "over budget"), []);
+    assert.deepEqual(
+      missingStopFacts(body, "review-rounds", "too many rounds"),
+      [],
+    );
     assert.ok(body.includes("the details") && body.includes("the next step"));
   }
-  assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
-    stage: "stopped",
-    pr,
-    stoppedStage: "review",
-    lease: null,
-    stopCode: "budget",
-    stopReason: "over budget",
-  });
+  assert.deepEqual(stateOf(stopped, `comment #${n} state`), state);
   assert.ok(
     bodyOf(stopped, `edit comment ${claim} role=claim`).includes(CLAIM_MARK),
   );
@@ -216,9 +204,10 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     reason: "could not push",
     detail: "",
     nextStep: null,
-    state: { stage: "implement" },
+    state: v2State(n, { stage: "review" }),
   };
   const label = "agent:stopped-push-rejected";
+  const state = stoppedAt(n, "push-rejected", "could not push");
   assert.deepEqual(askOps(request), {
     ok: true,
     op: "stop",
@@ -226,6 +215,7 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     commentIds: [],
     code: "push-rejected",
     label,
+    state,
   });
   const stopped = effects();
   assert.deepEqual(effectNames(stopped), [
@@ -240,31 +230,25 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     [],
   );
   assert.ok(body.includes("To resume") && body.includes(`remove \`${label}\``));
-  assert.deepEqual(stateOf(stopped, `comment #${n} state`), {
-    stage: "stopped",
-    stoppedStage: "implement",
-    lease: null,
-    stopCode: "push-rejected",
-    stopReason: "could not push",
-  });
+  assert.deepEqual(stateOf(stopped, `comment #${n} state`), state);
 });
 
-test("a stop at publish keeps its stage and says the wiki is published again", () => {
-  const { n } = STOPPED_BY_REASON;
-  reply([]);
+// Version 2 has no publish stage: once the code merged, the stop keeps the
+// stage it came from and says the next job publishes the wiki again.
+test("a stop after the code merged keeps its stage and says the wiki is published again", () => {
+  const { n, pr, state: stateId } = MERGED_STOP;
+  const saved = v2State(n, { stage: "merge", pr, codeMerged: CODE_MERGED });
+  reply([{ ...commentsReply(n, [stateComment(stateId, saved)]), keep: true }]);
   const request = {
     op: "stop",
     number: n,
     code: "conflict",
     reason: "the conflict resolution was rejected",
-    state: { stage: "publish", pr: 9 },
+    state: saved,
   };
   const label = "agent:stopped-conflict";
-  assert.deepEqual(askOps(request), {
+  assert.partialDeepStrictEqual(askOps(request), {
     ok: true,
-    op: "stop",
-    posted: 0,
-    commentIds: [],
     code: "conflict",
     label,
   });
@@ -272,9 +256,11 @@ test("a stop at publish keeps its stage and says the wiki is published again", (
   const body = bodyOf(stopped, `comment #${n} role=coordinator`);
   assert.ok(
     body.endsWith(
-      `To resume, fix what this names, then remove \`${label}\`. The PR has merged, so the next sweep publishes the wiki changes again, with every limit reset.`,
+      `To resume, fix what this names, then remove \`${label}\`. The PR has merged, so the next job reviews and publishes the wiki changes again, with every limit reset.`,
     ),
   );
-  const saved = JSON.stringify(stateOf(stopped, `comment #${n} state`));
-  assert.ok(saved.includes('"stoppedStage":"publish"'));
+  assert.partialDeepStrictEqual(
+    stateOf(stopped, `edit comment ${stateId} state`),
+    { stage: "stopped", stoppedStage: "merge", codeMerged: CODE_MERGED },
+  );
 });

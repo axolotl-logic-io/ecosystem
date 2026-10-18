@@ -6,16 +6,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
 import { bodyOf, effectNames } from "./gh-effects.mjs";
-import {
-  askOps,
-  configWith,
-  effects,
-  reply,
-  root,
-  sh,
-  worktree,
-} from "./ops-cli-test-kit.mjs";
+import { kit, v2State } from "./ops-v2-test-kit.mjs";
+
+const { askOps, configWith, effects, reply, root, sh, worktree } = kit;
 
 const COMMITTER = "-c user.email=a@b -c user.name=a";
 const ORIGIN = `${root}/origin.git`;
@@ -24,13 +19,16 @@ const PUSHED = 60;
 const REJECTED = 61;
 const AT_REVIEW = 62;
 const WITH_WIKI = 63;
-const LABEL = "agent:stopped-too-large";
+const LABEL = "agent:stopped-not-doable";
 const ONLY_LOCAL = "only local";
+// What stopAt returns for a stop at `stage`.
+/** @param {string} stage @returns {string[]} */
+function stoppedAt(stage) {
+  return ["not-doable", LABEL, "stopped", stage];
+}
+
 // A hook's mode: executable by everyone, writable by its owner.
 const EXECUTABLE = 0o755;
-
-// A stop runs after a sweep, which made the clone.
-sh(`git clone -q ${ORIGIN} ${root}/clones/o__r`);
 
 // Makes origin reject every push to issue `n`'s branch from now on.
 /** @param {number} n @returns {void} */
@@ -66,32 +64,36 @@ function headOf(dir, branch) {
   return sh(`git -C ${dir} rev-parse refs/heads/${branch}`);
 }
 
-// Stops issue `n` at `stage` as too large; `extra` may name the config.
-/** @param {number} n @param {string} stage @param {object} [extra] @returns {unknown} */
+// The parts of a stop's reply these tests read.
+const STOP_REPLY = z.object({
+  ok: z.literal(true),
+  op: z.literal("stop"),
+  code: z.string(),
+  label: z.string(),
+  state: z.looseObject({ stage: z.string(), stoppedStage: z.string() }),
+});
+
+// Stops issue `n` at `stage` as not doable; `extra` may name the config.
+// Returns the stop code, its label and the stage the state stopped at.
+/** @param {number} n @param {string} stage @param {object} [extra] @returns {string[]} */
 function stopAt(n, stage, extra = {}) {
   reply([]);
-  return askOps({
-    op: "stop",
-    ...extra,
-    number: n,
-    code: "too-large",
-    reason: "handed off twice",
-    state: { stage },
-  });
+  const { code, label, state } = STOP_REPLY.parse(
+    askOps({
+      op: "stop",
+      ...extra,
+      number: n,
+      code: "not-doable",
+      reason: "the change can't be done as asked",
+      state: v2State(n, { stage }),
+    }),
+  );
+  return [code, label, state.stage, state.stoppedStage];
 }
-
-const STOP_REPLY = {
-  ok: true,
-  op: "stop",
-  posted: 0,
-  commentIds: [],
-  code: "too-large",
-  label: LABEL,
-};
 
 test("a stop in implement pushes the worktree's commits to the branch", () => {
   const sha = worktreeAheadOfBranch(PUSHED);
-  assert.deepEqual(stopAt(PUSHED, "implement"), STOP_REPLY);
+  assert.deepEqual(stopAt(PUSHED, "implement"), stoppedAt("implement"));
   assert.equal(headOf(ORIGIN, `agent/issue-${PUSHED}`), sha);
   const body = bodyOf(effects(), `comment #${PUSHED} role=coordinator`);
   assert.equal(body.includes(ONLY_LOCAL), false);
@@ -101,7 +103,7 @@ test("a rejected push still stops, and the comment names the local head", () => 
   const sha = worktreeAheadOfBranch(REJECTED);
   rejectPushesTo(REJECTED);
   const before = headOf(ORIGIN, `agent/issue-${REJECTED}`);
-  assert.deepEqual(stopAt(REJECTED, "implement"), STOP_REPLY);
+  assert.deepEqual(stopAt(REJECTED, "implement"), stoppedAt("implement"));
   assert.equal(headOf(ORIGIN, `agent/issue-${REJECTED}`), before);
   const stopped = effects();
   assert.ok(effectNames(stopped).includes(`label #${REJECTED} ${LABEL}`));
@@ -112,7 +114,7 @@ test("a rejected push still stops, and the comment names the local head", () => 
 test("a stop at review pushes nothing", () => {
   worktreeAheadOfBranch(AT_REVIEW);
   const before = headOf(ORIGIN, `agent/issue-${AT_REVIEW}`);
-  assert.deepEqual(stopAt(AT_REVIEW, "review"), STOP_REPLY);
+  assert.deepEqual(stopAt(AT_REVIEW, "review"), stoppedAt("review"));
   assert.equal(headOf(ORIGIN, `agent/issue-${AT_REVIEW}`), before);
 });
 
@@ -132,6 +134,9 @@ test("a stop in implement pushes the wiki checkout's commits", () => {
   );
   const sha = sh(`git -C ${wiki} rev-parse HEAD`);
   const config = configWith({ wiki: true });
-  assert.deepEqual(stopAt(WITH_WIKI, "implement", { config }), STOP_REPLY);
+  assert.deepEqual(
+    stopAt(WITH_WIKI, "implement", { config }),
+    stoppedAt("implement"),
+  );
   assert.equal(headOf(wikiOrigin, `agent/issue-${WITH_WIKI}`), sha);
 });

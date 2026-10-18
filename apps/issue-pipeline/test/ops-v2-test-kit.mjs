@@ -44,6 +44,7 @@ function v2State(n, extra = {}) {
     mergeReturn: null,
     merged: null,
     codeMerged: null,
+    asked: null,
     counts: { conflictFixes: 0, syncs: 0 },
     log: [],
     ...extra,
