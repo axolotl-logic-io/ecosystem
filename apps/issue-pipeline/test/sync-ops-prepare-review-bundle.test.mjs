@@ -13,10 +13,9 @@ import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("sync-ops-prepare-review-bundle");
 const { fakeGh, sh, worktree } = fx;
-// Imported after the fixture, which must set the pipeline root first.
-const { REVIEW_BUNDLE_MAX_CHARS } = await import(
-  "../src/workflow/stages/review-prefix.ts"
-);
+// src/ops/review-diff.ts's REVIEW_BUNDLE_MAX_CHARS, which it doesn't export:
+// the review bundle's cap on its inline diff.
+const REVIEW_BUNDLE_MAX_CHARS = 200_000;
 const BASE = "integration";
 // Each test's issue.
 const ISSUE = { order: 41, again: 42, bound: 43, pathOnly: 44, wiki: 45 };

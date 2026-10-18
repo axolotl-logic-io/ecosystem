@@ -3,7 +3,7 @@
 // run through the ops CLI against a local origin and the fake gh.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { okLine, opsFixture } from "./ops-fixture.mjs";
+import { okLine, opsFixture, stateReadCall } from "./ops-fixture.mjs";
 import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("pr-ops");
@@ -71,6 +71,8 @@ function planDetails(plan) {
 /** @param {number} n @param {number} pr @param {object} [extra] @returns {string} */
 function startPr(n, pr, extra = {}) {
   fakeGh.reply([
+    // start-pr first reads the saved state: no comments, so no codeMerged.
+    { when: `issues/${n}/comments`, stdout: "" },
     { when: `repos/o/r/issues/${n}`, stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${pr}\n` },
@@ -117,6 +119,7 @@ test("start-pr on an existing branch with an open PR only labels it", () => {
   fx.pushFrom(n);
   const before = originRef("agent/issue-3");
   fakeGh.reply([
+    { when: "issues/3/comments", stdout: "" },
     { when: "repos/o/r/issues/3", stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: '[{"number":77}]' },
   ]);
@@ -224,7 +227,7 @@ test("push pushes the branch after a real commit", () => {
   assert.equal(out, okLine("push", { headSha: sha, ...CODE }));
   assert.equal(originRef("agent/issue-7"), sha);
   assert.deepEqual(pushRecord(fx.root, n), { sha, op: "push", dated: true });
-  assert.deepEqual(fakeGh.calls(), []);
+  assert.deepEqual(fakeGh.calls(), [stateReadCall(n)]);
 });
 
 // A stage job's exit push records itself as "exit-push", which a claim may
@@ -241,7 +244,7 @@ test("exit-push pushes the branch and records the push as exit-push", () => {
     op: "exit-push",
     dated: true,
   });
-  assert.deepEqual(fakeGh.calls(), []);
+  assert.deepEqual(fakeGh.calls(), [stateReadCall(n)]);
 });
 
 test("push with no code change and no wiki commits pushes nothing and says so", () => {

@@ -62,6 +62,8 @@ function prBody(n, text) {
 /** @param {number} n @param {number} pr @param {string} listed @param {object} extra @returns {string} */
 function startPr(n, pr, listed, extra) {
   fakeGh.reply([
+    // start-pr first reads the saved state: no comments, so no codeMerged.
+    { when: `issues/${n}/comments`, stdout: "" },
     { when: `repos/o/r/issues/${n}`, stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: listed },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${pr}\n` },

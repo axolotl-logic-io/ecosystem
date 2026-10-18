@@ -11,6 +11,8 @@ import {
   MERGE_COMMIT,
   moveWiki,
   PR,
+  publishOf,
+  refusalOf,
   savedListing,
   sh,
   wikiRef,
@@ -18,13 +20,10 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
-const { publishOps } = await import("../src/ops/publish.ts");
-const publish = publishOps["publish"];
-if (publish === undefined) {
-  throw new Error("publish is not an op");
-}
-
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
+// A published commit's short sha, as the publish op names it.
+const SHORT_SHA_LENGTH = 12;
+const NOT_THE_MERGE_COMMIT = /not PR #50's merge commit/u;
 /** @typedef {{ code: string | null, wiki: string | null, inputs: string }} Revision */
 
 /** @param {World} w @returns {Revision} */
@@ -50,17 +49,19 @@ function merged(w, { inputs = "inputs-1", state = "MERGED" } = {}) {
 // merged naming GitHub's merge commit with the approved wiki and inputs.
 /** @param {Revision} approved @param {object} [receipt] @returns {void} */
 function savedReceipt(approved, receipt = {}) {
-  const merged = {
+  const receiptMerged = {
     code: MERGE_COMMIT,
     wiki: approved.wiki,
     inputs: approved.inputs,
     ...receipt,
   };
-  fakeGh.reply([savedListing(approvedState(approved, { merged }))]);
+  fakeGh.reply([
+    savedListing(approvedState(approved, { merged: receiptMerged })),
+  ]);
 }
 
-/** @param {World} w @param {Revision} approved @param {object} [extra] @returns {object} */
-function request(w, approved, extra = {}) {
+/** @param {Revision} approved @param {object} [extra] @returns {object} */
+function request(approved, extra = {}) {
   return {
     number: 7,
     state: approvedState(approved),
@@ -74,8 +75,8 @@ test("publish after the job's own merge fast-forwards the wiki to the approved h
   const w = world({ wiki: true });
   merged(w);
   savedReceipt(approvedOf(w));
-  const reply = publish(w.cfg, request(w, approvedOf(w)));
-  const short = String(w.wikiSha).slice(0, 12);
+  const reply = publishOf(w.cfg, request(approvedOf(w)));
+  const short = String(w.wikiSha).slice(0, SHORT_SHA_LENGTH);
   assert.deepEqual(reply, {
     published: true,
     sha: w.wikiSha,
@@ -91,8 +92,8 @@ test("publish again after a crash succeeds without pushing anything new", () => 
   const w = world({ wiki: true });
   merged(w);
   savedReceipt(approvedOf(w));
-  publish(w.cfg, request(w, approvedOf(w)));
-  const again = publish(w.cfg, request(w, approvedOf(w)));
+  publishOf(w.cfg, request(approvedOf(w)));
+  const again = publishOf(w.cfg, request(approvedOf(w)));
   assert.deepEqual(again, {
     published: true,
     sha: w.wikiSha,
@@ -107,7 +108,7 @@ test("publish refuses a wiki that moved past the approved head, and never rebase
   const moved = moveWiki(w);
   merged(w);
   savedReceipt(approvedOf(w));
-  const reply = publish(w.cfg, request(w, approvedOf(w)));
+  const reply = publishOf(w.cfg, request(approvedOf(w)));
   assert.equal(reply.published, false);
   assert.equal("reason" in reply && reply.reason, "wiki-behind");
   assert.equal(wikiRef(w, "master"), moved);
@@ -118,14 +119,14 @@ test("publish refuses changed trusted inputs, an open PR and an unapproved revis
   const w = world({ wiki: true });
   const approved = approvedOf(w);
   merged(w, { inputs: "inputs-2" });
-  assert.equal(publish(w.cfg, request(w, approved)).reason, "stale");
+  assert.equal(refusalOf(w.cfg, request(approved)), "stale");
   merged(w, { state: "OPEN" });
-  assert.equal(publish(w.cfg, request(w, approved)).reason, "not-merged");
+  assert.equal(refusalOf(w.cfg, request(approved)), "not-merged");
   merged(w);
-  const unapproved = request(w, approved, {
+  const unapproved = request(approved, {
     state: { ...approvedState(approved), review: { verdict: "changes" } },
   });
-  assert.equal(publish(w.cfg, unapproved).reason, "unapproved");
+  assert.equal(refusalOf(w.cfg, unapproved), "unapproved");
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
 });
 
@@ -133,28 +134,28 @@ test("before codeMerged only the head GitHub merged is the approved code; after,
   const w = world({ wiki: true });
   merged(w);
   const other = { ...approvedOf(w), code: "0ther" };
-  assert.equal(publish(w.cfg, request(w, other)).reason, "code-mismatch");
+  assert.equal(refusalOf(w.cfg, request(other)), "code-mismatch");
   const codeMerged = { pr: PR, sha: MERGE_COMMIT };
   const premerge = approvedOf(w);
-  const late = request(w, premerge, {
+  const late = request(premerge, {
     state: approvedState(premerge, { codeMerged }),
   });
-  assert.equal(publish(w.cfg, late).reason, "code-mismatch");
+  assert.equal(refusalOf(w.cfg, late), "code-mismatch");
   const reviewed = { ...approvedOf(w), code: MERGE_COMMIT };
-  const ok = request(w, reviewed, {
+  const ok = request(reviewed, {
     state: approvedState(reviewed, { codeMerged }),
   });
-  assert.equal(publish(w.cfg, ok).published, true);
+  assert.equal(publishOf(w.cfg, ok).published, true);
 });
 
 test("publish fails on a codeMerged that isn't the PR's merge commit", () => {
   const w = world({ wiki: true });
   merged(w);
   const reviewed = { ...approvedOf(w), code: "0ther" };
-  const req = request(w, reviewed, {
+  const req = request(reviewed, {
     state: approvedState(reviewed, { codeMerged: { pr: PR, sha: "0ther" } }),
   });
-  assert.throws(() => publish(w.cfg, req), /not PR #50's merge commit/u);
+  assert.throws(() => publishOf(w.cfg, req), NOT_THE_MERGE_COMMIT);
 });
 
 test("publish of a change that lives only in the wiki needs no PR", () => {
@@ -166,7 +167,7 @@ test("publish of a change that lives only in the wiki needs no PR", () => {
     pr: null,
     flows: { code: false, wiki: true },
   };
-  const reply = publish(w.cfg, request(w, approved, { state }));
+  const reply = publishOf(w.cfg, request(approved, { state }));
   assert.equal(reply.published, true);
   assert.equal(wikiRef(w, "master"), w.wikiSha);
 });
@@ -185,7 +186,7 @@ test("publish with no approved wiki commits publishes nothing", () => {
     },
   });
   savedReceipt(approved);
-  assert.deepEqual(publish(w.cfg, request(w, approved)), {
+  assert.deepEqual(publishOf(w.cfg, request(approved)), {
     published: true,
     sha: null,
     commits: [],
@@ -198,7 +199,7 @@ test("publish refuses wiki commits the approval didn't include", () => {
   const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
   merged(w);
   savedReceipt(approved);
-  const reply = publish(w.cfg, request(w, approved));
+  const reply = publishOf(w.cfg, request(approved));
   assert.equal("reason" in reply && reply.reason, "stale");
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
 });
@@ -208,12 +209,12 @@ test("publish after the job's own merge refuses without the saved receipt, whate
   const approved = approvedOf(w);
   merged(w);
   fakeGh.reply([]);
-  const claimed = request(w, approved, {
+  const claimed = request(approved, {
     state: approvedState(approved, {
       merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
     }),
   });
-  assert.equal(publish(w.cfg, claimed).reason, "no-receipt");
+  assert.equal(refusalOf(w.cfg, claimed), "no-receipt");
   fakeGh.reply([
     savedListing({
       ...approvedState(approved, {
@@ -222,7 +223,7 @@ test("publish after the job's own merge refuses without the saved receipt, whate
       stage: "review",
     }),
   ]);
-  assert.equal(publish(w.cfg, claimed).reason, "no-receipt");
+  assert.equal(refusalOf(w.cfg, claimed), "no-receipt");
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
 });
 
@@ -236,7 +237,7 @@ test("publish refuses a saved receipt that isn't GitHub's merge of the approved 
     { inputs: "inputs-0" },
   ]) {
     savedReceipt(approved, receipt);
-    assert.equal(publish(w.cfg, request(w, approved)).reason, "no-receipt");
+    assert.equal(refusalOf(w.cfg, request(approved)), "no-receipt");
   }
   const reviewedElsewhere = { ...approved, code: "0ther" };
   fakeGh.reply([
@@ -253,6 +254,6 @@ test("publish refuses a saved receipt that isn't GitHub's merge of the approved 
       },
     }),
   ]);
-  assert.equal(publish(w.cfg, request(w, approved)).reason, "no-receipt");
+  assert.equal(refusalOf(w.cfg, request(approved)), "no-receipt");
   assert.equal(wikiRef(w, "master") === w.wikiSha, false);
 });

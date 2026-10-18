@@ -246,13 +246,14 @@ async function opsFixture(name) {
 }
 
 /**
- * The stdout the ops CLI prints for a successful op's reply.
+ * The stdout the ops CLI prints for a successful op's reply that posted no
+ * comments: no count and no comment ids.
  * @param {string} op
  * @param {object} reply
  * @returns {string}
  */
 function okLine(op, reply) {
-  return `${JSON.stringify({ ok: true, op, posted: 0, ...reply })}\n`;
+  return `${JSON.stringify({ ok: true, op, posted: 0, commentIds: [], ...reply })}\n`;
 }
 
 /**
@@ -267,4 +268,17 @@ function opsSourceDefines(name) {
   return source.includes(`"${name}"`) || source.includes(`ops.${name} =`);
 }
 
-export { okLine, opsFixture, opsSourceDefines };
+// The gh call that reads an issue's saved state, as a push does before it
+// pushes code: the issue's comments, where a codeMerged would refuse it.
+/** @param {number} n @returns {string[]} */
+function stateReadCall(n) {
+  return [
+    "api",
+    "--paginate",
+    `repos/o/r/issues/${n}/comments?per_page=100`,
+    "--jq",
+    ".[] | @json",
+  ];
+}
+
+export { okLine, opsFixture, opsSourceDefines, stateReadCall };

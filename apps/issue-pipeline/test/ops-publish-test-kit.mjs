@@ -11,6 +11,7 @@ import fs from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
 import process from "node:process";
+import { z } from "zod";
 import { githubComment, installFakeGh } from "./fake-gh.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
@@ -27,7 +28,14 @@ const root = fs.mkdtempSync("/tmp/issue-pipeline-publication-ops-");
 process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
 const home = path.join(root, "home");
 fs.mkdirSync(home);
-Object.assign(process.env, { ISSUE_PIPELINE_ROOT: root, HOME: home });
+// Environment variables are named by strings, as src/process.ts takes them.
+Object.assign(
+  process.env,
+  Object.fromEntries([
+    ["ISSUE_PIPELINE_ROOT", root],
+    ["HOME", home],
+  ]),
+);
 const fakeGh = installFakeGh();
 
 const SRC = new URL("../src/", import.meta.url).href;
@@ -52,6 +60,22 @@ if (pipelineRoot.ROOT !== root || pipelineRoot.HOME !== home) {
 const { loadConfig } = await import("../src/config.ts");
 const { ghIsRead } = await import("../src/github.ts");
 const { newIssueState } = await import("../src/state.ts");
+const { publishOps } = await import("../src/ops/publish.ts");
+// The publish op's reply: the wiki's new head and the commits it added, or
+// why it refused. Strict, so a reply with fields neither names fails.
+const PUBLISH_REPLY = z.discriminatedUnion("published", [
+  z.strictObject({
+    published: z.literal(true),
+    sha: z.string().nullable(),
+    commits: z.array(z.string()),
+    alreadyPublished: z.boolean(),
+  }),
+  z.strictObject({
+    published: z.literal(false),
+    reason: z.string(),
+    detail: z.string(),
+  }),
+]);
 
 /** @param {string} command @returns {string} */
 function sh(command) {
@@ -207,6 +231,27 @@ function writes() {
   return fakeGh.writes(ghIsRead);
 }
 
+// Runs the publish op as the merge role asks it, its reply checked against
+// the publish reply's shape.
+/** @param {import("../src/config.ts").Config} cfg @param {object} request @returns {z.infer<typeof PUBLISH_REPLY>} */
+function publishOf(cfg, request) {
+  const { publish } = publishOps;
+  if (publish === undefined) {
+    throw new Error("publish is not an op");
+  }
+  return PUBLISH_REPLY.parse(publish(cfg, request));
+}
+
+// Why the publish op refused the request; a publish fails the test.
+/** @param {import("../src/config.ts").Config} cfg @param {object} request @returns {string} */
+function refusalOf(cfg, request) {
+  const reply = publishOf(cfg, request);
+  if (reply.published) {
+    throw new Error("publish published what it should refuse");
+  }
+  return reply.reason;
+}
+
 export {
   approvedState,
   fakeGh,
@@ -216,7 +261,9 @@ export {
   moveWiki,
   PR,
   prView,
+  publishOf,
   REPO,
+  refusalOf,
   savedListing,
   sh,
   wikiRef,

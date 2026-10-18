@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
-import { okLine, opsFixture } from "./ops-fixture.mjs";
+import { okLine, opsFixture, stateReadCall } from "./ops-fixture.mjs";
 import { addSubmodule } from "./submodule-test-kit.mjs";
 
 const fx = await opsFixture("wiki-branch");
@@ -97,7 +97,7 @@ test("push sends the issue's wiki commits to its wiki branch", () => {
   sh(`cd ${dir} && echo page > Page.md && git add . && git commit -qm page`);
   const { out, want, ghCalls } = pushOp(PUSHED, 1);
   assert.equal(out, want);
-  assert.deepEqual(ghCalls, []);
+  assert.deepEqual(ghCalls, [stateReadCall(PUSHED)]);
   assert.equal(wikiRef(`agent/issue-${PUSHED}`), headOf(dir));
   assert.equal(wikiRef("master"), master);
 });

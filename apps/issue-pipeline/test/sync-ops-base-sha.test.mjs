@@ -1,7 +1,7 @@
 // @ts-check
 // finish-sync with the baseSha sync-base rebased onto (#279): a resolution is
 // checked against that commit, so it is pushed even when the base moved during
-// the fix, and the merge op then finds the branch behind. A head not on that
+// the fix, and the branch is then behind the base, which the merge op refuses. A head not on that
 // commit, or a commit that isn't on the base, is refused and nothing is pushed.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -13,10 +13,8 @@ import { pushRecord } from "./push-record-test-kit.mjs";
 /** @import { GhReply } from "./fake-gh.mjs" */
 
 const fx = await opsFixture("sync-ops-base-sha");
-const { ghIsRead } = await import("../src/github.ts");
 const { fakeGh, originRef, sh, worktree } = fx;
 const ISSUE = { movedBase: 61, olderBase: 62, offBase: 63 };
-const PR = 70;
 const CODE = { codeChanged: true, wikiAhead: 0 };
 
 // Runs an op after queuing `replies`; returns its stdout and the gh calls.
@@ -74,26 +72,6 @@ function failure(n, baseSha, reason, headSha) {
   return { got, expected };
 }
 
-// The merge op on #n's PR at `sha`, with gh's view showing it ready.
-/** @param {number} n @param {string} sha @returns {{ out: string, calls: string[][] }} */
-function merge(n, sha) {
-  const view = {
-    headRefOid: sha,
-    state: "OPEN",
-    mergeable: "MERGEABLE",
-    mergeStateStatus: "CLEAN",
-    isDraft: false,
-  };
-  const request = {
-    op: "merge",
-    number: n,
-    state: { pr: PR, stage: "merge" },
-    expectedSha: sha,
-    summary: "All good.",
-  };
-  return ask(request, [{ when: "pr view", stdout: JSON.stringify(view) }]);
-}
-
 test("finish-sync pushes a resolution onto its baseSha after the base moved, and merge finds it behind", () => {
   const n = ISSUE.movedBase;
   const { baseSha, calls: kept } = keptConflict(n);
@@ -112,14 +90,16 @@ test("finish-sync pushes a resolution onto its baseSha after the base moved, and
   assert.equal(originRef(`${headSha}^`), baseSha);
   const record = { sha: headSha, op: "finish-sync", dated: true };
   assert.deepEqual(pushRecord(fx.root, n), record);
-  const merged = merge(n, headSha);
+  // The pushed head sits on the old baseSha, behind the moved base: the
+  // state the merge op refuses as "behind" (test/merge-op.test.mjs, "merge
+  // refuses a head behind its base without merging").
+  const base = originRef("integration");
+  assert.notEqual(base, baseSha);
   assert.equal(
-    merged.out,
-    okLine("merge", { merged: false, reason: "behind" }),
-  );
-  assert.deepEqual(
-    merged.calls.filter((args) => !ghIsRead(args)),
-    [],
+    sh(
+      `git -C ${worktree(n)} merge-base --is-ancestor ${base} ${headSha} && echo ahead || echo behind`,
+    ),
+    "behind",
   );
 });
 

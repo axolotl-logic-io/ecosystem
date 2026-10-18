@@ -25,6 +25,8 @@ test("start-pr in a job checkout commits past its pre-commit hook and pushes the
   const cfg = loadConfig(`${root}/config.json`);
   const { repo: dir } = openJobCheckout(cfg, ISSUE, { stage: "implement" });
   fakeGh.reply([
+    // start-pr first reads the saved state: no comments, so no codeMerged.
+    { when: `issues/${ISSUE}/comments`, stdout: "" },
     { when: `repos/o/r/issues/${ISSUE}`, stdout: '{"title":"T"}' },
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${PR}\n` },

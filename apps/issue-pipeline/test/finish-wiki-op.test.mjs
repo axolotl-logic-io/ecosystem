@@ -11,6 +11,7 @@ import {
   fakeGh,
   MERGE_COMMIT,
   PR,
+  publishOf,
   REPO,
   savedListing,
   wikiRef,
@@ -19,9 +20,18 @@ import {
 } from "./ops-publish-test-kit.mjs";
 
 const { finishWiki } = await import("../src/ops/finish.ts");
-const { publishOps } = await import("../src/ops/publish.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
+// What the finish-wiki op's writes, refusals and closing comment say.
+const DELETES_ISSUE_BRANCH =
+  /DELETE repos\/o\/r\/git\/refs\/heads\/agent\/issue-7/u;
+const CLOSES_COMPLETED = /^issue close 7 -R o\/r --reason completed --comment/u;
+const NAMES_MERGE_COMMIT = /PR #50 merged into integration as 4e1d0c0ffee0\./u;
+const NAMES_WIKI_COMMIT = /Published wiki commit/u;
+const NOT_SAVED_DONE = /saved state done/u;
+const NOT_SAVED_COMPLETION = /not the saved completion/u;
+const NOT_THE_MERGE_COMMIT = /not PR #50's merge commit/u;
+const WIKI_ONLY_CLOSE = /lives only in the wiki/u;
 
 /** @param {World} w @param {object} [extra] @returns {import("../src/state.ts").IssueState} */
 function doneState(w, extra = {}) {
@@ -67,13 +77,15 @@ function published(w) {
     merged: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
   });
   fakeGh.reply([savedListing(receipt)]);
-  const reply = publishOps["publish"]?.(w.cfg, {
+  const reply = publishOf(w.cfg, {
     number: 7,
     state: approvedState(approved),
     expectedWiki: w.wikiSha,
     revision: approved,
   });
-  assert.equal(reply?.published, true);
+  if (!reply.published) {
+    throw new Error(`publish refused: ${reply.reason}`);
+  }
 }
 
 /** @param {string} open @returns {import("./fake-gh.mjs").GhReply} */
@@ -100,17 +112,14 @@ test("finish-wiki completes a saved done+merged issue: branch, labels, claim, th
     closed: true,
   });
   const done = flat(writes());
-  assert.match(
-    done[0] ?? "",
-    /DELETE repos\/o\/r\/git\/refs\/heads\/agent\/issue-7/u,
-  );
+  assert.match(done[0] ?? "", DELETES_ISSUE_BRANCH);
   assert.ok(done.some((line) => line.includes("issues/50/labels")));
   assert.ok(done.some((line) => line.includes("issues/7/labels")));
   assert.ok(done.some((line) => line.includes("issues/comments/501")));
   const close = done.at(-1) ?? "";
-  assert.match(close, /^issue close 7 -R o\/r --reason completed --comment/u);
-  assert.match(close, /PR #50 merged into integration as 4e1d0c0ffee0\./u);
-  assert.match(close, /Published wiki commit/u);
+  assert.match(close, CLOSES_COMPLETED);
+  assert.match(close, NAMES_MERGE_COMMIT);
+  assert.match(close, NAMES_WIKI_COMMIT);
   assert.equal(
     done.some((line) => line.includes("agent-pipeline:state")),
     false,
@@ -175,14 +184,14 @@ test("finish-wiki fails on a saved state that isn't a completion, or a request t
   const w = world({ wiki: true });
   mergedPr(w);
   fakeGh.reply([savedListing(doneState(w, { stage: "merge" }))]);
-  assert.throws(() => finishWiki(w.cfg, { number: 7 }), /saved state done/u);
+  assert.throws(() => finishWiki(w.cfg, { number: 7 }), NOT_SAVED_DONE);
   fakeGh.reply([savedListing(doneState(w))]);
   const other = doneState(w, {
     merged: { code: "0ther", wiki: null, inputs: "x" },
   });
   assert.throws(
     () => finishWiki(w.cfg, { number: 7, state: other }),
-    /not the saved completion/u,
+    NOT_SAVED_COMPLETION,
   );
   assert.deepEqual(writes(), []);
 });
@@ -195,10 +204,7 @@ test("finish-wiki fails when the saved merge commit isn't the PR's", () => {
     merged: { code: "0ther", wiki: w.wikiSha, inputs: "inputs-1" },
   });
   fakeGh.reply([savedListing(saved)]);
-  assert.throws(
-    () => finishWiki(w.cfg, { number: 7 }),
-    /not PR #50's merge commit/u,
-  );
+  assert.throws(() => finishWiki(w.cfg, { number: 7 }), NOT_THE_MERGE_COMMIT);
   assert.deepEqual(writes(), []);
 });
 
@@ -212,13 +218,13 @@ test("finish-wiki completes a change that lives only in the wiki, with no PR", (
     flows: { code: false, wiki: true },
   };
   fakeGh.reply([]);
-  const reply = publishOps["publish"]?.(w.cfg, {
+  const reply = publishOf(w.cfg, {
     number: 7,
     state,
     expectedWiki: w.wikiSha,
     revision: approved,
   });
-  assert.equal(reply?.published, true);
+  assert.equal(reply.published, true);
   const saved = { ...state, stage: "done", merged: approved };
   fakeGh.reply([savedListing(saved), issueIs("open")]);
   assert.deepEqual(finishWiki(w.cfg, { number: 7 }), {
@@ -230,7 +236,7 @@ test("finish-wiki completes a change that lives only in the wiki, with no PR", (
     done.some((line) => line.includes("issues/50/")),
     false,
   );
-  assert.match(done.at(-1) ?? "", /lives only in the wiki/u);
+  assert.match(done.at(-1) ?? "", WIKI_ONLY_CLOSE);
 });
 
 test("finish-wiki completes a merged PR with no wiki change, with no wiki to prove", () => {

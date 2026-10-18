@@ -21,6 +21,14 @@ import {
 const { merge } = await import("../src/ops/merge.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
+// What the merge op's writes and refusals say.
+const COMMENTS_ON_PR = /issues\/50\/comments/u;
+const NO_MERGE_COMMIT = /no merge commit/u;
+const NOT_APPROVED_CODE = /not the approved code/u;
+const NOT_ISSUE_BRANCH = /not agent\/issue-7/u;
+// An older issue's merge queued ahead of #7.
+const EARLIER = 3;
+const QUEUE = [EARLIER, ISSUE];
 
 /** @param {World} w @returns {{ code: string, wiki: null, inputs: string }} */
 function approvedOf(w) {
@@ -80,7 +88,7 @@ test("merge squash-merges at the approved head and returns GitHub's merge receip
     w.sha,
   ]);
   assert.equal(done.length, 2);
-  assert.match(done[1]?.join(" ") ?? "", /issues\/50\/comments/u);
+  assert.match(done[1]?.join(" ") ?? "", COMMENTS_ON_PR);
 });
 
 test("merge of a PR merged by hand returns the authoritative receipt and merges nothing", () => {
@@ -105,7 +113,7 @@ test("merge of a PR merged by hand returns the authoritative receipt and merges 
 test("merge of a merged PR with no merge commit fails instead of an empty receipt", () => {
   const w = world();
   fakeGh.reply([prView({ headRefOid: w.sha, state: "MERGED" })]);
-  assert.throws(() => merge(w.cfg, request(w)), /no merge commit/u);
+  assert.throws(() => merge(w.cfg, request(w)), NO_MERGE_COMMIT);
   assert.deepEqual(writes(), []);
 });
 
@@ -119,7 +127,7 @@ test("merge refuses a moved head, and an expectedSha other than the approved cod
   });
   assert.throws(
     () => merge(w.cfg, request(w, { expectedSha: "0ther" })),
-    /not the approved code/u,
+    NOT_APPROVED_CODE,
   );
   assert.deepEqual(writes(), []);
 });
@@ -127,7 +135,7 @@ test("merge refuses a moved head, and an expectedSha other than the approved cod
 test("merge refuses a PR from another branch", () => {
   const w = world();
   fakeGh.reply([prView({ headRefOid: w.sha, headRefName: "evil" })]);
-  assert.throws(() => merge(w.cfg, request(w)), /not agent\/issue-7/u);
+  assert.throws(() => merge(w.cfg, request(w)), NOT_ISSUE_BRANCH);
 });
 
 test("merge refuses a stale revision with the current one, before merging", () => {
@@ -155,7 +163,7 @@ test("an issue ahead in the merge queue at review holds the merge, whatever its 
       when: "issues/3/comments?per_page",
     },
   ]);
-  assert.deepEqual(merge(w.cfg, request(w, { mergeQueue: [3, 7] })), {
+  assert.deepEqual(merge(w.cfg, request(w, { mergeQueue: QUEUE })), {
     merged: false,
     reason: "queued",
     waitingFor: 3,
@@ -180,7 +188,7 @@ test("a stopped issue ahead in the queue doesn't hold the merge", () => {
       mergeCommit: { oid: MERGE_COMMIT },
     }),
   ]);
-  const reply = merge(w.cfg, request(w, { mergeQueue: [3, 7] }));
+  const reply = merge(w.cfg, request(w, { mergeQueue: QUEUE }));
   assert.equal(reply.merged, true);
 });
 
@@ -220,20 +228,22 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
   current(w);
   const lease = { lane: "L", sweepId: "s1", at: new Date().toISOString() };
   /** @param {string} stage @returns {import("./fake-gh.mjs").GhReply[]} */
-  const older = (stage) => [
-    prView({ headRefOid: w.sha }),
-    { when: "issue list", stdout: '[{"number":3,"labels":[]}]' },
-    {
-      ...savedListing({
-        ...approvedState(approvedOf(w)),
-        number: 3,
-        pr: 30,
-        stage,
-        lease,
-      }),
-      when: "issues/3/comments?per_page",
-    },
-  ];
+  function older(stage) {
+    return [
+      prView({ headRefOid: w.sha }),
+      { when: "issue list", stdout: '[{"number":3,"labels":[]}]' },
+      {
+        ...savedListing({
+          ...approvedState(approvedOf(w)),
+          number: 3,
+          pr: 30,
+          stage,
+          lease,
+        }),
+        when: "issues/3/comments?per_page",
+      },
+    ];
+  }
   fakeGh.reply(older("merge"));
   assert.deepEqual(merge(w.cfg, request(w, { mergeOrder: true })), {
     merged: false,
