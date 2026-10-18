@@ -12,9 +12,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import {
+  historyReply,
+  initialWriteStateReply,
+} from "./initial-write-state-fixtures.mjs";
 import { isolatedOpsFixture } from "./integration-source-test-kit.mjs";
 
 const fx = await isolatedOpsFixture("integration-source-review-sync");
+fx.fakeGh.requireReplies();
 const { fakeGh, sh, worktree, originRef } = fx;
 const { loadConfig, paths } = await import("../src/config.ts");
 
@@ -203,7 +208,7 @@ test("prepare-review refuses a confirmed merge commit that isn't on the base and
 function keptConflict(n) {
   const pushed = fx.startBranch(n, `c${n}.txt`, "mine");
   fx.advanceBase(`c${n}.txt`, "theirs");
-  fakeGh.reply([]);
+  fakeGh.reply([initialWriteStateReply(n), historyReply(n)]);
   const synced = parsed(
     fx.ask({ op: "sync-base", number: n, keepConflict: true }),
   );
@@ -223,7 +228,7 @@ test("finish-sync's abort drops the rebase and resets to the pushed branch, with
     const { pushed, synced, inRebase } = keptConflict(n);
     assert.equal(KEPT_CONFLICT.parse(synced).inRebase, true);
     assert.equal(inRebase, true);
-    fakeGh.reply([]);
+    fakeGh.reply([initialWriteStateReply(n), historyReply(n)]);
     const out = parsed(
       fx.ask({ op: "finish-sync", number: n, abort: true, reason }),
     );

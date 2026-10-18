@@ -9,7 +9,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
+import {
+  historyReply,
+  initialWriteStateReply,
+} from "./initial-write-state-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 import {
   addWiki,
@@ -22,6 +25,7 @@ import {
 } from "./wiki-pin-test-kit.mjs";
 
 const fx = await opsFixture("sync-wiki-pin");
+fx.fakeGh.requireReplies();
 const { sh, worktree } = fx;
 const { loadConfig } = await import("../src/config.ts");
 const { ensureWiki } = await import("../src/wiki.ts");
@@ -60,7 +64,10 @@ const SYNC_REPLY = z.looseObject({
 
 /** @param {{ number: number } & Record<string, unknown>} request @returns {z.infer<typeof SYNC_REPLY>} the op's parsed reply */
 function ask(request) {
-  fx.fakeGh.reply([initialWriteStateReply(request.number)]);
+  fx.fakeGh.reply([
+    initialWriteStateReply(request.number),
+    historyReply(request.number),
+  ]);
   return SYNC_REPLY.parse(JSON.parse(fx.ask(request, config)));
 }
 

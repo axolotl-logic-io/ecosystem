@@ -1,22 +1,23 @@
 // @ts-check
-// A job's dropped changes are saved as patches (dropped-changes-saved, #369):
-// closing a job's checkouts writes what each left uncommitted to
-// dropped/<job key>-<checkout>.patch in the issue's run folder, which
-// `git apply --index` restores on the base commit, before it drops it.
+// Recovery through the real job teardown, isolated local Git code and wiki origins.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import {
-  configIn,
-  git,
-  headOf,
-  ISSUE,
-  root,
-  write,
-} from "./pipeline-commit-test-kit.mjs";
+  close,
+  inRunDir,
+  KEY,
+  leaveChanges,
+  openFresh,
+  openIn,
+  REGULAR_EXECUTABLE_MODE,
+  restored,
+  under,
+} from "./job-checkout-dropped-test-kit.mjs";
+import { headOf, ISSUE, write } from "./pipeline-commit-test-kit.mjs";
+
 import {
   movePinAndBack,
   rebaseAcrossPin,
@@ -24,113 +25,12 @@ import {
 } from "./wiki-pin-test-kit.mjs";
 
 const { paths } = await import("../src/config.ts");
-const { closeJobCheckout } = await import("../src/job/checkout-close.ts");
-const { openJobCheckout } = await import("../src/job/checkout.ts");
 
-/** @import { Config } from "../src/config.ts" */
-
-const KEY = "implement-1";
 const LATER_KEY = "implement-2";
 const BASE_LINE = /^Base: (?<sha>[0-9a-f]{40})$/mu;
 const RECOVERY_RETAINED = /recovery incomplete; checkout retained/u;
 const FIRST_FILE = /first\.txt/u;
 const SECOND_FILE = /second\.txt/u;
-// Every byte value, so the patch must carry a binary file whole.
-const BINARY = Buffer.from(Array.from({ length: 256 }, (_, byte) => byte));
-// Text that isn't UTF-8: a Latin-1 é is the lone byte 0xe9.
-const LATIN1 = Buffer.from("café\n", "latin1");
-// The files each checkout is left holding besides its tracked file.
-const LEFT = ["new.txt", "notes.txt", "blob.bin", "latin1.txt"];
-
-/** @typedef {{ cfg: Config, root: string, repo: string, docs: string, branch: string, origin: string, wikiOrigin: string }} Opened */
-
-/** @param {Config} cfg @param {string} tmp @returns {Opened} */
-function openIn(cfg, tmp) {
-  const job = { stage: "implement", branch: `agent/issue-${ISSUE}` };
-  const dirs = openJobCheckout(cfg, ISSUE, job);
-  if (dirs.docs === null) {
-    throw new Error("the job has no wiki checkout");
-  }
-  return {
-    cfg,
-    root: dirs.root,
-    repo: dirs.repo,
-    docs: dirs.docs,
-    branch: dirs.branch,
-    origin: path.join(tmp, "origin.git"),
-    wikiOrigin: path.join(tmp, "wiki-origin.git"),
-  };
-}
-
-/** @returns {Opened} a fresh implement job's checkouts for #7 */
-function openFresh() {
-  const tmp = fs.mkdtempSync(path.join(root, "dropped-"));
-  return openIn(configIn(tmp), tmp);
-}
-
-/** @param {Opened} job @param {string} key */
-async function close(job, key) {
-  const { cfg, repo, docs, branch } = job;
-  const dirs = { root: job.root, repo, docs, branch, key };
-  return await closeJobCheckout(cfg, ISSUE, { ...dirs, wiki: "write" }, null);
-}
-
-/**
- * Leaves every kind of uncommitted change in `dir`, whose tracked file is
- * `tracked`, and an ignored file; returns each changed file's bytes.
- * @param {string} dir
- * @param {string} tracked
- * @returns {Map<string, Buffer>}
- */
-function leaveChanges(dir, tracked) {
-  write(dir, tracked, "staged\n");
-  git(dir, ["add", tracked]);
-  write(dir, tracked, "staged\nunstaged\n");
-  write(dir, "new.txt", "staged new\n");
-  git(dir, ["add", "new.txt"]);
-  write(dir, "notes.txt", "untracked\n");
-  fs.writeFileSync(path.join(dir, "blob.bin"), BINARY);
-  fs.writeFileSync(path.join(dir, "latin1.txt"), LATIN1);
-  const exclude = git(dir, [
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-path",
-    "info/exclude",
-  ]);
-  fs.appendFileSync(exclude, "ignored.txt\n");
-  write(dir, "ignored.txt", "ignored\n");
-  const files = new Map();
-  for (const file of [tracked, ...LEFT]) {
-    files.set(file, fs.readFileSync(path.join(dir, file)));
-  }
-  return files;
-}
-
-/**
- * A fresh clone of `origin` at `sha` with `patch` applied by
- * `git apply --index`.
- * @param {string} origin
- * @param {string} sha
- * @param {string} patch
- * @returns {string}
- */
-function restored(origin, sha, patch) {
-  const fresh = fs.mkdtempSync(path.join(root, "fresh-"));
-  execFileSync("git", ["clone", "--quiet", origin, fresh]);
-  git(fresh, ["checkout", "--quiet", sha]);
-  git(fresh, ["apply", "--index", patch]);
-  return fresh;
-}
-
-/** @param {Config} cfg @param {string} relative @returns {string} */
-function inRunDir(cfg, relative) {
-  return path.join(paths.runDir(cfg, ISSUE), relative);
-}
-
-/** @param {string} prefix @param {Map<string, Buffer>} files @returns {string[]} */
-function under(prefix, files) {
-  return [...files.keys()].map((file) => `${prefix}/${file}`);
-}
 
 test("each checkout's staged, unstaged and untracked changes are saved as a patch that restores them on the base commit", async () => {
   const job = openFresh();
@@ -158,6 +58,10 @@ test("each checkout's staged, unstaged and untracked changes are saved as a patc
     for (const [file, bytes] of left[name]) {
       assert.deepEqual(fs.readFileSync(path.join(fresh, file)), bytes, file);
     }
+    assert.equal(
+      fs.statSync(path.join(fresh, "run.sh")).mode,
+      REGULAR_EXECUTABLE_MODE,
+    );
     assert.equal(fs.existsSync(path.join(fresh, "ignored.txt")), false);
   }
   assert.equal(fs.existsSync(job.root), false);
@@ -169,6 +73,7 @@ test("clean checkouts write no patch and no dropped folder", async () => {
   assert.deepEqual(lost, []);
   assert.deepEqual(patches, []);
   assert.equal(fs.existsSync(inRunDir(job.cfg, "dropped")), false);
+  assert.equal(fs.existsSync(inRunDir(job.cfg, "recovery")), false);
 });
 
 test("a wiki checkout ahead of the code's pin, after a rebase replayed commits that move the pin, is no dropped change", async () => {

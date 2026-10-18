@@ -5,8 +5,8 @@
 // to a publish and finish, with no code merge. The Developer closes its
 // draft PR, so no PR is the issue's any more; the
 // fake current-revision answers as the real op reads the PR (revision.ts
-// issuePullRequest): the state's PR by number, else the branch's open PR,
-// of which there is none once the draft is closed. The claim keeps the same
+// issuePullRequest): the state's PR by number, else validated all-state
+// history permits only genuine unchanged wiki work to omit the closed draft. The claim keeps the same
 // PR the same way, so each role's end state is the next role's state.
 // reviewer-and-merge-role-kit sets a temporary HOME and root before any
 // pipeline module loads.
@@ -216,5 +216,7 @@ test("a failed close of the draft fails the role, which saves no state without t
   });
   await assert.rejects(implementorRole(ctx), failure);
   assert.equal(opNames(calls).at(-1), "close-pr");
-  assert.deepEqual(savesOf(calls), []);
+  assert.deepEqual(savesOf(calls), [
+    issueState({ stage: "implement", pr: PR, flows: null }),
+  ]);
 });

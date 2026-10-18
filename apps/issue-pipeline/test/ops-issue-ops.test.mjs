@@ -7,7 +7,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
-import { kit, v2State } from "./ops-v2-test-kit.mjs";
+import {
+  commentWriteReplies,
+  labelReplies,
+  stopMutationReplies,
+} from "./gh-mutation-fixtures.mjs";
+import { kit, reviewStopReplies, v2State } from "./ops-v2-test-kit.mjs";
+
+kit.requireGhReplies();
 
 const { STOPS } = await import("../src/stops.ts");
 const {
@@ -92,7 +99,11 @@ test("ask posts numbered questions as the author, parks the issue at the author 
     lease: { lane: "me", sweepId: "s1", at: TIME },
   });
   const comments = [stateComment(state, before), myClaim(claim)];
-  reply([{ ...commentsReply(n, comments), keep: true }]);
+  reply([
+    { ...commentsReply(n, comments), keep: true },
+    ...commentWriteReplies("o/r", n, [state, claim]),
+    ...labelReplies("o/r", n, ["agent:needs-info"], ["agent:working"]),
+  ]);
   const given = { ...before, asked: ASKED_INPUTS };
   const request = {
     op: "ask",
@@ -141,13 +152,7 @@ test("ask without a state is refused and changes nothing on GitHub", () => {
 
 test("stop by code explains the control on the issue and its PR and swaps labels", () => {
   const { n, pr, claim } = STOPPED;
-  reply([
-    {
-      when: `issues/${n}/labels`,
-      stdout: JSON.stringify([{ name: "agent:stopped-error" }]),
-    },
-    { ...commentsReply(n, [myClaim(claim)]), keep: true },
-  ]);
+  reviewStopReplies(n, pr, claim);
   const request = {
     op: "stop",
     number: n,
@@ -171,8 +176,8 @@ test("stop by code explains the control on the issue and its PR and swaps labels
   const stopped = effects();
   assert.deepEqual(effectNames(stopped), [
     `comment #${n} role=coordinator`,
-    `comment #${n} state`,
     `comment #${pr} role=coordinator`,
+    `edit comment ${n} state`,
     `edit comment ${claim} role=claim`,
     `label #${n} ${label}`,
     `label #${pr} ${label}`,
@@ -188,7 +193,7 @@ test("stop by code explains the control on the issue and its PR and swaps labels
     );
     assert.ok(body.includes("the details") && body.includes("the next step"));
   }
-  assert.deepEqual(stateOf(stopped, `comment #${n} state`), state);
+  assert.deepEqual(stateOf(stopped, `edit comment ${n} state`), state);
   assert.ok(
     bodyOf(stopped, `edit comment ${claim} role=claim`).includes(CLAIM_MARK),
   );
@@ -196,7 +201,13 @@ test("stop by code explains the control on the issue and its PR and swaps labels
 
 test("stop by reason, with no detail, next step or PR, says how to resume", () => {
   const { n } = STOPPED_BY_REASON;
-  reply([]);
+  reply([
+    ...stopMutationReplies(n, { stateId: n, pr: null, code: "push-rejected" }),
+    {
+      ...commentsReply(n, [stateComment(n, v2State(n, { stage: "review" }))]),
+      keep: true,
+    },
+  ]);
   const request = {
     op: "stop",
     number: n,
@@ -220,7 +231,7 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
   const stopped = effects();
   assert.deepEqual(effectNames(stopped), [
     `comment #${n} role=coordinator`,
-    `comment #${n} state`,
+    `edit comment ${n} state`,
     `label #${n} ${label}`,
     `unlabel #${n} agent:working`,
   ]);
@@ -230,7 +241,7 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     [],
   );
   assert.ok(body.includes("To resume") && body.includes(`remove \`${label}\``));
-  assert.deepEqual(stateOf(stopped, `comment #${n} state`), state);
+  assert.deepEqual(stateOf(stopped, `edit comment ${n} state`), state);
 });
 
 // Version 2 has no publish stage: once the code merged, the stop keeps the
@@ -238,7 +249,10 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
 test("a stop after the code merged keeps its stage and says the wiki is published again", () => {
   const { n, pr, state: stateId } = MERGED_STOP;
   const saved = v2State(n, { stage: "merge", pr, codeMerged: CODE_MERGED });
-  reply([{ ...commentsReply(n, [stateComment(stateId, saved)]), keep: true }]);
+  reply([
+    { ...commentsReply(n, [stateComment(stateId, saved)]), keep: true },
+    ...stopMutationReplies(n, { stateId, pr, code: "conflict" }),
+  ]);
   const request = {
     op: "stop",
     number: n,

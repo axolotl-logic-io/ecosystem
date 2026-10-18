@@ -3,12 +3,14 @@
 // why, and how to resume.
 
 import { z } from "zod";
+import { assignedBranch } from "../branch-binding.ts";
 import { closeClaims } from "../claims.ts";
 import type { Author } from "../comments.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError, parseRequest } from "../process.ts";
+import { readWriteState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE, withLog } from "../state.ts";
 import type { Stop } from "../stops.ts";
@@ -116,8 +118,16 @@ function stop(
   cfg: Config,
   request: unknown,
 ): { code: string; label: string; state: IssueState } {
-  const req = parseRequest(STOP_REQUEST, "stop", request);
-  const n = req.number;
+  const input = parseRequest(STOP_REQUEST, "stop", request);
+  const n = input.number;
+  const saved = readWriteState(cfg, n);
+  assignedBranch(cfg, n, saved);
+  // Stops do not grant or rewrite authority. Preserve durable provenance,
+  // including security rejection, over stale or forged request snapshots.
+  const req = {
+    ...input,
+    state: { ...saved, counts: input.state.counts, log: input.state.log },
+  };
   const found = stopOf(req.code, req.reason);
   const { stage } = req.state;
   const prNumber = req.state.pr ?? 0;

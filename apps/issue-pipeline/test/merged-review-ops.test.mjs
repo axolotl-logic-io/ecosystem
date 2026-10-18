@@ -14,9 +14,11 @@ import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { commentLines, githubComment } from "./fake-gh.mjs";
+import { collaboratorReply } from "./gh-mutation-fixtures.mjs";
 import { isolatedOpsFixture } from "./integration-source-test-kit.mjs";
 
 const fx = await isolatedOpsFixture("merged-review-ops");
+fx.fakeGh.requireReplies();
 const { fakeGh, sh, worktree, originRef } = fx;
 const { loadConfig, paths } = await import("../src/config.ts");
 const { pushUnpushed } = await import("../src/unpushed.ts");
@@ -204,6 +206,7 @@ test("the detached merge commit is no unpushed work: a stop pushes nothing and t
     labels: [],
   };
   fakeGh.reply([
+    collaboratorReply("o/r", "a"),
     {
       when: `api repos/o/r/issues/${ISSUE.merged}`,
       stdout: JSON.stringify(issue),

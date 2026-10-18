@@ -8,7 +8,11 @@ import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { bodyOf, effectNames } from "./gh-effects.mjs";
-import { kit, v2State } from "./ops-v2-test-kit.mjs";
+import { stopMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
+import { everyCommentsRead, kit, v2State } from "./ops-v2-test-kit.mjs";
+
+kit.requireGhReplies();
 
 const { askOps, configWith, effects, reply, root, sh, worktree } = kit;
 
@@ -77,7 +81,12 @@ const STOP_REPLY = z.object({
 // Returns the stop code, its label and the stage the state stopped at.
 /** @param {number} n @param {string} stage @param {object} [extra] @returns {string[]} */
 function stopAt(n, stage, extra = {}) {
-  reply([]);
+  const saved = v2State(n, { stage });
+  reply([
+    everyCommentsRead(n, [kit.stateComment(n, saved)]),
+    historyReply(n),
+    ...stopMutationReplies(n, { stateId: n, pr: null, code: "not-doable" }),
+  ]);
   const { code, label, state } = STOP_REPLY.parse(
     askOps({
       op: "stop",

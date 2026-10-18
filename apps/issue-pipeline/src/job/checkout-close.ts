@@ -8,7 +8,6 @@ import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withWikiLock } from "../locks.ts";
 import { run } from "../process.ts";
-import { holdWikiPin } from "../wiki.ts";
 import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";
@@ -19,43 +18,12 @@ interface DroppedChanges {
   patches: readonly string[];
 }
 const CHECKOUTS: readonly ("repo" | "docs")[] = ["repo", "docs"];
-const STATUS_PATH_AT = 3;
 function gitIn(dir: string, args: readonly string[]): string {
   return run("git", ["-C", dir, ...args]).stdout;
 }
 function hasGit(dir: string): boolean {
   return fs.existsSync(path.join(dir, ".git"));
 }
-// The paths `dir` holds uncommitted, each after `prefix`, which it then
-// drops, once it has saved them as the patch `to`; `saved` says whether it
-// wrote one. A failed save throws before any destructive operation.
-function dropChanges(
-  dir: string,
-  prefix: string,
-  to: { file: string; title: string },
-): { lost: string[]; saved: boolean } {
-  if (!hasGit(dir)) {
-    return { lost: [], saved: false };
-  }
-  const status = ["status", "--porcelain", "-z", "--untracked-files=all"];
-  const entries = gitIn(dir, status).split("\0");
-  const lost: string[] = [];
-  for (let at = 0; at < entries.length; at += 1) {
-    const entry = entries[at] ?? "";
-    if (entry !== "") {
-      lost.push(`${prefix}${entry.slice(STATUS_PATH_AT)}`);
-    }
-    // A rename or copy is followed by the path it came from.
-    if (entry.startsWith("R") || entry.startsWith("C")) {
-      at += 1;
-    }
-  }
-  const saved = saveDroppedPatch(dir, to);
-  gitIn(dir, ["reset", "--quiet", "--hard"]);
-  gitIn(dir, ["clean", "--quiet", "-fd"]);
-  return { lost, saved };
-}
-
 // How many commits the checkout has that no branch on the remote has, so
 // that commits another branch on the remote already holds count as pushed.
 function unpushed(cfg: Config, dir: string): number {
@@ -110,11 +78,11 @@ function reported<T>(step: () => T, fallback: T): T {
 
 // Closes job folder `job.root` of issue `issue`: saves its checkouts'
 // uncommitted changes as patches named by job key `job.key` and drops them,
-// calls `push` when its code checkout, or its wiki checkout under `job.wiki`
-// write access, holds commits the remote lacks, saves its wiki commits and
-// bundles code still absent from the remote, then removes the folder. A clean
-// checkout gets no patch. Failed patch/bundle saves retain the checkout and
-// throw; a restart must not overwrite that operator recovery work.
+// bundles local code before changing either checkout, then calls `push` when
+// its code checkout, or its wiki checkout under `job.wiki` write access, holds
+// commits the remote lacks. Saves its wiki commits, then removes the folder.
+// A clean checkout gets no patch. Failed preparation retains the exact
+// checkouts and indexes; a restart must not overwrite that recovery work.
 async function closeJobCheckout(
   cfg: Config,
   issue: number,
@@ -125,18 +93,20 @@ async function closeJobCheckout(
   let removable = false;
   try {
     const dropped = ((): DroppedChanges => {
-      // A moved wiki checkout is no change of the code checkout's.
-      holdWikiPin(cfg, repo);
       const lost: string[] = [];
       const patches: string[] = [];
       for (const name of CHECKOUTS) {
         const dir = job[name];
-        if (dir !== null) {
+        if (dir !== null && hasGit(dir)) {
           const file = paths.droppedPatch(cfg, issue, job.key, name);
           const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
           const prefix = `${path.relative(root, dir)}/`;
-          const one = dropChanges(dir, prefix, { file, title });
-          lost.push(...one.lost);
+          const one = saveDroppedPatch(cfg, dir, { file, title });
+          lost.push(
+            ...one.lost.map(
+              (fileName: string): string => `${prefix}${fileName}`,
+            ),
+          );
           if (one.saved) {
             patches.push(path.relative(paths.runDir(cfg, issue), file));
           }
@@ -144,6 +114,15 @@ async function closeJobCheckout(
       }
       return { lost, patches };
     })();
+    // Prepare every recovery artifact before changing either checkout.
+    saveCodeRecovery(cfg, issue, repo, job.key);
+    for (const name of CHECKOUTS) {
+      const dir = job[name];
+      if (dir !== null && hasGit(dir)) {
+        gitIn(dir, ["reset", "--quiet", "--hard"]);
+        gitIn(dir, ["clean", "--quiet", "-fd"]);
+      }
+    }
     if (
       push !== null &&
       (holdsUnpushed(cfg, repo) ||
@@ -159,8 +138,6 @@ async function closeJobCheckout(
       });
       reported((): void => saveWiki(scoped, issue, docs), undefined);
     }
-    // Even a refused exit push cannot strand commits in the folder we delete.
-    saveCodeRecovery(cfg, issue, repo, job.key);
     removable = true;
     return dropped;
   } finally {

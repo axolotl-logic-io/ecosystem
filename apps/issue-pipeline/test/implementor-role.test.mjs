@@ -101,7 +101,11 @@ test("a clean run works, pushes the draft with no sync or verify, and goes to re
   assert.equal(sessions[0]?.model, ctx.cfg.models.implementor);
   assert.equal(sessions[0]?.commits, true);
   assert.equal(sessions[0]?.phase, undefined);
-  assert.equal(saves.length, 0);
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0]?.pr, PR);
+  assert.deepEqual(saves[0]?.hardened, EARLIER.hardened);
+  assert.deepEqual(saves[0]?.integration, EARLIER.integration);
+  assert.deepEqual(saves[0]?.security, EARLIER.security);
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
   assert.equal(end.state.pr, PR);

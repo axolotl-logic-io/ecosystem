@@ -39,15 +39,28 @@ function gitIn(dir: string, args: readonly string[]): string {
 // push and job exit paths call it again before they check or stage, and the
 // checkout's hooks after git's own commits and rewrites. Does
 // nothing without a wiki submodule, or while its gitlink is unmerged.
-// Ordinary developer checkouts keep Git's default pin tracking.
-function holdWikiPin(cfg: Config, parent: string): void {
+// Ordinary developer checkouts keep Git's default pin tracking. An indexFile
+// confines this change to that index, leaving the checkout's own index intact.
+function holdWikiPin(cfg: Config, parent: string, indexFile?: string): void {
   const wiki = wikiCfg(cfg);
   if (wiki === null) {
     return;
   }
-  const entry = gitIn(parent, ["ls-files", "--stage", "--", wiki.dir]);
+  const env = new Map<string, string>();
+  if (indexFile !== undefined) {
+    env.set("GIT_INDEX_FILE", indexFile);
+  }
+  const entry = run(
+    "git",
+    ["-C", parent, "ls-files", "--stage", "--", wiki.dir],
+    { env },
+  ).stdout;
   if (MERGED_GITLINK.test(entry)) {
-    gitIn(parent, ["update-index", "--assume-unchanged", "--", wiki.dir]);
+    run(
+      "git",
+      ["-C", parent, "update-index", "--assume-unchanged", "--", wiki.dir],
+      { env },
+    );
   }
 }
 

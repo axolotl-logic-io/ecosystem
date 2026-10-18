@@ -4,15 +4,19 @@
 // one commit past the saved head, the push record the ops write before a
 // push, and a claim of the issue from its saved state, as ops' claim answers
 // it.
+
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { claimMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
 import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
   askOps,
   claimComment,
   commentsReply,
   reply,
+  requireGhReplies,
   root,
   runDir,
   sh,
@@ -20,6 +24,8 @@ import {
   TIME,
   worktree,
 } from "./ops-cli-test-kit.mjs";
+
+requireGhReplies();
 
 const { newIssueState } = await import("../src/state.ts");
 
@@ -89,9 +95,11 @@ function heldComments(n, saved) {
 function claimSaved(n, saved) {
   const comments = heldComments(n, saved);
   reply([
+    historyReply(n),
     issueReply(n),
     commentsReply(n, comments),
     commentsReply(n, comments),
+    ...claimMutationReplies(n, n * CLAIM_IDS + 1, null),
   ]);
   return CLAIM_REPLY.parse(askOps({ op: "claim", number: n, ...LANE }));
 }

@@ -5,7 +5,8 @@
 import { openIssue } from "./pipeline-flow-gh.mjs";
 import { ISSUE } from "./pipeline-flow-kit.mjs";
 
-const STATE = /<!-- agent-pipeline:state\n(?<json>[\s\S]*?)\n-->/u;
+const STATE =
+  /^(?:\*\*🤖 issue-pipeline · state\*\*\n)?<!-- agent-pipeline:state\n(?<json>[\s\S]*?)\n-->/u;
 
 /**
  * Opens the flow's issue on the fake GitHub.
@@ -64,9 +65,12 @@ function hardeningTurn() {
  * @returns {any}
  */
 function savedState(world) {
-  const comment = world.comments.find(
-    ({ issue, body }) => issue === ISSUE && STATE.test(body),
-  );
+  const comment = world.comments
+    .filter(
+      ({ issue, body, login }) =>
+        issue === ISSUE && login === world.account && STATE.test(body),
+    )
+    .at(-1);
   const { json } = STATE.exec(comment?.body ?? "")?.groups ?? {};
   if (json === undefined) {
     throw new Error(`#${ISSUE} has no state comment`);

@@ -7,7 +7,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
 import { bodyOf, stateOf } from "./gh-effects.mjs";
-import { kit, v2State } from "./ops-v2-test-kit.mjs";
+import { stopMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { everyCommentsRead, kit, v2State } from "./ops-v2-test-kit.mjs";
+
+kit.requireGhReplies();
 
 const { askOps, effects, reply, TIME } = kit;
 
@@ -28,7 +31,10 @@ function addressesIn(text) {
 
 test("a stop whose reason and detail name IP addresses posts neither address", () => {
   const { n } = STOPPED;
-  reply([]);
+  reply([
+    everyCommentsRead(n, [kit.stateComment(n, v2State(n))]),
+    ...stopMutationReplies(n, { stateId: n, pr: null, code: "error" }),
+  ]);
   const request = {
     op: "stop",
     number: n,
@@ -65,5 +71,5 @@ test("a stop whose reason and detail name IP addresses posts neither address", (
     body.includes("upstream [redacted] rejected [redacted]"),
     "the detail shows [redacted] for each address",
   );
-  assert.deepEqual(stateOf(stopped, `comment #${n} state`), stoppedState);
+  assert.deepEqual(stateOf(stopped, `edit comment ${n} state`), stoppedState);
 });

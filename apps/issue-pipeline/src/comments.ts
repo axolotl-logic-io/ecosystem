@@ -11,6 +11,7 @@ import type { Config } from "./config.ts";
 import { gh, ghLines } from "./github.ts";
 
 const STATE_MARK = "<!-- agent-pipeline:state";
+const STATE_HEADER = "**🤖 issue-pipeline · state**";
 // The mark of an issue's n-th usage comment (src/job/usage-log.ts): the
 // first is `usage`, the next `usage-2`, and so on.
 const USAGE_MARK =
@@ -234,12 +235,20 @@ function keyMark(number: number, key: string): string {
   return `<!-- issue-pipeline:${number}:${key} -->`;
 }
 
+// State must occupy the comment itself, not a quoted diagnostic or body field.
+function isStateBody(body: string): boolean {
+  return (
+    body.startsWith(STATE_MARK) ||
+    body.startsWith(`${STATE_HEADER}\n${STATE_MARK}`)
+  );
+}
+
 function pipelineRole(cfg: Config, item: IssueComment): string | null {
   if (item.user?.login !== cfg.account) {
     return null;
   }
   const body = item.body ?? "";
-  if (body.includes(STATE_MARK)) {
+  if (isStateBody(body)) {
     return "state";
   }
   const { role } = PIPELINE_MARK.exec(body)?.groups ?? {};
@@ -261,6 +270,7 @@ export {
   comment,
   commentByKey,
   editComment,
+  isStateBody,
   keyMark,
   listComments,
   listRepoComments,
@@ -269,6 +279,7 @@ export {
   pipelineRole,
   rawComment,
   roleSlug,
+  STATE_HEADER,
   STATE_MARK,
   signature,
   signed,

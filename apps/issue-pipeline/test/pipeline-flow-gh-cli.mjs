@@ -64,7 +64,7 @@ function viewOf(world, change) {
     title: change.title,
     body: change.body,
     headRefName: change.head,
-    headRefOid: change.mergedHead ?? live ?? "",
+    headRefOid: change.mergedHead ?? live ?? change.closedHead ?? "",
     baseRefName: change.base,
     isCrossRepository: false,
     isDraft: change.isDraft,
@@ -207,6 +207,7 @@ function pr(world, args) {
       change.isDraft = false;
       return { stdout: "" };
     case "close":
+      change.closedHead = branchHead(world.origin, change.head);
       change.state = "CLOSED";
       issueOf(world, change.number).state = "closed";
       return { stdout: "" };

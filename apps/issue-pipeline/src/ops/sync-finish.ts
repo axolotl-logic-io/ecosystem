@@ -7,9 +7,10 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
-import { run } from "../process.ts";
+import { OpsError, run } from "../process.ts";
 import { abortRebase, rebaseProblem } from "../rebase.ts";
 import { holdWikiPin, wikiPinProblem } from "../wiki.ts";
+import { readWriteAuthority } from "../write-authority.ts";
 
 // The commit sync-base rebased onto (its reply's baseSha, #279).
 interface FinishAgainst {
@@ -74,6 +75,9 @@ function resetToRemote(cfg: Config, n: number): void {
 // push first.
 function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
   const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
+  if (!readWriteAuthority(cfg, n).codeWritable) {
+    throw new OpsError(`#${n}'s code merged; refusing sync push`);
+  }
   recordPush(cfg, n, head(wt), op);
   git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", target]);
 }

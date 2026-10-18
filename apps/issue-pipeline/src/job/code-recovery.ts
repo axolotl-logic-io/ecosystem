@@ -38,13 +38,14 @@ function saveCodeRecovery(
   const dir = path.join(paths.runDir(cfg, issue), "recovery");
   fs.mkdirSync(dir, { recursive: true });
   const bundle = path.join(dir, `${key}-code.bundle`);
-  const temp = `${bundle}.tmp`;
+  const tempDir = fs.mkdtempSync(path.join(dir, `${key}-`));
+  const temp = path.join(tempDir, "code.bundle");
   try {
     run("git", ["-C", repo, "bundle", "create", temp, "HEAD"]);
     run("git", ["-C", repo, "bundle", "verify", temp]);
-    fs.renameSync(temp, bundle);
+    fs.linkSync(temp, bundle);
   } finally {
-    fs.rmSync(temp, { force: true });
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
   const sha = run("git", ["-C", repo, "rev-parse", "HEAD"]).stdout.trim();
   process.stderr.write(

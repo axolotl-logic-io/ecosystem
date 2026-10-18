@@ -2,11 +2,14 @@
 // wiki's agent/issue-<n>, so a stopped issue whose only work is on the wiki
 // resumes the stage it stopped at with that work. (Version 2 saves the stage
 // a stop came from, so the claim no longer infers review from wiki commits.)
+
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { effectNames, stateOf } from "./gh-effects.mjs";
+import { claimMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
 import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
   askOps,
@@ -15,6 +18,7 @@ import {
   configWith,
   effects,
   reply,
+  requireGhReplies,
   root,
   sh,
   stateComment,
@@ -23,6 +27,8 @@ import {
 } from "./ops-cli-test-kit.mjs";
 
 import { addSubmodule } from "./submodule-test-kit.mjs";
+
+requireGhReplies();
 
 const { newIssueState } = await import("../src/state.ts");
 
@@ -78,9 +84,13 @@ test("a claim lifts a stopped issue with only wiki work to its stage, with the w
     }),
   ];
   reply([
+    historyReply(ISSUE),
     issueReply(ISSUE, { labels: [{ name: "agent:stopped-wiki-check" }] }),
     commentsReply(ISSUE, comments),
     commentsReply(ISSUE, comments),
+    ...claimMutationReplies(ISSUE, STATE_ID, null, [
+      "agent:stopped-wiki-check",
+    ]),
   ]);
   const out = CLAIM_REPLY.parse(
     askOps({ op: "claim", config, number: ISSUE, ...LANE }),

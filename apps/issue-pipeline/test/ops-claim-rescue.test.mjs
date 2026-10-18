@@ -5,9 +5,13 @@
 // or reset to the branch when the push and the worktree diverged (#283). A
 // claim adopts nothing else (ops-claim-provenance.test.mjs), so it moves no
 // other worktree.
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { claimMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
+import { requireGhReplies } from "./ops-cli-test-kit.mjs";
 import {
   everyCommentsRead,
   kit,
@@ -17,6 +21,8 @@ import {
   recordPipelinePush,
   v2State,
 } from "./ops-v2-test-kit.mjs";
+
+requireGhReplies();
 
 const { askOps, reply, root, sh, stateComment, worktree } = kit;
 
@@ -81,8 +87,10 @@ function rescueRefs(n) {
 /** @param {number} n @param {object} saved */
 function claimSaved(n, saved) {
   reply([
+    historyReply(n),
     openIssue(n),
     everyCommentsRead(n, [stateComment(STATE_ID, saved), myClaim(CLAIM_ID)]),
+    ...claimMutationReplies(n, STATE_ID, null),
   ]);
   return CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE })).state;
 }

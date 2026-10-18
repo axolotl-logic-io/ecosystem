@@ -7,7 +7,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
+import { draftMutationReplies } from "./gh-mutation-fixtures.mjs";
+import {
+  historyReply,
+  initialWriteStateReply,
+  openDraftReply,
+} from "./initial-write-state-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 import {
   addWiki,
@@ -18,6 +23,7 @@ import {
 } from "./wiki-pin-test-kit.mjs";
 
 const fx = await opsFixture("wiki-pin-held");
+fx.fakeGh.requireReplies();
 const { loadConfig } = await import("../src/config.ts");
 const { ensureWiki } = await import("../src/wiki.ts");
 const { ensureClone, ensureWorktree, unsavedWork } = await import(
@@ -98,6 +104,9 @@ test("start-pr opens a new branch's draft from a checkout whose wiki gitlink los
   assert.equal(statusOf(wt), MOVED_WIKI);
   const reply = ask({ op: "start-pr", number: n }, [
     initialWriteStateReply(n),
+    ...draftMutationReplies(n, PR),
+    historyReply(n),
+    openDraftReply(n, PR, `${fx.root}/origin.git`),
     { when: `repos/o/r/issues/${n}`, stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${PR}\n` },

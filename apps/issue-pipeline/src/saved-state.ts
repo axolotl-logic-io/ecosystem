@@ -5,7 +5,13 @@
 
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
-import { listComments, rawComment, STATE_MARK } from "./comments.ts";
+import {
+  isStateBody,
+  listComments,
+  rawComment,
+  STATE_HEADER,
+  STATE_MARK,
+} from "./comments.ts";
 import type { Config } from "./config.ts";
 import { gh } from "./github.ts";
 import { OpsError } from "./process.ts";
@@ -27,10 +33,16 @@ const WRITE_STATE = ISSUE_STATE.pick({
   number: true,
   stage: true,
 }).extend({
+  stoppedStage: ISSUE_STATE.shape.stoppedStage.removeCatch(),
+  stopCode: ISSUE_STATE.shape.stopCode.removeCatch(),
   branch: ISSUE_STATE.shape.branch.removeCatch(),
   pr: ISSUE_STATE.shape.pr.removeCatch(),
   codeMerged: ISSUE_STATE.shape.codeMerged.removeCatch(),
   merged: ISSUE_STATE.shape.merged.removeCatch(),
+  hardened: ISSUE_STATE.shape.hardened.removeCatch(),
+  integration: ISSUE_STATE.shape.integration.removeCatch(),
+  security: ISSUE_STATE.shape.security.removeCatch(),
+  gherkin: ISSUE_STATE.shape.gherkin.removeCatch(),
 });
 
 const MARK_END = "-->";
@@ -151,8 +163,7 @@ function latestStateComment(
   return comments
     .filter(
       (item) =>
-        item.user?.login === cfg.account &&
-        (item.body ?? "").includes(STATE_MARK),
+        item.user?.login === cfg.account && isStateBody(item.body ?? ""),
     )
     .at(-1);
 }
@@ -192,7 +203,7 @@ function stateBody(number: number, state: IssueState): string {
     MARK_END_PATTERN,
     ESCAPED_MARK_END,
   );
-  return `**🤖 issue-pipeline · state**\n${STATE_MARK}\n${json}\n-->\n<sub>Machine state for #${number}. The pipeline rewrites this comment; do not edit it.</sub>`;
+  return `${STATE_HEADER}\n${STATE_MARK}\n${json}\n-->\n<sub>Machine state for #${number}. The pipeline rewrites this comment; do not edit it.</sub>`;
 }
 
 function writeState(cfg: Config, number: number, state: IssueState): void {

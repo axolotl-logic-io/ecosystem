@@ -6,7 +6,8 @@
 // also give `stderr` to print and `code` to exit with, as a refused command
 // does, and `keep` to answer every matching call rather than only the first,
 // so a test needn't know how often a read is made. A call that matches no
-// reply prints nothing and succeeds.
+// reply fails when requireReplies() enabled strict mode; legacy fixtures retain
+// their empty-success default. Neither mode can invoke system gh.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,6 +27,8 @@ const CALL_ARGS = z.array(z.string());
  * @property {string} [stderr]
  * @property {number} [code]
  * @property {boolean} [keep] answer every matching call, not only the first
+ * @property {boolean} [persistState] apply real state PATCHes to this saved comment fixture
+ * @property {{ repo: string, ref: string }} [headRef] local origin of this OPEN PR's actual head
  */
 
 /**
@@ -35,6 +38,7 @@ const CALL_ARGS = z.array(z.string());
  * the reads. A test passes src/github.ts's ghIsRead as `isRead`: this file
  * imports no src module, since tests set the pipeline root before src loads.
  * @typedef {object} FakeGh
+ * @property {() => void} requireReplies fail every unmatched read or write
  * @property {(replies: readonly GhReply[]) => void} reply
  * @property {() => string[][]} calls
  * @property {(isRead: (args: readonly string[]) => boolean) => string[][]} writes
@@ -47,6 +51,7 @@ const CALL_ARGS = z.array(z.string());
 function script(dir) {
   return `#!/usr/bin/env node
 const fs = require("node:fs");
+const { execFileSync } = require("node:child_process");
 const path = require("node:path");
 const dir = ${JSON.stringify(dir)};
 const args = process.argv.slice(2);
@@ -57,13 +62,33 @@ const text = args.join(" ");
 const at = replies.findIndex((reply) => text.includes(reply.when));
 if (at >= 0) {
   const reply = replies[at];
-  process.stdout.write(reply.stdout ?? "");
+  let stdout = reply.stdout ?? "";
+  if (reply.headRef) {
+    const view = JSON.parse(stdout);
+    view.headRefOid = execFileSync("git", ["-C", reply.headRef.repo, "rev-parse", reply.headRef.ref], { encoding: "utf8" }).trim();
+    stdout = JSON.stringify(view);
+  }
+  process.stdout.write(stdout);
   process.stderr.write(reply.stderr ?? "");
   process.exitCode = reply.code ?? 0;
   if (reply.keep !== true) {
     replies.splice(at, 1);
     fs.writeFileSync(file, JSON.stringify(replies));
   }
+} else if (fs.existsSync(path.join(dir, "strict")) || (args[0] === "pr" && args[1] === "list" && args.includes("all"))) {
+  process.stderr.write("unsupported private fake gh request: " + text); process.exitCode = 1;
+}
+const body = args.find(arg => arg.startsWith("body="))?.slice(5);
+const endpoint = args.find(arg => arg.startsWith("repos/"));
+if (at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("PATCH") && body?.includes("<!-- agent-pipeline:state")) {
+  for (const reply of replies.filter(item => item.persistState)) {
+    const comments = reply.stdout.split("\\n").filter(Boolean).map(line => JSON.parse(line));
+    for (const comment of comments) {
+      if (endpoint?.endsWith("/comments/" + comment.id)) comment.body = body;
+    }
+    reply.stdout = comments.map(comment => JSON.stringify(comment)).join("\\n");
+  }
+  fs.writeFileSync(file, JSON.stringify(replies));
 }
 `;
 }
@@ -87,6 +112,9 @@ function installFakeGh() {
       .map((line) => CALL_ARGS.parse(JSON.parse(line)));
   }
   return {
+    requireReplies() {
+      fs.writeFileSync(path.join(dir, "strict"), "true");
+    },
     reply(replies) {
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));
       fs.writeFileSync(callsFile, "");

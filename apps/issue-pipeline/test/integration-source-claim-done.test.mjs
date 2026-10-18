@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { collaboratorReply } from "./gh-mutation-fixtures.mjs";
 import {
   everyCommentsRead,
   kit,
@@ -18,6 +19,7 @@ import {
   v2State,
 } from "./ops-v2-test-kit.mjs";
 
+kit.requireGhReplies();
 const { askOps, reply, stateComment, writes } = kit;
 const SHA_LENGTH = 40;
 const MERGE_OID = "a".repeat(SHA_LENGTH);
@@ -38,11 +40,11 @@ const CLAIMED = z.looseObject({
 const FAILED = z.looseObject({ ok: z.literal(false), error: z.string() });
 const ANSWER = z.looseObject({ error: z.string().optional() });
 
-// gh's answer to the list of issue `n`'s branch's open PRs: none.
+// gh's answer to the list of issue `n`'s branch's all-state PR history: none.
 /** @param {number} n @returns {import("./fake-gh.mjs").GhReply} */
-function noOpenPr(n) {
+function noPrHistory(n) {
   return {
-    when: `pr list -R o/r --head agent/issue-${n} --state open`,
+    when: `pr list -R o/r --head agent/issue-${n} --state all`,
     stdout: "[]",
     keep: true,
   };
@@ -53,6 +55,12 @@ function noOpenPr(n) {
 /** @param {number} n @param {object} saved @param {readonly import("./fake-gh.mjs").GhReply[]} more @returns {unknown} */
 function claimDone(n, saved, more) {
   reply([
+    collaboratorReply("o/r", "bot"),
+    {
+      when: "api -X PATCH repos/o/r/issues/comments/1 -f",
+      stdout: "",
+      keep: true,
+    },
     openIssue(n),
     ...more,
     everyCommentsRead(n, [stateComment(1, saved), myClaim(2)]),
@@ -66,7 +74,7 @@ test("a done wiki-only change with no PR and no code merge on GitHub is claimed 
   const answer = claimDone(
     n,
     v2State(n, { stage: "done", flows: { code: false, wiki: true }, merged }),
-    [noOpenPr(n)],
+    [noPrHistory(n)],
   );
   assert.equal(ANSWER.parse(answer).error, undefined);
   const won = CLAIMED.parse(answer);

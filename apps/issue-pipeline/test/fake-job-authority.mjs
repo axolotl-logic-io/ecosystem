@@ -22,6 +22,7 @@ if (json) {
     if (request.op === "claim") state = reply.state;
     else if (["save-state", "release", "stop", "ask"].includes(request.op)) state = request.state;
     if (state) fs.writeFileSync(dir + "/authority-state.json", JSON.stringify(state));
+    if (request.op === "start-pr") fs.writeFileSync(dir + "/authority-pr.json", JSON.stringify({ number: reply.pr, head: reply.headSha }));
   }
 }
 process.stdout.write(result.stdout);
@@ -37,6 +38,7 @@ const root = ${JSON.stringify(root)};
 const args = process.argv.slice(2);
 const cfg = JSON.parse(fs.readFileSync(root + "/o__r.json", "utf8"));
 const state = JSON.parse(fs.readFileSync(root + "/authority-state.json", "utf8"));
+const pr = JSON.parse(fs.readFileSync(root + "/authority-pr.json", "utf8"));
 const replies = JSON.parse(fs.readFileSync(root + "/replies.json", "utf8"));
 const issue = replies.claim?.issue ?? ${JSON.stringify(ISSUE)};
 fs.appendFileSync(root + "/gh.log", JSON.stringify(args) + "\\n");
@@ -49,8 +51,12 @@ if (args[0] === "api" && endpoint === "repos/" + cfg.repo + "/issues/7/comments?
   process.stdout.write(JSON.stringify({ number: 7, state: "open", ...issue }));
 } else if (args[0] === "api" && endpoint === "repos/" + cfg.repo + "/collaborators/" + issue.user?.login) {
   process.stdout.write("");
-} else if (args[0] === "pr" && args[1] === "view" && state?.pr && args[2] === String(state.pr) && args[args.indexOf("-R") + 1] === cfg.repo) {
-  process.stdout.write(JSON.stringify({ number: state.pr, state: "OPEN", headRefName: state.branch ?? "agent/issue-7", headRefOid: state.headSha ?? "fixture-head", baseRefName: cfg.baseBranch, isCrossRepository: false, mergeCommit: null }));
+} else if (args[0] === "pr" && args[1] === "list" && args.includes("all") && args[args.indexOf("-R") + 1] === cfg.repo && args[args.indexOf("--head") + 1] === (state?.branch ?? "agent/issue-7")) {
+  const history = [];
+  if (pr !== null) history.push({ number: pr.number });
+  process.stdout.write(JSON.stringify(history));
+} else if (args[0] === "pr" && args[1] === "view" && pr !== null && args[2] === String(pr.number) && args[args.indexOf("-R") + 1] === cfg.repo) {
+  process.stdout.write(JSON.stringify({ number: pr.number, state: "OPEN", headRefName: state.branch ?? "agent/issue-7", headRefOid: pr.head ?? "fixture-head", baseRefName: cfg.baseBranch, isCrossRepository: false, mergeCommit: null }));
 } else {
   process.stderr.write("unsupported private fake gh request"); process.exit(1);
 }
@@ -69,6 +75,17 @@ function installJobAuthority(root, bin, replies) {
     path.join(root, "authority-state.json"),
     JSON.stringify(state),
   );
+  let pr = null;
+  if (
+    typeof state === "object" &&
+    state !== null &&
+    "pr" in state &&
+    state.pr !== null &&
+    "headSha" in state
+  ) {
+    pr = { number: state.pr, head: state.headSha };
+  }
+  fs.writeFileSync(path.join(root, "authority-pr.json"), JSON.stringify(pr));
   fs.writeFileSync(path.join(root, "ops-inner.mjs"), FAKE_OPS);
   fs.writeFileSync(path.join(root, "ops.mjs"), JOB_OPS);
   fs.writeFileSync(path.join(bin, "gh"), ghScript(root), { mode: 0o755 });

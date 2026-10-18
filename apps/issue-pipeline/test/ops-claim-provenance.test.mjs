@@ -4,9 +4,13 @@
 // or unreadable PR; the pipeline's own unsaved push it adopts, and the
 // branch head it only reports; and the done issue it claims only to
 // reconcile its completion.
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { claimMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
+import { requireGhReplies } from "./ops-cli-test-kit.mjs";
 import {
   commitOnOrigin,
   everyCommentsRead,
@@ -20,6 +24,8 @@ import {
   v2State,
 } from "./ops-v2-test-kit.mjs";
 
+requireGhReplies();
+
 const { askOps, reply, stateComment, writes } = kit;
 const SHA_LENGTH = 40;
 const MERGE_OID = "a".repeat(SHA_LENGTH);
@@ -31,12 +37,14 @@ const UNCONFIRMED = /doesn't confirm/u;
 
 // Queues the reads of a claim of issue `n` that this lane already holds,
 // with `saved` as its saved state, and `more` replies.
-/** @param {number} n @param {object} saved @param {readonly import("./fake-gh.mjs").GhReply[]} [more] @returns {void} */
+/** @param {number} n @param {Record<string, unknown>} saved @param {readonly import("./fake-gh.mjs").GhReply[]} [more] @returns {void} */
 function claimWorld(n, saved, more = []) {
+  const { pr } = saved;
   reply([
     openIssue(n),
     ...more,
     everyCommentsRead(n, [stateComment(1, saved), myClaim(2)]),
+    ...claimMutationReplies(n, 1, z.number().nullable().parse(pr)),
   ]);
 }
 
@@ -170,6 +178,7 @@ test("a claim adopts the pipeline's own unsaved push and sends a merge back to r
         revision: { code: saved, wiki: null, inputs: "x" },
       },
     }),
+    [historyReply(n)],
   );
   const won = CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(won.ok, true);
@@ -186,7 +195,9 @@ test("a claim reports a branch head the pipeline didn't push, leaving the state"
   const n = 308;
   const saved = commitOnOrigin(`agent/issue-${n}`, "f308a");
   const foreign = commitOnOrigin(`agent/issue-${n}`, "f308b");
-  claimWorld(n, v2State(n, { stage: "review", headSha: saved }));
+  claimWorld(n, v2State(n, { stage: "review", headSha: saved }), [
+    historyReply(n),
+  ]);
   const won = CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(won.ok, true);
   assert.equal(won.lost, undefined);

@@ -18,6 +18,7 @@ import { gh, ghJson } from "../github.ts";
 import { LABELS, setLabels } from "../labels.ts";
 import { OpsError, run } from "../process.ts";
 import { holdWikiPin } from "../wiki.ts";
+import { recoverDraft, saveDraftAuthority } from "./pr-state.ts";
 import { openPrFor } from "./prs.ts";
 import { refuseOnceMerged } from "./push.ts";
 import type { ReadyReply } from "./ready-pr.ts";
@@ -181,25 +182,9 @@ function startPr(cfg: Config, request: unknown): PrReply {
   } else if (given !== undefined) {
     gh(cfg, ["pr", "edit", String(pr), "-R", cfg.repo, "--body", given]);
   }
+  saveDraftAuthority(cfg, n, pr, headSha);
   setLabels(cfg, pr, [LABELS.working.name], []);
   return { pr, headSha };
-}
-
-// The issue's open PR, else `reopen` reopened, else none (undefined).
-function existingPr(
-  cfg: Config,
-  n: number,
-  reopen: number | null | undefined,
-): number | undefined {
-  const open = openPrFor(cfg, n);
-  if (open !== undefined || reopen === undefined || reopen === null) {
-    return open;
-  }
-  const args = ["pr", "reopen", String(reopen), "-R", cfg.repo];
-  if (gh(cfg, args, { allowFail: true }).code === 0) {
-    return reopen;
-  }
-  return undefined;
 }
 
 // Pushes the branch, then fills in the issue's PR when the branch changes
@@ -209,6 +194,9 @@ function existingPr(
 function openPr(cfg: Config, request: unknown): OpenReply {
   const req = parsed(OPEN_REQUEST, "open-pr request", request);
   const n = req.number;
+  if (req.reopen !== null && req.reopen !== undefined) {
+    recoverDraft(cfg, n, req.reopen);
+  }
   refuseOnceMerged(cfg, n, "open-pr");
   const pushed = push(cfg, n, "open-pr");
   const title = titleFor(n, textOr(req.title, `Fix #${n}`));
@@ -221,7 +209,7 @@ function openPr(cfg: Config, request: unknown): OpenReply {
       openPrFor(cfg, n) ?? createPr(cfg, n, ["--draft"], { title, body });
     return { pr: draft, ...pushed };
   }
-  let pr = existingPr(cfg, n, req.reopen);
+  let pr = openPrFor(cfg, n);
   if (pr === undefined) {
     pr = createPr(cfg, n, ["--draft"], { title, body });
   } else {

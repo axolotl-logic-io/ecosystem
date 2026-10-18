@@ -20,6 +20,14 @@ const { pushOps } = await import("../src/ops/push.ts");
 const REFUSED = /code.*(?:merged|read.only)/u;
 const PR = 42;
 
+/** @param {string} state @param {string} oid @returns {{ oid: string } | null} */
+function mergedReceipt(state, oid) {
+  if (state === "MERGED") {
+    return { oid };
+  }
+  return null;
+}
+
 /** @param {import("./pipeline-commit-test-kit.mjs").Job} job @param {string} state */
 function savedPr(job, state) {
   saveAuthority(job.cfg, {
@@ -35,7 +43,7 @@ function savedPr(job, state) {
     headRefOid: headOf(job.repo),
     baseRefName: job.cfg.baseBranch,
     isCrossRepository: false,
-    mergeCommit: { oid: headOf(job.repo) },
+    mergeCommit: mergedReceipt(state, headOf(job.repo)),
   });
 }
 

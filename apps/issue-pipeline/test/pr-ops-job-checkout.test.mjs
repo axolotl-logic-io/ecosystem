@@ -5,10 +5,16 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
-import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
+import { draftMutationReplies } from "./gh-mutation-fixtures.mjs";
+import {
+  historyReply,
+  initialWriteStateReply,
+  openDraftReply,
+} from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("pr-ops-job-checkout");
+fx.fakeGh.requireReplies();
 const { loadConfig } = await import("../src/config.ts");
 const { openJobCheckout } = await import("../src/job/checkout.ts");
 const { fakeGh, ask, originRef, root } = fx;
@@ -30,6 +36,9 @@ test("start-pr in a job checkout commits past its pre-commit hook and pushes the
   });
   fakeGh.reply([
     initialWriteStateReply(ISSUE),
+    ...draftMutationReplies(ISSUE, PR),
+    historyReply(ISSUE),
+    openDraftReply(ISSUE, PR, `${root}/origin.git`),
     { when: `repos/o/r/issues/${ISSUE}`, stdout: '{"title":"T"}' },
     { when: "pr list", stdout: "[]" },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${PR}\n` },

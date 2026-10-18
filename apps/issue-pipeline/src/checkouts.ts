@@ -21,6 +21,7 @@ import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError, run, runFailure, shell } from "./process.ts";
 import { holdWikiPin, pushWikiBranch, wikiAhead } from "./wiki.ts";
+import { readWriteAuthority } from "./write-authority.ts";
 
 const TEARDOWN_TIMEOUT_MS = 300_000;
 const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
@@ -213,6 +214,9 @@ function pushHead(cfg: Config, n: number, op: string): string {
   const wt = paths.worktree(cfg, n);
   const headSha = head(wt);
   const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
+  if (!readWriteAuthority(cfg, n).codeWritable) {
+    throw new OpsError(`#${n}'s code merged; refusing code push`);
+  }
   recordPush(cfg, n, headSha, op);
   git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
   return headSha;

@@ -8,10 +8,16 @@
 // pipeline comment changes the revision…"). Once a job claims it, the claim
 // clears needs-info and keeps `asked` for the author, who clears it with its
 // Gherkin.
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { effectNames, stateOf } from "./gh-effects.mjs";
+import {
+  claimMutationReplies,
+  collaboratorReply,
+} from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
 import {
   claimedState,
   claimReply,
@@ -28,11 +34,14 @@ import {
   effects,
   issueComment,
   reply,
+  requireGhReplies,
   stateComment,
   worktree,
 } from "./ops-cli-test-kit.mjs";
 // ops-v2-test-kit.mjs makes the clone a claim reads.
 import "./ops-v2-test-kit.mjs";
+
+requireGhReplies();
 
 const { newIssueState } = await import("../src/state.ts");
 
@@ -56,11 +65,14 @@ test("a claim of an answered, asked issue takes it, clearing needs-info and keep
   const mine = claimComment(CLAIM, LANE.lane, LANE.sweepId, LIVE);
   const labels = [{ name: "agent:needs-info" }];
   reply([
+    collaboratorReply("o/r", ALLOWED),
+    historyReply(ASKED_ISSUE),
     issueReply(ASKED_ISSUE, { labels }),
     commentsReply(ASKED_ISSUE, read),
     { when: `issues/${ASKED_ISSUE}/comments -f`, stdout: JSON.stringify(mine) },
     commentsReply(ASKED_ISSUE, [...read, mine]),
     commentsReply(ASKED_ISSUE, [...read, mine]),
+    ...claimMutationReplies(ASKED_ISSUE, ASKED_STATE, null),
   ]);
   const state = claimedState(ASKED_ISSUE, { asked: { inputs: ASKED_INPUTS } });
   assert.deepEqual(

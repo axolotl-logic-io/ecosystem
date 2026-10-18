@@ -12,38 +12,48 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import {
+  historyReply,
+  initialWriteStateReply,
+} from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 import { pushRecord } from "./push-record-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
 
 const fx = await opsFixture("sync-ops-base-sha");
+fx.fakeGh.requireReplies();
 const { fakeGh, originRef, sh, worktree } = fx;
+const { ghIsRead } = await import("../src/github.ts");
 const ISSUE = { movedBase: 61, olderBase: 62, offBase: 63 };
 const CODE = { codeChanged: true, wikiAhead: 0 };
 
-// Runs an op after queuing `replies`; returns its stdout and the gh calls.
-/** @param {object} request @param {GhReply[]} [replies] @returns {{ out: string, calls: string[][] }} */
+// Runs an op after queuing `replies`; returns its stdout and the gh writes.
+/** @param {{ number: number } & Record<string, unknown>} request @param {GhReply[]} [replies] @returns {{ out: string, writes: string[][] }} */
 function ask(request, replies = []) {
-  fakeGh.reply(replies);
+  fakeGh.reply([
+    initialWriteStateReply(request.number),
+    historyReply(request.number),
+    ...replies,
+  ]);
   const out = fx.ask(request);
-  return { out, calls: fakeGh.calls() };
+  return { out, writes: fakeGh.writes(ghIsRead) };
 }
 
 // A conflicting rebase kept in the worktree for a writer, as sync-base leaves
 // it. Returns the branch's head before it, the baseSha sync-base replied and
-// the gh calls it made.
-/** @param {number} n @returns {{ headSha: string, baseSha: string, calls: string[][] }} */
+// the gh writes it made.
+/** @param {number} n @returns {{ headSha: string, baseSha: string, writes: string[][] }} */
 function keptConflict(n) {
   const headSha = fx.startBranch(n, `c${n}`, "mine");
   fx.advanceBase(`c${n}`, "theirs");
-  const { out, calls } = ask({
+  const { out, writes } = ask({
     op: "sync-base",
     number: n,
     keepConflict: true,
   });
   const { baseSha } = JSON.parse(out);
-  return { headSha, baseSha, calls };
+  return { headSha, baseSha, writes };
 }
 
 // Resolves the kept rebase of `c<n>` and finishes it, as a writer would.
@@ -55,21 +65,21 @@ function resolve(n) {
   return sh(`git -C ${wt} rev-parse HEAD`);
 }
 
-// finish-sync's refusal for `reason`, beside what it did: no gh calls, and the
+// finish-sync's refusal for `reason`, beside what it did: no gh writes, and the
 // worktree and origin left at `headSha`.
 /** @param {number} n @param {string} baseSha @param {string} reason @param {string} headSha @returns {{ got: object, expected: object }} */
 function failure(n, baseSha, reason, headSha) {
-  const { out, calls } = ask({ op: "finish-sync", number: n, baseSha });
+  const { out, writes } = ask({ op: "finish-sync", number: n, baseSha });
   const got = {
     out,
-    calls,
+    writes,
     inRebase: fx.inRebase(n),
     worktree: fx.worktreeState(n),
     origin: originRef(`agent/issue-${n}`),
   };
   const expected = {
     out: okLine("finish-sync", { resolved: false, reason }),
-    calls: [],
+    writes: [],
     inRebase: false,
     worktree: { head: headSha, status: "" },
     origin: headSha,
@@ -79,13 +89,13 @@ function failure(n, baseSha, reason, headSha) {
 
 test("finish-sync pushes a resolution onto its baseSha after the base moved, and merge finds it behind", () => {
   const n = ISSUE.movedBase;
-  const { baseSha, calls: kept } = keptConflict(n);
+  const { baseSha, writes: kept } = keptConflict(n);
   assert.deepEqual(kept, []);
   resolve(n);
   fx.advanceBase("later", "unrelated");
   fx.fetchClone();
-  const { out, calls } = ask({ op: "finish-sync", number: n, baseSha });
-  assert.deepEqual(calls, []);
+  const { out, writes } = ask({ op: "finish-sync", number: n, baseSha });
+  assert.deepEqual(writes, []);
   const headSha = originRef(`agent/issue-${n}`);
   assert.equal(
     out,
@@ -110,8 +120,8 @@ test("finish-sync pushes a resolution onto its baseSha after the base moved, and
 
 test("finish-sync refuses a head not based on its baseSha", () => {
   const n = ISSUE.olderBase;
-  const { baseSha, calls } = keptConflict(n);
-  assert.deepEqual(calls, []);
+  const { baseSha, writes } = keptConflict(n);
+  assert.deepEqual(writes, []);
   const wt = worktree(n);
   sh(`git -C ${wt} rebase --abort`);
   fs.writeFileSync(path.join(wt, `c${n}`), "resolved on the old base\n");
@@ -124,8 +134,8 @@ test("finish-sync refuses a head not based on its baseSha", () => {
 
 test("finish-sync refuses a baseSha that is not on the base", () => {
   const n = ISSUE.offBase;
-  const { headSha, calls } = keptConflict(n);
-  assert.deepEqual(calls, []);
+  const { headSha, writes } = keptConflict(n);
+  assert.deepEqual(writes, []);
   resolve(n);
   const reason = `${headSha} is not on origin/integration`;
   const { got, expected } = failure(n, headSha, reason, headSha);

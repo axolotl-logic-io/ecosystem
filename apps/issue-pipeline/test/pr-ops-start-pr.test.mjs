@@ -4,10 +4,16 @@
 // open PR. Checked through the ops CLI's replies and gh writes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
+import { draftMutationReplies } from "./gh-mutation-fixtures.mjs";
+import {
+  historyReply,
+  initialWriteStateReply,
+  openDraftReply,
+} from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("pr-ops-start-pr");
+fx.fakeGh.requireReplies();
 const { signed } = await import("../src/comments.ts");
 const { ghIsRead } = await import("../src/github.ts");
 const { fakeGh, ask, originRef } = fx;
@@ -17,12 +23,32 @@ const EDITED = { n: 21, pr: 71 };
 const OPENED = { n: 22, pr: 72 };
 const TWICE = { n: 23, pr: 73 };
 const UNTOUCHED = { n: 24, pr: 74 };
+const { ISSUE_STATE } = await import("../src/state.ts");
+const { stateBody } = await import("../src/saved-state.ts");
+const { stateAt } = await import("./job-fixtures.mjs");
 
-// The gh calls since the last reply that change GitHub, by src/github.ts's
-// own read/write rule.
 /** @returns {string[][]} */
 function writes() {
   return fakeGh.calls().filter((args) => !ghIsRead(args));
+}
+
+/** @param {number} n @param {number} pr @returns {string[]} */
+function savedPrCall(n, pr) {
+  const state = stateAt("implement", {
+    number: n,
+    branch: `agent/issue-${n}`,
+    lease: null,
+    pr,
+  });
+  return [
+    "api",
+    "-X",
+    "PATCH",
+    `repos/o/r/issues/comments/${n}`,
+    "-f",
+    `body=${stateBody(n, ISSUE_STATE.parse(state))}`,
+    "--silent",
+  ];
 }
 
 /** @param {number} pr @returns {string[]} */
@@ -64,6 +90,14 @@ function prBody(n, text) {
 function startPr(n, pr, listed, extra) {
   fakeGh.reply([
     initialWriteStateReply(n),
+    ...draftMutationReplies(n, pr),
+    historyReply(
+      n,
+      JSON.parse(listed).map(
+        (/** @type {{number: number}} */ row) => row.number,
+      ),
+    ),
+    openDraftReply(n, pr, `${fx.root}/origin.git`),
     { when: `repos/o/r/issues/${n}`, stdout: JSON.stringify({ title: "T" }) },
     { when: "pr list", stdout: listed },
     { when: "pr create", stdout: `https://github.com/o/r/pull/${pr}\n` },
@@ -73,10 +107,15 @@ function startPr(n, pr, listed, extra) {
 
 test("start-pr with a body sets the open PR's body and leaves it a draft", () => {
   const { n, pr } = EDITED;
+  fx.startBranch(n, "initial", "existing branch");
   const out = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
   const headSha = originRef("agent/issue-21");
   assert.equal(out, okLine("start-pr", { pr, headSha }));
-  assert.deepEqual(writes(), [editCall(pr, prBody(n, "B")), labelCall(pr)]);
+  assert.deepEqual(writes(), [
+    editCall(pr, prBody(n, "B")),
+    savedPrCall(n, pr),
+    labelCall(pr),
+  ]);
 });
 
 test("start-pr with a body and no open PR opens a draft with that body only", () => {
@@ -86,6 +125,7 @@ test("start-pr with a body and no open PR opens a draft with that body only", ()
   assert.equal(out, okLine("start-pr", { pr, headSha }));
   assert.deepEqual(writes(), [
     createCall(n, ["--draft"], "T (#22)", prBody(n, "B")),
+    savedPrCall(n, pr),
     labelCall(pr),
   ]);
 });
@@ -97,7 +137,11 @@ test("start-pr with a body run twice opens one draft and sets the same body", ()
   assert.equal(created.length, 1);
   const body = created[0]?.at(-1) ?? "";
   const second = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
-  assert.deepEqual(writes(), [editCall(pr, body), labelCall(pr)]);
+  assert.deepEqual(writes(), [
+    editCall(pr, body),
+    savedPrCall(n, pr),
+    labelCall(pr),
+  ]);
   const headSha = originRef("agent/issue-23");
   assert.equal(first, okLine("start-pr", { pr, headSha }));
   assert.equal(second, first);
@@ -105,6 +149,7 @@ test("start-pr with a body run twice opens one draft and sets the same body", ()
 
 test("start-pr without a body only labels the open PR", () => {
   const { n, pr } = UNTOUCHED;
+  fx.startBranch(n, "initial", "existing branch");
   startPr(n, pr, `[{"number":${pr}}]`, {});
-  assert.deepEqual(writes(), [labelCall(pr)]);
+  assert.deepEqual(writes(), [savedPrCall(n, pr), labelCall(pr)]);
 });

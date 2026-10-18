@@ -5,14 +5,16 @@
 // the issue's own branch, in the configured repo, is refused.
 
 import { z } from "zod";
+import { assignedBranch } from "./branch-binding.ts";
 import type { Config } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
-import { fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
+import { assertClean, fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
 import { ghJson } from "./github.ts";
 import { trustedInputsHash, writeIssueContext } from "./issue-context.ts";
-import { openPrFor } from "./ops/prs.ts";
+import { historicalPrFor } from "./ops/prs.ts";
 import { assertPrBase } from "./pr-authority.ts";
 import { OpsError, run } from "./process.ts";
+import { readWriteState } from "./saved-state.ts";
 import type { CodeMerged, IssueState, Revision } from "./state.ts";
 import { wikiAhead } from "./wiki.ts";
 
@@ -85,6 +87,9 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
   }
   assertPrBase(cfg, pr, data.baseRefName);
   if (data.state !== "MERGED") {
+    if (data.mergeCommit !== null && data.mergeCommit !== undefined) {
+      throw new OpsError(`PR #${pr} has inconsistent merge evidence`);
+    }
     return {
       number: pr,
       state: data.state,
@@ -133,18 +138,62 @@ function confirmMerged(
   }
 }
 
-// The issue's PR: `state`'s, or else the open PR from the issue's branch;
-// null when it has neither.
+// A null saved PR requires all-state discovery, not an open-only search.
+// A closed draft is no active code PR only for proven unchanged wiki work.
 function issuePullRequest(
   cfg: Config,
   n: number,
-  state: Pick<IssueState, "pr"> | null,
+  state:
+    | (Pick<IssueState, "pr"> & Partial<Pick<IssueState, "flows" | "headSha">>)
+    | null,
 ): PullRequest | null {
-  const pr = state?.pr ?? openPrFor(cfg, n) ?? null;
+  const pr = state?.pr ?? historicalPrFor(cfg, n);
   if (pr === null) {
     return null;
   }
-  return pullRequest(cfg, n, pr);
+  const found = pullRequest(cfg, n, pr);
+  if ((state === null || state.pr === null) && found.state === "CLOSED") {
+    confirmWikiOnlyDraft(cfg, n, found);
+    return null;
+  }
+  return found;
+}
+
+// A historical closed draft never grants code writes. Only actual saved
+// wiki-only work can omit that inactive PR. Done replay may read the clean
+// base tree after branch deletion, without changing the original head/receipts.
+function confirmWikiOnlyDraft(cfg: Config, n: number, pr: PullRequest): void {
+  const saved = readWriteState(cfg, n);
+  assignedBranch(cfg, n, saved);
+  if (
+    saved.pr !== null ||
+    saved.flows?.code !== false ||
+    saved.headSha !== pr.headSha ||
+    saved.codeMerged !== null ||
+    (saved.merged !== null && saved.merged.code !== null)
+  ) {
+    throw new OpsError(
+      `PR #${pr.number} is closed; code authority needs operator recovery`,
+    );
+  }
+  const wt = paths.worktree(cfg, n);
+  assertClean(wt);
+  fetchIn(cfg, wt, cfg.baseBranch);
+  const base = `origin/${cfg.baseBranch}`;
+  const local = head(wt);
+  const doneReplay =
+    saved.stage === "done" &&
+    saved.merged !== null &&
+    saved.merged.code === null &&
+    local === gitIn(wt, ["rev-parse", base]).trim();
+  const diff = run("git", ["-C", wt, "diff", "--quiet", `${base}...HEAD`], {
+    allowFail: true,
+  });
+  if ((!doneReplay && local !== pr.headSha) || diff.code !== 0) {
+    throw new OpsError(
+      `PR #${pr.number} is closed with unconfirmed local code`,
+    );
+  }
 }
 
 // The code merge `pr` records, or null when it hasn't merged.
@@ -185,7 +234,9 @@ function wikiHead(cfg: Config, n: number): string | null {
 function currentRevision(
   cfg: Config,
   n: number,
-  state: Pick<IssueState, "pr"> | null,
+  state:
+    | (Pick<IssueState, "pr"> & Partial<Pick<IssueState, "flows" | "headSha">>)
+    | null,
 ): CurrentRevision {
   const context = writeIssueContext(cfg, n);
   const inputs = trustedInputsHash(cfg, context.issue, context.comments);

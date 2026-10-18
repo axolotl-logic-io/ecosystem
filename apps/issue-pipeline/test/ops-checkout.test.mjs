@@ -11,10 +11,14 @@ import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { commentLines, githubComment } from "./fake-gh.mjs";
-import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
+import {
+  historyReply,
+  initialWriteStateReply,
+} from "./initial-write-state-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("ops-checkout");
+fx.fakeGh.requireReplies();
 const { ask, fakeGh, originRef, sh } = fx;
 const { newIssueState } = await import("../src/state.ts");
 // A push's reply: its head when it pushed, its error when it didn't.
@@ -64,7 +68,10 @@ function jobClone(n, file, branch = `agent/issue-${n}`) {
 // The reply to a push with an explicitly saved initial premerge binding.
 /** @param {{ number: number, checkout?: unknown }} request @param {string} [boundBranch] @returns {z.infer<typeof PUSH_REPLY>} */
 function pushed(request, boundBranch) {
-  fakeGh.reply([initialWriteStateReply(request.number, boundBranch)]);
+  fakeGh.reply([
+    initialWriteStateReply(request.number, boundBranch),
+    historyReply(request.number, [], boundBranch),
+  ]);
   return PUSH_REPLY.parse(JSON.parse(ask({ op: "push", ...request })));
 }
 

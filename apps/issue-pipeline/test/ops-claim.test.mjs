@@ -5,11 +5,17 @@
 // lane's lease; resetting a worktree to an adopted push is
 // ops-claim-adopt.test.mjs's, and the code merge it records
 // ops-claim-provenance.test.mjs's.
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { bodyOf, effectNames, stateOf } from "./gh-effects.mjs";
+import {
+  claimMutationReplies,
+  collaboratorReply,
+} from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
 import {
   CLAIM_MARK,
   claimedFields,
@@ -28,6 +34,7 @@ import {
   configWith,
   effects,
   reply,
+  requireGhReplies,
   root,
   runDir,
   sh,
@@ -37,6 +44,8 @@ import {
   writes,
 } from "./ops-cli-test-kit.mjs";
 import { prView } from "./ops-v2-test-kit.mjs";
+
+requireGhReplies();
 
 const { newIssueState } = await import("../src/state.ts");
 
@@ -67,6 +76,7 @@ const ASKED_INPUTS = "a".repeat(INPUTS_LENGTH);
 
 test("a claim loses to another lane's live claim", () => {
   reply([
+    collaboratorReply("o/r", "bot"),
     issueReply(LOST_ISSUE),
     commentsReply(LOST_ISSUE, [claimComment(RIVAL_CLAIM, "other", "s0", LIVE)]),
   ]);
@@ -82,7 +92,11 @@ test("a claim loses to another lane's live claim", () => {
 });
 
 test("a claim refuses an issue that isn't open", () => {
-  reply([issueReply(CLOSED_ISSUE, { state: "closed" })]);
+  reply([
+    collaboratorReply("o/r", "bot"),
+    issueReply(CLOSED_ISSUE, { state: "closed" }),
+    commentsReply(CLOSED_ISSUE, []),
+  ]);
   assert.deepEqual(askOps({ op: "claim", number: 41, ...LANE }), {
     ok: false,
     error: "#41 is not open",
@@ -96,10 +110,12 @@ test("a claim of new work posts its claim, makes the worktree and runs setup", (
   });
   const mine = claimComment(NEW_CLAIM, "me", "s0", LIVE);
   reply([
+    historyReply(NEW_ISSUE),
     issueReply(NEW_ISSUE),
     commentsReply(NEW_ISSUE, []),
     { when: "issues/42/comments -f", stdout: JSON.stringify(mine) },
-    commentsReply(NEW_ISSUE, [mine]),
+    { ...commentsReply(NEW_ISSUE, [mine]), keep: true },
+    ...claimMutationReplies(NEW_ISSUE, NEW_ISSUE, null),
   ]);
   const state = claimedState(NEW_ISSUE);
   assert.deepEqual(
@@ -143,6 +159,9 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
     commentsReply(ANSWERED_ISSUE, comments),
     prView(ANSWERED_ISSUE, ANSWERED_PR, { headRefOid: sha }),
     commentsReply(ANSWERED_ISSUE, comments),
+    ...claimMutationReplies(ANSWERED_ISSUE, ANSWERED_STATE, ANSWERED_PR, [
+      "agent:stopped-conflict",
+    ]),
   ]);
   const got = askOps({ op: "claim", number: ANSWERED_ISSUE, ...LANE });
   const state = { ...saved, ...claimedFields(ANSWERED_ISSUE) };
@@ -184,11 +203,13 @@ test("a claim that resumes a lapsed lease keeps its stage and its worktree", () 
   const mine = claimComment(LAPSED_CLAIM, "me", "s0", LIVE);
   const labels = [{ name: "agent:working" }];
   reply([
+    historyReply(LAPSED_ISSUE),
     issueReply(LAPSED_ISSUE, { labels }),
     commentsReply(LAPSED_ISSUE, [rival, state]),
     { when: "issues/44/comments -f", stdout: JSON.stringify(mine) },
     commentsReply(LAPSED_ISSUE, [mine]),
     commentsReply(LAPSED_ISSUE, [state]),
+    ...claimMutationReplies(LAPSED_ISSUE, LAPSED_STATE, null),
   ]);
   const kept = claimedState(LAPSED_ISSUE, { stage: "implement" });
   assert.deepEqual(
@@ -231,9 +252,13 @@ test("a claim lifts a stopped issue's stop, resuming its stage with its counts r
   ];
   const labels = [{ name: "agent:stopped-conflict" }];
   reply([
+    historyReply(STOPPED_ISSUE),
     issueReply(STOPPED_ISSUE, { labels }),
     commentsReply(STOPPED_ISSUE, comments),
     commentsReply(STOPPED_ISSUE, comments),
+    ...claimMutationReplies(STOPPED_ISSUE, STOPPED_STATE, null, [
+      "agent:stopped-conflict",
+    ]),
   ]);
   const state = claimedState(STOPPED_ISSUE, {
     stage: "implement",

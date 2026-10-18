@@ -37,6 +37,13 @@ test("current saved state authorizes premerge code; codeMerged and own-merge rec
   for (const receipt of [
     { codeMerged: { pr: 42, sha: "merged" } },
     { merged: { code: "merged", wiki: null, inputs: "trusted" } },
+    {
+      security: {
+        revision: { code: null, wiki: "unsafe", inputs: "trusted" },
+        commentId: 9,
+        finding: { category: "rights", reason: "rejected" },
+      },
+    },
   ]) {
     saveAuthority(cfg, { ...valid, ...receipt });
     assert.equal(readWriteAuthority(cfg, ISSUE).codeWritable, false);
@@ -53,6 +60,12 @@ test("missing, legacy, mismatched and malformed critical authority fail closed, 
     { version: 1, stage: "implement" },
     { ...valid, number: ISSUE + 1 },
     { ...valid, stage: "unknown" },
+    { ...valid, stoppedStage: "unknown" },
+    { ...valid, stopCode: {} },
+    { ...valid, hardened: {} },
+    { ...valid, integration: {} },
+    { ...valid, security: {} },
+    { ...valid, gherkin: {} },
     withoutBranch,
     withoutReceipt,
     withoutOwnReceipt,

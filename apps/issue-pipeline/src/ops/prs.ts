@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { ghJson } from "../github.ts";
+import { OpsError } from "../process.ts";
 
 // One row of `gh pr list --json number,mergeCommit`: an unmerged PR's merge
 // commit is null.
@@ -15,6 +16,34 @@ const PR_ROW = z.looseObject({
 const PR_ROWS = z.array(PR_ROW).nullable();
 
 type PrRow = z.infer<typeof PR_ROW>;
+
+// A full result is unproven at the API bound. Never choose a newest match or
+// hide a retarget by filtering on the expected base during discovery.
+const HISTORY_LIMIT = 100;
+const HISTORY = z.array(z.object({ number: z.number().int().positive() }));
+
+function historicalPrFor(cfg: Config, n: number): number | null {
+  const rows = HISTORY.parse(
+    ghJson(cfg, [
+      "pr",
+      "list",
+      "-R",
+      cfg.repo,
+      "--head",
+      paths.branch(cfg, n),
+      "--state",
+      "all",
+      "--limit",
+      String(HISTORY_LIMIT),
+      "--json",
+      "number",
+    ]),
+  );
+  if (rows.length >= HISTORY_LIMIT || rows.length > 1) {
+    throw new OpsError(`#${n}'s PR history is saturated or ambiguous`);
+  }
+  return rows[0]?.number ?? null;
+}
 
 // The first PR from issue `n`'s branch in `state`, or undefined when it has
 // none.
@@ -53,4 +82,4 @@ function mergeCommitFor(cfg: Config, n: number): string | undefined {
   return prFor(cfg, n, "merged")?.mergeCommit?.oid;
 }
 
-export { mergeCommitFor, mergedPrFor, openPrFor };
+export { historicalPrFor, mergeCommitFor, mergedPrFor, openPrFor };

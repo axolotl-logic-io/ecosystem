@@ -4,8 +4,9 @@
 // live receipt is returned only for wiki checks, never written back as state.
 import { assignedBranch } from "./branch-binding.ts";
 import type { Config } from "./config.ts";
+import { historicalPrFor } from "./ops/prs.ts";
 import { OpsError } from "./process.ts";
-import { pullRequest } from "./revision.ts";
+import { issuePullRequest, pullRequest } from "./revision.ts";
 import { readWriteState } from "./saved-state.ts";
 import type { CodeMerged, IssueState } from "./state.ts";
 
@@ -15,10 +16,15 @@ function readWriteAuthority(
 ): { state: IssueState; codeWritable: boolean; codeMerged: CodeMerged | null } {
   const state = readWriteState(cfg, issue);
   assignedBranch(cfg, issue, state);
-  const { codeMerged, merged, pr } = state;
-  if (codeMerged !== null || (merged !== null && merged.code !== null)) {
+  const { codeMerged, merged } = state;
+  if (
+    codeMerged !== null ||
+    (merged !== null && merged.code !== null) ||
+    (state.security !== null && state.security.finding !== null)
+  ) {
     return { state, codeWritable: false, codeMerged };
   }
+  const pr = state.pr ?? historicalPrFor(cfg, issue);
   if (pr === null) {
     return { state, codeWritable: true, codeMerged: null };
   }
@@ -29,6 +35,13 @@ function readWriteAuthority(
       codeWritable: false,
       codeMerged: { pr, sha: current.mergeCommit },
     };
+  }
+  if (
+    state.pr === null &&
+    current.state === "CLOSED" &&
+    issuePullRequest(cfg, issue, state) === null
+  ) {
+    return { state, codeWritable: false, codeMerged: null };
   }
   if (current.state !== "OPEN") {
     throw new OpsError(

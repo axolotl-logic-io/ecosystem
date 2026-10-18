@@ -1,16 +1,22 @@
 // @ts-check
 // sync-base and finish-sync: their replies and the branch on origin, run
-// through the ops CLI against a local origin. Neither calls gh. prepare-review's
+// through the ops CLI against a local origin. Both require fresh saved/live write authority. prepare-review's
 // tests are in sync-ops-prepare-review.test.mjs.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import {
+  historyReply,
+  initialWriteStateReply,
+} from "./initial-write-state-fixtures.mjs";
 import { okLine, opsFixture } from "./ops-fixture.mjs";
 import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("sync-ops");
+fx.fakeGh.requireReplies();
 const { fakeGh, originRef, sh, worktree } = fx;
+const { ghIsRead } = await import("../src/github.ts");
 const BASE = "origin/integration";
 // Each test's issue. Two tests share 33, as they always have.
 const ISSUE = {
@@ -34,12 +40,15 @@ const MARKER_ROUNDS = 4;
 const MARKERS_SHOWN = 10;
 const EXECUTABLE = 0o755;
 
-// Runs an op; returns its stdout and the gh calls it made.
-/** @param {object} request @param {string} [config] @returns {{ out: string, calls: string[][] }} */
+// Runs an op; returns its stdout and the gh writes it made.
+/** @param {{ number: number } & Record<string, unknown>} request @param {string} [config] @returns {{ out: string, writes: string[][] }} */
 function ask(request, config) {
-  fakeGh.reply([]);
+  fakeGh.reply([
+    initialWriteStateReply(request.number),
+    historyReply(request.number),
+  ]);
   const out = fx.ask(request, config);
-  return { out, calls: fakeGh.calls() };
+  return { out, writes: fakeGh.writes(ghIsRead) };
 }
 
 /** @param {string} dir @param {string} args @returns {string} */
@@ -52,8 +61,8 @@ const CODE = { codeChanged: true, wikiAhead: 0 };
 
 test("sync-base leaves an up-to-date branch alone", () => {
   const headSha = fx.startBranch(ISSUE.upToDate, "g", "one");
-  const { out, calls } = ask({ op: "sync-base", number: ISSUE.upToDate });
-  assert.deepEqual(calls, []);
+  const { out, writes } = ask({ op: "sync-base", number: ISSUE.upToDate });
+  assert.deepEqual(writes, []);
   assert.equal(
     out,
     okLine("sync-base", { changed: false, conflict: false, headSha, ...CODE }),
@@ -64,8 +73,8 @@ test("sync-base leaves an up-to-date branch alone", () => {
 test("sync-base rebases onto a moved base and pushes", () => {
   const before = fx.startBranch(ISSUE.movedBase, "g", "one");
   const base = fx.advanceBase("b32", "base");
-  const { out, calls } = ask({ op: "sync-base", number: ISSUE.movedBase });
-  assert.deepEqual(calls, []);
+  const { out, writes } = ask({ op: "sync-base", number: ISSUE.movedBase });
+  assert.deepEqual(writes, []);
   const headSha = originRef("agent/issue-32");
   assert.notEqual(headSha, before);
   assert.equal(
@@ -83,15 +92,15 @@ test("sync-base whose push origin refuses goes back to its old head", () => {
   fx.advanceBase("b33", "base");
   const hook = path.join(fx.root, "origin.git", "hooks", "pre-receive");
   fs.writeFileSync(hook, "#!/bin/sh\nexit 1\n", { mode: EXECUTABLE });
-  /** @type {{ out: string, calls: string[][] }} */
-  let refused = { out: "", calls: [] };
+  /** @type {{ out: string, writes: string[][] }} */
+  let refused = { out: "", writes: [] };
   try {
     refused = ask({ op: "sync-base", number: n });
   } finally {
     fs.rmSync(hook);
   }
-  const { out, calls } = refused;
-  assert.deepEqual(calls, []);
+  const { out, writes } = refused;
+  assert.deepEqual(writes, []);
   assert.equal(JSON.parse(out).ok, false);
   assert.equal(originRef("agent/issue-33"), before);
   assert.deepEqual(fx.worktreeState(n), { head: before, status: "" });
@@ -120,8 +129,8 @@ function conflictLine(n, inRebase, baseSha) {
 test("sync-base reports a conflict and aborts the rebase", () => {
   const n = ISSUE.conflict;
   const { headSha, baseSha } = conflicting(n);
-  const { out, calls } = ask({ op: "sync-base", number: n });
-  assert.deepEqual(calls, []);
+  const { out, writes } = ask({ op: "sync-base", number: n });
+  assert.deepEqual(writes, []);
   assert.equal(out, conflictLine(n, false, baseSha));
   assert.equal(fx.inRebase(n), false);
   assert.deepEqual(fx.worktreeState(n), { head: headSha, status: "" });
@@ -132,39 +141,39 @@ test("sync-base keeps a conflicting rebase, and resets it on the next run", () =
   const n = ISSUE.keptConflict;
   const { headSha, baseSha } = conflicting(n);
   const kept = ask({ op: "sync-base", number: n, keepConflict: true });
-  assert.deepEqual(kept.calls, []);
+  assert.deepEqual(kept.writes, []);
   assert.equal(kept.out, conflictLine(n, true, baseSha));
   assert.equal(fx.inRebase(n), true);
   const again = ask({ op: "sync-base", number: n, keepConflict: false });
-  assert.deepEqual(again.calls, []);
+  assert.deepEqual(again.writes, []);
   assert.equal(again.out, conflictLine(n, false, baseSha));
   assert.equal(fx.inRebase(n), false);
   assert.deepEqual(fx.worktreeState(n), { head: headSha, status: "" });
 });
 
 // A conflicting rebase kept in the worktree for a writer, as sync-base leaves it.
-// Returns the branch's head before it, and the gh calls sync-base made.
-/** @param {number} n @returns {{ headSha: string, calls: string[][] }} */
+// Returns the branch's head before it, and the gh writes sync-base made.
+/** @param {number} n @returns {{ headSha: string, writes: string[][] }} */
 function keptConflict(n) {
   const { headSha } = conflicting(n);
-  const { calls } = ask({ op: "sync-base", number: n, keepConflict: true });
-  return { headSha, calls };
+  const { writes } = ask({ op: "sync-base", number: n, keepConflict: true });
+  return { headSha, writes };
 }
 
 // Runs finish-sync expecting `reason`; returns what it did beside what it should
-// have: that reply and no gh calls, with the worktree and origin left at `headSha`.
+// have: that reply and no gh writes, with the worktree and origin left at `headSha`.
 /** @param {number} n @param {object} request @param {string} reason @param {string} [headSha] @returns {{ got: object, expected: object }} */
 function failure(n, request, reason, headSha = originRef(`agent/issue-${n}`)) {
-  const { out, calls } = ask({ op: "finish-sync", number: n, ...request });
+  const { out, writes } = ask({ op: "finish-sync", number: n, ...request });
   const state = {
-    calls: [],
+    writes: [],
     inRebase: false,
     worktree: { head: headSha, status: "" },
     origin: headSha,
   };
   const got = {
     out,
-    calls,
+    writes,
     inRebase: fx.inRebase(n),
     worktree: fx.worktreeState(n),
     origin: originRef(`agent/issue-${n}`),
@@ -180,7 +189,7 @@ function failure(n, request, reason, headSha = originRef(`agent/issue-${n}`)) {
 
 test("finish-sync resets the worktree on an abort or an unfinished rebase", () => {
   const unfinishedConflict = keptConflict(ISSUE.unfinished);
-  assert.deepEqual(unfinishedConflict.calls, []);
+  assert.deepEqual(unfinishedConflict.writes, []);
   const unfinished = failure(
     ISSUE.unfinished,
     {},
@@ -188,11 +197,11 @@ test("finish-sync resets the worktree on an abort or an unfinished rebase", () =
     unfinishedConflict.headSha,
   );
   assert.deepEqual(unfinished.got, unfinished.expected);
-  const { headSha: head, calls } = keptConflict(ISSUE.aborted);
-  assert.deepEqual(calls, []);
+  const { headSha: head, writes } = keptConflict(ISSUE.aborted);
+  assert.deepEqual(writes, []);
   const aborted = failure(ISSUE.aborted, { abort: true }, "aborted", head);
   assert.deepEqual(aborted.got, aborted.expected);
-  assert.deepEqual(keptConflict(ISSUE.abortedWithReason).calls, []);
+  assert.deepEqual(keptConflict(ISSUE.abortedWithReason).writes, []);
   const withReason = failure(
     ISSUE.abortedWithReason,
     { abort: true, reason: "no time left" },
@@ -229,7 +238,7 @@ test("finish-sync refuses a branch not on the base", () => {
 });
 
 test("finish-sync refuses a branch with no commits left", () => {
-  assert.deepEqual(keptConflict(ISSUE.noCommits).calls, []);
+  assert.deepEqual(keptConflict(ISSUE.noCommits).writes, []);
   gitIn(worktree(ISSUE.noCommits), "rebase --abort");
   gitIn(worktree(ISSUE.noCommits), `reset -q --hard ${BASE}`);
   const { got, expected } = failure(
@@ -258,12 +267,12 @@ test("finish-sync refuses conflict markers", () => {
 });
 
 test("finish-sync pushes a finished rebase", () => {
-  assert.deepEqual(keptConflict(ISSUE.finished).calls, []);
+  assert.deepEqual(keptConflict(ISSUE.finished).writes, []);
   const wt = worktree(ISSUE.finished);
   fs.writeFileSync(path.join(wt, "c48"), "resolved\n");
   sh(`cd ${wt} && git add c48 && GIT_EDITOR=true git rebase --continue`);
-  const { out, calls } = ask({ op: "finish-sync", number: ISSUE.finished });
-  assert.deepEqual(calls, []);
+  const { out, writes } = ask({ op: "finish-sync", number: ISSUE.finished });
+  assert.deepEqual(writes, []);
   const headSha = originRef("agent/issue-48");
   assert.equal(
     out,

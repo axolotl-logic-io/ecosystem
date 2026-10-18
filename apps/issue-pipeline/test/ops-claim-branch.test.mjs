@@ -5,16 +5,20 @@
 // agent/issue-<n> for a state saved before assignments, whose branch is
 // null) is refused before it posts, labels or moves anything, so a resume
 // never strands or overwrites the issue's work on its own branch.
+
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { claimMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
 import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
   askOps,
   claimComment,
   commentsReply,
   reply,
+  requireGhReplies,
   root,
   sh,
   stateComment,
@@ -22,6 +26,8 @@ import {
 } from "./ops-cli-test-kit.mjs";
 // ops-v2-test-kit.mjs makes the clone a claim reads.
 import "./ops-v2-test-kit.mjs";
+
+requireGhReplies();
 
 const { newIssueState } = await import("../src/state.ts");
 
@@ -68,12 +74,17 @@ function claim(n, saved, checkout) {
     read.push(stateComment(STATE_COMMENT, saved));
   }
   const mine = claimComment(n * CLAIM_IDS, "me", "s1", LIVE);
+  const branch =
+    z.object({ branch: z.string() }).safeParse(checkout).data?.branch ??
+    `agent/issue-${n}`;
   reply([
+    historyReply(n, [], branch),
     issueReply(n),
     commentsReply(n, read),
     { when: `issues/${n}/comments -f`, stdout: JSON.stringify(mine) },
     commentsReply(n, [...read, mine]),
     commentsReply(n, [...read, mine]),
+    ...claimMutationReplies(n, STATE_COMMENT, null),
   ]);
   const request = { op: "claim", number: n, ...LANE };
   if (checkout !== undefined) {

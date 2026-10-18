@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { stopMutationReplies } from "./gh-mutation-fixtures.mjs";
 
 const kit = await import("./ops-cli-test-kit.mjs");
 
@@ -138,6 +139,31 @@ function myClaim(id) {
 // The ops read the clone a sweep used to make.
 sh(`git clone -q ${root}/origin.git ${root}/clones/o__r`);
 
+/** @param {number} n @param {number} pr @param {number} claim @returns {void} */
+function reviewStopReplies(n, pr, claim) {
+  const prior = kit.stateComment(n, v2State(n, { stage: "review", pr }));
+  kit.reply([
+    {
+      when: `api -X DELETE repos/o/r/issues/${n}/labels/agent%3Astopped-error --silent`,
+      stdout: "",
+    },
+    {
+      when: `issues/${n}/labels`,
+      stdout: JSON.stringify([{ name: "agent:stopped-error" }]),
+    },
+    {
+      ...kit.commentsReply(n, [myClaim(claim), prior]),
+      keep: true,
+    },
+    ...stopMutationReplies(n, {
+      stateId: n,
+      pr,
+      code: "review-rounds",
+      claims: [claim],
+    }),
+  ]);
+}
+
 export {
   commitOnOrigin,
   everyCommentsRead,
@@ -147,6 +173,7 @@ export {
   openIssue,
   prView,
   recordPipelinePush,
+  reviewStopReplies,
   savedStates,
   v2State,
 };

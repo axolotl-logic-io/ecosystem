@@ -165,6 +165,7 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
       START_PR_REPLY,
     );
     state = { ...state, pr: started.pr };
+    await ctx.save(state);
   }
   const summary = await work(ctx, state, mode);
   if (!summary.ok) {

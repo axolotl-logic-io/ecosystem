@@ -54,6 +54,7 @@ if (pipelineRoot.ROOT !== root || pipelineRoot.HOME !== root) {
   );
 }
 const fakeGh = installFakeGh();
+const requireGhReplies = fakeGh.requireReplies;
 const { STOPS } = await import("../src/stops.ts");
 const { ghIsRead } = await import("../src/github.ts");
 // The config as a sweep reports it. config.ts is outside #183's move.
@@ -189,6 +190,7 @@ export {
   postedCommentReply,
   publicConfigOf,
   reply,
+  requireGhReplies,
   root,
   runDir,
   sh,

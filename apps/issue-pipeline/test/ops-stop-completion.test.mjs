@@ -5,7 +5,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { kit, v2State } from "./ops-v2-test-kit.mjs";
+import { stopMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { everyCommentsRead, kit, v2State } from "./ops-v2-test-kit.mjs";
+
+kit.requireGhReplies();
 
 const { askOps, reply } = kit;
 const REVIEWING = 61;
@@ -20,8 +23,18 @@ const STOP_REPLY = z.looseObject({
 
 /** @param {Record<string, unknown>} state @returns {Record<string, unknown>} */
 function stoppedOf(state) {
-  reply([]);
-  const { number } = state;
+  const { number, pr } = state;
+  if (typeof number !== "number") {
+    throw new Error("fixture issue number missing");
+  }
+  reply([
+    everyCommentsRead(number, [kit.stateComment(number, state)]),
+    ...stopMutationReplies(number, {
+      stateId: number,
+      pr: z.number().nullable().parse(pr),
+      code: "error",
+    }),
+  ]);
   const out = askOps({
     op: "stop",
     number,

@@ -44,6 +44,7 @@ import process from "node:process";
  * @property {"OPEN" | "CLOSED" | "MERGED"} state
  * @property {boolean} isDraft
  * @property {string | null} mergeOid
+ * @property {string | null} [closedHead] retained head after closing/deleting the branch
  * @property {string | null} mergedHead
  */
 

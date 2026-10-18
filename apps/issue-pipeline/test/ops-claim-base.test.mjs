@@ -5,19 +5,25 @@
 // (src/job/checkout.ts openJobCheckout; pr-ops-job-checkout.test.mjs,
 // job-checkout-dropped.test.mjs), and a claim moves a lane worktree only to
 // a push of the pipeline's own it adopts (ops-claim-rescue.test.mjs).
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { claimMutationReplies } from "./gh-mutation-fixtures.mjs";
+import { historyReply } from "./initial-write-state-fixtures.mjs";
 import { issueReply, LANE, LIVE } from "./ops-claim-test-kit.mjs";
 import {
   askOps,
   claimComment,
   commentsReply,
   reply,
+  requireGhReplies,
   root,
   sh,
   worktree,
 } from "./ops-cli-test-kit.mjs";
+
+requireGhReplies();
 
 const COMMITTER = "-c user.email=a@b -c user.name=a";
 // The issue whose worktree has commits of its own, and its claim comment.
@@ -47,10 +53,12 @@ const CLAIM_REPLY = z.looseObject({ ok: z.unknown() });
 function claimNew(n, claimId) {
   const mine = claimComment(claimId, "me", "s0", LIVE);
   reply([
+    historyReply(n),
     issueReply(n),
     commentsReply(n, []),
     { when: `issues/${n}/comments -f`, stdout: JSON.stringify(mine) },
-    commentsReply(n, [mine]),
+    { ...commentsReply(n, [mine]), keep: true },
+    ...claimMutationReplies(n, n, null),
   ]);
   return CLAIM_REPLY.parse(askOps({ op: "claim", number: n, ...LANE }));
 }
