@@ -1,40 +1,30 @@
 // The merge order between issues: which other issue's PR should merge before
-// this one's. A stacked issue always waits for its open prerequisite (#289).
-// Otherwise a merge waits only for an issue at a holding stage: by default
-// the oldest PR at one goes first (decision merge-order); the orchestrator can
-// pass its own ranked queue instead (#234).
+// this one's. The orchestrator passes its ranked queue (#234), whose issues
+// at review or merge hold the merge slot whatever their verdict, since a
+// stale approval is never authorization; without a queue and with mergeOrder
+// set, the oldest PR at the merge stage goes first (decision merge-order).
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { ghJson } from "../github.ts";
 import { LABELS } from "../labels.ts";
-import type { StackedOn } from "../stack.ts";
-import { prereqMerged } from "../stack.ts";
 import { readState } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
-import { openPrFor } from "./prs.ts";
 
 const MS_PER_HOUR = 3_600_000;
 const WORKING_LIST_LIMIT = "100";
 
-// Stages after review, where an issue ranks for merge.
-const READY_STAGES: ReadonlySet<string> = new Set([
-  "sync",
-  "checks",
-  "accept",
-  "security",
-  "merge",
-]);
+// The stages where an issue ranks for merge: the orchestrator reserves the
+// merge slot for it from review through the merge.
+const READY_STAGES: ReadonlySet<string> = new Set(["review", "merge"]);
 
-// The ready stages whose issues hold the merges ranked after them (#358).
-// These are minutes from merging, so waiting for them keeps the merge order's
-// purpose; an issue at sync or checks, which can take 20 minutes or more,
-// still ranks but holds no merge.
-const HOLDING_STAGES: ReadonlySet<string> = new Set([
-  "accept",
-  "security",
-  "merge",
-]);
+// The ready stages whose issues hold the merges ranked after them in the
+// orchestrator's queue (#358).
+const HOLDING_STAGES: ReadonlySet<string> = READY_STAGES;
+
+// Without a queue, only an older PR already at the merge stage, minutes from
+// merging, holds a merge.
+const DEFAULT_HOLDING_STAGES: ReadonlySet<string> = new Set(["merge"]);
 
 // The issues gh lists, and the part of another issue's state the order reads.
 const WORKING = z
@@ -74,17 +64,12 @@ interface Queued {
   waitingForPr: number;
 }
 
-// The merge waits for prerequisite #stackedOn, the issue it is stacked on.
-interface StackQueued extends Queued {
-  stackedOn: number;
-}
-
 interface Ahead {
   number: number;
   pr: number;
 }
 
-// The PR of issue #number when it should merge before PR `pr`: at a holding
+// The PR of issue #number when it should merge before PR `pr`: at the merge
 // stage, with an older PR and a lease that hasn't expired (a crashed sweep).
 function readyPr(
   cfg: Config,
@@ -97,7 +82,7 @@ function readyPr(
     return undefined;
   }
   const { data } = parsed;
-  if (data.pr >= pr || !HOLDING_STAGES.has(data.stage)) {
+  if (data.pr >= pr || !DEFAULT_HOLDING_STAGES.has(data.stage)) {
     return undefined;
   }
   const at = data.lease?.at;
@@ -108,8 +93,8 @@ function readyPr(
   return data.pr;
 }
 
-// The open issue, other than #n, that should merge before PR `pr`: one at a
-// holding stage whose PR is older. Without this, a slow issue's long verify
+// The open issue, other than #n, that should merge before PR `pr`: one at the
+// merge stage whose PR is older. Without this, a slow issue's long verify
 // keeps losing the merge to quick issues in the other slots.
 function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
   const listed = ghJson(cfg, [
@@ -181,16 +166,16 @@ function aheadInQueue(
 }
 
 // Why issue #number's merge waits for another issue, or undefined when it
-// need not wait.
+// need not wait. A queue is always enforced; the default order only with
+// mergeOrder set.
 function queued(cfg: Config, req: OrderRequest): Queued | undefined {
-  if (req.mergeOrder !== true) {
-    return undefined;
-  }
   let ahead: Ahead | null;
-  if (req.mergeQueue === undefined || req.mergeQueue === null) {
+  if (req.mergeQueue !== undefined && req.mergeQueue !== null) {
+    ahead = aheadInQueue(cfg, req.number, req.mergeQueue);
+  } else if (req.mergeOrder === true) {
     ahead = olderReadyIssue(cfg, req.number, req.state.pr);
   } else {
-    ahead = aheadInQueue(cfg, req.number, req.mergeQueue);
+    return undefined;
   }
   if (ahead === null) {
     return undefined;
@@ -203,26 +188,5 @@ function queued(cfg: Config, req: OrderRequest): Queued | undefined {
   };
 }
 
-// Why a merge stacked on `stackedOn` waits for its prerequisite, or undefined
-// once the prerequisite has merged. A stacked issue's merge waits while its
-// prerequisite is open, whatever the merge order. `waitingForPr` is the
-// prerequisite's open PR, or 0 when it has none.
-function stackedQueued(
-  cfg: Config,
-  stackedOn: StackedOn,
-): StackQueued | undefined {
-  const { issue } = stackedOn;
-  if (prereqMerged(cfg, issue)) {
-    return undefined;
-  }
-  return {
-    merged: false,
-    reason: "queued",
-    waitingFor: issue,
-    waitingForPr: openPrFor(cfg, issue) ?? 0,
-    stackedOn: issue,
-  };
-}
-
-export type { Queued, StackQueued };
-export { HOLDING_STAGES, queued, READY_STAGES, stackedQueued };
+export type { Queued };
+export { HOLDING_STAGES, queued, READY_STAGES };

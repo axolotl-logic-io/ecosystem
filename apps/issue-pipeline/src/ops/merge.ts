@@ -1,21 +1,24 @@
 // The decision to merge an issue's PR or refuse it: the checks that the
-// verified commit is still the PR's head, contains the current base and isn't
-// stacked on another issue's branch, the wait for a stacked issue's open
-// prerequisite, the merge order between issues, the squash merge itself and
-// what a refusal means.
+// approved commit is still the PR's head and the approved revision is still
+// current, the merge order between issues, the base check, the squash merge
+// itself and the merge receipt. A merge only merges code: publishing the
+// wiki (publish) and closing the issue (finish-wiki) are separate ops the
+// merge role runs after it saves the receipt (`merge-publish-finish-split`).
 
 import { z } from "zod";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { paths } from "../config.ts";
+import { paths, wikiCfg } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
-import { gh, ghJson } from "../github.ts";
+import { gh, ghJson, git } from "../github.ts";
 import type { RunResult } from "../process.ts";
-import { parseRequest, run, tail } from "../process.ts";
-import { STATE } from "../state.ts";
-import { finishMerged } from "./finish.ts";
-import type { Queued, StackQueued } from "./merge-order.ts";
-import { queued, stackedQueued } from "./merge-order.ts";
+import { OpsError, parseRequest, run, tail } from "../process.ts";
+import { currentRevision } from "../revision.ts";
+import { ISSUE_STATE } from "../state.ts";
+import type { Queued } from "./merge-order.ts";
+import { queued } from "./merge-order.ts";
+import type { MergeStale } from "./publication-guard.ts";
+import { mergeStale, REVISION_REQUEST } from "./publication-guard.ts";
 
 const SHORT_SHA_LENGTH = 12;
 const REFUSAL_TAIL_LINES = 5;
@@ -28,33 +31,87 @@ const APPROVAL_HINT =
 
 // gh's answer to the PR view.
 const PR_VIEW = z.looseObject({
+  headRefName: z.string(),
   headRefOid: z.string(),
   isDraft: z.boolean(),
   mergeable: z.string(),
   mergeStateStatus: z.string(),
+  mergeCommit: z.looseObject({ oid: z.string() }).nullish(),
   state: z.string(),
 });
+const PR_VIEW_FIELDS =
+  "headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit";
 const MERGE_REQUEST = z.looseObject({
-  expectedSha: z.string(),
+  expectedSha: z.string().min(1),
   mergeOrder: z.boolean().nullish(),
   // The merge order the orchestrator ranked (#234), which replaces the
   // lowest-PR order when given.
   mergeQueue: z.array(z.number().int()).nullish(),
   number: z.number().int(),
-  state: STATE.extend({ pr: z.number() }),
+  // The revision the review approved, which must still be current.
+  revision: REVISION_REQUEST,
+  state: ISSUE_STATE.extend({ pr: z.number().int().positive() }),
   summary: z.string().nullish(),
 });
 
 type PrView = z.infer<typeof PR_VIEW>;
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
+// The merge receipt: GitHub's merge commit and the PR head it merged. byHand
+// when the PR had merged before this op, so the head may not be the approved
+// one; the role compares headSha with its approval.
 type MergeReply =
-  | { merged: true; byHand: true; published: boolean }
-  | { merged: true; published: boolean }
+  | { merged: true; mergeCommit: string; headSha: string }
+  | { merged: true; byHand: true; mergeCommit: string; headSha: string }
   | { merged: false; reason: string }
   | { merged: false; reason: "head-changed"; headSha: string }
-  | Queued
-  | StackQueued;
+  | { merged: false; reason: "wiki-behind"; detail: string }
+  | MergeStale
+  | Queued;
+
+function viewPr(cfg: Config, pr: number): PrView {
+  return PR_VIEW.parse(
+    ghJson(cfg, [
+      "pr",
+      "view",
+      String(pr),
+      "-R",
+      cfg.repo,
+      "--json",
+      PR_VIEW_FIELDS,
+    ]),
+  );
+}
+
+// The merge commit GitHub reports for a merged PR; a merged PR without one
+// is an error, never an empty receipt.
+function mergeCommitOf(pr: number, view: PrView): string {
+  const oid = view.mergeCommit?.oid ?? "";
+  if (oid === "") {
+    throw new OpsError(
+      `PR #${pr} is MERGED but GitHub reports no merge commit`,
+    );
+  }
+  return oid;
+}
+
+// The PR view, once the request and PR are consistent: the expected head is
+// the approved code, and the PR is from the issue's branch.
+function checkedView(cfg: Config, req: MergeRequest): PrView {
+  if (req.expectedSha !== req.revision.code) {
+    throw new OpsError(
+      `merge expectedSha ${req.expectedSha} is not the approved code ${String(req.revision.code)}`,
+    );
+  }
+  const view = viewPr(cfg, req.state.pr);
+  const branch = paths.branch(req.number);
+  if (view.headRefName !== branch) {
+    throw new OpsError(
+      `PR #${req.state.pr} is from ${view.headRefName}, not ${branch}`,
+    );
+  }
+  return view;
+}
 
 // Whether the verified commit lacks the current base: GitHub calls the PR
 // conflicting or behind, or, since without branch protection GitHub merges
@@ -81,9 +138,36 @@ function staleReason(
   return undefined;
 }
 
+// Whether the approved wiki head still fast-forwards the wiki's branch, so
+// the publish after the merge needs no unreviewed rebase. Merging code whose
+// wiki can't then be published as approved would leave it half done.
+function wikiBehind(
+  cfg: Config,
+  req: MergeRequest,
+): { merged: false; reason: "wiki-behind"; detail: string } | undefined {
+  const wiki = wikiCfg(cfg);
+  const approved = req.revision.wiki;
+  if (wiki === null || approved === null) {
+    return undefined;
+  }
+  const dir = paths.wiki(cfg, req.number);
+  const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
+  git(cfg, ["-C", dir, "fetch", "origin", refspec]);
+  const base = `origin/${wiki.branch}`;
+  const args = ["-C", dir, "merge-base", "--is-ancestor", base, approved];
+  if (run("git", args, { allowFail: true }).code === 0) {
+    return undefined;
+  }
+  return {
+    merged: false,
+    reason: "wiki-behind",
+    detail: `${base} moved past the approved wiki commit ${approved}`,
+  };
+}
+
 // Why the open PR may not merge yet, or undefined when it may. The merge
-// order comes before the base check, so only the issue at the head of the
-// queue is told to rebase (#422).
+// order comes before the fresh revision and base checks, so only the issue
+// at the head of the queue is told to rebase (#422).
 function precheck(
   cfg: Config,
   req: MergeRequest,
@@ -92,18 +176,6 @@ function precheck(
   if (view.state !== "OPEN") {
     return { merged: false, reason: `PR is ${view.state}` };
   }
-  // A stacked branch (stack.ts) still holds its prerequisite's commits, which
-  // its reviews never measured. It waits (queued) while the prerequisite is
-  // open; once the prerequisite merged it is behind, like a branch behind its
-  // base, until the sync moves it onto the base, and like one it waits its
-  // turn in the merge order before being told so.
-  const { stackedOn } = req.state;
-  if (stackedOn !== null && stackedOn !== undefined) {
-    return (
-      stackedQueued(cfg, stackedOn) ??
-      queued(cfg, req) ?? { merged: false, reason: "behind" }
-    );
-  }
   if (view.headRefOid !== req.expectedSha) {
     return { merged: false, reason: "head-changed", headSha: view.headRefOid };
   }
@@ -111,18 +183,25 @@ function precheck(
   if (waits !== undefined) {
     return waits;
   }
-  const stale = staleReason(cfg, req, view);
+  const stale = mergeStale(
+    req.revision,
+    currentRevision(cfg, req.number, req.state),
+  );
   if (stale !== undefined) {
-    return { merged: false, reason: stale };
+    return stale;
   }
-  return undefined;
+  const behind = staleReason(cfg, req, view);
+  if (behind !== undefined) {
+    return { merged: false, reason: behind };
+  }
+  return wikiBehind(cfg, req);
 }
 
 // What a failed `gh pr merge` means for the issue.
 function mergeRefusal(result: RunResult): MergeReply {
   const why = tail(result.stderr || result.stdout, REFUSAL_TAIL_LINES);
-  // Another PR merged first. The next sweep rebases and re-verifies, as for
-  // "behind".
+  // Another PR merged first. The next sync rebases and the issue is
+  // reviewed again, as for "behind".
   if (BASE_MOVED.test(why)) {
     return { merged: false, reason: "behind" };
   }
@@ -133,28 +212,23 @@ function mergeRefusal(result: RunResult): MergeReply {
   return { merged: false, reason: `merge refused: ${why}${hint}` };
 }
 
-// Squash-merges the issue's PR at the verified commit, or says why not.
+// Squash-merges the issue's PR at the approved commit and returns GitHub's
+// merge receipt, or says why not. It writes no state, labels or wiki: the
+// role saves the receipt, then publishes and finishes.
 function merge(cfg: Config, request: unknown): MergeReply {
   const req = parseRequest(MERGE_REQUEST, "merge", request);
-  const {
-    number: n,
-    state: { pr },
-  } = req;
-  const view = PR_VIEW.parse(
-    ghJson(cfg, [
-      "pr",
-      "view",
-      String(pr),
-      "-R",
-      cfg.repo,
-      "--json",
-      "headRefOid,state,mergeable,mergeStateStatus,isDraft",
-    ]),
-  );
+  const { pr } = req.state;
+  const view = checkedView(cfg, req);
   if (view.state === "MERGED") {
-    // Someone merged it by hand first. Finish the bookkeeping a merge does.
-    const published = finishMerged(cfg, n, pr, req.state);
-    return { merged: true, byHand: true, published };
+    // Someone merged it first, by hand or in a run that crashed before it
+    // saved the receipt.
+    const mergeCommit = mergeCommitOf(pr, view);
+    return {
+      merged: true,
+      byHand: true,
+      mergeCommit,
+      headSha: view.headRefOid,
+    };
   }
   const refused = precheck(cfg, req, view);
   if (refused !== undefined) {
@@ -176,15 +250,22 @@ function merge(cfg: Config, request: unknown): MergeReply {
   if (result.code !== 0) {
     return mergeRefusal(result);
   }
+  const after = viewPr(cfg, pr);
+  if (after.state !== "MERGED" || after.headRefOid !== req.expectedSha) {
+    throw new OpsError(
+      `gh merged PR #${pr}, but GitHub shows it ${after.state} at ${after.headRefOid}`,
+    );
+  }
+  const mergeCommit = mergeCommitOf(pr, after);
   const sha = req.expectedSha.slice(0, SHORT_SHA_LENGTH);
   comment(
     cfg,
     pr,
     { role: "merger" },
-    `Merged ${sha}: every blocking review finding is resolved and every check passed on this commit.\n\n${req.summary ?? ""}`,
+    `Merged ${sha} as ${mergeCommit.slice(0, SHORT_SHA_LENGTH)}: every blocking review finding is resolved and every check passed on this commit.\n\n${req.summary ?? ""}`,
   );
-  const published = finishMerged(cfg, n, pr, req.state);
-  return { merged: true, published };
+  return { merged: true, mergeCommit, headSha: req.expectedSha };
 }
 
+export type { MergeReply };
 export { merge };

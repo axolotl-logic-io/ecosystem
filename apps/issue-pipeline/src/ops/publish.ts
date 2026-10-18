@@ -1,26 +1,21 @@
 // The wiki's side of a merge: wiki-sync rebases the issue's wiki commits onto
-// the wiki's latest version before the code merges, finish-wiki-sync keeps a
-// rebase a writer resolved, and publish pushes the commits to the wiki once
-// the code has merged and then finishes the merged issue.
+// the wiki's latest version before the review that approves them,
+// finish-wiki-sync keeps a rebase a writer resolved, and publish fast-forwards
+// the wiki to exactly the approved wiki head once the code merged (or, for a
+// change that lives only in the wiki, with no PR). Publishing changes nothing
+// else: the role saves the completion and finish-wiki closes the issue.
 
 import { z } from "zod";
-import { removeWorktree } from "../checkouts.ts";
-import { closeClaims } from "../claims.ts";
-import { comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { gh, issueState } from "../github.ts";
-import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { parseRequest } from "../process.ts";
-import type { State } from "../state.ts";
-import { STATE, writeState } from "../state.ts";
-import type {
-  WikiFinishReply,
-  WikiPublish,
-  WikiSyncReply,
-} from "../wiki-publish.ts";
-import { finishWikiSync, publishWiki, syncWiki } from "../wiki-publish.ts";
-
-const SHORT_SHA_LENGTH = 12;
+import { currentRevision } from "../revision.ts";
+import { ISSUE_STATE } from "../state.ts";
+import type { WikiPublish } from "../wiki-publication.ts";
+import { publishReviewedWiki } from "../wiki-publication.ts";
+import type { WikiFinishReply, WikiSyncReply } from "../wiki-publish.ts";
+import { finishWikiSync, syncWiki } from "../wiki-publish.ts";
+import type { PublishRefusal } from "./publication-guard.ts";
+import { publishGate, REVISION_REQUEST } from "./publication-guard.ts";
 
 const SYNC_REQUEST = z.looseObject({ number: z.number().int() });
 const FINISH_REQUEST = z.looseObject({
@@ -30,89 +25,13 @@ const FINISH_REQUEST = z.looseObject({
 });
 const PUBLISH_REQUEST = z.looseObject({
   number: z.number().int(),
-  state: STATE.extend({ pr: z.number() }),
+  state: ISSUE_STATE,
+  // The wiki head the review approved, null when it approved no wiki commits.
+  expectedWiki: z.string().min(1).nullable(),
+  revision: REVISION_REQUEST,
 });
 
-// GitHub closes an issue from "Closes #N" only when the PR merges into the
-// default branch. A base like integration leaves it open, so close it here,
-// with `text` as the closing comment.
-function closeIssue(cfg: Config, n: number, text: string): void {
-  if (issueState(cfg, n) !== "open") {
-    return;
-  }
-  gh(
-    cfg,
-    [
-      "issue",
-      "close",
-      String(n),
-      "-R",
-      cfg.repo,
-      "--reason",
-      "completed",
-      "--comment",
-      text,
-    ],
-    { allowFail: true },
-  );
-}
-
-// The issue is done: its state, labels, claims and worktree say so. `why` is
-// what finished it, for the claims; `closing` is the issue's closing comment.
-function closeMerged(
-  cfg: Config,
-  n: number,
-  state: State,
-  { why, closing }: { why: string; closing: string },
-): void {
-  writeState(cfg, n, { ...state, stage: "done", lease: null });
-  setLabels(cfg, n, [LABELS.merged.name], [LABELS.working.name]);
-  clearStopLabels(cfg, n);
-  closeClaims(cfg, n, why);
-  closeIssue(cfg, n, closing);
-  removeWorktree(cfg, n);
-}
-
-// The closing comment of an issue whose change lives only in the wiki.
-function wikiOnlyClosing(cfg: Config, commits: readonly string[]): string {
-  const list = commits.map((line) => `- ${line}`).join("\n");
-  const history = `https://github.com/${cfg.repo}/wiki/_history`;
-  const text = `This issue's change lives only in the wiki, so it had no PR to merge. Published these wiki commits (history: ${history}):\n\n${list}`;
-  return signed({ role: "merger" }, text);
-}
-
-// After PR #pr merged, or with `pr` null for a change that lives only in the
-// wiki: publish the issue's wiki commits and, once they are on the wiki (or
-// there are none), finish the issue. A conflict leaves the rebase stopped and
-// the issue as it was; a push that keeps failing throws.
-function publishMerged(
-  cfg: Config,
-  n: number,
-  pr: number | null,
-  state: State,
-): WikiPublish {
-  const published = publishWiki(cfg, n);
-  if (!published.published) {
-    return published;
-  }
-  if (pr === null) {
-    const closing = wikiOnlyClosing(cfg, published.commits);
-    closeMerged(cfg, n, state, { why: "Wiki changes published.", closing });
-    return published;
-  }
-  if (published.sha !== null) {
-    const sha = published.sha.slice(0, SHORT_SHA_LENGTH);
-    comment(
-      cfg,
-      n,
-      { role: "merger" },
-      `Pushed this issue's wiki changes as wiki commit ${sha} (history: https://github.com/${cfg.repo}/wiki/_history).`,
-    );
-  }
-  const closing = `PR #${pr} merged into ${cfg.baseBranch}.`;
-  closeMerged(cfg, n, state, { why: `PR #${pr} merged.`, closing });
-  return published;
-}
+type PublishReply = WikiPublish | PublishRefusal;
 
 function wikiSyncOp(cfg: Config, request: unknown): WikiSyncReply {
   const req = parseRequest(SYNC_REQUEST, "wiki-sync", request);
@@ -131,9 +50,17 @@ function finishWikiSyncOp(cfg: Config, request: unknown): WikiFinishReply {
   return finishWikiSync(cfg, req.number, abort);
 }
 
-function publishOp(cfg: Config, request: unknown): WikiPublish {
+// Publishes the approved wiki head after the fresh gates (publication-guard)
+// pass, or says why not. Safe to repeat: a wiki that already holds the head
+// is a success.
+function publishOp(cfg: Config, request: unknown): PublishReply {
   const req = parseRequest(PUBLISH_REQUEST, "publish", request);
-  return publishMerged(cfg, req.number, req.state.pr, req.state);
+  const current = currentRevision(cfg, req.number, req.state);
+  const refused = publishGate(req.state, req, current);
+  if (refused !== undefined) {
+    return refused;
+  }
+  return publishReviewedWiki(cfg, req.number, req.expectedWiki);
 }
 
 const publishOps: Readonly<
@@ -142,7 +69,7 @@ const publishOps: Readonly<
     (
       cfg: Config,
       request: unknown,
-    ) => WikiPublish | WikiSyncReply | WikiFinishReply
+    ) => PublishReply | WikiSyncReply | WikiFinishReply
   >
 > = {
   "wiki-sync": wikiSyncOp,
@@ -150,4 +77,5 @@ const publishOps: Readonly<
   publish: publishOp,
 };
 
-export { publishMerged, publishOps };
+export type { PublishReply };
+export { publishOps };

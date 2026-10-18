@@ -1,21 +1,26 @@
-// What happens once an issue leaves the pipeline or ends a sweep: the
-// bookkeeping after its PR merges, closing a parent whose sub-issues are all
-// closed, posting queued comments, and keeping an unfinished issue's lease.
+// What happens once an issue leaves the pipeline or ends a job: completing
+// an issue after its merge role saved it done and merged (finish-wiki),
+// closing a parent whose sub-issues are all closed, posting queued comments,
+// and keeping an unfinished issue's lease.
 
 import { z } from "zod";
-import { touchClaim } from "../claims.ts";
-import { comment } from "../comments.ts";
+import { removeWorktree } from "../checkouts.ts";
+import { closeClaims, touchClaim } from "../claims.ts";
+import { comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { gh, ghJson } from "../github.ts";
+import { gh, ghJson, issueState } from "../github.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
-import { parseRequest } from "../process.ts";
-import type { State } from "../state.ts";
-import { STATE, writeState } from "../state.ts";
-import type { WikiPublish } from "../wiki-publish.ts";
-import { publishMerged } from "./publish.ts";
+import { OpsError, parseRequest } from "../process.ts";
+import { currentRevision } from "../revision.ts";
+import type { IssueState, Revision } from "../state.ts";
+import { ISSUE_STATE, readState, writeState } from "../state.ts";
+import { confirmWikiPublished } from "../wiki-publication.ts";
+import type { FinishRefusal } from "./publication-guard.ts";
+import { finishGate } from "./publication-guard.ts";
 
 const SUB_ISSUES_PER_PAGE = 100;
+const SHORT_SHA_LENGTH = 12;
 
 // The sub-issues as closeParent's jq reads them (GitHub's `state_reason` as
 // `reason`, each label by name), or null when gh printed nothing.
@@ -33,15 +38,17 @@ const SUB_ISSUES = z
 type SubIssue = NonNullable<z.infer<typeof SUB_ISSUES>>[number];
 
 const ISSUE_REQUEST = z.looseObject({ number: z.number().int() });
+// finish-wiki acts on the saved state; a `state` sent along must agree with
+// it, so a role can't finish a completion it never saved.
 const FINISH_WIKI_REQUEST = z.looseObject({
   number: z.number().int(),
-  state: STATE,
+  state: ISSUE_STATE.optional(),
 });
 // The lane fields are whatever the workflow sent (LaneRequest in claims.ts).
 const RELEASE_REQUEST = z.looseObject({
   lane: z.unknown().optional(),
   number: z.number().int(),
-  state: STATE,
+  state: ISSUE_STATE,
   sweepId: z.unknown().optional(),
 });
 
@@ -52,13 +59,11 @@ type CloseParentReply =
 
 type EmptyReply = Record<string, never>;
 
-type FinishWikiReply = { merged: true } & WikiPublish;
+// `closed` is false when the issue was already closed, as on a retry.
+type FinishWikiReply = { finished: true; closed: boolean } | FinishRefusal;
 
-function errorMessage(error: unknown): string | undefined {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return undefined;
+function short(sha: string): string {
+  return sha.slice(0, SHORT_SHA_LENGTH);
 }
 
 // Deletes the issue's code branch on GitHub, if it is there.
@@ -76,53 +81,124 @@ function deleteBranch(cfg: Config, n: number): void {
   );
 }
 
-// After a PR merges, by the pipeline or by hand: delete the branch, label the
-// PR, then publish the issue's wiki changes, which finishes the issue. True
-// when it published. Otherwise (a wiki conflict, or an error) the issue waits
-// at the publish stage, open, with its claim, lease and worktree.
-function finishMerged(
-  cfg: Config,
-  n: number,
-  pr: number,
-  state: State,
-): boolean {
-  deleteBranch(cfg, n);
-  setLabels(cfg, pr, [LABELS.merged.name], [LABELS.working.name]);
-  clearStopLabels(cfg, pr);
-  try {
-    if (publishMerged(cfg, n, pr, state).published) {
-      return true;
-    }
-  } catch (error) {
-    comment(
-      cfg,
-      n,
-      { role: "merger" },
-      `The wiki changes from this issue were not published: ${String(errorMessage(error))}. The pipeline will retry the publish.`,
-    );
+// GitHub closes an issue from "Closes #N" only when the PR merges into the
+// default branch. A base like integration leaves it open, so close it here,
+// with `text` as the closing comment. True when this call closed it; an
+// unreadable issue or a failed close throws, so the completion is retried.
+function closeIssue(cfg: Config, n: number, text: string): boolean {
+  const state = issueState(cfg, n);
+  if (state === null) {
+    throw new OpsError(`could not read whether #${n} is open`);
   }
-  writeState(cfg, n, { ...state, stage: "publish" });
-  return false;
+  if (state !== "open") {
+    return false;
+  }
+  gh(cfg, [
+    "issue",
+    "close",
+    String(n),
+    "-R",
+    cfg.repo,
+    "--reason",
+    "completed",
+    "--comment",
+    text,
+  ]);
+  return true;
 }
 
-// Finishes an issue whose change lives only in the wiki, in place of a merge:
-// deletes its code branch, publishes its wiki commits and closes it as
-// merged. A conflict leaves it waiting at the publish stage with the
-// conflict in the reply; a push that keeps failing throws.
+// The closing comment for the merged revision.
+function closingText(cfg: Config, state: IssueState, merged: Revision): string {
+  const lines: string[] = [];
+  if (state.pr !== null && merged.code !== null) {
+    lines.push(
+      `PR #${state.pr} merged into ${cfg.baseBranch} as ${short(merged.code)}.`,
+    );
+  } else if (merged.wiki !== null) {
+    lines.push(
+      "This issue's change lives only in the wiki, so it had no PR to merge.",
+    );
+  }
+  if (merged.wiki !== null) {
+    lines.push(
+      `Published wiki commit ${short(merged.wiki)} (history: https://github.com/${cfg.repo}/wiki/_history).`,
+    );
+  }
+  if (lines.length === 0) {
+    lines.push("The approved revision has no code or wiki change to merge.");
+  }
+  return signed({ role: "merger" }, lines.join(" "));
+}
+
+function sameMerged(a: Revision | null, b: Revision | null): boolean {
+  return (
+    a !== null &&
+    b !== null &&
+    a.code === b.code &&
+    a.wiki === b.wiki &&
+    a.inputs === b.inputs
+  );
+}
+
+// The completion cleanup, every step safe to repeat: the code branch, the
+// labels, the claims and the worktree, then the issue, closed last so a
+// crash before it leaves the issue open, done and merged, which the
+// orchestrator schedules again.
+function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
+  const n = state.number;
+  deleteBranch(cfg, n);
+  if (state.pr !== null) {
+    setLabels(cfg, state.pr, [LABELS.merged.name], [LABELS.working.name]);
+    clearStopLabels(cfg, state.pr);
+  }
+  setLabels(cfg, n, [LABELS.merged.name], [LABELS.working.name]);
+  clearStopLabels(cfg, n);
+  let why = "Change published.";
+  if (state.pr !== null) {
+    why = `PR #${state.pr} merged.`;
+  }
+  closeClaims(cfg, n, why);
+  removeWorktree(cfg, n);
+  return closeIssue(cfg, n, closingText(cfg, state, merged));
+}
+
+// Completes an issue whose merge role saved it done with the merged revision
+// (code merged and wiki published): only after a fresh check that the PR
+// merged at merged.code, the wiki holds merged.wiki and the trusted inputs
+// are unchanged. It publishes and merges nothing itself. Safe to repeat, so
+// a crash between the save and the cleanup is finished by running it again.
 function finishWiki(cfg: Config, request: unknown): FinishWikiReply {
   const req = parseRequest(FINISH_WIKI_REQUEST, "finish-wiki", request);
   const n = req.number;
-  deleteBranch(cfg, n);
-  const published = publishMerged(cfg, n, null, req.state);
-  if (!published.published) {
-    writeState(cfg, n, { ...req.state, stage: "publish" });
+  const saved = readState(cfg, n).state;
+  if (saved === null) {
+    throw new OpsError(`#${n} has no readable saved state to finish`);
   }
-  return { merged: true, ...published };
+  if (req.state !== undefined && !sameMerged(req.state.merged, saved.merged)) {
+    throw new OpsError(
+      `finish-wiki's state for #${n} is not the saved completion`,
+    );
+  }
+  const refused = finishGate(saved, currentRevision(cfg, n, saved));
+  if (refused !== undefined) {
+    return refused;
+  }
+  const { merged } = saved;
+  if (merged === null) {
+    throw new OpsError(`#${n} has no merged revision`);
+  }
+  if (merged.wiki !== null) {
+    const proof = confirmWikiPublished(cfg, n, merged.wiki);
+    if (!proof.published) {
+      return { finished: false, reason: proof.reason, detail: proof.detail };
+    }
+  }
+  return { finished: true, closed: complete(cfg, saved, merged) };
 }
 
 // A closed sub-issue merged when GitHub closed it as completed, as a merge
 // does, or it carries agent:merged.
-function merged(sub: SubIssue): boolean {
+function subIssueMerged(sub: SubIssue): boolean {
   return sub.reason === "completed" || sub.labels.includes(LABELS.merged.name);
 }
 
@@ -150,7 +226,7 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   if (open.length > 0) {
     return { closed: false, open };
   }
-  if (!subs.some(merged)) {
+  if (!subs.some(subIssueMerged)) {
     return { closed: false, reason: "no sub-issue merged" };
   }
   gh(cfg, ["issue", "close", String(n), "-R", cfg.repo]);
@@ -189,5 +265,5 @@ function release(cfg: Config, request: unknown): EmptyReply {
   return {};
 }
 
-export type { CloseParentReply };
-export { closeParent, finishMerged, finishWiki, post, release };
+export type { CloseParentReply, FinishWikiReply };
+export { closeParent, finishWiki, post, release };

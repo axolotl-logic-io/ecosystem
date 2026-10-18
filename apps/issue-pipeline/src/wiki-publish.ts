@@ -1,16 +1,16 @@
-// Bringing an issue's wiki commits onto the wiki's latest version. syncWiki
-// rebases the issue's wiki checkout onto the wiki's branch before the code
-// merges; finishWikiSync checks and keeps a rebase a writer resolved; and
-// publishWiki pushes the rebased commits to the wiki's branch after the code
-// merges and deletes the wiki remote's agent/issue-<n>. A conflict leaves the
-// rebase stopped for the conflict resolver; nothing is ever saved as a patch.
-// No wiki, or no commits of the issue's own, means there is nothing to do.
+// Bringing an issue's wiki commits onto the wiki's latest version before the
+// review that approves them. syncWiki rebases the issue's wiki checkout onto
+// the wiki's branch and finishWikiSync checks and keeps a rebase a writer
+// resolved. A conflict leaves the rebase stopped for the conflict resolver;
+// nothing is ever saved as a patch. No wiki, or no commits of the issue's
+// own, means there is nothing to do. Publishing the approved wiki is
+// wiki-publication.ts's, and never rebases.
 
 import fs from "node:fs";
 import path from "node:path";
 import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
-import { gitIn, head } from "./git-state.ts";
+import { head } from "./git-state.ts";
 import { git } from "./github.ts";
 import { withWikiLock } from "./locks.ts";
 import { OpsError, run } from "./process.ts";
@@ -21,8 +21,6 @@ import {
   unmergedFiles,
 } from "./rebase.ts";
 import { pushWikiBranch, wikiAhead } from "./wiki.ts";
-
-const PUBLISH_ATTEMPTS = 3;
 
 // A rebase stopped in the wiki checkout, onto `origin/<branch>` at `baseSha`.
 interface WikiConflict {
@@ -40,12 +38,6 @@ type WikiSyncReply =
 type WikiFinishReply =
   | { resolved: false; reason: string }
   | { resolved: true; headSha: string };
-
-// A publish: the wiki's new head and the commits it added ("<short sha>
-// <subject>", oldest first), or the conflict that stopped it.
-type WikiPublish =
-  | { published: true; sha: string | null; commits: string[] }
-  | ({ published: false } & WikiConflict);
 
 interface Checkout {
   wiki: WikiSettings;
@@ -165,56 +157,5 @@ function deleteWikiBranch(cfg: Config, dir: string, n: number): void {
   }
 }
 
-// Rebases and pushes to the wiki's branch, retrying a lost push race. Returns
-// the pushed head and commits, null with nothing to push, or the conflict.
-function pushRebased(
-  cfg: Config,
-  n: number,
-  checkout: Checkout,
-): { sha: string; commits: string[] } | null | WikiConflict {
-  const target = `HEAD:refs/heads/${checkout.wiki.branch}`;
-  for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt += 1) {
-    freshen(cfg, checkout);
-    const conflict = rebaseOnto(checkout);
-    if (conflict !== null) {
-      return conflict;
-    }
-    if (wikiAhead(cfg, n) === 0) {
-      return null;
-    }
-    const range = `origin/${checkout.wiki.branch}..HEAD`;
-    const log = ["log", "--reverse", "--abbrev=12", "--format=%h %s", range];
-    const commits = gitIn(checkout.dir, log).trim().split("\n");
-    const push = ["-C", checkout.dir, "push", "origin", target];
-    if (git(cfg, push, { allowFail: true }).code === 0) {
-      return { sha: head(checkout.dir), commits };
-    }
-  }
-  throw new OpsError(
-    `could not push the wiki changes after ${PUBLISH_ATTEMPTS} attempts`,
-  );
-}
-
-// After the code merges: publish the issue's wiki commits on the wiki's
-// branch and delete the wiki remote's agent/issue-<n>. A conflict leaves the
-// rebase stopped; a push that keeps losing races throws.
-function publishWiki(cfg: Config, n: number): WikiPublish {
-  const checkout = checkoutOf(cfg, n);
-  if (checkout === null) {
-    return { published: true, sha: null, commits: [] };
-  }
-  return withWikiLock(cfg, () => {
-    const pushed = pushRebased(cfg, n, checkout);
-    if (pushed !== null && "conflict" in pushed) {
-      return { published: false, ...pushed };
-    }
-    deleteWikiBranch(cfg, checkout.dir, n);
-    if (pushed === null) {
-      return { published: true, sha: null, commits: [] };
-    }
-    return { published: true, ...pushed };
-  });
-}
-
-export type { WikiConflict, WikiFinishReply, WikiPublish, WikiSyncReply };
-export { finishWikiSync, publishWiki, syncWiki };
+export type { Checkout, WikiConflict, WikiFinishReply, WikiSyncReply };
+export { checkoutOf, deleteWikiBranch, finishWikiSync, syncWiki };
