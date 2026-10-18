@@ -7,7 +7,7 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withWikiLock } from "../locks.ts";
-import { run } from "../process.ts";
+import { OpsError, run } from "../process.ts";
 import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";
@@ -46,8 +46,16 @@ function holdsUnpushed(cfg: Config, repo: string): boolean {
 function saveWiki(cfg: Config, issue: number, wikiDir: string): void {
   const wiki = wikiCfg(cfg);
   const mirror = paths.wikiMirror(cfg);
-  if (wiki === null || !hasGit(wikiDir) || !fs.existsSync(mirror)) {
+  if (wiki === null || !hasGit(wikiDir)) {
     return;
+  }
+  if (
+    !fs.existsSync(mirror) ||
+    gitIn(mirror, ["rev-parse", "--is-bare-repository"]).trim() !== "true"
+  ) {
+    throw new OpsError(
+      `wiki mirror ${mirror} is unavailable; checkout retained`,
+    );
   }
   const ref = `refs/heads/${paths.branch(cfg, issue)}`;
   const range = `origin/${wiki.branch}..HEAD`;
@@ -57,7 +65,7 @@ function saveWiki(cfg: Config, issue: number, wikiDir: string): void {
       gitIn(mirror, ["fetch", "--quiet", wikiDir, `+HEAD:${ref}`]);
       return;
     }
-    run("git", ["-C", mirror, "update-ref", "-d", ref], { allowFail: true });
+    gitIn(mirror, ["update-ref", "-d", ref]);
   });
 }
 
@@ -83,6 +91,8 @@ function reported<T>(step: () => T, fallback: T): T {
 // commits the remote lacks. Saves its wiki commits, then removes the folder.
 // A clean checkout gets no patch. Failed preparation retains the exact
 // checkouts and indexes; a restart must not overwrite that recovery work.
+// A later push or mirror-reconciliation failure retains the checkout and the
+// prepared artifacts, but cleanup may already have reset its dirty changes.
 async function closeJobCheckout(
   cfg: Config,
   issue: number,
@@ -90,6 +100,7 @@ async function closeJobCheckout(
   push: (() => Promise<void>) | null,
 ): Promise<DroppedChanges> {
   const { root, repo, docs, wiki } = job;
+  const scoped = withCheckout(cfg, { issue, dir: repo, branch: job.branch });
   let removable = false;
   try {
     const dropped = ((): DroppedChanges => {
@@ -116,6 +127,9 @@ async function closeJobCheckout(
     })();
     // Prepare every recovery artifact before changing either checkout.
     saveCodeRecovery(cfg, issue, repo, job.key);
+    if (docs !== null) {
+      saveWiki(scoped, issue, docs);
+    }
     for (const name of CHECKOUTS) {
       const dir = job[name];
       if (dir !== null && hasGit(dir)) {
@@ -131,12 +145,7 @@ async function closeJobCheckout(
       await push();
     }
     if (docs !== null) {
-      const scoped = withCheckout(cfg, {
-        issue,
-        dir: repo,
-        branch: job.branch,
-      });
-      reported((): void => saveWiki(scoped, issue, docs), undefined);
+      saveWiki(scoped, issue, docs);
     }
     removable = true;
     return dropped;
