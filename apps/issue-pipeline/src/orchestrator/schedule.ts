@@ -24,6 +24,7 @@ import {
   verdictHold,
   WRITERS,
 } from "./queue.ts";
+import { roleOffReason } from "./roles.ts";
 import { stackPartners, stackRule } from "./stacking.ts";
 
 type Decision =
@@ -45,7 +46,8 @@ type Decision =
       reason: string;
     };
 
-type Role = "reader" | "writer" | "merge";
+// The gates a stage passes besides the caps: file overlaps or merge order.
+type Gates = "reader" | "writer" | "merge";
 
 // What a tick has decided so far, which later decisions read.
 interface TickCount {
@@ -59,7 +61,7 @@ interface TickCount {
   holders: readonly number[];
 }
 
-function roleOf(stage: string): Role {
+function gatesOf(stage: string): Gates {
   if (stage === "merge") {
     return "merge";
   }
@@ -129,9 +131,13 @@ function holdReason(
   issue: SnapshotIssue,
   stage: string,
 ): string | null {
-  const role = roleOf(stage);
+  const off = roleOffReason(count.settings.roles, stage);
+  if (off !== null) {
+    return off;
+  }
+  const gates = gatesOf(stage);
   let reason: string | null;
-  switch (role) {
+  switch (gates) {
     case "reader":
       reason = capReason(count, stage);
       break;
@@ -142,8 +148,8 @@ function holdReason(
       reason = mergeReason(count, issue) ?? capReason(count, stage);
       break;
     default: {
-      const unknown: never = role;
-      throw new Error(`unknown role ${String(unknown)}`);
+      const unknown: never = gates;
+      throw new Error(`unknown gates ${String(unknown)}`);
     }
   }
   const limit = count.settings.tokensPerHour ?? 0; // null or 0: no limit
@@ -270,8 +276,9 @@ function schedule(
 }
 
 // Why a restart of `stage` for issue `number` is held now, or null once it
-// is admitted: a restart passes the same caps, file overlaps, merge order
-// and rate limit as a start, and counts against them for the later ones.
+// is admitted: a restart passes the same role check, caps, file overlaps,
+// merge order and rate limit as a start, and counts against them for the
+// later ones.
 type StartGate = (number: number, stage: string) => string | null;
 
 function startGate(snapshot: Snapshot, settings: ScheduleSettings): StartGate {

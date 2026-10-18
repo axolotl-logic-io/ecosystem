@@ -7,6 +7,7 @@
 
 import { HOLDING_STAGES, READY_STAGES } from "../ops/merge-order.ts";
 import { resumesAfterStop } from "../resume-stage.ts";
+import type { RoleName } from "../roles/registry.ts";
 import { STAGE_ORDER } from "../workflow/sweep-config.ts";
 
 // How the sweep's classify judged the issue, as far as scheduling cares.
@@ -86,6 +87,8 @@ interface ScheduleSettings {
   // The tokens the jobs may use an hour before no job starts; null or 0
   // means no limit (budgets-bound-context).
   tokensPerHour: number | null;
+  // The pipeline roles this orchestrator runs (#417); all of them when unset.
+  roles?: readonly RoleName[];
 }
 
 const STAGE_AT: ReadonlyMap<string, number> = new Map(

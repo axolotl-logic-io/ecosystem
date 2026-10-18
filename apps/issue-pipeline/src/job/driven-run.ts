@@ -8,6 +8,7 @@
 // and it is its launch's first attempt. The job's issueTokens are the
 // claimed issue's reportedTokens as the sweep counts them.
 
+import { roleOfStage } from "../orchestrator/roles.ts";
 import type { RoleName } from "../roles/registry.ts";
 import { parseOps } from "../workflow/launch-results.ts";
 import type { ChildSpec, LaunchSpec, OpsFrame } from "../workflow/launches.ts";
@@ -41,21 +42,6 @@ const INTERRUPTED = "interrupted";
 const NO_ITEM = "none";
 // What a usage record may name as a stage: STAGE_ORDER and done.
 const RECORDED_STAGES: readonly string[] = [...STAGE_ORDER, "done"];
-
-const STAGE_ROLES: Readonly<Record<StageName, RoleName>> = {
-  triage: "triage",
-  spec: "spec-writer",
-  implement: "implementor",
-  "open-pr": "implementor",
-  fix: "implementor",
-  sync: "implementor",
-  checks: "implementor",
-  review: "reviewer",
-  accept: "reviewer",
-  security: "reviewer",
-  merge: "finalizer",
-  publish: "finalizer",
-};
 
 // How a sweep run ended: finished with its summary, or stopped by a signal.
 type DrivenEnd =
@@ -91,9 +77,9 @@ function isStage(stage: string): stage is StageName {
 // The role at `stage`, or the job's own stage's when `stage` is none.
 function roleAt(stage: string, job: DrivenJob): RoleName {
   if (isStage(stage)) {
-    return STAGE_ROLES[stage];
+    return roleOfStage(stage);
   }
-  return STAGE_ROLES[job.stage];
+  return roleOfStage(job.stage);
 }
 
 function isChild(spec: LaunchSpec): spec is ChildSpec {

@@ -8,7 +8,8 @@
 // its state is still saved at `stopped` logs a `lifted` line, its reason the
 // label, before its start; and an escalation from the watchdog's rules adds
 // the `attempt` its stage is at and the issue's reportedTokens so far,
-// `issueTokens`.
+// `issueTokens`. A run logs the roles it chose once, at its start (#417), as
+// `{"at","action":"roles","roles"}`.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -53,6 +54,11 @@ function logDecisions(cfg: Config, decisions: readonly LogEntry[]): void {
   appendLines(cfg, LOG_FILE, lines);
 }
 
+// Logs the roles a run chose to orchestrator.log.
+function logRoles(cfg: Config, at: string, roles: readonly string[]): void {
+  appendLines(cfg, LOG_FILE, [JSON.stringify({ at, action: "roles", roles })]);
+}
+
 // Logs each escalation to orchestrator.log and to escalations.jsonl.
 function logEscalations(
   cfg: Config,
@@ -66,4 +72,4 @@ function logEscalations(
 }
 
 export type { LogEntry };
-export { logDecisions, logEscalations };
+export { logDecisions, logEscalations, logRoles };

@@ -21,6 +21,8 @@ const { tick } = await import("../src/orchestrator/tick.ts");
 /** @import { OpenIssue } from "./orchestrator-world-test-kit.mjs" */
 /** @import { Config } from "../src/config.ts" */
 /** @import { RunAgent } from "../src/orchestrator/escalation-consult.ts" */
+/** @import { TickDeps } from "../src/orchestrator/tick.ts" */
+/** @import { RoleName } from "../src/roles/registry.ts" */
 
 /** @type {RunAgent} */
 function noAgent() {
@@ -38,13 +40,14 @@ const LOG_LINE = z.object({
  * One tick at `minutes` after NOW over `issues`, with every spawn (less its
  * job id), steer and SIGTERM recorded, under `config` (the kit's by default). Spawned jobs die
  * at once, as a crashing job would, unless `spawnPid` gives the live pid they
- * run as. `runAgent` runs the escalation agent's pi.
+ * run as. `runAgent` runs the escalation agent's pi. `roles` are the roles
+ * the orchestrator runs (#417); left out, the tick takes the config's.
  * @param {readonly OpenIssue[]} issues
  * @param {number} [minutes]
- * @param {{ config?: Config, spawnPid?: number, runAgent?: RunAgent }} [options]
+ * @param {{ config?: Config, spawnPid?: number, runAgent?: RunAgent, roles?: readonly RoleName[] }} [options]
  */
 function tickOver(issues, minutes = 0, options = {}) {
-  const { config = cfg, spawnPid, runAgent = noAgent } = options;
+  const { config = cfg, spawnPid, runAgent = noAgent, roles } = options;
   openWith(issues);
   /** @type {string[][]} */
   const spawned = [];
@@ -52,7 +55,8 @@ function tickOver(issues, minutes = 0, options = {}) {
   const steered = [];
   /** @type {number[]} */
   const terminated = [];
-  tick(config, {
+  /** @type {TickDeps} */
+  const deps = {
     configPath: CONFIG,
     now: () => new Date(NOW.getTime() + minutes * MINUTE_MS),
     spawn: (argv) => {
@@ -62,8 +66,12 @@ function tickOver(issues, minutes = 0, options = {}) {
     steer: (socket, key, message) => steered.push([socket, key, message]),
     terminate: (pid) => terminated.push(pid),
     runAgent,
-  });
-  return { spawned, steered, terminated };
+  };
+  if (roles !== undefined) {
+    deps.roles = roles;
+  }
+  const { decisions } = tick(config, deps);
+  return { spawned, steered, terminated, decisions };
 }
 
 // What the ticks logged for `issue`; nothing before the first line is logged.

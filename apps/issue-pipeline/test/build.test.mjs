@@ -1,8 +1,8 @@
 // @ts-check
 // build.ts into a temporary folder: the built workflow is still an async
 // function body with no imports, the built ops CLI answers as src/ops.ts
-// does and its shell supervisor parses, the built orchestrator's --once exits 0 after a tick and 1 after
-// one that throws, and the built report names a missing --config. It builds into its own folder, so it never races install.test.mjs,
+// does and its shell supervisor parses, the built orchestrator's --once exits 0 after a tick, logging
+// the roles it chose, and 1 after one that throws, and the built report names a missing --config. It builds into its own folder, so it never races install.test.mjs,
 // which builds dist/.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { ROLE_NAMES } from "../src/roles/registry.ts";
 import { installFakeGh } from "./fake-gh.mjs";
 
 // What the built workflow must never contain: it is a sandboxed function body.
@@ -205,7 +206,7 @@ function orchestratorConfig() {
   return file;
 }
 
-test("the built orchestrator's --once exits 0 after a tick and 1 after a failed one", () => {
+test("the built orchestrator's --once logs the roles it chose, exits 0 after a tick and 1 after a failed one", () => {
   const fakeGh = installFakeGh();
   const config = orchestratorConfig();
   const orchestrator = path.join(tmp, "orchestrate.mjs");
@@ -231,8 +232,19 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   assert.ok(
     fakeGh.calls().some((call) => call.join(" ").startsWith("issue list")),
   );
+  // The run logs only the roles it chose, all five with no flag or config
+  // key (#417), since the queue is empty.
   const log = path.join(tmp, "runs", "o__r", "orchestrator.log");
-  assert.equal(readIfExists(log), "");
+  const lines = readIfExists(log)
+    .split("\n")
+    .filter((line) => line !== "");
+  assert.deepEqual(
+    lines.map((line) => {
+      const { action, roles } = JSON.parse(line);
+      return { action, roles };
+    }),
+    [{ action: "roles", roles: [...ROLE_NAMES] }],
+  );
   fakeGh.reply([{ when: "api user", stdout: "mallory\n" }]);
   const failed = once();
   assert.equal(failed.status, 1);
