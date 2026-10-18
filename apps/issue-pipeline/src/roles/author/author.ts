@@ -3,7 +3,7 @@
 // behaviour as Gherkin in one signed comment, edited in place, or asks its
 // questions. It never splits, approves, or writes tests, stubs or repo files.
 
-import { GHERKIN_KEY, gherkinBody } from "../../comments.ts";
+import { GHERKIN_KEY, gherkinBody } from "../../gherkin-comment.ts";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { Stage } from "../../stages.ts";
 import type { IssueState } from "../../state.ts";

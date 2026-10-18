@@ -1,14 +1,19 @@
 // A launch's record in job.json (src/job/status.ts): its pid, session file,
 // last event, consecutive failures of one tool and the last one's error,
-// token usage, token budget, context size, peak and first turn context,
-// turns, stop at the hard context limit, the pushes its commits made, and
-// outcome, and how a record a session prints changes it.
+// token usage, context size, peak and first turn context, turns, the pushes
+// its commits made, and outcome, and how a record a session prints changes
+// it. The context figures are records, never limits (`no-session-budgets`).
 
 import { z } from "zod";
-import { turnContext } from "./context-watch.ts";
 import type { ToolFailure } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
-import { addUsage, USAGE, usageTotal, ZERO_USAGE } from "./token-usage.ts";
+import {
+  addUsage,
+  turnContext,
+  USAGE,
+  usageTotal,
+  ZERO_USAGE,
+} from "./token-usage.ts";
 
 const LAUNCH_OUTCOME = z.enum(["ok", "failed"]);
 // One push the job made for a writer session's `pipeline_commit`: the repo,
@@ -33,24 +38,17 @@ const LAUNCH = z.object({
     .nullable()
     .default(null),
   usage: USAGE,
-  // A writer session's token budget, which the watchdog stops it past; null
-  // for an ops launch or any other session.
-  tokenBudget: z.number().nullable().default(null),
   // The token total of the latest message that reported usage: the session's
   // live context size, 0 before the first one.
   contextTokens: z.number().default(0),
-  // The highest turn context the session has shown (context-watch.ts).
+  // The highest turn context the session has shown (turnContext).
   peakContext: z.number().default(0),
   // The first turn's context, null before the first turn.
   firstContext: z.number().nullable().default(null),
   // The messages that reported usage.
   turns: z.number().default(0),
-  // A writer session's stop at the hard context limit, if it was stopped.
-  // An older file's stop may carry a `result`, which is dropped.
-  contextStop: z.object({ context: z.number() }).nullable().default(null),
   // The pushes the job made for the session's commits, oldest first.
   pushes: z.array(PUSH).default([]),
-  resumed: z.boolean(),
   outcome: LAUNCH_OUTCOME.nullable(),
 });
 
@@ -104,13 +102,11 @@ function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
 
 // A launch's record as it starts, before any event.
 function startedRecord(
-  start: Pick<
-    LaunchRecord,
-    "key" | "kind" | "pid" | "session" | "resumed" | "usage" | "tokenBudget"
-  >,
+  start: Pick<LaunchRecord, "key" | "kind" | "pid" | "session">,
 ): LaunchRecord {
   return {
     ...start,
+    usage: ZERO_USAGE,
     startedAt: new Date().toISOString(),
     lastEventAt: null,
     toolFailures: 0,
@@ -119,7 +115,6 @@ function startedRecord(
     peakContext: 0,
     firstContext: null,
     turns: 0,
-    contextStop: null,
     pushes: [],
     outcome: null,
   };

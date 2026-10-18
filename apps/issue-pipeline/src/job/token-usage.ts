@@ -57,5 +57,10 @@ function usageTotal(usage: Usage): number {
   return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }
 
+// The context one turn's usage shows: what the model read that turn.
+function turnContext(usage: Usage): number {
+  return usage.input + usage.cacheRead + usage.cacheWrite;
+}
+
 export type { Usage };
-export { addUsage, PI_USAGE, USAGE, usageTotal, ZERO_USAGE };
+export { addUsage, PI_USAGE, turnContext, USAGE, usageTotal, ZERO_USAGE };

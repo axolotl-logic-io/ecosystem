@@ -4,12 +4,8 @@
 // only the pipeline's signed, marked comment counts as the Gherkin.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  gherkinBody,
-  gherkinCommentOf,
-  keyMark,
-  signed,
-} from "../src/comments.ts";
+import { keyMark, signed } from "../src/comments.ts";
+import { gherkinBody, gherkinCommentOf } from "../src/gherkin-comment.ts";
 import { trustedInputsHash } from "../src/issue-context.ts";
 import { testConfig } from "./config-test-kit.mjs";
 import { installFakeGh } from "./fake-gh.mjs";

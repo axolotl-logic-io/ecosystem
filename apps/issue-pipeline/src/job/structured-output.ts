@@ -2,19 +2,14 @@
 // `pi -e structured-output.mjs --output-schema <file>` gives the session a
 // terminating `structured_output` tool whose parameters are the file's JSON
 // Schema; the tool's result `details` are the arguments it was given, which
-// the job reads from the session's tool_execution_end event. In a session
-// with a commit scope (pipeline-commit.ts), the tool first asks the job over
-// its control socket to check the reply: when the role's checks would fail
-// it, the tool fails with what they found, and the session goes on to fix it
-// and call the tool again. A job that doesn't answer checks nothing.
+// the job reads from the session's tool_execution_end event and parses
+// with the role's reply schema; nothing else checks a reply.
 // Modelled on pi's examples/extensions/structured-output.ts; it declares the
 // little of pi's extension API it uses, so the repo needs no pi dependency.
 
 import fs from "node:fs";
 import process from "node:process";
 import { z } from "zod";
-import { requestReplyCheck } from "./control-protocol.ts";
-import { commitScopeIn } from "./pipeline-commit.ts";
 
 const FLAG = "output-schema";
 const SCHEMA = z.record(z.string(), z.unknown());
@@ -64,19 +59,6 @@ function schemaOf(file: boolean | string | undefined): Arguments | null {
   }
 }
 
-// Fails with what the job's checks would fail `params` for, if the session
-// has a job to ask and they would.
-async function checkWithJob(params: Arguments): Promise<void> {
-  const scope = commitScopeIn(process.env);
-  if (scope === null) {
-    return;
-  }
-  const problems = await requestReplyCheck(scope.socket, scope.key, params);
-  if (problems !== null) {
-    throw new Error(problems);
-  }
-}
-
 function outputTool(parameters: Arguments): OutputTool {
   return {
     name: "structured_output",
@@ -85,17 +67,12 @@ function outputTool(parameters: Arguments): OutputTool {
       "Return your final answer as structured output. Call this once, as your last action.",
     promptSnippet: "End the session with the final structured answer",
     parameters,
-    execute: async (
-      _toolCallId: string,
-      params: Arguments,
-    ): Promise<ToolResult> => {
-      await checkWithJob(params);
-      return {
+    execute: (_toolCallId: string, params: Arguments): Promise<ToolResult> =>
+      Promise.resolve({
         content: [{ type: "text", text: "Structured output saved." }],
         details: params,
         terminate: true,
-      };
-    },
+      }),
   };
 }
 

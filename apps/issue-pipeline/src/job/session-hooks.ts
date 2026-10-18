@@ -18,7 +18,6 @@ import type { JobStatus, LaunchStart } from "./status.ts";
 interface JobWatch {
   status: JobStatus;
   control: Control;
-  resumePoint: LaunchHooks["resumePoint"];
 }
 
 // The launch hooks of the job `args` names, whose sessions run in its folder
@@ -35,22 +34,18 @@ function hooksOf(
     job: { id: string; startedAt: string };
   },
 ): LaunchHooks {
-  const { status, control, resumePoint } = watch;
+  const { status, control } = watch;
   const { cwd, repo, from, job } = where;
   const shared = agentEnvOf(rolesOf(cfg.jobRoles), from);
   const scope = commitScopeOf(args.stage, wikiCfg(cfg) !== null);
   return {
     sessionFile: (key: string): string => paths.session(cfg, args.issue, key),
-    resumePoint,
     started: (launch: LaunchStart, live: LiveHandle): void => {
       status.started(launch);
       control.register(live);
     },
     record: status.record,
     ended: status.ended,
-    contextLimits: cfg.contextLimits,
-    handoffFile: paths.handoff(cfg, args.issue),
-    contextStopped: status.contextStopped,
     sessionEnded: contextLogOf(
       paths.runDir(cfg, args.issue),
       { issue: args.issue, id: job.id },

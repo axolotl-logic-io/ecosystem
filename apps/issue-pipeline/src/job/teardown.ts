@@ -11,16 +11,11 @@ import path from "node:path";
 import process from "node:process";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { parseOps } from "../workflow/launch-results.ts";
-import type { OpsFrame } from "../workflow/launches.ts";
-import { opsSpec } from "../workflow/launches.ts";
-import type { OpLaunch, SweepSummary } from "../workflow/stages/types.ts";
 import type { JobDirs } from "./checkout.ts";
 import { closeJobCheckout } from "./checkout.ts";
-import type { LaunchHooks } from "./launch.ts";
-import { runLaunch } from "./launch.ts";
+import type { RunOp } from "./ops-request.ts";
 import type { Access } from "./pipeline-commit.ts";
-import type { RoleLine } from "./role-run.ts";
+import type { JobLine } from "./role-run.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 
 // The separators an ISO time has that a job key leaves out.
@@ -29,23 +24,21 @@ const KEY_TIME_SEPARATORS = /[-:.]/gu;
 const PATCH_CHECKOUT = /-(?<checkout>repo|docs)\.patch$/u;
 const NOTICE_BY = { role: "coordinator", agent: null, model: null, run: null };
 
-// How a run ended: finished with the sweep's summary (or a role stage's
-// line), or stopped by a signal.
+// How a run ended: finished with the job's line, or stopped by a signal.
 type RunEnd =
-  | { kind: "finished"; summary: SweepSummary | RoleLine }
+  | { kind: "finished"; summary: JobLine }
   | { kind: "stopped"; signal: StopSignal };
 
 // An exiting job: its issue, key, folder and wiki access, its exit push
-// (null for a role that never pushes), the frame and hooks its ops run
-// through, and its status file.
+// (null for a role that never pushes), the runner its ops go through, and
+// its status file.
 interface ExitingJob {
   issue: number;
   key: string;
   dirs: JobDirs;
   wiki: Access;
   push: (() => Promise<void>) | null;
-  frame: OpsFrame;
-  hooks: LaunchHooks;
+  runOp: RunOp;
   status: JobStatus;
 }
 
@@ -55,23 +48,17 @@ function jobKeyOf(stage: string, at: Date): string {
   return `${stage}-${at.toISOString().replace(KEY_TIME_SEPARATORS, "")}`;
 }
 
-// True when the run that ended with `end` stopped issue `issue`: a signal
-// ended it, the sweep stopped the issue, or the role stage ended stopped.
-// False for any other finish, and for a run that threw (null).
-function stoppedRun(issue: number, end: RunEnd | null): boolean {
+// True when the run that ended with `end` stopped: a signal ended it, or
+// the role's stage ended with a stop. False for any other finish, and for a
+// run that threw (null).
+function stoppedRun(end: RunEnd | null): boolean {
   if (end === null) {
     return false;
   }
   if (end.kind === "stopped") {
     return true;
   }
-  const { summary } = end;
-  if ("items" in summary) {
-    return summary.items.some(
-      (item): boolean => item.issue === issue && item.outcome === "stopped",
-    );
-  }
-  return summary.end.kind === "stopped";
+  return end.summary.end === "stop";
 }
 
 // The comment that tells the issue job `key` saved its dropped changes as
@@ -98,18 +85,11 @@ function droppedNotice(key: string, patches: readonly string[]): string {
 // Posts `body` as the issue's comment keyed by the job's key; a failed post
 // is reported on stderr.
 async function postNotice(job: ExitingJob, body: string): Promise<void> {
-  const { issue: number, key, frame, hooks } = job;
+  const { issue: number, key } = job;
   const comments = [{ number, by: NOTICE_BY, body, key: `dropped-${key}` }];
-  const launch: OpLaunch = {
-    kind: "op",
-    name: "dropped-notice",
-    op: "post",
-    payload: { number, comments },
-  };
-  const spec = opsSpec(frame, 1, launch, null);
-  const { ok, error } = parseOps(await runLaunch(spec, hooks));
-  if (ok !== true) {
-    process.stderr.write(`job: dropped notice: ${String(error)}\n`);
+  const reply = await job.runOp("post", { comments });
+  if (!reply.ok) {
+    process.stderr.write(`job: dropped notice: ${reply.error}\n`);
   }
 }
 
@@ -133,7 +113,7 @@ async function tearDown(
     path.join(runDir, patch),
   );
   process.stderr.write(`job: dropped changes saved: ${saved.join(" ")}\n`);
-  if (stoppedRun(issue, end)) {
+  if (stoppedRun(end)) {
     await postNotice(job, droppedNotice(key, patches));
   }
 }

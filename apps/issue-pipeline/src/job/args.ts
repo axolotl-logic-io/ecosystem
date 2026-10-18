@@ -4,17 +4,15 @@
 
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { STAGE_ORDER } from "../workflow/sweep-config.ts";
+import { STAGES } from "../stages.ts";
 
-const STAGES = STAGE_ORDER.join(", ");
+const STAGE_LIST = STAGES.join(", ");
 const NO_CONFIG = "--config must name a repo config file";
 const NO_ISSUE = "--issue must be an issue number";
-const NO_STAGE = `--stage must be one of: ${STAGES}`;
+const NO_STAGE = `--stage must be one of: ${STAGE_LIST}`;
 const NO_MESSAGE = "--steer needs a --message";
-const STEER_RESUME = "--steer can't be combined with --resume";
 const STEER_BOUNDARY = "--steer can't be combined with --print-boundary";
 const NO_QUEUE = "--merge-queue must list issue numbers, such as 3,5";
-const NO_PREREQ = "--stack-on must be an issue number other than --issue";
 const NO_JOB_ID = "--job-id must be a UUID";
 const MERGE_QUEUE = z
   .string()
@@ -32,39 +30,27 @@ const ISSUE = z.coerce
   .number({ error: NO_ISSUE })
   .int(NO_ISSUE)
   .positive(NO_ISSUE);
-const PREREQ = z.coerce
-  .number({ error: NO_PREREQ })
-  .int(NO_PREREQ)
-  .positive(NO_PREREQ);
-const STAGE = z.enum(STAGE_ORDER, { error: NO_STAGE });
+const STAGE = z.enum(STAGES, { error: NO_STAGE });
 const JOB_ARGS = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("run"),
-      config: CONFIG,
-      issue: ISSUE,
-      stage: STAGE,
-      lane: z.string().optional(),
-      resume: z.boolean().optional(),
-      // The merge order the orchestrator ranked (#234).
-      mergeQueue: MERGE_QUEUE.optional(),
-      // The issue whose branch this one starts on, if it has none (#268).
-      stackOn: PREREQ.optional(),
-      // The job's id, as the orchestrator logs its start; a job started
-      // without one makes its own.
-      jobId: z.uuid({ error: NO_JOB_ID }).optional(),
-    })
-    .refine((run) => run.stackOn !== run.issue, {
-      error: NO_PREREQ,
-      path: ["stackOn"],
-    }),
+  z.object({
+    kind: z.literal("run"),
+    config: CONFIG,
+    issue: ISSUE,
+    stage: STAGE,
+    // The claimant's name its lease records; the job's own without one.
+    lane: z.string().optional(),
+    // The merge order the orchestrator ranked (#234).
+    mergeQueue: MERGE_QUEUE.optional(),
+    // The job's id, as the orchestrator logs its start; a job started
+    // without one makes its own.
+    jobId: z.uuid({ error: NO_JOB_ID }).optional(),
+  }),
   z.object({
     kind: z.literal("steer"),
     config: CONFIG,
     issue: ISSUE,
     steer: z.string().min(1),
     message: z.string({ error: NO_MESSAGE }).min(1, NO_MESSAGE),
-    resume: z.undefined({ error: STEER_RESUME }).optional(),
     printBoundary: z.undefined({ error: STEER_BOUNDARY }).optional(),
   }),
   z.object({
@@ -89,12 +75,10 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       issue: { type: "string" },
       stage: { type: "string" },
       lane: { type: "string" },
-      resume: { type: "boolean" },
       steer: { type: "string" },
       message: { type: "string" },
       "print-boundary": { type: "boolean" },
       "merge-queue": { type: "string" },
-      "stack-on": { type: "string" },
       "job-id": { type: "string" },
     },
     strict: true,
@@ -102,7 +86,6 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
   const {
     "print-boundary": printBoundary,
     "merge-queue": mergeQueue,
-    "stack-on": stackOn,
     "job-id": jobId,
     ...named
   } = values;
@@ -116,7 +99,6 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     ...named,
     printBoundary,
     mergeQueue,
-    stackOn,
     jobId,
     kind,
   });

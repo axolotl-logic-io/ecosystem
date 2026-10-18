@@ -7,7 +7,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { AGENT_DIR } from "../pipeline-root.ts";
-import type { ChildSpec } from "../workflow/launches.ts";
 import { COMMIT_TOOL } from "./pipeline-commit.ts";
 
 const FRONTMATTER =
@@ -121,13 +120,14 @@ function toolsFlag(tools: readonly string[], added: readonly string[]): string {
   return [...tools, ...added].join(",");
 }
 
-// The `pi` arguments that run `spec` as `definition` in RPC mode, which
+// The `pi` arguments that run a session on `spec.model` as `definition` in
+// RPC mode, which
 // takes its prompt as a command on stdin, writing its session to
 // `files.session` and ending on the structured_output tool. A session given
 // `files.commit` also gets the pipeline_commit tool.
 function piArgs(
   definition: AgentDefinition,
-  spec: ChildSpec,
+  spec: { model: string },
   files: SessionFiles,
 ): string[] {
   const args = ["--mode", "rpc", "--model", spec.model];

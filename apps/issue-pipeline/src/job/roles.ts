@@ -1,17 +1,14 @@
 // The stage job's roles (sandbox-ready-jobs): the role each stage runs as,
-// which sessions commit and which are held to the context limits, each
-// stage's access to its code and wiki checkouts and what its sessions may
-// commit, what each role may
-// hold, the environment a session's pi gets and the token budget its
-// job.json records. No session holds a GitHub token: only the job does, and
+// which sessions commit, each stage's access to its code and wiki checkouts
+// and what its sessions may commit, what each role may hold, and the
+// environment a session's pi gets. No session holds a GitHub token: only the job does, and
 // the sessions that commit push through it (`pipeline_commit`). The networks
 // are recorded, not enforced.
 
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import type { JobRolesConfig } from "../config-schema.ts";
-import type { ChildSpec } from "../workflow/launches.ts";
-import type { StageName } from "../workflow/stages/types.ts";
+import type { Stage } from "../stages.ts";
 import { JOB_DOCS, JOB_REPO } from "./layout.ts";
 import type { Access, PathScope } from "./pipeline-commit.ts";
 import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
@@ -48,43 +45,24 @@ interface Boundary {
   network: readonly string[];
 }
 
-// The role each stage's job runs as. spec writes because the spec writer
-// commits its tests, stubs and wiki updates; sync and checks write because
-// their conflict resolver and CI fixer do. merge and publish run as merger; their
-// wiki conflict resolvers' sessions run as writers, as every writer session
-// does.
-const STAGE_ROLES: Readonly<Record<StageName, JobRole>> = {
-  triage: "reader",
-  spec: "writer",
+// The role each stage's job runs as (Reimagined-Pipeline): the author and
+// the reviewer only read; the implementor writes both checkouts; merge is
+// code alone, with no model session, and writes the wiki it publishes.
+const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
+  author: "reader",
   implement: "writer",
-  "open-pr": "writer",
   review: "reader",
-  fix: "writer",
-  sync: "writer",
-  checks: "writer",
-  accept: "reader",
-  security: "reader",
   merge: "merger",
-  publish: "merger",
 };
 
-// Each stage's access to the issue's wiki checkout (Pipeline-Roles-Shared,
-// "Wiki provisioning"): every stage at least reads it (every-role-reads-wiki,
-// #338); the spec writer writes the wiki, as merge and publish do when they
-// rebase and publish its commits; every other stage reads it.
-const STAGE_WIKI_ACCESS: Readonly<Record<StageName, Access>> = {
-  triage: "read",
-  spec: "write",
-  implement: "read",
-  "open-pr": "read",
+// Each stage's access to the issue's wiki checkout: every stage reads it;
+// the implementor writes its wiki updates, and merge rebases and publishes
+// them (`implementor-owns-the-change`).
+const STAGE_WIKI_ACCESS: Readonly<Record<Stage, Access>> = {
+  author: "read",
+  implement: "write",
   review: "read",
-  fix: "read",
-  sync: "read",
-  checks: "read",
-  accept: "read",
-  security: "read",
   merge: "write",
-  publish: "write",
 };
 
 const DEFAULT_ROLES: Roles = {
@@ -96,10 +74,8 @@ const DEFAULT_ROLES: Roles = {
   merger: { tokenEnv: undefined, network: ["api.github.com"] },
 };
 
-// The installed agent whose sessions write code.
-const WRITER_AGENT = "issue-pipeline-writer";
-// The installed agent whose sessions write the spec, its tests and stubs.
-const SPEC_AGENT = "issue-pipeline-specifier";
+// The installed agent whose sessions write code and the wiki.
+const IMPLEMENTOR_AGENT = "issue-pipeline-implementor";
 // The variables gh reads a token from.
 const GH_TOKEN_VARS: readonly string[] = [
   "GH_TOKEN",
@@ -109,25 +85,9 @@ const GH_TOKEN_VARS: readonly string[] = [
 ];
 
 // Whether a model session of installed agent `agent` commits, through
-// `pipeline_commit`: the writer's and the specifier's do, every other reads.
+// `pipeline_commit`: only the implementor's does; the others only read.
 function commitsOf(agent: string): boolean {
-  return agent === WRITER_AGENT || agent === SPEC_AGENT;
-}
-
-// Whether a session of `agent` is held to the config's `contextLimits` and
-// records a token budget: the writer's and the specifier's (#335).
-function heldToLimits(agent: string): boolean {
-  return agent === WRITER_AGENT || agent === SPEC_AGENT;
-}
-
-// The token budget job.json records for `spec`'s session, which the
-// orchestrator's watchdog stops it past: its budget for a session held to
-// the limits, and null, no watchdog max, for any other (Axlog, 2026-10-16).
-function recordedBudgetOf(spec: ChildSpec): number | null {
-  if (heldToLimits(spec.agent)) {
-    return spec.tokenBudget;
-  }
-  return null;
+  return agent === IMPLEMENTOR_AGENT;
 }
 
 function mergedRole(
@@ -171,7 +131,7 @@ function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
 
 // A stage's access to its code checkout: a writer stage writes it, and a
 // reader or merger stage only reads it.
-function codeAccessOf(stage: StageName): Access {
+function codeAccessOf(stage: Stage): Access {
   if (STAGE_ROLES[stage] === "writer") {
     return "write";
   }
@@ -182,7 +142,7 @@ function codeAccessOf(stage: StageName): Access {
 // wiki checkout (null when the job has none, `hasWiki` false) as the stage's
 // access allows, and the code globs, relative to the code checkout, it may
 // commit there: any code path, but none for a merger stage.
-function commitScopeOf(stage: StageName, hasWiki: boolean): PathScope {
+function commitScopeOf(stage: Stage, hasWiki: boolean): PathScope {
   const allowed: string[] = [];
   if (STAGE_ROLES[stage] !== "merger") {
     allowed.push("**");
@@ -209,7 +169,7 @@ function byName(a: string, b: string): -1 | 0 | 1 {
 function boundaryOf(
   cfg: Config,
   issue: number,
-  stage: StageName,
+  stage: Stage,
   from: EnvSource,
 ): Boundary {
   const role = STAGE_ROLES[stage];
@@ -237,10 +197,8 @@ export {
   codeAccessOf,
   commitScopeOf,
   commitsOf,
-  heldToLimits,
-  recordedBudgetOf,
+  IMPLEMENTOR_AGENT,
   rolesOf,
-  SPEC_AGENT,
   STAGE_ROLES,
   STAGE_WIKI_ACCESS,
 };

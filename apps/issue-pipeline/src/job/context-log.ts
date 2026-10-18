@@ -9,8 +9,7 @@
 // knows the line's layout.
 
 import path from "node:path";
-import type { Role } from "../workflow/types.ts";
-import type { ContextStop } from "./context-watch.ts";
+import type { ModelRole } from "../config.ts";
 import type { Control } from "./control.ts";
 import { appendRunLine } from "./run-log.ts";
 import type { JobStatus, StatusFile } from "./status.ts";
@@ -19,23 +18,21 @@ import { ZERO_USAGE } from "./token-usage.ts";
 
 type LaunchRecord = StatusFile["launches"][number];
 
-// How a session ended as its launch saw it: its result, or a handoff.
-type SessionEnded = "ok" | "failed" | "handoff";
+// How a session ended as its launch saw it: its result.
+type SessionEnded = "ok" | "failed";
 
-// The steers the job sent a session: the context watch's at the soft limit
-// (context-watch.ts), and those through the steer socket, the watchdog's or
-// one sent by hand with `--steer`.
+// The steers the job sent a session through the steer socket, the
+// watchdog's or one sent by hand with `--steer`.
 interface Steers {
-  context: number;
   socket: number;
 }
 
-// What the launch knows of a session as it ends: its role, agent, model and
-// end, its steers, the code checkout's head as it ended, and for a session
+// What the launch knows of a session as it ends: its model role, agent,
+// model and end, its steers, the code checkout's head as it ended, and for a session
 // that can't commit, the head it ran on, which it reviewed (null for a
 // writer, and either is null with no head to read).
 interface SessionEnd {
-  budgetRole: Role;
+  role: ModelRole;
   agent: string;
   model: string;
   ended: SessionEnded;
@@ -52,9 +49,8 @@ interface ContextLine {
   stage: string;
   key: string;
   session: string | null;
-  resumed: boolean | null;
   job: string;
-  role: Role;
+  role: ModelRole;
   agent: string;
   model: string;
   ended: SessionEnded | "killed" | "unrecorded";
@@ -65,7 +61,6 @@ interface ContextLine {
   firstContext: number | null;
   turns: number;
   usage: Usage;
-  contextStop: ContextStop | null;
   steers: Steers;
   headSha: string | null;
   reviewedSha: string | null;
@@ -80,26 +75,17 @@ interface ContextJob {
 // What a line takes from the session's launch record.
 type Measures = Pick<
   ContextLine,
-  | "session"
-  | "resumed"
-  | "peakContext"
-  | "contextTokens"
-  | "firstContext"
-  | "turns"
-  | "usage"
-  | "contextStop"
+  "session" | "peakContext" | "contextTokens" | "firstContext" | "turns" | "usage"
 >;
 
 // What a session with no launch record measured: nothing.
 const UNRECORDED: Measures = {
   session: null,
-  resumed: null,
   peakContext: 0,
   contextTokens: 0,
   firstContext: null,
   turns: 0,
   usage: ZERO_USAGE,
-  contextStop: null,
 };
 
 // The line for session `key` of `job` at its stage, measured as its
@@ -118,13 +104,11 @@ function contextLineOf(
   } else {
     measured = {
       session: launch.session && path.basename(launch.session),
-      resumed: launch.resumed,
       peakContext: launch.peakContext,
       contextTokens: launch.contextTokens,
       firstContext: launch.firstContext,
       turns: launch.turns,
       usage: launch.usage,
-      contextStop: launch.contextStop,
     };
   }
   if (job.stopping) {
@@ -136,9 +120,8 @@ function contextLineOf(
     stage: job.stage,
     key,
     session: measured.session,
-    resumed: measured.resumed,
     job: job.id,
-    role: end.budgetRole,
+    role: end.role,
     agent: end.agent,
     model: end.model,
     ended,
@@ -147,7 +130,6 @@ function contextLineOf(
     firstContext: measured.firstContext,
     turns: measured.turns,
     usage: measured.usage,
-    contextStop: measured.contextStop,
     steers: end.steers,
     headSha: end.headSha,
     reviewedSha: end.reviewedSha,

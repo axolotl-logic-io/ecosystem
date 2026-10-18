@@ -1,9 +1,7 @@
 // How a running stage job is controlled from outside: its live pi sessions
 // by launch key and its live ops children, the local socket that steers the
 // sessions (`job.mjs --steer`), takes its writer sessions' push requests
-// (`pipeline_commit`) and checks a session's reply before it ends
-// (`structured_output`, for a session whose role registered a check), and
-// the stop that SIGTERM or SIGINT begins. The stop
+// (`pipeline_commit`), and the stop that SIGTERM or SIGINT begins. The stop
 // aborts every live session, gives each STOP_GRACE_MS to exit and then kills
 // its process group, and sends SIGTERM to the process group of every ops
 // child live at that moment, and SIGKILL to one that hasn't exited within
@@ -18,17 +16,10 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import { endGroup } from "../process-group.ts";
-import type {
-  PushReply,
-  ReplyCheckReply,
-  SteerReply,
-} from "./control-protocol.ts";
+import type { PushReply, SteerReply } from "./control-protocol.ts";
 import { CONTROL_REQUEST } from "./control-protocol.ts";
 import type { OpsProcess } from "./ops-process.ts";
-import type { ReplyChecks } from "./reply-checks.ts";
-import { replyChecksOf } from "./reply-checks.ts";
 import type { RpcAnswer, RpcProcess } from "./rpc.ts";
-import type { ReplyCheck } from "./run-step.ts";
 import type { StopSignal } from "./status.ts";
 
 // How long a session has to exit after its abort, and an ops child or a
@@ -63,9 +54,6 @@ interface Control {
   // the stop, until it exits. A session registered once the stop began is
   // stopped; an ops child is not, since the stop runs its own ops.
   register: (live: LiveHandle) => void;
-  // Checks session `key`'s replies with `check` until the returned function
-  // is called (reply-checks.ts). A reply of a session with no check passes.
-  checkReplies: (key: string, check: ReplyCheck) => () => void;
   // The signal that began the stop, or null while the job runs on.
   stopping: () => StopSignal | null;
   // Stops listening, removes the socket and the signal handlers.
@@ -121,20 +109,18 @@ async function steerReply(
   return { ok: answer.success, error: answer.error };
 }
 
-// What the control's requests reach: the live sessions, the push and the
-// sessions' reply checks.
+// What the control's requests reach: the live sessions and the push.
 interface Served {
   launches: ReadonlyMap<string, LiveLaunch>;
   onPush: OnPush;
-  checks: ReplyChecks;
 }
 
-// The answer to one request line: a steer's, a push's or a reply check's.
+// The answer to one request line: a steer's or a push's.
 async function replyTo(
   text: string,
   served: Served,
-): Promise<SteerReply | PushReply | ReplyCheckReply> {
-  const { launches, onPush, checks } = served;
+): Promise<SteerReply | PushReply> {
+  const { launches, onPush } = served;
   let request: unknown = null;
   try {
     request = JSON.parse(text);
@@ -151,8 +137,6 @@ async function replyTo(
       return await steerReply(launches, data.key, data.message);
     case "push":
       return onPush(data.key);
-    case "check-reply":
-      return await checks.answer(data.key, data.reply);
     default:
       return unreachable(data);
   }
@@ -246,7 +230,6 @@ function liveSetOf(): LiveSet {
 async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
   const socket = socketPathOf(runDir);
   const live = liveSetOf();
-  const checks = replyChecksOf();
   let signal: StopSignal | null = null;
   function onSignal(received: StopSignal): void {
     if (signal !== null) {
@@ -259,7 +242,7 @@ async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
     process.on(name, onSignal);
   }
   const server = net.createServer((connection: net.Socket): void =>
-    serve(connection, { launches: live.sessions, onPush, checks }),
+    serve(connection, { launches: live.sessions, onPush }),
   );
   fs.mkdirSync(path.dirname(socket), { recursive: true });
   fs.rmSync(socket, { force: true });
@@ -267,7 +250,6 @@ async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
   return {
     socket,
     register: (launch: LiveHandle): void => live.add(launch, signal !== null),
-    checkReplies: checks.add,
     stopping: (): StopSignal | null => signal,
     close: (): void => {
       for (const name of SIGNALS) {

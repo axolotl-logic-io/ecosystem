@@ -1,12 +1,14 @@
 // A stage job's status file, `job.json` in the issue's run folder. While the
-// job runs it holds the job's pid, id, issue, the stage it started at and the
-// one it is at now (#424: a role's `next` end moves it on), lane, start time
-// and steer socket, a record of every launch it started (src/job/launch-record.ts),
-// and for a stage that runs a role, each step of the role's run (#301). On
-// exit it holds the job's outcome, which notes a sweep that deferred its
-// issue on a transient provider error for the orchestrator's backoff, the
-// error of a claim that failed, the uncommitted paths its checkout dropped (lostChanges) and the patches that
-// saved them (droppedPatches, relative to the run folder, #369). Each change rewrites
+// job runs it holds the pipeline's version (`pipelineVersion: 2`, which a
+// file the installed version wrote lacks, so its overlapping stage names
+// are never taken for this pipeline's), the job's pid, id, issue, the stage
+// it started at and the one it is at now, lane, start time and steer socket,
+// and a record of every launch it started (src/job/launch-record.ts). On
+// exit it holds the job's outcome: how the role's stage ended, whether the
+// issue deferred on a transient provider or transport error for the
+// orchestrator's backoff, the error of a claim that failed, the uncommitted
+// paths its checkout dropped (lostChanges) and the patches that saved them
+// (droppedPatches, relative to the run folder, #369). Each change rewrites
 // the whole file atomically, so a reader never sees part of one; a write that
 // fails is reported on stderr and the job goes on. This module alone knows
 // the file's name and layout.
@@ -15,51 +17,53 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
-import type { ContextStop } from "./context-watch.ts";
 import type {
   LaunchOutcome,
   LaunchPush,
   LaunchRecord,
 } from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
-import type { StepReport } from "./step-report.ts";
-import type { Usage } from "./token-usage.ts";
 
 const STATUS_FILE = "job.json";
+// The pipeline version a job of this pipeline records in its file.
+const PIPELINE_VERSION = 2;
 const SIGNAL = z.enum(["SIGTERM", "SIGINT"]);
+// How a finished job's stage ended: a role's end (src/job/role-context.ts),
+// or "unclaimed" when its claim didn't pass.
+const JOB_END = z.enum([
+  "next",
+  "stop",
+  "ask",
+  "wait",
+  "deferred",
+  "unclaimed",
+]);
 const JOB_OUTCOME = z.discriminatedUnion("kind", [
-  // rateLimited: the issue deferred on a model provider's rate limit or a
-  // transport error reaching it (src/workflow/stages/rate-limit.ts); absent before it was recorded.
-  // claimError: the error of the issue's claim, when the claim failed; absent
-  // when it passed. The orchestrator stops an issue on it once it repeats
-  // (src/orchestrator/claim-failures.ts).
+  // end: how the stage ended; absent from a file the installed version
+  // wrote. rateLimited: the issue deferred on a model provider's rate limit
+  // or a transport error reaching it (end "deferred"). claimError: the error
+  // of the issue's claim, when the claim failed; absent when it passed. The
+  // orchestrator stops an issue on it once it repeats.
   z.object({
     kind: z.literal("finished"),
+    end: JOB_END.optional(),
     rateLimited: z.boolean().optional(),
     claimError: z.string().optional(),
   }),
   z.object({ kind: z.literal("stopped"), signal: SIGNAL }),
   z.object({ kind: z.literal("failed"), error: z.string() }),
 ]);
-// A step of a role's run (src/job/runner.ts); null fields while it runs.
-const STEP = z.object({
-  at: z.string(),
-  effect: z.enum(["op", "check", "session", "sessions", "end"]),
-  name: z.string(),
-  startedAt: z.string(),
-  endedAt: z.string().nullable(),
-  result: z.string().nullable(),
-});
 const STATUS = z.object({
   version: z.literal(1),
+  // 2 for this pipeline's jobs; absent from the installed version's files.
+  pipelineVersion: z.literal(PIPELINE_VERSION).optional(),
   pid: z.number(),
   // The job's id; missing from a file written before it was recorded.
   id: z.string().optional(),
   issue: z.number(),
   // The stage the job started at (its `--stage`).
   stage: z.string(),
-  // The stage the job is at now; missing from a file written before #424,
-  // whose job never left the stage it started at.
+  // The stage the job is at now: the stage its role's `next` end saved.
   currentStage: z.string().optional(),
   lane: z.string().nullable(),
   startedAt: z.string(),
@@ -69,10 +73,10 @@ const STATUS = z.object({
   launches: z.array(LAUNCH),
   lostChanges: z.array(z.string()).optional(),
   droppedPatches: z.array(z.string()).optional(),
-  steps: z.array(STEP).optional(),
 });
 
 type StopSignal = z.infer<typeof SIGNAL>;
+type JobEnd = z.infer<typeof JOB_END>;
 type JobOutcome = z.infer<typeof JOB_OUTCOME>;
 type StatusFile = z.infer<typeof STATUS>;
 
@@ -87,22 +91,12 @@ interface JobInfo {
   socket: string;
 }
 
-// A launch as it starts: a pi session with its file, or an ops child, the
-// usage it starts from (a resumed session's) and its token budget (or null).
+// A launch as it starts: a pi session with its file, or an ops child.
 interface LaunchStart {
   key: string;
   kind: "session" | "ops";
   pid: number | null;
   session: string | null;
-  resumed: boolean;
-  usage: Usage;
-  tokenBudget: number | null;
-}
-
-// Where an interrupted session can carry on: its file and what it spent.
-interface ResumePoint {
-  session: string;
-  usage: Usage;
 }
 
 // The job's status file, kept current as the job reports what happens.
@@ -113,15 +107,11 @@ interface JobStatus {
   record: (key: string, record: unknown) => void;
   // Launch `key`'s process ended.
   ended: (key: string) => void;
-  // Writer session `key` was stopped at the hard context limit.
-  contextStopped: (key: string, stop: ContextStop) => void;
   // The job pushed `push` for session `key`'s commits.
   pushed: (key: string, push: LaunchPush) => void;
-  // Launch `key`'s result went back to the sweep: sets its `outcome`.
+  // Launch `key`'s result went back to the role: sets its `outcome`.
   settled: (key: string, outcome: LaunchOutcome) => void;
-  // A role's step started, or the step it last started ended.
-  step: (step: StepReport) => void;
-  // The job moved on to `stage`, in the same job.
+  // The job saved the issue at `stage`.
   moved: (stage: string) => void;
   // Launch `key`'s record as it stands, or null with none.
   launch: (key: string) => LaunchRecord | null;
@@ -191,23 +181,12 @@ function withPush(launch: LaunchRecord, push: LaunchPush): LaunchRecord {
   return { ...launch, pushes: [...launch.pushes, push] };
 }
 
-// `steps` with `step` added, in place of the last step when that one hasn't
-// ended: a step's end replaces its start.
-function withStep(
-  steps: readonly StepReport[],
-  step: StepReport,
-): StepReport[] {
-  if (steps.at(-1)?.endedAt === null) {
-    return [...steps.slice(0, -1), step];
-  }
-  return [...steps, step];
-}
-
 // Opens a fresh status file for the job in `runDir` and writes it.
 function openStatus(runDir: string, job: JobInfo): JobStatus {
   const file = statusFileOf(runDir);
   const status: StatusFile = {
     version: 1,
+    pipelineVersion: PIPELINE_VERSION,
     pid: process.pid,
     ...job,
     currentStage: job.stage,
@@ -236,14 +215,10 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
     record: (key: string, record: unknown): void =>
       update(key, (launch) => withRecord(launch, record)),
     ended: (key: string): void => update(key, (launch) => launch),
-    contextStopped: (key: string, contextStop: ContextStop): void =>
-      update(key, (launch) => ({ ...launch, contextStop })),
     pushed: (key: string, push: LaunchPush): void =>
       update(key, (launch) => withPush(launch, push)),
     settled: (key: string, outcome: LaunchOutcome): void =>
       update(key, (launch) => ({ ...launch, outcome })),
-    step: (step: StepReport): void =>
-      set({ steps: withStep(status.steps ?? [], step) }),
     moved: (stage: string): void => set({ currentStage: stage }),
     launch: (key: string): LaunchRecord | null =>
       status.launches.find((l: LaunchRecord): boolean => l.key === key) ?? null,
@@ -255,24 +230,11 @@ function openStatus(runDir: string, job: JobInfo): JobStatus {
   };
 }
 
-// Where the earlier job in `runDir` left each interrupted session: a session
-// launch with no outcome and no stop at the hard context limit whose file is
-// still on disk. Nothing, when there is no earlier file or it is malformed.
-function resumePoints(runDir: string): (key: string) => ResumePoint | null {
-  const earlier = readStatus(runDir);
-  return (key: string): ResumePoint | null => {
-    const launch = earlier?.launches.find((l) => l.key === key);
-    if (
-      launch?.kind !== "session" ||
-      launch.outcome !== null ||
-      launch.contextStop !== null ||
-      launch.session === null ||
-      !fs.existsSync(launch.session)
-    ) {
-      return null;
-    }
-    return { session: launch.session, usage: launch.usage };
-  };
+// Whether `status` is a job of this pipeline. A file the installed version
+// wrote names stages (implement, review, merge) that overlap this
+// pipeline's, so only the version marker says a job is this pipeline's.
+function isPipelineJob(status: StatusFile): boolean {
+  return status.pipelineVersion === PIPELINE_VERSION;
 }
 
 // The stage the job is at now, as its file names it.
@@ -286,11 +248,18 @@ function socketOf(runDir: string): string | null {
 }
 
 export type {
+  JobEnd,
   JobOutcome,
   JobStatus,
   LaunchStart,
-  ResumePoint,
   StatusFile,
   StopSignal,
 };
-export { currentStageOf, openStatus, readStatus, resumePoints, socketOf };
+export {
+  currentStageOf,
+  isPipelineJob,
+  openStatus,
+  PIPELINE_VERSION,
+  readStatus,
+  socketOf,
+};

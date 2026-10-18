@@ -81,6 +81,14 @@ const MERGE_RETURN = z.object({
   codeMerged: z.boolean(),
 });
 
+// The issue's PR as GitHub says it merged: its number and the merge
+// commit's oid. Only the claim sets it, from GitHub, never from a legacy
+// state or a reply; set, the code is in the base and only wiki work remains.
+const CODE_MERGED = z.object({
+  pr: z.number().int().positive(),
+  sha: z.string().min(1),
+});
+
 const ZERO_COUNTS = { conflictFixes: 0, syncs: 0 };
 
 const COUNTS = z.object({
@@ -113,6 +121,7 @@ const ISSUE_STATE = z.object({
   mergeReturn: MERGE_RETURN.nullable().catch(null),
   // The revision the merge job merged and published.
   merged: REVISION.nullable().catch(null),
+  codeMerged: CODE_MERGED.nullable().catch(null),
   counts: COUNTS.catch(ZERO_COUNTS),
   log: z.array(z.string()).catch([]),
 });
@@ -121,6 +130,7 @@ type IssueState = z.infer<typeof ISSUE_STATE>;
 type Revision = z.infer<typeof REVISION>;
 type Finding = z.infer<typeof FINDING>;
 type MergeReturn = z.infer<typeof MERGE_RETURN>;
+type CodeMerged = z.infer<typeof CODE_MERGED>;
 
 interface StoredState {
   id: number | null;
@@ -178,6 +188,7 @@ function newIssueState(number: number): IssueState {
     verifiedSha: null,
     mergeReturn: null,
     merged: null,
+    codeMerged: null,
     counts: { ...ZERO_COUNTS },
     log: [],
   };
@@ -348,7 +359,14 @@ function isStatus(value: unknown): value is Status {
   return STATUS.safeParse(value).success;
 }
 
-export type { Finding, IssueState, MergeReturn, Revision, StoredState };
+export type {
+  CodeMerged,
+  Finding,
+  IssueState,
+  MergeReturn,
+  Revision,
+  StoredState,
+};
 export {
   approvalHolds,
   FINDING,

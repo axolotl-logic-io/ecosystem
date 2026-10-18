@@ -6,7 +6,8 @@
 // never runs git or gh itself, and imports no other role's modules.
 
 import type { z } from "zod";
-import type { GherkinComment, IssueComment } from "../comments.ts";
+import type { IssueComment } from "../comments.ts";
+import type { GherkinComment } from "../gherkin-comment.ts";
 import type { Config, ModelRole } from "../config.ts";
 import type { Issue } from "../issue-context.ts";
 import type { Stage } from "../stages.ts";
