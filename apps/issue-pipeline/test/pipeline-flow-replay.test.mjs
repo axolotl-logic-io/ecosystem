@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { pageTextOf } from "./brain-test-kit.mjs";
-import { readWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
+import { readWorld, withWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
 import {
   ISSUE,
   refIn,
@@ -18,8 +18,8 @@ import {
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
 import {
-  createReplayFlow,
   merges,
+  prepareReplayFlow,
   replaceState,
   replayFacts,
   sessions,
@@ -37,6 +37,7 @@ let flow;
 let interruptedWorld;
 /** @type {string | null} */
 let originalWiki;
+let replayReady = false;
 
 /** @param {boolean} [checked] */
 function expectedReplay(checked = true) {
@@ -66,14 +67,44 @@ function expectedReplay(checked = true) {
 
 before(() => {
   flow = setUpFlow();
-  ({ interruptedWorld, originalWiki } = createReplayFlow(flow));
+  originalWiki = prepareReplayFlow(flow);
 });
 beforeEach(() => {
+  if (!replayReady) {
+    return;
+  }
   writeWorld(flow.ghDir, structuredClone(interruptedWorld));
   fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
   scriptPi(flow, { reviewer: [INTERRUPTED] });
 });
 after(() => stopJobs(flow));
+
+/** @param {string} stage @param {string} action @returns {string} */
+function completeSetupStage(stage, action) {
+  const result = runStage(flow, stage);
+  if (action === "fail-ci") {
+    withWorld(flow.ghDir, (world) => {
+      world.failedHead = savedState(world).hardened.code;
+    });
+  }
+  if (action === "snapshot") {
+    interruptedWorld = readWorld(flow.ghDir);
+    replayReady = true;
+  }
+  return result.end;
+}
+
+for (const step of [
+  { stage: "author", end: "next", action: "none" },
+  { stage: "implement", end: "next", action: "none" },
+  { stage: "review", end: "next", action: "fail-ci" },
+  { stage: "merge", end: "wait", action: "none" },
+  { stage: "merge", end: "deferred", action: "snapshot" },
+]) {
+  test(`replay setup ${step.stage} reaches ${step.end} within its own deadline`, () => {
+    assert.equal(completeSetupStage(step.stage, step.action), step.end);
+  });
+}
 
 test("the interrupted own merge saved original hardening/integration and its actual merge receipt, without publishing or closing", () => {
   const state = savedState(interruptedWorld);

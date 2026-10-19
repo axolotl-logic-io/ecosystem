@@ -8,11 +8,14 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
+import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
 import { ISSUE, SLUG } from "./pipeline-flow-kit.mjs";
 
-// A tick's orchestrator, and each job it starts, is given this long to end.
-// The slowest flow job measured took about 5 s.
-const RUN_MS = 60_000;
+// Bound each stage, not a whole multi-stage fixture. Verification of #95
+// measured stages exceeding the old 60 s bound (an isolated author alone
+// took 38 s). Allow startup/IO contention below the unchanged 180 s test
+// timeout; a timed-out stage must be killed before another stage can start.
+const RUN_MS = 120_000;
 const POLL_MS = 50;
 // A flow ends within this many ticks, or the test fails.
 const MAX_TICKS = 12;
@@ -60,7 +63,7 @@ async function untilExited(pids, deadline) {
   if (!pids.some(isLive)) {
     return;
   }
-  if (Date.now() > deadline) {
+  if (performance.now() >= deadline) {
     throw new Error(`jobs ${pids.join(", ")} ran past ${RUN_MS} ms`);
   }
   await delay(POLL_MS);
@@ -74,6 +77,7 @@ async function untilExited(pids, deadline) {
  * started and the tick's orchestrator log lines
  */
 async function tick(flow) {
+  const deadline = performance.now() + RUN_MS;
   const logFile = path.join(flow.root, "runs", SLUG, "orchestrator.log");
   const before = jsonLines(logFile).length;
   const known = new Set(flow.pids);
@@ -96,7 +100,14 @@ async function tick(flow) {
   const fresh = startsOf(flow).filter(({ pid }) => !known.has(pid));
   const pids = fresh.map(({ pid }) => pid);
   flow.pids.push(...pids);
-  await untilExited(pids, Date.now() + RUN_MS);
+  const pending = new Set(pids);
+  endsWithTest(() => {
+    for (const pid of pending) {
+      killGroup(pid);
+    }
+  });
+  await untilExited(pids, deadline);
+  pending.clear();
   return {
     started: fresh.map(({ stage }) => stage),
     log: jsonLines(logFile).slice(before),

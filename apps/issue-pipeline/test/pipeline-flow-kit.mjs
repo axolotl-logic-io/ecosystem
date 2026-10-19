@@ -203,6 +203,9 @@ function setUpFlow() {
   for (const dir of [home, root, bin, agents, piDir]) {
     fs.mkdirSync(String(dir), { recursive: true });
   }
+  // Fakes use /usr/bin/env node. Resolve the test's exact runtime, not an
+  // ambient version-manager shim that re-runs discovery on every gh call.
+  fs.symlinkSync(process.execPath, path.join(String(bin), "node"));
   const where = { tmp, home: String(home), root: String(root) };
   assertTemporary(where);
   installBuild(where.root, agents);

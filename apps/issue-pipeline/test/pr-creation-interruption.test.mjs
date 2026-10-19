@@ -73,12 +73,16 @@ for (const mode of [
   "interrupted-create",
   "failed-save",
 ]) {
-  test(`${mode}: no writer/code push after external merge; restart discovers exact PR and recovery retains work`, () => {
-    const flow = setUpFlow();
+  /** @type {import("./pipeline-flow-kit.mjs").Flow} */
+  let flow;
+  test(`${mode}: author establishes the create-interruption fixture`, () => {
+    flow = setUpFlow();
     observeOps(flow);
     openFlowIssue(flow, "alice", "Greet politely", "Say hello.");
     scriptPi(flow, { author: [authorTurn(GHERKIN, true)] });
     assert.equal(runStage(flow, "author").end, "next");
+  });
+  test(`${mode}: no writer/code push after external merge and recovery retains work`, () => {
     interruptCreation(flow, mode);
     assert.equal(runStage(flow, "implement").end, "stop");
     const captured = JSON.parse(
@@ -107,6 +111,12 @@ for (const mode of [
       fs.readFileSync(path.join(restored, "dirty.txt"), "utf8"),
       "exact interrupted dirty work\n",
     );
+  });
+  test(`${mode}: restart discovers the exact externally merged PR without a code push`, () => {
+    const captured = JSON.parse(
+      fs.readFileSync(path.join(flow.root, "interruption.json"), "utf8"),
+    );
+    const restored = path.join(flow.tmp, "restored");
     prepareRestart(flow);
     assert.equal(runStage(flow, "implement").end, "stop");
     const resumed = savedState(readWorld(flow.ghDir));
