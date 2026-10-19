@@ -90,6 +90,20 @@ for (const [name, builtinProviders] of [
     [...CACHE.discovery.builtinProviders, ...CACHE.discovery.builtinProviders],
   ],
   [
+    "ambiguous duplicate model",
+    CACHE.discovery.builtinProviders.map((provider) => ({
+      ...provider,
+      models: [...provider.models, ...provider.models],
+    })),
+  ],
+  [
+    "unsupported cached API",
+    CACHE.discovery.builtinProviders.map((provider) => ({
+      ...provider,
+      api: "unknown",
+    })),
+  ],
+  [
     "wrong provider",
     CACHE.discovery.builtinProviders.map((provider) => ({
       ...provider,

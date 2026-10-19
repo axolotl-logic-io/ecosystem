@@ -154,6 +154,34 @@ test("a second install changes nothing", () => {
   assert.equal(fs.existsSync(`${root}-backups`), false);
 });
 
+test("dry run preserves installed identity, operator state and histories byte for byte", () => {
+  const files = fs.readdirSync(root, { recursive: true }).map(String).sort();
+  const snapshot = files.map((file) => {
+    const target = path.join(root, file);
+    if (fs.statSync(target).isDirectory()) {
+      return [file, null];
+    }
+    return [file, fs.readFileSync(target).toString("hex")];
+  });
+  const result = install("--dry-run");
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    fs.readdirSync(root, { recursive: true }).map(String).sort(),
+    files,
+  );
+  assert.deepEqual(
+    files.map((file) => {
+      const target = path.join(root, file);
+      if (fs.statSync(target).isDirectory()) {
+        return [file, null];
+      }
+      return [file, fs.readFileSync(target).toString("hex")];
+    }),
+    snapshot,
+  );
+  assert.equal(fs.existsSync(`${root}-backups`), false);
+});
+
 test("refuses to install from inside the pipeline root", () => {
   const inside = path.join(root, "work/x");
   fs.mkdirSync(inside, { recursive: true });

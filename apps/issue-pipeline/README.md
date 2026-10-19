@@ -133,7 +133,7 @@ injection. Privileged calls receive only their selected `GH_TOKEN`; diagnostics
 redact it. Git uses a non-storing per-call helper, no personal/global helper,
 HTTPS repository/wiki allow-listing and no redirects. Local test origins receive
 no credentials. Submodule authentication is limited to the configured repo/wiki.
-No installer or release workflow change is implied. Keep the operator file out
+The installer never provisions operator credentials; release workflows remain unchanged. Keep the operator file out
 of `apps/web/` and its app-local env files: Next/Drizzle run from that folder,
 and web tooling that uses `--env-file` names its own app-local files. Never add
 the operator file to a build/deploy `--env-file` invocation or export it into a

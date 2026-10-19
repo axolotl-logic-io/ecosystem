@@ -117,6 +117,13 @@ for (const [name, state] of [
   ["missing native data", {}],
   ["disabled compaction", { model: MODEL, autoCompactionEnabled: false }],
   [
+    "unsupported native API",
+    {
+      model: { ...MODEL, api: "anthropic-messages" },
+      autoCompactionEnabled: true,
+    },
+  ],
+  [
     "changed window",
     {
       model: { ...MODEL, contextWindow: 300_000 },

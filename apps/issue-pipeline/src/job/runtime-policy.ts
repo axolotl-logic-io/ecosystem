@@ -10,7 +10,6 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const MODEL_REFERENCE =
   /^(?<provider>[^/:]+)\/(?<id>.+?)(?::(?:off|minimal|low|medium|high|xhigh|max))?$/u;
 const TRAILING_SLASHES = /\/+$/u;
-const API_VERSION = /\/v1$/u;
 const SAFE_INTEGER = z
   .number()
   .int()
@@ -92,11 +91,7 @@ const NATIVE_STATE = z.object({
     id: z.string(),
     contextWindow: SAFE_INTEGER.positive(),
     baseUrl: z.string(),
-    api: z.enum([
-      "openai-responses",
-      "openai-completions",
-      "anthropic-messages",
-    ]),
+    api: z.enum(["openai-responses", "openai-completions"]),
   }),
   autoCompactionEnabled: z.literal(true),
 });
@@ -156,10 +151,7 @@ function stateRefusal(
     return INVALID_STATE;
   }
   const { model } = parsed.data;
-  let expectedEndpoint = endpoint.replace(TRAILING_SLASHES, "");
-  if (model.api === "anthropic-messages") {
-    expectedEndpoint = expectedEndpoint.replace(API_VERSION, "");
-  }
+  const expectedEndpoint = endpoint.replace(TRAILING_SLASHES, "");
   if (
     model.provider !== policy.provider ||
     model.id !== policy.id ||
