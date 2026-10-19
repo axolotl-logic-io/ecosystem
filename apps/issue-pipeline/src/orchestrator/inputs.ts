@@ -5,10 +5,10 @@
 // trustedInputsHash counts only the title, the body and the comments of
 // allowed users who are still collaborators, never a visitor's comment or
 // one the pipeline wrote, so only trusted human input moves the current
-// revision. Only the pipeline account's signed Gherkin comment counts.
+// revision. Only the merge identity's provenance-checked Gherkin comment counts.
 
+import { AFTER_MARK } from "../comment-marks.ts";
 import type { IssueComment } from "../comments.ts";
-import { AFTER_MARK } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { gherkinCommentOf } from "../gherkin-comment.ts";
 import type { Issue } from "../issue-context.ts";

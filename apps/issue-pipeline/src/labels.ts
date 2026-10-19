@@ -56,7 +56,7 @@ function labelNames(listed: unknown): string[] {
 function ensureLabels(cfg: Config): void {
   const existing = new Set(
     labelNames(
-      ghJson(cfg, [
+      ghJson(cfg, "merge", [
         "label",
         "list",
         "-R",
@@ -73,6 +73,7 @@ function ensureLabels(cfg: Config): void {
     if (!existing.has(label.name)) {
       gh(
         cfg,
+        "merge",
         [
           "label",
           "create",
@@ -100,6 +101,7 @@ function setLabels(
   for (const name of remove) {
     gh(
       cfg,
+      "merge",
       [
         "api",
         "-X",
@@ -112,7 +114,7 @@ function setLabels(
   }
   if (add.length > 0) {
     const fields = add.flatMap((name) => ["-f", `labels[]=${name}`]);
-    gh(cfg, ["api", "-X", "POST", endpoint, "--silent", ...fields]);
+    gh(cfg, "merge", ["api", "-X", "POST", endpoint, "--silent", ...fields]);
   }
 }
 
@@ -125,7 +127,10 @@ function clearStopLabels(
   const have =
     names ??
     labelNames(
-      ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${number}/labels`]),
+      ghJson(cfg, "merge", [
+        "api",
+        `repos/${cfg.repo}/issues/${number}/labels`,
+      ]),
     );
   setLabels(cfg, number, [], have.filter(isStopLabel));
 }

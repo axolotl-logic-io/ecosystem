@@ -16,7 +16,10 @@ const { trustedInputsHash } = await import("../src/issue-context.ts");
 const { testConfig } = await import("./config-test-kit.mjs");
 
 const gh = installFakeGh();
-gh.reply([{ when: "collaborators/lapsed", code: 1, keep: true }]);
+gh.reply([
+  { when: "collaborators/lapsed", code: 1, keep: true },
+  { when: "collaborators/owner", stdout: "", keep: true },
+]);
 const { cfg } = testConfig({ allowedUsers: ["owner", "lapsed"] });
 const ISSUE = { title: "Title", body: "Body", user: { login: "owner" } };
 const NUMBER = 7;
@@ -64,9 +67,9 @@ test("an allowed collaborator's comment or edit changes it", () => {
   );
 });
 
-test("the account's unsigned comment counts as its person's answer", () => {
+test("a bot unsigned comment never counts as a human answer", () => {
   const answer = comment("pipeline-bot", "Answer: use the left panel.");
-  assert.notEqual(trustedInputsHash(cfg, ISSUE, [OWNER, answer]), base);
+  assert.equal(trustedInputsHash(cfg, ISSUE, [OWNER, answer]), base);
 });
 
 test("an allowed user who is no longer a collaborator doesn't count", () => {

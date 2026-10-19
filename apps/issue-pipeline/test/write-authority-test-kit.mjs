@@ -21,6 +21,25 @@ fs.writeFileSync(
   `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
+const tokenIdentity = /^fake-pipeline-(dev|merge)--(.+)$/.exec(process.env.GH_TOKEN ?? "");
+if (!tokenIdentity) throw new Error("missing fake credential");
+if (args[0] === "api" && args[1] === "user") { process.stdout.write(tokenIdentity[2]); process.exit(0); }
+let expectedIdentity = "merge";
+if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(args[1])) expectedIdentity = "dev";
+if (tokenIdentity[1] !== expectedIdentity) throw new Error("wrong fake credential identity");
+
+if (args[0] === "api" && args[1] === "graphql") {
+  const id = args.find(arg => arg.startsWith("id="))?.slice(3);
+  const stem = ${JSON.stringify(states)} + "/" + id.split(":")[0];
+  const file = stem + ".json";
+  const comments = fs.readFileSync(file, "utf8").split("\\n").filter(Boolean).map(line => JSON.parse(line));
+  const comment = comments.find(item => item.node_id === id);
+  if (!comment) throw new Error("unmatched provenance");
+  const node = { databaseId: comment.id, body: comment.body, author: comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at ?? comment.created_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor };
+  process.stdout.write(JSON.stringify({ data: { node } }));
+  if (fs.existsSync(file + ".next")) fs.renameSync(file + ".next", file);
+  process.exit(0);
+}
 const endpoint = args.find(arg => arg.startsWith("repos/"));
 let repo = endpoint?.split("/").slice(1, 3).join("/");
 if (args.includes("-R")) repo = args[args.indexOf("-R") + 1];
@@ -38,7 +57,7 @@ if (args[0] === "api" && args.includes("-X") && (postComment || patchState || po
   const field = args.find(arg => arg.startsWith("body="));
   if (patchState && (field?.startsWith("body=<!-- agent-pipeline:state") || field?.startsWith("body=**🤖 issue-pipeline · state**"))) {
     const body = field.slice(5);
-    fs.writeFileSync(stem + ".json", JSON.stringify({ id: 1, user: { login: "bot" }, created_at: "2026-10-18T00:00:00Z", body }));
+    fs.writeFileSync(stem + ".json", JSON.stringify({ id: 1, node_id: repo.replaceAll("/", "__") + ":1", lastEditedAt: null, editor: null, user: { login: "bot" }, created_at: "2026-10-18T00:00:00Z", body }));
   }
   process.stdout.write("99"); process.exit(0);
 }
@@ -57,7 +76,7 @@ if (args[0] !== "api" || args.includes("-X") || !endpoint?.endsWith("/comments?p
 }
 const file = ${JSON.stringify(states)} + "/" + endpoint.split("/").slice(1, 3).join("__") + ".json";
 process.stdout.write(fs.readFileSync(file, "utf8"));
-if (fs.existsSync(file + ".next")) { fs.renameSync(file + ".next", file); }
+
 `,
   { mode: 0o755 },
 );
@@ -74,12 +93,15 @@ function saveAuthority(cfg, state, afterRead = false) {
   let text = "";
   if (state !== null) {
     text = commentLines([
-      githubComment({
-        id: 1,
-        created: "2026-10-17T12:00:00Z",
-        login: cfg.account,
-        body: `<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`,
-      }),
+      {
+        ...githubComment({
+          id: 1,
+          nodeId: `${cfg.repo.replaceAll("/", "__")}:1`,
+          created: "2026-10-17T12:00:00Z",
+          login: cfg.mergeAccount,
+          body: `<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`,
+        }),
+      },
     ]);
   }
   let file = path.join(states, `${cfg.repo.replaceAll("/", "__")}.json`);
@@ -119,14 +141,15 @@ function authorityCalls(cfg) {
 
 /** @param {Config} cfg @param {string[]} bodies @returns {void} */
 function saveAuthorityBodies(cfg, bodies) {
-  const comments = bodies.map((body, at) =>
-    githubComment({
+  const comments = bodies.map((body, at) => ({
+    ...githubComment({
       id: at + 1,
-      login: cfg.account,
+      nodeId: `${cfg.repo.replaceAll("/", "__")}:${at + 1}`,
+      login: cfg.mergeAccount,
       created: "2026-10-18T00:00:00Z",
       body,
     }),
-  );
+  }));
   fs.writeFileSync(
     path.join(states, `${cfg.repo.replaceAll("/", "__")}.json`),
     commentLines(comments),

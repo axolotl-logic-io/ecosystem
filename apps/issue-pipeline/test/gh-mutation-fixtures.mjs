@@ -66,7 +66,7 @@ function draftMutationReplies(issue, pr) {
 /** @param {number} issue @param {number} stateId @param {number | null} pr @param {readonly string[]} [stops] @returns {GhReply[]} */
 function claimMutationReplies(issue, stateId, pr, stops = []) {
   const replies = [
-    collaboratorReply("o/r", "bot"),
+    collaboratorReply("o/r", "alice"),
     ...commentWriteReplies("o/r", issue, [stateId]),
     ...labelReplies(
       "o/r",

@@ -113,11 +113,11 @@ test("state upsert retains genuine comment identity despite newer diagnostic mar
     assert.ok(patched[0]?.includes(`repos/${job.cfg.repo}/issues/comments/1`));
     assert.equal(readState(job.cfg, ISSUE).id, 1);
     assert.equal(readWriteState(job.cfg, ISSUE).stage, "stopped");
-    saveAuthorityBodies({ ...job.cfg, account: "outsider" }, [
+    saveAuthorityBodies({ ...job.cfg, mergeAccount: "outsider" }, [
       stateBody(ISSUE, state),
     ]);
     assert.throws(() => readWriteState(job.cfg, ISSUE));
-    assert.equal(readState(job.cfg, ISSUE).state, null);
+    assert.throws(() => readState(job.cfg, ISSUE));
     assert.equal(
       pipelineRole(job.cfg, {
         ...comment(stateBody(ISSUE, state)),

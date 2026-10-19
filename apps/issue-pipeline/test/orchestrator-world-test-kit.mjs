@@ -6,10 +6,11 @@
 // process checks are recorded fakes, so no stage job or model runs. A test
 // imports every src module through this kit, after it has set the pipeline
 // root: a module loaded first would fix the installed root for the run, so
-// the kit refuses to start unless the root is its own.
+
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 import { isolatedRoot as root } from "./isolated-root-test-kit.mjs";
 
@@ -52,7 +53,9 @@ if (seeded.status !== 0) {
 /** @type {string[][]} */
 const recordedSpawns = [];
 const fakeGh = installFakeGh();
-fakeGh.reply([]);
+fakeGh.reply([
+  { when: "api repos/o/r/collaborators/alice", stdout: "", keep: true },
+]);
 const { ghIsRead } = await import("../src/github.ts");
 const { STOPS } = await import("../src/stops.ts");
 const { loadConfig, paths } = await import("../src/config.ts");
@@ -71,7 +74,7 @@ function configWith(extra) {
   const file = path.join(root, `config-${fs.readdirSync(root).length}.json`);
   const base = {
     repo: "o/r",
-    account: ACCOUNT,
+    ...credentialConfig(ACCOUNT),
     allowedUsers: [ALLOWED],
     cloneUrl: path.join(root, "origin.git"),
     baseBranch: "integration",
@@ -178,6 +181,7 @@ function openWith(issues, others = []) {
     { when: "issue list", stdout: JSON.stringify(issues.map(row)) },
     ...others,
     ...issues.map(commentReply),
+    { when: "api repos/o/r/collaborators/alice", stdout: "", keep: true },
   ]);
 }
 

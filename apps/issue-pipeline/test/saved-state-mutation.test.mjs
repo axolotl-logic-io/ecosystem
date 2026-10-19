@@ -34,18 +34,11 @@ const LEGACY_NUMBER = 992;
 const LEGACY_PR = 47;
 const STATE_ID = 1;
 const LATEST_ID = 3;
+const NO_AUTHORITY = /no saved authority; stop for reconciliation/u;
+const LEGACY = /legacy pipeline state needs explicit reconciliation/u;
 const REFUSED = z.looseObject({
   ok: z.literal(false),
   error: z.string().min(1),
-});
-const WON = z.looseObject({
-  ok: z.literal(true),
-  state: z.looseObject({
-    pr: z.number().nullable(),
-    headSha: z.string().nullable(),
-    flows: z.unknown(),
-    lease: z.looseObject({ lane: z.string() }),
-  }),
 });
 const saved = v2State(NUMBER, {
   branch: `agent/issue-${NUMBER}`,
@@ -75,13 +68,13 @@ const refs = sh(`git -C ${root}/origin.git show-ref`);
 function authority(invalid, older = []) {
   const latest = githubComment({
     id: LATEST_ID,
-    login: cfg.account,
+    login: cfg.mergeAccount,
     created: "2026-10-18T01:00:00Z",
     body: `<!-- agent-pipeline:state\n${JSON.stringify(invalid)}\n-->`,
   });
   reply([
     openIssue(NUMBER),
-    collaboratorReply("o/r", "bot"),
+    collaboratorReply("o/r", "alice"),
     {
       when: `issues/${NUMBER}/comments?per_page`,
       stdout: commentLines([...older, latest, myClaim(2)]),
@@ -183,7 +176,7 @@ test("a latest malformed genuine state cannot fall back to an older valid state 
   }
 });
 
-test("checkpoint and release refuse genuinely absent state, while a genuine first claim initializes it", () => {
+test("checkpoint, release and claim refuse missing authority beside prior claims and local work", () => {
   const comments = { ...kit.commentsReply(NUMBER, [myClaim(2)]), keep: true };
   for (const op of ["save-state", "release", "ask"]) {
     reply([comments]);
@@ -210,9 +203,11 @@ test("checkpoint and release refuse genuinely absent state, while a genuine firs
     historyReply(NUMBER),
     ...claimMutationReplies(NUMBER, STATE_ID, null),
   ]);
-  const initial = WON.parse(askOps({ op: "claim", number: NUMBER, ...LANE }));
-  assert.equal(initial.state.pr, null);
-  assert.equal(initial.state.lease.lane, LANE.lane);
+  const initial = REFUSED.parse(
+    askOps({ op: "claim", number: NUMBER, ...LANE }),
+  );
+  assert.match(initial.error, NO_AUTHORITY);
+  assert.deepEqual(writes(), []);
   assert.equal(sh(`git -C ${wt} rev-parse HEAD`), local);
   assert.deepEqual(fs.readFileSync(index), indexBefore);
   assert.equal(
@@ -221,7 +216,7 @@ test("checkpoint and release refuse genuinely absent state, while a genuine firs
   );
 });
 
-test("an explicit genuine v1 claim preserves PR, head, lease and flows while reconciling the actual matching PR", () => {
+test("an explicit genuine v1 state cannot be adopted by a claim", () => {
   const headSha = commitOnOrigin(
     `agent/issue-${LEGACY_NUMBER}`,
     "legacy-work.txt",
@@ -238,26 +233,19 @@ test("an explicit genuine v1 claim preserves PR, head, lease and flows while rec
   };
   const comments = [stateComment(STATE_ID, legacy), myClaim(2)];
   reply([{ ...kit.commentsReply(LEGACY_NUMBER, comments), keep: true }]);
-  const migrated = readClaimState(
-    cfg,
-    LEGACY_NUMBER,
-    listComments(cfg, LEGACY_NUMBER),
+  assert.throws(
+    () => readClaimState(cfg, LEGACY_NUMBER, listComments(cfg, LEGACY_NUMBER)),
+    LEGACY,
   );
-  assert.equal(migrated?.pr, LEGACY_PR);
-  assert.equal(migrated?.headSha, headSha);
-  assert.deepEqual(migrated?.lease, legacy.lease);
-  assert.deepEqual(migrated?.flows, legacy.flows);
   reply([
     openIssue(LEGACY_NUMBER),
     { ...kit.commentsReply(LEGACY_NUMBER, comments), keep: true },
     prView(LEGACY_NUMBER, LEGACY_PR, { headRefOid: headSha }),
     ...claimMutationReplies(LEGACY_NUMBER, STATE_ID, LEGACY_PR),
   ]);
-  const claimed = WON.parse(
+  const refused = REFUSED.parse(
     askOps({ op: "claim", number: LEGACY_NUMBER, ...LANE }),
   );
-  assert.equal(claimed.state.pr, LEGACY_PR);
-  assert.equal(claimed.state.headSha, headSha);
-  assert.deepEqual(claimed.state.flows, legacy.flows);
-  assert.equal(claimed.state.lease.lane, LANE.lane);
+  assert.match(refused.error, LEGACY);
+  assert.deepEqual(writes(), []);
 });

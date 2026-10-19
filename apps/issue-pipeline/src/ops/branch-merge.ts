@@ -5,7 +5,8 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";
-import { OpsError, tail } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { tail } from "../process.ts";
 import { FULL_SHA } from "./merged-graph.ts";
 
 const REFUSAL_TAIL_LINES = 5;
@@ -37,7 +38,7 @@ function branchMerge(cfg: Config, head: string): BranchMerge {
     "-f",
     `head=${head}`,
   ];
-  const result = gh(cfg, args, { allowFail: true });
+  const result = gh(cfg, "merge", args, { allowFail: true });
   const { status, body = "" } = HTTP_RESPONSE.exec(result.stdout)?.groups ?? {};
   if (result.code !== 0 || status !== "201") {
     let outcome = `unconfirmed merge outcome (${status ?? "no HTTP status"})`;

@@ -5,7 +5,7 @@
 // or a security review that doesn't clear the merged result refuses, and
 // undefined lets the op go on.
 
-import { OpsError } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
 import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
 import { mergeAuthorization } from "../state.ts";

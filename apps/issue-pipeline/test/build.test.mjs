@@ -5,12 +5,14 @@
 // built orchestrator's --once exits 0 after a tick and 1 after one that
 // throws, and the built report names a missing --config. It builds into its
 // own folder, so it never races install.test.mjs, which builds dist/.
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFakeGh } from "./fake-gh.mjs";
 
 // The executables the build writes, which install.mjs copies.
@@ -29,7 +31,8 @@ const UNKNOWN_FLAG = /--nope/u;
 const NO_CONFIG = /--config must name a repo config file/u;
 // What the orchestrator prints when a tick throws, here because gh is logged
 // in as another account than the config's.
-const TICK_FAILED = /orchestrate: tick failed: gh is logged in as mallory/u;
+const TICK_FAILED =
+  /orchestrate: tick failed: credential login verification failed for merge/u;
 // The account the orchestrator's test config names.
 const ACCOUNT = "bot";
 // The variable that points ops at a pipeline root, here the temporary folder.
@@ -173,7 +176,7 @@ function orchestratorConfig() {
   const file = path.join(tmp, "repo.json");
   const config = {
     repo: "o/r",
-    account: ACCOUNT,
+    ...credentialConfig(ACCOUNT),
     allowedUsers: ["alice"],
     cloneUrl: origin,
     baseBranch: "integration",
@@ -209,7 +212,10 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   assert.ok(
     fakeGh.calls().some((call) => call.join(" ").startsWith("issue list")),
   );
-  fakeGh.reply([{ when: "api user", stdout: "mallory\n" }]);
+  const parsed = JSON.parse(fs.readFileSync(config, "utf8"));
+  parsed.credentialsEnvFile = credentialConfig("mallory").credentialsEnvFile;
+  fs.writeFileSync(config, JSON.stringify(parsed));
+  fakeGh.reply([]);
   const failed = once();
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, TICK_FAILED);

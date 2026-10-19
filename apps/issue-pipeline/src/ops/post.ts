@@ -8,7 +8,7 @@ import type { Author } from "../comments.ts";
 import { AUTHOR, commentByKey, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";
-import { OpsError } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
 
 const QUEUED_COMMENT = z.looseObject({
   body: z.string(),
@@ -29,7 +29,7 @@ function postSigned(
   by: Author | undefined,
   body: string,
 ): number {
-  const posted = gh(cfg, [
+  const posted = gh(cfg, "merge", [
     "api",
     "-X",
     "POST",

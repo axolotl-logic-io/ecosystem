@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { commentWriteReplies } from "./gh-mutation-fixtures.mjs";
 import {
   askOps,
   commentsReply,
@@ -61,7 +62,10 @@ function fullBody() {
 
 /** @param {readonly unknown[]} comments @param {string} line */
 function append(comments, line = NEW) {
-  reply([{ ...commentsReply(N, comments), keep: true }]);
+  reply([
+    { ...commentsReply(N, comments), keep: true },
+    ...commentWriteReplies("o/r", N, [USAGE_ID, USAGE_2_ID]),
+  ]);
   return askOps({ op: "usage", number: N, line });
 }
 

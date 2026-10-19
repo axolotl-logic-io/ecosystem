@@ -8,7 +8,8 @@ import { paths } from "../config.ts";
 import { head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
 import { saveSyncRecovery } from "../job/code-recovery.ts";
-import { OpsError, run } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { run } from "../process.ts";
 import { abortRebase, rebaseProblem } from "../rebase.ts";
 import { holdWikiPin, wikiPinProblem } from "../wiki.ts";
 import { readWriteAuthority } from "../write-authority.ts";
@@ -81,7 +82,7 @@ function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
     throw new OpsError(`#${n}'s code merged; refusing sync push`);
   }
   recordPush(cfg, n, head(wt), op);
-  git(cfg, ["-C", wt, "push", "--force-with-lease", "origin", target]);
+  git(cfg, "dev", ["-C", wt, "push", "--force-with-lease", "origin", target]);
 }
 
 export { finishProblem, pushBranch, resetToRemote };

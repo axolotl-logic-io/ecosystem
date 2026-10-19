@@ -3,7 +3,7 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { gitIn } from "../git-state.ts";
-import { OpsError } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
 import { confirmMerged, pullRequest } from "../revision.ts";
 import type { CodeMerged } from "../state.ts";
 

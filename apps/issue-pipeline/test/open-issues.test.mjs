@@ -26,8 +26,10 @@
 //   (src/orchestrator/args.ts);
 // - a named issue that isn't open: ops-claim.test "a claim refuses an issue
 //   that isn't open".
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFakeGh } from "./fake-gh.mjs";
 import "./isolated-root-test-kit.mjs";
 
@@ -39,22 +41,29 @@ const { testConfig } = await import("./config-test-kit.mjs");
 const gh = installFakeGh();
 const { cfg } = testConfig({ allowedUsers: ["owner", "lapsed"] });
 const OTHER_ACCOUNT =
-  /gh is logged in as mallory, but the config's account is pipeline-bot/u;
+  /credential login verification failed for merge; expected @pipeline-bot/u;
 
 test("openIssues lists nothing, and sets up nothing, while gh is logged in as another account", () => {
   gh.reply([{ when: "api user", stdout: "mallory\n" }]);
-  assert.throws(() => openIssues(cfg), OTHER_ACCOUNT);
-  assert.deepEqual(gh.calls(), [["api", "user", "--jq", ".login"]]);
+  const swapped = {
+    ...cfg,
+    credentialsEnvFile: credentialConfig("mallory").credentialsEnvFile,
+  };
+  assert.throws(() => openIssues(swapped), OTHER_ACCOUNT);
+  assert.deepEqual(gh.calls(), []);
 });
 
-test("an author counts only on allowedUsers or as the account, and while a collaborator", () => {
-  gh.reply([{ when: "collaborators/lapsed", code: 1, keep: true }]);
+test("an author counts only on allowedUsers, never a bot, and while a collaborator", () => {
+  gh.reply([
+    { when: "collaborators/lapsed", code: 1, keep: true },
+    { when: "collaborators/owner", stdout: "", keep: true },
+  ]);
   const allowed = ["owner", "pipeline-bot", "lapsed", "eve", "", null].map(
     (login) => [login, isAllowedUser(cfg, login)],
   );
   assert.deepEqual(allowed, [
     ["owner", true],
-    ["pipeline-bot", true],
+    ["pipeline-bot", false],
     ["lapsed", false],
     ["eve", false],
     ["", false],
@@ -64,7 +73,6 @@ test("an author counts only on allowedUsers or as the account, and while a colla
   const lookups = gh.calls().map((args) => args.join(" "));
   assert.deepEqual(lookups, [
     "api repos/example/repo/collaborators/owner --silent",
-    "api repos/example/repo/collaborators/pipeline-bot --silent",
     "api repos/example/repo/collaborators/lapsed --silent",
   ]);
 });

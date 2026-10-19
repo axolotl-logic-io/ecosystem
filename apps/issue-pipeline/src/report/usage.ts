@@ -4,8 +4,8 @@
 // look, and names each role's tools with the most output. The flags only
 // label the report; nothing acts on them. It does no I/O.
 
+import { USAGE_MARK } from "../comment-marks.ts";
 import type { IssueComment } from "../comments.ts";
-import { USAGE_MARK } from "../comments.ts";
 import { usageLines } from "../job/usage-comment.ts";
 import type { UsageRecord, UsageRole } from "../job/usage-log.ts";
 import { parseUsageLine } from "../job/usage-log.ts";

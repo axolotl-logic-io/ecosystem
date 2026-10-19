@@ -4,16 +4,15 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { parseEnv } from "node:util";
 import { z } from "zod";
+import { hideCredentialVariable } from "./child-env.ts";
 import { withoutRemovedKeys } from "./config-legacy.ts";
-import { CONFIG_SCHEMA, DEFAULTS } from "./config-schema.ts";
+import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
 import { JOB_DOCS, JOB_REPO } from "./job/layout.ts";
+import { OpsError } from "./ops-error.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
-import { OpsError } from "./process.ts";
 
-const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
-const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
-const PATH_SEPARATOR = /[\\/]/u;
 // Branch names that are an option, a ref path, a ref expression or a name
 // git refuses (git-check-ref-format), rather than one literal branch.
 const UNSAFE_BRANCH =
@@ -40,77 +39,7 @@ interface WikiSettings {
   dir: string;
 }
 
-function checkUsers(configPath: string, users: unknown): void {
-  if (!Array.isArray(users) || users.length === 0) {
-    throw new OpsError(
-      `config ${configPath} must set allowedUsers, a list of GitHub usernames whose issues and comments the pipeline reads`,
-    );
-  }
-  for (const user of users) {
-    if (typeof user !== "string" || !GITHUB_USERNAME.test(user)) {
-      throw new OpsError(
-        `bad GitHub username in allowedUsers: ${JSON.stringify(user)}`,
-      );
-    }
-  }
-}
-
-function insideWorktree(entry: unknown): boolean {
-  return (
-    typeof entry === "string" &&
-    entry !== "" &&
-    !path.isAbsolute(entry) &&
-    !entry.split(PATH_SEPARATOR).includes("..")
-  );
-}
-
-function checkPractices(configPath: string, practices: unknown): void {
-  if (!Array.isArray(practices)) {
-    throw new OpsError(
-      `config ${configPath}: practices must be a list of paths`,
-    );
-  }
-  for (const entry of practices) {
-    if (!insideWorktree(entry)) {
-      throw new OpsError(
-        `config ${configPath}: practices entry ${JSON.stringify(entry)} must be a path inside the worktree`,
-      );
-    }
-  }
-}
-
-function present(value: unknown): boolean {
-  return value !== undefined && value !== null && value !== "";
-}
-
 const RAW = z.record(z.string(), z.unknown());
-const COMMANDS = z.looseObject({ test: z.unknown() });
-
-// The checks whose messages tell an operator what to fix, in the order a
-// config is usually written.
-function checkRequired(
-  configPath: string,
-  raw: Readonly<Record<string, unknown>>,
-): void {
-  const { account, allowedUsers, commands, practices, repo } = raw;
-  if (!present(repo)) {
-    throw new OpsError(`config ${configPath} is missing "repo"`);
-  }
-  if (!present(account)) {
-    throw new OpsError(`config ${configPath} is missing "account"`);
-  }
-  const parsedCommands = COMMANDS.safeParse(commands);
-  if (!(parsedCommands.success && present(parsedCommands.data.test))) {
-    throw new OpsError(
-      `config ${configPath} must set commands.test; the pipeline refuses repos without a test command`,
-    );
-  }
-  if (typeof repo !== "string" || !REPO_NAME.test(repo)) {
-    throw new OpsError(`bad repo "${String(repo)}"`);
-  }
-  checkUsers(configPath, allowedUsers);
-  checkPractices(configPath, practices);
-}
 
 function loadConfig(configPath: string | undefined): Config {
   const file = expand(configPath ?? "");
@@ -133,26 +62,18 @@ function loadConfig(configPath: string | undefined): Config {
     );
   }
   const { checkout: _fromFile, ...data } = parsed.data;
+  for (const role of Object.values(data.jobRoles ?? {})) {
+    if (role?.tokenEnv !== undefined) {
+      hideCredentialVariable(role.tokenEnv);
+    }
+  }
   return { ...data, slug: data.repo.replace("/", "__") };
 }
 
-// The config without its token file's path, for replies the workflow logs.
-function publicConfig(cfg: Config): Omit<Config, "tokenFile"> {
-  const { tokenFile: _hidden, ...rest } = cfg;
+// Public and model-facing config never exposes the operator credential path.
+function publicConfig(cfg: Config): Omit<Config, "credentialsEnvFile"> {
+  const { credentialsEnvFile: _hidden, ...rest } = cfg;
   return rest;
-}
-
-// The environment that makes gh and git act as the config's account. With no
-// tokenFile they use gh's own login (the keyring), which must be `account`.
-function tokenEnv(cfg: Config): ReadonlyMap<string, string> {
-  if (!present(cfg.tokenFile)) {
-    return new Map();
-  }
-  const file = expand(String(cfg.tokenFile));
-  if (!fs.existsSync(file)) {
-    throw new OpsError(`token file missing: ${file}`);
-  }
-  return new Map([["GH_TOKEN", fs.readFileSync(file, "utf8").trim()]]);
 }
 
 // The repo's GitHub wiki holds its docs and decisions (Autumn, 2026-10-13). Config
@@ -258,5 +179,42 @@ const paths = {
   },
 };
 
-export type { Config, JobCheckout, WikiSettings };
-export { loadConfig, paths, publicConfig, tokenEnv, wikiCfg, withCheckout };
+type Identity = "dev" | "merge";
+const VARIABLES: Readonly<Record<Identity, string>> = {
+  dev: "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
+  merge: "ISSUE_PIPELINE_MERGE_GITHUB_TOKEN",
+};
+const TOKEN = /^\S+$/u;
+const NON_OWNER_PERMISSION_RANGE = 0o100;
+
+function credential(cfg: Config, identity: Identity): string {
+  let contents: string | null = null;
+  try {
+    const file = fs.statSync(cfg.credentialsEnvFile);
+    if (!file.isFile() || file.mode % NON_OWNER_PERMISSION_RANGE !== 0) {
+      throw new OpsError("credential file must be private to its owner");
+    }
+    contents = fs.readFileSync(cfg.credentialsEnvFile, "utf8");
+  } catch (error) {
+    if (error instanceof OpsError) {
+      throw error;
+    }
+    contents = null;
+  }
+  if (contents === null) {
+    throw new OpsError(
+      `cannot read the configured ${identity} credential file`,
+    );
+  }
+  const values = new Map(Object.entries(parseEnv(contents)));
+  const selected = values.get(VARIABLES[identity]);
+  if (selected === undefined || !TOKEN.test(selected)) {
+    throw new OpsError(
+      `credential file must set ${VARIABLES[identity]} to a nonempty token`,
+    );
+  }
+  return selected;
+}
+
+export type { Config, Identity, JobCheckout, WikiSettings };
+export { credential, loadConfig, paths, publicConfig, wikiCfg, withCheckout };

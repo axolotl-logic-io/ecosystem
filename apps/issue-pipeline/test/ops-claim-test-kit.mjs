@@ -3,7 +3,7 @@
 // use them, with version 2 states.
 import path from "node:path";
 import {
-  ACCOUNT,
+  ALLOWED,
   runDir,
   TIME,
   timeless,
@@ -28,7 +28,7 @@ function issueOf(n, extra = {}) {
     title: `Issue ${n}`,
     body: "",
     state: "open",
-    user: { login: ACCOUNT },
+    user: { login: ALLOWED },
     labels: [],
     ...extra,
   };

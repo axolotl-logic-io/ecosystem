@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { ghJson } from "../github.ts";
-import { OpsError } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
 
 // One row of `gh pr list --json number,mergeCommit`: an unmerged PR's merge
 // commit is null.
@@ -24,7 +24,7 @@ const HISTORY = z.array(z.object({ number: z.number().int().positive() }));
 
 function historicalPrFor(cfg: Config, n: number): number | null {
   const rows = HISTORY.parse(
-    ghJson(cfg, [
+    ghJson(cfg, "merge", [
       "pr",
       "list",
       "-R",
@@ -48,7 +48,7 @@ function historicalPrFor(cfg: Config, n: number): number | null {
 // The first PR from issue `n`'s branch in `state`, or undefined when it has
 // none.
 function prFor(cfg: Config, n: number, state: string): PrRow | undefined {
-  const listed = ghJson(cfg, [
+  const listed = ghJson(cfg, "merge", [
     "pr",
     "list",
     "-R",

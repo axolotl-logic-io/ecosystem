@@ -2,8 +2,8 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { ghJson } from "../github.ts";
+import { OpsError } from "../ops-error.ts";
 import { assertPrBase } from "../pr-authority.ts";
-import { OpsError } from "../process.ts";
 
 // gh's answer to the PR view.
 const PR_VIEW = z.looseObject({
@@ -25,7 +25,7 @@ type PrView = z.infer<typeof PR_VIEW>;
 
 function viewForMerge(cfg: Config, pr: number): PrView {
   const view = PR_VIEW.parse(
-    ghJson(cfg, [
+    ghJson(cfg, "merge", [
       "pr",
       "view",
       String(pr),

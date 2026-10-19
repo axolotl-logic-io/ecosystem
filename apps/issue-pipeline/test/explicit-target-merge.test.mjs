@@ -154,7 +154,7 @@ test("unlisted fake reads and writes deny without changing the private origin", 
     ["pr", "merge", String(PR)],
     ["api", `repos/${REPO}/merges`, "-X", "POST"],
   ]) {
-    assert.notEqual(gh(w.cfg, args, { allowFail: true }).code, 0);
+    assert.notEqual(gh(w.cfg, "merge", args, { allowFail: true }).code, 0);
   }
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.base);
 });

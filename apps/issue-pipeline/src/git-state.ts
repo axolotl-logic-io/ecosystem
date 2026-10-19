@@ -7,8 +7,9 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
+import { OpsError } from "./ops-error.ts";
 import type { RunOptions, RunResult } from "./process.ts";
-import { OpsError, run, runFailure, tail } from "./process.ts";
+import { run, runFailure, tail } from "./process.ts";
 
 const STATUS_LINES = 20;
 const WHITESPACE = /\s+/u;
@@ -21,14 +22,20 @@ function gitIn(dir: string, args: readonly string[]): string {
 // lock too.
 function fetchIn(cfg: Config, dir: string, ...refs: string[]): RunResult {
   return withCloneLock(cfg, () =>
-    git(cfg, ["-C", dir, "fetch", "origin", ...refs]),
+    git(cfg, "dev", ["-C", dir, "fetch", "origin", ...refs]),
   );
 }
 
 // The issue branch's head on GitHub, or null when it has none.
 function remoteHead(cfg: Config, number: number): string | null {
   const ref = `refs/heads/${paths.branch(cfg, number)}`;
-  const listed = git(cfg, ["-C", paths.clone(cfg), "ls-remote", "origin", ref]);
+  const listed = git(cfg, "dev", [
+    "-C",
+    paths.clone(cfg),
+    "ls-remote",
+    "origin",
+    ref,
+  ]);
   const [sha] = listed.stdout.trim().split(WHITESPACE);
   return sha || null;
 }

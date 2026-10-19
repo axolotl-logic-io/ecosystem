@@ -9,7 +9,8 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
 import { git } from "./github.ts";
-import { OpsError, run } from "./process.ts";
+import { OpsError } from "./ops-error.ts";
+import { run } from "./process.ts";
 import { pushWikiBranch } from "./wiki.ts";
 import { readWriteAuthority } from "./write-authority.ts";
 
@@ -70,7 +71,7 @@ function pushCode(cfg: Config, n: number): string[] {
           `#${n}'s code merged; stop salvage cannot push code`,
         );
       }
-      git(cfg, ["-C", wt, "push", "origin", target]);
+      git(cfg, "dev", ["-C", wt, "push", "origin", target]);
     }
     return [];
   } catch {

@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { configFixture } from "./config-fixtures.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 import { bodyOf, effectNames, effectsOf } from "./gh-effects.mjs";
+import { commentWriteReplies, labelReplies } from "./gh-mutation-fixtures.mjs";
 import "./isolated-root-test-kit.mjs";
 
 /** @import { GhEffect } from "./gh-effects.mjs" */
@@ -83,9 +84,19 @@ function edits() {
   }));
 }
 
-test("a lane whose claim is the earliest live one wins, and labels the issue working", () => {
+/** @param {readonly import("./fake-gh.mjs").GhReply[]} replies @returns {void} */
+function scriptReplies(replies) {
   fakeGh.reply([
+    ...replies,
+    ...commentWriteReplies("o/r", ISSUE, [OWN_CLAIM, 2, OTHER_CLAIM]),
+  ]);
+}
+
+test("a lane whose claim is the earliest live one wins, and labels the issue working", () => {
+  scriptReplies([
     POSTED,
+    ...labelReplies("o/r", ISSUE, ["agent:working"], []),
+    ...commentWriteReplies("o/r", ISSUE, [OWN_CLAIM]),
     { when: LIST, stdout: commentLines([comment(OWN_CLAIM, claimBody("me"))]) },
   ]);
   assert.deepEqual(raceForClaim(cfg, ISSUE, req, []), {
@@ -102,8 +113,10 @@ test("a lane whose claim is the earliest live one wins, and labels the issue wor
 });
 
 test("a lane that sees an earlier claim after posting abandons its own", () => {
-  fakeGh.reply([
+  scriptReplies([
     POSTED,
+    ...labelReplies("o/r", ISSUE, ["agent:working"], []),
+    ...commentWriteReplies("o/r", ISSUE, [OWN_CLAIM]),
     {
       when: LIST,
       stdout: commentLines([
@@ -130,7 +143,12 @@ test("a lane that sees an earlier claim after posting abandons its own", () => {
 });
 
 test("a lane that can't see its own claim after posting abandons it", () => {
-  fakeGh.reply([POSTED]);
+  scriptReplies([
+    POSTED,
+    { when: LIST, stdout: "" },
+    ...commentWriteReplies("o/r", ISSUE, [OWN_CLAIM]),
+    ...labelReplies("o/r", ISSUE, ["agent:working"], []),
+  ]);
   assert.deepEqual(raceForClaim(cfg, ISSUE, req, []), {
     won: false,
     holder: null,
@@ -142,7 +160,7 @@ test("a lane that can't see its own claim after posting abandons it", () => {
 });
 
 test("a lane doesn't claim an issue another lane holds, nor one it holds", () => {
-  fakeGh.reply([]);
+  scriptReplies([]);
   const held = [COMMENT.parse(comment(HELD_CLAIM, claimBody("a")))];
   assert.deepEqual(raceForClaim(cfg, ISSUE, req, held), {
     won: false,
@@ -162,7 +180,7 @@ test("a lane doesn't claim an issue another lane holds, nor one it holds", () =>
 
 test("touching a claim stamps it once, replacing an earlier stamp", () => {
   const stamped = `${claimBody("me")}\n<sub>Lane still working at ${EARLIER_STAMP}.</sub>`;
-  fakeGh.reply([
+  scriptReplies([
     { when: LIST, stdout: commentLines([comment(OWN_CLAIM, claimBody("me"))]) },
     {
       when: LIST,
@@ -185,12 +203,12 @@ test("touching a claim stamps it once, replacing an earlier stamp", () => {
 });
 
 test("touching names the lane by its sweep when it has no lane name", () => {
-  fakeGh.reply([
+  scriptReplies([
     { when: LIST, stdout: commentLines([comment(OWN_CLAIM, claimBody("me"))]) },
   ]);
   touchClaim(cfg, ISSUE, { sweepId: "me" });
   assert.equal(edits()[0]?.id, "7");
-  fakeGh.reply([
+  scriptReplies([
     { when: LIST, stdout: commentLines([comment(OWN_CLAIM, claimBody("me"))]) },
   ]);
   touchClaim(cfg, ISSUE, { sweepId: "other" });
@@ -199,7 +217,7 @@ test("touching names the lane by its sweep when it has no lane name", () => {
 
 test("closing an issue's claims closes each live claim with the reason", () => {
   const old = new Date(Date.now() - EXPIRED_HOURS * MS_PER_HOUR).toISOString();
-  fakeGh.reply([
+  scriptReplies([
     {
       when: LIST,
       stdout: commentLines([

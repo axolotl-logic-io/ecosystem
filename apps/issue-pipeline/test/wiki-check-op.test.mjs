@@ -2,11 +2,13 @@
 // The wiki-check op (#215) against a real wiki checkout: issue #7's committed
 // wiki pages compared with the wiki's master on origin, in-process and through
 // the ops CLI.
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { configFixture } from "./config-fixtures.mjs";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 
 const fx = await opsFixture("wiki-check");
@@ -16,7 +18,7 @@ const ISSUE = 7;
 const GIT_USER = "-c user.email=a@b -c user.name=a";
 const CFG = configFixture({ account: "a", allowedUsers: ["a"], leaseHours: 1 });
 const WIKI_CFG = configFixture({
-  account: "a",
+  ...credentialConfig("a"),
   allowedUsers: ["a"],
   leaseHours: 1,
   wiki: true,

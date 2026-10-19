@@ -6,8 +6,7 @@
 // also give `stderr` to print and `code` to exit with, as a refused command
 // does, and `keep` to answer every matching call rather than only the first,
 // so a test needn't know how often a read is made. A call that matches no
-// reply fails when requireReplies() enabled strict mode; legacy fixtures retain
-// their empty-success default. Neither mode can invoke system gh.
+// reply fails closed. No request can invoke system gh.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -56,6 +55,23 @@ const { execFileSync } = require("node:child_process");
 const path = require("node:path");
 const dir = ${JSON.stringify(dir)};
 const args = process.argv.slice(2);
+const token = process.env.GH_TOKEN ?? "";
+const identity = /^fake-pipeline-(dev|merge)--(.+)$/.exec(token);
+if (!identity) throw new Error("missing fake bot credential");
+let expected = "merge";
+if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(args[1])) expected = "dev";
+if (!(args[0] === "api" && args[1] === "user") && identity[1] !== expected) throw new Error("wrong bot identity for operation");
+if (args[0] === "api" && args[1] === "user") {
+  process.stdout.write(identity[2] + "\\n"); process.exit(0);
+}
+if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => args.join(" ").includes(reply.when))) {
+  const id = args.find(arg => arg.startsWith("id="))?.slice(3);
+  const comments = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
+  const comment = comments.find(item => item.node_id === id);
+  if (!comment) throw new Error("unmatched comment provenance request");
+  const node = { databaseId: comment.id, body: comment.body, author: comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at ?? comment.created_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor };
+  fs.writeSync(1, JSON.stringify({ data: { node } })); process.exit(0);
+}
 fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
 const file = path.join(dir, "replies.json");
 const replies = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -78,6 +94,10 @@ if (at >= 0) {
     view.headRefOid = execFileSync("git", ["-C", reply.headRef.repo, "rev-parse", reply.headRef.ref], { encoding: "utf8" }).trim();
     stdout = JSON.stringify(view);
   }
+  if (args.some(arg => arg.includes("/comments?"))) {
+    const current = stdout.split("\\n").filter(Boolean).map(line => JSON.parse(line));
+    fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify(current));
+  }
   process.stdout.write(stdout);
   process.stderr.write(reply.stderr ?? "");
   process.exitCode = reply.code ?? 0;
@@ -85,7 +105,7 @@ if (at >= 0) {
     replies.splice(at, 1);
     fs.writeFileSync(file, JSON.stringify(replies));
   }
-} else if (fs.existsSync(path.join(dir, "strict")) || (args[0] === "pr" && args[1] === "list" && args.includes("all"))) {
+} else {
   process.stderr.write("unsupported private fake gh request: " + text); process.exitCode = 1;
 }
 const body = args.find(arg => arg.startsWith("body="))?.slice(5);
@@ -94,7 +114,13 @@ if (at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("PATCH") && body?.
   for (const reply of replies.filter(item => item.persistState)) {
     const comments = reply.stdout.split("\\n").filter(Boolean).map(line => JSON.parse(line));
     for (const comment of comments) {
-      if (endpoint?.endsWith("/comments/" + comment.id)) comment.body = body;
+      if (endpoint?.endsWith("/comments/" + comment.id)) {
+        comment.body = body;
+        const saved = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
+        const current = saved.find(item => item.id === comment.id);
+        if (current) current.body = body;
+        fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify(saved));
+      }
     }
     reply.stdout = comments.map(comment => JSON.stringify(comment)).join("\\n");
   }
@@ -128,6 +154,29 @@ function installFakeGh() {
     reply(replies) {
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));
       fs.writeFileSync(callsFile, "");
+      const comments = replies.flatMap((reply) => {
+        if (!reply.when.includes("comments") || reply.stdout === undefined) {
+          return [];
+        }
+        return reply.stdout
+          .split("\n")
+          .filter(Boolean)
+          .flatMap((line) => {
+            try {
+              const item = JSON.parse(line);
+              if (typeof item.id === "number") {
+                return [item];
+              }
+            } catch {
+              return [];
+            }
+            return [];
+          });
+      });
+      fs.writeFileSync(
+        path.join(dir, "comments.json"),
+        JSON.stringify(comments),
+      );
     },
     calls,
     writes(isRead) {
@@ -148,11 +197,26 @@ function commentLines(comments) {
 /**
  * A comment as GitHub's REST API returns it, which names its times in
  * snake_case; `updated` is left out when not given.
- * @param {{ id: number, body: string, login: string, created: string, updated?: string }} comment
+ * @param {{ id: number, body: string, login: string, created: string, updated?: string, nodeId?: string }} comment
  * @returns {object}
  */
-function githubComment({ id, body, login, created, updated }) {
-  const comment = { id, body, user: { login }, created_at: created };
+function githubComment({
+  id,
+  body,
+  login,
+  created,
+  updated,
+  nodeId = `comment-${id}`,
+}) {
+  const comment = {
+    id,
+    node_id: nodeId,
+    body,
+    user: { login },
+    created_at: created,
+    lastEditedAt: null,
+    editor: null,
+  };
   if (updated === undefined) {
     return comment;
   }

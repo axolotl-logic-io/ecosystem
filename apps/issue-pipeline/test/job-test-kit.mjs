@@ -4,6 +4,7 @@
 // was asked, so the tests see the ops in order, every pi command line and
 // every RPC command pi got. A job startJob started, and every pi in the
 // place's pi.log, are no longer running once the test ends.
+
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
@@ -11,6 +12,7 @@ import path from "node:path";
 import process from "node:process";
 import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
 import { writeBrain } from "./brain-test-kit.mjs";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installJobAuthority } from "./fake-job-authority.mjs";
 import { FAKE_PI } from "./fake-rpc-pi.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
@@ -76,7 +78,7 @@ function setUp(replies, script, extraConfig = {}, options = {}) {
     config,
     JSON.stringify({
       repo: "o/r",
-      account: "bot",
+      ...credentialConfig("bot"),
       allowedUsers: ["alice"],
       commands: { test: "true" },
       ...origins.config,

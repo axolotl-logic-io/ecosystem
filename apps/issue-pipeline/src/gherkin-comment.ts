@@ -69,7 +69,7 @@ function gherkinBody(
 }
 
 // The issue's Gherkin comment, or null when it has none. Only a comment the
-// pipeline's account wrote, signed by the author, with the key's mark and the
+// merge identity wrote with trusted editor provenance, signed by the author, with the key's mark and the
 // Gherkin mark, counts: anyone can paste the marks.
 function gherkinCommentOf(
   cfg: Config,

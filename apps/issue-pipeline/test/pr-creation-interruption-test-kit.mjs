@@ -11,10 +11,10 @@ import { savedState } from "./pipeline-flow-script.mjs";
 const RUN_MS = 60_000;
 const STATE = /<!-- agent-pipeline:state\n(?<json>[\s\S]*?)\n-->/u;
 
-/** @param {string} file @param {string[]} args @returns {import("node:child_process").SpawnSyncReturns<string>} */
-function localGh(file, args) {
+/** @param {string} file @param {string[]} args @param {NodeJS.ProcessEnv} [env] @returns {import("node:child_process").SpawnSyncReturns<string>} */
+function localGh(file, args, env = process.env) {
   return spawnSync(process.execPath, [file, ...args], {
-    env: process.env,
+    env,
     encoding: "utf8",
     timeout: RUN_MS,
   });
@@ -35,6 +35,23 @@ function localGit(repo, args) {
     throw new Error(result.stderr);
   }
   return result.stdout.trim();
+}
+
+/** @param {string} original @param {string[]} args @param {string} mergeAccount */
+function mergeGh(original, args, mergeAccount) {
+  let identity = "dev";
+  let account = "dev-bot";
+  if (args[0] === "api") {
+    identity = "merge";
+    account = mergeAccount;
+  }
+  const env = {
+    ...process.env,
+    ...Object.fromEntries([
+      ["GH_TOKEN", `fake-pipeline-${identity}--${account}`],
+    ]),
+  };
+  return localGh(original, args, env);
 }
 
 /** @param {string} root @param {string} ghDir @param {string} original */
@@ -60,7 +77,7 @@ function externalMerge(root, ghDir, original) {
       `head=${head}`,
     ],
   ]) {
-    const reply = localGh(original, args);
+    const reply = mergeGh(original, args, world.account);
     if (reply.status !== 0) {
       throw new Error(reply.stderr);
     }

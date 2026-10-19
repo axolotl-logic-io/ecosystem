@@ -4,10 +4,12 @@
 // A test isolates the pipeline root first (isolated-root-test-kit.mjs or its
 // own kit) and imports this kit dynamically after it; the kit refuses to load
 // unless src's root is that temporary root.
+
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 
 const { ROOT } = await import("../src/pipeline-root.ts");
 const { ISSUE_PIPELINE_ROOT: isolated } = process.env;
@@ -18,7 +20,7 @@ const { loadConfig } = await import("../src/config.ts");
 
 const BASE = {
   repo: "example/repo",
-  account: "pipeline-bot",
+  ...credentialConfig("pipeline-bot"),
   allowedUsers: ["owner"],
   commands: { test: "true" },
 };

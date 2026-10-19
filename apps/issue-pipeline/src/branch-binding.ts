@@ -8,7 +8,7 @@
 
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import { OpsError } from "./process.ts";
+import { OpsError } from "./ops-error.ts";
 import type { IssueState } from "./state.ts";
 
 // The branch issue `n` is assigned (paths.branch), which `state` must be

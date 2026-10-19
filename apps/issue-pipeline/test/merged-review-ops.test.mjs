@@ -37,7 +37,7 @@ const PR = 9;
 const BASE = "integration";
 const STATE_COMMENT = 70;
 const HOOK_MODE = 0o755;
-const CONFIG = fx.configWith("plain.json", {});
+const CONFIG = fx.configWith("plain.json", { allowedUsers: ["alice"] });
 const cfg = loadConfig(CONFIG);
 const REVIEW_REPLY = z.looseObject({
   ok: z.literal(true),
@@ -211,11 +211,11 @@ test("the detached merge commit is no unpushed work: a stop pushes nothing and t
     title: "T",
     body: "",
     state: "open",
-    user: { login: "a" },
+    user: { login: "alice" },
     labels: [],
   };
   fakeGh.reply([
-    collaboratorReply("o/r", "a"),
+    collaboratorReply("o/r", "alice"),
     {
       when: `api repos/o/r/issues/${ISSUE.merged}`,
       stdout: JSON.stringify(issue),

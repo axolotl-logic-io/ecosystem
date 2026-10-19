@@ -49,7 +49,7 @@ test("stop with a reason no stop names and no code is the error stop", () => {
       stdout: commentLines([
         githubComment({
           id: STATE_COMMENT,
-          login: cfg.account,
+          login: cfg.mergeAccount,
           created: "2026-10-18T00:00:00Z",
           body: `<!-- agent-pipeline:state\n${JSON.stringify(saved)}\n-->`,
         }),

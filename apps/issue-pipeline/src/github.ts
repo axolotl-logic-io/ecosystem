@@ -1,14 +1,18 @@
-// gh and git as the config's account, and who that account trusts. Reads that
+// gh and git as the explicitly selected bot, and who that account trusts. Reads that
 // GitHub can safely repeat are retried through its transient failures; writes
-// run once, with this machine's paths and every IP address taken out of the
-// text they post.
+// run once, with local paths and addresses redacted.
 
 import { z } from "zod";
-import type { Config } from "./config.ts";
-import { tokenEnv } from "./config.ts";
+import type { Config, Identity } from "./config.ts";
+import {
+  authenticatedEnv,
+  credentialedRun,
+  credentialFailure,
+} from "./github-auth.ts";
+import { OpsError } from "./ops-error.ts";
 import { redactLocalPaths } from "./pipeline-root.ts";
 import type { RunOptions, RunResult } from "./process.ts";
-import { OpsError, run, runFailure, sleepMs } from "./process.ts";
+import { run, sleepMs } from "./process.ts";
 import { redactAddresses } from "./redact-addresses.ts";
 
 type GhOptions = Omit<RunOptions, "env">;
@@ -16,17 +20,13 @@ type GhOptions = Omit<RunOptions, "env">;
 const WRITE_FLAG = /^(?:-X|--method|-f|-F|--field|--raw-field|--input)$/u;
 const GH_TRANSIENT =
   /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Timeout|connection reset|TLS handshake timeout|i\/o timeout/iu;
-// A stalled GitHub request once hung a sweep for 20 minutes, until the subagent
-// timeout killed it. Callers may pass a longer timeoutMs.
 const GH_TIMEOUT_MS = 120_000;
 const GH_READ_ATTEMPTS = 4;
-// The wait before retry n is n times this.
 const GH_RETRY_STEP_MS = 2000;
-const GH_ENV: ReadonlyMap<string, string> = new Map([
-  ["GH_PROMPT_DISABLED", "1"],
-]);
 const GIT_ENV: ReadonlyMap<string, string> = new Map([
   ["GIT_TERMINAL_PROMPT", "0"],
+  ["GIT_CONFIG_NOSYSTEM", "1"],
+  ["GIT_CONFIG_GLOBAL", "/dev/null"],
   ["ISSUE_PIPELINE_OPS", "1"],
 ]);
 
@@ -34,6 +34,9 @@ const GIT_ENV: ReadonlyMap<string, string> = new Map([
 // with no method or fields (a GET). Writes aren't retried, since a 502 may
 // hide one that landed.
 function ghIsRead(args: readonly string[]): boolean {
+  if (args[0] === "api" && args[1] === "graphql") {
+    return args.some((arg) => arg.startsWith("query=query("));
+  }
   if (args[0] === "api") {
     return !args.some((arg) => WRITE_FLAG.test(arg));
   }
@@ -41,7 +44,7 @@ function ghIsRead(args: readonly string[]): boolean {
 }
 
 // Only text arguments change (body=..., --body, --title), losing local paths
-// and IP addresses; endpoints don't.
+// and IP addresses; endpoints are unchanged.
 function redactGhArgs(args: readonly string[]): string[] {
   return args.map((arg, at) => {
     const flag = args[at - 1];
@@ -66,67 +69,119 @@ function retriable(result: RunResult, attempt: number): boolean {
   );
 }
 
+const LOCAL_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
+function remoteOf(args: readonly string[], options: GhOptions): string {
+  const clone = args.indexOf("clone");
+  if (clone >= 0) {
+    const remaining = args
+      .slice(clone + 1)
+      .filter((arg) => !arg.startsWith("-"));
+    return remaining[0] ?? "";
+  }
+  const remote = args.indexOf("ls-remote");
+  if (remote >= 0) {
+    const target = args.slice(remote + 1).find((arg) => !arg.startsWith("-"));
+    if (target !== undefined && target !== "origin") {
+      return target;
+    }
+  }
+  const at = args.indexOf("-C");
+  const { cwd = "." } = options;
+  let dir = cwd;
+  if (at >= 0) {
+    dir = args.at(at + 1) ?? cwd;
+  }
+  return run("git", ["config", "--get", "remote.origin.url"], {
+    cwd: dir,
+  }).stdout.trim();
+}
+
+// No persistent helper/keyring is consulted. The helper serves only this
+// repository, only to github.com, and never stores a credential.
+function gitHelper(cfg: Config): readonly string[] {
+  const helper = `!f() { [ "$1" = get ] || exit 0; protocol= host= path=; while IFS== read -r key value; do case "$key" in protocol) protocol=$value;; host) host=$value;; path) path=$value;; esac; done; [ "$protocol" = https ] && [ "$host" = github.com ] || exit 1; case "$path" in ${cfg.repo}.git|${cfg.repo}.wiki.git) printf 'username=x-access-token\\npassword=%s\\n' "$GH_TOKEN";; *) exit 1;; esac; }; f`;
+  return [
+    "-c",
+    "credential.helper=",
+    "-c",
+    "credential.https://github.com.helper=",
+    "-c",
+    `credential.helper=${helper}`,
+    "-c",
+    "credential.useHttpPath=true",
+    "-c",
+    "http.extraHeader=",
+    "-c",
+    "http.https://github.com/.extraHeader=",
+    "-c",
+    "http.followRedirects=false",
+  ];
+}
+
 function gh(
   cfg: Config,
+  identity: Identity,
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {
   const runOptions: RunOptions = {
     timeoutMs: GH_TIMEOUT_MS,
     ...options,
-    env: withEnv(tokenEnv(cfg), GH_ENV),
+    env: authenticatedEnv(cfg, identity),
   };
   if (!ghIsRead(args)) {
-    return run("gh", redactGhArgs(args), runOptions);
+    return credentialedRun("gh", redactGhArgs(args), runOptions);
   }
   // GitHub's API sometimes answers 502 or stalls; one failed read used to fail
   // a whole sweep.
   let attempt = 1;
-  let result = run("gh", args, { ...runOptions, allowFail: true });
+  let result = credentialedRun("gh", args, { ...runOptions, allowFail: true });
   while (retriable(result, attempt)) {
     sleepMs(GH_RETRY_STEP_MS * attempt);
     attempt += 1;
-    result = run("gh", args, { ...runOptions, allowFail: true });
+    result = credentialedRun("gh", args, { ...runOptions, allowFail: true });
   }
   if (result.code === 0 || options.allowFail === true) {
     return result;
   }
-  throw new OpsError(runFailure("gh", args, result, runOptions));
+  throw credentialFailure("gh", args, result, runOptions);
 }
 
 // gh's output read as JSON, or null when it printed nothing.
 function ghJson(
   cfg: Config,
+  identity: Identity,
   args: readonly string[],
   options: GhOptions = {},
 ): unknown {
-  const { stdout } = gh(cfg, args, options);
+  const { stdout } = gh(cfg, identity, args, options);
   if (stdout.trim() === "") {
     return null;
   }
   return JSON.parse(stdout);
 }
 
-// gh's output read as one JSON value per non-blank line.
 function ghLines(
   cfg: Config,
+  identity: Identity,
   args: readonly string[],
   options: GhOptions = {},
 ): unknown[] {
-  return gh(cfg, args, options)
+  return gh(cfg, identity, args, options)
     .stdout.split("\n")
     .filter((line) => line.trim() !== "")
     .map((line): unknown => JSON.parse(line));
 }
 
-// gh's answer to an issue's state, or null when it printed nothing.
 const ISSUE_STATE = z.looseObject({ state: z.unknown() }).nullable();
 
 // The issue's state on GitHub ("open" or "closed"), or null when GitHub's
 // answer can't be read.
 function issueState(cfg: Config, n: number): string | null {
   const args = ["api", `repos/${cfg.repo}/issues/${n}`, "--jq", "{state}"];
-  const parsed = ISSUE_STATE.safeParse(ghJson(cfg, args, { allowFail: true }));
+  const parsed = ISSUE_STATE.safeParse(
+    ghJson(cfg, "merge", args, { allowFail: true }),
+  );
   const state = parsed.data?.state;
   if (typeof state !== "string") {
     return null;
@@ -136,30 +191,57 @@ function issueState(cfg: Config, n: number): string | null {
 
 function git(
   cfg: Config,
+  identity: Identity,
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {
-  return run("git", args, {
+  const remote = remoteOf(args, options);
+  if (LOCAL_PATH.test(remote)) {
+    // Local test origins and mirrors never need or receive a credential.
+    return run("git", args, {
+      ...options,
+      env: GIT_ENV,
+    });
+  }
+  const expected = [
+    `https://github.com/${cfg.repo}.git`,
+    `https://github.com/${cfg.repo}.wiki.git`,
+  ];
+  if (!expected.includes(remote)) {
+    throw new OpsError(
+      "credentialed git requires the configured GitHub repository or wiki HTTPS remote",
+    );
+  }
+  const helper = gitHelper(cfg);
+  return credentialedRun("git", [...helper, ...args], {
     ...options,
-    env: withEnv(tokenEnv(cfg), GIT_ENV),
+    env: withEnv(authenticatedEnv(cfg, identity), GIT_ENV),
   });
 }
 
 // Authorization reads must observe revocation during a long-lived job too.
 function isCollaborator(cfg: Config, login: string): boolean {
   const endpoint = `repos/${cfg.repo}/collaborators/${login}`;
-  return gh(cfg, ["api", endpoint, "--silent"], { allowFail: true }).code === 0;
+  return (
+    gh(cfg, "merge", ["api", endpoint, "--silent"], { allowFail: true })
+      .code === 0
+  );
 }
 
-// A login counts only if it is on the config's allowedUsers (or is the account)
-// and is still a collaborator, so removing someone from either stops trust.
+// A human login counts only if explicitly allowed, never either bot,
 function isAllowedUser(cfg: Config, login: string | null | undefined): boolean {
   if (login === undefined || login === null || login === "") {
     return false;
   }
-  const allowed = new Set(
-    [...cfg.allowedUsers, cfg.account].map((user) => user.toLowerCase()),
-  );
+  const normalized = login.toLowerCase();
+  if (
+    [cfg.devAccount, cfg.mergeAccount].some(
+      (bot) => bot.toLowerCase() === normalized,
+    )
+  ) {
+    return false;
+  }
+  const allowed = new Set(cfg.allowedUsers.map((user) => user.toLowerCase()));
   return allowed.has(login.toLowerCase()) && isCollaborator(cfg, login);
 }
 

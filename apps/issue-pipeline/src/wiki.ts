@@ -142,7 +142,7 @@ function wikiCheckout(cfg: Config, parent: string): string | null {
   holdWikiPin(cfg, parent);
   holdWikiPinInHooks(parent, wiki.dir);
   configureClone(cfg, dir);
-  git(cfg, ["-C", dir, "fetch", "--prune", "origin"]);
+  git(cfg, "dev", ["-C", dir, "fetch", "--prune", "origin"]);
   return dir;
 }
 
@@ -222,7 +222,14 @@ function pushWikiBranch(cfg: Config, n: number): void {
   const dir = paths.wiki(cfg, n);
   const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
   withWikiLock(cfg, () =>
-    git(cfg, ["-C", dir, "push", "--force-with-lease", "origin", target]),
+    git(cfg, "dev", [
+      "-C",
+      dir,
+      "push",
+      "--force-with-lease",
+      "origin",
+      target,
+    ]),
   );
 }
 
@@ -251,7 +258,7 @@ function unsavedWiki(cfg: Config, n: number): string | null {
   }
   return withWikiLock(cfg, () => {
     const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
-    git(cfg, ["-C", dir, "fetch", "origin", refspec]);
+    git(cfg, "dev", ["-C", dir, "fetch", "origin", refspec]);
     const dirty = uncommitted(dir, "the wiki checkout");
     if (dirty !== null) {
       return dirty;

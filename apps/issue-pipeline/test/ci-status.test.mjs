@@ -3,12 +3,14 @@
 // the CLI it checks each reply and the failed-log file; imported with a fake
 // clock it checks the 3-minute no-checks grace and the wait's deadline, with
 // no real time passing.
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { configFixture } from "./config-fixtures.mjs";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFakeGh } from "./fake-gh.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { askRaw } from "./verify-test-kit.mjs";
@@ -26,12 +28,15 @@ fs.writeFileSync(
   config,
   JSON.stringify({
     repo: "o/r",
-    account: "a",
+    ...credentialConfig("a"),
     allowedUsers: ["a"],
     commands: { test: "true" },
   }),
 );
-const cfg = configFixture({ account: "a", allowedUsers: ["a"] });
+const cfg = configFixture({
+  ...credentialConfig("a"),
+  allowedUsers: ["alice"],
+});
 const ISSUE = 3;
 const PR = 9;
 const DIRECT = { number: ISSUE, pr: PR };
@@ -66,8 +71,13 @@ function askCi(body) {
   return JSON.parse(askRaw(root, request(body)));
 }
 
+/** @param {readonly GhReply[]} replies @returns {void} */
+function scriptReplies(replies) {
+  fakeGh.reply([...replies, { ...HEAD, keep: true }]);
+}
+
 test("a head that moved stops the wait", () => {
-  fakeGh.reply([
+  scriptReplies([
     { when: "pr view", stdout: JSON.stringify({ headRefOid: "def" }) },
   ]);
   assert.deepEqual(
@@ -81,7 +91,7 @@ test("required checks that all pass pass, by name", () => {
     { name: "build", state: "SUCCESS", bucket: "pass", link: "l1" },
     { name: "e2e", state: "SKIPPED", bucket: "skipping", link: "l2" },
   ];
-  fakeGh.reply([HEAD, checksReply(checks)]);
+  scriptReplies([HEAD, checksReply(checks)]);
   assert.deepEqual(
     askCi({ expectedSha: "abc" }),
     reply({ status: "pass", checks: ["build", "e2e"] }),
@@ -94,7 +104,7 @@ test("failing checks fail, with each one's failed log in one file", () => {
     { name: "deploy", state: "CANCELLED", bucket: "cancel" },
     { name: "lint", state: "SUCCESS", bucket: "pass", link: "l3" },
   ];
-  fakeGh.reply([
+  scriptReplies([
     HEAD,
     checksReply(checks),
     { when: "run view 555", stdout: "step 1\nboom\n" },
@@ -142,7 +152,7 @@ const NO_CHECKS_OUTPUTS = [
 ];
 for (const [output, label] of NO_CHECKS_OUTPUTS) {
   test(`checks that print ${label} for 3 minutes give no-checks when CI is required`, () => {
-    fakeGh.reply(
+    scriptReplies(
       Array.from({ length: GRACE_POLLS }, () => ({
         when: "pr checks",
         stdout: output,
@@ -159,7 +169,7 @@ for (const [output, label] of NO_CHECKS_OUTPUTS) {
 }
 
 test("no checks for 3 minutes pass when CI isn't required", () => {
-  fakeGh.reply([]);
+  scriptReplies([{ when: "pr checks", stdout: "[]", keep: true }]);
   const clock = fakeClock();
   assert.deepEqual(ciStatus({ ...cfg, requireCi: false }, DIRECT, clock), {
     status: "pass",
@@ -172,7 +182,7 @@ test("checks still pending at the deadline give pending", () => {
   const pending = checksReply([
     { name: "build", state: "PENDING", bucket: "pending", link: "l" },
   ]);
-  fakeGh.reply(Array.from({ length: DEADLINE_POLLS }, () => pending));
+  scriptReplies(Array.from({ length: DEADLINE_POLLS }, () => pending));
   const clock = fakeClock();
   assert.deepEqual(ciStatus(cfg, { ...DIRECT, waitMinutes: 1 }, clock), {
     status: "pending",
@@ -183,7 +193,7 @@ test("checks still pending at the deadline give pending", () => {
 });
 
 test("the config's wait applies when the request names none", () => {
-  fakeGh.reply([]);
+  scriptReplies([{ when: "pr checks", stdout: "[]", keep: true }]);
   const clock = fakeClock();
   const got = ciStatus({ ...cfg, ciWaitMinutes: WAIT_MINUTES }, DIRECT, clock);
   // With no checks the 3-minute grace outlasts a 2-minute wait.
@@ -193,7 +203,7 @@ test("the config's wait applies when the request names none", () => {
 });
 
 test("a failing check's log is named by the clock's time", () => {
-  fakeGh.reply([
+  scriptReplies([
     HEAD,
     checksReply([
       { name: "build", state: "FAILURE", bucket: "fail", link: "l" },

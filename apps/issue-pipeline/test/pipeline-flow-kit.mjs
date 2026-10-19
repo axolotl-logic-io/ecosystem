@@ -6,12 +6,14 @@
 // scripted fake pi (pipeline-flow-pi.mjs) first on PATH. A tick runs the
 // built orchestrator once, which starts the stage jobs it decides on as
 // detached job.mjs processes (pipeline-flow-run.mjs waits for them).
+
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { writeBrain } from "./brain-test-kit.mjs";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFlowGh } from "./pipeline-flow-gh.mjs";
 import { installFlowPi } from "./pipeline-flow-pi.mjs";
 
@@ -143,7 +145,7 @@ function installBuild(root, agents) {
 function writeConfig(config, origin) {
   const settings = {
     repo: "o/r",
-    account: "bot",
+    ...credentialConfig("bot"),
     allowedUsers: ["alice"],
     baseBranch: BASE,
     cloneUrl: origin,

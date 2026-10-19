@@ -14,7 +14,8 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
 import { git } from "../github.ts";
-import { OpsError, parseRequest, run } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { parseRequest, run } from "../process.ts";
 import { confirmMerged, currentRevision } from "../revision.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { branchMerge } from "./branch-merge.ts";
@@ -148,7 +149,7 @@ function wikiBehind(cfg: Config, req: MergeRequest): WikiRefusal | undefined {
     };
   }
   const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
-  git(cfg, ["-C", dir, "fetch", "origin", refspec]);
+  git(cfg, "dev", ["-C", dir, "fetch", "origin", refspec]);
   const base = `origin/${wiki.branch}`;
   const args = ["-C", dir, "merge-base", "--is-ancestor", base, approved];
   if (run("git", args, { allowFail: true }).code === 0) {

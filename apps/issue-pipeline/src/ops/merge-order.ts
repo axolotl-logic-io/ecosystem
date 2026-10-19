@@ -97,7 +97,7 @@ function readyPr(
 // merge stage whose PR is older. Without this, a slow issue's long verify
 // keeps losing the merge to quick issues in the other slots.
 function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
-  const listed = ghJson(cfg, [
+  const listed = ghJson(cfg, "merge", [
     "issue",
     "list",
     "-R",
@@ -129,7 +129,7 @@ function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
 // time, so no list limit can leave it out.
 function openUnstopped(cfg: Config, n: number): boolean {
   const viewed = VIEWED.parse(
-    ghJson(cfg, [
+    ghJson(cfg, "merge", [
       "issue",
       "view",
       String(n),

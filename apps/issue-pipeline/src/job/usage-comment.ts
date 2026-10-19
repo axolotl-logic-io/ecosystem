@@ -3,7 +3,8 @@
 // record lines (usage-log.ts). This module alone owns that format and
 // GitHub's size limit. It does no I/O.
 
-import { USAGE_MARK, usageMark } from "../comments.ts";
+import { USAGE_MARK } from "../comment-marks.ts";
+import { usageMark } from "../comments.ts";
 
 // GitHub refuses a comment longer than this.
 const COMMENT_LIMIT = 65_536;

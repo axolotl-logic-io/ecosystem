@@ -11,6 +11,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
 import type { Writable } from "node:stream";
 import { z } from "zod";
+import { childEnvironment } from "../child-env.ts";
 import { endGroup, signalGroup } from "../process-group.ts";
 import { STOP_GRACE_MS } from "./control.ts";
 import type { ProcessExit } from "./raw-results.ts";
@@ -190,7 +191,7 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
     };
     const child = spawn(PI, [...run.args], {
       cwd: run.cwd,
-      env: run.env,
+      env: childEnvironment(run.env),
       stdio: "pipe",
       detached: true,
     });

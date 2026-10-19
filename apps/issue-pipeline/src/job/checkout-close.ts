@@ -7,7 +7,8 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withWikiLock } from "../locks.ts";
-import { OpsError, run } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { run } from "../process.ts";
 import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";
@@ -27,7 +28,7 @@ function hasGit(dir: string): boolean {
 // How many commits the checkout has that no branch on the remote has, so
 // that commits another branch on the remote already holds count as pushed.
 function unpushed(cfg: Config, dir: string): number {
-  git(cfg, ["-C", dir, "fetch", "--quiet", "--prune", "origin"]);
+  git(cfg, "dev", ["-C", dir, "fetch", "--quiet", "--prune", "origin"]);
   const range = ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"];
   return Number(gitIn(dir, range).trim());
 }

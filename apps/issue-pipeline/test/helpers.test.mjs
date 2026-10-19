@@ -1,12 +1,14 @@
 // @ts-check
 // The ops CLI's pure helpers, pinned to the behaviour ops.mjs had before they
 // moved to src/*.ts (#166).
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 // A body longer than a GitHub comment, and the length signed() clips it to.
@@ -170,7 +172,7 @@ test("a job checkout stands in for its own issue's worktree and branch, with the
   };
   const config = {
     repo: "o/r",
-    account: "bot",
+    ...credentialConfig("bot"),
     allowedUsers: ["alice"],
     commands: { test: "true" },
     wiki: { dir: "wiki" },

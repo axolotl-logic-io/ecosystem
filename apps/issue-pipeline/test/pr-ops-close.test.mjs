@@ -9,6 +9,7 @@ const fx = await opsFixture("pr-ops-close");
 const { ghIsRead } = await import("../src/github.ts");
 const { fakeGh, ask } = fx;
 
+const POST_ENDPOINT_ARGS = 4;
 const CLOSED = { n: 10, pr: 60 };
 const COORDINATOR_SIGNATURE = /agent-pipeline:comment role=coordinator/u;
 const WIKI_ONLY = /lives only in the wiki/u;
@@ -31,14 +32,26 @@ test("close-pr on a PR that is already closed writes nothing", () => {
 
 test("close-pr closes the draft with a signed comment naming the wiki branch", () => {
   const { n, pr } = CLOSED;
-  fakeGh.reply([{ when: "pr view", stdout: '{"state":"OPEN"}' }]);
+  fakeGh.reply([
+    { when: "pr view", stdout: '{"state":"OPEN"}' },
+    { when: `pr close ${pr} -R o/r`, stdout: "" },
+    { when: `api -X POST repos/o/r/issues/${pr}/comments -f`, stdout: "" },
+  ]);
   const out = ask({ op: "close-pr", number: n, pr });
   assert.equal(out, okLine("close-pr", { pr, closed: true }));
-  const [call = [], ...rest] = writes();
+  const [posted = [], call = [], ...rest] = writes();
   assert.deepEqual(rest, []);
+  assert.ok(!call.includes("--comment"));
+  assert.deepEqual(posted.slice(0, POST_ENDPOINT_ARGS), [
+    "api",
+    "-X",
+    "POST",
+    `repos/o/r/issues/${pr}/comments`,
+  ]);
   const [command, verb, closed] = call;
   assert.deepEqual([command, verb, closed], ["pr", "close", String(pr)]);
-  const comment = call.at(call.indexOf("--comment") + 1) ?? "";
+  const comment =
+    posted.find((arg) => arg.startsWith("body="))?.slice("body=".length) ?? "";
   assert.match(comment, COORDINATOR_SIGNATURE);
   assert.match(comment, WIKI_ONLY);
   assert.match(comment, WIKI_BRANCH_10);

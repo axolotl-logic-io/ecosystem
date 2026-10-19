@@ -8,7 +8,8 @@ import type { Config } from "./config.ts";
 import { gitIn, head } from "./git-state.ts";
 import { git } from "./github.ts";
 import { withWikiLock } from "./locks.ts";
-import { OpsError, run } from "./process.ts";
+import { OpsError } from "./ops-error.ts";
+import { run } from "./process.ts";
 import { rebaseInProgress } from "./rebase.ts";
 import { wikiAhead } from "./wiki.ts";
 import type { Checkout } from "./wiki-publish.ts";
@@ -56,7 +57,7 @@ function isAncestor(
 // Fetches the wiki's branch without touching the checkout.
 function fetchWikiBranch(cfg: Config, { wiki, dir }: Checkout): string {
   const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
-  git(cfg, ["-C", dir, "fetch", "origin", refspec]);
+  git(cfg, "merge", ["-C", dir, "fetch", "origin", refspec]);
   return `origin/${wiki.branch}`;
 }
 
@@ -143,7 +144,7 @@ function pushReviewed(
   const commits = gitIn(dir, log).trim().split("\n");
   // No force: the wiki's branch only ever fast-forwards to the reviewed head.
   const target = `${expectedWiki}:refs/heads/${wiki.branch}`;
-  const pushed = git(cfg, ["-C", dir, "push", "origin", target], {
+  const pushed = git(cfg, "merge", ["-C", dir, "push", "origin", target], {
     allowFail: true,
   });
   if (pushed.code !== 0) {

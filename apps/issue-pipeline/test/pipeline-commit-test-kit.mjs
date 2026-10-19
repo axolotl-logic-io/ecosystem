@@ -5,10 +5,12 @@
 // registered on a fake pi API (Pipeline-Roles-Shared, "pipeline_commit").
 // Importing it sets a temporary HOME and pipeline root (isolated-root-test-kit)
 // before it loads src, so it comes before anything a test imports from src/.
+
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
@@ -76,7 +78,7 @@ function configIn(tmp, wiki = true) {
   const file = path.join(tmp, "config.json");
   const config = {
     repo: `o/r${repos}`,
-    account: "bot",
+    ...credentialConfig("bot"),
     allowedUsers: ["alice"],
     commands: { test: "true" },
     ...origins.config,

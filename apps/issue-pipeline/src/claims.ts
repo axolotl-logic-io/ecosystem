@@ -6,13 +6,13 @@
 // edits it (touchClaim). It is closed when the issue leaves the pipeline:
 // merged, stopped, asking or split.
 
+import { CLAIM_MARK, PIPELINE_MARK } from "./comment-marks.ts";
 import type { IssueComment } from "./comments.ts";
 import {
-  CLAIM_MARK,
   COMMENT,
   editComment,
   listComments,
-  PIPELINE_MARK,
+  pipelineRole,
   signed,
 } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -74,7 +74,7 @@ function minuteStamp(): string {
 
 function claimOf(item: IssueComment, cfg: Config): Claim | undefined {
   const body = item.body ?? "";
-  if (item.user?.login !== cfg.account) {
+  if (pipelineRole(cfg, item) !== "claim") {
     return undefined;
   }
   const { role } = PIPELINE_MARK.exec(body)?.groups ?? {};
@@ -87,7 +87,7 @@ function claimOf(item: IssueComment, cfg: Config): Claim | undefined {
 
 // The live claims on an issue, earliest first. A claim is a comment the
 // pipeline posted as role `claim`. The claim marker alone isn't enough: a
-// person writing from the same account may quote it, as #120 did.
+// quoted marker alone cannot establish claim authority.
 function liveClaims(cfg: Config, comments: readonly IssueComment[]): Claim[] {
   const maxAge = cfg.leaseHours * MS_PER_HOUR;
   const now = Date.now();
@@ -142,7 +142,7 @@ function postClaim(cfg: Config, n: number, req: LaneRequest): Claim {
   const text = `Lane \`${lane}\` is claiming this issue. If another lane claimed it first, this lane abandons it and takes another issue.`;
   const body = `${signed({ role: "claim", run: sweep }, text)}\n<!-- agent-pipeline:claim lane=${lane} sweep=${sweep} -->`;
   const posted = COMMENT.parse(
-    ghJson(cfg, [
+    ghJson(cfg, "merge", [
       "api",
       "-X",
       "POST",

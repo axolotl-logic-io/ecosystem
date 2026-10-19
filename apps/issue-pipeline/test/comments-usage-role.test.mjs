@@ -2,8 +2,7 @@
 // The pipeline's usage comments are its own records (#459): pipelineRole
 // claims them for the pipeline, and they are never trusted input, so they
 // never change the trusted-inputs revision that answers its questions and
-// re-runs the author, while a comment by the same account with no pipeline
-// mark still does.
+// re-runs the author, and bot comments never become human input.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ALLOWED, CONFIG, issueComment, reply } from "./ops-cli-test-kit.mjs";
@@ -38,7 +37,7 @@ function comment(body, login) {
 }
 
 // The fake gh answers every collaborator check with success.
-reply([]);
+reply([{ when: "api repos/o/r/collaborators/alice", stdout: "", keep: true }]);
 
 test("the account's usage comments are the pipeline's usage records", () => {
   assert.equal(pipelineRole(cfg, comment(usageBody("usage"))), "usage");
@@ -60,9 +59,9 @@ test("usage comments posted after the questions don't change the trusted-inputs 
   assert.equal(trustedInputsHash(cfg, TITLE_AND_BODY, comments), before);
 });
 
-test("an unmarked comment by the account after the questions changes it", () => {
+test("an unmarked bot comment after the questions does not change it", () => {
   const usage = [comment(usageBody("usage-2"))];
   const before = trustedInputsHash(cfg, TITLE_AND_BODY, usage);
   const answered = [...usage, comment("Yes, keep the old behaviour.")];
-  assert.notEqual(trustedInputsHash(cfg, TITLE_AND_BODY, answered), before);
+  assert.equal(trustedInputsHash(cfg, TITLE_AND_BODY, answered), before);
 });

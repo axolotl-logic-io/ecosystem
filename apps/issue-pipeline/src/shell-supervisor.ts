@@ -16,6 +16,7 @@ import process from "node:process";
 import type { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
+import { childEnvironment } from "./child-env.ts";
 import {
   endGroup,
   groupAlive,
@@ -124,6 +125,7 @@ async function supervise(
   const errors: string[] = [];
   const bash = spawn("bash", ["-lc", request.command], {
     detached: true,
+    env: childEnvironment(process.env),
     stdio: ["ignore", "pipe", "pipe"],
   });
   const stdout = outputOf(bash.stdout);

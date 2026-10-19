@@ -14,7 +14,8 @@ import { head } from "./git-state.ts";
 import { git } from "./github.ts";
 import { saveSyncRecovery } from "./job/code-recovery.ts";
 import { withWikiLock } from "./locks.ts";
-import { OpsError, run } from "./process.ts";
+import { OpsError } from "./ops-error.ts";
+import { run } from "./process.ts";
 import {
   abortRebase,
   rebaseInProgress,
@@ -64,7 +65,7 @@ function freshen(cfg: Config, { wiki, dir }: Checkout, n: number): void {
     abortRebase(dir);
   }
   const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
-  git(cfg, ["-C", dir, "fetch", "origin", refspec]);
+  git(cfg, "merge", ["-C", dir, "fetch", "origin", refspec]);
 }
 
 // Rebases the checkout onto the wiki's branch as last fetched. Null when it
@@ -157,8 +158,8 @@ function finishWikiSync(
 function deleteWikiBranch(cfg: Config, dir: string, n: number): void {
   const branch = paths.branch(cfg, n);
   const listed = ["-C", dir, "ls-remote", "--exit-code", "--heads", "origin"];
-  if (git(cfg, [...listed, branch], { allowFail: true }).code === 0) {
-    git(cfg, ["-C", dir, "push", "origin", "--delete", branch]);
+  if (git(cfg, "merge", [...listed, branch], { allowFail: true }).code === 0) {
+    git(cfg, "merge", ["-C", dir, "push", "origin", "--delete", branch]);
   }
 }
 

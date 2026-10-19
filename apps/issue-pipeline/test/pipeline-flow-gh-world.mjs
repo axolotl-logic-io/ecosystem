@@ -198,6 +198,7 @@ function postComment(world, n, login, body) {
 function restComment(world, posted) {
   return Object.fromEntries([
     ["id", posted.id],
+    ["node_id", `comment-${posted.id}`],
     ["body", posted.body],
     ["user", { login: posted.login }],
     ["created_at", posted.createdAt],

@@ -3,10 +3,12 @@
 // workflow does: a pipeline root with a config, local git repos holding issue
 // #7's worktree, the fake gh, and the exact gh writes and comment texts the
 // finishing ops make.
+
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { githubComment, installFakeGh } from "./fake-gh.mjs";
 import { runOps, setEnv } from "./ops-run-test-kit.mjs";
 
@@ -24,7 +26,7 @@ const MS_PER_HOUR = 3_600_000;
 const MINUTE_STAMP = /\d{4}-\d\d-\d\dT\d\d:\d\dZ/gu;
 const CONFIG = {
   repo: REPO,
-  account: ACCOUNT,
+  ...credentialConfig(ACCOUNT),
   allowedUsers: ["alice"],
   commands: { test: "true" },
   baseBranch: "integration",

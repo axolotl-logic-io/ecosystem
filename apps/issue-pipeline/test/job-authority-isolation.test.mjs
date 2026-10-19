@@ -9,6 +9,10 @@ import { repliesAt, stateAt } from "./job-fixtures.mjs";
 import { setUp } from "./job-test-kit.mjs";
 
 const UNSUPPORTED = /unsupported private fake gh request/u;
+const GH_ENV = {
+  ...process.env,
+  ...Object.fromEntries([["GH_TOKEN", "fake-pipeline-merge--bot"]]),
+};
 const MARK = "<!-- agent-pipeline:state\n";
 
 test("each job owns a default-deny fake gh with author and collaborator reads", () => {
@@ -16,15 +20,18 @@ test("each job owns a default-deny fake gh with author and collaborator reads", 
   const gh = path.join(place.bin, "gh");
   const issue = spawnSync(gh, ["api", "repos/o/r/issues/7"], {
     encoding: "utf8",
+    env: GH_ENV,
   });
   assert.equal(issue.status, 0, issue.stderr);
   assert.equal(JSON.parse(issue.stdout).user.login, "alice");
   const collaborator = spawnSync(gh, ["api", "repos/o/r/collaborators/alice"], {
     encoding: "utf8",
+    env: GH_ENV,
   });
   assert.equal(collaborator.status, 0, collaborator.stderr);
   const unsupported = spawnSync(gh, ["pr", "merge", "42"], {
     encoding: "utf8",
+    env: GH_ENV,
   });
   assert.equal(unsupported.status, 1);
   assert.match(unsupported.stderr, UNSUPPORTED);
@@ -40,12 +47,13 @@ test("successful fake save ops expose the exact complete saved receipt to subseq
   const save = spawnSync(process.execPath, [path.join(place.root, "ops.mjs")], {
     input: `BEGIN_OPS_REQUEST\n${JSON.stringify(request)}\nEND_OPS_REQUEST`,
     encoding: "utf8",
+    env: GH_ENV,
   });
   assert.equal(save.status, 0, save.stderr);
   const comments = spawnSync(
     path.join(place.bin, "gh"),
     ["api", "repos/o/r/issues/7/comments?per_page=100"],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: GH_ENV },
   );
   assert.equal(comments.status, 0, comments.stderr);
   const comment = JSON.parse(comments.stdout);

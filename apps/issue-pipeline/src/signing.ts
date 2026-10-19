@@ -1,4 +1,4 @@
-// Comment signatures. One GitHub account posts everything, so each comment
+// Comment signatures. The merge identity posts every comment, so each comment
 // names who wrote it: the role, the agent definition, the model, and the run
 // key (to find its logs).
 

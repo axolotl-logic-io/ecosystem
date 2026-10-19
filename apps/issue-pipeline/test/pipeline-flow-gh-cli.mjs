@@ -21,6 +21,7 @@ import {
 /** @typedef {import("./pipeline-flow-gh-world.mjs").FlowPr} FlowPr */
 /** @typedef {import("./pipeline-flow-gh-world.mjs").Answer} Answer */
 
+const FAKE_IDENTITY = /^fake-pipeline-(?<identity>dev|merge)--(?<login>.+)$/u;
 const UNSUPPORTED = "fake-gh: unsupported";
 
 /**
@@ -85,7 +86,7 @@ function createPr(world, args) {
     mergeOid: null,
     mergedHead: null,
   });
-  const login = world.account;
+  const login = "dev-bot";
   const at = now();
   /** @type {import("./pipeline-flow-gh-world.mjs").FlowIssue} */
   const kept = {
@@ -211,7 +212,54 @@ function labelCommand(world, args) {
 }
 
 /** @param {World} world @param {readonly string[]} args @returns {Answer} */
+function commentProvenance(world, args) {
+  const id = flagValue(args, "-f");
+  const nodeId = args.find((arg) => arg.startsWith("id="))?.slice("id=".length);
+  const item = world.comments.find(
+    (comment) => `comment-${comment.id}` === nodeId,
+  );
+  if (item === undefined || id === null) {
+    throw new Error("unsupported provenance request");
+  }
+  const node = {
+    databaseId: item.id,
+    body: item.body,
+    author: { login: item.login },
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    lastEditedAt: null,
+    editor: null,
+  };
+  return { stdout: JSON.stringify({ data: { node } }) };
+}
+
+/** @param {World} world @param {readonly string[]} args @returns {Answer} */
 function answer(world, args) {
+  const { GH_TOKEN: ghToken } = process.env;
+  const tokenIdentity = FAKE_IDENTITY.exec(ghToken ?? "");
+  if (tokenIdentity === null) {
+    throw new Error("missing fake credential");
+  }
+  const { identity, login = "" } = tokenIdentity.groups ?? {};
+  if (args[0] === "api" && args[1] === "user") {
+    return { stdout: login };
+  }
+  let expected = "merge";
+  if (
+    args[0] === "pr" &&
+    ["create", "edit", "reopen", "close", "ready"].includes(String(args[1]))
+  ) {
+    expected = "dev";
+  }
+  if (identity !== expected) {
+    throw new Error("wrong fake credential identity");
+  }
+  if (expected === "merge" && login !== world.account) {
+    throw new Error("wrong merge account");
+  }
+  if (args[0] === "api" && args[1] === "graphql") {
+    return commentProvenance(world, args);
+  }
   switch (args[0]) {
     case "api":
       return api(world, args.slice(1));

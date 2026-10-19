@@ -5,6 +5,7 @@
 
 import { spawn } from "node:child_process";
 import process from "node:process";
+import { childEnvironment } from "../child-env.ts";
 import { endGroup } from "../process-group.ts";
 import { STOP_GRACE_MS } from "./control.ts";
 import type { ProcessExit } from "./raw-results.ts";
@@ -41,7 +42,11 @@ function runOps(run: OpsRun): Promise<ProcessExit> {
       stderr: "",
       timedOut: false,
     };
-    const child = spawn(program, args, { stdio: "pipe", detached: true });
+    const child = spawn(program, args, {
+      stdio: "pipe",
+      detached: true,
+      env: childEnvironment(process.env),
+    });
     const pid = child.pid ?? null;
     const exited = new Promise<void>((done: () => void): void => {
       child.on("exit", (): void => done());

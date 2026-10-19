@@ -4,7 +4,7 @@
 import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";
-import { OpsError } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
 import { pullRequest } from "../revision.ts";
 import { readWriteState } from "../saved-state.ts";
 import { historicalPrFor } from "./prs.ts";
@@ -53,7 +53,7 @@ function recoverDraft(cfg: Config, n: number, reopen: number): void {
     throw new OpsError(`PR #${pr} merged; refusing draft recovery`);
   }
   if (before.state === "CLOSED") {
-    gh(cfg, ["pr", "reopen", String(pr), "-R", cfg.repo]);
+    gh(cfg, "dev", ["pr", "reopen", String(pr), "-R", cfg.repo]);
   }
   saveDraftAuthority(cfg, n, pr, before.headSha);
 }

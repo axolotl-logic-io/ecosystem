@@ -61,7 +61,7 @@ Parallel jobs must use distinct issues/branches. Never dispatch the same issue/b
 
 ## Write authority and refused-work recovery
 
-Every credentialed code push, including stop-time salvage and synchronization, checks fresh account-authored saved authority and actual PR status. Missing or malformed critical state, a saved code merge, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine account-authored state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and only an explicit, validated v1 state may migrate through claim with its actual PR reconciled. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
+Every credentialed code push, including stop-time salvage and synchronization, checks fresh merge-authored, editor-verified saved authority and actual PR status. Missing or malformed critical state, a saved code merge, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine merge-authored, editor-verified state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and any prior pipeline comment, local work, remote issue branch, private wiki ref or PR history without saved authority requires reconciliation. Legacy v1 state is display-only and claims refuse it with `legacy pipeline state needs explicit reconciliation`; there is no automatic adoption tool. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
 
 Draft creation validates the actual PR's repository, branch, target and head, saves its identity and confirms the save before the Developer can launch a writer. An interrupted create/save with no recorded PR searches branch-scoped history across **all** PR states, bounded at 100 rows. Unreadable, malformed, ambiguous or saturated history fails closed; an empty open-only search is never evidence that no merge occurred. An explicit `open-pr` reopen request validates the old PR, reopens it, rereads OPEN authority and saves it before any guarded code push.
 
@@ -100,7 +100,80 @@ Before any mutation the job snapshots the pages needed by its stage. Missing/unr
 | `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commit tool extensions |
 | `orchestrate.mjs` | Retained legacy discovery/scheduling compatibility only; `--config <path> --brain-path <wiki clone> [--once]`. Not the caller-owned entry point; do not run it alongside caller-managed jobs |
 
-Signed GitHub state, claim, Gherkin, hardening and security comments are authoritative. `clones/`, `work/` and `runs/` are local caches/recovery artifacts: retain them and saved patches through upgrades until preserved work is confirmed safe.
+GitHub state, claim, Gherkin, hardening and security comments require merge authorship plus same-read editor provenance to be authoritative; signatures and markers alone grant nothing. `clones/`, `work/` and `runs/` are local caches/recovery artifacts: retain them and saved patches through upgrades until preserved work is confirmed safe.
+
+## Two GitHub identities and operator credentials
+
+Development (`devAccount`, intended `axolotl-logic-hippy`) owns code/private-wiki
+commits, source/private-wiki branch pushes and PR create/edit/reopen/close/ready/draft.
+Review/merge (`mergeAccount`, intended `axolotl-logic-lawd`) owns every comment,
+saved state, claim, label, authority read, explicit-target REST merge and published
+wiki push. Closing a PR uses development; its accompanying comment uses merge.
+Neither bot is a trusted human, even if included in `allowedUsers`. Human issue
+and comment authors require both that explicit allow-list and a fresh collaborator
+check; revoking either stops trust.
+
+Configure distinct `devAccount` and `mergeAccount` and an absolute
+`credentialsEnvFile` pointing to a private operator-managed file (owner-only
+permissions, for example mode 0600), outside managed job worktrees, such as the
+operator checkout's ignored `.env`. Required entries are
+`ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_MERGE_GITHUB_TOKEN`.
+Never put token values in JSON, prompts, examples, logs or command arguments.
+The loader parses that one file, takes only the selected fixed variable and never
+exports dotenv values. Each selected credential is login-verified (cached only
+for that account/token in the current process); missing/swapped credentials fail
+closed, with no ambient, personal, keyring or role-token fallback. Public/model
+config omits the file path. Legacy live `account`/`tokenFile` config is rejected
+with migration instructions. Optional `legacyAccount` classifies historical
+machine text for display and trusted-input exclusion only; it grants no authority.
+
+Ordinary model/shell children lose both fixed token variables, ambient GitHub
+tokens, configured legacy role-token variables and inherited Git credential/debug
+injection. Privileged calls receive only their selected `GH_TOKEN`; diagnostics
+redact it. Git uses a non-storing per-call helper, no personal/global helper,
+HTTPS repository/wiki allow-listing and no redirects. Local test origins receive
+no credentials. Submodule authentication is limited to the configured repo/wiki.
+No installer or release workflow change is implied. Keep the operator file out
+of `apps/web/` and its app-local env files: Next/Drizzle run from that folder,
+and web tooling that uses `--env-file` names its own app-local files. Never add
+the operator file to a build/deploy `--env-file` invocation or export it into a
+web process. Pipeline build tasks do not load it.
+
+Every merge-authored comment is reread through GraphQL with body, author,
+`lastEditedAt` and `editor` in the same response. Unedited comments require null
+edit time/editor; edited comments require the merge bot as editor. Missing,
+unreadable or untrusted provenance (including removed markers) stops for
+reconciliation rather than falling back to an older/empty receipt. These
+semantics still need the operator verification below. This is not a same-OS-user
+sandbox: a child under the operator's user may still read the credential file.
+
+## Activation prerequisites — blocked on Autumn (A–H)
+
+Do not activate/install this change until Autumn records and verifies all of:
+
+- **A — Access and PATs:** both account memberships and repository/wiki access;
+  exact fine-grained PAT resources/permissions and separation of development and
+  merge capabilities. No permission has been changed by this source patch.
+- **B — Integration protection:** branch rules, required checks and an emergency
+  route compatible with the supported explicit-target REST merge; no bypass or
+  weakening is assumed or automated.
+- **C — Production:** production trigger and `main` protection; neither bot gets
+  deployment authority. This patch does not edit `release.yml` or triggers.
+- **D — Editor provenance:** verify GitHub's author/editor/`lastEditedAt` behavior
+  and authorized disposable tamper/deletion negative tests before trusting it.
+- **E — Residual risks:** accept same-user credential-file readability and the
+  full-deletion case where all remote and local prior-work evidence disappears.
+  Missing surviving authority evidence must be reconciled, never reset casually.
+- **F — Lifecycle:** token expiration, rotation, revocation and recovery ownership.
+- **G — Drained cutover:** stop dispatch and drain old jobs; inventory and preserve
+  config, state, claims, source/private-wiki branches, PRs, patches and bundles,
+  including issue #486 history. Explicitly reconcile historical authority and
+  rename drained `clones/`, `work/` and `runs/` directories as needed. No
+  `storageSlug` override, automatic state adoption or credential/schema migration
+  is provided. Do not overwrite old work or run old/new jobs together.
+- **H — Capability checks:** authorize any disposable wiki/workflow capability
+  tests and decide what to do about unsupported capabilities. Fake-only tests
+  here establish no live GitHub permission or protection claim.
 
 ## Config and model cutover
 

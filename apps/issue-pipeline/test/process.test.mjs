@@ -57,7 +57,13 @@ const IGNORES_TERM =
 
 // The modules `shell` loads, which a test copies without the supervisor
 // that sits beside them in src/.
-const SHELL_MODULES = ["process.ts", "pipeline-root.ts", "shell-protocol.ts"];
+const SHELL_MODULES = [
+  "process.ts",
+  "pipeline-root.ts",
+  "child-env.ts",
+  "ops-error.ts",
+  "shell-protocol.ts",
+];
 
 /** @typedef {{ code: number, log: string | undefined, tail: string }} ShellResult */
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // The orchestrator: a long-lived process, the only one that claims issues for
 // its repo, that starts stage jobs (author, implement, review, merge) as the
 // open issues need them.
@@ -18,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { childEnvironment } from "./child-env.ts";
 import type { Config } from "./config.ts";
 import { loadConfig } from "./config.ts";
 import { orchestratorArgsOf } from "./orchestrator/args.ts";
@@ -46,7 +48,11 @@ function spawnJob(argv: readonly string[], log: string): number {
     const child = spawn(
       process.execPath,
       [path.join(ROOT, JOB_ENTRY), ...argv],
-      { detached: true, stdio: ["ignore", out, out] },
+      {
+        env: childEnvironment(process.env),
+        detached: true,
+        stdio: ["ignore", out, out],
+      },
     );
     child.on("error", (error: Error): void => {
       process.stderr.write(`orchestrate: ${JOB_ENTRY}: ${error.message}\n`);
@@ -77,6 +83,7 @@ function isStageJob(pid: number): boolean {
   }
   const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], {
     encoding: "utf8",
+    env: childEnvironment(process.env),
   });
   if (ps.status !== 0 || ps.error !== undefined) {
     return true;

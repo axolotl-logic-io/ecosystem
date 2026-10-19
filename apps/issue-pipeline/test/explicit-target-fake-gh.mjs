@@ -7,6 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 
+const FAKE_IDENTITY = /^fake-pipeline-(?<identity>dev|merge)--(?<login>.+)$/u;
 const COMMAND_TIMEOUT_MS = 20_000;
 const UNEXPECTED_CALL = 91;
 const STEP = z.object({
@@ -27,6 +28,27 @@ if (home === undefined) {
 const file = path.join(home, "gh-script.json");
 const script = SCRIPT.parse(JSON.parse(fs.readFileSync(file, "utf8")));
 const args = process.argv.slice(2);
+const { GH_TOKEN: ghToken } = process.env;
+const tokenIdentity = FAKE_IDENTITY.exec(ghToken ?? "");
+if (!tokenIdentity) {
+  throw new Error("missing fake credential");
+}
+const { identity, login = "" } = tokenIdentity.groups ?? {};
+if (args[0] === "api" && args[1] === "user") {
+  process.stdout.write(login);
+  process.exit(0);
+}
+let expectedIdentity = "merge";
+if (
+  args[0] === "pr" &&
+  ["create", "edit", "reopen", "close", "ready"].includes(String(args[1]))
+) {
+  expectedIdentity = "dev";
+}
+if (identity !== expectedIdentity) {
+  throw new Error("wrong fake credential identity");
+}
+
 fs.appendFileSync(
   path.join(home, "gh-calls.jsonl"),
   `${JSON.stringify(args)}\n`,

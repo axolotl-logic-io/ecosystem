@@ -7,7 +7,7 @@
 // that moved returns a refusal, and undefined lets the op go on.
 
 import { z } from "zod";
-import { OpsError } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
 import type { currentRevision } from "../revision.ts";
 import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";

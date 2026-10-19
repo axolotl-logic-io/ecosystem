@@ -10,7 +10,7 @@ import { stopMutationReplies } from "./gh-mutation-fixtures.mjs";
 
 const kit = await import("./ops-cli-test-kit.mjs");
 
-const { ACCOUNT, root, sh, writes } = kit;
+const { ALLOWED, root, sh, writes } = kit;
 
 const STATE_JSON = /<!-- agent-pipeline:state\n(?<json>.*)\n-->/u;
 const STATE_GROUPS = z.object({ json: z.string() });
@@ -81,7 +81,7 @@ function openIssue(n) {
     title: `Issue ${n}`,
     body: "",
     state: "open",
-    user: { login: ACCOUNT },
+    user: { login: ALLOWED },
     labels: [],
   };
   return {

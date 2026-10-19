@@ -2,9 +2,11 @@
 // A pipeline root with a local origin, for tests that run the ops CLI against
 // real git repos and the fake gh. opsFixture() must run before anything from
 // src/ is imported, since the pipeline root is read once, on import.
+
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFakeGh } from "./fake-gh.mjs";
 import { OPS, runOps, setEnv, sh } from "./ops-run-test-kit.mjs";
 
@@ -57,7 +59,7 @@ const BASE = "integration";
 function writeConfig(file, extra) {
   const config = {
     repo: "o/r",
-    account: "a",
+    ...credentialConfig("a"),
     allowedUsers: ["a"],
     commands: { test: "true" },
     baseBranch: BASE,

@@ -1,9 +1,11 @@
 // @ts-check
 // Mutation authority must not inherit the compatibility reader's lossy defaults.
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { saveAuthority } from "./write-authority-test-kit.mjs";
 
@@ -19,7 +21,7 @@ fs.writeFileSync(
   file,
   JSON.stringify({
     repo: "o/authority",
-    account: "bot",
+    ...credentialConfig("bot"),
     allowedUsers: ["alice"],
     commands: { test: "true" },
   }),

@@ -7,7 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Config } from "../config.ts";
-import { OpsError, run } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { run } from "../process.ts";
 import { holdWikiPin } from "../wiki.ts";
 
 interface PreparedPatch {

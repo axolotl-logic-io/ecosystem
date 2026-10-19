@@ -2,6 +2,7 @@
 // The opt-in strict fake denies unexpected effects and never persists failed writes.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import process from "node:process";
 import { test } from "node:test";
 import { installFakeGh } from "./fake-gh.mjs";
 import { initialWriteStateReply } from "./initial-write-state-fixtures.mjs";
@@ -26,7 +27,13 @@ fake.requireReplies();
 
 /** @param {string[]} args @returns {import("node:child_process").SpawnSyncReturns<string>} */
 function gh(args) {
-  return spawnSync("gh", args, { encoding: "utf8" });
+  return spawnSync("gh", args, {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...Object.fromEntries([["GH_TOKEN", "fake-pipeline-merge--a"]]),
+    },
+  });
 }
 
 for (const args of [

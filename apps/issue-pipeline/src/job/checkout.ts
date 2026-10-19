@@ -12,7 +12,6 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   configureClone,
-  GH_HELPER,
   guardCommits,
   updateSubmodules,
 } from "../clone-setup.ts";
@@ -20,7 +19,8 @@ import type { Config, JobCheckout } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
-import { OpsError, run } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { run } from "../process.ts";
 import { ensureWiki } from "../wiki.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
@@ -64,16 +64,16 @@ function syncMirror(
   if (!fs.existsSync(path.join(mirror, "HEAD"))) {
     fs.rmSync(mirror, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(mirror), { recursive: true });
-    const clone = [...GH_HELPER, "clone", "--mirror", url, mirror];
-    git(cfg, clone);
+    const clone = ["clone", "--mirror", url, mirror];
+    git(cfg, "dev", clone);
   }
-  const fetch = [...GH_HELPER, "-C", mirror, "fetch", "origin"];
+  const fetch = ["-C", mirror, "fetch", "origin"];
   fetch.push("--prune");
   if (!prune) {
     // Private wiki heads must never be destinations of remote refresh.
     fetch.push("--refmap=", "+refs/heads/*:refs/remotes/origin/*");
   }
-  git(cfg, fetch);
+  git(cfg, "dev", fetch);
 }
 
 // Clones `spec.mirror` into `dir` on the issue's branch: at the mirror's

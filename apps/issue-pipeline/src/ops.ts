@@ -7,14 +7,14 @@
 // JSON line on stdout. Handled failures exit 0 with {"ok":false,...}; only
 // crashes exit non-zero.
 //
-// No language model runs here. This file is the only code that reads the
-// pipeline's token file.
+// No language model runs here. Authenticated calls select a verified credential
+// through github.ts; config.ts alone reads the private operator file.
 //
-// One GitHub account does everything: opens PRs, posts every agent's review,
-// and merges. It may also be a human's own account. So the pipeline never
-// tells its comments apart by author. Every comment it posts is signed with
-// the agent role that wrote it and carries a hidden PIPELINE_MARK; a comment
-// counts as the pipeline's only when it has the mark AND the account wrote it.
+// Development owns commits, source/private-wiki pushes and PR lifecycle.
+// Review/merge owns comments, state, claims, labels, authority reads, REST
+// merge and published wiki pushes. Both are excluded from human trust;
+// current merge authorship and editor provenance, not marks alone, confer
+// operational authority.
 
 import fs from "node:fs";
 import process from "node:process";
@@ -39,8 +39,9 @@ import { syncOps } from "./ops/sync.ts";
 import { usage } from "./ops/usage.ts";
 import { verify } from "./ops/verify.ts";
 import { wikiCheck } from "./ops/wiki-check.ts";
+import { OpsError } from "./ops-error.ts";
 import { ROOT } from "./pipeline-root.ts";
-import { OpsError, parseRequest } from "./process.ts";
+import { parseRequest } from "./process.ts";
 
 // An op reads its own fields from the whole request and returns its reply.
 type Op = (cfg: Config, request: unknown) => object;

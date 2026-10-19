@@ -57,6 +57,9 @@ for (const [index, invalid] of [
         {
           ...stateComment(number, { ...complete, ...invalid }),
           id: STATE_ID_BASE + STATE_ID_BASE + number,
+          ...Object.fromEntries([
+            ["node_id", `comment-${STATE_ID_BASE + STATE_ID_BASE + number}`],
+          ]),
         },
       ]);
     }

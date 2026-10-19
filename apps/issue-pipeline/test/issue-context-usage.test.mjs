@@ -1,12 +1,14 @@
 // @ts-check
 // issue.md leaves out the pipeline's usage comments (#459): they are its own
 // records, so no agent reads one as a person's comment, while a comment by
-// the same account with no pipeline mark is still shown as a person's.
+// the bot account with no pipeline mark is withheld.
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 
@@ -29,7 +31,7 @@ fs.writeFileSync(
   configFile,
   JSON.stringify({
     repo: "o/r",
-    account: ACCOUNT,
+    ...credentialConfig(ACCOUNT),
     allowedUsers: [ALLOWED],
     baseBranch: "integration",
     commands: { test: "true" },
@@ -53,6 +55,7 @@ function issueFileWith(comments) {
     githubComment({ id: at + 1, body, login, created: AT, updated: AT }),
   );
   fakeGh.reply([
+    { when: "api repos/o/r/collaborators/alice", stdout: "", keep: true },
     {
       when: `issues/${ISSUE}/comments?per_page`,
       stdout: commentLines(listed),
@@ -81,12 +84,15 @@ test("issue.md leaves out the account's usage comments (#459)", () => {
   assert.ok(!text.includes("withheld"), text);
 });
 
-test("issue.md still shows an unmarked comment by the account as a person's", () => {
+test("issue.md withholds an unmarked bot comment rather than treating it as human input", () => {
   const text = issueFileWith([
     [ACCOUNT, usageBody("usage")],
     [ACCOUNT, "Yes, keep the old behaviour."],
   ]);
-  assert.ok(text.includes(`Comment by @${ACCOUNT} (a person) at ${AT}:`), text);
-  assert.ok(text.includes("Yes, keep the old behaviour."), text);
+  assert.ok(
+    !text.includes(`Comment by @${ACCOUNT} (a person) at ${AT}:`),
+    text,
+  );
+  assert.ok(!text.includes("Yes, keep the old behaviour."), text);
   assert.ok(!text.includes(RECORD), text);
 });

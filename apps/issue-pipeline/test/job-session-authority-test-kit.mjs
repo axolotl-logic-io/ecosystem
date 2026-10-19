@@ -9,11 +9,13 @@
 // its phase's pinned prompt page appended to its system prompt, byte for
 // byte, though the page changed after it was pinned; and a session the stage
 // doesn't allow, or one the job pinned no prompt for, never starts pi.
+
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import { writeBrain } from "./brain-test-kit.mjs";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { saveAuthority } from "./write-authority-test-kit.mjs";
 
@@ -77,7 +79,7 @@ fs.writeFileSync(
   configFile,
   JSON.stringify({
     repo: "o/r",
-    account: "bot",
+    ...credentialConfig("bot"),
     allowedUsers: ["alice"],
     commands: { test: "true" },
   }),

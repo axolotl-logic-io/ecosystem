@@ -5,17 +5,14 @@
 // account wrote is ignored.
 
 import { z } from "zod";
+import { USAGE_MARK } from "../comment-marks.ts";
 import type { IssueComment } from "../comments.ts";
-import {
-  editComment,
-  listComments,
-  rawComment,
-  USAGE_MARK,
-} from "../comments.ts";
+import { editComment, listComments, rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { appendedBody, usageBody } from "../job/usage-comment.ts";
 import { parseUsageLine, serializeUsage } from "../job/usage-log.ts";
-import { OpsError, parseRequest } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { parseRequest } from "../process.ts";
 
 const USAGE_REQUEST = z.looseObject({
   number: z.number().int().positive(),
@@ -44,7 +41,7 @@ function lastMarked(
   let last: Marked | null = null;
   for (const { id, body, user } of comments) {
     const { issue, n: nth = "1" } = USAGE_MARK.exec(body ?? "")?.groups ?? {};
-    if (user?.login === cfg.account && issue === String(number)) {
+    if (user?.login === cfg.mergeAccount && issue === String(number)) {
       const n = Number(nth);
       if (last === null || n > last.n) {
         last = { id, n, body: body ?? "" };

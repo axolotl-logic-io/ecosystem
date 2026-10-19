@@ -5,11 +5,13 @@
 // .gitignore (node_modules), README.md and any extra files, and a clone of it at
 // <root>/clones/o__r, where the ops CLI looks for repo "o/r".
 // Not a test file: `node --test 'test/*.test.mjs'` doesn't run it.
+
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 
 const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
 // The folder that holds the repo's own `typescript` package.
@@ -123,7 +125,7 @@ function writeConfig(root, n, commands, extra = {}) {
   const file = path.join(root, `config-${n}.json`);
   const cfg = {
     repo: "o/r",
-    account: "a",
+    ...credentialConfig("a"),
     allowedUsers: ["a"],
     baseBranch: "integration",
     commands: { test: "true", ...commands },

@@ -1,27 +1,15 @@
 // The pipeline's comments on GitHub and the hidden marks they carry.
 //
-// One GitHub account does everything: opens PRs, posts every agent's review,
-// and merges. It may also be a human's own account. So the pipeline never
-// tells its comments apart by author. Every comment it posts is signed with
-// the agent role that wrote it and carries a hidden PIPELINE_MARK; a comment
-// counts as the pipeline's only when it has the mark AND the account wrote it.
+// Development owns commits, pushes and PR lifecycle. Review/merge owns all
+// comments. Role signatures describe model work, not authentication: current
+// authorship and editor provenance establish operational authority.
 
 import { z } from "zod";
+import { assertCommentAuthority, currentComment } from "./comment-authority.ts";
+import { isStateBody, PIPELINE_MARK, USAGE_MARK } from "./comment-marks.ts";
 import type { Config } from "./config.ts";
 import { gh, ghLines } from "./github.ts";
 
-const STATE_MARK = "<!-- agent-pipeline:state";
-const STATE_HEADER = "**🤖 issue-pipeline · state**";
-// The mark of an issue's n-th usage comment (src/job/usage-log.ts): the
-// first is `usage`, the next `usage-2`, and so on.
-const USAGE_MARK =
-  /<!-- issue-pipeline:(?<issue>\d+):usage(?:-(?<n>[2-9]|[1-9]\d+))? -->/u;
-const PIPELINE_MARK = /<!-- agent-pipeline:comment role=(?<role>[\w.:-]+) -->/u;
-const PARENT_MARK =
-  /<!-- agent-pipeline:parent (?<parent>\d+) depth (?<depth>\d+) -->/u;
-const AFTER_MARK = /<!-- agent-pipeline:after (?<after>[\d,]+) -->/u;
-const CLAIM_MARK =
-  /<!-- agent-pipeline:claim lane=(?<lane>\S+) sweep=(?<sweep>\S+) -->/u;
 const UNSAFE_ROLE_CHARACTERS = /[^\w.:-]+/gu;
 const EDGE_DASHES = /^-+|-+$/gu;
 // GitHub refuses comments longer than 65536 characters.
@@ -33,6 +21,9 @@ const COMMENT = z.looseObject({
   body: z.string().nullish(),
   created_at: z.string(),
   id: z.number(),
+  node_id: z.string().optional(),
+  lastEditedAt: z.string().nullable().optional(),
+  editor: z.object({ login: z.string() }).nullable().optional(),
   updated_at: z.string().nullish(),
   user: z.looseObject({ login: z.string() }).nullish(),
 });
@@ -69,20 +60,36 @@ function commentOf(line: unknown): IssueComment {
   return COMMENT.parse(line);
 }
 
+function verifiedComment(cfg: Config, item: IssueComment): IssueComment {
+  const node = currentComment(cfg, item);
+  if (node === null) {
+    return item;
+  }
+  return {
+    ...item,
+    body: node.body,
+    user: node.author,
+    created_at: node.createdAt,
+    updated_at: node.updatedAt,
+    lastEditedAt: node.lastEditedAt,
+    editor: node.editor,
+  };
+}
+
 function listComments(cfg: Config, number: number): IssueComment[] {
-  const lines = ghLines(cfg, [
+  const lines = ghLines(cfg, "merge", [
     "api",
     "--paginate",
     `repos/${cfg.repo}/issues/${number}/comments?per_page=100`,
     "--jq",
     ".[] | @json",
   ]);
-  return lines.map(commentOf);
+  return lines.map(commentOf).map((item) => verifiedComment(cfg, item));
 }
 
 // Posts `body` exactly as given: no signature, no mark.
 function rawComment(cfg: Config, number: number, body: string): void {
-  gh(cfg, [
+  gh(cfg, "merge", [
     "api",
     "-X",
     "POST",
@@ -100,14 +107,14 @@ function listRepoComments(cfg: Config, since: string | null): IssueComment[] {
   if (since !== null) {
     query = `${query}&since=${since}`;
   }
-  const lines = ghLines(cfg, [
+  const lines = ghLines(cfg, "merge", [
     "api",
     "--paginate",
     `repos/${cfg.repo}/issues/comments?${query}`,
     "--jq",
     ".[] | @json",
   ]);
-  return lines.map(commentOf);
+  return lines.map(commentOf).map((item) => verifiedComment(cfg, item));
 }
 
 // The mark of issue `issue`'s n-th usage comment.
@@ -184,6 +191,7 @@ function editComment(
 ): void {
   gh(
     cfg,
+    "merge",
     [
       "api",
       "-X",
@@ -211,10 +219,11 @@ function commentByKey(
   const text = `${signed(by, keyed.body)}\n${mark}`;
   const mine = listComments(cfg, number).find(
     (item) =>
-      item.user?.login === cfg.account && (item.body ?? "").includes(mark),
+      item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+      (item.body ?? "").includes(mark),
   );
   if (mine === undefined) {
-    const posted = gh(cfg, [
+    const posted = gh(cfg, "merge", [
       "api",
       "-X",
       "POST",
@@ -235,18 +244,11 @@ function keyMark(number: number, key: string): string {
   return `<!-- issue-pipeline:${number}:${key} -->`;
 }
 
-// State must occupy the comment itself, not a quoted diagnostic or body field.
-function isStateBody(body: string): boolean {
-  return (
-    body.startsWith(STATE_MARK) ||
-    body.startsWith(`${STATE_HEADER}\n${STATE_MARK}`)
-  );
-}
-
 function pipelineRole(cfg: Config, item: IssueComment): string | null {
-  if (item.user?.login !== cfg.account) {
+  if (item.user?.login.toLowerCase() !== cfg.mergeAccount.toLowerCase()) {
     return null;
   }
+  assertCommentAuthority(cfg, item);
   const body = item.body ?? "";
   if (isStateBody(body)) {
     return "state";
@@ -263,26 +265,18 @@ function pipelineRole(cfg: Config, item: IssueComment): string | null {
 
 export type { Author, IssueComment };
 export {
-  AFTER_MARK,
   AUTHOR,
-  CLAIM_MARK,
   COMMENT,
   comment,
   commentByKey,
   editComment,
-  isStateBody,
   keyMark,
   listComments,
   listRepoComments,
-  PARENT_MARK,
-  PIPELINE_MARK,
   pipelineRole,
   rawComment,
   roleSlug,
-  STATE_HEADER,
-  STATE_MARK,
   signature,
   signed,
-  USAGE_MARK,
   usageMark,
 };

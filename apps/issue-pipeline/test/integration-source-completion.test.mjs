@@ -92,7 +92,7 @@ function savedStateComment(n, saved) {
   const comment = githubComment({
     id: COMMENT_ID_BASE + n,
     body: stateBody(n, saved),
-    login: cfg.account,
+    login: cfg.mergeAccount,
     created: "2026-10-17T00:00:00Z",
   });
   fakeGh.reply([

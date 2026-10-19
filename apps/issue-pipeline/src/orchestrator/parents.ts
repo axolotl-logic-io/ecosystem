@@ -10,7 +10,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { CloseParentReply } from "../ops/finish.ts";
 import { closeParent } from "../ops/finish.ts";
-import { OpsError } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
 import type { LogEntry } from "./log.ts";
 
 // The stage a parent's log lines name.

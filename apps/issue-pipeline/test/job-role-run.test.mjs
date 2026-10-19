@@ -7,9 +7,11 @@
 // op's own error alone decides between deferring and stopping; a role's
 // comment is signed with its role and agent only; and the claim hands the
 // exit push the run's last saved state.
+
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFakeGh } from "./fake-gh.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
@@ -40,7 +42,7 @@ const SECOND_ID = 10;
 const CFG = {
   repo: "o/r",
   slug: "o__r",
-  account: "bot",
+  ...credentialConfig("bot"),
   allowedUsers: ["alice"],
   models: { author: "m-a", implementor: "m-i", reviewer: "m-r" },
 };

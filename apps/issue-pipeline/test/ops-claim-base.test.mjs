@@ -20,11 +20,13 @@ import {
   requireGhReplies,
   root,
   sh,
+  stateComment,
   worktree,
 } from "./ops-cli-test-kit.mjs";
 
 requireGhReplies();
 
+const { newIssueState } = await import("../src/state.ts");
 const COMMITTER = "-c user.email=a@b -c user.name=a";
 // The issue whose worktree has commits of its own, and its claim comment.
 const OWN = 48;
@@ -55,9 +57,12 @@ function claimNew(n, claimId) {
   reply([
     historyReply(n),
     issueReply(n),
-    commentsReply(n, []),
+    commentsReply(n, [stateComment(n, newIssueState(n))]),
     { when: `issues/${n}/comments -f`, stdout: JSON.stringify(mine) },
-    { ...commentsReply(n, [mine]), keep: true },
+    {
+      ...commentsReply(n, [stateComment(n, newIssueState(n)), mine]),
+      keep: true,
+    },
     ...claimMutationReplies(n, n, null),
   ]);
   return CLAIM_REPLY.parse(askOps({ op: "claim", number: n, ...LANE }));

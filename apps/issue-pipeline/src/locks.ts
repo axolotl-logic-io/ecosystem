@@ -7,8 +7,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
+import { OpsError } from "./ops-error.ts";
 import { ROOT } from "./pipeline-root.ts";
-import { OpsError, sleepMs } from "./process.ts";
+import { sleepMs } from "./process.ts";
 
 // How long a sweep's pick is held before its claim must have written the
 // lease: 15 minutes.

@@ -69,6 +69,7 @@ function requiredChecks(wait: Wait): Check[] {
   const args = ["pr", "checks", String(request.pr), "-R", settings.repo];
   const result = gh(
     cfg,
+    "merge",
     [...args, "--required", "--json", "name,state,bucket,link"],
     {
       allowFail: true,
@@ -99,7 +100,7 @@ function failReply(wait: Wait, failing: readonly Check[]): CiReply {
     parts.push(`===== ${check.name} (${String(check.link)}) =====`);
     if (run !== undefined) {
       const args = ["run", "view", run, "-R", settings.repo, "--log-failed"];
-      const log = gh(cfg, args, { allowFail: true }).stdout;
+      const log = gh(cfg, "merge", args, { allowFail: true }).stdout;
       parts.push(log.slice(-FAILED_LOG_CHARS));
     }
   }
@@ -129,7 +130,7 @@ function isFailing(check: Check): boolean {
 function movedHead(wait: Wait): CiReply | undefined {
   const { cfg, request, settings } = wait;
   const args = ["pr", "view", String(request.pr), "-R", settings.repo];
-  const view = ghJson(cfg, [...args, "--json", "headRefOid"]);
+  const view = ghJson(cfg, "merge", [...args, "--json", "headRefOid"]);
   const expected = request.expectedSha;
   if (expected === undefined || expected === null || expected === "") {
     return undefined;

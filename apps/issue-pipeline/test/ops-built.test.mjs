@@ -57,7 +57,7 @@ function issueListing() {
     title: "Issue 7",
     body: "",
     state: "open",
-    user: { login: "bot" },
+    user: { login: "alice" },
     labels: [],
   };
   return {
@@ -120,7 +120,7 @@ function mergeAndRelease(initial, ops) {
   const lease = { lane: LANE, sweepId: SWEEP, at: hoursFromNow(0) };
   const state = issueState({ stage: "merge", pr: PR, lease });
   fakeGh.reply([
-    collaboratorReply("o/r", "bot"),
+    collaboratorReply("o/r", "alice"),
     issueListing(),
     { ...claimListing(), keep: true },
     ...prViews(w.sha, w.mergeSha),
@@ -128,7 +128,7 @@ function mergeAndRelease(initial, ops) {
   const asked = ask(w, { op: "current-revision", number: ISSUE, state }, ops);
   const current = CURRENT.parse(JSON.parse(asked));
   fakeGh.reply([
-    collaboratorReply("o/r", "bot"),
+    collaboratorReply("o/r", "alice"),
     issueListing(),
     { ...claimListing(), keep: true },
     ...prViews(w.sha, w.mergeSha),

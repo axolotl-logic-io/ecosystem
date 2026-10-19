@@ -4,10 +4,12 @@
 // a fake gh first on PATH, and askOps(), which sends one request to
 // src/ops.ts as the workflow frames it. Times in replies and gh writes are
 // replaced with TIME, so no assertion depends on the clock.
+
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 import { effectsOf } from "./gh-effects.mjs";
 import { runOps, setEnv } from "./ops-run-test-kit.mjs";
@@ -67,7 +69,7 @@ function configWith(extra) {
   const file = path.join(root, `config-${fs.readdirSync(root).length}.json`);
   const base = {
     repo: "o/r",
-    account: ACCOUNT,
+    ...credentialConfig(ACCOUNT),
     allowedUsers: [ALLOWED],
     cloneUrl: path.join(root, "origin.git"),
     baseBranch: "integration",

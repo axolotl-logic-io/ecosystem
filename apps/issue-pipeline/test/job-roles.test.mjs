@@ -3,10 +3,12 @@
 // sessions are job-sessions.test.mjs's), each stage's wiki and code access
 // and commit scope, the roles' merged settings, and the environment a session's pi
 // gets, which holds no token (Pipeline-Roles-Shared, "No token in sessions").
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 const {
@@ -37,6 +39,11 @@ const GH_VARS = [
   "GITHUB_TOKEN",
   "GH_ENTERPRISE_TOKEN",
   "GITHUB_ENTERPRISE_TOKEN",
+  "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
+  "ISSUE_PIPELINE_MERGE_GITHUB_TOKEN",
+  "GIT_TRACE_CURL",
+  "GIT_CONFIG_KEY_0",
+  "GIT_CONFIG_VALUE_0",
 ];
 
 // An environment of `pairs`, whose names are env variables, not camelCase.
@@ -74,7 +81,7 @@ fs.writeFileSync(
   CONFIG_FILE,
   JSON.stringify({
     repo: "o/r",
-    account: "a",
+    ...credentialConfig("a"),
     allowedUsers: ["a"],
     commands: { test: "true" },
     jobRoles: JOB_ROLES,
@@ -130,9 +137,12 @@ test("no session env holds a gh token variable or any role's tokenEnv", () => {
   }
 });
 
-test("with no tokenEnv set, the role variables are ordinary and only gh's are hidden", () => {
-  const untouched = { ...PLAIN, ...ROLE_TOKENS };
-  assert.deepEqual(agentEnvOf(rolesOf({}), FROM), untouched);
+test("registered legacy credentials stay hidden even when this role config omits them", () => {
+  const ordinary = envOf([["ORDINARY_VALUE", "kept"]]);
+  assert.deepEqual(agentEnvOf(rolesOf({}), { ...FROM, ...ordinary }), {
+    ...PLAIN,
+    ...ordinary,
+  });
 });
 
 test("no session env inherits a commit scope from the job's own env", () => {

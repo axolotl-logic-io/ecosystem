@@ -50,6 +50,7 @@ test("a keyed comment sent twice is posted once and then edited", () => {
   reply([
     commentsReply(ISSUE, []),
     postedCommentReply(ISSUE, OWN_ID),
+    { when: `api -X PATCH repos/o/r/issues/comments/${OWN_ID} -f`, stdout: "" },
     commentsReply(ISSUE, [marked(OWN_ID)]),
   ]);
   assert.deepEqual(askOps(postOf("triage")), postedAs(OWN_ID));

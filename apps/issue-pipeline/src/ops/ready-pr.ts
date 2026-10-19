@@ -8,8 +8,9 @@ import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
+import { OpsError } from "../ops-error.ts";
 import { assertPrBase } from "../pr-authority.ts";
-import { OpsError, parseRequest } from "../process.ts";
+import { parseRequest } from "../process.ts";
 import { currentRevision } from "../revision.ts";
 import { readState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
@@ -49,7 +50,7 @@ const READY_SAVED_STAGES: ReadonlySet<string> = new Set(["review", "merge"]);
 function viewForReady(cfg: Config, pr: number): z.infer<typeof READY_VIEW> {
   const args = ["pr", "view", String(pr), "-R", cfg.repo];
   const view = READY_VIEW.safeParse(
-    ghJson(cfg, [...args, "--json", READY_VIEW_FIELDS]),
+    ghJson(cfg, "merge", [...args, "--json", READY_VIEW_FIELDS]),
   );
   if (!view.success) {
     throw new OpsError(
@@ -158,7 +159,7 @@ function readyPr(cfg: Config, request: unknown): ReadyReply {
   if (!view.isDraft) {
     return { pr, ready: true };
   }
-  gh(cfg, ["pr", "ready", String(pr), "-R", cfg.repo]);
+  gh(cfg, "dev", ["pr", "ready", String(pr), "-R", cfg.repo]);
   const after = viewForReady(cfg, pr);
   assertReadyView(cfg, n, pr, { code, view: after });
   if (after.isDraft) {

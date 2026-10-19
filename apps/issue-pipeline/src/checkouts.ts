@@ -1,11 +1,9 @@
 // The repo's clone and each issue's worktree and branch on this machine. One
-// clone per repo; agents work in worktrees of it and only commit, and only the
-// ops CLI pushes.
-
+// Agents commit in worktrees; only deterministic ops push.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { configureClone, GH_HELPER, updateSubmodules } from "./clone-setup.ts";
+import { configureClone, updateSubmodules } from "./clone-setup.ts";
 import type { Config } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
 import {
@@ -19,7 +17,8 @@ import {
 } from "./git-state.ts";
 import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
-import { OpsError, run, runFailure, shell } from "./process.ts";
+import { OpsError } from "./ops-error.ts";
+import { run, runFailure, shell } from "./process.ts";
 import { holdWikiPin, pushWikiBranch, wikiAhead } from "./wiki.ts";
 import { readWriteAuthority } from "./write-authority.ts";
 
@@ -59,7 +58,7 @@ function ensureClone(cfg: Config): string {
     if (!fs.existsSync(path.join(clone, ".git"))) {
       fs.mkdirSync(path.dirname(clone), { recursive: true });
       const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
-      git(cfg, [...GH_HELPER, "clone", url, clone]);
+      git(cfg, "dev", ["clone", url, clone]);
     }
     configureClone(cfg, clone);
     fetchIn(cfg, clone, "--prune");
@@ -84,7 +83,7 @@ function ensureWorktree(cfg: Config, number: number): string {
     let start = `origin/${cfg.baseBranch}`;
     if (remoteHead(cfg, number) !== null) {
       const refspec = `${branch}:refs/remotes/origin/${branch}`;
-      git(cfg, ["-C", clone, "fetch", "origin", refspec]);
+      git(cfg, "dev", ["-C", clone, "fetch", "origin", refspec]);
       start = `origin/${branch}`;
     }
     gitIn(clone, ["worktree", "add", "-B", branch, wt, start]);
@@ -218,7 +217,15 @@ function pushHead(cfg: Config, n: number, op: string): string {
     throw new OpsError(`#${n}'s code merged; refusing code push`);
   }
   recordPush(cfg, n, headSha, op);
-  git(cfg, ["-C", wt, "push", "--force-with-lease", "-u", "origin", target]);
+  git(cfg, "dev", [
+    "-C",
+    wt,
+    "push",
+    "--force-with-lease",
+    "-u",
+    "origin",
+    target,
+  ]);
   return headSha;
 }
 

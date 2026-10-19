@@ -1,30 +1,23 @@
 // An issue's saved state on GitHub: one hidden comment per issue that only
-// the pipeline's account writes. GitHub is the source of truth; anyone can
-// paste the marker, so only the account's own comments are read. A state the
-// installed version saved (version 1) reads as version 2.
+// merge identity writes. GitHub is the source of truth; current merge-bot
+// authorship and editor provenance are required for authority. Version 1 is
+// display-only: claims refuse it until explicit reconciliation.
 
-import { z } from "zod";
-import type { IssueComment } from "./comments.ts";
+import { assertCommentAuthority } from "./comment-authority.ts";
 import {
+  isLegacyPipelineComment,
   isStateBody,
-  listComments,
-  rawComment,
   STATE_HEADER,
   STATE_MARK,
-} from "./comments.ts";
+} from "./comment-marks.ts";
+import type { IssueComment } from "./comments.ts";
+import { listComments, rawComment } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { gh } from "./github.ts";
-import { OpsError } from "./process.ts";
-import type { Stage } from "./stages.ts";
+import { OpsError } from "./ops-error.ts";
+import { LEGACY_STATE, migrateLegacyState } from "./saved-state-legacy.ts";
 import type { IssueState } from "./state.ts";
-import {
-  clippedLog,
-  FLOWS,
-  ISSUE_STATE,
-  LEASE,
-  newIssueState,
-  withLog,
-} from "./state.ts";
+import { ISSUE_STATE, withLog } from "./state.ts";
 
 // Mutation authority is deliberately stricter than the compatibility reader:
 // a missing receipt must not be confused with a malformed one caught as null.
@@ -54,104 +47,9 @@ const ESCAPED_MARK_END = "--\\u003e";
 // Leaves room under GitHub's comment limit for the header and footer.
 const MAX_STATE_LENGTH = 60_000;
 
-// The installed version's (version 1) fields the migration reads; it drops
-// every other field.
-const LEGACY_STATE = z.looseObject({
-  stage: z.string().optional().catch(undefined),
-  stoppedStage: z.string().nullish().catch(null),
-  stopCode: z.string().nullish().catch(null),
-  lease: LEASE.nullish().catch(null),
-  pr: z.number().int().positive().nullish().catch(null),
-  headSha: z.string().nullish().catch(null),
-  flows: FLOWS.nullish().catch(null),
-  log: z.array(z.unknown()).nullish().catch(null),
-});
-
-// Claim alone may migrate an explicit, identifiable installed-version state.
-// Unknown versions/empty objects and v2 receipts cannot become a fresh v1 state.
-const CLAIM_LEGACY_STATE = LEGACY_STATE.extend({
-  version: z.literal(1),
-  number: z.number().int().positive(),
-  stage: z.enum([
-    "triage",
-    "spec",
-    "implement",
-    "review",
-    "checks",
-    "accept",
-    "merge",
-    "publish",
-    "fix",
-    "stopped",
-    "done",
-  ]),
-  stoppedStage: LEGACY_STATE.shape.stoppedStage.removeCatch(),
-  stopCode: LEGACY_STATE.shape.stopCode.removeCatch(),
-  lease: LEGACY_STATE.shape.lease.removeCatch(),
-  pr: LEGACY_STATE.shape.pr.removeCatch(),
-  headSha: LEGACY_STATE.shape.headSha.removeCatch(),
-  flows: LEGACY_STATE.shape.flows.removeCatch(),
-  codeMerged: z.never().optional(),
-  merged: z.never().optional(),
-  hardened: z.never().optional(),
-  integration: z.never().optional(),
-  security: z.never().optional(),
-  gherkin: z.never().optional(),
-});
-
-// Legacy stages before any code work, which go to the author alone.
-const LEGACY_AUTHOR_STAGES: ReadonlySet<string> = new Set(["triage", "spec"]);
-
 interface StoredState {
   id: number | null;
   state: IssueState | null;
-}
-
-// Where a legacy stage resumes after the author writes the Gherkin: null for
-// the stages before code work; review for a merged issue whose wiki is
-// unpublished (the reviewer sees the wiki before it is published); implement
-// for every other stage, so the job verifies the branch afresh.
-function legacyResumeStage(
-  stage: string | undefined,
-): Extract<Stage, "review" | "implement"> | null {
-  if (stage === undefined || LEGACY_AUTHOR_STAGES.has(stage)) {
-    return null;
-  }
-  if (stage === "publish") {
-    return "review";
-  }
-  return "implement";
-}
-
-// A version 1 state read as version 2. Every legacy issue goes to the author
-// first, since no Gherkin exists yet; it keeps its PR, head, lease and flows.
-function migrateLegacyState(raw: unknown, number: number): IssueState {
-  const legacy = LEGACY_STATE.safeParse(raw).data ?? {};
-  const base = newIssueState(number);
-  const kept: IssueState = {
-    ...base,
-    lease: legacy.lease ?? null,
-    pr: legacy.pr ?? null,
-    headSha: legacy.headSha ?? null,
-    flows: legacy.flows ?? null,
-    log: clippedLog(
-      (legacy.log ?? []).filter((entry) => typeof entry === "string"),
-    ),
-  };
-  const { stage } = legacy;
-  if (stage === "done") {
-    return { ...kept, stage: "done" };
-  }
-  if (stage === "stopped") {
-    return {
-      ...kept,
-      stage: "stopped",
-      stoppedStage: "author",
-      stopCode: legacy.stopCode ?? null,
-      resumeStage: legacyResumeStage(legacy.stoppedStage ?? undefined),
-    };
-  }
-  return { ...kept, resumeStage: legacyResumeStage(stage) };
 }
 
 // The saved state in `raw`: version 2 as saved, an older version migrated,
@@ -195,16 +93,40 @@ function latestStateComment(
   cfg: Config,
   comments: readonly IssueComment[],
 ): IssueComment | undefined {
-  return comments
+  for (const item of comments) {
+    if (item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase()) {
+      assertCommentAuthority(cfg, item);
+    }
+  }
+  const latest = comments
     .filter(
       (item) =>
-        item.user?.login === cfg.account && isStateBody(item.body ?? ""),
+        item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+        isStateBody(item.body ?? ""),
     )
     .at(-1);
+  if (
+    latest === undefined &&
+    comments.some(
+      (item) =>
+        isLegacyPipelineComment(cfg, item) && isStateBody(item.body ?? ""),
+    )
+  ) {
+    throw new OpsError("legacy pipeline state needs explicit reconciliation");
+  }
+  if (
+    latest === undefined &&
+    comments.some((item) => isStateBody(item.body ?? ""))
+  ) {
+    throw new OpsError(
+      "saved pipeline state has no merge authority; stop for reconciliation",
+    );
+  }
+  return latest;
 }
 
-// Fresh saved mutation authority, never a request's state. Legacy state must
-// first pass through claim migration/save. Invalid critical fields throw;
+// Fresh saved mutation authority, never a request's state. Legacy state
+// cannot authorize mutation. Invalid critical fields throw;
 // display/migration readers retain readState's tolerant behavior.
 function readWriteState(cfg: Config, number: number): IssueState {
   const latest = latestStateComment(cfg, listComments(cfg, number));
@@ -223,7 +145,7 @@ function validatedWriteState(raw: unknown, number: number): IssueState {
   return ISSUE_STATE.parse(raw);
 }
 
-// Claim may initialize genuinely absent state or migrate explicit v1 state.
+// Claim may initialize genuinely absent state, never adopt legacy state.
 // Every existing v2 state uses the same strict validator as credentialed writes.
 function readClaimState(
   cfg: Config,
@@ -235,9 +157,13 @@ function readClaimState(
     return null;
   }
   const raw = rawStateBody(latest.body ?? "");
-  const legacy = CLAIM_LEGACY_STATE.safeParse(raw);
-  if (legacy.success && legacy.data.number === number) {
-    return parseIssueState(legacy.data, number);
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    "version" in raw &&
+    raw.version === 1
+  ) {
+    throw new OpsError("legacy pipeline state needs explicit reconciliation");
   }
   return validatedWriteState(raw, number);
 }
@@ -247,8 +173,7 @@ function readState(
   number: number,
   comments?: readonly IssueComment[],
 ): StoredState {
-  // Only trust a state comment written by the pipeline's account. Anyone can
-  // paste the marker.
+  // Provenance is checked before compatibility parsing.
   const latest = latestStateComment(cfg, comments ?? listComments(cfg, number));
   if (latest === undefined) {
     return { id: null, state: null };
@@ -276,7 +201,7 @@ function writeState(cfg: Config, number: number, state: IssueState): void {
     rawComment(cfg, number, body);
     return;
   }
-  gh(cfg, [
+  gh(cfg, "merge", [
     "api",
     "-X",
     "PATCH",
@@ -289,7 +214,6 @@ function writeState(cfg: Config, number: number, state: IssueState): void {
 
 export type { StoredState };
 export {
-  migrateLegacyState,
   parseIssueState,
   parseStateBody,
   readClaimState,

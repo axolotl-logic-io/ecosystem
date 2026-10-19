@@ -1,9 +1,10 @@
 {
   "repo": "OWNER/REPO",
   "baseBranch": "main",
-  "account": "PIPELINE-ACCOUNT",
+  "devAccount": "DEVELOPMENT-BOT",
+  "mergeAccount": "REVIEW-MERGE-BOT",
+  "credentialsEnvFile": "/absolute/operator-checkout/project/.env",
   "allowedUsers": ["MAINTAINER"],
-  "tokenFile": "~/.pi/agent/issue-pipeline/secrets/OWNER__REPO.token",
   "takeNewWork": true,
   "skipLabels": ["deploy"],
   "models": {

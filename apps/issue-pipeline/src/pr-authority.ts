@@ -3,7 +3,7 @@
 // atomically bind current PR state. The merge mutation separately names
 // the configured destination and immutable authorized source.
 import type { Config } from "./config.ts";
-import { OpsError } from "./process.ts";
+import { OpsError } from "./ops-error.ts";
 
 function assertPrBase(cfg: Config, pr: number, baseRefName: string): void {
   if (baseRefName !== cfg.baseBranch) {

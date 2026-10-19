@@ -60,7 +60,7 @@ function saveCodeRecovery(
     return;
   }
   try {
-    git(cfg, ["-C", repo, "fetch", "--quiet", "--prune", "origin"]);
+    git(cfg, "dev", ["-C", repo, "fetch", "--quiet", "--prune", "origin"]);
     const count = run("git", [
       "-C",
       repo,

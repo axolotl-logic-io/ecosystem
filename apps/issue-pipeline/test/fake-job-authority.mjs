@@ -36,16 +36,27 @@ function ghScript(root) {
 const fs = require("node:fs");
 const root = ${JSON.stringify(root)};
 const args = process.argv.slice(2);
+const tokenIdentity = /^fake-pipeline-(dev|merge)--(.+)$/.exec(process.env.GH_TOKEN ?? "");
+if (!tokenIdentity) throw new Error("missing fake credential");
+if (args[0] === "api" && args[1] === "user") { process.stdout.write(tokenIdentity[2]); process.exit(0); }
+let expectedIdentity = "merge";
+if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(args[1])) expectedIdentity = "dev";
+if (tokenIdentity[1] !== expectedIdentity) throw new Error("wrong fake credential identity");
+
 const cfg = JSON.parse(fs.readFileSync(root + "/o__r.json", "utf8"));
 const state = JSON.parse(fs.readFileSync(root + "/authority-state.json", "utf8"));
 const pr = JSON.parse(fs.readFileSync(root + "/authority-pr.json", "utf8"));
 const replies = JSON.parse(fs.readFileSync(root + "/replies.json", "utf8"));
 const issue = replies.claim?.issue ?? ${JSON.stringify(ISSUE)};
 fs.appendFileSync(root + "/gh.log", JSON.stringify(args) + "\\n");
+if (args[0] === "api" && args[1] === "graphql") {
+  const node = { databaseId: 1, body: "<!-- agent-pipeline:state\\n" + JSON.stringify(state) + "\\n-->", author: { login: cfg.mergeAccount }, createdAt: "2026-10-18T00:00:00Z", updatedAt: "2026-10-18T00:00:00Z", lastEditedAt: null, editor: null };
+  process.stdout.write(JSON.stringify({ data: { node } })); process.exit(0);
+}
 const endpoint = args.find(arg => arg.startsWith("repos/"));
 if (args[0] === "api" && endpoint === "repos/" + cfg.repo + "/issues/7/comments?per_page=100") {
   if (state) {
-    process.stdout.write(JSON.stringify({ id: 1, user: { login: cfg.account }, created_at: "2026-10-18T00:00:00Z", body: "<!-- agent-pipeline:state\\n" + JSON.stringify(state) + "\\n-->" }));
+    process.stdout.write(JSON.stringify({ id: 1, node_id: "comment-1", user: { login: cfg.mergeAccount }, created_at: "2026-10-18T00:00:00Z", body: "<!-- agent-pipeline:state\\n" + JSON.stringify(state) + "\\n-->" }));
   }
 } else if (args[0] === "api" && endpoint === "repos/" + cfg.repo + "/issues/7") {
   process.stdout.write(JSON.stringify({ number: 7, state: "open", ...issue }));

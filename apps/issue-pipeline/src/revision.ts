@@ -12,8 +12,9 @@ import { assertClean, fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
 import { ghJson } from "./github.ts";
 import { trustedInputsHash, writeIssueContext } from "./issue-context.ts";
 import { historicalPrFor } from "./ops/prs.ts";
+import { OpsError } from "./ops-error.ts";
 import { assertPrBase } from "./pr-authority.ts";
-import { OpsError, run } from "./process.ts";
+import { run } from "./process.ts";
 import { readWriteState } from "./saved-state.ts";
 import type { CodeMerged, IssueState, Revision } from "./state.ts";
 import { wikiAhead } from "./wiki.ts";
@@ -59,7 +60,7 @@ interface CurrentRevision {
 // are refused; a failed read throws, so a merge is never assumed.
 function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
   const view = PR_VIEW.safeParse(
-    ghJson(cfg, [
+    ghJson(cfg, "merge", [
       "pr",
       "view",
       String(pr),

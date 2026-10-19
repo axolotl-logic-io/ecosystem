@@ -1,12 +1,14 @@
 // @ts-check
 // Each process isolates HOME/ROOT before importing src. Every world uses a
 // private local bare origin and an exact-script default-deny gh and pi.
+
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), "explicit-target-"));
 const ROOT = path.join(HOME, "pipeline");
@@ -149,7 +151,7 @@ function world(options = {}) {
     file,
     JSON.stringify({
       repo: REPO,
-      account: "bot",
+      ...credentialConfig("bot"),
       allowedUsers: ["owner"],
       baseBranch: BASE,
       commands: { test: "true" },

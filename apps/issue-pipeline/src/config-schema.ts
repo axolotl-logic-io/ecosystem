@@ -2,6 +2,7 @@
 // ops modules check (src/config.ts loads it).
 
 import { z } from "zod";
+import { OpsError } from "./ops-error.ts";
 
 const DEFAULTS: Readonly<Record<string, unknown>> = {
   baseBranch: "main",
@@ -63,7 +64,10 @@ const MODELS = z.object({
 });
 
 const CONFIG_SCHEMA = z.looseObject({
-  account: z.string(),
+  devAccount: z.string(),
+  mergeAccount: z.string(),
+  credentialsEnvFile: z.string(),
+  legacyAccount: z.string().optional(),
   allowedUsers: z.array(z.string()),
   baseBranch: z.string(),
   cloneUrl: OPTIONAL_TEXT,
@@ -81,7 +85,6 @@ const CONFIG_SCHEMA = z.looseObject({
   // rebase allowance (#201) that once stopped an issue. Accepted so older
   // configs still load, and unused.
   repo: z.string(),
-  tokenFile: OPTIONAL_TEXT,
   usageFlags: z.object({
     firstContext: TOKENS,
     toolOutputShare: z.number().gt(0).max(1),
@@ -97,7 +100,122 @@ const CONFIG_SCHEMA = z.looseObject({
     .nullish(),
 });
 
+const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
+const GITHUB_USERNAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
+const PATH_SEPARATOR = /[\\/]/u;
+const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
+
+function checkIdentities(
+  configPath: string,
+  raw: Readonly<Record<string, unknown>>,
+): void {
+  const {
+    account,
+    tokenFile,
+    devAccount,
+    mergeAccount,
+    credentialsEnvFile,
+    legacyAccount,
+  } = raw;
+  if (account !== undefined || tokenFile !== undefined) {
+    throw new OpsError(
+      "legacy account/tokenFile config is unsupported; migrate to distinct devAccount, mergeAccount and an absolute credentialsEnvFile",
+    );
+  }
+  for (const [key, value] of Object.entries({ devAccount, mergeAccount })) {
+    if (typeof value !== "string" || !GITHUB_USERNAME.test(value)) {
+      throw new OpsError(
+        `config ${configPath} must set ${key} to a GitHub username`,
+      );
+    }
+  }
+  if (
+    typeof legacyAccount === "string" &&
+    !GITHUB_USERNAME.test(legacyAccount)
+  ) {
+    throw new OpsError("legacyAccount must be a GitHub username");
+  }
+  if (String(devAccount).toLowerCase() === String(mergeAccount).toLowerCase()) {
+    throw new OpsError("devAccount and mergeAccount must be distinct");
+  }
+  if (
+    typeof credentialsEnvFile !== "string" ||
+    !ABSOLUTE_PATH.test(credentialsEnvFile)
+  ) {
+    throw new OpsError("credentialsEnvFile must be an explicit absolute path");
+  }
+}
+
+function checkUsers(configPath: string, users: unknown): void {
+  if (!Array.isArray(users) || users.length === 0) {
+    throw new OpsError(
+      `config ${configPath} must set allowedUsers, a list of GitHub usernames whose issues and comments the pipeline reads`,
+    );
+  }
+  for (const user of users) {
+    if (typeof user !== "string" || !GITHUB_USERNAME.test(user)) {
+      throw new OpsError(
+        `bad GitHub username in allowedUsers: ${JSON.stringify(user)}`,
+      );
+    }
+  }
+}
+
+function insideWorktree(entry: unknown): boolean {
+  return (
+    typeof entry === "string" &&
+    entry !== "" &&
+    !ABSOLUTE_PATH.test(entry) &&
+    !entry.split(PATH_SEPARATOR).includes("..")
+  );
+}
+
+function checkPractices(configPath: string, practices: unknown): void {
+  if (!Array.isArray(practices)) {
+    throw new OpsError(
+      `config ${configPath}: practices must be a list of paths`,
+    );
+  }
+  for (const entry of practices) {
+    if (!insideWorktree(entry)) {
+      throw new OpsError(
+        `config ${configPath}: practices entry ${JSON.stringify(entry)} must be a path inside the worktree`,
+      );
+    }
+  }
+}
+
+function present(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== "";
+}
+
+const COMMANDS = z.looseObject({ test: z.unknown() });
+
+// The checks whose messages tell an operator what to fix, in the order a
+// config is usually written.
+function checkRequired(
+  configPath: string,
+  raw: Readonly<Record<string, unknown>>,
+): void {
+  checkIdentities(configPath, raw);
+  const { allowedUsers, commands, practices, repo } = raw;
+  if (!present(repo)) {
+    throw new OpsError(`config ${configPath} is missing "repo"`);
+  }
+  const parsedCommands = COMMANDS.safeParse(commands);
+  if (!(parsedCommands.success && present(parsedCommands.data.test))) {
+    throw new OpsError(
+      `config ${configPath} must set commands.test; the pipeline refuses repos without a test command`,
+    );
+  }
+  if (typeof repo !== "string" || !REPO_NAME.test(repo)) {
+    throw new OpsError(`bad repo "${String(repo)}"`);
+  }
+  checkUsers(configPath, allowedUsers);
+  checkPractices(configPath, practices);
+}
+
 type JobRolesConfig = z.infer<typeof JOB_ROLES>;
 
 export type { JobRolesConfig };
-export { CONFIG_SCHEMA, DEFAULTS };
+export { CONFIG_SCHEMA, checkRequired, DEFAULTS };

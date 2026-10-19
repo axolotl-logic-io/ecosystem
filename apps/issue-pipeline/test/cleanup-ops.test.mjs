@@ -99,7 +99,7 @@ test("a closed issue whose work is on GitHub is removed and torn down", () => {
 
 test("a closed issue with commits not on GitHub is kept", () => {
   const w = cleanupWorld();
-  fakeGh.reply([CLOSED]);
+  fakeGh.reply([CLOSED, { when: "issues/7/comments?per_page", stdout: "" }]);
   const reply = ask(w, { op: "cleanup" });
   assert.equal(reply, replyLine(kept("1 local commit is not on GitHub")));
   assert.deepEqual(leftBehind(w), KEPT);

@@ -5,14 +5,16 @@
 // schema checked as loadConfig does, without a config file. Neither src
 // module it reads resolves the pipeline root, so it is safe to load before a
 // test isolates its root.
+
 import { withoutRemovedKeys } from "../src/config-legacy.ts";
 import { CONFIG_SCHEMA, DEFAULTS } from "../src/config-schema.ts";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 
 /** @import { Config } from "../src/config.ts" */
 
 const BASE = {
   repo: "o/r",
-  account: "bot",
+  ...credentialConfig("bot"),
   allowedUsers: ["alice"],
   baseBranch: "integration",
   commands: { test: "true" },

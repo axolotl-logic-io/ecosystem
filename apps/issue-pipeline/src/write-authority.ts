@@ -5,7 +5,7 @@
 import { assignedBranch } from "./branch-binding.ts";
 import type { Config } from "./config.ts";
 import { historicalPrFor } from "./ops/prs.ts";
-import { OpsError } from "./process.ts";
+import { OpsError } from "./ops-error.ts";
 import { issuePullRequest, pullRequest } from "./revision.ts";
 import { readWriteState } from "./saved-state.ts";
 import type { CodeMerged, IssueState } from "./state.ts";

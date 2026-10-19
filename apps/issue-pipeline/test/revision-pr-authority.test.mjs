@@ -47,7 +47,7 @@ for (const state of ["OPEN", "MERGED"]) {
   for (const baseRefName of ["main", "other"]) {
     test(`current revision refuses ${state} exact-head PR targeting ${baseRefName} before Git reads`, () => {
       reply([
-        collaboratorReply("o/r", "bot"),
+        collaboratorReply("o/r", "alice"),
         commentsReply(NUMBER, []),
         issueReply(NUMBER),
         prView(state, baseRefName),

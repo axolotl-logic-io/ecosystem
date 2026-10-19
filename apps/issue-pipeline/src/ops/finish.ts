@@ -10,7 +10,8 @@ import { comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { gh, ghJson, issueState } from "../github.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
-import { OpsError, parseRequest } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { parseRequest } from "../process.ts";
 import { currentRevision } from "../revision.ts";
 import { readState } from "../saved-state.ts";
 import type { IssueState, Revision } from "../state.ts";
@@ -63,6 +64,7 @@ function deleteBranch(cfg: Config, state: IssueState): void {
   const n = state.number;
   gh(
     cfg,
+    "merge",
     [
       "api",
       "-X",
@@ -86,7 +88,7 @@ function closeIssue(cfg: Config, n: number, text: string): boolean {
   if (state !== "open") {
     return false;
   }
-  gh(cfg, [
+  gh(cfg, "merge", [
     "issue",
     "close",
     String(n),
@@ -206,7 +208,7 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   const { number: n } = parseRequest(ISSUE_REQUEST, "close-parent", request);
   const subs =
     SUB_ISSUES.parse(
-      ghJson(cfg, [
+      ghJson(cfg, "merge", [
         "api",
         `repos/${cfg.repo}/issues/${n}/sub_issues?per_page=${SUB_ISSUES_PER_PAGE}`,
         "--jq",
@@ -225,7 +227,7 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   if (!subs.some(subIssueMerged)) {
     return { closed: false, reason: "no sub-issue merged" };
   }
-  gh(cfg, ["issue", "close", String(n), "-R", cfg.repo]);
+  gh(cfg, "merge", ["issue", "close", String(n), "-R", cfg.repo]);
   setLabels(cfg, n, [LABELS.merged.name], [LABELS.split.name]);
   const list = subs.map((sub) => `#${sub.number}`).join(", ");
   comment(

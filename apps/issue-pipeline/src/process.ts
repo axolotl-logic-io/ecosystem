@@ -12,12 +12,11 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { childEnvironment } from "./child-env.ts";
+import { OpsError } from "./ops-error.ts";
 import { ROOT } from "./pipeline-root.ts";
 import type { ShellKilled, ShellReport } from "./shell-protocol.ts";
 import { SHELL_KILL_GRACE_MS, SHELL_REPORT } from "./shell-protocol.ts";
-
-// A failure the ops CLI reports as {"ok":false,...} rather than a crash.
-class OpsError extends Error {}
 
 interface RunOptions {
   allowFail?: boolean;
@@ -96,7 +95,10 @@ const SHELL_ENV: ReadonlyMap<string, string> = new Map([["CI", "1"]]);
 function environment(
   added: ReadonlyMap<string, string> | undefined,
 ): NodeJS.ProcessEnv {
-  return { ...process.env, ...Object.fromEntries(added ?? new Map()) };
+  return {
+    ...childEnvironment(process.env),
+    ...Object.fromEntries(added ?? new Map()),
+  };
 }
 
 function run(
@@ -262,4 +264,4 @@ function sleepMs(ms: number): void {
 }
 
 export type { RunOptions, RunResult, ShellResult };
-export { OpsError, parseRequest, run, runFailure, shell, sleepMs, tail };
+export { parseRequest, run, runFailure, shell, sleepMs, tail };

@@ -6,11 +6,13 @@
 // ops-publish-revision-double.mjs. world() then builds issue #7's code
 // worktree on agent/issue-7 one commit past origin's integration, and, with
 // `wiki`, its wiki checkout one commit past the wiki origin's master.
+
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
 import { z } from "zod";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { githubComment, installFakeGh } from "./fake-gh.mjs";
 import { home, root } from "./ops-publish-environment.mjs";
 
@@ -90,7 +92,7 @@ function world({ wiki = false } = {}) {
     config,
     JSON.stringify({
       repo: REPO,
-      account: ACCOUNT,
+      ...credentialConfig(ACCOUNT),
       allowedUsers: ["alice"],
       commands: { test: "true" },
       baseBranch: "integration",

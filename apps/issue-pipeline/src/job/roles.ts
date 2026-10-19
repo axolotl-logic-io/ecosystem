@@ -10,6 +10,7 @@
 // The networks are recorded, not enforced, and nothing here isolates a
 // session's files or keyring from the OS user it runs as.
 
+import { childEnvironment } from "../child-env.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import type { ModelRole } from "../config-legacy.ts";
@@ -147,14 +148,6 @@ const DEFAULT_ROLES: Roles = {
   },
 };
 
-// The variables gh reads a token from.
-const GH_TOKEN_VARS: readonly string[] = [
-  "GH_TOKEN",
-  "GITHUB_TOKEN",
-  "GH_ENTERPRISE_TOKEN",
-  "GITHUB_ENTERPRISE_TOKEN",
-];
-
 // Why session `spec` may not run in a `stage` job, or null when it may: the
 // stage runs only its one agent, and only the sessions it lists, each with
 // its phase's write authority. A spec the stage has no session for, such as a
@@ -204,14 +197,14 @@ function rolesOf(config: JobRolesConfig | null | undefined): Roles {
 // token variables, every role's tokenEnv and any commit scope the job itself
 // was given, so that only a committing session gets one, its own.
 function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
-  const hidden = new Set([...GH_TOKEN_VARS, COMMIT_SCOPE_ENV]);
+  const hidden = new Set([COMMIT_SCOPE_ENV]);
   for (const settings of Object.values(roles)) {
     if (settings.tokenEnv !== undefined) {
       hidden.add(settings.tokenEnv);
     }
   }
   const env = new Map<string, string>();
-  for (const [name, value] of Object.entries(from)) {
+  for (const [name, value] of Object.entries(childEnvironment(from))) {
     if (value !== undefined && !hidden.has(name)) {
       env.set(name, value);
     }

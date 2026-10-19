@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { credentialConfig } from "./credentials-test-kit.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
 import "./isolated-root-test-kit.mjs";
 import { sessionRecord } from "./usage-fixtures.mjs";
@@ -19,7 +20,7 @@ const { COMMENT } = await import("../src/comments.ts");
 const { loadConfig } = await import("../src/config.ts");
 const { usageBody } = await import("../src/job/usage-comment.ts");
 const { serializeUsage } = await import("../src/job/usage-log.ts");
-const { OpsError } = await import("../src/process.ts");
+const { OpsError } = await import("../src/ops-error.ts");
 const { usageReport } = await import("../src/report/usage.ts");
 
 /** @import { IssueComment } from "../src/comments.ts" */
@@ -208,7 +209,7 @@ function configWith(extra) {
     file,
     JSON.stringify({
       repo: "o/r",
-      account: ACCOUNT,
+      ...credentialConfig(ACCOUNT),
       allowedUsers: [ACCOUNT],
       commands: { test: "true" },
       ...extra,

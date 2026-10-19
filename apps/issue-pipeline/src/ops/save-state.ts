@@ -7,7 +7,8 @@
 import { z } from "zod";
 import { touchClaim } from "../claims.ts";
 import type { Config } from "../config.ts";
-import { OpsError, parseRequest } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { parseRequest } from "../process.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";

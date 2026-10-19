@@ -8,6 +8,7 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
+import { childEnvironment } from "./child-env.ts";
 
 // How often groupEnded looks at the group again.
 const POLL_MS = 20;
@@ -50,7 +51,10 @@ function groupAlive(pid: number): boolean {
 // The pids in the group `pid` leads, best effort, from `pgrep -g`: null when
 // pgrep fails or lists none.
 function groupPids(pid: number): number[] | null {
-  const listed = spawnSync("pgrep", ["-g", String(pid)], { encoding: "utf8" });
+  const listed = spawnSync("pgrep", ["-g", String(pid)], {
+    encoding: "utf8",
+    env: childEnvironment(process.env),
+  });
   const pids = (listed.stdout || "")
     .split("\n")
     .filter((line: string): boolean => PID_LINE.test(line))

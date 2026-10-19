@@ -76,9 +76,12 @@ const ASKED_INPUTS = "a".repeat(INPUTS_LENGTH);
 
 test("a claim loses to another lane's live claim", () => {
   reply([
-    collaboratorReply("o/r", "bot"),
+    collaboratorReply("o/r", "alice"),
     issueReply(LOST_ISSUE),
-    commentsReply(LOST_ISSUE, [claimComment(RIVAL_CLAIM, "other", "s0", LIVE)]),
+    commentsReply(LOST_ISSUE, [
+      stateComment(1, newIssueState(LOST_ISSUE)),
+      claimComment(RIVAL_CLAIM, "other", "s0", LIVE),
+    ]),
   ]);
   assert.deepEqual(askOps({ op: "claim", number: 40, ...LANE }), {
     ok: true,
@@ -93,7 +96,7 @@ test("a claim loses to another lane's live claim", () => {
 
 test("a claim refuses an issue that isn't open", () => {
   reply([
-    collaboratorReply("o/r", "bot"),
+    collaboratorReply("o/r", "alice"),
     issueReply(CLOSED_ISSUE, { state: "closed" }),
     commentsReply(CLOSED_ISSUE, []),
   ]);

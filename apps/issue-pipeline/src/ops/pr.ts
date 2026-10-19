@@ -10,13 +10,14 @@ import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
 import { ensureWorktree, push } from "../checkouts.ts";
 import type { Author } from "../comments.ts";
-import { AUTHOR, signed } from "../comments.ts";
+import { AUTHOR, comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertClean, remoteHead } from "../git-state.ts";
 import { gh, ghJson } from "../github.ts";
 import { LABELS, setLabels } from "../labels.ts";
-import { OpsError, run } from "../process.ts";
+import { OpsError } from "../ops-error.ts";
+import { run } from "../process.ts";
 import { holdWikiPin } from "../wiki.ts";
 import { recoverDraft, saveDraftAuthority } from "./pr-state.ts";
 import { openPrFor } from "./prs.ts";
@@ -110,7 +111,7 @@ function createPr(
   text: { title: string; body: string },
 ): number {
   const args = ["pr", "create", "-R", cfg.repo, ...flags];
-  const url = gh(cfg, [
+  const url = gh(cfg, "dev", [
     ...args,
     "--base",
     cfg.baseBranch,
@@ -168,7 +169,7 @@ function startPr(cfg: Config, request: unknown): PrReply {
   const req = parsed(START_REQUEST, "start-pr request", request);
   const n = req.number;
   refuseOnceMerged(cfg, n, "start-pr");
-  const reply = ghJson(cfg, ["api", `repos/${cfg.repo}/issues/${n}`]);
+  const reply = ghJson(cfg, "merge", ["api", `repos/${cfg.repo}/issues/${n}`]);
   const issue = parsed(ISSUE, "gh issue reply", reply);
   const headSha = startBranch(cfg, n);
   const given = givenBody(n, req.body);
@@ -180,7 +181,7 @@ function startPr(cfg: Config, request: unknown): PrReply {
       body: given ?? signed(COORDINATOR, closesBody(n, text)),
     });
   } else if (given !== undefined) {
-    gh(cfg, ["pr", "edit", String(pr), "-R", cfg.repo, "--body", given]);
+    gh(cfg, "dev", ["pr", "edit", String(pr), "-R", cfg.repo, "--body", given]);
   }
   saveDraftAuthority(cfg, n, pr, headSha);
   setLabels(cfg, pr, [LABELS.working.name], []);
@@ -215,7 +216,7 @@ function openPr(cfg: Config, request: unknown): OpenReply {
   } else {
     // The draft from start-pr, or a reopened PR: fill it in.
     const edit = ["--title", title, "--body", body];
-    gh(cfg, ["pr", "edit", String(pr), "-R", cfg.repo, ...edit]);
+    gh(cfg, "dev", ["pr", "edit", String(pr), "-R", cfg.repo, ...edit]);
   }
   setLabels(cfg, pr, [LABELS.working.name], []);
   return { pr, ...pushed };
@@ -226,7 +227,7 @@ const PR_STATE = z.looseObject({ state: z.string() });
 
 function isOpen(cfg: Config, pr: number): boolean {
   const args = ["pr", "view", String(pr), "-R", cfg.repo, "--json", "state"];
-  return PR_STATE.safeParse(ghJson(cfg, args)).data?.state === "OPEN";
+  return PR_STATE.safeParse(ghJson(cfg, "merge", args)).data?.state === "OPEN";
 }
 
 // Closes the draft PR of a change that lives only in the wiki, saying where
@@ -239,16 +240,8 @@ function closePr(cfg: Config, request: unknown): CloseReply {
   }
   const branch = paths.branch(cfg, req.number);
   const text = `This change lives only in the wiki, on the wiki branch \`${branch}\`, so this PR has no code to merge and is closed. The pipeline reopens it if a later fix changes code.`;
-  const comment = signed(COORDINATOR, text);
-  gh(cfg, [
-    "pr",
-    "close",
-    String(req.pr),
-    "-R",
-    cfg.repo,
-    "--comment",
-    comment,
-  ]);
+  comment(cfg, req.pr, COORDINATOR, text);
+  gh(cfg, "dev", ["pr", "close", String(req.pr), "-R", cfg.repo]);
   return { pr: req.pr, closed: true };
 }
 

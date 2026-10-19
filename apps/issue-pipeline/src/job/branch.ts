@@ -7,10 +7,11 @@
 // is bound to another branch is the claim's to refuse, since only it reads
 // that state.
 
-import { GH_HELPER } from "../clone-setup.ts";
 import type { Config } from "../config.ts";
 import { paths, withCheckout } from "../config.ts";
-import { OpsError, run } from "../process.ts";
+import { git } from "../github.ts";
+import { OpsError } from "../ops-error.ts";
+import { run } from "../process.ts";
 
 // The symbolic HEAD line `git ls-remote --symref` prints.
 const SYMREF_HEAD = /^ref: refs\/heads\/(?<name>\S+)\tHEAD$/mu;
@@ -46,14 +47,10 @@ function nameRefusal(
 // The remote's default branch, or null when it can't be read.
 function remoteDefaultOf(cfg: Config): string | null {
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
-  const listed = run(
-    "git",
-    [...GH_HELPER, "ls-remote", "--symref", url, "HEAD"],
-    {
-      allowFail: true,
-      timeoutMs: LS_REMOTE_MS,
-    },
-  );
+  const listed = git(cfg, "dev", ["ls-remote", "--symref", url, "HEAD"], {
+    allowFail: true,
+    timeoutMs: LS_REMOTE_MS,
+  });
   if (listed.code !== 0) {
     return null;
   }

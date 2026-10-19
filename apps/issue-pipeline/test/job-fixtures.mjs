@@ -53,6 +53,9 @@ const GHERKIN_INPUTS =
 // read.
 const GHERKIN_COMMENT = {
   id: 55,
+  ...Object.fromEntries([["node_id", "comment-55"]]),
+  lastEditedAt: null,
+  editor: null,
   // GitHub's field names aren't camelCase.
   ...Object.fromEntries([["created_at", "2026-10-18T00:00:00Z"]]),
   user: { login: "bot" },

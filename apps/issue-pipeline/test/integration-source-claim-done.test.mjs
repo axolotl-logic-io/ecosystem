@@ -55,7 +55,7 @@ function noPrHistory(n) {
 /** @param {number} n @param {object} saved @param {readonly import("./fake-gh.mjs").GhReply[]} more @returns {unknown} */
 function claimDone(n, saved, more) {
   reply([
-    collaboratorReply("o/r", "bot"),
+    collaboratorReply("o/r", "alice"),
     {
       when: "api -X PATCH repos/o/r/issues/comments/1 -f",
       stdout: "",
