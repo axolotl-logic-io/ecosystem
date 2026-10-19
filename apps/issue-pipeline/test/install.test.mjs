@@ -13,11 +13,12 @@ import { test } from "node:test";
 const script = new URL("../install.mjs", import.meta.url).pathname;
 const dist = new URL("../dist/", import.meta.url).pathname;
 const BUILD_FAILED = /build failed/u;
-// The agents the stage jobs' sessions run as (src/job/roles.ts).
-const STAGE_AGENT_FILES = [
+// The stage agents and the dedicated read-only Git subagent.
+const AGENT_FILES = [
   "issue-pipeline-author.md",
   "issue-pipeline-implementor.md",
   "issue-pipeline-reviewer.md",
+  "git-reviewer.md",
 ];
 // What a template still holds when a placeholder is left unfilled.
 const PLACEHOLDER = /\{\{/u;
@@ -30,6 +31,7 @@ const BUILT = [
   "job.mjs",
   "structured-output.mjs",
   "pipeline-commit.mjs",
+  "git-review.mjs",
   "orchestrate.mjs",
   "report.mjs",
 ];
@@ -121,7 +123,7 @@ test("installs the pipeline with local paths filled in", () => {
       `operator-owned ${file}\n`,
     );
   }
-  for (const f of STAGE_AGENT_FILES) {
+  for (const f of AGENT_FILES) {
     const agent = fs.readFileSync(
       path.join(tmp, "agent/agents/issue-pipeline", f),
       "utf8",

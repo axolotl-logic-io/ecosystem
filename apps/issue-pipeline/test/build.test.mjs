@@ -24,6 +24,7 @@ const EXECUTABLES = [
   "report.mjs",
   "structured-output.mjs",
   "pipeline-commit.mjs",
+  "git-review.mjs",
 ];
 // The error the stage job exits with for an unknown --stage.
 const BAD_STAGE = /--stage must be one of/u;

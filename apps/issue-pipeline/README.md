@@ -58,6 +58,36 @@ Actual M, not premerge `verifiedSha=H` or head CI, must pass deterministic verif
 
 Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-implementor` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
 
+## Read-only Git subagent
+
+`agents/git-reviewer.md` is a dedicated supervisor-usable agent, not a replacement for the shared writable `issue-pipeline-reviewer`. Install includes its explicit `subagentOnlyExtensions` path to `git-review.mjs`; naming a tool without loading that extension is insufficient. The agent has exactly `read`, `grep`, `find`, `ls`, `git_review`, no shell/write/commit tool. Supervisors must launch it with resource discovery disabled and without unrelated extensions/MCP servers that would add command execution authority. Existing hardening, integration, security authority and prepared bundles are unchanged.
+
+The trusted supervisor provisions `PI_GIT_REVIEW_ROOTS` **in the child session environment** as a nonempty JSON array of absolute local repository roots. It must narrow this per task, not accept a repository's or reviewer's assertion of authority. Missing/malformed authority fails closed. Task text is not environment configuration. Use `cwd` equal to a canonical allowed repository root (subdirectory cwd is not supported):
+
+```json
+{"cwd":"/local/review/repo","argv":["diff","BASE..HEAD"],"offset":1,"limit":200}
+```
+
+Pass immutable commit IDs for assigned reviews. The reviewer can request later pages directly and independently inspect history, for example:
+
+```json
+{"cwd":"/local/review/repo","argv":["log","--oneline","--max-count=20","HEAD"]}
+{"cwd":"/local/review/repo","argv":["blame","--line-porcelain","HEAD","--","src/file.ts"]}
+{"cwd":"/local/review/repo","argv":["grep","-n","-e","pattern","HEAD","--","src"]}
+```
+
+The tool accepts only `diff`, `show`, `log`, `rev-parse`, `merge-base`, `ls-tree`, `cat-file`, `status`, `blame`, `grep`, with an explicit conservative option grammar in `src/job/git-review-policy.ts`. Paths follow `--`, grep patterns follow `-e`; pathspec magic, traversal, metadata paths, escaping symlinks, global options and unknown modes are refused. Supported common modes include patch/stat/name-only diff, cached diff, oneline/builtin log formats, numeric attached `--max-count=N`/`-nN`/`-UN`, revision verification, recursive trees, `cat-file -p/-t/-s`, porcelain status, and porcelain/numeric `-LN,M` blame. Arbitrary pretty formats, signature verification, `--no-index`, contents/pattern files, batch/filter modes, external programs and alternate Git directories are not supported.
+
+Git is spawned directly as `/usr/bin/git`, never via a shell, with a constant minimal environment, an empty temporary HOME, no host/global/system Git configuration, no credentials/askpass/agent or inherited execution overrides, no terminal input, and file-only transports. A private metadata view omits **all** repository configuration and hooks; applicable diff commands force `--no-ext-diff --no-textconv`. Only a plain `.git` directory is supported; linked worktrees/gitfiles, reftable, metadata symlinks and object alternates are refused. SHA-1 and SHA-256 object stores are supported. Query execution does not write the original files/index/refs/config; optional locks are disabled. Temporary views are removed after Git exits. The private view's object store is local; no fetch or lazy credential discovery is authorized.
+
+Output is cached per canonical repository and exact requested argv for this session. Limits: 32 MiB complete query output, 30-second execution timeout, UTF-8 output, 8192-byte requests, at most 1000 lines and **48 KiB for the serialized entire result**, including metadata/END. Oversized page limits are capped. If a line cannot fit intact, that offset returns an explicit error with no served-range record. Narrow oversized queries; do not claim missing evidence was read.
+
+Each successful tool-result `details` records `sessionId`, `queryId`, `repository`, `argv`, `totalLines`, `startLine`, `endLine`. Ranges are one-based/inclusive and represent **actual** delivery, not the requested limit. Empty output has `totalLines: 0`, null bounds and END, not a fictitious line. Only the page reaching the last line carries `=== END ===`. Failures have error details, not coverage. On session start the cache/identity resets; resuming another session does not inherit evidence records.
+
+For chunked reviews, assign the root and exact query, not generated diff files. Inspect the reviewer's persisted tool-result details/session records. Group by session/query/repository/argv, confirm consistent totalLines, sort and union successful inclusive ranges; require every line `1..totalLines`. Repeats/overlaps count once; another query/repo/session cannot fill a gap. An END marker or reviewer claim alone proves nothing about earlier pages. Delivery is not comprehension, review quality, merge authorization or security clearance.
+
+This is the **Git execution boundary**, not an OS/filesystem/keyring/network sandbox. The retained read tools can read same-user files and are not confined by this root allowlist. Do not promise universal credential-file isolation. Optional macOS sandboxing, writer shell isolation, credential rotation and production deployment are outside this feature. Merging does not install or activate it.
+
 ## Caller invocation and concurrency
 
 Run installed `job.mjs`, once per stage, with **one `--issue`, required `--branch` and required `--brain-path`**, including boundary prints:
@@ -119,6 +149,7 @@ Before any mutation the job snapshots the pages needed by its stage. Missing/unr
 | `report.mjs` | `usage --config <path> [--since <date>] [--role <role>] [--issue <n>]`; telemetry, not spending limits |
 | `shell-supervisor.mjs` | Configured commands in owned process groups, cleaned on exit |
 | `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commit tool extensions |
+| `git-review.mjs` | Credential-isolated, read-only Git queries with session-local paging and tool-result coverage records |
 | `orchestrate.mjs` | Retained legacy discovery/scheduling compatibility only; `--config <path> --brain-path <wiki clone> [--once]`. Not the caller-owned entry point; do not run it alongside caller-managed jobs |
 
 GitHub state, claim, Gherkin, hardening and security comments require merge authorship plus same-read editor provenance to be authoritative; signatures and markers alone grant nothing. `clones/`, `work/` and `runs/` are local caches/recovery artifacts: retain them and saved patches through upgrades until preserved work is confirmed safe.

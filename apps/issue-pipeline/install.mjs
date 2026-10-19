@@ -46,6 +46,7 @@ const BUILT = [
   "report.mjs",
   "structured-output.mjs",
   "pipeline-commit.mjs",
+  "git-review.mjs",
 ];
 // The agents of the stages an older install had, which retired() retires
 // with its old workflow.js, which an old lane schedule could still run, and

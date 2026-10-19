@@ -15,6 +15,7 @@ run = [
   "node --check dist/orchestrate.mjs",
   "node --check dist/report.mjs",
   "node --check dist/pipeline-commit.mjs",
+  "node --check dist/git-review.mjs",
   # Each test fails if it runs past --test-timeout, by its title, rather than
   # hanging the run (#372). The slowest test measured took 51.3 s (the
   # typecheck that fails on a type error, test/typecheck-config.test.mjs) in a
