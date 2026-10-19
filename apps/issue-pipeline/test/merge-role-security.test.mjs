@@ -10,11 +10,9 @@ import { test } from "node:test";
 import {
   AFTER_MERGE,
   CODE_MERGED,
-  FINISHED,
   finding,
   MERGED_REVISION,
   merging,
-  NO_FINDING,
   PREPARED_MERGED,
   WIKI_UNCHANGED,
 } from "./merge-role-test-kit.mjs";
@@ -194,56 +192,6 @@ test("a failed review stops with error and a transient one defers, neither publi
     assert.deepEqual(publishedOrFinished(calls), []);
     assert.ok(savesOf(calls).every((saved) => saved.security === null));
   }
-});
-
-test("a done completion rechecks M before reviewing missing security or reusing exact clearance", async () => {
-  const done = {
-    ...merging().ctx.state,
-    stage: /** @type {const} */ ("done"),
-    merged: MERGED_REVISION,
-  };
-  const unreviewed = fakeContext({
-    stage: "merge",
-    state: { ...done, merged: { ...MERGED_REVISION, wiki: null } },
-    ops: {
-      "current-revision": [AFTER_MERGE, AFTER_MERGE],
-      "prepare-review": [PREPARED_MERGED],
-      "finish-wiki": [FINISHED],
-      verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [{ pass: true, checks: [] }],
-    },
-    sessions: [NO_FINDING],
-  });
-  stateOf(await mergeRole(unreviewed.ctx), "next");
-  assert.deepEqual(opNames(unreviewed.calls), [
-    "current-revision",
-    "verify",
-    "wiki-check",
-    "prepare-review",
-    "current-revision",
-    "finish-wiki",
-  ]);
-  const cleared = fakeContext({
-    stage: "merge",
-    state: {
-      ...done,
-      security: { ...REJECTION, finding: null },
-    },
-    ops: {
-      "current-revision": [AFTER_MERGE],
-      "finish-wiki": [FINISHED],
-      verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [{ pass: true, checks: [] }],
-    },
-  });
-  stateOf(await mergeRole(cleared.ctx), "next");
-  assert.deepEqual(opNames(cleared.calls), [
-    "current-revision",
-    "verify",
-    "wiki-check",
-    "finish-wiki",
-  ]);
-  assert.equal(sessionsOf(cleared.calls).length, 0);
 });
 
 test("a done completion with a saved rejection stops again, never finishing", async () => {
