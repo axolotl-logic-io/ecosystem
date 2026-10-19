@@ -204,7 +204,10 @@ test("ready-pr refuses an authorization not saved first at review or merge, writ
     assert.throws(() => readyPr(w, state), NOT_SAVED);
     assert.deepEqual(writes(), []);
   }
-  fakeGh.reply([readyView({ headRefOid: w.sha })]);
+  fakeGh.reply([
+    { when: "issues/7/comments?per_page", stdout: "" },
+    readyView({ headRefOid: w.sha }),
+  ]);
   assert.throws(() => readyPr(w, state), NOT_SAVED);
   assert.deepEqual(writes(), []);
 });

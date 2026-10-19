@@ -12,6 +12,8 @@ import {
   collaboratorReply,
   commentWriteReplies,
 } from "./gh-mutation-fixtures.mjs";
+import { branchMergeReply } from "./merge-op-fixtures.mjs";
+import { mergeWorld } from "./ops-built-merge-fixtures.mjs";
 import { releaseReplies } from "./ops-release-test-kit.mjs";
 import {
   ask,
@@ -35,9 +37,9 @@ const PR = 50;
 // The commit prefix the merger comment names.
 const SHORT_SHA = 12;
 const MERGED_TRUE = /"merged":true/u;
-const SQUASH_MERGE = "pr merge 50 -R o/r --squash --match-head-commit <sha>";
-const SHA_LENGTH = 40;
-const MERGE_OID = "c".repeat(SHA_LENGTH);
+const BRANCH_MERGE =
+  "api repos/o/r/merges --method POST --include -f base=integration -f head=<sha>";
+const BEFORE_MERGE_VIEWS = 3;
 // The part of current-revision's reply the merge request carries.
 const CURRENT = z.looseObject({
   revision: z.object({
@@ -71,10 +73,9 @@ function issueState(extra) {
   return { ...newIssueState(ISSUE), ...extra };
 }
 
-// gh's replies to the PR views, open at `sha` until the merge and merged at
-// `sha` after it: the revision's view, then the merge op's.
-/** @param {string} sha @returns {import("./fake-gh.mjs").GhReply[]} */
-function prViews(sha) {
+// The same PR retains original H after merging at actual M.
+/** @param {string} sha @param {string} mergeSha @returns {import("./fake-gh.mjs").GhReply[]} */
+function prViews(sha, mergeSha) {
   const pr = {
     number: PR,
     headRefName: `agent/issue-${ISSUE}`,
@@ -87,23 +88,31 @@ function prViews(sha) {
     mergeCommit: null,
   };
   const open = { ...pr, state: "OPEN" };
-  const merged = { ...pr, state: "MERGED", mergeCommit: { oid: MERGE_OID } };
+  const merged = { ...pr, state: "MERGED", mergeCommit: { oid: mergeSha } };
   return [
-    { when: "--json number", stdout: JSON.stringify(open), keep: true },
-    { when: "--json baseRefName", stdout: JSON.stringify(open) },
-    { when: "--json baseRefName", stdout: JSON.stringify(open) },
-    { when: "--json baseRefName", stdout: JSON.stringify(merged) },
+    ...Array.from({ length: BEFORE_MERGE_VIEWS }, () => ({
+      when: "pr view 50 -R o/r --json",
+      stdout: JSON.stringify(open),
+    })),
+    {
+      when: "pr view 50 -R o/r --json",
+      stdout: JSON.stringify(merged),
+      keep: true,
+    },
   ];
 }
 
 // Merges #7 in `w` at its current revision and releases it, through `ops`
 // (src/ops.ts when undefined): the replies and gh calls, with the world's
 // head and paths made constant.
-/** @param {World} w @param {string | undefined} ops */
-function mergeAndRelease(w, ops) {
+/** @param {World} initial @param {string | undefined} ops */
+function mergeAndRelease(initial, ops) {
+  const w = mergeWorld(initial);
   /** @param {string} text @returns {string} */
   function constant(text) {
     return text
+      .replaceAll(w.mergeSha, "<merge-sha>")
+      .replaceAll(w.mergeSha.slice(0, SHORT_SHA), "<merge-sha>")
       .replaceAll(w.sha, "<sha>")
       .replaceAll(w.sha.slice(0, SHORT_SHA), "<sha>")
       .replaceAll(w.root, "<root>");
@@ -114,12 +123,7 @@ function mergeAndRelease(w, ops) {
     collaboratorReply("o/r", "bot"),
     issueListing(),
     { ...claimListing(), keep: true },
-    ...prViews(w.sha),
-    {
-      when: `pr merge ${PR} -R o/r --squash --match-head-commit ${w.sha}`,
-      stdout: "",
-    },
-    ...commentWriteReplies("o/r", PR, []),
+    ...prViews(w.sha, w.mergeSha),
   ]);
   const asked = ask(w, { op: "current-revision", number: ISSUE, state }, ops);
   const current = CURRENT.parse(JSON.parse(asked));
@@ -127,11 +131,8 @@ function mergeAndRelease(w, ops) {
     collaboratorReply("o/r", "bot"),
     issueListing(),
     { ...claimListing(), keep: true },
-    ...prViews(w.sha),
-    {
-      when: `pr merge ${PR} -R o/r --squash --match-head-commit ${w.sha}`,
-      stdout: "",
-    },
+    ...prViews(w.sha, w.mergeSha),
+    branchMergeReply(w),
     ...commentWriteReplies("o/r", PR, []),
   ]);
   // The merge op merges only the revision hardening authorized.
@@ -146,7 +147,7 @@ function mergeAndRelease(w, ops) {
   const merged = constant(ask(w, req, ops));
   const mergeCalls = calls().map((args) => constant(args.join(" ")));
   fakeGh.reply(
-    releaseReplies({ ...state, codeMerged: { pr: PR, sha: MERGE_OID } }),
+    releaseReplies({ ...state, codeMerged: { pr: PR, sha: w.mergeSha } }),
   );
   const release_ = { op: "release", number: ISSUE, lane: LANE, sweepId: SWEEP };
   const released = ask(
@@ -171,7 +172,10 @@ test("the built ops merges and releases as src/ops.ts does", () => {
       .ok,
     true,
   );
-  assert.ok(fromSrc.mergeCalls.includes(SQUASH_MERGE), "it squash-merged");
+  assert.ok(
+    fromSrc.mergeCalls.includes(BRANCH_MERGE),
+    "it named the exact target and source",
+  );
   const fromBuild = mergeAndRelease(world(), path.join(out, "ops.mjs"));
   assert.deepEqual(fromBuild, fromSrc);
 });

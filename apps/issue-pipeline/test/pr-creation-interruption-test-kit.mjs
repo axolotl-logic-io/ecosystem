@@ -48,7 +48,17 @@ function externalMerge(root, ghDir, original) {
   const head = localGit(world.origin, ["rev-parse", branch]);
   for (const args of [
     ["pr", "ready", String(change.number)],
-    ["pr", "merge", String(change.number), "--match-head-commit", head],
+    [
+      "api",
+      `repos/${world.repo}/merges`,
+      "--method",
+      "POST",
+      "--include",
+      "-f",
+      `base=${change.base}`,
+      "-f",
+      `head=${head}`,
+    ],
   ]) {
     const reply = localGh(original, args);
     if (reply.status !== 0) {

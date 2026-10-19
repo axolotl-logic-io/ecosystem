@@ -1,13 +1,14 @@
 // @ts-check
 // Supported exact POST and signed merge-comment effects for the strict op fixture.
 import path from "node:path";
-import { REPO } from "./ops-publish-test-kit.mjs";
+
+const REPO = "o/r";
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @typedef {import("./fake-gh.mjs").GhReply} GhReply */
 
 // The exact explicit-target POST applies a prepared genuine [P,H] result.
-/** @param {World} w @returns {GhReply} */
+/** @param {Pick<World, "root" | "sha" | "mergeSha">} w @returns {GhReply} */
 function branchMergeReply(w) {
   return {
     when: `api repos/${REPO}/merges --method POST --include -f base=integration -f head=${w.sha}`,

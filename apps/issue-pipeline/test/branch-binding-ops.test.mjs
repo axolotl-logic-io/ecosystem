@@ -6,15 +6,16 @@
 // included, never the legacy agent/issue-<n> in its place.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { finishReplies } from "./ops-finish-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
   approvedState,
   fakeGh,
-  MERGE_COMMIT,
   PR,
   prView,
   savedListing,
   securityOf,
+  sh,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
@@ -113,18 +114,24 @@ test("ready-pr refuses a saved state bound to another branch, writing nothing", 
   assert.deepEqual(writes(), []);
 });
 
-// #7 saved done and merged as MERGE_COMMIT, bound to `branch`, the security
+// #7 saved done at its actual merge result, bound to `branch`, the security
 // review of the merged result clear; GitHub shows the PR merged.
 /** @param {World} w @param {string} branch @returns {IssueState} */
 function doneOn(w, branch) {
-  const merged = { code: MERGE_COMMIT, wiki: null, inputs: "inputs-1" };
+  sh(
+    `git --git-dir=${w.root}/origin.git update-ref refs/heads/integration ${w.mergeSha}`,
+  );
+  sh(
+    `git --git-dir=${w.root}/origin.git update-ref refs/heads/${branch} ${w.sha}`,
+  );
+  const merged = { code: w.mergeSha, wiki: null, inputs: "inputs-1" };
   setCurrentRevision({
     revision: merged,
     baseSha: "base",
     pr: {
       number: PR,
       state: "MERGED",
-      mergeCommit: MERGE_COMMIT,
+      mergeCommit: w.mergeSha,
       headSha: w.sha,
     },
   });
@@ -132,6 +139,7 @@ function doneOn(w, branch) {
     stage: "done",
     branch,
     merged,
+    verifiedSha: w.mergeSha,
     security: securityOf(merged),
   });
 }
@@ -139,10 +147,7 @@ function doneOn(w, branch) {
 test("finish-wiki deletes the assigned branch the state is bound to, and refuses another before any write", () => {
   const w = world();
   const done = doneOn(w, ASSIGNED);
-  fakeGh.reply([
-    savedListing(done),
-    { when: "repos/o/r/issues/7 --jq {state}", stdout: '{"state":"open"}' },
-  ]);
+  fakeGh.reply([savedListing(done), ...finishReplies(ASSIGNED)]);
   assert.equal(finishWiki(assignedCfg(w), { number: 7 }).finished, true);
   assert.match(writes()[0]?.join(" ") ?? "", DELETES_ASSIGNED);
   fakeGh.reply([savedListing(doneOn(w, ASSIGNED))]);

@@ -9,11 +9,12 @@
 // op refuses a draft rather than marking it ready.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { branchMergeReply, mergeCommentReplies } from "./merge-op-fixtures.mjs";
+import { finishReplies } from "./ops-finish-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
   approvedState,
   fakeGh,
-  MERGE_COMMIT,
   PR,
   prView,
   publishOf,
@@ -24,6 +25,7 @@ import {
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
+import { mergedAt } from "./publication-integration-fixtures.mjs";
 
 const { merge } = await import("../src/ops/merge.ts");
 const { finishWiki } = await import("../src/ops/finish.ts");
@@ -33,7 +35,7 @@ const { finishWiki } = await import("../src/ops/finish.ts");
 
 const SHORT_SHA_LENGTH = 12;
 const SECURITY_FOLLOWS =
-  "A read-only security review of the merged result follows";
+  "Exact-result deterministic checks and a read-only security review of the merged result follow; the issue completes only if it finds nothing.";
 const REVIEWED_CODE = "c0ffee00000000000000000000000000000000aa";
 const NOT_AUTHORIZED_REVISION = /is not #7's authorized revision/u;
 
@@ -86,17 +88,18 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
-    { when: "pr merge 50" },
+    branchMergeReply(w),
+    ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: MERGE_COMMIT },
+      mergeCommit: { oid: w.mergeSha },
     }),
   ]);
   const reply = merge(w.cfg, mergeRequest(w, integrated, state));
   assert.deepEqual(reply, {
     merged: true,
-    mergeCommit: MERGE_COMMIT,
+    mergeCommit: w.mergeSha,
     headSha: w.sha,
   });
   const body = writes()[1]?.join(" ") ?? "";
@@ -113,11 +116,12 @@ test("merge without an integration says hardening passed on the merged head", ()
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
-    { when: "pr merge 50" },
+    branchMergeReply(w),
+    ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: MERGE_COMMIT },
+      mergeCommit: { oid: w.mergeSha },
     }),
   ]);
   merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
@@ -161,21 +165,6 @@ test("merge refuses a draft at the approved head without marking it ready", () =
   assert.deepEqual(writes(), []);
 });
 
-// GitHub says PR #50 merged the integrated head w.sha as MERGE_COMMIT.
-/** @param {World} w @returns {void} */
-function mergedAt(w) {
-  setCurrentRevision({
-    revision: { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" },
-    baseSha: "base",
-    pr: {
-      number: PR,
-      state: "MERGED",
-      mergeCommit: MERGE_COMMIT,
-      headSha: w.sha,
-    },
-  });
-}
-
 /** @param {Revision} revision @param {object} state @returns {object} */
 function publishRequest(revision, state) {
   return { number: 7, state, expectedWiki: revision.wiki, revision };
@@ -185,8 +174,7 @@ test("publish after the merge of an integrated head publishes the integrated wik
   const w = world({ wiki: true });
   const { reviewed, integrated } = chainOf(w);
   const state = integratedState(reviewed, { reviewed, revision: integrated });
-  const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
-  mergedAt(w);
+  const receipt = mergedAt(w);
   const security = securityOf(receipt);
   fakeGh.reply([savedListing({ ...state, merged: receipt, security })]);
   const reply = publishOf(w.cfg, publishRequest(integrated, state));
@@ -197,18 +185,18 @@ test("publish after the merge of an integrated head publishes the integrated wik
 test("a claimed own merge publishes and finishes with original hardening and integration intact, only after saved exact security", () => {
   const w = world({ wiki: true });
   const { reviewed, integrated } = chainOf(w);
-  const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
+  const receipt = mergedAt(w);
   const state = integratedState(
     reviewed,
     { reviewed, revision: integrated },
     {
-      codeMerged: { pr: PR, sha: MERGE_COMMIT },
+      codeMerged: { pr: PR, sha: w.mergeSha },
+      verifiedSha: w.mergeSha,
       merged: receipt,
     },
   );
   const cleared = { ...state, security: securityOf(receipt) };
   const before = structuredClone(cleared);
-  mergedAt(w);
   fakeGh.reply([savedListing(state)]);
   assert.equal(
     refusalOf(w.cfg, publishRequest(integrated, cleared)),
@@ -229,10 +217,7 @@ test("a claimed own merge publishes and finishes with original hardening and int
   const replay = publishOf(w.cfg, publishRequest(integrated, done));
   assert.ok(replay.published);
   assert.equal(replay.alreadyPublished, true);
-  fakeGh.reply([
-    savedListing(done),
-    { when: "repos/o/r/issues/7 --jq {state}", stdout: '{"state":"open"}' },
-  ]);
+  fakeGh.reply([savedListing(done), ...finishReplies()]);
   assert.deepEqual(finishWiki(w.cfg, { number: 7, state: done }), {
     finished: true,
     closed: true,
@@ -241,7 +226,11 @@ test("a claimed own merge publishes and finishes with original hardening and int
     writes().some((args) => args.join(" ").startsWith("issue close 7 ")),
   );
   assert.equal(
-    writes().some((args) => args.join(" ").startsWith("pr merge ")),
+    writes().some(
+      (args) =>
+        args.join(" ").startsWith("pr merge ") ||
+        args.includes("repos/o/r/merges"),
+    ),
     false,
   );
   assert.deepEqual(cleared, before);
@@ -255,9 +244,8 @@ test("publish refuses an integrated head no receipt binds to the approval, in th
     reviewed: { ...reviewed, code: "0ther" },
     revision: integrated,
   });
-  const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
+  const receipt = mergedAt(w);
   const security = securityOf(receipt);
-  mergedAt(w);
   fakeGh.reply([savedListing({ ...forged, merged: receipt, security })]);
   assert.equal(
     refusalOf(w.cfg, publishRequest(integrated, forged)),
@@ -277,8 +265,7 @@ test("publish of an integrated head refuses a security review of the pre-merge h
   const w = world({ wiki: true });
   const { reviewed, integrated } = chainOf(w);
   const state = integratedState(reviewed, { reviewed, revision: integrated });
-  const receipt = { code: MERGE_COMMIT, wiki: w.wikiSha, inputs: "inputs-1" };
-  mergedAt(w);
+  const receipt = mergedAt(w);
   for (const revision of [integrated, reviewed]) {
     const security = securityOf(revision);
     fakeGh.reply([savedListing({ ...state, merged: receipt, security })]);
