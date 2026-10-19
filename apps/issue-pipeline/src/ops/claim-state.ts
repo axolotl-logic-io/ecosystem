@@ -23,6 +23,25 @@ import type { IssueState } from "../state.ts";
 import { newIssueState, resumeOf, withLog } from "../state.ts";
 import { historicalPrFor } from "./prs.ts";
 
+// `show-ref --exists` distinguishes absence from unreadable repository history.
+const MISSING_REF = 2;
+
+function hasLocalBranch(dir: string, branch: string): boolean {
+  if (fs.statSync(dir, { throwIfNoEntry: false }) === undefined) {
+    return false;
+  }
+  const result = run(
+    "git",
+    ["-C", dir, "show-ref", "--exists", `refs/heads/${branch}`],
+    { allowFail: true },
+  );
+  if (result.code === MISSING_REF) {
+    return false;
+  }
+  // An existing ref or unreadable history both require reconciliation.
+  return true;
+}
+
 // A branch head on GitHub that is neither the saved one nor the pipeline's
 // own push.
 interface BranchChanged {
@@ -66,21 +85,16 @@ function assertFirstClaim(
         ),
   );
   const branch = paths.branch(cfg, number);
+  const priorCode = [paths.clone(cfg), paths.mirror(cfg)].some((dir) =>
+    hasLocalBranch(dir, branch),
+  );
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
   const remote = git(cfg, "dev", ["ls-remote", url, `refs/heads/${branch}`]);
-  const mirror = paths.wikiMirror(cfg);
-  let wiki = false;
-  if (fs.existsSync(mirror)) {
-    wiki =
-      run(
-        "git",
-        ["-C", mirror, "show-ref", "--verify", `refs/heads/${branch}`],
-        { allowFail: true },
-      ).code === 0;
-  }
+  const wiki = hasLocalBranch(paths.wikiMirror(cfg), branch);
   if (
     priorComment ||
     priorFiles ||
+    priorCode ||
     wiki ||
     remote.stdout.trim() !== "" ||
     historicalPrFor(cfg, number) !== null
