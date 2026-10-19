@@ -19,12 +19,7 @@ import {
   WIKI_BRANCH,
 } from "./pipeline-flow-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
-import {
-  jobLog,
-  stagesUntilIdle,
-  stopJobs,
-  tick,
-} from "./pipeline-flow-run.mjs";
+import { jobLog, stopJobs, tick } from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
   hardeningTurn,
@@ -67,7 +62,7 @@ function heads() {
   };
 }
 
-before(async () => {
+before(() => {
   flow = setUpFlow();
   start = heads();
   openFlowIssue(flow, "alice", "Document greetings", "Say how we greet.");
@@ -76,11 +71,25 @@ before(async () => {
     implementor: [DOCS_ONLY_TURN],
     reviewer: [hardeningTurn(), securityTurn()],
   });
-  stages = await stagesUntilIdle(flow);
+  stages = [];
 });
 after(() => stopJobs(flow));
 
-test("a wiki-only change goes through author, implement, hardening and final security at merge, then starts nothing", () => {
+/** @returns {Promise<string[]>} */
+async function completeWikiStage() {
+  const { started } = await tick(flow);
+  stages.push(...started);
+  return started;
+}
+
+for (const stage of ["author", "implement", "review", "merge"]) {
+  test(`wiki-only ${stage} completes within its own stage deadline`, async () => {
+    assert.deepEqual(await completeWikiStage(), [stage]);
+  });
+}
+
+test("a wiki-only change goes through author, implement, hardening and final security at merge, then starts nothing", async () => {
+  assert.deepEqual((await tick(flow)).started, [], jobLog(flow));
   assert.deepEqual(
     stages,
     ["author", "implement", "review", "merge"],

@@ -14,6 +14,8 @@ import {
 const { paths } = await import("../src/config.ts");
 const { closeJobCheckout } = await import("../src/job/checkout-close.ts");
 const { openJobCheckout } = await import("../src/job/checkout.ts");
+const { tearDown } = await import("../src/job/teardown.ts");
+const { openStatus } = await import("../src/job/status.ts");
 /** @import { Config } from "../src/config.ts" */
 const KEY = "implement-1";
 const EXECUTABLE_MODE = 0o755;
@@ -49,11 +51,55 @@ function openFresh() {
   return openIn(configIn(tmp), tmp);
 }
 
-/** @param {Opened} job @param {string} key */
-async function close(job, key) {
+/** @param {Opened} job @param {string} key @param {import("../src/job/dropped-patch.ts").RecoveryOrigin} [recovery] */
+async function close(
+  job,
+  key,
+  recovery = { stage: "implement", outcome: "stop", reason: null },
+) {
   const { cfg, repo, docs, branch } = job;
   const dirs = { root: job.root, repo, docs, branch, key };
-  return await closeJobCheckout(cfg, ISSUE, { ...dirs, wiki: "write" }, null);
+  return await closeJobCheckout(
+    cfg,
+    ISSUE,
+    { ...dirs, wiki: "write", recovery },
+    null,
+  );
+}
+
+/** @param {Opened} job @param {string} key */
+async function timedOutReview(job, key) {
+  const status = openStatus(paths.runDir(job.cfg, ISSUE), {
+    id: key,
+    issue: ISSUE,
+    stage: "review",
+    lane: "L",
+    startedAt: "2026-10-19T19:11:00.000Z",
+    socket: "/unused",
+    prompts: [],
+  });
+  return await tearDown(
+    job.cfg,
+    {
+      issue: ISSUE,
+      stage: "review",
+      key,
+      dirs: job,
+      wiki: "write",
+      push: null,
+      status,
+      runOp: async () => ({ ok: true, reply: {} }),
+    },
+    {
+      kind: "finished",
+      summary: {
+        issue: ISSUE,
+        stage: "review",
+        end: "stop",
+        reason: "the hardening session failed: timed out before it exited",
+      },
+    },
+  );
 }
 
 /**
@@ -125,5 +171,6 @@ export {
   openIn,
   REGULAR_EXECUTABLE_MODE,
   restored,
+  timedOutReview,
   under,
 };

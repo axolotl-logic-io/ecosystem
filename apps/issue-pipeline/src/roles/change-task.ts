@@ -6,7 +6,12 @@ import { JOB_DOCS, JOB_REPO } from "../job/layout.ts";
 import type { RoleContext } from "../job/role-context.ts";
 import type { CodeMerged, IssueState } from "../state.ts";
 import type { Check } from "./op-replies.ts";
-import { gherkinLines, header, replyLines } from "./task-facts.ts";
+import {
+  fullCheckLines,
+  gherkinLines,
+  header,
+  replyLines,
+} from "./task-facts.ts";
 
 // Where a change's work may go: the issue's code branch and its wiki; the
 // wiki alone of a change that lives only there and has no PR; or, once its
@@ -77,6 +82,7 @@ function fixTask(
   return [
     ...header(ctx, "check-fix"),
     ...scopeLines(ctx, mode),
+    ...fullCheckLines(ctx),
     ...gherkinLines(ctx),
     `## Failed checks (fix attempt ${attempt} of ${max})`,
     "",

@@ -41,12 +41,20 @@ function authorComments() {
   return comments.filter(({ body }) => body.includes(AUTHOR_MARK));
 }
 
-/** @returns {Promise<void>} */
-async function tickInto() {
-  ticks.push((await tick(flow)).started);
+/** @param {number} at @returns {Promise<string[]>} */
+async function completeInputStage(at) {
+  if (at === 1) {
+    humanComment(flow.ghDir, ISSUE, "mallory", VISITOR_SAYS);
+  }
+  if (at === 2) {
+    humanComment(flow.ghDir, ISSUE, "alice", ALICE_SAYS);
+  }
+  const { started } = await tick(flow);
+  ticks.push(started);
+  return started;
 }
 
-before(async () => {
+before(() => {
   flow = setUpFlow();
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
   scriptPi(flow, {
@@ -56,14 +64,19 @@ before(async () => {
       implementorTurn("hello, world; goodbye", "Say goodbye too"),
     ],
   });
-  await tickInto();
-  humanComment(flow.ghDir, ISSUE, "mallory", VISITOR_SAYS);
-  await tickInto();
-  humanComment(flow.ghDir, ISSUE, "alice", ALICE_SAYS);
-  await tickInto();
-  await tickInto();
 });
 after(() => stopJobs(flow));
+
+for (const [at, stage] of [
+  "author",
+  "implement",
+  "author",
+  "implement",
+].entries()) {
+  test(`human-input stage ${at + 1} completes ${stage} within its own deadline`, async () => {
+    assert.deepEqual(await completeInputStage(at), [stage]);
+  });
+}
 
 test("a visitor's comment doesn't wake the author; an allowed user's comment after the Gherkin does", () => {
   assert.deepEqual(

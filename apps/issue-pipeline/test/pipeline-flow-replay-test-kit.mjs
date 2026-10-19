@@ -12,7 +12,6 @@ import {
 } from "./pipeline-flow-kit.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
-import { runStage } from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
   implementorTurn,
@@ -96,7 +95,7 @@ function replayFacts(flow, traceStart) {
 }
 
 /** @param {Flow} flow */
-function createReplayFlow(flow) {
+function prepareReplayFlow(flow) {
   observeOps(flow);
   const originalWiki = refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`);
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
@@ -109,21 +108,7 @@ function createReplayFlow(flow) {
       INTERRUPTED,
     ],
   });
-  for (const stage of ["author", "implement", "review"]) {
-    const result = runStage(flow, stage);
-    if (result.end !== "next") {
-      throw new Error(
-        `setup ${stage}: ${JSON.stringify(result)}; ${JSON.stringify(opsTrace(flow).at(-1))}`,
-      );
-    }
-  }
-  withWorld(flow.ghDir, (world) => {
-    world.failedHead = savedState(world).hardened.code;
-  });
-  runStage(flow, "merge");
-  runStage(flow, "merge");
-  const interruptedWorld = readWorld(flow.ghDir);
-  return { flow, interruptedWorld, originalWiki };
+  return originalWiki;
 }
 
-export { createReplayFlow, merges, replaceState, replayFacts, sessions };
+export { merges, prepareReplayFlow, replaceState, replayFacts, sessions };

@@ -11,7 +11,8 @@ import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
-import { saveDroppedPatch } from "./dropped-patch.ts";
+import type { RecoveryOrigin, RecoverySnapshot } from "./dropped-patch.ts";
+import { saveDroppedPatch, saveRecovery } from "./dropped-patch.ts";
 import type { Access } from "./pipeline-commit.ts";
 
 interface DroppedChanges {
@@ -85,6 +86,71 @@ function reported<T>(step: () => T, fallback: T): T {
   }
 }
 
+function snapshotKind(file: string): RecoverySnapshot["kind"] {
+  if (file.endsWith(".index.patch")) {
+    return "index";
+  }
+  return "working-tree";
+}
+
+type ClosingJob = JobDirs & {
+  wiki: Access;
+  key: string;
+  recovery?: RecoveryOrigin;
+};
+
+function preparePatches(
+  cfg: Config,
+  issue: number,
+  job: ClosingJob,
+): DroppedChanges {
+  const { root, wiki } = job;
+  const lost: string[] = [];
+  const patches: string[] = [];
+  const snapshots: RecoverySnapshot[] = [];
+  for (const name of CHECKOUTS) {
+    const dir = job[name];
+    if (dir !== null && hasGit(dir)) {
+      const file = paths.droppedPatch(cfg, issue, job.key, name);
+      const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
+      const prefix = `${path.relative(root, dir)}/`;
+      const one = saveDroppedPatch(cfg, dir, { file, title });
+      snapshots.push(
+        ...one.files.map(
+          (saved: string): RecoverySnapshot => ({
+            file: path.basename(saved),
+            checkout: name,
+            source: dir,
+            kind: snapshotKind(saved),
+            base: gitIn(dir, ["rev-parse", "HEAD"]).trim(),
+          }),
+        ),
+      );
+      lost.push(
+        ...one.lost.map((fileName: string): string => `${prefix}${fileName}`),
+      );
+      patches.push(
+        ...one.files.map((saved: string): string =>
+          path.relative(paths.runDir(cfg, issue), saved),
+        ),
+      );
+    }
+  }
+  if (snapshots.length > 0 && job.recovery !== undefined) {
+    saveRecovery(cfg, {
+      version: 1,
+      repo: cfg.repo,
+      issue,
+      branch: job.branch,
+      job: job.key,
+      wikiAccess: wiki,
+      origin: job.recovery,
+      snapshots,
+    });
+  }
+  return { lost, patches };
+}
+
 // Closes job folder `job.root` of issue `issue`: saves its checkouts'
 // uncommitted changes as patches named by job key `job.key` and drops them,
 // bundles local code before changing either checkout, then calls `push` when
@@ -97,37 +163,14 @@ function reported<T>(step: () => T, fallback: T): T {
 async function closeJobCheckout(
   cfg: Config,
   issue: number,
-  job: JobDirs & { wiki: Access; key: string },
+  job: ClosingJob,
   push: (() => Promise<void>) | null,
 ): Promise<DroppedChanges> {
   const { root, repo, docs, wiki } = job;
   const scoped = withCheckout(cfg, { issue, dir: repo, branch: job.branch });
   let removable = false;
   try {
-    const dropped = ((): DroppedChanges => {
-      const lost: string[] = [];
-      const patches: string[] = [];
-      for (const name of CHECKOUTS) {
-        const dir = job[name];
-        if (dir !== null && hasGit(dir)) {
-          const file = paths.droppedPatch(cfg, issue, job.key, name);
-          const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
-          const prefix = `${path.relative(root, dir)}/`;
-          const one = saveDroppedPatch(cfg, dir, { file, title });
-          lost.push(
-            ...one.lost.map(
-              (fileName: string): string => `${prefix}${fileName}`,
-            ),
-          );
-          patches.push(
-            ...one.files.map((saved: string): string =>
-              path.relative(paths.runDir(cfg, issue), saved),
-            ),
-          );
-        }
-      }
-      return { lost, patches };
-    })();
+    const dropped = preparePatches(cfg, issue, job);
     // Prepare every recovery artifact before changing either checkout.
     saveCodeRecovery(cfg, issue, repo, job.key);
     if (docs !== null) {
@@ -141,7 +184,7 @@ async function closeJobCheckout(
       }
     }
     if (
-      push !== null &&
+      push &&
       (holdsUnpushed(cfg, repo) ||
         (wiki === "write" && docs !== null && holdsUnpushed(cfg, docs)))
     ) {

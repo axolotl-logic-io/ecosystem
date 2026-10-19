@@ -11,6 +11,7 @@ import path from "node:path";
 import process from "node:process";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import type { Stage } from "../stages.ts";
 import type { JobDirs } from "./checkout.ts";
 import { closeJobCheckout } from "./checkout-close.ts";
 import type { RunOp } from "./ops-request.ts";
@@ -34,6 +35,7 @@ type RunEnd =
 // its status file.
 interface ExitingJob {
   issue: number;
+  stage: Stage;
   key: string;
   dirs: JobDirs;
   wiki: Access;
@@ -102,7 +104,17 @@ async function tearDown(
   end: RunEnd | null,
 ): Promise<void> {
   const { issue, key, dirs, wiki, push, status } = job;
-  const closing = { ...dirs, wiki, key };
+  let outcome = "failed";
+  let reason: string | null = null;
+  if (end?.kind === "finished") {
+    outcome = end.summary.end;
+    reason = end.summary.reason ?? null;
+  } else if (end?.kind === "stopped") {
+    outcome = "stopped";
+    reason = end.signal;
+  }
+  const recovery = { stage: job.stage, outcome, reason };
+  const closing = { ...dirs, wiki, key, recovery };
   const { lost, patches } = await closeJobCheckout(cfg, issue, closing, push);
   status.lostChanges(lost, patches);
   if (patches.length === 0) {

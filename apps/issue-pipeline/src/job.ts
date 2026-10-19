@@ -134,7 +134,7 @@ async function runStage(
     }
     return claimed();
   });
-  const exiting = { issue, key, dirs, wiki, push, runOp, status };
+  const exiting = { issue, stage, key, dirs, wiki, push, runOp, status };
   const ending = runRoleStage({
     role,
     cfg,
