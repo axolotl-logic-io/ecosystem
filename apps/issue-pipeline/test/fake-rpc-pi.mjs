@@ -110,7 +110,10 @@ function finishSync() {
 // logs `{ mark: label }` to pi.log and leaves the mark under FAKE_PI_ROOT's
 // marks/, and `{ fakeHold: label }` waits until that mark is there. It
 // exits when stdin closes.
+const RUNTIME_KIT = new URL("./runtime-fixtures.mjs", import.meta.url).href;
 const FAKE_PI = `#!/usr/bin/env node
+import { fixtureState, versionProbe } from ${JSON.stringify(RUNTIME_KIT)};
+if (versionProbe(process.argv.slice(2))) process.exit(0);
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -204,7 +207,9 @@ const respond = (command, fields) =>
   process.stdout.write(JSON.stringify({ id: command.id, type: "response", command: command.type, ...fields }) + "\\n");
 const handle = (command) => {
   log({ command, name: named });
-  if (command.type === "prompt" && script.rejectPrompt) {
+  if (command.type === "get_state") {
+    respond(command, { success: true, data: fixtureState(argv[argv.indexOf("--model") + 1]) });
+  } else if (command.type === "prompt" && script.rejectPrompt) {
     respond(command, { success: false, error: script.rejectPrompt });
   } else if (command.type === "prompt") {
     respond(command, { success: true, data: { disposition: "started" } });
@@ -227,6 +232,8 @@ const handle = (command) => {
     play(events);
   } else if (command.type === "steer") {
     respond(command, { success: false, error: "the agent is not running" });
+  } else {
+    respond(command, { success: false, error: "unsupported offline RPC request" });
   }
 };
 let buffer = "";

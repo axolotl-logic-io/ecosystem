@@ -113,11 +113,9 @@ function sources() {
       to: path.join(ROOT, f),
       fill: false,
     })),
-    {
-      from: "repos/example.json",
-      to: path.join(ROOT, "repos/example.json"),
-      fill: false,
-    },
+    ...["repos/example.json", "runtime/pi-cliproxyapi-config.example.json"].map(
+      (from) => ({ from, to: path.join(ROOT, from), fill: false }),
+    ),
     ...mdIn("agents").map((f) => ({
       from: `agents/${f}`,
       to: path.join(AGENT_DIR, "agents/issue-pipeline", f),
@@ -154,6 +152,8 @@ function generated({ repo, commit, dirty, at, shortSha }) {
 Installed from \`apps/issue-pipeline/\` of ${repo || "the pipeline's repo"} at ${shortSha}, ${at}.
 
 Don't edit the code here: change it in the repo and run \`mise //apps/issue-pipeline:install\`, which overwrites these files. The per-repo configs in \`repos/\` (except \`example.json\`), their setup and teardown scripts, \`secrets/\`, \`clones/\`, \`work/\` and \`runs/\` are local and never installed. See \`apps/issue-pipeline/README.md\` in the repo for how it works.
+
+Native compaction is pipeline-owned (175000 target, 30000 recent). Before any model launch, separately provision the trusted Pi/provider versions, dedicated runtime HOME, referenced credentials and reviewed discovery cache as documented in \`apps/issue-pipeline/runtime/README.md\`. Installation copies only a nonsecret example, never personal runtime files. Merging source activates nothing. The operator separately installs the accepted version and records this installed identity before resuming affected jobs. No provider/profile/cache/credentials are provisioned by installation.
 `,
     },
     {

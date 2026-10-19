@@ -157,7 +157,11 @@ function promisedCommandLine(definition, spec, files) {
     ...definition.tools.filter((tool) => READ_TOOLS.includes(tool)),
     "structured_output",
   ];
-  const extensions = [...definition.extensions, FILES.extension];
+  const extensions = [
+    "builtin:codemode",
+    ...definition.extensions,
+    FILES.extension,
+  ];
   if (files.commit !== null) {
     tools = [...definition.tools, "structured_output", "pipeline_commit"];
     extensions.push(files.commit);
@@ -170,8 +174,8 @@ function promisedCommandLine(definition, spec, files) {
     systemPrompt: definition.systemPrompt,
     appended: [spec.prompt.text],
     extensions: new Set(extensions),
-    skills: definition.inheritSkills,
-    projectContext: definition.inheritProjectContext,
+    skills: false,
+    projectContext: false,
     session: FILES.session,
     schema: FILES.schema,
   };
@@ -223,13 +227,13 @@ test("the implementor may edit, write and run commands", () => {
   }
 });
 
-test("a definition without project context or a tools list runs with -nc, and a read-only session gets only the tools that read", () => {
+test("pipeline discovery policy wins over definition inheritance, and a read-only session gets only tools that read", () => {
   const definition = parsed(
     "---\nname: x\ninheritProjectContext: false\ninheritSkills: true\n---\nBe brief.\n",
   );
   const args = piArgs(definition, specFor("x"), FILES);
   assert.ok(args.includes("-nc"));
-  assert.ok(!args.includes("-ns"));
+  assert.ok(args.includes("-ns"));
   assert.ok(!args.includes("--thinking"));
   assert.equal(
     flagValue(args, "--tools"),
@@ -246,7 +250,7 @@ test("a definition's thinking and extensions reach pi's command line", () => {
   assert.equal(flagValue(args, "--thinking"), "high");
   assert.deepEqual(
     new Set(flagValues(args, "-e")),
-    new Set(["/x/ext-a", "/x/ext-b", FILES.extension]),
+    new Set(["builtin:codemode", "/x/ext-a", "/x/ext-b", FILES.extension]),
   );
   assert.equal(flagValue(args, "--tools"), "read,structured_output");
 });
@@ -256,7 +260,7 @@ test("a writer session's files add the pipeline_commit extension and tool", () =
   const args = piArgs(definition, specFor("x"), WRITER_FILES);
   assert.deepEqual(
     new Set(flagValues(args, "-e")),
-    new Set([FILES.extension, WRITER_FILES.commit]),
+    new Set(["builtin:codemode", FILES.extension, WRITER_FILES.commit]),
   );
   assert.equal(
     flagValue(args, "--tools"),

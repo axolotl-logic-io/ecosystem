@@ -159,7 +159,24 @@ function piArgs(
   spec: { model: string; prompt: { text: string } },
   files: SessionFiles,
 ): string[] {
-  const args = ["--mode", "rpc", "--model", spec.model];
+  // Pi 1.2.0 keeps explicit RPC authoritative over --print. The latter
+  // selects pi-cliproxyapi 0.4.3's existing cache-only child behavior.
+  const args = [
+    "--mode",
+    "rpc",
+    "--print",
+    "--offline",
+    "--no-approve",
+    "--no-extensions",
+    "-e",
+    "builtin:codemode",
+    "-nc",
+    "-ns",
+    "-np",
+    "--no-themes",
+    "--model",
+    spec.model,
+  ];
   if (definition.thinking !== null) {
     args.push("--thinking", definition.thinking);
   }
@@ -173,12 +190,6 @@ function piArgs(
   args.push("--append-system-prompt", spec.prompt.text);
   for (const extension of definition.extensions) {
     args.push("-e", extension);
-  }
-  if (!definition.inheritProjectContext) {
-    args.push("-nc");
-  }
-  if (!definition.inheritSkills) {
-    args.push("-ns");
   }
   args.push("--session", files.session);
   args.push("-e", files.extension, "--output-schema", files.schema);

@@ -16,6 +16,7 @@ import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installJobAuthority } from "./fake-job-authority.mjs";
 import { FAKE_PI } from "./fake-rpc-pi.mjs";
 import { seedOrigins } from "./job-git-test-kit.mjs";
+import { provisionFixture } from "./runtime-fixtures.mjs";
 
 const JOB = new URL("../src/job.ts", import.meta.url).pathname;
 const AGENTS = new URL("../agents/", import.meta.url).pathname;
@@ -82,6 +83,7 @@ function setUp(replies, script, extraConfig = {}, options = {}) {
       allowedUsers: ["alice"],
       commands: { test: "true" },
       ...origins.config,
+      runtime: provisionFixture(root),
       ...extraConfig,
     }),
   );
@@ -143,6 +145,7 @@ function jobEnv(place, extraEnv) {
       ["ISSUE_PIPELINE_ROOT", place.root],
       ["PI_CODING_AGENT_DIR", path.join(place.tmp, "agent")],
       ["FAKE_PI_ROOT", place.root],
+      ["PIPELINE_MODEL_KEY", "offline-fixture-credential"],
     ]),
   };
 }

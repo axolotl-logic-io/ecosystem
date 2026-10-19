@@ -51,6 +51,7 @@
         "src/ops/ci-status.ts",
         "src/job.ts",
         "src/job/launch.ts",
+        "src/job/runtime-profile.ts",
         "src/job/ops-process.ts",
         "src/job/agent-definition.ts",
         "src/job/structured-output.ts",

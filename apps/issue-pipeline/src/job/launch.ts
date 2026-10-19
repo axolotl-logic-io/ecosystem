@@ -24,13 +24,14 @@ import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
 import type { SessionPhase } from "./role-context.ts";
 import type { RpcAnswer, RpcCommand, RpcProcess } from "./rpc.ts";
 import { runRpc } from "./rpc.ts";
+import type { RuntimeConfig } from "./runtime-policy.ts";
+import { runtimeProfile } from "./runtime-profile.ts";
 import type { LaunchStart } from "./status.ts";
 
 const OPS_CLI = path.join(ROOT, "ops.mjs");
 const OUTPUT_EXTENSION = path.join(ROOT, "structured-output.mjs");
 const COMMIT_EXTENSION = path.join(ROOT, "pipeline-commit.mjs");
 const TIME_RADIX = 36;
-
 // What the stage job hears of its launches.
 interface LaunchHooks {
   // Where launch `key`'s session JSONL goes.
@@ -53,6 +54,7 @@ interface LaunchHooks {
   cwd: string;
   // The job's code checkout, in its folder.
   repo: string;
+  runtime?: RuntimeConfig;
 }
 
 // One ops request: its key in job.json, its framed request and its timeout.
@@ -177,16 +179,28 @@ async function runSession(
     const error = `agent ${launch.agent}: cannot prepare its session and schema files`;
     return failedSession(launch, error);
   }
-  const { key, agent, model, role, commits } = launch;
+  const { key, model, commits } = launch;
   let commit: string | null = null;
   if (commits) {
     commit = COMMIT_EXTENSION;
+  }
+  const env = hooks.env({ key, commits });
+  const runtime = runtimeProfile({
+    model,
+    runtime: hooks.runtime,
+    session: files.session,
+    cwd: hooks.cwd,
+    env,
+  });
+  if ("error" in runtime) {
+    return failedSession(launch, runtime.error);
   }
   const args = piArgs(read.definition, launch, {
     ...files,
     extension: OUTPUT_EXTENSION,
     commit,
   });
+  args.push("-e", runtime.extension);
   let reviewedSha: string | null = null;
   if (!commits) {
     reviewedSha = checkoutHead(hooks.repo);
@@ -195,7 +209,13 @@ async function runSession(
   const exit = await runRpc({
     args,
     cwd: hooks.cwd,
-    env: hooks.env({ key, commits }),
+    env: runtime.env,
+    preflight: {
+      policy: runtime.policy,
+      endpoint: runtime.endpoint,
+      provenance: runtime.provenance,
+      verify: runtime.verify,
+    },
     prompt: launch.task,
     timeoutMs: launch.timeoutMs,
     onSpawn: spawnedOf(launch, files.session, { hooks, steers }),
@@ -203,6 +223,18 @@ async function runSession(
   });
   hooks.ended(key);
   const raw = sessionRaw(launch, exit);
+  recordSessionEnd(launch, hooks, raw, { steers, reviewedSha });
+  return raw;
+}
+
+function recordSessionEnd(
+  launch: SessionLaunch,
+  hooks: LaunchHooks,
+  raw: SessionRaw,
+  context: { steers: Steers; reviewedSha: string | null },
+): void {
+  const { steers, reviewedSha } = context;
+  const { key, role, agent, model } = launch;
   let ended: SessionEnd["ended"] = "failed";
   if (raw.ok) {
     ended = "ok";
@@ -217,7 +249,6 @@ async function runSession(
     headSha,
     reviewedSha,
   });
-  return raw;
 }
 
 // Runs ops request `launch` and resolves to its raw result.

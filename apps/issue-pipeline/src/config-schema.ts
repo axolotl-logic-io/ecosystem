@@ -2,6 +2,7 @@
 // ops modules check (src/config.ts loads it).
 
 import { z } from "zod";
+import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
 import { OpsError } from "./ops-error.ts";
 
 const DEFAULTS: Readonly<Record<string, unknown>> = {
@@ -79,6 +80,7 @@ const CONFIG_SCHEMA = z.looseObject({
   // and unused.
   jobRoles: JOB_ROLES.nullish(),
   models: MODELS,
+  runtime: RUNTIME_SCHEMA,
   leaseHours: z.number(),
   practices: z.array(z.string()),
   // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue

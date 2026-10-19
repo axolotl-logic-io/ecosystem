@@ -45,7 +45,8 @@ test("a stage job claims its issue, runs the stage's role, releases the issue at
   const [{ argv, cwd }] = calls;
   assert.equal(cwd, checkoutOf(fs.realpathSync(place.root), READER_STAGE));
   assert.equal(flagValue(argv, "--mode"), "rpc");
-  const [prompt, ...others] = piCommands(place);
+  const [probe, prompt, ...others] = piCommands(place);
+  assert.deepEqual(probe, { id: "runtime-policy", type: "get_state" });
   assert.equal(prompt.type, "prompt");
   assert.ok(prompt.message.length > 0);
   assert.deepEqual(others, []);
@@ -123,7 +124,7 @@ test("a rejected prompt ends pi's session, and its error fails the launch", () =
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(
     piCommands(place).map(({ type }) => type),
-    ["prompt"],
+    ["get_state", "prompt"],
   );
   // The fake pi exits only once its stdin closes.
   const starts = piStarts(place);
