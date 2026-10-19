@@ -104,9 +104,9 @@ GitHub state, claim, Gherkin, hardening and security comments require merge auth
 
 ## Two GitHub identities and operator credentials
 
-Development (`devAccount`, intended `axolotl-logic-hippy`) owns code/private-wiki
+Development (`devAccount`) owns code/private-wiki
 commits, source/private-wiki branch pushes and PR create/edit/reopen/close/ready/draft.
-Review/merge (`mergeAccount`, intended `axolotl-logic-lawd`) owns every comment,
+Review/merge (`mergeAccount`) owns every comment,
 saved state, claim, label, authority read, explicit-target REST merge and published
 wiki push. Closing a PR uses development; its accompanying comment uses merge.
 Neither bot is a trusted human, even if included in `allowedUsers`. Human issue
