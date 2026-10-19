@@ -7,131 +7,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Query } from "./git-review-policy.ts";
+import { checkPaths, metadataView } from "./git-review-repository.ts";
 
 const MAX_OUTPUT_BYTES = 33_554_432;
 const MAX_ERROR_LENGTH = 2000;
 const TIMEOUT_MS = 30_000;
-const SHA256 = /^\s*objectformat\s*=\s*sha256\s*$/imu;
-const REFTABLE = /^\s*refstorage\s*=\s*reftable\s*$/imu;
-const SHARED_INDEX = /^sharedindex\.[a-f0-9]+$/u;
 const GIT = "/usr/bin/git";
+const INDEX_ENTRY = /^(?<mode>\d{6}) [a-f0-9]+ [0-3]\t(?<file>[\s\S]+)$/u;
+const WORKTREE_COMMANDS = new Set(["diff", "status", "grep", "blame"]);
 
-function inside(root: string, file: string): boolean {
-  const relative = path.relative(root, file);
-  return (
-    relative === "" ||
-    (!relative.startsWith(`..${path.sep}`) &&
-      relative !== ".." &&
-      !path.isAbsolute(relative))
-  );
-}
-
-function rootsOf(roots: readonly string[]): string[] {
-  return roots.map((root) => {
-    if (!path.isAbsolute(root)) {
-      throw new Error("Repository roots must be absolute paths");
-    }
-    const canonical = fs.realpathSync(root);
-    const gitDir = path.join(canonical, ".git");
-    if (!fs.lstatSync(gitDir).isDirectory()) {
-      throw new Error(
-        "Only repositories with a plain .git directory are supported",
-      );
-    }
-    return canonical;
-  });
-}
-
-function repositoryOf(cwd: string, roots: readonly string[]): string {
-  if (!path.isAbsolute(cwd)) {
-    throw new Error("cwd must be an absolute allowlisted repository root");
-  }
-  const canonical = fs.realpathSync(cwd);
-  if (!roots.includes(canonical)) {
-    throw new Error("cwd must name an explicitly allowlisted repository root");
-  }
-  return canonical;
-}
-
-// Check existing ancestors too, so a missing file below an escaping symlink
-// cannot bypass validation. Git receives literal pathspecs only.
-function checkPaths(repo: string, paths: readonly string[]): void {
-  for (const file of paths) {
-    let current = path.resolve(repo, file);
-    while (!fs.existsSync(current)) {
-      const parent = path.dirname(current);
-      if (parent === current) {
-        throw new Error(`Unsupported path: ${file}`);
-      }
-      current = parent;
-    }
-    if (!inside(repo, fs.realpathSync(current))) {
-      throw new Error(`Path leaves repository: ${file}`);
-    }
-  }
-}
-
-function assertPlainTree(dir: string): void {
-  const info = fs.lstatSync(dir);
-  if (info.isSymbolicLink() || !(info.isDirectory() || info.isFile())) {
-    throw new Error("Symlink or special file in Git metadata is unsupported");
-  }
-  if (info.isDirectory()) {
-    for (const child of fs.readdirSync(dir)) {
-      assertPlainTree(path.join(dir, child));
-    }
-  }
-}
-
-function copyIfPresent(source: string, target: string): void {
-  if (fs.existsSync(source)) {
-    assertPlainTree(source);
-    fs.cpSync(source, target, { recursive: true, dereference: false });
-  }
-}
-
-function metadataView(repo: string, view: string): void {
-  const source = path.join(repo, ".git");
-  if (!fs.lstatSync(source).isDirectory()) {
-    throw new Error("Git directory indirection is unsupported");
-  }
-  for (const name of [
-    "commondir",
-    "objects/info/alternates",
-    "objects/info/http-alternates",
-  ]) {
-    if (fs.existsSync(path.join(source, name))) {
-      throw new Error(`Unsupported Git metadata indirection: ${name}`);
-    }
-  }
-  const configFile = path.join(source, "config");
-  assertPlainTree(configFile);
-  const config = fs.readFileSync(configFile, "utf8");
-  if (REFTABLE.test(config)) {
-    throw new Error("Reftable repositories are unsupported");
-  }
-  let format = "";
-  if (SHA256.test(config)) {
-    format = ["", "[extensions]", "objectformat = sha256", ""].join("\n");
-  }
-  fs.mkdirSync(view);
-  fs.writeFileSync(
-    path.join(view, "config"),
-    `[core]\nrepositoryformatversion = 1\nbare = false\nlogAllRefUpdates = false\n${format}`,
-  );
-  for (const name of [
-    "HEAD",
-    "index",
-    "refs",
-    "packed-refs",
-    "shallow",
-    ...fs.readdirSync(source).filter((entry) => SHARED_INDEX.test(entry)),
-  ]) {
-    copyIfPresent(path.join(source, name), path.join(view, name));
-  }
-  const objects = path.join(source, "objects");
-  assertPlainTree(objects);
-  fs.symlinkSync(objects, path.join(view, "objects"), "dir");
+interface GitEvidence {
+  output: string;
+  exitCode: number;
 }
 
 // The environment is built from constants, not from the caller's environment.
@@ -177,7 +64,7 @@ function collect(
   view: string,
   context: { home: string; query: Query },
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<GitEvidence> {
   const { home, query } = context;
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -227,9 +114,9 @@ function collect(
             "Git output exceeds the 32 MiB cache limit; narrow the query",
           ),
         );
-      } else if (successful(query, code)) {
+      } else if (code !== null && successful(query, code)) {
         try {
-          resolve(outputOf(output));
+          resolve({ output: outputOf(output), exitCode: code });
         } catch {
           reject(new Error("Git output is not UTF-8; no lines served"));
         }
@@ -244,11 +131,58 @@ function collect(
   });
 }
 
+// Implicit paths need the same authority check as explicit path arguments.
+// Never let diff/status launch a child Git in an initialized submodule: that
+// child would discover its own untrusted config instead of our private view.
+async function checkWorktree(
+  repo: string,
+  view: string,
+  context: { home: string; query: Query },
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!WORKTREE_COMMANDS.has(context.query.command)) {
+    return;
+  }
+  const index = await collect(
+    repo,
+    view,
+    {
+      home: context.home,
+      query: {
+        command: "ls-files",
+        args: ["ls-files", "--stage", "-z"],
+        paths: [],
+      },
+    },
+    signal,
+  );
+  for (const entry of index.output
+    .split("\0")
+    .filter((value) => value !== "")) {
+    const { mode, file } = INDEX_ENTRY.exec(entry)?.groups ?? {};
+    if (file === undefined) {
+      throw new Error("Unsupported Git index entry");
+    }
+    checkPaths(repo, [file]);
+    if (
+      mode === "160000" &&
+      (context.query.command === "diff" ||
+        context.query.command === "status") &&
+      fs.lstatSync(path.join(repo, file, ".git"), { throwIfNoEntry: false }) !==
+        undefined
+    ) {
+      throw new Error(
+        "diff/status with initialized submodules is unsupported; use show/log for committed evidence or review a standalone submodule clone as an explicitly allowed root",
+      );
+    }
+  }
+}
+
 async function executeGit(
   repo: string,
   query: Query,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<GitEvidence> {
   checkPaths(repo, query.paths);
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "git-review-"));
   const home = path.join(temporary, "home");
@@ -256,10 +190,17 @@ async function executeGit(
   fs.mkdirSync(home);
   try {
     metadataView(repo, view);
-    return await collect(repo, view, { home, query }, signal);
+    const signals = [AbortSignal.timeout(TIMEOUT_MS)];
+    if (signal !== undefined) {
+      signals.push(signal);
+    }
+    const executionSignal = AbortSignal.any(signals);
+    await checkWorktree(repo, view, { home, query }, executionSignal);
+    return await collect(repo, view, { home, query }, executionSignal);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
 }
 
-export { executeGit, gitEnvironment, repositoryOf, rootsOf };
+export type { GitEvidence };
+export { executeGit, gitEnvironment };

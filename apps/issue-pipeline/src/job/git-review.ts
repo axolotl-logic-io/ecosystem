@@ -3,7 +3,8 @@
 import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { queryOf, REQUEST, ROOTS } from "./git-review-policy.ts";
-import { executeGit, repositoryOf, rootsOf } from "./git-review-process.ts";
+import { executeGit, type GitEvidence } from "./git-review-process.ts";
+import { repositoryOf, rootsOf } from "./git-review-repository.ts";
 
 const MAX_RESULT_BYTES = 49_152;
 const MAX_ERROR_LENGTH = 3000;
@@ -17,6 +18,7 @@ interface Delivery {
   repository: string;
   argv: string[];
   totalLines: number;
+  exitCode: number;
   startLine: number | null;
   endLine: number | null;
 }
@@ -28,6 +30,7 @@ interface Result {
 interface Cached {
   id: string;
   lines: string[];
+  exitCode: number;
 }
 interface ReviewTool {
   name: string;
@@ -70,7 +73,10 @@ function resultOf(
 
 function pageOf(
   cached: Cached,
-  identity: Omit<Delivery, "queryId" | "totalLines" | "startLine" | "endLine">,
+  identity: Omit<
+    Delivery,
+    "queryId" | "totalLines" | "exitCode" | "startLine" | "endLine"
+  >,
   offset: number,
   limit: number,
 ): Result {
@@ -82,6 +88,7 @@ function pageOf(
     ...identity,
     queryId: cached.id,
     totalLines,
+    exitCode: cached.exitCode,
     startLine: null,
     endLine: null,
   };
@@ -116,7 +123,7 @@ const TOOL_DEFINITION = {
   name: "git_review",
   label: "Git Review",
   description:
-    "Read local Git evidence without shell, credentials or writes. cwd must equal an allowed repository root. argv starts with diff/show/log/rev-parse/merge-base/ls-tree/cat-file/status/blame/grep. Paths follow --; grep patterns follow -e. Only documented read-only options are supported. offset is one-based; limit is capped at 1000 lines and 48 KiB including metadata. Same query is cached for this session. Details record actual served ranges; combine ranges for the same sessionId/queryId to prove delivery. END alone is not coverage.",
+    "Read local Git evidence without shell, credentials or writes. cwd must equal an allowed repository root. argv starts with diff/show/log/rev-parse/merge-base/ls-tree/cat-file/status/blame/grep. Paths follow --; grep patterns follow -e. Only documented read-only options are supported. diff/status refuse initialized submodules; use show/log for committed evidence. offset is one-based; limit is capped at 1000 lines and 48 KiB including metadata. Same query is cached for this session. Details record exitCode and actual served ranges; combine ranges for the same sessionId/queryId to prove delivery. END alone is not coverage.",
   parameters: {
     type: "object",
     properties: {
@@ -164,9 +171,10 @@ function reviewer(rootsJson: string | undefined): ReviewTool {
         let pending = cache.get(key);
         if (pending === undefined) {
           pending = executeGit(repository, query, signal).then(
-            (output: string): Cached => ({
+            (evidence: GitEvidence): Cached => ({
               id: randomUUID(),
-              lines: linesOf(output),
+              lines: linesOf(evidence.output),
+              exitCode: evidence.exitCode,
             }),
           );
           cache.set(key, pending);
