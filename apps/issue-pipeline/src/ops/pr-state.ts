@@ -6,9 +6,8 @@ import type { Config } from "../config.ts";
 import { gh } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
 import { pullRequest } from "../revision.ts";
-import { readWriteState } from "../saved-state.ts";
+import { readWriteState, writeState } from "../saved-state.ts";
 import { historicalPrFor } from "./prs.ts";
-import { saveIssueState } from "./save-state.ts";
 
 function saveDraftAuthority(
   cfg: Config,
@@ -28,9 +27,29 @@ function saveDraftAuthority(
   ) {
     throw new OpsError(`PR #${pr} has no matching open draft authority`);
   }
-  saveIssueState(cfg, n, { ...state, pr });
+  // Like ordinary state saves, retain the latest saved merge/reconciliation
+  // metadata. The explicit OPEN check alone may lift adoption's claim block.
+  const current = readWriteState(cfg, n);
+  if (
+    current.codeMerged !== null ||
+    current.pr !== state.pr ||
+    current.branch !== state.branch
+  ) {
+    throw new OpsError(
+      `PR #${pr}'s saved authority changed during draft recovery`,
+    );
+  }
+  let { adoption } = current;
+  if (adoption !== null) {
+    adoption = { ...adoption, blocked: false };
+  }
+  writeState(cfg, n, { ...current, pr, adoption });
   const saved = readWriteState(cfg, n);
-  if (saved.pr !== pr) {
+  if (
+    saved.pr !== pr ||
+    saved.codeMerged !== null ||
+    saved.adoption?.blocked === true
+  ) {
     throw new OpsError(`PR #${pr}'s authority save is not confirmed`);
   }
 }

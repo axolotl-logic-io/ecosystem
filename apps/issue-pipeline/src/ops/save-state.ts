@@ -1,7 +1,7 @@
 // The job's state writes: save-state writes a role's state and nothing else;
 // release writes the state the job ends with, renewing its lease, and keeps
-// the lane's claim live. Neither can set or clear the code merge: only the
-// claim records it, from GitHub, so the saved one always stays. The
+// the lane's claim live. Neither can set or clear saved merge/adoption
+// reconciliation; only validated GitHub operations establish it. The
 // comments the job queued ride along on every op (see ops.ts).
 
 import { z } from "zod";
@@ -27,8 +27,8 @@ const RELEASE_REQUEST = z.looseObject({
 
 type EmptyReply = Record<string, never>;
 
-// `state` as issue `n` may save it: for issue `n`, with the saved code merge.
-function withSavedCodeMerge(
+// A role state can neither fabricate nor erase saved merge/adoption evidence.
+function withSavedReconciliation(
   cfg: Config,
   n: number,
   state: IssueState,
@@ -37,12 +37,12 @@ function withSavedCodeMerge(
     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
   }
   const saved = readWriteState(cfg, n);
-  return { ...state, codeMerged: saved.codeMerged };
+  return { ...state, codeMerged: saved.codeMerged, adoption: saved.adoption };
 }
 
-// Writes issue `n`'s state, with the code merge it has saved.
+// Writes role state while retaining independently saved reconciliation.
 function saveIssueState(cfg: Config, n: number, state: IssueState): IssueState {
-  const written = withSavedCodeMerge(cfg, n, state);
+  const written = withSavedReconciliation(cfg, n, state);
   writeState(cfg, n, written);
   return written;
 }

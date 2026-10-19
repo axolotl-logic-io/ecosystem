@@ -26,6 +26,7 @@ function v2State(n, extra = {}) {
     version: 2,
     number: n,
     stage: "implement",
+    adoption: null,
     stoppedStage: null,
     stopCode: null,
     resumeStage: null,

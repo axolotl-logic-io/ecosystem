@@ -26,6 +26,7 @@ const WRITE_STATE = ISSUE_STATE.pick({
   number: true,
   stage: true,
 }).extend({
+  adoption: ISSUE_STATE.shape.adoption.removeCatch().optional(),
   stoppedStage: ISSUE_STATE.shape.stoppedStage.removeCatch(),
   stopCode: ISSUE_STATE.shape.stopCode.removeCatch(),
   branch: ISSUE_STATE.shape.branch.removeCatch(),
@@ -165,7 +166,13 @@ function readClaimState(
   ) {
     throw new OpsError("legacy pipeline state needs explicit reconciliation");
   }
-  return validatedWriteState(raw, number);
+  const state = validatedWriteState(raw, number);
+  if (state.adoption?.blocked === true) {
+    throw new OpsError(
+      "adopted retained work is stopped for explicit PR/completion reconciliation; no stage launch authorized",
+    );
+  }
+  return state;
 }
 
 function readState(
@@ -216,6 +223,7 @@ export type { StoredState };
 export {
   parseIssueState,
   parseStateBody,
+  rawStateBody,
   readClaimState,
   readState,
   readWriteState,

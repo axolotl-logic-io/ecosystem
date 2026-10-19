@@ -24,6 +24,7 @@ const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
 // the reports.
 const NODE_MODULES: ReadonlyMap<string, string> = new Map([
   [path.join(SOURCE_DIR, "ops.ts"), "ops.mjs"],
+  [path.join(SOURCE_DIR, "adopt.ts"), "adopt.mjs"],
   [path.join(SOURCE_DIR, "shell-supervisor.ts"), "shell-supervisor.mjs"],
   [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],
   [path.join(SOURCE_DIR, "orchestrate.ts"), "orchestrate.mjs"],

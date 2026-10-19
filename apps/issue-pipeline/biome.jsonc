@@ -28,6 +28,12 @@
         "test/**",
         "build.ts",
         "src/ops.ts",
+        "src/adopt.ts",
+        "src/adoption.ts",
+        "src/adoption-plan.ts",
+        "src/adoption-origin.ts",
+        "src/adoption-preservation.ts",
+        "src/adoption-graph.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
         "src/process-group.ts",
@@ -114,9 +120,14 @@
     // GitHub's REST API names a comment's times in snake_case (`created_at`,
     // `updated_at`). comments.ts declares its comment schema with them, and
     // test/fake-gh.mjs, the fake gh, answers with comments in that wire format
-    // (#219).
+    // (#219). Adoption also validates repository/PR REST wire fields.
     {
-      "includes": ["src/comments.ts", "test/fake-gh.mjs"],
+      "includes": [
+        "src/comments.ts",
+        "src/adoption-identity.ts",
+        "test/fake-gh.mjs",
+        "test/fake-adoption-gh.mjs"
+      ],
       "linter": {
         "rules": {
           "style": {

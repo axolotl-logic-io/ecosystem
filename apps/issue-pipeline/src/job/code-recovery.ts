@@ -86,4 +86,4 @@ function saveCodeRecovery(
   );
 }
 
-export { saveCodeRecovery, saveSyncRecovery };
+export { saveBundle, saveCodeRecovery, saveSyncRecovery };

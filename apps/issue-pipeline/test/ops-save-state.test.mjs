@@ -17,6 +17,15 @@ const SAVE_REPLY = { ok: true, op: "save-state", posted: 0, commentIds: [] };
 const BAD_SAVE = /bad save-state request/u;
 const SHA_LENGTH = 40;
 const CODE_MERGED = { pr: SAVED_MERGE.pr, sha: "b".repeat(SHA_LENGTH) };
+const ADOPTED = { n: 58, state: 14 };
+const DIGEST_LENGTH = 64;
+const ADOPTION = {
+  evidence: "$ISSUE_PIPELINE_ROOT/runs/o__r/issue-58/adoption/plan.json",
+  digest: "a".repeat(DIGEST_LENGTH),
+  repo: "o/r",
+  restart: "stopped",
+  blocked: true,
+};
 
 test("save-state writes the state it is given, and refuses a request without one", () => {
   const { n, state: stateId } = SAVED;
@@ -36,8 +45,8 @@ test("save-state writes the state it is given, and refuses a request without one
   assert.deepEqual(writes(), []);
 });
 
-// Only the claim records the code merge, from GitHub
-// (ops-claim-provenance.test.mjs): a state write neither sets nor clears it.
+// Claim and explicit adoption record merge truth from GitHub; an ordinary
+// state write can neither set nor clear it.
 test("save-state keeps the saved code merge, whatever the state it is given says", () => {
   const { n, state: stateId } = SAVED_MERGE;
   const forged = v2State(n, { stage: "merge", codeMerged: CODE_MERGED });
@@ -58,4 +67,25 @@ test("save-state keeps the saved code merge, whatever the state it is given says
   askOps({ op: "save-state", number: n, state: cleared });
   const kept = stateOf(effects(), `edit comment ${stateId} state`);
   assert.deepEqual(kept, forged);
+});
+
+// Only explicit adoption/reopen reconciliation establishes or lifts this block.
+test("save-state cannot fabricate or clear the saved adoption boundary", () => {
+  const { n, state: stateId } = ADOPTED;
+  const forged = v2State(n, { adoption: ADOPTION });
+  reply([
+    { ...commentsReply(n, [stateComment(stateId, v2State(n))]), keep: true },
+    ...commentWriteReplies("o/r", n, [stateId]),
+  ]);
+  askOps({ op: "save-state", number: n, state: forged });
+  assert.deepEqual(stateOf(effects(), `edit comment ${stateId} state`), {
+    ...forged,
+    adoption: null,
+  });
+  reply([
+    { ...commentsReply(n, [stateComment(stateId, forged)]), keep: true },
+    ...commentWriteReplies("o/r", n, [stateId]),
+  ]);
+  askOps({ op: "save-state", number: n, state: v2State(n) });
+  assert.deepEqual(stateOf(effects(), `edit comment ${stateId} state`), forged);
 });

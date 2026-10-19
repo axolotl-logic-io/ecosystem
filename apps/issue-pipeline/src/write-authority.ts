@@ -24,6 +24,11 @@ function readWriteAuthority(
   ) {
     return { state, codeWritable: false, codeMerged };
   }
+  if (state.adoption?.blocked === true) {
+    throw new OpsError(
+      "adopted retained work requires explicit validated PR reopen; no code write authority",
+    );
+  }
   const pr = state.pr ?? historicalPrFor(cfg, issue);
   if (pr === null) {
     return { state, codeWritable: true, codeMerged: null };

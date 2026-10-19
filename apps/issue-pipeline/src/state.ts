@@ -6,6 +6,7 @@
 // comes after the merge, and lets the issue complete (security).
 
 import { z } from "zod";
+import { ADOPTION } from "./adoption-state.ts";
 import type { Status } from "./stages.ts";
 import { STAGES } from "./stages.ts";
 
@@ -102,9 +103,8 @@ const MERGE_RETURN = z.object({
   codeMerged: z.boolean(),
 });
 
-// The issue's PR as GitHub says it merged: its number and the merge
-// commit's oid. Only the claim sets it, from GitHub, never from a legacy
-// state or a reply; set, the code is in the base and only wiki work remains.
+// Actual GitHub merge identity, established by claim or explicit adoption.
+// Never copied from historical claims; set, it permanently closes code writes.
 const CODE_MERGED = z.object({
   pr: z.number().int().positive(),
   sha: z.string().min(1),
@@ -122,25 +122,24 @@ const COUNTS = z.object({
   syncs: z.number().int().nonnegative().catch(0),
 });
 
-// A malformed optional field reads as its empty value, so one bad field never
-// loses the issue's PR or branch head; only an unreadable stage or number
-// makes the whole state unreadable.
+// Display parsing tolerates optional fields. Saved mutation authority uses
+// saved-state.ts's strict critical-field validator.
 const ISSUE_STATE = z.object({
   version: z.literal(2),
   number: z.number().int().positive(),
   stage: STATUS,
+  adoption: ADOPTION.nullable().catch(null),
   // The stage a stop happened in; lifting the stop resumes there.
   stoppedStage: STAGE.nullable().catch(null),
   stopCode: z.string().nullable().catch(null),
-  // The stage to return to after the author, when new trusted input sent an
-  // issue back to it, or a legacy issue migrated to it.
+  // The stage to return to after reauthoring changed trusted input.
   resumeStage: STAGE.nullable().catch(null),
   lease: LEASE.nullable().catch(null),
   pr: z.number().int().positive().nullable().catch(null),
   // The branch the issue is bound to (branch-binding.ts); null in a state
   // saved before assignments, whose work is on agent/issue-<n>.
   branch: z.string().min(1).nullable().catch(null),
-  // The last code head the pipeline pushed, which adopt-push moves on.
+  // The last pushed or explicitly reconciled code head.
   headSha: z.string().nullable().catch(null),
   flows: FLOWS.nullable().catch(null),
   gherkin: GHERKIN_REF.nullable().catch(null),
@@ -196,6 +195,7 @@ function newIssueState(number: number): IssueState {
     version: 2,
     number,
     stage: "author",
+    adoption: null,
     stoppedStage: null,
     stopCode: null,
     resumeStage: null,

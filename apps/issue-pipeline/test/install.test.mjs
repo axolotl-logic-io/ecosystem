@@ -26,6 +26,7 @@ const INSIDE_ROOT = /inside the pipeline root/u;
 // The build's files, each installed under its own name in the root.
 const BUILT = [
   "ops.mjs",
+  "adopt.mjs",
   "shell-supervisor.mjs",
   "job.mjs",
   "structured-output.mjs",

@@ -10,7 +10,6 @@
 // change the code that checks its own work. Every file it replaces or retires
 // is copied first to <root>-backups/<timestamp>-install/.
 //
-// Usage: node install.mjs [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
 //   --allow-dirty  install even with uncommitted changes in this folder
 
@@ -40,6 +39,7 @@ const DATE_PUNCTUATION = /[-:]/gu;
 // The build's files in dist/, each installed under its own name in ROOT.
 const BUILT = [
   "ops.mjs",
+  "adopt.mjs",
   "shell-supervisor.mjs",
   "job.mjs",
   "orchestrate.mjs",
