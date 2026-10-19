@@ -67,7 +67,7 @@ function nextStepText(control: Stop, req: StopRequest): string {
     return nextStep;
   }
   if (req.state.mergeAttempt !== null) {
-    return "Code may already have landed. Do not retry the merge POST, push code, or reset merged/security/attempt state. Preserve response evidence and original authorization. With unchanged inputs/wiki, at most one operator-authorized restart at merge may spend the remaining read-only recovery budget; exhaustion requires explicit reconciliation, not an unattended restart loop.";
+    return "Code may already have landed. Do not retry the merge POST, repeat approval, push code, or reset merged/security/attempt state. Preserve response evidence and original authorization. With unchanged inputs/wiki and identity, the operator may authorize one bounded restart at merge with a new finite confirmation window, using the saved response and cumulative read evidence without resetting them. Deadline expiry requires explicit reconciliation, not an unattended restart loop.";
   }
   if (req.state.codeMerged !== null) {
     return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next job reviews and publishes the wiki changes again, with every limit reset.`;
