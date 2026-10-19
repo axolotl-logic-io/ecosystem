@@ -1,0 +1,158 @@
+// @ts-check
+// The next caller-owned Review job supplies recovery automatically, even in
+// wiki-only scope and with changed heads; the files are inert, readable data.
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { test } from "node:test";
+import { outputEnd } from "./fake-rpc-pi.mjs";
+import {
+  claimWon,
+  GHERKIN_COMMENT,
+  HEAD_SHA,
+  repliesAt,
+  stateAt,
+} from "./job-fixtures.mjs";
+import { flagValue, logOf, piStarts, runJob, setUp } from "./job-test-kit.mjs";
+
+const INPUTS_LENGTH = 64;
+const KEY = "review-20261019T191100000Z";
+const BASE = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const PROMPT =
+  "# Hardening policy\n\nFor hardening and check-fix: run only targeted tests relevant to your changes. Do not run the configured full-check command inside the session. Deterministic verification runs it after the session. Inspect and incorporate useful preserved edits only within current scope.\n";
+
+/** @param {import("./job-test-kit.mjs").Place} at */
+function seedRecovery(at) {
+  const dropped = path.join(at.runDir, "dropped");
+  fs.mkdirSync(dropped, { recursive: true });
+  const file = `${KEY}-repo.patch.index.patch`;
+  const patch = path.join(dropped, file);
+  const bytes = `Dropped changes of issue #7, job ${KEY}, checkout repo/\nBase: ${BASE}\nSnapshot: index\n\n`;
+  fs.writeFileSync(patch, bytes);
+  fs.writeFileSync(
+    path.join(dropped, `${KEY}.json`),
+    JSON.stringify({
+      version: 1,
+      repo: "o/r",
+      issue: 7,
+      branch: "agent/issue-7",
+      job: KEY,
+      wikiAccess: "write",
+      origin: {
+        stage: "review",
+        outcome: "stop",
+        reason: "the hardening session failed: timed out before it exited",
+      },
+      snapshots: [
+        {
+          file,
+          checkout: "repo",
+          source: "/old/job/repo",
+          kind: "index",
+          base: BASE,
+        },
+      ],
+    }),
+  );
+  return { patch, bytes };
+}
+
+function reviewReplies() {
+  const state = stateAt("review");
+  return {
+    ...repliesAt("review"),
+    claim: claimWon(state, [GHERKIN_COMMENT]),
+    "current-revision": {
+      ok: true,
+      revision: {
+        code: HEAD_SHA,
+        wiki: BASE,
+        inputs: "0".repeat(INPUTS_LENGTH),
+      },
+      baseSha: HEAD_SHA,
+      pr: null,
+    },
+  };
+}
+
+test("a fresh wiki-only hardening writer gets previous timeout provenance and readable patches without an issue-comment handoff", () => {
+  const at = setUp(
+    reviewReplies(),
+    {
+      events: [
+        outputEnd({ outcome: "cannot", reason: "Need a product answer" }),
+      ],
+    },
+    { commands: { test: "mise //apps/issue-pipeline:check" } },
+    { wiki: true },
+  );
+  fs.writeFileSync(path.join(at.brain, "Pipeline-Prompt-Hardening.md"), PROMPT);
+  const { patch, bytes } = seedRecovery(at);
+  const r = runJob(at, ["--stage", "review"]);
+  assert.equal(r.status, 0, r.stderr);
+  const [start] = piStarts(at);
+  assert.equal(flagValue(start.argv, "--append-system-prompt"), PROMPT);
+  const prompt = logOf(at, "pi.log").find(
+    ({ command }) => command?.type === "prompt",
+  );
+  const task = prompt.command.message;
+  assert.ok(task.includes('commands.test: "mise //apps/issue-pipeline:check"'));
+  assert.ok(task.includes(KEY));
+  assert.ok(task.includes("timed out before it exited"));
+  assert.ok(task.includes(patch));
+  assert.ok(task.includes("snapshot: index"));
+  assert.ok(task.includes(BASE));
+  assert.ok(task.includes("/old/job/repo"));
+  assert.ok(task.includes("Scope: the wiki in `docs/` only"));
+  assert.equal(fs.readFileSync(patch, "utf8"), bytes);
+  assert.ok(
+    !logOf(at, "ops.log").some(({ op }) => ["verify", "ready-pr"].includes(op)),
+  );
+});
+
+test("hardening and check-fix both get the pinned targeted-test policy and actual full gate before they start", () => {
+  const replies = {
+    ...reviewReplies(),
+    verify: {
+      ok: true,
+      pass: false,
+      headSha: HEAD_SHA,
+      checks: [{ id: "test", pass: false, detail: "exit 1" }],
+    },
+    "wiki-check": { ok: true, pass: true, checks: [] },
+  };
+  const at = setUp(
+    replies,
+    {
+      launches: [
+        [outputEnd({ outcome: "done", summary: "targeted tests pass" })],
+        [
+          outputEnd({
+            outcome: "cannot",
+            reason: "outside service unavailable",
+          }),
+        ],
+      ],
+    },
+    { commands: { test: "mise //apps/issue-pipeline:check" } },
+  );
+  fs.writeFileSync(path.join(at.brain, "Pipeline-Prompt-Hardening.md"), PROMPT);
+  const r = runJob(at, ["--stage", "review"]);
+  assert.equal(r.status, 0, r.stderr);
+  const starts = piStarts(at);
+  assert.equal(starts.length, 2);
+  for (const start of starts) {
+    assert.equal(flagValue(start.argv, "--append-system-prompt"), PROMPT);
+  }
+  const tasks = logOf(at, "pi.log")
+    .filter(({ command }) => command?.type === "prompt")
+    .map(({ command }) => command.message);
+  assert.ok(tasks[0].includes("Task: `hardening`"));
+  assert.ok(tasks[1].includes("Task: `check-fix`"));
+  for (const task of tasks) {
+    assert.ok(
+      task.includes('commands.test: "mise //apps/issue-pipeline:check"'),
+    );
+  }
+  assert.ok(!logOf(at, "ops.log").some(({ op }) => op === "ready-pr"));
+});

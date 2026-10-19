@@ -19,8 +19,15 @@ import { ISSUE_STATE } from "../state.ts";
 import type { Brain } from "./brain.ts";
 import type { JobDirs } from "./checkout.ts";
 import type { Control } from "./control.ts";
+import { recoveryLines } from "./dropped-patch.ts";
 import type { LaunchHooks } from "./launch.ts";
-import type { Role, RoleContext, RoleInputs } from "./role-context.ts";
+import type {
+  Role,
+  RoleContext,
+  RoleInputs,
+  SessionResult,
+  SessionSpec,
+} from "./role-context.ts";
 import type { Claimed, EndingJob, RoleStageEnd } from "./role-end.ts";
 import {
   applyEnd,
@@ -104,6 +111,15 @@ function contextOf(
 ): RoleContext {
   const { job } = claimed;
   const op = opRunnerOf(job);
+  const session = sessionRunnerOf({
+    stage: job.stage,
+    brain: job.brain,
+    hooks: job.hooks,
+    status: job.status,
+    stopping: job.control.stopping,
+    usage: claimed.usage,
+    append: claimed.append,
+  });
   return {
     cfg: job.cfg,
     issue: job.issue,
@@ -114,15 +130,16 @@ function contextOf(
     inputs,
     mergeQueue: job.mergeQueue,
     op,
-    session: sessionRunnerOf({
-      stage: job.stage,
-      brain: job.brain,
-      hooks: job.hooks,
-      status: job.status,
-      stopping: job.control.stopping,
-      usage: claimed.usage,
-      append: claimed.append,
-    }),
+    session: async (spec: SessionSpec): Promise<SessionResult> => {
+      if (spec.phase !== "hardening" || !spec.commits) {
+        return await session(spec);
+      }
+      const recovery = recoveryLines(job.cfg, job.issue, job.dirs.branch);
+      return await session({
+        ...spec,
+        task: [spec.task, ...recovery].join("\n"),
+      });
+    },
     post: postOf(job, () => claimed.last).post,
     save: async (state: IssueState): Promise<void> => {
       await op("save-state", { state });

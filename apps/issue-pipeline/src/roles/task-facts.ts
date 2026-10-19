@@ -50,6 +50,16 @@ function header(
   ];
 }
 
+// The actual full gate, not an example or a command inferred by the model.
+function fullCheckLines(ctx: RoleContext): string[] {
+  return [
+    "## Configured full check (deterministic verification)",
+    "",
+    `commands.test: ${JSON.stringify(ctx.cfg.commands.test)}`,
+    "",
+  ];
+}
+
 // The issue's Gherkin, its assumptions and the wiki pages it names.
 function gherkinLines(ctx: RoleContext): string[] {
   const { gherkin } = ctx.inputs;
@@ -79,4 +89,4 @@ function replyLines(answers: readonly string[]): string[] {
 }
 
 export type { TaskKind };
-export { bullets, gherkinLines, header, replyLines };
+export { bullets, fullCheckLines, gherkinLines, header, replyLines };

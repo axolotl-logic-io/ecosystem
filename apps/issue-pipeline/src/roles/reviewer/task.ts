@@ -5,12 +5,18 @@
 import type { RoleContext } from "../../job/role-context.ts";
 import type { Mode } from "../change-task.ts";
 import { scopeLines } from "../change-task.ts";
-import { gherkinLines, header, replyLines } from "../task-facts.ts";
+import {
+  fullCheckLines,
+  gherkinLines,
+  header,
+  replyLines,
+} from "../task-facts.ts";
 
 function hardeningTask(ctx: RoleContext, mode: Mode): string {
   return [
     ...header(ctx, "hardening"),
     ...scopeLines(ctx, mode),
+    ...fullCheckLines(ctx),
     ...gherkinLines(ctx),
     ...replyLines([
       "`done`, with a `summary` of what you examined, the tests you added and the defects you fixed, once it is committed.",

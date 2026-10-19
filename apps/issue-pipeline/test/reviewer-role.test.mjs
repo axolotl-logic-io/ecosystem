@@ -98,6 +98,9 @@ test("the hardening task carries the facts: kind, scope and Gherkin, no behaviou
   assert.match(task, BRANCH_SCOPE);
   assert.match(task, GHERKIN);
   assert.doesNotMatch(task, BEHAVIOUR_WORDS);
+  assert.ok(
+    task.includes(`commands.test: ${JSON.stringify(ctx.cfg.commands.test)}`),
+  );
 });
 
 test("the comment says only that hardening passed, never that anything was approved", async () => {
@@ -187,8 +190,61 @@ test("a failing check gets a hardening-phase fix session and the fixed head is t
   const specs = sessionsOf(calls);
   assert.equal(specs.length, 2);
   assert.ok(specs.every((spec) => spec.phase === "hardening"));
+  for (const spec of specs) {
+    assert.ok(
+      spec.task.includes(
+        `commands.test: ${JSON.stringify(ctx.cfg.commands.test)}`,
+      ),
+    );
+  }
   assert.equal(state.verifiedSha, FIXED);
   assert.equal(state.hardened?.code, FIXED);
+});
+
+test("a hardening timeout never verifies, checkpoints or readies the draft", async () => {
+  const { ctx, calls } = hardening({
+    sessions: [
+      { ok: false, transient: false, error: "timed out before it exited" },
+    ],
+  });
+  const end = await reviewerRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.deepEqual(callNames(calls), ["current-revision", "session"]);
+  assert.equal(savesOf(calls).length, 0);
+});
+
+test("a targeted-test reply cannot bypass the bounded deterministic check-fix gate", async () => {
+  const { ctx, calls } = hardening({
+    config: {
+      maxCiFixes: 1,
+      commands: { test: "mise //apps/issue-pipeline:check" },
+    },
+    ops: { verify: [FAILING, FAILING], "wiki-check": [WIKI_PASS, WIKI_PASS] },
+    sessions: [
+      { ok: true, reply: { outcome: "done", summary: "targeted tests pass" } },
+      {
+        ok: true,
+        reply: { outcome: "done", summary: "targeted fix tests pass" },
+      },
+    ],
+  });
+  const end = await reviewerRole(ctx);
+  assert.equal(endCode(end), "check-fixes");
+  assert.deepEqual(callNames(calls), [
+    "current-revision",
+    "session",
+    "verify",
+    "wiki-check",
+    "session",
+    "verify",
+    "wiki-check",
+  ]);
+  assert.equal(savesOf(calls).length, 0);
+  for (const spec of sessionsOf(calls)) {
+    assert.ok(
+      spec.task.includes('commands.test: "mise //apps/issue-pipeline:check"'),
+    );
+  }
 });
 
 test("a push of anything but the verified head stops with error and saves nothing", async () => {
