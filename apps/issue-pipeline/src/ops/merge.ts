@@ -23,6 +23,7 @@ import { mergedText } from "./merge-comment.ts";
 import type { Queued } from "./merge-order.ts";
 import { queued } from "./merge-order.ts";
 import { FULL_SHA, mergedParent } from "./merged-graph.ts";
+import { approvePr } from "./pr-approval.ts";
 import type { PrView } from "./pr-merge.ts";
 import { viewForMerge } from "./pr-merge.ts";
 import type { MergeStale } from "./publication-guard.ts";
@@ -232,6 +233,7 @@ function merge(cfg: Config, request: unknown): MergeReply {
   if (fresh.isDraft) {
     return { merged: false, reason: "draft" };
   }
+  approvePr(cfg, pr, req.expectedSha);
   return attemptedMerge(cfg, req);
 }
 

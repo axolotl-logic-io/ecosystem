@@ -18,9 +18,10 @@ The check typechecks source and tests, lints, builds, checks syntax and runs the
 full test suite. Read [AGENTS.md](AGENTS.md) before changing code.
 
 `main` is the only long-lived branch. CI checks pull requests and pushes to
-`main`; there is no production deployment. The pipeline can work on other
-repositories; this checkout does not configure it to work on its own issues.
+`main`; there is no production deployment. The operator can configure the pipeline to work on ecosystem's own issues as
+well as other repositories. Issue jobs develop and review pipeline fixes; the
+operator coordinates installation separately from merging them.
 
-Wiki content is not included in this extraction. The pipeline's wiki links name
-its new home; publication of those pages is a separate wiki-split decision.
-An operator still supplies a separate, pinned wiki clone for prompt inputs.
+The [wiki](https://github.com/axolotl-logic-io/ecosystem/wiki) holds pipeline
+design and behavioral prompts. The caller supplies a pinned local wiki clone
+for prompt inputs and assigns each issue, branch, lane and stage explicitly.

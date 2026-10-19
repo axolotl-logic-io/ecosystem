@@ -25,7 +25,9 @@ const ANCESTRY = /not on origin\/integration/u;
 
 /** @returns {string[][]} */
 function mutations() {
-  return calls().filter((args) => args.includes("POST"));
+  return calls().filter(
+    (args) => args.includes("POST") && !args.includes("event=APPROVE"),
+  );
 }
 
 for (const { status, outcome } of [

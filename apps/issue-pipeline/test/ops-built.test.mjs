@@ -12,7 +12,7 @@ import {
   collaboratorReply,
   commentWriteReplies,
 } from "./gh-mutation-fixtures.mjs";
-import { branchMergeReply } from "./merge-op-fixtures.mjs";
+import { approvalReply, branchMergeReply } from "./merge-op-fixtures.mjs";
 import { mergeWorld } from "./ops-built-merge-fixtures.mjs";
 import { releaseReplies } from "./ops-release-test-kit.mjs";
 import {
@@ -132,6 +132,7 @@ function mergeAndRelease(initial, ops) {
     issueListing(),
     { ...claimListing(), keep: true },
     ...prViews(w.sha, w.mergeSha),
+    approvalReply(w),
     branchMergeReply(w),
     ...commentWriteReplies("o/r", PR, []),
   ]);
