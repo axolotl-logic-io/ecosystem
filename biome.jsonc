@@ -1,0 +1,194 @@
+// Lint policy: Biome's `all` preset with every rule group, nursery included,
+// raised to "error", so any diagnostic fails `npm run check`. Rules are turned
+// off only for frameworks this app does not use, each under a comment naming
+// the framework, and in the scoped overrides at the end, each of which names
+// its files and the framework or platform practice that needs it.
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    // apps/web/biome.jsonc narrows this for the site.
+    "includes": ["**", "!**/AGENTS.md"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "jsxQuoteStyle": "double",
+      "trailingCommas": "all",
+      "semicolons": "always",
+      "arrowParentheses": "always",
+      "bracketSpacing": true
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "drizzle": "all",
+      "next": "all",
+      "playwright": "all",
+      "project": "all",
+      "react": "all",
+      "tailwind": "all",
+      "test": "all",
+      "types": "all",
+      // Frameworks and tools this app does not use.
+      "astro": "none",
+      "qwik": "none",
+      "reactNative": "none",
+      "solid": "none",
+      "svelte": "none",
+      "turborepo": "none",
+      "vue": "none"
+    },
+    "rules": {
+      "preset": "all",
+      "a11y": "error",
+      "complexity": "error",
+      "correctness": "error",
+      "nursery": "error",
+      "performance": "error",
+      "security": "error",
+      "style": "error",
+      "suspicious": "error"
+    }
+  },
+  // A rule group can be a severity or a rule map, not both, so rule-level
+  // settings live in an override that applies to every file.
+  "overrides": [
+    {
+      "includes": ["**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            // Naming a rule group in an override re-enables the rules of every
+            // domain in that group, so the other frameworks' rules are turned
+            // off again here, group by group. Qwik only:
+            "noQwikUseVisibleTask": "off",
+            "useImageSize": "off",
+            "useQwikClasslist": "off",
+            "useQwikMethodUsage": "off",
+            "useQwikValidLexicalScope": "off",
+            // Solid only:
+            "noSolidDestructuredProps": "off",
+            // Vue only:
+            "noVueDataObjectDeclaration": "off",
+            "noVueDuplicateKeys": "off",
+            "noVueReservedKeys": "off",
+            "noVueReservedProps": "off",
+            "noVueSetupPropsReactivityLoss": "off",
+            "noVueVIfWithVFor": "off",
+            "useVueVForKey": "off",
+            "useVueValidTemplateRoot": "off",
+            "useVueValidVBind": "off",
+            "useVueValidVCloak": "off",
+            "useVueValidVElse": "off",
+            "useVueValidVElseIf": "off",
+            "useVueValidVHtml": "off",
+            "useVueValidVIf": "off",
+            "useVueValidVOn": "off",
+            "useVueValidVOnce": "off",
+            "useVueValidVPre": "off",
+            "useVueValidVText": "off"
+          },
+          "performance": {
+            // Solid only:
+            "useSolidForComponent": "off",
+            // Vue only:
+            "useVueVapor": "off"
+          },
+          "suspicious": {
+            // Solid only:
+            "noReactSpecificProps": "off",
+            // Vue only:
+            "noVueArrowFuncInWatch": "off",
+            // Turborepo only (checks env vars against turbo.json):
+            "noUndeclaredEnvVars": "off"
+          },
+          "style": {
+            // Vue only:
+            "noVueOptionsApi": "off",
+            "useVueConsistentVBindStyle": "off",
+            "useVueConsistentVOnStyle": "off",
+            "useVueDefineMacrosOrder": "off",
+            "useVueHyphenatedAttributes": "off",
+            "useVueMultiWordComponentNames": "off"
+          },
+          "nursery": {
+            // The codebase declares named functions with `function`.
+            "useConsistentFunctionStyle": {
+              "level": "error",
+              "options": { "style": "declaration" }
+            },
+            // Playwright names its test function `test` and has no `it`, so
+            // Vitest specs use `test` too.
+            "useConsistentTestIt": {
+              "level": "error",
+              "options": { "function": "test", "withinDescribe": "test" }
+            },
+
+            // The `all` preset and the domains set to "all" turn on every
+            // nursery rule of this stack without naming it, including
+            // noTailwindRawColors, noUnsafeTypeAssertion and useSortedClasses.
+
+            // Astro only:
+            "noAstroConflictingSetDirectives": "off",
+            "noAstroSetHtmlDirective": "off",
+            "useAstroClientOnlyDirectiveValue": "off",
+            // Qwik only:
+            "useQwikLoaderLocation": "off",
+            // React Native only:
+            "noReactNativeDeepImports": "off",
+            "noReactNativeLiteralColors": "off",
+            "noReactNativeRawText": "off",
+            "useReactNativePlatformComponents": "off",
+            // Svelte only:
+            "noSvelteAtDebugTags": "off",
+            "noSvelteAtHtmlTags": "off",
+            "noSvelteExportLet": "off",
+            "noSvelteLegacyConst": "off",
+            "noSvelteUnnecessaryStateWrap": "off",
+            "useSvelteKitRuneImports": "off",
+            "useSvelteRequireEachKey": "off",
+            // Vue only:
+            "noVueDeprecatedScopedSlots": "off",
+            "noVueImportCompilerMacros": "off",
+            "noVueRefAsOperand": "off",
+            "noVueUndeclaredDirectives": "off",
+            "noVueVOnNumberValues": "off",
+            "useScopedStyles": "off",
+            "useVueBaseImport": "off",
+            "useVueConsistentDefinePropsDeclaration": "off",
+            "useVueNextTickPromise": "off",
+            "useVueValidVFor": "off"
+          }
+        }
+      }
+    },
+
+    // Biome skips files over `files.maxSize` (1 MiB by default), dependencies
+    // included. Playwright's API types are one 1.15 MB file, so without this
+    // noUnresolvedImports reports every name it declares, such as `devices`.
+    // npm hoists it to the root node_modules.
+    {
+      "includes": ["**/node_modules/playwright-core/types/types.d.ts"],
+      "files": { "maxSize": 2097152 }
+    }
+  ]
+}

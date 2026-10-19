@@ -1,0 +1,10 @@
+{
+  "name": "ecosystem",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15"
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "name": "@project-buddy/issue-pipeline",
+  "name": "@ecosystem/issue-pipeline",
   "private": true,
   "type": "module",
   "scripts": {

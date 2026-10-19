@@ -1,6 +1,6 @@
 # Issue pipeline
 
-The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, integration turns, stops and restarts. The executor never selects another issue. The wiki's [Reimagined pipeline](https://github.com/axolotl-logic/project-buddy/wiki/Reimagined-Pipeline) describes the design.
+The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, integration turns, stops and restarts. The executor never selects another issue. The wiki's [Reimagined pipeline](https://github.com/axolotl-logic-io/ecosystem/wiki/Reimagined-Pipeline) describes the design.
 
 A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
