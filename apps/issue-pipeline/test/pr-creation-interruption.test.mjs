@@ -7,6 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
 import {
+  BASE,
   ISSUE,
   refIn,
   SLUG,
@@ -68,6 +69,24 @@ function prepareRestart(flow) {
   });
 }
 
+/** @returns {import("./pipeline-flow-kit.mjs").Flow} */
+function openIntegrationFlow() {
+  const flow = setUpFlow();
+  // This regression exercises open-issue discovery before the PR was saved,
+  // not the closed-Merge exception (which requires a recorded PR). Merge to
+  // a non-default integration branch so GitHub leaves the issue open.
+  git(flow.origin, [
+    "update-ref",
+    "refs/heads/main",
+    String(refIn(flow.origin, BASE)),
+  ]);
+  git(flow.origin, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+  observeOps(flow);
+  openFlowIssue(flow, "alice", "Greet politely", "Say hello.");
+  scriptPi(flow, { author: [authorTurn(GHERKIN, true)] });
+  return flow;
+}
+
 for (const mode of [
   "merged-before-save",
   "interrupted-create",
@@ -76,10 +95,7 @@ for (const mode of [
   /** @type {import("./pipeline-flow-kit.mjs").Flow} */
   let flow;
   test(`${mode}: author establishes the create-interruption fixture`, () => {
-    flow = setUpFlow();
-    observeOps(flow);
-    openFlowIssue(flow, "alice", "Greet politely", "Say hello.");
-    scriptPi(flow, { author: [authorTurn(GHERKIN, true)] });
+    flow = openIntegrationFlow();
     assert.equal(runStage(flow, "author").end, "next");
   });
   test(`${mode}: no writer/code push after external merge and recovery retains work`, () => {
@@ -88,7 +104,10 @@ for (const mode of [
     const captured = JSON.parse(
       fs.readFileSync(path.join(flow.root, "interruption.json"), "utf8"),
     );
-    const stopped = savedState(readWorld(flow.ghDir));
+    const interrupted = readWorld(flow.ghDir);
+    const stopped = savedState(interrupted);
+    const issue = interrupted.issues.find((item) => item.number === ISSUE);
+    assert.equal(issue?.state, "open");
     assert.equal(captured.before.pr, null);
     assert.equal(captured.before.codeMerged, null);
     assert.equal(stopped.pr, null);
