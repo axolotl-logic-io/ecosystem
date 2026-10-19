@@ -34,6 +34,7 @@ const WRITE_STATE = ISSUE_STATE.pick({
   lease: ISSUE_STATE.shape.lease.removeCatch(),
   pr: ISSUE_STATE.shape.pr.removeCatch(),
   codeMerged: ISSUE_STATE.shape.codeMerged.removeCatch(),
+  mergeAttempt: ISSUE_STATE.shape.mergeAttempt.removeCatch().optional(),
   merged: ISSUE_STATE.shape.merged.removeCatch(),
   hardened: ISSUE_STATE.shape.hardened.removeCatch(),
   integration: ISSUE_STATE.shape.integration.removeCatch(),

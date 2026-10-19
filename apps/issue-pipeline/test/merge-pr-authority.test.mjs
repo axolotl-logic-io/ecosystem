@@ -9,6 +9,7 @@ import {
   fakeGh,
   ISSUE,
   MERGE_COMMIT,
+  mergeAuthority,
   prView,
   world,
   writes,
@@ -78,6 +79,7 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
     prView({ headRefOid: w.sha }),
     approvalReply(w),
     branchMergeReply(w),
+    ...mergeAuthority(approvedState(approvedOf(w))),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
@@ -89,7 +91,10 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
   assert.equal(result.merged, false);
   assert.ok("reason" in result);
   assert.match(result.reason, TARGET_REFUSAL);
-  assert.equal(writes().length, 2);
+  assert.equal(writes().filter((args) => !args.includes("PATCH")).length, 2);
   assert.equal(writes()[0]?.[1], "repos/o/r/pulls/50/reviews");
-  assert.equal(writes()[1]?.[1], "repos/o/r/merges");
+  assert.equal(
+    writes().filter((args) => !args.includes("PATCH"))[1]?.[1],
+    "repos/o/r/merges",
+  );
 });

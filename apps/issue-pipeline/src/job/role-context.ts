@@ -33,6 +33,7 @@ type OpName =
   | "wiki-check"
   | "ci-status"
   | "merge"
+  | "reconcile-merge"
   | "wiki-sync"
   | "finish-wiki-sync"
   | "publish"

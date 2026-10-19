@@ -14,17 +14,18 @@ import {
 } from "./explicit-target-world-test-kit.mjs";
 
 /** @typedef {import("./explicit-target-world-test-kit.mjs").World} World */
-/** @typedef {{args: string[], stdout?: string, stderr?: string, code?: number, updates?: [string, string][]}} GhStep */
+/** @typedef {{args: string[], stdout?: string, stderr?: string, code?: number, updates?: [string, string][], interrupt?: boolean}} GhStep */
 const CALLS = z.array(z.array(z.string()));
 const REMAINING = z.object({ steps: z.array(z.unknown()) });
 const VIEW_FIELDS =
-  "number,isCrossRepository,baseRefName,headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit";
+  "number,isCrossRepository,baseRefName,headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit,url";
 const RECEIPT_FIELDS =
   "number,state,mergeCommit,headRefName,headRefOid,baseRefName,isCrossRepository";
 
 /** @param {World} w @param {Record<string, unknown>} [extra] */
 function view(w, extra = {}) {
   return {
+    url: `https://github.com/${REPO}/pull/${PR}`,
     number: PR,
     state: "OPEN",
     headRefName: BRANCH,
@@ -58,15 +59,6 @@ function prechecks(w) {
       stdout: JSON.stringify(ISSUE_DATA),
     },
     { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
-    {
-      args: [
-        "api",
-        "--paginate",
-        `repos/${REPO}/issues/${ISSUE}/comments?per_page=100`,
-        "--jq",
-        ".[] | @json",
-      ],
-    },
     { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
     prStep(w, {}, true),
     prStep(w),
@@ -89,6 +81,18 @@ function prechecks(w) {
         login: w.cfg.mergeAccount,
       }),
     },
+  ];
+}
+/** @param {World} w @returns {GhStep[]} */
+function resultInputs(w) {
+  return [
+    {
+      args: ["api", `repos/${REPO}/issues/${ISSUE}`],
+      stdout: JSON.stringify(ISSUE_DATA),
+    },
+    { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
+    { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
+    prStep(w, mergedView(w), true),
   ];
 }
 /** @param {World} w @param {Partial<GhStep>} [extra] @returns {GhStep} */
@@ -114,13 +118,15 @@ function post(w, extra = {}) {
 function mergedView(w) {
   return { state: "MERGED", mergeCommit: { oid: w.merged } };
 }
-/** @param {World} w @param {GhStep[]} steps @returns {void} */
-function script(w, steps) {
+/** @param {World} w @param {GhStep[]} steps @param {boolean} [preserveCalls] @returns {void} */
+function script(w, steps, preserveCalls = false) {
   fs.writeFileSync(
     path.join(HOME, "gh-script.json"),
     JSON.stringify({ origin: w.origin, steps }),
   );
-  fs.writeFileSync(path.join(HOME, "gh-calls.jsonl"), "");
+  if (!preserveCalls) {
+    fs.writeFileSync(path.join(HOME, "gh-calls.jsonl"), "");
+  }
 }
 /** @returns {string[][]} */
 function calls() {
@@ -160,6 +166,7 @@ export {
   prechecks,
   prStep,
   request,
+  resultInputs,
   script,
   view,
 };

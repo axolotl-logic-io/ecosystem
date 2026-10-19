@@ -145,6 +145,11 @@ function reconciled(
   state: IssueState,
   now: Date,
 ): IssueState {
+  // Reconciliation owns delayed PR reads after an attempted mutation. A
+  // stale OPEN/read failure must not clear truth or divert recovery to a writer.
+  if (state.mergeAttempt !== null) {
+    return state;
+  }
   const pr = issuePullRequest(cfg, n, state);
   const codeMerged = codeMergedOf(pr);
   const recorded = state.codeMerged ?? null;
@@ -184,7 +189,12 @@ function branchChangedOf(
   remote: string | null,
 ): BranchChanged | null {
   const { headSha, codeMerged } = state;
-  if (codeMerged !== null || headSha === null || remote === null) {
+  if (
+    state.mergeAttempt !== null ||
+    codeMerged !== null ||
+    headSha === null ||
+    remote === null
+  ) {
     return null;
   }
   if (remote === headSha) {

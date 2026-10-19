@@ -19,6 +19,7 @@ import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
   approvedState,
   fakeGh,
+  mergeAuthority,
   PR,
   prView,
   publishOf,
@@ -94,6 +95,7 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
     prView({ headRefOid: w.sha }),
     approvalReply(w),
     branchMergeReply(w),
+    ...mergeAuthority(state),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
@@ -107,7 +109,10 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
     mergeCommit: w.mergeSha,
     headSha: w.sha,
   });
-  const body = writes()[2]?.join(" ") ?? "";
+  const body =
+    writes()
+      .filter((args) => !args.includes("PATCH"))[2]
+      ?.join(" ") ?? "";
   assert.ok(body.includes(`hardening passed on ${short(REVIEWED_CODE)}`));
   assert.ok(body.includes(`integrated it as ${short(w.sha)}`));
   assert.ok(body.includes("with no further review"));
@@ -123,6 +128,7 @@ test("merge without an integration says hardening passed on the merged head", ()
     prView({ headRefOid: w.sha }),
     approvalReply(w),
     branchMergeReply(w),
+    ...mergeAuthority(approvedState(approved)),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
@@ -131,7 +137,10 @@ test("merge without an integration says hardening passed on the merged head", ()
     }),
   ]);
   merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
-  const body = writes()[2]?.join(" ") ?? "";
+  const body =
+    writes()
+      .filter((args) => !args.includes("PATCH"))[2]
+      ?.join(" ") ?? "";
   assert.ok(body.includes("hardening passed on this commit"));
   assert.ok(body.includes(SECURITY_FOLLOWS));
   assert.equal(body.includes("integrated"), false);

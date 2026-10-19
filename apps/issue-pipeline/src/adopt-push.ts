@@ -30,7 +30,12 @@ function adoptPush(
   if (pushed === null || remote !== pushed.sha) {
     return null;
   }
-  if (stage === "stopped" || stage === "done" || saved.codeMerged !== null) {
+  if (
+    stage === "stopped" ||
+    stage === "done" ||
+    saved.codeMerged !== null ||
+    saved.mergeAttempt !== null
+  ) {
     return null;
   }
   let next = stage;

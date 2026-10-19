@@ -7,6 +7,7 @@ import { assertPrBase } from "../pr-authority.ts";
 
 // gh's answer to the PR view.
 const PR_VIEW = z.looseObject({
+  url: z.string().url(),
   number: z.number().int().positive(),
   isCrossRepository: z.boolean(),
   baseRefName: z.string(),
@@ -19,7 +20,7 @@ const PR_VIEW = z.looseObject({
   state: z.string(),
 });
 const PR_VIEW_FIELDS =
-  "number,isCrossRepository,baseRefName,headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit";
+  "number,isCrossRepository,baseRefName,headRefName,headRefOid,state,mergeable,mergeStateStatus,isDraft,mergeCommit,url";
 
 type PrView = z.infer<typeof PR_VIEW>;
 
@@ -35,7 +36,12 @@ function viewForMerge(cfg: Config, pr: number): PrView {
       PR_VIEW_FIELDS,
     ]),
   );
-  if (view.number !== pr || view.isCrossRepository) {
+  if (
+    view.number !== pr ||
+    view.isCrossRepository ||
+    view.url.toLowerCase() !==
+      `https://github.com/${cfg.repo}/pull/${pr}`.toLowerCase()
+  ) {
     throw new OpsError(`PR #${pr} is not the configured repository source PR`);
   }
   assertPrBase(cfg, pr, view.baseRefName);
