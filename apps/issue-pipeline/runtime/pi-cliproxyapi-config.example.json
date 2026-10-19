@@ -1,0 +1,12 @@
+{
+  "proxy": {
+    "endpoint": "https://proxy.example.com/v1",
+    "apiKey": "$PIPELINE_MODEL_KEY",
+    "providerPrefix": "pipeline"
+  },
+  "builtinProviders": {
+    "openai": { "enabled": true, "models": ["gpt-6.1-sol"] }
+  },
+  "customProviders": {},
+  "refreshIntervalMinutes": 0
+}
