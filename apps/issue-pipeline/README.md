@@ -61,7 +61,7 @@ Parallel jobs must use distinct issues/branches. Never dispatch the same issue/b
 
 ## Write authority and refused-work recovery
 
-Every credentialed code push, including stop-time salvage and synchronization, checks fresh merge-authored, editor-verified saved authority and actual PR status. Missing or malformed critical state, a saved code merge, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine merge-authored, editor-verified state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and any prior pipeline comment, local work, remote issue branch, private wiki ref or PR history without saved authority requires reconciliation. Legacy v1 state is display-only and claims refuse it with `legacy pipeline state needs explicit reconciliation`; there is no automatic adoption tool. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
+Every credentialed code push, including stop-time salvage and synchronization, checks fresh merge-authored, editor-verified saved authority and actual PR status. Missing or malformed critical state, a saved code merge, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine merge-authored, editor-verified state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and any prior pipeline comment, local work, remote issue branch, private wiki ref or PR history without saved authority requires reconciliation. Legacy v1 state is display-only and claims refuse it with `legacy pipeline state needs explicit reconciliation`. Only the explicit operator reconciliation below can adopt it; a normal claim never migrates it. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
 
 Draft creation validates the actual PR's repository, branch, target and head, saves its identity and confirms the save before the Developer can launch a writer. An interrupted create/save with no recorded PR searches branch-scoped history across **all** PR states, bounded at 100 rows. Unreadable, malformed, ambiguous or saturated history fails closed; an empty open-only search is never evidence that no merge occurred. An explicit `open-pr` reopen request validates the old PR, reopens it, rereads OPEN authority and saves it before any guarded code push.
 
@@ -72,6 +72,59 @@ Refused commits stay local, never pushed merely to preserve them. Job teardown p
 Synchronization cleanup also saves the staged/working patches and a verified bundle containing current, local-branch and available pre-rebase history before abort/reset/clean. Wiki rejection restores the pre-rebase head rather than an older remote issue branch. An unresolved index refuses destructive cleanup and retains the original checkout, including conflict stages, for explicit recovery. A wiki-mirror refresh updates remote-tracking refs, never private recovery heads; divergence retains both refs and refuses automatic selection.
 
 **Concurrency limitation:** caller serialization is not external exclusion. Outside actors may push, merge, retarget or change permissions/configuration at any time. The explicit destination/immutable-source REST merge and exact-result checks above are the supported compromise, not an atomic PR/input/config transaction. Observed invalid authority refuses writes; unseen concurrent changes are not atomically prevented. No exclusion promise or credential/ruleset change is implied. Installation remains operator-owned and requires exact candidate checks and a reviewed cutover.
+
+## Explicit adoption of retained legacy work
+
+After installing this change, the operator can reconcile **one selected repository and issue** without launching a model:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/adopt.mjs" --config /path/to/repo.json \
+  --issue 475 --branch agent/issue-475 --code-path /path/to/retained/code \
+  --wiki-path /path/to/retained/wiki --restart-stage author
+```
+
+Omit `--wiki-path` only when there is no configured or retained wiki. Paths select existing local checkouts, not destinations to clone/reset. Select the checkout that contains the reconciled work, on the issue's source branch; local unpushed code may descend from the current PR head. An absent legacy branch binding means `agent/issue-N`, not permission to select a different source. The command also inventories the issue's old lane and retained stage-job checkouts, code clone/mirror and wiki mirror under the **current pipeline root**. Explicitly select work outside that layout, and keep any other old roots/external recovery locations available for manual follow-up. It never discovers or schedules other issues. Saved legacy code heads must be retained ancestors of the selected source; missing or divergent saved heads require explicit recovery first.
+
+Stop dispatch and drain jobs for the selected issue first. The command refuses live claims and takes a per-issue local adoption lock, but this is not distributed exclusion or an atomic GitHub transaction. Keep external writers/PR edits quiescent too. Configure the two identities and `legacyAccount` as documented above. All API authority reads and the new comment use the verified review/merge account; source and wiki observations use the existing credential boundary. Local file origins used in tests receive no credential. Their wiki identity comes from the committed `.gitmodules`; production identity is the configured repository's GitHub wiki.
+
+**The restart choice is mandatory, never inferred from the old stage:**
+
+- OPEN/unmerged work (or a validated branch with no PR) must choose `--restart-stage author`. The existing PR remains the tracking anchor. Fresh Author/Gherkin authority, then current hardening, integration, exact-result checks and security guards still apply. Adoption authorizes none of those receipts, and does not automatically replay or push preserved WIP.
+- CLOSED/unmerged work must choose `--restart-stage stopped`. Ordinary claims refuse it until the existing explicit validated `open-pr` / `reopen` recovery path confirms the same PR OPEN and saves authority. Adoption itself does not reopen or push it.
+- Genuinely MERGED work must choose `--restart-stage stopped`. The actual PR/merge SHA and fetched configured-target ancestry are retained as `codeMerged`, **not** a fabricated own-merge, completion, hardening or security receipt. Code writers, code pushes and another merge remain forbidden. Missing current completion authority requires separate explicit reconciliation; choosing Author, Review or Merge cannot bypass it.
+- `implement`, `review`, `merge` and `done` restart choices are refused because legacy approvals cannot establish their current authorization. Omitting the choice preserves/inventories work and reports the required decision, but publishes nothing.
+
+### Inventory and preservation evidence
+
+The JSON result reports `evidence` on success; refusals report the recovery directory:
+
+```text
+$ISSUE_PIPELINE_ROOT/runs/<owner__repo>/issue-N/adoption/
+  snapshot-*/comments.json          # historical state, comments and handoffs on GitHub
+  snapshot-*/inventory.json         # checkout identities, heads, refs and unpushed commits
+  snapshot-*/tree-*/commits.bundle  # verified HEAD/all refs, including ORIG_HEAD when present
+  snapshot-*/tree-*/working.patch   # working snapshot, including nonignored untracked/binary files
+  snapshot-*/tree-*/working.patch.index.patch  # independent index snapshot, if staged changes exist
+  snapshot-*/handoffs/              # local handoffs/sessions, issue/job metadata and recovery evidence
+  plan.json                        # immutable validated decision, identity and preserved-work references
+  publication-started.json          # durable marker written before the one POST
+```
+
+Files are created exclusively, never overwritten. The unpushed-commit inventory is relative to retained origin-tracking refs (which can be stale), not a claim that GitHub lacks each commit. Ignored files are not in patches; retain operator-managed secrets and other ignored data separately, never upload them as issue evidence. Unresolved index conflicts, unreadable/missing required work or failed bundle/patch preparation refuse adoption without resetting, cleaning or discarding the checkout. A completed earlier inventory can be reused only after fresh preservation matches it and its checksummed artifacts verify; partial preparations remain available but are not guessed complete. Snapshot directories may include additional isolated Git repositories used solely to confirm merge ancestry. Nothing applies, pushes, merges or publishes these artifacts.
+
+Reconciliation validates the actual configured repo/issue, source/target identity, source and target heads, local source ancestry and PR metadata. It searches source-branch PR history across **OPEN, CLOSED and MERGED**, without filtering away retargeted PRs; malformed/unreadable, multiple-candidate or 100-row saturated history refuses. Empty open-only results never prove absence. Wiki origin, published/private heads and preserved local wiki heads must also reconcile; a newer or divergent private wiki head needs explicit recovery rather than automatic selection. Historical merge/approval/check/security claims stay in evidence, not current authority.
+
+Only after preservation and repeated fresh identity/local-work checks does adoption create a **new** v2 comment. Historical comments are not edited. The new comment records the restart decision, branch/PR/current head, actual merge truth if any, and the reconciliation reference/digest (local paths in GitHub are redacted to `$ISSUE_PIPELINE_ROOT`). It is reread with the existing same-read author/editor provenance and strict saved-state validator. Normal stage invocations still require that current saved authority; adoption itself starts no stage.
+
+### Refusal and interruption recovery
+
+Keep the original checkout, staging, WIP, historical comments and **all** evidence. Inspect the named diagnostic and inventory; never reset/clean a retained checkout, remove a state comment or delete a publication marker just to make it look new. Bundles can be inspected with `git bundle verify` and cloned to a separate recovery directory. Each patch names its base: index and working snapshots independently apply at that base, not one on top of the other. To recover both, restore them in separate scratch checkouts, then overlay the recovered working files onto the recovered index checkout without restaging. Resolve feature-level decisions before deliberately bringing that work into a subsequent writer's checkout.
+
+Rerun the **same command/decision/paths** after an interruption. It rereads current comments and actual repo/PR/wiki truth and preserves again without overwriting earlier evidence. With a matching published state, intact plan/publication marker and unchanged work, it verifies the saved authority instead of duplicating or resetting it. Missing, changed, malformed or conflicting evidence refuses with recovery guidance. If publication began but no matching comment is visible, the result is **uncertain**: inspect GitHub and account/editor provenance manually; do not blindly repeat the POST or remove the marker. An advanced stage is not reset by rerunning adoption. A changed binding/work set or unrecoverable evidence requires explicit operator reconciliation, retaining the old attempt, not an automatic force/adopt switch.
+
+The earlier launch preparation permitted a **narrow, manually validated launch adoption**. That exception was not completion of this reusable tool and is not a recipe for bulk rewriting v1 comments. In particular, project-buddy #475 / PR #477 has later local WIP and unresolved feature decisions to retain for explicit follow-up. #472 / PR #478 is rescue work for split #479–#482, **not a second implementation lane**. Reconcile only the explicitly selected affected work; new ecosystem issues and the application backlog are not globally blocked.
+
+Merging this change does **not** install it; installation is a separate operator action under Install and safe upgrades. Adoption does not deploy, push to `main`, or open or label a deploy ticket.
 
 ## Wiki prompt source and pinning
 
@@ -94,6 +147,7 @@ Before any mutation the job snapshots the pages needed by its stage. Missing/unr
 | Program | Purpose |
 |---|---|
 | `job.mjs` | Explicit one-stage invocation above; `--steer <launch key> --message <text>` steers a running session |
+| `adopt.mjs` | Explicit operator adoption of retained v1 work; preserves, reconciles and publishes fresh state, never launches a model |
 | `ops.mjs` | Credentialed deterministic operations; framed JSON stdin (`BEGIN_OPS_REQUEST` … `END_OPS_REQUEST`, with `op` and `config`), one JSON reply |
 | `report.mjs` | `usage --config <path> [--since <date>] [--role <role>] [--issue <n>]`; telemetry, not spending limits |
 | `shell-supervisor.mjs` | Configured commands in owned process groups, cleaned on exit |
