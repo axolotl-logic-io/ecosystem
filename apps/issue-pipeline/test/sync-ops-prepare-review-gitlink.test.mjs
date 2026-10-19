@@ -98,6 +98,30 @@ for (const [reviewIndex, merged] of [false, true].entries()) {
   }
 }
 
+test("a locally readable gitlink target still has no appended commit contents", () => {
+  const n = 109;
+  const sentinel =
+    "submodule target contents must not leak into appended files";
+  baseGitlink(fx, null);
+  startBranch(fx, n, "target-payload", sentinel);
+  const wt = worktree(n);
+  const target = sh(`git -C ${wt} rev-parse HEAD`);
+  // Unlike the unavailable targets above, a blob-style show would succeed
+  // here and return the commit's patch, including the sentinel.
+  setGitlink(fx, wt, "wiki", target);
+  commitIndex(n);
+  assert.ok(sh(`git -C ${wt} show HEAD:wiki`).includes(sentinel));
+  fs.writeFileSync(path.join(wt, "target-payload"), "reviewed head text\n");
+  sh(`git -C ${wt} add target-payload`);
+  commitIndex(n);
+  const { files } = prepare(fx, n);
+  assert.ok(
+    files.includes(gitlinkEntry("wiki", "absent", `commit \`${target}\``)),
+  );
+  assert.ok(files.includes("reviewed head text"));
+  assert.ok(!files.includes(sentinel));
+});
+
 test("a moved gitlink is an old deleted path and a new added path", () => {
   const n = 110;
   baseGitlink(fx, OLD_COMMIT, "old-module");
