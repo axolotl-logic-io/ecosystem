@@ -93,6 +93,45 @@ test("literal configured integration and full H survive a concurrent source bran
   consumed();
 });
 
+test("main is a valid configured source base, not an implicit production exclusion", () => {
+  const original = world();
+  const w = { ...original, cfg: { ...original.cfg, baseBranch: "main" } };
+  script(w, [
+    ...prechecks(w),
+    post(w),
+    prStep(w, mergedView(w)),
+    prStep(w, mergedView(w), true),
+    commentStep(w),
+  ]);
+  assert.deepEqual(merge(w.cfg, request(w)), {
+    merged: true,
+    mergeCommit: w.merged,
+    headSha: w.head,
+  });
+  assert.equal(git(w.origin, ["rev-parse", "main"]), w.merged);
+  assert.equal(git(w.origin, ["rev-parse", BASE]), w.base);
+  assert.equal(
+    mutations().filter((args) => args[1] === `repos/${REPO}/merges`).length,
+    1,
+  );
+  consumed();
+});
+
+test("a main-source configuration refuses a PR targeting another branch before approval or merge", () => {
+  const original = world();
+  const w = { ...original, cfg: { ...original.cfg, baseBranch: "main" } };
+  script(w, [prStep(w, { baseRefName: BASE })]);
+  assert.throws(() => merge(w.cfg, request(w)), IDENTITY);
+  assert.equal(git(w.origin, ["rev-parse", "main"]), w.base);
+  assert.equal(git(w.origin, ["rev-parse", BASE]), w.base);
+  assert.equal(
+    calls().some((args) => args.includes("event=APPROVE")),
+    false,
+  );
+  assert.equal(mutations().length, 0);
+  consumed();
+});
+
 test("PR retarget during the request cannot select main and stops after landing without a false receipt", () => {
   const w = world();
   script(w, [

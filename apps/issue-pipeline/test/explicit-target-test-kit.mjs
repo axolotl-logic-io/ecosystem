@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import {
-  BASE,
   BRANCH,
   HOME,
   ISSUE,
@@ -29,7 +28,7 @@ function view(w, extra = {}) {
     state: "OPEN",
     headRefName: BRANCH,
     headRefOid: w.head,
-    baseRefName: BASE,
+    baseRefName: w.cfg.baseBranch,
     isCrossRepository: false,
     isDraft: false,
     mergeable: "MERGEABLE",
@@ -101,12 +100,12 @@ function post(w, extra = {}) {
       "POST",
       "--include",
       "-f",
-      `base=${BASE}`,
+      `base=${w.cfg.baseBranch}`,
       "-f",
       `head=${w.head}`,
     ],
     stdout: `HTTP/2.0 201 Created\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ sha: w.merged })}`,
-    updates: [[`refs/heads/${BASE}`, w.merged]],
+    updates: [[`refs/heads/${w.cfg.baseBranch}`, w.merged]],
     ...extra,
   };
 }
