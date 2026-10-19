@@ -114,6 +114,8 @@ if (args[0] === "--version") {
         send({type: "auto_compaction_end", result: {summary: "native event fixture"}});
         send({type: "tool_execution_end", toolName: "structured_output", toolCallId: "answer", isError: false, result: {content: [], details: {ok: true}}});
         send({type: "agent_settled"});
+      } else if (command.type === "abort") {
+        send({id: command.id, type: "response", command: "abort", success: true});
       } else { throw new Error("unsupported RPC command"); }
     }
   });

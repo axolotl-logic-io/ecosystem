@@ -207,6 +207,11 @@ function recordsOf(
       return;
     }
     if (probing) {
+      const response = RESPONSE.safeParse(record);
+      if (response.success) {
+        const { id, success, error } = response.data;
+        channel.answer(id, { success, error: error ?? null });
+      }
       return;
     }
     exit.stdout += `${line}\n`;

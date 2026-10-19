@@ -71,6 +71,27 @@ test("steer cannot start a model before native policy verification", async () =>
   ]);
 });
 
+test("abort is acknowledged while native policy verification is pending", async () => {
+  const kit = privateRuntime();
+  /** @type {Promise<RpcAnswer>[]} */
+  const replies = [];
+  kit.hooks.started = (_start, live) => {
+    if (live.kind === "session") {
+      replies.push(live.session.send({ type: "abort" }));
+    }
+  };
+  const raw = await runSession(launch(), kit.hooks);
+  assert.equal(raw.ok, true);
+  assert.deepEqual(await Promise.all(replies), [
+    { success: true, error: null },
+  ]);
+  assert.deepEqual(kit.calls().slice(1), [
+    { command: "abort" },
+    { command: "get_state" },
+    { command: "prompt" },
+  ]);
+});
+
 for (const home of [HOME, "relative-home"]) {
   test(`refuses non-isolated HOME ${home === HOME}`, async () => {
     const kit = privateRuntime();
