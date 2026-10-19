@@ -2,6 +2,7 @@
 // messages of its commits above it, the issue's wiki commits below it, and the
 // review bundle, which adds the changed files' head texts after all of that.
 
+import { z } from "zod";
 import type { Config } from "../config.ts";
 import { wikiCfg } from "../config.ts";
 import { run } from "../process.ts";
@@ -29,10 +30,23 @@ const PATH_ONLY: Readonly<Record<"deleted" | "binary" | "past", string>> = {
 };
 
 // A changed file of the reviewed range, by what the bundle can hold of it.
-interface RangeFile {
-  path: string;
-  kind: "text" | "deleted" | "binary";
-}
+type RangeFile =
+  | { path: string; kind: "text" | "deleted" | "binary" }
+  | { path: string; kind: "gitlink"; old: string; new: string };
+
+// --raw --no-abbrev --no-renames -z emits a header and path per change.
+// Full object ids identify gitlink commits even when they aren't local objects.
+const RAW_MODE = /^[0-7]{6}$/u;
+const RAW_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+const RAW_STATUS = /^[A-Z]$/u;
+const RAW_HEADER = z.tuple([
+  z.string().regex(RAW_MODE),
+  z.string().regex(RAW_MODE),
+  z.string().regex(RAW_OID),
+  z.string().regex(RAW_OID),
+  z.string().regex(RAW_STATUS),
+]);
+const RAW_RECORD = z.tuple([z.string().startsWith(":"), z.string()]);
 
 // The messages of the commits in `range`, oldest first, under a heading, for
 // the diff's top: the scope lens counts a commit's message as explaining it
@@ -76,26 +90,52 @@ function diffRecords(wt: string, range: string, extra: string[]): string[] {
 // doesn't depend on the locale. A renamed file is its old path, deleted, and
 // its new one.
 function rangeFiles(wt: string, range: string): RangeFile[] {
-  const deleted = new Set(
-    diffRecords(wt, range, ["--name-only", "--diff-filter=D"]),
-  );
   const binary = new Set(
     diffRecords(wt, range, ["--numstat"])
       .filter((record) => BINARY_NUMSTAT.test(record))
       .map((record) => record.replace(BINARY_NUMSTAT, "")),
   );
-  return diffRecords(wt, range, ["--name-only"])
-    .sort((a, b) => Number(a > b) - Number(a < b))
-    .map((file) => {
-      let kind: RangeFile["kind"] = "text";
+  const records = diffRecords(wt, range, ["--raw", "--no-abbrev"]);
+  const files: RangeFile[] = [];
+  for (let i = 0; i < records.length; i += 2) {
+    const [header, file] = RAW_RECORD.parse(records.slice(i, i + 2));
+    const [oldMode, newMode, oldOid, newOid, status] = RAW_HEADER.parse(
+      header.slice(1).split(" "),
+    );
+    // Check both sides before deletion/binary handling or any blob read.
+    if (oldMode === "160000" || newMode === "160000") {
+      files.push({
+        path: file,
+        kind: "gitlink",
+        old: objectIdentity(oldMode, oldOid),
+        new: objectIdentity(newMode, newOid),
+      });
+    } else {
+      let kind: "text" | "deleted" | "binary" = "text";
       if (binary.has(file)) {
         kind = "binary";
       }
-      if (deleted.has(file)) {
+      if (status === "D") {
         kind = "deleted";
       }
-      return { path: file, kind };
-    });
+      files.push({ path: file, kind });
+    }
+  }
+  return files.sort((a, b) =>
+    Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)),
+  );
+}
+
+// A missing side has no object identity; a type change may have a blob on
+// one side instead of a commit. Neither case should look like a commit id.
+function objectIdentity(mode: string, oid: string): string {
+  if (mode === "000000") {
+    return "absent";
+  }
+  if (mode === "160000") {
+    return `commit \`${oid}\``;
+  }
+  return `blob \`${oid}\``;
 }
 
 // `file`'s text at `head` under its path, in a fenced block that no backtick
@@ -124,7 +164,8 @@ function pathOnly(file: string, why: keyof typeof PATH_ONLY): string {
 // code checkout, in path order, with its text at the head while the bundle
 // stays within REVIEW_BUNDLE_MAX_CHARS. The first file that would pass it, and
 // every file after it, is listed by path only, as are deleted and binary
-// files. The same commits and diff give the same bundle.
+// files. Gitlinks always list only their path and old/new object identities,
+// never blob or submodule contents. The same commits and diff give the same bundle.
 function reviewBundle(
   wt: string,
   range: { from: string; head: string },
@@ -134,7 +175,9 @@ function reviewBundle(
   let past = false;
   for (const file of rangeFiles(wt, `${range.from}..${range.head}`)) {
     let entry = pathOnly(file.path, "past");
-    if (file.kind !== "text") {
+    if (file.kind === "gitlink") {
+      entry = `\n## ${file.path}\n\nGitlink: path only. Old: ${file.old}; new: ${file.new}.\n`;
+    } else if (file.kind !== "text") {
       entry = pathOnly(file.path, file.kind);
     } else if (!past) {
       const text = textEntry(wt, range.head, file.path);
