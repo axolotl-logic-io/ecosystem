@@ -19,8 +19,9 @@ const { paths, wikiCfg, withCheckout } = await import("../src/config.ts");
 const { syncOps } = await import("../src/ops/sync.ts");
 const { finishWikiSync } = await import("../src/wiki-publish.ts");
 
-/** @param {"code" | "wiki"} side */
-function conflicted(side) {
+// `pushed` publishes the conflicting issue commit, so a retry conflicts again.
+/** @param {"code" | "wiki"} side @param {boolean} [pushed] */
+function conflicted(side, pushed = false) {
   const job = openFresh();
   let dir = job.repo;
   let { origin } = job;
@@ -32,12 +33,17 @@ function conflicted(side) {
     file = "Home.md";
     base = wikiCfg(job.cfg)?.branch ?? "main";
   }
-  const remote = headOf(dir);
+  const start = headOf(dir);
   git(origin, ["fetch", dir, `HEAD:refs/heads/${job.branch}`]);
   write(dir, file, "original private commit\n");
   git(dir, ["commit", "-am", "Private original"], COMMIT_ENV);
   const original = headOf(dir);
-  git(dir, ["checkout", "--detach", remote]);
+  let remote = start;
+  if (pushed) {
+    git(origin, ["fetch", dir, `HEAD:refs/heads/${job.branch}`]);
+    remote = original;
+  }
+  git(dir, ["checkout", "--detach", start]);
   write(dir, file, "new base commit\n");
   git(dir, ["commit", "-am", "Changed base"], COMMIT_ENV);
   git(origin, ["fetch", dir, `HEAD:refs/heads/${base}`]);
@@ -86,10 +92,19 @@ function finish(w, abort) {
 /** @param {ReturnType<typeof conflicted>} w */
 async function recovered(w) {
   await close(w.job, "resolver-exit");
+  return recoveryOf(w);
+}
+
+/** @param {ReturnType<typeof conflicted>} w */
+function recoveryOf(w) {
   const recovery = path.join(paths.runDir(w.job.cfg, ISSUE), "recovery");
   const entries = fs
     .readdirSync(recovery)
-    .filter((name) => name.startsWith("sync-"));
+    .filter(
+      (name) =>
+        name.startsWith("sync-") &&
+        fs.existsSync(path.join(recovery, name, "commits.bundle")),
+    );
   const folder = path.join(recovery, entries[0] ?? "missing");
   const repo = fs.mkdtempSync(path.join(root, "resolver-restored-"));
   git(root, ["clone", path.join(folder, "commits.bundle"), repo]);
@@ -104,4 +119,11 @@ function completeRebase(w) {
   git(w.dir, ["-c", "core.editor=true", "rebase", "--continue"]);
 }
 
-export { completeRebase, conflicted, finish, leaveResolution, recovered };
+export {
+  completeRebase,
+  conflicted,
+  finish,
+  leaveResolution,
+  recovered,
+  recoveryOf,
+};
