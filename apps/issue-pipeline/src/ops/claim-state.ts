@@ -20,11 +20,17 @@ import { run } from "../process.ts";
 import { codeMergedOf, issuePullRequest } from "../revision.ts";
 import { readClaimState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
-import { newIssueState, resumeOf, withLog } from "../state.ts";
+import {
+  mergeAuthorization,
+  newIssueState,
+  resumeOf,
+  withLog,
+} from "../state.ts";
 import { historicalPrFor } from "./prs.ts";
 
 // `show-ref --exists` distinguishes absence from unreadable repository history.
 const MISSING_REF = 2;
+const FULL_SHA = /^[0-9a-f]{40}$/u;
 
 function hasLocalBranch(dir: string, branch: string): boolean {
   if (fs.statSync(dir, { throwIfNoEntry: false }) === undefined) {
@@ -153,16 +159,23 @@ function assertClosedMergeRecovery(
   }
   const pr = issuePullRequest(cfg, n, saved);
   const merged = codeMergedOf(pr);
+  const authorized = mergeAuthorization(saved);
   if (
     pr === null ||
     merged === null ||
+    !FULL_SHA.test(merged.sha) ||
+    !FULL_SHA.test(pr.headSha) ||
     (saved.headSha !== null &&
       saved.headSha !== pr.headSha &&
       saved.headSha !== saved.codeMerged?.sha) ||
     (saved.codeMerged !== null &&
       (saved.codeMerged.pr !== merged.pr ||
         saved.codeMerged.sha !== merged.sha)) ||
-    (saved.merged !== null && saved.merged.code !== merged.sha)
+    (saved.merged !== null &&
+      (saved.merged.code !== merged.sha ||
+        (authorized?.code !== null &&
+          authorized?.code !== undefined &&
+          authorized.code !== pr.headSha)))
   ) {
     throw new OpsError(`#${n}'s incomplete Merge is not confirmed by GitHub`);
   }

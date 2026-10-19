@@ -64,6 +64,12 @@ for (const [name, extra] of Object.entries({
     merged: { code: "other", wiki: null, inputs: "x" },
   },
   "changed retained head": { headSha: "other" },
+  "contradicted original own-merge head": {
+    headSha: MERGE,
+    codeMerged: { pr: PR, sha: MERGE },
+    merged: { code: MERGE, wiki: null, inputs: "x" },
+    hardened: { code: "b".repeat(SHA_LENGTH), wiki: null, inputs: "x" },
+  },
 })) {
   test(`closed issue with ${name} is refused without mutations`, () => {
     closedWorld([stateComment(1, { ...SAVED, ...extra })]);
@@ -79,6 +85,9 @@ for (const [name, view] of Object.entries({
   open: { state: "OPEN", mergeCommit: null },
   "closed unmerged": { state: "CLOSED", mergeCommit: null },
   "missing merged result": { state: "MERGED", mergeCommit: null },
+  "malformed merged result": { ...MERGED, mergeCommit: { oid: "not-an-oid" } },
+  "abbreviated merged result": { ...MERGED, mergeCommit: { oid: "abcd123" } },
+  "blank merged result": { ...MERGED, mergeCommit: { oid: " " } },
   "wrong configured base": { ...MERGED, baseRefName: "elsewhere" },
   "wrong branch": { ...MERGED, headRefName: "elsewhere" },
   fork: { ...MERGED, isCrossRepository: true },
@@ -92,6 +101,18 @@ for (const [name, view] of Object.entries({
     assert.deepEqual(writes(), []);
   });
 }
+
+test("malformed retained PR head cannot confirm closed recovery even without a saved head", () => {
+  closedWorld([stateComment(1, { ...SAVED, headSha: null })], {
+    ...MERGED,
+    headRefOid: "not-an-oid",
+  });
+  assert.equal(
+    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
+    false,
+  );
+  assert.deepEqual(writes(), []);
+});
 
 test("unreadable merged metadata never grants closed recovery", () => {
   reply([
