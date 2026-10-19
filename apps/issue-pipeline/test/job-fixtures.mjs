@@ -102,6 +102,7 @@ function stateAt(stage, fields = {}) {
     version: 2,
     number: ISSUE_NUMBER,
     stage,
+    adoption: null,
     stoppedStage: null,
     stopCode: null,
     resumeStage: null,
