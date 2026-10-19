@@ -17,6 +17,7 @@ import { z } from "zod";
 import { writeBrain } from "./brain-test-kit.mjs";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+import { provisionFixture } from "./runtime-fixtures.mjs";
 import { saveAuthority } from "./write-authority-test-kit.mjs";
 
 const { newIssueState } = await import("../src/state.ts");
@@ -37,6 +38,7 @@ Object.assign(
   process.env,
   Object.fromEntries([
     ["FAKE_PI_ROOT", tmp],
+    ["PIPELINE_MODEL_KEY", "offline-fixture-credential"],
     ["PATH", `${bin}${path.delimiter}${searchPath}`],
     ["GH_TOKEN", "gh-secret"],
     ["GITHUB_TOKEN", "github-secret"],
@@ -82,6 +84,7 @@ fs.writeFileSync(
     ...credentialConfig("bot"),
     allowedUsers: ["alice"],
     commands: { test: "true" },
+    runtime: provisionFixture(tmp),
   }),
 );
 
@@ -182,7 +185,7 @@ function reviewerSpec(commits, phase) {
   /** @type {SessionSpec} */
   const spec = {
     agent: REVIEWER,
-    model: "mock",
+    model: "openai/gpt-6.1-sol",
     task: "Do it.",
     schema: z.object({ outcome: z.string() }),
     commits,

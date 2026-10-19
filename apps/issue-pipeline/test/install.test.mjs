@@ -39,6 +39,7 @@ const root = path.join(tmp, "agent/issue-pipeline");
 // Environment variables are named by strings, as src/process.ts takes them.
 const env = Object.fromEntries([
   ...Object.entries(process.env),
+  ["HOME", tmp],
   ["ISSUE_PIPELINE_ROOT", root],
   ["PI_CODING_AGENT_DIR", path.join(tmp, "agent")],
 ]);
@@ -61,15 +62,35 @@ function install(...flags) {
   return installFrom(script, ...flags);
 }
 
+const RETAINED = [
+  "runtime/home/.pi/agent/settings.json",
+  "runtime/home/.pi/agent/pi-cliproxyapi/config.json",
+  "runtime/home/.pi/agent/pi-cliproxyapi/discovery-cache.json",
+  "work/retained/commits.bundle",
+  "runs/o__r/issue-7/sessions/original.jsonl",
+  "runs/o__r/issue-7/recovery/index.patch",
+  "runs/o__r/issue-7/authority.json",
+];
+
+/** @returns {void} */
+function seedOperatorState() {
+  for (const file of RETAINED) {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), `operator-owned ${file}\n`);
+  }
+}
+
 test("dry run writes nothing", () => {
   const r = install("--dry-run");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(fs.existsSync(root), false);
+  assert.equal(fs.existsSync(path.join(tmp, "agent")), false);
 });
 
 test("installs the pipeline with local paths filled in", () => {
   fs.mkdirSync(path.join(root, "repos"), { recursive: true });
   fs.writeFileSync(path.join(root, "repos/local.json"), "{}");
+  seedOperatorState();
   fs.rmSync(dist, { recursive: true, force: true });
   const r = install();
   assert.equal(r.status, 0, r.stderr);
@@ -80,6 +101,7 @@ test("installs the pipeline with local paths filled in", () => {
   for (const f of [
     ...BUILT,
     "repos/example.json",
+    "runtime/pi-cliproxyapi-config.example.json",
     "README.md",
     "INSTALLED.json",
   ]) {
@@ -93,6 +115,12 @@ test("installs the pipeline with local paths filled in", () => {
     );
   }
   assert.equal(fs.existsSync(path.join(root, "workflow.js")), false);
+  for (const file of RETAINED) {
+    assert.equal(
+      fs.readFileSync(path.join(root, file), "utf8"),
+      `operator-owned ${file}\n`,
+    );
+  }
   for (const f of STAGE_AGENT_FILES) {
     const agent = fs.readFileSync(
       path.join(tmp, "agent/agents/issue-pipeline", f),
@@ -106,10 +134,51 @@ test("installs the pipeline with local paths filled in", () => {
   );
 });
 
+test("installed identity records the candidate commit", () => {
+  const identity = JSON.parse(
+    fs.readFileSync(path.join(root, "INSTALLED.json"), "utf8"),
+  );
+  const head = spawnSync(
+    "git",
+    ["-C", path.dirname(script), "rev-parse", "HEAD"],
+    { encoding: "utf8" },
+  );
+  assert.equal(head.status, 0);
+  assert.equal(identity.commit, head.stdout.trim());
+});
+
 test("a second install changes nothing", () => {
   const r = install();
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, NOTHING_CHANGED);
+  assert.equal(fs.existsSync(`${root}-backups`), false);
+});
+
+test("dry run preserves installed identity, operator state and histories byte for byte", () => {
+  const files = fs.readdirSync(root, { recursive: true }).map(String).sort();
+  const snapshot = files.map((file) => {
+    const target = path.join(root, file);
+    if (fs.statSync(target).isDirectory()) {
+      return [file, null];
+    }
+    return [file, fs.readFileSync(target).toString("hex")];
+  });
+  const result = install("--dry-run");
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    fs.readdirSync(root, { recursive: true }).map(String).sort(),
+    files,
+  );
+  assert.deepEqual(
+    files.map((file) => {
+      const target = path.join(root, file);
+      if (fs.statSync(target).isDirectory()) {
+        return [file, null];
+      }
+      return [file, fs.readFileSync(target).toString("hex")];
+    }),
+    snapshot,
+  );
   assert.equal(fs.existsSync(`${root}-backups`), false);
 });
 
@@ -145,4 +214,17 @@ test("installs nothing when the build fails", () => {
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, BUILD_FAILED);
   assert.equal(fs.readFileSync(installed, "utf8"), before);
+});
+
+test("a fresh installation provisions no runnable runtime", () => {
+  const fresh = path.join(tmp, "fresh-root");
+  const result = spawnSync(process.execPath, [script, "--allow-dirty"], {
+    env: { ...env, ...Object.fromEntries([["ISSUE_PIPELINE_ROOT", fresh]]) },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(fs.readdirSync(path.join(fresh, "runtime")), [
+    "pi-cliproxyapi-config.example.json",
+  ]);
+  assert.equal(fs.existsSync(path.join(fresh, "secrets")), false);
 });

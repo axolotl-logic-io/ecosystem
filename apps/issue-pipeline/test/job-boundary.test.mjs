@@ -174,6 +174,34 @@ test("a reader session's pi gets neither pipeline_commit, a commit scope nor a t
   assert.deepEqual([session.commits, session.phase], [false, null]);
 });
 
+/** @param {string} root @returns {object} */
+function expectedRuntime(root) {
+  return {
+    nativeVersion: "1.2.0",
+    providerVersion: "0.4.3",
+    home: path.join(root, "model-home"),
+    providerExtension: path.join(root, "fixture-provider/index.ts"),
+    credentialEnv: ["PIPELINE_MODEL_KEY"],
+    projectConfiguration: "disabled",
+    resources: "explicit extensions only",
+    mode: "rpc",
+    providerCacheOnlyFlag: "--print",
+    providerScope: "OpenAI builtin via distinct proxy endpoint only",
+    ambientAuth: "OPENAI_API_KEY only when explicitly declared",
+    nativeOffline: true,
+    policies: ["author", "implementor", "reviewer"].map((role) => ({
+      role,
+      provider: "openai",
+      id: "gpt-6.1-sol",
+      contextWindow: 272_000,
+      targetTokens: 175_000,
+      enabled: true,
+      reserveTokens: 97_000,
+      keepRecentTokens: 30_000,
+    })),
+  };
+}
+
 for (const [stage, expected] of Object.entries(EXPECTED)) {
   test(`--print-boundary declares the ${stage} stage's boundary and starts nothing`, () => {
     const place = placeAt(BOUNDARY_ROLES, stage);
@@ -185,8 +213,9 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     // The wiki promises these fields, not their order.
     assert.deepEqual(
       new Set(Object.keys(boundary)),
-      new Set(["role", "checkout", "access", "env", "network"]),
+      new Set(["role", "checkout", "access", "env", "network", "runtime"]),
     );
+    assert.deepEqual(boundary.runtime, expectedRuntime(place.root));
     assert.equal(boundary.role, expected.role);
     assert.deepEqual(boundary.access, expected.access);
     assert.equal(boundary.checkout, checkoutOf(place.root, stage));

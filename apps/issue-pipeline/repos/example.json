@@ -12,6 +12,13 @@
     "implementor": "openai/gpt-6.1-sol",
     "reviewer": "openai/gpt-6.1-sol"
   },
+  "runtime": {
+    "home": null,
+    "providerExtension": "/opt/pipeline/providers/pi-cliproxyapi/index.ts",
+    "credentialEnv": ["PIPELINE_MODEL_KEY"],
+    "compaction": { "targetTokens": 175000, "keepRecentTokens": 30000 },
+    "modelContextWindows": { "openai/gpt-6.1-sol": 272000 }
+  },
   "commands": {
     "setup": "npm ci",
     "test": "npm test",

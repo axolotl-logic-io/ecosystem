@@ -1,5 +1,5 @@
-// One `pi --mode rpc` process run to its end: it sends the prompt as the
-// first command, reads stdout as LF-framed JSON records, correlates the
+// One `pi --mode rpc` process run to its end: it sends the prompt only
+// after optional native-policy verification, reads LF-framed JSON, correlates
 // responses to the commands it sent, and closes stdin, which shuts pi down,
 // once the run has settled or pi refused the prompt. While it runs, the
 // caller holds a handle that sends commands (abort, steer) and kills it.
@@ -10,28 +10,25 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
 import type { Writable } from "node:stream";
-import { z } from "zod";
 import { childEnvironment } from "../child-env.ts";
 import { endGroup, signalGroup } from "../process-group.ts";
 import { STOP_GRACE_MS } from "./control.ts";
 import type { ProcessExit } from "./raw-results.ts";
+import {
+  endsSession,
+  framerOf,
+  isProbeRecord,
+  probeRefusal,
+  RESPONSE,
+  recordOf,
+  SETTLED,
+} from "./rpc-protocol.ts";
+import type { NativePolicy } from "./runtime-policy.ts";
 
 const PI = "pi";
 const PROMPT_ID = "prompt";
-const TRAILING_CR = /\r$/u;
+const PREFLIGHT_ID = "runtime-policy";
 const ENDED: RpcAnswer = { success: false, error: "the session has ended" };
-const RESPONSE = z.object({
-  type: z.literal("response"),
-  id: z.string(),
-  success: z.boolean(),
-  error: z.string().optional(),
-});
-// A prompt pi handled without starting a run, so no agent_settled follows.
-const HANDLED = z.object({
-  data: z.object({ disposition: z.literal("handled") }),
-});
-const SETTLED = z.object({ type: z.literal("agent_settled") });
-
 // The commands a live session takes besides its prompt.
 type RpcCommand = { type: "abort" } | { type: "steer"; message: string };
 
@@ -63,25 +60,12 @@ interface RpcRun {
   timeoutMs: number;
   onSpawn: (rpc: RpcProcess) => void;
   onRecord: (record: unknown) => void;
-}
-
-function recordOf(line: string): unknown {
-  try {
-    const record: unknown = JSON.parse(line);
-    return record;
-  } catch {
-    return null;
-  }
-}
-
-// Whether `record`, which answered command `id`, ends the session.
-function endsSession(id: string, record: unknown): boolean {
-  const response = RESPONSE.safeParse(record);
-  return (
-    id === PROMPT_ID &&
-    response.success &&
-    (!response.data.success || HANDLED.safeParse(record).success)
-  );
+  preflight?: {
+    policy: NativePolicy;
+    endpoint: string;
+    provenance: Readonly<Record<string, string>>;
+    verify: () => string | null;
+  };
 }
 
 // The commands sent to one pi, by id, until pi answers each.
@@ -137,37 +121,24 @@ function readRecord(record: unknown, stdin: Writable, channel: Channel): void {
   channel.answer(id, { success, error: error ?? null });
 }
 
-// Splits stdout's chunks into lines on LF only, as pi's RPC framing says,
-// and hands each line to `onLine`; `flush` hands over an unterminated last.
-function framerOf(onLine: (line: string) => void): {
-  push: (chunk: string) => void;
-  flush: () => void;
-} {
-  let buffer = "";
-  return {
-    push: (chunk: string): void => {
-      const lines = `${buffer}${chunk}`.split("\n");
-      buffer = lines.pop() ?? "";
-      lines.forEach(onLine);
-    },
-    flush: (): void => {
-      if (buffer !== "") {
-        onLine(buffer);
-      }
-      buffer = "";
-    },
-  };
-}
-
 function handleOf(
   child: ChildProcessWithoutNullStreams,
   channel: Channel,
   exited: Promise<void>,
+  ready: () => boolean,
 ): RpcProcess {
   const pid = child.pid ?? null;
   return {
     pid,
-    send: (command: RpcCommand): Promise<RpcAnswer> => channel.send(command),
+    send: (command: RpcCommand): Promise<RpcAnswer> => {
+      if (!ready() && command.type === "steer") {
+        return Promise.resolve({
+          success: false,
+          error: "runtime policy not verified",
+        });
+      }
+      return channel.send(command);
+    },
     kill: (signal: NodeJS.Signals): void => {
       const running = child.exitCode === null && child.signalCode === null;
       if (running && pid !== null) {
@@ -175,6 +146,92 @@ function handleOf(
       }
     },
     exited,
+  };
+}
+
+function sendPrompt(stdin: Writable, message: string): void {
+  stdin.write(
+    `${JSON.stringify({ id: PROMPT_ID, type: "prompt", message })}\n`,
+  );
+}
+
+function beginPrompt(
+  record: unknown,
+  run: RpcRun,
+  exit: ProcessExit,
+  stdin: Writable,
+): boolean {
+  const { preflight } = run;
+  let refusal: string | null = probeRefusal(record, preflight);
+  if (refusal === null && preflight !== undefined) {
+    refusal = preflight.verify();
+  }
+  if (refusal !== null) {
+    exit.code = 1;
+    exit.stderr += `${refusal}\n`;
+    stdin.end();
+    return false;
+  }
+  // Never log the complete native Model: providers can put private
+  // headers in it. This diagnostic contains only our validated policy.
+  const safe = {
+    type: "runtime_policy",
+    ...preflight?.policy,
+    ...preflight?.provenance,
+  };
+  exit.stdout += `${JSON.stringify(safe)}\n`;
+  run.onRecord(safe);
+  sendPrompt(stdin, run.prompt);
+  return true;
+}
+
+function recordsOf(
+  run: RpcRun,
+  exit: ProcessExit,
+  stdin: Writable,
+  channel: Channel,
+): {
+  framer: ReturnType<typeof framerOf>;
+  start: () => void;
+  ready: () => boolean;
+} {
+  let probing = run.preflight !== undefined;
+  let ready = !probing;
+  const framer = framerOf((line: string): void => {
+    const record = recordOf(line);
+    if (run.preflight !== undefined && isProbeRecord(record)) {
+      if (probing) {
+        probing = false;
+        ready = beginPrompt(record, run, exit, stdin);
+      }
+      return;
+    }
+    if (probing) {
+      const response = RESPONSE.safeParse(record);
+      if (response.success) {
+        const { id, success, error } = response.data;
+        channel.answer(id, { success, error: error ?? null });
+      }
+      return;
+    }
+    exit.stdout += `${line}\n`;
+    if (record !== null) {
+      run.onRecord(record);
+      readRecord(record, stdin, channel);
+    }
+  });
+  return {
+    framer,
+    ready: (): boolean => ready,
+    start: (): void => {
+      if (probing) {
+        stdin.write(
+          `${JSON.stringify({ id: PREFLIGHT_ID, type: "get_state" })}\n`,
+        );
+      } else {
+        sendPrompt(stdin, run.prompt);
+      }
+    },
   };
 }
 
@@ -200,14 +257,7 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
       child.on("close", (): void => done());
     });
     const channel = channelOf(child.stdin);
-    const framer = framerOf((line: string): void => {
-      exit.stdout += `${line}\n`;
-      const record = recordOf(line.replace(TRAILING_CR, ""));
-      if (record !== null) {
-        run.onRecord(record);
-        readRecord(record, child.stdin, channel);
-      }
-    });
+    const records = recordsOf(run, exit, child.stdin, channel);
     const timer = setTimeout((): void => {
       exit.timedOut = true;
       if (pid !== null) {
@@ -219,7 +269,7 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
     }
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", framer.push);
+    child.stdout.on("data", records.framer.push);
     child.stderr.on("data", (chunk: string): void => {
       exit.stderr += chunk;
     });
@@ -227,14 +277,21 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
     child.on("error", noteError);
     child.on("close", (code: number | null): void => {
       clearTimeout(timer);
-      framer.flush();
+      records.framer.flush();
       channel.endAll();
+      if (run.preflight !== undefined && !records.ready()) {
+        exit.code = 1;
+        exit.stderr +=
+          "runtime: native RPC policy was not verified before process exit\n";
+      }
+      if (exit.code !== null) {
+        resolve(exit);
+        return;
+      }
       resolve({ ...exit, code });
     });
-    run.onSpawn(handleOf(child, channel, exited));
-    child.stdin.write(
-      `${JSON.stringify({ id: PROMPT_ID, type: "prompt", message: run.prompt })}\n`,
-    );
+    run.onSpawn(handleOf(child, channel, exited, records.ready));
+    records.start();
   });
 }
 

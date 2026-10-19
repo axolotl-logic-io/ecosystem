@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { fixtureState, versionProbe } from "./runtime-fixtures.mjs";
 
 /**
  * @typedef {object} FlowTurn
@@ -105,7 +106,15 @@ async function loadTools(argv) {
       }
     },
   };
-  const files = valuesOf(argv, "-e");
+  const files = valuesOf(argv, "-e").filter((file) => {
+    if (
+      file === "builtin:codemode" ||
+      file.endsWith("/fixture-provider/index.ts")
+    ) {
+      return false;
+    }
+    return true;
+  });
   const extensions = await Promise.all(
     files.map((file) => import(pathToFileURL(file).href)),
   );
@@ -240,10 +249,14 @@ function respond(command, fields) {
 
 /**
  * Answers one RPC command: a prompt plays the role's next turn and settles.
- * @param {{ dir: string, role: string, tools: Map<string, FlowTool>, out: Printers }} session
+ * @param {{ dir: string, role: string, tools: Map<string, FlowTool>, out: Printers, model: string }} session
  * @param {{ id?: string, type: string, message?: string }} command
  */
-async function handle({ dir, role, tools, out }, command) {
+async function handle({ dir, role, tools, out, model }, command) {
+  if (command.type === "get_state") {
+    respond(command, { success: true, data: fixtureState(model) });
+    return;
+  }
   if (command.type !== "prompt") {
     respond(command, { success: command.type === "abort" });
     return;
@@ -292,7 +305,11 @@ async function runFlowPi(roleOfModel) {
     ISSUE_PIPELINE_COMMIT_SCOPE: scope,
   } = process.env;
   const argv = process.argv.slice(2);
+  if (versionProbe(argv)) {
+    return;
+  }
   const model = valuesOf(argv, "--model")[0] ?? "";
+  fixtureState(model);
   const role = roleOfModel[model] ?? "unknown";
   const out = printersOf(dir, role, String(valuesOf(argv, "--session")[0]));
   out.log({
@@ -304,7 +321,7 @@ async function runFlowPi(roleOfModel) {
     ghToken: ghToken ?? githubToken,
     commitScope: scope !== undefined,
   });
-  const session = { dir, role, tools: await loadTools(argv), out };
+  const session = { dir, role, tools: await loadTools(argv), out, model };
   readLines((line) => {
     handle(session, JSON.parse(line)).catch((/** @type {unknown} */ error) => {
       out.log({ failed: String(error) });

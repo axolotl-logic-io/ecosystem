@@ -16,6 +16,7 @@ import { writeBrain } from "./brain-test-kit.mjs";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFlowGh } from "./pipeline-flow-gh.mjs";
 import { installFlowPi } from "./pipeline-flow-pi.mjs";
+import { FIXTURE_MODELS, provisionFixture } from "./runtime-fixtures.mjs";
 
 const APP = new URL("..", import.meta.url).pathname;
 const AGENTS = path.join(APP, "agents");
@@ -32,11 +33,7 @@ const DROPPED_ENV = new Set([
 ]);
 // The models the config names, one per role, which tell the fake pi which
 // role a session plays.
-const MODELS = {
-  author: "flow/author-model",
-  implementor: "flow/implementor-model",
-  reviewer: "flow/reviewer-model",
-};
+const MODELS = FIXTURE_MODELS;
 const SEED_ID = [
   "-c",
   "user.name=Seed",
@@ -152,6 +149,7 @@ function writeConfig(config, origin) {
     wiki: true,
     commands: { test: "true" },
     models: MODELS,
+    runtime: provisionFixture(path.dirname(config)),
     requireCi: false,
     gitName: "Pipeline",
     gitEmail: "pipeline@example.com",
@@ -179,6 +177,7 @@ function envOf({ tmp, home, root, bin, piDir }) {
     ["ISSUE_PIPELINE_ROOT", root],
     ["PI_CODING_AGENT_DIR", path.join(tmp, "agent")],
     ["FLOW_PI_DIR", piDir],
+    ["PIPELINE_MODEL_KEY", "offline-fixture-credential"],
     ["GIT_ALLOW_PROTOCOL", "file"],
     ["GIT_CONFIG_GLOBAL", path.join(home, ".gitconfig")],
     ["GIT_CONFIG_NOSYSTEM", "1"],

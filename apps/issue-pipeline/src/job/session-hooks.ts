@@ -87,6 +87,7 @@ function hooksOf(
     },
     cwd,
     repo,
+    runtime: cfg.runtime,
   };
 }
 

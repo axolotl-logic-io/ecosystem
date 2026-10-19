@@ -10,6 +10,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+import { FIXTURE_WINDOWS } from "./runtime-fixtures.mjs";
 
 const {
   agentEnvOf,
@@ -85,6 +86,7 @@ fs.writeFileSync(
     allowedUsers: ["a"],
     commands: { test: "true" },
     jobRoles: JOB_ROLES,
+    runtime: { modelContextWindows: FIXTURE_WINDOWS },
   }),
 );
 const CFG = loadConfig(CONFIG_FILE);

@@ -20,6 +20,7 @@ import { JOB_DOCS, JOB_REPO } from "./layout.ts";
 import type { Access, PathScope } from "./pipeline-commit.ts";
 import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
 import type { AgentName, SessionPhase, SessionSpec } from "./role-context.ts";
+import { runtimeBoundary } from "./runtime-policy.ts";
 
 type JobRole = "reader" | "writer" | "merger";
 
@@ -53,6 +54,7 @@ interface Boundary {
   access: CheckoutAccess;
   env: string[];
   network: readonly string[];
+  runtime: ReturnType<typeof runtimeBoundary>;
 }
 
 // The role each stage's job runs as (Reimagined-Pipeline): the author only
@@ -263,6 +265,7 @@ function boundaryOf(
     access: { repo: STAGE_CODE_ACCESS[stage], docs: STAGE_WIKI_ACCESS[stage] },
     env: Object.keys(agentEnvOf(roles, from)).sort(byName),
     network: roles[role].network,
+    runtime: runtimeBoundary(cfg.runtime, cfg.models),
   };
 }
 

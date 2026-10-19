@@ -76,7 +76,7 @@ test("the author's one session runs as its agent with no token, no commit tool a
   assert.equal(starts.length, 1);
   const [{ argv, env, ghToken, commitScope }] = starts;
   assert.equal(flagValue(argv, "--model"), "openai/gpt-6.1-sol");
-  assert.equal(argv.includes("--no-extensions"), false);
+  assert.equal(argv.includes("--no-extensions"), true);
   assert.equal(ghToken, null);
   assert.equal(env.includes("GH_TOKEN"), false);
   assert.equal(commitScope, null);
