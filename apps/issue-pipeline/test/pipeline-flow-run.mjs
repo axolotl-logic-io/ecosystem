@@ -11,8 +11,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { ISSUE, SLUG } from "./pipeline-flow-kit.mjs";
 
 // A tick's orchestrator, and each job it starts, is given this long to end.
-// The slowest flow job measured took about 5 s.
-const RUN_MS = 60_000;
+// A full-suite run on 2026-10-19 reached the old 60 s bound in the final
+// Developer run of job-explicit-root.test.mjs (137.9 s for the test so far).
+// Allow that real multi-process flow 120 s, still below the 180 s per-test
+// deadline. This is a harness safety bound, not a product latency promise.
+const RUN_MS = 120_000;
 const POLL_MS = 50;
 // A flow ends within this many ticks, or the test fails.
 const MAX_TICKS = 12;
@@ -130,7 +133,9 @@ function runStage(flow, stage) {
     { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
   );
   if (result.status !== 0) {
-    throw new Error(`job exited ${result.status}: ${result.stderr}`);
+    throw new Error(
+      `job exited ${result.status}: ${result.stderr}\nSignal: ${result.signal}; ${result.error?.message ?? "no spawn error"}`,
+    );
   }
   return JSON.parse(result.stdout);
 }
