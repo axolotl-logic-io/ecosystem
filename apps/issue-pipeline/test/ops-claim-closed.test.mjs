@@ -57,6 +57,9 @@ for (const [name, extra] of Object.entries({
   review: { stage: "review" },
   "stopped outside Merge": { stage: "stopped", stoppedStage: "review" },
   "no recorded PR": { pr: null },
+  "state for another issue": { number: ISSUE + 1 },
+  "legacy state": { version: 1 },
+  "stopped completion replay": { stage: "stopped", stoppedStage: "done" },
   "malformed code receipt": { codeMerged: { pr: PR } },
   "contradicted code receipt": { codeMerged: { pr: PR, sha: "other" } },
   "contradicted PR receipt": { codeMerged: { pr: PR + 1, sha: MERGE } },
@@ -83,6 +86,11 @@ for (const [name, extra] of Object.entries({
 
 for (const [name, view] of Object.entries({
   open: { state: "OPEN", mergeCommit: null },
+  "inconsistent open merge evidence": {
+    state: "OPEN",
+    mergeCommit: { oid: MERGE },
+  },
+  "another recorded PR": { ...MERGED, number: PR + 1 },
   "closed unmerged": { state: "CLOSED", mergeCommit: null },
   "missing merged result": { state: "MERGED", mergeCommit: null },
   "malformed merged result": { ...MERGED, mergeCommit: { oid: "not-an-oid" } },
@@ -177,6 +185,35 @@ test("eligible closed recovery does not override another lane's live claim", () 
   assert.equal(result.holder, "other");
   assert.deepEqual(writes(), []);
 });
+
+for (const [name, confirmation] of Object.entries({
+  "still closed": { stdout: JSON.stringify({ state: "closed" }) },
+  unreadable: { code: 1, stderr: "issue unavailable" },
+  "missing state": { stdout: "{}" },
+})) {
+  test(`closed recovery whose reopen is ${name} cannot save state or start work`, () => {
+    reply([
+      collaboratorReply("o/r", "alice"),
+      issueReply(ISSUE, { state: "closed" }),
+      everyCommentsRead(ISSUE, [
+        stateComment(1, SAVED),
+        claimComment(2, LANE.lane, LANE.sweepId, new Date().toISOString()),
+      ]),
+      prView(ISSUE, PR, MERGED),
+      { when: `issue reopen ${ISSUE} `, stdout: "" },
+      { when: `api repos/o/r/issues/${ISSUE} --jq`, ...confirmation },
+    ]);
+    assert.equal(
+      REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
+      false,
+    );
+    // A successful reopen command alone is not confirmation of recovery.
+    // In particular, don't replace the saved Merge with leased writer state.
+    assert.deepEqual(writes(), [
+      ["issue", "reopen", String(ISSUE), "-R", "o/r"],
+    ]);
+  });
+}
 
 test("eligible closed recovery refuses another assigned branch", () => {
   closedWorld([stateComment(1, { ...SAVED, branch: "another-assignment" })]);
