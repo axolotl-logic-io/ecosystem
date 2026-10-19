@@ -2,8 +2,8 @@
 // review that approves them. syncWiki rebases the issue's wiki checkout onto
 // the wiki's branch and finishWikiSync checks and keeps a rebase a writer
 // resolved. A conflict leaves the rebase stopped for the conflict resolver;
-// nothing is ever saved as a patch. No wiki, or no commits of the issue's
-// own, means there is nothing to do. Publishing the approved wiki is
+// rejected resolution work is preserved before cleanup. No wiki, or no
+// commits of the issue's own, means there is nothing to do. Publishing the approved wiki is
 // wiki-publication.ts's, and never rebases.
 
 import fs from "node:fs";
@@ -12,6 +12,7 @@ import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
 import { head } from "./git-state.ts";
 import { git } from "./github.ts";
+import { saveSyncRecovery } from "./job/code-recovery.ts";
 import { withWikiLock } from "./locks.ts";
 import { OpsError, run } from "./process.ts";
 import {
@@ -57,8 +58,11 @@ function checkoutOf(cfg: Config, n: number): Checkout | null {
 }
 
 // Drops a rebase left over from a crashed run and fetches the wiki's branch.
-function freshen(cfg: Config, { wiki, dir }: Checkout): void {
-  abortRebase(dir);
+function freshen(cfg: Config, { wiki, dir }: Checkout, n: number): void {
+  if (rebaseInProgress(dir)) {
+    saveSyncRecovery(cfg, n, dir);
+    abortRebase(dir);
+  }
   const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
   git(cfg, ["-C", dir, "fetch", "origin", refspec]);
 }
@@ -92,7 +96,7 @@ function syncWiki(cfg: Config, n: number): WikiSyncReply {
     return NOTHING;
   }
   return withWikiLock(cfg, () => {
-    freshen(cfg, checkout);
+    freshen(cfg, checkout, n);
     if (wikiAhead(cfg, n) === 0) {
       return NOTHING;
     }
@@ -110,18 +114,19 @@ function syncWiki(cfg: Config, n: number): WikiSyncReply {
   });
 }
 
-// Puts the checkout back on the wiki remote's agent/issue-<n>, dropping a
-// half-done rebase.
-function resetToWikiBranch(cfg: Config, { dir }: Checkout, n: number): void {
+// Returns to the pre-rebase head, not an older remote issue branch. Failed
+// preparation retains the original checkout; evidence never authorizes a push.
+function restoreBeforeRebase(cfg: Config, { dir }: Checkout, n: number): void {
+  saveSyncRecovery(cfg, n, dir);
+  const original = run("git", [
+    "-C",
+    dir,
+    "rev-parse",
+    "--verify",
+    "ORIG_HEAD",
+  ]).stdout.trim();
   abortRebase(dir);
-  const branch = paths.branch(cfg, n);
-  const refspec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
-  git(cfg, ["-C", dir, "fetch", "origin", refspec], { allowFail: true });
-  const ref = `refs/remotes/origin/${branch}`;
-  const verify = ["-C", dir, "rev-parse", "--verify", "--quiet", ref];
-  if (run("git", verify, { allowFail: true }).code === 0) {
-    run("git", ["-C", dir, "reset", "--hard", ref]);
-  }
+  run("git", ["-C", dir, "reset", "--hard", original]);
   run("git", ["-C", dir, "clean", "-fd"]);
 }
 
@@ -140,7 +145,7 @@ function finishWikiSync(
     const base = `origin/${checkout.wiki.branch}`;
     const reason = abort ?? rebaseProblem(checkout.dir, base);
     if (reason !== undefined) {
-      resetToWikiBranch(cfg, checkout, n);
+      restoreBeforeRebase(cfg, checkout, n);
       return { resolved: false, reason };
     }
     pushWikiBranch(cfg, n);

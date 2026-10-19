@@ -9,6 +9,7 @@ import { branchChanges } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertClean, fetchIn, head } from "../git-state.ts";
+import { saveSyncRecovery } from "../job/code-recovery.ts";
 import { parseRequest, run } from "../process.ts";
 import { rebaseInProgress, unmergedFiles } from "../rebase.ts";
 import { holdWikiPin } from "../wiki.ts";
@@ -121,6 +122,7 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   } catch (error: unknown) {
     // A deferred sync then retries from the head it pushed last, not from an
     // unpushed rebase.
+    saveSyncRecovery(cfg, n, wt);
     run("git", ["-C", wt, "reset", "--hard", before]);
     throw error;
   }

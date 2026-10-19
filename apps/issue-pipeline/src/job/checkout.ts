@@ -20,7 +20,7 @@ import type { Config, JobCheckout } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
-import { run } from "../process.ts";
+import { OpsError, run } from "../process.ts";
 import { ensureWiki } from "../wiki.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
@@ -68,8 +68,10 @@ function syncMirror(
     git(cfg, clone);
   }
   const fetch = [...GH_HELPER, "-C", mirror, "fetch", "origin"];
-  if (prune) {
-    fetch.push("--prune");
+  fetch.push("--prune");
+  if (!prune) {
+    // Private wiki heads must never be destinations of remote refresh.
+    fetch.push("--refmap=", "+refs/heads/*:refs/remotes/origin/*");
   }
   git(cfg, fetch);
 }
@@ -90,6 +92,37 @@ function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
   guardCommits(dir);
 }
 
+// Chooses a descendant without losing either private or remote wiki work.
+function wikiStart(mirror: string, branch: string): string | null {
+  const saved = `refs/heads/${branch}`;
+  const remote = `refs/remotes/origin/${branch}`;
+  if (!hasRef(mirror, saved)) {
+    if (hasRef(mirror, remote)) {
+      return remote;
+    }
+    return null;
+  }
+  if (!hasRef(mirror, remote)) {
+    return saved;
+  }
+  const privateHead = gitIn(mirror, ["rev-parse", saved]).trim();
+  const remoteHead = gitIn(mirror, ["rev-parse", remote]).trim();
+  const base = run(
+    "git",
+    ["-C", mirror, "merge-base", privateHead, remoteHead],
+    { allowFail: true },
+  );
+  if (base.code === 0 && base.stdout.trim() === privateHead) {
+    return remote;
+  }
+  if (base.code === 0 && base.stdout.trim() === remoteHead) {
+    return saved;
+  }
+  throw new OpsError(
+    "private wiki recovery and remote issue branch diverged or cannot be compared; both refs retained",
+  );
+}
+
 // Exposes `checkout`'s wiki submodule as docs/ (`cfg` is scoped to it),
 // restoring the previous job's unpublished work, for pipeline_commit's scope.
 function openWiki(cfg: Config, checkout: JobCheckout): string | null {
@@ -108,8 +141,9 @@ function openWiki(cfg: Config, checkout: JobCheckout): string | null {
   withWikiLock(cfg, (): void => {
     syncMirror(cfg, { mirror, url, prune: false });
     const branch = paths.branch(cfg, issue);
-    if (hasRef(mirror, `refs/heads/${branch}`)) {
-      gitIn(into, ["fetch", "--quiet", mirror, `refs/heads/${branch}`]);
+    const start = wikiStart(mirror, branch);
+    if (start !== null) {
+      gitIn(into, ["fetch", "--quiet", mirror, start]);
       gitIn(into, ["checkout", "--quiet", "-B", branch, "FETCH_HEAD"]);
     }
   });

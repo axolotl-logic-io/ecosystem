@@ -152,9 +152,10 @@ function stillAt(revision: Revision): (after: Revision) => boolean {
 // A done issue with its completion saved, back at merge because the finish
 // op didn't finish it: the finish op again, and nothing else, once the
 // trusted inputs are still the merged ones, GitHub still confirms the
-// merged code and a security receipt approves exactly what merged. A
-// completion with no such receipt (one an earlier pipeline saved) gets its
-// security review first; one the receipt rejects stops again.
+// merged code and a security receipt approves exactly what merged.
+// Code-only completion without a receipt gets fresh security. Historical wiki
+// work without exact clearance needs reconciliation, not an unpublished-only
+// diff falsely labelled as its review. A saved rejection stops again.
 async function finishCompleted(
   ctx: RoleContext,
   state: IssueState,
@@ -188,6 +189,15 @@ async function finishCompleted(
   const rejected = rejectedAgain(state, merged);
   if (rejected !== null) {
     return rejected;
+  }
+  if (
+    merged.wiki !== null &&
+    (state.security === null || !sameRevision(state.security.revision, merged))
+  ) {
+    return failed(
+      state,
+      "historical wiki completion has no exact security clearance; explicit reconciliation is required before completion",
+    );
   }
   let checked = state;
   if (codeMerged !== null) {

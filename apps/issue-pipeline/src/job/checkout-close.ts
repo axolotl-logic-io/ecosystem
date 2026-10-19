@@ -118,9 +118,11 @@ async function closeJobCheckout(
               (fileName: string): string => `${prefix}${fileName}`,
             ),
           );
-          if (one.saved) {
-            patches.push(path.relative(paths.runDir(cfg, issue), file));
-          }
+          patches.push(
+            ...one.files.map((saved: string): string =>
+              path.relative(paths.runDir(cfg, issue), saved),
+            ),
+          );
         }
       }
       return { lost, patches };

@@ -34,7 +34,7 @@ function rebaseInProgress(dir: string): boolean {
 // Drops a stopped rebase, if there is one.
 function abortRebase(dir: string): void {
   if (rebaseInProgress(dir)) {
-    run("git", ["-C", dir, "rebase", "--abort"], { allowFail: true });
+    run("git", ["-C", dir, "rebase", "--abort"]);
   }
 }
 

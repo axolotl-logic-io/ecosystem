@@ -7,7 +7,8 @@
 // finish-sync or finish-wiki-sync then checks the result, and pushes it. Each resolver session that ends, however it
 // ends, is one of the issue's `maxConflictFixes` attempts, counted and saved
 // at once; a transient failure is none. A resolution that is rejected, or
-// not finished, is dropped, and the next attempt rebases afresh.
+// not finished, is preserved before cleanup and another attempt. If its
+// recovery cannot be prepared, the original checkout is retained instead.
 
 import type { OpName, RoleContext } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";
@@ -62,7 +63,8 @@ function withConflictFix(state: IssueState, attempt: number): IssueState {
   return { ...state, counts: { ...state.counts, conflictFixes: attempt } };
 }
 
-// Drops the stopped rebase, putting the checkout back on its pushed branch.
+// Preserves failed resolver work before aborting. The operation refuses
+// destructive cleanup when it cannot prepare recovery.
 async function abortRebase(
   ctx: RoleContext,
   side: Side,

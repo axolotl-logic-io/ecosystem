@@ -41,7 +41,9 @@ test("each checkout's staged, unstaged and untracked changes are saved as a patc
   };
   const { lost, patches } = await close(job, KEY);
   assert.deepEqual(patches, [
+    `dropped/${KEY}-repo.patch.index.patch`,
     `dropped/${KEY}-repo.patch`,
+    `dropped/${KEY}-docs.patch.index.patch`,
     `dropped/${KEY}-docs.patch`,
   ]);
   const expected = [...under("repo", left.repo), ...under("docs", left.docs)];

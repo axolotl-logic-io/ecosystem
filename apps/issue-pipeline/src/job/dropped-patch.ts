@@ -7,12 +7,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Config } from "../config.ts";
-import { run } from "../process.ts";
+import { OpsError, run } from "../process.ts";
 import { holdWikiPin } from "../wiki.ts";
 
 interface PreparedPatch {
   lost: string[];
-  saved: boolean;
+  files: string[];
 }
 
 const DIFFERS = 1;
@@ -73,9 +73,52 @@ function copyIndex(dir: string, indexFile: string): void {
   }
 }
 
-// Uses a copy of the actual index to preserve staged pin changes and index
-// flags. A moving wiki checkout is held only in that copy. Existing recovery
-// evidence is never overwritten; any error leaves the original checkout intact.
+// Each patch independently restores its snapshot on HEAD. The index patch
+// precedes the worktree overlay, so divergent staged bytes cannot disappear.
+function writePatch(
+  dir: string,
+  indexFile: string,
+  to: { file: string; title: string },
+  temp: string,
+): boolean {
+  if (!stagedDiffers(dir, indexFile)) {
+    return false;
+  }
+  fs.mkdirSync(path.dirname(to.file), { recursive: true });
+  gitIn(
+    dir,
+    [
+      "diff",
+      "--cached",
+      "--binary",
+      "--no-color",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      `--output=${temp}`,
+      "HEAD",
+    ],
+    indexFile,
+  );
+  const base = gitIn(dir, ["rev-parse", "HEAD"], indexFile).trim();
+  const header = [
+    to.title,
+    `Base: ${base}`,
+    `To restore: check out ${base}, then run git apply --index ${path.basename(to.file)}`,
+    "",
+    "",
+  ].join("\n");
+  fs.writeFileSync(
+    to.file,
+    Buffer.concat([Buffer.from(header), fs.readFileSync(temp)]),
+    { flag: "wx" },
+  );
+  return true;
+}
+
+// Uses only a copy of the actual index. Existing artifacts are never
+// overwritten; an unmerged index or preparation error retains the checkout.
 function saveDroppedPatch(
   cfg: Config,
   dir: string,
@@ -89,42 +132,25 @@ function saveDroppedPatch(
   try {
     copyIndex(dir, indexFile);
     holdWikiPin(cfg, dir, indexFile);
-    const lost = changedPaths(dir, indexFile);
-    const base = gitIn(dir, ["rev-parse", "HEAD"], indexFile).trim();
-    gitIn(dir, ["add", "-A"], indexFile);
-    if (!stagedDiffers(dir, indexFile)) {
-      return { lost, saved: false };
+    if (gitIn(dir, ["ls-files", "--unmerged"], indexFile).trim() !== "") {
+      throw new OpsError(
+        `unmerged index in ${dir}; retain the original checkout for recovery`,
+      );
     }
-    fs.mkdirSync(path.dirname(to.file), { recursive: true });
-    gitIn(
-      dir,
-      [
-        "diff",
-        "--cached",
-        "--binary",
-        "--no-color",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--src-prefix=a/",
-        "--dst-prefix=b/",
-        `--output=${temp}`,
-        "HEAD",
-      ],
-      indexFile,
-    );
-    const header = [
-      to.title,
-      `Base: ${base}`,
-      `To restore: check out ${base}, then run git apply --index ${path.basename(to.file)}`,
-      "",
-      "",
-    ].join("\n");
-    fs.writeFileSync(
-      to.file,
-      Buffer.concat([Buffer.from(header), fs.readFileSync(temp)]),
-      { flag: "wx" },
-    );
-    return { lost, saved: true };
+    const lost = changedPaths(dir, indexFile);
+    const files: string[] = [];
+    const staged = {
+      file: `${to.file}.index.patch`,
+      title: `${to.title} (index snapshot)`,
+    };
+    if (writePatch(dir, indexFile, staged, temp)) {
+      files.push(staged.file);
+    }
+    gitIn(dir, ["add", "-A"], indexFile);
+    if (writePatch(dir, indexFile, to, temp)) {
+      files.push(to.file);
+    }
+    return { lost, files };
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

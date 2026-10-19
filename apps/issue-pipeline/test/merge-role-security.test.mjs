@@ -204,7 +204,7 @@ test("a done completion rechecks M before reviewing missing security or reusing 
   };
   const unreviewed = fakeContext({
     stage: "merge",
-    state: done,
+    state: { ...done, merged: { ...MERGED_REVISION, wiki: null } },
     ops: {
       "current-revision": [AFTER_MERGE, AFTER_MERGE],
       "prepare-review": [PREPARED_MERGED],

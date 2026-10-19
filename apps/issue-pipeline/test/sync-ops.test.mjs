@@ -137,18 +137,23 @@ test("sync-base reports a conflict and aborts the rebase", () => {
   assert.equal(originRef("agent/issue-33"), headSha);
 });
 
-test("sync-base keeps a conflicting rebase, and resets it on the next run", () => {
+test("sync-base retains an unresolved index on recovery instead of discarding it", () => {
   const n = ISSUE.keptConflict;
   const { headSha, baseSha } = conflicting(n);
   const kept = ask({ op: "sync-base", number: n, keepConflict: true });
   assert.deepEqual(kept.writes, []);
   assert.equal(kept.out, conflictLine(n, true, baseSha));
   assert.equal(fx.inRebase(n), true);
+  const before = fx.worktreeState(n);
   const again = ask({ op: "sync-base", number: n, keepConflict: false });
   assert.deepEqual(again.writes, []);
-  assert.equal(again.out, conflictLine(n, false, baseSha));
-  assert.equal(fx.inRebase(n), false);
-  assert.deepEqual(fx.worktreeState(n), { head: headSha, status: "" });
+  assert.equal(
+    again.out,
+    `${JSON.stringify({ ok: false, error: `unmerged index in ${worktree(n)}; retain the original checkout for recovery` })}\n`,
+  );
+  assert.equal(fx.inRebase(n), true);
+  assert.deepEqual(fx.worktreeState(n), before);
+  assert.equal(originRef(`agent/issue-${n}`), headSha);
 });
 
 // A conflicting rebase kept in the worktree for a writer, as sync-base leaves it.
@@ -187,9 +192,10 @@ function failure(n, request, reason, headSha = originRef(`agent/issue-${n}`)) {
   };
 }
 
-test("finish-sync resets the worktree on an abort or an unfinished rebase", () => {
+test("finish-sync preserves a staged resolution before resetting an abort or unfinished rebase", () => {
   const unfinishedConflict = keptConflict(ISSUE.unfinished);
   assert.deepEqual(unfinishedConflict.writes, []);
+  gitIn(worktree(ISSUE.unfinished), `add c${ISSUE.unfinished}`);
   const unfinished = failure(
     ISSUE.unfinished,
     {},
@@ -199,9 +205,11 @@ test("finish-sync resets the worktree on an abort or an unfinished rebase", () =
   assert.deepEqual(unfinished.got, unfinished.expected);
   const { headSha: head, writes } = keptConflict(ISSUE.aborted);
   assert.deepEqual(writes, []);
+  gitIn(worktree(ISSUE.aborted), `add c${ISSUE.aborted}`);
   const aborted = failure(ISSUE.aborted, { abort: true }, "aborted", head);
   assert.deepEqual(aborted.got, aborted.expected);
   assert.deepEqual(keptConflict(ISSUE.abortedWithReason).writes, []);
+  gitIn(worktree(ISSUE.abortedWithReason), `add c${ISSUE.abortedWithReason}`);
   const withReason = failure(
     ISSUE.abortedWithReason,
     { abort: true, reason: "no time left" },

@@ -7,6 +7,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { head, remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
+import { saveSyncRecovery } from "../job/code-recovery.ts";
 import { OpsError, run } from "../process.ts";
 import { abortRebase, rebaseProblem } from "../rebase.ts";
 import { holdWikiPin, wikiPinProblem } from "../wiki.ts";
@@ -62,6 +63,7 @@ function finishProblem(
 // Puts the worktree back on the pushed branch, dropping a half-done rebase.
 function resetToRemote(cfg: Config, n: number): void {
   const wt = paths.worktree(cfg, n);
+  saveSyncRecovery(cfg, n, wt);
   abortRebase(wt);
   const remote = remoteHead(cfg, n);
   if (remote !== null) {
