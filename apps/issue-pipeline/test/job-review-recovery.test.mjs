@@ -13,7 +13,14 @@ import {
   repliesAt,
   stateAt,
 } from "./job-fixtures.mjs";
-import { flagValue, logOf, piStarts, runJob, setUp } from "./job-test-kit.mjs";
+import {
+  flagValue,
+  logOf,
+  piStarts,
+  runJob,
+  setScript,
+  setUp,
+} from "./job-test-kit.mjs";
 
 const INPUTS_LENGTH = 64;
 const KEY = "review-20261019T191100000Z";
@@ -105,6 +112,92 @@ test("a fresh wiki-only hardening writer gets previous timeout provenance and re
   assert.ok(task.includes("/old/job/repo"));
   assert.ok(task.includes("Scope: the wiki in `docs/` only"));
   assert.equal(fs.readFileSync(patch, "utf8"), bytes);
+  assert.ok(
+    !logOf(at, "ops.log").some(({ op }) => ["verify", "ready-pr"].includes(op)),
+  );
+});
+
+/** @param {import("./job-test-kit.mjs").Place} at */
+function savedEvidence(at) {
+  const dropped = path.join(at.runDir, "dropped");
+  const files = fs.readdirSync(dropped);
+  const patchName = files.find((file) => file.endsWith("-repo.patch"));
+  const manifestName = files.find((file) => file.endsWith(".json"));
+  if (patchName === undefined || manifestName === undefined) {
+    throw new Error("Review teardown did not save a patch and its manifest");
+  }
+  const patch = path.join(dropped, patchName);
+  const manifest = path.join(dropped, manifestName);
+  return {
+    dropped,
+    patch,
+    manifest,
+    patchBytes: fs.readFileSync(patch),
+    manifestBytes: fs.readFileSync(manifest),
+  };
+}
+
+/** @param {import("./job-test-kit.mjs").Place} at @returns {string} */
+function latestTask(at) {
+  return (
+    logOf(at, "pi.log")
+      .filter(({ command }) => command?.type === "prompt")
+      .at(-1)?.command.message ?? ""
+  );
+}
+
+test("successive failed Review jobs preserve separate patches and automatically offer both to the next writer", () => {
+  // Inject the timeout result, rather than waiting for the wall-clock limit.
+  // Unlike seedRecovery, the real job must produce all recovery metadata.
+  const timeout = {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      errorMessage: "timed out before it exited",
+    },
+  };
+  const at = setUp(reviewReplies(), {
+    untracked: "repo/first.txt",
+    events: [timeout],
+  });
+  const first = runJob(at, ["--stage", "review"]);
+  assert.equal(first.status, 0, first.stderr);
+  assert.ok(first.stdout.includes("the hardening session failed: timed out"));
+  const { dropped, patch, manifest, patchBytes, manifestBytes } =
+    savedEvidence(at);
+
+  setScript(at, { untracked: "repo/second.txt", events: [timeout] });
+  const second = runJob(at, ["--stage", "review"]);
+  assert.equal(second.status, 0, second.stderr);
+  assert.ok(second.stdout.includes("the hardening session failed: timed out"));
+  const secondTask = latestTask(at);
+  assert.ok(secondTask.includes(patch));
+  assert.ok(secondTask.includes(manifest));
+  assert.ok(secondTask.includes("timed out before it exited"));
+  assert.deepEqual(fs.readFileSync(patch), patchBytes);
+  assert.deepEqual(fs.readFileSync(manifest), manifestBytes);
+  const laterFiles = fs.readdirSync(dropped);
+  const patches = laterFiles.filter((file) => file.endsWith("-repo.patch"));
+  assert.equal(patches.length, 2);
+  assert.equal(laterFiles.filter((file) => file.endsWith(".json")).length, 2);
+  for (const file of patches) {
+    const content = fs.readFileSync(path.join(dropped, file), "utf8");
+    // Merely offering the first patch must not replay it into the second job.
+    assert.notEqual(
+      content.includes("first.txt"),
+      content.includes("second.txt"),
+    );
+  }
+
+  setScript(at, {
+    events: [outputEnd({ outcome: "cannot", reason: "Need a product answer" })],
+  });
+  const third = runJob(at, ["--stage", "review"]);
+  assert.equal(third.status, 0, third.stderr);
+  const thirdTask = latestTask(at);
+  for (const file of laterFiles) {
+    assert.ok(thirdTask.includes(path.join(dropped, file)));
+  }
   assert.ok(
     !logOf(at, "ops.log").some(({ op }) => ["verify", "ready-pr"].includes(op)),
   );

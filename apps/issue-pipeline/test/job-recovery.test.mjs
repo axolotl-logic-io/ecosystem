@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  COMMIT_ENV,
   close,
   inRunDir,
   leaveChanges,
@@ -91,10 +92,13 @@ test("a timed-out Review's separate snapshots remain readable and discoverable a
     assert.ok(lines.includes(snapshot.base));
     assert.ok(lines.includes(snapshot.kind));
   }
-  // Offering evidence changes no current head, file or index, even when stale.
   assert.equal(git(next.repo, ["status", "--porcelain"]), before);
   assert.equal(headOf(next.repo), bases.repo);
   assert.deepEqual(recoveryLines(next.cfg, ISSUE, "different-assignment"), []);
+  assert.deepEqual(
+    recoveryLines({ ...next.cfg, repo: "another/repo" }, ISSUE, next.branch),
+    [],
+  );
   write(next.repo, "later.txt", "second attempt\n");
   await close(next, SECOND, TIMEOUT);
   for (const [patch, bytes] of originals) {
@@ -104,6 +108,42 @@ test("a timed-out Review's separate snapshots remain readable and discoverable a
   assert.ok(laterLines.includes(FIRST));
   assert.ok(laterLines.includes(SECOND));
   assert.equal(manifest(next, SECOND).snapshots.length, 1);
+});
+
+test("stale recovery keeps old bases visible without changing current heads, staged versions or working files", async () => {
+  const job = openFresh();
+  leaveChanges(job.repo, "README.md");
+  leaveChanges(job.docs, "Home.md");
+  await close(job, FIRST, TIMEOUT);
+  const first = manifest(job, FIRST);
+  const next = openIn(job.cfg, path.dirname(job.origin));
+  const tracked = { repo: "README.md", docs: "Home.md" };
+  const heads = new Map();
+  for (const side of /** @type {const} */ (["repo", "docs"])) {
+    write(next[side], tracked[side], "current committed work\n");
+    git(next[side], ["commit", "-am", "Current work"], COMMIT_ENV);
+    heads.set(side, headOf(next[side]));
+    write(next[side], tracked[side], "current staged work\n");
+    git(next[side], ["add", tracked[side]]);
+    write(next[side], tracked[side], "current working work\n");
+  }
+  const lines = recoveryLines(next.cfg, ISSUE, next.branch).join("\n");
+  for (const snapshot of first.snapshots) {
+    assert.notEqual(heads.get(snapshot.checkout), snapshot.base);
+    assert.ok(lines.includes(snapshot.base));
+    assert.ok(lines.includes(snapshot.source));
+  }
+  for (const side of /** @type {const} */ (["repo", "docs"])) {
+    assert.equal(headOf(next[side]), heads.get(side));
+    assert.equal(
+      git(next[side], ["show", `:${tracked[side]}`]),
+      "current staged work",
+    );
+    assert.equal(
+      fs.readFileSync(path.join(next[side], tracked[side]), "utf8"),
+      "current working work\n",
+    );
+  }
 });
 
 test("failure to save durable recovery metadata retains original staged and working bytes in both checkouts", async () => {
