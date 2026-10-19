@@ -22,6 +22,7 @@ import {
 } from "./merge-role-test-kit.mjs";
 import {
   callNames,
+  checksBefore,
   endCode,
   firstPayload,
   freshBefore,
@@ -181,12 +182,10 @@ test("a saved completion whose finish crashed rechecks M and the wiki before fin
   });
   const state = stateOf(await mergeRole(replay.ctx), "next");
   assert.deepEqual(state, saved);
-  assert.deepEqual(opNames(replay.calls), [
-    "current-revision",
-    "verify",
-    "wiki-check",
-    "finish-wiki",
-  ]);
+  const checks = checksBefore(replay.calls, "finish-wiki");
+  assert.deepEqual(checks.verify, { number: replay.ctx.issue, ...CODE_MERGED });
+  assert.deepEqual(checks.wiki, { number: replay.ctx.issue });
+  assert.deepEqual(mutationsOf(replay.calls), ["finish-wiki"]);
   const { state: finished } = firstPayload(replay.calls, "finish-wiki");
   assert.deepEqual(finished, saved);
   assert.equal(sessionsOf(replay.calls).length, 0);
@@ -257,12 +256,14 @@ test("a completion the finish op refuses for new inputs goes to the author", asy
 test("a completion whose published wiki the finish op can't prove stops, never done", async () => {
   const unpublished = refusedFinish("wiki-unpublished");
   assert.equal(endCode(await mergeRole(unpublished.ctx)), "error");
-  assert.deepEqual(opNames(unpublished.calls), [
-    "current-revision",
-    "verify",
-    "wiki-check",
-    "finish-wiki",
-  ]);
+  const checks = checksBefore(unpublished.calls, "finish-wiki");
+  assert.deepEqual(checks.verify, {
+    number: unpublished.ctx.issue,
+    ...CODE_MERGED,
+  });
+  assert.deepEqual(checks.wiki, { number: unpublished.ctx.issue });
+  assert.deepEqual(mutationsOf(unpublished.calls), ["finish-wiki"]);
+  assert.equal(sessionsOf(unpublished.calls).length, 0);
   assert.equal(savesOf(unpublished.calls).length, 1);
   const changed = refusedFinish("wiki-changed");
   assert.equal(endCode(await mergeRole(changed.ctx)), "error");

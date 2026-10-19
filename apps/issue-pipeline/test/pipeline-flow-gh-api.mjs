@@ -232,4 +232,4 @@ function api(world, args) {
   throw new Error(`fake-gh: unsupported api ${call.route.join("/")}`);
 }
 
-export { api };
+export { api, fieldOf, flagsOf };

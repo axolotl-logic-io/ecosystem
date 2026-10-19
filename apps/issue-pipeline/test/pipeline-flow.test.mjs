@@ -12,6 +12,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { pageTextOf } from "./brain-test-kit.mjs";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
+import { fieldOf, flagsOf } from "./pipeline-flow-gh-api.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
 import {
   BASE,
@@ -45,6 +46,7 @@ const GHERKIN_IN_PROMPT = /Then they see a polite greeting/u;
 const PUBLISHED_PAGE = /Greetings say Hello, world!/u;
 const REVIEWED_CODE = /\+Hello, world!/u;
 const REVIEWED_WIKI = /\+Greetings say Hello, world!/u;
+const MERGE_ENDPOINT = /^repos\/[^/]+\/[^/]+\/merges$/u;
 
 /** @typedef {import("./pipeline-flow-kit.mjs").Flow} Flow */
 
@@ -211,23 +213,27 @@ test("GitHub ends with the issue closed as merged, the PR merged at the approved
 
 test("the one branch POST names only integration and the checked full source head", () => {
   const { integration } = savedState(readWorld(flow.ghDir));
-  const merges = ghCalls(flow.ghDir).filter(
-    ([command, endpoint]) =>
-      command === "api" && endpoint === "repos/o/r/merges",
+  const merges = ghCalls(flow.ghDir)
+    .filter(([command]) => command === "api")
+    .map((args) => flagsOf(args.slice(1)))
+    .filter(({ endpoint }) => MERGE_ENDPOINT.test(endpoint));
+  assert.equal(merges.length, 1);
+  const [request] = merges;
+  assert.ok(request !== undefined);
+  assert.deepEqual(
+    {
+      endpoint: request.endpoint,
+      method: request.method,
+      base: fieldOf(request.fields, "base"),
+      head: fieldOf(request.fields, "head"),
+    },
+    {
+      endpoint: "repos/o/r/merges",
+      method: "POST",
+      base: "integration",
+      head: integration.revision.code,
+    },
   );
-  assert.deepEqual(merges, [
-    [
-      "api",
-      "repos/o/r/merges",
-      "--method",
-      "POST",
-      "--include",
-      "-f",
-      "base=integration",
-      "-f",
-      `head=${integration.revision.code}`,
-    ],
-  ]);
 });
 
 test("git ends with ordered parents covering the whole approved change on the base and the wiki fast-forwarded to the reviewed commit", () => {

@@ -43,6 +43,28 @@ function opPayloads(calls, name) {
 }
 
 /**
+ * The result-check targets before security preparation or completion, after
+ * any code merge, independent of check order and intervening reads.
+ * @param {Call[]} calls
+ * @param {"prepare-review" | "finish-wiki"} boundary
+ */
+function checksBefore(calls, boundary) {
+  const names = opNames(calls);
+  const before = names.indexOf(boundary);
+  if (before < 0) {
+    throw new Error(`missing ${boundary}`);
+  }
+  const after = names.lastIndexOf("merge", before) + 1;
+  const checks = calls
+    .filter((call) => call.kind === "op")
+    .slice(after, before);
+  return {
+    verify: firstPayload(checks, "verify"),
+    wiki: firstPayload(checks, "wiki-check"),
+  };
+}
+
+/**
  * The first `name` op's payload, empty when there was none; its keys are
  * read by destructuring.
  * @param {Call[]} calls @param {string} name
@@ -118,6 +140,7 @@ function endCode(end) {
 
 export {
   callNames,
+  checksBefore,
   endCode,
   firstPayload,
   freshBefore,

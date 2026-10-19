@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  CODE_MERGED,
   MERGED,
   MERGED_PR,
   MERGED_REVISION,
@@ -17,6 +18,7 @@ import {
 } from "./merge-role-test-kit.mjs";
 import {
   callNames,
+  checksBefore,
   endCode,
   firstPayload,
   freshBefore,
@@ -58,26 +60,17 @@ const SECURITY_COMMENT =
 test("a hardened revision merges with its head matched, then the security review of the merged result clears it and exactly the hardened wiki publishes", async () => {
   const { ctx, calls } = merging();
   const state = stateOf(await mergeRole(ctx), "next");
-  assert.deepEqual(callNames(calls), [
-    "current-revision",
-    "wiki-check",
-    "ci-status",
-    "current-revision",
-    "merge",
-    "save",
-    "current-revision",
-    "verify",
-    "wiki-check",
-    "save",
-    "prepare-review",
-    "session",
-    "current-revision",
-    "post",
-    "save",
-    "publish",
-    "save",
-    "finish-wiki",
-  ]);
+  assert.deepEqual(mutationsOf(calls), ["merge", "publish", "finish-wiki"]);
+  assert.equal(sessionsOf(calls).length, 1);
+  assert.ok(sessionsOf(calls).every((session) => session.commits === false));
+  const beforeMerge = calls.slice(0, callNames(calls).indexOf("merge"));
+  assert.deepEqual(firstPayload(beforeMerge, "ci-status"), {
+    pr: PR,
+    expectedSha: HEAD,
+  });
+  assert.deepEqual(firstPayload(beforeMerge, "wiki-check"), {
+    number: ctx.issue,
+  });
   assert.equal(state.stage, "done");
   assert.deepEqual(state.merged, MERGED_REVISION);
   const { expectedSha, revision, mergeQueue } = firstPayload(calls, "merge");
@@ -85,12 +78,9 @@ test("a hardened revision merges with its head matched, then the security review
   assert.deepEqual(revision, REVISION);
   assert.deepEqual(mergeQueue, QUEUE);
   assert.ok(freshBefore(calls, "merge"));
-  const preparation = callNames(calls).indexOf("prepare-review");
-  const checked = ["current-revision", "verify", "wiki-check", "save"];
-  assert.deepEqual(
-    callNames(calls).slice(preparation - checked.length, preparation),
-    checked,
-  );
+  const checks = checksBefore(calls, "prepare-review");
+  assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
+  assert.deepEqual(checks.wiki, { number: ctx.issue });
 });
 
 test("the security review is a fresh read-only Reviewer session over the merge commit GitHub confirmed", async () => {

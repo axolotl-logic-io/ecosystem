@@ -4,6 +4,7 @@
 // open PR. Checked through the ops CLI's replies and gh writes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { bodyOf, effectNames, effectsOf } from "./gh-effects.mjs";
 import { draftMutationReplies } from "./gh-mutation-fixtures.mjs";
 import {
   historyReply,
@@ -16,6 +17,7 @@ const fx = await opsFixture("pr-ops-start-pr");
 fx.fakeGh.requireReplies();
 const { signed } = await import("../src/comments.ts");
 const { ghIsRead } = await import("../src/github.ts");
+const { parseStateBody } = await import("../src/saved-state.ts");
 const { fakeGh, ask, originRef } = fx;
 
 // Each test's issue and its PR.
@@ -23,59 +25,61 @@ const EDITED = { n: 21, pr: 71 };
 const OPENED = { n: 22, pr: 72 };
 const TWICE = { n: 23, pr: 73 };
 const UNTOUCHED = { n: 24, pr: 74 };
-const { ISSUE_STATE } = await import("../src/state.ts");
-const { stateBody } = await import("../src/saved-state.ts");
-const { stateAt } = await import("./job-fixtures.mjs");
+const PR_NUMBER = /^\d+$/u;
 
 /** @returns {string[][]} */
 function writes() {
   return fakeGh.calls().filter((args) => !ghIsRead(args));
 }
 
-/** @param {number} n @param {number} pr @returns {string[]} */
-function savedPrCall(n, pr) {
-  const state = stateAt("implement", {
-    number: n,
-    branch: `agent/issue-${n}`,
-    lease: null,
-    pr,
-  });
-  return [
-    "api",
-    "-X",
-    "PATCH",
-    `repos/o/r/issues/comments/${n}`,
-    "-f",
-    `body=${stateBody(n, ISSUE_STATE.parse(state))}`,
-    "--silent",
-  ];
+/** The state mutation's authority facts and labels. @param {number} n */
+function savedPr(n) {
+  const effects = effectsOf(writes().filter(([command]) => command !== "pr"));
+  const saved = parseStateBody(bodyOf(effects, `edit comment ${n} state`), n);
+  return {
+    effects: effectNames(effects),
+    issue: saved?.number,
+    branch: saved?.branch,
+    pr: saved?.pr,
+    stage: saved?.stage,
+    lease: saved?.lease,
+    codeMerged: saved?.codeMerged,
+    merged: saved?.merged,
+    security: saved?.security,
+  };
 }
 
-/** @param {number} pr @returns {string[]} */
-function labelCall(pr) {
-  const endpoint = `repos/o/r/issues/${pr}/labels`;
-  return ["api", "-X", "POST", endpoint, "--silent", "-f"].concat([
-    "labels[]=agent:working",
-  ]);
+/** @param {string[]} args @param {string[]} names @returns {string | null} */
+function flagValue(args, names) {
+  const at = args.findIndex((arg) => names.includes(arg));
+  if (at < 0) {
+    return null;
+  }
+  return args[at + 1] ?? null;
 }
 
-/** @param {number} n @param {string[]} flags @param {string} title @param {string} body @returns {string[]} */
-function createCall(n, flags, title, body) {
-  const head = `agent/issue-${n}`;
-  return [
-    "pr",
-    "create",
-    "-R",
-    "o/r",
-    ...flags,
-    "--base",
-    "integration",
-  ].concat(["--head", head, "--title", title, "--body", body]);
-}
-
-/** @param {number} pr @param {string} body @returns {string[]} */
-function editCall(pr, body) {
-  return ["pr", "edit", String(pr), "-R", "o/r", "--body", body];
+/** The PR mutation's semantic fields, independent of flag order. */
+function prMutations() {
+  return writes()
+    .filter(([command]) => command === "pr")
+    .map((args) => {
+      const [, action] = args;
+      const request = {
+        action,
+        repo: flagValue(args, ["-R", "--repo"]),
+        body: flagValue(args, ["--body"]),
+      };
+      if (action === "create") {
+        return {
+          ...request,
+          draft: args.includes("--draft"),
+          base: flagValue(args, ["--base"]),
+          head: flagValue(args, ["--head"]),
+          title: flagValue(args, ["--title"]),
+        };
+      }
+      return { ...request, pr: args.find((arg) => PR_NUMBER.test(arg)) };
+    });
 }
 
 // The body start-pr gives issue `n`'s PR for the text `text`.
@@ -111,11 +115,20 @@ test("start-pr with a body sets the open PR's body and leaves it a draft", () =>
   const out = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
   const headSha = originRef("agent/issue-21");
   assert.equal(out, okLine("start-pr", { pr, headSha }));
-  assert.deepEqual(writes(), [
-    editCall(pr, prBody(n, "B")),
-    savedPrCall(n, pr),
-    labelCall(pr),
+  assert.deepEqual(prMutations(), [
+    { action: "edit", pr: String(pr), repo: "o/r", body: prBody(n, "B") },
   ]);
+  assert.deepEqual(savedPr(n), {
+    effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
+    issue: n,
+    branch: `agent/issue-${n}`,
+    pr,
+    stage: "implement",
+    lease: null,
+    codeMerged: null,
+    merged: null,
+    security: null,
+  });
 });
 
 test("start-pr with a body and no open PR opens a draft with that body only", () => {
@@ -123,25 +136,51 @@ test("start-pr with a body and no open PR opens a draft with that body only", ()
   const out = startPr(n, pr, "[]", { body: "B", plan: "P" });
   const headSha = originRef("agent/issue-22");
   assert.equal(out, okLine("start-pr", { pr, headSha }));
-  assert.deepEqual(writes(), [
-    createCall(n, ["--draft"], "T (#22)", prBody(n, "B")),
-    savedPrCall(n, pr),
-    labelCall(pr),
+  assert.deepEqual(prMutations(), [
+    {
+      action: "create",
+      repo: "o/r",
+      draft: true,
+      base: "integration",
+      head: `agent/issue-${n}`,
+      title: "T (#22)",
+      body: prBody(n, "B"),
+    },
   ]);
+  assert.deepEqual(savedPr(n), {
+    effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
+    issue: n,
+    branch: `agent/issue-${n}`,
+    pr,
+    stage: "implement",
+    lease: null,
+    codeMerged: null,
+    merged: null,
+    security: null,
+  });
 });
 
 test("start-pr with a body run twice opens one draft and sets the same body", () => {
   const { n, pr } = TWICE;
   const first = startPr(n, pr, "[]", { body: "B" });
-  const created = writes().filter((args) => args[1] === "create");
+  const created = prMutations().filter(({ action }) => action === "create");
   assert.equal(created.length, 1);
-  const body = created[0]?.at(-1) ?? "";
+  const body = created[0]?.body ?? "";
   const second = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
-  assert.deepEqual(writes(), [
-    editCall(pr, body),
-    savedPrCall(n, pr),
-    labelCall(pr),
+  assert.deepEqual(prMutations(), [
+    { action: "edit", pr: String(pr), repo: "o/r", body },
   ]);
+  assert.deepEqual(savedPr(n), {
+    effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
+    issue: n,
+    branch: `agent/issue-${n}`,
+    pr,
+    stage: "implement",
+    lease: null,
+    codeMerged: null,
+    merged: null,
+    security: null,
+  });
   const headSha = originRef("agent/issue-23");
   assert.equal(first, okLine("start-pr", { pr, headSha }));
   assert.equal(second, first);
@@ -151,5 +190,16 @@ test("start-pr without a body only labels the open PR", () => {
   const { n, pr } = UNTOUCHED;
   fx.startBranch(n, "initial", "existing branch");
   startPr(n, pr, `[{"number":${pr}}]`, {});
-  assert.deepEqual(writes(), [savedPrCall(n, pr), labelCall(pr)]);
+  assert.deepEqual(prMutations(), []);
+  assert.deepEqual(savedPr(n), {
+    effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
+    issue: n,
+    branch: `agent/issue-${n}`,
+    pr,
+    stage: "implement",
+    lease: null,
+    codeMerged: null,
+    merged: null,
+    security: null,
+  });
 });
