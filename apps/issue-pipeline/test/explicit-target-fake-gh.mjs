@@ -9,6 +9,7 @@ import { z } from "zod";
 
 const FAKE_IDENTITY = /^fake-pipeline-(?<identity>dev|merge)--(?<login>.+)$/u;
 const COMMAND_TIMEOUT_MS = 20_000;
+const SOURCE_REF = /^repos\/[^/]+\/[^/]+\/git\/refs\/heads\//u;
 const UNEXPECTED_CALL = 91;
 const STEP = z.object({
   args: z.array(z.string()),
@@ -42,6 +43,13 @@ let expectedIdentity = "merge";
 if (
   args[0] === "pr" &&
   ["create", "edit", "reopen", "close", "ready"].includes(String(args[1]))
+) {
+  expectedIdentity = "dev";
+}
+if (
+  args[0] === "api" &&
+  args.includes("DELETE") &&
+  args.some((arg) => SOURCE_REF.test(arg))
 ) {
   expectedIdentity = "dev";
 }

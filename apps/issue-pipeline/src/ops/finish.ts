@@ -64,7 +64,7 @@ function deleteBranch(cfg: Config, state: IssueState): void {
   const n = state.number;
   gh(
     cfg,
-    "merge",
+    "dev",
     [
       "api",
       "-X",

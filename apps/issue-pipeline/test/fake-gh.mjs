@@ -16,6 +16,10 @@ import { z } from "zod";
 // The gh script's file mode: executable by its owner, readable by all.
 const EXECUTABLE = 0o755;
 const CALL_ARGS = z.array(z.string());
+const AUTHENTICATED_CALL = z.object({
+  identity: z.enum(["dev", "merge"]),
+  args: CALL_ARGS,
+});
 
 /**
  * One queued answer: the text a call's arguments must contain, and what gh
@@ -41,6 +45,7 @@ const CALL_ARGS = z.array(z.string());
  * @property {() => void} requireReplies fail every unmatched read or write
  * @property {(replies: readonly GhReply[]) => void} reply
  * @property {() => string[][]} calls
+ * @property {() => { identity: "dev" | "merge", args: string[] }[]} authenticatedCalls
  * @property {(isRead: (args: readonly string[]) => boolean) => string[][]} writes
  */
 
@@ -60,6 +65,7 @@ const identity = /^fake-pipeline-(dev|merge)--(.+)$/.exec(token);
 if (!identity) throw new Error("missing fake bot credential");
 let expected = "merge";
 if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(args[1])) expected = "dev";
+if (args[0] === "api" && args.includes("DELETE") && args.some(arg => /^repos\\/[^/]+\\/[^/]+\\/git\\/refs\\/heads\\//u.test(arg))) expected = "dev";
 if (!(args[0] === "api" && args[1] === "user") && identity[1] !== expected) throw new Error("wrong bot identity for operation");
 if (args[0] === "api" && args[1] === "user") {
   process.stdout.write(identity[2] + "\\n"); process.exit(0);
@@ -73,6 +79,7 @@ if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(pa
   fs.writeSync(1, JSON.stringify({ data: { node } })); process.exit(0);
 }
 fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
+fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");
 const file = path.join(dir, "replies.json");
 const replies = JSON.parse(fs.readFileSync(file, "utf8"));
 const text = args.join(" ");
@@ -151,7 +158,15 @@ function installFakeGh() {
     requireReplies() {
       fs.writeFileSync(path.join(dir, "strict"), "true");
     },
+    authenticatedCalls() {
+      return fs
+        .readFileSync(path.join(dir, "identities.jsonl"), "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => AUTHENTICATED_CALL.parse(JSON.parse(line)));
+    },
     reply(replies) {
+      fs.writeFileSync(path.join(dir, "identities.jsonl"), "");
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));
       fs.writeFileSync(callsFile, "");
       const comments = replies.flatMap((reply) => {

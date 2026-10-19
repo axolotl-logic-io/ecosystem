@@ -23,6 +23,7 @@ import {
 
 const FAKE_IDENTITY = /^fake-pipeline-(?<identity>dev|merge)--(?<login>.+)$/u;
 const UNSUPPORTED = "fake-gh: unsupported";
+const SOURCE_REF = /^repos\/[^/]+\/[^/]+\/git\/refs\/heads\//u;
 
 /**
  * GitHub's mergeability of an open PR: clean on the base, behind it, or
@@ -248,6 +249,13 @@ function answer(world, args) {
   if (
     args[0] === "pr" &&
     ["create", "edit", "reopen", "close", "ready"].includes(String(args[1]))
+  ) {
+    expected = "dev";
+  }
+  if (
+    args[0] === "api" &&
+    args.includes("DELETE") &&
+    args.some((arg) => SOURCE_REF.test(arg))
   ) {
     expected = "dev";
   }

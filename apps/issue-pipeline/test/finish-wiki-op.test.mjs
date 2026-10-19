@@ -146,6 +146,11 @@ test("finish-wiki completes a saved done+merged issue: branch, labels, claim, th
   });
   const done = flat(writes());
   assert.match(done[0] ?? "", DELETES_ISSUE_BRANCH);
+  const identities = fakeGh.authenticatedCalls();
+  const deletion = identities.find((call) =>
+    DELETES_ISSUE_BRANCH.test(call.args.join(" ")),
+  );
+  assert.equal(deletion?.identity, "dev");
   assert.ok(done.some((line) => line.includes("issues/50/labels")));
   assert.ok(done.some((line) => line.includes("issues/7/labels")));
   assert.ok(done.some((line) => line.includes("issues/comments/501")));
