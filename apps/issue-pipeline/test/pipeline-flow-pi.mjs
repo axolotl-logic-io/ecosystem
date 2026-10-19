@@ -20,12 +20,14 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { writeTurnFiles } from "./pipeline-flow-pi-files-test-kit.mjs";
 import { fixtureState, versionProbe } from "./runtime-fixtures.mjs";
 
 /**
  * @typedef {object} FlowTurn
  * @property {Record<string, string>} [files]
  * @property {string[][]} [commits]
+ * @property {Record<string, string>} [gitlinks] paths and commit identities to stage in repo/
  * @property {string} [rejectPrompt]
  * @property {Record<string, unknown>} output
  */
@@ -207,11 +209,7 @@ async function commitAll(tool, commits, out, done = 0) {
  */
 async function play(turn, tools, out) {
   const { print, log } = out;
-  for (const [file, text] of Object.entries(turn.files ?? {})) {
-    const where = path.join(process.cwd(), file);
-    fs.mkdirSync(path.dirname(where), { recursive: true });
-    fs.writeFileSync(where, text);
-  }
+  writeTurnFiles(turn);
   await commitAll(tools.get("pipeline_commit"), turn.commits ?? [], out);
   print(MESSAGE_END);
   const output = tools.get("structured_output");
