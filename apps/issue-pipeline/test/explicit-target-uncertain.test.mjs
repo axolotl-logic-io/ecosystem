@@ -2,7 +2,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { child, posts } from "./explicit-target-recovery-test-kit.mjs";
+import {
+  child,
+  interruptAfterResponse,
+  posts,
+} from "./explicit-target-recovery-test-kit.mjs";
 import {
   consumed,
   mergedView,
@@ -167,4 +171,35 @@ test("interruption before response save never recovers own provenance from metad
   assert.equal(readWriteState(w.cfg, ISSUE).merged, null);
   assert.equal(posts().length, 1);
   consumed();
+});
+
+test("interruption spends a durable pass and abusive repeated process restarts cannot renew the lifetime budget", () => {
+  const w = world();
+  const { interrupted, saved } = interruptAfterResponse(w);
+  assert.equal(interrupted.signal, "SIGKILL");
+  assert.equal(saved.mergeAttempt?.reads, 1);
+  assert.equal(saved.mergeAttempt?.result, w.merged);
+  const afterInterruptedRestart = TOTAL_READS - 1 - READS_PER_RUN;
+  for (const remaining of [READS_PER_RUN, afterInterruptedRestart, 0]) {
+    script(
+      w,
+      Array.from({ length: remaining }, () =>
+        prStep(w, { state: "OPEN", mergeCommit: null }),
+      ),
+      true,
+    );
+    const resumed = child(w, { op: "reconcile-merge", number: ISSUE });
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.match(REFUSED.parse(JSON.parse(resumed.stdout)).reason, BOUNDED);
+    const current = readWriteState(w.cfg, ISSUE);
+    assert.equal(current.merged, null);
+    assert.equal(current.security, null);
+    assert.equal(posts().length, 1);
+    consumed();
+  }
+  const exhausted = readWriteState(w.cfg, ISSUE);
+  assert.equal(exhausted.mergeAttempt?.reads, TOTAL_READS);
+  assert.deepEqual(exhausted.hardened, saved.hardened);
+  assert.deepEqual(exhausted.integration, saved.integration);
+  assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
 });

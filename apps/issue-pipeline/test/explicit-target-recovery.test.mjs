@@ -33,6 +33,7 @@ import {
 const { merge } = await import("../src/ops/merge.ts");
 const { reconcileMerge } = await import("../src/ops/merge-recovery.ts");
 const { readWriteState, stateBody } = await import("../src/saved-state.ts");
+const { saveState } = await import("../src/ops/save-state.ts");
 const { verify } = await import("../src/ops/verify.ts");
 const { mergedCode } = await import("../src/ops/merged-review.ts");
 const OK = z.looseObject({
@@ -157,5 +158,28 @@ test("interruption after durable 201 response recovers in a new process without 
     calls().some((args) => args[0] === "pr" && args[1] === "merge"),
     false,
   );
+  consumed();
+});
+
+test("a stale job snapshot cannot erase a confirmed receipt or its exact security rejection", () => {
+  const w = world();
+  script(w, [...prechecks(w), post(w), ...confirmation(w), mergeComment(w)]);
+  assert.equal(merge(w.cfg, request(w)).merged, true);
+  const confirmed = readWriteState(w.cfg, ISSUE);
+  assert.ok(confirmed.merged !== null);
+  const security = {
+    revision: confirmed.merged,
+    commentId: PR,
+    finding: { category: /** @type {const} */ ("rights"), reason: "unsafe" },
+  };
+  saveState(w.cfg, { number: ISSUE, state: { ...confirmed, security } });
+  saveState(w.cfg, { number: ISSUE, state: w.state });
+  const retained = readWriteState(w.cfg, ISSUE);
+  assert.deepEqual(retained.merged, confirmed.merged);
+  assert.deepEqual(retained.security, security);
+  assert.deepEqual(retained.codeMerged, { pr: PR, sha: w.merged });
+  assert.deepEqual(retained.mergeAttempt, confirmed.mergeAttempt);
+  assert.deepEqual(retained.hardened, w.state.hardened);
+  assert.equal(posts().length, 1);
   consumed();
 });

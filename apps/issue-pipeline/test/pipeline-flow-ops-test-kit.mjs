@@ -34,7 +34,9 @@ async function runFlowOps(root) {
       },
     );
     if (result.status !== 0) {
-      throw new Error(`real ops exited ${result.status}: ${result.stderr}`);
+      throw new Error(
+        `real ops exited ${result.status} (signal ${result.signal}, error ${result.error?.message ?? "none"}): ${result.stderr}`,
+      );
     }
     output = result.stdout;
   }
