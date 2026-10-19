@@ -135,6 +135,39 @@ function assertBranchAssigned(
   assignedBranch(cfg, n, state);
 }
 
+// Closed issues may recover only an incomplete Merge, never initialize work or
+// replay completion. This is claim eligibility, not own-merge authorization:
+// without a saved receipt, the existing external-postmerge gates still apply.
+function assertClosedMergeRecovery(
+  cfg: Config,
+  n: number,
+  comments: readonly IssueComment[],
+): void {
+  const saved = readClaimState(cfg, n, comments);
+  if (
+    saved === null ||
+    resumeOf(saved).stage !== "merge" ||
+    saved.pr === null
+  ) {
+    throw new OpsError(`#${n} is not open`);
+  }
+  const pr = issuePullRequest(cfg, n, saved);
+  const merged = codeMergedOf(pr);
+  if (
+    pr === null ||
+    merged === null ||
+    (saved.headSha !== null &&
+      saved.headSha !== pr.headSha &&
+      saved.headSha !== saved.codeMerged?.sha) ||
+    (saved.codeMerged !== null &&
+      (saved.codeMerged.pr !== merged.pr ||
+        saved.codeMerged.sha !== merged.sha)) ||
+    (saved.merged !== null && saved.merged.code !== merged.sha)
+  ) {
+    throw new OpsError(`#${n}'s incomplete Merge is not confirmed by GitHub`);
+  }
+}
+
 // `state` with its PR and code merge as GitHub reports them. A recorded
 // code merge GitHub doesn't confirm, or a completion GitHub reports another
 // code merge for (none, for a change that lives only in the wiki), throws:
@@ -222,4 +255,4 @@ function claimedState(
 }
 
 export type { BranchChanged, ClaimedState };
-export { assertBranchAssigned, claimedState };
+export { assertBranchAssigned, assertClosedMergeRecovery, claimedState };

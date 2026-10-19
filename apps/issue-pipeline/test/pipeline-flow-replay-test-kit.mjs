@@ -1,5 +1,7 @@
 // @ts-check
 // An own-merge interruption fixture with real built jobs/ops and local fakes.
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
@@ -12,6 +14,7 @@ import {
 } from "./pipeline-flow-kit.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
+import { runStage } from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
   implementorTurn,
@@ -23,6 +26,20 @@ import {
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see a polite greeting";
 const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
+const SECURITY_TAG_LENGTH = 12;
+
+/** @param {Flow} flow @param {string} code */
+function securityEvidence(flow, code) {
+  const launch = piLog(flow.piDir)
+    .filter((entry) => entry.start === true)
+    .at(-1);
+  const tag = `review-security-${code.slice(0, SECURITY_TAG_LENGTH)}`;
+  const diff = fs.readFileSync(
+    path.join(flow.root, "runs", "o__r", `issue-${ISSUE}`, tag, "diff.patch"),
+    "utf8",
+  );
+  return { launch, diff };
+}
 const STATE_BLOCK = /<!-- agent-pipeline:state\n[\s\S]*?\n-->/u;
 const NO_WRITER_OPS = [
   "merge",
@@ -39,6 +56,32 @@ const CLAIM = z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
   }),
 });
+/** @param {import("./pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
+function expectedReplay(interruptedWorld, checked = true) {
+  const state = savedState(interruptedWorld);
+  const codeMerged = { pr: state.pr, sha: state.merged.code };
+  /** @type {{ pass: boolean, headSha: string }[]} */
+  let verified = [];
+  /** @type {{ pass: boolean }[]} */
+  let wikiChecked = [];
+  if (checked) {
+    verified = [{ pass: true, headSha: state.merged.code }];
+    wikiChecked = [{ pass: true }];
+  }
+  return {
+    claimCodeMerged: codeMerged,
+    forbidden: [],
+    merges: 1,
+    verified,
+    wikiChecked,
+    base: state.merged.code,
+    hardened: state.hardened,
+    integration: state.integration,
+    codeMerged,
+    unsupported: [],
+  };
+}
+
 /** @param {Flow} flow @returns {number} */
 function sessions(flow) {
   return piLog(flow.piDir).filter((entry) => entry.start === true).length;
@@ -124,4 +167,34 @@ function prepareReplayFlow(flow) {
   return originalWiki;
 }
 
-export { merges, prepareReplayFlow, replaceState, replayFacts, sessions };
+/** @param {Flow} flow @param {boolean} [delayMergeConfirmation] */
+function createReplayFlow(flow, delayMergeConfirmation = false) {
+  const originalWiki = prepareReplayFlow(flow);
+  for (const stage of ["author", "implement", "review"]) {
+    const result = runStage(flow, stage);
+    if (result.end !== "next") {
+      throw new Error(
+        `setup ${stage}: ${JSON.stringify(result)}; ${JSON.stringify(opsTrace(flow).at(-1))}`,
+      );
+    }
+  }
+  withWorld(flow.ghDir, (world) => {
+    world.failedHead = savedState(world).hardened.code;
+    world.delayMergeConfirmation = delayMergeConfirmation;
+  });
+  runStage(flow, "merge");
+  runStage(flow, "merge");
+  const interruptedWorld = readWorld(flow.ghDir);
+  return { flow, interruptedWorld, originalWiki };
+}
+
+export {
+  createReplayFlow,
+  expectedReplay,
+  merges,
+  prepareReplayFlow,
+  replaceState,
+  replayFacts,
+  securityEvidence,
+  sessions,
+};

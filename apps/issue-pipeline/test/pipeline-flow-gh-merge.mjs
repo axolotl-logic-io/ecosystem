@@ -11,6 +11,7 @@ import {
 /** @typedef {import("./pipeline-flow-gh-world.mjs").Answer} Answer */
 const REQUEST_ARGS = 8;
 const FULL_HEAD = /^[0-9a-f]{40}$/u;
+const CLOSES_ISSUE = /\bCloses #(?<issue>\d+)\b/gu;
 
 /** @param {string} status @param {object | null} body @param {number} [code] @returns {Answer} */
 function response(status, body, code = 0) {
@@ -89,6 +90,16 @@ function branchMerge(world, args) {
   gitIn(world.origin, ["update-ref", `refs/heads/${base}`, sha, parent]);
   Object.assign(change, { state: "MERGED", mergeOid: sha, mergedHead: head });
   issueOf(world, change.number).state = "closed";
+  const defaultRef = gitIn(world.origin, ["symbolic-ref", "HEAD"]);
+  if (defaultRef === `refs/heads/${base}`) {
+    for (const match of change.body.matchAll(CLOSES_ISSUE)) {
+      const { issue } = match.groups ?? {};
+      Object.assign(issueOf(world, Number(issue)), {
+        state: "closed",
+        stateReason: "completed",
+      });
+    }
+  }
   return response("201 Created", { sha });
 }
 
