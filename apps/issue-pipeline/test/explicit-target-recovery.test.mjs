@@ -1,0 +1,161 @@
+// @ts-check
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { test } from "node:test";
+import { z } from "zod";
+import {
+  child,
+  confirmation,
+  interruptAfterResponse,
+  mergeComment,
+  posts,
+} from "./explicit-target-recovery-test-kit.mjs";
+import {
+  calls,
+  consumed,
+  mergedView,
+  post,
+  prechecks,
+  prStep,
+  request,
+  script,
+} from "./explicit-target-test-kit.mjs";
+import {
+  BASE,
+  commit,
+  git,
+  ISSUE,
+  PR,
+  world,
+} from "./explicit-target-world-test-kit.mjs";
+
+const { merge } = await import("../src/ops/merge.ts");
+const { reconcileMerge } = await import("../src/ops/merge-recovery.ts");
+const { readWriteState, stateBody } = await import("../src/saved-state.ts");
+const { verify } = await import("../src/ops/verify.ts");
+const { mergedCode } = await import("../src/ops/merged-review.ts");
+const OK = z.looseObject({
+  ok: z.literal(true),
+  merged: z.literal(true),
+  mergeCommit: z.string(),
+  byHand: z.boolean().optional(),
+});
+for (const delay of [
+  { name: "stale OPEN", extra: { state: "OPEN", mergeCommit: null } },
+  { name: "missing result", extra: { state: "MERGED", mergeCommit: null } },
+  {
+    name: "malformed result",
+    extra: { state: "MERGED", mergeCommit: { oid: "bad" } },
+  },
+  { name: "unreadable metadata", code: 1, extra: {} },
+]) {
+  test(`${delay.name} then exact evidence confirms one own merge within the finite bound`, () => {
+    const w = world();
+    script(w, [
+      ...prechecks(w),
+      post(w),
+      { ...prStep(w, delay.extra), code: delay.code ?? 0 },
+      ...confirmation(w),
+      mergeComment(w),
+    ]);
+    assert.deepEqual(merge(w.cfg, request(w)), {
+      merged: true,
+      mergeCommit: w.merged,
+      headSha: w.head,
+    });
+    consumed();
+    const saved = readWriteState(w.cfg, ISSUE);
+    assert.equal(saved.merged?.code, w.merged);
+    assert.equal(saved.mergeAttempt?.reads, 2);
+    assert.equal(saved.mergeAttempt?.result, w.merged);
+    assert.equal(posts().length, 1);
+    assert.deepEqual(saved.hardened, w.state.hardened);
+    assert.deepEqual(saved.integration, w.state.integration);
+    assert.equal(saved.security, null);
+  });
+}
+
+test("actual result M survives a later target tip and checks/security read M and P..M", () => {
+  const w = world({ concurrent: true });
+  const { interrupted, saved: original } = interruptAfterResponse(w);
+  assert.equal(
+    interrupted.signal,
+    "SIGKILL",
+    `${interrupted.stdout} ${interrupted.stderr}`,
+  );
+  assert.equal(original.mergeAttempt?.result, w.merged);
+  assert.equal(original.merged, null);
+  git(w.seed, ["checkout", "-q", BASE]);
+  const later = commit(w.seed, "later.txt", "later integration\n");
+  git(w.seed, ["push", "-q", "origin", `${later}:refs/heads/${BASE}`]);
+  script(w, confirmation(w), true);
+  assert.deepEqual(reconcileMerge(w.cfg, { number: ISSUE }), {
+    merged: true,
+    mergeCommit: w.merged,
+    headSha: w.head,
+  });
+  assert.equal(readWriteState(w.cfg, ISSUE).merged?.code, w.merged);
+  assert.equal(posts().length, 1);
+  consumed();
+  script(
+    w,
+    [prStep(w, mergedView(w), true), prStep(w, mergedView(w), true)],
+    true,
+  );
+  const checked = verify(w.cfg, {
+    number: ISSUE,
+    codeMerged: { pr: PR, sha: w.merged },
+  });
+  assert.equal(checked.headSha, w.merged);
+  assert.equal(checked.pass, true);
+  consumed();
+  script(
+    w,
+    [prStep(w, mergedView(w), true), prStep(w, mergedView(w), true)],
+    true,
+  );
+  const reviewed = mergedCode(w.cfg, ISSUE, { pr: PR, sha: w.merged });
+  assert.deepEqual(reviewed.range, { from: w.parent, head: w.merged });
+  assert.deepEqual(reviewed.files, ["early.txt", "late.txt"]);
+  assert.equal(fs.existsSync(path.join(w.wt, "later.txt")), false);
+  assert.equal(posts().length, 1);
+  consumed();
+});
+
+test("interruption after durable 201 response recovers in a new process without another POST", () => {
+  const w = world();
+  const reviewed = {
+    ...w.revision,
+    code: git(w.wt, ["rev-parse", `${w.head}~1`]),
+  };
+  w.state.hardened = reviewed;
+  w.state.integration = { reviewed, revision: w.revision };
+  fs.writeFileSync(path.join(w.place, "state.json"), stateBody(ISSUE, w.state));
+  const { interrupted, saved: original } = interruptAfterResponse(w);
+  assert.equal(
+    interrupted.signal,
+    "SIGKILL",
+    `${interrupted.stdout} ${interrupted.stderr}`,
+  );
+  assert.equal(original.mergeAttempt?.result, w.merged);
+  assert.equal(original.merged, null);
+  assert.deepEqual(original.hardened, reviewed);
+  assert.equal(posts().length, 1);
+  script(w, confirmation(w), true);
+  const resumed = child(w, { op: "reconcile-merge", number: ISSUE });
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const reply = OK.parse(JSON.parse(resumed.stdout));
+  assert.equal(reply.mergeCommit, w.merged);
+  assert.equal(reply.byHand, undefined);
+  const saved = readWriteState(w.cfg, ISSUE);
+  assert.deepEqual(saved.hardened, original.hardened);
+  assert.deepEqual(saved.integration, original.integration);
+  assert.equal(saved.merged?.code, w.merged);
+  assert.equal(posts().length, 1);
+  assert.equal(
+    calls().some((args) => args[0] === "pr" && args[1] === "merge"),
+    false,
+  );
+  consumed();
+});
