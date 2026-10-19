@@ -1,5 +1,5 @@
-// What a pipeline_commit call plans before git runs (wiki Pipeline-Roles-
-// Shared, "pipeline_commit"): the refused flags and paths, how pathspecs
+// What a pipeline_commit call plans before git runs (wiki
+// Pipeline-Job-Contract#pipeline_commit): the refused flags and paths, how pathspecs
 // route to the code checkout (repo/) and the wiki checkout (docs/), the access
 // refusals (#338), the wiki's commit of everything with the same message,
 // the session trailer every commit ends with, and none for a scope without

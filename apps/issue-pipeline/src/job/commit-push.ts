@@ -1,5 +1,5 @@
-// The job's side of `pipeline_commit` (Pipeline-Roles-Shared, "Push"): after
-// a writer session commits, the job, which alone holds the token, pushes the
+// The job's side of `pipeline_commit` (Pipeline-Job-Contract#reply-and-push):
+// after a writer session commits, the job, which alone holds the token, pushes the
 // checkout's code commits that origin lacks to the issue's branch, and the
 // wiki checkout's when the stage writes the wiki, and records each push under
 // the session's launch in job.json and as a line of `pushes.jsonl` in the

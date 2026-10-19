@@ -1,5 +1,5 @@
-// The usage log (`log-usage-at-finish` in the wiki's Pipeline-Roles-Shared
-// page): what each finished session and job spent, as public records in a
+// The usage log (the wiki's Token-Spend#session-records):
+// what each finished session and job spent, as public records in a
 // hidden block of the issue's usage comments (usage-comment.ts). This module
 // alone owns the records' fields and the kinds of value they may hold
 // (numbers, booleans, times and names from fixed sets, never free text). It

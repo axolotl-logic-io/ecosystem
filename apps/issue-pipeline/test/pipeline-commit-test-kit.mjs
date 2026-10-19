@@ -2,7 +2,7 @@
 // pipeline_commit's integration tests' jobs, in-process against bare remotes:
 // a real job checkout (openJobCheckout), the job's control socket serving
 // pushes (openControl with pushServerOf), and the tool's default export
-// registered on a fake pi API (Pipeline-Roles-Shared, "pipeline_commit").
+// registered on a fake pi API (Pipeline-Job-Contract#pipeline_commit).
 // Importing it sets a temporary HOME and pipeline root (isolated-root-test-kit)
 // before it loads src, so it comes before anything a test imports from src/.
 

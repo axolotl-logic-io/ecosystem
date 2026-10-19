@@ -1,6 +1,6 @@
 // The pi extension that gives a stage job's writer session its only way to
-// commit: the `pipeline_commit` tool (Pipeline-Roles-Shared,
-// "pipeline_commit"). `pi -e pipeline-commit.mjs` registers it; the session's
+// commit: the `pipeline_commit` tool (Pipeline-Job-Contract#pipeline_commit).
+// `pi -e pipeline-commit.mjs` registers it; the session's
 // ISSUE_PIPELINE_COMMIT_SCOPE (pipeline-commit.ts) names the job's folder,
 // its code and wiki checkouts there, what it may commit and the job to ask
 // for the push. The tool runs the planner's
@@ -44,7 +44,7 @@ interface RepoResult {
   sha: string | null;
 }
 
-// The tool's reply, as Pipeline-Roles-Shared gives it.
+// The tool's reply, as Pipeline-Job-Contract#pipeline_commit gives it.
 interface CommitReply extends PushReply {
   code: RepoResult | null;
   wiki: RepoResult | null;

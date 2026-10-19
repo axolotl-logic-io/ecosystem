@@ -1,7 +1,7 @@
 // The stops: each is a failed control, a limit or check the issue didn't
 // pass. Each control has its own label, agent:stopped-<code>, and every stop
-// posts a comment naming the control, the reason and how to resume. The wiki
-// page Agent-Labels in the configured repository documents every label; keep
+// posts a comment naming the control, the reason and how to resume.
+// The pipeline wiki's Agent-Labels page documents every label; keep
 // it in step with this table. A stop's reason is free text; the first
 // matching control below names it. A label of a removed control, such as
 // agent:stopped-budget, still reads as a stop (isStopLabel).

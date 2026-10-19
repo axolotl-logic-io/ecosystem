@@ -2,7 +2,7 @@
 // pipeline_commit refuses a commit to a checkout the stage only reads
 // (commit-needs-write-access, #338), lets the reviewer's hardening and
 // merge's integration commit both checkouts, and a repo with no wiki gets no
-// docs/ (Pipeline-Roles-Shared, "pipeline_commit" and "Wiki provisioning").
+// docs/ (Pipeline-Job-Contract#pipeline_commit).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

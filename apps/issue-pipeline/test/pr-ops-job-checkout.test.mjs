@@ -1,6 +1,6 @@
 // @ts-check
 // start-pr from a stage job: its empty commit passes the job checkout's
-// pre-commit hook (Pipeline-Roles-Shared, "pipeline_commit"), and the branch
+// pre-commit hook (Pipeline-Job-Contract#pipeline_commit), and the branch
 // on origin starts with it.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

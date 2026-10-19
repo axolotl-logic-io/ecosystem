@@ -1,7 +1,6 @@
 // @ts-check
 // pipeline_commit end to end, in-process against bare remotes, through the
-// jobs of pipeline-commit-test-kit.mjs (Pipeline-Roles-Shared,
-// "pipeline_commit").
+// jobs of pipeline-commit-test-kit.mjs (Pipeline-Job-Contract#reply-and-push).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

@@ -2,7 +2,7 @@
 // The stage job's roles: which role each of the four stages runs as (its
 // sessions are job-sessions.test.mjs's), each stage's wiki and code access
 // and commit scope, the roles' merged settings, and the environment a session's pi
-// gets, which holds no token (Pipeline-Roles-Shared, "No token in sessions").
+// gets, which holds no token (Pipeline-Job-Contract#shared-role-rules).
 
 import assert from "node:assert/strict";
 import fs from "node:fs";

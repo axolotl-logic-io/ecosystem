@@ -2,8 +2,8 @@
 // A stage job's folder holds its code checkout, repo/, and its wiki
 // checkout, docs/, side by side (separate-checkouts, #338); every stage gets
 // docs/ (every-role-reads-wiki), and teardown finds the work left in either
-// (Running-the-Issue-Pipeline, "Stage jobs"). The author reads docs/; the
-// implementor writes it (STAGE_WIKI_ACCESS).
+// (Pipeline-Job-Contract#recovery-and-checkout-boundaries). The author reads
+// docs/; the implementor writes it (STAGE_WIKI_ACCESS).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
