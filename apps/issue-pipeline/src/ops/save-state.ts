@@ -47,9 +47,10 @@ function withSavedCodeMerge(
   ) {
     ({ merged } = saved);
   }
+  // An exact durable decision survives an interrupted save's stale snapshot,
+  // whether it rejected the result or already cleared it for completion.
   let { security } = state;
   if (
-    saved.security?.finding !== null &&
     saved.security !== null &&
     merged !== null &&
     sameRevision(saved.security.revision, merged)

@@ -168,28 +168,33 @@ test("interruption after durable 201 response recovers in a new process without 
   consumed();
 });
 
-test("a stale job snapshot cannot erase a confirmed receipt or its exact security rejection", () => {
-  const w = world();
-  script(w, [...prechecks(w), post(w), ...confirmation(w), mergeComment(w)]);
-  assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, true);
-  const confirmed = readWriteState(w.cfg, ISSUE);
-  assert.ok(confirmed.merged !== null);
-  const security = {
-    revision: confirmed.merged,
-    commentId: PR,
-    finding: { category: /** @type {const} */ ("rights"), reason: "unsafe" },
-  };
-  saveState(w.cfg, { number: ISSUE, state: { ...confirmed, security } });
-  saveState(w.cfg, { number: ISSUE, state: w.state });
-  const retained = readWriteState(w.cfg, ISSUE);
-  assert.deepEqual(retained.merged, confirmed.merged);
-  assert.deepEqual(retained.security, security);
-  assert.deepEqual(retained.codeMerged, { pr: PR, sha: w.merged });
-  assert.deepEqual(retained.mergeAttempt, confirmed.mergeAttempt);
-  assert.deepEqual(retained.hardened, w.state.hardened);
-  assert.equal(posts().length, 1);
-  consumed();
-});
+for (const finding of [
+  null,
+  { category: /** @type {const} */ ("rights"), reason: "unsafe" },
+]) {
+  test(`a stale job snapshot cannot erase a confirmed receipt or exact security decision: ${JSON.stringify(finding)}`, () => {
+    const w = world();
+    script(w, [...prechecks(w), post(w), ...confirmation(w), mergeComment(w)]);
+    assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, true);
+    const confirmed = readWriteState(w.cfg, ISSUE);
+    assert.ok(confirmed.merged !== null);
+    const security = {
+      revision: confirmed.merged,
+      commentId: PR,
+      finding,
+    };
+    saveState(w.cfg, { number: ISSUE, state: { ...confirmed, security } });
+    saveState(w.cfg, { number: ISSUE, state: w.state });
+    const retained = readWriteState(w.cfg, ISSUE);
+    assert.deepEqual(retained.merged, confirmed.merged);
+    assert.deepEqual(retained.security, security);
+    assert.deepEqual(retained.codeMerged, { pr: PR, sha: w.merged });
+    assert.deepEqual(retained.mergeAttempt, confirmed.mergeAttempt);
+    assert.deepEqual(retained.hardened, w.state.hardened);
+    assert.equal(posts().length, 1);
+    consumed();
+  });
+}
 
 test("trusted input movement during delayed confirmation retains landed truth but cannot create an own receipt", () => {
   const w = world();
