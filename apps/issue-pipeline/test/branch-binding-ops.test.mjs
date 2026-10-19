@@ -77,7 +77,10 @@ test("merge refuses a state bound to another branch than the assigned one, writi
   const w = world();
   openAt(w);
   const elsewhere = approvedState(approvedOf(w), { branch: "x/y" });
-  fakeGh.reply([prView({ headRefOid: w.sha })]);
+  fakeGh.reply([
+    savedListing(approvedState(approvedOf(w))),
+    prView({ headRefOid: w.sha }),
+  ]);
   assert.throws(
     () => merge(w.cfg, mergeRequest(w, elsewhere)),
     BOUND_ELSEWHERE,
@@ -85,7 +88,10 @@ test("merge refuses a state bound to another branch than the assigned one, writi
   assert.deepEqual(writes(), []);
   // A legacy state (branch null) is on agent/issue-7, not a new assignment.
   const legacy = approvedState(approvedOf(w));
-  fakeGh.reply([prView({ headRefOid: w.sha })]);
+  fakeGh.reply([
+    savedListing(approvedState(approvedOf(w))),
+    prView({ headRefOid: w.sha }),
+  ]);
   assert.throws(
     () => merge(assignedCfg(w), mergeRequest(w, legacy)),
     WORK_IS_ON,
@@ -97,7 +103,10 @@ test("merge of a state bound to its assigned branch refuses a PR from the legacy
   const w = world();
   openAt(w);
   const bound = approvedState(approvedOf(w), { branch: ASSIGNED });
-  fakeGh.reply([prView({ headRefOid: w.sha })]);
+  fakeGh.reply([
+    savedListing(approvedState(approvedOf(w))),
+    prView({ headRefOid: w.sha }),
+  ]);
   assert.throws(
     () => merge(assignedCfg(w), mergeRequest(w, bound)),
     NOT_ASSIGNED_PR,

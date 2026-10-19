@@ -15,6 +15,7 @@ const { readWriteAuthority } = await import("../src/write-authority.ts");
 const { newIssueState } = await import("../src/state.ts");
 const { refuseOnceMerged, pushOps } = await import("../src/ops/push.ts");
 const ISSUE = 7;
+const SHA_LENGTH = 40;
 const INVALID = /write authority/u;
 const file = path.join(isolatedRoot, "authority-config.json");
 fs.writeFileSync(
@@ -38,6 +39,27 @@ test("current saved state authorizes premerge code; codeMerged and own-merge rec
   assert.equal(readWriteAuthority(cfg, ISSUE).codeWritable, true);
   for (const receipt of [
     { codeMerged: { pr: 42, sha: "merged" } },
+    {
+      mergeAttempt: {
+        repo: cfg.repo,
+        pr: 42,
+        target: cfg.baseBranch,
+        branch: valid.branch,
+        authorized: {
+          code: "a".repeat(SHA_LENGTH),
+          wiki: null,
+          inputs: "trusted",
+        },
+        hardened: {
+          code: "a".repeat(SHA_LENGTH),
+          wiki: null,
+          inputs: "trusted",
+        },
+        integration: null,
+        result: null,
+        reads: 0,
+      },
+    },
     { merged: { code: "merged", wiki: null, inputs: "trusted" } },
     {
       security: {
@@ -67,6 +89,7 @@ test("missing, legacy, mismatched and malformed critical authority fail closed, 
     { ...valid, hardened: {} },
     { ...valid, integration: {} },
     { ...valid, security: {} },
+    { ...valid, mergeAttempt: {} },
     { ...valid, gherkin: {} },
     withoutBranch,
     withoutReceipt,

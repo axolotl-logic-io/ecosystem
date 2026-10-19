@@ -1,7 +1,8 @@
 // The job's state writes: save-state writes a role's state and nothing else;
 // release writes the state the job ends with, renewing its lease, and keeps
-// the lane's claim live. Neither can set or clear the code merge: only the
-// claim records it, from GitHub, so the saved one always stays. The
+// the lane's claim live. Neither can clear attempted/observed merge evidence
+// recorded by the claim or merge reconciliation. Stale role snapshots must
+// not erase a response or confirmed receipt saved inside the merge op. The
 // comments the job queued ride along on every op (see ops.ts).
 
 import { z } from "zod";
@@ -11,7 +12,7 @@ import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
-import { ISSUE_STATE } from "../state.ts";
+import { ISSUE_STATE, sameRevision } from "../state.ts";
 
 const SAVE_REQUEST = z.looseObject({
   number: z.number().int().positive(),
@@ -37,7 +38,32 @@ function withSavedCodeMerge(
     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
   }
   const saved = readWriteState(cfg, n);
-  return { ...state, codeMerged: saved.codeMerged };
+  let { merged } = state;
+  if (
+    saved.mergeAttempt !== null &&
+    saved.merged !== null &&
+    saved.merged.code === saved.mergeAttempt.result &&
+    state.merged?.code !== saved.merged.code
+  ) {
+    ({ merged } = saved);
+  }
+  // An exact durable decision survives an interrupted save's stale snapshot,
+  // whether it rejected the result or already cleared it for completion.
+  let { security } = state;
+  if (
+    saved.security !== null &&
+    merged !== null &&
+    sameRevision(saved.security.revision, merged)
+  ) {
+    ({ security } = saved);
+  }
+  return {
+    ...state,
+    security,
+    merged,
+    codeMerged: saved.codeMerged,
+    mergeAttempt: saved.mergeAttempt,
+  };
 }
 
 // Writes issue `n`'s state, with the code merge it has saved.

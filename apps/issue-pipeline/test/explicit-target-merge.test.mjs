@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import {
   calls,
   consumed,
@@ -12,6 +13,7 @@ import {
   prechecks,
   prStep,
   request,
+  resultInputs,
   script,
 } from "./explicit-target-test-kit.mjs";
 import {
@@ -73,9 +75,10 @@ test("literal configured integration and full H survive a concurrent source bran
     }),
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
+    ...resultInputs(w),
     commentStep(w),
   ]);
-  assert.deepEqual(merge(w.cfg, request(w)), {
+  assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
     merged: true,
     mergeCommit: w.merged,
     headSha: w.head,
@@ -101,9 +104,10 @@ test("main is a valid configured source base, not an implicit production exclusi
     post(w),
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
+    ...resultInputs(w),
     commentStep(w),
   ]);
-  assert.deepEqual(merge(w.cfg, request(w)), {
+  assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
     merged: true,
     mergeCommit: w.merged,
     headSha: w.head,
@@ -137,9 +141,14 @@ test("PR retarget during the request cannot select main and stops after landing 
   script(w, [
     ...prechecks(w),
     post(w),
-    prStep(w, { ...mergedView(w), baseRefName: "main" }),
+    ...Array.from({ length: 3 }, () =>
+      prStep(w, { ...mergedView(w), baseRefName: "main" }),
+    ),
   ]);
-  assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, IDENTITY);
+  assert.match(
+    REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+    IDENTITY,
+  );
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.merged);
   assert.equal(git(w.origin, ["rev-parse", "main"]), w.base);
   assert.equal(mutations().length, 1);
@@ -153,9 +162,10 @@ test("concurrent integration contribution is checked and security reads detached
     post(w),
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
+    ...resultInputs(w),
     commentStep(w),
   ]);
-  assert.equal(merge(w.cfg, request(w)).merged, true);
+  assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, true);
   consumed();
   script(w, receiptSteps(w));
   const verified = verify(
@@ -212,7 +222,7 @@ for (const head of [
     script(w, []);
     const req = request(w);
     assert.throws(
-      () => merge(w.cfg, { ...req, expectedSha: head }),
+      () => merge(w.cfg, { ...req, expectedSha: head }, confirmationClock()),
       INVALID_REQUEST,
     );
     assert.deepEqual(calls(), []);
@@ -222,7 +232,7 @@ for (const head of [
 test("a previously MERGED PR returns observed external truth without another mutation", () => {
   const w = world();
   script(w, [prStep(w, mergedView(w))]);
-  assert.deepEqual(merge(w.cfg, request(w)), {
+  assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
     merged: true,
     byHand: true,
     mergeCommit: w.merged,
@@ -238,7 +248,7 @@ test("HTTP204 after another actor landed H never fabricates an own receipt or re
     ...prechecks(w),
     post(w, { stdout: "HTTP/2.0 204 No Content\r\n\r\n" }),
   ]);
-  const reply = REFUSED.parse(merge(w.cfg, request(w)));
+  const reply = REFUSED.parse(merge(w.cfg, request(w), confirmationClock()));
   assert.ok(reply.reason.includes("no fresh own receipt"));
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.merged);
   assert.equal(mutations().length, 1);

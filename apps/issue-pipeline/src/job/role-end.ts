@@ -141,14 +141,20 @@ function thrownEnd(error: unknown, state: IssueState): RoleEnd {
 }
 
 // The stop for a PR branch whose head the pipeline didn't push, read after
-// the claim adopted the pipeline's own pushes. With the code merged the
-// branch head is no longer the code revision, so it isn't compared.
+// the claim adopted the pipeline's own pushes. After an attempted merge,
+// only read-only reconciliation can establish the retained PR head/result;
+// today's mutable branch tip must not prevent that recovery.
 function branchMoved(
   state: IssueState,
   remoteHead: string | null,
 ): RoleEnd | null {
   const { headSha, codeMerged } = state;
-  if (codeMerged !== null || headSha === null || remoteHead === null) {
+  if (
+    state.mergeAttempt !== null ||
+    codeMerged !== null ||
+    headSha === null ||
+    remoteHead === null
+  ) {
     return null;
   }
   if (remoteHead === headSha) {

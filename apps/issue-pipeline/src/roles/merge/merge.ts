@@ -33,7 +33,7 @@ import { finishCompleted } from "./completion.ts";
 import type { IntegrationNeed } from "./integration.ts";
 import { integrate } from "./integration.ts";
 import { afterOwnMerge, publishOnly } from "./publish.ts";
-import { recoverOwnMerge } from "./recovery.ts";
+import { MERGE_REPLY, recoverAttempt, recoverOwnMerge } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
 import { approvalGate } from "./source.ts";
@@ -43,16 +43,6 @@ const CI_STATUS = z.union([
   z.looseObject({ status: z.literal("no-checks") }),
   z.looseObject({ status: z.literal("fail"), failing: z.array(z.string()) }),
 ]);
-const MERGE = z.union([
-  z.looseObject({
-    merged: z.literal(true),
-    mergeCommit: z.string().min(1),
-    headSha: z.string().min(1),
-    byHand: z.boolean().optional(),
-  }),
-  z.looseObject({ merged: z.literal(false), reason: z.string().min(1) }),
-]);
-
 const CHECKS_ONLY = { code: false, wiki: false };
 
 function short(sha: string | null): string {
@@ -227,7 +217,7 @@ async function mergeCode(
       mergeQueue: ctx.mergeQueue,
       summary: mergeSummary(state, authorized),
     },
-    MERGE,
+    MERGE_REPLY,
   );
   if (!reply.merged) {
     return await refusedMerge(ctx, state, reply.reason);
@@ -254,6 +244,10 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   const { merged } = ctx.state;
   if (ctx.state.stage === "done" && merged !== null) {
     return await finishCompleted(ctx, ctx.state, merged);
+  }
+  const attempt = await recoverAttempt(ctx);
+  if (attempt !== null) {
+    return attempt;
   }
   const current = await currentRevision(ctx);
   const rejected = rejectedAgain(ctx.state, current.revision);

@@ -18,6 +18,7 @@ function readWriteAuthority(
   assignedBranch(cfg, issue, state);
   const { codeMerged, merged } = state;
   if (
+    state.mergeAttempt !== null ||
     codeMerged !== null ||
     (merged !== null && merged.code !== null) ||
     (state.security !== null && state.security.finding !== null)

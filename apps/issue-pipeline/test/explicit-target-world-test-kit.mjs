@@ -61,6 +61,7 @@ if (root.ROOT !== ROOT || root.HOME !== HOME) {
   throw new Error("src loaded outside the isolated HOME/ROOT");
 }
 const { loadConfig, paths } = await import("../src/config.ts");
+const { stateBody } = await import("../src/saved-state.ts");
 const { newIssueState } = await import("../src/state.ts");
 
 const ISSUE = 7;
@@ -154,6 +155,7 @@ function world(options = {}) {
       ...credentialConfig("bot"),
       allowedUsers: ["owner"],
       baseBranch: BASE,
+      mergeConfirmation: { deadlineSeconds: 3, backoffSeconds: [1] },
       commands: { test: "true" },
     }),
   );
@@ -164,6 +166,7 @@ function world(options = {}) {
   fs.mkdirSync(path.dirname(wt), { recursive: true });
   git(clone, ["worktree", "add", "-q", "-b", BRANCH, wt, `origin/${BRANCH}`]);
   const revision = { code: head, wiki: null, inputs: INPUTS };
+  /** @type {import("../src/state.ts").IssueState} */
   const state = {
     ...newIssueState(ISSUE),
     stage: /** @type {const} */ ("merge"),
@@ -173,6 +176,7 @@ function world(options = {}) {
     verifiedSha: head,
     flows: { code: true, wiki: false },
   };
+  fs.writeFileSync(path.join(place, "state.json"), stateBody(ISSUE, state));
   return {
     cfg,
     place,

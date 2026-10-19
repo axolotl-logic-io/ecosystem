@@ -6,6 +6,7 @@
 // comes after the merge, and lets the issue complete (security).
 
 import { z } from "zod";
+import { INTEGRATION, MERGE_ATTEMPT, REVISION } from "./merge-provenance.ts";
 import type { Status } from "./stages.ts";
 import { STAGES } from "./stages.ts";
 
@@ -23,14 +24,6 @@ const LEASE = z.object({
 });
 
 const FLOWS = z.object({ code: z.boolean(), wiki: z.boolean() });
-
-// What a review or a merge saw: the code head, the wiki head (null when the
-// issue has no wiki commits) and the trusted-inputs revision.
-const REVISION = z.object({
-  code: z.string().nullable(),
-  wiki: z.string().nullable(),
-  inputs: z.string(),
-});
 
 const FINDING = z.object({
   id: z.number().int().positive(),
@@ -66,15 +59,6 @@ const REVIEW = z.object({
   revision: REVISION.nullable().catch(null),
 });
 
-// The Reviewer's own integration of a hardened revision: `reviewed` is the
-// revision that passed hardening, as `hardened` names it, and `revision` the
-// revision the integration produced and checked. An integration never
-// changes the trusted inputs, so a receipt that names two inputs revisions
-// reads as none.
-const INTEGRATION = z
-  .object({ reviewed: REVISION, revision: REVISION })
-  .refine((receipt) => receipt.reviewed.inputs === receipt.revision.inputs);
-
 // The categories a security review stops an issue for (stops.ts codes).
 const SECURITY_CATEGORY = z.enum([
   "user-harm",
@@ -103,8 +87,9 @@ const MERGE_RETURN = z.object({
 });
 
 // The issue's PR as GitHub says it merged: its number and the merge
-// commit's oid. Only the claim sets it, from GitHub, never from a legacy
-// state or a reply; set, the code is in the base and only wiki work remains.
+// commit's oid. The claim or merge reconciliation records genuine GitHub
+// metadata, never a legacy state or unconfirmed response. It alone grants
+// no own provenance or completion authority.
 const CODE_MERGED = z.object({
   pr: z.number().int().positive(),
   sha: z.string().min(1),
@@ -158,6 +143,7 @@ const ISSUE_STATE = z.object({
   // The revision the merge job merged and published.
   merged: REVISION.nullable().catch(null),
   codeMerged: CODE_MERGED.nullable().catch(null),
+  mergeAttempt: MERGE_ATTEMPT.nullable().catch(null),
   asked: ASKED.nullable().catch(null),
   counts: COUNTS.catch(ZERO_COUNTS),
   log: z.array(z.string()).catch([]),
@@ -213,6 +199,7 @@ function newIssueState(number: number): IssueState {
     mergeReturn: null,
     merged: null,
     codeMerged: null,
+    mergeAttempt: null,
     asked: null,
     counts: { ...ZERO_COUNTS },
     log: [],
@@ -272,6 +259,7 @@ function isStatus(value: unknown): value is Status {
   return STATUS.safeParse(value).success;
 }
 
+export type { MergeAttempt } from "./merge-provenance.ts";
 export type {
   Asked,
   CodeMerged,

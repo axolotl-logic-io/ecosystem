@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import {
   calls,
   consumed,
@@ -16,6 +17,7 @@ import {
 } from "./explicit-target-test-kit.mjs";
 import {
   BASE,
+  BRANCH,
   git,
   ISSUE,
   PR,
@@ -25,6 +27,7 @@ import {
 const { merge } = await import("../src/ops/merge.ts");
 const { mergedCode } = await import("../src/ops/merged-review.ts");
 const { verify } = await import("../src/ops/verify.ts");
+const { readWriteState, stateBody } = await import("../src/saved-state.ts");
 const { mergedParent } = await import("../src/ops/merged-graph.ts");
 const UNSUPPORTED = /unsupported merged result/u;
 const REFUSED = z.looseObject({ merged: z.literal(false), reason: z.string() });
@@ -45,10 +48,15 @@ test("fast-forward multi-commit H stops on 201 and on restart before checks or r
   script(w, [
     ...prechecks(w),
     post(w),
-    prStep(w, mergedView(w)),
-    prStep(w, mergedView(w), true),
+    ...Array.from({ length: 3 }, () => [
+      prStep(w, mergedView(w)),
+      prStep(w, mergedView(w), true),
+    ]).flat(),
   ]);
-  assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, UNSUPPORTED);
+  assert.match(
+    REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+    UNSUPPORTED,
+  );
   consumed();
   script(w, receiptSteps(w));
   assert.throws(
@@ -98,10 +106,15 @@ for (const shape of ["reversed", "octopus"]) {
     script(w, [
       ...prechecks(w),
       post(unsupported),
-      prStep(unsupported, mergedView(unsupported)),
-      prStep(unsupported, mergedView(unsupported), true),
+      ...Array.from({ length: 3 }, () => [
+        prStep(unsupported, mergedView(unsupported)),
+        prStep(unsupported, mergedView(unsupported), true),
+      ]).flat(),
     ]);
-    assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, UNSUPPORTED);
+    assert.match(
+      REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+      UNSUPPORTED,
+    );
     assert.equal(git(w.origin, ["rev-parse", BASE]), sha);
     consumed();
     script(w, receiptSteps(unsupported));
@@ -132,5 +145,70 @@ test("genuine legacy squash can still prepare a full multi-commit security delta
   assert.ok(reviewed.diff.includes("earlier feature commit"));
   assert.ok(reviewed.diff.includes("last feature commit"));
   assert.equal(mutations().length, 0);
+  consumed();
+});
+
+/** @param {import("./explicit-target-world-test-kit.mjs").World} w @param {string} tree @param {string} label @param {string[]} parents */
+function graphNode(w, tree, label, ...parents) {
+  return git(w.seed, [
+    "commit-tree",
+    tree,
+    ...parents.flatMap((parent) => ["-p", parent]),
+    "-m",
+    label,
+  ]);
+}
+
+// Genuine criss-cross objects have two distinct best common ancestors.
+function crissCross() {
+  const w = world();
+  const tree = git(w.seed, ["rev-parse", `${w.head}^{tree}`]);
+  const left = graphNode(w, tree, "left", w.base);
+  const right = graphNode(w, tree, "right", w.base);
+  const parent = graphNode(w, tree, "parent", left, right);
+  const head = graphNode(w, tree, "head", right, left);
+  const merged = graphNode(w, tree, "ambiguous", parent, head);
+  const revision = { ...w.revision, code: head };
+  const state = {
+    ...w.state,
+    hardened: revision,
+    headSha: head,
+    verifiedSha: head,
+  };
+  const ambiguous = { ...w, head, merged, parent, revision, state };
+  git(w.seed, [
+    "push",
+    "-q",
+    "origin",
+    `${merged}:refs/heads/ambiguous`,
+    `+${head}:refs/heads/${BRANCH}`,
+  ]);
+  git(w.wt, ["fetch", "-q", "origin"]);
+  git(w.wt, ["checkout", "-q", "--detach", head]);
+  fs.writeFileSync(path.join(w.place, "state.json"), stateBody(ISSUE, state));
+  return ambiguous;
+}
+
+test("ambiguous criss-cross history retains landed truth but cannot establish own provenance", () => {
+  const ambiguous = crissCross();
+  const { cfg, merged } = ambiguous;
+  script(ambiguous, [
+    ...prechecks(ambiguous),
+    post(ambiguous),
+    ...Array.from({ length: 3 }, () => [
+      prStep(ambiguous, mergedView(ambiguous)),
+      prStep(ambiguous, mergedView(ambiguous), true),
+    ]).flat(),
+  ]);
+  assert.match(
+    REFUSED.parse(merge(cfg, request(ambiguous), confirmationClock())).reason,
+    UNSUPPORTED,
+  );
+  assert.deepEqual(readWriteState(cfg, ISSUE).codeMerged, {
+    pr: PR,
+    sha: merged,
+  });
+  assert.equal(readWriteState(cfg, ISSUE).merged, null);
+  assert.equal(mutations().length, 1);
   consumed();
 });

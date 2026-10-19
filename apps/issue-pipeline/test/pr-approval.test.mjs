@@ -9,6 +9,7 @@ import {
   ISSUE,
   PR,
   prView,
+  savedListing,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
@@ -52,6 +53,7 @@ for (const result of [
       response.commit = w.sha;
     }
     fakeGh.reply([
+      savedListing(approvedState(revision)),
       prView({ headRefOid: w.sha }),
       prView({ headRefOid: w.sha }),
       { ...approvalReply(w), stdout: JSON.stringify(response) },
@@ -76,6 +78,7 @@ test("failed approval never attempts a branch merge", () => {
   const revision = { code: w.sha, wiki: null, inputs: "inputs-1" };
   setCurrentRevision({ revision, baseSha: "base", pr: null });
   fakeGh.reply([
+    savedListing(approvedState(revision)),
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
     { ...approvalReply(w), code: 1, stderr: "approval refused" },

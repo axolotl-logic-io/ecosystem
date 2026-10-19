@@ -79,7 +79,9 @@ test("the interrupted own merge saved original hardening/integration and its act
   const state = savedState(interruptedWorld);
   assert.equal(state.stage, "merge");
   assert.equal(state.security, null);
-  assert.equal(state.codeMerged, null);
+  assert.deepEqual(state.codeMerged, { pr: state.pr, sha: state.merged.code });
+  assert.equal(state.mergeAttempt.result, state.merged.code);
+  assert.deepEqual(state.mergeAttempt.authorized, state.integration.revision);
   assert.equal(state.verifiedSha, state.merged.code);
   assert.notEqual(state.hardened.code, state.integration.revision.code);
   assert.notEqual(state.merged.code, state.integration.revision.code);

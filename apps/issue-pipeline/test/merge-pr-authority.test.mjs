@@ -2,6 +2,7 @@
 // Exact head authorization does not authorize a different PR target.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import { approvalReply, branchMergeReply } from "./merge-op-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
@@ -9,7 +10,9 @@ import {
   fakeGh,
   ISSUE,
   MERGE_COMMIT,
+  mergeAuthority,
   prView,
+  savedListing,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
@@ -44,6 +47,7 @@ for (const baseRefName of ["main", "other"]) {
       const w = world();
       current(w);
       fakeGh.reply([
+        savedListing(approvedState(approvedOf(w))),
         prView({
           headRefOid: w.sha,
           baseRefName,
@@ -51,7 +55,10 @@ for (const baseRefName of ["main", "other"]) {
           mergeCommit: { oid: MERGE_COMMIT },
         }),
       ]);
-      assert.throws(() => merge(w.cfg, request(w)), TARGET_REFUSAL);
+      assert.throws(
+        () => merge(w.cfg, request(w), confirmationClock()),
+        TARGET_REFUSAL,
+      );
       assert.deepEqual(writes(), []);
     });
   }
@@ -61,10 +68,14 @@ test("merge rechecks the actual target after revision and base prechecks before 
   const w = world();
   current(w);
   fakeGh.reply([
+    savedListing(approvedState(approvedOf(w))),
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha, baseRefName: "main" }),
   ]);
-  assert.throws(() => merge(w.cfg, request(w)), TARGET_REFUSAL);
+  assert.throws(
+    () => merge(w.cfg, request(w), confirmationClock()),
+    TARGET_REFUSAL,
+  );
   assert.deepEqual(writes(), []);
 });
 
@@ -78,6 +89,7 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
     prView({ headRefOid: w.sha }),
     approvalReply(w),
     branchMergeReply(w),
+    ...mergeAuthority(approvedState(approvedOf(w))),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
@@ -85,11 +97,14 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
       mergeCommit: { oid: MERGE_COMMIT },
     }),
   ]);
-  const result = merge(w.cfg, request(w));
+  const result = merge(w.cfg, request(w), confirmationClock());
   assert.equal(result.merged, false);
   assert.ok("reason" in result);
   assert.match(result.reason, TARGET_REFUSAL);
-  assert.equal(writes().length, 2);
+  assert.equal(writes().filter((args) => !args.includes("PATCH")).length, 2);
   assert.equal(writes()[0]?.[1], "repos/o/r/pulls/50/reviews");
-  assert.equal(writes()[1]?.[1], "repos/o/r/merges");
+  assert.equal(
+    writes().filter((args) => !args.includes("PATCH"))[1]?.[1],
+    "repos/o/r/merges",
+  );
 });

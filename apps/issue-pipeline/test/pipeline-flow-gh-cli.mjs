@@ -6,10 +6,10 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { api } from "./pipeline-flow-gh-api.mjs";
+import { viewOf } from "./pipeline-flow-gh-pr.mjs";
 import {
   branchHead,
   flagValue,
-  gitSucceeds,
   issueOf,
   jsonAnswer,
   now,
@@ -18,58 +18,11 @@ import {
 } from "./pipeline-flow-gh-world.mjs";
 
 /** @typedef {import("./pipeline-flow-gh-world.mjs").World} World */
-/** @typedef {import("./pipeline-flow-gh-world.mjs").FlowPr} FlowPr */
 /** @typedef {import("./pipeline-flow-gh-world.mjs").Answer} Answer */
 
 const FAKE_IDENTITY = /^fake-pipeline-(?<identity>dev|merge)--(?<login>.+)$/u;
 const UNSUPPORTED = "fake-gh: unsupported";
 const SOURCE_REF = /^repos\/[^/]+\/[^/]+\/git\/refs\/heads\//u;
-
-/**
- * GitHub's mergeability of an open PR: clean on the base, behind it, or
- * conflicting with it.
- * @param {World} world @param {FlowPr} change @param {string | null} head
- */
-function mergeability(world, change, head) {
-  const base = branchHead(world.origin, change.base);
-  const clean = { mergeable: "MERGEABLE", mergeStateStatus: "CLEAN" };
-  if (change.state !== "OPEN" || head === null || base === null) {
-    return clean;
-  }
-  if (gitSucceeds(world.origin, ["merge-base", "--is-ancestor", base, head])) {
-    return clean;
-  }
-  const tree = ["merge-tree", "--write-tree", base, head];
-  if (gitSucceeds(world.origin, tree)) {
-    return { mergeable: "MERGEABLE", mergeStateStatus: "BEHIND" };
-  }
-  return { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" };
-}
-
-/**
- * The PR as `gh pr view --json` shows it.
- * @param {World} world @param {FlowPr} change @returns {Record<string, unknown>}
- */
-function viewOf(world, change) {
-  const live = branchHead(world.origin, change.head);
-  let mergeCommit = null;
-  if (change.mergeOid !== null) {
-    mergeCommit = { oid: change.mergeOid };
-  }
-  return {
-    number: change.number,
-    state: change.state,
-    title: change.title,
-    body: change.body,
-    headRefName: change.head,
-    headRefOid: change.mergedHead ?? live ?? change.closedHead ?? "",
-    baseRefName: change.base,
-    isCrossRepository: false,
-    isDraft: change.isDraft,
-    mergeCommit,
-    ...mergeability(world, change, live),
-  };
-}
 
 /** @param {World} world @param {readonly string[]} args @returns {Answer} */
 function createPr(world, args) {
