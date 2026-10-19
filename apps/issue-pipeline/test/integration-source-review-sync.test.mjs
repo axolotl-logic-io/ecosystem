@@ -5,8 +5,8 @@
 // GitHub's confirmed merge commit is the reviewed head, its change against
 // its first parent and the whole wiki change are reviewed, with the checkout
 // detached at it; a merge GitHub doesn't confirm, or a commit not on the
-// base, writes nothing; an aborted resolution leaves the worktree clean on
-// the pushed branch. merged-review-ops.test.mjs has the rest.
+// base, writes nothing; an aborted, fully staged resolution is preserved
+// before leaving the worktree clean on the pushed branch. merged-review-ops.test.mjs has the rest.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -216,7 +216,7 @@ function keptConflict(n) {
   return { pushed, synced, inRebase: fx.inRebase(n) };
 }
 
-test("finish-sync's abort drops the rebase and resets to the pushed branch, with its reason", () => {
+test("finish-sync's abort preserves a staged resolution and resets to the pushed branch, with its reason", () => {
   for (const { n, reason, expected } of [
     {
       n: ISSUE.aborted,
@@ -228,6 +228,7 @@ test("finish-sync's abort drops the rebase and resets to the pushed branch, with
     const { pushed, synced, inRebase } = keptConflict(n);
     assert.equal(KEPT_CONFLICT.parse(synced).inRebase, true);
     assert.equal(inRebase, true);
+    sh(`git -C ${worktree(n)} add c${n}.txt`);
     fakeGh.reply([initialWriteStateReply(n), historyReply(n)]);
     const out = parsed(
       fx.ask({ op: "finish-sync", number: n, abort: true, reason }),
