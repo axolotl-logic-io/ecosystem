@@ -18,11 +18,12 @@ const { loadConfig, paths } = await import("../src/config.ts");
 const { newIssueState } = await import("../src/state.ts");
 const { openJobCheckout } = await import("../src/job/checkout.ts");
 const { openBrain } = await import("../src/job/brain.ts");
-const { openControl } = await import("../src/job/control.ts");
+const { openControl, STOP_GRACE_MS } = await import("../src/job/control.ts");
 const { hooksOf } = await import("../src/job/session-hooks.ts");
 const { sessionRunnerOf } = await import("../src/job/role-session.ts");
 const { runUsage } = await import("../src/job/run-usage.ts");
 const { openStatus } = await import("../src/job/status.ts");
+const { endGroup } = await import("../src/process-group.ts");
 const { STAGE_AGENTS } = await import("../src/job/roles.ts");
 
 const FIXTURE = new URL("./checkout-setup-fixtures.mjs", import.meta.url)
@@ -114,7 +115,7 @@ async function roleJob(w, stage, issue = 7) {
   const { cfg, config } = w;
   const branch = `agent/issue-${issue}`;
   const dirs = openJobCheckout(cfg, issue, { stage, branch });
-  saveAuthority(cfg, { ...newIssueState(issue), stage, branch });
+  saveAuthority(cfg, { ...newIssueState(issue), stage, branch }, false, issue);
   const runDir = paths.runDir(cfg, issue);
   const brain = openBrain(w.brainDir, stage);
   const identity = {
@@ -167,6 +168,13 @@ function trackLaunches(hooks) {
     started(launch, live);
     if (live.kind === "session") {
       endsWithTest(() => live.session.kill("SIGKILL"));
+    } else {
+      const { pid, exited } = live.ops;
+      endsWithTest(async () => {
+        if (pid !== null) {
+          await endGroup(pid, exited, STOP_GRACE_MS);
+        }
+      });
     }
   };
 }
@@ -201,8 +209,13 @@ function runner(w, { session, stage, issue, branch }) {
   };
   /** @param {{ probe?: boolean, phase?: import("../src/job/role-context.ts").SessionPhase }} [options] */
   async function run({ probe = true, phase } = {}) {
-    // The authority fake serves one issue snapshot per repository at a time.
-    saveAuthority(w.cfg, { ...newIssueState(issue), stage, branch });
+    // Each concurrent issue has its own saved authority snapshot.
+    saveAuthority(
+      w.cfg,
+      { ...newIssueState(issue), stage, branch },
+      false,
+      issue,
+    );
     let script = { events: [outputEnd({ outcome: "done" })] };
     if (probe) {
       script = { ...script, ...{ probe: [FIXTURE, "role"] } };

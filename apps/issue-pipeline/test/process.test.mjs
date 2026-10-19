@@ -1,5 +1,5 @@
 // @ts-check
-// `shell` (src/process.ts) leaves no process behind (#371): each command
+// `shell` (src/shell-command.ts) leaves no process behind (#371): each command
 // runs in a process group of its own, which is emptied when bash exits, when
 // the command times out and when the op running it dies, and the log names
 // what was killed. Each command but the first runs in a driver process of
@@ -22,10 +22,10 @@ import {
 import "./isolated-root-test-kit.mjs";
 
 // src after the kit set a temporary root, which the drivers inherit.
-const { shell } = await import("../src/process.ts");
+const { shell } = await import("../src/shell-command.ts");
 const { groupAlive } = await import("../src/process-group.ts");
 
-const PROCESS = new URL("../src/process.ts", import.meta.url).pathname;
+const PROCESS = new URL("../src/shell-command.ts", import.meta.url).pathname;
 // The driver: runs shell() on the request in its argument, logging to
 // shell.log in the request's folder, and prints the result as JSON.
 const DRIVER = `const [file, json] = process.argv.slice(1);
@@ -58,7 +58,8 @@ const IGNORES_TERM =
 // The modules `shell` loads, which a test copies without the supervisor
 // that sits beside them in src/.
 const SHELL_MODULES = [
-  "process.ts",
+  "shell-command.ts",
+  "process-group.ts",
   "pipeline-root.ts",
   "child-env.ts",
   "ops-error.ts",
@@ -203,7 +204,7 @@ test("when the op running a command dies of SIGTERM, the command's group is kill
 /**
  * `shell` from a copy of its modules in `dir`, with no shell supervisor
  * beside them, and zod's packages linked in.
- * @param {string} dir @returns {Promise<typeof shell>}
+ * @param {string} dir @returns {Promise<typeof import("../src/shell-command.ts")>}
  */
 async function shellWithoutSupervisor(dir) {
   for (const name of SHELL_MODULES) {
@@ -213,15 +214,69 @@ async function shellWithoutSupervisor(dir) {
   const zod = createRequire(import.meta.url).resolve("zod/package.json");
   const packages = path.dirname(path.dirname(zod));
   fs.symlinkSync(packages, path.join(dir, "node_modules"));
-  const copy = await import(path.join(dir, "process.ts"));
-  return copy.shell;
+  const copy = await import(path.join(dir, "shell-command.ts"));
+  return copy;
 }
 
 test("a missing shell supervisor fails the command without running it", async () => {
   const dir = tempDir();
-  const runShell = await shellWithoutSupervisor(dir);
+  const { shell: runShell } = await shellWithoutSupervisor(dir);
   const log = path.join(dir, "shell.log");
   const result = runShell("echo ran > ran.txt", dir, log, LONG_TIMEOUT_MS);
   assert.notEqual(result.code, 0);
   assert.equal(fs.existsSync(path.join(dir, "ran.txt")), false);
+});
+
+test("an unreadable supervisor report fails closed even when the supervisor exits zero", async () => {
+  const dir = tempDir();
+  const copy = await shellWithoutSupervisor(dir);
+  fs.writeFileSync(
+    path.join(dir, "shell-supervisor.mjs"),
+    'console.log("not a report");',
+  );
+  const command = "echo should-not-run";
+  const log = path.join(dir, "shell.log");
+  const sync = copy.shell(command, dir, log, LONG_TIMEOUT_MS);
+  assert.notEqual(sync.code, 0);
+  const async = await copy.asyncShell(command, dir, log, {
+    timeoutMs: LONG_TIMEOUT_MS,
+    env: new Map(),
+    started: ({ pid }) => {
+      if (pid !== null) {
+        endsWithTest(() => killGroup(pid));
+      }
+    },
+  });
+  assert.notEqual(async.code, 0);
+  assert.ok(logIn(dir).includes("the shell supervisor gave no report"));
+});
+
+test("asynchronous setup timeout kills the entire command group and records failure", async () => {
+  const dir = tempDir();
+  const { asyncShell } = await import("../src/shell-command.ts");
+  const result = await asyncShell(
+    IGNORES_TERM,
+    dir,
+    path.join(dir, "shell.log"),
+    {
+      timeoutMs: TIMEOUT_MS,
+      env: new Map(),
+      started: ({ pid }) => {
+        if (pid !== null) {
+          endsWithTest(() => killGroup(pid));
+        }
+        endsWithTest(() => {
+          const group = pidIn(dir, "group.pid");
+          if (group !== null) {
+            killGroup(group);
+          }
+          killWritten(dir, "child.pid");
+        });
+      },
+    },
+  );
+  assert.equal(result.code, TIMED_OUT_CODE);
+  assert.equal(alive(writtenPid(dir, "group.pid")), false);
+  assert.equal(alive(writtenPid(dir, "child.pid")), false);
+  assert.match(logIn(dir), TERM_THEN_KILL);
 });

@@ -4,7 +4,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { run, tail } from "./process.ts";
+import { run } from "./process.ts";
+import { tail } from "./shell-command.ts";
 
 const REBASE_DIRS: readonly string[] = ["rebase-merge", "rebase-apply"];
 const DIRTY_LINES = 20;

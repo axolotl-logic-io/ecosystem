@@ -9,7 +9,8 @@ import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunOptions, RunResult } from "./process.ts";
-import { run, runFailure, tail } from "./process.ts";
+import { run, runFailure } from "./process.ts";
+import { tail } from "./shell-command.ts";
 
 const STATUS_LINES = 20;
 const WHITESPACE = /\s+/u;

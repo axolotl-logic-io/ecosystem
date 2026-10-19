@@ -11,6 +11,7 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { ModelRole } from "../config-legacy.ts";
+import type { ShellProcess } from "../shell-command.ts";
 import type { Stage } from "../stages.ts";
 import type { Brain, PinnedPrompt } from "./brain.ts";
 import { setupContext } from "./checkout.ts";
@@ -157,11 +158,24 @@ function sessionRunnerOf(
     const n = (counts.get(role) ?? 0) + 1;
     counts.set(role, n);
     const key = `${role}-${n}`;
-    const setup = setupContext(job.cfg, job.issue, {
+    const setup = await setupContext(job.cfg, job.issue, {
       stage: job.stage,
       key,
       repo: job.hooks.repo,
+      started: (child: ShellProcess): void => {
+        const setupKey = `setup-${key}`;
+        job.hooks.started(
+          { key: setupKey, kind: "ops", pid: child.pid, session: null },
+          { kind: "ops", ops: { key: setupKey, ...child } },
+        );
+        child.exited
+          .then((): void => job.hooks.ended(setupKey))
+          .catch(() => null);
+      },
     });
+    if (job.stopping() !== null) {
+      return { ok: false, transient: true, error: STOPPING };
+    }
     const prepared = { ...spec, task: `${spec.task}\n\n${setup}` };
     return await runAs(job, prepared, { key, role, prompt });
   };

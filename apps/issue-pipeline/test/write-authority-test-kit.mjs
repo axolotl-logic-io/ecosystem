@@ -74,15 +74,22 @@ if (args[0] === "pr" && args[1] === "view") {
 if (args[0] !== "api" || args.includes("-X") || !endpoint?.endsWith("/comments?per_page=100")) {
   process.stderr.write("unexpected fake gh request"); process.exit(1);
 }
-const file = ${JSON.stringify(states)} + "/" + endpoint.split("/").slice(1, 3).join("__") + ".json";
+const issue = endpoint.split("/")[4];
+const issueFile = stem + "-issue-" + issue + ".json";
+const file = stem + ".json";
+if (fs.existsSync(issueFile)) { process.stdout.write(fs.readFileSync(issueFile, "utf8")); process.exit(0); }
 process.stdout.write(fs.readFileSync(file, "utf8"));
 
 `,
   { mode: 0o755 },
 );
 
-/** @param {Config} cfg @param {unknown} state @param {boolean} [afterRead] @returns {void} */
-function saveAuthority(cfg, state, afterRead = false) {
+/** @param {Config} cfg @param {unknown} state @param {boolean} [afterRead] @param {number | null} [issue] @returns {void} */
+function saveAuthority(cfg, state, afterRead = false, issue = null) {
+  let key = cfg.repo.replaceAll("/", "__");
+  if (issue !== null) {
+    key += `-issue-${issue}`;
+  }
   const history = path.join(
     states,
     `${cfg.repo.replaceAll("/", "__")}.history.json`,
@@ -96,7 +103,7 @@ function saveAuthority(cfg, state, afterRead = false) {
       {
         ...githubComment({
           id: 1,
-          nodeId: `${cfg.repo.replaceAll("/", "__")}:1`,
+          nodeId: `${key}:1`,
           created: "2026-10-17T12:00:00Z",
           login: cfg.mergeAccount,
           body: `<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`,
@@ -104,7 +111,7 @@ function saveAuthority(cfg, state, afterRead = false) {
       },
     ]);
   }
-  let file = path.join(states, `${cfg.repo.replaceAll("/", "__")}.json`);
+  let file = path.join(states, `${key}.json`);
   if (afterRead) {
     file += ".next";
   }

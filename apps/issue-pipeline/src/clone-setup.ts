@@ -9,8 +9,9 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { git } from "./github.ts";
 import { issueEnvironment } from "./issue-environment.ts";
-import type { ShellResult } from "./process.ts";
-import { run, shell } from "./process.ts";
+import { run } from "./process.ts";
+import type { ShellResult } from "./shell-command.ts";
+import { shell } from "./shell-command.ts";
 
 const PRE_PUSH_HOOK =
   '#!/bin/sh\n[ "$ISSUE_PIPELINE_OPS" = 1 ] || { echo "Only the issue pipeline ops tool may push from this clone." >&2; exit 1; }\n';
@@ -89,6 +90,7 @@ function setUpCheckout(
 export {
   configureClone,
   guardCommits,
+  SETUP_SETTINGS,
   setUpCheckout,
   updateSubmodules,
   writeHook,

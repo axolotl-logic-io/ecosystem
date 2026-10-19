@@ -30,6 +30,7 @@
         "src/ops.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
+        "src/shell-command.ts",
         "src/process-group.ts",
         "src/shell-supervisor.ts",
         "src/config.ts",

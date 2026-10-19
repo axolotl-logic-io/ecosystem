@@ -19,7 +19,8 @@ import { git } from "./github.ts";
 import { issueEnvironment } from "./issue-environment.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
-import { run, runFailure, shell } from "./process.ts";
+import { run, runFailure } from "./process.ts";
+import { shell } from "./shell-command.ts";
 import { holdWikiPin, pushWikiBranch, wikiAhead } from "./wiki.ts";
 import { readWriteAuthority } from "./write-authority.ts";
 

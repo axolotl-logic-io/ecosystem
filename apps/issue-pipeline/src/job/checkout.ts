@@ -13,16 +13,19 @@ import path from "node:path";
 import {
   configureClone,
   guardCommits,
-  setUpCheckout,
+  SETUP_SETTINGS,
   updateSubmodules,
 } from "../clone-setup.ts";
 import type { Config, JobCheckout } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
 import { head } from "../git-state.ts";
 import { git } from "../github.ts";
+import { issueEnvironment } from "../issue-environment.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
+import type { ShellProcess } from "../shell-command.ts";
+import { asyncShell } from "../shell-command.ts";
 import { ensureWiki } from "../wiki.ts";
 
 // A clone to make: the mirror it comes from, the remote its origin names, the
@@ -181,24 +184,48 @@ function openJobCheckout(
   return { root, repo, docs, branch };
 }
 
+const MS_PER_MINUTE = 60_000;
+
 // Prepares the currently selected code checkout before its model starts and
 // records the result separately from command output. Rerun for every session
 // so integration/head changes cannot inherit a stale preparation claim.
-function setupContext(
+async function setupContext(
   cfg: Config,
   issue: number,
-  session: { stage: string; key: string; repo: string },
-): string {
-  const { stage, key, repo } = session;
-  const name = `setup-${stage}-${key}`;
-  const result = setUpCheckout(cfg, issue, repo, `${name}.log`);
-  if (result === null) {
+  session: {
+    stage: string;
+    key: string;
+    repo: string;
+    started: (child: ShellProcess) => void;
+  },
+): Promise<string> {
+  const { stage, key, repo, started } = session;
+  const { commands, commandTimeoutMinutes } = SETUP_SETTINGS.parse(cfg);
+  const { setup } = commands;
+  if (setup === undefined || setup === null || setup === "") {
     return "Configured setup: not configured; no project-specific environment was provisioned by the pipeline.";
   }
+  const dir = paths.runDir(cfg, issue);
+  const base = `setup-${stage}-${key}`;
+  let name = base;
+  let attempt = 1;
+  while (
+    fs.existsSync(path.join(dir, `${name}.log`)) ||
+    fs.existsSync(path.join(dir, `${name}.json`))
+  ) {
+    attempt += 1;
+    name = `${base}-${attempt}`;
+  }
+  const selectedHead = head(repo);
+  const result = await asyncShell(setup, repo, path.join(dir, `${name}.log`), {
+    timeoutMs: commandTimeoutMinutes * MS_PER_MINUTE,
+    env: issueEnvironment(cfg, issue),
+    started,
+  });
   const record = {
     stage,
     key,
-    headSha: head(repo),
+    headSha: selectedHead,
     code: result.code,
     pass: result.code === 0,
     log: result.log,

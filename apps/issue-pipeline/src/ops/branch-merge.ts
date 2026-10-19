@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
-import { tail } from "../process.ts";
+import { tail } from "../shell-command.ts";
 import { FULL_SHA } from "./merged-graph.ts";
 
 const REFUSAL_TAIL_LINES = 5;

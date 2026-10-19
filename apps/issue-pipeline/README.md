@@ -44,8 +44,10 @@ Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity
 Before each allowed model session, job mode runs the repository's optional
 `commands.setup` in its code checkout at the selected HEAD, including Author,
 Developer, Reviewer hardening/integration and final security. Setup uses the
-configured command timeout and supervised command execution. It currently reruns
-for every session, so a changed integration/merged HEAD is prepared too.
+configured command timeout and supervised command execution without blocking the
+job control socket or signal handlers. Stopping during setup cleans its process
+groups and starts no model. It currently reruns for every session, so a changed
+integration/merged HEAD is prepared too.
 
 Configured commands and role tool environments share these non-secret values,
 overriding inherited copies:
@@ -61,7 +63,9 @@ application configuration or arrange services through the configured setup.
 Commands must not rely on leaving background children in their supervised group.
 
 The issue run directory holds `setup-<stage>-<role>-<n>.log` and a matching JSON
-result (HEAD, exit code, pass flag and log path). The role task explicitly reports
+result (selected HEAD, exit code, pass flag and log path). Restarted jobs retain
+earlier setup artifacts by adding a numeric suffix rather than overwriting them.
+The role task explicitly reports
 success/failure and these paths. A failed setup does not claim a prepared
 environment or add an automatic retry/stop policy. Without setup, no command or
 project-specific environment/database provisioning occurs.

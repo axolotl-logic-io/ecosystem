@@ -10,8 +10,9 @@ import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
 import { issueEnvironment } from "../issue-environment.ts";
-import type { ShellResult } from "../process.ts";
-import { run, shell } from "../process.ts";
+import { run } from "../process.ts";
+import type { ShellResult } from "../shell-command.ts";
+import { shell } from "../shell-command.ts";
 
 // One check's outcome. `log` names the log of the command it ran, and `tail`
 // ends that log, for failed checks only.

@@ -1,5 +1,5 @@
 // The shell supervisor, `node shell-supervisor.mjs <request JSON>`, which
-// `shell` (process.ts) runs for each command (commands-leave-no-processes,
+// `shell` (shell-command.ts) runs for each command (commands-leave-no-processes,
 // #371). It runs the request's command as `bash -lc` in a process group and
 // session of its own. The command ends when bash exits, when its time runs
 // out, or when this process gets SIGTERM, SIGINT or SIGHUP, as it does when

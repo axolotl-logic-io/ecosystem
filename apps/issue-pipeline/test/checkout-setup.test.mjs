@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { test } from "node:test";
+import { alive, waitFor } from "./bounded-test-kit.mjs";
 import { sql } from "./checkout-database-test-kit.mjs";
 import {
   BASE_CONTENT,
@@ -193,4 +195,72 @@ test("a later merge session prepares its newly selected HEAD rather than retaini
   assert.ok(
     fs.existsSync(path.join(job.runDir, "setup-merge-reviewer-2.json")),
   );
+});
+
+test("stopping during setup cleans its processes and never starts a model", async () => {
+  const w = world(
+    'sleep 60 & printf \'%s\\n%s\\n\' "$$" "$!" > setup.pids; wait',
+  );
+  // A safety deadline also makes a blocking regression fail in finite time.
+  w.cfg = { ...w.cfg, commandTimeoutMinutes: 0.25 };
+  const job = await roleJob(w, "author");
+  const running = job.run({ probe: false });
+  const marker = path.join(job.dirs.repo, "setup.pids");
+  await waitFor("setup's process marker", () => fs.existsSync(marker));
+  const pids = fs.readFileSync(marker, "utf8").trim().split("\n").map(Number);
+  assert.equal(pids.length, 2);
+  assert.ok(pids.every(Number.isSafeInteger));
+  process.emit("SIGTERM", "SIGTERM");
+  const result = await running;
+  assert.equal(result.ok, false);
+  assert.equal(job.control.stopping(), "SIGTERM");
+  assert.equal(fs.existsSync(path.join(w.tmp, "pi.log")), false);
+  await waitFor("all setup processes to end", () =>
+    pids.every((pid) => !alive(pid)),
+  );
+  const record = JSON.parse(
+    fs.readFileSync(
+      path.join(job.runDir, "setup-author-author-1.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(record.pass, false);
+});
+
+test("restarting a stage retains the previous setup log and result", async () => {
+  const w = world("echo first; exit 23");
+  const first = await roleJob(w, "author");
+  assert.ok((await first.run({ probe: false })).ok);
+  first.control.close();
+  // The first job completed; mimic removal of its disposable checkout.
+  fs.rmSync(first.dirs.root, { recursive: true, force: true });
+  const originalLog = path.join(first.runDir, "setup-author-author-1.log");
+  const originalResult = path.join(first.runDir, "setup-author-author-1.json");
+  const beforeLog = fs.readFileSync(originalLog, "utf8");
+  const beforeResult = fs.readFileSync(originalResult, "utf8");
+  w.cfg = { ...w.cfg, commands: { ...w.cfg.commands, setup: "echo second" } };
+  const resumed = await roleJob(w, "author");
+  assert.ok((await resumed.run({ probe: false })).ok);
+  assert.equal(fs.readFileSync(originalLog, "utf8"), beforeLog);
+  assert.equal(fs.readFileSync(originalResult, "utf8"), beforeResult);
+  const currentLog = path.join(first.runDir, "setup-author-author-1-2.log");
+  assert.ok(fs.readFileSync(currentLog, "utf8").includes("second"));
+  assert.ok(prompts(w).includes(currentLog));
+});
+
+test("a setup terminated by a signal is a failure in the role's context", async () => {
+  const w = world("echo interrupted-setup; kill -TERM $$");
+  const job = await roleJob(w, "review");
+  const result = await job.run({ probe: false });
+  assert.ok(result.ok, JSON.stringify(result));
+  assert.match(prompts(w), SETUP_FAILED);
+  assert.equal(prompts(w).includes("Configured setup succeeded"), false);
+  const record = JSON.parse(
+    fs.readFileSync(
+      path.join(job.runDir, "setup-review-reviewer-1.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(record.pass, false);
+  assert.notEqual(record.code, 0);
 });

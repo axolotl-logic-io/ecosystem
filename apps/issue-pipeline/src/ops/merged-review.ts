@@ -13,7 +13,7 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { gitIn, head } from "../git-state.ts";
 import { OpsError } from "../ops-error.ts";
-import { tail } from "../process.ts";
+import { tail } from "../shell-command.ts";
 import type { CodeMerged } from "../state.ts";
 import { holdWikiPin } from "../wiki.ts";
 import { confirmedMergedParent } from "./merged-graph.ts";
