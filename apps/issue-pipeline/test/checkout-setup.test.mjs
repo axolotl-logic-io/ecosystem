@@ -10,6 +10,7 @@ import {
   BASE_CONTENT,
   ENV_FILE,
   EXAMPLE,
+  FIXTURE,
   git,
   HEAD_CONTENT,
   prompts,
@@ -21,6 +22,7 @@ const { runChecks } = await import("../src/ops/checks.ts");
 const FIRST_ISSUE = 7;
 const STALE_PUBLIC_MODE = 0o644;
 const SECOND_ISSUE = 8;
+const SETUP_FAILURE_CODE = 23;
 const SETUP_FAILED = /Configured setup FAILED/u;
 const EXIT_23 = /exit 23/u;
 const NO_SETUP = /setup: not configured/u;
@@ -133,6 +135,34 @@ test("a nonzero setup result and its log are explicitly given to the session", a
       .readFileSync(path.join(job.runDir, "setup-author-author-1.log"), "utf8")
       .includes("fixture setup failed"),
   );
+});
+
+test("a failed setup is retried at unchanged HEAD and only the current preparation result reaches the next session", async () => {
+  const w = world(
+    `if [ ! -e setup-attempted ]; then touch setup-attempted; echo first-attempt-failed >&2; exit ${SETUP_FAILURE_CODE}; fi; node ${JSON.stringify(FIXTURE)} setup`,
+  );
+  const job = await roleJob(w, "review");
+  const headSha = git(job.dirs.repo, ["rev-parse", "HEAD"]);
+  assert.ok((await job.run({ probe: false })).ok);
+  assert.match(prompts(w), SETUP_FAILED);
+  const firstContextLength = prompts(w).length;
+  assert.ok((await job.run()).ok);
+  const current = prompts(w).slice(firstContextLength);
+  assert.ok(current.includes("Configured setup succeeded"));
+  assert.equal(SETUP_FAILED.test(current), false);
+  assert.ok(current.includes("guardedTest"));
+  assert.ok(current.includes("passed"));
+  for (const [session, pass, code] of [
+    [1, false, SETUP_FAILURE_CODE],
+    [2, true, 0],
+  ]) {
+    const file = path.join(job.runDir, `setup-review-reviewer-${session}.json`);
+    const record = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.equal(record.headSha, headSha);
+    assert.equal(record.pass, pass);
+    assert.equal(record.code, code);
+  }
+  assert.equal(git(job.dirs.repo, ["rev-parse", "HEAD"]), headSha);
 });
 
 test("no configured setup starts a session without creating app environment files or database resources", async () => {
