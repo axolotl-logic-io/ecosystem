@@ -1,10 +1,7 @@
 // @ts-check
-// One issue taken through the whole pipeline as built: the built
-// orchestrator's ticks start the built stage jobs, which run the built ops
-// against real git origins and the fake GitHub, and the fake pi plays each
-// model role's scripted turns through the real structured_output and
-// pipeline_commit extensions. Nothing here calls a role function directly.
-// Faked: GitHub (pipeline-flow-gh.mjs) and the model (pipeline-flow-pi.mjs).
+// One issue through the built orchestrator, jobs, ops and tool extensions.
+// Local git origins, pipeline-flow-gh and pipeline-flow-pi fake the services;
+// the stages themselves run unchanged, not through direct role calls.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -25,12 +22,7 @@ import {
   WIKI_BRANCH,
 } from "./pipeline-flow-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
-import {
-  jobLog,
-  stagesUntilIdle,
-  stopJobs,
-  tick,
-} from "./pipeline-flow-run.mjs";
+import { jobLog, stopJobs, tick } from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
   implementorTurn,
@@ -62,11 +54,6 @@ function piStarts() {
   return piLog(flow.piDir).filter((entry) => entry.start === true);
 }
 
-/** @returns {any[]} each prompt pi was sent, in order */
-function prompts() {
-  return piLog(flow.piDir).filter((entry) => "prompt" in entry);
-}
-
 /** @returns {{ base: string, wiki: string }} */
 function heads() {
   return {
@@ -75,15 +62,7 @@ function heads() {
   };
 }
 
-/**
- * What a model session may do, when it may commit or not.
- * @param {boolean} writes
- */
-function powersOf(writes) {
-  return { ghToken: null, commitScope: writes, commits: writes };
-}
-
-before(async () => {
+before(() => {
   flow = setUpFlow();
   start = heads();
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
@@ -96,17 +75,35 @@ before(async () => {
       securityTurn(),
     ],
   });
-  const authored = await tick(flow);
-  const developed = await tick(flow);
-  const reviewed = await tick(flow);
-  stages = [...authored.started, ...developed.started, ...reviewed.started];
-  const hardened = savedState(readWorld(flow.ghDir));
-  withWorld(flow.ghDir, (world) => {
-    world.failedHead = hardened.hardened.code;
-  });
-  stages.push(...(await stagesUntilIdle(flow)));
+  stages = [];
 });
 after(() => stopJobs(flow));
+
+// Each bounded stage, not the aggregate multi-job lifecycle, gets the test
+// deadline. The before hook used to charge every stage to the first test.
+/** @param {string} stage @returns {Promise<{ started: string[], log: string }>} */
+async function completeStage(stage) {
+  const result = await tick(flow);
+  stages.push(...result.started);
+  if (stage === "review") {
+    const hardened = savedState(readWorld(flow.ghDir));
+    withWorld(flow.ghDir, (world) => {
+      world.failedHead = hardened.hardened.code;
+    });
+  }
+  return { started: result.started, log: jobLog(flow) };
+}
+for (const stage of ["author", "implement", "review", "merge", "merge"]) {
+  test(`legacy tick completes the ${stage} stage`, async () => {
+    const result = await completeStage(stage);
+    assert.deepEqual(result.started, [stage], result.log);
+  });
+}
+
+test("completed legacy flow goes idle without another job", async () => {
+  const result = await tick(flow);
+  assert.deepEqual(result.started, [], jobLog(flow));
+});
 
 test("legacy ticks run development, hardening, bounded integration and security without a Developer fix round", () => {
   assert.deepEqual(
@@ -127,7 +124,12 @@ test("each phase gets its configured model and exact write authority without a G
     commitScope: each.commitScope,
     commits: each.extensions.includes("pipeline-commit.mjs"),
   }));
-  assert.deepEqual(powers, [false, true, true, true, false].map(powersOf));
+  const expected = [false, true, true, true, false].map((writes) => ({
+    ghToken: null,
+    commitScope: writes,
+    commits: writes,
+  }));
+  assert.deepEqual(powers, expected);
 });
 
 test("hardening, integration and final security get pinned pages and truthful revision provenance", () => {
@@ -145,7 +147,9 @@ test("hardening, integration and final security get pinned pages and truthful re
       .join("\n");
     assert.ok(usage.includes(sha256), `missing usage provenance for ${page}`);
   }
-  const [, , harden, integrate, security] = prompts();
+  const [, , harden, integrate, security] = piLog(flow.piDir).filter(
+    (entry) => "prompt" in entry,
+  );
   assert.match(String(harden?.prompt), GHERKIN_IN_PROMPT);
   assert.match(String(integrate?.prompt), GHERKIN_IN_PROMPT);
   const state = savedState(readWorld(flow.ghDir));
