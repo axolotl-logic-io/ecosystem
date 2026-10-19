@@ -56,7 +56,9 @@ function receiptSteps(w) {
 }
 /** @returns {string[][]} */
 function mutations() {
-  return calls().filter((args) => args.includes("POST"));
+  return calls().filter(
+    (args) => args.includes("POST") && !args.includes("event=APPROVE"),
+  );
 }
 
 test("literal configured integration and full H survive a concurrent source branch move", () => {

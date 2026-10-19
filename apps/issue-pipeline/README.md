@@ -71,7 +71,7 @@ Refused commits stay local, never pushed merely to preserve them. Job teardown p
 
 Synchronization cleanup also saves the staged/working patches and a verified bundle containing current, local-branch and available pre-rebase history before abort/reset/clean. Wiki rejection restores the pre-rebase head rather than an older remote issue branch. An unresolved index refuses destructive cleanup and retains the original checkout, including conflict stages, for explicit recovery. A wiki-mirror refresh updates remote-tracking refs, never private recovery heads; divergence retains both refs and refuses automatic selection.
 
-**Concurrency limitation:** caller serialization is not external exclusion. Outside actors may push, merge, retarget or change permissions/configuration at any time. The explicit destination/immutable-source REST merge and exact-result checks above are the supported compromise, not an atomic PR/input/config transaction. Observed invalid authority refuses writes; unseen concurrent changes are not atomically prevented. No exclusion promise or credential/ruleset change is implied. Installation still requires exact candidate checks and independent security clearance.
+**Concurrency limitation:** caller serialization is not external exclusion. Outside actors may push, merge, retarget or change permissions/configuration at any time. The explicit destination/immutable-source REST merge and exact-result checks above are the supported compromise, not an atomic PR/input/config transaction. Observed invalid authority refuses writes; unseen concurrent changes are not atomically prevented. No exclusion promise or credential/ruleset change is implied. Installation remains operator-owned and requires exact candidate checks and a reviewed cutover.
 
 ## Wiki prompt source and pinning
 
@@ -147,39 +147,30 @@ reconciliation rather than falling back to an older/empty receipt. These
 semantics still need the operator verification below. This is not a same-OS-user
 sandbox: a child under the operator's user may still read the credential file.
 
-## Activation prerequisites — blocked on Autumn (A–H)
+## Operator setup
 
-Do not activate/install this change until Autumn records and verifies all of:
+Configure both accounts and verify repository, PR, review and wiki capabilities.
+Development opens the PR; review/merge submits a GitHub APPROVE review bound
+to the exact checked commit before requesting the merge. A failed or mismatched
+approval prevents the merge. Review approval is distinct from final security
+clearance on the merged result.
 
-- **A — Access and PATs:** both account memberships and repository/wiki access;
-  exact fine-grained PAT resources/permissions and separation of development and
-  merge capabilities. No permission has been changed by this source patch.
-- **B — Integration protection:** branch rules, required checks and an emergency
-  route compatible with the supported explicit-target REST merge; no bypass or
-  weakening is assumed or automated.
-- **C — Production:** production trigger and `main` protection; neither bot gets
-  deployment authority. This patch does not edit `release.yml` or triggers.
-- **D — Editor provenance:** verify GitHub's author/editor/`lastEditedAt` behavior
-  and authorized disposable tamper/deletion negative tests before trusting it.
-- **E — Residual risks:** accept same-user credential-file readability and the
-  full-deletion case where all remote and local prior-work evidence disappears.
-  Missing surviving authority evidence must be reconciled, never reset casually.
-- **F — Lifecycle:** token expiration, rotation, revocation and recovery ownership.
-- **G — Drained cutover:** stop dispatch and drain old jobs; inventory and preserve
-  config, state, claims, source/private-wiki branches, PRs, patches and bundles,
-  including issue #486 history. Explicitly reconcile historical authority and
-  rename drained `clones/`, `work/` and `runs/` directories as needed. No
-  `storageSlug` override, automatic state adoption or credential/schema migration
-  is provided. Do not overwrite old work or run old/new jobs together.
-- **H — Capability checks:** authorize any disposable wiki/workflow capability
-  tests and decide what to do about unsupported capabilities. Fake-only tests
-  here establish no live GitHub permission or protection claim.
+The caller assigns issues and launches stage jobs for each configured repository,
+including ecosystem itself. It monitors failures, fixes pipeline defects and
+coordinates installation and useful restarts. There is no mandatory bootstrap
+issue, session-refresh pause or separate scheduler prerequisite.
+
+Keep operator credentials outside managed worktrees and verify their selected
+identities without exposing token values. Before replacing an installation,
+preserve active work, stop dispatch, drain its jobs and snapshot local config
+and recovery state. Existing issue histories may need explicit reconciliation;
+never discard retained work to make an issue look new.
 
 ## Config and model cutover
 
 Per-repo config lives in `$ISSUE_PIPELINE_ROOT/repos/`; `repos/example.json` shows configuration, `src/config-schema.ts` its shape/defaults. `wiki` uses the repo's submodule at `wiki.dir`, published to `wiki.branch` only after final security approval. Removed config fields load with warnings; old model-role mappings are in `src/config-legacy.ts`.
 
-The default and example role models are `openai/gpt-6.1-sol`. **For the upcoming cutover explicitly set all three project roles**, rather than relying on defaults or old-role aliases:
+The default and example role models are `openai/gpt-6.1-sol`. Set all three repository roles explicitly rather than relying on old-role aliases:
 
 ```json
 {
@@ -191,7 +182,7 @@ The default and example role models are `openai/gpt-6.1-sol`. **For the upcoming
 }
 ```
 
-Explicit configured models remain supported and pass unchanged to pi's `--model`; this default change never rewrites an external operator config. There is no automatic Claude fallback. The operator must verify all three roles at the gated install. Use the existing inherited **pi-cliproxyapi** extension/provider setup; the pipeline does not install providers or alter global extension/configuration. Pi still loads inherited extensions, plus the pipeline's per-session extensions. Never put provider/GitHub tokens in prompts, repo files or logs. Tests exercise selection/launch with fake pi only, not real providers.
+Explicit configured models remain supported and pass unchanged to pi's `--model`; this default change never rewrites an external operator config. There is no automatic Claude fallback. The operator verifies all three configured roles before launch. Use the existing inherited **pi-cliproxyapi** extension/provider setup; the pipeline does not install providers or alter global extension/configuration. Pi still loads inherited extensions, plus the pipeline's per-session extensions. Never put provider/GitHub tokens in prompts, repo files or logs. Tests exercise selection/launch with fake pi only, not real providers.
 
 ## Install and safe upgrades
 
@@ -200,11 +191,11 @@ The pipeline runs from an installed copy, not this source folder. Operator comma
 ```bash
 npm ci                                      # monorepo root, unchanged lockfile
 mise //apps/issue-pipeline:check              # exact-head combined gate
-mise //apps/issue-pipeline:install:dry-run    # inspect after independent review
+mise //apps/issue-pipeline:install:dry-run    # inspect candidate changes
 mise //apps/issue-pipeline:install            # operator-authorized cutover only
 ```
 
-Before upgrading: stop dispatch, drain all old-version jobs (prefer completing an active integration turn), verify no old job/session remains, snapshot installed config and signed state/recovery artifacts, pass the **exact source HEAD** full gate and independent security review, publish/verify the five wiki prompt pages and pin the intended wiki clone, inspect dry-run, then perform a controlled install and resume one explicitly assigned issue/stage at a time. Never mix live old/new jobs or reset branches, hardening, integration, security rejections or code-merge receipts to make an upgrade pass. Unknown moved heads return conservatively to hardening; code already merged stays merged. Install/rollback of binaries does not undo code merges or publish rejected wiki work.
+Before upgrading: stop dispatch, drain all old-version jobs (prefer completing an active integration turn), verify no old job/session remains, snapshot installed config and signed state/recovery artifacts, pass the **exact source HEAD** full gate, review the candidate changes, publish/verify the five wiki prompt pages and pin the intended wiki clone, inspect dry-run, then perform a controlled install and resume one explicitly assigned issue/stage at a time. Never mix live old/new jobs or reset branches, hardening, integration, security rejections or code-merge receipts to make an upgrade pass. Unknown moved heads return conservatively to hardening; code already merged stays merged. Install/rollback of binaries does not undo code merges or publish rejected wiki work.
 
 Install builds first, then copies programs and example config into `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`) and thin agents into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`), filling root placeholders. It backs up replaced/retired installed files under `$ISSUE_PIPELINE_ROOT-backups/<timestamp>-install/`, records the commit in `INSTALLED.json`, refuses dirty source unless explicitly overridden and refuses installing from inside the pipeline root. The retired old `workflow.js`, escalation/ops/reader/specifier/writer agents and start/pause prompts are listed by dry-run. Per-repo operator configs, setup/teardown scripts, secrets, clones, work and runs are not rewritten by install. Wiki publication and model-config cutover remain explicit operator responsibilities.
 

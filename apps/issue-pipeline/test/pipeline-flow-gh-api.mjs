@@ -200,6 +200,32 @@ function deleteBranch(world, call) {
   return { stdout: "" };
 }
 
+/** @param {World} world @param {ApiCall} call @returns {Answer} */
+function approve(world, call) {
+  const [, number] = call.route;
+  const head = fieldOf(call.fields, "commit_id");
+  const pr = world.prs.find((item) => item.number === Number(number));
+  if (
+    call.method !== "POST" ||
+    fieldOf(call.fields, "event") !== "APPROVE" ||
+    pr === undefined ||
+    head !== branchHead(world.origin, pr.head)
+  ) {
+    throw new Error("fake-gh: unsupported PR approval");
+  }
+  if (call.jq !== "{state, commit: .commit_id, login: .user.login}") {
+    throw new Error("fake-gh: unsupported PR approval filter");
+  }
+  return printed(
+    { ...call, jq: null },
+    {
+      state: "APPROVED",
+      commit: head,
+      login: world.account,
+    },
+  );
+}
+
 /**
  * Answers `gh api …` from the world.
  * @param {World} world @param {readonly string[]} args the arguments after `api`
@@ -228,6 +254,9 @@ function api(world, args) {
   }
   if (kind === "issues") {
     return issueRoute(world, call);
+  }
+  if (kind === "pulls" && call.route[2] === "reviews") {
+    return approve(world, call);
   }
   throw new Error(`fake-gh: unsupported api ${call.route.join("/")}`);
 }

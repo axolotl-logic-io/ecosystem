@@ -70,6 +70,25 @@ function prechecks(w) {
     { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
     prStep(w, {}, true),
     prStep(w),
+    {
+      args: [
+        "api",
+        `repos/${REPO}/pulls/${PR}/reviews`,
+        "--method",
+        "POST",
+        "-f",
+        "event=APPROVE",
+        "-f",
+        `commit_id=${w.head}`,
+        "--jq",
+        "{state, commit: .commit_id, login: .user.login}",
+      ],
+      stdout: JSON.stringify({
+        state: "APPROVED",
+        commit: w.head,
+        login: w.cfg.mergeAccount,
+      }),
+    },
   ];
 }
 /** @param {World} w @param {Partial<GhStep>} [extra] @returns {GhStep} */

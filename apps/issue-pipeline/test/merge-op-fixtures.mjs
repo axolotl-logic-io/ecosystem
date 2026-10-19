@@ -34,4 +34,16 @@ function mergeCommentReplies() {
   ];
 }
 
-export { branchMergeReply, mergeCommentReplies };
+/** @param {{ sha: string }} w @returns {GhReply} */
+function approvalReply(w) {
+  return {
+    when: `api repos/${REPO}/pulls/50/reviews --method POST -f event=APPROVE -f commit_id=${w.sha} --jq {state, commit: .commit_id, login: .user.login}`,
+    stdout: JSON.stringify({
+      state: "APPROVED",
+      commit: w.sha,
+      login: "bot",
+    }),
+  };
+}
+
+export { approvalReply, branchMergeReply, mergeCommentReplies };

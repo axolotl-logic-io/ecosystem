@@ -12,7 +12,11 @@
 // merge, whatever its verdict".
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { branchMergeReply, mergeCommentReplies } from "./merge-op-fixtures.mjs";
+import {
+  approvalReply,
+  branchMergeReply,
+  mergeCommentReplies,
+} from "./merge-op-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
   approvedState,
@@ -38,6 +42,7 @@ const NOT_ISSUE_BRANCH = /not agent\/issue-7/u;
 const FULL_SHA_LENGTH = 40;
 const EARLIER = 3;
 const QUEUE = [EARLIER, ISSUE];
+const SUCCESS_WRITES = 3;
 
 /** @param {World} w @returns {{ code: string, wiki: null, inputs: string }} */
 function approvedOf(w) {
@@ -67,12 +72,13 @@ function current(w) {
   });
 }
 
-test("merge binds the configured target and approved head and returns GitHub's merge receipt, writing nothing else", () => {
+test("merge records exact-head approval then returns the configured target's merge receipt", () => {
   const w = world();
   current(w);
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
+    approvalReply(w),
     branchMergeReply(w),
     ...mergeCommentReplies(),
     prView({
@@ -88,7 +94,8 @@ test("merge binds the configured target and approved head and returns GitHub's m
     headSha: w.sha,
   });
   const done = writes();
-  assert.deepEqual(done[0], [
+  assert.equal(done[0]?.[1], `repos/${REPO}/pulls/${PR}/reviews`);
+  assert.deepEqual(done[1], [
     "api",
     `repos/${REPO}/merges`,
     "--method",
@@ -99,8 +106,8 @@ test("merge binds the configured target and approved head and returns GitHub's m
     "-f",
     `head=${w.sha}`,
   ]);
-  assert.equal(done.length, 2);
-  assert.match(done[1]?.join(" ") ?? "", COMMENTS_ON_PR);
+  assert.equal(done.length, SUCCESS_WRITES);
+  assert.match(done[2]?.join(" ") ?? "", COMMENTS_ON_PR);
 });
 
 test("merge of a PR merged by hand returns the authoritative receipt and merges nothing", () => {
@@ -195,6 +202,7 @@ test("a stopped issue ahead in the queue doesn't hold the merge", () => {
       stdout: '{"state":"OPEN","labels":[{"name":"agent:stopped-error"}]}',
     },
     prView({ headRefOid: w.sha }),
+    approvalReply(w),
     branchMergeReply(w),
     ...mergeCommentReplies(),
     prView({
@@ -269,6 +277,7 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
   fakeGh.reply([
     ...older("review"),
     prView({ headRefOid: w.sha }),
+    approvalReply(w),
     branchMergeReply(w),
     ...mergeCommentReplies(),
     prView({

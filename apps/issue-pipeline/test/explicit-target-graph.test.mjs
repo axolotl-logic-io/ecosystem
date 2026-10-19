@@ -35,7 +35,9 @@ function receiptSteps(w) {
 }
 /** @returns {string[][]} */
 function mutations() {
-  return calls().filter((args) => args.includes("POST"));
+  return calls().filter(
+    (args) => args.includes("POST") && !args.includes("event=APPROVE"),
+  );
 }
 
 test("fast-forward multi-commit H stops on 201 and on restart before checks or review can omit earlier commits", () => {

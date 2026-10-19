@@ -9,7 +9,11 @@
 // op refuses a draft rather than marking it ready.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { branchMergeReply, mergeCommentReplies } from "./merge-op-fixtures.mjs";
+import {
+  approvalReply,
+  branchMergeReply,
+  mergeCommentReplies,
+} from "./merge-op-fixtures.mjs";
 import { finishReplies } from "./ops-finish-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
@@ -88,6 +92,7 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
+    approvalReply(w),
     branchMergeReply(w),
     ...mergeCommentReplies(),
     prView({
@@ -102,7 +107,7 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
     mergeCommit: w.mergeSha,
     headSha: w.sha,
   });
-  const body = writes()[1]?.join(" ") ?? "";
+  const body = writes()[2]?.join(" ") ?? "";
   assert.ok(body.includes(`hardening passed on ${short(REVIEWED_CODE)}`));
   assert.ok(body.includes(`integrated it as ${short(w.sha)}`));
   assert.ok(body.includes("with no further review"));
@@ -116,6 +121,7 @@ test("merge without an integration says hardening passed on the merged head", ()
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
+    approvalReply(w),
     branchMergeReply(w),
     ...mergeCommentReplies(),
     prView({
@@ -125,7 +131,7 @@ test("merge without an integration says hardening passed on the merged head", ()
     }),
   ]);
   merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
-  const body = writes()[1]?.join(" ") ?? "";
+  const body = writes()[2]?.join(" ") ?? "";
   assert.ok(body.includes("hardening passed on this commit"));
   assert.ok(body.includes(SECURITY_FOLLOWS));
   assert.equal(body.includes("integrated"), false);
