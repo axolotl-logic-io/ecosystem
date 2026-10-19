@@ -158,6 +158,34 @@ for (const credential of [
   });
 }
 
+for (const name of [
+  "HOME",
+  "PI_CODING_AGENT_DIR",
+  "PI_CODING_AGENT_SESSION_DIR",
+  "PI_OFFLINE",
+  "PI_SKIP_VERSION_CHECK",
+  "PI_TELEMETRY",
+]) {
+  test(`pipeline-managed ${name} cannot be a separately provisioned credential`, async () => {
+    const kit = privateRuntime();
+    kit.runtime.credentialEnv = [name];
+    Object.assign(kit.env, Object.fromEntries([[name, "opaque-fixture-key"]]));
+    json(path.join(kit.providerDir, "config.json"), {
+      ...PROFILE,
+      proxy: { ...PROFILE.proxy, apiKey: `$${name}` },
+    });
+    const raw = await runSession(launch(), kit.hooks);
+    assert.equal(raw.ok, false);
+    assert.match(raw.error ?? "", ERROR_RUNTIME);
+    assert.deepEqual(kit.calls(), []);
+    assert.equal(
+      fs.existsSync(path.join(kit.root, "version-calls.txt")),
+      false,
+    );
+    assert.ok(!JSON.stringify(raw).includes("opaque-fixture-key"));
+  });
+}
+
 test("native catalogue preference does not demand a fabricated cache window", async () => {
   const kit = privateRuntime();
   const builtinProviders = CACHE.discovery.builtinProviders.map((provider) => ({

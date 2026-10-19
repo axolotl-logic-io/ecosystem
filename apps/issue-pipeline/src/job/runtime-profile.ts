@@ -108,18 +108,18 @@ function provisionedProfile(
   };
 }
 
-function generatedEnvironment(
-  input: ProfileInput,
-  runtime: RuntimeConfig,
-  home: string,
-  policy: NativePolicy,
-): {
-  env: Record<string, string>;
-  settingsText: string;
-  settingsPath: string;
-} {
-  for (const name of runtime.credentialEnv) {
-    const { [name]: value } = input.env;
+function validateCredentials(
+  names: readonly string[],
+  env: Readonly<Record<string, string>>,
+  managed: Readonly<Record<string, string>>,
+): void {
+  for (const name of names) {
+    if (Object.hasOwn(managed, name)) {
+      throw new Error(
+        "runtime: model credentials must not name pipeline-managed environment variables",
+      );
+    }
+    const { [name]: value } = env;
     if (value === undefined || value.trim() === "") {
       throw new Error(
         `runtime: missing declared credential environment variable ${name}`,
@@ -131,7 +131,28 @@ function generatedEnvironment(
       );
     }
   }
+}
+
+function generatedEnvironment(
+  input: ProfileInput,
+  runtime: RuntimeConfig,
+  home: string,
+  policy: NativePolicy,
+): {
+  env: Record<string, string>;
+  settingsText: string;
+  settingsPath: string;
+} {
   const agentDir = fs.mkdtempSync(`${input.session}.agent-`);
+  const managed = Object.fromEntries([
+    ["HOME", home],
+    ["PI_CODING_AGENT_DIR", agentDir],
+    ["PI_CODING_AGENT_SESSION_DIR", path.dirname(input.session)],
+    ["PI_OFFLINE", "1"],
+    ["PI_SKIP_VERSION_CHECK", "1"],
+    ["PI_TELEMETRY", "0"],
+  ]);
+  validateCredentials(runtime.credentialEnv, input.env, managed);
   const settingsText = JSON.stringify(nativeSettings(policy));
   const settingsPath = path.join(agentDir, "settings.json");
   fs.writeFileSync(settingsPath, settingsText, { mode: 0o600 });
@@ -140,12 +161,7 @@ function generatedEnvironment(
       ([name]) =>
         name !== "OPENAI_API_KEY" || runtime.credentialEnv.includes(name),
     ),
-    ["HOME", home],
-    ["PI_CODING_AGENT_DIR", agentDir],
-    ["PI_CODING_AGENT_SESSION_DIR", path.dirname(input.session)],
-    ["PI_OFFLINE", "1"],
-    ["PI_SKIP_VERSION_CHECK", "1"],
-    ["PI_TELEMETRY", "0"],
+    ...Object.entries(managed),
   ]);
   return { env, settingsText, settingsPath };
 }
