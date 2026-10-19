@@ -115,6 +115,8 @@ function contextOf(
     mergeQueue: job.mergeQueue,
     op,
     session: sessionRunnerOf({
+      cfg: job.cfg,
+      issue: job.issue,
       stage: job.stage,
       brain: job.brain,
       hooks: job.hooks,

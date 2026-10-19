@@ -13,10 +13,12 @@ import path from "node:path";
 import {
   configureClone,
   guardCommits,
+  setUpCheckout,
   updateSubmodules,
 } from "../clone-setup.ts";
 import type { Config, JobCheckout } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
+import { head } from "../git-state.ts";
 import { git } from "../github.ts";
 import { withCloneLock, withWikiLock } from "../locks.ts";
 import { OpsError } from "../ops-error.ts";
@@ -179,5 +181,43 @@ function openJobCheckout(
   return { root, repo, docs, branch };
 }
 
+// Prepares the currently selected code checkout before its model starts and
+// records the result separately from command output. Rerun for every session
+// so integration/head changes cannot inherit a stale preparation claim.
+function setupContext(
+  cfg: Config,
+  issue: number,
+  session: { stage: string; key: string; repo: string },
+): string {
+  const { stage, key, repo } = session;
+  const name = `setup-${stage}-${key}`;
+  const result = setUpCheckout(cfg, issue, repo, `${name}.log`);
+  if (result === null) {
+    return "Configured setup: not configured; no project-specific environment was provisioned by the pipeline.";
+  }
+  const record = {
+    stage,
+    key,
+    headSha: head(repo),
+    code: result.code,
+    pass: result.code === 0,
+    log: result.log,
+  };
+  const file = path.join(paths.runDir(cfg, issue), `${name}.json`);
+  fs.writeFileSync(file, `${JSON.stringify(record)}\n`);
+  let status = "succeeded";
+  if (!record.pass) {
+    status = "FAILED; the test environment is not successfully prepared";
+  }
+  return [
+    "## Checkout setup result",
+    `Configured setup ${status} (exit ${result.code}).`,
+    `Checkout: ${repo} at HEAD ${record.headSha}.`,
+    `Setup log: ${result.log}`,
+    `Setup result: ${file}`,
+    "This result describes this session's preparation; do not assume successful setup from generic environment instructions.",
+  ].join("\n");
+}
+
 export type { JobDirs };
-export { openJobCheckout };
+export { openJobCheckout, setupContext };

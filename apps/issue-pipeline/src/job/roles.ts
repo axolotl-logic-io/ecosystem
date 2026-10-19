@@ -15,6 +15,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import type { ModelRole } from "../config-legacy.ts";
 import type { JobRolesConfig } from "../config-schema.ts";
+import { issueEnvironment } from "../issue-environment.ts";
 import type { Stage } from "../stages.ts";
 import { JOB_DOCS, JOB_REPO } from "./layout.ts";
 import type { Access, PathScope } from "./pipeline-commit.ts";
@@ -263,7 +264,12 @@ function boundaryOf(
     role,
     checkout: paths.jobCheckout(cfg, issue, stage),
     access: { repo: STAGE_CODE_ACCESS[stage], docs: STAGE_WIKI_ACCESS[stage] },
-    env: Object.keys(agentEnvOf(roles, from)).sort(byName),
+    env: [
+      ...new Set([
+        ...Object.keys(agentEnvOf(roles, from)),
+        ...issueEnvironment(cfg, issue).keys(),
+      ]),
+    ].sort(byName),
     network: roles[role].network,
     runtime: runtimeBoundary(cfg.runtime, cfg.models),
   };

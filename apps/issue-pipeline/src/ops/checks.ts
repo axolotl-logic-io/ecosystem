@@ -9,6 +9,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
+import { issueEnvironment } from "../issue-environment.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 
@@ -75,6 +76,7 @@ interface Verification {
   checks: Check[];
   logDir: string;
   timeoutMs: number;
+  env: ReadonlyMap<string, string>;
 }
 
 function present(command: string | null | undefined): command is string {
@@ -107,7 +109,10 @@ function exitCheck(
   command: string,
   logName: string = id,
 ): boolean {
-  const result = shell(command, v.dir, logPath(v, logName), v.timeoutMs);
+  const result = shell(command, v.dir, logPath(v, logName), {
+    timeoutMs: v.timeoutMs,
+    env: v.env,
+  });
   const pass = result.code === 0;
   record(v, { id, pass, detail: `exit ${result.code}` }, result);
   return pass;
@@ -139,7 +144,10 @@ function checkLockfiles(v: Verification): void {
   for (const { path: file, regenerate } of lockfiles) {
     if (v.changed.includes(file)) {
       const log = logPath(v, `lockfile-${path.basename(file)}`);
-      const result = shell(regenerate, v.dir, log, v.timeoutMs);
+      const result = shell(regenerate, v.dir, log, {
+        timeoutMs: v.timeoutMs,
+        env: v.env,
+      });
       const diff = ["-C", v.dir, "diff", "--quiet", "--", file];
       const same = run("git", diff, { allowFail: true }).code === 0;
       run("git", ["-C", v.dir, "checkout", "--", file], { allowFail: true });
@@ -214,6 +222,7 @@ function runChecks(
   const v: Verification = {
     dir,
     changed,
+    env: issueEnvironment(cfg, n),
     checks: [],
     logDir: path.join(
       paths.runDir(cfg, n),

@@ -1,13 +1,16 @@
-// The git setup the code clone and the private wiki clone share: the
-// pipeline's git identity, and the pre-push hook that keeps agents from
-// pushing; and the pre-commit hook that keeps a stage job's sessions
-// committing only through pipeline_commit.
+// Checkout preparation shared by legacy worktrees and job-mode clones:
+// git identity and guarded commits/pushes, submodules, and the configured
+// repository setup that provisions each issue's local test environment.
 
 import fs from "node:fs";
 import path from "node:path";
+import { z } from "zod";
 import type { Config } from "./config.ts";
+import { paths } from "./config.ts";
 import { git } from "./github.ts";
-import { run } from "./process.ts";
+import { issueEnvironment } from "./issue-environment.ts";
+import type { ShellResult } from "./process.ts";
+import { run, shell } from "./process.ts";
 
 const PRE_PUSH_HOOK =
   '#!/bin/sh\n[ "$ISSUE_PIPELINE_OPS" = 1 ] || { echo "Only the issue pipeline ops tool may push from this clone." >&2; exit 1; }\n';
@@ -53,4 +56,40 @@ function updateSubmodules(cfg: Config, dir: string): void {
   git(cfg, "dev", ["-C", dir, "submodule", "update", "--init", "--recursive"]);
 }
 
-export { configureClone, guardCommits, updateSubmodules, writeHook };
+const MS_PER_MINUTE = 60_000;
+// The config keys setUpCheckout reads; loadConfig applied their defaults.
+const SETUP_SETTINGS = z.looseObject({
+  commandTimeoutMinutes: z.number(),
+  commands: z.looseObject({ setup: z.string().nullish() }),
+});
+
+// Runs the repo's setup command (config `commands.setup`), if it sets one,
+// in issue `n`'s checkout `dir`, so the writer's own test runs get this
+// issue's database and ports instead of the shared defaults. It writes the
+// command's output to `logName` in the issue's run folder. Returns null
+// without configured setup; callers must surface failures to role sessions.
+function setUpCheckout(
+  cfg: Config,
+  n: number,
+  dir: string,
+  logName: string,
+): ShellResult | null {
+  const { commandTimeoutMinutes, commands } = SETUP_SETTINGS.parse(cfg);
+  const { setup } = commands;
+  if (setup === undefined || setup === null || setup === "") {
+    return null;
+  }
+  const log = path.join(paths.runDir(cfg, n), logName);
+  return shell(setup, dir, log, {
+    timeoutMs: commandTimeoutMinutes * MS_PER_MINUTE,
+    env: issueEnvironment(cfg, n),
+  });
+}
+
+export {
+  configureClone,
+  guardCommits,
+  setUpCheckout,
+  updateSubmodules,
+  writeHook,
+};

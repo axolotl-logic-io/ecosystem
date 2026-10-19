@@ -9,8 +9,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ensureClone, ensureWorktree, setUpCheckout } from "../checkouts.ts";
+import { ensureClone, ensureWorktree } from "../checkouts.ts";
 import { laneOf, raceForClaim } from "../claims.ts";
+import { setUpCheckout } from "../clone-setup.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";

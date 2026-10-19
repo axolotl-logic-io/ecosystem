@@ -102,6 +102,13 @@ test("each stage's boundary has its role, and no stage's session env names a tok
     for (const stage of stages) {
       const boundary = boundaryOf(CFG, ISSUE, stage, FROM);
       assert.equal(boundary.role, role, stage);
+      for (const name of [
+        "ISSUE_PIPELINE_REPO",
+        "ISSUE_PIPELINE_ISSUE",
+        "ISSUE_PIPELINE_RUN_DIR",
+      ]) {
+        assert.ok(boundary.env.includes(name), `${stage} ${name}`);
+      }
       for (const name of [...GH_VARS, "W_TOKEN", "M_TOKEN"]) {
         assert.equal(boundary.env.includes(name), false, `${stage} ${name}`);
       }

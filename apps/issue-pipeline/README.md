@@ -39,6 +39,42 @@ Actual M, not premerge `verifiedSha=H` or head CI, must pass deterministic verif
 
 Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-implementor` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
 
+## Role checkout setup
+
+Before each allowed model session, job mode runs the repository's optional
+`commands.setup` in its code checkout at the selected HEAD, including Author,
+Developer, Reviewer hardening/integration and final security. Setup uses the
+configured command timeout and supervised command execution. It currently reruns
+for every session, so a changed integration/merged HEAD is prepared too.
+
+Configured commands and role tool environments share these non-secret values,
+overriding inherited copies:
+
+- `ISSUE_PIPELINE_REPO`: configured owner/repository;
+- `ISSUE_PIPELINE_ISSUE`: decimal issue number;
+- `ISSUE_PIPELINE_RUN_DIR`: absolute issue run directory, stable across stages.
+
+Operator-owned setup selects issue-isolated databases, proxies and ports using
+this identity, and provisions dependencies and generated files in the checkout.
+A setup-shell export alone does not reach a later model; persist non-secret
+application configuration or arrange services through the configured setup.
+Commands must not rely on leaving background children in their supervised group.
+
+The issue run directory holds `setup-<stage>-<role>-<n>.log` and a matching JSON
+result (HEAD, exit code, pass flag and log path). The role task explicitly reports
+success/failure and these paths. A failed setup does not claim a prepared
+environment or add an automatic retry/stop policy. Without setup, no command or
+project-specific environment/database provisioning occurs.
+
+The pipeline does not copy `.env` files or hard-code project-buddy setup. Where
+an operator provisions `apps/web/.env.test`, the contract is the committed
+`HEAD:apps/web/.env.test.example`, opened with `O_NOFOLLOW` and permissions `0600`,
+never a dirty example, another environment file, production values or
+`.env.local`. Fixture regressions exercise this with a non-secret example and
+real issue-isolated SQLite databases. Operator-specific services still require
+correct configured setup. Source merge does not install this change or modify
+operator scripts.
+
 ## Caller invocation and concurrency
 
 Run installed `job.mjs`, once per stage, with **one `--issue`, required `--branch` and required `--brain-path`**, including boundary prints:
@@ -218,4 +254,4 @@ mise //apps/issue-pipeline:lint
 mise //apps/issue-pipeline:build
 ```
 
-Tests use temporary HOME/pipeline roots, local bare git origins, fake GitHub and fake pi, never real GitHub/models or production data. Create/assert the temporary ROOT and set HOME/ISSUE_PIPELINE_ROOT **before dynamic source imports**: root resolution happens once on import. Full-flow regressions cover writable hardening/integration, final read-only security, wiki-only completion, explicit fresh-root invocation and claim-populated interrupted-merge replay. Legacy scheduling safety tests remain compatibility coverage, not a live dispatch recommendation. A failure or flake blocks acceptance; fix its cause rather than rerunning for a pass.
+Tests require the `sqlite3` CLI for the guarded issue-isolation fixtures; no running database server is needed. Tests use temporary HOME/pipeline roots, local bare git origins, fake GitHub and fake pi, never real GitHub/models or production data. Create/assert the temporary ROOT and set HOME/ISSUE_PIPELINE_ROOT **before dynamic source imports**: root resolution happens once on import. Full-flow regressions cover writable hardening/integration, final read-only security, wiki-only completion, explicit fresh-root invocation and claim-populated interrupted-merge replay. Legacy scheduling safety tests remain compatibility coverage, not a live dispatch recommendation. A failure or flake blocks acceptance; fix its cause rather than rerunning for a pass.

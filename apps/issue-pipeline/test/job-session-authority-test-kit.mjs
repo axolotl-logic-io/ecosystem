@@ -166,6 +166,8 @@ async function openMergeJob(
   /** @type {UsageEntry[]} */
   const appended = [];
   const session = sessionRunnerOf({
+    cfg,
+    issue: ISSUE,
     stage: STAGE,
     brain,
     hooks,

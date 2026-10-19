@@ -140,6 +140,10 @@ const print = (event) => {
   fs.appendFileSync(session, JSON.stringify(event) + "\\n");
 };
 const work = () => {
+  if (script.probe) {
+    const output = execFileSync(process.execPath, script.probe, { cwd: code, encoding: "utf8", timeout: 10000 });
+    log({ probe: JSON.parse(output) });
+  }
   if (script.commit) {
     const file = path.join(process.cwd(), script.commit);
     fs.writeFileSync(file, "work\\n");

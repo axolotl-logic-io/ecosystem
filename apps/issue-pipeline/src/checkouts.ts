@@ -16,6 +16,7 @@ import {
   uncommitted,
 } from "./git-state.ts";
 import { git } from "./github.ts";
+import { issueEnvironment } from "./issue-environment.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import { run, runFailure, shell } from "./process.ts";
@@ -25,12 +26,6 @@ import { readWriteAuthority } from "./write-authority.ts";
 const TEARDOWN_TIMEOUT_MS = 300_000;
 const ISSUE_DIR = /^issue-(?<n>\d+)$/u;
 const PUSHED_FILE = "pushed.json";
-const MS_PER_MINUTE = 60_000;
-// The config keys setUpCheckout reads; loadConfig applied their defaults.
-const SETUP_SETTINGS = z.looseObject({
-  commandTimeoutMinutes: z.number(),
-  commands: z.looseObject({ setup: z.string().nullish() }),
-});
 // The part of the push record a claim reads.
 const PUSHED = z.object({ sha: z.string(), op: z.string() });
 
@@ -106,7 +101,10 @@ function removeWorktree(cfg: Config, number: number): void {
     const dir = paths.runDir(cfg, number);
     fs.mkdirSync(dir, { recursive: true });
     const log = path.join(dir, "teardown.log");
-    shell(teardown, dir, log, TEARDOWN_TIMEOUT_MS);
+    shell(teardown, dir, log, {
+      timeoutMs: TEARDOWN_TIMEOUT_MS,
+      env: issueEnvironment(cfg, number),
+    });
   }
   if (cfg.checkout?.issue === number) {
     return;
@@ -264,26 +262,6 @@ function push(
   return { headSha, ...changes };
 }
 
-// Runs the repo's setup command (config `commands.setup`), if it sets one,
-// in issue `n`'s checkout `dir`, so the writer's own test runs get this
-// issue's database and ports instead of the shared defaults. It writes the
-// command's output to `logName` in the issue's run folder. A failure is only
-// logged: verify runs setup again and reports it.
-function setUpCheckout(
-  cfg: Config,
-  n: number,
-  dir: string,
-  logName: string,
-): void {
-  const { commandTimeoutMinutes, commands } = SETUP_SETTINGS.parse(cfg);
-  const { setup } = commands;
-  if (setup === undefined || setup === null || setup === "") {
-    return;
-  }
-  const log = path.join(paths.runDir(cfg, n), logName);
-  shell(setup, dir, log, commandTimeoutMinutes * MS_PER_MINUTE);
-}
-
 export type { BranchChanges, PushRecord, PushResult };
 export {
   branchChanges,
@@ -295,6 +273,5 @@ export {
   pushHead,
   recordPush,
   removeWorktree,
-  setUpCheckout,
   unsavedWork,
 };

@@ -34,6 +34,11 @@ interface RunResult {
   timedOut: boolean;
 }
 
+interface ShellOptions {
+  timeoutMs: number;
+  env: ReadonlyMap<string, string>;
+}
+
 interface ShellResult {
   code: number;
   log: string | undefined;
@@ -159,13 +164,14 @@ function supervised(
   file: string,
   command: string,
   cwd: string,
-  timeoutMs: number,
+  options: ShellOptions,
 ): ShellReport {
+  const { timeoutMs, env } = options;
   const request = JSON.stringify({ command, timeoutMs });
   const result = spawnSync(process.execPath, [file, request], {
     cwd,
     encoding: "utf8",
-    env: environment(SHELL_ENV),
+    env: environment(new Map([...env, ...SHELL_ENV])),
     killSignal: "SIGTERM",
     maxBuffer: MAX_BUFFER_BYTES,
     timeout: timeoutMs + SUPERVISOR_SLACK_MS,
@@ -215,12 +221,18 @@ function shell(
   command: string,
   cwd: string,
   logPath: string | undefined,
-  timeoutMs: number,
+  timeout: number | ShellOptions,
 ): ShellResult {
+  let options: ShellOptions;
+  if (typeof timeout === "number") {
+    options = { timeoutMs: timeout, env: new Map() };
+  } else {
+    options = timeout;
+  }
   const file = supervisorFile();
   let report = missingSupervisor();
   if (file !== undefined) {
-    report = supervised(file, command, cwd, timeoutMs);
+    report = supervised(file, command, cwd, options);
   }
   const { stdout, stderr } = report;
   const exit = report.status ?? report.signal;

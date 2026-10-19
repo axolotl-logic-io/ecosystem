@@ -9,9 +9,11 @@
 // log, and its outcome to job.json.
 
 import { z } from "zod";
+import type { Config } from "../config.ts";
 import type { ModelRole } from "../config-legacy.ts";
 import type { Stage } from "../stages.ts";
 import type { Brain, PinnedPrompt } from "./brain.ts";
+import { setupContext } from "./checkout.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runSession } from "./launch.ts";
 import type { SessionRaw } from "./raw-results.ts";
@@ -37,6 +39,8 @@ const STOPPING = "the job is stopping";
 
 // What the sessions read of their job.
 interface SessionJob {
+  cfg: Config;
+  issue: number;
   stage: Stage;
   brain: Brain;
   hooks: LaunchHooks;
@@ -152,7 +156,14 @@ function sessionRunnerOf(
     const { role } = STAGE_AGENTS[job.stage];
     const n = (counts.get(role) ?? 0) + 1;
     counts.set(role, n);
-    return await runAs(job, spec, { key: `${role}-${n}`, role, prompt });
+    const key = `${role}-${n}`;
+    const setup = setupContext(job.cfg, job.issue, {
+      stage: job.stage,
+      key,
+      repo: job.hooks.repo,
+    });
+    const prepared = { ...spec, task: `${spec.task}\n\n${setup}` };
+    return await runAs(job, prepared, { key, role, prompt });
   };
 }
 

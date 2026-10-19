@@ -6,6 +6,7 @@
 
 import type { Config } from "../config.ts";
 import { paths, wikiCfg, withCheckout } from "../config.ts";
+import { issueEnvironment } from "../issue-environment.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 import type { RunArgs } from "./args.ts";
 import { contextLogOf } from "./context-log.ts";
@@ -39,7 +40,10 @@ function hooksOf(
 ): LaunchHooks {
   const { status, control } = watch;
   const { cwd, repo, from, job } = where;
-  const shared = agentEnvOf(rolesOf(cfg.jobRoles), from);
+  const shared = {
+    ...agentEnvOf(rolesOf(cfg.jobRoles), from),
+    ...Object.fromEntries(issueEnvironment(cfg, args.issue)),
+  };
   const scopes = new Map<string, PathScope>();
   const scoped = withCheckout(cfg, {
     issue: args.issue,
