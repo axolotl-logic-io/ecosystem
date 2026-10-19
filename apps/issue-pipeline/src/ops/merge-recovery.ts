@@ -6,7 +6,7 @@ import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
-import { parseRequest } from "../process.ts";
+import { parseRequest, sleepMs } from "../process.ts";
 import { confirmMerged, currentRevision } from "../revision.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
 import type { IssueState, MergeAttempt, Revision } from "../state.ts";
@@ -14,8 +14,16 @@ import { approvalHolds, sameRevision } from "../state.ts";
 import { FULL_SHA, mergedParent } from "./merged-graph.ts";
 import { viewForMerge } from "./pr-merge.ts";
 
-const READS_PER_INVOCATION = 3;
-const TOTAL_READS = 6;
+interface ConfirmationClock {
+  now: () => number;
+  sleep: (ms: number) => void;
+}
+
+const SYSTEM_CLOCK: ConfirmationClock = {
+  now: () => performance.now(),
+  sleep: sleepMs,
+};
+const MS_PER_SECOND = 1000;
 const RECOVERY_REQUEST = z.object({ number: z.number().int().positive() });
 
 type RecoveryReply =
@@ -25,7 +33,7 @@ type RecoveryReply =
 function diagnostic(detail: string): RecoveryReply {
   return {
     merged: false,
-    reason: `bounded merge recovery (${READS_PER_INVOCATION} reads per invocation, ${TOTAL_READS} total): code may already have landed; another merge POST or code writer is not authorized; retain recovery evidence: ${detail}`,
+    reason: `bounded merge recovery: code may already have landed; another merge POST or code writer is not authorized; retain recovery evidence: ${detail}`,
   };
 }
 
@@ -134,6 +142,7 @@ function readEvidence(
   cfg: Config,
   number: number,
   state: IssueState,
+  withinDeadline: () => boolean,
 ): RecoveryReply {
   const attempt = boundAttempt(cfg, number, state);
   const view = viewForMerge(cfg, attempt.pr);
@@ -185,23 +194,33 @@ function readEvidence(
       "PR, trusted inputs or wiki no longer match the original authorization",
     );
   }
+  if (!withinDeadline()) {
+    throw new OpsError("confirmation deadline reached during evidence reads");
+  }
   saveReceipt(cfg, number, observed, { ...attempt.authorized, code: result });
   return { merged: true, mergeCommit: result, headSha: view.headRefOid };
 }
 
-// Each invocation spends at most three passes; six are available across all
-// interruptions/restarts. Spend durably before reading so crashes cannot loop.
-function reconcileMerge(cfg: Config, request: unknown): RecoveryReply {
+// A deadline bounds this invocation only. Later caller-authorized runs may
+// confirm the same saved response, but never renew mutation authority. The
+// cumulative read count remains durable audit evidence, not a lifetime limit.
+function reconcileMerge(
+  cfg: Config,
+  request: unknown,
+  clock: ConfirmationClock = SYSTEM_CLOCK,
+): RecoveryReply {
   const { number } = parseRequest(RECOVERY_REQUEST, "reconcile-merge", request);
-  let detail =
-    "finite lifetime read budget exhausted; explicit operator reconciliation required";
-  for (let pass = 0; pass < READS_PER_INVOCATION; pass += 1) {
+  const { deadlineSeconds, backoffSeconds } = cfg.mergeConfirmation;
+  const deadline = clock.now() + deadlineSeconds * MS_PER_SECOND;
+  function withinDeadline(): boolean {
+    return clock.now() < deadline;
+  }
+  let detail = "confirmation deadline reached";
+  let waitIndex = 0;
+  while (withinDeadline()) {
     try {
       const state = readWriteState(cfg, number);
       const attempt = boundAttempt(cfg, number, state);
-      if (attempt.reads >= TOTAL_READS) {
-        break;
-      }
       const spent = {
         ...state,
         mergeAttempt: { ...attempt, reads: attempt.reads + 1 },
@@ -211,16 +230,30 @@ function reconcileMerge(cfg: Config, request: unknown): RecoveryReply {
         readWriteState(cfg, number).mergeAttempt?.reads !==
         spent.mergeAttempt.reads
       ) {
-        throw new OpsError("reconciliation budget checkpoint is not confirmed");
+        throw new OpsError("reconciliation read checkpoint is not confirmed");
       }
-      return readEvidence(cfg, number, spent);
+      return readEvidence(cfg, number, spent, withinDeadline);
     } catch (error) {
       if (error instanceof Error) {
         detail = error.message;
       }
     }
+    const seconds = backoffSeconds[waitIndex];
+    // Config validation guarantees a nonempty schedule. Repeat its final wait.
+    if (seconds === undefined) {
+      throw new OpsError("missing confirmation backoff schedule");
+    }
+    const remaining = deadline - clock.now();
+    if (remaining <= 0) {
+      break;
+    }
+    clock.sleep(Math.min(seconds * MS_PER_SECOND, remaining));
+    waitIndex = Math.min(waitIndex + 1, backoffSeconds.length - 1);
   }
-  return diagnostic(detail);
+  return diagnostic(
+    `confirmation deadline reached (${deadlineSeconds}s); ${detail}`,
+  );
 }
 
+export type { ConfirmationClock };
 export { beginMerge, diagnostic, reconcileMerge, saveMergeResponse };

@@ -31,6 +31,7 @@ const MERGE_ATTEMPT = z.object({
   hardened: REVISION,
   integration: INTEGRATION.nullable(),
   result: z.string().regex(FULL_SHA_PATTERN).nullable(),
+  // Cumulative audit evidence, never a lifetime confirmation limit.
   reads: z.number().int().nonnegative(),
 });
 

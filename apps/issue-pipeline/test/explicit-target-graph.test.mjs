@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import {
   calls,
   consumed,
@@ -52,7 +53,10 @@ test("fast-forward multi-commit H stops on 201 and on restart before checks or r
       prStep(w, mergedView(w), true),
     ]).flat(),
   ]);
-  assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, UNSUPPORTED);
+  assert.match(
+    REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+    UNSUPPORTED,
+  );
   consumed();
   script(w, receiptSteps(w));
   assert.throws(
@@ -107,7 +111,10 @@ for (const shape of ["reversed", "octopus"]) {
         prStep(unsupported, mergedView(unsupported), true),
       ]).flat(),
     ]);
-    assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, UNSUPPORTED);
+    assert.match(
+      REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+      UNSUPPORTED,
+    );
     assert.equal(git(w.origin, ["rev-parse", BASE]), sha);
     consumed();
     script(w, receiptSteps(unsupported));
@@ -194,7 +201,7 @@ test("ambiguous criss-cross history retains landed truth but cannot establish ow
     ]).flat(),
   ]);
   assert.match(
-    REFUSED.parse(merge(cfg, request(ambiguous))).reason,
+    REFUSED.parse(merge(cfg, request(ambiguous), confirmationClock())).reason,
     UNSUPPORTED,
   );
   assert.deepEqual(readWriteState(cfg, ISSUE).codeMerged, {

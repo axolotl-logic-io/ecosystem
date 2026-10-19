@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import {
   child,
   confirmation,
@@ -26,7 +27,9 @@ import {
   commit,
   git,
   ISSUE,
+  ISSUE_DATA,
   PR,
+  REPO,
   world,
 } from "./explicit-target-world-test-kit.mjs";
 
@@ -36,6 +39,7 @@ const { readWriteState, stateBody } = await import("../src/saved-state.ts");
 const { saveState } = await import("../src/ops/save-state.ts");
 const { verify } = await import("../src/ops/verify.ts");
 const { mergedCode } = await import("../src/ops/merged-review.ts");
+const INPUT_MOVEMENT = /trusted inputs or wiki no longer match/u;
 const OK = z.looseObject({
   ok: z.literal(true),
   merged: z.literal(true),
@@ -60,7 +64,7 @@ for (const delay of [
       ...confirmation(w),
       mergeComment(w),
     ]);
-    assert.deepEqual(merge(w.cfg, request(w)), {
+    assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
       merged: true,
       mergeCommit: w.merged,
       headSha: w.head,
@@ -91,11 +95,14 @@ test("actual result M survives a later target tip and checks/security read M and
   const later = commit(w.seed, "later.txt", "later integration\n");
   git(w.seed, ["push", "-q", "origin", `${later}:refs/heads/${BASE}`]);
   script(w, confirmation(w), true);
-  assert.deepEqual(reconcileMerge(w.cfg, { number: ISSUE }), {
-    merged: true,
-    mergeCommit: w.merged,
-    headSha: w.head,
-  });
+  assert.deepEqual(
+    reconcileMerge(w.cfg, { number: ISSUE }, confirmationClock()),
+    {
+      merged: true,
+      mergeCommit: w.merged,
+      headSha: w.head,
+    },
+  );
   assert.equal(readWriteState(w.cfg, ISSUE).merged?.code, w.merged);
   assert.equal(posts().length, 1);
   consumed();
@@ -164,7 +171,7 @@ test("interruption after durable 201 response recovers in a new process without 
 test("a stale job snapshot cannot erase a confirmed receipt or its exact security rejection", () => {
   const w = world();
   script(w, [...prechecks(w), post(w), ...confirmation(w), mergeComment(w)]);
-  assert.equal(merge(w.cfg, request(w)).merged, true);
+  assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, true);
   const confirmed = readWriteState(w.cfg, ISSUE);
   assert.ok(confirmed.merged !== null);
   const security = {
@@ -180,6 +187,38 @@ test("a stale job snapshot cannot erase a confirmed receipt or its exact securit
   assert.deepEqual(retained.codeMerged, { pr: PR, sha: w.merged });
   assert.deepEqual(retained.mergeAttempt, confirmed.mergeAttempt);
   assert.deepEqual(retained.hardened, w.state.hardened);
+  assert.equal(posts().length, 1);
+  consumed();
+});
+
+test("trusted input movement during delayed confirmation retains landed truth but cannot create an own receipt", () => {
+  const w = world();
+  const changed = confirmation(w).map((step) => {
+    if (step.args[1] === `repos/${REPO}/issues/${ISSUE}`) {
+      return {
+        ...step,
+        stdout: JSON.stringify({
+          ...ISSUE_DATA,
+          body: "changed after authorization",
+        }),
+      };
+    }
+    return step;
+  });
+  script(w, [
+    ...prechecks(w),
+    post(w),
+    ...Array.from({ length: 3 }, () => changed).flat(),
+  ]);
+  const reply = merge(w.cfg, request(w), confirmationClock());
+  assert.equal(reply.merged, false);
+  assert.ok("reason" in reply);
+  assert.match(reply.reason, INPUT_MOVEMENT);
+  const saved = readWriteState(w.cfg, ISSUE);
+  assert.equal(saved.merged, null);
+  assert.equal(saved.security, null);
+  assert.equal(saved.codeMerged?.sha, w.merged);
+  assert.equal(saved.mergeAttempt?.result, w.merged);
   assert.equal(posts().length, 1);
   consumed();
 });

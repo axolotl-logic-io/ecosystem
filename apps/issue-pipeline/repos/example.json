@@ -45,6 +45,10 @@
   "mergeAdmin": false,
   "requireCi": true,
   "ciWaitMinutes": 30,
+  "mergeConfirmation": {
+    "deadlineSeconds": 90,
+    "backoffSeconds": [1, 2, 4, 8, 10]
+  },
   "commandTimeoutMinutes": 20,
   "leaseHours": 3,
   "maxCiFixes": 2,

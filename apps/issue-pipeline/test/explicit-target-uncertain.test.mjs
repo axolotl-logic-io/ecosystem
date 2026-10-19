@@ -2,8 +2,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import {
   child,
+  confirmation,
   interruptAfterResponse,
   posts,
 } from "./explicit-target-recovery-test-kit.mjs";
@@ -41,20 +43,23 @@ const BOUNDED =
   /bounded merge recovery.*may already have landed.*another merge POST.*not authorized/u;
 const SHA_LENGTH = 40;
 const READS_PER_RUN = 3;
-const TOTAL_READS = 6;
-test("exhausted reads and lifted stops retain attempted authority and never permit another POST or code writer", () => {
+const EXPIRED_RUNS = 3;
+test("elapsed deadlines and lifted stops retain attempted authority and never permit another POST or code writer", () => {
   const w = world();
   function open() {
     return prStep(w, { state: "OPEN", mergeCommit: null });
   }
   script(w, [...prechecks(w), post(w), ...Array.from({ length: 3 }, open)]);
-  assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, BOUNDED);
+  assert.match(
+    REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+    BOUNDED,
+  );
   const uncertain = readWriteState(w.cfg, ISSUE);
   assert.equal(uncertain.mergeAttempt?.reads, READS_PER_RUN);
   assert.equal(uncertain.merged, null);
   assert.equal(uncertain.security, null);
   assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
-  // Stale job releases cannot erase the response or spent budget.
+  // Stale job releases cannot erase the response or cumulative read evidence.
   saveState(w.cfg, { number: ISSUE, state: w.state });
   assert.deepEqual(
     readWriteState(w.cfg, ISSUE).mergeAttempt,
@@ -69,26 +74,26 @@ test("exhausted reads and lifted stops retain attempted authority and never perm
   saveState(w.cfg, { number: ISSUE, state: lifted });
   script(w, Array.from({ length: 3 }, open), true);
   assert.match(
-    REFUSED.parse(reconcileMerge(w.cfg, { number: ISSUE })).reason,
+    REFUSED.parse(reconcileMerge(w.cfg, { number: ISSUE }, confirmationClock()))
+      .reason,
     BOUNDED,
   );
-  assert.equal(readWriteState(w.cfg, ISSUE).mergeAttempt?.reads, TOTAL_READS);
-  consumed();
-  script(w, [], true);
-  assert.match(
-    REFUSED.parse(reconcileMerge(w.cfg, { number: ISSUE })).reason,
-    BOUNDED,
+  assert.equal(
+    readWriteState(w.cfg, ISSUE).mergeAttempt?.reads,
+    READS_PER_RUN * 2,
   );
-  assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
   consumed();
-  // Even a direct stale merge request with fresh-looking OPEN cannot POST.
-  script(w, prechecks(w).slice(0, -2), true);
-  assert.deepEqual(merge(w.cfg, request(w)), {
-    merged: false,
-    reason: "behind",
+  // A direct stale merge request must recover read-only, before approval,
+  // even after what used to be the six-read lifetime cap.
+  script(w, confirmation(w), true);
+  assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
+    merged: true,
+    mergeCommit: w.merged,
+    headSha: w.head,
   });
+  assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
   assert.equal(posts().length, 1);
-  assert.equal(readWriteState(w.cfg, ISSUE).merged, null);
+  assert.equal(readWriteState(w.cfg, ISSUE).merged?.code, w.merged);
   consumed();
 });
 
@@ -114,7 +119,10 @@ for (const defect of [
         prStep(w, { ...mergedView(w), ...defect }),
       ),
     ]);
-    assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, BOUNDED);
+    assert.match(
+      REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+      BOUNDED,
+    );
     const saved = readWriteState(w.cfg, ISSUE);
     assert.equal(saved.merged, null);
     assert.equal(saved.security, null);
@@ -135,7 +143,7 @@ for (const response of [
   test(`missing saved successful response remains external on restart: ${JSON.stringify(response)}`, () => {
     const w = world();
     script(w, [...prechecks(w), post(w, { stdout: response })]);
-    assert.equal(merge(w.cfg, request(w)).merged, false);
+    assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, false);
     assert.equal(readWriteState(w.cfg, ISSUE).mergeAttempt?.result, null);
     script(w, [prStep(w, mergedView(w))], true);
     const resumed = child(w, { op: "reconcile-merge", number: ISSUE });
@@ -162,28 +170,30 @@ test("interruption before response save never recovers own provenance from metad
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.merged);
   assert.equal(readWriteState(w.cfg, ISSUE).mergeAttempt?.result, null);
   script(w, [prStep(w, mergedView(w))], true);
-  assert.deepEqual(reconcileMerge(w.cfg, { number: ISSUE }), {
-    merged: true,
-    byHand: true,
-    mergeCommit: w.merged,
-    headSha: w.head,
-  });
+  assert.deepEqual(
+    reconcileMerge(w.cfg, { number: ISSUE }, confirmationClock()),
+    {
+      merged: true,
+      byHand: true,
+      mergeCommit: w.merged,
+      headSha: w.head,
+    },
+  );
   assert.equal(readWriteState(w.cfg, ISSUE).merged, null);
   assert.equal(posts().length, 1);
   consumed();
 });
 
-test("interruption spends a durable pass and abusive repeated process restarts cannot renew the lifetime budget", () => {
+test("interruption retains cumulative read evidence without permanently expiring later bounded recovery", () => {
   const w = world();
   const { interrupted, saved } = interruptAfterResponse(w);
   assert.equal(interrupted.signal, "SIGKILL");
   assert.equal(saved.mergeAttempt?.reads, 1);
   assert.equal(saved.mergeAttempt?.result, w.merged);
-  const afterInterruptedRestart = TOTAL_READS - 1 - READS_PER_RUN;
-  for (const remaining of [READS_PER_RUN, afterInterruptedRestart, 0]) {
+  for (let run = 1; run <= EXPIRED_RUNS; run += 1) {
     script(
       w,
-      Array.from({ length: remaining }, () =>
+      Array.from({ length: READS_PER_RUN }, () =>
         prStep(w, { state: "OPEN", mergeCommit: null }),
       ),
       true,
@@ -192,14 +202,20 @@ test("interruption spends a durable pass and abusive repeated process restarts c
     assert.equal(resumed.status, 0, resumed.stderr);
     assert.match(REFUSED.parse(JSON.parse(resumed.stdout)).reason, BOUNDED);
     const current = readWriteState(w.cfg, ISSUE);
+    assert.equal(current.mergeAttempt?.reads, 1 + run * READS_PER_RUN);
     assert.equal(current.merged, null);
     assert.equal(current.security, null);
     assert.equal(posts().length, 1);
     consumed();
   }
-  const exhausted = readWriteState(w.cfg, ISSUE);
-  assert.equal(exhausted.mergeAttempt?.reads, TOTAL_READS);
-  assert.deepEqual(exhausted.hardened, saved.hardened);
-  assert.deepEqual(exhausted.integration, saved.integration);
+  script(w, confirmation(w), true);
+  const resumed = child(w, { op: "reconcile-merge", number: ISSUE });
+  assert.equal(OK.parse(JSON.parse(resumed.stdout)).mergeCommit, w.merged);
+  const confirmed = readWriteState(w.cfg, ISSUE);
+  assert.equal(confirmed.mergeAttempt?.reads, 2 + EXPIRED_RUNS * READS_PER_RUN);
+  assert.deepEqual(confirmed.hardened, saved.hardened);
+  assert.deepEqual(confirmed.integration, saved.integration);
   assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
+  assert.equal(posts().length, 1);
+  consumed();
 });

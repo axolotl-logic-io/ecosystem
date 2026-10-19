@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import {
   calls,
   consumed,
@@ -59,7 +60,7 @@ for (const { status, outcome } of [
         updates: [],
       }),
     ]);
-    const reply = merge(w.cfg, request(w));
+    const reply = merge(w.cfg, request(w), confirmationClock());
     assert.equal(reply.merged, false);
     assert.ok("reason" in reply && reply.reason.includes(outcome));
     assert.ok(
@@ -79,7 +80,10 @@ for (const body of ["", "not JSON", '{"sha":""}', '{"sha":"integration"}']) {
       ...prechecks(w),
       post(w, { stdout: `HTTP/2.0 201 Created\n\n${body}` }),
     ]);
-    assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, LANDED);
+    assert.match(
+      REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+      LANDED,
+    );
     assert.equal(mutations().length, 1);
     consumed();
   });
@@ -103,7 +107,10 @@ for (const extra of [
         prStep(w, { ...mergedView(w), ...extra }),
       ),
     ]);
-    assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, WRONG_RECEIPT);
+    assert.match(
+      REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+      WRONG_RECEIPT,
+    );
     assert.equal(mutations().length, 1);
     consumed();
   });
@@ -120,7 +127,10 @@ test("unreadable post-request metadata stops after one mutation", () => {
       stderr: "permission denied",
     })),
   ]);
-  assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, READ_DENIED);
+  assert.match(
+    REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+    READ_DENIED,
+  );
   assert.equal(mutations().length, 1);
   consumed();
 });
@@ -135,7 +145,10 @@ test("matching result must be in freshly fetched integration", () => {
       prStep(w, mergedView(w), true),
     ]).flat(),
   ]);
-  assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, ANCESTRY);
+  assert.match(
+    REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+    ANCESTRY,
+  );
   assert.equal(mutations().length, 1);
   consumed();
 });
@@ -148,7 +161,7 @@ test("exhausted transient post-request reads become a stop reply, never a deferr
     stderr: "HTTP 503 Service Unavailable",
   };
   script(w, [...prechecks(w), post(w), unreadable, unreadable, unreadable]);
-  const reply = REFUSED.parse(merge(w.cfg, request(w)));
+  const reply = REFUSED.parse(merge(w.cfg, request(w), confirmationClock()));
   assert.ok(reply.reason.includes("bounded merge recovery"));
   assert.equal(mutations().length, 1);
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.merged);

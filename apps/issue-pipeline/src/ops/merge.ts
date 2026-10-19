@@ -17,11 +17,13 @@ import { git } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import { currentRevision } from "../revision.ts";
+import { readWriteState } from "../saved-state.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { branchMerge } from "./branch-merge.ts";
 import { mergedText } from "./merge-comment.ts";
 import type { Queued } from "./merge-order.ts";
 import { queued } from "./merge-order.ts";
+import type { ConfirmationClock } from "./merge-recovery.ts";
 import {
   beginMerge,
   diagnostic,
@@ -208,8 +210,17 @@ function precheck(
 // Names the configured destination and immutable authorized source, not the
 // PR's mutable target/head refs. Observations below are not a transaction
 // with PR/input/wiki state or with concurrent integration changes.
-function merge(cfg: Config, request: unknown): MergeReply {
+function merge(
+  cfg: Config,
+  request: unknown,
+  clock?: ConfirmationClock,
+): MergeReply {
   const req = parseRequest(MERGE_REQUEST, "merge", request);
+  // A replay must enter read-only recovery before approval or premerge work,
+  // even if the caller still holds its pre-attempt snapshot and PR looks OPEN.
+  if (readWriteState(cfg, req.number).mergeAttempt !== null) {
+    return reconcileMerge(cfg, { number: req.number }, clock);
+  }
   const { pr } = req.state;
   const view = checkedView(cfg, req);
   if (view.state === "MERGED") {
@@ -240,12 +251,16 @@ function merge(cfg: Config, request: unknown): MergeReply {
     return { merged: false, reason: "draft" };
   }
   approvePr(cfg, pr, req.expectedSha);
-  return attemptedMerge(cfg, req);
+  return attemptedMerge(cfg, req, clock);
 }
 
 // After entering the mutation boundary, errors must be a durable refusal,
 // not an OpsFailure that a generic transient handler could defer/retry.
-function attemptedMerge(cfg: Config, req: MergeRequest): MergeReply {
+function attemptedMerge(
+  cfg: Config,
+  req: MergeRequest,
+  clock?: ConfirmationClock,
+): MergeReply {
   beginMerge(cfg, req.number, req.state.pr, req.revision);
   try {
     const result = branchMerge(cfg, req.expectedSha);
@@ -253,7 +268,7 @@ function attemptedMerge(cfg: Config, req: MergeRequest): MergeReply {
       return diagnostic(result.reason);
     }
     saveMergeResponse(cfg, req.number, result.sha);
-    const receipt = reconcileMerge(cfg, { number: req.number });
+    const receipt = reconcileMerge(cfg, { number: req.number }, clock);
     if (receipt.merged && receipt.byHand !== true) {
       comment(
         cfg,

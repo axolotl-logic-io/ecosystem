@@ -158,7 +158,10 @@ test("merge refuses a revision the state doesn't authorize, a forged receipt's o
   // A review that approved the head, with no hardening, authorizes nothing.
   const unhardened = approvedState(integrated, { hardened: null });
   for (const state of [forged, unbound, unhardened]) {
-    fakeGh.reply([prView({ headRefOid: w.sha })]);
+    fakeGh.reply([
+      savedListing(approvedState(integrated)),
+      prView({ headRefOid: w.sha }),
+    ]);
     assert.throws(
       () => merge(w.cfg, mergeRequest(w, integrated, state)),
       NOT_AUTHORIZED_REVISION,
@@ -171,7 +174,10 @@ test("merge refuses a draft at the approved head without marking it ready", () =
   const w = world();
   const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
   openAt(w, approved);
-  fakeGh.reply([prView({ headRefOid: w.sha, isDraft: true })]);
+  fakeGh.reply([
+    savedListing(approvedState(approved)),
+    prView({ headRefOid: w.sha, isDraft: true }),
+  ]);
   const reply = merge(
     w.cfg,
     mergeRequest(w, approved, approvedState(approved)),

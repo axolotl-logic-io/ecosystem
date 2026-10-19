@@ -155,6 +155,7 @@ function world(options = {}) {
       ...credentialConfig("bot"),
       allowedUsers: ["owner"],
       baseBranch: BASE,
+      mergeConfirmation: { deadlineSeconds: 3, backoffSeconds: [1] },
       commands: { test: "true" },
     }),
   );

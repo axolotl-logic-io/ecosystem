@@ -5,6 +5,12 @@ import { z } from "zod";
 import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
 import { OpsError } from "./ops-error.ts";
 
+const MIDDLE_CONFIRMATION_BACKOFF_SECONDS = 4;
+const LATE_CONFIRMATION_BACKOFF_SECONDS = 8;
+const FINAL_CONFIRMATION_BACKOFF_SECONDS = 10;
+const MAX_CONFIRMATION_DEADLINE_SECONDS = 600;
+const MAX_CONFIRMATION_BACKOFF_STEPS = 20;
+
 const DEFAULTS: Readonly<Record<string, unknown>> = {
   baseBranch: "main",
   // false: lanes finish issues already in progress (agent:working, answered
@@ -17,6 +23,16 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // reviewers read each in full (Axlog, 2026-10-15). Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
+  mergeConfirmation: {
+    deadlineSeconds: 90,
+    backoffSeconds: [
+      1,
+      2,
+      MIDDLE_CONFIRMATION_BACKOFF_SECONDS,
+      LATE_CONFIRMATION_BACKOFF_SECONDS,
+      FINAL_CONFIRMATION_BACKOFF_SECONDS,
+    ],
+  },
   maxCiFixes: 2,
   maxSyncs: 3,
   maxConflictFixes: 2,
@@ -82,6 +98,19 @@ const CONFIG_SCHEMA = z.looseObject({
   models: MODELS,
   runtime: RUNTIME_SCHEMA,
   leaseHours: z.number(),
+  // One read-only confirmation run, not renewed mutation authority. Bound both
+  // knobs to avoid accidental busy loops or an effectively unbounded job.
+  mergeConfirmation: z.object({
+    deadlineSeconds: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_CONFIRMATION_DEADLINE_SECONDS),
+    backoffSeconds: z
+      .array(z.number().int().min(1).max(60))
+      .min(1)
+      .max(MAX_CONFIRMATION_BACKOFF_STEPS),
+  }),
   practices: z.array(z.string()),
   // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue
   // rebase allowance (#201) that once stopped an issue. Accepted so older

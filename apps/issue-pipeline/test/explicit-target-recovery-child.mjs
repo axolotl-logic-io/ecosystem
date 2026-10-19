@@ -7,6 +7,7 @@ import { z } from "zod";
 import { loadConfig, withCheckout } from "../src/config.ts";
 import { merge } from "../src/ops/merge.ts";
 import { reconcileMerge } from "../src/ops/merge-recovery.ts";
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 
 const REQUEST = z.object({
   config: z.string(),
@@ -26,8 +27,8 @@ const cfg = {
 };
 let reply;
 if (req.op === "merge") {
-  reply = merge(cfg, req.payload);
+  reply = merge(cfg, req.payload, confirmationClock());
 } else {
-  reply = reconcileMerge(cfg, req.payload);
+  reply = reconcileMerge(cfg, req.payload, confirmationClock());
 }
 process.stdout.write(JSON.stringify({ ok: true, ...reply }));
