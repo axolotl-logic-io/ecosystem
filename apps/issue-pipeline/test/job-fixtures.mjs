@@ -125,6 +125,7 @@ function stateAt(stage, fields = {}) {
     mergeReturn: null,
     merged: null,
     codeMerged: null,
+    mergeAttempt: null,
     asked: null,
     counts: { conflictFixes: 0, syncs: 0 },
     log: [],

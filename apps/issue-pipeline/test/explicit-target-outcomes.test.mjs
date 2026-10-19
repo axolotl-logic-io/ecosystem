@@ -18,7 +18,7 @@ const { merge } = await import("../src/ops/merge.ts");
 const REFUSED = z.looseObject({ merged: z.literal(false), reason: z.string() });
 const SHA_LENGTH = 40;
 const WRONG_RECEIPT =
-  /not MERGED at exactly|not the configured repository|not agent/u;
+  /not genuinely MERGED|differs|not the configured repository|not agent|same source/u;
 const READ_DENIED = /permission denied/u;
 const LANDED = /may already have landed/u;
 const ANCESTRY = /not on origin\/integration/u;
@@ -99,7 +99,9 @@ for (const extra of [
     script(w, [
       ...prechecks(w),
       post(w),
-      prStep(w, { ...mergedView(w), ...extra }),
+      ...Array.from({ length: 3 }, () =>
+        prStep(w, { ...mergedView(w), ...extra }),
+      ),
     ]);
     assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, WRONG_RECEIPT);
     assert.equal(mutations().length, 1);
@@ -112,7 +114,11 @@ test("unreadable post-request metadata stops after one mutation", () => {
   script(w, [
     ...prechecks(w),
     post(w),
-    { ...prStep(w), code: 1, stderr: "permission denied" },
+    ...Array.from({ length: 3 }, () => ({
+      ...prStep(w),
+      code: 1,
+      stderr: "permission denied",
+    })),
   ]);
   assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, READ_DENIED);
   assert.equal(mutations().length, 1);
@@ -124,8 +130,10 @@ test("matching result must be in freshly fetched integration", () => {
   script(w, [
     ...prechecks(w),
     post(w, { updates: [] }),
-    prStep(w, mergedView(w)),
-    prStep(w, mergedView(w), true),
+    ...Array.from({ length: 3 }, () => [
+      prStep(w, mergedView(w)),
+      prStep(w, mergedView(w), true),
+    ]).flat(),
   ]);
   assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, ANCESTRY);
   assert.equal(mutations().length, 1);
@@ -139,16 +147,9 @@ test("exhausted transient post-request reads become a stop reply, never a deferr
     code: 1,
     stderr: "HTTP 503 Service Unavailable",
   };
-  script(w, [
-    ...prechecks(w),
-    post(w),
-    unreadable,
-    unreadable,
-    unreadable,
-    unreadable,
-  ]);
+  script(w, [...prechecks(w), post(w), unreadable, unreadable, unreadable]);
   const reply = REFUSED.parse(merge(w.cfg, request(w)));
-  assert.ok(reply.reason.includes("stop for read-only reconciliation"));
+  assert.ok(reply.reason.includes("bounded merge recovery"));
   assert.equal(mutations().length, 1);
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.merged);
   consumed();

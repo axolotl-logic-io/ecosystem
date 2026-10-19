@@ -20,6 +20,7 @@ function saveDraftAuthority(
   assignedBranch(cfg, n, state);
   const actual = pullRequest(cfg, n, pr);
   if (
+    state.mergeAttempt !== null ||
     state.codeMerged !== null ||
     (state.merged !== null && state.merged.code !== null) ||
     (state.pr !== null && state.pr !== pr) ||
@@ -43,6 +44,7 @@ function recoverDraft(cfg: Config, n: number, reopen: number): void {
   const pr = saved.pr ?? historicalPrFor(cfg, n);
   if (
     pr !== reopen ||
+    saved.mergeAttempt !== null ||
     saved.codeMerged !== null ||
     (saved.merged !== null && saved.merged.code !== null)
   ) {

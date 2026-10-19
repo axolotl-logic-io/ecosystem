@@ -227,6 +227,7 @@ function prView(view) {
     when: "pr view 50",
     keep: view.state === "MERGED",
     stdout: JSON.stringify({
+      url: `https://github.com/${REPO}/pull/${PR}`,
       number: PR,
       isCrossRepository: false,
       headRefName: "agent/issue-7",
@@ -268,12 +269,21 @@ function refusalOf(cfg, request) {
   return reply.reason;
 }
 
+/** @param {import("../src/state.ts").IssueState} state @returns {GhReply[]} */
+function mergeAuthority(state) {
+  return [
+    { ...savedListing(state), persistState: true },
+    { when: "api -X PATCH repos/o/r/issues/comments/900 -f", keep: true },
+  ];
+}
+
 export {
   approvedState,
   fakeGh,
   GIT_USER,
   ISSUE,
   MERGE_COMMIT,
+  mergeAuthority,
   moveWiki,
   PR,
   prView,

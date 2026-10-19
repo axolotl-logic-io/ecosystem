@@ -1,7 +1,7 @@
 // @ts-check
 // The merge op (src/ops/merge.ts) only merges code: it checks the approved
 // head, the queue and the fresh revision, names the target and exact source
-// and returns GitHub's genuine merge receipt, writing no state, labels, wiki or
+// and durably checkpoints attempted/confirmed evidence, without labels, wiki or
 // issue close (`merge-publish-finish-split`).
 // Branches are no longer stacked on a prerequisite's branch (#268): an issue
 // whose after mark names an open prerequisite doesn't start at all
@@ -22,6 +22,7 @@ import {
   approvedState,
   fakeGh,
   ISSUE,
+  mergeAuthority,
   PR,
   prView,
   REPO,
@@ -80,6 +81,7 @@ test("merge records exact-head approval then returns the configured target's mer
     prView({ headRefOid: w.sha }),
     approvalReply(w),
     branchMergeReply(w),
+    ...mergeAuthority(approvedState(approvedOf(w))),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
@@ -93,7 +95,7 @@ test("merge records exact-head approval then returns the configured target's mer
     mergeCommit: w.mergeSha,
     headSha: w.sha,
   });
-  const done = writes();
+  const done = writes().filter((args) => !args.includes("PATCH"));
   assert.equal(done[0]?.[1], `repos/${REPO}/pulls/${PR}/reviews`);
   assert.deepEqual(done[1], [
     "api",
@@ -204,6 +206,7 @@ test("a stopped issue ahead in the queue doesn't hold the merge", () => {
     prView({ headRefOid: w.sha }),
     approvalReply(w),
     branchMergeReply(w),
+    ...mergeAuthority(approvedState(approvedOf(w))),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
@@ -279,6 +282,7 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
     prView({ headRefOid: w.sha }),
     approvalReply(w),
     branchMergeReply(w),
+    ...mergeAuthority(approvedState(approvedOf(w))),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,

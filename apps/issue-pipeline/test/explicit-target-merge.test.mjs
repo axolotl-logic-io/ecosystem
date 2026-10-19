@@ -12,6 +12,7 @@ import {
   prechecks,
   prStep,
   request,
+  resultInputs,
   script,
 } from "./explicit-target-test-kit.mjs";
 import {
@@ -73,6 +74,7 @@ test("literal configured integration and full H survive a concurrent source bran
     }),
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
+    ...resultInputs(w),
     commentStep(w),
   ]);
   assert.deepEqual(merge(w.cfg, request(w)), {
@@ -137,7 +139,9 @@ test("PR retarget during the request cannot select main and stops after landing 
   script(w, [
     ...prechecks(w),
     post(w),
-    prStep(w, { ...mergedView(w), baseRefName: "main" }),
+    ...Array.from({ length: 3 }, () =>
+      prStep(w, { ...mergedView(w), baseRefName: "main" }),
+    ),
   ]);
   assert.match(REFUSED.parse(merge(w.cfg, request(w))).reason, IDENTITY);
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.merged);
@@ -153,6 +157,7 @@ test("concurrent integration contribution is checked and security reads detached
     post(w),
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
+    ...resultInputs(w),
     commentStep(w),
   ]);
   assert.equal(merge(w.cfg, request(w)).merged, true);

@@ -20,9 +20,9 @@ import {
   calls,
   claimListing,
   fakeGh,
-  hoursFromNow,
   LANE,
   SWEEP,
+  stateListing,
   world,
 } from "./ops-test-kit.mjs";
 
@@ -77,6 +77,7 @@ function issueState(extra) {
 /** @param {string} sha @param {string} mergeSha @returns {import("./fake-gh.mjs").GhReply[]} */
 function prViews(sha, mergeSha) {
   const pr = {
+    url: "https://github.com/o/r/pull/50",
     number: PR,
     headRefName: `agent/issue-${ISSUE}`,
     headRefOid: sha,
@@ -117,7 +118,7 @@ function mergeAndRelease(initial, ops) {
       .replaceAll(w.sha.slice(0, SHORT_SHA), "<sha>")
       .replaceAll(w.root, "<root>");
   }
-  const lease = { lane: LANE, sweepId: SWEEP, at: hoursFromNow(0) };
+  const lease = { lane: LANE, sweepId: SWEEP, at: "2026-01-01T00:00:00Z" };
   const state = issueState({ stage: "merge", pr: PR, lease });
   fakeGh.reply([
     collaboratorReply("o/r", "alice"),
@@ -130,7 +131,12 @@ function mergeAndRelease(initial, ops) {
   fakeGh.reply([
     collaboratorReply("o/r", "alice"),
     issueListing(),
-    { ...claimListing(), keep: true },
+    {
+      ...stateListing(ISSUE, { ...state, hardened: current.revision }),
+      keep: true,
+      persistState: true,
+    },
+    { when: "api -X PATCH repos/o/r/issues/comments/7 -f", keep: true },
     ...prViews(w.sha, w.mergeSha),
     approvalReply(w),
     branchMergeReply(w),

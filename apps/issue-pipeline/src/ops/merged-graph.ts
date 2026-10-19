@@ -10,6 +10,28 @@ import type { CodeMerged } from "../state.ts";
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const FULL_SHA = z.string().regex(FULL_SHA_PATTERN);
 
+// A unique original contribution cannot be inferred from criss-cross or
+// already-landed source history, even with superficially ordered parents.
+function confirmSourceHistory(
+  wt: string,
+  sha: string,
+  parent: string,
+  head: string,
+): void {
+  const bases = gitIn(wt, ["merge-base", "--all", parent, head])
+    .trim()
+    .split("\n");
+  if (
+    bases.length !== 1 ||
+    bases[0] === head ||
+    !FULL_SHA.safeParse(bases[0]).success
+  ) {
+    throw new OpsError(
+      `unsupported merged result ${sha}: ambiguous or already-landed source history`,
+    );
+  }
+}
+
 // New branch merges must have ordered parents [integration-side, retained
 // authorized head]. Legacy squash receipts are usable only when their entire
 // first-parent delta equals the original head's entire delta.
@@ -31,6 +53,7 @@ function mergedParent(
     FULL_SHA.safeParse(parent).success
   ) {
     if (parents.length === 2 && second === head) {
+      confirmSourceHistory(wt, sha, parent, head);
       return parent;
     }
     if (!branchOnly && parents.length === 1) {
