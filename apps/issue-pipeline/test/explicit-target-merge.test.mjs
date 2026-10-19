@@ -104,9 +104,10 @@ test("main is a valid configured source base, not an implicit production exclusi
     post(w),
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
+    ...resultInputs(w),
     commentStep(w),
   ]);
-  assert.deepEqual(merge(w.cfg, request(w)), {
+  assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
     merged: true,
     mergeCommit: w.merged,
     headSha: w.head,
