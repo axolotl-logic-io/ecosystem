@@ -239,4 +239,6 @@ mise //apps/issue-pipeline:lint
 mise //apps/issue-pipeline:build
 ```
 
+The combined gate runs at most two test files concurrently. Full-flow files launch their own jobs, ops, fake GitHub and Git subprocesses, so host-core-count parallelism can oversubscribe the machine and exhaust stage/hook deadlines. This resource budget changes neither the test selection nor any assertion or timeout. Run the combined gate rather than an unbounded parallel test invocation.
+
 Tests use temporary HOME/pipeline roots, local bare git origins, fake GitHub and fake pi, never real GitHub/models or production data. Create/assert the temporary ROOT and set HOME/ISSUE_PIPELINE_ROOT **before dynamic source imports**: root resolution happens once on import. Full-flow regressions cover writable hardening/integration, final read-only security, wiki-only completion, explicit fresh-root invocation and claim-populated interrupted-merge replay. Legacy scheduling safety tests remain compatibility coverage, not a live dispatch recommendation. A failure or flake blocks acceptance; fix its cause rather than rerunning for a pass.

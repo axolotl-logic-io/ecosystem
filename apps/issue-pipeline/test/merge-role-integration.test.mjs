@@ -218,8 +218,8 @@ test("a head that moved after the integration's push goes to review, with no rec
   assert.equal(state.hardened, null);
 });
 
-test("a push that leaves another head than the verified one stops with error", async () => {
-  const { ctx } = merging({
+test("a branch push that leaves another head than the verified one stops with no receipt or completion", async () => {
+  const { ctx, calls } = merging({
     ops: {
       ...BEHIND,
       ...AFTER_INTEGRATION,
@@ -229,5 +229,18 @@ test("a push that leaves another head than the verified one stops with error", a
       push: [{ ...PUSHED, headSha: MOVED }],
     },
   });
-  assert.equal(endCode(await mergeRole(ctx)), "error");
+  const end = await mergeRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.ok(end.kind === "stop");
+  assert.ok(end.reason.includes(MOVED));
+  assert.ok(end.reason.includes(REBASED));
+  assert.equal(end.state.integration, null);
+  assert.ok(savesOf(calls).every((saved) => saved.integration === null));
+  assert.deepEqual(firstPayload(calls, "push"), { number: ctx.issue });
+  // The only merge attempt is the original refusal that required integration.
+  assert.equal(opNames(calls).filter((name) => name === "merge").length, 1);
+  assert.ok(!opNames(calls).includes("prepare-review"));
+  assert.ok(!opNames(calls).includes("publish"));
+  assert.ok(!opNames(calls).includes("finish-wiki"));
+  assert.equal(sessionsOf(calls).length, 0);
 });

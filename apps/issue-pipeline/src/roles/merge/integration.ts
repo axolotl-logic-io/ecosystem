@@ -80,7 +80,9 @@ async function synced(
   return await syncSide(ctx, state, { side: "wiki", maxConflictFixes });
 }
 
-// Pushes the integrated, verified head `verified`.
+// Pushes the integrated, verified branch or the wiki alone. Once code has
+// merged, `verified` is M, not the retained issue head H reported by a
+// wiki-only push; currentRevision still checks the receipt against M.
 async function pushIntegrated(
   ctx: RoleContext,
   state: IssueState,
@@ -91,7 +93,7 @@ async function pushIntegrated(
     payload = { number: ctx.issue, wikiOnly: true };
   }
   const pushed = await opReply(ctx, "push", payload, PUSH_REPLY);
-  if (pushed.headSha !== verified) {
+  if (mode.kind !== "wiki-only" && pushed.headSha !== verified) {
     return ended(
       errorStop(
         state,
