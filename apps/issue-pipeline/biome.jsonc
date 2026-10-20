@@ -16,7 +16,8 @@
     // the install, the build and the tests with their kits; the entries of
     // the four CLIs (ops.ts, job.ts, orchestrate.ts, report.ts) and the shell
     // supervisor; the ops modules that run git, gh and the configured
-    // commands or keep the clones, worktrees, locks and logs on disk; the
+    // commands or keep the clones, worktrees, locks, logs and stop recovery
+    // evidence on disk; the
     // stage job's modules that spawn ops.mjs and pi, keep its checkout,
     // control socket, status and logs, or are pi extensions; and the
     // orchestrator's modules that read its arguments, spawn and check the
@@ -34,6 +35,7 @@
         "src/shell-supervisor.ts",
         "src/config.ts",
         "src/locks.ts",
+        "src/stop-recovery.ts",
         "src/clone-setup.ts",
         "src/checkouts.ts",
         "src/wiki.ts",

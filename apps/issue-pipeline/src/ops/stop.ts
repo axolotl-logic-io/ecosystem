@@ -8,12 +8,15 @@ import { closeClaims } from "../claims.ts";
 import type { Author } from "../comments.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
+import { applyStopLabel } from "../labels.ts";
 import { OpsError } from "../ops-error.ts";
+import { redactLocalPaths } from "../pipeline-root.ts";
 import { parseRequest } from "../process.ts";
+import { redactAddresses } from "../redact-addresses.ts";
 import { readWriteState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE, withLog } from "../state.ts";
+import { stopRecovery } from "../stop-recovery.ts";
 import type { Stop } from "../stops.ts";
 import { STOPS, stopFor } from "../stops.ts";
 import { pushUnpushed } from "../unpushed.ts";
@@ -23,6 +26,7 @@ import { saveIssueState } from "./save-state.ts";
 const ERROR_CODE = "error";
 
 const STOP_REQUEST = z.looseObject({
+  recoveryId: z.uuid().optional(),
   code: z.string().nullish(),
   detail: z.string().nullish(),
   nextStep: z.string().nullish(),
@@ -123,16 +127,35 @@ function stop(
   request: unknown,
 ): { code: string; label: string; state: IssueState } {
   const input = parseRequest(STOP_REQUEST, "stop", request);
+  const found = stopOf(input.code, input.reason);
+  const recovery = stopRecovery(cfg, { ...input, code: found.code });
+  try {
+    return performStop(cfg, input, found, recovery);
+  } catch (error: unknown) {
+    let failure = String(error);
+    if (error instanceof Error) {
+      failure = error.message;
+    }
+    throw new OpsError(recovery.fail(failure), { cause: error });
+  }
+}
+
+function performStop(
+  cfg: Config,
+  input: StopRequest,
+  found: Stop,
+  recovery: ReturnType<typeof stopRecovery>,
+): { code: string; label: string; state: IssueState } {
   const n = input.number;
   const saved = readWriteState(cfg, n);
   assignedBranch(cfg, n, saved);
+  recovery.plan(saved);
   // Stops do not grant or rewrite authority. Preserve durable provenance,
   // including security rejection, over stale or forged request snapshots.
   const req = {
     ...input,
     state: { ...saved, counts: input.state.counts, log: input.state.log },
   };
-  const found = stopOf(req.code, req.reason);
   const { stage } = req.state;
   const prNumber = req.state.pr ?? 0;
   let unpushed: string[] = [];
@@ -141,23 +164,39 @@ function stop(
   }
   const body = stopComment(found, req, unpushed);
   comment(cfg, n, COORDINATOR, body);
+  recovery.confirm(`explanation:${n}`);
   if (prNumber !== 0) {
     comment(cfg, prNumber, COORDINATOR, body);
+    recovery.confirm(`explanation:${prNumber}`);
   }
   const state = saveIssueState(
     cfg,
     n,
     stoppedState(req.state, found, req.reason),
   );
+  const confirmed = readWriteState(cfg, n);
+  if (
+    JSON.stringify(confirmed) !==
+    redactAddresses(redactLocalPaths(JSON.stringify(state)))
+  ) {
+    throw new OpsError(
+      "signed stopped state could not be confirmed by authoritative reread",
+    );
+  }
+  recovery.confirm("state", "lease");
   for (const target of [n, prNumber].filter((number) => number !== 0)) {
-    clearStopLabels(cfg, target);
-    setLabels(cfg, target, [found.label.name], [LABELS.working.name]);
+    applyStopLabel(cfg, target, found.label.name, () => {
+      recovery.confirm(`working-label:${target}`);
+    });
+    recovery.confirm(`labels:${target}`);
   }
   closeClaims(
     cfg,
     n,
     `the issue stopped (\`${found.label.name}\`); removing the label puts it back in the queue.`,
   );
+  recovery.confirm("claim");
+  recovery.complete();
   return { code: found.code, label: found.label.name, state };
 }
 

@@ -205,6 +205,7 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
     ...stopMutationReplies(n, { stateId: n, pr: null, code: "push-rejected" }),
     {
       ...commentsReply(n, [stateComment(n, v2State(n, { stage: "review" }))]),
+      persistState: true,
       keep: true,
     },
   ]);
@@ -250,7 +251,11 @@ test("a stop after the code merged keeps its stage and says the wiki is publishe
   const { n, pr, state: stateId } = MERGED_STOP;
   const saved = v2State(n, { stage: "merge", pr, codeMerged: CODE_MERGED });
   reply([
-    { ...commentsReply(n, [stateComment(stateId, saved)]), keep: true },
+    {
+      ...commentsReply(n, [stateComment(stateId, saved)]),
+      keep: true,
+      persistState: true,
+    },
     ...stopMutationReplies(n, { stateId, pr, code: "conflict" }),
   ]);
   const request = {

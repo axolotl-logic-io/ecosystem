@@ -6,6 +6,7 @@
 
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
+import { stopRecovery } from "../stop-recovery.ts";
 import type { AgentName, RoleEnd, RoleInputs } from "./role-context.ts";
 import { OpsFailure } from "./role-context.ts";
 import type { OpsJob } from "./role-ops.ts";
@@ -111,14 +112,25 @@ async function applyEnd(
       await release(claimed, state);
       return finished(job, { end: "ask" });
     }
-    case "stop":
-      await jobOp(job, "stop", {
-        code: end.code,
-        reason: end.reason,
-        state: end.state,
-      });
+    case "stop": {
+      const recovery = stopRecovery(job.cfg, { number: job.issue, ...end });
+      try {
+        await jobOp(job, "stop", {
+          code: end.code,
+          reason: end.reason,
+          state: end.state,
+          recoveryId: recovery.id,
+        });
+      } catch (error: unknown) {
+        let failure = String(error);
+        if (error instanceof Error) {
+          failure = error.message;
+        }
+        throw new Error(recovery.fail(failure), { cause: error });
+      }
       claimed.last = end.state;
       return finished(job, { end: "stop", reason: end.reason });
+    }
     case "deferred":
       await release(claimed, claimed.last);
       return finished(job, { end: "deferred", reason: end.error });

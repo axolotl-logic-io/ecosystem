@@ -83,7 +83,10 @@ const STOP_REPLY = z.object({
 function stopAt(n, stage, extra = {}) {
   const saved = v2State(n, { stage });
   reply([
-    everyCommentsRead(n, [kit.stateComment(n, saved)]),
+    {
+      ...everyCommentsRead(n, [kit.stateComment(n, saved)]),
+      persistState: true,
+    },
     historyReply(n),
     ...stopMutationReplies(n, { stateId: n, pr: null, code: "not-doable" }),
   ]);

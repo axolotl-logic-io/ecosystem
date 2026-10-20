@@ -33,7 +33,10 @@ function stoppedOf(state) {
     throw new Error("fixture issue number missing");
   }
   reply([
-    everyCommentsRead(number, [kit.stateComment(number, state)]),
+    {
+      ...everyCommentsRead(number, [kit.stateComment(number, state)]),
+      persistState: true,
+    },
     ...stopMutationReplies(number, {
       stateId: number,
       pr: z.number().nullable().parse(pr),

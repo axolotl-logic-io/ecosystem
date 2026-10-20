@@ -100,13 +100,18 @@ function liveClaims(cfg: Config, comments: readonly IssueComment[]): Claim[] {
     .sort((a, b) => a.id - b.id); // comment ids increase with creation
 }
 
-function closeClaim(cfg: Config, claim: Claim, note: string): void {
+function closeClaim(
+  cfg: Config,
+  claim: Claim,
+  note: string,
+  options: { allowFail?: boolean } = QUIET,
+): void {
   const closed = `<!-- agent-pipeline:claim-closed lane=${claim.lane} sweep=${claim.sweep} -->`;
   editComment(
     cfg,
     claim.id,
     `${claim.body.replace(CLAIM_MARK, closed)}\n\n${note}`,
-    QUIET,
+    options,
   );
 }
 
@@ -131,7 +136,7 @@ function touchClaim(cfg: Config, n: number, req: LaneRequest): void {
 function closeClaims(cfg: Config, n: number, why: string): void {
   const note = `Closed ${minuteStamp()}: ${why}`;
   for (const claim of liveClaims(cfg, listComments(cfg, n))) {
-    closeClaim(cfg, claim, note);
+    closeClaim(cfg, claim, note, {});
   }
 }
 
