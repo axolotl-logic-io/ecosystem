@@ -7,7 +7,7 @@ const GH_TIMEOUT_MS = 120_000;
 const GH_READ_ATTEMPTS = 4;
 const GH_RETRY_STEP_MS = 2000;
 const GH_TRANSIENT =
-  /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Timeout|connection (?:reset|refused|error)|error connecting to|could not resolve host|no such host|network is unreachable|TLS handshake timeout|i\/o timeout|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|secondary rate limit/iu;
+  /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Timeout|connection (?:reset|refused|error)|error connecting to|could not resolve host|no such host|network is unreachable|TLS handshake timeout|i\/o timeout|timed out|context deadline exceeded|Client\.Timeout exceeded|\b(?:unexpected )?EOF\b|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|secondary rate limit/iu;
 
 function transientGithubRead(result: RunResult): boolean {
   return (
