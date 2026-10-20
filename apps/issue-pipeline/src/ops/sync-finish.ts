@@ -10,7 +10,12 @@ import { git } from "../github.ts";
 import { saveSyncRecovery } from "../job/code-recovery.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
-import { abortRebase, rebaseProblem } from "../rebase.ts";
+import {
+  abortRebase,
+  clearCodeSync,
+  readCodeSync,
+  rebaseProblem,
+} from "../rebase.ts";
 import { holdWikiPin, wikiPinProblem } from "../wiki.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 
@@ -48,7 +53,10 @@ function finishProblem(
   against: FinishAgainst,
 ): string | undefined {
   const wt = paths.worktree(cfg, n);
-  const target = finishTarget(cfg, wt, against);
+  const sync = readCodeSync(wt);
+  const target = finishTarget(cfg, wt, {
+    baseSha: against.baseSha ?? sync?.onto,
+  });
   if ("problem" in target) {
     return target.problem;
   }
@@ -57,6 +65,12 @@ function finishProblem(
   const from = remoteHead(cfg, n);
   if (problem !== undefined || from === null) {
     return problem;
+  }
+  if (sync?.wikiResolved === true) {
+    if (sync.from !== from || sync.onto !== onto) {
+      return "the deterministic wiki resolution does not match the synchronization source and target";
+    }
+    return wikiPinProblem(cfg, wt, { from: onto, onto });
   }
   return wikiPinProblem(cfg, wt, { from, onto });
 }
@@ -72,6 +86,7 @@ function resetToRemote(cfg: Config, n: number): void {
   }
   run("git", ["-C", wt, "clean", "-fd"]);
   holdWikiPin(cfg, wt);
+  clearCodeSync(wt);
 }
 
 // Pushes the worktree's head as the issue's branch for `op`, recording the

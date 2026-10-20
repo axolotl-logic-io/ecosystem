@@ -3,8 +3,9 @@
 // wiki's latest version, only once the issue is at the head of the merge
 // queue. Hardening and development never sync. A rebase that stops on
 // conflicts is left in the checkout for a resolver session of the Reviewer,
-// which resolves each stopped commit and continues the rebase itself;
-// finish-sync or finish-wiki-sync then checks the result, and pushes it. Each resolver session that ends, however it
+// which stages code text or resolves and continues a wiki rebase. finish-sync
+// owns code continuation and gitlinks, returning later text stops; the finish
+// operations check the completed rebase before pushing. Each session that ends, however it
 // ends, is one of the issue's `maxConflictFixes` attempts, counted and saved
 // at once; a transient failure is none. A resolution that is rejected, or
 // not finished, is preserved before cleanup and another attempt. If its
@@ -39,6 +40,7 @@ interface Attempts {
   state: IssueState;
   rejected: string | null;
   maxConflictFixes: number;
+  next?: Conflict;
 }
 
 const SIDE_OPS: Readonly<Record<Side, SideOps>> = {
@@ -110,6 +112,12 @@ async function resolveOnce(
   const { finish, finishPayload } = SIDE_OPS[side];
   const payload = finishPayload(ctx.issue, conflict);
   const finished = await opReply(ctx, finish, payload, FINISH_REPLY);
+  if (finished.conflict) {
+    return {
+      ok: true,
+      value: { ...run, state, rejected: null, next: finished },
+    };
+  }
   if (!finished.resolved) {
     return { ok: true, value: { ...run, state, rejected: finished.reason } };
   }
@@ -156,6 +164,10 @@ async function resolvedFrom(
   const resolved = await resolveOnce(ctx, run, synced);
   if (!resolved.ok) {
     return resolved;
+  }
+  if (resolved.value.next !== undefined) {
+    const { next, ...remaining } = resolved.value;
+    return await resolvedFrom(ctx, remaining, next);
   }
   if (resolved.value.rejected === null) {
     return { ok: true, value: resolved.value.state };
