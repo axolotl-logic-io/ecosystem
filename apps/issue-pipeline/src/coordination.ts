@@ -10,6 +10,7 @@ import type {
   Snapshot,
 } from "./coordination-records.ts";
 import {
+  assertScope,
   bodyOf,
   hold,
   IDENTITY,
@@ -34,6 +35,7 @@ class Coordination {
     this.port = port;
     this.scope = scope;
     this.identity = IDENTITY.parse(identity);
+    assertScope(scope, this.identity);
     if (identity.repo !== cfg.repo || identity.base !== cfg.baseBranch) {
       hold("execution repository/base binding changed");
     }
@@ -118,7 +120,11 @@ class Coordination {
     } else if (view.owner.id !== mine.id) {
       return false;
     }
-    if (!this.read().confirmed) {
+    const reserved = this.read();
+    if (reserved.owner?.id !== mine.id) {
+      hold("immutable epoch reservation changed before confirmation");
+    }
+    if (!reserved.confirmed) {
       this.append({
         version: 1,
         scope: this.scope,

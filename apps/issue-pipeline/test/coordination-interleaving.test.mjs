@@ -31,7 +31,12 @@ function contender(github, lane, omitted) {
   return {
     cfg,
     port,
-    guard: coordination(cfg, port, "scope", github.identity("B", lane)),
+    guard: coordination(
+      cfg,
+      port,
+      github.scope("integration"),
+      github.identity("B", lane),
+    ),
   };
 }
 /** @param {ReturnType<typeof world>} github @param {() => void} acquire @returns {CoordinationPort} */
@@ -49,9 +54,9 @@ function beforeAcquire(github, acquire) {
 for (const lane of ["same", "different"]) {
   test(`atomic acquisition fences interleaved ${lane} lanes with incomplete initial listings`, () => {
     const github = world();
-    const first = github.guard("A", "scope", "same");
+    const first = github.guard("A", "integration", "same");
     const aRequest = first.request();
-    const second = github.guard("B", "scope", lane);
+    const second = github.guard("B", "integration", lane);
     const bRequest = second.request();
     const {
       cfg: cfgB,
@@ -65,7 +70,7 @@ for (const lane of ["same", "different"]) {
     const a = coordination(
       github.cfg,
       portA,
-      "scope",
+      github.scope("integration"),
       github.identity("A", "same"),
     );
     assert.throws(() => a.acquire(), UNCERTAIN);
@@ -87,7 +92,7 @@ for (const lane of ["same", "different"]) {
     const loser = coordination(
       cfgB,
       portB,
-      "scope",
+      github.scope("integration"),
       github.identity("A", "same"),
     );
     const before = structuredClone(github.comments);
@@ -104,10 +109,10 @@ for (const lane of ["same", "different"]) {
 for (const lane of ["same", "different"]) {
   test(`an omitted confirmed owner holds the ${lane} lane contender without touching order or refs`, () => {
     const github = world();
-    const a = github.guard("A", "scope", "same");
+    const a = github.guard("A", "integration", "same");
     a.request();
     assert.equal(a.acquire(), true);
-    const b = github.guard("B", "scope", lane);
+    const b = github.guard("B", "integration", lane);
     const bRequest = b.request();
     const partial = coordination(
       github.cfg,
@@ -116,7 +121,7 @@ for (const lane of ["same", "different"]) {
         comments: () =>
           structuredClone(github.comments.filter((row) => row.id === bRequest)),
       },
-      "scope",
+      github.scope("integration"),
       github.identity("B", lane),
     );
     const before = structuredClone(github.comments);

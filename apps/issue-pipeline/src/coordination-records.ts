@@ -70,6 +70,26 @@ function hold(reason: string): never {
 function bodyOf(record: Record): string {
   return `${HEADER}${JSON.stringify(RECORD.parse(record))}${END}`;
 }
+function scopeOf(identity: Identity, kind: "issue" | "integration"): string {
+  if (kind === "issue") {
+    return JSON.stringify([
+      identity.repo,
+      identity.base,
+      kind,
+      identity.issue,
+      identity.branch,
+    ]);
+  }
+  return JSON.stringify([identity.repo, identity.base, kind]);
+}
+function assertScope(scope: string, identity: Identity): void {
+  if (
+    scope !== scopeOf(identity, "issue") &&
+    scope !== scopeOf(identity, "integration")
+  ) {
+    hold("request identity does not match coordination scope");
+  }
+}
 function refOf(scope: string, epoch: number): string {
   const key = Array.from(
     new TextEncoder().encode(scope),
@@ -97,6 +117,9 @@ function parseRecord(cfg: Config, comment: IssueComment): Row[] {
   if (!parsed.success) {
     hold("invalid record");
   }
+  if (parsed.data.kind === "request") {
+    assertScope(parsed.data.scope, parsed.data.identity);
+  }
   return [{ ...parsed.data, id: comment.id }];
 }
 function recordsOf(
@@ -104,8 +127,22 @@ function recordsOf(
   comments: readonly IssueComment[],
   scope: string,
 ): Row[] {
-  const rows = comments
-    .flatMap((comment) => parseRecord(cfg, comment))
+  const history = comments.flatMap((comment) => parseRecord(cfg, comment));
+  // Validate linkage before scope selection: a moved transition must not vanish.
+  for (const row of history.filter((item) => item.kind !== "request")) {
+    const request = history.find(
+      (item): item is Request =>
+        item.kind === "request" && item.id === row.request,
+    );
+    if (
+      request === undefined ||
+      row.scope !== request.scope ||
+      row.instance !== request.identity.instance
+    ) {
+      hold("transition request/scope binding is invalid");
+    }
+  }
+  const rows = history
     .filter((row) => row.scope === scope)
     .sort((a, b) => a.id - b.id);
   const requests = rows.filter((row): row is Request => row.kind === "request");
@@ -180,12 +217,15 @@ function applyOwned(
     if (view.confirmed) {
       hold("duplicate confirmation");
     }
+    // A later, conflicting ref read cannot transfer this confirmation.
+    view.owner = request;
     view.confirmed = true;
-  } else if (!view.confirmed) {
+  } else if (!view.confirmed || view.owner?.id !== request.id) {
     hold("unconfirmed owner mutation");
   } else if (row.kind === "release") {
     view.pending.splice(view.pending.indexOf(request), 1);
     view.epoch = row.id;
+    view.owner = null;
     view.confirmed = false;
   }
 }
@@ -205,8 +245,11 @@ function snapshot(
   for (const row of records) {
     transition(port, scope, view, row);
   }
-  view.owner = ownerAt(port, scope, view);
-  const { owner } = view;
+  const owner = ownerAt(port, scope, view);
+  if (view.confirmed && view.owner?.id !== owner?.id) {
+    hold("immutable epoch ownership changed after confirmation");
+  }
+  view.owner = owner;
   if (
     owner !== null &&
     !view.pending.some((request) => request.id === owner.id)
@@ -238,6 +281,7 @@ function own(view: Snapshot, identity: Identity): Request {
 
 export type { CoordinationPort, Evidence, Identity, Record, Request, Snapshot };
 export {
+  assertScope,
   bodyOf,
   hold,
   IDENTITY,
@@ -245,5 +289,6 @@ export {
   recordsOf,
   refOf,
   sameIdentity,
+  scopeOf,
   snapshot,
 };

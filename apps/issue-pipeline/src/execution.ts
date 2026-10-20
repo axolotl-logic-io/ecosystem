@@ -10,7 +10,7 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import type { CoordinationPort, Evidence, Identity } from "./coordination.ts";
 import { coordination } from "./coordination.ts";
-import { IDENTITY } from "./coordination-records.ts";
+import { IDENTITY, scopeOf } from "./coordination-records.ts";
 import { gh, ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
@@ -181,17 +181,12 @@ function issueExecution(
   cfg: Config,
   issue: number,
 ): ReturnType<typeof coordination> {
+  const identity = identityOf(cfg, issue);
   return coordination(
     cfg,
     portOf(cfg, issue, false),
-    JSON.stringify([
-      cfg.repo,
-      cfg.baseBranch,
-      "issue",
-      issue,
-      paths.branch(cfg, issue),
-    ]),
-    identityOf(cfg, issue),
+    scopeOf(identity, "issue"),
+    identity,
   );
 }
 function integrationTurn(
@@ -200,11 +195,12 @@ function integrationTurn(
 ): ReturnType<typeof coordination> {
   // Issue execution remains an additional restriction, never replaced by a turn.
   assertExecution(cfg, issue);
+  const identity = identityOf(cfg, issue);
   return coordination(
     cfg,
     portOf(cfg, issue, true),
-    JSON.stringify([cfg.repo, cfg.baseBranch, "integration"]),
-    identityOf(cfg, issue),
+    scopeOf(identity, "integration"),
+    identity,
   );
 }
 function assertExecution(cfg: Config, issue: number): void {

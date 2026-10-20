@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { COMMENT } from "../src/comments.ts";
 import { coordination } from "../src/coordination.ts";
+import { scopeOf } from "../src/coordination-records.ts";
 import { assertReconciled, confirmedWrite } from "../src/execution.ts";
 import { configFixture } from "./config-fixtures.mjs";
 import { githubComment } from "./fake-gh.mjs";
@@ -84,9 +85,16 @@ class FakeGitHub {
   }
   /** @param {string} [instance] @param {string} [scope] @param {string} [lane] @param {number} [number] */
   guard(instance = "A", scope = "issue", lane = "lane", number = this.issue) {
-    return coordination(this.cfg, this.port, scope, {
+    return coordination(this.cfg, this.port, this.scope(scope, number), {
       ...this.identity(instance, lane, number),
     });
+  }
+  /** @param {string} [kind] @param {number} [number] */
+  scope(kind = "issue", number = this.issue) {
+    if (kind === "issue") {
+      return scopeOf(this.identity("A", "lane", number), "issue");
+    }
+    return scopeOf(this.identity("A", "lane", number), "integration");
   }
   /** @param {string} instance @param {string} [lane] @param {number} [number] */
   identity(instance, lane = "lane", number = this.issue) {

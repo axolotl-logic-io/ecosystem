@@ -120,14 +120,14 @@ for (const scope of ["issue", "integration"]) {
 
 test("integration order is reconstructed from GitHub, not caller dispatch or a local queue", () => {
   const github = world();
-  const a = github.guard("caller-job", "repository/base", "caller", 1);
-  const b = github.guard("candidate", "repository/base", "assignment", 2);
+  const a = github.guard("caller-job", "integration", "caller", 1);
+  const b = github.guard("candidate", "integration", "assignment", 2);
   a.request();
   b.request();
   assert.equal(a.acquire(), true);
   assert.equal(b.acquire(), false);
   const durable = b.read();
-  const restart = github.guard("candidate", "repository/base", "assignment", 2);
+  const restart = github.guard("candidate", "integration", "assignment", 2);
   assert.deepEqual(restart.read(), durable);
   a.release();
   assert.equal(restart.acquire(), true);

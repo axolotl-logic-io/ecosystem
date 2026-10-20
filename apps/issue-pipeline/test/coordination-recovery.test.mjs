@@ -25,7 +25,7 @@ test("an unlinked confirmation cannot establish exact authenticated write succes
   /** @type {import('../src/coordination-records.ts').Record} */
   const record = {
     version: 1,
-    scope: "issue",
+    scope: github.scope(),
     operation: crypto.randomUUID(),
     kind: "confirm",
     request: request.id,
@@ -76,7 +76,7 @@ for (const operation of ["acquire", "save", "release"]) {
     const rejected = coordination(
       github.cfg,
       port,
-      "issue",
+      github.scope(),
       github.identity("A"),
     );
     assert.throws(() => {
@@ -110,7 +110,7 @@ for (const invalid of ["missing ref", "changed ref"]) {
     a.request();
     assert.equal(a.acquire(), true);
     a.assertOwner();
-    const ref = refOf("issue", 0);
+    const ref = refOf(github.scope(), 0);
     if (invalid === "missing ref") {
       github.locks.clear();
     } else {
@@ -152,7 +152,7 @@ test("an unresolved confirmation retains exact intent and cannot grant local own
   const observer = coordination(
     github.cfg,
     { ...github.port, comments: () => structuredClone(github.comments) },
-    "issue",
+    github.scope(),
     github.identity("B"),
   );
   assert.equal(observer.read().owner?.id, aId);

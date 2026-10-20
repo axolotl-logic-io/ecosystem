@@ -46,8 +46,8 @@ for (const transition of TRANSITIONS) {
       } else if (invalid === "linkage") {
         if (transition === "request") {
           record.body = record.body?.replace(
-            github.cfg.baseBranch,
-            "wrong-base",
+            `"base":${JSON.stringify(github.cfg.baseBranch)}`,
+            '"base":"wrong-base"',
           );
         } else {
           record.body = record.body?.replace('"request":1', '"request":999');
@@ -76,7 +76,7 @@ test("request and successful immutable reservation alone cannot save or release"
   assert.throws(() => a.release(), HELD);
   const [request] = a.read().pending;
   assert.ok(request);
-  github.port.reserve(refOf("issue", 0), request.token);
+  github.port.reserve(refOf(github.scope(), 0), request.token);
   assert.equal(a.read().confirmed, false);
   const history = structuredClone(github.comments);
   assert.throws(() => a.save({ stage: "review" }), HELD);
@@ -128,17 +128,22 @@ for (const scope of ["issue", "integration"]) {
 
 test("a reused UUID with a changed lane, branch or issue cannot acquire or cancel", () => {
   const github = world();
-  const a = github.guard();
+  const a = github.guard("A", "integration");
   a.request();
   for (const change of [
     { lane: "other" },
     { branch: "other" },
     { issue: github.issue + 1 },
   ]) {
-    const spoof = coordination(github.cfg, github.port, "issue", {
-      ...github.identity("A"),
-      ...change,
-    });
+    const spoof = coordination(
+      github.cfg,
+      github.port,
+      github.scope("integration"),
+      {
+        ...github.identity("A"),
+        ...change,
+      },
+    );
     const before = structuredClone(github.comments);
     assert.throws(() => spoof.acquire(), HELD);
     assert.throws(() => spoof.cancel(), HELD);
