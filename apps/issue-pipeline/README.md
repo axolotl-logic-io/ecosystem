@@ -4,6 +4,55 @@ The pipeline executes one caller-assigned GitHub issue and branch at a time per 
 
 A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
+## Standalone coordination seam — runtime fencing unfinished
+
+`src/coordination-records.ts`, `src/coordination.ts` and `src/execution.ts`
+provide an **explicit-only protocol seam**, not activated runtime fencing.
+Default `job`, `ops`, `orchestrate` and `report` entry points do not reach the
+`issueExecution` or `integrationTurn` factories. Existing caller dispatch,
+claim/lease behavior, saved authority, head/CI/wiki/security checks and account
+roles are unchanged. Assignment mode remains disabled. Continue to avoid
+duplicate issue/branch dispatch and serialize integration turns yourself.
+
+The seam creates a fresh UUID independently of a stable lane, binding it to
+repository, literal base, issue and assigned branch. Issue-execution scopes
+bind the issue and branch; integration-turn order is shared across issues for
+the configured repository/base. Requests, owner confirmations, saves, releases
+and cancellations are append-only, merge-authored and same-read-editor-verified.
+Create-only epoch refs arbitrate acquisitions; the protocol never replaces or
+deletes them. Neither a request nor a successful ref creation grants save or
+release authority: exact authenticated owner confirmation is required. Every
+save/release freshly checks that exact execution and epoch. Release advances
+the epoch without deleting history, and cancellation removes only its own
+pending request. A fresh reader reconstructs pending order from durable records,
+not a private queue, heartbeat, local lease or cache.
+
+A lost/failed response may still have landed. Before a coordinated write the
+transport exclusively retains exact intent in the issue run directory's
+`coordination-uncertain.json`; only exact authenticated read-back clears it.
+Unresolved outcomes hold for explicit reconciliation without repeating the
+mutation. Preserve that file and durable comments/refs; local recovery evidence
+is not authority. Malformed, conflicting, unreadable or provenance-invalid
+required evidence holds rather than falling back to cached/older/empty state.
+The optional internal transport callback remains a composition hook, not a
+configuration switch or a claim that all runtime mutations are fenced.
+
+This slice adapts protocol commit `8141c9a` and its 31 bounded tests, with
+additional validation, interleaving, adapter and non-activation regressions.
+The `1359f09` preservation record was inspected. Issue #73's earlier create-only
+ref idea was compared, but its delete-on-release implementation was not imported.
+The older #116 dropped snapshot/register protocol and fixtures were compared
+for lost-write and reconstruction cases, not imported as duplicate authority.
+PR #124, `agent/issue-116`, preservation branches and unported recovery artifacts
+remain unchanged; `issue-116-runtime.patch.gz` is **not applied**.
+
+Runtime integration-turn composition remains #120; handoff, withdrawal/checkpoints
+and full composition/operations remain #118, #119 and #121. No scheduler,
+polling, handoff, automatic legacy adoption, alternate delivery path, worker
+installation/activation or production deployment is introduced. Merging source
+does not install anything; a future cutover remains operator-owned and requires
+separate runtime work and review.
+
 ## Stages and model roles
 
 ```text
