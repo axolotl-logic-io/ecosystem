@@ -16,6 +16,7 @@
 // call's args, then output is the structured answer. A role with no turn
 // left answers nothing, so its session fails. Every start, prompt and tool
 // result is logged to pi.jsonl under FLOW_PI_DIR.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -227,6 +228,11 @@ async function runFlowPi(roleOfModel) {
     extensions: valuesOf(argv, "-e").map((file) => path.basename(file)),
     ghToken: ghToken ?? githubToken,
     commitScope: scope !== undefined,
+    scope: JSON.parse(scope ?? "null"),
+    repoHead: execFileSync("git", ["-C", "repo", "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim(),
+    docsAvailable: fs.existsSync(path.join(process.cwd(), "docs", ".git")),
   });
   const session = { dir, role, tools: await loadTools(argv), out, model };
   readLines((line) => {

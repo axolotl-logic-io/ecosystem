@@ -98,12 +98,15 @@ test("after the code merged, wiki-only hardening verifies the merge commit, push
     before: merged,
     after: merged,
     ops: {
+      "prepare-review": [{ headSha: MERGE_COMMIT }],
       verify: [{ ...VERIFIED, headSha: MERGE_COMMIT }],
       push: [{ ...PUSHED, headSha: BRANCH_HEAD, codeChanged: false }],
     },
   });
   const state = stateOf(await reviewerRole(ctx), "next");
   assert.match(sessionsOf(calls)[0]?.task ?? "", MERGED_SCOPE);
+  const { codeMerged: prepared } = firstPayload(calls, "prepare-review");
+  assert.deepEqual(prepared, CODE_MERGED);
   const { codeMerged } = firstPayload(calls, "verify");
   assert.deepEqual(codeMerged, CODE_MERGED);
   const { wikiOnly } = firstPayload(calls, "push");
@@ -116,6 +119,21 @@ test("after the code merged, wiki-only hardening verifies the merge commit, push
     wiki: WIKI,
     inputs: INPUTS,
   });
+});
+
+test("postmerge preparation of a different result refuses a writer and preserves merged provenance", async () => {
+  const merged = current({ code: MERGE_COMMIT }, MERGED_PR);
+  const { ctx, calls } = hardening({
+    state: { codeMerged: CODE_MERGED },
+    before: merged,
+    ops: { "prepare-review": [{ headSha: HEAD }] },
+  });
+  const end = await reviewerRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.deepEqual(stateOf(end, "stop").codeMerged, CODE_MERGED);
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(savesOf(calls).length, 0);
+  assert.deepEqual(opNames(calls), ["current-revision", "prepare-review"]);
 });
 
 test("a code merge GitHub doesn't confirm stops before any hardening", async () => {

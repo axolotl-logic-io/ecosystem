@@ -23,6 +23,9 @@ import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 import { ensureWiki } from "../wiki.ts";
 
+// A setup failure retains its checkout for explicit reconciliation.
+class CheckoutSetupError extends OpsError {}
+
 // A clone to make: the mirror it comes from, the remote its origin names, the
 // base branch and the branch the issue's work is on.
 interface CloneSpec {
@@ -49,10 +52,6 @@ function gitIn(dir: string, args: readonly string[]): string {
 function hasRef(dir: string, ref: string): boolean {
   const args = ["-C", dir, "rev-parse", "--verify", "--quiet", ref];
   return run("git", args, { allowFail: true }).code === 0;
-}
-
-function hasGit(dir: string): boolean {
-  return fs.existsSync(path.join(dir, ".git"));
 }
 
 // Makes the bare mirror of `url` at `mirror` if missing, then fetches it.
@@ -128,13 +127,19 @@ function wikiStart(mirror: string, branch: string): string | null {
 function openWiki(cfg: Config, checkout: JobCheckout): string | null {
   const { issue, dir: repo } = checkout;
   const wiki = wikiCfg(cfg);
-  if (wiki === null || !hasGit(path.join(repo, wiki.dir))) {
+  if (wiki === null) {
     return null;
   }
   const into = paths.wiki(cfg, issue);
   const target = path.relative(path.dirname(into), path.join(repo, wiki.dir));
   fs.symlinkSync(target, into, "dir");
-  ensureWiki(cfg, issue);
+  // Availability comes from the configured submodule, not unpublished work.
+  // Keep the alias in place while ensureWiki measures work at the pinned HEAD;
+  // it can initialize a declared but not yet initialized submodule too.
+  if (ensureWiki(cfg, issue) === null) {
+    fs.unlinkSync(into);
+    return null;
+  }
   guardCommits(into);
   const mirror = paths.wikiMirror(cfg);
   const url = gitIn(into, ["remote", "get-url", "origin"]).trim();
@@ -174,10 +179,22 @@ function openJobCheckout(
   const scoped = withCheckout(cfg, checkout);
   const branch = paths.branch(scoped, issue);
   cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch }, repo);
-  updateSubmodules(cfg, repo);
-  const docs = openWiki(scoped, checkout);
-  return { root, repo, docs, branch };
+  try {
+    updateSubmodules(cfg, repo);
+    const docs = openWiki(scoped, checkout);
+    return { root, repo, docs, branch };
+  } catch (error: unknown) {
+    const wiki = wikiCfg(cfg);
+    let target = "configured submodules";
+    if (wiki !== null) {
+      target = `configured wiki submodule ${wiki.dir}, base ${wiki.branch}`;
+    }
+    throw new CheckoutSetupError(
+      `cannot prepare ${target}: ${String(error)}. Restore access and the configured submodule/base, reconcile retained work, then explicitly restart. Checkout retained at ${root}; do not overwrite it or replay recovery patches automatically`,
+      { cause: error },
+    );
+  }
 }
 
 export type { JobDirs };
-export { openJobCheckout };
+export { CheckoutSetupError, openJobCheckout };
