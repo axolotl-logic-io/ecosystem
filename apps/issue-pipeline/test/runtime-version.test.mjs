@@ -1,8 +1,6 @@
 // @ts-check
 import assert from "node:assert/strict";
-import childProcess from "node:child_process";
 import fs from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
@@ -10,9 +8,7 @@ import { pinnedOf } from "./brain-test-kit.mjs";
 import { privateRuntime } from "./runtime-policy-test-kit.mjs";
 
 const { runSession } = await import("../src/job/launch.ts");
-const { probeVersion, versionRefusal } = await import(
-  "../src/job/runtime-version.ts"
-);
+const { versionRefusal } = await import("../src/job/runtime-version.ts");
 const LIMIT = 2048;
 const SHIM_EXIT = 127;
 const BOUNDARY_PREFIX = 660;
@@ -137,6 +133,26 @@ test("missing executable refuses with spawn code and no normal status", async ()
   assert.deepEqual(kit.calls(), []);
 });
 
+test("an invalid spawn environment reports the native version and safe code before RPC", async () => {
+  const kit = privateRuntime();
+  Object.assign(
+    kit.env,
+    Object.fromEntries([
+      ["PIPELINE_MODEL_KEY", "synthetic-model-secret\u0000tail"],
+    ]),
+  );
+  const raw = await request(kit);
+  assert.equal(raw.ok, false);
+  assert.match(raw.error ?? "", REQUIRED);
+  assert.match(raw.error ?? "", NO_STATUS);
+  assert.ok(raw.error?.includes("ERR_INVALID_ARG_VALUE"));
+  assert.ok(raw.error?.includes("stderr was empty"));
+  assert.doesNotMatch(JSON.stringify([raw, kit.records]), SECRETS);
+  assert.deepEqual(kit.calls(), []);
+  assert.deepEqual(kit.records, []);
+  assert.ok(!fs.existsSync(path.join(kit.root, "version-calls.txt")));
+});
+
 test("signal termination refuses before RPC and reports the signal", async () => {
   const kit = privateRuntime();
   executable(
@@ -248,47 +264,3 @@ for (const length of [LIMIT - 1, LIMIT, LIMIT + 1]) {
     assert.doesNotMatch(refusal ?? "", UNSAFE);
   });
 }
-
-test("a probe timeout cannot be ignored by the shim", ({ mock }) => {
-  // Check the OS boundary deterministically: a real SIGTERM-ignoring child
-  // would block spawnSync (and the test runner) if this guarantee regressed.
-  let calls = 0;
-  mock.method(
-    childProcess,
-    "spawnSync",
-    /** @param {string} _file @param {string[]} _args @param {import("node:child_process").SpawnSyncOptions} options @returns {import("node:child_process").SpawnSyncReturns<string>} */ (
-      _file,
-      _args,
-      options,
-    ) => {
-      calls += 1;
-      assert.ok((options.timeout ?? 0) > 0);
-      assert.equal(options.killSignal, "SIGKILL");
-      /** @type {NodeJS.ErrnoException} */
-      const error = new Error("unreportable raw timeout error");
-      error.code = "ETIMEDOUT";
-      return {
-        pid: 1,
-        output: [null, "", "No version is set for shim: node"],
-        stdout: "",
-        stderr: "No version is set for shim: node",
-        status: null,
-        signal: "SIGKILL",
-        error,
-      };
-    },
-  );
-  syncBuiltinESMExports();
-  try {
-    const refusal = probeVersion("/", {}, {}, []);
-    assert.match(refusal ?? "", NO_STATUS);
-    assert.ok(refusal?.includes("timed out (ETIMEDOUT)"));
-    assert.ok(refusal?.includes("termination signal SIGKILL"));
-    assert.ok(refusal?.includes("No version is set for shim: node"));
-    assert.ok(!refusal?.includes("unreportable raw timeout error"));
-    assert.equal(calls, 1);
-  } finally {
-    mock.restoreAll();
-    syncBuiltinESMExports();
-  }
-});

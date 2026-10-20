@@ -93,16 +93,36 @@ function probeVersion(
   knownEnv: Readonly<Record<string, string>>,
   credentialNames: readonly string[],
 ): string | null {
-  const result = spawnSync("pi", ["--version", "--offline"], {
-    cwd,
-    env,
-    encoding: "utf8",
-    timeout: VERSION_TIMEOUT_MS,
-    // spawnSync waits for exit after its timeout signal. SIGTERM can be
-    // ignored by a broken shim; use an unignorable signal to finish refusal.
-    killSignal: "SIGKILL",
-    stdio: "pipe",
-  });
+  let result: SpawnSyncReturns<string>;
+  try {
+    result = spawnSync("pi", ["--version", "--offline"], {
+      cwd,
+      env,
+      encoding: "utf8",
+      timeout: VERSION_TIMEOUT_MS,
+      // spawnSync waits for exit after its timeout signal. SIGTERM can be
+      // ignored by a broken shim; use an unignorable signal to finish refusal.
+      killSignal: "SIGKILL",
+      stdio: "pipe",
+    });
+  } catch (error: unknown) {
+    // Invalid spawn inputs can throw instead of returning a process result.
+    // Treat them like returned spawn failures; their message/stack may quote
+    // environment values, so only versionRefusal's parsed code is reportable.
+    let failure = new Error("unknown probe failure");
+    if (error instanceof Error) {
+      failure = error;
+    }
+    result = {
+      pid: 0,
+      output: [],
+      stdout: "",
+      stderr: "",
+      status: null,
+      signal: null,
+      error: failure,
+    };
+  }
   return versionRefusal(result, knownEnv, credentialNames);
 }
 
