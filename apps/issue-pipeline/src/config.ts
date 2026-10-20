@@ -12,6 +12,7 @@ import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
 import { JOB_DOCS, JOB_REPO } from "./job/layout.ts";
 import { OpsError } from "./ops-error.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
+import type { RunResult } from "./process.ts";
 
 // Branch names that are an option, a ref path, a ref expression or a name
 // git refuses (git-check-ref-format), rather than one literal branch.
@@ -32,6 +33,8 @@ interface JobCheckout {
 type Config = z.infer<typeof CONFIG_SCHEMA> & {
   slug: string;
   checkout?: JobCheckout;
+  execution?: { instance: string; lane: string; issue: number };
+  mutation?: (write: () => RunResult) => RunResult;
 };
 
 interface WikiSettings {
