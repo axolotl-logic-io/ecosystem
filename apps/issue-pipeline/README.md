@@ -4,6 +4,8 @@ The pipeline executes one caller-assigned GitHub issue and branch at a time per 
 
 A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
+Model sessions keep a dedicated runtime HOME. Provision their shared probe/Pi/tool environment with the non-secret `runtime.toolchainEnv` declaration (PATH and HOME-independent mise locations); see [the runtime provisioning contract](runtime/README.md#declared-toolchain-isolated-model-configuration). No personal Pi profile or credential inheritance is added.
+
 ## Stages and model roles
 
 ```text
