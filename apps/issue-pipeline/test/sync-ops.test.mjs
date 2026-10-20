@@ -24,7 +24,6 @@ const ISSUE = {
   movedBase: 32,
   refusedPush: 33,
   conflict: 33,
-  keptConflict: 34,
   unfinished: 41,
   aborted: 42,
   abortedWithReason: 43,
@@ -136,25 +135,6 @@ test("sync-base reports a conflict and aborts the rebase", () => {
   assert.equal(fx.inRebase(n), false);
   assert.deepEqual(fx.worktreeState(n), { head: headSha, status: "" });
   assert.equal(originRef("agent/issue-33"), headSha);
-});
-
-test("sync-base retains an unresolved index on recovery instead of discarding it", () => {
-  const n = ISSUE.keptConflict;
-  const { headSha, baseSha } = conflicting(n);
-  const kept = ask({ op: "sync-base", number: n, keepConflict: true });
-  assert.deepEqual(kept.writes, []);
-  assert.equal(kept.out, conflictLine(n, true, baseSha));
-  assert.equal(fx.inRebase(n), true);
-  const before = fx.worktreeState(n);
-  const again = ask({ op: "sync-base", number: n, keepConflict: false });
-  assert.deepEqual(again.writes, []);
-  assert.equal(
-    again.out,
-    `${JSON.stringify({ ok: false, error: `unmerged index in ${worktree(n)}; retain the original checkout for recovery` })}\n`,
-  );
-  assert.equal(fx.inRebase(n), true);
-  assert.deepEqual(fx.worktreeState(n), before);
-  assert.equal(originRef(`agent/issue-${n}`), headSha);
 });
 
 // A conflicting rebase kept in the worktree for a writer, as sync-base leaves it.

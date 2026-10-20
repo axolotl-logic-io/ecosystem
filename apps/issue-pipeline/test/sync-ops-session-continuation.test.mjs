@@ -8,7 +8,6 @@ import { z } from "zod";
 import {
   ask,
   fx,
-  recoveryEvidence,
   resolveText,
   seed,
   sessionStop,
@@ -17,6 +16,7 @@ import {
   unmerged,
   wikiCommit,
 } from "./session-sync-test-kit.mjs";
+import { recoveryEvidence } from "./sync-recovery-test-kit.mjs";
 import { pinAt } from "./wiki-pin-test-kit.mjs";
 
 const ISSUE = { resolved: 81, mixed: 83, rejected: 84, abort: 86 };
@@ -90,7 +90,7 @@ for (const abort of [false, true]) {
       "partial resolver notes\n",
     );
     assert.equal(fx.originRef(`agent/issue-${w.n}`), w.original);
-    const { stages, bundle, restored } = recoveryEvidence(w.n);
+    const { stages, bundle, restored } = recoveryEvidence(fx.root, w.n);
     assert.deepEqual(
       stages
         .map(

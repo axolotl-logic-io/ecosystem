@@ -1,9 +1,6 @@
 // @ts-check
 // Multi-pick code histories where a session reaches a later wiki stop itself.
 import { spawnSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import { z } from "zod";
 import { gitlinkSyncFixture } from "./gitlink-sync-test-kit.mjs";
 
 const { fx, seed, branch, wikiCommit, stagePin, ask, unmerged, resolveText } =
@@ -33,7 +30,7 @@ function sessionStop(n, mixed = false) {
   const continued = spawnSync(
     "git",
     ["-C", wt, "-c", "core.editor=true", "rebase", "--continue"],
-    { encoding: "utf8" },
+    { encoding: "utf8", timeout: 30_000 },
   );
   const stop = [
     first.conflicts,
@@ -44,32 +41,9 @@ function sessionStop(n, mixed = false) {
   return { n, wt, original, target, base, stop };
 }
 
-const STAGES = z.array(
-  z.object({
-    file: z.string(),
-    mode: z.string(),
-    sha: z.string(),
-    stage: z.string(),
-  }),
-);
-
-/** @param {number} n */
-function recoveryEvidence(n) {
-  const recovery = path.join(fx.root, "runs", "o__r", `issue-${n}`, "recovery");
-  const dir = path.join(recovery, fs.readdirSync(recovery)[0] ?? "missing");
-  const bundle = path.join(dir, "commits.bundle");
-  const restored = path.join(fx.root, `restored${n}`);
-  sh(`git clone -q ${bundle} ${restored}`);
-  const stages = STAGES.parse(
-    JSON.parse(fs.readFileSync(path.join(dir, "conflict-stages.json"), "utf8")),
-  );
-  return { stages, bundle, restored };
-}
-
 export {
   ask,
   fx,
-  recoveryEvidence,
   resolveText,
   seed,
   sessionStop,
