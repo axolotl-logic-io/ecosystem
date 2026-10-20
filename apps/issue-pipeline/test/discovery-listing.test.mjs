@@ -48,6 +48,18 @@ test("explicit opt-in and valid configuration are required before any read", asy
     discoverAssignments({ ...hub.config, requestBudget: 0 }, hub),
   );
   await assert.rejects(discoverAssignments(undefined, hub));
+  await assert.rejects(
+    discoverAssignments(
+      {
+        ...hub.config,
+        repositories: hub.config.repositories.map((repo) => ({
+          ...repo,
+          allowedUsers: [],
+        })),
+      },
+      hub,
+    ),
+  );
   assert.equal(hub.requests.length, 0);
 });
 
@@ -196,4 +208,40 @@ test("a fully read empty queue is complete", async () => {
   assert.deepEqual(plan.candidates, []);
   assert.deepEqual(plan.continuations, []);
   assert.equal(plan.requests, 2);
+});
+
+test("identity matching is case-insensitive across mappings and authenticated actors", async () => {
+  const hub = world();
+  hub.config.allowRepositories = [hub.repository.toUpperCase()];
+  for (const worker of hub.config.workers) {
+    worker.repository = worker.repository.toUpperCase();
+    worker.login = worker.login.toUpperCase();
+    if (worker.reviewer !== undefined) {
+      worker.reviewer = worker.reviewer.toUpperCase();
+    }
+  }
+  const [repo] = hub.config.repositories;
+  assert.ok(repo);
+  repo.devAccount = "DEV";
+  repo.mergeAccount = "MERGE";
+  repo.allowedUsers = repo.allowedUsers.map((login) => login.toUpperCase());
+  let plan = await discoverAssignments(hub.config, hub);
+  assert.equal(plan.candidates[0]?.worker, "builder");
+  assert.deepEqual(plan.holds, []);
+  hub.assigned.length = 0;
+  hub.pulls.push(hub.pull);
+  hub.save();
+  plan = await discoverAssignments(hub.config, hub);
+  assert.equal(plan.candidates[0]?.worker, "checker");
+  assert.deepEqual(plan.holds, []);
+});
+
+test("identical duplicate mappings cannot be resolved by first-match ordering", async () => {
+  const hub = world();
+  const [worker] = hub.config.workers;
+  assert.ok(worker);
+  hub.config.workers.push({ ...worker });
+  const plan = await discoverAssignments(hub.config, hub);
+  assert.equal(plan.candidates.length, 0);
+  assert.equal(plan.holds[0]?.reason, "mapping");
 });

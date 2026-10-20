@@ -19,7 +19,7 @@ const REPO = z.object({
   devAccount: z.string().regex(LOGIN),
   mergeAccount: z.string().regex(LOGIN),
   legacyAccount: z.string().regex(LOGIN).optional(),
-  allowedUsers: z.array(z.string().regex(LOGIN)),
+  allowedUsers: z.array(z.string().regex(LOGIN)).min(1),
   baseBranch: z.string().min(1).default("main"),
   skipLabels: z.array(z.string()).default([]),
   takeNewWork: z.boolean().default(true),

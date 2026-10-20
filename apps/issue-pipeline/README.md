@@ -149,7 +149,7 @@ The discovery configuration is independent of repository model-role configuratio
 }
 ```
 
-Only explicitly allowed, configured repositories are read. Repository/login comparisons are case-insensitive. Duplicate repository definitions, duplicate login mappings (even if identical), or conflicting logical-worker mappings fail closed, never first-match/default-worker resolution. Each mapping is repository-scoped; its permitted roles are `development` and/or `review`. `reviewer` is the configured reviewer's GitHub login, not a model name. Repository settings also accept `legacyAccount`, `skipLabels` (default `[]`) and `takeNewWork` (default `true`); `baseBranch` defaults to `main`. No model, provider, credential path or token belongs in this configuration.
+Only explicitly allowed, configured repositories are read. Each repository requires a nonempty `allowedUsers` list; neither configured bot becomes a trusted human through that list. Repository/login comparisons are case-insensitive. Duplicate repository definitions, duplicate login mappings (even if identical), or conflicting logical-worker mappings fail closed, never first-match/default-worker resolution. Each mapping is repository-scoped; its permitted roles are `development` and/or `review`. `reviewer` is the configured reviewer's GitHub login, not a model name. Repository settings also accept `legacyAccount`, `skipLabels` (default `[]`) and `takeNewWork` (default `true`); `baseBranch` defaults to `main`. No model, provider, credential path or token belongs in this configuration.
 
 ### Reader and authentication contract
 
