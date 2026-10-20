@@ -1,7 +1,7 @@
 // @ts-check
 // A real authorized branch POST lands and auto-closes its issue, but delayed
 // PR confirmation refuses the merge receipt. Canonical jobs must reconcile
-// without inventing own-merge authority or repeating the code mutation.
+// the saved HTTP response without repeating the code mutation.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,11 +25,7 @@ import {
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
 import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
-import {
-  hardeningTurn,
-  savedState,
-  securityTurn,
-} from "./pipeline-flow-script.mjs";
+import { savedState, securityTurn } from "./pipeline-flow-script.mjs";
 
 const CLAIM_AUTHORITY = z.object({
   state: z.object({ hardened: z.unknown(), integration: z.unknown() }),
@@ -61,29 +57,45 @@ test("the accepted merge auto-closes the issue before delayed confirmation stops
   assert.equal(merges(flow).length, 1);
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   assert.notEqual(merged, stopped.integration.revision.code);
+  assert.equal(stopped.mergeAttempt.result, merged);
+  assert.deepEqual(
+    stopped.mergeAttempt.authorized,
+    stopped.integration.revision,
+  );
   assert.equal(
     refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
     originalWiki,
   );
 });
 
-test("canonical closed recovery reopens and reconciles but does not invent own-merge authorization", () => {
+test("canonical closed recovery reopens and reconciles the saved response with original authorization", () => {
   const stopped = savedState(readWorld(flow.ghDir));
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   withWorld(flow.ghDir, (world) => {
     world.delayMergeConfirmation = false;
   });
   fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
-  scriptPi(flow, { reviewer: [hardeningTurn(), securityTurn()] });
+  scriptPi(flow, { reviewer: [securityTurn()] });
+  // Inspect durable exact Security before any publication can occur.
+  fs.writeFileSync(
+    path.join(flow.root, "interrupt-publish"),
+    "pause publication",
+  );
   traceStart = opsTrace(flow).length;
   const callsStart = ghCalls(flow.ghDir).length;
   const starts = sessions(flow);
-  // No durable own receipt: a merged fact alone must return to hardening.
-  assert.equal(runStage(flow, "merge").end, "next");
+  // The saved response plus fresh matching evidence may establish an own
+  // receipt. PR truth alone would not be sufficient to do so.
+  assert.equal(runStage(flow, "merge").end, "deferred");
   const recovered = savedState(readWorld(flow.ghDir));
-  assert.equal(recovered.stage, "review");
+  assert.equal(recovered.stage, "merge");
   assert.deepEqual(recovered.codeMerged, { pr: stopped.pr, sha: merged });
-  assert.equal(recovered.merged, null);
+  assert.deepEqual(recovered.merged, {
+    ...stopped.integration.revision,
+    code: merged,
+  });
+  assert.equal(recovered.mergeAttempt.result, stopped.mergeAttempt.result);
+  assert.ok(recovered.mergeAttempt.reads > stopped.mergeAttempt.reads);
   const claimed = CLAIM_AUTHORITY.parse(
     opsTrace(flow)
       .slice(traceStart)
@@ -91,9 +103,9 @@ test("canonical closed recovery reopens and reconciles but does not invent own-m
   );
   assert.deepEqual(claimed.state.hardened, stopped.hardened);
   assert.deepEqual(claimed.state.integration, stopped.integration);
-  assert.equal(recovered.hardened, null);
-  assert.equal(recovered.integration, null);
-  assert.equal(sessions(flow), starts);
+  assert.deepEqual(recovered.hardened, stopped.hardened);
+  assert.deepEqual(recovered.integration, stopped.integration);
+  assert.equal(sessions(flow), starts + 1);
   assert.equal(
     readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
     "open",
@@ -110,30 +122,26 @@ test("canonical closed recovery reopens and reconciles but does not invent own-m
   );
 });
 
-test("postmerge hardening and actual-result checks precede read-only exact Security and wiki publication", () => {
+test("actual-result checks precede read-only exact Security and wiki publication", () => {
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
-  assert.equal(runStage(flow, "review").end, "next");
-  const hardened = savedState(readWorld(flow.ghDir));
-  assert.equal(hardened.hardened.code, merged);
-  assert.equal(hardened.merged, null);
-  assert.equal(hardened.security, null);
-  assert.equal(
-    refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
-    originalWiki,
-  );
-
-  // Interrupt publication to inspect durable exact Security before wiki writes.
-  fs.writeFileSync(
-    path.join(flow.root, "interrupt-publish"),
-    "pause publication",
-  );
-  assert.equal(runStage(flow, "merge").end, "deferred");
   const cleared = savedState(readWorld(flow.ghDir));
   assert.deepEqual(cleared.security.revision, {
     code: merged,
-    wiki: hardened.hardened.wiki,
-    inputs: hardened.hardened.inputs,
+    wiki: cleared.integration.revision.wiki,
+    inputs: cleared.integration.revision.inputs,
   });
+  const trace = opsTrace(flow).slice(traceStart);
+  const securityClaim = trace.findIndex(
+    ({ request }) => request.op === "prepare-review",
+  );
+  const verify = trace.findIndex(({ request }) => request.op === "verify");
+  const wikiCheck = trace.findIndex(
+    ({ request }) => request.op === "wiki-check",
+  );
+  assert.ok(verify >= 0);
+  assert.ok(wikiCheck >= 0);
+  assert.ok(securityClaim > verify);
+  assert.ok(securityClaim > wikiCheck);
   assert.equal(cleared.security.finding, null);
   assert.ok(cleared.security.commentId > 0);
   const security = piLog(flow.piDir)
@@ -188,13 +196,9 @@ test("recovery verified the actual result without another code push or merge POS
         request.op === "wiki-check" && pass === true,
     ),
   );
-  // A postmerge hardening push is wiki-only; no code push or second merge.
-  assert.ok(
-    trace
-      .filter(({ request }) => request.op === "push")
-      .every(
-        ({ request }) => "wikiOnly" in request && request.wikiOnly === true,
-      ),
+  assert.equal(
+    trace.some(({ request }) => request.op === "push"),
+    false,
   );
   assert.equal(
     trace.some(({ request }) =>

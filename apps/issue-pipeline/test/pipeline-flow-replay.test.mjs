@@ -18,9 +18,9 @@ import {
 } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
-  prepareReplayFlow,
   expectedReplay,
   merges,
+  prepareReplayFlow,
   replaceState,
   replayFacts,
   securityEvidence,
@@ -155,7 +155,10 @@ test("claim-populated replay cannot publish or close without security when the f
 test("retained publish-only recovery bundles an added gitlink and pending wiki before Security", () => {
   const traceStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "deferred");
-  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay(interruptedWorld));
+  assert.deepEqual(
+    replayFacts(flow, traceStart),
+    expectedReplay(interruptedWorld),
+  );
   const state = savedState(readWorld(flow.ghDir));
   const { diff, bundle, files } = securityBundle(state.merged.code);
   assert.ok(diff.includes(`+Subproject commit ${originalWiki}`));

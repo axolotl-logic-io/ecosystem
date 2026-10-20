@@ -169,6 +169,19 @@ function prepareReplayFlow(flow) {
 
 /** @param {Flow} flow @param {boolean} [delayMergeConfirmation] */
 function createReplayFlow(flow, delayMergeConfirmation = false) {
+  const originalConfig = fs.readFileSync(flow.config, "utf8");
+  if (delayMergeConfirmation) {
+    const settings = z.looseObject({}).parse(JSON.parse(originalConfig));
+    // Hold metadata until explicit recovery, not a timing-dependent race. A
+    // short configured window exercises expiry without the production wait.
+    fs.writeFileSync(
+      flow.config,
+      JSON.stringify({
+        ...settings,
+        mergeConfirmation: { deadlineSeconds: 1, backoffSeconds: [1] },
+      }),
+    );
+  }
   const originalWiki = prepareReplayFlow(flow);
   for (const stage of ["author", "implement", "review"]) {
     const result = runStage(flow, stage);
@@ -182,9 +195,20 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
     world.failedHead = savedState(world).hardened.code;
     world.delayMergeConfirmation = delayMergeConfirmation;
   });
-  runStage(flow, "merge");
-  runStage(flow, "merge");
+  for (const expected of ["wait", "deferred"]) {
+    let end = expected;
+    if (delayMergeConfirmation && expected === "deferred") {
+      end = "stop";
+    }
+    const result = runStage(flow, "merge");
+    if (result.end !== end) {
+      throw new Error(
+        `setup merge: expected ${end}, got ${JSON.stringify(result)}`,
+      );
+    }
+  }
   const interruptedWorld = readWorld(flow.ghDir);
+  fs.writeFileSync(flow.config, originalConfig);
   return { flow, interruptedWorld, originalWiki };
 }
 
