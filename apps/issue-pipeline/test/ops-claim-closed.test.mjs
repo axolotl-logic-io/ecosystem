@@ -24,6 +24,18 @@ const HEAD = "0".repeat(SHA_LENGTH);
 const MERGE = "a".repeat(SHA_LENGTH);
 const SAVED = v2State(ISSUE, { stage: "merge", pr: PR, headSha: HEAD });
 const MERGED = { state: "MERGED", mergeCommit: { oid: MERGE } };
+const AUTHORIZED = { code: HEAD, wiki: null, inputs: "x" };
+const ATTEMPT = {
+  repo: "o/r",
+  pr: PR,
+  target: "integration",
+  branch: `agent/issue-${ISSUE}`,
+  authorized: AUTHORIZED,
+  hardened: AUTHORIZED,
+  integration: null,
+  result: MERGE,
+  reads: 1,
+};
 const REPLY = z.object({
   ok: z.boolean(),
   lost: z.boolean().optional(),
@@ -76,6 +88,33 @@ for (const [name, extra] of Object.entries({
 })) {
   test(`closed issue with ${name} is refused without mutations`, () => {
     closedWorld([stateComment(1, { ...SAVED, ...extra })]);
+    assert.equal(
+      REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
+      false,
+    );
+    assert.deepEqual(writes(), []);
+  });
+}
+
+for (const [name, extra] of Object.entries({
+  "different response result": { result: "b".repeat(SHA_LENGTH) },
+  "different source head": {
+    authorized: { ...AUTHORIZED, code: "b".repeat(SHA_LENGTH) },
+  },
+  "different PR": { pr: PR + 1 },
+  "different repository": { repo: "another/repo" },
+  "different target": { target: "another-base" },
+  "different branch": { branch: "another-branch" },
+})) {
+  test(`closed recovery refuses a saved merge attempt with ${name} before mutations`, () => {
+    closedWorld([
+      stateComment(1, {
+        ...SAVED,
+        headSha: null,
+        hardened: AUTHORIZED,
+        mergeAttempt: { ...ATTEMPT, ...extra },
+      }),
+    ]);
     assert.equal(
       REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
       false,

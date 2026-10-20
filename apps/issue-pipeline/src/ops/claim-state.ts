@@ -160,6 +160,20 @@ function assertClosedMergeRecovery(
   const pr = issuePullRequest(cfg, n, saved);
   const merged = codeMergedOf(pr);
   const authorized = mergeAuthorization(saved);
+  const attempt = saved.mergeAttempt;
+  if (
+    attempt !== null &&
+    (attempt.repo !== cfg.repo ||
+      attempt.pr !== saved.pr ||
+      attempt.target !== cfg.baseBranch ||
+      attempt.branch !== paths.branch(cfg, n) ||
+      attempt.authorized.code !== pr?.headSha ||
+      (attempt.result !== null && attempt.result !== merged?.sha))
+  ) {
+    throw new OpsError(
+      `#${n}'s saved merge attempt is not confirmed by GitHub`,
+    );
+  }
   if (
     pr === null ||
     merged === null ||
