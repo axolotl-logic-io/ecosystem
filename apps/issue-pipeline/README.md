@@ -88,6 +88,116 @@ For chunked reviews, assign the root and exact query, not generated diff files. 
 
 This is the **Git execution boundary**, not an OS/filesystem/keyring/network sandbox. The retained read tools can read same-user files and are not confined by this root allowlist. Do not promise universal credential-file isolation. Optional macOS sandboxing, writer shell isolation, credential rotation and production deployment are outside this feature. Merging does not install or activate it.
 
+## Opt-in assignment discovery module (read-only)
+
+`src/discovery/plan.ts` exports `discoverAssignments(configuration, reader)` and the `DiscoveryPlan`, `Candidate`, `Hold`, `DiscoveryReader` and `ReadRequest` types. This is a **source-module seam**, not an installed worker program. Nothing imports it from the job executor or retained orchestrator. Existing explicit issue/branch/stage dispatch is unchanged; omitting this API call does no discovery. Configuration must explicitly contain `enabled: true`; disabled, missing or structurally invalid configuration rejects before making any reads.
+
+The discovery configuration is independent of repository model-role configuration and private credential selection. For example (logins below are illustrative operator choices):
+
+```json
+{
+  "enabled": true,
+  "allowRepositories": [
+    "axolotl-logic-io/ecosystem",
+    "axolotl-logic-io/project-buddy"
+  ],
+  "repositories": [
+    {
+      "repo": "axolotl-logic-io/ecosystem",
+      "devAccount": "development-login",
+      "mergeAccount": "review-login",
+      "allowedUsers": ["trusted-human"],
+      "baseBranch": "main"
+    },
+    {
+      "repo": "axolotl-logic-io/project-buddy",
+      "devAccount": "development-login",
+      "mergeAccount": "review-login",
+      "allowedUsers": ["trusted-human"],
+      "baseBranch": "main"
+    }
+  ],
+  "workers": [
+    {
+      "repository": "axolotl-logic-io/ecosystem",
+      "login": "development-login",
+      "worker": "ecosystem-development",
+      "roles": ["development"],
+      "reviewer": "review-login"
+    },
+    {
+      "repository": "axolotl-logic-io/ecosystem",
+      "login": "review-login",
+      "worker": "ecosystem-review",
+      "roles": ["review"]
+    },
+    {
+      "repository": "axolotl-logic-io/project-buddy",
+      "login": "development-login",
+      "worker": "buddy-development",
+      "roles": ["development"],
+      "reviewer": "review-login"
+    },
+    {
+      "repository": "axolotl-logic-io/project-buddy",
+      "login": "review-login",
+      "worker": "buddy-review",
+      "roles": ["review"]
+    }
+  ],
+  "requestBudget": 100
+}
+```
+
+Only explicitly allowed, configured repositories are read. Repository/login comparisons are case-insensitive. Duplicate repository definitions, duplicate login mappings (even if identical), or conflicting logical-worker mappings fail closed, never first-match/default-worker resolution. Each mapping is repository-scoped; its permitted roles are `development` and/or `review`. `reviewer` is the configured reviewer's GitHub login, not a model name. Repository settings also accept `legacyAccount`, `skipLabels` (default `[]`) and `takeNewWork` (default `true`); `baseBranch` defaults to `main`. No model, provider, credential path or token belongs in this configuration.
+
+### Reader and authentication contract
+
+An explicitly opting-in caller supplies a **trusted authenticated GitHub transport**, not model-produced records or preapproved eligibility booleans:
+
+```ts
+import { discoverAssignments } from "./src/discovery/plan.ts";
+
+const plan = await discoverAssignments(configuration, {
+  read: async (request) => transport.readOneGitHubResponse(request),
+});
+```
+
+`transport` above is an application-owned dependency, not an adapter delivered here. `ReadRequest` permits only a REST `GET` (`repository`, repository-scoped `path`) or the module's fixed read-only GraphQL issue-comment query (`repository`, `query`, `id`). Return `{ status, body, link }`: the HTTP status, decoded **complete** JSON response body and raw REST Link header (`null` when absent; also `null` for GraphQL). REST bodies use GitHub's documented wire names; the boundary normalizes snake-case keys and rejects colliding spellings before schema validation. The reader must deliver genuine GitHub responses for the requested repository, preserve HTTP errors, and throw for failed/partial transport or JSON decoding. It must not fabricate fields, cache away revocation, follow pages, retry internally, silently truncate a body, or perform writes. One call must mean **one request attempt**. The module deliberately does not call the existing automatically retrying `ghJson` helper, select credentials, or accept arbitrary GraphQL queries from work text. This contract is an in-process trust boundary, not protection against a malicious caller/transport.
+
+The module lists assigned open issues and all open PRs (filtering requested reviewers), follows REST pagination to completion, and reads issue comments, assignment/review-request events, collaborator membership, linked issue/state/dependencies and PR reviews as needed. PR bodies starting with the existing `Closes #N` convention locate an issue only; they confer no authority. Review candidates must independently match that issue's trusted saved PR number, development author, repository/base, branch and head revision. An external/fork PR or a copied issue link cannot substitute for the recorded PR.
+
+Current assignee/reviewer lists are discovery signals, **not grants**. The latest matching GitHub grant/removal event supplies actor provenance. A human actor and the issue author must be in `allowedUsers` and still be collaborators; neither configured bot is a human even if allow-listed. The configured merge identity can orchestrate grants. Development can request only its configured reviewer, with no additional user/team targets, on its own recorded PR and a matching saved handoff. Missing events, unreadable collaborator checks and contradictory evidence fail closed; copied comment markers establish neither an event actor nor saved authority.
+
+Saved state uses the existing strict claim/write-authority validation, never the tolerant display/migration reader. All merge-authored comments are reread with body, author, edit time and editor in the **same GraphQL response**, including comments whose markers were removed. Only merge-authored, editor-verified v2 state is planning evidence. Discovery additionally validates question/review fields without display defaults. Legacy, forged, malformed, uncertain attempted-merge/postmerge or local-recovery records remain held; discovery never adopts or rewrites them.
+
+The read-only handoff input is the saved state's optional `coordination.handoff`, with `coordination.pending: null` and `localRecovery: false`. Its required binding is:
+
+```ts
+{
+  checkpoint: { pr: number, branch: string, code: string, inputs: string, at: string },
+  request: number | null,
+  eventsBefore: number[],
+  review: number | null
+}
+```
+
+`code` is the full PR head SHA; `inputs` is the trusted-input revision; `at` is an ISO timestamp. A review-request grant must match that checkpoint and either the recorded request event ID or, with a null request, an event not in `eventsBefore` occurring at/after the checkpoint. Missing handoffs stay held even for an otherwise authenticated orchestrator. A recorded merge-account review is accepted only when its genuine GitHub review ID, PR URL, commit and submission time match the saved handoff, current recorded PR and trusted-input revision. A saved review missing from GitHub is incomplete; another PR's or an older revision's review cannot satisfy it. Unbound merge reviews hold the affected PR conservatively rather than approving or reinterpreting them. This module writes no handoff lifecycle.
+
+Trusted human requirements use exactly the existing title/body/comment hashing format. Visitors, both configured bots and recognized legacy machine comments cannot change that revision or answer needs-info. Stops, unanswered questions, split/skip labels, disabled new work and existing `after` prerequisites remain controls. Existing `parent` markers are read as relationships, not newly invented prerequisites. Unreadable dependencies are not permission. Changed trusted input sends development planning back to `author`; it holds review for return to Author rather than skipping authoring.
+
+### Plans, bounds and continuation
+
+`DiscoveryPlan` contains `executionAuthority: false`, `requests`, `complete`, `candidates`, `holds` and `continuations`. A candidate identifies repository, issue/PR number, linked issue, GitHub login, logical worker, permitted role, suggested existing stage, trusted-input revision and grant/review evidence IDs. Development suggests only `author`/`implement`; review suggests only `review`/`merge`. **Every returned plan grants no execution authority**, including a candidate suggesting merge. It cannot authorize a session, claim, state save, comment, label/assignment/review-request change, submitted review or merge. Any future executor would need its own fresh authorization; this snapshot is not a lease or a claim.
+
+`requestBudget` defaults to **100**, must be an integer from **1 through 1000**, and covers the entire sweep across repositories, including every listing page, event/comment/review page, same-read editor query, collaboration check, state/input and dependency read. There are no hidden retries. Calls stop at the budget; unrelated unfinished work gets explicit holds too. Pagination validates endpoints, filters and next-page progression. A full page without Link metadata requires another bounded read rather than implying completion. Failed, malformed or partial reads never become an empty array. A transport that silently discards response bytes violates the reader contract; no client can authenticate omitted bytes from such a transport.
+
+`complete: true` means all required reads for the evaluated snapshot finished, **not** that every item was eligible. A completed empty listing can therefore have no candidates/continuations; a refused mapping can have a complete snapshot with a hold. `complete: false` means some listing or required evidence is incomplete. Fully authenticated independent candidates may still be shown, but missing results never prove unassignment or an authoritative empty queue. This is an observational sweep, not an atomic GitHub snapshot: concurrent changes can occur between reads.
+
+Each hold has repository, work kind/number/login, typed `reason`, stable `evidence`, `incomplete` and `deduplicationKey`. Reasons distinguish repository/mapping/role, scope/provenance/state, stop/needs-info/dependency/inputs, and budget/read/page failures. The key is a deterministic JSON tuple of normalized work identity, reason and evidence, suitable for deduplicating repeated unchanged rejections without posting anything to GitHub. `continuations` are the incomplete holds: retry descriptors identifying the unfinished listing/page or evidence, **not resumable authority**. Retry with an explicit new sweep after fixing the read/configuration/budget; no automatic polling, persisted cursor, rejection-notification service or unassignment inference is supplied.
+
+Source delivery adds no live worker entry point, provider setup, installation, activation or production deployment. No wiki changes are needed for this module seam.
+
 ## Caller invocation and concurrency
 
 Run installed `job.mjs`, once per stage, with **one `--issue`, required `--branch` and required `--brain-path`**, including boundary prints:
