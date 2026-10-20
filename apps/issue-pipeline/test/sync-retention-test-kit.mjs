@@ -95,19 +95,33 @@ async function recovered(w) {
   return recoveryOf(w);
 }
 
-/** @param {ReturnType<typeof conflicted>} w */
-function recoveryOf(w) {
+/**
+ * Restore the one snapshot with the requested evidence, not the first random
+ * directory: a rejected resolution and an unmerged retry have different kinds.
+ * @param {ReturnType<typeof conflicted>} w
+ * @param {"working.patch" | "conflict-stages.json"} [evidence]
+ */
+function recoveryOf(w, evidence = "working.patch") {
   const recovery = path.join(paths.runDir(w.job.cfg, ISSUE), "recovery");
   const entries = fs
     .readdirSync(recovery)
     .filter(
       (name) =>
         name.startsWith("sync-") &&
-        fs.existsSync(path.join(recovery, name, "commits.bundle")),
+        fs.existsSync(path.join(recovery, name, "commits.bundle")) &&
+        fs.existsSync(path.join(recovery, name, evidence)),
     );
-  const folder = path.join(recovery, entries[0] ?? "missing");
+  const [entry] = entries;
+  if (entries.length !== 1 || entry === undefined) {
+    throw new Error(
+      `expected one ${evidence} snapshot, found ${entries.length}`,
+    );
+  }
+  const folder = path.join(recovery, entry);
   const repo = fs.mkdtempSync(path.join(root, "resolver-restored-"));
-  git(root, ["clone", path.join(folder, "commits.bundle"), repo]);
+  const bundle = path.join(folder, "commits.bundle");
+  git(root, ["clone", bundle, repo]);
+  git(repo, ["bundle", "verify", bundle]);
   return { folder, repo };
 }
 
