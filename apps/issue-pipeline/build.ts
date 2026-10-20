@@ -7,7 +7,8 @@
 // its `#!` line: the ops CLI <outdir>/ops.mjs (src/ops.ts) and the shell
 // supervisor it runs each command through (<outdir>/shell-supervisor.mjs),
 // the stage job <outdir>/job.mjs (src/job.ts) and its pi extensions
-// <outdir>/structured-output.mjs and <outdir>/pipeline-commit.mjs, the
+// <outdir>/structured-output.mjs, <outdir>/pipeline-commit.mjs and
+// <outdir>/git-review.mjs, the
 // orchestrator <outdir>/orchestrate.mjs and the reports <outdir>/report.mjs.
 // It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
@@ -23,6 +24,7 @@ const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
 // supervisor, the stage job, the job's pi extensions, the orchestrator and
 // the reports.
 const NODE_MODULES: ReadonlyMap<string, string> = new Map([
+  [path.join(SOURCE_DIR, "job", "git-review.ts"), "git-review.mjs"],
   [path.join(SOURCE_DIR, "ops.ts"), "ops.mjs"],
   [path.join(SOURCE_DIR, "shell-supervisor.ts"), "shell-supervisor.mjs"],
   [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],

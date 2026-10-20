@@ -54,6 +54,9 @@
         "src/job/runtime-profile.ts",
         "src/job/ops-process.ts",
         "src/job/agent-definition.ts",
+        "src/job/git-review.ts",
+        "src/job/git-review-process.ts",
+        "src/job/git-review-repository.ts",
         "src/job/structured-output.ts",
         "src/job/args.ts",
         "src/job/brain.ts",
@@ -98,10 +101,11 @@
     // pi loads an extension from its default export, so the stage job's pi
     // extensions keep one (`best-practice-over-lint`: default exports are
     // fine where they are the platform's setup): structured_output's and
-    // pipeline_commit's (#303).
+    // pipeline_commit's (#303), and git_review's.
     {
       "includes": [
         "src/job/structured-output.ts",
+        "src/job/git-review.ts",
         "src/job/pipeline-commit-tool.ts"
       ],
       "linter": {

@@ -140,7 +140,9 @@ function readOnlyToolsFlag(
 ): string {
   let kept = READ_ONLY_TOOLS;
   if (tools.length > 0) {
-    kept = tools.filter((tool) => READ_ONLY_TOOLS.includes(tool));
+    kept = tools.filter(
+      (tool) => READ_ONLY_TOOLS.includes(tool) || tool === "git_review",
+    );
   }
   return [...kept, ...added].join(",");
 }
