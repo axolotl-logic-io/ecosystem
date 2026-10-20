@@ -1,0 +1,729 @@
+diff --git a/apps/issue-pipeline/README.md b/apps/issue-pipeline/README.md
+index 123559c..caa54c9 100644
+--- a/apps/issue-pipeline/README.md
++++ b/apps/issue-pipeline/README.md
+@@ -110,6 +110,28 @@ Issue/branch binding is persisted at first claim. A changed branch on resume is
+ 
+ Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. The caller serializes integration/merge turns (one at a time); existing claim/lease/head/merge-queue guards still apply. `--merge-queue N,...` carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
+ 
++## Instance fencing and integration turns — implementation draft (#116)
++
++**This branch is incomplete and is not an install candidate.** The protocol seam has deterministic tests, but existing CLI/job fixtures still assume legacy claims and need migration with their delivery and recovery assertions intact. See [preserved development status](preserved/issue-116.md). Do not treat these draft semantics as a validated installed runtime.
++
++The draft separates the stable caller `--lane` from a fresh UUID for each invocation, independent of caller-supplied job IDs. Only a confirmed execution instance may launch a writer or cross a controlled mutation boundary. Sequential stages acquire anew after the predecessor saved its authoritative state, completed recovery-safe teardown and verifiably relinquished ownership. Stage mismatch saves preserved work without launching a model. A lease timestamp, matching lane or stale in-memory state is never execution permission.
++
++Authenticated append-only GitHub comments represent requests, confirmations, checkpoints and releases. Immutable create-only refs under `pipeline-coordination/` arbitrate each repository/base-scoped ownership epoch; those refs are coordination metadata, not source delivery. Releases refer to one exact request/instance and open a new epoch without deleting the predecessor's ref. Request/comment order is retained across restarts; it is not an autonomous scheduling or fairness policy. A missing/changed historical lock, malformed record, foreign author/editor or conflicting instance holds for reconciliation rather than selecting older authority. Comment provenance still requires merge authorship and same-read editor verification.
++
++Compatibility in the draft:
++
++- Genuinely new issues retain first-claim checks against prior GitHub/local work.
++- V2 saved state with a strict `execution` receipt (`protocol: 1`, request comment ID and instance UUID) requires its authenticated complete coordination history and immutable refs. Active ownership is not inherited by a new invocation; only verified release permits sequential reacquisition.
++- V2 state without the receipt, old live/expired lane claims, unknown/conflicting write outcomes, malformed receipts and missing history require explicit reconciliation. V1 remains display-only. No automatic legacy adoption is supplied.
++- A write intent is preserved locally as `coordination-uncertain.json` before the attempt. Exact authenticated read-back can conclusively establish an outcome despite a lost response. Otherwise the intent remains and the write is not automatically repeated, including on an explicit restart. Do not delete it to obtain permission.
++- Dirty-work patches, unresolved indexes, retained checkouts and required code/wiki recovery remain recovery requirements, not disposable coordination caches. A recovery-blocked executor does not relinquish merely because its heartbeat is old. Refused work is preserved locally, never pushed for safekeeping.
++
++`integrationTurn` is an explicit protocol primitive only: **the default runtime does not invoke it**. Its repository/base scope is shared across issues. Future assignment-mode composition must route caller-dispatched merge jobs and assignment candidates through that same guard, check both issue-instance and turn ownership freshly at controlled integration boundaries, and retain merge-queue order as an additional restriction. Caller dispatch, a supplied queue or a local lock cannot independently grant a turn. Existing branch/head/CI/approval/trusted-input/wiki/security and merged-result controls remain restrictions; no exclusion of outside GitHub actors is claimed.
++
++### Drained operator-owned cutover
++
++Older runtimes do not enforce the draft instance or integration guards. Mixed old/new executors, waiting for lease expiry and automatically adopting legacy state are **not** safe cutover strategies. Once the exact source and tests are complete and reviewed, the operator must stop dispatch, drain every old executor, preserve authoritative GitHub state/comments/refs, uncertain-write evidence and all required local recovery artifacts, and reconcile incompatible or unresolved ownership explicitly before a coordinated replacement. Do not clear receipts, order, merged/security evidence or recovery files to make work look new. Installation, worker activation, credentials and deployment remain operator-owned and are not authorized by source delivery. This change adds no discovery, polling, handoff or activation option.
++
+ ## Write authority and refused-work recovery
+ 
+ Every credentialed code push, including stop-time salvage and synchronization, checks fresh merge-authored, editor-verified saved authority and actual PR status. Missing or malformed critical state, a saved code merge, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine merge-authored, editor-verified state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and any prior pipeline comment, local work, remote issue branch, private wiki ref or PR history without saved authority requires reconciliation. Legacy v1 state is display-only and claims refuse it with `legacy pipeline state needs explicit reconciliation`; there is no automatic adoption tool. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
+diff --git a/apps/issue-pipeline/src/job.ts b/apps/issue-pipeline/src/job.ts
+index 982d2b0..51decd5 100644
+--- a/apps/issue-pipeline/src/job.ts
++++ b/apps/issue-pipeline/src/job.ts
+@@ -62,6 +62,7 @@ import os from "node:os";
+ import process from "node:process";
+ import type { Config } from "./config.ts";
+ import { loadConfig, paths } from "./config.ts";
++import { withExecution } from "./execution.ts";
+ import { authorizedIssue } from "./issue-context.ts";
+ import type { RunArgs, SteerArgs } from "./job/args.ts";
+ import { jobArgsOf } from "./job/args.ts";
+@@ -69,32 +70,27 @@ import type { Brain } from "./job/brain.ts";
+ import { openBrain } from "./job/brain.ts";
+ import { branchRefusalOf } from "./job/branch.ts";
+ import { openJobCheckout } from "./job/checkout.ts";
+-import { pushServerOf } from "./job/commit-push.ts";
+ import type { Control } from "./job/control.ts";
+-import { openControl, socketPathOf } from "./job/control.ts";
+ import { steerJob } from "./job/control-protocol.ts";
+ import { exitPushOf } from "./job/exit-push.ts";
+-import { opsRunnerOf } from "./job/ops-request.ts";
++import { openInvocation } from "./job/invocation.ts";
+ import { runRoleStage } from "./job/role-run.ts";
+ import { boundaryOf, STAGE_WIKI_ACCESS } from "./job/roles.ts";
+-import { hooksOf } from "./job/session-hooks.ts";
+ import type { JobOutcome, StopSignal } from "./job/status.ts";
+-import { openStatus, socketOf } from "./job/status.ts";
++import { socketOf } from "./job/status.ts";
+ import type { ExitingJob, RunEnd } from "./job/teardown.ts";
+ import { jobKeyOf, tearDown } from "./job/teardown.ts";
+ import { isTransientSessionError } from "./job/transient.ts";
+ import { roleOf } from "./roles/registry.ts";
+ import type { IssueState } from "./state.ts";
+ 
+-// A job's claimant id is "s" and its start time in base 36, as a sweep's
+-// was; its lease names it.
+-const SWEEP_ID_RADIX = 36;
++// Every invocation has a fresh execution UUID independent of lane/job id.
+ // A process a signal ended exits with 128 + the signal's number.
+ const SIGNAL_EXIT_BASE = 128;
+ 
+ async function runStage(
+   args: RunArgs,
+-  cfg: Config,
++  loaded: Config,
+   brain: Brain,
+ ): Promise<RunEnd> {
+   const { issue, stage, branch, mergeQueue = null } = args;
+@@ -102,31 +98,20 @@ async function runStage(
+   if (role === undefined) {
+     throw new Error(`no role for stage ${stage}`);
+   }
++  const sweepId = randomUUID();
++  const cfg = withExecution(loaded, {
++    instance: sweepId,
++    lane: args.lane ?? sweepId,
++    issue,
++  });
+   const key = jobKeyOf(stage, new Date());
+   const wiki = STAGE_WIKI_ACCESS[stage];
+   const dirs = openJobCheckout(cfg, issue, { stage, branch });
+-  const { root, repo } = dirs;
+-  const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
+-  const runDir = paths.runDir(cfg, issue);
+-  const id = args.jobId ?? randomUUID();
+-  const identity = { id, startedAt: new Date().toISOString() };
+-  const lane = args.lane ?? null;
+-  const socket = socketPathOf(runDir);
+-  const job = { issue, stage, lane, socket, prompts: brain.pinned };
+-  const status = openStatus(runDir, { ...job, ...identity });
+-  const control = await openControl(
+-    runDir,
+-    pushServerOf(cfg, { issue, stage, checkout: repo, branch, id }, status),
++  const { identity, status, control, hooks, runOp } = await openInvocation(
++    cfg,
++    args,
++    { dirs, brain },
+   );
+-  const where = { cwd: root, repo, from: process.env, job: identity };
+-  const hooks = hooksOf(cfg, args, { status, control }, where);
+-  const frame = {
+-    config: args.config,
+-    sweepId,
+-    lane: args.lane ?? sweepId,
+-    checkout: { issue, dir: repo, branch },
+-  };
+-  const runOp = opsRunnerOf(issue, frame, { hooks, status });
+   let claimed: (() => IssueState) | null = null;
+   const push = exitPushOf(stage, runOp, (): IssueState | null => {
+     if (claimed === null) {
+@@ -134,7 +119,17 @@ async function runStage(
+     }
+     return claimed();
+   });
+-  const exiting = { issue, stage, key, dirs, wiki, push, runOp, status };
++  const exiting = {
++    issue,
++    stage,
++    key,
++    dirs,
++    wiki,
++    push,
++    runOp,
++    status,
++    acquired: (): boolean => claimed !== null,
++  };
+   const ending = runRoleStage({
+     role,
+     cfg,
+@@ -160,7 +155,7 @@ async function runStage(
+ async function settle(
+   cfg: Config,
+   ending: Promise<RunEnd>,
+-  job: ExitingJob & { control: Control },
++  job: ExitingJob & { control: Control; acquired: () => boolean },
+ ): Promise<RunEnd> {
+   const { status, control } = job;
+   let end: RunEnd | null = null;
+@@ -173,7 +168,15 @@ async function settle(
+     throw error;
+   } finally {
+     try {
+-      await tearDown(cfg, job, end);
++      const reconciled = await tearDown(cfg, job, end);
++      if (reconciled && job.acquired() && end?.kind === "finished") {
++        const released = await job.runOp("relinquish-execution", {});
++        if (!released.ok) {
++          process.stderr.write(
++            `execution retained for reconciliation: ${released.error}\n`,
++          );
++        }
++      }
+     } finally {
+       control.close();
+     }
+diff --git a/apps/issue-pipeline/src/job/invocation.ts b/apps/issue-pipeline/src/job/invocation.ts
+new file mode 100644
+index 0000000..8083c5f
+--- /dev/null
++++ b/apps/issue-pipeline/src/job/invocation.ts
+@@ -0,0 +1,68 @@
++// One job's distinct process identity, control channel and op envelope.
++import type { Config } from "../config.ts";
++import { paths } from "../config.ts";
++import type { RunArgs } from "./args.ts";
++import type { Brain } from "./brain.ts";
++import type { JobDirs } from "./checkout.ts";
++import { pushServerOf } from "./commit-push.ts";
++import type { Control } from "./control.ts";
++import { openControl, socketPathOf } from "./control.ts";
++import type { LaunchHooks } from "./launch.ts";
++import type { RunOp } from "./ops-request.ts";
++import { opsRunnerOf } from "./ops-request.ts";
++import { hooksOf } from "./session-hooks.ts";
++import type { JobStatus } from "./status.ts";
++import { openStatus } from "./status.ts";
++
++interface Invocation {
++  identity: { id: string; startedAt: string };
++  status: JobStatus;
++  control: Control;
++  hooks: LaunchHooks;
++  runOp: RunOp;
++}
++async function openInvocation(
++  cfg: Config,
++  args: RunArgs,
++  site: { dirs: JobDirs; brain: Brain },
++): Promise<Invocation> {
++  const { dirs, brain } = site;
++  const { issue, stage } = args;
++  const { root, repo, branch } = dirs;
++  const { execution } = cfg;
++  if (execution === undefined) {
++    throw new Error("execution identity required");
++  }
++  const runDir = paths.runDir(cfg, issue);
++  const id = args.jobId ?? crypto.randomUUID();
++  const identity = { id, startedAt: new Date().toISOString() };
++  const lane = args.lane ?? null;
++  const socket = socketPathOf(runDir);
++  const job = { issue, stage, lane, socket, prompts: brain.pinned };
++  const status = openStatus(runDir, { ...job, ...identity });
++  const control = await openControl(
++    runDir,
++    pushServerOf(cfg, { issue, stage, checkout: repo, branch, id }, status),
++  );
++  const hooks = hooksOf(
++    cfg,
++    args,
++    { status, control },
++    { cwd: root, repo, from: process.env, job: identity },
++  );
++  const frame = {
++    config: args.config,
++    sweepId: execution.instance,
++    lane: execution.lane,
++    checkout: { issue, dir: repo, branch },
++  };
++  return {
++    identity,
++    status,
++    control,
++    hooks,
++    runOp: opsRunnerOf(issue, frame, { hooks, status }),
++  };
++}
++
++export { openInvocation };
+diff --git a/apps/issue-pipeline/src/job/role-run.ts b/apps/issue-pipeline/src/job/role-run.ts
+index 6f421c7..d8a8b59 100644
+--- a/apps/issue-pipeline/src/job/role-run.ts
++++ b/apps/issue-pipeline/src/job/role-run.ts
+@@ -131,6 +131,10 @@ function contextOf(
+     mergeQueue: job.mergeQueue,
+     op,
+     session: async (spec: SessionSpec): Promise<SessionResult> => {
++      const permission = await job.runOp("assert-execution", {});
++      if (!permission.ok) {
++        throw new Error(`execution not confirmed: ${permission.error}`);
++      }
+       if (spec.phase !== "hardening" || !spec.commits) {
+         return await session(spec);
+       }
+diff --git a/apps/issue-pipeline/src/job/teardown.ts b/apps/issue-pipeline/src/job/teardown.ts
+index 8e71d69..e8616bf 100644
+--- a/apps/issue-pipeline/src/job/teardown.ts
++++ b/apps/issue-pipeline/src/job/teardown.ts
+@@ -102,7 +102,7 @@ async function tearDown(
+   cfg: Config,
+   job: ExitingJob,
+   end: RunEnd | null,
+-): Promise<void> {
++): Promise<boolean> {
+   const { issue, key, dirs, wiki, push, status } = job;
+   let outcome = "failed";
+   let reason: string | null = null;
+@@ -118,7 +118,7 @@ async function tearDown(
+   const { lost, patches } = await closeJobCheckout(cfg, issue, closing, push);
+   status.lostChanges(lost, patches);
+   if (patches.length === 0) {
+-    return;
++    return true;
+   }
+   const runDir = paths.runDir(cfg, issue);
+   const saved = patches.map((patch: string): string =>
+@@ -128,6 +128,7 @@ async function tearDown(
+   if (stoppedRun(end)) {
+     await postNotice(job, droppedNotice(key, patches));
+   }
++  return false;
+ }
+ 
+ export type { ExitingJob, RunEnd };
+diff --git a/apps/issue-pipeline/src/ops.ts b/apps/issue-pipeline/src/ops.ts
+index e3a7044..cc1b7b0 100644
+--- a/apps/issue-pipeline/src/ops.ts
++++ b/apps/issue-pipeline/src/ops.ts
+@@ -22,6 +22,7 @@ import { text } from "node:stream/consumers";
+ import { z } from "zod";
+ import type { Config } from "./config.ts";
+ import { loadConfig, withCheckout } from "./config.ts";
++import { assertExecution, issueExecution, withExecution } from "./execution.ts";
+ import { ask } from "./ops/ask.ts";
+ import { ciStatus } from "./ops/ci-status.ts";
+ import { claim } from "./ops/claim.ts";
+@@ -75,6 +76,26 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
+   ["finish-wiki", finishWiki],
+   ["close-parent", closeParent],
+   ["claim", claim],
++  [
++    "relinquish-execution",
++    (cfg: Config, request: unknown): object => {
++      const { number } = z
++        .object({ number: z.number().int().positive() })
++        .parse(request);
++      issueExecution(cfg, number).release();
++      return {};
++    },
++  ],
++  [
++    "assert-execution",
++    (cfg: Config, request: unknown): object => {
++      const { number } = z
++        .object({ number: z.number().int().positive() })
++        .parse(request);
++      assertExecution(cfg, number);
++      return {};
++    },
++  ],
+   // Writes state and nothing else; queued comments ride along on every op (see main).
+   ["save-state", saveState],
+   ["ask", ask],
+@@ -105,6 +126,9 @@ const ENVELOPE = z.looseObject({
+   comments: z.array(QUEUED_COMMENT).nullish(),
+   config: z.string().nullish(),
+   op: z.string(),
++  lane: z.string().min(1).optional(),
++  sweepId: z.string().min(1).optional(),
++  number: z.number().int().positive().optional(),
+   // A stage job's own checkout, which stands in for its issue's worktree,
+   // and the branch the caller assigned the issue (config.ts's JobCheckout).
+   checkout: z
+@@ -133,19 +157,31 @@ async function readRequest(): Promise<unknown> {
+ 
+ // Runs a parsed request: its queued comments, then its op.
+ function runRequest(request: unknown): OpsReply {
+-  const { checkout, comments, config, op } = parseRequest(
+-    ENVELOPE,
+-    "ops",
+-    request,
+-  );
++  const { checkout, comments, config, op, lane, sweepId, number } =
++    parseRequest(ENVELOPE, "ops", request);
+   const handler = OPS.get(op);
+   if (handler === undefined) {
+     throw new OpsError(`unknown op "${op}"`);
+   }
+-  const cfg = withCheckout(loadConfig(config ?? undefined), checkout);
++  let cfg = withCheckout(loadConfig(config ?? undefined), checkout);
++  const unguarded = ["usage", "ci-status"];
++  if (!unguarded.includes(op)) {
++    if (lane === undefined || sweepId === undefined || number === undefined) {
++      throw new OpsError(
++        "active execution identity required; legacy requests need reconciliation",
++      );
++    }
++    cfg = withExecution(cfg, { lane, instance: sweepId, issue: number });
++    if (op !== "claim") {
++      assertExecution(cfg, number);
++    }
++  }
+   fs.mkdirSync(ROOT, { recursive: true });
+   // Post the signed comments the workflow queued for this issue before running the op,
+   // so they land in order and aren't lost if the op fails.
++  if (op === "claim" && (comments?.length ?? 0) > 0) {
++    throw new OpsError("claim cannot carry work comments before ownership");
++  }
+   const commentIds = postComments(cfg, comments ?? []);
+   const posted = commentIds.length;
+   return { ok: true, op, posted, commentIds, ...handler(cfg, request) };
+diff --git a/apps/issue-pipeline/src/ops/claim-state.ts b/apps/issue-pipeline/src/ops/claim-state.ts
+index 0260aa7..f41d4ec 100644
+--- a/apps/issue-pipeline/src/ops/claim-state.ts
++++ b/apps/issue-pipeline/src/ops/claim-state.ts
+@@ -13,6 +13,7 @@ import { isLegacyPipelineComment } from "../comment-marks.ts";
+ import type { IssueComment } from "../comments.ts";
+ import type { Config } from "../config.ts";
+ import { paths } from "../config.ts";
++import { assertExecutionHistory } from "../execution.ts";
+ import { remoteHead } from "../git-state.ts";
+ import { git } from "../github.ts";
+ import { OpsError } from "../ops-error.ts";
+@@ -139,6 +140,9 @@ function assertBranchAssigned(
+     assertFirstClaim(cfg, n, comments);
+   }
+   assignedBranch(cfg, n, state);
++  if (state !== null) {
++    assertExecutionHistory(cfg, n, state.execution);
++  }
+ }
+ 
+ // Closed issues may recover only an incomplete Merge, never initialize work or
+diff --git a/apps/issue-pipeline/src/ops/claim.ts b/apps/issue-pipeline/src/ops/claim.ts
+index a0dd57a..cd6f028 100644
+--- a/apps/issue-pipeline/src/ops/claim.ts
++++ b/apps/issue-pipeline/src/ops/claim.ts
+@@ -10,10 +10,13 @@ import fs from "node:fs";
+ import path from "node:path";
+ import { z } from "zod";
+ import { ensureClone, ensureWorktree, setUpCheckout } from "../checkouts.ts";
++import type { ClaimRace } from "../claims.ts";
+ import { laneOf, raceForClaim } from "../claims.ts";
+ import type { IssueComment } from "../comments.ts";
++import { listComments } from "../comments.ts";
+ import type { Config } from "../config.ts";
+ import { paths } from "../config.ts";
++import { assertReconciled, issueExecution } from "../execution.ts";
+ import { fetchIn } from "../git-state.ts";
+ import { gh, issueState } from "../github.ts";
+ import type { Issue } from "../issue-context.ts";
+@@ -21,7 +24,7 @@ import { writeIssueContext } from "../issue-context.ts";
+ import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
+ import { OpsError } from "../ops-error.ts";
+ import { parseRequest } from "../process.ts";
+-import { writeState } from "../saved-state.ts";
++import { readClaimState, writeState } from "../saved-state.ts";
+ import type { IssueState } from "../state.ts";
+ import { withLog } from "../state.ts";
+ import { isStopLabel } from "../stops.ts";
+@@ -112,13 +115,71 @@ function readyCheckouts(
+   return { wiki, entry: resetKeepingUnpushed(wt, n, claimed.remote, now) };
+ }
+ 
+-function leased(state: IssueState, req: ClaimRequest, now: Date): IssueState {
++function leased(
++  state: IssueState,
++  req: ClaimRequest,
++  now: Date,
++  execution: IssueState["execution"],
++): IssueState {
+   const lease = {
+     lane: laneOf(req),
+     sweepId: req.sweepId,
+     at: now.toISOString(),
+   };
+-  return { ...state, lease };
++  return { ...state, lease, execution };
++}
++
++function acquireIssue(
++  cfg: Config,
++  n: number,
++  req: ClaimRequest,
++  comments: readonly IssueComment[],
++): ClaimRace {
++  assertReconciled(cfg, n);
++  if (cfg.execution === undefined) {
++    return raceForClaim(cfg, n, req, comments);
++  }
++  const execution = issueExecution(cfg, n);
++  const before = execution.read();
++  if (before.pending.length > 0) {
++    return {
++      won: false,
++      holder:
++        before.owner?.identity.instance ??
++        before.pending[0]?.identity.instance ??
++        null,
++      posted: false,
++    };
++  }
++  const claimId = execution.request();
++  const won = execution.acquire();
++  if (!won) {
++    execution.cancel();
++  }
++  return { won, claimId, posted: true };
++}
++
++function currentClaimState(
++  cfg: Config,
++  n: number,
++  comments: IssueComment[],
++  now: Date,
++): ReturnType<typeof claimedState> {
++  let startingComments = comments;
++  if (
++    cfg.execution !== undefined &&
++    readClaimState(cfg, n, comments) !== null
++  ) {
++    startingComments = listComments(cfg, n);
++  }
++  return claimedState(cfg, n, startingComments, now);
++}
++
++function reopenRecovery(cfg: Config, n: number): void {
++  gh(cfg, "merge", ["issue", "reopen", String(n), "-R", cfg.repo]);
++  if (issueState(cfg, n) !== "open") {
++    throw new OpsError(`could not confirm #${n} reopened for Merge recovery`);
++  }
+ }
+ 
+ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
+@@ -138,21 +199,24 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
+   if (!fs.existsSync(path.join(paths.clone(cfg), ".git"))) {
+     ensureClone(cfg);
+   }
+-  const race = raceForClaim(cfg, n, req, context.comments);
++  const race = acquireIssue(cfg, n, req, context.comments);
+   if (!race.won || race.claimId === undefined) {
+     return { lost: true, holder: race.holder ?? null, posted: race.posted };
+   }
+   const now = new Date();
+-  const claimed = claimedState(cfg, n, context.comments, now);
++  const claimed = currentClaimState(cfg, n, context.comments, now);
+   if (recovering) {
+-    // Only the winning claimant may reopen; no writer or merge authority is
+-    // granted by this mutation. Completion closes it again after all gates.
+-    gh(cfg, "merge", ["issue", "reopen", String(n), "-R", cfg.repo]);
+-    if (issueState(cfg, n) !== "open") {
+-      throw new OpsError(`could not confirm #${n} reopened for Merge recovery`);
+-    }
++    reopenRecovery(cfg, n);
++  }
++  let receipt = claimed.state.execution;
++  if (cfg.execution !== undefined) {
++    receipt = {
++      protocol: 1,
++      request: race.claimId,
++      instance: cfg.execution.instance,
++    };
+   }
+-  let state = leased(claimed.state, req, now);
++  let state = leased(claimed.state, req, now, receipt);
+   let wiki: string | null = null;
+   if (state.stage !== "done") {
+     const ready = readyCheckouts(cfg, n, claimed, now);
+diff --git a/apps/issue-pipeline/src/ops/save-state.ts b/apps/issue-pipeline/src/ops/save-state.ts
+index 89123e6..33883bb 100644
+--- a/apps/issue-pipeline/src/ops/save-state.ts
++++ b/apps/issue-pipeline/src/ops/save-state.ts
+@@ -8,6 +8,7 @@
+ import { z } from "zod";
+ import { touchClaim } from "../claims.ts";
+ import type { Config } from "../config.ts";
++import { guardExecution } from "../execution.ts";
+ import { OpsError } from "../ops-error.ts";
+ import { parseRequest } from "../process.ts";
+ import { readWriteState, writeState } from "../saved-state.ts";
+@@ -37,6 +38,7 @@ function withSavedCodeMerge(
+   if (state.number !== n) {
+     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
+   }
++  guardExecution(cfg, n);
+   const saved = readWriteState(cfg, n);
+   let { merged } = state;
+   if (
+@@ -59,6 +61,7 @@ function withSavedCodeMerge(
+   }
+   return {
+     ...state,
++    execution: saved.execution,
+     security,
+     merged,
+     codeMerged: saved.codeMerged,
+@@ -91,7 +94,9 @@ function release(cfg: Config, request: unknown): EmptyReply {
+     renewed = { ...lease, at: new Date().toISOString() };
+   }
+   saveIssueState(cfg, req.number, { ...req.state, lease: renewed });
+-  touchClaim(cfg, req.number, req);
++  if (cfg.execution === undefined) {
++    touchClaim(cfg, req.number, req);
++  }
+   return {};
+ }
+ 
+diff --git a/apps/issue-pipeline/src/saved-state.ts b/apps/issue-pipeline/src/saved-state.ts
+index b165b9e..f7844cb 100644
+--- a/apps/issue-pipeline/src/saved-state.ts
++++ b/apps/issue-pipeline/src/saved-state.ts
+@@ -13,7 +13,8 @@ import {
+ import type { IssueComment } from "./comments.ts";
+ import { listComments, rawComment } from "./comments.ts";
+ import type { Config } from "./config.ts";
+-import { gh } from "./github.ts";
++import { confirmedWrite, guardExecution } from "./execution.ts";
++import { gh, redactGhArgs } from "./github.ts";
+ import { OpsError } from "./ops-error.ts";
+ import { LEGACY_STATE, migrateLegacyState } from "./saved-state-legacy.ts";
+ import type { IssueState } from "./state.ts";
+@@ -23,6 +24,7 @@ import { ISSUE_STATE, withLog } from "./state.ts";
+ // a missing receipt must not be confused with a malformed one caught as null.
+ const WRITE_STATE = ISSUE_STATE.pick({
+   version: true,
++  execution: true,
+   number: true,
+   stage: true,
+ }).extend({
+@@ -191,6 +193,23 @@ function stateBody(number: number, state: IssueState): string {
+ }
+ 
+ function writeState(cfg: Config, number: number, state: IssueState): void {
++  guardExecution(cfg, number);
++  if (cfg.execution !== undefined) {
++    const [expected] = redactGhArgs([`body=${stateBody(number, state)}`]);
++    confirmedWrite(cfg, number, "save-state", {
++      write: (): void => storeState(cfg, number, state),
++      confirmed: (): boolean => {
++        const latest = latestStateComment(cfg, listComments(cfg, number));
++        return `body=${latest?.body}` === expected;
++      },
++    });
++    guardExecution(cfg, number);
++    return;
++  }
++  storeState(cfg, number, state);
++}
++
++function storeState(cfg: Config, number: number, state: IssueState): void {
+   const body = stateBody(number, state);
+   if (body.length > MAX_STATE_LENGTH) {
+     throw new OpsError(
+diff --git a/apps/issue-pipeline/src/state.ts b/apps/issue-pipeline/src/state.ts
+index 879a146..ee5d1e0 100644
+--- a/apps/issue-pipeline/src/state.ts
++++ b/apps/issue-pipeline/src/state.ts
+@@ -112,6 +112,13 @@ const COUNTS = z.object({
+ // makes the whole state unreadable.
+ const ISSUE_STATE = z.object({
+   version: z.literal(2),
++  execution: z
++    .strictObject({
++      protocol: z.literal(1),
++      request: z.number().int().positive(),
++      instance: z.string().min(1),
++    })
++    .optional(),
+   number: z.number().int().positive(),
+   stage: STATUS,
+   // The stage a stop happened in; lifting the stop resumes there.
+diff --git a/apps/issue-pipeline/src/write-authority.ts b/apps/issue-pipeline/src/write-authority.ts
+index 345fb16..21574ae 100644
+--- a/apps/issue-pipeline/src/write-authority.ts
++++ b/apps/issue-pipeline/src/write-authority.ts
+@@ -4,6 +4,7 @@
+ // live receipt is returned only for wiki checks, never written back as state.
+ import { assignedBranch } from "./branch-binding.ts";
+ import type { Config } from "./config.ts";
++import { guardExecution } from "./execution.ts";
+ import { historicalPrFor } from "./ops/prs.ts";
+ import { OpsError } from "./ops-error.ts";
+ import { issuePullRequest, pullRequest } from "./revision.ts";
+@@ -14,6 +15,7 @@ function readWriteAuthority(
+   cfg: Config,
+   issue: number,
+ ): { state: IssueState; codeWritable: boolean; codeMerged: CodeMerged | null } {
++  guardExecution(cfg, issue);
+   const state = readWriteState(cfg, issue);
+   assignedBranch(cfg, issue, state);
+   const { codeMerged, merged } = state;
+diff --git a/apps/issue-pipeline/test/job-execution-fencing.test.mjs b/apps/issue-pipeline/test/job-execution-fencing.test.mjs
+new file mode 100644
+index 0000000..86e2b23
+--- /dev/null
++++ b/apps/issue-pipeline/test/job-execution-fencing.test.mjs
+@@ -0,0 +1,68 @@
++// @ts-check
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { z } from "zod";
++import {
++  IMPLEMENTOR_SESSION,
++  implementReplies,
++  repliesAt,
++} from "./job-fixtures.mjs";
++import { logOf, piStarts, runJob, setUp } from "./job-test-kit.mjs";
++
++const OP = z.looseObject({
++  op: z.string(),
++  sweepId: z.string(),
++  lane: z.string(),
++  state: z.unknown().optional(),
++});
++test("fresh loss of issue ownership refuses the real writer launch", () => {
++  const place = setUp(
++    {
++      ...implementReplies(),
++      "assert-execution": { ok: false, error: "execution ownership lost" },
++    },
++    IMPLEMENTOR_SESSION,
++  );
++  const result = runJob(place, ["--stage", "implement", "--lane", "stable"]);
++  assert.equal(result.status, 1);
++  assert.deepEqual(piStarts(place), []);
++  const calls = z.array(OP).parse(logOf(place, "ops.log"));
++  assert.equal(
++    calls.filter((call) => call.op === "assert-execution").length,
++    1,
++  );
++  assert.equal(
++    calls.filter((call) => call.op === "relinquish-execution").length,
++    0,
++  );
++});
++
++test("an explicit stage mismatch preserves the checkpoint and relinquishes without a writer", () => {
++  const place = setUp(
++    { ...repliesAt("review"), "relinquish-execution": { ok: true } },
++    IMPLEMENTOR_SESSION,
++  );
++  const first = runJob(place, ["--stage", "implement", "--lane", "stable"]);
++  assert.equal(first.status, 0, first.stderr);
++  assert.deepEqual(piStarts(place), []);
++  const calls = z.array(OP).parse(logOf(place, "ops.log"));
++  const claim = calls.find((call) => call.op === "claim");
++  const release = calls.find((call) => call.op === "release");
++  const relinquish = calls.find((call) => call.op === "relinquish-execution");
++  assert.ok(claim && release && relinquish);
++  assert.equal(relinquish.sweepId, claim.sweepId);
++  assert.equal(relinquish.lane, "stable");
++  assert.equal(
++    z.object({ stage: z.string() }).parse(release.state).stage,
++    "review",
++  );
++  const second = runJob(place, ["--stage", "implement", "--lane", "stable"]);
++  assert.equal(second.status, 0, second.stderr);
++  const claims = z
++    .array(OP)
++    .parse(logOf(place, "ops.log"))
++    .filter((call) => call.op === "claim");
++  assert.equal(claims.length, 2);
++  assert.notEqual(claims[0]?.sweepId, claims[1]?.sweepId);
++  assert.deepEqual(piStarts(place), []);
++});

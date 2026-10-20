@@ -4,6 +4,16 @@ The pipeline executes one caller-assigned GitHub issue and branch at a time per 
 
 A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
+## Incomplete protocol work (#116)
+
+This branch preserves a tested, explicit coordination primitive and an **unreviewed runtime recovery patch**, not a finished instance-fencing upgrade. The default runtime does not invoke either new protocol factory yet and still uses its existing claims. Do not install this partial branch to operate new-protocol state. [Development status, exact patch Base/hash and check results](preserved/issue-116.md) record the remaining CLI/job fixture and runtime-boundary work; no failing acceptance assertion was weakened.
+
+The preserved runtime draft distinguishes the stable lane from a fresh invocation UUID. Its proposed accepted saved authority is v2 state with a strict `execution` receipt (`protocol: 1`, request ID, instance), authenticated complete coordination history and immutable epoch refs. Only verified relinquishment followed by a new confirmed acquisition permits sequential resume. V1 remains display-only; pre-protocol v2 state, old live/expired lane claims, malformed/missing/conflicting authority, uncertain writes and unresolved local recovery require explicit reconciliation. The current legacy runtime must not be mistaken for an enforcer of those draft rules.
+
+The integration-turn primitive is explicit-test-only and remains default-unused, including after the draft wiring. Later assignment composition must make caller-dispatched merge jobs and other integration candidates share the same durable repository/base guard and freshly verify both instance and turn ownership. A supplied merge queue is only an additional ordering restriction, never turn authority. Existing branch/head/CI/approval/trusted-input/wiki/security and merged-result protections remain restrictions; the protocol does not atomically exclude outside GitHub actors.
+
+**Safe future cutover:** older runtimes do not enforce the new guards. Stop dispatch, drain all old executors, preserve authoritative GitHub comments/refs, uncertain-write evidence and required local recovery patches/bundles/wiki refs/checkouts, then explicitly reconcile incompatible ownership before a coordinated operator-owned replacement of a reviewed, fully tested candidate. Do not erase evidence to obtain permission. Mixed old/new workers, lease expiry and automatic legacy adoption are not safe cutovers. This source work adds no autonomous discovery, polling, handoff or activation option and authorizes no installation, worker activation, credential rotation or deployment.
+
 ## Stages and model roles
 
 ```text
