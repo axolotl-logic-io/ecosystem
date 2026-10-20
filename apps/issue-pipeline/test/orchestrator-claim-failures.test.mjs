@@ -8,12 +8,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, test } from "node:test";
 import { z } from "zod";
+import { commentLines } from "./fake-gh.mjs";
 import { bodyOf, effectNames, effectsOf, stateOf } from "./gh-effects.mjs";
 import {
   collaboratorReply,
   stopMutationReplies,
 } from "./gh-mutation-fixtures.mjs";
 import {
+  cfg,
   fakeGh,
   ghIsRead,
   NOW,
@@ -21,6 +23,7 @@ import {
   recordedSpawns,
   resetRuns,
   STATE_ID_BASE,
+  stateComment,
   tickOver,
   writeJob,
 } from "./orchestrator-world-test-kit.mjs";
@@ -28,6 +31,7 @@ import { git, heldCheckout } from "./orchestrator-write-authority-test-kit.mjs";
 
 fakeGh.requireReplies();
 const { newIssueState } = await import("../src/state.ts");
+const { readWriteState } = await import("../src/saved-state.ts");
 
 /** @import { GhEffect } from "./gh-effects.mjs" */
 
@@ -79,17 +83,24 @@ function tickAfterJob(
   if (saved !== null) {
     Object.assign(issue, { state: saved });
   }
-  openWith(
-    [issue],
-    [
-      collaboratorReply("o/r", "alice"),
-      ...stopMutationReplies(number, {
-        stateId: STATE_ID_BASE + number,
-        pr: null,
-        code: "error",
-      }),
-    ],
-  );
+  const replies = [
+    collaboratorReply("o/r", "alice"),
+    ...stopMutationReplies(number, {
+      stateId: STATE_ID_BASE + number,
+      pr: null,
+      code: "error",
+    }),
+  ];
+  if (saved !== null) {
+    replies.push({
+      when: `issues/${number}/comments?per_page`,
+      stdout: commentLines([stateComment(number, saved)]),
+      keep: true,
+      // A successful state PATCH must be visible to the stop's reread.
+      persistState: true,
+    });
+  }
+  openWith([issue], replies);
   const { spawned } = tickOver();
   return { spawned, effects: effectsOf(fakeGh.writes(ghIsRead)) };
 }
@@ -115,6 +126,7 @@ test("a claim failing with one error three times in a row stops the issue with t
   );
   assert.equal(saved.stoppedStage, STAGE);
   assert.equal(saved.lease, null);
+  assert.deepEqual(readWriteState(cfg, 1), saved);
 });
 
 test("a different error starts the count again, and a passing claim clears it", () => {
