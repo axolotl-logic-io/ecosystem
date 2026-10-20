@@ -16,13 +16,11 @@ function sanitized(text: string, secrets: readonly string[]): string {
   for (const secret of secrets) {
     result = result.split(secret).join("[redacted]");
   }
-  result = stripVTControlCharacters(result).replace(UNSAFE_CONTROLS, " ");
-  // Also catch a known value whose bytes were interrupted by terminal controls.
+  result = stripVTControlCharacters(result).replace(UNSAFE_CONTROLS, "");
+  // Remove rather than replace controls so an interrupted credential is
+  // reconstructed and redacted too, not reported as space-separated fragments.
   for (const secret of secrets) {
-    const clean = stripVTControlCharacters(secret).replace(
-      UNSAFE_CONTROLS,
-      " ",
-    );
+    const clean = stripVTControlCharacters(secret).replace(UNSAFE_CONTROLS, "");
     if (clean !== "") {
       result = result.split(clean).join("[redacted]");
     }
@@ -100,6 +98,9 @@ function probeVersion(
     env,
     encoding: "utf8",
     timeout: VERSION_TIMEOUT_MS,
+    // spawnSync waits for exit after its timeout signal. SIGTERM can be
+    // ignored by a broken shim; use an unignorable signal to finish refusal.
+    killSignal: "SIGKILL",
     stdio: "pipe",
   });
   return versionRefusal(result, knownEnv, credentialNames);
