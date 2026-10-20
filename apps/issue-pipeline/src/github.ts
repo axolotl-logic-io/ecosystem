@@ -136,7 +136,7 @@ function gh(
   // a whole sweep.
   let attempt = 1;
   let result = credentialedRun("gh", args, { ...runOptions, allowFail: true });
-  while (retriable(result, attempt)) {
+  while (cfg.assignment === undefined && retriable(result, attempt)) {
     sleepMs(GH_RETRY_STEP_MS * attempt);
     attempt += 1;
     result = credentialedRun("gh", args, { ...runOptions, allowFail: true });

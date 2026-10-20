@@ -4,6 +4,7 @@
 // (`exact-reviewed-wiki`); confirmWikiPublished proves a recorded wiki commit
 // is on the wiki before finish-wiki closes the issue.
 
+import { assertExecution } from "./assignment/authority.ts";
 import type { Config } from "./config.ts";
 import { gitIn, head } from "./git-state.ts";
 import { git } from "./github.ts";
@@ -144,6 +145,7 @@ function pushReviewed(
   const commits = gitIn(dir, log).trim().split("\n");
   // No force: the wiki's branch only ever fast-forwards to the reviewed head.
   const target = `${expectedWiki}:refs/heads/${wiki.branch}`;
+  assertExecution(cfg, n);
   const pushed = git(cfg, "merge", ["-C", dir, "push", "origin", target], {
     allowFail: true,
   });

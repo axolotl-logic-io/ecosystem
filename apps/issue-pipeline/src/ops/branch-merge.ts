@@ -3,6 +3,7 @@
 // it. It is not expected-base CAS and cannot atomically bind PR/input/wiki
 // state. Writes run once, including ambiguous transport failures.
 import { z } from "zod";
+import { beginMutation } from "../assignment/checkpoint.ts";
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
@@ -38,6 +39,9 @@ function branchMerge(cfg: Config, head: string): BranchMerge {
     "-f",
     `head=${head}`,
   ];
+  if (cfg.execution !== undefined) {
+    beginMutation(cfg, cfg.execution.issue, "code-merge", head);
+  }
   const result = gh(cfg, "merge", args, { allowFail: true });
   const { status, body = "" } = HTTP_RESPONSE.exec(result.stdout)?.groups ?? {};
   if (result.code !== 0 || status !== "201") {

@@ -20,6 +20,9 @@ import fs from "node:fs";
 import process from "node:process";
 import { text } from "node:stream/consumers";
 import { z } from "zod";
+import { assertExecution } from "./assignment/authority.ts";
+import { beginMutation, finishMutation } from "./assignment/checkpoint.ts";
+import { EXECUTION } from "./assignment/schema.ts";
 import type { Config } from "./config.ts";
 import { loadConfig, withCheckout } from "./config.ts";
 import { ask } from "./ops/ask.ts";
@@ -100,6 +103,8 @@ const MAX_ERROR_LENGTH = 4000;
 // path, the signed comments the workflow queued for the issue and, from a
 // stage job, its checkout.
 const ENVELOPE = z.looseObject({
+  execution: EXECUTION.optional(),
+  number: z.number().int().positive().optional(),
   comments: z.array(QUEUED_COMMENT).nullish(),
   config: z.string().nullish(),
   op: z.string(),
@@ -131,7 +136,7 @@ async function readRequest(): Promise<unknown> {
 
 // Runs a parsed request: its queued comments, then its op.
 function runRequest(request: unknown): OpsReply {
-  const { checkout, comments, config, op } = parseRequest(
+  const { checkout, comments, config, op, execution, number } = parseRequest(
     ENVELOPE,
     "ops",
     request,
@@ -140,13 +145,31 @@ function runRequest(request: unknown): OpsReply {
   if (handler === undefined) {
     throw new OpsError(`unknown op "${op}"`);
   }
-  const cfg = withCheckout(loadConfig(config ?? undefined), checkout);
+  const cfg = {
+    ...withCheckout(loadConfig(config ?? undefined), checkout),
+    execution,
+  };
+  if (cfg.assignment !== undefined || execution !== undefined) {
+    if (number === undefined) {
+      throw new OpsError("assignment ops require an issue");
+    }
+    assertExecution(cfg, number, op === "claim");
+  }
   fs.mkdirSync(ROOT, { recursive: true });
   // Post the signed comments the workflow queued for this issue before running the op,
   // so they land in order and aren't lost if the op fails.
   const commentIds = postComments(cfg, comments ?? []);
   const posted = commentIds.length;
-  return { ok: true, op, posted, commentIds, ...handler(cfg, request) };
+  const tracked =
+    ["publish", "finish-wiki"].includes(op) && number !== undefined;
+  if (tracked && number !== undefined) {
+    beginMutation(cfg, number, op);
+  }
+  const result = handler(cfg, request);
+  if (tracked && number !== undefined) {
+    finishMutation(cfg, number, op);
+  }
+  return { ok: true, op, posted, commentIds, ...result };
 }
 
 function messageOf(error: unknown): string {

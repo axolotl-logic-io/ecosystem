@@ -1,0 +1,4840 @@
+Dropped changes of issue #73, job implement-20261019T215304339Z, checkout repo/
+Base: 38d7b18c547d2990824f45df9df61ff8c2c52321
+To restore: check out 38d7b18c547d2990824f45df9df61ff8c2c52321, then run git apply --index implement-20261019T215304339Z-repo.patch
+
+diff --git a/apps/issue-pipeline/README.md b/apps/issue-pipeline/README.md
+index adb529b..bee35ed 100644
+--- a/apps/issue-pipeline/README.md
++++ b/apps/issue-pipeline/README.md
+@@ -1,6 +1,6 @@
+ # Issue pipeline
+ 
+-The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, integration turns, stops and restarts. The executor never selects another issue. The configured repository's wiki page `Reimagined-Pipeline` describes the design.
++By default the pipeline executes one caller-assigned GitHub issue, branch and stage per invocation. The caller owns discovery and scheduling in that mode. An explicitly enabled assignment worker can instead discover authorized GitHub assignments and handoffs, select stages and serialize integration. Both modes use the same guarded stage executor; do not run them concurrently on the same repository. The configured repository's wiki page `Reimagined-Pipeline` describes the design.
+ 
+ A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
+ 
+@@ -59,6 +59,166 @@ Issue/branch binding is persisted at first claim. A changed branch on resume is
+ 
+ Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. The caller serializes integration/merge turns (one at a time); existing claim/lease/head/merge-queue guards still apply. `--merge-queue N,...` carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
+ 
++## Assignment-driven workers (opt-in)
++
++This mode replaces per-issue/per-stage dispatch, not the role programs or their
++authority. The orchestrator decides assignments. Workers never assign issues,
++claim unrelated labeled work, split issues, install themselves or start a service.
++Omitting `assignment` keeps explicit dispatch. Delivery of these files does not
++activate this mode.
++
++Add this **non-secret** section to each operator repository configuration. The
++logins must match its existing `devAccount` and `mergeAccount`; names are examples,
++not hard-coded identities. `id` is the process's logical worker identity. `roles`
++is its pipeline responsibility, not a model selection or credential name.
++
++```json
++{
++  "assignment": {
++    "enabled": true,
++    "workers": [
++      { "id": "development", "login": "hippy", "roles": "development" },
++      { "id": "review-merge", "login": "lawd", "roles": "review" }
++    ],
++    "pollSeconds": 60,
++    "maxBackoffSeconds": 3600,
++    "heartbeatSeconds": 60,
++    "pageBudget": 100
++  }
++}
++```
++
++IDs, accounts and responsibilities must each be unambiguous. Model choices remain
++in `models`; credentials remain in private operator configuration. Repository and
++worker identity changes require draining/reconciliation, not a live account swap.
++
++An operator-owned JSON manifest is the repository allow-list. Use absolute paths
++to repository configs and separately pinned brain checkouts. It may contain both
++ecosystem and project-buddy, with their own base, checks, allowed humans and target
++wiki settings. It never changes either repository's writable wiki target.
++
++```json
++{
++  "repositories": [
++    { "config": "/OPERATOR/repos/ecosystem.json", "brainPath": "/OPERATOR/brains/ecosystem" },
++    { "config": "/OPERATOR/repos/project-buddy.json", "brainPath": "/OPERATOR/brains/ecosystem" }
++  ]
++}
++```
++
++After separate operator approval and cutover, the process interface is:
++
++```bash
++node "$ISSUE_PIPELINE_ROOT/worker.mjs" --manifest /OPERATOR/workers.json --worker development
++node "$ISSUE_PIPELINE_ROOT/worker.mjs" --manifest /OPERATOR/workers.json --worker review-merge
++```
++
++These are alternative long-running worker processes, one per responsibility;
++source delivery does not execute them. `--once` performs one **real** sweep, not a
++dry-run. SIGINT/SIGTERM stops discovery, ends and awaits the owned stage process
++group, and preserves uncertain execution ownership and local recovery evidence.
++
++### Discovery and handoffs
++
++The development worker paginates open issues assigned to its configured account.
++It requires a currently allowed human collaborator as issue author and an
++assignment event from the configured review/merge account or an allowed human
++collaborator. The current assignee list alone does not establish who assigned it.
++A development account may request review of its recorded PR; it cannot authorize
++its own initial assignment or widen trusted human input.
++
++The review worker paginates repository issues (including closed issues with an
++unfinished recorded merge) and open PR review requests. It selects recorded
++signed handoffs, not arbitrary PRs. Missing, ambiguous or unauthenticated anchors
++produce a GitHub-visible hold. Exhausting the page budget is incomplete discovery,
++never proof of an empty queue or unassignment.
++
++A handoff records an ID, issue branch, exact confirmed code/private-wiki heads,
++PR, input revision, assignment event and review-request event. The developer
++saves it before requesting the configured reviewer. Accepted ownership remains
++in signed state after GitHub consumes the request, but only with a corresponding
++new review by that reviewer on the recorded head. Request cancellation or
++replacement, another developer assignment, changed inputs or external heads hold
++or invalidate it. Review/event snapshots prevent old same-second signals from
++becoming a fresh handoff. An exact-head authenticated changes request returns the
++work to development, clears old hardening/integration/security authority and keeps
++feedback as operational evidence, never as trusted human issue input.
++
++The worker preserves existing question, stop, split-parent, role, readiness,
++approval, exact-result and security gates. Existing v2 work without assignment
++coordination and retained legacy state require explicit reconciliation, not
++automatic adoption. Trusted input changes send development back to Author before
++more implementation. Unanswered needs-info work does not restart on visitor or
++pipeline comments. Same-repository prerequisites use the existing
++`<!-- agent-pipeline:after 12,34 -->` marker: every dependency must be closed and
++completed or marked `agent:merged`. A blocked issue does not prevent another
++eligible assignment from running.
++
++### Durable coordination and recovery
++
++GitHub is the coordination store. Signed v2 state retains stage, worker/status,
++reason/retry time, confirmed checkpoints, pending mutation and accepted handoff.
++Existing signed claim comments provide bounded heartbeat updates. Keyed
++`assignment-observer` comments explain ignored signals and holds; they are not
++human input or a substitute for signed state. The ref namespaces are reserved:
++
++- `pipeline-execution/issue-N`: atomic create-if-absent execution fence. Each
++  execution uses a unique immutable commit token and claim lane. Sharing a worker
++  identity cannot admit duplicate sessions.
++- `pipeline-integration/HEX_BASE`: one integration-to-completion turn per
++  repository/base. Other issues can develop/harden while that turn is held.
++- `pipeline-discovery/WORKER`: discovery ownership. A crash or inability to
++  confirm retry-state publication leaves it held for reconciliation.
++- `pipeline-retry/TIMESTAMP-ID`: durable repository retry deadline in epoch
++  milliseconds. A replacement reads it before discovery can select work.
++
++Polling defaults to 60 seconds, with configurable bounded exponential backoff
++(default cap one hour). A later server Retry-After or rate-limit reset is a
++minimum, not a limit to shorten. Page size is 100; the page budget defaults to
++100. There is no authoritative local queue. Process records and logs help with
++diagnosis, but restarting reconstructs stage selection from GitHub.
++
++Before source/private-wiki pushes, PR creation, handoff requests, code merge,
++public wiki publication or completion, the runtime saves mutation intent. It
++confirms the outcome before clearing the intent. Source/wiki checkpoints require
++an exact remote-head observation; a local SHA or successful command alone is not
++remote recovery. Private issue-wiki pushes do not publish the public wiki base.
++A lost response/save leaves a pending intent and execution fence, not permission
++to repeat the mutation. Existing public-wiki and issue-completion guards still
++require the actual merged result's exact clear security receipt.
++
++Every controlled action revalidates execution ownership and the current grant.
++The operator manifest, repository opt-in and worker mapping are reread; removing
++scope or a grant stops newly unauthorized work. This is observation, not an atomic
++transaction with external GitHub actors. Refused bytes remain in the existing
++patches, bundles, wiki mirror and retained checkouts. `localRecovery` and stalled
++notices explicitly distinguish them from the last confirmed remote checkpoint.
++A replacement must not reset or reimplement work whose required evidence is
++missing.
++
++**Lease expiry is not takeover permission.** There is deliberately no automatic
++stale-fence deletion. Before releasing stale discovery, execution or integration
++ownership, the operator must stop/prove termination of the prior owner, inspect
++pending intents and all local evidence, reconcile actual remote branches/PRs and
++merge/publication/completion receipts, and establish current authorized scope.
++Only then may ownership be released and the signed checkpoint reconciled. An old
++instance must fail its token/grant/claim checks. Never remove a ref or pending
++intent merely to unblock a sweep. A pending review-request response can be
++reconciled against its authenticated event without reposting it; other ambiguous
++outcomes may remain held for explicit recovery.
++
++### Assignment cutover
++
++Coordinate these operating rules with ecosystem issue **#60**. Stop new explicit
++dispatch and drain/stop owned jobs before enabling assignment configs; snapshot
++installed files, pins, signed state and local recovery artifacts. Review and
++approve the exact code/wiki candidate, security clearance and install dry-run.
++Install as one unit only while no old runtime is active. Explicit jobs without
++worker execution authority are refused on opted-in repositories; do not mix
++modes or installed versions. Operator approval separately controls worker launch
++and any assignment changes. Retained-legacy-state adoption remains **#58**.
++Nothing here installs, starts, changes credentials/assignments or deploys anything.
++
+ ## Write authority and refused-work recovery
+ 
+ Every credentialed code push, including stop-time salvage and synchronization, checks fresh merge-authored, editor-verified saved authority and actual PR status. Missing or malformed critical state, a saved code merge, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine merge-authored, editor-verified state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and any prior pipeline comment, local work, remote issue branch, private wiki ref or PR history without saved authority requires reconciliation. Legacy v1 state is display-only and claims refuse it with `legacy pipeline state needs explicit reconciliation`; there is no automatic adoption tool. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
+@@ -93,6 +253,7 @@ Before any mutation the job snapshots the pages needed by its stage. Missing/unr
+ 
+ | Program | Purpose |
+ |---|---|
++| `worker.mjs` | Opt-in assignment polling through `--manifest`, `--worker`, optional `--once`; no service activation |
+ | `job.mjs` | Explicit one-stage invocation above; `--steer <launch key> --message <text>` steers a running session |
+ | `ops.mjs` | Credentialed deterministic operations; framed JSON stdin (`BEGIN_OPS_REQUEST` … `END_OPS_REQUEST`, with `op` and `config`), one JSON reply |
+ | `report.mjs` | `usage --config <path> [--since <date>] [--role <role>] [--issue <n>]`; telemetry, not spending limits |
+diff --git a/apps/issue-pipeline/biome.jsonc b/apps/issue-pipeline/biome.jsonc
+index 3ae94f2..0f56a89 100644
+--- a/apps/issue-pipeline/biome.jsonc
++++ b/apps/issue-pipeline/biome.jsonc
+@@ -20,7 +20,8 @@
+     // stage job's modules that spawn ops.mjs and pi, keep its checkout,
+     // control socket, status and logs, or are pi extensions; and the
+     // orchestrator's modules that read its arguments, spawn and check the
+-    // jobs and keep its log and memory. Every other module, such as the
++    // jobs and keep its log and memory; the assignment worker entry and its
++    // stage-child process adapter. Every other module, such as the
+     // roles, the schedule, the saved state and the protocols, gets none.
+     {
+       "includes": [
+@@ -50,6 +51,9 @@
+         "src/ops/push.ts",
+         "src/ops/ci-status.ts",
+         "src/job.ts",
++        "src/worker.ts",
++        "src/assignment/worker-process.ts",
++        "src/assignment/scope.ts",
+         "src/job/launch.ts",
+         "src/job/runtime-profile.ts",
+         "src/job/ops-process.ts",
+@@ -115,9 +119,15 @@
+     // GitHub's REST API names a comment's times in snake_case (`created_at`,
+     // `updated_at`). comments.ts declares its comment schema with them, and
+     // test/fake-gh.mjs, the fake gh, answers with comments in that wire format
+-    // (#219).
++    // (#219). signal-schema.ts validates GitHub issue/event/review wire fields.
+     {
+-      "includes": ["src/comments.ts", "test/fake-gh.mjs"],
++      "includes": [
++        "src/comments.ts",
++        "src/assignment/signal-schema.ts",
++        "test/assignment/fake-wire.mjs",
++        "test/assignment/fake-hub.mjs",
++        "test/fake-gh.mjs"
++      ],
+       "linter": {
+         "rules": {
+           "style": {
+diff --git a/apps/issue-pipeline/build.ts b/apps/issue-pipeline/build.ts
+index 8ef6356..7ac457f 100644
+--- a/apps/issue-pipeline/build.ts
++++ b/apps/issue-pipeline/build.ts
+@@ -26,6 +26,7 @@ const NODE_MODULES: ReadonlyMap<string, string> = new Map([
+   [path.join(SOURCE_DIR, "ops.ts"), "ops.mjs"],
+   [path.join(SOURCE_DIR, "shell-supervisor.ts"), "shell-supervisor.mjs"],
+   [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],
++  [path.join(SOURCE_DIR, "worker.ts"), "worker.mjs"],
+   [path.join(SOURCE_DIR, "orchestrate.ts"), "orchestrate.mjs"],
+   [path.join(SOURCE_DIR, "report.ts"), "report.mjs"],
+   [
+diff --git a/apps/issue-pipeline/install.mjs b/apps/issue-pipeline/install.mjs
+index 1c119d0..694257a 100644
+--- a/apps/issue-pipeline/install.mjs
++++ b/apps/issue-pipeline/install.mjs
+@@ -42,6 +42,7 @@ const BUILT = [
+   "ops.mjs",
+   "shell-supervisor.mjs",
+   "job.mjs",
++  "worker.mjs",
+   "orchestrate.mjs",
+   "report.mjs",
+   "structured-output.mjs",
+diff --git a/apps/issue-pipeline/mise.toml b/apps/issue-pipeline/mise.toml
+index b2d6ceb..1ec8c10 100644
+--- a/apps/issue-pipeline/mise.toml
++++ b/apps/issue-pipeline/mise.toml
+@@ -12,6 +12,7 @@ run = [
+   "node --check dist/ops.mjs",
+   "node --check dist/shell-supervisor.mjs",
+   "node --check dist/job.mjs",
++  "node --check dist/worker.mjs",
+   "node --check dist/orchestrate.mjs",
+   "node --check dist/report.mjs",
+   "node --check dist/pipeline-commit.mjs",
+diff --git a/apps/issue-pipeline/src/assignment/authority.ts b/apps/issue-pipeline/src/assignment/authority.ts
+new file mode 100644
+index 0000000..55eb25b
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/authority.ts
+@@ -0,0 +1,120 @@
++import type { z } from "zod";
++import { liveClaims } from "../claims.ts";
++import { listComments } from "../comments.ts";
++import type { Config } from "../config.ts";
++import { trustedInputsHash } from "../issue-context.ts";
++import { OpsError } from "../ops-error.ts";
++import { readWriteState } from "../saved-state.ts";
++import { integrationLock, issueLock, lockHead } from "./exclusion.ts";
++import type { Hub } from "./github.ts";
++import { hubOf } from "./github.ts";
++import type { Execution } from "./schema.ts";
++import { freshScope } from "./scope.ts";
++import { ISSUE } from "./signal-schema.ts";
++import { developmentGrant, reviewGrant, workerOf } from "./signals.ts";
++
++function assertInputs(
++  cfg: Config,
++  issue: number,
++  current: z.infer<typeof ISSUE>,
++): void {
++  if (cfg.execution?.stage !== "author") {
++    const state = readWriteState(cfg, issue);
++    if (
++      state.gherkin?.inputs !==
++      trustedInputsHash(cfg, current, listComments(cfg, issue))
++    ) {
++      throw new OpsError(
++        "trusted inputs changed; reauthor before further controlled mutations",
++      );
++    }
++  }
++}
++
++function assertOwnership(cfg: Config, execution: Execution, hub: Hub): void {
++  const { issue } = execution;
++  if (lockHead(hub, issueLock(issue)) !== execution.token) {
++    throw new OpsError("exclusive execution ownership lost");
++  }
++  if (
++    execution.stage === "merge" &&
++    (execution.turn === null ||
++      lockHead(hub, integrationLock(cfg.baseBranch)) !== execution.turn)
++  ) {
++    throw new OpsError("serialized integration turn is missing or lost");
++  }
++}
++
++function assertClaim(cfg: Config, execution: Execution): void {
++  const state = readWriteState(cfg, execution.issue);
++  const lane = executionLane(execution.token);
++  if (
++    state.stage === "done" &&
++    state.merged !== null &&
++    state.security?.finding === null
++  ) {
++    return;
++  }
++  if (
++    state.lease?.lane !== lane ||
++    !liveClaims(cfg, listComments(cfg, execution.issue)).some(
++      (claim) => claim.lane === lane,
++    )
++  ) {
++    throw new OpsError(
++      "stage claim missing, expired or displaced; preserve work and reconcile",
++    );
++  }
++}
++
++function executionLane(token: string): string {
++  return `assignment-${token}`;
++}
++
++// Rechecked at job entry, every op, writer scope and credentialed push.
++// An absent/invalid grant is withdrawal even when its remover is untrusted.
++// This observes revocation, not an atomic transaction with outside actors.
++function assertExecution(
++  config: Config,
++  issue: number,
++  claiming = false,
++  hub: Hub = hubOf(config),
++): void {
++  const cfg = freshScope(config);
++  if (cfg.assignment === undefined) {
++    if (cfg.execution !== undefined) {
++      throw new OpsError("assignment worker scope was withdrawn");
++    }
++    return;
++  }
++  const { execution } = cfg;
++  if (execution === undefined || execution.issue !== issue) {
++    throw new OpsError(
++      "assignment mode refuses explicit dispatch without exclusive worker authority",
++    );
++  }
++  const worker = workerOf(cfg, execution.worker);
++  assertOwnership(cfg, execution, hub);
++  if (!claiming) {
++    assertClaim(cfg, execution);
++  }
++  const current = ISSUE.parse(hub.read(`issues/${issue}`));
++  assertInputs(cfg, issue, current);
++  if (worker.roles === "development") {
++    if (!["author", "implement"].includes(execution.stage)) {
++      throw new OpsError("development worker cannot execute review or merge");
++    }
++    developmentGrant(hub, cfg, current, worker);
++  } else {
++    if (!["review", "merge"].includes(execution.stage)) {
++      throw new OpsError("review worker cannot execute development roles");
++    }
++    const state = readWriteState(cfg, issue);
++    if (state.coordination?.handoff?.id !== execution.handoff) {
++      throw new OpsError("review handoff ownership lost");
++    }
++    reviewGrant(hub, cfg, current, { state, worker });
++  }
++}
++
++export { assertExecution, executionLane };
+diff --git a/apps/issue-pipeline/src/assignment/checkpoint.ts b/apps/issue-pipeline/src/assignment/checkpoint.ts
+new file mode 100644
+index 0000000..4574811
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/checkpoint.ts
+@@ -0,0 +1,178 @@
++import type { Config } from "../config.ts";
++import { paths, wikiCfg } from "../config.ts";
++import { head } from "../git-state.ts";
++import { git } from "../github.ts";
++import { OpsError } from "../ops-error.ts";
++import { readWriteState, writeState } from "../saved-state.ts";
++import type { IssueState } from "../state.ts";
++import { assertExecution } from "./authority.ts";
++import { lockHead } from "./exclusion.ts";
++import { hubOf } from "./github.ts";
++import { emptyCoordination } from "./schema.ts";
++
++function beginMutation(
++  cfg: Config,
++  issue: number,
++  kind: string,
++  expected: string | null = null,
++): void {
++  if (cfg.assignment === undefined) {
++    return;
++  }
++  assertExecution(cfg, issue);
++  const state = readWriteState(cfg, issue);
++  const coordination = state.coordination ?? emptyCoordination();
++  if (coordination.pending !== null) {
++    throw new OpsError(
++      `uncertain ${coordination.pending.kind}; explicit reconciliation required, not a retry`,
++    );
++  }
++  const pending = { kind, expected, at: new Date().toISOString() };
++  writeState(cfg, issue, {
++    ...state,
++    coordination: { ...coordination, pending },
++  });
++  const confirmed = readWriteState(cfg, issue).coordination?.pending;
++  if (confirmed?.kind !== kind || confirmed.at !== pending.at) {
++    throw new OpsError("mutation intent save could not be confirmed");
++  }
++}
++function finishMutation(cfg: Config, issue: number, kind: string): void {
++  if (cfg.assignment === undefined) {
++    return;
++  }
++  const state = readWriteState(cfg, issue);
++  if (state.coordination?.pending?.kind !== kind) {
++    throw new OpsError("mutation intent changed; reconcile before continuing");
++  }
++  writeState(cfg, issue, {
++    ...state,
++    coordination: { ...state.coordination, pending: null },
++  });
++}
++
++// Only an exact remote observation confirms a push. Local commits, the
++// optimistic pre-push log and an arbitrary current branch tip grant no
++// recoverable checkpoint. A crash leaves the intent and exclusive ref held.
++function confirmedPush(
++  cfg: Config,
++  issue: number,
++  repo: "code" | "wiki",
++  push: () => void,
++): void {
++  if (cfg.assignment === undefined) {
++    push();
++    return;
++  }
++  let dir = paths.worktree(cfg, issue);
++  if (repo === "wiki") {
++    dir = paths.wiki(cfg, issue);
++  }
++  const expected = head(dir);
++  const kind = `${repo}-push`;
++  beginMutation(cfg, issue, kind, expected);
++  push();
++  const branch = paths.branch(cfg, issue);
++  assertPublishedHead(cfg, { dir, branch }, expected);
++  const state = readWriteState(cfg, issue);
++  const coordination = state.coordination ?? emptyCoordination();
++  const previous = coordination.checkpoint;
++  const checkpoint = {
++    branch,
++    code: previous?.code ?? null,
++    wiki: previous?.wiki ?? null,
++    pr: state.pr,
++    inputs: state.gherkin?.inputs ?? "pre-author",
++    at: new Date().toISOString(),
++  };
++  let { headSha } = state;
++  if (repo === "code") {
++    checkpoint.code = expected;
++    headSha = expected;
++  } else {
++    checkpoint.wiki = expected;
++  }
++  if (
++    coordination.pending?.kind !== kind ||
++    coordination.pending.expected !== expected
++  ) {
++    throw new OpsError("push intent changed");
++  }
++  writeState(cfg, issue, {
++    ...state,
++    headSha,
++    coordination: { ...coordination, pending: null, checkpoint },
++  });
++}
++
++function assertPublishedHead(
++  cfg: Config,
++  location: { dir: string; branch: string },
++  expected: string,
++): void {
++  const [observed] = git(cfg, "dev", [
++    "-C",
++    location.dir,
++    "ls-remote",
++    "--heads",
++    "origin",
++    `refs/heads/${location.branch}`,
++  ])
++    .stdout.trim()
++    .split("\t");
++  if (observed !== expected) {
++    throw new OpsError(
++      "checkpoint not confirmed remotely; local recovery required",
++    );
++  }
++}
++
++function verifyCheckpoint(cfg: Config, state: IssueState): void {
++  const checkpoint = state.coordination?.checkpoint;
++  if (
++    checkpoint === undefined ||
++    checkpoint === null ||
++    state.stage === "done"
++  ) {
++    return;
++  }
++  if (checkpoint.branch !== state.branch) {
++    throw new OpsError("checkpoint branch binding changed");
++  }
++  if (
++    checkpoint.code !== null &&
++    state.codeMerged === null &&
++    lockHead(hubOf(cfg), `heads/${checkpoint.branch}`) !== checkpoint.code
++  ) {
++    throw new OpsError(
++      "source checkpoint moved or missing; do not invent a recoverable head",
++    );
++  }
++  if (checkpoint.wiki !== null) {
++    if (wikiCfg(cfg) === null) {
++      throw new OpsError("wiki checkpoint outside configured scope");
++    }
++    const remote = `https://github.com/${cfg.repo}.wiki.git`;
++    const [observed] = git(cfg, "dev", [
++      "ls-remote",
++      "--heads",
++      remote,
++      `refs/heads/${checkpoint.branch}`,
++    ])
++      .stdout.trim()
++      .split("\t");
++    if (observed !== checkpoint.wiki) {
++      throw new OpsError(
++        "private wiki checkpoint moved or missing; explicit recovery required",
++      );
++    }
++  }
++}
++
++export {
++  assertPublishedHead,
++  beginMutation,
++  confirmedPush,
++  finishMutation,
++  verifyCheckpoint,
++};
+diff --git a/apps/issue-pipeline/src/assignment/exclusion.ts b/apps/issue-pipeline/src/assignment/exclusion.ts
+new file mode 100644
+index 0000000..1250418
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/exclusion.ts
+@@ -0,0 +1,64 @@
++import { z } from "zod";
++import type { Config } from "../config.ts";
++import { OpsError } from "../ops-error.ts";
++import type { Hub } from "./github.ts";
++
++const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
++const REF = z.object({ object: z.object({ sha: SHA }) }).nullable();
++const COMMIT = z.object({
++  sha: SHA,
++  tree: z.object({ sha: SHA }),
++  message: z.string(),
++});
++
++function issueLock(issue: number): string {
++  return `heads/pipeline-execution/issue-${issue}`;
++}
++function integrationLock(base: string): string {
++  return `heads/pipeline-integration/${Buffer.from(base).toString("hex")}`;
++}
++function lockHead(hub: Hub, ref: string): string | null {
++  return REF.parse(hub.read(`git/ref/${ref}`))?.object.sha ?? null;
++}
++
++// Ref creation is GitHub's atomic create-if-absent operation. Comments and
++// logical lanes alone cannot exclude two processes sharing an identity.
++// Locks never expire into a second writer: a stale lock requires explicit
++// reconciliation, including uncertain writes and local-only recovery.
++function acquire(
++  hub: Hub,
++  cfg: Config,
++  ref: string,
++  owner: string,
++): string | null {
++  if (lockHead(hub, ref) !== null) {
++    return null;
++  }
++  const base = REF.parse(hub.read(`git/ref/heads/${cfg.baseBranch}`));
++  if (base === null) {
++    throw new OpsError("integration base is missing");
++  }
++  const parent = COMMIT.parse(hub.read(`git/commits/${base.object.sha}`));
++  const commit = COMMIT.parse(
++    hub.create("git/commits", {
++      message: `pipeline exclusive execution ${owner} ${crypto.randomUUID()}`,
++      tree: parent.tree.sha,
++      parents: [parent.sha],
++    }),
++  );
++  // On a lost response do not delete, adopt the current ref or repeat the
++  // creation. Its persistent ref is the visible reconciliation hold.
++  hub.create("git/refs", { ref: `refs/${ref}`, sha: commit.sha });
++  if (lockHead(hub, ref) !== commit.sha) {
++    throw new OpsError("exclusive execution could not be confirmed");
++  }
++  return commit.sha;
++}
++function releaseLock(hub: Hub, ref: string, token: string): void {
++  if (lockHead(hub, ref) !== token) {
++    throw new OpsError("execution ownership lost; refusing unlock");
++  }
++  hub.remove(`git/refs/${ref}`);
++}
++
++export { acquire, integrationLock, issueLock, lockHead, releaseLock };
+diff --git a/apps/issue-pipeline/src/assignment/execution-state.ts b/apps/issue-pipeline/src/assignment/execution-state.ts
+new file mode 100644
+index 0000000..2967e15
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/execution-state.ts
+@@ -0,0 +1,103 @@
++import { OpsError } from "../ops-error.ts";
++import type { Stage } from "../stages.ts";
++import type { IssueState } from "../state.ts";
++import type { Work } from "./plan.ts";
++import type { Coordination } from "./schema.ts";
++import { emptyCoordination } from "./schema.ts";
++import type { JobResult } from "./worker-state.ts";
++import { requiredState, saveCoordination } from "./worker-state.ts";
++
++const MS_PER_SECOND = 1000;
++const DEFAULT_BACKOFF_SECONDS = 3600;
++function prepareStage(work: Work, stage: Stage): IssueState | null {
++  const { deps, worker, state } = work;
++  if (state === null) {
++    return null;
++  }
++  const initial = state.coordination ?? emptyCoordination();
++  let next = { ...state, coordination: initial };
++  if (stage === "author" && state.stage !== "author") {
++    next = {
++      ...state,
++      stage: "author",
++      resumeStage: "implement",
++      hardened: null,
++      integration: null,
++      security: null,
++      coordination: {
++        ...initial,
++        handoff: null,
++      },
++    };
++  }
++  const coord = next.coordination;
++  let { handoff } = coord;
++  if (worker.roles === "review" && handoff !== null) {
++    handoff = { ...handoff, phase: "accepted" };
++  }
++  return saveCoordination(deps, next, {
++    ...coord,
++    worker: worker.id,
++    status: "active",
++    reason: null,
++    heartbeat: deps.now().toISOString(),
++    handoff,
++  });
++}
++function checkpointStatus(
++  state: IssueState,
++  result: JobResult,
++): Coordination["status"] {
++  if (state.stage === "done") {
++    return "completed";
++  }
++  if (["wait", "ask", "stop"].includes(result.end)) {
++    return "blocked";
++  }
++  return "queued";
++}
++function finishStage(work: Work, result: JobResult): IssueState {
++  const { cfg, deps, worker, issue } = work;
++  const state = requiredState(deps, issue.number);
++  const coord = state.coordination ?? emptyCoordination();
++  if (
++    result.localRecovery ||
++    coord.localRecovery ||
++    coord.pending !== null ||
++    result.end === "unclaimed"
++  ) {
++    saveCoordination(deps, state, {
++      ...coord,
++      worker: worker.id,
++      status: "stalled",
++      localRecovery: result.localRecovery || coord.localRecovery,
++      reason:
++        result.reason ?? "uncertain stage outcome; reconcile before resuming",
++    });
++    throw new OpsError(
++      "local recovery or uncertain outcome: exclusive execution retained",
++    );
++  }
++  let retryAt: string | null = null;
++  if (result.end === "deferred" || result.end === "wait") {
++    retryAt = new Date(
++      deps.now().getTime() +
++        (cfg.assignment?.maxBackoffSeconds ?? DEFAULT_BACKOFF_SECONDS) *
++          MS_PER_SECOND,
++    ).toISOString();
++  }
++  return saveCoordination(
++    deps,
++    { ...state, lease: null },
++    {
++      ...coord,
++      worker: worker.id,
++      status: checkpointStatus(state, result),
++      reason: result.reason,
++      retryAt,
++      heartbeat: deps.now().toISOString(),
++    },
++  );
++}
++
++export { finishStage, prepareStage };
+diff --git a/apps/issue-pipeline/src/assignment/executor.ts b/apps/issue-pipeline/src/assignment/executor.ts
+new file mode 100644
+index 0000000..b6e6aed
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/executor.ts
+@@ -0,0 +1,153 @@
++import type { Config } from "../config.ts";
++import { OpsError } from "../ops-error.ts";
++import type { Stage } from "../stages.ts";
++import {
++  acquire,
++  integrationLock,
++  issueLock,
++  releaseLock,
++} from "./exclusion.ts";
++import { finishStage, prepareStage } from "./execution-state.ts";
++import { fixesFor, requestHandoff, returnForFixes } from "./handoff.ts";
++import type { Work } from "./plan.ts";
++import { holdReason, stageFor } from "./plan.ts";
++import { RetryHold } from "./retry.ts";
++import type { Execution, Worker } from "./schema.ts";
++import { ISSUE } from "./signal-schema.ts";
++import { developmentGrant, reviewGrant } from "./signals.ts";
++import type { WorkerDeps } from "./worker-state.ts";
++
++function observe(
++  cfg: Config,
++  deps: WorkerDeps,
++  worker: Worker,
++  number: number,
++): Work {
++  const issue = ISSUE.parse(deps.hub.read(`issues/${number}`));
++  const comments = deps.comments(number);
++  const state = deps.state(number, comments);
++  return {
++    cfg,
++    deps,
++    worker,
++    issue,
++    state,
++    inputs: deps.inputs(issue, comments),
++  };
++}
++function assertReady(work: Work): void {
++  const { cfg, deps, worker, issue, state } = work;
++  if (worker.roles === "development") {
++    developmentGrant(deps.hub, cfg, issue, worker);
++  } else {
++    if (state === null) {
++      throw new OpsError("review cannot initialize issues");
++    }
++    reviewGrant(deps.hub, cfg, issue, { state, worker });
++  }
++  const hold = holdReason(work);
++  if (hold !== null) {
++    throw new OpsError(hold);
++  }
++  if (worker.roles === "review") {
++    stageFor(worker, state, work.inputs);
++  } else if (
++    state !== null &&
++    !["author", "implement", "review"].includes(state.stage) &&
++    fixesFor(cfg, deps, issue, state) === null
++  ) {
++    throw new OpsError(
++      "work belongs to review/merge; development must not fence its owner",
++    );
++  }
++}
++function integrationTurn(
++  work: Work,
++  stage: Stage,
++  token: string,
++): string | null {
++  if (stage !== "merge") {
++    return null;
++  }
++  const { cfg, deps, worker, issue } = work;
++  const turn = acquire(
++    deps.hub,
++    cfg,
++    integrationLock(cfg.baseBranch),
++    `${worker.id} issue ${issue.number}`,
++  );
++  if (turn === null) {
++    releaseLock(deps.hub, issueLock(issue.number), token);
++    throw new OpsError(
++      "repository integration turn held; retry on bounded sweep",
++    );
++  }
++  return turn;
++}
++async function runExclusive(work: Work, token: string): Promise<boolean> {
++  const { cfg, deps, worker, issue, inputs } = work;
++  let { state } = work;
++  assertReady(work);
++  if (state !== null && worker.roles === "development") {
++    state = returnForFixes(cfg, deps, issue, state);
++  }
++  if (
++    worker.roles === "development" &&
++    state?.stage === "review" &&
++    state.gherkin?.inputs === inputs
++  ) {
++    requestHandoff(cfg, deps, issue, state);
++    releaseLock(deps.hub, issueLock(issue.number), token);
++    return false;
++  }
++  const stage = stageFor(worker, state, inputs);
++  const turn = integrationTurn(work, stage, token);
++  state = prepareStage({ ...work, state }, stage);
++  const execution: Execution = {
++    issue: issue.number,
++    worker: worker.id,
++    stage,
++    token,
++    turn,
++    handoff: state?.coordination?.handoff?.id ?? null,
++  };
++  const result = await deps.job(
++    execution,
++    state?.branch ?? `agent/issue-${issue.number}`,
++  );
++  state = finishStage(work, result);
++  if (
++    worker.roles === "development" &&
++    state.stage === "review" &&
++    result.end === "next"
++  ) {
++    requestHandoff(cfg, deps, issue, state);
++  }
++  if (turn !== null) {
++    releaseLock(deps.hub, integrationLock(cfg.baseBranch), turn);
++  }
++  releaseLock(deps.hub, issueLock(issue.number), token);
++  if (result.end === "deferred") {
++    throw new RetryHold(result.reason ?? "execution deferred", {
++      until: Date.parse(
++        state.coordination?.retryAt ?? deps.now().toISOString(),
++      ),
++    });
++  }
++  return true;
++}
++async function execute(work: Work): Promise<boolean> {
++  const { cfg, deps, worker, issue } = work;
++  assertReady(work);
++  const token = acquire(deps.hub, cfg, issueLock(issue.number), worker.id);
++  if (token === null) {
++    throw new OpsError(
++      "active or stale exclusive executor; inspect claim heartbeat and reconcile recovery before takeover",
++    );
++  }
++  // Never finally-unlock: an uncertain save/write or missing local evidence
++  // remains durably fenced against automatic takeover, including after restart.
++  return await runExclusive(observe(cfg, deps, worker, issue.number), token);
++}
++
++export { execute, observe };
+diff --git a/apps/issue-pipeline/src/assignment/github.ts b/apps/issue-pipeline/src/assignment/github.ts
+new file mode 100644
+index 0000000..e4f4eb6
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/github.ts
+@@ -0,0 +1,94 @@
++import { z } from "zod";
++import type { Config } from "../config.ts";
++import { gh, ghJson, isAllowedUser } from "../github.ts";
++import { OpsError } from "../ops-error.ts";
++import { RetryHold, retryTime } from "./retry.ts";
++
++interface Hub {
++  read: (path: string) => unknown;
++  create: (path: string, body: object, identity?: "dev" | "merge") => unknown;
++  remove: (path: string) => void;
++  allowed: (login: string) => boolean;
++}
++const PAGE_SIZE = 100;
++const NOT_FOUND = /HTTP 404/u;
++const HTTP =
++  /^HTTP\/\S+ (?<status>\d+)[^\r\n]*\r?\n(?<headers>[\s\S]*?)\r?\n\r?\n(?<body>[\s\S]*)$/u;
++const ERROR = z.looseObject({ message: z.literal("Not Found") });
++function hubOf(cfg: Config): Hub {
++  const prefix = `repos/${cfg.repo}/`;
++  return {
++    read: (endpoint: string): unknown => {
++      const result = gh(
++        cfg,
++        "merge",
++        ["api", "--include", `${prefix}${endpoint}`],
++        { allowFail: true },
++      );
++      const {
++        status,
++        headers = "",
++        body = "",
++      } = HTTP.exec(result.stdout)?.groups ?? {};
++      if (result.code !== 0) {
++        if (status === "404" || NOT_FOUND.test(result.stderr)) {
++          return null;
++        }
++        throw new RetryHold(result.stderr || "incomplete GitHub read", {
++          until: retryTime(headers, Date.now()),
++        });
++      }
++      if (status === undefined) {
++        throw new OpsError("missing GitHub response envelope");
++      }
++      const value: unknown = JSON.parse(body);
++      if (ERROR.safeParse(value).success) {
++        return null;
++      }
++      return value;
++    },
++    create: (endpoint: string, body: object, identity = "merge"): unknown =>
++      ghJson(
++        cfg,
++        identity,
++        ["api", "-X", "POST", `${prefix}${endpoint}`, "--input", "-"],
++        { input: JSON.stringify(body) },
++      ),
++    remove: (endpoint: string): void => {
++      gh(cfg, "merge", ["api", "-X", "DELETE", `${prefix}${endpoint}`]);
++    },
++    allowed: (login: string): boolean => isAllowedUser(cfg, login),
++  };
++}
++
++// A saturated budget is an incomplete observation, never an empty queue or
++// evidence that an assignment, handoff or durable record disappeared.
++function pages<T>(
++  hub: Hub,
++  endpoint: string,
++  schema: z.ZodType<T>,
++  budget: number,
++): T[] {
++  const rows: T[] = [];
++  let separator = "?";
++  if (endpoint.includes("?")) {
++    separator = "&";
++  }
++  for (let page = 1; page <= budget; page += 1) {
++    const batch = z
++      .array(schema)
++      .parse(
++        hub.read(`${endpoint}${separator}per_page=${PAGE_SIZE}&page=${page}`),
++      );
++    rows.push(...batch);
++    if (batch.length < PAGE_SIZE) {
++      return rows;
++    }
++  }
++  throw new OpsError(
++    `pagination budget exhausted for ${endpoint}; discovery incomplete`,
++  );
++}
++
++export type { Hub };
++export { hubOf, pages };
+diff --git a/apps/issue-pipeline/src/assignment/handoff.ts b/apps/issue-pipeline/src/assignment/handoff.ts
+new file mode 100644
+index 0000000..1290348
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/handoff.ts
+@@ -0,0 +1,258 @@
++import type { Config } from "../config.ts";
++import { OpsError } from "../ops-error.ts";
++import type { IssueState } from "../state.ts";
++import { pages } from "./github.ts";
++import type { Coordination, Worker } from "./schema.ts";
++import { DEFAULT_PAGE_BUDGET } from "./schema.ts";
++import type { IssueRow, Review } from "./signal-schema.ts";
++import { PR, REVIEW } from "./signal-schema.ts";
++import {
++  assertPullIdentity,
++  changeRequest,
++  developmentGrant,
++  eventsFor,
++  reviewGrant,
++} from "./signals.ts";
++import type { WorkerDeps } from "./worker-state.ts";
++import { requiredState, saveCoordination } from "./worker-state.ts";
++
++function fixesFor(
++  cfg: Config,
++  deps: WorkerDeps,
++  issue: IssueRow,
++  state: IssueState,
++): {
++  coord: Coordination;
++  handoff: NonNullable<Coordination["handoff"]>;
++  changes: Review | undefined;
++  developer: Worker | undefined;
++} | null {
++  const coord = state.coordination;
++  if (
++    coord?.handoff === null ||
++    coord === null ||
++    coord === undefined ||
++    state.codeMerged !== null ||
++    state.merged !== null
++  ) {
++    return null;
++  }
++  const changes = changeRequest(deps.hub, cfg, state);
++  const developer = cfg.assignment?.workers.find(
++    (worker) => worker.roles === "development",
++  );
++  let reassigned = false;
++  if (developer !== undefined) {
++    const event = developmentGrant(deps.hub, cfg, issue, developer);
++    reassigned = event.id !== coord.handoff.assignment;
++  }
++  if (changes === undefined && !reassigned) {
++    return null;
++  }
++  return { coord, handoff: coord.handoff, changes, developer };
++}
++function returnForFixes(
++  cfg: Config,
++  deps: WorkerDeps,
++  issue: IssueRow,
++  state: IssueState,
++): IssueState {
++  const fixes = fixesFor(cfg, deps, issue, state);
++  if (fixes === null) {
++    return state;
++  }
++  const { coord, handoff, changes, developer } = fixes;
++  const next: IssueState = {
++    ...state,
++    stage: "implement",
++    hardened: null,
++    integration: null,
++    security: null,
++    verifiedSha: null,
++    coordination: {
++      ...coord,
++      handoff: null,
++      worker: developer?.id ?? null,
++      status: "queued",
++      reason: "authenticated changes/reassignment returned work to development",
++    },
++  };
++  if (changes !== undefined) {
++    applyReview(deps, next, changes, handoff.checkpoint);
++  }
++  deps.save(issue.number, next);
++  return requiredState(deps, issue.number);
++}
++
++function applyReview(
++  deps: WorkerDeps,
++  next: IssueState,
++  changes: Review,
++  checkpoint: NonNullable<Coordination["checkpoint"]>,
++): void {
++  // Review bodies remain operational evidence; never append them to trusted
++  // human inputs or pretend that a bot answered the Author's questions.
++
++  deps.notice(
++    next.number,
++    `Review #${changes.id} requests development fixes at ${changes.commit_id}: ${changes.body ?? ""}`,
++  );
++  next.review = {
++    ...next.review,
++    verdict: "changes",
++    findings: [
++      {
++        id: changes.id,
++        severity: "blocking",
++        text: changes.body ?? "Review requested changes",
++      },
++    ],
++    revision: {
++      code: changes.commit_id,
++      wiki: checkpoint.wiki,
++      inputs: checkpoint.inputs,
++    },
++  };
++}
++
++function prepareHandoff(
++  cfg: Config,
++  deps: WorkerDeps,
++  context: { state: IssueState; issue: IssueRow },
++): IssueState {
++  const { state, issue } = context;
++  const coord = state.coordination;
++  const checkpoint = coord?.checkpoint;
++  if (
++    coord === null ||
++    checkpoint === undefined ||
++    checkpoint === null ||
++    state.pr === null ||
++    checkpoint.code !== state.headSha ||
++    checkpoint.inputs !== state.gherkin?.inputs
++  ) {
++    throw new OpsError(
++      "ready for handoff without confirmed source/wiki checkpoint and PR; reconcile publication",
++    );
++  }
++  const developer = cfg.assignment?.workers.find(
++    (worker) => worker.roles === "development",
++  );
++  if (developer === undefined) {
++    throw new OpsError("missing developer mapping");
++  }
++  const assignment = developmentGrant(deps.hub, cfg, issue, developer).id;
++  const bound = { ...checkpoint, pr: state.pr, at: deps.now().toISOString() };
++  const handoff: Coordination["handoff"] = {
++    id: crypto.randomUUID(),
++    assignment,
++    eventsBefore: eventsFor(deps.hub, cfg, state.pr).map((event) => event.id),
++    reviewsBefore: pages(
++      deps.hub,
++      `pulls/${state.pr}/reviews`,
++      REVIEW,
++      cfg.assignment?.pageBudget ?? DEFAULT_PAGE_BUDGET,
++    ).map((review) => review.id),
++    checkpoint: bound,
++    phase: "pending",
++    request: null,
++    review: null,
++  };
++  return saveCoordination(deps, state, {
++    ...coord,
++    status: "ready-for-handoff",
++    handoff,
++  });
++}
++function requestHandoff(
++  cfg: Config,
++  deps: WorkerDeps,
++  issue: IssueRow,
++  state: IssueState,
++): IssueState {
++  let saved = state;
++  if (saved.coordination?.handoff === null) {
++    saved = prepareHandoff(cfg, deps, { state: saved, issue });
++  }
++  const coord = saved.coordination;
++  const handoff = coord?.handoff;
++  const reviewer = cfg.assignment?.workers.find(
++    (worker) => worker.roles === "review",
++  );
++  if (
++    coord === undefined ||
++    coord === null ||
++    handoff === undefined ||
++    handoff === null ||
++    reviewer === undefined ||
++    saved.pr === null
++  ) {
++    throw new OpsError("missing review mapping or handoff");
++  }
++  if (handoff.phase !== "pending") {
++    return saved;
++  }
++  // Reconcile a request whose response was lost before considering a POST.
++  // If the outcome is uncertain after POST, pending state plus the retained
++  // execution ref prevents blind replay on restart.
++  const pr = PR.parse(deps.hub.read(`pulls/${saved.pr}`));
++  assertPullIdentity(cfg, saved, pr);
++  eventsFor(deps.hub, cfg, saved.pr);
++  if (
++    pr.requested_reviewers.some(
++      (user) => user.login.toLowerCase() === reviewer.login.toLowerCase(),
++    )
++  ) {
++    const event = reviewGrant(deps.hub, cfg, issue, {
++      state: saved,
++      worker: reviewer,
++    });
++    return saveCoordination(deps, saved, {
++      ...coord,
++      pending: null,
++      handoff: { ...handoff, phase: "requested", request: event.id },
++    });
++  }
++  return publishRequest({ cfg, deps, issue, saved, coord, handoff, reviewer });
++}
++
++interface Request {
++  cfg: Config;
++  deps: WorkerDeps;
++  issue: IssueRow;
++  saved: IssueState;
++  coord: Coordination;
++  handoff: NonNullable<Coordination["handoff"]>;
++  reviewer: Worker;
++}
++function publishRequest(request: Request): IssueState {
++  const { cfg, deps, issue, coord, handoff, reviewer } = request;
++  let { saved } = request;
++  if (coord.pending !== null) {
++    throw new OpsError("uncertain review request; reconcile, do not repeat");
++  }
++  saved = saveCoordination(deps, saved, {
++    ...coord,
++    pending: {
++      kind: "review-request",
++      expected: handoff.checkpoint.code,
++      at: deps.now().toISOString(),
++    },
++  });
++  deps.hub.create(
++    `pulls/${saved.pr}/requested_reviewers`,
++    { reviewers: [reviewer.login] },
++    "dev",
++  );
++  const event = reviewGrant(deps.hub, cfg, issue, {
++    state: saved,
++    worker: reviewer,
++  });
++  return saveCoordination(deps, saved, {
++    ...coord,
++    pending: null,
++    handoff: { ...handoff, phase: "requested", request: event.id },
++  });
++}
++
++export { fixesFor, requestHandoff, returnForFixes };
+diff --git a/apps/issue-pipeline/src/assignment/plan.ts b/apps/issue-pipeline/src/assignment/plan.ts
+new file mode 100644
+index 0000000..b9a4d48
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/plan.ts
+@@ -0,0 +1,123 @@
++import type { Config } from "../config.ts";
++import { LABELS } from "../labels.ts";
++import { OpsError } from "../ops-error.ts";
++import { afterMarkOf } from "../orchestrator/inputs.ts";
++import type { Stage } from "../stages.ts";
++import type { IssueState } from "../state.ts";
++import { isStopLabel } from "../stops.ts";
++import type { Worker } from "./schema.ts";
++import type { IssueRow } from "./signal-schema.ts";
++import { ISSUE } from "./signal-schema.ts";
++
++import type { WorkerDeps } from "./worker-state.ts";
++
++interface Work {
++  cfg: Config;
++  deps: WorkerDeps;
++  worker: Worker;
++  issue: IssueRow;
++  state: IssueState | null;
++  inputs: string;
++}
++function coordinationHold(work: Work): string | null {
++  const { state, inputs, deps } = work;
++
++  if (
++    state?.coordination?.pending !== undefined &&
++    state.coordination.pending !== null
++  ) {
++    return `uncertain ${state.coordination.pending.kind}: explicit reconciliation required`;
++  }
++  if (state?.coordination?.localRecovery === true) {
++    return "local-only recovery evidence required; do not reset or reimplement";
++  }
++  const retry = state?.coordination?.retryAt;
++  if (
++    retry !== undefined &&
++    retry !== null &&
++    Date.parse(retry) > deps.now().getTime()
++  ) {
++    return `retry hold until ${retry}`;
++  }
++  if (state?.asked?.inputs === inputs) {
++    return "questions unanswered on unchanged trusted inputs";
++  }
++  if (state !== null && state.coordination === null) {
++    return "existing state needs an operator-coordinated assignment cutover";
++  }
++  return null;
++}
++function holdReason(work: Work): string | null {
++  const { cfg, deps, issue, state } = work;
++  const labels = issue.labels.map((label) => label.name);
++  if (state?.stage === "stopped" || labels.some(isStopLabel)) {
++    return "unresolved stop: reconcile its control before resuming";
++  }
++  if (labels.includes(LABELS.split.name)) {
++    return "split parent is not a stage job";
++  }
++  const coordination = coordinationHold(work);
++  if (coordination !== null) {
++    return coordination;
++  }
++  for (const number of afterMarkOf(issue.body)) {
++    const dependency = ISSUE.parse(deps.hub.read(`issues/${number}`));
++    if (dependency.state !== "closed") {
++      return `prerequisite #${number} is unsatisfied`;
++    }
++  }
++  const { skipLabels, takeNewWork } = cfg;
++  if (
++    Array.isArray(skipLabels) &&
++    skipLabels.some(
++      (label: unknown) => typeof label === "string" && labels.includes(label),
++    )
++  ) {
++    return "issue excluded by repository scope";
++  }
++  if (state === null && takeNewWork === false) {
++    return "new work disabled";
++  }
++  return null;
++}
++
++function stageFor(
++  worker: Worker,
++  state: IssueState | null,
++  inputs: string,
++): Stage {
++  if (worker.roles === "development") {
++    if (
++      state === null ||
++      state.stage === "author" ||
++      (state.gherkin?.inputs !== inputs && state.codeMerged === null)
++    ) {
++      return "author";
++    }
++    if (state.stage === "implement") {
++      return "implement";
++    }
++    throw new OpsError("next action belongs to review, not development");
++  }
++  if (state === null) {
++    throw new OpsError("review cannot initialize new issues");
++  }
++  if (state.gherkin?.inputs !== inputs && state.codeMerged === null) {
++    throw new OpsError(
++      "trusted inputs changed: development must reauthor before review",
++    );
++  }
++  if (state.stage === "review") {
++    return "review";
++  }
++  if (
++    state.stage === "merge" ||
++    (state.stage === "done" && state.merged !== null)
++  ) {
++    return "merge";
++  }
++  throw new OpsError("next action belongs to development, not review");
++}
++
++export type { Work };
++export { holdReason, stageFor };
+diff --git a/apps/issue-pipeline/src/assignment/poll.ts b/apps/issue-pipeline/src/assignment/poll.ts
+new file mode 100644
+index 0000000..487472b
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/poll.ts
+@@ -0,0 +1,161 @@
++import { z } from "zod";
++import type { Config } from "../config.ts";
++import { OpsError } from "../ops-error.ts";
++import { acquire, releaseLock } from "./exclusion.ts";
++import type { Hub } from "./github.ts";
++import { pages } from "./github.ts";
++import { RetryHold } from "./retry.ts";
++import { DEFAULT_PAGE_BUDGET } from "./schema.ts";
++import { sweep } from "./worker.ts";
++import type { WorkerDeps } from "./worker-state.ts";
++
++const MS_PER_SECOND = 1000;
++const MAX_EXPONENT = 20;
++const REF = z.object({ ref: z.string() });
++const RETRY_REF = /^refs\/heads\/pipeline-retry\/(?<until>\d+)-/u;
++function retryHold(hub: Hub, cfg: Config): number {
++  const refs = pages(
++    hub,
++    "git/matching-refs/heads/pipeline-retry/",
++    REF,
++    cfg.assignment?.pageBudget ?? DEFAULT_PAGE_BUDGET,
++  );
++  return refs.reduce((until, ref) => {
++    const { until: stamp } = RETRY_REF.exec(ref.ref)?.groups ?? {};
++    return Math.max(until, Number(stamp ?? 0));
++  }, 0);
++}
++function saveRetry(hub: Hub, cfg: Config, until: number): void {
++  acquire(
++    hub,
++    cfg,
++    `heads/pipeline-retry/${until}-${crypto.randomUUID()}`,
++    `retry until ${new Date(until).toISOString()}`,
++  );
++}
++interface PollRepository {
++  cfg: Config;
++  deps: WorkerDeps;
++}
++interface PollClock {
++  now: () => number;
++  sleep: (ms: number) => Promise<void>;
++  stopped: () => boolean;
++  report: (repo: string, reason: string) => void;
++}
++interface Polling {
++  worker: string;
++  clock: PollClock;
++  failures: Map<string, number>;
++}
++function defer(
++  repository: PollRepository,
++  polling: Polling,
++  error: unknown,
++): number {
++  const { cfg, deps } = repository;
++  const { clock, failures } = polling;
++  const settings = cfg.assignment;
++  if (settings === undefined) {
++    throw new OpsError("assignment mode disabled");
++  }
++  const count = (failures.get(cfg.repo) ?? 0) + 1;
++  failures.set(cfg.repo, count);
++  let ms =
++    Math.min(
++      settings.maxBackoffSeconds,
++      settings.pollSeconds * 2 ** Math.min(count, MAX_EXPONENT),
++    ) * MS_PER_SECOND;
++  if (error instanceof RetryHold) {
++    ms = Math.max(ms, error.until - clock.now());
++  }
++  let reason = "incomplete discovery";
++  if (error instanceof Error) {
++    reason = error.message;
++  }
++  clock.report(cfg.repo, reason);
++  const at = clock.now() + ms;
++  // If saving retry authority fails, the caller leaves its discovery ref
++  // held and exits. A replacement must reconcile it, not bypass the hold.
++  saveRetry(deps.hub, cfg, at);
++  return at;
++}
++async function attempt(
++  repository: PollRepository,
++  polling: Polling,
++): Promise<number> {
++  const { cfg, deps } = repository;
++  const { worker, clock, failures } = polling;
++  if (cfg.assignment === undefined) {
++    throw new OpsError("worker repository lacks assignment opt-in");
++  }
++  deps.scope();
++  const normal = clock.now() + cfg.assignment.pollSeconds * MS_PER_SECOND;
++  const ref = `heads/pipeline-discovery/${worker}`;
++  const token = acquire(deps.hub, cfg, ref, worker);
++  if (token === null) {
++    clock.report(
++      cfg.repo,
++      "active or stalled discovery owner; inspect pipeline-discovery ref and reconcile before replacement",
++    );
++    return normal;
++  }
++  try {
++    const hold = retryHold(deps.hub, cfg);
++    if (hold > clock.now()) {
++      releaseLock(deps.hub, ref, token);
++      return hold;
++    }
++    await sweep(cfg, worker, deps);
++    failures.delete(cfg.repo);
++    releaseLock(deps.hub, ref, token);
++    return clock.now() + cfg.assignment.pollSeconds * MS_PER_SECOND;
++  } catch (error: unknown) {
++    const at = defer(repository, polling, error);
++    releaseLock(deps.hub, ref, token);
++    return at;
++  }
++}
++function cadence(
++  clock: PollClock,
++  due: ReadonlyMap<string, number>,
++  once: boolean,
++): AsyncIterable<number> {
++  let initial = true;
++  const iterator: AsyncIterableIterator<number> = {
++    [Symbol.asyncIterator]: (): AsyncIterableIterator<number> => iterator,
++    next: async (): Promise<IteratorResult<number>> => {
++      if (clock.stopped() || (once && !initial)) {
++        return { done: true, value: 0 };
++      }
++      if (!initial) {
++        await clock.sleep(Math.max(1, Math.min(...due.values()) - clock.now()));
++      }
++      initial = false;
++      return { done: clock.stopped(), value: clock.now() };
++    },
++  };
++  return iterator;
++}
++
++// Only disposable timing lives here. Every attempt consults GitHub retry
++// holds and reconstructs candidates; no private scheduler DB is introduced.
++async function poll(
++  repositories: readonly PollRepository[],
++  worker: string,
++  clock: PollClock,
++  once = false,
++): Promise<void> {
++  const polling = { worker, clock, failures: new Map<string, number>() };
++  const due = new Map<string, number>();
++  for await (const at of cadence(clock, due, once)) {
++    for await (const repository of repositories) {
++      if (!clock.stopped() && (due.get(repository.cfg.repo) ?? 0) <= at) {
++        due.set(repository.cfg.repo, await attempt(repository, polling));
++      }
++    }
++  }
++}
++
++export type { PollClock, PollRepository };
++export { poll, retryHold, saveRetry };
+diff --git a/apps/issue-pipeline/src/assignment/retry.ts b/apps/issue-pipeline/src/assignment/retry.ts
+new file mode 100644
+index 0000000..450496e
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/retry.ts
+@@ -0,0 +1,32 @@
++import { OpsError } from "../ops-error.ts";
++
++const MS_PER_SECOND = 1000;
++const RETRY_AFTER = /^retry-after:\s*(?<value>.+)$/imu;
++const RESET = /^x-ratelimit-reset:\s*(?<value>\d+)$/imu;
++class RetryHold extends OpsError {
++  readonly until: number;
++  constructor(message: string, options: ErrorOptions & { until: number }) {
++    super(message, options);
++    this.until = options.until;
++  }
++}
++function retryTime(headers: string, now: number): number {
++  const { value } = RETRY_AFTER.exec(headers)?.groups ?? {};
++  const { value: reset } = RESET.exec(headers)?.groups ?? {};
++  let until = now;
++  if (value !== undefined) {
++    let parsed = Date.parse(value);
++    if (Number.isFinite(Number(value))) {
++      parsed = now + Number(value) * MS_PER_SECOND;
++    }
++    if (Number.isFinite(parsed)) {
++      until = Math.max(until, parsed);
++    }
++  }
++  if (reset !== undefined) {
++    until = Math.max(until, Number(reset) * MS_PER_SECOND);
++  }
++  return until;
++}
++
++export { RetryHold, retryTime };
+diff --git a/apps/issue-pipeline/src/assignment/runtime.ts b/apps/issue-pipeline/src/assignment/runtime.ts
+new file mode 100644
+index 0000000..9dde154
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/runtime.ts
+@@ -0,0 +1,80 @@
++import type { IssueComment } from "../comments.ts";
++import { commentByKey, keyMark, listComments, signed } from "../comments.ts";
++import type { Config } from "../config.ts";
++import { OpsError } from "../ops-error.ts";
++import { readClaimState, writeState } from "../saved-state.ts";
++import type { IssueState } from "../state.ts";
++import { hubOf } from "./github.ts";
++import type { Execution } from "./schema.ts";
++import { repositoryScope } from "./scope.ts";
++import type { IssueRow } from "./signal-schema.ts";
++import { workerOf } from "./signals.ts";
++import { runJob } from "./worker-process.ts";
++import type { JobResult, WorkerDeps } from "./worker-state.ts";
++import { productionInputs } from "./worker-state.ts";
++
++const NOTICE_LENGTH = 3000;
++
++interface RuntimeRepository {
++  manifest: string;
++  config: string;
++  brainPath: string;
++  cfg: Config;
++}
++
++function notice(
++  cfg: Config,
++  worker: string,
++  issue: number,
++  reason: string,
++): void {
++  const key = `assignment-${worker}`;
++  const body = `Assignment worker \`${worker}\`: ${reason.slice(0, NOTICE_LENGTH)}\n\nInspect signed state, claims and execution refs before recovery. This observation grants no work.`;
++  const expected = `${signed({ role: "assignment-observer" }, body)}\n${keyMark(issue, key)}`;
++  if (
++    listComments(cfg, issue).some(
++      (comment) =>
++        comment.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
++        comment.body === expected,
++    )
++  ) {
++    return;
++  }
++  commentByKey(cfg, issue, { role: "assignment-observer" }, { body, key });
++}
++
++// The worker owns a stage child only while awaiting it. SIGTERM and failed
++// grant/heartbeat checks terminate it and await bounded process cleanup;
++// an uncertain exit deliberately retains durable execution authority.
++function runtimeDeps(
++  repository: RuntimeRepository,
++  worker: string,
++  signal: AbortSignal,
++): WorkerDeps {
++  const { cfg } = repository;
++  return {
++    scope: (): void => {
++      const fresh = repositoryScope(cfg, repository);
++      if (fresh.assignment === undefined) {
++        throw new OpsError("assignment worker scope withdrawn");
++      }
++      workerOf(fresh, worker);
++    },
++    hub: hubOf(cfg),
++    now: (): Date => new Date(),
++    comments: (issue: number) => listComments(cfg, issue),
++    state: (issue: number, comments: readonly IssueComment[] | undefined) =>
++      readClaimState(cfg, issue, comments ?? listComments(cfg, issue)),
++    save: (issue: number, state: IssueState): void =>
++      writeState(cfg, issue, state),
++    inputs: (issue: IssueRow, comments: readonly IssueComment[]): string =>
++      productionInputs(cfg, issue, comments),
++    notice: (issue: number, reason: string): void =>
++      notice(cfg, worker, issue, reason),
++    job: (execution: Execution, branch: string): Promise<JobResult> =>
++      runJob(repository, execution, branch, signal),
++  };
++}
++
++export type { RuntimeRepository };
++export { notice, runtimeDeps };
+diff --git a/apps/issue-pipeline/src/assignment/schema.ts b/apps/issue-pipeline/src/assignment/schema.ts
+new file mode 100644
+index 0000000..bffdf9d
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/schema.ts
+@@ -0,0 +1,144 @@
++import { z } from "zod";
++
++const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
++const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u;
++const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
++const MIN_INTERVAL_SECONDS = 10;
++const DEFAULT_INTERVAL_SECONDS = 60;
++const MAX_POLL_SECONDS = 3600;
++const MAX_HEARTBEAT_SECONDS = 300;
++const MAX_BACKOFF_SECONDS = 86_400;
++const MAX_PAGE_BUDGET = 1000;
++const DEFAULT_PAGE_BUDGET = 100;
++const ASSIGNMENT = z
++  .object({
++    enabled: z.literal(true),
++    workers: z
++      .array(
++        z.object({
++          id: z.string().regex(ID),
++          login: z.string().regex(LOGIN),
++          roles: z.enum(["development", "review"]),
++        }),
++      )
++      .min(2),
++    pollSeconds: z
++      .number()
++      .int()
++      .min(MIN_INTERVAL_SECONDS)
++      .max(MAX_POLL_SECONDS)
++      .default(DEFAULT_INTERVAL_SECONDS),
++    maxBackoffSeconds: z
++      .number()
++      .int()
++      .min(DEFAULT_INTERVAL_SECONDS)
++      .max(MAX_BACKOFF_SECONDS)
++      .default(MAX_POLL_SECONDS),
++    heartbeatSeconds: z
++      .number()
++      .int()
++      .min(MIN_INTERVAL_SECONDS)
++      .max(MAX_HEARTBEAT_SECONDS)
++      .default(DEFAULT_INTERVAL_SECONDS),
++    pageBudget: z
++      .number()
++      .int()
++      .min(1)
++      .max(MAX_PAGE_BUDGET)
++      .default(DEFAULT_PAGE_BUDGET),
++  })
++  .superRefine((settings, ctx) => {
++    const keys: ("id" | "login" | "roles")[] = ["id", "login", "roles"];
++    for (const key of keys) {
++      const values = settings.workers.map((worker) =>
++        worker[key].toLowerCase(),
++      );
++      if (new Set(values).size !== values.length) {
++        ctx.addIssue({ code: "custom", message: `ambiguous worker ${key}` });
++      }
++    }
++    if (settings.pollSeconds > settings.maxBackoffSeconds) {
++      ctx.addIssue({ code: "custom", message: "poll exceeds maximum backoff" });
++    }
++  });
++
++const CHECKPOINT = z.object({
++  branch: z.string().min(1),
++  code: SHA.nullable(),
++  wiki: SHA.nullable(),
++  pr: z.number().int().positive().nullable(),
++  inputs: z.string().min(1),
++  at: z.iso.datetime(),
++});
++const HANDOFF = z.object({
++  id: z.uuid(),
++  assignment: z.number().int().positive().nullable().default(null),
++  eventsBefore: z.array(z.number().int().positive()).default([]),
++  reviewsBefore: z.array(z.number().int().positive()).default([]),
++  checkpoint: CHECKPOINT,
++  phase: z.enum(["pending", "requested", "accepted"]),
++  request: z.number().int().positive().nullable(),
++  review: z.number().int().positive().nullable(),
++});
++const COORDINATION = z.object({
++  pending: z
++    .object({
++      kind: z.string(),
++      expected: z.string().nullable(),
++      at: z.iso.datetime(),
++    })
++    .nullable()
++    .default(null),
++  localRecovery: z.boolean().default(false),
++  worker: z.string().nullable(),
++  status: z.enum([
++    "queued",
++    "active",
++    "blocked",
++    "ready-for-handoff",
++    "stalled",
++    "completed",
++  ]),
++  reason: z.string().nullable(),
++  heartbeat: z.iso.datetime().nullable(),
++  retryAt: z.iso.datetime().nullable(),
++  checkpoint: CHECKPOINT.nullable(),
++  handoff: HANDOFF.nullable(),
++});
++const EXECUTION = z.object({
++  scope: z
++    .object({ manifest: z.string(), config: z.string(), brainPath: z.string() })
++    .optional(),
++  worker: z.string(),
++  issue: z.number().int().positive(),
++  stage: z.enum(["author", "implement", "review", "merge"]),
++  token: SHA,
++  turn: SHA.nullable(),
++  handoff: z.uuid().nullable(),
++});
++type Execution = z.infer<typeof EXECUTION>;
++type Coordination = z.infer<typeof COORDINATION>;
++type Worker = z.infer<typeof ASSIGNMENT>["workers"][number];
++
++function emptyCoordination(): Coordination {
++  return {
++    pending: null,
++    localRecovery: false,
++    worker: null,
++    status: "queued",
++    reason: null,
++    heartbeat: null,
++    retryAt: null,
++    checkpoint: null,
++    handoff: null,
++  };
++}
++
++export type { Coordination, Execution, Worker };
++export {
++  ASSIGNMENT,
++  COORDINATION,
++  DEFAULT_PAGE_BUDGET,
++  EXECUTION,
++  emptyCoordination,
++};
+diff --git a/apps/issue-pipeline/src/assignment/scope.ts b/apps/issue-pipeline/src/assignment/scope.ts
+new file mode 100644
+index 0000000..dcb66b8
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/scope.ts
+@@ -0,0 +1,64 @@
++import fs from "node:fs";
++import { z } from "zod";
++import type { Config } from "../config.ts";
++import { loadConfig } from "../config.ts";
++import { OpsError } from "../ops-error.ts";
++
++const MAX_REPOSITORIES = 50;
++const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/])/u;
++const MANIFEST = z.object({
++  repositories: z
++    .array(
++      z.object({
++        config: z.string().regex(ABSOLUTE),
++        brainPath: z.string().regex(ABSOLUTE),
++      }),
++    )
++    .min(1)
++    .max(MAX_REPOSITORIES),
++});
++function readManifest(file: string): z.infer<typeof MANIFEST> {
++  return MANIFEST.parse(JSON.parse(fs.readFileSync(file, "utf8")));
++}
++// The privileged paths originate only in the operator's invocation. Models
++// do not receive this scope, and config files cannot inject an execution.
++function freshScope(cfg: Config): Config {
++  if (cfg.execution === undefined || cfg.configFile === undefined) {
++    return cfg;
++  }
++  const { scope } = cfg.execution;
++  if (scope === undefined || scope.config !== cfg.configFile) {
++    throw new OpsError("missing worker repository allow-list provenance");
++  }
++  const fresh = repositoryScope(cfg, scope);
++  return { ...fresh, execution: cfg.execution };
++}
++function repositoryScope(
++  cfg: Config,
++  scope: { manifest: string; config: string; brainPath: string },
++): Config {
++  const manifest = readManifest(scope.manifest);
++  const entries = manifest.repositories.filter(
++    (entry) =>
++      entry.config === scope.config && entry.brainPath === scope.brainPath,
++  );
++  if (entries.length !== 1) {
++    throw new OpsError(
++      "repository removed from worker scope or mapping is ambiguous",
++    );
++  }
++  const fresh = loadConfig(scope.config);
++  if (
++    fresh.repo !== cfg.repo ||
++    fresh.baseBranch !== cfg.baseBranch ||
++    fresh.devAccount !== cfg.devAccount ||
++    fresh.mergeAccount !== cfg.mergeAccount
++  ) {
++    throw new OpsError(
++      "repository identity or integration target changed; drain and reconcile",
++    );
++  }
++  return fresh;
++}
++
++export { freshScope, readManifest, repositoryScope };
+diff --git a/apps/issue-pipeline/src/assignment/signal-schema.ts b/apps/issue-pipeline/src/assignment/signal-schema.ts
+new file mode 100644
+index 0000000..0cd7b4a
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/signal-schema.ts
+@@ -0,0 +1,52 @@
++import { z } from "zod";
++
++const USER = z.object({ login: z.string().min(1) });
++const ISSUE = z.looseObject({
++  number: z.number().int().positive(),
++  state: z.enum(["open", "closed"]),
++  user: USER,
++  title: z.string(),
++  body: z.string().nullable(),
++  assignees: z.array(USER),
++  labels: z.array(z.object({ name: z.string() })),
++  pull_request: z.unknown().optional(),
++});
++const EVENT = z.looseObject({
++  id: z.number().int().positive(),
++  event: z.string(),
++  actor: USER.nullable(),
++  created_at: z.iso.datetime(),
++  assignee: USER.optional(),
++  requested_reviewer: USER.optional(),
++});
++const PR = z.looseObject({
++  number: z.number().int().positive(),
++  state: z.string(),
++  user: USER,
++  head: z.object({
++    sha: z.string(),
++    ref: z.string(),
++    repo: z.object({ full_name: z.string() }),
++  }),
++  base: z.object({
++    ref: z.string(),
++    repo: z.object({ full_name: z.string() }),
++  }),
++  requested_reviewers: z.array(USER),
++});
++const REVIEW = z.looseObject({
++  id: z.number().int().positive(),
++  user: USER,
++  state: z.string(),
++  commit_id: z.string(),
++  submitted_at: z.iso.datetime().nullable(),
++  body: z.string().nullable(),
++});
++type IssueRow = z.infer<typeof ISSUE>;
++type Event = z.infer<typeof EVENT>;
++type Review = z.infer<typeof REVIEW>;
++
++type Pull = z.infer<typeof PR>;
++
++export type { Event, IssueRow, Pull, Review };
++export { EVENT, ISSUE, PR, REVIEW };
+diff --git a/apps/issue-pipeline/src/assignment/signals.ts b/apps/issue-pipeline/src/assignment/signals.ts
+new file mode 100644
+index 0000000..5f6e8b8
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/signals.ts
+@@ -0,0 +1,240 @@
++import type { Config } from "../config.ts";
++import { OpsError } from "../ops-error.ts";
++import type { IssueState } from "../state.ts";
++import type { Hub } from "./github.ts";
++import { pages } from "./github.ts";
++import type { Worker } from "./schema.ts";
++import { DEFAULT_PAGE_BUDGET } from "./schema.ts";
++import type { Event, IssueRow, Pull, Review } from "./signal-schema.ts";
++import { EVENT, PR, REVIEW } from "./signal-schema.ts";
++
++function same(a: string, b: string): boolean {
++  return a.toLowerCase() === b.toLowerCase();
++}
++function workerOf(cfg: Config, id: string): Worker {
++  const matches =
++    cfg.assignment?.workers.filter((entry) => entry.id === id) ?? [];
++  const [worker] = matches;
++  if (matches.length !== 1 || worker === undefined) {
++    throw new OpsError(`missing or ambiguous worker mapping: ${id}`);
++  }
++  let account = cfg.devAccount;
++  if (worker.roles === "review") {
++    account = cfg.mergeAccount;
++  }
++  if (!same(worker.login, account)) {
++    throw new OpsError(
++      `worker ${id} must map to its configured ${worker.roles} account`,
++    );
++  }
++  return worker;
++}
++function orchestrator(hub: Hub, cfg: Config, event: Event): boolean {
++  const login = event.actor?.login;
++  return (
++    login !== undefined && (same(login, cfg.mergeAccount) || hub.allowed(login))
++  );
++}
++function eventsFor(hub: Hub, cfg: Config, number: number): Event[] {
++  return pages(
++    hub,
++    `issues/${number}/events`,
++    EVENT,
++    cfg.assignment?.pageBudget ?? DEFAULT_PAGE_BUDGET,
++  ).sort((a, b) => a.id - b.id);
++}
++function developmentGrant(
++  hub: Hub,
++  cfg: Config,
++  issue: IssueRow,
++  worker: Worker,
++): Event {
++  if (issue.state !== "open" || !hub.allowed(issue.user.login)) {
++    throw new OpsError(
++      "issue is closed or its author is not a trusted collaborator",
++    );
++  }
++  if (!issue.assignees.some((assignee) => same(assignee.login, worker.login))) {
++    throw new OpsError("assignment withdrawn");
++  }
++  const last = eventsFor(hub, cfg, issue.number).findLast(
++    (event) =>
++      ["assigned", "unassigned"].includes(event.event) &&
++      same(event.assignee?.login ?? "", worker.login),
++  );
++  if (
++    last === undefined ||
++    last.event !== "assigned" ||
++    !orchestrator(hub, cfg, last)
++  ) {
++    throw new OpsError(
++      "ignored assignment: missing or unauthorized actor provenance",
++    );
++  }
++  return last;
++}
++function reviewGrant(
++  hub: Hub,
++  cfg: Config,
++  issue: IssueRow,
++  binding: { state: IssueState; worker: Worker },
++): Event {
++  const { state, worker } = binding;
++  if (
++    (issue.state !== "open" && state.codeMerged === null) ||
++    !hub.allowed(issue.user.login)
++  ) {
++    throw new OpsError("issue closed or author untrusted");
++  }
++  const handoff = state.coordination?.handoff;
++  if (
++    handoff === undefined ||
++    handoff === null ||
++    state.pr === null ||
++    handoff.checkpoint.pr !== state.pr ||
++    handoff.checkpoint.branch !== state.branch
++  ) {
++    throw new OpsError("review request has no matching durable handoff");
++  }
++  const pr = PR.parse(hub.read(`pulls/${state.pr}`));
++  assertPullIdentity(cfg, state, pr);
++  const assignment = eventsFor(hub, cfg, issue.number).findLast(
++    (item) =>
++      item.event === "assigned" &&
++      same(item.assignee?.login ?? "", cfg.devAccount),
++  );
++  if (assignment?.id !== handoff.assignment && state.codeMerged === null) {
++    throw new OpsError("development reassignment cancels review ownership");
++  }
++  if (changeRequest(hub, cfg, state) !== undefined) {
++    throw new OpsError("bound changes requested: return to development");
++  }
++  const events = eventsFor(hub, cfg, state.pr);
++  const event = events.findLast(
++    (item) =>
++      ["review_requested", "review_request_removed"].includes(item.event) &&
++      same(item.requested_reviewer?.login ?? "", worker.login),
++  );
++  if (event === undefined) {
++    throw new OpsError("review request actor cannot be verified");
++  }
++  const fromDeveloper =
++    same(event.actor?.login ?? "", cfg.devAccount) &&
++    Date.parse(event.created_at) >= Date.parse(handoff.checkpoint.at);
++  if (!(orchestrator(hub, cfg, event) || fromDeveloper)) {
++    throw new OpsError("ignored review request: unauthorized actor");
++  }
++  assertRequestBinding({ hub, cfg, pr, state, handoff, worker }, event);
++  return event;
++}
++
++function assertPullIdentity(cfg: Config, state: IssueState, pr: Pull): void {
++  if (
++    pr.number !== state.pr ||
++    !same(pr.user.login, cfg.devAccount) ||
++    pr.head.repo.full_name !== cfg.repo ||
++    pr.base.repo.full_name !== cfg.repo ||
++    pr.head.ref !== state.branch ||
++    pr.base.ref !== cfg.baseBranch ||
++    !["open", "closed"].includes(pr.state)
++  ) {
++    throw new OpsError("review PR identity disagrees with saved handoff");
++  }
++  const accepted = state.coordination?.handoff?.phase === "accepted";
++  if (accepted && pr.head.sha !== state.headSha && state.codeMerged === null) {
++    throw new OpsError("external head change invalidates review ownership");
++  }
++}
++interface RequestBinding {
++  hub: Hub;
++  cfg: Config;
++  pr: Pull;
++  state: IssueState;
++  worker: Worker;
++  handoff: NonNullable<NonNullable<IssueState["coordination"]>["handoff"]>;
++}
++function assertRequestBinding(binding: RequestBinding, event: Event): void {
++  const { hub, cfg, pr, handoff, worker } = binding;
++  if (Date.parse(event.created_at) < Date.parse(handoff.checkpoint.at)) {
++    throw new OpsError("request predates saved handoff");
++  }
++  if (handoff.phase === "accepted") {
++    if (
++      handoff.request === null ||
++      (event.event === "review_requested" && event.id !== handoff.request)
++    ) {
++      throw new OpsError("accepted handoff was replaced");
++    }
++    if (event.event === "review_request_removed") {
++      const consumed = reviewsFor(hub, cfg, pr.number).some(
++        (review) =>
++          !handoff.reviewsBefore.includes(review.id) &&
++          same(event.actor?.login ?? "", worker.login) &&
++          same(review.user.login, cfg.mergeAccount) &&
++          review.commit_id === pr.head.sha &&
++          review.submitted_at !== null &&
++          Date.parse(review.submitted_at) >= Date.parse(handoff.checkpoint.at),
++      );
++      if (!consumed) {
++        throw new OpsError("accepted review handoff cancelled");
++      }
++    }
++  } else if (
++    event.event !== "review_requested" ||
++    (handoff.request === null && handoff.eventsBefore.includes(event.id)) ||
++    (handoff.request !== null && handoff.request !== event.id) ||
++    !pr.requested_reviewers.some((user) => same(user.login, worker.login)) ||
++    pr.head.sha !== handoff.checkpoint.code
++  ) {
++    throw new OpsError("pending request and durable handoff disagree");
++  }
++}
++
++function reviewsFor(hub: Hub, cfg: Config, pr: number): Review[] {
++  return pages(
++    hub,
++    `pulls/${pr}/reviews`,
++    REVIEW,
++    cfg.assignment?.pageBudget ?? DEFAULT_PAGE_BUDGET,
++  );
++}
++function changeRequest(
++  hub: Hub,
++  cfg: Config,
++  state: IssueState,
++): Review | undefined {
++  const handoff = state.coordination?.handoff;
++  if (
++    state.pr === null ||
++    handoff === undefined ||
++    handoff === null ||
++    state.codeMerged !== null ||
++    state.merged !== null
++  ) {
++    return undefined;
++  }
++  const pr = PR.parse(hub.read(`pulls/${state.pr}`));
++  return reviewsFor(hub, cfg, state.pr)
++    .filter(
++      (review) =>
++        same(review.user.login, cfg.mergeAccount) &&
++        !handoff.reviewsBefore.includes(review.id) &&
++        review.state === "CHANGES_REQUESTED" &&
++        review.commit_id === pr.head.sha &&
++        review.commit_id === handoff.checkpoint.code &&
++        review.id !== handoff.review &&
++        review.submitted_at !== null &&
++        Date.parse(review.submitted_at) >= Date.parse(handoff.checkpoint.at),
++    )
++    .at(-1);
++}
++
++export {
++  assertPullIdentity,
++  changeRequest,
++  developmentGrant,
++  eventsFor,
++  reviewGrant,
++  same,
++  workerOf,
++};
+diff --git a/apps/issue-pipeline/src/assignment/worker-process.ts b/apps/issue-pipeline/src/assignment/worker-process.ts
+new file mode 100644
+index 0000000..7d5ca27
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/worker-process.ts
+@@ -0,0 +1,245 @@
++import type { ChildProcess } from "node:child_process";
++import { spawn } from "node:child_process";
++import { randomUUID } from "node:crypto";
++import fs from "node:fs";
++import path from "node:path";
++import process from "node:process";
++import { z } from "zod";
++import { childEnvironment } from "../child-env.ts";
++import { closeClaim, liveClaims, touchClaim } from "../claims.ts";
++import { listComments } from "../comments.ts";
++import { paths } from "../config.ts";
++import { readStatus } from "../job/status.ts";
++import { OpsError } from "../ops-error.ts";
++import { ROOT } from "../pipeline-root.ts";
++import { endGroup } from "../process-group.ts";
++import { readClaimState } from "../saved-state.ts";
++import { assertExecution, executionLane } from "./authority.ts";
++import { verifyCheckpoint } from "./checkpoint.ts";
++import type { RuntimeRepository } from "./runtime.ts";
++import type { Execution } from "./schema.ts";
++import type { JobResult } from "./worker-state.ts";
++
++const RESULT = z.object({
++  issue: z.number(),
++  stage: z.string(),
++  end: z.enum(["next", "wait", "ask", "stop", "deferred", "done", "unclaimed"]),
++  reason: z.string().optional(),
++});
++const KILL_GRACE_MS = 30_000;
++const OUTPUT_LENGTH = 10_000;
++const MS_PER_SECOND = 1000;
++const DEFAULT_HEARTBEAT_SECONDS = 60;
++interface StageChild {
++  child: ChildProcess;
++  exited: Promise<number | null>;
++  output: () => string;
++  id: string;
++  execution: Execution;
++  repository: RuntimeRepository;
++}
++function startChild(
++  repository: RuntimeRepository,
++  execution: Execution,
++  branch: string,
++): StageChild {
++  const { cfg, config, brainPath } = repository;
++  const state = readClaimState(
++    cfg,
++    execution.issue,
++    listComments(cfg, execution.issue),
++  );
++  if (state !== null) {
++    verifyCheckpoint(cfg, state);
++  }
++  const id = randomUUID();
++  fs.mkdirSync(paths.runDir(cfg, execution.issue), { recursive: true });
++  const log = fs.openSync(paths.jobLog(cfg, execution.issue), "a");
++  const argv = [
++    path.join(ROOT, "job.mjs"),
++    "--config",
++    config,
++    "--brain-path",
++    brainPath,
++    "--issue",
++    String(execution.issue),
++    "--stage",
++    execution.stage,
++    "--branch",
++    branch,
++    "--lane",
++    executionLane(execution.token),
++    "--job-id",
++    id,
++    "--execution",
++    JSON.stringify(execution),
++  ];
++  let child: ChildProcess;
++  try {
++    child = spawn(process.execPath, argv, {
++      detached: true,
++      env: childEnvironment(process.env),
++      stdio: ["ignore", "pipe", log],
++    });
++  } finally {
++    fs.closeSync(log);
++  }
++  let output = "";
++  child.stdout?.on("data", (chunk: Buffer): void => {
++    output = (output + chunk.toString()).slice(-OUTPUT_LENGTH);
++  });
++  const exited = new Promise<number | null>((resolve, reject): void => {
++    child.once("error", reject);
++    child.once("exit", resolve);
++  });
++  return {
++    child,
++    exited,
++    output: (): string => output,
++    id,
++    execution,
++    repository,
++  };
++}
++function resultOf(stage: StageChild): JobResult {
++  const {
++    execution,
++    repository: { cfg },
++    id,
++  } = stage;
++  const lines = stage.output().trim().split("\n");
++  const result = RESULT.parse(JSON.parse(lines.at(-1) ?? "null"));
++  const status = readStatus(paths.runDir(cfg, execution.issue));
++  if (
++    result.issue !== execution.issue ||
++    result.stage !== execution.stage ||
++    status?.id !== id ||
++    status.outcome === null
++  ) {
++    throw new OpsError(
++      "stage outcome or recovery evidence cannot be confirmed",
++    );
++  }
++  const localRecovery =
++    (status.droppedPatches?.length ?? 0) > 0 ||
++    (status.lostChanges?.length ?? 0) > 0 ||
++    fs.existsSync(paths.jobCheckout(cfg, execution.issue, execution.stage));
++  for (const claim of liveClaims(cfg, listComments(cfg, execution.issue))) {
++    if (claim.lane === executionLane(execution.token)) {
++      closeClaim(
++        cfg,
++        claim,
++        "Stage child ended; execution ref remains until supervisor checkpoint confirmation.",
++      );
++    }
++  }
++  return { end: result.end, reason: result.reason ?? null, localRecovery };
++}
++interface Monitor {
++  check: () => Promise<void>;
++  close: () => Promise<void>;
++}
++function monitor(stage: StageChild, signal: AbortSignal): Monitor {
++  const {
++    child,
++    exited,
++    execution,
++    repository: { cfg },
++  } = stage;
++  let refusing: Error | null = null;
++  let ending: Promise<unknown> | null = null;
++  function stop(error: Error): void {
++    refusing = error;
++    if (ending === null && child.pid !== undefined) {
++      ending = endGroup(child.pid, exited, KILL_GRACE_MS);
++    }
++  }
++  function abort(): void {
++    stop(
++      new Error(
++        "worker stopped; preserve execution and reconcile retained work",
++      ),
++    );
++  }
++  signal.addEventListener("abort", abort, { once: true });
++  if (signal.aborted) {
++    abort();
++  }
++  const heartbeat = setInterval(
++    (): void => {
++      try {
++        assertExecution({ ...cfg, execution }, execution.issue, true);
++        touchClaim(cfg, execution.issue, {
++          lane: executionLane(execution.token),
++          sweepId: stage.id,
++        });
++      } catch (error: unknown) {
++        stop(
++          new Error("work grant or heartbeat cannot be verified", {
++            cause: error,
++          }),
++        );
++      }
++    },
++    (cfg.assignment?.heartbeatSeconds ?? DEFAULT_HEARTBEAT_SECONDS) *
++      MS_PER_SECOND,
++  );
++  return {
++    check: async (): Promise<void> => {
++      if (ending !== null) {
++        await ending;
++      }
++      if (refusing !== null) {
++        throw refusing;
++      }
++    },
++    close: async (): Promise<void> => {
++      clearInterval(heartbeat);
++      signal.removeEventListener("abort", abort);
++      if (
++        child.exitCode === null &&
++        child.signalCode === null &&
++        child.pid !== undefined
++      ) {
++        await endGroup(child.pid, exited, KILL_GRACE_MS);
++      }
++    },
++  };
++}
++async function awaitChild(
++  stage: StageChild,
++  signal: AbortSignal,
++): Promise<JobResult> {
++  const watch = monitor(stage, signal);
++  try {
++    const code = await stage.exited;
++    await watch.check();
++    if (code !== 0) {
++      throw new OpsError(
++        `stage child exited ${code}; inspect retained recovery evidence`,
++      );
++    }
++    return resultOf(stage);
++  } finally {
++    await watch.close();
++  }
++}
++
++async function runJob(
++  repository: RuntimeRepository,
++  execution: Execution,
++  branch: string,
++  signal: AbortSignal,
++): Promise<JobResult> {
++  const scoped = {
++    ...execution,
++    scope: {
++      manifest: repository.manifest,
++      config: repository.config,
++      brainPath: repository.brainPath,
++    },
++  };
++  return await awaitChild(startChild(repository, scoped, branch), signal);
++}
++
++export { runJob };
+diff --git a/apps/issue-pipeline/src/assignment/worker-state.ts b/apps/issue-pipeline/src/assignment/worker-state.ts
+new file mode 100644
+index 0000000..9d233b6
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/worker-state.ts
+@@ -0,0 +1,64 @@
++import type { IssueComment } from "../comments.ts";
++import type { Config } from "../config.ts";
++import { trustedInputsHash } from "../issue-context.ts";
++import { OpsError } from "../ops-error.ts";
++import type { IssueState } from "../state.ts";
++import type { Hub } from "./github.ts";
++import type { Coordination, Execution } from "./schema.ts";
++import type { IssueRow } from "./signal-schema.ts";
++
++interface JobResult {
++  end: "next" | "wait" | "ask" | "stop" | "deferred" | "done" | "unclaimed";
++  reason: string | null;
++  localRecovery: boolean;
++}
++interface WorkerDeps {
++  scope: () => void;
++  hub: Hub;
++  now: () => Date;
++  comments: (issue: number) => IssueComment[];
++  state: (
++    issue: number,
++    comments?: readonly IssueComment[],
++  ) => IssueState | null;
++  save: (issue: number, state: IssueState) => void;
++  inputs: (issue: IssueRow, comments: readonly IssueComment[]) => string;
++  notice: (issue: number, reason: string) => void;
++  job: (execution: Execution, branch: string) => Promise<JobResult>;
++}
++interface SweepResult {
++  discovered: number;
++  executed: number;
++  held: number;
++}
++
++function productionInputs(
++  cfg: Config,
++  issue: IssueRow,
++  comments: readonly IssueComment[],
++): string {
++  return trustedInputsHash(cfg, issue, comments);
++}
++function requiredState(deps: WorkerDeps, number: number): IssueState {
++  const state = deps.state(number);
++  if (state === null) {
++    throw new OpsError("missing signed state after stage execution");
++  }
++  return state;
++}
++function saveCoordination(
++  deps: WorkerDeps,
++  state: IssueState,
++  coordination: Coordination,
++): IssueState {
++  const saved = { ...state, coordination };
++  deps.save(state.number, saved);
++  const confirmed = requiredState(deps, state.number);
++  if (JSON.stringify(confirmed.coordination) !== JSON.stringify(coordination)) {
++    throw new OpsError("coordination save unconfirmed");
++  }
++  return confirmed;
++}
++
++export type { JobResult, SweepResult, WorkerDeps };
++export { productionInputs, requiredState, saveCoordination };
+diff --git a/apps/issue-pipeline/src/assignment/worker.ts b/apps/issue-pipeline/src/assignment/worker.ts
+new file mode 100644
+index 0000000..cee0e38
+--- /dev/null
++++ b/apps/issue-pipeline/src/assignment/worker.ts
+@@ -0,0 +1,124 @@
++import type { Config } from "../config.ts";
++import { isTransientOpError } from "../job/transient.ts";
++import { OpsError } from "../ops-error.ts";
++import { execute, observe } from "./executor.ts";
++import { pages } from "./github.ts";
++import { RetryHold } from "./retry.ts";
++import type { Worker } from "./schema.ts";
++import type { IssueRow } from "./signal-schema.ts";
++import { ISSUE, PR } from "./signal-schema.ts";
++import { workerOf } from "./signals.ts";
++import type { SweepResult, WorkerDeps } from "./worker-state.ts";
++
++interface Discovery {
++  cfg: Config;
++  deps: WorkerDeps;
++  worker: Worker;
++  requests: Set<number>;
++  seen: Set<number>;
++}
++function candidate(discovery: Discovery, issue: IssueRow): boolean {
++  const { worker, deps, requests, seen } = discovery;
++  if (worker.roles === "development") {
++    return true;
++  }
++  const state = deps.state(issue.number, deps.comments(issue.number));
++  if (state?.pr !== null && state?.pr !== undefined) {
++    seen.add(state.pr);
++    if (requests.has(state.pr) && state.coordination?.handoff === null) {
++      throw new OpsError("pending PR request has no signed handoff");
++    }
++  }
++  return (
++    state?.coordination?.handoff !== null &&
++    state?.coordination?.handoff !== undefined &&
++    !(state.stage === "done" && issue.state === "closed")
++  );
++}
++async function reconsider(
++  work: Discovery,
++  issue: IssueRow,
++  result: SweepResult,
++): Promise<void> {
++  const { cfg, deps, worker } = work;
++  try {
++    if (
++      candidate(work, issue) &&
++      (await execute(observe(cfg, deps, worker, issue.number)))
++    ) {
++      result.executed += 1;
++    }
++  } catch (error: unknown) {
++    if (error instanceof RetryHold) {
++      throw error;
++    }
++    if (error instanceof Error && isTransientOpError(error.message)) {
++      throw new RetryHold(error.message, {
++        until: deps.now().getTime(),
++        cause: error,
++      });
++    }
++    result.held += 1;
++    let reason = "unreadable work authority";
++    if (error instanceof Error) {
++      reason = error.message;
++    }
++    deps.notice(issue.number, reason);
++  }
++}
++// Complete listings reconstruct the queue; local process records never
++// select work. A budget exhaustion is a failed sweep, not an empty queue.
++async function sweep(
++  cfg: Config,
++  workerId: string,
++  deps: WorkerDeps,
++): Promise<SweepResult> {
++  if (cfg.assignment === undefined) {
++    throw new OpsError("assignment operation is not enabled");
++  }
++  deps.scope();
++  const worker = workerOf(cfg, workerId);
++  let query = `issues?state=open&assignee=${encodeURIComponent(worker.login)}`;
++  if (worker.roles === "review") {
++    query = "issues?state=all";
++  }
++  const issues = pages(
++    deps.hub,
++    query,
++    ISSUE,
++    cfg.assignment.pageBudget,
++  ).filter((issue) => issue.pull_request === undefined);
++  const requests = new Set<number>();
++  if (worker.roles === "review") {
++    for (const pr of pages(
++      deps.hub,
++      "pulls?state=open",
++      PR,
++      cfg.assignment.pageBudget,
++    )) {
++      if (
++        pr.requested_reviewers.some(
++          (user) => user.login.toLowerCase() === worker.login.toLowerCase(),
++        )
++      ) {
++        requests.add(pr.number);
++      }
++    }
++  }
++  const discovery = { cfg, deps, worker, requests, seen: new Set<number>() };
++  const result = { discovered: issues.length, executed: 0, held: 0 };
++  for await (const issue of issues) {
++    await reconsider(discovery, issue, result);
++  }
++  for (const pr of requests) {
++    if (!discovery.seen.has(pr)) {
++      deps.notice(
++        pr,
++        "ignored review request: no recorded issue PR and signed handoff",
++      );
++    }
++  }
++  return result;
++}
++
++export { sweep };
+diff --git a/apps/issue-pipeline/src/checkouts.ts b/apps/issue-pipeline/src/checkouts.ts
+index a497b10..bf77928 100644
+--- a/apps/issue-pipeline/src/checkouts.ts
++++ b/apps/issue-pipeline/src/checkouts.ts
+@@ -1,8 +1,9 @@
+-// The repo's clone and each issue's worktree and branch on this machine. One
++// The repo clone and each issue worktree and branch on this machine.
+ // Agents commit in worktrees; only deterministic ops push.
+ import fs from "node:fs";
+ import path from "node:path";
+ import { z } from "zod";
++import { confirmedPush } from "./assignment/checkpoint.ts";
+ import { configureClone, updateSubmodules } from "./clone-setup.ts";
+ import type { Config } from "./config.ts";
+ import { paths, wikiCfg } from "./config.ts";
+@@ -206,9 +207,8 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
+   return { codeChanged: result.code === 1, wikiAhead: wikiAhead(cfg, n) };
+ }
+ 
+-// Pushes the issue's checkout's HEAD to its branch for `op`, recording the
+-// push first, with --force-with-lease against the head it last pushed, and
+-// returns the head pushed. A refused push throws.
++// Pushes the issue head with a lease. Assignment mode confirms the exact
++// remote head before saving a recoverable checkpoint; refused pushes throw.
+ function pushHead(cfg: Config, n: number, op: string): string {
+   const wt = paths.worktree(cfg, n);
+   const headSha = head(wt);
+@@ -217,24 +217,22 @@ function pushHead(cfg: Config, n: number, op: string): string {
+     throw new OpsError(`#${n}'s code merged; refusing code push`);
+   }
+   recordPush(cfg, n, headSha, op);
+-  git(cfg, "dev", [
+-    "-C",
+-    wt,
+-    "push",
+-    "--force-with-lease",
+-    "-u",
+-    "origin",
+-    target,
+-  ]);
++  confirmedPush(cfg, n, "code", (): void => {
++    git(cfg, "dev", [
++      "-C",
++      wt,
++      "push",
++      "--force-with-lease",
++      "-u",
++      "origin",
++      target,
++    ]);
++  });
+   return headSha;
+ }
+ 
+-// Pushes the issue's branch for `op`, recording the push first, and its wiki
+-// checkout's own commits to the wiki's branch of the same name, and returns
+-// the code head and what the work changes. allowEmpty lets start-pr push the
+-// branch's empty first commit. Otherwise a branch that changes no files is
+-// pushed only when the wiki has commits, and nothing is pushed when neither
+-// changed.
++// Pushes code and private wiki work, returning their changes. allowEmpty
++// permits the initial draft commit; otherwise unchanged work is not pushed.
+ function push(
+   cfg: Config,
+   number: number,
+diff --git a/apps/issue-pipeline/src/config-schema.ts b/apps/issue-pipeline/src/config-schema.ts
+index 899fc0f..978a665 100644
+--- a/apps/issue-pipeline/src/config-schema.ts
++++ b/apps/issue-pipeline/src/config-schema.ts
+@@ -2,6 +2,7 @@
+ // ops modules check (src/config.ts loads it).
+ 
+ import { z } from "zod";
++import { ASSIGNMENT } from "./assignment/schema.ts";
+ import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
+ import { OpsError } from "./ops-error.ts";
+ 
+@@ -65,6 +66,7 @@ const MODELS = z.object({
+ });
+ 
+ const CONFIG_SCHEMA = z.looseObject({
++  assignment: ASSIGNMENT.optional(),
+   devAccount: z.string(),
+   mergeAccount: z.string(),
+   credentialsEnvFile: z.string(),
+diff --git a/apps/issue-pipeline/src/config.ts b/apps/issue-pipeline/src/config.ts
+index f1a531e..414b7f6 100644
+--- a/apps/issue-pipeline/src/config.ts
++++ b/apps/issue-pipeline/src/config.ts
+@@ -6,6 +6,7 @@ import fs from "node:fs";
+ import path from "node:path";
+ import { parseEnv } from "node:util";
+ import { z } from "zod";
++import type { Execution } from "./assignment/schema.ts";
+ import { hideCredentialVariable } from "./child-env.ts";
+ import { withoutRemovedKeys } from "./config-legacy.ts";
+ import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
+@@ -31,7 +32,9 @@ interface JobCheckout {
+ 
+ type Config = z.infer<typeof CONFIG_SCHEMA> & {
+   slug: string;
++  configFile?: string;
+   checkout?: JobCheckout;
++  execution?: Execution | undefined;
+ };
+ 
+ interface WikiSettings {
+@@ -61,18 +64,41 @@ function loadConfig(configPath: string | undefined): Config {
+       `config ${String(configPath)}: ${z.prettifyError(parsed.error)}`,
+     );
+   }
+-  const { checkout: _fromFile, ...data } = parsed.data;
++  const {
++    checkout: _fromFile,
++    execution: _executionFromFile,
++    configFile: _configFromFile,
++    ...data
++  } = parsed.data;
++  for (const worker of data.assignment?.workers ?? []) {
++    let account = data.devAccount;
++    if (worker.roles === "review") {
++      account = data.mergeAccount;
++    }
++    if (worker.login.toLowerCase() !== account.toLowerCase()) {
++      throw new OpsError(
++        `worker ${worker.id} does not map to its configured ${worker.roles} account`,
++      );
++    }
++  }
+   for (const role of Object.values(data.jobRoles ?? {})) {
+     if (role?.tokenEnv !== undefined) {
+       hideCredentialVariable(role.tokenEnv);
+     }
+   }
+-  return { ...data, slug: data.repo.replace("/", "__") };
++  return { ...data, configFile: file, slug: data.repo.replace("/", "__") };
+ }
+ 
+ // Public and model-facing config never exposes the operator credential path.
+-function publicConfig(cfg: Config): Omit<Config, "credentialsEnvFile"> {
+-  const { credentialsEnvFile: _hidden, ...rest } = cfg;
++function publicConfig(
++  cfg: Config,
++): Omit<Config, "credentialsEnvFile" | "execution" | "configFile"> {
++  const {
++    credentialsEnvFile: _hidden,
++    execution: _execution,
++    configFile: _configFile,
++    ...rest
++  } = cfg;
+   return rest;
+ }
+ 
+@@ -114,7 +140,13 @@ const paths = {
+     if (cfg.checkout?.issue === n) {
+       ({ branch } = cfg.checkout);
+     }
+-    if (UNSAFE_BRANCH.test(branch)) {
++    if (
++      UNSAFE_BRANCH.test(branch) ||
++      branch.startsWith("pipeline-execution/") ||
++      branch.startsWith("pipeline-integration/") ||
++      branch.startsWith("pipeline-retry/") ||
++      branch.startsWith("pipeline-discovery/")
++    ) {
+       throw new OpsError(
+         `#${n}'s branch ${JSON.stringify(branch)} is not a literal branch name`,
+       );
+diff --git a/apps/issue-pipeline/src/github.ts b/apps/issue-pipeline/src/github.ts
+index 9f83ef0..fcc52b1 100644
+--- a/apps/issue-pipeline/src/github.ts
++++ b/apps/issue-pipeline/src/github.ts
+@@ -136,7 +136,7 @@ function gh(
+   // a whole sweep.
+   let attempt = 1;
+   let result = credentialedRun("gh", args, { ...runOptions, allowFail: true });
+-  while (retriable(result, attempt)) {
++  while (cfg.assignment === undefined && retriable(result, attempt)) {
+     sleepMs(GH_RETRY_STEP_MS * attempt);
+     attempt += 1;
+     result = credentialedRun("gh", args, { ...runOptions, allowFail: true });
+diff --git a/apps/issue-pipeline/src/job.ts b/apps/issue-pipeline/src/job.ts
+index b9ca076..ef0cb25 100644
+--- a/apps/issue-pipeline/src/job.ts
++++ b/apps/issue-pipeline/src/job.ts
+@@ -60,6 +60,7 @@
+ import { randomUUID } from "node:crypto";
+ import os from "node:os";
+ import process from "node:process";
++import { assertExecution } from "./assignment/authority.ts";
+ import type { Config } from "./config.ts";
+ import { loadConfig, paths } from "./config.ts";
+ import { authorizedIssue } from "./issue-context.ts";
+@@ -92,16 +93,33 @@ const SWEEP_ID_RADIX = 36;
+ // A process a signal ended exits with 128 + the signal's number.
+ const SIGNAL_EXIT_BASE = 128;
+ 
++function requiredRole(
++  stage: RunArgs["stage"],
++): NonNullable<ReturnType<typeof roleOf>> {
++  const role = roleOf(stage);
++  if (role === undefined) {
++    throw new Error(`no role for stage ${stage}`);
++  }
++  return role;
++}
++
++function executionConfig(config: Config, args: RunArgs): Config {
++  const cfg = { ...config, execution: args.execution };
++  assertExecution(cfg, args.issue, true);
++  if (args.execution !== undefined && args.execution.stage !== args.stage) {
++    throw new Error("execution stage mismatch");
++  }
++  return cfg;
++}
++
+ async function runStage(
+   args: RunArgs,
+-  cfg: Config,
++  config: Config,
+   brain: Brain,
+ ): Promise<RunEnd> {
++  const cfg = executionConfig(config, args);
+   const { issue, stage, branch, mergeQueue = null } = args;
+-  const role = roleOf(stage);
+-  if (role === undefined) {
+-    throw new Error(`no role for stage ${stage}`);
+-  }
++  const role = requiredRole(stage);
+   const key = jobKeyOf(stage, new Date());
+   const wiki = STAGE_WIKI_ACCESS[stage];
+   const dirs = openJobCheckout(cfg, issue, { stage, branch });
+@@ -122,6 +140,7 @@ async function runStage(
+   const hooks = hooksOf(cfg, args, { status, control }, where);
+   const frame = {
+     config: args.config,
++    execution: args.execution,
+     sweepId,
+     lane: args.lane ?? sweepId,
+     checkout: { issue, dir: repo, branch },
+diff --git a/apps/issue-pipeline/src/job/args.ts b/apps/issue-pipeline/src/job/args.ts
+index 0e13873..fd6327a 100644
+--- a/apps/issue-pipeline/src/job/args.ts
++++ b/apps/issue-pipeline/src/job/args.ts
+@@ -4,6 +4,7 @@
+ 
+ import { parseArgs } from "node:util";
+ import { z } from "zod";
++import { EXECUTION } from "../assignment/schema.ts";
+ import { STAGES } from "../stages.ts";
+ 
+ const STAGE_LIST = STAGES.join(", ");
+@@ -42,6 +43,11 @@ const STAGE = z.enum(STAGES, { error: NO_STAGE });
+ const JOB_ARGS = z.discriminatedUnion("kind", [
+   z.object({
+     kind: z.literal("run"),
++    execution: z
++      .string()
++      .transform((value: string): unknown => JSON.parse(value))
++      .pipe(EXECUTION)
++      .optional(),
+     config: CONFIG,
+     issue: ISSUE,
+     stage: STAGE,
+@@ -83,6 +89,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
+   const { values } = parseArgs({
+     args: [...argv],
+     options: {
++      execution: { type: "string" },
+       config: { type: "string" },
+       issue: { type: "string" },
+       stage: { type: "string" },
+diff --git a/apps/issue-pipeline/src/job/checkout-close.ts b/apps/issue-pipeline/src/job/checkout-close.ts
+index 4e2491c..03f8c6c 100644
+--- a/apps/issue-pipeline/src/job/checkout-close.ts
++++ b/apps/issue-pipeline/src/job/checkout-close.ts
+@@ -3,12 +3,14 @@
+ import fs from "node:fs";
+ import path from "node:path";
+ import process from "node:process";
++import { emptyCoordination } from "../assignment/schema.ts";
+ import type { Config } from "../config.ts";
+ import { paths, wikiCfg, withCheckout } from "../config.ts";
+ import { git } from "../github.ts";
+ import { withWikiLock } from "../locks.ts";
+ import { OpsError } from "../ops-error.ts";
+ import { run } from "../process.ts";
++import { readWriteState, writeState } from "../saved-state.ts";
+ import type { JobDirs } from "./checkout.ts";
+ import { saveCodeRecovery } from "./code-recovery.ts";
+ import { saveDroppedPatch } from "./dropped-patch.ts";
+@@ -36,6 +38,9 @@ function unpushed(cfg: Config, dir: string): number {
+ // True when `repo` is a clone with commits its remote lacks; a git step that
+ // fails is reported and counts as none.
+ function holdsUnpushed(cfg: Config, repo: string): boolean {
++  if (cfg.assignment !== undefined) {
++    return hasGit(repo) && unpushed(cfg, repo) > 0;
++  }
+   return reported(
+     (): boolean => hasGit(repo) && unpushed(cfg, repo) > 0,
+     false,
+@@ -85,6 +90,66 @@ function reported<T>(step: () => T, fallback: T): T {
+   }
+ }
+ 
++function preservePatches(
++  cfg: Config,
++  issue: number,
++  job: JobDirs & { key: string },
++): DroppedChanges {
++  const { root } = job;
++  const lost: string[] = [];
++  const patches: string[] = [];
++  for (const name of CHECKOUTS) {
++    const dir = job[name];
++    if (dir !== null && hasGit(dir)) {
++      const file = paths.droppedPatch(cfg, issue, job.key, name);
++      const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
++      const prefix = `${path.relative(root, dir)}/`;
++      const one = saveDroppedPatch(cfg, dir, { file, title });
++      lost.push(
++        ...one.lost.map((fileName: string): string => `${prefix}${fileName}`),
++      );
++      patches.push(
++        ...one.files.map((saved: string): string =>
++          path.relative(paths.runDir(cfg, issue), saved),
++        ),
++      );
++    }
++  }
++  return { lost, patches };
++}
++
++function recordRecovery(
++  cfg: Config,
++  issue: number,
++  job: JobDirs,
++  dropped: DroppedChanges,
++): void {
++  const { repo, docs } = job;
++  if (
++    cfg.assignment !== undefined &&
++    (dropped.patches.length > 0 ||
++      holdsUnpushed(cfg, repo) ||
++      (docs !== null && holdsUnpushed(cfg, docs)))
++  ) {
++    const saved = readWriteState(cfg, issue);
++    writeState(cfg, issue, {
++      ...saved,
++      coordination: {
++        ...(saved.coordination ?? emptyCoordination()),
++        status: "stalled",
++        localRecovery: true,
++        reason:
++          "local-only patches/bundle/wiki evidence required; remote checkpoint does not contain all work",
++      },
++    });
++    if (readWriteState(cfg, issue).coordination?.localRecovery !== true) {
++      throw new Error(
++        "local recovery requirement could not be confirmed; retaining checkout",
++      );
++    }
++  }
++}
++
+ // Closes job folder `job.root` of issue `issue`: saves its checkouts'
+ // uncommitted changes as patches named by job key `job.key` and drops them,
+ // bundles local code before changing either checkout, then calls `push` when
+@@ -104,30 +169,7 @@ async function closeJobCheckout(
+   const scoped = withCheckout(cfg, { issue, dir: repo, branch: job.branch });
+   let removable = false;
+   try {
+-    const dropped = ((): DroppedChanges => {
+-      const lost: string[] = [];
+-      const patches: string[] = [];
+-      for (const name of CHECKOUTS) {
+-        const dir = job[name];
+-        if (dir !== null && hasGit(dir)) {
+-          const file = paths.droppedPatch(cfg, issue, job.key, name);
+-          const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
+-          const prefix = `${path.relative(root, dir)}/`;
+-          const one = saveDroppedPatch(cfg, dir, { file, title });
+-          lost.push(
+-            ...one.lost.map(
+-              (fileName: string): string => `${prefix}${fileName}`,
+-            ),
+-          );
+-          patches.push(
+-            ...one.files.map((saved: string): string =>
+-              path.relative(paths.runDir(cfg, issue), saved),
+-            ),
+-          );
+-        }
+-      }
+-      return { lost, patches };
+-    })();
++    const dropped = preservePatches(cfg, issue, job);
+     // Prepare every recovery artifact before changing either checkout.
+     saveCodeRecovery(cfg, issue, repo, job.key);
+     if (docs !== null) {
+@@ -150,6 +192,7 @@ async function closeJobCheckout(
+     if (docs !== null) {
+       saveWiki(scoped, issue, docs);
+     }
++    recordRecovery(cfg, issue, job, dropped);
+     removable = true;
+     return dropped;
+   } finally {
+diff --git a/apps/issue-pipeline/src/job/ops-request.ts b/apps/issue-pipeline/src/job/ops-request.ts
+index 07500c4..161611b 100644
+--- a/apps/issue-pipeline/src/job/ops-request.ts
++++ b/apps/issue-pipeline/src/job/ops-request.ts
+@@ -5,6 +5,7 @@
+ // knows the request's framing and the reply's shape on stdout.
+ 
+ import { z } from "zod";
++import type { Execution } from "../assignment/schema.ts";
+ import type { JobCheckout } from "../config.ts";
+ import type { LaunchHooks } from "./launch.ts";
+ import { runOpsLaunch } from "./launch.ts";
+@@ -23,6 +24,7 @@ const REPLY = z.looseObject({ ok: z.boolean(), error: z.string().optional() });
+ // job's own checkout, with the issue branch its caller assigned.
+ interface OpsFrame {
+   config: string;
++  execution?: Execution | undefined;
+   sweepId: string;
+   lane: string;
+   checkout: JobCheckout;
+diff --git a/apps/issue-pipeline/src/ops.ts b/apps/issue-pipeline/src/ops.ts
+index f05cb1d..9403784 100644
+--- a/apps/issue-pipeline/src/ops.ts
++++ b/apps/issue-pipeline/src/ops.ts
+@@ -20,6 +20,9 @@ import fs from "node:fs";
+ import process from "node:process";
+ import { text } from "node:stream/consumers";
+ import { z } from "zod";
++import { assertExecution } from "./assignment/authority.ts";
++import { beginMutation, finishMutation } from "./assignment/checkpoint.ts";
++import { EXECUTION } from "./assignment/schema.ts";
+ import type { Config } from "./config.ts";
+ import { loadConfig, withCheckout } from "./config.ts";
+ import { ask } from "./ops/ask.ts";
+@@ -100,6 +103,8 @@ const MAX_ERROR_LENGTH = 4000;
+ // path, the signed comments the workflow queued for the issue and, from a
+ // stage job, its checkout.
+ const ENVELOPE = z.looseObject({
++  execution: EXECUTION.optional(),
++  number: z.number().int().positive().optional(),
+   comments: z.array(QUEUED_COMMENT).nullish(),
+   config: z.string().nullish(),
+   op: z.string(),
+@@ -131,7 +136,7 @@ async function readRequest(): Promise<unknown> {
+ 
+ // Runs a parsed request: its queued comments, then its op.
+ function runRequest(request: unknown): OpsReply {
+-  const { checkout, comments, config, op } = parseRequest(
++  const { checkout, comments, config, op, execution, number } = parseRequest(
+     ENVELOPE,
+     "ops",
+     request,
+@@ -140,13 +145,31 @@ function runRequest(request: unknown): OpsReply {
+   if (handler === undefined) {
+     throw new OpsError(`unknown op "${op}"`);
+   }
+-  const cfg = withCheckout(loadConfig(config ?? undefined), checkout);
++  const cfg = {
++    ...withCheckout(loadConfig(config ?? undefined), checkout),
++    execution,
++  };
++  if (cfg.assignment !== undefined || execution !== undefined) {
++    if (number === undefined) {
++      throw new OpsError("assignment ops require an issue");
++    }
++    assertExecution(cfg, number, op === "claim");
++  }
+   fs.mkdirSync(ROOT, { recursive: true });
+   // Post the signed comments the workflow queued for this issue before running the op,
+   // so they land in order and aren't lost if the op fails.
+   const commentIds = postComments(cfg, comments ?? []);
+   const posted = commentIds.length;
+-  return { ok: true, op, posted, commentIds, ...handler(cfg, request) };
++  const tracked =
++    ["publish", "finish-wiki"].includes(op) && number !== undefined;
++  if (tracked && number !== undefined) {
++    beginMutation(cfg, number, op);
++  }
++  const result = handler(cfg, request);
++  if (tracked && number !== undefined) {
++    finishMutation(cfg, number, op);
++  }
++  return { ok: true, op, posted, commentIds, ...result };
+ }
+ 
+ function messageOf(error: unknown): string {
+diff --git a/apps/issue-pipeline/src/ops/branch-merge.ts b/apps/issue-pipeline/src/ops/branch-merge.ts
+index 7e58470..e5db343 100644
+--- a/apps/issue-pipeline/src/ops/branch-merge.ts
++++ b/apps/issue-pipeline/src/ops/branch-merge.ts
+@@ -3,6 +3,7 @@
+ // it. It is not expected-base CAS and cannot atomically bind PR/input/wiki
+ // state. Writes run once, including ambiguous transport failures.
+ import { z } from "zod";
++import { beginMutation } from "../assignment/checkpoint.ts";
+ import type { Config } from "../config.ts";
+ import { gh } from "../github.ts";
+ import { OpsError } from "../ops-error.ts";
+@@ -38,6 +39,9 @@ function branchMerge(cfg: Config, head: string): BranchMerge {
+     "-f",
+     `head=${head}`,
+   ];
++  if (cfg.execution !== undefined) {
++    beginMutation(cfg, cfg.execution.issue, "code-merge", head);
++  }
+   const result = gh(cfg, "merge", args, { allowFail: true });
+   const { status, body = "" } = HTTP_RESPONSE.exec(result.stdout)?.groups ?? {};
+   if (result.code !== 0 || status !== "201") {
+diff --git a/apps/issue-pipeline/src/ops/claim-state.ts b/apps/issue-pipeline/src/ops/claim-state.ts
+index 333e762..d61803f 100644
+--- a/apps/issue-pipeline/src/ops/claim-state.ts
++++ b/apps/issue-pipeline/src/ops/claim-state.ts
+@@ -11,6 +11,7 @@ import { assignedBranch } from "../branch-binding.ts";
+ import { lastPush } from "../checkouts.ts";
+ import { isLegacyPipelineComment } from "../comment-marks.ts";
+ import type { IssueComment } from "../comments.ts";
++import { pipelineRole } from "../comments.ts";
+ import type { Config } from "../config.ts";
+ import { paths } from "../config.ts";
+ import { remoteHead } from "../git-state.ts";
+@@ -66,7 +67,11 @@ function assertFirstClaim(
+ ): void {
+   const priorComment = comments.some(
+     (item) =>
+-      item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() ||
++      (item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
++        !(
++          cfg.assignment !== undefined &&
++          pipelineRole(cfg, item) === "assignment-observer"
++        )) ||
+       isLegacyPipelineComment(cfg, item),
+   );
+   const local = [paths.runDir(cfg, number)];
+diff --git a/apps/issue-pipeline/src/ops/finish.ts b/apps/issue-pipeline/src/ops/finish.ts
+index ce802a5..9403a84 100644
+--- a/apps/issue-pipeline/src/ops/finish.ts
++++ b/apps/issue-pipeline/src/ops/finish.ts
+@@ -3,6 +3,7 @@
+ // and closing a parent whose sub-issues are all closed.
+ 
+ import { z } from "zod";
++import { assertExecution } from "../assignment/authority.ts";
+ import { assignedBranch } from "../branch-binding.ts";
+ import { removeWorktree } from "../checkouts.ts";
+ import { closeClaims } from "../claims.ts";
+@@ -81,6 +82,7 @@ function deleteBranch(cfg: Config, state: IssueState): void {
+ // with `text` as the closing comment. True when this call closed it; an
+ // unreadable issue or a failed close throws, so the completion is retried.
+ function closeIssue(cfg: Config, n: number, text: string): boolean {
++  assertExecution(cfg, n, true);
+   const state = issueState(cfg, n);
+   if (state === null) {
+     throw new OpsError(`could not read whether #${n} is open`);
+diff --git a/apps/issue-pipeline/src/ops/merge.ts b/apps/issue-pipeline/src/ops/merge.ts
+index 3b83908..5a29a7d 100644
+--- a/apps/issue-pipeline/src/ops/merge.ts
++++ b/apps/issue-pipeline/src/ops/merge.ts
+@@ -1,13 +1,8 @@
+-// The decision to merge an issue's PR or refuse it: the checks that the
+-// request's revision is the state's authorized one (mergeAuthorization),
+-// that it is still the PR's head and still current, the merge order between
+-// issues, the base check, that the Reviewer marked the PR ready, the explicit-target branch
+-// merge itself and the merge receipt. A merge only merges code: publishing
+-// the wiki (publish) and closing the issue (finish-wiki) are separate ops
+-// the merge role runs after it saves the receipt and the security review of
+-// the merged result (`merge-publish-finish-split`).
++// Guarded explicit-target code merge and exact-result receipt. Wiki publication
++// and completion remain separate, postmerge-security-gated operations.
+ 
+ import { z } from "zod";
++import { finishMutation } from "../assignment/checkpoint.ts";
+ import { assignedBranch } from "../branch-binding.ts";
+ import { comment } from "../comments.ts";
+ import type { Config } from "../config.ts";
+@@ -17,6 +12,7 @@ import { git } from "../github.ts";
+ import { OpsError } from "../ops-error.ts";
+ import { parseRequest, run } from "../process.ts";
+ import { confirmMerged, currentRevision } from "../revision.ts";
++import { readWriteState, writeState } from "../saved-state.ts";
+ import { approvalHolds, ISSUE_STATE } from "../state.ts";
+ import { branchMerge } from "./branch-merge.ts";
+ import { mergedText } from "./merge-comment.ts";
+@@ -289,6 +285,14 @@ function ownReceipt(
+     { role: "merger" },
+     `${mergedText(req.state, req.expectedSha, mergeCommit)}\n\n${req.summary ?? ""}`,
+   );
++  if (cfg.assignment !== undefined) {
++    const saved = readWriteState(cfg, req.number);
++    writeState(cfg, req.number, {
++      ...saved,
++      codeMerged: { pr, sha: mergeCommit },
++    });
++    finishMutation(cfg, req.number, "code-merge");
++  }
+   return { merged: true, mergeCommit, headSha: req.expectedSha };
+ }
+ 
+diff --git a/apps/issue-pipeline/src/ops/pr.ts b/apps/issue-pipeline/src/ops/pr.ts
+index 67fe4b2..73e11cb 100644
+--- a/apps/issue-pipeline/src/ops/pr.ts
++++ b/apps/issue-pipeline/src/ops/pr.ts
+@@ -7,6 +7,7 @@
+ // open-pr pushes code.
+ 
+ import { z } from "zod";
++import { beginMutation, finishMutation } from "../assignment/checkpoint.ts";
+ import type { BranchChanges } from "../checkouts.ts";
+ import { ensureWorktree, push } from "../checkouts.ts";
+ import type { Author } from "../comments.ts";
+@@ -110,6 +111,7 @@ function createPr(
+   flags: readonly string[],
+   text: { title: string; body: string },
+ ): number {
++  beginMutation(cfg, n, "pr-create");
+   const args = ["pr", "create", "-R", cfg.repo, ...flags];
+   const url = gh(cfg, "dev", [
+     ...args,
+@@ -122,7 +124,16 @@ function createPr(
+     "--body",
+     text.body,
+   ]).stdout.trim();
+-  return Number(url.split("/").pop());
++  const pr = Number(url.split("/").pop());
++  if (cfg.assignment !== undefined) {
++    const remote = remoteHead(cfg, n);
++    if (remote === null) {
++      throw new OpsError("PR creation has no confirmed source head");
++    }
++    saveDraftAuthority(cfg, n, pr, remote);
++  }
++  finishMutation(cfg, n, "pr-create");
++  return pr;
+ }
+ 
+ function planDetails(plan: string | null | undefined): string {
+diff --git a/apps/issue-pipeline/src/ops/save-state.ts b/apps/issue-pipeline/src/ops/save-state.ts
+index 88c4745..1521b84 100644
+--- a/apps/issue-pipeline/src/ops/save-state.ts
++++ b/apps/issue-pipeline/src/ops/save-state.ts
+@@ -37,7 +37,18 @@ function withSavedCodeMerge(
+     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
+   }
+   const saved = readWriteState(cfg, n);
+-  return { ...state, codeMerged: saved.codeMerged };
++  let { coordination, headSha } = state;
++  if (cfg.assignment !== undefined) {
++    ({ coordination } = saved);
++  }
++  if (
++    cfg.assignment !== undefined &&
++    saved.coordination?.checkpoint?.code !== undefined
++  ) {
++    const { code } = saved.coordination.checkpoint;
++    headSha = code;
++  }
++  return { ...state, headSha, coordination, codeMerged: saved.codeMerged };
+ }
+ 
+ // Writes issue `n`'s state, with the code merge it has saved.
+diff --git a/apps/issue-pipeline/src/ops/sync-finish.ts b/apps/issue-pipeline/src/ops/sync-finish.ts
+index df2be66..30ec77d 100644
+--- a/apps/issue-pipeline/src/ops/sync-finish.ts
++++ b/apps/issue-pipeline/src/ops/sync-finish.ts
+@@ -2,6 +2,7 @@
+ // pushes it, and the push and reset that sync-base and finish-sync share
+ // (sync.ts).
+ 
++import { confirmedPush } from "../assignment/checkpoint.ts";
+ import { recordPush } from "../checkouts.ts";
+ import type { Config } from "../config.ts";
+ import { paths } from "../config.ts";
+@@ -82,7 +83,9 @@ function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
+     throw new OpsError(`#${n}'s code merged; refusing sync push`);
+   }
+   recordPush(cfg, n, head(wt), op);
+-  git(cfg, "dev", ["-C", wt, "push", "--force-with-lease", "origin", target]);
++  confirmedPush(cfg, n, "code", (): void => {
++    git(cfg, "dev", ["-C", wt, "push", "--force-with-lease", "origin", target]);
++  });
+ }
+ 
+ export { finishProblem, pushBranch, resetToRemote };
+diff --git a/apps/issue-pipeline/src/saved-state.ts b/apps/issue-pipeline/src/saved-state.ts
+index d65bb88..211e157 100644
+--- a/apps/issue-pipeline/src/saved-state.ts
++++ b/apps/issue-pipeline/src/saved-state.ts
+@@ -23,6 +23,7 @@ import { ISSUE_STATE, withLog } from "./state.ts";
+ // a missing receipt must not be confused with a malformed one caught as null.
+ const WRITE_STATE = ISSUE_STATE.pick({
+   version: true,
++  coordination: true,
+   number: true,
+   stage: true,
+ }).extend({
+diff --git a/apps/issue-pipeline/src/state.ts b/apps/issue-pipeline/src/state.ts
+index e9a93d5..af3b6b3 100644
+--- a/apps/issue-pipeline/src/state.ts
++++ b/apps/issue-pipeline/src/state.ts
+@@ -1,11 +1,9 @@
+-// An issue's state, which saved-state.ts keeps on GitHub. This module owns
+-// the state's schema (version 2), its log, and the merge authorization rule:
+-// only the exact revision that passed the Reviewer's hardening
+-// (`approval-is-for-one-revision`), or the one revision the Reviewer's own
+-// integration checked from it. The security review of the merged result
+-// comes after the merge, and lets the issue complete (security).
++// Signed v2 stage authority, exact revision receipts and assignment coordination.
++// Hardening authorizes only its revision or its checked integration; final
++// security clears the actual merged result before publication and completion.
+ 
+ import { z } from "zod";
++import { COORDINATION } from "./assignment/schema.ts";
+ import type { Status } from "./stages.ts";
+ import { STAGES } from "./stages.ts";
+ 
+@@ -127,6 +125,7 @@ const COUNTS = z.object({
+ // makes the whole state unreadable.
+ const ISSUE_STATE = z.object({
+   version: z.literal(2),
++  coordination: COORDINATION.nullable().default(null),
+   number: z.number().int().positive(),
+   stage: STATUS,
+   // The stage a stop happened in; lifting the stop resumes there.
+@@ -194,6 +193,7 @@ function withLog(state: IssueState, entry: string, now: Date): IssueState {
+ function newIssueState(number: number): IssueState {
+   return {
+     version: 2,
++    coordination: null,
+     number,
+     stage: "author",
+     stoppedStage: null,
+diff --git a/apps/issue-pipeline/src/unpushed.ts b/apps/issue-pipeline/src/unpushed.ts
+index ab92cd3..639dc3e 100644
+--- a/apps/issue-pipeline/src/unpushed.ts
++++ b/apps/issue-pipeline/src/unpushed.ts
+@@ -5,6 +5,7 @@
+ // any commits the branch lacks under refs/pipeline/rescue/<n>/<stamp>, and
+ // keeps HEAD unless someone pushed to the branch since.
+ 
++import { confirmedPush } from "./assignment/checkpoint.ts";
+ import type { Config } from "./config.ts";
+ import { paths } from "./config.ts";
+ import { fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
+@@ -71,7 +72,9 @@ function pushCode(cfg: Config, n: number): string[] {
+           `#${n}'s code merged; stop salvage cannot push code`,
+         );
+       }
+-      git(cfg, "dev", ["-C", wt, "push", "origin", target]);
++      confirmedPush(cfg, n, "code", (): void => {
++        git(cfg, "dev", ["-C", wt, "push", "origin", target]);
++      });
+     }
+     return [];
+   } catch {
+diff --git a/apps/issue-pipeline/src/wiki-publication.ts b/apps/issue-pipeline/src/wiki-publication.ts
+index 0f57d5a..df17ca1 100644
+--- a/apps/issue-pipeline/src/wiki-publication.ts
++++ b/apps/issue-pipeline/src/wiki-publication.ts
+@@ -4,6 +4,7 @@
+ // (`exact-reviewed-wiki`); confirmWikiPublished proves a recorded wiki commit
+ // is on the wiki before finish-wiki closes the issue.
+ 
++import { assertExecution } from "./assignment/authority.ts";
+ import type { Config } from "./config.ts";
+ import { gitIn, head } from "./git-state.ts";
+ import { git } from "./github.ts";
+@@ -144,6 +145,7 @@ function pushReviewed(
+   const commits = gitIn(dir, log).trim().split("\n");
+   // No force: the wiki's branch only ever fast-forwards to the reviewed head.
+   const target = `${expectedWiki}:refs/heads/${wiki.branch}`;
++  assertExecution(cfg, n);
+   const pushed = git(cfg, "merge", ["-C", dir, "push", "origin", target], {
+     allowFail: true,
+   });
+diff --git a/apps/issue-pipeline/src/wiki.ts b/apps/issue-pipeline/src/wiki.ts
+index 9b8408e..a06363a 100644
+--- a/apps/issue-pipeline/src/wiki.ts
++++ b/apps/issue-pipeline/src/wiki.ts
+@@ -4,6 +4,7 @@
+ 
+ import fs from "node:fs";
+ import path from "node:path";
++import { confirmedPush } from "./assignment/checkpoint.ts";
+ import { configureClone, updateSubmodules, writeHook } from "./clone-setup.ts";
+ import type { Config, WikiSettings } from "./config.ts";
+ import { paths, wikiCfg } from "./config.ts";
+@@ -221,16 +222,18 @@ function pushWikiBranch(cfg: Config, n: number): void {
+   }
+   const dir = paths.wiki(cfg, n);
+   const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
+-  withWikiLock(cfg, () =>
+-    git(cfg, "dev", [
+-      "-C",
+-      dir,
+-      "push",
+-      "--force-with-lease",
+-      "origin",
+-      target,
+-    ]),
+-  );
++  withWikiLock(cfg, () => {
++    confirmedPush(cfg, n, "wiki", (): void => {
++      git(cfg, "dev", [
++        "-C",
++        dir,
++        "push",
++        "--force-with-lease",
++        "origin",
++        target,
++      ]);
++    });
++  });
+ }
+ 
+ // The wiki's part of a review diff: every wiki commit the issue made so far.
+diff --git a/apps/issue-pipeline/src/worker.ts b/apps/issue-pipeline/src/worker.ts
+new file mode 100644
+index 0000000..bec7b35
+--- /dev/null
++++ b/apps/issue-pipeline/src/worker.ts
+@@ -0,0 +1,86 @@
++#!/usr/bin/env node
++// Opt-in assignment runtime. Source delivery never starts this program.
++import process from "node:process";
++import { setTimeout as delay } from "node:timers/promises";
++import { parseArgs } from "node:util";
++import { z } from "zod";
++import { poll } from "./assignment/poll.ts";
++import { runtimeDeps } from "./assignment/runtime.ts";
++import { readManifest } from "./assignment/scope.ts";
++import { workerOf } from "./assignment/signals.ts";
++import { loadConfig } from "./config.ts";
++import { OpsError } from "./ops-error.ts";
++
++const ARGS = z.object({
++  manifest: z.string().min(1),
++  worker: z.string().min(1),
++  once: z.boolean().default(false),
++});
++async function main(): Promise<void> {
++  const { values } = parseArgs({
++    options: {
++      manifest: { type: "string" },
++      worker: { type: "string" },
++      once: { type: "boolean" },
++    },
++  });
++  const args = ARGS.parse(values);
++  const manifest = readManifest(args.manifest);
++  const controller = new AbortController();
++  function stop(): void {
++    controller.abort();
++  }
++  process.once("SIGINT", stop);
++  process.once("SIGTERM", stop);
++  try {
++    const repositories = manifest.repositories.map((entry) => {
++      const cfg = loadConfig(entry.config);
++      workerOf(cfg, args.worker);
++      const repository = { ...entry, manifest: args.manifest, cfg };
++      return {
++        cfg,
++        deps: runtimeDeps(repository, args.worker, controller.signal),
++      };
++    });
++    if (
++      new Set(repositories.map(({ cfg }) => cfg.repo.toLowerCase())).size !==
++      repositories.length
++    ) {
++      throw new OpsError("ambiguous repository mapping in worker allow-list");
++    }
++    await poll(
++      repositories,
++      args.worker,
++      {
++        now: (): number => Date.now(),
++        stopped: (): boolean => controller.signal.aborted,
++        sleep: async (ms: number): Promise<void> => {
++          try {
++            await delay(ms, undefined, { signal: controller.signal });
++          } catch (error: unknown) {
++            if (!controller.signal.aborted) {
++              throw error;
++            }
++          }
++        },
++        report: (repo: string, reason: string): void => {
++          process.stderr.write(`assignment worker ${repo}: ${reason}\n`);
++        },
++      },
++      args.once,
++    );
++  } finally {
++    process.removeListener("SIGINT", stop);
++    process.removeListener("SIGTERM", stop);
++  }
++}
++try {
++  await main();
++} catch (error: unknown) {
++  let reason = "assignment worker failed";
++  if (error instanceof Error) {
++    reason = error.message;
++  }
++  process.stderr.write(`${reason}\n`);
++  process.exitCode = 1;
++}
+diff --git a/apps/issue-pipeline/src/write-authority.ts b/apps/issue-pipeline/src/write-authority.ts
+index 3e38637..75a1831 100644
+--- a/apps/issue-pipeline/src/write-authority.ts
++++ b/apps/issue-pipeline/src/write-authority.ts
+@@ -2,6 +2,7 @@
+ // Saved merge receipts close code authority permanently for that work; a
+ // confirmed live merge closes the interval before its receipt is saved. The
+ // live receipt is returned only for wiki checks, never written back as state.
++import { assertExecution } from "./assignment/authority.ts";
+ import { assignedBranch } from "./branch-binding.ts";
+ import type { Config } from "./config.ts";
+ import { historicalPrFor } from "./ops/prs.ts";
+@@ -14,6 +15,7 @@ function readWriteAuthority(
+   cfg: Config,
+   issue: number,
+ ): { state: IssueState; codeWritable: boolean; codeMerged: CodeMerged | null } {
++  assertExecution(cfg, issue);
+   const state = readWriteState(cfg, issue);
+   assignedBranch(cfg, issue, state);
+   const { codeMerged, merged } = state;
+diff --git a/apps/issue-pipeline/test/assignment-checkpoints.test.mjs b/apps/issue-pipeline/test/assignment-checkpoints.test.mjs
+new file mode 100644
+index 0000000..a5ca0c6
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment-checkpoints.test.mjs
+@@ -0,0 +1,74 @@
++// @ts-check
++// The same remote confirmation that gates assignment checkpoint state, using
++// two isolated Git origins. Local commits do not become remote recovery claims.
++import assert from "node:assert/strict";
++import fs from "node:fs";
++import { test } from "node:test";
++import {
++  COMMIT_ENV,
++  close,
++  KEY,
++  openFresh,
++} from "./job-checkout-dropped-test-kit.mjs";
++import { git, headOf, write } from "./pipeline-commit-test-kit.mjs";
++
++const { assertPublishedHead } = await import("../src/assignment/checkpoint.ts");
++const PUSH_ENV = Object.fromEntries([["ISSUE_PIPELINE_OPS", "1"]]);
++const UNCONFIRMED = /not confirmed remotely/u;
++const TEST_BOUND_MS = 20_000;
++
++test("source and private wiki checkpoints require the exact published heads, never local-only commits", {
++  timeout: TEST_BOUND_MS,
++}, async () => {
++  const job = openFresh();
++  try {
++    for (const [dir, tracked] of [
++      [job.repo, "README.md"],
++      [job.docs, "Home.md"],
++    ]) {
++      if (dir === undefined || tracked === undefined) {
++        throw new Error("incomplete origin fixture");
++      }
++      const location = { dir, branch: job.branch };
++      const original = headOf(dir);
++      assert.throws(
++        () => assertPublishedHead(job.cfg, location, original),
++        UNCONFIRMED,
++      );
++      git(
++        dir,
++        ["push", "--quiet", "origin", `HEAD:refs/heads/${job.branch}`],
++        PUSH_ENV,
++      );
++      assertPublishedHead(job.cfg, location, original);
++      write(dir, tracked, "local-only recovery bytes\n");
++      git(dir, ["commit", "-am", "Unpublished checkpoint"], COMMIT_ENV);
++      const unpublished = headOf(dir);
++      assert.notEqual(unpublished, original);
++      assert.throws(
++        () => assertPublishedHead(job.cfg, location, unpublished),
++        UNCONFIRMED,
++      );
++      assert.equal(headOf(dir), unpublished);
++      assert.equal(
++        fs.readFileSync(`${dir}/${tracked}`, "utf8"),
++        "local-only recovery bytes\n",
++      );
++      // A positive remote read of the old checkpoint is not permission to
++      // claim that later local work was pushed after a lost response.
++      assertPublishedHead(job.cfg, location, original);
++      git(
++        dir,
++        ["push", "--quiet", "origin", `HEAD:refs/heads/${job.branch}`],
++        PUSH_ENV,
++      );
++      assertPublishedHead(job.cfg, location, unpublished);
++      assert.throws(
++        () => assertPublishedHead(job.cfg, location, original),
++        UNCONFIRMED,
++      );
++    }
++  } finally {
++    await close(job, KEY);
++  }
++});
+diff --git a/apps/issue-pipeline/test/assignment-discovery.test.mjs b/apps/issue-pipeline/test/assignment-discovery.test.mjs
+new file mode 100644
+index 0000000..da4be66
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment-discovery.test.mjs
+@@ -0,0 +1,246 @@
++// @ts-check
++import "./isolated-root-test-kit.mjs";
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { poll, retryHold } from "../src/assignment/poll.ts";
++import { RetryHold, retryTime } from "../src/assignment/retry.ts";
++import { ASSIGNMENT, emptyCoordination } from "../src/assignment/schema.ts";
++import { workerOf } from "../src/assignment/signals.ts";
++import { sweep } from "../src/assignment/worker.ts";
++import { ISSUE_STATE, newIssueState } from "../src/state.ts";
++import { fakeGithub } from "./assignment/fake-github.mjs";
++import { assignmentConfig, START } from "./assignment/world.mjs";
++
++const RATE_LIMIT_RESET = 1_792_454_520;
++const SECOND = 1000;
++const DAY = 86_400_000;
++const FIXTURE_3 = 3;
++const FIXTURE_4 = 4;
++const FIXTURE_5 = 5;
++const FIXTURE_6 = 6;
++const FIXTURE_7 = 7;
++const FIXTURE_8 = 8;
++const FIXTURE_10 = 10;
++const FIXTURE_100 = 100;
++const FIXTURE_101 = 101;
++const FIXTURE_102 = 102;
++const FIXTURE_120 = 120;
++const EXPECTED_MESSAGE_1 = /missing or ambiguous/u;
++const EXPECTED_MESSAGE_2 = /discovery incomplete/u;
++const EXPECTED_MESSAGE_3 = /actor provenance/u;
++const EXPECTED_MESSAGE_4 = /actor provenance/u;
++const EXPECTED_MESSAGE_5 = /author/u;
++const EXPECTED_MESSAGE_6 = /prerequisite/u;
++const EXPECTED_MESSAGE_7 = /questions/u;
++const EXPECTED_MESSAGE_8 = /stop/u;
++const EXPECTED_MESSAGE_9 = /cutover/u;
++const EXPECTED_MESSAGE_10 = /local-only recovery/u;
++
++test("assignment opt-in validates distinct configurable identities, not model or credential selection", () => {
++  const cfg = assignmentConfig();
++  assert.equal(workerOf(cfg, "build").login, "builder");
++  assert.throws(() => workerOf(cfg, "missing"), EXPECTED_MESSAGE_1);
++  assert.equal(
++    ASSIGNMENT.safeParse({
++      enabled: true,
++      workers: [
++        { id: "same", login: "one", roles: "development" },
++        { id: "same", login: "two", roles: "review" },
++      ],
++    }).success,
++    false,
++  );
++  assert.equal(
++    ASSIGNMENT.safeParse({
++      enabled: true,
++      workers: [
++        { id: "one", login: "same", roles: "development" },
++        { id: "two", login: "same", roles: "review" },
++      ],
++    }).success,
++    false,
++  );
++  assert.equal(
++    ISSUE_STATE.safeParse({
++      ...newIssueState(1),
++      coordination: { status: "active" },
++    }).success,
++    false,
++  );
++  assert.equal(cfg.models.author, cfg.models.implementor);
++});
++
++test("complete multi-repository discovery follows the second page and never selects an unassigned issue", async () => {
++  const first = fakeGithub();
++  for (let number = 1; number <= FIXTURE_100; number += 1) {
++    first.issue(number, "visitor");
++  }
++  first.issue(FIXTURE_101);
++  first.issue(FIXTURE_102).assignees = [];
++  const second = fakeGithub(assignmentConfig("other/project"));
++  second.issue(FIXTURE_8);
++  await poll(
++    [
++      { cfg: first.cfg, deps: first.deps() },
++      { cfg: second.cfg, deps: second.deps() },
++    ],
++    "build",
++    {
++      now: () => first.world.now,
++      sleep: () => Promise.reject(new Error("once must not wait")),
++      stopped: () => false,
++      report: () => {
++        throw new Error("unexpected discovery failure");
++      },
++    },
++    true,
++  );
++  assert.deepEqual(
++    first.launches.map((job) => job.issue),
++    [FIXTURE_101],
++  );
++  assert.deepEqual(
++    second.launches.map((job) => job.issue),
++    [FIXTURE_8],
++  );
++  assert.ok(first.reads.some((read) => read.includes("page=2")));
++  assert.ok(first.notices.get(1)?.includes("author"));
++});
++
++test("a saturated pagination budget refuses an incomplete queue before executing any issue", async () => {
++  const fake = fakeGithub();
++  for (let number = 1; number <= FIXTURE_100; number += 1) {
++    fake.issue(number);
++  }
++  assert.ok(fake.cfg.assignment);
++  fake.cfg.assignment.pageBudget = 1;
++  await assert.rejects(
++    sweep(fake.cfg, "build", fake.deps()),
++    EXPECTED_MESSAGE_2,
++  );
++  assert.equal(fake.launches.length, 0);
++});
++
++test("current assignment never supplies its actor and never overrides the issue author", async () => {
++  const fake = fakeGithub();
++  fake.issue(1, "alice", "visitor");
++  fake.issue(2, "alice", "builder");
++  fake.issue(FIXTURE_3, "builder", "merger");
++  fake.issue(FIXTURE_4, "alice", "merger");
++  fake.issue(FIXTURE_5);
++  fake.allowed.delete("alice");
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(fake.launches.length, 0);
++  fake.allowed.add("alice");
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.deepEqual(
++    fake.launches.map((job) => job.issue),
++    [FIXTURE_4, FIXTURE_5],
++  );
++  assert.match(fake.notices.get(1) ?? "", EXPECTED_MESSAGE_3);
++  assert.match(fake.notices.get(2) ?? "", EXPECTED_MESSAGE_4);
++  assert.match(fake.notices.get(FIXTURE_3) ?? "", EXPECTED_MESSAGE_5);
++});
++
++test("dependency, questions, stop, legacy cutover, role and local-recovery holds leave other assigned work runnable", async () => {
++  const fake = fakeGithub();
++  fake.issue(1).body = "<!-- agent-pipeline:after 2 -->";
++  fake.issue(2).assignees = [];
++  for (const number of [
++    FIXTURE_3,
++    FIXTURE_4,
++    FIXTURE_5,
++    FIXTURE_6,
++    FIXTURE_7,
++  ]) {
++    fake.issue(number);
++  }
++  fake.states.set(FIXTURE_3, {
++    ...newIssueState(FIXTURE_3),
++    asked: { inputs: fake.world.inputs },
++    coordination: emptyCoordination(),
++  });
++  fake.states.set(FIXTURE_4, {
++    ...newIssueState(FIXTURE_4),
++    stage: "stopped",
++    coordination: emptyCoordination(),
++  });
++  fake.states.set(FIXTURE_5, newIssueState(FIXTURE_5));
++  fake.states.set(FIXTURE_6, {
++    ...newIssueState(FIXTURE_6),
++    coordination: { ...emptyCoordination(), localRecovery: true },
++  });
++  const result = await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(result.executed, 1);
++  assert.deepEqual(
++    fake.launches.map((job) => job.issue),
++    [FIXTURE_7],
++  );
++  assert.match(fake.notices.get(1) ?? "", EXPECTED_MESSAGE_6);
++  assert.match(fake.notices.get(FIXTURE_3) ?? "", EXPECTED_MESSAGE_7);
++  assert.match(fake.notices.get(FIXTURE_4) ?? "", EXPECTED_MESSAGE_8);
++  assert.match(fake.notices.get(FIXTURE_5) ?? "", EXPECTED_MESSAGE_9);
++  assert.match(fake.notices.get(FIXTURE_6) ?? "", EXPECTED_MESSAGE_10);
++});
++
++test("idle polling continues and discovers a later assignment within its healthy bound", async () => {
++  const fake = fakeGithub();
++  let waits = 0;
++  await poll([{ cfg: fake.cfg, deps: fake.deps() }], "build", {
++    now: () => fake.world.now,
++    stopped: () => waits === 2,
++    sleep: (ms) => {
++      assert.equal(ms, FIXTURE_10 * SECOND);
++      fake.world.now += ms;
++      waits += 1;
++      if (waits === 1) {
++        fake.issue(1);
++      }
++      return Promise.resolve();
++    },
++    report: () => {
++      throw new Error("unexpected failure");
++    },
++  });
++  assert.equal(waits, 2);
++  assert.deepEqual(
++    fake.launches.map((job) => job.issue),
++    [1],
++  );
++});
++
++test("rate-limit retry timing is durable across replacement without a private queue and incomplete reads do not withdraw work", async () => {
++  const fake = fakeGithub();
++  fake.issue(1);
++  const until = START + DAY;
++  const deps = fake.deps();
++  const { read } = deps.hub;
++  deps.hub = {
++    ...deps.hub,
++    read: (endpoint) => {
++      if (endpoint.startsWith("issues?")) {
++        throw new RetryHold("HTTP 429", { until });
++      }
++      return read(endpoint);
++    },
++  };
++  const clock = {
++    now: () => fake.world.now,
++    stopped: () => false,
++    sleep: () => Promise.resolve(),
++    report: () => undefined,
++  };
++  await poll([{ cfg: fake.cfg, deps }], "build", clock, true);
++  assert.equal(retryHold(fake.hub, fake.cfg), until);
++  assert.equal(fake.launches.length, 0);
++  assert.equal(fake.issues.get(1)?.assignees[0]?.login, "builder");
++  await poll([{ cfg: fake.cfg, deps: fake.deps() }], "build", clock, true);
++  assert.equal(fake.launches.length, 0);
++  fake.world.now = until;
++  await poll([{ cfg: fake.cfg, deps: fake.deps() }], "build", clock, true);
++  assert.equal(fake.launches.length, 1);
++  assert.equal(
++    retryTime("Retry-After: 120\r\nX-RateLimit-Reset: 1792454520", START),
++    Math.max(START + FIXTURE_120 * SECOND, RATE_LIMIT_RESET * SECOND),
++  );
++});
+diff --git a/apps/issue-pipeline/test/assignment-exclusion.test.mjs b/apps/issue-pipeline/test/assignment-exclusion.test.mjs
+new file mode 100644
+index 0000000..3e0a3ee
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment-exclusion.test.mjs
+@@ -0,0 +1,137 @@
++// @ts-check
++import "./isolated-root-test-kit.mjs";
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { assertExecution } from "../src/assignment/authority.ts";
++import {
++  acquire,
++  integrationLock,
++  issueLock,
++} from "../src/assignment/exclusion.ts";
++import { sweep } from "../src/assignment/worker.ts";
++import { fakeGithub } from "./assignment/fake-github.mjs";
++import { ready } from "./assignment/test-kit.mjs";
++import { SHA_LENGTH } from "./assignment/world.mjs";
++import { waitFor } from "./bounded-test-kit.mjs";
++
++const DAY = 86_400_000;
++const EXPECTED_MESSAGE_1 = /ownership lost/u;
++const EXPECTED_MESSAGE_2 = /withdrawn/u;
++const EXPECTED_MESSAGE_3 = /closed/u;
++const EXPECTED_MESSAGE_4 = /withdrawn/u;
++const EXPECTED_MESSAGE_5 = /integration turn/u;
++
++test("duplicate instances sharing a logical worker cannot launch concurrent role sessions", async () => {
++  const fake = fakeGithub();
++  fake.issue(1);
++  /** @type {PromiseWithResolvers<void>} */
++  const pause = Promise.withResolvers();
++  const { model } = fake.callbacks;
++  fake.callbacks.model = async (execution) => {
++    await pause.promise;
++    return await model(execution);
++  };
++  const first = sweep(fake.cfg, "build", fake.deps());
++  try {
++    await waitFor(
++      "exclusive fake model session",
++      () => fake.launches.length === 1,
++    );
++    await sweep(fake.cfg, "build", fake.deps());
++    assert.equal(fake.launches.length, 1);
++    assert.ok(fake.refs.has(issueLock(1)));
++  } finally {
++    pause.resolve();
++    await first;
++  }
++  assert.equal(fake.refs.has(issueLock(1)), false);
++});
++
++test("stale leases alone cannot take over an executor; old instances refuse writes after explicit ownership loss or withdrawal", async () => {
++  const fake = fakeGithub();
++  fake.issue(1);
++  const token = acquire(fake.hub, fake.cfg, issueLock(1), "build");
++  assert.ok(token);
++  fake.world.now += DAY;
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(fake.launches.length, 0);
++  const execution = {
++    worker: "build",
++    issue: 1,
++    stage: /** @type {const} */ ("author"),
++    token,
++    turn: null,
++    handoff: null,
++  };
++  assertExecution({ ...fake.cfg, execution }, 1, true, fake.hub);
++  fake.refs.set(issueLock(1), "d".repeat(SHA_LENGTH));
++  assert.throws(
++    () => assertExecution({ ...fake.cfg, execution }, 1, true, fake.hub),
++    EXPECTED_MESSAGE_1,
++  );
++  fake.refs.set(issueLock(1), token);
++  const issue = fake.issues.get(1);
++  assert.ok(issue);
++  issue.assignees = [];
++  assert.throws(
++    () => assertExecution({ ...fake.cfg, execution }, 1, true, fake.hub),
++    EXPECTED_MESSAGE_2,
++  );
++  issue.assignees = [{ login: "builder" }];
++  issue.state = "closed";
++  assert.throws(
++    () => assertExecution({ ...fake.cfg, execution }, 1, true, fake.hub),
++    EXPECTED_MESSAGE_3,
++  );
++  assert.throws(
++    () =>
++      assertExecution(
++        { ...fake.cfg, assignment: undefined, execution },
++        1,
++        true,
++        fake.hub,
++      ),
++    EXPECTED_MESSAGE_4,
++  );
++});
++
++test("repository integration turns survive restart and block a distinct issue without consuming its handoff", async () => {
++  const fake = fakeGithub();
++  await ready(fake);
++  await sweep(fake.cfg, "check", fake.deps());
++  const turn = acquire(
++    fake.hub,
++    fake.cfg,
++    integrationLock(fake.cfg.baseBranch),
++    "another instance",
++  );
++  assert.ok(turn);
++  await sweep(fake.cfg, "check", fake.deps());
++  assert.equal(fake.launches.at(-1)?.stage, "review");
++  assert.equal(fake.refs.has(issueLock(1)), false);
++  assert.match(fake.notices.get(1) ?? "", EXPECTED_MESSAGE_5);
++  assert.equal(fake.states.get(1)?.coordination?.handoff?.phase, "accepted");
++});
++
++test("fresh requirements reauthor before more implementation while local-only or uncertain outcomes retain their fence", async () => {
++  const fake = fakeGithub();
++  fake.issue(1);
++  await sweep(fake.cfg, "build", fake.deps());
++  fake.world.inputs = "new human inputs";
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.deepEqual(
++    fake.launches.map((job) => job.stage),
++    ["author", "author"],
++  );
++  const { model } = fake.callbacks;
++  fake.callbacks.model = async (execution) => {
++    const result = await model(execution);
++    return { ...result, localRecovery: true };
++  };
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(fake.states.get(1)?.coordination?.localRecovery, true);
++  assert.ok(fake.refs.has(issueLock(1)));
++  const count = fake.launches.length;
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(fake.launches.length, count);
++});
+diff --git a/apps/issue-pipeline/test/assignment-handoff.test.mjs b/apps/issue-pipeline/test/assignment-handoff.test.mjs
+new file mode 100644
+index 0000000..e953908
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment-handoff.test.mjs
+@@ -0,0 +1,143 @@
++// @ts-check
++import "./isolated-root-test-kit.mjs";
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { issueLock } from "../src/assignment/exclusion.ts";
++import { requestHandoff } from "../src/assignment/handoff.ts";
++import { sweep } from "../src/assignment/worker.ts";
++import { fakeGithub } from "./assignment/fake-github.mjs";
++import { ready } from "./assignment/test-kit.mjs";
++import { CODE, SHA_LENGTH } from "./assignment/world.mjs";
++
++const SECOND = 1000;
++const FIXTURE_4 = 4;
++const EXPECTED_MESSAGE_1 = /fix the invariant/u;
++
++test("developer saves a bound handoff and requests its reviewer; reviewer resumes without issue assignment or pending request", async () => {
++  const fake = fakeGithub();
++  let state = await ready(fake);
++  assert.equal(state.coordination?.handoff?.phase, "requested");
++  assert.equal(state.coordination?.handoff?.checkpoint.pr, state.pr);
++  assert.equal(state.coordination?.handoff?.checkpoint.code, CODE);
++  const requests = fake.writes.filter((write) =>
++    write.endsWith("requested_reviewers"),
++  ).length;
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(
++    fake.writes.filter((write) => write.endsWith("requested_reviewers")).length,
++    requests,
++  );
++  await sweep(fake.cfg, "check", fake.deps());
++  state = fake.states.get(1) ?? state;
++  assert.equal(state.coordination?.handoff?.phase, "accepted");
++  assert.equal(state.stage, "merge");
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(fake.refs.has(issueLock(1)), false);
++  assert.equal(fake.launches.at(-1)?.stage, "review");
++  const pr = fake.prs.get(state.pr ?? 0);
++  assert.ok(pr);
++  fake.clearRequest(pr.number);
++  fake.review(pr.number, "APPROVED");
++  fake.request(pr.number, "merger", "review_request_removed");
++  await sweep(fake.cfg, "check", fake.deps());
++  assert.equal(fake.states.get(1)?.stage, "done");
++  assert.deepEqual(
++    fake.launches.map((job) => job.stage),
++    ["author", "implement", "review", "merge"],
++  );
++  await sweep(fake.cfg, "check", fake.deps());
++  assert.equal(fake.launches.length, FIXTURE_4);
++});
++
++test("a lost handoff-request response leaves a visible intent and can be reconciled without a duplicate request", async () => {
++  const fake = fakeGithub();
++  fake.issue(1);
++  await sweep(fake.cfg, "build", fake.deps());
++  fake.world.now += SECOND;
++  fake.world.failRequest = true;
++  await sweep(fake.cfg, "build", fake.deps());
++  const state = fake.states.get(1);
++  assert.ok(state);
++  assert.equal(state.coordination?.handoff?.phase, "pending");
++  assert.equal(state.coordination?.pending?.kind, "review-request");
++  assert.ok(fake.refs.has(issueLock(1)));
++  const before = fake.writes.filter((write) =>
++    write.endsWith("requested_reviewers"),
++  ).length;
++  const row = fake.issues.get(1);
++  assert.ok(row);
++  requestHandoff(fake.cfg, fake.deps(), row, state);
++  assert.equal(fake.states.get(1)?.coordination?.handoff?.phase, "requested");
++  assert.equal(fake.states.get(1)?.coordination?.pending, null);
++  assert.equal(
++    fake.writes.filter((write) => write.endsWith("requested_reviewers")).length,
++    before,
++  );
++});
++
++test("authenticated exact-head change requests invalidate review authority and return operational feedback to development", async () => {
++  const fake = fakeGithub();
++  const state = await ready(fake);
++  const pr = state.pr ?? 0;
++  fake.review(pr, "CHANGES_REQUESTED", { body: "fix the invariant" });
++  await sweep(fake.cfg, "check", fake.deps());
++  assert.equal(fake.launches.length, 2);
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(fake.launches.at(-1)?.stage, "implement");
++  assert.match(fake.notices.get(1) ?? "", EXPECTED_MESSAGE_1);
++  assert.notEqual(
++    fake.states.get(1)?.coordination?.handoff?.id,
++    state.coordination?.handoff?.id,
++  );
++});
++
++test("untrusted requests, cancellation, external heads and changed trusted inputs cannot authorize hardening", async () => {
++  for await (const reason of ["actor", "cancel", "head", "inputs"]) {
++    const fake = fakeGithub();
++    const state = await ready(fake);
++    const pr = state.pr ?? 0;
++    const pull = fake.prs.get(pr);
++    assert.ok(pull);
++    if (reason === "actor") {
++      fake.request(pr, "visitor");
++    }
++    if (reason === "cancel") {
++      fake.request(pr, "visitor", "review_request_removed");
++    }
++    if (reason === "head") {
++      pull.head.sha = "d".repeat(SHA_LENGTH);
++    }
++    if (reason === "inputs") {
++      fake.world.inputs = "changed human input";
++    }
++    await sweep(fake.cfg, "check", fake.deps());
++    assert.equal(fake.launches.length, 2, reason);
++    assert.ok(fake.notices.get(1), reason);
++  }
++});
++
++test("same-second authenticated development reassignment invalidates a consumed handoff before merge", async () => {
++  const fake = fakeGithub();
++  const before = await ready(fake);
++  await sweep(fake.cfg, "check", fake.deps());
++  fake.issue(1);
++  await sweep(fake.cfg, "check", fake.deps());
++  assert.equal(fake.launches.at(-1)?.stage, "review");
++  await sweep(fake.cfg, "build", fake.deps());
++  assert.equal(fake.launches.at(-1)?.stage, "implement");
++  assert.notEqual(
++    fake.states.get(1)?.coordination?.handoff?.id,
++    before.coordination?.handoff?.id,
++  );
++});
++
++test("consumption is not permission to ignore a later request cancellation by another actor", async () => {
++  const fake = fakeGithub();
++  const state = await ready(fake);
++  await sweep(fake.cfg, "check", fake.deps());
++  fake.review(state.pr ?? 0, "APPROVED");
++  fake.request(state.pr ?? 0, "alice", "review_request_removed");
++  await sweep(fake.cfg, "check", fake.deps());
++  assert.equal(fake.launches.at(-1)?.stage, "review");
++  assert.ok(fake.notices.get(1));
++});
+diff --git a/apps/issue-pipeline/test/assignment-scope.test.mjs b/apps/issue-pipeline/test/assignment-scope.test.mjs
+new file mode 100644
+index 0000000..1d187bc
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment-scope.test.mjs
+@@ -0,0 +1,83 @@
++// @ts-check
++import "./isolated-root-test-kit.mjs";
++import assert from "node:assert/strict";
++import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
++import { test } from "node:test";
++import { assertExecution } from "../src/assignment/authority.ts";
++import { acquire, issueLock } from "../src/assignment/exclusion.ts";
++import { fakeGithub } from "./assignment/fake-github.mjs";
++
++const WITHDRAWN = /withdrawn/u;
++const OUTSIDE_SCOPE = /removed from worker scope/u;
++const NO_WORKER = /missing or ambiguous worker/u;
++const AMBIGUOUS = /ambiguous/u;
++
++/** @param {string} dir */
++function scopeFixture(dir) {
++  const fake = fakeGithub();
++  fake.issue(1);
++  const token = acquire(fake.hub, fake.cfg, issueLock(1), "build");
++  if (token === null) {
++    throw new Error("fixture executor already held");
++  }
++  const config = path.join(dir, "config.json");
++  const manifest = path.join(dir, "manifest.json");
++  const brainPath = path.join(dir, "brain");
++  const entry = { config, brainPath };
++  fs.writeFileSync(config, JSON.stringify(fake.cfg));
++  fs.writeFileSync(manifest, JSON.stringify({ repositories: [entry] }));
++  const execution = {
++    worker: "build",
++    issue: 1,
++    stage: /** @type {const} */ ("author"),
++    token,
++    turn: null,
++    handoff: null,
++    scope: { manifest, config, brainPath },
++  };
++  const cfg = { ...fake.cfg, configFile: config, execution };
++  return { fake, cfg, config, manifest, entry };
++}
++
++test("a running executor re-reads the operator allow-list, opt-in and worker mapping before a controlled action", () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "assignment-scope-"));
++  try {
++    const { fake, cfg, config, manifest, entry } = scopeFixture(dir);
++    assertExecution(cfg, 1, true, fake.hub);
++    fs.writeFileSync(
++      config,
++      JSON.stringify({ ...fake.cfg, assignment: undefined }),
++    );
++    assert.throws(() => assertExecution(cfg, 1, true, fake.hub), WITHDRAWN);
++    assert.ok(fake.cfg.assignment);
++    const workers = fake.cfg.assignment.workers.map((worker) => ({
++      ...worker,
++      id: `other-${worker.id}`,
++    }));
++    fs.writeFileSync(
++      config,
++      JSON.stringify({
++        ...fake.cfg,
++        assignment: { ...fake.cfg.assignment, workers },
++      }),
++    );
++    assert.throws(() => assertExecution(cfg, 1, true, fake.hub), NO_WORKER);
++    fs.writeFileSync(config, JSON.stringify(fake.cfg));
++    fs.writeFileSync(
++      manifest,
++      JSON.stringify({
++        repositories: [{ ...entry, config: path.join(dir, "another.json") }],
++      }),
++    );
++    assert.throws(() => assertExecution(cfg, 1, true, fake.hub), OUTSIDE_SCOPE);
++    fs.writeFileSync(
++      manifest,
++      JSON.stringify({ repositories: [entry, entry] }),
++    );
++    assert.throws(() => assertExecution(cfg, 1, true, fake.hub), AMBIGUOUS);
++  } finally {
++    fs.rmSync(dir, { recursive: true, force: true });
++  }
++});
+diff --git a/apps/issue-pipeline/test/assignment/fake-github.mjs b/apps/issue-pipeline/test/assignment/fake-github.mjs
+new file mode 100644
+index 0000000..369bd81
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment/fake-github.mjs
+@@ -0,0 +1,86 @@
++// @ts-check
++import { OpsError } from "../../src/ops-error.ts";
++import { ISSUE_STATE } from "../../src/state.ts";
++import { fakeHub } from "./fake-hub.mjs";
++import { model } from "./fake-model.mjs";
++import {
++  clearRequest,
++  event,
++  issue,
++  pull,
++  request,
++  review,
++} from "./fake-wire.mjs";
++import { assignmentConfig, fakeWorld } from "./world.mjs";
++
++/** @import { WorkerDeps, JobResult } from '../../src/assignment/worker-state.ts' */
++/** @import { World } from './world.mjs' */
++/** @import { Hub } from '../../src/assignment/github.ts' */
++/** @import { Execution } from '../../src/assignment/schema.ts' */
++/** @param {World} f @param {Hub} hub @param {{model: (execution: Execution) => Promise<JobResult>}} callbacks @returns {WorkerDeps} */
++function workerDeps(f, hub, callbacks) {
++  return {
++    hub,
++    scope: () => {
++      if (!f.world.scope) {
++        throw new OpsError("scope withdrawn");
++      }
++    },
++    now: () => new Date(f.world.now),
++    comments: () => [],
++    state: (number) => {
++      const state = f.states.get(number);
++      if (state === undefined) {
++        return null;
++      }
++      return ISSUE_STATE.parse(structuredClone(state));
++    },
++    save: (number, state) => {
++      f.states.set(number, ISSUE_STATE.parse(structuredClone(state)));
++    },
++    inputs: () => f.world.inputs,
++    notice: (number, reason) => {
++      f.notices.set(number, reason);
++    },
++    job: async (execution) => {
++      f.launches.push(execution);
++      return await callbacks.model(execution);
++    },
++  };
++}
++/** @param {ReturnType<typeof assignmentConfig>} [cfg] */
++function fakeGithub(cfg = assignmentConfig()) {
++  const f = fakeWorld(cfg);
++  const hub = fakeHub(f);
++  const callbacks = {
++    model: (/** @type {Execution} */ execution) =>
++      Promise.resolve(model(f, execution)),
++  };
++  return {
++    ...f,
++    hub,
++    callbacks,
++    deps: () => workerDeps(f, hub, callbacks),
++    issue: (/** @type {number} */ number, author = "alice", actor = "alice") =>
++      issue(f, number, author, actor),
++    pull: (/** @type {number} */ number) => pull(f, number),
++    event: (
++      /** @type {number} */ number,
++      /** @type {string} */ kind,
++      /** @type {string} */ actor,
++    ) => event(f, number, kind, { actor }),
++    request: (
++      /** @type {number} */ number,
++      /** @type {string} */ actor,
++      kind = "review_requested",
++    ) => request(f, number, actor, kind),
++    review: (
++      /** @type {number} */ pr,
++      /** @type {string} */ verdict,
++      /** @type {{body?:string,author?:string,head?:string}} */ options = {},
++    ) => review(f, pr, verdict, options),
++    clearRequest: (/** @type {number} */ pr) => clearRequest(f, pr),
++  };
++}
++
++export { fakeGithub };
+diff --git a/apps/issue-pipeline/test/assignment/fake-hub.mjs b/apps/issue-pipeline/test/assignment/fake-hub.mjs
+new file mode 100644
+index 0000000..cbed4bd
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment/fake-hub.mjs
+@@ -0,0 +1,139 @@
++// @ts-check
++import { z } from "zod";
++import { OpsError } from "../../src/ops-error.ts";
++import { request } from "./fake-wire.mjs";
++import { SHA_LENGTH, TREE } from "./world.mjs";
++
++/** @import { Hub } from '../../src/assignment/github.ts' */
++/** @import { World } from './world.mjs' */
++const PAGE_SIZE = 100;
++const SHA_RADIX = 16;
++const REF_BODY = z.object({ ref: z.string(), sha: z.string() });
++const REQUEST = /^pulls\/(?<pr>\d+)\/requested_reviewers$/u;
++/** @param {unknown[]} rows @param {URL} url */
++function page(rows, url) {
++  const size = Number(url.searchParams.get("per_page") ?? PAGE_SIZE);
++  const at = (Number(url.searchParams.get("page") ?? 1) - 1) * size;
++  return rows.slice(at, at + size);
++}
++/** @param {World} f @param {URL} url */
++function readIssue(f, url) {
++  const [, , id, child] = url.pathname.split("/");
++  const number = Number(id);
++  if (child === "events") {
++    return page(f.events.get(number) ?? [], url);
++  }
++  if (id !== undefined) {
++    return f.issues.get(number) ?? null;
++  }
++  let rows = [...f.issues.values()];
++  const assignee = url.searchParams.get("assignee");
++  if (assignee !== null) {
++    rows = rows.filter((row) =>
++      row.assignees.some((user) => user.login === assignee),
++    );
++  }
++  if (url.searchParams.get("state") === "open") {
++    rows = rows.filter((row) => row.state === "open");
++  }
++  return page(rows, url);
++}
++/** @param {World} f @param {URL} url */
++function readPull(f, url) {
++  const [, , id, child] = url.pathname.split("/");
++  if (id === undefined) {
++    return page(
++      [...f.prs.values()].filter((pr) => pr.state === "open"),
++      url,
++    );
++  }
++  if (child === "reviews") {
++    return page(f.reviews.get(Number(id)) ?? [], url);
++  }
++  return f.prs.get(Number(id)) ?? null;
++}
++/** @param {World} f @param {URL} url */
++function readGit(f, url) {
++  const prefix = "/git/ref/";
++  if (url.pathname.startsWith(prefix)) {
++    const sha = f.refs.get(url.pathname.slice(prefix.length));
++    if (sha === undefined) {
++      return null;
++    }
++    return { object: { sha } };
++  }
++  if (url.pathname.startsWith("/git/commits/")) {
++    return f.commits.get(url.pathname.slice("/git/commits/".length));
++  }
++  if (url.pathname.startsWith("/git/matching-refs/")) {
++    const refPrefix = url.pathname.slice("/git/matching-refs/".length);
++    return page(
++      [...f.refs.keys()]
++        .filter((ref) => ref.startsWith(refPrefix))
++        .map((ref) => ({ ref: `refs/${ref}` })),
++      url,
++    );
++  }
++  throw new Error(`unhandled fake read ${url.pathname}`);
++}
++/** @param {World} f @param {string} endpoint @param {object} body @param {"dev" | "merge"} identity @returns {unknown} */
++function create(f, endpoint, body, identity) {
++  f.writes.push(endpoint);
++  if (endpoint === "git/commits") {
++    f.world.sequence += 1;
++    const sha = f.world.sequence.toString(SHA_RADIX).padStart(SHA_LENGTH, "0");
++    const commit = { sha, tree: { sha: TREE }, message: JSON.stringify(body) };
++    f.commits.set(sha, commit);
++    return commit;
++  }
++  if (endpoint === "git/refs") {
++    const parsed = REF_BODY.parse(body);
++    const ref = parsed.ref.slice("refs/".length);
++    if (f.refs.has(ref)) {
++      throw new OpsError("HTTP 422 ref already exists");
++    }
++    f.refs.set(ref, parsed.sha);
++    return {};
++  }
++  const { pr } = REQUEST.exec(endpoint)?.groups ?? {};
++  if (pr !== undefined) {
++    if (!f.prs.has(Number(pr)) || identity !== "dev") {
++      throw new Error("wrong request identity or PR");
++    }
++    const row = f.prs.get(Number(pr));
++    if (row !== undefined) {
++      row.requested_reviewers = [{ login: f.cfg.mergeAccount }];
++    }
++    request(f, Number(pr), f.cfg.devAccount);
++    if (f.world.failRequest) {
++      throw new OpsError("response lost after review request");
++    }
++    return {};
++  }
++  throw new Error(`unhandled fake mutation ${endpoint}`);
++}
++/** @param {World} f @returns {Hub} */
++function fakeHub(f) {
++  return {
++    allowed: (login) => f.allowed.has(login),
++    read: (endpoint) => {
++      f.reads.push(endpoint);
++      const url = new URL(`https://fake/${endpoint}`);
++      if (endpoint.startsWith("issues")) {
++        return readIssue(f, url);
++      }
++      if (endpoint.startsWith("pulls")) {
++        return readPull(f, url);
++      }
++      return readGit(f, url);
++    },
++    create: (endpoint, body, identity = "merge") =>
++      create(f, endpoint, body, identity),
++    remove: (endpoint) => {
++      f.writes.push(endpoint);
++      f.refs.delete(endpoint.slice("git/refs/".length));
++    },
++  };
++}
++
++export { fakeHub };
+diff --git a/apps/issue-pipeline/test/assignment/fake-model.mjs b/apps/issue-pipeline/test/assignment/fake-model.mjs
+new file mode 100644
+index 0000000..b515a92
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment/fake-model.mjs
+@@ -0,0 +1,65 @@
++// @ts-check
++
++import { emptyCoordination } from "../../src/assignment/schema.ts";
++import { ISSUE_STATE, newIssueState } from "../../src/state.ts";
++import { pull } from "./fake-wire.mjs";
++import { CODE, TREE, WIKI } from "./world.mjs";
++
++/** @import { World } from './world.mjs' */
++/** @import { Execution } from '../../src/assignment/schema.ts' */
++/** @import { JobResult } from '../../src/assignment/worker-state.ts' */
++/** @param {World} f @param {import('../../src/state.ts').IssueState} state */
++function implement(f, state) {
++  const pr = pull(f, state.number);
++  state.pr = pr.number;
++  state.headSha = CODE;
++  state.stage = "review";
++  state.coordination = {
++    ...emptyCoordination(),
++    checkpoint: {
++      code: CODE,
++      wiki: WIKI,
++      inputs: f.world.inputs,
++      branch: state.branch ?? "",
++      pr: pr.number,
++      at: new Date(f.world.now).toISOString(),
++    },
++  };
++  f.refs.set(`heads/${state.branch}`, CODE);
++}
++/** @param {World} f @param {import('../../src/state.ts').IssueState} state */
++function merge(f, state) {
++  state.stage = "done";
++  state.codeMerged = { pr: state.pr ?? 1, sha: TREE };
++  state.merged = { code: TREE, wiki: WIKI, inputs: f.world.inputs };
++  state.security = {
++    revision: state.merged,
++    finding: null,
++    commentId: state.number,
++  };
++  const row = f.issues.get(state.number);
++  if (row !== undefined) {
++    row.state = "closed";
++  }
++}
++/** @param {World} f @param {Execution} execution @returns {JobResult} */
++function model(f, execution) {
++  const state = f.states.get(execution.issue) ?? newIssueState(execution.issue);
++  state.branch = `agent/issue-${execution.issue}`;
++  state.coordination ??= emptyCoordination();
++  if (execution.stage === "author") {
++    state.stage = "implement";
++    state.gherkin = { commentId: state.number, rev: 1, inputs: f.world.inputs };
++  } else if (execution.stage === "implement") {
++    implement(f, state);
++  } else if (execution.stage === "review") {
++    state.stage = "merge";
++    state.hardened = { code: CODE, wiki: WIKI, inputs: f.world.inputs };
++  } else {
++    merge(f, state);
++  }
++  f.states.set(state.number, ISSUE_STATE.parse(state));
++  return { end: "next", reason: null, localRecovery: false };
++}
++
++export { model };
+diff --git a/apps/issue-pipeline/test/assignment/fake-wire.mjs b/apps/issue-pipeline/test/assignment/fake-wire.mjs
+new file mode 100644
+index 0000000..c1ec814
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment/fake-wire.mjs
+@@ -0,0 +1,98 @@
++// @ts-check
++// GitHub's wire spelling belongs here, not in policy tests.
++import {
++  EVENT,
++  ISSUE,
++  PR,
++  REVIEW,
++} from "../../src/assignment/signal-schema.ts";
++import { CODE } from "./world.mjs";
++
++/** @import { World } from './world.mjs' */
++const PR_OFFSET = 10_000;
++/** @param {World} f @param {number} number @param {string} kind @param {{actor: string, extra?: object}} data */
++function event(f, number, kind, { actor, extra = {} }) {
++  f.world.sequence += 1;
++  const row = EVENT.parse({
++    id: f.world.sequence,
++    event: kind,
++    actor: { login: actor },
++    created_at: new Date(f.world.now).toISOString(),
++    ...extra,
++  });
++  f.events.set(number, [...(f.events.get(number) ?? []), row]);
++  return row;
++}
++/** @param {World} f @param {number} number @param {string} actor @param {string} [kind] */
++function request(f, number, actor, kind = "review_requested") {
++  return event(f, number, kind, {
++    actor,
++    extra: { requested_reviewer: { login: f.cfg.mergeAccount } },
++  });
++}
++/** @param {World} f @param {number} number @param {string} [author] @param {string} [actor] */
++function issue(f, number, author = "alice", actor = "alice") {
++  const row = ISSUE.parse({
++    number,
++    state: "open",
++    title: "Work",
++    body: "",
++    user: { login: author },
++    assignees: [{ login: f.cfg.devAccount }],
++    labels: [],
++  });
++  f.issues.set(number, row);
++  event(f, number, "assigned", {
++    actor,
++    extra: { assignee: { login: f.cfg.devAccount } },
++  });
++  return row;
++}
++/** @param {World} f @param {number} number */
++function pull(f, number) {
++  const pr = PR.parse({
++    number: number + PR_OFFSET,
++    state: "open",
++    user: { login: f.cfg.devAccount },
++    requested_reviewers: [],
++    head: {
++      sha: CODE,
++      ref: `agent/issue-${number}`,
++      repo: { full_name: f.cfg.repo },
++    },
++    base: { ref: f.cfg.baseBranch, repo: { full_name: f.cfg.repo } },
++  });
++  f.prs.set(pr.number, pr);
++  return pr;
++}
++/** @param {World} f @param {number} pr @param {string} verdict @param {{body?: string, author?: string, head?: string}} [options] */
++function review(f, pr, verdict, options = {}) {
++  f.world.sequence += 1;
++  const row = REVIEW.parse({
++    id: f.world.sequence,
++    user: { login: options.author ?? f.cfg.mergeAccount },
++    state: verdict,
++    commit_id: options.head ?? CODE,
++    submitted_at: new Date(f.world.now).toISOString(),
++    body: options.body ?? "checked",
++  });
++  f.reviews.set(pr, [...(f.reviews.get(pr) ?? []), row]);
++  clearRequest(f, pr);
++  request(
++    f,
++    pr,
++    options.author ?? f.cfg.mergeAccount,
++    "review_request_removed",
++  );
++  return row;
++}
++/** @param {World} f @param {number} pr */
++function clearRequest(f, pr) {
++  const row = f.prs.get(pr);
++  if (row === undefined) {
++    throw new Error("missing fixture PR");
++  }
++  row.requested_reviewers = [];
++}
++
++export { clearRequest, event, issue, pull, request, review };
+diff --git a/apps/issue-pipeline/test/assignment/test-kit.mjs b/apps/issue-pipeline/test/assignment/test-kit.mjs
+new file mode 100644
+index 0000000..da0c4f7
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment/test-kit.mjs
+@@ -0,0 +1,19 @@
++// @ts-check
++import { sweep } from "../../src/assignment/worker.ts";
++
++/** @import { fakeGithub } from './fake-github.mjs' */
++const SECOND = 1000;
++/** @param {ReturnType<typeof fakeGithub>} fake @param {number} [number] */
++async function ready(fake, number = 1) {
++  fake.issue(number);
++  await sweep(fake.cfg, "build", fake.deps());
++  fake.world.now += SECOND;
++  await sweep(fake.cfg, "build", fake.deps());
++  const state = fake.states.get(number);
++  if (state === undefined || state.pr === null) {
++    throw new Error("fixture failed to create its source checkpoint and PR");
++  }
++  return state;
++}
++
++export { ready };
+diff --git a/apps/issue-pipeline/test/assignment/world.mjs b/apps/issue-pipeline/test/assignment/world.mjs
+new file mode 100644
+index 0000000..198c106
+--- /dev/null
++++ b/apps/issue-pipeline/test/assignment/world.mjs
+@@ -0,0 +1,62 @@
++// @ts-check
++
++import { ASSIGNMENT } from "../../src/assignment/schema.ts";
++import { configFixture } from "../config-fixtures.mjs";
++
++/** @import { IssueState } from '../../src/state.ts' */
++/** @import { Execution } from '../../src/assignment/schema.ts' */
++/** @import { IssueRow, Pull, Event, Review } from '../../src/assignment/signal-schema.ts' */
++const SHA_LENGTH = 40;
++const CODE = "a".repeat(SHA_LENGTH);
++const TREE = "b".repeat(SHA_LENGTH);
++const WIKI = "c".repeat(SHA_LENGTH);
++const START = Date.parse("2026-10-20T00:00:00.000Z");
++/** @param {string} [repo] */
++function assignmentConfig(repo = "o/r") {
++  return configFixture({
++    repo,
++    devAccount: "builder",
++    mergeAccount: "merger",
++    assignment: ASSIGNMENT.parse({
++      enabled: true,
++      workers: [
++        { id: "build", login: "builder", roles: "development" },
++        { id: "check", login: "merger", roles: "review" },
++      ],
++      pollSeconds: 10,
++      maxBackoffSeconds: 60,
++      heartbeatSeconds: 10,
++      pageBudget: 3,
++    }),
++  });
++}
++/** @param {ReturnType<typeof assignmentConfig>} cfg */
++function fakeWorld(cfg) {
++  return {
++    cfg,
++    issues: new Map(/** @type {[number, IssueRow][]} */ ([])),
++    states: new Map(/** @type {[number, IssueState][]} */ ([])),
++    events: new Map(/** @type {[number, Event[]][]} */ ([])),
++    prs: new Map(/** @type {[number, Pull][]} */ ([])),
++    reviews: new Map(/** @type {[number, Review[]][]} */ ([])),
++    refs: new Map([[`heads/${cfg.baseBranch}`, CODE]]),
++    commits: new Map([
++      [CODE, { sha: CODE, tree: { sha: TREE }, message: "base" }],
++    ]),
++    notices: new Map(/** @type {[number, string][]} */ ([])),
++    allowed: new Set(["alice"]),
++    launches: /** @type {Execution[]} */ ([]),
++    reads: /** @type {string[]} */ ([]),
++    writes: /** @type {string[]} */ ([]),
++    world: {
++      now: START,
++      inputs: "inputs-1",
++      failRequest: false,
++      scope: true,
++      sequence: 1000,
++    },
++  };
++}
++
++/** @typedef {ReturnType<typeof fakeWorld>} World */
++export { assignmentConfig, CODE, fakeWorld, SHA_LENGTH, START, TREE, WIKI };
+diff --git a/apps/issue-pipeline/test/ops-v2-test-kit.mjs b/apps/issue-pipeline/test/ops-v2-test-kit.mjs
+index f3029d9..692558a 100644
+--- a/apps/issue-pipeline/test/ops-v2-test-kit.mjs
++++ b/apps/issue-pipeline/test/ops-v2-test-kit.mjs
+@@ -24,6 +24,7 @@ const LANE = { lane: "me", sweepId: "s1" };
+ function v2State(n, extra = {}) {
+   return {
+     version: 2,
++    coordination: null,
+     number: n,
+     stage: "implement",
+     stoppedStage: null,

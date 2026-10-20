@@ -2,6 +2,7 @@
 // pushes it, and the push and reset that sync-base and finish-sync share
 // (sync.ts).
 
+import { confirmedPush } from "../assignment/checkpoint.ts";
 import { recordPush } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -82,7 +83,9 @@ function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
     throw new OpsError(`#${n}'s code merged; refusing sync push`);
   }
   recordPush(cfg, n, head(wt), op);
-  git(cfg, "dev", ["-C", wt, "push", "--force-with-lease", "origin", target]);
+  confirmedPush(cfg, n, "code", (): void => {
+    git(cfg, "dev", ["-C", wt, "push", "--force-with-lease", "origin", target]);
+  });
 }
 
 export { finishProblem, pushBranch, resetToRemote };

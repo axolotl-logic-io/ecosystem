@@ -1,0 +1,308 @@
+Dropped changes of issue #73, job implement-20261019T215304339Z, checkout docs/
+Base: 4441ca5b676b238d30b9a005ffe1a80dfe12637f
+To restore: check out 4441ca5b676b238d30b9a005ffe1a80dfe12637f, then run git apply --index implement-20261019T215304339Z-docs.patch
+
+diff --git a/Agent-Labels.md b/Agent-Labels.md
+index ac66c24..21a3d6b 100644
+--- a/Agent-Labels.md
++++ b/Agent-Labels.md
+@@ -1,6 +1,6 @@
+ # Agent labels
+ 
+-This page documents the label registry in [`src/labels.ts`](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/src/labels.ts) and [`src/stops.ts`](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/src/stops.ts). [Reimagined pipeline](Reimagined-Pipeline) describes the caller-assigned workflow. Labels are visible status, not a substitute for signed state, exact revision receipts or fresh write authority.
++This page documents the label registry in [`src/labels.ts`](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/src/labels.ts) and [`src/stops.ts`](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/src/stops.ts). [Reimagined pipeline](Reimagined-Pipeline) describes explicit dispatch and opt-in assignment workers. Labels are visible status, not a substitute for signed state, exact revision receipts or fresh write authority.
+ 
+ ## Status labels
+ 
+@@ -11,7 +11,7 @@ This page documents the label registry in [`src/labels.ts`](https://github.com/a
+ | `agent:split` | Split into agent sub-issues. |
+ | `agent:merged` | Merged by the agent pipeline. |
+ 
+-The registry recognizes these labels; it does not imply that the executor discovers or splits issues. The caller owns issue selection and splitting. The Author asks needs-info questions; only trusted input can change the input revision. A code merge alone is not final security clearance or completed wiki publication.
++The registry recognizes these labels; it does not imply that the executor discovers or splits issues. In explicit mode the caller owns issue selection. Assignment workers select only authenticated assigned work or bound review handoffs; neither labels nor open status grant work. The orchestrator still decides assignments and splitting. The Author asks needs-info questions; only trusted input can change the input revision. A code merge alone is not final security clearance or completed wiki publication.
+ 
+ ## Stop labels
+ 
+@@ -43,3 +43,32 @@ The caller owns restarts and must inspect the stop, saved state and recovery evi
+ Final security runs on the actual merged result. A security stop can therefore leave code already merged while wiki publication and completion remain blocked. It is not a rollback. Lifting the stop cannot reroll the same rejected revision: it re-stops without a model. Remediation may need a separate issue or operator action. Missing or stale clearance never permits completion.
+ 
+ Preserve local refused work and recovery artifacts. [Job and shared session contract](Pipeline-Job-Contract#recovery-and-checkout-boundaries) describes the recovery boundary; the [source README](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/README.md) gives operator procedures.
++
++## Assignment-worker status
++
++Assignment mode does not add a second label-based queue. Existing labels keep
++these meanings; signed v2 coordination and its receipts remain authoritative.
++Read the issue's signed stage/coordination, claim heartbeat and keyed
++`assignment-observer` comments together:
++
++| Coordination status | Meaning |
++|---|---|
++| `queued` | Saved next work; it still needs a current eligible grant |
++| `active` | An exclusive execution token owns the stage; claim edits show recent heartbeat |
++| `ready-for-handoff` | Confirmed checkpoints and a saved handoff await review acceptance or reconciliation |
++| `blocked` | Questions, waits or bounded retry timing prevent another role run |
++| `stalled` | Uncertain mutation or local-only recovery needs explicit reconciliation |
++| `completed` | The stage saved completion; exact completion/publication receipts still establish delivery |
++
++Observer comments report provenance, prerequisite, role, stop, stale-owner,
++missing-evidence and retry holds without relaunching the failing role. They may
++explain a hold that prevented any state change. They are pipeline evidence, never
++trusted human input or answers to Author questions. The signed checkpoint links
++code and private-wiki branches/heads, PR, inputs and handoff; private wiki progress
++is not public wiki publication.
++
++`pipeline-execution/issue-N` and `pipeline-integration/HEX_BASE` refs may remain
++held after a crash even when a claim heartbeat is stale. Inspect pending intent,
++remote truth and required local evidence before releasing ownership. Removing a
++label, request, ref or stop never itself restores authority. Coordinate mode
++cutover with **#60**; retained-legacy-state adoption belongs to **#58**.
+diff --git a/Decisions.md b/Decisions.md
+index 0a2601f..e237dc4 100644
+--- a/Decisions.md
++++ b/Decisions.md
+@@ -1,6 +1,6 @@
+ # Ecosystem pipeline decisions
+ 
+-Each retained decision has a stable heading slug. Ecosystem owns the reusable pipeline; project-buddy owns its product, site and target rules. [Root `AGENTS.md`](https://github.com/axolotl-logic-io/ecosystem/blob/main/AGENTS.md) sets source contribution rules. The design and [shared job/session contract](Pipeline-Job-Contract) describe the caller-assigned pipeline, not a claim about an operator's installed version.
++Each retained decision has a stable heading slug. Ecosystem owns the reusable pipeline; project-buddy owns its product, site and target rules. [Root `AGENTS.md`](https://github.com/axolotl-logic-io/ecosystem/blob/main/AGENTS.md) sets source contribution rules. The design and [shared job/session contract](Pipeline-Job-Contract) describe explicit dispatch and opt-in assignment workers, not a claim about an operator's installed version.
+ 
+ ## Code and tooling
+ 
+@@ -8,6 +8,19 @@ Each retained decision has a stable heading slug. Ecosystem owns the reusable pi
+ - [`pipeline-tests-bounded`](Decisions-Code-and-tooling#pipeline-tests-bounded)
+ - [`sandbox-ready-jobs`](Decisions-Code-and-tooling#sandbox-ready-jobs)
+ 
++## Assignment operation
++
++- [`github-is-the-worker-coordination-store`](Reimagined-Pipeline#github-is-the-worker-coordination-store): explicit repository/worker scope, authenticated event grants and signed revision-bound handoffs; no private authoritative scheduler queue.
++- [`exclusive-workers-and-reconciled-recovery`](Reimagined-Pipeline#exclusive-workers-and-reconciled-recovery): atomic execution/integration refs, existing signed claims, confirmed remote checkpoints and intent-before-mutation; stale leases never authorize automatic takeover or blind retry.
++- [`bounded-assignment-polling`](Reimagined-Pipeline#bounded-assignment-polling): continuous idle polling, complete pagination and durable server-respecting retry holds.
++
++Explicit dispatch remains the default. Assignment operation replaces caller-owned
++per-stage dispatch only after quiescent operator cutover, coordinated with **#60**.
++It does not activate an installed runtime, change assignments/credentials, adopt
++retained legacy state (**#58**) or deploy production. Role/tool boundaries,
++merge-authored signed v2 authority and exact-result security/publication gates are
++unchanged.
++
+ ## Pipeline design and durable controls
+ 
+ - [`author-maintains-gherkin`](Reimagined-Pipeline#author-maintains-gherkin)
+diff --git a/Home.md b/Home.md
+index f0b7f3b..b2c81c6 100644
+--- a/Home.md
++++ b/Home.md
+@@ -2,15 +2,15 @@ Welcome to the ecosystem wiki!
+ 
+ # Ecosystem issue pipeline
+ 
+-Ecosystem owns the reusable issue pipeline under [`apps/issue-pipeline/`](https://github.com/axolotl-logic-io/ecosystem/tree/main/apps/issue-pipeline). Its caller assigns one issue, branch and stage per invocation. Jobs still work on project-buddy as their configured target; project-buddy's [product documentation](https://github.com/axolotl-logic-io/project-buddy/wiki/Home), target rules and writable target wiki remain separate.
++Ecosystem owns the reusable issue pipeline under [`apps/issue-pipeline/`](https://github.com/axolotl-logic-io/ecosystem/tree/main/apps/issue-pipeline). Explicit caller dispatch remains the default. Opt-in assignment workers can instead reconstruct authorized work, handoffs and stage progression from GitHub, while the orchestrator decides assignments. Jobs still work on project-buddy as their configured target; project-buddy's [product documentation](https://github.com/axolotl-logic-io/project-buddy/wiki/Home), target rules and writable target wiki remain separate.
+ 
+ ## Scope and runtime status
+ 
+-This wiki describes the pipeline in the ecosystem source. It makes no assertion about the runtime an operator has installed. The [pipeline README](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/README.md) provides invocation, configuration, upgrade and recovery procedures; [root `AGENTS.md`](https://github.com/axolotl-logic-io/ecosystem/blob/main/AGENTS.md) sets source contribution rules.
++This wiki describes the pipeline in the ecosystem source. Assignment operation requires separate operator configuration and quiescent cutover; source/wiki delivery starts no worker and changes no assignment. Coordinate operating procedures with **#60**; retained-legacy-state adoption remains **#58**. It makes no assertion about the runtime an operator has installed. The [pipeline README](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/README.md) provides invocation, configuration, upgrade and recovery procedures; [root `AGENTS.md`](https://github.com/axolotl-logic-io/ecosystem/blob/main/AGENTS.md) sets source contribution rules.
+ 
+ ## Issue pipeline
+ 
+-- [Reimagined pipeline](Reimagined-Pipeline): four stages, three model roles, revision-bound hardening, integration and final security.
++- [Reimagined pipeline](Reimagined-Pipeline): four stages, three model roles, opt-in GitHub assignment coordination, revision-bound hardening, integration and final security.
+ - [Job and shared session contract](Pipeline-Job-Contract): session authority, `pipeline_commit`, push replies and recovery boundaries.
+ - [Agent labels](Agent-Labels): status labels, stop controls and recovery meaning.
+ - [Token spend](Token-Spend): usage records, prompt provenance and commit/push attribution.
+@@ -25,7 +25,7 @@ This wiki describes the pipeline in the ecosystem source. It makes no assertion
+ - [Integration](Pipeline-Prompt-Integration)
+ - [Security](Pipeline-Prompt-Security)
+ 
+-The caller supplies a separately pinned wiki checkout through `--brain-path`. The job snapshots only the stage's mapped prompt pages, not Decisions or reference pages. It does not install or fetch this wiki. A brain pin does not change the configured target: project-buddy jobs use project-buddy's target wiki as writable job `docs/`.
++The caller or worker manifest supplies a separately pinned wiki checkout through `--brain-path`. The job snapshots only the stage's mapped prompt pages, not Decisions or reference pages. It does not install or fetch this wiki. A brain pin does not change the configured target: project-buddy jobs use project-buddy's target wiki as writable job `docs/`.
+ 
+ Other reference material must be supplied explicitly; any additional local pipeline-reference checkout must also be pinned explicitly. It is not automatically loaded by `--brain-path`.
+ 
+diff --git a/Pipeline-Job-Contract.md b/Pipeline-Job-Contract.md
+index e3526dd..d42df07 100644
+--- a/Pipeline-Job-Contract.md
++++ b/Pipeline-Job-Contract.md
+@@ -1,6 +1,6 @@
+ # Job and shared session contract
+ 
+-This page documents the caller-assigned pipeline's session and commit contract. The authority is [`src/job/roles.ts`](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/src/job/roles.ts), the commit planner/tool, control protocol and push server. [Reimagined pipeline](Reimagined-Pipeline) explains stage progression; [Token spend](Token-Spend) explains attribution.
++This page documents the session and commit contract shared by explicit caller dispatch and opt-in assignment-driven workers. The authority is [`src/job/roles.ts`](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/src/job/roles.ts), the commit planner/tool, control protocol and push server. [Reimagined pipeline](Reimagined-Pipeline) explains stage progression; [Token spend](Token-Spend) explains attribution.
+ 
+ ## Shared role rules
+ 
+@@ -54,6 +54,43 @@ After committing, the tool asks the running job over its control socket to push.
+ 
+ Code and wiki pushes target the caller-assigned issue branch using `--force-with-lease`. Wiki pushes run under the wiki lock.
+ 
++## Assignment execution authority
++
++In assignment mode, only the worker may start a stage on an opted-in repository.
++It supplies an immutable GitHub execution token, worker mapping, issue/stage,
++review-handoff ID and integration-turn token where required. A stable lane alone
++cannot admit duplicate sessions. The worker launches the same role programs,
++pinned prompts and tool scopes; no model receives discovery credentials or a new
++GitHub/mutation tool.
++
++Job entry, ops and credentialed writer/push boundaries reread current scope and
++grants. The current manifest/config, signed state, live claim, execution ref and
++bound review ownership must agree. Observed unassignment, closure, cancellation,
++reassignment, input changes or scope removal holds newly unauthorized work. A
++request consumed by its reviewer's corresponding submission is not cancellation.
++These checks observe GitHub; they do not make concurrent external changes atomic.
++
++Before a guarded mutation, signed state records intent. A code/private-wiki
++checkpoint records only remotely confirmed heads, branch, PR and input revision.
++The developer saves a bound handoff before requesting review. Acceptance remains
++in signed state after request consumption, including across worker replacement.
++It never substitutes for hardening, actual approval, exact-result verification or
++postmerge security clearance. Public wiki publication and issue completion retain
++their existing guards.
++
++Uncertain outcomes retain their pending intent and execution fence. A stopped
++worker reports local-only recovery rather than publishing refused bytes to make
++them appear recoverable. Required patches, bundles, mirrors and checkouts remain
++recovery evidence, not another scheduler or permission to push. A replacement
++holds if it cannot prove a checkpoint or lacks required unpublished work.
++
++The operator must prove the old executor stopped and reconcile writes/evidence
++before releasing stale refs; lease expiry does not suffice. SIGINT/SIGTERM ends
++and awaits only the worker's owned stage process group. See the
++[worker operating guide](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/README.md#assignment-driven-workers-opt-in)
++for scope, retry timing and quiescent cutover with **#60**. Legacy adoption remains
++**#58**; this contract installs or starts nothing.
++
+ ## Recovery and checkout boundaries
+ 
+ ### worktrees-and-branches
+diff --git a/Reimagined-Pipeline.md b/Reimagined-Pipeline.md
+index 4338a86..08e6a49 100644
+--- a/Reimagined-Pipeline.md
++++ b/Reimagined-Pipeline.md
+@@ -1,10 +1,10 @@
+ The issue pipeline has four stages and three model roles: Author, Developer and Reviewer. The Reviewer hardens the change, integrates it, then performs a final security-only review of the merged result. Actual merge and publication mutations remain deterministic.
+ 
+-The caller assigns work and serializes integration turns. The [pipeline README](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/README.md) describes invocation and configuration; [Job and shared session contract](Pipeline-Job-Contract) describes session authority and commit/push behavior.
++Explicit caller dispatch remains the default. Opt-in [assignment-driven workers](#assignment-driven-workers) instead discover authenticated GitHub grants, choose stages and serialize integration turns. The orchestrator still decides assignments. The [pipeline README](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/README.md) describes invocation and configuration; [Job and shared session contract](Pipeline-Job-Contract) describes session authority and commit/push behavior.
+ 
+ ## Goal
+ 
+-The pipeline takes a caller-assigned issue through Gherkin, implementation, hardening, integration, result verification and final security. An unresolved question or failed control stops progress for an answer or recovery; it does not authorize bypassing a guard.
++The pipeline takes an authorized assigned issue through Gherkin, implementation, hardening, integration, result verification and final security. An unresolved question or failed control stops progress for an answer or recovery; it does not authorize bypassing a guard.
+ 
+ ## Stages and roles
+ 
+@@ -33,6 +33,77 @@ It goes back when something changes or fails:
+ 
+ Gherkin is the plain-text `Feature`, `Scenario`, `Given`, `When`, `Then` notation for behaviour. Only three model roles exist: Author, Developer and Reviewer. Existing serialized `implement`/`implementor` names may remain for compatibility. Integration is a Reviewer state, not a fourth model role. Each stage remains plain code that runs its ops and at most its one role; the design adds no state-machine framework.
+ 
++## Assignment-driven workers
++
++### `github-is-the-worker-coordination-store`
++
++Assignment mode is an operator opt-in, not a change to the installed runtime.
++The [worker operating guide](https://github.com/axolotl-logic-io/ecosystem/blob/main/apps/issue-pipeline/README.md#assignment-driven-workers-opt-in)
++defines the non-secret manifest and repository settings. Worker IDs map to the
++configured development or review/merge GitHub account, separately from models and
++private credentials. The manifest allows repositories explicitly; ecosystem and
++project-buddy keep independent target bases, checks, trusted humans and wikis.
++
++Workers paginate assignments, PR requests and authenticated issue/PR event history.
++New development needs an allowed human collaborator as author and a current grant
++from the configured review/merge account or an allowed human collaborator. An
++assignee list, label or visitor request cannot establish provenance. The developer
++may request review only for the issue's recorded PR and confirmed checkpoints.
++Review scans signed handoffs as well as pending requests, so accepted ownership
++survives GitHub consuming a request during that reviewer's bound submission.
++
++Signed v2 coordination adds worker/status, reason, heartbeat/retry timing,
++checkpoints, handoff and pending mutation intent to existing stage/receipt state.
++Handoffs bind their own ID, assignment and request events, source/private-wiki
++heads, branch, PR and trusted inputs. Snapshots exclude prior reviews/events,
++including signals with the same timestamp. Bound changes requests or a new
++assignment back to development invalidate old hardening/integration/security
++permission. Review feedback remains operational evidence, not human input.
++
++Question, prerequisite, split-parent, stop, role, legacy, approval and mutation
++gates remain in force. Changed trusted requirements return development to Author.
++Same-repository prerequisites use `<!-- agent-pipeline:after 12,34 -->` and must
++be closed and completed or marked `agent:merged`. A held issue does not prevent
++other eligible assigned work. The worker never splits or self-assigns issues.
++
++### `exclusive-workers-and-reconciled-recovery`
++
++GitHub create-if-absent refs exclude duplicate executors, including two instances
++sharing one worker identity. `pipeline-execution/issue-N` names an immutable token;
++the stage's claim lane includes that token. `pipeline-integration/HEX_BASE` holds
++one repository/base integration-to-completion turn. Existing signed claims still
++supply leases and bounded heartbeat comments. These are cooperating-worker
++controls, not atomic exclusion of outside GitHub actors.
++
++Mutation intent precedes source/private-wiki pushes, PR creation, review requests,
++code merge, public wiki publication and completion. Confirmation precedes clearing
++the intent. Only an exact remote observation becomes a recoverable checkpoint.
++A lost response or save retains the intent and execution ref. There is no blind
++write retry or automatic stale-fence deletion. Lease expiry alone never proves an
++old process stopped or its write did not land.
++
++Before stale takeover, the operator must terminate the prior owner, reconcile
++remote branches/PRs and genuine receipts, preserve required local evidence and
++restore current authority. Missing local patches, bundles, mirrors or checkouts
++can require a hold. A checkpoint does not claim those unpublished bytes exist on
++GitHub. New scope, claim, assignment or request loss refuses subsequent controlled
++actions; it does not authorize salvage pushes or concurrent replacement.
++
++### `bounded-assignment-polling`
++
++A worker continues after idle and completed sweeps. Healthy polling defaults to
++60 seconds; configured exponential backoff is capped, except that a later server
++Retry-After/reset remains a minimum. `pipeline-retry/TIMESTAMP-ID` refs preserve
++repository retry deadlines across replacement. `pipeline-discovery/WORKER` prevents
++an interrupted or unconfirmed discovery/backoff write from silently restarting.
++Pagination exhaustion is incomplete discovery, not an empty queue or unassignment.
++
++Only disposable timers live locally. A new worker reconstructs assignments,
++accepted handoffs, stages, branch bindings, checkpoints and receipts from GitHub.
++Signed state, claim heartbeats and keyed `assignment-observer` comments expose
++ownership, holds, retry times and recovery needs. Local PIDs/logs do not authorize
++progress. Read failures never imply permission to repeat uncertain mutations.
++
+ ## Design
+ 
+ ### `author-maintains-gherkin`
+@@ -175,7 +246,7 @@ The pipeline records context in `context.jsonl` and attributes sessions, commits
+ 
+ ### `caller-assigns-the-work`
+ 
+-The caller chooses issues, splitting, prerequisites, concurrency, stage selection, integration turns and restarts. Each invocation runs one stage of one issue on the required `--issue` and `--branch`, with required `--brain-path`. The branch is a valid literal name, never the base, wiki or remote-default branch. Saved state binds the issue to its branch; a changed assignment on resume is refused before mutation.
++When assignment mode is absent, the caller chooses issues, splitting, prerequisites, concurrency, stage selection, integration turns and restarts. Each invocation runs one stage of one issue on the required `--issue` and `--branch`, with required `--brain-path`. The branch is a valid literal name, never the base, wiki or remote-default branch. Saved state binds the issue to its branch; a changed assignment on resume is refused before mutation.
+ 
+ Use the same branch and stable `--lane` claimant across stages. Here `--lane` is a claim identity, not a scheduling system. Never dispatch the same issue/branch concurrently, even under the same claimant. Distinct jobs use distinct issues/branches; the caller serializes merge turns. `--merge-queue` conveys order, not permission for concurrent merges. Do not blindly loop on `unclaimed`, `wait`, `deferred` or `stop`.
+ 
+@@ -191,11 +262,11 @@ The roles' behavioural instructions are wiki pages, not code: [Author](Pipeline-
+ 
+ ### `claims-without-race-wait`
+ 
+-The caller assigns a given issue only once at a time. A signed claim comment has a lease; a live lease refuses other claimants. Omitting the stable `--lane` creates a new claimant that cannot take a still-live earlier claim. Caller dispatch and leases do not exclude outside GitHub actors or make PR/ref/input changes atomic. A stage mismatch releases preserved state without running its model.
++In explicit mode, the caller assigns a given issue only once at a time. Assignment mode adds the exclusive GitHub ref above; a shared claim lane alone is not exclusion. A signed claim comment has a lease; a live lease refuses other claimants. Omitting the stable `--lane` creates a new claimant that cannot take a still-live earlier claim. Caller dispatch and leases do not exclude outside GitHub actors or make PR/ref/input changes atomic. A stage mismatch releases preserved state without running its model.
+ 
+ ### `prerequisite-holds`
+ 
+-The caller holds dependent work until its prerequisites are satisfied. Discovery, splitting and prerequisite scheduling are outside the stage executor's authority: the executor never selects another issue. Branch stacking is not a prerequisite scheduler supplied by this workflow.
++In explicit mode, the caller holds dependent work until its prerequisites are satisfied. Assignment workers enforce the prerequisite marker described above. Discovery, splitting and prerequisite scheduling are outside the stage executor's authority: the executor never selects another issue. Branch stacking is not a prerequisite scheduler supplied by this workflow.
+ 
+ ### `three-configurable-models`
+ 
+@@ -271,8 +342,10 @@ A merge is not installation. The operator reviews the exact code/wiki candidate,
+ 
+ ## Cutover
+ 
+-Cutover is quiescent, not a rolling upgrade. The exact combined code/wiki candidate must pass its source gates and fresh independent security review before operator-authorized installation or job launch ([`installed-not-merged`](#installed-not-merged)).
++Cutover is quiescent, not a rolling upgrade. Coordinate assignment operation with ecosystem **#60**; retained-legacy-state adoption remains **#58**. Source delivery does not enable configs, install files, start workers or change assignments. The exact combined code/wiki candidate must pass its source gates and fresh independent security review before operator-authorized installation or job launch ([`installed-not-merged`](#installed-not-merged)).
+ 
+ Before installation the operator stops new dispatch, stops or drains only owned jobs, verifies their leases and processes are released, and snapshots the installation, configuration, signed state and recovery artifacts. Pushed commits, accurate checkpoints, refused local work and genuine merge/security provenance must survive. Unrecognized state or uncertain delivery requires explicit reconciliation, not a blind restart or reset. The operator reviews the install dry-run, installs as one unit only while no old-version job runs, then pins the approved prompts and explicitly assigns work from preserved state. Never mix installed versions under live jobs; no compatibility shim solely for such coexistence is required.
+ 
+ The operator handles questions, genuine stops and pipeline faults, and controls pause, upgrade and resume procedures. It does not bypass failed checks, lose branch work or deploy main.
++
++Assignment cutover also drains explicit dispatch before enabling worker scope. Opted-in repositories refuse explicit stage jobs without worker execution authority. Do not mix modes, installed versions or overlapping owners. Existing v2 work without assignment coordination needs explicit reconciliation, not implicit adoption. Stale execution/integration/discovery refs and pending intents must be reconciled before releasing ownership; snapshots and required local recovery evidence remain necessary even though the queue is in GitHub.

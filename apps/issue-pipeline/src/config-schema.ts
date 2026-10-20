@@ -2,6 +2,7 @@
 // ops modules check (src/config.ts loads it).
 
 import { z } from "zod";
+import { ASSIGNMENT } from "./assignment/schema.ts";
 import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
 import { OpsError } from "./ops-error.ts";
 
@@ -65,6 +66,7 @@ const MODELS = z.object({
 });
 
 const CONFIG_SCHEMA = z.looseObject({
+  assignment: ASSIGNMENT.optional(),
   devAccount: z.string(),
   mergeAccount: z.string(),
   credentialsEnvFile: z.string(),

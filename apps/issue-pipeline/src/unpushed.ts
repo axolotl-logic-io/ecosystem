@@ -5,6 +5,7 @@
 // any commits the branch lacks under refs/pipeline/rescue/<n>/<stamp>, and
 // keeps HEAD unless someone pushed to the branch since.
 
+import { confirmedPush } from "./assignment/checkpoint.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
@@ -71,7 +72,9 @@ function pushCode(cfg: Config, n: number): string[] {
           `#${n}'s code merged; stop salvage cannot push code`,
         );
       }
-      git(cfg, "dev", ["-C", wt, "push", "origin", target]);
+      confirmedPush(cfg, n, "code", (): void => {
+        git(cfg, "dev", ["-C", wt, "push", "origin", target]);
+      });
     }
     return [];
   } catch {

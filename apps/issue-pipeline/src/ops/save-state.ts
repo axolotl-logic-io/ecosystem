@@ -37,7 +37,18 @@ function withSavedCodeMerge(
     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
   }
   const saved = readWriteState(cfg, n);
-  return { ...state, codeMerged: saved.codeMerged };
+  let { coordination, headSha } = state;
+  if (cfg.assignment !== undefined) {
+    ({ coordination } = saved);
+  }
+  if (
+    cfg.assignment !== undefined &&
+    saved.coordination?.checkpoint?.code !== undefined
+  ) {
+    const { code } = saved.coordination.checkpoint;
+    headSha = code;
+  }
+  return { ...state, headSha, coordination, codeMerged: saved.codeMerged };
 }
 
 // Writes issue `n`'s state, with the code merge it has saved.

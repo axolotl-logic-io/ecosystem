@@ -12,6 +12,7 @@ run = [
   "node --check dist/ops.mjs",
   "node --check dist/shell-supervisor.mjs",
   "node --check dist/job.mjs",
+  "node --check dist/worker.mjs",
   "node --check dist/orchestrate.mjs",
   "node --check dist/report.mjs",
   "node --check dist/pipeline-commit.mjs",

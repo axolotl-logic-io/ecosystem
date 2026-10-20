@@ -7,6 +7,7 @@
 // open-pr pushes code.
 
 import { z } from "zod";
+import { beginMutation, finishMutation } from "../assignment/checkpoint.ts";
 import type { BranchChanges } from "../checkouts.ts";
 import { ensureWorktree, push } from "../checkouts.ts";
 import type { Author } from "../comments.ts";
@@ -110,6 +111,7 @@ function createPr(
   flags: readonly string[],
   text: { title: string; body: string },
 ): number {
+  beginMutation(cfg, n, "pr-create");
   const args = ["pr", "create", "-R", cfg.repo, ...flags];
   const url = gh(cfg, "dev", [
     ...args,
@@ -122,7 +124,16 @@ function createPr(
     "--body",
     text.body,
   ]).stdout.trim();
-  return Number(url.split("/").pop());
+  const pr = Number(url.split("/").pop());
+  if (cfg.assignment !== undefined) {
+    const remote = remoteHead(cfg, n);
+    if (remote === null) {
+      throw new OpsError("PR creation has no confirmed source head");
+    }
+    saveDraftAuthority(cfg, n, pr, remote);
+  }
+  finishMutation(cfg, n, "pr-create");
+  return pr;
 }
 
 function planDetails(plan: string | null | undefined): string {

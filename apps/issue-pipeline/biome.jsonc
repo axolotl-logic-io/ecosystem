@@ -20,7 +20,8 @@
     // stage job's modules that spawn ops.mjs and pi, keep its checkout,
     // control socket, status and logs, or are pi extensions; and the
     // orchestrator's modules that read its arguments, spawn and check the
-    // jobs and keep its log and memory. Every other module, such as the
+    // jobs and keep its log and memory; the assignment worker entry and its
+    // stage-child process adapter. Every other module, such as the
     // roles, the schedule, the saved state and the protocols, gets none.
     {
       "includes": [
@@ -50,6 +51,9 @@
         "src/ops/push.ts",
         "src/ops/ci-status.ts",
         "src/job.ts",
+        "src/worker.ts",
+        "src/assignment/worker-process.ts",
+        "src/assignment/scope.ts",
         "src/job/launch.ts",
         "src/job/runtime-profile.ts",
         "src/job/ops-process.ts",
@@ -115,9 +119,15 @@
     // GitHub's REST API names a comment's times in snake_case (`created_at`,
     // `updated_at`). comments.ts declares its comment schema with them, and
     // test/fake-gh.mjs, the fake gh, answers with comments in that wire format
-    // (#219).
+    // (#219). signal-schema.ts validates GitHub issue/event/review wire fields.
     {
-      "includes": ["src/comments.ts", "test/fake-gh.mjs"],
+      "includes": [
+        "src/comments.ts",
+        "src/assignment/signal-schema.ts",
+        "test/assignment/fake-wire.mjs",
+        "test/assignment/fake-hub.mjs",
+        "test/fake-gh.mjs"
+      ],
       "linter": {
         "rules": {
           "style": {

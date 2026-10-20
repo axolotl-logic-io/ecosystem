@@ -1,13 +1,8 @@
-// The decision to merge an issue's PR or refuse it: the checks that the
-// request's revision is the state's authorized one (mergeAuthorization),
-// that it is still the PR's head and still current, the merge order between
-// issues, the base check, that the Reviewer marked the PR ready, the explicit-target branch
-// merge itself and the merge receipt. A merge only merges code: publishing
-// the wiki (publish) and closing the issue (finish-wiki) are separate ops
-// the merge role runs after it saves the receipt and the security review of
-// the merged result (`merge-publish-finish-split`).
+// Guarded explicit-target code merge and exact-result receipt. Wiki publication
+// and completion remain separate, postmerge-security-gated operations.
 
 import { z } from "zod";
+import { finishMutation } from "../assignment/checkpoint.ts";
 import { assignedBranch } from "../branch-binding.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
@@ -17,6 +12,7 @@ import { git } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import { confirmMerged, currentRevision } from "../revision.ts";
+import { readWriteState, writeState } from "../saved-state.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { branchMerge } from "./branch-merge.ts";
 import { mergedText } from "./merge-comment.ts";
@@ -289,6 +285,14 @@ function ownReceipt(
     { role: "merger" },
     `${mergedText(req.state, req.expectedSha, mergeCommit)}\n\n${req.summary ?? ""}`,
   );
+  if (cfg.assignment !== undefined) {
+    const saved = readWriteState(cfg, req.number);
+    writeState(cfg, req.number, {
+      ...saved,
+      codeMerged: { pr, sha: mergeCommit },
+    });
+    finishMutation(cfg, req.number, "code-merge");
+  }
   return { merged: true, mergeCommit, headSha: req.expectedSha };
 }
 

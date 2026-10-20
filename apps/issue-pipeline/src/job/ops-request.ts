@@ -5,6 +5,7 @@
 // knows the request's framing and the reply's shape on stdout.
 
 import { z } from "zod";
+import type { Execution } from "../assignment/schema.ts";
 import type { JobCheckout } from "../config.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runOpsLaunch } from "./launch.ts";
@@ -23,6 +24,7 @@ const REPLY = z.looseObject({ ok: z.boolean(), error: z.string().optional() });
 // job's own checkout, with the issue branch its caller assigned.
 interface OpsFrame {
   config: string;
+  execution?: Execution | undefined;
   sweepId: string;
   lane: string;
   checkout: JobCheckout;

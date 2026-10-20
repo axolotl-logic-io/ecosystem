@@ -3,6 +3,7 @@
 // and closing a parent whose sub-issues are all closed.
 
 import { z } from "zod";
+import { assertExecution } from "../assignment/authority.ts";
 import { assignedBranch } from "../branch-binding.ts";
 import { removeWorktree } from "../checkouts.ts";
 import { closeClaims } from "../claims.ts";
@@ -81,6 +82,7 @@ function deleteBranch(cfg: Config, state: IssueState): void {
 // with `text` as the closing comment. True when this call closed it; an
 // unreadable issue or a failed close throws, so the completion is retried.
 function closeIssue(cfg: Config, n: number, text: string): boolean {
+  assertExecution(cfg, n, true);
   const state = issueState(cfg, n);
   if (state === null) {
     throw new OpsError(`could not read whether #${n} is open`);

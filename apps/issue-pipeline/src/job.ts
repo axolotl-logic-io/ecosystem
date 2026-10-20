@@ -60,6 +60,7 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import process from "node:process";
+import { assertExecution } from "./assignment/authority.ts";
 import type { Config } from "./config.ts";
 import { loadConfig, paths } from "./config.ts";
 import { authorizedIssue } from "./issue-context.ts";
@@ -92,16 +93,33 @@ const SWEEP_ID_RADIX = 36;
 // A process a signal ended exits with 128 + the signal's number.
 const SIGNAL_EXIT_BASE = 128;
 
-async function runStage(
-  args: RunArgs,
-  cfg: Config,
-  brain: Brain,
-): Promise<RunEnd> {
-  const { issue, stage, branch, mergeQueue = null } = args;
+function requiredRole(
+  stage: RunArgs["stage"],
+): NonNullable<ReturnType<typeof roleOf>> {
   const role = roleOf(stage);
   if (role === undefined) {
     throw new Error(`no role for stage ${stage}`);
   }
+  return role;
+}
+
+function executionConfig(config: Config, args: RunArgs): Config {
+  const cfg = { ...config, execution: args.execution };
+  assertExecution(cfg, args.issue, true);
+  if (args.execution !== undefined && args.execution.stage !== args.stage) {
+    throw new Error("execution stage mismatch");
+  }
+  return cfg;
+}
+
+async function runStage(
+  args: RunArgs,
+  config: Config,
+  brain: Brain,
+): Promise<RunEnd> {
+  const cfg = executionConfig(config, args);
+  const { issue, stage, branch, mergeQueue = null } = args;
+  const role = requiredRole(stage);
   const key = jobKeyOf(stage, new Date());
   const wiki = STAGE_WIKI_ACCESS[stage];
   const dirs = openJobCheckout(cfg, issue, { stage, branch });
@@ -122,6 +140,7 @@ async function runStage(
   const hooks = hooksOf(cfg, args, { status, control }, where);
   const frame = {
     config: args.config,
+    execution: args.execution,
     sweepId,
     lane: args.lane ?? sweepId,
     checkout: { issue, dir: repo, branch },

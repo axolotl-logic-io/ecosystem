@@ -24,6 +24,7 @@ const LANE = { lane: "me", sweepId: "s1" };
 function v2State(n, extra = {}) {
   return {
     version: 2,
+    coordination: null,
     number: n,
     stage: "implement",
     stoppedStage: null,

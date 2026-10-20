@@ -4,6 +4,7 @@
 
 import { parseArgs } from "node:util";
 import { z } from "zod";
+import { EXECUTION } from "../assignment/schema.ts";
 import { STAGES } from "../stages.ts";
 
 const STAGE_LIST = STAGES.join(", ");
@@ -42,6 +43,11 @@ const STAGE = z.enum(STAGES, { error: NO_STAGE });
 const JOB_ARGS = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("run"),
+    execution: z
+      .string()
+      .transform((value: string): unknown => JSON.parse(value))
+      .pipe(EXECUTION)
+      .optional(),
     config: CONFIG,
     issue: ISSUE,
     stage: STAGE,
@@ -83,6 +89,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
   const { values } = parseArgs({
     args: [...argv],
     options: {
+      execution: { type: "string" },
       config: { type: "string" },
       issue: { type: "string" },
       stage: { type: "string" },

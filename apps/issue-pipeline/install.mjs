@@ -42,6 +42,7 @@ const BUILT = [
   "ops.mjs",
   "shell-supervisor.mjs",
   "job.mjs",
+  "worker.mjs",
   "orchestrate.mjs",
   "report.mjs",
   "structured-output.mjs",

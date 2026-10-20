@@ -1,6 +1,6 @@
 # Issue pipeline
 
-The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, integration turns, stops and restarts. The executor never selects another issue. The configured repository's wiki page `Reimagined-Pipeline` describes the design.
+By default the pipeline executes one caller-assigned GitHub issue, branch and stage per invocation. The caller owns discovery and scheduling in that mode. An explicitly enabled assignment worker can instead discover authorized GitHub assignments and handoffs, select stages and serialize integration. Both modes use the same guarded stage executor; do not run them concurrently on the same repository. The configured repository's wiki page `Reimagined-Pipeline` describes the design.
 
 A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
@@ -59,6 +59,166 @@ Issue/branch binding is persisted at first claim. A changed branch on resume is 
 
 Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. The caller serializes integration/merge turns (one at a time); existing claim/lease/head/merge-queue guards still apply. `--merge-queue N,...` carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
 
+## Assignment-driven workers (opt-in)
+
+This mode replaces per-issue/per-stage dispatch, not the role programs or their
+authority. The orchestrator decides assignments. Workers never assign issues,
+claim unrelated labeled work, split issues, install themselves or start a service.
+Omitting `assignment` keeps explicit dispatch. Delivery of these files does not
+activate this mode.
+
+Add this **non-secret** section to each operator repository configuration. The
+logins must match its existing `devAccount` and `mergeAccount`; names are examples,
+not hard-coded identities. `id` is the process's logical worker identity. `roles`
+is its pipeline responsibility, not a model selection or credential name.
+
+```json
+{
+  "assignment": {
+    "enabled": true,
+    "workers": [
+      { "id": "development", "login": "hippy", "roles": "development" },
+      { "id": "review-merge", "login": "lawd", "roles": "review" }
+    ],
+    "pollSeconds": 60,
+    "maxBackoffSeconds": 3600,
+    "heartbeatSeconds": 60,
+    "pageBudget": 100
+  }
+}
+```
+
+IDs, accounts and responsibilities must each be unambiguous. Model choices remain
+in `models`; credentials remain in private operator configuration. Repository and
+worker identity changes require draining/reconciliation, not a live account swap.
+
+An operator-owned JSON manifest is the repository allow-list. Use absolute paths
+to repository configs and separately pinned brain checkouts. It may contain both
+ecosystem and project-buddy, with their own base, checks, allowed humans and target
+wiki settings. It never changes either repository's writable wiki target.
+
+```json
+{
+  "repositories": [
+    { "config": "/OPERATOR/repos/ecosystem.json", "brainPath": "/OPERATOR/brains/ecosystem" },
+    { "config": "/OPERATOR/repos/project-buddy.json", "brainPath": "/OPERATOR/brains/ecosystem" }
+  ]
+}
+```
+
+After separate operator approval and cutover, the process interface is:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/worker.mjs" --manifest /OPERATOR/workers.json --worker development
+node "$ISSUE_PIPELINE_ROOT/worker.mjs" --manifest /OPERATOR/workers.json --worker review-merge
+```
+
+These are alternative long-running worker processes, one per responsibility;
+source delivery does not execute them. `--once` performs one **real** sweep, not a
+dry-run. SIGINT/SIGTERM stops discovery, ends and awaits the owned stage process
+group, and preserves uncertain execution ownership and local recovery evidence.
+
+### Discovery and handoffs
+
+The development worker paginates open issues assigned to its configured account.
+It requires a currently allowed human collaborator as issue author and an
+assignment event from the configured review/merge account or an allowed human
+collaborator. The current assignee list alone does not establish who assigned it.
+A development account may request review of its recorded PR; it cannot authorize
+its own initial assignment or widen trusted human input.
+
+The review worker paginates repository issues (including closed issues with an
+unfinished recorded merge) and open PR review requests. It selects recorded
+signed handoffs, not arbitrary PRs. Missing, ambiguous or unauthenticated anchors
+produce a GitHub-visible hold. Exhausting the page budget is incomplete discovery,
+never proof of an empty queue or unassignment.
+
+A handoff records an ID, issue branch, exact confirmed code/private-wiki heads,
+PR, input revision, assignment event and review-request event. The developer
+saves it before requesting the configured reviewer. Accepted ownership remains
+in signed state after GitHub consumes the request, but only with a corresponding
+new review by that reviewer on the recorded head. Request cancellation or
+replacement, another developer assignment, changed inputs or external heads hold
+or invalidate it. Review/event snapshots prevent old same-second signals from
+becoming a fresh handoff. An exact-head authenticated changes request returns the
+work to development, clears old hardening/integration/security authority and keeps
+feedback as operational evidence, never as trusted human issue input.
+
+The worker preserves existing question, stop, split-parent, role, readiness,
+approval, exact-result and security gates. Existing v2 work without assignment
+coordination and retained legacy state require explicit reconciliation, not
+automatic adoption. Trusted input changes send development back to Author before
+more implementation. Unanswered needs-info work does not restart on visitor or
+pipeline comments. Same-repository prerequisites use the existing
+`<!-- agent-pipeline:after 12,34 -->` marker: every dependency must be closed and
+completed or marked `agent:merged`. A blocked issue does not prevent another
+eligible assignment from running.
+
+### Durable coordination and recovery
+
+GitHub is the coordination store. Signed v2 state retains stage, worker/status,
+reason/retry time, confirmed checkpoints, pending mutation and accepted handoff.
+Existing signed claim comments provide bounded heartbeat updates. Keyed
+`assignment-observer` comments explain ignored signals and holds; they are not
+human input or a substitute for signed state. The ref namespaces are reserved:
+
+- `pipeline-execution/issue-N`: atomic create-if-absent execution fence. Each
+  execution uses a unique immutable commit token and claim lane. Sharing a worker
+  identity cannot admit duplicate sessions.
+- `pipeline-integration/HEX_BASE`: one integration-to-completion turn per
+  repository/base. Other issues can develop/harden while that turn is held.
+- `pipeline-discovery/WORKER`: discovery ownership. A crash or inability to
+  confirm retry-state publication leaves it held for reconciliation.
+- `pipeline-retry/TIMESTAMP-ID`: durable repository retry deadline in epoch
+  milliseconds. A replacement reads it before discovery can select work.
+
+Polling defaults to 60 seconds, with configurable bounded exponential backoff
+(default cap one hour). A later server Retry-After or rate-limit reset is a
+minimum, not a limit to shorten. Page size is 100; the page budget defaults to
+100. There is no authoritative local queue. Process records and logs help with
+diagnosis, but restarting reconstructs stage selection from GitHub.
+
+Before source/private-wiki pushes, PR creation, handoff requests, code merge,
+public wiki publication or completion, the runtime saves mutation intent. It
+confirms the outcome before clearing the intent. Source/wiki checkpoints require
+an exact remote-head observation; a local SHA or successful command alone is not
+remote recovery. Private issue-wiki pushes do not publish the public wiki base.
+A lost response/save leaves a pending intent and execution fence, not permission
+to repeat the mutation. Existing public-wiki and issue-completion guards still
+require the actual merged result's exact clear security receipt.
+
+Every controlled action revalidates execution ownership and the current grant.
+The operator manifest, repository opt-in and worker mapping are reread; removing
+scope or a grant stops newly unauthorized work. This is observation, not an atomic
+transaction with external GitHub actors. Refused bytes remain in the existing
+patches, bundles, wiki mirror and retained checkouts. `localRecovery` and stalled
+notices explicitly distinguish them from the last confirmed remote checkpoint.
+A replacement must not reset or reimplement work whose required evidence is
+missing.
+
+**Lease expiry is not takeover permission.** There is deliberately no automatic
+stale-fence deletion. Before releasing stale discovery, execution or integration
+ownership, the operator must stop/prove termination of the prior owner, inspect
+pending intents and all local evidence, reconcile actual remote branches/PRs and
+merge/publication/completion receipts, and establish current authorized scope.
+Only then may ownership be released and the signed checkpoint reconciled. An old
+instance must fail its token/grant/claim checks. Never remove a ref or pending
+intent merely to unblock a sweep. A pending review-request response can be
+reconciled against its authenticated event without reposting it; other ambiguous
+outcomes may remain held for explicit recovery.
+
+### Assignment cutover
+
+Coordinate these operating rules with ecosystem issue **#60**. Stop new explicit
+dispatch and drain/stop owned jobs before enabling assignment configs; snapshot
+installed files, pins, signed state and local recovery artifacts. Review and
+approve the exact code/wiki candidate, security clearance and install dry-run.
+Install as one unit only while no old runtime is active. Explicit jobs without
+worker execution authority are refused on opted-in repositories; do not mix
+modes or installed versions. Operator approval separately controls worker launch
+and any assignment changes. Retained-legacy-state adoption remains **#58**.
+Nothing here installs, starts, changes credentials/assignments or deploys anything.
+
 ## Write authority and refused-work recovery
 
 Every credentialed code push, including stop-time salvage and synchronization, checks fresh merge-authored, editor-verified saved authority and actual PR status. Missing or malformed critical state, a saved code merge, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine merge-authored, editor-verified state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and any prior pipeline comment, local work, remote issue branch, private wiki ref or PR history without saved authority requires reconciliation. Legacy v1 state is display-only and claims refuse it with `legacy pipeline state needs explicit reconciliation`; there is no automatic adoption tool. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
@@ -93,6 +253,7 @@ Before any mutation the job snapshots the pages needed by its stage. Missing/unr
 
 | Program | Purpose |
 |---|---|
+| `worker.mjs` | Opt-in assignment polling through `--manifest`, `--worker`, optional `--once`; no service activation |
 | `job.mjs` | Explicit one-stage invocation above; `--steer <launch key> --message <text>` steers a running session |
 | `ops.mjs` | Credentialed deterministic operations; framed JSON stdin (`BEGIN_OPS_REQUEST` … `END_OPS_REQUEST`, with `op` and `config`), one JSON reply |
 | `report.mjs` | `usage --config <path> [--since <date>] [--role <role>] [--issue <n>]`; telemetry, not spending limits |

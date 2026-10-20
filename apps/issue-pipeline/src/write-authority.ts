@@ -2,6 +2,7 @@
 // Saved merge receipts close code authority permanently for that work; a
 // confirmed live merge closes the interval before its receipt is saved. The
 // live receipt is returned only for wiki checks, never written back as state.
+import { assertExecution } from "./assignment/authority.ts";
 import { assignedBranch } from "./branch-binding.ts";
 import type { Config } from "./config.ts";
 import { historicalPrFor } from "./ops/prs.ts";
@@ -14,6 +15,7 @@ function readWriteAuthority(
   cfg: Config,
   issue: number,
 ): { state: IssueState; codeWritable: boolean; codeMerged: CodeMerged | null } {
+  assertExecution(cfg, issue);
   const state = readWriteState(cfg, issue);
   assignedBranch(cfg, issue, state);
   const { codeMerged, merged } = state;

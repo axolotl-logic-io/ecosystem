@@ -23,6 +23,7 @@ import { ISSUE_STATE, withLog } from "./state.ts";
 // a missing receipt must not be confused with a malformed one caught as null.
 const WRITE_STATE = ISSUE_STATE.pick({
   version: true,
+  coordination: true,
   number: true,
   stage: true,
 }).extend({

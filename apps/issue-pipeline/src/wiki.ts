@@ -4,6 +4,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { confirmedPush } from "./assignment/checkpoint.ts";
 import { configureClone, updateSubmodules, writeHook } from "./clone-setup.ts";
 import type { Config, WikiSettings } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
@@ -221,16 +222,18 @@ function pushWikiBranch(cfg: Config, n: number): void {
   }
   const dir = paths.wiki(cfg, n);
   const target = `HEAD:refs/heads/${paths.branch(cfg, n)}`;
-  withWikiLock(cfg, () =>
-    git(cfg, "dev", [
-      "-C",
-      dir,
-      "push",
-      "--force-with-lease",
-      "origin",
-      target,
-    ]),
-  );
+  withWikiLock(cfg, () => {
+    confirmedPush(cfg, n, "wiki", (): void => {
+      git(cfg, "dev", [
+        "-C",
+        dir,
+        "push",
+        "--force-with-lease",
+        "origin",
+        target,
+      ]);
+    });
+  });
 }
 
 // The wiki's part of a review diff: every wiki commit the issue made so far.

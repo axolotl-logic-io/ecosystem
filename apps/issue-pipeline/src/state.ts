@@ -1,11 +1,9 @@
-// An issue's state, which saved-state.ts keeps on GitHub. This module owns
-// the state's schema (version 2), its log, and the merge authorization rule:
-// only the exact revision that passed the Reviewer's hardening
-// (`approval-is-for-one-revision`), or the one revision the Reviewer's own
-// integration checked from it. The security review of the merged result
-// comes after the merge, and lets the issue complete (security).
+// Signed v2 stage authority, exact revision receipts and assignment coordination.
+// Hardening authorizes only its revision or its checked integration; final
+// security clears the actual merged result before publication and completion.
 
 import { z } from "zod";
+import { COORDINATION } from "./assignment/schema.ts";
 import type { Status } from "./stages.ts";
 import { STAGES } from "./stages.ts";
 
@@ -127,6 +125,7 @@ const COUNTS = z.object({
 // makes the whole state unreadable.
 const ISSUE_STATE = z.object({
   version: z.literal(2),
+  coordination: COORDINATION.nullable().default(null),
   number: z.number().int().positive(),
   stage: STATUS,
   // The stage a stop happened in; lifting the stop resumes there.
@@ -194,6 +193,7 @@ function withLog(state: IssueState, entry: string, now: Date): IssueState {
 function newIssueState(number: number): IssueState {
   return {
     version: 2,
+    coordination: null,
     number,
     stage: "author",
     stoppedStage: null,

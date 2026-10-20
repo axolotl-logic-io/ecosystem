@@ -1,8 +1,9 @@
-// The repo's clone and each issue's worktree and branch on this machine. One
+// The repo clone and each issue worktree and branch on this machine.
 // Agents commit in worktrees; only deterministic ops push.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { confirmedPush } from "./assignment/checkpoint.ts";
 import { configureClone, updateSubmodules } from "./clone-setup.ts";
 import type { Config } from "./config.ts";
 import { paths, wikiCfg } from "./config.ts";
@@ -206,9 +207,8 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
   return { codeChanged: result.code === 1, wikiAhead: wikiAhead(cfg, n) };
 }
 
-// Pushes the issue's checkout's HEAD to its branch for `op`, recording the
-// push first, with --force-with-lease against the head it last pushed, and
-// returns the head pushed. A refused push throws.
+// Pushes the issue head with a lease. Assignment mode confirms the exact
+// remote head before saving a recoverable checkpoint; refused pushes throw.
 function pushHead(cfg: Config, n: number, op: string): string {
   const wt = paths.worktree(cfg, n);
   const headSha = head(wt);
@@ -217,24 +217,22 @@ function pushHead(cfg: Config, n: number, op: string): string {
     throw new OpsError(`#${n}'s code merged; refusing code push`);
   }
   recordPush(cfg, n, headSha, op);
-  git(cfg, "dev", [
-    "-C",
-    wt,
-    "push",
-    "--force-with-lease",
-    "-u",
-    "origin",
-    target,
-  ]);
+  confirmedPush(cfg, n, "code", (): void => {
+    git(cfg, "dev", [
+      "-C",
+      wt,
+      "push",
+      "--force-with-lease",
+      "-u",
+      "origin",
+      target,
+    ]);
+  });
   return headSha;
 }
 
-// Pushes the issue's branch for `op`, recording the push first, and its wiki
-// checkout's own commits to the wiki's branch of the same name, and returns
-// the code head and what the work changes. allowEmpty lets start-pr push the
-// branch's empty first commit. Otherwise a branch that changes no files is
-// pushed only when the wiki has commits, and nothing is pushed when neither
-// changed.
+// Pushes code and private wiki work, returning their changes. allowEmpty
+// permits the initial draft commit; otherwise unchanged work is not pushed.
 function push(
   cfg: Config,
   number: number,

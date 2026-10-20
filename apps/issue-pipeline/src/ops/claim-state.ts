@@ -11,6 +11,7 @@ import { assignedBranch } from "../branch-binding.ts";
 import { lastPush } from "../checkouts.ts";
 import { isLegacyPipelineComment } from "../comment-marks.ts";
 import type { IssueComment } from "../comments.ts";
+import { pipelineRole } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { remoteHead } from "../git-state.ts";
@@ -66,7 +67,11 @@ function assertFirstClaim(
 ): void {
   const priorComment = comments.some(
     (item) =>
-      item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() ||
+      (item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+        !(
+          cfg.assignment !== undefined &&
+          pipelineRole(cfg, item) === "assignment-observer"
+        )) ||
       isLegacyPipelineComment(cfg, item),
   );
   const local = [paths.runDir(cfg, number)];

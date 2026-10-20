@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import { z } from "zod";
+import type { Execution } from "./assignment/schema.ts";
 import { hideCredentialVariable } from "./child-env.ts";
 import { withoutRemovedKeys } from "./config-legacy.ts";
 import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
@@ -31,7 +32,9 @@ interface JobCheckout {
 
 type Config = z.infer<typeof CONFIG_SCHEMA> & {
   slug: string;
+  configFile?: string;
   checkout?: JobCheckout;
+  execution?: Execution | undefined;
 };
 
 interface WikiSettings {
@@ -61,18 +64,41 @@ function loadConfig(configPath: string | undefined): Config {
       `config ${String(configPath)}: ${z.prettifyError(parsed.error)}`,
     );
   }
-  const { checkout: _fromFile, ...data } = parsed.data;
+  const {
+    checkout: _fromFile,
+    execution: _executionFromFile,
+    configFile: _configFromFile,
+    ...data
+  } = parsed.data;
+  for (const worker of data.assignment?.workers ?? []) {
+    let account = data.devAccount;
+    if (worker.roles === "review") {
+      account = data.mergeAccount;
+    }
+    if (worker.login.toLowerCase() !== account.toLowerCase()) {
+      throw new OpsError(
+        `worker ${worker.id} does not map to its configured ${worker.roles} account`,
+      );
+    }
+  }
   for (const role of Object.values(data.jobRoles ?? {})) {
     if (role?.tokenEnv !== undefined) {
       hideCredentialVariable(role.tokenEnv);
     }
   }
-  return { ...data, slug: data.repo.replace("/", "__") };
+  return { ...data, configFile: file, slug: data.repo.replace("/", "__") };
 }
 
 // Public and model-facing config never exposes the operator credential path.
-function publicConfig(cfg: Config): Omit<Config, "credentialsEnvFile"> {
-  const { credentialsEnvFile: _hidden, ...rest } = cfg;
+function publicConfig(
+  cfg: Config,
+): Omit<Config, "credentialsEnvFile" | "execution" | "configFile"> {
+  const {
+    credentialsEnvFile: _hidden,
+    execution: _execution,
+    configFile: _configFile,
+    ...rest
+  } = cfg;
   return rest;
 }
 
@@ -114,7 +140,13 @@ const paths = {
     if (cfg.checkout?.issue === n) {
       ({ branch } = cfg.checkout);
     }
-    if (UNSAFE_BRANCH.test(branch)) {
+    if (
+      UNSAFE_BRANCH.test(branch) ||
+      branch.startsWith("pipeline-execution/") ||
+      branch.startsWith("pipeline-integration/") ||
+      branch.startsWith("pipeline-retry/") ||
+      branch.startsWith("pipeline-discovery/")
+    ) {
       throw new OpsError(
         `#${n}'s branch ${JSON.stringify(branch)} is not a literal branch name`,
       );
