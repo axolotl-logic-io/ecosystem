@@ -13,7 +13,7 @@ import {
   unmerged,
 } from "./session-sync-test-kit.mjs";
 
-const ISSUE = { source: 91, target: 92, disabled: 93 };
+const ISSUE = { source: 91, target: 92, disabled: 93, restart: 94 };
 const SYNC = z.object({
   from: z.string(),
   onto: z.string(),
@@ -51,6 +51,28 @@ test("a later stop rejects a different requested target without changing the unr
   assert.equal(reply.ok, false);
   assert.ok(reply.error?.includes("target differs"), reply.error);
   assert.equal(unmerged(w.wt), stages);
+  assert.equal(fx.originRef(`agent/issue-${w.n}`), w.original);
+});
+
+test("sync-base classifies a session's later wiki stop before rejecting stale rebase cleanup", () => {
+  const w = sessionStop(ISSUE.restart, true);
+  assert.deepEqual(w.stop, [[`early${w.n}`], 1, true, true]);
+  const textStages = unmerged(w.wt)
+    .split("\n")
+    .filter((line) => !line.endsWith("\twiki"))
+    .join("\n");
+  const head = sh(`git -C ${w.wt} rev-parse HEAD`);
+  const text = fs.readFileSync(path.join(w.wt, `later${w.n}`));
+  const reply = ask(w.n, "sync-base");
+  assert.equal(reply.ok, false);
+  assert.equal(sh(`git -C ${w.wt} rev-parse :wiki`), w.target);
+  assert.equal(unmerged(w.wt), textStages);
+  assert.ok(reply.error?.includes(`later${w.n}`), reply.error);
+  assert.ok(reply.error?.includes("conflict-stages.json"), reply.error);
+  assert.ok(reply.error?.includes("commits.bundle"), reply.error);
+  assert.equal(fx.inRebase(w.n), true);
+  assert.equal(sh(`git -C ${w.wt} rev-parse HEAD`), head);
+  assert.deepEqual(fs.readFileSync(path.join(w.wt, `later${w.n}`)), text);
   assert.equal(fx.originRef(`agent/issue-${w.n}`), w.original);
 });
 

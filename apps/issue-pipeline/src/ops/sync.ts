@@ -107,7 +107,10 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   refuseOnceMerged(cfg, n, "sync-base");
   const wt = paths.worktree(cfg, n);
   if (rebaseInProgress(wt)) {
-    resetToRemote(cfg, n); // left over from a crashed run
+    // A crashed run can leave a later stop reached by a resolver session.
+    // Apply the same classification before deciding whether cleanup is safe.
+    classifyCodeSync(cfg, wt, undefined);
+    resetToRemote(cfg, n);
   }
   holdWikiPin(cfg, wt);
   assertClean(wt);
