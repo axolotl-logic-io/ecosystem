@@ -72,7 +72,10 @@ function currentComment(
   return node;
 }
 
-function assertCommentAuthority(cfg: Config, item: IssueComment): void {
+function assertCommentAuthority(
+  cfg: Pick<Config, "mergeAccount">,
+  item: IssueComment,
+): void {
   const merge = cfg.mergeAccount.toLowerCase();
   if (
     item.user?.login.toLowerCase() !== merge ||

@@ -91,7 +91,7 @@ function rawStateBody(body: string): unknown {
 }
 
 function latestStateComment(
-  cfg: Config,
+  cfg: Pick<Config, "mergeAccount" | "legacyAccount">,
   comments: readonly IssueComment[],
 ): IssueComment | undefined {
   for (const item of comments) {
@@ -149,7 +149,7 @@ function validatedWriteState(raw: unknown, number: number): IssueState {
 // Claim may initialize genuinely absent state, never adopt legacy state.
 // Every existing v2 state uses the same strict validator as credentialed writes.
 function readClaimState(
-  cfg: Config,
+  cfg: Pick<Config, "mergeAccount" | "legacyAccount">,
   number: number,
   comments: readonly IssueComment[],
 ): IssueState | null {
@@ -217,6 +217,7 @@ export type { StoredState };
 export {
   parseIssueState,
   parseStateBody,
+  rawStateBody,
   readClaimState,
   readState,
   readWriteState,
