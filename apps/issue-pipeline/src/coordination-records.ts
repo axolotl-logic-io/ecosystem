@@ -1,0 +1,249 @@
+// Validated append-only history. A missing/changed immutable epoch lock or a
+// conflicting record never falls back to an older, more permissive owner.
+import { z } from "zod";
+import { assertCommentAuthority } from "./comment-authority.ts";
+import type { IssueComment } from "./comments.ts";
+import type { Config } from "./config.ts";
+import { OpsError } from "./ops-error.ts";
+
+const HEX_RADIX = 16;
+const HEX_BYTE_WIDTH = 2;
+const HEADER = "<!-- agent-pipeline:coordination\n";
+const END = "\n-->";
+const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
+const IDENTITY = z.strictObject({
+  instance: z.string().uuid(),
+  lane: z.string().min(1),
+  issue: z.number().int().positive(),
+  branch: z.string().min(1),
+  repo: z.string().min(1),
+  base: z.string().min(1),
+});
+const RECORD = z.discriminatedUnion("kind", [
+  z.strictObject({
+    version: z.literal(1),
+    scope: z.string().min(1),
+    operation: z.string().uuid(),
+    kind: z.literal("request"),
+    identity: IDENTITY,
+    token: SHA,
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    scope: z.string().min(1),
+    operation: z.string().uuid(),
+    kind: z.enum(["confirm", "release", "cancel", "save"]),
+    request: z.number().int().positive(),
+    instance: z.string().uuid(),
+    evidence: z.json().optional(),
+  }),
+]);
+const EVIDENCE = z.json();
+type Evidence = z.infer<typeof EVIDENCE>;
+type Identity = z.infer<typeof IDENTITY>;
+type Record = z.infer<typeof RECORD>;
+type Row = Record & { id: number };
+type Request = Extract<Row, { kind: "request" }>;
+interface CoordinationPort {
+  comments: () => readonly IssueComment[];
+  append: (body: string) => void;
+  token: (identity: Identity) => string;
+  lock: (ref: string) => string | null;
+  reserve: (ref: string, token: string) => void;
+  write: (
+    operation: string,
+    write: () => void,
+    confirmed: () => boolean,
+    evidence?: Evidence,
+  ) => void;
+}
+interface Snapshot {
+  owner: Request | null;
+  confirmed: boolean;
+  pending: Request[];
+  epoch: number;
+  records: Row[];
+}
+function hold(reason: string): never {
+  throw new OpsError(`coordination requires reconciliation: ${reason}`);
+}
+function bodyOf(record: Record): string {
+  return `${HEADER}${JSON.stringify(RECORD.parse(record))}${END}`;
+}
+function refOf(scope: string, epoch: number): string {
+  const key = Array.from(
+    new TextEncoder().encode(scope),
+    (byte: number): string =>
+      byte.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, "0"),
+  ).join("");
+  return `heads/pipeline-coordination/${key}/${epoch}`;
+}
+function parseRecord(cfg: Config, comment: IssueComment): Row[] {
+  const body = comment.body ?? "";
+  if (!body.includes("agent-pipeline:coordination")) {
+    return [];
+  }
+  assertCommentAuthority(cfg, comment);
+  if (!(body.startsWith(HEADER) && body.endsWith(END))) {
+    hold("malformed record");
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(body.slice(HEADER.length, -END.length));
+  } catch {
+    hold("unreadable record");
+  }
+  const parsed = RECORD.safeParse(raw);
+  if (!parsed.success) {
+    hold("invalid record");
+  }
+  return [{ ...parsed.data, id: comment.id }];
+}
+function recordsOf(
+  cfg: Config,
+  comments: readonly IssueComment[],
+  scope: string,
+): Row[] {
+  const rows = comments
+    .flatMap((comment) => parseRecord(cfg, comment))
+    .filter((row) => row.scope === scope)
+    .sort((a, b) => a.id - b.id);
+  const requests = rows.filter((row): row is Request => row.kind === "request");
+  if (
+    requests.some(
+      (row) =>
+        row.identity.repo !== cfg.repo || row.identity.base !== cfg.baseBranch,
+    )
+  ) {
+    hold("request repository/base binding is invalid");
+  }
+  for (const keys of [
+    rows.map((row) => row.operation),
+    rows.map((row) => String(row.id)),
+    requests.map((row) => row.token),
+    requests.map((row) => row.identity.instance),
+  ]) {
+    if (new Set(keys).size !== keys.length) {
+      hold("duplicate operation, token or instance");
+    }
+  }
+  return rows;
+}
+function ownerAt(
+  port: CoordinationPort,
+  scope: string,
+  view: Snapshot,
+): Request | null {
+  const token = port.lock(refOf(scope, view.epoch));
+  const owner =
+    view.records.find(
+      (row): row is Request => row.kind === "request" && row.token === token,
+    ) ?? null;
+  if (token !== null && owner === null) {
+    hold("lock has no authenticated request");
+  }
+  return owner;
+}
+function transition(
+  port: CoordinationPort,
+  scope: string,
+  view: Snapshot,
+  row: Row,
+): void {
+  if (row.kind === "request") {
+    view.pending.push(row);
+    return;
+  }
+  const request = view.pending.find((item) => item.id === row.request);
+  if (request === undefined || request.identity.instance !== row.instance) {
+    hold("mutation of an absent or released predecessor");
+  }
+  const current = ownerAt(port, scope, view);
+  if (row.kind === "cancel") {
+    if (current?.id === request.id) {
+      hold("owner cannot cancel instead of release");
+    }
+    view.pending.splice(view.pending.indexOf(request), 1);
+    return;
+  }
+  if (current?.id !== request.id) {
+    hold("record does not match immutable epoch ownership");
+  }
+  applyOwned(view, row, request);
+}
+function applyOwned(
+  view: Snapshot,
+  row: Exclude<Row, Request>,
+  request: Request,
+): void {
+  if (row.kind === "confirm") {
+    if (view.confirmed) {
+      hold("duplicate confirmation");
+    }
+    view.confirmed = true;
+  } else if (!view.confirmed) {
+    hold("unconfirmed owner mutation");
+  } else if (row.kind === "release") {
+    view.pending.splice(view.pending.indexOf(request), 1);
+    view.epoch = row.id;
+    view.confirmed = false;
+  }
+}
+function snapshot(
+  cfg: Config,
+  port: CoordinationPort,
+  scope: string,
+): Snapshot {
+  const records = recordsOf(cfg, port.comments(), scope);
+  const view: Snapshot = {
+    owner: null,
+    confirmed: false,
+    pending: [],
+    epoch: 0,
+    records,
+  };
+  for (const row of records) {
+    transition(port, scope, view, row);
+  }
+  view.owner = ownerAt(port, scope, view);
+  const { owner } = view;
+  if (
+    owner !== null &&
+    !view.pending.some((request) => request.id === owner.id)
+  ) {
+    hold("released lock reused in a later epoch");
+  }
+  return view;
+}
+function sameIdentity(a: Identity, b: Identity): boolean {
+  return (
+    a.instance === b.instance &&
+    a.lane === b.lane &&
+    a.issue === b.issue &&
+    a.branch === b.branch &&
+    a.repo === b.repo &&
+    a.base === b.base
+  );
+}
+function own(view: Snapshot, identity: Identity): Request {
+  if (
+    !view.confirmed ||
+    view.owner?.identity.instance !== identity.instance ||
+    !sameIdentity(view.owner.identity, identity)
+  ) {
+    hold("execution ownership lost or unconfirmed");
+  }
+  return view.owner;
+}
+
+export type { CoordinationPort, Evidence, Identity, Record, Request, Snapshot };
+export {
+  bodyOf,
+  hold,
+  IDENTITY,
+  own,
+  recordsOf,
+  refOf,
+  sameIdentity,
+  snapshot,
+};
