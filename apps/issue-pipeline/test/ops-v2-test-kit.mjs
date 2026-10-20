@@ -154,6 +154,7 @@ function reviewStopReplies(n, pr, claim) {
     },
     {
       ...kit.commentsReply(n, [myClaim(claim), prior]),
+      persistState: true,
       keep: true,
     },
     ...stopMutationReplies(n, {

@@ -23,6 +23,12 @@ const TRANSPORT_ERROR =
 const NETWORK_ERROR =
   /Could not resolve host|error connecting to api\.github\.com|Connection timed out|Connection reset|HTTP 50[234]\b|The requested URL returned error: 50[234]\b/iu;
 
+// Login verification has already classified identity rejection before stderr
+// is appended. That terminal decision must also outrank transient excerpt text
+// when the job chooses stop versus deferral.
+const LOGIN_REJECTED =
+  /^credential login verification failed for (?:dev|merge); expected @[a-z\d-]+; (?:wrong account:|authentication rejected)/iu;
+
 // Whether a session's error text, if any, reports a rate limit or overload.
 function isRateLimitError(text: string | null): boolean {
   if (text === null) {
@@ -52,6 +58,9 @@ function isNetworkError(text: string | null): boolean {
 // failure of its gh or git, or a provider's rate limit or transport error
 // passed through. An error the job found itself (null) never is.
 function isTransientOpError(text: string | null): boolean {
+  if (text !== null && LOGIN_REJECTED.test(text)) {
+    return false;
+  }
   return isNetworkError(text) || isTransientSessionError(text);
 }
 

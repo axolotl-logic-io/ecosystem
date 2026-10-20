@@ -50,7 +50,10 @@ test("openIssues lists nothing, and sets up nothing, while gh is logged in as an
     credentialsEnvFile: credentialConfig("mallory").credentialsEnvFile,
   };
   assert.throws(() => openIssues(swapped), OTHER_ACCOUNT);
-  assert.deepEqual(gh.calls(), []);
+  // Explicit login replies are recorded too; verification is the only
+  // permitted call, with no retry, discovery or setup after the mismatch.
+  assert.equal(gh.loginCalls().length, 1);
+  assert.deepEqual(gh.calls(), gh.loginCalls());
 });
 
 test("an author counts only on allowedUsers, never a bot, and while a collaborator", () => {

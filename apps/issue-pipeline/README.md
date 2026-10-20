@@ -128,6 +128,36 @@ Synchronization cleanup also saves the staged/working patches and a verified bun
 
 **Concurrency limitation:** caller serialization is not external exclusion. Outside actors may push, merge, retarget or change permissions/configuration at any time. The explicit destination/immutable-source REST merge and exact-result checks above are the supported compromise, not an atomic PR/input/config transaction. Observed invalid authority refuses writes; unseen concurrent changes are not atomically prevented. No exclusion promise or credential/ruleset change is implied. Installation remains operator-owned and requires exact candidate checks and a reviewed cutover.
 
+## Stop reconciliation evidence
+
+Before a job launches stop, it writes a private local
+`runs/<slug>/issue-N/stop-recovery/<uuid>.json` record shared with the stop child.
+Stop verifies merge identity, preserves fresh signed durable authority and the
+resume stage, saves and authoritatively rereads the stopped state/cleared lease,
+then requires working-label removal, stop-label updates and claim closure.
+Transient login failures receive only the bounded safe-read retries above;
+required writes are not blindly retried. A fully acknowledged stop records
+`signed-stop-confirmed`. Required cleanup failures are not ignored; a missing
+label (HTTP 404) is already removed. If a signal interrupts the stop child,
+the job retains this evidence instead of saving its stale working checkpoint
+over a stopped state that may already have landed.
+
+If login, a required update or the child itself fails, the record remains
+`reconciliation-required` and the job reports its path. It names issue/repository,
+assigned branch, resume stage/source, intended code, original and stop failures,
+and confirmed versus unresolved state/lease, explanation, working-label,
+stop-label and claim effects. Failure fields redact configured tokens before
+truncation (8192 UTF-16 code units plus a marker per field). A lost response stays
+unresolved and may have landed. Retain these files across status replacement.
+
+Stop dispatch and reconcile every unresolved effect against fresh GitHub
+state/editor provenance, lease, live claims and issue/PR labels before an
+explicitly authorized restart. Preserve remote code/private-wiki commits and
+existing genuine receipts. This local evidence is **not signed authority**:
+passed checks or pushed commits never supply missing hardening, and ordinary
+saved-authority/exact-head checks still gate recovery. No install or deployment
+is implied by merging this source change.
+
 ## Wiki prompt source and pinning
 
 `--brain-path` is a local clone of the wiki, distinct from mutable issue docs. Behavioral instructions come **only** from these pages, selected by `(stage, phase)`:
@@ -179,7 +209,15 @@ The loader parses that one file, takes only the selected fixed variable and neve
 exports dotenv values. Each selected credential is login-verified (cached only
 for that account/token in the current process); missing/swapped credentials fail
 closed, with no ambient, personal, keyring or role-token fallback. Public/model
-config omits the file path. Legacy live `account`/`tokenFile` config is rejected
+config omits the file path. Login checks use the shared safe-read backoff:
+four attempts, waiting 2/4/6 seconds, with the existing 120-second command timeout.
+Network/transport failures, HTTP 5xx and secondary rate limits are transient;
+a named wrong login or HTTP 401 fails immediately, taking precedence over
+transient text. Only successful account/token verification is cached. Errors
+distinguish wrong account, authentication rejection and unverifiable identity,
+with gh exit status and a stderr excerpt of at most 1024 UTF-16 code units
+including the truncation indicator. Selected-token redaction precedes truncation;
+empty stderr is explicit. Verification retries never repeat the requested write. Legacy live `account`/`tokenFile` config is rejected
 with migration instructions. Optional `legacyAccount` classifies historical
 machine text for display and trusted-input exclusion only; it grants no authority.
 

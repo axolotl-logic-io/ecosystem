@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { gh, ghJson } from "./github.ts";
+import { OpsError } from "./ops-error.ts";
 import type { GitHubLabel } from "./stops.ts";
 import { isStopLabel, STOPS } from "./stops.ts";
 
@@ -135,7 +136,45 @@ function clearStopLabels(
   setLabels(cfg, number, [], have.filter(isStopLabel));
 }
 
+// Stop cleanup is required, unlike best-effort ordinary label removal. A
+// missing label is already removed; any other failed write stays unresolved.
+const LABEL_ABSENT = /HTTP 404\b/iu;
+function applyStopLabel(
+  cfg: Config,
+  number: number,
+  label: string,
+  workingRemoved: () => void,
+): void {
+  const endpoint = `repos/${cfg.repo}/issues/${number}/labels`;
+  const have = labelNames(ghJson(cfg, "merge", ["api", endpoint]));
+  for (const name of new Set([
+    ...have.filter(isStopLabel),
+    LABELS.working.name,
+  ])) {
+    const result = gh(
+      cfg,
+      "merge",
+      [
+        "api",
+        "-X",
+        "DELETE",
+        `${endpoint}/${encodeURIComponent(name)}`,
+        "--silent",
+      ],
+      { allowFail: true },
+    );
+    if (result.code !== 0 && !LABEL_ABSENT.test(result.stderr)) {
+      throw new OpsError(
+        `stop label removal failed for #${number} (${name}); gh exit status ${result.code}: ${result.stderr}`,
+      );
+    }
+  }
+  workingRemoved();
+  setLabels(cfg, number, [label]);
+}
+
 export {
+  applyStopLabel,
   clearStopLabels,
   ensureLabels,
   isPipelineLabel,

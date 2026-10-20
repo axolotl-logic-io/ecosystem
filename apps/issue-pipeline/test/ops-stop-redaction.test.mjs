@@ -32,7 +32,10 @@ function addressesIn(text) {
 test("a stop whose reason and detail name IP addresses posts neither address", () => {
   const { n } = STOPPED;
   reply([
-    everyCommentsRead(n, [kit.stateComment(n, v2State(n))]),
+    {
+      ...everyCommentsRead(n, [kit.stateComment(n, v2State(n))]),
+      persistState: true,
+    },
     ...stopMutationReplies(n, { stateId: n, pr: null, code: "error" }),
   ]);
   const request = {
