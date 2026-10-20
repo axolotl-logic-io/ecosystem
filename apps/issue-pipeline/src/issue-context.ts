@@ -14,6 +14,7 @@ import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { ghJson, isAllowedUser } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
+import { trustedInputBytes } from "./trusted-inputs.ts";
 
 // An issue as GitHub's REST API gives it.
 const ISSUE = z.looseObject({
@@ -148,13 +149,12 @@ function trustedInputsHash(
 ): string {
   assertIssueAuthor(cfg, issue);
   const hash = createHash("sha256");
-  hash.update(JSON.stringify(["issue", issue.title, issue.body ?? ""]));
-  const trusted = comments
-    .filter((item) => isTrustedInput(cfg, item))
-    .toSorted((a, b) => a.id - b.id);
-  for (const item of trusted) {
-    hash.update(JSON.stringify(["comment", item.id, item.body ?? ""]));
-  }
+  hash.update(
+    trustedInputBytes(
+      issue,
+      comments.filter((item) => isTrustedInput(cfg, item)),
+    ),
+  );
   return hash.digest("hex");
 }
 

@@ -244,7 +244,10 @@ function keyMark(number: number, key: string): string {
   return `<!-- issue-pipeline:${number}:${key} -->`;
 }
 
-function pipelineRole(cfg: Config, item: IssueComment): string | null {
+function pipelineRole(
+  cfg: Pick<Config, "mergeAccount">,
+  item: IssueComment,
+): string | null {
   if (item.user?.login.toLowerCase() !== cfg.mergeAccount.toLowerCase()) {
     return null;
   }

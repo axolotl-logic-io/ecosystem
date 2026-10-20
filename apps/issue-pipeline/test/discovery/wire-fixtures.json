@@ -1,0 +1,97 @@
+{
+  "comment": {
+    "id": 10,
+    "node_id": "state",
+    "body": "",
+    "created_at": "2026-10-20T00:00:00Z",
+    "user": {
+      "login": "merge"
+    }
+  },
+  "gherkin": {
+    "id": 11,
+    "node_id": "gherkin",
+    "body": "",
+    "created_at": "2026-10-20T00:00:00Z",
+    "user": {
+      "login": "merge"
+    }
+  },
+  "issue": {
+    "number": 1,
+    "state": "open",
+    "title": "Work",
+    "body": "Requirements",
+    "user": {
+      "login": "owner"
+    },
+    "assignees": [
+      {
+        "login": "dev"
+      }
+    ],
+    "labels": []
+  },
+  "pull": {
+    "number": 2,
+    "state": "open",
+    "body": "Closes #1\n\nWork",
+    "user": {
+      "login": "dev"
+    },
+    "head": {
+      "ref": "work",
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "repo": {
+        "full_name": "axolotl-logic-io/ecosystem"
+      }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "repo": {
+        "full_name": "axolotl-logic-io/ecosystem"
+      }
+    },
+    "requested_reviewers": [
+      {
+        "login": "merge"
+      }
+    ],
+    "requested_teams": []
+  },
+  "event": {
+    "id": 20,
+    "event": "assigned",
+    "actor": {
+      "login": "owner"
+    },
+    "created_at": "2026-10-20T01:00:00Z",
+    "assignee": {
+      "login": "dev"
+    }
+  },
+  "review": {
+    "id": 30,
+    "user": {
+      "login": "merge"
+    },
+    "state": "APPROVED",
+    "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "submitted_at": "2026-10-20T02:00:00Z",
+    "pull_request_url": "https://api.github.com/repos/axolotl-logic-io/ecosystem/pulls/2"
+  },
+  "teamEvent": {
+    "id": 22,
+    "event": "review_requested",
+    "actor": {
+      "login": "owner"
+    },
+    "created_at": "2026-10-20T02:00:00Z",
+    "requested_reviewer": null,
+    "requested_team": {
+      "id": 5,
+      "slug": "other-team"
+    }
+  }
+}

@@ -23,7 +23,10 @@ function isStateBody(body: string): boolean {
 }
 
 // Historical machine text is display-only, never a human input or authority.
-function isLegacyPipelineComment(cfg: Config, item: IssueComment): boolean {
+function isLegacyPipelineComment(
+  cfg: Pick<Config, "legacyAccount">,
+  item: IssueComment,
+): boolean {
   if (
     cfg.legacyAccount === undefined ||
     item.user?.login.toLowerCase() !== cfg.legacyAccount.toLowerCase()

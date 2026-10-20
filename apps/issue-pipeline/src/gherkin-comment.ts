@@ -72,7 +72,7 @@ function gherkinBody(
 // merge identity wrote with trusted editor provenance, signed by the author, with the key's mark and the
 // Gherkin mark, counts: anyone can paste the marks.
 function gherkinCommentOf(
-  cfg: Config,
+  cfg: Pick<Config, "mergeAccount">,
   number: number,
   comments: readonly IssueComment[],
 ): GherkinComment | null {
