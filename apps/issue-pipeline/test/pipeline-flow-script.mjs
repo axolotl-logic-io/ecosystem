@@ -62,18 +62,19 @@ function hardeningTurn() {
 /**
  * The issue's saved state, read from its state comment.
  * @param {import("./pipeline-flow-gh-world.mjs").World} world
+ * @param {number} [issueNumber]
  * @returns {any}
  */
-function savedState(world) {
+function savedState(world, issueNumber = ISSUE) {
   const comment = world.comments
     .filter(
       ({ issue, body, login }) =>
-        issue === ISSUE && login === world.account && STATE.test(body),
+        issue === issueNumber && login === world.account && STATE.test(body),
     )
     .at(-1);
   const { json } = STATE.exec(comment?.body ?? "")?.groups ?? {};
   if (json === undefined) {
-    throw new Error(`#${ISSUE} has no state comment`);
+    throw new Error(`#${issueNumber} has no state comment`);
   }
   return JSON.parse(json);
 }
