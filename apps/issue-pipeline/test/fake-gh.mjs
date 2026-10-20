@@ -44,6 +44,7 @@ const AUTHENTICATED_CALL = z.object({
  * @typedef {object} FakeGh
  * @property {() => void} requireReplies fail every unmatched read or write
  * @property {(replies: readonly GhReply[]) => void} reply
+ * @property {() => string[][]} loginCalls
  * @property {() => string[][]} calls
  * @property {() => { identity: "dev" | "merge", args: string[] }[]} authenticatedCalls
  * @property {(isRead: (args: readonly string[]) => boolean) => string[][]} writes
@@ -68,7 +69,10 @@ if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(
 if (args[0] === "api" && args.includes("DELETE") && args.some(arg => /^repos\\/[^/]+\\/[^/]+\\/git\\/refs\\/heads\\//u.test(arg))) expected = "dev";
 if (!(args[0] === "api" && args[1] === "user") && identity[1] !== expected) throw new Error("wrong bot identity for operation");
 if (args[0] === "api" && args[1] === "user") {
-  process.stdout.write(identity[2] + "\\n"); process.exit(0);
+  fs.appendFileSync(path.join(dir, "logins.jsonl"), JSON.stringify(args) + "\\n");
+  if (!JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => reply.when.startsWith("api user") && args.join(" ").includes(reply.when))) {
+    process.stdout.write(identity[2] + "\\n"); process.exit(0);
+  }
 }
 if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => args.join(" ").includes(reply.when))) {
   const id = args.find(arg => arg.startsWith("id="))?.slice(3);
@@ -136,6 +140,15 @@ if (at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("PATCH") && body?.
 `;
 }
 
+/** @param {string} file @returns {string[][]} */
+function readCallLog(file) {
+  return fs
+    .readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => CALL_ARGS.parse(JSON.parse(line)));
+}
+
 /**
  * Puts a fake gh first on PATH and returns it.
  * @returns {FakeGh}
@@ -155,6 +168,7 @@ function installFakeGh() {
       .map((line) => CALL_ARGS.parse(JSON.parse(line)));
   }
   return {
+    loginCalls: () => readCallLog(path.join(dir, "logins.jsonl")),
     requireReplies() {
       fs.writeFileSync(path.join(dir, "strict"), "true");
     },
@@ -166,6 +180,7 @@ function installFakeGh() {
         .map((line) => AUTHENTICATED_CALL.parse(JSON.parse(line)));
     },
     reply(replies) {
+      fs.writeFileSync(path.join(dir, "logins.jsonl"), "");
       fs.writeFileSync(path.join(dir, "identities.jsonl"), "");
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));
       fs.writeFileSync(callsFile, "");

@@ -9,20 +9,16 @@ import {
   credentialedRun,
   credentialFailure,
 } from "./github-auth.ts";
+import { GH_TIMEOUT_MS, githubRead } from "./github-read.ts";
 import { OpsError } from "./ops-error.ts";
 import { redactLocalPaths } from "./pipeline-root.ts";
 import type { RunOptions, RunResult } from "./process.ts";
-import { run, sleepMs } from "./process.ts";
+import { run } from "./process.ts";
 import { redactAddresses } from "./redact-addresses.ts";
 
 type GhOptions = Omit<RunOptions, "env">;
 
 const WRITE_FLAG = /^(?:-X|--method|-f|-F|--field|--raw-field|--input)$/u;
-const GH_TRANSIENT =
-  /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Timeout|connection reset|TLS handshake timeout|i\/o timeout/iu;
-const GH_TIMEOUT_MS = 120_000;
-const GH_READ_ATTEMPTS = 4;
-const GH_RETRY_STEP_MS = 2000;
 const GIT_ENV: ReadonlyMap<string, string> = new Map([
   ["GIT_TERMINAL_PROMPT", "0"],
   ["GIT_CONFIG_NOSYSTEM", "1"],
@@ -59,14 +55,6 @@ function withEnv(
   ...maps: readonly ReadonlyMap<string, string>[]
 ): ReadonlyMap<string, string> {
   return new Map(maps.flatMap((map) => [...map]));
-}
-
-function retriable(result: RunResult, attempt: number): boolean {
-  return (
-    result.code !== 0 &&
-    attempt < GH_READ_ATTEMPTS &&
-    (result.timedOut || GH_TRANSIENT.test(result.stderr))
-  );
 }
 
 const LOCAL_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
@@ -132,15 +120,9 @@ function gh(
   if (!ghIsRead(args)) {
     return credentialedRun("gh", redactGhArgs(args), runOptions);
   }
-  // GitHub's API sometimes answers 502 or stalls; one failed read used to fail
-  // a whole sweep.
-  let attempt = 1;
-  let result = credentialedRun("gh", args, { ...runOptions, allowFail: true });
-  while (retriable(result, attempt)) {
-    sleepMs(GH_RETRY_STEP_MS * attempt);
-    attempt += 1;
-    result = credentialedRun("gh", args, { ...runOptions, allowFail: true });
-  }
+  const { result } = githubRead(() =>
+    credentialedRun("gh", args, { ...runOptions, allowFail: true }),
+  );
   if (result.code === 0 || options.allowFail === true) {
     return result;
   }
