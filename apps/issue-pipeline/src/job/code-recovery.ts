@@ -7,7 +7,9 @@ import process from "node:process";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { git } from "../github.ts";
+import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
+import { conflictStages } from "../rebase.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";
 
 // An independently verifiable bundle, installed without overwriting evidence.
@@ -28,16 +30,31 @@ function saveBundle(
 }
 
 // Before abort/reset/clean, keep index/worktree patches and every local branch,
-// current HEAD and available pre-rebase head. Unmerged indexes refuse cleanup:
-// the original checkout, including conflict stages, is the recovery artifact.
-function saveSyncRecovery(cfg: Config, issue: number, repo: string): void {
+// current HEAD and available pre-rebase head. Unmerged indexes save numbered
+// stages instead of lossy patches, then refuse cleanup: the original checkout
+// and working files remain indispensable recovery artifacts.
+function saveSyncRecovery(
+  cfg: Config,
+  issue: number,
+  repo: string,
+  reason = "synchronization cleanup refused",
+): void {
   const root = path.join(paths.runDir(cfg, issue), "recovery");
   fs.mkdirSync(root, { recursive: true });
   const dir = fs.mkdtempSync(path.join(root, "sync-"));
-  saveDroppedPatch(cfg, repo, {
-    file: path.join(dir, "working.patch"),
-    title: "Work retained before synchronization cleanup",
-  });
+  const stages = conflictStages(repo);
+  if (stages.length === 0) {
+    saveDroppedPatch(cfg, repo, {
+      file: path.join(dir, "working.patch"),
+      title: "Work retained before synchronization cleanup",
+    });
+  } else {
+    fs.writeFileSync(
+      path.join(dir, "conflict-stages.json"),
+      JSON.stringify(stages, null, 2),
+      { flag: "wx" },
+    );
+  }
   const refs = ["HEAD", "--branches"];
   const original = run(
     "git",
@@ -48,6 +65,12 @@ function saveSyncRecovery(cfg: Config, issue: number, repo: string): void {
     refs.push("ORIG_HEAD");
   }
   saveBundle(repo, path.join(dir, "commits.bundle"), refs);
+  if (stages.length > 0) {
+    const files = [...new Set(stages.map((entry) => entry.file))];
+    throw new OpsError(
+      `${reason}; unmerged paths ${files.map((file) => JSON.stringify(file)).join(", ")}; verified commits.bundle and numbered conflict-stages.json saved in ${dir}; retain the original checkout, unresolved index and working files for explicit recovery; nothing is reset, replayed or pushed`,
+    );
+  }
 }
 
 function saveCodeRecovery(

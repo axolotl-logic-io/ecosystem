@@ -191,3 +191,32 @@ test("a wiki gitlink versus ordinary file type conflict is retained, never auto-
   assert.notEqual(unmerged(wt), "");
   assert.equal(fx.originRef(`agent/issue-${n}`), remote);
 });
+
+test("a recorded target without the configured gitlink never gets an automatic pin", () => {
+  const n = 80;
+  const wt = branch(n);
+  stagePin(wt, wikiCommit("missingtargetown"), "knowledge");
+  fx.commitIn(n, "own80", "mine");
+  const original = fx.pushFrom(n);
+  sh(`git -C ${seed} update-index --force-remove knowledge`);
+  const target = fx.advanceBase("base80", "target without wiki");
+  const file = fx.configWith("missing-target.json", {
+    wiki: { dir: "knowledge" },
+  });
+  const reply = ask(n, "sync-base", {}, file);
+  assert.equal(reply.ok, false);
+  assert.equal(sh(`git -C ${wt} ls-tree ${target} -- knowledge`), "");
+  assert.ok(reply.error?.includes("knowledge"), reply.error);
+  const stages = unmerged(wt);
+  assert.notEqual(stages, "");
+  for (const line of stages.split("\n")) {
+    const [mode, sha, numbered] = line.split(" ");
+    const stage = numbered?.split("\t")[0];
+    assert.ok(
+      reply.error?.includes(`stage ${stage}: ${sha} (mode ${mode})`),
+      reply.error,
+    );
+  }
+  assert.equal(fx.inRebase(n), true);
+  assert.equal(fx.originRef(`agent/issue-${n}`), original);
+});

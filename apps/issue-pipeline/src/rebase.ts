@@ -155,6 +155,9 @@ function resolveWikiConflict(cfg: Config, wt: string, sync: CodeSync): void {
   const wiki = wikiCfg(cfg);
   for (const file of links) {
     const stages = entries.filter((entry) => entry.file === file);
+    const evidence = stages
+      .map((entry) => `stage ${entry.stage}: ${entry.sha} (mode ${entry.mode})`)
+      .join(", ");
     const bothPins =
       stages.some((entry) => entry.stage === "2") &&
       stages.some((entry) => entry.stage === "3");
@@ -163,11 +166,6 @@ function resolveWikiConflict(cfg: Config, wt: string, sync: CodeSync): void {
       !bothPins ||
       stages.some((entry) => entry.mode !== "160000")
     ) {
-      const evidence = stages
-        .map(
-          (entry) => `stage ${entry.stage}: ${entry.sha} (mode ${entry.mode})`,
-        )
-        .join(", ");
       throw new OpsError(
         `unsupported gitlink conflict at ${JSON.stringify(file)}; ${evidence}; retaining unresolved checkout`,
       );
@@ -175,7 +173,7 @@ function resolveWikiConflict(cfg: Config, wt: string, sync: CodeSync): void {
     const tree = gitOut(wt, ["ls-tree", sync.onto, "--", file]).trim();
     if (!tree.startsWith("160000 commit ")) {
       throw new OpsError(
-        `synchronization target ${sync.onto} has no wiki gitlink at ${JSON.stringify(file)}; retaining unresolved checkout`,
+        `synchronization target ${sync.onto} has no wiki gitlink at ${JSON.stringify(file)}; ${evidence}; retaining unresolved checkout`,
       );
     }
   }
@@ -196,6 +194,32 @@ function resolveWikiConflict(cfg: Config, wt: string, sync: CodeSync): void {
   sync.wikiResolved = true;
   saveCodeSync(wt, sync);
   holdWikiPin(cfg, wt);
+}
+
+// Classify the actual checkout against its recorded synchronization, including
+// a stop reached by a session's own continuation or one being rejected. A
+// requested target must match while stopped; completed work has finish checks.
+function classifyCodeSync(
+  cfg: Config,
+  wt: string,
+  target: string | null | undefined,
+): CodeSync | undefined {
+  const sync = readCodeSync(wt);
+  if (sync === undefined) {
+    return undefined;
+  }
+  if (
+    rebaseInProgress(wt) &&
+    target !== undefined &&
+    target !== null &&
+    target !== sync.onto
+  ) {
+    throw new OpsError(
+      "finish-sync target differs from the stopped code rebase",
+    );
+  }
+  resolveWikiConflict(cfg, wt, sync);
+  return sync;
 }
 
 // Continue only once all text at a stop has been staged. Every subsequent
@@ -223,7 +247,9 @@ function continueCodeSync(cfg: Config, wt: string, sync: CodeSync): void {
 export type { CodeSync };
 export {
   abortRebase,
+  classifyCodeSync,
   clearCodeSync,
+  conflictStages,
   continueCodeSync,
   readCodeSync,
   rebaseInProgress,
