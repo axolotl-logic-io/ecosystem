@@ -9,6 +9,7 @@ import { PATH_SCOPE } from "./pipeline-commit.ts";
 import type { ToolFailure } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
 import { SESSION_PHASES } from "./role-context.ts";
+import { RUNTIME_POLICY } from "./runtime-policy.ts";
 import {
   addUsage,
   turnContext,
@@ -43,6 +44,9 @@ const LAUNCH = z.object({
     .object({ page: z.string(), sha256: z.string() })
     .nullable()
     .default(null),
+  // The sanitized policy accepted before the prompt; null for ops,
+  // unverified launches and files written before this evidence was kept.
+  runtimePolicy: RUNTIME_POLICY.nullable().default(null),
   startedAt: z.string(),
   lastEventAt: z.string().nullable(),
   // Consecutive failed calls of the tool that failed last; a success or
@@ -90,6 +94,11 @@ function failuresAfter(
 // `launch` once session record `record` is read.
 function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
   const { usage, toolEnd } = recordFacts(record);
+  const policy = RUNTIME_POLICY.safeParse(record);
+  let { runtimePolicy } = launch;
+  if (policy.success && runtimePolicy === null) {
+    runtimePolicy = policy.data;
+  }
   let { toolFailures, lastToolFailure, contextTokens, peakContext } = launch;
   let { firstContext, turns } = launch;
   if (toolEnd !== null) {
@@ -104,6 +113,7 @@ function withRecord(launch: LaunchRecord, record: unknown): LaunchRecord {
   }
   return {
     ...launch,
+    runtimePolicy,
     lastEventAt: new Date().toISOString(),
     toolFailures,
     lastToolFailure,
@@ -127,6 +137,7 @@ function startedRecord(
     commits: start.commits ?? null,
     phase: start.phase ?? null,
     prompt: start.prompt ?? null,
+    runtimePolicy: null,
     usage: ZERO_USAGE,
     startedAt: new Date().toISOString(),
     lastEventAt: null,
