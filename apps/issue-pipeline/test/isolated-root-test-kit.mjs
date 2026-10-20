@@ -19,6 +19,7 @@ Object.assign(
   Object.fromEntries([
     ["HOME", home],
     ["ISSUE_PIPELINE_ROOT", isolatedRoot],
+    ["PI_CODING_AGENT_DIR", path.join(home, ".pi", "agent")],
   ]),
 );
 const { ROOT } = await import("../src/pipeline-root.ts");
