@@ -1,9 +1,8 @@
-// The wiki's side of a merge: wiki-sync rebases the issue's wiki commits onto
-// the wiki's latest version before the review that approves them,
-// finish-wiki-sync keeps a rebase a writer resolved, and publish fast-forwards
-// the wiki to exactly the approved wiki head once the code merged (or, for a
-// change that lives only in the wiki, with no PR). Publishing changes nothing
-// else: the role saves the completion and finish-wiki closes the issue.
+// Checked wiki integration and publication: wiki-sync rebases private work,
+// finish-wiki-sync checks a writer's resolution, and pin-wiki records the
+// integrated result in unmerged code before verification. publish fast-forwards
+// to the authorized wiki head only after the security/publication gates hold.
+// Completion and issue close remain separate operations.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -17,6 +16,7 @@ import type { WikiFinishReply, WikiSyncReply } from "../wiki-publish.ts";
 import { finishWikiSync, syncWiki } from "../wiki-publish.ts";
 import type { PublishRefusal } from "./publication-guard.ts";
 import { publishGate, REVISION_REQUEST } from "./publication-guard.ts";
+import { pinIntegratedWiki } from "./push.ts";
 
 const SYNC_REQUEST = z.looseObject({ number: z.number().int() });
 const FINISH_REQUEST = z.looseObject({
@@ -33,6 +33,11 @@ const PUBLISH_REQUEST = z.looseObject({
 });
 
 type PublishReply = WikiPublish | PublishRefusal;
+
+function pinWikiOp(cfg: Config, request: unknown): { changed: boolean } {
+  const req = parseRequest(SYNC_REQUEST, "pin-wiki", request);
+  return { changed: pinIntegratedWiki(cfg, req.number) };
+}
 
 function wikiSyncOp(cfg: Config, request: unknown): WikiSyncReply {
   const req = parseRequest(SYNC_REQUEST, "wiki-sync", request);
@@ -71,9 +76,10 @@ const publishOps: Readonly<
     (
       cfg: Config,
       request: unknown,
-    ) => PublishReply | WikiSyncReply | WikiFinishReply
+    ) => PublishReply | WikiSyncReply | WikiFinishReply | { changed: boolean }
   >
 > = {
+  "pin-wiki": pinWikiOp,
   "wiki-sync": wikiSyncOp,
   "finish-wiki-sync": finishWikiSyncOp,
   publish: publishOp,

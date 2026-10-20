@@ -139,11 +139,15 @@ async function refusedMerge(
         state,
         "the issue's wiki checkout doesn't hold the authorized wiki commit, so the merge refused to merge code whose wiki it can't publish",
       );
+    case "wiki-pin":
     case "wiki-behind":
       return await integrate(
         ctx,
         state,
-        integration({ code: false, wiki: true }, "the wiki moved"),
+        integration(
+          { code: false, wiki: true },
+          `wiki synchronization required (${reason})`,
+        ),
       );
     case "behind":
     case "conflict":

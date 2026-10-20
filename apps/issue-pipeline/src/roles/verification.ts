@@ -141,6 +141,15 @@ async function verifiedFrom(
   loop: Loop,
   attempt: number,
 ): Promise<Step<string>> {
+  if (
+    loop.phase === "integration" &&
+    loop.mode.kind === "branch" &&
+    ctx.dirs.docs !== null
+  ) {
+    // A check-fix may have changed the wiki again. Pin before every exact-head
+    // check, never after checks and never for a publish-only flow.
+    await ctx.op("pin-wiki", { number: ctx.issue });
+  }
   const verification = await verifyOnce(ctx, loop.mode);
   const end = judged(loop, verification, attempt);
   if (end !== null) {

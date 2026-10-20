@@ -34,6 +34,7 @@ type OpName =
   | "ci-status"
   | "merge"
   | "reconcile-merge"
+  | "pin-wiki"
   | "wiki-sync"
   | "finish-wiki-sync"
   | "publish"

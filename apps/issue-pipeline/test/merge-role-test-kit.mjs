@@ -38,6 +38,7 @@ const MUTATIONS = [
   "finish-wiki",
   "sync-base",
   "wiki-sync",
+  "pin-wiki",
   "push",
   "ready-pr",
 ];
@@ -66,6 +67,7 @@ const CI_FAIL = { status: "fail", failing: ["e2e"], logPath: "/run/ci.log" };
 const PUSHED = { headSha: REBASED, codeChanged: true, wikiAhead: 0 };
 const VERIFIED = { pass: true, headSha: REBASED, checks: [] };
 const AFTER_INTEGRATION = {
+  "pin-wiki": [{ changed: false }],
   verify: [VERIFIED],
   "wiki-check": [WIKI_PASS, WIKI_PASS],
   push: [PUSHED],
