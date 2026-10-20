@@ -74,11 +74,11 @@ const reportToolchain = () => {
   if (!process.env.FAKE_TOOLCHAIN_REPORT) return;
   const names = ["PATH", "MISE_DATA_DIR", "MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_CONFIG_DIR", "MISE_GLOBAL_CONFIG_FILE"];
   const tools = ["node", "npm", "mise"].map((name) => {
-    const result = spawnSync(name, ["--version"], {env: process.env, cwd: process.cwd(), encoding: "utf8", timeout: 3000});
+    const result = spawnSync("/bin/bash", ["-c", name + " --version"], {env: process.env, cwd: process.cwd(), encoding: "utf8", timeout: 3000});
     const selected = spawnSync("/bin/sh", ["-c", "command -v " + name], {env: process.env, cwd: process.cwd(), encoding: "utf8", timeout: 3000});
     return {name, selected: selected.stdout.trim(), status: result.status, version: result.stdout.trim()};
   });
-  fs.appendFileSync(process.env.FAKE_TOOLCHAIN_REPORT, JSON.stringify({home: process.env.HOME, cwd: process.cwd(), tools, toolchain: Object.fromEntries(names.map((name) => [name, process.env[name]]))}) + "\\n");
+  fs.appendFileSync(process.env.FAKE_TOOLCHAIN_REPORT, JSON.stringify({home: process.env.HOME, cwd: process.cwd(), env: Object.keys(process.env), tools, toolchain: Object.fromEntries(names.map((name) => [name, process.env[name]]))}) + "\\n");
 };
 if (args[0] === "--version") {
   reportToolchain();

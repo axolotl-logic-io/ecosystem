@@ -23,6 +23,7 @@ import {
   setUp,
   statusOf,
 } from "./job-test-kit.mjs";
+import { FIXTURE_WINDOWS } from "./runtime-fixtures.mjs";
 
 const NAMES_JOB_ROLES = /jobRoles/u;
 const STEER_BOUNDARY = /--steer can't be combined with --print-boundary/u;
@@ -182,6 +183,7 @@ function expectedRuntime(root) {
     home: path.join(root, "model-home"),
     providerExtension: path.join(root, "fixture-provider/index.ts"),
     credentialEnv: ["PIPELINE_MODEL_KEY"],
+    toolchainEnv: {},
     projectConfiguration: "disabled",
     resources: "explicit extensions only",
     mode: "rpc",
@@ -241,6 +243,27 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     assert.ok(!fs.existsSync(path.join(place.runDir, "job.json")));
   });
 }
+
+test("--print-boundary exposes the declared non-secret toolchain without probing or starting a job", () => {
+  const toolchainEnv = Object.fromEntries([
+    ["PATH", "/opt/toolchain/bin:/usr/bin:/bin"],
+    ["MISE_DATA_DIR", "/opt/toolchain/data"],
+    ["MISE_STATE_DIR", "/opt/toolchain/state"],
+    ["MISE_CACHE_DIR", "/opt/toolchain/cache"],
+    ["MISE_CONFIG_DIR", "/opt/toolchain/config"],
+    ["MISE_GLOBAL_CONFIG_FILE", "/opt/toolchain/config/config.toml"],
+  ]);
+  const place = setUp(repliesAt(READER_STAGE), AUTHOR_SESSION, {
+    runtime: { toolchainEnv, modelContextWindows: FIXTURE_WINDOWS },
+  });
+  const r = runJob(place, ["--stage", READER_STAGE, "--print-boundary"]);
+  assert.equal(r.status, 0, r.stderr);
+  const boundary = JSON.parse(r.stdout);
+  assert.deepEqual(boundary.runtime.toolchainEnv, toolchainEnv);
+  assert.ok(!fs.existsSync(path.join(place.root, "ops.log")));
+  assert.ok(!fs.existsSync(path.join(place.root, "pi.log")));
+  assert.ok(!fs.existsSync(path.join(place.runDir, "job.json")));
+});
 
 test("--print-boundary with --steer is refused", () => {
   const place = placeAt({}, READER_STAGE);

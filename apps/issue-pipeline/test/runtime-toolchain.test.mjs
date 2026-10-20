@@ -20,6 +20,7 @@ const REPORT_COUNT = 3;
 const REPORT = z.object({
   home: z.string(),
   cwd: z.string(),
+  env: z.array(z.string()),
   toolchain: z.record(z.string(), z.string()),
   tools: z.array(
     z.object({
@@ -132,6 +133,12 @@ for (const shims of [true, false]) {
           assert.deepEqual(child.tools, expected.tools);
           assert.deepEqual(child.toolchain, kit.toolchain);
           assert.ok(child.tools.every((tool) => tool.status === 0));
+          // Inspect the version probe as well as RPC/tool descendants, without
+          // recording credential contents in the fixture's diagnostics.
+          for (const name of HIDDEN) {
+            assert.ok(!child.env.includes(name));
+          }
+          assert.ok(child.env.includes("PIPELINE_MODEL_KEY"));
         }
         assert.ok(
           JSON.stringify(Object.entries(process.env).sort()) ===
@@ -139,6 +146,17 @@ for (const shims of [true, false]) {
           "the parent process environment must remain unchanged",
         );
         assert.deepEqual(kit.env, inputEnv);
+      });
+      test(`policy refusal for ${stage} ${session.phase ?? "unphased"}, shims ${shims}`, async () => {
+        const kit = toolchainRuntime(shims);
+        Object.assign(
+          kit.env,
+          Object.fromEntries([["FAKE_CHANGE_SETTINGS", "yes"]]),
+        );
+        const raw = await startSession(kit, spec);
+        assert.equal(raw.ok, false);
+        assert.ok(raw.error?.includes("changed before the first prompt"));
+        assert.deepEqual(kit.calls().slice(1), [{ command: "get_state" }]);
       });
       test(`isolated profile for ${stage} ${session.phase ?? "unphased"}, shims ${shims}`, async () => {
         const kit = toolchainRuntime(shims);
