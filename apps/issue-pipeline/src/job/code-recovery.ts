@@ -9,7 +9,7 @@ import { paths } from "../config.ts";
 import { git } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
-import { conflictStages } from "../rebase.ts";
+import { conflictStages, rebaseInProgress } from "../rebase.ts";
 import { saveDroppedPatch } from "./dropped-patch.ts";
 
 // An independently verifiable bundle, installed without overwriting evidence.
@@ -31,14 +31,14 @@ function saveBundle(
 
 // Before abort/reset/clean, keep index/worktree patches and every local branch,
 // current HEAD and available pre-rebase head. Unmerged indexes save numbered
-// stages instead of lossy patches, then refuse cleanup: the original checkout
-// and working files remain indispensable recovery artifacts.
-function saveSyncRecovery(
+// stages instead of lossy patches and return a retention reason: the original
+// checkout and working files remain indispensable recovery artifacts.
+function prepareSyncRecovery(
   cfg: Config,
   issue: number,
   repo: string,
-  reason = "synchronization cleanup refused",
-): void {
+  reason: string,
+): string | undefined {
   const root = path.join(paths.runDir(cfg, issue), "recovery");
   fs.mkdirSync(root, { recursive: true });
   const dir = fs.mkdtempSync(path.join(root, "sync-"));
@@ -67,10 +67,53 @@ function saveSyncRecovery(
   saveBundle(repo, path.join(dir, "commits.bundle"), refs);
   if (stages.length > 0) {
     const files = [...new Set(stages.map((entry) => entry.file))];
-    throw new OpsError(
-      `${reason}; unmerged paths ${files.map((file) => JSON.stringify(file)).join(", ")}; verified commits.bundle and numbered conflict-stages.json saved in ${dir}; retain the original checkout, unresolved index and working files for explicit recovery; nothing is reset, replayed or pushed`,
-    );
+    return `${reason}; unmerged paths ${files.map((file) => JSON.stringify(file)).join(", ")}; verified commits.bundle and numbered conflict-stages.json saved in ${dir}; retain the original checkout, unresolved index and working files for explicit recovery; nothing is reset, replayed or pushed`;
   }
+  return undefined;
+}
+
+// Cleanup callers must not proceed past an unresolved index, even after its
+// evidence has been saved successfully.
+function saveSyncRecovery(
+  cfg: Config,
+  issue: number,
+  repo: string,
+  reason = "synchronization cleanup refused",
+): void {
+  const retained = prepareSyncRecovery(cfg, issue, repo, reason);
+  if (retained !== undefined) {
+    throw new OpsError(retained);
+  }
+}
+
+// An exhausted resolver allowance is a controlled stop, not cleanup failure.
+// Preserve the same evidence without attempting to abort or reset the rebase.
+function retainSyncConflict(
+  cfg: Config,
+  issue: number,
+  repo: string,
+  reason: string,
+): string {
+  if (!rebaseInProgress(repo) || conflictStages(repo).length === 0) {
+    throw new OpsError("no stopped unresolved rebase to retain");
+  }
+  const pick = run("git", [
+    "-C",
+    repo,
+    "rev-parse",
+    "--verify",
+    "REBASE_HEAD",
+  ]).stdout.trim();
+  const retained = prepareSyncRecovery(
+    cfg,
+    issue,
+    repo,
+    `${reason}; stopped pick ${pick}`,
+  );
+  if (retained === undefined) {
+    throw new OpsError("the stopped rebase no longer has unresolved paths");
+  }
+  return retained;
 }
 
 function saveCodeRecovery(
@@ -109,4 +152,4 @@ function saveCodeRecovery(
   );
 }
 
-export { saveCodeRecovery, saveSyncRecovery };
+export { retainSyncConflict, saveCodeRecovery, saveSyncRecovery };

@@ -9,7 +9,7 @@ import { branchChanges } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertClean, fetchIn, head } from "../git-state.ts";
-import { saveSyncRecovery } from "../job/code-recovery.ts";
+import { retainSyncConflict, saveSyncRecovery } from "../job/code-recovery.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import {
@@ -40,7 +40,7 @@ interface SyncConflict {
 
 type FinishReply =
   | SyncConflict
-  | { resolved: false; reason: string }
+  | { resolved: false; reason: string; retained?: true }
   | ({ resolved: true; headSha: string } & BranchChanges);
 
 type Op = (
@@ -58,6 +58,7 @@ const FINISH_REQUEST = z.looseObject({
   number: z.number().int(),
   abort: z.boolean().nullish(),
   cannotFix: z.boolean().nullish(),
+  retainConflict: z.boolean().nullish(),
   reason: z.string().nullish(),
   // The commit sync-base rebased onto (its reply's baseSha), #279.
   baseSha: z.string().regex(COMMIT_SHA).nullish(),
@@ -168,6 +169,15 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
   refuseOnceMerged(cfg, n, "finish-sync");
   const wt = paths.worktree(cfg, n);
   const sync = classifyCodeSync(cfg, wt, req.baseSha);
+  if (req.retainConflict === true) {
+    const reason = retainSyncConflict(
+      cfg,
+      n,
+      wt,
+      textOr(req.reason, "conflict-fix allowance exhausted"),
+    );
+    return { resolved: false, retained: true, reason };
+  }
   let reason: string | undefined;
   if (req.abort === true) {
     reason = textOr(req.reason, "aborted");

@@ -34,7 +34,13 @@ const RESOLVED = {
   reply: { outcome: "conflict-resolved", summary: "kept both" },
 };
 const REJECTED = { resolved: false, reason: "conflict markers remain" };
-// Two resolver sessions whose finishes are checked, then the abort before
+const MAX_ATTEMPTS = 2;
+const RETAINED = {
+  resolved: false,
+  retained: true,
+  reason: `the code rebase still conflicts after the resolver's ${MAX_ATTEMPTS} attempts (maxConflictFixes)`,
+};
+// Two resolver sessions whose finishes are checked, then retention before
 // the stop: three rebases and three finishes.
 const REJECTED_RUN_OPS = 3;
 // A cannot-fix and a resolution.
@@ -80,7 +86,7 @@ function firstFinish(ops, name) {
  * @param {import("../src/job/role-context.ts").RoleContext} ctx
  * @param {"code" | "wiki"} [side] @param {number} [max]
  */
-function sync(ctx, side = "code", max = 2) {
+function sync(ctx, side = "code", max = MAX_ATTEMPTS) {
   return syncSide(ctx, ctx.state, { side, maxConflictFixes: max });
 }
 
@@ -118,7 +124,10 @@ test("a conflict is resolved by a counted Reviewer integration session", async (
 
 test("rejected resolutions rebase afresh, up to exactly maxConflictFixes attempts", async () => {
   const { ctx, ops, sessions, saves } = fakeContext({
-    ops: { "sync-base": [CONFLICT], "finish-sync": [REJECTED] },
+    ops: {
+      "sync-base": [CONFLICT],
+      "finish-sync": [REJECTED, REJECTED, RETAINED],
+    },
     sessions: [RESOLVED],
   });
   const end = await sync(ctx);
@@ -128,8 +137,9 @@ test("rejected resolutions rebase afresh, up to exactly maxConflictFixes attempt
   assert.equal(payloadsOf(ops, "sync-base").length, REJECTED_RUN_OPS);
   const finishes = payloadsOf(ops, "finish-sync");
   assert.equal(finishes.length, REJECTED_RUN_OPS);
-  const { abort } = finishes.at(-1) ?? {};
-  assert.equal(abort, true);
+  const { retainConflict, abort } = finishes.at(-1) ?? {};
+  assert.equal(retainConflict, true);
+  assert.equal(abort, undefined);
   assert.deepEqual(
     saves.map((state) => state.counts.conflictFixes),
     [1, 2],
@@ -143,11 +153,13 @@ test("rejected resolutions rebase afresh, up to exactly maxConflictFixes attempt
 test("an issue out of conflict attempts stops before another resolver session", async () => {
   const { ctx, ops, sessions } = fakeContext({
     state: { counts: { conflictFixes: 2, syncs: 0 } },
-    ops: { "sync-base": [CONFLICT] },
+    ops: { "sync-base": [CONFLICT], "finish-sync": [RETAINED] },
   });
   const end = await sync(ctx);
   assert.equal(sessions.length, 0);
-  assert.equal(firstFinish(ops, "finish-sync").abort, true);
+  const { retainConflict, abort } = payloadsOf(ops, "finish-sync")[0] ?? {};
+  assert.equal(retainConflict, true);
+  assert.equal(abort, undefined);
   assert.ok(!end.ok && end.end.kind === "stop");
   assert.equal(end.end.code, "conflict");
 });

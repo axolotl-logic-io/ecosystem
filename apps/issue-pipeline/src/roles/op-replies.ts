@@ -29,6 +29,13 @@ const SYNC_REPLY = z.union([
   CONFLICT,
 ]);
 
+// A controlled conflict-limit stop has saved evidence and retained the rebase.
+const RETAINED_CONFLICT_REPLY = z.looseObject({
+  resolved: z.literal(false),
+  retained: z.literal(true),
+  reason: z.string().min(1),
+});
+
 // finish-sync and finish-wiki-sync.
 const FINISH_REPLY = z.union([
   CONFLICT,
@@ -126,6 +133,7 @@ export {
   OPEN_PR_REPLY,
   opReply,
   PUSH_REPLY,
+  RETAINED_CONFLICT_REPLY,
   readyPr,
   START_PR_REPLY,
   SYNC_REPLY,
