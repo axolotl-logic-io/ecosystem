@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { pageTextOf } from "./brain-test-kit.mjs";
+import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { readWorld, withWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
 import {
   ISSUE,
@@ -16,12 +17,13 @@ import {
   WIKI_BRANCH,
 } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
 import {
+  expectedReplay,
   merges,
   prepareReplayFlow,
   replaceState,
   replayFacts,
+  securityEvidence,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
 import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
@@ -38,32 +40,6 @@ let interruptedWorld;
 /** @type {string | null} */
 let originalWiki;
 let replayReady = false;
-
-/** @param {boolean} [checked] */
-function expectedReplay(checked = true) {
-  const state = savedState(interruptedWorld);
-  const codeMerged = { pr: state.pr, sha: state.merged.code };
-  /** @type {{ pass: boolean, headSha: string }[]} */
-  let verified = [];
-  /** @type {{ pass: boolean }[]} */
-  let wikiChecked = [];
-  if (checked) {
-    verified = [{ pass: true, headSha: state.merged.code }];
-    wikiChecked = [{ pass: true }];
-  }
-  return {
-    claimCodeMerged: codeMerged,
-    forbidden: [],
-    merges: 1,
-    verified,
-    wikiChecked,
-    base: state.merged.code,
-    hardened: state.hardened,
-    integration: state.integration,
-    codeMerged,
-    unsupported: [],
-  };
-}
 
 /** @param {string} mergedSha @returns {{ diff: string, bundle: string, files: string }} */
 function securityBundle(mergedSha) {
@@ -115,7 +91,7 @@ for (const step of [
   });
 }
 
-test("the interrupted own merge saved original hardening/integration and its actual merge receipt, without publishing or closing", () => {
+test("the interrupted own merge saved its provenance before Security despite default-branch auto-close", () => {
   const state = savedState(interruptedWorld);
   assert.equal(state.stage, "merge");
   assert.equal(state.security, null);
@@ -132,7 +108,7 @@ test("the interrupted own merge saved original hardening/integration and its act
   assert.equal(interruptedWorld.prs[0]?.mergeOid, state.merged.code);
   assert.equal(
     interruptedWorld.issues.find(({ number }) => number === ISSUE)?.state,
-    "open",
+    "closed",
   );
   assert.equal(
     refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
@@ -142,11 +118,25 @@ test("the interrupted own merge saved original hardening/integration and its act
 });
 
 test("claim-populated replay cannot publish or close without security when the fresh assessment is interrupted", () => {
+  const callsStart = ghCalls(flow.ghDir).length;
   const traceStart = opsTrace(flow).length;
   const starts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "deferred");
   assert.equal(sessions(flow), starts + 1);
-  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay());
+  assert.deepEqual(
+    replayFacts(flow, traceStart),
+    expectedReplay(interruptedWorld),
+  );
+  assert.ok(
+    ghCalls(flow.ghDir)
+      .slice(callsStart)
+      .some(
+        ([command, action, target]) =>
+          command === "issue" &&
+          action === "reopen" &&
+          target === String(ISSUE),
+      ),
+  );
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
@@ -165,7 +155,10 @@ test("claim-populated replay cannot publish or close without security when the f
 test("retained publish-only recovery bundles an added gitlink and pending wiki before Security", () => {
   const traceStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "deferred");
-  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay());
+  assert.deepEqual(
+    replayFacts(flow, traceStart),
+    expectedReplay(interruptedWorld),
+  );
   const state = savedState(readWorld(flow.ghDir));
   const { diff, bundle, files } = securityBundle(state.merged.code);
   assert.ok(diff.includes(`+Subproject commit ${originalWiki}`));
@@ -194,7 +187,10 @@ test("stale security cannot authorize replay publication or closure; a new asses
   const starts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "deferred");
   assert.equal(sessions(flow), starts + 1);
-  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay());
+  assert.deepEqual(
+    replayFacts(flow, traceStart),
+    expectedReplay(interruptedWorld),
+  );
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
@@ -224,7 +220,10 @@ test("a saved rejection on the actual merged result re-stops without a model, wr
   const traceStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "stop");
   assert.equal(sessions(flow), starts);
-  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay(false));
+  assert.deepEqual(
+    replayFacts(flow, traceStart),
+    expectedReplay(interruptedWorld, false),
+  );
   const world = readWorld(flow.ghDir);
   const issue = world.issues.find(({ number }) => number === ISSUE);
   assert.equal(issue?.state, "open");
@@ -234,9 +233,13 @@ test("a saved rejection on the actual merged result re-stops without a model, wr
     refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
     originalWiki,
   );
+  assert.equal(runStage(flow, "merge").end, "stop");
+  assert.equal(sessions(flow), starts);
+  assert.equal(merges(flow).length, 1);
 });
 
 test("missing security is reviewed read-only at the actual first-parent merge diff, then exact approval survives a publication interruption and is reused", () => {
+  const expected = expectedReplay(interruptedWorld);
   scriptPi(flow, { reviewer: [securityTurn()] });
   fs.writeFileSync(
     path.join(flow.root, "interrupt-publish"),
@@ -246,7 +249,7 @@ test("missing security is reviewed read-only at the actual first-parent merge di
   const starts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "deferred");
   assert.equal(sessions(flow), starts + 1);
-  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay());
+  assert.deepEqual(replayFacts(flow, traceStart), expected);
   const approved = savedState(readWorld(flow.ghDir));
   assert.deepEqual(approved.security.revision, approved.merged);
   assert.equal(approved.security.finding, null);
@@ -255,22 +258,19 @@ test("missing security is reviewed read-only at the actual first-parent merge di
     refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
     originalWiki,
   );
-  const launch = piLog(flow.piDir)
-    .filter((entry) => entry.start === true)
-    .at(-1);
+  const { launch, diff } = securityEvidence(flow, approved.merged.code);
   assert.ok(launch !== undefined);
   assert.equal(launch.commitScope, false);
   assert.equal(launch.ghToken, null);
   assert.equal(launch.extensions.includes("pipeline-commit.mjs"), false);
   assert.ok(launch.argv.includes(pageTextOf(SECURITY_PHASE)));
-  const { diff } = securityBundle(approved.merged.code);
   assert.ok(diff.includes("+Hello, world!"));
   assert.ok(diff.includes("+Greetings say Hello, world!"));
   fs.unlinkSync(path.join(flow.root, "interrupt-publish"));
   const retryStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "next");
   assert.equal(sessions(flow), starts + 1);
-  assert.deepEqual(replayFacts(flow, retryStart), expectedReplay());
+  assert.deepEqual(replayFacts(flow, retryStart), expected);
   const world = readWorld(flow.ghDir);
   const done = savedState(world);
   assert.equal(done.stage, "done");

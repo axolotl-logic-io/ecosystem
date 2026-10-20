@@ -15,6 +15,7 @@ import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
+import { gh, issueState } from "../github.ts";
 import type { Issue } from "../issue-context.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
@@ -27,7 +28,11 @@ import { isStopLabel } from "../stops.ts";
 import { resetKeepingUnpushed } from "../unpushed.ts";
 import { ensureWiki } from "../wiki.ts";
 import type { BranchChanged } from "./claim-state.ts";
-import { assertBranchAssigned, claimedState } from "./claim-state.ts";
+import {
+  assertBranchAssigned,
+  assertClosedMergeRecovery,
+  claimedState,
+} from "./claim-state.ts";
 
 const CLAIM_REQUEST = z.looseObject({
   lane: z.string().min(1),
@@ -121,7 +126,10 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
   const n = req.number;
   const context = writeIssueContext(cfg, n);
   const issue = CLAIMED_ISSUE.parse(context.issue);
-  if (issue.state !== "open") {
+  const recovering = issue.state === "closed";
+  if (recovering) {
+    assertClosedMergeRecovery(cfg, n, context.comments);
+  } else if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
   }
   assertBranchAssigned(cfg, n, context.comments);
@@ -136,6 +144,14 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
   }
   const now = new Date();
   const claimed = claimedState(cfg, n, context.comments, now);
+  if (recovering) {
+    // Only the winning claimant may reopen; no writer or merge authority is
+    // granted by this mutation. Completion closes it again after all gates.
+    gh(cfg, "merge", ["issue", "reopen", String(n), "-R", cfg.repo]);
+    if (issueState(cfg, n) !== "open") {
+      throw new OpsError(`could not confirm #${n} reopened for Merge recovery`);
+    }
+  }
   let state = leased(claimed.state, req, now);
   let wiki: string | null = null;
   if (state.stage !== "done") {

@@ -60,6 +60,7 @@ import process from "node:process";
  * @property {string[]} repoLabels
  * @property {FlowPr[]} prs
  * @property {string | null} [failedHead] exact head with a scripted CI failure
+ * @property {boolean} [delayMergeConfirmation] hide merged metadata until the test clears it
  * @property {string[][]} unsupported the calls the fake refused
  */
 

@@ -20,11 +20,17 @@ import { run } from "../process.ts";
 import { codeMergedOf, issuePullRequest } from "../revision.ts";
 import { readClaimState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
-import { newIssueState, resumeOf, withLog } from "../state.ts";
+import {
+  mergeAuthorization,
+  newIssueState,
+  resumeOf,
+  withLog,
+} from "../state.ts";
 import { historicalPrFor } from "./prs.ts";
 
 // `show-ref --exists` distinguishes absence from unreadable repository history.
 const MISSING_REF = 2;
+const FULL_SHA = /^[0-9a-f]{40}$/u;
 
 function hasLocalBranch(dir: string, branch: string): boolean {
   if (fs.statSync(dir, { throwIfNoEntry: false }) === undefined) {
@@ -135,6 +141,60 @@ function assertBranchAssigned(
   assignedBranch(cfg, n, state);
 }
 
+// Closed issues may recover only an incomplete Merge, never initialize work or
+// replay completion. This is claim eligibility, not own-merge authorization:
+// without a saved receipt, the existing external-postmerge gates still apply.
+function assertClosedMergeRecovery(
+  cfg: Config,
+  n: number,
+  comments: readonly IssueComment[],
+): void {
+  const saved = readClaimState(cfg, n, comments);
+  if (
+    saved === null ||
+    resumeOf(saved).stage !== "merge" ||
+    saved.pr === null
+  ) {
+    throw new OpsError(`#${n} is not open`);
+  }
+  const pr = issuePullRequest(cfg, n, saved);
+  const merged = codeMergedOf(pr);
+  const authorized = mergeAuthorization(saved);
+  const attempt = saved.mergeAttempt;
+  if (
+    attempt !== null &&
+    (attempt.repo !== cfg.repo ||
+      attempt.pr !== saved.pr ||
+      attempt.target !== cfg.baseBranch ||
+      attempt.branch !== paths.branch(cfg, n) ||
+      attempt.authorized.code !== pr?.headSha ||
+      (attempt.result !== null && attempt.result !== merged?.sha))
+  ) {
+    throw new OpsError(
+      `#${n}'s saved merge attempt is not confirmed by GitHub`,
+    );
+  }
+  if (
+    pr === null ||
+    merged === null ||
+    !FULL_SHA.test(merged.sha) ||
+    !FULL_SHA.test(pr.headSha) ||
+    (saved.headSha !== null &&
+      saved.headSha !== pr.headSha &&
+      saved.headSha !== saved.codeMerged?.sha) ||
+    (saved.codeMerged !== null &&
+      (saved.codeMerged.pr !== merged.pr ||
+        saved.codeMerged.sha !== merged.sha)) ||
+    (saved.merged !== null &&
+      (saved.merged.code !== merged.sha ||
+        (authorized?.code !== null &&
+          authorized?.code !== undefined &&
+          authorized.code !== pr.headSha)))
+  ) {
+    throw new OpsError(`#${n}'s incomplete Merge is not confirmed by GitHub`);
+  }
+}
+
 // `state` with its PR and code merge as GitHub reports them. A recorded
 // code merge GitHub doesn't confirm, or a completion GitHub reports another
 // code merge for (none, for a change that lives only in the wiki), throws:
@@ -222,4 +282,4 @@ function claimedState(
 }
 
 export type { BranchChanged, ClaimedState };
-export { assertBranchAssigned, claimedState };
+export { assertBranchAssigned, assertClosedMergeRecovery, claimedState };
