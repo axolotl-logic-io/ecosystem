@@ -65,6 +65,15 @@ function expectedReplay(checked = true) {
   };
 }
 
+/** @param {string} mergedSha @returns {{ diff: string, bundle: string, files: string }} */
+function securityBundle(mergedSha) {
+  const tag = `review-security-${mergedSha.slice(0, SECURITY_TAG_LENGTH)}`;
+  const dir = path.join(flow.root, "runs", "o__r", `issue-${ISSUE}`, tag);
+  const diff = fs.readFileSync(path.join(dir, "diff.patch"), "utf8");
+  const bundle = fs.readFileSync(path.join(dir, "bundle.md"), "utf8");
+  return { diff, bundle, files: bundle.slice(diff.length) };
+}
+
 before(() => {
   flow = setUpFlow();
   originalWiki = prepareReplayFlow(flow);
@@ -153,6 +162,24 @@ test("claim-populated replay cannot publish or close without security when the f
   );
 });
 
+test("retained publish-only recovery bundles an added gitlink and pending wiki before Security", () => {
+  const traceStart = opsTrace(flow).length;
+  assert.equal(runStage(flow, "merge").end, "deferred");
+  assert.deepEqual(replayFacts(flow, traceStart), expectedReplay());
+  const state = savedState(readWorld(flow.ghDir));
+  const { diff, bundle, files } = securityBundle(state.merged.code);
+  assert.ok(diff.includes(`+Subproject commit ${originalWiki}`));
+  assert.ok(diff.includes("+Greetings say Hello, world!"));
+  assert.ok(bundle.startsWith(diff));
+  assert.ok(
+    files.includes(
+      `\n## review-module\n\nGitlink: path only. Old: absent; new: commit \`${originalWiki}\`.\n`,
+    ),
+  );
+  assert.ok(!files.includes("Greetings say"));
+  assert.ok(!files.includes("The wiki."));
+});
+
 test("stale security cannot authorize replay publication or closure; a new assessment is required", () => {
   const state = savedState(interruptedWorld);
   replaceState(flow, {
@@ -236,11 +263,7 @@ test("missing security is reviewed read-only at the actual first-parent merge di
   assert.equal(launch.ghToken, null);
   assert.equal(launch.extensions.includes("pipeline-commit.mjs"), false);
   assert.ok(launch.argv.includes(pageTextOf(SECURITY_PHASE)));
-  const tag = `review-security-${approved.merged.code.slice(0, SECURITY_TAG_LENGTH)}`;
-  const diff = fs.readFileSync(
-    path.join(flow.root, "runs", "o__r", `issue-${ISSUE}`, tag, "diff.patch"),
-    "utf8",
-  );
+  const { diff } = securityBundle(approved.merged.code);
   assert.ok(diff.includes("+Hello, world!"));
   assert.ok(diff.includes("+Greetings say Hello, world!"));
   fs.unlinkSync(path.join(flow.root, "interrupt-publish"));

@@ -98,10 +98,23 @@ function replayFacts(flow, traceStart) {
 function prepareReplayFlow(flow) {
   observeOps(flow);
   const originalWiki = refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`);
+  if (originalWiki === null) {
+    throw new Error("missing wiki baseline");
+  }
+  const draft = implementorTurn("hello, world", "Developer draft");
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
   scriptPi(flow, {
     author: [authorTurn(GHERKIN, true)],
-    implementor: [implementorTurn("hello, world", "Developer draft")],
+    implementor: [
+      {
+        ...draft,
+        files: {
+          ...draft.files,
+          "repo/.gitmodules": `[submodule "wiki"]\n\tpath = wiki\n\turl = ${flow.wikiOrigin}\n[submodule "review-module"]\n\tpath = review-module\n\turl = ${flow.wikiOrigin}\n`,
+        },
+        gitlinks: { "review-module": originalWiki },
+      },
+    ],
     reviewer: [
       implementorTurn("Hello, world", "Hardening fixes capitalization"),
       implementorTurn("Hello, world!", "Integration fixes CI"),
