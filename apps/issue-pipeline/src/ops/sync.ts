@@ -13,9 +13,9 @@ import { saveSyncRecovery } from "../job/code-recovery.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import {
+  classifyCodeSync,
   clearCodeSync,
   continueCodeSync,
-  readCodeSync,
   rebaseInProgress,
   saveCodeSync,
   unmergedFiles,
@@ -57,6 +57,7 @@ const SYNC_REQUEST = z.looseObject({
 const FINISH_REQUEST = z.looseObject({
   number: z.number().int(),
   abort: z.boolean().nullish(),
+  cannotFix: z.boolean().nullish(),
   reason: z.string().nullish(),
   // The commit sync-base rebased onto (its reply's baseSha), #279.
   baseSha: z.string().regex(COMMIT_SHA).nullish(),
@@ -163,31 +164,25 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
   const n = req.number;
   refuseOnceMerged(cfg, n, "finish-sync");
   const wt = paths.worktree(cfg, n);
+  const sync = classifyCodeSync(cfg, wt, req.baseSha);
   let reason: string | undefined;
   if (req.abort === true) {
     reason = textOr(req.reason, "aborted");
   } else {
-    const sync = readCodeSync(wt);
     if (sync !== undefined && rebaseInProgress(wt)) {
-      if (
-        req.baseSha !== undefined &&
-        req.baseSha !== null &&
-        req.baseSha !== sync.onto
-      ) {
-        throw new OpsError(
-          "finish-sync target differs from the stopped code rebase",
-        );
-      }
       continueCodeSync(cfg, wt, sync);
-      if (rebaseInProgress(wt)) {
+      if (rebaseInProgress(wt) && req.cannotFix !== true) {
         return conflictReply(wt, sync.onto, true);
       }
     }
     holdWikiPin(cfg, wt);
     reason = finishProblem(cfg, n, req);
+    if (reason !== undefined && req.cannotFix === true) {
+      reason = `${textOr(req.reason, "resolver could not fix conflicts")}; ${reason}`;
+    }
   }
   if (reason !== undefined) {
-    resetToRemote(cfg, n);
+    resetToRemote(cfg, n, reason);
     return { resolved: false, reason };
   }
   pushBranch(cfg, n, wt, "finish-sync");

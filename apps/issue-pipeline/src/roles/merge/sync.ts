@@ -104,13 +104,18 @@ async function resolveOnce(
   const state = withConflictFix(run.state, attempt);
   await ctx.save(state);
   const reply = session.value;
-  if (reply.outcome !== "conflict-resolved") {
-    const rejected = `the resolver replied ${reply.outcome}: ${replyText(reply)}`;
+  const rejected = `the resolver replied ${reply.outcome}: ${replyText(reply)}`;
+  if (reply.outcome !== "conflict-resolved" && side === "wiki") {
     await abortRebase(ctx, side, rejected);
     return { ok: true, value: { ...run, state, rejected } };
   }
   const { finish, finishPayload } = SIDE_OPS[side];
-  const payload = finishPayload(ctx.issue, conflict);
+  let payload = finishPayload(ctx.issue, conflict);
+  if (reply.outcome !== "conflict-resolved") {
+    // Code classification/continuation is deterministic, even when the model
+    // gave up at a later wiki-only pick. An explicit abort still rejects.
+    payload = { ...payload, cannotFix: true, reason: rejected };
+  }
   const finished = await opReply(ctx, finish, payload, FINISH_REPLY);
   if (finished.conflict) {
     return {

@@ -167,9 +167,12 @@ test("a transient resolver aborts the rebase and defers, counting nothing", asyn
   assert.ok(!opNames(ops).includes("verify"));
 });
 
-test("cannot-fix is a counted attempt that aborts, and the next attempt rebases afresh", async () => {
+test("cannot-fix is counted and goes through code finish classification; rejected work retries within the bound", async () => {
   const { ctx, ops, sessions } = fakeContext({
-    ops: { "sync-base": [CONFLICT, CONFLICT, CLEAN] },
+    ops: {
+      "sync-base": [CONFLICT, CONFLICT, CLEAN],
+      "finish-sync": [REJECTED, { resolved: true }],
+    },
     sessions: [
       { ok: true, reply: { outcome: "cannot-fix", summary: "too tangled" } },
       RESOLVED,
@@ -179,7 +182,10 @@ test("cannot-fix is a counted attempt that aborts, and the next attempt rebases 
   assert.equal(sessions.length, CANNOT_FIX_RUN_SESSIONS);
   const finishes = payloadsOf(ops, "finish-sync");
   const first = firstFinish(ops, "finish-sync");
-  assert.equal(first.abort, true);
+  assert.equal(first.abort, undefined);
+  const { cannotFix, baseSha } = finishes[0] ?? {};
+  assert.equal(cannotFix, true);
+  assert.equal(baseSha, BASE);
   assert.match(String(first.reason), CANNOT_FIX_REASON);
   assert.deepEqual(finishes[1], { number: ISSUE, baseSha: BASE });
   assert.ok(end.ok);

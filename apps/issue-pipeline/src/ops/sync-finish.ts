@@ -76,9 +76,9 @@ function finishProblem(
 }
 
 // Puts the worktree back on the pushed branch, dropping a half-done rebase.
-function resetToRemote(cfg: Config, n: number): void {
+function resetToRemote(cfg: Config, n: number, reason?: string): void {
   const wt = paths.worktree(cfg, n);
-  saveSyncRecovery(cfg, n, wt);
+  saveSyncRecovery(cfg, n, wt, reason);
   abortRebase(wt);
   const remote = remoteHead(cfg, n);
   if (remote !== null) {
