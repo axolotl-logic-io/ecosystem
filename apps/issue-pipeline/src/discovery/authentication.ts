@@ -18,6 +18,13 @@ import {
 
 const HTTP_OK = 200;
 const HEX_RADIX = 16;
+// Unlike the display reader, discovery cannot interpret omitted input fields
+// as an anonymous author or an empty human requirement.
+const INPUT_COMMENT = COMMENT.extend({
+  body: COMMENT.shape.body.unwrap(),
+  user: COMMENT.shape.user.unwrap(),
+  id: COMMENT.shape.id.int().positive(),
+});
 
 interface Inputs {
   state: IssueState | null;
@@ -77,7 +84,7 @@ async function commentsFor(
   number: number,
 ): Promise<IssueComment[]> {
   const path = `/repos/${repo.repo}/issues/${number}/comments`;
-  const comments = await reads.pages(repo.repo, path, COMMENT);
+  const comments = await reads.pages(repo.repo, path, INPUT_COMMENT);
   const current: IssueComment[] = [];
   const seen = new Set<number>();
   for await (const item of comments) {
@@ -157,6 +164,15 @@ function savedInputs(
   try {
     const state = readClaimState(repo, number, comments);
     if (state === null) {
+      if (
+        comments.some(
+          (item) =>
+            same(item.user?.login ?? "", repo.mergeAccount) ||
+            isLegacyPipelineComment(repo, item),
+        )
+      ) {
+        throw new Error("prior pipeline work has no saved authority");
+      }
       return { state, handoff: null };
     }
     const latest = comments

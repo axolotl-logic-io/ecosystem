@@ -80,8 +80,8 @@ function handoffMatches(
     checkpoint.code === pull.head.sha &&
     checkpoint.inputs === inputs.revision &&
     Date.parse(event.createdAt) >= Date.parse(checkpoint.at) &&
-    (handoff.request === event.id ||
-      (handoff.request === null && !handoff.eventsBefore.includes(event.id)))
+    !handoff.eventsBefore.includes(event.id) &&
+    (handoff.request === event.id || handoff.request === null)
   );
 }
 

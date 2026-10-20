@@ -80,14 +80,22 @@ const EVENT = wire(
       actor: USER.nullable(),
       createdAt: z.iso.datetime(),
       assignee: USER.optional(),
-      requestedReviewer: USER.optional(),
+      requestedReviewer: USER.nullish(),
+      requestedTeam: z
+        .object({ id: z.number().int().positive(), slug: z.string().min(1) })
+        .nullish(),
     })
     .superRefine((event, context) => {
+      const hasReviewer =
+        event.requestedReviewer !== undefined &&
+        event.requestedReviewer !== null;
+      const hasTeam =
+        event.requestedTeam !== undefined && event.requestedTeam !== null;
       if (
         (["assigned", "unassigned"].includes(event.event) &&
           event.assignee === undefined) ||
         (["review_requested", "review_request_removed"].includes(event.event) &&
-          event.requestedReviewer === undefined)
+          hasReviewer === hasTeam)
       ) {
         context.addIssue({
           code: "custom",

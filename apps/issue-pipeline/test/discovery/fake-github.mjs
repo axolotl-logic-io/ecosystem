@@ -13,6 +13,7 @@ const fixture = z
     issue: z.unknown(),
     pull: z.unknown(),
     event: z.unknown(),
+    teamEvent: z.unknown(),
     review: z.unknown(),
     comment: z.unknown(),
     gherkin: z.unknown(),

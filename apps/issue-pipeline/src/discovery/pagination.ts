@@ -32,6 +32,36 @@ function pageUrl(raw: string, current: URL): URL {
   return next;
 }
 
+function continues(
+  relations: ReadonlyMap<string, URL>,
+  page: number,
+  count: number,
+): boolean {
+  const next = relations.get("next");
+  const last = relations.get("last");
+  const first = relations.get("first");
+  const prev = relations.get("prev");
+  if (
+    (first !== undefined && Number(first.searchParams.get("page")) !== 1) ||
+    (prev !== undefined &&
+      Number(prev.searchParams.get("page")) !== page - 1) ||
+    (last !== undefined &&
+      (Number(last.searchParams.get("page")) < page ||
+        (next === undefined && Number(last.searchParams.get("page")) > page) ||
+        (next !== undefined && Number(last.searchParams.get("page")) <= page)))
+  ) {
+    throw new Error("contradictory pagination");
+  }
+  if (next === undefined) {
+    // A partial header without a final-page claim cannot terminate a full page.
+    return last === undefined && count === PAGE_SIZE;
+  }
+  if (count === 0 || Number(next.searchParams.get("page")) !== page + 1) {
+    throw new Error("missing page");
+  }
+  return true;
+}
+
 function hasNext(link: string | null, path: string, count: number): boolean {
   if (link === null) {
     return count === PAGE_SIZE;
@@ -50,18 +80,11 @@ function hasNext(link: string | null, path: string, count: number): boolean {
       }
       relations.set(relation, pageUrl(url, current));
     }
-    const next = relations.get("next");
-    if (next === undefined) {
-      return false;
-    }
-    if (
-      count === 0 ||
-      Number(next.searchParams.get("page")) !==
-        Number(current.searchParams.get("page")) + 1
-    ) {
-      throw new Error("missing page");
-    }
-    return true;
+    return continues(
+      relations,
+      Number(current.searchParams.get("page")),
+      count,
+    );
   } catch (cause) {
     throw new DiscoveryHold(
       { reason: "page", evidence: path, incomplete: true },

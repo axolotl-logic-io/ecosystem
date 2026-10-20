@@ -84,6 +84,7 @@ function localControls(repo: Repository, issue: Issue, inputs: Inputs): void {
   savedControls(inputs);
   if (
     labels.includes("agent:split") ||
+    labels.includes("agent:merged") ||
     labels.some((label) => repo.skipLabels.includes(label)) ||
     (state === null && !repo.takeNewWork)
   ) {
@@ -105,7 +106,9 @@ function savedControls(inputs: Inputs): void {
   const { state } = inputs;
   if (
     (state?.mergeAttempt !== null && state?.mergeAttempt !== undefined) ||
-    (state?.codeMerged !== null && state?.codeMerged !== undefined)
+    (state?.codeMerged !== null && state?.codeMerged !== undefined) ||
+    (state?.merged !== null && state?.merged !== undefined) ||
+    (state?.security !== null && state?.security !== undefined)
   ) {
     throw new DiscoveryHold({
       reason: "state",
