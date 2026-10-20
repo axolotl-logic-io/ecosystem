@@ -241,14 +241,17 @@ function sessionRaw(
   };
 }
 
-// A session that never started, failed with `error`.
+// A session that never started, failed with a prepared diagnostic. Unlike a
+// running child's raw stderr, this message must retain its refusal context.
 function failedSession(launch: SessionLaunch, error: string): SessionRaw {
-  return sessionRaw(launch, {
-    code: null,
-    stdout: "",
-    stderr: error,
-    timedOut: false,
-  });
+  return {
+    ok: false,
+    structuredOutput: null,
+    error,
+    key: launch.key,
+    agent: launch.agent,
+    results: [{ usage: ZERO_USAGE }],
+  };
 }
 
 export type { OpsRaw, ProcessExit, SessionLaunch, SessionRaw, ToolFailure };

@@ -66,10 +66,22 @@ const CACHE = {
 };
 
 const FAKE = `#!${process.execPath}
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 const args = process.argv.slice(2);
+const reportToolchain = () => {
+  if (!process.env.FAKE_TOOLCHAIN_REPORT) return;
+  const names = ["PATH", "MISE_DATA_DIR", "MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_CONFIG_DIR", "MISE_GLOBAL_CONFIG_FILE"];
+  const tools = ["node", "npm", "mise"].map((name) => {
+    const result = spawnSync(name, ["--version"], {env: process.env, cwd: process.cwd(), encoding: "utf8", timeout: 3000});
+    const selected = spawnSync("/bin/sh", ["-c", "command -v " + name], {env: process.env, cwd: process.cwd(), encoding: "utf8", timeout: 3000});
+    return {name, selected: selected.stdout.trim(), status: result.status, version: result.stdout.trim()};
+  });
+  fs.appendFileSync(process.env.FAKE_TOOLCHAIN_REPORT, JSON.stringify({home: process.env.HOME, cwd: process.cwd(), tools, toolchain: Object.fromEntries(names.map((name) => [name, process.env[name]]))}) + "\\n");
+};
 if (args[0] === "--version") {
+  reportToolchain();
   fs.appendFileSync(path.join(process.env.PRIVATE_RUNTIME_ROOT, "version-calls.txt"), "version\\n");
   if (args.join(" ") !== "--version --offline") throw new Error("unsupported version command");
   process.stdout.write((process.env.FAKE_NATIVE_VERSION ?? "1.2.0") + "\\n");
@@ -115,6 +127,7 @@ if (args[0] === "--version") {
         }
         for (const event of JSON.parse(process.env.FAKE_PROBE_EVENTS ?? "[]")) send(event);
       } else if (command.type === "prompt") {
+        reportToolchain();
         send({id: command.id, type: "response", command: "prompt", success: true, data: {disposition: "started"}});
         send({type: "auto_compaction_start", reason: "threshold"});
         send({type: "auto_compaction_end", result: {summary: "native event fixture"}});

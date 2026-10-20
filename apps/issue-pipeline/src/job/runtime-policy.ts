@@ -17,10 +17,47 @@ const SAFE_INTEGER = z
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER);
 
+// Runtime launch/tool environments are POSIX; no shell expansion or implicit
+// current-directory PATH entries are accepted in the declared toolchain.
+const ABSOLUTE_PATH = /^\//u;
+const TOOLCHAIN_ENV = z
+  .partialRecord(
+    z.enum([
+      "PATH",
+      "MISE_DATA_DIR",
+      "MISE_STATE_DIR",
+      "MISE_CACHE_DIR",
+      "MISE_CONFIG_DIR",
+      "MISE_GLOBAL_CONFIG_FILE",
+    ]),
+    z.string().min(1),
+  )
+  .superRefine((env, context): void => {
+    for (const [name, value] of Object.entries(env)) {
+      let paths = [value];
+      if (name === "PATH") {
+        paths = value.split(":");
+      }
+      if (
+        !paths.every(
+          (entry: string): boolean =>
+            ABSOLUTE_PATH.test(entry) && !entry.includes("\u0000"),
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: [name],
+          message: "Toolchain locations must be absolute POSIX paths",
+        });
+      }
+    }
+  });
+
 const RUNTIME_SCHEMA = z
   .object({
     home: z.string().min(1).nullable().default(null),
     providerExtension: z.string().min(1).nullable().default(null),
+    toolchainEnv: TOOLCHAIN_ENV.default({}),
     credentialEnv: z
       .array(z.string().regex(ENV_NAME))
       .min(1)
@@ -41,6 +78,7 @@ const RUNTIME_SCHEMA = z
       .default({}),
   })
   .default({
+    toolchainEnv: {},
     home: null,
     providerExtension: null,
     credentialEnv: ["PIPELINE_MODEL_KEY"],
@@ -90,6 +128,7 @@ interface RuntimeBoundary {
   home: string;
   providerExtension: string | null;
   credentialEnv: string[];
+  toolchainEnv: RuntimeConfig["toolchainEnv"];
   projectConfiguration: "disabled";
   resources: "explicit extensions only";
   mode: "rpc";
@@ -188,6 +227,7 @@ function runtimeBoundary(
     home: runtime.home ?? "$ISSUE_PIPELINE_ROOT/runtime/home",
     providerExtension: runtime.providerExtension,
     credentialEnv: runtime.credentialEnv,
+    toolchainEnv: runtime.toolchainEnv,
     projectConfiguration: "disabled",
     resources: "explicit extensions only",
     mode: "rpc",

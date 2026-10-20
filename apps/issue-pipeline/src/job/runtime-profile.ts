@@ -1,6 +1,5 @@
 // The model child's explicit CLIProxy provisioning and generated native Pi
 // settings. This changes neither the parent job's HOME nor its credentials.
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,8 +14,8 @@ import {
   RUNTIME_SCHEMA,
 } from "./runtime-policy.ts";
 import { profileEndpoint } from "./runtime-provider.ts";
+import { probeVersion } from "./runtime-version.ts";
 
-const VERSION_TIMEOUT_MS = 10_000;
 const CHANGED_PROFILE =
   "runtime: generated settings or provisioned provider profile changed before the first prompt";
 const PROVIDER_PACKAGE = z.object({
@@ -152,7 +151,16 @@ function generatedEnvironment(
     ["PI_SKIP_VERSION_CHECK", "1"],
     ["PI_TELEMETRY", "0"],
   ]);
-  validateCredentials(runtime.credentialEnv, input.env, managed);
+  const toolchain: Record<string, string> = {};
+  for (const [name, value] of Object.entries(runtime.toolchainEnv)) {
+    if (value !== undefined) {
+      toolchain[name] = value;
+    }
+  }
+  validateCredentials(runtime.credentialEnv, input.env, {
+    ...managed,
+    ...toolchain,
+  });
   const settingsText = JSON.stringify(nativeSettings(policy));
   const settingsPath = path.join(agentDir, "settings.json");
   fs.writeFileSync(settingsPath, settingsText, { mode: 0o600 });
@@ -161,6 +169,7 @@ function generatedEnvironment(
       ([name]) =>
         name !== "OPENAI_API_KEY" || runtime.credentialEnv.includes(name),
     ),
+    ...Object.entries(toolchain),
     ...Object.entries(managed),
   ]);
   return { env, settingsText, settingsPath };
@@ -176,17 +185,14 @@ function verifiedRuntime(input: ProfileInput): PreparedRuntime {
     profile.home,
     policy,
   );
-  const version = spawnSync("pi", ["--version", "--offline"], {
-    cwd: input.cwd,
+  const refusal = probeVersion(
+    input.cwd,
     env,
-    encoding: "utf8",
-    timeout: VERSION_TIMEOUT_MS,
-    stdio: "pipe",
-  });
-  if (version.status !== 0 || version.stdout.trim() !== NATIVE_VERSION) {
-    throw new Error(
-      "runtime: the native pi executable must report version 1.2.0",
-    );
+    input.env,
+    runtime.credentialEnv,
+  );
+  if (refusal !== null) {
+    throw new Error(refusal);
   }
   return {
     env,
@@ -221,7 +227,8 @@ function verifyFiles(
 }
 
 // Failure messages never include parsed provider data, credentials, native
-// stderr or command output. Missing provisioning cannot fall back to HOME.
+// data or raw command output. Only the bounded, sanitized version diagnostic
+// is reportable. Missing provisioning cannot fall back to HOME.
 function runtimeProfile(
   input: ProfileInput,
 ): PreparedRuntime | { error: string } {
