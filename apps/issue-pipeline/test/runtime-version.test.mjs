@@ -121,6 +121,32 @@ test("redaction precedes UTF-8 truncation and no raw stderr or Error escapes", a
   assert.deepEqual(kit.records, []);
 });
 
+test("a matching successful probe does not report stderr as a refusal or diagnostic record", async () => {
+  const kit = privateRuntime();
+  Object.assign(
+    kit.env,
+    Object.fromEntries([["PIPELINE_MODEL_KEY", "synthetic-model-secret"]]),
+  );
+  const original = fs
+    .readFileSync(path.join(kit.root, "bin", "pi"), "utf8")
+    .split("\n")
+    .slice(1)
+    .join("\n");
+  const warning = `${RED}synthetic-model-secret ${"界".repeat(OVERSIZED_LENGTH)}`;
+  executable(
+    kit,
+    `if (process.argv.includes("--version")) process.stderr.write(${JSON.stringify(warning)});\n${original}`,
+  );
+  const raw = await request(kit);
+  assert.equal(raw.ok, true, raw.error ?? "");
+  assert.equal(raw.error, null);
+  assert.doesNotMatch(JSON.stringify([raw, kit.records]), SECRETS);
+  assert.deepEqual(kit.calls().slice(1), [
+    { command: "get_state" },
+    { command: "prompt" },
+  ]);
+});
+
 test("missing executable refuses with spawn code and no normal status", async () => {
   const kit = privateRuntime();
   fs.unlinkSync(path.join(kit.root, "bin", "pi"));

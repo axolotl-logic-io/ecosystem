@@ -197,6 +197,44 @@ for (const shims of [true, false]) {
   }
 }
 
+for (const overridePath of [false, true]) {
+  test(`inherited HOME-independent locations survive a partial declaration, PATH override ${overridePath}`, async () => {
+    const kit = toolchainRuntime(true);
+    Object.assign(kit.env, kit.toolchain, HOSTILE_ENV);
+    assert.equal(kit.comparison().status, 0);
+    let toolchainEnv = {};
+    if (overridePath) {
+      toolchainEnv = Object.fromEntries(
+        Object.entries(kit.toolchain).filter(([name]) => name === "PATH"),
+      );
+      Object.assign(
+        kit.env,
+        Object.fromEntries([["PATH", path.join(kit.root, "unselected")]]),
+      );
+    }
+    kit.runtime.toolchainEnv = RUNTIME_SCHEMA.parse({
+      toolchainEnv,
+    }).toolchainEnv;
+    const inputEnv = { ...kit.env };
+    const raw = await runSession(launch({}), kit.hooks);
+    assert.equal(raw.ok, true, raw.error ?? "");
+    const [expected, ...children] = REPORT.array().parse(kit.reports());
+    assert.ok(expected);
+    assert.equal(children.length, REPORT_COUNT - 1);
+    for (const child of children) {
+      assert.equal(child.home, kit.runtime.home);
+      assert.equal(child.cwd, expected.cwd);
+      assert.deepEqual(child.tools, expected.tools);
+      assert.deepEqual(child.toolchain, kit.toolchain);
+      assert.ok(child.tools.every((tool) => tool.status === 0));
+      for (const name of HIDDEN) {
+        assert.ok(!child.env.includes(name));
+      }
+    }
+    assert.deepEqual(kit.env, inputEnv);
+  });
+}
+
 for (const [name, value] of [
   ["HOME", "/elsewhere"],
   ["GH_TOKEN", "synthetic"],
