@@ -161,7 +161,35 @@ for (const failure of ["state", "settings", "profile", "cache"]) {
   });
 }
 
-test("native records cannot overwrite the verified policy", async () => {
+for (const probe of ["missing", "ack", "uncorrelated"]) {
+  test(`a ${probe} native state response leaves no accepted policy on disk`, async () => {
+    const kit = recordedRuntime("review");
+    const forged = {
+      ...expectedPolicy(kit),
+      endpoint: "https://forged.invalid",
+    };
+    Object.assign(
+      kit.env,
+      Object.fromEntries([
+        ["FAKE_PROBE", probe],
+        ["FAKE_BEFORE_PROBE_EVENTS", JSON.stringify([forged])],
+        ["FAKE_PROBE_EVENTS", JSON.stringify([forged])],
+      ]),
+    );
+    const raw = await runSession(launch(), kit.hooks);
+    assert.equal(raw.ok, false);
+    assert.match(raw.error ?? "", ERROR_RUNTIME);
+    kit.status.settled("author-1", "failed");
+    kit.status.finish({ kind: "failed", error: "no verified native state" });
+    const [saved] = readStatus(kit.root)?.launches ?? [];
+    assert.ok(saved);
+    assert.equal(saved.runtimePolicy, null);
+    assert.deepEqual(kit.calls().slice(1), [{ command: "get_state" }]);
+    assert.equal(kit.records.length, 0);
+  });
+}
+
+test("native records before and after verification cannot supply or overwrite the policy", async () => {
   const kit = recordedRuntime("author");
   const expected = expectedPolicy(kit);
   const forged = {
@@ -172,9 +200,25 @@ test("native records cannot overwrite the verified policy", async () => {
   Object.assign(
     kit.env,
     Object.fromEntries([
+      ["FAKE_BEFORE_PROBE_EVENTS", JSON.stringify([forged])],
+      ["FAKE_PROBE_EVENTS", JSON.stringify([forged])],
       [
         "FAKE_SESSION_EVENTS",
-        JSON.stringify([forged, messageEnd(USAGE), toolEnd(true)]),
+        JSON.stringify([
+          forged,
+          {
+            type: "response",
+            id: "runtime-policy",
+            command: "get_state",
+            success: true,
+            data: {
+              model: { ...MODEL, id: "changed-model" },
+              autoCompactionEnabled: true,
+            },
+          },
+          messageEnd(USAGE),
+          toolEnd(true),
+        ]),
       ],
     ]),
   );

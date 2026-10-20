@@ -96,6 +96,7 @@ if (args[0] === "--version") {
       log(logged);
       const send = (record) => process.stdout.write(JSON.stringify(record) + "\\n");
       if (command.type === "get_state") {
+        for (const event of JSON.parse(process.env.FAKE_BEFORE_PROBE_EVENTS ?? "[]")) send(event);
         if (process.env.FAKE_PROBE === "missing") { process.exit(0); }
         if (process.env.FAKE_CHANGE_CACHE === "yes") {
           fs.writeFileSync(path.join(process.env.HOME, ".pi", "agent", "pi-cliproxyapi", "discovery-cache.json"), "{}");
