@@ -193,9 +193,14 @@ test("a gitlink whose commit is absent from the code object store is reviewed as
   const wt = worktree(n);
   sh(`git -C ${wt} update-index --add --cacheinfo 160000,${pin},vendor`);
   sh(`git -C ${wt} commit -qm "Add external gitlink"`);
+  assert.equal(sh(`git -C ${wt} cat-file -e ${pin} 2>/dev/null; echo $?`), "1");
   const prepared = prepare(n);
   assert.ok(prepared.diff.includes(`Subproject commit ${pin}`));
   const files = filesPart(prepared);
-  assert.ok(files.includes("## vendor"));
-  assert.ok(files.includes(`Gitlink (submodule pointer): ${pin}`));
+  assert.ok(
+    files.endsWith(
+      `\n## vendor\n\nGitlink: path only. Old: absent; new: commit \`${pin}\`.\n`,
+    ),
+    "the added gitlink has its full pointer and no appended contents",
+  );
 });
