@@ -3,13 +3,16 @@ import { ISSUE_STATE } from "../state.ts";
 import { wire } from "./wire.ts";
 
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u;
+// App actors can appear in unrelated GitHub history. Parsing their provenance
+// does not map them to a configured account or make them trusted humans.
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?$/u;
 const REPOSITORY = /^[\w.-]+\/[\w.-]+$/u;
 const SHA = /^[0-9a-f]{40}$/u;
 const INPUT_REVISION = /^[0-9a-f]{64}$/u;
 const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u;
 const MAX_REQUESTS = 1000;
 const DEFAULT_REQUESTS = 100;
-const USER = z.object({ login: z.string().regex(LOGIN) });
+const USER = z.object({ login: z.string().regex(GITHUB_LOGIN) });
 const ROLE = z.enum(["development", "review"]);
 const REPO = z.object({
   repo: z.string().regex(REPOSITORY),
