@@ -31,8 +31,16 @@ const SYNC_REPLY = z.union([
 
 // finish-sync and finish-wiki-sync.
 const FINISH_REPLY = z.union([
-  z.looseObject({ resolved: z.literal(true) }),
-  z.looseObject({ resolved: z.literal(false), reason: z.string() }),
+  CONFLICT,
+  z.looseObject({
+    conflict: z.literal(false).default(false),
+    resolved: z.literal(true),
+  }),
+  z.looseObject({
+    conflict: z.literal(false).default(false),
+    resolved: z.literal(false),
+    reason: z.string(),
+  }),
 ]);
 
 const CHECK = z.looseObject({

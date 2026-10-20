@@ -118,9 +118,10 @@ async function tick(flow) {
  * Runs exactly the caller's assigned issue/stage/branch; no discovery or sweep.
  * @param {import("./pipeline-flow-kit.mjs").Flow} flow
  * @param {string} stage
+ * @param {number} [issue]
  * @returns {{ issue: number, stage: string, end: string }}
  */
-function runStage(flow, stage) {
+function runStage(flow, stage, issue = ISSUE) {
   const result = spawnSync(
     process.execPath,
     [
@@ -128,9 +129,9 @@ function runStage(flow, stage) {
       "--config",
       flow.config,
       "--issue",
-      String(ISSUE),
+      String(issue),
       "--branch",
-      `agent/issue-${ISSUE}`,
+      `agent/issue-${issue}`,
       "--brain-path",
       flow.brain,
       "--stage",

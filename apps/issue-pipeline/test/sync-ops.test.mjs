@@ -39,6 +39,7 @@ const NAME_DIGITS = 2;
 const MARKER_ROUNDS = 4;
 const MARKERS_SHOWN = 10;
 const EXECUTABLE = 0o755;
+const STAGED_MARKERS = /^\+(?:<{7}|={7}|>{7})(?: |$)/u;
 
 // Runs an op; returns its stdout and the gh writes it made.
 /** @param {{ number: number } & Record<string, unknown>} request @param {string} [config] @returns {{ out: string, writes: string[][] }} */
@@ -192,14 +193,19 @@ function failure(n, request, reason, headSha = originRef(`agent/issue-${n}`)) {
   };
 }
 
-test("finish-sync preserves a staged resolution before resetting an abort or unfinished rebase", () => {
+test("finish-sync rejects staged markers after continuation and preserves staged work before abort cleanup", () => {
   const unfinishedConflict = keptConflict(ISSUE.unfinished);
   assert.deepEqual(unfinishedConflict.writes, []);
   gitIn(worktree(ISSUE.unfinished), `add c${ISSUE.unfinished}`);
+  const markers = gitIn(worktree(ISSUE.unfinished), "diff --cached")
+    .split("\n")
+    .filter((line) => STAGED_MARKERS.test(line))
+    .join("\n");
+  assert.notEqual(markers, "");
   const unfinished = failure(
     ISSUE.unfinished,
     {},
-    "the rebase was not finished",
+    `conflict markers remain:\n${markers}`,
     unfinishedConflict.headSha,
   );
   assert.deepEqual(unfinished.got, unfinished.expected);

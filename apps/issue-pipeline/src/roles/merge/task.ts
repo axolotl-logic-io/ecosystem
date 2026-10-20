@@ -72,12 +72,13 @@ function resolverTask(
       "",
     );
   }
-  lines.push(
-    ...replyLines([
-      "`conflict-resolved`, with a `summary`, once the rebase has finished.",
-      "`cannot-fix`, with a `summary`.",
-    ]),
-  );
+  let resolved =
+    "`conflict-resolved`, with a `summary`, once the rebase has finished.";
+  if (side === "code") {
+    resolved =
+      "`conflict-resolved`, with a `summary`, once this stop's text conflicts are staged. Do not continue the code rebase: finish-sync owns continuation and all wiki gitlink resolutions, and may return another text stop.";
+  }
+  lines.push(...replyLines([resolved, "`cannot-fix`, with a `summary`."]));
   return lines.join("\n");
 }
 

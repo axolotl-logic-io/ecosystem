@@ -111,3 +111,38 @@ test("CI decides: pending waits, none required stops, a moved head goes to revie
     assert.ok(!opNames(runs[index]?.calls ?? []).includes("merge"));
   }
 });
+
+test("each integration verification pins again after a check-fix session could change the wiki", async () => {
+  const { ctx, calls } = merging({
+    ops: {
+      ...AFTER_INTEGRATION,
+      "current-revision": [current(), current({ code: REBASED })],
+      "ci-status": [CI_FAIL],
+      "pin-wiki": [{ changed: false }, { changed: true }],
+      verify: [
+        {
+          pass: false,
+          headSha: HEAD,
+          checks: [{ id: "test", pass: false, detail: "still failing" }],
+        },
+        VERIFIED,
+      ],
+      "wiki-check": [
+        { pass: true, checks: [] },
+        { pass: true, checks: [] },
+        { pass: true, checks: [] },
+      ],
+    },
+    sessions: [FIXED, FIXED],
+  });
+  const state = stateOf(await mergeRole(ctx), "wait");
+  assert.equal(integrationSessions(calls).length, 2);
+  assert.deepEqual(
+    opNames(calls).filter((name) =>
+      ["pin-wiki", "verify", "push"].includes(name),
+    ),
+    ["pin-wiki", "verify", "pin-wiki", "verify", "push"],
+  );
+  assert.equal(state.verifiedSha, REBASED);
+  assert.deepEqual(state.integration?.revision, INTEGRATED);
+});

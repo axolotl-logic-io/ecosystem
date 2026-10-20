@@ -13,7 +13,7 @@ import type { Config } from "../config.ts";
 import { paths, wikiCfg } from "../config.ts";
 import { assertClean, head, remoteHead } from "../git-state.ts";
 import { OpsError } from "../ops-error.ts";
-import { parseRequest } from "../process.ts";
+import { parseRequest, run } from "../process.ts";
 import { pullRequest } from "../revision.ts";
 import type { CodeMerged } from "../state.ts";
 import { holdWikiPin, pushWikiBranch, wikiAhead } from "../wiki.ts";
@@ -122,9 +122,62 @@ function exitPushOp(cfg: Config, request: unknown): PushResult {
   return pushFor(cfg, request, "exit-push");
 }
 
+// Pins the integrated wiki before integration's exact-head verification.
+// This is never called for publish-only work, and fresh authority also closes
+// this local code-write path after a merge or attempted merge.
+function pinIntegratedWiki(cfg: Config, n: number): boolean {
+  const wiki = wikiCfg(cfg);
+  const wt = paths.worktree(cfg, n);
+  const dir = paths.wiki(cfg, n);
+  if (wiki === null || !fs.existsSync(path.join(dir, ".git"))) {
+    return false;
+  }
+  const authority = readWriteAuthority(cfg, n);
+  if (!(authority.codeWritable && authority.state.flows?.code === true)) {
+    throw new OpsError(
+      "pin-wiki requires an unmerged code flow with code write authority",
+    );
+  }
+  holdWikiPin(cfg, wt);
+  assertClean(wt);
+  assertClean(dir, "the wiki checkout");
+  const integrated = head(dir);
+  const entry = run("git", [
+    "-C",
+    wt,
+    "ls-tree",
+    "HEAD",
+    "--",
+    wiki.dir,
+  ]).stdout;
+  if (!entry.startsWith("160000 commit ")) {
+    throw new OpsError(`no configured wiki gitlink at ${wiki.dir}`);
+  }
+  if (
+    run("git", ["-C", wt, "rev-parse", `HEAD:${wiki.dir}`]).stdout.trim() ===
+    integrated
+  ) {
+    return false;
+  }
+  run("git", [
+    "-C",
+    wt,
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    "160000",
+    integrated,
+    wiki.dir,
+  ]);
+  const env = new Map([["ISSUE_PIPELINE_COMMIT", "1"]]);
+  run("git", ["-C", wt, "commit", "-m", "Pin integrated wiki result"], { env });
+  holdWikiPin(cfg, wt);
+  return true;
+}
+
 const pushOps: Readonly<Record<string, PushOp>> = {
   push: pushOp,
   "exit-push": exitPushOp,
 };
 
-export { pushOps, refuseOnceMerged };
+export { pinIntegratedWiki, pushOps, refuseOnceMerged };

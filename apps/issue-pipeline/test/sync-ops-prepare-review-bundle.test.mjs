@@ -18,7 +18,14 @@ const { fakeGh, sh, worktree } = fx;
 const { REVIEW_BUNDLE_MAX_CHARS } = await import("../src/ops/review-diff.ts");
 const BASE = "integration";
 // Each test's issue.
-const ISSUE = { order: 41, again: 42, bound: 43, pathOnly: 44, wiki: 45 };
+const ISSUE = {
+  order: 41,
+  again: 42,
+  bound: 43,
+  pathOnly: 44,
+  wiki: 45,
+  gitlink: 46,
+};
 // The reply fields these tests read; the bundle's are checked by value.
 const BUNDLE_REPLY = z.looseObject({
   ok: z.literal(true),
@@ -177,4 +184,23 @@ test("the bundle holds the issue's wiki commits as diff.patch has them, and read
   assert.ok(prepared.diff.includes("+page-415"));
   const files = filesPart(prepared);
   assert.ok(files.includes(headText(ISSUE.wiki, "g")));
+});
+
+test("a gitlink whose commit is absent from the code object store is reviewed as a full pointer, never a text blob", () => {
+  const n = ISSUE.gitlink;
+  fx.startBranch(n, "code", "code with pointer");
+  const pin = sh(`git -C ${fx.root}/wiki-seed rev-parse HEAD`);
+  const wt = worktree(n);
+  sh(`git -C ${wt} update-index --add --cacheinfo 160000,${pin},vendor`);
+  sh(`git -C ${wt} commit -qm "Add external gitlink"`);
+  assert.equal(sh(`git -C ${wt} cat-file -e ${pin} 2>/dev/null; echo $?`), "1");
+  const prepared = prepare(n);
+  assert.ok(prepared.diff.includes(`Subproject commit ${pin}`));
+  const files = filesPart(prepared);
+  assert.ok(
+    files.endsWith(
+      `\n## vendor\n\nGitlink: path only. Old: absent; new: commit \`${pin}\`.\n`,
+    ),
+    "the added gitlink has its full pointer and no appended contents",
+  );
 });

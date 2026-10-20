@@ -10,8 +10,16 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertClean, fetchIn, head } from "../git-state.ts";
 import { saveSyncRecovery } from "../job/code-recovery.ts";
+import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
-import { rebaseInProgress, unmergedFiles } from "../rebase.ts";
+import {
+  clearCodeSync,
+  continueCodeSync,
+  readCodeSync,
+  rebaseInProgress,
+  saveCodeSync,
+  unmergedFiles,
+} from "../rebase.ts";
 import { holdWikiPin } from "../wiki.ts";
 import type { ReviewReply } from "./prepare-review.ts";
 import { prepareReview } from "./prepare-review.ts";
@@ -31,6 +39,7 @@ interface SyncConflict {
 }
 
 type FinishReply =
+  | SyncConflict
   | { resolved: false; reason: string }
   | ({ resolved: true; headSha: string } & BranchChanges);
 
@@ -89,8 +98,8 @@ function conflictReply(wt: string, onto: string, keep: boolean): SyncConflict {
   };
 }
 
-// With keepConflict, a conflicting rebase is left stopped in the worktree for a
-// writer to resolve; finish-sync then checks the result and pushes it.
+// Resolve wiki gitlinks and continue automatically. With keepConflict, remaining
+// text stops stay for a writer to stage; finish-sync continues and checks them.
 function syncBase(cfg: Config, request: unknown): SyncReply {
   const req = parseRequest(SYNC_REQUEST, "sync-base", request);
   const n = req.number;
@@ -102,14 +111,24 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   holdWikiPin(cfg, wt);
   assertClean(wt);
   fetchIn(cfg, wt, cfg.baseBranch);
-  const onto = `origin/${cfg.baseBranch}`;
+  const onto = gitOut(wt, ["rev-parse", `origin/${cfg.baseBranch}`]).trim();
   if (gitSucceeds(wt, ["merge-base", "--is-ancestor", onto, "HEAD"])) {
     const changes = branchChanges(cfg, n);
     return { changed: false, conflict: false, headSha: head(wt), ...changes };
   }
   const before = head(wt);
+  const sync = { from: before, onto, wikiResolved: false };
+  saveCodeSync(wt, sync);
   const rebased = gitSucceeds(wt, ["rebase", onto]);
+  if (!(rebased || rebaseInProgress(wt))) {
+    throw new OpsError(
+      "code rebase failed without a stopped rebase; retaining checkout",
+    );
+  }
   if (!rebased) {
+    continueCodeSync(cfg, wt, sync);
+  }
+  if (rebaseInProgress(wt)) {
     const keep = req.keepConflict === true;
     const conflict = conflictReply(wt, onto, keep);
     // The stopped rebase may have replayed commits that move the wiki pin.
@@ -126,6 +145,7 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     run("git", ["-C", wt, "reset", "--hard", before]);
     throw error;
   }
+  clearCodeSync(wt);
   const changes = branchChanges(cfg, n);
   return {
     changed: true,
@@ -135,10 +155,9 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   };
 }
 
-// After a writer resolved a kept rebase: push it if it passes the checks
-// against the base sync-base rebased onto (the request's baseSha, else the
-// base branch as fetched). Anything else (or abort: true) resets the worktree
-// to the pushed branch and reports why.
+// Continue a staged text stop, returning the next text conflict when necessary.
+// Only a finished, checked rebase is pushed. Rejected work is preserved before
+// cleanup; an unresolved index refuses destructive cleanup.
 function finishSync(cfg: Config, request: unknown): FinishReply {
   const req = parseRequest(FINISH_REQUEST, "finish-sync", request);
   const n = req.number;
@@ -148,7 +167,22 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
   if (req.abort === true) {
     reason = textOr(req.reason, "aborted");
   } else {
-    // The resolver's own rebase --continue may have replayed pin commits.
+    const sync = readCodeSync(wt);
+    if (sync !== undefined && rebaseInProgress(wt)) {
+      if (
+        req.baseSha !== undefined &&
+        req.baseSha !== null &&
+        req.baseSha !== sync.onto
+      ) {
+        throw new OpsError(
+          "finish-sync target differs from the stopped code rebase",
+        );
+      }
+      continueCodeSync(cfg, wt, sync);
+      if (rebaseInProgress(wt)) {
+        return conflictReply(wt, sync.onto, true);
+      }
+    }
     holdWikiPin(cfg, wt);
     reason = finishProblem(cfg, n, req);
   }
@@ -157,6 +191,7 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
     return { resolved: false, reason };
   }
   pushBranch(cfg, n, wt, "finish-sync");
+  clearCodeSync(wt);
   return { resolved: true, headSha: head(wt), ...branchChanges(cfg, n) };
 }
 

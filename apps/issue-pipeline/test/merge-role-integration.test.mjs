@@ -82,6 +82,7 @@ test("a branch behind its base is rebased, checked, pushed and its receipt saved
     "save",
     "sync-base",
     "wiki-sync",
+    "pin-wiki",
     "verify",
     "wiki-check",
     "push",
@@ -162,6 +163,7 @@ test("a wiki that moved rebases only the wiki", async () => {
       merge: [{ merged: false, reason: "wiki-behind", detail: "moved" }],
       "current-revision": [current(), current(), current({ wiki: MOVED })],
       "wiki-sync": [{ conflict: false, changed: true, headSha: MOVED }],
+      "pin-wiki": [{ changed: false }],
       verify: [{ pass: true, headSha: HEAD, checks: [] }],
       "wiki-check": [
         { pass: true, checks: [] },
@@ -172,6 +174,12 @@ test("a wiki that moved rebases only the wiki", async () => {
   });
   const state = stateOf(await mergeRole(ctx), "wait");
   assert.ok(!opNames(calls).includes("sync-base"));
+  assert.ok(
+    opNames(calls).indexOf("wiki-sync") < opNames(calls).indexOf("pin-wiki"),
+  );
+  assert.ok(
+    opNames(calls).indexOf("pin-wiki") < opNames(calls).lastIndexOf("verify"),
+  );
   assert.deepEqual(state.integration?.revision, { ...REVISION, wiki: MOVED });
 });
 
@@ -243,4 +251,30 @@ test("a branch push that leaves another head than the verified one stops with no
   assert.ok(!opNames(calls).includes("publish"));
   assert.ok(!opNames(calls).includes("finish-wiki"));
   assert.equal(sessionsOf(calls).length, 0);
+});
+
+test("an otherwise current code head with a stale wiki pin integrates and checks its new pin before authorization", async () => {
+  const { ctx, calls } = merging({
+    ops: {
+      ...AFTER_INTEGRATION,
+      merge: [{ merged: false, reason: "wiki-pin" }],
+      "current-revision": REVISIONS,
+      "wiki-sync": [WIKI_UNCHANGED],
+      "pin-wiki": [{ changed: true }],
+    },
+  });
+  const state = stateOf(await mergeRole(ctx), "wait");
+  assert.ok(!opNames(calls).includes("sync-base"));
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(state.verifiedSha, REBASED);
+  assert.deepEqual(state.integration, {
+    reviewed: REVISION,
+    revision: INTEGRATED,
+  });
+  assert.deepEqual(
+    opNames(calls).filter((name) =>
+      ["wiki-sync", "pin-wiki", "verify", "push"].includes(name),
+    ),
+    ["wiki-sync", "pin-wiki", "verify", "push"],
+  );
 });

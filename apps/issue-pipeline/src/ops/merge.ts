@@ -1,11 +1,7 @@
-// The decision to merge an issue's PR or refuse it: the checks that the
-// request's revision is the state's authorized one (mergeAuthorization),
-// that it is still the PR's head and still current, the merge order between
-// issues, the base check, that the Reviewer marked the PR ready, the explicit-target branch
-// merge itself and the merge receipt. A merge only merges code: publishing
-// the wiki (publish) and closing the issue (finish-wiki) are separate ops
-// the merge role runs after it saves the receipt and the security review of
-// the merged result (`merge-publish-finish-split`).
+// Merge code only: validate exact-head authorization, queue, base, readiness
+// and publishable wiki/pin before the explicit-target merge and durable receipt.
+// Wiki publication and issue completion are separate operations, after actual-
+// result checks and security (`merge-publish-finish-split`).
 
 import { z } from "zod";
 import { assignedBranch } from "../branch-binding.ts";
@@ -53,18 +49,15 @@ const MERGE_REQUEST = z.looseObject({
 
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
-// The merge receipt: GitHub's merge commit and the PR head it merged. byHand
-// when the PR had merged before this op, so the head may not be the approved
-// one; the role compares headSha with its approval.
-// The approved wiki head can't be published as approved after the merge:
-// the wiki's branch moved past it (wiki-behind), or the issue's wiki
-// checkout doesn't hold it (wiki-missing).
+// The wiki is unpublishable at its approved head, or the exact code tree does
+// not pin it. Integration must repair this before any code merge authorization.
 interface WikiRefusal {
   merged: false;
-  reason: "wiki-behind" | "wiki-missing";
+  reason: "wiki-behind" | "wiki-missing" | "wiki-pin";
   detail: string;
 }
 
+// byHand receipts may have an unapproved head; the role compares it to approval.
 type MergeReply =
   | { merged: true; mergeCommit: string; headSha: string }
   | { merged: true; byHand: true; mergeCommit: string; headSha: string }
@@ -162,6 +155,21 @@ function wikiBehind(cfg: Config, req: MergeRequest): WikiRefusal | undefined {
   const base = `origin/${wiki.branch}`;
   const args = ["-C", dir, "merge-base", "--is-ancestor", base, approved];
   if (run("git", args, { allowFail: true }).code === 0) {
+    const pin = run("git", [
+      "-C",
+      paths.worktree(cfg, req.number),
+      "ls-tree",
+      req.expectedSha,
+      "--",
+      wiki.dir,
+    ]).stdout;
+    if (!pin.startsWith(`160000 commit ${approved}\t`)) {
+      return {
+        merged: false,
+        reason: "wiki-pin",
+        detail: `the authorized code tree must pin the integrated wiki commit ${approved} at ${wiki.dir}`,
+      };
+    }
     return undefined;
   }
   return {

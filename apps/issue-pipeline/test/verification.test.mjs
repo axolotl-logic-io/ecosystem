@@ -76,7 +76,12 @@ test("the tests run under a temporary pipeline root", () => {
 });
 
 test("a failing check gets a Reviewer fix session of the caller's phase, and the fixed head is the one verified", async () => {
-  const run = fakeContext({ ops: { verify: [FAILING, PASSING] } });
+  const run = fakeContext({
+    ops: {
+      "pin-wiki": [{ changed: false }, { changed: true }],
+      verify: [FAILING, PASSING],
+    },
+  });
   const end = await verified(run, { phase: "integration" });
   const { ops, sessions } = run;
   assert.equal(sessions.length, 1);
@@ -89,6 +94,10 @@ test("a failing check gets a Reviewer fix session of the caller's phase, and the
   assert.equal(sessions[0]?.phase, "integration");
   assert.equal(sessions[0]?.commits, true);
   assert.equal(count(opNames(ops)), 2);
+  assert.deepEqual(
+    opNames(ops).filter((name) => name === "pin-wiki" || name === "verify"),
+    ["pin-wiki", "verify", "pin-wiki", "verify"],
+  );
   assert.deepEqual(end, { ok: true, value: FIXED });
 });
 
@@ -174,14 +183,17 @@ test("verify is the verdict, whatever the session says", async () => {
 });
 
 test("failing CI gets the first fix session before any verify, then verify decides", async () => {
-  const run = fakeContext({ ops: { verify: [PASSING] } });
+  const run = fakeContext({
+    ops: { "pin-wiki": [{ changed: true }], verify: [PASSING] },
+  });
   const end = await verified(run, {
     phase: "integration",
     failing: FAILING_CI,
   });
   assert.equal(run.sessions.length, 1);
   assert.match(run.sessions[0]?.task ?? "", CI_CHECK_HEADING);
-  assert.equal(opNames(run.ops).indexOf("verify"), 0);
+  assert.equal(opNames(run.ops)[0], "pin-wiki");
+  assert.equal(opNames(run.ops).indexOf("verify"), 1);
   assert.deepEqual(end, { ok: true, value: FIXED });
 });
 

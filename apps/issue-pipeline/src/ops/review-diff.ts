@@ -141,7 +141,19 @@ function objectIdentity(mode: string, oid: string): string {
 // `file`'s text at `head` under its path, in a fenced block that no backtick
 // run in the text can close.
 function textEntry(wt: string, head: string, file: string): string {
-  const text = run("git", ["-C", wt, "show", `${head}:${file}`]).stdout;
+  const tree = run("git", ["-C", wt, "ls-tree", head, "--", file]).stdout;
+  let text: string;
+  if (tree.startsWith("160000 commit ")) {
+    const pin = run("git", [
+      "-C",
+      wt,
+      "rev-parse",
+      `${head}:${file}`,
+    ]).stdout.trim();
+    text = `Gitlink (submodule pointer): ${pin}\n`;
+  } else {
+    text = run("git", ["-C", wt, "show", `${head}:${file}`]).stdout;
+  }
   const longest = Math.max(
     MIN_FENCE - 1,
     ...(text.match(BACKTICK_RUN) ?? []).map((backticks) => backticks.length),
