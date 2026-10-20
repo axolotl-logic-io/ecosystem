@@ -18,9 +18,13 @@ This is a protocol seam only. It does not yet strengthen the default caller work
 
 ## Unreviewed runtime recovery patch
 
-- File: `issue-116-runtime.patch` in this directory.
+- File: `issue-116-runtime.patch.gz` in this directory (lossless, deterministic gzip packaging).
 - Exact Base: `8141c9aa58899d0d54e4266155e95ca58c86635a`.
-- SHA-256: `b24ce18b28ac20e6c6e0a18f829ea8cfe9f15067efb4b683251f30d5d35a4fae`.
+- Compressed SHA-256: `c832099be639fa65212a5e4e1958c399377783875efa6c921091c1eb43a4bf30`.
+- Decompressed patch SHA-256: `b24ce18b28ac20e6c6e0a18f829ea8cfe9f15067efb4b683251f30d5d35a4fae`.
+
+Patch context includes the required leading space on empty context lines. Lossless compression preserves those bytes without making the repository's own whitespace check flag the recovery artifact. Decode into a separate recovery/scratch file for inspection; do not automatically apply it.
+
 - Contents: README draft compatibility/cutover; `src/job.ts`, `src/job/invocation.ts`, `src/job/role-run.ts`, `src/job/teardown.ts`; `src/ops.ts`, `src/ops/claim-state.ts`, `src/ops/claim.ts`, `src/ops/save-state.ts`; `src/saved-state.ts`, `src/state.ts`, `src/write-authority.ts`; and `test/job-execution-fencing.test.mjs`.
 
 The patch wires fresh per-invocation UUIDs into ops and commit boundaries, confirms ownership before sessions, adds strict saved execution receipts and confirmed state writes, and delays relinquishment until recovery-safe teardown. It rejects legacy work requests and pre-protocol saved authority. It is **not applied to current source**: it was saved byte-for-byte and reversed from the worktree/index before committing this preservation record. Inspect/adapt it against current source; do not automatically replay it or replace newer code with its Base.
