@@ -10,6 +10,7 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const MODEL_REFERENCE =
   /^(?<provider>[^/:]+)\/(?<id>.+?)(?::(?:off|minimal|low|medium|high|xhigh|max))?$/u;
 const TRAILING_SLASHES = /\/+$/u;
+const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const SAFE_INTEGER = z
   .number()
   .int()
@@ -52,15 +53,29 @@ const RUNTIME_SCHEMA = z
 
 type RuntimeConfig = z.infer<typeof RUNTIME_SCHEMA>;
 
-interface NativePolicy {
-  provider: string;
-  id: string;
-  contextWindow: number;
-  targetTokens: number;
-  enabled: true;
-  reserveTokens: number;
-  keepRecentTokens: number;
-}
+const NATIVE_POLICY = z.object({
+  provider: z.string(),
+  id: z.string(),
+  contextWindow: SAFE_INTEGER.positive(),
+  targetTokens: SAFE_INTEGER.positive(),
+  enabled: z.literal(true),
+  reserveTokens: SAFE_INTEGER,
+  keepRecentTokens: SAFE_INTEGER,
+});
+const SHA256 = z.string().regex(SHA256_HEX);
+// An allowlist, not raw native state or provider configuration. Used both
+// for the verified diagnostic and the launch's evidence in job.json.
+const RUNTIME_POLICY = NATIVE_POLICY.extend({
+  type: z.literal("runtime_policy"),
+  endpoint: z.string(),
+  settingsSha256: SHA256,
+  providerConfigSha256: SHA256,
+  providerCacheSha256: SHA256,
+  nativeVersion: z.string(),
+  providerVersion: z.string(),
+});
+
+type NativePolicy = z.infer<typeof NATIVE_POLICY>;
 
 const INVALID_STATE =
   "runtime: native state is missing valid model metadata or enabled compaction";
@@ -193,6 +208,7 @@ export {
   nativeSettings,
   PROVIDER_VERSION,
   policyOf,
+  RUNTIME_POLICY,
   RUNTIME_SCHEMA,
   runtimeBoundary,
   stateRefusal,

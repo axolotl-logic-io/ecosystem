@@ -89,9 +89,14 @@ if (args[0] === "--version") {
     buffer += chunk;
     for (let at = buffer.indexOf("\\n"); at >= 0; at = buffer.indexOf("\\n")) {
       const command = JSON.parse(buffer.slice(0, at)); buffer = buffer.slice(at + 1);
-      log({command: command.type});
+      const logged = {command: command.type};
+      if (command.type === "prompt" && process.env.FAKE_STATUS_FILE) {
+        logged.policyAtPrompt = JSON.parse(fs.readFileSync(process.env.FAKE_STATUS_FILE, "utf8")).launches.at(-1).runtimePolicy;
+      }
+      log(logged);
       const send = (record) => process.stdout.write(JSON.stringify(record) + "\\n");
       if (command.type === "get_state") {
+        for (const event of JSON.parse(process.env.FAKE_BEFORE_PROBE_EVENTS ?? "[]")) send(event);
         if (process.env.FAKE_PROBE === "missing") { process.exit(0); }
         if (process.env.FAKE_CHANGE_CACHE === "yes") {
           fs.writeFileSync(path.join(process.env.HOME, ".pi", "agent", "pi-cliproxyapi", "discovery-cache.json"), "{}");
@@ -108,10 +113,13 @@ if (args[0] === "--version") {
         } else {
           send({id: process.env.FAKE_PROBE === "uncorrelated" ? "other" : command.id, type: "response", command: "get_state", success: true, data: state});
         }
+        for (const event of JSON.parse(process.env.FAKE_PROBE_EVENTS ?? "[]")) send(event);
       } else if (command.type === "prompt") {
         send({id: command.id, type: "response", command: "prompt", success: true, data: {disposition: "started"}});
         send({type: "auto_compaction_start", reason: "threshold"});
         send({type: "auto_compaction_end", result: {summary: "native event fixture"}});
+        for (const event of JSON.parse(process.env.FAKE_SESSION_EVENTS ?? "[]")) send(event);
+        if (process.env.FAKE_SESSION_FAILURE === "yes") process.exit(1);
         send({type: "tool_execution_end", toolName: "structured_output", toolCallId: "answer", isError: false, result: {content: [], details: {ok: true}}});
         send({type: "agent_settled"});
       } else if (command.type === "abort") {

@@ -14,29 +14,23 @@ import { childEnvironment } from "../child-env.ts";
 import { endGroup, signalGroup } from "../process-group.ts";
 import { STOP_GRACE_MS } from "./control.ts";
 import type { ProcessExit } from "./raw-results.ts";
+import type { Channel, RpcAnswer } from "./rpc-channel.ts";
+import { channelOf, readRecord } from "./rpc-channel.ts";
 import {
-  endsSession,
   framerOf,
   isProbeRecord,
   probeRefusal,
-  RESPONSE,
   recordOf,
-  SETTLED,
 } from "./rpc-protocol.ts";
 import type { NativePolicy } from "./runtime-policy.ts";
+import { RUNTIME_POLICY } from "./runtime-policy.ts";
 
 const PI = "pi";
 const PROMPT_ID = "prompt";
 const PREFLIGHT_ID = "runtime-policy";
-const ENDED: RpcAnswer = { success: false, error: "the session has ended" };
+const POLICY_TAG = RUNTIME_POLICY.pick({ type: true });
 // The commands a live session takes besides its prompt.
 type RpcCommand = { type: "abort" } | { type: "steer"; message: string };
-
-// pi's answer to a command: whether it accepted it, and why not.
-interface RpcAnswer {
-  success: boolean;
-  error: string | null;
-}
 
 // A running pi process.
 interface RpcProcess {
@@ -66,59 +60,6 @@ interface RpcRun {
     provenance: Readonly<Record<string, string>>;
     verify: () => string | null;
   };
-}
-
-// The commands sent to one pi, by id, until pi answers each.
-interface Channel {
-  send: (command: Record<string, unknown>) => Promise<RpcAnswer>;
-  answer: (id: string, answer: RpcAnswer) => void;
-  // Answers every unanswered command with a failure.
-  endAll: () => void;
-}
-
-function channelOf(stdin: Writable): Channel {
-  const pending = new Map<string, (answer: RpcAnswer) => void>();
-  let sent = 0;
-  return {
-    send: (command: Record<string, unknown>): Promise<RpcAnswer> => {
-      if (stdin.writableEnded) {
-        return Promise.resolve(ENDED);
-      }
-      sent += 1;
-      const id = `c${sent}`;
-      return new Promise((answer: (a: RpcAnswer) => void): void => {
-        pending.set(id, answer);
-        stdin.write(`${JSON.stringify({ id, ...command })}\n`);
-      });
-    },
-    answer: (id: string, answer: RpcAnswer): void => {
-      pending.get(id)?.(answer);
-      pending.delete(id);
-    },
-    endAll: (): void => {
-      for (const answer of pending.values()) {
-        answer(ENDED);
-      }
-      pending.clear();
-    },
-  };
-}
-
-// Reads one record pi printed: answers the command it responds to, and
-// closes stdin once the run has settled or pi refused the prompt.
-function readRecord(record: unknown, stdin: Writable, channel: Channel): void {
-  if (SETTLED.safeParse(record).success) {
-    stdin.end();
-  }
-  const response = RESPONSE.safeParse(record);
-  if (!response.success) {
-    return;
-  }
-  const { id, success, error } = response.data;
-  if (endsSession(id, record)) {
-    stdin.end();
-  }
-  channel.answer(id, { success, error: error ?? null });
 }
 
 function handleOf(
@@ -174,11 +115,12 @@ function beginPrompt(
   }
   // Never log the complete native Model: providers can put private
   // headers in it. This diagnostic contains only our validated policy.
-  const safe = {
-    type: "runtime_policy",
+  const safe = RUNTIME_POLICY.parse({
     ...preflight?.policy,
     ...preflight?.provenance,
-  };
+    endpoint: preflight?.endpoint,
+    type: "runtime_policy",
+  });
   exit.stdout += `${JSON.stringify(safe)}\n`;
   run.onRecord(safe);
   sendPrompt(stdin, run.prompt);
@@ -199,6 +141,11 @@ function recordsOf(
   let ready = !probing;
   const framer = framerOf((line: string): void => {
     const record = recordOf(line);
+    // Only beginPrompt can emit accepted-policy evidence. Native output
+    // cannot forge it, including after a refused probe or during a session.
+    if (POLICY_TAG.safeParse(record).success) {
+      return;
+    }
     if (run.preflight !== undefined && isProbeRecord(record)) {
       if (probing) {
         probing = false;
@@ -207,11 +154,7 @@ function recordsOf(
       return;
     }
     if (probing) {
-      const response = RESPONSE.safeParse(record);
-      if (response.success) {
-        const { id, success, error } = response.data;
-        channel.answer(id, { success, error: error ?? null });
-      }
+      channel.answer(record);
       return;
     }
     exit.stdout += `${line}\n`;
@@ -295,5 +238,6 @@ function runRpc(run: RpcRun): Promise<ProcessExit> {
   });
 }
 
-export type { RpcAnswer, RpcCommand, RpcProcess };
+export type { RpcAnswer } from "./rpc-channel.ts";
+export type { RpcCommand, RpcProcess };
 export { runRpc };
