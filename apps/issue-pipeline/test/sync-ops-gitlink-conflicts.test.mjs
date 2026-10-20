@@ -240,6 +240,7 @@ test("a wiki gitlink versus ordinary file type conflict is retained, never auto-
   const file = fx.configWith("type-path.json", { wiki: { dir: "knowledge" } });
   const reply = ask(n, "sync-base", {}, file);
   assert.equal(reply.ok, false);
+  assert.ok(typeof reply.error === "string");
   assert.ok(reply.error.includes("unsupported gitlink conflict"), reply.error);
   assert.ok(reply.error.includes("knowledge"), reply.error);
   assert.ok(reply.error.includes("mode 160000"), reply.error);
