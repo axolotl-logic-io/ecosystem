@@ -7,6 +7,7 @@ import {
   clearEvidence,
   evidenceOf,
   FIRST_WAIT,
+  INPUTS,
   ISSUE,
   LOGIN,
   noSleep,
@@ -14,13 +15,14 @@ import {
   RECONCILIATION,
   SHA_LENGTH,
   setup,
+  stopChild,
+  stopJob,
   stopReplies,
 } from "./stop-recovery-test-kit.mjs";
 
 const { readWriteState } = await import("../src/saved-state.ts");
 const { stop } = await import("../src/ops/stop.ts");
 const { applyEnd } = await import("../src/job/role-end.ts");
-const { runUsage } = await import("../src/job/run-usage.ts");
 afterEach(() => mock.restoreAll());
 
 test("a transient stop login recovers into an authoritative resumable stop and closes its claim", () => {
@@ -125,34 +127,15 @@ test("a failed label write retains confirmed signed state, lease removal and pre
 test("a parent job records reconciliation if the stop child cannot return a result", async () => {
   clearEvidence();
   const { cfg, state, token } = setup();
-  /** @type {import("../src/job/role-end.ts").Claimed} */
-  const claimed = {
-    job: {
-      cfg,
-      issue: ISSUE,
-      stage: "review",
-      status: {
-        moved: () => {
-          throw new Error("stop must not advance stage");
-        },
-      },
-      runOp: async () => ({ ok: false, error: `stop child failed ${token}` }),
-    },
-    last: state,
-    usage: runUsage("review", new Date()),
-  };
-  const inputs = {
-    revision: "inputs",
-    gherkin: null,
-    comments: [],
-    issue: { title: "Review work", body: "", user: { login: "alice" } },
-  };
+  const claimed = stopJob(cfg, state, () =>
+    Promise.resolve({ ok: false, error: `stop child failed ${token}` }),
+  );
   await assert.rejects(
     () =>
       applyEnd(
         claimed,
         { kind: "stop", code: "error", reason: REASON, state },
-        inputs,
+        INPUTS,
       ),
     RECONCILIATION,
   );
@@ -160,6 +143,76 @@ test("a parent job records reconciliation if the stop child cannot return a resu
   assert.equal(evidence?.result, "reconciliation-required");
   assert.ok(evidence?.stopFailure?.includes("stop child failed <token>"));
   assert.equal(JSON.stringify(evidence).includes(token), false);
+});
+
+test("parent and child retain one journal with fresh authority and precise progress after partial stop", async () => {
+  clearEvidence();
+  const { cfg, state } = setup();
+  kit.reply([
+    {
+      when: `api -X POST repos/o/r/issues/${ISSUE}/labels`,
+      code: 1,
+      stderr: "required cleanup failed after signed state",
+    },
+    ...stopReplies(cfg, state),
+  ]);
+  const claimed = stopJob(cfg, state, stopChild(cfg));
+  await assert.rejects(
+    () =>
+      applyEnd(
+        claimed,
+        {
+          kind: "stop",
+          code: "error",
+          reason: REASON,
+          state: { ...state, stage: "implement", pr: null },
+        },
+        INPUTS,
+      ),
+    RECONCILIATION,
+  );
+  const records = evidenceOf(cfg);
+  assert.equal(records.length, 1);
+  const [record] = records;
+  assert.equal(record?.result, "reconciliation-required");
+  assert.equal(record?.resumeStage, "review");
+  const { state: stateUpdate, lease, claim } = record?.updates ?? {};
+  assert.equal(stateUpdate, "confirmed");
+  assert.equal(lease, "confirmed");
+  assert.equal(record?.updates[`working-label:${ISSUE}`], "confirmed");
+  assert.equal(record?.updates[`labels:${ISSUE}`], "unresolved");
+  assert.equal(record?.updates[`explanation:${state.pr}`], "confirmed");
+  assert.equal(claim, "unresolved");
+  assert.equal(record?.originalFailure, REASON);
+  assert.ok(
+    record?.stopFailure?.includes("required cleanup failed after signed state"),
+  );
+  assert.equal(readWriteState(cfg, ISSUE).stopCode, "error");
+});
+
+test("passed checks and a forged request receipt cannot supply missing saved hardening", () => {
+  clearEvidence();
+  const { cfg, state } = setup();
+  assert.equal(state.hardened, null);
+  assert.equal(state.verifiedSha, state.headSha);
+  kit.reply(stopReplies(cfg, state));
+  stop(cfg, {
+    number: ISSUE,
+    state: {
+      ...state,
+      hardened: {
+        code: state.headSha,
+        wiki: "d".repeat(SHA_LENGTH),
+        inputs: "checks-passed",
+      },
+    },
+    reason: REASON,
+    code: "error",
+  });
+  const saved = readWriteState(cfg, ISSUE);
+  assert.equal(saved.hardened, null);
+  assert.equal(saved.integration, null);
+  assert.equal(saved.headSha, state.headSha);
 });
 
 test("remote work and genuine receipts survive a stop without inventing hardening from passed checks", () => {

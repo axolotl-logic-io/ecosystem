@@ -11,6 +11,8 @@ import { everyCommentsRead, kit, v2State } from "./ops-v2-test-kit.mjs";
 
 const { loadConfig, paths } = await import("../src/config.ts");
 const { ISSUE_STATE } = await import("../src/state.ts");
+const { runUsage } = await import("../src/job/run-usage.ts");
+const { stop } = await import("../src/ops/stop.ts");
 const EVIDENCE = z.object({
   result: z.string(),
   issue: z.number(),
@@ -29,6 +31,12 @@ const LOGIN = "api user --jq .login";
 const FIRST_WAIT = 2000;
 const ATTEMPTS = 4;
 const RECONCILIATION = /reconciliation-required/u;
+const INPUTS = {
+  revision: "inputs",
+  gherkin: null,
+  comments: [],
+  issue: { title: "Review work", body: "", user: { login: "alice" } },
+};
 let sequence = 0;
 
 /** @returns {number[]} */
@@ -111,11 +119,52 @@ function clearEvidence() {
   });
 }
 
+/** @param {import("../src/config.ts").Config} cfg @param {import("../src/state.ts").IssueState} state @param {import("../src/job/ops-request.ts").RunOp} runOp @returns {import("../src/job/role-end.ts").Claimed} */
+function stopJob(cfg, state, runOp) {
+  return {
+    job: {
+      cfg,
+      issue: ISSUE,
+      stage: "review",
+      status: {
+        moved: () => {
+          throw new Error("stop must not advance stage");
+        },
+      },
+      runOp,
+    },
+    last: state,
+    usage: runUsage("review", new Date()),
+  };
+}
+
+/** @param {import("../src/config.ts").Config} cfg @returns {import("../src/job/ops-request.ts").RunOp} */
+function stopChild(cfg) {
+  return (op, payload) => {
+    if (op !== "stop") {
+      throw new Error(`unexpected stop-child operation: ${op}`);
+    }
+    try {
+      return Promise.resolve({
+        ok: true,
+        reply: stop(cfg, { number: ISSUE, ...payload }),
+      });
+    } catch (error) {
+      let failure = String(error);
+      if (error instanceof Error) {
+        failure = error.message;
+      }
+      return Promise.resolve({ ok: false, error: failure });
+    }
+  };
+}
+
 export {
   ATTEMPTS,
   clearEvidence,
   evidenceOf,
   FIRST_WAIT,
+  INPUTS,
   ISSUE,
   LOGIN,
   noSleep,
@@ -124,5 +173,7 @@ export {
   RECONCILIATION,
   SHA_LENGTH,
   setup,
+  stopChild,
+  stopJob,
   stopReplies,
 };

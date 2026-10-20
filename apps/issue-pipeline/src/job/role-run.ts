@@ -5,9 +5,9 @@
 // own ops: release for next and wait, ask then release, stop, and release
 // of the last saved state for a deferral. This module alone knows how a
 // role's effects become the job's launches and how an end is applied. On a
-// signal it saves the last saved state with no lease and applies no end; a
-// signal while the end is applied, which ends the op it runs, does the same
-// in place of the op's failure.
+// signal it saves the last saved state with no lease and applies no end. A
+// signal while an end is applied does the same, except that an interrupted
+// stop retains its reconciliation evidence without overwriting signed state.
 // An issue at another stage is released untouched, but a merge job runs its
 // role on a done issue with its merge recorded, to finish its completion.
 
@@ -188,6 +188,12 @@ async function runClaimed(
     const late = job.control.stopping();
     if (late === null) {
       throw error;
+    }
+    if (end.kind === "stop") {
+      // Stop may already have saved signed state before its child was killed.
+      // Its write-ahead evidence tracks that uncertainty; the old working
+      // checkpoint must not erase the stop code, resume stage or cleared lease.
+      return { kind: "stopped", signal: late };
     }
     return await stoppedAt(claimed, late);
   }

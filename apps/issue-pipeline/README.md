@@ -138,7 +138,9 @@ then requires working-label removal, stop-label updates and claim closure.
 Transient login failures receive only the bounded safe-read retries above;
 required writes are not blindly retried. A fully acknowledged stop records
 `signed-stop-confirmed`. Required cleanup failures are not ignored; a missing
-label (HTTP 404) is already removed.
+label (HTTP 404) is already removed. If a signal interrupts the stop child,
+the job retains this evidence instead of saving its stale working checkpoint
+over a stopped state that may already have landed.
 
 If login, a required update or the child itself fails, the record remains
 `reconciliation-required` and the job reports its path. It names issue/repository,
