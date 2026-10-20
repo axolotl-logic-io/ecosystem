@@ -20,6 +20,7 @@ const REPLY = z.looseObject({
   resolved: z.boolean().optional(),
   baseSha: z.string().optional(),
   reason: z.string().optional(),
+  retained: z.boolean().optional(),
 });
 
 /** @param {string} wt @param {string} pin @param {string} [file] @returns {void} */
@@ -81,6 +82,7 @@ async function gitlinkSyncFixture(name) {
 
   return {
     fx,
+    cfg,
     seed,
     wikiSeed,
     disabled,

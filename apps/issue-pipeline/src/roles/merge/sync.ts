@@ -10,12 +10,19 @@
 // at once; a transient failure is none. A resolution that is rejected, or
 // not finished, is preserved before cleanup and another attempt. If its
 // recovery cannot be prepared, the original checkout is retained instead.
+// At the code resolver limit, preserve the stopped pick and its evidence as a
+// controlled conflict stop, without requesting destructive cleanup.
 
 import type { OpName, RoleContext } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
 import type { Conflict, SyncReply } from "../op-replies.ts";
-import { FINISH_REPLY, opReply, SYNC_REPLY } from "../op-replies.ts";
+import {
+  FINISH_REPLY,
+  opReply,
+  RETAINED_CONFLICT_REPLY,
+  SYNC_REPLY,
+} from "../op-replies.ts";
 import type { Step } from "../writer-session.ts";
 import {
   ended,
@@ -163,6 +170,19 @@ async function resolvedFrom(
   }
   if (state.counts.conflictFixes >= maxConflictFixes) {
     const reason = `the ${side} rebase still conflicts after the resolver's ${maxConflictFixes} attempts (maxConflictFixes)`;
+    if (side === "code") {
+      const retained = await opReply(
+        ctx,
+        "finish-sync",
+        {
+          ...SIDE_OPS.code.finishPayload(ctx.issue, synced),
+          retainConflict: true,
+          reason,
+        },
+        RETAINED_CONFLICT_REPLY,
+      );
+      return conflictStop(run, retained.reason);
+    }
     await abortRebase(ctx, side, reason);
     return conflictStop(run, reason);
   }
