@@ -7,7 +7,11 @@ import { readWorld } from "./pipeline-flow-gh-world.mjs";
 import { BASE, bareGit, refIn, WIKI_BRANCH } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
-import { merges, sessions } from "./pipeline-flow-replay-test-kit.mjs";
+import {
+  merges,
+  replaceState,
+  sessions,
+} from "./pipeline-flow-replay-test-kit.mjs";
 import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
 import { securityTurn } from "./pipeline-flow-script.mjs";
 import {
@@ -58,6 +62,7 @@ test("initial postmerge Review receives authoritative docs without any issue wik
     .filter(({ start }) => start === true)
     .at(-1);
   assert.equal(launch.docsAvailable, true);
+  assert.equal(launch.docsHead, wikiBase);
   assert.equal(launch.repoHead, code);
   assert.notEqual(launch.repoHead, source);
   assert.deepEqual(launch.scope.repo, { dir: "repo", access: "read" });
@@ -109,17 +114,33 @@ test("restart with retained merged truth authors first wiki work and a bounded w
   assert.equal(refIn(flow.origin, "agent/issue-7"), source);
 });
 
-test("actual-result checks and fresh exact security precede wiki publication without code writes or repeat merge", () => {
+test("first-time wiki work needs fresh exact security even with a clear older receipt for the merged code", () => {
+  const hardened = stateOf(flow);
+  // Even a saved clear receipt over the same merged code and inputs cannot
+  // approve the first wiki revision authored after that code merged.
+  replaceState(flow, {
+    ...hardened,
+    security: {
+      revision: { ...hardened.hardened, wiki: null },
+      commentId: 123,
+      finding: null,
+    },
+  });
+  const beforeSecurity = sessions(flow);
   fs.writeFileSync(
     path.join(flow.root, "interrupt-publish"),
     "pause publication",
   );
   assert.equal(runStage(flow, "merge").end, "deferred");
+  assert.equal(sessions(flow), beforeSecurity + 1);
   const checked = stateOf(flow);
   assert.deepEqual(checked.security.revision, checked.hardened);
   assert.equal(checked.security.finding, null);
   assert.equal(checked.merged, null);
   assert.equal(refIn(flow.wikiOrigin, WIKI_BRANCH), wikiBase);
+});
+
+test("exact clearance replay publishes the wiki without code writes or repeat merge", () => {
   fs.unlinkSync(path.join(flow.root, "interrupt-publish"));
   const before = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "next");

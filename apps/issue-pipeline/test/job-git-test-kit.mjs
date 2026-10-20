@@ -133,6 +133,7 @@ export {
   branchOnOrigin,
   checkoutOf,
   docsOf,
+  git,
   refOf,
   repoOf,
   seedOrigins,

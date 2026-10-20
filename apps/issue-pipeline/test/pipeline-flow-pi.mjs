@@ -201,6 +201,16 @@ function readLines(onLine) {
   process.stdin.on("end", () => process.exit(0));
 }
 
+/** @returns {string | null} the authoritative docs revision before the turn runs */
+function wikiHead() {
+  if (!fs.existsSync(path.join(process.cwd(), "docs", ".git"))) {
+    return null;
+  }
+  return execFileSync("git", ["-C", "docs", "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+}
+
 /**
  * The fake pi's entry, given the role each configured model plays.
  * @param {Record<string, string>} roleOfModel
@@ -233,6 +243,7 @@ async function runFlowPi(roleOfModel) {
       encoding: "utf8",
     }).trim(),
     docsAvailable: fs.existsSync(path.join(process.cwd(), "docs", ".git")),
+    docsHead: wikiHead(),
   });
   const session = { dir, role, tools: await loadTools(argv), out, model };
   readLines((line) => {
