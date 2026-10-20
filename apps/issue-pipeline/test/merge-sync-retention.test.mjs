@@ -43,6 +43,24 @@ test("evidence preparation failure does not claim a controlled retained conflict
   assert.equal(baseSha, BASE);
 });
 
+test("a failed attempt checkpoint cannot continue the rebase or launch another resolver", async () => {
+  const failure = new Error("attempt checkpoint unavailable");
+  const { ctx, sessions, ops } = fakeContext({
+    ops: { "sync-base": [CONFLICT], "finish-sync": [CONFLICT] },
+    sessions: [RESOLVED],
+  });
+  ctx.save = () => Promise.reject(failure);
+  await assert.rejects(
+    syncSide(ctx, ctx.state, { side: "code", maxConflictFixes: 2 }),
+    failure,
+  );
+  assert.equal(sessions.length, 1);
+  assert.equal(
+    ops.some((op) => op.name === "finish-sync"),
+    false,
+  );
+});
+
 for (const reply of [
   { resolved: true },
   { resolved: false, reason: "no retention receipt" },
