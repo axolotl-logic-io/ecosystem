@@ -211,6 +211,6 @@ test("a branch push that leaves another head than the verified one stops with no
   // The only merge attempt is the original refusal that required integration.
   assert.equal(opNames(calls).filter((name) => name === "merge").length, 1);
   assert.ok(!opNames(calls).includes("prepare-review"));
-  assert.ok(!opNames(calls).includes("finish-wiki"));
+  assert.ok(!opNames(calls).includes("finish"));
   assert.equal(sessionsOf(calls).length, 0);
 });

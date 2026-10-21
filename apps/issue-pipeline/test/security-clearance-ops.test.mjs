@@ -1,6 +1,6 @@
 // @ts-check
 // The security review's hold on completion (src/security-clearance.ts, via
-// the finish-wiki op): after a merge into the base, the issue doesn't
+// the finish op): after a merge into the base, the issue doesn't
 // complete unless the issue's saved state holds a security review that found
 // nothing at exactly the merged result: GitHub's merge commit and the trusted
 // inputs. A missing review, a finding, or a review of any other revision (the
@@ -19,7 +19,7 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
-const { finishWiki } = await import("../src/ops/finish.ts");
+const { finishIssue } = await import("../src/ops/finish.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @typedef {import("../src/state.ts").Revision} Revision */
@@ -66,7 +66,7 @@ function unclearing(w, result) {
   ];
 }
 
-test("finish-wiki refuses a saved completion its security review doesn't clear, changing nothing", () => {
+test("finish refuses a saved completion its security review doesn't clear, changing nothing", () => {
   const w = world();
   const { approved, result } = chainOf(w);
   merged(w);
@@ -78,13 +78,13 @@ test("finish-wiki refuses a saved completion its security review doesn't clear, 
       security,
     };
     fakeGh.reply([savedListing(saved)]);
-    const reply = finishWiki(w.cfg, { number: 7, state: saved });
+    const reply = finishIssue(w.cfg, { number: 7, state: saved });
     assert.equal("reason" in reply && reply.reason, "security");
     assert.deepEqual(writes(), []);
   }
 });
 
-test("finish-wiki fails on a change with no PR saved as merging code", () => {
+test("finish fails on a change with no PR saved as merging code", () => {
   const w = world();
   const { approved } = chainOf(w);
   setCurrentRevision({ revision: approved, baseSha: "base", pr: null });
@@ -98,13 +98,13 @@ test("finish-wiki fails on a change with no PR saved as merging code", () => {
   };
   fakeGh.reply([savedListing(saved)]);
   assert.throws(
-    () => finishWiki(w.cfg, { number: 7 }),
+    () => finishIssue(w.cfg, { number: 7 }),
     DONE_WITH_CODE_BUT_NO_PR,
   );
   assert.deepEqual(writes(), []);
 });
 
-test("finish-wiki fails on a completion whose merge authorization isn't the head GitHub merged, changing nothing", () => {
+test("finish fails on a completion whose merge authorization isn't the head GitHub merged, changing nothing", () => {
   const w = world();
   const { approved, result } = chainOf(w);
   merged(w);
@@ -117,7 +117,7 @@ test("finish-wiki fails on a completion whose merge authorization isn't the head
     };
     fakeGh.reply([savedListing(saved)]);
     assert.throws(
-      () => finishWiki(w.cfg, { number: 7 }),
+      () => finishIssue(w.cfg, { number: 7 }),
       NOT_THE_AUTHORIZED_HEAD,
     );
     assert.deepEqual(writes(), []);

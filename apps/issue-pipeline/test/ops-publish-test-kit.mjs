@@ -1,5 +1,5 @@
 // @ts-check
-// Shared setup for the merge and finish-wiki op tests, which call the ops'
+// Shared setup for the merge and finish op tests, which call the ops'
 // own functions. Before any src module loads it points the pipeline root and
 // HOME at a temporary folder (and checks src took it), puts the fake gh first
 // on PATH, and resolves src's ../revision.ts to

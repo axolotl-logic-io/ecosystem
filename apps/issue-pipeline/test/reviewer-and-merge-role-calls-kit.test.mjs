@@ -16,10 +16,7 @@ function op(name, payload = {}) {
   return { kind: "op", name, payload };
 }
 
-for (const boundary of /** @type {const} */ ([
-  "prepare-review",
-  "finish-wiki",
-])) {
+for (const boundary of /** @type {const} */ (["prepare-review", "finish"])) {
   test(`verify counts with extra reads before ${boundary}`, () => {
     const calls = [
       op("verify", { number: 99 }),
@@ -41,5 +38,5 @@ test("checks before merge or after the security boundary do not count", () => {
     op("verify", TARGET),
   ];
   assert.deepEqual(checksBefore(calls, "prepare-review"), { verify: {} });
-  assert.throws(() => checksBefore(calls, "finish-wiki"));
+  assert.throws(() => checksBefore(calls, "finish"));
 });

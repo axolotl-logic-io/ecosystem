@@ -32,7 +32,7 @@ test("uninterrupted own result checks M after saving truthful merge and before r
       verify: [verified(w)],
       merge: [{ merged: true, headSha: w.head, mergeCommit: w.merged }],
       "prepare-review": postmergeOps(w)["prepare-review"],
-      "finish-wiki": [{ finished: true, closed: true }],
+      finish: [{ finished: true, closed: true }],
     },
     sessions: [NO_FINDING],
   });
@@ -98,7 +98,7 @@ for (const mode of ["recovered", "uninterrupted"]) {
       assert.ok(end.reason.includes("code remains merged"));
       assert.ok(names(run.calls).includes("verify"));
       assert.equal(names(run.calls).includes("session"), false);
-      assert.equal(names(run.calls).includes("finish-wiki"), false);
+      assert.equal(names(run.calls).includes("finish"), false);
       assert.deepEqual(codeWrites(run.calls), []);
     });
   }

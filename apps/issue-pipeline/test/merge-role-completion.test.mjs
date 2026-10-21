@@ -58,15 +58,12 @@ const DONE = {
 /** @param {Parameters<typeof callNames>[0]} calls */
 function betweenSessionAndFinish(calls) {
   const names = callNames(calls);
-  return names.slice(
-    names.indexOf("session") + 1,
-    names.indexOf("finish-wiki"),
-  );
+  return names.slice(names.indexOf("session") + 1, names.indexOf("finish"));
 }
 
 test("a finish that fails leaves the completion saved for a retry", async () => {
   const { ctx, calls } = merging({
-    ops: { "finish-wiki": [() => Promise.reject(new Error("gh: network"))] },
+    ops: { finish: [() => Promise.reject(new Error("gh: network"))] },
   });
   await assert.rejects(mergeRole(ctx), NETWORK);
   const saved = savesOf(calls).at(-1);
@@ -132,7 +129,7 @@ test("a change with no PR and no code merge stops, merging nothing", async () =>
 
 test("a saved completion whose finish crashed rechecks M before finishing again", async () => {
   const crashed = merging({
-    ops: { "finish-wiki": [() => Promise.reject(new Error("gh: network"))] },
+    ops: { finish: [() => Promise.reject(new Error("gh: network"))] },
   });
   await assert.rejects(mergeRole(crashed.ctx), NETWORK);
   const saved = savesOf(crashed.calls).at(-1);
@@ -143,16 +140,16 @@ test("a saved completion whose finish crashed rechecks M before finishing again"
     mergeQueue: QUEUE,
     ops: {
       "current-revision": [AFTER_MERGE],
-      "finish-wiki": [FINISHED],
+      finish: [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
   });
   const state = stateOf(await mergeRole(replay.ctx), "next");
   assert.deepEqual(state, saved);
-  const checks = checksBefore(replay.calls, "finish-wiki");
+  const checks = checksBefore(replay.calls, "finish");
   assert.deepEqual(checks.verify, { number: replay.ctx.issue, ...CODE_MERGED });
-  assert.deepEqual(mutationsOf(replay.calls), ["finish-wiki"]);
-  const { state: finished } = firstPayload(replay.calls, "finish-wiki");
+  assert.deepEqual(mutationsOf(replay.calls), ["finish"]);
+  const { state: finished } = firstPayload(replay.calls, "finish");
   assert.deepEqual(finished, saved);
   assert.equal(sessionsOf(replay.calls).length, 0);
   assert.deepEqual(savesOf(replay.calls), [saved]);
@@ -173,7 +170,7 @@ test("an older completion with no code merge finishes with no PR", async () => {
     ops: { "current-revision": [current({ code: null }, null)] },
   });
   stateOf(await mergeRole(ctx), "next");
-  assert.deepEqual(opNames(calls), ["current-revision", "finish-wiki"]);
+  assert.deepEqual(opNames(calls), ["current-revision", "finish"]);
 });
 
 test("a completion is not finished on new inputs or a merge GitHub doesn't confirm", async () => {
@@ -208,7 +205,7 @@ function refusedFinish(reason) {
     state: DONE,
     ops: {
       "current-revision": [AFTER_MERGE],
-      "finish-wiki": [{ finished: false, reason, detail: "why" }],
+      finish: [{ finished: false, reason, detail: "why" }],
     },
   });
 }
@@ -222,12 +219,12 @@ test("a completion the finish op refuses for new inputs goes to the author", asy
 test("a completion the finish op refuses for anything but new inputs stops, never done", async () => {
   const refused = refusedFinish("security");
   assert.equal(endCode(await mergeRole(refused.ctx)), "error");
-  const checks = checksBefore(refused.calls, "finish-wiki");
+  const checks = checksBefore(refused.calls, "finish");
   assert.deepEqual(checks.verify, {
     number: refused.ctx.issue,
     ...CODE_MERGED,
   });
-  assert.deepEqual(mutationsOf(refused.calls), ["finish-wiki"]);
+  assert.deepEqual(mutationsOf(refused.calls), ["finish"]);
   assert.equal(sessionsOf(refused.calls).length, 0);
   assert.equal(savesOf(refused.calls).length, 1);
 });
@@ -235,11 +232,11 @@ test("a completion the finish op refuses for anything but new inputs stops, neve
 test("a finish op reply outside its schema fails as an op, so the job stops instead of crashing", async () => {
   const { ctx } = merging({
     state: DONE,
-    ops: { "current-revision": [AFTER_MERGE], "finish-wiki": [{}] },
+    ops: { "current-revision": [AFTER_MERGE], finish: [{}] },
   });
   await assert.rejects(mergeRole(ctx), {
     name: "OpsFailure",
-    op: "finish-wiki",
+    op: "finish",
   });
 });
 

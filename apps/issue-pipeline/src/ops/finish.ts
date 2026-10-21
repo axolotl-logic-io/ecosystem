@@ -1,5 +1,5 @@
 // What happens once an issue leaves the pipeline or ends a job: completing
-// an issue after its merge role saved it done and merged (finish-wiki),
+// an issue after its merge role saved it done and merged (the finish op),
 // and closing a parent whose sub-issues are all closed.
 
 import { z } from "zod";
@@ -38,9 +38,9 @@ const SUB_ISSUES = z
 type SubIssue = NonNullable<z.infer<typeof SUB_ISSUES>>[number];
 
 const ISSUE_REQUEST = z.looseObject({ number: z.number().int() });
-// finish-wiki acts on the saved state; a `state` sent along must agree with
+// The finish op acts on the saved state; a `state` sent along must agree with
 // it, so a role can't finish a completion it never saved.
-const FINISH_WIKI_REQUEST = z.looseObject({
+const FINISH_ISSUE_REQUEST = z.looseObject({
   number: z.number().int(),
   state: ISSUE_STATE.optional(),
 });
@@ -51,7 +51,7 @@ type CloseParentReply =
   | { closed: true };
 
 // `closed` is false when the issue was already closed, as on a retry.
-type FinishWikiReply = { finished: true; closed: boolean } | FinishRefusal;
+type FinishIssueReply = { finished: true; closed: boolean } | FinishRefusal;
 
 function short(sha: string): string {
   return sha.slice(0, SHORT_SHA_LENGTH);
@@ -142,8 +142,8 @@ function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
 // revision: only after a fresh check that the PR merged at merged.code and
 // the trusted inputs are unchanged. It publishes and merges nothing itself. Safe to repeat, so
 // a crash between the save and the cleanup is finished by running it again.
-function finishWiki(cfg: Config, request: unknown): FinishWikiReply {
-  const req = parseRequest(FINISH_WIKI_REQUEST, "finish-wiki", request);
+function finishIssue(cfg: Config, request: unknown): FinishIssueReply {
+  const req = parseRequest(FINISH_ISSUE_REQUEST, "finish", request);
   const n = req.number;
   const saved = readState(cfg, n).state;
   if (saved === null) {
@@ -151,7 +151,7 @@ function finishWiki(cfg: Config, request: unknown): FinishWikiReply {
   }
   if (req.state !== undefined && !sameMerged(req.state.merged, saved.merged)) {
     throw new OpsError(
-      `finish-wiki's state for #${n} is not the saved completion`,
+      `the finish op's state for #${n} is not the saved completion`,
     );
   }
   const refused = finishGate(saved, currentRevision(cfg, n, saved));
@@ -210,5 +210,5 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   return { closed: true };
 }
 
-export type { CloseParentReply, FinishWikiReply };
-export { closeParent, finishWiki };
+export type { CloseParentReply, FinishIssueReply };
+export { closeParent, finishIssue };

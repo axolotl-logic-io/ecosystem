@@ -60,7 +60,7 @@ const SECURITY_COMMENT =
 test("a hardened revision merges with its head matched, then the security review of the merged result clears it and the issue completes", async () => {
   const { ctx, calls } = merging();
   const state = stateOf(await mergeRole(ctx), "next");
-  assert.deepEqual(mutationsOf(calls), ["merge", "finish-wiki"]);
+  assert.deepEqual(mutationsOf(calls), ["merge", "finish"]);
   assert.equal(sessionsOf(calls).length, 1);
   assert.ok(sessionsOf(calls).every((session) => session.commits === false));
   const beforeMerge = calls.slice(0, callNames(calls).indexOf("merge"));
@@ -218,7 +218,7 @@ test("GitHub's refusal stops with merge-refused; a merged reply with no merge co
     op: "merge",
     message: UNREADABLE_REPLY,
   });
-  assert.ok(!opNames(blind.calls).includes("finish-wiki"));
+  assert.ok(!opNames(blind.calls).includes("finish"));
   assert.equal(savesOf(blind.calls).length, 0);
 });
 
@@ -228,7 +228,7 @@ test("a merge of another head than the authorized one is never reviewed or compl
   });
   const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(state.stage, "review");
-  for (const name of ["prepare-review", "finish-wiki"]) {
+  for (const name of ["prepare-review", "finish"]) {
     assert.ok(!opNames(calls).includes(name), `ran ${name}`);
   }
   assert.equal(sessionsOf(calls).length, 0);
@@ -250,7 +250,7 @@ test("after its own merge, GitHub must confirm the merge commit before any secur
     assert.ok(end.kind === "stop");
     assert.deepEqual(end.state.merged, MERGED_REVISION);
     const names = opNames(runs[index]?.calls ?? []);
-    for (const name of ["prepare-review", "finish-wiki"]) {
+    for (const name of ["prepare-review", "finish"]) {
       assert.ok(!names.includes(name), `ran ${name}`);
     }
     assert.equal(sessionsOf(runs[index]?.calls ?? []).length, 0);

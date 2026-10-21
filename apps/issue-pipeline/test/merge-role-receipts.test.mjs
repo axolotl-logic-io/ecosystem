@@ -34,7 +34,7 @@ test("own merge saves the original receipt, exact-M verification, security and c
   });
   assert.equal(saves[3]?.stage, "done");
   assert.deepEqual(saves[3]?.security, saves[2]?.security);
-  const { state: finished } = firstPayload(calls, "finish-wiki");
+  const { state: finished } = firstPayload(calls, "finish");
   assert.deepEqual(finished, saves[3]);
   assert.deepEqual(firstPayload(calls, "verify"), {
     number: ctx.issue,
@@ -58,7 +58,7 @@ for (const checks of [
     assert.equal(end.state.verifiedSha, HEAD);
     assert.equal(end.state.security, null);
     assert.equal(sessionsOf(calls).length, 0);
-    for (const name of ["push", "sync-base", "prepare-review", "finish-wiki"]) {
+    for (const name of ["push", "sync-base", "prepare-review", "finish"]) {
       assert.ok(!opNames(calls).includes(name), name);
     }
     assert.deepEqual(

@@ -30,7 +30,7 @@ const MERGED_PR = {
 const AFTER_MERGE = current({ code: MERGE_COMMIT }, MERGED_PR);
 const MERGED_REVISION = { code: MERGE_COMMIT, inputs: INPUTS };
 const CODE_MERGED = { codeMerged: { pr: PR, sha: MERGE_COMMIT } };
-const MUTATIONS = ["merge", "finish-wiki", "sync-base", "push", "ready-pr"];
+const MUTATIONS = ["merge", "finish", "sync-base", "push", "ready-pr"];
 
 const FINISHED = { finished: true, closed: true };
 const CI_PASS = { status: "pass", checks: ["ci"] };
@@ -106,7 +106,7 @@ function merging(script = {}) {
       "ci-status": [CI_PASS],
       merge: [MERGED],
       "prepare-review": [PREPARED_MERGED],
-      "finish-wiki": [FINISHED],
+      finish: [FINISHED],
       ...script.ops,
     },
     sessions: script.sessions ?? [NO_FINDING],

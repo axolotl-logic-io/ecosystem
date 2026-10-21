@@ -32,7 +32,7 @@ const REVIEWER_OPS = new Set([
   "verify",
   "ready-pr",
   "merge",
-  "finish-wiki",
+  "finish",
   "ci-status",
 ]);
 const MERGED = shaOf("f");

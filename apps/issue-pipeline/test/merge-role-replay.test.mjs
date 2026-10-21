@@ -69,7 +69,7 @@ for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
     assert.equal(sessions[0]?.commits, false);
     const { codeMerged: preparedMerge } = firstPayload(calls, "prepare-review");
     assert.deepEqual(preparedMerge, { pr: PR, sha: MERGE_COMMIT });
-    const { state: finished } = firstPayload(calls, "finish-wiki");
+    const { state: finished } = firstPayload(calls, "finish");
     assert.deepEqual(finished, done);
     assert.equal(savesOf(calls)[0]?.verifiedSha, MERGE_COMMIT);
     assert.deepEqual(savesOf(calls).at(-2)?.security, CLEARED);
@@ -93,7 +93,7 @@ test("an interrupted own merge reuses exact saved security approval and original
   assert.deepEqual(done.hardened, REVISION);
   assert.deepEqual(done.integration, integration);
   assert.deepEqual(done.codeMerged, CODE_MERGED.codeMerged);
-  const { state: finished } = firstPayload(calls, "finish-wiki");
+  const { state: finished } = firstPayload(calls, "finish");
   assert.deepEqual(finished, done);
   assert.equal(sessionsOf(calls).length, 0);
   assert.ok(!opNames(calls).includes("prepare-review"));
@@ -207,6 +207,6 @@ test("code that moves during the recovered security session discards it and neve
   });
   const state = stateOf(await mergeRole(ctx), "wait");
   assert.equal(state.security, null);
-  assert.ok(!opNames(calls).includes("finish-wiki"));
+  assert.ok(!opNames(calls).includes("finish"));
   assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
 });

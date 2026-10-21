@@ -1,6 +1,6 @@
 // @ts-check
 // The orchestrator's scheduler on completions (`completion-reconciliation`):
-// an open issue saved done with its merged revision, which finish-wiki hasn't
+// an open issue saved done with its merged revision, which finish hasn't
 // closed, runs a merge job that only finishes it, with agent:merged or an open
 // prerequisite and never via a re-author, while stop labels, skip labels,
 // untrusted authors, live jobs, leases and legacy jobs still apply and a

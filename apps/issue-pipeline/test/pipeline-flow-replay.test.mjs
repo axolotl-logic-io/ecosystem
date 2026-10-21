@@ -129,7 +129,7 @@ test("claim-populated replay cannot complete or close without security when the 
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
-  assert.equal(ops.includes("finish-wiki"), false);
+  assert.equal(ops.includes("finish"), false);
   assert.equal(
     readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
     "open",
@@ -177,7 +177,7 @@ test("stale security cannot authorize replay completion or closure; a new assess
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
-  assert.equal(ops.includes("finish-wiki"), false);
+  assert.equal(ops.includes("finish"), false);
   assert.equal(
     readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
     "open",

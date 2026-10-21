@@ -144,7 +144,7 @@ function postmergeOps(w) {
         changedFiles: ["early.txt", "late.txt"],
       },
     ],
-    "finish-wiki": [{ finished: true, closed: true }],
+    finish: [{ finished: true, closed: true }],
   };
 }
 /** @param {import("./explicit-target-role-test-kit.mjs").Call[]} calls */

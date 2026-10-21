@@ -54,7 +54,7 @@ const REJECTION = {
 
 /** @param {Parameters<typeof opNames>[0]} calls */
 function finishedOps(calls) {
-  return opNames(calls).filter((name) => name === "finish-wiki");
+  return opNames(calls).filter((name) => name === "finish");
 }
 
 test("a finding in any category saves its receipt and stops with that category, never finishing", async () => {

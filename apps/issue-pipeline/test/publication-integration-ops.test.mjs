@@ -30,7 +30,7 @@ import {
 import { mergedAt } from "./publication-integration-fixtures.mjs";
 
 const { merge } = await import("../src/ops/merge.ts");
-const { finishWiki } = await import("../src/ops/finish.ts");
+const { finishIssue } = await import("../src/ops/finish.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @typedef {import("../src/state.ts").Revision} Revision */
@@ -203,14 +203,14 @@ test("a claimed own merge finishes with original hardening and integration intac
   );
   const uncleared = doneAt(receipt, state);
   fakeGh.reply([savedListing(uncleared)]);
-  const refused = finishWiki(w.cfg, { number: 7, state: uncleared });
+  const refused = finishIssue(w.cfg, { number: 7, state: uncleared });
   assert.equal("reason" in refused && refused.reason, "security");
   assert.deepEqual(writes(), []);
 
   const done = { ...uncleared, security: securityOf(receipt) };
   const before = structuredClone(done);
   fakeGh.reply([savedListing(done), ...finishReplies()]);
-  assert.deepEqual(finishWiki(w.cfg, { number: 7, state: done }), {
+  assert.deepEqual(finishIssue(w.cfg, { number: 7, state: done }), {
     finished: true,
     closed: true,
   });
@@ -241,7 +241,7 @@ test("finish refuses an integrated head no receipt binds to the approval, changi
     const done = { ...doneAt(receipt, saved), security };
     fakeGh.reply([savedListing(done)]);
     assert.throws(
-      () => finishWiki(w.cfg, { number: 7, state: done }),
+      () => finishIssue(w.cfg, { number: 7, state: done }),
       NOT_BOUND,
     );
     assert.deepEqual(writes(), []);
@@ -256,7 +256,7 @@ test("finish of an integrated head refuses a security review of the pre-merge he
   for (const revision of [integrated, reviewed]) {
     const done = { ...doneAt(receipt, state), security: securityOf(revision) };
     fakeGh.reply([savedListing(done)]);
-    const reply = finishWiki(w.cfg, { number: 7, state: done });
+    const reply = finishIssue(w.cfg, { number: 7, state: done });
     assert.equal("reason" in reply && reply.reason, "security");
     assert.deepEqual(writes(), []);
   }

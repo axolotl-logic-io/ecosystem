@@ -32,7 +32,7 @@ type OpName =
   | "ci-status"
   | "merge"
   | "reconcile-merge"
-  | "finish-wiki"
+  | "finish"
   | "ready-pr"
   | "cleanup";
 

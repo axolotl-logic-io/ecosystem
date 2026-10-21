@@ -26,7 +26,7 @@ import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
-import { closeParent, finishWiki } from "./ops/finish.ts";
+import { closeParent, finishIssue } from "./ops/finish.ts";
 import { merge } from "./ops/merge.ts";
 import { reconcileMerge } from "./ops/merge-recovery.ts";
 import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
@@ -67,7 +67,7 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["merge", merge],
   ["reconcile-merge", reconcileMerge],
   // Completes an issue its merge role saved done and merged.
-  ["finish-wiki", finishWiki],
+  ["finish", finishIssue],
   ["close-parent", closeParent],
   ["claim", claim],
   // Writes state and nothing else; queued comments ride along on every op (see main).

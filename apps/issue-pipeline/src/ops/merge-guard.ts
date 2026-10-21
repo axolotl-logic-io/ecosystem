@@ -1,5 +1,5 @@
 // The gates between an authorized revision and what merge (and, through
-// finish-guard.ts, finish-wiki) may do to GitHub, decided against a fresh
+// finish-guard.ts, the finish op) may do to GitHub, decided against a fresh
 // current revision (src/revision.ts) and the issue's saved state rather
 // than any claim in a request. Each gate is pure: an inconsistent request
 // or GitHub answer throws, a revision that moved returns a refusal, and

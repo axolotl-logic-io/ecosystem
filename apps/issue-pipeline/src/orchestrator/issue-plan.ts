@@ -5,7 +5,7 @@
 //   who isn't an allowed collaborator, a split parent (the tick closes it), a
 //   state at `done`, a live job, or new work while takeNewWork is false.
 // - A completion (`completion-reconciliation`): an open issue saved `done`
-//   with its merged revision, which finish-wiki hasn't closed, runs a merge
+//   with its merged revision, which the finish op hasn't closed, runs a merge
 //   job that only finishes it, even with agent:merged already set. The
 //   merge role, not a re-author here, sends new trusted input to the author.
 // - Held: a legacy job still running, another lane's live lease, an open

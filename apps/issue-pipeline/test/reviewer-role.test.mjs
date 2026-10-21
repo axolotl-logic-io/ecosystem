@@ -43,7 +43,7 @@ const MERGE_STAGE_OPS = new Set([
   "ci-status",
   "merge",
   "prepare-review",
-  "finish-wiki",
+  "finish",
 ]);
 
 const HARDENING_TASK = /Task: `hardening`/u;

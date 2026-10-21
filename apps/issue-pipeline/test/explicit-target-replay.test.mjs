@@ -34,8 +34,7 @@ test("done replay with saved security still reestablishes graph/checks before co
   const end = await mergeRole(run.ctx);
   assert.equal(end.kind, "next");
   assert.ok(
-    names(run.calls).indexOf("verify") <
-      names(run.calls).indexOf("finish-wiki"),
+    names(run.calls).indexOf("verify") < names(run.calls).indexOf("finish"),
   );
   assert.equal(names(run.calls).includes("session"), false);
   assert.equal(names(run.calls).includes("merge"), false);
@@ -218,7 +217,7 @@ test("done replay check failure cannot reuse saved security to complete unchecke
   assert.ok(end.kind === "stop");
   assert.equal(end.state.merged?.code, w.merged);
   assert.equal(end.state.security?.finding, null);
-  assert.equal(names(run.calls).includes("finish-wiki"), false);
+  assert.equal(names(run.calls).includes("finish"), false);
   assert.equal(names(run.calls).includes("session"), false);
   assert.deepEqual(codeWrites(run.calls), []);
 });

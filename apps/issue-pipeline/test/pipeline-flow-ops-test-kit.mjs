@@ -21,7 +21,7 @@ async function runFlowOps(root) {
   const request = JSON.parse(json);
   let output;
   const marker = path.join(root, "interrupt-finish");
-  if (request.op === "finish-wiki" && fs.existsSync(marker)) {
+  if (request.op === "finish" && fs.existsSync(marker)) {
     output = JSON.stringify({ ok: false, error: "read ECONNRESET" });
   } else {
     const result = spawnSync(

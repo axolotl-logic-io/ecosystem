@@ -22,7 +22,7 @@ import {
 
 const { merge } = await import("../src/ops/merge.ts");
 const { readyPr } = await import("../src/ops/ready-pr.ts");
-const { finishWiki } = await import("../src/ops/finish.ts");
+const { finishIssue } = await import("../src/ops/finish.ts");
 const { withCheckout } = await import("../src/config.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
@@ -153,13 +153,13 @@ function doneOn(w, branch) {
   });
 }
 
-test("finish-wiki deletes the assigned branch the state is bound to, and refuses another before any write", () => {
+test("finish deletes the assigned branch the state is bound to, and refuses another before any write", () => {
   const w = world();
   const done = doneOn(w, ASSIGNED);
   fakeGh.reply([savedListing(done), ...finishReplies(ASSIGNED)]);
-  assert.equal(finishWiki(assignedCfg(w), { number: 7 }).finished, true);
+  assert.equal(finishIssue(assignedCfg(w), { number: 7 }).finished, true);
   assert.match(writes()[0]?.join(" ") ?? "", DELETES_ASSIGNED);
   fakeGh.reply([savedListing(doneOn(w, ASSIGNED))]);
-  assert.throws(() => finishWiki(w.cfg, { number: 7 }), BOUND_TO_ASSIGNED);
+  assert.throws(() => finishIssue(w.cfg, { number: 7 }), BOUND_TO_ASSIGNED);
   assert.deepEqual(writes(), []);
 });

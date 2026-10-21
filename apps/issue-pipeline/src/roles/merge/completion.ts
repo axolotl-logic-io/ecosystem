@@ -50,11 +50,11 @@ async function complete(
 // review that doesn't clear the merged result) stops, so no job retries a
 // completion that can't finish.
 async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
-  const finished = await opReply(ctx, "finish-wiki", { state: done }, FINISHED);
+  const finished = await opReply(ctx, "finish", { state: done }, FINISHED);
   if (finished.finished) {
     return { kind: "next", state: done };
   }
-  const detail = `finish-wiki refused (${finished.reason}): ${finished.detail ?? "no detail"}`;
+  const detail = `the finish op refused (${finished.reason}): ${finished.detail ?? "no detail"}`;
   if (finished.reason === "inputs-changed") {
     return toAuthor(done, detail);
   }

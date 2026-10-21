@@ -1,5 +1,5 @@
 // @ts-check
-// The finish-wiki op (src/ops/finish.ts): completes an issue only from its
+// The finish op (src/ops/finish.ts): completes an issue only from its
 // saved done+merged state, after fresh proof that the PR merged at
 // merged.code and the trusted inputs are unchanged, and with a saved security
 // review that found nothing at exactly that merged revision; it merges
@@ -20,15 +20,14 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
-const { finishWiki } = await import("../src/ops/finish.ts");
+const { finishIssue } = await import("../src/ops/finish.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
-// What the finish-wiki op's writes, refusals and closing comment say.
+// What the finish op's writes, refusals and closing comment say.
 const DELETES_ISSUE_BRANCH =
   /DELETE repos\/o\/r\/git\/refs\/heads\/agent\/issue-7/u;
 const CLOSES_COMPLETED = /^issue close 7 -R o\/r --reason completed --comment/u;
 
-const NAMES_WIKI_COMMIT = /Published wiki commit/u;
 const NOT_SAVED_DONE = /saved state done/u;
 const NOT_SAVED_COMPLETION = /not the saved completion/u;
 const NOT_THE_MERGE_COMMIT = /not PR #50's merge commit/u;
@@ -98,12 +97,12 @@ function flat(done) {
   return done.map((args) => args.join(" "));
 }
 
-test("finish-wiki completes a saved done+merged issue: branch, labels, claim, then the close", () => {
+test("finish completes a saved done+merged issue: branch, labels, claim, then the close", () => {
   const w = world();
   mergedPr(w);
   const saved = doneState(w);
   fakeGh.reply([savedListing(saved, { claim: true }), ...issueIs("open")]);
-  assert.deepEqual(finishWiki(w.cfg, { number: 7, state: saved }), {
+  assert.deepEqual(finishIssue(w.cfg, { number: 7, state: saved }), {
     finished: true,
     closed: true,
   });
@@ -124,19 +123,18 @@ test("finish-wiki completes a saved done+merged issue: branch, labels, claim, th
       `PR #50 merged into integration as ${w.mergeSha.slice(0, SHORT_SHA_LENGTH)}.`,
     ),
   );
-  assert.doesNotMatch(close, NAMES_WIKI_COMMIT);
   assert.equal(
     done.some((line) => line.includes("agent-pipeline:state")),
     false,
   );
 });
 
-test("finish-wiki again after the close closes nothing twice", () => {
+test("finish again after the close closes nothing twice", () => {
   const w = world();
   mergedPr(w);
   const saved = doneState(w);
   fakeGh.reply([savedListing(saved), ...issueIs("closed")]);
-  assert.deepEqual(finishWiki(w.cfg, { number: 7 }), {
+  assert.deepEqual(finishIssue(w.cfg, { number: 7 }), {
     finished: true,
     closed: false,
   });
@@ -146,7 +144,7 @@ test("finish-wiki again after the close closes nothing twice", () => {
   );
 });
 
-test("finish-wiki completes after the code branch was already deleted", () => {
+test("finish completes after the code branch was already deleted", () => {
   const w = world();
   mergedPr(w);
   const saved = doneState(w);
@@ -159,42 +157,42 @@ test("finish-wiki completes after the code branch was already deleted", () => {
     },
     ...issueIs("open"),
   ]);
-  assert.equal(finishWiki(w.cfg, { number: 7 }).finished, true);
+  assert.equal(finishIssue(w.cfg, { number: 7 }).finished, true);
 });
 
-test("finish-wiki refuses new trusted input and changes nothing", () => {
+test("finish refuses new trusted input and changes nothing", () => {
   const w = world();
   mergedPr(w, "inputs-2");
   fakeGh.reply([savedListing(doneState(w))]);
-  const reply = finishWiki(w.cfg, { number: 7 });
+  const reply = finishIssue(w.cfg, { number: 7 });
   assert.equal(reply.finished, false);
   assert.equal("reason" in reply && reply.reason, "inputs-changed");
   assert.deepEqual(writes(), []);
 });
 
-test("finish-wiki fails on a saved state that isn't a completion, or a request that isn't the saved one", () => {
+test("finish fails on a saved state that isn't a completion, or a request that isn't the saved one", () => {
   const w = world();
   mergedPr(w);
   fakeGh.reply([savedListing(doneState(w, { stage: "merge" }))]);
-  assert.throws(() => finishWiki(w.cfg, { number: 7 }), NOT_SAVED_DONE);
+  assert.throws(() => finishIssue(w.cfg, { number: 7 }), NOT_SAVED_DONE);
   fakeGh.reply([savedListing(doneState(w))]);
   const other = doneState(w, {
     merged: { code: "0ther", inputs: "x" },
   });
   assert.throws(
-    () => finishWiki(w.cfg, { number: 7, state: other }),
+    () => finishIssue(w.cfg, { number: 7, state: other }),
     NOT_SAVED_COMPLETION,
   );
   assert.deepEqual(writes(), []);
 });
 
-test("finish-wiki fails when the saved merge commit isn't the PR's", () => {
+test("finish fails when the saved merge commit isn't the PR's", () => {
   const w = world();
   mergedPr(w);
   const saved = doneState(w, {
     merged: { code: "0ther", inputs: "inputs-1" },
   });
   fakeGh.reply([savedListing(saved)]);
-  assert.throws(() => finishWiki(w.cfg, { number: 7 }), NOT_THE_MERGE_COMMIT);
+  assert.throws(() => finishIssue(w.cfg, { number: 7 }), NOT_THE_MERGE_COMMIT);
   assert.deepEqual(writes(), []);
 });
