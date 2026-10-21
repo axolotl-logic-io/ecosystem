@@ -12,7 +12,13 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { PROMPT_PAGES, pageTextOf } from "./brain-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+import {
+  headsWithGit,
+  PROMPT_PAGES,
+  pageTextOf,
+  writeBrain,
+} from "./brain-test-kit.mjs";
 import { AUTHOR_SESSION, READER_STAGE, repliesAt } from "./job-fixtures.mjs";
 import {
   flagValue,
@@ -34,6 +40,8 @@ const CANT_READ = /can't read .*Pipeline-Prompt-Author\.md/u;
 const NOT_TEXT = /Pipeline-Prompt-Author\.md isn't a prompt page of text/u;
 const NOT_UTF8 = /Pipeline-Prompt-Author\.md isn't UTF-8/u;
 const COMMIT_ID = /^[0-9a-f]{40}$/u;
+const SHA1_HEX_LENGTH = 40;
+const SHA256_HEX_LENGTH = 64;
 // "#", a byte no UTF-8 text holds, and a newline.
 const NOT_UTF8_BYTES = Buffer.from("23ff0a", "hex");
 const GIT = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
@@ -97,13 +105,77 @@ test("a brain that is its own git checkout records its HEAD; a folder inside one
   const head = execFileSync("git", ["-C", at.brain, "rev-parse", "HEAD"], {
     encoding: "utf8",
   }).trim();
-  const [pinned] = openBrain(at.brain, READER_STAGE).pinned;
-  assert.match(String(pinned?.head), COMMIT_ID);
-  assert.equal(pinned?.head, head);
-  const inner = path.join(at.brain, "inner");
-  fs.mkdirSync(inner);
-  fs.writeFileSync(path.join(inner, AUTHOR_PAGE), pageTextOf(AUTHOR_PAGE));
-  assert.equal(openBrain(inner, READER_STAGE).pinned[0]?.head, null);
+  assert.match(head, COMMIT_ID);
+  assert.deepEqual(
+    openBrain(at.brain, "merge").pinned.map((pinned) => pinned.head),
+    [head, head],
+  );
+  const inner = writeBrain(path.join(at.brain, "inner"));
+  assert.deepEqual(
+    openBrain(inner, "merge").pinned.map((pinned) => pinned.head),
+    [null, null],
+  );
+});
+
+test("a brain outside a checkout or with no committed HEAD pins pages with null heads", () => {
+  const at = place();
+  assert.deepEqual(
+    openBrain(at.brain, "merge").pinned.map((pinned) => pinned.head),
+    [null, null],
+  );
+  execFileSync("git", ["init", "-q", at.brain]);
+  assert.deepEqual(
+    openBrain(at.brain, "merge").pinned.map((pinned) => pinned.head),
+    [null, null],
+  );
+});
+
+test("Git reporting the top level without a HEAD line pins null, not an empty head", () => {
+  const at = place();
+  execFileSync("git", ["init", "-q", at.brain]);
+  assert.equal(headsWithGit(at, ""), "[null,null]\n");
+});
+
+test("Git root and HEAD reads are independent and every page records the valid full commit", () => {
+  const at = place();
+  execFileSync("git", ["init", "-q", at.brain]);
+  const head = "a".repeat(SHA1_HEX_LENGTH);
+  assert.equal(
+    headsWithGit(at, `${head}\n`),
+    `${JSON.stringify([head, head])}\n`,
+  );
+});
+
+test("unavailable or malformed HEAD output pins every page with a null head", () => {
+  const at = place();
+  execFileSync("git", ["init", "-q", at.brain]);
+  for (const { name, head, code } of [
+    {
+      name: "failed HEAD read",
+      head: `${"a".repeat(SHA1_HEX_LENGTH)}\n`,
+      code: 1,
+    },
+    { name: "whitespace HEAD", head: " \t\n", code: 0 },
+    { name: "short HEAD", head: "abc123\n", code: 0 },
+    {
+      name: "uppercase HEAD",
+      head: `${"A".repeat(SHA1_HEX_LENGTH)}\n`,
+      code: 0,
+    },
+    { name: "non-hex HEAD", head: `${"g".repeat(SHA1_HEX_LENGTH)}\n`, code: 0 },
+    {
+      name: "SHA-256 HEAD",
+      head: `${"a".repeat(SHA256_HEX_LENGTH)}\n`,
+      code: 0,
+    },
+    {
+      name: "multiple HEAD lines",
+      head: `${"a".repeat(SHA1_HEX_LENGTH)}\n${"b".repeat(SHA1_HEX_LENGTH)}\n`,
+      code: 0,
+    },
+  ]) {
+    assert.equal(headsWithGit(at, head, code), "[null,null]\n", name);
+  }
 });
 
 test("the author job's pi gets its page appended to its system prompt, and job.json and the usage record name where it came from", () => {

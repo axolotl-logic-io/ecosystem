@@ -18,6 +18,7 @@ import { STAGE_AGENTS } from "./roles.ts";
 
 // The bound on reading the brain's HEAD, a local read.
 const GIT_MS = 30_000;
+const COMMIT_ID = /^[0-9a-f]{40}$/u;
 // The longest page pi can take as one argument: Linux bounds each argument,
 // with its NUL, to 128 KiB (MAX_ARG_STRLEN, 131072 bytes).
 const PAGE_MAX_BYTES = 131_071;
@@ -44,8 +45,8 @@ const PROMPT_PAGES: readonly {
 ];
 
 // Where a pinned page came from: its name, its absolute path when pinned,
-// the sha256 of the bytes pinned, and the brain's HEAD commit (null when the
-// brain isn't a git checkout).
+// the sha256 of the bytes pinned, and the brain's HEAD commit (null when
+// unavailable or the brain isn't the root of its own checkout).
 interface PromptProvenance {
   page: string;
   path: string;
@@ -73,16 +74,26 @@ function sessionKey(stage: Stage, phase: SessionPhase | null): string {
   return `${stage}/${phase ?? ""}`;
 }
 
-// The HEAD commit of the brain's own git checkout, or null when it isn't
-// the top of one (a folder inside another checkout has none of its own).
+// The full SHA-1 HEAD commit of the brain's own git checkout, or null when
+// unavailable or it isn't the top of one (a nested folder has none of its own).
 function headOf(brain: string): string | null {
-  const read = run(
-    "git",
-    ["-C", brain, "rev-parse", "--show-toplevel", "--verify", "HEAD"],
-    { allowFail: true, timeoutMs: GIT_MS, cwd: brain },
-  );
-  const [top = "", head = ""] = read.stdout.trim().split("\n");
-  if (read.code !== 0 || top !== fs.realpathSync(brain)) {
+  // Keep the root and revision queries separate: Git versions differ in how
+  // --verify interacts with --show-toplevel in a combined rev-parse call.
+  const root = run("git", ["-C", brain, "rev-parse", "--show-toplevel"], {
+    allowFail: true,
+    timeoutMs: GIT_MS,
+    cwd: brain,
+  });
+  if (root.code !== 0 || root.stdout.trim() !== fs.realpathSync(brain)) {
+    return null;
+  }
+  const read = run("git", ["-C", brain, "rev-parse", "--verify", "HEAD"], {
+    allowFail: true,
+    timeoutMs: GIT_MS,
+    cwd: brain,
+  });
+  const head = read.stdout.trim();
+  if (read.code !== 0 || !COMMIT_ID.test(head)) {
     return null;
   }
   return head;
