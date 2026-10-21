@@ -1,15 +1,15 @@
 # Coding practices
 
-These are the code, type, lint, test and secrets rules for this repository. The root [`AGENTS.md`](../AGENTS.md) links here.
+These are the design, type, lint, test and secrets rules shared by every repository that keeps a copy of this page. Each copy is identical, so a change here goes into every copy. The root [`AGENTS.md`](../AGENTS.md) links here and to the repository's own project practices.
 
 ## Design
 
 Follow John Ousterhout's *A Philosophy of Software Design*:
 
 - **Deep modules:** small, simple interfaces over substantial functionality. No pass-through methods, no thin wrappers that only rename, no classes that exist only to hold one call.
-- **Information hiding:** each design decision lives in exactly one module, for example the model choice, prompt assembly, the storage layout and error classification. Callers don't know the schema, the provider or the prompt text.
+- **Information hiding:** each design decision lives in exactly one module, for example a storage layout, a wire format or an error classification. Callers don't know the schema, the provider or the format.
 - **Pull complexity downward:** a module handles its hard cases itself rather than pushing them to callers through options or extra steps.
-- **Define errors out of existence:** prefer interfaces with no error case. An unknown or malformed id is "not found" (`undefined`), not an exception; deletes and re-indexes are idempotent.
+- **Define errors out of existence:** prefer interfaces with no error case. An unknown or malformed id is "not found" (`undefined`), not an exception; deletes are idempotent.
 - **Different layer, different abstraction:** Different layers each speak their own vocabulary. Avoid temporal decomposition, which splits code by the order things happen rather than by the knowledge they hide.
 - **Somewhat general-purpose:** interfaces fit today's needs without baking in one caller's special case.
 - **Comments:** interface comments say what a module does and promises, not how. Implementation comments explain only what the code can't. Names are precise and consistent across the codebase.
@@ -18,7 +18,7 @@ Follow John Ousterhout's *A Philosophy of Software Design*:
 ## Types
 
 - No `any`, no non-null `!`, and no `as` casts except at one validated boundary.
-- Parse external data at the boundary with zod: CLI arguments, environment variables, config and state files, GitHub responses and model tool inputs. Inside the boundary, use the parsed types.
+- Parse external data at the boundary with zod and use the parsed types inside it.
 - Domain ids get their own types where they could be mixed up.
 
 ## Lint
@@ -37,9 +37,7 @@ Follow John Ousterhout's *A Philosophy of Software Design*:
 ## Tests
 
 - **A flake is a failure** (`flakes-are-failures`). Fix the cause or the measurement; never rerun until it passes. A passing repeat adds no evidence, and no test may depend on timing.
-- **Code only tests use lives with the tests, not in `src/`** (`test-code-in-test`): `src/` holds only what the app runs. An app's tests and their helpers are in its `test/`, in the folder their subject has under `src/`, so the tests for `src/chats/store.ts` are `test/chats/store.test.ts`. Helpers are named `fake-*.ts`, `*-fixtures.ts` or `*-test-kit.ts`, such as `test/db/fake-neon-http.ts`, which runs the real Neon driver against a stubbed `fetch`.
-
-The [pipeline README](../apps/issue-pipeline/README.md#tests) describes its isolated test setup.
+- **Code only tests use lives with the tests, not in `src/`** (`test-code-in-test`): `src/` holds only what the program runs. Tests and their helpers are in `test/`, in the folder their subject has under `src/`, so the tests for `src/storage/store.ts` are `test/storage/store.test.ts`. Helpers are named `fake-*.ts`, `*-fixtures.ts` or `*-test-kit.ts`, such as `test/http/fake-fetch.ts`, which answers requests from a stubbed `fetch`.
 
 ## Secrets
 

@@ -1,6 +1,6 @@
 # Code and test decisions
 
-These decisions cover how the pipeline's own code and tests behave. The repository's code, lint and test rules are in [coding practices](../coding-practices.md).
+These decisions cover how the pipeline's own code and tests behave. The repository's code, lint and test rules are in the shared [coding practices](../coding-practices.md) and this repository's [project practices](../project-practices.md).
 
 ## tests-pin-promised-behaviour
 

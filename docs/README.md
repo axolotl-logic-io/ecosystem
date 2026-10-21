@@ -4,7 +4,9 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 ## Practices
 
-[Coding practices](coding-practices.md): the design, type, lint, test and secrets rules for code in this repository.
+[Coding practices](coding-practices.md): the shared design, type, lint, test and secrets rules, kept identical in each repository.
+
+[Project practices](project-practices.md): this repository's own rules, which add to the coding practices.
 
 [Docs style guide](docs-style-guide.md): how to write these docs.
 
