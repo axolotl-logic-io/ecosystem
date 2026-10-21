@@ -11,6 +11,7 @@ import {
 } from "./reviewer-and-merge-role-calls-kit.mjs";
 import {
   COMMENT_ID,
+  cfg,
   current,
   MOVED,
   mergeRole,
@@ -19,7 +20,7 @@ import {
 
 const CLEAR = {
   revision: REVISION,
-  candidate: { target: "integration", baseSha: current().baseSha },
+  candidate: { target: cfg.baseBranch, baseSha: current().baseSha },
   commentId: COMMENT_ID,
   finding: null,
 };

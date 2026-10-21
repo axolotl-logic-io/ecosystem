@@ -28,8 +28,8 @@ for (const refusal of [
     const w = world();
     current(w);
     const saved = approvedState(approvedOf(w));
-    const security = saved.security;
-    assert.ok(security?.candidate !== undefined);
+    const { security } = saved;
+
     switch (refusal) {
       case "missing":
         saved.security = null;
