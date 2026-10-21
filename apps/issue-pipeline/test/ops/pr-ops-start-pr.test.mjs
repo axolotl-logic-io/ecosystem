@@ -160,8 +160,12 @@ test("start-pr with a body run twice opens one draft and sets the same body", ()
 test("start-pr without a body only labels the open PR", () => {
   const { n, pr } = UNTOUCHED;
   fx.startBranch(n, "initial", "existing branch");
-  startPr(n, pr, `[{"number":${pr}}]`, {});
-  assert.partialDeepStrictEqual(prMutations(writes()), []);
+  const branch = `agent/issue-${n}`;
+  const headSha = originRef(branch);
+  const out = startPr(n, pr, `[{"number":${pr}}]`, {});
+  assert.equal(out, okLine("start-pr", { pr, headSha }));
+  assert.equal(originRef(branch), headSha);
+  assert.deepEqual(prMutations(writes()), []);
   assert.deepEqual(savedPr(n), {
     effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
     issue: n,

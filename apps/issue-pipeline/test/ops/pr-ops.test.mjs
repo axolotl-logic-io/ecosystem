@@ -135,6 +135,9 @@ test("open-pr opens a draft PR when none is open", () => {
   const [created] = prMutations(writes());
   assert.equal(created?.action, "create");
   assert.equal(created?.draft, true);
+  assert.equal(created?.repo, "o/r");
+  assert.equal(created?.base, "integration");
+  assert.equal(created?.head, `agent/issue-${n}`);
   assert.equal(created?.title, "Fix #6");
   assert.ok(created?.body?.includes("Closes #6"));
   assert.ok(created?.body?.includes("B"));
