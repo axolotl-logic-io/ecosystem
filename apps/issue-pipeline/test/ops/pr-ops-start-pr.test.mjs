@@ -4,7 +4,12 @@
 // open PR. Checked through the ops CLI's replies and gh writes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bodyOf, effectNames, effectsOf } from "../gh-effects-test-kit.mjs";
+import {
+  bodyOf,
+  effectNames,
+  effectsOf,
+  prMutations,
+} from "../gh-effects-test-kit.mjs";
 import { draftMutationReplies } from "../gh-mutation-fixtures.mjs";
 import {
   historyReply,
@@ -25,11 +30,10 @@ const EDITED = { n: 21, pr: 71 };
 const OPENED = { n: 22, pr: 72 };
 const TWICE = { n: 23, pr: 73 };
 const UNTOUCHED = { n: 24, pr: 74 };
-const PR_NUMBER = /^\d+$/u;
 
 /** @returns {string[][]} */
 function writes() {
-  return fakeGh.calls().filter((args) => !ghIsRead(args));
+  return fakeGh.writes(ghIsRead);
 }
 
 /** The state mutation's authority facts and labels. @param {number} n */
@@ -47,39 +51,6 @@ function savedPr(n) {
     merged: saved?.merged,
     security: saved?.security,
   };
-}
-
-/** @param {string[]} args @param {string[]} names @returns {string | null} */
-function flagValue(args, names) {
-  const at = args.findIndex((arg) => names.includes(arg));
-  if (at < 0) {
-    return null;
-  }
-  return args[at + 1] ?? null;
-}
-
-/** The PR mutation's semantic fields, independent of flag order. */
-function prMutations() {
-  return writes()
-    .filter(([command]) => command === "pr")
-    .map((args) => {
-      const [, action] = args;
-      const request = {
-        action,
-        repo: flagValue(args, ["-R", "--repo"]),
-        body: flagValue(args, ["--body"]),
-      };
-      if (action === "create") {
-        return {
-          ...request,
-          draft: args.includes("--draft"),
-          base: flagValue(args, ["--base"]),
-          head: flagValue(args, ["--head"]),
-          title: flagValue(args, ["--title"]),
-        };
-      }
-      return { ...request, pr: args.find((arg) => PR_NUMBER.test(arg)) };
-    });
 }
 
 // The body start-pr gives issue `n`'s PR for the text `text`.
@@ -115,7 +86,7 @@ test("start-pr with a body sets the open PR's body and leaves it a draft", () =>
   const out = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
   const headSha = originRef("agent/issue-21");
   assert.equal(out, okLine("start-pr", { pr, headSha }));
-  assert.deepEqual(prMutations(), [
+  assert.deepEqual(prMutations(writes()), [
     { action: "edit", pr: String(pr), repo: "o/r", body: prBody(n, "B") },
   ]);
   assert.deepEqual(savedPr(n), {
@@ -136,7 +107,7 @@ test("start-pr with a body and no open PR opens a draft with that body only", ()
   const out = startPr(n, pr, "[]", { body: "B", plan: "P" });
   const headSha = originRef("agent/issue-22");
   assert.equal(out, okLine("start-pr", { pr, headSha }));
-  assert.deepEqual(prMutations(), [
+  assert.deepEqual(prMutations(writes()), [
     {
       action: "create",
       repo: "o/r",
@@ -163,11 +134,13 @@ test("start-pr with a body and no open PR opens a draft with that body only", ()
 test("start-pr with a body run twice opens one draft and sets the same body", () => {
   const { n, pr } = TWICE;
   const first = startPr(n, pr, "[]", { body: "B" });
-  const created = prMutations().filter(({ action }) => action === "create");
+  const created = prMutations(writes()).filter(
+    ({ action }) => action === "create",
+  );
   assert.equal(created.length, 1);
   const body = created[0]?.body ?? "";
   const second = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
-  assert.deepEqual(prMutations(), [
+  assert.deepEqual(prMutations(writes()), [
     { action: "edit", pr: String(pr), repo: "o/r", body },
   ]);
   assert.deepEqual(savedPr(n), {
@@ -190,7 +163,7 @@ test("start-pr without a body only labels the open PR", () => {
   const { n, pr } = UNTOUCHED;
   fx.startBranch(n, "initial", "existing branch");
   startPr(n, pr, `[{"number":${pr}}]`, {});
-  assert.deepEqual(prMutations(), []);
+  assert.deepEqual(prMutations(writes()), []);
   assert.deepEqual(savedPr(n), {
     effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
     issue: n,

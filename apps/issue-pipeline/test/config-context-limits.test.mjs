@@ -13,12 +13,30 @@ import "./isolated-root-test-kit.mjs";
 
 const { testConfig } = await import("./config-test-kit.mjs");
 
-const REMOVAL = "session budgets and handoffs were removed";
+const REMOVED_KEYS = Object.keys({
+  claimCandidates: true,
+  claimWaitSeconds: true,
+  contextLimits: true,
+  failureStreak: true,
+  issueTokenBudget: true,
+  maxContinuations: true,
+  maxFixRounds: true,
+  maxSpawnsPerRun: true,
+  maxTriages: true,
+  nonCodePathGlobs: true,
+  orchestratorRoles: true,
+  practicesDigest: true,
+  rebaseTokenBudget: true,
+  requireNewTests: true,
+  roleBudgets: true,
+  sessionTokenCap: true,
+  silentMinutes: true,
+  testPathGlobs: true,
+  tokensPerHour: true,
+});
 const SOFT = 175_000;
 const HARD = 225_000;
-const WRITER_CAP = 300_000;
 const CI_FIXER_BUDGET = 100_000;
-const SEVERAL = 3;
 
 // What is wrong with how a config setting the `removed` keys loads: a key
 // with no warning naming its removal, or one the loaded config still has.
@@ -29,7 +47,7 @@ function ignoredProblems(removed) {
   const problems = [];
   for (const key of Object.keys(removed)) {
     const warned = warnings.some((line) =>
-      line.includes(`${key} is no longer read (${REMOVAL})`),
+      line.includes(`${key} is no longer read`),
     );
     if (!warned) {
       problems.push(`${key} has no warning`);
@@ -41,15 +59,17 @@ function ignoredProblems(removed) {
   return problems;
 }
 
-test("a config that sets the removed context limits, continuations and budgets loads, warning for each", () => {
-  const problems = ignoredProblems({
-    contextLimits: { soft: SOFT, hard: HARD },
-    maxContinuations: SEVERAL,
-    sessionTokenCap: WRITER_CAP,
-    roleBudgets: { implementer: WRITER_CAP },
+for (const key of [...REMOVED_KEYS, "escalationAgentActs"]) {
+  test(`removed config key ${key} loads, warns once and grants no configuration`, () => {
+    const { cfg, warnings } = testConfig({ [key]: 42 });
+    assert.equal(key in cfg, false);
+    assert.equal(
+      warnings.filter((line) => line.includes(`${key} is no longer read`))
+        .length,
+      1,
+    );
   });
-  assert.deepEqual(problems, []);
-});
+}
 
 test("values loadConfig once refused no longer stop a config loading", () => {
   const once = [
@@ -65,12 +85,7 @@ test("values loadConfig once refused no longer stop a config loading", () => {
 test("a config without them loads with no warning", () => {
   const { cfg, warnings } = testConfig({});
   assert.deepEqual(warnings, []);
-  for (const key of [
-    "contextLimits",
-    "maxContinuations",
-    "sessionTokenCap",
-    "roleBudgets",
-  ]) {
+  for (const key of REMOVED_KEYS) {
     assert.equal(key in cfg, false, key);
   }
 });

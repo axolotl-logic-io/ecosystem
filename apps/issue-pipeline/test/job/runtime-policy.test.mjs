@@ -4,17 +4,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import { isolatedRoot } from "../isolated-root-test-kit.mjs";
-import { pinnedOf } from "../prompt-test-kit.mjs";
 import { FIXTURE_WINDOWS } from "../runtime-fixtures.mjs";
 import {
   json,
+  launch,
   MODEL,
   PROFILE,
   privateRuntime,
 } from "./runtime-policy-test-kit.mjs";
 
-/** @import { SessionLaunch } from "../../src/job/launch.ts" */
 const { AGENT_DIR } = await import("../../src/pipeline-root.ts");
 const { runSession } = await import("../../src/job/launch.ts");
 const { policyOf, RUNTIME_SCHEMA, stateRefusal } = await import(
@@ -32,23 +30,6 @@ const LARGER_RESERVE = 125_000;
 const ERROR_RUNTIME = /runtime:/u;
 const CREDENTIALS =
   /private-credential-sentinel|private-native-header-sentinel|forbidden-job-token|forbidden-role-token/u;
-
-/** @param {Partial<SessionLaunch>} [changes] @returns {SessionLaunch} */
-function launch(changes = {}) {
-  return {
-    key: "author-1",
-    role: "author",
-    agent: "issue-pipeline-author",
-    model: "openai/gpt-6.1-sol",
-    task: "Offline fixture task",
-    outputSchema: { type: "object" },
-    timeoutMs: 3000,
-    commits: false,
-    phase: null,
-    prompt: pinnedOf("author.md"),
-    ...changes,
-  };
-}
 
 // Every actual stage/phase reaches the same native policy preparation path.
 for (const [stage, entry] of Object.entries(STAGE_AGENTS)) {
@@ -107,11 +88,6 @@ for (const [stage, entry] of Object.entries(STAGE_AGENTS)) {
     });
   }
 }
-
-test("temporary roots exist before pipeline imports", () => {
-  assert.ok(AGENT_DIR.startsWith(path.dirname(isolatedRoot)));
-  assert.ok(fs.statSync(isolatedRoot).isDirectory());
-});
 
 for (const [name, state] of [
   ["missing native data", {}],

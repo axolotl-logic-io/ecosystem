@@ -4,11 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import { pinnedOf } from "../prompt-test-kit.mjs";
 import { FIXTURE_WINDOWS } from "../runtime-fixtures.mjs";
-import { privateRuntime } from "./runtime-policy-test-kit.mjs";
+import { launch, privateRuntime } from "./runtime-policy-test-kit.mjs";
 
-/** @import { SessionLaunch } from "../../src/job/launch.ts" */
 const { runSession } = await import("../../src/job/launch.ts");
 const { runtimeBoundary, RUNTIME_SCHEMA } = await import(
   "../../src/job/runtime-policy.ts"
@@ -23,29 +21,13 @@ const COMPACTION = {
   },
 };
 
-/** @param {string} key @returns {SessionLaunch} */
-function launch(key) {
-  return {
-    key,
-    role: "author",
-    agent: "issue-pipeline-author",
-    model: "openai/gpt-6.1-sol",
-    task: "Offline fixture task",
-    outputSchema: { type: "object" },
-    timeoutMs: 3000,
-    commits: false,
-    phase: null,
-    prompt: pinnedOf("author.md"),
-  };
-}
-
 test("resumed and new launch paths keep old history and independently generate policy", async () => {
   const kit = privateRuntime();
   const original = '{"type":"session","id":"preserved-original"}\n';
   const oldFile = kit.hooks.sessionFile("resumed");
   fs.writeFileSync(oldFile, original);
-  const resumed = await runSession(launch("resumed"), kit.hooks);
-  const fresh = await runSession(launch("fresh"), kit.hooks);
+  const resumed = await runSession(launch({ key: "resumed" }), kit.hooks);
+  const fresh = await runSession(launch({ key: "fresh" }), kit.hooks);
   assert.equal(resumed.ok, true);
   assert.equal(fresh.ok, true);
   const archives = fs

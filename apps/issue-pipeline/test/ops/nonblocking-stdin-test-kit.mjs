@@ -1,10 +1,29 @@
 // @ts-check
-// An --import preload that makes fd 0 a non-blocking pipe before the main
-// module runs, as a parent that already touched stdin leaves it (#263).
-// Opening process.stdin on a pipe puts the fd in libuv's non-blocking mode;
-// pausing it leaves the data for the main module to read. The ready line on
-// stderr tells the test the fd is non-blocking.
+// Non-blocking fd 0; signal only when the real stdin consumer attempts a read.
+import fs from "node:fs";
 import process from "node:process";
 
 process.stdin.pause();
-process.stderr.write("nonblocking-stdin-ready\n");
+const read = process.stdin._read;
+let first = true;
+process.stdin._read = (size) => {
+  if (first) {
+    first = false;
+    try {
+      fs.readSync(0, Buffer.alloc(1), 0, 1, null);
+      throw new Error("stdin was not an empty non-blocking pipe");
+    } catch (error) {
+      if (
+        !(error instanceof Error && "code" in error) ||
+        error.code !== "EAGAIN"
+      ) {
+        throw error;
+      }
+    }
+    process.stdin.once("data", () =>
+      process.stderr.write("stdin-chunk-read\n"),
+    );
+    process.stderr.write("nonblocking-stdin-ready\n");
+  }
+  read.call(process.stdin, size);
+};

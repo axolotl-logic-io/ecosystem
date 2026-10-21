@@ -12,7 +12,7 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { endsWithTest } from "../../bounded-test-kit.mjs";
-import { ROOT, TEMPORARY_ROOT } from "../implementor-test-kit.mjs";
+import { TEMPORARY_ROOT } from "../implementor-test-kit.mjs";
 
 const { guardCommits } = await import("../../../src/clone-setup.ts");
 
@@ -105,11 +105,6 @@ function resolveAndContinue(repo, text) {
   gitOk(repo, ["add", "--", "a.txt"]);
   return git(repo, ["rebase", "--continue"], [["GIT_EDITOR", "true"]]);
 }
-
-test("the tests run under a temporary pipeline root", () => {
-  assert.equal(ROOT, TEMPORARY_ROOT);
-  assert.ok(TEMPORARY_ROOT.startsWith(os.tmpdir()));
-});
 
 test("a guarded checkout refuses git commit", () => {
   const repo = conflictedRepo();

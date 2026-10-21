@@ -5,7 +5,6 @@
 // no session. The Developer's work after the merge pushes nothing and runs
 // no code op.
 import assert from "node:assert/strict";
-import os from "node:os";
 import { test } from "node:test";
 import { z } from "zod";
 import {
@@ -14,9 +13,7 @@ import {
   ISSUE,
   opNames,
   PR,
-  ROOT,
   shaOf,
-  TEMPORARY_ROOT,
 } from "./implementor-test-kit.mjs";
 
 // The config bound the callers pass in; its defaults fill it in.
@@ -59,11 +56,6 @@ function verified(run) {
     maxCiFixes: CI_LIMIT.parse(run.ctx.cfg).maxCiFixes,
   });
 }
-
-test("the tests run under a temporary pipeline root", () => {
-  assert.equal(ROOT, TEMPORARY_ROOT);
-  assert.ok(TEMPORARY_ROOT.startsWith(os.tmpdir()));
-});
 
 test("the Developer's work after the merge names the merge and pushes nothing", async () => {
   const { ctx, ops, sessions } = mergedContext();

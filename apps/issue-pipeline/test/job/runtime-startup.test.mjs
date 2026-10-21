@@ -2,36 +2,19 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
-import { pinnedOf } from "../prompt-test-kit.mjs";
 import {
   json,
+  launch,
   MODEL,
   PROFILE,
   privateRuntime,
 } from "./runtime-policy-test-kit.mjs";
 
-/** @import { SessionLaunch } from "../../src/job/launch.ts" */
 /** @import { RpcAnswer } from "../../src/job/rpc.ts" */
 const { HOME } = await import("../../src/pipeline-root.ts");
 const { runSession } = await import("../../src/job/launch.ts");
 const { RUNTIME_SCHEMA } = await import("../../src/job/runtime-policy.ts");
 const ERROR_RUNTIME = /runtime:/u;
-
-/** @returns {SessionLaunch} */
-function launch() {
-  return {
-    key: "runtime-startup",
-    role: "author",
-    agent: "issue-pipeline-author",
-    model: "openai/gpt-6.1-sol",
-    task: "Offline fixture task",
-    outputSchema: { type: "object" },
-    timeoutMs: 3000,
-    commits: false,
-    phase: null,
-    prompt: pinnedOf("author.md"),
-  };
-}
 
 test("startup hashes actual generated settings again before prompt", async () => {
   const kit = privateRuntime();

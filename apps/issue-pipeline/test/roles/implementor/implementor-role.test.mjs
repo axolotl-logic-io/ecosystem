@@ -7,7 +7,6 @@
 // the author; `cannot`, failed sessions and failed ops end the stage as
 // they should.
 import assert from "node:assert/strict";
-import os from "node:os";
 import { test } from "node:test";
 import {
   fakeContext,
@@ -15,9 +14,7 @@ import {
   INPUTS,
   opNames,
   PR,
-  ROOT,
   shaOf,
-  TEMPORARY_ROOT,
 } from "../implementor-test-kit.mjs";
 
 const { implementorRole } = await import(
@@ -56,11 +53,6 @@ const NOT_DOABLE_REASON = /could not do the issue as written: no API/u;
 const BAD_REPLY = /bad reply/u;
 const CHANGES_NOTHING = /changes no file.*Lists chats/u;
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
-
-test("the tests run under a temporary pipeline root", () => {
-  assert.equal(ROOT, TEMPORARY_ROOT);
-  assert.ok(TEMPORARY_ROOT.startsWith(os.tmpdir()));
-});
 
 const MERGED_RESULT = { code: shaOf("2"), inputs: INPUTS };
 const REJECTED = { category: /** @type {const} */ ("rights"), reason: "x" };

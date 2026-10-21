@@ -4,7 +4,6 @@
 // failing checks and then the check-fixes stop, a fixer's `cannot` as the
 // same stop, a transient fix session deferring, and failing CI fixed first.
 import assert from "node:assert/strict";
-import os from "node:os";
 import { test } from "node:test";
 import { z } from "zod";
 import {
@@ -12,9 +11,7 @@ import {
   fakeContext,
   HEAD,
   opNames,
-  ROOT,
   shaOf,
-  TEMPORARY_ROOT,
 } from "./implementor-test-kit.mjs";
 
 // The config bound the callers pass in; its defaults fill it in.
@@ -67,11 +64,6 @@ function verified(run, { phase = "hardening", failing = [] } = {}) {
 function count(names, name = "verify") {
   return names.filter((each) => each === name).length;
 }
-
-test("the tests run under a temporary pipeline root", () => {
-  assert.equal(ROOT, TEMPORARY_ROOT);
-  assert.ok(TEMPORARY_ROOT.startsWith(os.tmpdir()));
-});
 
 test("a failing check gets a Reviewer fix session of the caller's phase, and the fixed head is the one verified", async () => {
   const run = fakeContext({

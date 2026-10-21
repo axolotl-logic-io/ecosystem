@@ -140,7 +140,10 @@ test("legacy-account state requires reconciliation and never automatic adoption"
 });
 
 test("legacy machine text stays out of trusted inputs without making bots human", () => {
-  fake.reply([{ when: "collaborators/owner", stdout: "", keep: true }]);
+  fake.reply([
+    { when: "collaborators/owner", stdout: "", keep: true },
+    { when: "collaborators/retired-bot", stdout: "", keep: true },
+  ]);
   const issue = { title: "T", body: "B", user: { login: "owner" } };
   const base = trustedInputsHash(cfg, issue, []);
   const machine = stateComment({ user: { login: "retired-bot" } });
@@ -161,7 +164,7 @@ for (const reply of [
       },
       { when: "api graphql", ...reply },
     ]);
-    assert.throws(() => readWriteState(cfg, NUMBER));
+    assert.throws(() => readWriteState(cfg, NUMBER), PROVENANCE);
     assert.deepEqual(fake.writes(ghIsRead), []);
   });
 }

@@ -3,34 +3,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { pinnedOf } from "../prompt-test-kit.mjs";
 import {
   CACHE,
   json,
+  launch,
   MODEL,
   PROFILE,
   privateRuntime,
 } from "./runtime-policy-test-kit.mjs";
 
-/** @import { SessionLaunch } from "../../src/job/launch.ts" */
 const { runSession } = await import("../../src/job/launch.ts");
 const ERROR_RUNTIME = /runtime:/u;
-
-/** @returns {SessionLaunch} */
-function launch() {
-  return {
-    key: "provider-input",
-    role: "author",
-    agent: "issue-pipeline-author",
-    model: "openai/gpt-6.1-sol",
-    task: "Offline fixture task",
-    outputSchema: { type: "object" },
-    timeoutMs: 3000,
-    commits: false,
-    phase: null,
-    prompt: pinnedOf("author.md"),
-  };
-}
 
 /** @type {[string, Record<string, unknown>][]} */
 const CONFIG_FAILURES = [

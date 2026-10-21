@@ -6,26 +6,9 @@
 // temporary folder, since the pipeline's modules read the root once, on
 // import. A test then imports the pipeline's modules dynamically, after this
 // kit, and checks that the root they read, `ROOT`, is `TEMPORARY_ROOT`.
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import process from "node:process";
+import { isolatedRoot } from "../isolated-root-test-kit.mjs";
 
-const place = fs.mkdtempSync(path.join(os.tmpdir(), "implementor-kit-"));
-process.on("exit", () => fs.rmSync(place, { recursive: true, force: true }));
-const TEMPORARY_ROOT = path.join(place, "root");
-// src runs its commands in the root, so it must exist.
-fs.mkdirSync(TEMPORARY_ROOT);
-// Environment names aren't camelCase, so they go in as entries, as in
-// job-test-kit.mjs.
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["HOME", place],
-    ["ISSUE_PIPELINE_ROOT", TEMPORARY_ROOT],
-  ]),
-);
-
+const TEMPORARY_ROOT = isolatedRoot;
 const { ROOT } = await import("../../src/pipeline-root.ts");
 const { testConfig } = await import("../config-test-kit.mjs");
 const { newIssueState } = await import("../../src/state.ts");

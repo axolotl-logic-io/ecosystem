@@ -2,17 +2,15 @@
 // A stop child may save signed state before interruption; signal cleanup must
 // not replace that state with the parent's older working-stage checkpoint.
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { installFakeGh } from "../fake-gh.mjs";
-import { isolatedRoot } from "../isolated-root-test-kit.mjs";
+import { roleJob } from "./role-job-test-kit.mjs";
 
 const { testConfig } = await import("../config-test-kit.mjs");
 const { runRoleStage } = await import("../../src/job/role-run.ts");
-const { openStatus } = await import("../../src/job/status.ts");
 const { newIssueState } = await import("../../src/state.ts");
 const { paths } = await import("../../src/config.ts");
 const fake = installFakeGh();
@@ -27,56 +25,6 @@ const EVIDENCE = z.object({
   stopFailure: z.string(),
 });
 
-/** @returns {never} */
-function unexpectedLaunch() {
-  throw new Error("this role must not launch a model or ops child");
-}
-
-/** @param {import("../../src/job/ops-request.ts").RunOp} runOp @returns {import("../../src/job/role-run.ts").RoleJob} */
-function jobFor(runOp) {
-  const id = randomUUID();
-  const startedAt = new Date().toISOString();
-  return {
-    cfg,
-    issue: ISSUE,
-    stage: "review",
-    mergeQueue: null,
-    identity: { id, startedAt },
-    dirs: {
-      root: isolatedRoot,
-      repo: isolatedRoot,
-      branch: "agent/issue-7",
-    },
-    prompts: { pinned: [], promptFor: unexpectedLaunch },
-    status: openStatus(path.join(isolatedRoot, id), {
-      id,
-      startedAt,
-      issue: ISSUE,
-      stage: "review",
-      lane: "lane",
-      socket: "unused",
-      prompts: [],
-    }),
-    hooks: {
-      sessionFile: unexpectedLaunch,
-      started: unexpectedLaunch,
-      record: unexpectedLaunch,
-      ended: unexpectedLaunch,
-      sessionEnded: unexpectedLaunch,
-      env: unexpectedLaunch,
-      cwd: isolatedRoot,
-      repo: isolatedRoot,
-    },
-    control: { stopping: () => null },
-    onClaimed: () => undefined,
-    runOp,
-    role: async (ctx) => {
-      await ctx.op("verify", {});
-      return { kind: "next", state: ctx.state };
-    },
-  };
-}
-
 /** @param {"stop" | "release"} interruptOn @returns {Promise<{state: import("../../src/state.ts").IssueState, calls: {op: string, payload: object}[], end: import("../../src/job/role-end.ts").RoleStageEnd}>} */
 async function interrupted(interruptOn) {
   const state = newIssueState(ISSUE);
@@ -85,7 +33,7 @@ async function interrupted(interruptOn) {
   const calls = [];
   /** @type {import("../../src/job/status.ts").StopSignal | null} */
   let signal = null;
-  const job = jobFor((op, payload) => {
+  const job = roleJob((op, payload) => {
     calls.push({ op, payload });
     if (op === interruptOn) {
       signal = "SIGTERM";
@@ -114,6 +62,7 @@ async function interrupted(interruptOn) {
     }
     return Promise.resolve({ ok: true, reply: {} });
   });
+  job.cfg = cfg;
   job.control.stopping = () => signal;
   const end = await runRoleStage(job);
   return { state, calls, end };

@@ -4,43 +4,13 @@
 // merged, and nothing before its claim won; the reviewer's job, whose
 // hardening commits, is a writer; a reader or merger never pushes.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
 import { test } from "node:test";
+import { fakeOps } from "./role-job-test-kit.mjs";
 
-// The pipeline root and home are temporary before any module reads them.
-const tmp = fs.mkdtempSync("/tmp/issue-pipeline-exit-push-");
-process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
-const TEMPORARY_ROOT = path.join(tmp, "root");
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["ISSUE_PIPELINE_ROOT", TEMPORARY_ROOT],
-    ["HOME", path.join(tmp, "home")],
-  ]),
-);
-const { ROOT } = await import("../../src/pipeline-root.ts");
 const { exitPushOf } = await import("../../src/job/exit-push.ts");
 const { stateAt } = await import("../job-fixtures.mjs");
 
 const CODE_MERGED = { pr: 42, sha: "c0ffee" };
-
-// A fake op runner whose every op succeeds, logging every call.
-function fakeOps() {
-  /** @type {{ op: string, payload: object }[]} */
-  const calls = [];
-  /** @param {string} op @param {object} payload @returns {Promise<import("../../src/job/ops-request.ts").OpsReply>} */
-  function runOp(op, payload) {
-    calls.push({ op, payload });
-    return Promise.resolve({ ok: true, reply: {} });
-  }
-  return { calls, runOp };
-}
-
-test("the exit push's pipeline root is a temporary one", () => {
-  assert.equal(ROOT, TEMPORARY_ROOT);
-});
 
 /** @param {any} state @param {"implement" | "review"} [stage] */
 async function exitPushAt(state, stage = "implement") {

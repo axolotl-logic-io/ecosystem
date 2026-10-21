@@ -5,16 +5,8 @@
 // attempt past it; a rejected resolution rebases afresh; a transient
 // resolver aborts the rebase and defers, counting nothing.
 import assert from "node:assert/strict";
-import os from "node:os";
 import { test } from "node:test";
-import {
-  BASE,
-  fakeContext,
-  ISSUE,
-  opNames,
-  ROOT,
-  TEMPORARY_ROOT,
-} from "../implementor-test-kit.mjs";
+import { BASE, fakeContext, ISSUE, opNames } from "../implementor-test-kit.mjs";
 
 const { syncCode } = await import("../../../src/roles/merge/sync.ts");
 const { OpsFailure } = await import("../../../src/job/role-context.ts");
@@ -82,11 +74,6 @@ function firstFinish(ops, name) {
 function sync(ctx) {
   return syncCode(ctx, ctx.state, MAX_ATTEMPTS);
 }
-
-test("the tests run under a temporary pipeline root", () => {
-  assert.equal(ROOT, TEMPORARY_ROOT);
-  assert.ok(TEMPORARY_ROOT.startsWith(os.tmpdir()));
-});
 
 test("a conflict is resolved by a counted Reviewer integration session", async () => {
   const { ctx, ops, sessions, saves } = fakeContext({

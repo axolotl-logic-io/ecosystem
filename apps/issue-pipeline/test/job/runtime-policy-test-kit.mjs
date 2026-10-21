@@ -1,12 +1,15 @@
 // @ts-check
 // Default-deny private runtime: fake pi never loads an extension or reaches a
 // model. Its only external input is the explicitly created local state file.
+
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { isolatedRoot } from "../isolated-root-test-kit.mjs";
+import { pinnedOf } from "../prompt-test-kit.mjs";
 import { FIXTURE_WINDOWS } from "../runtime-fixtures.mjs";
 
+/** @import { SessionLaunch } from "../../src/job/launch.ts" */
 /** @import { LaunchHooks } from "../../src/job/launch.ts" */
 const { RUNTIME_SCHEMA } = await import("../../src/job/runtime-policy.ts");
 const { agentEnvOf, rolesOf, STAGE_AGENTS } = await import(
@@ -242,4 +245,21 @@ function privateRuntime() {
   };
 }
 
-export { CACHE, json, MODEL, PROFILE, privateRuntime };
+/** @param {Partial<SessionLaunch>} [changes] @returns {SessionLaunch} */
+function launch(changes = {}) {
+  return {
+    key: "author-1",
+    role: "author",
+    agent: "issue-pipeline-author",
+    model: "openai/gpt-6.1-sol",
+    task: "Offline fixture task",
+    outputSchema: { type: "object" },
+    timeoutMs: 3000,
+    commits: false,
+    phase: null,
+    prompt: pinnedOf("author.md"),
+    ...changes,
+  };
+}
+
+export { CACHE, json, launch, MODEL, PROFILE, privateRuntime };

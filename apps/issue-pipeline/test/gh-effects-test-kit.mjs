@@ -6,6 +6,8 @@
 // linked as sub-issues. A comment is named by the role
 // in its `agent-pipeline:comment role=` marker, or as the state comment.
 
+const PR_NUMBER = /^\d+$/u;
+const BRANCH_REF = /^repos\/[^/]+\/[^/]+\/git\/refs\/heads\/(?<branch>.+)$/u;
 const ISSUE_COMMENTS =
   /^repos\/[^/]+\/[^/]+\/issues\/(?<posted>\d+)\/comments$/u;
 const COMMENT = /^repos\/[^/]+\/[^/]+\/issues\/comments\/(?<edited>\d+)$/u;
@@ -58,6 +60,10 @@ function kindOf(body) {
 /** @param {readonly string[]} args @returns {string} */
 function nameOf(args) {
   const endpoint = args.find((arg) => arg.startsWith("repos/")) ?? "";
+  const { branch } = groupsOf(BRANCH_REF, endpoint);
+  if (branch !== undefined && args.includes("DELETE")) {
+    return `delete branch ${decodeURIComponent(branch)}`;
+  }
   const kind = kindOf(field(args, BODY_FIELD));
   if (ISSUES.test(endpoint)) {
     return `issue ${field(args, TITLE_FIELD)}`;
@@ -123,4 +129,37 @@ function stateOf(effects, name) {
   return JSON.parse(json);
 }
 
-export { bodyOf, effectNames, effectsOf, stateOf };
+/** @param {string[]} args @param {string[]} names @returns {string | null} */
+function flagValue(args, names) {
+  const at = args.findIndex((arg) => names.includes(arg));
+  if (at < 0) {
+    return null;
+  }
+  return args[at + 1] ?? null;
+}
+
+/** @param {readonly string[][]} writes */
+function prMutations(writes) {
+  return writes
+    .filter(([command]) => command === "pr")
+    .map((args) => {
+      const [, action] = args;
+      const request = {
+        action,
+        repo: flagValue(args, ["-R", "--repo"]),
+        body: flagValue(args, ["--body"]),
+      };
+      if (action === "create") {
+        return {
+          ...request,
+          draft: args.includes("--draft"),
+          base: flagValue(args, ["--base"]),
+          head: flagValue(args, ["--head"]),
+          title: flagValue(args, ["--title"]),
+        };
+      }
+      return { ...request, pr: args.find((arg) => PR_NUMBER.test(arg)) };
+    });
+}
+
+export { bodyOf, effectNames, effectsOf, prMutations, stateOf };

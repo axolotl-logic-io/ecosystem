@@ -3,10 +3,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { messageEnd, toolEnd } from "../fake-rpc-pi.mjs";
-import { pinnedOf } from "../prompt-test-kit.mjs";
 import { MODEL, privateRuntime } from "./runtime-policy-test-kit.mjs";
 
-/** @import { SessionLaunch } from "../../src/job/launch.ts" */
 /** @import { JobStatus } from "../../src/job/status.ts" */
 const { nativeSettings, policyOf } = await import(
   "../../src/job/runtime-policy.ts"
@@ -21,23 +19,6 @@ const USAGE = {
   cacheWrite1h: 0,
   cost: 0,
 };
-
-/** @param {Partial<SessionLaunch>} [changes] @returns {SessionLaunch} */
-function launch(changes = {}) {
-  return {
-    key: "author-1",
-    role: "author",
-    agent: "issue-pipeline-author",
-    model: "openai/gpt-6.1-sol",
-    task: "Offline fixture task",
-    outputSchema: { type: "object" },
-    timeoutMs: 3000,
-    commits: false,
-    phase: null,
-    prompt: pinnedOf("author.md"),
-    ...changes,
-  };
-}
 
 /** @param {string} stage @returns {ReturnType<typeof privateRuntime> & {status: JobStatus, file: string}} */
 function recordedRuntime(stage) {
@@ -105,4 +86,4 @@ function expectedPolicy(
   };
 }
 
-export { expectedPolicy, launch, recordedRuntime, USAGE };
+export { expectedPolicy, recordedRuntime, USAGE };

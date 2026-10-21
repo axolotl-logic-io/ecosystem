@@ -9,13 +9,12 @@
 // exit push the run's last saved state.
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { testConfig } from "../config-test-kit.mjs";
 import { credentialConfig } from "../credentials-test-kit.mjs";
 import { installFakeGh } from "../fake-gh.mjs";
-import { isolatedRoot } from "../isolated-root-test-kit.mjs";
+import { fakeOps, roleJob } from "./role-job-test-kit.mjs";
 
-const tmp = isolatedRoot;
 const fakeGh = installFakeGh();
 fakeGh.reply([
   { when: "api repos/o/r/collaborators/alice", keep: true },
@@ -26,7 +25,6 @@ fakeGh.reply([
     keep: true,
   },
 ]);
-const { ROOT } = await import("../../src/pipeline-root.ts");
 const { runRoleStage } = await import("../../src/job/role-run.ts");
 const { stateAt, ISSUE } = await import("../job-fixtures.mjs");
 
@@ -52,21 +50,6 @@ const CFG = {
  * @typedef {{ ok: true, reply: Record<string, unknown> } | { ok: false, error: string }} Reply
  */
 
-/**
- * A fake op runner answering from `replies` by op, logging every call.
- * @param {Record<string, Reply>} replies
- */
-function fakeOps(replies) {
-  /** @type {OpCall[]} */
-  const calls = [];
-  /** @param {string} op @param {object} payload @returns {Promise<Reply>} */
-  function runOp(op, payload) {
-    calls.push({ op, payload });
-    return Promise.resolve(replies[op] ?? { ok: true, reply: {} });
-  }
-  return { calls, runOp };
-}
-
 /** @param {Record<string, unknown>} state @returns {Reply} */
 function won(state) {
   return {
@@ -84,7 +67,7 @@ function won(state) {
 
 /**
  * Runs `role` as a `stage` job on the fake ops `replies`.
- * @param {string} stage
+ * @param {import("../../src/stages.ts").Stage} stage
  * @param {any} role
  * @param {Record<string, Reply>} replies
  */
@@ -92,23 +75,14 @@ async function run(stage, role, replies) {
   const { calls, runOp } = fakeOps(replies);
   /** @type {(() => any) | null} */
   let claimed = null;
-  const job = {
+  const job = roleJob(runOp, {
     role,
-    cfg: CFG,
-    issue: 7,
+    cfg: testConfig(CFG).cfg,
     stage,
-    mergeQueue: null,
-    dirs: { root: tmp, repo: tmp, docs: null },
-    identity: { id: randomUUID(), startedAt: new Date().toISOString() },
-    hooks: {},
-    status: { moved: () => undefined, settled: () => undefined },
-    control: { stopping: () => null },
-    runOp,
-    onClaimed: (/** @type {() => any} */ last) => {
+    onClaimed: (last) => {
       claimed = last;
     },
-  };
-  // @ts-expect-error: the fake job holds only what the runner reads.
+  });
   const end = await runRoleStage(job);
   return { end, calls, claimed: () => claimed?.() ?? null };
 }
@@ -129,10 +103,6 @@ function nextRole(state) {
   }
   return { role, seen };
 }
-
-test("the runner's pipeline root is a temporary one", () => {
-  assert.equal(ROOT, isolatedRoot);
-});
 
 test("the role sees the claim's top-level issue file", async () => {
   const state = stateAt("author");
@@ -169,6 +139,7 @@ test("a merge job runs its role on a done issue with its merge recorded", async 
 });
 
 test("a done issue with no merge recorded, or at another job's stage, is released untouched", async () => {
+  /** @type {{stage: import("../../src/stages.ts").Stage, state: ReturnType<typeof stateAt>}[]} */
   const cases = [
     { stage: "merge", state: stateAt("done") },
     { stage: "author", state: stateAt("done", { merged: MERGED }) },

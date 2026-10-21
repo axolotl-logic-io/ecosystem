@@ -1,4 +1,5 @@
 // @ts-check
+
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,11 +7,16 @@ import { test } from "node:test";
 import { messageEnd, toolEnd } from "../fake-rpc-pi.mjs";
 import {
   expectedPolicy,
-  launch,
   recordedRuntime,
   USAGE,
 } from "./runtime-policy-persistence-test-kit.mjs";
-import { CACHE, json, MODEL, PROFILE } from "./runtime-policy-test-kit.mjs";
+import {
+  CACHE,
+  json,
+  launch,
+  MODEL,
+  PROFILE,
+} from "./runtime-policy-test-kit.mjs";
 
 const { runSession } = await import("../../src/job/launch.ts");
 const { STAGE_AGENTS } = await import("../../src/job/roles.ts");

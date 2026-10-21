@@ -48,10 +48,25 @@ fs.appendFileSync(stem + ".calls", JSON.stringify(args) + "\\n");
 if (args[0] === "pr" && args[1] === "list" && args.includes("all")) {
   process.stdout.write(fs.readFileSync(stem + ".history.json", "utf8")); process.exit(0);
 }
+if (args[0] === "pr" && args[1] === "reopen") {
+  if (fs.existsSync(stem + ".reopen-error")) {
+    process.stderr.write("fake reopen denied"); process.exit(1);
+  }
+  const file = stem + ".pr.json";
+  const pr = JSON.parse(fs.readFileSync(file, "utf8"));
+  pr.state = "OPEN";
+  fs.writeFileSync(file, JSON.stringify(pr));
+  process.exit(0);
+}
+if (args[0] === "pr" && args[1] === "edit") { process.exit(0); }
+if (args[0] === "pr" && args[1] === "list" && args.includes("open")) {
+  const pr = JSON.parse(fs.readFileSync(stem + ".pr.json", "utf8"));
+  process.stdout.write(JSON.stringify(pr.state === "OPEN" ? [{number: pr.number, mergeCommit: null}] : [])); process.exit(0);
+}
 const method = args[args.indexOf("-X") + 1];
 const postComment = method === "POST" && ["7", "42"].some(n => endpoint === "repos/" + repo + "/issues/" + n + "/comments");
 const patchState = method === "PATCH" && endpoint === "repos/" + repo + "/issues/comments/1";
-const postLabel = method === "POST" && ["7", "42"].some(n => endpoint === "repos/" + repo + "/issues/" + n + "/labels") && args.some(arg => ["labels[]=agent:stopped-not-doable", "labels[]=agent:stopped-error"].includes(arg));
+const postLabel = method === "POST" && ["7", "42"].some(n => endpoint === "repos/" + repo + "/issues/" + n + "/labels") && args.some(arg => ["labels[]=agent:stopped-not-doable", "labels[]=agent:stopped-error", "labels[]=agent:working"].includes(arg));
 const removeWorking = method === "DELETE" && ["7", "42"].some(n => endpoint === "repos/" + repo + "/issues/" + n + "/labels/agent%3Aworking");
 if (args[0] === "api" && args.includes("-X") && (postComment || patchState || postLabel || removeWorking)) {
   const field = args.find(arg => arg.startsWith("body="));
@@ -156,8 +171,17 @@ function saveAuthorityBodies(cfg, bodies) {
   );
 }
 
+/** @param {Config} cfg @returns {void} */
+function failPrReopen(cfg) {
+  fs.writeFileSync(
+    path.join(states, `${cfg.repo.replaceAll("/", "__")}.reopen-error`),
+    "denied",
+  );
+}
+
 export {
   authorityCalls,
+  failPrReopen,
   saveAuthority,
   saveAuthorityBodies,
   savePrAuthority,

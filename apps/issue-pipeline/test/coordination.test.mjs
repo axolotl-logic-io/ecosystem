@@ -35,15 +35,9 @@ for (const scope of ["issue", "integration"]) {
       b.request();
       assert.equal(b.acquire(), false);
       assert.equal(a.acquire(), true);
-      let models = 0;
-      let mutations = 0;
       a.assertOwner();
-      models += 1;
       a.assertOwner();
-      mutations += 1;
       assert.throws(() => b.assertOwner(), RECONCILE);
-      assert.equal(models, 1);
-      assert.equal(mutations, 1);
       assert.equal(github.guard("B", scope, lane).acquire(), false);
     });
   }
@@ -169,8 +163,8 @@ for (const condition of [
       github.comments.push(duplicate);
     }
     const writes = [...github.writes];
-    assert.throws(() => a.assertOwner());
-    assert.throws(() => a.save({ stage: "done" }));
+    assert.throws(() => a.assertOwner(), RECONCILE);
+    assert.throws(() => a.save({ stage: "done" }), RECONCILE);
     assert.deepEqual(github.writes, writes);
   });
 }
