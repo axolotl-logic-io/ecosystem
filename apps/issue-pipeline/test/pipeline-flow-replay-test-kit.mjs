@@ -5,7 +5,11 @@ import path from "node:path";
 import { z } from "zod";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
-import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import {
+  readWorld,
+  withWorld,
+  writeWorld,
+} from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { runStage } from "./pipeline-flow-run-test-kit.mjs";
@@ -56,12 +60,14 @@ const CLAIM = z.object({
 /** @param {import("./fake-pipeline-flow-gh-world.mjs").World} world */
 function expectedTargetUpdates(world) {
   const { mergeAttempt } = savedState(world);
-  return [{
-    origin: world.origin,
-    ref: `refs/heads/${mergeAttempt.target}`,
-    old: mergeAttempt.operation.base,
-    head: mergeAttempt.authorized.code,
-  }];
+  return [
+    {
+      origin: world.origin,
+      ref: `refs/heads/${mergeAttempt.target}`,
+      old: mergeAttempt.operation.base,
+      head: mergeAttempt.authorized.code,
+    },
+  ];
 }
 
 /** @param {import("./fake-pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
@@ -115,6 +121,15 @@ function replaceState(flow, state) {
       STATE_BLOCK,
       `<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`,
     );
+  });
+}
+
+/** @param {Flow} flow @param {import("./fake-pipeline-flow-gh-world.mjs").World} world */
+function restoreReplay(flow, world) {
+  writeWorld(flow.ghDir, structuredClone(world));
+  fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
+  scriptPi(flow, {
+    reviewer: [{ output: {}, rejectPrompt: "read ECONNRESET" }],
   });
 }
 
@@ -188,8 +203,13 @@ function prepareReplayFlow(flow) {
 /** @param {Flow} flow @param {import("../src/state.ts").Integration} integration */
 function historicalMerge(flow, integration) {
   const state = savedState(readWorld(flow.ghDir));
-  if (state.mergeAttempt.authorized.code !== integration.revision.code) {
-    throw new Error("historical fixture does not match the landed source");
+  if (
+    state.mergeAttempt.authorized.code !== integration.revision.code ||
+    integration.reviewed.code === state.merged.code
+  ) {
+    throw new Error(
+      "historical fixture needs the landed source and an earlier hardened revision",
+    );
   }
   replaceState(flow, {
     ...state,
@@ -263,12 +283,13 @@ function createReplayFlow(flow, withholdMergeBinding = false) {
 export {
   createReplayFlow,
   expectedReplay,
-  historicalMerge,
   expectedTargetUpdates,
+  historicalMerge,
   merges,
   prepareReplayFlow,
   replaceState,
   replayFacts,
+  restoreReplay,
   securityBundle,
   securityEvidence,
   sessions,

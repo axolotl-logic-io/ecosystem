@@ -69,7 +69,10 @@ test("the accepted merge auto-closes the issue before delayed confirmation stops
   assert.equal(stopped.stoppedStage, "merge");
   assert.equal(stopped.stopCode, "merge-refused");
   assert.equal(stopped.merged, null);
-  assert.deepEqual(stopped.codeMerged, { pr: stopped.pr, sha: stopped.hardened.code });
+  assert.deepEqual(stopped.codeMerged, {
+    pr: stopped.pr,
+    sha: stopped.hardened.code,
+  });
   assert.equal(readWorld(flow.ghDir).withholdMergeBinding, true);
   assert.deepEqual(stopped.security.revision, stopped.hardened);
   assert.equal(stopped.security.finding, null);
@@ -84,7 +87,11 @@ test("the accepted merge auto-closes the issue before delayed confirmation stops
   );
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   assert.equal(merged, stopped.hardened.code);
-  assert.deepEqual(stopped.hardenedTarget, { repo: "o/r", branch: BASE, sha: stopped.mergeAttempt.operation.base });
+  assert.deepEqual(stopped.hardenedTarget, {
+    repo: "o/r",
+    branch: BASE,
+    sha: stopped.mergeAttempt.operation.base,
+  });
   assert.equal(stopped.mergeAttempt.result, merged);
   assert.deepEqual(stopped.mergeAttempt.authorized, stopped.hardened);
 });
@@ -132,7 +139,10 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
   assert.deepEqual(recovered.hardened, stopped.hardened);
   assert.deepEqual(recovered.integration, stopped.integration);
   assert.deepEqual(recovered.hardenedTarget, stopped.hardenedTarget);
-  assert.deepEqual({ ...recovered.mergeAttempt, reads: stopped.mergeAttempt.reads }, stopped.mergeAttempt);
+  assert.deepEqual(
+    { ...recovered.mergeAttempt, reads: stopped.mergeAttempt.reads },
+    stopped.mergeAttempt,
+  );
   assert.deepEqual(recovered.security, stopped.security);
   assert.equal(sessions(flow), starts);
   assert.equal(

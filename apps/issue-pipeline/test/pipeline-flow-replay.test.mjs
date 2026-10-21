@@ -8,11 +8,7 @@ import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
-import {
-  readWorld,
-  withWorld,
-  writeWorld,
-} from "./fake-pipeline-flow-gh-world.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   expectedReplay,
@@ -21,6 +17,7 @@ import {
   prepareReplayFlow,
   replaceState,
   replayFacts,
+  restoreReplay,
   securityBundle,
   securityEvidence,
   sessions,
@@ -29,7 +26,6 @@ import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
 import { savedState, securityTurn } from "./pipeline-flow-script-test-kit.mjs";
 import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
-const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
 const SECURITY_PHASE = "security.md";
 
 /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
@@ -50,9 +46,7 @@ beforeEach(() => {
   if (!replayReady) {
     return;
   }
-  writeWorld(flow.ghDir, structuredClone(interruptedWorld));
-  fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
-  scriptPi(flow, { reviewer: [INTERRUPTED] });
+  restoreReplay(flow, interruptedWorld);
 });
 after(() => stopJobs(flow));
 
@@ -89,7 +83,9 @@ test("replay setup merge reaches deferred within its own deadline", () => {
   assert.equal(current.security.phase, "candidate");
   assert.deepEqual(current.security.revision, current.merged);
   assert.deepEqual(current.merged, current.mergeAttempt.authorized);
-  assert.ok(opsTrace(flow).some(({ request }) => request.op === "prepare-review"));
+  assert.ok(
+    opsTrace(flow).some(({ request }) => request.op === "prepare-review"),
+  );
   const { launch } = securityEvidence(flow, current.merged.code);
   assert.equal(launch?.commitScope, false);
   historicalMerge(flow, originalIntegration);

@@ -137,7 +137,9 @@ for (const mode of ["equal heads", "armed only", "landed fact"]) {
     saveState(w.cfg, { number: ISSUE, state: w.state });
     const written = readWriteState(w.cfg, ISSUE);
     assert.equal(written.merged, null);
-    assert.equal(written.security, null);
+    assert.ok(saved.security !== null);
+    assert.equal(saved.security.phase, "candidate");
+    assert.deepEqual(written.security, saved.security);
     assert.deepEqual(written.mergeAttempt, saved.mergeAttempt);
     assert.deepEqual(written.codeMerged, saved.codeMerged);
     consumed();

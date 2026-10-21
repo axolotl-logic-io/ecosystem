@@ -3,7 +3,6 @@
 // Local git origins, pipeline-flow-gh and pipeline-flow-pi fake the services;
 // the stages themselves run unchanged, not through direct role calls.
 import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
-import { BASE, refIn, scriptPi } from "./pipeline-flow-test-kit.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { jobLog, tick } from "./pipeline-flow-run-test-kit.mjs";
 import {
@@ -14,6 +13,7 @@ import {
   savedState,
   securityTurn,
 } from "./pipeline-flow-script-test-kit.mjs";
+import { BASE, refIn, scriptPi } from "./pipeline-flow-test-kit.mjs";
 
 /** @typedef {import("./pipeline-flow-test-kit.mjs").Flow} Flow */
 

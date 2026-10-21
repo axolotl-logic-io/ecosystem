@@ -8,10 +8,21 @@ import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
 import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import {
+  baseHead,
+  completeStage as driveStage,
+  piStarts,
+  scriptFlow,
+} from "./pipeline-flow-provenance-test-kit.mjs";
 import { jobLog, stopJobs, tick } from "./pipeline-flow-run-test-kit.mjs";
-import { baseHead, completeStage as driveStage, piStarts, scriptFlow } from "./pipeline-flow-provenance-test-kit.mjs";
 import { savedState } from "./pipeline-flow-script-test-kit.mjs";
-import { BASE, bareGit, ISSUE, SLUG, setUpFlow } from "./pipeline-flow-test-kit.mjs";
+import {
+  BASE,
+  bareGit,
+  ISSUE,
+  SLUG,
+  setUpFlow,
+} from "./pipeline-flow-test-kit.mjs";
 import { PROMPT_PAGES } from "./prompt-test-kit.mjs";
 
 const GHERKIN =
@@ -23,7 +34,7 @@ const REVIEWED_CODE = /\+Hello, world!/u;
 const REVIEWED_DOCS = /\+Greetings say Hello, world!/u;
 const MERGE_ENDPOINT = /^repos\/[^/]+\/[^/]+\/merges$/u;
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
 /** @type {string} the origin's base head before the flow */
 let start;

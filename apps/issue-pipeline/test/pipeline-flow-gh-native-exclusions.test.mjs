@@ -2,7 +2,6 @@
 // Negative real-Git controls for the fake service's native observation.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { git } from "./job-git-test-kit.mjs";
 import {
   nativeTargetUpdates,
   observeNativeMerges,
@@ -20,6 +19,7 @@ import {
   gitSucceeds,
   issueOf,
 } from "./fake-pipeline-flow-gh-world.mjs";
+import { git } from "./job-git-test-kit.mjs";
 
 /** @param {ReturnType<typeof nativeWorld>} fixture @param {string} defect */
 function excludePr({ world, old, head }, defect) {

@@ -4,10 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after } from "node:test";
-import { git } from "./job-git-test-kit.mjs";
 import { installFlowGh, openIssue } from "./fake-pipeline-flow-gh.mjs";
 import { pr } from "./fake-pipeline-flow-gh-prs.mjs";
 import { branchHead, readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { git } from "./job-git-test-kit.mjs";
 
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "flow-native-service-"));
 const BASE = "integration";
