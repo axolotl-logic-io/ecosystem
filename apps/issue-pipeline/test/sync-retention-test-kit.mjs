@@ -15,9 +15,40 @@ import {
   write,
 } from "./pipeline-commit-test-kit.mjs";
 
+import {
+  saveAuthority,
+  saveIssueAuthority,
+} from "./write-authority-test-kit.mjs";
+
+const { newIssueState } = await import("../src/state.ts");
+const { trustedInputsHash } = await import("../src/issue-context.ts");
+const { configuredWikiRemote } = await import("../src/wiki-sync/authority.ts");
 const { paths, wikiCfg, withCheckout } = await import("../src/config.ts");
 const { syncOps } = await import("../src/ops/sync.ts");
 const { finishWikiSync } = await import("../src/wiki-publish.ts");
+
+/** @param {import("../src/config.ts").Config} cfg @param {string} dir @param {string} original @param {string} code */
+function wikiAuthority(cfg, dir, original, code) {
+  const remote = configuredWikiRemote(cfg);
+  const actual = git(dir, ["remote", "get-url", "origin"]);
+  fs.symlinkSync(actual, remote, "dir");
+  git(dir, ["remote", "set-url", "origin", remote]);
+  git(paths.wikiMirror(cfg), ["remote", "set-url", "origin", remote]);
+  const issue = {
+    title: "Resolver",
+    body: "Trusted inputs",
+    user: { login: "alice" },
+  };
+  saveIssueAuthority(cfg, issue);
+  const inputs = trustedInputsHash(cfg, issue, []);
+  saveAuthority(cfg, {
+    ...newIssueState(ISSUE),
+    stage: "merge",
+    branch: "agent/issue-7",
+    hardened: { code, wiki: original, inputs },
+    gherkin: { commentId: 3, rev: 1, inputs },
+  });
+}
 
 // `pushed` publishes the conflicting issue commit, so a retry conflicts again.
 /** @param {"code" | "wiki"} side @param {boolean} [pushed] */
@@ -62,6 +93,9 @@ function conflicted(side, pushed = false) {
     dir: job.repo,
     branch: job.branch,
   });
+  if (side === "wiki") {
+    wikiAuthority(scoped, dir, original, headOf(job.repo));
+  }
   return { job, dir, origin, file, remote, original, scoped, side };
 }
 

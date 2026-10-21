@@ -99,7 +99,8 @@ function seedGit(args, cwd) {
  */
 function seedOrigins(tmp) {
   const origin = path.join(tmp, "origin.git");
-  const wikiOrigin = path.join(tmp, "wiki-origin.git");
+  // Match the configured code repository's canonical wiki destination.
+  const wikiOrigin = path.join(tmp, "origin.wiki.git");
   const wikiSeed = path.join(tmp, "wiki-seed");
   seedGit(["init", "--quiet", "--bare", "-b", WIKI_BRANCH, wikiOrigin]);
   seedGit(["init", "--quiet", "-b", WIKI_BRANCH, wikiSeed]);

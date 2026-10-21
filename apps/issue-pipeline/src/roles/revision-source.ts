@@ -16,6 +16,7 @@ const CURRENT_REVISION = z.looseObject({
     inputs: z.string().min(1),
   }),
   baseSha: z.string(),
+  recoveredWiki: z.boolean().optional(),
   pr: z
     .looseObject({
       number: z.number().int().positive(),

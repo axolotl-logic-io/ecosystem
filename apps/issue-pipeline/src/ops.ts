@@ -40,6 +40,7 @@ import { syncOps } from "./ops/sync.ts";
 import { usage } from "./ops/usage.ts";
 import { verify } from "./ops/verify.ts";
 import { wikiCheck } from "./ops/wiki-check.ts";
+import { reconcileWiki, selectWiki } from "./ops/wiki-recovery.ts";
 import { OpsError } from "./ops-error.ts";
 import { ROOT } from "./pipeline-root.ts";
 import { parseRequest } from "./process.ts";
@@ -71,6 +72,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   // Merges code only, checkpointing attempt/response/receipt; never the wiki or issue.
   ["merge", merge],
   ["reconcile-merge", reconcileMerge],
+  ["reconcile-wiki-sync", reconcileWiki],
+  ["select-wiki-recovery", selectWiki],
   // Completes an issue its merge role saved done and merged.
   ["finish-wiki", finishWiki],
   ["close-parent", closeParent],
@@ -141,6 +144,15 @@ function runRequest(request: unknown): OpsReply {
   const handler = OPS.get(op);
   if (handler === undefined) {
     throw new OpsError(`unknown op "${op}"`);
+  }
+  if (
+    (op === "reconcile-wiki-sync" || op === "select-wiki-recovery") &&
+    ((comments?.length ?? 0) > 0 ||
+      (checkout !== null && checkout !== undefined))
+  ) {
+    throw new OpsError(
+      "wiki recovery accepts no queued comments or checkout override; use its explicit retained checkout and branch",
+    );
   }
   const cfg = withCheckout(loadConfig(config ?? undefined), checkout);
   fs.mkdirSync(ROOT, { recursive: true });

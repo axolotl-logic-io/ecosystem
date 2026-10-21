@@ -19,6 +19,10 @@ import { publishGate, REVISION_REQUEST } from "./publication-guard.ts";
 import { pinIntegratedWiki } from "./push.ts";
 
 const SYNC_REQUEST = z.looseObject({ number: z.number().int() });
+const SYNC_IDENTITY = z.looseObject({
+  lane: z.string().min(1),
+  jobId: z.string().min(1),
+});
 const FINISH_REQUEST = z.looseObject({
   number: z.number().int(),
   abort: z.boolean().nullish(),
@@ -41,7 +45,11 @@ function pinWikiOp(cfg: Config, request: unknown): { changed: boolean } {
 
 function wikiSyncOp(cfg: Config, request: unknown): WikiSyncReply {
   const req = parseRequest(SYNC_REQUEST, "wiki-sync", request);
-  return syncWiki(cfg, req.number);
+  const identity = parseRequest(SYNC_IDENTITY, "wiki-sync identity", request);
+  return syncWiki(cfg, req.number, {
+    lane: identity.lane,
+    job: identity.jobId,
+  });
 }
 
 function finishWikiSyncOp(cfg: Config, request: unknown): WikiFinishReply {
@@ -53,7 +61,15 @@ function finishWikiSyncOp(cfg: Config, request: unknown): WikiFinishReply {
   if (abort !== null && typeof req.reason === "string" && req.reason !== "") {
     abort = req.reason;
   }
-  return finishWikiSync(cfg, req.number, abort);
+  const identity = parseRequest(
+    SYNC_IDENTITY,
+    "finish-wiki-sync identity",
+    request,
+  );
+  return finishWikiSync(cfg, req.number, abort, {
+    lane: identity.lane,
+    job: identity.jobId,
+  });
 }
 
 // Publishes the approved wiki head after the fresh gates (publication-guard)

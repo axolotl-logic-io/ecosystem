@@ -22,7 +22,14 @@ import {
   rebaseProblem,
   unmergedFiles,
 } from "./rebase.ts";
-import { pushWikiBranch, wikiAhead } from "./wiki.ts";
+import { wikiAhead } from "./wiki.ts";
+import type { SyncIdentity } from "./wiki-sync/checkpoint.ts";
+import {
+  abandonWikiSync,
+  pendingWikiSync,
+  prepareWikiSync,
+  pushSyncedWiki,
+} from "./wiki-sync/checkpoint.ts";
 
 // A rebase stopped in the wiki checkout, onto `origin/<branch>` at `baseSha`.
 interface WikiConflict {
@@ -91,7 +98,11 @@ function rebaseOnto({ wiki, dir }: Checkout): WikiConflict | null {
 
 // Before the code merges: rebase the issue's wiki commits onto the wiki's
 // latest version and keep the result on the wiki remote's agent/issue-<n>.
-function syncWiki(cfg: Config, n: number): WikiSyncReply {
+function syncWiki(
+  cfg: Config,
+  n: number,
+  identity?: SyncIdentity,
+): WikiSyncReply {
   const checkout = checkoutOf(cfg, n);
   if (checkout === null) {
     return NOTHING;
@@ -101,6 +112,12 @@ function syncWiki(cfg: Config, n: number): WikiSyncReply {
     if (wikiAhead(cfg, n) === 0) {
       return NOTHING;
     }
+    if (identity === undefined) {
+      throw new OpsError(
+        "wiki sync requires an originating job and stable lane",
+      );
+    }
+    const preparation = prepareWikiSync(cfg, n, checkout.dir, identity);
     const before = head(checkout.dir);
     const conflict = rebaseOnto(checkout);
     if (conflict !== null) {
@@ -109,7 +126,9 @@ function syncWiki(cfg: Config, n: number): WikiSyncReply {
     const headSha = head(checkout.dir);
     const changed = headSha !== before;
     if (changed) {
-      pushWikiBranch(cfg, n);
+      pushSyncedWiki(cfg, n, checkout.dir, preparation);
+    } else {
+      abandonWikiSync(cfg, preparation);
     }
     return { conflict: false, changed, headSha };
   });
@@ -137,6 +156,7 @@ function finishWikiSync(
   cfg: Config,
   n: number,
   abort: string | null,
+  identity?: SyncIdentity,
 ): WikiFinishReply {
   const checkout = checkoutOf(cfg, n);
   if (checkout === null) {
@@ -147,9 +167,18 @@ function finishWikiSync(
     const reason = abort ?? rebaseProblem(checkout.dir, base);
     if (reason !== undefined) {
       restoreBeforeRebase(cfg, checkout, n);
+      if (identity !== undefined) {
+        abandonWikiSync(cfg, pendingWikiSync(cfg, n, checkout.dir, identity));
+      }
       return { resolved: false, reason };
     }
-    pushWikiBranch(cfg, n);
+    if (identity === undefined) {
+      throw new OpsError(
+        "wiki sync completion requires an originating job and stable lane",
+      );
+    }
+    const preparation = pendingWikiSync(cfg, n, checkout.dir, identity);
+    pushSyncedWiki(cfg, n, checkout.dir, preparation);
     return { resolved: true, headSha: head(checkout.dir) };
   });
 }

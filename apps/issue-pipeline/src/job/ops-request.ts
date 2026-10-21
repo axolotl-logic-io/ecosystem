@@ -26,6 +26,7 @@ interface OpsFrame {
   sweepId: string;
   lane: string;
   checkout: JobCheckout;
+  jobId?: string;
 }
 
 // An op's reply: its fields after `ok`, or why it failed.

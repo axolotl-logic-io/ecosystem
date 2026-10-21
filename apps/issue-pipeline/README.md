@@ -109,6 +109,26 @@ Actual M, not premerge `verifiedSha=H` or head CI, must pass deterministic verif
 
 Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-implementor` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
 
+## Interrupted wiki sync
+
+Clean and resolved wiki syncs preserve identity-bound intent, full old/new/target
+histories and separate push completion under `runs/<slug>/issue-N/wiki-sync/`.
+An uncertain intent blocks another wiki push. Explicit operator operations
+`reconcile-wiki-sync` and `select-wiki-recovery` can record a bounded local
+checkout-start selection before a replacement job exists; they never push or
+publish. Ordinary private-only/ancestor selection is unchanged, and unexplained
+divergence still refuses checkout selection without resetting either history.
+
+See the configured wiki's `Pipeline-Job-Contract` (Explicit wiki reconciliation)
+for the framed ops requests, finite bounds and retained-checkout requirements,
+and `Reimagined-Pipeline` for the stop/preserve/investigate/install/restart
+procedure, including pre-checkpoint incidents. A selection is not saved authority,
+verification, integration approval or security clearance. The exact recovered
+candidate must pass the ordinary integration/CI/result/security/publication gates;
+code merge-attempt and receipt barriers are unchanged. Source acceptance installs
+nothing and authorizes no incident restart. Installation and at most one bounded
+same-issue/branch/lane Merge restart are separate operator decisions.
+
 ## Read-only Git subagent
 
 `agents/git-reviewer.md` is a dedicated supervisor-usable agent, not a replacement for the shared writable `issue-pipeline-reviewer`. Install includes its explicit `subagentOnlyExtensions` path to `git-review.mjs`; naming a tool without loading that extension is insufficient. The agent has exactly `read`, `grep`, `find`, `ls`, `git_review`, no shell/write/commit tool. Supervisors must launch it with resource discovery disabled and without unrelated extensions/MCP servers that would add command execution authority. Existing hardening, integration, security authority and prepared bundles are unchanged.

@@ -41,6 +41,12 @@
         "src/checkouts.ts",
         "src/wiki.ts",
         "src/wiki-publish.ts",
+        // Disk-backed wiki recovery is part of the same Node process boundary.
+        "src/wiki-sync/checkpoint.ts",
+        "src/wiki-sync/operator.ts",
+        "src/wiki-sync/reconcile.ts",
+        "src/wiki-sync/records.ts",
+        "src/wiki-sync/selection.ts",
         "src/rebase.ts",
         "src/issue-context.ts",
         "src/ops/claim.ts",

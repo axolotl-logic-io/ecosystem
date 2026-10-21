@@ -28,8 +28,20 @@ function isAlreadyThere(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "EEXIST";
 }
 
+function assertCollision(lock: string, error: unknown, wait: boolean): void {
+  if (!isAlreadyThere(error)) {
+    throw error;
+  }
+  if (!wait) {
+    throw new OpsError(
+      `wiki recovery lock ${lock} is held; reconcile the caller-owned exclusion and dead runtime lock explicitly`,
+      { cause: error },
+    );
+  }
+}
+
 // Waits for the lock directory and makes it, or throws once the wait is over.
-function acquire(lock: string): void {
+function acquire(lock: string, wait: boolean): void {
   fs.mkdirSync(path.dirname(lock), { recursive: true });
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
@@ -37,9 +49,7 @@ function acquire(lock: string): void {
       fs.mkdirSync(lock);
       return;
     } catch (error) {
-      if (!isAlreadyThere(error)) {
-        throw error;
-      }
+      assertCollision(lock, error, wait);
       const made = fs.statSync(lock, { throwIfNoEntry: false })?.mtimeMs;
       if (Date.now() - (made ?? Date.now()) > STALE_LOCK_MS) {
         fs.rmSync(lock, { force: true, recursive: true });
@@ -54,7 +64,7 @@ function acquire(lock: string): void {
 
 // Runs `fn` holding the lock at path `lock`. mkdir is atomic, so the directory
 // is the lock. Reentrant within one process.
-function withLock<T>(lock: string, fn: () => T): T {
+function withLock<T>(lock: string, fn: () => T, wait = true): T {
   const depth = lockDepth.get(lock) ?? 0;
   if (depth > 0) {
     lockDepth.set(lock, depth + 1);
@@ -64,7 +74,7 @@ function withLock<T>(lock: string, fn: () => T): T {
       lockDepth.set(lock, depth);
     }
   }
-  acquire(lock);
+  acquire(lock, wait);
   lockDepth.set(lock, 1);
   try {
     return fn();
@@ -82,8 +92,12 @@ function withRepoLock<T>(cfg: Config, name: string, fn: () => T): T {
   return withLock(path.join(ROOT, "runs", cfg.slug, `${name}.lock`), fn);
 }
 
-function withWikiLock<T>(cfg: Config, fn: () => T): T {
-  return withLock(`${paths.wikiMirror(cfg)}.lock`, fn);
+function withWikiLock<T>(
+  cfg: Config,
+  fn: () => T,
+  options: { wait: boolean } = { wait: true },
+): T {
+  return withLock(`${paths.wikiMirror(cfg)}.lock`, fn, options.wait);
 }
 
 export { RESERVATION_MS, withCloneLock, withRepoLock, withWikiLock };

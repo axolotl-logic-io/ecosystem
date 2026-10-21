@@ -43,6 +43,8 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
     base: string;
   };
   mutation?: (write: () => RunResult) => RunResult;
+  // Explicit caller lane for local wiki recovery; never loaded from JSON.
+  recoveryLane?: string | undefined;
 };
 
 interface WikiSettings {
@@ -76,6 +78,7 @@ function loadConfig(configPath: string | undefined): Config {
     checkout: _fromFile,
     execution: _execution,
     mutation: _mutation,
+    recoveryLane: _recoveryLane,
     ...data
   } = parsed.data;
   for (const role of Object.values(data.jobRoles ?? {})) {

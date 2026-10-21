@@ -22,6 +22,7 @@ import { withCloneLock, withWikiLock } from "../locks.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 import { ensureWiki } from "../wiki.ts";
+import { selectedWikiStart } from "../wiki-sync/selection.ts";
 
 // A setup failure retains its checkout for explicit reconciliation.
 class CheckoutSetupError extends OpsError {}
@@ -92,7 +93,13 @@ function cloneInto(cfg: Config, spec: CloneSpec, dir: string): void {
 }
 
 // Chooses a descendant without losing either private or remote wiki work.
-function wikiStart(mirror: string, branch: string): string | null {
+function wikiStart(
+  cfg: Config,
+  issue: number,
+  mirror: string,
+  source: { branch: string; url: string },
+): string | null {
+  const { branch, url } = source;
   const saved = `refs/heads/${branch}`;
   const remote = `refs/remotes/origin/${branch}`;
   if (!hasRef(mirror, saved)) {
@@ -116,6 +123,10 @@ function wikiStart(mirror: string, branch: string): string | null {
   }
   if (base.code === 0 && base.stdout.trim() === remoteHead) {
     return saved;
+  }
+  const selected = selectedWikiStart(cfg, issue, mirror, url);
+  if (selected !== null) {
+    return selected.ref;
   }
   throw new OpsError(
     "private wiki recovery and remote issue branch diverged or cannot be compared; both refs retained",
@@ -146,7 +157,7 @@ function openWiki(cfg: Config, checkout: JobCheckout): string | null {
   withWikiLock(cfg, (): void => {
     syncMirror(cfg, { mirror, url, prune: false });
     const branch = paths.branch(cfg, issue);
-    const start = wikiStart(mirror, branch);
+    const start = wikiStart(cfg, issue, mirror, { branch, url });
     if (start !== null) {
       gitIn(into, ["fetch", "--quiet", mirror, start]);
       gitIn(into, ["checkout", "--quiet", "-B", branch, "FETCH_HEAD"]);

@@ -222,5 +222,6 @@ export {
   readState,
   readWriteState,
   stateBody,
+  validatedWriteState,
   writeState,
 };

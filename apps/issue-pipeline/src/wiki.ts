@@ -11,6 +11,7 @@ import { uncommitted } from "./git-state.ts";
 import { git } from "./github.ts";
 import { withCloneLock, withWikiLock } from "./locks.ts";
 import { run } from "./process.ts";
+import { assertNoUncertainWikiPush } from "./wiki-sync/records.ts";
 
 interface WikiDiff {
   diff: string;
@@ -216,6 +217,7 @@ function ensureWiki(cfg: Config, n: number): string | null {
 // Keeps the issue's wiki commits on the wiki remote's agent/issue-<n>. Does
 // nothing when the checkout has no commits of its own; a failed push throws.
 function pushWikiBranch(cfg: Config, n: number): void {
+  assertNoUncertainWikiPush(cfg, n);
   if (wikiAhead(cfg, n) === 0) {
     return;
   }

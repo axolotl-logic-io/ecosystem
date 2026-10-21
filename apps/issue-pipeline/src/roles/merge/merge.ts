@@ -36,7 +36,7 @@ import { afterOwnMerge, publishOnly } from "./publish.ts";
 import { MERGE_REPLY, recoverAttempt, recoverOwnMerge } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
-import { approvalGate } from "./source.ts";
+import { approvalGate, recoveredApprovalGate } from "./source.ts";
 
 const CI_STATUS = z.union([
   z.looseObject({ status: z.enum(["pass", "pending", "head-changed"]) }),
@@ -261,6 +261,20 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   const recovered = await recoverOwnMerge(ctx, current);
   if (recovered !== null) {
     return recovered;
+  }
+  if (current.recoveredWiki === true) {
+    const refusal = recoveredApprovalGate(ctx, ctx.state, current);
+    if (refusal !== null) {
+      return refusal;
+    }
+    return await integrate(
+      ctx,
+      { ...ctx.state, verifiedSha: null },
+      integration(
+        CHECKS_ONLY,
+        "explicitly reconciled wiki sync requires fresh exact integration checks",
+      ),
+    );
   }
   const gate = approvalGate(ctx, ctx.state, current);
   if (gate !== null) {

@@ -7,7 +7,7 @@
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";
-import { approvalHolds } from "../../state.ts";
+import { approvalHolds, mergeAuthorization } from "../../state.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { codeMergeConfirmed } from "../revision-source.ts";
 import { failed, toAuthor, toReview } from "./returns.ts";
@@ -40,4 +40,21 @@ function approvalGate(
   return null;
 }
 
-export { approvalGate };
+// Only the wiki rewrite has been attributed by deterministic recovery. Every
+// other source gate must still hold before entering integration, not just merge.
+function recoveredApprovalGate(
+  ctx: RoleContext,
+  state: IssueState,
+  current: CurrentRevision,
+): RoleEnd | null {
+  const from = mergeAuthorization(state);
+  if (from === null) {
+    return approvalGate(ctx, state, current);
+  }
+  return approvalGate(ctx, state, {
+    ...current,
+    revision: { ...current.revision, wiki: from.wiki },
+  });
+}
+
+export { approvalGate, recoveredApprovalGate };

@@ -17,7 +17,7 @@ function syncOperation(w, ops, name, payload) {
     return finish(w, true);
   }
   if (name === "wiki-sync") {
-    return syncWiki(w.scoped, ISSUE);
+    return syncWiki(w.scoped, ISSUE, { lane: "L", job: "resolver-job" });
   }
   if (name === "sync-base") {
     const start = syncOps["sync-base"];

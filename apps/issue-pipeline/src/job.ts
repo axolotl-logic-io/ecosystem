@@ -126,7 +126,7 @@ async function runStage(
   cfg: Config,
   brain: Brain,
 ): Promise<RunEnd> {
-  const { issue, stage, branch, mergeQueue = null } = args;
+  const { issue, stage, branch, mergeQueue = null, lane = null } = args;
   const role = roleOf(stage);
   if (role === undefined) {
     throw new Error(`no role for stage ${stage}`);
@@ -139,7 +139,6 @@ async function runStage(
   const runDir = paths.runDir(cfg, issue);
   const id = args.jobId ?? randomUUID();
   const identity = { id, startedAt: new Date().toISOString() };
-  const lane = args.lane ?? null;
   const socket = socketPathOf(runDir);
   const job = { issue, stage, lane, socket, prompts: brain.pinned };
   const status = openStatus(runDir, { ...job, ...identity });
@@ -154,6 +153,7 @@ async function runStage(
     sweepId,
     lane: args.lane ?? sweepId,
     checkout: { issue, dir: repo, branch },
+    jobId: id,
   };
   const runOp = opsRunnerOf(issue, frame, { hooks, status });
   let claimed: (() => IssueState) | null = null;
@@ -281,7 +281,11 @@ async function main(): Promise<void> {
       return;
     }
     authorizedIssue(cfg, args.issue);
-    const end = await runStage(args, cfg, brain);
+    const end = await runStage(
+      args,
+      { ...cfg, recoveryLane: args.lane },
+      brain,
+    );
     if (end.kind === "finished") {
       process.stdout.write(`${JSON.stringify(end.summary)}\n`);
       return;

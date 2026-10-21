@@ -45,6 +45,12 @@ let repo = endpoint?.split("/").slice(1, 3).join("/");
 if (args.includes("-R")) repo = args[args.indexOf("-R") + 1];
 const stem = ${JSON.stringify(states)} + "/" + repo.replaceAll("/", "__");
 fs.appendFileSync(stem + ".calls", JSON.stringify(args) + "\\n");
+if (args[0] === "api" && !args.includes("-X") && endpoint === "repos/" + repo + "/issues/7" && fs.existsSync(stem + ".issue.json")) {
+  process.stdout.write(fs.readFileSync(stem + ".issue.json", "utf8")); process.exit(0);
+}
+if (args[0] === "api" && endpoint === "repos/" + repo + "/collaborators/alice" && fs.existsSync(stem + ".issue.json")) {
+  process.exit(0);
+}
 if (args[0] === "pr" && args[1] === "list" && args.includes("all")) {
   process.stdout.write(fs.readFileSync(stem + ".history.json", "utf8")); process.exit(0);
 }
@@ -156,10 +162,19 @@ function saveAuthorityBodies(cfg, bodies) {
   );
 }
 
+/** @param {Config} cfg @param {object} issue @returns {void} */
+function saveIssueAuthority(cfg, issue) {
+  fs.writeFileSync(
+    path.join(states, `${cfg.repo.replaceAll("/", "__")}.issue.json`),
+    JSON.stringify(issue),
+  );
+}
+
 export {
   authorityCalls,
   saveAuthority,
   saveAuthorityBodies,
+  saveIssueAuthority,
   savePrAuthority,
   savePrHistory,
 };
