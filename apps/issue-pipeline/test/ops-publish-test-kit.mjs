@@ -1,23 +1,21 @@
 // @ts-check
-// Shared setup for the merge, publish and finish-wiki op tests, which call the
-// ops' own functions. Before any src module loads it points the pipeline root
-// and HOME at a temporary folder (and checks src took it), puts the fake gh
-// first on PATH, and resolves src's ../revision.ts to
+// Shared setup for the merge and finish-wiki op tests, which call the ops'
+// own functions. Before any src module loads it points the pipeline root and
+// HOME at a temporary folder (and checks src took it), puts the fake gh first
+// on PATH, and resolves src's ../revision.ts to
 // ops-publish-revision-double.mjs. world() then builds issue #7's code
-// worktree on agent/issue-7 one commit past origin's integration, and, with
-// `wiki`, its wiki checkout one commit past the wiki origin's master.
+// worktree on agent/issue-7 one commit past origin's integration.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
-import { z } from "zod";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { githubComment, installFakeGh } from "./fake-gh.mjs";
 import { home, root } from "./ops-publish-environment.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
-/** @typedef {{ cfg: import("../src/config.ts").Config, root: string, sha: string, mergeSha: string, worktree: string, wikiDir: string, wikiOrigin: string, wikiSha: string | null }} World */
+/** @typedef {{ cfg: import("../src/config.ts").Config, root: string, sha: string, mergeSha: string, worktree: string }} World */
 
 const ACCOUNT = "bot";
 const REPO = "o/r";
@@ -52,22 +50,6 @@ if (pipelineRoot.ROOT !== root || pipelineRoot.HOME !== home) {
 const { loadConfig } = await import("../src/config.ts");
 const { ghIsRead } = await import("../src/github.ts");
 const { newIssueState } = await import("../src/state.ts");
-const { publishOps } = await import("../src/ops/publish.ts");
-// The publish op's reply: the wiki's new head and the commits it added, or
-// why it refused. Strict, so a reply with fields neither names fails.
-const PUBLISH_REPLY = z.discriminatedUnion("published", [
-  z.strictObject({
-    published: z.literal(true),
-    sha: z.string().nullable(),
-    commits: z.array(z.string()),
-    alreadyPublished: z.boolean(),
-  }),
-  z.strictObject({
-    published: z.literal(false),
-    reason: z.string(),
-    detail: z.string(),
-  }),
-]);
 
 /** @param {string} command @returns {string} */
 function sh(command) {
@@ -78,10 +60,9 @@ function sh(command) {
   return r.stdout.trim();
 }
 
-// A fresh world in the shared root: origin, the clone, #7's worktree and,
-// with `wiki`, the wiki origin, its clone and #7's wiki checkout.
-/** @param {{ wiki?: boolean }} [options] @returns {World} */
-function world({ wiki = false } = {}) {
+// A fresh world in the shared root: origin, the clone and #7's worktree.
+/** @returns {World} */
+function world() {
   for (const entry of fs.readdirSync(root)) {
     if (entry !== "home") {
       fs.rmSync(path.join(root, entry), { recursive: true, force: true });
@@ -96,7 +77,6 @@ function world({ wiki = false } = {}) {
       allowedUsers: ["alice"],
       commands: { test: "true" },
       baseBranch: "integration",
-      wiki,
     }),
   );
   const worktree = path.join(root, "work/o__r/issue-7");
@@ -114,44 +94,7 @@ function world({ wiki = false } = {}) {
     `git -C ${worktree} ${GIT_USER} commit-tree ${tree} -p origin/integration -p ${sha} -m merged`,
   );
   sh(`git -C ${worktree} push -q origin ${mergeSha}:refs/fixture/result`);
-  const wikiOrigin = path.join(root, "wiki.git");
-  const wikiDir = path.join(worktree, "wiki");
-  let wikiSha = null;
-  if (wiki) {
-    const wikiClone = path.join(root, "clones/o__r.wiki");
-    sh(
-      `cd ${root} && git init -q --bare -b master wiki.git && git clone -q wiki.git ${wikiClone} 2>/dev/null && echo home > ${wikiClone}/Home.md && git -C ${wikiClone} add Home.md && git -C ${wikiClone} ${GIT_USER} commit -q -m home && git -C ${wikiClone} push -q origin HEAD:master`,
-    );
-    sh(
-      `git -C ${wikiClone} worktree add -q -b agent/issue-7 ${wikiDir} origin/master && echo issue > ${wikiDir}/Home.md && git -C ${wikiDir} ${GIT_USER} commit -q -am page && git -C ${wikiDir} push -q origin HEAD:agent/issue-7`,
-    );
-    wikiSha = sh(`git -C ${wikiDir} rev-parse HEAD`);
-  }
-  return {
-    cfg: loadConfig(config),
-    root,
-    sha,
-    mergeSha,
-    worktree,
-    wikiDir,
-    wikiOrigin,
-    wikiSha,
-  };
-}
-
-// The wiki origin's master gains a commit of someone else's.
-/** @param {World} w @returns {string} */
-function moveWiki(w) {
-  const other = path.join(root, "wiki-other");
-  sh(
-    `git clone -q ${w.wikiOrigin} ${other} 2>/dev/null && echo other > ${other}/Other.md && git -C ${other} add Other.md && git -C ${other} ${GIT_USER} commit -q -m other && git -C ${other} push -q origin HEAD:master`,
-  );
-  return sh(`git -C ${w.wikiOrigin} rev-parse master`);
-}
-
-/** @param {World} w @param {string} ref @returns {string} */
-function wikiRef(w, ref) {
-  return sh(`git -C ${w.wikiOrigin} rev-parse --verify --quiet ${ref} || true`);
+  return { cfg: loadConfig(config), root, sha, mergeSha, worktree };
 }
 
 /**
@@ -248,27 +191,6 @@ function writes() {
   return fakeGh.writes(ghIsRead);
 }
 
-// Runs the publish op as the merge role asks it, its reply checked against
-// the publish reply's shape.
-/** @param {import("../src/config.ts").Config} cfg @param {object} request @returns {z.infer<typeof PUBLISH_REPLY>} */
-function publishOf(cfg, request) {
-  const { publish } = publishOps;
-  if (publish === undefined) {
-    throw new Error("publish is not an op");
-  }
-  return PUBLISH_REPLY.parse(publish(cfg, request));
-}
-
-// Why the publish op refused the request; a publish fails the test.
-/** @param {import("../src/config.ts").Config} cfg @param {object} request @returns {string} */
-function refusalOf(cfg, request) {
-  const reply = publishOf(cfg, request);
-  if (reply.published) {
-    throw new Error("publish published what it should refuse");
-  }
-  return reply.reason;
-}
-
 /** @param {import("../src/state.ts").IssueState} state @returns {GhReply[]} */
 function mergeAuthority(state) {
   return [
@@ -284,16 +206,12 @@ export {
   ISSUE,
   MERGE_COMMIT,
   mergeAuthority,
-  moveWiki,
   PR,
   prView,
-  publishOf,
   REPO,
-  refusalOf,
   savedListing,
   securityOf,
   sh,
-  wikiRef,
   world,
   writes,
 };

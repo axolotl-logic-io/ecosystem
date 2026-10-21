@@ -1,8 +1,7 @@
 // @ts-check
 // The full-flow tests' world: the pipeline as build.ts builds it (ops.mjs,
 // job.mjs, orchestrate.mjs and the pi extensions), with the prompt pages it
-// ships, in a temporary pipeline root under a temporary HOME, real bare git origins for the repo and its
-// wiki submodule, the stateful fake GitHub (pipeline-flow-gh.mjs) and the
+// ships, in a temporary pipeline root under a temporary HOME, a real bare git origin for the repo, the stateful fake GitHub (pipeline-flow-gh.mjs) and the
 // scripted fake pi (pipeline-flow-pi.mjs) first on PATH. A tick runs the
 // built orchestrator once, which starts the stage jobs it decides on as
 // detached job.mjs processes (pipeline-flow-run.mjs waits for them).
@@ -21,7 +20,6 @@ const APP = new URL("..", import.meta.url).pathname;
 const AGENTS = path.join(APP, "agents");
 const PROMPTS = path.join(APP, "prompts");
 const BASE = "integration";
-const WIKI_BRANCH = "master";
 const ISSUE = 7;
 const SLUG = "o__r";
 // What no process in a flow inherits: a GitHub token, and the commit scope
@@ -50,7 +48,6 @@ const SEED_ID = [
  * @property {string} root
  * @property {string} config
  * @property {string} origin
- * @property {string} wikiOrigin
  * @property {string} prompts the root's prompts/ folder, which the jobs pin
  * their prompts from
  * @property {string} ghDir
@@ -85,43 +82,28 @@ function seedGit(args, cwd) {
   return execFileSync("git", [...SEED_ID, ...args], {
     cwd,
     encoding: "utf8",
-    env: {
-      ...process.env,
-      ...Object.fromEntries([["GIT_ALLOW_PROTOCOL", "file"]]),
-    },
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }
 
 /**
- * Seeds bare origins: the wiki with Home.md, and the repo with AGENTS.md,
- * an app file and the wiki as its `wiki` submodule.
+ * Seeds the bare origin: the repo with AGENTS.md, an app file and its docs
+ * page, docs/Home.md.
  * @param {string} tmp
  */
-function seedOrigins(tmp) {
+function seedOrigin(tmp) {
   const origin = path.join(tmp, "origin.git");
-  const wikiOrigin = path.join(tmp, "wiki-origin.git");
-  const wikiSeed = path.join(tmp, "wiki-seed");
-  seedGit(["init", "--quiet", "--bare", "-b", WIKI_BRANCH, wikiOrigin]);
-  seedGit(["init", "--quiet", "-b", WIKI_BRANCH, wikiSeed]);
-  fs.writeFileSync(path.join(wikiSeed, "Home.md"), "The wiki.\n");
-  seedGit(["add", "Home.md"], wikiSeed);
-  seedGit(["commit", "--quiet", "-m", "wiki base"], wikiSeed);
-  seedGit(
-    ["push", "--quiet", wikiOrigin, `HEAD:refs/heads/${WIKI_BRANCH}`],
-    wikiSeed,
-  );
   const seed = path.join(tmp, "seed");
   seedGit(["init", "--quiet", "--bare", "-b", BASE, origin]);
   seedGit(["init", "--quiet", "-b", BASE, seed]);
   fs.writeFileSync(path.join(seed, "AGENTS.md"), "Keep greetings polite.\n");
   fs.writeFileSync(path.join(seed, "greet.txt"), "hello\n");
-  seedGit(["add", "AGENTS.md", "greet.txt"], seed);
+  fs.mkdirSync(path.join(seed, "docs"));
+  fs.writeFileSync(path.join(seed, "docs", "Home.md"), "The docs.\n");
+  seedGit(["add", "AGENTS.md", "greet.txt", "docs/Home.md"], seed);
   seedGit(["commit", "--quiet", "-m", "base"], seed);
-  seedGit(["submodule", "add", "--quiet", wikiOrigin, "wiki"], seed);
-  seedGit(["commit", "--quiet", "-m", "Add wiki submodule"], seed);
   seedGit(["push", "--quiet", origin, `HEAD:refs/heads/${BASE}`], seed);
-  return { origin, wikiOrigin };
+  return origin;
 }
 
 /**
@@ -153,7 +135,6 @@ function writeConfig(config, origin) {
     allowedUsers: ["alice"],
     baseBranch: BASE,
     cloneUrl: origin,
-    wiki: true,
     commands: { test: "true" },
     models: MODELS,
     runtime: provisionFixture(path.dirname(config)),
@@ -216,7 +197,7 @@ function setUpFlow() {
   const where = { tmp, home: String(home), root: String(root) };
   assertTemporary(where);
   const prompts = installBuild(where.root, agents);
-  const { origin, wikiOrigin } = seedOrigins(tmp);
+  const origin = seedOrigin(tmp);
   const collaborators = ["bot", "alice"];
   const gh = { dir: String(ghDir), bin: String(bin), origin, collaborators };
   installFlowGh({ ...gh, repo: "o/r", account: "bot" });
@@ -230,7 +211,6 @@ function setUpFlow() {
     ...where,
     config,
     origin,
-    wikiOrigin,
     prompts,
     ghDir: String(ghDir),
     piDir: String(piDir),
@@ -278,4 +258,4 @@ function refIn(bare, ref) {
   }
 }
 
-export { BASE, bareGit, ISSUE, refIn, SLUG, scriptPi, setUpFlow, WIKI_BRANCH };
+export { BASE, bareGit, ISSUE, refIn, SLUG, scriptPi, setUpFlow };

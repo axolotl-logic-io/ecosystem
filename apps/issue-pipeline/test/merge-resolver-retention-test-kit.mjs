@@ -4,7 +4,6 @@ import { ISSUE } from "./pipeline-commit-test-kit.mjs";
 import { finish, leaveResolution } from "./sync-retention-test-kit.mjs";
 
 const { syncOps } = await import("../src/ops/sync.ts");
-const { syncWiki } = await import("../src/wiki-publish.ts");
 const { newIssueState } = await import("../src/state.ts");
 const INPUTS_LENGTH = 64;
 
@@ -13,11 +12,8 @@ const INPUTS_LENGTH = 64;
 /** @param {World} w @param {string[]} ops @param {string} name @param {object} payload */
 function syncOperation(w, ops, name, payload) {
   ops.push(name);
-  if (name === "finish-sync" || name === "finish-wiki-sync") {
+  if (name === "finish-sync") {
     return finish(w, true);
-  }
-  if (name === "wiki-sync") {
-    return syncWiki(w.scoped, ISSUE);
   }
   if (name === "sync-base") {
     const start = syncOps["sync-base"];
@@ -75,7 +71,7 @@ function resolverContext(w, failed) {
       issue: ISSUE,
       stage: "merge",
       state,
-      dirs: { job: w.job.root, repo: w.job.repo, docs: w.job.docs },
+      dirs: { job: w.job.root, repo: w.job.repo, docs: null },
       issueFile: "local-issue.md",
       mergeQueue: [ISSUE],
       inputs,

@@ -33,7 +33,7 @@ const { logOf, runJob, setUp, startJob, statusOf } = await import(
 const ISSUE = 7;
 const STOPPED_BY_SIGTERM = 143;
 const REPO_PATCH = /^dropped\/(?<key>implement-\d{8}T\d{9}Z)-repo\.patch$/u;
-const DOCS_PATCH = /^dropped\/author-\d{8}T\d{9}Z-docs\.patch$/u;
+const AUTHOR_PATCH = /^dropped\/author-\d{8}T\d{9}Z-repo\.patch$/u;
 const DROPPED_KEY = /^dropped-/u;
 const NOTICE_FAILED = /job: dropped notice: /u;
 const LOCAL_PATH = /(?:^|[\s`(])(?:\/|~)/u;
@@ -102,18 +102,16 @@ test("a notice whose post fails is reported on stderr and the job still exits 0"
 });
 
 test("a finished run whose issue didn't stop saves its patch and posts nothing", () => {
-  const place = setUp(
-    repliesAt(READER_STAGE),
-    { ...AUTHOR_SESSION, untracked: "docs/Page.md" },
-    {},
-    { wiki: true },
-  );
+  const place = setUp(repliesAt(READER_STAGE), {
+    ...AUTHOR_SESSION,
+    untracked: "repo/docs/Page.md",
+  });
   const r = runJob(place, ["--stage", READER_STAGE]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).end, "next");
   const { droppedPatches } = statusOf(place);
   assert.equal(droppedPatches.length, 1);
-  assert.match(droppedPatches[0], DOCS_PATCH);
+  assert.match(droppedPatches[0], AUTHOR_PATCH);
   assert.ok(fs.existsSync(path.join(place.runDir, droppedPatches[0])));
   assert.deepEqual(notices(place), []);
   // The author's one post is its Gherkin.

@@ -1,5 +1,7 @@
 // @ts-check
-// Divergent local gitlinks and guarded ops requests, without an initialized submodule.
+// Divergent local gitlinks and guarded ops requests, without an initialized
+// submodule: the base has a `vendor` submodule of a local origin, and each
+// test pins its own divergent commits of it.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -9,7 +11,7 @@ import {
 } from "./initial-write-state-fixtures.mjs";
 import { opsFixture } from "./ops-fixture.mjs";
 import { sh } from "./ops-run-test-kit.mjs";
-import { addWiki, pinAt } from "./wiki-pin-test-kit.mjs";
+import { addSubmodule } from "./submodule-test-kit.mjs";
 
 const REPLY = z.looseObject({
   ok: z.boolean(),
@@ -24,7 +26,7 @@ const REPLY = z.looseObject({
 });
 
 /** @param {string} wt @param {string} pin @param {string} [file] @returns {void} */
-function stagePin(wt, pin, file = "wiki") {
+function stagePin(wt, pin, file = "vendor") {
   sh(`git -C ${wt} update-index --add --cacheinfo 160000,${pin},${file}`);
 }
 
@@ -39,27 +41,53 @@ function resolveText(wt, file) {
   sh(`git -C ${wt} add -- ${file}`);
 }
 
+/**
+ * Gives `fx`'s base a `vendor` submodule of a local origin with one commit,
+ * and brings the pipeline's clone onto it.
+ * @param {import("./ops-fixture.mjs").OpsFixture} fx
+ * @returns {{ vendorOrigin: string, vendorSeed: string, vendorBase: string }}
+ */
+function addVendor(fx) {
+  const { root } = fx;
+  const seed = path.join(root, "seed");
+  const vendorOrigin = path.join(root, "vendor.git");
+  const vendorSeed = path.join(root, "vendor-seed");
+  sh(`git init -q --bare -b main ${vendorOrigin}`);
+  sh(`git clone -q ${vendorOrigin} ${vendorSeed} 2>/dev/null`);
+  sh(`git -C ${vendorSeed} config user.email a@b`);
+  sh(`git -C ${vendorSeed} config user.name a`);
+  sh(
+    `cd ${vendorSeed} && echo lib > lib.txt && git add . && git commit -qm lib`,
+  );
+  sh(`git -C ${vendorSeed} push -q origin HEAD:main`);
+  const vendorBase = sh(`git -C ${vendorSeed} rev-parse HEAD`);
+  addSubmodule(seed, vendorOrigin, "vendor");
+  sh(`git -C ${seed} push -q origin integration`);
+  fx.fetchClone();
+  sh(`git -C ${root}/clones/o__r reset --hard origin/integration`);
+  return { vendorOrigin, vendorSeed, vendorBase };
+}
+
 /** @param {string} name */
 async function gitlinkSyncFixture(name) {
   const fx = await opsFixture(name);
   fx.fakeGh.requireReplies();
-  addWiki(fx);
-  const config = fx.configWith("wiki.json", { wiki: true });
-  const disabled = fx.configWith("disabled.json", { wiki: false });
+  const { vendorOrigin, vendorSeed, vendorBase } = addVendor(fx);
+  const seed = path.join(fx.root, "seed");
   const { loadConfig } = await import("../src/config.ts");
   const { ensureWorktree } = await import("../src/checkouts.ts");
-  const cfg = loadConfig(config);
-  const { worktree } = fx;
-  const seed = path.join(fx.root, "seed");
-  const wikiSeed = path.join(fx.root, "wiki-seed");
-  const wikiBase = pinAt(seed, "HEAD");
+  const cfg = loadConfig(path.join(fx.root, "config.json"));
+
+  // A new commit of the vendor origin, diverging from its first.
   /** @param {string} label @returns {string} */
-  function wikiCommit(label) {
-    sh(`git -C ${wikiSeed} checkout -q --detach ${wikiBase}`);
-    fs.writeFileSync(path.join(wikiSeed, `${label}.md`), `${label}\n`);
-    sh(`git -C ${wikiSeed} add . && git -C ${wikiSeed} commit -qm ${label}`);
-    const sha = sh(`git -C ${wikiSeed} rev-parse HEAD`);
-    sh(`git -C ${wikiSeed} push -q origin HEAD:refs/heads/${label}`);
+  function vendorCommit(label) {
+    sh(`git -C ${vendorSeed} checkout -q --detach ${vendorBase}`);
+    fs.writeFileSync(path.join(vendorSeed, `${label}.txt`), `${label}\n`);
+    sh(
+      `git -C ${vendorSeed} add . && git -C ${vendorSeed} commit -qm ${label}`,
+    );
+    const sha = sh(`git -C ${vendorSeed} rev-parse HEAD`);
+    sh(`git -C ${vendorSeed} push -q origin HEAD:refs/heads/${label}`);
     return sha;
   }
 
@@ -67,27 +95,26 @@ async function gitlinkSyncFixture(name) {
   function branch(n) {
     fx.fetchClone();
     ensureWorktree(cfg, n);
-    const wt = worktree(n);
+    const wt = fx.worktree(n);
     sh(`git -C ${wt} submodule deinit -q --force --all`);
     return wt;
   }
 
-  /** @param {number} n @param {string} op @param {object} [extra] @param {string} [file] */
-  function ask(n, op, extra = {}, file = config) {
+  /** @param {number} n @param {string} op @param {object} [extra] */
+  function ask(n, op, extra = {}) {
     fx.fakeGh.reply([initialWriteStateReply(n), historyReply(n)]);
     return REPLY.parse(
-      JSON.parse(fx.ask({ op, number: n, keepConflict: true, ...extra }, file)),
+      JSON.parse(fx.ask({ op, number: n, keepConflict: true, ...extra })),
     );
   }
 
   return {
     fx,
-    cfg,
     seed,
-    wikiSeed,
-    disabled,
+    vendorBase,
+    vendorOrigin,
     branch,
-    wikiCommit,
+    vendorCommit,
     stagePin,
     ask,
     unmerged,

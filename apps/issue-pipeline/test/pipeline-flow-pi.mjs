@@ -29,7 +29,6 @@ import { fixtureState, versionProbe } from "./runtime-fixtures.mjs";
  * @property {Record<string, string>} [files]
  * @property {string[][]} [commits]
  * @property {Record<string, string>} [gitlinks] paths and commit identities to stage in repo/
- * @property {boolean} [pinWiki] explicitly pin the committed issue wiki through the commit tool
  * @property {string} [rejectPrompt]
  * @property {Record<string, unknown>} output
  */
@@ -201,16 +200,6 @@ function readLines(onLine) {
   process.stdin.on("end", () => process.exit(0));
 }
 
-/** @returns {string | null} the authoritative docs revision before the turn runs */
-function wikiHead() {
-  if (!fs.existsSync(path.join(process.cwd(), "docs", ".git"))) {
-    return null;
-  }
-  return execFileSync("git", ["-C", "docs", "rev-parse", "HEAD"], {
-    encoding: "utf8",
-  }).trim();
-}
-
 /**
  * The fake pi's entry, given the role each configured model plays.
  * @param {Record<string, string>} roleOfModel
@@ -242,8 +231,6 @@ async function runFlowPi(roleOfModel) {
     repoHead: execFileSync("git", ["-C", "repo", "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim(),
-    docsAvailable: fs.existsSync(path.join(process.cwd(), "docs", ".git")),
-    docsHead: wikiHead(),
   });
   const session = { dir, role, tools: await loadTools(argv), out, model };
   readLines((line) => {

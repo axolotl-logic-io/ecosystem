@@ -32,7 +32,6 @@ import {
   logOf,
   piStarts,
   runJob,
-  setScript,
   setUp,
   startJob,
   statusOf,
@@ -253,24 +252,4 @@ test("a failed exit push is reported on stderr and the checkout still goes", () 
   assert.match(r.stderr, PUSH_FAILED);
   assert.equal(r.stdout.trim().split("\n").length, 1);
   assert.equal(fs.existsSync(checkoutOf(place.root, "implement")), false);
-});
-
-test("the job's wiki checkout comes from the wiki mirror, and its unpushed commits wait there", () => {
-  const place = setUp(
-    implementReplies(),
-    { ...IMPLEMENTOR_SESSION, commit: "docs/Page.md" },
-    {},
-    { wiki: true },
-  );
-  const r = runJob(place, ["--stage", "implement"]);
-  assert.equal(r.status, 0, r.stderr);
-  const first = committed(place);
-  const wikiMirror = path.join(place.root, "work/o__r/wiki-mirror.git");
-  assert.equal(refOf(wikiMirror, BRANCH), first);
-  assert.equal(refOf(String(place.wikiOrigin), BRANCH), "");
-  setScript(place, { ...IMPLEMENTOR_SESSION, commit: "docs/Other.md" });
-  const again = runJob(place, ["--stage", "implement"]);
-  assert.equal(again.status, 0, again.stderr);
-  assert.equal(refOf(wikiMirror, `${BRANCH}~1`), first);
-  assert.equal(refOf(wikiMirror, BRANCH), committed(place));
 });

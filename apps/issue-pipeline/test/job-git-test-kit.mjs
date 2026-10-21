@@ -1,14 +1,12 @@
 // @ts-check
-// The stage job tests' git: a local bare origin (and wiki origin) seeded with
-// one commit, its refs, and where a job's own checkout lives.
+// The stage job tests' git: a local bare origin seeded with one commit, its
+// refs, and where a job's own checkout lives.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { addSubmodule } from "./submodule-test-kit.mjs";
 
 // The base branch the job tests' config names.
 const BASE = "integration";
-const WIKI_BRANCH = "master";
 // Commits made outside a job need a name and no signing.
 const IDENTITY = [
   "-c",
@@ -27,42 +25,35 @@ function git(args) {
 }
 
 /**
- * Makes a bare repo at `bare` whose `branch` holds one commit of `file`.
+ * Makes a bare repo at `bare` whose `branch` holds one commit of `files`.
  * @param {string} bare
  * @param {string} branch
- * @param {string} file
+ * @param {readonly string[]} files
  * @returns {void}
  */
-function seedBare(bare, branch, file) {
+function seedBare(bare, branch, files) {
   const seed = `${bare}-seed`;
   git(["init", "--quiet", "--bare", "-b", branch, bare]);
   git(["init", "--quiet", "-b", branch, seed]);
-  fs.writeFileSync(path.join(seed, file), "base\n");
-  git(["-C", seed, "add", file]);
+  for (const file of files) {
+    fs.mkdirSync(path.dirname(path.join(seed, file)), { recursive: true });
+    fs.writeFileSync(path.join(seed, file), "base\n");
+  }
+  git(["-C", seed, "add", ...files]);
   git(["-C", seed, "commit", "--quiet", "-m", "base"]);
   git(["-C", seed, "push", "--quiet", bare, `HEAD:refs/heads/${branch}`]);
 }
 
 /**
- * Seeds the repo's origin, and its wiki's when `wiki` is set, in `tmp`. The
- * config keys that point the job at them.
+ * Seeds the repo's origin in `tmp`, its base holding a README and the
+ * repo's docs/Home.md. The config keys that point the job at it.
  * @param {string} tmp
- * @param {boolean} wiki
- * @returns {{ origin: string, wikiOrigin: string | null, config: Record<string, unknown> }}
+ * @returns {{ origin: string, config: Record<string, unknown> }}
  */
-function seedOrigins(tmp, wiki) {
+function seedOrigin(tmp) {
   const origin = path.join(tmp, "origin.git");
-  seedBare(origin, BASE, "README.md");
-  const config = { cloneUrl: origin, baseBranch: BASE };
-  if (!wiki) {
-    return { origin, wikiOrigin: null, config };
-  }
-  const wikiOrigin = path.join(tmp, "wiki-origin.git");
-  seedBare(wikiOrigin, WIKI_BRANCH, "Home.md");
-  const seed = `${origin}-seed`;
-  addSubmodule(seed, wikiOrigin);
-  git(["-C", seed, "push", "--quiet", origin, `HEAD:refs/heads/${BASE}`]);
-  return { origin, wikiOrigin, config: { ...config, wiki: true } };
+  seedBare(origin, BASE, ["README.md", "docs/Home.md"]);
+  return { origin, config: { cloneUrl: origin, baseBranch: BASE } };
 }
 
 /**
@@ -118,24 +109,4 @@ function repoOf(root, stage) {
   return path.join(checkoutOf(root, stage), "repo");
 }
 
-/**
- * Stage `stage`'s job's wiki checkout, docs/ in its folder.
- * @param {string} root
- * @param {string} stage
- * @returns {string}
- */
-function docsOf(root, stage) {
-  return path.join(checkoutOf(root, stage), "docs");
-}
-
-export {
-  BASE,
-  branchOnOrigin,
-  checkoutOf,
-  docsOf,
-  git,
-  refOf,
-  repoOf,
-  seedOrigins,
-  WIKI_BRANCH,
-};
+export { BASE, branchOnOrigin, checkoutOf, git, refOf, repoOf, seedOrigin };

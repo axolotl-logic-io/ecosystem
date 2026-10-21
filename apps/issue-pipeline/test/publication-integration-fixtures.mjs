@@ -8,7 +8,7 @@ function mergedAt(w) {
   sh(
     `git --git-dir=${w.root}/origin.git update-ref refs/heads/integration ${w.mergeSha}`,
   );
-  const revision = { code: w.mergeSha, wiki: w.wikiSha, inputs: "inputs-1" };
+  const revision = { code: w.mergeSha, wiki: null, inputs: "inputs-1" };
   setCurrentRevision({
     revision,
     baseSha: "base",

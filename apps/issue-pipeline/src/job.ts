@@ -65,7 +65,7 @@ import { authorizedIssue } from "./issue-context.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
 import { branchRefusalOf } from "./job/branch.ts";
-import { CheckoutSetupError, openJobCheckout } from "./job/checkout.ts";
+import { openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
 import type { Control } from "./job/control.ts";
 import { openControl, socketPathOf } from "./job/control.ts";
@@ -74,7 +74,6 @@ import { exitPushOf } from "./job/exit-push.ts";
 import { opsRunnerOf } from "./job/ops-request.ts";
 import type { StagePrompts } from "./job/prompts.ts";
 import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
-import { inputsOf } from "./job/role-inputs.ts";
 import { runRoleStage } from "./job/role-run.ts";
 import { boundaryOf, STAGE_WIKI_ACCESS } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
@@ -83,7 +82,6 @@ import { openStatus, socketOf } from "./job/status.ts";
 import type { ExitingJob, RunEnd } from "./job/teardown.ts";
 import { jobKeyOf, tearDown } from "./job/teardown.ts";
 import { isTransientSessionError } from "./job/transient.ts";
-import { wikiSetupReason } from "./job/wiki-requirements.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { IssueState } from "./state.ts";
 
@@ -92,33 +90,6 @@ import type { IssueState } from "./state.ts";
 const SWEEP_ID_RADIX = 36;
 // A process a signal ended exits with 128 + the signal's number.
 const SIGNAL_EXIT_BASE = 128;
-
-// Setup precedes the claim. If it fails, retain the checkout and all saved
-// authority, and identify any signed required pages before reporting the hold.
-function openCheckout(
-  cfg: Config,
-  issue: number,
-  job: { stage: string; branch: string },
-): ReturnType<typeof openJobCheckout> {
-  try {
-    return openJobCheckout(cfg, issue, job);
-  } catch (error: unknown) {
-    if (!(error instanceof CheckoutSetupError)) {
-      throw error;
-    }
-    let pages: readonly string[] = [];
-    try {
-      const { gherkin } = inputsOf(cfg, issue, {});
-      pages = gherkin?.wikiPages ?? [];
-    } catch (inputError: unknown) {
-      throw new Error(
-        `${error.message}; cannot read signed wiki requirements: ${messageOf(inputError)}`,
-        { cause: inputError },
-      );
-    }
-    throw new Error(wikiSetupReason(pages, error.message), { cause: error });
-  }
-}
 
 async function runStage(
   args: RunArgs,
@@ -132,7 +103,7 @@ async function runStage(
   }
   const key = jobKeyOf(stage, new Date());
   const wiki = STAGE_WIKI_ACCESS[stage];
-  const dirs = openCheckout(cfg, issue, { stage, branch });
+  const dirs = openJobCheckout(cfg, issue, { stage, branch });
   const { root, repo } = dirs;
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const runDir = paths.runDir(cfg, issue);

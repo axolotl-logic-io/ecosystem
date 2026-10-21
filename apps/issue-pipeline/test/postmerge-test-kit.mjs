@@ -1,5 +1,6 @@
 // @ts-check
-// Genuine external code merge, signed named wiki requirements, no wiki work.
+// Genuine external code merge of the issue's draft, before the pipeline's
+// hardening and merge.
 import fs from "node:fs";
 import path from "node:path";
 import { branchMerge } from "./pipeline-flow-gh-merge.mjs";
@@ -16,8 +17,8 @@ import {
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see a polite greeting";
 
-/** @param {string[]} [pages] */
-function mergedWikiFlow(pages = ["Home"]) {
+/** @param {string[]} pages the Gherkin's named pages */
+function externallyMergedFlow(pages) {
   const flow = setUpFlow();
   observeOps(flow);
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
@@ -41,8 +42,8 @@ function mergedWikiFlow(pages = ["Home"]) {
   }
   withWorld(flow.ghDir, (world) => {
     const state = savedState(world);
-    if (!state.flows.code || state.flows.wiki) {
-      throw new Error("setup must have code and no wiki work");
+    if (!state.flows.code) {
+      throw new Error("setup must have code");
     }
     const response = branchMerge(world, [
       "repos/o/r/merges",
@@ -74,4 +75,4 @@ function stateOf(flow) {
   return savedState(readWorld(flow.ghDir));
 }
 
-export { mergedWikiFlow, reviewerTurns, stateOf };
+export { externallyMergedFlow, reviewerTurns, stateOf };

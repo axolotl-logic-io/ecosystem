@@ -3,7 +3,7 @@
 // required for a run and for --print-boundary, and refused, with the job
 // exiting 1 before it runs an op, opens job.json or clones anything, when
 // git wouldn't take it literally, when the repo protects it (its configured
-// base, its wiki's branch, the remote's default branch). A branch it takes is
+// base, the remote's default branch). A branch it takes is
 // the one its checkout is on and every ops request names; the claim refuses
 // one the saved state isn't bound to.
 import assert from "node:assert/strict";
@@ -27,7 +27,7 @@ const DEFAULT_BRANCH = /is o\/r's default branch/u;
 // A job whose claim would run the author, so a refusal is the only reason
 // it runs nothing.
 function place() {
-  return setUp(repliesAt(READER_STAGE), AUTHOR_SESSION, {}, { wiki: true });
+  return setUp(repliesAt(READER_STAGE), AUTHOR_SESSION);
 }
 
 /**
@@ -78,13 +78,11 @@ test("a branch git wouldn't take literally as a branch name is refused before an
   }
 });
 
-test("the configured base and the wiki's branch are refused, for a run and a boundary print", () => {
+test("the configured base is refused, for a run and a boundary print", () => {
   const at = place();
-  for (const branch of ["integration", "master"]) {
-    for (const extra of [[], ["--print-boundary"]]) {
-      const args = ["--stage", READER_STAGE, "--branch", branch, ...extra];
-      assert.deepEqual(refusalOf(at, runJob(at, args), PROTECTED), REFUSED);
-    }
+  for (const extra of [[], ["--print-boundary"]]) {
+    const args = ["--stage", READER_STAGE, "--branch", "integration", ...extra];
+    assert.deepEqual(refusalOf(at, runJob(at, args), PROTECTED), REFUSED);
   }
 });
 

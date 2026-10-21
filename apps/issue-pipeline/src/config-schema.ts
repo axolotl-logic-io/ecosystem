@@ -216,6 +216,21 @@ function checkPractices(configPath: string, practices: unknown): void {
   }
 }
 
+// The repo's docs are ordinary tracked Markdown under its own docs/, changed
+// and reviewed with the code, so a config that still names a wiki was written
+// for the wiki flow, which is gone: it fails rather than silently dropping it.
+function checkNoWiki(
+  configPath: string,
+  raw: Readonly<Record<string, unknown>>,
+): void {
+  const { wiki } = raw;
+  if (wiki !== undefined) {
+    throw new OpsError(
+      `config ${configPath} sets "wiki", which the pipeline no longer supports: docs are ordinary tracked Markdown in the repo's docs/, changed and reviewed with the code. Remove "wiki" from the config`,
+    );
+  }
+}
+
 function present(value: unknown): boolean {
   return value !== undefined && value !== null && value !== "";
 }
@@ -229,6 +244,7 @@ function checkRequired(
   raw: Readonly<Record<string, unknown>>,
 ): void {
   checkIdentities(configPath, raw);
+  checkNoWiki(configPath, raw);
   const { allowedUsers, commands, practices, repo } = raw;
   if (!present(repo)) {
     throw new OpsError(`config ${configPath} is missing "repo"`);

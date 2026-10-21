@@ -10,7 +10,6 @@ import {
   mergeBranch,
   NEW_COMMIT,
   OLD_COMMIT,
-  pendingWiki,
   prepare,
   setGitlink,
   startBranch,
@@ -66,7 +65,7 @@ for (const [reviewIndex, merged] of [false, true].entries()) {
       const n = FIRST_ISSUE + reviewIndex * CHANGES.length + index;
       baseGitlink(fx, change.before);
       startBranch(fx, n, "marker", `case ${n}`);
-      setGitlink(fx, worktree(n), "wiki", change.after);
+      setGitlink(fx, worktree(n), "vendor", change.after);
       const featureHead = commitIndex(n);
       let result = null;
       if (merged) {
@@ -74,7 +73,7 @@ for (const [reviewIndex, merged] of [false, true].entries()) {
       }
       const { diff, files, reply } = prepare(fx, n, result);
       assert.ok(
-        files.endsWith(gitlinkEntry("wiki", change.oldSide, change.newSide)),
+        files.endsWith(gitlinkEntry("vendor", change.oldSide, change.newSide)),
         "gitlink entry has no appended contents",
       );
       assert.ok(diff.includes("160000"));
@@ -108,15 +107,15 @@ test("a locally readable gitlink target still has no appended commit contents", 
   const target = sh(`git -C ${wt} rev-parse HEAD`);
   // Unlike the unavailable targets above, a blob-style show would succeed
   // here and return the commit's patch, including the sentinel.
-  setGitlink(fx, wt, "wiki", target);
+  setGitlink(fx, wt, "vendor", target);
   commitIndex(n);
-  assert.ok(sh(`git -C ${wt} show HEAD:wiki`).includes(sentinel));
+  assert.ok(sh(`git -C ${wt} show HEAD:vendor`).includes(sentinel));
   fs.writeFileSync(path.join(wt, "target-payload"), "reviewed head text\n");
   sh(`git -C ${wt} add target-payload`);
   commitIndex(n);
   const { files } = prepare(fx, n);
   assert.ok(
-    files.includes(gitlinkEntry("wiki", "absent", `commit \`${target}\``)),
+    files.includes(gitlinkEntry("vendor", "absent", `commit \`${target}\``)),
   );
   assert.ok(files.includes("reviewed head text"));
   assert.ok(!files.includes(sentinel));
@@ -134,7 +133,7 @@ test("a moved gitlink is an old deleted path and a new added path", () => {
   assert.ok(files.includes(gitlinkEntry("new-module", "absent", OLD_SIDE)));
 });
 
-test("ordinary files and wiki changes retain their behavior alongside a gitlink", () => {
+test("ordinary files retain their behavior alongside a gitlink", () => {
   const n = 111;
   baseGitlink(fx, OLD_COMMIT);
   fx.advanceBase("deleted.txt", "deleted full contents");
@@ -146,20 +145,16 @@ test("ordinary files and wiki changes retain their behavior alongside a gitlink"
   fx.commitIn(n, "\u{10000}-text", "astral");
   fx.commitIn(n, "\uE000-text", "private-use");
   sh(`git -C ${wt} rm -q deleted.txt && git -C ${wt} add a-text binary`);
-  setGitlink(fx, wt, "wiki", NEW_COMMIT);
+  setGitlink(fx, wt, "vendor", NEW_COMMIT);
   commitIndex(n);
-  const config = pendingWiki(fx, n);
-  const { diff, files, reply } = prepare(fx, n, null, config);
-  assert.ok(diff.includes("+wiki page body"));
-  assert.ok(!files.includes("wiki page body"));
-  assert.ok(!files.includes("Page.md"));
+  const { files, reply } = prepare(fx, n);
   assert.deepEqual(
     Array.from(files.matchAll(HEADING), ([, file]) => file),
     [
       "a-text",
       "binary",
       "deleted.txt",
-      "wiki",
+      "vendor",
       "\uE000-text",
       "\u{10000}-text",
     ],
@@ -169,7 +164,7 @@ test("ordinary files and wiki changes retain their behavior alongside a gitlink"
   assert.ok(files.includes("Deleted at the head: path only."));
   assert.ok(!files.includes("binary\0payload"));
   assert.ok(!files.includes("deleted full contents"));
-  assert.ok(files.includes(gitlinkEntry("wiki", OLD_SIDE, NEW_SIDE)));
+  assert.ok(files.includes(gitlinkEntry("vendor", OLD_SIDE, NEW_SIDE)));
   assert.equal(reply.bundleText, fs.readFileSync(reply.bundlePath, "utf8"));
 });
 
@@ -186,7 +181,7 @@ test("gitlink identities survive the size bound and bundles repeat byte for byte
   fs.writeFileSync(path.join(wt, "b-big"), `changed first row\n${big}`);
   fx.commitIn(n, "c-small", "later content");
   sh(`git -C ${wt} add b-big`);
-  setGitlink(fx, wt, "wiki", NEW_COMMIT);
+  setGitlink(fx, wt, "vendor", NEW_COMMIT);
   commitIndex(n);
   const first = prepare(fx, n);
   const bytes = fs.readFileSync(first.reply.bundlePath);
@@ -203,5 +198,5 @@ test("gitlink identities survive the size bound and bundles repeat byte for byte
   }
   assert.ok(!first.files.includes("last row"));
   assert.ok(!first.files.includes("later content"));
-  assert.ok(first.files.includes(gitlinkEntry("wiki", OLD_SIDE, NEW_SIDE)));
+  assert.ok(first.files.includes(gitlinkEntry("vendor", OLD_SIDE, NEW_SIDE)));
 });

@@ -216,29 +216,6 @@ test("merge refuses a head behind its base without merging", () => {
   assert.deepEqual(writes(), []);
 });
 
-test("merge refuses when the wiki moved past the approved wiki head", async () => {
-  const w = world({ wiki: true });
-  const { moveWiki } = await import("./ops-publish-test-kit.mjs");
-  moveWiki(w);
-  const approved = { code: w.sha, wiki: w.wikiSha, inputs: "inputs-1" };
-  setCurrentRevision({
-    revision: approved,
-    baseSha: "base",
-    pr: { number: PR, state: "OPEN", mergeCommit: null, headSha: w.sha },
-  });
-  fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
-    prView({ headRefOid: w.sha }),
-  ]);
-  const reply = merge(
-    w.cfg,
-    request(w, { revision: approved, state: approvedState(approved) }),
-  );
-  assert.equal(reply.merged, false);
-  assert.equal("reason" in reply && reply.reason, "wiki-behind");
-  assert.deepEqual(writes(), []);
-});
-
 test("with mergeOrder and no queue, an older PR at merge holds the merge and one at review doesn't", () => {
   const w = world();
   current(w);

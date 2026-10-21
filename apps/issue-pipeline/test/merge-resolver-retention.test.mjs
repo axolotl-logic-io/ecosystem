@@ -52,134 +52,129 @@ function unresolvedState(w) {
   };
 }
 
-for (const [side, finishName, startName] of /** @type {const} */ ([
-  ["code", "finish-sync", "sync-base"],
-  ["wiki", "finish-wiki-sync", "wiki-sync"],
-])) {
-  test(`${side} failed model session preserves its partial resolution through ordinary exit`, async () => {
-    const w = conflicted(side);
-    const { ctx, ops, saved } = resolverContext(w, true);
-    const result = await syncSide(ctx, ctx.state, {
-      side,
+test("code failed model session preserves its partial resolution through ordinary exit", async () => {
+  const w = conflicted();
+  const { ctx, ops, saved } = resolverContext(w, true);
+  const result = await syncSide(ctx, ctx.state, {
+    side: "code",
+    first: conflictOf(w),
+    maxConflictFixes: 1,
+  });
+  assert.ok(!result.ok);
+  assert.equal(result.end.kind, "stop");
+  assert.ok(ops.includes("finish-sync"));
+  assert.deepEqual(saved, []);
+  const { folder, repo } = await recovered(w);
+  assert.equal(git(repo, ["cat-file", "-t", w.original]), "commit");
+  git(repo, ["apply", "--index", path.join(folder, "working.patch")]);
+  assert.equal(
+    fs.readFileSync(path.join(repo, w.file), "utf8"),
+    "unique working resolution\n",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(repo, "resolver-notes.txt"), "utf8"),
+    "untracked resolution notes\n",
+  );
+  git(repo, ["reset", "--hard", "HEAD"]);
+  git(repo, ["clean", "-fd"]);
+  git(repo, [
+    "apply",
+    "--index",
+    path.join(folder, "working.patch.index.patch"),
+  ]);
+  assert.equal(
+    fs.readFileSync(path.join(repo, w.file), "utf8"),
+    "unique staged resolution\n",
+  );
+  assert.equal(
+    git(w.origin, ["rev-parse", `refs/heads/${w.job.branch}`]),
+    w.remote,
+  );
+  assert.equal(fs.existsSync(w.job.root), false);
+});
+
+test("code cannot-fix preserves the failed attempt and retains an unresolved retry on exit", async () => {
+  const w = conflicted(true);
+  const { ctx, ops, saved } = resolverContext(w, false);
+  await assert.rejects(
+    syncSide(ctx, ctx.state, {
+      side: "code",
       first: conflictOf(w),
       maxConflictFixes: 1,
-    });
-    assert.ok(!result.ok);
-    assert.equal(result.end.kind, "stop");
-    assert.ok(ops.includes(finishName));
-    assert.deepEqual(saved, []);
-    const { folder, repo } = await recovered(w);
-    assert.equal(git(repo, ["cat-file", "-t", w.original]), "commit");
-    git(repo, ["apply", "--index", path.join(folder, "working.patch")]);
-    assert.equal(
-      fs.readFileSync(path.join(repo, w.file), "utf8"),
-      "unique working resolution\n",
-    );
-    assert.equal(
-      fs.readFileSync(path.join(repo, "resolver-notes.txt"), "utf8"),
-      "untracked resolution notes\n",
-    );
-    git(repo, ["reset", "--hard", "HEAD"]);
-    git(repo, ["clean", "-fd"]);
-    git(repo, [
-      "apply",
-      "--index",
-      path.join(folder, "working.patch.index.patch"),
-    ]);
-    assert.equal(
-      fs.readFileSync(path.join(repo, w.file), "utf8"),
-      "unique staged resolution\n",
-    );
-    assert.equal(
-      git(w.origin, ["rev-parse", `refs/heads/${w.job.branch}`]),
-      w.remote,
-    );
-    assert.equal(fs.existsSync(w.job.root), false);
-  });
+    }),
+    UNMERGED,
+  );
+  assert.ok(ops.includes("finish-sync"));
+  assert.ok(ops.includes("sync-base"));
+  assert.deepEqual(
+    saved.map((state) => state.counts.conflictFixes),
+    [1],
+  );
+  await assert.rejects(close(w.job, "cannot-exit"), UNMERGED);
+  const { folder, repo } = recoveryOf(w);
+  assert.equal(git(repo, ["cat-file", "-t", w.original]), "commit");
+  git(repo, ["apply", "--index", path.join(folder, "working.patch")]);
+  assert.equal(
+    fs.readFileSync(path.join(repo, w.file), "utf8"),
+    "unique working resolution\n",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(repo, "resolver-notes.txt"), "utf8"),
+    "untracked resolution notes\n",
+  );
+  git(repo, ["reset", "--hard", "HEAD"]);
+  git(repo, ["clean", "-fd"]);
+  git(repo, [
+    "apply",
+    "--index",
+    path.join(folder, "working.patch.index.patch"),
+  ]);
+  assert.equal(
+    fs.readFileSync(path.join(repo, w.file), "utf8"),
+    "unique staged resolution\n",
+  );
+  assert.equal(
+    git(w.origin, ["rev-parse", `refs/heads/${w.job.branch}`]),
+    w.remote,
+  );
+  assert.equal(fs.existsSync(w.job.root), true);
+});
 
-  test(`${side} cannot-fix preserves the failed attempt and retains an unresolved retry on exit`, async () => {
-    const w = conflicted(side, true);
-    const { ctx, ops, saved } = resolverContext(w, false);
-    await assert.rejects(
-      syncSide(ctx, ctx.state, {
-        side,
-        first: conflictOf(w),
-        maxConflictFixes: 1,
-      }),
-      UNMERGED,
-    );
-    assert.ok(ops.includes(finishName));
-    assert.ok(ops.includes(startName));
-    assert.deepEqual(
-      saved.map((state) => state.counts.conflictFixes),
-      [1],
-    );
-    await assert.rejects(close(w.job, "cannot-exit"), UNMERGED);
-    const { folder, repo } = recoveryOf(w);
-    assert.equal(git(repo, ["cat-file", "-t", w.original]), "commit");
-    git(repo, ["apply", "--index", path.join(folder, "working.patch")]);
-    assert.equal(
-      fs.readFileSync(path.join(repo, w.file), "utf8"),
-      "unique working resolution\n",
-    );
-    assert.equal(
-      fs.readFileSync(path.join(repo, "resolver-notes.txt"), "utf8"),
-      "untracked resolution notes\n",
-    );
-    git(repo, ["reset", "--hard", "HEAD"]);
-    git(repo, ["clean", "-fd"]);
-    git(repo, [
-      "apply",
-      "--index",
-      path.join(folder, "working.patch.index.patch"),
-    ]);
-    assert.equal(
-      fs.readFileSync(path.join(repo, w.file), "utf8"),
-      "unique staged resolution\n",
-    );
-    assert.equal(
-      git(w.origin, ["rev-parse", `refs/heads/${w.job.branch}`]),
-      w.remote,
-    );
-    assert.equal(fs.existsSync(w.job.root), true);
-  });
-
-  test(`${side} unresolved retry retains its exact checkout, numbered stages and self-contained history`, async () => {
-    const w = conflicted(side, true);
-    const { ctx } = resolverContext(w, false);
-    await assert.rejects(
-      syncSide(ctx, ctx.state, {
-        side,
-        first: conflictOf(w),
-        maxConflictFixes: 1,
-      }),
-      UNMERGED,
-    );
-    const before = unresolvedState(w);
-    assert.notEqual(before.unmerged, "");
-    await assert.rejects(close(w.job, "cannot-exit"), UNMERGED);
-    assert.deepEqual(unresolvedState(w), before);
-    const { folder, repo } = recoveryOf(w, "conflict-stages.json");
-    const stages = STAGES.parse(
-      JSON.parse(
-        fs.readFileSync(path.join(folder, "conflict-stages.json"), "utf8"),
-      ),
-    );
-    assert.equal(
-      stages
-        .map(
-          (entry) => `${entry.mode} ${entry.sha} ${entry.stage}\t${entry.file}`,
-        )
-        .join("\n"),
-      before.unmerged,
-    );
-    assert.equal(git(repo, ["cat-file", "-t", w.original]), "commit");
-    assert.equal(git(repo, ["cat-file", "-t", before.head]), "commit");
-    assert.equal(fs.existsSync(path.join(folder, "working.patch")), false);
-    assert.equal(
-      git(w.origin, ["rev-parse", `refs/heads/${w.job.branch}`]),
-      w.remote,
-    );
-    assert.equal(fs.existsSync(w.job.root), true);
-  });
-}
+test("code unresolved retry retains its exact checkout, numbered stages and self-contained history", async () => {
+  const w = conflicted(true);
+  const { ctx } = resolverContext(w, false);
+  await assert.rejects(
+    syncSide(ctx, ctx.state, {
+      side: "code",
+      first: conflictOf(w),
+      maxConflictFixes: 1,
+    }),
+    UNMERGED,
+  );
+  const before = unresolvedState(w);
+  assert.notEqual(before.unmerged, "");
+  await assert.rejects(close(w.job, "cannot-exit"), UNMERGED);
+  assert.deepEqual(unresolvedState(w), before);
+  const { folder, repo } = recoveryOf(w, "conflict-stages.json");
+  const stages = STAGES.parse(
+    JSON.parse(
+      fs.readFileSync(path.join(folder, "conflict-stages.json"), "utf8"),
+    ),
+  );
+  assert.equal(
+    stages
+      .map(
+        (entry) => `${entry.mode} ${entry.sha} ${entry.stage}\t${entry.file}`,
+      )
+      .join("\n"),
+    before.unmerged,
+  );
+  assert.equal(git(repo, ["cat-file", "-t", w.original]), "commit");
+  assert.equal(git(repo, ["cat-file", "-t", before.head]), "commit");
+  assert.equal(fs.existsSync(path.join(folder, "working.patch")), false);
+  assert.equal(
+    git(w.origin, ["rev-parse", `refs/heads/${w.job.branch}`]),
+    w.remote,
+  );
+  assert.equal(fs.existsSync(w.job.root), true);
+});

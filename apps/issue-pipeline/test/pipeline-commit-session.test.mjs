@@ -23,14 +23,12 @@ test("each pushed commit carries the session's trailer, and pushes.jsonl gets a 
   const job = await openJob("implement");
   try {
     write(job.repo, "README.md", "changed\n");
-    write(job.docs, "Page.md", "new\n");
+    write(job.repo, "docs/Home.md", "changed\n");
     const result = await job.commit(["-am", "Add the page"]);
     assert.equal(result.isError, false);
     const trailer = `${KEY}@${JOB_STARTED_AT}`;
-    for (const dir of [job.repo, job.docs]) {
-      const format = "--format=%(trailers:key=Pipeline-Session,valueonly)";
-      assert.equal(git(dir, ["log", "-1", format]), trailer);
-    }
+    const format = "--format=%(trailers:key=Pipeline-Session,valueonly)";
+    assert.equal(git(job.repo, ["log", "-1", format]), trailer);
     const file = path.join(job.runDir, "pushes.jsonl");
     const lines = fs
       .readFileSync(file, "utf8")
@@ -45,7 +43,6 @@ test("each pushed commit carries the session's trailer, and pushes.jsonl gets a 
     }));
     assert.deepEqual(facts, [
       { key: KEY, id: JOB_ID, repo: "code", sha: headOf(job.repo) },
-      { key: KEY, id: JOB_ID, repo: "wiki", sha: headOf(job.docs) },
     ]);
     for (const { at } of lines) {
       assert.ok(Date.parse(at) > 0, at);
@@ -55,19 +52,17 @@ test("each pushed commit carries the session's trailer, and pushes.jsonl gets a 
   }
 });
 
-test("a scope without the job's start commits and pushes code and wiki with no trailer", async () => {
+test("a scope without the job's start commits and pushes code and its docs with no trailer", async () => {
   const job = await openJob("implement", { withJobStart: false });
   try {
     write(job.repo, "README.md", "changed\n");
-    write(job.docs, "Page.md", "new\n");
+    write(job.repo, "docs/Home.md", "changed\n");
     const result = await job.commit(["-am", "Add the page"]);
     assert.equal(result.isError, false);
-    assert.equal(result.details.pushed, "both");
-    for (const dir of [job.repo, job.docs]) {
-      assert.equal(git(dir, ["log", "-1", "--format=%s"]), "Add the page");
-      const format = "--format=%(trailers:key=Pipeline-Session,valueonly)";
-      assert.equal(git(dir, ["log", "-1", format]), "");
-    }
+    assert.equal(result.details.pushed, "code");
+    assert.equal(git(job.repo, ["log", "-1", "--format=%s"]), "Add the page");
+    const format = "--format=%(trailers:key=Pipeline-Session,valueonly)";
+    assert.equal(git(job.repo, ["log", "-1", format]), "");
   } finally {
     job.close();
   }

@@ -1,5 +1,5 @@
 // The stop op during implement: the implementer's commits that exist only
-// in the worktree (and the wiki checkout) reach the issue's branch on GitHub
+// in the worktree reach the issue's branch on GitHub
 // before the stop, and a failed push only adds a line to the stop comment
 // (#283).
 import assert from "node:assert/strict";
@@ -14,15 +14,14 @@ import { everyCommentsRead, kit, v2State } from "./ops-v2-test-kit.mjs";
 
 kit.requireGhReplies();
 
-const { askOps, configWith, effects, reply, root, sh, worktree } = kit;
+const { askOps, effects, reply, root, sh, worktree } = kit;
 
 const COMMITTER = "-c user.email=a@b -c user.name=a";
 const ORIGIN = `${root}/origin.git`;
-// The issues: pushed, rejected by origin, stopped at review, and with a wiki.
+// The issues: pushed, rejected by origin, and stopped at review.
 const PUSHED = 60;
 const REJECTED = 61;
 const AT_REVIEW = 62;
-const WITH_WIKI = 63;
 const LABEL = "agent:stopped-not-doable";
 const ONLY_LOCAL = "only local";
 // What stopAt returns for a stop at `stage`.
@@ -77,10 +76,10 @@ const STOP_REPLY = z.object({
   state: z.looseObject({ stage: z.string(), stoppedStage: z.string() }),
 });
 
-// Stops issue `n` at `stage` as not doable; `extra` may name the config.
-// Returns the stop code, its label and the stage the state stopped at.
-/** @param {number} n @param {string} stage @param {object} [extra] @returns {string[]} */
-function stopAt(n, stage, extra = {}) {
+// Stops issue `n` at `stage` as not doable. Returns the stop code, its label
+// and the stage the state stopped at.
+/** @param {number} n @param {string} stage @returns {string[]} */
+function stopAt(n, stage) {
   const saved = v2State(n, { stage });
   reply([
     {
@@ -93,7 +92,6 @@ function stopAt(n, stage, extra = {}) {
   const { code, label, state } = STOP_REPLY.parse(
     askOps({
       op: "stop",
-      ...extra,
       number: n,
       code: "not-doable",
       reason: "the change can't be done as asked",
@@ -128,27 +126,4 @@ test("a stop at review pushes nothing", () => {
   const before = headOf(ORIGIN, `agent/issue-${AT_REVIEW}`);
   assert.deepEqual(stopAt(AT_REVIEW, "review"), stoppedAt("review"));
   assert.equal(headOf(ORIGIN, `agent/issue-${AT_REVIEW}`), before);
-});
-
-test("a stop in implement pushes the wiki checkout's commits", () => {
-  const wikiOrigin = path.join(root, "wiki.git");
-  const wiki = path.join(worktree(WITH_WIKI), "wiki");
-  sh(`git init -q --bare -b master ${wikiOrigin}`);
-  sh(
-    `git -C ${root}/clones/o__r worktree add -q -B agent/issue-${WITH_WIKI} ${worktree(WITH_WIKI)} origin/integration`,
-  );
-  sh(`git clone -q ${wikiOrigin} ${wiki} 2>/dev/null`);
-  sh(
-    `cd ${wiki} && echo home > Home.md && git add . && git ${COMMITTER} commit -qm home && git push -q origin HEAD:master`,
-  );
-  sh(
-    `cd ${wiki} && echo page > Page.md && git add . && git ${COMMITTER} commit -qm page`,
-  );
-  const sha = sh(`git -C ${wiki} rev-parse HEAD`);
-  const config = configWith({ wiki: true });
-  assert.deepEqual(
-    stopAt(WITH_WIKI, "implement", { config }),
-    stoppedAt("implement"),
-  );
-  assert.equal(headOf(wikiOrigin, `agent/issue-${WITH_WIKI}`), sha);
 });

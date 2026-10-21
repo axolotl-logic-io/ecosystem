@@ -16,24 +16,22 @@ import { okLine, opsFixture } from "./ops-fixture.mjs";
 const fx = await opsFixture("sync-ops-prepare-review");
 const { fakeGh, sh, worktree } = fx;
 const BASE = "origin/integration";
-const WIKI_HEADING =
-  "\n\n# Wiki changes (paths under wiki/; pushed to the wiki when the PR merges)\n\n";
 // Each test's issue.
 const ISSUE = {
   mergeBase: 21,
   sinceSha: 22,
   rebasedSince: 23,
-  wiki: 24,
+  docs: 24,
   messages: 27,
 };
 // The two commits after sinceSha, oldest first.
 const COMMITS_IN_ORDER =
   /^# Commits, oldest first\n\ncommit \w+\n\nfix a flaky check\n\ncommit \w+\n\nsimplify the parser\n\n$/u;
 // Runs an op; returns its stdout and the gh calls it made.
-/** @param {object} request @param {string} [config] @returns {{ out: string, calls: string[][] }} */
-function ask(request, config) {
+/** @param {object} request @returns {{ out: string, calls: string[][] }} */
+function ask(request) {
   fakeGh.reply([]);
-  const out = fx.ask(request, config);
+  const out = fx.ask(request);
   return { out, calls: fakeGh.calls() };
 }
 
@@ -70,17 +68,13 @@ function patchIdIn(dir, range) {
 /** @typedef {{ file: string, reply: { headSha: string, headTree: string, baseSha: string, patchId: string | null, diffPath: string, diffLines: number, changedFiles: string[] } }} Review */
 
 // What prepare-review should reply and write for the diff `from..HEAD`.
-/** @param {number} n @param {string | undefined} from @param {string} tag @param {{ diff: string, files: string[] }} [wiki] @returns {Review} */
-function review(n, from, tag, wiki = { diff: "", files: [] }) {
+/** @param {number} n @param {string | undefined} from @param {string} tag @returns {Review} */
+function review(n, from, tag) {
   const wt = worktree(n);
   const headSha = gitIn(wt, "rev-parse HEAD");
   const headTree = gitIn(wt, `rev-parse ${headSha}^{tree}`);
   const baseSha = gitIn(wt, `merge-base ${BASE} HEAD`);
-  const code = codePart(wt, `${from ?? baseSha}..${headSha}`);
-  let file = code;
-  if (wiki.diff !== "") {
-    file = `${code}${WIKI_HEADING}${wiki.diff}`;
-  }
+  const file = codePart(wt, `${from ?? baseSha}..${headSha}`);
   const names = gitIn(wt, `diff --name-only ${baseSha}..${headSha}`);
   const patchId = patchIdIn(wt, `${baseSha} ${headSha}`);
   const diffPath = path.join(
@@ -91,7 +85,7 @@ function review(n, from, tag, wiki = { diff: "", files: [] }) {
     `review-${tag}`,
     "diff.patch",
   );
-  const changedFiles = names.split("\n").concat(wiki.files);
+  const changedFiles = names.split("\n");
   const diffLines = file.split("\n").length;
   return {
     file,
@@ -179,36 +173,16 @@ test("prepare-review falls back to the merge base when sinceSha was rebased away
   assert.deepEqual(got, expected);
 });
 
-test("prepare-review appends the issue's wiki commits", () => {
-  const wikiOrigin = path.join(fx.root, "wiki.git");
-  const seed = path.join(fx.root, "wiki-seed");
-  sh(
-    `git init -q --bare -b master ${wikiOrigin} && git clone -q ${wikiOrigin} ${seed} 2>/dev/null`,
-  );
-  sh(`cd ${seed} && git config user.email a@b && git config user.name a`);
-  sh(
-    `cd ${seed} && echo home > Home.md && git add . && git commit -qm home && git push -q origin HEAD:master`,
-  );
-  const config = fx.configWith("wiki-config.json", {
-    wiki: { url: wikiOrigin },
-  });
-  fx.startBranch(ISSUE.wiki, "g", "one");
-  const wiki = path.join(worktree(ISSUE.wiki), "wiki");
-  sh(
-    `git clone -q ${wikiOrigin} ${wiki} && cd ${wiki} && git config user.email a@b && git config user.name a`,
-  );
-  sh(`cd ${wiki} && echo page > Page.md && git add . && git commit -qm page`);
-  const { out, calls } = ask(
-    { op: "prepare-review", number: ISSUE.wiki },
-    config,
-  );
+test("prepare-review reviews a docs/ page with the code", () => {
+  const n = ISSUE.docs;
+  fx.startBranch(n, "g", "one");
+  fs.mkdirSync(path.join(worktree(n), "docs"));
+  fx.commitIn(n, "docs/Page.md", "page");
+  const { out, calls } = ask({ op: "prepare-review", number: n });
   assert.deepEqual(calls, []);
-  const diff = patch(wiki, "origin/master...HEAD");
-  const want = review(ISSUE.wiki, undefined, "r0", {
-    diff,
-    files: ["wiki/Page.md"],
-  });
-  assert.deepEqual(want.reply.changedFiles, ["g", "wiki/Page.md"]);
+  const want = review(n, undefined, "r0");
+  assert.deepEqual(want.reply.changedFiles, ["docs/Page.md", "g"]);
+  assert.ok(want.file.includes("+page"), want.file);
   const { got, expected } = reviewOutcome(out, want);
   assert.deepEqual(got, expected);
 });

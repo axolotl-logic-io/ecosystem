@@ -38,10 +38,6 @@
     "up": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:up",
     "down": "DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate:down"
   },
-  "wiki": {
-    "dir": "wiki",
-    "branch": "master"
-  },
   "mergeAdmin": false,
   "requireCi": true,
   "ciWaitMinutes": 30,

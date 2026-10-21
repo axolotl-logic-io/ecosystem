@@ -197,4 +197,4 @@ function openJobCheckout(
 }
 
 export type { JobDirs };
-export { CheckoutSetupError, openJobCheckout };
+export { openJobCheckout };

@@ -66,13 +66,6 @@ async function refusedWork(job, kind, deleted) {
   const reply = await job.commit(["-am", "Refused local C"]);
   const local = headOf(job.repo);
   write(job.repo, "dirty.txt", "exact dirty work\n");
-  write(job.docs, "Page.md", "allowed wiki\n");
-  git(job.docs, ["add", "Page.md"]);
-  git(
-    job.docs,
-    ["commit", "-m", "Wiki salvage"],
-    Object.fromEntries([["ISSUE_PIPELINE_COMMIT", "1"]]),
-  );
   let remote = original;
   if (deleted) {
     remote = "";
@@ -85,7 +78,7 @@ async function restoredWork(job) {
   await closeJobCheckout(
     job.cfg,
     ISSUE,
-    { ...job, wiki: "write", key: RECOVERY },
+    { ...job, docs: null, wiki: "write", key: RECOVERY },
     null,
   );
   const bundle = path.join(
@@ -135,7 +128,6 @@ for (const kind of ["saved", "own-merge", "live", "unsaved-live"]) {
           fs.readFileSync(path.join(job.repo, "dirty.txt"), "utf8"),
           "exact dirty work\n",
         );
-        assert.equal(refOf(job.wikiOrigin, BRANCH), headOf(job.docs));
         const restored = await restoredWork(job);
         assert.equal(headOf(restored), local);
         assert.equal(

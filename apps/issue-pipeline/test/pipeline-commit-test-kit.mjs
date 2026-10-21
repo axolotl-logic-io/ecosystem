@@ -12,7 +12,7 @@ import path from "node:path";
 import process from "node:process";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
-import { seedOrigins } from "./job-git-test-kit.mjs";
+import { seedOrigin } from "./job-git-test-kit.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 import { saveAuthority } from "./write-authority-test-kit.mjs";
 
@@ -45,9 +45,9 @@ const JOB_ID = "6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b";
 const JOB_STARTED_AT = "2026-10-17T12:00:00.000Z";
 
 /**
- * One stage job's folder (root) with its code checkout (repo) and wiki
- * checkout (docs), its control socket and its registered tool.
- * @typedef {{ cfg: Config, root: string, repo: string, docs: string, branch: string, origin: string, wikiOrigin: string, runDir: string, socket: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
+ * One stage job's folder (root) with its code checkout (repo), its control
+ * socket and its registered tool.
+ * @typedef {{ cfg: Config, root: string, repo: string, branch: string, origin: string, runDir: string, socket: string, commit: (args: string[]) => Promise<any>, close: () => void }} Job
  */
 
 let repos = 0;
@@ -67,14 +67,13 @@ function git(dir, args, env = {}) {
 }
 
 /**
- * A config of a repo of its own, with a wiki unless `wiki` is false.
+ * A config of a repo of its own.
  * @param {string} tmp
- * @param {boolean} [wiki]
  * @returns {Config}
  */
-function configIn(tmp, wiki = true) {
+function configIn(tmp) {
   repos += 1;
-  const origins = seedOrigins(tmp, wiki);
+  const origins = seedOrigin(tmp);
   const file = path.join(tmp, "config.json");
   const config = {
     repo: `o/r${repos}`,
@@ -102,7 +101,7 @@ function registeredTool() {
   return tools[0];
 }
 
-// Opens a job of `stage` for #7 of a repo of its own, with a wiki, whose
+// Opens a job of `stage` for #7 of a repo of its own, whose
 // launch KEY has started, recorded as given commit authority unless
 // `commits` is false. With `withJobStart` false its commit scope lacks
 // the job's start, as a job started before the trailer (#402) sends it.
@@ -118,9 +117,6 @@ async function openJob(
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp);
   const dirs = openJobCheckout(cfg, ISSUE, { stage, branch: ISSUE_BRANCH });
-  if (dirs.docs === null) {
-    throw new Error("the job has no wiki checkout");
-  }
   const runDir = paths.runDir(cfg, ISSUE);
   const job = {
     issue: ISSUE,
@@ -139,7 +135,7 @@ async function openJob(
   const control = await openControl(runDir, pushServerOf(cfg, job, status));
   let boundScope = null;
   if (bindScope) {
-    boundScope = commitScopeOf(stage, true, true);
+    boundScope = commitScopeOf(stage, false, true);
   }
   status.started({
     key: KEY,
@@ -155,16 +151,14 @@ async function openJob(
   if (withJobStart) {
     scope.jobStartedAt = JOB_STARTED_AT;
   }
-  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true, true) });
+  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, false, true) });
   const tool = registeredTool();
   return {
     cfg,
     root: dirs.root,
     repo: dirs.repo,
-    docs: dirs.docs,
     branch: dirs.branch,
     origin: path.join(tmp, "origin.git"),
-    wikiOrigin: path.join(tmp, "wiki-origin.git"),
     runDir,
     socket: control.socket,
     commit: async (args) => {

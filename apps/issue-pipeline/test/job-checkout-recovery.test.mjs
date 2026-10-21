@@ -1,5 +1,5 @@
 // @ts-check
-// Recovery through the real job teardown, isolated local Git code and wiki origins.
+// Recovery through the real job teardown, with an isolated local Git origin.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -36,29 +36,20 @@ function indexBytes(dir) {
 
 for (const failure of [
   "patch directory",
-  "docs patch",
   "bundle directory",
   "existing bundle",
 ]) {
-  test(`${failure} failure preserves both checkouts, exact indexes, modes and local commits`, async () => {
+  test(`${failure} failure preserves the checkout, its exact index, modes and local commits`, async () => {
     const job = openFresh();
     write(job.repo, "README.md", "local commit\n");
     git(job.repo, ["commit", "-am", "Local recovery commit"], COMMIT_ENV);
-    const heads = { repo: headOf(job.repo), docs: headOf(job.docs) };
-    const left = {
-      repo: leaveChanges(job.repo, "README.md"),
-      docs: leaveChanges(job.docs, "Home.md"),
-    };
-    // Preparation must not change the actual pin's index flags either.
-    git(job.repo, ["update-index", "--no-assume-unchanged", "--", "wiki"]);
-    const indexes = { repo: indexBytes(job.repo), docs: indexBytes(job.docs) };
+    const head = headOf(job.repo);
+    const left = leaveChanges(job.repo, "README.md");
+    const index = indexBytes(job.repo);
     const runDir = paths.runDir(job.cfg, ISSUE);
     fs.mkdirSync(runDir, { recursive: true });
     let obstruction = path.join(runDir, "dropped");
-    if (failure === "docs patch") {
-      fs.mkdirSync(obstruction);
-      obstruction = paths.droppedPatch(job.cfg, ISSUE, KEY, "docs");
-    } else if (failure === "bundle directory") {
+    if (failure === "bundle directory") {
       obstruction = path.join(runDir, "recovery");
     } else if (failure === "existing bundle") {
       obstruction = path.join(runDir, "recovery");
@@ -69,17 +60,15 @@ for (const failure of [
     await assert.rejects(close(job, KEY));
     assert.equal(fs.existsSync(job.root), true);
     assert.equal(fs.readFileSync(obstruction, "utf8"), "prior evidence\n");
-    for (const name of /** @type {const} */ (["repo", "docs"])) {
-      assert.equal(headOf(job[name]), heads[name]);
-      assert.deepEqual(indexBytes(job[name]), indexes[name]);
-      for (const [file, bytes] of left[name]) {
-        assert.deepEqual(fs.readFileSync(path.join(job[name], file)), bytes);
-      }
-      assert.equal(
-        fs.statSync(path.join(job[name], "run.sh")).mode,
-        REGULAR_EXECUTABLE_MODE,
-      );
+    assert.equal(headOf(job.repo), head);
+    assert.deepEqual(indexBytes(job.repo), index);
+    for (const [file, bytes] of left) {
+      assert.deepEqual(fs.readFileSync(path.join(job.repo, file)), bytes);
     }
+    assert.equal(
+      fs.statSync(path.join(job.repo, "run.sh")).mode,
+      REGULAR_EXECUTABLE_MODE,
+    );
     assert.equal(
       fs.existsSync(paths.droppedPatch(job.cfg, ISSUE, KEY, "repo")),
       failure !== "patch directory",
@@ -90,8 +79,7 @@ for (const failure of [
         branch: job.branch,
       }),
     );
-    assert.deepEqual(indexBytes(job.repo), indexes.repo);
-    assert.deepEqual(indexBytes(job.docs), indexes.docs);
+    assert.deepEqual(indexBytes(job.repo), index);
   });
 }
 

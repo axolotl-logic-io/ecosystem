@@ -1,5 +1,6 @@
 // @ts-check
-// Scripted model edits before the real pipeline_commit call.
+// Scripted model edits before the real pipeline_commit call: files written,
+// and gitlinks staged with their .gitmodules.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,6 +27,13 @@ function writeTurnFiles(turn) {
       ],
       { timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] },
     );
+  }
+  // A gitlink needs its submodule declared, as a writer stages it.
+  if (Object.keys(turn.gitlinks ?? {}).length > 0) {
+    execFileSync("git", ["-C", "repo", "add", ".gitmodules"], {
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   }
 }
 

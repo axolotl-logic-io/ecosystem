@@ -15,7 +15,6 @@ import {
   refIn,
   scriptPi,
   setUpFlow,
-  WIKI_BRANCH,
 } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
@@ -33,12 +32,10 @@ const CLAIM_AUTHORITY = z.object({
 
 /** @type {import("./pipeline-flow-kit.mjs").Flow} */
 let flow;
-/** @type {string | null} */
-let originalWiki;
 let traceStart = 0;
 before(() => {
   flow = setUpFlow();
-  ({ originalWiki } = createReplayFlow(flow, true));
+  createReplayFlow(flow, true);
 });
 after(() => stopJobs(flow));
 
@@ -62,10 +59,6 @@ test("the accepted merge auto-closes the issue before delayed confirmation stops
     stopped.mergeAttempt.authorized,
     stopped.integration.revision,
   );
-  assert.equal(
-    refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
-    originalWiki,
-  );
 });
 
 test("canonical closed recovery reopens and reconciles the saved response with original authorization", () => {
@@ -76,11 +69,8 @@ test("canonical closed recovery reopens and reconciles the saved response with o
   });
   fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
   scriptPi(flow, { reviewer: [securityTurn()] });
-  // Inspect durable exact Security before any publication can occur.
-  fs.writeFileSync(
-    path.join(flow.root, "interrupt-publish"),
-    "pause publication",
-  );
+  // Inspect durable exact Security before the finish op can complete it.
+  fs.writeFileSync(path.join(flow.root, "interrupt-finish"), "pause finish");
   traceStart = opsTrace(flow).length;
   const callsStart = ghCalls(flow.ghDir).length;
   const starts = sessions(flow);
@@ -88,7 +78,7 @@ test("canonical closed recovery reopens and reconciles the saved response with o
   // receipt. PR truth alone would not be sufficient to do so.
   assert.equal(runStage(flow, "merge").end, "deferred");
   const recovered = savedState(readWorld(flow.ghDir));
-  assert.equal(recovered.stage, "merge");
+  assert.equal(recovered.stage, "done");
   assert.deepEqual(recovered.codeMerged, { pr: stopped.pr, sha: merged });
   assert.deepEqual(recovered.merged, {
     ...stopped.integration.revision,
@@ -122,7 +112,7 @@ test("canonical closed recovery reopens and reconciles the saved response with o
   );
 });
 
-test("actual-result checks precede read-only exact Security and wiki publication", () => {
+test("actual-result checks precede read-only exact Security and completion", () => {
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   const cleared = savedState(readWorld(flow.ghDir));
   assert.deepEqual(cleared.security.revision, {
@@ -148,15 +138,11 @@ test("actual-result checks precede read-only exact Security and wiki publication
     .filter((entry) => entry.start === true)
     .at(-1);
   assert.equal(security?.commitScope, false);
-  assert.equal(
-    refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
-    originalWiki,
-  );
 });
 
-test("exact clearance permits publication and completion with merged labels and completed closure", () => {
+test("exact clearance permits completion with merged labels and completed closure", () => {
   const cleared = savedState(readWorld(flow.ghDir));
-  fs.unlinkSync(path.join(flow.root, "interrupt-publish"));
+  fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
   const clearedStarts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "next");
   assert.equal(sessions(flow), clearedStarts);
@@ -164,10 +150,7 @@ test("exact clearance permits publication and completion with merged labels and 
   const done = savedState(world);
   assert.equal(done.stage, "done");
   assert.deepEqual(done.security, cleared.security);
-  assert.equal(
-    refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
-    done.security.revision.wiki,
-  );
+  assert.equal(done.security.revision.wiki, null);
   const completed = world.issues.find(({ number }) => number === ISSUE);
   assert.equal(completed?.state, "closed");
   assert.equal(completed?.stateReason, "completed");

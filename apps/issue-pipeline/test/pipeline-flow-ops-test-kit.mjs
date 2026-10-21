@@ -1,6 +1,7 @@
 // @ts-check
 // Observes the real built ops in an isolated full-flow root. A marker can
-// interrupt publication before it runs, after the role saved security.
+// interrupt the finish op before it runs, after the role saved security and
+// the completion.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -19,8 +20,8 @@ async function runFlowOps(root) {
   const { json = "{}" } = REQUEST.exec(input)?.groups ?? {};
   const request = JSON.parse(json);
   let output;
-  const marker = path.join(root, "interrupt-publish");
-  if (request.op === "publish" && fs.existsSync(marker)) {
+  const marker = path.join(root, "interrupt-finish");
+  if (request.op === "finish-wiki" && fs.existsSync(marker)) {
     output = JSON.stringify({ ok: false, error: "read ECONNRESET" });
   } else {
     const result = spawnSync(

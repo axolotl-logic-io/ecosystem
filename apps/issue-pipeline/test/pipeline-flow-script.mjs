@@ -34,15 +34,15 @@ function authorTurn(gherkin, changed) {
 }
 
 /**
- * An implementor's turn that writes the greeting and the wiki's word on it,
- * commits both checkouts through pipeline_commit and replies done.
+ * An implementor's turn that writes the greeting and the docs' word on it,
+ * commits them through pipeline_commit and replies done.
  * @param {string} greeting @param {string} message
  */
 function implementorTurn(greeting, message) {
   return {
     files: {
       "repo/greet.txt": `${greeting}\n`,
-      "docs/Home.md": `The wiki.\n\nGreetings say ${greeting}\n`,
+      "repo/docs/Home.md": `The docs.\n\nGreetings say ${greeting}\n`,
     },
     commits: [["-am", message]],
     output: { outcome: "done", summary: message },

@@ -23,7 +23,7 @@ const ISSUE = {
   again: 42,
   bound: 43,
   pathOnly: 44,
-  wiki: 45,
+  docs: 45,
   gitlink: 46,
 };
 // The reply fields these tests read; the bundle's are checked by value.
@@ -35,18 +35,20 @@ const BUNDLE_REPLY = z.looseObject({
   bundleText: z.unknown().optional(),
 });
 
+// A commit no repo of the fixture holds.
+const ABSENT_COMMIT = "3333333333333333333333333333333333333333";
 // A file git counts as binary, since it holds NUL bytes.
 const BINARY = Buffer.from("\u0089PNG\u0000\u0000binary-415\n", "latin1");
 
 /** @typedef {{ diffPath: string, bundlePath?: string | undefined, bundleLines?: unknown, bundleText?: unknown }} BundleReply */
 /** @typedef {{ reply: BundleReply, diff: string, bundle: string }} Prepared */
 
-// prepare-review for issue `n` with `config`: its reply, the diff it wrote and
-// the bundle it wrote, or "" when it named none.
-/** @param {number} n @param {string} [config] @returns {Prepared} */
-function prepare(n, config) {
+// prepare-review for issue `n`: its reply, the diff it wrote and the bundle
+// it wrote, or "" when it named none.
+/** @param {number} n @returns {Prepared} */
+function prepare(n) {
   fakeGh.reply([]);
-  const out = fx.ask({ op: "prepare-review", number: n }, config);
+  const out = fx.ask({ op: "prepare-review", number: n });
   const reply = BUNDLE_REPLY.parse(JSON.parse(out));
   let bundle = "";
   if (reply.bundlePath !== undefined) {
@@ -161,35 +163,23 @@ test("a deleted file and a binary file are listed by path only", () => {
   assert.ok(!files.includes("\u0000"), "the binary file's bytes are in");
 });
 
-test("the bundle holds the issue's wiki commits as diff.patch has them, and reads no wiki page from the code checkout", () => {
-  const wikiOrigin = path.join(fx.root, "wiki.git");
-  const seed = path.join(fx.root, "wiki-seed");
-  sh(
-    `git init -q --bare -b master ${wikiOrigin} && git clone -q ${wikiOrigin} ${seed} 2>/dev/null`,
-  );
-  sh(`cd ${seed} && git config user.email a@b && git config user.name a`);
-  sh(
-    `cd ${seed} && echo home > Home.md && git add . && git commit -qm home && git push -q origin HEAD:master`,
-  );
-  const config = fx.configWith("wiki-config.json", {
-    wiki: { url: wikiOrigin },
-  });
-  fx.startBranch(ISSUE.wiki, "g", "code-415");
-  const wiki = path.join(worktree(ISSUE.wiki), "wiki");
-  sh(
-    `git clone -q ${wikiOrigin} ${wiki} && cd ${wiki} && git config user.email a@b && git config user.name a`,
-  );
-  sh(`cd ${wiki} && echo page-415 > Page.md && git add . && git commit -qm p`);
-  const prepared = prepare(ISSUE.wiki, config);
+test("the bundle holds a docs/ page's head text like any code file", () => {
+  const n = ISSUE.docs;
+  fx.startBranch(n, "g", "code-415");
+  fs.mkdirSync(path.join(worktree(n), "docs"));
+  fx.commitIn(n, "docs/Page.md", "page-415");
+  const prepared = prepare(n);
   assert.ok(prepared.diff.includes("+page-415"));
   const files = filesPart(prepared);
-  assert.ok(files.includes(headText(ISSUE.wiki, "g")));
+  assert.ok(files.includes(headText(n, "g")));
+  assert.ok(files.includes("\n## docs/Page.md\n"), files);
+  assert.ok(files.includes(headText(n, "docs/Page.md")));
 });
 
 test("a gitlink whose commit is absent from the code object store is reviewed as a full pointer, never a text blob", () => {
   const n = ISSUE.gitlink;
   fx.startBranch(n, "code", "code with pointer");
-  const pin = sh(`git -C ${fx.root}/wiki-seed rev-parse HEAD`);
+  const pin = ABSENT_COMMIT;
   const wt = worktree(n);
   sh(`git -C ${wt} update-index --add --cacheinfo 160000,${pin},vendor`);
   sh(`git -C ${wt} commit -qm "Add external gitlink"`);

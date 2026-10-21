@@ -11,7 +11,6 @@
 import { z } from "zod";
 import { flowsOf } from "../../flows.ts";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
-import { wikiRequirementHold } from "../../job/wiki-requirements.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { approvalHolds, withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -160,15 +159,14 @@ interface Hardened {
   revision: Revision;
 }
 
-// Required wiki work must be possible, and postmerge writers must read M,
-// not the retained source head H. Checkout availability grants no authority.
+// Postmerge writers must read M, not the retained source head H. Checkout
+// availability grants no authority.
 async function hardeningSetup(
   ctx: RoleContext,
   mode: Mode,
 ): Promise<string | null> {
-  const hold = wikiRequirementHold(ctx);
-  if (hold !== null || mode.kind !== "wiki-only") {
-    return hold;
+  if (mode.kind !== "wiki-only") {
+    return null;
   }
   const prepared = await opReply(
     ctx,

@@ -1,5 +1,5 @@
 // @ts-check
-// Recovery through the real job teardown, isolated local Git code and wiki origins.
+// Recovery through the real job teardown, with an isolated local Git origin.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -18,12 +18,6 @@ import {
 } from "./job-checkout-dropped-test-kit.mjs";
 import { headOf, ISSUE, write } from "./pipeline-commit-test-kit.mjs";
 
-import {
-  movePinAndBack,
-  rebaseAcrossPin,
-  wikiAhead,
-} from "./wiki-pin-test-kit.mjs";
-
 const { paths } = await import("../src/config.ts");
 
 const LATER_KEY = "implement-2";
@@ -32,60 +26,51 @@ const RECOVERY_RETAINED = /recovery incomplete; checkout retained/u;
 const FIRST_FILE = /first\.txt/u;
 const SECOND_FILE = /second\.txt/u;
 
-test("each checkout's staged, unstaged and untracked changes are saved as a patch that restores them on the base commit", async () => {
+/** @param {string} a @param {string} b @returns {number} */
+function byName(a, b) {
+  return a.localeCompare(b);
+}
+
+test("the checkout's staged, unstaged and untracked changes, in its docs/ too, are saved as a patch that restores them on the base commit", async () => {
   const job = openFresh();
-  const bases = { repo: headOf(job.repo), docs: headOf(job.docs) };
-  const left = {
-    repo: leaveChanges(job.repo, "README.md"),
-    docs: leaveChanges(job.docs, "Home.md"),
-  };
+  const base = headOf(job.repo);
+  const left = leaveChanges(job.repo, "README.md");
+  write(job.repo, "docs/Home.md", "docs left\n");
+  left.set(
+    "docs/Home.md",
+    fs.readFileSync(path.join(job.repo, "docs/Home.md")),
+  );
   const { lost, patches } = await close(job, KEY);
   assert.deepEqual(patches, [
     `dropped/${KEY}-repo.patch.index.patch`,
     `dropped/${KEY}-repo.patch`,
-    `dropped/${KEY}-docs.patch.index.patch`,
-    `dropped/${KEY}-docs.patch`,
   ]);
-  const expected = [...under("repo", left.repo), ...under("docs", left.docs)];
-  assert.deepEqual([...lost].sort(), expected.sort());
-  const origins = { repo: job.origin, docs: job.wikiOrigin };
-  for (const name of /** @type {const} */ (["repo", "docs"])) {
-    const patch = inRunDir(job.cfg, `dropped/${KEY}-${name}.patch`);
-    const text = fs.readFileSync(patch, "latin1");
-    const title = `Dropped changes of issue #${ISSUE}, job ${KEY}, checkout ${name}/`;
-    assert.equal(text.split("\n")[0], title);
-    const { sha } = BASE_LINE.exec(text)?.groups ?? {};
-    assert.equal(sha, bases[name], name);
-    const fresh = restored(origins[name], bases[name], patch);
-    for (const [file, bytes] of left[name]) {
-      assert.deepEqual(fs.readFileSync(path.join(fresh, file)), bytes, file);
-    }
-    assert.equal(
-      fs.statSync(path.join(fresh, "run.sh")).mode,
-      REGULAR_EXECUTABLE_MODE,
-    );
-    assert.equal(fs.existsSync(path.join(fresh, "ignored.txt")), false);
+  assert.deepEqual([...lost].sort(byName), under("repo", left).sort(byName));
+  const patch = inRunDir(job.cfg, `dropped/${KEY}-repo.patch`);
+  const text = fs.readFileSync(patch, "latin1");
+  const title = `Dropped changes of issue #${ISSUE}, job ${KEY}, checkout repo/`;
+  assert.equal(text.split("\n")[0], title);
+  const { sha } = BASE_LINE.exec(text)?.groups ?? {};
+  assert.equal(sha, base);
+  const fresh = restored(job.origin, base, patch);
+  for (const [file, bytes] of left) {
+    assert.deepEqual(fs.readFileSync(path.join(fresh, file)), bytes, file);
   }
+  assert.equal(
+    fs.statSync(path.join(fresh, "run.sh")).mode,
+    REGULAR_EXECUTABLE_MODE,
+  );
+  assert.equal(fs.existsSync(path.join(fresh, "ignored.txt")), false);
   assert.equal(fs.existsSync(job.root), false);
 });
 
-test("clean checkouts write no patch and no dropped folder", async () => {
+test("a clean checkout writes no patch and no dropped folder", async () => {
   const job = openFresh();
   const { lost, patches } = await close(job, KEY);
   assert.deepEqual(lost, []);
   assert.deepEqual(patches, []);
   assert.equal(fs.existsSync(inRunDir(job.cfg, "dropped")), false);
   assert.equal(fs.existsSync(inRunDir(job.cfg, "recovery")), false);
-});
-
-test("a wiki checkout ahead of the code's pin, after a rebase replayed commits that move the pin, is no dropped change", async () => {
-  const job = openFresh();
-  wikiAhead(job.repo, "Ahead");
-  movePinAndBack(job.repo);
-  rebaseAcrossPin(job.repo);
-  const { lost, patches } = await close(job, KEY);
-  assert.deepEqual(lost, []);
-  assert.deepEqual(patches, []);
 });
 
 test("a later job of the same stage saves its patch beside the earlier one's", async () => {
