@@ -13,7 +13,8 @@
     // The only exception to the policy (`best-practice-over-lint`): the
     // modules at the pipeline's process boundary may read the process (its
     // arguments, environment and stdin), the files and the terminal. They are
-    // the install, the build and the tests with their kits; the entries of
+    // the install, the build, the caller's job launcher (scripts/) and the
+    // tests with their kits; the entries of
     // the four CLIs (ops.ts, job.ts, orchestrate.ts, report.ts) and the shell
     // supervisor; the ops modules that run git, gh and the configured
     // commands or keep the clones, worktrees, locks, logs and stop recovery
@@ -28,6 +29,7 @@
         "install.mjs",
         "test/**",
         "build.ts",
+        "scripts/**",
         "src/ops.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
