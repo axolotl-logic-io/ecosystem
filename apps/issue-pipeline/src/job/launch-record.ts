@@ -20,7 +20,8 @@ import {
 
 const LAUNCH_OUTCOME = z.enum(["ok", "failed"]);
 // One push the job made for a writer session's `pipeline_commit`: the repo,
-// the head it pushed, and when.
+// the head it pushed, and when. The job pushes only "code"; "wiki" is
+// legacy, kept so a job.json written while the pipeline had a wiki parses.
 const PUSH = z.object({
   repo: z.enum(["code", "wiki"]),
   sha: z.string(),

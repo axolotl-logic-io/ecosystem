@@ -10,6 +10,7 @@ const { approvalHolds, newIssueState, resumeOf } = await import(
   "../src/state.ts"
 );
 const { parseIssueState } = await import("../src/saved-state.ts");
+const { LAUNCH, startedRecord } = await import("../src/job/launch-record.ts");
 
 // The legacy issue, its PR and head; a short issue the stage tests use; and
 // a version 2 issue with its PR.
@@ -24,6 +25,8 @@ const SAVED_PR = 8;
 // Round counts a stop carried before it was lifted.
 const CONFLICT_FIXES = 2;
 const SYNCS = 3;
+// The length of a SHA-1 commit id in hex.
+const SHA1_HEX_LENGTH = 40;
 
 const LEASE = {
   lane: "orchestrator",
@@ -120,6 +123,22 @@ test("lifting a stop resumes the stage that stopped with its counts reset", () =
   assert.equal(lifted.stage, "implement");
   assert.equal(lifted.stopCode, null);
   assert.deepEqual(lifted.counts, { conflictFixes: 0, syncs: 0 });
+});
+
+test("a launch record whose session pushed to the wiki, written while the pipeline had one, still parses with its pushes", () => {
+  const pushes = [
+    { repo: "code", sha: "c".repeat(SHA1_HEX_LENGTH), at: LEASE.at },
+    { repo: "wiki", sha: "d".repeat(SHA1_HEX_LENGTH), at: LEASE.at },
+  ];
+  const started = startedRecord({
+    key: "developer-1",
+    kind: "session",
+    pid: 1,
+    session: "session.jsonl",
+  });
+  const parsed = LAUNCH.safeParse({ ...started, pushes });
+  assert.ok(parsed.success);
+  assert.deepEqual(parsed.data.pushes, pushes);
 });
 
 test("a merge authorization holds only for the code, wiki and inputs revision hardened", () => {
