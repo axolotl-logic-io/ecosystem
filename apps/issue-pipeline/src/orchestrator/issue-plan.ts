@@ -202,12 +202,12 @@ function planOf(
   return { kind: "run", stage, reason, reauthor: null };
 }
 
-// The state the tick saves before it starts the author on new input, from
+// The state the tick saves before its requirements owner reads new input, from
 // the state read again just before (`fresh`) and the one the plan saw
 // (`seen`), or the reason it holds the start instead: the state changed
-// since, or another claimant's lease went live. Every other field, the lease
-// and the Gherkin's recorded revision included, is kept as it is: the author
-// moves the recorded revision on once it has read the new input.
+// since, or another claimant's lease went live. Revision-bound authorizations
+// are invalidated; the lease and saved work remain. The requirements owner
+// records the input revision only after reading it.
 function reauthoredState(
   states: { fresh: IssueState | null; seen: IssueState | null },
   reauthor: Reauthor,

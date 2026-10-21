@@ -142,6 +142,8 @@ const COORDINATION = z.object({
 });
 // Discovery never uses the display reader's catch/default values as evidence.
 const STRICT_STATE = ISSUE_STATE.extend({
+  authorUsed: ISSUE_STATE.shape.authorUsed.removeCatch(),
+  requirementsInputs: ISSUE_STATE.shape.requirementsInputs.removeCatch(),
   asked: ISSUE_STATE.shape.asked.removeCatch(),
   resumeStage: ISSUE_STATE.shape.resumeStage.removeCatch(),
   review: ISSUE_STATE.shape.review.removeCatch().extend({
