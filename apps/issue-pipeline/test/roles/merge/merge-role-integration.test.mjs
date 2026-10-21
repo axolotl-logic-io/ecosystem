@@ -1,17 +1,9 @@
 // @ts-check
-// The Reviewer's own integration at merge (src/roles/merge/integration.ts)
-// through a fake RoleContext: a branch behind its base is rebased and a
-// conflict resolved, in bounded Reviewer writer sessions of the
-// integration phase; the result is verified and pushed,
-// and its receipt saved before CI runs on it, so the next merge job merges
-// the integrated revision with no model review of its own work. Each
-// integration counts one sync against `maxSyncs`; a head that moved by
-// anything else goes back to review. The check fixes are
-// merge-role-checks.test.mjs's.
+// Candidate integration records checked history, then changed code returns
+// for fresh hardening and Security. Integration counts against maxSyncs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  callNames,
   endCode,
   firstPayload,
   opNames,
@@ -24,7 +16,6 @@ import {
   LIMITS,
   MOVED,
   mergeRole,
-  PR,
   REVISION,
 } from "../reviewer-and-merge-role-test-kit.mjs";
 import {
@@ -33,6 +24,7 @@ import {
   INTEGRATED,
   integrationSessions,
   merging,
+  PREPARED_CANDIDATE,
   PUSHED,
   REBASED,
 } from "./merge-role-test-kit.mjs";
@@ -43,10 +35,13 @@ const REBASED_CLEAN = {
   headSha: REBASED,
   codeChanged: true,
 };
+const CONFLICT_TASK = /Task: `conflict-resolution`/u;
 
 // current-revision for the checks, before the merge and after the push.
-const REVISIONS = [current(), current(), current({ code: REBASED })];
-const BEHIND = { merge: [{ merged: false, reason: "behind" }] };
+const REVISIONS = [current(), current({ code: REBASED })];
+const BEHIND = {
+  "prepare-review": [{ ...PREPARED_CANDIDATE, baseSha: MOVED }],
+};
 
 test("a branch behind its base is rebased, checked, pushed and its receipt saved, with no model review", async () => {
   const { ctx, calls } = merging({
@@ -58,58 +53,37 @@ test("a branch behind its base is rebased, checked, pushed and its receipt saved
     },
   });
   const end = await mergeRole(ctx);
-  const state = stateOf(end, "wait");
-  assert.ok(end.kind === "wait");
-  assert.equal(state.stage, "merge");
-  assert.deepEqual(state.hardened, REVISION);
+  const state = stateOf(end, "next");
+  assert.equal(state.stage, "review");
+  assert.equal(state.hardened, null);
   assert.deepEqual(state.integration, {
     reviewed: REVISION,
     revision: INTEGRATED,
   });
   assert.equal(state.headSha, REBASED);
-  assert.equal(state.verifiedSha, REBASED);
+  assert.equal(state.verifiedSha, null);
   assert.equal(state.counts.syncs, 1);
   assert.equal(sessionsOf(calls).length, 0);
-  const names = callNames(calls);
-  const saved = calls
-    .slice(0, names.indexOf("sync-base"))
-    .filter((call) => call.kind === "save")
-    .at(-1);
-  assert.ok(saved?.kind === "save");
-  assert.equal(saved.state.counts.syncs, 1);
-  assert.ok(names.indexOf("verify") < names.indexOf("push"));
+  assert.ok(!opNames(calls).includes("merge"));
+  assert.deepEqual(firstPayload(calls, "push"), { number: ctx.issue });
+  assert.equal(savesOf(calls)[0]?.counts.syncs, 1);
 });
 
-test("the next merge job waits for CI on exactly the integrated head, then merges it", async () => {
-  const integrated = {
-    verifiedSha: REBASED,
-    headSha: REBASED,
-    integration: { reviewed: REVISION, revision: INTEGRATED },
-  };
-  const at = current({ code: REBASED });
-  const pending = merging({
-    state: integrated,
-    ops: {
-      "current-revision": [at],
-      "ci-status": [{ status: "pending" }],
+test("the next merge job refuses an integrated head until fresh hardening", async () => {
+  const { ctx, calls } = merging({
+    state: {
+      verifiedSha: REBASED,
+      headSha: REBASED,
+      integration: { reviewed: REVISION, revision: INTEGRATED },
     },
+    ops: { "current-revision": [current({ code: REBASED })] },
   });
-  stateOf(await mergeRole(pending.ctx), "wait");
-  assert.deepEqual(firstPayload(pending.calls, "ci-status"), {
-    pr: PR,
-    expectedSha: REBASED,
-  });
-  const merged = merging({
-    state: integrated,
-    ops: {
-      "current-revision": [at, at],
-      merge: [{ merged: false, reason: "queued" }],
-    },
-  });
-  stateOf(await mergeRole(merged.ctx), "wait");
-  const { expectedSha, revision } = firstPayload(merged.calls, "merge");
-  assert.equal(expectedSha, REBASED);
-  assert.deepEqual(revision, INTEGRATED);
+  const state = stateOf(await mergeRole(ctx), "next");
+  assert.equal(state.stage, "review");
+  assert.equal(state.hardened, null);
+  assert.ok(!opNames(calls).includes("merge"));
+  assert.ok(!opNames(calls).includes("ci-status"));
+  assert.equal(sessionsOf(calls).length, 0);
 });
 
 test("a rebase conflict gets a Reviewer resolver session of the integration phase, counted once as a sync", async () => {
@@ -133,8 +107,11 @@ test("a rebase conflict gets a Reviewer resolver session of the integration phas
       { ok: true, reply: { outcome: "conflict-resolved", summary: "both" } },
     ],
   });
-  const state = stateOf(await mergeRole(ctx), "wait");
-  assert.equal(integrationSessions(calls).length, 1);
+  const state = stateOf(await mergeRole(ctx), "next");
+  const [spec] = integrationSessions(calls);
+  assert.equal(spec?.agent, "issue-pipeline-reviewer");
+  assert.equal(spec?.commits, true);
+  assert.match(spec?.task ?? "", CONFLICT_TASK);
   const { baseSha } = firstPayload(calls, "finish-sync");
   assert.equal(baseSha, MOVED);
   assert.equal(state.counts.syncs, 1);
@@ -152,7 +129,7 @@ test("integrations are allowed for exactly maxSyncs, then stop before rebasing o
       "sync-base": [REBASED_CLEAN],
     },
   });
-  const counted = stateOf(await mergeRole(last.ctx), "wait");
+  const counted = stateOf(await mergeRole(last.ctx), "next");
   assert.equal(counted.counts.syncs, LIMITS.maxSyncs);
   const runs = [
     merging({ state: spent, ops: BEHIND }),
@@ -172,7 +149,7 @@ test("a head that moved after the integration's push goes to review, with no rec
     ops: {
       ...BEHIND,
       ...AFTER_INTEGRATION,
-      "current-revision": [current(), current(), current({ code: MOVED })],
+      "current-revision": [current(), current({ code: MOVED })],
       "sync-base": [REBASED_CLEAN],
     },
   });
@@ -200,9 +177,8 @@ test("a branch push that leaves another head than the verified one stops with no
   assert.equal(end.state.integration, null);
   assert.ok(savesOf(calls).every((saved) => saved.integration === null));
   assert.deepEqual(firstPayload(calls, "push"), { number: ctx.issue });
-  // The only merge attempt is the original refusal that required integration.
-  assert.equal(opNames(calls).filter((name) => name === "merge").length, 1);
-  assert.ok(!opNames(calls).includes("prepare-review"));
+  // Candidate preparation detects the outdated base before any merge attempt.
+  assert.equal(opNames(calls).filter((name) => name === "merge").length, 0);
   assert.ok(!opNames(calls).includes("finish"));
   assert.equal(sessionsOf(calls).length, 0);
 });

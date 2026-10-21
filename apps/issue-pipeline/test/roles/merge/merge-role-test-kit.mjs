@@ -41,10 +41,13 @@ const CI_PASS = { status: "pass", checks: ["ci"] };
 const MERGED = { merged: true, mergeCommit: MERGE_COMMIT, headSha: HEAD };
 const PREPARED_MERGED = {
   headSha: MERGE_COMMIT,
+  baseSha: sha("b"),
   diffPath: "/run/security/diff.patch",
   bundlePath: "/run/security/bundle.md",
   changedFiles: ["src/chat.ts", "docs/Chats.md"],
 };
+
+const PREPARED_CANDIDATE = { ...PREPARED_MERGED, headSha: HEAD };
 
 // The Reviewer's own integration at merge: a failing CI check, the fix
 // session's reply, and the ops of an integration that ends in a push of
@@ -106,11 +109,11 @@ function merging(script = {}) {
     mergeQueue: QUEUE,
     config: script.config,
     ops: {
-      "current-revision": [current(), current(), AFTER_MERGE, AFTER_MERGE],
+      "current-revision": [current(), current(), current(), AFTER_MERGE],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
       "ci-status": [CI_PASS],
       merge: [MERGED],
-      "prepare-review": [PREPARED_MERGED],
+      "prepare-review": [PREPARED_CANDIDATE],
       finish: [FINISHED],
       ...script.ops,
     },
@@ -145,6 +148,7 @@ export {
   merging,
   mutationsOf,
   NO_FINDING,
+  PREPARED_CANDIDATE,
   PREPARED_MERGED,
   PUSHED,
   QUEUE,

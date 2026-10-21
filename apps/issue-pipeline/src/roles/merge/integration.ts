@@ -1,14 +1,5 @@
-// The Reviewer's own integration of the hardened revision at merge: the
-// final synchronization with the base (src/roles/merge/sync.ts) once the
-// merge queue reaches the issue, and the fixes of checks that fail at
-// merge, each in bounded Reviewer writer sessions. The pipeline then checks
-// the exact result (verify, src/roles/verification.ts),
-// pushes it and saves the integration receipt: `state.integration` binds the
-// hardened revision to the integrated one, which the merge may then take
-// once CI passes on it, with no model review of the integration's own work.
-// The hardened revision stays as it was. Every integration counts one of
-// the issue's `maxSyncs`; a head that moved by anything but this module is
-// never integrated, it goes back to hardening.
+// Integration may fix/synchronize a candidate, but changed code needs fresh
+// hardening and Security. Its receipt records history, not merge permission.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -126,17 +117,14 @@ function receipt(
     integration: { reviewed: hardened, revision },
   };
   const entry = `integrated code ${short(hardened.code)} as ${short(revision.code)}; verified`;
-  return {
-    kind: "wait",
-    reason:
-      "the integrated revision is checked locally; the merge waits for its required CI",
-    state: logged(integrated, entry),
-  };
+  return toReview(
+    logged(integrated, entry),
+    "integration changed the candidate; fresh hardening and Security are required",
+  );
 }
 
-// Integrates the hardened revision of `start` as `need` says. Ends waiting
-// with the receipt saved, so the next merge job merges the integrated
-// revision once its CI passes, or with the stop or return that came first.
+// Integrate the hardened revision as needed. Changed code returns to Review;
+// unchanged checked code waits for the next merge job.
 async function integrate(
   ctx: RoleContext,
   start: IssueState,

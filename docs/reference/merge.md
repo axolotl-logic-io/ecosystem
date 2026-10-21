@@ -4,24 +4,25 @@ This page describes the `merge` stage: what it may merge, merge order, the merge
 
 ## What may merge
 
-The merge stage merges only the revision its authorization names: the hardened revision, or the Reviewer's own checked integration of it. It reads that authorization fresh before every mutation.
+The merge stage merges only the revision its authorization names: the exact hardened, checked and Security-cleared code/input revision. It reads that authorization fresh before every mutation.
 
 - A trusted-input change sends the issue back to the Author.
-- A code head that moved by anything other than the Reviewer's own integration goes back to `review` for hardening.
+- Any changed code head, including the Reviewer's own integration, goes back to `review` for hardening.
 - A base that moved, a conflict or a failed check gets the Reviewer's integration (see [sync](sync.md)).
 
 ```mermaid
 flowchart TD
   A[Fresh authorization] --> B{Base moved, conflict or failed check?}
-  B -- yes --> I[Integration] --> A
+  B -- yes --> I[Integration] --> H[Fresh hardening and checks if changed] --> A
   B -- no --> C[Verify head, wait for CI on H]
-  C --> Q{First in merge order?}
+  C --> S[Read-only Security on exact candidate H]
+  S -- clear --> Q{First in merge order?}
   Q -- no --> W[wait: queued]
   Q -- yes --> P[Approve H, save attempt, POST merge]
+  S -- reject --> X[Stop without merging]
   P --> R[Confirm result M]
   R --> V[Verify M]
-  V --> S[Read-only Security on P..M]
-  S --> F[Finish]
+  V --> F[Finish with saved candidate clearance]
 ```
 
 ## Merge order
@@ -32,11 +33,11 @@ Merge order keeps slow issues from losing races repeatedly.
 - Without a queue, the merge stage applies no order. The `merge` op also accepts `mergeOrder: true`, under which an older PR at the `merge` stage whose lease hasn't expired holds the slot; the merge stage doesn't set it today.
 - A held issue gets `{"merged": false, "reason": "queued", "waitingFor": N, "waitingForPr": PR}` and the job ends with `wait`.
 
-The queue is an order, not permission to run merges concurrently. The caller still runs one merge turn at a time.
+The queue orders configured target mutations, not candidate-local integration, checks or read-only Security. It is not permission to run merges concurrently. The caller still runs one merge turn at a time.
 
 ## The merge call
 
-1. The review/merge account submits a GitHub `APPROVE` review of the exact head H. A failed or mismatched approval prevents the merge.
+1. Security clears the exact hardened and checked candidate at the observed target revision. A rejection, stale or missing clearance prevents approval and merge. The review/merge account submits a GitHub `APPROVE` review of the exact head H. A failed or mismatched approval prevents the merge.
 2. A `mergeAttempt` checkpoint is saved and reread. It binds the repository, PR, literal base, source branch and the authorization. From then on, no automatic code write or repeat merge is allowed, even if the call is never sent.
 3. The job calls `POST /repos/{owner}/{repo}/merges` with the configured repository, literal `baseBranch` and the full SHA H. The PR's own target and branch never choose the write. There's no fallback PR merge, push or admin bypass.
 4. Only an HTTP 201 with a full result SHA M is saved as a possible own merge. HTTP 204 means already merged and is not an own receipt. A failed, lost or malformed response is never retried.
@@ -56,9 +57,9 @@ A PR merged outside the confirmed operation, for example by hand, isn't an own m
 
 ## After the merge
 
-The merge result M, not the pre-merge head, must pass deterministic verification in a clean detached checkout (see [review](review.md#deterministic-verification)). A failed check on M keeps the merged state and stops without a code writer. Then the read-only [Security review](review.md#security-review) reads `P..M`.
+The merge result M, not the pre-merge head, must pass deterministic verification in a clean detached checkout (see [review](review.md#deterministic-verification)). A failed check on M keeps the merged state and stops without a code writer. New own merges reuse their saved premerge [Security clearance](review.md#security-review), without another model pass. A missing or mismatched candidate receipt cannot be repaired by pretending a postmerge review was premerge permission.
 
-Only a saved Security clearance of exactly M allows completion. The `finish` op acts on the saved done state; it merges and publishes nothing itself. It:
+Only Security clearance bound to the genuine own merge's exact authorized candidate, or a historical clearance of exactly M, allows completion. The `finish` op acts on the saved done state; it merges and publishes nothing itself. It:
 
 - deletes the issue branch;
 - sets `agent:merged` and removes `agent:working` on the PR and the issue;

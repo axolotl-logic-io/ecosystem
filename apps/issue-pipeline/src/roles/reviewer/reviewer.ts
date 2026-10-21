@@ -1,6 +1,7 @@
 // Reviewer hardening checks and checkpoints one exact revision and literal
 // target context before readying its PR. Unmerged historical authorizations
 // without that target context require fresh hardening, never an inferred base.
+// Read-only Security precedes a new merge (src/roles/merge/).
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -255,7 +256,7 @@ async function postHardened(
     key: "hardening",
     on,
     role: "reviewer",
-    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
+    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; any changed integration needs fresh hardening and Security; Security runs before merge.`,
   });
 }
 

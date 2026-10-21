@@ -1,22 +1,23 @@
-// The merge job's end: the security review of the merged result
-// (security.ts), then the completion, saved as done with what merged before
-// the finish op labels and closes the issue, so a finish that fails can be
-// run again from the saved completion. Nothing completes without a security
-// receipt that approves exactly what merged; a done issue back at merge
-// gets the finish op again only with such a receipt.
+// Complete only after deterministic result checks and bound Security clearance.
+// New own merges reuse premerge clearance; historical runs may recover missing
+// read-only Security. Save done before finish so cleanup can be replayed.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
 import { ownMergeResultObservation } from "../../ops/merge-guard.ts";
+import { securityRefusal } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
+import type { Step } from "../writer-session.ts";
+import { ended } from "../writer-session.ts";
 import { checkedMergedResult } from "./checks.ts";
 import { failed, logged, toAuthor } from "./returns.ts";
+import type { MergedResult } from "./security.ts";
 import { rejectedAgain, securityReviewed } from "./security.ts";
 
 const FINISHED = z.union([
@@ -63,7 +64,24 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   return failed(done, detail);
 }
 
-// The security review of the merged result `merged`, then the completion.
+// New own merges reuse premerge clearance, never launch a duplicate model
+// pass. Only historical merged runs can obtain missing postmerge review.
+async function completionSecurity(
+  ctx: RoleContext,
+  state: IssueState,
+  result: MergedResult,
+): Promise<Step<IssueState>> {
+  const refusal = securityRefusal(state, result.revision);
+  if (refusal === undefined) {
+    return { ok: true, value: state };
+  }
+  if (state.security?.phase === "candidate") {
+    return ended(failed(state, refusal));
+  }
+  return await securityReviewed(ctx, state, result);
+}
+
+// Bound Security clearance of `merged`, then durable completion.
 async function reviewedAndCompleted(
   ctx: RoleContext,
   state: IssueState,
@@ -83,7 +101,7 @@ async function reviewedAndCompleted(
   if (rejected !== null) {
     return rejected;
   }
-  const security = await securityReviewed(ctx, state, {
+  const security = await completionSecurity(ctx, state, {
     revision: result,
     codeMerged,
     still,
@@ -179,7 +197,7 @@ async function finishConfirmed(
     }
     checked = result.state;
   }
-  const security = await securityReviewed(ctx, checked, {
+  const security = await completionSecurity(ctx, checked, {
     revision: observed,
     codeMerged,
     still: (after: Revision): boolean =>

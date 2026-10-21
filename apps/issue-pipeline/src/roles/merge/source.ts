@@ -1,8 +1,8 @@
 // The gate the merge job's revision must pass, read fresh from the ops just
 // before each mutation: the Gherkin is for the current trusted inputs, a
 // recorded code merge is still what GitHub says, and the merge
-// authorization (state.ts mergeAuthorization: the hardened revision, or the
-// Reviewer's own integration of it) holds for exactly this code head and
+// authorization (state.ts mergeAuthorization: the hardened revision)
+// holds for exactly this code head and
 // inputs revision (`approval-is-for-one-revision`).
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -42,9 +42,15 @@ function approvalGate(
     );
   }
   if (!approvalHolds(state, revision)) {
+    return toReview(state, "no exact hardening holds for the current revision");
+  }
+  if (
+    codeMerged === null &&
+    !targetHolds(ctx.cfg, state.hardenedTarget, current.baseSha)
+  ) {
     return toReview(
       state,
-      "no hardening or own integration holds for the current revision",
+      "the target context needs fresh hardening and checks",
     );
   }
   return null;

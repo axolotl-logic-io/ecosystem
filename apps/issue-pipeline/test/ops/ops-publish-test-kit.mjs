@@ -17,6 +17,7 @@ import { home, root } from "./ops-publish-environment-fixtures.mjs";
 /** @import { GhReply } from "../fake-gh.mjs" */
 /** @typedef {{ cfg: import("../../src/config.ts").Config, root: string, sha: string, mergeSha: string, worktree: string }} World */
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const CLAIM_ID = 501;
 const ACCOUNT = "bot";
 const REPO = "o/r";
@@ -118,6 +119,13 @@ function approvedState(approved, extra = {}) {
       revision: approved,
     },
     hardened: approved,
+    hardenedTarget: { repo: REPO, branch: "integration", sha: TARGET_SHA },
+    verifiedSha: approved.code,
+    security: {
+      ...securityOf(approved),
+      phase: "candidate",
+      target: { repo: REPO, branch: "integration", sha: TARGET_SHA },
+    },
     ...extra,
   };
 }
@@ -127,6 +135,11 @@ function boundState(w, approved, extra = {}) {
   const sha = sh(`git -C ${w.worktree} rev-parse origin/integration`);
   return approvedState(approved, {
     hardenedTarget: { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha },
+    security: {
+      ...securityOf(approved),
+      phase: "candidate",
+      target: { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha },
+    },
     ...extra,
   });
 }

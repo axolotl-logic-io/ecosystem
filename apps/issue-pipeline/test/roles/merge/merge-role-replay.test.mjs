@@ -28,6 +28,7 @@ import {
   MERGED_PR,
   MERGED_REVISION,
   merging,
+  PREPARED_MERGED,
 } from "./merge-role-test-kit.mjs";
 
 const RECEIPT = { ...CODE_MERGED, merged: MERGED_REVISION };
@@ -40,20 +41,14 @@ const FORBIDDEN = ["merge", "push", "sync-base", "ready-pr"];
 
 for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
   test(`an interrupted own merge resumes missing security with codeMerged ${String(codeMerged?.sha ?? null)}, no writer or second merge`, async () => {
-    const interrupted = merging({
-      ops: {
-        "prepare-review": [() => Promise.reject(new Error("interrupted"))],
-      },
-    });
-    await assert.rejects(mergeRole(interrupted.ctx), {
-      message: "interrupted",
-    });
-    const [receipt] = savesOf(interrupted.calls);
-    assert.ok(receipt !== undefined);
-    assert.deepEqual(receipt.merged, MERGED_REVISION);
+    // A saved pre-upgrade own merge has no premerge receipt. Its missing
+    // historical Security review remains recoverable without another merge.
     const { ctx, calls } = merging({
-      state: { ...receipt, codeMerged },
-      ops: { "current-revision": [AFTER_MERGE, AFTER_MERGE] },
+      state: { ...RECEIPT, codeMerged },
+      ops: {
+        "current-revision": [AFTER_MERGE, AFTER_MERGE],
+        "prepare-review": [PREPARED_MERGED],
+      },
     });
     const done = stateOf(await mergeRole(ctx), "next");
     assert.equal(done.stage, "done");
@@ -201,7 +196,10 @@ test("code that moves during the recovered security session discards it and neve
   const at = current({ ...MERGED_REVISION, code: MOVED }, MERGED_PR);
   const { ctx, calls } = merging({
     state: RECEIPT,
-    ops: { "current-revision": [AFTER_MERGE, at] },
+    ops: {
+      "current-revision": [AFTER_MERGE, at],
+      "prepare-review": [PREPARED_MERGED],
+    },
   });
   const state = stateOf(await mergeRole(ctx), "wait");
   assert.equal(state.security, null);

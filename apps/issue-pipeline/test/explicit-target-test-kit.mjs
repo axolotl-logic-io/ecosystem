@@ -61,6 +61,7 @@ function prechecks(w) {
     { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
     prStep(w, {}, true),
     prStep(w),
+    ...candidateInputs(w),
     {
       args: [
         "api",
@@ -80,6 +81,19 @@ function prechecks(w) {
         login: w.cfg.mergeAccount,
       }),
     },
+    ...candidateInputs(w),
+  ];
+}
+/** @param {World} w @returns {GhStep[]} */
+function candidateInputs(w) {
+  return [
+    {
+      args: ["api", `repos/${REPO}/issues/${ISSUE}`],
+      stdout: JSON.stringify(ISSUE_DATA),
+    },
+    { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
+    { args: ["api", `repos/${REPO}/collaborators/owner`, "--silent"] },
+    prStep(w, {}, true),
   ];
 }
 /** @param {World} w @returns {GhStep[]} */

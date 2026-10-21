@@ -136,7 +136,11 @@ test("merge refuses a PR from another branch", () => {
 test("merge refuses a stale revision with the current one, before merging", () => {
   const w = world();
   const moved = { ...approvedOf(w), inputs: "inputs-2" };
-  setCurrentRevision({ revision: moved, baseSha: "base", pr: null });
+  setCurrentRevision({
+    revision: moved,
+    baseSha: sh(`git -C ${w.worktree} rev-parse origin/integration`),
+    pr: null,
+  });
   fakeGh.reply([
     savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: w.sha }),

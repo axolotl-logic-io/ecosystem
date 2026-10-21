@@ -19,10 +19,10 @@ import {
   COMMENT_ID,
   current,
   fakeContext,
-  MERGE_COMMIT,
   MOVED,
   mergeRole,
   NEW_INPUTS,
+  REVISION,
 } from "../reviewer-and-merge-role-test-kit.mjs";
 import {
   AFTER_MERGE,
@@ -64,11 +64,12 @@ test("a finding in any category saves its receipt and stops with that category, 
     assert.equal(endCode(end), category);
     assert.ok(end.kind === "stop");
     assert.equal(end.state.stage, "merge");
-    assert.deepEqual(end.state.merged, MERGED_REVISION);
-    assert.deepEqual(end.state.security?.revision, MERGED_REVISION);
+    assert.equal(end.state.merged, null);
+    assert.deepEqual(end.state.security?.revision, REVISION);
     assert.equal(end.state.security?.finding?.category, category);
     assert.deepEqual(savesOf(calls).at(-1)?.security, end.state.security);
     assert.deepEqual(finishedOps(calls), []);
+    assert.ok(!opNames(calls).includes("merge"));
   }
   assert.match(postsOf(runs[0]?.calls ?? [])[0]?.body ?? "", STOPPED_COMMENT);
 });
@@ -109,12 +110,7 @@ test("a rejection of another revision is no receipt for this one: the merged res
 test("a revision that moved during the review discards it: nothing is saved as a receipt or finished", async () => {
   const { ctx, calls } = merging({
     ops: {
-      "current-revision": [
-        current(),
-        current(),
-        AFTER_MERGE,
-        current({ code: MOVED }, AFTER_MERGE.pr),
-      ],
+      "current-revision": [current(), current({ code: MOVED })],
     },
   });
   const end = await mergeRole(ctx);
@@ -128,12 +124,7 @@ test("a revision that moved during the review discards it: nothing is saved as a
 test("inputs that changed during the review send the issue to the author, never finishing", async () => {
   const { ctx, calls } = merging({
     ops: {
-      "current-revision": [
-        current(),
-        current(),
-        AFTER_MERGE,
-        current({ code: MERGE_COMMIT, inputs: NEW_INPUTS }, AFTER_MERGE.pr),
-      ],
+      "current-revision": [current(), current({ inputs: NEW_INPUTS })],
     },
   });
   const state = stateOf(await mergeRole(ctx), "next");

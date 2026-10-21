@@ -39,7 +39,7 @@ function attemptOf(w, response = w.merged) {
 test("saved successful response reconciles before ordinary approval or writers, then verifies M before read-only security", async () => {
   const w = world();
   const run = context(w, {
-    state: { mergeAttempt: attemptOf(w), merged: null },
+    state: { mergeAttempt: attemptOf(w), merged: null, security: null },
     ops: {
       ...postmergeOps(w),
       "reconcile-merge": [

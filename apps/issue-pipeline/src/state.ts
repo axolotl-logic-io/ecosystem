@@ -1,9 +1,7 @@
 // An issue's state, which saved-state.ts keeps on GitHub. This module owns
 // the state's schema (version 2), its log, and the merge authorization rule:
-// only the exact revision that passed the Reviewer's hardening
-// (`approval-is-for-one-revision`), or the one revision the Reviewer's own
-// integration checked from it. The security review of the merged result
-// comes after merge and lets the issue complete (security).
+// only the exact code/input revision that passed hardening. Security must
+// clear that candidate before merge; old merged-result receipts are history.
 
 import { z } from "zod";
 import {
@@ -74,18 +72,25 @@ const SECURITY_CATEGORY = z.enum([
   "abuse-risk",
 ]);
 
-// The read-only security review of the merged result: `revision` is exactly
-// what it reviewed (code: GitHub's merge commit, null with no PR),
-// `commentId` its comment, and `finding` null when it
-// found nothing, or why it rejected that exact revision, so a lifted stop
-// can't review the same unsafe result again for another answer.
-const SECURITY = z.object({
+// Candidate phase and target validate together. Phase-absent receipts remain
+// historical postmerge observations, never permission for a new merge.
+const SECURITY_VERDICT = z.object({
   revision: REVISION,
   commentId: z.number().int().positive(),
   finding: z
     .object({ category: SECURITY_CATEGORY, reason: z.string().min(1) })
     .nullable(),
 });
+const SECURITY = z.union([
+  SECURITY_VERDICT.extend({
+    phase: z.literal("candidate"),
+    target: REVIEWED_TARGET,
+  }),
+  SECURITY_VERDICT.extend({
+    phase: z.undefined().optional(),
+    target: z.undefined().optional(),
+  }),
+]);
 
 // The reasons "wiki-check" and "wiki-conflict" are legacy: no longer written.
 const MERGE_RETURN = z.object({
@@ -144,6 +149,7 @@ const ISSUE_STATE = z.object({
   hardenedTarget: REVIEWED_TARGET.nullable().catch(null),
   // The receipt of the Reviewer's own integration of the hardened revision.
   integration: INTEGRATION.nullable().catch(null),
+  // Exact Security clearance/rejection (security-clearance.ts).
   security: SECURITY.nullable().catch(null),
   verifiedSha: z.string().nullable().catch(null),
   mergeReturn: MERGE_RETURN.nullable().catch(null),
@@ -238,33 +244,15 @@ function sameRevision(a: Revision, b: Revision): boolean {
   );
 }
 
-// The revision the issue may merge, or null when nothing is authorized: the
-// hardened revision, or the revision the Reviewer's own integration checked
-// from exactly it. A receipt for another revision is ignored, never an
-// authorization of its head; the review verdict plays no part.
+// Only exact hardening authorizes a candidate. Integration receipts remain
+// recovery evidence, never an exception for changed code.
 function mergeAuthorization(state: IssueState): Revision | null {
-  const { hardened, integration } = state;
-  if (hardened === null) {
-    return null;
-  }
-  if (integration !== null && sameRevision(integration.reviewed, hardened)) {
-    return integration.revision;
-  }
-  return hardened;
+  return state.hardened;
 }
 
-// Whether the issue's merge authorization holds for `current`: it is
-// exactly the authorized revision (mergeAuthorization), and the trusted
-// inputs are still the ones hardening saw. Any other change after
-// hardening, a clean rebase outside the Reviewer's own integration
-// included, voids it.
 function approvalHolds(state: IssueState, current: Revision): boolean {
   const authorized = mergeAuthorization(state);
-  return (
-    authorized !== null &&
-    sameRevision(authorized, current) &&
-    state.hardened?.inputs === current.inputs
-  );
+  return authorized !== null && sameRevision(authorized, current);
 }
 
 function isStatus(value: unknown): value is Status {

@@ -57,7 +57,7 @@ test("elapsed deadlines and lifted stops retain attempted authority and never pe
   const uncertain = readWriteState(w.cfg, ISSUE);
   assert.equal(uncertain.mergeAttempt?.reads, READS_PER_RUN);
   assert.equal(uncertain.merged, null);
-  assert.equal(uncertain.security, null);
+  assert.deepEqual(uncertain.security, w.state.security);
   assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
   // Stale job releases cannot erase the response or cumulative read evidence.
   saveState(w.cfg, { number: ISSUE, state: w.state });
@@ -125,7 +125,7 @@ for (const defect of [
     );
     const saved = readWriteState(w.cfg, ISSUE);
     assert.equal(saved.merged, null);
-    assert.equal(saved.security, null);
+    assert.deepEqual(saved.security, w.state.security);
     assert.equal(saved.mergeAttempt?.result, w.merged);
     assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
     assert.equal(posts().length, 1);
@@ -207,7 +207,7 @@ test("interruption retains cumulative read evidence without permanently expiring
     const current = readWriteState(w.cfg, ISSUE);
     assert.equal(current.mergeAttempt?.reads, 1 + run * READS_PER_RUN);
     assert.equal(current.merged, null);
-    assert.equal(current.security, null);
+    assert.deepEqual(current.security, w.state.security);
     assert.equal(posts().length, 1);
     consumed();
   }

@@ -111,38 +111,38 @@ test("the comment says only that hardening passed, never that anything was appro
 });
 
 test("a hardening saved for exactly this revision goes on to merge with no session", async () => {
-  const runs = [
-    { hardened: REVISION, integration: null },
-    { hardened: OLDER, integration: { reviewed: OLDER, revision: REVISION } },
-  ];
-  const contexts = runs.map((saved) =>
-    fakeContext({
+  const { ctx, calls } = fakeContext({
+    stage: "review",
+    state: issueState({
       stage: "review",
-      state: issueState({
-        stage: "review",
-        ...saved,
-        hardenedTarget: {
-          repo: cfg.repo,
-          branch: cfg.baseBranch,
-          sha: current().baseSha,
-        },
-      }),
-      ops: {
-        "current-revision": [current()],
-        "ready-pr": [{ pr: PR, ready: true }],
+      hardened: REVISION,
+      hardenedTarget: {
+        repo: cfg.repo,
+        branch: cfg.baseBranch,
+        sha: current().baseSha,
       },
     }),
-  );
-  const ends = await Promise.all(contexts.map(({ ctx }) => reviewerRole(ctx)));
-  for (const [at, { calls }] of contexts.entries()) {
-    const state = stateOf(
-      ends[at] ?? { kind: "deferred", error: "none" },
-      "next",
-    );
-    assert.deepEqual(opNames(calls), ["current-revision", "ready-pr"]);
-    assert.equal(sessionsOf(calls).length, 0);
-    assert.equal(state.stage, "merge");
-  }
+    ops: {
+      "current-revision": [current()],
+      "ready-pr": [{ pr: PR, ready: true }],
+    },
+  });
+  const state = stateOf(await reviewerRole(ctx), "next");
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(state.stage, "merge");
+});
+
+test("an integrated head needs a fresh hardening session even when linked to the earlier hardening", async () => {
+  const { ctx, calls } = hardening({
+    state: {
+      hardened: OLDER,
+      integration: { reviewed: OLDER, revision: REVISION },
+    },
+  });
+  const state = stateOf(await reviewerRole(ctx), "next");
+  assert.equal(sessionsOf(calls).length, 1);
+  assert.deepEqual(state.hardened, REVISION);
+  assert.equal(state.integration, null);
 });
 
 test("a hardening of an earlier revision is redone on the current one", async () => {

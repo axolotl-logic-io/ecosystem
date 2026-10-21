@@ -14,7 +14,6 @@ import {
   withWorld,
   writeWorld,
 } from "./fake-pipeline-flow-gh-world.mjs";
-import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   createReplayFlow,
@@ -47,8 +46,6 @@ const MUTATION_ARGS = new Set([
   "edit",
   "create",
 ]);
-const { loadConfig } = await import("../src/config.ts");
-const { configPolicyDigest } = await import("../src/project-policy.ts");
 
 const CLAIM_AUTHORITY = z.object({
   state: z.object({ hardened: z.unknown(), integration: z.unknown() }),
@@ -72,19 +69,17 @@ test("the accepted merge auto-closes the issue before delayed confirmation stops
   assert.equal(stopped.stopCode, "merge-refused");
   assert.equal(stopped.merged, null);
   assert.equal(stopped.codeMerged, null);
-  assert.equal(stopped.security, null);
+  assert.deepEqual(stopped.security.revision, stopped.hardened);
+  assert.equal(stopped.security.finding, null);
   const issue = readWorld(flow.ghDir).issues.find(
     ({ number }) => number === ISSUE,
   );
   assert.equal(issue?.state, "closed");
   assert.equal(merges(flow).length, 1);
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
-  assert.notEqual(merged, stopped.integration.revision.code);
+  assert.notEqual(merged, stopped.hardened.code);
   assert.equal(stopped.mergeAttempt.result, merged);
-  assert.deepEqual(
-    stopped.mergeAttempt.authorized,
-    stopped.integration.revision,
-  );
+  assert.deepEqual(stopped.mergeAttempt.authorized, stopped.hardened);
 });
 
 test("the installed caller reaches closed recovery and reconciles the saved response with original authorization", async () => {
@@ -107,7 +102,7 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
   assert.equal(recovered.stage, "done");
   assert.deepEqual(recovered.codeMerged, { pr: stopped.pr, sha: merged });
   assert.deepEqual(recovered.merged, {
-    ...stopped.integration.revision,
+    ...stopped.hardened,
     code: merged,
   });
   assert.equal(recovered.mergeAttempt.result, stopped.mergeAttempt.result);
@@ -121,7 +116,7 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
   assert.deepEqual(claimed.state.integration, stopped.integration);
   assert.deepEqual(recovered.hardened, stopped.hardened);
   assert.deepEqual(recovered.integration, stopped.integration);
-  assert.equal(sessions(flow), starts + 1);
+  assert.equal(sessions(flow), starts);
   assert.equal(
     readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
     "open",
@@ -141,24 +136,14 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
 test("actual-result checks precede read-only exact Security and completion", () => {
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   const cleared = savedState(readWorld(flow.ghDir));
-  assert.deepEqual(cleared.security.revision, {
-    code: merged,
-    inputs: cleared.integration.revision.inputs,
-    policy: configPolicyDigest(loadConfig(flow.config)),
-  });
-  const trace = opsTrace(flow).slice(traceStart);
-  const securityClaim = trace.findIndex(
-    ({ request }) => request.op === "prepare-review",
-  );
-  const verify = trace.findIndex(({ request }) => request.op === "verify");
-  assert.ok(verify >= 0);
-  assert.ok(securityClaim > verify);
+  assert.deepEqual(cleared.security.revision, cleared.hardened);
   assert.equal(cleared.security.finding, null);
   assert.ok(cleared.security.commentId > 0);
-  const security = piLog(flow.piDir)
-    .filter((entry) => entry.start === true)
-    .at(-1);
-  assert.equal(security?.commitScope, false);
+  const trace = opsTrace(flow).slice(traceStart);
+  const verify = trace.findIndex(({ request }) => request.op === "verify");
+  assert.ok(verify >= 0);
+  assert.ok(!trace.some(({ request }) => request.op === "prepare-review"));
+  assert.notEqual(merged, cleared.security.revision.code);
 });
 
 test("exact clearance permits completion with merged labels and completed closure", () => {

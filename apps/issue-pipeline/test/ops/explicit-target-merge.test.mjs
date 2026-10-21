@@ -1,7 +1,5 @@
 // @ts-check
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import {
@@ -19,7 +17,6 @@ import {
   BASE,
   BRANCH,
   git,
-  ISSUE,
   PR,
   REPO,
   world,
@@ -29,7 +26,6 @@ import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 
 const { merge } = await import("../../src/ops/merge.ts");
 const { gh } = await import("../../src/github.ts");
-const { stateBody } = await import("../../src/saved-state.ts");
 const REFUSED = z.looseObject({ merged: z.literal(false), reason: z.string() });
 const INVALID_REQUEST = /bad merge request/u;
 const SHA_LENGTH = 40;
@@ -76,10 +72,7 @@ test("literal configured integration and full H survive a concurrent source bran
 });
 
 test("main is a valid configured source base, not an implicit production exclusion", () => {
-  const original = world({ fastForward: true });
-  const w = { ...original, cfg: { ...original.cfg, baseBranch: "main" } };
-  w.state.hardenedTarget = { repo: w.cfg.repo, branch: "main", sha: w.base };
-  fs.writeFileSync(path.join(w.place, "state.json"), stateBody(ISSUE, w.state));
+  const w = world({ baseBranch: "main", fastForward: true });
   script(w, [
     ...prechecks(w),
     post(w),
@@ -101,8 +94,7 @@ test("main is a valid configured source base, not an implicit production exclusi
 });
 
 test("a main-source configuration refuses a PR targeting another branch before approval or merge", () => {
-  const original = world({ fastForward: true });
-  const w = { ...original, cfg: { ...original.cfg, baseBranch: "main" } };
+  const w = world({ baseBranch: "main", fastForward: true });
   script(w, [prStep(w, { baseRefName: BASE })]);
   assert.throws(() => merge(w.cfg, request(w)), IDENTITY);
   assert.equal(git(w.origin, ["rev-parse", "main"]), w.base);

@@ -1,11 +1,11 @@
 // The merge stage's session tasks: the Reviewer's resolution of a rebase
 // its own integration stopped on conflicts, and the read-only security
-// review of the merged result. Each holds this run's facts only; the
+// review of the candidate or historical merged result. Each holds facts; the
 // behaviour is the phase's prompt page (task-facts.ts). Pure.
 
 import { JOB_REPO } from "../../job/layout.ts";
 import type { RoleContext } from "../../job/role-context.ts";
-import type { Revision } from "../../state.ts";
+import type { CodeMerged, Revision } from "../../state.ts";
 import { bullets, header, replyLines } from "../task-facts.ts";
 
 // What prepare-review wrote for the security review.
@@ -17,9 +17,9 @@ interface PreparedReview {
 
 interface SecurityReviewFacts {
   prepared: PreparedReview;
-  // The merged result under review: GitHub's merge commit, or null when
-  // the change merged no code.
+  // The exact candidate or historical confirmed merged revision.
   revision: Revision;
+  codeMerged: CodeMerged | null;
 }
 
 // The task of a session that resolves the code rebase stopped on
@@ -62,10 +62,13 @@ function resolverTask(
 }
 
 function resultLines(facts: SecurityReviewFacts): string[] {
-  const { prepared, revision } = facts;
+  const { prepared, revision, codeMerged } = facts;
   let code = "Merge commit: none; the change merged no code";
   if (revision.code !== null) {
-    code = `Merge commit: \`${revision.code}\`, confirmed by GitHub`;
+    code = `Candidate commit: \`${revision.code}\``;
+    if (codeMerged !== null) {
+      code = `Historical merged commit: \`${revision.code}\``;
+    }
   }
   return bullets([
     code,
@@ -75,7 +78,7 @@ function resultLines(facts: SecurityReviewFacts): string[] {
   ]);
 }
 
-// The task of the security review of the merged result.
+// Facts for a candidate Security review or historical merged recovery.
 function securityReviewTask(
   ctx: RoleContext,
   facts: SecurityReviewFacts,
@@ -83,11 +86,11 @@ function securityReviewTask(
   const { code } = facts.revision;
   let checkout = "on the issue's branch";
   if (code !== null) {
-    checkout = `detached at the merge commit \`${code}\`: the merged result`;
+    checkout = `at exactly the reviewed commit \`${code}\``;
   }
   return [
     ...header(ctx, "security-review", checkout),
-    "## The merged result",
+    "## The reviewed revision",
     "",
     ...resultLines(facts),
     "",

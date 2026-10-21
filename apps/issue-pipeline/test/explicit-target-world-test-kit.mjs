@@ -103,6 +103,32 @@ function commit(dir, file, text) {
   return git(dir, ["rev-parse", "HEAD"]);
 }
 
+/**
+ * @param {import("../src/config.ts").Config} cfg
+ * @param {import("../src/state.ts").Revision} revision
+ * @param {string} base
+ * @returns {import("../src/state.ts").IssueState}
+ */
+function candidateState(cfg, revision, base) {
+  return {
+    ...newIssueState(ISSUE),
+    stage: "merge",
+    pr: PR,
+    hardened: revision,
+    hardenedTarget: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
+    security: {
+      revision,
+      commentId: 11,
+      finding: null,
+      phase: "candidate",
+      target: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
+    },
+    headSha: revision.code,
+    verifiedSha: revision.code,
+    flows: { code: true },
+  };
+}
+
 /** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean }} [options] */
 function graph(options = {}) {
   const place = fs.mkdtempSync(path.join(HOME, "world-"));
@@ -152,7 +178,7 @@ function graph(options = {}) {
   return { place, origin, seed, base, parent, head, moved, merged };
 }
 
-/** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean }} [options] */
+/** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean, baseBranch?: string }} [options] */
 function world(options = {}) {
   const { place, origin, seed, base, parent, head, moved, merged } =
     graph(options);
@@ -164,7 +190,7 @@ function world(options = {}) {
       repo: REPO,
       ...credentialConfig("bot"),
       allowedUsers: ["owner"],
-      baseBranch: BASE,
+      baseBranch: options.baseBranch ?? BASE,
       mergeConfirmation: { deadlineSeconds: 3, backoffSeconds: [1] },
       commands: { test: "true" },
     }),
@@ -176,17 +202,7 @@ function world(options = {}) {
   fs.mkdirSync(path.dirname(wt), { recursive: true });
   git(clone, ["worktree", "add", "-q", "-b", BRANCH, wt, `origin/${BRANCH}`]);
   const revision = { code: head, inputs: INPUTS, ...policyRevision(cfg) };
-  /** @type {import("../src/state.ts").IssueState} */
-  const state = {
-    ...newIssueState(ISSUE),
-    stage: /** @type {const} */ ("merge"),
-    pr: PR,
-    hardened: revision,
-    hardenedTarget: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
-    headSha: head,
-    verifiedSha: head,
-    flows: { code: true },
-  };
+  const state = candidateState(cfg, revision, base);
   fs.writeFileSync(path.join(place, "state.json"), stateBody(ISSUE, state));
   return {
     cfg,

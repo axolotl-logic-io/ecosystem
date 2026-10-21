@@ -11,7 +11,8 @@ import type { Config } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
-import type { IssueState } from "../state.ts";
+import { sameSecuritySubject } from "../security-clearance.ts";
+import type { IssueState, Security } from "../state.ts";
 import { ISSUE_STATE, sameRevision } from "../state.ts";
 import { retainedFastForwardReceipt } from "./fast-forward-evidence.ts";
 
@@ -28,6 +29,31 @@ const RELEASE_REQUEST = z.looseObject({
 });
 
 type EmptyReply = Record<string, never>;
+
+// Keep an exact durable decision across a stale save, but let fresh inputs or
+// target provenance replace obsolete clearance. A rejection of the same
+// code/inputs cannot be rerolled merely by changing the target.
+function sameCandidateDecision(
+  saved: Security,
+  requested: Security | null,
+  headSha: string | null,
+): boolean {
+  if (saved.phase !== "candidate" || saved.revision.code !== headSha) {
+    return false;
+  }
+  if (requested === null) {
+    return true;
+  }
+  if (!sameRevision(saved.revision, requested.revision)) {
+    return false;
+  }
+  return (
+    requested.phase === undefined ||
+    (saved.target.repo === requested.target.repo &&
+      saved.target.branch === requested.target.branch &&
+      saved.target.sha === requested.target.sha)
+  );
+}
 
 // `state` as issue `n` may save it: for issue `n`, with the saved code merge.
 function withSavedCodeMerge(
@@ -55,8 +81,11 @@ function withSavedCodeMerge(
   let { security } = state;
   if (
     saved.security !== null &&
-    merged !== null &&
-    sameRevision(saved.security.revision, merged)
+    ((saved.security.finding !== null &&
+      (security === null ||
+        sameSecuritySubject(saved.security.revision, security.revision))) ||
+      (merged !== null && sameRevision(saved.security.revision, merged)) ||
+      sameCandidateDecision(saved.security, security, state.headSha))
   ) {
     ({ security } = saved);
   }

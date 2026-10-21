@@ -22,20 +22,29 @@ const { afterOwnMerge } = await import(
   "../../../src/roles/merge/after-merge.ts"
 );
 
-test("uninterrupted own result checks M after saving truthful merge and before read-only security/completion", async () => {
+test("uninterrupted own result checks M after premerge Security and saving truthful merge, before completion", async () => {
   const w = world({ concurrent: true });
   const run = context(w, {
+    state: { security: null },
     ops: {
       "current-revision": [
         current(w),
         current(w),
-        current(w, true),
+        current(w),
         current(w, true),
       ],
       "ci-status": [{ status: "pass" }],
       verify: [verified(w)],
       merge: [{ merged: true, headSha: w.head, mergeCommit: w.merged }],
-      "prepare-review": postmergeOps(w)["prepare-review"],
+      "prepare-review": [
+        {
+          headSha: w.head,
+          baseSha: w.base,
+          diffPath: "diff",
+          bundlePath: "bundle",
+          changedFiles: ["early.txt", "late.txt"],
+        },
+      ],
       finish: [{ finished: true, closed: true }],
     },
     sessions: [NO_FINDING],
@@ -44,11 +53,12 @@ test("uninterrupted own result checks M after saving truthful merge and before r
   assert.equal(end.kind, "next");
   const log = names(run.calls);
   assert.ok(log.indexOf("merge") < log.indexOf("verify"));
-  assert.ok(log.indexOf("verify") < log.indexOf("prepare-review"));
-  assert.ok(log.indexOf("prepare-review") < log.indexOf("session"));
+  assert.ok(log.indexOf("session") < log.indexOf("merge"));
+  assert.equal(log.filter((name) => name === "session").length, 1);
   const saved = saves(run.calls);
-  assert.equal(saved[0]?.merged?.code, w.merged);
-  assert.equal(saved[0]?.verifiedSha, w.head);
+  const merged = saved.find((state) => state.merged?.code === w.merged);
+  assert.ok(merged !== undefined);
+  assert.equal(merged.verifiedSha, w.head);
   assert.ok(saved.some((state) => state.verifiedSha === w.merged));
   const verifiedCall = run.calls.find(
     (call) => call.kind === "op" && call.name === "verify",

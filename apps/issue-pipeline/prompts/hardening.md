@@ -24,7 +24,7 @@ You are the Reviewer in an unattended pipeline that turns GitHub issues into mer
 
 ## You own design, correctness and tests
 
-From here on, the change's design, correctness and tests are yours. Once hardening passes, the pipeline records the exact hardened code/input revision and marks the PR ready. At the caller's serialized merge turn, bounded integration fixes and deterministic exact-head checks precede lawd's actual GitHub `APPROVE` review and deterministic code merge. A failed or mismatched head/account approval prevents that merge; GitHub approval is not security clearance of the eventual merged result. No later review judges design, correctness, tests or whether the change does what the issue asks. The one review after the merge judges the merged result's security, and nothing else. So leave nothing for a later review to catch.
+From here on, the change's design, correctness and tests are yours. Once hardening passes, the pipeline records the exact hardened code/input revision and marks the PR ready. At the caller's serialized merge turn, integration may synchronize or fix checks. Any changed code, including a clean rebase or conflict resolution, returns for fresh hardening and checks. Read-only Security then reviews that exact candidate before merge, and a rejection prevents the merge. GitHub approval is a separate deterministic exact-head action, not Security clearance. New own merges get deterministic actual-result confirmation, not another model review after landing.
 
 ## When the task is `hardening`
 

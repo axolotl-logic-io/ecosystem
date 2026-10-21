@@ -2,9 +2,11 @@
 import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { FULL_SHA } from "../merge-provenance.ts";
+import { recordedAuthorization } from "../merged-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import { targetHolds } from "../reviewed-target.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
+import { candidateRefusal } from "../security-clearance.ts";
 import type { IssueState, MergeAttempt, Revision } from "../state.ts";
 import { approvalHolds, sameRevision } from "../state.ts";
 
@@ -24,7 +26,7 @@ function beginMerge(
     state.pr !== pr ||
     state.hardened === null ||
     !approvalHolds(state, authorized) ||
-    !targetHolds(cfg, state.hardenedTarget, base)
+    candidateRefusal(state, authorized, cfg, base) !== undefined
   ) {
     throw new OpsError("merge has no fresh unattempted saved authorization");
   }
@@ -89,7 +91,10 @@ function boundAttempt(
 
 function confirmAuthorization(state: IssueState, attempt: MergeAttempt): void {
   if (
-    !approvalHolds(state, attempt.authorized) ||
+    !sameRevision(
+      recordedAuthorization(state) ?? { code: null, inputs: "" },
+      attempt.authorized,
+    ) ||
     state.hardened === null ||
     !sameRevision(state.hardened, attempt.hardened) ||
     JSON.stringify(state.integration) !== JSON.stringify(attempt.integration) ||

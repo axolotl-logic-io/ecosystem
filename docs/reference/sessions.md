@@ -8,7 +8,7 @@ An issue moves through four stages:
 
 ```mermaid
 flowchart LR
-  author --> implement --> review["review: hardening"] --> merge["merge: integration, merge, result checks, Security"] --> done
+  author --> implement --> review["review: hardening"] --> merge["merge: integration, Security, merge, result checks"] --> done
 ```
 
 Only three model roles exist: Author, Developer and Reviewer. The serialized role and config name for the Developer is still `implementor`.
@@ -19,7 +19,7 @@ Only three model roles exist: Author, Developer and Reviewer. The serialized rol
 | `implement` | Developer | Yes | Code, tests and docs pushed to the issue's branch as a draft PR |
 | `review` / `hardening` | Reviewer | Yes | A verified, pushed hardened revision and a ready PR (see [review](review.md)) |
 | `merge` / `integration` | Reviewer | Yes | The final synchronization and its conflict and check fixes (see [sync](sync.md)) |
-| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the merged result (see [review](review.md#security-review)) |
+| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the exact candidate before merge (historical merged recovery remains read-only) (see [review](review.md#security-review)) |
 
 The Author is mandatory today. The [trusted-inputs-revision](../decisions/authority.md#trusted-inputs-revision) decision makes it optional; that isn't implemented yet.
 

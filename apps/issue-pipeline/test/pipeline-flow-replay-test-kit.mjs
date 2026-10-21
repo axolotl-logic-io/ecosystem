@@ -10,16 +10,17 @@ import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
+  hardeningTurn,
   implementorTurn,
   openFlowIssue,
   savedState,
+  securityTurn,
 } from "./pipeline-flow-script-test-kit.mjs";
 import { BASE, ISSUE, refIn, scriptPi } from "./pipeline-flow-test-kit.mjs";
 
 /** @typedef {import("./pipeline-flow-test-kit.mjs").Flow} Flow */
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see a polite greeting";
-const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
 const SECURITY_TAG_LENGTH = 12;
 
 /** @param {Flow} flow @param {string} code */
@@ -143,10 +144,38 @@ function prepareReplayFlow(flow) {
     reviewer: [
       implementorTurn("Hello, world", "Hardening fixes capitalization"),
       implementorTurn("Hello, world!", "Integration fixes CI"),
-      INTERRUPTED,
+      hardeningTurn(),
+      securityTurn(),
     ],
   });
+  fs.writeFileSync(
+    path.join(flow.root, "interrupt-finish"),
+    "pause completion",
+  );
   return gitlink;
+}
+
+// Synthetic migration fixture: retain the real confirmed merge and known
+// original integration, but encode the pre-upgrade postmerge-Security shape.
+// This is test data, never a runtime path for erasing candidate clearance.
+/** @param {Flow} flow @param {import("../src/state.ts").Integration} integration */
+function historicalMerge(flow, integration) {
+  const state = savedState(readWorld(flow.ghDir));
+  if (state.mergeAttempt.authorized.code !== integration.revision.code) {
+    throw new Error("historical fixture does not match the landed source");
+  }
+  replaceState(flow, {
+    ...state,
+    stage: "merge",
+    security: null,
+    hardened: integration.reviewed,
+    integration,
+    mergeAttempt: {
+      ...state.mergeAttempt,
+      hardened: integration.reviewed,
+      integration,
+    },
+  });
 }
 
 /** @param {Flow} flow @param {boolean} [delayMergeConfirmation] */
@@ -177,18 +206,28 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
     world.failedHead = savedState(world).hardened.code;
     world.delayMergeConfirmation = delayMergeConfirmation;
   });
-  for (const expected of ["wait", "deferred"]) {
-    let end = expected;
-    if (delayMergeConfirmation && expected === "deferred") {
-      end = "stop";
-    }
-    const result = runStage(flow, "merge");
-    if (result.end !== end) {
-      throw new Error(
-        `setup merge: expected ${end}, got ${JSON.stringify(result)}`,
-      );
-    }
+  const integrated = runStage(flow, "merge");
+  if (integrated.end !== "next") {
+    throw new Error(`setup integration: ${JSON.stringify(integrated)}`);
   }
+  const { integration } = savedState(readWorld(flow.ghDir));
+  if (runStage(flow, "review").end !== "next") {
+    throw new Error("fresh hardening did not complete");
+  }
+  let expected = "deferred";
+  if (delayMergeConfirmation) {
+    expected = "stop";
+  }
+  const result = runStage(flow, "merge");
+  if (result.end !== expected) {
+    throw new Error(
+      `setup merge: expected ${expected}, got ${JSON.stringify(result)}`,
+    );
+  }
+  if (!delayMergeConfirmation) {
+    historicalMerge(flow, integration);
+  }
+  fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
   const interruptedWorld = readWorld(flow.ghDir);
   fs.writeFileSync(flow.config, originalConfig);
   return { flow, interruptedWorld, gitlink };
@@ -197,6 +236,7 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
 export {
   createReplayFlow,
   expectedReplay,
+  historicalMerge,
   merges,
   prepareReplayFlow,
   replaceState,

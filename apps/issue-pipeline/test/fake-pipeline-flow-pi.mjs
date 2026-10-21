@@ -30,6 +30,7 @@ import { fixtureState, versionProbe } from "./runtime-fixtures.mjs";
  * @property {string[][]} [commits]
  * @property {Record<string, string>} [gitlinks] paths and commit identities to stage in repo/
  * @property {string} [rejectPrompt]
+ * @property {{ origin: string, branch: string, before: string, after: string }} [targetAdvance] external actor's target move during this turn
  * @property {Record<string, unknown>} output
  */
 

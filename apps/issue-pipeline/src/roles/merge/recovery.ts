@@ -7,8 +7,8 @@
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { recordedAuthorization } from "../../merged-authorization.ts";
 import { currentResultObservation } from "../../security-clearance.ts";
-import { mergeAuthorization } from "../../state.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { afterOwnMerge } from "./after-merge.ts";
@@ -37,7 +37,7 @@ async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
   if (
     attempt.result === null &&
     state.codeMerged !== null &&
-    mergeAuthorization(state)?.code === state.codeMerged.sha
+    recordedAuthorization(state)?.code === state.codeMerged.sha
   ) {
     return null;
   }
@@ -69,7 +69,7 @@ async function recoverOwnMerge(
 ): Promise<RoleEnd | null> {
   const { state } = ctx;
   const { merged, codeMerged } = state;
-  const authorized = mergeAuthorization(state);
+  const authorized = recordedAuthorization(state);
   if (
     state.stage !== "merge" ||
     merged === null ||

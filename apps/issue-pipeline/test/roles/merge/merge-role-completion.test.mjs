@@ -37,6 +37,7 @@ import {
   MERGED_REVISION,
   merging,
   mutationsOf,
+  PREPARED_MERGED,
   QUEUE,
 } from "./merge-role-test-kit.mjs";
 
@@ -70,6 +71,7 @@ test("after a confirmed code merge, the merge commit is verified, reviewed for s
     },
     ops: {
       "current-revision": [AFTER_MERGE, AFTER_MERGE, AFTER_MERGE],
+      "prepare-review": [PREPARED_MERGED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
   });

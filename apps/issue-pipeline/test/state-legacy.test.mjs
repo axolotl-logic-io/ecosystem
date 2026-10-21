@@ -201,7 +201,7 @@ test("a revision saved with a null wiki head is the same revision as one with no
   const state = parseIssueState(wikiEraState(), SAVED_ISSUE);
   assert.ok(state !== null);
   const current = { code: "c2", inputs: "i1" };
-  assert.equal(approvalHolds(state, current), true);
+  assert.equal(approvalHolds(state, current), false);
   assert.ok(state.merged !== null);
   assert.equal(sameRevision(state.merged, { code: "m1", inputs: "i1" }), true);
   const legacyWiki = { ...current, wiki: "w1" };

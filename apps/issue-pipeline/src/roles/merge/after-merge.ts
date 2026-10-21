@@ -1,12 +1,5 @@
-// The merge job's way to the security review of the merged result and the
-// completion (completion.ts), after its own code merge or one before it.
-//
-// `state.merged` means two things by stage. At merge it is this job's own
-// merge receipt, saved right after the explicit-target code merge and before
-// the security review: `merged.code` is the merge commit, `merged.inputs`
-// the authorized inputs (with a legacy wiki head, if any), and the
-// authorized revision's code (state.ts mergeAuthorization) the pre-merge
-// head the merge matched. At done it is the completion: what merged.
+// Confirmed own merges reuse exact premerge clearance after deterministic
+// result checks. Historical merged runs keep their original read-only recovery.
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { currentResultObservation } from "../../security-clearance.ts";
@@ -27,8 +20,7 @@ function short(sha: string | null): string {
 
 // After this job's own explicit-target merge of `authorized.code` as
 // `mergeCommit`: the receipt saved first; then, only while GitHub confirms
-// that merge and the inputs are still the authorized ones, the security
-// review of the merged result and the completion. Anything else goes back
+// that merge and the inputs are still the authorized ones, the bound clearance and the completion. Anything else goes back
 // to review. An interrupted job resumes an exact saved own-merge receipt
 // through recovery.ts, preserving its original authorization; changed work
 // instead needs hardening against the merged code before this module takes
