@@ -12,6 +12,7 @@ import {
   MERGE_ATTEMPT,
   REVISION,
 } from "./merge-provenance.ts";
+import { REVIEWED_TARGET } from "./reviewed-target.ts";
 import type { Status } from "./stages.ts";
 import { STAGES } from "./stages.ts";
 
@@ -141,14 +142,12 @@ const ISSUE_STATE = z.object({
   // The exact revision that passed the Reviewer's hardening, which
   // authorizes its merge; any other revision is hardened first.
   hardened: REVISION.nullable().catch(null),
+  hardenedTarget: REVIEWED_TARGET.nullable().catch(null),
   // The receipt of the Reviewer's own integration of the hardened revision.
   integration: INTEGRATION.nullable().catch(null),
-  // The security review of the merged result (security-clearance.ts).
   security: SECURITY.nullable().catch(null),
-  // The code head whose verification last passed.
   verifiedSha: z.string().nullable().catch(null),
   mergeReturn: MERGE_RETURN.nullable().catch(null),
-  // The revision the merge job merged.
   merged: REVISION.nullable().catch(null),
   codeMerged: CODE_MERGED.nullable().catch(null),
   mergeAttempt: MERGE_ATTEMPT.nullable().catch(null),
@@ -201,6 +200,7 @@ function newIssueState(number: number): IssueState {
     gherkin: null,
     review: { ...EMPTY_REVIEW, findings: [] },
     hardened: null,
+    hardenedTarget: null,
     integration: null,
     security: null,
     verifiedSha: null,
