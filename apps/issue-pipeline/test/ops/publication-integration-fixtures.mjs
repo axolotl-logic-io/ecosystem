@@ -3,12 +3,12 @@
 import { setCurrentRevision } from "./fake-ops-publish-revision.mjs";
 import { PR, sh } from "./ops-publish-test-kit.mjs";
 
-/** @param {import("./ops-publish-test-kit.mjs").World} w @returns {import("../../src/state.ts").Revision} */
-function mergedAt(w) {
+/** @param {import("./ops-publish-test-kit.mjs").World} w @param {import("../../src/state.ts").Revision} authorized @returns {import("../../src/state.ts").Revision} */
+function mergedAt(w, authorized) {
   sh(
     `git --git-dir=${w.root}/origin.git update-ref refs/heads/integration ${w.mergeSha}`,
   );
-  const revision = { code: w.mergeSha, inputs: "inputs-1" };
+  const revision = { ...authorized, code: w.mergeSha };
   setCurrentRevision({
     revision,
     baseSha: "base",

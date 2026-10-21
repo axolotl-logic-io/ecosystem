@@ -4,28 +4,26 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { approvedOf, current, request } from "./merge-op-test-kit.mjs";
 import {
-  approvedState,
+  boundState,
   fakeGh,
+  ISSUE,
   prView,
   savedListing,
-  securityOf,
+  sh,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
 
-const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const MOVED_TARGET_SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const { merge } = await import("../../src/ops/merge.ts");
+const { readWriteState } = await import("../../src/saved-state.ts");
 
-/** @param {import("./ops-publish-test-kit.mjs").World} w @param {string} refusal */
-function unclearedState(w, refusal) {
-  const saved = approvedState(approvedOf(w));
-  const security = {
-    ...securityOf(approvedOf(w)),
-    phase: /** @type {const} */ ("candidate"),
-    target: { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha: TARGET_SHA },
-  };
-  saved.security = security;
+/** @param {import("../../src/state.ts").IssueState} saved @param {string} refusal */
+function unclearedState(saved, refusal) {
+  const { security } = saved;
+  if (security?.target === undefined) {
+    throw new Error("missing bound baseline Security target");
+  }
 
   switch (refusal) {
     case "missing":
@@ -76,9 +74,23 @@ for (const refusal of [
   test(`saved ${refusal} clearance refuses before approval, attempt checkpoint or target mutation`, () => {
     const w = world();
     current(w);
-    const saved = unclearedState(w, refusal);
+    const baseline = boundState(w, approvedOf(w));
+    const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
+    assert.deepEqual(baseline.hardenedTarget, {
+      repo: w.cfg.repo,
+      branch: w.cfg.baseBranch,
+      sha: base,
+    });
+    assert.ok(baseline.security);
+    assert.equal(baseline.security.phase, "candidate");
+    assert.deepEqual(baseline.security.target, baseline.hardenedTarget);
+    assert.deepEqual(baseline.security.revision, approvedOf(w));
+    assert.equal(baseline.security.finding, null);
+    assert.equal(baseline.verifiedSha, w.sha);
+    assert.notEqual(base, MOVED_TARGET_SHA);
+    const saved = unclearedState(baseline, refusal);
     fakeGh.reply([
-      savedListing(saved),
+      { ...savedListing(saved), persistState: true },
       prView({ headRefOid: w.sha }),
       prView({ headRefOid: w.sha }),
     ]);
@@ -89,6 +101,10 @@ for (const refusal of [
     assert.ok("reason" in reply);
     assert.equal(reply.reason, "security");
     assert.deepEqual(writes(), []);
-    assert.equal(saved.mergeAttempt, null);
+    assert.equal(readWriteState(w.cfg, ISSUE).mergeAttempt, null);
+    assert.equal(
+      sh(`git --git-dir=${w.root}/origin.git rev-parse refs/heads/integration`),
+      base,
+    );
   });
 }

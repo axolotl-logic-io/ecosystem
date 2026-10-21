@@ -32,6 +32,7 @@ import {
   mergeComment,
   posts,
 } from "./explicit-target-recovery-test-kit.mjs";
+import { confirmedLostResponse } from "./fast-forward-save-state-test-kit.mjs";
 
 const { merge } = await import("../../src/ops/merge.ts");
 const { reconcileMerge } = await import("../../src/ops/merge-recovery.ts");
@@ -39,6 +40,8 @@ const { readWriteState, stateBody } = await import("../../src/saved-state.ts");
 const { saveState } = await import("../../src/ops/save-state.ts");
 const { verify } = await import("../../src/ops/verify.ts");
 const { mergedCode } = await import("../../src/ops/merged-review.ts");
+const { securityRefusal } = await import("../../src/security-clearance.ts");
+const { readWriteAuthority } = await import("../../src/write-authority.ts");
 const INPUT_MOVEMENT = /trusted inputs no longer match/u;
 const OK = z.looseObject({
   ok: z.literal(true),
@@ -184,30 +187,46 @@ test("interruption after durable 201 response recovers in a new process without 
   consumed();
 });
 
-for (const finding of [
-  null,
-  { category: /** @type {const} */ ("rights"), reason: "unsafe" },
-]) {
-  test(`a stale job snapshot cannot erase a confirmed receipt or exact security decision: ${JSON.stringify(finding)}`, () => {
-    const w = world({ fastForward: true });
-    script(w, [...prechecks(w), post(w), ...confirmation(w), mergeComment(w)]);
-    assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, true);
-    const confirmed = readWriteState(w.cfg, ISSUE);
-    assert.ok(confirmed.merged !== null);
-    const security = {
-      revision: confirmed.merged,
-      commentId: PR,
-      finding,
-    };
-    saveState(w.cfg, { number: ISSUE, state: { ...confirmed, security } });
+/** @type {{finding: import("../../src/state.ts").Security["finding"], refusal: string | undefined, cleared: boolean}[]} */
+const STALE_DECISIONS = [
+  { finding: null, refusal: undefined, cleared: true },
+  {
+    finding: { category: "rights", reason: "unsafe" },
+    cleared: false,
+    refusal: "the security review stopped this revision (rights): unsafe",
+  },
+];
+for (const { finding, refusal, cleared } of STALE_DECISIONS) {
+  test(`a stale job snapshot cannot erase a confirmed receipt or exact security decision: ${JSON.stringify(finding)}`, async () => {
+    const { w, confirmed, resultSecurity, reviewed, review, reply } =
+      await confirmedLostResponse(finding);
+    assert.equal(reply.merged, true);
+    assert.equal(review.ok, cleared);
+    assert.ok(confirmed.merged);
+    assert.ok(w.state.security);
+    assert.equal(w.state.security.phase, "candidate");
+    assert.notEqual(resultSecurity.revision.policy, w.revision.policy);
+    assert.deepEqual(reviewed.resultSecurity, resultSecurity);
+    assert.deepEqual(reviewed.security, w.state.security);
+    assert.equal(securityRefusal(reviewed, resultSecurity.revision), refusal);
     saveState(w.cfg, { number: ISSUE, state: w.state });
     const retained = readWriteState(w.cfg, ISSUE);
     assert.deepEqual(retained.merged, confirmed.merged);
-    assert.deepEqual(retained.security, security);
+    assert.deepEqual(retained.security, w.state.security);
+    assert.deepEqual(retained.resultSecurity, resultSecurity);
+    assert.equal(securityRefusal(retained, resultSecurity.revision), refusal);
     assert.deepEqual(retained.codeMerged, { pr: PR, sha: w.merged });
     assert.deepEqual(retained.mergeAttempt, confirmed.mergeAttempt);
     assert.deepEqual(retained.hardened, w.state.hardened);
+    assert.deepEqual(retained.hardenedTarget, w.state.hardenedTarget);
+    assert.deepEqual(retained.integration, w.state.integration);
+    assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
+    assert.equal(git(w.origin, ["rev-parse", BASE]), w.head);
     assert.equal(posts().length, 1);
+    assert.equal(
+      calls().filter((args) => args.includes("event=APPROVE")).length,
+      1,
+    );
     consumed();
   });
 }

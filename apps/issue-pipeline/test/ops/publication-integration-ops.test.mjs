@@ -5,7 +5,7 @@
 // receipt bound to the exact hardened revision moves to the integrated,
 // checked one; a receipt bound to anything else authorizes nothing, and no
 // review verdict authorizes a merge. The merge comment keeps the hardened head apart from
-// the integrated one and says the security review follows, and the merge
+// the integrated one and records premerge Security, and the merge
 // op refuses a draft rather than marking it ready.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -34,6 +34,7 @@ const { finishIssue } = await import("../../src/ops/finish.ts");
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @typedef {import("../../src/state.ts").Revision} Revision */
 
+const SHORT_SHA_LENGTH = 12;
 const REVIEWED_CODE = "c0ffee00000000000000000000000000000000aa";
 const NOT_AUTHORIZED_REVISION = /is not #7's authorized revision/u;
 const NOT_BOUND = /merge authorization .* is not bound to the saved result/u;
@@ -113,7 +114,17 @@ test("merge without an integration says hardening passed on the merged head", ()
   ]);
   merge(w.cfg, mergeRequest(w, approved, boundState(w, approved)));
   const body = bodyOf(effectsOf(writes()), "comment #50 role=merger");
-  assert.ok(body.includes("hardening passed on this commit"));
+  assert.ok(
+    body.includes(
+      `hardening passed on ${approved.code.slice(0, SHORT_SHA_LENGTH)}`,
+    ),
+  );
+  assert.ok(
+    body.includes(
+      `premerge Security cleared ${approved.code.slice(0, SHORT_SHA_LENGTH)}`,
+    ),
+  );
+  assert.ok(body.includes("without another model review"));
   assert.equal(body.includes("integrated"), false);
 });
 
@@ -174,7 +185,14 @@ function doneAt(receipt, state) {
 test("a claimed own merge finishes with original hardening and integration intact, only after saved exact security", () => {
   const w = world();
   const { reviewed, integrated } = chainOf(w);
-  const receipt = mergedAt(w);
+  const receipt = mergedAt(w, integrated);
+  assert.notEqual(reviewed.code, integrated.code);
+  assert.notEqual(receipt.code, integrated.code);
+  assert.equal(receipt.policy, integrated.policy);
+  assert.equal(
+    sh(`git --git-dir=${w.root}/origin.git show -s --format=%P ${w.mergeSha}`),
+    `${sh(`git -C ${w.worktree} rev-parse origin/integration`)} ${w.sha}`,
+  );
   const state = integratedState(
     w,
     reviewed,
@@ -209,6 +227,10 @@ test("a claimed own merge finishes with original hardening and integration intac
     false,
   );
   assert.deepEqual(done, before);
+  assert.equal(
+    sh(`git --git-dir=${w.root}/origin.git rev-parse refs/heads/integration`),
+    receipt.code,
+  );
 });
 
 test("finish refuses an integrated head no receipt binds to the approval, changing nothing", () => {
@@ -218,7 +240,7 @@ test("finish refuses an integrated head no receipt binds to the approval, changi
     reviewed: { ...reviewed, code: "0ther" },
     revision: integrated,
   });
-  const receipt = mergedAt(w);
+  const receipt = mergedAt(w, integrated);
   const security = securityOf(receipt);
   for (const saved of [forged, integratedState(w, reviewed, null)]) {
     const done = { ...doneAt(receipt, saved), security };
@@ -238,7 +260,14 @@ test("finish of an integrated head refuses a security review of the pre-merge he
     reviewed,
     revision: integrated,
   });
-  const receipt = mergedAt(w);
+  const receipt = mergedAt(w, integrated);
+  assert.notEqual(reviewed.code, integrated.code);
+  assert.notEqual(receipt.code, integrated.code);
+  assert.equal(receipt.policy, integrated.policy);
+  assert.equal(
+    sh(`git --git-dir=${w.root}/origin.git show -s --format=%P ${w.mergeSha}`),
+    `${sh(`git -C ${w.worktree} rev-parse origin/integration`)} ${w.sha}`,
+  );
   for (const revision of [integrated, reviewed]) {
     const done = { ...doneAt(receipt, state), security: securityOf(revision) };
     fakeGh.reply([savedListing(done)]);
