@@ -84,14 +84,7 @@ async function tick(flow) {
   const orchestrate = path.join(flow.root, "orchestrate.mjs");
   const result = spawnSync(
     process.execPath,
-    [
-      orchestrate,
-      "--config",
-      flow.config,
-      "--brain-path",
-      flow.brain,
-      "--once",
-    ],
+    [orchestrate, "--config", flow.config, "--once"],
     { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
   );
   if (result.status !== 0) {
@@ -132,8 +125,6 @@ function runStage(flow, stage, issue = ISSUE) {
       String(issue),
       "--branch",
       `agent/issue-${issue}`,
-      "--brain-path",
-      flow.brain,
       "--stage",
       stage,
       "--lane",

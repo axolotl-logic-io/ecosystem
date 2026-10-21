@@ -9,7 +9,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
-import { pageTextOf } from "./brain-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   AUTHOR_SESSION,
@@ -31,6 +30,7 @@ import {
   startJob,
   statusOf,
 } from "./job-test-kit.mjs";
+import { pageTextOf } from "./prompt-test-kit.mjs";
 
 /** @import { Place } from "./job-test-kit.mjs" */
 
@@ -149,12 +149,12 @@ const TOLD = [
   {
     stage: READER_STAGE,
     script: AUTHOR_SESSION,
-    page: "Pipeline-Prompt-Author.md",
+    page: "author.md",
   },
   {
     stage: "implement",
     script: IMPLEMENTOR_SESSION,
-    page: "Pipeline-Prompt-Developer.md",
+    page: "developer.md",
   },
 ];
 for (const { stage, script, page } of TOLD) {

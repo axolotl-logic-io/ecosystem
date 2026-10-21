@@ -16,7 +16,6 @@ import {
 import { withoutJobId } from "./orchestrator-job-id-kit.mjs";
 import {
   ALLOWED,
-  BRAIN,
   CONFIG,
   commentBy,
   FIRST_SPAWN_PID,
@@ -100,7 +99,7 @@ test("a visitor's or the pipeline's comment never wakes the author", () => {
   openWith([written(1, "review", { after })]);
   const { spawned } = tickOver();
   assert.deepEqual(argvs(spawned), [
-    `--config ${CONFIG} --issue 1 --stage review --branch agent/issue-1 --brain-path ${BRAIN} --lane orchestrator`,
+    `--config ${CONFIG} --issue 1 --stage review --branch agent/issue-1 --lane orchestrator`,
   ]);
   assert.deepEqual(fakeGh.writes(ghIsRead), []);
 });
@@ -111,7 +110,7 @@ test("a trusted comment sends a review back to the author, saving the state firs
   openWith([written(1, "review", { after, state: { lease } })]);
   const { spawned } = tickOver();
   assert.deepEqual(argvs(spawned), [
-    `--config ${CONFIG} --issue 1 --stage author --branch agent/issue-1 --brain-path ${BRAIN} --lane orchestrator`,
+    `--config ${CONFIG} --issue 1 --stage author --branch agent/issue-1 --lane orchestrator`,
   ]);
   const effects = effectsOf(fakeGh.writes(ghIsRead));
   assert.deepEqual(effectNames(effects), ["edit comment 1001 state"]);
@@ -165,7 +164,7 @@ test("needs-info holds on the input asked on, and an answer that landed before t
   ]);
   const { spawned } = tickOver();
   assert.deepEqual(argvs(spawned), [
-    `--config ${CONFIG} --issue 2 --stage author --branch agent/issue-2 --brain-path ${BRAIN} --lane orchestrator`,
+    `--config ${CONFIG} --issue 2 --stage author --branch agent/issue-2 --lane orchestrator`,
   ]);
   assert.deepEqual(loggedFor(1), ["author held needs-info"]);
 });
@@ -188,8 +187,8 @@ test("a live legacy job holds its issue; a dead one is ignored and never restart
   ]);
   const { spawned } = tickOver({ live: [LIVE_PID] });
   assert.deepEqual(argvs(spawned), [
-    `--config ${CONFIG} --issue 3 --stage review --branch agent/issue-3 --brain-path ${BRAIN} --lane orchestrator`,
-    `--config ${CONFIG} --issue 2 --stage implement --branch agent/issue-2 --brain-path ${BRAIN} --lane orchestrator`,
+    `--config ${CONFIG} --issue 3 --stage review --branch agent/issue-3 --lane orchestrator`,
+    `--config ${CONFIG} --issue 2 --stage implement --branch agent/issue-2 --lane orchestrator`,
   ]);
   assert.deepEqual(loggedFor(1), ["implement held legacy-job-live"]);
   assert.deepEqual(loggedFor(2), ["implement started free"]);
@@ -205,7 +204,7 @@ test("a dead job of this pipeline restarts as a fresh job at its stage, with no 
   openWith([written(1, "review")]);
   const { spawned } = tickOver();
   assert.deepEqual(argvs(spawned), [
-    `--config ${CONFIG} --issue 1 --stage review --branch agent/issue-1 --brain-path ${BRAIN} --lane orchestrator`,
+    `--config ${CONFIG} --issue 1 --stage review --branch agent/issue-1 --lane orchestrator`,
   ]);
   assert.deepEqual(loggedFor(1), ["review started restart"]);
 });
@@ -222,7 +221,7 @@ test("the merge window's holder keeps it across ticks while its changed head is 
   openWith([written(1, "merge"), written(2, "merge")]);
   const first = tickOver();
   assert.deepEqual(argvs(first.spawned), [
-    `--config ${CONFIG} --issue 1 --stage merge --branch agent/issue-1 --brain-path ${BRAIN} --lane orchestrator --merge-queue 1,2`,
+    `--config ${CONFIG} --issue 1 --stage merge --branch agent/issue-1 --lane orchestrator --merge-queue 1,2`,
   ]);
   writeJob({
     issue: 1,
@@ -233,7 +232,7 @@ test("the merge window's holder keeps it across ticks while its changed head is 
   openWith([written(1, "review"), written(2, "merge")]);
   const second = tickOver();
   assert.deepEqual(argvs(second.spawned), [
-    `--config ${CONFIG} --issue 1 --stage review --branch agent/issue-1 --brain-path ${BRAIN} --lane orchestrator`,
+    `--config ${CONFIG} --issue 1 --stage review --branch agent/issue-1 --lane orchestrator`,
   ]);
   assert.deepEqual(loggedFor(2), [
     "merge held merge-window:#1",

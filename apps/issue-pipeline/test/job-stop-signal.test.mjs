@@ -48,7 +48,7 @@ function jobFor(runOp) {
       docs: null,
       branch: "agent/issue-7",
     },
-    brain: { pinned: [], promptFor: unexpectedLaunch },
+    prompts: { pinned: [], promptFor: unexpectedLaunch },
     status: openStatus(path.join(isolatedRoot, id), {
       id,
       startedAt,

@@ -2,8 +2,8 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { pinnedOf } from "./brain-test-kit.mjs";
 import { messageEnd, toolEnd } from "./fake-rpc-pi.mjs";
+import { pinnedOf } from "./prompt-test-kit.mjs";
 import { MODEL, privateRuntime } from "./runtime-policy-test-kit.mjs";
 
 /** @import { SessionLaunch } from "../src/job/launch.ts" */
@@ -34,7 +34,7 @@ function launch(changes = {}) {
     timeoutMs: 3000,
     commits: false,
     phase: null,
-    prompt: pinnedOf("Pipeline-Prompt-Author.md"),
+    prompt: pinnedOf("author.md"),
     ...changes,
   };
 }

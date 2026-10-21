@@ -11,8 +11,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { pinnedOf } from "./brain-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+import { pinnedOf } from "./prompt-test-kit.mjs";
 
 /** @import { AgentDefinition } from "../src/job/agent-definition.ts" */
 /** @import { LaunchHooks, SessionLaunch } from "../src/job/launch.ts" */
@@ -32,7 +32,7 @@ const { runSession } = await import("../src/job/launch.ts");
 const { STAGE_AGENTS } = await import("../src/job/roles.ts");
 
 const FRONTMATTER_FENCE = /^---/u;
-const PROMPT = pinnedOf("Pipeline-Prompt-Author.md");
+const PROMPT = pinnedOf("author.md");
 const NOBODY = /issue-pipeline-nobody/u;
 
 // Launch hooks that put fresh sessions in `sessions` and record nothing.

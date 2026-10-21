@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { pageTextOf } from "./brain-test-kit.mjs";
 import {
   appendedOf,
   COMMIT_SCOPE_ENV,
@@ -13,12 +12,13 @@ import {
   stateOf,
   toolsOf,
 } from "./job-session-authority-test-kit.mjs";
+import { pageTextOf } from "./prompt-test-kit.mjs";
 
 const WRITES = ["bash", "edit", "write", "pipeline_commit"];
 const REFUSED_PHASE = /security-review session can't set commits true/u;
 const NO_PROMPT = /pinned no prompt for this merge session/u;
-const INTEGRATION_PAGE = "Pipeline-Prompt-Integration.md";
-const SECURITY_PAGE = "Pipeline-Prompt-Security.md";
+const INTEGRATION_PAGE = "integration.md";
+const SECURITY_PAGE = "security.md";
 
 test("the merge job's integration session commits and its final security review only reads, though both run the same agent", async () => {
   const job = await openMergeJob();
@@ -87,7 +87,7 @@ test("a session whose authority its phase or stage forbids, or that the job pinn
 test("each session's pi gets its phase's page appended to its system prompt as pinned, though the page changed after", async () => {
   const job = await openMergeJob();
   const before = piStarts().length;
-  fs.writeFileSync(path.join(job.brainDir, INTEGRATION_PAGE), "Edited.\n");
+  fs.writeFileSync(path.join(job.promptsDir, INTEGRATION_PAGE), "Edited.\n");
   try {
     await job.session(reviewerSpec(true, "integration"));
     await job.session(reviewerSpec(false, "security-review"));

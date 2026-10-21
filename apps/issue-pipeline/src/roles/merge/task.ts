@@ -1,7 +1,7 @@
 // The merge stage's session tasks: the Reviewer's resolution of a rebase
 // its own integration stopped on conflicts, and the read-only security
 // review of the merged result. Each holds this run's facts only; the
-// behaviour is the phase's wiki page (task-facts.ts). Pure.
+// behaviour is the phase's prompt page (task-facts.ts). Pure.
 
 import { JOB_DOCS, JOB_REPO } from "../../job/layout.ts";
 import type { RoleContext } from "../../job/role-context.ts";

@@ -85,7 +85,6 @@ function configWith(extra) {
 }
 
 const CONFIG = configWith({});
-const BRAIN = "/brain";
 const cfg = loadConfig(CONFIG);
 
 /**
@@ -257,8 +256,7 @@ function resetRuns() {
 }
 
 /**
- * One tick over the queue `openWith` set up, handing its jobs BRAIN, its
- * processes faked: `live` are the pids that run, and each spawn gets the next
+ * One tick over the queue `openWith` set up, its processes faked: `live` are the pids that run, and each spawn gets the next
  * pid from FIRST_SPAWN_PID and is recorded as its argv.
  * @param {{ live?: readonly number[], at?: Date }} [run]
  * @returns {{ result: TickResult, spawned: string[][] }}
@@ -270,7 +268,6 @@ function tickOver(run = {}) {
   const live = new Set(run.live ?? []);
   const result = tick(cfg, {
     configPath: CONFIG,
-    brainPath: BRAIN,
     now: () => run.at ?? NOW,
     spawn: (argv) => {
       spawned.push([...argv]);
@@ -284,7 +281,6 @@ function tickOver(run = {}) {
 
 export {
   ALLOWED,
-  BRAIN,
   CONFIG,
   cfg,
   commentBy,

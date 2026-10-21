@@ -1,12 +1,11 @@
 // @ts-check
 // The real roles, claims, publication and finish ops replay an interrupted
 // own explicit-target branch merge. Git and the built programs are real; GitHub and pi are
-// local fakes. The caller assigns one issue, branch, stage and pinned brain.
+// local fakes. The caller assigns one issue, branch and stage.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
-import { pageTextOf } from "./brain-test-kit.mjs";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { readWorld, withWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
 import {
@@ -30,7 +29,7 @@ import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
 import { savedState, securityTurn } from "./pipeline-flow-script.mjs";
 
 const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
-const SECURITY_PHASE = "Pipeline-Prompt-Security.md";
+const SECURITY_PHASE = "security.md";
 const SECURITY_TAG_LENGTH = 12;
 
 /** @type {import("./pipeline-flow-kit.mjs").Flow} */
@@ -263,7 +262,8 @@ test("missing security is reviewed read-only at the actual first-parent merge di
   assert.equal(launch.commitScope, false);
   assert.equal(launch.ghToken, null);
   assert.equal(launch.extensions.includes("pipeline-commit.mjs"), false);
-  assert.ok(launch.argv.includes(pageTextOf(SECURITY_PHASE)));
+  const securityPage = path.join(flow.prompts, SECURITY_PHASE);
+  assert.ok(launch.argv.includes(fs.readFileSync(securityPage, "utf8")));
   assert.ok(diff.includes("+Hello, world!"));
   assert.ok(diff.includes("+Greetings say Hello, world!"));
   fs.unlinkSync(path.join(flow.root, "interrupt-publish"));

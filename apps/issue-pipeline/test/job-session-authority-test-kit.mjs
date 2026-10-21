@@ -14,9 +14,9 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
-import { writeBrain } from "./brain-test-kit.mjs";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+import { writePrompts } from "./prompt-test-kit.mjs";
 import { provisionFixture } from "./runtime-fixtures.mjs";
 import { saveAuthority } from "./write-authority-test-kit.mjs";
 
@@ -47,9 +47,9 @@ Object.assign(
 
 const { FAKE_PI, outputEnd } = await import("./fake-rpc-pi.mjs");
 const { loadConfig, paths } = await import("../src/config.ts");
-const { openBrain } = await import("../src/job/brain.ts");
 const { openControl } = await import("../src/job/control.ts");
 const { COMMIT_SCOPE_ENV } = await import("../src/job/pipeline-commit.ts");
+const { pinPrompts } = await import("../src/job/prompts.ts");
 const { sessionRunnerOf } = await import("../src/job/role-session.ts");
 const { runUsage } = await import("../src/job/run-usage.ts");
 const { hooksOf } = await import("../src/job/session-hooks.ts");
@@ -118,14 +118,15 @@ function toolsOf(argv) {
 }
 
 // A merge job's session runner, with its status, control, usage entries and
-// brain, its prompts pinned from that brain as a `pinnedAs` job pins them.
+// prompt folder, its prompts pinned from that folder as a `pinnedAs` job
+// pins them.
 /** @param {import("../src/stages.ts").Stage} [pinnedAs] @param {{ merged?: boolean, wiki?: boolean }} [options] */
 async function openMergeJob(
   pinnedAs = STAGE,
   { merged = false, wiki = true } = {},
 ) {
-  const brainDir = writeBrain(fs.mkdtempSync(path.join(tmp, "brain-")));
-  const brain = openBrain(brainDir, pinnedAs);
+  const promptsDir = writePrompts(fs.mkdtempSync(path.join(tmp, "root-")));
+  const prompts = pinPrompts(promptsDir, pinnedAs);
   const cfg = { ...loadConfig(configFile), wiki };
   let codeMerged = null;
   if (merged) {
@@ -146,7 +147,7 @@ async function openMergeJob(
     stage: STAGE,
     lane: null,
     socket: "",
-    prompts: brain.pinned,
+    prompts: prompts.pinned,
   });
   const control = await openControl(runDir, () => ({
     pushed: "none",
@@ -159,7 +160,6 @@ async function openMergeJob(
     issue: ISSUE,
     stage: STAGE,
     branch: "agent/issue-7",
-    brainPath: brainDir,
   };
   const where = { cwd, repo: cwd, from: process.env, job: identity };
   const hooks = hooksOf(cfg, args, { status, control }, where);
@@ -167,7 +167,7 @@ async function openMergeJob(
   const appended = [];
   const session = sessionRunnerOf({
     stage: STAGE,
-    brain,
+    prompts,
     hooks,
     status,
     stopping: control.stopping,
@@ -177,7 +177,7 @@ async function openMergeJob(
       return Promise.resolve();
     },
   });
-  return { session, runDir, control, appended, brainDir, cfg };
+  return { session, runDir, control, appended, promptsDir, cfg };
 }
 
 /** @param {boolean} commits @param {SessionPhase} [phase] @returns {SessionSpec} */

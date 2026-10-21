@@ -10,4 +10,4 @@ inheritSkills: false
 defaultContext: fresh
 ---
 
-You are the issue pipeline's Developer. Your instructions are the wiki page Pipeline-Prompt-Developer, which the job pins and gives you ahead of your task. Your task holds this run's facts.
+You are the issue pipeline's Developer. Your instructions are the pipeline's prompt page developer.md, which the job pins and gives you ahead of your task. Your task holds this run's facts.

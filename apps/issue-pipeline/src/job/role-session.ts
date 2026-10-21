@@ -2,7 +2,7 @@
 // one of the job's launches (src/job/launch.ts), as the one installed agent
 // the stage may run, with the write authority its spec asks for and the stage
 // allows (sessionRefusalOf in roles.ts), with the behavioral prompt the job
-// pinned for its stage and phase (src/job/brain.ts), always fresh and
+// pinned for its stage and phase (src/job/prompts.ts), always fresh and
 // bounded only by its wall-clock timeout. Its reply is the structured_output tool's,
 // parsed once more by the role's schema here, the only reply check
 // (`one-review-session`). Every finished session's usage goes to the usage
@@ -11,9 +11,9 @@
 import { z } from "zod";
 import type { ModelRole } from "../config-legacy.ts";
 import type { Stage } from "../stages.ts";
-import type { Brain, PinnedPrompt } from "./brain.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runSession } from "./launch.ts";
+import type { PinnedPrompt, StagePrompts } from "./prompts.ts";
 import type { SessionRaw } from "./raw-results.ts";
 import type { SessionResult, SessionSpec } from "./role-context.ts";
 import { STAGE_AGENTS, sessionRefusalOf } from "./roles.ts";
@@ -38,7 +38,7 @@ const STOPPING = "the job is stopping";
 // What the sessions read of their job.
 interface SessionJob {
   stage: Stage;
-  brain: Brain;
+  prompts: StagePrompts;
   hooks: LaunchHooks;
   status: Pick<JobStatus, "settled">;
   stopping: () => unknown;
@@ -142,7 +142,7 @@ function sessionRunnerOf(
     if (refusal !== null) {
       return refused(refusal);
     }
-    const prompt = job.brain.promptFor(job.stage, spec.phase ?? null);
+    const prompt = job.prompts.promptFor(job.stage, spec.phase ?? null);
     if (prompt === null) {
       return refused(`the job pinned no prompt for this ${job.stage} session`);
     }

@@ -14,11 +14,11 @@ import type { ModelRole } from "../config-legacy.ts";
 import { head } from "../git-state.ts";
 import { ROOT } from "../pipeline-root.ts";
 import { piArgs, readDefinition } from "./agent-definition.ts";
-import type { PinnedPrompt } from "./brain.ts";
 import type { SessionEnd, Steers } from "./context-log.ts";
 import type { LiveHandle } from "./control.ts";
 import type { OpsProcess } from "./ops-process.ts";
 import { runOps } from "./ops-process.ts";
+import type { PinnedPrompt } from "./prompts.ts";
 import type { OpsRaw, SessionRaw } from "./raw-results.ts";
 import { failedSession, opsRaw, sessionRaw } from "./raw-results.ts";
 import type { SessionPhase } from "./role-context.ts";
@@ -67,8 +67,8 @@ interface OpsLaunch {
 // One model session: its key, the model role it plays, its installed agent
 // and model, its task, the JSON Schema of its reply, its timeout, whether it
 // commits (its own write authority), the reviewer phase it is labelled with
-// (null for none) and its behavioral prompt, pinned from the brain, which
-// pi appends to its agent's system prompt and which grants it nothing.
+// (null for none) and its behavioral prompt, pinned from the installed
+// prompt pages, which pi appends to its agent's system prompt and which grants it nothing.
 interface SessionLaunch {
   key: string;
   role: ModelRole;

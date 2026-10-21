@@ -1,5 +1,5 @@
 // The Developer session's task: the issue's facts, its Gherkin and what an
-// earlier round left for it. The Developer's behaviour is its wiki page
+// earlier round left for it. The Developer's behaviour is its prompt page
 // (task-facts.ts). Pure.
 
 import type { RoleContext } from "../../job/role-context.ts";

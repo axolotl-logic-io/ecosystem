@@ -1,8 +1,10 @@
 // @ts-check
 // install.mjs into temporary roots: every file lands, the executables are
-// the ones it built into dist/, every stage's agent is installed with its
-// placeholders filled, a second install
-// replaces nothing and backs nothing up, and a failed build installs nothing.
+// the ones it built into dist/, the prompt pages are prompts/'s byte for
+// byte, every stage's agent is installed with its placeholders filled, a
+// second install replaces nothing and backs nothing up, an installed prompt
+// page the source no longer has is retired, and a failed build installs
+// nothing.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -12,6 +14,12 @@ import { test } from "node:test";
 
 const script = new URL("../install.mjs", import.meta.url).pathname;
 const dist = new URL("../dist/", import.meta.url).pathname;
+const prompts = new URL("../prompts/", import.meta.url).pathname;
+// The prompt pages the source ships, which install puts in the root's prompts/.
+const PROMPT_FILES = fs
+  .readdirSync(prompts)
+  .filter((f) => f.endsWith(".md"))
+  .sort();
 const BUILD_FAILED = /build failed/u;
 // The stage agents and the dedicated read-only Git subagent.
 const AGENT_FILES = [
@@ -24,6 +32,8 @@ const AGENT_FILES = [
 const PLACEHOLDER = /\{\{/u;
 const NOTHING_CHANGED = /0 pipeline file\(s\) changed/u;
 const INSIDE_ROOT = /inside the pipeline root/u;
+const RETIRED_STALE_PROMPT =
+  /^retired +\S*prompts\/Pipeline-Prompt-Author\.md$/mu;
 // The build's files, each installed under its own name in the root.
 const BUILT = [
   "ops.mjs",
@@ -113,6 +123,17 @@ test("installs the pipeline with local paths filled in", () => {
     assert.equal(
       fs.readFileSync(path.join(root, f), "utf8"),
       fs.readFileSync(path.join(dist, f), "utf8"),
+      f,
+    );
+  }
+  assert.deepEqual(fs.readdirSync(path.join(root, "prompts")).sort(), [
+    ...PROMPT_FILES,
+  ]);
+  for (const f of PROMPT_FILES) {
+    assert.ok(
+      fs
+        .readFileSync(path.join(root, "prompts", f))
+        .equals(fs.readFileSync(path.join(prompts, f))),
       f,
     );
   }
@@ -229,4 +250,38 @@ test("a fresh installation provisions no runnable runtime", () => {
     "pi-cliproxyapi-config.example.json",
   ]);
   assert.equal(fs.existsSync(path.join(fresh, "secrets")), false);
+});
+
+test("install retires an installed prompt page the source no longer has, backing it up, and keeps other files", () => {
+  const upgraded = path.join(tmp, "upgraded-root");
+  const installed = path.join(upgraded, "prompts");
+  fs.mkdirSync(installed, { recursive: true });
+  const stale = "Pipeline-Prompt-Author.md";
+  fs.writeFileSync(path.join(installed, stale), "# Old\n\nOld page.\n");
+  fs.writeFileSync(path.join(installed, "notes.txt"), "operator notes\n");
+  const result = spawnSync(process.execPath, [script, "--allow-dirty"], {
+    env: {
+      ...env,
+      ...Object.fromEntries([["ISSUE_PIPELINE_ROOT", upgraded]]),
+    },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, RETIRED_STALE_PROMPT);
+  assert.deepEqual(
+    fs.readdirSync(installed).sort(),
+    [...PROMPT_FILES, "notes.txt"].sort(),
+  );
+  const backups = fs
+    .readdirSync(`${upgraded}-backups`, { recursive: true })
+    .map(String)
+    .filter((file) => file.endsWith(`prompts${path.sep}${stale}`));
+  assert.equal(backups.length, 1);
+  assert.equal(
+    fs.readFileSync(
+      path.join(`${upgraded}-backups`, String(backups[0])),
+      "utf8",
+    ),
+    "# Old\n\nOld page.\n",
+  );
 });

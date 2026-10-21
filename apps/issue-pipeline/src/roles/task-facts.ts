@@ -1,10 +1,10 @@
 // The facts every session's task is built from. A task holds only this
 // run's facts and the reply's shape: the behaviour each session follows is
-// the wiki page the runtime pins and loads ahead of the task, by the
-// session's stage and phase (author: Pipeline-Prompt-Author, implement:
-// -Developer, review/hardening: -Hardening, merge/integration:
-// -Integration, merge/security-review: -Security). The task's kind names
-// the section of that page that applies. Pure.
+// the prompt page the runtime pins and loads ahead of the task, by the
+// session's stage and phase (prompts/ in the pipeline: author: author.md,
+// implement: developer.md, review/hardening: hardening.md,
+// merge/integration: integration.md, merge/security-review: security.md).
+// The task's kind names the section of that page that applies. Pure.
 
 import { JOB_DOCS, JOB_REPO } from "../job/layout.ts";
 import type { RoleContext } from "../job/role-context.ts";

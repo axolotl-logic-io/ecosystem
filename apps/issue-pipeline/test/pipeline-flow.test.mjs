@@ -7,7 +7,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { pageTextOf } from "./brain-test-kit.mjs";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { fieldOf, flagsOf } from "./pipeline-flow-gh-api.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
@@ -30,6 +29,7 @@ import {
   savedState,
   securityTurn,
 } from "./pipeline-flow-script.mjs";
+import { PROMPT_PAGES } from "./prompt-test-kit.mjs";
 
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    When they arrive\n    Then they see a polite greeting";
@@ -134,14 +134,14 @@ test("each phase gets its configured model and exact write authority without a G
 
 test("hardening, integration and final security get pinned pages and truthful revision provenance", () => {
   const starts = piStarts();
-  const pages = ["Author", "Developer", "Hardening", "Integration", "Security"];
-  for (const [at, name] of pages.entries()) {
+  const pages = PROMPT_PAGES.map(({ page }) => page);
+  for (const [at, page] of pages.entries()) {
     const launched = starts[at];
     assert.ok(launched !== undefined);
     const flag = launched.argv.indexOf("--append-system-prompt");
-    const page = `Pipeline-Prompt-${name}.md`;
-    assert.equal(launched.argv[flag + 1], pageTextOf(page));
-    const sha256 = createHash("sha256").update(pageTextOf(page)).digest("hex");
+    const text = fs.readFileSync(path.join(flow.prompts, page), "utf8");
+    assert.equal(launched.argv[flag + 1], text);
+    const sha256 = createHash("sha256").update(text).digest("hex");
     const usage = readWorld(flow.ghDir)
       .comments.map(({ body }) => body)
       .join("\n");

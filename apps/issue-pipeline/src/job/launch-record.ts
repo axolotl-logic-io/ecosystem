@@ -37,8 +37,8 @@ const LAUNCH = z.object({
   commits: z.boolean().nullable().default(null),
   scope: PATH_SCOPE.nullable().default(null),
   phase: z.enum(SESSION_PHASES).nullable().default(null),
-  // The brain page the session's prompt was pinned from and the sha256 of
-  // its bytes (src/job/brain.ts); null for an ops launch and in a file
+  // The prompt page the session's prompt was pinned from and the sha256 of
+  // its bytes (src/job/prompts.ts); null for an ops launch and in a file
   // written before it was recorded.
   prompt: z
     .object({ page: z.string(), sha256: z.string() })

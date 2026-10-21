@@ -93,7 +93,7 @@ test("a fresh wiki-only hardening writer gets previous timeout provenance and re
     { commands: { test: "mise //apps/issue-pipeline:check" } },
     { wiki: true },
   );
-  fs.writeFileSync(path.join(at.brain, "Pipeline-Prompt-Hardening.md"), PROMPT);
+  fs.writeFileSync(path.join(at.prompts, "hardening.md"), PROMPT);
   const { patch, bytes } = seedRecovery(at);
   const r = runJob(at, ["--stage", "review"]);
   assert.equal(r.status, 0, r.stderr);
@@ -229,7 +229,7 @@ test("hardening and check-fix both get the pinned targeted-test policy and actua
     },
     { commands: { test: "mise //apps/issue-pipeline:check" } },
   );
-  fs.writeFileSync(path.join(at.brain, "Pipeline-Prompt-Hardening.md"), PROMPT);
+  fs.writeFileSync(path.join(at.prompts, "hardening.md"), PROMPT);
   const r = runJob(at, ["--stage", "review"]);
   assert.equal(r.status, 0, r.stderr);
   const starts = piStarts(at);

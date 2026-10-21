@@ -1,5 +1,5 @@
 // The author session's task: the issue's facts and its current Gherkin. The
-// Author's behaviour is its wiki page (task-facts.ts). Pure.
+// Author's behaviour is its prompt page (task-facts.ts). Pure.
 
 import { JOB_DOCS, JOB_REPO } from "../../job/layout.ts";
 import type { RoleContext } from "../../job/role-context.ts";

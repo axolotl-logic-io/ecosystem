@@ -11,7 +11,7 @@ function wikiSetupReason(pages: readonly string[], problem: string): string {
   if (pages.length > 0) {
     work = `required wiki updates (${pages.join(", ")})`;
   }
-  return `${work}: ${problem}. Supply the enabled, accessible authoritative target wiki as docs/ using its configured submodule and base; reconcile retained checkout/recovery evidence before an explicitly authorized restart. Neither repo/ documentation nor the prompt-brain checkout substitutes for docs/. This grants no code write, repeat merge, wiki publication or completion authority`;
+  return `${work}: ${problem}. Supply the enabled, accessible authoritative target wiki as docs/ using its configured submodule and base; reconcile retained checkout/recovery evidence before an explicitly authorized restart. Neither repo/ documentation nor the pipeline's prompt pages substitute for docs/. This grants no code write, repeat merge, wiki publication or completion authority`;
 }
 
 function unavailableWiki(cfg: Config): string {

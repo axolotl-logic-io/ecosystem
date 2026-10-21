@@ -2,20 +2,19 @@
 // The stage job: one job pinned to one issue that runs only one stage.
 //
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
-//     --brain-path <wiki clone> [--lane L] [--merge-queue n1,n2,…]
-//     [--job-id <uuid>]
+//     [--lane L] [--merge-queue n1,n2,…] [--job-id <uuid>]
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
-//     --brain-path <wiki clone> --print-boundary
+//     --print-boundary
 //
 // Its caller assigns it the issue and the issue's branch; it never picks
 // another issue. Before it claims or clones anything it refuses a branch git
 // wouldn't take literally and one the repo protects: its base, its wiki's
 // branch, the remote's default (src/job/branch.ts). Both checkouts, every
 // ops request and every push name that branch; the claim refuses one the
-// issue's saved state isn't bound to. It then pins, from the wiki clone
-// --brain-path names, the behavioral prompt page of each session its stage
-// runs, failing on one it can't read (src/job/brain.ts); pi appends a
+// issue's saved state isn't bound to. It then pins, from the installed
+// release's prompts/ folder, the behavioral prompt page of each session its
+// stage runs, failing on one it can't read (src/job/prompts.ts); pi appends a
 // session's page to its agent's system prompt, and it grants nothing. It
 // claims #N and runs the stage's role (src/roles/registry.ts) on the role
 // runner (src/job/role-run.ts), always fresh: a restarted job starts the
@@ -65,8 +64,6 @@ import { loadConfig, paths } from "./config.ts";
 import { authorizedIssue } from "./issue-context.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
-import type { Brain } from "./job/brain.ts";
-import { openBrain } from "./job/brain.ts";
 import { branchRefusalOf } from "./job/branch.ts";
 import { CheckoutSetupError, openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
@@ -75,6 +72,8 @@ import { openControl, socketPathOf } from "./job/control.ts";
 import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
 import { opsRunnerOf } from "./job/ops-request.ts";
+import type { StagePrompts } from "./job/prompts.ts";
+import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
 import { inputsOf } from "./job/role-inputs.ts";
 import { runRoleStage } from "./job/role-run.ts";
 import { boundaryOf, STAGE_WIKI_ACCESS } from "./job/roles.ts";
@@ -124,7 +123,7 @@ function openCheckout(
 async function runStage(
   args: RunArgs,
   cfg: Config,
-  brain: Brain,
+  prompts: StagePrompts,
 ): Promise<RunEnd> {
   const { issue, stage, branch, mergeQueue = null } = args;
   const role = roleOf(stage);
@@ -141,7 +140,7 @@ async function runStage(
   const identity = { id, startedAt: new Date().toISOString() };
   const lane = args.lane ?? null;
   const socket = socketPathOf(runDir);
-  const job = { issue, stage, lane, socket, prompts: brain.pinned };
+  const job = { issue, stage, lane, socket, prompts: prompts.pinned };
   const status = openStatus(runDir, { ...job, ...identity });
   const control = await openControl(
     runDir,
@@ -171,7 +170,7 @@ async function runStage(
     stage,
     mergeQueue,
     dirs,
-    brain,
+    prompts,
     identity,
     runOp,
     hooks,
@@ -274,14 +273,14 @@ async function main(): Promise<void> {
     if (refusal !== null) {
       throw new Error(refusal);
     }
-    const brain = openBrain(args.brainPath, args.stage);
+    const prompts = pinPrompts(PROMPTS_DIR, args.stage);
     if (args.kind === "boundary") {
       const boundary = boundaryOf(cfg, args.issue, args.stage, process.env);
       process.stdout.write(`${JSON.stringify(boundary)}\n`);
       return;
     }
     authorizedIssue(cfg, args.issue);
-    const end = await runStage(args, cfg, brain);
+    const end = await runStage(args, cfg, prompts);
     if (end.kind === "finished") {
       process.stdout.write(`${JSON.stringify(end.summary)}\n`);
       return;

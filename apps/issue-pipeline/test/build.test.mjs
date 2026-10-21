@@ -195,7 +195,7 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   function once() {
     return spawnSync(
       process.execPath,
-      [orchestrator, "--config", config, "--brain-path", tmp, "--once"],
+      [orchestrator, "--config", config, "--once"],
       {
         encoding: "utf8",
         env: { ...process.env, [ROOT_VAR]: tmp },

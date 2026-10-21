@@ -23,5 +23,6 @@ well as other repositories. Issue jobs develop and review pipeline fixes; the
 operator coordinates installation separately from merging them.
 
 The [wiki](https://github.com/axolotl-logic-io/ecosystem/wiki) holds pipeline
-design and behavioral prompts. The caller supplies a pinned local wiki clone
-for prompt inputs and assigns each issue, branch, lane and stage explicitly.
+design. The sessions' behavioral prompts ship with the pipeline in
+`apps/issue-pipeline/prompts/`, and the caller assigns each issue, branch,
+lane and stage explicitly.

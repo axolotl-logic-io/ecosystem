@@ -3,8 +3,8 @@
 // file the installed version wrote lacks, so its overlapping stage names
 // are never taken for this pipeline's), the job's pid, id, issue, the stage
 // it started at and the one it is at now, lane, start time and steer socket,
-// the brain pages it pinned its prompts from (src/job/brain.ts), and a
-// record of every launch it started (src/job/launch-record.ts). On
+// the prompt pages it pinned (src/job/prompts.ts), and a record of every
+// launch it started (src/job/launch-record.ts). On
 // exit it holds the job's outcome: how the role's stage ended, whether the
 // issue deferred on a transient provider or transport error for the
 // orchestrator's backoff, the error of a claim that failed, the uncommitted
@@ -18,7 +18,6 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
-import type { PromptProvenance } from "./brain.ts";
 import type {
   LaunchOutcome,
   LaunchPush,
@@ -26,6 +25,7 @@ import type {
 } from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
 import type { PathScope } from "./pipeline-commit.ts";
+import type { PromptProvenance } from "./prompts.ts";
 import type { SessionPhase } from "./role-context.ts";
 
 const STATUS_FILE = "job.json";
@@ -72,8 +72,9 @@ const STATUS = z.object({
   lane: z.string().nullable(),
   startedAt: z.string(),
   socket: z.string(),
-  // The brain pages the job pinned its sessions' prompts from
-  // (src/job/brain.ts); absent from a file written before they were.
+  // The prompt pages the job pinned its sessions' prompts from
+  // (src/job/prompts.ts); absent from a file written before they were.
+  // `head` is the HEAD of the wiki clone an older job pinned them from.
   prompts: z
     .array(
       z.object({
@@ -97,7 +98,7 @@ type JobOutcome = z.infer<typeof JOB_OUTCOME>;
 type StatusFile = z.infer<typeof STATUS>;
 
 // The job as its file names it: its random id and its start, as its usage
-// records and its commits' trailers name them, too, and the brain pages it
+// records and its commits' trailers name them, too, and the prompt pages it
 // pinned.
 interface JobInfo {
   id: string;
@@ -110,7 +111,7 @@ interface JobInfo {
 }
 
 // A launch as it starts: a pi session with its file, its write authority,
-// its reviewer phase and the brain page its prompt was pinned from, or an ops
+// its reviewer phase and the prompt page its prompt was pinned from, or an ops
 // child.
 interface LaunchStart {
   key: string;

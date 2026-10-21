@@ -1,7 +1,7 @@
 // @ts-check
 // The full-flow tests' world: the pipeline as build.ts builds it (ops.mjs,
-// job.mjs, orchestrate.mjs and the pi extensions) in a temporary pipeline
-// root under a temporary HOME, real bare git origins for the repo and its
+// job.mjs, orchestrate.mjs and the pi extensions), with the prompt pages it
+// ships, in a temporary pipeline root under a temporary HOME, real bare git origins for the repo and its
 // wiki submodule, the stateful fake GitHub (pipeline-flow-gh.mjs) and the
 // scripted fake pi (pipeline-flow-pi.mjs) first on PATH. A tick runs the
 // built orchestrator once, which starts the stage jobs it decides on as
@@ -12,7 +12,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { writeBrain } from "./brain-test-kit.mjs";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { installFlowGh } from "./pipeline-flow-gh.mjs";
 import { installFlowPi } from "./pipeline-flow-pi.mjs";
@@ -20,6 +19,7 @@ import { FIXTURE_MODELS, provisionFixture } from "./runtime-fixtures.mjs";
 
 const APP = new URL("..", import.meta.url).pathname;
 const AGENTS = path.join(APP, "agents");
+const PROMPTS = path.join(APP, "prompts");
 const BASE = "integration";
 const WIKI_BRANCH = "master";
 const ISSUE = 7;
@@ -51,7 +51,8 @@ const SEED_ID = [
  * @property {string} config
  * @property {string} origin
  * @property {string} wikiOrigin
- * @property {string} brain the wiki clone the jobs pin their prompts from
+ * @property {string} prompts the root's prompts/ folder, which the jobs pin
+ * their prompts from
  * @property {string} ghDir
  * @property {string} piDir
  * @property {NodeJS.ProcessEnv} env
@@ -124,18 +125,24 @@ function seedOrigins(tmp) {
 }
 
 /**
- * Installs the build in `root` as install.mjs would, and the agent files
- * where pi reads them.
- * @param {string} root @param {string} agents
+ * Installs the build and the prompt pages in `root` as install.mjs would,
+ * and the agent files where pi reads them. Returns the installed prompts/.
+ * @param {string} root @param {string} agents @returns {string}
  */
 function installBuild(root, agents) {
   const out = buildOnce();
   for (const file of fs.readdirSync(out)) {
     fs.copyFileSync(path.join(out, file), path.join(root, file));
   }
+  const prompts = path.join(root, "prompts");
+  fs.mkdirSync(prompts);
+  for (const file of fs.readdirSync(PROMPTS)) {
+    fs.copyFileSync(path.join(PROMPTS, file), path.join(prompts, file));
+  }
   for (const file of fs.readdirSync(AGENTS)) {
     fs.copyFileSync(path.join(AGENTS, file), path.join(agents, file));
   }
+  return prompts;
 }
 
 /** @param {string} config @param {string} origin */
@@ -208,7 +215,7 @@ function setUpFlow() {
   fs.symlinkSync(process.execPath, path.join(String(bin), "node"));
   const where = { tmp, home: String(home), root: String(root) };
   assertTemporary(where);
-  installBuild(where.root, agents);
+  const prompts = installBuild(where.root, agents);
   const { origin, wikiOrigin } = seedOrigins(tmp);
   const collaborators = ["bot", "alice"];
   const gh = { dir: String(ghDir), bin: String(bin), origin, collaborators };
@@ -224,7 +231,7 @@ function setUpFlow() {
     config,
     origin,
     wikiOrigin,
-    brain: writeBrain(path.join(tmp, "brain")),
+    prompts,
     ghDir: String(ghDir),
     piDir: String(piDir),
     env,

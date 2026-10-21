@@ -133,8 +133,10 @@ const SESSION_RECORD = z.strictObject({
     steered: z.boolean().optional(),
   }),
   task: z.strictObject({ chars: COUNT, files: z.record(RELATIVE_PATH, COUNT) }),
-  // The brain page the session's behavioral prompt was pinned from, the
-  // sha256 of its bytes and the brain's HEAD (null when it had none);
+  // The prompt page the session's behavioral prompt was pinned from, the
+  // sha256 of its bytes and the HEAD of the wiki clone an older job pinned
+  // it from (null for a page that ships with the pipeline, or a clone with
+  // none);
   // absent from records written before it was recorded.
   prompt: z
     .strictObject({

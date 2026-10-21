@@ -36,8 +36,6 @@ function startAuthor(flow, extra) {
       "author",
       "--branch",
       `agent/issue-${ISSUE}`,
-      "--brain-path",
-      flow.brain,
       ...extra,
     ],
     { env: flow.env, encoding: "utf8", timeout: RUN_MS },
@@ -86,15 +84,16 @@ test("fresh explicit Author initializes metadata once; Developer interruption an
   assert.deepEqual(readWorld(flow.ghDir).unsupported, []);
 });
 
-test("invalid branch and missing brain refuse before any mirror, claim or model exists", () => {
+test("invalid branch and a missing prompt page refuse before any mirror, claim or model exists", () => {
   const flow = newIssue();
   const branch = startAuthor(flow, ["--branch", "integration"]);
   assert.equal(branch.status, 1);
   assert.ok(branch.stderr.includes("base or wiki branch"));
-  fs.renameSync(flow.brain, `${flow.brain}-unavailable`);
-  const brain = startAuthor(flow, []);
-  assert.equal(brain.status, 1);
-  assert.ok(brain.stderr.includes("--brain-path"));
+  const page = path.join(flow.prompts, "author.md");
+  fs.renameSync(page, `${page}-unavailable`);
+  const missing = startAuthor(flow, []);
+  assert.equal(missing.status, 1);
+  assert.ok(missing.stderr.includes(`can't read prompt page ${page}`));
   for (const dir of ["clones", "mirrors", "work"]) {
     assert.equal(fs.existsSync(path.join(flow.root, dir)), false);
   }

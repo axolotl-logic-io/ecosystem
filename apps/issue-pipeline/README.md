@@ -72,7 +72,7 @@ Hardening authorizes integration, not a fictitious premerge security approval. `
 
 A security rejection leaves code **already merged**, but wiki unpublished and issue stopped. It is not a rollback. Lifting the stop cannot reroll the same rejected revision: it re-stops without a model. Remediation may need a separate issue or operator action. Missing/stale security cannot authorize completion. After interruption, an exact saved own-merge receipt and original authorization reestablish whole-change graph coverage and deterministic code/wiki checks on the exact merged result before running missing security or reusing its exact approval; they do not rerun writers, push code or merge again. Done replay with historical wiki work and missing/stale exact clearance stops for explicit reconciliation: today's unpublished diff cannot establish a receipt for yesterday's published wiki revision. Code-only replay without wiki work may still obtain fresh security after exact-result checks. Independently hardened wiki-only work after a previous code merge remains supported. A wiki-only issue merges no code and passes the same final security/publication gate.
 
-Pending wiki requirements come from signed Gherkin's named pages, not `flows.wiki` (which counts unpublished work). Authorized post-merge hardening still receives the configured target wiki as `docs/` when no issue wiki branch exists; it initializes the tracked submodule under existing base/pin rules and restores private work without overwriting recovery evidence. Before its writer starts, `repo/` is detached at the confirmed merged result. Hardening and wiki check-fixes have wiki-only commit authority, never a code push or repeat merge. Disabled/misconfigured required wikis stop before the model; initialization/access/base/reconciliation failures report a setup error naming the signed pages, configured target and underlying problem, retaining the failed checkout for explicit recovery before restart. No source README or prompt-brain fallback is used. New wiki commits require their own exact hardening, actual-result/wiki checks and clear security before publication; code-only work acquires no invented wiki edit. This is source behavior, not a claim about an older installed incident.
+Pending wiki requirements come from signed Gherkin's named pages, not `flows.wiki` (which counts unpublished work). Authorized post-merge hardening still receives the configured target wiki as `docs/` when no issue wiki branch exists; it initializes the tracked submodule under existing base/pin rules and restores private work without overwriting recovery evidence. Before its writer starts, `repo/` is detached at the confirmed merged result. Hardening and wiki check-fixes have wiki-only commit authority, never a code push or repeat merge. Disabled/misconfigured required wikis stop before the model; initialization/access/base/reconciliation failures report a setup error naming the signed pages, configured target and underlying problem, retaining the failed checkout for explicit recovery before restart. No source README or prompt-page fallback is used. New wiki commits require their own exact hardening, actual-result/wiki checks and clear security before publication; code-only work acquires no invented wiki edit. This is source behavior, not a claim about an older installed incident.
 
 ## Explicit-target merge and result verification
 
@@ -251,15 +251,15 @@ Source delivery adds no live worker entry point, provider setup, installation, a
 
 ## Caller invocation and concurrency
 
-Run installed `job.mjs`, once per stage, with **one `--issue`, required `--branch` and required `--brain-path`**, including boundary prints:
+Run installed `job.mjs`, once per stage, with **one `--issue` and a required `--branch`**, including boundary prints:
 
 ```bash
 node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
-  --issue 479 --branch feature/issue-479-query --brain-path /path/to/wiki-clone \
+  --issue 479 --branch feature/issue-479-query \
   --lane caller-query --stage author --print-boundary
 
 node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
-  --issue 479 --branch feature/issue-479-query --brain-path /path/to/wiki-clone \
+  --issue 479 --branch feature/issue-479-query \
   --lane caller-query --stage author
 ```
 
@@ -321,19 +321,19 @@ passed checks or pushed commits never supply missing hardening, and ordinary
 saved-authority/exact-head checks still gate recovery. No install or deployment
 is implied by merging this source change.
 
-## Wiki prompt source and pinning
+## Prompt source and pinning
 
-`--brain-path` is a local clone of the wiki, distinct from mutable issue docs. Behavioral instructions come **only** from these pages, selected by `(stage, phase)`:
+The behavioral prompts ship with the pipeline: `prompts/` in this folder, which install copies to `$ISSUE_PIPELINE_ROOT/prompts/`, distinct from mutable issue docs. Behavioral instructions come **only** from these installed pages, selected by `(stage, phase)` (`src/job/prompts.ts`):
 
 | Stage / phase | File |
 |---|---|
-| author / none | `Pipeline-Prompt-Author.md` |
-| implement / none | `Pipeline-Prompt-Developer.md` |
-| review / hardening | `Pipeline-Prompt-Hardening.md` |
-| merge / integration | `Pipeline-Prompt-Integration.md` |
-| merge / security-review | `Pipeline-Prompt-Security.md` |
+| author / none | `author.md` |
+| implement / none | `developer.md` |
+| review / hardening | `hardening.md` |
+| merge / integration | `integration.md` |
+| merge / security-review | `security.md` |
 
-Before any mutation the job snapshots the pages needed by its stage. Missing/unreadable/nonplain/symlink, invalid UTF-8, NUL-containing, blank, single-line or oversized pages fail explicitly; there is **no bundled/installed/network fallback**. Each page must be multiline and at most 131071 bytes. `job.json` records path, page, SHA-256 and wiki HEAD; session launch/usage provenance records the page/hash (usage also HEAD). The exact pinned text is appended to pi's thin identity prompt with `--append-system-prompt`, so editing the clone mid-job changes no session's policy. An unmapped stage/phase cannot start. Wiki text cannot grant tools, tokens or commit permission; code checks each session's `commits` and `phase` against `STAGE_AGENTS` in `src/job/roles.ts`.
+Before any mutation the job snapshots the pages needed by its stage. A missing prompt folder, or a missing/unreadable/nonplain/symlink, invalid UTF-8, NUL-containing, blank, single-line or oversized page, fails explicitly; there is **no wiki, bundled or network fallback**. Each page must be multiline and at most 131071 bytes. `job.json` records path, page and SHA-256; session launch/usage provenance records the page/hash. Their `head` is null; records written by older jobs, which pinned the pages from a wiki clone given by the removed `--brain-path` flag, still parse with that clone's HEAD. The exact pinned text is appended to pi's thin identity prompt with `--append-system-prompt`, so installing another release mid-job changes no session's policy. An unmapped stage/phase cannot start. Prompt text cannot grant tools, tokens or commit permission; code checks each session's `commits` and `phase` against `STAGE_AGENTS` in `src/job/roles.ts`.
 
 ## Programs
 
@@ -347,7 +347,7 @@ Before any mutation the job snapshots the pages needed by its stage. Missing/unr
 | `shell-supervisor.mjs` | Configured commands in owned process groups, cleaned on exit |
 | `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commit tool extensions |
 | `git-review.mjs` | Credential-isolated, read-only Git queries with session-local paging and tool-result coverage records |
-| `orchestrate.mjs` | Retained legacy discovery/scheduling compatibility only; `--config <path> --brain-path <wiki clone> [--once]`. Not the caller-owned entry point; do not run it alongside caller-managed jobs |
+| `orchestrate.mjs` | Retained legacy discovery/scheduling compatibility only; `--config <path> [--once]`. Not the caller-owned entry point; do not run it alongside caller-managed jobs |
 
 GitHub state, claim, Gherkin, hardening and security comments require merge authorship plus same-read editor provenance to be authoritative; signatures and markers alone grant nothing. `clones/`, `work/` and `runs/` are local caches/recovery artifacts: retain them and saved patches through upgrades until preserved work is confirmed safe.
 
@@ -447,7 +447,7 @@ This ordinary backlog continuation is not a prerequisite for unrelated delivery.
 
 ## Install and safe upgrades
 
-The executor runs from an installed copy, not this source folder. Install only when a change affects installed source or installed assets. Documentation-only and wiki behavioral-prompt-only changes need no ceremonial binary reinstall: wiki publication and the caller's pinned-brain refresh are separate actions. Changes to installed thin agent definitions are installed assets, unlike the wiki's behavioral pages.
+The executor runs from an installed copy, not this source folder. Install only when a change affects installed source or installed assets. Documentation-only changes need no ceremonial binary reinstall: wiki publication is a separate action. Changes to the behavioral prompts in `prompts/` and to the thin agent definitions are installed assets.
 
 Operator commands for an installed-source/assets change (not an automatic release step):
 
@@ -458,13 +458,13 @@ mise //apps/issue-pipeline:install:dry-run    # inspect candidate changes
 mise //apps/issue-pipeline:install            # operator-authorized cutover only
 ```
 
-Before upgrading: stop dispatch, drain all old-version jobs (prefer completing an active integration turn), verify no old job/session remains, snapshot installed config and signed state/recovery artifacts, pass the **exact source HEAD** full gate, review the candidate changes and install dry-run, then perform a controlled install and resume one explicitly assigned issue/stage at a time. When prompts change, review/publish the wiki and select the intended pinned brain separately; new jobs must still validate their stage's required pages. Never mix live old/new jobs or reset branches, hardening, integration, attempted-merge/response evidence (including cumulative reconciliation reads), security rejections or code-merge receipts to make an upgrade pass. Installing this recovery fix is a separate operator-authorized upgrade after its source merge, not an automatic source-workflow step; it performs no credential rotation, release or deployment. Unknown moved heads return conservatively to hardening; code already merged stays merged. Install/rollback of binaries does not undo code merges or publish rejected wiki work.
+Before upgrading: stop dispatch, drain all old-version jobs (prefer completing an active integration turn), verify no old job/session remains, snapshot installed config and signed state/recovery artifacts, pass the **exact source HEAD** full gate, review the candidate changes and install dry-run, then perform a controlled install and resume one explicitly assigned issue/stage at a time. Prompt changes take effect with the install, for jobs started after it; new jobs must still validate their stage's required pages. Never mix live old/new jobs or reset branches, hardening, integration, attempted-merge/response evidence (including cumulative reconciliation reads), security rejections or code-merge receipts to make an upgrade pass. Installing this recovery fix is a separate operator-authorized upgrade after its source merge, not an automatic source-workflow step; it performs no credential rotation, release or deployment. Unknown moved heads return conservatively to hardening; code already merged stays merged. Install/rollback of binaries does not undo code merges or publish rejected wiki work.
 
 When pipeline operation exposes a source defect, preserve retained issue work and authoritative receipts, and deliver a tested/reviewed fix through the issue and PR workflow. Source merge does not change the installed runtime. After any necessary operator cutover and explicit recovery, restart the retained repository, issue, branch and stable lane at a stage appropriate to saved state and current inputs. Lifting a stop supplies no missing authority; ambiguous merge outcomes require read-only reconciliation, not a blind mutation retry. The wiki's [recovery procedure](https://github.com/axolotl-logic-io/ecosystem/wiki/Pipeline-Job-Contract#operator-recovery-procedure) and [cutover runbook](https://github.com/axolotl-logic-io/ecosystem/wiki/Reimagined-Pipeline#cutover) describe this process.
 
-Record source delivery (PR/H/M), operator installation (candidate and installed identity or not applicable), wiki publication (exact revision/security evidence or pending) and pinned-brain refresh (wiki revision/page hashes or pending) separately. None implies another, and publishing the wiki changes no prompt text already pinned by a live job. Ecosystem's source-base `main` is not permission to deploy another configured repository's production branch.
+Record source delivery (PR/H/M), operator installation (candidate and installed identity or not applicable) and wiki publication (exact revision/security evidence or pending) separately. Neither implies the other, and installing changes no prompt text already pinned by a live job. Ecosystem's source-base `main` is not permission to deploy another configured repository's production branch.
 
-Install builds first, then copies programs and example config into `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`) and thin agents into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`), filling root placeholders. It backs up replaced/retired installed files under `$ISSUE_PIPELINE_ROOT-backups/<timestamp>-install/`, records the commit in `INSTALLED.json`, refuses dirty source unless explicitly overridden and refuses installing from inside the pipeline root. The retired old `workflow.js`, escalation/ops/reader/specifier/writer agents and start/pause prompts are listed by dry-run. Per-repo operator configs, setup/teardown scripts, secrets, clones, work and runs are not rewritten by install. Wiki publication and model-config cutover remain explicit operator responsibilities. Install also copies the nonsecret runtime example, never a runnable profile/cache/credential. Merging this source does not activate it or resume jobs: the operator separately installs the accepted version and records its installed identity before resuming affected jobs.
+Install builds first, then copies programs, the behavioral prompts (`prompts/*.md` into `prompts/`) and example config into `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`) and thin agents into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`), filling root placeholders. It backs up replaced/retired installed files under `$ISSUE_PIPELINE_ROOT-backups/<timestamp>-install/`, records the commit in `INSTALLED.json`, refuses dirty source unless explicitly overridden and refuses installing from inside the pipeline root. The retired old `workflow.js`, any installed prompt page `prompts/` no longer has, escalation/ops/reader/specifier/writer agents and start/pause prompts are listed by dry-run. Per-repo operator configs, setup/teardown scripts, secrets, clones, work and runs are not rewritten by install. Wiki publication and model-config cutover remain explicit operator responsibilities. Install also copies the nonsecret runtime example, never a runnable profile/cache/credential. Merging this source does not activate it or resume jobs: the operator separately installs the accepted version and records its installed identity before resuming affected jobs.
 
 ## Tests
 

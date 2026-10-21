@@ -62,7 +62,7 @@
         "src/job/git-review-repository.ts",
         "src/job/structured-output.ts",
         "src/job/args.ts",
-        "src/job/brain.ts",
+        "src/job/prompts.ts",
         "src/job/rpc.ts",
         "src/job/status.ts",
         "src/job/context-log.ts",
