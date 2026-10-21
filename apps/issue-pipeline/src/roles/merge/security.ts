@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { sameSecuritySubject } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -52,9 +53,8 @@ function securityStop(state: IssueState, finding: Finding): RoleEnd {
   };
 }
 
-// The stop again of a saved security rejection of exactly `current`, the
-// issue's revision now, with no session: a rejected merged result never
-// gets a second review. A receipt of a change that merged no code binds no
+// The stop again for unchanged rejected code and trusted inputs, with no
+// session: a changed checking policy does not remediate a known finding. A receipt of a change that merged no code binds no
 // code head. Null when no saved rejection is for `current`.
 function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
   const saved = state.security;
@@ -65,7 +65,7 @@ function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
   if (saved.revision.code === null) {
     compared = { ...current, code: null };
   }
-  if (!sameRevision(saved.revision, compared)) {
+  if (!sameSecuritySubject(saved.revision, compared)) {
     return null;
   }
   return securityStop(state, saved.finding);
@@ -209,6 +209,10 @@ async function securityReviewed(
   result: MergedResult,
 ): Promise<Step<IssueState>> {
   const { revision } = result;
+  const rejected = rejectedAgain(state, revision);
+  if (rejected !== null) {
+    return ended(rejected);
+  }
   const saved = state.security;
   if (saved !== null && sameRevision(saved.revision, revision)) {
     if (saved.finding === null) {

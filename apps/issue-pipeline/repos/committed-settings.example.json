@@ -1,0 +1,56 @@
+{
+  "repo": "OWNER/REPO",
+  "baseBranch": "main",
+  "devAccount": "DEVELOPMENT-BOT",
+  "mergeAccount": "REVIEW-MERGE-BOT",
+  "credentialsEnvFile": "/absolute/operator-checkout/project/.env",
+  "allowedUsers": ["MAINTAINER"],
+  "takeNewWork": true,
+  "skipLabels": ["deploy"],
+  "models": {
+    "author": "openai/gpt-6.1-sol",
+    "implementor": "openai/gpt-6.1-sol",
+    "reviewer": "openai/gpt-6.1-sol"
+  },
+  "runtime": {
+    "home": null,
+    "providerExtension": "/opt/pipeline/providers/pi-cliproxyapi/index.ts",
+    "credentialEnv": ["PIPELINE_MODEL_KEY"],
+    "compaction": {
+      "targetTokens": 175000,
+      "keepRecentTokens": 30000
+    },
+    "modelContextWindows": {
+      "openai/gpt-6.1-sol": 272000
+    }
+  },
+  "mergeAdmin": false,
+  "requireCi": true,
+  "ciWaitMinutes": 30,
+  "mergeConfirmation": {
+    "deadlineSeconds": 90,
+    "backoffSeconds": [1, 2, 4, 8, 10]
+  },
+  "commandTimeoutMinutes": 20,
+  "leaseHours": 3,
+  "maxCiFixes": 2,
+  "maxSyncs": 3,
+  "maxConflictFixes": 2,
+  "maxJobs": 4,
+  "stageCaps": {
+    "author": 2,
+    "review": 2
+  },
+  "maxResumes": 2,
+  "claimFailureStreak": 3,
+  "rateLimitBackoffMinutes": 5,
+  "orchestratorIntervalSeconds": 60,
+  "usageFlags": {
+    "firstContext": 40000,
+    "toolOutputShare": 0.25
+  },
+  "projectPolicy": {
+    "repository": "/absolute/trusted/checkout",
+    "revision": "0000000000000000000000000000000000000000"
+  }
+}

@@ -18,6 +18,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import type { ProjectPolicyBinding } from "../project-policy-schema.ts";
+import { POLICY_BINDING } from "../project-policy-schema.ts";
 import type {
   LaunchOutcome,
   LaunchPush,
@@ -62,7 +64,7 @@ const STATUS = z.object({
   // 2 for this pipeline's jobs; absent from the installed version's files.
   pipelineVersion: z.literal(PIPELINE_VERSION).optional(),
   pid: z.number(),
-  // The job's id; missing from a file written before it was recorded.
+  // The job id; absent in older files.
   id: z.string().optional(),
   issue: z.number(),
   // The stage the job started at (its `--stage`).
@@ -85,6 +87,7 @@ const STATUS = z.object({
       }),
     )
     .optional(),
+  policyBinding: POLICY_BINDING.optional(),
   outcome: JOB_OUTCOME.nullable(),
   endedAt: z.string().optional(),
   launches: z.array(LAUNCH),
@@ -207,11 +210,16 @@ function withPush(launch: LaunchRecord, push: LaunchPush): LaunchRecord {
 }
 
 // Opens a fresh status file for the job in `runDir` and writes it.
-function openStatus(runDir: string, job: JobInfo): JobStatus {
+function openStatus(
+  runDir: string,
+  job: JobInfo,
+  policyBinding?: ProjectPolicyBinding,
+): JobStatus {
   const file = statusFileOf(runDir);
   const status: StatusFile = {
     version: 1,
     pipelineVersion: PIPELINE_VERSION,
+    policyBinding,
     pid: process.pid,
     ...job,
     prompts: [...job.prompts],

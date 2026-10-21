@@ -9,6 +9,7 @@ import { z } from "zod";
 import { legacyWikiOf, REVISION } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import type { currentRevision } from "../revision.ts";
+import { currentResultObservation } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
 import { mergeAuthorization, sameRevision } from "../state.ts";
 
@@ -82,7 +83,8 @@ function mergedAuthorizationHolds(
     authorized === null ||
     result.code !== merged.mergeCommit ||
     legacyWikiOf(authorized) !== legacyWikiOf(result) ||
-    authorized.inputs !== result.inputs
+    authorized.inputs !== result.inputs ||
+    (authorized.policy ?? null) !== (result.policy ?? null)
   ) {
     return false;
   }
@@ -100,5 +102,54 @@ function mergedAuthorizationHolds(
   );
 }
 
+// A current-policy observation is not historical authorization. It needs both
+// the untouched original authorization/receipt and canonical exact merged truth.
+function ownMergeResultObservation(
+  saved: IssueState,
+  current: {
+    revision: Revision;
+    pr: {
+      number: number;
+      state: string;
+      mergeCommit: string | null;
+      headSha: string;
+    } | null;
+  },
+): Revision | null {
+  const { merged, codeMerged } = saved;
+  const { pr } = current;
+  if (
+    merged === null ||
+    pr === null ||
+    pr.number !== saved.pr ||
+    pr.state !== "MERGED" ||
+    pr.mergeCommit === null ||
+    mergeAuthorization(saved)?.code !== pr.headSha
+  ) {
+    return null;
+  }
+  if (
+    codeMerged !== null &&
+    (codeMerged.pr !== pr.number || codeMerged.sha !== pr.mergeCommit)
+  ) {
+    return null;
+  }
+  if (
+    !mergedAuthorizationHolds(saved, merged, {
+      headSha: pr.headSha,
+      mergeCommit: pr.mergeCommit,
+    })
+  ) {
+    return null;
+  }
+  return currentResultObservation(merged, current.revision);
+}
+
 export type { CurrentRevision, MergeStale };
-export { mergedAuthorizationHolds, mergedPr, mergeStale, REVISION_REQUEST };
+export {
+  mergedAuthorizationHolds,
+  mergedPr,
+  mergeStale,
+  ownMergeResultObservation,
+  REVISION_REQUEST,
+};

@@ -13,6 +13,11 @@ import { JOB_REPO } from "./job/layout.ts";
 import { OpsError } from "./ops-error.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
 import type { RunResult } from "./process.ts";
+import {
+  computePolicyBinding,
+  resolveProjectSettings,
+} from "./project-policy.ts";
+import type { ProjectPolicyBinding } from "./project-policy-schema.ts";
 
 // Branch names that are an option, a ref path, a ref expression or a name
 // git refuses (git-check-ref-format), rather than one literal branch.
@@ -31,6 +36,7 @@ interface JobCheckout {
 
 type Config = z.infer<typeof CONFIG_SCHEMA> & {
   slug: string;
+  policyBinding?: ProjectPolicyBinding;
   checkout?: JobCheckout;
   // Internal standalone seam only; never loaded from repository JSON.
   execution?: {
@@ -54,7 +60,7 @@ function loadConfig(configPath: string | undefined): Config {
   const fromFile = RAW.parse(JSON.parse(fs.readFileSync(file, "utf8")));
   const { kept: raw, warnings } = withoutRemovedKeys({
     ...DEFAULTS,
-    ...fromFile,
+    ...resolveProjectSettings(fromFile),
   });
   checkRequired(String(configPath), raw);
   for (const warning of warnings) {
@@ -77,7 +83,11 @@ function loadConfig(configPath: string | undefined): Config {
       hideCredentialVariable(role.tokenEnv);
     }
   }
-  return { ...data, slug: data.repo.replace("/", "__") };
+  return {
+    ...data,
+    policyBinding: computePolicyBinding(data),
+    slug: data.repo.replace("/", "__"),
+  };
 }
 
 // Public and model-facing config never exposes the operator credential path.

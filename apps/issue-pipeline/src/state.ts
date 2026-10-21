@@ -3,7 +3,7 @@
 // only the exact revision that passed the Reviewer's hardening
 // (`approval-is-for-one-revision`), or the one revision the Reviewer's own
 // integration checked from it. The security review of the merged result
-// comes after the merge, and lets the issue complete (security).
+// comes after merge and lets the issue complete (security).
 
 import { z } from "zod";
 import {
@@ -18,7 +18,6 @@ import { STAGES } from "./stages.ts";
 const MAX_LOG_ENTRIES = 40;
 const MAX_LOG_ENTRY = 300;
 const STAMP_LENGTH = 16;
-
 const STAGE = z.enum(STAGES);
 const STATUS = z.enum([...STAGES, "stopped", "done"]);
 
@@ -234,7 +233,8 @@ function sameRevision(a: Revision, b: Revision): boolean {
   return (
     a.code === b.code &&
     legacyWikiOf(a) === legacyWikiOf(b) &&
-    a.inputs === b.inputs
+    a.inputs === b.inputs &&
+    (a.policy ?? null) === (b.policy ?? null)
   );
 }
 

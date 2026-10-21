@@ -40,6 +40,7 @@ import { verify } from "./ops/verify.ts";
 import { OpsError } from "./ops-error.ts";
 import { ROOT } from "./pipeline-root.ts";
 import { parseRequest } from "./process.ts";
+import { assertPolicyDigest } from "./project-policy.ts";
 
 // An op reads its own fields from the whole request and returns its reply.
 type Op = (cfg: Config, request: unknown) => object;
@@ -99,6 +100,7 @@ const ENVELOPE = z.looseObject({
   comments: z.array(QUEUED_COMMENT).nullish(),
   config: z.string().nullish(),
   op: z.string(),
+  policyDigest: z.string().optional(),
   // A stage job's own checkout, which stands in for its issue's worktree,
   // and the branch the caller assigned the issue (config.ts's JobCheckout).
   checkout: z
@@ -127,7 +129,7 @@ async function readRequest(): Promise<unknown> {
 
 // Runs a parsed request: its queued comments, then its op.
 function runRequest(request: unknown): OpsReply {
-  const { checkout, comments, config, op } = parseRequest(
+  const { checkout, comments, config, op, policyDigest } = parseRequest(
     ENVELOPE,
     "ops",
     request,
@@ -137,6 +139,7 @@ function runRequest(request: unknown): OpsReply {
     throw new OpsError(`unknown op "${op}"`);
   }
   const cfg = withCheckout(loadConfig(config ?? undefined), checkout);
+  assertPolicyDigest(cfg, policyDigest);
   fs.mkdirSync(ROOT, { recursive: true });
   // Post the signed comments the workflow queued for this issue before running the op,
   // so they land in order and aren't lost if the op fails.

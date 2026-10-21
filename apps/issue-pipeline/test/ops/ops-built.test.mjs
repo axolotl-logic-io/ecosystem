@@ -45,6 +45,7 @@ const CURRENT = z.looseObject({
   revision: z.object({
     code: z.string(),
     inputs: z.string(),
+    policy: z.string(),
   }),
 });
 

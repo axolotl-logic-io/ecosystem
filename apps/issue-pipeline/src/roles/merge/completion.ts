@@ -8,10 +8,12 @@
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { ownMergeResultObservation } from "../../ops/merge-guard.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { opReply } from "../op-replies.ts";
+import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
 import { checkedMergedResult } from "./checks.ts";
 import { failed, logged, toAuthor } from "./returns.ts";
@@ -67,20 +69,22 @@ async function reviewedAndCompleted(
   state: IssueState,
   {
     merged,
+    result = merged,
     codeMerged,
     still,
   }: {
     merged: Revision;
+    result?: Revision;
     codeMerged: CodeMerged | null;
     still: (after: Revision) => boolean;
   },
 ): Promise<RoleEnd> {
-  const rejected = rejectedAgain(state, merged);
+  const rejected = rejectedAgain(state, result);
   if (rejected !== null) {
     return rejected;
   }
   const security = await securityReviewed(ctx, state, {
-    revision: merged,
+    revision: result,
     codeMerged,
     still,
   });
@@ -107,7 +111,8 @@ async function finishCompleted(
   state: IssueState,
   merged: Revision,
 ): Promise<RoleEnd> {
-  const { revision, pr } = await currentRevision(ctx);
+  const current = await currentRevision(ctx);
+  const { revision, pr } = current;
   const { gherkin } = ctx.inputs;
   if (
     gherkin === null ||
@@ -128,6 +133,16 @@ async function finishCompleted(
       `the completion records code ${merged.code} merged, and GitHub doesn't confirm PR #${state.pr} merged as it`,
     );
   }
+  return await finishConfirmed(ctx, state, merged, current);
+}
+
+async function finishConfirmed(
+  ctx: RoleContext,
+  state: IssueState,
+  merged: Revision,
+  current: CurrentRevision,
+): Promise<RoleEnd> {
+  const { revision } = current;
   let codeMerged: CodeMerged | null = null;
   if (merged.code !== null && state.pr !== null) {
     codeMerged = { pr: state.pr, sha: merged.code };
@@ -145,18 +160,30 @@ async function finishCompleted(
       "a completion saved with a legacy wiki head has no exact security clearance; explicit reconciliation is required before completion",
     );
   }
+  let observed = merged;
+  if ((merged.policy ?? null) !== (revision.policy ?? null)) {
+    const result = ownMergeResultObservation(state, current);
+    if (result === null) {
+      return failed(
+        state,
+        "current policy cannot reauthorize an unproven historical merge",
+      );
+    }
+    observed = result;
+  }
   let checked = state;
   if (codeMerged !== null) {
-    const result = await checkedMergedResult(ctx, state, merged, codeMerged);
+    const result = await checkedMergedResult(ctx, state, observed, codeMerged);
     if ("end" in result) {
       return result.end;
     }
     checked = result.state;
   }
   const security = await securityReviewed(ctx, checked, {
-    revision: merged,
+    revision: observed,
     codeMerged,
     still: (after: Revision): boolean =>
+      (after.policy ?? null) === (observed.policy ?? null) &&
       after.inputs === merged.inputs &&
       (merged.code === null || after.code === merged.code),
   });

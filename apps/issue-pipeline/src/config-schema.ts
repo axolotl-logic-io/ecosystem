@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
 import { OpsError } from "./ops-error.ts";
+import { PROJECT_POLICY_SOURCE } from "./project-policy-schema.ts";
 
 const MIDDLE_CONFIRMATION_BACKOFF_SECONDS = 4;
 const LATE_CONFIRMATION_BACKOFF_SECONDS = 8;
@@ -82,6 +83,7 @@ const MODELS = z.object({
 });
 
 const CONFIG_SCHEMA = z.looseObject({
+  projectPolicy: PROJECT_POLICY_SOURCE.optional(),
   devAccount: z.string(),
   mergeAccount: z.string(),
   credentialsEnvFile: z.string(),
