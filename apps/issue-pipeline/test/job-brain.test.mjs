@@ -99,19 +99,24 @@ test("a job pins only its stage's pages, byte for byte, and keeps them though th
   assert.equal(brain.promptFor("review", "hardening"), null);
 });
 
-test("a brain that is its own git checkout records its HEAD; a folder inside one records none", () => {
-  const at = place();
-  execFileSync("git", ["init", "-q", at.brain], GIT_OPTIONS);
-  execFileSync("git", [...GIT, "-C", at.brain, "add", "."], GIT_OPTIONS);
+/** @param {string} brain @returns {string} */
+function commitBrain(brain) {
+  execFileSync("git", ["init", "-q", brain], GIT_OPTIONS);
+  execFileSync("git", [...GIT, "-C", brain, "add", "."], GIT_OPTIONS);
   execFileSync(
     "git",
-    [...GIT, "-C", at.brain, "commit", "-qm", "pages"],
+    [...GIT, "-C", brain, "commit", "-qm", "pages"],
     GIT_OPTIONS,
   );
-  const head = execFileSync("git", ["-C", at.brain, "rev-parse", "HEAD"], {
+  return execFileSync("git", ["-C", brain, "rev-parse", "HEAD"], {
     ...GIT_OPTIONS,
     encoding: "utf8",
   }).trim();
+}
+
+test("a brain that is its own git checkout records its HEAD; a folder inside one records none", () => {
+  const at = place();
+  const head = commitBrain(at.brain);
   assert.match(head, COMMIT_ID);
   assert.deepEqual(
     openBrain(at.brain, "merge").pinned.map((pinned) => pinned.head),
@@ -224,6 +229,38 @@ test("unavailable or malformed HEAD output pins every page with a null head", ()
   ]) {
     assert.equal(headsWithGit(at, head, code), "[null,null]\n", name);
   }
+});
+
+test("Merge refuses incompatible working bytes even at a compatible brain HEAD and retains the previous pin", () => {
+  const at = place();
+  const head = commitBrain(at.brain);
+  const integrationPage = "Pipeline-Prompt-Integration.md";
+  const merge = openBrain(at.brain, "merge");
+  const original = merge.promptFor("merge", "integration");
+  assert.ok(original);
+  const legacy = "# Integration\nContinue the code rebase until finished.\n";
+  const integrationPath = path.join(at.brain, integrationPage);
+  fs.writeFileSync(integrationPath, legacy);
+  assert.throws(
+    () => openBrain(at.brain, "merge"),
+    (error) => {
+      assert.ok(error instanceof Error);
+      for (const fact of [
+        integrationPage,
+        integrationPath,
+        sha256Of(legacy),
+        head,
+        "stage-text-and-return/v1",
+        "missing Code-Resolver-Protocol declaration",
+      ]) {
+        assert.ok(error.message.includes(fact), error.message);
+      }
+      return true;
+    },
+  );
+  assert.equal(original.text, pageTextOf(integrationPage));
+  assert.equal(original.provenance.head, head);
+  assert.equal(original.provenance.sha256, sha256Of(original.text));
 });
 
 test("the author job's pi gets its page appended to its system prompt, and job.json and the usage record name where it came from", () => {

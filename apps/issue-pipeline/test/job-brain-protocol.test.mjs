@@ -6,7 +6,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { pageTextOf } from "./brain-test-kit.mjs";
+import { endsWithTest } from "./bounded-test-kit.mjs";
+import { pageTextOf, writeBrain } from "./brain-test-kit.mjs";
 import { AUTHOR_SESSION, READER_STAGE, repliesAt } from "./job-fixtures.mjs";
 import { logOf, runJob, setUp } from "./job-test-kit.mjs";
 
@@ -110,6 +111,45 @@ test("a compatible declaration is required even with corrected prose; it is not 
     message: MISSING_DECLARATION,
   });
   assert.equal(openBrain(at.brain, "implement").pinned.length, 1);
+});
+
+/** @returns {string} */
+function temporaryBrain() {
+  const brain = fs.mkdtempSync("/tmp/issue-pipeline-brain-");
+  endsWithTest(() => fs.rmSync(brain, { recursive: true, force: true }));
+  return writeBrain(brain);
+}
+
+test("inline protocol mentions and extra version tokens cannot establish compatibility", () => {
+  const brain = temporaryBrain();
+  const page = path.join(brain, PAGE);
+  for (const declaration of [
+    `The required declaration is ${REQUIRED}.`,
+    `${REQUIRED} continue-until-finished/v1`,
+  ]) {
+    const text = `# Integration\n${declaration}\n`;
+    fs.writeFileSync(page, text);
+    assert.throws(() => openBrain(brain, "merge"));
+    assert.equal(fs.readFileSync(page, "utf8"), text);
+  }
+});
+
+test("a compatible CRLF page is validated repeatedly without normalizing its pinned bytes", () => {
+  const brain = temporaryBrain();
+  const text = `\uFEFF# Integration\r\n\r\n${REQUIRED}\r\nStage assigned text and return.  \r\n`;
+  const page = path.join(brain, PAGE);
+  fs.writeFileSync(page, text);
+  for (const attempt of [1, 2]) {
+    const pinned = openBrain(brain, "merge").promptFor("merge", "integration");
+    assert.ok(pinned, `pin ${attempt}`);
+    assert.equal(pinned.text, text);
+    assert.equal(
+      pinned.provenance.sha256,
+      createHash("sha256").update(Buffer.from(text)).digest("hex"),
+    );
+    assert.equal(pinned.provenance.path, page);
+  }
+  assert.equal(fs.readFileSync(page, "utf8"), text);
 });
 
 test("brain selection changes only a newly pinned Merge job, without rewriting old pins or authorizing execution", () => {
