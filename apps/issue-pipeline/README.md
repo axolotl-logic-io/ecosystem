@@ -53,6 +53,16 @@ installation/activation or production deployment is introduced. Merging source
 does not install anything; a future cutover remains operator-owned and requires
 separate runtime work and review.
 
+## Invocation-wiring follow-up status (#131)
+
+The bounded #131 implementation attempt is **incomplete**. Its runtime and
+fixture edits are not active source. [Preserved draft and check evidence](preserved/issue-131/README.md)
+records the recovered #116 artifacts, partial adapter tests, failing checks and
+remaining work. The original #116 runtime patch is retained losslessly for
+comparison, not applied. Neither preservation record is an install candidate
+or proof of invocation-owned runtime authority. Caller-owned exclusion and
+serialized integration remain necessary; assignment mode stays disabled.
+
 ## Stages and model roles
 
 ```text
