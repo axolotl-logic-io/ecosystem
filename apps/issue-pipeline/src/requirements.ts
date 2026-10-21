@@ -5,6 +5,9 @@
 import type { GherkinComment } from "./gherkin-comment.ts";
 import type { IssueState } from "./state.ts";
 
+const DEVELOPER_RECOVERY_REASON =
+  "work has merged or attempted-merge evidence; explicit reconciliation is required, not another Developer session";
+
 function usedAuthor(state: IssueState): boolean {
   return (
     state.authorUsed ||
@@ -32,13 +35,24 @@ function requirementsHold(
   return state.requirementsInputs === inputs;
 }
 
-// No receipt or merged fact is erased to revisit requirements. Exact revision
-// guards invalidate earlier approval/clearance; they never authorize a writer
-// over merged work or a security rejection.
+function developerRecoveryRequired(state: IssueState): boolean {
+  return (
+    state.codeMerged !== null ||
+    state.merged !== null ||
+    state.mergeAttempt !== null
+  );
+}
+
+// Null refuses a direct requirements writer over retained merge
+// evidence. Callers stop or hold without changing that evidence. Legacy
+// authored requirements retain their existing return path.
 function requirementsState(
   state: IssueState,
   resumeStage: "implement" | "review",
-): IssueState {
+): IssueState | null {
+  if (!usedAuthor(state) && developerRecoveryRequired(state)) {
+    return null;
+  }
   if (usedAuthor(state)) {
     return {
       ...state,
@@ -58,4 +72,11 @@ function requirementsState(
   };
 }
 
-export { requirementsHold, requirementsStage, requirementsState, usedAuthor };
+export {
+  DEVELOPER_RECOVERY_REASON,
+  developerRecoveryRequired,
+  requirementsHold,
+  requirementsStage,
+  requirementsState,
+  usedAuthor,
+};

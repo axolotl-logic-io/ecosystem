@@ -11,6 +11,7 @@
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import {
+  DEVELOPER_RECOVERY_REASON,
   requirementsHold,
   requirementsStage,
   requirementsState,
@@ -44,6 +45,9 @@ function short(sha: string | null): string {
 // issue comes back to review.
 function toRequirements(state: IssueState, why: string): RoleEnd {
   const next = requirementsState(state, "review");
+  if (next === null) {
+    return errorStop(state, `${why}; ${DEVELOPER_RECOVERY_REASON}`);
+  }
   return {
     kind: "next",
     state: logged(next, `${why}; back to ${requirementsStage(state)}`),

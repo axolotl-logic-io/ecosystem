@@ -7,7 +7,11 @@
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
-import { requirementsStage, requirementsState } from "../../requirements.ts";
+import {
+  DEVELOPER_RECOVERY_REASON,
+  requirementsStage,
+  requirementsState,
+} from "../../requirements.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
 
@@ -27,6 +31,9 @@ function voided(state: IssueState): IssueState {
 
 function toRequirements(state: IssueState, why: string): RoleEnd {
   const next = requirementsState(state, "review");
+  if (next === null) {
+    return failed(state, `${why}; ${DEVELOPER_RECOVERY_REASON}`);
+  }
   return {
     kind: "next",
     state: logged(next, `${why}; back to ${requirementsStage(state)}`),

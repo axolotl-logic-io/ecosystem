@@ -30,6 +30,7 @@ import { fixtureState, versionProbe } from "./runtime-fixtures.mjs";
  * @property {string[][]} [commits]
  * @property {Record<string, string>} [gitlinks] paths and commit identities to stage in repo/
  * @property {string} [rejectPrompt]
+ * @property {{ dir: string, issue: number, login: string, body: string }} [humanComment]
  * @property {Record<string, unknown>} output
  */
 

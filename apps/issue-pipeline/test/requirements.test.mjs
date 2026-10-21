@@ -76,6 +76,7 @@ for (const stage of /** @type {const} */ (["implement", "review", "merge"])) {
     assert.equal(planned.stage, "implement");
     assert.equal(planned.reason, "reauthor");
     const routed = requirementsState(issue.state, "review");
+    assert.ok(routed);
     assert.equal(routed.stage, "implement");
     assert.equal(routed.resumeStage, null);
     assert.equal(requirementsHold(routed, null, CURRENT), false);

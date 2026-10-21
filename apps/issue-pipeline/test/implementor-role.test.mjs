@@ -47,8 +47,6 @@ const FINDING = /1\. \[blocking\] \(a\.ts:3\) Sort is wrong/u;
 const MERGE_RETURN = /Sent back from merge \(ci\)\n\ne2e failed/u;
 const BRANCH_SCOPE =
   /Scope: the code branch in `repo\/`, including its docs in `repo\/docs\/`/u;
-const MERGED_SCOPE =
-  /Scope: none\. The code already merged as PR #\d+, merge commit `[0-9a-f]+`, which `repo\/` holds: commit nothing\./u;
 // Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS =
   /AGENTS\.md|pipeline_commit|artificial load|handoff|budget/iu;
@@ -158,15 +156,18 @@ test("the work task carries the facts: the Gherkin, the scope, the findings and 
   assert.doesNotMatch(task, BEHAVIOUR_WORDS);
 });
 
-test("after the code merged, the job opens no PR and pushes nothing", async () => {
-  const { ctx, ops, sessions } = fakeContext({
+test("after the code merged, Developer entry stops before any session or op", async () => {
+  const { ctx, ops, sessions, saves } = fakeContext({
     state: { pr: PR, codeMerged: { pr: PR, sha: MERGED } },
   });
+  const before = structuredClone(ctx.state);
   const end = await implementorRole(ctx);
-  assert.match(sessions[0]?.task ?? "", MERGED_SCOPE);
-  assert.deepEqual(opNames(ops), []);
-  assert.ok(end.kind === "next");
-  assert.equal(end.state.stage, "review");
+  assert.deepEqual(sessions, []);
+  assert.deepEqual(ops, []);
+  assert.deepEqual(saves, []);
+  assert.ok(end.kind === "stop");
+  assert.equal(end.code, "error");
+  assert.deepEqual(end.state, before);
 });
 
 test("an issue with no Gherkin goes to the author and comes back to implement", async () => {
@@ -267,9 +268,10 @@ test("the Developer never syncs, verifies, readies, merges or completes", async 
     }),
   ];
   const ends = await Promise.all(runs.map(({ ctx }) => implementorRole(ctx)));
-  for (const end of ends) {
-    assert.equal(end.kind, "next");
-  }
+  assert.deepEqual(
+    ends.map(({ kind }) => kind),
+    ["next", "stop"],
+  );
   for (const name of runs.flatMap(({ ops }) => opNames(ops))) {
     assert.ok(!REVIEWER_OPS.has(name), `ran ${name}`);
   }

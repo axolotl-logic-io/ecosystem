@@ -6,10 +6,13 @@
 // the full verification: the Reviewer hardens and verifies the change next
 // (src/roles/reviewer/). Its push makes any earlier hardening, approval or
 // integration stale, so it clears them. Once the issue's code merged
-// (`state.codeMerged`) the job opens no PR and pushes nothing.
+// or an attempted merge is retained, Developer entry stops before any
+// session or operation. Read-only recovery belongs to Merge.
 
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import {
+  DEVELOPER_RECOVERY_REASON,
+  developerRecoveryRequired,
   requirementsHold,
   requirementsState,
   usedAuthor,
@@ -148,11 +151,18 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
 }
 
 const implementorRole: Role = async (ctx: RoleContext) => {
+  if (developerRecoveryRequired(ctx.state)) {
+    return errorStop(ctx.state, DEVELOPER_RECOVERY_REASON);
+  }
   if (
     usedAuthor(ctx.state) &&
     !requirementsHold(ctx.state, ctx.inputs.gherkin, ctx.inputs.revision)
   ) {
-    return { kind: "next", state: requirementsState(ctx.state, "implement") };
+    const state = requirementsState(ctx.state, "implement");
+    if (state === null) {
+      return errorStop(ctx.state, DEVELOPER_RECOVERY_REASON);
+    }
+    return { kind: "next", state };
   }
   return await develop(ctx);
 };

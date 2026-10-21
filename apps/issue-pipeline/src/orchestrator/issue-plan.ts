@@ -20,6 +20,7 @@
 
 import { LABELS } from "../labels.ts";
 import {
+  DEVELOPER_RECOVERY_REASON,
   requirementsStage,
   requirementsState,
   usedAuthor,
@@ -225,6 +226,9 @@ function reauthoredState(
   const { resumeStage } = reauthor;
   const entry = `trusted inputs changed at ${lifted.stage}: back to ${requirementsStage(lifted)}`;
   const back = requirementsState(lifted, resumeStage ?? "implement");
+  if (back === null) {
+    return { kind: "held", reason: DEVELOPER_RECOVERY_REASON };
+  }
   return { kind: "save", state: withLog(back, entry, run.now) };
 }
 
