@@ -77,3 +77,14 @@ test("new trusted inputs can receive a new verdict without an obsolete rejection
   saveIssueState(cfg, ISSUE, { ...SAVED, hardened: revision, security });
   assert.deepEqual(readWriteState(cfg, ISSUE).security, security);
 });
+
+test("historical same-content rejection cannot be laundered into candidate clearance", () => {
+  const rejection = {
+    revision: REVISION,
+    commentId: 901,
+    finding: { category: /** @type {const} */ ("rights"), reason: "unsafe" },
+  };
+  serve({ ...SAVED, security: rejection });
+  saveIssueState(cfg, ISSUE, { ...SAVED, security: CLEAR });
+  assert.deepEqual(readWriteState(cfg, ISSUE).security, rejection);
+});

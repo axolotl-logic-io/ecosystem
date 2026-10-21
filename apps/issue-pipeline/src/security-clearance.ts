@@ -1,10 +1,21 @@
 // Candidate clearance is distinct from historical postmerge review. Missing
 // provenance cannot turn an old receipt into permission for a new merge.
+import { legacyWikiOf } from "./merge-provenance.ts";
 import { recordedAuthorization } from "./merged-authorization.ts";
 import type { IssueState, Revision, Security } from "./state.ts";
 import { approvalHolds, sameRevision } from "./state.ts";
 
 type Candidate = NonNullable<Security["candidate"]>;
+
+// Policy and target changes invalidate clearance, not known harm in unchanged
+// code/trusted inputs. Keep this comparison separate from merge authorization.
+function sameSecuritySubject(a: Revision, b: Revision): boolean {
+  return (
+    a.code === b.code &&
+    a.inputs === b.inputs &&
+    legacyWikiOf(a) === legacyWikiOf(b)
+  );
+}
 
 function candidateRefusal(
   saved: IssueState,
@@ -66,4 +77,4 @@ function securityRefusal(
 }
 
 export type { Candidate };
-export { candidateRefusal, securityRefusal };
+export { candidateRefusal, sameSecuritySubject, securityRefusal };

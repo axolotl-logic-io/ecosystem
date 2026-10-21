@@ -13,12 +13,12 @@ The merge stage merges only the revision its authorization names: the exact hard
 ```mermaid
 flowchart TD
   A[Fresh authorization] --> B{Base moved, conflict or failed check?}
-  B -- yes --> I[Integration] --> A
+  B -- yes --> I[Integration] --> H[Fresh hardening and checks if changed] --> A
   B -- no --> C[Verify head, wait for CI on H]
-  C --> Q{First in merge order?}
+  C --> S[Read-only Security on exact candidate H]
+  S -- clear --> Q{First in merge order?}
   Q -- no --> W[wait: queued]
-  Q -- yes --> S[Read-only Security on exact candidate H]
-  S -- clear --> P[Approve H, save attempt, POST merge]
+  Q -- yes --> P[Approve H, save attempt, POST merge]
   S -- reject --> X[Stop without merging]
   P --> R[Confirm result M]
   R --> V[Verify M]
@@ -33,7 +33,7 @@ Merge order keeps slow issues from losing races repeatedly.
 - Without a queue, the merge stage applies no order. The `merge` op also accepts `mergeOrder: true`, under which an older PR at the `merge` stage whose lease hasn't expired holds the slot; the merge stage doesn't set it today.
 - A held issue gets `{"merged": false, "reason": "queued", "waitingFor": N, "waitingForPr": PR}` and the job ends with `wait`.
 
-The queue is an order, not permission to run merges concurrently. The caller still runs one merge turn at a time.
+The queue orders configured target mutations, not candidate-local integration, checks or read-only Security. It is not permission to run merges concurrently. The caller still runs one merge turn at a time.
 
 ## The merge call
 

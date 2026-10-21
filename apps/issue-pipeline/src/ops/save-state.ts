@@ -11,6 +11,7 @@ import type { Config } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
+import { sameSecuritySubject } from "../security-clearance.ts";
 import type { IssueState, Security } from "../state.ts";
 import { ISSUE_STATE, sameRevision } from "../state.ts";
 
@@ -46,7 +47,6 @@ function sameCandidateDecision(
     return false;
   }
   return (
-    saved.finding !== null ||
     requested.candidate === undefined ||
     (saved.candidate.target === requested.candidate.target &&
       saved.candidate.baseSha === requested.candidate.baseSha)
@@ -77,7 +77,10 @@ function withSavedCodeMerge(
   let { security } = state;
   if (
     saved.security !== null &&
-    ((merged !== null && sameRevision(saved.security.revision, merged)) ||
+    ((saved.security.finding !== null &&
+      (security === null ||
+        sameSecuritySubject(saved.security.revision, security.revision))) ||
+      (merged !== null && sameRevision(saved.security.revision, merged)) ||
       sameCandidateDecision(saved.security, security, state.headSha))
   ) {
     ({ security } = saved);

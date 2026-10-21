@@ -4,7 +4,7 @@ This page describes how the Reviewer integrates a hardened change with its base 
 
 ## Integration
 
-Only the merge stage synchronizes. The Developer and hardening never rebase onto the base. Once the issue reaches the front of the merge order, the Reviewer's integration rebases the issue branch onto the fetched base and fixes checks that fail there, in bounded writer sessions in phase `integration`.
+Only the merge stage synchronizes. The Developer and hardening never rebase onto the base. The Reviewer's integration rebases the issue branch onto the fetched base and fixes checks that fail there, in bounded writer sessions in phase `integration`. Candidate-local synchronization and checks may run before the issue's queue turn; the queue orders target mutations.
 
 The pipeline verifies the exact result, pushes it and saves an integration receipt (`state.integration`). That receipt records the original hardened revision and the integrated revision; it does not authorize changed code to merge. Any code change, including a clean rebase or conflict resolution, returns to `review` for fresh hardening and checks. The merge stage then needs Security clearance and required CI on that exact code/input revision.
 

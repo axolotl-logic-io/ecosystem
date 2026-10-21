@@ -1,13 +1,6 @@
 // @ts-check
-// The Reviewer's own integration at merge (src/roles/merge/integration.ts)
-// through a fake RoleContext: a branch behind its base is rebased and a
-// conflict resolved, in bounded Reviewer writer sessions of the
-// integration phase; the result is verified and pushed,
-// and its receipt saved before CI runs on it, so the next merge job merges
-// the integrated revision with no model review of its own work. Each
-// integration counts one sync against `maxSyncs`; a head that moved by
-// anything else goes back to review. The check fixes are
-// merge-role-checks.test.mjs's.
+// Candidate integration records checked history, then changed code returns
+// for fresh hardening and Security. Integration counts against maxSyncs.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -185,7 +178,7 @@ test("a branch push that leaves another head than the verified one stops with no
   assert.equal(end.state.integration, null);
   assert.ok(savesOf(calls).every((saved) => saved.integration === null));
   assert.deepEqual(firstPayload(calls, "push"), { number: ctx.issue });
-  // The only merge attempt is the original refusal that required integration.
+  // Candidate preparation detects the outdated base before any merge attempt.
   assert.equal(opNames(calls).filter((name) => name === "merge").length, 0);
   assert.ok(!opNames(calls).includes("finish"));
   assert.equal(sessionsOf(calls).length, 0);
