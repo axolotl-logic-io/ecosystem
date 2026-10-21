@@ -7,9 +7,9 @@ import type { Mode } from "../change-task.ts";
 import { scopeLines } from "../change-task.ts";
 import {
   fullCheckLines,
-  gherkinLines,
   header,
   replyLines,
+  requirementsLines,
 } from "../task-facts.ts";
 
 function hardeningTask(ctx: RoleContext, mode: Mode): string {
@@ -17,7 +17,7 @@ function hardeningTask(ctx: RoleContext, mode: Mode): string {
     ...header(ctx, "hardening"),
     ...scopeLines(ctx, mode),
     ...fullCheckLines(ctx),
-    ...gherkinLines(ctx),
+    ...requirementsLines(ctx),
     ...replyLines([
       "`done`, with a `summary` of what you examined, the tests you added and the defects you fixed, once it is committed.",
       "`cannot`, with the `reason` naming the question only a person can answer.",

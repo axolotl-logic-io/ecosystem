@@ -2,7 +2,7 @@
 
 This page holds the prompt Autumn pastes into a fresh agent session to make it the pipeline's caller. The caller is the agent that starts each stage job, reads its result and starts the next one. It does that through one launcher, `caller-jobs.mjs` in the installed pipeline, built from [`scripts/caller-jobs.ts`](../../apps/issue-pipeline/scripts/caller-jobs.ts), and follows [coordination](coordination.md) for what each result means.
 
-**Note:** The stage flow will change with two planned items: Author becomes optional, and Security moves before merge. This prompt will be updated when they land.
+**Note:** Security will move before merge in a separate change. Author is optional: start ordinary new work at `implement`, or explicitly select `author` for new work. Resume saved issues at their saved stage.
 
 ## Fill in the run inputs
 

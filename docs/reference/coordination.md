@@ -15,7 +15,7 @@ node "$ISSUE_PIPELINE_ROOT/job.mjs" --config CONFIG \
 - `ISSUE`: the issue number.
 - `BRANCH`: the issue's branch. It must be a literal ref and not the base, the remote's default branch or another protected branch.
 - `LANE`: a stable claimant name, the same for every stage of the issue.
-- `STAGE`: `author`, `implement`, `review` or `merge`.
+- `STAGE`: `implement` for ordinary new work, `author` to explicitly use Author for new work, then the saved next stage (`implement`, `review` or `merge`).
 
 Optional flags:
 

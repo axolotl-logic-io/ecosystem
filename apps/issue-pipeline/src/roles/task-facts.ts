@@ -8,6 +8,7 @@
 
 import { JOB_REPO } from "../job/layout.ts";
 import type { RoleContext } from "../job/role-context.ts";
+import { usedAuthor } from "../requirements.ts";
 
 // What a session is asked to do, as its page's sections name it.
 type TaskKind =
@@ -52,8 +53,17 @@ function fullCheckLines(ctx: RoleContext): string[] {
   ];
 }
 
-// The issue's Gherkin and its assumptions.
-function gherkinLines(ctx: RoleContext): string[] {
+// The trusted requirements source and optional Author output.
+function requirementsLines(ctx: RoleContext): string[] {
+  if (!usedAuthor(ctx.state)) {
+    return [
+      "## Requirements",
+      "",
+      `Source: issue title, body and trusted collaborator comments in ${ctx.issueFile}`,
+      `Trusted-input revision: ${ctx.inputs.revision}`,
+      "",
+    ];
+  }
   const { gherkin } = ctx.inputs;
   if (gherkin === null) {
     return [];
@@ -78,4 +88,4 @@ function replyLines(answers: readonly string[]): string[] {
 }
 
 export type { TaskKind };
-export { bullets, fullCheckLines, gherkinLines, header, replyLines };
+export { bullets, fullCheckLines, header, replyLines, requirementsLines };

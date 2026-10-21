@@ -8,9 +8,9 @@ import type { CodeMerged, IssueState } from "../state.ts";
 import type { Check } from "./op-replies.ts";
 import {
   fullCheckLines,
-  gherkinLines,
   header,
   replyLines,
+  requirementsLines,
 } from "./task-facts.ts";
 
 // Where a change's work may go: the issue's code branch, with its docs in
@@ -71,7 +71,7 @@ function fixTask(
     ...header(ctx, "check-fix"),
     ...scopeLines(ctx, mode),
     ...fullCheckLines(ctx),
-    ...gherkinLines(ctx),
+    ...requirementsLines(ctx),
     `## Failed checks (fix attempt ${attempt} of ${max})`,
     "",
     ...failed.slice(0, MAX_CHECKS).flatMap(checkLines),

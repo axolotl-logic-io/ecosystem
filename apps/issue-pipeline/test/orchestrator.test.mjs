@@ -33,8 +33,8 @@ test("each stage starts, later stages first, then older issues", () => {
   assert.deepEqual(decided(snapshot), [
     "#4 merge started free [4]",
     "#3 review started free",
+    "#1 implement started free",
     "#2 implement started free",
-    "#1 author started free",
   ]);
 });
 

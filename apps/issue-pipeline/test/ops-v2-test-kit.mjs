@@ -35,6 +35,8 @@ function v2State(n, extra = {}) {
     headSha: null,
     flows: null,
     gherkin: null,
+    authorUsed: true,
+    requirementsInputs: null,
     review: {
       round: 0,
       verdict: null,

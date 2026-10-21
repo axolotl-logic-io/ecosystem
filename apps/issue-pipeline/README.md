@@ -56,19 +56,25 @@ separate runtime work and review.
 ## Stages and model roles
 
 ```text
-author -> implement (draft) -> review (hardening) -> merge (integration -> branch merge -> exact-result checks -> security -> finish/close) -> done
+[optional author] -> implement (draft) -> review (hardening) -> merge (integration -> branch merge -> exact-result checks -> security -> finish/close) -> done
 ```
 
 | Stage / phase | Session authority | Result |
 |---|---|---|
-| `author` | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
+| `author` (explicit) | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
 | `implement` | Developer (`implementor` in config), writable | Preserved issue work plus code/tests/docs commits through `pipeline_commit`, pushed as a **draft**; no entry/resume base synchronization or mandatory verification/fix loop |
 | `review` / `hardening` | Reviewer, writable | Design/correctness/test fixes and bounded configured verification fixes, without synchronization. Saves exact `hardened` before guarded draft readiness; an exact checkpoint resumes without another writer |
 | `merge` / `integration` | Reviewer, writable only when integration needs fixes | At the caller's serialized merge turn, bounded synchronization/conflict/check/CI fixes. Saves checked integration linked to original hardening; no extra design re-review of its own checked work |
 | `merge` / `security-review` | Fresh Reviewer, **read-only** | Security only (`user-harm`, `rights`, `financial-harm`, `abuse-risk`) over the **actual merged result's complete first-parent contribution**, readable merged tree and final docs/inputs, after deterministic code merge |
 | completion | Deterministic ops | Only an exact durable clear security receipt permits issue completion/closure through the `finish` op |
 
-Hardening authorizes integration, not a fictitious premerge security approval. `hardened`, `integration`, actual `merged`/`codeMerged` and `security` have separate provenance. Unexpected external heads return to hardening; trusted-input movement returns to Author. Integration's own locally checked changes do not require another design review. CI is required on the exact authorized head when configured. Deterministic issue delivery may merge into ecosystem's configured source base `main`, which has no production deployment. No model pushes a base branch, and no stage deploys production.
+New issues start at `implement` by default. To use the optional read-only Author, start a genuinely new issue with `--stage author` instead. It still produces Gherkin or asks questions; there is no configuration switch. An existing saved issue keeps its stage and mode, including stopped, asked and resume runs. A stage mismatch never resets saved work to select a different mode.
+
+For direct work, the Developer derives requirements from the trusted issue title, body and allowed collaborator comments in the issue file. No Gherkin or replacement requirements document is required by Developer, Review or Merge. Unanswered product questions stop direct work with `not-doable`; Author can instead ask questions and wait at `agent:needs-info`. An unanswered saved question refuses a claim until trusted inputs change.
+
+Saved state records `authorUsed` and the Developer-consumed `requirementsInputs` revision. Missing mode fields mean an older authored run, not permission to start over. Authored issues still need their current authenticated Gherkin. New trusted inputs return an authored issue to Author, otherwise Developer, invalidating old revision approval without erasing PRs, branches, heads, merge facts or Security rejections. Old authored own-merge and closed-incomplete-Merge recovery retain their existing eligibility and authority guards.
+
+Hardening authorizes integration, not a fictitious premerge security approval. `hardened`, `integration`, actual `merged`/`codeMerged` and `security` have separate provenance. Unexpected external heads return to hardening; trusted-input movement returns to Author for authored issues and Developer otherwise. Integration's own locally checked changes do not require another design review. CI is required on the exact authorized head when configured. Deterministic issue delivery may merge into ecosystem's configured source base `main`, which has no production deployment. No model pushes a base branch, and no stage deploys production.
 
 A security rejection leaves code **already merged** and the issue stopped. It is not a rollback. Lifting the stop cannot reroll the same rejected revision: it re-stops without a model. Remediation may need a separate issue or operator action. Missing/stale security cannot authorize completion.
 
@@ -239,7 +245,7 @@ The read-only handoff input is the saved state's optional `coordination.handoff`
 
 `code` is the full PR head SHA; `inputs` is the trusted-input revision; `at` is an ISO timestamp. A review-request grant must match that checkpoint, occur at/after it, be absent from `eventsBefore`, and match the recorded request event ID when non-null. A saved request also listed in `eventsBefore` is contradictory, not a valid handoff. Missing handoffs stay held even for an otherwise authenticated orchestrator. A recorded merge-account review is accepted only when its genuine GitHub review ID, PR URL, commit and submission time match the saved handoff, current recorded PR and trusted-input revision. A saved review missing from GitHub is incomplete; another PR's or an older revision's review cannot satisfy it. Unbound merge reviews hold the affected PR conservatively rather than approving or reinterpreting them. This module writes no handoff lifecycle.
 
-Trusted human requirements use exactly the existing title/body/comment hashing format. Visitors, both configured bots and recognized legacy machine comments cannot change that revision or answer needs-info. Stops, unanswered questions, split/skip labels, disabled new work and existing `after` prerequisites remain controls. Existing `parent` markers are read as relationships, not newly invented prerequisites. Unreadable dependencies are not permission. Changed trusted input sends development planning back to `author`; it holds review for return to Author rather than skipping authoring.
+Trusted human requirements use exactly the existing title/body/comment hashing format. Visitors, both configured bots and recognized legacy machine comments cannot change that revision or answer needs-info. Stops, unanswered questions, split/skip labels, disabled new work and existing `after` prerequisites remain controls. Existing `parent` markers are read as relationships, not newly invented prerequisites. Unreadable dependencies are not permission. Changed trusted input sends development planning to `author` for authored issues and `implement` otherwise; it holds review until that requirements review.
 
 ### Plans, bounds and continuation
 
@@ -260,11 +266,11 @@ Run installed `job.mjs`, once per stage, with **one `--issue` and a required `--
 ```bash
 node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
   --issue 479 --branch feature/issue-479-query \
-  --lane caller-query --stage author --print-boundary
+  --lane caller-query --stage implement --print-boundary
 
 node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
   --issue 479 --branch feature/issue-479-query \
-  --lane caller-query --stage author
+  --lane caller-query --stage implement
 ```
 
 The caller reads the one-line JSON result and saved issue state, then invokes the indicated next stage on the **same branch and stable `--lane`**. A lane owns the live claim across stages; omitting it gives each job a new claimant id, which cannot take a still-live earlier claim. A stage mismatch releases preserved state without running its model. Do not blindly loop on `unclaimed`, `wait`, `deferred` or `stop`. Do not use the retained autonomous orchestrator for this caller-owned workflow.

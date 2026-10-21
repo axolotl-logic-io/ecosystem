@@ -17,6 +17,7 @@ import {
   authorTurn,
   implementorTurn,
   openFlowIssue,
+  retainAuthoredIssue,
   savedState,
 } from "./pipeline-flow-script.mjs";
 
@@ -57,6 +58,7 @@ async function completeInputStage(at) {
 before(() => {
   flow = setUpFlow();
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
+  retainAuthoredIssue(flow);
   scriptPi(flow, {
     author: [authorTurn(FIRST, true), authorTurn(SECOND, true)],
     implementor: [

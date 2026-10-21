@@ -25,6 +25,7 @@ import {
   authorTurn,
   implementorTurn,
   openFlowIssue,
+  retainAuthoredIssue,
   savedState,
   securityTurn,
 } from "./pipeline-flow-script.mjs";
@@ -62,6 +63,7 @@ before(() => {
   flow = setUpFlow();
   start = baseHead();
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
+  retainAuthoredIssue(flow);
   scriptPi(flow, {
     author: [authorTurn(GHERKIN, true)],
     implementor: [implementorTurn("hello, world", "Greet with hello, world")],

@@ -16,7 +16,7 @@ for (const repository of [
     assert.equal(plan.complete, true);
     assert.equal(plan.executionAuthority, false);
     assert.equal(plan.candidates[0]?.worker, "builder");
-    assert.equal(plan.candidates[0]?.stage, "author");
+    assert.equal(plan.candidates[0]?.stage, "implement");
     const priorRequests = hub.requests.length;
     hub.assigned.length = 0;
     hub.pulls.push(hub.pull);

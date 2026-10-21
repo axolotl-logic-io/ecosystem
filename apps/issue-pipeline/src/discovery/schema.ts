@@ -151,7 +151,11 @@ const STRICT_STATE = ISSUE_STATE.extend({
     verdict: ISSUE_STATE.shape.review.removeCatch().shape.verdict.removeCatch(),
   }),
 }).superRefine((state, context) => {
-  for (const inputs of [state.asked?.inputs, state.gherkin?.inputs]) {
+  for (const inputs of [
+    state.asked?.inputs,
+    state.gherkin?.inputs,
+    state.requirementsInputs ?? undefined,
+  ]) {
     if (inputs !== undefined && !INPUT_REVISION.test(inputs)) {
       context.addIssue({
         code: "custom",
