@@ -16,6 +16,7 @@
 // call's args, then output is the structured answer. A role with no turn
 // left answers nothing, so its session fails. Every start, prompt and tool
 // result is logged to pi.jsonl under FLOW_PI_DIR.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -200,6 +201,16 @@ function readLines(onLine) {
   process.stdin.on("end", () => process.exit(0));
 }
 
+/** @returns {string | null} the authoritative docs revision before the turn runs */
+function wikiHead() {
+  if (!fs.existsSync(path.join(process.cwd(), "docs", ".git"))) {
+    return null;
+  }
+  return execFileSync("git", ["-C", "docs", "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+}
+
 /**
  * The fake pi's entry, given the role each configured model plays.
  * @param {Record<string, string>} roleOfModel
@@ -227,6 +238,12 @@ async function runFlowPi(roleOfModel) {
     extensions: valuesOf(argv, "-e").map((file) => path.basename(file)),
     ghToken: ghToken ?? githubToken,
     commitScope: scope !== undefined,
+    scope: JSON.parse(scope ?? "null"),
+    repoHead: execFileSync("git", ["-C", "repo", "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim(),
+    docsAvailable: fs.existsSync(path.join(process.cwd(), "docs", ".git")),
+    docsHead: wikiHead(),
   });
   const session = { dir, role, tools: await loadTools(argv), out, model };
   readLines((line) => {

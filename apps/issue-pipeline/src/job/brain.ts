@@ -79,7 +79,7 @@ function headOf(brain: string): string | null {
   const read = run(
     "git",
     ["-C", brain, "rev-parse", "--show-toplevel", "--verify", "HEAD"],
-    { allowFail: true, timeoutMs: GIT_MS },
+    { allowFail: true, timeoutMs: GIT_MS, cwd: brain },
   );
   const [top = "", head = ""] = read.stdout.trim().split("\n");
   if (read.code !== 0 || top !== fs.realpathSync(brain)) {

@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { flowsOf } from "../../flows.ts";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { wikiRequirementHold } from "../../job/wiki-requirements.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { approvalHolds, withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -159,6 +160,28 @@ interface Hardened {
   revision: Revision;
 }
 
+// Required wiki work must be possible, and postmerge writers must read M,
+// not the retained source head H. Checkout availability grants no authority.
+async function hardeningSetup(
+  ctx: RoleContext,
+  mode: Mode,
+): Promise<string | null> {
+  const hold = wikiRequirementHold(ctx);
+  if (hold !== null || mode.kind !== "wiki-only") {
+    return hold;
+  }
+  const prepared = await opReply(
+    ctx,
+    "prepare-review",
+    { number: ctx.issue, codeMerged: mode.merged, tag: "hardening" },
+    z.looseObject({ headSha: z.string() }),
+  );
+  if (prepared.headSha !== mode.merged.sha) {
+    return `prepare-review read ${prepared.headSha}, not the merge commit ${mode.merged.sha}`;
+  }
+  return null;
+}
+
 // Hardens the revision `before` and checkpoints the result, or says why not.
 async function harden(
   ctx: RoleContext,
@@ -166,6 +189,10 @@ async function harden(
   before: Revision,
 ): Promise<Step<Hardened>> {
   const mode = changeModeOf(start);
+  const hold = await hardeningSetup(ctx, mode);
+  if (hold !== null) {
+    return ended(errorStop(start, hold));
+  }
   const refused = await hardeningSession(ctx, start, mode);
   if (refused !== null) {
     return refused;
