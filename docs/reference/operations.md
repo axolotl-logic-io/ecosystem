@@ -44,6 +44,8 @@ Keep the credentials file (`credentialsEnvFile`) outside managed worktrees, owne
 - Keep the file out of any web app folder and out of any build or deploy `--env-file`. Pipeline build tasks don't load it.
 - The installer never provisions credentials.
 
+The model key file sets the variables that [`runtime.credentialEnv`](runtime.md) names. A [caller](caller.md) run names it by absolute path only, as `run.json`'s `modelEnvFile`. The launcher passes that path to each job's Node with `--env-file`, so only the job reads the file. The caller and the launcher never open it.
+
 ## Install a release
 
 Install only when a change affects installed source or assets. Prompts in `apps/issue-pipeline/prompts/` and agent definitions in `agents/` are installed assets, so a prompt change takes effect only after an install. Docs changes in `docs/` need no install.

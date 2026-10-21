@@ -9,8 +9,10 @@
 //   node caller-jobs.ts status --run RUN_DIR
 //   node caller-jobs.ts wait   --run RUN_DIR --seconds S
 //
-// `start` refuses (exit 2, the reason on stderr) what refusalOf in
-// caller-jobs/live-jobs.ts refuses, and an issue GitHub doesn't show open.
+// `start` refuses (exit 2, the reason on stderr) a run.json rewritten to
+// widen the caps the run's first start read (wideningOf in
+// caller-jobs/run-limits.ts), what refusalOf in caller-jobs/live-jobs.ts
+// refuses, and an issue GitHub doesn't show open.
 // Otherwise it runs the installed job.mjs in its own session with its stdin
 // closed, prints the receipt as one JSON line and exits without waiting.
 // `status` prints one JSON line per job the run started. `wait` blocks until
@@ -38,17 +40,17 @@ import { ROOT } from "../src/pipeline-root.ts";
 import { sleepMs } from "../src/process.ts";
 import { STAGES } from "../src/stages.ts";
 import { JOB_ENTRY, liveJobs, refusalOf } from "./caller-jobs/live-jobs.ts";
-import type { JobReport, Launch, RunLimits } from "./caller-jobs/run-folder.ts";
+import type { JobReport, Launch } from "./caller-jobs/run-folder.ts";
 import {
   attemptsAt,
   launches,
   newReceipt,
-  parsed,
   pending,
   reports,
-  runLimits,
   writeLaunch,
 } from "./caller-jobs/run-folder.ts";
+import type { RunLimits } from "./caller-jobs/run-limits.ts";
+import { parsed, runLimits, wideningOf } from "./caller-jobs/run-limits.ts";
 
 const WAIT_STEP_MS = 2000;
 const MS_PER_SECOND = 1000;
@@ -169,6 +171,10 @@ function start(argv: readonly string[]): void {
   const { "merge-queue": mergeQueue, ...named } = values;
   const args = parsed(START_ARGS, { ...named, mergeQueue }, "start");
   const limits = runLimits(args.run);
+  const widening = wideningOf(args.run, limits);
+  if (widening !== null) {
+    throw new Refusal(widening);
+  }
   const nodeFlags = nodeFlagsOf(limits);
   const cfg = loadConfig(args.config);
   const { issue, stage, branch, lane } = args;

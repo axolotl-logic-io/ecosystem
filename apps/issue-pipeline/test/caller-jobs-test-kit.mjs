@@ -288,13 +288,19 @@ function hasStatusFile(issue) {
   return fs.existsSync(path.join(file, "job.json"));
 }
 
-/** @param {string} run @returns {unknown[]} the receipt files it holds */
+/**
+ * @param {string} run
+ * @returns {unknown[]} the receipt files it holds, without the copy of its
+ * first limits
+ */
 function receiptsOf(run) {
   const jobs = path.join(run, "jobs");
   if (!fs.existsSync(jobs)) {
     return [];
   }
-  return fs.readdirSync(jobs, { recursive: true });
+  return fs
+    .readdirSync(jobs, { recursive: true })
+    .filter((file) => file !== "limits.json");
 }
 
 export {

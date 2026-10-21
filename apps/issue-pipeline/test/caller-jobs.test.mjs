@@ -1,6 +1,7 @@
 // @ts-check
-// The caller's launcher, scripts/caller-jobs.ts: `start` checks the run's
-// exclusions, attempts and caps, the live jobs and the issue's state before
+// The caller's launcher, scripts/caller-jobs.ts: `start` holds run.json to
+// the caps the run's first start read, and checks the run's exclusions,
+// attempts and caps, the live jobs and the issue's state before
 // it runs job.mjs detached with a receipt; `status` and `wait` read the
 // receipts and each job's job.json. caller-jobs-test-kit.mjs's fake job and
 // fake gh stand in for the stage job and GitHub, so no model, network or
@@ -109,7 +110,11 @@ test("only the job loads the run's modelEnvFile; the launcher never opens it", a
   const kept = fs
     .readdirSync(launch.receipt)
     .map((file) => fs.readFileSync(path.join(launch.receipt, file), "utf8"));
-  for (const text of [JSON.stringify(out.lines), shown, ...kept]) {
+  const firstLimits = fs.readFileSync(
+    path.join(run, "jobs", "limits.json"),
+    "utf8",
+  );
+  for (const text of [JSON.stringify(out.lines), shown, firstLimits, ...kept]) {
     assert.ok(!text.includes(MODEL_ENV), "nothing names the file");
     assert.ok(!text.includes("fake-model-key"), "nothing holds its value");
   }
@@ -209,17 +214,65 @@ test("start counts a live job another caller started, and one merge per repo", a
     refusal(start(run, FOURTH_ISSUE, "author")),
     "1 jobs are live; the cap is 1",
   );
-  setLimits(run, {});
+  const uncapped = runFolder({});
   assert.equal(
-    refusal(start(run, THIRD_ISSUE, "review")),
+    refusal(start(uncapped, THIRD_ISSUE, "review")),
     "#9 already has a live job",
   );
   assert.equal(
-    refusal(start(run, FOURTH_ISSUE, "merge")),
+    refusal(start(uncapped, FOURTH_ISSUE, "merge")),
     "o/r already has a live merge job",
   );
   assert.deepEqual(receiptsOf(run), []);
+  assert.deepEqual(receiptsOf(uncapped), []);
   release(THIRD_ISSUE, "stop");
+});
+
+test("start refuses a run.json rewritten to widen the caps its first start read", async () => {
+  issuesOnGitHub();
+  const first = {
+    maxJobs: 2,
+    maxStageJobs: { review: 1 },
+    maxAttempts: 1,
+    excludedIssues: { "o/r": [FOURTH_ISSUE] },
+  };
+  const run = newRun(first);
+  const started = start(run, ISSUE, "author");
+  assert.equal(started.code, 0, started.stderr);
+  /** @type {[Record<string, unknown>, string][]} */
+  const widenings = [
+    [{ maxJobs: 3 }, "run.json raises maxJobs past the run's first limit, 2"],
+    [
+      { maxAttempts: 2 },
+      "run.json raises maxAttempts past the run's first limit, 1",
+    ],
+    [
+      { maxStageJobs: { review: 2 } },
+      "run.json raises maxStageJobs.review past the run's first limit, 1",
+    ],
+    [
+      { maxStageJobs: {} },
+      "run.json raises maxStageJobs.review past the run's first limit, 1",
+    ],
+    [{ excludedIssues: {} }, "run.json no longer excludes o/r#10"],
+  ];
+  for (const [widened, reason] of widenings) {
+    setLimits(run, { ...first, ...widened });
+    const out = start(run, SECOND_ISSUE, "author");
+    assert.equal(out.code, REFUSED);
+    assert.equal(refusal(out), reason);
+  }
+  release(ISSUE, "stop");
+  await waitFor("the job's end", () => !alive(started.lines[0].pid));
+  setLimits(run, {
+    maxJobs: 1,
+    maxStageJobs: { review: 1, merge: 1 },
+    maxAttempts: 1,
+    excludedIssues: { "o/r": [THIRD_ISSUE, FOURTH_ISSUE] },
+  });
+  const narrowed = start(run, SECOND_ISSUE, "author");
+  assert.equal(narrowed.code, 0, narrowed.stderr);
+  release(SECOND_ISSUE, "stop");
 });
 
 test("start refuses a stage that has used its attempts", async () => {

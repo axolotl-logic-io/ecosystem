@@ -1,10 +1,10 @@
-// The caller's run folder: the run's limits in `run.json`, and one receipt
-// folder per job it starts, `jobs/SLUG/issue-N/STAGE-ATTEMPT/`. A receipt
-// holds the job's pid and command (`launch.json`), its stdout, whose last
-// line is the job's result, and its stderr. The first report that finds the
-// job ended copies its `job.json`, which the next job on the issue would
-// replace, and marks it reported (`ended.json`). This module alone knows the
-// folder's layout.
+// The caller's run folder: the run's limits, which caller-jobs/run-limits.ts
+// reads, and one receipt folder per job it starts,
+// `jobs/SLUG/issue-N/STAGE-ATTEMPT/`. A receipt holds the job's pid and
+// command (`launch.json`), its stdout, whose last line is the job's result,
+// and its stderr. The first report that finds the job ended copies its
+// `job.json`, which the next job on the issue would replace, and marks it
+// reported (`ended.json`). This module alone knows the receipts' layout.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -13,8 +13,8 @@ import { readStatus } from "../../src/job/status.ts";
 import { ROOT } from "../../src/pipeline-root.ts";
 import { STAGES } from "../../src/stages.ts";
 import { folders, isStageJob } from "./live-jobs.ts";
+import { COUNT } from "./run-limits.ts";
 
-const RUN_FILE = "run.json";
 const LAUNCH_FILE = "launch.json";
 const STDOUT_FILE = "stdout.log";
 const STDERR_FILE = "stderr.log";
@@ -23,16 +23,6 @@ const ENDED_FILE = "ended.json";
 // How much of a failed job's stderr its report shows.
 const STDERR_TAIL_CHARS = 2000;
 
-const COUNT = z.number().int().positive();
-// The run's limits, which Autumn sets for each run. modelEnvFile is a path
-// the job's Node loads with --env-file; this module never opens it.
-const RUN = z.strictObject({
-  maxJobs: COUNT,
-  maxStageJobs: z.partialRecord(z.enum(STAGES), COUNT).default({}),
-  maxAttempts: COUNT,
-  excludedIssues: z.record(z.string(), z.array(COUNT)).default({}),
-  modelEnvFile: z.string().startsWith("/").optional(),
-});
 const LAUNCH = z.object({
   repo: z.string(),
   slug: z.string(),
@@ -53,7 +43,6 @@ const RESULT = z.looseObject({
   end: z.string(),
 });
 
-type RunLimits = z.infer<typeof RUN>;
 type Launch = z.infer<typeof LAUNCH>;
 type JobResult = z.infer<typeof RESULT>;
 type StatusFile = NonNullable<ReturnType<typeof readStatus>>;
@@ -81,26 +70,12 @@ interface JobReport extends Omit<Launch, "argv" | "slug" | "jobId"> {
   stderrTail: string | null;
 }
 
-// `value` as `schema` reads it, or a throw naming `what` and what doesn't fit.
-function parsed<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
-  const result = schema.safeParse(value);
-  if (!result.success) {
-    throw new Error(`${what}: ${z.prettifyError(result.error)}`);
-  }
-  return result.data;
-}
-
 function readText(file: string): string {
   try {
     return fs.readFileSync(file, "utf8");
   } catch {
     return "";
   }
-}
-
-function runLimits(runDir: string): RunLimits {
-  const file = path.join(runDir, RUN_FILE);
-  return parsed(RUN, JSON.parse(readText(file) || "null"), file);
 }
 
 function launchOf(receiptDir: string): Launch | null {
@@ -264,14 +239,5 @@ function reports(runDir: string): JobReport[] {
   return receipts(runDir).map(([dir, launch]) => reportOf(dir, launch));
 }
 
-export type { JobReport, Launch, Receipt, RunLimits };
-export {
-  attemptsAt,
-  launches,
-  newReceipt,
-  parsed,
-  pending,
-  reports,
-  runLimits,
-  writeLaunch,
-};
+export type { JobReport, Launch, Receipt };
+export { attemptsAt, launches, newReceipt, pending, reports, writeLaunch };
