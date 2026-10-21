@@ -4,11 +4,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { z } from "zod";
 import { assertNoDependentCheckouts } from "./checkout-dependencies.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import { MAX_LANE_SLOTS } from "./config-schema.ts";
+import {
+  readStore,
+  saveStore,
+  storeFile,
+  surviving,
+} from "./lane-slot-store.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import type { ShellResult } from "./process.ts";
@@ -17,65 +21,6 @@ import { shell } from "./process.ts";
 const HOUR_MS = 3_600_000;
 // Maintenance must finish before the clone lock's stale-lock deadline.
 const PRUNE_TIMEOUT_MS = 300_000;
-const SLOT = z.number().int().min(1).max(MAX_LANE_SLOTS);
-const LEASE = z.object({
-  issue: z.number().int().positive(),
-  slot: SLOT,
-  checkouts: z.array(z.string().min(1)).min(1),
-  pendingSetup: z.array(z.string().min(1)).default([]),
-});
-const STORE = z
-  .object({
-    leases: z.array(LEASE),
-    prunedAt: z.number().finite().nullable(),
-  })
-  .refine(
-    ({ leases }) =>
-      new Set(leases.map((lease) => lease.issue)).size === leases.length &&
-      new Set(leases.map((lease) => lease.slot)).size === leases.length,
-    "duplicate issue or slot ownership",
-  );
-
-type SlotStore = z.infer<typeof STORE>;
-
-function storeFile(cfg: Config): string {
-  return path.join(path.dirname(paths.runDir(cfg, 0)), "lane-slots.json");
-}
-
-function readStore(cfg: Config): SlotStore {
-  const file = storeFile(cfg);
-  if (!fs.existsSync(file)) {
-    return { leases: [], prunedAt: null };
-  }
-  try {
-    return STORE.parse(JSON.parse(fs.readFileSync(file, "utf8")));
-  } catch (error) {
-    throw new OpsError(
-      `cannot read lane slot ownership at ${file}; preserve checkouts and reconcile before retrying`,
-      { cause: error },
-    );
-  }
-}
-
-function saveStore(cfg: Config, store: SlotStore): void {
-  const file = storeFile(cfg);
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(temporary, `${JSON.stringify(store)}\n`, { mode: 0o600 });
-  fs.renameSync(temporary, file);
-}
-
-function surviving(store: SlotStore): SlotStore {
-  const leases = store.leases.flatMap((lease) => {
-    const checkouts = lease.checkouts.filter((dir) => fs.existsSync(dir));
-    if (checkouts.length === 0) {
-      return [];
-    }
-    return [{ ...lease, checkouts }];
-  });
-  return { ...store, leases };
-}
-
 // Calls claim under the clone lock with capacity reserved before any claim
 // mutation. Null means the claim lost and cancels only this reservation.
 // Exceptions/crashes retain ownership wherever a checkout still exists.
@@ -167,6 +112,16 @@ function checkoutEnvironment(
   });
 }
 
+// Recovery may name the same checkout through a symlink or platform alias.
+function sameCheckout(left: string, right: string): boolean {
+  return (
+    left === right ||
+    (fs.existsSync(left) &&
+      fs.existsSync(right) &&
+      fs.realpathSync(left) === fs.realpathSync(right))
+  );
+}
+
 // A failed or interrupted lane setup cannot fall back to a human/default
 // environment. Mark it before launch and keep the original checkout until an
 // explicit successful retry; this is local readiness, not signed authority.
@@ -203,14 +158,36 @@ function withCheckoutSetup(
         `#${issue} lost lane slot ownership during setup; retain ${dir} and reconcile`,
       );
     }
-    held.pendingSetup = held.pendingSetup.filter((pending) => pending !== dir);
+    held.pendingSetup = held.pendingSetup.filter(
+      (pending) => !sameCheckout(pending, dir),
+    );
     saveStore(cfg, store);
   });
   return result;
 }
 
-// Called before any recovery/reset/removal of a disposable checkout. Missing
-// or corrupt ownership is not proof that a possibly interrupted setup ended.
+// Missing or corrupt ownership cannot prove setup readiness. This guard
+// checks the durable barrier even when the setup command is now absent.
+function assertCheckoutReady(cfg: Config, issue: number, dir: string): void {
+  if (cfg.laneSlots === undefined) {
+    return;
+  }
+  withCloneLock(cfg, () => {
+    if (!fs.existsSync(storeFile(cfg))) {
+      throw new OpsError(
+        `lane slot ownership is missing; retain ${dir} and reconcile before tests or removal`,
+      );
+    }
+    const held = readStore(cfg).leases.find((lease) => lease.issue === issue);
+    if (held?.pendingSetup.some((pending) => sameCheckout(pending, dir))) {
+      throw new OpsError(
+        `lane setup is incomplete; checkout retained at ${dir}. Fix setup and explicitly retry the claim before tests or removal`,
+      );
+    }
+  });
+}
+
+// Also preserve Git metadata needed by another surviving checkout.
 function assertCheckoutReadyForRemoval(
   cfg: Config,
   issue: number,
@@ -220,19 +197,10 @@ function assertCheckoutReadyForRemoval(
     return;
   }
   withCloneLock(cfg, () => {
-    if (!fs.existsSync(storeFile(cfg))) {
-      throw new OpsError(
-        `lane slot ownership is missing; retain ${dir} and reconcile before removal`,
-      );
-    }
+    assertCheckoutReady(cfg, issue, dir);
     const held = surviving(readStore(cfg)).leases.find(
       (lease) => lease.issue === issue,
     );
-    if (held?.pendingSetup.includes(dir)) {
-      throw new OpsError(
-        `lane setup is incomplete; checkout retained at ${dir}. Fix setup and explicitly retry the claim before tests or removal`,
-      );
-    }
     if (held !== undefined) {
       assertNoDependentCheckouts(dir, held.checkouts);
     }
@@ -285,6 +253,7 @@ function pruneLaneResources(cfg: Config, now: () => number = Date.now): void {
 }
 
 export {
+  assertCheckoutReady,
   assertCheckoutReadyForRemoval,
   checkoutEnvironment,
   pruneLaneResources,

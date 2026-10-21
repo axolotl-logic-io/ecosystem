@@ -43,6 +43,7 @@
         "src/checkouts.ts",
         "src/checkout-dependencies.ts",
         "src/lane-slots.ts",
+        "src/lane-slot-store.ts",
         "src/rebase.ts",
         "src/issue-context.ts",
         "src/ops/claim.ts",

@@ -14,8 +14,10 @@ function assertNoDependentCheckouts(
     return;
   }
   const primary = fs.realpathSync(metadata);
+  const primaryCheckout = fs.realpathSync(dir);
   const retained = checkouts.filter(
-    (checkout) => checkout !== dir && fs.existsSync(checkout),
+    (checkout) =>
+      fs.existsSync(checkout) && fs.realpathSync(checkout) !== primaryCheckout,
   );
   for (const checkout of retained) {
     let common: string;

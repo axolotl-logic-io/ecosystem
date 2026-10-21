@@ -16,6 +16,7 @@ import {
 } from "./git-state.ts";
 import { git } from "./github.ts";
 import {
+  assertCheckoutReady,
   assertCheckoutReadyForRemoval,
   releaseCheckoutSlot,
   withCheckoutSetup,
@@ -259,11 +260,9 @@ function push(
   return { headSha, ...changes };
 }
 
-// Runs the repo's setup command (config `commands.setup`), if it sets one,
-// in issue `n`'s checkout `dir`, so the writer's own test runs get this
-// issue's database and ports instead of the shared defaults. It writes the
-// command's output to `logName` in the issue's run folder. Legacy failures
-// are logged; lane failures retain the checkout and refuse session startup.
+// Runs configured setup in the issue checkout with its leased environment.
+// Logs output to logName; legacy failures are nonfatal, lane failures retain
+// the checkout and refuse session startup.
 function setUpCheckout(
   cfg: Config,
   n: number,
@@ -273,6 +272,7 @@ function setUpCheckout(
   const { commandTimeoutMinutes, commands } = SETUP_SETTINGS.parse(cfg);
   const { setup } = commands;
   if (setup === undefined || setup === null || setup === "") {
+    assertCheckoutReady(cfg, n, dir);
     return;
   }
   const log = path.join(paths.runDir(cfg, n), logName);

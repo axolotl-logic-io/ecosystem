@@ -14,6 +14,7 @@ import type { Config } from "../config.ts";
 import { paths, withCheckout } from "../config.ts";
 import { assertClean, fetchIn, gitIn, head } from "../git-state.ts";
 import {
+  assertCheckoutReadyForRemoval,
   checkoutEnvironment,
   releaseCheckoutSlot,
   withCheckoutSlot,
@@ -106,6 +107,7 @@ function verifyMerged(
     return runChecks(cfg, n, { dir, sha, changed });
   } finally {
     withCloneLock(cfg, () => {
+      assertCheckoutReadyForRemoval(cfg, n, dir);
       removeVerifyCheckout(wt, dir, teardown);
       fs.rmSync(parent, { recursive: true, force: true });
       releaseCheckoutSlot(cfg);

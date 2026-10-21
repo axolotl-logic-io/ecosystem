@@ -9,7 +9,11 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
-import { checkoutEnvironment, withCheckoutSetup } from "../lane-slots.ts";
+import {
+  assertCheckoutReady,
+  checkoutEnvironment,
+  withCheckoutSetup,
+} from "../lane-slots.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 
@@ -131,8 +135,12 @@ function exitCheck(
 // Setup, then the test, lint and typecheck commands. False when setup fails.
 function runCommands(v: Verification): boolean {
   const { setup, test, lint, typecheck } = v.settings.commands;
-  if (present(setup) && !exitCheck(v, "setup", setup)) {
-    return false;
+  if (present(setup)) {
+    if (!exitCheck(v, "setup", setup)) {
+      return false;
+    }
+  } else {
+    assertCheckoutReady(v.cfg, v.issue, v.dir);
   }
   const commands = new Map([
     ["test", test],
