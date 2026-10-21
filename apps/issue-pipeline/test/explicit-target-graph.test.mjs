@@ -5,14 +5,12 @@ import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
+import { retainLegacyAttempt } from "./explicit-target-recovery-test-kit.mjs";
 import {
   calls,
   consumed,
   mergedView,
-  post,
-  prechecks,
   prStep,
-  request,
   script,
 } from "./explicit-target-test-kit.mjs";
 import {
@@ -24,7 +22,7 @@ import {
   world,
 } from "./explicit-target-world-test-kit.mjs";
 
-const { merge } = await import("../src/ops/merge.ts");
+const { reconcileMerge } = await import("../src/ops/merge-recovery.ts");
 const { mergedCode } = await import("../src/ops/merged-review.ts");
 const { verify } = await import("../src/ops/verify.ts");
 const { readWriteState, stateBody } = await import("../src/saved-state.ts");
@@ -43,37 +41,49 @@ function mutations() {
   );
 }
 
-test("fast-forward multi-commit H stops on 201 and on restart before checks or review can omit earlier commits", () => {
+test("fast-forward multi-commit H requires authenticated exact intent and checks/review include all original commits", () => {
   const w = world({ fastForward: true });
-  script(w, [
-    ...prechecks(w),
-    post(w),
-    ...Array.from({ length: 3 }, () => [
-      prStep(w, mergedView(w)),
-      prStep(w, mergedView(w), true),
-    ]).flat(),
-  ]);
-  assert.match(
-    REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
-    UNSUPPORTED,
-  );
-  consumed();
+  git(w.origin, ["update-ref", `refs/heads/${BASE}`, w.head]);
   script(w, receiptSteps(w));
   assert.throws(
-    () =>
-      verify(w.cfg, { number: ISSUE, codeMerged: { pr: PR, sha: w.merged } }),
+    () => verify(w.cfg, { number: ISSUE, codeMerged: { pr: PR, sha: w.head } }),
     UNSUPPORTED,
   );
-  assert.equal(mutations().length, 0);
+  consumed();
+  const state = {
+    ...w.state,
+    codeMerged: { pr: PR, sha: w.head },
+    merged: w.revision,
+    mergeAttempt: {
+      repo: w.cfg.repo,
+      pr: PR,
+      target: BASE,
+      branch: BRANCH,
+      authorized: w.revision,
+      hardened: w.revision,
+      integration: null,
+      operation: { kind: /** @type {const} */ ("fast-forward"), base: w.base },
+      result: null,
+      reads: 1,
+    },
+  };
+  fs.writeFileSync(path.join(w.place, "state.json"), stateBody(ISSUE, state));
+  script(w, receiptSteps(w));
+  const verified = verify(w.cfg, {
+    number: ISSUE,
+    codeMerged: state.codeMerged,
+  });
+  assert.equal(verified.pass, true);
+  assert.deepEqual(verified.changedFiles, ["early.txt", "late.txt"]);
   consumed();
   script(w, receiptSteps(w));
-  assert.throws(
-    () => mergedCode(w.cfg, ISSUE, { pr: PR, sha: w.merged }),
-    UNSUPPORTED,
-  );
+  const reviewed = mergedCode(w.cfg, ISSUE, state.codeMerged);
+  assert.deepEqual(reviewed.range, { from: w.base, head: w.head });
+  assert.deepEqual(reviewed.files, ["early.txt", "late.txt"]);
+  assert.ok(reviewed.diff.includes("earlier feature commit"));
+  assert.ok(reviewed.diff.includes("last feature commit"));
   assert.equal(mutations().length, 0);
   consumed();
-  assert.equal(git(w.wt, ["rev-parse", "HEAD"]), w.head);
 });
 
 test("legacy genuine squash retains complete original-head delta and rejects partial delta", () => {
@@ -103,16 +113,17 @@ for (const shape of ["reversed", "octopus"]) {
     const sha = git(w.seed, ["commit-tree", tree, ...parents, "-m", shape]);
     git(w.seed, ["push", "-q", "origin", `${sha}:refs/heads/unsupported`]);
     const unsupported = { ...w, merged: sha };
+    retainLegacyAttempt(unsupported);
     script(w, [
-      ...prechecks(w),
-      post(unsupported),
       ...Array.from({ length: 3 }, () => [
         prStep(unsupported, mergedView(unsupported)),
         prStep(unsupported, mergedView(unsupported), true),
       ]).flat(),
     ]);
     assert.match(
-      REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
+      REFUSED.parse(
+        reconcileMerge(w.cfg, { number: ISSUE }, confirmationClock()),
+      ).reason,
       UNSUPPORTED,
     );
     assert.equal(git(w.origin, ["rev-parse", BASE]), sha);
@@ -192,16 +203,16 @@ function crissCross() {
 test("ambiguous criss-cross history retains landed truth but cannot establish own provenance", () => {
   const ambiguous = crissCross();
   const { cfg, merged } = ambiguous;
+  retainLegacyAttempt(ambiguous);
   script(ambiguous, [
-    ...prechecks(ambiguous),
-    post(ambiguous),
     ...Array.from({ length: 3 }, () => [
       prStep(ambiguous, mergedView(ambiguous)),
       prStep(ambiguous, mergedView(ambiguous), true),
     ]).flat(),
   ]);
   assert.match(
-    REFUSED.parse(merge(cfg, request(ambiguous), confirmationClock())).reason,
+    REFUSED.parse(reconcileMerge(cfg, { number: ISSUE }, confirmationClock()))
+      .reason,
     UNSUPPORTED,
   );
   assert.deepEqual(readWriteState(cfg, ISSUE).codeMerged, {
@@ -209,6 +220,6 @@ test("ambiguous criss-cross history retains landed truth but cannot establish ow
     sha: merged,
   });
   assert.equal(readWriteState(cfg, ISSUE).merged, null);
-  assert.equal(mutations().length, 1);
+  assert.equal(mutations().length, 0);
   consumed();
 });

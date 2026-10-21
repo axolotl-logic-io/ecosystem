@@ -13,7 +13,7 @@ import {
 } from "./explicit-target-world-test-kit.mjs";
 
 /** @typedef {import("./explicit-target-world-test-kit.mjs").World} World */
-/** @typedef {{args: string[], stdout?: string, stderr?: string, code?: number, updates?: [string, string][], interrupt?: boolean}} GhStep */
+/** @typedef {{args: string[], stdout?: string, stderr?: string, code?: number, updates?: [string, string][], interrupt?: boolean, skipMutation?: boolean}} GhStep */
 const CALLS = z.array(z.array(z.string()));
 const REMAINING = z.object({ steps: z.array(z.unknown()) });
 const VIEW_FIELDS =
@@ -98,18 +98,18 @@ function resultInputs(w) {
 function post(w, extra = {}) {
   return {
     args: [
-      "api",
-      `repos/${REPO}/merges`,
-      "--method",
-      "POST",
-      "--include",
-      "-f",
-      `base=${w.cfg.baseBranch}`,
-      "-f",
-      `head=${w.head}`,
+      "-C",
+      w.wt,
+      "-c",
+      "push.followTags=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "push",
+      "--porcelain",
+      `--force-with-lease=refs/heads/${w.cfg.baseBranch}:${w.base}`,
+      "origin",
+      `${w.head}:refs/heads/${w.cfg.baseBranch}`,
     ],
-    stdout: `HTTP/2.0 201 Created\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ sha: w.merged })}`,
-    updates: [[`refs/heads/${w.cfg.baseBranch}`, w.merged]],
     ...extra,
   };
 }

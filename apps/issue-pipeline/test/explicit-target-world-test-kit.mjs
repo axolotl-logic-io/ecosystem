@@ -43,6 +43,15 @@ Object.assign(
   ]),
 );
 const COMMAND_TIMEOUT_MS = 20_000;
+const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+Object.assign(process.env, Object.fromEntries([["TEST_REAL_GIT", realGit]]));
+const fakeGit = new URL("./explicit-target-fake-git.mjs", import.meta.url)
+  .pathname;
+fs.writeFileSync(
+  path.join(BIN, "git"),
+  `#!/bin/sh\ncase " $* " in *" push "*) [ "$ISSUE_PIPELINE_OPS" = 1 ] || exec '${realGit}' "$@";; *) exec '${realGit}' "$@";; esac\nexec '${process.execPath}' '${fakeGit}' "$@"\n`,
+  { mode: 0o755 },
+);
 const MODE = 0o755;
 const fake = new URL("./explicit-target-fake-gh.mjs", import.meta.url).pathname;
 fs.writeFileSync(

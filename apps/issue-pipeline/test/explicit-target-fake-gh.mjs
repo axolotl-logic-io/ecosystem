@@ -16,7 +16,8 @@ const STEP = z.object({
   args: z.array(z.string()),
   stdout: z.string().default(""),
   stderr: z.string().default(""),
-  code: z.number().int().default(0),
+  code: z.number().int().optional(),
+  skipMutation: z.boolean().optional(),
   interrupt: z.boolean().default(false),
   updates: z.array(z.tuple([z.string(), z.string()])).default([]),
 });
@@ -133,7 +134,7 @@ if (step === undefined || JSON.stringify(step.args) !== JSON.stringify(args)) {
 if (!script.origin.startsWith(`${home}${path.sep}`)) {
   throw new Error("fake gh refuses an origin outside its home");
 }
-if (step.code === 0) {
+if ((step.code ?? 0) === 0) {
   for (const [ref, sha] of step.updates) {
     execFileSync("git", ["-C", script.origin, "update-ref", ref, sha], {
       timeout: COMMAND_TIMEOUT_MS,
@@ -148,4 +149,4 @@ if (step.interrupt) {
 }
 process.stdout.write(step.stdout);
 process.stderr.write(step.stderr);
-process.exit(step.code);
+process.exit(step.code ?? 0);

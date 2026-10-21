@@ -39,7 +39,7 @@ const { readWriteState, stateBody } = await import("../src/saved-state.ts");
 const { saveState } = await import("../src/ops/save-state.ts");
 const { verify } = await import("../src/ops/verify.ts");
 const { mergedCode } = await import("../src/ops/merged-review.ts");
-const INPUT_MOVEMENT = /trusted inputs or legacy wiki head no longer match/u;
+const INPUT_MOVEMENT = /trusted inputs no longer match/u;
 const OK = z.looseObject({
   ok: z.literal(true),
   merged: z.literal(true),
@@ -47,7 +47,7 @@ const OK = z.looseObject({
   byHand: z.boolean().optional(),
 });
 for (const delay of [
-  { name: "stale OPEN", extra: { state: "OPEN", mergeCommit: null } },
+  { name: "stale CLOSED", extra: { state: "CLOSED", mergeCommit: null } },
   { name: "missing result", extra: { state: "MERGED", mergeCommit: null } },
   {
     name: "malformed result",
@@ -56,7 +56,7 @@ for (const delay of [
   { name: "unreadable metadata", code: 1, extra: {} },
 ]) {
   test(`${delay.name} then exact evidence confirms one own merge within the finite bound`, () => {
-    const w = world();
+    const w = world({ fastForward: true });
     script(w, [
       ...prechecks(w),
       post(w),
@@ -104,7 +104,7 @@ test("actual result M survives a later target tip and checks/security read M and
     },
   );
   assert.equal(readWriteState(w.cfg, ISSUE).merged?.code, w.merged);
-  assert.equal(posts().length, 1);
+  assert.equal(posts().length, 0);
   consumed();
   script(
     w,
@@ -127,12 +127,12 @@ test("actual result M survives a later target tip and checks/security read M and
   assert.deepEqual(reviewed.range, { from: w.parent, head: w.merged });
   assert.deepEqual(reviewed.files, ["early.txt", "late.txt"]);
   assert.equal(fs.existsSync(path.join(w.wt, "later.txt")), false);
-  assert.equal(posts().length, 1);
+  assert.equal(posts().length, 0);
   consumed();
 });
 
 test("interruption after durable 201 response recovers in a new process without another POST", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   const reviewed = {
     ...w.revision,
     code: git(w.wt, ["rev-parse", `${w.head}~1`]),
@@ -173,7 +173,7 @@ for (const finding of [
   { category: /** @type {const} */ ("rights"), reason: "unsafe" },
 ]) {
   test(`a stale job snapshot cannot erase a confirmed receipt or exact security decision: ${JSON.stringify(finding)}`, () => {
-    const w = world();
+    const w = world({ fastForward: true });
     script(w, [...prechecks(w), post(w), ...confirmation(w), mergeComment(w)]);
     assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, true);
     const confirmed = readWriteState(w.cfg, ISSUE);
@@ -197,7 +197,7 @@ for (const finding of [
 }
 
 test("trusted input movement during delayed confirmation retains landed truth but cannot create an own receipt", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   const changed = confirmation(w).map((step) => {
     if (step.args[1] === `repos/${REPO}/issues/${ISSUE}`) {
       return {

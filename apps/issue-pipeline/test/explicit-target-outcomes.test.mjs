@@ -19,54 +19,35 @@ const { merge } = await import("../src/ops/merge.ts");
 const REFUSED = z.looseObject({ merged: z.literal(false), reason: z.string() });
 const SHA_LENGTH = 40;
 const WRONG_RECEIPT =
-  /not genuinely MERGED|differs|not the configured repository|not agent|same source/u;
+  /differs|not the configured repository|not agent|same source/u;
 const READ_DENIED = /permission denied/u;
 const LANDED = /may already have landed/u;
-const ANCESTRY = /not on origin\/integration/u;
+const ANCESTRY = /target does not equal/u;
 
 /** @returns {string[][]} */
 function mutations() {
-  return calls().filter(
-    (args) => args.includes("POST") && !args.includes("event=APPROVE"),
-  );
+  return calls().filter((args) => args[0] === "git" && args.includes("push"));
 }
 
-for (const { status, outcome } of [
-  { status: "204", outcome: "already merged" },
-  { status: "403", outcome: "rejected" },
-  { status: "404", outcome: "rejected" },
-  { status: "409", outcome: "rejected" },
-  { status: "422", outcome: "rejected" },
-  { status: "500", outcome: "unconfirmed" },
-  { status: "lost", outcome: "unconfirmed" },
-  { status: "timeout", outcome: "unconfirmed" },
+for (const outcome of [
+  "lease mismatch",
+  "permission denied",
+  "missing target",
+  "branch protection",
+  "non-fast-forward",
+  "connection lost before send",
+  "timeout before receive",
+  "unknown response",
 ]) {
-  test(`HTTP ${status} has no new own receipt and never retries mutation`, () => {
-    const w = world();
-    let stdout = `HTTP/2.0 ${status} Outcome\r\n\r\n`;
-    let code = 1;
-    if (status === "204") {
-      code = 0;
-    }
-    if (status === "lost" || status === "timeout") {
-      stdout = "";
-    }
+  test(`${outcome} has no new own receipt and never retries mutation`, () => {
+    const w = world({ fastForward: true });
     script(w, [
       ...prechecks(w),
-      post(w, {
-        stdout,
-        code,
-        stderr: "i/o timeout or connection lost",
-        updates: [],
-      }),
+      post(w, { skipMutation: true, code: 1, stderr: outcome }),
     ]);
-    const reply = merge(w.cfg, request(w), confirmationClock());
-    assert.equal(reply.merged, false);
-    assert.ok("reason" in reply && reply.reason.includes(outcome));
-    assert.ok(
-      "reason" in reply &&
-        reply.reason.includes("code may already have landed"),
-    );
+    const reply = REFUSED.parse(merge(w.cfg, request(w), confirmationClock()));
+    assert.match(reply.reason, LANDED);
+    assert.match(reply.reason, ANCESTRY);
     assert.equal(mutations().length, 1);
     assert.equal(git(w.origin, ["rev-parse", BASE]), w.base);
     consumed();
@@ -74,23 +55,20 @@ for (const { status, outcome } of [
 }
 
 for (const body of ["", "not JSON", '{"sha":""}', '{"sha":"integration"}']) {
-  test(`malformed 201 body ${JSON.stringify(body)} stops without retry or own receipt`, () => {
-    const w = world();
-    script(w, [
-      ...prechecks(w),
-      post(w, { stdout: `HTTP/2.0 201 Created\n\n${body}` }),
-    ]);
+  test(`acknowledgement text ${JSON.stringify(body)} cannot replace exact-target confirmation`, () => {
+    const w = world({ fastForward: true });
+    script(w, [...prechecks(w), post(w, { skipMutation: true, stdout: body })]);
     assert.match(
       REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
-      LANDED,
+      ANCESTRY,
     );
     assert.equal(mutations().length, 1);
+    assert.equal(git(w.origin, ["rev-parse", BASE]), w.base);
     consumed();
   });
 }
 
 for (const extra of [
-  { state: "OPEN" },
   { state: "CLOSED" },
   { mergeCommit: { oid: "f".repeat(SHA_LENGTH) } },
   { headRefOid: "d".repeat(SHA_LENGTH) },
@@ -98,8 +76,8 @@ for (const extra of [
   { isCrossRepository: true },
   { headRefName: "other" },
 ]) {
-  test(`201 requires genuine same-PR retained-head result: ${JSON.stringify(extra)}`, () => {
-    const w = world();
+  test(`FF confirmation requires genuine same-PR retained-head binding: ${JSON.stringify(extra)}`, () => {
+    const w = world({ fastForward: true });
     script(w, [
       ...prechecks(w),
       post(w),
@@ -117,7 +95,7 @@ for (const extra of [
 }
 
 test("unreadable post-request metadata stops after one mutation", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   script(w, [
     ...prechecks(w),
     post(w),
@@ -135,16 +113,9 @@ test("unreadable post-request metadata stops after one mutation", () => {
   consumed();
 });
 
-test("matching result must be in freshly fetched integration", () => {
-  const w = world();
-  script(w, [
-    ...prechecks(w),
-    post(w, { updates: [] }),
-    ...Array.from({ length: 3 }, () => [
-      prStep(w, mergedView(w)),
-      prStep(w, mergedView(w), true),
-    ]).flat(),
-  ]);
+test("matching result must equal the freshly read literal integration target", () => {
+  const w = world({ fastForward: true });
+  script(w, [...prechecks(w), post(w, { skipMutation: true })]);
   assert.match(
     REFUSED.parse(merge(w.cfg, request(w), confirmationClock())).reason,
     ANCESTRY,
@@ -154,7 +125,7 @@ test("matching result must be in freshly fetched integration", () => {
 });
 
 test("exhausted transient post-request reads become a stop reply, never a deferred mutation retry", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   const unreadable = {
     ...prStep(w),
     code: 1,
