@@ -12,4 +12,5 @@ The root and pipeline Biome configs encode the lint policy and its documented pr
 
 ## Tests
 
-The issue pipeline's tests don't yet follow the folder layout that `test-code-in-test` requires; a planned reorganization will fix that. The [pipeline README](../apps/issue-pipeline/README.md#tests) describes its isolated test setup.
+- **Levels:** a module's logic gets a unit test. Behaviour that crosses jobs, ops, git or GitHub gets a full-flow test, which runs the real job and ops against a temporary root, local bare git origins, fake GitHub and fake pi.
+- The issue pipeline's tests don't yet follow the folder layout that `test-code-in-test` requires; a planned reorganization will fix that. The [pipeline README](../apps/issue-pipeline/README.md#tests) describes its isolated test setup.

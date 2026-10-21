@@ -37,6 +37,10 @@ Follow John Ousterhout's *A Philosophy of Software Design*:
 ## Tests
 
 - **A flake is a failure** (`flakes-are-failures`). Fix the cause or the measurement; never rerun until it passes. A passing repeat adds no evidence, and no test may depend on timing.
+- **Fix a known flake first, on its own,** before other work that would trip on it. A flake left open costs a run in every branch that meets it.
+- **Test each behaviour at the lowest level that proves it.** Logic gets a unit test. Behaviour that depends on a real dependency, such as a database, git or a subprocess, gets a test against that dependency. Only what needs the whole system running gets an end-to-end test. Don't repeat at a higher level what a lower level already proves. The project practices name each repository's levels.
+- **Reuse the test kits.** Before writing a helper, fixture or fake, look in `test/` for one, and extend it rather than writing a copy.
+- **Keep tests fast.** Each test makes its own data. Share only read-only set-up within a file, and run independent set-up together.
 - **Code only tests use lives with the tests, not in `src/`** (`test-code-in-test`): `src/` holds only what the program runs. Tests and their helpers are in `test/`, in the folder their subject has under `src/`, so the tests for `src/storage/store.ts` are `test/storage/store.test.ts`. Helpers are named `fake-*.ts`, `*-fixtures.ts` or `*-test-kit.ts`, such as `test/http/fake-fetch.ts`, which answers requests from a stubbed `fetch`.
 
 ## Secrets
