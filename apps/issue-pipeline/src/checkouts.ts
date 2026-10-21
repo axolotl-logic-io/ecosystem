@@ -1,5 +1,4 @@
-// The repo's clone and each issue's worktree and branch on this machine. One
-// Agents commit in worktrees; only deterministic ops push.
+// Repository clone and issue worktrees. Only deterministic ops push commits.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -16,6 +15,12 @@ import {
   uncommitted,
 } from "./git-state.ts";
 import { git } from "./github.ts";
+import {
+  assertCheckoutReady,
+  assertCheckoutReadyForRemoval,
+  releaseCheckoutSlot,
+  withCheckoutSetup,
+} from "./lane-slots.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import { run, runFailure, shell } from "./process.ts";
@@ -96,6 +101,7 @@ function ensureWorktree(cfg: Config, number: number): string {
 // as it exits (job/teardown.ts), so the checkout that proves a completion
 // stays until then.
 function removeWorktree(cfg: Config, number: number): void {
+  assertCheckoutReadyForRemoval(cfg, number, paths.worktree(cfg, number));
   // Frees what setup made outside the worktree, such as a per-issue test
   // database. Runs in the issue's run dir, whose path names the issue. A
   // failure is only logged.
@@ -112,6 +118,7 @@ function removeWorktree(cfg: Config, number: number): void {
   withCloneLock(cfg, () => {
     const clone = paths.clone(cfg);
     const wt = paths.worktree(cfg, number);
+    assertCheckoutReadyForRemoval(cfg, number, wt);
     if (fs.existsSync(wt)) {
       const args = [
         "-C",
@@ -126,6 +133,7 @@ function removeWorktree(cfg: Config, number: number): void {
     }
     const branch = paths.branch(cfg, number);
     run("git", ["-C", clone, "branch", "-D", branch], { allowFail: true });
+    releaseCheckoutSlot(cfg);
   });
 }
 
@@ -252,11 +260,9 @@ function push(
   return { headSha, ...changes };
 }
 
-// Runs the repo's setup command (config `commands.setup`), if it sets one,
-// in issue `n`'s checkout `dir`, so the writer's own test runs get this
-// issue's database and ports instead of the shared defaults. It writes the
-// command's output to `logName` in the issue's run folder. A failure is only
-// logged: verify runs setup again and reports it.
+// Runs configured setup in the issue checkout with its leased environment.
+// Logs output to logName; legacy failures are nonfatal, lane failures retain
+// the checkout and refuse session startup.
 function setUpCheckout(
   cfg: Config,
   n: number,
@@ -266,10 +272,16 @@ function setUpCheckout(
   const { commandTimeoutMinutes, commands } = SETUP_SETTINGS.parse(cfg);
   const { setup } = commands;
   if (setup === undefined || setup === null || setup === "") {
+    assertCheckoutReady(cfg, n, dir);
     return;
   }
   const log = path.join(paths.runDir(cfg, n), logName);
-  shell(setup, dir, log, commandTimeoutMinutes * MS_PER_MINUTE);
+  withCheckoutSetup(cfg, n, dir, (env) =>
+    shell(setup, dir, log, {
+      timeoutMs: commandTimeoutMinutes * MS_PER_MINUTE,
+      env,
+    }),
+  );
 }
 
 export type { BranchChanges, PushRecord, PushResult };

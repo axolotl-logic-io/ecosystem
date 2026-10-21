@@ -11,8 +11,15 @@ import path from "node:path";
 import { z } from "zod";
 import { updateSubmodules } from "../clone-setup.ts";
 import type { Config } from "../config.ts";
-import { paths } from "../config.ts";
+import { paths, withCheckout } from "../config.ts";
 import { assertClean, fetchIn, gitIn, head } from "../git-state.ts";
+import {
+  assertCheckoutReadyForRemoval,
+  checkoutEnvironment,
+  releaseCheckoutSlot,
+  withCheckoutSlot,
+} from "../lane-slots.ts";
+import { withCloneLock } from "../locks.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run, shell } from "../process.ts";
 import type { VerifyReply } from "./checks.ts";
@@ -81,7 +88,16 @@ function verifyMerged(
     log: path.join(runDir, "verify-merged-teardown.log"),
   };
   try {
-    gitIn(wt, ["worktree", "add", "--detach", dir, sha]);
+    // Verification reuses an already claimed environment, never a new slot.
+    checkoutEnvironment(cfg, n);
+    const scoped = withCheckout(cfg, {
+      issue: n,
+      dir,
+      branch: paths.branch(cfg, n),
+    });
+    withCheckoutSlot(scoped, n, () =>
+      gitIn(wt, ["worktree", "add", "--detach", dir, sha]),
+    );
     updateSubmodules(cfg, dir);
     const at = head(dir);
     if (at !== sha) {
@@ -90,8 +106,12 @@ function verifyMerged(
     const changed = changedFiles(dir, integrationParent, sha);
     return runChecks(cfg, n, { dir, sha, changed });
   } finally {
-    removeVerifyCheckout(wt, dir, teardown);
-    fs.rmSync(parent, { recursive: true, force: true });
+    withCloneLock(cfg, () => {
+      assertCheckoutReadyForRemoval(cfg, n, dir);
+      removeVerifyCheckout(wt, dir, teardown);
+      fs.rmSync(parent, { recursive: true, force: true });
+      releaseCheckoutSlot(cfg);
+    });
   }
 }
 
