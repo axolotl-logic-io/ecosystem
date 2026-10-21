@@ -23,7 +23,7 @@ import {
   recordIds,
 } from "./records.ts";
 import { PREPARATION } from "./schema.ts";
-import { privateTip, retainedWork } from "./selection.ts";
+import { privateTip, retainedIdentity, retainedWork } from "./selection.ts";
 
 interface OperatorSelection {
   number: number;
@@ -198,6 +198,7 @@ function selectLegacyWiki(
         new: req.next,
         private: req.old,
         retained: fs.realpathSync(req.retained),
+        retainedIdentity: retainedIdentity(req.retained),
         basis: req.rationale,
         kind: "operator",
       });

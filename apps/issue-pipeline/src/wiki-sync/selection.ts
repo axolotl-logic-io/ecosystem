@@ -19,13 +19,14 @@ import {
   readOperatorSelection,
   readPreparation,
   readRecord,
+  readSyncIntent,
   recordDir,
   recordIds,
 } from "./records.ts";
 import type { Preparation, Selection } from "./schema.ts";
-import { COMPLETION, INTENT, OID, SELECTION } from "./schema.ts";
+import { COMPLETION, OID, SELECTION } from "./schema.ts";
 
-const MAX_BRANCHES = 100;
+const MAX_RETAINED_REFS = 100;
 
 function importHistory(
   cfg: Config,
@@ -67,6 +68,10 @@ function importHistory(
 function privateTip(mirror: string, branch: string): string {
   return OID.parse(localGit(mirror, ["rev-parse", `refs/heads/${branch}`]));
 }
+function retainedIdentity(dir: string): Selection["retainedIdentity"] {
+  const { dev: device, ino: inode } = fs.statSync(fs.realpathSync(dir));
+  return { device, inode };
+}
 function retainedWork(prep: Preparation, next: string, retained: string): void {
   auditRetainedWork(prep, next, retained);
   // A supplied relocation must not hide a still-present dirty original checkout.
@@ -90,14 +95,15 @@ function auditRetainedWork(
     );
   }
   const tip = localGit(retained, ["rev-parse", "HEAD"]);
-  const branches = localGit(retained, ["for-each-ref", "refs/heads"]);
-  const branchLines = branches.split("\n").filter(Boolean);
-  if (branchLines.length > MAX_BRANCHES) {
+  // A clean worktree may still retain staged/working edits in a stash.
+  const refs = localGit(retained, ["for-each-ref", "refs/heads", "refs/stash"]);
+  const refLines = refs.split("\n").filter(Boolean);
+  if (refLines.length > MAX_RETAINED_REFS) {
     throw new OpsError(
-      "retained wiki branches exceed the bounded reconciliation scan",
+      "retained wiki refs exceed the bounded reconciliation scan",
     );
   }
-  const extra = branchLines.some((line) => {
+  const extra = refLines.some((line) => {
     const [branchTip] = line.split(" ");
     return (
       localGit(retained, [
@@ -136,7 +142,7 @@ function validateSelection(
     );
   }
   if (selection.kind === "checkpoint") {
-    const intent = readRecord(path.join(folder, "intent.json"), INTENT);
+    const intent = readSyncIntent(folder, prep.id);
     const completion = readRecord(
       path.join(folder, "completion.json"),
       COMPLETION,
@@ -200,6 +206,15 @@ function selectedWikiStart(
   if (selection.id !== prep.id || remote !== prep.remote) {
     throw new OpsError("wiki recovery selection identity conflict");
   }
+  const identity = retainedIdentity(selection.retained);
+  if (
+    identity.device !== selection.retainedIdentity.device ||
+    identity.inode !== selection.retainedIdentity.inode
+  ) {
+    throw new OpsError(
+      "retained wiki checkout identity changed; preserve the original evidence and explicitly reconcile before restart",
+    );
+  }
   assertRemote(cfg, mirror);
   assertRemote(cfg, selection.retained);
   retainedWork(prep, selection.new, selection.retained);
@@ -260,6 +275,7 @@ export {
   importHistory,
   privateTip,
   recoveredWikiRevision,
+  retainedIdentity,
   retainedWork,
   selectedWikiStart,
 };

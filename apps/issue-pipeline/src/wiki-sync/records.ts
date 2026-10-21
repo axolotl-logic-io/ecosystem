@@ -8,7 +8,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
-import type { Preparation, Selection } from "./schema.ts";
+import type { Intent, Preparation, Selection } from "./schema.ts";
 import {
   ABANDONED,
   COMPLETION,
@@ -169,11 +169,23 @@ function readOperatorSelection(folder: string, id: string): Selection {
     createHash("sha256").update(decision.evidence).digest("hex") !==
       decision.sha256 ||
     fs.existsSync(path.join(folder, "intent.json")) ||
-    fs.existsSync(path.join(folder, "completion.json"))
+    fs.existsSync(path.join(folder, "completion.json")) ||
+    fs.existsSync(path.join(folder, "abandoned.json"))
   ) {
     throw new OpsError("operator selection decision evidence conflicts");
   }
   return selection;
+}
+function readSyncIntent(folder: string, id: string): Intent {
+  const intent = readRecord(path.join(folder, "intent.json"), INTENT);
+  if (
+    intent.id !== id ||
+    fs.existsSync(path.join(folder, "abandoned.json")) ||
+    fs.existsSync(path.join(folder, "operator.json"))
+  ) {
+    throw new OpsError("conflicting wiki sync intent evidence");
+  }
+  return intent;
 }
 function assertUniqueWikiIntent(
   cfg: Config,
@@ -188,7 +200,7 @@ function assertUniqueWikiIntent(
     const otherFile = path.join(folder, "intent.json");
     if (
       fs.existsSync(otherFile) &&
-      readRecord(otherFile, INTENT).new === next
+      readSyncIntent(folder, other).new === next
     ) {
       throw new OpsError("conflicting attribution of the synced wiki tip");
     }
@@ -207,6 +219,12 @@ function assertPushComplete(folder: string, id: string): void {
   }
   const intentFile = path.join(folder, "intent.json");
   if (
+    !fs.existsSync(intentFile) &&
+    fs.existsSync(path.join(folder, "completion.json"))
+  ) {
+    throw new OpsError("conflicting wiki completion without original intent");
+  }
+  if (
     !(
       fs.existsSync(intentFile) ||
       fs.existsSync(path.join(folder, "abandoned.json"))
@@ -223,7 +241,7 @@ function assertPushComplete(folder: string, id: string): void {
     throw new OpsError("conflicting abandoned wiki sync preparation");
   }
   if (fs.existsSync(intentFile)) {
-    const intent = readRecord(intentFile, INTENT);
+    const intent = readSyncIntent(folder, id);
     const file = path.join(folder, "completion.json");
     if (!fs.existsSync(file)) {
       throw new OpsError(
@@ -255,6 +273,7 @@ export {
   readOperatorSelection,
   readPreparation,
   readRecord,
+  readSyncIntent,
   recordDir,
   recordIds,
 };

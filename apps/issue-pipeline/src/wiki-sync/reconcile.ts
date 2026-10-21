@@ -15,10 +15,16 @@ import {
   durableJson,
   readPreparation,
   readRecord,
+  readSyncIntent,
   recordDir,
 } from "./records.ts";
-import { COMPLETION, INTENT } from "./schema.ts";
-import { importHistory, privateTip, retainedWork } from "./selection.ts";
+import { COMPLETION } from "./schema.ts";
+import {
+  importHistory,
+  privateTip,
+  retainedIdentity,
+  retainedWork,
+} from "./selection.ts";
 
 interface ReconcileRequest {
   number: number;
@@ -52,10 +58,7 @@ function reconcileWikiSync(
         const prep = readPreparation(cfg, issue, id);
         assertRemote(cfg, retained);
         const folder = recordDir(cfg, issue, id);
-        const intent = readRecord(path.join(folder, "intent.json"), INTENT);
-        if (intent.id !== id) {
-          throw new OpsError("wiki sync intent identity conflict");
-        }
+        const intent = readSyncIntent(folder, id);
         validatePreparation(cfg, issue, prep, { lane, next: intent.new });
         const mirror = paths.wikiMirror(cfg);
         assertRemote(cfg, mirror);
@@ -79,6 +82,7 @@ function reconcileWikiSync(
           new: intent.new,
           private: prep.old,
           retained: fs.realpathSync(retained),
+          retainedIdentity: retainedIdentity(retained),
           basis:
             "exact intent, histories, original authority and fresh remote read-back",
           kind: "checkpoint",

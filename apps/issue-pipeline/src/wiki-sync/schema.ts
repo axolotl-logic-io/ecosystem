@@ -47,6 +47,10 @@ const SELECTION = z.strictObject({
   new: OID,
   private: OID,
   retained: z.string().min(1),
+  retainedIdentity: z.strictObject({
+    device: z.number().int().nonnegative(),
+    inode: z.number().int().nonnegative(),
+  }),
   basis: z.string().min(1),
   kind: z.enum(["checkpoint", "operator"]),
 });

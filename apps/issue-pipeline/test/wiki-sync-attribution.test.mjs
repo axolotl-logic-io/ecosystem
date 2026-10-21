@@ -162,13 +162,13 @@ test("later conflicting attribution invalidates an earlier local selection", () 
 test("a saved exact integration can survive interruption before private mirror catch-up without replacing original hardening", () => {
   const w = world();
   const { id, next } = synced(w);
-  reconcile(w, id);
+  const retained = relocate(w);
+  reconcile({ ...w, dirs: { ...w.dirs, docs: retained } }, id);
   const integration = {
     reviewed: w.state.hardened,
     revision: { ...w.state.hardened, wiki: next },
   };
   saveAuthority(w.cfg, { ...w.state, integration });
-  relocate(w);
   const opened = reopen(w);
   assert.equal(headOf(opened.docs ?? ""), next);
   assert.equal(git(paths.wikiMirror(w.cfg), ["rev-parse", BRANCH]), w.old);
