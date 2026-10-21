@@ -23,6 +23,7 @@ import { piLog } from "./pipeline-flow-pi.mjs";
 import { jobLog, stopJobs, tick } from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
+  hardeningTurn,
   implementorTurn,
   openFlowIssue,
   savedState,
@@ -68,6 +69,7 @@ before(() => {
     reviewer: [
       implementorTurn("Hello, world", "Hardening capitalizes the greeting"),
       implementorTurn("Hello, world!", "Integration fixes the failed CI check"),
+      hardeningTurn(),
       securityTurn(),
     ],
   });
@@ -75,13 +77,14 @@ before(() => {
 });
 after(() => stopJobs(flow));
 
-// Each bounded stage, not the aggregate multi-job lifecycle, gets the test
-// deadline. The before hook used to charge every stage to the first test.
 /** @param {string} stage @returns {Promise<{ started: string[], log: string }>} */
 async function completeStage(stage) {
   const result = await tick(flow);
   stages.push(...result.started);
-  if (stage === "review") {
+  if (
+    stage === "review" &&
+    stages.filter((each) => each === "review").length === 1
+  ) {
     const hardened = savedState(readWorld(flow.ghDir));
     withWorld(flow.ghDir, (world) => {
       world.failedHead = hardened.hardened.code;
@@ -89,7 +92,14 @@ async function completeStage(stage) {
   }
   return { started: result.started, log: jobLog(flow) };
 }
-for (const stage of ["author", "implement", "review", "merge", "merge"]) {
+for (const stage of [
+  "author",
+  "implement",
+  "review",
+  "merge",
+  "review",
+  "merge",
+]) {
   test(`legacy tick completes the ${stage} stage`, async () => {
     const result = await completeStage(stage);
     assert.deepEqual(result.started, [stage], result.log);
@@ -104,7 +114,7 @@ test("completed legacy flow goes idle without another job", async () => {
 test("legacy ticks run development, hardening, bounded integration and security without a Developer fix round", () => {
   assert.deepEqual(
     stages,
-    ["author", "implement", "review", "merge", "merge"],
+    ["author", "implement", "review", "merge", "review", "merge"],
     jobLog(flow),
   );
 });
@@ -113,14 +123,14 @@ test("each phase gets its configured model and exact write authority without a G
   const starts = piStarts();
   assert.deepEqual(
     starts.map((each) => each.role),
-    ["author", "implementor", "reviewer", "reviewer", "reviewer"],
+    ["author", "implementor", "reviewer", "reviewer", "reviewer", "reviewer"],
   );
   const powers = starts.map((each) => ({
     ghToken: each.ghToken,
     commitScope: each.commitScope,
     commits: each.extensions.includes("pipeline-commit.mjs"),
   }));
-  const expected = [false, true, true, true, false].map((writes) => ({
+  const expected = [false, true, true, true, true, false].map((writes) => ({
     ghToken: null,
     commitScope: writes,
     commits: writes,
@@ -131,6 +141,7 @@ test("each phase gets its configured model and exact write authority without a G
 test("hardening, integration and final security get pinned pages and truthful revision provenance", () => {
   const starts = piStarts();
   const pages = PROMPT_PAGES.map(({ page }) => page);
+  pages.splice(pages.length - 1, 0, "hardening.md");
   for (const [at, page] of pages.entries()) {
     const launched = starts[at];
     assert.ok(launched !== undefined);
@@ -143,20 +154,20 @@ test("hardening, integration and final security get pinned pages and truthful re
       .join("\n");
     assert.ok(usage.includes(sha256), `missing usage provenance for ${page}`);
   }
-  const [, , harden, integrate, security] = piLog(flow.piDir).filter(
+  const [, , harden, integrate, reharden, security] = piLog(flow.piDir).filter(
     (entry) => "prompt" in entry,
   );
   assert.match(String(harden?.prompt), GHERKIN_IN_PROMPT);
   assert.match(String(integrate?.prompt), GHERKIN_IN_PROMPT);
   const state = savedState(readWorld(flow.ghDir));
-  assert.ok(String(security?.prompt).includes(state.merged.code));
+  assert.ok(String(security?.prompt).includes(state.hardened.code));
   assert.equal("wiki" in state.merged, false);
-  assert.deepEqual(state.integration.reviewed, state.hardened);
-  assert.notEqual(state.integration.revision.code, state.hardened.code);
-  assert.deepEqual(state.security.revision, state.merged);
+  assert.ok(String(reharden?.prompt).includes(state.hardened.code));
+  assert.equal(state.integration, null);
+  assert.deepEqual(state.security.revision, state.hardened);
   assert.equal(state.security.finding, null);
   assert.ok(state.security.commentId > 0);
-  const tag = `review-security-${state.merged.code.slice(0, SECURITY_TAG_LENGTH)}`;
+  const tag = `review-security-${state.hardened.code.slice(0, SECURITY_TAG_LENGTH)}`;
   const diff = path.join(
     flow.root,
     "runs",
@@ -168,7 +179,7 @@ test("hardening, integration and final security get pinned pages and truthful re
   const reviewed = fs.readFileSync(diff, "utf8");
   assert.match(reviewed, REVIEWED_CODE);
   assert.match(reviewed, REVIEWED_DOCS);
-  const [, , , , securityStart] = starts;
+  const [, , , , , securityStart] = starts;
   assert.ok(securityStart !== undefined);
   const tools =
     securityStart.argv[securityStart.argv.indexOf("--tools") + 1].split(",");
@@ -202,8 +213,8 @@ test("GitHub ends with the issue closed as merged, the PR merged at the approved
       stage: "done",
       verdict: null,
       pr: "MERGED",
-      mergedHead: state.integration.revision.code,
-      merged: { ...state.integration.revision, code: pr.mergeOid },
+      mergedHead: state.hardened.code,
+      merged: { ...state.hardened, code: pr.mergeOid },
       issue: ["closed", "completed", ["agent:merged"]],
       reviews: 2,
       unsupported: [],
@@ -212,7 +223,7 @@ test("GitHub ends with the issue closed as merged, the PR merged at the approved
 });
 
 test("the one branch POST names only integration and the checked full source head", () => {
-  const { integration } = savedState(readWorld(flow.ghDir));
+  const { hardened } = savedState(readWorld(flow.ghDir));
   const merges = ghCalls(flow.ghDir)
     .filter(([command]) => command === "api")
     .map((args) => flagsOf(args.slice(1)))
@@ -231,27 +242,23 @@ test("the one branch POST names only integration and the checked full source hea
       endpoint: "repos/o/r/merges",
       method: "POST",
       base: "integration",
-      head: integration.revision.code,
+      head: hardened.code,
     },
   );
 });
 
 test("git ends with ordered parents covering the whole approved change, its docs included, on the base", () => {
   const base = baseHead();
-  const { merged, integration } = savedState(readWorld(flow.ghDir));
+  const { merged, hardened } = savedState(readWorld(flow.ghDir));
   assert.equal(base, merged.code);
   assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^1`]), start);
-  assert.equal(
-    bareGit(flow.origin, ["rev-parse", `${base}^2`]),
-    integration.revision.code,
-  );
+  assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^2`]), hardened.code);
   const greeting = bareGit(flow.origin, ["show", `${base}:greet.txt`]);
   assert.equal(greeting, "Hello, world!");
   const page = bareGit(flow.origin, ["show", `${base}:docs/Home.md`]);
   assert.match(page, MERGED_PAGE);
 });
 
-// Runs last: it reopens the issue as if the completion's close was lost.
 test("a completion replayed on a reopened done issue closes it again with no model, merging nothing new", async () => {
   const done = baseHead();
   const receipt = savedState(readWorld(flow.ghDir)).merged;

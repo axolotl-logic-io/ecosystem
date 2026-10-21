@@ -8,7 +8,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CODE_MERGED,
   MERGED,
   MERGED_PR,
   MERGED_REVISION,
@@ -18,7 +17,6 @@ import {
 } from "./merge-role-test-kit.mjs";
 import {
   callNames,
-  checksBefore,
   endCode,
   firstPayload,
   freshBefore,
@@ -47,17 +45,16 @@ const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const OLDER = { ...REVISION, code: sha("8") };
 const SECURITY_TASK = /Task: `security-review`/u;
 const MERGED_CHECKOUT = new RegExp(
-  `Code checkout: \`repo/\`, detached at the merge commit \`${MERGE_COMMIT}\`: the merged result`,
+  `Code checkout: \`repo/\`, at exactly the reviewed commit \`${HEAD}\``,
   "u",
 );
 const BUNDLE = /Bundle: `\/run\/security\/bundle\.md`/u;
 // Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS =
   /AGENTS\.md|artificial load|allow-listed|first parent/iu;
-const SECURITY_COMMENT =
-  /^## Security review of the merged result: no security finding/u;
+const SECURITY_COMMENT = /^## Security review: no security finding/u;
 
-test("a hardened revision merges with its head matched, then the security review of the merged result clears it and the issue completes", async () => {
+test("a hardened revision receives Security clearance before its exact head merges and the issue completes", async () => {
   const { ctx, calls } = merging();
   const state = stateOf(await mergeRole(ctx), "next");
   assert.deepEqual(mutationsOf(calls), ["merge", "finish"]);
@@ -75,17 +72,19 @@ test("a hardened revision merges with its head matched, then the security review
   assert.deepEqual(revision, REVISION);
   assert.deepEqual(mergeQueue, QUEUE);
   assert.ok(freshBefore(calls, "merge"));
-  const checks = checksBefore(calls, "prepare-review");
-  assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
+  assert.ok(
+    callNames(calls).indexOf("session") < callNames(calls).indexOf("merge"),
+  );
+  assert.deepEqual(state.security?.revision, REVISION);
 });
 
-test("the security review is a fresh read-only Reviewer session over the merge commit GitHub confirmed", async () => {
+test("the security review is a fresh read-only Reviewer session over the exact candidate", async () => {
   const { ctx, calls } = merging();
   await mergeRole(ctx);
   assert.deepEqual(firstPayload(calls, "prepare-review"), {
-    tag: `security-${MERGE_COMMIT.slice(0, SHORT_SHA_LENGTH)}`,
+    tag: `security-${HEAD.slice(0, SHORT_SHA_LENGTH)}`,
     sinceSha: null,
-    codeMerged: { pr: PR, sha: MERGE_COMMIT },
+    codeMerged: null,
   });
   const [spec] = sessionsOf(calls);
   assert.equal(spec?.agent, "issue-pipeline-reviewer");
@@ -106,21 +105,21 @@ test("the security comment keeps the key a pipeline with a wiki gave the same me
   const { ctx, calls } = merging();
   await mergeRole(ctx);
   const [post] = postsOf(calls);
-  const merged = MERGE_COMMIT.slice(0, SHORT_SHA_LENGTH);
+  const merged = HEAD.slice(0, SHORT_SHA_LENGTH);
   assert.equal(post?.key, `security-${merged}-none`);
 });
 
-test("nothing integrates or pushes once the merged result is prepared for review", async () => {
+test("nothing integrates or pushes after Security prepares the candidate", async () => {
   const { ctx, calls } = merging();
   await mergeRole(ctx);
   const names = opNames(calls);
   const after = names.slice(names.indexOf("prepare-review"));
-  for (const name of ["sync-base", "push", "verify", "merge"]) {
+  for (const name of ["sync-base", "push"]) {
     assert.ok(!after.includes(name), `ran ${name} after prepare-review`);
   }
 });
 
-test("the Reviewer's own integration of the hardened revision authorizes the merge of the integrated one", async () => {
+test("the Reviewer's own integration requires fresh hardening before merge", async () => {
   const { ctx, calls } = merging({
     state: {
       hardened: OLDER,
@@ -128,9 +127,10 @@ test("the Reviewer's own integration of the hardened revision authorizes the mer
     },
   });
   const state = stateOf(await mergeRole(ctx), "next");
-  assert.equal(state.stage, "done");
-  const { expectedSha } = firstPayload(calls, "merge");
-  assert.equal(expectedSha, HEAD);
+  assert.equal(state.stage, "review");
+  assert.equal(state.hardened, null);
+  assert.deepEqual(mutationsOf(calls), []);
+  assert.equal(sessionsOf(calls).length, 0);
 });
 
 test("no authorization for the current revision goes to review without a mutation", async () => {
@@ -149,7 +149,7 @@ test("no authorization for the current revision goes to review without a mutatio
     const state = stateOf(end, "next");
     assert.equal(state.stage, "review");
     assert.equal(state.hardened, null);
-    assert.equal(state.integration, null);
+    assert.deepEqual(state.integration, runs[index]?.ctx.state.integration);
     assert.deepEqual(opNames(runs[index]?.calls ?? []), ["current-revision"]);
   }
 });
@@ -177,8 +177,9 @@ test("a head that changes after the checks goes to review, not to merge", async 
   const { ctx, calls } = merging({
     ops: { "current-revision": [current(), current({ code: MOVED })] },
   });
-  const state = stateOf(await mergeRole(ctx), "next");
-  assert.equal(state.stage, "review");
+  const state = stateOf(await mergeRole(ctx), "wait");
+  assert.equal(state.stage, "merge");
+  assert.equal(state.security, null);
   assert.ok(!opNames(calls).includes("merge"));
 });
 
@@ -204,7 +205,7 @@ test("a PR still a draft is marked ready from the saved authorization, then wait
   assert.ok(names.indexOf("save") < names.indexOf("ready-pr"));
   const { state: readied } = firstPayload(calls, "ready-pr");
   assert.deepEqual(readied, savesOf(calls)[0]);
-  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(sessionsOf(calls).length, 1);
 });
 
 test("GitHub's refusal stops with merge-refused; a merged reply with no merge commit is an error", async () => {
@@ -219,7 +220,8 @@ test("GitHub's refusal stops with merge-refused; a merged reply with no merge co
     message: UNREADABLE_REPLY,
   });
   assert.ok(!opNames(blind.calls).includes("finish"));
-  assert.equal(savesOf(blind.calls).length, 0);
+  assert.equal(savesOf(blind.calls).length, 1);
+  assert.equal(savesOf(blind.calls)[0]?.merged, null);
 });
 
 test("a merge of another head than the authorized one is never reviewed or completed as authorized", async () => {
@@ -228,13 +230,11 @@ test("a merge of another head than the authorized one is never reviewed or compl
   });
   const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(state.stage, "review");
-  for (const name of ["prepare-review", "finish"]) {
-    assert.ok(!opNames(calls).includes(name), `ran ${name}`);
-  }
-  assert.equal(sessionsOf(calls).length, 0);
+  assert.ok(!opNames(calls).includes("finish"));
+  assert.equal(sessionsOf(calls).length, 1);
 });
 
-test("after its own merge, GitHub must confirm the merge commit before any security review", async () => {
+test("after its own merge, GitHub must confirm the merge commit before completion", async () => {
   const afters = [
     current({ code: MERGE_COMMIT }, { ...MERGED_PR, mergeCommit: MOVED }),
     current({ code: MERGE_COMMIT }, { ...MERGED_PR, state: "OPEN" }),
@@ -242,7 +242,9 @@ test("after its own merge, GitHub must confirm the merge commit before any secur
     current({}, MERGED_PR),
   ];
   const runs = afters.map((after) =>
-    merging({ ops: { "current-revision": [current(), current(), after] } }),
+    merging({
+      ops: { "current-revision": [current(), current(), current(), after] },
+    }),
   );
   const ends = await Promise.all(runs.map(({ ctx }) => mergeRole(ctx)));
   for (const [index, end] of ends.entries()) {
@@ -250,9 +252,9 @@ test("after its own merge, GitHub must confirm the merge commit before any secur
     assert.ok(end.kind === "stop");
     assert.deepEqual(end.state.merged, MERGED_REVISION);
     const names = opNames(runs[index]?.calls ?? []);
-    for (const name of ["prepare-review", "finish"]) {
+    for (const name of ["finish"]) {
       assert.ok(!names.includes(name), `ran ${name}`);
     }
-    assert.equal(sessionsOf(runs[index]?.calls ?? []).length, 0);
+    assert.equal(sessionsOf(runs[index]?.calls ?? []).length, 1);
   }
 });

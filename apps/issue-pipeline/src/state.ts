@@ -72,11 +72,8 @@ const SECURITY_CATEGORY = z.enum([
   "abuse-risk",
 ]);
 
-// The read-only security review of the merged result: `revision` is exactly
-// what it reviewed (code: GitHub's merge commit, null with no PR),
-// `commentId` its comment, and `finding` null when it
-// found nothing, or why it rejected that exact revision, so a lifted stop
-// can't review the same unsafe result again for another answer.
+// An exact Security verdict. New candidate receipts also bind the target;
+// old receipts without candidate provenance remain postmerge history only.
 const SECURITY = z.object({
   revision: REVISION,
   // Absent on historical postmerge receipts: never premerge permission.
@@ -145,7 +142,7 @@ const ISSUE_STATE = z.object({
   hardened: REVISION.nullable().catch(null),
   // The receipt of the Reviewer's own integration of the hardened revision.
   integration: INTEGRATION.nullable().catch(null),
-  // The security review of the merged result (security-clearance.ts).
+  // Exact Security clearance/rejection (security-clearance.ts).
   security: SECURITY.nullable().catch(null),
   // The code head whose verification last passed.
   verifiedSha: z.string().nullable().catch(null),

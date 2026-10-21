@@ -12,6 +12,7 @@ import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   expectedReplay,
+  historicalMerge,
   merges,
   prepareReplayFlow,
   replaceState,
@@ -33,6 +34,8 @@ let interruptedWorld;
 /** @type {string} the review-module gitlink the Developer's draft adds */
 let gitlink;
 let replayReady = false;
+/** @type {import("../src/state.ts").Integration} */
+let originalIntegration;
 
 /** @param {string} mergedSha @returns {{ diff: string, bundle: string, files: string }} */
 function securityBundle(mergedSha) {
@@ -65,7 +68,12 @@ function completeSetupStage(stage, action) {
       world.failedHead = savedState(world).hardened.code;
     });
   }
+  if (action === "integration") {
+    originalIntegration = savedState(readWorld(flow.ghDir)).integration;
+  }
   if (action === "snapshot") {
+    historicalMerge(flow, originalIntegration);
+    fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
     interruptedWorld = readWorld(flow.ghDir);
     replayReady = true;
   }
@@ -76,7 +84,8 @@ for (const step of [
   { stage: "author", end: "next", action: "none" },
   { stage: "implement", end: "next", action: "none" },
   { stage: "review", end: "next", action: "fail-ci" },
-  { stage: "merge", end: "wait", action: "none" },
+  { stage: "merge", end: "next", action: "integration" },
+  { stage: "review", end: "next", action: "none" },
   { stage: "merge", end: "deferred", action: "snapshot" },
 ]) {
   test(`replay setup ${step.stage} reaches ${step.end} within its own deadline`, () => {

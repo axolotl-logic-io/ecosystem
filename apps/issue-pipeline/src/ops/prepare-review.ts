@@ -12,7 +12,7 @@ import { paths } from "../config.ts";
 import { fetchIn, head, patchIdOf } from "../git-state.ts";
 import { parseRequest, run } from "../process.ts";
 import type { CodeMerged } from "../state.ts";
-import { mergedCode } from "./merged-review.ts";
+import { assertNoCodeChanges, mergedCode } from "./merged-review.ts";
 import { commitLog, reviewBundle } from "./review-diff.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
@@ -147,6 +147,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   }
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);
+  assertNoCodeChanges(wt);
   const headSha = head(wt);
   const headTree = gitOut(wt, ["rev-parse", `${headSha}^{tree}`]).trim();
   const measured = `origin/${cfg.baseBranch}`;

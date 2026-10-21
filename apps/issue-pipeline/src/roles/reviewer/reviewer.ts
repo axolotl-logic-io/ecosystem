@@ -6,7 +6,7 @@
 // it hardened (`state.hardened`), which alone authorizes the merge
 // (`approval-is-for-one-revision`); only then is the draft PR marked ready.
 // Hardening never rebases or syncs the change: the merge stage integrates
-// it. The security review comes after the merge (src/roles/merge/).
+// it. The Security review precedes the merge (src/roles/merge/).
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -240,7 +240,7 @@ async function postHardened(
     key: "hardening",
     on,
     role: "reviewer",
-    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
+    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; any changed integration needs fresh hardening and Security; Security runs before merge.`,
   });
 }
 

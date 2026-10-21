@@ -118,6 +118,11 @@ function approvedState(approved, extra = {}) {
       revision: approved,
     },
     hardened: approved,
+    verifiedSha: approved.code,
+    security: {
+      ...securityOf(approved),
+      candidate: { target: "integration", baseSha: "base" },
+    },
     ...extra,
   };
 }

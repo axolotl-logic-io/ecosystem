@@ -63,10 +63,13 @@ function resolverTask(
 }
 
 function resultLines(facts: SecurityReviewFacts): string[] {
-  const { prepared, revision } = facts;
+  const { prepared, revision, codeMerged } = facts;
   let code = "Merge commit: none; the change merged no code";
   if (revision.code !== null) {
-    code = `Reviewed commit: \`${revision.code}\``;
+    code = `Candidate commit: \`${revision.code}\``;
+    if (codeMerged !== null) {
+      code = `Historical merged commit: \`${revision.code}\``;
+    }
   }
   return bullets([
     code,

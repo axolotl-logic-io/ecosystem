@@ -37,7 +37,7 @@ function securityCommentKey(revision: Revision): string {
   return `security-${short(revision.code)}-${short(legacyWikiOf(revision))}`;
 }
 
-// The stop for a security finding on the merged result.
+// A finding prevents a new merge; historical already-merged code stays merged.
 function securityStop(state: IssueState, finding: Finding): RoleEnd {
   const { category, reason } = finding;
   return {
@@ -48,10 +48,7 @@ function securityStop(state: IssueState, finding: Finding): RoleEnd {
   };
 }
 
-// The stop again of a saved security rejection of exactly `current`, the
-// issue's revision now, with no session: a rejected merged result never
-// gets a second review. A receipt of a change that merged no code binds no
-// code head. Null when no saved rejection is for `current`.
+// A saved exact rejection is never rerolled, before or after a merge.
 function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
   const saved = state.security;
   if (saved === null || saved.finding === null) {
@@ -102,10 +99,7 @@ function reviewBody(reply: SecurityReviewReply, revision: Revision): string {
   return lines.join("\n");
 }
 
-// What the security review reviews: `revision`, the merged result its
-// receipt binds, with `codeMerged` the code merge GitHub confirmed (null
-// only for an older completion with no code); `still` says whether the
-// revision read after the session is still that result.
+// Candidate provenance is absent only for historical merged recovery.
 interface MergedResult {
   revision: Revision;
   codeMerged: CodeMerged | null;
@@ -113,8 +107,7 @@ interface MergedResult {
   candidate?: Candidate;
 }
 
-// A fresh security review of `result`, prepared after the code merge was
-// confirmed: discarded when the revision moved while it ran.
+// Discard a fresh verdict if code, inputs or the observed target moved.
 async function freshReview(
   ctx: RoleContext,
   state: IssueState,

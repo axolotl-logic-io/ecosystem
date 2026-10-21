@@ -97,8 +97,7 @@ test("literal configured integration and full H survive a concurrent source bran
 });
 
 test("main is a valid configured source base, not an implicit production exclusion", () => {
-  const original = world();
-  const w = { ...original, cfg: { ...original.cfg, baseBranch: "main" } };
+  const w = world({ baseBranch: "main" });
   script(w, [
     ...prechecks(w),
     post(w),
@@ -122,8 +121,7 @@ test("main is a valid configured source base, not an implicit production exclusi
 });
 
 test("a main-source configuration refuses a PR targeting another branch before approval or merge", () => {
-  const original = world();
-  const w = { ...original, cfg: { ...original.cfg, baseBranch: "main" } };
+  const w = world({ baseBranch: "main" });
   script(w, [prStep(w, { baseRefName: BASE })]);
   assert.throws(() => merge(w.cfg, request(w)), IDENTITY);
   assert.equal(git(w.origin, ["rev-parse", "main"]), w.base);

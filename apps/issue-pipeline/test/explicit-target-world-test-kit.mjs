@@ -142,7 +142,7 @@ function graph(options = {}) {
   return { place, origin, seed, base, parent, head, moved, merged };
 }
 
-/** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean }} [options] */
+/** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean, baseBranch?: string }} [options] */
 function world(options = {}) {
   const { place, origin, seed, base, parent, head, moved, merged } =
     graph(options);
@@ -154,7 +154,7 @@ function world(options = {}) {
       repo: REPO,
       ...credentialConfig("bot"),
       allowedUsers: ["owner"],
-      baseBranch: BASE,
+      baseBranch: options.baseBranch ?? BASE,
       mergeConfirmation: { deadlineSeconds: 3, backoffSeconds: [1] },
       commands: { test: "true" },
     }),
@@ -172,6 +172,12 @@ function world(options = {}) {
     stage: /** @type {const} */ ("merge"),
     pr: PR,
     hardened: revision,
+    security: {
+      revision,
+      commentId: 11,
+      finding: null,
+      candidate: { target: cfg.baseBranch, baseSha: base },
+    },
     headSha: head,
     verifiedSha: head,
     flows: { code: true },

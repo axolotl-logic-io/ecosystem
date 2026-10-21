@@ -35,17 +35,9 @@ const { finishIssue } = await import("../src/ops/finish.ts");
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @typedef {import("../src/state.ts").Revision} Revision */
 
-const SHORT_SHA_LENGTH = 12;
-const SECURITY_FOLLOWS =
-  "Exact-result deterministic checks and a read-only security review of the merged result follow; the issue completes only if it finds nothing.";
 const REVIEWED_CODE = "c0ffee00000000000000000000000000000000aa";
 const NOT_AUTHORIZED_REVISION = /is not #7's authorized revision/u;
 const NOT_BOUND = /merge authorization .* is not bound to the saved result/u;
-
-/** @param {string | null} sha @returns {string} */
-function short(sha) {
-  return String(sha).slice(0, SHORT_SHA_LENGTH);
-}
 
 // Hardening passed REVIEWED_CODE; the Reviewer's own integration then
 // checked the world's head from it.
@@ -83,38 +75,17 @@ function mergeRequest(w, revision, state) {
   };
 }
 
-test("merge merges the Reviewer's integrated head and its comment names the hardened head apart", () => {
+test("merge refuses the Reviewer's integrated head without fresh hardening, writing nothing", () => {
   const w = world();
   const { reviewed, integrated } = chainOf(w);
   const state = integratedState(reviewed, { reviewed, revision: integrated });
   openAt(w, integrated);
-  fakeGh.reply([
-    prView({ headRefOid: w.sha }),
-    prView({ headRefOid: w.sha }),
-    approvalReply(w),
-    branchMergeReply(w),
-    ...mergeAuthority(state),
-    ...mergeCommentReplies(),
-    prView({
-      headRefOid: w.sha,
-      state: "MERGED",
-      mergeCommit: { oid: w.mergeSha },
-    }),
-  ]);
-  const reply = merge(w.cfg, mergeRequest(w, integrated, state));
-  assert.deepEqual(reply, {
-    merged: true,
-    mergeCommit: w.mergeSha,
-    headSha: w.sha,
-  });
-  const body =
-    writes()
-      .filter((args) => !args.includes("PATCH"))[2]
-      ?.join(" ") ?? "";
-  assert.ok(body.includes(`hardening passed on ${short(REVIEWED_CODE)}`));
-  assert.ok(body.includes(`integrated it as ${short(w.sha)}`));
-  assert.ok(body.includes("with no further review"));
-  assert.ok(body.includes(SECURITY_FOLLOWS));
+  fakeGh.reply([savedListing(state)]);
+  assert.throws(
+    () => merge(w.cfg, mergeRequest(w, integrated, state)),
+    NOT_AUTHORIZED_REVISION,
+  );
+  assert.deepEqual(writes(), []);
 });
 
 test("merge without an integration says hardening passed on the merged head", () => {
@@ -134,14 +105,17 @@ test("merge without an integration says hardening passed on the merged head", ()
       mergeCommit: { oid: w.mergeSha },
     }),
   ]);
-  merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
-  const body =
-    writes()
-      .filter((args) => !args.includes("PATCH"))[2]
-      ?.join(" ") ?? "";
-  assert.ok(body.includes("hardening passed on this commit"));
-  assert.ok(body.includes(SECURITY_FOLLOWS));
-  assert.equal(body.includes("integrated"), false);
+  const reply = merge(
+    w.cfg,
+    mergeRequest(w, approved, approvedState(approved)),
+  );
+  assert.deepEqual(reply, {
+    merged: true,
+    mergeCommit: w.mergeSha,
+    headSha: w.sha,
+  });
+  const approval = writes().find((args) => args.includes("event=APPROVE"));
+  assert.ok(approval?.includes(`commit_id=${w.sha}`));
 });
 
 test("merge refuses a revision the state doesn't authorize, a forged receipt's or a reviewed head included, writing nothing", () => {
@@ -155,7 +129,12 @@ test("merge refuses a revision the state doesn't authorize, a forged receipt's o
   const unbound = integratedState(reviewed, null);
   // A review that approved the head, with no hardening, authorizes nothing.
   const unhardened = approvedState(integrated, { hardened: null });
-  for (const state of [forged, unbound, unhardened]) {
+  for (const state of [
+    integratedState(reviewed, { reviewed, revision: integrated }),
+    forged,
+    unbound,
+    unhardened,
+  ]) {
     fakeGh.reply([
       savedListing(approvedState(integrated)),
       prView({ headRefOid: w.sha }),

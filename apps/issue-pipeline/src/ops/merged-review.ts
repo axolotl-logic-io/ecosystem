@@ -105,4 +105,4 @@ function mergedCode(
 }
 
 export type { MergedCode };
-export { mergedCode };
+export { assertNoCodeChanges, mergedCode };
