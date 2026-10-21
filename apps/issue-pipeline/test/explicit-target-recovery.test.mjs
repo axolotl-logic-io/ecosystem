@@ -77,7 +77,7 @@ for (const delay of [
     assert.equal(posts().length, 1);
     assert.deepEqual(saved.hardened, w.state.hardened);
     assert.deepEqual(saved.integration, w.state.integration);
-    assert.equal(saved.security, null);
+    assert.deepEqual(saved.security, w.state.security);
   });
 }
 
@@ -137,16 +137,32 @@ test("interruption after durable 201 response recovers in a new process without 
     ...w.revision,
     code: git(w.wt, ["rev-parse", `${w.head}~1`]),
   };
-  w.state.hardened = reviewed;
-  w.state.integration = { reviewed, revision: w.revision };
-  fs.writeFileSync(path.join(w.place, "state.json"), stateBody(ISSUE, w.state));
-  const { interrupted, saved: original } = interruptAfterResponse(w);
+  const { interrupted, saved: attempted } = interruptAfterResponse(w);
+  assert.ok(attempted.mergeAttempt !== null);
+  // Synthetic pre-upgrade attempt: the original hardening authorized its
+  // own checked integration, and Security had not run before the old POST.
+  const integration = { reviewed, revision: w.revision };
+  const original = {
+    ...attempted,
+    hardened: reviewed,
+    integration,
+    security: null,
+    mergeAttempt: {
+      ...attempted.mergeAttempt,
+      hardened: reviewed,
+      integration,
+    },
+  };
+  fs.writeFileSync(
+    path.join(w.place, "state.json"),
+    stateBody(ISSUE, original),
+  );
   assert.equal(
     interrupted.signal,
     "SIGKILL",
     `${interrupted.stdout} ${interrupted.stderr}`,
   );
-  assert.equal(original.mergeAttempt?.result, w.merged);
+  assert.equal(original.mergeAttempt.result, w.merged);
   assert.equal(original.merged, null);
   assert.deepEqual(original.hardened, reviewed);
   assert.equal(posts().length, 1);
@@ -221,7 +237,7 @@ test("trusted input movement during delayed confirmation retains landed truth bu
   assert.match(reply.reason, INPUT_MOVEMENT);
   const saved = readWriteState(w.cfg, ISSUE);
   assert.equal(saved.merged, null);
-  assert.equal(saved.security, null);
+  assert.deepEqual(saved.security, w.state.security);
   assert.equal(saved.codeMerged?.sha, w.merged);
   assert.equal(saved.mergeAttempt?.result, w.merged);
   assert.equal(posts().length, 1);
