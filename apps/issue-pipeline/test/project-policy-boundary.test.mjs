@@ -75,6 +75,25 @@ test("multiple source origins refuse even when each names the configured reposit
   assert.throws(() => loadConfig(fx.file), WRONG_ORIGIN);
 });
 
+const EXPECTED_ORIGIN = "https://github.com/example/repo.git";
+for (const origins of [
+  [EXPECTED_ORIGIN, ""],
+  ["", EXPECTED_ORIGIN],
+  [EXPECTED_ORIGIN, " \t"],
+  [" \t", EXPECTED_ORIGIN],
+  [` ${EXPECTED_ORIGIN}`],
+  [`${EXPECTED_ORIGIN} `],
+]) {
+  test(`blank or padded source origins refuse: ${JSON.stringify(origins)}`, () => {
+    const fx = policyFixture();
+    git(fx.dir, ["config", "--unset-all", "remote.origin.url"]);
+    for (const origin of origins) {
+      git(fx.dir, ["config", "--add", "remote.origin.url", origin]);
+    }
+    assert.throws(() => loadConfig(fx.file), WRONG_ORIGIN);
+  });
+}
+
 test("moving source HEAD to weaker committed commands does not activate them", () => {
   const fx = policyFixture();
   const before = loadConfig(fx.file);

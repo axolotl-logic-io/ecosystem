@@ -83,10 +83,12 @@ function committedSettings(
   }
   const origin = gitObject(source, [
     "config",
+    "--null",
     "--get-all",
     "remote.origin.url",
-  ]).trim();
-  if (origin !== expected) {
+  ]);
+  // Exact framing requires one raw value; blank extras and padding reject.
+  if (origin !== `${expected}\u0000`) {
     throw new OpsError(
       "project policy source must have the configured repository origin",
     );

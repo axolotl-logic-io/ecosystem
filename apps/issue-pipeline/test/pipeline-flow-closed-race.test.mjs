@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { z } from "zod";
+import "./isolated-root-test-kit.mjs";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
 import {
@@ -25,6 +26,9 @@ import {
 } from "./pipeline-flow-replay-test-kit.mjs";
 import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
 import { savedState, securityTurn } from "./pipeline-flow-script.mjs";
+
+const { loadConfig } = await import("../src/config.ts");
+const { configPolicyDigest } = await import("../src/project-policy.ts");
 
 const CLAIM_AUTHORITY = z.object({
   state: z.object({ hardened: z.unknown(), integration: z.unknown() }),
@@ -118,6 +122,7 @@ test("actual-result checks precede read-only exact Security and completion", () 
   assert.deepEqual(cleared.security.revision, {
     code: merged,
     inputs: cleared.integration.revision.inputs,
+    policy: configPolicyDigest(loadConfig(flow.config)),
   });
   const trace = opsTrace(flow).slice(traceStart);
   const securityClaim = trace.findIndex(
