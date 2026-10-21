@@ -172,14 +172,23 @@ test("start refuses an excluded issue without asking GitHub or starting a job", 
   assert.deepEqual(receiptsOf(run), []);
 });
 
-test("start refuses an issue GitHub shows closed", () => {
-  issuesOnGitHub([SECOND_ISSUE]);
-  const run = newRun({});
-  const out = start(run, SECOND_ISSUE, "author");
-  assert.equal(out.code, REFUSED);
-  assert.equal(refusal(out), "GitHub shows #8 as closed");
-  assert.deepEqual(receiptsOf(run), []);
-});
+for (const [stage, state] of Object.entries({
+  author: "closed",
+  implement: "closed",
+  review: "closed",
+  merge: null,
+})) {
+  test(`start refuses ${stage} work on an issue whose state is ${state ?? "unreadable"}`, () => {
+    const when = `repos/o/r/issues/${SECOND_ISSUE}`;
+    gh.reply([{ when, stdout: JSON.stringify({ state }), keep: true }]);
+    const run = newRun({});
+    const out = start(run, SECOND_ISSUE, stage);
+    assert.equal(out.code, REFUSED);
+    assert.equal(refusal(out), `GitHub shows #8 as ${state ?? "unreadable"}`);
+    assert.deepEqual(receiptsOf(run), []);
+    assert.equal(hasStarted(SECOND_ISSUE), false);
+  });
+}
 
 test("start refuses a second live job on an issue, and jobs past the caps", async () => {
   issuesOnGitHub();

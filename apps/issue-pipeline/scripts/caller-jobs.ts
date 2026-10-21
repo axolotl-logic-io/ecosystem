@@ -13,7 +13,9 @@
 // `start` refuses (exit 2, the reason on stderr) a run.json rewritten to
 // widen the caps the run's first start read (wideningOf in
 // caller-jobs/run-limits.ts), what refusalOf in caller-jobs/live-jobs.ts
-// refuses, and an issue GitHub doesn't show open.
+// refuses, and an issue GitHub doesn't show open, except an explicit Merge
+// attempt on a closed issue. The job's canonical claim guards alone decide
+// closed recovery eligibility and reopen only for the winning claimant.
 // Otherwise it runs the installed job.mjs in its own session with its stdin
 // closed, prints the receipt as one JSON line and exits without waiting.
 // `status` prints one JSON line per job the run started. `wait` blocks until
@@ -191,7 +193,7 @@ function start(argv: readonly string[]): void {
     throw new Refusal(refusal);
   }
   const state = issueState(cfg, issue);
-  if (state !== "open") {
+  if (state !== "open" && !(state === "closed" && stage === "merge")) {
     throw new Refusal(`GitHub shows #${issue} as ${state ?? "unreadable"}`);
   }
   const receipt = newReceipt(args.run, where);

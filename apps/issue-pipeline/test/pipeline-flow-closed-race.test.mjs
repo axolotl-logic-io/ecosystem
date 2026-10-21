@@ -1,14 +1,15 @@
 // @ts-check
 // A real authorized branch POST lands and auto-closes its issue, but delayed
-// PR confirmation refuses the merge receipt. Canonical jobs must reconcile
-// the saved HTTP response without repeating the code mutation.
+// PR confirmation refuses the merge receipt. The installed caller must reach
+// canonical recovery without granting authority or repeating the code mutation.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { z } from "zod";
+import { isStateBody } from "../src/comment-marks.ts";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
+import { readWorld, withWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
 import {
   BASE,
   ISSUE,
@@ -21,21 +22,34 @@ import { piLog } from "./pipeline-flow-pi.mjs";
 import {
   createReplayFlow,
   merges,
+  replaceState,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
+import { runCallerStage, runStage, stopJobs } from "./pipeline-flow-run.mjs";
 import { savedState, securityTurn } from "./pipeline-flow-script.mjs";
 
+const SHA_LENGTH = 40;
+const MUTATION_ARGS = new Set([
+  "POST",
+  "PATCH",
+  "DELETE",
+  "reopen",
+  "close",
+  "edit",
+  "create",
+]);
 const CLAIM_AUTHORITY = z.object({
   state: z.object({ hardened: z.unknown(), integration: z.unknown() }),
 });
 
 /** @type {import("./pipeline-flow-kit.mjs").Flow} */
 let flow;
+/** @type {import("./pipeline-flow-gh-world.mjs").World} */
+let interruptedWorld;
 let traceStart = 0;
 before(() => {
   flow = setUpFlow();
-  createReplayFlow(flow, true);
+  ({ interruptedWorld } = createReplayFlow(flow, true));
 });
 after(() => stopJobs(flow));
 
@@ -61,7 +75,7 @@ test("the accepted merge auto-closes the issue before delayed confirmation stops
   );
 });
 
-test("canonical closed recovery reopens and reconciles the saved response with original authorization", () => {
+test("the installed caller reaches closed recovery and reconciles the saved response with original authorization", async () => {
   const stopped = savedState(readWorld(flow.ghDir));
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   withWorld(flow.ghDir, (world) => {
@@ -76,7 +90,7 @@ test("canonical closed recovery reopens and reconciles the saved response with o
   const starts = sessions(flow);
   // The saved response plus fresh matching evidence may establish an own
   // receipt. PR truth alone would not be sufficient to do so.
-  assert.equal(runStage(flow, "merge").end, "deferred");
+  assert.equal((await runCallerStage(flow, "merge")).end, "deferred");
   const recovered = savedState(readWorld(flow.ghDir));
   assert.equal(recovered.stage, "done");
   assert.deepEqual(recovered.codeMerged, { pr: stopped.pr, sha: merged });
@@ -181,3 +195,62 @@ test("recovery verified the actual result without another code push or merge POS
   assert.equal(refIn(flow.origin, `refs/heads/${BASE}`), merged);
   assert.deepEqual(world.unsupported, []);
 });
+
+for (const [name, extra] of Object.entries({
+  "no saved state": null,
+  "ineligible Review state": { stage: "review", stoppedStage: null },
+  "stale retained head": { headSha: "b".repeat(SHA_LENGTH) },
+  "another assigned branch": { branch: "another-assignment" },
+})) {
+  test(`the installed caller leaves closed Merge with ${name} untouched`, async () => {
+    const seen = await refusedRecovery(extra);
+    assert.equal(seen.result.end, "unclaimed");
+    assert.ok(seen.result.claimError);
+    assert.deepEqual(seen.after, seen.before);
+    assert.deepEqual(seen.ops, ["claim"]);
+    assert.deepEqual(seen.writes, []);
+  });
+}
+
+/** @typedef {{world: import("./pipeline-flow-gh-world.mjs").World, head: string | null, branch: string | null, sessions: number}} RecoverySnapshot */
+/**
+ * @param {Record<string, unknown> | null} extra
+ * @returns {Promise<{result: Awaited<ReturnType<typeof runCallerStage>>, before: RecoverySnapshot, after: RecoverySnapshot, ops: string[], writes: string[][]}>}
+ */
+async function refusedRecovery(extra) {
+  writeWorld(flow.ghDir, structuredClone(interruptedWorld));
+  withWorld(flow.ghDir, (world) => {
+    world.delayMergeConfirmation = false;
+    if (extra === null) {
+      world.comments = world.comments.filter(({ body }) => !isStateBody(body));
+    }
+  });
+  if (extra !== null) {
+    replaceState(flow, { ...savedState(interruptedWorld), ...extra });
+  }
+  const snapshot = {
+    world: readWorld(flow.ghDir),
+    head: refIn(flow.origin, `refs/heads/${BASE}`),
+    branch: refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`),
+    sessions: sessions(flow),
+  };
+  const beforeCalls = ghCalls(flow.ghDir).length;
+  const beforeTrace = opsTrace(flow).length;
+  const result = await runCallerStage(flow, "merge");
+  return {
+    result,
+    before: snapshot,
+    after: {
+      world: readWorld(flow.ghDir),
+      head: refIn(flow.origin, `refs/heads/${BASE}`),
+      branch: refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`),
+      sessions: sessions(flow),
+    },
+    ops: opsTrace(flow)
+      .slice(beforeTrace)
+      .map(({ request }) => request.op),
+    writes: ghCalls(flow.ghDir)
+      .slice(beforeCalls)
+      .filter((args) => args.some((arg) => MUTATION_ARGS.has(arg))),
+  };
+}

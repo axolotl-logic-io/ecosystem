@@ -76,7 +76,9 @@ Read CHECKOUT/docs/reference/coordination.md. It says how stage jobs run, what e
      --branch BRANCH --lane LANE --stage STAGE
    ```
 
-   For a merge, add `--merge-queue MERGE_QUEUE`. Exit 0 means the job started. Exit 2 means the launcher refused it and exit 1 means an error, each with the reason on stderr. Handle both as Decide and report says.
+   For a merge, add `--merge-queue MERGE_QUEUE`. An explicitly authorized closed-issue Merge recovery uses this same command with `--stage merge`. Only the job's canonical claim guards decide eligibility and reopen for the winning claimant; a started job grants no recovery, merge or Security authority. Closed Author, Implement and Review starts remain refused.
+
+   Exit 0 means the job started. Exit 2 means the launcher refused it and exit 1 means an error, each with the reason on stderr. Handle both as Decide and report says.
 4. Wait for a job to end, in one command, without sleeping or looping yourself:
 
    ```bash
