@@ -58,16 +58,21 @@ function writeBrain(dir) {
 // Combined rev-parse queries deliberately print only the root, reproducing
 // Git's top-level-without-HEAD output without depending on the host version.
 /**
- * @param {{ bin: string, brain: string }} at
+ * @param {{ bin: string, brain: string, rootRead?: { stdout: string, code: number } }} at
  * @param {string} head
  * @param {number} [code]
  * @returns {string}
  */
 function headsWithGit(at, head, code = 0) {
+  const root = at.rootRead ?? {
+    stdout: `${fs.realpathSync(at.brain)}\n`,
+    code: 0,
+  };
   const git = `#!${process.execPath}
 const args = process.argv.slice(2);
 if (args.includes("--show-toplevel")) {
-  process.stdout.write(${JSON.stringify(fs.realpathSync(at.brain))} + "\\n");
+  process.stdout.write(${JSON.stringify(root.stdout)});
+  process.exitCode = ${root.code};
 } else {
   process.stdout.write(${JSON.stringify(head)});
   process.exitCode = ${code};
