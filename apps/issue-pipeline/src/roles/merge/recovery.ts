@@ -7,6 +7,7 @@
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { currentResultObservation } from "../../security-clearance.ts";
 import { mergeAuthorization } from "../../state.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
@@ -96,6 +97,7 @@ async function recoverOwnMerge(
     pr.mergeCommit !== merged.code ||
     revision.code !== merged.code ||
     legacyWikiOf(authorized) !== legacyWikiOf(merged) ||
+    (authorized.policy ?? null) !== (merged.policy ?? null) ||
     legacyWikiOf(revision) !== legacyWikiOf(merged)
   ) {
     return null;
@@ -106,15 +108,20 @@ async function recoverOwnMerge(
   ) {
     return null;
   }
+  const result = currentResultObservation(merged, revision);
+  if (result === null) {
+    return null;
+  }
   const receipt = { pr: pr.number, sha: merged.code };
-  const checked = await checkedMergedResult(ctx, state, merged, receipt);
+  const checked = await checkedMergedResult(ctx, state, result, receipt);
   if ("end" in checked) {
     return checked.end;
   }
   return await reviewedAndCompleted(ctx, checked.state, {
     merged,
+    result,
     codeMerged: receipt,
-    still: stillAt(merged),
+    still: stillAt(result),
   });
 }
 

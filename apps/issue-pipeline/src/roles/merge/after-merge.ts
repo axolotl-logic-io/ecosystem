@@ -9,6 +9,7 @@
 // head the merge matched. At done it is the completion: what merged.
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { currentResultObservation } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import type { CurrentRevision } from "../revision-source.ts";
@@ -53,20 +54,24 @@ async function afterOwnMerge(
   ) {
     return toAuthor(state, `${merged}, then the trusted inputs changed`);
   }
-  const result: Revision = { ...authorized, code: mergeCommit };
-  const still = stillAt(result);
+  const receipt: Revision = { ...authorized, code: mergeCommit };
+  const result = currentResultObservation(receipt, revision);
+  const still = stillAt(result ?? receipt);
   const receiptHolds =
     pr !== null &&
     pr.number === start.pr &&
     pr.state === "MERGED" &&
     pr.headSha === authorized.code &&
     pr.mergeCommit === mergeCommit &&
-    still(revision);
+    result !== null;
   if (start.pr === null || !receiptHolds) {
     return errorStop(
       state,
       `${merged}, but GitHub no longer matches it; merged truth is retained`,
     );
+  }
+  if (result === null) {
+    return errorStop(state, "the confirmed result observation is missing");
   }
   const codeMerged = { pr: start.pr, sha: mergeCommit };
   const checked = await checkedMergedResult(ctx, state, result, codeMerged);
@@ -74,7 +79,8 @@ async function afterOwnMerge(
     return checked.end;
   }
   return await reviewedAndCompleted(ctx, checked.state, {
-    merged: result,
+    merged: receipt,
+    result,
     codeMerged,
     still,
   });

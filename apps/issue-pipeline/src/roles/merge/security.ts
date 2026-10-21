@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { sameSecuritySubject } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -65,7 +66,7 @@ function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
   if (saved.revision.code === null) {
     compared = { ...current, code: null };
   }
-  if (!sameRevision(saved.revision, compared)) {
+  if (!sameSecuritySubject(saved.revision, compared)) {
     return null;
   }
   return securityStop(state, saved.finding);
@@ -209,6 +210,10 @@ async function securityReviewed(
   result: MergedResult,
 ): Promise<Step<IssueState>> {
   const { revision } = result;
+  const rejected = rejectedAgain(state, revision);
+  if (rejected !== null) {
+    return ended(rejected);
+  }
   const saved = state.security;
   if (saved !== null && sameRevision(saved.revision, revision)) {
     if (saved.finding === null) {

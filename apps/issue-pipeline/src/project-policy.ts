@@ -102,7 +102,12 @@ function committedSettings(
       `project policy ${DOCUMENT} must be a committed regular file`,
     );
   }
-  const text = gitObject(source, ["show", `${source.revision}:${DOCUMENT}`]);
+  const object = `${source.revision}:${DOCUMENT}`;
+  const size = Number(gitObject(source, ["cat-file", "-s", object]).trim());
+  if (!Number.isSafeInteger(size) || size < 1 || size > MAX_POLICY_BYTES) {
+    throw new OpsError("project policy document is empty or oversized");
+  }
+  const text = gitObject(source, ["cat-file", "blob", object]);
   if (
     Buffer.byteLength(text, "utf8") > MAX_POLICY_BYTES ||
     text.includes("\u0000") ||
@@ -113,13 +118,6 @@ function committedSettings(
     );
   }
   const settings = PROJECT_SETTINGS.parse(JSON.parse(text));
-  for (const key of Object.keys(settings)) {
-    if (Object.hasOwn(raw, key)) {
-      throw new OpsError(
-        `project policy setting ${key} must not also appear in operator config`,
-      );
-    }
-  }
   return { ...raw, ...settings };
 }
 
