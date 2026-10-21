@@ -19,7 +19,7 @@ The pipeline runs from an installed copy under `$ISSUE_PIPELINE_ROOT` (default `
 
 ## Configuration
 
-Each repository has a config file in `$ISSUE_PIPELINE_ROOT/repos/`. `repos/example.json` shows the fields, and `apps/issue-pipeline/src/config-schema.ts` defines their shape and defaults. The removed `wiki` key is refused, even when false or null: remove it. Other removed fields still load with a warning naming what replaced them; legacy single-account fields are refused.
+Each repository has an operator config file in `$ISSUE_PIPELINE_ROOT/repos/`. Reproducible project settings can instead come from an explicitly pinned commit of the repository's `.issue-pipeline.json`; see [project settings](project-settings.md) for the field split, trust boundary and migration. `repos/example.json` shows the fields, and `apps/issue-pipeline/src/config-schema.ts` defines their shape and defaults. The removed `wiki` key is refused, even when false or null: remove it. Other removed fields still load with a warning naming what replaced them; legacy single-account fields are refused.
 
 | Setting | Default |
 |---|---|

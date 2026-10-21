@@ -4,7 +4,13 @@ const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
 const PATH_SEPARATOR = /[\\/]/u;
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
-const TEXT = z.string().trim().min(1);
+const TEXT = z
+  .string()
+  .refine(
+    (value: string): boolean =>
+      value.trim() !== "" && !value.includes("\u0000"),
+    "must be nonblank text without NUL",
+  );
 const COMMAND = TEXT.nullish();
 const RELATIVE_PATH = TEXT.refine(
   (value: string): boolean =>
@@ -41,9 +47,14 @@ const PROJECT_POLICY_SOURCE = z.strictObject({
   revision: z.string().regex(FULL_SHA, "must be a full immutable commit SHA"),
 });
 const POLICY_BINDING = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("legacy"), digest: z.string().regex(SHA256) }),
+  z.object({
+    mode: z.literal("legacy"),
+    digest: z.string().regex(SHA256),
+    settings: z.record(z.string(), z.unknown()),
+  }),
   z.object({
     mode: z.literal("committed"),
+    settings: z.record(z.string(), z.unknown()),
     revision: z.string().regex(FULL_SHA),
     blob: z.string().regex(FULL_SHA),
     sha256: z.string().regex(SHA256),

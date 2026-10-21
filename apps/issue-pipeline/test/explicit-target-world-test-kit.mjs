@@ -61,6 +61,7 @@ if (root.ROOT !== ROOT || root.HOME !== HOME) {
   throw new Error("src loaded outside the isolated HOME/ROOT");
 }
 const { loadConfig, paths } = await import("../src/config.ts");
+const { policyRevision } = await import("../src/project-policy.ts");
 const { stateBody } = await import("../src/saved-state.ts");
 const { newIssueState } = await import("../src/state.ts");
 
@@ -165,7 +166,7 @@ function world(options = {}) {
   const wt = paths.worktree(cfg, ISSUE);
   fs.mkdirSync(path.dirname(wt), { recursive: true });
   git(clone, ["worktree", "add", "-q", "-b", BRANCH, wt, `origin/${BRANCH}`]);
-  const revision = { code: head, inputs: INPUTS };
+  const revision = { code: head, inputs: INPUTS, ...policyRevision(cfg) };
   /** @type {import("../src/state.ts").IssueState} */
   const state = {
     ...newIssueState(ISSUE),

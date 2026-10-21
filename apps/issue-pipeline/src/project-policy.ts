@@ -24,6 +24,16 @@ function sha256(text: string): string {
 
 // Object key order and JSON whitespace confer no policy change. Arrays retain
 // their order because command/path order can affect checking behavior.
+function compareKeys(a: string, b: string): -1 | 0 | 1 {
+  if (a === b) {
+    return 0;
+  }
+  if (a < b) {
+    return -1;
+  }
+  return 1;
+}
+
 function canonical(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonical).join(",")}]`;
@@ -31,7 +41,7 @@ function canonical(value: unknown): string {
   if (value !== null && typeof value === "object") {
     const entries = Object.entries(value)
       .filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b));
+      .sort(([a], [b]) => compareKeys(a, b));
     return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(",")}}`;
   }
   return JSON.stringify(value);
@@ -95,9 +105,12 @@ function committedSettings(
   const text = gitObject(source, ["show", `${source.revision}:${DOCUMENT}`]);
   if (
     Buffer.byteLength(text, "utf8") > MAX_POLICY_BYTES ||
-    text.includes("\u0000")
+    text.includes("\u0000") ||
+    text.includes("\ufffd")
   ) {
-    throw new OpsError("project policy document is oversized or contains NUL");
+    throw new OpsError(
+      "project policy document is oversized or contains invalid text",
+    );
   }
   const settings = PROJECT_SETTINGS.parse(JSON.parse(text));
   for (const key of Object.keys(settings)) {
@@ -155,6 +168,7 @@ function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
   if (source === undefined) {
     return {
       mode: "legacy",
+      settings: effective,
       digest: sha256(canonical({ mode: "legacy", effective })),
     };
   }
@@ -168,6 +182,7 @@ function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
   const provenance = { source, blob, sha256: sha256(text), effective };
   return {
     mode: "committed",
+    settings: effective,
     revision: source.revision,
     blob,
     sha256: provenance.sha256,

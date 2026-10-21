@@ -40,6 +40,8 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Sync](reference/sync.md): integrating with the base at merge time, conflicts and their limits.
 
+[Project settings](reference/project-settings.md): tracked project policy, operator-owned controls, trusted committed revisions and legacy migration.
+
 [Runtime](reference/runtime.md): the native Pi runtime, context compaction and startup checks.
 
 [Telemetry](reference/telemetry.md): usage records, local logs, commit attribution and the usage report.

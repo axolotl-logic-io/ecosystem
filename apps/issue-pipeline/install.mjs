@@ -1,19 +1,11 @@
 #!/usr/bin/env node
 // @ts-check
-// Builds src/ and scripts/ into dist/ (build.ts; run `npm ci` at the repo root
-// first) and installs dist/*.mjs (BUILT), prompts/*.md and repos/example.json
-// in $ISSUE_PIPELINE_ROOT and agents/*.md, placeholders filled, in
-// $PI_CODING_AGENT_DIR's agents/issue-pipeline/ (README.md). It names the
-// commit in the root's README.md and INSTALLED.json and retires what an older
-// install left (retired()), leaving local configs, secrets and work alone. The
-// running pipeline changes only here, never when a PR merges, so an agent's PR
-// can't change the code that checks its own work. Every file it replaces or
-// retires is copied first to <root>-backups/<timestamp>-install/.
-//
+// Builds programs and installs prompts, examples and filled agent definitions.
+// Every replaced/retired file is backed up; operator config and work stay local.
+// Only an operator-authorized install activates source changes.
 // Usage: node install.mjs [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
 //   --allow-dirty  install even with uncommitted changes in this folder
-
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -114,6 +106,7 @@ function sources() {
     })),
     ...[
       "repos/example.json",
+      "repos/committed-settings.example.json",
       "runtime/pi-cliproxyapi-config.example.json",
       ...mdIn(SRC, "prompts"),
     ].map((from) => ({ from, to: path.join(ROOT, from), fill: false })),
