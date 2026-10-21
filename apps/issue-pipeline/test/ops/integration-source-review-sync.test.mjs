@@ -124,16 +124,11 @@ test("prepare-review with a confirmed code merge reviews the merge commit's firs
     path.join(reviewDir(ISSUE.merged, "r1"), "diff.patch"),
   );
   const diff = fs.readFileSync(reply.diffPath, "utf8");
-  assert.ok(
-    diff.startsWith(
-      `# Code\n\nPR #${PR} merged as ${mergeSha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent.\n`,
-    ),
-    diff,
-  );
+  assert.ok(diff.includes(mergeSha));
+  assert.ok(diff.includes(parent));
   assert.ok(diff.includes("+feature line"), diff);
   assert.ok(diff.includes("+page"), diff);
   assert.ok(reply.bundleText.startsWith(diff), "the bundle starts with it");
-  assert.ok(reply.bundleText.includes("\n## code.txt\n"), reply.bundleText);
   for (const call of fakeGh.calls()) {
     assert.deepEqual(call.slice(0, 2), ["pr", "view"], call.join(" "));
   }

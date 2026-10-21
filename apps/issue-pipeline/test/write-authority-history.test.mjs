@@ -15,8 +15,9 @@ const { saveDraftAuthority } = await import("../src/ops/pr-state.ts");
 const { readWriteState } = await import("../src/saved-state.ts");
 const PR = 42;
 const TITLE_LENGTH = 45;
+const CLOSED_REFUSAL = /is CLOSED; code write authority requires an open PR/u;
 
-for (const status of ["OPEN", "MERGED", "CLOSED"]) {
+for (const status of ["OPEN", "MERGED"]) {
   test(`all-state discovery validates actual ${status} identity with saved pr:null`, async () => {
     const job = await openJob("implement");
     try {
@@ -35,18 +36,10 @@ for (const status of ["OPEN", "MERGED", "CLOSED"]) {
         isCrossRepository: false,
         mergeCommit,
       });
-      let result = "refused";
-      try {
-        result = String(readWriteAuthority(job.cfg, ISSUE).codeWritable);
-      } catch {
-        // Refused CLOSED authority remains an explicit outcome, never writable.
-      }
-      const expected = new Map([
-        ["OPEN", "true"],
-        ["MERGED", "false"],
-        ["CLOSED", "refused"],
-      ]);
-      assert.equal(result, expected.get(status));
+      assert.equal(
+        readWriteAuthority(job.cfg, ISSUE).codeWritable,
+        status === "OPEN",
+      );
       // Discovery cannot forge an own-merge/approval or silently save a receipt.
       assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
       assert.equal(readWriteState(job.cfg, ISSUE).codeMerged, null);
@@ -132,6 +125,27 @@ test("a stale head cannot be saved; a validated draft saves only its PR identity
     assert.throws(() => saveDraftAuthority(job.cfg, ISSUE, PR, "stale-head"));
     saveDraftAuthority(job.cfg, ISSUE, PR, original);
     assert.deepEqual(readWriteState(job.cfg, ISSUE), { ...state, pr: PR });
+  } finally {
+    job.close();
+  }
+});
+
+test("closed PR discovery refuses specifically instead of granting code authority", async () => {
+  const job = await openJob("implement");
+  try {
+    savePrHistory(job.cfg, [{ number: PR }]);
+    savePrAuthority(job.cfg, {
+      number: PR,
+      state: "CLOSED",
+      headRefName: job.branch,
+      headRefOid: headOf(job.repo),
+      baseRefName: job.cfg.baseBranch,
+      isCrossRepository: false,
+      mergeCommit: null,
+    });
+    assert.throws(() => readWriteAuthority(job.cfg, ISSUE), CLOSED_REFUSAL);
+    assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
+    assert.equal(readWriteState(job.cfg, ISSUE).codeMerged, null);
   } finally {
     job.close();
   }

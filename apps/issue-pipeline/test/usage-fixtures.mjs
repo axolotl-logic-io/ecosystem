@@ -154,6 +154,11 @@ function jobRecord(over = {}) {
   };
 }
 
+/** @param {number} issue @param {string} kind @returns {string} */
+function usageBody(issue, kind) {
+  return `<!-- issue-pipeline:${issue}:${kind} -->\n<!--\n{"kind":"job","issue":${issue}}\n-->`;
+}
+
 export {
   CONTEXT,
   JOB_ID,
@@ -163,4 +168,5 @@ export {
   LAUNCH,
   sessionEntry,
   sessionRecord,
+  usageBody,
 };

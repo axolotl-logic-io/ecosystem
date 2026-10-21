@@ -59,6 +59,9 @@ function kindOf(body) {
 
 /** @param {readonly string[]} args @returns {string} */
 function nameOf(args) {
+  if (args[0] === "issue" && args[1] === "close") {
+    return `close #${args[2]}`;
+  }
   const endpoint = args.find((arg) => arg.startsWith("repos/")) ?? "";
   const { branch } = groupsOf(BRANCH_REF, endpoint);
   if (branch !== undefined && args.includes("DELETE")) {
@@ -144,22 +147,16 @@ function prMutations(writes) {
     .filter(([command]) => command === "pr")
     .map((args) => {
       const [, action] = args;
-      const request = {
+      return {
         action,
         repo: flagValue(args, ["-R", "--repo"]),
+        pr: args.find((arg) => PR_NUMBER.test(arg)),
         body: flagValue(args, ["--body"]),
         title: flagValue(args, ["--title"]),
+        draft: args.includes("--draft"),
+        base: flagValue(args, ["--base"]),
+        head: flagValue(args, ["--head"]),
       };
-      if (action === "create") {
-        return {
-          ...request,
-          draft: args.includes("--draft"),
-          base: flagValue(args, ["--base"]),
-          head: flagValue(args, ["--head"]),
-          title: flagValue(args, ["--title"]),
-        };
-      }
-      return { ...request, pr: args.find((arg) => PR_NUMBER.test(arg)) };
     });
 }
 

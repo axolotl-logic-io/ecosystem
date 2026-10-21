@@ -3,26 +3,9 @@
 // binds GitHub's head and merge SHA separately, while only saved security of
 // the exact result permits completion (src/ops/finish-guard.ts).
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
 import { test } from "node:test";
+import "./isolated-root-test-kit.mjs";
 
-const root = fs.mkdtempSync("/tmp/issue-pipeline-own-merge-replay-");
-const home = path.join(root, "home");
-fs.mkdirSync(home);
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["HOME", home],
-    ["ISSUE_PIPELINE_ROOT", root],
-  ]),
-);
-process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-const { ROOT, HOME } = await import("../src/pipeline-root.ts");
-if (ROOT !== root || HOME !== home) {
-  throw new Error("source imported outside the test's temporary root and home");
-}
 const { newIssueState, ISSUE_STATE } = await import("../src/state.ts");
 const { finishGate } = await import("../src/ops/finish-guard.ts");
 

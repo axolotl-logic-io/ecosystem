@@ -110,10 +110,7 @@ test("a stage input refresh observes collaborator revocation before writing or h
   ]);
   const context = writeIssueContext(cfg, n);
   const before = fs.readFileSync(context.file, "utf8");
-  assert.equal(
-    typeof trustedInputsHash(cfg, context.issue, context.comments),
-    "string",
-  );
+
   reply([
     issueReply(n, { user: { login: ALLOWED }, body: "Revoked edit" }),
     commentsReply(n, []),

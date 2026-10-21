@@ -6,6 +6,7 @@ import path from "node:path";
 import { mock } from "node:test";
 import { z } from "zod";
 import { credentialConfig } from "../credentials-test-kit.mjs";
+import { claimComment } from "../fake-gh.mjs";
 import { stopMutationReplies } from "../gh-mutation-fixtures.mjs";
 import { everyCommentsRead, kit, v2State } from "../ops-v2-test-kit.mjs";
 
@@ -93,12 +94,13 @@ function stopReplies(cfg, state) {
           `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`,
           cfg.mergeAccount,
         ),
-        kit.issueComment(
-          claimId,
-          "**🤖 issue-pipeline · claim**\n<!-- agent-pipeline:comment role=claim -->\n<!-- agent-pipeline:claim lane=me sweep=s1 -->",
-          cfg.mergeAccount,
-          new Date().toISOString(),
-        ),
+        claimComment({
+          id: claimId,
+          lane: "me",
+          sweep: "s1",
+          login: cfg.mergeAccount,
+          at: new Date().toISOString(),
+        }),
       ]),
       persistState: true,
     },

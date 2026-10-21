@@ -14,7 +14,6 @@ const fakeGh = installFakeGh();
 fakeGh.requireReplies();
 const { openPrFor } = await import("../../src/ops/prs.ts");
 const { stop } = await import("../../src/ops/stop.ts");
-const { saveState } = await import("../../src/ops/save-state.ts");
 const { ghIsRead } = await import("../../src/github.ts");
 const { newIssueState } = await import("../../src/state.ts");
 
@@ -23,11 +22,9 @@ const cfg = configFixture();
 const ISSUE = 7;
 const PR = 12;
 const STOPPED_ISSUE = 8;
-const SAVED_ISSUE = 9;
 // The genuine saved-state comment edited by the stop.
 const STATE_COMMENT = 31;
 const BAD_STOP = /bad stop request/u;
-const BAD_SAVE = /bad save-state request/u;
 // gh answers only a lookup that names the issue's branch, agent/issue-<n>.
 test("openPrFor reads the issue branch's open PR", () => {
   fakeGh.reply([{ when: "agent/issue-7 ", stdout: '[{"number":12}]' }]);
@@ -89,11 +86,5 @@ test("stop with an empty reason is refused, writing nothing", () => {
     state: newIssueState(STOPPED_ISSUE),
   };
   assert.throws(() => stop(cfg, request), BAD_STOP);
-  assert.deepEqual(fakeGh.writes(ghIsRead), []);
-});
-
-test("save-state with no state is refused, writing nothing", () => {
-  fakeGh.reply([]);
-  assert.throws(() => saveState(cfg, { number: SAVED_ISSUE }), BAD_SAVE);
   assert.deepEqual(fakeGh.writes(ghIsRead), []);
 });

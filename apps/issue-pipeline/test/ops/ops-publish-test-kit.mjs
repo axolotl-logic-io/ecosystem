@@ -11,12 +11,13 @@ import fs from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
 import { credentialConfig } from "../credentials-test-kit.mjs";
-import { githubComment, installFakeGh } from "../fake-gh.mjs";
+import { claimComment, githubComment, installFakeGh } from "../fake-gh.mjs";
 import { home, root } from "./ops-publish-environment-fixtures.mjs";
 
 /** @import { GhReply } from "../fake-gh.mjs" */
 /** @typedef {{ cfg: import("../../src/config.ts").Config, root: string, sha: string, mergeSha: string, worktree: string }} World */
 
+const CLAIM_ID = 501;
 const ACCOUNT = "bot";
 const REPO = "o/r";
 const ISSUE = 7;
@@ -147,12 +148,12 @@ function savedListing(state, { claim = false } = {}) {
   ];
   if (claim) {
     items.push(
-      githubComment({
-        id: 501,
-        body: "<!-- agent-pipeline:comment role=claim -->\nLane `L` is claiming this issue.\n<!-- agent-pipeline:claim lane=L sweep=s1 -->",
+      claimComment({
+        id: CLAIM_ID,
+        lane: "L",
+        sweep: "s1",
         login: ACCOUNT,
-        created: at,
-        updated: at,
+        at,
       }),
     );
   }

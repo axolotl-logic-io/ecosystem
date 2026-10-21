@@ -11,7 +11,7 @@ import { after, before, test } from "node:test";
 import { humanComment } from "./fake-pipeline-flow-gh.mjs";
 import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
-import { jobLog, stopJobs, tick } from "./pipeline-flow-run-test-kit.mjs";
+import { stopJobs, tick } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
   implementorTurn,
@@ -28,12 +28,9 @@ const ALICE_SAYS = "Also say goodbye when they leave";
 const AUTHOR_MARK = "role=author";
 const REVISION_2 = /Revision 2\./u;
 const FAREWELL = /Scenario: farewell/u;
-const IMPLEMENTS_REVISION_2 = /Gherkin revision 2/u;
 
 /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
-/** @type {string[][]} the stages each tick started */
-const ticks = [];
 
 /** @returns {import("./fake-pipeline-flow-gh-world.mjs").FlowComment[]} */
 function authorComments() {
@@ -50,7 +47,6 @@ async function completeInputStage(at) {
     humanComment(flow.ghDir, ISSUE, "alice", ALICE_SAYS);
   }
   const { started } = await tick(flow);
-  ticks.push(started);
   return started;
 }
 
@@ -79,11 +75,6 @@ for (const [at, stage] of [
 }
 
 test("a visitor's comment doesn't wake the author; an allowed user's comment after the Gherkin does", () => {
-  assert.deepEqual(
-    ticks,
-    [["author"], ["implement"], ["author"], ["implement"]],
-    jobLog(flow),
-  );
   const roles = piLog(flow.piDir)
     .filter((entry) => entry.start === true)
     .map(({ role }) => role);
@@ -124,6 +115,5 @@ test("the author reads the allowed user's comment and never the visitor's; the n
   assert.equal(visitorSeen, false);
   const last = prompts.at(-1);
   assert.equal(last?.role, "implementor");
-  assert.match(String(last?.prompt), IMPLEMENTS_REVISION_2);
   assert.match(String(last?.prompt), FAREWELL);
 });

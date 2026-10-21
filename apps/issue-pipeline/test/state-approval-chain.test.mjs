@@ -168,3 +168,23 @@ test("a malformed hardened, integration or security field reads as null and keep
     assert.equal(parsed.pr, PR);
   }
 });
+
+test("a merge authorization holds only for the code, legacy wiki and inputs revision hardened", () => {
+  const revision = { code: "c1", wiki: "w1", inputs: "i1" };
+  const state = newIssueState(ISSUE);
+  const hardened = { ...state, hardened: revision };
+  assert.equal(approvalHolds(hardened, revision), true);
+  assert.equal(approvalHolds(hardened, { ...revision, code: "c2" }), false);
+  assert.equal(approvalHolds(hardened, { ...revision, wiki: "w2" }), false);
+  assert.equal(approvalHolds(hardened, { ...revision, inputs: "i2" }), false);
+  // A review's approval, with no hardening, authorizes no merge.
+  const reviewedOnly = {
+    ...state,
+    review: {
+      ...state.review,
+      verdict: /** @type {const} */ ("approve"),
+      revision,
+    },
+  };
+  assert.equal(approvalHolds(reviewedOnly, revision), false);
+});

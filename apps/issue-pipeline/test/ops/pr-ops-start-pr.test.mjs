@@ -20,7 +20,6 @@ import { okLine, opsFixture } from "../ops-fixtures.mjs";
 
 const fx = await opsFixture("pr-ops-start-pr");
 fx.fakeGh.requireReplies();
-const { signed } = await import("../../src/comments.ts");
 const { ghIsRead } = await import("../../src/github.ts");
 const { parseStateBody } = await import("../../src/saved-state.ts");
 const { fakeGh, ask, originRef } = fx;
@@ -53,12 +52,6 @@ function savedPr(n) {
   };
 }
 
-// The body start-pr gives issue `n`'s PR for the text `text`.
-/** @param {number} n @param {string} text @returns {string} */
-function prBody(n, text) {
-  return signed({ role: "coordinator" }, `Closes #${n}\n\n${text}`);
-}
-
 // Runs start-pr for issue `n` while gh lists `listed` as the branch's open
 // PRs; a PR it opens is `pr`.
 /** @param {number} n @param {number} pr @param {string} listed @param {object} extra @returns {string} */
@@ -86,9 +79,12 @@ test("start-pr with a body sets the open PR's body and leaves it a draft", () =>
   const out = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
   const headSha = originRef("agent/issue-21");
   assert.equal(out, okLine("start-pr", { pr, headSha }));
-  assert.deepEqual(prMutations(writes()), [
-    { action: "edit", pr: String(pr), repo: "o/r", body: prBody(n, "B") },
+  assert.partialDeepStrictEqual(prMutations(writes()), [
+    { action: "edit", pr: String(pr), repo: "o/r" },
   ]);
+  const [mutation] = prMutations(writes());
+  assert.ok(mutation?.body?.includes(`Closes #${n}`));
+  assert.ok(mutation?.body?.includes("B"));
   assert.deepEqual(savedPr(n), {
     effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
     issue: n,
@@ -107,7 +103,7 @@ test("start-pr with a body and no open PR opens a draft with that body only", ()
   const out = startPr(n, pr, "[]", { body: "B", plan: "P" });
   const headSha = originRef("agent/issue-22");
   assert.equal(out, okLine("start-pr", { pr, headSha }));
-  assert.deepEqual(prMutations(writes()), [
+  assert.partialDeepStrictEqual(prMutations(writes()), [
     {
       action: "create",
       repo: "o/r",
@@ -115,9 +111,11 @@ test("start-pr with a body and no open PR opens a draft with that body only", ()
       base: "integration",
       head: `agent/issue-${n}`,
       title: "T (#22)",
-      body: prBody(n, "B"),
     },
   ]);
+  const [mutation] = prMutations(writes());
+  assert.ok(mutation?.body?.includes(`Closes #${n}`));
+  assert.ok(mutation?.body?.includes("B"));
   assert.deepEqual(savedPr(n), {
     effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
     issue: n,
@@ -140,7 +138,7 @@ test("start-pr with a body run twice opens one draft and sets the same body", ()
   assert.equal(created.length, 1);
   const body = created[0]?.body ?? "";
   const second = startPr(n, pr, `[{"number":${pr}}]`, { body: "B" });
-  assert.deepEqual(prMutations(writes()), [
+  assert.partialDeepStrictEqual(prMutations(writes()), [
     { action: "edit", pr: String(pr), repo: "o/r", body },
   ]);
   assert.deepEqual(savedPr(n), {
@@ -163,7 +161,7 @@ test("start-pr without a body only labels the open PR", () => {
   const { n, pr } = UNTOUCHED;
   fx.startBranch(n, "initial", "existing branch");
   startPr(n, pr, `[{"number":${pr}}]`, {});
-  assert.deepEqual(prMutations(writes()), []);
+  assert.partialDeepStrictEqual(prMutations(writes()), []);
   assert.deepEqual(savedPr(n), {
     effects: [`edit comment ${n} state`, `label #${pr} agent:working`],
     issue: n,

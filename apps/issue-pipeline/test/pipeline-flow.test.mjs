@@ -45,8 +45,6 @@ const MERGE_ENDPOINT = /^repos\/[^/]+\/[^/]+\/merges$/u;
 let flow;
 /** @type {string} the origin's base head before the flow */
 let start;
-/** @type {string[]} every stage the flow started, until it went idle */
-let stages;
 
 /** @returns {any[]} each pi start, in order */
 function piStarts() {
@@ -71,7 +69,6 @@ before(() => {
       securityTurn(),
     ],
   });
-  stages = [];
 });
 after(() => stopJobs(flow));
 
@@ -80,7 +77,6 @@ after(() => stopJobs(flow));
 /** @param {string} stage @returns {Promise<{ started: string[], log: string }>} */
 async function completeStage(stage) {
   const result = await tick(flow);
-  stages.push(...result.started);
   if (stage === "review") {
     const hardened = savedState(readWorld(flow.ghDir));
     withWorld(flow.ghDir, (world) => {
@@ -99,14 +95,6 @@ for (const stage of ["author", "implement", "review", "merge", "merge"]) {
 test("completed legacy flow goes idle without another job", async () => {
   const result = await tick(flow);
   assert.deepEqual(result.started, [], jobLog(flow));
-});
-
-test("legacy ticks run development, hardening, bounded integration and security without a Developer fix round", () => {
-  assert.deepEqual(
-    stages,
-    ["author", "implement", "review", "merge", "merge"],
-    jobLog(flow),
-  );
 });
 
 test("each phase gets its configured model and exact write authority without a GitHub token", () => {

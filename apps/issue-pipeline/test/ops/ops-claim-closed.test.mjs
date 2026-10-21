@@ -14,6 +14,20 @@ import {
   prView,
   v2State,
 } from "../ops-v2-test-kit.mjs";
+import {
+  ATTEMPT_UNCONFIRMED,
+  INVALID_JSON,
+  MERGE_UNCONFIRMED,
+  NO_MERGE_AUTHOR,
+  NOT_OPEN,
+  PR_REFUSALS,
+  PROVENANCE,
+  REOPEN_UNCONFIRMED,
+  refusalOf,
+  STATE_REFUSALS,
+  UNREADABLE_MERGE,
+  WRONG_BRANCH,
+} from "./ops-claim-closed-fixtures.mjs";
 
 requireGhReplies();
 const { askOps, reply, stateComment, writes, claimComment } = kit;
@@ -41,6 +55,7 @@ const REPLY = z.object({
   lost: z.boolean().optional(),
   holder: z.string().optional(),
 });
+const REFUSED = z.object({ ok: z.literal(false), error: z.string() });
 const COMMENT_BODY = z.looseObject({ body: z.string() });
 
 /** @param {readonly unknown[]} comments @param {object} [view] */
@@ -55,9 +70,9 @@ function closedWorld(comments, view = MERGED) {
 
 test("closed issue without saved pipeline state cannot initialize work", () => {
   closedWorld([]);
-  assert.equal(
-    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-    false,
+  assert.match(
+    REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+    NOT_OPEN,
   );
   assert.deepEqual(writes(), []);
 });
@@ -88,9 +103,9 @@ for (const [name, extra] of Object.entries({
 })) {
   test(`closed issue with ${name} is refused without mutations`, () => {
     closedWorld([stateComment(1, { ...SAVED, ...extra })]);
-    assert.equal(
-      REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-      false,
+    assert.match(
+      REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+      refusalOf(STATE_REFUSALS, name),
     );
     assert.deepEqual(writes(), []);
   });
@@ -115,9 +130,9 @@ for (const [name, extra] of Object.entries({
         mergeAttempt: { ...ATTEMPT, ...extra },
       }),
     ]);
-    assert.equal(
-      REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-      false,
+    assert.match(
+      REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+      ATTEMPT_UNCONFIRMED,
     );
     assert.deepEqual(writes(), []);
   });
@@ -141,9 +156,9 @@ for (const [name, view] of Object.entries({
 })) {
   test(`closed issue whose PR is ${name} is refused without mutations`, () => {
     closedWorld([stateComment(1, SAVED)], view);
-    assert.equal(
-      REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-      false,
+    assert.match(
+      REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+      refusalOf(PR_REFUSALS, name),
     );
     assert.deepEqual(writes(), []);
   });
@@ -154,9 +169,9 @@ test("malformed retained PR head cannot confirm closed recovery even without a s
     ...MERGED,
     headRefOid: "not-an-oid",
   });
-  assert.equal(
-    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-    false,
+  assert.match(
+    REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+    MERGE_UNCONFIRMED,
   );
   assert.deepEqual(writes(), []);
 });
@@ -168,9 +183,9 @@ test("unreadable merged metadata never grants closed recovery", () => {
     everyCommentsRead(ISSUE, [stateComment(1, SAVED)]),
     { when: `pr view ${PR} `, code: 1, stderr: "unreadable merge", keep: true },
   ]);
-  assert.equal(
-    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-    false,
+  assert.match(
+    REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+    UNREADABLE_MERGE,
   );
   assert.deepEqual(writes(), []);
 });
@@ -181,18 +196,18 @@ test("a malformed latest state cannot fall back to an older eligible Merge", () 
     stateComment(1, SAVED),
     { ...malformed, body: malformed.body.replace(JSON.stringify(SAVED), "{") },
   ]);
-  assert.equal(
-    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-    false,
+  assert.match(
+    REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+    INVALID_JSON,
   );
   assert.deepEqual(writes(), []);
 });
 
 test("a state without merge authorship cannot authorize closed recovery", () => {
   closedWorld([{ ...stateComment(1, SAVED), user: { login: "alice" } }]);
-  assert.equal(
-    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-    false,
+  assert.match(
+    REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+    NO_MERGE_AUTHOR,
   );
   assert.deepEqual(writes(), []);
 });
@@ -206,9 +221,9 @@ test("untrusted editing of otherwise eligible Merge state refuses closed recover
       editor: { login: "alice" },
     },
   ]);
-  assert.equal(
-    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-    false,
+  assert.match(
+    REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+    PROVENANCE,
   );
   assert.deepEqual(writes(), []);
 });
@@ -242,9 +257,9 @@ for (const [name, confirmation] of Object.entries({
       { when: `issue reopen ${ISSUE} `, stdout: "" },
       { when: `api repos/o/r/issues/${ISSUE} --jq`, ...confirmation },
     ]);
-    assert.equal(
-      REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-      false,
+    assert.match(
+      REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+      REOPEN_UNCONFIRMED,
     );
     // A successful reopen command alone is not confirmation of recovery.
     // In particular, don't replace the saved Merge with leased writer state.
@@ -256,9 +271,9 @@ for (const [name, confirmation] of Object.entries({
 
 test("eligible closed recovery refuses another assigned branch", () => {
   closedWorld([stateComment(1, { ...SAVED, branch: "another-assignment" })]);
-  assert.equal(
-    REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).ok,
-    false,
+  assert.match(
+    REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
+    WRONG_BRANCH,
   );
   assert.deepEqual(writes(), []);
 });

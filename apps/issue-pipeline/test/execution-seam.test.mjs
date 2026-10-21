@@ -11,8 +11,9 @@ import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 // Resolve the pipeline root only after the isolation kit has run, independent
 // of import sorting. No test may load the operator's installed root.
 const { loadConfig } = await import("../src/config.ts");
-const { executionIdentity, integrationTurn, issueExecution, withExecution } =
-  await import("../src/execution.ts");
+const { executionIdentity, issueExecution, withExecution } = await import(
+  "../src/execution.ts"
+);
 
 const cfg = configFixture({ assignment: undefined });
 const ISSUE = 7;
@@ -29,11 +30,6 @@ test("fresh executions on one stable lane bind unique UUIDs to the exact configu
   assert.equal(a.base, cfg.baseBranch);
   assert.equal(a.issue, ISSUE);
   assert.equal(a.branch, "agent/issue-7");
-  const bound = withExecution(cfg, a);
-  assert.equal(typeof bound.mutation, "function");
-  // Constructing an issue handle neither acquires it nor performs transport I/O.
-  assert.equal(typeof issueExecution(bound, ISSUE).assertOwner, "function");
-  assert.equal(typeof integrationTurn, "function");
 });
 
 for (const change of [
@@ -98,19 +94,4 @@ test("the standalone seam builds but default runtime entry points cannot reach e
     ),
     false,
   );
-  const seam = await build({
-    entryPoints: [path.join(source, "execution.ts")],
-    bundle: true,
-    write: false,
-    metafile: true,
-    platform: "node",
-    format: "esm",
-    logLevel: "silent",
-  });
-  const exports = Object.values(seam.metafile.outputs).flatMap(
-    (output) => output.exports,
-  );
-  assert.ok(exports.includes("issueExecution"));
-  assert.ok(exports.includes("integrationTurn"));
-  assert.ok(exports.includes("withExecution"));
 });

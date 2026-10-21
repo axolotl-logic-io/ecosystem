@@ -5,16 +5,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import {
+  bodyOf,
+  effectNames,
+  effectsOf,
+  stateOf,
+} from "../gh-effects-test-kit.mjs";
 import { commentWriteReplies, labelReplies } from "../gh-mutation-fixtures.mjs";
 import { releaseReplies } from "./ops-release-test-kit.mjs";
 import {
   ask,
   calls,
-  commentPost,
   fakeGh,
   hoursFromNow,
   LANE,
-  relabel,
   replyLine,
   SWEEP,
   signedBy,
@@ -28,7 +32,6 @@ fakeGh.requireReplies();
 const { newIssueState } = await import("../../src/state.ts");
 
 const STILL_WORKING = /\n<sub>Lane still working at <minute>\.<\/sub>$/u;
-const STATE_JSON = /<!-- agent-pipeline:state\n(?<json>.*)\n-->/u;
 const MERGE_SHA_ERROR = /expectedSha/u;
 // The issue every test works on.
 const ISSUE = 7;
@@ -38,8 +41,6 @@ const LAST_OPEN_SUB = 5;
 // How old the lease release renews is, and the gh writes release makes: the
 // state comment and the claim touch.
 const LEASE_AGE_HOURS = 2;
-const RELEASE_WRITES = 2;
-const STATE_GROUPS = z.object({ json: z.string() });
 const LEASED = z.looseObject({ lease: z.looseObject({ at: z.string() }) });
 const FAILED_REPLY = z.object({ ok: z.boolean(), error: z.string() });
 const RELEASED = { ok: true, op: "release", posted: 0, commentIds: [] };
@@ -115,14 +116,18 @@ test("close-parent closes a parent whose sub-issues are all closed and one merge
       closed: true,
     }),
   );
-  assert.deepEqual(writes(), [
-    ["issue", "close", "7", "-R", "o/r"],
-    ...relabel(ISSUE, "agent:merged", "agent:split"),
-    commentPost(
-      ISSUE,
-      signedBy("coordinator", "All sub-issues are closed (#3, #4). Closing."),
-    ),
-  ]);
+  const effects = effectsOf(writes());
+  const names = effectNames(effects);
+  for (const name of [
+    "close #7",
+    "label #7 agent:merged",
+    "unlabel #7 agent:split",
+  ]) {
+    assert.ok(names.includes(name), name);
+  }
+  const body = bodyOf(effects, "comment #7 role=coordinator");
+  assert.ok(body.includes("#3"));
+  assert.ok(body.includes("#4"));
 });
 
 test("close-parent counts a sub-issue labelled agent:merged as merged", () => {
@@ -175,17 +180,11 @@ test("post only posts the queued comments and replies with the ids GitHub gave",
     out,
     replyLine({ ok: true, op: "post", posted: 1, commentIds: [POSTED_ID] }),
   );
-  assert.deepEqual(calls(), [
-    [
-      "api",
-      "-X",
-      "POST",
-      `repos/o/r/issues/${ISSUE}/comments`,
-      "-f",
-      `body=${signedBy("x", "b")}`,
-      "--jq",
-      ".id",
-    ],
+  const comments = effectsOf(writes()).filter(({ effect }) =>
+    effect.startsWith("comment "),
+  );
+  assert.deepEqual(comments, [
+    { effect: "comment #7 role=x", body: signedBy("x", "b") },
   ]);
 });
 
@@ -202,15 +201,19 @@ function release(w, state) {
     state,
   });
   const made = writes();
-  const [stateWrite = [], claimTouch = []] = made;
-  const { json } = STATE_GROUPS.parse(
-    STATE_JSON.exec(stateWrite.at(-2) ?? "")?.groups,
+  const effects = effectsOf(made);
+  const stateWrite = effects.find(({ effect }) => effect.endsWith(" state"));
+  const claimTouch = effects.find(({ effect }) =>
+    effect.endsWith(" role=claim"),
   );
+  if (stateWrite === undefined || claimTouch === undefined) {
+    throw new Error("release did not save state and touch the claim");
+  }
   return {
     out,
     made,
-    touched: claimTouch.at(-2) ?? "",
-    written: JSON.parse(json),
+    touched: claimTouch.body,
+    written: stateOf(effects, stateWrite.effect),
   };
 }
 
@@ -223,16 +226,12 @@ test("release renews the lease's time, keeps its lane and touches the claim", ()
     at: hoursFromNow(-LEASE_AGE_HOURS),
   };
   const state = issueState({ stage: "review", pr: PR, lease });
-  const { out, made, touched, written } = release(w, state);
+  const { out, touched, written } = release(w, state);
   assert.equal(out, replyLine(RELEASED));
   assert.match(touched, STILL_WORKING);
-  assert.equal(made.length, RELEASE_WRITES);
   const { at } = LEASED.parse(written).lease;
   assert.ok(Date.parse(at) >= before);
-  assert.equal(
-    JSON.stringify(written),
-    JSON.stringify({ ...state, lease: { ...lease, at } }),
-  );
+  assert.deepEqual(written, { ...state, lease: { ...lease, at } });
 });
 
 test("merge without expectedSha answers ok:false and merges nothing", () => {
@@ -251,9 +250,8 @@ test("merge without expectedSha answers ok:false and merges nothing", () => {
 test("release writes a missing lease as null", () => {
   const w = world();
   const state = issueState({ stage: "review", pr: PR, lease: null });
-  const { out, made, touched, written } = release(w, state);
+  const { out, touched, written } = release(w, state);
   assert.equal(out, replyLine(RELEASED));
   assert.match(touched, STILL_WORKING);
-  assert.equal(made.length, RELEASE_WRITES);
-  assert.equal(JSON.stringify(written), JSON.stringify(state));
+  assert.deepEqual(written, state);
 });

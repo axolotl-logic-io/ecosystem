@@ -5,7 +5,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { configFixture } from "./config-fixtures.mjs";
-import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
+import {
+  claimComment,
+  commentLines,
+  githubComment,
+  installFakeGh,
+} from "./fake-gh.mjs";
 import { bodyOf, effectNames, effectsOf } from "./gh-effects-test-kit.mjs";
 import { commentWriteReplies, labelReplies } from "./gh-mutation-fixtures.mjs";
 import "./isolated-root-test-kit.mjs";
@@ -33,7 +38,7 @@ const MS_PER_HOUR = 3_600_000;
 const EXPIRED_HOURS = 4;
 /** @param {string} lane @returns {string} */
 function claimBody(lane) {
-  return `**🤖 issue-pipeline · claim**\n<!-- agent-pipeline:comment role=claim -->\n\nLane \`${lane}\` is claiming this issue.\n<!-- agent-pipeline:claim lane=${lane} sweep=s1 -->`;
+  return claimComment({ id: 1, lane, sweep: "s1", login: "bot", at: now }).body;
 }
 /** @param {number} id @param {string} body @param {string} [login] @param {string} [at] @returns {object} */
 function comment(id, body, login = "bot", at = now) {

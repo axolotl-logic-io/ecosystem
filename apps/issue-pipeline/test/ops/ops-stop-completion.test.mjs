@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { bodyOf, effectsOf } from "../gh-effects-test-kit.mjs";
 import { stopMutationReplies } from "../gh-mutation-fixtures.mjs";
 import { everyCommentsRead, kit, v2State } from "../ops-v2-test-kit.mjs";
 
@@ -88,11 +89,11 @@ test("an uncertain merge stop explains a fresh bounded recovery window without r
   );
   assert.deepEqual(retained, mergeAttempt);
   assert.equal(stoppedStage, "merge");
-  const comments = writes()
-    .filter((args) => args.includes(`repos/o/r/issues/${UNCERTAIN}/comments`))
-    .flatMap((args) => args.filter((arg) => arg.startsWith("body=")));
-  assert.equal(comments.length, 1);
-  assert.match(comments[0] ?? "", NO_RETRY);
-  assert.match(comments[0] ?? "", BOUNDED_RESTART);
-  assert.doesNotMatch(comments[0] ?? "", LIFETIME_BUDGET);
+  const body = bodyOf(
+    effectsOf(writes()),
+    `comment #${UNCERTAIN} role=coordinator`,
+  );
+  assert.match(body, NO_RETRY);
+  assert.match(body, BOUNDED_RESTART);
+  assert.doesNotMatch(body, LIFETIME_BUDGET);
 });

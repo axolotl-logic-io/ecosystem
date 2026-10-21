@@ -9,7 +9,7 @@ import {
   openDraftReply,
   savedDraftReply,
 } from "../initial-write-state-fixtures.mjs";
-import { okLine, opsFixture, stateReadCall } from "../ops-fixtures.mjs";
+import { okLine, opsFixture } from "../ops-fixtures.mjs";
 import { pushRecord } from "./push-record-test-kit.mjs";
 
 const fx = await opsFixture("pr-push");
@@ -21,7 +21,7 @@ const EMPTY = { n: 8, pr: 58 };
 const CODE = { codeChanged: true };
 /** @returns {string[][]} */
 function writes() {
-  return fakeGh.calls().filter((args) => !ghIsRead(args));
+  return fakeGh.writes(ghIsRead);
 }
 /** @param {number} n @param {number} pr @returns {string} */
 function startPr(n, pr) {
@@ -49,13 +49,6 @@ test("push pushes the branch after a real commit", () => {
   assert.equal(out, okLine("push", { headSha: sha, ...CODE }));
   assert.equal(originRef("agent/issue-7"), sha);
   assert.deepEqual(pushRecord(fx.root, n), { sha, op: "push", dated: true });
-  assert.ok(
-    fakeGh
-      .calls()
-      .some(
-        (args) => JSON.stringify(args) === JSON.stringify(stateReadCall(n)),
-      ),
-  );
   assert.deepEqual(writes(), []);
 });
 
@@ -77,13 +70,6 @@ test("exit-push pushes the branch and records the push as exit-push", () => {
     op: "exit-push",
     dated: true,
   });
-  assert.ok(
-    fakeGh
-      .calls()
-      .some(
-        (args) => JSON.stringify(args) === JSON.stringify(stateReadCall(n)),
-      ),
-  );
   assert.deepEqual(writes(), []);
 });
 

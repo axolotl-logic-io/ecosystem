@@ -17,52 +17,7 @@ const { fakeGh, ask } = fx;
 // own read/write rule.
 /** @returns {string[][]} */
 function writes() {
-  return fakeGh.calls().filter((args) => !ghIsRead(args));
-}
-
-const { ISSUE_STATE } = await import("../../src/state.ts");
-const { stateBody } = await import("../../src/saved-state.ts");
-const { stateAt } = await import("../job-fixtures.mjs");
-
-/** @param {number} n @param {number} pr @returns {string[]} */
-function savedPrCall(n, pr) {
-  const state = stateAt("implement", {
-    number: n,
-    branch: `agent/issue-${n}`,
-    lease: null,
-    pr,
-  });
-  return [
-    "api",
-    "-X",
-    "PATCH",
-    `repos/o/r/issues/comments/${n}`,
-    "-f",
-    `body=${stateBody(n, ISSUE_STATE.parse(state))}`,
-    "--silent",
-  ];
-}
-
-/** @param {number} pr @returns {string[]} */
-function labelCall(pr) {
-  const endpoint = `repos/o/r/issues/${pr}/labels`;
-  return ["api", "-X", "POST", endpoint, "--silent", "-f"].concat([
-    "labels[]=agent:working",
-  ]);
-}
-
-/** @param {number} n @param {string[]} flags @param {string} title @param {string} body @returns {string[]} */
-function createCall(n, flags, title, body) {
-  const head = `agent/issue-${n}`;
-  return [
-    "pr",
-    "create",
-    "-R",
-    "o/r",
-    ...flags,
-    "--base",
-    "integration",
-  ].concat(["--head", head, "--title", title, "--body", body]);
+  return fakeGh.writes(ghIsRead);
 }
 
 // Runs start-pr on a new branch with no open PR, which opens draft `pr`.
@@ -80,4 +35,4 @@ function startPr(n, pr, extra = {}) {
   return ask({ op: "start-pr", number: n, ...extra });
 }
 
-export { createCall, fx, labelCall, savedPrCall, startPr, writes };
+export { fx, startPr, writes };

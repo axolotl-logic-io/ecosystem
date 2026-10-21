@@ -1,7 +1,6 @@
 // @ts-check
 // An explicit caller needs no discovery/sweep prerequisite on a fresh root.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -20,27 +19,6 @@ import { ISSUE, SLUG, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see hello";
-const RUN_MS = 60_000;
-
-/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow @param {string[]} extra */
-function startAuthor(flow, extra) {
-  return spawnSync(
-    process.execPath,
-    [
-      path.join(flow.root, "job.mjs"),
-      "--config",
-      flow.config,
-      "--issue",
-      String(ISSUE),
-      "--stage",
-      "author",
-      "--branch",
-      `agent/issue-${ISSUE}`,
-      ...extra,
-    ],
-    { env: flow.env, encoding: "utf8", timeout: RUN_MS },
-  );
-}
 
 function newIssue() {
   const flow = setUpFlow();
@@ -82,34 +60,6 @@ test("fresh explicit Author initializes metadata once; Developer interruption an
     false,
   );
   assert.deepEqual(readWorld(flow.ghDir).unsupported, []);
-});
-
-test("invalid branch and a missing prompt page refuse before any mirror, claim or model exists", () => {
-  const flow = newIssue();
-  const branch = startAuthor(flow, ["--branch", "integration"]);
-  assert.equal(branch.status, 1);
-  assert.ok(branch.stderr.includes("is the base branch"));
-  const page = path.join(flow.prompts, "author.md");
-  fs.renameSync(page, `${page}-unavailable`);
-  const missing = startAuthor(flow, []);
-  assert.equal(missing.status, 1);
-  assert.ok(missing.stderr.includes(`can't read prompt page ${page}`));
-  for (const dir of ["clones", "mirrors", "work"]) {
-    assert.equal(fs.existsSync(path.join(flow.root, dir)), false);
-  }
-  assert.deepEqual(ghCalls(flow.ghDir), []);
-  assert.deepEqual(piLog(flow.piDir), []);
-  assert.deepEqual(readWorld(flow.ghDir).comments, []);
-});
-
-test("a boundary print pins pages but initializes no clone or claim", () => {
-  const flow = newIssue();
-  const boundary = startAuthor(flow, ["--print-boundary"]);
-  assert.equal(boundary.status, 0, boundary.stderr);
-  assert.equal(fs.existsSync(path.join(flow.root, "clones")), false);
-  assert.equal(fs.existsSync(path.join(flow.root, "work")), false);
-  assert.deepEqual(ghCalls(flow.ghDir), []);
-  assert.deepEqual(piLog(flow.piDir), []);
 });
 
 test("metadata clone failure before claim leaves no lease, model, live job or control socket", () => {

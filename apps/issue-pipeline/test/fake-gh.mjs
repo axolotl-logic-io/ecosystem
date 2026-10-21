@@ -228,7 +228,6 @@ function commentLines(comments) {
  * A comment as GitHub's REST API returns it, which names its times in
  * snake_case; `updated` is left out when not given.
  * @param {{ id: number, body: string, login: string, created: string, updated?: string, nodeId?: string }} comment
- * @returns {object}
  */
 function githubComment({
   id,
@@ -253,4 +252,16 @@ function githubComment({
   return { ...comment, updated_at: updated };
 }
 
-export { commentLines, githubComment, installFakeGh };
+// A genuine claim wire record; callers may vary body/provenance to test refusals.
+/** @param {{id: number, lane: string, sweep: string, login: string, at: string}} claim */
+function claimComment({ id, lane, sweep, login, at }) {
+  return githubComment({
+    id,
+    login,
+    created: at,
+    updated: at,
+    body: `**🤖 issue-pipeline · claim**\n<!-- agent-pipeline:comment role=claim -->\n\nLane \`${lane}\` is claiming this issue.\n<!-- agent-pipeline:claim lane=${lane} sweep=${sweep} -->`,
+  });
+}
+
+export { claimComment, commentLines, githubComment, installFakeGh };
