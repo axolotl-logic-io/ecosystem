@@ -11,6 +11,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
 import {
@@ -116,6 +117,23 @@ test("a brain that is its own git checkout records its HEAD; a folder inside one
     openBrain(at.brain, "merge").pinned.map((pinned) => pinned.head),
     [head, head],
   );
+  const source = new URL("../src/job/brain.ts", import.meta.url).href;
+  const environment = new Map(Object.entries(process.env));
+  environment.set("ISSUE_PIPELINE_ROOT", path.join(at.tmp, "absent"));
+  const isolated = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `const { openBrain } = await import(${JSON.stringify(source)}); console.log(openBrain(${JSON.stringify(at.brain)}, "author").pinned[0].head);`,
+    ],
+    {
+      ...GIT_OPTIONS,
+      env: Object.fromEntries(environment),
+      encoding: "utf8",
+    },
+  );
+  assert.equal(isolated.trim(), head);
   // Root identity is canonical even when the caller reaches it via a link.
   const alias = path.join(at.tmp, "brain-link");
   fs.symlinkSync(at.brain, alias, "dir");
