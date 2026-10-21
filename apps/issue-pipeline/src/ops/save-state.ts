@@ -55,6 +55,31 @@ function sameCandidateDecision(
   );
 }
 
+function retainedResultSecurity(
+  saved: IssueState,
+  state: IssueState,
+): Partial<Pick<IssueState, "resultSecurity">> {
+  let { resultSecurity } = state;
+  const observed = saved.resultSecurity;
+  if (
+    observed !== undefined &&
+    observed !== null &&
+    (resultSecurity === undefined ||
+      resultSecurity === null ||
+      (observed.finding !== null &&
+        sameSecuritySubject(observed.revision, resultSecurity.revision)) ||
+      (sameRevision(observed.revision, resultSecurity.revision) &&
+        JSON.stringify(observed.target) ===
+          JSON.stringify(resultSecurity.target)))
+  ) {
+    resultSecurity = observed;
+  }
+  if (resultSecurity === undefined) {
+    return {};
+  }
+  return { resultSecurity };
+}
+
 // `state` as issue `n` may save it: for issue `n`, with the saved code merge.
 function withSavedCodeMerge(
   cfg: Config,
@@ -92,6 +117,7 @@ function withSavedCodeMerge(
   return {
     ...state,
     security,
+    ...retainedResultSecurity(saved, state),
     merged,
     codeMerged: saved.codeMerged,
     mergeAttempt: saved.mergeAttempt,

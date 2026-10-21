@@ -16,10 +16,10 @@ import {
   stateOf,
 } from "../reviewer-and-merge-role-calls-test-kit.mjs";
 import {
+  cfg,
   current,
   gherkinComment,
   HEAD,
-  INPUTS,
   MERGE_COMMIT,
   MOVED,
   NEW_INPUTS,
@@ -30,6 +30,7 @@ import {
 } from "../reviewer-and-merge-role-test-kit.mjs";
 import { hardening, VERIFIED } from "./reviewer-role-test-kit.mjs";
 
+const { policyRevision } = await import("../../../src/project-policy.ts");
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const HEAD_MOVED = /the next job hardens the new head/u;
 const MERGED_SCOPE =
@@ -109,10 +110,8 @@ test("after the code merged, hardening verifies the merge commit, pushes nothing
   assert.ok(!opNames(calls).includes("ready-pr"));
   assert.equal(state.stage, "merge");
   assert.equal(state.verifiedSha, MERGE_COMMIT);
-  assert.deepEqual(state.hardened, {
-    code: MERGE_COMMIT,
-    inputs: INPUTS,
-  });
+  assert.deepEqual(state.hardened, merged.revision);
+  assert.equal(state.hardened?.policy, policyRevision(cfg).policy);
 });
 
 test("postmerge preparation of a different result refuses a writer and preserves merged provenance", async () => {

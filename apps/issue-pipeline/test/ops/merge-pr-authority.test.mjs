@@ -18,12 +18,13 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
+const { policyRevision } = await import("../../src/project-policy.ts");
 const { merge } = await import("../../src/ops/merge.ts");
 const TARGET_REFUSAL = /targets .+, not integration/u;
 
-/** @param {import("./ops-publish-test-kit.mjs").World} w @returns {{ code: string, inputs: string }} */
+/** @param {import("./ops-publish-test-kit.mjs").World} w @returns {import("../../src/state.ts").Revision & {code: string}} */
 function approvedOf(w) {
-  return { code: w.sha, inputs: "inputs-1" };
+  return { code: w.sha, inputs: "inputs-1", ...policyRevision(w.cfg) };
 }
 
 /** @param {import("./ops-publish-test-kit.mjs").World} w @returns {object} */

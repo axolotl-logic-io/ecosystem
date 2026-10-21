@@ -39,6 +39,7 @@ const { reviewerRole } = await import("../../src/roles/reviewer/reviewer.ts");
 const { mergeRole } = await import("../../src/roles/merge/merge.ts");
 
 const { cfg } = testConfig();
+const { policyRevision } = await import("../../src/project-policy.ts");
 // The loop bounds the roles read from the config, which its defaults fill in.
 const LIMITS = z
   .looseObject({
@@ -77,7 +78,9 @@ const GHERKIN_TEXT =
   "Feature: Chats\n  Scenario: list\n    Given a chat\n    Then it is listed";
 
 /** @type {import("../../src/state.ts").Revision} */
-const REVISION = { code: HEAD, inputs: INPUTS };
+const REVISION = { code: HEAD, inputs: INPUTS, ...policyRevision(cfg) };
+// Genuine pre-policy history has no policy binding.
+const LEGACY_UNBOUND_REVISION = { code: HEAD, inputs: INPUTS };
 
 /**
  * @typedef {import("./reviewer-and-merge-role-calls-test-kit.mjs").Call} Call
@@ -246,6 +249,7 @@ export {
   HEAD,
   INPUTS,
   issueState,
+  LEGACY_UNBOUND_REVISION,
   LIMITS,
   MERGE_COMMIT,
   MOVED,

@@ -93,3 +93,56 @@ test("historical same-content rejection cannot be laundered into candidate clear
   saveIssueState(cfg, ISSUE, { ...SAVED, security: CLEAR });
   assert.deepEqual(readWriteState(cfg, ISSUE).security, rejection);
 });
+
+// Result observations preserve candidate authority through lost/stale state saves.
+const { policyRevision } = await import("../../src/project-policy.ts");
+const { policyBinding: _binding, ...unboundConfig } = cfg;
+const CHANGED_POLICY = policyRevision({
+  ...unboundConfig,
+  commandTimeoutMinutes: 123,
+}).policy;
+const RESULT_CLEAR = {
+  revision: { ...REVISION, code: TARGET_SHA, ...policyRevision(cfg) },
+  target: TARGET,
+  finding: null,
+  commentId: 902,
+};
+
+test("a stale save retains the result observation and original candidate receipt", () => {
+  serve({ ...SAVED, resultSecurity: RESULT_CLEAR });
+  const { resultSecurity: _missing, ...stale } = {
+    ...SAVED,
+    resultSecurity: RESULT_CLEAR,
+  };
+  saveIssueState(cfg, ISSUE, stale);
+  const saved = readWriteState(cfg, ISSUE);
+  assert.deepEqual(saved.resultSecurity, RESULT_CLEAR);
+  assert.deepEqual(saved.security, CLEAR);
+});
+
+test("result rejection survives replacement by changed-policy approval of unchanged content", () => {
+  const rejected = {
+    ...RESULT_CLEAR,
+    finding: {
+      category: /** @type {const} */ ("rights"),
+      reason: "private data",
+    },
+  };
+  serve({ ...SAVED, resultSecurity: rejected });
+  const changedPolicy = {
+    ...RESULT_CLEAR,
+    revision: { ...RESULT_CLEAR.revision, policy: CHANGED_POLICY },
+  };
+  saveIssueState(cfg, ISSUE, { ...SAVED, resultSecurity: changedPolicy });
+  assert.deepEqual(readWriteState(cfg, ISSUE).resultSecurity, rejected);
+});
+
+test("fresh policy result observation replaces stale approval", () => {
+  serve({ ...SAVED, resultSecurity: RESULT_CLEAR });
+  const changedPolicy = {
+    ...RESULT_CLEAR,
+    revision: { ...RESULT_CLEAR.revision, policy: CHANGED_POLICY },
+  };
+  saveIssueState(cfg, ISSUE, { ...SAVED, resultSecurity: changedPolicy });
+  assert.deepEqual(readWriteState(cfg, ISSUE).resultSecurity, changedPolicy);
+});

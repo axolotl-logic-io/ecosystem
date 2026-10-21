@@ -13,6 +13,7 @@ import {
   HEAD,
   INPUTS,
   issueState,
+  LEGACY_UNBOUND_REVISION,
   MERGE_COMMIT,
   PR,
   REVISION,
@@ -32,7 +33,9 @@ const MERGED_PR = {
 };
 // After the merge, current-revision gives the merge commit as the code.
 const AFTER_MERGE = current({ code: MERGE_COMMIT }, MERGED_PR);
-const MERGED_REVISION = { code: MERGE_COMMIT, inputs: INPUTS };
+const MERGED_REVISION = { ...REVISION, code: MERGE_COMMIT };
+// Genuine pre-policy history has no policy binding.
+const LEGACY_UNBOUND_MERGED_REVISION = { code: MERGE_COMMIT, inputs: INPUTS };
 const CODE_MERGED = { codeMerged: { pr: PR, sha: MERGE_COMMIT } };
 const MUTATIONS = ["merge", "finish", "sync-base", "push", "ready-pr"];
 
@@ -131,6 +134,21 @@ function mutationsOf(calls) {
   return opNames(calls).filter((name) => MUTATIONS.includes(name));
 }
 
+// Genuine pre-policy, pre-candidate history; explicit script state/ops still win.
+/** @param {Parameters<typeof merging>[0]} [script] */
+function legacyUnboundMerging(script = {}) {
+  const run = merging({
+    ...script,
+    ops: { "prepare-review": [PREPARED_MERGED], ...script.ops },
+  });
+  run.ctx.state = {
+    ...run.ctx.state,
+    hardened: LEGACY_UNBOUND_REVISION,
+    ...script.state,
+  };
+  return run;
+}
+
 export {
   AFTER_INTEGRATION,
   AFTER_MERGE,
@@ -142,6 +160,8 @@ export {
   finding,
   INTEGRATED,
   integrationSessions,
+  LEGACY_UNBOUND_MERGED_REVISION,
+  legacyUnboundMerging,
   MERGED,
   MERGED_PR,
   MERGED_REVISION,

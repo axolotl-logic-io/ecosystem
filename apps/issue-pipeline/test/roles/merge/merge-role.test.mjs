@@ -44,6 +44,12 @@ import {
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const OLDER = { ...REVISION, code: sha("8") };
 const SECURITY_TASK = /Task: `security-review`/u;
+const MERGED_CHECKOUT = new RegExp(
+  `Code checkout: \`repo/\`, at exactly the reviewed commit \`${HEAD}\``,
+  "u",
+);
+const BUNDLE = /Bundle: `\/run\/security\/bundle\.md`/u;
+const SECURITY_COMMENT = /^## Security review: no security finding/u;
 // Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS =
   /AGENTS\.md|artificial load|allow-listed|first parent/iu;
@@ -87,11 +93,12 @@ test("the security review is a fresh read-only Reviewer session over the exact c
   assert.equal(spec?.phase, "security-review");
   const task = spec?.task ?? "";
   assert.match(task, SECURITY_TASK);
-  assert.ok(task.includes(MERGE_COMMIT));
-  assert.ok(task.includes("/run/security/bundle.md"));
+  assert.match(task, MERGED_CHECKOUT);
+  assert.match(task, BUNDLE);
   assert.doesNotMatch(task, BEHAVIOUR_WORDS);
   const [post] = postsOf(calls);
   assert.equal(post?.on, "pr");
+  assert.match(post?.body ?? "", SECURITY_COMMENT);
   assert.equal(savesOf(calls).at(-1)?.security?.finding, null);
 });
 

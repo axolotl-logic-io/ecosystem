@@ -6,7 +6,10 @@ import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
 import { ownMergeResultObservation } from "../../ops/merge-guard.ts";
-import { securityRefusal } from "../../security-clearance.ts";
+import {
+  resultReviewTarget,
+  securityRefusal,
+} from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -76,7 +79,11 @@ async function completionSecurity(
     return { ok: true, value: state };
   }
   if (state.security?.phase === "candidate") {
-    return ended(failed(state, refusal));
+    const resultTarget = resultReviewTarget(state, result.revision);
+    if (resultTarget === null) {
+      return ended(failed(state, refusal));
+    }
+    return await securityReviewed(ctx, state, { ...result, resultTarget });
   }
   return await securityReviewed(ctx, state, result);
 }

@@ -5,8 +5,8 @@ import { test } from "node:test";
 import {
   CODE_MERGED,
   MERGED_PR,
-  MERGED_REVISION,
-  merging,
+  LEGACY_UNBOUND_MERGED_REVISION as MERGED_REVISION,
+  legacyUnboundMerging as merging,
 } from "./roles/merge/merge-role-test-kit.mjs";
 import {
   firstPayload,
@@ -22,7 +22,7 @@ import {
   MOVED,
   mergeRole,
   NEW_INPUTS,
-  REVISION,
+  LEGACY_UNBOUND_REVISION as REVISION,
 } from "./roles/reviewer-and-merge-role-test-kit.mjs";
 
 const { policyRevision } = await import("../src/project-policy.ts");

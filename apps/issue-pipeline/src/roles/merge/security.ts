@@ -2,13 +2,19 @@
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
+
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { configPolicyDigest } from "../../project-policy.ts";
 import type { ReviewedTarget } from "../../reviewed-target.ts";
 import { targetHolds } from "../../reviewed-target.ts";
-import { sameSecuritySubject } from "../../security-clearance.ts";
+import {
+  resultReviewTarget,
+  sameSecuritySubject,
+} from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
+
 import type { SecurityReviewReply } from "../replies.ts";
 import { SECURITY_REVIEW_REPLY } from "../replies.ts";
 import { currentRevision } from "../revision-source.ts";
@@ -16,6 +22,7 @@ import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
 import { integrate } from "./integration.ts";
 import { logged, toAuthor, toReview, waiting } from "./returns.ts";
+import { recorded, securityStop } from "./security-record.ts";
 import { securityReviewTask } from "./task.ts";
 
 const PREPARED = z.looseObject({
@@ -26,44 +33,20 @@ const PREPARED = z.looseObject({
   changedFiles: z.array(z.string()),
 });
 
-type Finding = NonNullable<SecurityReviewReply["security"]>;
-
-function short(sha: string | null): string {
-  return sha?.slice(0, SHORT_SHA) ?? "none";
-}
-
-// The key of the security review comment on exactly `revision`. It keeps the
-// legacy wiki head's place ("none" for a revision without one), so a comment
-// posted before the wiki was removed is still found and edited, not repeated.
-function securityCommentKey(revision: Revision): string {
-  return `security-${short(revision.code)}-${short(legacyWikiOf(revision))}`;
-}
-
-// A finding prevents a new merge; historical already-merged code stays merged.
-function securityStop(state: IssueState, finding: Finding): RoleEnd {
-  const { category, reason } = finding;
-  return {
-    kind: "stop",
-    code: category,
-    reason: `security review (${category}): ${reason}. This revision cannot merge or complete. Existing merged code stays merged; lifting this stop does not reroll Security`,
-    state,
-  };
-}
-
 // A policy or target change does not remediate known harm in unchanged work.
 function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
-  const saved = state.security;
-  if (saved === null || saved.finding === null) {
-    return null;
+  for (const saved of [state.security, state.resultSecurity]) {
+    if (saved !== undefined && saved !== null && saved.finding !== null) {
+      let compared = current;
+      if (saved.revision.code === null) {
+        compared = { ...current, code: null };
+      }
+      if (sameSecuritySubject(saved.revision, compared)) {
+        return securityStop(state, saved.finding);
+      }
+    }
   }
-  let compared = current;
-  if (saved.revision.code === null) {
-    compared = { ...current, code: null };
-  }
-  if (!sameSecuritySubject(saved.revision, compared)) {
-    return null;
-  }
-  return securityStop(state, saved.finding);
+  return null;
 }
 
 // The candidate or historical merged result, prepared at exactly `revision`.
@@ -72,7 +55,7 @@ async function prepare(
   revision: Revision,
   codeMerged: CodeMerged | null,
 ): Promise<z.infer<typeof PREPARED>> {
-  const tag = `security-${short(revision.code ?? legacyWikiOf(revision))}`;
+  const tag = `security-${(revision.code ?? legacyWikiOf(revision))?.slice(0, SHORT_SHA) ?? "none"}`;
   const reply = await ctx.op("prepare-review", {
     tag,
     sinceSha: null,
@@ -85,28 +68,24 @@ async function prepare(
   return parsed.data;
 }
 
-function reviewBody(reply: SecurityReviewReply, revision: Revision): string {
-  let title = "no security finding";
-  if (reply.security !== null) {
-    title = `stopped (${reply.security.category})`;
-  }
-  const lines = [`## Security review: ${title}`, ""];
-  lines.push(reply.summary, "");
-  if (reply.security !== null) {
-    lines.push(`**${reply.security.category}:** ${reply.security.reason}`, "");
-  }
-  lines.push(
-    `Reviewed code ${short(revision.code)} and trusted inputs ${short(revision.inputs)}. This review judged security alone; hardening owned the design, correctness and tests.`,
-  );
-  return lines.join("\n");
-}
-
 // Candidate provenance is absent only for historical merged recovery.
 interface MergedResult {
   revision: Revision;
   codeMerged: CodeMerged | null;
   still: (after: Revision) => boolean;
   target?: ReviewedTarget;
+  resultTarget?: ReviewedTarget;
+}
+
+function reviewDecisionHolds(
+  { revision, still }: Pick<MergedResult, "revision" | "still">,
+  after: Revision,
+  reply: SecurityReviewReply,
+): boolean {
+  if (reply.security !== null) {
+    return sameSecuritySubject(after, revision);
+  }
+  return still(after);
 }
 
 // Code/input movement discards a verdict; target movement expires only clearance.
@@ -158,7 +137,7 @@ async function freshReview(
     );
   }
   if (
-    !still(after) ||
+    !reviewDecisionHolds({ revision, still }, after, reply) ||
     (reply.security === null &&
       target !== undefined &&
       fresh.baseSha !== target.sha)
@@ -171,49 +150,6 @@ async function freshReview(
     );
   }
   return { ok: true, value: reply };
-}
-
-// The receipt of `reply`, the review of exactly `revision`: its comment
-// posted and the receipt saved, approval or rejection, before anything
-// publishes or stops.
-async function recorded(
-  ctx: RoleContext,
-  state: IssueState,
-  {
-    revision,
-    reply,
-    target,
-  }: {
-    revision: Revision;
-    reply: SecurityReviewReply;
-    target?: ReviewedTarget | undefined;
-  },
-): Promise<Step<IssueState>> {
-  let on: "issue" | "pr" = "pr";
-  if (state.pr === null) {
-    on = "issue";
-  }
-  const commentId = await ctx.post({
-    key: securityCommentKey(revision),
-    on,
-    role: "reviewer",
-    body: reviewBody(reply, revision),
-  });
-  const finding = reply.security;
-  let entry = "security review: no finding";
-  if (finding !== null) {
-    entry = `security review: ${finding.category}`;
-  }
-  let security: IssueState["security"] = { revision, commentId, finding };
-  if (target !== undefined) {
-    security = { ...security, phase: "candidate", target };
-  }
-  const reviewed = logged({ ...state, security }, entry);
-  await ctx.save(reviewed);
-  if (finding !== null) {
-    return ended(securityStop(reviewed, finding));
-  }
-  return { ok: true, value: reviewed };
 }
 
 function candidateGate(
@@ -247,6 +183,35 @@ function candidateGate(
   return null;
 }
 
+function reusableSecurity(
+  ctx: RoleContext,
+  state: IssueState,
+  result: MergedResult,
+): NonNullable<IssueState["security"] | IssueState["resultSecurity"]> | null {
+  const { revision, target } = result;
+  let saved: IssueState["security"] | IssueState["resultSecurity"] =
+    state.security;
+  if (result.resultTarget !== undefined) {
+    saved = state.resultSecurity;
+  }
+  if (
+    saved !== undefined &&
+    saved !== null &&
+    sameRevision(saved.revision, revision) &&
+    ((target === undefined &&
+      !("phase" in saved) &&
+      (result.resultTarget === undefined ||
+        targetHolds(ctx.cfg, saved.target, result.resultTarget.sha))) ||
+      (target !== undefined &&
+        "phase" in saved &&
+        saved.phase === "candidate" &&
+        targetHolds(ctx.cfg, saved.target, target.sha)))
+  ) {
+    return saved;
+  }
+  return null;
+}
+
 // The security receipt for exactly `result.revision`: the saved one when it
 // is for this revision, with no session, or a fresh review's. Ends with the
 // category's stop on a finding, the saved one included.
@@ -261,18 +226,30 @@ async function securityReviewed(
     return ended(rejected);
   }
   const gate = candidateGate(ctx, state, target);
+  if (target !== undefined && revision.policy !== configPolicyDigest(ctx.cfg)) {
+    return ended(
+      toReview(state, "candidate checking policy needs fresh hardening"),
+    );
+  }
+  const originalTarget = resultReviewTarget(state, revision);
+  if (
+    result.resultTarget !== undefined &&
+    (revision.policy !== configPolicyDigest(ctx.cfg) ||
+      originalTarget === null ||
+      !targetHolds(ctx.cfg, result.resultTarget, originalTarget.sha))
+  ) {
+    return ended(
+      errorStop(
+        state,
+        "current-policy result review has no original candidate provenance",
+      ),
+    );
+  }
   if (gate !== null) {
     return ended(gate);
   }
-  const saved = state.security;
-  if (
-    saved !== null &&
-    sameRevision(saved.revision, revision) &&
-    ((target === undefined && saved.phase === undefined) ||
-      (target !== undefined &&
-        saved.phase === "candidate" &&
-        targetHolds(ctx.cfg, saved.target, target.sha)))
-  ) {
+  const saved = reusableSecurity(ctx, state, result);
+  if (saved !== null) {
     if (saved.finding === null) {
       return { ok: true, value: state };
     }
@@ -286,6 +263,7 @@ async function securityReviewed(
     revision,
     reply: reply.value,
     target,
+    resultTarget: result.resultTarget,
   });
 }
 

@@ -40,6 +40,7 @@ const WRITE_STATE = ISSUE_STATE.pick({
   hardenedTarget: ISSUE_STATE.shape.hardenedTarget.removeCatch().optional(),
   integration: ISSUE_STATE.shape.integration.removeCatch(),
   security: ISSUE_STATE.shape.security.removeCatch(),
+  resultSecurity: ISSUE_STATE.shape.resultSecurity,
   gherkin: ISSUE_STATE.shape.gherkin.removeCatch(),
 });
 

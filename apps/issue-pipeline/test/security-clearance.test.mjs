@@ -14,7 +14,12 @@ const { newIssueState } = await import("../src/state.ts");
 
 const ISSUE = 7;
 const COMMENT = 3;
-const REVISION = { code: "candidate", inputs: "trusted-inputs" };
+const { policyRevision } = await import("../src/project-policy.ts");
+const REVISION = {
+  code: "candidate",
+  inputs: "trusted-inputs",
+  ...policyRevision(cfg),
+};
 const TARGET = { repo: cfg.repo, branch: cfg.baseBranch, sha: TARGET_SHA };
 const CLEAR = {
   revision: REVISION,
@@ -159,6 +164,61 @@ test("fresh configured repository, literal branch and advertised target must all
   };
   assert.notEqual(
     candidateRefusal(saved, REVISION, cfg, TARGET.sha),
+    undefined,
+  );
+});
+
+const KNOWN_HARM = /private data/u;
+const RESULT_REJECTION = {
+  revision: { ...REVISION, ...policyRevision(cfg) },
+  target: TARGET,
+  commentId: COMMENT,
+  finding: {
+    category: /** @type {const} */ ("rights"),
+    reason: "private data",
+  },
+};
+test("a same-subject result rejection blocks direct premerge authorization", () => {
+  assert.match(
+    candidateRefusal(
+      { ...SAVED, resultSecurity: RESULT_REJECTION },
+      REVISION,
+      cfg,
+      TARGET.sha,
+    ) ?? "",
+    KNOWN_HARM,
+  );
+});
+test("policy movement does not bypass a same-subject result rejection", () => {
+  const changed = {
+    ...REVISION,
+    ...policyRevision({ ...cfg, commandTimeoutMinutes: 123 }),
+  };
+  assert.notEqual(changed.policy, REVISION.policy);
+  assert.match(
+    candidateRefusal(
+      { ...SAVED, resultSecurity: RESULT_REJECTION },
+      changed,
+      cfg,
+      TARGET.sha,
+    ) ?? "",
+    KNOWN_HARM,
+  );
+});
+test("a result rejection of different code does not block cleared candidate authorization", () => {
+  const resultSecurity = {
+    ...RESULT_REJECTION,
+    revision: { ...RESULT_REJECTION.revision, code: "other" },
+  };
+  assert.equal(
+    candidateRefusal({ ...SAVED, resultSecurity }, REVISION, cfg, TARGET.sha),
+    undefined,
+  );
+});
+test("a null result finding does not block cleared candidate authorization", () => {
+  const resultSecurity = { ...RESULT_REJECTION, finding: null };
+  assert.equal(
+    candidateRefusal({ ...SAVED, resultSecurity }, REVISION, cfg, TARGET.sha),
     undefined,
   );
 });

@@ -27,6 +27,7 @@ import {
 } from "./ops-publish-test-kit.mjs";
 import { mergedAt } from "./publication-integration-fixtures.mjs";
 
+const { policyRevision } = await import("../../src/project-policy.ts");
 const { merge } = await import("../../src/ops/merge.ts");
 const { finishIssue } = await import("../../src/ops/finish.ts");
 
@@ -43,7 +44,7 @@ const NOT_BOUND = /merge authorization .* is not bound to the saved result/u;
 function chainOf(w) {
   return {
     reviewed: { code: REVIEWED_CODE, inputs: "inputs-1" },
-    integrated: { code: w.sha, inputs: "inputs-1" },
+    integrated: { code: w.sha, inputs: "inputs-1", ...policyRevision(w.cfg) },
   };
 }
 
@@ -92,7 +93,11 @@ test("merge refuses the Reviewer's integrated head without fresh hardening, writ
 
 test("merge without an integration says hardening passed on the merged head", () => {
   const w = world();
-  const approved = { code: w.sha, inputs: "inputs-1" };
+  const approved = {
+    code: w.sha,
+    inputs: "inputs-1",
+    ...policyRevision(w.cfg),
+  };
   openAt(w, approved);
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
@@ -143,7 +148,11 @@ test("merge refuses a revision the state doesn't authorize, a forged receipt's o
 
 test("merge refuses a draft at the approved head without marking it ready", () => {
   const w = world();
-  const approved = { code: w.sha, inputs: "inputs-1" };
+  const approved = {
+    code: w.sha,
+    inputs: "inputs-1",
+    ...policyRevision(w.cfg),
+  };
   openAt(w, approved);
   fakeGh.reply([
     savedListing(boundState(w, approved)),

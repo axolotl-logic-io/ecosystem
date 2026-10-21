@@ -3,6 +3,8 @@
 import type { Config } from "./config.ts";
 import { legacyWikiOf } from "./merge-provenance.ts";
 import { recordedAuthorization } from "./merged-authorization.ts";
+import { configPolicyDigest } from "./project-policy.ts";
+import type { ReviewedTarget } from "./reviewed-target.ts";
 import { targetHolds } from "./reviewed-target.ts";
 import type { IssueState, Revision, Security } from "./state.ts";
 import { approvalHolds, sameRevision } from "./state.ts";
@@ -42,7 +44,18 @@ function candidateRefusal(
   sha: string,
 ): string | undefined {
   const { security } = saved;
+  for (const receipt of [security, saved.resultSecurity]) {
+    if (
+      receipt !== undefined &&
+      receipt !== null &&
+      receipt.finding !== null &&
+      sameSecuritySubject(receipt.revision, revision)
+    ) {
+      return findingRefusal(receipt);
+    }
+  }
   if (
+    revision.policy !== configPolicyDigest(cfg) ||
     !approvalHolds(saved, revision) ||
     saved.verifiedSha !== revision.code ||
     !targetHolds(cfg, saved.hardenedTarget, sha) ||
@@ -55,7 +68,9 @@ function candidateRefusal(
   return findingRefusal(security);
 }
 
-function findingRefusal(security: Security): string | undefined {
+function findingRefusal(
+  security: Pick<Security, "finding">,
+): string | undefined {
   if (security.finding !== null) {
     const { category, reason } = security.finding;
     return `the security review stopped this revision (${category}): ${reason}`;
@@ -71,18 +86,46 @@ function securityRefusal(
   result: Revision,
 ): string | undefined {
   const security = saved?.security;
+  for (const receipt of [security, saved?.resultSecurity]) {
+    if (
+      receipt !== undefined &&
+      receipt !== null &&
+      receipt.finding !== null &&
+      sameSecuritySubject(receipt.revision, result)
+    ) {
+      return findingRefusal(receipt);
+    }
+  }
+  const observed = saved?.resultSecurity;
   if (
-    security !== undefined &&
-    security !== null &&
-    security.finding !== null &&
-    sameSecuritySubject(security.revision, result)
+    saved !== null &&
+    observed !== undefined &&
+    observed !== null &&
+    sameRevision(observed.revision, result)
   ) {
-    return findingRefusal(security);
+    const target = resultReviewTarget(saved, result);
+    if (target !== null && sameTarget(observed.target, target)) {
+      return findingRefusal(observed);
+    }
   }
   if (security === null || security === undefined) {
     return "no security review is saved";
   }
   if (security.phase === "candidate") {
+    return candidateResultRefusal(saved, result);
+  }
+  if (!sameRevision(security.revision, result)) {
+    return `no security review of the merged result (code ${String(result.code)}, inputs ${result.inputs}) is saved`;
+  }
+  return findingRefusal(security);
+}
+
+function candidateResultRefusal(
+  saved: IssueState | null,
+  result: Revision,
+): string | undefined {
+  const security = saved?.security;
+  if (security?.phase === "candidate") {
     let authorized: Revision | null = null;
     if (saved !== null) {
       authorized = recordedAuthorization(saved);
@@ -102,15 +145,39 @@ function securityRefusal(
     ) {
       return "candidate Security clearance is not bound to this own merged result";
     }
-  } else if (!sameRevision(security.revision, result)) {
-    return `no security review of the merged result (code ${String(result.code)}, inputs ${result.inputs}) is saved`;
+    return findingRefusal(security);
   }
-  return findingRefusal(security);
+  return "no original candidate clearance is saved";
+}
+
+function sameTarget(a: ReviewedTarget, b: ReviewedTarget): boolean {
+  return a.repo === b.repo && a.branch === b.branch && a.sha === b.sha;
+}
+
+// This only permits a result-phase observation; callers confirm merged truth independently.
+function resultReviewTarget(
+  saved: IssueState,
+  result: Revision,
+): ReviewedTarget | null {
+  const { merged, hardenedTarget } = saved;
+  if (
+    merged === null ||
+    hardenedTarget === null ||
+    merged.policy === undefined ||
+    result.policy === undefined ||
+    merged.policy === result.policy ||
+    !sameSecuritySubject(merged, result) ||
+    candidateResultRefusal(saved, merged) !== undefined
+  ) {
+    return null;
+  }
+  return hardenedTarget;
 }
 
 export {
   candidateRefusal,
   currentResultObservation,
+  resultReviewTarget,
   sameSecuritySubject,
   securityRefusal,
 };

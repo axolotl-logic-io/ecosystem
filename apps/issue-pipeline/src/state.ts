@@ -151,6 +151,14 @@ const ISSUE_STATE = z.object({
   integration: INTEGRATION.nullable().catch(null),
   // Exact Security clearance/rejection (security-clearance.ts).
   security: SECURITY.nullable().catch(null),
+  // A read-only current-policy result observation preserves candidate history.
+  resultSecurity: SECURITY_VERDICT.strict()
+    .extend({
+      revision: REVISION.extend({ policy: REVISION.shape.policy.unwrap() }),
+      target: REVIEWED_TARGET,
+    })
+    .nullable()
+    .optional(),
   verifiedSha: z.string().nullable().catch(null),
   mergeReturn: MERGE_RETURN.nullable().catch(null),
   merged: REVISION.nullable().catch(null),

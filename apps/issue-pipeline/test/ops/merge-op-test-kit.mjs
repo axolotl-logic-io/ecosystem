@@ -3,10 +3,12 @@
 import { setCurrentRevision } from "./fake-ops-publish-revision.mjs";
 import { boundState, ISSUE, PR, sh } from "./ops-publish-test-kit.mjs";
 
+const { policyRevision } = await import("../../src/project-policy.ts");
+
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
-/** @param {World} w @returns {{ code: string, inputs: string }} */
+/** @param {World} w @returns {import("../../src/state.ts").Revision & {code: string}} */
 function approvedOf(w) {
-  return { code: w.sha, inputs: "inputs-1" };
+  return { code: w.sha, inputs: "inputs-1", ...policyRevision(w.cfg) };
 }
 
 /** @param {World} w @param {object} [extra] @returns {object} */
