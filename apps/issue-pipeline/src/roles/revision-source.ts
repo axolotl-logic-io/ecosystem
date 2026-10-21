@@ -1,7 +1,8 @@
 // The issue's revision as the Reviewer reads it, fresh from the
-// `current-revision` op: its code head and trusted-inputs revision, and its PR as GitHub reports it. The Reviewer reads it before
-// and after each step that binds a revision, so a verdict, a hardening or an
-// integration of a revision that moved meanwhile is never recorded.
+// `current-revision` op: its code head and trusted-inputs revision, and its
+// PR as GitHub reports it. The Reviewer reads it before and after each step
+// that binds a revision, so a verdict, a hardening or an integration of a
+// revision that moved meanwhile is never recorded.
 
 import { z } from "zod";
 import type { RoleContext } from "../job/role-context.ts";
