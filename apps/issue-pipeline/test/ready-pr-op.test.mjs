@@ -21,7 +21,7 @@ import {
 const { readyPr: readyPrOp } = await import("../src/ops/ready-pr.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
-/** @typedef {{ code: string | null, wiki: string | null, inputs: string }} Revision */
+/** @typedef {import("../src/state.ts").Revision} Revision */
 /** @typedef {import("../src/state.ts").IssueState} IssueState */
 /** @typedef {import("./fake-gh.mjs").GhReply} GhReply */
 
@@ -37,7 +37,7 @@ const TARGET_REFUSAL = /targets .+, not integration/u;
 
 /** @param {World} w @returns {Revision} */
 function reviewedOf(w) {
-  return { code: w.sha, wiki: null, inputs: "inputs-1" };
+  return { code: w.sha, inputs: "inputs-1" };
 }
 
 // Issue #7 hardened (and approved, as a legacy review) at `approved`, saved

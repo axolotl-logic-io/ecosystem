@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { legacyWikiOf } from "../../merge-provenance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -136,7 +137,7 @@ async function finishCompleted(
     return rejected;
   }
   if (
-    merged.wiki !== null &&
+    legacyWikiOf(merged) !== null &&
     (state.security === null || !sameRevision(state.security.revision, merged))
   ) {
     return failed(

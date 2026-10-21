@@ -37,6 +37,7 @@ const DONE = {
 };
 
 test("a code-only done completion rechecks M before reviewing missing security", async () => {
+  // Saved while the pipeline had a wiki: its revisions name a null wiki head.
   const codeOnly = { ...MERGED_REVISION, wiki: null };
   const afterCodeMerge = current(codeOnly, AFTER_MERGE.pr);
   const { ctx, calls } = fakeContext({
@@ -45,7 +46,7 @@ test("a code-only done completion rechecks M before reviewing missing security",
       ...DONE,
       hardened: { ...REVISION, wiki: null },
       merged: codeOnly,
-      flows: { code: true, wiki: false },
+      flows: { code: true },
     },
     ops: {
       "current-revision": [afterCodeMerge, afterCodeMerge],

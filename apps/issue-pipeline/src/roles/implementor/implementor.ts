@@ -74,7 +74,7 @@ async function pushBranch(
     ...state,
     pr: opened.pr,
     headSha: opened.headSha,
-    flows: { code: opened.codeChanged, wiki: false },
+    flows: { code: opened.codeChanged },
   };
   if (!opened.codeChanged) {
     return withLog(

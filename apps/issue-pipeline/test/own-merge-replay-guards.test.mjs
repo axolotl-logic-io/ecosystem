@@ -44,7 +44,7 @@ function receipt() {
     ...newIssueState(ISSUE),
     stage: "merge",
     pr: PR,
-    flows: { code: true, wiki: true },
+    flows: { code: true },
     hardened: ORIGINAL,
     integration: { reviewed: ORIGINAL, revision: APPROVED },
     codeMerged: { pr: PR, sha: MERGE },

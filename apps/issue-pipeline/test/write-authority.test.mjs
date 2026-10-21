@@ -47,12 +47,10 @@ test("current saved state authorizes premerge code; codeMerged and own-merge rec
         branch: valid.branch,
         authorized: {
           code: "a".repeat(SHA_LENGTH),
-          wiki: null,
           inputs: "trusted",
         },
         hardened: {
           code: "a".repeat(SHA_LENGTH),
-          wiki: null,
           inputs: "trusted",
         },
         integration: null,
@@ -60,7 +58,7 @@ test("current saved state authorizes premerge code; codeMerged and own-merge rec
         reads: 0,
       },
     },
-    { merged: { code: "merged", wiki: null, inputs: "trusted" } },
+    { merged: { code: "merged", inputs: "trusted" } },
     {
       security: {
         revision: { code: null, wiki: "unsafe", inputs: "trusted" },

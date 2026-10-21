@@ -23,11 +23,11 @@ test("genuine code-only completion requires no invented edit, commit or push", (
   const before = opsTrace(flow).length;
   assert.equal(runStage(flow, "review").end, "next");
   const hardened = stateOf(flow);
-  assert.equal(hardened.hardened.wiki, null);
+  assert.equal("wiki" in hardened.hardened, false);
   assert.equal(runStage(flow, "merge").end, "next");
   const done = stateOf(flow);
   assert.equal(done.stage, "done");
-  assert.equal(done.merged.wiki, null);
+  assert.equal("wiki" in done.merged, false);
   assert.deepEqual(done.security.revision, done.merged);
   assert.equal(done.security.finding, null);
   assert.equal(refIn(flow.origin, BASE), code);

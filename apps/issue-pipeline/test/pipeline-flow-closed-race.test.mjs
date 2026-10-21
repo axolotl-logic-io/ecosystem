@@ -117,7 +117,6 @@ test("actual-result checks precede read-only exact Security and completion", () 
   const cleared = savedState(readWorld(flow.ghDir));
   assert.deepEqual(cleared.security.revision, {
     code: merged,
-    wiki: cleared.integration.revision.wiki,
     inputs: cleared.integration.revision.inputs,
   });
   const trace = opsTrace(flow).slice(traceStart);
@@ -145,7 +144,7 @@ test("exact clearance permits completion with merged labels and completed closur
   const done = savedState(world);
   assert.equal(done.stage, "done");
   assert.deepEqual(done.security, cleared.security);
-  assert.equal(done.security.revision.wiki, null);
+  assert.equal("wiki" in done.security.revision, false);
   const completed = world.issues.find(({ number }) => number === ISSUE);
   assert.equal(completed?.state, "closed");
   assert.equal(completed?.stateReason, "completed");

@@ -33,7 +33,7 @@ const { merge } = await import("../src/ops/merge.ts");
 const { finishWiki } = await import("../src/ops/finish.ts");
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
-/** @typedef {{ code: string | null, wiki: string | null, inputs: string }} Revision */
+/** @typedef {import("../src/state.ts").Revision} Revision */
 
 const SHORT_SHA_LENGTH = 12;
 const SECURITY_FOLLOWS =
@@ -52,8 +52,8 @@ function short(sha) {
 /** @param {World} w @returns {{ reviewed: Revision, integrated: Revision }} */
 function chainOf(w) {
   return {
-    reviewed: { code: REVIEWED_CODE, wiki: null, inputs: "inputs-1" },
-    integrated: { code: w.sha, wiki: null, inputs: "inputs-1" },
+    reviewed: { code: REVIEWED_CODE, inputs: "inputs-1" },
+    integrated: { code: w.sha, inputs: "inputs-1" },
   };
 }
 
@@ -119,7 +119,7 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
 
 test("merge without an integration says hardening passed on the merged head", () => {
   const w = world();
-  const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
+  const approved = { code: w.sha, inputs: "inputs-1" };
   openAt(w, approved);
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
@@ -170,7 +170,7 @@ test("merge refuses a revision the state doesn't authorize, a forged receipt's o
 
 test("merge refuses a draft at the approved head without marking it ready", () => {
   const w = world();
-  const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
+  const approved = { code: w.sha, inputs: "inputs-1" };
   openAt(w, approved);
   fakeGh.reply([
     savedListing(approvedState(approved)),

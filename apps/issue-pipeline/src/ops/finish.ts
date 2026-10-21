@@ -15,7 +15,7 @@ import { parseRequest } from "../process.ts";
 import { currentRevision } from "../revision.ts";
 import { readState } from "../saved-state.ts";
 import type { IssueState, Revision } from "../state.ts";
-import { ISSUE_STATE } from "../state.ts";
+import { ISSUE_STATE, sameRevision } from "../state.ts";
 import type { FinishRefusal } from "./finish-guard.ts";
 import { finishGate } from "./finish-guard.ts";
 
@@ -111,13 +111,7 @@ function closingText(cfg: Config, state: IssueState, merged: Revision): string {
 }
 
 function sameMerged(a: Revision | null, b: Revision | null): boolean {
-  return (
-    a !== null &&
-    b !== null &&
-    a.code === b.code &&
-    a.wiki === b.wiki &&
-    a.inputs === b.inputs
-  );
+  return a !== null && b !== null && sameRevision(a, b);
 }
 
 // The completion cleanup, every step safe to repeat: the code branch, the

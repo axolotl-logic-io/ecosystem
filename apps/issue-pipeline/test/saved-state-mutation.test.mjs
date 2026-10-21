@@ -228,7 +228,7 @@ test("an explicit genuine v1 state cannot be adopted by a claim", () => {
     pr: LEGACY_PR,
     headSha,
     lease: { ...LANE, at: "2020-01-01T00:00:00Z" },
-    flows: { code: true, wiki: false },
+    flows: { code: true },
     log: ["Retained legacy work"],
   };
   const comments = [stateComment(STATE_ID, legacy), myClaim(2)];

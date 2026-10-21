@@ -84,7 +84,7 @@ async function pushIntegrated(
       ...state,
       headSha: pushed.headSha,
       verifiedSha: verified,
-      flows: { code: pushed.codeChanged, wiki: false },
+      flows: { code: pushed.codeChanged },
     },
   };
 }

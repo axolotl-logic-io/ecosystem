@@ -112,7 +112,7 @@ test("external recovery completes without a pipeline merge POST or code push", (
   assert.equal(done.stage, "done");
   assert.equal(done.mergeAttempt, null);
   assert.deepEqual(done.merged, done.security.revision);
-  assert.equal(done.merged.wiki, null);
+  assert.equal("wiki" in done.merged, false);
   assert.equal(
     world.issues.find(({ number }) => number === ISSUE)?.state,
     "closed",

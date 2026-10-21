@@ -5,6 +5,7 @@ import { z } from "zod";
 import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import { legacyWikiOf } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, sleepMs } from "../process.ts";
 import { confirmMerged, currentRevision } from "../revision.ts";
@@ -188,10 +189,10 @@ function readEvidence(
     current.pr.headSha !== attempt.authorized.code ||
     current.pr.mergeCommit !== result ||
     current.revision.inputs !== attempt.authorized.inputs ||
-    current.revision.wiki !== attempt.authorized.wiki
+    legacyWikiOf(current.revision) !== legacyWikiOf(attempt.authorized)
   ) {
     throw new OpsError(
-      "PR, trusted inputs or wiki no longer match the original authorization",
+      "PR, trusted inputs or legacy wiki head no longer match the original authorization",
     );
   }
   if (!withinDeadline()) {

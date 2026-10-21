@@ -46,7 +46,7 @@ for (const result of [
 ]) {
   test(`invalid approval refuses before branch merge: ${JSON.stringify(result)}`, () => {
     const w = world();
-    const revision = { code: w.sha, wiki: null, inputs: "inputs-1" };
+    const revision = { code: w.sha, inputs: "inputs-1" };
     setCurrentRevision({ revision, baseSha: "base", pr: null });
     const response = { ...result };
     if (response.commit === "head") {
@@ -75,7 +75,7 @@ for (const result of [
 
 test("failed approval never attempts a branch merge", () => {
   const w = world();
-  const revision = { code: w.sha, wiki: null, inputs: "inputs-1" };
+  const revision = { code: w.sha, inputs: "inputs-1" };
   setCurrentRevision({ revision, baseSha: "base", pr: null });
   fakeGh.reply([
     savedListing(approvedState(revision)),

@@ -169,7 +169,7 @@ function codeMergedOf(pr: PullRequest | null): CodeMerged | null {
 // Issue `n`'s current revision, read afresh: its trusted inputs from GitHub
 // (rewriting the issue file), its PR from `state.pr` or its branch, its code
 // head (the merge commit once GitHub says the PR merged, else the checkout's
-// HEAD). Its wiki head is always null: issues have no wiki.
+// HEAD).
 function currentRevision(
   cfg: Config,
   n: number,
@@ -186,11 +186,7 @@ function currentRevision(
   const baseSha = gitIn(wt, ["rev-parse", `origin/${cfg.baseBranch}`]).trim();
   const checkoutHead = head(wt);
   return {
-    revision: {
-      code: codeMerged?.sha ?? checkoutHead,
-      wiki: null,
-      inputs,
-    },
+    revision: { code: codeMerged?.sha ?? checkoutHead, inputs },
     baseSha,
     pr,
     codeMerged,

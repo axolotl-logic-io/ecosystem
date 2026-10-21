@@ -40,8 +40,8 @@ const SHORT_SHA_LENGTH = 12;
 // result clear.
 /** @param {World} w @param {object} [extra] @returns {import("../src/state.ts").IssueState} */
 function doneState(w, extra = {}) {
-  const approved = { code: w.sha, wiki: null, inputs: "inputs-1" };
-  const merged = { code: w.mergeSha, wiki: null, inputs: "inputs-1" };
+  const approved = { code: w.sha, inputs: "inputs-1" };
+  const merged = { code: w.mergeSha, inputs: "inputs-1" };
   return {
     ...approvedState(approved),
     stage: "done",
@@ -59,7 +59,7 @@ function mergedPr(w, inputs = "inputs-1") {
     `git --git-dir=${w.root}/origin.git update-ref refs/heads/integration ${w.mergeSha}`,
   );
   setCurrentRevision({
-    revision: { code: w.mergeSha, wiki: null, inputs },
+    revision: { code: w.mergeSha, inputs },
     baseSha: "base",
     pr: {
       number: PR,
@@ -179,7 +179,7 @@ test("finish-wiki fails on a saved state that isn't a completion, or a request t
   assert.throws(() => finishWiki(w.cfg, { number: 7 }), NOT_SAVED_DONE);
   fakeGh.reply([savedListing(doneState(w))]);
   const other = doneState(w, {
-    merged: { code: "0ther", wiki: null, inputs: "x" },
+    merged: { code: "0ther", inputs: "x" },
   });
   assert.throws(
     () => finishWiki(w.cfg, { number: 7, state: other }),
@@ -192,7 +192,7 @@ test("finish-wiki fails when the saved merge commit isn't the PR's", () => {
   const w = world();
   mergedPr(w);
   const saved = doneState(w, {
-    merged: { code: "0ther", wiki: null, inputs: "inputs-1" },
+    merged: { code: "0ther", inputs: "inputs-1" },
   });
   fakeGh.reply([savedListing(saved)]);
   assert.throws(() => finishWiki(w.cfg, { number: 7 }), NOT_THE_MERGE_COMMIT);

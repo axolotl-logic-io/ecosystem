@@ -77,7 +77,7 @@ const GHERKIN_TEXT =
   "Feature: Chats\n  Scenario: list\n    Given a chat\n    Then it is listed";
 
 /** @type {import("../src/state.ts").Revision} */
-const REVISION = { code: HEAD, wiki: null, inputs: INPUTS };
+const REVISION = { code: HEAD, inputs: INPUTS };
 
 /**
  * @typedef {import("./reviewer-and-merge-role-calls-kit.mjs").Call} Call
@@ -106,7 +106,7 @@ function issueState(state = {}) {
     pr: PR,
     headSha: HEAD,
     verifiedSha: HEAD,
-    flows: { code: true, wiki: false },
+    flows: { code: true },
     ...state,
   };
 }

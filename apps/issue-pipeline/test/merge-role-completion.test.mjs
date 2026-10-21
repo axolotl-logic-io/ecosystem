@@ -163,7 +163,7 @@ test("an older completion with no code merge finishes with no PR", async () => {
     state: {
       ...DONE,
       pr: null,
-      flows: { code: false, wiki: false },
+      flows: { code: false },
       merged: { ...MERGED_REVISION, code: null },
       security: {
         ...CLEARED,

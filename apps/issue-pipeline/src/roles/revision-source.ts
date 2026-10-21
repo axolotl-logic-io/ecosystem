@@ -1,6 +1,5 @@
 // The issue's revision as the Reviewer reads it, fresh from the
-// `current-revision` op: its code head, wiki head and trusted-inputs
-// revision, and its PR as GitHub reports it. The Reviewer reads it before
+// `current-revision` op: its code head and trusted-inputs revision, and its PR as GitHub reports it. The Reviewer reads it before
 // and after each step that binds a revision, so a verdict, a hardening or an
 // integration of a revision that moved meanwhile is never recorded.
 
@@ -12,7 +11,6 @@ import { opReply } from "./op-replies.ts";
 const CURRENT_REVISION = z.looseObject({
   revision: z.object({
     code: z.string().nullable(),
-    wiki: z.string().nullable(),
     inputs: z.string().min(1),
   }),
   baseSha: z.string(),

@@ -175,7 +175,7 @@ test("a claim adopts the pipeline's own unsaved push and sends a merge back to r
         verdict: "approve",
         commentId: null,
         findings: [],
-        revision: { code: saved, wiki: null, inputs: "x" },
+        revision: { code: saved, inputs: "x" },
       },
     }),
     [historyReply(n)],
@@ -209,7 +209,7 @@ test("a claim reports a branch head the pipeline didn't push, leaving the state"
 
 test("a claim of a done issue that saved its merge reconciles it, done and unlabelled", () => {
   const n = 309;
-  const merged = { code: MERGE_OID, wiki: null, inputs: "x" };
+  const merged = { code: MERGE_OID, inputs: "x" };
   claimWorld(
     n,
     v2State(n, {

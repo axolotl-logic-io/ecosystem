@@ -129,7 +129,7 @@ async function pushHardened(
       ),
     );
   }
-  const flows = { code: true, wiki: false };
+  const flows = { code: true };
   return {
     ok: true,
     value: { ...state, headSha: pushed.headSha, verifiedSha: verified, flows },

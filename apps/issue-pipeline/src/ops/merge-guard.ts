@@ -6,6 +6,7 @@
 // undefined lets the op go on.
 
 import { z } from "zod";
+import { legacyWikiOf, REVISION } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import type { currentRevision } from "../revision.ts";
 import type { IssueState, Revision } from "../state.ts";
@@ -13,12 +14,9 @@ import { mergeAuthorization, sameRevision } from "../state.ts";
 
 type CurrentRevision = ReturnType<typeof currentRevision>;
 
-// A revision a request names: what hardening authorized (state.ts's Revision).
-const REVISION_REQUEST = z.object({
-  code: z.string().nullable(),
-  wiki: z.string().nullable(),
-  inputs: z.string().min(1),
-});
+// A revision a request names: what hardening authorized (state.ts's Revision,
+// whose legacy wiki head it keeps).
+const REVISION_REQUEST = REVISION.extend({ inputs: z.string().min(1) });
 
 interface MergeStale {
   merged: false;
@@ -83,7 +81,7 @@ function mergedAuthorizationHolds(
   if (
     authorized === null ||
     result.code !== merged.mergeCommit ||
-    authorized.wiki !== result.wiki ||
+    legacyWikiOf(authorized) !== legacyWikiOf(result) ||
     authorized.inputs !== result.inputs
   ) {
     return false;

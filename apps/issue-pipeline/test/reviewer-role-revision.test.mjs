@@ -111,7 +111,6 @@ test("after the code merged, hardening verifies the merge commit, pushes nothing
   assert.equal(state.verifiedSha, MERGE_COMMIT);
   assert.deepEqual(state.hardened, {
     code: MERGE_COMMIT,
-    wiki: null,
     inputs: INPUTS,
   });
 });

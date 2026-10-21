@@ -111,7 +111,7 @@ test("a stale head cannot be saved; a validated draft saves only its PR identity
   const job = await openJob("implement");
   try {
     const original = headOf(job.repo);
-    const revision = { code: original, wiki: null, inputs: "trusted" };
+    const revision = { code: original, inputs: "trusted" };
     const state = {
       ...newIssueState(ISSUE),
       branch: job.branch,

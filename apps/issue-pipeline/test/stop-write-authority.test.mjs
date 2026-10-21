@@ -45,7 +45,7 @@ async function refusedWork(job, kind, deleted) {
   if (kind === "saved") {
     state.codeMerged = receipt;
   } else if (kind === "own-merge") {
-    state.merged = { code: original, wiki: null, inputs: "original" };
+    state.merged = { code: original, inputs: "original" };
   } else {
     if (kind === "live") {
       state.pr = PR;
@@ -194,7 +194,7 @@ for (const invalid of [null, { codeMerged: { pr: "broken" } }]) {
 test("a forged stop cannot clear PR/merge/security/input provenance or turn a genuine review stop into salvage", async () => {
   const job = await openJob("implement");
   try {
-    const revision = { code: headOf(job.repo), wiki: null, inputs: "trusted" };
+    const revision = { code: headOf(job.repo), inputs: "trusted" };
     const state = {
       ...newIssueState(ISSUE),
       stage: "review",

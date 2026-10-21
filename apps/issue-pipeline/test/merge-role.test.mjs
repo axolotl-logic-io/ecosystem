@@ -102,6 +102,14 @@ test("the security review is a fresh read-only Reviewer session over the merge c
   assert.match(post?.body ?? "", SECURITY_COMMENT);
 });
 
+test("the security comment keeps the key a pipeline with a wiki gave the same merged code, so a comment posted before the upgrade is edited, not repeated", async () => {
+  const { ctx, calls } = merging();
+  await mergeRole(ctx);
+  const [post] = postsOf(calls);
+  const merged = MERGE_COMMIT.slice(0, SHORT_SHA_LENGTH);
+  assert.equal(post?.key, `security-${merged}-none`);
+});
+
 test("nothing integrates or pushes once the merged result is prepared for review", async () => {
   const { ctx, calls } = merging();
   await mergeRole(ctx);

@@ -12,7 +12,7 @@ const OBSERVED = z.object({
 const { confirmMerged, pullRequest } = await import("../src/revision.ts");
 
 /**
- * @typedef {{ code: string | null, wiki: string | null, inputs: string }} Revision
+ * @typedef {import("../src/state.ts").Revision} Revision
  * @typedef {{ number: number, state: "OPEN" | "CLOSED" | "MERGED", mergeCommit: string | null, headSha: string }} CurrentPr
  * @typedef {{ revision: Revision, baseSha: string, pr: CurrentPr | null }} CurrentRevision
  */

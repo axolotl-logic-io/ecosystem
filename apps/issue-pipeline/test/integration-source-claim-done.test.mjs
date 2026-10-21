@@ -94,7 +94,7 @@ test("a done wiki-only change with no PR and no code merge on GitHub is claimed 
 
 test("a done code change whose PR GitHub doesn't report merged is refused", () => {
   const n = 322;
-  const merged = { code: MERGE_OID, wiki: null, inputs: "x" };
+  const merged = { code: MERGE_OID, inputs: "x" };
   const failed = FAILED.parse(
     claimDone(n, v2State(n, { stage: "done", pr: PR, merged }), [
       prView(n, PR),
@@ -106,7 +106,7 @@ test("a done code change whose PR GitHub doesn't report merged is refused", () =
 
 test("a done code change GitHub reports merged at another commit is refused", () => {
   const n = 323;
-  const merged = { code: MERGE_OID, wiki: null, inputs: "x" };
+  const merged = { code: MERGE_OID, inputs: "x" };
   const failed = FAILED.parse(
     claimDone(n, v2State(n, { stage: "done", pr: PR, merged }), [
       prView(n, PR, { state: "MERGED", mergeCommit: { oid: OTHER_OID } }),

@@ -28,7 +28,7 @@ const MERGED_PR = {
 };
 // After the merge, current-revision gives the merge commit as the code.
 const AFTER_MERGE = current({ code: MERGE_COMMIT }, MERGED_PR);
-const MERGED_REVISION = { code: MERGE_COMMIT, wiki: null, inputs: INPUTS };
+const MERGED_REVISION = { code: MERGE_COMMIT, inputs: INPUTS };
 const CODE_MERGED = { codeMerged: { pr: PR, sha: MERGE_COMMIT } };
 const MUTATIONS = ["merge", "finish-wiki", "sync-base", "push", "ready-pr"];
 

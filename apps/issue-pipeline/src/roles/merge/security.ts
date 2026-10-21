@@ -9,6 +9,7 @@
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
+import { legacyWikiOf } from "../../merge-provenance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -31,6 +32,13 @@ type Finding = NonNullable<SecurityReviewReply["security"]>;
 
 function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
+}
+
+// The key of the security review comment on exactly `revision`. It keeps the
+// legacy wiki head's place ("none" for a revision without one), so a comment
+// posted before the wiki was removed is still found and edited, not repeated.
+function securityCommentKey(revision: Revision): string {
+  return `security-${short(revision.code)}-${short(legacyWikiOf(revision))}`;
 }
 
 // The stop for a security finding on the merged result.
@@ -69,7 +77,7 @@ async function prepare(
   revision: Revision,
   codeMerged: CodeMerged | null,
 ): Promise<z.infer<typeof PREPARED>> {
-  const tag = `security-${short(revision.code ?? revision.wiki)}`;
+  const tag = `security-${short(revision.code ?? legacyWikiOf(revision))}`;
   const reply = await ctx.op("prepare-review", {
     tag,
     sinceSha: null,
@@ -93,7 +101,7 @@ function reviewBody(reply: SecurityReviewReply, revision: Revision): string {
     lines.push(`**${reply.security.category}:** ${reply.security.reason}`, "");
   }
   lines.push(
-    `Reviewed merged code ${short(revision.code)}, wiki ${short(revision.wiki)} and trusted inputs ${short(revision.inputs)}. This review judged security alone; hardening owned the design, correctness and tests.`,
+    `Reviewed merged code ${short(revision.code)} and trusted inputs ${short(revision.inputs)}. This review judged security alone; hardening owned the design, correctness and tests.`,
   );
   return lines.join("\n");
 }
@@ -151,7 +159,7 @@ async function freshReview(
     return ended(
       waiting(
         logged(state, "security review discarded: the revision moved"),
-        "the code or wiki head moved during the security review, so it is discarded",
+        "the code head moved during the security review, so it is discarded",
       ),
     );
   }
@@ -171,7 +179,7 @@ async function recorded(
     on = "issue";
   }
   const commentId = await ctx.post({
-    key: `security-${short(revision.code)}-${short(revision.wiki)}`,
+    key: securityCommentKey(revision),
     on,
     role: "reviewer",
     body: reviewBody(reply, revision),

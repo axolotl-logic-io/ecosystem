@@ -72,7 +72,7 @@ test("a saved own-merge receipt closes code authority before claim sets codeMerg
       ...newIssueState(ISSUE),
       branch: "agent/issue-7",
       stage: "merge",
-      merged: { code: headOf(job.repo), wiki: null, inputs: "trusted" },
+      merged: { code: headOf(job.repo), inputs: "trusted" },
       codeMerged: null,
     });
     write(job.repo, "README.md", "unauthorized\n");

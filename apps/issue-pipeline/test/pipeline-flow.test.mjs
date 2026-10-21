@@ -150,7 +150,7 @@ test("hardening, integration and final security get pinned pages and truthful re
   assert.match(String(integrate?.prompt), GHERKIN_IN_PROMPT);
   const state = savedState(readWorld(flow.ghDir));
   assert.ok(String(security?.prompt).includes(state.merged.code));
-  assert.equal(state.merged.wiki, null);
+  assert.equal("wiki" in state.merged, false);
   assert.deepEqual(state.integration.reviewed, state.hardened);
   assert.notEqual(state.integration.revision.code, state.hardened.code);
   assert.deepEqual(state.security.revision, state.merged);

@@ -62,13 +62,13 @@ test("the tests run under a temporary pipeline root", () => {
   assert.ok(TEMPORARY_ROOT.startsWith(os.tmpdir()));
 });
 
-const MERGED_RESULT = { code: shaOf("2"), wiki: null, inputs: INPUTS };
+const MERGED_RESULT = { code: shaOf("2"), inputs: INPUTS };
 const REJECTED = { category: /** @type {const} */ ("rights"), reason: "x" };
 const EARLIER = {
-  hardened: { code: HEAD, wiki: null, inputs: INPUTS },
+  hardened: { code: HEAD, inputs: INPUTS },
   integration: {
-    reviewed: { code: HEAD, wiki: null, inputs: INPUTS },
-    revision: { code: shaOf("1"), wiki: null, inputs: INPUTS },
+    reviewed: { code: HEAD, inputs: INPUTS },
+    revision: { code: shaOf("1"), inputs: INPUTS },
   },
   security: { revision: MERGED_RESULT, commentId: 9, finding: null },
   review: {
@@ -112,7 +112,7 @@ test("a clean run works, pushes the draft with no sync or verify, and goes to re
   assert.equal(end.state.integration, null);
   assert.equal(end.state.security, null);
   assert.equal(end.state.review.verdict, null);
-  assert.deepEqual(end.state.flows, { code: true, wiki: false });
+  assert.deepEqual(end.state.flows, { code: true });
   assert.equal(end.state.mergeReturn, null);
 });
 
@@ -226,7 +226,7 @@ test("a branch that changes nothing still goes to review, and says so", async ()
   assert.equal(opNames(ops).at(-1), "open-pr");
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
-  assert.deepEqual(end.state.flows, { code: false, wiki: false });
+  assert.deepEqual(end.state.flows, { code: false });
   assert.match(end.state.log.at(-2) ?? "", CHANGES_NOTHING);
 });
 
@@ -244,7 +244,7 @@ test("a branch whose existing change already does the Gherkin is pushed as it is
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
   assert.equal(end.state.headSha, HEAD);
-  assert.deepEqual(end.state.flows, { code: true, wiki: false });
+  assert.deepEqual(end.state.flows, { code: true });
 });
 
 test("a failed op propagates as its OpsFailure, and a malformed reply fails", async () => {

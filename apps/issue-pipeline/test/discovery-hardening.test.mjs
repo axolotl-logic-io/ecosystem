@@ -30,7 +30,7 @@ for (const evidence of [
     }
     if (evidence.endsWith("receipt")) {
       hub.state.stage = "implement";
-      const revision = { code: SHA, wiki: null, inputs: hub.revision };
+      const revision = { code: SHA, inputs: hub.revision };
       if (evidence === "merged-receipt") {
         hub.state.merged = revision;
       } else {

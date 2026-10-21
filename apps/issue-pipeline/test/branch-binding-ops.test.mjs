@@ -47,9 +47,9 @@ function assignedCfg(w) {
   return withCheckout(w.cfg, { issue: 7, dir: w.worktree, branch: ASSIGNED });
 }
 
-/** @param {World} w @returns {{ code: string, wiki: null, inputs: string }} */
+/** @param {World} w @returns {{ code: string, inputs: string }} */
 function approvedOf(w) {
-  return { code: w.sha, wiki: null, inputs: "inputs-1" };
+  return { code: w.sha, inputs: "inputs-1" };
 }
 
 /** @param {World} w @param {IssueState} state @returns {object} */
@@ -133,7 +133,7 @@ function doneOn(w, branch) {
   sh(
     `git --git-dir=${w.root}/origin.git update-ref refs/heads/${branch} ${w.sha}`,
   );
-  const merged = { code: w.mergeSha, wiki: null, inputs: "inputs-1" };
+  const merged = { code: w.mergeSha, inputs: "inputs-1" };
   setCurrentRevision({
     revision: merged,
     baseSha: "base",

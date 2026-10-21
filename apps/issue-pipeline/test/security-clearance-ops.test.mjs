@@ -34,8 +34,8 @@ const FINDING = { category: "user-harm", reason: "leaks the users' tokens" };
 /** @param {World} w @returns {{ approved: Revision, result: Revision }} */
 function chainOf(w) {
   return {
-    approved: { code: w.sha, wiki: null, inputs: "inputs-1" },
-    result: { code: MERGE_COMMIT, wiki: null, inputs: "inputs-1" },
+    approved: { code: w.sha, inputs: "inputs-1" },
+    result: { code: MERGE_COMMIT, inputs: "inputs-1" },
   };
 }
 
@@ -43,7 +43,7 @@ function chainOf(w) {
 /** @param {World} w @returns {void} */
 function merged(w) {
   setCurrentRevision({
-    revision: { code: MERGE_COMMIT, wiki: null, inputs: "inputs-1" },
+    revision: { code: MERGE_COMMIT, inputs: "inputs-1" },
     baseSha: "base",
     pr: {
       number: PR,
@@ -92,7 +92,7 @@ test("finish-wiki fails on a change with no PR saved as merging code", () => {
     ...approvedState(approved),
     stage: "done",
     pr: null,
-    flows: { code: true, wiki: false },
+    flows: { code: true },
     merged: approved,
     security: securityOf(approved),
   };

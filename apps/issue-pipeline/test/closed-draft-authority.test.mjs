@@ -37,7 +37,7 @@ function invalidateDraft(job, state, view, bad) {
     state.merged = null;
   }
   if (bad === "code-flow") {
-    state.flows = { code: true, wiki: true };
+    state.flows = { code: true };
   }
   if (bad === "dirty-code") {
     write(job.repo, "README.md", "local edits\n");
@@ -83,7 +83,7 @@ async function closedDraft(bad) {
     stage: "done",
     branch: job.branch,
     headSha: original,
-    flows: { code: false, wiki: true },
+    flows: { code: false },
     merged: revision,
     hardened: { ...revision, code: original },
     security: { revision, commentId: 9, finding: null },

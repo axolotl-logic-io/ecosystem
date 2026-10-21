@@ -19,7 +19,7 @@ import {
 const PREREQ = 9;
 const SHA_LENGTH = 40;
 // What a completed issue's merge role saved as merged.
-const MERGED = { code: "c".repeat(SHA_LENGTH), wiki: null, inputs: "inputs-1" };
+const MERGED = { code: "c".repeat(SHA_LENGTH), inputs: "inputs-1" };
 const COMPLETED = /** @type {const} */ ({
   stage: "done",
   pr: 40,

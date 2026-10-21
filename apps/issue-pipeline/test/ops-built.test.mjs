@@ -44,7 +44,6 @@ const BEFORE_MERGE_VIEWS = 3;
 const CURRENT = z.looseObject({
   revision: z.object({
     code: z.string(),
-    wiki: z.string().nullable(),
     inputs: z.string(),
   }),
 });

@@ -100,7 +100,7 @@ function world() {
 /**
  * Issue #7's state at merge: PR #50, hardened (and approved, as a legacy
  * review) at `approved`, with `extra`.
- * @param {{ code: string | null, wiki: string | null, inputs: string }} approved
+ * @param {import("../src/state.ts").Revision} approved
  * @param {object} [extra]
  * @returns {import("../src/state.ts").IssueState}
  */
@@ -109,7 +109,7 @@ function approvedState(approved, extra = {}) {
     ...newIssueState(ISSUE),
     stage: "merge",
     pr: PR,
-    flows: { code: true, wiki: approved.wiki !== null },
+    flows: { code: true },
     review: {
       round: 0,
       verdict: "approve",

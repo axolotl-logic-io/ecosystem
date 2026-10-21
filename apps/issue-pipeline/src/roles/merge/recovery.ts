@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { legacyWikiOf } from "../../merge-provenance.ts";
 import { mergeAuthorization } from "../../state.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
@@ -94,8 +95,8 @@ async function recoverOwnMerge(
     pr.headSha !== authorized.code ||
     pr.mergeCommit !== merged.code ||
     revision.code !== merged.code ||
-    authorized.wiki !== merged.wiki ||
-    revision.wiki !== merged.wiki
+    legacyWikiOf(authorized) !== legacyWikiOf(merged) ||
+    legacyWikiOf(revision) !== legacyWikiOf(merged)
   ) {
     return null;
   }

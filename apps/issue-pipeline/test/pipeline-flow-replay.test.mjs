@@ -246,7 +246,7 @@ test("missing security is reviewed read-only at the actual first-parent merge di
   const done = savedState(world);
   assert.equal(done.stage, "done");
   assert.deepEqual(done.security, approved.security);
-  assert.equal(done.security.revision.wiki, null);
+  assert.equal("wiki" in done.security.revision, false);
   assert.equal(
     world.issues.find(({ number }) => number === ISSUE)?.state,
     "closed",

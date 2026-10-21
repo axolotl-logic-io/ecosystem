@@ -20,9 +20,9 @@ import {
 const { merge } = await import("../src/ops/merge.ts");
 const TARGET_REFUSAL = /targets .+, not integration/u;
 
-/** @param {import("./ops-publish-test-kit.mjs").World} w @returns {{ code: string, wiki: null, inputs: string }} */
+/** @param {import("./ops-publish-test-kit.mjs").World} w @returns {{ code: string, inputs: string }} */
 function approvedOf(w) {
-  return { code: w.sha, wiki: null, inputs: "inputs-1" };
+  return { code: w.sha, inputs: "inputs-1" };
 }
 
 /** @param {import("./ops-publish-test-kit.mjs").World} w @returns {object} */
