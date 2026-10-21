@@ -78,7 +78,7 @@ test("stop with a reason no stop names and no code is the error stop", () => {
       stopCode: "error",
     },
   );
-  assert.equal(state.stoppedStage, "author");
+  assert.equal(state.stoppedStage, "implement");
 });
 
 test("stop with an empty reason is refused, writing nothing", () => {

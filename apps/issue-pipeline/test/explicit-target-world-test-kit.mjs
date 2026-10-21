@@ -63,6 +63,7 @@ if (root.ROOT !== ROOT || root.HOME !== HOME) {
 const { loadConfig, paths } = await import("../src/config.ts");
 const { stateBody } = await import("../src/saved-state.ts");
 const { newIssueState } = await import("../src/state.ts");
+const { COMMENT } = await import("../src/comments.ts");
 
 const ISSUE = 7;
 const PR = 50;
@@ -74,9 +75,27 @@ const ISSUE_DATA = {
   body: "Deliver the complete change",
   user: { login: "owner" },
 };
+// No human comments precede this original Author revision. Its canonical
+// trusted-input bytes therefore contain only the original issue tuple.
 const INPUTS = createHash("sha256")
   .update(JSON.stringify(["issue", ISSUE_DATA.title, ISSUE_DATA.body]))
   .digest("hex");
+const GHERKIN_COMMENT = COMMENT.parse({
+  id: 41,
+  ...Object.fromEntries([["created_at", "2026-10-18T00:00:00Z"]]),
+  user: { login: "bot" },
+  lastEditedAt: null,
+  editor: null,
+  body: [
+    "```gherkin",
+    "Feature: delivery\n  Scenario: exact result",
+    "```",
+    `<!-- issue-pipeline:gherkin rev=1 inputs=${INPUTS} -->`,
+    "<!-- agent-pipeline:comment role=author -->",
+    `<!-- issue-pipeline:${ISSUE}:gherkin -->`,
+  ].join("\n"),
+});
+const GHERKIN_REF = { commentId: GHERKIN_COMMENT.id, rev: 1, inputs: INPUTS };
 /** @param {string} dir @param {string[]} args @returns {string} */
 function git(dir, args) {
   return execFileSync("git", ["-C", dir, ...args], {
@@ -168,8 +187,9 @@ function world(options = {}) {
   const revision = { code: head, inputs: INPUTS };
   /** @type {import("../src/state.ts").IssueState} */
   const state = {
-    ...newIssueState(ISSUE),
+    ...newIssueState(ISSUE, "author"),
     stage: /** @type {const} */ ("merge"),
+    gherkin: GHERKIN_REF,
     pr: PR,
     hardened: revision,
     headSha: head,
@@ -199,6 +219,7 @@ export {
   BASE,
   BRANCH,
   commit,
+  GHERKIN_COMMENT,
   git,
   HOME,
   INPUTS,

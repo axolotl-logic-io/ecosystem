@@ -9,6 +9,7 @@ import { outputEnd } from "./fake-rpc-pi.mjs";
 import {
   claimWon,
   GHERKIN_COMMENT,
+  GHERKIN_INPUTS,
   HEAD_SHA,
   repliesAt,
   stateAt,
@@ -22,7 +23,6 @@ import {
   setUp,
 } from "./job-test-kit.mjs";
 
-const INPUTS_LENGTH = 64;
 const KEY = "review-20261019T191100000Z";
 const BASE = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const PROMPT =
@@ -73,7 +73,7 @@ function reviewReplies() {
       revision: {
         code: HEAD_SHA,
         wiki: BASE,
-        inputs: "0".repeat(INPUTS_LENGTH),
+        inputs: GHERKIN_INPUTS,
       },
       baseSha: HEAD_SHA,
       pr: null,

@@ -89,7 +89,11 @@ function completion(number) {
 
 /** @param {number} number @returns {IssueState} */
 function readyToMerge(number) {
-  return { ...newIssueState(number), stage: "merge", pr: number };
+  return {
+    ...newIssueState(number, "author"),
+    stage: "merge",
+    pr: number,
+  };
 }
 
 /**
