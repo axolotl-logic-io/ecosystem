@@ -17,7 +17,7 @@ import type { IssueState } from "../state.ts";
 // The ops a role may ask for; each runs in its own `ops.mjs` process, the
 // only code that holds a token. The job alone runs claim, save-state, stop,
 // ask, release, usage and exit-push. `current-revision` reads the issue's
-// trusted inputs, the checkouts' code and wiki heads and the PR afresh from
+// trusted inputs, the checkout's code head and the PR afresh from
 // GitHub (shared-ops-contract.md).
 type OpName =
   | "current-revision"
