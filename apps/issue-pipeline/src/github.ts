@@ -106,6 +106,18 @@ function gitHelper(cfg: Config): readonly string[] {
   ];
 }
 
+// Optional internal transport boundary. Default callers have no execution and
+// retain their existing authority checks; this is not an activation setting.
+function controlledWrite(cfg: Config, write: () => RunResult): RunResult {
+  if (cfg.execution === undefined) {
+    return write();
+  }
+  if (cfg.mutation === undefined) {
+    throw new OpsError("execution mutation boundary is not bound");
+  }
+  return cfg.mutation(write);
+}
+
 function gh(
   cfg: Config,
   identity: Identity,
@@ -118,7 +130,10 @@ function gh(
     env: authenticatedEnv(cfg, identity),
   };
   if (!ghIsRead(args)) {
-    return credentialedRun("gh", redactGhArgs(args), runOptions);
+    return controlledWrite(
+      cfg,
+      (): RunResult => credentialedRun("gh", redactGhArgs(args), runOptions),
+    );
   }
   const { result } = githubRead(() =>
     credentialedRun("gh", args, { ...runOptions, allowFail: true }),
@@ -177,6 +192,13 @@ function git(
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {
+  if (args.includes("push") && cfg.execution !== undefined) {
+    const { execution: _execution, mutation: _mutation, ...transport } = cfg;
+    return controlledWrite(
+      cfg,
+      (): RunResult => git(transport, identity, args, options),
+    );
+  }
   const remote = remoteOf(args, options);
   if (LOCAL_PATH.test(remote)) {
     // Local test origins and mirrors never need or receive a credential.

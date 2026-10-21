@@ -35,6 +35,7 @@
         "src/shell-supervisor.ts",
         "src/config.ts",
         "src/locks.ts",
+        "src/execution.ts",
         "src/stop-recovery.ts",
         "src/clone-setup.ts",
         "src/checkouts.ts",
