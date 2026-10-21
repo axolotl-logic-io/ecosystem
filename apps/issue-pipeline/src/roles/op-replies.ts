@@ -22,8 +22,8 @@ const CONFLICT = z.looseObject({
   baseSha: SHA,
 });
 
-// sync-base and wiki-sync: a clean rebase (sync-base pushes one that changed
-// the branch; the wiki's is pushed with the work), or a conflict.
+// sync-base: a clean rebase (pushed when it changed the branch), or a
+// conflict.
 const SYNC_REPLY = z.union([
   z.looseObject({ conflict: z.literal(false), changed: z.boolean() }),
   CONFLICT,
@@ -36,7 +36,7 @@ const RETAINED_CONFLICT_REPLY = z.looseObject({
   reason: z.string().min(1),
 });
 
-// finish-sync and finish-wiki-sync.
+// finish-sync.
 const FINISH_REPLY = z.union([
   CONFLICT,
   z.looseObject({
@@ -64,16 +64,10 @@ const VERIFY_REPLY = z.looseObject({
   checks: z.array(CHECK),
 });
 
-const WIKI_CHECK_REPLY = z.looseObject({
-  pass: z.boolean(),
-  checks: z.array(CHECK),
-});
-
 // open-pr and push: the code head after the push and what the work changes.
 const PUSH_REPLY = z.looseObject({
   headSha: SHA,
   codeChanged: z.boolean(),
-  wikiAhead: z.number().int().nonnegative(),
 });
 
 const OPEN_PR_REPLY = PUSH_REPLY.extend({ pr: z.number().int().positive() });
@@ -138,5 +132,4 @@ export {
   START_PR_REPLY,
   SYNC_REPLY,
   VERIFY_REPLY,
-  WIKI_CHECK_REPLY,
 };

@@ -1,5 +1,5 @@
 // @ts-check
-// The merge and finish ops (src/ops/merge.ts, src/ops/publication-guard.ts,
+// The merge and finish ops (src/ops/merge.ts, src/ops/merge-guard.ts,
 // src/ops/finish-guard.ts) with the Reviewer's own integration: they merge and
 // complete only the state's authorized revision (mergeAuthorization), which a
 // receipt bound to the exact hardened revision moves to the integrated,

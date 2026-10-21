@@ -87,7 +87,7 @@ function remoteOf(args: readonly string[], options: GhOptions): string {
 // No persistent helper/keyring is consulted. The helper serves only this
 // repository, only to github.com, and never stores a credential.
 function gitHelper(cfg: Config): readonly string[] {
-  const helper = `!f() { [ "$1" = get ] || exit 0; protocol= host= path=; while IFS== read -r key value; do case "$key" in protocol) protocol=$value;; host) host=$value;; path) path=$value;; esac; done; [ "$protocol" = https ] && [ "$host" = github.com ] || exit 1; case "$path" in ${cfg.repo}.git|${cfg.repo}.wiki.git) printf 'username=x-access-token\\npassword=%s\\n' "$GH_TOKEN";; *) exit 1;; esac; }; f`;
+  const helper = `!f() { [ "$1" = get ] || exit 0; protocol= host= path=; while IFS== read -r key value; do case "$key" in protocol) protocol=$value;; host) host=$value;; path) path=$value;; esac; done; [ "$protocol" = https ] && [ "$host" = github.com ] || exit 1; case "$path" in ${cfg.repo}.git) printf 'username=x-access-token\\npassword=%s\\n' "$GH_TOKEN";; *) exit 1;; esac; }; f`;
   return [
     "-c",
     "credential.helper=",
@@ -207,13 +207,9 @@ function git(
       env: GIT_ENV,
     });
   }
-  const expected = [
-    `https://github.com/${cfg.repo}.git`,
-    `https://github.com/${cfg.repo}.wiki.git`,
-  ];
-  if (!expected.includes(remote)) {
+  if (remote !== `https://github.com/${cfg.repo}.git`) {
     throw new OpsError(
-      "credentialed git requires the configured GitHub repository or wiki HTTPS remote",
+      "credentialed git requires the configured GitHub repository HTTPS remote",
     );
   }
   const helper = gitHelper(cfg);

@@ -275,7 +275,7 @@ test("a stop after the code merged keeps its stage and says the wiki is publishe
   const body = bodyOf(stopped, `comment #${n} role=coordinator`);
   assert.ok(
     body.endsWith(
-      `To resume, fix what this names, then remove \`${label}\`. The PR has merged, so the next job reviews and publishes the wiki changes again, with every limit reset.`,
+      `To resume, fix what this names, then remove \`${label}\`. The PR has merged, so the next job checks and reviews the merged result again, with every limit reset.`,
     ),
   );
   assert.partialDeepStrictEqual(

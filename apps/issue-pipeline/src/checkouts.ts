@@ -5,7 +5,7 @@ import path from "node:path";
 import { z } from "zod";
 import { configureClone, updateSubmodules } from "./clone-setup.ts";
 import type { Config } from "./config.ts";
-import { paths, wikiCfg } from "./config.ts";
+import { paths } from "./config.ts";
 import {
   assertClean,
   commitsOffGitHub,
@@ -19,7 +19,6 @@ import { git } from "./github.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import { run, runFailure, shell } from "./process.ts";
-import { holdWikiPin, pushWikiBranch, wikiAhead } from "./wiki.ts";
 import { readWriteAuthority } from "./write-authority.ts";
 
 const TEARDOWN_TIMEOUT_MS = 300_000;
@@ -34,11 +33,10 @@ const SETUP_SETTINGS = z.looseObject({
 // The part of the push record a claim reads.
 const PUSHED = z.object({ sha: z.string(), op: z.string() });
 
-// What an issue's work changes: its code branch against the base branch, and
-// the commits its wiki checkout has that the wiki lacks.
+// What an issue's work changes: whether its code branch changes files
+// against the base branch.
 interface BranchChanges {
   codeChanged: boolean;
-  wikiAhead: number;
 }
 
 // The code head after a push, and what the work changes.
@@ -156,8 +154,6 @@ function unsavedWork(cfg: Config, n: number, pr: number | null): string | null {
   if (!fs.existsSync(path.join(wt, ".git"))) {
     return "not a git worktree";
   }
-  // The wiki checkout's own work is unsavedWiki's to judge.
-  holdWikiPin(cfg, wt);
   const dirty = uncommitted(wt, "the worktree");
   if (dirty !== null) {
     return dirty;
@@ -195,7 +191,7 @@ function lastPush(cfg: Config, n: number): PushRecord | null {
 }
 
 // What the issue's work changes: whether its branch changes files against the
-// base branch, and how many commits its wiki checkout has that the wiki lacks.
+// base branch.
 function branchChanges(cfg: Config, n: number): BranchChanges {
   const wt = paths.worktree(cfg, n);
   const args = ["diff", "--quiet", `origin/${cfg.baseBranch}...HEAD`];
@@ -203,7 +199,7 @@ function branchChanges(cfg: Config, n: number): BranchChanges {
   if (result.code > 1) {
     throw new OpsError(runFailure("git", args, result));
   }
-  return { codeChanged: result.code === 1, wikiAhead: wikiAhead(cfg, n) };
+  return { codeChanged: result.code === 1 };
 }
 
 // Pushes the issue's checkout's HEAD to its branch for `op`, recording the
@@ -229,12 +225,10 @@ function pushHead(cfg: Config, n: number, op: string): string {
   return headSha;
 }
 
-// Pushes the issue's branch for `op`, recording the push first, and its wiki
-// checkout's own commits to the wiki's branch of the same name, and returns
+// Pushes the issue's branch for `op`, recording the push first, and returns
 // the code head and what the work changes. allowEmpty lets start-pr push the
 // branch's empty first commit. Otherwise a branch that changes no files is
-// pushed only when the wiki has commits, and nothing is pushed when neither
-// changed.
+// not pushed.
 function push(
   cfg: Config,
   number: number,
@@ -242,12 +236,7 @@ function push(
   { allowEmpty = false }: { allowEmpty?: boolean } = {},
 ): PushResult {
   const wt = paths.worktree(cfg, number);
-  holdWikiPin(cfg, wt);
   assertClean(wt, "worktree");
-  const wiki = paths.wiki(cfg, number);
-  if (wikiCfg(cfg) !== null && fs.existsSync(path.join(wiki, ".git"))) {
-    assertClean(wiki, "the wiki checkout");
-  }
   const base = `origin/${cfg.baseBranch}`;
   const ahead = Number(
     gitIn(wt, ["rev-list", "--count", `${base}..HEAD`]).trim(),
@@ -256,11 +245,10 @@ function push(
     throw new OpsError("branch has no commits ahead of the base branch");
   }
   const changes = branchChanges(cfg, number);
-  if (allowEmpty !== true && !changes.codeChanged && changes.wikiAhead === 0) {
+  if (allowEmpty !== true && !changes.codeChanged) {
     return { headSha: head(wt), ...changes };
   }
   const headSha = pushHead(cfg, number, op);
-  pushWikiBranch(cfg, number);
   return { headSha, ...changes };
 }
 

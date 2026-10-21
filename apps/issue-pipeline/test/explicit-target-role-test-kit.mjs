@@ -114,14 +114,12 @@ function saves(calls) {
   });
 }
 
-/** @type {{pass: boolean, checks: import("../src/ops/checks.ts").Check[]}} */
-const WIKI_PASS = { pass: true, checks: [] };
 /** @type {import("../src/job/role-context.ts").SessionResult} */
 const NO_FINDING = {
   ok: true,
   reply: { summary: "No security finding", security: null },
 };
-const NO_WRITES = ["push", "sync-base", "wiki-sync", "ready-pr"];
+const NO_WRITES = ["push", "sync-base", "ready-pr"];
 
 /** @param {import("./explicit-target-world-test-kit.mjs").World} w @returns {import("../src/ops/checks.ts").VerifyReply} */
 function verified(w) {
@@ -139,7 +137,6 @@ function ownState(w) {
 function postmergeOps(w) {
   return {
     verify: [verified(w)],
-    "wiki-check": [WIKI_PASS],
     "prepare-review": [
       {
         headSha: w.merged,
@@ -167,5 +164,4 @@ export {
   result,
   saves,
   verified,
-  WIKI_PASS,
 };

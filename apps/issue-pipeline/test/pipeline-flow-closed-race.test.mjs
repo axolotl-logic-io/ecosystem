@@ -125,13 +125,8 @@ test("actual-result checks precede read-only exact Security and completion", () 
     ({ request }) => request.op === "prepare-review",
   );
   const verify = trace.findIndex(({ request }) => request.op === "verify");
-  const wikiCheck = trace.findIndex(
-    ({ request }) => request.op === "wiki-check",
-  );
   assert.ok(verify >= 0);
-  assert.ok(wikiCheck >= 0);
   assert.ok(securityClaim > verify);
-  assert.ok(securityClaim > wikiCheck);
   assert.equal(cleared.security.finding, null);
   assert.ok(cleared.security.commentId > 0);
   const security = piLog(flow.piDir)
@@ -171,12 +166,6 @@ test("recovery verified the actual result without another code push or merge POS
   assert.ok(
     verified.every(
       ({ reply: { pass, headSha } }) => pass === true && headSha === merged,
-    ),
-  );
-  assert.ok(
-    trace.some(
-      ({ request, reply: { pass } }) =>
-        request.op === "wiki-check" && pass === true,
     ),
   );
   assert.equal(

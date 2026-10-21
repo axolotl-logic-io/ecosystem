@@ -36,7 +36,7 @@ const UNOPENED = { n: 6, pr: 56, opened: 66 };
 const NULL_AUTHOR = { n: 9, pr: 59 };
 const REOPENED = { n: 11, pr: 61 };
 // What a branch with a code change and no wiki reports.
-const CODE = { codeChanged: true, wikiAhead: 0 };
+const CODE = { codeChanged: true };
 
 /** @param {number} n @param {string} [tail] @returns {string} */
 function draftBody(n, tail = "") {

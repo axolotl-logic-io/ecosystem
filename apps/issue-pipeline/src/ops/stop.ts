@@ -71,10 +71,10 @@ function nextStepText(control: Stop, req: StopRequest): string {
     return nextStep;
   }
   if (req.state.mergeAttempt !== null) {
-    return "Code may already have landed. Do not retry the merge POST, repeat approval, push code, or reset merged/security/attempt state. Preserve response evidence and original authorization. With unchanged inputs/wiki and identity, the operator may authorize one bounded restart at merge with a new finite confirmation window, using the saved response and cumulative read evidence without resetting them. Deadline expiry requires explicit reconciliation, not an unattended restart loop.";
+    return "Code may already have landed. Do not retry the merge POST, repeat approval, push code, or reset merged/security/attempt state. Preserve response evidence and original authorization. With unchanged inputs and identity, the operator may authorize one bounded restart at merge with a new finite confirmation window, using the saved response and cumulative read evidence without resetting them. Deadline expiry requires explicit reconciliation, not an unattended restart loop.";
   }
   if (req.state.codeMerged !== null) {
-    return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next job reviews and publishes the wiki changes again, with every limit reset.`;
+    return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next job checks and reviews the merged result again, with every limit reset.`;
   }
   return `To resume, fix what this names (push to the branch if you like), then remove \`${control.label.name}\`. The next sweep continues at the stage that stopped, from the PR's branch, with every limit reset; a stage after review goes back to review if the branch moved since it.`;
 }

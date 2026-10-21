@@ -11,13 +11,12 @@ import {
   postmergeOps,
   saves,
   verified,
-  WIKI_PASS,
 } from "./explicit-target-role-test-kit.mjs";
 import { ISSUE, PR, world } from "./explicit-target-world-test-kit.mjs";
 
 const { mergeRole } = await import("../src/roles/merge/merge.ts");
 const { recoverOwnMerge } = await import("../src/roles/merge/recovery.ts");
-const { afterOwnMerge } = await import("../src/roles/merge/publish.ts");
+const { afterOwnMerge } = await import("../src/roles/merge/after-merge.ts");
 
 test("uninterrupted own result checks M after saving truthful merge and before read-only security/completion", async () => {
   const w = world({ concurrent: true });
@@ -30,7 +29,6 @@ test("uninterrupted own result checks M after saving truthful merge and before r
         current(w, true),
       ],
       "ci-status": [{ status: "pass" }],
-      "wiki-check": [WIKI_PASS, WIKI_PASS],
       verify: [verified(w)],
       merge: [{ merged: true, headSha: w.head, mergeCommit: w.merged }],
       "prepare-review": postmergeOps(w)["prepare-review"],
@@ -43,9 +41,7 @@ test("uninterrupted own result checks M after saving truthful merge and before r
   const log = names(run.calls);
   assert.ok(log.indexOf("merge") < log.indexOf("verify"));
   assert.ok(log.indexOf("verify") < log.indexOf("prepare-review"));
-  assert.ok(
-    log.indexOf("wiki-check", log.indexOf("verify")) < log.indexOf("session"),
-  );
+  assert.ok(log.indexOf("prepare-review") < log.indexOf("session"));
   const saved = saves(run.calls);
   assert.equal(saved[0]?.merged?.code, w.merged);
   assert.equal(saved[0]?.verifiedSha, w.head);
@@ -66,22 +62,15 @@ test("uninterrupted own result checks M after saving truthful merge and before r
 });
 
 for (const mode of ["recovered", "uninterrupted"]) {
-  for (const failure of ["code", "wiki", "wrong-head"]) {
-    test(`${mode} own ${failure} check failure preserves merged truth and stops without security/wiki/completion/writer`, async () => {
+  for (const failure of ["code", "wrong-head"]) {
+    test(`${mode} own ${failure} check failure preserves merged truth and stops without security/completion/writer`, async () => {
       const w = world();
       let check = verified(w);
-      let wiki = WIKI_PASS;
       if (failure === "code") {
         check = {
           pass: false,
           headSha: w.merged,
           checks: [{ id: "test", pass: false, detail: "exit 1" }],
-        };
-      }
-      if (failure === "wiki") {
-        wiki = {
-          pass: false,
-          checks: [{ id: "wiki", pass: false, detail: "bad link" }],
         };
       }
       if (failure === "wrong-head") {
@@ -92,7 +81,6 @@ for (const mode of ["recovered", "uninterrupted"]) {
         ops: {
           "current-revision": [current(w, true)],
           verify: [check],
-          "wiki-check": [wiki],
         },
       });
       let end;
@@ -110,7 +98,6 @@ for (const mode of ["recovered", "uninterrupted"]) {
       assert.ok(end.reason.includes("code remains merged"));
       assert.ok(names(run.calls).includes("verify"));
       assert.equal(names(run.calls).includes("session"), false);
-      assert.equal(names(run.calls).includes("publish"), false);
       assert.equal(names(run.calls).includes("finish-wiki"), false);
       assert.deepEqual(codeWrites(run.calls), []);
     });

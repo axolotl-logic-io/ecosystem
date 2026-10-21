@@ -26,7 +26,6 @@ import type { IssueState } from "../state.ts";
 import { withLog } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import { resetKeepingUnpushed } from "../unpushed.ts";
-import { ensureWiki } from "../wiki.ts";
 import type { BranchChanged } from "./claim-state.ts";
 import {
   assertBranchAssigned,
@@ -66,7 +65,6 @@ interface ClaimWon {
     worktree: string;
     runDir: string;
     issueFile: string;
-    wiki: string | null;
   };
 }
 
@@ -88,28 +86,27 @@ function labelWorking(
   }
 }
 
-// Readies the issue's code and wiki checkouts and returns the wiki's path.
-// A new checkout is set up for the writer's own test runs; an existing one
+// Readies the issue's code checkout, and says what a reset of it did. A new
+// checkout is set up for the writer's own test runs; an existing one
 // moves to an adopted push's head, keeping any commits the branch lacks.
 function readyCheckouts(
   cfg: Config,
   n: number,
   claimed: { remote: string | null; adopted: boolean },
   now: Date,
-): { wiki: string | null; entry: string | null } {
+): string | null {
   const wt = paths.worktree(cfg, n);
   const existed = fs.existsSync(path.join(wt, ".git"));
   ensureWorktree(cfg, n);
-  const wiki = ensureWiki(cfg, n);
   if (!existed) {
     setUpCheckout(cfg, n, wt, "setup-at-claim.log");
-    return { wiki, entry: null };
+    return null;
   }
   if (!claimed.adopted || claimed.remote === null) {
-    return { wiki, entry: null };
+    return null;
   }
   fetchIn(cfg, wt, paths.branch(cfg, n));
-  return { wiki, entry: resetKeepingUnpushed(wt, n, claimed.remote, now) };
+  return resetKeepingUnpushed(wt, n, claimed.remote, now);
 }
 
 function leased(state: IssueState, req: ClaimRequest, now: Date): IssueState {
@@ -153,12 +150,10 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
     }
   }
   let state = leased(claimed.state, req, now);
-  let wiki: string | null = null;
   if (state.stage !== "done") {
-    const ready = readyCheckouts(cfg, n, claimed, now);
-    ({ wiki } = ready);
-    if (ready.entry !== null) {
-      state = withLog(state, ready.entry, now);
+    const entry = readyCheckouts(cfg, n, claimed, now);
+    if (entry !== null) {
+      state = withLog(state, entry, now);
     }
     labelWorking(cfg, n, issue.labels, state.pr);
   }
@@ -174,7 +169,6 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
       worktree: paths.worktree(cfg, n),
       runDir: paths.runDir(cfg, n),
       issueFile: context.file,
-      wiki,
     },
   };
   if (claimed.branchChanged !== null) {

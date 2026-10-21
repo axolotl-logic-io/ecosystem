@@ -1,9 +1,9 @@
 // @ts-check
 // The Reviewer's hardening and the revision it binds, through a fake
 // RoleContext: a head or inputs change during hardening saves nothing and
-// posts nothing, a stale Gherkin goes to the author, wiki-only hardening
-// after the code merged binds the merge commit and pushes the wiki alone,
-// and failures never pass for a hardening.
+// posts nothing, a stale Gherkin goes to the author, hardening after the
+// code merged binds the merge commit and pushes nothing, and failures never
+// pass for a hardening.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -26,17 +26,14 @@ import {
   PR,
   REVISION,
   reviewerRole,
-  WIKI,
+  sha,
 } from "./reviewer-and-merge-role-kit.mjs";
-import { hardening, PUSHED, VERIFIED } from "./reviewer-role-test-kit.mjs";
+import { hardening, VERIFIED } from "./reviewer-role-test-kit.mjs";
 
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const HEAD_MOVED = /the next job hardens the new head/u;
 const MERGED_SCOPE =
   /Scope: the wiki in `docs\/` only\. The code already merged as PR #90/u;
-const WIKI_CHANGE_SCOPE =
-  /Scope: the wiki in `docs\/` only\. The change lives only in the wiki/u;
-const BRANCH_HEAD = HEAD;
 
 const MERGED_PR = {
   number: PR,
@@ -48,8 +45,8 @@ const CODE_MERGED = { pr: PR, sha: MERGE_COMMIT };
 
 test("a head that moved after the push waits, saving and posting nothing", async () => {
   const { ctx, calls } = hardening({
-    state: { hardened: REVISION },
-    before: current({ wiki: MOVED }),
+    state: { hardened: { ...REVISION, code: sha("8") } },
+    before: current(),
     after: current({ code: MOVED }),
   });
   const end = await reviewerRole(ctx);
@@ -91,7 +88,7 @@ test("a Gherkin older than the inputs, or none, goes to the author before any se
   }
 });
 
-test("after the code merged, wiki-only hardening verifies the merge commit, pushes the wiki alone and binds the merge commit", async () => {
+test("after the code merged, hardening verifies the merge commit, pushes nothing and binds the merge commit", async () => {
   const merged = current({ code: MERGE_COMMIT }, MERGED_PR);
   const { ctx, calls } = hardening({
     state: { codeMerged: CODE_MERGED },
@@ -100,7 +97,6 @@ test("after the code merged, wiki-only hardening verifies the merge commit, push
     ops: {
       "prepare-review": [{ headSha: MERGE_COMMIT }],
       verify: [{ ...VERIFIED, headSha: MERGE_COMMIT }],
-      push: [{ ...PUSHED, headSha: BRANCH_HEAD, codeChanged: false }],
     },
   });
   const state = stateOf(await reviewerRole(ctx), "next");
@@ -109,14 +105,13 @@ test("after the code merged, wiki-only hardening verifies the merge commit, push
   assert.deepEqual(prepared, CODE_MERGED);
   const { codeMerged } = firstPayload(calls, "verify");
   assert.deepEqual(codeMerged, CODE_MERGED);
-  const { wikiOnly } = firstPayload(calls, "push");
-  assert.equal(wikiOnly, true);
+  assert.ok(!opNames(calls).includes("push"));
   assert.ok(!opNames(calls).includes("ready-pr"));
   assert.equal(state.stage, "merge");
   assert.equal(state.verifiedSha, MERGE_COMMIT);
   assert.deepEqual(state.hardened, {
     code: MERGE_COMMIT,
-    wiki: WIKI,
+    wiki: null,
     inputs: INPUTS,
   });
 });
@@ -145,22 +140,6 @@ test("a code merge GitHub doesn't confirm stops before any hardening", async () 
   stateOf(end, "stop");
   assert.equal(endCode(end), "error");
   assert.equal(sessionsOf(calls).length, 0);
-});
-
-test("a change that lives only in the wiki is hardened in docs/, pushed alone and noted on the issue", async () => {
-  const { ctx, calls } = hardening({
-    state: { pr: null, flows: { code: false, wiki: true } },
-    before: current({}, null),
-    after: current({}, null),
-    ops: { push: [{ ...PUSHED, codeChanged: false }] },
-  });
-  const state = stateOf(await reviewerRole(ctx), "next");
-  assert.match(sessionsOf(calls)[0]?.task ?? "", WIKI_CHANGE_SCOPE);
-  const { wikiOnly } = firstPayload(calls, "push");
-  assert.equal(wikiOnly, true);
-  assert.equal(postsOf(calls)[0]?.on, "issue");
-  assert.ok(!opNames(calls).includes("ready-pr"));
-  assert.equal(state.stage, "merge");
 });
 
 test("a failed session stops with error, and a transient one defers, saving nothing", async () => {

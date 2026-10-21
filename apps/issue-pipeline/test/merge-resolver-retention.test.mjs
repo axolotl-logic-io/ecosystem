@@ -14,7 +14,7 @@ import {
   recoveryOf,
 } from "./sync-retention-test-kit.mjs";
 
-const { syncSide } = await import("../src/roles/merge/sync.ts");
+const { syncCode } = await import("../src/roles/merge/sync.ts");
 const UNMERGED = /unmerged.*retain/u;
 const STAGES = z.array(
   z.object({
@@ -24,17 +24,6 @@ const STAGES = z.array(
     stage: z.string(),
   }),
 );
-
-/** @param {ReturnType<typeof conflicted>} w */
-function conflictOf(w) {
-  return {
-    conflict: /** @type {const} */ (true),
-    changed: false,
-    inRebase: true,
-    conflicts: [w.file],
-    baseSha: headOf(w.dir),
-  };
-}
 
 /** @param {ReturnType<typeof conflicted>} w */
 function unresolvedState(w) {
@@ -55,11 +44,7 @@ function unresolvedState(w) {
 test("code failed model session preserves its partial resolution through ordinary exit", async () => {
   const w = conflicted();
   const { ctx, ops, saved } = resolverContext(w, true);
-  const result = await syncSide(ctx, ctx.state, {
-    side: "code",
-    first: conflictOf(w),
-    maxConflictFixes: 1,
-  });
+  const result = await syncCode(ctx, ctx.state, 1);
   assert.ok(!result.ok);
   assert.equal(result.end.kind, "stop");
   assert.ok(ops.includes("finish-sync"));
@@ -96,14 +81,7 @@ test("code failed model session preserves its partial resolution through ordinar
 test("code cannot-fix preserves the failed attempt and retains an unresolved retry on exit", async () => {
   const w = conflicted(true);
   const { ctx, ops, saved } = resolverContext(w, false);
-  await assert.rejects(
-    syncSide(ctx, ctx.state, {
-      side: "code",
-      first: conflictOf(w),
-      maxConflictFixes: 1,
-    }),
-    UNMERGED,
-  );
+  await assert.rejects(syncCode(ctx, ctx.state, 1), UNMERGED);
   assert.ok(ops.includes("finish-sync"));
   assert.ok(ops.includes("sync-base"));
   assert.deepEqual(
@@ -143,14 +121,7 @@ test("code cannot-fix preserves the failed attempt and retains an unresolved ret
 test("code unresolved retry retains its exact checkout, numbered stages and self-contained history", async () => {
   const w = conflicted(true);
   const { ctx } = resolverContext(w, false);
-  await assert.rejects(
-    syncSide(ctx, ctx.state, {
-      side: "code",
-      first: conflictOf(w),
-      maxConflictFixes: 1,
-    }),
-    UNMERGED,
-  );
+  await assert.rejects(syncCode(ctx, ctx.state, 1), UNMERGED);
   const before = unresolvedState(w);
   assert.notEqual(before.unmerged, "");
   await assert.rejects(close(w.job, "cannot-exit"), UNMERGED);

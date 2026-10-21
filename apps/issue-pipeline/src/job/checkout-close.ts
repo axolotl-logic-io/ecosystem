@@ -4,10 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg, withCheckout } from "../config.ts";
+import { paths } from "../config.ts";
 import { git } from "../github.ts";
-import { withWikiLock } from "../locks.ts";
-import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
@@ -41,34 +39,6 @@ function holdsUnpushed(cfg: Config, repo: string): boolean {
     (): boolean => hasGit(repo) && unpushed(cfg, repo) > 0,
     false,
   );
-}
-
-// Keeps the wiki checkout's unpushed commits as the issue's branch in the
-// wiki mirror, where its next job starts from; with none, drops that branch.
-function saveWiki(cfg: Config, issue: number, wikiDir: string): void {
-  const wiki = wikiCfg(cfg);
-  const mirror = paths.wikiMirror(cfg);
-  if (wiki === null || !hasGit(wikiDir)) {
-    return;
-  }
-  if (
-    !fs.existsSync(mirror) ||
-    gitIn(mirror, ["rev-parse", "--is-bare-repository"]).trim() !== "true"
-  ) {
-    throw new OpsError(
-      `wiki mirror ${mirror} is unavailable; checkout retained`,
-    );
-  }
-  const ref = `refs/heads/${paths.branch(cfg, issue)}`;
-  const range = `origin/${wiki.branch}..HEAD`;
-  const ahead = Number(gitIn(wikiDir, ["rev-list", "--count", range]).trim());
-  withWikiLock(cfg, (): void => {
-    if (ahead > 0) {
-      gitIn(mirror, ["fetch", "--quiet", wikiDir, `+HEAD:${ref}`]);
-      return;
-    }
-    gitIn(mirror, ["update-ref", "-d", ref]);
-  });
 }
 
 // Runs one exit step; when it fails, reports why on stderr and gives
@@ -114,7 +84,7 @@ function preparePatches(
       const file = paths.droppedPatch(cfg, issue, job.key, name);
       const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
       const prefix = `${path.relative(root, dir)}/`;
-      const one = saveDroppedPatch(cfg, dir, { file, title });
+      const one = saveDroppedPatch(dir, { file, title });
       snapshots.push(
         ...one.files.map(
           (saved: string): RecoverySnapshot => ({
@@ -154,11 +124,10 @@ function preparePatches(
 // Closes job folder `job.root` of issue `issue`: saves its checkouts'
 // uncommitted changes as patches named by job key `job.key` and drops them,
 // bundles local code before changing either checkout, then calls `push` when
-// its code checkout, or its wiki checkout under `job.wiki` write access, holds
-// commits the remote lacks. Saves its wiki commits, then removes the folder.
+// its code checkout holds commits the remote lacks, then removes the folder.
 // A clean checkout gets no patch. Failed preparation retains the exact
 // checkouts and indexes; a restart must not overwrite that recovery work.
-// A later push or mirror-reconciliation failure retains the checkout and the
+// A later push failure retains the checkout and the
 // prepared artifacts, but cleanup may already have reset its dirty changes.
 async function closeJobCheckout(
   cfg: Config,
@@ -166,16 +135,12 @@ async function closeJobCheckout(
   job: ClosingJob,
   push: (() => Promise<void>) | null,
 ): Promise<DroppedChanges> {
-  const { root, repo, docs, wiki } = job;
-  const scoped = withCheckout(cfg, { issue, dir: repo, branch: job.branch });
+  const { root, repo } = job;
   let removable = false;
   try {
     const dropped = preparePatches(cfg, issue, job);
     // Prepare every recovery artifact before changing either checkout.
     saveCodeRecovery(cfg, issue, repo, job.key);
-    if (docs !== null) {
-      saveWiki(scoped, issue, docs);
-    }
     for (const name of CHECKOUTS) {
       const dir = job[name];
       if (dir !== null && hasGit(dir)) {
@@ -183,15 +148,8 @@ async function closeJobCheckout(
         gitIn(dir, ["clean", "--quiet", "-fd"]);
       }
     }
-    if (
-      push &&
-      (holdsUnpushed(cfg, repo) ||
-        (wiki === "write" && docs !== null && holdsUnpushed(cfg, docs)))
-    ) {
+    if (push && holdsUnpushed(cfg, repo)) {
       await push();
-    }
-    if (docs !== null) {
-      saveWiki(scoped, issue, docs);
     }
     removable = true;
     return dropped;

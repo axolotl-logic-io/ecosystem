@@ -69,7 +69,6 @@ function inputsRevision(char) {
 }
 
 const HEAD = sha("c");
-const WIKI = sha("d");
 const MOVED = sha("f");
 const MERGE_COMMIT = sha("e");
 const INPUTS = inputsRevision("a");
@@ -78,7 +77,7 @@ const GHERKIN_TEXT =
   "Feature: Chats\n  Scenario: list\n    Given a chat\n    Then it is listed";
 
 /** @type {import("../src/state.ts").Revision} */
-const REVISION = { code: HEAD, wiki: WIKI, inputs: INPUTS };
+const REVISION = { code: HEAD, wiki: null, inputs: INPUTS };
 
 /**
  * @typedef {import("./reviewer-and-merge-role-calls-kit.mjs").Call} Call
@@ -107,7 +106,7 @@ function issueState(state = {}) {
     pr: PR,
     headSha: HEAD,
     verifiedSha: HEAD,
-    flows: { code: true, wiki: true },
+    flows: { code: true, wiki: false },
     ...state,
   };
 }
@@ -258,5 +257,4 @@ export {
   reviewerRole,
   SHORT_SHA_LENGTH,
   sha,
-  WIKI,
 };

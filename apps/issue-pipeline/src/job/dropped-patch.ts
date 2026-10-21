@@ -11,7 +11,6 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
-import { holdWikiPin } from "../wiki.ts";
 
 interface PreparedPatch {
   lost: string[];
@@ -128,7 +127,6 @@ function writePatch(
 // Uses only a copy of the actual index. Existing artifacts are never
 // overwritten; an unmerged index or preparation error retains the checkout.
 function saveDroppedPatch(
-  cfg: Config,
   dir: string,
   to: { file: string; title: string },
 ): PreparedPatch {
@@ -139,7 +137,6 @@ function saveDroppedPatch(
   const temp = path.join(tempDir, "changes.patch");
   try {
     copyIndex(dir, indexFile);
-    holdWikiPin(cfg, dir, indexFile);
     if (gitIn(dir, ["ls-files", "--unmerged"], indexFile).trim() !== "") {
       throw new OpsError(
         `unmerged index in ${dir}; retain the original checkout for recovery`,

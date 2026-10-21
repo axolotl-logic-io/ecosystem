@@ -1,14 +1,13 @@
 // The job's side of `pipeline_commit` (Pipeline-Job-Contract#reply-and-push):
 // after a writer session commits, the job, which alone holds the token, pushes the
-// checkout's code commits that origin lacks to the issue's branch, and the
-// wiki checkout's when the stage writes the wiki, and records each push under
+// checkout's code commits that origin lacks to the issue's branch, and
+// records each push under
 // the session's launch in job.json and as a line of `pushes.jsonl` in the
 // issue's run folder, `{key, job, repo, sha, at}`, which outlives job.json.
 // Only a launch with a job-bound write scope can push. Fresh saved receipts
 // and live PR authority independently forbid code after merge, even when a
-// session forges its tool environment. Wiki writes keep their bound scope.
-// It defers while a rebase is stopped in
-// either checkout, whose ops push the rebased branch only after its checks.
+// session forges its tool environment. It defers while a rebase is stopped
+// in the checkout, whose ops push the rebased branch only after its checks.
 // A refused push keeps the commits and is reported, never thrown; the next
 // request rechecks authority for whatever is still unpushed.
 
@@ -18,7 +17,6 @@ import { paths, withCheckout } from "../config.ts";
 import { run } from "../process.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { Stage } from "../stages.ts";
-import { pushWikiBranch } from "../wiki.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 import type { Pushed, PushReply } from "./control-protocol.ts";
 import type { LaunchPush } from "./launch-record.ts";
@@ -64,15 +62,9 @@ function messageOf(error: unknown): string {
   return String(error);
 }
 
-function pushedOf(code: boolean, wiki: boolean): Pushed {
-  if (code && wiki) {
-    return "both";
-  }
+function pushedOf(code: boolean): Pushed {
   if (code) {
     return "code";
-  }
-  if (wiki) {
-    return "wiki";
   }
   return "none";
 }
@@ -108,7 +100,6 @@ function pushSession(
 ): PushReply {
   const { key, scope } = session;
   const { issue } = job;
-  const wikiDir = paths.wiki(cfg, issue);
   const done: { pushes: LaunchPush[]; errors: string[] } = {
     pushes: [],
     errors: [],
@@ -129,18 +120,6 @@ function pushSession(
     },
     done,
   );
-  let wiki = false;
-  if (scope.docs?.access === "write") {
-    wiki = pushRepo(
-      wikiDir,
-      "wiki",
-      (): void => {
-        readWriteAuthority(cfg, issue);
-        pushWikiBranch(cfg, issue);
-      },
-      done,
-    );
-  }
   for (const push of done.pushes) {
     status.pushed(key, push);
     appendRunLine(paths.runDir(cfg, issue), "pushes.jsonl", {
@@ -153,7 +132,7 @@ function pushSession(
   if (done.errors.length > 0) {
     pushError = done.errors.join("\n");
   }
-  return { pushed: pushedOf(code, wiki), pushError };
+  return { pushed: pushedOf(code), pushError };
 }
 
 // The push request handler of `job`, which records each push in `status`
@@ -166,7 +145,6 @@ function pushServerOf(
 ): (key: string) => PushReply {
   const { issue, checkout, branch } = job;
   const jobCfg = withCheckout(cfg, { issue, dir: checkout, branch });
-  const wikiDir = paths.wiki(jobCfg, issue);
   return (key: string): PushReply => {
     const launch = status.launch(key);
     if (launch?.kind !== "session" || launch.commits !== true) {
@@ -178,16 +156,13 @@ function pushServerOf(
       return { pushed: "none", pushError: `${key} has no bound write scope` };
     }
     // No request fields or session environment supply this authority. Failure
-    // to confirm saved state refuses both checkouts, rather than guessing.
+    // to confirm saved state refuses the push, rather than guessing.
     try {
       readWriteAuthority(jobCfg, issue);
     } catch (error: unknown) {
       return { pushed: "none", pushError: messageOf(error) };
     }
-    const rebasing = [checkout, wikiDir].some(
-      (dir) => isRepo(dir) && rebaseInProgress(dir),
-    );
-    if (rebasing) {
+    if (isRepo(checkout) && rebaseInProgress(checkout)) {
       return { pushed: "deferred", pushError: null };
     }
     return pushSession(jobCfg, job, { key, scope }, status);

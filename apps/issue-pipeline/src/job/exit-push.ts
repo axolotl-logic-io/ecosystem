@@ -1,8 +1,8 @@
 // What a stage job pushes as it exits: a writer that claimed the issue runs
 // the exit-push op on the commits its checkout holds, which the next claim
 // may adopt as the saved head (src/adopt-push.ts); once the issue's code is
-// merged (`codeMerged`) it pushes only its wiki, through `push {wikiOnly}`,
-// so no writer's unmerged code reaches the branch. The writers are the
+// merged (`codeMerged`) it pushes nothing, so no writer's unmerged code
+// reaches the branch. The writers are the
 // implementor's and the reviewer's (whose hardening commits) jobs. A reader
 // never pushes, and neither does a merger: its integration's rebased or
 // fixed head reaches the branch only through its role's own ops, never half
@@ -32,16 +32,10 @@ function exitPushOf(
     case "writer":
       return async (): Promise<void> => {
         const state = claimed();
-        if (state === null) {
+        if (state === null || state.codeMerged !== null) {
           return;
         }
-        let op = "exit-push";
-        let payload = {};
-        if (state.codeMerged !== null) {
-          op = "push";
-          payload = { wikiOnly: true };
-        }
-        const reply = await runOp(op, payload);
+        const reply = await runOp("exit-push", {});
         if (!reply.ok) {
           process.stderr.write(`job: exit push: ${reply.error}\n`);
         }

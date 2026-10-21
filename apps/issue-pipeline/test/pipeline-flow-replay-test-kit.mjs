@@ -35,16 +35,8 @@ function securityEvidence(flow, code) {
   return { launch, diff };
 }
 const STATE_BLOCK = /<!-- agent-pipeline:state\n[\s\S]*?\n-->/u;
-const NO_WRITER_OPS = [
-  "merge",
-  "push",
-  "sync-base",
-  "wiki-sync",
-  "ready-pr",
-  "exit-push",
-];
+const NO_WRITER_OPS = ["merge", "push", "sync-base", "ready-pr", "exit-push"];
 const VERIFIED = z.object({ pass: z.boolean(), headSha: z.string() });
-const WIKI_CHECKED = z.object({ pass: z.boolean() });
 const CLAIM = z.object({
   state: z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
@@ -56,18 +48,14 @@ function expectedReplay(interruptedWorld, checked = true) {
   const codeMerged = { pr: state.pr, sha: state.merged.code };
   /** @type {{ pass: boolean, headSha: string }[]} */
   let verified = [];
-  /** @type {{ pass: boolean }[]} */
-  let wikiChecked = [];
   if (checked) {
     verified = [{ pass: true, headSha: state.merged.code }];
-    wikiChecked = [{ pass: true }];
   }
   return {
     claimCodeMerged: codeMerged,
     forbidden: [],
     merges: 1,
     verified,
-    wikiChecked,
     base: state.merged.code,
     hardened: state.hardened,
     integration: state.integration,
@@ -120,9 +108,6 @@ function replayFacts(flow, traceStart) {
     verified: trace
       .filter(({ request }) => request.op === "verify")
       .map(({ reply }) => VERIFIED.parse(reply)),
-    wikiChecked: trace
-      .filter(({ request }) => request.op === "wiki-check")
-      .map(({ reply }) => WIKI_CHECKED.parse(reply)),
     base: refIn(flow.origin, `refs/heads/${BASE}`),
     hardened: state.hardened,
     integration: state.integration,

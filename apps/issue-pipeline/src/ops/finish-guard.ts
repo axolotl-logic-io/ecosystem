@@ -1,6 +1,6 @@
 // The gate on finish-wiki: the saved completion it may close an issue on,
 // decided against a fresh current revision (src/revision.ts) and the
-// issue's saved state. Like publication-guard.ts's gates it is pure: an
+// issue's saved state. Like merge-guard.ts's gates it is pure: an
 // inconsistent saved state or GitHub answer throws, a revision that moved
 // or a security review that doesn't clear the merged result refuses, and
 // undefined lets the op go on.
@@ -9,12 +9,12 @@ import { OpsError } from "../ops-error.ts";
 import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
 import { mergeAuthorization } from "../state.ts";
-import type { CurrentRevision } from "./publication-guard.ts";
-import { mergedAuthorizationHolds, mergedPr } from "./publication-guard.ts";
+import type { CurrentRevision } from "./merge-guard.ts";
+import { mergedAuthorizationHolds, mergedPr } from "./merge-guard.ts";
 
 interface FinishRefusal {
   finished: false;
-  reason: "inputs-changed" | "wiki-unpublished" | "wiki-changed" | "security";
+  reason: "inputs-changed" | "security";
   detail: string;
 }
 

@@ -1,8 +1,8 @@
 // @ts-check
 // The Reviewer's own integration at merge (src/roles/merge/integration.ts)
-// through a fake RoleContext: a branch behind its base or the wiki is
-// rebased and a conflict resolved, in bounded Reviewer writer sessions of
-// the integration phase; the result is verified, wiki-checked and pushed,
+// through a fake RoleContext: a branch behind its base is rebased and a
+// conflict resolved, in bounded Reviewer writer sessions of the
+// integration phase; the result is verified and pushed,
 // and its receipt saved before CI runs on it, so the next merge job merges
 // the integrated revision with no model review of its own work. Each
 // integration counts one sync against `maxSyncs`; a head that moved by
@@ -18,7 +18,6 @@ import {
   merging,
   PUSHED,
   REBASED,
-  WIKI_UNCHANGED,
 } from "./merge-role-test-kit.mjs";
 import {
   callNames,
@@ -31,7 +30,6 @@ import {
 } from "./reviewer-and-merge-role-calls-kit.mjs";
 import {
   current,
-  HEAD,
   LIMITS,
   MOVED,
   mergeRole,
@@ -44,7 +42,6 @@ const REBASED_CLEAN = {
   conflict: false,
   headSha: REBASED,
   codeChanged: true,
-  wikiAhead: 0,
 };
 const CONFLICT_TASK = /Task: `conflict-resolution`/u;
 const RECEIPT_WAIT = /waits for its required CI/u;
@@ -60,7 +57,6 @@ test("a branch behind its base is rebased, checked, pushed and its receipt saved
       ...AFTER_INTEGRATION,
       "current-revision": REVISIONS,
       "sync-base": [REBASED_CLEAN],
-      "wiki-sync": [WIKI_UNCHANGED],
     },
   });
   const end = await mergeRole(ctx);
@@ -81,10 +77,7 @@ test("a branch behind its base is rebased, checked, pushed and its receipt saved
     "merge",
     "save",
     "sync-base",
-    "wiki-sync",
-    "pin-wiki",
     "verify",
-    "wiki-check",
     "push",
     "current-revision",
   ]);
@@ -139,7 +132,6 @@ test("a rebase conflict gets a Reviewer resolver session of the integration phas
         },
       ],
       "finish-sync": [{ resolved: true }],
-      "wiki-sync": [WIKI_UNCHANGED],
     },
     sessions: [
       { ok: true, reply: { outcome: "conflict-resolved", summary: "both" } },
@@ -157,32 +149,6 @@ test("a rebase conflict gets a Reviewer resolver session of the integration phas
   assert.deepEqual(state.integration?.revision, INTEGRATED);
 });
 
-test("a wiki that moved rebases only the wiki", async () => {
-  const { ctx, calls } = merging({
-    ops: {
-      merge: [{ merged: false, reason: "wiki-behind", detail: "moved" }],
-      "current-revision": [current(), current(), current({ wiki: MOVED })],
-      "wiki-sync": [{ conflict: false, changed: true, headSha: MOVED }],
-      "pin-wiki": [{ changed: false }],
-      verify: [{ pass: true, headSha: HEAD, checks: [] }],
-      "wiki-check": [
-        { pass: true, checks: [] },
-        { pass: true, checks: [] },
-      ],
-      push: [{ headSha: HEAD, codeChanged: false, wikiAhead: 1 }],
-    },
-  });
-  const state = stateOf(await mergeRole(ctx), "wait");
-  assert.ok(!opNames(calls).includes("sync-base"));
-  assert.ok(
-    opNames(calls).indexOf("wiki-sync") < opNames(calls).indexOf("pin-wiki"),
-  );
-  assert.ok(
-    opNames(calls).indexOf("pin-wiki") < opNames(calls).lastIndexOf("verify"),
-  );
-  assert.deepEqual(state.integration?.revision, { ...REVISION, wiki: MOVED });
-});
-
 test("integrations are allowed for exactly maxSyncs, then stop before rebasing or any session", async () => {
   const spent = { counts: { conflictFixes: 0, syncs: LIMITS.maxSyncs } };
   const last = merging({
@@ -192,7 +158,6 @@ test("integrations are allowed for exactly maxSyncs, then stop before rebasing o
       ...AFTER_INTEGRATION,
       "current-revision": REVISIONS,
       "sync-base": [REBASED_CLEAN],
-      "wiki-sync": [WIKI_UNCHANGED],
     },
   });
   const counted = stateOf(await mergeRole(last.ctx), "wait");
@@ -217,7 +182,6 @@ test("a head that moved after the integration's push goes to review, with no rec
       ...AFTER_INTEGRATION,
       "current-revision": [current(), current(), current({ code: MOVED })],
       "sync-base": [REBASED_CLEAN],
-      "wiki-sync": [WIKI_UNCHANGED],
     },
   });
   const state = stateOf(await mergeRole(ctx), "next");
@@ -233,7 +197,6 @@ test("a branch push that leaves another head than the verified one stops with no
       ...AFTER_INTEGRATION,
       "current-revision": REVISIONS,
       "sync-base": [REBASED_CLEAN],
-      "wiki-sync": [WIKI_UNCHANGED],
       push: [{ ...PUSHED, headSha: MOVED }],
     },
   });
@@ -248,33 +211,6 @@ test("a branch push that leaves another head than the verified one stops with no
   // The only merge attempt is the original refusal that required integration.
   assert.equal(opNames(calls).filter((name) => name === "merge").length, 1);
   assert.ok(!opNames(calls).includes("prepare-review"));
-  assert.ok(!opNames(calls).includes("publish"));
   assert.ok(!opNames(calls).includes("finish-wiki"));
   assert.equal(sessionsOf(calls).length, 0);
-});
-
-test("an otherwise current code head with a stale wiki pin integrates and checks its new pin before authorization", async () => {
-  const { ctx, calls } = merging({
-    ops: {
-      ...AFTER_INTEGRATION,
-      merge: [{ merged: false, reason: "wiki-pin" }],
-      "current-revision": REVISIONS,
-      "wiki-sync": [WIKI_UNCHANGED],
-      "pin-wiki": [{ changed: true }],
-    },
-  });
-  const state = stateOf(await mergeRole(ctx), "wait");
-  assert.ok(!opNames(calls).includes("sync-base"));
-  assert.equal(sessionsOf(calls).length, 0);
-  assert.equal(state.verifiedSha, REBASED);
-  assert.deepEqual(state.integration, {
-    reviewed: REVISION,
-    revision: INTEGRATED,
-  });
-  assert.deepEqual(
-    opNames(calls).filter((name) =>
-      ["wiki-sync", "pin-wiki", "verify", "push"].includes(name),
-    ),
-    ["wiki-sync", "pin-wiki", "verify", "push"],
-  );
 });

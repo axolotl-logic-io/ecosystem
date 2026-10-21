@@ -1,11 +1,9 @@
 // @ts-check
 // The merge role's end through a fake RoleContext: the security review and
-// publish when no code is left to merge (merged before this job, or a
-// change that lives only in the wiki), the completion saved before the
-// finish op, a refused publish that completes nothing, and the finish
-// reconciliation of a saved completion, which rechecks actual M and the
-// wiki before finishing once its security receipt clears exactly what
-// merged, never another merge or publish.
+// completion when the code merged before this job, the completion saved
+// before the finish op, and the finish reconciliation of a saved
+// completion, which rechecks actual M before finishing once its security
+// receipt clears exactly what merged, never another merge.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -16,9 +14,7 @@ import {
   MERGED_REVISION,
   merging,
   mutationsOf,
-  PREPARED_MERGED,
   QUEUE,
-  WIKI_UNCHANGED,
 } from "./merge-role-test-kit.mjs";
 import {
   callNames,
@@ -27,7 +23,6 @@ import {
   firstPayload,
   freshBefore,
   opNames,
-  postsOf,
   savesOf,
   sessionsOf,
   stateOf,
@@ -43,8 +38,6 @@ import {
   MOVED,
   mergeRole,
   NEW_INPUTS,
-  REVISION,
-  WIKI,
 } from "./reviewer-and-merge-role-kit.mjs";
 
 const NETWORK = /network/u;
@@ -59,13 +52,16 @@ const DONE = {
   security: CLEARED,
 };
 
-// What runs between the security review session and the publish: the
+// What runs between the security review session and the finish op: the
 // revision read fresh after the session, the receipt's comment and its save,
-// and nothing that could move a head.
+// the completion's save, and nothing that could move a head.
 /** @param {Parameters<typeof callNames>[0]} calls */
-function betweenSessionAndPublish(calls) {
+function betweenSessionAndFinish(calls) {
   const names = callNames(calls);
-  return names.slice(names.indexOf("session") + 1, names.indexOf("publish"));
+  return names.slice(
+    names.indexOf("session") + 1,
+    names.indexOf("finish-wiki"),
+  );
 }
 
 test("a finish that fails leaves the completion saved for a retry", async () => {
@@ -78,16 +74,7 @@ test("a finish that fails leaves the completion saved for a retry", async () => 
   assert.deepEqual(saved?.merged, MERGED_REVISION);
 });
 
-test("a refused publish waits and records no completion", async () => {
-  const { ctx, calls } = merging({
-    ops: { publish: [{ published: false, reason: "wiki-behind" }] },
-  });
-  stateOf(await mergeRole(ctx), "wait");
-  assert.ok(!opNames(calls).includes("finish-wiki"));
-  assert.ok(savesOf(calls).every((saved) => saved.stage !== "done"));
-});
-
-test("after a confirmed code merge, the merge commit is verified, the hardened wiki checked, reviewed for security and published", async () => {
+test("after a confirmed code merge, the merge commit is verified, reviewed for security and completed", async () => {
   const { ctx, calls } = merging({
     state: {
       ...CODE_MERGED,
@@ -96,7 +83,6 @@ test("after a confirmed code merge, the merge commit is verified, the hardened w
     },
     ops: {
       "current-revision": [AFTER_MERGE, AFTER_MERGE, AFTER_MERGE],
-      "wiki-sync": [WIKI_UNCHANGED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
   });
@@ -109,12 +95,11 @@ test("after a confirmed code merge, the merge commit is verified, the hardened w
   assert.deepEqual(verifiedMerge, CODE_MERGED.codeMerged);
   const { codeMerged: reviewedMerge } = firstPayload(calls, "prepare-review");
   assert.deepEqual(reviewedMerge, CODE_MERGED.codeMerged);
-  const { expectedWiki } = firstPayload(calls, "publish");
-  assert.equal(expectedWiki, WIKI);
   assert.ok(freshBefore(calls, "prepare-review"));
-  assert.deepEqual(betweenSessionAndPublish(calls), [
+  assert.deepEqual(betweenSessionAndFinish(calls), [
     "current-revision",
     "post",
+    "save",
     "save",
   ]);
 });
@@ -135,34 +120,17 @@ test("a code merge needs a hardening of the merge commit, and GitHub's confirmat
   assert.deepEqual(mutationsOf(unconfirmed.calls), []);
 });
 
-test("a change that lives only in the wiki takes the same security review, then publishes with no code merge and no PR", async () => {
-  const wikiOnly = current({}, null);
+test("a change with no PR and no code merge stops, merging nothing", async () => {
   const { ctx, calls } = merging({
-    state: { pr: null, flows: { code: false, wiki: true } },
-    ops: {
-      "current-revision": [wikiOnly, wikiOnly, wikiOnly],
-      "wiki-sync": [WIKI_UNCHANGED],
-      verify: [{ pass: true, headSha: REVISION.code, checks: [] }],
-      "prepare-review": [{ ...PREPARED_MERGED, headSha: REVISION.code }],
-    },
+    state: { pr: null },
+    ops: { "current-revision": [current({}, null)] },
   });
-  const state = stateOf(await mergeRole(ctx), "next");
-  assert.equal(state.stage, "done");
-  assert.deepEqual(state.merged, { ...REVISION, code: null });
-  assert.deepEqual(state.security?.revision, { ...REVISION, code: null });
-  const { codeMerged } = firstPayload(calls, "prepare-review");
-  assert.equal(codeMerged, null);
-  assert.equal(sessionsOf(calls)[0]?.phase, "security-review");
-  assert.equal(postsOf(calls)[0]?.on, "issue");
-  assert.ok(!opNames(calls).includes("merge"));
-  assert.deepEqual(betweenSessionAndPublish(calls), [
-    "current-revision",
-    "post",
-    "save",
-  ]);
+  assert.equal(endCode(await mergeRole(ctx)), "error");
+  assert.deepEqual(mutationsOf(calls), []);
+  assert.equal(sessionsOf(calls).length, 0);
 });
 
-test("a saved completion whose finish crashed rechecks M and the wiki before finishing again", async () => {
+test("a saved completion whose finish crashed rechecks M before finishing again", async () => {
   const crashed = merging({
     ops: { "finish-wiki": [() => Promise.reject(new Error("gh: network"))] },
   });
@@ -177,14 +145,12 @@ test("a saved completion whose finish crashed rechecks M and the wiki before fin
       "current-revision": [AFTER_MERGE],
       "finish-wiki": [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [{ pass: true, checks: [] }],
     },
   });
   const state = stateOf(await mergeRole(replay.ctx), "next");
   assert.deepEqual(state, saved);
   const checks = checksBefore(replay.calls, "finish-wiki");
   assert.deepEqual(checks.verify, { number: replay.ctx.issue, ...CODE_MERGED });
-  assert.deepEqual(checks.wiki, { number: replay.ctx.issue });
   assert.deepEqual(mutationsOf(replay.calls), ["finish-wiki"]);
   const { state: finished } = firstPayload(replay.calls, "finish-wiki");
   assert.deepEqual(finished, saved);
@@ -192,12 +158,12 @@ test("a saved completion whose finish crashed rechecks M and the wiki before fin
   assert.deepEqual(savesOf(replay.calls), [saved]);
 });
 
-test("a completion of a change that lives only in the wiki finishes with no PR", async () => {
+test("an older completion with no code merge finishes with no PR", async () => {
   const { ctx, calls } = merging({
     state: {
       ...DONE,
       pr: null,
-      flows: { code: false, wiki: true },
+      flows: { code: false, wiki: false },
       merged: { ...MERGED_REVISION, code: null },
       security: {
         ...CLEARED,
@@ -253,21 +219,17 @@ test("a completion the finish op refuses for new inputs goes to the author", asy
   assert.equal(author.stage, "author");
 });
 
-test("a completion whose published wiki the finish op can't prove stops, never done", async () => {
-  const unpublished = refusedFinish("wiki-unpublished");
-  assert.equal(endCode(await mergeRole(unpublished.ctx)), "error");
-  const checks = checksBefore(unpublished.calls, "finish-wiki");
+test("a completion the finish op refuses for anything but new inputs stops, never done", async () => {
+  const refused = refusedFinish("security");
+  assert.equal(endCode(await mergeRole(refused.ctx)), "error");
+  const checks = checksBefore(refused.calls, "finish-wiki");
   assert.deepEqual(checks.verify, {
-    number: unpublished.ctx.issue,
+    number: refused.ctx.issue,
     ...CODE_MERGED,
   });
-  assert.deepEqual(checks.wiki, { number: unpublished.ctx.issue });
-  assert.deepEqual(mutationsOf(unpublished.calls), ["finish-wiki"]);
-  assert.equal(sessionsOf(unpublished.calls).length, 0);
-  assert.equal(savesOf(unpublished.calls).length, 1);
-  const changed = refusedFinish("wiki-changed");
-  assert.equal(endCode(await mergeRole(changed.ctx)), "error");
-  assert.equal(savesOf(changed.calls).length, 1);
+  assert.deepEqual(mutationsOf(refused.calls), ["finish-wiki"]);
+  assert.equal(sessionsOf(refused.calls).length, 0);
+  assert.equal(savesOf(refused.calls).length, 1);
 });
 
 test("a finish op reply outside its schema fails as an op, so the job stops instead of crashing", async () => {

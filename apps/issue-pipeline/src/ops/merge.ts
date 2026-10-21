@@ -1,15 +1,14 @@
-// Merge code only: validate exact-head authorization, queue, base, readiness
-// and publishable wiki/pin before the explicit-target merge and durable receipt.
-// Wiki publication and issue completion are separate operations, after actual-
-// result checks and security (`merge-publish-finish-split`).
+// Merge code only: validate exact-head authorization, queue, base and
+// readiness before the explicit-target merge and durable receipt. Issue
+// completion is a separate operation, after actual-result checks and
+// security (`merge-publish-finish-split`).
 
 import { z } from "zod";
 import { assignedBranch } from "../branch-binding.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
-import { paths, wikiCfg } from "../config.ts";
+import { paths } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
-import { git } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import { currentRevision } from "../revision.ts";
@@ -17,6 +16,8 @@ import { readWriteState } from "../saved-state.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { branchMerge } from "./branch-merge.ts";
 import { mergedText } from "./merge-comment.ts";
+import type { MergeStale } from "./merge-guard.ts";
+import { mergeStale, REVISION_REQUEST } from "./merge-guard.ts";
 import type { Queued } from "./merge-order.ts";
 import { queued } from "./merge-order.ts";
 import type { ConfirmationClock } from "./merge-recovery.ts";
@@ -30,8 +31,6 @@ import { FULL_SHA } from "./merged-graph.ts";
 import { approvePr } from "./pr-approval.ts";
 import type { PrView } from "./pr-merge.ts";
 import { viewForMerge } from "./pr-merge.ts";
-import type { MergeStale } from "./publication-guard.ts";
-import { mergeStale, REVISION_REQUEST } from "./publication-guard.ts";
 
 const MERGE_REQUEST = z.looseObject({
   expectedSha: FULL_SHA,
@@ -49,14 +48,6 @@ const MERGE_REQUEST = z.looseObject({
 
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 
-// The wiki is unpublishable at its approved head, or the exact code tree does
-// not pin it. Integration must repair this before any code merge authorization.
-interface WikiRefusal {
-  merged: false;
-  reason: "wiki-behind" | "wiki-missing" | "wiki-pin";
-  detail: string;
-}
-
 // byHand receipts may have an unapproved head; the role compares it to approval.
 type MergeReply =
   | { merged: true; mergeCommit: string; headSha: string }
@@ -66,7 +57,6 @@ type MergeReply =
   // The PR is still a draft: only ready-pr marks it ready, after the
   // Reviewer's hardening authorized it.
   | { merged: false; reason: "draft" }
-  | WikiRefusal
   | MergeStale
   | Queued;
 
@@ -131,54 +121,6 @@ function staleReason(
   return undefined;
 }
 
-// Whether the issue's wiki checkout holds the approved wiki head, and it
-// still fast-forwards the wiki's branch, so the publish after the merge needs
-// no unreviewed rebase. Merging code whose wiki can't then be published as
-// approved would leave it half done.
-function wikiBehind(cfg: Config, req: MergeRequest): WikiRefusal | undefined {
-  const wiki = wikiCfg(cfg);
-  const approved = req.revision.wiki;
-  if (wiki === null || approved === null) {
-    return undefined;
-  }
-  const dir = paths.wiki(cfg, req.number);
-  const holds = ["-C", dir, "cat-file", "-e", `${approved}^{commit}`];
-  if (run("git", holds, { allowFail: true }).code !== 0) {
-    return {
-      merged: false,
-      reason: "wiki-missing",
-      detail: `the issue's wiki checkout doesn't hold the approved wiki commit ${approved}, so nothing was merged or published`,
-    };
-  }
-  const refspec = `+refs/heads/${wiki.branch}:refs/remotes/origin/${wiki.branch}`;
-  git(cfg, "dev", ["-C", dir, "fetch", "origin", refspec]);
-  const base = `origin/${wiki.branch}`;
-  const args = ["-C", dir, "merge-base", "--is-ancestor", base, approved];
-  if (run("git", args, { allowFail: true }).code === 0) {
-    const pin = run("git", [
-      "-C",
-      paths.worktree(cfg, req.number),
-      "ls-tree",
-      req.expectedSha,
-      "--",
-      wiki.dir,
-    ]).stdout;
-    if (!pin.startsWith(`160000 commit ${approved}\t`)) {
-      return {
-        merged: false,
-        reason: "wiki-pin",
-        detail: `the authorized code tree must pin the integrated wiki commit ${approved} at ${wiki.dir}`,
-      };
-    }
-    return undefined;
-  }
-  return {
-    merged: false,
-    reason: "wiki-behind",
-    detail: `${base} moved past the approved wiki commit ${approved}`,
-  };
-}
-
 // Why the open PR may not merge yet, or undefined when it may. The merge
 // order comes before the fresh revision and base checks, so only the issue
 // at the head of the queue is told to rebase (#422). A draft is refused, and
@@ -212,12 +154,12 @@ function precheck(
   if (view.isDraft) {
     return { merged: false, reason: "draft" };
   }
-  return wikiBehind(cfg, req);
+  return undefined;
 }
 
 // Names the configured destination and immutable authorized source, not the
 // PR's mutable target/head refs. Observations below are not a transaction
-// with PR/input/wiki state or with concurrent integration changes.
+// with PR/input state or with concurrent integration changes.
 function merge(
   cfg: Config,
   request: unknown,

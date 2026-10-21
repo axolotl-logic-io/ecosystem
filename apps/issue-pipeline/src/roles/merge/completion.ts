@@ -1,10 +1,9 @@
 // The merge job's end: the security review of the merged result
-// (security.ts), then the publish of exactly the wiki head it reviewed and
-// the completion, saved as done with what merged before the finish op
-// labels and closes the issue, so a finish that fails can be run again from
-// the saved completion. Nothing publishes or completes without a security
-// receipt that approves exactly what merged and publishes; a done issue
-// back at merge gets the finish op again only with such a receipt.
+// (security.ts), then the completion, saved as done with what merged before
+// the finish op labels and closes the issue, so a finish that fails can be
+// run again from the saved completion. Nothing completes without a security
+// receipt that approves exactly what merged; a done issue back at merge
+// gets the finish op again only with such a receipt.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -14,7 +13,7 @@ import { SHORT_SHA } from "../change-task.ts";
 import { opReply } from "../op-replies.ts";
 import { currentRevision } from "../revision-source.ts";
 import { checkedMergedResult } from "./checks.ts";
-import { failed, logged, toAuthor, waiting } from "./returns.ts";
+import { failed, logged, toAuthor } from "./returns.ts";
 import { rejectedAgain, securityReviewed } from "./security.ts";
 
 const FINISHED = z.union([
@@ -25,32 +24,18 @@ const FINISHED = z.union([
     detail: z.string().optional(),
   }),
 ]);
-const PUBLISHED = z.union([
-  z.looseObject({
-    published: z.literal(true),
-    sha: z.string().nullable(),
-    commits: z.array(z.string()),
-  }),
-  z.looseObject({
-    published: z.literal(false),
-    reason: z.string().optional(),
-    detail: z.string().optional(),
-    conflicts: z.array(z.string()).optional(),
-  }),
-]);
-
 function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// Done, with what merged and published saved first; then the finish op's
-// labels and closure.
+// Done, with what merged saved first; then the finish op's labels and
+// closure.
 async function complete(
   ctx: RoleContext,
   state: IssueState,
   merged: Revision,
 ): Promise<RoleEnd> {
-  const entry = `done: merged code ${short(merged.code)}, published wiki ${short(merged.wiki)}`;
+  const entry = `done: merged code ${short(merged.code)}`;
   const done = logged(
     { ...state, stage: "done", merged, mergeReturn: null },
     entry,
@@ -60,8 +45,8 @@ async function complete(
 }
 
 // The finish op on the saved completion `done`. Done only when it finished;
-// new trusted inputs go to the author, and any other refusal (the wiki not
-// holding the published head, or changed past it) stops, so no job retries a
+// new trusted inputs go to the author, and any other refusal (a security
+// review that doesn't clear the merged result) stops, so no job retries a
 // completion that can't finish.
 async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   const finished = await opReply(ctx, "finish-wiki", { state: done }, FINISHED);
@@ -75,52 +60,16 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   return failed(done, detail);
 }
 
-// Pushes the wiki at exactly `revision.wiki`; null once published, else why
-// it waits. A refused publish changes nothing, and the next merge job
-// integrates the wiki again; a security refusal, the publish guard finding
-// no saved security receipt that clears exactly the merged result, stops
-// instead, since no retry of the same publish can pass it.
-async function publishWiki(
-  ctx: RoleContext,
-  state: IssueState,
-  revision: Revision,
-): Promise<RoleEnd | null> {
-  if (revision.wiki === null) {
-    return null;
-  }
-  const reply = await opReply(
-    ctx,
-    "publish",
-    { state, expectedWiki: revision.wiki, revision },
-    PUBLISHED,
-  );
-  if (reply.published) {
-    return null;
-  }
-  const why =
-    reply.reason ?? `conflicts in ${(reply.conflicts ?? []).join(", ")}`;
-  if (reply.reason === "security") {
-    return failed(
-      state,
-      `the wiki publish was refused (security): ${reply.detail ?? "no security receipt clears the merged result"}`,
-    );
-  }
-  return waiting(state, `the wiki publish was refused: ${why}`);
-}
-
-// The security review of the merged result `merged`, then the publish of
-// its wiki for the authorized revision `authorized` and the completion.
-async function reviewedAndPublished(
+// The security review of the merged result `merged`, then the completion.
+async function reviewedAndCompleted(
   ctx: RoleContext,
   state: IssueState,
   {
     merged,
-    authorized,
     codeMerged,
     still,
   }: {
     merged: Revision;
-    authorized: Revision;
     codeMerged: CodeMerged | null;
     still: (after: Revision) => boolean;
   },
@@ -136,10 +85,6 @@ async function reviewedAndPublished(
   });
   if (!security.ok) {
     return security.end;
-  }
-  const refused = await publishWiki(ctx, security.value, authorized);
-  if (refused !== null) {
-    return refused;
   }
   return await complete(ctx, security.value, merged);
 }
@@ -220,4 +165,4 @@ async function finishCompleted(
   return await finish(ctx, security.value);
 }
 
-export { finishCompleted, reviewedAndPublished, stillAt };
+export { finishCompleted, reviewedAndCompleted, stillAt };

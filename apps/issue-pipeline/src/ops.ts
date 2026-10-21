@@ -10,9 +10,8 @@
 // No language model runs here. Authenticated calls select a verified credential
 // through github.ts; config.ts alone reads the private operator file.
 //
-// Development owns commits, source/private-wiki pushes and PR lifecycle.
-// Review/merge owns comments, state, claims, labels, authority reads, REST
-// merge and published wiki pushes. Both are excluded from human trust;
+// Development owns commits, source pushes and PR lifecycle. Review/merge
+// owns comments, state, claims, labels, authority reads and REST merge. Both are excluded from human trust;
 // current merge authorship and editor provenance, not marks alone, confer
 // operational authority.
 
@@ -32,14 +31,12 @@ import { merge } from "./ops/merge.ts";
 import { reconcileMerge } from "./ops/merge-recovery.ts";
 import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
 import { prOps } from "./ops/pr.ts";
-import { publishOps } from "./ops/publish.ts";
 import { pushOps } from "./ops/push.ts";
 import { release, saveState } from "./ops/save-state.ts";
 import { stop } from "./ops/stop.ts";
 import { syncOps } from "./ops/sync.ts";
 import { usage } from "./ops/usage.ts";
 import { verify } from "./ops/verify.ts";
-import { wikiCheck } from "./ops/wiki-check.ts";
 import { OpsError } from "./ops-error.ts";
 import { ROOT } from "./pipeline-root.ts";
 import { parseRequest } from "./process.ts";
@@ -66,9 +63,7 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ...Object.entries(prOps),
   ...Object.entries(pushOps),
   ...Object.entries(syncOps),
-  // publish, wiki-sync and finish-wiki-sync.
-  ...Object.entries(publishOps),
-  // Merges code only, checkpointing attempt/response/receipt; never the wiki or issue.
+  // Merges code only, checkpointing attempt/response/receipt; never the issue.
   ["merge", merge],
   ["reconcile-merge", reconcileMerge],
   // Completes an issue its merge role saved done and merged.
@@ -83,7 +78,6 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["stop", stop],
   ["current-revision", currentRevisionOp],
   ["verify", verify],
-  ["wiki-check", wikiCheck],
   ["ci-status", ciStatus],
   ["post", post],
   ["release", release],

@@ -1,7 +1,6 @@
 // @ts-check
 // The pipeline's verification (src/roles/verification.ts), which the
-// Reviewer runs while it hardens and integrates a change: verify and
-// wiki-check, exactly `maxCiFixes` fix sessions of the caller's phase for
+// Reviewer runs while it hardens and integrates a change: verify, exactly `maxCiFixes` fix sessions of the caller's phase for
 // failing checks and then the check-fixes stop, a fixer's `cannot` as the
 // same stop, a transient fix session deferring, and failing CI fixed first.
 import assert from "node:assert/strict";
@@ -45,7 +44,6 @@ const FIRST_OF_TWO = /fix attempt 1 of 2/u;
 const FAILED_TEST_HEADING = /### test: exit 1/u;
 const FAILED_TEST_TAIL = /AssertionError: 2 !== 3/u;
 const PASSED_LINT_HEADING = /### lint/u;
-const WIKI_ORPHAN = /wiki-orphan:New/u;
 const CANNOT_REASON = /fix attempt 1 of 2.*\(test\): the DB is down/u;
 
 const FAILING_CI = [{ id: "ci/build", pass: false, detail: "failure" }];
@@ -77,10 +75,7 @@ test("the tests run under a temporary pipeline root", () => {
 
 test("a failing check gets a Reviewer fix session of the caller's phase, and the fixed head is the one verified", async () => {
   const run = fakeContext({
-    ops: {
-      "pin-wiki": [{ changed: false }, { changed: true }],
-      verify: [FAILING, PASSING],
-    },
+    ops: { verify: [FAILING, PASSING] },
   });
   const end = await verified(run, { phase: "integration" });
   const { ops, sessions } = run;
@@ -94,30 +89,7 @@ test("a failing check gets a Reviewer fix session of the caller's phase, and the
   assert.equal(sessions[0]?.phase, "integration");
   assert.equal(sessions[0]?.commits, true);
   assert.equal(count(opNames(ops)), 2);
-  assert.deepEqual(
-    opNames(ops).filter((name) => name === "pin-wiki" || name === "verify"),
-    ["pin-wiki", "verify", "pin-wiki", "verify"],
-  );
   assert.deepEqual(end, { ok: true, value: FIXED });
-});
-
-test("a failing wiki check gets a fix session too", async () => {
-  const run = fakeContext({
-    ops: {
-      "wiki-check": [
-        {
-          pass: false,
-          checks: [{ id: "wiki-orphan:New", pass: false, detail: "orphan" }],
-        },
-        { pass: true, checks: [] },
-      ],
-    },
-  });
-  const end = await verified(run);
-  assert.equal(run.sessions.length, 1);
-  assert.equal(run.sessions[0]?.phase, "hardening");
-  assert.match(run.sessions[0]?.task ?? "", WIKI_ORPHAN);
-  assert.equal(end.ok, true);
 });
 
 test("checks that keep failing get exactly maxCiFixes fix sessions, then stop", async () => {
@@ -184,7 +156,7 @@ test("verify is the verdict, whatever the session says", async () => {
 
 test("failing CI gets the first fix session before any verify, then verify decides", async () => {
   const run = fakeContext({
-    ops: { "pin-wiki": [{ changed: true }], verify: [PASSING] },
+    ops: { verify: [PASSING] },
   });
   const end = await verified(run, {
     phase: "integration",
@@ -192,8 +164,7 @@ test("failing CI gets the first fix session before any verify, then verify decid
   });
   assert.equal(run.sessions.length, 1);
   assert.match(run.sessions[0]?.task ?? "", CI_CHECK_HEADING);
-  assert.equal(opNames(run.ops)[0], "pin-wiki");
-  assert.equal(opNames(run.ops).indexOf("verify"), 1);
+  assert.deepEqual(opNames(run.ops), ["verify"]);
   assert.deepEqual(end, { ok: true, value: FIXED });
 });
 

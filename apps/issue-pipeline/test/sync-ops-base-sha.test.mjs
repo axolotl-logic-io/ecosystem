@@ -26,7 +26,7 @@ fx.fakeGh.requireReplies();
 const { fakeGh, originRef, sh, worktree } = fx;
 const { ghIsRead } = await import("../src/github.ts");
 const ISSUE = { movedBase: 61, olderBase: 62, offBase: 63 };
-const CODE = { codeChanged: true, wikiAhead: 0 };
+const CODE = { codeChanged: true };
 
 // Runs an op after queuing `replies`; returns its stdout and the gh writes.
 /** @param {{ number: number } & Record<string, unknown>} request @param {GhReply[]} [replies] @returns {{ out: string, writes: string[][] }} */

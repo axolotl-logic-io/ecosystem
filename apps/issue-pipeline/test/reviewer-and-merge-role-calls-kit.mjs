@@ -58,10 +58,7 @@ function checksBefore(calls, boundary) {
   const checks = calls
     .filter((call) => call.kind === "op")
     .slice(after, before);
-  return {
-    verify: firstPayload(checks, "verify"),
-    wiki: firstPayload(checks, "wiki-check"),
-  };
+  return { verify: firstPayload(checks, "verify") };
 }
 
 /**

@@ -1,5 +1,5 @@
 // The cleanup op, run at the end of every sweep: frees the worktree, local
-// branches, wiki checkout and teardown resources of each closed issue whose
+// branches and teardown resources of each closed issue whose
 // work is all on GitHub. Anything in doubt is kept, with the reason.
 
 import { z } from "zod";
@@ -11,7 +11,6 @@ import { issueState } from "../github.ts";
 import { withCloneLock } from "../locks.ts";
 import { parseRequest } from "../process.ts";
 import { readState } from "../saved-state.ts";
-import { unsavedWiki } from "../wiki.ts";
 
 // `skip` is the sweep's own issue, which its lane may still be using.
 const CLEANUP_REQUEST = z.looseObject({ skip: z.number().int().nullish() });
@@ -53,7 +52,7 @@ function keepReason(
   }
   const { state: stored } = readState(cfg, n, comments);
   const pr = PR_NUMBER.safeParse(stored?.pr).data ?? null;
-  return unsavedWork(cfg, n, pr) ?? unsavedWiki(cfg, n);
+  return unsavedWork(cfg, n, pr);
 }
 
 // Checks issue n and removes its worktree, holding the clone lock for this

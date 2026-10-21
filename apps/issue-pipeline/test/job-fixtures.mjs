@@ -78,20 +78,17 @@ const IMPLEMENTOR_SESSION = {
   events: [messageEnd(USAGE), outputEnd(IMPLEMENTED)],
 };
 // The ops an implement job runs around its session: the draft PR, a code
-// and wiki sync that change nothing, a verification and wiki check that pass
-// at HEAD_SHA, and the PR made ready at that head.
+// sync that changes nothing, a verification that passes at HEAD_SHA, and the
+// PR made ready at that head.
 const IMPLEMENT_OPS = {
   "start-pr": { ok: true, pr: PR, headSha: HEAD_SHA },
   "sync-base": { ok: true, conflict: false, changed: false },
-  "wiki-sync": { ok: true, conflict: false, changed: false },
   verify: { ok: true, pass: true, headSha: HEAD_SHA, checks: [] },
-  "wiki-check": { ok: true, pass: true, checks: [] },
   "open-pr": {
     ok: true,
     pr: PR,
     headSha: HEAD_SHA,
     codeChanged: true,
-    wikiAhead: 0,
   },
 };
 

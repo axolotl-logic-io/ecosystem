@@ -210,7 +210,6 @@ test("hardening and check-fix both get the pinned targeted-test policy and actua
       headSha: HEAD_SHA,
       checks: [{ id: "test", pass: false, detail: "exit 1" }],
     },
-    "wiki-check": { ok: true, pass: true, checks: [] },
   };
   const at = setUp(
     replies,

@@ -1,12 +1,9 @@
 // What prepare-review (sync.ts) writes around a branch's code diff: the
-// messages of its commits above it, the issue's wiki commits below it, and the
-// review bundle, which adds the changed files' head texts after all of that.
+// messages of its commits above it, and the review bundle, which adds the
+// changed files' head texts after all of that.
 
 import { z } from "zod";
-import type { Config } from "../config.ts";
-import { wikiCfg } from "../config.ts";
 import { run } from "../process.ts";
-import { wikiDiff } from "../wiki.ts";
 
 // Changed files' whole texts go into the review bundle, in path order, while
 // it stays within this; about 57k tokens at 3.5 characters a token, so a
@@ -59,22 +56,6 @@ function commitLog(wt: string, range: string): string {
     return "";
   }
   return `# Commits, oldest first\n\n${log}\n\n# Diff\n\n`;
-}
-
-// Wiki commits come after the code diff. They are always the whole wiki change so
-// far, even in a re-review that shows only the code since the last review.
-function withWiki(
-  cfg: Config,
-  n: number,
-  diff: string,
-): { text: string; files: string[] } {
-  const wiki = wikiDiff(cfg, n);
-  const settings = wikiCfg(cfg);
-  if (wiki.diff === "" || settings === null) {
-    return { text: diff, files: wiki.files };
-  }
-  const heading = `# Wiki changes (paths under ${settings.dir}/; pushed to the wiki when the PR merges)`;
-  return { text: `${diff}\n\n${heading}\n\n${wiki.diff}`, files: wiki.files };
 }
 
 // The NUL-separated records `git diff <extra> range` prints, without the
@@ -203,4 +184,4 @@ function reviewBundle(
   return bundle;
 }
 
-export { commitLog, REVIEW_BUNDLE_MAX_CHARS, reviewBundle, withWiki };
+export { commitLog, REVIEW_BUNDLE_MAX_CHARS, reviewBundle };

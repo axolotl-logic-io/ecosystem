@@ -28,9 +28,7 @@ import {
   REVISION,
 } from "./reviewer-and-merge-role-kit.mjs";
 
-const { mergedAuthorizationHolds } = await import(
-  "../src/ops/publication-guard.ts"
-);
+const { mergedAuthorizationHolds } = await import("../src/ops/merge-guard.ts");
 
 const DONE = {
   ...merging().ctx.state,
@@ -54,7 +52,6 @@ test("a code-only done completion rechecks M before reviewing missing security",
       "prepare-review": [{ ...PREPARED_MERGED, changedFiles: ["src/chat.ts"] }],
       "finish-wiki": [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [{ pass: true, checks: [] }],
     },
     sessions: [NO_FINDING],
   });
@@ -75,7 +72,6 @@ test("a code-only done completion rechecks M before reviewing missing security",
   ])) {
     const checks = checksBefore(calls, boundary);
     assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
-    assert.deepEqual(checks.wiki, { number: ctx.issue });
   }
   assert.deepEqual(mutationsOf(calls), ["finish-wiki"]);
   assert.ok(sessionsOf(calls).every((session) => session.commits === false));
@@ -96,13 +92,11 @@ test("a done completion rechecks M before reusing exact clearance", async () => 
       "current-revision": [AFTER_MERGE],
       "finish-wiki": [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [{ pass: true, checks: [] }],
     },
   });
   stateOf(await mergeRole(ctx), "next");
   const checks = checksBefore(calls, "finish-wiki");
   assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
-  assert.deepEqual(checks.wiki, { number: ctx.issue });
   assert.deepEqual(mutationsOf(calls), ["finish-wiki"]);
   assert.equal(sessionsOf(calls).length, 0);
 });

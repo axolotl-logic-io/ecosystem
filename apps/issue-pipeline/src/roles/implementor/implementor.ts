@@ -6,19 +6,12 @@
 // the full verification: the Reviewer hardens and verifies the change next
 // (src/roles/reviewer/). Its push makes any earlier hardening, approval or
 // integration stale, so it clears them. Once the issue's code merged
-// (`state.codeMerged`) only its wiki work remains: no PR, and a push of the
-// wiki alone.
+// (`state.codeMerged`) the job opens no PR and pushes nothing.
 
-import { flowsOf } from "../../flows.ts";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
-import {
-  OPEN_PR_REPLY,
-  opReply,
-  PUSH_REPLY,
-  START_PR_REPLY,
-} from "../op-replies.ts";
+import { OPEN_PR_REPLY, opReply, START_PR_REPLY } from "../op-replies.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop, writerSession } from "../writer-session.ts";
 import type { DevelopmentMode } from "./task.ts";
@@ -64,9 +57,8 @@ async function work(
 }
 
 // Pushes the branch and fills in the PR, which stays a draft until the
-// Reviewer's hardening marks it ready. A change that lives only in the wiki closes the
-// draft, and once it is closed the issue has no PR; one that changes
-// nothing goes to review as it is, saying so.
+// Reviewer's hardening marks it ready. A change that changes nothing goes
+// to review as it is, saying so.
 async function pushBranch(
   ctx: RoleContext,
   state: IssueState,
@@ -84,41 +76,20 @@ async function pushBranch(
     },
     OPEN_PR_REPLY,
   );
-  const flows = flowsOf(opened);
-  let pr: number | null = opened.pr;
-  if (!flows.code && flows.wiki) {
-    await ctx.op("close-pr", { number: ctx.issue, pr: opened.pr });
-    pr = null;
-  }
   const next: IssueState = {
     ...state,
-    pr,
+    pr: opened.pr,
     headSha: opened.headSha,
-    flows,
+    flows: { code: opened.codeChanged, wiki: false },
   };
-  if (!(flows.code || flows.wiki)) {
+  if (!opened.codeChanged) {
     return withLog(
       next,
-      `the branch changes no file and the wiki has no commits; the developer said: ${summary}`,
+      `the branch changes no file; the developer said: ${summary}`,
       new Date(),
     );
   }
   return next;
-}
-
-// Pushes the wiki alone, after the code merged: the op refuses when the code
-// checkout's head moved off the pushed branch.
-async function pushWiki(
-  ctx: RoleContext,
-  state: IssueState,
-): Promise<IssueState> {
-  const pushed = await opReply(
-    ctx,
-    "push",
-    { number: ctx.issue, wikiOnly: true },
-    PUSH_REPLY,
-  );
-  return { ...state, headSha: pushed.headSha, flows: flowsOf(pushed) };
 }
 
 // The state after a new push: no hardening, approval, integration or
@@ -171,9 +142,7 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
   if (!summary.ok) {
     return summary.end;
   }
-  if (mode.kind === "wiki-only") {
-    state = await pushWiki(ctx, state);
-  } else {
+  if (mode.kind === "branch") {
     state = await pushBranch(ctx, state, summary.value);
   }
   const head = state.headSha?.slice(0, SHORT_SHA) ?? "none";

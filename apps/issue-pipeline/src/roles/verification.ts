@@ -1,6 +1,5 @@
 // The pipeline's verification of a change (`verify-runs-repo-checks`): the
-// repo's configured checks through `verify`, then `wiki-check`, never a
-// session's word. The Reviewer runs it while it hardens a change and while
+// repo's configured checks through `verify`, never a session's word. The Reviewer runs it while it hardens a change and while
 // it integrates one at merge. A failure gets a fix session of that phase, up
 // to `maxCiFixes` of them in a job, and stops with check-fixes after that,
 // or as soon as a fix session says no change in the repo can fix them. Once
@@ -13,14 +12,13 @@ import type { CodeMerged, IssueState } from "../state.ts";
 import type { Mode } from "./change-task.ts";
 import { fixTask } from "./change-task.ts";
 import type { Check } from "./op-replies.ts";
-import { opReply, VERIFY_REPLY, WIKI_CHECK_REPLY } from "./op-replies.ts";
+import { opReply, VERIFY_REPLY } from "./op-replies.ts";
 import type { Step, WriterPhase } from "./writer-session.ts";
 import { ended, errorStop, writerSession } from "./writer-session.ts";
 
 interface Verification {
   headSha: string;
-  codePass: boolean;
-  wikiPass: boolean;
+  pass: boolean;
   failed: Check[];
 }
 
@@ -51,20 +49,10 @@ async function verifyOnce(ctx: RoleContext, mode: Mode): Promise<Verification> {
     verifyPayload(ctx, mode),
     VERIFY_REPLY,
   );
-  const wiki = await opReply(
-    ctx,
-    "wiki-check",
-    { number: ctx.issue },
-    WIKI_CHECK_REPLY,
-  );
-  const failed = [...verified.checks, ...wiki.checks].filter(
-    (check) => !check.pass,
-  );
   return {
     headSha: verified.headSha,
-    codePass: verified.pass,
-    wikiPass: wiki.pass,
-    failed,
+    pass: verified.pass,
+    failed: verified.checks.filter((check) => !check.pass),
   };
 }
 
@@ -92,10 +80,10 @@ function judged(
     const reason = `verify checked ${verification.headSha}, not the merge commit ${mode.merged.sha}`;
     return ended(errorStop(state, reason));
   }
-  if (verification.codePass && verification.wikiPass) {
+  if (verification.pass) {
     return { ok: true, value: verification.headSha };
   }
-  if (mode.kind === "wiki-only" && !verification.codePass) {
+  if (mode.kind === "wiki-only") {
     const reason = `checks still fail on the merged code at ${mode.merged.sha}, which wiki-only work can't change: ${failedIds(verification)}`;
     return ended(checksStop(state, reason));
   }
@@ -141,15 +129,6 @@ async function verifiedFrom(
   loop: Loop,
   attempt: number,
 ): Promise<Step<string>> {
-  if (
-    loop.phase === "integration" &&
-    loop.mode.kind === "branch" &&
-    ctx.dirs.docs !== null
-  ) {
-    // A check-fix may have changed the wiki again. Pin before every exact-head
-    // check, never after checks and never for a publish-only flow.
-    await ctx.op("pin-wiki", { number: ctx.issue });
-  }
   const verification = await verifyOnce(ctx, loop.mode);
   const end = judged(loop, verification, attempt);
   if (end !== null) {
@@ -163,7 +142,7 @@ async function verifiedFrom(
   return await verifiedFrom(ctx, loop, attempt + 1);
 }
 
-// The verified code head: verify and wiki-check pass on it, after up to
+// The verified code head: verify passes on it, after up to
 // `maxCiFixes` fix sessions of `phase`. Given `failing`, checks that already
 // failed elsewhere (CI), the first fix session fixes them before any verify.
 async function verifiedHead(

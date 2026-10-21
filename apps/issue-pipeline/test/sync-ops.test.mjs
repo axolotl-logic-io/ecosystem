@@ -57,7 +57,7 @@ function gitIn(dir, args) {
 }
 
 // What a branch with a code change and no wiki reports.
-const CODE = { codeChanged: true, wikiAhead: 0 };
+const CODE = { codeChanged: true };
 
 test("sync-base leaves an up-to-date branch alone", () => {
   const headSha = fx.startBranch(ISSUE.upToDate, "g", "one");

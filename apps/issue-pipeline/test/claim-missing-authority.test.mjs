@@ -56,13 +56,6 @@ function priorWork(number, evidence) {
       "must survive\n",
     );
   }
-  if (evidence === "private wiki ref") {
-    const mirror = path.join(root, "work", "o__r", "wiki-mirror.git");
-    sh(`git clone -q --bare ${root}/origin.git ${mirror}`);
-    sh(
-      `git -C ${mirror} update-ref refs/heads/${branch} refs/heads/integration`,
-    );
-  }
   if (evidence === "machine comment") {
     return [
       issueComment(
@@ -146,7 +139,6 @@ for (const [index, evidence] of [
   "source branch",
   "local work",
   "recovery bundle",
-  "private wiki ref",
   "machine comment",
   "PR history",
 ].entries()) {

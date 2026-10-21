@@ -54,11 +54,9 @@ async function exitPushAt(state, stage = "implement") {
   return calls;
 }
 
-test("a writer's exit push pushes only the wiki once the code is merged", async () => {
+test("a writer's exit push pushes nothing once the code is merged", async () => {
   const merged = stateAt("implement", { codeMerged: CODE_MERGED });
-  assert.deepEqual(await exitPushAt(merged), [
-    { op: "push", payload: { wikiOnly: true } },
-  ]);
+  assert.deepEqual(await exitPushAt(merged), []);
   assert.deepEqual(await exitPushAt(stateAt("implement")), [
     { op: "exit-push", payload: {} },
   ]);

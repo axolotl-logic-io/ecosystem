@@ -13,7 +13,6 @@ import {
   fakeContext,
   HEAD,
   INPUTS,
-  ISSUE,
   opNames,
   PR,
   ROOT,
@@ -27,15 +26,12 @@ const { implementorRole } = await import(
 const { OpsFailure } = await import("../src/job/role-context.ts");
 
 // The ops the Developer never runs: synchronizing, verifying, merging and
-// publishing belong to the Reviewer.
+// completing belong to the Reviewer.
 const REVIEWER_OPS = new Set([
   "sync-base",
-  "wiki-sync",
   "verify",
-  "wiki-check",
   "ready-pr",
   "merge",
-  "publish",
   "finish-wiki",
   "ci-status",
 ]);
@@ -115,7 +111,7 @@ test("a clean run works, pushes the draft with no sync or verify, and goes to re
   assert.equal(end.state.integration, null);
   assert.equal(end.state.security, null);
   assert.equal(end.state.review.verdict, null);
-  assert.deepEqual(end.state.flows, { code: true, wiki: true });
+  assert.deepEqual(end.state.flows, { code: true, wiki: false });
   assert.equal(end.state.mergeReturn, null);
 });
 
@@ -161,18 +157,15 @@ test("the work task carries the facts: the Gherkin, the scope, the findings and 
   assert.doesNotMatch(task, BEHAVIOUR_WORDS);
 });
 
-test("after the code merged, the work is scoped to the wiki and only the wiki is pushed", async () => {
+test("after the code merged, the job opens no PR and pushes nothing", async () => {
   const { ctx, ops, sessions } = fakeContext({
     state: { pr: PR, codeMerged: { pr: PR, sha: MERGED } },
-    ops: { push: [{ headSha: MERGED, codeChanged: false, wikiAhead: 1 }] },
   });
   const end = await implementorRole(ctx);
   assert.match(sessions[0]?.task ?? "", WIKI_SCOPE);
-  assert.deepEqual(opNames(ops), ["push"]);
-  assert.deepEqual(ops[0]?.payload, { number: ISSUE, wikiOnly: true });
+  assert.deepEqual(opNames(ops), []);
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
-  assert.deepEqual(end.state.flows, { code: false, wiki: true });
 });
 
 test("an issue with no Gherkin goes to the author and comes back to implement", async () => {
@@ -222,28 +215,14 @@ test("a resolver's reply to the work task stops with error", async () => {
   assert.ok(end.kind === "stop" && end.code === "error");
 });
 
-test("a change that lives only in the wiki closes the draft PR and saves no PR", async () => {
-  const { ctx, ops } = fakeContext({
-    ops: {
-      "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: false, wikiAhead: 2 }],
-    },
-  });
-  const end = await implementorRole(ctx);
-  assert.equal(opNames(ops).at(-1), "close-pr");
-  assert.deepEqual(ops.at(-1)?.payload, { number: ISSUE, pr: PR });
-  assert.ok(end.kind === "next");
-  assert.deepEqual(end.state.flows, { code: false, wiki: true });
-  assert.equal(end.state.pr, null);
-});
-
 test("a branch that changes nothing still goes to review, and says so", async () => {
   const { ctx, ops } = fakeContext({
     ops: {
-      "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: false, wikiAhead: 0 }],
+      "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: false }],
     },
   });
   const end = await implementorRole(ctx);
-  assert.ok(!opNames(ops).includes("close-pr"));
+  assert.equal(opNames(ops).at(-1), "open-pr");
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
   assert.deepEqual(end.state.flows, { code: false, wiki: false });
@@ -264,7 +243,7 @@ test("a branch whose existing change already does the Gherkin is pushed as it is
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
   assert.equal(end.state.headSha, HEAD);
-  assert.deepEqual(end.state.flows, { code: true, wiki: true });
+  assert.deepEqual(end.state.flows, { code: true, wiki: false });
 });
 
 test("a failed op propagates as its OpsFailure, and a malformed reply fails", async () => {
@@ -279,12 +258,11 @@ test("a failed op propagates as its OpsFailure, and a malformed reply fails", as
   });
 });
 
-test("the Developer never syncs, verifies, readies, merges or publishes", async () => {
+test("the Developer never syncs, verifies, readies, merges or completes", async () => {
   const runs = [
     fakeContext(),
     fakeContext({
       state: { codeMerged: { pr: PR, sha: MERGED } },
-      ops: { push: [{ headSha: MERGED, codeChanged: false, wikiAhead: 1 }] },
     }),
     fakeContext({ docs: null }),
   ];

@@ -28,7 +28,7 @@ import {
   reviewerRole,
   sha,
 } from "./reviewer-and-merge-role-kit.mjs";
-import { hardening, PUSHED, WIKI_PASS } from "./reviewer-role-test-kit.mjs";
+import { hardening, PUSHED } from "./reviewer-role-test-kit.mjs";
 
 const FIXED = sha("9");
 const OLDER = { ...REVISION, code: sha("8") };
@@ -40,11 +40,9 @@ const FAILING = {
 // The ops hardening never runs: syncing and merging are the merge stage's.
 const MERGE_STAGE_OPS = new Set([
   "sync-base",
-  "wiki-sync",
   "ci-status",
   "merge",
   "prepare-review",
-  "publish",
   "finish-wiki",
 ]);
 
@@ -68,7 +66,6 @@ test("hardening runs one Reviewer session, verifies, pushes, saves the hardened 
     "current-revision",
     "session",
     "verify",
-    "wiki-check",
     "push",
     "current-revision",
     "save",
@@ -178,7 +175,6 @@ test("a failing check gets a hardening-phase fix session and the fixed head is t
     after: current({ code: FIXED }),
     ops: {
       verify: [FAILING, { pass: true, headSha: FIXED, checks: [] }],
-      "wiki-check": [WIKI_PASS, WIKI_PASS],
       push: [{ ...PUSHED, headSha: FIXED }],
     },
     sessions: [
@@ -219,7 +215,7 @@ test("a targeted-test reply cannot bypass the bounded deterministic check-fix ga
       maxCiFixes: 1,
       commands: { test: "mise //apps/issue-pipeline:check" },
     },
-    ops: { verify: [FAILING, FAILING], "wiki-check": [WIKI_PASS, WIKI_PASS] },
+    ops: { verify: [FAILING, FAILING] },
     sessions: [
       { ok: true, reply: { outcome: "done", summary: "targeted tests pass" } },
       {
@@ -234,10 +230,8 @@ test("a targeted-test reply cannot bypass the bounded deterministic check-fix ga
     "current-revision",
     "session",
     "verify",
-    "wiki-check",
     "session",
     "verify",
-    "wiki-check",
   ]);
   assert.equal(savesOf(calls).length, 0);
   for (const spec of sessionsOf(calls)) {
@@ -270,7 +264,7 @@ test("a branch left with no code after hardening stops, never going to merge", a
   assert.equal(savesOf(calls).length, 0);
 });
 
-test("hardening never syncs, merges, reviews security or publishes", async () => {
+test("hardening never syncs, merges, reviews security or completes", async () => {
   const runs = [
     hardening(),
     hardening({ state: { hardened: REVISION } }),

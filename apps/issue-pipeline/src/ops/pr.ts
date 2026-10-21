@@ -1,16 +1,15 @@
 // The issue's pull request: start-pr opens it as a draft before any code is
 // written, or, given a body, sets the body of the one it finds; open-pr fills
 // it in, still a draft (reopening a closed one); ready-pr marks it ready once
-// the Reviewer approved its exact revision; close-pr closes the draft of a
-// change that lives only in the wiki. How a PR links to its issue lives
-// here. Once the saved state records the code merged, neither start-pr nor
+// the Reviewer approved its exact revision. How a PR links to its issue
+// lives here. Once the saved state records the code merged, neither start-pr nor
 // open-pr pushes code.
 
 import { z } from "zod";
 import type { BranchChanges } from "../checkouts.ts";
 import { ensureWorktree, push } from "../checkouts.ts";
 import type { Author } from "../comments.ts";
-import { AUTHOR, comment, signed } from "../comments.ts";
+import { AUTHOR, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertClean, remoteHead } from "../git-state.ts";
@@ -18,7 +17,6 @@ import { gh, ghJson } from "../github.ts";
 import { LABELS, setLabels } from "../labels.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
-import { holdWikiPin } from "../wiki.ts";
 import { recoverDraft, saveDraftAuthority } from "./pr-state.ts";
 import { openPrFor } from "./prs.ts";
 import { refuseOnceMerged } from "./push.ts";
@@ -32,15 +30,7 @@ interface PrReply {
 
 interface OpenReply extends PrReply, BranchChanges {}
 
-interface CloseReply {
-  pr: number;
-  closed: true;
-}
-
-type Op = (
-  cfg: Config,
-  request: unknown,
-) => PrReply | OpenReply | CloseReply | ReadyReply;
+type Op = (cfg: Config, request: unknown) => PrReply | OpenReply | ReadyReply;
 
 const DRAFT_TEXT =
   "Work on this issue has started. This draft PR tracks it; the pipeline replaces this description once the change is pushed, and marks it ready for review once the Reviewer approves it.";
@@ -58,10 +48,6 @@ const OPEN_REQUEST = z.looseObject({
   body: z.string().nullish(),
   by: AUTHOR.nullish(),
   reopen: z.number().int().nullish(),
-});
-const CLOSE_REQUEST = z.looseObject({
-  number: z.number().int(),
-  pr: z.number().int(),
 });
 const ISSUE = z.looseObject({ title: z.string() });
 
@@ -140,7 +126,6 @@ function startBranch(cfg: Config, n: number): string {
   if (remote !== null) {
     return remote;
   }
-  holdWikiPin(cfg, wt);
   assertClean(wt);
   const message = `Start work on #${n}\n\nPipeline-Agent: coordinator`;
   // A job checkout's pre-commit hook passes only commits that say so.
@@ -190,7 +175,7 @@ function startPr(cfg: Config, request: unknown): PrReply {
 
 // Pushes the branch, then fills in the issue's PR when the branch changes
 // files, leaving it a draft: a new PR opens as one, and a found or reopened
-// one keeps its draft status. A change that lives only in the wiki leaves
+// one keeps its draft status.
 // the draft as it is.
 function openPr(cfg: Config, request: unknown): OpenReply {
   const req = parsed(OPEN_REQUEST, "open-pr request", request);
@@ -222,34 +207,10 @@ function openPr(cfg: Config, request: unknown): OpenReply {
   return { pr, ...pushed };
 }
 
-// gh's answer to a PR's state ("OPEN", "CLOSED" or "MERGED").
-const PR_STATE = z.looseObject({ state: z.string() });
-
-function isOpen(cfg: Config, pr: number): boolean {
-  const args = ["pr", "view", String(pr), "-R", cfg.repo, "--json", "state"];
-  return PR_STATE.safeParse(ghJson(cfg, "merge", args)).data?.state === "OPEN";
-}
-
-// Closes the draft PR of a change that lives only in the wiki, saying where
-// the change is. A PR that isn't open is left as it is, so a second close
-// posts nothing.
-function closePr(cfg: Config, request: unknown): CloseReply {
-  const req = parsed(CLOSE_REQUEST, "close-pr request", request);
-  if (!isOpen(cfg, req.pr)) {
-    return { pr: req.pr, closed: true };
-  }
-  const branch = paths.branch(cfg, req.number);
-  const text = `This change lives only in the wiki, on the wiki branch \`${branch}\`, so this PR has no code to merge and is closed. The pipeline reopens it if a later fix changes code.`;
-  comment(cfg, req.pr, COORDINATOR, text);
-  gh(cfg, "dev", ["pr", "close", String(req.pr), "-R", cfg.repo]);
-  return { pr: req.pr, closed: true };
-}
-
 const prOps: Readonly<Record<string, Op>> = {
   "start-pr": startPr,
   "open-pr": openPr,
   "ready-pr": readyPr,
-  "close-pr": closePr,
 };
 
 export { prOps };

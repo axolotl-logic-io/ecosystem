@@ -1,9 +1,8 @@
 // prepare-review: the diff and bundle a review round reads. Before the code
 // merges, they hold the branch's code change since the last reviewed head
-// that is still in its history, then the whole wiki change. Once the code
-// merged, they hold the merge commit GitHub confirmed, as its change against
-// its first parent, then the whole wiki change, with the checkout detached
-// at the merge commit (merged-review.ts).
+// that is still in its history. Once the code merged, they hold the merge
+// commit GitHub confirmed, as its change against its first parent, with the
+// checkout detached at the merge commit (merged-review.ts).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -14,7 +13,7 @@ import { fetchIn, head, patchIdOf } from "../git-state.ts";
 import { parseRequest, run } from "../process.ts";
 import type { CodeMerged } from "../state.ts";
 import { mergedCode } from "./merged-review.ts";
-import { commitLog, reviewBundle, withWiki } from "./review-diff.ts";
+import { commitLog, reviewBundle } from "./review-diff.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
 // patchId is the id of the branch's changes, which a clean rebase keeps, or
@@ -84,8 +83,8 @@ function reviewFrom(
   return baseSha;
 }
 
-// The review's diff and bundle for `range`, written to the round's folder.
-// The diff is `diff` with the whole wiki change after it.
+// The review's diff `diff` and bundle for `range`, written to the round's
+// folder.
 function writeReview(
   cfg: Config,
   n: number,
@@ -97,37 +96,34 @@ function writeReview(
 ): Pick<
   ReviewReply,
   "diffPath" | "diffLines" | "bundlePath" | "bundleLines" | "bundleText"
-> & { wikiFiles: string[] } {
+> {
   const wt = paths.worktree(cfg, n);
   const dir = path.join(paths.runDir(cfg, n), `review-${tag}`);
   fs.mkdirSync(dir, { recursive: true });
   const diffPath = path.join(dir, "diff.patch");
-  const full = withWiki(cfg, n, diff);
-  fs.writeFileSync(diffPath, full.text);
+  fs.writeFileSync(diffPath, diff);
   const bundlePath = path.join(dir, "bundle.md");
-  const bundle = reviewBundle(wt, range, full.text);
+  const bundle = reviewBundle(wt, range, diff);
   fs.writeFileSync(bundlePath, bundle);
   return {
     diffPath,
-    diffLines: full.text.split("\n").length,
+    diffLines: diff.split("\n").length,
     bundlePath,
     bundleLines: bundle.split("\n").length,
     bundleText: bundle,
-    wikiFiles: full.files,
   };
 }
 
 // The review of the merged result after the code merged as
 // `codeMerged.sha`, once GitHub confirms that merge (merged-review.ts): the
-// merge commit's change against its first parent, then the whole wiki
-// change, with the bundle holding the merged files' texts.
+// merge commit's change against its first parent, with the bundle holding the merged files' texts.
 function prepareMergedReview(
   cfg: Config,
   n: number,
   { tag, codeMerged }: { tag: string; codeMerged: CodeMerged },
 ): ReviewReply {
   const merged = mergedCode(cfg, n, codeMerged);
-  const { wikiFiles, ...written } = writeReview(cfg, n, {
+  const written = writeReview(cfg, n, {
     tag,
     diff: merged.diff,
     range: merged.range,
@@ -137,7 +133,7 @@ function prepareMergedReview(
     headTree: merged.tree,
     baseSha: merged.parent,
     patchId: null,
-    changedFiles: merged.files.concat(wikiFiles),
+    changedFiles: merged.files,
     ...written,
   };
 }
@@ -160,7 +156,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const patch = gitOut(wt, ["diff", "--stat", "--patch", range]);
   const diff = `${commitLog(wt, range)}${patch}`;
   const names = gitOut(wt, ["diff", "--name-only", `${baseSha}..${headSha}`]);
-  const { wikiFiles, ...written } = writeReview(cfg, n, {
+  const written = writeReview(cfg, n, {
     tag,
     diff,
     range: { from, head: headSha },
@@ -170,7 +166,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
     headTree,
     baseSha,
     patchId: patchIdOf(wt, measured, headSha),
-    changedFiles: nonEmptyLines(names).concat(wikiFiles),
+    changedFiles: nonEmptyLines(names),
     ...written,
   };
 }

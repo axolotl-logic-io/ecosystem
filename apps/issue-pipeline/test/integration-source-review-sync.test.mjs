@@ -126,7 +126,7 @@ test("prepare-review with a confirmed code merge reviews the merge commit's firs
   const diff = fs.readFileSync(reply.diffPath, "utf8");
   assert.ok(
     diff.startsWith(
-      `# Code\n\nPR #${PR} merged as ${mergeSha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent. Then the wiki change.\n`,
+      `# Code\n\nPR #${PR} merged as ${mergeSha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent.\n`,
     ),
     diff,
   );

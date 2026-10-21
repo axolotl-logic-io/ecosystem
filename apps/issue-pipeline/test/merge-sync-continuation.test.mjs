@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BASE, fakeContext } from "./implementor-test-kit.mjs";
 
-const { syncSide } = await import("../src/roles/merge/sync.ts");
+const { syncCode } = await import("../src/roles/merge/sync.ts");
 const CONFLICT = {
   conflict: true,
   inRebase: true,
@@ -35,10 +35,7 @@ test("subsequent text stops get bounded sessions without restarting the code reb
     checkpoints.push(saves.at(-1)?.counts.conflictFixes ?? 0);
     return await perform(name, payload);
   };
-  const end = await syncSide(ctx, ctx.state, {
-    side: "code",
-    maxConflictFixes: 2,
-  });
+  const end = await syncCode(ctx, ctx.state, 2);
   assert.equal(sessions.length, 2);
   assert.deepEqual(checkpoints, [0, 1, 2]);
   assert.ok(sessions[1]?.task.includes("next-text"));
@@ -52,7 +49,7 @@ test("subsequent text stops get bounded sessions without restarting the code reb
     saves.map((state) => state.counts.conflictFixes),
     [1, 2],
   );
-  assert.ok(sessions[0]?.task.includes("Do not continue the code rebase"));
+  assert.ok(sessions[0]?.task.includes("Do not continue the rebase"));
   assert.equal(ops.filter((op) => op.name === "sync-base").length, 1);
   assert.equal(end.ok, true);
   assert.ok(end.ok && end.value.counts.conflictFixes === 2);
@@ -74,10 +71,7 @@ test("a later text stop cannot exceed the existing conflict-fix limit", async ()
     },
     sessions: [RESOLVED],
   });
-  const end = await syncSide(ctx, ctx.state, {
-    side: "code",
-    maxConflictFixes: 1,
-  });
+  const end = await syncCode(ctx, ctx.state, 1);
   assert.equal(sessions.length, 1);
   assert.ok(!end.ok && end.end.kind === "stop" && end.end.code === "conflict");
   assert.ok(

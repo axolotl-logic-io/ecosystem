@@ -4,13 +4,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BASE, fakeContext } from "./implementor-test-kit.mjs";
 
-const { syncSide } = await import("../src/roles/merge/sync.ts");
+const { syncCode } = await import("../src/roles/merge/sync.ts");
 
 for (const outcome of /** @type {const} */ ([
   "conflict-resolved",
   "cannot-fix",
 ])) {
-  test(`${outcome} at a later wiki-only pick uses one session and one conflict attempt`, async () => {
+  test(`${outcome} before later picks that apply cleanly uses one session and one conflict attempt`, async () => {
     const { ctx, ops, sessions } = fakeContext({
       ops: {
         "sync-base": [
@@ -26,14 +26,11 @@ for (const outcome of /** @type {const} */ ([
       sessions: [
         {
           ok: true,
-          reply: { outcome, summary: "continued to wiki-only pick" },
+          reply: { outcome, summary: "continued to a clean pick" },
         },
       ],
     });
-    const end = await syncSide(ctx, ctx.state, {
-      side: "code",
-      maxConflictFixes: 1,
-    });
+    const end = await syncCode(ctx, ctx.state, 1);
     assert.equal(end.ok, true);
     assert.ok(end.ok && end.value.counts.conflictFixes === 1);
     assert.equal(sessions.length, 1);

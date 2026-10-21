@@ -61,7 +61,6 @@ test("a fresh exact Security rejection stops closed recovery and cannot be rerol
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
-  assert.equal(ops.includes("publish"), false);
   assert.equal(ops.includes("finish-wiki"), false);
 });
 
@@ -98,7 +97,6 @@ test("closed recovery retains merged truth when actual-result verification fails
     const ops = opsTrace(flow)
       .slice(traceStart)
       .map(({ request }) => request.op);
-    assert.equal(ops.includes("publish"), false);
     assert.equal(ops.includes("finish-wiki"), false);
   } finally {
     fs.writeFileSync(flow.config, config);

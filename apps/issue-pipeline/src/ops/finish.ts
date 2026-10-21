@@ -16,7 +16,6 @@ import { currentRevision } from "../revision.ts";
 import { readState } from "../saved-state.ts";
 import type { IssueState, Revision } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
-import { confirmWikiPublished } from "../wiki-publication.ts";
 import type { FinishRefusal } from "./finish-guard.ts";
 import { finishGate } from "./finish-guard.ts";
 
@@ -104,25 +103,11 @@ function closeIssue(cfg: Config, n: number, text: string): boolean {
 
 // The closing comment for the merged revision.
 function closingText(cfg: Config, state: IssueState, merged: Revision): string {
-  const lines: string[] = [];
+  let text = "The approved revision has no code change to merge.";
   if (state.pr !== null && merged.code !== null) {
-    lines.push(
-      `PR #${state.pr} merged into ${cfg.baseBranch} as ${short(merged.code)}.`,
-    );
-  } else if (merged.wiki !== null) {
-    lines.push(
-      "This issue's change lives only in the wiki, so it had no PR to merge.",
-    );
+    text = `PR #${state.pr} merged into ${cfg.baseBranch} as ${short(merged.code)}.`;
   }
-  if (merged.wiki !== null) {
-    lines.push(
-      `Published wiki commit ${short(merged.wiki)} (history: https://github.com/${cfg.repo}/wiki/_history).`,
-    );
-  }
-  if (lines.length === 0) {
-    lines.push("The approved revision has no code or wiki change to merge.");
-  }
-  return signed({ role: "merger" }, lines.join(" "));
+  return signed({ role: "merger" }, text);
 }
 
 function sameMerged(a: Revision | null, b: Revision | null): boolean {
@@ -137,10 +122,9 @@ function sameMerged(a: Revision | null, b: Revision | null): boolean {
 
 // The completion cleanup, every step safe to repeat: the code branch, the
 // labels and the claims, then the issue, then the worktree (in a stage job,
-// only the teardown: the job removes its own checkout as it exits). A crash before
-// the close leaves the issue open, done and merged, which the orchestrator
-// schedules again, with the checkout that proves the wiki publication still
-// there.
+// only the teardown: the job removes its own checkout as it exits). A crash
+// before the close leaves the issue open, done and merged, which the
+// orchestrator schedules again.
 function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
   const n = state.number;
   deleteBranch(cfg, state);
@@ -160,10 +144,9 @@ function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
   return closed;
 }
 
-// Completes an issue whose merge role saved it done with the merged revision
-// (code merged and wiki published): only after a fresh check that the PR
-// merged at merged.code, the wiki holds merged.wiki and the trusted inputs
-// are unchanged. It publishes and merges nothing itself. Safe to repeat, so
+// Completes an issue whose merge role saved it done with the merged
+// revision: only after a fresh check that the PR merged at merged.code and
+// the trusted inputs are unchanged. It publishes and merges nothing itself. Safe to repeat, so
 // a crash between the save and the cleanup is finished by running it again.
 function finishWiki(cfg: Config, request: unknown): FinishWikiReply {
   const req = parseRequest(FINISH_WIKI_REQUEST, "finish-wiki", request);
@@ -184,12 +167,6 @@ function finishWiki(cfg: Config, request: unknown): FinishWikiReply {
   const { merged } = saved;
   if (merged === null) {
     throw new OpsError(`#${n} has no merged revision`);
-  }
-  if (merged.wiki !== null) {
-    const proof = confirmWikiPublished(cfg, n, merged.wiki);
-    if (!proof.published) {
-      return { finished: false, reason: proof.reason, detail: proof.detail };
-    }
   }
   return { finished: true, closed: complete(cfg, saved, merged) };
 }

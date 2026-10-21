@@ -3,8 +3,7 @@
 // stopped on conflicts gets Reviewer resolver sessions in the integration
 // phase, each counted and saved at once against `maxConflictFixes`, with no
 // attempt past it; a rejected resolution rebases afresh; a transient
-// resolver aborts the rebase and defers, counting nothing; the wiki side
-// goes through wiki-sync and finish-wiki-sync.
+// resolver aborts the rebase and defers, counting nothing.
 import assert from "node:assert/strict";
 import os from "node:os";
 import { test } from "node:test";
@@ -17,7 +16,7 @@ import {
   TEMPORARY_ROOT,
 } from "./implementor-test-kit.mjs";
 
-const { syncSide } = await import("../src/roles/merge/sync.ts");
+const { syncCode } = await import("../src/roles/merge/sync.ts");
 const { OpsFailure } = await import("../src/job/role-context.ts");
 
 const CONFLICT = {
@@ -48,8 +47,7 @@ const CANNOT_FIX_RUN_SESSIONS = 2;
 
 const CONFLICTED_FILE = /- src\/a\.ts/u;
 const RESOLUTION_TASK = /Task: `conflict-resolution`/u;
-const CODE_SIDE = /Side: code; the checkout is `repo\/`/u;
-const WIKI_SIDE = /Side: wiki; the checkout is `docs\/`/u;
+const CODE_CHECKOUT = /The checkout is `repo\/`/u;
 const FIRST_ATTEMPT = /Attempt: 1 of 2/u;
 const SECOND_ATTEMPT = /Attempt: 2 of 2/u;
 const REJECTION_SHOWN =
@@ -57,10 +55,7 @@ const REJECTION_SHOWN =
 const OUT_OF_ATTEMPTS =
   /2 attempts \(maxConflictFixes\).*conflict markers remain/u;
 const CANNOT_FIX_REASON = /too tangled/u;
-const CONFLICTED_PAGE = /- Chats\.md/u;
 const FAILED_RESOLVER = /code conflict resolver session failed: no reply/u;
-const WIKI_OUT_OF_ATTEMPTS =
-  /wiki rebase still conflicts after the resolver's 0 attempts/u;
 
 /**
  * @param {{ name: string, payload: Record<string, unknown> }[]} ops
@@ -81,13 +76,11 @@ function firstFinish(ops, name) {
 }
 
 /**
- * The code or wiki side's sync from the context's state, within two
- * attempts unless `max` says otherwise.
+ * The code sync from the context's state, within two attempts.
  * @param {import("../src/job/role-context.ts").RoleContext} ctx
- * @param {"code" | "wiki"} [side] @param {number} [max]
  */
-function sync(ctx, side = "code", max = MAX_ATTEMPTS) {
-  return syncSide(ctx, ctx.state, { side, maxConflictFixes: max });
+function sync(ctx) {
+  return syncCode(ctx, ctx.state, MAX_ATTEMPTS);
 }
 
 test("the tests run under a temporary pipeline root", () => {
@@ -104,7 +97,7 @@ test("a conflict is resolved by a counted Reviewer integration session", async (
   assert.equal(sessions.length, 1);
   const task = sessions[0]?.task ?? "";
   assert.match(task, RESOLUTION_TASK);
-  assert.match(task, CODE_SIDE);
+  assert.match(task, CODE_CHECKOUT);
   assert.match(task, CONFLICTED_FILE);
   assert.match(task, FIRST_ATTEMPT);
   assert.equal(sessions[0]?.agent, "issue-pipeline-reviewer");
@@ -214,39 +207,6 @@ test("a conflict reported with no stopped rebase stops with error", async () => 
   assert.equal(end.end.code, "error");
 });
 
-test("a wiki conflict is resolved in docs/ through the wiki's own sync ops", async () => {
-  const { ctx, ops, sessions } = fakeContext({
-    ops: {
-      "wiki-sync": [{ ...CONFLICT, conflicts: ["Chats.md"], branch: "master" }],
-    },
-    sessions: [RESOLVED],
-  });
-  const end = await sync(ctx, "wiki");
-  const task = sessions[0]?.task ?? "";
-  assert.match(task, WIKI_SIDE);
-  assert.match(task, CONFLICTED_PAGE);
-  assert.deepEqual(payloadsOf(ops, "finish-wiki-sync"), [{ number: ISSUE }]);
-  assert.equal(payloadsOf(ops, "finish-sync").length, 0);
-  assert.ok(end.ok);
-});
-
-test("a rebase the merge's own checks already started goes on from its conflict, with no new wiki-sync", async () => {
-  const { ctx, ops, sessions } = fakeContext({
-    ops: { "wiki-sync": [] },
-    sessions: [RESOLVED],
-  });
-  /** @type {import("../src/roles/op-replies.ts").Conflict} */
-  const first = { ...CONFLICT, conflict: true, conflicts: ["Chats.md"] };
-  const end = await syncSide(ctx, ctx.state, {
-    side: "wiki",
-    maxConflictFixes: 2,
-    first,
-  });
-  assert.ok(end.ok);
-  assert.equal(sessions.length, 1);
-  assert.equal(payloadsOf(ops, "wiki-sync").length, 0);
-});
-
 test("a failed resolver session aborts the rebase and stops with error, counting nothing", async () => {
   const { ctx, ops, saves } = fakeContext({
     ops: { "sync-base": [CONFLICT] },
@@ -271,18 +231,4 @@ test("an abort that fails propagates its failure instead of deferring quietly", 
     sessions: [{ ok: false, transient: true, error: "ECONNRESET" }],
   });
   await assert.rejects(sync(ctx), failure);
-});
-
-test("a stopped wiki rebase past maxConflictFixes aborts through finish-wiki-sync", async () => {
-  const { ctx, ops, sessions } = fakeContext({
-    ops: { "wiki-sync": [{ ...CONFLICT, conflicts: ["Chats.md"] }] },
-  });
-  const end = await sync(ctx, "wiki", 0);
-  assert.equal(sessions.length, 0);
-  const aborts = payloadsOf(ops, "finish-wiki-sync");
-  assert.equal(aborts.length, 1);
-  assert.equal(firstFinish(ops, "finish-wiki-sync").abort, true);
-  assert.ok(!end.ok && end.end.kind === "stop");
-  assert.equal(end.end.code, "conflict");
-  assert.match(end.end.reason, WIKI_OUT_OF_ATTEMPTS);
 });

@@ -1,19 +1,17 @@
 // The Reviewer's own synchronization at merge (`conflicts-never-stop`): the
-// issue's code branch rebased onto its base and its wiki branch onto the
-// wiki's latest version, only once the issue is at the head of the merge
-// queue. Hardening and development never sync. A rebase that stops on
-// conflicts is left in the checkout for a resolver session of the Reviewer,
-// which stages code text or resolves and continues a wiki rebase. finish-sync
-// owns code continuation and gitlinks, returning later text stops; the finish
-// operations check the completed rebase before pushing. Each session that ends, however it
-// ends, is one of the issue's `maxConflictFixes` attempts, counted and saved
+// issue's code branch rebased onto its base, only once the issue is at the
+// head of the merge queue. Hardening and development never sync. A rebase
+// that stops on conflicts is left in the checkout for a resolver session of
+// the Reviewer, which stages its text. finish-sync owns continuation and
+// refuses gitlink conflicts, returning later text stops, and checks the
+// completed rebase before pushing. Each session that ends, however it ends, is one of the issue's `maxConflictFixes` attempts, counted and saved
 // at once; a transient failure is none. A resolution that is rejected, or
 // not finished, is preserved before cleanup and another attempt. If its
 // recovery cannot be prepared, the original checkout is retained instead.
 // At the code resolver limit, preserve the stopped pick and its evidence as a
 // controlled conflict stop, without requesting destructive cleanup.
 
-import type { OpName, RoleContext } from "../../job/role-context.ts";
+import type { RoleContext } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
 import type { Conflict, SyncReply } from "../op-replies.ts";
@@ -30,57 +28,35 @@ import {
   replyText,
   writerSession,
 } from "../writer-session.ts";
-import type { Side } from "./task.ts";
 import { resolverTask } from "./task.ts";
 
-interface SideOps {
-  start: OpName;
-  startPayload: (number: number) => object;
-  finish: OpName;
-  finishPayload: (number: number, conflict: Conflict) => object;
-}
-
-// One side's sync so far: the state, and why its last resolution was
-// rejected, if one was.
+// The sync so far: the state, and why its last resolution was rejected, if
+// one was.
 interface Attempts {
-  side: Side;
   state: IssueState;
   rejected: string | null;
   maxConflictFixes: number;
   next?: Conflict;
 }
 
-const SIDE_OPS: Readonly<Record<Side, SideOps>> = {
-  code: {
-    start: "sync-base",
-    startPayload: (number: number) => ({ number, keepConflict: true }),
-    finish: "finish-sync",
-    finishPayload: (number: number, { baseSha }: Conflict) => ({
-      number,
-      baseSha,
-    }),
-  },
-  wiki: {
-    start: "wiki-sync",
-    startPayload: (number: number) => ({ number }),
-    finish: "finish-wiki-sync",
-    finishPayload: (number: number) => ({ number }),
-  },
-};
+const WHAT = "code conflict resolver";
 
 function withConflictFix(state: IssueState, attempt: number): IssueState {
   return { ...state, counts: { ...state.counts, conflictFixes: attempt } };
 }
 
+// Rebases the issue's branch onto its base, keeping a stop's conflicts for
+// a resolver.
+async function syncBase(ctx: RoleContext): Promise<SyncReply> {
+  const payload = { number: ctx.issue, keepConflict: true };
+  return await opReply(ctx, "sync-base", payload, SYNC_REPLY);
+}
+
 // Preserves failed resolver work before aborting. The operation refuses
 // destructive cleanup when it cannot prepare recovery.
-async function abortRebase(
-  ctx: RoleContext,
-  side: Side,
-  reason: string,
-): Promise<void> {
+async function abortRebase(ctx: RoleContext, reason: string): Promise<void> {
   const payload = { number: ctx.issue, abort: true, reason };
-  await ctx.op(SIDE_OPS[side].finish, payload);
+  await ctx.op("finish-sync", payload);
 }
 
 // One resolver session on the stopped rebase, then the finish's check. The
@@ -90,40 +66,33 @@ async function resolveOnce(
   run: Attempts,
   conflict: Conflict,
 ): Promise<Step<Attempts>> {
-  const { side, maxConflictFixes } = run;
   const attempt = run.state.counts.conflictFixes + 1;
-  const task = resolverTask(ctx, side, {
+  const task = resolverTask(ctx, {
     ...conflict,
     attempt,
-    max: maxConflictFixes,
+    max: run.maxConflictFixes,
     rejected: run.rejected,
   });
-  const what = `${side} conflict resolver`;
   const session = await writerSession(ctx, run.state, {
     phase: "integration",
     task,
-    what,
+    what: WHAT,
   });
   if (!session.ok) {
-    await abortRebase(ctx, side, `the ${what} session did not finish`);
+    await abortRebase(ctx, `the ${WHAT} session did not finish`);
     return session;
   }
   const state = withConflictFix(run.state, attempt);
   await ctx.save(state);
   const reply = session.value;
   const rejected = `the resolver replied ${reply.outcome}: ${replyText(reply)}`;
-  if (reply.outcome !== "conflict-resolved" && side === "wiki") {
-    await abortRebase(ctx, side, rejected);
-    return { ok: true, value: { ...run, state, rejected } };
-  }
-  const { finish, finishPayload } = SIDE_OPS[side];
-  let payload = finishPayload(ctx.issue, conflict);
+  let payload: object = { number: ctx.issue, baseSha: conflict.baseSha };
   if (reply.outcome !== "conflict-resolved") {
-    // Code classification/continuation is deterministic, even when the model
-    // gave up at a later wiki-only pick. An explicit abort still rejects.
+    // Classification and continuation are deterministic, even when the
+    // model gave up. An explicit abort still rejects.
     payload = { ...payload, cannotFix: true, reason: rejected };
   }
-  const finished = await opReply(ctx, finish, payload, FINISH_REPLY);
+  const finished = await opReply(ctx, "finish-sync", payload, FINISH_REPLY);
   if (finished.conflict) {
     return {
       ok: true,
@@ -133,7 +102,7 @@ async function resolveOnce(
   if (!finished.resolved) {
     return { ok: true, value: { ...run, state, rejected: finished.reason } };
   }
-  const entry = `resolved the ${side} rebase's conflicts on attempt ${attempt}`;
+  const entry = `resolved the code rebase's conflicts on attempt ${attempt}`;
   const logged = withLog(state, entry, new Date());
   return { ok: true, value: { ...run, state: logged, rejected: null } };
 }
@@ -151,40 +120,36 @@ function conflictStop(run: Attempts, reason: string): Step<IssueState> {
   });
 }
 
-// Resolves the rebase of one side that `reply` reports, within the issue's
-// attempts: each attempt after a rejected one rebases afresh.
+// Resolves the rebase that `synced` reports, within the issue's attempts:
+// each attempt after a rejected one rebases afresh.
 async function resolvedFrom(
   ctx: RoleContext,
   run: Attempts,
   synced: SyncReply,
 ): Promise<Step<IssueState>> {
-  const { side, state, maxConflictFixes } = run;
-  const { start, startPayload } = SIDE_OPS[side];
+  const { state, maxConflictFixes } = run;
   if (!synced.conflict) {
     return { ok: true, value: state };
   }
   if (!synced.inRebase) {
     const files = synced.conflicts.join(", ");
-    const reason = `${start} reported conflicts in ${files} but left no rebase to resolve`;
+    const reason = `sync-base reported conflicts in ${files} but left no rebase to resolve`;
     return ended(errorStop(state, reason));
   }
   if (state.counts.conflictFixes >= maxConflictFixes) {
-    const reason = `the ${side} rebase still conflicts after the resolver's ${maxConflictFixes} attempts (maxConflictFixes)`;
-    if (side === "code") {
-      const retained = await opReply(
-        ctx,
-        "finish-sync",
-        {
-          ...SIDE_OPS.code.finishPayload(ctx.issue, synced),
-          retainConflict: true,
-          reason,
-        },
-        RETAINED_CONFLICT_REPLY,
-      );
-      return conflictStop(run, retained.reason);
-    }
-    await abortRebase(ctx, side, reason);
-    return conflictStop(run, reason);
+    const reason = `the code rebase still conflicts after the resolver's ${maxConflictFixes} attempts (maxConflictFixes)`;
+    const retained = await opReply(
+      ctx,
+      "finish-sync",
+      {
+        number: ctx.issue,
+        baseSha: synced.baseSha,
+        retainConflict: true,
+        reason,
+      },
+      RETAINED_CONFLICT_REPLY,
+    );
+    return conflictStop(run, retained.reason);
   }
   const resolved = await resolveOnce(ctx, run, synced);
   if (!resolved.ok) {
@@ -197,29 +162,18 @@ async function resolvedFrom(
   if (resolved.value.rejected === null) {
     return { ok: true, value: resolved.value.state };
   }
-  const again = await opReply(ctx, start, startPayload(ctx.issue), SYNC_REPLY);
-  return await resolvedFrom(ctx, resolved.value, again);
+  return await resolvedFrom(ctx, resolved.value, await syncBase(ctx));
 }
 
-// Rebases one side, resolving its conflicts within the issue's
-// `maxConflictFixes` attempts. Given `first`, the reply of a rebase already
-// started (a wiki rebase the merge's own checks ran), it goes on from that.
-async function syncSide(
+// Rebases the issue's branch onto its base, resolving its conflicts within
+// the issue's `maxConflictFixes` attempts.
+async function syncCode(
   ctx: RoleContext,
   state: IssueState,
-  {
-    side,
-    maxConflictFixes,
-    first,
-  }: { side: Side; maxConflictFixes: number; first?: Conflict },
+  maxConflictFixes: number,
 ): Promise<Step<IssueState>> {
-  const run: Attempts = { side, state, rejected: null, maxConflictFixes };
-  if (first !== undefined) {
-    return await resolvedFrom(ctx, run, first);
-  }
-  const { start, startPayload } = SIDE_OPS[side];
-  const reply = await opReply(ctx, start, startPayload(ctx.issue), SYNC_REPLY);
-  return await resolvedFrom(ctx, run, reply);
+  const run: Attempts = { state, rejected: null, maxConflictFixes };
+  return await resolvedFrom(ctx, run, await syncBase(ctx));
 }
 
-export { syncSide };
+export { syncCode };

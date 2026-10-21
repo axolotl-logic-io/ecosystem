@@ -1,10 +1,8 @@
 // The security review of the merged result: a fresh read-only Reviewer
-// session after the code merge (or, for a change that lives only in the
-// wiki, with no code merge) over exactly the merge commit GitHub confirmed
-// and the wiki head about to publish, in the four security categories. Its
-// receipt (`state.security`) binds that revision, and is saved before
-// anything publishes: an approval lets the wiki publish and the issue
-// complete; a rejection stops the issue with its category, and stops it
+// session after the code merge over exactly the merge commit GitHub
+// confirmed, in the four security categories. Its receipt
+// (`state.security`) binds that revision, and is saved before the issue
+// completes: an approval lets the issue complete; a rejection stops the issue with its category, and stops it
 // again for the same revision however often the stop is lifted. The merged
 // code stays merged: nothing here undoes it or touches `main`.
 
@@ -41,7 +39,7 @@ function securityStop(state: IssueState, finding: Finding): RoleEnd {
   return {
     kind: "stop",
     code: category,
-    reason: `security review (${category}) of the merged result: ${reason}. The merged code stays merged and the wiki is not published; a fix needs a new change, since lifting this stop reviews nothing again`,
+    reason: `security review (${category}) of the merged result: ${reason}. The merged code stays merged and the issue is not completed; a fix needs a new change, since lifting this stop reviews nothing again`,
     state,
   };
 }
@@ -102,7 +100,7 @@ function reviewBody(reply: SecurityReviewReply, revision: Revision): string {
 
 // What the security review reviews: `revision`, the merged result its
 // receipt binds, with `codeMerged` the code merge GitHub confirmed (null
-// for a change that lives only in the wiki); `still` says whether the
+// only for an older completion with no code); `still` says whether the
 // revision read after the session is still that result.
 interface MergedResult {
   revision: Revision;

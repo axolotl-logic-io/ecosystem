@@ -74,14 +74,10 @@ const GHERKIN = {
 const CLEAN_OPS = {
   "start-pr": [{ pr: PR, headSha: HEAD }],
   "sync-base": [{ changed: false, conflict: false, headSha: HEAD }],
-  "wiki-sync": [{ changed: false, conflict: false, headSha: "" }],
   verify: [{ pass: true, headSha: HEAD, changedFiles: ["a.ts"], checks: [] }],
-  "wiki-check": [{ pass: true, checks: [] }],
-  "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: true, wikiAhead: 1 }],
-  push: [{ headSha: HEAD, codeChanged: true, wikiAhead: 1 }],
+  "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: true }],
+  push: [{ headSha: HEAD, codeChanged: true }],
   "finish-sync": [{ resolved: true, headSha: HEAD }],
-  "finish-wiki-sync": [{ resolved: true, headSha: shaOf("d") }],
-  "close-pr": [{ pr: PR, closed: true }],
 };
 
 /** @type {SessionResult} */

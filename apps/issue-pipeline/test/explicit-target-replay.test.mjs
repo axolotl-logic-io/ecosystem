@@ -11,15 +11,14 @@ import {
   postmergeOps,
   result,
   saves,
-  WIKI_PASS,
 } from "./explicit-target-role-test-kit.mjs";
 import { PR, world } from "./explicit-target-world-test-kit.mjs";
 
 const { mergeRole } = await import("../src/roles/merge/merge.ts");
 const { recoverOwnMerge } = await import("../src/roles/merge/recovery.ts");
-const { afterOwnMerge } = await import("../src/roles/merge/publish.ts");
+const { afterOwnMerge } = await import("../src/roles/merge/after-merge.ts");
 const { OpsFailure } = await import("../src/job/role-context.ts");
-const FALSE_RECEIPT = /GitHub or the wiki no longer match/u;
+const FALSE_RECEIPT = /GitHub no longer matches it/u;
 
 test("done replay with saved security still reestablishes graph/checks before completion", async () => {
   const w = world();
@@ -108,7 +107,6 @@ test("byHand observed during merge is never promoted to a fresh own receipt", as
   const run = context(w, {
     ops: {
       "current-revision": [current(w), current(w)],
-      "wiki-check": [WIKI_PASS],
       "ci-status": [{ status: "pass" }],
       merge: [
         { merged: true, byHand: true, mergeCommit: w.merged, headSha: w.head },
@@ -168,7 +166,6 @@ for (const outcome of [
     const run = context(w, {
       ops: {
         "current-revision": [current(w), current(w)],
-        "wiki-check": [WIKI_PASS],
         "ci-status": [{ status: "pass" }],
         merge: [{ merged: false, reason: outcome }],
       },
@@ -214,7 +211,6 @@ test("done replay check failure cannot reuse saved security to complete unchecke
     ops: {
       "current-revision": [current(w, true)],
       verify: [{ pass: false, headSha: w.merged, checks: [] }],
-      "wiki-check": [WIKI_PASS],
     },
   });
   const end = await mergeRole(run.ctx);
