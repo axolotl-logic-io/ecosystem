@@ -1,15 +1,16 @@
 // @ts-check
-// The merge authorization chain (src/state.ts): a merge is authorized for
-// the revision that passed the Reviewer's hardening, or the one revision the
-// Reviewer's own integration checked from exactly that hardened revision
-// (state.integration), never a receipt's head for another revision or other
-// trusted inputs, and never by a review verdict alone. The security review
+// New merge authorization requires exact hardening. Historical recovery keeps
+// the original checked integration separately, never as new candidate permission.
+// The security review
 // of the merged result (state.security) parses as saved, its finding
 // included. A state saved before these fields existed reads them as null.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
 
+const { recordedAuthorization } = await import(
+  "../src/merged-authorization.ts"
+);
 const { approvalHolds, mergeAuthorization, ISSUE_STATE, newIssueState } =
   await import("../src/state.ts");
 const { parseIssueState, stateBody, parseStateBody } = await import(
@@ -91,6 +92,7 @@ test("the Reviewer's own integration does not authorize changed code and keeps t
     revision: INTEGRATED,
   });
   assert.deepEqual(saved?.hardened, HARDENED);
+  assert.deepEqual(recordedAuthorization(state), INTEGRATED);
 });
 
 test("a receipt bound to another revision than the hardened one authorizes nothing new", () => {

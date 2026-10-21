@@ -109,7 +109,7 @@ interface MergedResult {
   target?: ReviewedTarget;
 }
 
-// Discard a fresh verdict if code, inputs or the observed target moved.
+// Code/input movement discards a verdict; target movement expires only clearance.
 async function freshReview(
   ctx: RoleContext,
   state: IssueState,
@@ -157,7 +157,12 @@ async function freshReview(
       toAuthor(state, "the trusted inputs changed during the security review"),
     );
   }
-  if (!still(after) || (target !== undefined && fresh.baseSha !== target.sha)) {
+  if (
+    !still(after) ||
+    (reply.security === null &&
+      target !== undefined &&
+      fresh.baseSha !== target.sha)
+  ) {
     return ended(
       waiting(
         logged(state, "security review discarded: the revision moved"),

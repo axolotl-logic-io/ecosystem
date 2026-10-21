@@ -1,5 +1,6 @@
 // @ts-check
 // Execute scripted model edits through the real commit and reply tools.
+import { gitIn } from "./pipeline-flow-gh-world.mjs";
 import { writeTurnFiles } from "./pipeline-flow-pi-files-test-kit.mjs";
 
 /** @import { FlowTool, FlowTurn, Printers } from "./pipeline-flow-pi.mjs" */
@@ -82,6 +83,10 @@ async function commitAll(tool, commits, out, done = 0) {
  */
 async function play(turn, tools, out) {
   const { print, log } = out;
+  if (turn.targetAdvance !== undefined) {
+    const { origin, branch, before, after } = turn.targetAdvance;
+    gitIn(origin, ["update-ref", `refs/heads/${branch}`, after, before]);
+  }
   writeTurnFiles(turn);
   await commitAll(tools.get("pipeline_commit"), turn.commits ?? [], out);
   print(MESSAGE_END);

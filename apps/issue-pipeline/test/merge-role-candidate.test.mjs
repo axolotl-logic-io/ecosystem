@@ -1,8 +1,9 @@
 // @ts-check
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AFTER_MERGE, merging } from "./merge-role-test-kit.mjs";
+import { AFTER_MERGE, finding, merging } from "./merge-role-test-kit.mjs";
 import {
+  endCode,
   firstPayload,
   opNames,
   savesOf,
@@ -15,6 +16,7 @@ import {
   current,
   MOVED,
   mergeRole,
+  NEW_INPUTS,
   REVISION,
   sha,
 } from "./reviewer-and-merge-role-kit.mjs";
@@ -38,6 +40,66 @@ test("target movement during Security discards clearance and has zero merge effe
   for (const mutation of ["merge", "push", "finish", "ready-pr"]) {
     assert.ok(!opNames(calls).includes(mutation));
   }
+});
+
+test("a finding returned while only the target moves is saved and cannot reroll after fresh target hardening", async () => {
+  const { ctx, calls } = merging({
+    ops: { "current-revision": [current(), { ...current(), baseSha: MOVED }] },
+    sessions: [finding("rights")],
+  });
+  const end = await mergeRole(ctx);
+  assert.equal(endCode(end), "rights");
+  const rejected = stateOf(end, "stop");
+  assert.deepEqual(rejected.security, {
+    ...CLEAR,
+    finding: {
+      category: "rights",
+      reason: "src/chat.ts:12 drops the owner scope",
+    },
+  });
+  assert.deepEqual(savesOf(calls).at(-1)?.security, rejected.security);
+  assert.equal(rejected.merged, null);
+  assert.equal(sessionsOf(calls).length, 1);
+  assert.ok(sessionsOf(calls).every((spec) => spec.commits === false));
+  assert.ok(!opNames(calls).includes("merge"));
+  const retry = merging({
+    state: {
+      ...rejected,
+      hardened: REVISION,
+      hardenedTarget: { ...CLEAR.target, sha: MOVED },
+    },
+    ops: { "current-revision": [{ ...current(), baseSha: MOVED }] },
+    sessions: [],
+  });
+  const retried = await mergeRole(retry.ctx);
+  assert.equal(endCode(retried), "rights");
+  const stopped = stateOf(retried, "stop");
+  assert.deepEqual(stopped.security, rejected.security);
+  assert.deepEqual(opNames(retry.calls), ["current-revision"]);
+  assert.equal(sessionsOf(retry.calls).length, 0);
+});
+
+test("a returned finding with changed code still discards the obsolete subject", async () => {
+  const { ctx, calls } = merging({
+    ops: { "current-revision": [current(), current({ code: MOVED })] },
+    sessions: [finding("rights")],
+  });
+  const state = stateOf(await mergeRole(ctx), "wait");
+  assert.equal(state.security, null);
+  assert.ok(savesOf(calls).every((saved) => saved.security === null));
+  assert.ok(!opNames(calls).includes("merge"));
+});
+
+test("a returned finding with changed inputs still returns to requirements review", async () => {
+  const { ctx, calls } = merging({
+    ops: { "current-revision": [current(), current({ inputs: NEW_INPUTS })] },
+    sessions: [finding("rights")],
+  });
+  const state = stateOf(await mergeRole(ctx), "next");
+  assert.equal(state.stage, "author");
+  assert.equal(state.security, null);
+  assert.ok(savesOf(calls).every((saved) => saved.security === null));
+  assert.ok(!opNames(calls).includes("merge"));
 });
 
 test("exact saved candidate clearance permits only one merge and no duplicate postmerge model pass", async () => {
