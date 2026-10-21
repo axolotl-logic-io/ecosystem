@@ -87,7 +87,7 @@ test("exit-push pushes the branch and records the push as exit-push", () => {
   assert.deepEqual(writes(), []);
 });
 
-test("push with no code change and no wiki commits pushes nothing and says so", () => {
+test("push with no code change pushes nothing and says so", () => {
   const { n, pr } = EMPTY;
   startPr(n, pr);
   const before = originRef("agent/issue-8");

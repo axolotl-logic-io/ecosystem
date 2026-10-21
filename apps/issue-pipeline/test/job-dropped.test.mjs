@@ -40,7 +40,7 @@ const LOCAL_PATH = /(?:^|[\s`(])(?:\/|~)/u;
 const NOTHING_APPLIES = /Nothing applies/u;
 const RUN_DIRECTORY = /run directory/u;
 const KEY = "implement-1";
-const PATCHES = [`dropped/${KEY}-repo.patch`, `dropped/${KEY}-docs.patch`];
+const PATCHES = [`dropped/${KEY}-repo.patch`];
 // The fake ops answers the notice's post. The author's Gherkin post needs
 // ROUTINE_OPS's reply, with its comment id.
 const POSTING = { post: { ok: true } };
@@ -156,11 +156,10 @@ test("a reader job with no changes saves no patch and makes no dropped folder", 
   assert.equal(fs.existsSync(path.join(place.runDir, "dropped")), false);
 });
 
-test("the dropped notice names the job, each checkout and the run directory, and no local path", () => {
+test("the dropped notice names the job, the code checkout and the run directory, and no local path", () => {
   const body = droppedNotice(KEY, PATCHES);
   assert.ok(body.includes(KEY));
   assert.ok(body.includes("`repo/`"));
-  assert.ok(body.includes("`docs/`"));
   assert.match(body, RUN_DIRECTORY);
   assert.match(body, NOTHING_APPLIES);
   assert.doesNotMatch(body, LOCAL_PATH);

@@ -218,7 +218,7 @@ test("passed checks and a forged request receipt cannot supply missing saved har
 test("remote work and genuine receipts survive a stop without inventing hardening from passed checks", () => {
   clearEvidence();
   const code = commitOnOrigin(`agent/issue-${ISSUE}`, "review-work");
-  const wikiBranch = `private-wiki-${ISSUE}`;
+  const wikiBranch = `retained-work-${ISSUE}`;
   const wiki = commitOnOrigin(wikiBranch, "wiki-review-work");
   const { cfg, state } = setup();
   const receipt = {

@@ -120,14 +120,11 @@ function toolsOf(argv) {
 // A merge job's session runner, with its status, control, usage entries and
 // prompt folder, its prompts pinned from that folder as a `pinnedAs` job
 // pins them.
-/** @param {import("../src/stages.ts").Stage} [pinnedAs] @param {{ merged?: boolean, wiki?: boolean }} [options] */
-async function openMergeJob(
-  pinnedAs = STAGE,
-  { merged = false, wiki = true } = {},
-) {
+/** @param {import("../src/stages.ts").Stage} [pinnedAs] @param {{ merged?: boolean }} [options] */
+async function openMergeJob(pinnedAs = STAGE, { merged = false } = {}) {
   const promptsDir = writePrompts(fs.mkdtempSync(path.join(tmp, "root-")));
   const prompts = pinPrompts(promptsDir, pinnedAs);
-  const cfg = { ...loadConfig(configFile), wiki };
+  const cfg = loadConfig(configFile);
   let codeMerged = null;
   if (merged) {
     codeMerged = { pr: 42, sha: "merged-code" };
