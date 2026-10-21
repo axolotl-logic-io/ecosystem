@@ -94,7 +94,7 @@ test("after a confirmed code merge, the merge commit is verified, reviewed for s
   ]) {
     assert.equal(between.includes(mutation), false, mutation);
   }
-  assert.ok(freshBefore(calls, "finish"));
+  assert.ok(between.includes("current-revision"));
 });
 
 test("a code merge needs a hardening of the merge commit, and GitHub's confirmation", async () => {

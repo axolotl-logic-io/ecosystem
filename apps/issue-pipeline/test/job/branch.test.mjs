@@ -2,7 +2,9 @@
 // Literal branch validation in process; git's own syntax validator is local only.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { testConfig } from "../config-test-kit.mjs";
+import "../isolated-root-test-kit.mjs";
+
+const { testConfig } = await import("../config-test-kit.mjs");
 
 const { branchRefusalOf } = await import("../../src/job/branch.ts");
 const { cfg } = testConfig();
@@ -22,7 +24,7 @@ const INVALID = [
   "x@{1}",
   "a b",
   "x.lock",
-  "integration",
+  cfg.baseBranch,
 ];
 for (const branch of INVALID) {
   test(`branch ${branch} cannot name issue work`, () => {

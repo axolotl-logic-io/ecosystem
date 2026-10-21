@@ -17,6 +17,7 @@ for (const kind of ["issues", "pulls"]) {
       let query = "state=open&assignee=*";
       let row = fixture.issue;
       if (kind === "pulls") {
+        hub.assigned.length = 0;
         query = "state=open";
         row = fixture.pull;
       }

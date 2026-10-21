@@ -15,7 +15,7 @@ const { saveDraftAuthority } = await import("../src/ops/pr-state.ts");
 const { readWriteState } = await import("../src/saved-state.ts");
 const PR = 42;
 const TITLE_LENGTH = 45;
-const CLOSED_REFUSAL = /is CLOSED; code write authority requires an open PR/u;
+const CLOSED_REFUSAL = /is closed; code authority needs operator recovery/u;
 
 for (const status of ["OPEN", "MERGED"]) {
   test(`all-state discovery validates actual ${status} identity with saved pr:null`, async () => {

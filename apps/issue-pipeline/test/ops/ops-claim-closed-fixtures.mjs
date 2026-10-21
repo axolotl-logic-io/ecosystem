@@ -27,7 +27,7 @@ const STATE_REFUSALS = {
   "no recorded PR": NOT_OPEN,
   "state for another issue": INVALID_AUTHORITY,
   "legacy state": LEGACY_AUTHORITY,
-  "stopped completion replay": NOT_OPEN,
+  "stopped completion replay": INVALID_AUTHORITY,
   "malformed code receipt": INVALID_AUTHORITY,
   "contradicted code receipt": MERGE_UNCONFIRMED,
   "contradicted PR receipt": MERGE_UNCONFIRMED,

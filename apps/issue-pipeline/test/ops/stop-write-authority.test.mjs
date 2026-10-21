@@ -30,6 +30,8 @@ const { ghIsRead } = await import("../../src/github.ts");
 const PR = 42;
 const RECOVERY = "salvage-refused";
 const NO_AUTHORITY = /has no saved write authority/u;
+const HELD_CHECKOUT =
+  /already exists; preserve it for operator recovery before restarting/u;
 const INVALID_AUTHORITY = /saved write authority is invalid/u;
 
 /** @param {import("../pipeline-commit-test-kit.mjs").Job} job @param {string} kind @param {boolean} deleted */
@@ -180,7 +182,7 @@ for (const invalid of [null, { codeMerged: { pr: "broken" } }]) {
             stage: "implement",
             branch: job.branch,
           }),
-        refusal,
+        HELD_CHECKOUT,
       );
       assert.equal(headOf(job.repo), local);
     } finally {

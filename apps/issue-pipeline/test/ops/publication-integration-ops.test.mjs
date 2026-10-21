@@ -106,7 +106,7 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
     mergeCommit: w.mergeSha,
     headSha: w.sha,
   });
-  const body = bodyOf(effectsOf(writes()), "comment #7 role=coordinator");
+  const body = bodyOf(effectsOf(writes()), "comment #50 role=merger");
   assert.ok(body.includes(`hardening passed on ${short(REVIEWED_CODE)}`));
   assert.ok(body.includes(`integrated it as ${short(w.sha)}`));
   assert.ok(body.includes("with no further review"));
@@ -130,7 +130,7 @@ test("merge without an integration says hardening passed on the merged head", ()
     }),
   ]);
   merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
-  const body = bodyOf(effectsOf(writes()), "comment #7 role=coordinator");
+  const body = bodyOf(effectsOf(writes()), "comment #50 role=merger");
   assert.ok(body.includes("hardening passed on this commit"));
   assert.equal(body.includes("integrated"), false);
 });

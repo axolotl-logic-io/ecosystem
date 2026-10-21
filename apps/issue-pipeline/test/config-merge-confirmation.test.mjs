@@ -1,7 +1,9 @@
 // @ts-check
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { testConfig } from "./config-test-kit.mjs";
+import "./isolated-root-test-kit.mjs";
+
+const { testConfig } = await import("./config-test-kit.mjs");
 
 const { mergeConfirmation: defaults } = testConfig().cfg;
 const CONFIGURED_SLOW_WAIT_SECONDS = 5;

@@ -24,6 +24,7 @@ function operate(guard, operation) {
   }
   return true;
 }
+const UNREADABLE = /GitHub unavailable/u;
 const RECONCILE = /reconciliation|uncertain/u;
 for (const scope of ["issue", "integration"]) {
   for (const lane of ["same", "different"]) {
@@ -162,9 +163,13 @@ for (const condition of [
       duplicate.id = DUPLICATE_ID;
       github.comments.push(duplicate);
     }
+    let refusal = RECONCILE;
+    if (condition === "unreadable") {
+      refusal = UNREADABLE;
+    }
     const writes = [...github.writes];
-    assert.throws(() => a.assertOwner(), RECONCILE);
-    assert.throws(() => a.save({ stage: "done" }), RECONCILE);
+    assert.throws(() => a.assertOwner(), refusal);
+    assert.throws(() => a.save({ stage: "done" }), refusal);
     assert.deepEqual(github.writes, writes);
   });
 }
