@@ -3,6 +3,7 @@
 // review of the merged result. Each holds this run's facts only; the
 // behaviour is the phase's wiki page (task-facts.ts). Pure.
 
+import { CODE_RESOLVER_PROTOCOL } from "../../code-resolver-contract.ts";
 import { JOB_DOCS, JOB_REPO } from "../../job/layout.ts";
 import type { RoleContext } from "../../job/role-context.ts";
 import type { Revision } from "../../state.ts";
@@ -75,10 +76,16 @@ function resolverTask(
   let resolved =
     "`conflict-resolved`, with a `summary`, once the rebase has finished.";
   if (side === "code") {
+    lines.push(`Code resolver protocol: \`${CODE_RESOLVER_PROTOCOL}\``, "");
     resolved =
-      "`conflict-resolved`, with a `summary`, once this stop's text conflicts are staged. Do not continue the code rebase: finish-sync owns continuation and all wiki gitlink resolutions, and may return another text stop.";
+      "`conflict-resolved`, with a `summary`, once this stop's text conflicts are staged. Stage only the assigned resolved text; do not choose or stage a wiki gitlink. Do not continue the code rebase: finish-sync owns continuation and all wiki gitlink resolutions, and may return another text stop.";
   }
-  lines.push(...replyLines([resolved, "`cannot-fix`, with a `summary`."]));
+  lines.push(
+    ...replyLines([
+      resolved,
+      "`cannot-fix`, with a `summary`, when the assigned conflicts cannot be resolved.",
+    ]),
+  );
   return lines.join("\n");
 }
 

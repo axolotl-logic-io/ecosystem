@@ -32,7 +32,11 @@ const PROMPT_PAGES = [
 // page must be, naming its page.
 /** @param {string} page @returns {string} */
 function pageTextOf(page) {
-  return `# ${page}\n\nThe behavior ${page} prompts.\n`;
+  let declaration = "";
+  if (page === "Pipeline-Prompt-Integration.md") {
+    declaration = "Code-Resolver-Protocol: stage-text-and-return/v1\n\n";
+  }
+  return `# ${page}\n\n${declaration}The behavior ${page} prompts.\n`;
 }
 
 // Page `page` as a job outside a git checkout pins it from brain `dir`.

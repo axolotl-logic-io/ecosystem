@@ -6,11 +6,13 @@
 // path, the sha256 of its bytes, and the clone's git HEAD when it has one.
 // A page that is missing, unreadable, empty, not UTF-8 or a single line fails
 // the job; there is no bundled fallback. The pinned text is behavior only:
-// no session's tools, token, commit scope or authority come from it.
+// no session's tools, token, commit scope or authority come from it. Merge
+// also requires the declared code-resolver protocol before any integration.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { codeResolverContractProblem } from "../code-resolver-contract.ts";
 import { run } from "../process.ts";
 import type { Stage } from "../stages.ts";
 import type { SessionPhase } from "./role-context.ts";
@@ -160,6 +162,14 @@ function openBrain(brainPath: string, stage: Stage): Brain {
     const { text, bytes } = pageText(brain, page);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     const provenance = { page, path: path.join(brain, page), sha256, head };
+    if (stage === "merge" && phase === "integration") {
+      const problem = codeResolverContractProblem(text);
+      if (problem !== null) {
+        throw new Error(
+          `${page} at ${provenance.path} (sha256 ${sha256}, wiki HEAD ${head ?? "unavailable"}): ${problem}. Refresh or select the compatible published Integration page in the wiki clone selected through --brain-path, then explicitly authorize a new Merge run under the existing guards. This job's pinned text is not rewritten; retained recovery state and cumulative limits must be preserved. Wiki publication, brain selection and runtime installation are separate actions; installation does not refresh the brain. Do not bypass cannot-fix rejection.`,
+        );
+      }
+    }
     prompts.set(sessionKey(stage, phase), { text, provenance });
   }
   return {

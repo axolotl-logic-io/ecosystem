@@ -225,6 +225,14 @@ test("a wiki conflict is resolved in docs/ through the wiki's own sync ops", asy
   const task = sessions[0]?.task ?? "";
   assert.match(task, WIKI_SIDE);
   assert.match(task, CONFLICTED_PAGE);
+  assert.ok(
+    task.includes(
+      "`conflict-resolved`, with a `summary`, once the rebase has finished.",
+    ),
+  );
+  assert.ok(task.includes("when the assigned conflicts cannot be resolved"));
+  assert.equal(task.includes("Code resolver protocol:"), false);
+  assert.equal(task.includes("Do not continue the code rebase"), false);
   assert.deepEqual(payloadsOf(ops, "finish-wiki-sync"), [{ number: ISSUE }]);
   assert.equal(payloadsOf(ops, "finish-sync").length, 0);
   assert.ok(end.ok);

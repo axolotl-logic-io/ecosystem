@@ -16,6 +16,9 @@ import { pinAt } from "./wiki-pin-test-kit.mjs";
 
 const { fx, ask, resolveText, unmerged } = fixture;
 const { saveCodeSync } = await import("../src/rebase.ts");
+const { CODE_RESOLVER_PROTOCOL } = await import(
+  "../src/code-resolver-contract.ts"
+);
 const ISSUE = {
   alternating: 101,
   wikiFirst: 102,
@@ -87,6 +90,36 @@ function resultFacts(h, run) {
   };
 }
 
+/** @param {SyncRun} run */
+function operationFacts(run) {
+  const finishes = run.ops.filter((op) => op.name === "finish-sync");
+  return {
+    starts: run.ops.filter((op) => op.name === "sync-base").length,
+    finishes: finishes.length,
+    saved: finishes.map((op) => op.saved),
+    attempts: finishes.map((op) => op.attempts),
+    remotes: run.ops.map((op) => op.remote),
+  };
+}
+
+/** @param {import("./alternating-sync-test-kit.mjs").Resolver} resolver */
+function contractFacts({ spec, prompt }) {
+  const required = [
+    `Code resolver protocol: \`${CODE_RESOLVER_PROTOCOL}\``,
+    "once this stop's text conflicts are staged",
+    "Do not continue the code rebase",
+    "do not choose or stage a wiki gitlink",
+    "when the assigned conflicts cannot be resolved",
+  ];
+  return {
+    page: prompt.provenance.page,
+    declared: prompt.text.includes(
+      `Code-Resolver-Protocol: ${CODE_RESOLVER_PROTOCOL}`,
+    ),
+    missingInstructions: required.filter((line) => !spec.task.includes(line)),
+  };
+}
+
 for (const scenario of CASES) {
   test(`${scenario.name}`, async () => {
     const h = history(scenario.n, scenario.picks);
@@ -106,23 +139,21 @@ for (const scenario of CASES) {
       remote: facts.remote,
       submodule: false,
     });
-    assert.equal(run.ops.filter((op) => op.name === "sync-base").length, 1);
-    const finishes = run.ops.filter((op) => op.name === "finish-sync");
-    assert.equal(finishes.length, scenario.counts.length);
-    assert.deepEqual(
-      finishes.map((op) => op.saved),
-      scenario.counts,
-    );
-    assert.deepEqual(
-      finishes.map((op) => op.attempts),
-      scenario.counts,
-    );
-    assert.deepEqual(
-      run.ops.map((op) => op.remote),
-      run.ops.map(() => h.original),
-    );
+    assert.deepEqual(operationFacts(run), {
+      starts: 1,
+      finishes: scenario.counts.length,
+      saved: scenario.counts,
+      attempts: scenario.counts,
+      remotes: run.ops.map(() => h.original),
+    });
     assert.equal(run.sessions.length, scenario.counts.length);
-    for (const [index, { spec, files }] of run.sessions.entries()) {
+    for (const [index, resolver] of run.sessions.entries()) {
+      assert.deepEqual(contractFacts(resolver), {
+        page: "Pipeline-Prompt-Integration.md",
+        declared: true,
+        missingInstructions: [],
+      });
+      const { spec, files } = resolver;
       assert.equal(spec.phase, "integration");
       assert.equal(spec.agent, "issue-pipeline-reviewer");
       assert.ok(spec.task.includes(`at \`${h.base}\``));

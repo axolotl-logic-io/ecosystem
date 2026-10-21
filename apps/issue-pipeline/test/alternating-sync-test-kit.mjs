@@ -2,12 +2,20 @@
 // Real ops and rebases with staged-only resolver sessions at each text stop.
 import fs from "node:fs";
 import path from "node:path";
+import { writeBrain } from "./brain-test-kit.mjs";
 import { gitlinkSyncFixture } from "./gitlink-sync-test-kit.mjs";
 
 const fixture = await gitlinkSyncFixture("alternating-conflicts");
 const { fx, cfg, seed, branch, wikiCommit, stagePin, ask, resolveText } =
   fixture;
 const { syncSide } = await import("../src/roles/merge/sync.ts");
+const { openBrain } = await import("../src/job/brain.ts");
+const brain = openBrain(writeBrain(path.join(fx.root, "brain")), "merge");
+const integration = brain.promptFor("merge", "integration");
+if (integration === null) {
+  throw new Error("resolver has no pinned prompt");
+}
+const prompt = integration;
 const { newIssueState } = await import("../src/state.ts");
 const { conflictStages } = await import("../src/rebase.ts");
 const { OpsFailure } = await import("../src/job/role-context.ts");
@@ -17,7 +25,7 @@ const { OpsFailure } = await import("../src/job/role-context.ts");
 /** @typedef {import("../src/roles/op-replies.ts").Conflict} Conflict */
 /** @typedef {{ n: number; wt: string; original: string; target: string; base: string }} History */
 /** @typedef {{ name: string; payload: object; remote: string; saved: number; attempts: number }} SyncOp */
-/** @typedef {{ spec: import("../src/job/role-context.ts").SessionSpec; files: string[] }} Resolver */
+/** @typedef {{ spec: import("../src/job/role-context.ts").SessionSpec; files: string[]; prompt: import("../src/job/brain.ts").PinnedPrompt }} Resolver */
 /** @typedef {{ end: import("../src/roles/writer-session.ts").Step<IssueState>; saves: IssueState[]; sessions: Resolver[]; ops: SyncOp[]; stoppedPicks: string[] }} SyncRun */
 
 /**
@@ -102,7 +110,7 @@ async function resolveHistory(h, max, { initial = 0, first } = {}) {
           .map((entry) => entry.file),
       ),
     ];
-    sessions.push({ spec, files });
+    sessions.push({ spec, files, prompt });
     for (const file of files) {
       resolveText(h.wt, file);
     }
