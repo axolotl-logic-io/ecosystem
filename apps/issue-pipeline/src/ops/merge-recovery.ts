@@ -1,6 +1,6 @@
 // Durable uncertainty and bounded read-only recovery of one target mutation.
-// Only a saved successful response can become an own receipt; PR truth alone
-// is external provenance. No path in this module mutates code or opens a writer.
+// FF recovery requires exact authenticated intent; legacy two-parent recovery
+// still requires a saved successful response for own provenance. No code writes.
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";

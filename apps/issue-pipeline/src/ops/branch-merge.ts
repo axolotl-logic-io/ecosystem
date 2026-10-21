@@ -3,7 +3,7 @@
 // No fallback or retry is safe, including after an ambiguous transport error.
 import type { Config } from "../config.ts";
 import { gitIn } from "../git-state.ts";
-import { git } from "../github.ts";
+import { assertGitPushDestination, git } from "../github.ts";
 import { FULL_SHA } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
@@ -47,6 +47,7 @@ function branchMerge(
 ): boolean {
   const ref = targetRef(cfg);
   assertFastForward(wt, base, head);
+  assertGitPushDestination(cfg, wt);
   const result = git(
     cfg,
     "merge",

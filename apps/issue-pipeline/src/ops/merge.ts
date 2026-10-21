@@ -8,9 +8,11 @@ import { assignedBranch } from "../branch-binding.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import { assertGitPushDestination } from "../github.ts";
 import { FULL_SHA } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
+import { targetHolds } from "../reviewed-target.ts";
 import { currentRevision } from "../revision.ts";
 import { readWriteState } from "../saved-state.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
@@ -29,6 +31,7 @@ import { viewForMerge } from "./pr-merge.ts";
 
 const MERGE_REQUEST = z.looseObject({
   expectedSha: FULL_SHA,
+  expectedBase: FULL_SHA,
   mergeOrder: z.boolean().nullish(),
   // The merge order the orchestrator ranked (#234), which replaces the
   // lowest-PR order when given.
@@ -139,6 +142,16 @@ function precheck(
   if (stale !== undefined) {
     return stale;
   }
+  if (
+    current.baseSha !== req.expectedBase ||
+    !targetHolds(
+      cfg,
+      readWriteState(cfg, req.number).hardenedTarget,
+      req.expectedBase,
+    )
+  ) {
+    return { merged: false, reason: "target-changed" };
+  }
   const behind = staleReason(cfg, req, view, current.baseSha);
   if (behind !== undefined) {
     return { merged: false, reason: behind };
@@ -146,7 +159,7 @@ function precheck(
   if (view.isDraft) {
     return { merged: false, reason: "draft" };
   }
-  return { base: FULL_SHA.parse(current.baseSha) };
+  return { base: req.expectedBase };
 }
 
 // Names the configured destination and immutable authorized source, not the
@@ -197,6 +210,7 @@ function merge(
     checked.base,
     req.expectedSha,
   );
+  assertGitPushDestination(cfg, paths.worktree(cfg, req.number));
   approvePr(cfg, pr, req.expectedSha);
   return attemptedMerge(cfg, req, checked.base, clock);
 }
@@ -209,6 +223,7 @@ function attemptedMerge(
   base: string,
   clock?: ConfirmationClock,
 ): MergeReply {
+  assertGitPushDestination(cfg, paths.worktree(cfg, req.number));
   beginMerge(cfg, req.number, req.state.pr, { authorized: req.revision, base });
   try {
     const result = branchMerge(

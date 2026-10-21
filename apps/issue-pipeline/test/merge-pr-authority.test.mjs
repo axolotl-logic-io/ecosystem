@@ -3,16 +3,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
-import { approvalReply, branchMergeReply } from "./merge-op-fixtures.mjs";
+import { approvalReply } from "./merge-op-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
-  approvedState,
+  boundState,
   fakeGh,
   ISSUE,
   MERGE_COMMIT,
   mergeAuthority,
   prView,
   savedListing,
+  sh,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
@@ -30,15 +31,20 @@ function request(w) {
   const approved = approvedOf(w);
   return {
     number: ISSUE,
-    state: approvedState(approved),
+    state: boundState(w, approved),
     expectedSha: w.sha,
+    expectedBase: sh(`git -C ${w.worktree} rev-parse origin/integration`),
     revision: approved,
   };
 }
 
 /** @param {import("./ops-publish-test-kit.mjs").World} w @returns {void} */
 function current(w) {
-  setCurrentRevision({ revision: approvedOf(w), baseSha: "base", pr: null });
+  setCurrentRevision({
+    revision: approvedOf(w),
+    baseSha: sh(`git -C ${w.worktree} rev-parse origin/integration`),
+    pr: null,
+  });
 }
 
 for (const baseRefName of ["main", "other"]) {
@@ -47,7 +53,7 @@ for (const baseRefName of ["main", "other"]) {
       const w = world();
       current(w);
       fakeGh.reply([
-        savedListing(approvedState(approvedOf(w))),
+        savedListing(boundState(w, approvedOf(w))),
         prView({
           headRefOid: w.sha,
           baseRefName,
@@ -68,7 +74,7 @@ test("merge rechecks the actual target after revision and base prechecks before 
   const w = world();
   current(w);
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha, baseRefName: "main" }),
   ]);
@@ -88,8 +94,7 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
     approvalReply(w),
-    branchMergeReply(w),
-    ...mergeAuthority(approvedState(approvedOf(w))),
+    ...mergeAuthority(boundState(w, approvedOf(w))),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
@@ -101,10 +106,14 @@ test("merge refuses a wrong-target receipt without signing a merge comment", () 
   assert.equal(result.merged, false);
   assert.ok("reason" in result);
   assert.match(result.reason, TARGET_REFUSAL);
-  assert.equal(writes().filter((args) => !args.includes("PATCH")).length, 2);
+  assert.equal(writes().filter((args) => !args.includes("PATCH")).length, 1);
   assert.equal(writes()[0]?.[1], "repos/o/r/pulls/50/reviews");
   assert.equal(
-    writes().filter((args) => !args.includes("PATCH"))[1]?.[1],
-    "repos/o/r/merges",
+    writes().some((args) => args[1] === "repos/o/r/merges"),
+    false,
+  );
+  assert.equal(
+    sh(`git --git-dir=${w.root}/origin.git rev-parse integration`),
+    w.sha,
   );
 });

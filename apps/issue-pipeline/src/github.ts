@@ -186,6 +186,40 @@ function issueState(cfg: Config, n: number): string | null {
   return state;
 }
 
+function assertGitRemote(cfg: Config, remote: string): void {
+  if (
+    !LOCAL_PATH.test(remote) &&
+    remote !== `https://github.com/${cfg.repo}.git`
+  ) {
+    throw new OpsError(
+      "credentialed git requires the configured GitHub repository HTTPS remote",
+    );
+  }
+}
+
+// Bind origin's effective fetch and push destinations before arming a write.
+// URL rewrites and multiple/alternate destinations are not authorized transport.
+function assertGitPushDestination(cfg: Config, wt: string): void {
+  const options = { cwd: wt, env: GIT_ENV };
+  const raw = run(
+    "git",
+    ["config", "--get", "remote.origin.url"],
+    options,
+  ).stdout.trim();
+  assertGitRemote(cfg, raw);
+  for (const args of [
+    ["remote", "get-url", "--all", "origin"],
+    ["remote", "get-url", "--push", "--all", "origin"],
+  ]) {
+    const effective = run("git", args, options).stdout.trim().split("\n");
+    if (effective.length !== 1 || effective[0] !== raw) {
+      throw new OpsError(
+        "origin requires one unchanged fetch and push destination",
+      );
+    }
+  }
+}
+
 function git(
   cfg: Config,
   identity: Identity,
@@ -207,11 +241,7 @@ function git(
       env: GIT_ENV,
     });
   }
-  if (remote !== `https://github.com/${cfg.repo}.git`) {
-    throw new OpsError(
-      "credentialed git requires the configured GitHub repository HTTPS remote",
-    );
-  }
+  assertGitRemote(cfg, remote);
   const helper = gitHelper(cfg);
   return credentialedRun("git", [...helper, ...args], {
     ...options,
@@ -246,6 +276,7 @@ function isAllowedUser(cfg: Config, login: string | null | undefined): boolean {
 }
 
 export {
+  assertGitPushDestination,
   gh,
   ghIsRead,
   ghJson,

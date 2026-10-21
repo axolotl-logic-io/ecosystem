@@ -122,6 +122,15 @@ function approvedState(approved, extra = {}) {
   };
 }
 
+/** @param {World} w @param {import("../src/state.ts").Revision} approved @param {object} [extra] */
+function boundState(w, approved, extra = {}) {
+  const sha = sh(`git -C ${w.worktree} rev-parse origin/integration`);
+  return approvedState(approved, {
+    hardenedTarget: { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha },
+    ...extra,
+  });
+}
+
 // A security review of the merged result `result` that found nothing, or
 // `finding` when given.
 /**
@@ -201,6 +210,7 @@ function mergeAuthority(state) {
 
 export {
   approvedState,
+  boundState,
   fakeGh,
   GIT_USER,
   ISSUE,

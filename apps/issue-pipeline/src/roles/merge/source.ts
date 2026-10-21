@@ -6,6 +6,7 @@
 // inputs revision (`approval-is-for-one-revision`).
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { targetHolds } from "../../reviewed-target.ts";
 import type { IssueState } from "../../state.ts";
 import { approvalHolds } from "../../state.ts";
 import type { CurrentRevision } from "../revision-source.ts";
@@ -29,6 +30,15 @@ function approvalGate(
     return failed(
       state,
       `GitHub doesn't confirm PR #${codeMerged.pr} merged as ${codeMerged.sha}, as the claim recorded`,
+    );
+  }
+  if (
+    state.codeMerged === null &&
+    !targetHolds(ctx.cfg, state.hardenedTarget, current.baseSha)
+  ) {
+    return toReview(
+      state,
+      "the reviewed target is unknown or changed; fresh checks and review are required",
     );
   }
   if (!approvalHolds(state, revision)) {

@@ -181,6 +181,7 @@ function world(options = {}) {
     stage: /** @type {const} */ ("merge"),
     pr: PR,
     hardened: revision,
+    hardenedTarget: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
     headSha: head,
     verifiedSha: head,
     flows: { code: true },

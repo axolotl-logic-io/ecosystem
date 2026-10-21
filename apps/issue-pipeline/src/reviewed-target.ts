@@ -16,7 +16,7 @@ function reviewedTarget(cfg: Config, sha: string): ReviewedTarget {
 }
 
 function targetHolds(
-  cfg: Config,
+  cfg: Pick<Config, "repo" | "baseBranch">,
   target: ReviewedTarget | null | undefined,
   sha: string,
 ): boolean {

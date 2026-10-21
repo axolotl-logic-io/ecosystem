@@ -53,6 +53,7 @@ function currentRevision(cfg, n, state) {
     return {
       ...answer,
       pr,
+      baseSha: observed.data.codeMerged.sha,
       revision: { ...answer.revision, code: observed.data.codeMerged.sha },
     };
   }

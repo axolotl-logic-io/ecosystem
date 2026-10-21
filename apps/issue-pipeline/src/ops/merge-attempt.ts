@@ -3,11 +3,12 @@ import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { FULL_SHA } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
+import { targetHolds } from "../reviewed-target.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
 import type { IssueState, MergeAttempt, Revision } from "../state.ts";
 import { approvalHolds, sameRevision } from "../state.ts";
 
-// Confirm the pre-POST checkpoint is actually readable before sending code.
+// Confirm the intent checkpoint is actually readable before sending code.
 function beginMerge(
   cfg: Config,
   number: number,
@@ -22,7 +23,8 @@ function beginMerge(
     (state.security !== null && state.security.finding !== null) ||
     state.pr !== pr ||
     state.hardened === null ||
-    !approvalHolds(state, authorized)
+    !approvalHolds(state, authorized) ||
+    !targetHolds(cfg, state.hardenedTarget, base)
   ) {
     throw new OpsError("merge has no fresh unattempted saved authorization");
   }
@@ -42,7 +44,7 @@ function beginMerge(
   const saved = readWriteState(cfg, number);
   if (JSON.stringify(saved.mergeAttempt) !== JSON.stringify(attempt)) {
     throw new OpsError(
-      "merge attempt checkpoint is not confirmed; do not send a merge POST",
+      "merge attempt checkpoint is not confirmed; do not mutate the target",
     );
   }
   return saved;
@@ -90,7 +92,13 @@ function confirmAuthorization(state: IssueState, attempt: MergeAttempt): void {
     !approvalHolds(state, attempt.authorized) ||
     state.hardened === null ||
     !sameRevision(state.hardened, attempt.hardened) ||
-    JSON.stringify(state.integration) !== JSON.stringify(attempt.integration)
+    JSON.stringify(state.integration) !== JSON.stringify(attempt.integration) ||
+    (attempt.operation !== undefined &&
+      !targetHolds(
+        { repo: attempt.repo, baseBranch: attempt.target },
+        state.hardenedTarget,
+        attempt.operation.base,
+      ))
   ) {
     throw new OpsError("original hardening/integration authorization changed");
   }

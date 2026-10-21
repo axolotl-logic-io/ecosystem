@@ -1,5 +1,7 @@
 // @ts-check
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
@@ -18,12 +20,14 @@ import {
   BASE,
   BRANCH,
   git,
+  ISSUE,
   PR,
   REPO,
   world,
 } from "./explicit-target-world-test-kit.mjs";
 
 const { merge } = await import("../src/ops/merge.ts");
+const { stateBody } = await import("../src/saved-state.ts");
 const { signed } = await import("../src/comments.ts");
 const { mergedText } = await import("../src/ops/merge-comment.ts");
 const { gh } = await import("../src/github.ts");
@@ -82,6 +86,8 @@ test("literal configured integration and full H survive a concurrent source bran
 test("main is a valid configured source base, not an implicit production exclusion", () => {
   const original = world({ fastForward: true });
   const w = { ...original, cfg: { ...original.cfg, baseBranch: "main" } };
+  w.state.hardenedTarget = { repo: w.cfg.repo, branch: "main", sha: w.base };
+  fs.writeFileSync(path.join(w.place, "state.json"), stateBody(ISSUE, w.state));
   script(w, [
     ...prechecks(w),
     post(w),
@@ -140,7 +146,7 @@ test("concurrent integration contribution requires resync, checks and review rat
   script(w, prechecks(w).slice(0, INITIAL_REVISION_READS));
   assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
     merged: false,
-    reason: "behind",
+    reason: "target-changed",
   });
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.parent);
   assert.equal(mutations().length, 0);

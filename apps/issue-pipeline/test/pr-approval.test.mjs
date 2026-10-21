@@ -4,12 +4,13 @@ import { test } from "node:test";
 import { approvalReply } from "./merge-op-fixtures.mjs";
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import {
-  approvedState,
+  boundState,
   fakeGh,
   ISSUE,
   PR,
   prView,
   savedListing,
+  sh,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
@@ -47,13 +48,14 @@ for (const result of [
   test(`invalid approval refuses before branch merge: ${JSON.stringify(result)}`, () => {
     const w = world();
     const revision = { code: w.sha, inputs: "inputs-1" };
-    setCurrentRevision({ revision, baseSha: "base", pr: null });
+    const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
+    setCurrentRevision({ revision, baseSha: base, pr: null });
     const response = { ...result };
     if (response.commit === "head") {
       response.commit = w.sha;
     }
     fakeGh.reply([
-      savedListing(approvedState(revision)),
+      savedListing(boundState(w, revision)),
       prView({ headRefOid: w.sha }),
       prView({ headRefOid: w.sha }),
       { ...approvalReply(w), stdout: JSON.stringify(response) },
@@ -62,8 +64,9 @@ for (const result of [
       () =>
         merge(w.cfg, {
           number: ISSUE,
-          state: approvedState(revision),
+          state: boundState(w, revision),
           expectedSha: w.sha,
+          expectedBase: base,
           revision,
         }),
       INVALID_APPROVAL,
@@ -76,9 +79,10 @@ for (const result of [
 test("failed approval never attempts a branch merge", () => {
   const w = world();
   const revision = { code: w.sha, inputs: "inputs-1" };
-  setCurrentRevision({ revision, baseSha: "base", pr: null });
+  const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
+  setCurrentRevision({ revision, baseSha: base, pr: null });
   fakeGh.reply([
-    savedListing(approvedState(revision)),
+    savedListing(boundState(w, revision)),
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
     { ...approvalReply(w), code: 1, stderr: "approval refused" },
@@ -87,8 +91,9 @@ test("failed approval never attempts a branch merge", () => {
     () =>
       merge(w.cfg, {
         number: ISSUE,
-        state: approvedState(revision),
+        state: boundState(w, revision),
         expectedSha: w.sha,
+        expectedBase: base,
         revision,
       }),
     INVALID_APPROVAL,

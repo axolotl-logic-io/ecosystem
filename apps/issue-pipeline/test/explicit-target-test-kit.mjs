@@ -153,6 +153,7 @@ function request(w) {
     state: w.state,
     revision: w.revision,
     expectedSha: w.head,
+    expectedBase: w.base,
     mergeQueue: null,
   };
 }

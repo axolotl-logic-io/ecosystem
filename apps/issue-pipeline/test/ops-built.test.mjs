@@ -12,7 +12,7 @@ import {
   collaboratorReply,
   commentWriteReplies,
 } from "./gh-mutation-fixtures.mjs";
-import { approvalReply, branchMergeReply } from "./merge-op-fixtures.mjs";
+import { approvalReply } from "./merge-op-fixtures.mjs";
 import { mergeWorld } from "./ops-built-merge-fixtures.mjs";
 import { releaseReplies } from "./ops-release-test-kit.mjs";
 import {
@@ -22,6 +22,7 @@ import {
   fakeGh,
   LANE,
   SWEEP,
+  sh,
   stateListing,
   world,
 } from "./ops-test-kit.mjs";
@@ -37,8 +38,7 @@ const PR = 50;
 // The commit prefix the merger comment names.
 const SHORT_SHA = 12;
 const MERGED_TRUE = /"merged":true/u;
-const BRANCH_MERGE =
-  "api repos/o/r/merges --method POST --include -f base=integration -f head=<sha>";
+const BRANCH_MERGE = "api repos/o/r/merges";
 const BEFORE_MERGE_VIEWS = 3;
 // The part of current-revision's reply the merge request carries.
 const CURRENT = z.looseObject({
@@ -102,12 +102,9 @@ function prViews(sha, mergeSha) {
   ];
 }
 
-// Merges #7 in `w` at its current revision and releases it, through `ops`
-// (src/ops.ts when undefined): the replies and gh calls, with the world's
-// head and paths made constant.
-/** @param {World} initial @param {string | undefined} ops */
-function mergeAndRelease(initial, ops) {
-  const w = mergeWorld(initial);
+/** @param {World & { mergeSha: string }} w @returns {(text: string) => string} */
+function constantsFor(w) {
+  const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
   /** @param {string} text @returns {string} */
   function constant(text) {
     return text
@@ -115,15 +112,32 @@ function mergeAndRelease(initial, ops) {
       .replaceAll(w.mergeSha.slice(0, SHORT_SHA), "<merge-sha>")
       .replaceAll(w.sha, "<sha>")
       .replaceAll(w.sha.slice(0, SHORT_SHA), "<sha>")
+      .replaceAll(base, "<base>")
       .replaceAll(w.root, "<root>");
   }
+  return constant;
+}
+
+// Merges #7 in `w` at its current revision and releases it, through `ops`
+// (src/ops.ts when undefined): the replies and gh calls, with the world's
+// head and paths made constant.
+/** @param {World} initial @param {string | undefined} ops */
+function mergeAndRelease(initial, ops) {
+  const w = mergeWorld(initial);
+  const constant = constantsFor(w);
   const lease = { lane: LANE, sweepId: SWEEP, at: "2026-01-01T00:00:00Z" };
-  const state = issueState({ stage: "merge", pr: PR, lease });
+  const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
+  const state = issueState({
+    stage: "merge",
+    pr: PR,
+    lease,
+    hardenedTarget: { repo: "o/r", branch: "integration", sha: base },
+  });
   fakeGh.reply([
     collaboratorReply("o/r", "alice"),
     issueListing(),
     { ...claimListing(), keep: true },
-    ...prViews(w.sha, w.mergeSha),
+    ...prViews(w.sha, w.sha),
   ]);
   const asked = ask(w, { op: "current-revision", number: ISSUE, state }, ops);
   const current = CURRENT.parse(JSON.parse(asked));
@@ -136,9 +150,8 @@ function mergeAndRelease(initial, ops) {
       persistState: true,
     },
     { when: "api -X PATCH repos/o/r/issues/comments/7 -f", keep: true },
-    ...prViews(w.sha, w.mergeSha),
+    ...prViews(w.sha, w.sha),
     approvalReply(w),
-    branchMergeReply(w),
     ...commentWriteReplies("o/r", PR, []),
   ]);
   // The merge op merges only the revision hardening authorized.
@@ -147,13 +160,17 @@ function mergeAndRelease(initial, ops) {
     number: ISSUE,
     state: { ...state, hardened: current.revision },
     expectedSha: w.sha,
+    expectedBase: base,
     revision: current.revision,
     mergeQueue: null,
   };
   const merged = constant(ask(w, req, ops));
+  const target = constant(
+    sh(`git --git-dir=${w.root}/origin.git rev-parse integration`),
+  );
   const mergeCalls = calls().map((args) => constant(args.join(" ")));
   fakeGh.reply(
-    releaseReplies({ ...state, codeMerged: { pr: PR, sha: w.mergeSha } }),
+    releaseReplies({ ...state, codeMerged: { pr: PR, sha: w.sha } }),
   );
   const release_ = { op: "release", number: ISSUE, lane: LANE, sweepId: SWEEP };
   const released = ask(
@@ -162,7 +179,7 @@ function mergeAndRelease(initial, ops) {
     ops,
   );
   const releaseCalls = calls().map((args) => constant(args.join(" ")));
-  return { merged, mergeCalls, released, releaseCalls };
+  return { merged, mergeCalls, released, releaseCalls, target };
 }
 
 test("the built ops merges and releases as src/ops.ts does", () => {
@@ -173,14 +190,15 @@ test("the built ops merges and releases as src/ops.ts does", () => {
   assert.equal(built.status, 0, built.stderr);
   const fromSrc = mergeAndRelease(world(), undefined);
   assert.match(fromSrc.merged, MERGED_TRUE);
+  assert.equal(fromSrc.target, "<sha>");
   assert.equal(
     z.looseObject({ ok: z.literal(true) }).parse(JSON.parse(fromSrc.released))
       .ok,
     true,
   );
   assert.ok(
-    fromSrc.mergeCalls.includes(BRANCH_MERGE),
-    "it named the exact target and source",
+    !fromSrc.mergeCalls.some((call) => call.startsWith(BRANCH_MERGE)),
+    "it never calls the obsolete REST merge endpoint",
   );
   const fromBuild = mergeAndRelease(world(), path.join(out, "ops.mjs"));
   assert.deepEqual(fromBuild, fromSrc);
