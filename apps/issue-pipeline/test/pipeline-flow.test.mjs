@@ -1,7 +1,4 @@
 // @ts-check
-// One issue through the built orchestrator, jobs, ops and tool extensions.
-// Local git origins, pipeline-flow-gh and pipeline-flow-pi fake the services;
-// the stages themselves run unchanged, not through direct role calls.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -12,23 +9,9 @@ import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
 import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { jobLog, stopJobs, tick } from "./pipeline-flow-run-test-kit.mjs";
-import {
-  authorTurn,
-  hardeningTurn,
-  implementorTurn,
-  openFlowIssue,
-  savedState,
-  securityTurn,
-} from "./pipeline-flow-script-test-kit.mjs";
-import {
-  BASE,
-  bareGit,
-  ISSUE,
-  refIn,
-  SLUG,
-  scriptPi,
-  setUpFlow,
-} from "./pipeline-flow-test-kit.mjs";
+import { baseHead, completeStage as driveStage, piStarts, scriptFlow } from "./pipeline-flow-provenance-test-kit.mjs";
+import { savedState } from "./pipeline-flow-script-test-kit.mjs";
+import { BASE, bareGit, ISSUE, SLUG, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 import { PROMPT_PAGES } from "./prompt-test-kit.mjs";
 
 const GHERKIN =
@@ -40,57 +23,28 @@ const REVIEWED_CODE = /\+Hello, world!/u;
 const REVIEWED_DOCS = /\+Greetings say Hello, world!/u;
 const MERGE_ENDPOINT = /^repos\/[^/]+\/[^/]+\/merges$/u;
 
-/** @typedef {import("./pipeline-flow-test-kit.mjs").Flow} Flow */
-
-/** @type {Flow} */
+/** @type {import("./pipeline-flow-kit.mjs").Flow} */
 let flow;
 /** @type {string} the origin's base head before the flow */
 let start;
-/** @type {string[]} every started stage */
-let stages;
-
-/** @returns {any[]} each pi start, in order */
-function piStarts() {
-  return piLog(flow.piDir).filter((entry) => entry.start === true);
-}
-
-/** @returns {string} */
-function baseHead() {
-  return String(refIn(flow.origin, `refs/heads/${BASE}`));
-}
+/** @type {string[]} every stage the flow started, until it went idle */
+const stages = [];
+/** @type {import("../src/state.ts").IssueState[]} */
+const checkpoints = [];
 
 before(() => {
-  stages = [];
   flow = setUpFlow();
-  start = baseHead();
-  openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
-  scriptPi(flow, {
-    author: [authorTurn(GHERKIN, true)],
-    implementor: [implementorTurn("hello, world", "Greet with hello, world")],
-    reviewer: [
-      implementorTurn("Hello, world", "Hardening capitalizes the greeting"),
-      implementorTurn("Hello, world!", "Integration fixes the failed CI check"),
-      hardeningTurn(),
-      securityTurn(),
-    ],
-  });
+  start = baseHead(flow);
+  scriptFlow(flow, GHERKIN);
+  stages.length = 0;
 });
 after(() => stopJobs(flow));
 
-/** @param {string} stage @returns {Promise<{ started: string[], log: string }>} */
+/** @param {string} stage */
 async function completeStage(stage) {
-  const result = await tick(flow);
-  stages.push(...result.started);
-  if (
-    stage === "review" &&
-    stages.filter((each) => each === "review").length === 1
-  ) {
-    const hardened = savedState(readWorld(flow.ghDir));
-    withWorld(flow.ghDir, (world) => {
-      world.failedHead = hardened.hardened.code;
-    });
-  }
-  return { started: result.started, log: jobLog(flow) };
+  const result = await driveStage(flow, stages, stage);
+  checkpoints.push(result.state);
+  return result;
 }
 for (const stage of [
   "author",
@@ -120,7 +74,7 @@ test("legacy ticks run development, hardening, bounded integration and security 
 });
 
 test("each phase gets its configured model and exact write authority without a GitHub token", () => {
-  const starts = piStarts();
+  const starts = piStarts(flow);
   assert.deepEqual(
     starts.map((each) => each.role),
     ["author", "implementor", "reviewer", "reviewer", "reviewer", "reviewer"],
@@ -139,7 +93,7 @@ test("each phase gets its configured model and exact write authority without a G
 });
 
 test("hardening, integration and final security get pinned pages and truthful revision provenance", () => {
-  const starts = piStarts();
+  const starts = piStarts(flow);
   const pages = PROMPT_PAGES.map(({ page }) => page);
   pages.splice(pages.length - 1, 0, "hardening.md");
   for (const [at, page] of pages.entries()) {
@@ -162,7 +116,8 @@ test("hardening, integration and final security get pinned pages and truthful re
   const state = savedState(readWorld(flow.ghDir));
   assert.ok(String(security?.prompt).includes(state.hardened.code));
   assert.equal("wiki" in state.merged, false);
-  assert.ok(String(reharden?.prompt).includes(state.hardened.code));
+  assert.ok(reharden !== undefined);
+  assert.match(String(reharden.prompt), GHERKIN_IN_PROMPT);
   assert.equal(state.integration, null);
   assert.deepEqual(state.security.revision, state.hardened);
   assert.equal(state.security.finding, null);
@@ -186,6 +141,32 @@ test("hardening, integration and final security get pinned pages and truthful re
   for (const tool of ["write", "edit", "bash", "pipeline_commit"]) {
     assert.equal(tools.includes(tool), false);
   }
+});
+
+test("changed integration loses authority until Review checkpoints the same head with its target", () => {
+  const [, , firstHardening, changedIntegrationReturn, reviewCheckpoint] =
+    checkpoints;
+  assert.ok(firstHardening !== undefined);
+  assert.ok(changedIntegrationReturn !== undefined);
+  assert.ok(reviewCheckpoint !== undefined);
+  assert.equal(firstHardening.stage, "merge");
+  assert.equal(changedIntegrationReturn.stage, "review");
+  assert.equal(reviewCheckpoint.stage, "merge");
+  assert.ok(firstHardening.hardened !== null);
+  assert.ok(changedIntegrationReturn.integration !== null);
+  assert.equal(changedIntegrationReturn.hardened, null);
+  assert.equal(changedIntegrationReturn.verifiedSha, null);
+  const integrated = changedIntegrationReturn.integration.revision;
+  assert.equal(changedIntegrationReturn.headSha, integrated.code);
+  assert.notEqual(firstHardening.hardened.code, integrated.code);
+  assert.deepEqual(reviewCheckpoint.hardened, integrated);
+  assert.equal(reviewCheckpoint.verifiedSha, integrated.code);
+  assert.equal(reviewCheckpoint.integration, null);
+  assert.deepEqual(reviewCheckpoint.hardenedTarget, {
+    repo: "o/r",
+    branch: BASE,
+    sha: start,
+  });
 });
 
 test("GitHub ends with the issue closed as merged, the PR merged at the approved head, and the state done with its merge receipt", () => {
@@ -247,7 +228,7 @@ test("one native target update lands the exact authorized head with no REST merg
 });
 
 test("git lands exact H strictly after the retained base with the whole multi-commit code and docs contribution", () => {
-  const base = baseHead();
+  const base = baseHead(flow);
   const { merged, hardened } = savedState(readWorld(flow.ghDir));
   assert.equal(base, merged.code);
   assert.equal(base, hardened.code);
@@ -271,7 +252,7 @@ test("a completion replayed on a reopened done issue closes it again with no mod
     savedState(completedWorld).merged,
   );
   const updates = nativeTargetUpdates(completedWorld);
-  const done = baseHead();
+  const done = baseHead(flow);
   const receipt = savedState(completedWorld).merged;
   withWorld(flow.ghDir, (reopened) => {
     const issue = reopened.issues.find(({ number }) => number === ISSUE);
@@ -281,7 +262,7 @@ test("a completion replayed on a reopened done issue closes it again with no mod
       labels: [],
     });
   });
-  const sessions = piStarts().length;
+  const sessions = piStarts(flow).length;
   const { started } = await tick(flow);
   const world = readWorld(flow.ghDir);
   const issue = world.issues.find(({ number }) => number === ISSUE);
@@ -294,8 +275,8 @@ test("a completion replayed on a reopened done issue closes it again with no mod
     false,
   );
   assert.deepEqual(started, ["merge"], jobLog(flow));
-  assert.equal(piStarts().length, sessions);
-  assert.equal(baseHead(), done);
+  assert.equal(piStarts(flow).length, sessions);
+  assert.equal(baseHead(flow), done);
   assert.equal(world.prs.length, 1);
   assert.equal(issue?.state, "closed");
   assert.equal(savedState(world).stage, "done");
