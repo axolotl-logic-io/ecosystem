@@ -96,7 +96,7 @@ Decide everything yourself except what Ask Autumn lists, and report each decisio
 - **No result line:** read `stderrTail`. Retry a transient failure while attempts remain; otherwise give up on the issue.
 - **`droppedPatches` not empty:** leave the patches where they are, list them in your report and go on with the `end`'s next step.
 - **A stage out of attempts:** give up on the issue.
-- **Exit 2:** for a full cap or a live job on the issue, branch or repo's merge, wait for a job to end and retry. For a closed issue, treat it as done. For a stage out of attempts, give up on the issue. For a widened run.json, put it back as you first wrote it.
+- **Exit 2:** for a full cap or a live job on the issue, branch or repo's merge, wait for a job to end and retry. For a closed-issue refusal, stop starts and report it as unresolved unless genuine saved completion is established. Closed status alone is not completion. Consult CHECKOUT/docs/reference/merge.md, “Closed issues with an incomplete merge”, for separately authorized recovery; never reopen it or infer clearance yourself. For a stage out of attempts, give up on the issue. For a widened run.json, put it back as you first wrote it.
 - **Exit 1:** if your command was wrong, fix it and retry. Otherwise give up on the issue.
 - **Anything else:** follow coordination.md and the limits, take the more cautious choice and report it.
 
