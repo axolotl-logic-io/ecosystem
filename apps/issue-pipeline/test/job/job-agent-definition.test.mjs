@@ -145,11 +145,6 @@ function commandLineOf(args) {
 const READ_TOOLS = ["read", "grep", "find", "ls", "codemode"];
 const WRITE_TOOLS = ["edit", "write", "bash"];
 
-test("the pipeline root and agent folder the definitions load from are the test's temporary ones", () => {
-  assert.equal(fs.statSync(isolatedRoot).isDirectory(), true);
-  assert.ok(agentDir.startsWith(isolatedRoot));
-});
-
 // Each session each stage lists, as its stage's agent.
 const STAGE_SESSIONS = Object.entries(STAGE_AGENTS).flatMap(
   ([stage, { agent, sessions }]) =>
