@@ -10,6 +10,7 @@ import type {
 import {
   PROJECT_POLICY_SOURCE,
   PROJECT_SETTINGS,
+  parseProjectSettings,
 } from "./project-policy-schema.ts";
 
 const DOCUMENT = ".issue-pipeline.json";
@@ -117,7 +118,7 @@ function committedSettings(
       "project policy document is oversized or contains invalid text",
     );
   }
-  const settings = PROJECT_SETTINGS.parse(JSON.parse(text));
+  const settings = parseProjectSettings(text);
   return { ...raw, ...settings };
 }
 

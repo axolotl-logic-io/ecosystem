@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { OpsError } from "./ops-error.ts";
 
+const JSON_TOKEN = /"(?:[^"\\]|\\.)*"|[{}:]/gu;
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
 const PATH_SEPARATOR = /[\\/]/u;
 const FULL_SHA = /^[0-9a-f]{40}$/u;
@@ -62,8 +64,36 @@ const POLICY_BINDING = z.discriminatedUnion("mode", [
   }),
 ]);
 
+// JSON.parse silently takes the last duplicate member. Validate its syntax
+// first, then compare decoded object keys so escaping cannot hide duplicates.
+function parseProjectSettings(text: string): z.infer<typeof PROJECT_SETTINGS> {
+  const parsed: unknown = JSON.parse(text);
+  const tokens = text.match(JSON_TOKEN) ?? [];
+  const objects: Set<string>[] = [];
+  for (const [index, token] of tokens.entries()) {
+    if (token === "{") {
+      objects.push(new Set());
+    } else if (token === "}") {
+      objects.pop();
+    } else if (tokens.at(index + 1) === ":") {
+      const key = z.string().parse(JSON.parse(token));
+      const object = objects.at(-1);
+      if (object?.has(key)) {
+        throw new OpsError(`project policy repeats field ${key}`);
+      }
+      object?.add(key);
+    }
+  }
+  return PROJECT_SETTINGS.parse(parsed);
+}
+
 type ProjectPolicyBinding = z.infer<typeof POLICY_BINDING>;
 type ProjectPolicySource = z.infer<typeof PROJECT_POLICY_SOURCE>;
 
 export type { ProjectPolicyBinding, ProjectPolicySource };
-export { POLICY_BINDING, PROJECT_POLICY_SOURCE, PROJECT_SETTINGS };
+export {
+  POLICY_BINDING,
+  PROJECT_POLICY_SOURCE,
+  PROJECT_SETTINGS,
+  parseProjectSettings,
+};

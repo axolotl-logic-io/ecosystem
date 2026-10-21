@@ -138,3 +138,20 @@ test("empty, oversized, NUL and invalid UTF-8 committed documents refuse explici
     assert.throws(() => loadConfig(fx.file));
   }
 });
+
+test("a committed duplicate command cannot silently choose the last checking value", () => {
+  const fx = policyFixture();
+  fs.writeFileSync(
+    path.join(fx.dir, ".issue-pipeline.json"),
+    '{"commands":{"test":"printf trusted","test":"true"}}',
+  );
+  git(fx.dir, ["add", ".issue-pipeline.json"]);
+  git(fx.dir, ["commit", "--quiet", "-m", "ambiguous policy"]);
+  fx.save({
+    projectPolicy: {
+      repository: fx.dir,
+      revision: git(fx.dir, ["rev-parse", "HEAD"]),
+    },
+  });
+  assert.throws(() => loadConfig(fx.file));
+});
