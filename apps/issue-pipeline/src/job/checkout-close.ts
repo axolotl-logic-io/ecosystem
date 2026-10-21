@@ -145,6 +145,7 @@ async function closeJobCheckout(
   } finally {
     if (removable) {
       withCloneLock(cfg, () => {
+        assertCheckoutReadyForRemoval(cfg, issue, repo);
         fs.rmSync(root, { recursive: true, force: true });
         releaseCheckoutSlot(cfg);
       });

@@ -9,7 +9,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
-import { checkoutEnvironment } from "../lane-slots.ts";
+import { checkoutEnvironment, withCheckoutSetup } from "../lane-slots.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 
@@ -70,6 +70,8 @@ type Migrations = z.infer<typeof MIGRATIONS>;
 // One verify run: the checkout it runs in, the files its change touches, its
 // logs' folder, and the checks so far.
 interface Verification {
+  cfg: Config;
+  issue: number;
   dir: string;
   settings: Settings;
   changed: string[];
@@ -109,10 +111,18 @@ function exitCheck(
   command: string,
   logName: string = id,
 ): boolean {
-  const result = shell(command, v.dir, logPath(v, logName), {
-    timeoutMs: v.timeoutMs,
-    env: v.env,
-  });
+  function execute(env: ReadonlyMap<string, string>): ShellResult {
+    return shell(command, v.dir, logPath(v, logName), {
+      timeoutMs: v.timeoutMs,
+      env,
+    });
+  }
+  let result: ShellResult;
+  if (id === "setup") {
+    result = withCheckoutSetup(v.cfg, v.issue, v.dir, execute);
+  } else {
+    result = execute(v.env);
+  }
   const pass = result.code === 0;
   record(v, { id, pass, detail: `exit ${result.code}` }, result);
   return pass;
@@ -220,6 +230,8 @@ function runChecks(
   const settings = SETTINGS.parse(cfg);
   const { dir, sha, changed } = checkout;
   const v: Verification = {
+    cfg,
+    issue: n,
     dir,
     changed,
     checks: [],

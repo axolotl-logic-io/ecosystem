@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { assertNoDependentCheckouts } from "./checkout-dependencies.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
 import { MAX_LANE_SLOTS } from "./config-schema.ts";
@@ -174,10 +175,9 @@ function withCheckoutSetup(
   issue: number,
   dir: string,
   setup: (env: ReadonlyMap<string, string>) => ShellResult,
-): void {
+): ShellResult {
   if (cfg.laneSlots === undefined) {
-    setup(new Map());
-    return;
+    return setup(new Map());
   }
   const env = checkoutEnvironment(cfg, issue);
   withCloneLock(cfg, () => {
@@ -206,6 +206,7 @@ function withCheckoutSetup(
     held.pendingSetup = held.pendingSetup.filter((pending) => pending !== dir);
     saveStore(cfg, store);
   });
+  return result;
 }
 
 // Called before any recovery/reset/removal of a disposable checkout. Missing
@@ -224,11 +225,16 @@ function assertCheckoutReadyForRemoval(
         `lane slot ownership is missing; retain ${dir} and reconcile before removal`,
       );
     }
-    const held = readStore(cfg).leases.find((lease) => lease.issue === issue);
+    const held = surviving(readStore(cfg)).leases.find(
+      (lease) => lease.issue === issue,
+    );
     if (held?.pendingSetup.includes(dir)) {
       throw new OpsError(
         `lane setup is incomplete; checkout retained at ${dir}. Fix setup and explicitly retry the claim before tests or removal`,
       );
+    }
+    if (held !== undefined) {
+      assertNoDependentCheckouts(dir, held.checkouts);
     }
   });
 }

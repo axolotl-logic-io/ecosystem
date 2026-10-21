@@ -1,5 +1,4 @@
-// The repo's clone and each issue's worktree and branch on this machine. One
-// Agents commit in worktrees; only deterministic ops push.
+// Repository clone and issue worktrees. Only deterministic ops push commits.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -118,6 +117,7 @@ function removeWorktree(cfg: Config, number: number): void {
   withCloneLock(cfg, () => {
     const clone = paths.clone(cfg);
     const wt = paths.worktree(cfg, number);
+    assertCheckoutReadyForRemoval(cfg, number, wt);
     if (fs.existsSync(wt)) {
       const args = [
         "-C",

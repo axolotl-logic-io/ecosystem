@@ -14,6 +14,8 @@ import { piLog } from "./pipeline-flow-pi.mjs";
 import { runStage } from "./pipeline-flow-run.mjs";
 import {
   authorTurn,
+  hardeningTurn,
+  implementorTurn,
   openFlowIssue,
   savedState,
 } from "./pipeline-flow-script.mjs";
@@ -21,8 +23,8 @@ import {
 /** @import { Flow } from "./pipeline-flow-kit.mjs" */
 const SETTINGS = z.record(z.string(), z.unknown());
 
-/** @param {Flow} flow @param {string} setup @returns {void} */
-function configure(flow, setup) {
+/** @param {Flow} flow @param {string} setup @param {string} [testCommand] @returns {void} */
+function configure(flow, setup, testCommand = "true") {
   const settings = SETTINGS.parse(
     JSON.parse(fs.readFileSync(flow.config, "utf8")),
   );
@@ -31,7 +33,7 @@ function configure(flow, setup) {
     JSON.stringify({
       ...settings,
       laneSlots: 1,
-      commands: { test: "true", setup },
+      commands: { test: testCommand, setup },
     }),
   );
   openFlowIssue(
@@ -40,6 +42,43 @@ function configure(flow, setup) {
     "Prepare a lane",
     "Use an isolated test environment.",
   );
+}
+
+/** @param {Flow} flow @param {string} stage */
+function jobAttempt(flow, stage) {
+  return spawnSync(
+    process.execPath,
+    [
+      path.join(flow.root, "job.mjs"),
+      "--config",
+      flow.config,
+      "--issue",
+      "7",
+      "--branch",
+      "agent/issue-7",
+      "--stage",
+      stage,
+      "--lane",
+      "flow-caller",
+    ],
+    { env: flow.env, encoding: "utf8", timeout: 60_000 },
+  );
+}
+
+/** @param {Flow} flow @returns {void} */
+function prepareReview(flow) {
+  scriptPi(flow, {
+    author: [
+      authorTurn(
+        "Feature: lane\n  Scenario: isolated\n    Then the tests use their lane",
+        true,
+      ),
+    ],
+    implementor: [implementorTurn("Hello, lane", "Isolate the tests")],
+    reviewer: [hardeningTurn(), hardeningTurn()],
+  });
+  runStage(flow, "author");
+  runStage(flow, "implement");
 }
 
 const SETUP_NOT_READY = /lane setup is incomplete|lane setup failed/u;
@@ -74,23 +113,7 @@ test("a pre-created caller clone receives its leased setup before its first mode
 test("failed caller setup starts no model and preserves its original checkout and signed retry state", () => {
   const flow = setUpFlow();
   configure(flow, "printf 'original' > local-work; exit 2");
-  const result = spawnSync(
-    process.execPath,
-    [
-      path.join(flow.root, "job.mjs"),
-      "--config",
-      flow.config,
-      "--issue",
-      "7",
-      "--branch",
-      "agent/issue-7",
-      "--stage",
-      "author",
-      "--lane",
-      "flow-caller",
-    ],
-    { env: flow.env, encoding: "utf8", timeout: 60_000 },
-  );
+  const result = jobAttempt(flow, "author");
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, SETUP_NOT_READY);
   const repo = path.join(flow.root, "work/o__r/jobs/issue-7-author/repo");
@@ -103,4 +126,46 @@ test("failed caller setup starts no model and preserves its original checkout an
     [],
   );
   assert.equal(savedState(readWorld(flow.ghDir)).stage, "author");
+});
+
+test("failed verification setup retains the primary checkout and starts no check-fix model", () => {
+  const flow = setUpFlow();
+  configure(
+    flow,
+    "if [ -e .git/lane-ready ]; then printf 'retained' > local-work; exit 2; fi; touch .git/lane-ready",
+  );
+  prepareReview(flow);
+  const result = jobAttempt(flow, "review");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, SETUP_NOT_READY);
+  assert.equal(
+    piLog(flow.piDir).filter(
+      (entry) => entry.start === true && entry.role === "reviewer",
+    ).length,
+    1,
+  );
+  const repo = path.join(flow.root, "work/o__r/jobs/issue-7-review/repo");
+  assert.equal(
+    fs.readFileSync(path.join(repo, "local-work"), "utf8"),
+    "retained",
+  );
+});
+
+test("successful lane setup keeps ordinary failed-check repair sessions enabled", () => {
+  const flow = setUpFlow();
+  const failedOnce = path.join(flow.tmp, "failed-once");
+  configure(
+    flow,
+    "true",
+    `test -f '${failedOnce}' || { touch '${failedOnce}'; exit 1; }`,
+  );
+  prepareReview(flow);
+  assert.equal(runStage(flow, "review").end, "next");
+  assert.equal(
+    piLog(flow.piDir).filter(
+      (entry) => entry.start === true && entry.role === "reviewer",
+    ).length,
+    2,
+  );
+  assert.equal(savedState(readWorld(flow.ghDir)).stage, "merge");
 });
