@@ -75,12 +75,7 @@ async function refusedWork(job, kind, deleted) {
 
 /** @param {import("./pipeline-commit-test-kit.mjs").Job} job @returns {Promise<string>} */
 async function restoredWork(job) {
-  await closeJobCheckout(
-    job.cfg,
-    ISSUE,
-    { ...job, docs: null, wiki: "write", key: RECOVERY },
-    null,
-  );
+  await closeJobCheckout(job.cfg, ISSUE, { ...job, key: RECOVERY }, null);
   const bundle = path.join(
     paths.runDir(job.cfg, ISSUE),
     "recovery",

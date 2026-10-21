@@ -82,7 +82,6 @@ test("a job folder holds repo/ and no docs/ beside it", () => {
     stage: "implement",
     branch: `agent/issue-${ISSUE}`,
   });
-  assert.equal(dirs.docs, null);
   assert.ok(fs.existsSync(path.join(dirs.root, "repo", ".git")));
   assert.ok(!fs.existsSync(path.join(dirs.root, "docs")));
   assert.ok(!fs.existsSync(path.join(dirs.root, ".git")));

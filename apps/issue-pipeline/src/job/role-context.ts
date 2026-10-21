@@ -133,9 +133,8 @@ interface RoleContext {
   stage: Stage;
   // The claimed state.
   state: IssueState;
-  // The job's folder, its code checkout repo/ and its wiki checkout docs/
-  // (null when the repo has no wiki).
-  dirs: { job: string; repo: string; docs: string | null };
+  // The job's folder and its code checkout repo/.
+  dirs: { job: string; repo: string };
   // The filtered issue file: the issue and its trusted comments.
   issueFile: string;
   inputs: RoleInputs;

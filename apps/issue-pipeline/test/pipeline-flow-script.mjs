@@ -27,7 +27,6 @@ function authorTurn(gherkin, changed) {
       outcome: "gherkin",
       gherkin,
       assumptions: [],
-      wikiPages: ["Home"],
       changed,
     },
   };

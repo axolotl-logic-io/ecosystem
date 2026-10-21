@@ -33,7 +33,7 @@ import { hardening, VERIFIED } from "./reviewer-role-test-kit.mjs";
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const HEAD_MOVED = /the next job hardens the new head/u;
 const MERGED_SCOPE =
-  /Scope: the wiki in `docs\/` only\. The code already merged as PR #90/u;
+  /Scope: none\. The code already merged as PR #90, merge commit `[0-9a-f]+`, which `repo\/` holds: commit nothing\./u;
 
 const MERGED_PR = {
   number: PR,

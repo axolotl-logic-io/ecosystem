@@ -131,7 +131,6 @@ function gherkinComment(gherkin = {}) {
     inputs: INPUTS,
     gherkin: GHERKIN_TEXT,
     assumptions: ["the list is newest first"],
-    wikiPages: ["Chats"],
     ...gherkin,
   };
 }
@@ -213,7 +212,7 @@ function fakeContext(script) {
     issue: ISSUE,
     stage: script.stage,
     state: script.state,
-    dirs: { job: "/job", repo: "/job/repo", docs: "/job/docs" },
+    dirs: { job: "/job", repo: "/job/repo" },
     issueFile: "/run/issue.md",
     inputs: {
       issue: { title: "T", body: "B", user: { login: "owner" } },

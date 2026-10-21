@@ -44,7 +44,6 @@ function seedRecovery(at) {
       issue: 7,
       branch: "agent/issue-7",
       job: KEY,
-      wikiAccess: "write",
       origin: {
         stage: "review",
         outcome: "stop",

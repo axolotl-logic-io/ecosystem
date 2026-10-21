@@ -19,7 +19,7 @@ const ISSUE_BRANCH = "agent/issue-7";
 const NO_BRANCH = /--branch must name the issue's branch/u;
 // paths.branch's refusals (src/config.ts), which every op applies too.
 const NOT_LITERAL = /--branch: #7's branch .* is not a literal branch name/u;
-const PROTECTED = /--branch: #7's branch .* is the base or wiki branch/u;
+const PROTECTED = /--branch: #7's branch .* is the base branch/u;
 // git's, for a name past that rule.
 const NOT_VALID = /is not a valid branch name/u;
 const DEFAULT_BRANCH = /is o\/r's default branch/u;

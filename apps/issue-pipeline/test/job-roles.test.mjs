@@ -1,7 +1,7 @@
 // @ts-check
 // The stage job's roles: which role each of the four stages runs as (its
-// sessions are job-sessions.test.mjs's), each stage's wiki and code access
-// and commit scope, the roles' merged settings, and the environment a session's pi
+// sessions are job-sessions.test.mjs's), each stage's code access and
+// commit scope, the roles' merged settings, and the environment a session's pi
 // gets, which holds no token (Pipeline-Job-Contract#shared-role-rules).
 
 import assert from "node:assert/strict";
@@ -12,14 +12,8 @@ import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { FIXTURE_WINDOWS } from "./runtime-fixtures.mjs";
 
-const {
-  agentEnvOf,
-  boundaryOf,
-  commitScopeOf,
-  rolesOf,
-  STAGE_CODE_ACCESS,
-  STAGE_WIKI_ACCESS,
-} = await import("../src/job/roles.ts");
+const { agentEnvOf, boundaryOf, commitScopeOf, rolesOf, STAGE_CODE_ACCESS } =
+  await import("../src/job/roles.ts");
 const { STAGES } = await import("../src/stages.ts");
 const { loadConfig } = await import("../src/config.ts");
 
@@ -152,18 +146,6 @@ test("no session env inherits a commit scope from the job's own env", () => {
   assert.deepEqual(agentEnvOf(rolesOf({}), scoped), PLAIN);
 });
 
-test("only the author reads the wiki alone; implement, review and merge write it", () => {
-  const writers = Object.entries(STAGE_WIKI_ACCESS)
-    .filter(([, access]) => access === "write")
-    .map(([stage]) => stage)
-    .sort();
-  assert.deepEqual(writers, ["implement", "merge", "review"]);
-  for (const stage of READER_STAGES) {
-    assert.equal(STAGE_WIKI_ACCESS[stage], "read", stage);
-  }
-  assert.deepEqual(new Set(Object.keys(STAGE_WIKI_ACCESS)), new Set(STAGES));
-});
-
 test("only the author reads the code alone; the writers and merge's integration write it", () => {
   for (const stage of [...WRITER_STAGES, ...MERGER_STAGES]) {
     assert.equal(STAGE_CODE_ACCESS[stage], "write", stage);
@@ -174,21 +156,26 @@ test("only the author reads the code alone; the writers and merge's integration 
   assert.deepEqual(new Set(Object.keys(STAGE_CODE_ACCESS)), new Set(STAGES));
 });
 
-test("a committing session of review or merge may commit any code path and the wiki; the author's scope commits nothing", () => {
+test("a committing session of review or merge may commit any code path; the author's scope commits nothing", () => {
   for (const stage of [...WRITER_STAGES, ...MERGER_STAGES]) {
     assert.deepEqual(
-      commitScopeOf(stage, true, true),
-      {
-        repo: { dir: "repo", access: "write" },
-        docs: { dir: "docs", access: "write" },
-        allowed: ["**"],
-      },
+      commitScopeOf(stage, true),
+      { repo: { dir: "repo", access: "write" }, allowed: ["**"] },
       stage,
     );
   }
-  assert.deepEqual(commitScopeOf("author", false, true), {
+  assert.deepEqual(commitScopeOf("author", true), {
     repo: { dir: "repo", access: "read" },
-    docs: null,
     allowed: [],
   });
+});
+
+test("a writer's scope once the code merged commits nothing", () => {
+  for (const stage of [...WRITER_STAGES, ...MERGER_STAGES]) {
+    assert.deepEqual(
+      commitScopeOf(stage, false),
+      { repo: { dir: "repo", access: "read" }, allowed: [] },
+      stage,
+    );
+  }
 });

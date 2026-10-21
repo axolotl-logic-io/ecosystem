@@ -1,6 +1,6 @@
 // git commit's option grammar, as `pipeline_commit` reads a call's
 // arguments before git runs: which options it refuses, which take a value,
-// which message options the wiki's commit repeats, and the pathspecs. A
+// where each message file's path sits, and the pathspecs. A
 // refused option throws a Refusal, which the planner (pipeline-commit.ts)
 // turns into its refused plan.
 
@@ -40,12 +40,10 @@ const LONG_OPTION = /^--(?<name>[^=]+)(?:=(?<value>[\s\S]*))?$/u;
 type Used = 1 | 2;
 
 // A commit call's arguments, read: the options as given, where in them each
-// message file's path sits, the options the wiki's commit repeats, the
-// pathspecs and whether it is a dry run.
+// message file's path sits, the pathspecs and whether it is a dry run.
 interface ReadArgs {
   options: string[];
   files: number[];
-  message: string[][];
   paths: string[];
   dryRun: boolean;
 }
@@ -87,9 +85,6 @@ function readLong(args: readonly string[], at: number, read: ReadArgs): Used {
   if (full === "dry-run") {
     read.dryRun = true;
   }
-  if (full === "signoff") {
-    read.message.push(["-s"]);
-  }
   if (!LONG_WITH_VALUE.includes(full)) {
     read.options.push(args[at] ?? "");
     return 1;
@@ -107,28 +102,16 @@ function readLong(args: readonly string[], at: number, read: ReadArgs): Used {
   return 1;
 }
 
-// Keeps the message options the wiki's commit repeats, and where a message
-// file's path, the last of the options read so far, sits.
+// Keeps where a message file's path, the last of the options read so far,
+// sits, refusing a message read from stdin.
 function messageOption(option: string, value: string, read: ReadArgs): void {
-  switch (option) {
-    case "message":
-    case "m":
-      read.message.push(["-m", value]);
-      return;
-    case "file":
-    case "F":
-      if (value === "-") {
-        refuse("-F - is not allowed: the message can't come from stdin");
-      }
-      read.files.push(read.options.length - 1);
-      read.message.push(["-F", value]);
-      return;
-    case "trailer":
-      read.message.push(["--trailer", value]);
-      return;
-    default:
-      return;
+  if (option !== "file" && option !== "F") {
+    return;
   }
+  if (value === "-") {
+    refuse("-F - is not allowed: the message can't come from stdin");
+  }
+  read.files.push(read.options.length - 1);
 }
 
 // Reads the short option cluster at `args[at]` into `read`, and returns how
@@ -153,9 +136,6 @@ function readShort(args: readonly string[], at: number, read: ReadArgs): Used {
       }
       return 1;
     }
-    if (flag === "s") {
-      read.message.push(["-s"]);
-    }
   }
   read.options.push(cluster);
   return 1;
@@ -165,7 +145,6 @@ function readArgs(args: readonly string[]): ReadArgs {
   const read: ReadArgs = {
     options: [],
     files: [],
-    message: [],
     paths: [],
     dryRun: false,
   };

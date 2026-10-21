@@ -3,8 +3,8 @@
 // it integrates one at merge. A failure gets a fix session of that phase, up
 // to `maxCiFixes` of them in a job, and stops with check-fixes after that,
 // or as soon as a fix session says no change in the repo can fix them. Once
-// the code merged, verify checks the merge commit itself, which wiki-only
-// work can't change, so a failure there stops with check-fixes without a fix
+// the code merged, verify checks the merge commit itself, which no session
+// may change, so a failure there stops with check-fixes without a fix
 // session.
 
 import type { RoleContext, RoleEnd } from "../job/role-context.ts";
@@ -36,7 +36,7 @@ type VerifyPayload =
   | { number: number; codeMerged: CodeMerged };
 
 function verifyPayload(ctx: RoleContext, mode: Mode): VerifyPayload {
-  if (mode.kind === "wiki-only") {
+  if (mode.kind === "merged") {
     return { number: ctx.issue, codeMerged: mode.merged };
   }
   return { number: ctx.issue };
@@ -76,15 +76,15 @@ function judged(
   attempt: number,
 ): Step<string> | null {
   const { state, mode, maxCiFixes } = loop;
-  if (mode.kind === "wiki-only" && verification.headSha !== mode.merged.sha) {
+  if (mode.kind === "merged" && verification.headSha !== mode.merged.sha) {
     const reason = `verify checked ${verification.headSha}, not the merge commit ${mode.merged.sha}`;
     return ended(errorStop(state, reason));
   }
   if (verification.pass) {
     return { ok: true, value: verification.headSha };
   }
-  if (mode.kind === "wiki-only") {
-    const reason = `checks still fail on the merged code at ${mode.merged.sha}, which wiki-only work can't change: ${failedIds(verification)}`;
+  if (mode.kind === "merged") {
+    const reason = `checks still fail on the merged code at ${mode.merged.sha}, which work after the merge can't change: ${failedIds(verification)}`;
     return ended(checksStop(state, reason));
   }
   if (attempt > maxCiFixes) {

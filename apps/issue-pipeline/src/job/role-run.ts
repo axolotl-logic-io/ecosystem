@@ -125,7 +125,7 @@ function contextOf(
     issue: job.issue,
     stage: job.stage,
     state: claimed.last,
-    dirs: { job: job.dirs.root, repo: job.dirs.repo, docs: job.dirs.docs },
+    dirs: { job: job.dirs.root, repo: job.dirs.repo },
     issueFile,
     inputs,
     mergeQueue: job.mergeQueue,

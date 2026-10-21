@@ -75,7 +75,7 @@ import { opsRunnerOf } from "./job/ops-request.ts";
 import type { StagePrompts } from "./job/prompts.ts";
 import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
 import { runRoleStage } from "./job/role-run.ts";
-import { boundaryOf, STAGE_WIKI_ACCESS } from "./job/roles.ts";
+import { boundaryOf } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
 import type { JobOutcome, StopSignal } from "./job/status.ts";
 import { openStatus, socketOf } from "./job/status.ts";
@@ -102,7 +102,6 @@ async function runStage(
     throw new Error(`no role for stage ${stage}`);
   }
   const key = jobKeyOf(stage, new Date());
-  const wiki = STAGE_WIKI_ACCESS[stage];
   const dirs = openJobCheckout(cfg, issue, { stage, branch });
   const { root, repo } = dirs;
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
@@ -133,7 +132,7 @@ async function runStage(
     }
     return claimed();
   });
-  const exiting = { issue, stage, key, dirs, wiki, push, runOp, status };
+  const exiting = { issue, stage, key, dirs, push, runOp, status };
   const ending = runRoleStage({
     role,
     cfg,

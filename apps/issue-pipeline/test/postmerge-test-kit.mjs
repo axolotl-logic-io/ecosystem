@@ -17,19 +17,18 @@ import {
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see a polite greeting";
 
-/** @param {string[]} pages the Gherkin's named pages */
-function externallyMergedFlow(pages) {
+function externallyMergedFlow() {
   const flow = setUpFlow();
   observeOps(flow);
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
   const authored = authorTurn(GHERKIN, true);
   scriptPi(flow, {
-    author: [{ output: { ...authored.output, wikiPages: pages } }],
+    author: [authored],
     implementor: [
       {
         files: { "repo/greet.txt": "Hello, world!\n" },
         commits: [["-am", "Greet visitors"]],
-        output: { outcome: "done", summary: "Code merged before wiki work" },
+        output: { outcome: "done", summary: "Code merged before hardening" },
       },
     ],
     reviewer: [{ output: {}, rejectPrompt: "read ECONNRESET" }],

@@ -48,9 +48,9 @@ const MERGE_STAGE_OPS = new Set([
 
 const HARDENING_TASK = /Task: `hardening`/u;
 const BRANCH_SCOPE =
-  /Scope: the code branch in `repo\/` and the wiki in `docs\/`\. The change: `git -C repo diff origin\/\S+\.\.\.HEAD`/u;
+  /Scope: the code branch in `repo\/`, including its docs in `repo\/docs\/`\. The change: `git -C repo diff origin\/\S+\.\.\.HEAD`/u;
 const GHERKIN = /Scenario: list/u;
-// Behaviour is the wiki page's, never the task's.
+// Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS =
   /AGENTS\.md|pipeline_commit|artificial load|adversarial/iu;
 const HARDENING_PASSED = /^## Hardening passed/u;

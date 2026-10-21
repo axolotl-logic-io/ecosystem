@@ -125,7 +125,6 @@ function gherkinComment(id, number, inputs) {
   const text = {
     gherkin: "Feature: F\n  Scenario: S",
     assumptions: [],
-    wikiPages: [],
   };
   const body = `${signed({ role: "author" }, gherkinBody(text, { rev: 1, inputs }))}\n${keyMark(number, "gherkin")}`;
   return commentBy(id, ACCOUNT, body);

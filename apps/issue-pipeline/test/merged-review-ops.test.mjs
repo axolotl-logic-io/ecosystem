@@ -5,7 +5,7 @@
 // moving and writing nothing, a checkout with uncommitted changes, a merge
 // commit with no change against its first parent, and a checkout that
 // doesn't end at the merge commit; and the detached checkout is no
-// unpushed work: no stop pushes it, a wiki-only push accepts it, the
+// unpushed work: no stop pushes it, a push after the merge is refused, the
 // current revision is the merge commit, and a stage job's teardown drops
 // and pushes nothing.
 import assert from "node:assert/strict";
@@ -271,7 +271,7 @@ test("a stage job's teardown of a checkout detached at the merge drops and pushe
   const dropped = await closeJobCheckout(
     cfg,
     ISSUE.job,
-    { root, repo, docs: null, wiki: "read", key: "review-1", branch: name },
+    { root, repo, key: "review-1", branch: name },
     () => {
       pushes += 1;
       return Promise.resolve();

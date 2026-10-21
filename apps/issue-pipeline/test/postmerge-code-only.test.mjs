@@ -17,7 +17,7 @@ let flow;
 after(() => stopJobs(flow));
 
 test("genuine code-only completion requires no invented edit, commit or push", () => {
-  flow = externallyMergedFlow([]);
+  flow = externallyMergedFlow();
   const code = refIn(flow.origin, BASE);
   reviewerTurns(flow, [hardeningTurn(), securityTurn()]);
   const before = opsTrace(flow).length;

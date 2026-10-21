@@ -54,7 +54,7 @@ function mergedContext(script = {}) {
  */
 function verified(run) {
   return verifiedHead(run.ctx, run.ctx.state, {
-    mode: { kind: "wiki-only", merged: CODE_MERGED },
+    mode: { kind: "merged", merged: CODE_MERGED },
     phase: "hardening",
     maxCiFixes: CI_LIMIT.parse(run.ctx.cfg).maxCiFixes,
   });
@@ -112,7 +112,7 @@ test("checks failing on the merged code stop check-fixes with no fix session, na
   assert.match(
     end.end.reason,
     new RegExp(
-      `merged code at ${MERGED}, which wiki-only work can't change: test`,
+      `merged code at ${MERGED}, which work after the merge can't change: test`,
       "u",
     ),
   );

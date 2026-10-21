@@ -147,3 +147,31 @@ test("failure to save durable recovery metadata retains original staged and work
     "staged\nunstaged\n",
   );
 });
+
+test("a Review manifest saved while the pipeline had a wiki still lists its repo/ and docs/ patches, without the wiki access", () => {
+  const job = openFresh();
+  const base = headOf(job.repo);
+  const dropped = inRunDir(job.cfg, "dropped");
+  fs.mkdirSync(dropped, { recursive: true });
+  const snapshot = { source: "/old/job", kind: "working-tree", base };
+  fs.writeFileSync(
+    path.join(dropped, `${FIRST}.json`),
+    JSON.stringify({
+      version: 1,
+      repo: job.cfg.repo,
+      issue: ISSUE,
+      branch: job.branch,
+      job: FIRST,
+      wikiAccess: "write",
+      origin: TIMEOUT,
+      snapshots: [
+        { ...snapshot, file: `${FIRST}-repo.patch`, checkout: "repo" },
+        { ...snapshot, file: `${FIRST}-docs.patch`, checkout: "docs" },
+      ],
+    }),
+  );
+  const lines = recoveryLines(job.cfg, ISSUE, job.branch).join("\n");
+  assert.ok(lines.includes(`${FIRST}-repo.patch; checkout: repo/`));
+  assert.ok(lines.includes(`${FIRST}-docs.patch; checkout: docs/`));
+  assert.ok(!lines.includes("wiki access"));
+});

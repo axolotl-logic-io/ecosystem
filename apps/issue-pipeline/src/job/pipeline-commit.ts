@@ -1,8 +1,8 @@
 // What a `pipeline_commit` call commits, worked out before git runs: the
 // planner reads the call's options (commit-options.ts), refuses the flags and
 // paths a session may not use, routes the pathspecs, which are relative to
-// the job's folder, to its code checkout (repo/) and its wiki checkout
-// (docs/), refuses those into a checkout the stage may not write
+// the job's folder, to its code checkout (repo/), refuses those outside it
+// or into a checkout the stage may not write
 // (commit-needs-write-access, #338), adds the trailer that names the session
 // to every commit, `Pipeline-Session: <launch key>@<job start>`, when its
 // scope names the job's start, and owns the session variable that tells the
@@ -23,13 +23,11 @@ const ACCESS = z.enum(["read", "write"]);
 // stage's access to it.
 const CHECKOUT_SCOPE = z.object({ dir: z.string(), access: ACCESS });
 // A session's commit scope: the job's control socket, the launch it is, the
-// job's start, the job's folder, its code checkout, its wiki checkout (null
-// with no wiki), and the code globs, relative to the code checkout, it may
-// commit. A job started before the trailer (#402) sends no `jobStartedAt`,
+// job's start, the job's folder, its code checkout, and the code globs,
+// relative to the code checkout, it may commit. A job started before the trailer (#402) sends no `jobStartedAt`,
 // and its sessions commit without the trailer.
 const PATH_SCOPE = z.object({
   repo: CHECKOUT_SCOPE,
-  docs: CHECKOUT_SCOPE.nullable(),
   allowed: z.array(z.string()).readonly(),
 });
 const COMMIT_SCOPE = PATH_SCOPE.extend({
@@ -43,38 +41,18 @@ type Access = z.infer<typeof ACCESS>;
 type CheckoutScope = z.infer<typeof CHECKOUT_SCOPE>;
 type CommitScope = z.infer<typeof COMMIT_SCOPE>;
 
-// What a session may commit: its code checkout, its wiki checkout (null with
-// no wiki) and the code globs it may commit (none: wiki only).
+// What a session may commit: its code checkout and the code globs it may
+// commit there (none: nothing).
 interface PathScope {
   repo: CheckoutScope;
-  docs: CheckoutScope | null;
   allowed: readonly string[];
 }
 
-type CheckoutName = "repo" | "docs";
-
-// What an error calls each checkout.
-const CHECKOUT_LABELS: Readonly<Record<CheckoutName, string>> = {
-  repo: "the code checkout",
-  docs: "the wiki checkout",
-};
-
-// A pathspec routed to a checkout, relative to it.
-interface Routed {
-  checkout: CheckoutName;
-  path: string;
-}
-
 // A call's plan: refused with the reason, or the git argv to run in the code
-// checkout (null for none) and in the wiki checkout (in order, null for none).
+// checkout (null for none).
 type CommitPlan =
   | { kind: "refused"; error: string }
-  | {
-      kind: "commit";
-      code: string[] | null;
-      wiki: string[][] | null;
-      dryRun: boolean;
-    };
+  | { kind: "commit"; code: string[] | null; dryRun: boolean };
 
 // The pathspec normalized, or refused when it reaches outside the job's
 // folder or uses pathspec magic.
@@ -86,34 +64,22 @@ function checkedPath(spec: string): string {
   return segments.join("/") || ".";
 }
 
-// The job's checkouts, by name.
-function checkoutsOf(scope: PathScope): [CheckoutName, CheckoutScope][] {
-  const list: [CheckoutName, CheckoutScope][] = [["repo", scope.repo]];
-  if (scope.docs !== null) {
-    list.push(["docs", scope.docs]);
-  }
-  return list;
-}
-
-// Where pathspec `spec` goes: refused unless it is in a checkout of the job
-// that the stage may write.
-function routeOf(spec: string, scope: PathScope): Routed {
+// Pathspec `spec` relative to the code checkout: refused unless it is in
+// that checkout and the stage may write it.
+function codePathOf(spec: string, scope: PathScope): string {
   const [first = "", ...rest] = checkedPath(spec).split("/");
-  const checkouts = checkoutsOf(scope);
-  const found = checkouts.find(([, checkout]) => checkout.dir === first);
-  if (found === undefined) {
-    const dirs = checkouts.map(([, checkout]) => `${checkout.dir}/`);
+  const { dir, access } = scope.repo;
+  if (first !== dir) {
     return refuse(
-      `${spec}: not in a checkout of this job; paths start with ${dirs.join(" or ")}`,
+      `${spec}: not in a checkout of this job; paths start with ${dir}/`,
     );
   }
-  const [name, { dir, access }] = found;
   if (access !== "write") {
     refuse(
-      `${spec}: this stage has ${access} access to ${CHECKOUT_LABELS[name]} (${dir}/); it may not commit there`,
+      `${spec}: this stage has ${access} access to the code checkout (${dir}/); it may not commit there`,
     );
   }
-  return { checkout: name, path: rest.join("/") || "." };
+  return rest.join("/") || ".";
 }
 
 // A message file's path as checkout folder `dir`, inside the job's folder,
@@ -150,41 +116,10 @@ function trailerArgs(trailer: string | null): string[] {
   return ["--trailer", trailer];
 }
 
-// The wiki's argv: everything when it got no pathspec, else the named paths,
-// committed with `trailer` (none when null).
-function wikiArgv(
-  read: ReadArgs,
-  paths: string[],
-  where: { dir: string; trailer: string | null },
-): string[][] {
-  const { dir, trailer } = where;
-  const message = read.message.flatMap(([option = "", value]): string[] => {
-    if (value === undefined) {
-      return [option];
-    }
-    if (option === "-F") {
-      return [option, fileFrom(value, dir)];
-    }
-    return [option, value];
-  });
-  if (read.dryRun) {
-    const all: string[] = [];
-    if (paths.length === 0) {
-      all.push("-a");
-    }
-    return [withPaths(["commit", "--dry-run", ...all, ...message], paths)];
-  }
-  return [
-    withPaths(["add", "-A"], paths),
-    withPaths(["commit", ...message, ...trailerArgs(trailer)], paths),
-  ];
-}
-
 // The plan for one call of `pipeline_commit` with git commit's `args`, in a
-// session that may commit what `scope` allows, each commit ending with the
-// trailer `trailer` (none when null). A call that names pathspecs commits
-// only the checkouts they are in; one that names none commits each checkout
-// the stage may write.
+// session that may commit what `scope` allows, the commit ending with the
+// trailer `trailer` (none when null). A call that names no pathspecs commits
+// all the code checkout's changes.
 function planOf(
   args: readonly string[],
   scope: PathScope,
@@ -192,34 +127,21 @@ function planOf(
 ): CommitPlan {
   const read = readArgs(args);
   const codePaths: string[] = [];
-  const wikiPaths: string[] = [];
   for (const spec of read.paths) {
-    const routed = routeOf(spec, scope);
-    if (routed.checkout === "docs") {
-      wikiPaths.push(routed.path);
-    } else if (matchAny(scope.allowed, routed.path)) {
-      codePaths.push(routed.path);
-    } else {
+    const path = codePathOf(spec, scope);
+    if (!matchAny(scope.allowed, path)) {
       refuse(`${spec}: outside the paths this session may commit`);
     }
+    codePaths.push(path);
   }
-  const named = read.paths.length > 0;
-  const { repo, docs } = scope;
+  const { repo } = scope;
   let code: string[] | null = null;
-  if (
-    repo.access === "write" &&
-    scope.allowed.length > 0 &&
-    (!named || codePaths.length > 0)
-  ) {
+  if (repo.access === "write" && scope.allowed.length > 0) {
     const options = optionsIn(read, repo.dir);
     const commit = ["commit", ...options, ...trailerArgs(trailer)];
     code = withPaths(commit, codePaths);
   }
-  let wiki: string[][] | null = null;
-  if (docs?.access === "write" && (!named || wikiPaths.length > 0)) {
-    wiki = wikiArgv(read, wikiPaths, { dir: docs.dir, trailer });
-  }
-  return { kind: "commit", code, wiki, dryRun: read.dryRun };
+  return { kind: "commit", code, dryRun: read.dryRun };
 }
 
 // The trailer that names session `key` of the job that started at
@@ -236,7 +158,7 @@ function sessionTrailer(
 
 // The plan for `args` within `scope`, each commit ending with `trailer`
 // (none when null): refused, naming the flag or path, before anything runs;
-// or the argv for each repo.
+// or the argv to run.
 function commitArgsOf(
   args: readonly string[],
   scope: PathScope,

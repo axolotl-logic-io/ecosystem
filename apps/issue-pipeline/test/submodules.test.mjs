@@ -65,21 +65,15 @@ test("issue worktrees contain submodules and can be removed with them", () => {
   assert.equal(fs.existsSync(dir), false);
 });
 
-test("stage jobs initialize submodules even without wiki publishing enabled", async () => {
+test("stage jobs initialize the repo's submodules", async () => {
   const dirs = openJobCheckout(cfg, 2, {
     stage: "review",
     branch: "agent/issue-2",
   });
   try {
     assert.deepEqual(pagesOf(dirs.repo), ["pinned\n", "pinned\n"]);
-    assert.equal(dirs.docs, null);
   } finally {
-    await closeJobCheckout(
-      cfg,
-      2,
-      { ...dirs, wiki: "read", key: "review" },
-      null,
-    );
+    await closeJobCheckout(cfg, 2, { ...dirs, key: "review" }, null);
   }
   assert.equal(fs.existsSync(dirs.root), false);
 });

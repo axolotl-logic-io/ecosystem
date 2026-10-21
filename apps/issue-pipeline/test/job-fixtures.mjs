@@ -27,7 +27,6 @@ const AUTHORED = {
   gherkin:
     "Feature: The thing\n\n  Scenario: It is done\n    Given src/a.ts\n    Then it does the thing",
   assumptions: [],
-  wikiPages: [],
   changed: true,
 };
 // The author's reply asking its questions.

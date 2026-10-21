@@ -50,25 +50,25 @@ const BOUNDARY_ROLES = {
   writer: { tokenEnv: "W_TOKEN", network: ["example.com"] },
   merger: { tokenEnv: "M_TOKEN" },
 };
-// Each stage's role, network and access to its code (repo/) and wiki (docs/)
-// checkouts: the author only reads; every other stage writes both.
+// Each stage's role, network and access to its code (repo/)
+// checkout: the author only reads it; every other stage writes it.
 const WRITER = {
   role: "writer",
   network: ["example.com"],
-  access: { repo: "write", docs: "write" },
+  access: { repo: "write" },
 };
 const EXPECTED = {
   author: {
     role: "reader",
     network: ["api.anthropic.com"],
-    access: { repo: "read", docs: "read" },
+    access: { repo: "read" },
   },
   implement: WRITER,
   review: WRITER,
   merge: {
     role: "merger",
     network: ["api.github.com", "api.anthropic.com", "registry.npmjs.org"],
-    access: { repo: "write", docs: "write" },
+    access: { repo: "write" },
   },
 };
 const COMMIT_EXTENSION = /\/pipeline-commit\.mjs$/u;

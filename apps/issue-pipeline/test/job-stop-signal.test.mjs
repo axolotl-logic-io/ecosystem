@@ -45,7 +45,6 @@ function jobFor(runOp) {
     dirs: {
       root: isolatedRoot,
       repo: isolatedRoot,
-      docs: null,
       branch: "agent/issue-7",
     },
     prompts: { pinned: [], promptFor: unexpectedLaunch },

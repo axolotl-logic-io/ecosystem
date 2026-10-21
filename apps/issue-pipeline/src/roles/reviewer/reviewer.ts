@@ -65,11 +65,8 @@ function notHardenable(
       `GitHub doesn't confirm PR #${codeMerged.pr} merged as ${codeMerged.sha}, as the claim recorded`,
     );
   }
-  if (current.revision.code === null && current.revision.wiki === null) {
-    return errorStop(
-      state,
-      "nothing to harden: no code head and no wiki commits",
-    );
+  if (current.revision.code === null) {
+    return errorStop(state, "nothing to harden: no code head");
   }
   return null;
 }
@@ -162,7 +159,7 @@ async function hardeningSetup(
   ctx: RoleContext,
   mode: Mode,
 ): Promise<string | null> {
-  if (mode.kind !== "wiki-only") {
+  if (mode.kind !== "merged") {
     return null;
   }
   const prepared = await opReply(
@@ -223,7 +220,7 @@ async function harden(
     });
   }
   const { revision } = after;
-  const entry = `hardened code ${short(revision.code)}, wiki ${short(revision.wiki)}`;
+  const entry = `hardened code ${short(revision.code)}`;
   const hardened = logged(checkpoint(state, revision), entry);
   return { ok: true, value: { state: hardened, revision } };
 }
@@ -243,7 +240,7 @@ async function postHardened(
     key: "hardening",
     on,
     role: "reviewer",
-    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\` and wiki \`${short(revision.wiki)}\`, and the pipeline's checks passed on them. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
+    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
   });
 }
 

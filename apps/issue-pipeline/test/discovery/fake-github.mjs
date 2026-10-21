@@ -145,7 +145,7 @@ function createSave(hub) {
     const receipt = COMMENT.parse(fixture.comment);
     receipt.body = `<!-- agent-pipeline:state\n${JSON.stringify(raw)}\n-->`;
     const gherkin = COMMENT.parse(fixture.gherkin);
-    gherkin.body = `<!-- agent-pipeline:comment role=author -->\n<!-- issue-pipeline:1:gherkin -->\n${gherkinBody({ gherkin: "Feature: work", assumptions: [], wikiPages: [] }, { rev: 1, inputs: revision })}`;
+    gherkin.body = `<!-- agent-pipeline:comment role=author -->\n<!-- issue-pipeline:1:gherkin -->\n${gherkinBody({ gherkin: "Feature: work", assumptions: [] }, { rev: 1, inputs: revision })}`;
     comments.splice(0, comments.length, receipt, gherkin);
   };
 }

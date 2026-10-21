@@ -88,7 +88,7 @@ function resolverContext(w, failed) {
       issue: ISSUE,
       stage: "merge",
       state,
-      dirs: { job: w.job.root, repo: w.job.repo, docs: null },
+      dirs: { job: w.job.root, repo: w.job.repo },
       issueFile: "local-issue.md",
       mergeQueue: [ISSUE],
       inputs,

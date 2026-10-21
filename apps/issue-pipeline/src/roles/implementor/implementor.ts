@@ -11,26 +11,20 @@
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
+import type { Mode } from "../change-task.ts";
+import { changeModeOf } from "../change-task.ts";
 import { OPEN_PR_REPLY, opReply, START_PR_REPLY } from "../op-replies.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop, writerSession } from "../writer-session.ts";
-import type { DevelopmentMode } from "./task.ts";
 import { workTask } from "./task.ts";
 
 const SHORT_SHA = 12;
-
-function modeOf(state: IssueState): DevelopmentMode {
-  if (state.codeMerged === null) {
-    return { kind: "branch" };
-  }
-  return { kind: "wiki-only", merged: state.codeMerged };
-}
 
 // The session that does the issue's work; its summary on success.
 async function work(
   ctx: RoleContext,
   state: IssueState,
-  mode: DevelopmentMode,
+  mode: Mode,
 ): Promise<Step<string>> {
   const session = await writerSession(ctx, state, {
     phase: "development",
@@ -126,7 +120,7 @@ function toAuthor(state: IssueState): RoleEnd {
 }
 
 async function develop(ctx: RoleContext): Promise<RoleEnd> {
-  const mode = modeOf(ctx.state);
+  const mode = changeModeOf(ctx.state);
   let { state } = ctx;
   if (mode.kind === "branch") {
     const started = await opReply(

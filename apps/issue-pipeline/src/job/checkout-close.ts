@@ -11,13 +11,11 @@ import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
 import type { RecoveryOrigin, RecoverySnapshot } from "./dropped-patch.ts";
 import { saveDroppedPatch, saveRecovery } from "./dropped-patch.ts";
-import type { Access } from "./pipeline-commit.ts";
 
 interface DroppedChanges {
   lost: readonly string[];
   patches: readonly string[];
 }
-const CHECKOUTS: readonly ("repo" | "docs")[] = ["repo", "docs"];
 function gitIn(dir: string, args: readonly string[]): string {
   return run("git", ["-C", dir, ...args]).stdout;
 }
@@ -64,7 +62,6 @@ function snapshotKind(file: string): RecoverySnapshot["kind"] {
 }
 
 type ClosingJob = JobDirs & {
-  wiki: Access;
   key: string;
   recovery?: RecoveryOrigin;
 };
@@ -74,38 +71,23 @@ function preparePatches(
   issue: number,
   job: ClosingJob,
 ): DroppedChanges {
-  const { root, wiki } = job;
-  const lost: string[] = [];
-  const patches: string[] = [];
-  const snapshots: RecoverySnapshot[] = [];
-  for (const name of CHECKOUTS) {
-    const dir = job[name];
-    if (dir !== null && hasGit(dir)) {
-      const file = paths.droppedPatch(cfg, issue, job.key, name);
-      const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout ${name}/`;
-      const prefix = `${path.relative(root, dir)}/`;
-      const one = saveDroppedPatch(dir, { file, title });
-      snapshots.push(
-        ...one.files.map(
-          (saved: string): RecoverySnapshot => ({
-            file: path.basename(saved),
-            checkout: name,
-            source: dir,
-            kind: snapshotKind(saved),
-            base: gitIn(dir, ["rev-parse", "HEAD"]).trim(),
-          }),
-        ),
-      );
-      lost.push(
-        ...one.lost.map((fileName: string): string => `${prefix}${fileName}`),
-      );
-      patches.push(
-        ...one.files.map((saved: string): string =>
-          path.relative(paths.runDir(cfg, issue), saved),
-        ),
-      );
-    }
+  const { root, repo } = job;
+  if (!hasGit(repo)) {
+    return { lost: [], patches: [] };
   }
+  const file = paths.droppedPatch(cfg, issue, job.key, "repo");
+  const title = `Dropped changes of issue #${issue}, job ${job.key}, checkout repo/`;
+  const prefix = `${path.relative(root, repo)}/`;
+  const one = saveDroppedPatch(repo, { file, title });
+  const snapshots = one.files.map(
+    (saved: string): RecoverySnapshot => ({
+      file: path.basename(saved),
+      checkout: "repo",
+      source: repo,
+      kind: snapshotKind(saved),
+      base: gitIn(repo, ["rev-parse", "HEAD"]).trim(),
+    }),
+  );
   if (snapshots.length > 0 && job.recovery !== undefined) {
     saveRecovery(cfg, {
       version: 1,
@@ -113,20 +95,24 @@ function preparePatches(
       issue,
       branch: job.branch,
       job: job.key,
-      wikiAccess: wiki,
       origin: job.recovery,
       snapshots,
     });
   }
-  return { lost, patches };
+  return {
+    lost: one.lost.map((fileName: string): string => `${prefix}${fileName}`),
+    patches: one.files.map((saved: string): string =>
+      path.relative(paths.runDir(cfg, issue), saved),
+    ),
+  };
 }
 
-// Closes job folder `job.root` of issue `issue`: saves its checkouts'
+// Closes job folder `job.root` of issue `issue`: saves its code checkout's
 // uncommitted changes as patches named by job key `job.key` and drops them,
-// bundles local code before changing either checkout, then calls `push` when
+// bundles local code before changing the checkout, then calls `push` when
 // its code checkout holds commits the remote lacks, then removes the folder.
 // A clean checkout gets no patch. Failed preparation retains the exact
-// checkouts and indexes; a restart must not overwrite that recovery work.
+// checkout and index; a restart must not overwrite that recovery work.
 // A later push failure retains the checkout and the
 // prepared artifacts, but cleanup may already have reset its dirty changes.
 async function closeJobCheckout(
@@ -139,14 +125,11 @@ async function closeJobCheckout(
   let removable = false;
   try {
     const dropped = preparePatches(cfg, issue, job);
-    // Prepare every recovery artifact before changing either checkout.
+    // Prepare every recovery artifact before changing the checkout.
     saveCodeRecovery(cfg, issue, repo, job.key);
-    for (const name of CHECKOUTS) {
-      const dir = job[name];
-      if (dir !== null && hasGit(dir)) {
-        gitIn(dir, ["reset", "--quiet", "--hard"]);
-        gitIn(dir, ["clean", "--quiet", "-fd"]);
-      }
+    if (hasGit(repo)) {
+      gitIn(repo, ["reset", "--quiet", "--hard"]);
+      gitIn(repo, ["clean", "--quiet", "-fd"]);
     }
     if (push && holdsUnpushed(cfg, repo)) {
       await push();

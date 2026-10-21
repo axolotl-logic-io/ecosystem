@@ -41,7 +41,7 @@ function fakeContext(result, inputs = {}, state = {}) {
     issue: ISSUE,
     stage: "author",
     state: { ...newIssueState(ISSUE), ...state },
-    dirs: { job: "/job", repo: "/job/repo", docs: "/job/docs" },
+    dirs: { job: "/job", repo: "/job/repo" },
     issueFile: "/run/issue.md",
     mergeQueue: null,
     inputs: {
@@ -69,12 +69,11 @@ const reply = {
   outcome: "gherkin",
   gherkin: GHERKIN,
   assumptions: [],
-  wikiPages: [],
   changed: true,
 };
 
 const AUTHORING_TASK = /Task: `authoring`/u;
-// Behaviour is the wiki page's, never the task's.
+// Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS = /AGENTS\.md|artificial load|allow-listed/iu;
 
 test("an authored Gherkin answers the questions asked before it", async () => {
@@ -117,7 +116,6 @@ test("an unchanged Gherkin keeps its revision and returns to resumeStage", async
     inputs: EARLIER_INPUTS,
     gherkin: GHERKIN,
     assumptions: [],
-    wikiPages: [],
   };
   const { ctx, posts } = fakeContext(
     { ok: true, reply: { ...reply, changed: false } },
@@ -138,7 +136,6 @@ test("a changed Gherkin goes back to implement from any later stage", async () =
     inputs: EARLIER_INPUTS,
     gherkin: "Feature: old\n  Scenario: x",
     assumptions: [],
-    wikiPages: [],
   };
   const { ctx } = fakeContext(
     { ok: true, reply },

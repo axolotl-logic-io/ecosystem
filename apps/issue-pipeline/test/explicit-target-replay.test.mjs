@@ -65,7 +65,8 @@ for (const stage of REPLAY_STAGES) {
   });
 }
 
-for (const change of ["head", "merge", "wiki", "pr"]) {
+// "legacy wiki": a receipt saved while the pipeline had a wiki.
+for (const change of ["head", "merge", "legacy wiki", "pr"]) {
   test(`own recovery refuses ${change} mismatch rather than inventing provenance or invoking checks`, async () => {
     const w = world();
     const fresh = current(w, true);
@@ -79,7 +80,7 @@ for (const change of ["head", "merge", "wiki", "pr"]) {
       fresh.pr.number = PR + 1;
     }
     const run = context(w, { state: { ...ownState(w) }, ops: {} });
-    if (change === "wiki") {
+    if (change === "legacy wiki") {
       run.ctx.state.merged = { ...result(w), wiki: w.moved };
     }
     assert.equal(await recoverOwnMerge(run.ctx, fresh), null);

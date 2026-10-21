@@ -20,7 +20,6 @@ import {
 
 const { closeJobCheckout } = await import("../src/job/checkout-close.ts");
 const { lastPush } = await import("../src/checkouts.ts");
-const { STAGE_WIKI_ACCESS } = await import("../src/job/roles.ts");
 
 const PUSHED_BRANCH = "origin/agent/issue-7";
 const REFUSED_PUSH = /code push failed/u;
@@ -140,9 +139,7 @@ test("an implement job's commit whose push was refused is pushed as the job exit
     {
       root: job.root,
       repo: job.repo,
-      docs: null,
       branch: job.branch,
-      wiki: STAGE_WIKI_ACCESS.implement,
       key: JOB_KEY,
     },
     () => {
@@ -167,9 +164,7 @@ test("a reader stage's docs edit is never pushed: teardown drops it as a patch",
     {
       root: job.root,
       repo: job.repo,
-      docs: null,
       branch: job.branch,
-      wiki: STAGE_WIKI_ACCESS.author,
       key: JOB_KEY,
     },
     null,

@@ -46,9 +46,10 @@ const ASSUMPTION = /Chats are sorted newest first/u;
 const FINDING = /1\. \[blocking\] \(a\.ts:3\) Sort is wrong/u;
 const MERGE_RETURN = /Sent back from merge \(ci\)\n\ne2e failed/u;
 const BRANCH_SCOPE =
-  /Scope: the code branch in `repo\/` and the wiki in `docs\/`/u;
-const WIKI_SCOPE = /Scope: the wiki in `docs\/` only/u;
-// Behaviour is the wiki page's, never the task's.
+  /Scope: the code branch in `repo\/`, including its docs in `repo\/docs\/`/u;
+const MERGED_SCOPE =
+  /Scope: none\. The code already merged as PR #\d+, merge commit `[0-9a-f]+`, which `repo\/` holds: commit nothing\./u;
+// Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS =
   /AGENTS\.md|pipeline_commit|artificial load|handoff|budget/iu;
 const NOT_DOABLE_REASON = /could not do the issue as written: no API/u;
@@ -162,7 +163,7 @@ test("after the code merged, the job opens no PR and pushes nothing", async () =
     state: { pr: PR, codeMerged: { pr: PR, sha: MERGED } },
   });
   const end = await implementorRole(ctx);
-  assert.match(sessions[0]?.task ?? "", WIKI_SCOPE);
+  assert.match(sessions[0]?.task ?? "", MERGED_SCOPE);
   assert.deepEqual(opNames(ops), []);
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
@@ -264,7 +265,6 @@ test("the Developer never syncs, verifies, readies, merges or completes", async 
     fakeContext({
       state: { codeMerged: { pr: PR, sha: MERGED } },
     }),
-    fakeContext({ docs: null }),
   ];
   const ends = await Promise.all(runs.map(({ ctx }) => implementorRole(ctx)));
   for (const end of ends) {

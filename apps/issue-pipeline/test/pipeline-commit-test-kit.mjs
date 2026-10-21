@@ -135,7 +135,7 @@ async function openJob(
   const control = await openControl(runDir, pushServerOf(cfg, job, status));
   let boundScope = null;
   if (bindScope) {
-    boundScope = commitScopeOf(stage, false, true);
+    boundScope = commitScopeOf(stage, true);
   }
   status.started({
     key: KEY,
@@ -151,7 +151,7 @@ async function openJob(
   if (withJobStart) {
     scope.jobStartedAt = JOB_STARTED_AT;
   }
-  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, false, true) });
+  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true) });
   const tool = registeredTool();
   return {
     cfg,

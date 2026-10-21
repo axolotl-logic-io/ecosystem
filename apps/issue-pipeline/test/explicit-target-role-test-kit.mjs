@@ -44,7 +44,7 @@ function context(w, script) {
     stage: "merge",
     mergeQueue: null,
     state: { ...w.state, ...script.state },
-    dirs: { job: w.place, repo: w.wt, docs: null },
+    dirs: { job: w.place, repo: w.wt },
     issueFile: "issue.md",
     inputs: {
       issue: { title: "Target", body: "Deliver", user: { login: "owner" } },
@@ -56,7 +56,6 @@ function context(w, script) {
         inputs: INPUTS,
         gherkin: "Feature: delivery\n  Scenario: exact result",
         assumptions: [],
-        wikiPages: [],
       },
     },
     op: scriptedOps(script.ops, calls),

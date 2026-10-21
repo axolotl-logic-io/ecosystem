@@ -163,6 +163,8 @@ function saveDroppedPatch(
 
 const PATCH_FILE = /^[a-zA-Z0-9-]+-(?:repo|docs)\.patch(?:\.index\.patch)?$/u;
 const BASE = /^[0-9a-f]{40}$/u;
+// A manifest written before the wiki was removed may name a docs/ snapshot
+// and the job's wiki access; both still parse, and the access is dropped.
 const SNAPSHOT = z.object({
   file: z.string().regex(PATCH_FILE),
   checkout: z.enum(["repo", "docs"]),
@@ -181,7 +183,6 @@ const MANIFEST = z.object({
   issue: z.number().int(),
   branch: z.string(),
   job: z.string(),
-  wikiAccess: z.string(),
   origin: ORIGIN,
   snapshots: z.array(SNAPSHOT),
 });
@@ -209,7 +210,7 @@ function manifestLines(dir: string, m: RecoveryManifest): string[] {
   return [
     `### Source job ${m.job}`,
     `Manifest: ${path.join(dir, `${m.job}.json`)}`,
-    `Assigned branch: ${m.branch}; previous wiki access: ${m.wikiAccess}`,
+    `Assigned branch: ${m.branch}`,
     `Stage: ${m.origin.stage}; outcome: ${m.origin.outcome}; reason: ${m.origin.reason ?? "not recorded"}`,
     ...m.snapshots.map(
       (snapshot: RecoverySnapshot): string =>

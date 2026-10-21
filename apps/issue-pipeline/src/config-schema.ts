@@ -19,8 +19,8 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // Issues with any of these labels are never pipeline work, such as deploy tickets.
   skipLabels: [],
   // The files that hold the project's coding practices, relative to the worktree
-  // (wiki pages under the wiki's dir, such as "wiki/Decisions.md"). Writers and
-  // reviewers read each in full (Axlog, 2026-10-15). Missing files are skipped.
+  // (such as "docs/Decisions.md"). Writers and reviewers read each in full
+  // (Axlog, 2026-10-15). Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
   mergeConfirmation: {
@@ -120,15 +120,6 @@ const CONFIG_SCHEMA = z.looseObject({
     firstContext: TOKENS,
     toolOutputShare: z.number().gt(0).max(1),
   }),
-  wiki: z
-    .union([
-      z.boolean(),
-      z.looseObject({
-        branch: z.string().optional(),
-        dir: z.string().optional(),
-      }),
-    ])
-    .nullish(),
 });
 
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;

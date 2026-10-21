@@ -117,7 +117,7 @@ test("an implement job gives its writer session the commit scope of its folder",
   const scope = start.commitScope;
   assert.equal(scope.root, checkoutOf(place.root, "implement"));
   assert.deepEqual(scope.repo, { dir: "repo", access: "write" });
-  assert.equal(scope.docs, null);
+  assert.ok(!("docs" in scope));
 });
 
 // Checkouts are assignment facts in the task; behavior comes from the

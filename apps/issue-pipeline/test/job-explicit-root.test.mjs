@@ -88,7 +88,7 @@ test("invalid branch and a missing prompt page refuse before any mirror, claim o
   const flow = newIssue();
   const branch = startAuthor(flow, ["--branch", "integration"]);
   assert.equal(branch.status, 1);
-  assert.ok(branch.stderr.includes("base or wiki branch"));
+  assert.ok(branch.stderr.includes("is the base branch"));
   const page = path.join(flow.prompts, "author.md");
   fs.renameSync(page, `${page}-unavailable`);
   const missing = startAuthor(flow, []);

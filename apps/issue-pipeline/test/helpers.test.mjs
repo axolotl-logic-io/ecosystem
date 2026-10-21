@@ -12,7 +12,7 @@ import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 // A body longer than a GitHub comment, and the length signed() clips it to.
-const BASE_OR_WIKI = /is the base or wiki branch/u;
+const BASE_BRANCH = /is the base branch, which no issue works on/u;
 const OVERLONG_BODY = 70_000;
 const COMMENT_LIMIT = 65_000;
 // The issue a new state is made for, and its PR.
@@ -191,6 +191,6 @@ test("a job checkout stands in for its own issue's worktree and branch, and for 
   assert.equal(paths.branch(scoped, other), `agent/issue-${other}`);
   // The configured base (main by default) is no issue's.
   const unsafe = withCheckout(cfg, { ...checkout, branch: "main" });
-  assert.throws(() => paths.branch(unsafe, STATE_ISSUE), BASE_OR_WIKI);
+  assert.throws(() => paths.branch(unsafe, STATE_ISSUE), BASE_BRANCH);
   assert.equal(withCheckout(cfg, null), cfg);
 });

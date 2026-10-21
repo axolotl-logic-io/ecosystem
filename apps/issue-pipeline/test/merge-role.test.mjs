@@ -51,7 +51,7 @@ const MERGED_CHECKOUT = new RegExp(
   "u",
 );
 const BUNDLE = /Bundle: `\/run\/security\/bundle\.md`/u;
-// Behaviour is the wiki page's, never the task's.
+// Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS =
   /AGENTS\.md|artificial load|allow-listed|first parent/iu;
 const SECURITY_COMMENT =

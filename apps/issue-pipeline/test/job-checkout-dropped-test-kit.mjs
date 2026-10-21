@@ -25,7 +25,7 @@ const BINARY = Buffer.from(Array.from({ length: 256 }, (_, byte) => byte));
 const LATIN1 = Buffer.from("café\n", "latin1");
 const LEFT = ["new.txt", "notes.txt", "blob.bin", "latin1.txt", "run.sh"];
 
-/** @typedef {{ cfg: Config, root: string, repo: string, docs: null, branch: string, origin: string }} Opened */
+/** @typedef {{ cfg: Config, root: string, repo: string, branch: string, origin: string }} Opened */
 
 /** @param {Config} cfg @param {string} tmp @returns {Opened} */
 function openIn(cfg, tmp) {
@@ -35,7 +35,6 @@ function openIn(cfg, tmp) {
     cfg,
     root: dirs.root,
     repo: dirs.repo,
-    docs: null,
     branch: dirs.branch,
     origin: path.join(tmp, "origin.git"),
   };
@@ -53,14 +52,9 @@ async function close(
   key,
   recovery = { stage: "implement", outcome: "stop", reason: null },
 ) {
-  const { cfg, repo, docs, branch } = job;
-  const dirs = { root: job.root, repo, docs, branch, key };
-  return await closeJobCheckout(
-    cfg,
-    ISSUE,
-    { ...dirs, wiki: "write", recovery },
-    null,
-  );
+  const { cfg, repo, branch } = job;
+  const dirs = { root: job.root, repo, branch, key };
+  return await closeJobCheckout(cfg, ISSUE, { ...dirs, recovery }, null);
 }
 
 /** @param {Opened} job @param {string} key */
@@ -81,7 +75,6 @@ async function timedOutReview(job, key) {
       stage: "review",
       key,
       dirs: job,
-      wiki: "write",
       push: null,
       status,
       runOp: async () => ({ ok: true, reply: {} }),

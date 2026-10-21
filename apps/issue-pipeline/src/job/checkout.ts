@@ -32,11 +32,10 @@ interface CloneSpec {
   branch: string;
 }
 
-// A stage job's folder and its code checkout. `docs` is always null.
+// A stage job's folder and its code checkout.
 interface JobDirs {
   root: string;
   repo: string;
-  docs: string | null;
   // The issue branch the job's caller assigned, which the checkout is on.
   branch: string;
 }
@@ -103,7 +102,7 @@ function openJobCheckout(
   cloneInto(cfg, { mirror, url, base: cfg.baseBranch, branch }, repo);
   try {
     updateSubmodules(cfg, repo);
-    return { root, repo, docs: null, branch };
+    return { root, repo, branch };
   } catch (error: unknown) {
     throw new CheckoutSetupError(
       `cannot prepare configured submodules: ${String(error)}. Restore access and the configured submodule/base, reconcile retained work, then explicitly restart. Checkout retained at ${root}; do not overwrite it or replay recovery patches automatically`,

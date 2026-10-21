@@ -187,9 +187,7 @@ test("refused postmerge code survives teardown in a self-contained operator reco
     {
       root: job.root,
       repo: job.repo,
-      docs: null,
       branch: job.branch,
-      wiki: "write",
       key: RECOVERY_KEY,
     },
     null,
@@ -228,9 +226,7 @@ test("a failed recovery write retains the local checkout and refuses replacement
       {
         root: job.root,
         repo: job.repo,
-        docs: null,
         branch: job.branch,
-        wiki: "write",
         key: RECOVERY_KEY,
       },
       null,

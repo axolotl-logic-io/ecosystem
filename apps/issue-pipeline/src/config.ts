@@ -9,7 +9,7 @@ import { z } from "zod";
 import { hideCredentialVariable } from "./child-env.ts";
 import { withoutRemovedKeys } from "./config-legacy.ts";
 import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
-import { JOB_DOCS, JOB_REPO } from "./job/layout.ts";
+import { JOB_REPO } from "./job/layout.ts";
 import { OpsError } from "./ops-error.ts";
 import { expand, ROOT } from "./pipeline-root.ts";
 import type { RunResult } from "./process.ts";
@@ -20,10 +20,9 @@ const UNSAFE_BRANCH =
   /^[-/.]|^refs\/|^HEAD$|^@$|\.\.|@\{|\/\/|[/.]$|\.lock$|\/\.|[\s~^:?*[\\\p{Cc}]/u;
 
 // A stage job's own checkout of issue `issue` (#250). While an ops request
-// that names it runs, the issue's worktree is `dir`, the job's code checkout,
-// and its wiki checkout is `dir`'s sibling (#338); `branch` is the branch
-// the caller assigned the issue, for its code and its wiki. It never comes
-// from the config file.
+// that names it runs, the issue's worktree is `dir`, the job's code checkout;
+// `branch` is the branch the caller assigned the issue. It never comes from
+// the config file.
 interface JobCheckout {
   issue: number;
   dir: string;
@@ -44,11 +43,6 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
   };
   mutation?: (write: () => RunResult) => RunResult;
 };
-
-interface WikiSettings {
-  branch: string;
-  dir: string;
-}
 
 const RAW = z.record(z.string(), z.unknown());
 
@@ -92,22 +86,6 @@ function publicConfig(cfg: Config): Omit<Config, "credentialsEnvFile"> {
   return rest;
 }
 
-// The repo's GitHub wiki holds its docs and decisions (Autumn, 2026-10-13). Config
-// `wiki: true` or `{ dir, branch }` enables publishing its submodule; off by default.
-function wikiCfg(cfg: Config): WikiSettings | null {
-  const { wiki } = cfg;
-  if (wiki === undefined || wiki === null || wiki === false) {
-    return null;
-  }
-  if (wiki === true) {
-    return { branch: "master", dir: "wiki" };
-  }
-  return {
-    branch: wiki.branch ?? "master",
-    dir: wiki.dir ?? "wiki",
-  };
-}
-
 // `cfg` for one ops request: with a checkout, issue `checkout.issue` works
 // in `checkout.dir`; other issues keep their worktrees.
 function withCheckout(
@@ -121,10 +99,10 @@ function withCheckout(
 }
 
 const paths = {
-  // The branch issue `n` works on, for its code and its wiki: the one its
-  // job was assigned (cfg.checkout), else the legacy `agent/issue-<n>`. A
-  // branch that isn't one safe literal name, or is the configured base or
-  // wiki branch, throws, so no op can push, reset or delete it as an issue's.
+  // The branch issue `n` works on: the one its job was assigned
+  // (cfg.checkout), else the legacy `agent/issue-<n>`. A branch that isn't
+  // one safe literal name, or is the configured base branch, throws, so no
+  // op can push, reset or delete it as an issue's.
   branch: (cfg: Config, n: number): string => {
     let branch: string = paths.legacyBranch(n);
     if (cfg.checkout?.issue === n) {
@@ -135,9 +113,9 @@ const paths = {
         `#${n}'s branch ${JSON.stringify(branch)} is not a literal branch name`,
       );
     }
-    if (branch === cfg.baseBranch || branch === wikiCfg(cfg)?.branch) {
+    if (branch === cfg.baseBranch) {
       throw new OpsError(
-        `#${n}'s branch ${JSON.stringify(branch)} is the base or wiki branch, which no issue works on`,
+        `#${n}'s branch ${JSON.stringify(branch)} is the base branch, which no issue works on`,
       );
     }
     return branch;
@@ -147,15 +125,12 @@ const paths = {
   legacyBranch: (n: number): string => `agent/issue-${n}`,
   clone: (cfg: Config): string => path.join(ROOT, "clones", cfg.slug),
   // Stage job `stage`'s own folder for issue `n`, which holds its code
-  // checkout and its wiki checkout side by side (#338).
+  // checkout.
   jobCheckout: (cfg: Config, n: number, stage: string): string =>
     path.join(ROOT, "work", cfg.slug, "jobs", `issue-${n}-${stage}`),
   // The job's code checkout, cloned from the mirror.
   jobRepo: (cfg: Config, n: number, stage: string): string =>
     path.join(paths.jobCheckout(cfg, n, stage), JOB_REPO),
-  // The job's docs alias of the wiki submodule.
-  jobDocs: (cfg: Config, n: number, stage: string): string =>
-    path.join(paths.jobCheckout(cfg, n, stage), JOB_DOCS),
   // Where a writer session of issue `n` that runs out of room writes its
   // handoff, which the next session reads.
   // Where stage job `key` of issue `n` saves what its checkout `checkout`
@@ -164,7 +139,7 @@ const paths = {
     cfg: Config,
     n: number,
     key: string,
-    checkout: "repo" | "docs",
+    checkout: "repo",
   ): string =>
     path.join(paths.runDir(cfg, n), "dropped", `${key}-${checkout}.patch`),
   jobLog: (cfg: Config, n: number): string =>
@@ -177,16 +152,6 @@ const paths = {
   // A stage job's model session for launch `key` on issue `n`, as JSONL.
   session: (cfg: Config, n: number, key: string): string =>
     path.join(paths.runDir(cfg, n), "sessions", `${key}.jsonl`),
-  // The issue's wiki checkout: in a stage job, its code checkout's sibling;
-  // in a lane, a folder of its worktree.
-  wiki: (cfg: Config, n: number): string => {
-    if (cfg.checkout?.issue === n) {
-      return path.join(path.dirname(cfg.checkout.dir), JOB_DOCS);
-    }
-    return path.join(paths.worktree(cfg, n), wikiCfg(cfg)?.dir ?? "wiki");
-  },
-  wikiMirror: (cfg: Config): string =>
-    path.join(ROOT, "work", cfg.slug, "wiki-mirror.git"),
   worktree: (cfg: Config, n: number): string => {
     if (cfg.checkout?.issue === n) {
       return cfg.checkout.dir;
@@ -232,5 +197,5 @@ function credential(cfg: Config, identity: Identity): string {
   return selected;
 }
 
-export type { Config, Identity, JobCheckout, WikiSettings };
-export { credential, loadConfig, paths, publicConfig, wikiCfg, withCheckout };
+export type { Config, Identity, JobCheckout };
+export { credential, loadConfig, paths, publicConfig, withCheckout };
