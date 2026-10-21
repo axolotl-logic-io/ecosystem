@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import type { Config, Identity } from "./config.ts";
+import { assertGitRemote, GIT_ENV, LOCAL_PATH } from "./git-remote.ts";
 import {
   authenticatedEnv,
   credentialedRun,
@@ -19,13 +20,6 @@ import { redactAddresses } from "./redact-addresses.ts";
 type GhOptions = Omit<RunOptions, "env">;
 
 const WRITE_FLAG = /^(?:-X|--method|-f|-F|--field|--raw-field|--input)$/u;
-const GIT_ENV: ReadonlyMap<string, string> = new Map([
-  ["GIT_TERMINAL_PROMPT", "0"],
-  ["GIT_CONFIG_NOSYSTEM", "1"],
-  ["GIT_CONFIG_GLOBAL", "/dev/null"],
-  ["ISSUE_PIPELINE_OPS", "1"],
-]);
-
 // A read that GitHub can safely repeat: `list`/`view` subcommands, or `gh api`
 // with no method or fields (a GET). Writes aren't retried, since a 502 may
 // hide one that landed.
@@ -57,7 +51,6 @@ function withEnv(
   return new Map(maps.flatMap((map) => [...map]));
 }
 
-const LOCAL_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
 function remoteOf(args: readonly string[], options: GhOptions): string {
   const clone = args.indexOf("clone");
   if (clone >= 0) {
@@ -186,40 +179,6 @@ function issueState(cfg: Config, n: number): string | null {
   return state;
 }
 
-function assertGitRemote(cfg: Config, remote: string): void {
-  if (
-    !LOCAL_PATH.test(remote) &&
-    remote !== `https://github.com/${cfg.repo}.git`
-  ) {
-    throw new OpsError(
-      "credentialed git requires the configured GitHub repository HTTPS remote",
-    );
-  }
-}
-
-// Bind origin's effective fetch and push destinations before arming a write.
-// URL rewrites and multiple/alternate destinations are not authorized transport.
-function assertGitPushDestination(cfg: Config, wt: string): void {
-  const options = { cwd: wt, env: GIT_ENV };
-  const raw = run(
-    "git",
-    ["config", "--get", "remote.origin.url"],
-    options,
-  ).stdout.trim();
-  assertGitRemote(cfg, raw);
-  for (const args of [
-    ["remote", "get-url", "--all", "origin"],
-    ["remote", "get-url", "--push", "--all", "origin"],
-  ]) {
-    const effective = run("git", args, options).stdout.trim().split("\n");
-    if (effective.length !== 1 || effective[0] !== raw) {
-      throw new OpsError(
-        "origin requires one unchanged fetch and push destination",
-      );
-    }
-  }
-}
-
 function git(
   cfg: Config,
   identity: Identity,
@@ -276,7 +235,6 @@ function isAllowedUser(cfg: Config, login: string | null | undefined): boolean {
 }
 
 export {
-  assertGitPushDestination,
   gh,
   ghIsRead,
   ghJson,

@@ -2,8 +2,9 @@
 // lease. The lease is server CAS, not permission to replace non-ancestor work.
 // No fallback or retry is safe, including after an ambiguous transport error.
 import type { Config } from "../config.ts";
+import { assertGitPushDestination } from "../git-remote.ts";
 import { gitIn } from "../git-state.ts";
-import { assertGitPushDestination, git } from "../github.ts";
+import { git } from "../github.ts";
 import { FULL_SHA } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";

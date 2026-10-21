@@ -8,7 +8,7 @@ import { assignedBranch } from "../branch-binding.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { assertGitPushDestination } from "../github.ts";
+import { assertGitPushDestination } from "../git-remote.ts";
 import { FULL_SHA } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
@@ -189,6 +189,7 @@ function merge(
       headSha: view.headRefOid,
     };
   }
+  assertGitPushDestination(cfg, paths.worktree(cfg, req.number));
   const checked = precheck(cfg, req, view);
   if (!("base" in checked)) {
     return checked;

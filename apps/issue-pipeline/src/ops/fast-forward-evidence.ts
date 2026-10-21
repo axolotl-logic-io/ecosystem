@@ -8,6 +8,7 @@ import { OpsError } from "../ops-error.ts";
 import type { CodeMerged, IssueState } from "../state.ts";
 import { sameRevision } from "../state.ts";
 import { assertFastForward, targetRef } from "./branch-merge.ts";
+import { confirmAuthorization } from "./merge-attempt.ts";
 
 const WHITESPACE = /\s+/u;
 
@@ -35,6 +36,30 @@ function intendedBase(
     );
   }
   return attempt.operation.base;
+}
+
+// A freshly authenticated saved receipt may outlive a lost push response.
+// This preserves confirmed evidence only; equal heads cannot create a receipt.
+function retainedFastForwardReceipt(
+  cfg: Config,
+  number: number,
+  state: IssueState,
+): boolean {
+  const attempt = state.mergeAttempt;
+  if (attempt?.operation === undefined || state.merged === null) {
+    return false;
+  }
+  if (
+    state.codeMerged === null ||
+    intendedBase(cfg, number, state, state.codeMerged) === undefined ||
+    !sameRevision(state.merged, attempt.authorized)
+  ) {
+    throw new OpsError(
+      "saved fast-forward receipt differs from its exact intent",
+    );
+  }
+  confirmAuthorization(state, attempt);
+  return true;
 }
 
 function confirmedFastForwardBase(
@@ -74,4 +99,9 @@ function exactTarget(cfg: Config, wt: string): string {
   return FULL_SHA.parse(sha);
 }
 
-export { confirmedFastForwardBase, exactTarget, intendedBase };
+export {
+  confirmedFastForwardBase,
+  exactTarget,
+  intendedBase,
+  retainedFastForwardReceipt,
+};
