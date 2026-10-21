@@ -35,8 +35,8 @@ const NO_CONFIG = /--config must name a repo config file/u;
 const NO_COMMAND = /give start, status or wait/u;
 // What the orchestrator prints when a tick throws, here because gh is logged
 // in as another account than the config's.
-const TICK_FAILED =
-  /orchestrate: tick failed: credential login verification failed for merge/u;
+const TICK_FAILED = /tick failed/iu;
+const WRONG_ACCOUNT = /mallory|wrong account/iu;
 // The account the orchestrator's test config names.
 const ACCOUNT = "bot";
 // The variable that points ops at a pipeline root, here the temporary folder.
@@ -248,6 +248,7 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   const failed = once();
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, TICK_FAILED);
+  assert.match(failed.stderr, WRONG_ACCOUNT);
 });
 
 test("the built pi extensions default-export their factories", async () => {

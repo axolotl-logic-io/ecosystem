@@ -34,7 +34,7 @@ const SHORT_WAIT_MS = 50;
 const SHORT_TEST_MS = 5000;
 const THE_MARKER = /the marker/u;
 const TIMED_OUT = new RegExp(
-  `^not ok 1 - ${HUNG_TEST}\\n[\\s\\S]*timed out`,
+  `not ok \\d+ - ${HUNG_TEST}\\n[\\s\\S]*timed out`,
   "mu",
 );
 
@@ -45,13 +45,13 @@ import { test } from "node:test";
 import { waitFor } from ${JSON.stringify(BOUNDED_KIT)};
 import { READER_STAGE, repliesAt } from ${JSON.stringify(JOB_FIXTURES)};
 import { piCommands, piStarts, setUp, startJob, statusOf } from ${JSON.stringify(JOB_KIT)};
-test(${JSON.stringify(HUNG_TEST)}, async () => {
+test("launch reaches its prompt before timeout cleanup", async (t) => {
   const place = setUp(repliesAt(READER_STAGE), { events: ["wait"] });
   startJob(place, ["--stage", READER_STAGE, "--lane", "L"]);
   await waitFor("pi got the prompt", () => piCommands(place).some(({ type }) => type === "prompt"));
   const pids = { job: statusOf(place).pid, pis: piStarts(place).map(({ pid }) => pid) };
   fs.writeFileSync(process.env.FIXTURE_PIDS, JSON.stringify(pids));
-  await new Promise(() => undefined);
+  await t.test(${JSON.stringify(HUNG_TEST)}, {timeout: 50}, async () => { await new Promise(() => undefined); });
 });
 `;
 

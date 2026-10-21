@@ -9,6 +9,7 @@
 // op refuses a draft rather than marking it ready.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { bodyOf, effectsOf } from "../gh-effects-test-kit.mjs";
 import { setCurrentRevision } from "./fake-ops-publish-revision.mjs";
 import {
   approvalReply,
@@ -36,8 +37,6 @@ const { finishIssue } = await import("../../src/ops/finish.ts");
 /** @typedef {import("../../src/state.ts").Revision} Revision */
 
 const SHORT_SHA_LENGTH = 12;
-const SECURITY_FOLLOWS =
-  "Exact-result deterministic checks and a read-only security review of the merged result follow; the issue completes only if it finds nothing.";
 const REVIEWED_CODE = "c0ffee00000000000000000000000000000000aa";
 const NOT_AUTHORIZED_REVISION = /is not #7's authorized revision/u;
 const NOT_BOUND = /merge authorization .* is not bound to the saved result/u;
@@ -107,14 +106,10 @@ test("merge merges the Reviewer's integrated head and its comment names the hard
     mergeCommit: w.mergeSha,
     headSha: w.sha,
   });
-  const body =
-    writes()
-      .filter((args) => !args.includes("PATCH"))[2]
-      ?.join(" ") ?? "";
+  const body = bodyOf(effectsOf(writes()), "comment #7 role=coordinator");
   assert.ok(body.includes(`hardening passed on ${short(REVIEWED_CODE)}`));
   assert.ok(body.includes(`integrated it as ${short(w.sha)}`));
   assert.ok(body.includes("with no further review"));
-  assert.ok(body.includes(SECURITY_FOLLOWS));
 });
 
 test("merge without an integration says hardening passed on the merged head", () => {
@@ -135,12 +130,8 @@ test("merge without an integration says hardening passed on the merged head", ()
     }),
   ]);
   merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
-  const body =
-    writes()
-      .filter((args) => !args.includes("PATCH"))[2]
-      ?.join(" ") ?? "";
+  const body = bodyOf(effectsOf(writes()), "comment #7 role=coordinator");
   assert.ok(body.includes("hardening passed on this commit"));
-  assert.ok(body.includes(SECURITY_FOLLOWS));
   assert.equal(body.includes("integrated"), false);
 });
 

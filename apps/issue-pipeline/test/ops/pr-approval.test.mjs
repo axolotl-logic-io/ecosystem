@@ -16,26 +16,28 @@ import {
 
 const { approvePr } = await import("../../src/ops/pr-approval.ts");
 const { merge } = await import("../../src/ops/merge.ts");
-const INVALID_APPROVAL = /approval|Invalid|APPROVED/u;
+const APPROVAL_REFUSED = /approval refused/u;
+const INVALID_APPROVAL =
+  /PR approval does not match the review account and head/u;
 
 test("approval uses the review account and immutable checked head", () => {
   const w = world();
   fakeGh.reply([approvalReply(w)]);
   approvePr(w.cfg, PR, w.sha);
-  assert.deepEqual(writes(), [
-    [
-      "api",
-      "repos/o/r/pulls/50/reviews",
-      "--method",
-      "POST",
-      "-f",
-      "event=APPROVE",
-      "-f",
-      `commit_id=${w.sha}`,
-      "--jq",
-      "{state, commit: .commit_id, login: .user.login}",
-    ],
-  ]);
+  const review = writes().find((call) =>
+    call.includes(`repos/o/r/pulls/${PR}/reviews`),
+  );
+  assert.ok(review);
+  assert.ok(review.includes("POST"));
+  assert.ok(review.includes("event=APPROVE"));
+  assert.ok(review.includes(`commit_id=${w.sha}`));
+  assert.equal(
+    fakeGh
+      .authenticatedCalls()
+      .find(({ args }) => args.includes(`repos/o/r/pulls/${PR}/reviews`))
+      ?.identity,
+    "merge",
+  );
 });
 
 for (const result of [
@@ -58,6 +60,11 @@ for (const result of [
       prView({ headRefOid: w.sha }),
       { ...approvalReply(w), stdout: JSON.stringify(response) },
     ]);
+    /** @type {RegExp | {name: string}} */
+    let refusal = { name: "ZodError" };
+    if (result.state === "APPROVED") {
+      refusal = INVALID_APPROVAL;
+    }
     assert.throws(
       () =>
         merge(w.cfg, {
@@ -66,10 +73,15 @@ for (const result of [
           expectedSha: w.sha,
           revision,
         }),
-      INVALID_APPROVAL,
+      refusal,
     );
-    assert.equal(writes().length, 1);
-    assert.equal(writes()[0]?.[1], "repos/o/r/pulls/50/reviews");
+    assert.equal(
+      writes().some((call) => call.includes("repos/o/r/merges")),
+      false,
+    );
+    assert.ok(
+      writes().some((call) => call.includes("repos/o/r/pulls/50/reviews")),
+    );
   });
 }
 
@@ -91,8 +103,10 @@ test("failed approval never attempts a branch merge", () => {
         expectedSha: w.sha,
         revision,
       }),
-    INVALID_APPROVAL,
+    APPROVAL_REFUSED,
   );
-  assert.equal(writes().length, 1);
-  assert.equal(writes()[0]?.[1], "repos/o/r/pulls/50/reviews");
+  assert.equal(
+    writes().some((call) => call.includes("repos/o/r/merges")),
+    false,
+  );
 });

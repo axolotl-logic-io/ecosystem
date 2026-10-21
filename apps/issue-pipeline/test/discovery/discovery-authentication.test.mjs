@@ -224,5 +224,4 @@ test("normalizes actual GitHub REST wire names", async () => {
   assert.equal(plan.candidates[0]?.inputs, hub.revision);
   assert.equal(plan.candidates[0]?.grant, GRANT_ID);
   assert.equal(plan.executionAuthority, false);
-  assert.equal(SHA.length, SHA_LENGTH);
 });

@@ -6,6 +6,7 @@
 // included, never the legacy agent/issue-<n> in its place.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { effectNames, effectsOf } from "../gh-effects-test-kit.mjs";
 import { setCurrentRevision } from "./fake-ops-publish-revision.mjs";
 import { finishReplies } from "./ops-finish-fixtures.mjs";
 import {
@@ -37,8 +38,6 @@ const BOUND_ELSEWHERE =
 const BOUND_TO_ASSIGNED =
   /#7's work is on feature\/seven, not the assigned agent\/issue-7/u;
 const NOT_ASSIGNED_PR = /PR #50 is from agent\/issue-7, not feature\/seven/u;
-const DELETES_ASSIGNED =
-  /^api -X DELETE repos\/o\/r\/git\/refs\/heads\/feature\/seven --silent$/u;
 
 // The world's config with issue #7 assigned ASSIGNED, its checkout the
 // world's worktree.
@@ -158,7 +157,10 @@ test("finish deletes the assigned branch the state is bound to, and refuses anot
   const done = doneOn(w, ASSIGNED);
   fakeGh.reply([savedListing(done), ...finishReplies(ASSIGNED)]);
   assert.equal(finishIssue(assignedCfg(w), { number: 7 }).finished, true);
-  assert.match(writes()[0]?.join(" ") ?? "", DELETES_ASSIGNED);
+  const deletes = effectNames(effectsOf(writes())).filter((effect) =>
+    effect.startsWith("delete branch "),
+  );
+  assert.deepEqual(deletes, [`delete branch ${ASSIGNED}`]);
   fakeGh.reply([savedListing(doneOn(w, ASSIGNED))]);
   assert.throws(() => finishIssue(w.cfg, { number: 7 }), BOUND_TO_ASSIGNED);
   assert.deepEqual(writes(), []);

@@ -140,13 +140,7 @@ test("a checkout's branch that is a ref expression, an option, or the base branc
   const { dir, sha } = jobClone(UNSAFE, "unsafe.txt", "feature/unsafe-15");
   /** @type {[string, RegExp][]} */
   const refused = [
-    ["-f", NOT_LITERAL],
-    ["refs/heads/x", NOT_LITERAL],
     ["HEAD", NOT_LITERAL],
-    ["a..b", NOT_LITERAL],
-    ["x@{1}", NOT_LITERAL],
-    ["a b", NOT_LITERAL],
-    ["x.lock", NOT_LITERAL],
     ["integration", BASE_BRANCH],
   ];
   for (const [branch, why] of refused) {

@@ -4,12 +4,15 @@
 // was sent from; needs-info asks; a failed session stops or defers.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { githubComment } from "../../fake-gh.mjs";
 import "../../isolated-root-test-kit.mjs";
 
 const { testConfig } = await import("../../config-test-kit.mjs");
 const { authorRole: author } = await import(
   "../../../src/roles/author/author.ts"
 );
+const { COMMENT, signed, keyMark } = await import("../../../src/comments.ts");
+const { gherkinCommentOf } = await import("../../../src/gherkin-comment.ts");
 const { roleOf } = await import("../../../src/roles/registry.ts");
 const { newIssueState } = await import("../../../src/state.ts");
 
@@ -67,6 +70,23 @@ function fakeContext(result, inputs = {}, state = {}) {
   return { ctx, sessions, posts };
 }
 
+/** @param {import("../../../src/job/role-context.ts").PostedComment | undefined} post */
+function parsedPost(post) {
+  if (post === undefined) {
+    throw new Error("author posted no Gherkin");
+  }
+  return gherkinCommentOf(cfg, ISSUE, [
+    COMMENT.parse(
+      githubComment({
+        id: GHERKIN_COMMENT,
+        created: "2026-10-19T00:00:00Z",
+        login: cfg.mergeAccount,
+        body: `${signed({ role: post.role }, post.body)}\n${keyMark(ISSUE, post.key ?? "")}`,
+      }),
+    ),
+  ]);
+}
+
 const reply = {
   outcome: "gherkin",
   gherkin: GHERKIN,
@@ -93,15 +113,14 @@ test("a first Gherkin posts revision 1 and goes to implement", async () => {
   assert.equal(sessions[0]?.agent, "issue-pipeline-author");
   assert.equal(sessions[0]?.commits, false);
   assert.equal(sessions[0]?.model, cfg.models.author);
-  assert.equal(sessions[0]?.phase, undefined);
   const task = sessions[0]?.task ?? "";
   assert.match(task, AUTHORING_TASK);
   assert.doesNotMatch(task, BEHAVIOUR_WORDS);
   assert.equal(posts.length, 1);
   assert.equal(posts[0]?.key, "gherkin");
   assert.equal(posts[0]?.role, "author");
-  assert.ok(posts[0]?.body.includes(`rev=1 inputs=${INPUTS}`));
-  assert.equal(end.kind, "next");
+  assert.equal(parsedPost(posts[0])?.rev, 1);
+  assert.equal(parsedPost(posts[0])?.inputs, INPUTS);
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "implement");
   assert.deepEqual(end.state.gherkin, {
@@ -128,7 +147,8 @@ test("an unchanged Gherkin keeps its revision and returns to resumeStage", async
   assert.ok(end.kind === "next");
   assert.equal(end.state.stage, "review");
   assert.equal(end.state.resumeStage, null);
-  assert.ok(posts[0]?.body.includes(`rev=${EARLIER_REV} inputs=${INPUTS}`));
+  assert.equal(parsedPost(posts[0])?.rev, EARLIER_REV);
+  assert.equal(parsedPost(posts[0])?.inputs, INPUTS);
 });
 
 test("a changed Gherkin goes back to implement from any later stage", async () => {

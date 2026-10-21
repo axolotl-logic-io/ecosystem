@@ -29,6 +29,8 @@ const { openJobCheckout } = await import("../../src/job/checkout.ts");
 const { ghIsRead } = await import("../../src/github.ts");
 const PR = 42;
 const RECOVERY = "salvage-refused";
+const NO_AUTHORITY = /has no saved write authority/u;
+const INVALID_AUTHORITY = /saved write authority is invalid/u;
 
 /** @param {import("../pipeline-commit-test-kit.mjs").Job} job @param {string} kind @param {boolean} deleted */
 async function refusedWork(job, kind, deleted) {
@@ -123,17 +125,6 @@ for (const kind of ["saved", "own-merge", "live", "unsaved-live"]) {
           fs.readFileSync(path.join(job.repo, "dirty.txt"), "utf8"),
           "exact dirty work\n",
         );
-        const restored = await restoredWork(job);
-        assert.equal(headOf(restored), local);
-        assert.equal(
-          fs.readFileSync(path.join(restored, "README.md"), "utf8"),
-          "forbidden C\n",
-        );
-        assert.equal(refOf(job.origin, BRANCH), remote);
-        assert.equal(
-          fs.readFileSync(path.join(restored, "dirty.txt"), "utf8"),
-          "exact dirty work\n",
-        );
       } finally {
         job.close();
       }
@@ -165,8 +156,13 @@ for (const invalid of [null, { codeMerged: { pr: "broken" } }]) {
         dir: job.repo,
         branch: job.branch,
       });
-      assert.throws(() =>
-        stop(cfg, { number: ISSUE, state, reason: "cannot" }),
+      let refusal = INVALID_AUTHORITY;
+      if (invalid === null) {
+        refusal = NO_AUTHORITY;
+      }
+      assert.throws(
+        () => stop(cfg, { number: ISSUE, state, reason: "cannot" }),
+        refusal,
       );
       assert.deepEqual(
         authorityCalls(job.cfg).filter((args) => !ghIsRead(args)),
@@ -178,11 +174,13 @@ for (const invalid of [null, { codeMerged: { pr: "broken" } }]) {
         fs.readFileSync(path.join(job.repo, "dirty.txt"), "utf8"),
         "held dirty\n",
       );
-      assert.throws(() =>
-        openJobCheckout(job.cfg, ISSUE, {
-          stage: "implement",
-          branch: job.branch,
-        }),
+      assert.throws(
+        () =>
+          openJobCheckout(job.cfg, ISSUE, {
+            stage: "implement",
+            branch: job.branch,
+          }),
+        refusal,
       );
       assert.equal(headOf(job.repo), local);
     } finally {
@@ -238,6 +236,32 @@ test("a forged stop cannot clear PR/merge/security/input provenance or turn a ge
     assert.equal(result.state.branch, job.branch);
     assert.equal(refOf(job.origin, BRANCH), "");
     assert.equal(headOf(job.repo), local);
+  } finally {
+    job.close();
+  }
+});
+
+test("stopped forbidden work can be reconstructed locally without salvage push", async () => {
+  const job = await openJob("implement");
+  try {
+    const { state, local, remote } = await refusedWork(job, "saved", false);
+    const cfg = withCheckout(job.cfg, {
+      issue: ISSUE,
+      dir: job.repo,
+      branch: job.branch,
+    });
+    stop(cfg, { number: ISSUE, code: "not-doable", reason: "cannot", state });
+    const restored = await restoredWork(job);
+    assert.equal(headOf(restored), local);
+    assert.equal(
+      fs.readFileSync(path.join(restored, "README.md"), "utf8"),
+      "forbidden C\n",
+    );
+    assert.equal(refOf(job.origin, BRANCH), remote);
+    assert.equal(
+      fs.readFileSync(path.join(restored, "dirty.txt"), "utf8"),
+      "exact dirty work\n",
+    );
   } finally {
     job.close();
   }

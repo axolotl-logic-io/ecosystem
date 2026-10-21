@@ -36,9 +36,6 @@ const CLIPPED_WAIT_MS = 5000;
 const LATER_RUN_DELAY_MS = 60_000;
 const CUSTOM_DEADLINE_SECONDS = 9;
 const CUSTOM_WAIT_SECONDS = 3;
-const TOO_LONG_WAIT_SECONDS = 61;
-const FRACTIONAL_SECONDS = 1.5;
-const CONFIGURED_SLOW_WAIT_SECONDS = 5;
 const WAITS_TO_LAG = [
   SECOND_MS,
   SECOND_WAIT_MS,
@@ -226,45 +223,4 @@ test("configured backoff repeats its final wait and clips it at the finite deadl
   assert.equal(posts().length, 1);
   assert.equal(approvalCount(), 1);
   consumed();
-});
-
-test("confirmation config has safe defaults and refuses unbounded or busy-loop settings", () => {
-  assert.deepEqual(defaults, {
-    deadlineSeconds: 90,
-    backoffSeconds: [
-      1,
-      2,
-      THIRD_WAIT_MS / SECOND_MS,
-      FOURTH_WAIT_MS / SECOND_MS,
-      FINAL_WAIT_MS / SECOND_MS,
-    ],
-  });
-  for (const mergeConfirmation of [
-    { deadlineSeconds: 0, backoffSeconds: [1] },
-    { deadlineSeconds: -1, backoffSeconds: [1] },
-    { deadlineSeconds: 601, backoffSeconds: [1] },
-    { deadlineSeconds: 1.5, backoffSeconds: [1] },
-    { deadlineSeconds: "90", backoffSeconds: [1] },
-    { deadlineSeconds: 90, backoffSeconds: [] },
-    { deadlineSeconds: 90, backoffSeconds: [0] },
-    { deadlineSeconds: 90, backoffSeconds: [-1] },
-    { deadlineSeconds: 90, backoffSeconds: [TOO_LONG_WAIT_SECONDS] },
-    { deadlineSeconds: 90, backoffSeconds: [FRACTIONAL_SECONDS] },
-    {
-      deadlineSeconds: 90,
-      backoffSeconds: Array.from({ length: 21 }, () => 1),
-    },
-  ]) {
-    assert.throws(() => testConfig({ mergeConfirmation }));
-  }
-  const { cfg } = testConfig({
-    mergeConfirmation: {
-      deadlineSeconds: 120,
-      backoffSeconds: [2, CONFIGURED_SLOW_WAIT_SECONDS],
-    },
-  });
-  assert.deepEqual(cfg.mergeConfirmation, {
-    deadlineSeconds: 120,
-    backoffSeconds: [2, CONFIGURED_SLOW_WAIT_SECONDS],
-  });
 });

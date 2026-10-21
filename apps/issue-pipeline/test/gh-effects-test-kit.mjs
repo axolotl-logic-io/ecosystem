@@ -148,6 +148,7 @@ function prMutations(writes) {
         action,
         repo: flagValue(args, ["-R", "--repo"]),
         body: flagValue(args, ["--body"]),
+        title: flagValue(args, ["--title"]),
       };
       if (action === "create") {
         return {

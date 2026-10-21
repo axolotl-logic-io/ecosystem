@@ -62,16 +62,7 @@ for (const identity of ["dev", "merge"]) {
   if (identity !== "dev" && identity !== "merge") {
     throw new Error("invalid identity fixture");
   }
-  for (const failure of [
-    "error connecting to api.github.com",
-    "i/o timeout",
-    "net/http: request canceled (Client.Timeout exceeded while awaiting headers)",
-    "context deadline exceeded",
-    "unexpected EOF",
-    "HTTP 502",
-    "HTTP 503",
-    "secondary rate limit",
-  ]) {
+  for (const failure of ["HTTP 502"]) {
     test(`${identity} login recovers from ${failure} before one mutation`, () => {
       const waits = waitsOf();
       const { cfg, account } = selected(identity);

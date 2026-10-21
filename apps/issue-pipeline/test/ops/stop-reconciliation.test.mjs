@@ -1,6 +1,7 @@
 // @ts-check
 import assert from "node:assert/strict";
 import { afterEach, mock, test } from "node:test";
+import { bodyOf, effectNames, effectsOf } from "../gh-effects-test-kit.mjs";
 import { commitOnOrigin, kit } from "../ops-v2-test-kit.mjs";
 import {
   ATTEMPTS,
@@ -53,12 +54,19 @@ test("a transient stop login recovers into an authoritative resumable stop and c
       (value) => value === "confirmed",
     ),
   );
-  const writes = kit.writes().flat().join("\n");
-  assert.ok(writes.includes("claim-closed"));
-  assert.ok(writes.includes(REASON));
-  assert.ok(writes.includes("To resume"));
-  assert.ok(writes.includes("agent%3Aworking"));
-  assert.ok(writes.includes("labels[]=agent:stopped-error"));
+  const effects = effectsOf(kit.writes());
+  const names = effectNames(effects);
+  const closedClaim = effects.find(
+    ({ effect, body }) =>
+      effect.startsWith("edit comment ") &&
+      body.includes("agent-pipeline:claim-closed"),
+  );
+  assert.ok(closedClaim);
+  const coordinator = bodyOf(effects, `comment #${ISSUE} role=coordinator`);
+  assert.ok(coordinator.includes(REASON));
+  assert.ok(coordinator.includes("To resume"));
+  assert.ok(names.includes(`unlabel #${ISSUE} agent:working`));
+  assert.ok(names.includes(`label #${ISSUE} agent:stopped-error`));
 });
 
 test("persistent login failure records both failures, selected branch and every unresolved update", () => {

@@ -35,6 +35,7 @@ const LEGACY_PR = 47;
 const STATE_ID = 1;
 const LATEST_ID = 3;
 const NO_AUTHORITY = /no saved authority; stop for reconciliation/u;
+const INVALID_AUTHORITY = /saved write authority is invalid/u;
 const LEGACY = /legacy pipeline state needs explicit reconciliation/u;
 const REFUSED = z.looseObject({
   ok: z.literal(false),
@@ -83,7 +84,7 @@ function authority(invalid, older = []) {
   ]);
 }
 
-for (const invalid of [
+const INVALID_SHAPES = [
   { pr: "broken" },
   { codeMerged: {} },
   { merged: {} },
@@ -99,40 +100,49 @@ for (const invalid of [
   { stopCode: 42 },
   { version: 3 },
   { number: LEGACY_NUMBER },
-]) {
+];
+for (const invalid of INVALID_SHAPES) {
   test(`existing invalid authority ${JSON.stringify(invalid)} cannot be normalized by claim, checkpoint, release or ask`, () => {
     const bad = { ...saved, ...invalid };
     authority(bad);
-    assert.throws(() => readClaimState(cfg, NUMBER, listComments(cfg, NUMBER)));
-    assert.throws(() => readWriteState(cfg, NUMBER));
-    for (const op of ["claim", "save-state", "release", "ask"]) {
-      authority(bad);
-      const result = REFUSED.parse(
-        askOps({
-          op,
-          number: NUMBER,
-          state: saved,
-          ...LANE,
-          questions: ["Which?"],
-          by: { role: "author" },
-        }),
-      );
-      assert.equal(result.ok, false);
-      assert.deepEqual(writes(), []);
-      assert.equal(sh(`git -C ${wt} rev-parse HEAD`), local);
-      assert.deepEqual(fs.readFileSync(index), indexBefore);
-      assert.equal(
-        fs.readFileSync(path.join(wt, "held.txt"), "utf8"),
-        "staged\nunstaged\n",
-      );
-      assert.equal(
-        fs.readFileSync(path.join(wt, "dirty.txt"), "utf8"),
-        "untracked recovery\n",
-      );
-      assert.equal(sh(`git -C ${root}/origin.git show-ref`), refs);
-    }
+    assert.throws(
+      () => readClaimState(cfg, NUMBER, listComments(cfg, NUMBER)),
+      INVALID_AUTHORITY,
+    );
+    assert.throws(() => readWriteState(cfg, NUMBER), INVALID_AUTHORITY);
   });
 }
+
+test("invalid authority blocks every mutating CLI path without touching local recovery", () => {
+  const bad = { ...saved, codeMerged: {} };
+  for (const op of ["claim", "save-state", "release", "ask"]) {
+    authority(bad);
+    const result = REFUSED.parse(
+      askOps({
+        op,
+        number: NUMBER,
+        state: saved,
+        ...LANE,
+        questions: ["Which?"],
+        by: { role: "author" },
+      }),
+    );
+    assert.equal(result.ok, false);
+    assert.match(result.error, INVALID_AUTHORITY);
+    assert.deepEqual(writes(), []);
+    assert.equal(sh(`git -C ${wt} rev-parse HEAD`), local);
+    assert.deepEqual(fs.readFileSync(index), indexBefore);
+    assert.equal(
+      fs.readFileSync(path.join(wt, "held.txt"), "utf8"),
+      "staged\nunstaged\n",
+    );
+    assert.equal(
+      fs.readFileSync(path.join(wt, "dirty.txt"), "utf8"),
+      "untracked recovery\n",
+    );
+    assert.equal(sh(`git -C ${root}/origin.git show-ref`), refs);
+  }
+});
 
 for (const invalid of [
   null,
