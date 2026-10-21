@@ -347,6 +347,7 @@ Before any mutation the job snapshots the pages needed by its stage. A missing p
 | `shell-supervisor.mjs` | Configured commands in owned process groups, cleaned on exit |
 | `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commit tool extensions |
 | `git-review.mjs` | Credential-isolated, read-only Git queries with session-local paging and tool-result coverage records |
+| `caller-jobs.mjs` | The caller's job launcher (`scripts/caller-jobs.ts`): `start`, `status` and `wait`; see [the caller reference](../../docs/reference/caller.md) |
 | `orchestrate.mjs` | Retained legacy discovery/scheduling compatibility only; `--config <path> [--once]`. Not the caller-owned entry point; do not run it alongside caller-managed jobs |
 
 GitHub state, claim, Gherkin, hardening and security comments require merge authorship plus same-read editor provenance to be authoritative; signatures and markers alone grant nothing. `clones/`, `work/` and `runs/` are local caches/recovery artifacts: retain them and saved patches through upgrades until preserved work is confirmed safe.

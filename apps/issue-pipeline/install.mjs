@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // @ts-check
-// Builds src/ into dist/ (build.ts; run `npm ci` at the repo root first) and
-// installs dist/*.mjs (BUILT), prompts/*.md and repos/example.json in
-// $ISSUE_PIPELINE_ROOT and agents/*.md, placeholders filled, in
+// Builds src/ and scripts/ into dist/ (build.ts; run `npm ci` at the repo root
+// first) and installs dist/*.mjs (BUILT), prompts/*.md and repos/example.json
+// in $ISSUE_PIPELINE_ROOT and agents/*.md, placeholders filled, in
 // $PI_CODING_AGENT_DIR's agents/issue-pipeline/ (README.md). It names the
 // commit in the root's README.md and INSTALLED.json and retires what an older
-// install left (retired()), leaving local configs, secrets and work alone.
-// The running pipeline changes only here, never when a PR merges, so an
-// agent's PR can't change the code that checks its own work. Every file it
-// replaces or retires is copied first to <root>-backups/<timestamp>-install/.
+// install left (retired()), leaving local configs, secrets and work alone. The
+// running pipeline changes only here, never when a PR merges, so an agent's PR
+// can't change the code that checks its own work. Every file it replaces or
+// retires is copied first to <root>-backups/<timestamp>-install/.
 //
 // Usage: node install.mjs [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
@@ -47,10 +47,10 @@ const BUILT = [
   "structured-output.mjs",
   "pipeline-commit.mjs",
   "git-review.mjs",
+  "caller-jobs.mjs",
 ];
-// The agents of the stages an older install had, which retired() retires
-// with its old workflow.js, which an old lane schedule could still run, and
-// its old pi prompts.
+// An older install's stage agents, which retired() retires with its old
+// workflow.js, which an old lane schedule could still run, and its pi prompts.
 const RETIRED_AGENTS = ["escalation", "ops", "reader", "specifier", "writer"];
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));

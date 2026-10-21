@@ -2,12 +2,13 @@
 
 // The pipeline caller's one launcher (docs/reference/caller.md): it starts
 // stage jobs detached, after its checks, and reports how they stand, so a
-// caller never builds its own wrapper or polls in a loop.
+// caller never builds its own wrapper or polls in a loop. build.ts bundles it
+// and install.mjs installs it as $ISSUE_PIPELINE_ROOT/caller-jobs.mjs:
 //
-//   node caller-jobs.ts start  --run RUN_DIR --config CONFIG --issue N
+//   node caller-jobs.mjs start  --run RUN_DIR --config CONFIG --issue N
 //        --branch BRANCH --lane LANE --stage STAGE [--merge-queue N1,N2]
-//   node caller-jobs.ts status --run RUN_DIR
-//   node caller-jobs.ts wait   --run RUN_DIR --seconds S
+//   node caller-jobs.mjs status --run RUN_DIR
+//   node caller-jobs.mjs wait   --run RUN_DIR --seconds S
 //
 // `start` refuses (exit 2, the reason on stderr) a run.json rewritten to
 // widen the caps the run's first start read (wideningOf in

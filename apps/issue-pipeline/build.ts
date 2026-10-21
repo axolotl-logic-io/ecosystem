@@ -1,4 +1,4 @@
-// Builds the installed pipeline from src/ with esbuild:
+// Builds the installed pipeline from src/ and scripts/ with esbuild:
 //
 //   node build.ts [outdir]   (outdir defaults to dist/ in this folder)
 //
@@ -9,7 +9,9 @@
 // the stage job <outdir>/job.mjs (src/job.ts) and its pi extensions
 // <outdir>/structured-output.mjs, <outdir>/pipeline-commit.mjs and
 // <outdir>/git-review.mjs, the
-// orchestrator <outdir>/orchestrate.mjs and the reports <outdir>/report.mjs.
+// orchestrator <outdir>/orchestrate.mjs, the reports <outdir>/report.mjs
+// and the caller's job launcher <outdir>/caller-jobs.mjs
+// (scripts/caller-jobs.ts).
 // It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
 
@@ -19,10 +21,11 @@ import process from "node:process";
 import { build } from "esbuild";
 
 const SOURCE_DIR = path.join(import.meta.dirname, "src");
+const SCRIPTS_DIR = path.join(import.meta.dirname, "scripts");
 const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
 // The Node ES modules built from one entry each: the ops CLI and its shell
-// supervisor, the stage job, the job's pi extensions, the orchestrator and
-// the reports.
+// supervisor, the stage job, the job's pi extensions, the orchestrator, the
+// reports and the caller's job launcher.
 const NODE_MODULES: ReadonlyMap<string, string> = new Map([
   [path.join(SOURCE_DIR, "job", "git-review.ts"), "git-review.mjs"],
   [path.join(SOURCE_DIR, "ops.ts"), "ops.mjs"],
@@ -38,6 +41,7 @@ const NODE_MODULES: ReadonlyMap<string, string> = new Map([
     path.join(SOURCE_DIR, "job", "pipeline-commit-tool.ts"),
     "pipeline-commit.mjs",
   ],
+  [path.join(SCRIPTS_DIR, "caller-jobs.ts"), "caller-jobs.mjs"],
 ]);
 
 async function buildNodeModule(source: string, outfile: string): Promise<void> {
