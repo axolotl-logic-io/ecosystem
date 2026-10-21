@@ -5,8 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { z } from "zod";
-import { readWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
-import { scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
+import { readWorld, writeWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   createReplayFlow,
@@ -15,12 +14,13 @@ import {
   replayFacts,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
-import { savedState } from "./pipeline-flow-script.mjs";
+import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import { savedState } from "./pipeline-flow-script-test-kit.mjs";
+import { scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
-/** @type {import("./pipeline-flow-gh-world.mjs").World} */
+/** @type {import("./fake-pipeline-flow-gh-world.mjs").World} */
 let interruptedWorld;
 before(() => {
   flow = setUpFlow();

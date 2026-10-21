@@ -7,30 +7,30 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { z } from "zod";
-import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
+import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
+import {
+  createReplayFlow,
+  merges,
+  sessions,
+} from "./pipeline-flow-replay-test-kit.mjs";
+import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import { savedState, securityTurn } from "./pipeline-flow-script-test-kit.mjs";
 import {
   BASE,
   ISSUE,
   refIn,
   scriptPi,
   setUpFlow,
-} from "./pipeline-flow-kit.mjs";
-import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import {
-  createReplayFlow,
-  merges,
-  sessions,
-} from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
-import { savedState, securityTurn } from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-test-kit.mjs";
 
 const CLAIM_AUTHORITY = z.object({
   state: z.object({ hardened: z.unknown(), integration: z.unknown() }),
 });
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
 let traceStart = 0;
 before(() => {

@@ -3,16 +3,16 @@
 // hardening and merge.
 import fs from "node:fs";
 import path from "node:path";
-import { branchMerge } from "./pipeline-flow-gh-merge.mjs";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
-import { BASE, ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
+import { branchMerge } from "./fake-pipeline-flow-gh-merge.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { observeOps } from "./pipeline-flow-ops-test-kit.mjs";
-import { runStage } from "./pipeline-flow-run.mjs";
+import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
   openFlowIssue,
   savedState,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-script-test-kit.mjs";
+import { BASE, ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see a polite greeting";
@@ -63,13 +63,13 @@ function externallyMergedFlow() {
   return flow;
 }
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow @param {import("./pipeline-flow-pi.mjs").FlowTurn[]} turns */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow @param {import("./fake-pipeline-flow-pi.mjs").FlowTurn[]} turns */
 function reviewerTurns(flow, turns) {
   fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
   scriptPi(flow, { reviewer: turns });
 }
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow */
 function stateOf(flow) {
   return savedState(readWorld(flow.ghDir));
 }

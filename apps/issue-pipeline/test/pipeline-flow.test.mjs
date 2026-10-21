@@ -7,9 +7,18 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { fieldOf, flagsOf } from "./pipeline-flow-gh-api.mjs";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
+import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { fieldOf, flagsOf } from "./fake-pipeline-flow-gh-api.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import { jobLog, stopJobs, tick } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  authorTurn,
+  implementorTurn,
+  openFlowIssue,
+  savedState,
+  securityTurn,
+} from "./pipeline-flow-script-test-kit.mjs";
 import {
   BASE,
   bareGit,
@@ -18,16 +27,7 @@ import {
   SLUG,
   scriptPi,
   setUpFlow,
-} from "./pipeline-flow-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import { jobLog, stopJobs, tick } from "./pipeline-flow-run.mjs";
-import {
-  authorTurn,
-  implementorTurn,
-  openFlowIssue,
-  savedState,
-  securityTurn,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-test-kit.mjs";
 import { PROMPT_PAGES } from "./prompt-test-kit.mjs";
 
 const GHERKIN =
@@ -39,7 +39,7 @@ const REVIEWED_CODE = /\+Hello, world!/u;
 const REVIEWED_DOCS = /\+Greetings say Hello, world!/u;
 const MERGE_ENDPOINT = /^repos\/[^/]+\/[^/]+\/merges$/u;
 
-/** @typedef {import("./pipeline-flow-kit.mjs").Flow} Flow */
+/** @typedef {import("./pipeline-flow-test-kit.mjs").Flow} Flow */
 
 /** @type {Flow} */
 let flow;

@@ -8,17 +8,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { humanComment } from "./pipeline-flow-gh.mjs";
-import { readWorld } from "./pipeline-flow-gh-world.mjs";
-import { ISSUE, SLUG, scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import { jobLog, stopJobs, tick } from "./pipeline-flow-run.mjs";
+import { humanComment } from "./fake-pipeline-flow-gh.mjs";
+import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import { jobLog, stopJobs, tick } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
   implementorTurn,
   openFlowIssue,
   savedState,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-script-test-kit.mjs";
+import { ISSUE, SLUG, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const FIRST =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    When they arrive\n    Then they see hello, world";
@@ -30,12 +30,12 @@ const REVISION_2 = /Revision 2\./u;
 const FAREWELL = /Scenario: farewell/u;
 const IMPLEMENTS_REVISION_2 = /Gherkin revision 2/u;
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
 /** @type {string[][]} the stages each tick started */
 const ticks = [];
 
-/** @returns {import("./pipeline-flow-gh-world.mjs").FlowComment[]} */
+/** @returns {import("./fake-pipeline-flow-gh-world.mjs").FlowComment[]} */
 function authorComments() {
   const { comments } = readWorld(flow.ghDir);
   return comments.filter(({ body }) => body.includes(AUTHOR_MARK));

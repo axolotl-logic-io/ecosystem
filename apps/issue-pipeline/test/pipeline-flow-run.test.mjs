@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { setUpFlow } from "./pipeline-flow-kit.mjs";
+import { setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 test("full-flow fakes use the current Node runtime without invoking an ambient shim", () => {
   const flow = setUpFlow();

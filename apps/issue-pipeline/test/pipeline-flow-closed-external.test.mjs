@@ -5,29 +5,29 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
-import { branchMerge } from "./pipeline-flow-gh-merge.mjs";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
-import {
-  BASE,
-  ISSUE,
-  refIn,
-  scriptPi,
-  setUpFlow,
-} from "./pipeline-flow-kit.mjs";
+import { branchMerge } from "./fake-pipeline-flow-gh-merge.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   merges,
   prepareReplayFlow,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
+import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
 import {
   hardeningTurn,
   savedState,
   securityTurn,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-script-test-kit.mjs";
+import {
+  BASE,
+  ISSUE,
+  refIn,
+  scriptPi,
+  setUpFlow,
+} from "./pipeline-flow-test-kit.mjs";
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
 let traceStart = 0;
 after(() => stopJobs(flow));

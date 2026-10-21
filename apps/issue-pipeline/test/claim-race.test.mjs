@@ -6,11 +6,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { configFixture } from "./config-fixtures.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
-import { bodyOf, effectNames, effectsOf } from "./gh-effects.mjs";
+import { bodyOf, effectNames, effectsOf } from "./gh-effects-test-kit.mjs";
 import { commentWriteReplies, labelReplies } from "./gh-mutation-fixtures.mjs";
 import "./isolated-root-test-kit.mjs";
 
-/** @import { GhEffect } from "./gh-effects.mjs" */
+/** @import { GhEffect } from "./gh-effects-test-kit.mjs" */
 
 const fakeGh = installFakeGh();
 const { COMMENT } = await import("../src/comments.ts");

@@ -11,11 +11,11 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { alive, waitFor } from "./bounded-test-kit.mjs";
+import { logOf, setUp } from "./job/job-test-kit.mjs";
 import { READER_STAGE, repliesAt } from "./job-fixtures.mjs";
-import { logOf, setUp } from "./job-test-kit.mjs";
 
 const BOUNDED_KIT = new URL("./bounded-test-kit.mjs", import.meta.url).href;
-const JOB_KIT = new URL("./job-test-kit.mjs", import.meta.url).href;
+const JOB_KIT = new URL("./job/job-test-kit.mjs", import.meta.url).href;
 const JOB_FIXTURES = new URL("./job-fixtures.mjs", import.meta.url).href;
 const HUNG_TEST = "a test whose job waits and that never resolves";
 // The fixture's per-test timeout. It covers setting up a place and the job

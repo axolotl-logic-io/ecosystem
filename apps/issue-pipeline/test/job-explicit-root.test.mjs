@@ -6,23 +6,23 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
-import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld } from "./pipeline-flow-gh-world.mjs";
-import { ISSUE, SLUG, scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import { runStage } from "./pipeline-flow-run.mjs";
+import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
   implementorTurn,
   openFlowIssue,
   savedState,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-script-test-kit.mjs";
+import { ISSUE, SLUG, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see hello";
 const RUN_MS = 60_000;
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow @param {string[]} extra */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow @param {string[]} extra */
 function startAuthor(flow, extra) {
   return spawnSync(
     process.execPath,

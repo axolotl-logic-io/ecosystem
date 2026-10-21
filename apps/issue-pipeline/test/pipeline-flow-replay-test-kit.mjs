@@ -3,20 +3,20 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
-import { BASE, ISSUE, refIn, scriptPi } from "./pipeline-flow-kit.mjs";
+import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import { runStage } from "./pipeline-flow-run.mjs";
+import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
   implementorTurn,
   openFlowIssue,
   savedState,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-script-test-kit.mjs";
+import { BASE, ISSUE, refIn, scriptPi } from "./pipeline-flow-test-kit.mjs";
 
-/** @typedef {import("./pipeline-flow-kit.mjs").Flow} Flow */
+/** @typedef {import("./pipeline-flow-test-kit.mjs").Flow} Flow */
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see a polite greeting";
 const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
@@ -42,7 +42,7 @@ const CLAIM = z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
   }),
 });
-/** @param {import("./pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
+/** @param {import("./fake-pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
 function expectedReplay(interruptedWorld, checked = true) {
   const state = savedState(interruptedWorld);
   const codeMerged = { pr: state.pr, sha: state.merged.code };

@@ -48,7 +48,7 @@ async function runFlowOps(root) {
   process.stdout.write(output);
 }
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow */
 function observeOps(flow) {
   const original = path.join(flow.root, "ops.mjs");
   fs.renameSync(original, path.join(flow.root, "real-ops.mjs"));
@@ -59,7 +59,7 @@ function observeOps(flow) {
   );
 }
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow @returns {{request: {op: string}, reply: Record<string, unknown>}[]} */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow @returns {{request: {op: string}, reply: Record<string, unknown>}[]} */
 function opsTrace(flow) {
   return fs
     .readFileSync(path.join(flow.root, "ops-trace.jsonl"), "utf8")

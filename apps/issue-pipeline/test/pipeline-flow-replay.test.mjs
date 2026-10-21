@@ -6,9 +6,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
-import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld, withWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
-import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
+import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import {
+  readWorld,
+  withWorld,
+  writeWorld,
+} from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   expectedReplay,
@@ -19,16 +22,17 @@ import {
   securityEvidence,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
-import { savedState, securityTurn } from "./pipeline-flow-script.mjs";
+import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import { savedState, securityTurn } from "./pipeline-flow-script-test-kit.mjs";
+import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
 const SECURITY_PHASE = "security.md";
 const SECURITY_TAG_LENGTH = 12;
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
-/** @type {import("./pipeline-flow-gh-world.mjs").World} */
+/** @type {import("./fake-pipeline-flow-gh-world.mjs").World} */
 let interruptedWorld;
 /** @type {string} the review-module gitlink the Developer's draft adds */
 let gitlink;

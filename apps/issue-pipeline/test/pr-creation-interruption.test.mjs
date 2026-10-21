@@ -5,7 +5,15 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
+import { runStage } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  authorTurn,
+  openFlowIssue,
+  savedState,
+} from "./pipeline-flow-script-test-kit.mjs";
 import {
   BASE,
   ISSUE,
@@ -13,15 +21,7 @@ import {
   SLUG,
   scriptPi,
   setUpFlow,
-} from "./pipeline-flow-kit.mjs";
-import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import { runStage } from "./pipeline-flow-run.mjs";
-import {
-  authorTurn,
-  openFlowIssue,
-  savedState,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-test-kit.mjs";
 import { interruptCreation } from "./pr-creation-interruption-test-kit.mjs";
 
 const GHERKIN =
@@ -35,7 +35,7 @@ function git(repo, args) {
   }).trim();
 }
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow */
 function recoveredWork(flow) {
   const runDir = path.join(flow.root, "runs", SLUG, "issue-7");
   const bundles = fs.readdirSync(path.join(runDir, "recovery"));
@@ -52,7 +52,7 @@ function recoveredWork(flow) {
   return { restored, bundles, patches };
 }
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow */
 function prepareRestart(flow) {
   withWorld(flow.ghDir, (world) => {
     const issue = world.issues.find((item) => item.number === ISSUE);
@@ -69,7 +69,7 @@ function prepareRestart(flow) {
   });
 }
 
-/** @returns {import("./pipeline-flow-kit.mjs").Flow} */
+/** @returns {import("./pipeline-flow-test-kit.mjs").Flow} */
 function openIntegrationFlow() {
   const flow = setUpFlow();
   // This regression exercises open-issue discovery before the PR was saved,
@@ -92,7 +92,7 @@ for (const mode of [
   "interrupted-create",
   "failed-save",
 ]) {
-  /** @type {import("./pipeline-flow-kit.mjs").Flow} */
+  /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
   let flow;
   test(`${mode}: author establishes the create-interruption fixture`, () => {
     flow = openIntegrationFlow();

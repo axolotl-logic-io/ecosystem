@@ -44,7 +44,7 @@ Object.assign(
 );
 const COMMAND_TIMEOUT_MS = 20_000;
 const MODE = 0o755;
-const fake = new URL("./explicit-target-fake-gh.mjs", import.meta.url).pathname;
+const fake = new URL("./fake-explicit-target-gh.mjs", import.meta.url).pathname;
 fs.writeFileSync(
   path.join(BIN, "gh"),
   `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`,

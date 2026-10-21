@@ -7,16 +7,16 @@ import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
 import "./isolated-root-test-kit.mjs";
-import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
-import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import { runStage } from "./pipeline-flow-run.mjs";
+import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { readWorld, writeWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
   openFlowIssue,
   savedState,
-} from "./pipeline-flow-script.mjs";
+} from "./pipeline-flow-script-test-kit.mjs";
+import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const { ghIsRead } = await import("../src/github.ts");
 const ALLOWED = "alice";
