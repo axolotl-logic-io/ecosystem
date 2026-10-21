@@ -56,22 +56,17 @@ async function afterOwnMerge(
   }
   const receipt: Revision = { ...authorized, code: mergeCommit };
   const result = currentResultObservation(receipt, revision);
-  const still = stillAt(result ?? receipt);
   const receiptHolds =
     pr !== null &&
     pr.number === start.pr &&
     pr.state === "MERGED" &&
     pr.headSha === authorized.code &&
-    pr.mergeCommit === mergeCommit &&
-    result !== null;
-  if (start.pr === null || !receiptHolds) {
+    pr.mergeCommit === mergeCommit;
+  if (start.pr === null || result === null || !receiptHolds) {
     return errorStop(
       state,
       `${merged}, but GitHub no longer matches it; merged truth is retained`,
     );
-  }
-  if (result === null) {
-    return errorStop(state, "the confirmed result observation is missing");
   }
   const codeMerged = { pr: start.pr, sha: mergeCommit };
   const checked = await checkedMergedResult(ctx, state, result, codeMerged);
@@ -82,7 +77,7 @@ async function afterOwnMerge(
     merged: receipt,
     result,
     codeMerged,
-    still,
+    still: stillAt(result),
   });
 }
 

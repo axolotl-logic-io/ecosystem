@@ -190,15 +190,19 @@ function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
 
 // Loaded configs use their snapshot; in-process callers with parsed configs get
 // the same computation. Requests may compare this value but cannot supply it.
+function configPolicyDigest(cfg: PolicyConfig): string {
+  return (cfg.policyBinding ?? computePolicyBinding(cfg)).digest;
+}
+
 function policyRevision(cfg: PolicyConfig): { policy: string } {
-  return { policy: (cfg.policyBinding ?? computePolicyBinding(cfg)).digest };
+  return { policy: configPolicyDigest(cfg) };
 }
 
 function assertPolicyDigest(
   cfg: PolicyConfig,
   expected: string | undefined,
 ): void {
-  if (expected !== undefined && policyRevision(cfg).policy !== expected) {
+  if (expected !== undefined && configPolicyDigest(cfg) !== expected) {
     throw new OpsError(
       "project checking policy changed since this job started; preserve work and restart with fresh checks/review",
     );
@@ -208,6 +212,7 @@ function assertPolicyDigest(
 export {
   assertPolicyDigest,
   computePolicyBinding,
+  configPolicyDigest,
   policyRevision,
   resolveProjectSettings,
 };

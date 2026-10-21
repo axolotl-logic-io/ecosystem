@@ -53,9 +53,8 @@ function securityStop(state: IssueState, finding: Finding): RoleEnd {
   };
 }
 
-// The stop again of a saved security rejection of exactly `current`, the
-// issue's revision now, with no session: a rejected merged result never
-// gets a second review. A receipt of a change that merged no code binds no
+// The stop again for unchanged rejected code and trusted inputs, with no
+// session: a changed checking policy does not remediate a known finding. A receipt of a change that merged no code binds no
 // code head. Null when no saved rejection is for `current`.
 function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
   const saved = state.security;

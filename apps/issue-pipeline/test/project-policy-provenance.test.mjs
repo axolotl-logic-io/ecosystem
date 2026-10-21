@@ -6,7 +6,9 @@ import { test } from "node:test";
 import { git, policyFixture } from "./project-policy-test-kit.mjs";
 
 const { loadConfig } = await import("../src/config.ts");
-const { policyRevision } = await import("../src/project-policy.ts");
+const { configPolicyDigest, policyRevision } = await import(
+  "../src/project-policy.ts"
+);
 const { opsFrameOf } = await import("../src/job/ops-request.ts");
 const { openStatus, readStatus } = await import("../src/job/status.ts");
 const ISSUE = 7;
@@ -64,6 +66,7 @@ for (const mode of ["committed", "legacy"]) {
     const { commands } = saved?.policyBinding?.settings ?? {};
     assert.deepEqual(commands, cfg.commands);
     assert.equal(saved?.policyBinding?.digest, first.policyDigest);
+    assert.equal(first.policyDigest, configPolicyDigest(cfg));
     assert.equal(
       first.policyDigest,
       policyRevision(loadConfig(fx.file)).policy,

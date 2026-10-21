@@ -175,3 +175,93 @@ test("result-policy movement during readonly Security discards the observation a
   assert.equal(opNames(calls).includes("finish"), false);
   assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
 });
+
+test("a genuine saved successful old attempt gets a new result observation, never another merge", async () => {
+  const { ctx, calls } = merging({
+    state: { ...HISTORICAL, merged: null },
+    ops: {
+      "reconcile-merge": [
+        {
+          merged: true,
+          mergeCommit: MERGED_PR.mergeCommit,
+          headSha: MERGED_PR.headSha,
+        },
+      ],
+      "current-revision": [FRESH, FRESH],
+    },
+  });
+  const before = structuredClone(ctx.state);
+  const done = stateOf(await mergeRole(ctx), "next");
+  assert.deepEqual(done.mergeAttempt, before.mergeAttempt);
+  assert.deepEqual(done.hardened, before.hardened);
+  assert.deepEqual(done.merged, MERGED_REVISION);
+  assert.deepEqual(done.security?.revision, RESULT);
+  assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
+  assert.ok(sessionsOf(calls).every((spec) => spec.commits === false));
+});
+
+test("external merged truth without successful original attempt cannot borrow current-policy authority", async () => {
+  const { ctx, calls } = merging({
+    state: {
+      ...HISTORICAL,
+      merged: null,
+      mergeAttempt: { ...HISTORICAL.mergeAttempt, result: null },
+    },
+    ops: {
+      "reconcile-merge": [
+        {
+          merged: true,
+          byHand: true,
+          mergeCommit: MERGED_PR.mergeCommit,
+          headSha: MERGED_PR.headSha,
+        },
+      ],
+    },
+  });
+  const end = await mergeRole(ctx);
+  assert.ok(end.kind === "stop");
+  assert.equal(end.code, "merge-refused");
+  assert.equal(end.state.merged, null);
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.ok(
+    opNames(calls).every((name) => ![...FORBIDDEN, "finish"].includes(name)),
+  );
+});
+
+test("current-policy checks that fail on a historical result stop without a writer or Security", async () => {
+  const { ctx, calls } = merging({
+    state: HISTORICAL,
+    ops: {
+      "current-revision": [FRESH],
+      verify: [{ pass: false, headSha: MERGED_PR.mergeCommit, checks: [] }],
+    },
+  });
+  const end = await mergeRole(ctx);
+  assert.ok(end.kind === "stop");
+  assert.equal(end.code, "error");
+  assert.deepEqual(end.state.merged, MERGED_REVISION);
+  assert.deepEqual(end.state.mergeAttempt, HISTORICAL.mergeAttempt);
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.ok(
+    opNames(calls).every((name) => ![...FORBIDDEN, "finish"].includes(name)),
+  );
+});
+
+test("a historical no-finding receipt is not reusable after policy drift", async () => {
+  const { ctx, calls } = merging({
+    state: {
+      ...HISTORICAL,
+      security: {
+        revision: MERGED_REVISION,
+        commentId: COMMENT_ID,
+        finding: null,
+      },
+    },
+    ops: { "current-revision": [FRESH, FRESH] },
+  });
+  const done = stateOf(await mergeRole(ctx), "next");
+  assert.deepEqual(done.merged, MERGED_REVISION);
+  assert.deepEqual(done.security?.revision, RESULT);
+  assert.equal(sessionsOf(calls).length, 1);
+  assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
+});
