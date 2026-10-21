@@ -22,7 +22,7 @@ full test suite. Read [AGENTS.md](AGENTS.md) before changing code.
 well as other repositories. Issue jobs develop and review pipeline fixes; the
 operator coordinates installation separately from merging them.
 
-The [wiki](https://github.com/axolotl-logic-io/ecosystem/wiki) holds pipeline
-design. The sessions' behavioral prompts ship with the pipeline in
+The [pipeline docs](docs/README.md) hold its decisions and reference. The sessions'
+behavioral prompts ship with the pipeline in
 `apps/issue-pipeline/prompts/`, and the caller assigns each issue, branch,
 lane and stage explicitly.

@@ -49,9 +49,9 @@ This adapts checkpoint `81a7208873096665897245c38ee8550f80a05e39` and its histor
 
 Source merge changes nothing running. After acceptance, the operator separately installs the reviewed version, records `INSTALLED.json` identity and provisions the supported inputs before resuming affected jobs. Preserve operator configuration, runtime HOME, retained commits, histories, saved authority, merge receipts and recovery artifacts through that cutover. Do not mix live runtime versions or erase state to relaunch. No production release/deployment is part of this work.
 
-The caller-owned flow and two-account boundary are unchanged: Author → Developer → writable Hardening → caller-serialized Integration → exact-head approval and deterministic merge → actual-result checks → fresh read-only Security → exact security clearance → wiki publication/completion. Rejection preserves already-merged truth and blocks publication/completion. Restart retains authority and own-merge receipts and does not repeat a recorded merge. hippy/lawd are this operator's configured development/review identities, not reusable pipeline constants.
+The caller-owned flow and two-account boundary are unchanged: Author → Developer → writable Hardening → caller-serialized Integration → exact-head approval and deterministic merge → actual-result checks → fresh read-only Security → exact security clearance → completion through the `finish` op. Rejection preserves already-merged truth and blocks completion. Restart retains authority and own-merge receipts and does not repeat a recorded merge. hippy/lawd are this operator's configured development/review identities, not reusable pipeline constants.
 
-There is no wiki checkout in this repository/task. This page records the Decisions/Reimagined-Pipeline runtime continuation locally; publication to those wiki pages must be reconciled with their actual current layout when a wiki checkout is available, not claimed as already published.
+Docs are tracked Markdown in the repository's `docs/`, merged with code, not published separately. See the [runtime reference](../../../docs/reference/runtime.md) and [operations reference](../../../docs/reference/operations.md) for policy and cutover.
 
 A source-side effective-config read is distinct from either a job or `--print-boundary`. From the reviewed repo root, with an explicitly selected operator config path:
 
@@ -64,7 +64,7 @@ console.log(JSON.stringify({ models: cfg.models, runtime: runtimeBoundary(cfg.ru
 JS
 ```
 
-This reads/parses local config and prints expectations/names/paths only. It does not read token files, contact GitHub/provider, load provider code, validate catalogue freshness, create a job, pin wiki prompts or prove a native runtime has successfully launched. Check profile/cache existence/schema and package provenance separately during provisioning, without printing credentials. Actual runtime verification is still fail-closed on the first subsequently authorized session. Never substitute a fake generic get_state ACK for that evidence.
+This reads/parses local config and prints expectations/names/paths only. It does not read token files, contact GitHub/provider, load provider code, validate catalogue freshness, create a job, pin installed prompts or prove a native runtime has successfully launched. Check profile/cache existence/schema and package provenance separately during provisioning, without printing credentials. Actual runtime verification is still fail-closed on the first subsequently authorized session. Never substitute a fake generic get_state ACK for that evidence.
 
 ## Source/API evidence (pinned versions)
 

@@ -23,6 +23,8 @@ Only three model roles exist: Author, Developer and Reviewer. The serialized rol
 
 The Author is mandatory today. The [trusted-inputs-revision](../decisions/authority.md#trusted-inputs-revision) decision makes it optional; that isn't implemented yet.
 
+In `branch` mode, the writable scope is the code checkout, `repo/`, including tracked docs in `repo/docs/`. After `codeMerged` is saved, sessions still run in `merged` mode but commit nothing: `repo/` is read-only and the commit scope has no writable paths. Security remains read-only and token-free.
+
 The Developer starts from the work already on the branch. It doesn't synchronize with the base, and it doesn't own the full verification. Its push clears any earlier hardening, approval or integration.
 
 Each stage runs as one installed agent: `issue-pipeline-author`, `issue-pipeline-implementor` or `issue-pipeline-reviewer`. `STAGE_AGENTS` in `apps/issue-pipeline/src/job/roles.ts` lists the sessions each stage may run and whether each commits. A session with the wrong agent, a missing Reviewer phase or the wrong commit setting is refused, not guessed.

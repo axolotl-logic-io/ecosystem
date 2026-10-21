@@ -8,6 +8,7 @@ The pipeline runs from an installed copy under `$ISSUE_PIPELINE_ROOT` (default `
 
 | Program | Purpose |
 |---|---|
+| `caller-jobs.mjs` | The installed caller launcher: `start`, `status` and `wait` (see [caller](caller.md)) |
 | `job.mjs` | Runs one stage of one issue (see [coordination](coordination.md)) |
 | `ops.mjs` | Credentialed deterministic operations; reads one framed JSON request on stdin and prints one JSON reply |
 | `report.mjs` | The usage report (see [telemetry](telemetry.md)) |
@@ -18,7 +19,7 @@ The pipeline runs from an installed copy under `$ISSUE_PIPELINE_ROOT` (default `
 
 ## Configuration
 
-Each repository has a config file in `$ISSUE_PIPELINE_ROOT/repos/`. `repos/example.json` shows the fields, and `apps/issue-pipeline/src/config-schema.ts` defines their shape and defaults. Removed fields still load, with a warning naming what replaced them; legacy single-account fields are refused.
+Each repository has a config file in `$ISSUE_PIPELINE_ROOT/repos/`. `repos/example.json` shows the fields, and `apps/issue-pipeline/src/config-schema.ts` defines their shape and defaults. The removed `wiki` key is refused, even when false or null: remove it. Other removed fields still load with a warning naming what replaced them; legacy single-account fields are refused.
 
 | Setting | Default |
 |---|---|
@@ -76,6 +77,17 @@ Merging source changes nothing that runs. Record source delivery (the PR and its
 6. Resume one explicitly assigned issue and stage at a time.
 
 Never run old and new jobs together. Never reset branches, hardening, integration, merge-attempt evidence, Security rejections or merge receipts to make an upgrade pass. Rolling back an install doesn't undo a code merge.
+
+### Upgrade from the removed wiki flow
+
+Before this cutover, drain all jobs that started with the wiki flow and preserve their work and receipts. Then:
+
+1. Remove the `wiki` key from every repository config; false and null are refused too.
+2. Remove `--brain-path` from launcher commands and wrappers; the argument is no longer accepted. Use the installed `$ISSUE_PIPELINE_ROOT/caller-jobs.mjs` and its installed `job.mjs`, which pins installed prompt pages.
+3. Reconcile unfinished wiki-era issues explicitly. Historical state, receipts, launch records and recovery manifests remain readable; that doesn't authorize new wiki work or publication.
+4. Preserve any private wiki commits, patches and bundles outside the old checkout and mirror before removing unused data. The old `work/SLUG/wiki-mirror.git`, sibling job `docs/` checkouts and private issue branches in the wiki remote are no longer maintained or cleaned up by the pipeline. Remove them only after confirming no old job uses them and all retained work is safe. Never delete the published wiki branch as routine cleanup.
+
+The installer doesn't rewrite operator configs or remove these caches or remote branches. This cleanup is operator-owned, not an automatic migration.
 
 ## Restart after a source defect
 

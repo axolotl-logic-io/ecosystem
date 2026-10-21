@@ -58,7 +58,7 @@ A PR merged outside the confirmed operation, for example by hand, isn't an own m
 
 The merge result M, not the pre-merge head, must pass deterministic verification in a clean detached checkout (see [review](review.md#deterministic-verification)). A failed check on M keeps the merged state and stops without a code writer. Then the read-only [Security review](review.md#security-review) reads `P..M`.
 
-Only a saved Security clearance of exactly M allows completion. `finish`:
+Only a saved Security clearance of exactly M allows completion. The `finish` op acts on the saved done state; it merges and publishes nothing itself. It:
 
 - deletes the issue branch;
 - sets `agent:merged` and removes `agent:working` on the PR and the issue;
@@ -66,7 +66,7 @@ Only a saved Security clearance of exactly M allows completion. `finish`:
 - closes the issue with a comment, which matters when the base isn't the default branch and GitHub doesn't auto-close it;
 - removes the job's worktree.
 
-A parent issue closes once all its sub-issues are closed. A finished issue whose `finish` didn't complete only runs `finish` again, once Security has cleared exactly what merged.
+A parent issue closes once all its sub-issues are closed and at least one merged. A finished issue whose `finish` didn't complete only runs `finish` again, once Security has cleared exactly what merged.
 
 ### Closed issues with an incomplete merge
 

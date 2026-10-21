@@ -34,6 +34,8 @@ A failed control adds `agent:stopped-CODE` to the issue and its PR, and posts a 
 | `job` | A legacy scheduler restarted a dying stage job too often (`maxResumes`) |
 | `error` | A step, a session or a claim failed with no more specific match |
 
+`agent:stopped-wiki-check` is legacy: the old wiki check failed. The pipeline no longer runs that check; docs are tracked Markdown reviewed with code, so it produces no new stops. The label and reason matcher remain so old stops still read.
+
 `review-rounds` is kept only so old labels and state still read; review rounds and `maxFixRounds` were removed. Any label starting with `agent:stopped-` counts as a stop, even with an unknown code. That isn't permission to resume.
 
 Rate limits and transient GitHub or network errors don't stop an issue. They defer it (`end: "deferred"`) without using up a fix attempt, and the caller backs off before retrying.
