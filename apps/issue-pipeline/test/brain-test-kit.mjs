@@ -4,9 +4,11 @@
 // this list against), each page's text naming its page, so a test can tell
 // which page a session got. It imports no source, so a kit that loads it
 // still sets its root before any source loads.
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 
 // Each session's stage, phase and page, as the reviewer-flow contract lists
 // them.
@@ -52,4 +54,48 @@ function writeBrain(dir) {
   return dir;
 }
 
-export { PROMPT_PAGES, pageTextOf, pinnedOf, writeBrain };
+// Read both merge-page heads in a child with a controlled Git executable.
+// Combined rev-parse queries deliberately print only the root, reproducing
+// Git's top-level-without-HEAD output without depending on the host version.
+/**
+ * @param {{ bin: string, brain: string, rootRead?: { stdout: string, code: number } }} at
+ * @param {string} head
+ * @param {number} [code]
+ * @returns {string}
+ */
+function headsWithGit(at, head, code = 0) {
+  const root = at.rootRead ?? {
+    stdout: `${fs.realpathSync(at.brain)}\n`,
+    code: 0,
+  };
+  const git = `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args.includes("--show-toplevel")) {
+  process.stdout.write(${JSON.stringify(root.stdout)});
+  process.exitCode = ${root.code};
+} else {
+  process.stdout.write(${JSON.stringify(head)});
+  process.exitCode = ${code};
+}
+`;
+  fs.writeFileSync(path.join(at.bin, "git"), git, { mode: 0o755 });
+  const source = new URL("../src/job/brain.ts", import.meta.url).href;
+  const script = `
+import { openBrain } from ${JSON.stringify(source)};
+const brain = openBrain(${JSON.stringify(at.brain)}, "merge");
+console.log(JSON.stringify(brain.pinned.map(({ head }) => head)));
+`;
+  const { PATH: searchPath = "" } = process.env;
+  return execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...Object.fromEntries([
+        ["PATH", `${at.bin}${path.delimiter}${searchPath}`],
+      ]),
+    },
+    timeout: 30_000,
+  });
+}
+
+export { headsWithGit, PROMPT_PAGES, pageTextOf, pinnedOf, writeBrain };
