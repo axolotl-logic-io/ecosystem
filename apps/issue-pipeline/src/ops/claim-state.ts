@@ -26,6 +26,7 @@ import {
   resumeOf,
   withLog,
 } from "../state.ts";
+import { requestedAuthorState } from "./author-request.ts";
 import { historicalPrFor } from "./prs.ts";
 
 // `show-ref --exists` distinguishes absence from unreadable repository history.
@@ -272,7 +273,10 @@ function claimedState(
   const start = startingState(cfg, n, comments, stage);
   const remote = remoteHead(cfg, n);
   const adoptedState = adoptPush(start, remote, lastPush(cfg, n), now);
-  const state = reconciled(cfg, n, adoptedState ?? start, now);
+  const state = requestedAuthorState(
+    reconciled(cfg, n, adoptedState ?? start, now),
+    startAt,
+  );
   return {
     state,
     remote,

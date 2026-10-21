@@ -113,7 +113,12 @@ for (const stage of /** @type {const} */ (["author", "implement"])) {
       issueReply(UNANSWERED_ISSUE, issue),
       commentsReply(UNANSWERED_ISSUE, [stateComment(ASKED_STATE, state)]),
     ]);
-    const result = askOps({ op: "claim", number: UNANSWERED_ISSUE, ...LANE });
+    const result = askOps({
+      op: "claim",
+      number: UNANSWERED_ISSUE,
+      stage: "author",
+      ...LANE,
+    });
     assert.deepEqual(result, {
       ok: true,
       op: "claim",

@@ -27,6 +27,7 @@ import type { IssueState } from "../state.ts";
 import { withLog } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
 import { resetKeepingUnpushed } from "../unpushed.ts";
+import { assertAuthorRequest } from "./author-request.ts";
 import type { BranchChanged } from "./claim-state.ts";
 import {
   assertBranchAssigned,
@@ -157,6 +158,7 @@ function claim(
   if (awaitingAnswer(cfg, n, context)) {
     return { waiting: "answer" };
   }
+  assertAuthorRequest(cfg, readClaimState(cfg, n, context.comments), req.stage);
   // Explicit stage jobs need the same metadata clone that legacy discovery
   // initialized. Do this before posting a claim; failure leaves no lease.
   if (!fs.existsSync(path.join(paths.clone(cfg), ".git"))) {

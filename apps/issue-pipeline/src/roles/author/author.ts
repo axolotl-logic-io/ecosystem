@@ -24,6 +24,35 @@ function nextStage(state: IssueState, changed: boolean): Stage {
   return state.resumeStage;
 }
 
+// A first explicit pass can describe the already-consumed issue requirements
+// without changing behavior. A new Gherkin artifact alone is not new work.
+function requirementsChanged(
+  ctx: RoleContext,
+  reply: GherkinReply,
+  changed: boolean,
+): boolean {
+  if (
+    ctx.inputs.gherkin === null &&
+    ctx.state.gherkin === null &&
+    ctx.state.resumeStage !== null &&
+    ctx.state.requirementsInputs === ctx.inputs.revision
+  ) {
+    return reply.changed;
+  }
+  return changed;
+}
+
+function changedState(state: IssueState, changed: boolean): IssueState {
+  if (!changed) {
+    return state;
+  }
+  let { security } = state;
+  if (security?.finding === null) {
+    security = null;
+  }
+  return { ...state, hardened: null, integration: null, security };
+}
+
 async function postGherkin(
   ctx: RoleContext,
   reply: GherkinReply,
@@ -44,9 +73,10 @@ async function postGherkin(
     role: "author",
     body: gherkinBody(reply, { rev, inputs }),
   });
-  const stage = nextStage(ctx.state, changed);
+  const behaviorChanged = requirementsChanged(ctx, reply, changed);
+  const stage = nextStage(ctx.state, behaviorChanged);
   const state: IssueState = {
-    ...ctx.state,
+    ...changedState(ctx.state, behaviorChanged),
     stage,
     authorUsed: true,
     resumeStage: null,

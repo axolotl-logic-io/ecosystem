@@ -22,14 +22,27 @@ function currentGherkin(ctx: RoleContext): string[] {
   ];
 }
 
+function checkpoint(ctx: RoleContext): string[] {
+  if (ctx.state.resumeStage === null) {
+    return [];
+  }
+  return [
+    `Return checkpoint: \`${ctx.state.resumeStage}\`.`,
+    `Developer-consumed trusted inputs: ${ctx.state.requirementsInputs ?? "none"}.`,
+    `Current trusted inputs: ${ctx.inputs.revision}.`,
+    "",
+  ];
+}
+
 function authorTask(ctx: RoleContext): string {
   return [
     ...header(ctx, "authoring"),
     `Read: the issue and the repo in \`${JOB_REPO}/\`, including its docs in \`${JOB_REPO}/docs/\`.`,
     "",
+    ...checkpoint(ctx),
     ...currentGherkin(ctx),
     ...replyLines([
-      "`gherkin`, with the `gherkin` text, your `assumptions`, and `changed`: whether the behaviour differs from the current Gherkin.",
+      "`gherkin`, with the `gherkin` text, your `assumptions`, and `changed`: whether behavior changed from the current Gherkin or the saved direct requirements.",
       "`needs-info`, with up to five `questions`.",
     ]),
   ].join("\n");
