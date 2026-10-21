@@ -59,7 +59,7 @@ function requirementsLines(ctx: RoleContext): string[] {
     return [
       "## Requirements",
       "",
-      `Source: issue title, body and trusted collaborator comments in ${ctx.issueFile}`,
+      `Source: issue title, body and allowed collaborator comments in ${ctx.issueFile}`,
       `Trusted-input revision: ${ctx.inputs.revision}`,
       "",
     ];

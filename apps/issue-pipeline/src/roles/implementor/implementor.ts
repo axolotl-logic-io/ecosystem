@@ -1,6 +1,6 @@
 // The Developer (`implementor-owns-the-change`): the implement stage's one
 // role. One session does the issue's work on the existing branch work, from
-// the Gherkin and any merge return an earlier pipeline left, and the job
+// the trusted requirements and any merge return an earlier pipeline left, and the job
 // pushes what it committed into the issue's draft PR, which stays a draft.
 // The Developer never synchronizes the branch with its base and never owns
 // the full verification: the Reviewer hardens and verifies the change next

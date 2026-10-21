@@ -1,5 +1,5 @@
 // The gate the merge job's revision must pass, read fresh from the ops just
-// before each mutation: the Gherkin is for the current trusted inputs, a
+// before each mutation: requirements reflect current trusted inputs, a
 // recorded code merge is still what GitHub says, and the merge
 // authorization (state.ts mergeAuthorization: the hardened revision, or the
 // Reviewer's own integration of it) holds for exactly this code head and

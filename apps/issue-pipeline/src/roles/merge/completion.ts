@@ -47,7 +47,7 @@ async function complete(
 }
 
 // The finish op on the saved completion `done`. Done only when it finished;
-// new trusted inputs go to the author, and any other refusal (a security
+// new trusted inputs go to their requirements owner, and any other refusal (a security
 // review that doesn't clear the merged result) stops, so no job retries a
 // completion that can't finish.
 async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {

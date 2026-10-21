@@ -1,4 +1,4 @@
-// The Developer session's task: the issue's facts, its Gherkin and what an
+// The Developer session's task: the issue's trusted requirements and what an
 // earlier round left for it. The Developer's behaviour is its prompt page
 // (task-facts.ts). Pure.
 

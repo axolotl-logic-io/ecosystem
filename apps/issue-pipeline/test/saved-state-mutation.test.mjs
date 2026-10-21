@@ -91,6 +91,8 @@ for (const invalid of [
   { hardened: {} },
   { integration: {} },
   { gherkin: {} },
+  { authorUsed: "false" },
+  { requirementsInputs: {} },
   { flows: {} },
   { headSha: {} },
   { lease: {} },

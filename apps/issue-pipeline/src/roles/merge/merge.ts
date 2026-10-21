@@ -4,7 +4,7 @@
 // or the Reviewer's own checked integration of it), read fresh before each
 // mutation:
 //
-// - a change to the trusted inputs goes to the author, and a code head that
+// - changed trusted inputs go to their requirements owner, and a code head that
 //   moved by anything but the Reviewer's own integration goes back to
 //   review, which hardens it;
 // - a base that moved, a conflict and a failed check get the Reviewer's own

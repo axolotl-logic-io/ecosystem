@@ -1,6 +1,6 @@
 // The Reviewer's hardening, the review stage's one role. A writing session
 // owns the change's design, correctness and tests: it examines the
-// Developer's draft against the Gherkin, adds tests and fixes defects. The
+// Developer's draft against the trusted requirements, adds tests and fixes defects. The
 // pipeline then verifies the result (`verify-runs-repo-checks`), with fix
 // sessions within `maxCiFixes`, pushes it and checkpoints the exact revision
 // it hardened (`state.hardened`), which alone authorizes the merge
@@ -40,7 +40,7 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The trusted inputs moved past the Gherkin: the author goes first, and the
+// The trusted requirements moved: their owner goes first, and the
 // issue comes back to review.
 function toRequirements(state: IssueState, why: string): RoleEnd {
   const next = requirementsState(state, "review");
