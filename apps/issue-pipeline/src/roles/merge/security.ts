@@ -64,7 +64,7 @@ function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
   return securityStop(state, saved.finding);
 }
 
-// The merged result the review reads, prepared for exactly `revision`.
+// The candidate or historical merged result, prepared at exactly `revision`.
 async function prepare(
   ctx: RoleContext,
   revision: Revision,

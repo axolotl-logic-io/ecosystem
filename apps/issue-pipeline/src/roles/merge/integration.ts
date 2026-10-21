@@ -123,9 +123,8 @@ function receipt(
   );
 }
 
-// Integrates the hardened revision of `start` as `need` says. Ends waiting
-// with the receipt saved, so the next merge job merges the integrated
-// revision once its CI passes, or with the stop or return that came first.
+// Integrate the hardened revision as needed. Changed code returns to Review;
+// unchanged checked code waits for the next merge job.
 async function integrate(
   ctx: RoleContext,
   start: IssueState,

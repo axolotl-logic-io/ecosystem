@@ -1,6 +1,6 @@
 // The merge stage's session tasks: the Reviewer's resolution of a rebase
 // its own integration stopped on conflicts, and the read-only security
-// review of the merged result. Each holds this run's facts only; the
+// review of the candidate or historical merged result. Each holds facts; the
 // behaviour is the phase's prompt page (task-facts.ts). Pure.
 
 import { JOB_REPO } from "../../job/layout.ts";
@@ -17,8 +17,7 @@ interface PreparedReview {
 
 interface SecurityReviewFacts {
   prepared: PreparedReview;
-  // The merged result under review: GitHub's merge commit, or null when
-  // the change merged no code.
+  // The exact candidate or historical confirmed merged revision.
   revision: Revision;
   codeMerged: CodeMerged | null;
 }
@@ -79,7 +78,7 @@ function resultLines(facts: SecurityReviewFacts): string[] {
   ]);
 }
 
-// The task of the security review of the merged result.
+// Facts for a candidate Security review or historical merged recovery.
 function securityReviewTask(
   ctx: RoleContext,
   facts: SecurityReviewFacts,

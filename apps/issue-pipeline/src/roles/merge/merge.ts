@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState, Revision } from "../../state.ts";
+import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { opReply, readyPr } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
@@ -145,8 +146,7 @@ async function clearedCandidate(
     revision: current.revision,
     codeMerged: null,
     candidate: { target: ctx.cfg.baseBranch, baseSha: current.baseSha },
-    still: (after: Revision): boolean =>
-      after.code === code && after.inputs === current.revision.inputs,
+    still: (after: Revision): boolean => sameRevision(after, current.revision),
   });
   if (!clearance.ok) {
     return { end: clearance.end };

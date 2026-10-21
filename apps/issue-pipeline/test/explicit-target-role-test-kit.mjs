@@ -139,6 +139,7 @@ function postmergeOps(w) {
     "prepare-review": [
       {
         headSha: w.merged,
+        baseSha: w.parent,
         diffPath: "diff",
         bundlePath: "bundle",
         changedFiles: ["early.txt", "late.txt"],

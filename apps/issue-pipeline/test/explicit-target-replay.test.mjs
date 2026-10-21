@@ -137,7 +137,11 @@ test("external merged result needs independent postmerge hardening, not original
 test("independently hardened postmerge M retains external provenance and runs exact checks without merge", async () => {
   const w = world();
   const run = context(w, {
-    state: { hardened: result(w), codeMerged: { pr: PR, sha: w.merged } },
+    state: {
+      hardened: result(w),
+      codeMerged: { pr: PR, sha: w.merged },
+      security: null,
+    },
     ops: {
       ...postmergeOps(w),
       "current-revision": [

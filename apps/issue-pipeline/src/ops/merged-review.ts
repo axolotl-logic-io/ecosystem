@@ -44,7 +44,7 @@ function assertNoCodeChanges(wt: string): void {
   const status = gitIn(wt, args).trim();
   if (status !== "") {
     throw new OpsError(
-      `the checkout has uncommitted changes, so it can't be moved to the merged result; nothing was dropped:\n${tail(status, STATUS_LINES)}`,
+      `the checkout has uncommitted changes, so it cannot supply an exact review tree; nothing was dropped:\n${tail(status, STATUS_LINES)}`,
     );
   }
 }

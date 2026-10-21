@@ -1,8 +1,7 @@
 // Where the merge job sends an issue it doesn't merge, and the bound on its
 // own integrations. A changed input goes to the author, and a code head
-// that moved by anything but the Reviewer's own integration goes back
-// to review, which hardens it again: the merge never takes a revision no
-// hardening or integration of it checked. Each integration counts one sync,
+// that moved, including the Reviewer's own integration, goes back to review
+// for fresh hardening. Each integration counts one sync,
 // and the one past `maxSyncs` stops the issue instead.
 
 import { z } from "zod";

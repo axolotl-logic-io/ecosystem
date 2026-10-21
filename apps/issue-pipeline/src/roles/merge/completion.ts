@@ -1,9 +1,6 @@
-// The merge job's end: the security review of the merged result
-// (security.ts), then the completion, saved as done with what merged before
-// the finish op labels and closes the issue, so a finish that fails can be
-// run again from the saved completion. Nothing completes without a security
-// receipt that approves exactly what merged; a done issue back at merge
-// gets the finish op again only with such a receipt.
+// Complete only after deterministic result checks and bound Security clearance.
+// New own merges reuse premerge clearance; historical runs may recover missing
+// read-only Security. Save done before finish so cleanup can be replayed.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -82,7 +79,7 @@ async function completionSecurity(
   return await securityReviewed(ctx, state, result);
 }
 
-// The security review of the merged result `merged`, then the completion.
+// Bound Security clearance of `merged`, then durable completion.
 async function reviewedAndCompleted(
   ctx: RoleContext,
   state: IssueState,
