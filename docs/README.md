@@ -32,6 +32,8 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Coordination](reference/coordination.md): running stage jobs, reading their results and keeping concurrent work apart.
 
+[Caller](reference/caller.md): the prompt that makes an agent session the pipeline's caller, and its launcher.
+
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
 [Merge](reference/merge.md): merge order, the merge call, confirming the result and completion.
