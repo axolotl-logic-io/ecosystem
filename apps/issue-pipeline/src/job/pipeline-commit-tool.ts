@@ -9,19 +9,19 @@
 // session holds no token and never pushes itself.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import { run } from "../process.ts";
+import { Refusal } from "./commit-options.ts";
+import type { CommitScope } from "./commit-scope.ts";
+import { COMMIT_TOOL, commitScopeIn } from "./commit-scope.ts";
+import type { PreparedCommit } from "./commit-selection.ts";
+import { prepareCommit } from "./commit-selection.ts";
 import type { PushReply } from "./control-protocol.ts";
 import { requestPush } from "./control-protocol.ts";
-import type { CommitPlan, CommitScope } from "./pipeline-commit.ts";
-import {
-  COMMIT_TOOL,
-  commitArgsOf,
-  commitScopeIn,
-  sessionTrailer,
-} from "./pipeline-commit.ts";
+import { commitArgsOf, sessionTrailer } from "./pipeline-commit.ts";
 
 const PARAMS = z.object({ args: z.array(z.string()) });
 // git's own words for a commit with nothing in it, in the C locale.
@@ -80,11 +80,45 @@ function headOf(dir: string): string | null {
 }
 
 // Runs `argvs` in `dir` in turn, stopping at the first that fails.
-function runIn(dir: string, argvs: readonly string[][]): RepoResult {
+function runIn(
+  dir: string,
+  argvs: readonly string[][],
+  dryRun: boolean,
+): RepoResult {
+  if (!dryRun) {
+    return runCommands(dir, argvs, COMMIT_ENV);
+  }
+  // Even Git's status-like commit modes can refresh an index. Simulate the
+  // complete selection in a private copy, never in the checkout's index.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-commit-"));
+  try {
+    const index = path.join(tmp, "index");
+    const actual = run("git", ["rev-parse", "--git-path", "index"], {
+      cwd: dir,
+    }).stdout.trim();
+    const source = path.resolve(dir, actual);
+    if (fs.existsSync(source)) {
+      fs.copyFileSync(source, index);
+    }
+    return runCommands(
+      dir,
+      argvs,
+      new Map([...COMMIT_ENV, ["GIT_INDEX_FILE", index]]),
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function runCommands(
+  dir: string,
+  argvs: readonly string[][],
+  env: ReadonlyMap<string, string>,
+): RepoResult {
   const before = headOf(dir);
   let last = { code: 0, stdout: "", stderr: "" };
   for (const argv of argvs) {
-    last = run("git", argv, { cwd: dir, env: COMMIT_ENV, allowFail: true });
+    last = run("git", argv, { cwd: dir, env, allowFail: true });
     if (last.code !== 0) {
       break;
     }
@@ -124,23 +158,28 @@ function failed(reply: CommitReply): ToolResult {
       said.push(`git exited ${result.exitCode}: ${output}`);
     }
   }
-  const text = `pipeline_commit failed, nothing was pushed.\n${said.join("\n")}`;
+  for (const result of [reply.code, reply.wiki]) {
+    if (result?.sha) {
+      said.push(`Local commit retained: ${result.sha}`);
+    }
+  }
+  const text = `pipeline_commit failed, nothing was pushed. Files and staged work are retained.\n${said.join("\n")}`;
   return { content: [{ type: "text", text }], details: reply, isError: true };
 }
 
 // Commits as `plan` says in `scope`'s checkouts, and asks the job to push.
 async function commitAndPush(
-  plan: Extract<CommitPlan, { kind: "commit" }>,
+  plan: PreparedCommit,
   scope: CommitScope,
 ): Promise<ToolResult> {
   let code: RepoResult | null = null;
   if (plan.code !== null) {
-    code = runIn(path.join(scope.root, scope.repo.dir), [plan.code]);
+    code = runIn(path.join(scope.root, scope.repo.dir), plan.code, plan.dryRun);
   }
   const wikiDir = wikiFolder(scope);
   let wiki: RepoResult | null = null;
   if (plan.wiki !== null && wikiDir !== null) {
-    wiki = runIn(wikiDir, plan.wiki);
+    wiki = runIn(wikiDir, plan.wiki, plan.dryRun);
   }
   const unpushed: CommitReply = { code, wiki, pushed: "none", pushError: null };
   const committed = [code, wiki].some(
@@ -181,7 +220,18 @@ async function execute(_id: string, params: unknown): Promise<ToolResult> {
   if (plan.kind === "refused") {
     throw new Error(`pipeline_commit refused: ${plan.error}`);
   }
-  return await commitAndPush(plan, scope);
+  let prepared: PreparedCommit;
+  try {
+    prepared = prepareCommit(plan, scope);
+  } catch (error: unknown) {
+    if (error instanceof Refusal) {
+      throw new Error(`pipeline_commit refused: ${error.message}`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  return await commitAndPush(prepared, scope);
 }
 
 // Registers the pipeline_commit tool.
@@ -190,7 +240,7 @@ function pipelineCommit(pi: ExtensionApi): void {
     name: COMMIT_TOOL,
     label: "Pipeline Commit",
     description:
-      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "repo/src/a.ts"]. Paths, and a relative -F file, are relative to the job folder, your working directory: pathspecs start with repo/ (the code checkout) or docs/ (the wiki checkout), and with none, every checkout this stage may write is committed. A path into a checkout this stage only reads is refused. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
+      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "repo/src/a.ts"]. Paths, and a relative -F file, are relative to the job folder: selections start with repo/ (code) or docs/ (wiki). Explicit authorized paths, including new files, are staged by this tool; never run git add separately. Directories/patterns are checked on every descendant before either checkout changes. Absolute paths, traversal, pathspec magic, escaping symlinks and unauthorized paths are refused. With no selection, supported tracked-code commits and writable-wiki staging remain available; arbitrary untracked code is not staged. --dry-run changes no index, files or HEAD and requests no push. Failures retain files, staged work and any local commits; push failure is reported separately. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
     promptSnippet: "Commit and push your work (the only way to commit)",
     parameters: {
       type: "object",

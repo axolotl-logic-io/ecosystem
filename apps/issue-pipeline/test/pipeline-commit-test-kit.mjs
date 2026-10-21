@@ -26,7 +26,7 @@ const { openControl } = await import("../src/job/control.ts");
 const { pushServerOf } = await import("../src/job/commit-push.ts");
 const { openStatus, readStatus } = await import("../src/job/status.ts");
 const { COMMIT_SCOPE_ENV, commitEnvOf } = await import(
-  "../src/job/pipeline-commit.ts"
+  "../src/job/commit-scope.ts"
 );
 const { commitScopeOf } = await import("../src/job/roles.ts");
 const { default: pipelineCommit } = await import(
@@ -93,13 +93,17 @@ function configIn(tmp, wiki = true) {
   return cfg;
 }
 
-// The tool pipelineCommit registers on a fake pi API.
-/** @returns {any} */
-function registeredTool() {
+// Register the tool on a fake pi API, binding the session's environment.
+/** @param {Record<string, string>} env @returns {(args: string[]) => Promise<any>} */
+function committer(env) {
   /** @type {any[]} */
   const tools = [];
-  pipelineCommit({ registerTool: (tool) => tools.push(tool) });
-  return tools[0];
+  pipelineCommit({ registerTool: (registered) => tools.push(registered) });
+  const [tool] = tools;
+  return async (args) => {
+    setEnv(COMMIT_SCOPE_ENV, env[COMMIT_SCOPE_ENV] ?? "");
+    return await tool.execute("call", { args });
+  };
 }
 
 // Opens a job of `stage` for #7 of a repo of its own, with a wiki, whose
@@ -108,12 +112,18 @@ function registeredTool() {
 // the job's start, as a job started before the trailer (#402) sends it.
 /**
  * @param {Stage} stage
- * @param {{ withJobStart?: boolean, commits?: boolean, bindScope?: boolean }} [options]
+ * @param {{ withJobStart?: boolean, commits?: boolean, bindScope?: boolean, codeWritable?: boolean, allowed?: string[] }} [options]
  * @returns {Promise<Job>}
  */
 async function openJob(
   stage,
-  { withJobStart = true, commits = true, bindScope = true } = {},
+  {
+    withJobStart = true,
+    commits = true,
+    bindScope = true,
+    codeWritable = true,
+    allowed,
+  } = {},
 ) {
   const tmp = fs.mkdtempSync(path.join(root, "repo-"));
   const cfg = configIn(tmp);
@@ -137,9 +147,10 @@ async function openJob(
     prompts: [],
   });
   const control = await openControl(runDir, pushServerOf(cfg, job, status));
+  const sessionScope = scopeFor(stage, codeWritable, allowed);
   let boundScope = null;
   if (bindScope) {
-    boundScope = commitScopeOf(stage, true, true);
+    boundScope = sessionScope;
   }
   status.started({
     key: KEY,
@@ -155,8 +166,7 @@ async function openJob(
   if (withJobStart) {
     scope.jobStartedAt = JOB_STARTED_AT;
   }
-  const env = commitEnvOf({ ...scope, ...commitScopeOf(stage, true, true) });
-  const tool = registeredTool();
+  const env = commitEnvOf({ ...scope, ...sessionScope });
   return {
     cfg,
     root: dirs.root,
@@ -167,12 +177,18 @@ async function openJob(
     wikiOrigin: path.join(tmp, "wiki-origin.git"),
     runDir,
     socket: control.socket,
-    commit: async (args) => {
-      setEnv(COMMIT_SCOPE_ENV, env[COMMIT_SCOPE_ENV] ?? "");
-      return await tool.execute("call", { args });
-    },
+    commit: committer(env),
     close: () => control.close(),
   };
+}
+
+/** @param {Stage} stage @param {boolean} codeWritable @param {string[] | undefined} allowed */
+function scopeFor(stage, codeWritable, allowed) {
+  const scope = commitScopeOf(stage, true, codeWritable);
+  if (allowed !== undefined) {
+    scope.allowed = allowed;
+  }
+  return scope;
 }
 
 // The pushes job.json records under the job's launch.

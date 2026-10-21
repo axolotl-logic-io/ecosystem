@@ -19,13 +19,13 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { PromptProvenance } from "./brain.ts";
+import type { PathScope } from "./commit-scope.ts";
 import type {
   LaunchOutcome,
   LaunchPush,
   LaunchRecord,
 } from "./launch-record.ts";
 import { LAUNCH, startedRecord, withRecord } from "./launch-record.ts";
-import type { PathScope } from "./pipeline-commit.ts";
 import type { SessionPhase } from "./role-context.ts";
 
 const STATUS_FILE = "job.json";

@@ -20,9 +20,9 @@ import { rebaseInProgress } from "../rebase.ts";
 import type { Stage } from "../stages.ts";
 import { pushWikiBranch } from "../wiki.ts";
 import { readWriteAuthority } from "../write-authority.ts";
+import type { PathScope } from "./commit-scope.ts";
 import type { Pushed, PushReply } from "./control-protocol.ts";
 import type { LaunchPush } from "./launch-record.ts";
-import type { PathScope } from "./pipeline-commit.ts";
 import { appendRunLine } from "./run-log.ts";
 import type { JobStatus } from "./status.ts";
 

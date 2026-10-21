@@ -5,7 +5,7 @@
 // it. The context figures are records, never limits (`no-session-budgets`).
 
 import { z } from "zod";
-import { PATH_SCOPE } from "./pipeline-commit.ts";
+import { PATH_SCOPE } from "./commit-scope.ts";
 import type { ToolFailure } from "./raw-results.ts";
 import { recordFacts } from "./raw-results.ts";
 import { SESSION_PHASES } from "./role-context.ts";

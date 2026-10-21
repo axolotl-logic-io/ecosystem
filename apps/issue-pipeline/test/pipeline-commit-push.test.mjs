@@ -28,7 +28,7 @@ const REFUSED_WIKI_PUSH = /wiki push failed/u;
 const NOTHING_COMMITTED = /git exited 1: .*nothing/su;
 const HOOK_REFUSES = /pipeline_commit/u;
 const NO_COMMITTING_SESSION = /no session of this job that commits/u;
-const MISSING_PATHSPEC = /pathspec 'missing\.txt' did not match/u;
+const LOCAL_COMMIT_RETAINED = /Local commit retained:/u;
 const REFUSE_ALL = "#!/bin/sh\nexit 1\n";
 const HOOK_MODE = 0o755;
 // The key closeJobCheckout names the job's dropped patches by.
@@ -103,12 +103,21 @@ test("a git error in the code repo fails the call, and neither repo is pushed th
   const job = await openJob("implement");
   try {
     write(job.docs, "Page.md", "new\n");
-    const args = ["-m", "Both", "--", "docs/Page.md", "repo/missing.txt"];
+    write(job.repo, "new.txt", "new code\n");
+    fs.writeFileSync(path.join(job.repo, ".git/hooks/pre-commit"), REFUSE_ALL, {
+      mode: HOOK_MODE,
+    });
+    const args = ["-m", "Both", "--", "docs/Page.md", "repo/new.txt"];
     const result = await job.commit(args);
     assert.equal(result.isError, true);
     assert.notEqual(result.details.code.exitCode, 0);
     assert.equal(typeof result.details.wiki.sha, "string");
-    assert.match(result.content[0].text, MISSING_PATHSPEC);
+    assert.match(result.content[0].text, LOCAL_COMMIT_RETAINED);
+    assert.equal(git(job.repo, ["show", ":new.txt"]), "new code");
+    assert.equal(
+      fs.readFileSync(path.join(job.repo, "new.txt"), "utf8"),
+      "new code\n",
+    );
     assert.equal(refOf(job.origin, BRANCH), "");
     assert.equal(refOf(job.wikiOrigin, BRANCH), "");
     assert.deepEqual(pushesOf(job), []);

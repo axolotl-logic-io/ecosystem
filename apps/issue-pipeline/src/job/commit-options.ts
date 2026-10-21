@@ -13,11 +13,22 @@ const REFUSED_LONG: readonly string[] = [
   "date",
   "reset-author",
   "pathspec-from-file",
+  "include",
+  "no-only",
+  "interactive",
+  "patch",
+  "no-post-rewrite",
+  "no-dry-run",
+  "no-short",
+  "no-long",
+  "no-porcelain",
+  "no-null",
 ];
 // Short options that are refused: -n is --no-verify.
-const REFUSED_SHORT = "n";
+const REFUSED_SHORT = "nip";
 // Long options that take their value as the next argument when it isn't
 // attached with `=`.
+const DRY_RUN_OPTIONS = ["dry-run", "short", "long", "porcelain", "null"];
 const LONG_WITH_VALUE: readonly string[] = [
   "message",
   "file",
@@ -76,7 +87,8 @@ function longNameOf(name: string): string {
   if (known.length === 1 && known[0] !== undefined) {
     return known[0];
   }
-  return name;
+  const dry = DRY_RUN_OPTIONS.find((full) => full.startsWith(name));
+  return dry ?? name;
 }
 
 // Reads the long option at `args[at]` into `read`, and returns how many
@@ -84,7 +96,7 @@ function longNameOf(name: string): string {
 function readLong(args: readonly string[], at: number, read: ReadArgs): Used {
   const { name = "", value } = LONG_OPTION.exec(args[at] ?? "")?.groups ?? {};
   const full = longNameOf(name);
-  if (full === "dry-run") {
+  if (DRY_RUN_OPTIONS.includes(full)) {
     read.dryRun = true;
   }
   if (full === "signoff") {
@@ -139,7 +151,7 @@ function readShort(args: readonly string[], at: number, read: ReadArgs): Used {
     const flag = cluster.charAt(index);
     const rest = cluster.slice(index + 1);
     if (REFUSED_SHORT.includes(flag)) {
-      refuse(`-${flag} is not allowed (--no-verify)`);
+      refuse(`-${flag} is not allowed (hook or selection bypass)`);
     }
     if (SHORT_OPTIONAL_VALUE.includes(flag)) {
       break;
@@ -153,12 +165,19 @@ function readShort(args: readonly string[], at: number, read: ReadArgs): Used {
       }
       return 1;
     }
-    if (flag === "s") {
-      read.message.push(["-s"]);
-    }
+    shortFlag(flag, read);
   }
   read.options.push(cluster);
   return 1;
+}
+
+function shortFlag(flag: string, read: ReadArgs): void {
+  if (flag === "z") {
+    read.dryRun = true;
+  }
+  if (flag === "s") {
+    read.message.push(["-s"]);
+  }
 }
 
 function readArgs(args: readonly string[]): ReadArgs {

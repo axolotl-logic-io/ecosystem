@@ -9,47 +9,10 @@
 // tool its scope. It runs nothing; the tool (pipeline-commit-tool.ts) runs
 // the argv it returns.
 
-import { z } from "zod";
 import { matchAny } from "../globs.ts";
 import type { ReadArgs } from "./commit-options.ts";
 import { Refusal, readArgs, refuse } from "./commit-options.ts";
-
-// The tool's name, as pi's --tools names it.
-const COMMIT_TOOL = "pipeline_commit";
-// The session variable that carries the tool's scope, as JSON.
-const COMMIT_SCOPE_ENV = "ISSUE_PIPELINE_COMMIT_SCOPE";
-const ACCESS = z.enum(["read", "write"]);
-// One of the job's checkouts: its folder in the job's folder, and the
-// stage's access to it.
-const CHECKOUT_SCOPE = z.object({ dir: z.string(), access: ACCESS });
-// A session's commit scope: the job's control socket, the launch it is, the
-// job's start, the job's folder, its code checkout, its wiki checkout (null
-// with no wiki), and the code globs, relative to the code checkout, it may
-// commit. A job started before the trailer (#402) sends no `jobStartedAt`,
-// and its sessions commit without the trailer.
-const PATH_SCOPE = z.object({
-  repo: CHECKOUT_SCOPE,
-  docs: CHECKOUT_SCOPE.nullable(),
-  allowed: z.array(z.string()).readonly(),
-});
-const COMMIT_SCOPE = PATH_SCOPE.extend({
-  socket: z.string(),
-  key: z.string(),
-  jobStartedAt: z.string().optional(),
-  root: z.string(),
-});
-
-type Access = z.infer<typeof ACCESS>;
-type CheckoutScope = z.infer<typeof CHECKOUT_SCOPE>;
-type CommitScope = z.infer<typeof COMMIT_SCOPE>;
-
-// What a session may commit: its code checkout, its wiki checkout (null with
-// no wiki) and the code globs it may commit (none: wiki only).
-interface PathScope {
-  repo: CheckoutScope;
-  docs: CheckoutScope | null;
-  allowed: readonly string[];
-}
+import type { CheckoutScope, CommitScope, PathScope } from "./commit-scope.ts";
 
 type CheckoutName = "repo" | "docs";
 
@@ -80,7 +43,12 @@ type CommitPlan =
 // folder or uses pathspec magic.
 function checkedPath(spec: string): string {
   const segments = spec.split("/").filter((s) => s !== "" && s !== ".");
-  if (spec.startsWith("/") || spec.startsWith(":") || segments.includes("..")) {
+  if (
+    spec.startsWith("/") ||
+    segments[0]?.startsWith(":") ||
+    segments.includes("..") ||
+    spec.includes("\0")
+  ) {
     return refuse(`${spec}: only paths inside the checkout may be committed`);
   }
   return segments.join("/") || ".";
@@ -108,12 +76,16 @@ function routeOf(spec: string, scope: PathScope): Routed {
     );
   }
   const [name, { dir, access }] = found;
+  const relative = checkedPath(rest.join("/"));
+  if (relative.split("/").includes(".git")) {
+    refuse(`${spec}: checkout metadata may not be committed`);
+  }
   if (access !== "write") {
     refuse(
       `${spec}: this stage has ${access} access to ${CHECKOUT_LABELS[name]} (${dir}/); it may not commit there`,
     );
   }
-  return { checkout: name, path: rest.join("/") || "." };
+  return { checkout: name, path: relative };
 }
 
 // A message file's path as checkout folder `dir`, inside the job's folder,
@@ -197,7 +169,14 @@ function planOf(
     const routed = routeOf(spec, scope);
     if (routed.checkout === "docs") {
       wikiPaths.push(routed.path);
-    } else if (matchAny(scope.allowed, routed.path)) {
+    } else if (
+      scope.allowed.length > 0 &&
+      (matchAny(scope.allowed, routed.path) ||
+        routed.path === "." ||
+        routed.path.includes("*") ||
+        routed.path.includes("?") ||
+        scope.allowed.some((glob) => glob.startsWith(`${routed.path}/`)))
+    ) {
       codePaths.push(routed.path);
     } else {
       refuse(`${spec}: outside the paths this session may commit`);
@@ -252,38 +231,5 @@ function commitArgsOf(
   }
 }
 
-// The session variables that give the tool `scope`.
-function commitEnvOf(scope: CommitScope): Record<string, string> {
-  return Object.fromEntries([[COMMIT_SCOPE_ENV, JSON.stringify(scope)]]);
-}
-
-// The scope in a session's variables, or null when it has none or it is
-// malformed.
-function commitScopeIn(
-  env: Readonly<Record<string, string | undefined>>,
-): CommitScope | null {
-  const text = new Map(Object.entries(env)).get(COMMIT_SCOPE_ENV);
-  if (text === undefined) {
-    return null;
-  }
-  try {
-    const parsed = COMMIT_SCOPE.safeParse(JSON.parse(text));
-    if (parsed.success) {
-      return parsed.data;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export type { Access, CommitPlan, CommitScope, PathScope };
-export {
-  COMMIT_SCOPE_ENV,
-  COMMIT_TOOL,
-  commitArgsOf,
-  commitEnvOf,
-  commitScopeIn,
-  PATH_SCOPE,
-  sessionTrailer,
-};
+export type { CommitPlan };
+export { commitArgsOf, sessionTrailer };

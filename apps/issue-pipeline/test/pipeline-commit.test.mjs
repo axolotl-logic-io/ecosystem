@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { commitArgsOf, sessionTrailer } from "../src/job/pipeline-commit.ts";
 
-/** @typedef {import("../src/job/pipeline-commit.ts").PathScope} PathScope */
+/** @typedef {import("../src/job/commit-scope.ts").PathScope} PathScope */
 
 /**
  * @param {"read" | "write"} repo

@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { AGENT_DIR } from "../pipeline-root.ts";
-import { COMMIT_TOOL } from "./pipeline-commit.ts";
+import { COMMIT_TOOL } from "./commit-scope.ts";
 
 const FRONTMATTER =
   /^---\r?\n(?<head>[\s\S]*?)\r?\n---\r?\n?(?<body>[\s\S]*)$/u;

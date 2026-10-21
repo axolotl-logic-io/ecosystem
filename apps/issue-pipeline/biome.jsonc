@@ -71,6 +71,7 @@
         "src/job/control.ts",
         "src/job/control-protocol.ts",
         "src/job/pipeline-commit-tool.ts",
+        "src/job/commit-selection.ts",
         "src/job/checkout.ts",
         "src/job/checkout-close.ts",
         "src/job/code-recovery.ts",

@@ -14,8 +14,8 @@ import { paths } from "../config.ts";
 import type { Stage } from "../stages.ts";
 import type { JobDirs } from "./checkout.ts";
 import { closeJobCheckout } from "./checkout-close.ts";
+import type { Access } from "./commit-scope.ts";
 import type { RunOp } from "./ops-request.ts";
-import type { Access } from "./pipeline-commit.ts";
 import type { JobLine } from "./role-end.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 

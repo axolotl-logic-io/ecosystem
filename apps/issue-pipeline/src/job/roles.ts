@@ -16,9 +16,9 @@ import { paths } from "../config.ts";
 import type { ModelRole } from "../config-legacy.ts";
 import type { JobRolesConfig } from "../config-schema.ts";
 import type { Stage } from "../stages.ts";
+import type { Access, PathScope } from "./commit-scope.ts";
+import { COMMIT_SCOPE_ENV } from "./commit-scope.ts";
 import { JOB_DOCS, JOB_REPO } from "./layout.ts";
-import type { Access, PathScope } from "./pipeline-commit.ts";
-import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
 import type { AgentName, SessionPhase, SessionSpec } from "./role-context.ts";
 import { runtimeBoundary } from "./runtime-policy.ts";
 

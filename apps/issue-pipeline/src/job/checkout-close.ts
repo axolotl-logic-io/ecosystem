@@ -11,9 +11,9 @@ import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
+import type { Access } from "./commit-scope.ts";
 import type { RecoveryOrigin, RecoverySnapshot } from "./dropped-patch.ts";
 import { saveDroppedPatch, saveRecovery } from "./dropped-patch.ts";
-import type { Access } from "./pipeline-commit.ts";
 
 interface DroppedChanges {
   lost: readonly string[];
