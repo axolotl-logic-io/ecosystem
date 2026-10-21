@@ -1,8 +1,8 @@
 // @ts-check
 // The ready-pr op (src/ops/ready-pr.ts), the only op that marks an issue's
-// draft PR ready: only for the merge authorization the Reviewer's hardening
-// (or its own integration of the hardened revision) gives, saved at review
-// or merge before the call, holding for the revision read fresh, with
+// draft PR ready: only for the exact revision the Reviewer's hardening
+// authorizes, saved at review or merge before the call. Integration history
+// grants no authorization. Hardening must hold for the revision read fresh, with
 // GitHub showing the PR open at the authorized head. No review verdict
 // stands in for hardening. Safe to repeat; a failed ready fails the op.
 import assert from "node:assert/strict";
@@ -11,8 +11,10 @@ import { setCurrentRevision } from "./fake-ops-publish-revision.mjs";
 import {
   approvedState,
   fakeGh,
+  hardenedApproval,
   PR,
   REPO,
+  readyView,
   savedListing,
   world,
   writes,
@@ -23,7 +25,6 @@ const { readyPr: readyPrOp } = await import("../../src/ops/ready-pr.ts");
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @typedef {import("../../src/state.ts").Revision} Revision */
 /** @typedef {import("../../src/state.ts").IssueState} IssueState */
-/** @typedef {import("../fake-gh.mjs").GhReply} GhReply */
 
 const READY_CALL = ["pr", "ready", String(PR), "-R", REPO];
 const NO_HARDENED_AUTHORIZATION = /no hardened authorization/u;
@@ -40,17 +41,6 @@ function reviewedOf(w) {
   return { code: w.sha, inputs: "inputs-1" };
 }
 
-// Issue #7 hardened (and approved, as a legacy review) at `approved`, saved
-// at stage review unless `extra` says otherwise.
-/** @param {Revision} approved @param {object} [extra] @returns {IssueState} */
-function hardenedApproval(approved, extra = {}) {
-  return approvedState(approved, {
-    stage: "review",
-    hardened: approved,
-    ...extra,
-  });
-}
-
 /** @param {Revision} revision @returns {void} */
 function current(revision) {
   setCurrentRevision({
@@ -58,22 +48,6 @@ function current(revision) {
     baseSha: "base",
     pr: { number: PR, state: "OPEN", mergeCommit: null, headSha: "x" },
   });
-}
-
-/** @param {object} view @returns {GhReply} */
-function readyView(view) {
-  return {
-    when: `pr view ${PR}`,
-    stdout: JSON.stringify({
-      number: PR,
-      state: "OPEN",
-      isDraft: true,
-      headRefName: "agent/issue-7",
-      isCrossRepository: false,
-      baseRefName: "integration",
-      ...view,
-    }),
-  };
 }
 
 /** @param {World} w @param {IssueState} state @returns {unknown} */
@@ -109,7 +83,7 @@ test("ready-pr on a PR already ready succeeds again without a write, from a merg
   assert.deepEqual(writes(), []);
 });
 
-test("ready-pr marks the head the Reviewer's own integration checked from the hardened revision ready", () => {
+test("ready-pr requires fresh hardening after integration changes the head", () => {
   const w = world();
   const reviewed = { ...reviewedOf(w), code: "c0ffee" };
   const integrated = reviewedOf(w);
@@ -118,14 +92,19 @@ test("ready-pr marks the head the Reviewer's own integration checked from the ha
     hardened: reviewed,
     integration: { reviewed, revision: integrated },
   });
+  assert.notEqual(reviewed.code, integrated.code);
   current(integrated);
+  fakeGh.reply([savedListing(state), readyView({ headRefOid: w.sha })]);
+  assert.throws(() => readyPr(w, state), NOT_CURRENT);
+  assert.deepEqual(writes(), []);
+  const fresh = { ...state, hardened: integrated };
   fakeGh.reply([
-    savedListing(state),
+    savedListing(fresh),
     readyView({ headRefOid: w.sha }),
     { when: "pr ready 50" },
     readyView({ headRefOid: w.sha, isDraft: false }),
   ]);
-  assert.deepEqual(readyPr(w, state), { pr: PR, ready: true });
+  assert.deepEqual(readyPr(w, fresh), { pr: PR, ready: true });
   assert.deepEqual(writes(), [READY_CALL]);
 });
 
@@ -189,13 +168,6 @@ test("ready-pr refuses an authorization not saved first at review or merge, writ
   const savedStates = [
     { ...state, hardened: null },
     { ...state, hardened: { ...approved, code: "0ld" } },
-    {
-      ...state,
-      integration: {
-        reviewed: approved,
-        revision: { ...approved, code: "c2" },
-      },
-    },
     { ...state, stage: "implement" },
     { ...state, pr: 51 },
   ];
@@ -210,6 +182,27 @@ test("ready-pr refuses an authorization not saved first at review or merge, writ
   ]);
   assert.throws(() => readyPr(w, state), NOT_SAVED);
   assert.deepEqual(writes(), []);
+});
+
+test("ready-pr accepts unchanged saved hardening despite different integration history", () => {
+  const w = world();
+  const approved = reviewedOf(w);
+  const state = hardenedApproval(approved);
+  const saved = {
+    ...state,
+    integration: { reviewed: approved, revision: { ...approved, code: "c2" } },
+  };
+  assert.notDeepEqual(saved.integration, state.integration);
+  assert.deepEqual(saved.hardened, state.hardened);
+  current(approved);
+  fakeGh.reply([
+    savedListing(saved),
+    readyView({ headRefOid: w.sha }),
+    { when: "pr ready 50" },
+    readyView({ headRefOid: w.sha, isDraft: false }),
+  ]);
+  assert.deepEqual(readyPr(w, state), { pr: PR, ready: true });
+  assert.deepEqual(writes(), [READY_CALL]);
 });
 
 test("ready-pr refuses a revision that moved since hardening, writing nothing", () => {

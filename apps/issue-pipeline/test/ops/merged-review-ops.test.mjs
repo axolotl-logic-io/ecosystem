@@ -47,7 +47,7 @@ const REVIEW_REPLY = z.looseObject({
 });
 const ERROR_REPLY = z.object({ ok: z.literal(false), error: z.string() });
 const UNCOMMITTED =
-  /uncommitted changes, so it can't be moved to the merged result; nothing was dropped/u;
+  /uncommitted changes, so it cannot supply an exact review tree; nothing was dropped/u;
 const CHANGES_NOTHING = /changes nothing against its first parent/u;
 const NOT_AT_MERGE = /not the merge commit/u;
 const CODE_MERGED_REFUSAL = /code merged, so push can't push code/u;

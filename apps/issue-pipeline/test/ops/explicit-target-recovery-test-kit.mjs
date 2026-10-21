@@ -23,6 +23,9 @@ import {
   REPO,
 } from "../explicit-target-world-test-kit.mjs";
 
+import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
+
+const { merge } = await import("../../src/ops/merge.ts");
 const { stateBody, readWriteState } = await import("../../src/saved-state.ts");
 const { signed } = await import("../../src/comments.ts");
 const { mergedText } = await import("../../src/ops/merge-comment.ts");
@@ -38,6 +41,26 @@ function confirmation(w) {
 /** @returns {string[][]} */
 function posts() {
   return calls().filter((args) => args[0] === "git" && args.includes("push"));
+}
+/** @param {World} w */
+function expectedTargetPush(w) {
+  return {
+    origin: w.origin,
+    ref: `refs/heads/${w.cfg.baseBranch}`,
+    old: w.base,
+    head: w.head,
+  };
+}
+/** @param {World} w @param {readonly number[]} waits */
+function staleConfirmation(w, waits) {
+  const clock = confirmationClock();
+  script(w, [
+    ...prechecks(w),
+    post(w),
+    ...waits.map(() => prStep(w, { state: "CLOSED", mergeCommit: null })),
+  ]);
+  const reply = merge(w.cfg, request(w), clock);
+  return { clock, reply };
 }
 /** @param {World} w @param {object} payload */
 function child(w, payload) {
@@ -114,8 +137,10 @@ function mergeComment(w) {
 export {
   child,
   confirmation,
+  expectedTargetPush,
   interruptAfterResponse,
   mergeComment,
   posts,
   retainLegacyAttempt,
+  staleConfirmation,
 };

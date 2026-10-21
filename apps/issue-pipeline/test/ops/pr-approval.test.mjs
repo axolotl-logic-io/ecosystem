@@ -15,6 +15,7 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
+const { policyRevision } = await import("../../src/project-policy.ts");
 const { approvePr } = await import("../../src/ops/pr-approval.ts");
 const { merge } = await import("../../src/ops/merge.ts");
 const APPROVAL_REFUSED = /approval refused/u;
@@ -49,7 +50,11 @@ for (const result of [
 ]) {
   test(`invalid approval refuses before branch merge: ${JSON.stringify(result)}`, () => {
     const w = world();
-    const revision = { code: w.sha, inputs: "inputs-1" };
+    const revision = {
+      code: w.sha,
+      inputs: "inputs-1",
+      ...policyRevision(w.cfg),
+    };
     const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
     setCurrentRevision({ revision, baseSha: base, pr: null });
     const response = { ...result };
@@ -85,12 +90,20 @@ for (const result of [
     assert.ok(
       writes().some((call) => call.includes("repos/o/r/pulls/50/reviews")),
     );
+    assert.equal(
+      sh(`git --git-dir=${w.root}/origin.git rev-parse refs/heads/integration`),
+      base,
+    );
   });
 }
 
 test("failed approval never attempts a branch merge", () => {
   const w = world();
-  const revision = { code: w.sha, inputs: "inputs-1" };
+  const revision = {
+    code: w.sha,
+    inputs: "inputs-1",
+    ...policyRevision(w.cfg),
+  };
   const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
   setCurrentRevision({ revision, baseSha: base, pr: null });
   fakeGh.reply([
@@ -109,6 +122,13 @@ test("failed approval never attempts a branch merge", () => {
         revision,
       }),
     APPROVAL_REFUSED,
+  );
+  assert.ok(
+    writes().some((call) => call.includes("repos/o/r/pulls/50/reviews")),
+  );
+  assert.equal(
+    sh(`git --git-dir=${w.root}/origin.git rev-parse refs/heads/integration`),
+    base,
   );
   assert.equal(
     writes().some((call) => call.includes("repos/o/r/merges")),

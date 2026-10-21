@@ -13,8 +13,11 @@ import {
   commentWriteReplies,
 } from "../gh-mutation-fixtures.mjs";
 import { approvalReply } from "./merge-op-fixtures.mjs";
-import { mergeWorld } from "./ops-built-merge-fixtures.mjs";
-import { releaseReplies } from "./ops-release-test-kit.mjs";
+import {
+  candidateState,
+  mergeWorld,
+  releaseAndCalls,
+} from "./ops-built-merge-fixtures.mjs";
 import {
   ask,
   calls,
@@ -142,11 +145,12 @@ function mergeAndRelease(initial, ops) {
   ]);
   const asked = ask(w, { op: "current-revision", number: ISSUE, state }, ops);
   const current = CURRENT.parse(JSON.parse(asked));
+  const authorized = candidateState(state, current.revision);
   fakeGh.reply([
     collaboratorReply("o/r", "alice"),
     issueListing(),
     {
-      ...stateListing(ISSUE, { ...state, hardened: current.revision }),
+      ...stateListing(ISSUE, authorized),
       keep: true,
       persistState: true,
     },
@@ -159,7 +163,7 @@ function mergeAndRelease(initial, ops) {
   const req = {
     op: "merge",
     number: ISSUE,
-    state: { ...state, hardened: current.revision },
+    state: authorized,
     expectedSha: w.sha,
     expectedBase: base,
     revision: current.revision,
@@ -170,17 +174,16 @@ function mergeAndRelease(initial, ops) {
     sh(`git --git-dir=${w.root}/origin.git rev-parse integration`),
   );
   const mergeCalls = calls().map((args) => constant(args.join(" ")));
-  fakeGh.reply(
-    releaseReplies({ ...state, codeMerged: { pr: PR, sha: w.sha } }),
-  );
-  const release_ = { op: "release", number: ISSUE, lane: LANE, sweepId: SWEEP };
-  const released = ask(
-    w,
-    { ...release_, state: { ...state, lease: null } },
-    ops,
-  );
-  const releaseCalls = calls().map((args) => constant(args.join(" ")));
-  return { merged, mergeCalls, released, releaseCalls, target };
+  const { released, releaseCalls } = releaseAndCalls(w, state, ops, constant);
+  return {
+    merged,
+    mergeCalls,
+    released,
+    releaseCalls,
+    target,
+    candidateHead: constant(current.revision.code),
+    base: constant(base),
+  };
 }
 
 test("the built ops merges and releases as src/ops.ts does", () => {
@@ -191,7 +194,10 @@ test("the built ops merges and releases as src/ops.ts does", () => {
   assert.equal(built.status, 0, built.stderr);
   const fromSrc = mergeAndRelease(world(), undefined);
   assert.match(fromSrc.merged, MERGED_TRUE);
+  assert.equal(fromSrc.candidateHead, "<sha>");
+  assert.equal(fromSrc.base, "<base>");
   assert.equal(fromSrc.target, "<sha>");
+  assert.notEqual(fromSrc.target, fromSrc.base);
   assert.equal(
     z.looseObject({ ok: z.literal(true) }).parse(JSON.parse(fromSrc.released))
       .ok,
@@ -202,5 +208,10 @@ test("the built ops merges and releases as src/ops.ts does", () => {
     "it never calls the obsolete REST merge endpoint",
   );
   const fromBuild = mergeAndRelease(world(), path.join(out, "ops.mjs"));
+  assert.match(fromBuild.merged, MERGED_TRUE);
+  assert.equal(fromBuild.candidateHead, "<sha>");
+  assert.equal(fromBuild.base, "<base>");
+  assert.equal(fromBuild.target, "<sha>");
+  assert.notEqual(fromBuild.target, fromBuild.base);
   assert.deepEqual(fromBuild, fromSrc);
 });

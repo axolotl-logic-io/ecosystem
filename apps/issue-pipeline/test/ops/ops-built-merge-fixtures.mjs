@@ -2,8 +2,10 @@
 // Real multi-commit feature and ordered result for source/bundle parity.
 import fs from "node:fs";
 import path from "node:path";
-import { sh } from "./ops-test-kit.mjs";
+import { releaseReplies } from "./ops-release-test-kit.mjs";
+import { ask, calls, fakeGh, ISSUE, LANE, SWEEP, sh } from "./ops-test-kit.mjs";
 
+const PR = 50;
 const GIT_USER = "-c user.email=a@b -c user.name=a";
 
 /** @param {import("./ops-test-kit.mjs").World} w @returns {import("./ops-test-kit.mjs").World & { mergeSha: string }} */
@@ -26,4 +28,45 @@ function mergeWorld(w) {
   return { ...w, sha, mergeSha };
 }
 
-export { mergeWorld };
+/**
+ * @param {Record<string, unknown>} state
+ * @param {import("../../src/state.ts").Revision} revision
+ * @returns {Record<string, unknown>}
+ */
+function candidateState(state, revision) {
+  const { hardenedTarget } = state;
+  return {
+    ...state,
+    hardened: revision,
+    verifiedSha: revision.code,
+    security: {
+      revision,
+      commentId: 901,
+      finding: null,
+      phase: "candidate",
+      target: hardenedTarget,
+    },
+  };
+}
+
+/**
+ * @param {import("./ops-test-kit.mjs").World} w
+ * @param {Record<string, unknown>} state
+ * @param {string | undefined} ops
+ * @param {(text: string) => string} constant
+ */
+function releaseAndCalls(w, state, ops, constant) {
+  fakeGh.reply(
+    releaseReplies({ ...state, codeMerged: { pr: PR, sha: w.sha } }),
+  );
+  const release_ = { op: "release", number: ISSUE, lane: LANE, sweepId: SWEEP };
+  const released = ask(
+    w,
+    { ...release_, state: { ...state, lease: null } },
+    ops,
+  );
+  const releaseCalls = calls().map((args) => constant(args.join(" ")));
+  return { released, releaseCalls };
+}
+
+export { candidateState, mergeWorld, releaseAndCalls };

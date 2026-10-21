@@ -11,11 +11,13 @@ import {
   BRANCH,
   git,
   ISSUE,
+  PR,
 } from "../explicit-target-world-test-kit.mjs";
 import { OPS } from "../ops-run-test-kit.mjs";
 import { posts } from "./explicit-target-recovery-test-kit.mjs";
 import { confirmedLostResponse } from "./fast-forward-save-state-test-kit.mjs";
 
+const { policyRevision } = await import("../../src/project-policy.ts");
 const { readWriteState } = await import("../../src/saved-state.ts");
 
 for (const finding of [
@@ -23,8 +25,19 @@ for (const finding of [
   { category: /** @type {const} */ ("rights"), reason: "unsafe result" },
 ]) {
   for (const op of ["save-state", "release"]) {
-    test(`framed ${op} child preserves lost-response FF evidence and decision: ${JSON.stringify(finding)}`, () => {
-      const { w, confirmed, security } = confirmedLostResponse(finding);
+    test(`framed ${op} child preserves lost-response FF evidence and decision: ${JSON.stringify(finding)}`, async () => {
+      const { w, confirmed, resultSecurity, reviewed } =
+        await confirmedLostResponse(finding);
+      assert.ok(w.state.security);
+      assert.equal(w.state.security.phase, "candidate");
+      assert.deepEqual(reviewed.security, w.state.security);
+      assert.deepEqual(reviewed.resultSecurity, {
+        revision: { ...w.revision, ...policyRevision(w.cfg) },
+        target: w.state.hardenedTarget,
+        commentId: PR,
+        finding,
+      });
+      assert.notEqual(resultSecurity.revision.policy, w.revision.policy);
       const request = {
         op,
         config: path.join(w.place, "config.json"),
@@ -49,7 +62,8 @@ for (const finding of [
       });
       const retained = readWriteState(w.cfg, ISSUE);
       assert.deepEqual(retained.merged, confirmed.merged);
-      assert.deepEqual(retained.security, security);
+      assert.deepEqual(retained.security, w.state.security);
+      assert.deepEqual(retained.resultSecurity, resultSecurity);
       assert.deepEqual(retained.codeMerged, confirmed.codeMerged);
       assert.deepEqual(retained.mergeAttempt, confirmed.mergeAttempt);
       assert.equal(retained.mergeAttempt?.result, null);

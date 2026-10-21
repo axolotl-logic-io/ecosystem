@@ -81,7 +81,6 @@ function prechecks(w) {
         login: w.cfg.mergeAccount,
       }),
     },
-    ...candidateInputs(w),
   ];
 }
 /** @param {World} w @returns {GhStep[]} */

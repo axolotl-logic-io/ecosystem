@@ -10,12 +10,15 @@ import {
   request,
   script,
 } from "../explicit-target-test-kit.mjs";
-import { ISSUE, world } from "../explicit-target-world-test-kit.mjs";
+import { git, ISSUE, world } from "../explicit-target-world-test-kit.mjs";
+import { targetPushes } from "../fake-pipeline-flow-gh-native.mjs";
 import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 import {
   confirmation,
+  expectedTargetPush,
   mergeComment,
   posts,
+  staleConfirmation,
 } from "./explicit-target-recovery-test-kit.mjs";
 
 const { merge } = await import("../../src/ops/merge.ts");
@@ -36,6 +39,7 @@ const CLIPPED_WAIT_MS = 5000;
 const LATER_RUN_DELAY_MS = 60_000;
 const CUSTOM_DEADLINE_SECONDS = 9;
 const CUSTOM_WAIT_SECONDS = 3;
+const CUSTOM_READS = 4;
 const WAITS_TO_LAG = [
   SECOND_MS,
   SECOND_WAIT_MS,
@@ -60,6 +64,12 @@ function approvalCount() {
   return calls().filter((args) => args.includes("event=APPROVE")).length;
 }
 
+function elapsedWorld() {
+  const w = world({ fastForward: true });
+  git(w.origin, ["config", "core.logAllRefUpdates", "true"]);
+  return w;
+}
+
 for (const delay of [
   {
     lag: LONG_LAG_MS,
@@ -76,7 +86,11 @@ for (const delay of [
   { lag: SHORT_LAG_MS, name: "unreadable metadata", extra: {}, code: 1 },
 ]) {
   test(`${delay.name} for ${delay.lag}ms confirms with default spaced waits and one approval and POST`, () => {
-    const w = world({ fastForward: true });
+    const w = elapsedWorld();
+    assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.base);
+    assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), []);
+    assert.ok(w.state.security);
+    assert.equal(w.state.security.phase, "candidate");
     w.cfg.mergeConfirmation = defaults;
     const clock = confirmationClock();
     const expectedWaits = [];
@@ -110,7 +124,11 @@ for (const delay of [
     assert.equal(saved.merged?.code, w.merged);
     assert.deepEqual(saved.hardened, w.state.hardened);
     assert.deepEqual(saved.integration, w.state.integration);
-    assert.equal(saved.security, null);
+    assert.deepEqual(saved.security, w.state.security);
+    assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.head);
+    assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), [
+      expectedTargetPush(w),
+    ]);
     assert.equal(posts().length, 1);
     assert.equal(approvalCount(), 1);
     consumed();
@@ -118,17 +136,13 @@ for (const delay of [
 }
 
 test("default deadline stops durably but later matching evidence recovers the same saved attempt read-only", () => {
-  const w = world({ fastForward: true });
+  const w = elapsedWorld();
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.base);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), []);
+  assert.ok(w.state.security);
+  assert.equal(w.state.security.phase, "candidate");
   w.cfg.mergeConfirmation = defaults;
-  const clock = confirmationClock();
-  script(w, [
-    ...prechecks(w),
-    post(w),
-    ...WAITS_TO_DEADLINE.map(() =>
-      prStep(w, { state: "CLOSED", mergeCommit: null }),
-    ),
-  ]);
-  const reply = merge(w.cfg, request(w), clock);
+  const { clock, reply } = staleConfirmation(w, WAITS_TO_DEADLINE);
   assert.equal(reply.merged, false);
   assert.ok("reason" in reply);
   assert.match(reply.reason, BOUNDED);
@@ -139,8 +153,12 @@ test("default deadline stops durably but later matching evidence recovers the sa
   assert.equal(expired.mergeAttempt?.authorized.code, w.head);
   assert.equal(expired.mergeAttempt?.reads, WAITS_TO_DEADLINE.length);
   assert.equal(expired.merged, null);
-  assert.equal(expired.security, null);
+  assert.deepEqual(expired.security, w.state.security);
   assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.head);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), [
+    expectedTargetPush(w),
+  ]);
   consumed();
 
   // This is a separate, explicitly caller-authorized run, not an automatic
@@ -161,13 +179,20 @@ test("default deadline stops durably but later matching evidence recovers the sa
   assert.equal(saved.merged?.code, w.merged);
   assert.deepEqual(saved.hardened, expired.hardened);
   assert.deepEqual(saved.integration, expired.integration);
+  assert.deepEqual(saved.security, w.state.security);
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.head);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), [
+    expectedTargetPush(w),
+  ]);
   assert.equal(posts().length, 1);
   assert.equal(approvalCount(), 1);
   consumed();
 });
 
 test("evidence reads finishing after the deadline retain landed truth for a later run, not a late own receipt", () => {
-  const w = world({ fastForward: true });
+  const w = elapsedWorld();
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.base);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), []);
   w.cfg.mergeConfirmation = defaults;
   let samples = 0;
   const clock = confirmationClock();
@@ -186,6 +211,11 @@ test("evidence reads finishing after the deadline retain landed truth for a late
   assert.equal(saved.codeMerged?.sha, w.merged);
   assert.equal(saved.mergeAttempt?.result, w.merged);
   assert.deepEqual(clock.waits, []);
+  assert.deepEqual(saved.security, w.state.security);
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.head);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), [
+    expectedTargetPush(w),
+  ]);
   consumed();
   script(w, confirmation(w), true);
   assert.equal(
@@ -193,13 +223,20 @@ test("evidence reads finishing after the deadline retain landed truth for a late
     true,
   );
   assert.equal(readWriteState(w.cfg, ISSUE).merged?.code, w.merged);
+  assert.deepEqual(readWriteState(w.cfg, ISSUE).security, w.state.security);
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.head);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), [
+    expectedTargetPush(w),
+  ]);
   assert.equal(posts().length, 1);
   assert.equal(approvalCount(), 1);
   consumed();
 });
 
 test("configured backoff repeats its final wait and clips it at the finite deadline", () => {
-  const w = world({ fastForward: true });
+  const w = elapsedWorld();
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.base);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), []);
   w.cfg.mergeConfirmation = {
     deadlineSeconds: CUSTOM_DEADLINE_SECONDS,
     backoffSeconds: [2, CUSTOM_WAIT_SECONDS],
@@ -208,7 +245,7 @@ test("configured backoff repeats its final wait and clips it at the finite deadl
   script(w, [
     ...prechecks(w),
     post(w),
-    ...Array.from({ length: 4 }, () =>
+    ...Array.from({ length: CUSTOM_READS }, () =>
       prStep(w, { state: "CLOSED", mergeCommit: null }),
     ),
   ]);
@@ -220,6 +257,14 @@ test("configured backoff repeats its final wait and clips it at the finite deadl
     SECOND_MS,
   ]);
   assert.equal(clock.now(), CUSTOM_DEADLINE_SECONDS * SECOND_MS);
+  const saved = readWriteState(w.cfg, ISSUE);
+  assert.equal(saved.mergeAttempt?.reads, CUSTOM_READS);
+  assert.equal(saved.mergeAttempt?.result, w.head);
+  assert.deepEqual(saved.security, w.state.security);
+  assert.equal(git(w.origin, ["rev-parse", w.cfg.baseBranch]), w.head);
+  assert.deepEqual(targetPushes(w.origin, w.cfg.baseBranch), [
+    expectedTargetPush(w),
+  ]);
   assert.equal(posts().length, 1);
   assert.equal(approvalCount(), 1);
   consumed();

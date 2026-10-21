@@ -15,6 +15,8 @@ import { claimComment, githubComment, installFakeGh } from "../fake-gh.mjs";
 import { home, root } from "./ops-publish-environment-fixtures.mjs";
 
 /** @import { GhReply } from "../fake-gh.mjs" */
+/** @typedef {import("../../src/state.ts").Revision} Revision */
+/** @typedef {import("../../src/state.ts").IssueState} IssueState */
 /** @typedef {{ cfg: import("../../src/config.ts").Config, root: string, sha: string, mergeSha: string, worktree: string }} World */
 
 const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -221,17 +223,46 @@ function mergeAuthority(state) {
   ];
 }
 
+// Issue #7 hardened (and approved, as a legacy review) at `approved`, saved
+// at stage review unless `extra` says otherwise.
+/** @param {Revision} approved @param {object} [extra] @returns {IssueState} */
+function hardenedApproval(approved, extra = {}) {
+  return approvedState(approved, {
+    stage: "review",
+    hardened: approved,
+    ...extra,
+  });
+}
+
+/** @param {object} view @returns {GhReply} */
+function readyView(view) {
+  return {
+    when: `pr view ${PR}`,
+    stdout: JSON.stringify({
+      number: PR,
+      state: "OPEN",
+      isDraft: true,
+      headRefName: "agent/issue-7",
+      isCrossRepository: false,
+      baseRefName: "integration",
+      ...view,
+    }),
+  };
+}
+
 export {
   approvedState,
   boundState,
   fakeGh,
   GIT_USER,
+  hardenedApproval,
   ISSUE,
   MERGE_COMMIT,
   mergeAuthority,
   PR,
   prView,
   REPO,
+  readyView,
   savedListing,
   securityOf,
   sh,

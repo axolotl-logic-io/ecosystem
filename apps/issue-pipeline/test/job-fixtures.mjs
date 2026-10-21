@@ -120,6 +120,7 @@ function stateAt(stage, fields = {}) {
       revision: null,
     },
     hardened: null,
+    hardenedTarget: null,
     integration: null,
     security: null,
     verifiedSha: null,
