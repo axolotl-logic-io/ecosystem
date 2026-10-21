@@ -6,7 +6,12 @@
 // comes after the merge, and lets the issue complete (security).
 
 import { z } from "zod";
-import { INTEGRATION, MERGE_ATTEMPT, REVISION } from "./merge-provenance.ts";
+import {
+  INTEGRATION,
+  legacyWikiOf,
+  MERGE_ATTEMPT,
+  REVISION,
+} from "./merge-provenance.ts";
 import type { Status } from "./stages.ts";
 import { STAGES } from "./stages.ts";
 
@@ -23,7 +28,9 @@ const LEASE = z.object({
   at: z.string(),
 });
 
-const FLOWS = z.object({ code: z.boolean(), wiki: z.boolean() });
+// Whether the issue's change has code. A state saved while the pipeline had
+// a wiki also has a legacy `wiki` flag, which nothing reads: parsing drops it.
+const FLOWS = z.object({ code: z.boolean() });
 
 const FINDING = z.object({
   id: z.number().int().positive(),
@@ -68,8 +75,8 @@ const SECURITY_CATEGORY = z.enum([
 ]);
 
 // The read-only security review of the merged result: `revision` is exactly
-// what it reviewed (code: GitHub's merge commit, null with no PR; wiki: the
-// head to publish), `commentId` its comment, and `finding` null when it
+// what it reviewed (code: GitHub's merge commit, null with no PR),
+// `commentId` its comment, and `finding` null when it
 // found nothing, or why it rejected that exact revision, so a lifted stop
 // can't review the same unsafe result again for another answer.
 const SECURITY = z.object({
@@ -80,6 +87,7 @@ const SECURITY = z.object({
     .nullable(),
 });
 
+// The reasons "wiki-check" and "wiki-conflict" are legacy: no longer written.
 const MERGE_RETURN = z.object({
   reason: z.enum(["conflict", "retest", "ci", "wiki-check", "wiki-conflict"]),
   detail: z.string(),
@@ -140,7 +148,7 @@ const ISSUE_STATE = z.object({
   // The code head whose verification last passed.
   verifiedSha: z.string().nullable().catch(null),
   mergeReturn: MERGE_RETURN.nullable().catch(null),
-  // The revision the merge job merged and published.
+  // The revision the merge job merged.
   merged: REVISION.nullable().catch(null),
   codeMerged: CODE_MERGED.nullable().catch(null),
   mergeAttempt: MERGE_ATTEMPT.nullable().catch(null),
@@ -223,7 +231,11 @@ function resumeOf(state: IssueState): IssueState {
 }
 
 function sameRevision(a: Revision, b: Revision): boolean {
-  return a.code === b.code && a.wiki === b.wiki && a.inputs === b.inputs;
+  return (
+    a.code === b.code &&
+    legacyWikiOf(a) === legacyWikiOf(b) &&
+    a.inputs === b.inputs
+  );
 }
 
 // The revision the issue may merge, or null when nothing is authorized: the

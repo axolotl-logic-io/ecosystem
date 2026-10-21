@@ -1,7 +1,7 @@
 // @ts-check
 // The claim helpers that talk to GitHub (raceForClaim, touchClaim and
 // closeClaims), run against a fake gh: which claims they post, edit, close
-// and label, and the markers and notes the wiki promises on them.
+// and label, and the markers and notes on them.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { configFixture } from "./config-fixtures.mjs";

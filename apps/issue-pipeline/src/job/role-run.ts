@@ -16,11 +16,11 @@ import { paths } from "../config.ts";
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
-import type { Brain } from "./brain.ts";
 import type { JobDirs } from "./checkout.ts";
 import type { Control } from "./control.ts";
 import { recoveryLines } from "./dropped-patch.ts";
 import type { LaunchHooks } from "./launch.ts";
+import type { StagePrompts } from "./prompts.ts";
 import type {
   Role,
   RoleContext,
@@ -67,7 +67,7 @@ interface RoleJob extends EndingJob {
   mergeQueue: readonly number[] | null;
   dirs: JobDirs;
   // The behavioral prompts the job pinned for its stage's sessions.
-  brain: Brain;
+  prompts: StagePrompts;
   // The job's random id and start, which its usage records and commits'
   // trailers name.
   identity: { id: string; startedAt: string };
@@ -113,7 +113,7 @@ function contextOf(
   const op = opRunnerOf(job);
   const session = sessionRunnerOf({
     stage: job.stage,
-    brain: job.brain,
+    prompts: job.prompts,
     hooks: job.hooks,
     status: job.status,
     stopping: job.control.stopping,
@@ -125,7 +125,7 @@ function contextOf(
     issue: job.issue,
     stage: job.stage,
     state: claimed.last,
-    dirs: { job: job.dirs.root, repo: job.dirs.repo, docs: job.dirs.docs },
+    dirs: { job: job.dirs.root, repo: job.dirs.repo },
     issueFile,
     inputs,
     mergeQueue: job.mergeQueue,

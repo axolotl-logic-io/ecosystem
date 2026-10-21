@@ -1,19 +1,22 @@
 // @ts-check
-// Real divergent gitlinks through ops, with no initialized code submodule.
+// A rebase that conflicts on a gitlink, through the real ops with no
+// initialized submodule, stops on it: the error names the gitlink and each of
+// its numbered stages, the rebase and its unmerged index are kept, and
+// nothing is pushed.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { gitlinkSyncFixture } from "./gitlink-sync-test-kit.mjs";
-import { pinAt } from "./wiki-pin-test-kit.mjs";
 
 const {
   fx,
   seed,
-  wikiSeed,
-  disabled,
+  vendorBase,
+  vendorOrigin,
   branch,
-  wikiCommit,
+  vendorCommit,
   stagePin,
   ask,
   unmerged,
@@ -21,202 +24,135 @@ const {
 } = await gitlinkSyncFixture("gitlink-conflicts");
 const { sh } = fx;
 
-test("a wiki-only conflict pins the exact fetched base and pushes without a resolver or wiki mutation", () => {
-  const n = 71;
-  const wt = branch(n);
-  assert.equal(fs.existsSync(path.join(wt, "wiki", ".git")), false);
-  const own = wikiCommit("own71");
-  stagePin(wt, own);
-  fx.commitIn(n, "own71", "code");
-  fx.pushFrom(n);
-  const other = wikiCommit("base71");
-  stagePin(seed, other);
-  const base = fx.advanceBase("base71", "other code");
-  const reply = ask(n, "sync-base");
-  assert.equal(reply.conflict, false, reply.error);
-  assert.equal(reply.changed, true);
-  assert.equal(unmerged(wt), "");
-  assert.equal(pinAt(wt, "HEAD"), other);
-  assert.equal(
-    pinAt(path.join(fx.root, "origin.git"), `agent/issue-${n}`),
-    other,
-  );
-  assert.equal(sh(`git -C ${wt} merge-base HEAD ${base}`), base);
-  assert.equal(sh(`git -C ${wikiSeed} rev-parse origin/own71`), own);
-  assert.equal(sh(`git -C ${wikiSeed} rev-parse origin/base71`), other);
-});
+// Each unmerged index line of `stages` the error doesn't name, by its stage,
+// commit and mode.
+/** @param {string | undefined} error @param {string} stages @returns {string[]} */
+function stagesNotNamed(error, stages) {
+  return stages.split("\n").filter((line) => {
+    const [mode, sha, numbered] = line.split(" ");
+    const stage = numbered?.split("\t")[0];
+    return !error?.includes(`stage ${stage}: ${sha} (mode ${mode})`);
+  });
+}
 
-test("machinery resolves wiki gitlinks at every later stop; finish accepts only its recorded base pin even after origin moves", () => {
-  const n = 72;
-  const wt = branch(n);
-  const own = wikiCommit("own72");
-  stagePin(wt, own);
-  fx.commitIn(n, "text72", "mine");
-  stagePin(wt, wikiCommit("later72"));
-  fx.commitIn(n, "later72", "mine");
-  const original = fx.pushFrom(n);
-  const other = wikiCommit("base72");
-  stagePin(seed, other);
-  fx.advanceBase("text72", "target");
-  const base = fx.advanceBase("later72", "target");
-  const first = ask(n, "sync-base");
-  assert.equal(first.baseSha, base);
-  assert.deepEqual(first.conflicts, ["text72"]);
-  assert.equal(sh(`git -C ${wt} rev-parse :wiki`), other);
-  assert.equal(fx.originRef(`agent/issue-${n}`), original);
-  resolveText(wt, "text72");
-  const second = ask(n, "finish-sync", { baseSha: base });
-  assert.deepEqual(second.conflicts, ["later72"]);
-  assert.equal(sh(`git -C ${wt} rev-parse :wiki`), other);
-  stagePin(seed, wikiCommit("newbase72"));
-  fx.advanceBase("unrelated72", "base moved");
-  sh(`git -C ${wt} fetch -q origin integration`);
-  resolveText(wt, "later72");
-  const finished = ask(n, "finish-sync", { baseSha: base });
-  assert.equal(finished.resolved, true, finished.reason ?? finished.error);
-  assert.equal(unmerged(wt), "");
-  assert.equal(pinAt(wt, "HEAD"), other);
-  assert.equal(
-    pinAt(path.join(fx.root, "origin.git"), `agent/issue-${n}`),
-    other,
-  );
-});
+// Issue `n`'s branch on origin and whether any gh call posted.
+/** @param {number} n @returns {{ remote: string, posted: boolean }} */
+function published(n) {
+  return {
+    remote: fx.originRef(`agent/issue-${n}`),
+    posted: fx.fakeGh.calls().some((args) => args.includes("POST")),
+  };
+}
 
-test("another gitlink stops precisely with full stage evidence and no synchronized push", () => {
-  const base = wikiCommit("vendorbase");
-  stagePin(seed, base, "vendor");
-  fs.appendFileSync(
-    path.join(seed, ".gitmodules"),
-    `\n[submodule "vendor"]\n  path = vendor\n  url = ${path.join(fx.root, "wiki.git")}\n`,
-  );
-  sh(`git -C ${seed} add .gitmodules`);
-  fx.advanceBase("vendor-seed", "seed");
+test("a gitlink conflict stops with every numbered stage and no synchronized push", () => {
   const n = 73;
   const wt = branch(n);
-  const own = wikiCommit("vendorown");
-  stagePin(wt, own, "vendor");
+  assert.equal(fs.existsSync(path.join(wt, "vendor", ".git")), false);
+  const own = vendorCommit("own73");
+  stagePin(wt, own);
   fx.commitIn(n, "own73", "mine");
   const before = fx.pushFrom(n);
-  const other = wikiCommit("vendortarget");
-  stagePin(seed, other, "vendor");
+  const target = vendorCommit("target73");
+  stagePin(seed, target);
   fx.advanceBase("base73", "target");
   const reply = ask(n, "sync-base");
   assert.equal(reply.ok, false);
   assert.ok(reply.error?.includes('"vendor"'), reply.error);
-  for (const [stage, sha] of [
-    [1, base],
-    [2, other],
-    ["3", own],
-  ]) {
+  for (const [index, sha] of [vendorBase, target, own].entries()) {
+    const stage = index + 1;
     assert.ok(reply.error?.includes(`stage ${stage}: ${sha}`), reply.error);
     assert.ok(unmerged(wt).includes(`160000 ${sha} ${stage}\tvendor`));
   }
   assert.equal(fx.inRebase(n), true);
-  assert.equal(fx.originRef(`agent/issue-${n}`), before);
-  assert.equal(
-    fx.fakeGh.calls().some((args) => args.includes("POST")),
-    false,
-  );
+  assert.deepEqual(published(n), { remote: before, posted: false });
 });
 
-test("a disabled wiki flow does not auto-select even its wiki gitlink", () => {
-  const n = 74;
-  const wt = branch(n);
-  stagePin(wt, wikiCommit("own74"));
-  fx.commitIn(n, "own74", "mine");
-  const before = fx.pushFrom(n);
-  stagePin(seed, wikiCommit("base74"));
-  fx.advanceBase("base74", "target");
-  const reply = ask(n, "sync-base", {}, disabled);
-  assert.equal(reply.ok, false);
-  assert.ok(reply.error?.includes('"wiki"'), reply.error);
-  assert.notEqual(unmerged(wt), "");
-  assert.equal(fx.originRef(`agent/issue-${n}`), before);
-});
-
-test("ordinary text at the configured wiki path remains a text conflict", () => {
-  const n = 75;
-  const wt = branch(n);
-  fx.commitIn(n, "text75", "mine");
-  fx.pushFrom(n);
-  fx.advanceBase("text75", "target");
-  const file = fx.configWith("text-path.json", { wiki: { dir: "text75" } });
-  const reply = ask(n, "sync-base", {}, file);
-  assert.deepEqual(reply.conflicts, ["text75"]);
-  assert.ok(unmerged(wt).includes("100644"));
-  assert.equal(fx.inRebase(n), true);
-});
-
-test("the configured nondefault gitlink gets the same exact-target policy", () => {
-  sh(
-    `git -C ${seed} mv wiki knowledge && git -C ${seed} commit -qm "Relocate wiki" && git -C ${seed} push -q origin integration`,
-  );
-  const file = fx.configWith("custom-path.json", {
-    wiki: { dir: "knowledge" },
-  });
-  const n = 76;
-  const wt = branch(n);
-  stagePin(wt, wikiCommit("own76"), "knowledge");
-  fx.commitIn(n, "own76", "mine");
-  fx.pushFrom(n);
-  const target = wikiCommit("target76");
-  stagePin(seed, target, "knowledge");
-  fx.advanceBase("base76", "target");
-  const reply = ask(n, "sync-base", {}, file);
-  assert.equal(reply.conflict, false, reply.error);
-  assert.equal(unmerged(wt), "");
-  assert.equal(sh(`git -C ${wt} rev-parse HEAD:knowledge`), target);
-});
-
-test("a wiki gitlink versus ordinary file type conflict is retained, never auto-selected", () => {
+test("a gitlink versus ordinary file type conflict is retained, never auto-selected", () => {
   const n = 78;
   const wt = branch(n);
-  sh(`git -C ${wt} rm --cached knowledge`);
-  fs.rmdirSync(path.join(wt, "knowledge"));
-  fs.writeFileSync(path.join(wt, "knowledge"), "ordinary file intent\n");
-  sh(`git -C ${wt} add knowledge`);
+  sh(`git -C ${wt} rm -q --cached vendor`);
+  fs.rmSync(path.join(wt, "vendor"), { recursive: true, force: true });
+  fs.writeFileSync(path.join(wt, "vendor"), "ordinary file intent\n");
+  sh(`git -C ${wt} add vendor`);
   fx.commitIn(n, "own78", "mine");
-  fx.pushFrom(n);
-  const remote = fx.originRef(`agent/issue-${n}`);
-  stagePin(seed, wikiCommit("target78"), "knowledge");
+  const before = fx.pushFrom(n);
+  stagePin(seed, vendorCommit("target78"));
   fx.advanceBase("base78", "target");
-  const file = fx.configWith("type-path.json", { wiki: { dir: "knowledge" } });
-  const reply = ask(n, "sync-base", {}, file);
+  const reply = ask(n, "sync-base");
   assert.equal(reply.ok, false);
   assert.ok(typeof reply.error === "string");
-  assert.ok(reply.error.includes("unsupported gitlink conflict"), reply.error);
-  assert.ok(reply.error.includes("knowledge"), reply.error);
+  assert.ok(reply.error.includes("vendor"), reply.error);
   assert.ok(reply.error.includes("mode 160000"), reply.error);
   assert.equal(fx.inRebase(n), true);
   assert.notEqual(unmerged(wt), "");
-  assert.equal(fx.originRef(`agent/issue-${n}`), remote);
+  assert.deepEqual(published(n), { remote: before, posted: false });
 });
 
-test("a recorded target without the configured gitlink never gets an automatic pin", () => {
-  const n = 80;
+test("two conflicting gitlinks both keep every stage", () => {
+  const otherBase = vendorCommit("zzbase");
+  stagePin(seed, otherBase, "zz-vendor");
+  fs.appendFileSync(
+    path.join(seed, ".gitmodules"),
+    `\n[submodule "zz-vendor"]\n  path = zz-vendor\n  url = ${vendorOrigin}\n`,
+  );
+  sh(`git -C ${seed} add .gitmodules`);
+  fx.advanceBase("zz-seed", "seed");
+  const n = 79;
   const wt = branch(n);
-  stagePin(wt, wikiCommit("missingtargetown"), "knowledge");
-  fx.commitIn(n, "own80", "mine");
-  const original = fx.pushFrom(n);
-  sh(`git -C ${seed} update-index --force-remove knowledge`);
-  const target = fx.advanceBase("base80", "target without wiki");
-  const file = fx.configWith("missing-target.json", {
-    wiki: { dir: "knowledge" },
-  });
-  const reply = ask(n, "sync-base", {}, file);
+  const start = sh(`git -C ${wt} rev-parse HEAD:vendor`);
+  const own = { vendor: vendorCommit("own79"), zz: vendorCommit("zzown79") };
+  stagePin(wt, own.vendor);
+  stagePin(wt, own.zz, "zz-vendor");
+  fx.commitIn(n, "own79", "mine");
+  const before = fx.pushFrom(n);
+  const target = {
+    vendor: vendorCommit("target79"),
+    zz: vendorCommit("zztarget79"),
+  };
+  stagePin(seed, target.vendor);
+  stagePin(seed, target.zz, "zz-vendor");
+  fx.advanceBase("base79", "target");
+  const reply = ask(n, "sync-base");
   assert.equal(reply.ok, false);
-  assert.equal(sh(`git -C ${wt} ls-tree ${target} -- knowledge`), "");
-  assert.ok(reply.error?.includes("knowledge"), reply.error);
-  const stages = unmerged(wt);
-  assert.notEqual(stages, "");
-  for (const line of stages.split("\n")) {
-    const [mode, sha, numbered] = line.split(" ");
-    const stage = numbered?.split("\t")[0];
-    assert.ok(
-      reply.error?.includes(`stage ${stage}: ${sha} (mode ${mode})`),
-      reply.error,
-    );
+  for (const { file, pins } of [
+    { file: "vendor", pins: [start, target.vendor, own.vendor] },
+    { file: "zz-vendor", pins: [otherBase, target.zz, own.zz] },
+  ]) {
+    for (const [index, sha] of pins.entries()) {
+      const stage = index + 1;
+      assert.ok(unmerged(wt).includes(`160000 ${sha} ${stage}\t${file}`));
+    }
   }
   assert.equal(fx.inRebase(n), true);
-  assert.equal(fx.originRef(`agent/issue-${n}`), original);
+  assert.deepEqual(published(n), { remote: before, posted: false });
+});
+
+test("abort after a session continued the rebase into a later gitlink stop retains it and names all its stages", () => {
+  const n = 93;
+  const wt = branch(n);
+  fx.commitIn(n, `early${n}`, "mine");
+  stagePin(wt, vendorCommit(`own${n}`));
+  fx.commitIn(n, `later${n}`, "mine");
+  const original = fx.pushFrom(n);
+  stagePin(seed, vendorCommit(`target${n}`));
+  const base = fx.advanceBase(`early${n}`, "target");
+  const first = ask(n, "sync-base");
+  assert.deepEqual(first.conflicts, [`early${n}`]);
+  resolveText(wt, `early${n}`);
+  const continued = spawnSync(
+    "git",
+    ["-C", wt, "-c", "core.editor=true", "rebase", "--continue"],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  assert.equal(continued.status, 1);
+  assert.equal(fx.inRebase(n), true);
+  const stages = unmerged(wt);
+  assert.ok(stages.includes("\tvendor"), stages);
+  const reply = ask(n, "finish-sync", { baseSha: base, abort: true });
+  assert.equal(reply.ok, false);
+  assert.ok(reply.error?.includes('"vendor"'), reply.error);
+  assert.deepEqual(stagesNotNamed(reply.error, stages), []);
+  assert.equal(unmerged(wt), stages);
+  assert.equal(fx.inRebase(n), true);
+  assert.deepEqual(published(n), { remote: original, posted: false });
 });

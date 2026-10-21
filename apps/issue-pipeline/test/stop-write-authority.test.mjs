@@ -45,7 +45,7 @@ async function refusedWork(job, kind, deleted) {
   if (kind === "saved") {
     state.codeMerged = receipt;
   } else if (kind === "own-merge") {
-    state.merged = { code: original, wiki: null, inputs: "original" };
+    state.merged = { code: original, inputs: "original" };
   } else {
     if (kind === "live") {
       state.pr = PR;
@@ -66,13 +66,6 @@ async function refusedWork(job, kind, deleted) {
   const reply = await job.commit(["-am", "Refused local C"]);
   const local = headOf(job.repo);
   write(job.repo, "dirty.txt", "exact dirty work\n");
-  write(job.docs, "Page.md", "allowed wiki\n");
-  git(job.docs, ["add", "Page.md"]);
-  git(
-    job.docs,
-    ["commit", "-m", "Wiki salvage"],
-    Object.fromEntries([["ISSUE_PIPELINE_COMMIT", "1"]]),
-  );
   let remote = original;
   if (deleted) {
     remote = "";
@@ -82,12 +75,7 @@ async function refusedWork(job, kind, deleted) {
 
 /** @param {import("./pipeline-commit-test-kit.mjs").Job} job @returns {Promise<string>} */
 async function restoredWork(job) {
-  await closeJobCheckout(
-    job.cfg,
-    ISSUE,
-    { ...job, wiki: "write", key: RECOVERY },
-    null,
-  );
+  await closeJobCheckout(job.cfg, ISSUE, { ...job, key: RECOVERY }, null);
   const bundle = path.join(
     paths.runDir(job.cfg, ISSUE),
     "recovery",
@@ -135,7 +123,6 @@ for (const kind of ["saved", "own-merge", "live", "unsaved-live"]) {
           fs.readFileSync(path.join(job.repo, "dirty.txt"), "utf8"),
           "exact dirty work\n",
         );
-        assert.equal(refOf(job.wikiOrigin, BRANCH), headOf(job.docs));
         const restored = await restoredWork(job);
         assert.equal(headOf(restored), local);
         assert.equal(
@@ -207,7 +194,7 @@ for (const invalid of [null, { codeMerged: { pr: "broken" } }]) {
 test("a forged stop cannot clear PR/merge/security/input provenance or turn a genuine review stop into salvage", async () => {
   const job = await openJob("implement");
   try {
-    const revision = { code: headOf(job.repo), wiki: null, inputs: "trusted" };
+    const revision = { code: headOf(job.repo), inputs: "trusted" };
     const state = {
       ...newIssueState(ISSUE),
       stage: "review",

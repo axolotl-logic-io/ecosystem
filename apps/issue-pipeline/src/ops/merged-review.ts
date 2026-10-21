@@ -10,12 +10,11 @@
 // unpushed work.
 
 import type { Config } from "../config.ts";
-import { paths, wikiCfg } from "../config.ts";
+import { paths } from "../config.ts";
 import { gitIn, head } from "../git-state.ts";
 import { OpsError } from "../ops-error.ts";
 import { tail } from "../process.ts";
 import type { CodeMerged } from "../state.ts";
-import { holdWikiPin } from "../wiki.ts";
 import { confirmedMergedParent } from "./merged-graph.ts";
 import { commitLog } from "./review-diff.ts";
 
@@ -38,15 +37,10 @@ function nonEmptyLines(text: string): string[] {
   return text.split("\n").filter((line) => line !== "");
 }
 
-// Throws when the checkout `wt` holds uncommitted changes outside the wiki
-// checkout, whose gitlink and folder are the wiki's own (wiki.ts); nothing
-// is stashed or discarded.
-function assertNoCodeChanges(cfg: Config, wt: string): void {
+// Throws when the checkout `wt` holds uncommitted changes; nothing is
+// stashed or discarded.
+function assertNoCodeChanges(wt: string): void {
   const args = ["status", "--porcelain", "--ignore-submodules=all", "--", "."];
-  const wiki = wikiCfg(cfg);
-  if (wiki !== null) {
-    args.push(`:(exclude,top)${wiki.dir}`);
-  }
   const status = gitIn(wt, args).trim();
   if (status !== "") {
     throw new OpsError(
@@ -56,11 +50,11 @@ function assertNoCodeChanges(cfg: Config, wt: string): void {
 }
 
 // Detaches the checkout `wt` at the merge commit `sha` (already fetched by
-// confirmMerged), keeping the wiki gitlink held, and checks it ended at
-// exactly `sha` and its tree. Safe to repeat.
-function detachAt(cfg: Config, wt: string, sha: string): void {
+// confirmMerged), and checks it ended at exactly `sha` and its tree. Safe to
+// repeat.
+function detachAt(wt: string, sha: string): void {
   if (head(wt) !== sha) {
-    assertNoCodeChanges(cfg, wt);
+    assertNoCodeChanges(wt);
     gitIn(wt, [
       "-c",
       "submodule.recurse=false",
@@ -70,7 +64,6 @@ function detachAt(cfg: Config, wt: string, sha: string): void {
       sha,
     ]);
   }
-  holdWikiPin(cfg, wt);
   const at = head(wt);
   const tree = gitIn(wt, ["rev-parse", "HEAD^{tree}"]).trim();
   const merged = gitIn(wt, ["rev-parse", `${sha}^{tree}`]).trim();
@@ -99,9 +92,9 @@ function mergedCode(
       `merge commit ${sha} changes nothing against its first parent ${parent}, so there is no merged code to review`,
     );
   }
-  detachAt(cfg, wt, sha);
+  detachAt(wt, sha);
   const patch = gitIn(wt, ["diff", "--stat", "--patch", range]);
-  const header = `# Code\n\nPR #${pr} merged as ${sha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent. Then the wiki change.\n\n`;
+  const header = `# Code\n\nPR #${pr} merged as ${sha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent.\n\n`;
   return {
     diff: `${header}${commitLog(wt, range)}${patch}`,
     range: { from: parent, head: sha },

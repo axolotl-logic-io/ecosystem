@@ -8,7 +8,8 @@ import { usageMark } from "../comments.ts";
 
 // GitHub refuses a comment longer than this.
 const COMMENT_LIMIT = 65_536;
-const VISIBLE_LINE = "Issue pipeline usage records (hidden; see the wiki)";
+const VISIBLE_LINE =
+  "Issue pipeline usage records (hidden; described in the issue pipeline's docs/reference/)";
 const BLOCK_START = "<!--";
 // What ends the hidden block, so no record line may hold it.
 const BLOCK_END = "-->";

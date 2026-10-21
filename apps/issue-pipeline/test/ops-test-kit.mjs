@@ -246,7 +246,7 @@ function finishReplies() {
 }
 
 // The gh writes finishMerged makes for issue #7 and PR #50, in order, with
-// `published`, the writes the wiki publish makes, between the PR's labels and
+// `published`, any additional completion writes, between the PR's labels and
 // the issue's.
 /** @param {object} state @param {string[][]} [published] @returns {string[][]} */
 function finishWrites(state, published = []) {

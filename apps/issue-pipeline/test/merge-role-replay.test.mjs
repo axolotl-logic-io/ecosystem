@@ -37,7 +37,7 @@ const CLEARED = {
   commentId: COMMENT_ID,
   finding: null,
 };
-const FORBIDDEN = ["merge", "push", "sync-base", "wiki-sync", "ready-pr"];
+const FORBIDDEN = ["merge", "push", "sync-base", "ready-pr"];
 
 for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
   test(`an interrupted own merge resumes missing security with codeMerged ${String(codeMerged?.sha ?? null)}, no writer or second merge`, async () => {
@@ -69,13 +69,7 @@ for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
     assert.equal(sessions[0]?.commits, false);
     const { codeMerged: preparedMerge } = firstPayload(calls, "prepare-review");
     assert.deepEqual(preparedMerge, { pr: PR, sha: MERGE_COMMIT });
-    const { revision, state: published } = firstPayload(calls, "publish");
-    assert.deepEqual(revision, REVISION);
-    assert.deepEqual(
-      published,
-      savesOf(calls).find((state) => state.security !== null),
-    );
-    const { state: finished } = firstPayload(calls, "finish-wiki");
+    const { state: finished } = firstPayload(calls, "finish");
     assert.deepEqual(finished, done);
     assert.equal(savesOf(calls)[0]?.verifiedSha, MERGE_COMMIT);
     assert.deepEqual(savesOf(calls).at(-2)?.security, CLEARED);
@@ -99,8 +93,8 @@ test("an interrupted own merge reuses exact saved security approval and original
   assert.deepEqual(done.hardened, REVISION);
   assert.deepEqual(done.integration, integration);
   assert.deepEqual(done.codeMerged, CODE_MERGED.codeMerged);
-  const { revision } = firstPayload(calls, "publish");
-  assert.deepEqual(revision, integrated);
+  const { state: finished } = firstPayload(calls, "finish");
+  assert.deepEqual(finished, done);
   assert.equal(sessionsOf(calls).length, 0);
   assert.ok(!opNames(calls).includes("prepare-review"));
   assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
@@ -152,11 +146,7 @@ const MISMATCHES = [
   },
   { name: "another code revision", at: current({ code: MOVED }, MERGED_PR) },
   {
-    name: "another wiki",
-    at: current({ ...MERGED_REVISION, wiki: MOVED }, MERGED_PR),
-  },
-  {
-    name: "receipt for another wiki",
+    name: "legacy receipt with a wiki",
     state: { merged: { ...MERGED_REVISION, wiki: MOVED } },
   },
   {
@@ -170,7 +160,7 @@ const MISMATCHES = [
 ];
 
 for (const mismatch of MISMATCHES) {
-  test(`own-merge recovery refuses ${mismatch.name} without a session, publish or finish`, async () => {
+  test(`own-merge recovery refuses ${mismatch.name} without a session or finish`, async () => {
     const { ctx, calls } = merging({
       state: { ...RECEIPT, ...mismatch.state },
       ops: { "current-revision": [mismatch.at ?? AFTER_MERGE] },
@@ -209,15 +199,14 @@ test("new trusted inputs after the own merge return to Author instead of recover
   assert.equal(sessionsOf(calls).length, 0);
 });
 
-test("a wiki race during the recovered security session discards it and never publishes", async () => {
-  const at = current({ ...MERGED_REVISION, wiki: MOVED }, MERGED_PR);
+test("code that moves during the recovered security session discards it and never finishes", async () => {
+  const at = current({ ...MERGED_REVISION, code: MOVED }, MERGED_PR);
   const { ctx, calls } = merging({
     state: RECEIPT,
     ops: { "current-revision": [AFTER_MERGE, at] },
   });
   const state = stateOf(await mergeRole(ctx), "wait");
   assert.equal(state.security, null);
-  assert.ok(!opNames(calls).includes("publish"));
-  assert.ok(!opNames(calls).includes("finish-wiki"));
+  assert.ok(!opNames(calls).includes("finish"));
   assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
 });

@@ -4,18 +4,17 @@
 // or the Reviewer's own checked integration of it), read fresh before each
 // mutation:
 //
-// - a change to the trusted inputs goes to the author, and a code or wiki
-//   head that moved by anything but the Reviewer's own integration goes
-//   back to review, which hardens it;
-// - a base or wiki that moved, a conflict and a failed check get the
-//   Reviewer's own integration (integration.ts), in bounded writer
-//   sessions, counted against `maxSyncs`, with no review of its own work;
-// - otherwise the head is verified if it isn't yet, the wiki checked, CI
-//   waited for on exactly that head, and an explicit-target branch merge
-//   uses immutable H in merge-queue order; then the receipt is saved, M is
-//   deterministically checked, and the
-//   read-only security review of the merged result decides whether the wiki
-//   publishes and the issue completes (publish.ts, security.ts);
+// - a change to the trusted inputs goes to the author, and a code head that
+//   moved by anything but the Reviewer's own integration goes back to
+//   review, which hardens it;
+// - a base that moved, a conflict and a failed check get the Reviewer's own
+//   integration (integration.ts), in bounded writer sessions, counted
+//   against `maxSyncs`, with no review of its own work;
+// - otherwise the head is verified if it isn't yet, CI waited for on
+//   exactly that head, and an explicit-target branch merge uses immutable H
+//   in merge-queue order; then the receipt is saved, M is deterministically
+//   checked, and the read-only security review of the merged result decides
+//   whether the issue completes (after-merge.ts, security.ts);
 // - a done issue whose finish didn't finish only runs the finish op again,
 //   once a security receipt approves exactly what merged;
 // - a merged result the security review rejected stops again, from its
@@ -28,11 +27,11 @@ import { SHORT_SHA } from "../change-task.ts";
 import { opReply, readyPr } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
+import { afterEarlierMerge, afterOwnMerge } from "./after-merge.ts";
 import { localChecks } from "./checks.ts";
 import { finishCompleted } from "./completion.ts";
 import type { IntegrationNeed } from "./integration.ts";
 import { integrate } from "./integration.ts";
-import { afterOwnMerge, publishOnly } from "./publish.ts";
 import { MERGE_REPLY, recoverAttempt, recoverOwnMerge } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
@@ -43,21 +42,13 @@ const CI_STATUS = z.union([
   z.looseObject({ status: z.literal("no-checks") }),
   z.looseObject({ status: z.literal("fail"), failing: z.array(z.string()) }),
 ]);
-const CHECKS_ONLY = { code: false, wiki: false };
 
 function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-function integration(
-  rebase: IntegrationNeed["rebase"],
-  why: string,
-): IntegrationNeed {
-  return { rebase, wikiConflict: null, failing: [], why };
-}
-
 // The checks before the merge, on the authorized head `code`: verify when
-// this head isn't verified yet, the wiki check, and CI on exactly this head.
+// this head isn't verified yet, and CI on exactly this head.
 async function checksBeforeMerge(
   ctx: RoleContext,
   { code, pr }: { code: string; pr: number },
@@ -68,8 +59,7 @@ async function checksBeforeMerge(
   }
   if (local.kind === "integrate") {
     const need: IntegrationNeed = {
-      rebase: CHECKS_ONLY,
-      wikiConflict: local.wikiConflict,
+      rebase: false,
       failing: local.failing,
       why: "the authorized head's checks failed at merge",
     };
@@ -107,8 +97,7 @@ async function checksBeforeMerge(
         detail: `the required CI check ${id} failed on ${code}`,
       }));
       const need: IntegrationNeed = {
-        rebase: CHECKS_ONLY,
-        wikiConflict: null,
+        rebase: false,
         failing,
         why: `CI failed on ${short(code)}`,
       };
@@ -120,8 +109,7 @@ async function checksBeforeMerge(
 }
 
 // What a refused merge means: wait for the queue, harden a moved head,
-// integrate a moved base or wiki, mark a draft ready, or stop on GitHub's
-// refusal.
+// integrate a moved base, mark a draft ready, or stop on GitHub's refusal.
 async function refusedMerge(
   ctx: RoleContext,
   state: IssueState,
@@ -134,31 +122,13 @@ async function refusedMerge(
       return toReview(state, "the PR head moved before the merge");
     case "stale":
       return toReview(state, "the revision moved before the merge");
-    case "wiki-missing":
-      return failed(
-        state,
-        "the issue's wiki checkout doesn't hold the authorized wiki commit, so the merge refused to merge code whose wiki it can't publish",
-      );
-    case "wiki-pin":
-    case "wiki-behind":
-      return await integrate(
-        ctx,
-        state,
-        integration(
-          { code: false, wiki: true },
-          `wiki synchronization required (${reason})`,
-        ),
-      );
     case "behind":
     case "conflict":
-      return await integrate(
-        ctx,
-        state,
-        integration(
-          { code: true, wiki: true },
-          `the branch is ${reason} ${ctx.cfg.baseBranch}`,
-        ),
-      );
+      return await integrate(ctx, state, {
+        rebase: true,
+        failing: [],
+        why: `the branch is ${reason} ${ctx.cfg.baseBranch}`,
+      });
     case "draft": {
       // An interrupted job left the PR a draft; the saved state is the
       // authorization ready-pr checks.
@@ -177,7 +147,7 @@ async function refusedMerge(
 }
 
 function mergeSummary(state: IssueState, authorized: Revision): string {
-  return `Merged at code ${short(authorized.code)}, wiki ${short(authorized.wiki)} and trusted inputs ${short(authorized.inputs)}; verified at ${short(state.verifiedSha)}; the wiki checked and CI passed on that head.`;
+  return `Merged at code ${short(authorized.code)} and trusted inputs ${short(authorized.inputs)}; verified at ${short(state.verifiedSha)}; CI passed on that head.`;
 }
 
 // The open PR's merge, at the authorized code head.
@@ -268,13 +238,10 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   }
   const { state } = ctx;
   if (state.codeMerged !== null) {
-    return await publishOnly(ctx, current);
+    return await afterEarlierMerge(ctx, current, state.codeMerged);
   }
   if (state.pr === null) {
-    if (state.flows?.code === true) {
-      return failed(state, "the change has code but no PR to merge");
-    }
-    return await publishOnly(ctx, current);
+    return failed(state, "the change has no PR to merge");
   }
   return await mergeCode(ctx, current);
 };

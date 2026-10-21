@@ -5,7 +5,7 @@
 // override, and the context a role job gives its records. The records are
 // what usageRecord and jobRecord make of the entries under CONTEXT.
 
-import { pinnedOf } from "./brain-test-kit.mjs";
+import { pinnedOf } from "./prompt-test-kit.mjs";
 
 /** @import { UsageContext } from "../src/job/usage-log.ts" */
 /** @import { JobEntry, SessionEntry } from "../src/job/run-usage.ts" */
@@ -18,9 +18,7 @@ const ISSUE = 7;
 const TASK_CHARS = 16;
 const JOB_SECONDS = 30;
 // The implementor's pinned prompt, as a session's entry and record name it.
-const { path: _pinnedAt, ...PROMPT } = pinnedOf(
-  "Pipeline-Prompt-Developer.md",
-).provenance;
+const { path: _pinnedAt, ...PROMPT } = pinnedOf("developer.md").provenance;
 
 /** @type {LaunchUsage} */
 const LAUNCH = {

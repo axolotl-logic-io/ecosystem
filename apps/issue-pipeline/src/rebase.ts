@@ -1,15 +1,12 @@
-// Rebase state and finish checks for code and wiki checkouts. Code continuation
-// additionally owns gitlink classification and its exact-target wiki pointer;
-// writers stage text, never select wiki revisions.
+// Rebase state and finish checks for the code checkout. Code continuation
+// additionally refuses gitlink conflicts: writers stage text, never select a
+// submodule's revision.
 
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import type { Config } from "./config.ts";
-import { wikiCfg } from "./config.ts";
 import { OpsError } from "./ops-error.ts";
 import { run, tail } from "./process.ts";
-import { holdWikiPin } from "./wiki.ts";
 
 const REBASE_DIRS: readonly string[] = ["rebase-merge", "rebase-apply"];
 const DIRTY_LINES = 20;
@@ -88,7 +85,7 @@ function rebaseProblem(dir: string, base: string): string | undefined {
 
 const COMMIT_SHA = /^[0-9a-f]{40,64}$/u;
 const SHA = z.string().regex(COMMIT_SHA);
-const SYNC = z.object({ from: SHA, onto: SHA, wikiResolved: z.boolean() });
+const SYNC = z.object({ from: SHA, onto: SHA });
 type CodeSync = z.infer<typeof SYNC>;
 const ENTRY =
   /^(?<mode>\d{6}) (?<sha>[0-9a-f]{40,64}) (?<stage>[123])\t(?<file>[\s\S]+)$/u;
@@ -143,64 +140,28 @@ function conflictStages(wt: string): Stage[] {
     });
 }
 
-// Refuse unsupported gitlinks before touching any entry. Type conflicts, even
-// at the wiki path, are not eligible for the automatic exception.
-function resolveWikiConflict(cfg: Config, wt: string, sync: CodeSync): void {
+// Refuses a stop that conflicts on a gitlink before touching any entry: no
+// writer or op chooses a submodule's revision. The error names each of its
+// numbered stages.
+function refuseGitlinkConflict(wt: string): void {
   const entries = conflictStages(wt);
-  const links = new Set(
-    entries
-      .filter((entry) => entry.mode === "160000")
-      .map((entry) => entry.file),
-  );
-  const wiki = wikiCfg(cfg);
-  for (const file of links) {
-    const stages = entries.filter((entry) => entry.file === file);
-    const evidence = stages
-      .map((entry) => `stage ${entry.stage}: ${entry.sha} (mode ${entry.mode})`)
-      .join(", ");
-    const bothPins =
-      stages.some((entry) => entry.stage === "2") &&
-      stages.some((entry) => entry.stage === "3");
-    if (
-      wiki?.dir !== file ||
-      !bothPins ||
-      stages.some((entry) => entry.mode !== "160000")
-    ) {
-      throw new OpsError(
-        `unsupported gitlink conflict at ${JSON.stringify(file)}; ${evidence}; retaining unresolved checkout`,
-      );
-    }
-    const tree = gitOut(wt, ["ls-tree", sync.onto, "--", file]).trim();
-    if (!tree.startsWith("160000 commit ")) {
-      throw new OpsError(
-        `synchronization target ${sync.onto} has no wiki gitlink at ${JSON.stringify(file)}; ${evidence}; retaining unresolved checkout`,
-      );
-    }
-  }
-  if (wiki === null || !links.has(wiki.dir)) {
+  const link = entries.find((entry) => entry.mode === "160000");
+  if (link === undefined) {
     return;
   }
-  const pin = gitOut(wt, ["rev-parse", `${sync.onto}:${wiki.dir}`]).trim();
-  run("git", [
-    "-C",
-    wt,
-    "update-index",
-    "--add",
-    "--cacheinfo",
-    "160000",
-    pin,
-    wiki.dir,
-  ]);
-  sync.wikiResolved = true;
-  saveCodeSync(wt, sync);
-  holdWikiPin(cfg, wt);
+  const evidence = entries
+    .filter((entry) => entry.file === link.file)
+    .map((entry) => `stage ${entry.stage}: ${entry.sha} (mode ${entry.mode})`)
+    .join(", ");
+  throw new OpsError(
+    `unsupported gitlink conflict at ${JSON.stringify(link.file)}; ${evidence}; retaining unresolved checkout`,
+  );
 }
 
 // Classify the actual checkout against its recorded synchronization, including
 // a stop reached by a session's own continuation or one being rejected. A
 // requested target must match while stopped; completed work has finish checks.
 function classifyCodeSync(
-  cfg: Config,
   wt: string,
   target: string | null | undefined,
 ): CodeSync | undefined {
@@ -218,15 +179,15 @@ function classifyCodeSync(
       "finish-sync target differs from the stopped code rebase",
     );
   }
-  resolveWikiConflict(cfg, wt, sync);
+  refuseGitlinkConflict(wt);
   return sync;
 }
 
 // Continue only once all text at a stop has been staged. Every subsequent
-// stop is classified too; a writer never selects or stages a wiki revision.
-function continueCodeSync(cfg: Config, wt: string, sync: CodeSync): void {
+// stop is classified too.
+function continueCodeSync(wt: string): void {
   while (rebaseInProgress(wt)) {
-    resolveWikiConflict(cfg, wt, sync);
+    refuseGitlinkConflict(wt);
     if (unmergedFiles(wt).length > 0) {
       return;
     }
@@ -235,7 +196,6 @@ function continueCodeSync(cfg: Config, wt: string, sync: CodeSync): void {
       ["-C", wt, "-c", "core.editor=true", "rebase", "--continue"],
       { allowFail: true },
     );
-    holdWikiPin(cfg, wt);
     if (result.code !== 0 && unmergedFiles(wt).length === 0) {
       throw new OpsError(
         `code rebase continuation failed; retaining checkout: ${result.stderr}`,

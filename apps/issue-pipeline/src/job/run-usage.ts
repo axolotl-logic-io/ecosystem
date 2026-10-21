@@ -5,7 +5,7 @@
 
 import type { ModelRole } from "../config-legacy.ts";
 import type { Status } from "../stages.ts";
-import type { PromptProvenance } from "./brain.ts";
+import type { PromptProvenance } from "./prompts.ts";
 import type { SessionPhase } from "./role-context.ts";
 import type { Usage } from "./token-usage.ts";
 import { addUsage, ZERO_USAGE } from "./token-usage.ts";
@@ -27,8 +27,8 @@ interface SessionEntry {
   model: string;
   attempt: number;
   taskChars: number;
-  // The brain page its prompt was pinned from, its sha256 and the brain's
-  // HEAD.
+  // The prompt page its prompt was pinned from, its sha256 and its head
+  // (src/job/prompts.ts).
   prompt: Omit<PromptProvenance, "path">;
   ended: Ended;
   reply: unknown;

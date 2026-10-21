@@ -224,7 +224,9 @@ test("a usage body round-trips its lines and its mark", () => {
   const lines = [FIRST_LINE, SECOND_LINE];
   const body = usageBody(ISSUE, 1, lines);
   assert.ok(
-    body.startsWith("Issue pipeline usage records (hidden; see the wiki)\n"),
+    body.startsWith(
+      "Issue pipeline usage records (hidden; described in the issue pipeline's docs/reference/)\n",
+    ),
   );
   assert.ok(body.includes(MARK));
   assert.deepEqual(usageLines(body), lines);

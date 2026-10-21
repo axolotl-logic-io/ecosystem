@@ -11,7 +11,6 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
-import { holdWikiPin } from "../wiki.ts";
 
 interface PreparedPatch {
   lost: string[];
@@ -128,7 +127,6 @@ function writePatch(
 // Uses only a copy of the actual index. Existing artifacts are never
 // overwritten; an unmerged index or preparation error retains the checkout.
 function saveDroppedPatch(
-  cfg: Config,
   dir: string,
   to: { file: string; title: string },
 ): PreparedPatch {
@@ -139,7 +137,6 @@ function saveDroppedPatch(
   const temp = path.join(tempDir, "changes.patch");
   try {
     copyIndex(dir, indexFile);
-    holdWikiPin(cfg, dir, indexFile);
     if (gitIn(dir, ["ls-files", "--unmerged"], indexFile).trim() !== "") {
       throw new OpsError(
         `unmerged index in ${dir}; retain the original checkout for recovery`,
@@ -166,6 +163,8 @@ function saveDroppedPatch(
 
 const PATCH_FILE = /^[a-zA-Z0-9-]+-(?:repo|docs)\.patch(?:\.index\.patch)?$/u;
 const BASE = /^[0-9a-f]{40}$/u;
+// A manifest written before the wiki was removed may name a docs/ snapshot
+// and the job's wiki access; both still parse, and the access is dropped.
 const SNAPSHOT = z.object({
   file: z.string().regex(PATCH_FILE),
   checkout: z.enum(["repo", "docs"]),
@@ -184,7 +183,6 @@ const MANIFEST = z.object({
   issue: z.number().int(),
   branch: z.string(),
   job: z.string(),
-  wikiAccess: z.string(),
   origin: ORIGIN,
   snapshots: z.array(SNAPSHOT),
 });
@@ -212,7 +210,7 @@ function manifestLines(dir: string, m: RecoveryManifest): string[] {
   return [
     `### Source job ${m.job}`,
     `Manifest: ${path.join(dir, `${m.job}.json`)}`,
-    `Assigned branch: ${m.branch}; previous wiki access: ${m.wikiAccess}`,
+    `Assigned branch: ${m.branch}`,
     `Stage: ${m.origin.stage}; outcome: ${m.origin.outcome}; reason: ${m.origin.reason ?? "not recorded"}`,
     ...m.snapshots.map(
       (snapshot: RecoverySnapshot): string =>

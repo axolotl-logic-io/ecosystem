@@ -20,7 +20,6 @@ import {
   saveCodeSync,
   unmergedFiles,
 } from "../rebase.ts";
-import { holdWikiPin } from "../wiki.ts";
 import type { ReviewReply } from "./prepare-review.ts";
 import { prepareReview } from "./prepare-review.ts";
 import { refuseOnceMerged } from "./push.ts";
@@ -100,8 +99,9 @@ function conflictReply(wt: string, onto: string, keep: boolean): SyncConflict {
   };
 }
 
-// Resolve wiki gitlinks and continue automatically. With keepConflict, remaining
-// text stops stay for a writer to stage; finish-sync continues and checks them.
+// Rebase onto the base and continue automatically, refusing gitlink conflicts.
+// With keepConflict, remaining text stops stay for a writer to stage;
+// finish-sync continues and checks them.
 function syncBase(cfg: Config, request: unknown): SyncReply {
   const req = parseRequest(SYNC_REQUEST, "sync-base", request);
   const n = req.number;
@@ -110,10 +110,9 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   if (rebaseInProgress(wt)) {
     // A crashed run can leave a later stop reached by a resolver session.
     // Apply the same classification before deciding whether cleanup is safe.
-    classifyCodeSync(cfg, wt, undefined);
+    classifyCodeSync(wt, undefined);
     resetToRemote(cfg, n);
   }
-  holdWikiPin(cfg, wt);
   assertClean(wt);
   fetchIn(cfg, wt, cfg.baseBranch);
   const onto = gitOut(wt, ["rev-parse", `origin/${cfg.baseBranch}`]).trim();
@@ -122,7 +121,7 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     return { changed: false, conflict: false, headSha: head(wt), ...changes };
   }
   const before = head(wt);
-  const sync = { from: before, onto, wikiResolved: false };
+  const sync = { from: before, onto };
   saveCodeSync(wt, sync);
   const rebased = gitSucceeds(wt, ["rebase", onto]);
   if (!(rebased || rebaseInProgress(wt))) {
@@ -131,16 +130,11 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
     );
   }
   if (!rebased) {
-    continueCodeSync(cfg, wt, sync);
+    continueCodeSync(wt);
   }
   if (rebaseInProgress(wt)) {
-    const keep = req.keepConflict === true;
-    const conflict = conflictReply(wt, onto, keep);
-    // The stopped rebase may have replayed commits that move the wiki pin.
-    holdWikiPin(cfg, wt);
-    return conflict;
+    return conflictReply(wt, onto, req.keepConflict === true);
   }
-  holdWikiPin(cfg, wt);
   try {
     pushBranch(cfg, n, wt, "sync-base");
   } catch (error: unknown) {
@@ -168,7 +162,7 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
   const n = req.number;
   refuseOnceMerged(cfg, n, "finish-sync");
   const wt = paths.worktree(cfg, n);
-  const sync = classifyCodeSync(cfg, wt, req.baseSha);
+  const sync = classifyCodeSync(wt, req.baseSha);
   if (req.retainConflict === true) {
     const reason = retainSyncConflict(
       cfg,
@@ -183,12 +177,11 @@ function finishSync(cfg: Config, request: unknown): FinishReply {
     reason = textOr(req.reason, "aborted");
   } else {
     if (sync !== undefined && rebaseInProgress(wt)) {
-      continueCodeSync(cfg, wt, sync);
+      continueCodeSync(wt);
       if (rebaseInProgress(wt) && req.cannotFix !== true) {
         return conflictReply(wt, sync.onto, true);
       }
     }
-    holdWikiPin(cfg, wt);
     reason = finishProblem(cfg, n, req);
     if (reason !== undefined && req.cannotFix === true) {
       reason = `${textOr(req.reason, "resolver could not fix conflicts")}; ${reason}`;

@@ -57,13 +57,13 @@ function ok(args) {
 }
 function pushed(fields) {
   sh(["push", "--quiet", "--force", "origin", "HEAD:refs/heads/agent/issue-7"]);
-  return { ok: true, headSha: sh(["rev-parse", "HEAD"]), codeChanged: true, wikiAhead: 0, ...fields };
+  return { ok: true, headSha: sh(["rev-parse", "HEAD"]), codeChanged: true, ...fields };
 }
 function syncBase() {
   sh(["fetch", "--quiet", "origin", "integration"]);
   const baseSha = sh(["rev-parse", "origin/integration"]);
   if (ok(["merge-base", "--is-ancestor", baseSha, "HEAD"])) {
-    return { ok: true, changed: false, conflict: false, headSha: sh(["rev-parse", "HEAD"]), codeChanged: true, wikiAhead: 0 };
+    return { ok: true, changed: false, conflict: false, headSha: sh(["rev-parse", "HEAD"]), codeChanged: true };
   }
   if (!ok(["rebase", "--quiet", baseSha])) {
     const conflicts = sh(["diff", "--name-only", "--diff-filter=U"]).split("\\n").filter(Boolean);

@@ -1,5 +1,5 @@
 // @ts-check
-// Real isolated code/wiki checkouts and binary-safe dirty work for recovery tests.
+// A real isolated code checkout and binary-safe dirty work for recovery tests.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,23 +25,18 @@ const BINARY = Buffer.from(Array.from({ length: 256 }, (_, byte) => byte));
 const LATIN1 = Buffer.from("café\n", "latin1");
 const LEFT = ["new.txt", "notes.txt", "blob.bin", "latin1.txt", "run.sh"];
 
-/** @typedef {{ cfg: Config, root: string, repo: string, docs: string, branch: string, origin: string, wikiOrigin: string }} Opened */
+/** @typedef {{ cfg: Config, root: string, repo: string, branch: string, origin: string }} Opened */
 
 /** @param {Config} cfg @param {string} tmp @returns {Opened} */
 function openIn(cfg, tmp) {
   const job = { stage: "implement", branch: `agent/issue-${ISSUE}` };
   const dirs = openJobCheckout(cfg, ISSUE, job);
-  if (dirs.docs === null) {
-    throw new Error("the job has no wiki checkout");
-  }
   return {
     cfg,
     root: dirs.root,
     repo: dirs.repo,
-    docs: dirs.docs,
     branch: dirs.branch,
     origin: path.join(tmp, "origin.git"),
-    wikiOrigin: path.join(tmp, "wiki-origin.git"),
   };
 }
 
@@ -57,14 +52,9 @@ async function close(
   key,
   recovery = { stage: "implement", outcome: "stop", reason: null },
 ) {
-  const { cfg, repo, docs, branch } = job;
-  const dirs = { root: job.root, repo, docs, branch, key };
-  return await closeJobCheckout(
-    cfg,
-    ISSUE,
-    { ...dirs, wiki: "write", recovery },
-    null,
-  );
+  const { cfg, repo, branch } = job;
+  const dirs = { root: job.root, repo, branch, key };
+  return await closeJobCheckout(cfg, ISSUE, { ...dirs, recovery }, null);
 }
 
 /** @param {Opened} job @param {string} key */
@@ -85,7 +75,6 @@ async function timedOutReview(job, key) {
       stage: "review",
       key,
       dirs: job,
-      wiki: "write",
       push: null,
       status,
       runOp: async () => ({ ok: true, reply: {} }),

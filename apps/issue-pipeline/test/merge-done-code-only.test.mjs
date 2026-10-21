@@ -28,9 +28,7 @@ import {
   REVISION,
 } from "./reviewer-and-merge-role-kit.mjs";
 
-const { mergedAuthorizationHolds } = await import(
-  "../src/ops/publication-guard.ts"
-);
+const { mergedAuthorizationHolds } = await import("../src/ops/merge-guard.ts");
 
 const DONE = {
   ...merging().ctx.state,
@@ -39,6 +37,7 @@ const DONE = {
 };
 
 test("a code-only done completion rechecks M before reviewing missing security", async () => {
+  // Saved while the pipeline had a wiki: its revisions name a null wiki head.
   const codeOnly = { ...MERGED_REVISION, wiki: null };
   const afterCodeMerge = current(codeOnly, AFTER_MERGE.pr);
   const { ctx, calls } = fakeContext({
@@ -47,14 +46,13 @@ test("a code-only done completion rechecks M before reviewing missing security",
       ...DONE,
       hardened: { ...REVISION, wiki: null },
       merged: codeOnly,
-      flows: { code: true, wiki: false },
+      flows: { code: true },
     },
     ops: {
       "current-revision": [afterCodeMerge, afterCodeMerge],
       "prepare-review": [{ ...PREPARED_MERGED, changedFiles: ["src/chat.ts"] }],
-      "finish-wiki": [FINISHED],
+      finish: [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [{ pass: true, checks: [] }],
     },
     sessions: [NO_FINDING],
   });
@@ -69,15 +67,11 @@ test("a code-only done completion rechecks M before reviewing missing security",
   assert.deepEqual(saved, reviewed);
   assert.ok(saved !== undefined);
   assert.equal(mergedAuthorizationHolds(saved, codeOnly, MERGED_PR), true);
-  for (const boundary of /** @type {const} */ ([
-    "prepare-review",
-    "finish-wiki",
-  ])) {
+  for (const boundary of /** @type {const} */ (["prepare-review", "finish"])) {
     const checks = checksBefore(calls, boundary);
     assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
-    assert.deepEqual(checks.wiki, { number: ctx.issue });
   }
-  assert.deepEqual(mutationsOf(calls), ["finish-wiki"]);
+  assert.deepEqual(mutationsOf(calls), ["finish"]);
   assert.ok(sessionsOf(calls).every((session) => session.commits === false));
 });
 
@@ -94,15 +88,13 @@ test("a done completion rechecks M before reusing exact clearance", async () => 
     },
     ops: {
       "current-revision": [AFTER_MERGE],
-      "finish-wiki": [FINISHED],
+      finish: [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [{ pass: true, checks: [] }],
     },
   });
   stateOf(await mergeRole(ctx), "next");
-  const checks = checksBefore(calls, "finish-wiki");
+  const checks = checksBefore(calls, "finish");
   assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
-  assert.deepEqual(checks.wiki, { number: ctx.issue });
-  assert.deepEqual(mutationsOf(calls), ["finish-wiki"]);
+  assert.deepEqual(mutationsOf(calls), ["finish"]);
   assert.equal(sessionsOf(calls).length, 0);
 });

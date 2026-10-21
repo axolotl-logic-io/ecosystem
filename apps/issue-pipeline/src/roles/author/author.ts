@@ -1,7 +1,7 @@
 // The author (`author-maintains-gherkin`): one read-only session that reads
-// the filtered issue, AGENTS.md and the wiki, then either writes the issue's
-// behaviour as Gherkin in one signed comment, edited in place, or asks its
-// questions. It never splits, approves, or writes tests, stubs or repo files.
+// the filtered issue, AGENTS.md and the repo's docs, then either writes the
+// issue's behaviour as Gherkin in one signed comment, edited in place, or
+// asks its questions. It never splits, approves, or writes tests, stubs or repo files.
 
 import { GHERKIN_KEY, gherkinBody } from "../../gherkin-comment.ts";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";

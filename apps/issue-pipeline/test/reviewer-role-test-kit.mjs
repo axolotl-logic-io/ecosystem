@@ -11,8 +11,7 @@ import {
 } from "./reviewer-and-merge-role-kit.mjs";
 
 const VERIFIED = { pass: true, headSha: HEAD, changedFiles: [], checks: [] };
-const WIKI_PASS = { pass: true, checks: [] };
-const PUSHED = { headSha: HEAD, codeChanged: true, wikiAhead: 1 };
+const PUSHED = { headSha: HEAD, codeChanged: true };
 const READY = { pr: PR, ready: true };
 
 /** @type {import("../src/job/role-context.ts").SessionResult} */
@@ -43,7 +42,6 @@ function hardening(script = {}) {
         script.after ?? current(),
       ],
       verify: [VERIFIED],
-      "wiki-check": [WIKI_PASS],
       push: [PUSHED],
       "ready-pr": [READY],
       ...script.ops,
@@ -52,4 +50,4 @@ function hardening(script = {}) {
   });
 }
 
-export { HARDENED, hardening, PUSHED, READY, VERIFIED, WIKI_PASS };
+export { HARDENED, hardening, PUSHED, READY, VERIFIED };

@@ -1,7 +1,7 @@
 // The stage job's roles (sandbox-ready-jobs): the role each stage runs as,
 // the sessions each stage may run and which of them commit, each stage's
-// access to its code and wiki checkouts and what its committing sessions may
-// commit, what each role may hold, and the environment a session's pi gets.
+// access to its code checkout and what its committing sessions may commit,
+// what each role may hold, and the environment a session's pi gets.
 // Write authority is each session's own (`SessionSpec.commits`), never its
 // agent's: the reviewer commits while it hardens or integrates and only
 // reads in its final security review of the integrated result. No session
@@ -16,7 +16,7 @@ import { paths } from "../config.ts";
 import type { ModelRole } from "../config-legacy.ts";
 import type { JobRolesConfig } from "../config-schema.ts";
 import type { Stage } from "../stages.ts";
-import { JOB_DOCS, JOB_REPO } from "./layout.ts";
+import { JOB_REPO } from "./layout.ts";
 import type { Access, PathScope } from "./pipeline-commit.ts";
 import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
 import type { AgentName, SessionPhase, SessionSpec } from "./role-context.ts";
@@ -36,15 +36,14 @@ type Roles = Readonly<Record<JobRole, RoleSettings>>;
 // An environment as a process sees it: unset variables read as undefined.
 type EnvSource = Readonly<Record<string, string | undefined>>;
 
-// A stage's access to each of its job's checkouts: the code's (repo/) and
-// the wiki's (docs/).
+// A stage's access to its job's checkout: the code's (repo/), whose docs are
+// in repo/docs/.
 interface CheckoutAccess {
   repo: Access;
-  docs: Access;
 }
 
 // What a stage job declares about itself for a sandbox: its role, the
-// folder it works in, its access to each checkout there (what its committing
+// folder it works in, its access to the checkout there (what its committing
 // sessions may commit; a read-only session, such as the reviewer's final
 // security review, commits nothing), the names of its sessions' env, and its
 // network.
@@ -59,8 +58,8 @@ interface Boundary {
 
 // The role each stage's job runs as (Reimagined-Pipeline): the author only
 // reads; the implementor and the reviewer, which hardens the change, write;
-// merge holds the credentials for its deterministic merge and publication,
-// and its model sessions, which integrate the change and then review its
+// merge holds the credentials for its deterministic merge, and its model
+// sessions, which integrate the change and then review its
 // security, never get them.
 const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
   author: "reader",
@@ -73,16 +72,6 @@ const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
 // sessions get: the author only reads it; the implementor writes it, the
 // reviewer hardens it, and merge's integration rebases and fixes it.
 const STAGE_CODE_ACCESS: Readonly<Record<Stage, Access>> = {
-  author: "read",
-  implement: "write",
-  review: "write",
-  merge: "write",
-};
-
-// Each stage's access to the issue's wiki checkout: every stage reads it;
-// the implementor writes its wiki updates, the reviewer hardens them, and
-// merge rebases and publishes them.
-const STAGE_WIKI_ACCESS: Readonly<Record<Stage, Access>> = {
   author: "read",
   implement: "write",
   review: "write",
@@ -214,16 +203,12 @@ function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
   return Object.fromEntries(env);
 }
 
-// What a committing session of `stage` may commit: its code checkout and its
-// wiki checkout (null when the job has none, `hasWiki` false) as the stage's
-// access allows, and the code globs, relative to the code checkout, it may
-// commit there: any code path only while fresh authority permits code writes,
-// else none. This scopes the commit tool, not OS filesystem access.
-function commitScopeOf(
-  stage: Stage,
-  hasWiki: boolean,
-  codeWritable: boolean,
-): PathScope {
+// What a committing session of `stage` may commit: its code checkout as the
+// stage's access allows, and the code globs, relative to the code checkout,
+// it may commit there: any code path only while fresh authority permits code
+// writes, else none, so a session after the code merged commits nothing.
+// This scopes the commit tool, not OS filesystem access.
+function commitScopeOf(stage: Stage, codeWritable: boolean): PathScope {
   let access = STAGE_CODE_ACCESS[stage];
   if (!codeWritable) {
     access = "read";
@@ -232,12 +217,7 @@ function commitScopeOf(
   if (access === "write") {
     allowed.push("**");
   }
-  const repo = { dir: JOB_REPO, access };
-  let docs: PathScope["docs"] = null;
-  if (hasWiki) {
-    docs = { dir: JOB_DOCS, access: STAGE_WIKI_ACCESS[stage] };
-  }
-  return { repo, docs, allowed };
+  return { repo: { dir: JOB_REPO, access }, allowed };
 }
 
 function byName(a: string, b: string): -1 | 0 | 1 {
@@ -262,7 +242,7 @@ function boundaryOf(
   return {
     role,
     checkout: paths.jobCheckout(cfg, issue, stage),
-    access: { repo: STAGE_CODE_ACCESS[stage], docs: STAGE_WIKI_ACCESS[stage] },
+    access: { repo: STAGE_CODE_ACCESS[stage] },
     env: Object.keys(agentEnvOf(roles, from)).sort(byName),
     network: roles[role].network,
     runtime: runtimeBoundary(cfg.runtime, cfg.models),
@@ -286,6 +266,5 @@ export {
   STAGE_AGENTS,
   STAGE_CODE_ACCESS,
   STAGE_ROLES,
-  STAGE_WIKI_ACCESS,
   sessionRefusalOf,
 };

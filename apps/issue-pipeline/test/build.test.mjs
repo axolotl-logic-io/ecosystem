@@ -3,7 +3,8 @@
 // copies and no workflow, the built ops CLI answers as src/ops.ts does and
 // its shell supervisor parses, the built stage job rejects a bad stage, the
 // built orchestrator's --once exits 0 after a tick and 1 after one that
-// throws, and the built report names a missing --config. It builds into its
+// throws, the built report names a missing --config, and the built caller's
+// launcher reports an empty run and names its commands. It builds into its
 // own folder, so it never races install.test.mjs, which builds dist/.
 
 import assert from "node:assert/strict";
@@ -25,11 +26,13 @@ const EXECUTABLES = [
   "structured-output.mjs",
   "pipeline-commit.mjs",
   "git-review.mjs",
+  "caller-jobs.mjs",
 ];
 // The error the stage job exits with for an unknown --stage.
 const BAD_STAGE = /--stage must be one of/u;
 const UNKNOWN_FLAG = /--nope/u;
 const NO_CONFIG = /--config must name a repo config file/u;
+const NO_COMMAND = /give start, status or wait/u;
 // What the orchestrator prints when a tick throws, here because gh is logged
 // in as another account than the config's.
 const TICK_FAILED =
@@ -159,6 +162,31 @@ test("the built report parses, keeps its #! line and names a missing --config", 
   assert.match(missing.stderr, NO_CONFIG);
 });
 
+test("the built caller's launcher keeps its #! line, reports an empty run and names its commands", () => {
+  const launcher = path.join(tmp, "caller-jobs.mjs");
+  assert.ok(
+    fs.readFileSync(launcher, "utf8").startsWith("#!/usr/bin/env node\n"),
+  );
+  /** @param {string[]} args @returns {import("node:child_process").SpawnSyncReturns<string>} */
+  function run(args) {
+    return spawnSync(process.execPath, [launcher, ...args], {
+      encoding: "utf8",
+      env: { [ROOT_VAR]: tmp },
+    });
+  }
+  const runDir = fs.mkdtempSync(path.join(tmp, "run-"));
+  fs.writeFileSync(
+    path.join(runDir, "run.json"),
+    JSON.stringify({ maxJobs: 1, maxAttempts: 1 }),
+  );
+  const status = run(["status", "--run", runDir]);
+  assert.equal(status.status, 0, status.stderr);
+  assert.equal(status.stdout, "");
+  const none = run([]);
+  assert.equal(none.status, 1);
+  assert.match(none.stderr, NO_COMMAND);
+});
+
 // A repo config for the built orchestrator, cloning a bare origin in tmp.
 /** @returns {string} */
 function orchestratorConfig() {
@@ -195,7 +223,7 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   function once() {
     return spawnSync(
       process.execPath,
-      [orchestrator, "--config", config, "--brain-path", tmp, "--once"],
+      [orchestrator, "--config", config, "--once"],
       {
         encoding: "utf8",
         env: { ...process.env, [ROOT_VAR]: tmp },

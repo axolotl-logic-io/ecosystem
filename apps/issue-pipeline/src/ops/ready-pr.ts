@@ -113,9 +113,9 @@ function readyApproval(
   assignedBranch(cfg, n, saved);
   const current = currentRevision(cfg, n, state);
   if (!approvalHolds(state, current.revision)) {
-    const { code, wiki, inputs } = current.revision;
+    const { code, inputs } = current.revision;
     throw new OpsError(
-      `#${n}'s merge authorization doesn't hold for its current revision (code ${String(code)}, wiki ${String(wiki)}, inputs ${inputs})`,
+      `#${n}'s merge authorization doesn't hold for its current revision (code ${String(code)}, inputs ${inputs})`,
     );
   }
   return { pr, code: authorized.code };

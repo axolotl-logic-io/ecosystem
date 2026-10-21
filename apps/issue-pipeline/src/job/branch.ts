@@ -1,8 +1,8 @@
 // The issue branch a stage job's caller assigns it (`--branch`): checked
 // before the job claims, clones or changes anything. A branch is refused
 // when it isn't one an issue may work on (paths.branch in src/config.ts,
-// which every op applies too: a literal branch name, neither the configured
-// base nor the wiki's branch), when git would rewrite it as a branch name,
+// which every op applies too: a literal branch name that isn't the
+// configured base), when git would rewrite it as a branch name,
 // or when it is the remote's default branch. Whether the issue's saved state
 // is bound to another branch is the claim's to refuse, since only it reads
 // that state.

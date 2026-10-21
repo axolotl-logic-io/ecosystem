@@ -17,7 +17,7 @@ const CONTROL_REQUEST = z.discriminatedUnion("type", [
   PUSH_REQUEST,
 ]);
 const STEER_REPLY = z.object({ ok: z.boolean(), error: z.string().nullable() });
-const PUSHED = z.enum(["both", "code", "wiki", "none", "deferred"]);
+const PUSHED = z.enum(["code", "none", "deferred"]);
 const PUSH_REPLY = z.object({
   pushed: PUSHED,
   pushError: z.string().nullable(),

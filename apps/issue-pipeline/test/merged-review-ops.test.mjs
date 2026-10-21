@@ -5,7 +5,7 @@
 // moving and writing nothing, a checkout with uncommitted changes, a merge
 // commit with no change against its first parent, and a checkout that
 // doesn't end at the merge commit; and the detached checkout is no
-// unpushed work: no stop pushes it, a wiki-only push accepts it, the
+// unpushed work: no stop pushes it, a push after the merge is refused, the
 // current revision is the merge commit, and a stage job's teardown drops
 // and pushes nothing.
 import assert from "node:assert/strict";
@@ -46,14 +46,11 @@ const REVIEW_REPLY = z.looseObject({
   bundleText: z.string(),
 });
 const ERROR_REPLY = z.object({ ok: z.literal(false), error: z.string() });
-const PUSHED_REPLY = z.looseObject({
-  ok: z.literal(true),
-  headSha: z.string(),
-});
 const UNCOMMITTED =
   /uncommitted changes, so it can't be moved to the merged result; nothing was dropped/u;
 const CHANGES_NOTHING = /changes nothing against its first parent/u;
 const NOT_AT_MERGE = /not the merge commit/u;
+const CODE_MERGED_REFUSAL = /code merged, so push can't push code/u;
 const AT = "2026-10-15T01:00:00Z";
 
 /** @param {string} out @returns {unknown} */
@@ -233,7 +230,7 @@ test("the detached merge commit is no unpushed work: a stop pushes nothing and t
   assert.equal(current.checkoutHead, merged.sha);
 });
 
-test("a wiki-only push from the detached merge commit pushes no code", () => {
+test("a push once the code merged is refused and pushes no code", () => {
   const saved = {
     ...newIssueState(ISSUE.merged),
     stage: "review",
@@ -254,9 +251,9 @@ test("a wiki-only push from the detached merge commit pushes no code", () => {
       keep: true,
     },
   ]);
-  const request = { op: "push", number: ISSUE.merged, wikiOnly: true };
-  const reply = PUSHED_REPLY.parse(parsed(fx.ask(request, CONFIG)));
-  assert.equal(reply.headSha, merged.sha);
+  const request = { op: "push", number: ISSUE.merged };
+  const reply = ERROR_REPLY.parse(parsed(fx.ask(request, CONFIG)));
+  assert.match(reply.error, CODE_MERGED_REFUSAL);
   assert.equal(originRef(`agent/issue-${ISSUE.merged}`), merged.head);
 });
 
@@ -274,7 +271,7 @@ test("a stage job's teardown of a checkout detached at the merge drops and pushe
   const dropped = await closeJobCheckout(
     cfg,
     ISSUE.job,
-    { root, repo, docs: null, wiki: "read", key: "review-1", branch: name },
+    { root, repo, key: "review-1", branch: name },
     () => {
       pushes += 1;
       return Promise.resolve();

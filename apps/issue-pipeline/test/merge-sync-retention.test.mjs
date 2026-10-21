@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BASE, fakeContext } from "./implementor-test-kit.mjs";
 
-const { syncSide } = await import("../src/roles/merge/sync.ts");
+const { syncCode } = await import("../src/roles/merge/sync.ts");
 const { OpsFailure } = await import("../src/job/role-context.ts");
 const CONFLICT = {
   conflict: true,
@@ -28,10 +28,7 @@ test("evidence preparation failure does not claim a controlled retained conflict
     ops: { "sync-base": [CONFLICT], "finish-sync": [CONFLICT, failure] },
     sessions: [RESOLVED],
   });
-  await assert.rejects(
-    syncSide(ctx, ctx.state, { side: "code", maxConflictFixes: 1 }),
-    failure,
-  );
+  await assert.rejects(syncCode(ctx, ctx.state, 1), failure);
   assert.equal(sessions.length, 1);
   assert.deepEqual(
     saves.map((state) => state.counts.conflictFixes),
@@ -50,10 +47,7 @@ test("a failed attempt checkpoint cannot continue the rebase or launch another r
     sessions: [RESOLVED],
   });
   ctx.save = () => Promise.reject(failure);
-  await assert.rejects(
-    syncSide(ctx, ctx.state, { side: "code", maxConflictFixes: 2 }),
-    failure,
-  );
+  await assert.rejects(syncCode(ctx, ctx.state, 2), failure);
   assert.equal(sessions.length, 1);
   assert.equal(
     ops.some((op) => op.name === "finish-sync"),
@@ -70,10 +64,7 @@ for (const reply of [
     const { ctx, sessions } = fakeContext({
       ops: { "sync-base": [CONFLICT], "finish-sync": [reply] },
     });
-    await assert.rejects(
-      syncSide(ctx, ctx.state, { side: "code", maxConflictFixes: 0 }),
-      OpsFailure,
-    );
+    await assert.rejects(syncCode(ctx, ctx.state, 0), OpsFailure);
     assert.equal(sessions.length, 0);
   });
 }

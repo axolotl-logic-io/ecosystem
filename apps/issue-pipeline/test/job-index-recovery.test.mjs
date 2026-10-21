@@ -1,5 +1,6 @@
 // @ts-check
-// Staged bytes survive independently of the final working tree in both checkouts.
+// Staged bytes survive independently of the final working tree, in code and
+// in its docs/.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,18 +15,12 @@ import { git, headOf, ISSUE, write } from "./pipeline-commit-test-kit.mjs";
 
 const { paths } = await import("../src/config.ts");
 
-for (const side of /** @type {const} */ (["repo", "docs"])) {
+for (const tracked of ["README.md", "docs/Home.md"]) {
   for (const working of ["HEAD", "distinct"]) {
-    test(`${side}: staged content survives cleanup with ${working} working bytes`, async () => {
+    test(`${tracked}: staged content survives cleanup with ${working} working bytes`, async () => {
       const job = openFresh();
-      let dir = job.repo;
-      let { origin } = job;
-      let tracked = "README.md";
-      if (side === "docs") {
-        dir = job.docs;
-        origin = job.wikiOrigin;
-        tracked = "Home.md";
-      }
+      const dir = job.repo;
+      const { origin } = job;
       const sha = headOf(dir);
       const original = fs.readFileSync(path.join(dir, tracked));
       write(dir, tracked, "unique staged bytes\n");
@@ -36,7 +31,7 @@ for (const side of /** @type {const} */ (["repo", "docs"])) {
       }
       fs.writeFileSync(path.join(dir, tracked), bytes);
       const result = await close(job, KEY);
-      const patch = paths.droppedPatch(job.cfg, ISSUE, KEY, side);
+      const patch = paths.droppedPatch(job.cfg, ISSUE, KEY, "repo");
       const indexPatch = `${patch}.index.patch`;
       assert.equal(fs.existsSync(indexPatch), true);
       assert.ok(result.patches.some((file) => file.endsWith(".index.patch")));

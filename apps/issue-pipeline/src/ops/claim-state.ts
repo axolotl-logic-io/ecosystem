@@ -96,12 +96,10 @@ function assertFirstClaim(
   );
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
   const remote = git(cfg, "dev", ["ls-remote", url, `refs/heads/${branch}`]);
-  const wiki = hasLocalBranch(paths.wikiMirror(cfg), branch);
   if (
     priorComment ||
     priorFiles ||
     priorCode ||
-    wiki ||
     remote.stdout.trim() !== "" ||
     historicalPrFor(cfg, number) !== null
   ) {
@@ -197,7 +195,7 @@ function assertClosedMergeRecovery(
 
 // `state` with its PR and code merge as GitHub reports them. A recorded
 // code merge GitHub doesn't confirm, or a completion GitHub reports another
-// code merge for (none, for a change that lives only in the wiki), throws:
+// code merge for (none, for a completion with no code), throws:
 // the claim never clears or replaces a merge it recorded.
 function reconciled(
   cfg: Config,

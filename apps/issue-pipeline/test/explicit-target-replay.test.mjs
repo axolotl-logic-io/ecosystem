@@ -11,15 +11,14 @@ import {
   postmergeOps,
   result,
   saves,
-  WIKI_PASS,
 } from "./explicit-target-role-test-kit.mjs";
 import { PR, world } from "./explicit-target-world-test-kit.mjs";
 
 const { mergeRole } = await import("../src/roles/merge/merge.ts");
 const { recoverOwnMerge } = await import("../src/roles/merge/recovery.ts");
-const { afterOwnMerge } = await import("../src/roles/merge/publish.ts");
+const { afterOwnMerge } = await import("../src/roles/merge/after-merge.ts");
 const { OpsFailure } = await import("../src/job/role-context.ts");
-const FALSE_RECEIPT = /GitHub or the wiki no longer match/u;
+const FALSE_RECEIPT = /GitHub no longer matches it/u;
 
 test("done replay with saved security still reestablishes graph/checks before completion", async () => {
   const w = world();
@@ -35,8 +34,7 @@ test("done replay with saved security still reestablishes graph/checks before co
   const end = await mergeRole(run.ctx);
   assert.equal(end.kind, "next");
   assert.ok(
-    names(run.calls).indexOf("verify") <
-      names(run.calls).indexOf("finish-wiki"),
+    names(run.calls).indexOf("verify") < names(run.calls).indexOf("finish"),
   );
   assert.equal(names(run.calls).includes("session"), false);
   assert.equal(names(run.calls).includes("merge"), false);
@@ -66,7 +64,8 @@ for (const stage of REPLAY_STAGES) {
   });
 }
 
-for (const change of ["head", "merge", "wiki", "pr"]) {
+// "legacy wiki": a receipt saved while the pipeline had a wiki.
+for (const change of ["head", "merge", "legacy wiki", "pr"]) {
   test(`own recovery refuses ${change} mismatch rather than inventing provenance or invoking checks`, async () => {
     const w = world();
     const fresh = current(w, true);
@@ -80,7 +79,7 @@ for (const change of ["head", "merge", "wiki", "pr"]) {
       fresh.pr.number = PR + 1;
     }
     const run = context(w, { state: { ...ownState(w) }, ops: {} });
-    if (change === "wiki") {
+    if (change === "legacy wiki") {
       run.ctx.state.merged = { ...result(w), wiki: w.moved };
     }
     assert.equal(await recoverOwnMerge(run.ctx, fresh), null);
@@ -108,7 +107,6 @@ test("byHand observed during merge is never promoted to a fresh own receipt", as
   const run = context(w, {
     ops: {
       "current-revision": [current(w), current(w)],
-      "wiki-check": [WIKI_PASS],
       "ci-status": [{ status: "pass" }],
       merge: [
         { merged: true, byHand: true, mergeCommit: w.merged, headSha: w.head },
@@ -168,7 +166,6 @@ for (const outcome of [
     const run = context(w, {
       ops: {
         "current-revision": [current(w), current(w)],
-        "wiki-check": [WIKI_PASS],
         "ci-status": [{ status: "pass" }],
         merge: [{ merged: false, reason: outcome }],
       },
@@ -214,14 +211,13 @@ test("done replay check failure cannot reuse saved security to complete unchecke
     ops: {
       "current-revision": [current(w, true)],
       verify: [{ pass: false, headSha: w.merged, checks: [] }],
-      "wiki-check": [WIKI_PASS],
     },
   });
   const end = await mergeRole(run.ctx);
   assert.ok(end.kind === "stop");
   assert.equal(end.state.merged?.code, w.merged);
   assert.equal(end.state.security?.finding, null);
-  assert.equal(names(run.calls).includes("finish-wiki"), false);
+  assert.equal(names(run.calls).includes("finish"), false);
   assert.equal(names(run.calls).includes("session"), false);
   assert.deepEqual(codeWrites(run.calls), []);
 });

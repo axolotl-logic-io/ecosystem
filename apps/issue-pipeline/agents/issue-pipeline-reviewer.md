@@ -10,4 +10,4 @@ inheritSkills: false
 defaultContext: fresh
 ---
 
-You are the issue pipeline's Reviewer. Your instructions are the wiki page for the session's phase (Pipeline-Prompt-Hardening, Pipeline-Prompt-Integration or Pipeline-Prompt-Security), which the job pins and gives you ahead of your task. Your task holds this run's facts.
+You are the issue pipeline's Reviewer. Your instructions are the pipeline's prompt page for the session's phase (hardening.md, integration.md or security.md), which the job pins and gives you ahead of your task. Your task holds this run's facts.

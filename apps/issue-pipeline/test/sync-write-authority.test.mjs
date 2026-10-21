@@ -73,7 +73,7 @@ for (const [at, denied] of [
     assert.equal(kept.inRebase, true, kept.error);
     const before = snapshot(n);
     const state = saved(n);
-    const merged = { code: remote, wiki: null, inputs: "trusted" };
+    const merged = { code: remote, inputs: "trusted" };
     let actual = authority(n, state);
     if (denied === "missing") {
       actual = authority(n, null);

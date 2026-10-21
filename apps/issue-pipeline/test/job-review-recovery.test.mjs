@@ -1,6 +1,6 @@
 // @ts-check
-// The next caller-owned Review job supplies recovery automatically, even in
-// wiki-only scope and with changed heads; the files are inert, readable data.
+// The next caller-owned Review job supplies recovery automatically, even with
+// changed heads; the files are inert, readable data.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -44,7 +44,6 @@ function seedRecovery(at) {
       issue: 7,
       branch: "agent/issue-7",
       job: KEY,
-      wikiAccess: "write",
       origin: {
         stage: "review",
         outcome: "stop",
@@ -82,7 +81,7 @@ function reviewReplies() {
   };
 }
 
-test("a fresh wiki-only hardening writer gets previous timeout provenance and readable patches without an issue-comment handoff", () => {
+test("a fresh hardening writer gets previous timeout provenance and readable patches without an issue-comment handoff", () => {
   const at = setUp(
     reviewReplies(),
     {
@@ -91,9 +90,8 @@ test("a fresh wiki-only hardening writer gets previous timeout provenance and re
       ],
     },
     { commands: { test: "mise //apps/issue-pipeline:check" } },
-    { wiki: true },
   );
-  fs.writeFileSync(path.join(at.brain, "Pipeline-Prompt-Hardening.md"), PROMPT);
+  fs.writeFileSync(path.join(at.prompts, "hardening.md"), PROMPT);
   const { patch, bytes } = seedRecovery(at);
   const r = runJob(at, ["--stage", "review"]);
   assert.equal(r.status, 0, r.stderr);
@@ -110,7 +108,6 @@ test("a fresh wiki-only hardening writer gets previous timeout provenance and re
   assert.ok(task.includes("snapshot: index"));
   assert.ok(task.includes(BASE));
   assert.ok(task.includes("/old/job/repo"));
-  assert.ok(task.includes("Scope: the wiki in `docs/` only"));
   assert.equal(fs.readFileSync(patch, "utf8"), bytes);
   assert.ok(
     !logOf(at, "ops.log").some(({ op }) => ["verify", "ready-pr"].includes(op)),
@@ -212,7 +209,6 @@ test("hardening and check-fix both get the pinned targeted-test policy and actua
       headSha: HEAD_SHA,
       checks: [{ id: "test", pass: false, detail: "exit 1" }],
     },
-    "wiki-check": { ok: true, pass: true, checks: [] },
   };
   const at = setUp(
     replies,
@@ -229,7 +225,7 @@ test("hardening and check-fix both get the pinned targeted-test policy and actua
     },
     { commands: { test: "mise //apps/issue-pipeline:check" } },
   );
-  fs.writeFileSync(path.join(at.brain, "Pipeline-Prompt-Hardening.md"), PROMPT);
+  fs.writeFileSync(path.join(at.prompts, "hardening.md"), PROMPT);
   const r = runJob(at, ["--stage", "review"]);
   assert.equal(r.status, 0, r.stderr);
   const starts = piStarts(at);

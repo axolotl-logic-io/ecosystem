@@ -4,8 +4,7 @@
 // the change touches them. Before the code merges they run in the issue's
 // checkout, which verify leaves as it found it. Once it merged, they run at
 // the exact merge commit GitHub reports, in a clean detached checkout of it
-// that verify removes, so the issue's checkout and its pending wiki work stay
-// as they are.
+// that verify removes, so the issue's checkout stays as it is.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +15,6 @@ import { paths } from "../config.ts";
 import { assertClean, fetchIn, gitIn, head } from "../git-state.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run, shell } from "../process.ts";
-import { holdWikiPin } from "../wiki.ts";
 import type { VerifyReply } from "./checks.ts";
 import { changedFiles, present, runChecks, SETTINGS } from "./checks.ts";
 import { confirmedMergedParent } from "./merged-graph.ts";
@@ -35,9 +33,6 @@ const REQUEST = z.looseObject({
 // leaves the base branch.
 function verifyCheckout(cfg: Config, n: number): VerifyReply {
   const wt = paths.worktree(cfg, n);
-  // The finalizer's rebase (#422), or a writer's own reset, may have
-  // replayed commits that move the wiki pin.
-  holdWikiPin(cfg, wt);
   assertClean(wt);
   fetchIn(cfg, wt, cfg.baseBranch);
   const sha = head(wt);

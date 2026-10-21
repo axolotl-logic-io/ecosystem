@@ -18,7 +18,7 @@ const { ghIsRead } = await import("../src/github.ts");
 const { fakeGh, ask, originRef } = fx;
 const PUSHED = { n: 7, pr: 57 };
 const EMPTY = { n: 8, pr: 58 };
-const CODE = { codeChanged: true, wikiAhead: 0 };
+const CODE = { codeChanged: true };
 /** @returns {string[][]} */
 function writes() {
   return fakeGh.calls().filter((args) => !ghIsRead(args));
@@ -87,7 +87,7 @@ test("exit-push pushes the branch and records the push as exit-push", () => {
   assert.deepEqual(writes(), []);
 });
 
-test("push with no code change and no wiki commits pushes nothing and says so", () => {
+test("push with no code change pushes nothing and says so", () => {
   const { n, pr } = EMPTY;
   startPr(n, pr);
   const before = originRef("agent/issue-8");
@@ -98,7 +98,7 @@ test("push with no code change and no wiki commits pushes nothing and says so", 
     openDraftReply(n, pr, `${fx.root}/origin.git`),
   ]);
   const out = ask({ op: "push", number: 8 });
-  const nothing = { headSha: before, codeChanged: false, wikiAhead: 0 };
+  const nothing = { headSha: before, codeChanged: false };
   assert.equal(out, okLine("push", nothing));
   assert.equal(originRef("agent/issue-8"), before);
   assert.deepEqual(pushRecord(fx.root, n), record);

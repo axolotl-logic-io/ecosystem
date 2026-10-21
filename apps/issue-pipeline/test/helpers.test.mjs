@@ -12,7 +12,7 @@ import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 // A body longer than a GitHub comment, and the length signed() clips it to.
-const BASE_OR_WIKI = /is the base or wiki branch/u;
+const BASE_BRANCH = /is the base branch, which no issue works on/u;
 const OVERLONG_BODY = 70_000;
 const COMMENT_LIMIT = 65_000;
 // The issue a new state is made for, and its PR.
@@ -143,7 +143,7 @@ test("a state comment's body gives its state, or null", () => {
     parseStateBody("<!-- agent-pipeline:state {bad -->", STATE_ISSUE),
     null,
   );
-  // What the wiki says the state comment holds, in any order.
+  // What the state comment holds, in any order.
   const promised = [
     "version",
     "stage",
@@ -161,7 +161,7 @@ test("a state comment's body gives its state, or null", () => {
   );
 });
 
-test("a job checkout stands in for its own issue's worktree and branch, with the wiki checkout docs/ beside it, and for its issue only", () => {
+test("a job checkout stands in for its own issue's worktree and branch, and for its issue only", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "issue-pipeline-paths-"));
   process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, "o__r.json");
@@ -175,7 +175,6 @@ test("a job checkout stands in for its own issue's worktree and branch, with the
     ...credentialConfig("bot"),
     allowedUsers: ["alice"],
     commands: { test: "true" },
-    wiki: { dir: "wiki" },
     checkout,
   };
   fs.writeFileSync(file, JSON.stringify(config));
@@ -183,19 +182,15 @@ test("a job checkout stands in for its own issue's worktree and branch, with the
   assert.equal(cfg.checkout, undefined);
   const work = `${isolatedRoot}/work/o__r`;
   assert.equal(paths.worktree(cfg, STATE_ISSUE), `${work}/issue-7`);
-  assert.equal(paths.wiki(cfg, STATE_ISSUE), `${work}/issue-7/wiki`);
   const scoped = withCheckout(cfg, checkout);
   assert.equal(paths.worktree(scoped, STATE_ISSUE), "/jobs/issue-7-spec/repo");
-  assert.equal(paths.wiki(scoped, STATE_ISSUE), "/jobs/issue-7-spec/docs");
   assert.equal(paths.branch(scoped, STATE_ISSUE), "feature/seven");
   assert.equal(paths.branch(cfg, STATE_ISSUE), "agent/issue-7");
   const other = STATE_ISSUE + 1;
   assert.equal(paths.worktree(scoped, other), `${work}/issue-${other}`);
   assert.equal(paths.branch(scoped, other), `agent/issue-${other}`);
-  // The configured base (main by default) and wiki branch are no issue's.
-  for (const branch of ["main", "master"]) {
-    const unsafe = withCheckout(cfg, { ...checkout, branch });
-    assert.throws(() => paths.branch(unsafe, STATE_ISSUE), BASE_OR_WIKI);
-  }
+  // The configured base (main by default) is no issue's.
+  const unsafe = withCheckout(cfg, { ...checkout, branch: "main" });
+  assert.throws(() => paths.branch(unsafe, STATE_ISSUE), BASE_BRANCH);
   assert.equal(withCheckout(cfg, null), cfg);
 });

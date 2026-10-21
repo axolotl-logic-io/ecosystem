@@ -66,7 +66,6 @@ const GHERKIN = {
   gherkin:
     "Feature: Chats\n  Scenario: list\n    Given a chat\n    Then it is listed",
   assumptions: ["Chats are sorted newest first"],
-  wikiPages: ["Chats"],
 };
 
 // The ops of a clean run: no conflicts, every check passing, code pushed.
@@ -74,14 +73,10 @@ const GHERKIN = {
 const CLEAN_OPS = {
   "start-pr": [{ pr: PR, headSha: HEAD }],
   "sync-base": [{ changed: false, conflict: false, headSha: HEAD }],
-  "wiki-sync": [{ changed: false, conflict: false, headSha: "" }],
   verify: [{ pass: true, headSha: HEAD, changedFiles: ["a.ts"], checks: [] }],
-  "wiki-check": [{ pass: true, checks: [] }],
-  "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: true, wikiAhead: 1 }],
-  push: [{ headSha: HEAD, codeChanged: true, wikiAhead: 1 }],
+  "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: true }],
+  push: [{ headSha: HEAD, codeChanged: true }],
   "finish-sync": [{ resolved: true, headSha: HEAD }],
-  "finish-wiki-sync": [{ resolved: true, headSha: shaOf("d") }],
-  "close-pr": [{ pr: PR, closed: true }],
 };
 
 /** @type {SessionResult} */
@@ -157,7 +152,6 @@ function scriptedSessions(results) {
  *   sessions?: SessionResult[],
  *   state?: Partial<IssueState>,
  *   gherkin?: GherkinComment | null,
- *   docs?: string | null,
  *   config?: Record<string, unknown>,
  * }} [script]
  */
@@ -166,8 +160,8 @@ function fakeContext(script = {}) {
   const { session, sessions } = scriptedSessions(script.sessions ?? [DONE]);
   /** @type {IssueState[]} */
   const saves = [];
-  // A null docs or Gherkin is the test's own; only a missing one defaults.
-  const { docs = "/job/docs", gherkin = GHERKIN } = script;
+  // A null Gherkin is the test's own; only a missing one defaults.
+  const { gherkin = GHERKIN } = script;
   /** @type {RoleContext} */
   const ctx = {
     cfg: configOf(script.config),
@@ -175,7 +169,7 @@ function fakeContext(script = {}) {
     stage: "implement",
     mergeQueue: null,
     state: { ...newIssueState(ISSUE), stage: "implement", ...script.state },
-    dirs: { job: "/job", repo: "/job/repo", docs },
+    dirs: { job: "/job", repo: "/job/repo" },
     issueFile: "/job/issue.md",
     inputs: {
       issue: { title: "List chats", body: "B", user: { login: "owner" } },

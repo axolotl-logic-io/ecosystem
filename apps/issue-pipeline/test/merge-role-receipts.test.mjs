@@ -16,7 +16,6 @@ import {
   mergeRole,
   PR,
   REVISION,
-  WIKI,
 } from "./reviewer-and-merge-role-kit.mjs";
 
 test("own merge saves the original receipt, exact-M verification, security and completion separately", async () => {
@@ -33,16 +32,9 @@ test("own merge saves the original receipt, exact-M verification, security and c
     commentId: COMMENT_ID,
     finding: null,
   });
-  const {
-    expectedWiki,
-    revision: published,
-    state: publishing,
-  } = firstPayload(calls, "publish");
-  assert.equal(expectedWiki, WIKI);
-  assert.deepEqual(published, REVISION);
-  assert.deepEqual(publishing, saves[2]);
   assert.equal(saves[3]?.stage, "done");
-  const { state: finished } = firstPayload(calls, "finish-wiki");
+  assert.deepEqual(saves[3]?.security, saves[2]?.security);
+  const { state: finished } = firstPayload(calls, "finish");
   assert.deepEqual(finished, saves[3]);
   assert.deepEqual(firstPayload(calls, "verify"), {
     number: ctx.issue,
@@ -54,7 +46,7 @@ for (const checks of [
   [],
   [{ id: "test", pass: false, detail: "failed on combined M" }],
 ]) {
-  test(`an own-result verify failure with ${checks.length} failed rows stops without a writer or publication`, async () => {
+  test(`an own-result verify failure with ${checks.length} failed rows stops without a writer or completion`, async () => {
     const { ctx, calls } = merging({
       ops: { verify: [{ pass: false, headSha: MERGE_COMMIT, checks }] },
     });
@@ -66,13 +58,7 @@ for (const checks of [
     assert.equal(end.state.verifiedSha, HEAD);
     assert.equal(end.state.security, null);
     assert.equal(sessionsOf(calls).length, 0);
-    for (const name of [
-      "push",
-      "sync-base",
-      "prepare-review",
-      "publish",
-      "finish-wiki",
-    ]) {
+    for (const name of ["push", "sync-base", "prepare-review", "finish"]) {
       assert.ok(!opNames(calls).includes(name), name);
     }
     assert.deepEqual(

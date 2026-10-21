@@ -4,11 +4,11 @@
 // hardening and integration, which commit, and its final security review,
 // which must only read: a read-only session keeps only the tools that read,
 // whatever its definition lists, and never pi's defaults. Its behavioral
-// prompt, pinned from the brain, is appended to its system prompt as text
+// prompt, pinned from its prompt page, is appended to its system prompt as text
 // and grants nothing, though it names tools or authority.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pinnedOf } from "./brain-test-kit.mjs";
+import { pinnedOf } from "./prompt-test-kit.mjs";
 import "./isolated-root-test-kit.mjs";
 
 /** @import { AgentDefinition } from "../src/job/agent-definition.ts" */
@@ -26,7 +26,7 @@ const FILES = {
 };
 const COMMIT_EXTENSION = "/r/pipeline-commit.mjs";
 const READ_ONLY = "read,grep,find,ls,codemode,structured_output";
-const SECURITY = pinnedOf("Pipeline-Prompt-Security.md");
+const SECURITY = pinnedOf("security.md");
 
 // The reviewer's final security review, read-only, with `prompt` pinned.
 /** @param {SessionLaunch["prompt"]} [prompt] @returns {SessionLaunch} */

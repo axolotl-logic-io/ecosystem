@@ -1,8 +1,8 @@
 // The stops: each is a failed control, a limit or check the issue didn't
 // pass. Each control has its own label, agent:stopped-<code>, and every stop
 // posts a comment naming the control, the reason and how to resume.
-// The pipeline wiki's Agent-Labels page documents every label; keep
-// it in step with this table. A stop's reason is free text; the first
+// The issue pipeline's docs/reference/ describe every label; keep them in
+// step with this table. A stop's reason is free text; the first
 // matching control below names it. A label of a removed control, such as
 // agent:stopped-budget, still reads as a stop (isStopLabel).
 
@@ -111,7 +111,7 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     test: /could not do the issue as written|the implementation changed nothing/iu,
     control: "implementer",
     explain:
-      "The implementer found the issue can't be done as written, or its work changed nothing: no files on the branch and no wiki commits.",
+      "The implementer found the issue can't be done as written, or its work changed nothing: no files on the branch.",
   },
   {
     code: "branch-changed",
@@ -122,14 +122,16 @@ const ROWS: readonly Omit<Stop, "label">[] = [
     explain:
       "The PR branch changed outside the pipeline, so it stopped rather than overwrite it.",
   },
+  // Legacy: the check of an issue's wiki changes, from before the pipeline's
+  // wiki was removed. Its label stays, so an issue it stopped still reads so.
   {
     code: "wiki-check",
     short:
-      "Stopped: the wiki changes failed the wiki check. See the stop comment.",
+      "Stopped (legacy): the wiki check, which the pipeline no longer runs, failed.",
     test: /wiki check/iu,
-    control: "wiki check",
+    control: "wiki check (legacy)",
     explain:
-      "Before the code merges, the issue's wiki changes, rebased onto the wiki's latest version, must pass the wiki check: every link in a changed page names a page on the wiki, and every new page is linked from _Sidebar or another page.",
+      "The issue's wiki changes failed the wiki check, which the pipeline ran before its wiki was removed. Docs are now tracked Markdown in the repo's `docs/`, reviewed with the code, so no new stop comes from this check.",
   },
   {
     code: "conflict",

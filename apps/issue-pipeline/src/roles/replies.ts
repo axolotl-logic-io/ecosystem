@@ -20,7 +20,6 @@ const AUTHOR_REPLY = z.discriminatedUnion("outcome", [
         "the Gherkin must have a Feature: line and at least one Scenario",
       ),
     assumptions: z.array(z.string().min(1)),
-    wikiPages: z.array(z.string().min(1)),
     // Whether the behaviour differs from the Gherkin comment the task showed.
     changed: z.boolean(),
   }),

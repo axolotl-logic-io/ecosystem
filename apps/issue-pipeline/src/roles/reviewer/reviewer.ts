@@ -9,9 +9,7 @@
 // it. The security review comes after the merge (src/roles/merge/).
 
 import { z } from "zod";
-import { flowsOf } from "../../flows.ts";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
-import { wikiRequirementHold } from "../../job/wiki-requirements.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { approvalHolds, withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -67,11 +65,8 @@ function notHardenable(
       `GitHub doesn't confirm PR #${codeMerged.pr} merged as ${codeMerged.sha}, as the claim recorded`,
     );
   }
-  if (current.revision.code === null && current.revision.wiki === null) {
-    return errorStop(
-      state,
-      "nothing to harden: no code head and no wiki commits",
-    );
+  if (current.revision.code === null) {
+    return errorStop(state, "nothing to harden: no code head");
   }
   return null;
 }
@@ -106,21 +101,19 @@ async function hardeningSession(
   );
 }
 
-// Pushes the verified head `verified`: the branch, or the wiki alone for a
-// change with no code to push. A push of anything else stops. Once the code
-// merged, `verified` is the merge commit and the push, which refuses a
-// checkout off the issue's authoritative code head, pushes no code.
+// Pushes the verified branch head `verified`; a push of anything else
+// stops. Once the code merged, `verified` is the merge commit and nothing is
+// pushed.
 async function pushHardened(
   ctx: RoleContext,
   state: IssueState,
   { mode, verified }: { mode: Mode; verified: string },
 ): Promise<Step<IssueState>> {
-  let payload: object = { number: ctx.issue };
   if (mode.kind !== "branch") {
-    payload = { number: ctx.issue, wikiOnly: true };
+    return { ok: true, value: { ...state, verifiedSha: verified } };
   }
-  const pushed = await opReply(ctx, "push", payload, PUSH_REPLY);
-  if (mode.kind !== "wiki-only" && pushed.headSha !== verified) {
+  const pushed = await opReply(ctx, "push", { number: ctx.issue }, PUSH_REPLY);
+  if (pushed.headSha !== verified) {
     return ended(
       errorStop(
         state,
@@ -128,8 +121,7 @@ async function pushHardened(
       ),
     );
   }
-  const flows = flowsOf(pushed);
-  if (mode.kind === "branch" && !flows.code) {
+  if (!pushed.codeChanged) {
     return ended(
       errorStop(
         state,
@@ -137,6 +129,7 @@ async function pushHardened(
       ),
     );
   }
+  const flows = { code: true };
   return {
     ok: true,
     value: { ...state, headSha: pushed.headSha, verifiedSha: verified, flows },
@@ -160,15 +153,14 @@ interface Hardened {
   revision: Revision;
 }
 
-// Required wiki work must be possible, and postmerge writers must read M,
-// not the retained source head H. Checkout availability grants no authority.
+// Postmerge writers must read M, not the retained source head H. Checkout
+// availability grants no authority.
 async function hardeningSetup(
   ctx: RoleContext,
   mode: Mode,
 ): Promise<string | null> {
-  const hold = wikiRequirementHold(ctx);
-  if (hold !== null || mode.kind !== "wiki-only") {
-    return hold;
+  if (mode.kind !== "merged") {
+    return null;
   }
   const prepared = await opReply(
     ctx,
@@ -228,7 +220,7 @@ async function harden(
     });
   }
   const { revision } = after;
-  const entry = `hardened code ${short(revision.code)}, wiki ${short(revision.wiki)}`;
+  const entry = `hardened code ${short(revision.code)}`;
   const hardened = logged(checkpoint(state, revision), entry);
   return { ok: true, value: { state: hardened, revision } };
 }
@@ -248,7 +240,7 @@ async function postHardened(
     key: "hardening",
     on,
     role: "reviewer",
-    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\` and wiki \`${short(revision.wiki)}\`, and the pipeline's checks passed on them. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
+    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
   });
 }
 

@@ -5,13 +5,7 @@ import path from "node:path";
 import { z } from "zod";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
-import {
-  BASE,
-  ISSUE,
-  refIn,
-  scriptPi,
-  WIKI_BRANCH,
-} from "./pipeline-flow-kit.mjs";
+import { BASE, ISSUE, refIn, scriptPi } from "./pipeline-flow-kit.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
 import { runStage } from "./pipeline-flow-run.mjs";
@@ -41,16 +35,8 @@ function securityEvidence(flow, code) {
   return { launch, diff };
 }
 const STATE_BLOCK = /<!-- agent-pipeline:state\n[\s\S]*?\n-->/u;
-const NO_WRITER_OPS = [
-  "merge",
-  "push",
-  "sync-base",
-  "wiki-sync",
-  "ready-pr",
-  "exit-push",
-];
+const NO_WRITER_OPS = ["merge", "push", "sync-base", "ready-pr", "exit-push"];
 const VERIFIED = z.object({ pass: z.boolean(), headSha: z.string() });
-const WIKI_CHECKED = z.object({ pass: z.boolean() });
 const CLAIM = z.object({
   state: z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
@@ -62,18 +48,14 @@ function expectedReplay(interruptedWorld, checked = true) {
   const codeMerged = { pr: state.pr, sha: state.merged.code };
   /** @type {{ pass: boolean, headSha: string }[]} */
   let verified = [];
-  /** @type {{ pass: boolean }[]} */
-  let wikiChecked = [];
   if (checked) {
     verified = [{ pass: true, headSha: state.merged.code }];
-    wikiChecked = [{ pass: true }];
   }
   return {
     claimCodeMerged: codeMerged,
     forbidden: [],
     merges: 1,
     verified,
-    wikiChecked,
     base: state.merged.code,
     hardened: state.hardened,
     integration: state.integration,
@@ -126,9 +108,6 @@ function replayFacts(flow, traceStart) {
     verified: trace
       .filter(({ request }) => request.op === "verify")
       .map(({ reply }) => VERIFIED.parse(reply)),
-    wikiChecked: trace
-      .filter(({ request }) => request.op === "wiki-check")
-      .map(({ reply }) => WIKI_CHECKED.parse(reply)),
     base: refIn(flow.origin, `refs/heads/${BASE}`),
     hardened: state.hardened,
     integration: state.integration,
@@ -137,12 +116,15 @@ function replayFacts(flow, traceStart) {
   };
 }
 
+// Scripts the flow's issue; the Developer's draft adds a review-module
+// submodule pinned at the base's first commit, whose gitlink the security
+// bundle shows by path only. Returns that pin.
 /** @param {Flow} flow */
 function prepareReplayFlow(flow) {
   observeOps(flow);
-  const originalWiki = refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`);
-  if (originalWiki === null) {
-    throw new Error("missing wiki baseline");
+  const gitlink = refIn(flow.origin, `refs/heads/${BASE}`);
+  if (gitlink === null) {
+    throw new Error("missing base head");
   }
   const draft = implementorTurn("hello, world", "Developer draft");
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
@@ -153,9 +135,9 @@ function prepareReplayFlow(flow) {
         ...draft,
         files: {
           ...draft.files,
-          "repo/.gitmodules": `[submodule "wiki"]\n\tpath = wiki\n\turl = ${flow.wikiOrigin}\n[submodule "review-module"]\n\tpath = review-module\n\turl = ${flow.wikiOrigin}\n`,
+          "repo/.gitmodules": `[submodule "review-module"]\n\tpath = review-module\n\turl = ${flow.origin}\n`,
         },
-        gitlinks: { "review-module": originalWiki },
+        gitlinks: { "review-module": gitlink },
       },
     ],
     reviewer: [
@@ -164,7 +146,7 @@ function prepareReplayFlow(flow) {
       INTERRUPTED,
     ],
   });
-  return originalWiki;
+  return gitlink;
 }
 
 /** @param {Flow} flow @param {boolean} [delayMergeConfirmation] */
@@ -182,7 +164,7 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
       }),
     );
   }
-  const originalWiki = prepareReplayFlow(flow);
+  const gitlink = prepareReplayFlow(flow);
   for (const stage of ["author", "implement", "review"]) {
     const result = runStage(flow, stage);
     if (result.end !== "next") {
@@ -209,7 +191,7 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
   }
   const interruptedWorld = readWorld(flow.ghDir);
   fs.writeFileSync(flow.config, originalConfig);
-  return { flow, interruptedWorld, originalWiki };
+  return { flow, interruptedWorld, gitlink };
 }
 
 export {

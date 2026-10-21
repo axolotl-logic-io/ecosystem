@@ -15,7 +15,6 @@ const STEER_BOUNDARY = "--steer can't be combined with --print-boundary";
 const NO_QUEUE = "--merge-queue must list issue numbers, such as 3,5";
 const NO_JOB_ID = "--job-id must be a UUID";
 const NO_BRANCH = "--branch must name the issue's branch";
-const NO_BRAIN = "--brain-path must name a clone of the repo's wiki";
 const MERGE_QUEUE = z
   .string()
   .transform((list: string): string[] => list.split(","))
@@ -31,9 +30,6 @@ const CONFIG = z.string({ error: NO_CONFIG }).min(1, NO_CONFIG);
 // The issue's branch, which the caller assigns: required, never guessed, and
 // checked against the repo before the job changes anything (branch.ts).
 const BRANCH = z.string({ error: NO_BRANCH }).min(1, NO_BRANCH);
-// The caller's clone of the repo's wiki, whose pages are the sessions'
-// behavioral prompts (brain.ts): required, with no bundled fallback.
-const BRAIN_PATH = z.string({ error: NO_BRAIN }).min(1, NO_BRAIN);
 const ISSUE = z.coerce
   .number({ error: NO_ISSUE })
   .int(NO_ISSUE)
@@ -46,7 +42,6 @@ const JOB_ARGS = z.discriminatedUnion("kind", [
     issue: ISSUE,
     stage: STAGE,
     branch: BRANCH,
-    brainPath: BRAIN_PATH,
     // The claimant's name its lease records; the job's own without one.
     lane: z.string().optional(),
     // The merge order the orchestrator ranked (#234).
@@ -69,7 +64,6 @@ const JOB_ARGS = z.discriminatedUnion("kind", [
     issue: ISSUE,
     stage: STAGE,
     branch: BRANCH,
-    brainPath: BRAIN_PATH,
   }),
 ]);
 
@@ -87,7 +81,6 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       issue: { type: "string" },
       stage: { type: "string" },
       branch: { type: "string" },
-      "brain-path": { type: "string" },
       lane: { type: "string" },
       steer: { type: "string" },
       message: { type: "string" },
@@ -101,7 +94,6 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     "print-boundary": printBoundary,
     "merge-queue": mergeQueue,
     "job-id": jobId,
-    "brain-path": brainPath,
     ...named
   } = values;
   let kind = "run";
@@ -115,7 +107,6 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     printBoundary,
     mergeQueue,
     jobId,
-    brainPath,
     kind,
   });
   if (!parsed.success) {

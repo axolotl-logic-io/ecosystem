@@ -1,6 +1,6 @@
 // An issue's unpushed commits are never dropped (#283). A stop during
-// implement pushes the worktree's and the wiki checkout's commits that GitHub
-// lacks to the issue's branch, and says in the stop comment which stayed only
+// implement pushes the worktree's commits that GitHub lacks to the issue's
+// branch, and says in the stop comment which stayed only
 // local. A claim that moves a worktree to the branch on GitHub first saves
 // any commits the branch lacks under refs/pipeline/rescue/<n>/<stamp>, and
 // keeps HEAD unless someone pushed to the branch since.
@@ -11,7 +11,6 @@ import { fetchIn, gitIn, head, remoteHead } from "./git-state.ts";
 import { git } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import { run } from "./process.ts";
-import { pushWikiBranch } from "./wiki.ts";
 import { readWriteAuthority } from "./write-authority.ts";
 
 // The separators an ISO time has that a rescue ref's stamp drops, with its
@@ -44,11 +43,13 @@ function onlyLocal(what: string, sha: string): string {
   return `The ${what} checkout's commits are only local: its push was refused or failed, so they are at ${sha} on this machine, not on GitHub.`;
 }
 
-// Pushes the worktree's commits that the issue's branch on GitHub (or, with
-// no branch there, the base) lacks. Only fast-forwards an existing branch.
+// Pushes issue `n`'s worktree commits that its branch on GitHub (or, with no
+// branch there, the base) lacks. Only fast-forwards an existing branch.
 // Commits already on the base are on GitHub, so a checkout at the base's
-// merge commit of the issue (merged-review.ts) pushes nothing.
-function pushCode(cfg: Config, n: number): string[] {
+// merge commit of the issue (merged-review.ts) pushes nothing. Never throws:
+// returns the stop-comment line naming the head when the push failed, and
+// none when everything reached GitHub or there was nothing to push.
+function pushUnpushed(cfg: Config, n: number): string[] {
   const wt = paths.worktree(cfg, n);
   const sha = headOrNull(wt);
   if (sha === null) {
@@ -77,24 +78,6 @@ function pushCode(cfg: Config, n: number): string[] {
   } catch {
     return [onlyLocal("code", sha)];
   }
-}
-
-function pushWiki(cfg: Config, n: number): string[] {
-  try {
-    pushWikiBranch(cfg, n);
-    return [];
-  } catch {
-    const sha = headOrNull(paths.wiki(cfg, n)) ?? "an unknown head";
-    return [onlyLocal("wiki", sha)];
-  }
-}
-
-// Pushes issue `n`'s unpushed code and wiki commits to its agent/issue-<n>
-// branches. Never throws: returns one stop-comment line per checkout whose
-// push failed, naming its head, and none when everything reached GitHub or
-// there was nothing to push.
-function pushUnpushed(cfg: Config, n: number): string[] {
-  return [...pushCode(cfg, n), ...pushWiki(cfg, n)];
 }
 
 // Moves the worktree `wt` of issue `n` to `remote`, its branch head on GitHub

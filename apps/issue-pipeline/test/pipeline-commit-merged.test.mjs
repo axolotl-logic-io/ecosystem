@@ -45,7 +45,7 @@ function saveMerged(cfg, sha) {
   });
 }
 
-test("a saved merge refuses a stale writer's mixed code/wiki request, keeps local code and still pushes the wiki", async () => {
+test("a saved merge refuses a stale writer's code and docs push and keeps them local", async () => {
   const job = await openJob("implement");
   try {
     const original = headOf(job.repo);
@@ -53,14 +53,13 @@ test("a saved merge refuses a stale writer's mixed code/wiki request, keeps loca
     // The tool's launch scope still permits code, as does an attacker-forged scope.
     saveMerged(job.cfg, original);
     write(job.repo, "README.md", "unauthorized code\n");
-    write(job.docs, "Page.md", "legitimate wiki\n");
+    write(job.repo, "docs/Home.md", "unauthorized docs\n");
     const reply = await job.commit(["-am", "Mixed work"]);
-    assert.equal(reply.details.pushed, "wiki");
+    assert.equal(reply.details.pushed, "none");
     assert.match(reply.details.pushError, REFUSED_CODE);
     assert.notEqual(headOf(job.repo), original);
     assert.equal(refOf(job.origin, BRANCH), original);
-    assert.equal(refOf(job.wikiOrigin, BRANCH), headOf(job.docs));
-    assert.deepEqual(pushesOf(job), [{ repo: "wiki", sha: headOf(job.docs) }]);
+    assert.deepEqual(pushesOf(job), []);
   } finally {
     job.close();
   }
@@ -73,7 +72,7 @@ test("a saved own-merge receipt closes code authority before claim sets codeMerg
       ...newIssueState(ISSUE),
       branch: "agent/issue-7",
       stage: "merge",
-      merged: { code: headOf(job.repo), wiki: null, inputs: "trusted" },
+      merged: { code: headOf(job.repo), inputs: "trusted" },
       codeMerged: null,
     });
     write(job.repo, "README.md", "unauthorized\n");
@@ -123,8 +122,7 @@ test("a direct forged socket request cannot downgrade the freshly saved merge re
       dir: job.repo,
       branch: job.branch,
     });
-    // A forged op payload is not saved authority either. The exit op's wiki
-    // path refuses the unrecognized local head rather than pushing it.
+    // A forged op payload is not saved authority either.
     const operations = new Map(Object.entries(pushOps));
     for (const op of ["push", "exit-push"]) {
       const mutate = operations.get(op);
@@ -146,14 +144,11 @@ const INVALID_AUTHORITIES = [
   { merged: { code: "merged" } },
 ];
 for (const [index, invalid] of INVALID_AUTHORITIES.entries()) {
-  test(`invalid saved authority ${index} never permits socket code/wiki pushes`, async () => {
+  test(`invalid saved authority ${index} never permits socket code pushes`, async () => {
     const job = await openJob("implement");
     try {
       write(job.repo, "README.md", "local code\n");
-      write(job.docs, "Page.md", "local wiki\n");
       git(job.repo, ["commit", "-am", "Local code"], COMMIT_ENV);
-      git(job.docs, ["add", "-A"]);
-      git(job.docs, ["commit", "-m", "Local wiki"], COMMIT_ENV);
       let state = null;
       if (invalid !== null) {
         state = {
@@ -168,7 +163,6 @@ for (const [index, invalid] of INVALID_AUTHORITIES.entries()) {
       assert.equal(reply.pushed, "none");
       assert.match(reply.pushError ?? "", REFUSED_AUTHORITY);
       assert.equal(refOf(job.origin, BRANCH), "");
-      assert.equal(refOf(job.wikiOrigin, BRANCH), "");
     } finally {
       job.close();
     }
@@ -193,9 +187,7 @@ test("refused postmerge code survives teardown in a self-contained operator reco
     {
       root: job.root,
       repo: job.repo,
-      docs: job.docs,
       branch: job.branch,
-      wiki: "write",
       key: RECOVERY_KEY,
     },
     null,
@@ -234,9 +226,7 @@ test("a failed recovery write retains the local checkout and refuses replacement
       {
         root: job.root,
         repo: job.repo,
-        docs: job.docs,
         branch: job.branch,
-        wiki: "write",
         key: RECOVERY_KEY,
       },
       null,

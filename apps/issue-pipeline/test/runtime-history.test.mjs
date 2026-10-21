@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import { pinnedOf } from "./brain-test-kit.mjs";
+import { pinnedOf } from "./prompt-test-kit.mjs";
 import { FIXTURE_WINDOWS } from "./runtime-fixtures.mjs";
 import { privateRuntime } from "./runtime-policy-test-kit.mjs";
 
@@ -35,7 +35,7 @@ function launch(key) {
     timeoutMs: 3000,
     commits: false,
     phase: null,
-    prompt: pinnedOf("Pipeline-Prompt-Author.md"),
+    prompt: pinnedOf("author.md"),
   };
 }
 

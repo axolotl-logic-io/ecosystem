@@ -1,6 +1,6 @@
 // The task of the Reviewer's hardening, the review stage's one session: the
 // issue's facts, its Gherkin and the change's scope. The hardening's
-// behaviour is its wiki page (task-facts.ts). Pure.
+// behaviour is its prompt page (task-facts.ts). Pure.
 
 import type { RoleContext } from "../../job/role-context.ts";
 import type { Mode } from "../change-task.ts";

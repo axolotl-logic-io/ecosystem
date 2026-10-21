@@ -16,7 +16,7 @@ const COMPLETED = 62;
 const UNCERTAIN = 63;
 const PR = 7;
 const SHA_LENGTH = 40;
-const MERGED = { code: "a".repeat(SHA_LENGTH), wiki: null, inputs: "inputs-1" };
+const MERGED = { code: "a".repeat(SHA_LENGTH), inputs: "inputs-1" };
 const BOUNDED_RESTART =
   /one bounded restart at merge.*new finite confirmation window/u;
 const NO_RETRY = /Do not retry the merge POST/u;

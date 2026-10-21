@@ -1,8 +1,8 @@
 // Exact-head checks used before integration and on actual merged results.
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
-import type { Check, Conflict } from "../op-replies.ts";
-import { opReply, VERIFY_REPLY, WIKI_CHECK_REPLY } from "../op-replies.ts";
+import type { Check } from "../op-replies.ts";
+import { opReply, VERIFY_REPLY } from "../op-replies.ts";
 import { failed } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
 
@@ -10,47 +10,33 @@ import { rejectedAgain } from "./security.ts";
 // integration needs.
 type LocalChecks =
   | { kind: "ready"; state: IssueState }
-  | { kind: "integrate"; wikiConflict: Conflict | null; failing: Check[] }
+  | { kind: "integrate"; failing: Check[] }
   | { kind: "moved"; headSha: string };
 
 // The merge job's own checks of the authorized head `code`: verify, unless
-// this head is already verified, and the wiki check. `codeMerged` is the
-// code merge to verify instead of the branch.
+// this head is already verified. `codeMerged` is the code merge to verify
+// instead of the branch.
 async function localChecks(
   ctx: RoleContext,
   state: IssueState,
   { code, codeMerged }: { code: string; codeMerged: CodeMerged | null },
 ): Promise<LocalChecks> {
-  const failing: Check[] = [];
-  let checked = state;
-  let codePassed = true;
-  if (codeMerged !== null || state.verifiedSha !== code) {
-    let payload: object = { number: ctx.issue };
-    if (codeMerged !== null) {
-      payload = { number: ctx.issue, codeMerged };
-    }
-    const verified = await opReply(ctx, "verify", payload, VERIFY_REPLY);
-    if (verified.headSha !== code) {
-      return { kind: "moved", headSha: verified.headSha };
-    }
-    if (verified.pass) {
-      checked = { ...state, verifiedSha: code };
-    } else {
-      codePassed = false;
-      failing.push(...verified.checks.filter((check) => !check.pass));
-    }
+  if (codeMerged === null && state.verifiedSha === code) {
+    return { kind: "ready", state };
   }
-  const wiki = await opReply(
-    ctx,
-    "wiki-check",
-    { number: ctx.issue },
-    WIKI_CHECK_REPLY,
-  );
-  failing.push(...wiki.checks.filter((check) => !check.pass));
-  if (!codePassed || failing.length > 0 || !wiki.pass) {
-    return { kind: "integrate", wikiConflict: null, failing };
+  let payload: object = { number: ctx.issue };
+  if (codeMerged !== null) {
+    payload = { number: ctx.issue, codeMerged };
   }
-  return { kind: "ready", state: checked };
+  const verified = await opReply(ctx, "verify", payload, VERIFY_REPLY);
+  if (verified.headSha !== code) {
+    return { kind: "moved", headSha: verified.headSha };
+  }
+  if (!verified.pass) {
+    const failing = verified.checks.filter((check) => !check.pass);
+    return { kind: "integrate", failing };
+  }
+  return { kind: "ready", state: { ...state, verifiedSha: code } };
 }
 
 // A postmerge failure is a stop, never a request for a code writer. Repeat

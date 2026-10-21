@@ -19,8 +19,8 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // Issues with any of these labels are never pipeline work, such as deploy tickets.
   skipLabels: [],
   // The files that hold the project's coding practices, relative to the worktree
-  // (wiki pages under the wiki's dir, such as "wiki/Decisions.md"). Writers and
-  // reviewers read each in full (Axlog, 2026-10-15). Missing files are skipped.
+  // (such as "docs/Decisions.md"). Writers and reviewers read each in full
+  // (Axlog, 2026-10-15). Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
   mergeConfirmation: {
@@ -120,15 +120,6 @@ const CONFIG_SCHEMA = z.looseObject({
     firstContext: TOKENS,
     toolOutputShare: z.number().gt(0).max(1),
   }),
-  wiki: z
-    .union([
-      z.boolean(),
-      z.looseObject({
-        branch: z.string().optional(),
-        dir: z.string().optional(),
-      }),
-    ])
-    .nullish(),
 });
 
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/u;
@@ -216,6 +207,21 @@ function checkPractices(configPath: string, practices: unknown): void {
   }
 }
 
+// The repo's docs are ordinary tracked Markdown under its own docs/, changed
+// and reviewed with the code, so a config that still names a wiki was written
+// for the wiki flow, which is gone: it fails rather than silently dropping it.
+function checkNoWiki(
+  configPath: string,
+  raw: Readonly<Record<string, unknown>>,
+): void {
+  const { wiki } = raw;
+  if (wiki !== undefined) {
+    throw new OpsError(
+      `config ${configPath} sets "wiki", which the pipeline no longer supports: docs are ordinary tracked Markdown in the repo's docs/, changed and reviewed with the code. Remove "wiki" from the config`,
+    );
+  }
+}
+
 function present(value: unknown): boolean {
   return value !== undefined && value !== null && value !== "";
 }
@@ -229,6 +235,7 @@ function checkRequired(
   raw: Readonly<Record<string, unknown>>,
 ): void {
   checkIdentities(configPath, raw);
+  checkNoWiki(configPath, raw);
   const { allowedUsers, commands, practices, repo } = raw;
   if (!present(repo)) {
     throw new OpsError(`config ${configPath} is missing "repo"`);

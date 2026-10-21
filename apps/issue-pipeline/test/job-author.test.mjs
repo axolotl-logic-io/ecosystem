@@ -10,7 +10,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
-import { pageTextOf } from "./brain-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   AFTER_READER_STAGE,
@@ -31,6 +30,7 @@ import {
   runJob,
   setUp,
 } from "./job-test-kit.mjs";
+import { pageTextOf } from "./prompt-test-kit.mjs";
 
 const AUTHOR_AGENT = "issue-pipeline-author";
 // A token the job holds, which no session may see.
@@ -90,7 +90,7 @@ test("the author's one session runs as its agent with no token, no commit tool a
   assert.match(flagValue(argv, "--system-prompt"), AUTHOR_PROMPT);
   assert.equal(
     flagValue(argv, "--append-system-prompt"),
-    pageTextOf("Pipeline-Prompt-Author.md"),
+    pageTextOf("author.md"),
   );
   const [prompt] = piCommands(place).filter(({ type }) => type === "prompt");
   assert.ok(prompt.message.includes(ISSUE_FILE), prompt.message);

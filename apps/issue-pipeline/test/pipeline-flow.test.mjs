@@ -7,7 +7,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { pageTextOf } from "./brain-test-kit.mjs";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
 import { fieldOf, flagsOf } from "./pipeline-flow-gh-api.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
@@ -19,7 +18,6 @@ import {
   SLUG,
   scriptPi,
   setUpFlow,
-  WIKI_BRANCH,
 } from "./pipeline-flow-kit.mjs";
 import { piLog } from "./pipeline-flow-pi.mjs";
 import { jobLog, stopJobs, tick } from "./pipeline-flow-run.mjs";
@@ -30,21 +28,22 @@ import {
   savedState,
   securityTurn,
 } from "./pipeline-flow-script.mjs";
+import { PROMPT_PAGES } from "./prompt-test-kit.mjs";
 
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    When they arrive\n    Then they see a polite greeting";
 const SECURITY_TAG_LENGTH = 12;
 const GHERKIN_IN_PROMPT = /Then they see a polite greeting/u;
-const PUBLISHED_PAGE = /Greetings say Hello, world!/u;
+const MERGED_PAGE = /Greetings say Hello, world!/u;
 const REVIEWED_CODE = /\+Hello, world!/u;
-const REVIEWED_WIKI = /\+Greetings say Hello, world!/u;
+const REVIEWED_DOCS = /\+Greetings say Hello, world!/u;
 const MERGE_ENDPOINT = /^repos\/[^/]+\/[^/]+\/merges$/u;
 
 /** @typedef {import("./pipeline-flow-kit.mjs").Flow} Flow */
 
 /** @type {Flow} */
 let flow;
-/** @type {{ base: string, wiki: string }} the origins' heads before the flow */
+/** @type {string} the origin's base head before the flow */
 let start;
 /** @type {string[]} every stage the flow started, until it went idle */
 let stages;
@@ -54,17 +53,14 @@ function piStarts() {
   return piLog(flow.piDir).filter((entry) => entry.start === true);
 }
 
-/** @returns {{ base: string, wiki: string }} */
-function heads() {
-  return {
-    base: String(refIn(flow.origin, `refs/heads/${BASE}`)),
-    wiki: String(refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`)),
-  };
+/** @returns {string} */
+function baseHead() {
+  return String(refIn(flow.origin, `refs/heads/${BASE}`));
 }
 
 before(() => {
   flow = setUpFlow();
-  start = heads();
+  start = baseHead();
   openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
   scriptPi(flow, {
     author: [authorTurn(GHERKIN, true)],
@@ -134,14 +130,14 @@ test("each phase gets its configured model and exact write authority without a G
 
 test("hardening, integration and final security get pinned pages and truthful revision provenance", () => {
   const starts = piStarts();
-  const pages = ["Author", "Developer", "Hardening", "Integration", "Security"];
-  for (const [at, name] of pages.entries()) {
+  const pages = PROMPT_PAGES.map(({ page }) => page);
+  for (const [at, page] of pages.entries()) {
     const launched = starts[at];
     assert.ok(launched !== undefined);
     const flag = launched.argv.indexOf("--append-system-prompt");
-    const page = `Pipeline-Prompt-${name}.md`;
-    assert.equal(launched.argv[flag + 1], pageTextOf(page));
-    const sha256 = createHash("sha256").update(pageTextOf(page)).digest("hex");
+    const text = fs.readFileSync(path.join(flow.prompts, page), "utf8");
+    assert.equal(launched.argv[flag + 1], text);
+    const sha256 = createHash("sha256").update(text).digest("hex");
     const usage = readWorld(flow.ghDir)
       .comments.map(({ body }) => body)
       .join("\n");
@@ -154,7 +150,7 @@ test("hardening, integration and final security get pinned pages and truthful re
   assert.match(String(integrate?.prompt), GHERKIN_IN_PROMPT);
   const state = savedState(readWorld(flow.ghDir));
   assert.ok(String(security?.prompt).includes(state.merged.code));
-  assert.ok(String(security?.prompt).includes(state.merged.wiki));
+  assert.equal("wiki" in state.merged, false);
   assert.deepEqual(state.integration.reviewed, state.hardened);
   assert.notEqual(state.integration.revision.code, state.hardened.code);
   assert.deepEqual(state.security.revision, state.merged);
@@ -171,7 +167,7 @@ test("hardening, integration and final security get pinned pages and truthful re
   );
   const reviewed = fs.readFileSync(diff, "utf8");
   assert.match(reviewed, REVIEWED_CODE);
-  assert.match(reviewed, REVIEWED_WIKI);
+  assert.match(reviewed, REVIEWED_DOCS);
   const [, , , , securityStart] = starts;
   assert.ok(securityStart !== undefined);
   const tools =
@@ -240,27 +236,24 @@ test("the one branch POST names only integration and the checked full source hea
   );
 });
 
-test("git ends with ordered parents covering the whole approved change on the base and the wiki fast-forwarded to the reviewed commit", () => {
-  const { base, wiki } = heads();
+test("git ends with ordered parents covering the whole approved change, its docs included, on the base", () => {
+  const base = baseHead();
   const { merged, integration } = savedState(readWorld(flow.ghDir));
   assert.equal(base, merged.code);
-  assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^1`]), start.base);
+  assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^1`]), start);
   assert.equal(
     bareGit(flow.origin, ["rev-parse", `${base}^2`]),
     integration.revision.code,
   );
   const greeting = bareGit(flow.origin, ["show", `${base}:greet.txt`]);
   assert.equal(greeting, "Hello, world!");
-  assert.equal(wiki, integration.revision.wiki);
-  const ancestry = ["merge-base", "--is-ancestor", start.wiki, wiki];
-  assert.doesNotThrow(() => bareGit(flow.wikiOrigin, ancestry));
-  const page = bareGit(flow.wikiOrigin, ["show", `${wiki}:Home.md`]);
-  assert.match(page, PUBLISHED_PAGE);
+  const page = bareGit(flow.origin, ["show", `${base}:docs/Home.md`]);
+  assert.match(page, MERGED_PAGE);
 });
 
 // Runs last: it reopens the issue as if the completion's close was lost.
-test("a completion replayed on a reopened done issue closes it again with no model, merging and publishing nothing new", async () => {
-  const done = heads();
+test("a completion replayed on a reopened done issue closes it again with no model, merging nothing new", async () => {
+  const done = baseHead();
   const receipt = savedState(readWorld(flow.ghDir)).merged;
   withWorld(flow.ghDir, (reopened) => {
     const issue = reopened.issues.find(({ number }) => number === ISSUE);
@@ -278,7 +271,7 @@ test("a completion replayed on a reopened done issue closes it again with no mod
     {
       started,
       sessions: piStarts().length,
-      heads: heads(),
+      base: baseHead(),
       prs: world.prs.length,
       issue: issue?.state,
       stage: savedState(world).stage,
@@ -288,7 +281,7 @@ test("a completion replayed on a reopened done issue closes it again with no mod
     {
       started: ["merge"],
       sessions,
-      heads: done,
+      base: done,
       prs: 1,
       issue: "closed",
       stage: "done",

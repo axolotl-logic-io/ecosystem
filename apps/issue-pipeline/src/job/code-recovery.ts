@@ -44,7 +44,7 @@ function prepareSyncRecovery(
   const dir = fs.mkdtempSync(path.join(root, "sync-"));
   const stages = conflictStages(repo);
   if (stages.length === 0) {
-    saveDroppedPatch(cfg, repo, {
+    saveDroppedPatch(repo, {
       file: path.join(dir, "working.patch"),
       title: "Work retained before synchronization cleanup",
     });

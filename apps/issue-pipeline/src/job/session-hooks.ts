@@ -5,7 +5,7 @@
 // is the session's own, never its agent's.
 
 import type { Config } from "../config.ts";
-import { paths, wikiCfg, withCheckout } from "../config.ts";
+import { paths, withCheckout } from "../config.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 import type { RunArgs } from "./args.ts";
 import { contextLogOf } from "./context-log.ts";
@@ -73,11 +73,7 @@ function hooksOf(
           `saved stage ${state.stage} cannot authorize a ${args.stage} writer session`,
         );
       }
-      const scope = commitScopeOf(
-        args.stage,
-        wikiCfg(cfg) !== null,
-        codeWritable,
-      );
+      const scope = commitScopeOf(args.stage, codeWritable);
       scopes.set(key, scope);
       const { socket } = control;
       const { startedAt: jobStartedAt } = job;

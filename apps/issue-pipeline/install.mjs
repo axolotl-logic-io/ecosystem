@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // @ts-check
-// Builds src/ into dist/ (build.ts; run `npm ci` at the repo root first) and
-// installs dist/*.mjs (BUILT) and repos/example.json in $ISSUE_PIPELINE_ROOT
-// and agents/*.md, placeholders filled, in $PI_CODING_AGENT_DIR's
-// agents/issue-pipeline/ (README.md). It names the commit in the root's
-// README.md and INSTALLED.json and retires the files an older install left
-// (retired()), leaving local configs, secrets and work alone. The running
-// pipeline changes only here, never when a PR merges, so an agent's PR can't
-// change the code that checks its own work. Every file it replaces or retires
-// is copied first to <root>-backups/<timestamp>-install/.
+// Builds src/ and scripts/ into dist/ (build.ts; run `npm ci` at the repo root
+// first) and installs dist/*.mjs (BUILT), prompts/*.md and repos/example.json
+// in $ISSUE_PIPELINE_ROOT and agents/*.md, placeholders filled, in
+// $PI_CODING_AGENT_DIR's agents/issue-pipeline/ (README.md). It names the
+// commit in the root's README.md and INSTALLED.json and retires what an older
+// install left (retired()), leaving local configs, secrets and work alone. The
+// running pipeline changes only here, never when a PR merges, so an agent's PR
+// can't change the code that checks its own work. Every file it replaces or
+// retires is copied first to <root>-backups/<timestamp>-install/.
 //
 // Usage: node install.mjs [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
@@ -47,10 +47,10 @@ const BUILT = [
   "structured-output.mjs",
   "pipeline-commit.mjs",
   "git-review.mjs",
+  "caller-jobs.mjs",
 ];
-// The agents of the stages an older install had, which retired() retires
-// with its old workflow.js, which an old lane schedule could still run, and
-// its old pi prompts.
+// An older install's stage agents, which retired() retires with its old
+// workflow.js, which an old lane schedule could still run, and its pi prompts.
 const RETIRED_AGENTS = ["escalation", "ops", "reader", "specifier", "writer"];
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
@@ -98,12 +98,10 @@ function fill(text) {
     .replaceAll("{{PI_CODING_AGENT_DIR}}", AGENT_DIR);
 }
 
-/** @param {string} dir @returns {string[]} */
-function mdIn(dir) {
-  return fs
-    .readdirSync(path.join(SRC, dir))
-    .filter((f) => f.endsWith(".md"))
-    .sort();
+// The Markdown files in `base`'s folder `dir`, if any, relative to `base`.
+/** @param {string} base @param {string} dir @returns {string[]} */
+function mdIn(base, dir) {
+  return fs.globSync(`${dir}/*.md`, { cwd: base }).sort();
 }
 
 /** @returns {Source[]} */
@@ -114,12 +112,14 @@ function sources() {
       to: path.join(ROOT, f),
       fill: false,
     })),
-    ...["repos/example.json", "runtime/pi-cliproxyapi-config.example.json"].map(
-      (from) => ({ from, to: path.join(ROOT, from), fill: false }),
-    ),
-    ...mdIn("agents").map((f) => ({
-      from: `agents/${f}`,
-      to: path.join(AGENT_DIR, "agents/issue-pipeline", f),
+    ...[
+      "repos/example.json",
+      "runtime/pi-cliproxyapi-config.example.json",
+      ...mdIn(SRC, "prompts"),
+    ].map((from) => ({ from, to: path.join(ROOT, from), fill: false })),
+    ...mdIn(SRC, "agents").map((from) => ({
+      from,
+      to: path.join(AGENT_DIR, "agents/issue-pipeline", path.basename(from)),
       fill: true,
     })),
   ];
@@ -225,6 +225,7 @@ function retired(files) {
   const agents = path.join(AGENT_DIR, "agents/issue-pipeline");
   return [
     path.join(ROOT, "workflow.js"),
+    ...mdIn(ROOT, "prompts").map((f) => path.join(ROOT, f)),
     ...RETIRED_AGENTS.map((a) => path.join(agents, `issue-pipeline-${a}.md`)),
     path.join(AGENT_DIR, "prompts/pipeline-start.md"),
     path.join(AGENT_DIR, "prompts/pipeline-pause.md"),

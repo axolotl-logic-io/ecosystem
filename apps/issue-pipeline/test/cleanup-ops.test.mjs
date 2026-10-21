@@ -145,31 +145,6 @@ test("a closed issue with uncommitted changes is kept", () => {
   assert.deepEqual(leftBehind(w), KEPT);
 });
 
-test("a closed issue with wiki commits not on the wiki is kept", () => {
-  const w = cleanupWorld();
-  pushAsPullHead(w);
-  const clone = path.join(w.root, "clones/o__r.wiki");
-  const dir = path.join(w.worktree, "wiki");
-  const config = JSON.parse(fs.readFileSync(w.config, "utf8"));
-  fs.writeFileSync(w.config, JSON.stringify({ ...config, wiki: true }));
-  sh(
-    `cd ${w.root} && git init -q --bare -b master wiki.git && git clone -q wiki.git ${clone} 2>/dev/null && git -C ${clone} ${GIT_USER} commit -q --allow-empty -m home && git -C ${clone} push -q origin HEAD:master`,
-  );
-  sh(
-    `git -C ${clone} worktree add -q -b agent/issue-7 ${dir} origin/master && git -C ${dir} ${GIT_USER} commit -q --allow-empty -m page`,
-  );
-  // ensureWiki hides the wiki checkout from the code repo the same way.
-  const exclude = path.join(w.root, "clones/o__r/.git/info/exclude");
-  fs.appendFileSync(exclude, "\n/wiki/\n");
-  fakeGh.reply([CLOSED, MERGED_STATE]);
-  const reply = ask(w, { op: "cleanup" });
-  assert.equal(
-    reply,
-    replyLine(kept("the wiki checkout has 1 commit(s) not on the wiki")),
-  );
-  assert.deepEqual(leftBehind(w), KEPT);
-});
-
 test("the sweep's own issue is kept", () => {
   const w = cleanupWorld();
   pushAsPullHead(w);

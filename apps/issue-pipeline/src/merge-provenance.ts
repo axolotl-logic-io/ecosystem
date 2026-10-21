@@ -3,13 +3,21 @@ import { z } from "zod";
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 
-// What a review or a merge saw: the code head, the wiki head (null when the
-// issue has no wiki commits) and the trusted-inputs revision.
+// What a review or a merge saw: the code head and the trusted-inputs
+// revision. `wiki` is legacy: a revision saved while the pipeline had a wiki
+// names its wiki head (null with no wiki commits). The pipeline writes none,
+// and an absent one reads as null (legacyWikiOf).
 const REVISION = z.object({
   code: z.string().nullable(),
-  wiki: z.string().nullable(),
+  wiki: z.string().nullable().optional(),
   inputs: z.string(),
 });
+
+// `revision`'s legacy wiki head: null for a revision that has none, as every
+// revision saved since the wiki was removed.
+function legacyWikiOf(revision: z.infer<typeof REVISION>): string | null {
+  return revision.wiki ?? null;
+}
 
 // The Reviewer's own integration of a hardened revision: `reviewed` is the
 // revision that passed hardening, as `hardened` names it, and `revision` the
@@ -38,4 +46,4 @@ const MERGE_ATTEMPT = z.object({
 type MergeAttempt = z.infer<typeof MERGE_ATTEMPT>;
 
 export type { MergeAttempt };
-export { INTEGRATION, MERGE_ATTEMPT, REVISION };
+export { INTEGRATION, legacyWikiOf, MERGE_ATTEMPT, REVISION };

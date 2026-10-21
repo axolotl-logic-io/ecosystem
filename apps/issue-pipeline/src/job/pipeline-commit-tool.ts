@@ -2,13 +2,12 @@
 // commit: the `pipeline_commit` tool (Pipeline-Job-Contract#pipeline_commit).
 // `pi -e pipeline-commit.mjs` registers it; the session's
 // ISSUE_PIPELINE_COMMIT_SCOPE (pipeline-commit.ts) names the job's folder,
-// its code and wiki checkouts there, what it may commit and the job to ask
-// for the push. The tool runs the planner's
+// its code checkout there, what it may commit and the job to ask for the
+// push. The tool runs the planner's
 // git commands with ISSUE_PIPELINE_COMMIT=1, which the checkouts' pre-commit
 // hook lets through, then asks the job over its control socket to push: the
 // session holds no token and never pushes itself.
 
-import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
@@ -47,7 +46,6 @@ interface RepoResult {
 // The tool's reply, as Pipeline-Job-Contract#pipeline_commit gives it.
 interface CommitReply extends PushReply {
   code: RepoResult | null;
-  wiki: RepoResult | null;
 }
 
 interface ToolResult {
@@ -104,31 +102,19 @@ function gitError(result: RepoResult | null): boolean {
   return !NOTHING_TO_COMMIT.test(`${result.stdout}\n${result.stderr}`);
 }
 
-// The wiki checkout's folder, or null when the job has none.
-function wikiFolder(scope: CommitScope): string | null {
-  if (scope.docs === null) {
-    return null;
-  }
-  const dir = path.join(scope.root, scope.docs.dir);
-  if (!fs.existsSync(path.join(dir, ".git"))) {
-    return null;
-  }
-  return dir;
-}
-
 function failed(reply: CommitReply): ToolResult {
   const said: string[] = [];
-  for (const result of [reply.code, reply.wiki]) {
-    if (result !== null && result.exitCode !== 0) {
-      const output = `${result.stdout}${result.stderr}`.trim();
-      said.push(`git exited ${result.exitCode}: ${output}`);
-    }
+  const result = reply.code;
+  if (result !== null && result.exitCode !== 0) {
+    const output = `${result.stdout}${result.stderr}`.trim();
+    said.push(`git exited ${result.exitCode}: ${output}`);
   }
   const text = `pipeline_commit failed, nothing was pushed.\n${said.join("\n")}`;
   return { content: [{ type: "text", text }], details: reply, isError: true };
 }
 
-// Commits as `plan` says in `scope`'s checkouts, and asks the job to push.
+// Commits as `plan` says in `scope`'s code checkout, and asks the job to
+// push.
 async function commitAndPush(
   plan: Extract<CommitPlan, { kind: "commit" }>,
   scope: CommitScope,
@@ -137,17 +123,10 @@ async function commitAndPush(
   if (plan.code !== null) {
     code = runIn(path.join(scope.root, scope.repo.dir), [plan.code]);
   }
-  const wikiDir = wikiFolder(scope);
-  let wiki: RepoResult | null = null;
-  if (plan.wiki !== null && wikiDir !== null) {
-    wiki = runIn(wikiDir, plan.wiki);
-  }
-  const unpushed: CommitReply = { code, wiki, pushed: "none", pushError: null };
-  const committed = [code, wiki].some(
-    (result) => typeof result?.sha === "string",
-  );
-  const ranClean = [code, wiki].some((result) => result?.exitCode === 0);
-  if (gitError(code) || gitError(wiki)) {
+  const unpushed: CommitReply = { code, pushed: "none", pushError: null };
+  const committed = typeof code?.sha === "string";
+  const ranClean = code?.exitCode === 0;
+  if (gitError(code)) {
     return failed(unpushed);
   }
   if (plan.dryRun && ranClean) {
@@ -156,11 +135,7 @@ async function commitAndPush(
   if (plan.dryRun || !committed) {
     return failed(unpushed);
   }
-  return succeeded({
-    code,
-    wiki,
-    ...(await requestPush(scope.socket, scope.key)),
-  });
+  return succeeded({ code, ...(await requestPush(scope.socket, scope.key)) });
 }
 
 function succeeded(reply: CommitReply): ToolResult {
@@ -190,7 +165,7 @@ function pipelineCommit(pi: ExtensionApi): void {
     name: COMMIT_TOOL,
     label: "Pipeline Commit",
     description:
-      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "repo/src/a.ts"]. Paths, and a relative -F file, are relative to the job folder, your working directory: pathspecs start with repo/ (the code checkout) or docs/ (the wiki checkout), and with none, every checkout this stage may write is committed. A path into a checkout this stage only reads is refused. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
+      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "repo/src/a.ts"]. Paths, and a relative -F file, are relative to the job folder, your working directory: pathspecs start with repo/ (the code checkout, whose docs are in repo/docs/), and with none, the code checkout is committed. A path outside repo/, or into a checkout this stage only reads, is refused. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
     promptSnippet: "Commit and push your work (the only way to commit)",
     parameters: {
       type: "object",

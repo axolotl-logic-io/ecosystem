@@ -1,8 +1,8 @@
 // @ts-check
 // The claim of a done issue, through the ops CLI, which claims it only to
 // reconcile its completion: GitHub must report the same code merge the done
-// state saved, and a change that lives only in the wiki saved none, so
-// GitHub must report none. ops-v2-test-kit (through ops-cli-test-kit) sets a
+// state saved, and a legacy change that lived only in the wiki (saved while
+// the pipeline had one) saved none, so GitHub must report none. ops-v2-test-kit (through ops-cli-test-kit) sets a
 // temporary HOME and pipeline root before any pipeline module loads.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -68,7 +68,7 @@ function claimDone(n, saved, more) {
   return askOps({ op: "claim", number: n, ...LANE });
 }
 
-test("a done wiki-only change with no PR and no code merge on GitHub is claimed to finish it", () => {
+test("a legacy done wiki-only change with no PR and no code merge on GitHub is claimed to finish it", () => {
   const n = 321;
   const merged = { code: null, wiki: WIKI_OID, inputs: "x" };
   const answer = claimDone(
@@ -94,7 +94,7 @@ test("a done wiki-only change with no PR and no code merge on GitHub is claimed 
 
 test("a done code change whose PR GitHub doesn't report merged is refused", () => {
   const n = 322;
-  const merged = { code: MERGE_OID, wiki: null, inputs: "x" };
+  const merged = { code: MERGE_OID, inputs: "x" };
   const failed = FAILED.parse(
     claimDone(n, v2State(n, { stage: "done", pr: PR, merged }), [
       prView(n, PR),
@@ -106,7 +106,7 @@ test("a done code change whose PR GitHub doesn't report merged is refused", () =
 
 test("a done code change GitHub reports merged at another commit is refused", () => {
   const n = 323;
-  const merged = { code: MERGE_OID, wiki: null, inputs: "x" };
+  const merged = { code: MERGE_OID, inputs: "x" };
   const failed = FAILED.parse(
     claimDone(n, v2State(n, { stage: "done", pr: PR, merged }), [
       prView(n, PR, { state: "MERGED", mergeCommit: { oid: OTHER_OID } }),
@@ -116,7 +116,7 @@ test("a done code change GitHub reports merged at another commit is refused", ()
   assert.deepEqual(writes(), []);
 });
 
-test("a done wiki-only change whose PR GitHub reports merged is refused", () => {
+test("a legacy done wiki-only change whose PR GitHub reports merged is refused", () => {
   const n = 324;
   const merged = { code: null, wiki: WIKI_OID, inputs: "x" };
   const failed = FAILED.parse(

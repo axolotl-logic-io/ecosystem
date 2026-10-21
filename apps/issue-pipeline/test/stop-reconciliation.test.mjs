@@ -218,8 +218,8 @@ test("passed checks and a forged request receipt cannot supply missing saved har
 test("remote work and genuine receipts survive a stop without inventing hardening from passed checks", () => {
   clearEvidence();
   const code = commitOnOrigin(`agent/issue-${ISSUE}`, "review-work");
-  const wikiBranch = `private-wiki-${ISSUE}`;
-  const wiki = commitOnOrigin(wikiBranch, "wiki-review-work");
+  const retainedBranch = `retained-work-${ISSUE}`;
+  const retainedWork = commitOnOrigin(retainedBranch, "retained-review-work");
   const { cfg, state } = setup();
   const receipt = {
     code: "b".repeat(SHA_LENGTH),
@@ -235,7 +235,7 @@ test("remote work and genuine receipts survive a stop without inventing hardenin
   kit.reply(stopReplies(cfg, saved));
   const result = stop(cfg, {
     number: ISSUE,
-    state: { ...state, hardened: { code, wiki, inputs: "checks-passed" } },
+    state: { ...state, hardened: { code, inputs: "checks-passed" } },
     reason: REASON,
     code: "error",
   });
@@ -249,8 +249,8 @@ test("remote work and genuine receipts survive a stop without inventing hardenin
   );
   assert.equal(
     kit.sh(
-      `git --git-dir=${kit.root}/origin.git rev-parse refs/heads/${wikiBranch}`,
+      `git --git-dir=${kit.root}/origin.git rev-parse refs/heads/${retainedBranch}`,
     ),
-    wiki,
+    retainedWork,
   );
 });

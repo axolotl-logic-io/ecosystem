@@ -1,6 +1,5 @@
 // @ts-check
 // Execute scripted model edits through the real commit and reply tools.
-import { execFileSync } from "node:child_process";
 import { writeTurnFiles } from "./pipeline-flow-pi-files-test-kit.mjs";
 
 /** @import { FlowTool, FlowTurn, Printers } from "./pipeline-flow-pi.mjs" */
@@ -85,27 +84,6 @@ async function play(turn, tools, out) {
   const { print, log } = out;
   writeTurnFiles(turn);
   await commitAll(tools.get("pipeline_commit"), turn.commits ?? [], out);
-  if (turn.pinWiki === true) {
-    const pin = execFileSync("git", ["-C", "docs", "rev-parse", "HEAD"], {
-      encoding: "utf8",
-    }).trim();
-    execFileSync("git", [
-      "-C",
-      "repo",
-      "update-index",
-      "--add",
-      "--cacheinfo",
-      "160000",
-      pin,
-      "wiki",
-    ]);
-    await commitOnce(
-      tools.get("pipeline_commit"),
-      "pin",
-      ["-m", "Pin issue wiki", "--", "repo/wiki"],
-      out,
-    );
-  }
   print(MESSAGE_END);
   const output = tools.get("structured_output");
   if (output === undefined) {

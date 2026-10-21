@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
+import { z } from "zod";
 import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
 import { ISSUE, SLUG } from "./pipeline-flow-kit.mjs";
 
@@ -19,6 +20,13 @@ const RUN_MS = 120_000;
 const POLL_MS = 50;
 // A flow ends within this many ticks, or the test fails.
 const MAX_TICKS = 12;
+const CALLER_LAUNCH = z.object({ pid: z.number(), receipt: z.string() });
+const JOB_RESULT = z.looseObject({
+  issue: z.number(),
+  stage: z.string(),
+  end: z.string(),
+  claimError: z.string().optional(),
+});
 
 /** @param {number} pid @returns {boolean} */
 function isLive(pid) {
@@ -84,14 +92,7 @@ async function tick(flow) {
   const orchestrate = path.join(flow.root, "orchestrate.mjs");
   const result = spawnSync(
     process.execPath,
-    [
-      orchestrate,
-      "--config",
-      flow.config,
-      "--brain-path",
-      flow.brain,
-      "--once",
-    ],
+    [orchestrate, "--config", flow.config, "--once"],
     { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
   );
   if (result.status !== 0) {
@@ -132,8 +133,6 @@ function runStage(flow, stage, issue = ISSUE) {
       String(issue),
       "--branch",
       `agent/issue-${issue}`,
-      "--brain-path",
-      flow.brain,
       "--stage",
       stage,
       "--lane",
@@ -145,6 +144,55 @@ function runStage(flow, stage, issue = ISSUE) {
     throw new Error(`job exited ${result.status}: ${result.stderr}`);
   }
   return JSON.parse(result.stdout);
+}
+
+/**
+ * Runs the installed caller and waits for the actual guarded stage job's result.
+ * @param {import("./pipeline-flow-kit.mjs").Flow} flow
+ * @param {string} stage
+ * @returns {Promise<import("zod").infer<typeof JOB_RESULT>>}
+ */
+async function runCallerStage(flow, stage) {
+  const run = fs.mkdtempSync(path.join(flow.tmp, "caller-"));
+  fs.writeFileSync(
+    path.join(run, "run.json"),
+    JSON.stringify({ maxJobs: 1, maxAttempts: 1 }),
+  );
+  const deadline = performance.now() + RUN_MS;
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(flow.root, "caller-jobs.mjs"),
+      "start",
+      "--run",
+      run,
+      "--config",
+      flow.config,
+      "--issue",
+      String(ISSUE),
+      "--branch",
+      `agent/issue-${ISSUE}`,
+      "--stage",
+      stage,
+      "--lane",
+      "flow-caller",
+    ],
+    { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
+  );
+  if (result.status !== 0) {
+    throw new Error(`caller exited ${result.status}: ${result.stderr}`);
+  }
+  const { pid, receipt } = CALLER_LAUNCH.parse(JSON.parse(result.stdout));
+  flow.pids.push(pid);
+  endsWithTest(() => killGroup(pid));
+  await untilExited([pid], deadline);
+  const stdout = fs.readFileSync(path.join(receipt, "stdout.log"), "utf8");
+  if (stdout.trim() === "") {
+    throw new Error(
+      `job has no result: ${fs.readFileSync(path.join(receipt, "stderr.log"), "utf8")}`,
+    );
+  }
+  return JOB_RESULT.parse(JSON.parse(stdout));
 }
 
 /**
@@ -187,4 +235,4 @@ function stopJobs(flow) {
   }
 }
 
-export { jobLog, runStage, stagesUntilIdle, stopJobs, tick };
+export { jobLog, runCallerStage, runStage, stagesUntilIdle, stopJobs, tick };

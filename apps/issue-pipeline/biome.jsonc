@@ -1,6 +1,6 @@
 // The issue pipeline's Biome config. It extends the root biome.jsonc, which
 // holds the lint policy for all of the repo's code (`practices-cover-all-code`
-// in the wiki). The pipeline passes it, and `mise //apps/issue-pipeline:check`
+// in docs/decisions/code-and-tests.md). The pipeline passes it, and `mise //apps/issue-pipeline:check`
 // runs it (#223). Globs here resolve from this folder.
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
@@ -13,7 +13,8 @@
     // The only exception to the policy (`best-practice-over-lint`): the
     // modules at the pipeline's process boundary may read the process (its
     // arguments, environment and stdin), the files and the terminal. They are
-    // the install, the build and the tests with their kits; the entries of
+    // the install, the build, the caller's job launcher (scripts/) and the
+    // tests with their kits; the entries of
     // the four CLIs (ops.ts, job.ts, orchestrate.ts, report.ts) and the shell
     // supervisor; the ops modules that run git, gh and the configured
     // commands or keep the clones, worktrees, locks, logs and stop recovery
@@ -28,6 +29,7 @@
         "install.mjs",
         "test/**",
         "build.ts",
+        "scripts/**",
         "src/ops.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
@@ -39,8 +41,6 @@
         "src/stop-recovery.ts",
         "src/clone-setup.ts",
         "src/checkouts.ts",
-        "src/wiki.ts",
-        "src/wiki-publish.ts",
         "src/rebase.ts",
         "src/issue-context.ts",
         "src/ops/claim.ts",
@@ -62,7 +62,7 @@
         "src/job/git-review-repository.ts",
         "src/job/structured-output.ts",
         "src/job/args.ts",
-        "src/job/brain.ts",
+        "src/job/prompts.ts",
         "src/job/rpc.ts",
         "src/job/status.ts",
         "src/job/context-log.ts",

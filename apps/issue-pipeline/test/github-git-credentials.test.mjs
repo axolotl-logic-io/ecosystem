@@ -1,5 +1,6 @@
 // @ts-check
-// Git's helper is per-call, non-storing and restricted to this repo/wiki.
+// Git's helper is per-call, non-storing and restricted to this repo; the
+// repo's wiki gets no credential.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +17,7 @@ fake.reply([]);
 const bin = path.join(isolatedRoot, "git-bin");
 fs.mkdirSync(bin);
 const EXECUTABLE = 0o755;
-const REMOTE = /configured GitHub repository or wiki HTTPS remote/u;
+const REMOTE = /configured GitHub repository HTTPS remote/u;
 const { PATH: previousPath = "" } = process.env;
 Object.assign(
   process.env,
@@ -35,10 +36,9 @@ if (encoded !== undefined) {
   const command = encoded.slice("credential.helper=!".length);
   const attempt = (host, target, action = "get") => spawnSync("/bin/sh", ["-c", command + " " + action], { env: process.env, input: "protocol=https\\nhost=" + host + "\\npath=" + target + "\\n\\n", encoding: "utf8" });
   const repo = attempt("github.com", "example/repo.git");
-  const wiki = attempt("github.com", "example/repo.wiki.git");
   helper = {
     repo: repo.status === 0 && repo.stdout === "username=x-access-token\\npassword=" + process.env.GH_TOKEN + "\\n",
-    wiki: wiki.status === 0 && wiki.stdout.includes("password=" + process.env.GH_TOKEN),
+    wiki: attempt("github.com", "example/repo.wiki.git").stdout === "",
     otherRepo: attempt("github.com", "other/repo.git").stdout === "",
     otherHost: attempt("other.example", "example/repo.git").stdout === "",
     store: attempt("github.com", "example/repo.git", "store").stdout === ""
@@ -104,6 +104,7 @@ test("local fake origins receive no credentials or helper", () => {
 
 for (const remote of [
   "https://github.com/other/repo.git",
+  "https://github.com/example/repo.wiki.git",
   "https://other.example/example/repo.git",
   "git@github.com:example/repo.git",
 ]) {

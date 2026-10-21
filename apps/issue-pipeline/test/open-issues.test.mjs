@@ -22,8 +22,7 @@
 // - a stopped issue taken only on request (takeStopped, #251): a stop label
 //   holds the issue (above), and "a stopped issue whose stop label is gone
 //   starts at the stage it stopped in"; there are no named runs, the
-//   orchestrator takes only --config, --brain-path and --once
-//   (src/orchestrator/args.ts);
+//   orchestrator takes only --config and --once (src/orchestrator/args.ts);
 // - a named issue that isn't open: ops-claim.test "a claim refuses an issue
 //   that isn't open".
 

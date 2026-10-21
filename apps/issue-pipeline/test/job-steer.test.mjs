@@ -85,7 +85,7 @@ test("--steer sends the message to the live session, which carries on, and its c
   assert.deepEqual(line.usage, USAGE);
 });
 
-test("--steer reaches a live writer session too, as the wiki's Steering a running session says", async () => {
+test("--steer reaches a live writer session too", async () => {
   const place = setUp(implementReplies(), {
     events: ["wait", messageEnd(USAGE), outputEnd(IMPLEMENTED)],
   });

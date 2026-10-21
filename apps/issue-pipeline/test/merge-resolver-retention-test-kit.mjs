@@ -1,23 +1,36 @@
 // @ts-check
-// Real merge-controller abort/retry paths over local repos; only the model is fake.
-import { ISSUE } from "./pipeline-commit-test-kit.mjs";
+// Real merge-controller abort/retry paths over local repos; only the model is
+// fake. The world's rebase is already stopped on its conflict, so the first
+// sync-base reports that conflict; later ones run the real op.
+import { headOf, ISSUE } from "./pipeline-commit-test-kit.mjs";
 import { finish, leaveResolution } from "./sync-retention-test-kit.mjs";
 
 const { syncOps } = await import("../src/ops/sync.ts");
-const { syncWiki } = await import("../src/wiki-publish.ts");
 const { newIssueState } = await import("../src/state.ts");
 const INPUTS_LENGTH = 64;
 
 /** @typedef {ReturnType<typeof import("./sync-retention-test-kit.mjs").conflicted>} World */
 
+/** The stopped rebase's conflict, as sync-base reports it. @param {World} w */
+function conflictOf(w) {
+  return {
+    conflict: true,
+    changed: false,
+    inRebase: true,
+    conflicts: [w.file],
+    baseSha: headOf(w.dir),
+  };
+}
+
 /** @param {World} w @param {string[]} ops @param {string} name @param {object} payload */
 function syncOperation(w, ops, name, payload) {
+  const started = ops.includes("sync-base");
   ops.push(name);
-  if (name === "finish-sync" || name === "finish-wiki-sync") {
+  if (name === "finish-sync") {
     return finish(w, true);
   }
-  if (name === "wiki-sync") {
-    return syncWiki(w.scoped, ISSUE);
+  if (name === "sync-base" && !started) {
+    return conflictOf(w);
   }
   if (name === "sync-base") {
     const start = syncOps["sync-base"];
@@ -75,7 +88,7 @@ function resolverContext(w, failed) {
       issue: ISSUE,
       stage: "merge",
       state,
-      dirs: { job: w.job.root, repo: w.job.repo, docs: w.job.docs },
+      dirs: { job: w.job.root, repo: w.job.repo },
       issueFile: "local-issue.md",
       mergeQueue: [ISSUE],
       inputs,

@@ -165,7 +165,7 @@ function world(options = {}) {
   const wt = paths.worktree(cfg, ISSUE);
   fs.mkdirSync(path.dirname(wt), { recursive: true });
   git(clone, ["worktree", "add", "-q", "-b", BRANCH, wt, `origin/${BRANCH}`]);
-  const revision = { code: head, wiki: null, inputs: INPUTS };
+  const revision = { code: head, inputs: INPUTS };
   /** @type {import("../src/state.ts").IssueState} */
   const state = {
     ...newIssueState(ISSUE),
@@ -174,7 +174,7 @@ function world(options = {}) {
     hardened: revision,
     headSha: head,
     verifiedSha: head,
-    flows: { code: true, wiki: false },
+    flows: { code: true },
   };
   fs.writeFileSync(path.join(place, "state.json"), stateBody(ISSUE, state));
   return {

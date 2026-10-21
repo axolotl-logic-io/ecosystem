@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
-import { pinnedOf } from "./brain-test-kit.mjs";
+import { pinnedOf } from "./prompt-test-kit.mjs";
 import {
   json,
   MODEL,
@@ -29,7 +29,7 @@ function launch() {
     timeoutMs: 3000,
     commits: false,
     phase: null,
-    prompt: pinnedOf("Pipeline-Prompt-Author.md"),
+    prompt: pinnedOf("author.md"),
   };
 }
 

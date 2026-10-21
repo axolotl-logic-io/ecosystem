@@ -20,7 +20,8 @@ import {
 
 const LAUNCH_OUTCOME = z.enum(["ok", "failed"]);
 // One push the job made for a writer session's `pipeline_commit`: the repo,
-// the head it pushed, and when.
+// the head it pushed, and when. The job pushes only "code"; "wiki" is
+// legacy, kept so a job.json written while the pipeline had a wiki parses.
 const PUSH = z.object({
   repo: z.enum(["code", "wiki"]),
   sha: z.string(),
@@ -37,8 +38,8 @@ const LAUNCH = z.object({
   commits: z.boolean().nullable().default(null),
   scope: PATH_SCOPE.nullable().default(null),
   phase: z.enum(SESSION_PHASES).nullable().default(null),
-  // The brain page the session's prompt was pinned from and the sha256 of
-  // its bytes (src/job/brain.ts); null for an ops launch and in a file
+  // The prompt page the session's prompt was pinned from and the sha256 of
+  // its bytes (src/job/prompts.ts); null for an ops launch and in a file
   // written before it was recorded.
   prompt: z
     .object({ page: z.string(), sha256: z.string() })

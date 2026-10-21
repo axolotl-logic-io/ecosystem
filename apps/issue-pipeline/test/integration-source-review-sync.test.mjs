@@ -1,10 +1,9 @@
 // @ts-check
 // prepare-review once the code merged (src/ops/prepare-review.ts,
 // merged-review.ts) and finish-sync's abort (src/ops/sync.ts), through the
-// ops CLI against a local origin, a local wiki origin and the fake gh:
-// GitHub's confirmed merge commit is the reviewed head, its change against
-// its first parent and the whole wiki change are reviewed, with the checkout
-// detached at it; a merge GitHub doesn't confirm, or a commit not on the
+// ops CLI against a local origin and the fake gh: GitHub's confirmed merge
+// commit is the reviewed head, its change against its first parent, docs/
+// included, is reviewed, with the checkout detached at it; a merge GitHub doesn't confirm, or a commit not on the
 // base, writes nothing; an aborted, fully staged resolution is preserved
 // before leaving the worktree clean on the pushed branch. merged-review-ops.test.mjs has the rest.
 import assert from "node:assert/strict";
@@ -43,28 +42,11 @@ const KEPT_CONFLICT = z.looseObject({
   conflict: z.literal(true),
   inRebase: z.boolean(),
 });
-const WIKI_HEADING = "# Wiki changes (paths under wiki/;";
 
 /** @param {string} out @returns {unknown} */
 function parsed(out) {
   return JSON.parse(out);
 }
-
-// A config with a wiki whose origin holds one page on master.
-function wikiConfig() {
-  const wikiOrigin = path.join(fx.root, "wiki.git");
-  const seed = path.join(fx.root, "wiki-seed");
-  sh(`git init -q --bare -b master ${wikiOrigin}`);
-  sh(`git clone -q ${wikiOrigin} ${seed} 2>/dev/null`);
-  sh(`cd ${seed} && echo home > Home.md && git add . && git commit -qm home`);
-  sh(`cd ${seed} && git push -q origin HEAD:master`);
-  return {
-    file: fx.configWith("wiki-config.json", { wiki: { url: wikiOrigin } }),
-    wikiOrigin,
-  };
-}
-
-const wiki = wikiConfig();
 
 // Merges issue `n`'s pushed branch into the base on origin with a merge
 // commit, as GitHub would; returns the merge commit.
@@ -99,24 +81,24 @@ function prView(n, { state, mergeCommit, head }) {
 
 /** @param {number} n @param {string} tag @returns {string} */
 function reviewDir(n, tag) {
-  return path.join(paths.runDir(loadConfig(wiki.file), n), `review-${tag}`);
+  const config = path.join(fx.root, "config.json");
+  return path.join(paths.runDir(loadConfig(config), n), `review-${tag}`);
 }
 
-// Issue `n`'s branch with a code change, pushed, and a wiki page committed in
-// its wiki checkout; returns the branch head.
+// Issue `n`'s branch with a code change and a docs page, pushed; returns the
+// branch head.
 /** @param {number} n @returns {string} */
-function branchWithWikiPage(n) {
-  const head = fx.startBranch(n, "code.txt", "feature line");
-  const dir = path.join(worktree(n), "wiki");
-  sh(`git clone -q ${wiki.wikiOrigin} ${dir} 2>/dev/null`);
-  sh(`cd ${dir} && echo page > Page.md && git add . && git commit -qm page`);
-  return head;
+function branchWithDocsPage(n) {
+  fx.startBranch(n, "code.txt", "feature line");
+  fs.mkdirSync(path.join(worktree(n), "docs"));
+  fx.commitIn(n, "docs/Page.md", "page");
+  return fx.pushFrom(n);
 }
 
-const branchHead = branchWithWikiPage(ISSUE.merged);
+const branchHead = branchWithDocsPage(ISSUE.merged);
 const mergeSha = mergeOnOrigin(ISSUE.merged);
 
-test("prepare-review with a confirmed code merge reviews the merge commit's first-parent change and the wiki, at the merged checkout", () => {
+test("prepare-review with a confirmed code merge reviews the merge commit's first-parent change, docs included, at the merged checkout", () => {
   const merged = { state: "MERGED", mergeCommit: mergeSha, head: branchHead };
   fakeGh.reply([prView(ISSUE.merged, merged)]);
   const request = {
@@ -125,7 +107,7 @@ test("prepare-review with a confirmed code merge reviews the merge commit's firs
     tag: "r1",
     codeMerged: { pr: PR, sha: mergeSha },
   };
-  const reply = REVIEW_REPLY.parse(parsed(fx.ask(request, wiki.file)));
+  const reply = REVIEW_REPLY.parse(parsed(fx.ask(request)));
   const seed = path.join(fx.root, "seed");
   const parent = sh(`git -C ${seed} rev-parse ${mergeSha}^1`);
   assert.equal(reply.headSha, mergeSha);
@@ -136,7 +118,7 @@ test("prepare-review with a confirmed code merge reviews the merge commit's firs
     reply.headTree,
     sh(`git -C ${seed} rev-parse ${mergeSha}^{tree}`),
   );
-  assert.deepEqual(reply.changedFiles, ["code.txt", "wiki/Page.md"]);
+  assert.deepEqual(reply.changedFiles, ["code.txt", "docs/Page.md"]);
   assert.equal(
     reply.diffPath,
     path.join(reviewDir(ISSUE.merged, "r1"), "diff.patch"),
@@ -144,12 +126,11 @@ test("prepare-review with a confirmed code merge reviews the merge commit's firs
   const diff = fs.readFileSync(reply.diffPath, "utf8");
   assert.ok(
     diff.startsWith(
-      `# Code\n\nPR #${PR} merged as ${mergeSha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent. Then the wiki change.\n`,
+      `# Code\n\nPR #${PR} merged as ${mergeSha}. The code checkout (repo/) is now at that merge commit, so its files are the merged result. Below is the merge commit's change against its first parent ${parent}, This is the complete net contribution relative to the integration-side parent, not a cumulative review of changes already in that parent.\n`,
     ),
     diff,
   );
   assert.ok(diff.includes("+feature line"), diff);
-  assert.ok(diff.indexOf("+feature line") < diff.indexOf(WIKI_HEADING), diff);
   assert.ok(diff.includes("+page"), diff);
   assert.ok(reply.bundleText.startsWith(diff), "the bundle starts with it");
   assert.ok(reply.bundleText.includes("\n## code.txt\n"), reply.bundleText);
@@ -180,7 +161,7 @@ test("prepare-review refuses a merge GitHub doesn't confirm and writes nothing",
       tag,
       codeMerged: { pr: PR, sha },
     };
-    const reply = ERROR_REPLY.parse(parsed(fx.ask(request, wiki.file)));
+    const reply = ERROR_REPLY.parse(parsed(fx.ask(request)));
     assert.match(reply.error, NOT_CONFIRMED, tag);
     assert.equal(fs.existsSync(reviewDir(ISSUE.merged, tag)), false, tag);
   }
@@ -196,7 +177,7 @@ test("prepare-review refuses a confirmed merge commit that isn't on the base and
     tag: "off-base",
     codeMerged: { pr: PR, sha: stray },
   };
-  const reply = ERROR_REPLY.parse(parsed(fx.ask(request, wiki.file)));
+  const reply = ERROR_REPLY.parse(parsed(fx.ask(request)));
   assert.match(reply.error, NOT_ON_BASE);
   assert.equal(fs.existsSync(reviewDir(ISSUE.merged, "off-base")), false);
 });

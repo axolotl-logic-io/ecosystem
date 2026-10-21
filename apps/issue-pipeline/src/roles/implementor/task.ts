@@ -1,5 +1,5 @@
 // The Developer session's task: the issue's facts, its Gherkin and what an
-// earlier round left for it. The Developer's behaviour is its wiki page
+// earlier round left for it. The Developer's behaviour is its prompt page
 // (task-facts.ts). Pure.
 
 import type { RoleContext } from "../../job/role-context.ts";
@@ -7,10 +7,6 @@ import type { Finding, MergeReturn } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
 import { scopeLines } from "../change-task.ts";
 import { gherkinLines, header, replyLines } from "../task-facts.ts";
-
-// Where the Developer's work may go: the issue's branch, or, once its code
-// merged, the wiki alone.
-type DevelopmentMode = Exclude<Mode, { kind: "wiki-change" }>;
 
 function whereOf(finding: Finding): string {
   if (finding.path === undefined) {
@@ -55,7 +51,7 @@ function mergeReturnLines(mergeReturn: MergeReturn | null): string[] {
 }
 
 // The task of the Developer's session, which does the issue's work.
-function workTask(ctx: RoleContext, mode: DevelopmentMode): string {
+function workTask(ctx: RoleContext, mode: Mode): string {
   return [
     ...header(ctx, "development"),
     ...scopeLines(ctx, mode),
@@ -69,5 +65,4 @@ function workTask(ctx: RoleContext, mode: DevelopmentMode): string {
   ].join("\n");
 }
 
-export type { DevelopmentMode };
 export { workTask };

@@ -1,5 +1,6 @@
 // @ts-check
-// A closed draft may disappear only from proven wiki-only READ authority.
+// A closed draft the saved state does not name grants no authority: every
+// history of one needs operator recovery, and no code ref changes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { refOf } from "./job-git-test-kit.mjs";
@@ -22,11 +23,6 @@ const { withCheckout } = await import("../src/config.ts");
 const { issuePullRequest } = await import("../src/revision.ts");
 const { readWriteAuthority } = await import("../src/write-authority.ts");
 const { pushHead } = await import("../src/checkouts.ts");
-const { readWriteState } = await import("../src/saved-state.ts");
-const { pushBranch } = await import("../src/ops/sync-finish.ts");
-const { syncOps } = await import("../src/ops/sync.ts");
-const { prOps } = await import("../src/ops/pr.ts");
-const { pushOps } = await import("../src/ops/push.ts");
 const PR = 42;
 
 /** @param {import("./pipeline-commit-test-kit.mjs").Job} job @param {import("../src/state.ts").IssueState} state @param {{baseRefName: string, headRefName: string, isCrossRepository: boolean}} view @param {string} bad @returns {void} */
@@ -41,7 +37,7 @@ function invalidateDraft(job, state, view, bad) {
     state.merged = null;
   }
   if (bad === "code-flow") {
-    state.flows = { code: true, wiki: true };
+    state.flows = { code: true };
   }
   if (bad === "dirty-code") {
     write(job.repo, "README.md", "local edits\n");
@@ -87,7 +83,7 @@ async function closedDraft(bad) {
     stage: "done",
     branch: job.branch,
     headSha: original,
-    flows: { code: false, wiki: true },
+    flows: { code: false },
     merged: revision,
     hardened: { ...revision, code: original },
     security: { revision, commentId: 9, finding: null },
@@ -112,40 +108,8 @@ async function closedDraft(bad) {
   return { job, cfg, state };
 }
 
-test("done wiki-only replay can read clean base after branch deletion but grants no code push authority", async () => {
-  const { job, cfg, state } = await closedDraft("valid");
-  try {
-    assert.equal(issuePullRequest(cfg, ISSUE, state), null);
-    assert.equal(readWriteAuthority(cfg, ISSUE).codeWritable, false);
-    assert.throws(() => pushHead(cfg, ISSUE, "test"));
-    assert.throws(() => pushBranch(cfg, ISSUE, job.repo, "test"));
-    /** @type {Iterable<readonly [string, (config: import("../src/config.ts").Config, request: unknown) => unknown]>} */
-    const entries = [
-      ...Object.entries(syncOps),
-      ...Object.entries(prOps),
-      ...Object.entries(pushOps),
-    ];
-    const writes = new Map(entries);
-    for (const name of [
-      "sync-base",
-      "finish-sync",
-      "start-pr",
-      "open-pr",
-      "push",
-      "exit-push",
-    ]) {
-      const mutate = writes.get(name);
-      assert.ok(mutate);
-      assert.throws(() => mutate(cfg, { number: ISSUE }));
-    }
-    assert.deepEqual(readWriteState(cfg, ISSUE), state);
-    assert.equal(refOf(job.origin, BRANCH), "");
-  } finally {
-    job.close();
-  }
-});
-
 for (const bad of [
+  "valid",
   "non-done",
   "head-mismatch",
   "missing-receipt",
@@ -157,7 +121,7 @@ for (const bad of [
   "wrong-branch",
   "wrong-repo",
 ]) {
-  test(`closed wiki-only history refuses ${bad} without changing code ref`, async () => {
+  test(`a closed draft history (${bad}) needs operator recovery, changing no code ref`, async () => {
     const { job, cfg, state } = await closedDraft(bad);
     try {
       assert.throws(() => issuePullRequest(cfg, ISSUE, state));
@@ -169,20 +133,3 @@ for (const bad of [
     }
   });
 }
-
-test("non-done genuine wiki-only work retains its original closed PR head and never gains code authority", async () => {
-  const { job, cfg, state } = await closedDraft("valid");
-  try {
-    assert.ok(state.headSha);
-    git(job.repo, ["reset", "--hard", state.headSha]);
-    const saved = { ...state, stage: "review" };
-    saveAuthority(job.cfg, saved);
-    assert.equal(issuePullRequest(cfg, ISSUE, saved), null);
-    assert.equal(readWriteAuthority(cfg, ISSUE).codeWritable, false);
-    assert.deepEqual(readWriteState(cfg, ISSUE), saved);
-    assert.equal(headOf(job.repo), state.headSha);
-    assert.equal(refOf(job.origin, BRANCH), "");
-  } finally {
-    job.close();
-  }
-});

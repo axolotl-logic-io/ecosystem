@@ -17,28 +17,22 @@ import type { IssueState } from "../state.ts";
 // The ops a role may ask for; each runs in its own `ops.mjs` process, the
 // only code that holds a token. The job alone runs claim, save-state, stop,
 // ask, release, usage and exit-push. `current-revision` reads the issue's
-// trusted inputs, the checkouts' code and wiki heads and the PR afresh from
+// trusted inputs, the checkout's code head and the PR afresh from
 // GitHub (shared-ops-contract.md).
 type OpName =
   | "current-revision"
   | "post"
   | "start-pr"
   | "open-pr"
-  | "close-pr"
   | "push"
   | "sync-base"
   | "finish-sync"
   | "prepare-review"
   | "verify"
-  | "wiki-check"
   | "ci-status"
   | "merge"
   | "reconcile-merge"
-  | "pin-wiki"
-  | "wiki-sync"
-  | "finish-wiki-sync"
-  | "publish"
-  | "finish-wiki"
+  | "finish"
   | "ready-pr"
   | "cleanup";
 
@@ -139,9 +133,8 @@ interface RoleContext {
   stage: Stage;
   // The claimed state.
   state: IssueState;
-  // The job's folder, its code checkout repo/ and its wiki checkout docs/
-  // (null when the repo has no wiki).
-  dirs: { job: string; repo: string; docs: string | null };
+  // The job's folder and its code checkout repo/.
+  dirs: { job: string; repo: string };
   // The filtered issue file: the issue and its trusted comments.
   issueFile: string;
   inputs: RoleInputs;

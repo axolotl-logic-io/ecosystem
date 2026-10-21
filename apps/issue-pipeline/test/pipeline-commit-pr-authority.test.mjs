@@ -60,20 +60,19 @@ test("an OPEN PR permits ordinary premerge code pushes", async () => {
   }
 });
 
-test("GitHub MERGED with both saved receipts null refuses code, preserves it locally and still pushes wiki", async () => {
+test("GitHub MERGED with both saved receipts null refuses code and docs, preserving them locally", async () => {
   const job = await openJob("implement");
   try {
     const original = headOf(job.repo);
     git(job.origin, ["update-ref", BRANCH, original]);
     savedPr(job, "MERGED");
     write(job.repo, "README.md", "too late\n");
-    write(job.docs, "Page.md", "wiki followup\n");
+    write(job.repo, "docs/Home.md", "docs followup\n");
     const reply = await job.commit(["-am", "After actual merge"]);
-    assert.equal(reply.details.pushed, "wiki");
+    assert.equal(reply.details.pushed, "none");
     assert.match(reply.details.pushError, REFUSED);
     assert.equal(refOf(job.origin, BRANCH), original);
     assert.notEqual(headOf(job.repo), original);
-    assert.equal(refOf(job.wikiOrigin, BRANCH), headOf(job.docs));
     // Deterministic pushes share the same live authority guard.
     ensureClone(job.cfg);
     const cfg = withCheckout(job.cfg, {
@@ -91,38 +90,8 @@ test("GitHub MERGED with both saved receipts null refuses code, preserves it loc
   }
 });
 
-test("deterministic wiki-only push remains available after an actual merge with no saved receipt", async () => {
-  const job = await openJob("implement");
-  try {
-    const original = headOf(job.repo);
-    git(job.origin, ["update-ref", BRANCH, original]);
-    savedPr(job, "MERGED");
-    write(job.docs, "Page.md", "wiki only\n");
-    const reply = await job.commit([
-      "-m",
-      "Wiki followup",
-      "--",
-      "docs/Page.md",
-    ]);
-    assert.equal(reply.details.pushed, "wiki");
-    ensureClone(job.cfg);
-    const cfg = withCheckout(job.cfg, {
-      issue: ISSUE,
-      dir: job.repo,
-      branch: job.branch,
-    });
-    const { push } = pushOps;
-    assert.ok(push);
-    const result = push(cfg, { number: ISSUE, wikiOnly: true });
-    assert.equal(result.headSha, original);
-    assert.equal(refOf(job.origin, BRANCH), original);
-  } finally {
-    job.close();
-  }
-});
-
 for (const state of ["CLOSED", "query-failure", "wrong-branch"]) {
-  test(`a ${state} PR cannot authorize code or wiki mutation`, async () => {
+  test(`a ${state} PR cannot authorize code mutation`, async () => {
     const job = await openJob("implement");
     try {
       savedPr(job, state);
@@ -140,12 +109,11 @@ for (const state of ["CLOSED", "query-failure", "wrong-branch"]) {
         });
       }
       write(job.repo, "README.md", "unconfirmed code\n");
-      write(job.docs, "Page.md", "unconfirmed wiki\n");
+      write(job.repo, "docs/Home.md", "unconfirmed docs\n");
       const reply = await job.commit(["-am", "Unconfirmed work"]);
       assert.equal(reply.details.pushed, "none");
       assert.equal(typeof reply.details.pushError, "string");
       assert.equal(refOf(job.origin, BRANCH), "");
-      assert.equal(refOf(job.wikiOrigin, BRANCH), "");
       ensureClone(job.cfg);
       const cfg = withCheckout(job.cfg, {
         issue: ISSUE,

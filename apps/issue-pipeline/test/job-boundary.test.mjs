@@ -50,25 +50,25 @@ const BOUNDARY_ROLES = {
   writer: { tokenEnv: "W_TOKEN", network: ["example.com"] },
   merger: { tokenEnv: "M_TOKEN" },
 };
-// Each stage's role, network and access to its code (repo/) and wiki (docs/)
-// checkouts: the author only reads; every other stage writes both.
+// Each stage's role, network and access to its code (repo/)
+// checkout: the author only reads it; every other stage writes it.
 const WRITER = {
   role: "writer",
   network: ["example.com"],
-  access: { repo: "write", docs: "write" },
+  access: { repo: "write" },
 };
 const EXPECTED = {
   author: {
     role: "reader",
     network: ["api.anthropic.com"],
-    access: { repo: "read", docs: "read" },
+    access: { repo: "read" },
   },
   implement: WRITER,
   review: WRITER,
   merge: {
     role: "merger",
     network: ["api.github.com", "api.anthropic.com", "registry.npmjs.org"],
-    access: { repo: "write", docs: "write" },
+    access: { repo: "write" },
   },
 };
 const COMMIT_EXTENSION = /\/pipeline-commit\.mjs$/u;
@@ -96,17 +96,12 @@ function isSorted(names) {
 
 // A `stage` job whose config has `jobRoles`: the implementor's ops and
 // session at implement, the author's at every other stage.
-/** @param {object} jobRoles @param {string} stage @param {object} [options] */
-function placeAt(jobRoles, stage, options = {}) {
+/** @param {object} jobRoles @param {string} stage */
+function placeAt(jobRoles, stage) {
   if (stage === "implement") {
-    return setUp(
-      implementReplies(),
-      IMPLEMENTOR_SESSION,
-      { jobRoles },
-      options,
-    );
+    return setUp(implementReplies(), IMPLEMENTOR_SESSION, { jobRoles });
   }
-  return setUp(repliesAt(stage), AUTHOR_SESSION, { jobRoles }, options);
+  return setUp(repliesAt(stage), AUTHOR_SESSION, { jobRoles });
 }
 
 test("a reader session's pi gets none of the gh token variables nor a role's token", () => {
@@ -142,21 +137,6 @@ test("a writer session's pi loads pipeline_commit with its commit scope, and job
   assert.ok(start.env.includes(COMMIT_SCOPE_ENV));
   const session = sessionOf(statusOf(place));
   assert.deepEqual([session.commits, session.phase], [true, null]);
-});
-
-test("the wiki's writer, the implementor, commits its docs/ through pipeline_commit and gets no gh token", () => {
-  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "implement", {
-    wiki: true,
-  });
-  runJob(place, ["--stage", "implement"], TOKENS_ENV);
-  const [start] = piStarts(place);
-  assert.ok(toolsOf(start.argv).includes("pipeline_commit"));
-  assert.ok(start.env.includes(COMMIT_SCOPE_ENV));
-  assert.deepEqual(start.commitScope.docs, { dir: "docs", access: "write" });
-  assert.equal(start.ghToken, null);
-  for (const name of [...GH_VARS, "W_TOKEN"]) {
-    assert.ok(!start.env.includes(name), name);
-  }
 });
 
 test("a reader session's pi gets neither pipeline_commit, a commit scope nor a tool that writes, and job.json records it read-only", () => {
@@ -210,7 +190,7 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     const lines = r.stdout.trim().split("\n");
     assert.equal(lines.length, 1);
     const boundary = JSON.parse(r.stdout);
-    // The wiki promises these fields, not their order.
+    // The boundary contract promises these fields, not their order.
     assert.deepEqual(
       new Set(Object.keys(boundary)),
       new Set(["role", "checkout", "access", "env", "network", "runtime"]),

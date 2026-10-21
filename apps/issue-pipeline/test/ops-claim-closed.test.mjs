@@ -24,7 +24,7 @@ const HEAD = "0".repeat(SHA_LENGTH);
 const MERGE = "a".repeat(SHA_LENGTH);
 const SAVED = v2State(ISSUE, { stage: "merge", pr: PR, headSha: HEAD });
 const MERGED = { state: "MERGED", mergeCommit: { oid: MERGE } };
-const AUTHORIZED = { code: HEAD, wiki: null, inputs: "x" };
+const AUTHORIZED = { code: HEAD, inputs: "x" };
 const ATTEMPT = {
   repo: "o/r",
   pr: PR,
@@ -63,7 +63,7 @@ test("closed issue without saved pipeline state cannot initialize work", () => {
 });
 
 for (const [name, extra] of Object.entries({
-  done: { stage: "done", merged: { code: MERGE, wiki: null, inputs: "x" } },
+  done: { stage: "done", merged: { code: MERGE, inputs: "x" } },
   author: { stage: "author" },
   implement: { stage: "implement" },
   review: { stage: "review" },
@@ -76,14 +76,14 @@ for (const [name, extra] of Object.entries({
   "contradicted code receipt": { codeMerged: { pr: PR, sha: "other" } },
   "contradicted PR receipt": { codeMerged: { pr: PR + 1, sha: MERGE } },
   "contradicted own receipt": {
-    merged: { code: "other", wiki: null, inputs: "x" },
+    merged: { code: "other", inputs: "x" },
   },
   "changed retained head": { headSha: "other" },
   "contradicted original own-merge head": {
     headSha: MERGE,
     codeMerged: { pr: PR, sha: MERGE },
-    merged: { code: MERGE, wiki: null, inputs: "x" },
-    hardened: { code: "b".repeat(SHA_LENGTH), wiki: null, inputs: "x" },
+    merged: { code: MERGE, inputs: "x" },
+    hardened: { code: "b".repeat(SHA_LENGTH), inputs: "x" },
   },
 })) {
   test(`closed issue with ${name} is refused without mutations`, () => {

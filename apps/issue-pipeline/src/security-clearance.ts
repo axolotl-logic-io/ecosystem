@@ -7,7 +7,7 @@ import type { IssueState, Revision } from "./state.ts";
 import { sameRevision } from "./state.ts";
 
 // Why `saved`'s security review doesn't clear `result` (GitHub's merge
-// commit, or null with no PR; the wiki head; the trusted inputs), or
+// commit, or null with no PR; the trusted inputs), or
 // undefined when it does. Only the issue's saved state counts.
 function securityRefusal(
   saved: IssueState | null,
@@ -15,7 +15,7 @@ function securityRefusal(
 ): string | undefined {
   const security = saved?.security ?? null;
   if (security === null || !sameRevision(security.revision, result)) {
-    return `no security review of the merged result (code ${String(result.code)}, wiki ${String(result.wiki)}, inputs ${result.inputs}) is saved`;
+    return `no security review of the merged result (code ${String(result.code)}, inputs ${result.inputs}) is saved`;
   }
   const { finding } = security;
   if (finding !== null) {

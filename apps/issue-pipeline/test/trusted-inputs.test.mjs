@@ -83,7 +83,6 @@ test("the Gherkin comment counts only with the marks, by the account", () => {
   const text = {
     gherkin: "Feature: F\n  Scenario: S",
     assumptions: ["A"],
-    wikiPages: ["Home"],
   };
   const body = `${signed({ role: "author" }, gherkinBody(text, { rev: GHERKIN_REV, inputs: base }))}\n${keyMark(NUMBER, "gherkin")}`;
   const found = gherkinCommentOf(cfg, NUMBER, [
@@ -106,4 +105,25 @@ test("the Gherkin comment counts only with the marks, by the account", () => {
     ]),
     null,
   );
+});
+
+test("a Gherkin comment written while the pipeline had a wiki still parses, ignoring its Wiki pages section", () => {
+  const text = { gherkin: "Feature: F\n  Scenario: S", assumptions: ["A"] };
+  const current = gherkinBody(text, { rev: GHERKIN_REV, inputs: base });
+  const legacy = current.replace(
+    "- A\n",
+    "- A\n\n### Wiki pages\n\n- Home\n- Chats\n",
+  );
+  assert.notEqual(legacy, current);
+  assert.ok(!current.includes("Wiki pages"));
+  const body = `${signed({ role: "author" }, legacy)}\n${keyMark(NUMBER, "gherkin")}`;
+  const found = gherkinCommentOf(cfg, NUMBER, [
+    comment("pipeline-bot", body, GHERKIN_ID),
+  ]);
+  assert.deepEqual(found, {
+    id: GHERKIN_ID,
+    rev: GHERKIN_REV,
+    inputs: base,
+    ...text,
+  });
 });

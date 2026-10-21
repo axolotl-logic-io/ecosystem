@@ -1,7 +1,7 @@
 // @ts-check
 // The merge op (src/ops/merge.ts) only merges code: it checks the approved
 // head, the queue and the fresh revision, names the target and exact source
-// and durably checkpoints attempted/confirmed evidence, without labels, wiki or
+// and durably checkpoints attempted/confirmed evidence, without labels or
 // issue close (`merge-publish-finish-split`).
 // Branches are no longer stacked on a prerequisite's branch (#268): an issue
 // whose after mark names an open prerequisite doesn't start at all
@@ -213,29 +213,6 @@ test("merge refuses a head behind its base without merging", () => {
     merged: false,
     reason: "behind",
   });
-  assert.deepEqual(writes(), []);
-});
-
-test("merge refuses when the wiki moved past the approved wiki head", async () => {
-  const w = world({ wiki: true });
-  const { moveWiki } = await import("./ops-publish-test-kit.mjs");
-  moveWiki(w);
-  const approved = { code: w.sha, wiki: w.wikiSha, inputs: "inputs-1" };
-  setCurrentRevision({
-    revision: approved,
-    baseSha: "base",
-    pr: { number: PR, state: "OPEN", mergeCommit: null, headSha: w.sha },
-  });
-  fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
-    prView({ headRefOid: w.sha }),
-  ]);
-  const reply = merge(
-    w.cfg,
-    request(w, { revision: approved, state: approvedState(approved) }),
-  );
-  assert.equal(reply.merged, false);
-  assert.equal("reason" in reply && reply.reason, "wiki-behind");
   assert.deepEqual(writes(), []);
 });
 

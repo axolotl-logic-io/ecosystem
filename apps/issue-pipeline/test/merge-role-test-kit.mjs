@@ -13,10 +13,8 @@ import {
   PR,
   REVISION,
   sha,
-  WIKI,
 } from "./reviewer-and-merge-role-kit.mjs";
 
-const SHORT_COMMIT_LENGTH = 7;
 const QUEUE_HEAD = 7;
 const QUEUE_NEXT = 12;
 
@@ -30,46 +28,28 @@ const MERGED_PR = {
 };
 // After the merge, current-revision gives the merge commit as the code.
 const AFTER_MERGE = current({ code: MERGE_COMMIT }, MERGED_PR);
-const MERGED_REVISION = { code: MERGE_COMMIT, wiki: WIKI, inputs: INPUTS };
+const MERGED_REVISION = { code: MERGE_COMMIT, inputs: INPUTS };
 const CODE_MERGED = { codeMerged: { pr: PR, sha: MERGE_COMMIT } };
-const MUTATIONS = [
-  "merge",
-  "publish",
-  "finish-wiki",
-  "sync-base",
-  "wiki-sync",
-  "pin-wiki",
-  "push",
-  "ready-pr",
-];
+const MUTATIONS = ["merge", "finish", "sync-base", "push", "ready-pr"];
 
 const FINISHED = { finished: true, closed: true };
-const WIKI_UNCHANGED = { conflict: false, changed: false, headSha: WIKI };
-const WIKI_PASS = { pass: true, checks: [] };
 const CI_PASS = { status: "pass", checks: ["ci"] };
 const MERGED = { merged: true, mergeCommit: MERGE_COMMIT, headSha: HEAD };
-const PUBLISHED = {
-  published: true,
-  sha: WIKI,
-  commits: [`${WIKI.slice(0, SHORT_COMMIT_LENGTH)} Chats`],
-};
 const PREPARED_MERGED = {
   headSha: MERGE_COMMIT,
   diffPath: "/run/security/diff.patch",
   bundlePath: "/run/security/bundle.md",
-  changedFiles: ["src/chat.ts", "wiki/Chats.md"],
+  changedFiles: ["src/chat.ts", "docs/Chats.md"],
 };
 
 // The Reviewer's own integration at merge: a failing CI check, the fix
 // session's reply, and the ops of an integration that ends in a push of
 // REBASED.
 const CI_FAIL = { status: "fail", failing: ["e2e"], logPath: "/run/ci.log" };
-const PUSHED = { headSha: REBASED, codeChanged: true, wikiAhead: 0 };
+const PUSHED = { headSha: REBASED, codeChanged: true };
 const VERIFIED = { pass: true, headSha: REBASED, checks: [] };
 const AFTER_INTEGRATION = {
-  "pin-wiki": [{ changed: false }],
   verify: [VERIFIED],
-  "wiki-check": [WIKI_PASS, WIKI_PASS],
   push: [PUSHED],
 };
 const INTEGRATED = { ...REVISION, code: REBASED };
@@ -123,12 +103,10 @@ function merging(script = {}) {
     ops: {
       "current-revision": [current(), current(), AFTER_MERGE, AFTER_MERGE],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
-      "wiki-check": [WIKI_PASS, WIKI_PASS],
       "ci-status": [CI_PASS],
       merge: [MERGED],
       "prepare-review": [PREPARED_MERGED],
-      publish: [PUBLISHED],
-      "finish-wiki": [FINISHED],
+      finish: [FINISHED],
       ...script.ops,
     },
     sessions: script.sessions ?? [NO_FINDING],
@@ -163,11 +141,8 @@ export {
   mutationsOf,
   NO_FINDING,
   PREPARED_MERGED,
-  PUBLISHED,
   PUSHED,
   QUEUE,
   REBASED,
   VERIFIED,
-  WIKI_PASS,
-  WIKI_UNCHANGED,
 };

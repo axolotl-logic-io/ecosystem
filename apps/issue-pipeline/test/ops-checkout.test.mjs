@@ -3,7 +3,7 @@
 // in for the named issue's worktree while the request runs, and the branch
 // the caller assigned the issue, which its pushes go to. Other issues, and
 // requests without it, keep their issue-N worktrees and agent/issue-N
-// branches. A branch that isn't one literal name, or is the base or wiki
+// branches. A branch that isn't one literal name, or is the base
 // branch, is refused before anything moves.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -29,7 +29,7 @@ const PUSH_REPLY = z.looseObject({
 });
 const NAMES_CHECKOUT = /^bad ops request: .*→ at checkout/su;
 const NOT_LITERAL = /is not a literal branch name/u;
-const BASE_OR_WIKI = /is the base or wiki branch/u;
+const BASE_BRANCH = /is the base branch, which no issue works on/u;
 const BOUND_ELSEWHERE =
   /#16's work is on x\/y, not the assigned feature\/bound-16/u;
 const ASSIGNED = "feature/assigned-11";
@@ -136,7 +136,7 @@ test("push with an assigned branch pushes the job's commit to exactly that branc
   assert.equal(originRef(`agent/issue-${VIA_ASSIGNED}`), "");
 });
 
-test("a checkout's branch that is a ref expression, an option, or the base or wiki branch pushes nothing", () => {
+test("a checkout's branch that is a ref expression, an option, or the base branch pushes nothing", () => {
   const { dir, sha } = jobClone(UNSAFE, "unsafe.txt", "feature/unsafe-15");
   /** @type {[string, RegExp][]} */
   const refused = [
@@ -147,7 +147,7 @@ test("a checkout's branch that is a ref expression, an option, or the base or wi
     ["x@{1}", NOT_LITERAL],
     ["a b", NOT_LITERAL],
     ["x.lock", NOT_LITERAL],
-    ["integration", BASE_OR_WIKI],
+    ["integration", BASE_BRANCH],
   ];
   for (const [branch, why] of refused) {
     const reply = pushed({

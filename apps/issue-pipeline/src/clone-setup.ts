@@ -1,7 +1,6 @@
-// The git setup the code clone and the private wiki clone share: the
-// pipeline's git identity, and the pre-push hook that keeps agents from
-// pushing; and the pre-commit hook that keeps a stage job's sessions
-// committing only through pipeline_commit.
+// The git setup of a code clone: the pipeline's git identity, the pre-push
+// hook that keeps agents from pushing, and the pre-commit hook that keeps a
+// stage job's sessions committing only through pipeline_commit.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -47,7 +46,7 @@ function guardCommits(clone: string): void {
 }
 
 // Fetches the submodule commits recorded by this checkout, recursively.
-// Only the configured GitHub repo/wiki can obtain command-scoped credentials.
+// Only the configured GitHub repo can obtain command-scoped credentials.
 function updateSubmodules(cfg: Config, dir: string): void {
   git(cfg, "dev", ["-C", dir, "submodule", "sync", "--recursive"]);
   git(cfg, "dev", ["-C", dir, "submodule", "update", "--init", "--recursive"]);

@@ -6,12 +6,7 @@ import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { z } from "zod";
 import { readWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
-import {
-  refIn,
-  scriptPi,
-  setUpFlow,
-  WIKI_BRANCH,
-} from "./pipeline-flow-kit.mjs";
+import { scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   createReplayFlow,
@@ -27,11 +22,9 @@ import { savedState } from "./pipeline-flow-script.mjs";
 let flow;
 /** @type {import("./pipeline-flow-gh-world.mjs").World} */
 let interruptedWorld;
-/** @type {string | null} */
-let originalWiki;
 before(() => {
   flow = setUpFlow();
-  ({ interruptedWorld, originalWiki } = createReplayFlow(flow));
+  ({ interruptedWorld } = createReplayFlow(flow));
 });
 beforeEach(() => {
   writeWorld(flow.ghDir, structuredClone(interruptedWorld));
@@ -62,21 +55,16 @@ test("a fresh exact Security rejection stops closed recovery and cannot be rerol
   assert.deepEqual(rejected.security.revision, rejected.merged);
   assert.equal(rejected.security.finding.category, "rights");
   assert.equal(rejected.stage, "stopped");
-  assert.equal(
-    refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
-    originalWiki,
-  );
   assert.equal(runStage(flow, "merge").end, "stop");
   assert.equal(sessions(flow), starts + 1);
   assert.equal(merges(flow).length, 1);
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
-  assert.equal(ops.includes("publish"), false);
-  assert.equal(ops.includes("finish-wiki"), false);
+  assert.equal(ops.includes("finish"), false);
 });
 
-test("closed recovery retains merged truth when actual-result verification fails without a writer or publication", () => {
+test("closed recovery retains merged truth when actual-result verification fails without a writer or completion", () => {
   const config = fs.readFileSync(flow.config, "utf8");
   const settings = z
     .looseObject({ commands: z.looseObject({ test: z.string() }) })
@@ -109,12 +97,7 @@ test("closed recovery retains merged truth when actual-result verification fails
     const ops = opsTrace(flow)
       .slice(traceStart)
       .map(({ request }) => request.op);
-    assert.equal(ops.includes("publish"), false);
-    assert.equal(ops.includes("finish-wiki"), false);
-    assert.equal(
-      refIn(flow.wikiOrigin, `refs/heads/${WIKI_BRANCH}`),
-      originalWiki,
-    );
+    assert.equal(ops.includes("finish"), false);
   } finally {
     fs.writeFileSync(flow.config, config);
   }

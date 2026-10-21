@@ -2,20 +2,19 @@
 // The stage job: one job pinned to one issue that runs only one stage.
 //
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
-//     --brain-path <wiki clone> [--lane L] [--merge-queue n1,n2,…]
-//     [--job-id <uuid>]
+//     [--lane L] [--merge-queue n1,n2,…] [--job-id <uuid>]
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
-//     --brain-path <wiki clone> --print-boundary
+//     --print-boundary
 //
 // Its caller assigns it the issue and the issue's branch; it never picks
 // another issue. Before it claims or clones anything it refuses a branch git
-// wouldn't take literally and one the repo protects: its base, its wiki's
-// branch, the remote's default (src/job/branch.ts). Both checkouts, every
-// ops request and every push name that branch; the claim refuses one the
-// issue's saved state isn't bound to. It then pins, from the wiki clone
-// --brain-path names, the behavioral prompt page of each session its stage
-// runs, failing on one it can't read (src/job/brain.ts); pi appends a
+// wouldn't take literally and one the repo protects: its base or the
+// remote's default (src/job/branch.ts). Its checkout, every ops request and
+// every push name that branch; the claim refuses one the
+// issue's saved state isn't bound to. It then pins, from the installed
+// release's prompts/ folder, the behavioral prompt page of each session its
+// stage runs, failing on one it can't read (src/job/prompts.ts); pi appends a
 // session's page to its agent's system prompt, and it grants nothing. It
 // claims #N and runs the stage's role (src/roles/registry.ts) on the role
 // runner (src/job/role-run.ts), always fresh: a restarted job starts the
@@ -48,11 +47,11 @@
 // prints the stage job's boundary as one JSON line and starts nothing.
 //
 // The job works in its own folder, where every pi session runs, holding its
-// code checkout, cloned from a bare mirror of the repo, and its wiki checkout
-// (src/job/checkout.ts). On every exit (src/job/teardown.ts) it saves what
-// the checkouts left uncommitted as patches in the run folder
+// code checkout, cloned from a bare mirror of the repo, with the repo's docs
+// in its docs/ (src/job/checkout.ts). On every exit (src/job/teardown.ts) it
+// saves what the checkout left uncommitted as patches in the run folder
 // (droppedPatches), records and drops it (lostChanges), the implementor's
-// job pushes what the remotes lack, only the wiki once the code is merged
+// job pushes what the remote lacks, nothing once the code is merged
 // (src/job/exit-push.ts), and the folder is
 // removed; a run that stopped with saved patches posts a comment saying so
 // (#369).
@@ -65,26 +64,24 @@ import { loadConfig, paths } from "./config.ts";
 import { authorizedIssue } from "./issue-context.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
-import type { Brain } from "./job/brain.ts";
-import { openBrain } from "./job/brain.ts";
 import { branchRefusalOf } from "./job/branch.ts";
-import { CheckoutSetupError, openJobCheckout } from "./job/checkout.ts";
+import { openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
 import type { Control } from "./job/control.ts";
 import { openControl, socketPathOf } from "./job/control.ts";
 import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
 import { opsRunnerOf } from "./job/ops-request.ts";
-import { inputsOf } from "./job/role-inputs.ts";
+import type { StagePrompts } from "./job/prompts.ts";
+import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
 import { runRoleStage } from "./job/role-run.ts";
-import { boundaryOf, STAGE_WIKI_ACCESS } from "./job/roles.ts";
+import { boundaryOf } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
 import type { JobOutcome, StopSignal } from "./job/status.ts";
 import { openStatus, socketOf } from "./job/status.ts";
 import type { ExitingJob, RunEnd } from "./job/teardown.ts";
 import { jobKeyOf, tearDown } from "./job/teardown.ts";
 import { isTransientSessionError } from "./job/transient.ts";
-import { wikiSetupReason } from "./job/wiki-requirements.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { IssueState } from "./state.ts";
 
@@ -94,37 +91,10 @@ const SWEEP_ID_RADIX = 36;
 // A process a signal ended exits with 128 + the signal's number.
 const SIGNAL_EXIT_BASE = 128;
 
-// Setup precedes the claim. If it fails, retain the checkout and all saved
-// authority, and identify any signed required pages before reporting the hold.
-function openCheckout(
-  cfg: Config,
-  issue: number,
-  job: { stage: string; branch: string },
-): ReturnType<typeof openJobCheckout> {
-  try {
-    return openJobCheckout(cfg, issue, job);
-  } catch (error: unknown) {
-    if (!(error instanceof CheckoutSetupError)) {
-      throw error;
-    }
-    let pages: readonly string[] = [];
-    try {
-      const { gherkin } = inputsOf(cfg, issue, {});
-      pages = gherkin?.wikiPages ?? [];
-    } catch (inputError: unknown) {
-      throw new Error(
-        `${error.message}; cannot read signed wiki requirements: ${messageOf(inputError)}`,
-        { cause: inputError },
-      );
-    }
-    throw new Error(wikiSetupReason(pages, error.message), { cause: error });
-  }
-}
-
 async function runStage(
   args: RunArgs,
   cfg: Config,
-  brain: Brain,
+  prompts: StagePrompts,
 ): Promise<RunEnd> {
   const { issue, stage, branch, mergeQueue = null } = args;
   const role = roleOf(stage);
@@ -132,8 +102,7 @@ async function runStage(
     throw new Error(`no role for stage ${stage}`);
   }
   const key = jobKeyOf(stage, new Date());
-  const wiki = STAGE_WIKI_ACCESS[stage];
-  const dirs = openCheckout(cfg, issue, { stage, branch });
+  const dirs = openJobCheckout(cfg, issue, { stage, branch });
   const { root, repo } = dirs;
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const runDir = paths.runDir(cfg, issue);
@@ -141,7 +110,7 @@ async function runStage(
   const identity = { id, startedAt: new Date().toISOString() };
   const lane = args.lane ?? null;
   const socket = socketPathOf(runDir);
-  const job = { issue, stage, lane, socket, prompts: brain.pinned };
+  const job = { issue, stage, lane, socket, prompts: prompts.pinned };
   const status = openStatus(runDir, { ...job, ...identity });
   const control = await openControl(
     runDir,
@@ -163,7 +132,7 @@ async function runStage(
     }
     return claimed();
   });
-  const exiting = { issue, stage, key, dirs, wiki, push, runOp, status };
+  const exiting = { issue, stage, key, dirs, push, runOp, status };
   const ending = runRoleStage({
     role,
     cfg,
@@ -171,7 +140,7 @@ async function runStage(
     stage,
     mergeQueue,
     dirs,
-    brain,
+    prompts,
     identity,
     runOp,
     hooks,
@@ -274,14 +243,14 @@ async function main(): Promise<void> {
     if (refusal !== null) {
       throw new Error(refusal);
     }
-    const brain = openBrain(args.brainPath, args.stage);
+    const prompts = pinPrompts(PROMPTS_DIR, args.stage);
     if (args.kind === "boundary") {
       const boundary = boundaryOf(cfg, args.issue, args.stage, process.env);
       process.stdout.write(`${JSON.stringify(boundary)}\n`);
       return;
     }
     authorizedIssue(cfg, args.issue);
-    const end = await runStage(args, cfg, brain);
+    const end = await runStage(args, cfg, prompts);
     if (end.kind === "finished") {
       process.stdout.write(`${JSON.stringify(end.summary)}\n`);
       return;

@@ -90,7 +90,7 @@ test("a claim adopts a push at review with its verdict and verification voided, 
     verdict: /** @type {const} */ ("changes"),
     commentId: null,
     findings: [],
-    revision: { code: moved.saved.headSha, wiki: null, inputs: "x" },
+    revision: { code: moved.saved.headSha, inputs: "x" },
   };
   const saved = {
     ...moved.saved,

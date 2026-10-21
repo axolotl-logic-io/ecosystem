@@ -33,7 +33,7 @@ function setGitlink(fx, dir, file, oid) {
 
 // Set a clean starting point on the local origin for each independent range.
 /** @param {OpsFixture} fx @param {string | null} oid @param {string} [file] @returns {void} */
-function baseGitlink(fx, oid, file = "wiki") {
+function baseGitlink(fx, oid, file = "vendor") {
   const seed = path.join(fx.root, "seed");
   fx.sh(`git -C ${seed} pull -q origin ${BASE}`);
   setGitlink(fx, seed, file, oid);
@@ -61,8 +61,8 @@ function mergeBranch(fx, n) {
   return { head, sha: fx.originRef(BASE) };
 }
 
-/** @param {OpsFixture} fx @param {number} n @param {{ head: string, sha: string } | null} [merged] @param {string} [config] @returns {Prepared} */
-function prepare(fx, n, merged, config) {
+/** @param {OpsFixture} fx @param {number} n @param {{ head: string, sha: string } | null} [merged] @returns {Prepared} */
+function prepare(fx, n, merged) {
   /** @type {object} */
   let request = { op: "prepare-review", number: n };
   fx.fakeGh.reply([]);
@@ -84,7 +84,7 @@ function prepare(fx, n, merged, config) {
     ]);
     request = { ...request, codeMerged: { pr: PR, sha: merged.sha } };
   }
-  const reply = REPLY.parse(JSON.parse(fx.ask(request, config)));
+  const reply = REPLY.parse(JSON.parse(fx.ask(request)));
   const diff = fs.readFileSync(reply.diffPath, "utf8");
   const written = fs.readFileSync(reply.bundlePath, "utf8");
   if (written !== reply.bundleText || !written.startsWith(diff)) {
@@ -95,31 +95,11 @@ function prepare(fx, n, merged, config) {
   return { reply, diff, files: written.slice(diff.length) };
 }
 
-/** @param {OpsFixture} fx @param {number} n @returns {string} */
-function pendingWiki(fx, n) {
-  const origin = path.join(fx.root, "wiki.git");
-  const wiki = path.join(fx.worktree(n), "wiki");
-  fx.sh(
-    `git init -q --bare -b master ${origin} && git clone -q ${origin} ${wiki}`,
-  );
-  fx.sh(
-    `git -C ${wiki} config user.email a@b && git -C ${wiki} config user.name a`,
-  );
-  fs.writeFileSync(path.join(wiki, "Home.md"), "wiki home\n");
-  fx.sh(
-    `git -C ${wiki} add . && git -C ${wiki} commit -qm home && git -C ${wiki} push -q origin master`,
-  );
-  fs.writeFileSync(path.join(wiki, "Page.md"), "wiki page body\n");
-  fx.sh(`git -C ${wiki} add . && git -C ${wiki} commit -qm page`);
-  return fx.configWith("wiki.json", { wiki: { url: origin } });
-}
-
 export {
   baseGitlink,
   mergeBranch,
   NEW_COMMIT,
   OLD_COMMIT,
-  pendingWiki,
   prepare,
   setGitlink,
   startBranch,

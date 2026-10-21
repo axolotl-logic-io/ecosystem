@@ -2,16 +2,17 @@
 // original authorization, independently confirmed against GitHub's PR head
 // and merge commit. codeMerged stays an authoritative fact, not a reason
 // to pretend hardening covered the merge SHA. Unchanged work needs only
-// its missing security review and publication, never another writer.
+// its missing security review and completion, never another writer.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { legacyWikiOf } from "../../merge-provenance.ts";
 import { mergeAuthorization } from "../../state.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
+import { afterOwnMerge } from "./after-merge.ts";
 import { checkedMergedResult } from "./checks.ts";
-import { reviewedAndPublished, stillAt } from "./completion.ts";
-import { afterOwnMerge } from "./publish.ts";
+import { reviewedAndCompleted, stillAt } from "./completion.ts";
 import { toAuthor } from "./returns.ts";
 
 const MERGE_REPLY = z.union([
@@ -94,8 +95,8 @@ async function recoverOwnMerge(
     pr.headSha !== authorized.code ||
     pr.mergeCommit !== merged.code ||
     revision.code !== merged.code ||
-    authorized.wiki !== merged.wiki ||
-    revision.wiki !== merged.wiki
+    legacyWikiOf(authorized) !== legacyWikiOf(merged) ||
+    legacyWikiOf(revision) !== legacyWikiOf(merged)
   ) {
     return null;
   }
@@ -110,9 +111,8 @@ async function recoverOwnMerge(
   if ("end" in checked) {
     return checked.end;
   }
-  return await reviewedAndPublished(ctx, checked.state, {
+  return await reviewedAndCompleted(ctx, checked.state, {
     merged,
-    authorized,
     codeMerged: receipt,
     still: stillAt(merged),
   });

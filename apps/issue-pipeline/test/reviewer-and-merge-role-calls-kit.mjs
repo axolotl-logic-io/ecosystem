@@ -46,7 +46,7 @@ function opPayloads(calls, name) {
  * The result-check targets before security preparation or completion, after
  * any code merge, independent of check order and intervening reads.
  * @param {Call[]} calls
- * @param {"prepare-review" | "finish-wiki"} boundary
+ * @param {"prepare-review" | "finish"} boundary
  */
 function checksBefore(calls, boundary) {
   const names = opNames(calls);
@@ -58,10 +58,7 @@ function checksBefore(calls, boundary) {
   const checks = calls
     .filter((call) => call.kind === "op")
     .slice(after, before);
-  return {
-    verify: firstPayload(checks, "verify"),
-    wiki: firstPayload(checks, "wiki-check"),
-  };
+  return { verify: firstPayload(checks, "verify") };
 }
 
 /**

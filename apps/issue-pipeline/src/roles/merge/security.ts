@@ -1,16 +1,15 @@
 // The security review of the merged result: a fresh read-only Reviewer
-// session after the code merge (or, for a change that lives only in the
-// wiki, with no code merge) over exactly the merge commit GitHub confirmed
-// and the wiki head about to publish, in the four security categories. Its
-// receipt (`state.security`) binds that revision, and is saved before
-// anything publishes: an approval lets the wiki publish and the issue
-// complete; a rejection stops the issue with its category, and stops it
+// session after the code merge over exactly the merge commit GitHub
+// confirmed, in the four security categories. Its receipt
+// (`state.security`) binds that revision, and is saved before the issue
+// completes: an approval lets the issue complete; a rejection stops the issue with its category, and stops it
 // again for the same revision however often the stop is lifted. The merged
 // code stays merged: nothing here undoes it or touches `main`.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
+import { legacyWikiOf } from "../../merge-provenance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -35,13 +34,20 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
+// The key of the security review comment on exactly `revision`. It keeps the
+// legacy wiki head's place ("none" for a revision without one), so a comment
+// posted before the wiki was removed is still found and edited, not repeated.
+function securityCommentKey(revision: Revision): string {
+  return `security-${short(revision.code)}-${short(legacyWikiOf(revision))}`;
+}
+
 // The stop for a security finding on the merged result.
 function securityStop(state: IssueState, finding: Finding): RoleEnd {
   const { category, reason } = finding;
   return {
     kind: "stop",
     code: category,
-    reason: `security review (${category}) of the merged result: ${reason}. The merged code stays merged and the wiki is not published; a fix needs a new change, since lifting this stop reviews nothing again`,
+    reason: `security review (${category}) of the merged result: ${reason}. The merged code stays merged and the issue is not completed; a fix needs a new change, since lifting this stop reviews nothing again`,
     state,
   };
 }
@@ -71,7 +77,7 @@ async function prepare(
   revision: Revision,
   codeMerged: CodeMerged | null,
 ): Promise<z.infer<typeof PREPARED>> {
-  const tag = `security-${short(revision.code ?? revision.wiki)}`;
+  const tag = `security-${short(revision.code ?? legacyWikiOf(revision))}`;
   const reply = await ctx.op("prepare-review", {
     tag,
     sinceSha: null,
@@ -95,14 +101,14 @@ function reviewBody(reply: SecurityReviewReply, revision: Revision): string {
     lines.push(`**${reply.security.category}:** ${reply.security.reason}`, "");
   }
   lines.push(
-    `Reviewed merged code ${short(revision.code)}, wiki ${short(revision.wiki)} and trusted inputs ${short(revision.inputs)}. This review judged security alone; hardening owned the design, correctness and tests.`,
+    `Reviewed merged code ${short(revision.code)} and trusted inputs ${short(revision.inputs)}. This review judged security alone; hardening owned the design, correctness and tests.`,
   );
   return lines.join("\n");
 }
 
 // What the security review reviews: `revision`, the merged result its
 // receipt binds, with `codeMerged` the code merge GitHub confirmed (null
-// for a change that lives only in the wiki); `still` says whether the
+// only for an older completion with no code); `still` says whether the
 // revision read after the session is still that result.
 interface MergedResult {
   revision: Revision;
@@ -153,7 +159,7 @@ async function freshReview(
     return ended(
       waiting(
         logged(state, "security review discarded: the revision moved"),
-        "the code or wiki head moved during the security review, so it is discarded",
+        "the code head moved during the security review, so it is discarded",
       ),
     );
   }
@@ -173,7 +179,7 @@ async function recorded(
     on = "issue";
   }
   const commentId = await ctx.post({
-    key: `security-${short(revision.code)}-${short(revision.wiki)}`,
+    key: securityCommentKey(revision),
     on,
     role: "reviewer",
     body: reviewBody(reply, revision),

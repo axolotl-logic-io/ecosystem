@@ -1,7 +1,7 @@
 // @ts-check
 // Original hardening survives a claimed own-merge replay: the saved receipt
 // binds GitHub's head and merge SHA separately, while only saved security of
-// the exact result permits publication and completion.
+// the exact result permits completion (src/ops/finish-guard.ts).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -24,12 +24,11 @@ if (ROOT !== root || HOME !== home) {
   throw new Error("source imported outside the test's temporary root and home");
 }
 const { newIssueState, ISSUE_STATE } = await import("../src/state.ts");
-const { publishGate } = await import("../src/ops/publication-guard.ts");
 const { finishGate } = await import("../src/ops/finish-guard.ts");
 
 /** @typedef {import("../src/state.ts").IssueState} IssueState */
 /** @typedef {import("../src/state.ts").Revision} Revision */
-/** @typedef {import("../src/ops/publication-guard.ts").CurrentRevision} CurrentRevision */
+/** @typedef {import("../src/ops/merge-guard.ts").CurrentRevision} CurrentRevision */
 const ISSUE = 7;
 const PR = 50;
 const HEAD = "approved-head";
@@ -45,7 +44,7 @@ function receipt() {
     ...newIssueState(ISSUE),
     stage: "merge",
     pr: PR,
-    flows: { code: true, wiki: true },
+    flows: { code: true },
     hardened: ORIGINAL,
     integration: { reviewed: ORIGINAL, revision: APPROVED },
     codeMerged: { pr: PR, sha: MERGE },
@@ -67,33 +66,17 @@ function current() {
   };
 }
 
-/** @param {IssueState | null} saved @param {IssueState} [state] @param {CurrentRevision} [fresh] @param {Revision} [revision] */
-function publish(
-  saved,
-  state = receipt(),
-  fresh = current(),
-  revision = APPROVED,
-) {
-  return publishGate(
-    state,
-    saved,
-    { expectedWiki: revision.wiki, revision },
-    fresh,
-  );
-}
-
 /** @param {IssueState} saved @param {CurrentRevision} [fresh] */
 function finish(saved, fresh = current()) {
   return finishGate({ ...saved, stage: "done" }, fresh);
 }
 
-test("a claimed own merge reuses exact original authorization for publish and finish without erasing provenance", () => {
+test("a claimed own merge reuses exact original authorization for finish without erasing provenance", () => {
   for (const saved of [
     receipt(),
     { ...receipt(), hardened: APPROVED, integration: null },
   ]) {
     const before = structuredClone(saved);
-    assert.equal(publish(saved), undefined);
     assert.equal(finish(saved), undefined);
     assert.deepEqual(saved, before);
     assert.deepEqual(saved.hardened, before.hardened);
@@ -116,41 +99,8 @@ test("missing, malformed, stale or rejected saved security refuses the claimed o
     },
   ]) {
     const saved = ISSUE_STATE.parse({ ...receipt(), security });
-    for (const stage of ["merge", "done"]) {
-      const replay = ISSUE_STATE.parse({ ...saved, stage });
-      assert.equal(publish(replay)?.reason, "security");
-    }
     assert.equal(finish(saved)?.reason, "security");
   }
-});
-
-test("only a saved exact own-merge receipt authorizes replay, never the request's receipt", () => {
-  for (const extra of [
-    { merged: null },
-    { merged: { ...RESULT, code: "other" } },
-    { merged: { ...RESULT, wiki: "other" } },
-    { merged: { ...RESULT, inputs: "other" } },
-    { pr: PR + 1 },
-    { number: 8 },
-    { stage: "review" },
-    { hardened: null },
-    {
-      integration: {
-        reviewed: { ...ORIGINAL, code: "other" },
-        revision: APPROVED,
-      },
-    },
-    {
-      integration: {
-        reviewed: ORIGINAL,
-        revision: { ...APPROVED, wiki: "other" },
-      },
-    },
-  ]) {
-    const saved = ISSUE_STATE.parse({ ...receipt(), ...extra });
-    assert.equal(publish(saved)?.reason, "no-receipt", JSON.stringify(extra));
-  }
-  assert.equal(publish(null)?.reason, "no-receipt");
 });
 
 test("GitHub head, PR and merge commit and both saved and requested code provenance are independently checked", () => {
@@ -158,16 +108,10 @@ test("GitHub head, PR and merge commit and both saved and requested code provena
   const fresh = current();
   const { pr } = fresh;
   assert.ok(pr);
-  assert.equal(
-    publish(saved, saved, { ...fresh, pr: { ...pr, headSha: "other" } })
-      ?.reason,
-    "code-mismatch",
-  );
   for (const changed of [
     { ...fresh, pr: { ...pr, number: PR + 1 } },
     { ...fresh, pr: { ...pr, mergeCommit: "other" } },
   ]) {
-    assert.throws(() => publish(saved, saved, changed));
     assert.throws(() => finish(saved, changed));
   }
   assert.throws(
@@ -179,13 +123,11 @@ test("GitHub head, PR and merge commit and both saved and requested code provena
     { pr: PR, sha: "other" },
   ]) {
     const wrong = { ...saved, codeMerged };
-    assert.throws(() => publish(saved, wrong));
-    assert.throws(() => publish(wrong, saved));
     assert.throws(() => finish(wrong));
   }
 });
 
-test("finish binds the saved merged wiki and inputs to authorization even if security cleared another result", () => {
+test("finish binds the saved legacy wiki head and inputs to authorization even if security cleared another result", () => {
   const saved = receipt();
   for (const changed of [
     { ...RESULT, wiki: "other" },
@@ -201,56 +143,24 @@ test("finish binds the saved merged wiki and inputs to authorization even if sec
   }
 });
 
-test("an exact saved done completion supports original-head publish replay, not a partial or different receipt", () => {
-  const saved = { ...receipt(), stage: "done" };
-  const done = ISSUE_STATE.parse(saved);
-  assert.equal(publish(done), undefined);
-  for (const merged of [
-    null,
+test("an independently hardened merge-SHA authorization remains valid", () => {
+  const saved = {
+    ...receipt(),
+    hardened: RESULT,
+    integration: null,
+    merged: null,
+  };
+  assert.equal(finish({ ...saved, merged: RESULT }), undefined);
+  for (const changed of [
     { ...RESULT, wiki: "other" },
     { ...RESULT, inputs: "other" },
-    { ...RESULT, code: "other" },
   ]) {
-    assert.equal(publish({ ...done, merged })?.reason, "no-receipt");
-  }
-});
-
-test("independently hardened merge-SHA and wiki-only-after-code-merge authorizations remain valid", () => {
-  for (const flows of [
-    { code: true, wiki: true },
-    { code: false, wiki: true },
-  ]) {
-    const saved = {
-      ...receipt(),
-      hardened: RESULT,
-      integration: null,
-      merged: null,
-      flows,
-    };
-    assert.equal(publish(saved, saved, current(), RESULT), undefined);
-    assert.equal(finish({ ...saved, merged: RESULT }), undefined);
-    assert.equal(
-      publish({ ...saved, hardened: APPROVED }, saved, current(), RESULT)
-        ?.reason,
-      "no-receipt",
-    );
-    for (const changed of [
-      { ...RESULT, wiki: "other" },
-      { ...RESULT, inputs: "other" },
-    ]) {
-      assert.throws(() =>
-        finish({
-          ...saved,
-          merged: changed,
-          security: { revision: changed, commentId: 901, finding: null },
-        }),
-      );
-    }
-    const done = ISSUE_STATE.parse({ ...saved, stage: "done", merged: RESULT });
-    assert.equal(publish(done, done, current(), RESULT), undefined);
-    assert.equal(
-      publish({ ...done, merged: null }, done, current(), RESULT)?.reason,
-      "no-receipt",
+    assert.throws(() =>
+      finish({
+        ...saved,
+        merged: changed,
+        security: { revision: changed, commentId: 901, finding: null },
+      }),
     );
   }
 });
@@ -262,9 +172,5 @@ test("a merge-SHA authorization without confirmed codeMerged cannot replace an o
     integration: null,
     codeMerged: null,
   };
-  assert.equal(
-    publish(saved, saved, current(), RESULT)?.reason,
-    "code-mismatch",
-  );
   assert.throws(() => finish(saved), BAD_CHAIN);
 });

@@ -2,7 +2,9 @@
 // author, keyed `gherkin`, and edited in place on every revision, so GitHub
 // keeps its history. Its mark records the revision and the trusted-inputs
 // revision it was written from. The implementor and the reviewer read the
-// Gherkin from here at their job's start, never from the saved state.
+// Gherkin from here at their job's start, never from the saved state. A
+// comment written while the pipeline had a wiki may also list "Wiki pages";
+// that section is ignored.
 
 import type { IssueComment } from "./comments.ts";
 import { keyMark, pipelineRole } from "./comments.ts";
@@ -16,7 +18,6 @@ const GHERKIN_BLOCK = /```gherkin\n(?<gherkin>[\s\S]*?)\n```/u;
 interface GherkinText {
   gherkin: string;
   assumptions: readonly string[];
-  wikiPages: readonly string[];
 }
 
 interface GherkinComment extends GherkinText {
@@ -61,7 +62,6 @@ function gherkinBody(
     text.gherkin.trim(),
     "```",
     ...bulletSection("Assumptions", text.assumptions),
-    ...bulletSection("Wiki pages", text.wikiPages),
     "",
     `<sub>Revision ${revision.rev}. The pipeline keeps this up to date from the issue and the comments of allowed users; reply on the issue to change it.</sub>`,
     `<!-- issue-pipeline:gherkin rev=${revision.rev} inputs=${revision.inputs} -->`,
@@ -98,7 +98,6 @@ function gherkinCommentOf(
     inputs,
     gherkin,
     assumptions: bullets(body, "Assumptions"),
-    wikiPages: bullets(body, "Wiki pages"),
   };
 }
 

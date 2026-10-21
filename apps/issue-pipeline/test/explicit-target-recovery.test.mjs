@@ -39,7 +39,7 @@ const { readWriteState, stateBody } = await import("../src/saved-state.ts");
 const { saveState } = await import("../src/ops/save-state.ts");
 const { verify } = await import("../src/ops/verify.ts");
 const { mergedCode } = await import("../src/ops/merged-review.ts");
-const INPUT_MOVEMENT = /trusted inputs or wiki no longer match/u;
+const INPUT_MOVEMENT = /trusted inputs or legacy wiki head no longer match/u;
 const OK = z.looseObject({
   ok: z.literal(true),
   merged: z.literal(true),

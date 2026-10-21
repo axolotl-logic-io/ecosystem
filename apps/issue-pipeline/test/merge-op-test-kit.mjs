@@ -4,9 +4,9 @@ import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import { approvedState, ISSUE, PR } from "./ops-publish-test-kit.mjs";
 
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
-/** @param {World} w @returns {{ code: string, wiki: null, inputs: string }} */
+/** @param {World} w @returns {{ code: string, inputs: string }} */
 function approvedOf(w) {
-  return { code: w.sha, wiki: null, inputs: "inputs-1" };
+  return { code: w.sha, inputs: "inputs-1" };
 }
 
 /** @param {World} w @param {object} [extra] @returns {object} */

@@ -33,7 +33,7 @@ function mergedText(
   ) {
     return `${merged}: the Reviewer's hardening passed on this commit and every check passed on it. ${SECURITY_FOLLOWS}`;
   }
-  return `${merged}: the Reviewer's hardening passed on ${short(hardened.code)} (wiki ${short(hardened.wiki)}); the Reviewer then integrated it as ${short(authorized.code)} (wiki ${short(authorized.wiki)}) with no further review, and every check passed on ${short(head)}. ${SECURITY_FOLLOWS}`;
+  return `${merged}: the Reviewer's hardening passed on ${short(hardened.code)}; the Reviewer then integrated it as ${short(authorized.code)} with no further review, and every check passed on ${short(head)}. ${SECURITY_FOLLOWS}`;
 }
 
 export { mergedText };

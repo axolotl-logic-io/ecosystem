@@ -16,7 +16,7 @@ import { saveAuthority } from "./write-authority-test-kit.mjs";
 const { newIssueState } = await import("../src/state.ts");
 const NO_AUTHORITY = /no saved write authority/u;
 
-test("postmerge writers bind read-only code and writable wiki per launch; security remains read-only and token-free", async () => {
+test("a writer session after the code merged binds read-only code and may commit nothing; security stays read-only and token-free", async () => {
   const job = await openMergeJob(STAGE, { merged: true });
   const before = piStarts().length;
   try {
@@ -30,32 +30,18 @@ test("postmerge writers bind read-only code and writable wiki per launch; securi
     );
     const [writer, reader] = piStarts().slice(before);
     assert.deepEqual(writer.commitScope.repo, { dir: "repo", access: "read" });
-    assert.deepEqual(writer.commitScope.docs, { dir: "docs", access: "write" });
     assert.deepEqual(writer.commitScope.allowed, []);
     assert.equal(reader.commitScope, null);
     assert.equal(writer.ghToken, null);
+    assert.equal(reader.ghToken, null);
     const status = JSON.parse(
       fs.readFileSync(path.join(job.runDir, "job.json"), "utf8"),
     );
-    assert.deepEqual(status.launches[0].scope.repo, writer.commitScope.repo);
+    assert.deepEqual(status.launches[0].scope, {
+      repo: { dir: "repo", access: "read" },
+      allowed: [],
+    });
     assert.equal(status.launches[1].scope, null);
-  } finally {
-    job.control.close();
-  }
-});
-
-test("a postmerge writer with no docs has no writable paths", async () => {
-  const job = await openMergeJob(STAGE, { merged: true, wiki: false });
-  const before = piStarts().length;
-  try {
-    assert.equal(
-      (await job.session(reviewerSpec(true, "integration"))).ok,
-      true,
-    );
-    const [writer] = piStarts().slice(before);
-    assert.deepEqual(writer.commitScope.repo, { dir: "repo", access: "read" });
-    assert.equal(writer.commitScope.docs, null);
-    assert.deepEqual(writer.commitScope.allowed, []);
   } finally {
     job.control.close();
   }

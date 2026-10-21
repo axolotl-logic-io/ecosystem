@@ -1,8 +1,8 @@
 // The Reviewer's own integration of the hardened revision at merge: the
-// final synchronization with the base and the wiki (src/roles/merge/sync.ts)
-// once the merge queue reaches the issue, and the fixes of checks that fail
-// at merge, each in bounded Reviewer writer sessions. The pipeline then
-// checks the exact result (verify and wiki-check, src/roles/verification.ts),
+// final synchronization with the base (src/roles/merge/sync.ts) once the
+// merge queue reaches the issue, and the fixes of checks that fail at
+// merge, each in bounded Reviewer writer sessions. The pipeline then checks
+// the exact result (verify, src/roles/verification.ts),
 // pushes it and saves the integration receipt: `state.integration` binds the
 // hardened revision to the integrated one, which the merge may then take
 // once CI passes on it, with no model review of the integration's own work.
@@ -11,20 +11,19 @@
 // never integrated, it goes back to hardening.
 
 import { z } from "zod";
-import { flowsOf } from "../../flows.ts";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { mergeAuthorization, sameRevision } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
 import { changeModeOf, SHORT_SHA } from "../change-task.ts";
-import type { Check, Conflict } from "../op-replies.ts";
+import type { Check } from "../op-replies.ts";
 import { opReply, PUSH_REPLY } from "../op-replies.ts";
 import { currentRevision } from "../revision-source.ts";
 import { verifiedHead } from "../verification.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
 import { counted, logged, toAuthor, toReview, waiting } from "./returns.ts";
-import { syncSide } from "./sync.ts";
+import { syncCode } from "./sync.ts";
 
 // The config's bounds on an integration's sessions; its defaults fill them
 // in.
@@ -34,12 +33,9 @@ const LIMITS = z.looseObject({
 });
 
 // What an integration does: rebase the code branch onto its base (only at
-// the head of the merge queue) and the wiki branch onto the wiki's latest
-// version, go on with a wiki rebase that already stopped on conflicts, and
-// fix checks that already failed.
+// the head of the merge queue), and fix checks that already failed.
 interface IntegrationNeed {
-  rebase: { code: boolean; wiki: boolean };
-  wikiConflict: Conflict | null;
+  rebase: boolean;
   failing: readonly Check[];
   // Why the integration runs, for the log.
   why: string;
@@ -49,51 +45,32 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The code and wiki synchronization an integration needs.
+// The code synchronization an integration needs.
 async function synced(
   ctx: RoleContext,
-  start: IssueState,
+  state: IssueState,
   { mode, need }: { mode: Mode; need: IntegrationNeed },
 ): Promise<Step<IssueState>> {
+  if (mode.kind !== "branch" || !need.rebase) {
+    return { ok: true, value: state };
+  }
   const { maxConflictFixes } = LIMITS.parse(ctx.cfg);
-  let state = start;
-  if (mode.kind === "branch" && need.rebase.code) {
-    const code = await syncSide(ctx, state, { side: "code", maxConflictFixes });
-    if (!code.ok) {
-      return code;
-    }
-    state = code.value;
-  }
-  if (ctx.dirs.docs === null) {
-    return { ok: true, value: state };
-  }
-  if (need.wikiConflict !== null) {
-    return await syncSide(ctx, state, {
-      side: "wiki",
-      maxConflictFixes,
-      first: need.wikiConflict,
-    });
-  }
-  if (!need.rebase.wiki) {
-    return { ok: true, value: state };
-  }
-  return await syncSide(ctx, state, { side: "wiki", maxConflictFixes });
+  return await syncCode(ctx, state, maxConflictFixes);
 }
 
-// Pushes the integrated, verified branch or the wiki alone. Once code has
-// merged, `verified` is M, not the retained issue head H reported by a
-// wiki-only push; currentRevision still checks the receipt against M.
+// Pushes the integrated, verified branch. Once code has merged, `verified`
+// is M and nothing is pushed; currentRevision still checks the receipt
+// against M.
 async function pushIntegrated(
   ctx: RoleContext,
   state: IssueState,
   { mode, verified }: { mode: Mode; verified: string },
 ): Promise<Step<IssueState>> {
-  let payload: object = { number: ctx.issue };
   if (mode.kind !== "branch") {
-    payload = { number: ctx.issue, wikiOnly: true };
+    return { ok: true, value: { ...state, verifiedSha: verified } };
   }
-  const pushed = await opReply(ctx, "push", payload, PUSH_REPLY);
-  if (mode.kind !== "wiki-only" && pushed.headSha !== verified) {
+  const pushed = await opReply(ctx, "push", { number: ctx.issue }, PUSH_REPLY);
+  if (pushed.headSha !== verified) {
     return ended(
       errorStop(
         state,
@@ -107,7 +84,7 @@ async function pushIntegrated(
       ...state,
       headSha: pushed.headSha,
       verifiedSha: verified,
-      flows: flowsOf(pushed),
+      flows: { code: pushed.codeChanged },
     },
   };
 }
@@ -148,7 +125,7 @@ function receipt(
     ...state,
     integration: { reviewed: hardened, revision },
   };
-  const entry = `integrated code ${short(hardened.code)} as ${short(revision.code)}, wiki ${short(hardened.wiki)} as ${short(revision.wiki)}; verified and wiki-checked`;
+  const entry = `integrated code ${short(hardened.code)} as ${short(revision.code)}; verified`;
   return {
     kind: "wait",
     reason:

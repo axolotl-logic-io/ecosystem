@@ -1,15 +1,13 @@
 // @ts-check
-// A stage job's folder holds its code checkout, repo/, and its wiki
-// checkout, docs/, side by side (separate-checkouts, #338); every stage gets
-// docs/ (every-role-reads-wiki), and teardown finds the work left in either
+// A stage job's folder holds its code checkout, repo/, whose docs/ is
+// ordinary tracked Markdown, and teardown finds the work left in it
 // (Pipeline-Job-Contract#recovery-and-checkout-boundaries). The author reads
-// docs/; the implementor writes it (STAGE_WIKI_ACCESS).
+// repo/docs/; the implementor writes it with the code.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { waitFor } from "./bounded-test-kit.mjs";
-import { pageTextOf } from "./brain-test-kit.mjs";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 import {
   AUTHOR_SESSION,
@@ -20,7 +18,7 @@ import {
   repliesAt,
   USAGE,
 } from "./job-fixtures.mjs";
-import { checkoutOf, docsOf, repoOf } from "./job-git-test-kit.mjs";
+import { checkoutOf, repoOf } from "./job-git-test-kit.mjs";
 import {
   flagValue,
   logOf,
@@ -31,6 +29,7 @@ import {
   startJob,
   statusOf,
 } from "./job-test-kit.mjs";
+import { pageTextOf } from "./prompt-test-kit.mjs";
 
 /** @import { Place } from "./job-test-kit.mjs" */
 
@@ -59,27 +58,16 @@ function pushes(place) {
 }
 
 for (const stage of [READER_STAGE, "implement"]) {
-  test(`the ${stage} job's folder holds repo/ and docs/ side by side, and is its session's cwd`, async () => {
-    const place = setUp(repliesFor(stage), WAITING, {}, { wiki: true });
+  test(`the ${stage} job's folder holds repo/ alone, and is its session's cwd`, async () => {
+    const place = setUp(repliesFor(stage), WAITING);
     const job = startJob(place, ["--stage", stage]);
     const root = checkoutOf(place.root, stage);
     const repo = repoOf(place.root, stage);
     try {
       await waitFor("the session's spending in job.json", () => spent(place));
       assert.ok(fs.existsSync(path.join(repo, ".git")));
-      const docs = docsOf(place.root, stage);
-      assert.ok(fs.existsSync(path.join(docs, ".git")));
-      assert.equal(
-        fs.realpathSync(docs),
-        fs.realpathSync(path.join(repo, "wiki")),
-      );
-      assert.equal(fs.existsSync(path.join(root, ".git")), false);
-      const exclude = path.join(repo, ".git", "info", "exclude");
-      const lines = fs.readFileSync(exclude, "utf8").split("\n");
-      assert.deepEqual(
-        lines.filter((line) => line.includes("docs") || line.includes("wiki")),
-        [],
-      );
+      assert.ok(fs.existsSync(path.join(repo, "docs", "Home.md")));
+      assert.deepEqual(fs.readdirSync(root), ["repo"]);
       const [start] = piStarts(place);
       const realRoot = checkoutOf(fs.realpathSync(place.root), stage);
       assert.equal(start.cwd, realRoot);
@@ -91,27 +79,23 @@ for (const stage of [READER_STAGE, "implement"]) {
   });
 }
 
-test("an author job gets docs/ to read, and its edits there are lost as docs/ paths", () => {
-  const place = setUp(
-    repliesAt(READER_STAGE),
-    { ...AUTHOR_SESSION, untracked: "docs/Page.md" },
-    {},
-    { wiki: true },
-  );
+test("an author job reads repo/docs/, and its edits there are lost as repo/ paths", () => {
+  const place = setUp(repliesAt(READER_STAGE), {
+    ...AUTHOR_SESSION,
+    untracked: "repo/docs/Page.md",
+  });
   const r = runJob(place, ["--stage", READER_STAGE]);
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(statusOf(place).lostChanges, ["docs/Page.md"]);
+  assert.deepEqual(statusOf(place).lostChanges, ["repo/docs/Page.md"]);
   assert.deepEqual(pushes(place), []);
   assert.equal(fs.existsSync(checkoutOf(place.root, READER_STAGE)), false);
 });
 
-test("an implement job whose only commit is in docs/ still runs its exit push", () => {
-  const place = setUp(
-    implementReplies(),
-    { ...IMPLEMENTOR_SESSION, commit: "docs/Page.md" },
-    {},
-    { wiki: true },
-  );
+test("an implement job whose only commit is in repo/docs/ runs its exit push", () => {
+  const place = setUp(implementReplies(), {
+    ...IMPLEMENTOR_SESSION,
+    commit: "repo/docs/Page.md",
+  });
   const r = runJob(place, ["--stage", "implement"]);
   assert.equal(r.status, 0, r.stderr);
   const [push] = pushes(place);
@@ -123,43 +107,36 @@ test("an implement job whose only commit is in docs/ still runs its exit push", 
   assert.deepEqual(statusOf(place).lostChanges, []);
 });
 
-// A writer session's pipeline_commit routes repo/ and docs/ pathspecs from
-// its scope's root, so the root must be the job's folder (#338). The
-// implementor writes the wiki (STAGE_WIKI_ACCESS).
-const SCOPES = [
-  { wiki: true, docs: { dir: "docs", access: "write" }, name: "with" },
-  { wiki: false, docs: null, name: "without" },
-];
-for (const { wiki, docs, name } of SCOPES) {
-  test(`an implement job ${name} a wiki gives its writer session the commit scope of its folder`, () => {
-    const place = setUp(implementReplies(), IMPLEMENTOR_SESSION, {}, { wiki });
-    const r = runJob(place, ["--stage", "implement"]);
-    assert.equal(r.status, 0, r.stderr);
-    const [start] = piStarts(place);
-    const scope = start.commitScope;
-    assert.equal(scope.root, checkoutOf(place.root, "implement"));
-    assert.deepEqual(scope.repo, { dir: "repo", access: "write" });
-    assert.deepEqual(scope.docs, docs);
-  });
-}
+// A writer session's pipeline_commit routes repo/ pathspecs from its scope's
+// root, so the root must be the job's folder (#338).
+test("an implement job gives its writer session the commit scope of its folder", () => {
+  const place = setUp(implementReplies(), IMPLEMENTOR_SESSION);
+  const r = runJob(place, ["--stage", "implement"]);
+  assert.equal(r.status, 0, r.stderr);
+  const [start] = piStarts(place);
+  const scope = start.commitScope;
+  assert.equal(scope.root, checkoutOf(place.root, "implement"));
+  assert.deepEqual(scope.repo, { dir: "repo", access: "write" });
+  assert.ok(!("docs" in scope));
+});
 
 // Checkouts are assignment facts in the task; behavior comes from the
-// pinned wiki page, not duplicated instructions in a bundled definition.
+// pinned prompt page, not duplicated instructions in a bundled definition.
 const TOLD = [
   {
     stage: READER_STAGE,
     script: AUTHOR_SESSION,
-    page: "Pipeline-Prompt-Author.md",
+    page: "author.md",
   },
   {
     stage: "implement",
     script: IMPLEMENTOR_SESSION,
-    page: "Pipeline-Prompt-Developer.md",
+    page: "developer.md",
   },
 ];
 for (const { stage, script, page } of TOLD) {
-  test(`the ${stage} job's session gets its checkout facts and pinned wiki behavior`, () => {
-    const place = setUp(repliesFor(stage), script, {}, { wiki: true });
+  test(`the ${stage} job's session gets its checkout facts and pinned prompt behavior`, () => {
+    const place = setUp(repliesFor(stage), script);
     const r = runJob(place, ["--stage", stage]);
     assert.equal(r.status, 0, r.stderr);
     const prompt = piCommands(place).find(({ type }) => type === "prompt");
@@ -169,11 +146,7 @@ for (const { stage, script, page } of TOLD) {
       pageTextOf(page),
     );
     const text = String(prompt?.message);
-    for (const fact of [
-      "Code checkout: `repo/`, on the issue's branch",
-      "Wiki checkout: `docs/`, on the issue's wiki branch",
-    ]) {
-      assert.ok(text.includes(fact), `${fact} missing from:\n${text}`);
-    }
+    const fact = "Code checkout: `repo/`, on the issue's branch";
+    assert.ok(text.includes(fact), `${fact} missing from:\n${text}`);
   });
 }

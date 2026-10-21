@@ -13,7 +13,6 @@ import {
   refIn,
   scriptPi,
   setUpFlow,
-  WIKI_BRANCH,
 } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
@@ -30,14 +29,12 @@ import {
 
 /** @type {import("./pipeline-flow-kit.mjs").Flow} */
 let flow;
-/** @type {string} */
-let originalWiki;
 let traceStart = 0;
 after(() => stopJobs(flow));
 
 test("external merge setup retains genuine premerge authority and auto-closes the issue", () => {
   flow = setUpFlow();
-  originalWiki = prepareReplayFlow(flow);
+  prepareReplayFlow(flow);
   for (const stage of ["author", "implement", "review"]) {
     assert.equal(runStage(flow, stage).end, "next");
   }
@@ -90,27 +87,23 @@ test("confirmed closed recovery without a response needs fresh postmerge hardeni
   );
 });
 
-test("independent actual-result hardening and exact Security precede publication", () => {
+test("independent actual-result hardening and exact Security precede completion", () => {
   const merged = refIn(flow.origin, BASE);
   assert.equal(runStage(flow, "review").end, "next");
   const hardened = savedState(readWorld(flow.ghDir));
   assert.equal(hardened.hardened.code, merged);
   assert.equal(hardened.merged, null);
   assert.equal(hardened.security, null);
-  fs.writeFileSync(
-    path.join(flow.root, "interrupt-publish"),
-    "pause publication",
-  );
+  fs.writeFileSync(path.join(flow.root, "interrupt-finish"), "pause finish");
   assert.equal(runStage(flow, "merge").end, "deferred");
   const cleared = savedState(readWorld(flow.ghDir));
   assert.deepEqual(cleared.security.revision, hardened.hardened);
   assert.equal(cleared.security.finding, null);
-  assert.equal(cleared.merged, null);
-  assert.equal(refIn(flow.wikiOrigin, WIKI_BRANCH), originalWiki);
+  assert.deepEqual(cleared.merged, hardened.hardened);
 });
 
 test("external recovery completes without a pipeline merge POST or code push", () => {
-  fs.unlinkSync(path.join(flow.root, "interrupt-publish"));
+  fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
   const starts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "next");
   assert.equal(sessions(flow), starts);
@@ -119,22 +112,15 @@ test("external recovery completes without a pipeline merge POST or code push", (
   assert.equal(done.stage, "done");
   assert.equal(done.mergeAttempt, null);
   assert.deepEqual(done.merged, done.security.revision);
-  assert.equal(refIn(flow.wikiOrigin, WIKI_BRANCH), done.merged.wiki);
+  assert.equal("wiki" in done.merged, false);
   assert.equal(
     world.issues.find(({ number }) => number === ISSUE)?.state,
     "closed",
   );
   const trace = opsTrace(flow).slice(traceStart);
-  assert.ok(
-    trace
-      .filter(({ request }) => request.op === "push")
-      .every(
-        ({ request }) => "wikiOnly" in request && request.wikiOnly === true,
-      ),
-  );
   assert.equal(
     trace.some(({ request }) =>
-      ["merge", "exit-push", "sync-base"].includes(request.op),
+      ["merge", "push", "exit-push", "sync-base"].includes(request.op),
     ),
     false,
   );

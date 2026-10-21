@@ -1,6 +1,6 @@
-// The gate on finish-wiki: the saved completion it may close an issue on,
+// The gate on the finish op: the saved completion it may close an issue on,
 // decided against a fresh current revision (src/revision.ts) and the
-// issue's saved state. Like publication-guard.ts's gates it is pure: an
+// issue's saved state. Like merge-guard.ts's gates it is pure: an
 // inconsistent saved state or GitHub answer throws, a revision that moved
 // or a security review that doesn't clear the merged result refuses, and
 // undefined lets the op go on.
@@ -9,19 +9,20 @@ import { OpsError } from "../ops-error.ts";
 import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
 import { mergeAuthorization } from "../state.ts";
-import type { CurrentRevision } from "./publication-guard.ts";
-import { mergedAuthorizationHolds, mergedPr } from "./publication-guard.ts";
+import type { CurrentRevision } from "./merge-guard.ts";
+import { mergedAuthorizationHolds, mergedPr } from "./merge-guard.ts";
 
 interface FinishRefusal {
   finished: false;
-  reason: "inputs-changed" | "wiki-unpublished" | "wiki-changed" | "security";
+  reason: "inputs-changed" | "security";
   detail: string;
 }
 
-// Throws unless the saved completion binds the authorized wiki and inputs
-// to GitHub's exact merge: either the original authorized head with its
-// own-merge receipt, or independently hardened postmerge work with confirmed
-// codeMerged. Recording codeMerged never changes which path authorized it.
+// Throws unless the saved completion binds the authorized inputs (and any
+// legacy wiki head) to GitHub's exact merge: either the original authorized
+// head with its own-merge receipt, or independently hardened postmerge work
+// with confirmed codeMerged. Recording codeMerged never changes which path
+// authorized it.
 function unauthorizedHead(
   saved: IssueState,
   merged: Revision,
@@ -35,7 +36,7 @@ function unauthorizedHead(
   }
 }
 
-// The saved completion finish-wiki may act on: done, with the merged
+// The saved completion the finish op may act on: done, with the merged
 // revision, its PR (if any) merged at merged.code from the authorized head
 // (a change with no PR merged no code), the trusted inputs unchanged since, and the saved
 // security review clear at exactly that merged revision. A state that isn't
@@ -48,7 +49,7 @@ function finishGate(
   const { merged } = saved;
   if (saved.stage !== "done" || merged === null) {
     throw new OpsError(
-      `finish-wiki needs #${saved.number}'s saved state done with a merged revision; it is ${saved.stage}`,
+      `the finish op needs #${saved.number}'s saved state done with a merged revision; it is ${saved.stage}`,
     );
   }
   if (saved.pr === null) {

@@ -1,5 +1,6 @@
 // @ts-check
-// Local-only conflicting rebases with independently staged and working resolver bytes.
+// Local-only conflicting rebases of the code checkout with independently
+// staged and working resolver bytes.
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -15,24 +16,17 @@ import {
   write,
 } from "./pipeline-commit-test-kit.mjs";
 
-const { paths, wikiCfg, withCheckout } = await import("../src/config.ts");
+const { paths, withCheckout } = await import("../src/config.ts");
 const { syncOps } = await import("../src/ops/sync.ts");
-const { finishWikiSync } = await import("../src/wiki-publish.ts");
 
 // `pushed` publishes the conflicting issue commit, so a retry conflicts again.
-/** @param {"code" | "wiki"} side @param {boolean} [pushed] */
-function conflicted(side, pushed = false) {
+/** @param {boolean} [pushed] */
+function conflicted(pushed = false) {
   const job = openFresh();
-  let dir = job.repo;
-  let { origin } = job;
-  let file = "README.md";
-  let base = job.cfg.baseBranch;
-  if (side === "wiki") {
-    dir = job.docs;
-    origin = job.wikiOrigin;
-    file = "Home.md";
-    base = wikiCfg(job.cfg)?.branch ?? "main";
-  }
+  const dir = job.repo;
+  const { origin } = job;
+  const file = "README.md";
+  const base = job.cfg.baseBranch;
   const start = headOf(dir);
   git(origin, ["fetch", dir, `HEAD:refs/heads/${job.branch}`]);
   write(dir, file, "original private commit\n");
@@ -62,7 +56,7 @@ function conflicted(side, pushed = false) {
     dir: job.repo,
     branch: job.branch,
   });
-  return { job, dir, origin, file, remote, original, scoped, side };
+  return { job, dir, origin, file, remote, original, scoped };
 }
 
 /** @param {ReturnType<typeof conflicted>} w */
@@ -75,13 +69,6 @@ function leaveResolution(w) {
 
 /** @param {ReturnType<typeof conflicted>} w @param {boolean} abort */
 function finish(w, abort) {
-  if (w.side === "wiki") {
-    let reason = null;
-    if (abort) {
-      reason = "resolver failed";
-    }
-    return finishWikiSync(w.scoped, ISSUE, reason);
-  }
   const op = syncOps["finish-sync"];
   if (op === undefined) {
     throw new Error("missing finish-sync");

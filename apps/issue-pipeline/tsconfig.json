@@ -22,5 +22,5 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["build.ts", "src/**/*.ts"]
+  "include": ["build.ts", "scripts/**/*.ts", "src/**/*.ts"]
 }

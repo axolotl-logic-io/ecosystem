@@ -16,7 +16,6 @@ import {
   readCodeSync,
   rebaseProblem,
 } from "../rebase.ts";
-import { holdWikiPin, wikiPinProblem } from "../wiki.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 
 // The commit sync-base rebased onto (its reply's baseSha, #279).
@@ -45,8 +44,7 @@ function finishTarget(
 }
 
 // Why issue `n`'s resolved rebase can't be pushed, or undefined when it can:
-// the rebase's own checks against its target (finishTarget), then the wiki
-// pin against the one the branch's own commits on GitHub give.
+// the rebase's own checks against its target (finishTarget).
 function finishProblem(
   cfg: Config,
   n: number,
@@ -60,19 +58,7 @@ function finishProblem(
   if ("problem" in target) {
     return target.problem;
   }
-  const { onto } = target;
-  const problem = rebaseProblem(wt, onto);
-  const from = remoteHead(cfg, n);
-  if (problem !== undefined || from === null) {
-    return problem;
-  }
-  if (sync?.wikiResolved === true) {
-    if (sync.from !== from || sync.onto !== onto) {
-      return "the deterministic wiki resolution does not match the synchronization source and target";
-    }
-    return wikiPinProblem(cfg, wt, { from: onto, onto });
-  }
-  return wikiPinProblem(cfg, wt, { from, onto });
+  return rebaseProblem(wt, target.onto);
 }
 
 // Puts the worktree back on the pushed branch, dropping a half-done rebase.
@@ -85,7 +71,6 @@ function resetToRemote(cfg: Config, n: number, reason?: string): void {
     run("git", ["-C", wt, "reset", "--hard", remote]);
   }
   run("git", ["-C", wt, "clean", "-fd"]);
-  holdWikiPin(cfg, wt);
   clearCodeSync(wt);
 }
 

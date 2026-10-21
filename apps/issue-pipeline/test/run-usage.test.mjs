@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
-import { pinnedOf } from "./brain-test-kit.mjs";
+import { pinnedOf } from "./prompt-test-kit.mjs";
 import { LAUNCH } from "./usage-fixtures.mjs";
 
 const { endedOf, runUsage } = await import("../src/job/run-usage.ts");
@@ -37,7 +37,7 @@ function finished(over = {}) {
     agent: "issue-pipeline-implementor",
     model: "mock",
     taskChars: TASK_CHARS,
-    prompt: pinnedOf("Pipeline-Prompt-Developer.md").provenance,
+    prompt: pinnedOf("developer.md").provenance,
     ok: true,
     reply: { outcome: "done" },
     launch: LAUNCH,

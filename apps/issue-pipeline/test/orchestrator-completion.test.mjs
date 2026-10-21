@@ -1,6 +1,6 @@
 // @ts-check
 // The orchestrator's scheduler on completions (`completion-reconciliation`):
-// an open issue saved done with its merged revision, which finish-wiki hasn't
+// an open issue saved done with its merged revision, which finish hasn't
 // closed, runs a merge job that only finishes it, with agent:merged or an open
 // prerequisite and never via a re-author, while stop labels, skip labels,
 // untrusted authors, live jobs, leases and legacy jobs still apply and a
@@ -19,7 +19,7 @@ import {
 const PREREQ = 9;
 const SHA_LENGTH = 40;
 // What a completed issue's merge role saved as merged.
-const MERGED = { code: "c".repeat(SHA_LENGTH), wiki: null, inputs: "inputs-1" };
+const MERGED = { code: "c".repeat(SHA_LENGTH), inputs: "inputs-1" };
 const COMPLETED = /** @type {const} */ ({
   stage: "done",
   pr: 40,

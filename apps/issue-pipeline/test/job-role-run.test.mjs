@@ -31,7 +31,7 @@ const { runRoleStage } = await import("../src/job/role-run.ts");
 const { stateAt, ISSUE } = await import("./job-fixtures.mjs");
 
 const ISSUE_FILE = "/w/runs/o__r/issue-7/issue.md";
-const MERGED = { code: "c0ffee", wiki: null, inputs: "in-1" };
+const MERGED = { code: "c0ffee", inputs: "in-1" };
 const CODE_MERGED = { pr: 42, sha: "c0ffee" };
 const NETWORK = "Could not resolve host: api.github.com";
 const NAMES_ISSUE_FILE = /issueFile/u;
