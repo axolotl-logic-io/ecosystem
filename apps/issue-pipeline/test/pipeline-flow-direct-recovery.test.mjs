@@ -180,13 +180,33 @@ test("trusted inputs changing inside direct postmerge Security stop before a lat
     assert.equal(tools.includes(tool), false);
   }
   assert.equal(security?.extensions.includes("pipeline-commit.mjs"), false);
+  const stopped = structuredClone(state(flow));
+  assert.match(stopped.log.join("\n"), RECONCILE);
+  // Nonzero fixture counters make the canonical reset observable.
+  replaceState(flow, {
+    ...stopped,
+    review: { ...stopped.review, round: 1 },
+    counts: { conflictFixes: 1, syncs: 1 },
+  });
   const sessions = starts(flow).length;
-  assert.equal(runStage(flow, "implement").end, "unclaimed");
+  const mismatch = runStage(flow, "implement");
+  assert.deepEqual(mismatch, {
+    issue: ISSUE,
+    stage: "implement",
+    end: "unclaimed",
+    reason: "the issue is at merge, not implement",
+  });
   assert.equal(starts(flow).length, sessions);
-  assert.deepEqual(
-    recoveryFacts(flow, traceStart),
-    expectedRecovery(original, refs),
-  );
+  assert.deepEqual(recoveryFacts(flow, traceStart), {
+    ...expectedRecovery(original, refs),
+    stage: "merge",
+    stopCode: null,
+  });
+  const resumed = state(flow);
+  assert.equal(resumed.stoppedStage, null);
+  assert.deepEqual(resumed.log, stopped.log);
+  assert.deepEqual(resumed.review, { ...stopped.review, round: 0 });
+  assert.deepEqual(resumed.counts, { conflictFixes: 0, syncs: 0 });
 });
 
 for (const staleImplement of [false, true]) {
