@@ -36,6 +36,7 @@
         "src/process-group.ts",
         "src/shell-supervisor.ts",
         "src/config.ts",
+        "src/project-policy.ts",
         "src/locks.ts",
         "src/execution.ts",
         "src/stop-recovery.ts",

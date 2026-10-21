@@ -11,6 +11,11 @@ const REVISION = z.object({
   code: z.string().nullable(),
   wiki: z.string().nullable().optional(),
   inputs: z.string(),
+  // Missing only on historical receipts; never synthesize their policy.
+  policy: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/u)
+    .optional(),
 });
 
 // `revision`'s legacy wiki head: null for a revision that has none, as every

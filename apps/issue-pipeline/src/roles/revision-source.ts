@@ -6,14 +6,12 @@
 
 import { z } from "zod";
 import type { RoleContext } from "../job/role-context.ts";
+import { REVISION } from "../merge-provenance.ts";
 import type { CodeMerged } from "../state.ts";
 import { opReply } from "./op-replies.ts";
 
 const CURRENT_REVISION = z.looseObject({
-  revision: z.object({
-    code: z.string().nullable(),
-    inputs: z.string().min(1),
-  }),
+  revision: REVISION.extend({ inputs: z.string().min(1) }),
   baseSha: z.string(),
   pr: z
     .looseObject({
