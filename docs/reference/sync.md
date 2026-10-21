@@ -1,0 +1,46 @@
+# Sync
+
+This page describes how the Reviewer integrates a hardened change with its base at merge time: rebasing, conflict resolution, check fixes and their limits. The rules are in [delivery decisions](../decisions/delivery.md).
+
+## Integration
+
+Only the merge stage synchronizes. The Developer and hardening never rebase onto the base. Once the issue reaches the front of the merge order, the Reviewer's integration rebases the issue branch onto the fetched base and fixes checks that fail there, in bounded writer sessions in phase `integration`.
+
+The pipeline then verifies the exact result, pushes it and saves an integration receipt (`state.integration`). The receipt binds the hardened revision to the integrated one, and the merge may take that revision once CI passes on it. The hardened revision itself stays as it was.
+
+The integration's own changes get no model review of their own, and no fresh Security review before merge. The [approval-is-for-one-revision](../decisions/delivery.md#approval-is-for-one-revision) decision requires fresh Security review for them; that isn't implemented yet.
+
+A head that moved by anything other than this integration is never integrated; it goes back to `review` for hardening.
+
+## Conflicts
+
+A rebase that stops on conflicts stays in the checkout for a resolver session. The resolver stages resolved text files and returns; it doesn't continue the rebase or push. The `finish-sync` op continues the rebase, returns any later conflict to the next resolver session, and checks the completed rebase before the guarded push.
+
+- Each resolver session that ends, however it ends, counts as one of `maxConflictFixes` (default 2) attempts, saved at once. A transient failure doesn't count.
+- A later conflict on the same rebase goes to the next resolver with the current paths and the next attempt number. The earlier staged resolution isn't treated as rejected.
+- A `cannot-fix` reply can complete only through the normal finish and push checks. An explicit abort never pushes.
+- At the limit, `finish-sync` keeps the stopped pick and stops with `agent:stopped-conflict`, naming the pick, the paths and where its evidence is kept.
+
+A changed gitlink (submodule pointer) in a conflict stops with its full stage SHAs and the unresolved evidence kept. Resolvers never choose submodule revisions.
+
+## Limits
+
+| Setting | Default | Bounds | Stop |
+|---|---|---|---|
+| `maxSyncs` | 3 | Integrations of one issue without merging | `agent:stopped-sync-limit`: the base kept moving |
+| `maxConflictFixes` | 2 | Resolver sessions | `agent:stopped-conflict` |
+| `maxCiFixes` | 2 | Check-fix sessions | `agent:stopped-check-fixes` |
+
+## Evidence kept on failure
+
+Before any abort, reset or clean, synchronization saves the staged and working-tree patches and a verified Git bundle of current, local-branch and pre-rebase history.
+
+An unresolved index also saves `conflict-stages.json`: path, stage number, mode and full object ID for each entry. The original checkout, unresolved index and working files are then kept, and destructive cleanup is refused. See [checkouts](checkouts.md) for where evidence lives.
+
+## Recover from a sync stop
+
+1. Stop dispatching the issue.
+2. Read the stop comment. It names the paths and where the evidence is kept.
+3. Keep the checkout, `conflict-stages.json`, the bundle and the patches until the work is safe.
+4. For `sync-limit`, find out why the base keeps moving before the issue's turn ends; merging fewer issues at once or holding the base briefly helps. Don't raise `maxSyncs` as a reflex.
+5. For `conflict`, resolve the conflict through ordinary reviewed work on the same branch, or recover the kept checkout explicitly. Then restart `merge` on the same issue, branch and lane. Nothing applies saved evidence automatically.
