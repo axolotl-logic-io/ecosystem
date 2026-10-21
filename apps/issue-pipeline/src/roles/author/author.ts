@@ -48,6 +48,7 @@ async function postGherkin(
   const state: IssueState = {
     ...ctx.state,
     stage,
+    authorUsed: true,
     resumeStage: null,
     gherkin: { commentId, rev, inputs },
     // The questions, if any were asked, are answered by this Gherkin.
@@ -88,7 +89,7 @@ const authorRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
     return {
       kind: "ask",
       questions: reply.questions,
-      state: { ...ctx.state, stage: "author" },
+      state: { ...ctx.state, stage: "author", authorUsed: true },
     };
   }
   return await postGherkin(ctx, reply);

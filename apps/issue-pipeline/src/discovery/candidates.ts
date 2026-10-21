@@ -1,4 +1,5 @@
 import { gherkinCommentOf } from "../gherkin-comment.ts";
+import { requirementsHold, requirementsStage } from "../requirements.ts";
 import type { Inputs } from "./authentication.ts";
 import { inputsFor, workerFor } from "./authentication.ts";
 import { controls, developmentStage, issueAt } from "./eligibility.ts";
@@ -137,13 +138,15 @@ async function review(
     throw new DiscoveryHold({ reason: "role", evidence: "review-stage" });
   }
   if (
-    state.gherkin?.inputs !== inputs.revision ||
-    gherkinCommentOf(repo, issueNumber, inputs.comments)?.inputs !==
-      inputs.revision
+    !requirementsHold(
+      state,
+      gherkinCommentOf(repo, issueNumber, inputs.comments),
+      inputs.revision,
+    )
   ) {
     throw new DiscoveryHold({
       reason: "inputs",
-      evidence: `return-to-author:${inputs.revision}`,
+      evidence: `return-to-${requirementsStage(state)}:${inputs.revision}`,
     });
   }
   const event = await reviewGrant(context, pull, { worker, inputs });

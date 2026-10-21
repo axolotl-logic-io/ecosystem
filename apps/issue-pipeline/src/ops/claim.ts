@@ -17,11 +17,12 @@ import { paths } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
 import { gh, issueState } from "../github.ts";
 import type { Issue } from "../issue-context.ts";
-import { writeIssueContext } from "../issue-context.ts";
+import { trustedInputsHash, writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
-import { writeState } from "../saved-state.ts";
+import { readClaimState, writeState } from "../saved-state.ts";
+import { STAGES } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 import { withLog } from "../state.ts";
 import { isStopLabel } from "../stops.ts";
@@ -37,6 +38,7 @@ const CLAIM_REQUEST = z.looseObject({
   lane: z.string().min(1),
   number: z.number().int().positive(),
   sweepId: z.string().min(1),
+  stage: z.enum(STAGES).optional(),
 });
 
 // The issue's fields the claim reads beyond those issue-context reads.
@@ -118,7 +120,29 @@ function leased(state: IssueState, req: ClaimRequest, now: Date): IssueState {
   return { ...state, lease };
 }
 
-function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
+function awaitingAnswer(
+  cfg: Config,
+  n: number,
+  context: { issue: Issue; comments: IssueComment[] },
+): boolean {
+  const saved = readClaimState(cfg, n, context.comments);
+  return (
+    saved?.asked?.inputs ===
+    trustedInputsHash(cfg, context.issue, context.comments)
+  );
+}
+
+function firstStage(req: ClaimRequest): "author" | "implement" {
+  if (req.stage === "author") {
+    return "author";
+  }
+  return "implement";
+}
+
+function claim(
+  cfg: Config,
+  request: unknown,
+): ClaimLost | ClaimWon | { waiting: "answer" } {
   const req = parseRequest(CLAIM_REQUEST, "claim", request);
   const n = req.number;
   const context = writeIssueContext(cfg, n);
@@ -130,6 +154,9 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
     throw new OpsError(`#${n} is not open`);
   }
   assertBranchAssigned(cfg, n, context.comments);
+  if (awaitingAnswer(cfg, n, context)) {
+    return { waiting: "answer" };
+  }
   // Explicit stage jobs need the same metadata clone that legacy discovery
   // initialized. Do this before posting a claim; failure leaves no lease.
   if (!fs.existsSync(path.join(paths.clone(cfg), ".git"))) {
@@ -140,7 +167,10 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
     return { lost: true, holder: race.holder ?? null, posted: race.posted };
   }
   const now = new Date();
-  const claimed = claimedState(cfg, n, context.comments, now);
+  const claimed = claimedState(cfg, n, context.comments, {
+    now,
+    stage: firstStage(req),
+  });
   if (recovering) {
     // Only the winning claimant may reopen; no writer or merge authority is
     // granted by this mutation. Completion closes it again after all gates.

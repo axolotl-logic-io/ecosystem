@@ -50,7 +50,7 @@ function issueOf(facts) {
   let state = null;
   if (stage !== undefined) {
     state = {
-      ...newIssueState(number),
+      ...newIssueState(number, "author"),
       stage,
       pr: facts.pr ?? null,
       ...facts.state,

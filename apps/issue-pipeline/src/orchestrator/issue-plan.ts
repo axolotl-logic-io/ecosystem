@@ -19,6 +19,11 @@
 // - A stopped issue whose stop label is gone runs at the stage it stopped in.
 
 import { LABELS } from "../labels.ts";
+import {
+  requirementsStage,
+  requirementsState,
+  usedAuthor,
+} from "../requirements.ts";
 import type { Stage } from "../stages.ts";
 import { isStage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
@@ -35,7 +40,7 @@ type StartReason = "free" | "lifted" | "reauthor";
 // The state the tick saves before it starts the author on new input: the
 // issue at `author`, to go on at `resumeStage` when the Gherkin is unchanged.
 interface Reauthor {
-  resumeStage: Stage | null;
+  resumeStage: "implement" | "review" | null;
 }
 
 type IssuePlan =
@@ -113,7 +118,7 @@ function resumeStageFor(
 // null for a saved `done` with nothing merged.
 function stageOf(state: IssueState | null): Stage | null {
   if (state === null) {
-    return "author";
+    return "implement";
   }
   if (isCompletion(state)) {
     return "merge";
@@ -173,17 +178,23 @@ function planOf(
   if (state?.stage === "stopped") {
     reason = "lifted";
   }
-  if (stage === "author") {
-    const asked = issue.labels.includes(LABELS.needsInfo.name);
-    if (asked && inputs.asked === inputs.current) {
-      return { kind: "held", stage, reason: "needs-info" };
-    }
+  if (
+    issue.labels.includes(LABELS.needsInfo.name) &&
+    inputs.asked === inputs.current
+  ) {
+    return { kind: "held", stage, reason: "needs-info" };
+  }
+  if (state === null || stage === "author") {
     return { kind: "run", stage, reason, reauthor: null };
   }
-  if (inputs.gherkin !== inputs.current) {
+  let consumed = state.requirementsInputs;
+  if (usedAuthor(state)) {
+    consumed = inputs.gherkin;
+  }
+  if (consumed !== inputs.current) {
     return {
       kind: "run",
-      stage: "author",
+      stage: requirementsStage(state),
       reason: "reauthor",
       reauthor: { resumeStage: resumeStageFor(stage) },
     };
@@ -212,8 +223,8 @@ function reauthoredState(
   }
   const lifted = resumeOf(fresh);
   const { resumeStage } = reauthor;
-  const entry = `trusted inputs changed at ${lifted.stage}: back to author, then ${resumeStage ?? "as the Gherkin needs"}`;
-  const back: IssueState = { ...lifted, stage: "author", resumeStage };
+  const entry = `trusted inputs changed at ${lifted.stage}: back to ${requirementsStage(lifted)}`;
+  const back = requirementsState(lifted, resumeStage ?? "implement");
   return { kind: "save", state: withLog(back, entry, run.now) };
 }
 

@@ -10,6 +10,11 @@
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import {
+  requirementsHold,
+  requirementsStage,
+  requirementsState,
+} from "../../requirements.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { approvalHolds, withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -37,15 +42,12 @@ function short(sha: string | null): string {
 
 // The trusted inputs moved past the Gherkin: the author goes first, and the
 // issue comes back to review.
-function toAuthor(state: IssueState, why: string): RoleEnd {
-  const next: IssueState = {
-    ...state,
-    stage: "author",
-    resumeStage: "review",
-    hardened: null,
-    integration: null,
+function toRequirements(state: IssueState, why: string): RoleEnd {
+  const next = requirementsState(state, "review");
+  return {
+    kind: "next",
+    state: logged(next, `${why}; back to ${requirementsStage(state)}`),
   };
-  return { kind: "next", state: logged(next, `${why}; back to the author`) };
 }
 
 // Why `current` can't be hardened now, or null when it can.
@@ -55,8 +57,8 @@ function notHardenable(
 ): RoleEnd | null {
   const { state } = ctx;
   const { gherkin } = ctx.inputs;
-  if (gherkin === null || gherkin.inputs !== current.revision.inputs) {
-    return toAuthor(state, "the trusted inputs changed since the Gherkin");
+  if (!requirementsHold(state, gherkin, current.revision.inputs)) {
+    return toRequirements(state, "the trusted inputs need requirements review");
   }
   const { codeMerged } = state;
   if (codeMerged !== null && !codeMergeConfirmed(current, codeMerged)) {
@@ -209,7 +211,7 @@ async function harden(
   const after = await currentRevision(ctx);
   if (after.revision.inputs !== before.inputs) {
     return ended(
-      toAuthor(state, "the trusted inputs changed during hardening"),
+      toRequirements(state, "the trusted inputs changed during hardening"),
     );
   }
   if (after.revision.code !== verified.value) {

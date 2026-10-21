@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { requirementsStage, requirementsState } from "../../requirements.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
 
@@ -24,13 +25,12 @@ function voided(state: IssueState): IssueState {
   return { ...state, hardened: null, integration: null };
 }
 
-function toAuthor(state: IssueState, why: string): RoleEnd {
-  const next: IssueState = {
-    ...voided(state),
-    stage: "author",
-    resumeStage: "review",
+function toRequirements(state: IssueState, why: string): RoleEnd {
+  const next = requirementsState(state, "review");
+  return {
+    kind: "next",
+    state: logged(next, `${why}; back to ${requirementsStage(state)}`),
   };
-  return { kind: "next", state: logged(next, `${why}; back to the author`) };
 }
 
 function toReview(state: IssueState, why: string): RoleEnd {
@@ -67,4 +67,4 @@ function counted(
   return { state: { ...state, counts: { ...state.counts, syncs: syncs + 1 } } };
 }
 
-export { counted, failed, logged, toAuthor, toReview, waiting };
+export { counted, failed, logged, toRequirements, toReview, waiting };

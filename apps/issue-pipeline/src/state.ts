@@ -1,9 +1,4 @@
-// An issue's state, which saved-state.ts keeps on GitHub. This module owns
-// the state's schema (version 2), its log, and the merge authorization rule:
-// only the exact revision that passed the Reviewer's hardening
-// (`approval-is-for-one-revision`), or the one revision the Reviewer's own
-// integration checked from it. The security review of the merged result
-// comes after the merge, and lets the issue complete (security).
+// The v2 saved state, its bounded log and merge authorization rules.
 
 import { z } from "zod";
 import {
@@ -94,18 +89,13 @@ const MERGE_RETURN = z.object({
   codeMerged: z.boolean(),
 });
 
-// The issue's PR as GitHub says it merged: its number and the merge
-// commit's oid. The claim or merge reconciliation records genuine GitHub
-// metadata, never a legacy state or unconfirmed response. It alone grants
-// no own provenance or completion authority.
+// Genuine GitHub merged truth, not own provenance or completion authority.
 const CODE_MERGED = z.object({
   pr: z.number().int().positive(),
   sha: z.string().min(1),
 });
 
-// The trusted-inputs revision the author's questions were asked at: the
-// issue waits at needs-info while its inputs still hash to it. The job's ask
-// end sets it and the author's Gherkin clears it.
+// Questions wait at needs-info until trusted inputs change.
 const ASKED = z.object({ inputs: z.string().min(1) });
 
 const ZERO_COUNTS = { conflictFixes: 0, syncs: 0 };
@@ -137,6 +127,9 @@ const ISSUE_STATE = z.object({
   headSha: z.string().nullable().catch(null),
   flows: FLOWS.nullable().catch(null),
   gherkin: GHERKIN_REF.nullable().catch(null),
+  // Missing means saved work from the mandatory-Author runtime.
+  authorUsed: z.boolean().default(true).catch(true),
+  requirementsInputs: z.string().min(1).nullable().default(null).catch(null),
   review: REVIEW.catch(EMPTY_REVIEW),
   // The exact revision that passed the Reviewer's hardening, which
   // authorizes its merge; any other revision is hardened first.
@@ -185,11 +178,14 @@ function withLog(state: IssueState, entry: string, now: Date): IssueState {
   };
 }
 
-function newIssueState(number: number): IssueState {
+function newIssueState(
+  number: number,
+  stage: "author" | "implement" = "implement",
+): IssueState {
   return {
     version: 2,
     number,
-    stage: "author",
+    stage,
     stoppedStage: null,
     stopCode: null,
     resumeStage: null,
@@ -199,6 +195,8 @@ function newIssueState(number: number): IssueState {
     headSha: null,
     flows: null,
     gherkin: null,
+    authorUsed: stage === "author",
+    requirementsInputs: null,
     review: { ...EMPTY_REVIEW, findings: [] },
     hardened: null,
     integration: null,

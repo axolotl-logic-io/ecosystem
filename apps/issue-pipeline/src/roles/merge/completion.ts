@@ -8,13 +8,14 @@
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { requirementsHold } from "../../requirements.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { opReply } from "../op-replies.ts";
 import { currentRevision } from "../revision-source.ts";
 import { checkedMergedResult } from "./checks.ts";
-import { failed, logged, toAuthor } from "./returns.ts";
+import { failed, logged, toRequirements } from "./returns.ts";
 import { rejectedAgain, securityReviewed } from "./security.ts";
 
 const FINISHED = z.union([
@@ -56,7 +57,7 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   }
   const detail = `the finish op refused (${finished.reason}): ${finished.detail ?? "no detail"}`;
   if (finished.reason === "inputs-changed") {
-    return toAuthor(done, detail);
+    return toRequirements(done, detail);
   }
   return failed(done, detail);
 }
@@ -110,11 +111,10 @@ async function finishCompleted(
   const { revision, pr } = await currentRevision(ctx);
   const { gherkin } = ctx.inputs;
   if (
-    gherkin === null ||
-    gherkin.inputs !== revision.inputs ||
+    !requirementsHold(state, gherkin, revision.inputs) ||
     merged.inputs !== revision.inputs
   ) {
-    return toAuthor(state, "the trusted inputs changed since the merge");
+    return toRequirements(state, "the trusted inputs changed since the merge");
   }
   const codeConfirmed =
     merged.code === null ||

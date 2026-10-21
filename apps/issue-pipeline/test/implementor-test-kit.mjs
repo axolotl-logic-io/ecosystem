@@ -168,7 +168,11 @@ function fakeContext(script = {}) {
     issue: ISSUE,
     stage: "implement",
     mergeQueue: null,
-    state: { ...newIssueState(ISSUE), stage: "implement", ...script.state },
+    state: {
+      ...newIssueState(ISSUE, "author"),
+      stage: "implement",
+      ...script.state,
+    },
     dirs: { job: "/job", repo: "/job/repo" },
     issueFile: "/job/issue.md",
     inputs: {

@@ -9,6 +9,7 @@
 // head the merge matched. At done it is the completion: what merged.
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { requirementsHold } from "../../requirements.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import type { CurrentRevision } from "../revision-source.ts";
@@ -17,7 +18,7 @@ import { errorStop } from "../writer-session.ts";
 import { checkedMergedResult, localChecks } from "./checks.ts";
 import { reviewedAndCompleted, stillAt } from "./completion.ts";
 import { integrate } from "./integration.ts";
-import { logged, toAuthor } from "./returns.ts";
+import { logged, toRequirements } from "./returns.ts";
 import { approvalGate } from "./source.ts";
 
 function short(sha: string | null): string {
@@ -47,11 +48,10 @@ async function afterOwnMerge(
   const { gherkin } = ctx.inputs;
   const { revision, pr } = fresh;
   if (
-    gherkin === null ||
     revision.inputs !== authorized.inputs ||
-    gherkin.inputs !== revision.inputs
+    !requirementsHold(state, gherkin, revision.inputs)
   ) {
-    return toAuthor(state, `${merged}, then the trusted inputs changed`);
+    return toRequirements(state, `${merged}, then the trusted inputs changed`);
   }
   const result: Revision = { ...authorized, code: mergeCommit };
   const still = stillAt(result);

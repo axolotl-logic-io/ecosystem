@@ -40,7 +40,7 @@ function fakeContext(result, inputs = {}, state = {}) {
     cfg,
     issue: ISSUE,
     stage: "author",
-    state: { ...newIssueState(ISSUE), ...state },
+    state: { ...newIssueState(ISSUE, "author"), ...state },
     dirs: { job: "/job", repo: "/job/repo" },
     issueFile: "/run/issue.md",
     mergeQueue: null,

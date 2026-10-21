@@ -102,7 +102,7 @@ function current(
  */
 function issueState(state = {}) {
   return {
-    ...newIssueState(ISSUE),
+    ...newIssueState(ISSUE, "author"),
     pr: PR,
     headSha: HEAD,
     verifiedSha: HEAD,

@@ -9,6 +9,11 @@
 // (`state.codeMerged`) the job opens no PR and pushes nothing.
 
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import {
+  requirementsHold,
+  requirementsState,
+  usedAuthor,
+} from "../../requirements.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -106,19 +111,6 @@ function freshChange(state: IssueState): IssueState {
   };
 }
 
-// An issue with no Gherkin comment goes to the author first.
-function toAuthor(state: IssueState): RoleEnd {
-  const next: IssueState = {
-    ...state,
-    stage: "author",
-    resumeStage: "implement",
-  };
-  return {
-    kind: "next",
-    state: withLog(next, "no Gherkin comment yet; on to author", new Date()),
-  };
-}
-
 async function develop(ctx: RoleContext): Promise<RoleEnd> {
   const mode = changeModeOf(ctx.state);
   let { state } = ctx;
@@ -143,13 +135,24 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
   const entry = `pushed ${head}; on to review, which hardens it`;
   return {
     kind: "next",
-    state: withLog(freshChange(state), entry, new Date()),
+    state: withLog(
+      freshChange({
+        ...state,
+        requirementsInputs: ctx.inputs.revision,
+        asked: null,
+      }),
+      entry,
+      new Date(),
+    ),
   };
 }
 
 const implementorRole: Role = async (ctx: RoleContext) => {
-  if (ctx.inputs.gherkin === null) {
-    return toAuthor(ctx.state);
+  if (
+    usedAuthor(ctx.state) &&
+    !requirementsHold(ctx.state, ctx.inputs.gherkin, ctx.inputs.revision)
+  ) {
+    return { kind: "next", state: requirementsState(ctx.state, "implement") };
   }
   return await develop(ctx);
 };

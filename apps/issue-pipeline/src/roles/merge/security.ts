@@ -18,7 +18,7 @@ import { SECURITY_REVIEW_REPLY } from "../replies.ts";
 import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
-import { logged, toAuthor, waiting } from "./returns.ts";
+import { logged, toRequirements, waiting } from "./returns.ts";
 import { securityReviewTask } from "./task.ts";
 
 const PREPARED = z.looseObject({
@@ -152,7 +152,10 @@ async function freshReview(
   const { revision: after } = await currentRevision(ctx);
   if (after.inputs !== revision.inputs) {
     return ended(
-      toAuthor(state, "the trusted inputs changed during the security review"),
+      toRequirements(
+        state,
+        "the trusted inputs changed during the security review",
+      ),
     );
   }
   if (!still(after)) {

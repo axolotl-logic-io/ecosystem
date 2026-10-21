@@ -1,5 +1,6 @@
 import { AFTER_MARK, PARENT_MARK } from "../comment-marks.ts";
 import { gherkinCommentOf } from "../gherkin-comment.ts";
+import { requirementsHold, requirementsStage } from "../requirements.ts";
 import { isStopLabel } from "../stops.ts";
 import type { Inputs } from "./authentication.ts";
 import { DiscoveryHold } from "./hold.ts";
@@ -124,13 +125,11 @@ function developmentStage(
 ): Candidate["stage"] {
   const { state, revision, comments } = inputs;
   const gherkin = gherkinCommentOf(repo, issue.number, comments);
-  if (
-    state === null ||
-    state.stage === "author" ||
-    state.gherkin?.inputs !== revision ||
-    gherkin?.inputs !== revision
-  ) {
-    return "author";
+  if (state === null) {
+    return "implement";
+  }
+  if (state.stage === "author" || !requirementsHold(state, gherkin, revision)) {
+    return requirementsStage(state);
   }
   if (
     state.stage !== "implement" ||
