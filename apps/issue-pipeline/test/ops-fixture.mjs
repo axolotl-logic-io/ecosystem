@@ -243,7 +243,7 @@ async function opsFixture(name) {
     // The raw stdout of one ops request, framed as the workflow frames it.
     ask: (request, configFile = config) =>
       runOps({ config: configFile, request, root }),
-    // A config file with extra settings, such as a wiki.
+    // A config file with extra settings.
     configWith: (fileName, extra) => {
       const file = path.join(root, fileName);
       writeConfig(file, { cloneUrl: origin, ...extra });

@@ -44,7 +44,7 @@ function issueReply(n, extra = {}) {
   };
 }
 
-// The marker the wiki promises on a live claim by lane `me` of sweep `s1`.
+// The marker on a live claim by lane `me` of sweep `s1`.
 const CLAIM_MARK = "<!-- agent-pipeline:claim lane=me sweep=s1 -->";
 const LEASE = { lane: "me", sweepId: "s1", at: TIME };
 

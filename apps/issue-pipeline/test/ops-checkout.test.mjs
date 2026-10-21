@@ -3,7 +3,7 @@
 // in for the named issue's worktree while the request runs, and the branch
 // the caller assigned the issue, which its pushes go to. Other issues, and
 // requests without it, keep their issue-N worktrees and agent/issue-N
-// branches. A branch that isn't one literal name, or is the base or wiki
+// branches. A branch that isn't one literal name, or is the base
 // branch, is refused before anything moves.
 import assert from "node:assert/strict";
 import fs from "node:fs";

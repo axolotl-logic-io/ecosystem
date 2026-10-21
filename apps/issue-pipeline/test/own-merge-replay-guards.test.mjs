@@ -127,7 +127,7 @@ test("GitHub head, PR and merge commit and both saved and requested code provena
   }
 });
 
-test("finish binds the saved merged wiki and inputs to authorization even if security cleared another result", () => {
+test("finish binds the saved legacy wiki head and inputs to authorization even if security cleared another result", () => {
   const saved = receipt();
   for (const changed of [
     { ...RESULT, wiki: "other" },

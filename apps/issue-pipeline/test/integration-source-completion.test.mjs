@@ -147,7 +147,7 @@ test("a release keeps a partial merge receipt and the saved code merge, and rene
     stage: "merge",
     codeMerged: CODE_MERGED,
   });
-  // The merge job's state after the code merged, before the wiki published:
+  // The merge job's legacy state after the code merged, before completion:
   // the role never carries the code merge itself.
   const ending = {
     ...newIssueState(n),

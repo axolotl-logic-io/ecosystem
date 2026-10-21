@@ -56,7 +56,7 @@ function gitIn(dir, args) {
   return sh(`git -C ${dir} ${args}`);
 }
 
-// What a branch with a code change and no wiki reports.
+// What a branch with a code change reports.
 const CODE = { codeChanged: true };
 
 test("sync-base leaves an up-to-date branch alone", () => {

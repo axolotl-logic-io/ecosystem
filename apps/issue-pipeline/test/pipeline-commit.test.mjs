@@ -1,5 +1,4 @@
-// What a pipeline_commit call plans before git runs (wiki
-// Pipeline-Job-Contract#pipeline_commit): the refused flags and paths, how pathspecs
+// What a pipeline_commit call plans before git runs: the refused flags and paths, how pathspecs
 // route to the code checkout (repo/, whose docs are in repo/docs/), the access
 // refusals (#338), the session trailer every commit ends with, and none for a
 // scope without the job's start, and the dry run.

@@ -143,7 +143,7 @@ test("a state comment's body gives its state, or null", () => {
     parseStateBody("<!-- agent-pipeline:state {bad -->", STATE_ISSUE),
     null,
   );
-  // What the wiki says the state comment holds, in any order.
+  // What the state comment holds, in any order.
   const promised = [
     "version",
     "stage",

@@ -1,7 +1,7 @@
 // @ts-check
 // The merge op (src/ops/merge.ts) only merges code: it checks the approved
 // head, the queue and the fresh revision, names the target and exact source
-// and durably checkpoints attempted/confirmed evidence, without labels, wiki or
+// and durably checkpoints attempted/confirmed evidence, without labels or
 // issue close (`merge-publish-finish-split`).
 // Branches are no longer stacked on a prerequisite's branch (#268): an issue
 // whose after mark names an open prerequisite doesn't start at all

@@ -1,6 +1,6 @@
 // The issue pipeline's Biome config. It extends the root biome.jsonc, which
 // holds the lint policy for all of the repo's code (`practices-cover-all-code`
-// in the wiki). The pipeline passes it, and `mise //apps/issue-pipeline:check`
+// in docs/decisions/code-and-tests.md). The pipeline passes it, and `mise //apps/issue-pipeline:check`
 // runs it (#223). Globs here resolve from this folder.
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
@@ -41,8 +41,6 @@
         "src/stop-recovery.ts",
         "src/clone-setup.ts",
         "src/checkouts.ts",
-        "src/wiki.ts",
-        "src/wiki-publish.ts",
         "src/rebase.ts",
         "src/issue-context.ts",
         "src/ops/claim.ts",

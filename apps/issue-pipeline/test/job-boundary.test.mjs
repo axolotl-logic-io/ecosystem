@@ -190,7 +190,7 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
     const lines = r.stdout.trim().split("\n");
     assert.equal(lines.length, 1);
     const boundary = JSON.parse(r.stdout);
-    // The wiki promises these fields, not their order.
+    // The boundary contract promises these fields, not their order.
     assert.deepEqual(
       new Set(Object.keys(boundary)),
       new Set(["role", "checkout", "access", "env", "network", "runtime"]),
