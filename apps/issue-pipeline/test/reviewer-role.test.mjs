@@ -113,7 +113,15 @@ test("the comment says only that hardening passed, never that anything was appro
 test("a hardening saved for exactly this revision goes on to merge with no session", async () => {
   const { ctx, calls } = fakeContext({
     stage: "review",
-    state: issueState({ stage: "review", hardened: REVISION }),
+    state: issueState({
+      stage: "review",
+      hardened: REVISION,
+      hardenedTarget: {
+        repo: cfg.repo,
+        branch: cfg.baseBranch,
+        sha: current().baseSha,
+      },
+    }),
     ops: {
       "current-revision": [current()],
       "ready-pr": [{ pr: PR, ready: true }],

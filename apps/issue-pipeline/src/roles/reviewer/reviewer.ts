@@ -1,15 +1,12 @@
-// The Reviewer's hardening, the review stage's one role. A writing session
-// owns the change's design, correctness and tests: it examines the
-// Developer's draft against the Gherkin, adds tests and fixes defects. The
-// pipeline then verifies the result (`verify-runs-repo-checks`), with fix
-// sessions within `maxCiFixes`, pushes it and checkpoints the exact revision
-// it hardened (`state.hardened`), which alone authorizes the merge
-// (`approval-is-for-one-revision`); only then is the draft PR marked ready.
-// Hardening never rebases or syncs the change: the merge stage integrates
-// it. The Security review precedes the merge (src/roles/merge/).
+// Reviewer hardening checks and checkpoints one exact revision and literal
+// target context before readying its PR. Unmerged historical authorizations
+// without that target context require fresh hardening, never an inferred base.
+// Read-only Security precedes a new merge (src/roles/merge/).
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import type { ReviewedTarget } from "../../reviewed-target.ts";
+import { reviewedTarget, targetHolds } from "../../reviewed-target.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { approvalHolds, withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -43,6 +40,7 @@ function toAuthor(state: IssueState, why: string): RoleEnd {
     stage: "author",
     resumeStage: "review",
     hardened: null,
+    hardenedTarget: null,
     integration: null,
   };
   return { kind: "next", state: logged(next, `${why}; back to the author`) };
@@ -138,11 +136,16 @@ async function pushHardened(
 
 // The hardened state: `revision`, read after the push, is checkpointed as
 // the one revision the merge may take.
-function checkpoint(state: IssueState, revision: Revision): IssueState {
+function checkpoint(
+  state: IssueState,
+  revision: Revision,
+  target: ReviewedTarget | null,
+): IssueState {
   return {
     ...state,
     stage: "review",
     hardened: revision,
+    hardenedTarget: target,
     integration: null,
     mergeReturn: null,
   };
@@ -178,7 +181,7 @@ async function hardeningSetup(
 async function harden(
   ctx: RoleContext,
   start: IssueState,
-  before: Revision,
+  before: CurrentRevision,
 ): Promise<Step<Hardened>> {
   const mode = changeModeOf(start);
   const hold = await hardeningSetup(ctx, mode);
@@ -207,7 +210,7 @@ async function harden(
   }
   const state = pushed.value;
   const after = await currentRevision(ctx);
-  if (after.revision.inputs !== before.inputs) {
+  if (after.revision.inputs !== before.revision.inputs) {
     return ended(
       toAuthor(state, "the trusted inputs changed during hardening"),
     );
@@ -219,9 +222,22 @@ async function harden(
       state: logged(state, "hardening not checkpointed: the head moved"),
     });
   }
+  if (mode.kind === "branch" && after.baseSha !== before.baseSha) {
+    return ended({
+      kind: "next",
+      state: logged(
+        { ...state, hardened: null, hardenedTarget: null, integration: null },
+        "the target moved during hardening; fresh checks and review are required",
+      ),
+    });
+  }
+  let target: ReviewedTarget | null = null;
+  if (mode.kind === "branch") {
+    target = reviewedTarget(ctx.cfg, before.baseSha);
+  }
   const { revision } = after;
   const entry = `hardened code ${short(revision.code)}`;
-  const hardened = logged(checkpoint(state, revision), entry);
+  const hardened = logged(checkpoint(state, revision, target), entry);
   return { ok: true, value: { state: hardened, revision } };
 }
 
@@ -263,10 +279,14 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   }
   // A hardening checkpointed for exactly this revision needs no session
   // again: an interrupted job left its PR to mark ready.
-  if (approvalHolds(ctx.state, before.revision)) {
+  if (
+    approvalHolds(ctx.state, before.revision) &&
+    (ctx.state.codeMerged !== null ||
+      targetHolds(ctx.cfg, ctx.state.hardenedTarget, before.baseSha))
+  ) {
     return await toMerge(ctx, ctx.state, "hardening already passed");
   }
-  const hardened = await harden(ctx, ctx.state, before.revision);
+  const hardened = await harden(ctx, ctx.state, before);
   if (!hardened.ok) {
     return hardened.end;
   }
