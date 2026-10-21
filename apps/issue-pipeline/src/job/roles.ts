@@ -1,6 +1,7 @@
 // The stage job's roles (sandbox-ready-jobs): the role each stage runs as,
 // the sessions each stage may run and which of them commit, each stage's
-// access to its code checkout and what its committing sessions may commit, what each role may hold, and the environment a session's pi gets.
+// access to its code checkout and what its committing sessions may commit,
+// what each role may hold, and the environment a session's pi gets.
 // Write authority is each session's own (`SessionSpec.commits`), never its
 // agent's: the reviewer commits while it hardens or integrates and only
 // reads in its final security review of the integrated result. No session
@@ -42,7 +43,7 @@ interface CheckoutAccess {
 }
 
 // What a stage job declares about itself for a sandbox: its role, the
-// folder it works in, its access to each checkout there (what its committing
+// folder it works in, its access to the checkout there (what its committing
 // sessions may commit; a read-only session, such as the reviewer's final
 // security review, commits nothing), the names of its sessions' env, and its
 // network.
@@ -57,8 +58,8 @@ interface Boundary {
 
 // The role each stage's job runs as (Reimagined-Pipeline): the author only
 // reads; the implementor and the reviewer, which hardens the change, write;
-// merge holds the credentials for its deterministic merge and publication,
-// and its model sessions, which integrate the change and then review its
+// merge holds the credentials for its deterministic merge, and its model
+// sessions, which integrate the change and then review its
 // security, never get them.
 const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
   author: "reader",

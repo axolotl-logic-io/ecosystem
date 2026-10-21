@@ -1,4 +1,4 @@
-// The usage log (the wiki's Token-Spend#session-records):
+// The usage log (Token-Spend#session-records):
 // what each finished session and job spent, as public records in a
 // hidden block of the issue's usage comments (usage-comment.ts). This module
 // alone owns the records' fields and the kinds of value they may hold

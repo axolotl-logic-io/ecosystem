@@ -1,6 +1,6 @@
 // GitHub's branch-merge mutation names a literal configured destination and
 // immutable authorized source. Unlike PR merge, retargeting cannot redirect
-// it. It is not expected-base CAS and cannot atomically bind PR/input/wiki
+// it. It is not expected-base CAS and cannot atomically bind PR or input
 // state. Writes run once, including ambiguous transport failures.
 import { z } from "zod";
 import type { Config } from "../config.ts";

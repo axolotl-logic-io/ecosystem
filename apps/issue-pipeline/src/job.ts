@@ -9,9 +9,9 @@
 //
 // Its caller assigns it the issue and the issue's branch; it never picks
 // another issue. Before it claims or clones anything it refuses a branch git
-// wouldn't take literally and one the repo protects: its base, its wiki's
-// branch, the remote's default (src/job/branch.ts). Both checkouts, every
-// ops request and every push name that branch; the claim refuses one the
+// wouldn't take literally and one the repo protects: its base or the
+// remote's default (src/job/branch.ts). Its checkout, every ops request and
+// every push name that branch; the claim refuses one the
 // issue's saved state isn't bound to. It then pins, from the installed
 // release's prompts/ folder, the behavioral prompt page of each session its
 // stage runs, failing on one it can't read (src/job/prompts.ts); pi appends a
@@ -47,11 +47,11 @@
 // prints the stage job's boundary as one JSON line and starts nothing.
 //
 // The job works in its own folder, where every pi session runs, holding its
-// code checkout, cloned from a bare mirror of the repo, and its wiki checkout
-// (src/job/checkout.ts). On every exit (src/job/teardown.ts) it saves what
-// the checkouts left uncommitted as patches in the run folder
+// code checkout, cloned from a bare mirror of the repo, with the repo's docs
+// in its docs/ (src/job/checkout.ts). On every exit (src/job/teardown.ts) it
+// saves what the checkout left uncommitted as patches in the run folder
 // (droppedPatches), records and drops it (lostChanges), the implementor's
-// job pushes what the remotes lack, only the wiki once the code is merged
+// job pushes what the remote lacks, nothing once the code is merged
 // (src/job/exit-push.ts), and the folder is
 // removed; a run that stopped with saved patches posts a comment saying so
 // (#369).
