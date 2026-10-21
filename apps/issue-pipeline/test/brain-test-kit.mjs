@@ -10,6 +10,9 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
+const GIT = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
+const GIT_OPTIONS = { timeout: 30_000 };
+
 // Each session's stage, phase and page, as the reviewer-flow contract lists
 // them.
 const PROMPT_PAGES = [
@@ -98,4 +101,26 @@ console.log(JSON.stringify(brain.pinned.map(({ head }) => head)));
   });
 }
 
-export { headsWithGit, PROMPT_PAGES, pageTextOf, pinnedOf, writeBrain };
+/** @param {string} brain @returns {string} */
+function commitBrain(brain) {
+  execFileSync("git", ["init", "-q", brain], GIT_OPTIONS);
+  execFileSync("git", [...GIT, "-C", brain, "add", "."], GIT_OPTIONS);
+  execFileSync(
+    "git",
+    [...GIT, "-C", brain, "commit", "-qm", "pages"],
+    GIT_OPTIONS,
+  );
+  return execFileSync("git", ["-C", brain, "rev-parse", "HEAD"], {
+    ...GIT_OPTIONS,
+    encoding: "utf8",
+  }).trim();
+}
+
+export {
+  commitBrain,
+  headsWithGit,
+  PROMPT_PAGES,
+  pageTextOf,
+  pinnedOf,
+  writeBrain,
+};
