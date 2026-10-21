@@ -45,9 +45,9 @@ const SHA_LENGTH = 40;
 const READS_PER_RUN = 3;
 const EXPIRED_RUNS = 3;
 test("elapsed deadlines and lifted stops retain attempted authority and never permit another POST or code writer", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   function open() {
-    return prStep(w, { state: "OPEN", mergeCommit: null });
+    return prStep(w, { state: "CLOSED", mergeCommit: null });
   }
   script(w, [...prechecks(w), post(w), ...Array.from({ length: 3 }, open)]);
   assert.match(
@@ -111,7 +111,7 @@ for (const defect of [
   { mergeCommit: { oid: "f".repeat(SHA_LENGTH) } },
 ]) {
   test(`invalid identity/result cannot create an own receipt: ${JSON.stringify(defect)}`, () => {
-    const w = world();
+    const w = world({ fastForward: true });
     script(w, [
       ...prechecks(w),
       post(w),
@@ -134,32 +134,36 @@ for (const defect of [
 }
 
 for (const response of [
-  "HTTP/2.0 204 No Content\r\n\r\n",
-  "",
-  "malformed HTTP",
-  "HTTP/2.0 201 Created\r\n\r\nnot JSON",
-  "HTTP/2.0 201 Created\r\n\r\n{}",
+  "connection lost",
+  "timeout",
+  "empty ack",
+  "malformed ack",
+  "missing ack",
 ]) {
-  test(`missing saved successful response remains external on restart: ${JSON.stringify(response)}`, () => {
-    const w = world();
-    script(w, [...prechecks(w), post(w, { stdout: response })]);
+  test(`missing push response confirms only its authenticated exact intent on restart: ${response}`, () => {
+    const w = world({ fastForward: true });
+    script(w, [
+      ...prechecks(w),
+      post(w, { skipMutation: true, code: 1, stderr: response }),
+    ]);
     assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, false);
     assert.equal(readWriteState(w.cfg, ISSUE).mergeAttempt?.result, null);
-    script(w, [prStep(w, mergedView(w))], true);
+    git(w.origin, ["update-ref", `refs/heads/${BASE}`, w.head]);
+    script(w, confirmation(w), true);
     const resumed = child(w, { op: "reconcile-merge", number: ISSUE });
     const reply = OK.parse(JSON.parse(resumed.stdout));
-    assert.equal(reply.byHand, true);
+    assert.equal(reply.byHand, undefined);
     const saved = readWriteState(w.cfg, ISSUE);
-    assert.equal(saved.merged, null);
-    assert.deepEqual(saved.codeMerged, { pr: PR, sha: w.merged });
+    assert.equal(saved.merged?.code, w.head);
+    assert.deepEqual(saved.codeMerged, { pr: PR, sha: w.head });
     assert.equal(readWriteAuthority(w.cfg, ISSUE).codeWritable, false);
     assert.equal(posts().length, 1);
     consumed();
   });
 }
 
-test("interruption before response save never recovers own provenance from metadata alone", () => {
-  const w = world();
+test("interruption before response save recovers exact intended FF without another mutation", () => {
+  const w = world({ fastForward: true });
   script(w, [...prechecks(w), post(w, { interrupt: true })]);
   const stopped = child(w, { ...request(w), op: "merge" });
   assert.equal(
@@ -169,23 +173,22 @@ test("interruption before response save never recovers own provenance from metad
   );
   assert.equal(git(w.origin, ["rev-parse", BASE]), w.merged);
   assert.equal(readWriteState(w.cfg, ISSUE).mergeAttempt?.result, null);
-  script(w, [prStep(w, mergedView(w))], true);
+  script(w, confirmation(w), true);
   assert.deepEqual(
     reconcileMerge(w.cfg, { number: ISSUE }, confirmationClock()),
     {
       merged: true,
-      byHand: true,
       mergeCommit: w.merged,
       headSha: w.head,
     },
   );
-  assert.equal(readWriteState(w.cfg, ISSUE).merged, null);
+  assert.equal(readWriteState(w.cfg, ISSUE).merged?.code, w.head);
   assert.equal(posts().length, 1);
   consumed();
 });
 
 test("interruption retains cumulative read evidence without permanently expiring later bounded recovery", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   const { interrupted, saved } = interruptAfterResponse(w);
   assert.equal(interrupted.signal, "SIGKILL");
   assert.equal(saved.mergeAttempt?.reads, 1);
@@ -194,7 +197,7 @@ test("interruption retains cumulative read evidence without permanently expiring
     script(
       w,
       Array.from({ length: READS_PER_RUN }, () =>
-        prStep(w, { state: "OPEN", mergeCommit: null }),
+        prStep(w, { state: "CLOSED", mergeCommit: null }),
       ),
       true,
     );

@@ -120,6 +120,11 @@ async function refusedMerge(
       return waiting(state, "the merge waits for its turn in the merge queue");
     case "head-changed":
       return toReview(state, "the PR head moved before the merge");
+    case "target-changed":
+      return toReview(
+        state,
+        "the reviewed target changed; fresh checks and review are required",
+      );
     case "stale":
       return toReview(state, "the revision moved before the merge");
     case "behind":
@@ -187,6 +192,7 @@ async function mergeCode(
       number: ctx.issue,
       state,
       expectedSha: code,
+      expectedBase: current.baseSha,
       revision: authorized,
       mergeQueue: ctx.mergeQueue,
       summary: mergeSummary(state, authorized),

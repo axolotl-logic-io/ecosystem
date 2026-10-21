@@ -37,6 +37,7 @@ const WRITE_STATE = ISSUE_STATE.pick({
   mergeAttempt: ISSUE_STATE.shape.mergeAttempt.removeCatch().optional(),
   merged: ISSUE_STATE.shape.merged.removeCatch(),
   hardened: ISSUE_STATE.shape.hardened.removeCatch(),
+  hardenedTarget: ISSUE_STATE.shape.hardenedTarget.removeCatch().optional(),
   integration: ISSUE_STATE.shape.integration.removeCatch(),
   security: ISSUE_STATE.shape.security.removeCatch(),
   gherkin: ISSUE_STATE.shape.gherkin.removeCatch(),

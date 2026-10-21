@@ -11,20 +11,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bodyOf, effectsOf } from "../gh-effects-test-kit.mjs";
 import { setCurrentRevision } from "./fake-ops-publish-revision.mjs";
-import {
-  approvalReply,
-  branchMergeReply,
-  mergeCommentReplies,
-} from "./merge-op-fixtures.mjs";
+import { approvalReply, mergeCommentReplies } from "./merge-op-fixtures.mjs";
 import { finishReplies } from "./ops-finish-fixtures.mjs";
 import {
-  approvedState,
+  boundState,
   fakeGh,
   mergeAuthority,
   PR,
   prView,
   savedListing,
   securityOf,
+  sh,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
@@ -56,16 +53,16 @@ function chainOf(w) {
   };
 }
 
-/** @param {Revision} reviewed @param {{ reviewed: Revision, revision: Revision } | null} integration @param {object} [extra] */
-function integratedState(reviewed, integration, extra = {}) {
-  return approvedState(reviewed, { integration, ...extra });
+/** @param {World} w @param {Revision} reviewed @param {{ reviewed: Revision, revision: Revision } | null} integration @param {object} [extra] */
+function integratedState(w, reviewed, integration, extra = {}) {
+  return boundState(w, reviewed, { integration, ...extra });
 }
 
 /** @param {World} w @param {Revision} revision @returns {void} */
 function openAt(w, revision) {
   setCurrentRevision({
     revision,
-    baseSha: "base",
+    baseSha: sh(`git -C ${w.worktree} rev-parse origin/integration`),
     pr: { number: PR, state: "OPEN", mergeCommit: null, headSha: w.sha },
   });
 }
@@ -76,6 +73,7 @@ function mergeRequest(w, revision, state) {
     number: 7,
     state,
     expectedSha: w.sha,
+    expectedBase: sh(`git -C ${w.worktree} rev-parse origin/integration`),
     revision,
     mergeQueue: null,
     summary: "S",
@@ -85,25 +83,27 @@ function mergeRequest(w, revision, state) {
 test("merge merges the Reviewer's integrated head and its comment names the hardened head apart", () => {
   const w = world();
   const { reviewed, integrated } = chainOf(w);
-  const state = integratedState(reviewed, { reviewed, revision: integrated });
+  const state = integratedState(w, reviewed, {
+    reviewed,
+    revision: integrated,
+  });
   openAt(w, integrated);
   fakeGh.reply([
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
     approvalReply(w),
-    branchMergeReply(w),
     ...mergeAuthority(state),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: w.mergeSha },
+      mergeCommit: { oid: w.sha },
     }),
   ]);
   const reply = merge(w.cfg, mergeRequest(w, integrated, state));
   assert.deepEqual(reply, {
     merged: true,
-    mergeCommit: w.mergeSha,
+    mergeCommit: w.sha,
     headSha: w.sha,
   });
   const body = bodyOf(effectsOf(writes()), "comment #50 role=merger");
@@ -120,16 +120,15 @@ test("merge without an integration says hardening passed on the merged head", ()
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
     approvalReply(w),
-    branchMergeReply(w),
-    ...mergeAuthority(approvedState(approved)),
+    ...mergeAuthority(boundState(w, approved)),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: w.mergeSha },
+      mergeCommit: { oid: w.sha },
     }),
   ]);
-  merge(w.cfg, mergeRequest(w, approved, approvedState(approved)));
+  merge(w.cfg, mergeRequest(w, approved, boundState(w, approved)));
   const body = bodyOf(effectsOf(writes()), "comment #50 role=merger");
   assert.ok(body.includes("hardening passed on this commit"));
   assert.equal(body.includes("integrated"), false);
@@ -139,16 +138,16 @@ test("merge refuses a revision the state doesn't authorize, a forged receipt's o
   const w = world();
   const { reviewed, integrated } = chainOf(w);
   openAt(w, integrated);
-  const forged = integratedState(reviewed, {
+  const forged = integratedState(w, reviewed, {
     reviewed: { ...reviewed, code: "0ther" },
     revision: integrated,
   });
-  const unbound = integratedState(reviewed, null);
+  const unbound = integratedState(w, reviewed, null);
   // A review that approved the head, with no hardening, authorizes nothing.
-  const unhardened = approvedState(integrated, { hardened: null });
+  const unhardened = boundState(w, integrated, { hardened: null });
   for (const state of [forged, unbound, unhardened]) {
     fakeGh.reply([
-      savedListing(approvedState(integrated)),
+      savedListing(boundState(w, integrated)),
       prView({ headRefOid: w.sha }),
     ]);
     assert.throws(
@@ -164,12 +163,12 @@ test("merge refuses a draft at the approved head without marking it ready", () =
   const approved = { code: w.sha, inputs: "inputs-1" };
   openAt(w, approved);
   fakeGh.reply([
-    savedListing(approvedState(approved)),
+    savedListing(boundState(w, approved)),
     prView({ headRefOid: w.sha, isDraft: true }),
   ]);
   const reply = merge(
     w.cfg,
-    mergeRequest(w, approved, approvedState(approved)),
+    mergeRequest(w, approved, boundState(w, approved)),
   );
   assert.deepEqual(reply, { merged: false, reason: "draft" });
   assert.deepEqual(writes(), []);
@@ -185,6 +184,7 @@ test("a claimed own merge finishes with original hardening and integration intac
   const { reviewed, integrated } = chainOf(w);
   const receipt = mergedAt(w);
   const state = integratedState(
+    w,
     reviewed,
     { reviewed, revision: integrated },
     {
@@ -222,13 +222,13 @@ test("a claimed own merge finishes with original hardening and integration intac
 test("finish refuses an integrated head no receipt binds to the approval, changing nothing", () => {
   const w = world();
   const { reviewed, integrated } = chainOf(w);
-  const forged = integratedState(reviewed, {
+  const forged = integratedState(w, reviewed, {
     reviewed: { ...reviewed, code: "0ther" },
     revision: integrated,
   });
   const receipt = mergedAt(w);
   const security = securityOf(receipt);
-  for (const saved of [forged, integratedState(reviewed, null)]) {
+  for (const saved of [forged, integratedState(w, reviewed, null)]) {
     const done = { ...doneAt(receipt, saved), security };
     fakeGh.reply([savedListing(done)]);
     assert.throws(
@@ -242,7 +242,10 @@ test("finish refuses an integrated head no receipt binds to the approval, changi
 test("finish of an integrated head refuses a security review of the pre-merge head instead of the merge commit", () => {
   const w = world();
   const { reviewed, integrated } = chainOf(w);
-  const state = integratedState(reviewed, { reviewed, revision: integrated });
+  const state = integratedState(w, reviewed, {
+    reviewed,
+    revision: integrated,
+  });
   const receipt = mergedAt(w);
   for (const revision of [integrated, reviewed]) {
     const done = { ...doneAt(receipt, state), security: securityOf(revision) };

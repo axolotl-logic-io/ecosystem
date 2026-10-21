@@ -57,6 +57,7 @@ function mergeRequest(w, state) {
     number: 7,
     state,
     expectedSha: w.sha,
+    expectedBase: sh(`git -C ${w.worktree} rev-parse origin/integration`),
     revision: approvedOf(w),
     mergeQueue: null,
     summary: "S",
@@ -67,7 +68,7 @@ function mergeRequest(w, state) {
 function openAt(w) {
   setCurrentRevision({
     revision: approvedOf(w),
-    baseSha: "base",
+    baseSha: sh(`git -C ${w.worktree} rev-parse origin/integration`),
     pr: { number: PR, state: "OPEN", mergeCommit: null, headSha: w.sha },
   });
 }
@@ -135,7 +136,7 @@ function doneOn(w, branch) {
   const merged = { code: w.mergeSha, inputs: "inputs-1" };
   setCurrentRevision({
     revision: merged,
-    baseSha: "base",
+    baseSha: sh(`git -C ${w.worktree} rev-parse origin/integration`),
     pr: {
       number: PR,
       state: "MERGED",

@@ -43,6 +43,15 @@ Object.assign(
   ]),
 );
 const COMMAND_TIMEOUT_MS = 20_000;
+const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+Object.assign(process.env, Object.fromEntries([["TEST_REAL_GIT", realGit]]));
+const fakeGit = new URL("./fake-explicit-target-git.mjs", import.meta.url)
+  .pathname;
+fs.writeFileSync(
+  path.join(BIN, "git"),
+  `#!/bin/sh\ncase " $* " in *" push "*) [ "$ISSUE_PIPELINE_OPS" = 1 ] || exec '${realGit}' "$@";; *) exec '${realGit}' "$@";; esac\nexec '${process.execPath}' '${fakeGit}' "$@"\n`,
+  { mode: 0o755 },
+);
 const MODE = 0o755;
 const fake = new URL("./fake-explicit-target-gh.mjs", import.meta.url).pathname;
 fs.writeFileSync(
@@ -173,6 +182,7 @@ function world(options = {}) {
     stage: /** @type {const} */ ("merge"),
     pr: PR,
     hardened: revision,
+    hardenedTarget: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
     headSha: head,
     verifiedSha: head,
     flows: { code: true },

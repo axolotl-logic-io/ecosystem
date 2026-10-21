@@ -13,6 +13,7 @@ import { parseRequest } from "../process.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE, sameRevision } from "../state.ts";
+import { retainedFastForwardReceipt } from "./fast-forward-evidence.ts";
 
 const SAVE_REQUEST = z.looseObject({
   number: z.number().int().positive(),
@@ -42,7 +43,9 @@ function withSavedCodeMerge(
   if (
     saved.mergeAttempt !== null &&
     saved.merged !== null &&
-    saved.merged.code === saved.mergeAttempt.result &&
+    (retainedFastForwardReceipt(cfg, n, saved) ||
+      (saved.mergeAttempt.operation === undefined &&
+        saved.merged.code === saved.mergeAttempt.result)) &&
     state.merged?.code !== saved.merged.code
   ) {
     ({ merged } = saved);

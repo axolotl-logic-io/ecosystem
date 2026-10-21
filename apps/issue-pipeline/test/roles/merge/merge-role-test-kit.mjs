@@ -7,6 +7,7 @@ import {
   sessionsOf,
 } from "../reviewer-and-merge-role-calls-test-kit.mjs";
 import {
+  cfg,
   current,
   fakeContext,
   HEAD,
@@ -98,6 +99,7 @@ function merging(script = {}) {
     state: issueState({
       stage: "merge",
       hardened: REVISION,
+      hardenedTarget: { repo: cfg.repo, branch: cfg.baseBranch, sha: sha("b") },
       ...script.state,
     }),
     gherkin: script.gherkin,

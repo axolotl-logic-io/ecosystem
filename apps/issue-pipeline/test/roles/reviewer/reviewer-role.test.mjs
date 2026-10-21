@@ -118,7 +118,15 @@ test("a hardening saved for exactly this revision goes on to merge with no sessi
   const contexts = runs.map((saved) =>
     fakeContext({
       stage: "review",
-      state: issueState({ stage: "review", ...saved }),
+      state: issueState({
+        stage: "review",
+        ...saved,
+        hardenedTarget: {
+          repo: cfg.repo,
+          branch: cfg.baseBranch,
+          sha: current().baseSha,
+        },
+      }),
       ops: {
         "current-revision": [current()],
         "ready-pr": [{ pr: PR, ready: true }],

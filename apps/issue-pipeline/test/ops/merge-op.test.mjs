@@ -13,14 +13,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setCurrentRevision } from "./fake-ops-publish-revision.mjs";
-import {
-  approvalReply,
-  branchMergeReply,
-  mergeCommentReplies,
-} from "./merge-op-fixtures.mjs";
+import { approvalReply, mergeCommentReplies } from "./merge-op-fixtures.mjs";
 import { approvedOf, current, request } from "./merge-op-test-kit.mjs";
 import {
-  approvedState,
+  boundState,
   fakeGh,
   ISSUE,
   mergeAuthority,
@@ -28,6 +24,7 @@ import {
   prView,
   REPO,
   savedListing,
+  sh,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
@@ -41,7 +38,7 @@ const NOT_ISSUE_BRANCH = /not agent\/issue-7/u;
 const FULL_SHA_LENGTH = 40;
 const EARLIER = 3;
 const QUEUE = [EARLIER, ISSUE];
-const SUCCESS_WRITES = 3;
+const SUCCESS_WRITES = 2;
 
 test("merge records exact-head approval then returns the configured target's merge receipt", () => {
   const w = world();
@@ -50,42 +47,38 @@ test("merge records exact-head approval then returns the configured target's mer
     prView({ headRefOid: w.sha }),
     prView({ headRefOid: w.sha }),
     approvalReply(w),
-    branchMergeReply(w),
-    ...mergeAuthority(approvedState(approvedOf(w))),
+    ...mergeAuthority(boundState(w, approvedOf(w))),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: w.mergeSha },
+      mergeCommit: { oid: w.sha },
     }),
   ]);
   const reply = merge(w.cfg, request(w));
   assert.deepEqual(reply, {
     merged: true,
-    mergeCommit: w.mergeSha,
+    mergeCommit: w.sha,
     headSha: w.sha,
   });
   const done = writes().filter((args) => !args.includes("PATCH"));
   assert.equal(done[0]?.[1], `repos/${REPO}/pulls/${PR}/reviews`);
-  assert.deepEqual(done[1], [
-    "api",
-    `repos/${REPO}/merges`,
-    "--method",
-    "POST",
-    "--include",
-    "-f",
-    "base=integration",
-    "-f",
-    `head=${w.sha}`,
-  ]);
+  assert.equal(
+    sh(`git --git-dir=${w.root}/origin.git rev-parse integration`),
+    w.sha,
+  );
+  assert.equal(
+    done.some((args) => args[1] === `repos/${REPO}/merges`),
+    false,
+  );
   assert.equal(done.length, SUCCESS_WRITES);
-  assert.match(done[2]?.join(" ") ?? "", COMMENTS_ON_PR);
+  assert.match(done[1]?.join(" ") ?? "", COMMENTS_ON_PR);
 });
 
 test("merge of a PR merged by hand returns the authoritative receipt and merges nothing", () => {
   const w = world();
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({
       headRefOid: "f00d",
       state: "MERGED",
@@ -105,7 +98,7 @@ test("merge of a PR merged by hand returns the authoritative receipt and merges 
 test("merge of a merged PR with no merge commit fails instead of an empty receipt", () => {
   const w = world();
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: w.sha, state: "MERGED" }),
   ]);
   assert.throws(() => merge(w.cfg, request(w)), NO_MERGE_COMMIT);
@@ -115,7 +108,7 @@ test("merge of a merged PR with no merge commit fails instead of an empty receip
 test("merge refuses a moved head, and an expectedSha other than the approved code fails", () => {
   const w = world();
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: "0ther" }),
   ]);
   assert.deepEqual(merge(w.cfg, request(w)), {
@@ -134,7 +127,7 @@ test("merge refuses a moved head, and an expectedSha other than the approved cod
 test("merge refuses a PR from another branch", () => {
   const w = world();
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: w.sha, headRefName: "evil" }),
   ]);
   assert.throws(() => merge(w.cfg, request(w)), NOT_ISSUE_BRANCH);
@@ -145,7 +138,7 @@ test("merge refuses a stale revision with the current one, before merging", () =
   const moved = { ...approvedOf(w), inputs: "inputs-2" };
   setCurrentRevision({ revision: moved, baseSha: "base", pr: null });
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: w.sha }),
   ]);
   assert.deepEqual(merge(w.cfg, request(w)), {
@@ -159,9 +152,9 @@ test("merge refuses a stale revision with the current one, before merging", () =
 test("an issue ahead in the merge queue at review holds the merge, whatever its verdict", () => {
   const w = world();
   current(w);
-  const ahead = { ...approvedState(approvedOf(w)), number: 3, pr: 30 };
+  const ahead = { ...boundState(w, approvedOf(w)), number: 3, pr: 30 };
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: w.sha }),
     { when: "issue view 3", stdout: '{"state":"OPEN","labels":[]}' },
     {
@@ -189,13 +182,12 @@ test("a stopped issue ahead in the queue doesn't hold the merge", () => {
     },
     prView({ headRefOid: w.sha }),
     approvalReply(w),
-    branchMergeReply(w),
-    ...mergeAuthority(approvedState(approvedOf(w))),
+    ...mergeAuthority(boundState(w, approvedOf(w))),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: w.mergeSha },
+      mergeCommit: { oid: w.sha },
     }),
   ]);
   const reply = merge(w.cfg, request(w, { mergeQueue: QUEUE }));
@@ -206,7 +198,7 @@ test("merge refuses a head behind its base without merging", () => {
   const w = world();
   current(w);
   fakeGh.reply([
-    savedListing(approvedState(approvedOf(w))),
+    savedListing(boundState(w, approvedOf(w))),
     prView({ headRefOid: w.sha, mergeStateStatus: "BEHIND" }),
   ]);
   assert.deepEqual(merge(w.cfg, request(w)), {
@@ -227,7 +219,7 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
       { when: "issue list", stdout: '[{"number":3,"labels":[]}]' },
       {
         ...savedListing({
-          ...approvedState(approvedOf(w)),
+          ...boundState(w, approvedOf(w)),
           number: 3,
           pr: 30,
           stage,
@@ -237,7 +229,7 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
       },
     ];
   }
-  fakeGh.reply([savedListing(approvedState(approvedOf(w))), ...older("merge")]);
+  fakeGh.reply([savedListing(boundState(w, approvedOf(w))), ...older("merge")]);
   assert.deepEqual(merge(w.cfg, request(w, { mergeOrder: true })), {
     merged: false,
     reason: "queued",
@@ -248,13 +240,12 @@ test("with mergeOrder and no queue, an older PR at merge holds the merge and one
     ...older("review"),
     prView({ headRefOid: w.sha }),
     approvalReply(w),
-    branchMergeReply(w),
-    ...mergeAuthority(approvedState(approvedOf(w))),
+    ...mergeAuthority(boundState(w, approvedOf(w))),
     ...mergeCommentReplies(),
     prView({
       headRefOid: w.sha,
       state: "MERGED",
-      mergeCommit: { oid: w.mergeSha },
+      mergeCommit: { oid: w.sha },
     }),
   ]);
   assert.equal(merge(w.cfg, request(w, { mergeOrder: true })).merged, true);

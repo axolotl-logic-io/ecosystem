@@ -63,8 +63,8 @@ function approvalCount() {
 for (const delay of [
   {
     lag: LONG_LAG_MS,
-    name: "stale OPEN",
-    extra: { state: "OPEN", mergeCommit: null },
+    name: "stale CLOSED",
+    extra: { state: "CLOSED", mergeCommit: null },
     code: 0,
   },
   {
@@ -76,7 +76,7 @@ for (const delay of [
   { lag: SHORT_LAG_MS, name: "unreadable metadata", extra: {}, code: 1 },
 ]) {
   test(`${delay.name} for ${delay.lag}ms confirms with default spaced waits and one approval and POST`, () => {
-    const w = world();
+    const w = world({ fastForward: true });
     w.cfg.mergeConfirmation = defaults;
     const clock = confirmationClock();
     const expectedWaits = [];
@@ -118,14 +118,14 @@ for (const delay of [
 }
 
 test("default deadline stops durably but later matching evidence recovers the same saved attempt read-only", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   w.cfg.mergeConfirmation = defaults;
   const clock = confirmationClock();
   script(w, [
     ...prechecks(w),
     post(w),
     ...WAITS_TO_DEADLINE.map(() =>
-      prStep(w, { state: "OPEN", mergeCommit: null }),
+      prStep(w, { state: "CLOSED", mergeCommit: null }),
     ),
   ]);
   const reply = merge(w.cfg, request(w), clock);
@@ -167,7 +167,7 @@ test("default deadline stops durably but later matching evidence recovers the sa
 });
 
 test("evidence reads finishing after the deadline retain landed truth for a later run, not a late own receipt", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   w.cfg.mergeConfirmation = defaults;
   let samples = 0;
   const clock = confirmationClock();
@@ -199,7 +199,7 @@ test("evidence reads finishing after the deadline retain landed truth for a late
 });
 
 test("configured backoff repeats its final wait and clips it at the finite deadline", () => {
-  const w = world();
+  const w = world({ fastForward: true });
   w.cfg.mergeConfirmation = {
     deadlineSeconds: CUSTOM_DEADLINE_SECONDS,
     backoffSeconds: [2, CUSTOM_WAIT_SECONDS],
@@ -209,7 +209,7 @@ test("configured backoff repeats its final wait and clips it at the finite deadl
     ...prechecks(w),
     post(w),
     ...Array.from({ length: 4 }, () =>
-      prStep(w, { state: "OPEN", mergeCommit: null }),
+      prStep(w, { state: "CLOSED", mergeCommit: null }),
     ),
   ]);
   assert.equal(merge(w.cfg, request(w), clock).merged, false);
