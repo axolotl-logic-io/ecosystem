@@ -16,6 +16,11 @@ import {
   uncommitted,
 } from "./git-state.ts";
 import { git } from "./github.ts";
+import {
+  assertCheckoutReadyForRemoval,
+  releaseCheckoutSlot,
+  withCheckoutSetup,
+} from "./lane-slots.ts";
 import { withCloneLock } from "./locks.ts";
 import { OpsError } from "./ops-error.ts";
 import { run, runFailure, shell } from "./process.ts";
@@ -96,6 +101,7 @@ function ensureWorktree(cfg: Config, number: number): string {
 // as it exits (job/teardown.ts), so the checkout that proves a completion
 // stays until then.
 function removeWorktree(cfg: Config, number: number): void {
+  assertCheckoutReadyForRemoval(cfg, number, paths.worktree(cfg, number));
   // Frees what setup made outside the worktree, such as a per-issue test
   // database. Runs in the issue's run dir, whose path names the issue. A
   // failure is only logged.
@@ -126,6 +132,7 @@ function removeWorktree(cfg: Config, number: number): void {
     }
     const branch = paths.branch(cfg, number);
     run("git", ["-C", clone, "branch", "-D", branch], { allowFail: true });
+    releaseCheckoutSlot(cfg);
   });
 }
 
@@ -255,8 +262,8 @@ function push(
 // Runs the repo's setup command (config `commands.setup`), if it sets one,
 // in issue `n`'s checkout `dir`, so the writer's own test runs get this
 // issue's database and ports instead of the shared defaults. It writes the
-// command's output to `logName` in the issue's run folder. A failure is only
-// logged: verify runs setup again and reports it.
+// command's output to `logName` in the issue's run folder. Legacy failures
+// are logged; lane failures retain the checkout and refuse session startup.
 function setUpCheckout(
   cfg: Config,
   n: number,
@@ -269,7 +276,12 @@ function setUpCheckout(
     return;
   }
   const log = path.join(paths.runDir(cfg, n), logName);
-  shell(setup, dir, log, commandTimeoutMinutes * MS_PER_MINUTE);
+  withCheckoutSetup(cfg, n, dir, (env) =>
+    shell(setup, dir, log, {
+      timeoutMs: commandTimeoutMinutes * MS_PER_MINUTE,
+      env,
+    }),
+  );
 }
 
 export type { BranchChanges, PushRecord, PushResult };

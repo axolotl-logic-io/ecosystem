@@ -16,9 +16,10 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
 import { gh, issueState } from "../github.ts";
-import type { Issue } from "../issue-context.ts";
+import type { Issue, IssueContext } from "../issue-context.ts";
 import { writeIssueContext } from "../issue-context.ts";
 import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
+import { pruneLaneResources, withCheckoutSlot } from "../lane-slots.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
 import { writeState } from "../saved-state.ts";
@@ -99,7 +100,6 @@ function readyCheckouts(
   const existed = fs.existsSync(path.join(wt, ".git"));
   ensureWorktree(cfg, n);
   if (!existed) {
-    setUpCheckout(cfg, n, wt, "setup-at-claim.log");
     return null;
   }
   if (!claimed.adopted || claimed.remote === null) {
@@ -116,6 +116,57 @@ function leased(state: IssueState, req: ClaimRequest, now: Date): IssueState {
     at: now.toISOString(),
   };
   return { ...state, lease };
+}
+
+interface PreparedClaim {
+  claimed: ReturnType<typeof claimedState>;
+  claimId: number;
+  posted: boolean;
+  now: Date;
+  existed: boolean;
+  entry: string | null;
+}
+
+function claimCheckout(
+  cfg: Config,
+  req: ClaimRequest,
+  context: IssueContext,
+  recovering: boolean,
+): ClaimLost | PreparedClaim {
+  const n = req.number;
+  let lost: ClaimLost = { lost: true, holder: null, posted: false };
+  const prepared = withCheckoutSlot(cfg, n, () => {
+    const race = raceForClaim(cfg, n, req, context.comments);
+    if (!race.won || race.claimId === undefined) {
+      lost = { lost: true, holder: race.holder ?? null, posted: race.posted };
+      return null;
+    }
+    const now = new Date();
+    const claimed = claimedState(cfg, n, context.comments, now);
+    if (recovering) {
+      // Only the winning claimant may reopen; this grants no writer authority.
+      gh(cfg, "merge", ["issue", "reopen", String(n), "-R", cfg.repo]);
+      if (issueState(cfg, n) !== "open") {
+        throw new OpsError(
+          `could not confirm #${n} reopened for Merge recovery`,
+        );
+      }
+    }
+    const existed = fs.existsSync(path.join(paths.worktree(cfg, n), ".git"));
+    let entry: string | null = null;
+    if (claimed.state.stage !== "done") {
+      entry = readyCheckouts(cfg, n, claimed, now);
+    }
+    return {
+      claimed,
+      claimId: race.claimId,
+      posted: race.posted,
+      now,
+      existed,
+      entry,
+    };
+  });
+  return prepared ?? lost;
 }
 
 function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
@@ -135,32 +186,31 @@ function claim(cfg: Config, request: unknown): ClaimLost | ClaimWon {
   if (!fs.existsSync(path.join(paths.clone(cfg), ".git"))) {
     ensureClone(cfg);
   }
-  const race = raceForClaim(cfg, n, req, context.comments);
-  if (!race.won || race.claimId === undefined) {
-    return { lost: true, holder: race.holder ?? null, posted: race.posted };
+  const prepared = claimCheckout(cfg, req, context, recovering);
+  if ("lost" in prepared) {
+    return prepared;
   }
-  const now = new Date();
-  const claimed = claimedState(cfg, n, context.comments, now);
-  if (recovering) {
-    // Only the winning claimant may reopen; no writer or merge authority is
-    // granted by this mutation. Completion closes it again after all gates.
-    gh(cfg, "merge", ["issue", "reopen", String(n), "-R", cfg.repo]);
-    if (issueState(cfg, n) !== "open") {
-      throw new OpsError(`could not confirm #${n} reopened for Merge recovery`);
-    }
-  }
+  const { claimed, claimId, posted, now, existed, entry } = prepared;
+  pruneLaneResources(cfg);
   let state = leased(claimed.state, req, now);
   if (state.stage !== "done") {
-    const entry = readyCheckouts(cfg, n, claimed, now);
+    if (!existed && cfg.laneSlots === undefined) {
+      setUpCheckout(cfg, n, paths.worktree(cfg, n), "setup-at-claim.log");
+    }
     if (entry !== null) {
       state = withLog(state, entry, now);
     }
     labelWorking(cfg, n, issue.labels, state.pr);
   }
   writeState(cfg, n, state);
+  // Save authority before lane setup: a failed setup keeps its checkout and
+  // slot, and an explicit retry must not look like unsigned prior work.
+  if (state.stage !== "done" && cfg.laneSlots !== undefined) {
+    setUpCheckout(cfg, n, paths.worktree(cfg, n), "setup-at-claim.log");
+  }
   const won: ClaimWon = {
     state,
-    claim: { id: race.claimId, posted: race.posted },
+    claim: { id: claimId, posted },
     remoteHead: claimed.remote,
     issueFile: context.file,
     issue: context.issue,

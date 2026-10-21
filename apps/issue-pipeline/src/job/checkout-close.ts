@@ -6,6 +6,11 @@ import process from "node:process";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { git } from "../github.ts";
+import {
+  assertCheckoutReadyForRemoval,
+  releaseCheckoutSlot,
+} from "../lane-slots.ts";
+import { withCloneLock } from "../locks.ts";
 import { run } from "../process.ts";
 import type { JobDirs } from "./checkout.ts";
 import { saveCodeRecovery } from "./code-recovery.ts";
@@ -124,6 +129,7 @@ async function closeJobCheckout(
   const { root, repo } = job;
   let removable = false;
   try {
+    assertCheckoutReadyForRemoval(cfg, issue, repo);
     const dropped = preparePatches(cfg, issue, job);
     // Prepare every recovery artifact before changing the checkout.
     saveCodeRecovery(cfg, issue, repo, job.key);
@@ -138,7 +144,10 @@ async function closeJobCheckout(
     return dropped;
   } finally {
     if (removable) {
-      fs.rmSync(root, { recursive: true, force: true });
+      withCloneLock(cfg, () => {
+        fs.rmSync(root, { recursive: true, force: true });
+        releaseCheckoutSlot(cfg);
+      });
     } else {
       process.stderr.write(
         `job: recovery incomplete; checkout retained at ${root} for operator recovery\n`,

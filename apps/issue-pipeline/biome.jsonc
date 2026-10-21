@@ -41,6 +41,7 @@
         "src/stop-recovery.ts",
         "src/clone-setup.ts",
         "src/checkouts.ts",
+        "src/lane-slots.ts",
         "src/rebase.ts",
         "src/issue-context.ts",
         "src/ops/claim.ts",
