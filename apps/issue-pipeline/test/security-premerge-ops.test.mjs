@@ -8,11 +8,57 @@ import {
   fakeGh,
   prView,
   savedListing,
+  securityOf,
   world,
   writes,
 } from "./ops-publish-test-kit.mjs";
 
 const { merge } = await import("../src/ops/merge.ts");
+
+/** @param {import("./ops-publish-test-kit.mjs").World} w @param {string} refusal */
+function unclearedState(w, refusal) {
+  const saved = approvedState(approvedOf(w));
+  const security = {
+    ...securityOf(approvedOf(w)),
+    candidate: { target: w.cfg.baseBranch, baseSha: "base" },
+  };
+  saved.security = security;
+
+  switch (refusal) {
+    case "missing":
+      saved.security = null;
+      break;
+    case "historical": {
+      const { candidate: _candidate, ...historical } = security;
+      saved.security = historical;
+      break;
+    }
+    case "rejected":
+      security.finding = {
+        category: "rights",
+        reason: "Exports private data",
+      };
+      break;
+    case "wrong code":
+      security.revision = { ...security.revision, code: "unreviewed" };
+      break;
+    case "wrong inputs":
+      security.revision = { ...security.revision, inputs: "stale-inputs" };
+      break;
+    case "wrong target":
+      security.candidate.target = "other";
+      break;
+    case "moved target":
+      security.candidate.baseSha = "target-before";
+      break;
+    case "unchecked":
+      saved.verifiedSha = null;
+      break;
+    default:
+      throw new Error(`unhandled case ${refusal}`);
+  }
+  return saved;
+}
 
 for (const refusal of [
   "missing",
@@ -27,42 +73,7 @@ for (const refusal of [
   test(`saved ${refusal} clearance refuses before approval, attempt checkpoint or target mutation`, () => {
     const w = world();
     current(w);
-    const saved = approvedState(approvedOf(w));
-    const { security } = saved;
-
-    switch (refusal) {
-      case "missing":
-        saved.security = null;
-        break;
-      case "historical": {
-        const { candidate: _candidate, ...historical } = security;
-        saved.security = historical;
-        break;
-      }
-      case "rejected":
-        security.finding = {
-          category: "rights",
-          reason: "Exports private data",
-        };
-        break;
-      case "wrong code":
-        security.revision = { ...security.revision, code: "unreviewed" };
-        break;
-      case "wrong inputs":
-        security.revision = { ...security.revision, inputs: "stale-inputs" };
-        break;
-      case "wrong target":
-        security.candidate.target = "other";
-        break;
-      case "moved target":
-        security.candidate.baseSha = "target-before";
-        break;
-      case "unchecked":
-        saved.verifiedSha = null;
-        break;
-      default:
-        throw new Error(`unhandled case ${refusal}`);
-    }
+    const saved = unclearedState(w, refusal);
     fakeGh.reply([
       savedListing(saved),
       prView({ headRefOid: w.sha }),
