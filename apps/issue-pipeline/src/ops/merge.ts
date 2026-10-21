@@ -8,26 +8,21 @@ import { assignedBranch } from "../branch-binding.ts";
 import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { fetchIn } from "../git-state.ts";
+import { FULL_SHA } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import { currentRevision } from "../revision.ts";
 import { readWriteState } from "../saved-state.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
-import { branchMerge } from "./branch-merge.ts";
+import { assertFastForward, branchMerge } from "./branch-merge.ts";
+import { beginMerge, saveMergeResponse } from "./merge-attempt.ts";
 import { mergedText } from "./merge-comment.ts";
 import type { MergeStale } from "./merge-guard.ts";
 import { mergeStale, REVISION_REQUEST } from "./merge-guard.ts";
 import type { Queued } from "./merge-order.ts";
 import { queued } from "./merge-order.ts";
 import type { ConfirmationClock } from "./merge-recovery.ts";
-import {
-  beginMerge,
-  diagnostic,
-  reconcileMerge,
-  saveMergeResponse,
-} from "./merge-recovery.ts";
-import { FULL_SHA } from "./merged-graph.ts";
+import { diagnostic, reconcileMerge } from "./merge-recovery.ts";
 import { approvePr } from "./pr-approval.ts";
 import type { PrView } from "./pr-merge.ts";
 import { viewForMerge } from "./pr-merge.ts";
@@ -104,6 +99,7 @@ function staleReason(
   cfg: Config,
   req: MergeRequest,
   view: PrView,
+  base: string,
 ): "conflict" | "behind" | undefined {
   if (view.mergeable === "CONFLICTING") {
     return "conflict";
@@ -112,8 +108,6 @@ function staleReason(
     return "behind";
   }
   const wt = paths.worktree(cfg, req.number);
-  fetchIn(cfg, wt, cfg.baseBranch);
-  const base = `origin/${cfg.baseBranch}`;
   const args = ["-C", wt, "merge-base", "--is-ancestor", base, req.expectedSha];
   if (run("git", args, { allowFail: true }).code !== 0) {
     return "behind";
@@ -129,7 +123,7 @@ function precheck(
   cfg: Config,
   req: MergeRequest,
   view: PrView,
-): MergeReply | undefined {
+): MergeReply | { base: string } {
   if (view.state !== "OPEN") {
     return { merged: false, reason: `PR is ${view.state}` };
   }
@@ -140,21 +134,19 @@ function precheck(
   if (waits !== undefined) {
     return waits;
   }
-  const stale = mergeStale(
-    req.revision,
-    currentRevision(cfg, req.number, req.state),
-  );
+  const current = currentRevision(cfg, req.number, req.state);
+  const stale = mergeStale(req.revision, current);
   if (stale !== undefined) {
     return stale;
   }
-  const behind = staleReason(cfg, req, view);
+  const behind = staleReason(cfg, req, view, current.baseSha);
   if (behind !== undefined) {
     return { merged: false, reason: behind };
   }
   if (view.isDraft) {
     return { merged: false, reason: "draft" };
   }
-  return undefined;
+  return { base: FULL_SHA.parse(current.baseSha) };
 }
 
 // Names the configured destination and immutable authorized source, not the
@@ -184,9 +176,9 @@ function merge(
       headSha: view.headRefOid,
     };
   }
-  const refused = precheck(cfg, req, view);
-  if (refused !== undefined) {
-    return refused;
+  const checked = precheck(cfg, req, view);
+  if (!("base" in checked)) {
+    return checked;
   }
   // A last observation refuses an already invalid PR; it is not atomic
   // current-PR authority. Retargeting cannot redirect the explicit request.
@@ -200,8 +192,13 @@ function merge(
   if (fresh.isDraft) {
     return { merged: false, reason: "draft" };
   }
+  assertFastForward(
+    paths.worktree(cfg, req.number),
+    checked.base,
+    req.expectedSha,
+  );
   approvePr(cfg, pr, req.expectedSha);
-  return attemptedMerge(cfg, req, clock);
+  return attemptedMerge(cfg, req, checked.base, clock);
 }
 
 // After entering the mutation boundary, errors must be a durable refusal,
@@ -209,15 +206,20 @@ function merge(
 function attemptedMerge(
   cfg: Config,
   req: MergeRequest,
+  base: string,
   clock?: ConfirmationClock,
 ): MergeReply {
-  beginMerge(cfg, req.number, req.state.pr, req.revision);
+  beginMerge(cfg, req.number, req.state.pr, { authorized: req.revision, base });
   try {
-    const result = branchMerge(cfg, req.expectedSha);
-    if ("reason" in result) {
-      return diagnostic(result.reason);
+    const result = branchMerge(
+      cfg,
+      paths.worktree(cfg, req.number),
+      base,
+      req.expectedSha,
+    );
+    if (result) {
+      saveMergeResponse(cfg, req.number, req.expectedSha);
     }
-    saveMergeResponse(cfg, req.number, result.sha);
     const receipt = reconcileMerge(cfg, { number: req.number }, clock);
     if (receipt.merged && receipt.byHand !== true) {
       comment(

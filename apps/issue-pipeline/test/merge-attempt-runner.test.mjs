@@ -7,12 +7,15 @@ import { consumed, script } from "./explicit-target-test-kit.mjs";
 import { BRANCH, git, PR, world } from "./explicit-target-world-test-kit.mjs";
 
 const { branchMoved } = await import("../src/job/role-end.ts");
-const { beginMerge } = await import("../src/ops/merge-recovery.ts");
+const { beginMerge } = await import("../src/ops/merge-attempt.ts");
 
 test("an attempted merge reaches read-only recovery despite movement of the mutable source branch", () => {
   const w = world();
   script(w, []);
-  const attempt = beginMerge(w.cfg, w.state.number, PR, w.revision);
+  const attempt = beginMerge(w.cfg, w.state.number, PR, {
+    authorized: w.revision,
+    base: w.base,
+  });
   git(w.seed, ["push", "-q", "origin", `${w.moved}:refs/heads/${BRANCH}`]);
   assert.equal(attempt.codeMerged, null);
   assert.equal(attempt.merged, null);
