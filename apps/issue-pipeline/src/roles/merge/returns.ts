@@ -1,11 +1,16 @@
 // Where the merge job sends an issue it doesn't merge, and the bound on its
-// own integrations. A changed input goes to the author, and a code head
-// that moved, including the Reviewer's own integration, goes back to review
+// own integrations. A changed input goes to its requirements owner, and a code
+// head that moved, including the Reviewer's own integration, goes back to review
 // for fresh hardening. Each integration counts one sync,
 // and the one past `maxSyncs` stops the issue instead.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import {
+  DEVELOPER_RECOVERY_REASON,
+  requirementsStage,
+  requirementsState,
+} from "../../requirements.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
 
@@ -23,13 +28,18 @@ function voided(state: IssueState): IssueState {
   return { ...state, hardened: null, verifiedSha: null };
 }
 
-function toAuthor(state: IssueState, why: string): RoleEnd {
-  const next: IssueState = {
-    ...voided(state),
-    stage: "author",
-    resumeStage: "review",
+function toRequirements(state: IssueState, why: string): RoleEnd {
+  const next = requirementsState({ ...state, verifiedSha: null }, "review");
+  if (next === null) {
+    return failed(state, `${why}; ${DEVELOPER_RECOVERY_REASON}`);
+  }
+  return {
+    kind: "next",
+    state: logged(
+      { ...next, integration: state.integration },
+      `${why}; back to ${requirementsStage(state)}`,
+    ),
   };
-  return { kind: "next", state: logged(next, `${why}; back to the author`) };
 }
 
 function toReview(state: IssueState, why: string): RoleEnd {
@@ -66,4 +76,4 @@ function counted(
   return { state: { ...state, counts: { ...state.counts, syncs: syncs + 1 } } };
 }
 
-export { counted, failed, logged, toAuthor, toReview, waiting };
+export { counted, failed, logged, toRequirements, toReview, waiting };

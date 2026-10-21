@@ -1,17 +1,18 @@
 // The gate the merge job's revision must pass, read fresh from the ops just
-// before each mutation: the Gherkin is for the current trusted inputs, a
+// before each mutation: requirements reflect current trusted inputs, a
 // recorded code merge is still what GitHub says, and the merge
 // authorization (state.ts mergeAuthorization: the hardened revision)
 // holds for exactly this code head and
 // inputs revision (`approval-is-for-one-revision`).
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { requirementsHold } from "../../requirements.ts";
 import { targetHolds } from "../../reviewed-target.ts";
 import type { IssueState } from "../../state.ts";
 import { approvalHolds } from "../../state.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { codeMergeConfirmed } from "../revision-source.ts";
-import { failed, toAuthor, toReview } from "./returns.ts";
+import { failed, toRequirements, toReview } from "./returns.ts";
 
 // Why the merge job may not go on with `current` from `state`, or null when
 // it may.
@@ -22,8 +23,8 @@ function approvalGate(
 ): RoleEnd | null {
   const { gherkin } = ctx.inputs;
   const { revision } = current;
-  if (gherkin === null || gherkin.inputs !== revision.inputs) {
-    return toAuthor(state, "the trusted inputs changed since the Gherkin");
+  if (!requirementsHold(state, gherkin, revision.inputs)) {
+    return toRequirements(state, "the trusted inputs need requirements review");
   }
   const { codeMerged } = state;
   if (codeMerged !== null && !codeMergeConfirmed(current, codeMerged)) {

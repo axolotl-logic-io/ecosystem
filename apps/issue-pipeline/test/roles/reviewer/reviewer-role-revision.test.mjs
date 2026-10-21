@@ -72,9 +72,26 @@ test("inputs that changed during hardening send the issue to the author, voiding
 });
 
 test("a Gherkin older than the inputs, or none, goes to the author before any session", async () => {
+  const target = { repo: cfg.repo, branch: cfg.baseBranch, sha: sha("b") };
+  const retained = {
+    hardened: REVISION,
+    hardenedTarget: target,
+    integration: { reviewed: REVISION, revision: { ...REVISION, code: MOVED } },
+    verifiedSha: HEAD,
+    security: { revision: REVISION, commentId: PR, finding: null },
+    resultSecurity: {
+      revision: { ...REVISION, ...policyRevision(cfg) },
+      target,
+      commentId: PR,
+      finding: null,
+    },
+  };
   const runs = [
-    hardening({ gherkin: gherkinComment({ inputs: NEW_INPUTS }) }),
-    hardening({ gherkin: null }),
+    hardening({
+      state: retained,
+      gherkin: gherkinComment({ inputs: NEW_INPUTS }),
+    }),
+    hardening({ state: retained, gherkin: null }),
   ];
   const ends = await Promise.all(runs.map(({ ctx }) => reviewerRole(ctx)));
   for (const [at, { calls }] of runs.entries()) {
@@ -84,6 +101,12 @@ test("a Gherkin older than the inputs, or none, goes to the author before any se
     );
     assert.equal(state.stage, "author");
     assert.equal(state.resumeStage, "review");
+    assert.equal(state.hardened, null);
+    assert.equal(state.hardenedTarget, null);
+    assert.equal(state.integration, null);
+    assert.equal(state.verifiedSha, retained.verifiedSha);
+    assert.deepEqual(state.security, retained.security);
+    assert.deepEqual(state.resultSecurity, retained.resultSecurity);
     assert.deepEqual(opNames(calls), ["current-revision"]);
     assert.equal(sessionsOf(calls).length, 0);
   }

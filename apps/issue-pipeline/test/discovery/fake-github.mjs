@@ -134,7 +134,7 @@ function initialWorld(repository = "axolotl-logic-io/ecosystem") {
 /** @param {import('../../src/discovery/schema.ts').Issue} issue */
 function savedFor(issue) {
   const state = {
-    ...newIssueState(1),
+    ...newIssueState(1, "author"),
     stage: "review",
     pr: 2,
     branch: "work",

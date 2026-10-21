@@ -21,9 +21,12 @@ import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
 import { integrate } from "./integration.ts";
-import { logged, toAuthor, toReview, waiting } from "./returns.ts";
+import { logged, toRequirements, toReview, waiting } from "./returns.ts";
 import { recorded, securityStop } from "./security-record.ts";
 import { securityReviewTask } from "./task.ts";
+
+const SECURITY_INPUTS_CHANGED =
+  "the trusted inputs changed during the security review";
 
 const PREPARED = z.looseObject({
   headSha: z.string(),
@@ -132,9 +135,7 @@ async function freshReview(
   const fresh = await currentRevision(ctx);
   const { revision: after } = fresh;
   if (after.inputs !== revision.inputs) {
-    return ended(
-      toAuthor(state, "the trusted inputs changed during the security review"),
-    );
+    return ended(toRequirements(state, SECURITY_INPUTS_CHANGED));
   }
   if (
     !reviewDecisionHolds({ revision, still }, after, reply) ||

@@ -50,7 +50,7 @@ test("a rate-limited end holds every start until the backoff passes", () => {
     ...commentWriteReplies("o/r", 1, [STATE_ID_BASE + 1]),
   ]);
   assert.deepEqual(tickOver().spawned, []);
-  assert.deepEqual(loggedFor(2), ["author held rate-limited"]);
+  assert.deepEqual(loggedFor(2), ["implement held rate-limited"]);
   openWith(QUEUE, [
     collaboratorReply("o/r", "alice"),
     ...commentWriteReplies("o/r", 1, [STATE_ID_BASE + 1]),

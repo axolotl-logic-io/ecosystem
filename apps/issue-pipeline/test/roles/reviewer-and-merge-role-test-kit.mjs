@@ -4,28 +4,8 @@
 // a test can assert what the role did, and what came right before a
 // mutation, without pinning the rest of the order. The pipeline's root and
 // home are a temporary folder, set before any pipeline module is imported.
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import process from "node:process";
 import { z } from "zod";
-
-const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "review-merge-role-"));
-const sandboxRoot = path.join(sandbox, "root");
-// src runs its commands in the root, so it must exist.
-fs.mkdirSync(sandboxRoot);
-// Names are the environment's own, set as entries.
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["HOME", sandbox],
-    ["ISSUE_PIPELINE_ROOT", sandboxRoot],
-    ["PI_CODING_AGENT_DIR", path.join(sandbox, "agent")],
-  ]),
-);
-process.on("exit", () => {
-  fs.rmSync(sandbox, { recursive: true, force: true });
-});
+import { isolatedRoot as sandboxRoot } from "../isolated-root-test-kit.mjs";
 
 const { ROOT } = await import("../../src/pipeline-root.ts");
 if (ROOT !== sandboxRoot) {
@@ -105,7 +85,7 @@ function current(
  */
 function issueState(state = {}) {
   return {
-    ...newIssueState(ISSUE),
+    ...newIssueState(ISSUE, "author"),
     pr: PR,
     headSha: HEAD,
     verifiedSha: HEAD,

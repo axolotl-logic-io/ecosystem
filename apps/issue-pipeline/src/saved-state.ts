@@ -42,6 +42,8 @@ const WRITE_STATE = ISSUE_STATE.pick({
   security: ISSUE_STATE.shape.security.removeCatch(),
   resultSecurity: ISSUE_STATE.shape.resultSecurity,
   gherkin: ISSUE_STATE.shape.gherkin.removeCatch(),
+  authorUsed: ISSUE_STATE.shape.authorUsed.removeCatch(),
+  requirementsInputs: ISSUE_STATE.shape.requirementsInputs.removeCatch(),
 });
 
 const MARK_END = "-->";

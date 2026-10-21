@@ -24,7 +24,6 @@ Approvals and Security clearance record the revision of trusted inputs they reli
 
 Requirements review means the Author if the issue used one, otherwise the Developer.
 
-Not yet implemented: the Author stage and its Gherkin comment are still mandatory, and a trusted-input change returns the issue to the Author from any stage.
 
 ## allow-listed-input
 

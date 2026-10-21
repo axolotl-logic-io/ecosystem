@@ -142,6 +142,8 @@ const COORDINATION = z.object({
 });
 // Discovery never uses the display reader's catch/default values as evidence.
 const STRICT_STATE = ISSUE_STATE.extend({
+  authorUsed: ISSUE_STATE.shape.authorUsed.removeCatch(),
+  requirementsInputs: ISSUE_STATE.shape.requirementsInputs.removeCatch(),
   asked: ISSUE_STATE.shape.asked.removeCatch(),
   resumeStage: ISSUE_STATE.shape.resumeStage.removeCatch(),
   review: ISSUE_STATE.shape.review.removeCatch().extend({
@@ -151,7 +153,11 @@ const STRICT_STATE = ISSUE_STATE.extend({
     verdict: ISSUE_STATE.shape.review.removeCatch().shape.verdict.removeCatch(),
   }),
 }).superRefine((state, context) => {
-  for (const inputs of [state.asked?.inputs, state.gherkin?.inputs]) {
+  for (const inputs of [
+    state.asked?.inputs,
+    state.gherkin?.inputs,
+    state.requirementsInputs ?? undefined,
+  ]) {
     if (inputs !== undefined && !INPUT_REVISION.test(inputs)) {
       context.addIssue({
         code: "custom",

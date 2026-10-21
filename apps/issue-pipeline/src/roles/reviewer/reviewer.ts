@@ -1,10 +1,14 @@
-// Reviewer hardening checks and checkpoints one exact revision and literal
-// target context before readying its PR. Unmerged historical authorizations
-// without that target context require fresh hardening, never an inferred base.
-// Read-only Security precedes a new merge (src/roles/merge/).
+// Hardening checkpoints one exact revision and literal target before PR readiness.
+// Missing historical targets need fresh hardening; Security precedes new merges.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import {
+  DEVELOPER_RECOVERY_REASON,
+  requirementsHold,
+  requirementsStage,
+  requirementsState,
+} from "../../requirements.ts";
 import type { ReviewedTarget } from "../../reviewed-target.ts";
 import { reviewedTarget, targetHolds } from "../../reviewed-target.ts";
 import type { IssueState, Revision } from "../../state.ts";
@@ -32,18 +36,16 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The trusted inputs moved past the Gherkin: the author goes first, and the
-// issue comes back to review.
-function toAuthor(state: IssueState, why: string): RoleEnd {
-  const next: IssueState = {
-    ...state,
-    stage: "author",
-    resumeStage: "review",
-    hardened: null,
-    hardenedTarget: null,
-    integration: null,
+// Changed trusted requirements go to their owner, then back to review.
+function toRequirements(state: IssueState, why: string): RoleEnd {
+  const next = requirementsState({ ...state, hardenedTarget: null }, "review");
+  if (next === null) {
+    return errorStop(state, `${why}; ${DEVELOPER_RECOVERY_REASON}`);
+  }
+  return {
+    kind: "next",
+    state: logged(next, `${why}; back to ${requirementsStage(state)}`),
   };
-  return { kind: "next", state: logged(next, `${why}; back to the author`) };
 }
 
 // Why `current` can't be hardened now, or null when it can.
@@ -53,8 +55,8 @@ function notHardenable(
 ): RoleEnd | null {
   const { state } = ctx;
   const { gherkin } = ctx.inputs;
-  if (gherkin === null || gherkin.inputs !== current.revision.inputs) {
-    return toAuthor(state, "the trusted inputs changed since the Gherkin");
+  if (!requirementsHold(state, gherkin, current.revision.inputs)) {
+    return toRequirements(state, "the trusted inputs need requirements review");
   }
   const { codeMerged } = state;
   if (codeMerged !== null && !codeMergeConfirmed(current, codeMerged)) {
@@ -212,7 +214,7 @@ async function harden(
   const after = await currentRevision(ctx);
   if (after.revision.inputs !== before.revision.inputs) {
     return ended(
-      toAuthor(state, "the trusted inputs changed during hardening"),
+      toRequirements(state, "the trusted inputs changed during hardening"),
     );
   }
   if (after.revision.code !== verified.value) {
@@ -241,8 +243,7 @@ async function harden(
   return { ok: true, value: { state: hardened, revision } };
 }
 
-// The hardening's own comment, on the PR or, with none, the issue. It says
-// only that hardening passed: no security review has run yet.
+// Hardening passed, not Security: comment on the PR or, with none, the issue.
 async function postHardened(
   ctx: RoleContext,
   state: IssueState,

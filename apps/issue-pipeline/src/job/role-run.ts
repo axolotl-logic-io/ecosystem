@@ -203,7 +203,7 @@ async function runClaimed(
 // An issue saved at another stage is released untouched, except a done one
 // a merge job reconciles (reconcilesCompletion).
 async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
-  const reply = await job.runOp("claim", {});
+  const reply = await job.runOp("claim", { stage: job.stage });
   const signal = job.control.stopping();
   if (signal !== null) {
     return { kind: "stopped", signal };

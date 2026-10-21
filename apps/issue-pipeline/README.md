@@ -56,17 +56,25 @@ separate runtime work and review.
 ## Stages and model roles
 
 ```text
-author -> implement (draft) -> review (hardening) -> merge (integration -> fresh hardening if changed -> security -> branch merge -> exact-result checks -> finish/close) -> done
+[optional author] -> implement (draft) -> review (hardening) -> merge (integration -> fresh hardening if changed -> security -> branch merge -> exact-result checks -> finish/close) -> done
 ```
 
 | Stage / phase | Session authority | Result |
 |---|---|---|
-| `author` | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
+| `author` (explicit) | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
 | `implement` | Developer (`implementor` in config), writable | Preserved issue work plus code/tests/docs commits through `pipeline_commit`, pushed as a **draft**; no entry/resume base synchronization or mandatory verification/fix loop |
 | `review` / `hardening` | Reviewer, writable | Design/correctness/test fixes and bounded configured verification fixes, without synchronization. Saves exact `hardened` before guarded draft readiness; an exact checkpoint resumes without another writer |
 | `merge` / `integration` | Reviewer, writable only when integration needs fixes | At the caller's serialized merge turn, bounded synchronization/conflict/check/CI fixes. Records integration history; any changed code returns for fresh hardening, checks and Security |
 | `merge` / `security-review` | Fresh Reviewer, **read-only** | Security only (`user-harm`, `rights`, `financial-harm`, `abuse-risk`) over the **exact candidate's complete contribution**, readable tree and final docs/inputs, before deterministic code merge; rejection prevents merge |
 | completion | Deterministic ops | Only an exact durable clear security receipt permits issue completion/closure through the `finish` op |
+
+New issues start at `implement` by default. To use the optional read-only Author, invoke `--stage author` for new or existing direct-mode work. It still produces Gherkin or asks questions; there is no configuration switch. A claim checkpoints an existing direct issue at Author with its original return stage, branch, PR, head and saved work intact. An interruption or question retains that checkpoint. When the trusted inputs and behavior are unchanged, its first Gherkin returns to the checkpoint without supplying new downstream approval. Changed requirements return to Developer and invalidate old approval, never a saved Security rejection.
+
+Explicit Author follows ordinary trust, branch, unanswered-question and claim guards. It refuses a switch over attempted/uncertain merges, merged/completed work, saved Security rejection or a non-open/unreadable PR; use the existing recovery instead. Other stage mismatches still release saved work untouched. Legacy authored and stopped/asked/resume runs keep their meaning.
+
+For direct work, the Developer derives requirements from the trusted issue title, body and allowed collaborator comments in the issue file. No Gherkin or replacement requirements document is required by Developer, Review or Merge. Unanswered product questions stop direct work with `not-doable`; Author can instead ask questions and wait at `agent:needs-info`. An unanswered saved question refuses a claim until trusted inputs change.
+
+Saved state records `authorUsed` and the Developer-consumed `requirementsInputs` revision. Missing mode fields mean an older authored run, not permission to start over. Authored issues still need their current authenticated Gherkin. New trusted inputs return an authored issue to Author, otherwise Developer, invalidating old revision approval without erasing PRs, branches, heads, merge facts or Security rejections. Old authored own-merge and closed-incomplete-Merge recovery retain their existing eligibility and authority guards.
 
 Hardening authorizes only one exact code/input revision. Any changed code, including clean integration or conflict resolution, needs fresh hardening, checks and Security. `integration` remains historical evidence, not an authorization exception. Security receipts for new candidates explicitly bind the configured target and observed target commit as well as the candidate code and trusted inputs. A target change invalidates clearance. CI is required on the exact authorized head when configured.
 
@@ -239,7 +247,7 @@ The read-only handoff input is the saved state's optional `coordination.handoff`
 
 `code` is the full PR head SHA; `inputs` is the trusted-input revision; `at` is an ISO timestamp. A review-request grant must match that checkpoint, occur at/after it, be absent from `eventsBefore`, and match the recorded request event ID when non-null. A saved request also listed in `eventsBefore` is contradictory, not a valid handoff. Missing handoffs stay held even for an otherwise authenticated orchestrator. A recorded merge-account review is accepted only when its genuine GitHub review ID, PR URL, commit and submission time match the saved handoff, current recorded PR and trusted-input revision. A saved review missing from GitHub is incomplete; another PR's or an older revision's review cannot satisfy it. Unbound merge reviews hold the affected PR conservatively rather than approving or reinterpreting them. This module writes no handoff lifecycle.
 
-Trusted human requirements use exactly the existing title/body/comment hashing format. Visitors, both configured bots and recognized legacy machine comments cannot change that revision or answer needs-info. Stops, unanswered questions, split/skip labels, disabled new work and existing `after` prerequisites remain controls. Existing `parent` markers are read as relationships, not newly invented prerequisites. Unreadable dependencies are not permission. Changed trusted input sends development planning back to `author`; it holds review for return to Author rather than skipping authoring.
+Trusted human requirements use exactly the existing title/body/comment hashing format. Visitors, both configured bots and recognized legacy machine comments cannot change that revision or answer needs-info. Stops, unanswered questions, split/skip labels, disabled new work and existing `after` prerequisites remain controls. Existing `parent` markers are read as relationships, not newly invented prerequisites. Unreadable dependencies are not permission. Changed trusted input sends development planning to `author` for authored issues and `implement` otherwise; it holds review until that requirements review.
 
 ### Plans, bounds and continuation
 
@@ -260,14 +268,14 @@ Run installed `job.mjs`, once per stage, with **one `--issue` and a required `--
 ```bash
 node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
   --issue 479 --branch feature/issue-479-query \
-  --lane caller-query --stage author --print-boundary
+  --lane caller-query --stage implement --print-boundary
 
 node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
   --issue 479 --branch feature/issue-479-query \
-  --lane caller-query --stage author
+  --lane caller-query --stage implement
 ```
 
-The caller reads the one-line JSON result and saved issue state, then invokes the indicated next stage on the **same branch and stable `--lane`**. A lane owns the live claim across stages; omitting it gives each job a new claimant id, which cannot take a still-live earlier claim. A stage mismatch releases preserved state without running its model. Do not blindly loop on `unclaimed`, `wait`, `deferred` or `stop`. Do not use the retained autonomous orchestrator for this caller-owned workflow.
+The caller reads the one-line JSON result and saved issue state, then invokes the indicated next stage on the **same branch and stable `--lane`**. A lane owns the live claim across stages; omitting it gives each job a new claimant id, which cannot take a still-live earlier claim. A stage mismatch releases preserved state without running its model, except an eligible explicit Author pass for saved direct work as described above. Do not blindly loop on `unclaimed`, `wait`, `deferred` or `stop`. Do not use the retained autonomous orchestrator for this caller-owned workflow.
 
 Canonical claim normally requires an open issue. A closed issue may recover only genuine merge-authored, editor-verified incomplete Merge state (including a stop resuming Merge) with a recorded PR freshly confirmed merged into the configured base and no contradictory saved merge provenance. Eligibility and branch binding are checked before claim/state/working-label writes; only the winning claimant reopens it, using the merge identity and confirming it open. Done/non-Merge, missing/untrusted/malformed state and unconfirmed merges stay refused. This covers GitHub default-branch auto-close before verification/Security/completion, not a general closed-issue retry or lease override. Exact saved own-merge receipts retain original authorization. A confirmation race first reconciles its saved attempt and successful HTTP response, if present; without that response it still needs the independently authorized postmerge path. Neither recovery path pushes code or repeats the merge POST. Actual-result verification and bound Security clearance still gate completed closure; a saved exact rejection is not rerolled.
 

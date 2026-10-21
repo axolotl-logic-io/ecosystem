@@ -15,7 +15,7 @@ node "$ISSUE_PIPELINE_ROOT/job.mjs" --config CONFIG \
 - `ISSUE`: the issue number.
 - `BRANCH`: the issue's branch. It must be a literal ref and not the base, the remote's default branch or another protected branch.
 - `LANE`: a stable claimant name, the same for every stage of the issue.
-- `STAGE`: `author`, `implement`, `review` or `merge`.
+- `STAGE`: `implement` for ordinary new work, `author` to explicitly use Author for new or eligible saved direct-mode work, then the saved next stage (`implement`, `review` or `merge`).
 
 Optional flags:
 
@@ -38,7 +38,7 @@ A job prints one JSON line, `{"issue", "stage", "end", "reason"?, "claimError"?}
 | `deferred` | A rate limit or transient error deferred it | Back off, then retry |
 | `unclaimed` | Another claimant holds it, or the claim failed | Check `reason` and `claimError` first |
 
-Don't loop blindly on `unclaimed`, `wait`, `deferred` or `stop`. A restarted job always starts its stage fresh from saved state. A job whose issue is saved at a different stage releases it without running a session; a `merge` job also completes a finished issue's recorded completion.
+Don't loop blindly on `unclaimed`, `wait`, `deferred` or `stop`. A restarted job always starts its stage fresh from saved state. An eligible explicit `author` job checkpoints saved direct-mode work at Author and retains its return stage. Other jobs whose issues are saved at different stages release them without running a session; a `merge` job also completes a finished issue's recorded completion.
 
 ## Keep concurrent work apart
 

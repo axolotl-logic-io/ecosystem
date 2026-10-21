@@ -1,17 +1,12 @@
 // @ts-check
-// A claim of an issue the author asked about. The claim op no longer waits
-// for an answer: the orchestrator holds a needs-info issue while its trusted
-// inputs still hash to the revision asked on, so no job claims it (#243,
-// orchestrator.test.mjs "needs-info holds while the input is the one asked
-// on…", orchestrator-tick.test.mjs), and no pipeline comment, usage records
-// included, changes that revision (#457, trusted-inputs.test.mjs "no
-// pipeline comment changes the revision…"). Once a job claims it, the claim
-// clears needs-info and keeps `asked` for the author, who clears it with its
-// Gherkin.
+// Claims refuse unanswered saved questions before claim or working-label
+// writes. A changed trusted-input revision resumes the retained mode.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { test } from "node:test";
+import { trustedInputBytes } from "../../src/trusted-inputs.ts";
 import { effectNames, stateOf } from "../gh-effects-test-kit.mjs";
 import {
   claimMutationReplies,
@@ -97,3 +92,41 @@ test("a claim of an answered, asked issue takes it, clearing needs-info and keep
   );
   assert.ok(fs.existsSync(worktree(ASKED_ISSUE)));
 });
+
+const UNANSWERED_ISSUE = 49;
+for (const stage of /** @type {const} */ (["author", "implement"])) {
+  test(`a claim at ${stage} refuses unanswered trusted requirements without mutation`, () => {
+    const issue = {
+      title: "Which behavior?",
+      body: "Choose one",
+      user: { login: ALLOWED },
+    };
+    const inputs = createHash("sha256")
+      .update(trustedInputBytes(issue, []))
+      .digest("hex");
+    const state = {
+      ...newIssueState(UNANSWERED_ISSUE, stage),
+      asked: { inputs },
+    };
+    reply([
+      collaboratorReply("o/r", ALLOWED),
+      issueReply(UNANSWERED_ISSUE, issue),
+      commentsReply(UNANSWERED_ISSUE, [stateComment(ASKED_STATE, state)]),
+    ]);
+    const result = askOps({
+      op: "claim",
+      number: UNANSWERED_ISSUE,
+      stage: "author",
+      ...LANE,
+    });
+    assert.deepEqual(result, {
+      ok: true,
+      op: "claim",
+      posted: 0,
+      commentIds: [],
+      waiting: "answer",
+    });
+    assert.deepEqual(effects(), []);
+    assert.equal(fs.existsSync(worktree(UNANSWERED_ISSUE)), false);
+  });
+}

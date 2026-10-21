@@ -2,7 +2,9 @@
 // The full-flow tests' scripting: the issue a flow starts from, the model
 // turns the fake pi plays, and the issue's saved state as its state comment
 // on the fake GitHub holds it.
+import { newIssueState } from "../src/state.ts";
 import { openIssue } from "./fake-pipeline-flow-gh.mjs";
+import { withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { ISSUE } from "./pipeline-flow-test-kit.mjs";
 
 const STATE =
@@ -15,6 +17,28 @@ const STATE =
  */
 function openFlowIssue(flow, login, title, body) {
   openIssue(flow.ghDir, { number: ISSUE, title, body, login });
+}
+
+/** A saved pre-optional-Author run, without a mode marker.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ */
+function retainAuthoredIssue(flow) {
+  const {
+    authorUsed: _mode,
+    requirementsInputs: _inputs,
+    ...saved
+  } = newIssueState(ISSUE, "author");
+  withWorld(flow.ghDir, (world) => {
+    world.comments.push({
+      id: world.nextId,
+      issue: ISSUE,
+      login: world.account,
+      createdAt: "2026-10-18T00:00:00Z",
+      updatedAt: "2026-10-18T00:00:00Z",
+      body: `<!-- agent-pipeline:state\n${JSON.stringify(saved)}\n-->`,
+    });
+    world.nextId += 1;
+  });
 }
 
 /**
@@ -83,6 +107,7 @@ export {
   hardeningTurn,
   implementorTurn,
   openFlowIssue,
+  retainAuthoredIssue,
   savedState,
   securityTurn,
 };

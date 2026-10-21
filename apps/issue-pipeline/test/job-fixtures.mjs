@@ -2,6 +2,8 @@
 // The stage job tests' fixtures: issue #7 as a claim wins it at a stage, the
 // replies of the ops every stage job runs, and the author's replies and
 // session, which job-test-kit.mjs's fake ops and fake pi play.
+import { createHash } from "node:crypto";
+import { trustedInputBytes } from "../src/trusted-inputs.ts";
 import { messageEnd, outputEnd } from "./fake-rpc-pi.mjs";
 
 // The issue every job test runs for, and the trusted user who opened it.
@@ -45,8 +47,9 @@ const AUTHOR_SESSION = { events: [messageEnd(USAGE), outputEnd(AUTHORED)] };
 const PR = 42;
 const HEAD_SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 // The trusted-inputs revision the Gherkin comment was written at.
-const GHERKIN_INPUTS =
-  "0000000000000000000000000000000000000000000000000000000000000000";
+const GHERKIN_INPUTS = createHash("sha256")
+  .update(trustedInputBytes(ISSUE, []))
+  .digest("hex");
 // The account's signed Gherkin comment on issue #7, as the author posts it
 // (src/gherkin-comment.ts), which the implementor's and reviewer's tasks
 // read.
@@ -107,6 +110,8 @@ function stateAt(stage, fields = {}) {
     headSha: null,
     flows: null,
     gherkin: null,
+    authorUsed: true,
+    requirementsInputs: null,
     review: {
       round: 0,
       verdict: null,
@@ -194,6 +199,7 @@ export {
   COMMENT_ID,
   claimWon,
   GHERKIN_COMMENT,
+  GHERKIN_INPUTS,
   HEAD_SHA,
   IMPLEMENT_OPS,
   IMPLEMENTED,

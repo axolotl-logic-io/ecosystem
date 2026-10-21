@@ -4,7 +4,7 @@ This page describes how a change is checked: the Reviewer's hardening, determini
 
 ## Hardening
 
-The `review` stage runs one writable Reviewer session in phase `hardening`. It reads the Gherkin and the Developer's draft adversarially, adds regression and edge-case tests and fixes design and correctness defects. Docs in `docs/` are part of the change it hardens.
+The `review` stage runs one writable Reviewer session in phase `hardening`. It reads the trusted issue requirements, optional Author Gherkin and the Developer's draft adversarially, adds regression and edge-case tests and fixes design and correctness defects. Docs in `docs/` are part of the change it hardens.
 
 - It commits through `pipeline_commit` (see [sessions](sessions.md)). It never synchronizes with the base; integration does that at merge.
 - Its task names the actual `commands.test`, and its prompt tells it to run only targeted tests. The full gate runs afterward, outside the session.

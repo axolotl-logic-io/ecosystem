@@ -92,6 +92,8 @@ const INVALID_SHAPES = [
   { hardened: {} },
   { integration: {} },
   { gherkin: {} },
+  { authorUsed: "false" },
+  { requirementsInputs: {} },
   { flows: {} },
   { headSha: {} },
   { lease: {} },

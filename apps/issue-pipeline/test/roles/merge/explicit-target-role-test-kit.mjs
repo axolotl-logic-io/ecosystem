@@ -1,7 +1,15 @@
 // @ts-check
 // A default-deny RoleContext; only explicitly scripted ops and sessions run.
 // The imported fixture already isolated HOME/ROOT and blocked real gh/pi.
-import { INPUTS, ISSUE, PR } from "../../explicit-target-world-test-kit.mjs";
+import {
+  GHERKIN_COMMENT,
+  INPUTS,
+  ISSUE,
+  ISSUE_DATA,
+  PR,
+} from "../../explicit-target-world-test-kit.mjs";
+
+const { gherkinCommentOf } = await import("../../../src/gherkin-comment.ts");
 
 /** @typedef {import("../../../src/job/role-context.ts").RoleContext} RoleContext */
 /** @typedef {{ kind: "op", name: string, payload: object } | { kind: "session", spec: import("../../../src/job/role-context.ts").SessionSpec } | {kind: "save", state: import("../../../src/state.ts").IssueState} | {kind: "post"}} Call */
@@ -47,16 +55,10 @@ function context(w, script) {
     dirs: { job: w.place, repo: w.wt },
     issueFile: "issue.md",
     inputs: {
-      issue: { title: "Target", body: "Deliver", user: { login: "owner" } },
+      issue: ISSUE_DATA,
       comments: [],
       revision: INPUTS,
-      gherkin: {
-        id: 41,
-        rev: 1,
-        inputs: INPUTS,
-        gherkin: "Feature: delivery\n  Scenario: exact result",
-        assumptions: [],
-      },
+      gherkin: gherkinCommentOf(w.cfg, ISSUE, [GHERKIN_COMMENT]),
     },
     op: scriptedOps(script.ops, calls),
     session: async (spec) => {

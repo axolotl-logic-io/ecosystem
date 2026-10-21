@@ -75,7 +75,7 @@ Each repository must set a nonempty `allowedUsers` list; a missing or empty list
 - Comments from anyone else are withheld from the issue text sessions read, with a note counting them.
 - Neither pipeline account is ever trusted input, even if listed.
 - The trusted-input revision is a hash over the issue's title and body and the trusted comments. Visitor comments and pipeline comments never change it.
-- A changed revision voids approvals given on the old one. Today it returns the issue to the Author from any stage.
+- A changed revision voids approvals given on the old one. It returns authored work to Author and direct work to Developer for requirements review. Saved states without `authorUsed` remain authored; they are not reset to select a new mode.
 
 ## Session authority
 

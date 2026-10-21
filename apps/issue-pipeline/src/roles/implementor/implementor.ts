@@ -1,14 +1,22 @@
 // The Developer (`implementor-owns-the-change`): the implement stage's one
 // role. One session does the issue's work on the existing branch work, from
-// the Gherkin and any merge return an earlier pipeline left, and the job
+// the trusted requirements and any merge return an earlier pipeline left, and the job
 // pushes what it committed into the issue's draft PR, which stays a draft.
 // The Developer never synchronizes the branch with its base and never owns
 // the full verification: the Reviewer hardens and verifies the change next
 // (src/roles/reviewer/). Its push makes any earlier hardening, approval or
 // integration stale, so it clears them. Once the issue's code merged
-// (`state.codeMerged`) the job opens no PR and pushes nothing.
+// or an attempted merge is retained, Developer entry stops before any
+// session or operation. Read-only recovery belongs to Merge.
 
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import {
+  DEVELOPER_RECOVERY_REASON,
+  developerRecoveryRequired,
+  requirementsHold,
+  requirementsState,
+  usedAuthor,
+} from "../../requirements.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -106,19 +114,6 @@ function freshChange(state: IssueState): IssueState {
   };
 }
 
-// An issue with no Gherkin comment goes to the author first.
-function toAuthor(state: IssueState): RoleEnd {
-  const next: IssueState = {
-    ...state,
-    stage: "author",
-    resumeStage: "implement",
-  };
-  return {
-    kind: "next",
-    state: withLog(next, "no Gherkin comment yet; on to author", new Date()),
-  };
-}
-
 async function develop(ctx: RoleContext): Promise<RoleEnd> {
   const mode = changeModeOf(ctx.state);
   let { state } = ctx;
@@ -143,13 +138,31 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
   const entry = `pushed ${head}; on to review, which hardens it`;
   return {
     kind: "next",
-    state: withLog(freshChange(state), entry, new Date()),
+    state: withLog(
+      freshChange({
+        ...state,
+        requirementsInputs: ctx.inputs.revision,
+        asked: null,
+      }),
+      entry,
+      new Date(),
+    ),
   };
 }
 
 const implementorRole: Role = async (ctx: RoleContext) => {
-  if (ctx.inputs.gherkin === null) {
-    return toAuthor(ctx.state);
+  if (developerRecoveryRequired(ctx.state)) {
+    return errorStop(ctx.state, DEVELOPER_RECOVERY_REASON);
+  }
+  if (
+    usedAuthor(ctx.state) &&
+    !requirementsHold(ctx.state, ctx.inputs.gherkin, ctx.inputs.revision)
+  ) {
+    const state = requirementsState(ctx.state, "implement");
+    if (state === null) {
+      return errorStop(ctx.state, DEVELOPER_RECOVERY_REASON);
+    }
+    return { kind: "next", state };
   }
   return await develop(ctx);
 };

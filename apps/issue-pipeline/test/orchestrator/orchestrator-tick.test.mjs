@@ -66,7 +66,13 @@ function written(number, stage, { before = [], after = [], state = {} } = {}) {
   const inputs = inputsOf({ number, comments: before });
   return {
     number,
-    state: { ...newIssueState(number), number, stage, pr: PR, ...state },
+    state: {
+      ...newIssueState(number, "author"),
+      number,
+      stage,
+      pr: PR,
+      ...state,
+    },
     comments: [...before, gherkinComment(GHERKIN_ID, number, inputs), ...after],
   };
 }
@@ -148,7 +154,7 @@ test("new input at implement returns to implement, and another lane's lease hold
 test("needs-info holds on the input asked on, and an answer that landed before the first read starts the author", () => {
   const labels = ["agent:needs-info"];
   const asked = { inputs: inputsOf({ number: 1 }) };
-  const state = { ...newIssueState(1), stage: "author", asked };
+  const state = { ...newIssueState(1, "author"), stage: "author", asked };
   openWith([
     { number: 1, labels, state: { ...state, number: 1 } },
     {

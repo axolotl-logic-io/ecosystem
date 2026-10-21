@@ -1,4 +1,4 @@
-// The issue's Gherkin comment (`author-maintains-gherkin`): signed by the
+// An authored issue's optional Gherkin comment: signed by the
 // author, keyed `gherkin`, and edited in place on every revision, so GitHub
 // keeps its history. Its mark records the revision and the trusted-inputs
 // revision it was written from. The implementor and the reviewer read the

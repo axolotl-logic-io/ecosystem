@@ -1,7 +1,7 @@
 // @ts-check
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PR, world } from "../../explicit-target-world-test-kit.mjs";
+import { ISSUE, PR, world } from "../../explicit-target-world-test-kit.mjs";
 import {
   codeWrites,
   context,
@@ -225,6 +225,20 @@ test("done replay check failure cannot reuse saved security to complete unchecke
   assert.ok(end.kind === "stop");
   assert.equal(end.state.merged?.code, w.merged);
   assert.equal(end.state.security?.finding, null);
+  assert.equal(end.code, "error");
+  assert.ok(
+    end.reason.startsWith(
+      `postmerge checks failed on ${w.merged}; code remains merged`,
+    ),
+  );
+  const verifyCall = run.calls.find(
+    (call) => call.kind === "op" && call.name === "verify",
+  );
+  assert.deepEqual(verifyCall, {
+    kind: "op",
+    name: "verify",
+    payload: { number: ISSUE, codeMerged: { pr: PR, sha: w.merged } },
+  });
   assert.equal(names(run.calls).includes("finish"), false);
   assert.equal(names(run.calls).includes("session"), false);
   assert.deepEqual(codeWrites(run.calls), []);

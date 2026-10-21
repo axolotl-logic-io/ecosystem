@@ -1,5 +1,7 @@
 // @ts-check
 // Execute scripted model edits through the real commit and reply tools.
+
+import { humanComment } from "./fake-pipeline-flow-gh.mjs";
 import { gitIn } from "./fake-pipeline-flow-gh-world.mjs";
 import { writeTurnFiles } from "./pipeline-flow-pi-files-test-kit.mjs";
 
@@ -86,6 +88,10 @@ async function play(turn, tools, out) {
   if (turn.targetAdvance !== undefined) {
     const { origin, branch, before, after } = turn.targetAdvance;
     gitIn(origin, ["update-ref", `refs/heads/${branch}`, after, before]);
+  }
+  const comment = turn.humanComment;
+  if (comment !== undefined) {
+    humanComment(comment.dir, comment.issue, comment.login, comment.body);
   }
   writeTurnFiles(turn);
   await commitAll(tools.get("pipeline_commit"), turn.commits ?? [], out);

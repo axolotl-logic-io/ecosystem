@@ -41,6 +41,7 @@ import {
   QUEUE,
 } from "./merge-role-test-kit.mjs";
 
+const { policyRevision } = await import("../../../src/project-policy.ts");
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const OLDER = { ...REVISION, code: sha("8") };
 const SECURITY_TASK = /Task: `security-review`/u;
@@ -156,12 +157,35 @@ test("no authorization for the current revision goes to review without a mutatio
 });
 
 test("inputs the Gherkin predates go to the author before anything merges", async () => {
+  const target = { repo: cfg.repo, branch: cfg.baseBranch, sha: sha("b") };
+  const retained = {
+    hardened: REVISION,
+    hardenedTarget: target,
+    integration: { reviewed: OLDER, revision: REVISION },
+    verifiedSha: HEAD,
+    security: { revision: REVISION, commentId: PR, finding: null },
+    resultSecurity: {
+      revision: { ...REVISION, ...policyRevision(cfg) },
+      target,
+      commentId: PR,
+      finding: null,
+    },
+  };
   const { ctx, calls } = merging({
+    state: retained,
     gherkin: gherkinComment({ inputs: NEW_INPUTS }),
   });
   const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(state.stage, "author");
   assert.equal(state.resumeStage, "review");
+  assert.equal(state.hardened, null);
+  assert.equal(state.verifiedSha, null);
+  assert.deepEqual(state.integration, retained.integration);
+  assert.deepEqual(state.hardenedTarget, retained.hardenedTarget);
+  assert.deepEqual(state.security, retained.security);
+  assert.deepEqual(state.resultSecurity, retained.resultSecurity);
+  assert.deepEqual(opNames(calls), ["current-revision"]);
+  assert.equal(sessionsOf(calls).length, 0);
   assert.deepEqual(mutationsOf(calls), []);
 });
 

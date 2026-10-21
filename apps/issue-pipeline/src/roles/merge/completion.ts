@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
 import { ownMergeResultObservation } from "../../ops/merge-guard.ts";
+import { requirementsHold } from "../../requirements.ts";
 import {
   resultReviewTarget,
   securityRefusal,
@@ -19,7 +20,7 @@ import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended } from "../writer-session.ts";
 import { checkedMergedResult } from "./checks.ts";
-import { failed, logged, toAuthor } from "./returns.ts";
+import { failed, logged, toRequirements } from "./returns.ts";
 import type { MergedResult } from "./security.ts";
 import { rejectedAgain, securityReviewed } from "./security.ts";
 
@@ -52,7 +53,7 @@ async function complete(
 }
 
 // The finish op on the saved completion `done`. Done only when it finished;
-// new trusted inputs go to the author, and any other refusal (a security
+// new trusted inputs go to their requirements owner, and any other refusal (a security
 // review that doesn't clear the merged result) stops, so no job retries a
 // completion that can't finish.
 async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
@@ -62,7 +63,7 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   }
   const detail = `the finish op refused (${finished.reason}): ${finished.detail ?? "no detail"}`;
   if (finished.reason === "inputs-changed") {
-    return toAuthor(done, detail);
+    return toRequirements(done, detail);
   }
   return failed(done, detail);
 }
@@ -140,11 +141,10 @@ async function finishCompleted(
   const { revision, pr } = current;
   const { gherkin } = ctx.inputs;
   if (
-    gherkin === null ||
-    gherkin.inputs !== revision.inputs ||
+    !requirementsHold(state, gherkin, revision.inputs) ||
     merged.inputs !== revision.inputs
   ) {
-    return toAuthor(state, "the trusted inputs changed since the merge");
+    return toRequirements(state, "the trusted inputs changed since the merge");
   }
   const codeConfirmed =
     merged.code === null ||

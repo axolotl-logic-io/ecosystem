@@ -6,7 +6,7 @@ This page describes the `merge` stage: what it may merge, merge order, the merge
 
 The merge stage merges only the revision its authorization names: the exact hardened, checked and Security-cleared code/input revision. It reads that authorization fresh before every mutation.
 
-- A trusted-input change sends the issue back to the Author.
+- A trusted-input change sends authored work back to Author and direct work back to Developer. Direct work needs no Gherkin or substitute requirements document.
 - Any changed code head, including the Reviewer's own integration, goes back to `review` for hardening.
 - A base that moved, a conflict or a failed check gets the Reviewer's integration (see [sync](sync.md)).
 

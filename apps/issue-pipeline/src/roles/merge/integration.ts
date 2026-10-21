@@ -13,7 +13,13 @@ import { currentRevision } from "../revision-source.ts";
 import { verifiedHead } from "../verification.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
-import { counted, logged, toAuthor, toReview, waiting } from "./returns.ts";
+import {
+  counted,
+  logged,
+  toRequirements,
+  toReview,
+  waiting,
+} from "./returns.ts";
 import { syncCode } from "./sync.ts";
 
 // The config's bounds on an integration's sessions; its defaults fill them
@@ -98,7 +104,10 @@ function receipt(
   },
 ): RoleEnd {
   if (revision.inputs !== hardened.inputs) {
-    return toAuthor(state, "the trusted inputs changed during the integration");
+    return toRequirements(
+      state,
+      "the trusted inputs changed during the integration",
+    );
   }
   if (revision.code !== verified) {
     return toReview(

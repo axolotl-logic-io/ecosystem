@@ -22,6 +22,7 @@ import { codeMergedOf, issuePullRequest } from "../revision.ts";
 import { readClaimState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { newIssueState, resumeOf, withLog } from "../state.ts";
+import { requestedAuthorState } from "./author-request.ts";
 import { historicalPrFor } from "./prs.ts";
 
 // `show-ref --exists` distinguishes absence from unreadable repository history.
@@ -109,11 +110,12 @@ function startingState(
   cfg: Config,
   n: number,
   comments: readonly IssueComment[],
+  stage: "author" | "implement",
 ): IssueState {
   const saved = readClaimState(cfg, n, comments);
   if (saved === null) {
     assertFirstClaim(cfg, n, comments);
-    return { ...newIssueState(n), branch: assignedBranch(cfg, n, null) };
+    return { ...newIssueState(n, stage), branch: assignedBranch(cfg, n, null) };
   }
   if (saved.stage === "done" && saved.merged === null) {
     throw new OpsError(`#${n} is done`);
@@ -261,12 +263,16 @@ function claimedState(
   cfg: Config,
   n: number,
   comments: readonly IssueComment[],
-  now: Date,
+  startAt: { now: Date; stage: "author" | "implement" },
 ): ClaimedState {
-  const start = startingState(cfg, n, comments);
+  const { now, stage } = startAt;
+  const start = startingState(cfg, n, comments, stage);
   const remote = remoteHead(cfg, n);
   const adoptedState = adoptPush(start, remote, lastPush(cfg, n), now);
-  const state = reconciled(cfg, n, adoptedState ?? start, now);
+  const state = requestedAuthorState(
+    reconciled(cfg, n, adoptedState ?? start, now),
+    startAt,
+  );
   return {
     state,
     remote,

@@ -7,7 +7,7 @@ The pipeline loads this page into every Reviewer session of stage `merge`, phase
 The task gives this run's facts:
 - the issue file and the checkout;
 - the base branch;
-- the Gherkin, for `check-fix`;
+- the trusted requirements source and optional Author Gherkin, for `check-fix`;
 - the conflicting files, the commit being rebased onto, the attempt number, and why the last resolution was rejected, for `conflict-resolution`;
 - the failed checks with their logs, and the attempt number, for `check-fix`;
 - the reply's shape.

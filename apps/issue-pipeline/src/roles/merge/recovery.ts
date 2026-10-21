@@ -8,13 +8,17 @@ import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
 import { recordedAuthorization } from "../../merged-authorization.ts";
+import { requirementsHold } from "../../requirements.ts";
 import { currentResultObservation } from "../../security-clearance.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { afterOwnMerge } from "./after-merge.ts";
 import { checkedMergedResult } from "./checks.ts";
 import { reviewedAndCompleted, stillAt } from "./completion.ts";
-import { toAuthor } from "./returns.ts";
+import { toRequirements } from "./returns.ts";
+
+const OWN_MERGE_INPUTS_CHANGED =
+  "the trusted inputs changed since the own merge";
 
 const MERGE_REPLY = z.union([
   z.looseObject({
@@ -82,12 +86,11 @@ async function recoverOwnMerge(
   const { revision, pr } = current;
   const { gherkin } = ctx.inputs;
   if (
-    gherkin === null ||
-    gherkin.inputs !== revision.inputs ||
+    !requirementsHold(state, gherkin, revision.inputs) ||
     authorized.inputs !== revision.inputs ||
     merged.inputs !== revision.inputs
   ) {
-    return toAuthor(state, "the trusted inputs changed since the own merge");
+    return toRequirements(state, OWN_MERGE_INPUTS_CHANGED);
   }
   if (
     pr === null ||
