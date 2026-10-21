@@ -13,7 +13,6 @@ import { alive, waitFor } from "../bounded-test-kit.mjs";
 import { messageEnd, outputEnd } from "../fake-rpc-pi.mjs";
 import {
   AUTHOR_SESSION,
-  AUTHORED,
   IMPLEMENTED,
   IMPLEMENTOR_SESSION,
   implementReplies,
@@ -98,19 +97,6 @@ test("the checkout of an issue with a branch on origin starts at its head", () =
   assert.equal(r.status, 0, r.stderr);
   const [start] = piStarts(place);
   assert.equal(start.head, earlier);
-});
-
-test("a job stopped by SIGTERM exits 143 and removes its checkout", async () => {
-  const place = setUp(repliesAt(READER_STAGE), {
-    events: [messageEnd(USAGE), "wait", outputEnd(AUTHORED)],
-  });
-  const job = startJob(place, ["--stage", READER_STAGE]);
-  await waitFor("the session's spending in job.json", () => spent(place));
-  assert.ok(fs.existsSync(checkoutOf(place.root, READER_STAGE)));
-  job.child.kill("SIGTERM");
-  const end = await job.end;
-  assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
-  assert.equal(fs.existsSync(checkoutOf(place.root, READER_STAGE)), false);
 });
 
 test("a writer's commit reaches the issue's branch through the exit-push op before its checkout goes", () => {

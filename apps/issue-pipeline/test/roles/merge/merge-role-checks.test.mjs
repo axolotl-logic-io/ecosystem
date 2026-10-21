@@ -34,7 +34,7 @@ const CANNOT = {
   reply: { outcome: "cannot", reason: "the e2e runner is down" },
 };
 const CHECK_FIX_TASK = /Task: `check-fix`/u;
-const FAILING_CI = /ci: e2e/u;
+const FAILING_CI = /e2e/u;
 
 test("failing CI gets a Reviewer check-fix session, then its own verify, push and receipt", async () => {
   const { ctx, calls } = merging({

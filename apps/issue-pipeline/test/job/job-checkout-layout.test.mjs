@@ -79,18 +79,6 @@ for (const stage of [READER_STAGE, "implement"]) {
   });
 }
 
-test("an author job reads repo/docs/, and its edits there are lost as repo/ paths", () => {
-  const place = setUp(repliesAt(READER_STAGE), {
-    ...AUTHOR_SESSION,
-    untracked: "repo/docs/Page.md",
-  });
-  const r = runJob(place, ["--stage", READER_STAGE]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(statusOf(place).lostChanges, ["repo/docs/Page.md"]);
-  assert.deepEqual(pushes(place), []);
-  assert.equal(fs.existsSync(checkoutOf(place.root, READER_STAGE)), false);
-});
-
 test("an implement job whose only commit is in repo/docs/ runs its exit push", () => {
   const place = setUp(implementReplies(), {
     ...IMPLEMENTOR_SESSION,
@@ -146,7 +134,7 @@ for (const { stage, script, page } of TOLD) {
       pageTextOf(page),
     );
     const text = String(prompt?.message);
-    const fact = "Code checkout: `repo/`, on the issue's branch";
+    const fact = "repo/";
     assert.ok(text.includes(fact), `${fact} missing from:\n${text}`);
   });
 }

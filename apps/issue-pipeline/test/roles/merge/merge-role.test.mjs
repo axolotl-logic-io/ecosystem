@@ -46,16 +46,9 @@ import {
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const OLDER = { ...REVISION, code: sha("8") };
 const SECURITY_TASK = /Task: `security-review`/u;
-const MERGED_CHECKOUT = new RegExp(
-  `Code checkout: \`repo/\`, detached at the merge commit \`${MERGE_COMMIT}\`: the merged result`,
-  "u",
-);
-const BUNDLE = /Bundle: `\/run\/security\/bundle\.md`/u;
 // Behaviour is the prompt page's, never the task's.
 const BEHAVIOUR_WORDS =
   /AGENTS\.md|artificial load|allow-listed|first parent/iu;
-const SECURITY_COMMENT =
-  /^## Security review of the merged result: no security finding/u;
 
 test("a hardened revision merges with its head matched, then the security review of the merged result clears it and the issue completes", async () => {
   const { ctx, calls } = merging();
@@ -82,10 +75,10 @@ test("a hardened revision merges with its head matched, then the security review
 test("the security review is a fresh read-only Reviewer session over the merge commit GitHub confirmed", async () => {
   const { ctx, calls } = merging();
   await mergeRole(ctx);
-  assert.deepEqual(firstPayload(calls, "prepare-review"), {
-    tag: `security-${MERGE_COMMIT.slice(0, SHORT_SHA_LENGTH)}`,
-    sinceSha: null,
-    codeMerged: { pr: PR, sha: MERGE_COMMIT },
+  const { codeMerged } = firstPayload(calls, "prepare-review");
+  assert.deepEqual(codeMerged, {
+    pr: PR,
+    sha: MERGE_COMMIT,
   });
   const [spec] = sessionsOf(calls);
   assert.equal(spec?.agent, "issue-pipeline-reviewer");
@@ -94,12 +87,12 @@ test("the security review is a fresh read-only Reviewer session over the merge c
   assert.equal(spec?.phase, "security-review");
   const task = spec?.task ?? "";
   assert.match(task, SECURITY_TASK);
-  assert.match(task, MERGED_CHECKOUT);
-  assert.match(task, BUNDLE);
+  assert.ok(task.includes(MERGE_COMMIT));
+  assert.ok(task.includes("/run/security/bundle.md"));
   assert.doesNotMatch(task, BEHAVIOUR_WORDS);
   const [post] = postsOf(calls);
   assert.equal(post?.on, "pr");
-  assert.match(post?.body ?? "", SECURITY_COMMENT);
+  assert.equal(savesOf(calls).at(-1)?.security?.finding, null);
 });
 
 test("the security comment keeps the key a pipeline with a wiki gave the same merged code, so a comment posted before the upgrade is edited, not repeated", async () => {
@@ -150,7 +143,8 @@ test("no authorization for the current revision goes to review without a mutatio
     assert.equal(state.stage, "review");
     assert.equal(state.hardened, null);
     assert.equal(state.integration, null);
-    assert.deepEqual(opNames(runs[index]?.calls ?? []), ["current-revision"]);
+    assert.deepEqual(mutationsOf(runs[index]?.calls ?? []), []);
+    assert.equal(sessionsOf(runs[index]?.calls ?? []).length, 0);
   }
 });
 

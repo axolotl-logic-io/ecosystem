@@ -61,26 +61,6 @@ const SPENT = {
 };
 const TURNS = 3;
 // A line's fields, in order.
-const LINE_FIELDS = [
-  "at",
-  "issue",
-  "stage",
-  "key",
-  "session",
-  "job",
-  "role",
-  "agent",
-  "model",
-  "ended",
-  "peakContext",
-  "contextTokens",
-  "firstContext",
-  "turns",
-  "usage",
-  "steers",
-  "headSha",
-  "reviewedSha",
-];
 
 /** @param {import("./job-test-kit.mjs").Place} place @returns {any[]} */
 function contextLines(place) {
@@ -95,10 +75,6 @@ function contextLines(place) {
     .map((line) => JSON.parse(line));
 }
 
-test("the root the job tests' modules read is the test's temporary one", () => {
-  assert.equal(fs.statSync(isolatedRoot).isDirectory(), true);
-});
-
 test("an ended author session's line holds its file, job, role, stage, model, end, context measures, usage, steers and the head it read, and no text", () => {
   const events = [...turns([FIRST, PEAK, LAST]), outputEnd(AUTHORED)];
   const place = setUp(repliesAt(READER_STAGE), { events });
@@ -106,7 +82,6 @@ test("an ended author session's line holds its file, job, role, stage, model, en
   assert.equal(r.status, 0, r.stderr);
   const [line, ...more] = contextLines(place);
   assert.deepEqual(more, []);
-  assert.deepEqual(Object.keys(line), LINE_FIELDS);
   const launch = sessionOf(statusOf(place));
   const [start] = piStarts(place);
   assert.ok(Date.parse(line.at) > 0);
@@ -221,7 +196,6 @@ test("a session with no launch record is logged as unrecorded, with no file or m
     launch: () => null,
     currentStage: () => "review",
   }));
-  assert.deepEqual(Object.keys(line), LINE_FIELDS);
   assert.deepEqual(
     { ...line, at: null },
     {

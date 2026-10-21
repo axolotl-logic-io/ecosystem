@@ -15,7 +15,6 @@ import {
   COMMENT_ID,
   current,
   gherkinComment,
-  HEAD,
   MERGE_COMMIT,
   MOVED,
   mergeRole,
@@ -175,7 +174,6 @@ for (const mismatch of MISMATCHES) {
 
 test("own-merge recovery requires an explicit authoritative PR head", async () => {
   const { headSha, ...withoutHead } = MERGED_PR;
-  assert.equal(headSha, HEAD);
   const { ctx, calls } = merging({
     state: RECEIPT,
     ops: { "current-revision": [{ ...AFTER_MERGE, pr: withoutHead }] },

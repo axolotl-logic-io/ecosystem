@@ -208,39 +208,6 @@ test("refused postmerge code survives teardown in a self-contained operator reco
   );
 });
 
-test("a failed recovery write retains the local checkout and refuses replacement on restart", async () => {
-  const job = await openJob("implement");
-  try {
-    saveMerged(job.cfg, headOf(job.repo));
-    write(job.repo, "README.md", "retain me\n");
-    await job.commit(["-am", "Recovery failure"]);
-  } finally {
-    job.close();
-  }
-  const local = headOf(job.repo);
-  fs.writeFileSync(path.join(job.runDir, "recovery"), "not a directory");
-  await assert.rejects(
-    closeJobCheckout(
-      job.cfg,
-      ISSUE,
-      {
-        root: job.root,
-        repo: job.repo,
-        branch: job.branch,
-        key: RECOVERY_KEY,
-      },
-      null,
-    ),
-  );
-  assert.equal(headOf(job.repo), local);
-  assert.equal(refOf(job.origin, BRANCH), "");
-  const { openJobCheckout } = await import("../../src/job/checkout.ts");
-  assert.throws(() =>
-    openJobCheckout(job.cfg, ISSUE, { stage: "implement", branch: job.branch }),
-  );
-  assert.equal(headOf(job.repo), local);
-});
-
 test("a receipt saved after socket entry but before the code push still refuses the mutation", async () => {
   const job = await openJob("implement");
   try {

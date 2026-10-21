@@ -35,18 +35,18 @@ for (const actor of ["owner", "merge", "dev", "visitor", "revoked"]) {
   });
 }
 
-for (const mismatch of [
-  "reviewer",
-  "author",
-  "pr",
-  "revision",
-  "absent",
-  "request",
-  "edited",
-  "legacy",
-  "malformed",
-  "inputs",
-]) {
+for (const [mismatch, reason] of Object.entries({
+  reviewer: "scope",
+  author: "scope",
+  pr: "scope",
+  revision: "scope",
+  absent: "scope",
+  request: "scope",
+  edited: "provenance",
+  legacy: "state",
+  malformed: "state",
+  inputs: "inputs",
+})) {
   test(`holds development review requests with ${mismatch} mismatch`, async () => {
     const hub = world();
     hub.assigned.length = 0;
@@ -93,7 +93,7 @@ for (const mismatch of [
     }
     const plan = await discoverAssignments(hub.config, hub);
     assert.equal(plan.candidates.length, 0);
-    assert.ok(plan.holds.length > 0);
+    assert.equal(plan.holds[0]?.reason, reason);
   });
 }
 

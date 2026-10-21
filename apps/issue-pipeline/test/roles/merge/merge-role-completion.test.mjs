@@ -61,16 +61,6 @@ function betweenSessionAndFinish(calls) {
   return names.slice(names.indexOf("session") + 1, names.indexOf("finish"));
 }
 
-test("a finish that fails leaves the completion saved for a retry", async () => {
-  const { ctx, calls } = merging({
-    ops: { finish: [() => Promise.reject(new Error("gh: network"))] },
-  });
-  await assert.rejects(mergeRole(ctx), NETWORK);
-  const saved = savesOf(calls).at(-1);
-  assert.equal(saved?.stage, "done");
-  assert.deepEqual(saved?.merged, MERGED_REVISION);
-});
-
 test("after a confirmed code merge, the merge commit is verified, reviewed for security and completed", async () => {
   const { ctx, calls } = merging({
     state: {
@@ -93,12 +83,18 @@ test("after a confirmed code merge, the merge commit is verified, reviewed for s
   const { codeMerged: reviewedMerge } = firstPayload(calls, "prepare-review");
   assert.deepEqual(reviewedMerge, CODE_MERGED.codeMerged);
   assert.ok(freshBefore(calls, "prepare-review"));
-  assert.deepEqual(betweenSessionAndFinish(calls), [
-    "current-revision",
-    "post",
-    "save",
-    "save",
-  ]);
+  const between = betweenSessionAndFinish(calls);
+  for (const mutation of [
+    "sync-base",
+    "finish-sync",
+    "push",
+    "merge",
+    "ready-pr",
+    "open-pr",
+  ]) {
+    assert.equal(between.includes(mutation), false, mutation);
+  }
+  assert.ok(freshBefore(calls, "finish"));
 });
 
 test("a code merge needs a hardening of the merge commit, and GitHub's confirmation", async () => {
@@ -134,6 +130,8 @@ test("a saved completion whose finish crashed rechecks M before finishing again"
   await assert.rejects(mergeRole(crashed.ctx), NETWORK);
   const saved = savesOf(crashed.calls).at(-1);
   assert.ok(saved !== undefined);
+  assert.equal(saved.stage, "done");
+  assert.deepEqual(saved.merged, MERGED_REVISION);
   const replay = fakeContext({
     stage: "merge",
     state: saved,

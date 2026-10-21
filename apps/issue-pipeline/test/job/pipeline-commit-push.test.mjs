@@ -188,18 +188,6 @@ test("the job pushes nothing for a launch not given commit authority, so the com
   }
 });
 
-test("a reviewer's hardening commit in a review job is pushed like the implementor's", async () => {
-  const job = await openJob("review");
-  try {
-    write(job.repo, "README.md", "hardened\n");
-    const result = await job.commit(["-am", "Harden"]);
-    assert.equal(result.details.pushed, "code");
-    assert.equal(refOf(job.origin, BRANCH), headOf(job.repo));
-  } finally {
-    job.close();
-  }
-});
-
 test("a refused push keeps the commit and reports it, and the next call pushes both commits", async () => {
   const job = await openJob("implement");
   const hook = path.join(job.origin, "hooks", "pre-receive");

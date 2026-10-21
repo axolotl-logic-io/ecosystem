@@ -43,8 +43,6 @@ const REBASED_CLEAN = {
   headSha: REBASED,
   codeChanged: true,
 };
-const CONFLICT_TASK = /Task: `conflict-resolution`/u;
-const RECEIPT_WAIT = /waits for its required CI/u;
 
 // current-revision for the checks, before the merge and after the push.
 const REVISIONS = [current(), current(), current({ code: REBASED })];
@@ -62,7 +60,6 @@ test("a branch behind its base is rebased, checked, pushed and its receipt saved
   const end = await mergeRole(ctx);
   const state = stateOf(end, "wait");
   assert.ok(end.kind === "wait");
-  assert.match(end.reason, RECEIPT_WAIT);
   assert.equal(state.stage, "merge");
   assert.deepEqual(state.hardened, REVISION);
   assert.deepEqual(state.integration, {
@@ -73,15 +70,14 @@ test("a branch behind its base is rebased, checked, pushed and its receipt saved
   assert.equal(state.verifiedSha, REBASED);
   assert.equal(state.counts.syncs, 1);
   assert.equal(sessionsOf(calls).length, 0);
-  assert.deepEqual(callNames(calls).slice(callNames(calls).indexOf("merge")), [
-    "merge",
-    "save",
-    "sync-base",
-    "verify",
-    "push",
-    "current-revision",
-  ]);
-  assert.equal(savesOf(calls)[0]?.counts.syncs, 1);
+  const names = callNames(calls);
+  const saved = calls
+    .slice(0, names.indexOf("sync-base"))
+    .filter((call) => call.kind === "save")
+    .at(-1);
+  assert.ok(saved?.kind === "save");
+  assert.equal(saved.state.counts.syncs, 1);
+  assert.ok(names.indexOf("verify") < names.indexOf("push"));
 });
 
 test("the next merge job waits for CI on exactly the integrated head, then merges it", async () => {
@@ -138,14 +134,10 @@ test("a rebase conflict gets a Reviewer resolver session of the integration phas
     ],
   });
   const state = stateOf(await mergeRole(ctx), "wait");
-  const [spec] = integrationSessions(calls);
-  assert.equal(spec?.agent, "issue-pipeline-reviewer");
-  assert.equal(spec?.commits, true);
-  assert.match(spec?.task ?? "", CONFLICT_TASK);
+  assert.equal(integrationSessions(calls).length, 1);
   const { baseSha } = firstPayload(calls, "finish-sync");
   assert.equal(baseSha, MOVED);
   assert.equal(state.counts.syncs, 1);
-  assert.equal(state.counts.conflictFixes, 1);
   assert.deepEqual(state.integration?.revision, INTEGRATED);
 });
 

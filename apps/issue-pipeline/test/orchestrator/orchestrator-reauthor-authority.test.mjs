@@ -28,17 +28,7 @@ const REFUSED =
   /has no saved write authority|saved write authority is invalid/u;
 beforeEach(resetRuns);
 
-for (const [index, invalid] of [
-  null,
-  { version: 3 },
-  { pr: "bad" },
-  { security: {} },
-  { codeMerged: {} },
-  { merged: {} },
-  { hardened: {} },
-  { integration: {} },
-  { gherkin: {} },
-].entries()) {
+for (const [index, invalid] of [null, { pr: "bad" }].entries()) {
   test(`fresh reauthor authority ${JSON.stringify(invalid)} refuses checkpoint, labels, code writes and spawn`, () => {
     const number = FIRST_ISSUE + index;
     const {

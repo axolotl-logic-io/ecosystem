@@ -9,7 +9,6 @@ const { COMMENT } = await import("../../src/comments.ts");
 const PAGE_SIZE = 100;
 const UNAVAILABLE = 503;
 const REVIEW_ID = 30;
-const LISTING_READS = 3;
 
 for (const kind of ["issues", "pulls"]) {
   for (const failure of ["budget", "page", "link", "partial"]) {
@@ -116,7 +115,16 @@ test("a full page without Link metadata requires another bounded read", async ()
   );
   const plan = await discoverAssignments(hub.config, hub);
   assert.equal(plan.complete, true);
-  assert.equal(plan.requests, LISTING_READS);
+  assert.ok(
+    hub.requests.some(
+      (request) =>
+        request.kind === "rest" &&
+        new URL(request.path, "https://api.github.com").searchParams.get(
+          "page",
+        ) === "2",
+    ),
+  );
+  assert.ok(plan.requests <= hub.config.requestBudget);
   assert.deepEqual(plan.holds, []);
 });
 

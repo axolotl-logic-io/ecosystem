@@ -23,6 +23,7 @@ import { logOf, setUp, startJob } from "./job-test-kit.mjs";
 /** @import { Place } from "./job-test-kit.mjs" */
 
 // Where the fake ops writes the pid of the hung op's sleep.
+const OP_FAILED = /op failed/u;
 const HANG_PID = "hang.pid";
 // 128 + each signal's number.
 const STOPPED_BY_SIGTERM = 143;
@@ -84,6 +85,7 @@ for (const [signal, code] of SIGNAL_CODES) {
     job.child.kill(signal);
     const end = await job.end;
     assert.equal(end.status, code, end.stderr);
+    assert.doesNotMatch(end.stderr, OP_FAILED);
     const { state, asked } = issueStateOf(place);
     assert.equal(typeof asked.asked?.inputs, "string");
     assert.deepEqual(

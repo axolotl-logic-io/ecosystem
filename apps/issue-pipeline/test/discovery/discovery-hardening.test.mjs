@@ -162,6 +162,16 @@ test("a full final page with coherent Link metadata is complete", async () => {
   });
   const plan = await discoverAssignments(hub.config, hub);
   assert.equal(plan.complete, true);
-  assert.equal(plan.requests, 2);
+  assert.ok(plan.requests <= hub.config.requestBudget);
+  assert.equal(
+    hub.requests.some(
+      (request) =>
+        request.kind === "rest" &&
+        new URL(request.path, "https://api.github.com").searchParams.get(
+          "page",
+        ) === "2",
+    ),
+    false,
+  );
   assert.deepEqual(plan.holds, []);
 });

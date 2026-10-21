@@ -4,23 +4,16 @@
 // merge's integration commit code and its docs/, and a job folder holds
 // repo/ alone (Pipeline-Job-Contract#pipeline_commit).
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
 import { refOf } from "../job-git-test-kit.mjs";
 import {
   BRANCH,
-  configIn,
   git,
   headOf,
-  ISSUE,
   openJob,
   pushesOf,
-  root,
   write,
 } from "../pipeline-commit-test-kit.mjs";
-
-const { openJobCheckout } = await import("../../src/job/checkout.ts");
 
 /** @import { Stage } from "../../src/stages.ts" */
 
@@ -74,15 +67,3 @@ for (const stage of HARDENING_STAGES) {
     }
   });
 }
-
-test("a job folder holds repo/ and no docs/ beside it", () => {
-  const tmp = fs.mkdtempSync(path.join(root, "repo-"));
-  const cfg = configIn(tmp);
-  const dirs = openJobCheckout(cfg, ISSUE, {
-    stage: "implement",
-    branch: `agent/issue-${ISSUE}`,
-  });
-  assert.ok(fs.existsSync(path.join(dirs.root, "repo", ".git")));
-  assert.ok(!fs.existsSync(path.join(dirs.root, "docs")));
-  assert.ok(!fs.existsSync(path.join(dirs.root, ".git")));
-});

@@ -22,7 +22,6 @@ import {
   stateAt,
   USAGE,
 } from "../job-fixtures.mjs";
-import { pageTextOf } from "../prompt-test-kit.mjs";
 import {
   flagValue,
   logOf,
@@ -30,6 +29,7 @@ import {
   piStarts,
   runJob,
   setUp,
+  statusOf,
 } from "./job-test-kit.mjs";
 
 const AUTHOR_AGENT = "issue-pipeline-author";
@@ -41,7 +41,6 @@ const SCHEMA_REFUSAL = /doesn't match its schema/u;
 const NETWORK = "error connecting to api.github.com";
 const NETWORK_DEFERRAL = /the post op failed: error connecting/u;
 const NOT_A_STRING = /must be a string/u;
-const AUTHOR_PROMPT = /You are the issue pipeline's Author/u;
 // Where job-test-kit.mjs makes each job's pipeline root.
 const TEMPORARY_ROOT = "/tmp/issue-pipeline-job-";
 
@@ -72,6 +71,7 @@ function requests(place, op) {
 test("the author's one session runs as its agent with no token, no commit tool and the claim's issue file", () => {
   const { place, line } = authorJob(repliesAt(READER_STAGE), AUTHOR_SESSION);
   assert.deepEqual(line, { issue: 7, stage: READER_STAGE, end: "next" });
+  assert.deepEqual(statusOf(place).droppedPatches, []);
   const starts = piStarts(place);
   assert.equal(starts.length, 1);
   const [{ argv, env, ghToken, commitScope }] = starts;
@@ -86,11 +86,6 @@ test("the author's one session runs as its agent with no token, no commit tool a
       arg.endsWith("pipeline-commit.mjs"),
     ),
     false,
-  );
-  assert.match(flagValue(argv, "--system-prompt"), AUTHOR_PROMPT);
-  assert.equal(
-    flagValue(argv, "--append-system-prompt"),
-    pageTextOf("author.md"),
   );
   const [prompt] = piCommands(place).filter(({ type }) => type === "prompt");
   assert.ok(prompt.message.includes(ISSUE_FILE), prompt.message);

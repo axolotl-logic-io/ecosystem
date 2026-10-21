@@ -24,6 +24,9 @@ import {
   statusOf,
 } from "./job-test-kit.mjs";
 
+const { loadConfig } = await import("../../src/config.ts");
+const { runtimeBoundary } = await import("../../src/job/runtime-policy.ts");
+
 const NAMES_JOB_ROLES = /jobRoles/u;
 const STEER_BOUNDARY = /--steer can't be combined with --print-boundary/u;
 const GH_VARS = [
@@ -104,32 +107,15 @@ function placeAt(jobRoles, stage) {
   return setUp(repliesAt(stage), AUTHOR_SESSION, { jobRoles });
 }
 
-test("a reader session's pi gets none of the gh token variables nor a role's token", () => {
-  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, READER_STAGE);
-  const r = runJob(place, ["--stage", READER_STAGE], TOKENS_ENV);
-  assert.equal(r.status, 0, r.stderr);
-  const [start] = piStarts(place);
-  for (const name of [...GH_VARS, "W_TOKEN"]) {
-    assert.ok(!start.env.includes(name), name);
-  }
-  assert.ok(start.env.includes("PATH"));
-  assert.equal(start.ghToken, null);
-});
-
-test("a writer session's pi gets no gh token, even its role's tokenEnv", () => {
-  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "implement");
-  runJob(place, ["--stage", "implement"], TOKENS_ENV);
-  const [start] = piStarts(place);
-  assert.equal(start.ghToken, null);
-  for (const name of [...GH_VARS, "W_TOKEN"]) {
-    assert.ok(!start.env.includes(name), name);
-  }
-});
-
 test("a writer session's pi loads pipeline_commit with its commit scope, and job.json records it committing", () => {
-  const place = placeAt({}, "implement");
-  runJob(place, ["--stage", "implement"]);
+  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, "implement");
+  const end = runJob(place, ["--stage", "implement"], TOKENS_ENV);
+  assert.equal(end.status, 0, end.stderr);
   const [start] = piStarts(place);
+  assert.equal(start.ghToken, null);
+  for (const name of [...GH_VARS, "W_TOKEN"]) {
+    assert.equal(start.env.includes(name), false, name);
+  }
   assert.ok(
     extensionsOf(start.argv).some((file) => COMMIT_EXTENSION.test(file)),
   );
@@ -140,9 +126,15 @@ test("a writer session's pi loads pipeline_commit with its commit scope, and job
 });
 
 test("a reader session's pi gets neither pipeline_commit, a commit scope nor a tool that writes, and job.json records it read-only", () => {
-  const place = placeAt({}, READER_STAGE);
-  runJob(place, ["--stage", READER_STAGE]);
+  const place = placeAt({ writer: { tokenEnv: "W_TOKEN" } }, READER_STAGE);
+  const end = runJob(place, ["--stage", READER_STAGE], TOKENS_ENV);
+  assert.equal(end.status, 0, end.stderr);
   const [start] = piStarts(place);
+  assert.equal(start.ghToken, null);
+  assert.ok(start.env.includes("PATH"));
+  for (const name of [...GH_VARS, "W_TOKEN"]) {
+    assert.equal(start.env.includes(name), false, name);
+  }
   assert.ok(
     !extensionsOf(start.argv).some((file) => COMMIT_EXTENSION.test(file)),
   );
@@ -153,34 +145,6 @@ test("a reader session's pi gets neither pipeline_commit, a commit scope nor a t
   const session = sessionOf(statusOf(place));
   assert.deepEqual([session.commits, session.phase], [false, null]);
 });
-
-/** @param {string} root @returns {object} */
-function expectedRuntime(root) {
-  return {
-    nativeVersion: "1.2.0",
-    providerVersion: "0.4.3",
-    home: path.join(root, "model-home"),
-    providerExtension: path.join(root, "fixture-provider/index.ts"),
-    credentialEnv: ["PIPELINE_MODEL_KEY"],
-    projectConfiguration: "disabled",
-    resources: "explicit extensions only",
-    mode: "rpc",
-    providerCacheOnlyFlag: "--print",
-    providerScope: "OpenAI builtin via distinct proxy endpoint only",
-    ambientAuth: "OPENAI_API_KEY only when explicitly declared",
-    nativeOffline: true,
-    policies: ["author", "implementor", "reviewer"].map((role) => ({
-      role,
-      provider: "openai",
-      id: "gpt-6.1-sol",
-      contextWindow: 272_000,
-      targetTokens: 175_000,
-      enabled: true,
-      reserveTokens: 97_000,
-      keepRecentTokens: 30_000,
-    })),
-  };
-}
 
 for (const [stage, expected] of Object.entries(EXPECTED)) {
   test(`--print-boundary declares the ${stage} stage's boundary and starts nothing`, () => {
@@ -195,7 +159,11 @@ for (const [stage, expected] of Object.entries(EXPECTED)) {
       new Set(Object.keys(boundary)),
       new Set(["role", "checkout", "access", "env", "network", "runtime"]),
     );
-    assert.deepEqual(boundary.runtime, expectedRuntime(place.root));
+    const config = loadConfig(place.config);
+    assert.deepEqual(
+      boundary.runtime,
+      runtimeBoundary(config.runtime, config.models),
+    );
     assert.equal(boundary.role, expected.role);
     assert.deepEqual(boundary.access, expected.access);
     assert.equal(boundary.checkout, checkoutOf(place.root, stage));

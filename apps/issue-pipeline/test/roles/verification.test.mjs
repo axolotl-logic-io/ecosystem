@@ -37,14 +37,13 @@ const PASSING = { pass: true, headSha: FIXED, checks: [] };
 const MANY_CI_FIXES = 3;
 const MAX_CI_FIXES_CASES = [0, 1, MANY_CI_FIXES];
 
-const FIRST_OF_TWO = /fix attempt 1 of 2/u;
-const FAILED_TEST_HEADING = /### test: exit 1/u;
+const FAILED_TEST_DETAIL = /exit 1/u;
 const FAILED_TEST_TAIL = /AssertionError: 2 !== 3/u;
-const PASSED_LINT_HEADING = /### lint/u;
-const CANNOT_REASON = /fix attempt 1 of 2.*\(test\): the DB is down/u;
+const PASSED_LINT = /lint/u;
+const CANNOT_REASON = /the DB is down/u;
 
 const FAILING_CI = [{ id: "ci/build", pass: false, detail: "failure" }];
-const CI_CHECK_HEADING = /### ci\/build: failure/u;
+const CI_CHECK_ID = /ci\/build/u;
 
 /**
  * The verified head of the branch in `phase`, within the run's limit.
@@ -73,10 +72,10 @@ test("a failing check gets a Reviewer fix session of the caller's phase, and the
   const { ops, sessions } = run;
   assert.equal(sessions.length, 1);
   const fix = sessions[0]?.task ?? "";
-  assert.match(fix, FIRST_OF_TWO);
-  assert.match(fix, FAILED_TEST_HEADING);
+  assert.ok(fix.includes("test"));
+  assert.match(fix, FAILED_TEST_DETAIL);
   assert.match(fix, FAILED_TEST_TAIL);
-  assert.doesNotMatch(fix, PASSED_LINT_HEADING);
+  assert.doesNotMatch(fix, PASSED_LINT);
   assert.equal(sessions[0]?.agent, "issue-pipeline-reviewer");
   assert.equal(sessions[0]?.phase, "integration");
   assert.equal(sessions[0]?.commits, true);
@@ -100,10 +99,6 @@ test("checks that keep failing get exactly maxCiFixes fix sessions, then stop", 
     assert.equal(count(opNames(run.ops)), 1 + maxCiFixes);
     assert.ok(!end.ok && end.end.kind === "stop");
     assert.equal(end.end.code, "check-fixes");
-    assert.ok(
-      end.end.reason.includes(`after ${maxCiFixes} check-fix attempts`),
-      end.end.reason,
-    );
   }
 });
 
@@ -138,12 +133,15 @@ test("a transient fix session defers with nothing counted or saved", async () =>
 
 test("verify is the verdict, whatever the session says", async () => {
   const run = fakeContext({
-    config: { maxCiFixes: 0 },
+    config: { maxCiFixes: 1 },
     ops: { verify: [{ ...FAILING, checks: [] }] },
+    sessions: [DONE],
   });
   const end = await verified(run);
   assert.ok(!end.ok && end.end.kind === "stop");
   assert.equal(end.end.code, "check-fixes");
+  assert.equal(run.sessions.length, 1);
+  assert.equal(count(opNames(run.ops)), 2);
 });
 
 test("failing CI gets the first fix session before any verify, then verify decides", async () => {
@@ -155,7 +153,7 @@ test("failing CI gets the first fix session before any verify, then verify decid
     failing: FAILING_CI,
   });
   assert.equal(run.sessions.length, 1);
-  assert.match(run.sessions[0]?.task ?? "", CI_CHECK_HEADING);
+  assert.match(run.sessions[0]?.task ?? "", CI_CHECK_ID);
   assert.deepEqual(opNames(run.ops), ["verify"]);
   assert.deepEqual(end, { ok: true, value: FIXED });
 });

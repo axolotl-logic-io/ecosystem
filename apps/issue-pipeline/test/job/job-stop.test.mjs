@@ -85,23 +85,6 @@ for (const [signal, code] of SIGNAL_CODES) {
   });
 }
 
-test("a session that ignores the abort is killed after the grace period, and the job still saves", async () => {
-  const place = setUp(repliesAt(READER_STAGE), {
-    events: ["wait"],
-    ignoreAbort: true,
-  });
-  const job = startJob(place, STAGE_ARGS);
-  await waitFor("pi got the prompt", () =>
-    piCommands(place).some(({ type }) => type === "prompt"),
-  );
-  const [{ pid }] = piStarts(place);
-  job.child.kill("SIGTERM");
-  const end = await job.end;
-  assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
-  assert.equal(alive(pid), false);
-  assert.deepEqual(stopSaveOf(place), SAVED_AT_STAGE);
-});
-
 /** @param {import("./job-test-kit.mjs").Place} place @returns {any} the job's first launch, or null */
 function firstLaunchOf(place) {
   return statusOf(place)?.launches[0] ?? null;
@@ -156,8 +139,11 @@ test("a session killed after the grace period loses its whole process group (#37
   if (sleep === null) {
     throw new Error("pi-child.pid has no pid");
   }
+  const [{ pid }] = piStarts(place);
   job.child.kill("SIGTERM");
   const end = await job.end;
   assert.equal(end.status, STOPPED_BY_SIGTERM, end.stderr);
+  assert.equal(alive(pid), false);
+  assert.deepEqual(stopSaveOf(place), SAVED_AT_STAGE);
   await waitFor("pi's child to end", () => !alive(sleep));
 });

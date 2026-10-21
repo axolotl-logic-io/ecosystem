@@ -1,12 +1,30 @@
 // @ts-check
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { afterEach } from "node:test";
 import { z } from "zod";
 import { COMMENT } from "../../src/comments.ts";
 import { EVENT, ISSUE, PULL } from "../../src/discovery/schema.ts";
 import { gherkinBody } from "../../src/gherkin-comment.ts";
 import { newIssueState } from "../../src/state.ts";
 import { trustedInputBytes } from "../../src/trusted-inputs.ts";
+
+/** @type {Set<() => string[]>} */
+const pendingReplies = new Set();
+afterEach(() => {
+  const unused = [...pendingReplies].flatMap((pending) => pending());
+  pendingReplies.clear();
+  if (unused.length > 0) {
+    throw new Error(`unused fake GitHub replies: ${unused.join(", ")}`);
+  }
+});
+
+// Pagination faults target the endpoint and page, not incidental query order.
+/** @param {string} path */
+function routePage(path) {
+  const url = new URL(path, "https://api.github.com");
+  return `${url.pathname}?page=${url.searchParams.get("page") ?? ""}`;
+}
 
 const fixture = z
   .object({
@@ -70,6 +88,10 @@ function initialWorld(repository = "axolotl-logic-io/ecosystem") {
   const requests = [];
   /** @type {Map<string, {status: number, body: unknown, link: string | null}>} */
   const replies = new Map();
+  const usedReplies = new Set();
+  pendingReplies.add(() =>
+    [...replies.keys()].filter((path) => !usedReplies.has(path)),
+  );
   const collaborators = new Set(["owner", "legacy"]);
   const assigned = [issue];
   /** @type {import('../../src/discovery/schema.ts').Pull[]} */
@@ -96,6 +118,7 @@ function initialWorld(repository = "axolotl-logic-io/ecosystem") {
     comments,
     requests,
     replies,
+    usedReplies,
     collaborators,
     assigned,
     pulls,
@@ -160,6 +183,17 @@ function world(repository = "axolotl-logic-io/ecosystem") {
   return { ...hub, save: createSave(hub), read };
 }
 
+/** @param {ReturnType<typeof initialWorld>} hub @param {string} requested */
+function overrideReply(hub, requested) {
+  for (const [path, override] of hub.replies) {
+    if (routePage(path) === routePage(requested)) {
+      hub.usedReplies.add(path);
+      return override;
+    }
+  }
+  return null;
+}
+
 /**
  * @param {ReturnType<typeof initialWorld>} hub
  * @param {import('../../src/discovery/reads.ts').ReadRequest} request
@@ -170,7 +204,6 @@ async function readHub(hub, request) {
     issue,
     comments,
     requests,
-    replies,
     collaborators,
     assigned,
     pulls,
@@ -188,8 +221,8 @@ async function readHub(hub, request) {
   if (request.method !== "GET") {
     throw new Error("not a GET");
   }
-  const override = replies.get(request.path);
-  if (override !== undefined) {
+  const override = overrideReply(hub, request.path);
+  if (override !== null) {
     return override;
   }
   const url = new URL(`https://api.github.com${request.path}`);

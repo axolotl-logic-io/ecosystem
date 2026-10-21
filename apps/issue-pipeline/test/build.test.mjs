@@ -72,22 +72,18 @@ test("the build writes every executable and no workflow", () => {
   assert.equal(fs.existsSync(path.join(tmp, "workflow.js")), false);
 });
 
-test("the built ops parses and keeps its #! line", () => {
-  const r = spawnSync(process.execPath, ["--check", builtOps], {
-    encoding: "utf8",
-  });
-  assert.equal(r.status, 0, r.stderr);
+test("every built executable parses and ops keeps its #! line", () => {
+  for (const file of EXECUTABLES) {
+    const parsed = spawnSync(
+      process.execPath,
+      ["--check", path.join(tmp, file)],
+      { encoding: "utf8" },
+    );
+    assert.equal(parsed.status, 0, `${file}: ${parsed.stderr}`);
+  }
   assert.ok(
     fs.readFileSync(builtOps, "utf8").startsWith("#!/usr/bin/env node\n"),
   );
-});
-
-test("the build writes the shell supervisor beside ops, and it parses", () => {
-  const supervisor = path.join(tmp, "shell-supervisor.mjs");
-  const r = spawnSync(process.execPath, ["--check", supervisor], {
-    encoding: "utf8",
-  });
-  assert.equal(r.status, 0, r.stderr);
 });
 
 // Inputs the ops CLI answers without running an op, by name.
@@ -109,10 +105,6 @@ for (const [name, input] of ANSWERED_INPUTS) {
 
 test("the built stage job parses, keeps its #! line and rejects a bad stage", () => {
   const job = path.join(tmp, "job.mjs");
-  const check = spawnSync(process.execPath, ["--check", job], {
-    encoding: "utf8",
-  });
-  assert.equal(check.status, 0, check.stderr);
   assert.ok(fs.readFileSync(job, "utf8").startsWith("#!/usr/bin/env node\n"));
   const r = spawnSync(
     process.execPath,
@@ -125,10 +117,6 @@ test("the built stage job parses, keeps its #! line and rejects a bad stage", ()
 
 test("the built orchestrator parses and names a bad flag or a missing --config", () => {
   const orchestrator = path.join(tmp, "orchestrate.mjs");
-  const check = spawnSync(process.execPath, ["--check", orchestrator], {
-    encoding: "utf8",
-  });
-  assert.equal(check.status, 0, check.stderr);
   const head = fs.readFileSync(orchestrator, "utf8");
   assert.ok(head.startsWith("#!/usr/bin/env node\n"));
   /** @param {string[]} args @returns {import("node:child_process").SpawnSyncReturns<string>} */
@@ -148,10 +136,6 @@ test("the built orchestrator parses and names a bad flag or a missing --config",
 
 test("the built report parses, keeps its #! line and names a missing --config", () => {
   const report = path.join(tmp, "report.mjs");
-  const check = spawnSync(process.execPath, ["--check", report], {
-    encoding: "utf8",
-  });
-  assert.equal(check.status, 0, check.stderr);
   const head = fs.readFileSync(report, "utf8");
   assert.ok(head.startsWith("#!/usr/bin/env node\n"));
   const missing = spawnSync(process.execPath, [report, "usage"], {

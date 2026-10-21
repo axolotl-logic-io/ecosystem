@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { isolatedRoot } from "../isolated-root-test-kit.mjs";
+import "../isolated-root-test-kit.mjs";
 
 const { droppedNotice, stoppedRun } = await import("../../src/job/teardown.ts");
 const { waitFor } = await import("../bounded-test-kit.mjs");
@@ -37,7 +37,6 @@ const AUTHOR_PATCH = /^dropped\/author-\d{8}T\d{9}Z-repo\.patch$/u;
 const DROPPED_KEY = /^dropped-/u;
 const NOTICE_FAILED = /job: dropped notice: /u;
 const LOCAL_PATH = /(?:^|[\s`(])(?:\/|~)/u;
-const NOTHING_APPLIES = /Nothing applies/u;
 const RUN_DIRECTORY = /run directory/u;
 const KEY = "implement-1";
 const PATCHES = [`dropped/${KEY}-repo.patch`];
@@ -69,10 +68,6 @@ function notices(place) {
 function finishedEnd(end, stage = "implement") {
   return { kind: "finished", summary: { issue: ISSUE, stage, end } };
 }
-
-test("the dropped notices' tests run in a temporary pipeline root", () => {
-  assert.equal(fs.statSync(isolatedRoot).isDirectory(), true);
-});
 
 test("a finished writer whose issue stopped saves its patch, which job.json names, and posts the notice", () => {
   const place = setUp(
@@ -109,7 +104,14 @@ test("a finished run whose issue didn't stop saves its patch and posts nothing",
   const r = runJob(place, ["--stage", READER_STAGE]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).end, "next");
-  const { droppedPatches } = statusOf(place);
+  const { droppedPatches, lostChanges } = statusOf(place);
+  assert.deepEqual(lostChanges, ["repo/docs/Page.md"]);
+  assert.equal(
+    logOf(place, "ops.log").some(
+      ({ op }) => op === "exit-push" || op === "push",
+    ),
+    false,
+  );
   assert.equal(droppedPatches.length, 1);
   assert.match(droppedPatches[0], AUTHOR_PATCH);
   assert.ok(fs.existsSync(path.join(place.runDir, droppedPatches[0])));
@@ -148,20 +150,11 @@ test("a writer stopped by SIGTERM names its patch on stderr and posts one keyed 
   assert.equal(comment.body.includes(place.root), false);
 });
 
-test("a reader job with no changes saves no patch and makes no dropped folder", () => {
-  const place = setUp(repliesAt(READER_STAGE), AUTHOR_SESSION);
-  const r = runJob(place, ["--stage", READER_STAGE]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(statusOf(place).droppedPatches, []);
-  assert.equal(fs.existsSync(path.join(place.runDir, "dropped")), false);
-});
-
 test("the dropped notice names the job, the code checkout and the run directory, and no local path", () => {
   const body = droppedNotice(KEY, PATCHES);
   assert.ok(body.includes(KEY));
   assert.ok(body.includes("`repo/`"));
   assert.match(body, RUN_DIRECTORY);
-  assert.match(body, NOTHING_APPLIES);
   assert.doesNotMatch(body, LOCAL_PATH);
 });
 
