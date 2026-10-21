@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
 import {
   readWorld,
   withWorld,
@@ -20,6 +21,7 @@ import {
   prepareReplayFlow,
   replaceState,
   replayFacts,
+  securityBundle,
   securityEvidence,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
@@ -29,7 +31,6 @@ import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
 const SECURITY_PHASE = "security.md";
-const SECURITY_TAG_LENGTH = 12;
 
 /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
@@ -40,15 +41,6 @@ let gitlink;
 let replayReady = false;
 /** @type {import("../src/state.ts").Integration} */
 let originalIntegration;
-
-/** @param {string} mergedSha @returns {{ diff: string, bundle: string, files: string }} */
-function securityBundle(mergedSha) {
-  const tag = `review-security-${mergedSha.slice(0, SECURITY_TAG_LENGTH)}`;
-  const dir = path.join(flow.root, "runs", "o__r", `issue-${ISSUE}`, tag);
-  const diff = fs.readFileSync(path.join(dir, "diff.patch"), "utf8");
-  const bundle = fs.readFileSync(path.join(dir, "bundle.md"), "utf8");
-  return { diff, bundle, files: bundle.slice(diff.length) };
-}
 
 before(() => {
   flow = setUpFlow();
@@ -75,12 +67,6 @@ function completeSetupStage(stage, action) {
   if (action === "integration") {
     originalIntegration = savedState(readWorld(flow.ghDir)).integration;
   }
-  if (action === "snapshot") {
-    historicalMerge(flow, originalIntegration);
-    fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
-    interruptedWorld = readWorld(flow.ghDir);
-    replayReady = true;
-  }
   return result.end;
 }
 
@@ -90,14 +76,36 @@ for (const step of [
   { stage: "review", end: "next", action: "fail-ci" },
   { stage: "merge", end: "next", action: "integration" },
   { stage: "review", end: "next", action: "none" },
-  { stage: "merge", end: "deferred", action: "snapshot" },
 ]) {
   test(`replay setup ${step.stage} reaches ${step.end} within its own deadline`, () => {
     assert.equal(completeSetupStage(step.stage, step.action), step.end);
   });
 }
 
+test("replay setup merge reaches deferred within its own deadline", () => {
+  assert.equal(runStage(flow, "merge").end, "deferred");
+  const current = savedState(readWorld(flow.ghDir));
+  assert.equal(current.stage, "done");
+  assert.equal(current.security.phase, "candidate");
+  assert.deepEqual(current.security.revision, current.merged);
+  assert.deepEqual(current.merged, current.mergeAttempt.authorized);
+  assert.ok(opsTrace(flow).some(({ request }) => request.op === "prepare-review"));
+  const { launch } = securityEvidence(flow, current.merged.code);
+  assert.equal(launch?.commitScope, false);
+  historicalMerge(flow, originalIntegration);
+  fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
+  const world = readWorld(flow.ghDir);
+  const historical = savedState(world);
+  assert.equal(historical.stage, "merge");
+  assert.equal(historical.security, null);
+  assert.deepEqual(historical.merged, current.merged);
+  assert.notEqual(historical.hardened.code, historical.merged.code);
+  interruptedWorld = world;
+  replayReady = true;
+});
+
 test("the interrupted own merge saved its provenance before Security despite default-branch auto-close", () => {
+  assert.equal(replayReady, true);
   const state = savedState(interruptedWorld);
   assert.equal(state.stage, "merge");
   assert.equal(state.security, null);
@@ -106,7 +114,7 @@ test("the interrupted own merge saved its provenance before Security despite def
   assert.deepEqual(state.mergeAttempt.authorized, state.integration.revision);
   assert.equal(state.verifiedSha, state.merged.code);
   assert.notEqual(state.hardened.code, state.integration.revision.code);
-  assert.notEqual(state.merged.code, state.integration.revision.code);
+  assert.equal(state.merged.code, state.integration.revision.code);
   assert.equal(
     interruptedWorld.prs[0]?.mergedHead,
     state.integration.revision.code,
@@ -116,10 +124,16 @@ test("the interrupted own merge saved its provenance before Security despite def
     interruptedWorld.issues.find(({ number }) => number === ISSUE)?.state,
     "closed",
   );
-  assert.equal(merges(flow).length, 1);
+  assert.equal(merges(flow).length, 0);
+  assert.deepEqual(
+    nativeTargetUpdates(readWorld(flow.ghDir)),
+    expectedReplay(interruptedWorld).targetUpdates,
+  );
 });
 
 test("claim-populated replay cannot complete or close without security when the fresh assessment is interrupted", () => {
+  assert.equal(replayReady, true);
+  assert.equal(savedState(interruptedWorld).stage, "merge");
   const callsStart = ghCalls(flow.ghDir).length;
   const traceStart = opsTrace(flow).length;
   const starts = sessions(flow);
@@ -150,6 +164,8 @@ test("claim-populated replay cannot complete or close without security when the 
 });
 
 test("retained recovery bundles an added gitlink and the docs change before Security", () => {
+  assert.equal(replayReady, true);
+  assert.equal(savedState(interruptedWorld).stage, "merge");
   const traceStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "deferred");
   assert.deepEqual(
@@ -157,7 +173,7 @@ test("retained recovery bundles an added gitlink and the docs change before Secu
     expectedReplay(interruptedWorld),
   );
   const state = savedState(readWorld(flow.ghDir));
-  const { diff, bundle, files } = securityBundle(state.merged.code);
+  const { diff, bundle, files } = securityBundle(flow, state.merged.code);
   assert.ok(diff.includes(`+Subproject commit ${gitlink}`));
   assert.ok(diff.includes("+Greetings say Hello, world!"));
   assert.ok(bundle.startsWith(diff));
@@ -165,15 +181,24 @@ test("retained recovery bundles an added gitlink and the docs change before Secu
 });
 
 test("stale security cannot authorize replay completion or closure; a new assessment is required", () => {
+  assert.equal(replayReady, true);
+  assert.equal(savedState(interruptedWorld).stage, "merge");
   const state = savedState(interruptedWorld);
+  const stale = state.hardened;
+  assert.notEqual(stale.code, state.merged.code);
+  assert.notDeepEqual(stale, state.merged);
   replaceState(flow, {
     ...state,
     security: {
-      revision: state.integration.revision,
+      revision: stale,
       commentId: state.gherkin.commentId,
       finding: null,
     },
   });
+  assert.notDeepEqual(
+    savedState(readWorld(flow.ghDir)).security.revision,
+    state.merged,
+  );
   const traceStart = opsTrace(flow).length;
   const starts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "deferred");
@@ -193,7 +218,12 @@ test("stale security cannot authorize replay completion or closure; a new assess
 });
 
 test("a saved rejection on the actual merged result re-stops without a model, writer, second merge or completion", () => {
+  assert.equal(replayReady, true);
+  assert.equal(savedState(interruptedWorld).stage, "merge");
   const state = savedState(interruptedWorld);
+  assert.equal(state.stage, "merge");
+  assert.equal(state.security, null);
+  assert.deepEqual(state.merged, state.mergeAttempt.authorized);
   replaceState(flow, {
     ...state,
     security: {
@@ -202,6 +232,10 @@ test("a saved rejection on the actual merged result re-stops without a model, wr
       finding: { category: "abuse-risk", reason: "Missing authorization" },
     },
   });
+  assert.deepEqual(
+    savedState(readWorld(flow.ghDir)).security.revision,
+    state.merged,
+  );
   const starts = sessions(flow);
   const traceStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "stop");
@@ -217,10 +251,16 @@ test("a saved rejection on the actual merged result re-stops without a model, wr
   assert.ok(issue.labels.includes("agent:stopped-abuse-risk"));
   assert.equal(runStage(flow, "merge").end, "stop");
   assert.equal(sessions(flow), starts);
-  assert.equal(merges(flow).length, 1);
+  assert.equal(merges(flow).length, 0);
+  assert.deepEqual(
+    nativeTargetUpdates(readWorld(flow.ghDir)),
+    expectedReplay(interruptedWorld).targetUpdates,
+  );
 });
 
-test("missing security is reviewed read-only at the actual first-parent merge diff, then exact approval survives a completion interruption and is reused", () => {
+test("missing security reviews the whole authorized FF contribution read-only, then exact approval survives a completion interruption and is reused", () => {
+  assert.equal(replayReady, true);
+  assert.equal(savedState(interruptedWorld).stage, "merge");
   const expected = expectedReplay(interruptedWorld);
   scriptPi(flow, { reviewer: [securityTurn()] });
   fs.writeFileSync(

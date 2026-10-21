@@ -7,6 +7,7 @@
 // This module installs it and lets a test seed and read its world.
 import fs from "node:fs";
 import path from "node:path";
+import { targetPushes } from "./fake-pipeline-flow-gh-native.mjs";
 import {
   now,
   postComment,
@@ -20,15 +21,26 @@ const CLI = new URL("fake-pipeline-flow-gh-cli.mjs", import.meta.url).pathname;
 
 /**
  * A fresh world for `repo`, and the `gh` in `bin` that serves it.
- * @param {{ dir: string, bin: string, repo: string, account: string, collaborators: string[], origin: string }} where
+ * @param {{ dir: string, bin: string, repo: string, account: string, collaborators: string[], origin: string, baseBranch: string }} where
  */
-function installFlowGh({ dir, bin, repo, account, collaborators, origin }) {
+function installFlowGh({
+  dir,
+  bin,
+  repo,
+  account,
+  collaborators,
+  origin,
+  baseBranch,
+}) {
   fs.mkdirSync(dir, { recursive: true });
   writeWorld(dir, {
     repo,
     account,
     collaborators,
     origin,
+    baseBranch,
+    nativePushStart: targetPushes(origin, baseBranch).length,
+    nativePushesSeen: 0,
     nextId: FIRST_ID,
     issues: [],
     comments: [],

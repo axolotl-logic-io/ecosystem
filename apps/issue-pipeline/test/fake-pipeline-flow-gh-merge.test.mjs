@@ -1,5 +1,5 @@
 // @ts-check
-// Shared fake branch dispatch must preserve real graph/ref/PR evidence, not invent receipts.
+// Historical REST branch dispatch preserves real two-parent graph/ref/PR evidence.
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
@@ -28,6 +28,9 @@ function mergeWorld() {
       account: "bot",
       collaborators: [],
       origin,
+      baseBranch: "integration",
+      nativePushStart: 0,
+      nativePushesSeen: 0,
       nextId: NEXT_ID,
       comments: [],
       repoLabels: [],

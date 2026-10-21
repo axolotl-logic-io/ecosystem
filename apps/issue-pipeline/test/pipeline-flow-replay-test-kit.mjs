@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
 import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
@@ -35,6 +36,15 @@ function securityEvidence(flow, code) {
   );
   return { launch, diff };
 }
+/** @param {Flow} flow @param {string} mergedSha @returns {{ diff: string, bundle: string, files: string }} */
+function securityBundle(flow, mergedSha) {
+  const tag = `review-security-${mergedSha.slice(0, SECURITY_TAG_LENGTH)}`;
+  const dir = path.join(flow.root, "runs", "o__r", `issue-${ISSUE}`, tag);
+  const diff = fs.readFileSync(path.join(dir, "diff.patch"), "utf8");
+  const bundle = fs.readFileSync(path.join(dir, "bundle.md"), "utf8");
+  return { diff, bundle, files: bundle.slice(diff.length) };
+}
+
 const STATE_BLOCK = /<!-- agent-pipeline:state\n[\s\S]*?\n-->/u;
 const NO_WRITER_OPS = ["merge", "push", "sync-base", "ready-pr", "exit-push"];
 const VERIFIED = z.object({ pass: z.boolean(), headSha: z.string() });
@@ -43,6 +53,17 @@ const CLAIM = z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
   }),
 });
+/** @param {import("./fake-pipeline-flow-gh-world.mjs").World} world */
+function expectedTargetUpdates(world) {
+  const { mergeAttempt } = savedState(world);
+  return [{
+    origin: world.origin,
+    ref: `refs/heads/${mergeAttempt.target}`,
+    old: mergeAttempt.operation.base,
+    head: mergeAttempt.authorized.code,
+  }];
+}
+
 /** @param {import("./fake-pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
 function expectedReplay(interruptedWorld, checked = true) {
   const state = savedState(interruptedWorld);
@@ -55,9 +76,12 @@ function expectedReplay(interruptedWorld, checked = true) {
   return {
     claimCodeMerged: codeMerged,
     forbidden: [],
-    merges: 1,
+    merges: 0,
+    targetUpdates: expectedTargetUpdates(interruptedWorld),
     verified,
     base: state.merged.code,
+    mergeAttempt: state.mergeAttempt,
+    hardenedTarget: state.hardenedTarget,
     hardened: state.hardened,
     integration: state.integration,
     codeMerged,
@@ -106,10 +130,13 @@ function replayFacts(flow, traceStart) {
       .map(({ request }) => request.op)
       .filter((op) => NO_WRITER_OPS.includes(op)),
     merges: merges(flow).length,
+    targetUpdates: nativeTargetUpdates(readWorld(flow.ghDir)),
     verified: trace
       .filter(({ request }) => request.op === "verify")
       .map(({ reply }) => VERIFIED.parse(reply)),
     base: refIn(flow.origin, `refs/heads/${BASE}`),
+    mergeAttempt: state.mergeAttempt,
+    hardenedTarget: state.hardenedTarget,
     hardened: state.hardened,
     integration: state.integration,
     codeMerged: state.codeMerged,
@@ -178,13 +205,13 @@ function historicalMerge(flow, integration) {
   });
 }
 
-/** @param {Flow} flow @param {boolean} [delayMergeConfirmation] */
-function createReplayFlow(flow, delayMergeConfirmation = false) {
+/** @param {Flow} flow @param {boolean} [withholdMergeBinding] */
+function createReplayFlow(flow, withholdMergeBinding = false) {
   const originalConfig = fs.readFileSync(flow.config, "utf8");
-  if (delayMergeConfirmation) {
+  if (withholdMergeBinding) {
     const settings = z.looseObject({}).parse(JSON.parse(originalConfig));
-    // Hold metadata until explicit recovery, not a timing-dependent race. A
-    // short configured window exercises expiry without the production wait.
+    // CLOSED with no merge OID is incompatible with an FF own receipt,
+    // regardless of host speed. The short window bounds only test duration.
     fs.writeFileSync(
       flow.config,
       JSON.stringify({
@@ -204,7 +231,7 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
   }
   withWorld(flow.ghDir, (world) => {
     world.failedHead = savedState(world).hardened.code;
-    world.delayMergeConfirmation = delayMergeConfirmation;
+    world.withholdMergeBinding = withholdMergeBinding;
   });
   const integrated = runStage(flow, "merge");
   if (integrated.end !== "next") {
@@ -215,7 +242,7 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
     throw new Error("fresh hardening did not complete");
   }
   let expected = "deferred";
-  if (delayMergeConfirmation) {
+  if (withholdMergeBinding) {
     expected = "stop";
   }
   const result = runStage(flow, "merge");
@@ -224,7 +251,7 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
       `setup merge: expected ${expected}, got ${JSON.stringify(result)}`,
     );
   }
-  if (!delayMergeConfirmation) {
+  if (!withholdMergeBinding) {
     historicalMerge(flow, integration);
   }
   fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
@@ -237,10 +264,12 @@ export {
   createReplayFlow,
   expectedReplay,
   historicalMerge,
+  expectedTargetUpdates,
   merges,
   prepareReplayFlow,
   replaceState,
   replayFacts,
+  securityBundle,
   securityEvidence,
   sessions,
 };

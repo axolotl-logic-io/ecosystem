@@ -44,7 +44,7 @@ function viewOf(world, change) {
     headRefName: change.head,
     headRefOid: change.mergedHead ?? live ?? change.closedHead ?? "",
     baseRefName: change.base,
-    isCrossRepository: false,
+    isCrossRepository: change.isCrossRepository ?? false,
     url: `https://github.com/${world.repo}/pull/${change.number}`,
     isDraft: change.isDraft,
     mergeCommit,

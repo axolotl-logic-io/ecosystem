@@ -1,7 +1,6 @@
 // @ts-check
-// A real authorized branch POST lands and auto-closes its issue, but delayed
-// PR confirmation refuses the merge receipt. The installed caller must reach
-// canonical recovery without granting authority or repeating the code mutation.
+// A real authorized FF lands and auto-closes its issue, but incompatible PR
+// binding withholds the own receipt. Installed-caller recovery stays read-only.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +8,7 @@ import { after, before, test } from "node:test";
 import { z } from "zod";
 import { isStateBody } from "../src/comment-marks.ts";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
 import {
   readWorld,
   withWorld,
@@ -17,6 +17,7 @@ import {
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   createReplayFlow,
+  expectedTargetUpdates,
   merges,
   replaceState,
   sessions,
@@ -68,25 +69,30 @@ test("the accepted merge auto-closes the issue before delayed confirmation stops
   assert.equal(stopped.stoppedStage, "merge");
   assert.equal(stopped.stopCode, "merge-refused");
   assert.equal(stopped.merged, null);
-  assert.equal(stopped.codeMerged, null);
+  assert.deepEqual(stopped.codeMerged, { pr: stopped.pr, sha: stopped.hardened.code });
+  assert.equal(readWorld(flow.ghDir).withholdMergeBinding, true);
   assert.deepEqual(stopped.security.revision, stopped.hardened);
   assert.equal(stopped.security.finding, null);
   const issue = readWorld(flow.ghDir).issues.find(
     ({ number }) => number === ISSUE,
   );
   assert.equal(issue?.state, "closed");
-  assert.equal(merges(flow).length, 1);
+  assert.equal(merges(flow).length, 0);
+  assert.deepEqual(
+    nativeTargetUpdates(readWorld(flow.ghDir)),
+    expectedTargetUpdates(readWorld(flow.ghDir)),
+  );
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
-  assert.notEqual(merged, stopped.hardened.code);
+  assert.equal(merged, stopped.hardened.code);
+  assert.deepEqual(stopped.hardenedTarget, { repo: "o/r", branch: BASE, sha: stopped.mergeAttempt.operation.base });
   assert.equal(stopped.mergeAttempt.result, merged);
   assert.deepEqual(stopped.mergeAttempt.authorized, stopped.hardened);
 });
 
-test("the installed caller reaches closed recovery and reconciles the saved response with original authorization", async () => {
-  const stopped = savedState(readWorld(flow.ghDir));
-  const merged = refIn(flow.origin, `refs/heads/${BASE}`);
+/** Prepare explicit recovery without running it or asserting results. */
+function prepareClosedRecovery() {
   withWorld(flow.ghDir, (world) => {
-    world.delayMergeConfirmation = false;
+    world.withholdMergeBinding = false;
   });
   fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
   scriptPi(flow, { reviewer: [securityTurn()] });
@@ -95,8 +101,17 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
   traceStart = opsTrace(flow).length;
   const callsStart = ghCalls(flow.ghDir).length;
   const starts = sessions(flow);
-  // The saved response plus fresh matching evidence may establish an own
-  // receipt. PR truth alone would not be sufficient to do so.
+  return { callsStart, starts };
+}
+
+test("the installed caller reaches closed recovery and reconciles the saved response with original authorization", async () => {
+  const stopped = savedState(readWorld(flow.ghDir));
+  const merged = refIn(flow.origin, `refs/heads/${BASE}`);
+  const { callsStart, starts } = prepareClosedRecovery();
+  assert.equal(stopped.stage, "stopped");
+  assert.equal(stopped.merged, null);
+  assert.deepEqual(stopped.codeMerged, { pr: stopped.pr, sha: merged });
+  // Exact authenticated intent and matching evidence, not equal heads alone.
   assert.equal((await runCallerStage(flow, "merge")).end, "deferred");
   const recovered = savedState(readWorld(flow.ghDir));
   assert.equal(recovered.stage, "done");
@@ -116,6 +131,9 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
   assert.deepEqual(claimed.state.integration, stopped.integration);
   assert.deepEqual(recovered.hardened, stopped.hardened);
   assert.deepEqual(recovered.integration, stopped.integration);
+  assert.deepEqual(recovered.hardenedTarget, stopped.hardenedTarget);
+  assert.deepEqual({ ...recovered.mergeAttempt, reads: stopped.mergeAttempt.reads }, stopped.mergeAttempt);
+  assert.deepEqual(recovered.security, stopped.security);
   assert.equal(sessions(flow), starts);
   assert.equal(
     readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
@@ -136,6 +154,8 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
 test("actual-result checks precede read-only exact Security and completion", () => {
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   const cleared = savedState(readWorld(flow.ghDir));
+  assert.equal(cleared.stage, "done");
+  assert.ok(cleared.security !== null);
   assert.deepEqual(cleared.security.revision, cleared.hardened);
   assert.equal(cleared.security.finding, null);
   assert.ok(cleared.security.commentId > 0);
@@ -143,11 +163,14 @@ test("actual-result checks precede read-only exact Security and completion", () 
   const verify = trace.findIndex(({ request }) => request.op === "verify");
   assert.ok(verify >= 0);
   assert.ok(!trace.some(({ request }) => request.op === "prepare-review"));
-  assert.notEqual(merged, cleared.security.revision.code);
+  assert.equal(merged, cleared.security.revision.code);
 });
 
 test("exact clearance permits completion with merged labels and completed closure", () => {
   const cleared = savedState(readWorld(flow.ghDir));
+  assert.equal(cleared.stage, "done");
+  assert.deepEqual(cleared.security.revision, cleared.merged);
+  assert.equal(cleared.security.finding, null);
   fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
   const clearedStarts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "next");
@@ -171,6 +194,7 @@ test("exact clearance permits completion with merged labels and completed closur
 test("recovery verified the actual result without another code push or merge POST", () => {
   const world = readWorld(flow.ghDir);
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
+  assert.equal(savedState(world).stage, "done");
   const trace = opsTrace(flow).slice(traceStart);
   const verified = trace.filter(({ request }) => request.op === "verify");
   assert.ok(verified.length > 0);
@@ -189,7 +213,11 @@ test("recovery verified the actual result without another code push or merge POS
     ),
     false,
   );
-  assert.equal(merges(flow).length, 1);
+  assert.equal(merges(flow).length, 0);
+  assert.deepEqual(
+    nativeTargetUpdates(readWorld(flow.ghDir)),
+    expectedTargetUpdates(readWorld(flow.ghDir)),
+  );
   assert.equal(refIn(flow.origin, `refs/heads/${BASE}`), merged);
   assert.deepEqual(world.unsupported, []);
 });
@@ -218,7 +246,7 @@ for (const [name, extra] of Object.entries({
 async function refusedRecovery(extra) {
   writeWorld(flow.ghDir, structuredClone(interruptedWorld));
   withWorld(flow.ghDir, (world) => {
-    world.delayMergeConfirmation = false;
+    world.withholdMergeBinding = false;
     if (extra === null) {
       world.comments = world.comments.filter(({ body }) => !isStateBody(body));
     }
