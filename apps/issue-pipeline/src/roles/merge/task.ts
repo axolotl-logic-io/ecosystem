@@ -5,7 +5,7 @@
 
 import { JOB_REPO } from "../../job/layout.ts";
 import type { RoleContext } from "../../job/role-context.ts";
-import type { Revision } from "../../state.ts";
+import type { CodeMerged, Revision } from "../../state.ts";
 import { bullets, header, replyLines } from "../task-facts.ts";
 
 // What prepare-review wrote for the security review.
@@ -20,6 +20,7 @@ interface SecurityReviewFacts {
   // The merged result under review: GitHub's merge commit, or null when
   // the change merged no code.
   revision: Revision;
+  codeMerged: CodeMerged | null;
 }
 
 // The task of a session that resolves the code rebase stopped on
@@ -65,7 +66,7 @@ function resultLines(facts: SecurityReviewFacts): string[] {
   const { prepared, revision } = facts;
   let code = "Merge commit: none; the change merged no code";
   if (revision.code !== null) {
-    code = `Merge commit: \`${revision.code}\`, confirmed by GitHub`;
+    code = `Reviewed commit: \`${revision.code}\``;
   }
   return bullets([
     code,
@@ -83,11 +84,11 @@ function securityReviewTask(
   const { code } = facts.revision;
   let checkout = "on the issue's branch";
   if (code !== null) {
-    checkout = `detached at the merge commit \`${code}\`: the merged result`;
+    checkout = `at exactly the reviewed commit \`${code}\``;
   }
   return [
     ...header(ctx, "security-review", checkout),
-    "## The merged result",
+    "## The reviewed revision",
     "",
     ...resultLines(facts),
     "",

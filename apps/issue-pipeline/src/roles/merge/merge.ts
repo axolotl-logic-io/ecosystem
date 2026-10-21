@@ -1,24 +1,5 @@
-// The merge stage (`deterministic-merge-and-publish`), the Reviewer's at the
-// caller's serialized merge turn. It merges only the revision the merge
-// authorization names (state.ts mergeAuthorization: the hardened revision,
-// or the Reviewer's own checked integration of it), read fresh before each
-// mutation:
-//
-// - a change to the trusted inputs goes to the author, and a code head that
-//   moved by anything but the Reviewer's own integration goes back to
-//   review, which hardens it;
-// - a base that moved, a conflict and a failed check get the Reviewer's own
-//   integration (integration.ts), in bounded writer sessions, counted
-//   against `maxSyncs`, with no review of its own work;
-// - otherwise the head is verified if it isn't yet, CI waited for on
-//   exactly that head, and an explicit-target branch merge uses immutable H
-//   in merge-queue order; then the receipt is saved, M is deterministically
-//   checked, and the read-only security review of the merged result decides
-//   whether the issue completes (after-merge.ts, security.ts);
-// - a done issue whose finish didn't finish only runs the finish op again,
-//   once a security receipt approves exactly what merged;
-// - a merged result the security review rejected stops again, from its
-//   saved receipt, before anything else runs.
+// Serialized merge orchestration: exact hardening/checks and read-only Security
+// precede deterministic mutation; result verification still follows it.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -34,7 +15,7 @@ import type { IntegrationNeed } from "./integration.ts";
 import { integrate } from "./integration.ts";
 import { MERGE_REPLY, recoverAttempt, recoverOwnMerge } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
-import { rejectedAgain } from "./security.ts";
+import { rejectedAgain, securityReviewed } from "./security.ts";
 import { approvalGate } from "./source.ts";
 
 const CI_STATUS = z.union([
@@ -150,6 +131,44 @@ function mergeSummary(state: IssueState, authorized: Revision): string {
   return `Merged at code ${short(authorized.code)} and trusted inputs ${short(authorized.inputs)}; verified at ${short(state.verifiedSha)}; CI passed on that head.`;
 }
 
+async function clearedCandidate(
+  ctx: RoleContext,
+  current: CurrentRevision,
+  code: string,
+  pr: number,
+): Promise<{ state: IssueState; authorized: Revision } | { end: RoleEnd }> {
+  const checked = await checksBeforeMerge(ctx, { code, pr });
+  if ("end" in checked) {
+    return { end: checked.end };
+  }
+  const clearance = await securityReviewed(ctx, checked.state, {
+    revision: current.revision,
+    codeMerged: null,
+    candidate: { target: ctx.cfg.baseBranch, baseSha: current.baseSha },
+    still: (after: Revision): boolean =>
+      after.code === code && after.inputs === current.revision.inputs,
+  });
+  if (!clearance.ok) {
+    return { end: clearance.end };
+  }
+  const state = clearance.value;
+  const fresh = await currentRevision(ctx);
+  const gate = approvalGate(ctx, state, fresh);
+  if (gate !== null) {
+    return { end: gate };
+  }
+  if (fresh.baseSha !== current.baseSha) {
+    return {
+      end: await integrate(ctx, state, {
+        rebase: true,
+        failing: [],
+        why: "the target moved after Security clearance",
+      }),
+    };
+  }
+  return { state, authorized: fresh.revision };
+}
+
 // The open PR's merge, at the authorized code head.
 async function mergeCode(
   ctx: RoleContext,
@@ -169,17 +188,11 @@ async function mergeCode(
   if (pr.state !== "OPEN") {
     return failed(ctx.state, `PR #${pr.number} is ${pr.state}`);
   }
-  const checked = await checksBeforeMerge(ctx, { code, pr: pr.number });
-  if ("end" in checked) {
-    return checked.end;
+  const cleared = await clearedCandidate(ctx, current, code, pr.number);
+  if ("end" in cleared) {
+    return cleared.end;
   }
-  const { state } = checked;
-  const fresh = await currentRevision(ctx);
-  const gate = approvalGate(ctx, state, fresh);
-  if (gate !== null) {
-    return gate;
-  }
-  const authorized = fresh.revision;
+  const { state, authorized } = cleared;
   const reply = await opReply(
     ctx,
     "merge",

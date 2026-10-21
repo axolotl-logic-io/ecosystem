@@ -21,7 +21,7 @@ function logged(state: IssueState, entry: string): IssueState {
 // The state with its merge authorization voided: no hardening or
 // integration of an earlier revision holds for the next one.
 function voided(state: IssueState): IssueState {
-  return { ...state, hardened: null, integration: null };
+  return { ...state, hardened: null, verifiedSha: null };
 }
 
 function toAuthor(state: IssueState, why: string): RoleEnd {

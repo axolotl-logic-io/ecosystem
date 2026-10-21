@@ -1,15 +1,9 @@
-// The security review of the merged result: a fresh read-only Reviewer
-// session after the code merge over exactly the merge commit GitHub
-// confirmed, in the four security categories. Its receipt
-// (`state.security`) binds that revision, and is saved before the issue
-// completes: an approval lets the issue complete; a rejection stops the issue with its category, and stops it
-// again for the same revision however often the stop is lifted. The merged
-// code stays merged: nothing here undoes it or touches `main`.
-
+// Read-only Security over an exact candidate, or historical merged recovery.
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import type { Candidate } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -18,11 +12,13 @@ import { SECURITY_REVIEW_REPLY } from "../replies.ts";
 import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
+import { integrate } from "./integration.ts";
 import { logged, toAuthor, waiting } from "./returns.ts";
 import { securityReviewTask } from "./task.ts";
 
 const PREPARED = z.looseObject({
   headSha: z.string(),
+  baseSha: z.string(),
   diffPath: z.string().min(1),
   bundlePath: z.string().min(1),
   changedFiles: z.array(z.string()),
@@ -47,7 +43,7 @@ function securityStop(state: IssueState, finding: Finding): RoleEnd {
   return {
     kind: "stop",
     code: category,
-    reason: `security review (${category}) of the merged result: ${reason}. The merged code stays merged and the issue is not completed; a fix needs a new change, since lifting this stop reviews nothing again`,
+    reason: `security review (${category}): ${reason}. This revision cannot merge or complete. Existing merged code stays merged; lifting this stop does not reroll Security`,
     state,
   };
 }
@@ -95,13 +91,13 @@ function reviewBody(reply: SecurityReviewReply, revision: Revision): string {
   if (reply.security !== null) {
     title = `stopped (${reply.security.category})`;
   }
-  const lines = [`## Security review of the merged result: ${title}`, ""];
+  const lines = [`## Security review: ${title}`, ""];
   lines.push(reply.summary, "");
   if (reply.security !== null) {
     lines.push(`**${reply.security.category}:** ${reply.security.reason}`, "");
   }
   lines.push(
-    `Reviewed merged code ${short(revision.code)} and trusted inputs ${short(revision.inputs)}. This review judged security alone; hardening owned the design, correctness and tests.`,
+    `Reviewed code ${short(revision.code)} and trusted inputs ${short(revision.inputs)}. This review judged security alone; hardening owned the design, correctness and tests.`,
   );
   return lines.join("\n");
 }
@@ -114,6 +110,7 @@ interface MergedResult {
   revision: Revision;
   codeMerged: CodeMerged | null;
   still: (after: Revision) => boolean;
+  candidate?: Candidate;
 }
 
 // A fresh security review of `result`, prepared after the code merge was
@@ -121,21 +118,30 @@ interface MergedResult {
 async function freshReview(
   ctx: RoleContext,
   state: IssueState,
-  { revision, codeMerged, still }: MergedResult,
+  { revision, codeMerged, still, candidate }: MergedResult,
 ): Promise<Step<SecurityReviewReply>> {
   const prepared = await prepare(ctx, revision, codeMerged);
-  if (codeMerged !== null && prepared.headSha !== codeMerged.sha) {
+  if (revision.code !== null && prepared.headSha !== revision.code) {
     return ended(
       errorStop(
         state,
-        `prepare-review read ${prepared.headSha}, not the merge commit ${codeMerged.sha}`,
+        `prepare-review read ${prepared.headSha}, not the reviewed commit ${revision.code}`,
       ),
+    );
+  }
+  if (candidate !== undefined && prepared.baseSha !== candidate.baseSha) {
+    return ended(
+      await integrate(ctx, state, {
+        rebase: true,
+        failing: [],
+        why: "the candidate does not include the observed target revision",
+      }),
     );
   }
   const result = await ctx.session({
     agent: "issue-pipeline-reviewer",
     model: ctx.cfg.models.reviewer,
-    task: securityReviewTask(ctx, { prepared, revision }),
+    task: securityReviewTask(ctx, { prepared, revision, codeMerged }),
     schema: SECURITY_REVIEW_REPLY,
     commits: false,
     phase: "security-review",
@@ -149,17 +155,21 @@ async function freshReview(
     );
   }
   const reply = SECURITY_REVIEW_REPLY.parse(result.reply);
-  const { revision: after } = await currentRevision(ctx);
+  const fresh = await currentRevision(ctx);
+  const { revision: after } = fresh;
   if (after.inputs !== revision.inputs) {
     return ended(
       toAuthor(state, "the trusted inputs changed during the security review"),
     );
   }
-  if (!still(after)) {
+  if (
+    !still(after) ||
+    (candidate !== undefined && fresh.baseSha !== candidate.baseSha)
+  ) {
     return ended(
       waiting(
         logged(state, "security review discarded: the revision moved"),
-        "the code head moved during the security review, so it is discarded",
+        "the code head or target moved during the security review, so it is discarded",
       ),
     );
   }
@@ -172,7 +182,15 @@ async function freshReview(
 async function recorded(
   ctx: RoleContext,
   state: IssueState,
-  { revision, reply }: { revision: Revision; reply: SecurityReviewReply },
+  {
+    revision,
+    reply,
+    candidate,
+  }: {
+    revision: Revision;
+    reply: SecurityReviewReply;
+    candidate?: Candidate | undefined;
+  },
 ): Promise<Step<IssueState>> {
   let on: "issue" | "pr" = "pr";
   if (state.pr === null) {
@@ -185,14 +203,15 @@ async function recorded(
     body: reviewBody(reply, revision),
   });
   const finding = reply.security;
-  let entry = "security review of the merged result: no finding";
+  let entry = "security review: no finding";
   if (finding !== null) {
-    entry = `security review of the merged result: ${finding.category}`;
+    entry = `security review: ${finding.category}`;
   }
-  const reviewed = logged(
-    { ...state, security: { revision, commentId, finding } },
-    entry,
-  );
+  let security: IssueState["security"] = { revision, commentId, finding };
+  if (candidate !== undefined) {
+    security = { ...security, candidate };
+  }
+  const reviewed = logged({ ...state, security }, entry);
   await ctx.save(reviewed);
   if (finding !== null) {
     return ended(securityStop(reviewed, finding));
@@ -208,9 +227,15 @@ async function securityReviewed(
   state: IssueState,
   result: MergedResult,
 ): Promise<Step<IssueState>> {
-  const { revision } = result;
+  const { revision, candidate } = result;
   const saved = state.security;
-  if (saved !== null && sameRevision(saved.revision, revision)) {
+  if (
+    saved !== null &&
+    sameRevision(saved.revision, revision) &&
+    (candidate === undefined ||
+      (saved.candidate?.target === candidate.target &&
+        saved.candidate.baseSha === candidate.baseSha))
+  ) {
     if (saved.finding === null) {
       return { ok: true, value: state };
     }
@@ -220,7 +245,11 @@ async function securityReviewed(
   if (!reply.ok) {
     return reply;
   }
-  return await recorded(ctx, state, { revision, reply: reply.value });
+  return await recorded(ctx, state, {
+    revision,
+    reply: reply.value,
+    candidate,
+  });
 }
 
 export type { MergedResult };

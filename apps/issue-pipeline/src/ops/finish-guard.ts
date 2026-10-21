@@ -5,10 +5,10 @@
 // or a security review that doesn't clear the merged result refuses, and
 // undefined lets the op go on.
 
+import { recordedAuthorization } from "../merged-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
-import { mergeAuthorization } from "../state.ts";
 import type { CurrentRevision } from "./merge-guard.ts";
 import { mergedAuthorizationHolds, mergedPr } from "./merge-guard.ts";
 
@@ -29,7 +29,7 @@ function unauthorizedHead(
   pr: { mergeCommit: string; headSha: string },
 ): void {
   if (!mergedAuthorizationHolds(saved, merged, pr)) {
-    const authorized = mergeAuthorization(saved)?.code ?? null;
+    const authorized = recordedAuthorization(saved)?.code ?? null;
     throw new OpsError(
       `#${saved.number}'s merge authorization ${String(authorized)} is not bound to the saved result of head ${pr.headSha} as ${pr.mergeCommit}, which PR #${String(saved.pr)} merged`,
     );

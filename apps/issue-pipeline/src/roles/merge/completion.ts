@@ -8,13 +8,17 @@
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
+import { securityRefusal } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { opReply } from "../op-replies.ts";
 import { currentRevision } from "../revision-source.ts";
+import type { Step } from "../writer-session.ts";
+import { ended } from "../writer-session.ts";
 import { checkedMergedResult } from "./checks.ts";
 import { failed, logged, toAuthor } from "./returns.ts";
+import type { MergedResult } from "./security.ts";
 import { rejectedAgain, securityReviewed } from "./security.ts";
 
 const FINISHED = z.union([
@@ -61,6 +65,23 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   return failed(done, detail);
 }
 
+// New own merges reuse premerge clearance, never launch a duplicate model
+// pass. Only historical merged runs can obtain missing postmerge review.
+async function completionSecurity(
+  ctx: RoleContext,
+  state: IssueState,
+  result: MergedResult,
+): Promise<Step<IssueState>> {
+  const refusal = securityRefusal(state, result.revision);
+  if (refusal === undefined) {
+    return { ok: true, value: state };
+  }
+  if (state.security?.candidate !== undefined) {
+    return ended(failed(state, refusal));
+  }
+  return await securityReviewed(ctx, state, result);
+}
+
 // The security review of the merged result `merged`, then the completion.
 async function reviewedAndCompleted(
   ctx: RoleContext,
@@ -79,7 +100,7 @@ async function reviewedAndCompleted(
   if (rejected !== null) {
     return rejected;
   }
-  const security = await securityReviewed(ctx, state, {
+  const security = await completionSecurity(ctx, state, {
     revision: merged,
     codeMerged,
     still,
@@ -153,7 +174,7 @@ async function finishCompleted(
     }
     checked = result.state;
   }
-  const security = await securityReviewed(ctx, checked, {
+  const security = await completionSecurity(ctx, checked, {
     revision: merged,
     codeMerged,
     still: (after: Revision): boolean =>

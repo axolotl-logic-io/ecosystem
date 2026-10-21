@@ -78,13 +78,13 @@ test("the authorized revision is the hardened one when nothing integrated it, wh
   assert.equal(approvalHolds(state, { ...HARDENED, inputs: "i2" }), false);
 });
 
-test("the Reviewer's own integration moves the authorization to its checked revision and keeps the hardened one", () => {
+test("the Reviewer's own integration does not authorize changed code and keeps the hardened one", () => {
   const state = hardenedState({
     integration: { reviewed: HARDENED, revision: INTEGRATED },
   });
-  assert.deepEqual(mergeAuthorization(state), INTEGRATED);
-  assert.equal(approvalHolds(state, INTEGRATED), true);
-  assert.equal(approvalHolds(state, HARDENED), false);
+  assert.deepEqual(mergeAuthorization(state), HARDENED);
+  assert.equal(approvalHolds(state, INTEGRATED), false);
+  assert.equal(approvalHolds(state, HARDENED), true);
   const saved = parseStateBody(stateBody(ISSUE, state), ISSUE);
   assert.deepEqual(saved?.integration, {
     reviewed: HARDENED,

@@ -13,6 +13,7 @@ import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import { currentRevision } from "../revision.ts";
 import { readWriteState } from "../saved-state.ts";
+import { candidateRefusal } from "../security-clearance.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { branchMerge } from "./branch-merge.ts";
 import { mergedText } from "./merge-comment.ts";
@@ -52,7 +53,7 @@ type MergeRequest = z.infer<typeof MERGE_REQUEST>;
 type MergeReply =
   | { merged: true; mergeCommit: string; headSha: string }
   | { merged: true; byHand: true; mergeCommit: string; headSha: string }
-  | { merged: false; reason: string }
+  | { merged: false; reason: string; detail?: string }
   | { merged: false; reason: "head-changed"; headSha: string }
   // The PR is still a draft: only ready-pr marks it ready, after the
   // Reviewer's hardening authorized it.
@@ -199,6 +200,19 @@ function merge(
   }
   if (fresh.isDraft) {
     return { merged: false, reason: "draft" };
+  }
+  const saved = readWriteState(cfg, req.number);
+  const current = currentRevision(cfg, req.number, saved);
+  const refusal = candidateRefusal(saved, req.revision, {
+    target: cfg.baseBranch,
+    baseSha: current.baseSha,
+  });
+  if (refusal !== undefined) {
+    return { merged: false, reason: "security", detail: refusal };
+  }
+  const moved = mergeStale(req.revision, current);
+  if (moved !== undefined) {
+    return moved;
   }
   approvePr(cfg, pr, req.expectedSha);
   return attemptedMerge(cfg, req, clock);

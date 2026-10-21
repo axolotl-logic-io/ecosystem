@@ -7,10 +7,11 @@
 
 import { z } from "zod";
 import { legacyWikiOf, REVISION } from "../merge-provenance.ts";
+import { recordedAuthorization } from "../merged-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import type { currentRevision } from "../revision.ts";
 import type { IssueState, Revision } from "../state.ts";
-import { mergeAuthorization, sameRevision } from "../state.ts";
+import { sameRevision } from "../state.ts";
 
 type CurrentRevision = ReturnType<typeof currentRevision>;
 
@@ -25,7 +26,7 @@ interface MergeStale {
 }
 
 // A merge goes on only while the code head and trusted inputs are
-// still the authorized `revision` (mergeAuthorization).
+// still the authorized `revision` (recordedAuthorization).
 function mergeStale(
   revision: Revision,
   current: CurrentRevision,
@@ -77,7 +78,7 @@ function mergedAuthorizationHolds(
   result: Revision,
   merged: { mergeCommit: string; headSha: string },
 ): boolean {
-  const authorized = mergeAuthorization(saved);
+  const authorized = recordedAuthorization(saved);
   if (
     authorized === null ||
     result.code !== merged.mergeCommit ||

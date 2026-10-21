@@ -52,8 +52,9 @@ function withSavedCodeMerge(
   let { security } = state;
   if (
     saved.security !== null &&
-    merged !== null &&
-    sameRevision(saved.security.revision, merged)
+    ((merged !== null && sameRevision(saved.security.revision, merged)) ||
+      (saved.security.candidate !== undefined &&
+        saved.security.revision.code === state.headSha))
   ) {
     ({ security } = saved);
   }

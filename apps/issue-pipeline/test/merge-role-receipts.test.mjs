@@ -16,6 +16,7 @@ import {
   mergeRole,
   PR,
   REVISION,
+  sha,
 } from "./reviewer-and-merge-role-kit.mjs";
 
 test("own merge saves the original receipt, exact-M verification, security and completion separately", async () => {
@@ -23,12 +24,13 @@ test("own merge saves the original receipt, exact-M verification, security and c
   await mergeRole(ctx);
   const saves = savesOf(calls);
   assert.equal(saves[0]?.stage, "merge");
-  assert.deepEqual(saves[0]?.merged, MERGED_REVISION);
-  assert.equal(saves[0]?.security, null);
-  assert.equal(saves[1]?.verifiedSha, MERGE_COMMIT);
-  assert.deepEqual(saves[1]?.hardened, REVISION);
-  assert.deepEqual(saves[2]?.security, {
-    revision: MERGED_REVISION,
+  assert.equal(saves[0]?.merged, null);
+  assert.deepEqual(saves[1]?.merged, MERGED_REVISION);
+  assert.equal(saves[2]?.verifiedSha, MERGE_COMMIT);
+  assert.deepEqual(saves[2]?.hardened, REVISION);
+  assert.deepEqual(saves[0]?.security, {
+    revision: REVISION,
+    candidate: { target: ctx.cfg.baseBranch, baseSha: sha("b") },
     commentId: COMMENT_ID,
     finding: null,
   });
@@ -56,14 +58,14 @@ for (const checks of [
     assert.deepEqual(end.state.merged, MERGED_REVISION);
     assert.deepEqual(end.state.hardened, REVISION);
     assert.equal(end.state.verifiedSha, HEAD);
-    assert.equal(end.state.security, null);
-    assert.equal(sessionsOf(calls).length, 0);
-    for (const name of ["push", "sync-base", "prepare-review", "finish"]) {
+    assert.deepEqual(end.state.security?.revision, REVISION);
+    assert.equal(sessionsOf(calls).length, 1);
+    for (const name of ["push", "sync-base", "finish"]) {
       assert.ok(!opNames(calls).includes(name), name);
     }
     assert.deepEqual(
       savesOf(calls).map((saved) => saved.merged),
-      [MERGED_REVISION],
+      [null, MERGED_REVISION],
     );
   });
 }

@@ -45,7 +45,7 @@ test("failing CI gets a Reviewer check-fix session, then its own verify, push an
     },
     sessions: [FIXED],
   });
-  const state = stateOf(await mergeRole(ctx), "wait");
+  const state = stateOf(await mergeRole(ctx), "next");
   const [spec] = integrationSessions(calls);
   assert.match(spec?.task ?? "", CHECK_FIX_TASK);
   assert.match(spec?.task ?? "", FAILING_CI);
@@ -84,9 +84,11 @@ test("a failed local check at merge is fixed in the integration phase", async ()
     },
     sessions: [FIXED],
   });
-  const state = stateOf(await mergeRole(ctx), "wait");
+  const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(integrationSessions(calls).length, 1);
-  assert.equal(state.verifiedSha, REBASED);
+  assert.equal(state.stage, "review");
+  assert.equal(state.hardened, null);
+  assert.equal(state.verifiedSha, null);
   assert.ok(!opNames(calls).includes("ci-status"));
 });
 
@@ -125,12 +127,14 @@ test("failing CI and then failing checks get one integration fix session each be
     },
     sessions: [FIXED, FIXED],
   });
-  const state = stateOf(await mergeRole(ctx), "wait");
+  const state = stateOf(await mergeRole(ctx), "next");
   assert.equal(integrationSessions(calls).length, 2);
   assert.deepEqual(
     opNames(calls).filter((name) => ["verify", "push"].includes(name)),
     ["verify", "verify", "push"],
   );
-  assert.equal(state.verifiedSha, REBASED);
+  assert.equal(state.stage, "review");
+  assert.equal(state.hardened, null);
+  assert.equal(state.verifiedSha, null);
   assert.deepEqual(state.integration?.revision, INTEGRATED);
 });
