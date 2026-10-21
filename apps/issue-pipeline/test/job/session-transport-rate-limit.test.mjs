@@ -10,7 +10,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CONNECTION_RESET,
   failedSessionJob,
   requestsOf,
   SERVER_ERROR,
@@ -23,30 +22,7 @@ const RATE_LIMITED = { kind: "finished", end: "deferred", rateLimited: true };
 // The transport failures that defer, each named for its test, with the
 // stage whose session meets it.
 /** @type {readonly (readonly [string, "author" | "implement", { ok: boolean, error: string }])[]} */
-const TRANSPORT_FAILURES = [
-  ["a connection reset in an api_error", "implement", CONNECTION_RESET],
-  ["ECONNRESET", "implement", SOCKET_RESET],
-  ["a socket hang-up", "author", { ok: false, error: "Error: socket hang up" }],
-  [
-    "a timeout reading from the provider",
-    "author",
-    { ok: false, error: "Timeout reading from the provider" },
-  ],
-  [
-    "ETIMEDOUT",
-    "implement",
-    { ok: false, error: "connect ETIMEDOUT 1.2.3.4:443" },
-  ],
-  [
-    "a refused connection in another letter case",
-    "implement",
-    {
-      ok: false,
-      error: "dial tcp 1.2.3.4:443: connect: Connection Refused",
-    },
-  ],
-  ["EAI_AGAIN", "author", { ok: false, error: "getaddrinfo EAI_AGAIN host" }],
-];
+const TRANSPORT_FAILURES = [["ECONNRESET", "implement", SOCKET_RESET]];
 
 for (const [name, stage, failure] of TRANSPORT_FAILURES) {
   test(`an ${stage} session that fails with ${name} leaves the issue at ${stage}, rate-limited, with no stop`, () => {

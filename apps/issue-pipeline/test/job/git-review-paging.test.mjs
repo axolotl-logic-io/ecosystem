@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import {
-  coveredLines,
   delivery,
   eachAsync,
   fixture,
@@ -26,6 +25,7 @@ const WIDE_LINE_BYTES = 5000;
 const WIDE_LINE_COUNT = 20;
 const TOO_WIDE = /cannot fit intact/u;
 const END = "=== END ===";
+const LAST_OVERSIZED_LINE = 3;
 
 /** @import { Delivery } from '../../src/job/git-review.ts' */
 
@@ -78,7 +78,7 @@ test("delivers all 6000 real diff lines within line and serialized byte limits",
   assert.deepEqual(lines, expected);
   const [first] = records;
   assert.ok(first);
-  assert.equal(coveredLines(records, first).size, TOTAL_LINES);
+  assert.ok(records.every((record) => record.queryId === first.queryId));
 });
 
 test("empty output has END and null ranges, never invented covered lines", async () => {
@@ -90,7 +90,6 @@ test("empty output has END and null ranges, never invented covered lines", async
   assert.equal(record.endLine, null);
   assert.deepEqual(pageLines(result), []);
   assert.ok(result.content[0]?.text.endsWith(END));
-  assert.equal(coveredLines([record], record).size, 0);
 });
 
 test("pages stay stable across mutations but not across queries, repos or sessions", async () => {
@@ -117,7 +116,6 @@ test("pages stay stable across mutations but not across queries, repos or sessio
   assert.notEqual(delivery(fresh).sessionId, firstRecord.sessionId);
   assert.notEqual(delivery(fresh).queryId, firstRecord.queryId);
   assert.ok(pageLines(fresh).includes("+different"));
-  assert.equal(coveredLines([delivery(fresh), otherRepo], firstRecord).size, 0);
 });
 
 test("accounts for JSON escaping, metadata and END in the byte cap", async () => {
@@ -163,8 +161,9 @@ test("a line too large to deliver causes an explicit error and no served range",
   assert.ok("error" in failed.details);
   assert.match(failed.content[0]?.text ?? "", TOO_WIDE);
   const last = delivery(await query(tool, repo, argv, { offset: 3 }));
-  assert.equal(coveredLines([first, last], first).size, 2);
-  assert.equal(coveredLines([first, last], first).has(2), false);
+  assert.equal(last.queryId, first.queryId);
+  assert.equal(last.startLine, LAST_OVERSIZED_LINE);
+  assert.equal(last.endLine, LAST_OVERSIZED_LINE);
 });
 
 test("failed Git and invalid page requests never acquire coverage", async () => {
@@ -185,7 +184,7 @@ test("failed Git and invalid page requests never acquire coverage", async () => 
   );
 });
 
-test("coverage requires a union for one query, not repeats, other queries or END alone", async () => {
+test("page records retain query identity and final ranges, not foreign queries", async () => {
   const { repo, tool } = fixture();
   const argv = ["cat-file", "-p", "HEAD:file.txt"];
   const first = delivery(await query(tool, repo, argv, { limit: 1 }));
@@ -194,18 +193,15 @@ test("coverage requires a union for one query, not repeats, other queries or END
   const last = delivery(lastResult);
   assert.deepEqual(repeat, first);
   assert.ok(lastResult.content[0]?.text.endsWith(END));
-  assert.equal(coveredLines([last], first).has(1), false);
-  assert.equal(coveredLines([first, repeat], first).size, 1);
-  assert.equal(
-    coveredLines([first, repeat, last], first).size,
-    first.totalLines,
-  );
+  assert.equal(last.queryId, first.queryId);
+  assert.equal(last.startLine, 2);
+  assert.equal(last.endLine, 2);
   const foreign = delivery(
     await query(tool, repo, ["show", "HEAD:file.txt"], {
       limit: OVERSIZED_LIMIT,
     }),
   );
-  assert.equal(coveredLines([last, foreign], first).has(1), false);
+  assert.notEqual(foreign.queryId, first.queryId);
 });
 
 test("blank lines, a UTF-8 BOM and an unterminated final line survive paging", async () => {

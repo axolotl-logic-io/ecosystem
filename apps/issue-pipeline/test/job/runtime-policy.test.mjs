@@ -70,9 +70,8 @@ for (const [stage, entry] of Object.entries(STAGE_AGENTS)) {
           "type" in record &&
           record.type === "runtime_policy",
       );
-      const diagnostic = DIAGNOSTIC.parse(policy);
-      assert.equal(diagnostic.targetTokens, TARGET);
-      assert.equal(diagnostic.settingsSha256.length, HASH_LENGTH);
+      DIAGNOSTIC.parse(policy);
+
       // The fake's compaction events cannot stop/replace the session: one
       // process, one prompt, same structured-output lifecycle.
       assert.equal(

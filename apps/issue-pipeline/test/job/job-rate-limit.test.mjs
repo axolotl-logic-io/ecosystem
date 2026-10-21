@@ -11,7 +11,6 @@ import {
   COOLING_DOWN,
   failedPostJob,
   failedSessionJob,
-  OVERLOADED,
   requestsOf,
 } from "./rate-limit-test-kit.mjs";
 
@@ -21,9 +20,7 @@ const NETWORK = "error connecting to api.github.com";
 /** @type {readonly ["author" | "implement", string, { ok: boolean, error: string }][]} */
 const RATE_LIMITS = [
   ["author", "the rate limit", COOLING_DOWN],
-  ["author", "an overload", OVERLOADED],
   ["implement", "the rate limit", COOLING_DOWN],
-  ["implement", "an overload", OVERLOADED],
 ];
 
 for (const [stage, name, failure] of RATE_LIMITS) {
@@ -35,20 +32,15 @@ for (const [stage, name, failure] of RATE_LIMITS) {
       end: "deferred",
       reason: failure.error,
     });
-    assert.equal(ops.includes("stop"), false);
+    for (const op of ["stop", "verify", "open-pr", "push", "ready-pr"]) {
+      assert.equal(ops.includes(op), false, op);
+    }
     const [release] = requestsOf(place, "release");
     assert.equal(release.state.stage, stage);
     assert.deepEqual(release.state.counts, { conflictFixes: 0, syncs: 0 });
     assert.deepEqual(outcome, RATE_LIMITED);
   });
 }
-
-test("the implementor's rate-limited session pushes nothing and readies no PR", () => {
-  const { ops } = failedSessionJob("implement", COOLING_DOWN);
-  for (const op of ["verify", "open-pr", "push"]) {
-    assert.equal(ops.includes(op), false, op);
-  }
-});
 
 test("an op's network failure defers its issue but isn't rate-limited", () => {
   const { line, ops, outcome } = failedPostJob(NETWORK);

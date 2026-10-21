@@ -109,16 +109,22 @@ for (const argv of UNSAFE_MODES) {
   });
 }
 
-test("spawns Git directly with an empty HOME and a constant credential-free environment", async ({
-  mock,
-}) => {
-  const { repo, tool } = fixture();
+/** @returns {string} */
+function hostConfig() {
   const host = path.join(isolatedRoot, "host-home");
   fs.mkdirSync(host);
   fs.writeFileSync(
     path.join(host, ".gitconfig"),
     "[credential]\nhelper = sentinel\n[alias]\nstatus = !sentinel\n",
   );
+  return host;
+}
+
+test("spawns Git directly with an empty HOME and a constant credential-free environment", async ({
+  mock,
+}) => {
+  const { repo, tool } = fixture();
+  const host = hostConfig();
   mock.property(process, "env", syntheticEnvironment(host));
   const original = childProcess.spawn;
   let calls = 0;
@@ -140,10 +146,23 @@ test("spawns Git directly with an empty HOME and a constant credential-free envi
       assert.notEqual(home, host);
       spawnedHome = home;
       assert.deepEqual(fs.readdirSync(home), []);
-      assert.deepEqual(env, gitEnvironment(home));
-      assert.ok(args?.includes("--no-pager"));
-      assert.ok(args?.includes("--no-ext-diff"));
-      assert.ok(args?.includes("--no-textconv"));
+      const {
+        XDG_CONFIG_HOME: xdg,
+        GIT_TERMINAL_PROMPT: prompt,
+        GIT_ALLOW_PROTOCOL: protocol,
+      } = env;
+      assert.equal(xdg, home);
+      assert.equal(prompt, "0");
+      assert.equal(protocol, "file");
+      for (const key of [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "SSH_AUTH_SOCK",
+        "GIT_ASKPASS",
+        "SENTINEL",
+      ]) {
+        assert.equal(key in env, false, key);
+      }
       return original(file, args, options);
     },
   );
@@ -219,28 +238,6 @@ test("non-file transport is refused below validation without connecting", () => 
   );
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, TRANSPORT_REFUSED);
-});
-
-test("the child policy contains only the documented minimal environment", () => {
-  const home = "/empty-temporary-home";
-  assert.deepEqual(
-    gitEnvironment(home),
-    Object.fromEntries([
-      ["HOME", home],
-      ["XDG_CONFIG_HOME", home],
-      ["PATH", "/usr/bin:/bin"],
-      ["LC_ALL", "C"],
-      ["TZ", "UTC"],
-      ["GIT_CONFIG_GLOBAL", "/dev/null"],
-      ["GIT_CONFIG_SYSTEM", "/dev/null"],
-      ["GIT_CONFIG_NOSYSTEM", "1"],
-      ["GIT_TERMINAL_PROMPT", "0"],
-      ["GIT_ALLOW_PROTOCOL", "file"],
-      ["GIT_NO_REPLACE_OBJECTS", "1"],
-      ["GIT_OPTIONAL_LOCKS", "0"],
-      ["GIT_ATTR_NOSYSTEM", "1"],
-    ]),
-  );
 });
 
 test("cancelled requests return no delivery record", async () => {

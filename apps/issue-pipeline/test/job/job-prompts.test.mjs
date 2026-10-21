@@ -30,9 +30,7 @@ import {
 } from "./job-test-kit.mjs";
 
 const { STAGES } = await import("../../src/stages.ts");
-const { PROMPT_PAGES: SOURCE_PAGES, pinPrompts } = await import(
-  "../../src/job/prompts.ts"
-);
+const { pinPrompts } = await import("../../src/job/prompts.ts");
 const { openStatus, readStatus } = await import("../../src/job/status.ts");
 const { parseUsageLine, serializeUsage } = await import(
   "../../src/job/usage-log.ts"
@@ -77,10 +75,6 @@ function failureOf(at, r, pattern) {
 }
 
 const FAILED = { status: 1, named: true, ran: 0 };
-
-test("each session's page is the one the reviewer-flow contract names, and the test kit writes the same pages", () => {
-  assert.deepEqual(SOURCE_PAGES, PROMPT_PAGES);
-});
 
 test("the pipeline ships exactly the prompt pages, and every stage pins them as valid pages", () => {
   const shipped = fs.readdirSync(SHIPPED).sort();
@@ -209,20 +203,12 @@ test("a run or a boundary print given --brain-path, or whose root has no prompt 
     const flagged = runJob(at, [...args, "--brain-path", at.prompts]);
     assert.deepEqual(failureOf(at, flagged, UNKNOWN_FLAG), FAILED);
   }
-  fs.renameSync(at.prompts, `${at.prompts}-moved`);
-  fs.writeFileSync(at.prompts, "");
-  for (const extra of [[], ["--print-boundary"]]) {
-    const notFolder = runJob(at, ["--stage", READER_STAGE, ...extra]);
-    assert.deepEqual(failureOf(at, notFolder, NOT_A_FOLDER), FAILED);
-  }
-  fs.rmSync(at.prompts);
-  for (const extra of [[], ["--print-boundary"]]) {
-    const missing = runJob(at, ["--stage", READER_STAGE, ...extra]);
-    assert.deepEqual(failureOf(at, missing, NOT_A_FOLDER), FAILED);
-  }
+  fs.rmSync(at.prompts, { recursive: true });
+  const missing = runJob(at, ["--stage", READER_STAGE]);
+  assert.deepEqual(failureOf(at, missing, NOT_A_FOLDER), FAILED);
 });
 
-test("a page that is missing, a link, empty, one line or not UTF-8 fails the job before anything runs", () => {
+test("missing, linked, blank, single-line and non-UTF-8 prompt pages cannot be pinned", () => {
   const at = place();
   const page = path.join(at.prompts, AUTHOR_PAGE);
   const outside = path.join(at.tmp, "outside.md");
@@ -239,9 +225,15 @@ test("a page that is missing, a link, empty, one line or not UTF-8 fails the job
   for (const [breakPage, pattern] of broken) {
     fs.rmSync(page, { force: true });
     breakPage();
-    for (const extra of [[], ["--print-boundary"]]) {
-      const r = runJob(at, ["--stage", READER_STAGE, ...extra]);
-      assert.deepEqual(failureOf(at, r, pattern), FAILED, r.stderr);
-    }
+    assert.throws(() => pinPrompts(at.prompts, READER_STAGE), pattern);
+  }
+});
+
+test("a missing prompt page refuses both job modes before any op or model", () => {
+  const at = place();
+  fs.rmSync(path.join(at.prompts, AUTHOR_PAGE));
+  for (const extra of [[], ["--print-boundary"]]) {
+    const r = runJob(at, ["--stage", READER_STAGE, ...extra]);
+    assert.deepEqual(failureOf(at, r, CANT_READ), FAILED, r.stderr);
   }
 });
