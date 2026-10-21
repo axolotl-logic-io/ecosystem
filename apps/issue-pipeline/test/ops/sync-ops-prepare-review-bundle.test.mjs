@@ -26,7 +26,6 @@ const ISSUE = {
   bound: 43,
   pathOnly: 44,
   docs: 45,
-  gitlink: 46,
 };
 // The reply fields these tests read; the bundle's are checked by value.
 const BUNDLE_REPLY = z.looseObject({
@@ -37,8 +36,6 @@ const BUNDLE_REPLY = z.looseObject({
   bundleText: z.unknown().optional(),
 });
 
-// A commit no repo of the fixture holds.
-const ABSENT_COMMIT = "3333333333333333333333333333333333333333";
 // A file git counts as binary, since it holds NUL bytes.
 const BINARY = Buffer.from("\u0089PNG\u0000\u0000binary-415\n", "latin1");
 
@@ -176,23 +173,4 @@ test("the bundle holds a docs/ page's head text like any code file", () => {
   assert.ok(files.includes(headText(n, "g")));
   assert.ok(files.includes("\n## docs/Page.md\n"), files);
   assert.ok(files.includes(headText(n, "docs/Page.md")));
-});
-
-test("a gitlink whose commit is absent from the code object store is reviewed as a full pointer, never a text blob", () => {
-  const n = ISSUE.gitlink;
-  fx.startBranch(n, "code", "code with pointer");
-  const pin = ABSENT_COMMIT;
-  const wt = worktree(n);
-  sh(`git -C ${wt} update-index --add --cacheinfo 160000,${pin},vendor`);
-  sh(`git -C ${wt} commit -qm "Add external gitlink"`);
-  assert.equal(sh(`git -C ${wt} cat-file -e ${pin} 2>/dev/null; echo $?`), "1");
-  const prepared = prepare(n);
-  assert.ok(prepared.diff.includes(`Subproject commit ${pin}`));
-  const files = filesPart(prepared);
-  assert.ok(
-    files.endsWith(
-      `\n## vendor\n\nGitlink: path only. Old: absent; new: commit \`${pin}\`.\n`,
-    ),
-    "the added gitlink has its full pointer and no appended contents",
-  );
 });

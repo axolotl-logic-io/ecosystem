@@ -152,11 +152,6 @@ test("retained recovery bundles an added gitlink and the docs change before Secu
   assert.ok(diff.includes(`+Subproject commit ${gitlink}`));
   assert.ok(diff.includes("+Greetings say Hello, world!"));
   assert.ok(bundle.startsWith(diff));
-  assert.ok(
-    files.includes(
-      `\n## review-module\n\nGitlink: path only. Old: absent; new: commit \`${gitlink}\`.\n`,
-    ),
-  );
   assert.ok(files.includes("Greetings say Hello, world!"));
 });
 

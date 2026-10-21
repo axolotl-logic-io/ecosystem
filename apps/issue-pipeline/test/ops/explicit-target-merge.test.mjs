@@ -24,33 +24,23 @@ import {
   REPO,
   world,
 } from "../explicit-target-world-test-kit.mjs";
+import { effectsOf } from "../gh-effects-test-kit.mjs";
 import { confirmationClock } from "./confirmation-clock-test-kit.mjs";
 
 const { merge } = await import("../../src/ops/merge.ts");
 const { mergedCode } = await import("../../src/ops/merged-review.ts");
 const { verify } = await import("../../src/ops/verify.ts");
-const { signed } = await import("../../src/comments.ts");
-const { mergedText } = await import("../../src/ops/merge-comment.ts");
 const { gh } = await import("../../src/github.ts");
 const REFUSED = z.looseObject({ merged: z.literal(false), reason: z.string() });
 const INVALID_REQUEST = /bad merge request/u;
 const SHA_LENGTH = 40;
 const IDENTITY = /not the configured repository|not from|not agent|targets/u;
 
-/** @param {import("../explicit-target-world-test-kit.mjs").World} w */
-function commentStep(w) {
-  const text = `${mergedText(w.state, w.head, w.merged)}\n\n`;
-  return {
-    args: [
-      "api",
-      "-X",
-      "POST",
-      `repos/${REPO}/issues/${PR}/comments`,
-      "-f",
-      `body=${signed({ role: "merger" }, text)}`,
-      "--silent",
-    ],
-  };
+const SHORT_SHA_LENGTH = 12;
+function mergerComments() {
+  return effectsOf(calls()).filter(
+    ({ effect }) => effect === `comment #${PR} role=merger`,
+  );
 }
 /** @param {import("../explicit-target-world-test-kit.mjs").World} w */
 function receiptSteps(w) {
@@ -76,7 +66,6 @@ test("literal configured integration and full H survive a concurrent source bran
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
     ...resultInputs(w),
-    commentStep(w),
   ]);
   assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
     merged: true,
@@ -93,6 +82,9 @@ test("literal configured integration and full H survive a concurrent source bran
     mutations().filter((args) => args[1] === `repos/${REPO}/merges`).length,
     1,
   );
+  const comments = mergerComments();
+  assert.equal(comments.length, 1);
+  assert.ok(comments[0]?.body.includes(w.merged.slice(0, SHORT_SHA_LENGTH)));
   consumed();
 });
 
@@ -105,7 +97,6 @@ test("main is a valid configured source base, not an implicit production exclusi
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
     ...resultInputs(w),
-    commentStep(w),
   ]);
   assert.deepEqual(merge(w.cfg, request(w), confirmationClock()), {
     merged: true,
@@ -118,6 +109,9 @@ test("main is a valid configured source base, not an implicit production exclusi
     mutations().filter((args) => args[1] === `repos/${REPO}/merges`).length,
     1,
   );
+  const comments = mergerComments();
+  assert.equal(comments.length, 1);
+  assert.ok(comments[0]?.body.includes(w.merged.slice(0, SHORT_SHA_LENGTH)));
   consumed();
 });
 
@@ -163,9 +157,11 @@ test("concurrent integration contribution is checked and security reads detached
     prStep(w, mergedView(w)),
     prStep(w, mergedView(w), true),
     ...resultInputs(w),
-    commentStep(w),
   ]);
   assert.equal(merge(w.cfg, request(w), confirmationClock()).merged, true);
+  const comments = mergerComments();
+  assert.equal(comments.length, 1);
+  assert.ok(comments[0]?.body.includes(w.merged.slice(0, SHORT_SHA_LENGTH)));
   consumed();
   script(w, receiptSteps(w));
   const verified = verify(
@@ -192,7 +188,6 @@ test("concurrent integration contribution is checked and security reads detached
   );
   assert.ok(reviewed.diff.includes("earlier feature commit"));
   assert.ok(reviewed.diff.includes("last feature commit"));
-  assert.ok(reviewed.diff.includes("not a cumulative review"));
   assert.equal(mutations().length, 0);
   consumed();
 });

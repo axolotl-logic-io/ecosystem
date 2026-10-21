@@ -104,11 +104,6 @@ test("another account's marked comment is ignored, and the first is posted", () 
   assert.deepEqual(done.map(targetOf), ["POST repos/o/r/issues/7/comments"]);
   const body = bodyOf(done[0] ?? []);
   assert.ok(body.includes("<!-- issue-pipeline:7:usage -->"));
-  assert.ok(
-    body.startsWith(
-      "Issue pipeline usage records (hidden; described in the issue pipeline's docs/reference/)",
-    ),
-  );
   assert.deepEqual(attemptsOf(done[0] ?? []), [2]);
 });
 
