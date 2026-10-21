@@ -28,6 +28,10 @@ function comment(body) {
   );
 }
 
+const ABSENT_AUTHORITY = /has no saved write authority/u;
+const INVALID_AUTHORITY = /saved write authority is invalid/u;
+const UNTRUSTED_AUTHORITY = /state has no merge authority/u;
+
 test("canonical and raw state are eligible; account-authored coordinator/error/quoted state markers are not", async () => {
   const job = await openJob("implement");
   try {
@@ -68,7 +72,7 @@ test("canonical and raw state are eligible; account-authored coordinator/error/q
     saveAuthorityBodies(job.cfg, [
       `**🤖 issue-pipeline · coordinator**\n${writable}`,
     ]);
-    assert.throws(() => readWriteState(job.cfg, ISSUE));
+    assert.throws(() => readWriteState(job.cfg, ISSUE), ABSENT_AUTHORITY);
     assert.equal(readState(job.cfg, ISSUE).state, null);
   } finally {
     job.close();
@@ -84,7 +88,12 @@ test("a malformed latest eligible state cannot revive older writable authority",
       "**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n{}\n-->",
     ]) {
       saveAuthorityBodies(job.cfg, [older, malformed]);
-      assert.throws(() => readWriteState(job.cfg, ISSUE));
+      /** @type {RegExp | typeof SyntaxError} */
+      let refusal = INVALID_AUTHORITY;
+      if (malformed.includes("not JSON")) {
+        refusal = SyntaxError;
+      }
+      assert.throws(() => readWriteState(job.cfg, ISSUE), refusal);
     }
   } finally {
     job.close();
@@ -116,8 +125,8 @@ test("state upsert retains genuine comment identity despite newer diagnostic mar
     saveAuthorityBodies({ ...job.cfg, mergeAccount: "outsider" }, [
       stateBody(ISSUE, state),
     ]);
-    assert.throws(() => readWriteState(job.cfg, ISSUE));
-    assert.throws(() => readState(job.cfg, ISSUE));
+    assert.throws(() => readWriteState(job.cfg, ISSUE), UNTRUSTED_AUTHORITY);
+    assert.throws(() => readState(job.cfg, ISSUE), UNTRUSTED_AUTHORITY);
     assert.equal(
       pipelineRole(job.cfg, {
         ...comment(stateBody(ISSUE, state)),

@@ -49,18 +49,25 @@ for (const status of ["OPEN", "MERGED"]) {
   });
 }
 
-for (const bad of [
-  null,
-  {},
-  [{ number: "42" }],
-  [{ number: PR }, { number: PR + 1 }],
-  Array.from({ length: 100 }, (_, i) => ({ number: i + 1 })),
+const HISTORY_SHAPE = { name: "ZodError" };
+for (const { bad, refusal } of [
+  { bad: null, refusal: HISTORY_SHAPE },
+  { bad: {}, refusal: HISTORY_SHAPE },
+  { bad: [{ number: "42" }], refusal: HISTORY_SHAPE },
+  {
+    bad: [{ number: PR }, { number: PR + 1 }],
+    refusal: /PR history is saturated or ambiguous/u,
+  },
+  {
+    bad: Array.from({ length: 100 }, (_, i) => ({ number: i + 1 })),
+    refusal: /PR history is saturated or ambiguous/u,
+  },
 ]) {
   test(`malformed, unreadable, ambiguous or saturated PR history refuses: ${JSON.stringify(bad).slice(0, TITLE_LENGTH)}`, async () => {
     const job = await openJob("implement");
     try {
       savePrHistory(job.cfg, bad);
-      assert.throws(() => readWriteAuthority(job.cfg, ISSUE));
+      assert.throws(() => readWriteAuthority(job.cfg, ISSUE), refusal);
       assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
     } finally {
       job.close();
@@ -68,14 +75,25 @@ for (const bad of [
   });
 }
 
-for (const wrong of [
-  { number: PR + 1 },
-  { headRefName: "stale-branch" },
-  { headRefOid: "" },
-  { baseRefName: "main" },
-  { isCrossRepository: true },
-  { mergeCommit: { oid: "unexpected" } },
-]) {
+/** @type {{wrong: Record<string, unknown>, refusal: RegExp}[]} */
+const WRONG_PRS = [
+  { wrong: { number: PR + 1 }, refusal: /is not from .* so it isn't/u },
+  {
+    wrong: { headRefName: "stale-branch" },
+    refusal: /is not from .* so it isn't/u,
+  },
+  { wrong: { headRefOid: "" }, refusal: /reply for PR #42 doesn't parse/u },
+  { wrong: { baseRefName: "main" }, refusal: /targets main, not integration/u },
+  {
+    wrong: { isCrossRepository: true },
+    refusal: /is not from .* so it isn't/u,
+  },
+  {
+    wrong: { mergeCommit: { oid: "unexpected" } },
+    refusal: /has inconsistent merge evidence/u,
+  },
+];
+for (const { wrong, refusal } of WRONG_PRS) {
   test(`discovered PR identity cannot authorize a draft save: ${JSON.stringify(wrong)}`, async () => {
     const job = await openJob("implement");
     try {
@@ -91,14 +109,19 @@ for (const wrong of [
         mergeCommit: null,
         ...wrong,
       });
-      assert.throws(() => readWriteAuthority(job.cfg, ISSUE));
-      assert.throws(() => saveDraftAuthority(job.cfg, ISSUE, PR, original));
+      assert.throws(() => readWriteAuthority(job.cfg, ISSUE), refusal);
+      assert.throws(
+        () => saveDraftAuthority(job.cfg, ISSUE, PR, original),
+        refusal,
+      );
       assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
     } finally {
       job.close();
     }
   });
 }
+
+const STALE_DRAFT = /has no matching open draft authority/u;
 
 test("a stale head cannot be saved; a validated draft saves only its PR identity and preserves provenance", async () => {
   const job = await openJob("implement");
@@ -122,7 +145,10 @@ test("a stale head cannot be saved; a validated draft saves only its PR identity
       isCrossRepository: false,
       mergeCommit: null,
     });
-    assert.throws(() => saveDraftAuthority(job.cfg, ISSUE, PR, "stale-head"));
+    assert.throws(
+      () => saveDraftAuthority(job.cfg, ISSUE, PR, "stale-head"),
+      STALE_DRAFT,
+    );
     saveDraftAuthority(job.cfg, ISSUE, PR, original);
     assert.deepEqual(readWriteState(job.cfg, ISSUE), { ...state, pr: PR });
   } finally {

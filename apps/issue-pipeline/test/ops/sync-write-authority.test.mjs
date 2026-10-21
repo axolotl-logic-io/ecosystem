@@ -60,13 +60,15 @@ function keepConflict(n) {
   return { remote, reply };
 }
 
-for (const [at, denied] of [
-  "missing",
-  "malformed",
-  "saved-merge",
-  "live-merge",
-  "rejected",
-].entries()) {
+const SYNC_REFUSALS = new Map([
+  ["missing", /has no saved write authority/u],
+  ["malformed", /saved write authority is invalid/u],
+  ["saved-merge", /code merged, so (?:sync-base|finish-sync) can't push code/u],
+  ["live-merge", /code merged, so (?:sync-base|finish-sync) can't push code/u],
+  ["rejected", /code merged, so (?:sync-base|finish-sync) can't push code/u],
+]);
+const PUSH_REFUSAL = /code merged; refusing sync push/u;
+for (const [at, [denied, refusal]] of [...SYNC_REFUSALS].entries()) {
   test(`sync entry refuses ${denied} before abort/reset/rebase; exact conflict and dirty work remain`, () => {
     const n = FIRST_REFUSAL_ISSUE + at;
     const { remote, reply: kept } = keepConflict(n);
@@ -122,6 +124,7 @@ for (const [at, denied] of [
     ]) {
       const reply = JSON.parse(fx.ask(request));
       assert.equal(reply.ok, false, JSON.stringify(reply));
+      assert.match(reply.error, refusal);
       assert.deepEqual(snapshot(n), before);
       assert.equal(fx.originRef(`agent/issue-${n}`), remote);
       assert.equal(
@@ -150,6 +153,7 @@ test("finish-sync rechecks authority immediately before its raw push and retains
   ]);
   const reply = JSON.parse(fx.ask({ op: "finish-sync", number: n }));
   assert.equal(reply.ok, false, JSON.stringify(reply));
+  assert.match(reply.error, PUSH_REFUSAL);
   assert.deepEqual(fx.worktreeState(n), before);
   assert.equal(
     fs.readFileSync(path.join(wt, `c${n}`), "utf8"),
