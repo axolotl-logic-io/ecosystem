@@ -93,6 +93,32 @@ function commit(dir, file, text) {
   return git(dir, ["rev-parse", "HEAD"]);
 }
 
+/**
+ * @param {import("../src/config.ts").Config} cfg
+ * @param {import("../src/state.ts").Revision} revision
+ * @param {string} base
+ * @returns {import("../src/state.ts").IssueState}
+ */
+function candidateState(cfg, revision, base) {
+  return {
+    ...newIssueState(ISSUE),
+    stage: "merge",
+    pr: PR,
+    hardened: revision,
+    hardenedTarget: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
+    security: {
+      revision,
+      commentId: 11,
+      finding: null,
+      phase: "candidate",
+      target: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
+    },
+    headSha: revision.code,
+    verifiedSha: revision.code,
+    flows: { code: true },
+  };
+}
+
 /** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean }} [options] */
 function graph(options = {}) {
   const place = fs.mkdtempSync(path.join(HOME, "world-"));
@@ -166,22 +192,7 @@ function world(options = {}) {
   fs.mkdirSync(path.dirname(wt), { recursive: true });
   git(clone, ["worktree", "add", "-q", "-b", BRANCH, wt, `origin/${BRANCH}`]);
   const revision = { code: head, inputs: INPUTS };
-  /** @type {import("../src/state.ts").IssueState} */
-  const state = {
-    ...newIssueState(ISSUE),
-    stage: /** @type {const} */ ("merge"),
-    pr: PR,
-    hardened: revision,
-    security: {
-      revision,
-      commentId: 11,
-      finding: null,
-      candidate: { target: cfg.baseBranch, baseSha: base },
-    },
-    headSha: head,
-    verifiedSha: head,
-    flows: { code: true },
-  };
+  const state = candidateState(cfg, revision, base);
   fs.writeFileSync(path.join(place, "state.json"), stateBody(ISSUE, state));
   return {
     cfg,

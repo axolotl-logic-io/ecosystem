@@ -17,6 +17,7 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const { merge } = await import("../src/ops/merge.ts");
 const TARGET_REFUSAL = /targets .+, not integration/u;
 
@@ -38,7 +39,11 @@ function request(w) {
 
 /** @param {import("./ops-publish-test-kit.mjs").World} w @returns {void} */
 function current(w) {
-  setCurrentRevision({ revision: approvedOf(w), baseSha: "base", pr: null });
+  setCurrentRevision({
+    revision: approvedOf(w),
+    baseSha: TARGET_SHA,
+    pr: null,
+  });
 }
 
 for (const baseRefName of ["main", "other"]) {

@@ -13,6 +13,8 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const MOVED_TARGET_SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const { merge } = await import("../src/ops/merge.ts");
 
 /** @param {import("./ops-publish-test-kit.mjs").World} w @param {string} refusal */
@@ -20,7 +22,8 @@ function unclearedState(w, refusal) {
   const saved = approvedState(approvedOf(w));
   const security = {
     ...securityOf(approvedOf(w)),
-    candidate: { target: w.cfg.baseBranch, baseSha: "base" },
+    phase: /** @type {const} */ ("candidate"),
+    target: { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha: TARGET_SHA },
   };
   saved.security = security;
 
@@ -29,7 +32,7 @@ function unclearedState(w, refusal) {
       saved.security = null;
       break;
     case "historical": {
-      const { candidate: _candidate, ...historical } = security;
+      const { phase: _phase, target: _target, ...historical } = security;
       saved.security = historical;
       break;
     }
@@ -46,10 +49,10 @@ function unclearedState(w, refusal) {
       security.revision = { ...security.revision, inputs: "stale-inputs" };
       break;
     case "wrong target":
-      security.candidate.target = "other";
+      security.target.branch = "other";
       break;
     case "moved target":
-      security.candidate.baseSha = "target-before";
+      security.target.sha = MOVED_TARGET_SHA;
       break;
     case "unchecked":
       saved.verifiedSha = null;

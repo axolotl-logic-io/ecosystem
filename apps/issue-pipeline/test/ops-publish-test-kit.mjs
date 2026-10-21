@@ -17,6 +17,7 @@ import { home, root } from "./ops-publish-environment.mjs";
 /** @import { GhReply } from "./fake-gh.mjs" */
 /** @typedef {{ cfg: import("../src/config.ts").Config, root: string, sha: string, mergeSha: string, worktree: string }} World */
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const ACCOUNT = "bot";
 const REPO = "o/r";
 const ISSUE = 7;
@@ -118,10 +119,12 @@ function approvedState(approved, extra = {}) {
       revision: approved,
     },
     hardened: approved,
+    hardenedTarget: { repo: REPO, branch: "integration", sha: TARGET_SHA },
     verifiedSha: approved.code,
     security: {
       ...securityOf(approved),
-      candidate: { target: "integration", baseSha: "base" },
+      phase: "candidate",
+      target: { repo: REPO, branch: "integration", sha: TARGET_SHA },
     },
     ...extra,
   };

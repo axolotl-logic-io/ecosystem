@@ -4,6 +4,7 @@
 // result that finds nothing, and the replies after the merge.
 import { opNames, sessionsOf } from "./reviewer-and-merge-role-calls-kit.mjs";
 import {
+  cfg,
   current,
   fakeContext,
   HEAD,
@@ -98,6 +99,11 @@ function merging(script = {}) {
     state: issueState({
       stage: "merge",
       hardened: REVISION,
+      hardenedTarget: {
+        repo: cfg.repo,
+        branch: cfg.baseBranch,
+        sha: current().baseSha,
+      },
       ...script.state,
     }),
     gherkin: script.gherkin,

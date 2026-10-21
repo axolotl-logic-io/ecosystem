@@ -32,6 +32,7 @@ import {
   writes,
 } from "./ops-publish-test-kit.mjs";
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const { merge } = await import("../src/ops/merge.ts");
 
 const COMMENTS_ON_PR = /issues\/50\/comments/u;
@@ -143,7 +144,7 @@ test("merge refuses a PR from another branch", () => {
 test("merge refuses a stale revision with the current one, before merging", () => {
   const w = world();
   const moved = { ...approvedOf(w), inputs: "inputs-2" };
-  setCurrentRevision({ revision: moved, baseSha: "base", pr: null });
+  setCurrentRevision({ revision: moved, baseSha: TARGET_SHA, pr: null });
   fakeGh.reply([
     savedListing(approvedState(approvedOf(w))),
     prView({ headRefOid: w.sha }),

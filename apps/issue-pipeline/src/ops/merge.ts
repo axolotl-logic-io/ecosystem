@@ -203,10 +203,7 @@ function merge(
   }
   const saved = readWriteState(cfg, req.number);
   const current = currentRevision(cfg, req.number, saved);
-  const refusal = candidateRefusal(saved, req.revision, {
-    target: cfg.baseBranch,
-    baseSha: current.baseSha,
-  });
+  const refusal = candidateRefusal(saved, req.revision, cfg, current.baseSha);
   if (refusal !== undefined) {
     return { merged: false, reason: "security", detail: refusal };
   }

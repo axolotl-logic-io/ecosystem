@@ -58,10 +58,7 @@ function beginMerge(
     state.hardened === null ||
     !sameRevision(current.revision, authorized) ||
     !approvalHolds(state, authorized) ||
-    candidateRefusal(state, authorized, {
-      target: cfg.baseBranch,
-      baseSha: current.baseSha,
-    }) !== undefined
+    candidateRefusal(state, authorized, cfg, current.baseSha) !== undefined
   ) {
     throw new OpsError("merge has no fresh unattempted saved authorization");
   }

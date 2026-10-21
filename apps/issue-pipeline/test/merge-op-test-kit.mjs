@@ -3,6 +3,8 @@
 import { setCurrentRevision } from "./ops-publish-revision-double.mjs";
 import { approvedState, ISSUE, PR } from "./ops-publish-test-kit.mjs";
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
 /** @typedef {import("./ops-publish-test-kit.mjs").World} World */
 /** @param {World} w @returns {{ code: string, inputs: string }} */
 function approvedOf(w) {
@@ -27,7 +29,7 @@ function request(w, extra = {}) {
 function current(w) {
   setCurrentRevision({
     revision: approvedOf(w),
-    baseSha: "base",
+    baseSha: TARGET_SHA,
     pr: { number: PR, state: "OPEN", mergeCommit: null, headSha: w.sha },
   });
 }

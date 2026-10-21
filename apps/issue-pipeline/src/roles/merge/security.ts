@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
-import type { Candidate } from "../../security-clearance.ts";
+import type { ReviewedTarget } from "../../reviewed-target.ts";
+import { targetHolds } from "../../reviewed-target.ts";
 import { sameSecuritySubject } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
@@ -14,7 +15,7 @@ import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
 import { integrate } from "./integration.ts";
-import { logged, toAuthor, waiting } from "./returns.ts";
+import { logged, toAuthor, toReview, waiting } from "./returns.ts";
 import { securityReviewTask } from "./task.ts";
 
 const PREPARED = z.looseObject({
@@ -105,14 +106,14 @@ interface MergedResult {
   revision: Revision;
   codeMerged: CodeMerged | null;
   still: (after: Revision) => boolean;
-  candidate?: Candidate;
+  target?: ReviewedTarget;
 }
 
 // Discard a fresh verdict if code, inputs or the observed target moved.
 async function freshReview(
   ctx: RoleContext,
   state: IssueState,
-  { revision, codeMerged, still, candidate }: MergedResult,
+  { revision, codeMerged, still, target }: MergedResult,
 ): Promise<Step<SecurityReviewReply>> {
   const prepared = await prepare(ctx, revision, codeMerged);
   if (revision.code !== null && prepared.headSha !== revision.code) {
@@ -123,7 +124,7 @@ async function freshReview(
       ),
     );
   }
-  if (candidate !== undefined && prepared.baseSha !== candidate.baseSha) {
+  if (target !== undefined && prepared.baseSha !== target.sha) {
     return ended(
       await integrate(ctx, state, {
         rebase: true,
@@ -156,10 +157,7 @@ async function freshReview(
       toAuthor(state, "the trusted inputs changed during the security review"),
     );
   }
-  if (
-    !still(after) ||
-    (candidate !== undefined && fresh.baseSha !== candidate.baseSha)
-  ) {
+  if (!still(after) || (target !== undefined && fresh.baseSha !== target.sha)) {
     return ended(
       waiting(
         logged(state, "security review discarded: the revision moved"),
@@ -179,11 +177,11 @@ async function recorded(
   {
     revision,
     reply,
-    candidate,
+    target,
   }: {
     revision: Revision;
     reply: SecurityReviewReply;
-    candidate?: Candidate | undefined;
+    target?: ReviewedTarget | undefined;
   },
 ): Promise<Step<IssueState>> {
   let on: "issue" | "pr" = "pr";
@@ -202,8 +200,8 @@ async function recorded(
     entry = `security review: ${finding.category}`;
   }
   let security: IssueState["security"] = { revision, commentId, finding };
-  if (candidate !== undefined) {
-    security = { ...security, candidate };
+  if (target !== undefined) {
+    security = { ...security, phase: "candidate", target };
   }
   const reviewed = logged({ ...state, security }, entry);
   await ctx.save(reviewed);
@@ -211,6 +209,37 @@ async function recorded(
     return ended(securityStop(reviewed, finding));
   }
   return { ok: true, value: reviewed };
+}
+
+function candidateGate(
+  ctx: RoleContext,
+  state: IssueState,
+  target: ReviewedTarget | undefined,
+): RoleEnd | null {
+  if (target !== undefined) {
+    if (
+      state.mergeAttempt !== null ||
+      state.codeMerged !== null ||
+      (state.merged !== null && state.merged.code !== null)
+    ) {
+      return errorStop(
+        state,
+        "candidate Security cannot run after merge or an uncertain attempt",
+      );
+    }
+    if (
+      !(
+        targetHolds(ctx.cfg, target, target.sha) &&
+        targetHolds(ctx.cfg, state.hardenedTarget, target.sha)
+      )
+    ) {
+      return toReview(
+        state,
+        "the target context needs fresh hardening and checks",
+      );
+    }
+  }
+  return null;
 }
 
 // The security receipt for exactly `result.revision`: the saved one when it
@@ -221,18 +250,23 @@ async function securityReviewed(
   state: IssueState,
   result: MergedResult,
 ): Promise<Step<IssueState>> {
-  const { revision, candidate } = result;
+  const { revision, target } = result;
   const rejected = rejectedAgain(state, revision);
   if (rejected !== null) {
     return ended(rejected);
+  }
+  const gate = candidateGate(ctx, state, target);
+  if (gate !== null) {
+    return ended(gate);
   }
   const saved = state.security;
   if (
     saved !== null &&
     sameRevision(saved.revision, revision) &&
-    (candidate === undefined ||
-      (saved.candidate?.target === candidate.target &&
-        saved.candidate.baseSha === candidate.baseSha))
+    ((target === undefined && saved.phase === undefined) ||
+      (target !== undefined &&
+        saved.phase === "candidate" &&
+        targetHolds(ctx.cfg, saved.target, target.sha)))
   ) {
     if (saved.finding === null) {
       return { ok: true, value: state };
@@ -246,7 +280,7 @@ async function securityReviewed(
   return await recorded(ctx, state, {
     revision,
     reply: reply.value,
-    candidate,
+    target,
   });
 }
 

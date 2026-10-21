@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { reviewedTarget } from "../../reviewed-target.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -145,7 +146,7 @@ async function clearedCandidate(
   const clearance = await securityReviewed(ctx, checked.state, {
     revision: current.revision,
     codeMerged: null,
-    candidate: { target: ctx.cfg.baseBranch, baseSha: current.baseSha },
+    target: reviewedTarget(ctx.cfg, current.baseSha),
     still: (after: Revision): boolean => sameRevision(after, current.revision),
   });
   if (!clearance.ok) {

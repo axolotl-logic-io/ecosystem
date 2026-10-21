@@ -3,30 +3,36 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const MOVED_TARGET_SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const { candidateRefusal, securityRefusal } = await import(
   "../src/security-clearance.ts"
 );
+const { configFixture } = await import("./config-fixtures.mjs");
+const cfg = configFixture();
 const { newIssueState } = await import("../src/state.ts");
 
 const ISSUE = 7;
 const COMMENT = 3;
 const REVISION = { code: "candidate", inputs: "trusted-inputs" };
-const CANDIDATE = { target: "main", baseSha: "target-before" };
+const TARGET = { repo: cfg.repo, branch: cfg.baseBranch, sha: TARGET_SHA };
 const CLEAR = {
   revision: REVISION,
-  candidate: CANDIDATE,
+  phase: /** @type {const} */ ("candidate"),
+  target: TARGET,
   commentId: COMMENT,
   finding: null,
 };
 const SAVED = {
   ...newIssueState(ISSUE),
   hardened: REVISION,
+  hardenedTarget: TARGET,
   verifiedSha: REVISION.code,
   security: CLEAR,
 };
 
 test("only exact candidate hardening, checks and premerge Security clear the observed target", () => {
-  assert.equal(candidateRefusal(SAVED, REVISION, CANDIDATE), undefined);
+  assert.equal(candidateRefusal(SAVED, REVISION, cfg, TARGET.sha), undefined);
   for (const saved of [
     { ...SAVED, hardened: null },
     { ...SAVED, verifiedSha: null },
@@ -41,11 +47,11 @@ test("only exact candidate hardening, checks and premerge Security clear the obs
     },
     {
       ...SAVED,
-      security: { ...CLEAR, candidate: { ...CANDIDATE, baseSha: "old" } },
+      security: { ...CLEAR, target: { ...TARGET, sha: MOVED_TARGET_SHA } },
     },
     {
       ...SAVED,
-      security: { ...CLEAR, candidate: { ...CANDIDATE, target: "other" } },
+      security: { ...CLEAR, target: { ...TARGET, branch: "other" } },
     },
     {
       ...SAVED,
@@ -58,20 +64,29 @@ test("only exact candidate hardening, checks and premerge Security clear the obs
       },
     },
   ]) {
-    assert.notEqual(candidateRefusal(saved, REVISION, CANDIDATE), undefined);
+    assert.notEqual(
+      candidateRefusal(saved, REVISION, cfg, TARGET.sha),
+      undefined,
+    );
   }
   for (const revision of [
     { ...REVISION, code: "integrated" },
     { ...REVISION, inputs: "changed" },
   ]) {
-    assert.notEqual(candidateRefusal(SAVED, revision, CANDIDATE), undefined);
+    assert.notEqual(
+      candidateRefusal(SAVED, revision, cfg, TARGET.sha),
+      undefined,
+    );
   }
 });
 
 test("historical merged-result clearance never supplies premerge permission", () => {
-  const { candidate: _candidate, ...historical } = CLEAR;
+  const { phase: _phase, target: _target, ...historical } = CLEAR;
   const saved = { ...SAVED, security: historical };
-  assert.notEqual(candidateRefusal(saved, REVISION, CANDIDATE), undefined);
+  assert.notEqual(
+    candidateRefusal(saved, REVISION, cfg, TARGET.sha),
+    undefined,
+  );
   assert.equal(securityRefusal(saved, REVISION), undefined);
   assert.notEqual(
     securityRefusal(saved, { ...REVISION, code: "other" }),
@@ -90,6 +105,60 @@ test("candidate clearance reaches completion only through the saved own result a
   );
   assert.notEqual(
     securityRefusal(saved, { ...result, inputs: "changed" }),
+    undefined,
+  );
+});
+
+for (const target of [
+  null,
+  { ...TARGET, repo: "other/repository" },
+  { ...TARGET, branch: "other" },
+  { ...TARGET, sha: MOVED_TARGET_SHA },
+]) {
+  test(`a candidate receipt cannot replace retained hardening target: ${JSON.stringify(target)}`, () => {
+    assert.notEqual(
+      candidateRefusal(
+        { ...SAVED, hardenedTarget: target },
+        REVISION,
+        cfg,
+        TARGET.sha,
+      ),
+      undefined,
+    );
+    assert.notEqual(
+      securityRefusal(
+        {
+          ...SAVED,
+          hardenedTarget: target,
+          merged: { ...REVISION, code: "result" },
+        },
+        { ...REVISION, code: "result" },
+      ),
+      undefined,
+    );
+  });
+}
+
+test("fresh configured repository, literal branch and advertised target must all match the receipt", () => {
+  for (const changed of [
+    { ...cfg, repo: "other/repository" },
+    { ...cfg, baseBranch: "other" },
+  ]) {
+    assert.notEqual(
+      candidateRefusal(SAVED, REVISION, changed, TARGET.sha),
+      undefined,
+    );
+  }
+  assert.notEqual(
+    candidateRefusal(SAVED, REVISION, cfg, MOVED_TARGET_SHA),
+    undefined,
+  );
+  const saved = {
+    ...SAVED,
+    security: { ...CLEAR, target: { ...TARGET, repo: "other/repository" } },
+  };
+  assert.notEqual(
+    candidateRefusal(saved, REVISION, cfg, TARGET.sha),
     undefined,
   );
 });

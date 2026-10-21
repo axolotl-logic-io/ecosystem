@@ -37,7 +37,7 @@ function sameCandidateDecision(
   requested: Security | null,
   headSha: string | null,
 ): boolean {
-  if (saved.candidate === undefined || saved.revision.code !== headSha) {
+  if (saved.phase !== "candidate" || saved.revision.code !== headSha) {
     return false;
   }
   if (requested === null) {
@@ -47,9 +47,10 @@ function sameCandidateDecision(
     return false;
   }
   return (
-    requested.candidate === undefined ||
-    (saved.candidate.target === requested.candidate.target &&
-      saved.candidate.baseSha === requested.candidate.baseSha)
+    requested.phase === undefined ||
+    (saved.target.repo === requested.target.repo &&
+      saved.target.branch === requested.target.branch &&
+      saved.target.sha === requested.target.sha)
   );
 }
 

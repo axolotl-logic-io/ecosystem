@@ -73,7 +73,7 @@ async function completionSecurity(
   if (refusal === undefined) {
     return { ok: true, value: state };
   }
-  if (state.security?.candidate !== undefined) {
+  if (state.security?.phase === "candidate") {
     return ended(failed(state, refusal));
   }
   return await securityReviewed(ctx, state, result);

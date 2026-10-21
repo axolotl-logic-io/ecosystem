@@ -1,11 +1,11 @@
 // Candidate clearance is distinct from historical postmerge review. Missing
 // provenance cannot turn an old receipt into permission for a new merge.
+import type { Config } from "./config.ts";
 import { legacyWikiOf } from "./merge-provenance.ts";
 import { recordedAuthorization } from "./merged-authorization.ts";
+import { targetHolds } from "./reviewed-target.ts";
 import type { IssueState, Revision, Security } from "./state.ts";
 import { approvalHolds, sameRevision } from "./state.ts";
-
-type Candidate = NonNullable<Security["candidate"]>;
 
 // Policy and target changes invalidate clearance, not known harm in unchanged
 // code/trusted inputs. Keep this comparison separate from merge authorization.
@@ -20,15 +20,16 @@ function sameSecuritySubject(a: Revision, b: Revision): boolean {
 function candidateRefusal(
   saved: IssueState,
   revision: Revision,
-  candidate: Candidate,
+  cfg: Config,
+  sha: string,
 ): string | undefined {
   const { security } = saved;
   if (
     !approvalHolds(saved, revision) ||
     saved.verifiedSha !== revision.code ||
-    security?.candidate === undefined ||
-    security.candidate.target !== candidate.target ||
-    security.candidate.baseSha !== candidate.baseSha ||
+    !targetHolds(cfg, saved.hardenedTarget, sha) ||
+    security?.phase !== "candidate" ||
+    !targetHolds(cfg, security.target, sha) ||
     !sameRevision(security.revision, revision)
   ) {
     return "no exact hardened, checked and Security-cleared candidate is saved for this target revision";
@@ -55,7 +56,7 @@ function securityRefusal(
   if (security === null || security === undefined) {
     return "no security review is saved";
   }
-  if (security.candidate !== undefined) {
+  if (security.phase === "candidate") {
     let authorized: Revision | null = null;
     if (saved !== null) {
       authorized = recordedAuthorization(saved);
@@ -66,6 +67,10 @@ function securityRefusal(
       !sameRevision(saved.merged, result) ||
       authorized === null ||
       !sameRevision(security.revision, authorized) ||
+      saved.hardenedTarget === null ||
+      security.target.repo !== saved.hardenedTarget.repo ||
+      security.target.branch !== saved.hardenedTarget.branch ||
+      security.target.sha !== saved.hardenedTarget.sha ||
       authorized.inputs !== result.inputs
     ) {
       return "candidate Security clearance is not bound to this own merged result";
@@ -76,5 +81,4 @@ function securityRefusal(
   return findingRefusal(security);
 }
 
-export type { Candidate };
 export { candidateRefusal, sameSecuritySubject, securityRefusal };

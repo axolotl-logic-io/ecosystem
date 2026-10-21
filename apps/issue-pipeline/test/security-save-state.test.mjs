@@ -9,20 +9,24 @@ import {
   savedListing,
 } from "./ops-publish-test-kit.mjs";
 
+const TARGET_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const MOVED_TARGET_SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const { saveIssueState } = await import("../src/ops/save-state.ts");
 const { readWriteState } = await import("../src/saved-state.ts");
 const cfg = configFixture();
 const ISSUE = 7;
 const REVISION = { code: "candidate", inputs: "trusted-inputs" };
-const CANDIDATE = { target: cfg.baseBranch, baseSha: "before" };
+const TARGET = { repo: cfg.repo, branch: cfg.baseBranch, sha: TARGET_SHA };
 const CLEAR = {
   revision: REVISION,
-  candidate: CANDIDATE,
+  phase: /** @type {const} */ ("candidate"),
+  target: TARGET,
   finding: null,
   commentId: 901,
 };
 const SAVED = approvedState(REVISION, {
   headSha: REVISION.code,
+  hardenedTarget: TARGET,
   security: CLEAR,
 });
 
@@ -36,8 +40,9 @@ function serve(saved) {
 
 for (const security of [
   { ...CLEAR, revision: { ...REVISION, inputs: "fresh-inputs" } },
-  { ...CLEAR, candidate: { ...CANDIDATE, baseSha: "after" } },
-  { ...CLEAR, candidate: { ...CANDIDATE, target: "other" } },
+  { ...CLEAR, target: { ...TARGET, sha: MOVED_TARGET_SHA } },
+  { ...CLEAR, target: { ...TARGET, branch: "other" } },
+  { ...CLEAR, target: { ...TARGET, repo: "other/repository" } },
 ]) {
   test(`fresh clearance persists after its binding changes: ${JSON.stringify(security)}`, () => {
     serve(SAVED);
@@ -59,7 +64,7 @@ test("changing the target cannot replace a durable rejection of the same code an
     finding: { category: /** @type {const} */ ("rights"), reason: "unsafe" },
   };
   serve({ ...SAVED, security: rejection });
-  const security = { ...CLEAR, candidate: { ...CANDIDATE, baseSha: "after" } };
+  const security = { ...CLEAR, target: { ...TARGET, sha: MOVED_TARGET_SHA } };
   saveIssueState(cfg, ISSUE, { ...SAVED, security });
   assert.deepEqual(readWriteState(cfg, ISSUE).security, rejection);
 });

@@ -30,7 +30,8 @@ test("own merge saves the original receipt, exact-M verification, security and c
   assert.deepEqual(saves[2]?.hardened, REVISION);
   assert.deepEqual(saves[0]?.security, {
     revision: REVISION,
-    candidate: { target: ctx.cfg.baseBranch, baseSha: sha("b") },
+    phase: "candidate",
+    target: { repo: ctx.cfg.repo, branch: ctx.cfg.baseBranch, sha: sha("b") },
     commentId: COMMENT_ID,
     finding: null,
   });

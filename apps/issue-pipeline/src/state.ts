@@ -73,19 +73,25 @@ const SECURITY_CATEGORY = z.enum([
   "abuse-risk",
 ]);
 
-// An exact Security verdict. New candidate receipts also bind the target;
-// old receipts without candidate provenance remain postmerge history only.
-const SECURITY = z.object({
+// Candidate phase and target validate together. Phase-absent receipts remain
+// historical postmerge observations, never permission for a new merge.
+const SECURITY_VERDICT = z.object({
   revision: REVISION,
-  // Absent on historical postmerge receipts: never premerge permission.
-  candidate: z
-    .object({ target: z.string().min(1), baseSha: z.string().min(1) })
-    .optional(),
   commentId: z.number().int().positive(),
   finding: z
     .object({ category: SECURITY_CATEGORY, reason: z.string().min(1) })
     .nullable(),
 });
+const SECURITY = z.union([
+  SECURITY_VERDICT.extend({
+    phase: z.literal("candidate"),
+    target: REVIEWED_TARGET,
+  }),
+  SECURITY_VERDICT.extend({
+    phase: z.undefined().optional(),
+    target: z.undefined().optional(),
+  }),
+]);
 
 // The reasons "wiki-check" and "wiki-conflict" are legacy: no longer written.
 const MERGE_RETURN = z.object({
