@@ -173,6 +173,17 @@ test("an older completion with no code merge finishes with no PR", async () => {
   assert.deepEqual(opNames(calls), ["current-revision", "finish"]);
 });
 
+test("a completion saved with a legacy wiki head and no security review of it stops for reconciliation, reviewing and finishing nothing", async () => {
+  const merged = { ...MERGED_REVISION, wiki: MOVED };
+  const { ctx, calls } = merging({
+    state: { ...DONE, merged, security: null },
+    ops: { "current-revision": [current({ code: MERGE_COMMIT }, MERGED_PR)] },
+  });
+  assert.equal(endCode(await mergeRole(ctx)), "error");
+  assert.deepEqual(opNames(calls), ["current-revision"]);
+  assert.equal(sessionsOf(calls).length, 0);
+});
+
 test("a completion is not finished on new inputs or a merge GitHub doesn't confirm", async () => {
   const changed = merging({
     state: DONE,

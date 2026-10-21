@@ -93,7 +93,7 @@ function initialEvidence(cfg: Config, intent: StopIntent): Evidence {
       ]),
     ]),
     recovery:
-      "Stop dispatch. Retain remote code/private-wiki commits, saved receipts and local recovery artifacts. Read GitHub state/editor provenance, lease, live claims and issue/PR labels; reconcile every unresolved update and the original failure before an explicitly authorized restart on the same issue/branch/resume stage. A lost response may have landed. This file grants no write, hardening or restart authority; exact saved-authority/head checks still apply. Never infer hardening from passed checks or pushed commits.",
+      "Stop dispatch. Retain remote code commits, saved receipts and local recovery artifacts. Read GitHub state/editor provenance, lease, live claims and issue/PR labels; reconcile every unresolved update and the original failure before an explicitly authorized restart on the same issue/branch/resume stage. A lost response may have landed. This file grants no write, hardening or restart authority; exact saved-authority/head checks still apply. Never infer hardening from passed checks or pushed commits.",
   };
   if (state.stage === "stopped") {
     evidence.resumeStage = state.stoppedStage;

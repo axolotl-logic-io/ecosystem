@@ -2,8 +2,8 @@
 // before each mutation: the Gherkin is for the current trusted inputs, a
 // recorded code merge is still what GitHub says, and the merge
 // authorization (state.ts mergeAuthorization: the hardened revision, or the
-// Reviewer's own integration of it) holds for exactly this code head, wiki
-// head and inputs revision (`approval-is-for-one-revision`).
+// Reviewer's own integration of it) holds for exactly this code head and
+// inputs revision (`approval-is-for-one-revision`).
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";

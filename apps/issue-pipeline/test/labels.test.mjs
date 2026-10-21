@@ -83,7 +83,7 @@ test("a reason maps to its stop, and any other reason to error", () => {
     "wiki-check",
   );
   assert.equal(
-    stopFor("rebasing the wiki onto master conflicts again")?.code,
+    stopFor("rebasing onto master conflicts again")?.code,
     "conflict",
   );
   assert.equal(stopFor("the stage job kept dying: review")?.code, "job");

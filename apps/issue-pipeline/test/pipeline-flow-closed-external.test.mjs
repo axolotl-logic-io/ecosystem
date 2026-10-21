@@ -118,16 +118,9 @@ test("external recovery completes without a pipeline merge POST or code push", (
     "closed",
   );
   const trace = opsTrace(flow).slice(traceStart);
-  assert.ok(
-    trace
-      .filter(({ request }) => request.op === "push")
-      .every(
-        ({ request }) => "wikiOnly" in request && request.wikiOnly === true,
-      ),
-  );
   assert.equal(
     trace.some(({ request }) =>
-      ["merge", "exit-push", "sync-base"].includes(request.op),
+      ["merge", "push", "exit-push", "sync-base"].includes(request.op),
     ),
     false,
   );

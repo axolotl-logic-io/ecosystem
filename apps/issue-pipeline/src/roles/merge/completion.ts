@@ -99,9 +99,9 @@ function stillAt(revision: Revision): (after: Revision) => boolean {
 // op didn't finish it: the finish op again, and nothing else, once the
 // trusted inputs are still the merged ones, GitHub still confirms the
 // merged code and a security receipt approves exactly what merged.
-// Code-only completion without a receipt gets fresh security. Historical wiki
-// work without exact clearance needs reconciliation, not an unpublished-only
-// diff falsely labelled as its review. A saved rejection stops again.
+// Code-only completion without a receipt gets fresh security. A completion
+// saved with a legacy wiki head and no exact clearance needs reconciliation:
+// no review here covers its wiki work. A saved rejection stops again.
 async function finishCompleted(
   ctx: RoleContext,
   state: IssueState,
@@ -142,7 +142,7 @@ async function finishCompleted(
   ) {
     return failed(
       state,
-      "historical wiki completion has no exact security clearance; explicit reconciliation is required before completion",
+      "a completion saved with a legacy wiki head has no exact security clearance; explicit reconciliation is required before completion",
     );
   }
   let checked = state;

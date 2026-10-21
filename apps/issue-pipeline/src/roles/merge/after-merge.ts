@@ -3,10 +3,10 @@
 //
 // `state.merged` means two things by stage. At merge it is this job's own
 // merge receipt, saved right after the explicit-target code merge and before
-// the security review: `merged.code` is the merge commit, `merged.wiki` and
-// `merged.inputs` the authorized ones, and the authorized revision's code
-// (state.ts mergeAuthorization) the pre-merge head the merge matched. At
-// done it is the completion: what merged.
+// the security review: `merged.code` is the merge commit, `merged.inputs`
+// the authorized inputs (with a legacy wiki head, if any), and the
+// authorized revision's code (state.ts mergeAuthorization) the pre-merge
+// head the merge matched. At done it is the completion: what merged.
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";

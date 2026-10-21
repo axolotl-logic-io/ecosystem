@@ -54,8 +54,8 @@ const CLAIM_LEGACY_STATE = LEGACY_STATE.extend({
 const LEGACY_AUTHOR_STAGES: ReadonlySet<string> = new Set(["triage", "spec"]);
 
 // Where a legacy stage resumes after the author writes the Gherkin: null for
-// the stages before code work; review for a merged issue whose wiki is
-// unpublished (the reviewer sees the wiki before it is published); implement
+// the stages before code work; review for `publish`, the legacy stage of an
+// issue whose code merged while its wiki waited for publication; implement
 // for every other stage, so the job verifies the branch afresh.
 function legacyResumeStage(
   stage: string | undefined,

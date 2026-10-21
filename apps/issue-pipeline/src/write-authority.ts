@@ -1,7 +1,7 @@
 // Credentialed writes and session scopes share one fresh authority boundary.
 // Saved merge receipts close code authority permanently for that work; a
 // confirmed live merge closes the interval before its receipt is saved. The
-// live receipt is returned only for wiki checks, never written back as state.
+// live receipt is returned, never written back as state.
 import { assignedBranch } from "./branch-binding.ts";
 import type { Config } from "./config.ts";
 import { historicalPrFor } from "./ops/prs.ts";

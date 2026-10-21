@@ -1,5 +1,5 @@
 // The pipeline's labels on GitHub: the status labels below and the stop labels
-// (stops.ts). The wiki page Agent-Labels documents every one of them.
+// (stops.ts). The issue pipeline's docs/reference/ describe every one of them.
 
 import { z } from "zod";
 import type { Config } from "./config.ts";

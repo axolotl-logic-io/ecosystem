@@ -78,7 +78,7 @@ function mergeCommitOf(pr: number, view: PrView): string {
 function checkedView(cfg: Config, req: MergeRequest): PrView {
   if (!approvalHolds(req.state, req.revision)) {
     throw new OpsError(
-      `merge revision (code ${String(req.revision.code)}, wiki ${String(req.revision.wiki)}) is not #${req.number}'s authorized revision`,
+      `merge revision (code ${String(req.revision.code)}) is not #${req.number}'s authorized revision`,
     );
   }
   if (req.expectedSha !== req.revision.code) {
