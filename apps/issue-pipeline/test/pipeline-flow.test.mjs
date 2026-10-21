@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { fieldOf, flagsOf } from "./pipeline-flow-gh-api.mjs";
+import { nativeTargetUpdates } from "./pipeline-flow-gh-native.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
 import {
   BASE,
@@ -211,39 +211,40 @@ test("GitHub ends with the issue closed as merged, the PR merged at the approved
   );
 });
 
-test("the one branch POST names only integration and the checked full source head", () => {
-  const { integration } = savedState(readWorld(flow.ghDir));
-  const merges = ghCalls(flow.ghDir)
-    .filter(([command]) => command === "api")
-    .map((args) => flagsOf(args.slice(1)))
-    .filter(({ endpoint }) => MERGE_ENDPOINT.test(endpoint));
-  assert.equal(merges.length, 1);
-  const [request] = merges;
-  assert.ok(request !== undefined);
-  assert.deepEqual(
+test("one native target update lands the exact authorized head with no REST merge fallback", () => {
+  const world = readWorld(flow.ghDir);
+  const { integration, mergeAttempt, hardenedTarget } = savedState(world);
+  assert.equal(mergeAttempt.operation.kind, "fast-forward");
+  assert.equal(mergeAttempt.operation.base, start);
+  assert.equal(hardenedTarget.sha, start);
+  assert.equal(mergeAttempt.authorized.code, integration.revision.code);
+  assert.equal(
+    ghCalls(flow.ghDir).some(
+      ([command, endpoint = ""]) =>
+        command === "api" && MERGE_ENDPOINT.test(endpoint),
+    ),
+    false,
+  );
+  assert.deepEqual(nativeTargetUpdates(world), [
     {
-      endpoint: request.endpoint,
-      method: request.method,
-      base: fieldOf(request.fields, "base"),
-      head: fieldOf(request.fields, "head"),
-    },
-    {
-      endpoint: "repos/o/r/merges",
-      method: "POST",
-      base: "integration",
+      origin: flow.origin,
+      ref: `refs/heads/${BASE}`,
+      old: start,
       head: integration.revision.code,
     },
-  );
+  ]);
 });
 
-test("git ends with ordered parents covering the whole approved change, its docs included, on the base", () => {
+test("git lands exact H strictly after the retained base with the whole multi-commit code and docs contribution", () => {
   const base = baseHead();
   const { merged, integration } = savedState(readWorld(flow.ghDir));
   assert.equal(base, merged.code);
-  assert.equal(bareGit(flow.origin, ["rev-parse", `${base}^1`]), start);
-  assert.equal(
-    bareGit(flow.origin, ["rev-parse", `${base}^2`]),
-    integration.revision.code,
+  assert.equal(base, integration.revision.code);
+  assert.notEqual(base, start);
+  assert.equal(bareGit(flow.origin, ["merge-base", start, base]), start);
+  assert.ok(
+    Number(bareGit(flow.origin, ["rev-list", "--count", `${start}..${base}`])) >
+      1,
   );
   const greeting = bareGit(flow.origin, ["show", `${base}:greet.txt`]);
   assert.equal(greeting, "Hello, world!");
@@ -253,8 +254,15 @@ test("git ends with ordered parents covering the whole approved change, its docs
 
 // Runs last: it reopens the issue as if the completion's close was lost.
 test("a completion replayed on a reopened done issue closes it again with no model, merging nothing new", async () => {
+  const completedWorld = readWorld(flow.ghDir);
+  assert.equal(savedState(completedWorld).stage, "done");
+  assert.deepEqual(
+    savedState(completedWorld).security.revision,
+    savedState(completedWorld).merged,
+  );
+  const updates = nativeTargetUpdates(completedWorld);
   const done = baseHead();
-  const receipt = savedState(readWorld(flow.ghDir)).merged;
+  const receipt = savedState(completedWorld).merged;
   withWorld(flow.ghDir, (reopened) => {
     const issue = reopened.issues.find(({ number }) => number === ISSUE);
     Object.assign(issue ?? {}, {
@@ -267,27 +275,20 @@ test("a completion replayed on a reopened done issue closes it again with no mod
   const { started } = await tick(flow);
   const world = readWorld(flow.ghDir);
   const issue = world.issues.find(({ number }) => number === ISSUE);
-  assert.deepEqual(
-    {
-      started,
-      sessions: piStarts().length,
-      base: baseHead(),
-      prs: world.prs.length,
-      issue: issue?.state,
-      stage: savedState(world).stage,
-      merged: savedState(world).merged,
-      unsupported: world.unsupported,
-    },
-    {
-      started: ["merge"],
-      sessions,
-      base: done,
-      prs: 1,
-      issue: "closed",
-      stage: "done",
-      merged: receipt,
-      unsupported: [],
-    },
-    jobLog(flow),
+  assert.deepEqual(nativeTargetUpdates(world), updates);
+  assert.equal(
+    ghCalls(flow.ghDir).some(
+      ([command, endpoint = ""]) =>
+        command === "api" && MERGE_ENDPOINT.test(endpoint),
+    ),
+    false,
   );
+  assert.deepEqual(started, ["merge"], jobLog(flow));
+  assert.equal(piStarts().length, sessions);
+  assert.equal(baseHead(), done);
+  assert.equal(world.prs.length, 1);
+  assert.equal(issue?.state, "closed");
+  assert.equal(savedState(world).stage, "done");
+  assert.deepEqual(savedState(world).merged, receipt);
+  assert.deepEqual(world.unsupported, []);
 });

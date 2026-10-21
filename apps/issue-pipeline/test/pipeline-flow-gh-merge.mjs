@@ -1,5 +1,5 @@
 // @ts-check
-// A supported branch POST creates a genuine [P,H] commit on only its named ref.
+// Historical/external REST merges create a genuine [P,H] commit on the named ref.
 import {
   branchHead,
   gitIn,
@@ -53,6 +53,22 @@ function mergeRequest(world, args) {
   return { base, head };
 }
 
+/** @param {World} world @param {import("./pipeline-flow-gh-world.mjs").FlowPr} change @param {string} sha @param {string} head */
+function closeMergedPr(world, change, sha, head) {
+  Object.assign(change, { state: "MERGED", mergeOid: sha, mergedHead: head });
+  issueOf(world, change.number).state = "closed";
+  const defaultRef = gitIn(world.origin, ["symbolic-ref", "HEAD"]);
+  if (defaultRef === `refs/heads/${change.base}`) {
+    for (const match of change.body.matchAll(CLOSES_ISSUE)) {
+      const { issue } = match.groups ?? {};
+      Object.assign(issueOf(world, Number(issue)), {
+        state: "closed",
+        stateReason: "completed",
+      });
+    }
+  }
+}
+
 /** @param {World} world @param {readonly string[]} args @returns {Answer} */
 function branchMerge(world, args) {
   const { base, head } = mergeRequest(world, args);
@@ -87,20 +103,16 @@ function branchMerge(world, args) {
     "-m",
     `Merge PR #${change.number}`,
   ]);
-  gitIn(world.origin, ["update-ref", `refs/heads/${base}`, sha, parent]);
-  Object.assign(change, { state: "MERGED", mergeOid: sha, mergedHead: head });
-  issueOf(world, change.number).state = "closed";
-  const defaultRef = gitIn(world.origin, ["symbolic-ref", "HEAD"]);
-  if (defaultRef === `refs/heads/${base}`) {
-    for (const match of change.body.matchAll(CLOSES_ISSUE)) {
-      const { issue } = match.groups ?? {};
-      Object.assign(issueOf(world, Number(issue)), {
-        state: "closed",
-        stateReason: "completed",
-      });
-    }
-  }
+  gitIn(world.origin, [
+    "update-ref",
+    "-m",
+    "fake-rest-merge",
+    `refs/heads/${base}`,
+    sha,
+    parent,
+  ]);
+  closeMergedPr(world, change, sha, head);
   return response("201 Created", { sha });
 }
 
-export { branchMerge };
+export { branchMerge, closeMergedPr };

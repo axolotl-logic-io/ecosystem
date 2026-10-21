@@ -43,6 +43,7 @@ function v2State(n, extra = {}) {
       revision: null,
     },
     hardened: null,
+    hardenedTarget: null,
     integration: null,
     security: null,
     verifiedSha: null,

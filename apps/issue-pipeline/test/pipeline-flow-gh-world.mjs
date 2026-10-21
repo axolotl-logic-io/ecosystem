@@ -39,6 +39,7 @@ import process from "node:process";
  * @property {number} number
  * @property {string} head
  * @property {string} base
+ * @property {boolean} [isCrossRepository]
  * @property {string} title
  * @property {string} body
  * @property {"OPEN" | "CLOSED" | "MERGED"} state
@@ -54,13 +55,16 @@ import process from "node:process";
  * @property {string} account
  * @property {string[]} collaborators
  * @property {string} origin the repo's bare origin
+ * @property {string} baseBranch configured target, independent of the default branch
+ * @property {number} nativePushStart seed updates excluded from this flow
+ * @property {number} nativePushesSeen consumed receive-pack observations
  * @property {number} nextId the next issue, PR or comment number
  * @property {FlowIssue[]} issues
  * @property {FlowComment[]} comments
  * @property {string[]} repoLabels
  * @property {FlowPr[]} prs
  * @property {string | null} [failedHead] exact head with a scripted CI failure
- * @property {boolean} [delayMergeConfirmation] hide merged metadata until the test clears it
+ * @property {boolean} [withholdMergeBinding] project incompatible CLOSED evidence until explicit recovery
  * @property {string[][]} unsupported the calls the fake refused
  */
 

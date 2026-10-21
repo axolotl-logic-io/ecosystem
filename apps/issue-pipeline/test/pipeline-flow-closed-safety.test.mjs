@@ -57,7 +57,11 @@ test("a fresh exact Security rejection stops closed recovery and cannot be rerol
   assert.equal(rejected.stage, "stopped");
   assert.equal(runStage(flow, "merge").end, "stop");
   assert.equal(sessions(flow), starts + 1);
-  assert.equal(merges(flow).length, 1);
+  assert.equal(merges(flow).length, 0);
+  assert.deepEqual(
+    replayFacts(flow, traceStart).targetUpdates,
+    expectedReplay(interruptedWorld).targetUpdates,
+  );
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
@@ -83,7 +87,11 @@ test("closed recovery retains merged truth when actual-result verification fails
     assert.equal(sessions(flow), starts);
     const facts = replayFacts(flow, traceStart);
     assert.deepEqual(facts.forbidden, []);
-    assert.equal(facts.merges, 1);
+    assert.equal(facts.merges, 0);
+    assert.deepEqual(
+      facts.targetUpdates,
+      expectedReplay(interruptedWorld).targetUpdates,
+    );
     assert.deepEqual(
       facts.codeMerged,
       expectedReplay(interruptedWorld).codeMerged,

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { api } from "./pipeline-flow-gh-api.mjs";
+import { observeNativeMerges } from "./pipeline-flow-gh-native.mjs";
 import { pr } from "./pipeline-flow-gh-prs.mjs";
 import {
   flagValue,
@@ -159,7 +160,10 @@ function runFlowGh(dir) {
   /** @type {Answer} */
   let reply = {};
   try {
-    reply = withWorld(dir, (world) => answer(world, args));
+    reply = withWorld(dir, (world) => {
+      observeNativeMerges(world);
+      return answer(world, args);
+    });
   } catch (error) {
     const message = String(error);
     if (message.includes(UNSUPPORTED)) {

@@ -95,6 +95,7 @@ function seedOrigin(tmp) {
   const origin = path.join(tmp, "origin.git");
   const seed = path.join(tmp, "seed");
   seedGit(["init", "--quiet", "--bare", "-b", BASE, origin]);
+  seedGit(["--git-dir", origin, "config", "core.logAllRefUpdates", "true"]);
   seedGit(["init", "--quiet", "-b", BASE, seed]);
   fs.writeFileSync(path.join(seed, "AGENTS.md"), "Keep greetings polite.\n");
   fs.writeFileSync(path.join(seed, "greet.txt"), "hello\n");
@@ -200,7 +201,7 @@ function setUpFlow() {
   const origin = seedOrigin(tmp);
   const collaborators = ["bot", "alice"];
   const gh = { dir: String(ghDir), bin: String(bin), origin, collaborators };
-  installFlowGh({ ...gh, repo: "o/r", account: "bot" });
+  installFlowGh({ ...gh, repo: "o/r", account: "bot", baseBranch: BASE });
   const roles = Object.entries(MODELS).map(([role, id]) => [id, role]);
   installFlowPi(String(bin), Object.fromEntries(roles));
   fs.writeFileSync(path.join(String(piDir), "script.json"), "{}");

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { ghCalls } from "./pipeline-flow-gh.mjs";
+import { nativeTargetUpdates } from "./pipeline-flow-gh-native.mjs";
 import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
 import { BASE, ISSUE, refIn, scriptPi } from "./pipeline-flow-kit.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
@@ -42,6 +43,19 @@ const CLAIM = z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
   }),
 });
+/** @param {import("./pipeline-flow-gh-world.mjs").World} world */
+function expectedTargetUpdates(world) {
+  const { mergeAttempt } = savedState(world);
+  return [
+    {
+      origin: world.origin,
+      ref: `refs/heads/${mergeAttempt.target}`,
+      old: mergeAttempt.operation.base,
+      head: mergeAttempt.authorized.code,
+    },
+  ];
+}
+
 /** @param {import("./pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
 function expectedReplay(interruptedWorld, checked = true) {
   const state = savedState(interruptedWorld);
@@ -54,9 +68,12 @@ function expectedReplay(interruptedWorld, checked = true) {
   return {
     claimCodeMerged: codeMerged,
     forbidden: [],
-    merges: 1,
+    merges: 0,
+    targetUpdates: expectedTargetUpdates(interruptedWorld),
     verified,
     base: state.merged.code,
+    mergeAttempt: state.mergeAttempt,
+    hardenedTarget: state.hardenedTarget,
     hardened: state.hardened,
     integration: state.integration,
     codeMerged,
@@ -105,10 +122,13 @@ function replayFacts(flow, traceStart) {
       .map(({ request }) => request.op)
       .filter((op) => NO_WRITER_OPS.includes(op)),
     merges: merges(flow).length,
+    targetUpdates: nativeTargetUpdates(readWorld(flow.ghDir)),
     verified: trace
       .filter(({ request }) => request.op === "verify")
       .map(({ reply }) => VERIFIED.parse(reply)),
     base: refIn(flow.origin, `refs/heads/${BASE}`),
+    mergeAttempt: state.mergeAttempt,
+    hardenedTarget: state.hardenedTarget,
     hardened: state.hardened,
     integration: state.integration,
     codeMerged: state.codeMerged,
@@ -149,13 +169,13 @@ function prepareReplayFlow(flow) {
   return gitlink;
 }
 
-/** @param {Flow} flow @param {boolean} [delayMergeConfirmation] */
-function createReplayFlow(flow, delayMergeConfirmation = false) {
+/** @param {Flow} flow @param {boolean} [withholdMergeBinding] */
+function createReplayFlow(flow, withholdMergeBinding = false) {
   const originalConfig = fs.readFileSync(flow.config, "utf8");
-  if (delayMergeConfirmation) {
+  if (withholdMergeBinding) {
     const settings = z.looseObject({}).parse(JSON.parse(originalConfig));
-    // Hold metadata until explicit recovery, not a timing-dependent race. A
-    // short configured window exercises expiry without the production wait.
+    // CLOSED with no merge OID is incompatible with an FF own receipt,
+    // regardless of host speed. The short window bounds only test duration.
     fs.writeFileSync(
       flow.config,
       JSON.stringify({
@@ -175,11 +195,11 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
   }
   withWorld(flow.ghDir, (world) => {
     world.failedHead = savedState(world).hardened.code;
-    world.delayMergeConfirmation = delayMergeConfirmation;
+    world.withholdMergeBinding = withholdMergeBinding;
   });
   for (const expected of ["wait", "deferred"]) {
     let end = expected;
-    if (delayMergeConfirmation && expected === "deferred") {
+    if (withholdMergeBinding && expected === "deferred") {
       end = "stop";
     }
     const result = runStage(flow, "merge");
@@ -197,6 +217,7 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
 export {
   createReplayFlow,
   expectedReplay,
+  expectedTargetUpdates,
   merges,
   prepareReplayFlow,
   replaceState,

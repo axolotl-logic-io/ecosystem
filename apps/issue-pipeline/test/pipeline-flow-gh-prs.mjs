@@ -76,8 +76,8 @@ function pr(world, args) {
   switch (sub) {
     case "view": {
       const view = viewOf(world, change);
-      if (world.delayMergeConfirmation && change.state === "MERGED") {
-        Object.assign(view, { state: "OPEN", mergeCommit: null });
+      if (world.withholdMergeBinding && change.state === "MERGED") {
+        Object.assign(view, { state: "CLOSED", mergeCommit: null });
       }
       return jsonAnswer(view, flagValue(args, "--json"));
     }
