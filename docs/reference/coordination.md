@@ -50,7 +50,7 @@ Caller serialization doesn't exclude outside actors. Anyone with access may push
 
 ## Prerequisites and sub-issues
 
-An issue's `after` marker names prerequisite issues. The legacy scheduler and assignment discovery hold an issue while a prerequisite is open, and treat an unreadable dependency as a hold. A stage job doesn't check prerequisites, so the caller must. An issue labeled `agent:split` was split into sub-issues; its parent closes once every sub-issue is closed.
+An issue's `after` marker names prerequisite issues. The legacy scheduler and assignment discovery hold an issue while a prerequisite is open, and treat an unreadable dependency as a hold. A stage job doesn't check prerequisites, so the caller must. An issue labeled `agent:split` was split into sub-issues; its parent closes once every sub-issue is closed and at least one has merged.
 
 ## Code that isn't the caller's entry point
 

@@ -76,7 +76,9 @@ Read CHECKOUT/docs/reference/coordination.md. It says how stage jobs run, what e
      --branch BRANCH --lane LANE --stage STAGE
    ```
 
-   For a merge, add `--merge-queue MERGE_QUEUE`. Exit 0 means the job started. Exit 2 means the launcher refused it and exit 1 means an error, each with the reason on stderr. Handle both as Decide and report says.
+   For a merge, add `--merge-queue MERGE_QUEUE`. An explicitly authorized closed-issue Merge recovery uses this same command with `--stage merge`. Only the job's canonical claim guards decide eligibility and reopen for the winning claimant; a started job grants no recovery, merge or Security authority. Closed Author, Implement and Review starts remain refused.
+
+   Exit 0 means the job started. Exit 2 means the launcher refused it and exit 1 means an error, each with the reason on stderr. Handle both as Decide and report says.
 4. Wait for a job to end, in one command, without sleeping or looping yourself:
 
    ```bash
@@ -96,7 +98,7 @@ Decide everything yourself except what Ask Autumn lists, and report each decisio
 - **No result line:** read `stderrTail`. Retry a transient failure while attempts remain; otherwise give up on the issue.
 - **`droppedPatches` not empty:** leave the patches where they are, list them in your report and go on with the `end`'s next step.
 - **A stage out of attempts:** give up on the issue.
-- **Exit 2:** for a full cap or a live job on the issue, branch or repo's merge, wait for a job to end and retry. For a closed issue, treat it as done. For a stage out of attempts, give up on the issue. For a widened run.json, put it back as you first wrote it.
+- **Exit 2:** for a full cap or a live job on the issue, branch or repo's merge, wait for a job to end and retry. For a closed-issue refusal, stop starts and report it as unresolved unless genuine saved completion is established. Closed status alone is not completion. Consult CHECKOUT/docs/reference/merge.md, “Closed issues with an incomplete merge”, for separately authorized recovery; never reopen it or infer clearance yourself. For a stage out of attempts, give up on the issue. For a widened run.json, put it back as you first wrote it.
 - **Exit 1:** if your command was wrong, fix it and retry. Otherwise give up on the issue.
 - **Anything else:** follow coordination.md and the limits, take the more cautious choice and report it.
 
