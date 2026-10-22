@@ -2,6 +2,7 @@
 // An interrupted own merge resumes from its saved receipt and original
 // authorization, never a fabricated hardening of the merge SHA. GitHub
 // independently confirms both the authorized PR head and the merge commit.
+// Missing Security is never reviewed after the merge (#185).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -40,9 +41,10 @@ const CLEARED = {
 const FORBIDDEN = ["merge", "push", "sync-base", "ready-pr"];
 
 for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
-  test(`an interrupted own merge resumes missing security with codeMerged ${String(codeMerged?.sha ?? null)}, no writer or second merge`, async () => {
+  test(`an interrupted own merge missing security with codeMerged ${String(codeMerged?.sha ?? null)} stops, with no postmerge review, writer or second merge`, async () => {
     // A saved pre-upgrade own merge has no premerge receipt. Its missing
-    // historical Security review remains recoverable without another merge.
+    // historical Security review is not run retrospectively; the merged
+    // receipt is retained for read-only reconciliation.
     const { ctx, calls } = merging({
       state: { ...RECEIPT, codeMerged },
       ops: {
@@ -50,28 +52,22 @@ for (const codeMerged of [null, CODE_MERGED.codeMerged]) {
         "prepare-review": [PREPARED_MERGED],
       },
     });
-    const done = stateOf(await mergeRole(ctx), "next");
-    assert.equal(done.stage, "done");
-    assert.deepEqual(done.hardened, REVISION);
-    assert.equal(done.integration, null);
-    assert.deepEqual(done.codeMerged, codeMerged);
-    assert.deepEqual(done.security, CLEARED);
+    const stopped = stateOf(await mergeRole(ctx), "stop");
+    assert.notEqual(stopped.stage, "done");
+    assert.deepEqual(stopped.hardened, REVISION);
+    assert.deepEqual(stopped.merged, MERGED_REVISION);
+    assert.deepEqual(stopped.codeMerged, codeMerged);
+    assert.equal(stopped.security, null);
     assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
-    const sessions = sessionsOf(calls);
-    assert.equal(sessions.length, 1);
-    assert.equal(sessions[0]?.phase, "security-review");
-    assert.equal(sessions[0]?.commits, false);
-    const { codeMerged: preparedMerge } = firstPayload(calls, "prepare-review");
-    assert.deepEqual(preparedMerge, { pr: PR, sha: MERGE_COMMIT });
-    const { state: finished } = firstPayload(calls, "finish");
-    assert.deepEqual(finished, done);
-    assert.equal(savesOf(calls)[0]?.verifiedSha, MERGE_COMMIT);
-    assert.deepEqual(savesOf(calls).at(-2)?.security, CLEARED);
-    assert.deepEqual(firstPayload(calls, "verify"), {
+    assert.equal(sessionsOf(calls).length, 0);
+    for (const name of ["prepare-review", "verify", "finish"]) {
+      assert.equal(opNames(calls).includes(name), false, name);
+    }
+    assert.deepEqual(firstPayload(calls, "confirm-merged"), {
       number: ctx.issue,
       codeMerged: { pr: PR, sha: MERGE_COMMIT },
     });
-    assert.ok(savesOf(calls).every((state) => state.codeMerged === codeMerged));
+    assert.deepEqual(savesOf(calls), []);
   });
 }
 
@@ -192,7 +188,7 @@ test("new trusted inputs after the own merge return to Author instead of recover
   assert.equal(sessionsOf(calls).length, 0);
 });
 
-test("code that moves during the recovered security session discards it and never finishes", async () => {
+test("code that moves after an own merge missing security never opens a recovered security session or finishes", async () => {
   const at = current({ ...MERGED_REVISION, code: MOVED }, MERGED_PR);
   const { ctx, calls } = merging({
     state: RECEIPT,
@@ -201,8 +197,11 @@ test("code that moves during the recovered security session discards it and neve
       "prepare-review": [PREPARED_MERGED],
     },
   });
-  const state = stateOf(await mergeRole(ctx), "wait");
+  const state = stateOf(await mergeRole(ctx), "stop");
   assert.equal(state.security, null);
+  assert.deepEqual(state.merged, MERGED_REVISION);
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.ok(!opNames(calls).includes("prepare-review"));
   assert.ok(!opNames(calls).includes("finish"));
   assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
 });
