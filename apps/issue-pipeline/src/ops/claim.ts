@@ -34,6 +34,7 @@ import {
   assertBranchAssigned,
   assertClosedMergeRecovery,
   claimedState,
+  startingState,
 } from "./claim-state.ts";
 
 const CLAIM_REQUEST = z.looseObject({
@@ -149,10 +150,13 @@ function claimCheckout(
       return null;
     }
     const now = new Date();
-    const claimed = claimedState(cfg, n, context.comments, {
-      now,
-      stage: firstStage(req),
-    });
+    const stage = firstStage(req);
+    const claimed = claimedState(
+      cfg,
+      n,
+      startingState(cfg, n, context.comments, stage),
+      { now, stage },
+    );
     if (recovering) {
       // Only the winning claimant may reopen; this grants no writer authority.
       gh(cfg, "merge", ["issue", "reopen", String(n), "-R", cfg.repo]);
@@ -208,7 +212,7 @@ function claim(
   const issue = CLAIMED_ISSUE.parse(context.issue);
   const recovering = issue.state === "closed";
   if (recovering) {
-    assertClosedMergeRecovery(cfg, n, context.comments);
+    assertClosedMergeRecovery(cfg, n, readClaimState(cfg, n, context.comments));
   } else if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
   }

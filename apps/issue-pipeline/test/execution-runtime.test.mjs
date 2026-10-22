@@ -156,11 +156,7 @@ test("released authenticated history permits a new receipt, never current owners
   assert.equal(claimed.branch, state.branch);
 });
 
-for (const operation of [
-  readExecutionClaimState,
-  claimExecutionState,
-  saveExecutionState,
-]) {
+for (const operation of [readExecutionClaimState, claimExecutionState]) {
   test(`the explicit seam refuses an unbound caller: ${operation.name}`, () => {
     const fixture = executionFixture(UNBOUND);
     const {
@@ -168,9 +164,22 @@ for (const operation of [
       mutation: _mutation,
       ...unbound
     } = fixture.cfg;
-    const state = fixture.claim();
+    fixture.claim();
     const before = fixture.writes();
-    assert.throws(() => operation(unbound, fixture.issue, state));
+    assert.throws(() => operation(unbound, fixture.issue));
     assert.deepEqual(fixture.writes(), before);
   });
 }
+
+test("the explicit save refuses an unbound caller", () => {
+  const fixture = executionFixture(UNBOUND);
+  const {
+    execution: _execution,
+    mutation: _mutation,
+    ...unbound
+  } = fixture.cfg;
+  const state = fixture.claim();
+  const before = fixture.writes();
+  assert.throws(() => saveExecutionState(unbound, fixture.issue, state));
+  assert.deepEqual(fixture.writes(), before);
+});

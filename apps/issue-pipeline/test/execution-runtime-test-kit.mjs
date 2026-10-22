@@ -31,6 +31,7 @@ const TRANSPORT = z.looseObject({
   refs: z.record(z.string(), z.string()),
   failState: z.boolean().optional(),
   loseStateResponse: z.boolean().optional(),
+  stateAfterConfirm: z.string().optional(),
   stateReadback: z
     .object({
       graphBody: z.string().optional(),

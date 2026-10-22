@@ -20,7 +20,7 @@ import {
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
 import type { IssueState } from "../state.ts";
-import { withLog } from "../state.ts";
+import { resumeOf, withLog } from "../state.ts";
 import { assertStopRecoveryResolved } from "../stop-recovery.ts";
 import { assertAuthorRequest } from "./author-request.ts";
 import type { ClaimRequest, ClaimWon } from "./claim.ts";
@@ -55,7 +55,7 @@ function boundClaim(
   const issue = CLAIMED_ISSUE.parse(context.issue);
   const recovering = issue.state === "closed";
   if (recovering) {
-    assertClosedMergeRecovery(cfg, n, context.comments);
+    assertClosedMergeRecovery(cfg, n, saved);
   } else if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
   }
@@ -103,11 +103,20 @@ function prepareBoundClaim(
   const { recovering, existed, stage } = preparation;
   // Child 1 owns request/confirmation, immutable epoch and exact save readback.
   // In particular, old lease age and lane identity cannot bypass its checks.
-  const owned = claimExecutionState(cfg, n);
+  const owned = claimExecutionState(cfg, n, stage);
   assertExecution(cfg, n);
+  if (
+    owned.asked?.inputs ===
+    trustedInputsHash(cfg, context.issue, context.comments)
+  ) {
+    throw new OpsError("claim eligibility changed; reconciliation required");
+  }
+  if (recovering) {
+    assertClosedMergeRecovery(cfg, n, owned);
+  }
   ensureClone(cfg);
   const now = new Date();
-  const claimed = claimedState(cfg, n, context.comments, {
+  const claimed = claimedState(cfg, n, resumeOf(owned), {
     now,
     stage,
   });

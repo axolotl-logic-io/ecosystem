@@ -105,7 +105,11 @@ function checkpoint(cfg: Config, issue: number, state: IssueState): IssueState {
 // Bind the strictly inspected state to a newly confirmed owner, preserving
 // stage and all saved work. Callers may set up only after this checkpoint.
 // Broad claim transitions and eligibility remain outside this preparatory API.
-function claimExecutionState(cfg: Config, issue: number): IssueState {
+function claimExecutionState(
+  cfg: Config,
+  issue: number,
+  initialStage: "author" | "implement" = "implement",
+): IssueState {
   const saved = readExecutionClaimState(cfg, issue);
   const guard = issueExecution(cfg, issue);
   guard.request();
@@ -114,10 +118,21 @@ function claimExecutionState(cfg: Config, issue: number): IssueState {
       "execution ownership unavailable; reconciliation required",
     );
   }
-  const state = saved ?? newIssueState(issue);
+  // A predecessor checkpoint may become visible while ownership is acquired.
+  // Never overwrite it with the earlier eligibility snapshot.
+  const current = readClaimState(cfg, issue, stateComments(cfg, issue));
+  if (current === null && saved !== null) {
+    throw new OpsError(
+      "saved execution authority disappeared; reconciliation required",
+    );
+  }
+  if (current !== null) {
+    assertExecutionHistory(cfg, issue, current.execution);
+  }
+  const state = current ?? newIssueState(issue, initialStage);
   return checkpoint(cfg, issue, {
     ...state,
-    branch: assignedBranch(cfg, issue, saved),
+    branch: assignedBranch(cfg, issue, current),
     execution: currentExecutionReceipt(cfg, issue),
   });
 }

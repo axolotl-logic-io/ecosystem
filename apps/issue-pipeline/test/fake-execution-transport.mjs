@@ -71,6 +71,14 @@ if (fs.existsSync(transportFile)) {
       comment.editor = { login: identity[2] };
     }
     if (body.includes("agent-pipeline:state")) Object.assign(comment, transport.stateReadback);
+    // Model delayed visibility of an already authenticated predecessor save at
+    // the ownership boundary, without fabricating coordination history.
+    if (body.includes('"kind":"confirm"') && transport.stateAfterConfirm) {
+      const state = transport.comments.find(item => item.issue === comment.issue && item.body.includes("agent-pipeline:state"));
+      if (!state) fail("missing saved state for delayed visibility");
+      state.body = transport.stateAfterConfirm;
+      delete transport.stateAfterConfirm;
+    }
     save();
     if (transport.loseStateResponse && body.includes("agent-pipeline:state")) fail("HTTP 503 response lost after save");
     if (args.includes("--silent")) send("");

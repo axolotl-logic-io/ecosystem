@@ -120,8 +120,13 @@ runtime fencing.
 
 A bound resume requires a fresh execution identity, authenticated saved receipt
 and history, and a verified predecessor release. The same lane and an expired
-lease do not substitute for release. Unresolved coordination journals or local
-stop-recovery records block progress. Confirmed stop recovery is only a removed
+lease do not substitute for release. After acquiring ownership, the claim
+rereads authenticated state and derives its resume transition from that confirmed
+checkpoint, not its earlier issue-context snapshot. A newly visible unanswered
+question or ineligible closed-Merge state holds progress rather than being reset.
+This is a fresh-read guard, not an atomic GitHub snapshot.
+
+Unresolved coordination journals or local stop-recovery records block progress. Confirmed stop recovery is only a removed
 barrier: it never supplies execution authority. A failed lane setup keeps its
 checkout, slot, signed receipt and readiness barrier. Explicit reconciliation
 must resolve readiness before another bound claim can use that checkout.
