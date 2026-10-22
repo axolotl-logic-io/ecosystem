@@ -26,8 +26,8 @@ full test suite. The dashboard's gates are separate:
 npm run check --workspace @ecosystem/workflow-dash
 ```
 
-The imported dashboard has inherited lint debt; this gate must pass before
-operator cutover. Read [AGENTS.md](AGENTS.md) before changing code.
+The dashboard's source gates do not replace operator acceptance before
+cutover. Read [AGENTS.md](AGENTS.md) before changing code.
 
 `main` is the only long-lived branch. CI checks pull requests and pushes to
 `main`; there is no production deployment. The operator can configure the pipeline to work on ecosystem's own issues as
