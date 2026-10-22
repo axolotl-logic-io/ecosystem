@@ -12,6 +12,10 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import {
+  EXECUTION_TRANSPORT,
+  executionTransportFiles,
+} from "./fake-execution-transport.mjs";
 
 // The gh script's file mode: executable by its owner, readable by all.
 const EXECUTABLE = 0o755;
@@ -42,6 +46,8 @@ const AUTHENTICATED_CALL = z.object({
  * the reads. A test passes src/github.ts's ghIsRead as `isRead`: this file
  * imports no src module, since tests set the pipeline root before src loads.
  * @typedef {object} FakeGh
+ * @property {(state: unknown) => void} transport
+ * @property {() => unknown} transportState
  * @property {() => void} requireReplies fail every unmatched read or write
  * @property {(replies: readonly GhReply[]) => void} reply
  * @property {() => string[][]} loginCalls
@@ -74,6 +80,7 @@ if (args[0] === "api" && args[1] === "user") {
     process.stdout.write(identity[2] + "\\n"); process.exit(0);
   }
 }
+${EXECUTION_TRANSPORT}
 if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => args.join(" ").includes(reply.when))) {
   const id = args.find(arg => arg.startsWith("id="))?.slice(3);
   const comments = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
@@ -168,6 +175,7 @@ function installFakeGh() {
       .map((line) => CALL_ARGS.parse(JSON.parse(line)));
   }
   return {
+    ...executionTransportFiles(dir),
     loginCalls: () => readCallLog(path.join(dir, "logins.jsonl")),
     requireReplies() {
       fs.writeFileSync(path.join(dir, "strict"), "true");

@@ -52,6 +52,18 @@ The issue's state lives in a hidden review/merge comment on the issue. It record
 - Only a truly new issue can get a first claim. Earlier pipeline comments, local work, run files or branches without saved authority need reconciliation instead.
 - Legacy v1 state is display-only; a claim over it fails with `legacy pipeline state needs explicit reconciliation`.
 
+## Explicit execution state seam
+
+`src/execution-state.ts` provides an explicit-only API for authenticated state checkpoints. Default jobs, ops, orchestration and reporting do not import it. This preparatory seam is not runtime fencing, claim eligibility, setup, teardown or release, and it is not an install candidate. Lane resource leases do not grant invocation ownership.
+
+- `readExecutionClaimState(config, issue)` validates the explicit execution binding and reads supported saved state without changing it. Existing state needs a strict `{ protocol: 1, request, instance }` receipt linked to an authenticated request and owner confirmation for the exact repository, literal base, issue and branch. A current UUID must also match its authenticated lane. A different historical UUID needs a durable release; its old lease's age grants nothing.
+- `claimExecutionState(config, issue)` inspects state before requesting ownership, acquires through the existing authenticated adapter, and checkpoints the current receipt. It preserves the saved stage and work; it does not apply broad claim transitions or run setup. Only genuinely absent work can initialize state. Unsupported, malformed, untrusted, edited or history-less authority requires reconciliation, not adoption.
+- `saveExecutionState(config, issue, state)` requires fresh current ownership and a current saved receipt. It retains branch, PR, non-erased head, attempted/observed merge facts, own-merge recovery authorization and durable Security decisions across stale role snapshots. Explicit head changes remain possible through the existing authorized push/adopt/sync flow; it does not freeze every non-null historical head. Existing draft validation and merge authorization rules are unchanged.
+
+A checkpoint makes one mutation attempt and confirms the exact transmitted body with body, author and editor provenance from the same authenticated read. A lost response can resolve through that exact read-back. An unresolved result retains the exact body, comment identity and execution binding in `coordination-uncertain.json`. It permits neither writer assertion nor release, and a later invocation cannot repeat the mutation for progress. Preserve the journal and durable history for explicit reconciliation; neither local evidence nor historical receipts grant current ownership.
+
+Receipt-less historical v2 state remains readable through the compatibility reader, but cannot grant execution through this seam. New revisions omit wiki writes. Historical non-null wiki revision values retain their conservative meaning and cannot become clearance for a wiki-free revision by omission.
+
 ## Claims and leases
 
 A job claims an issue with a comment, reads the comments back, and proceeds only if its claim is the earliest live one. A claim is live until it is closed or goes `leaseHours` (default 3) without an edit.

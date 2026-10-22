@@ -90,7 +90,10 @@ test("the standalone seam builds but default runtime entry points cannot reach e
   assert.equal(
     Object.keys(defaults.metafile.inputs).some(
       (input) =>
-        input.endsWith("/execution.ts") || input.endsWith("/coordination.ts"),
+        input.endsWith("/execution.ts") ||
+        input.endsWith("/coordination.ts") ||
+        input.endsWith("/execution-state.ts") ||
+        input.endsWith("/execution-history.ts"),
     ),
     false,
   );

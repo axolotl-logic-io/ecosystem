@@ -181,6 +181,7 @@ export {
   commentsReply,
   configWith,
   effects,
+  fakeGh,
   issueComment,
   labelsReply,
   postedCommentReply,

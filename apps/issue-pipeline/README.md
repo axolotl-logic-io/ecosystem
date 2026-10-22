@@ -46,6 +46,15 @@ for lost-write and reconstruction cases, not imported as duplicate authority.
 PR #124, `agent/issue-116`, preservation branches and unported recovery artifacts
 remain unchanged; `issue-116-runtime.patch.gz` is **not applied**.
 
+`src/execution-state.ts` adds explicit bound claim/save checkpoints on this
+adapter, with strict saved execution receipts and authenticated historical
+request/confirmation linkage. It preserves existing saved work and durable
+merge/Security facts, permits existing explicit head movement, and confirms the
+exact saved body and same-read provenance. Unresolved saves retain exact intent
+and block writer assertion, retry and release. Default entry points still do
+not import this seam. See [execution state authority](../../docs/reference/authority.md#explicit-execution-state-seam).
+This preparatory source slice does not authorize installation or activation.
+
 Runtime integration-turn composition remains #120; handoff, withdrawal/checkpoints
 and full composition/operations remain #118, #119 and #121. No scheduler,
 polling, handoff, automatic legacy adoption, alternate delivery path, worker
