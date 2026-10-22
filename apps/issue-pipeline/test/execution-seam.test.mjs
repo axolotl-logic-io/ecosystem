@@ -11,7 +11,7 @@ import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 // Resolve the pipeline root only after the isolation kit has run, independent
 // of import sorting. No test may load the operator's installed root.
 const { loadConfig } = await import("../src/config.ts");
-const { executionIdentity, issueExecution, withExecution } = await import(
+const { executionBinding, issueExecution, withExecution } = await import(
   "../src/execution.ts"
 );
 
@@ -20,8 +20,8 @@ const ISSUE = 7;
 const HELD = /binding|reconciliation/u;
 
 test("fresh executions on one stable lane bind unique UUIDs to the exact configured scope", () => {
-  const a = executionIdentity(cfg, ISSUE, "caller");
-  const b = executionIdentity(cfg, ISSUE, "caller");
+  const a = executionBinding(cfg, ISSUE, "caller");
+  const b = executionBinding(cfg, ISSUE, "caller");
   assert.notEqual(a.instance, b.instance);
   assert.equal(z.string().uuid().parse(a.instance), a.instance);
   assert.equal(z.string().uuid().parse(b.instance), b.instance);
@@ -39,7 +39,7 @@ for (const change of [
   { base: "main" },
 ]) {
   test(`a factory refuses changed execution binding ${JSON.stringify(change)}`, () => {
-    const execution = executionIdentity(cfg, ISSUE, "caller");
+    const execution = executionBinding(cfg, ISSUE, "caller");
     assert.throws(
       () =>
         issueExecution(
@@ -52,9 +52,9 @@ for (const change of [
 }
 
 test("execution UUID and lane validation are not inherited from a permissive config", () => {
-  const execution = executionIdentity(cfg, ISSUE, "caller");
+  const execution = executionBinding(cfg, ISSUE, "caller");
   assert.throws(() => withExecution(cfg, { ...execution, instance: "caller" }));
-  assert.throws(() => executionIdentity(cfg, ISSUE, ""));
+  assert.throws(() => executionBinding(cfg, ISSUE, ""));
   assert.throws(() => issueExecution(cfg, ISSUE));
 });
 
@@ -64,7 +64,7 @@ test("repository JSON cannot activate an internal execution or mutation hook", (
     file,
     JSON.stringify({
       ...cfg,
-      execution: executionIdentity(cfg, ISSUE, "caller"),
+      execution: executionBinding(cfg, ISSUE, "caller"),
       mutation: "not an internal callback",
     }),
   );

@@ -170,15 +170,15 @@ const paths = {
   },
 };
 
-type Identity = "dev" | "merge";
-const VARIABLES: Readonly<Record<Identity, string>> = {
+type Account = "dev" | "merge";
+const VARIABLES: Readonly<Record<Account, string>> = {
   dev: "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
   merge: "ISSUE_PIPELINE_MERGE_GITHUB_TOKEN",
 };
 const TOKEN = /^\S+$/u;
 const NON_OWNER_PERMISSION_RANGE = 0o100;
 
-function credential(cfg: Config, identity: Identity): string {
+function credential(cfg: Config, identity: Account): string {
   let contents: string | null = null;
   try {
     const file = fs.statSync(cfg.credentialsEnvFile);
@@ -207,5 +207,5 @@ function credential(cfg: Config, identity: Identity): string {
   return selected;
 }
 
-export type { Config, Identity, JobCheckout };
+export type { Account, Config, JobCheckout };
 export { credential, loadConfig, paths, publicConfig, withCheckout };

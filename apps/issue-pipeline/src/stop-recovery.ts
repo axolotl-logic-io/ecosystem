@@ -6,12 +6,12 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import type { Config, Identity } from "./config.ts";
+import type { Account, Config } from "./config.ts";
 import { credential, paths } from "./config.ts";
 import { OpsError } from "./ops-error.ts";
 import type { IssueState } from "./state.ts";
 
-const IDENTITIES: readonly Identity[] = ["dev", "merge"];
+const ACCOUNTS: readonly Account[] = ["dev", "merge"];
 const DIAGNOSTIC_LIMIT = 8192;
 const TOKEN = /gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+/gu;
 const RECOVERY_ID = z.uuid();
@@ -46,7 +46,7 @@ interface StopRecovery {
 
 function redacted(cfg: Config, text: string): string {
   let safe = text;
-  for (const identity of IDENTITIES) {
+  for (const identity of ACCOUNTS) {
     try {
       safe = safe.replaceAll(credential(cfg, identity), "<token>");
     } catch {

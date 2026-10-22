@@ -4,7 +4,7 @@ import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
 import { coordination } from "../src/coordination.ts";
 import {
-  executionIdentity,
+  executionBinding,
   integrationTurn,
   issueExecution,
   withExecution,
@@ -33,7 +33,7 @@ function serve(github) {
 
 /** @param {ReturnType<typeof world>} github @param {number} issue @param {string} lane */
 function seedIssue(github, issue, lane) {
-  const identity = executionIdentity(github.cfg, issue, lane);
+  const identity = executionBinding(github.cfg, issue, lane);
   const scope = JSON.stringify([
     github.cfg.repo,
     github.cfg.baseBranch,

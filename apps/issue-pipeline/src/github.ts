@@ -3,7 +3,7 @@
 // run once, with local paths and addresses redacted.
 
 import { z } from "zod";
-import type { Config, Identity } from "./config.ts";
+import type { Account, Config } from "./config.ts";
 import { assertGitRemote, GIT_ENV, LOCAL_PATH } from "./git-remote.ts";
 import {
   authenticatedEnv,
@@ -113,7 +113,7 @@ function controlledWrite(cfg: Config, write: () => RunResult): RunResult {
 
 function gh(
   cfg: Config,
-  identity: Identity,
+  identity: Account,
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {
@@ -140,7 +140,7 @@ function gh(
 // gh's output read as JSON, or null when it printed nothing.
 function ghJson(
   cfg: Config,
-  identity: Identity,
+  identity: Account,
   args: readonly string[],
   options: GhOptions = {},
 ): unknown {
@@ -153,7 +153,7 @@ function ghJson(
 
 function ghLines(
   cfg: Config,
-  identity: Identity,
+  identity: Account,
   args: readonly string[],
   options: GhOptions = {},
 ): unknown[] {
@@ -181,7 +181,7 @@ function issueState(cfg: Config, n: number): string | null {
 
 function git(
   cfg: Config,
-  identity: Identity,
+  identity: Account,
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {

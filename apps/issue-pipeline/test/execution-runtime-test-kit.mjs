@@ -8,7 +8,7 @@ import { CONFIG, fakeGh, root } from "./ops-cli-test-kit.mjs";
 /** @typedef {{ config?: string, replies?: readonly GhReply[] }} ExecutionOptions */
 
 const { loadConfig, paths } = await import("../src/config.ts");
-const { executionIdentity, issueExecution, withExecution } = await import(
+const { executionBinding, issueExecution, withExecution } = await import(
   "../src/execution.ts"
 );
 const { claimExecutionState, readExecutionClaimState, saveExecutionState } =
@@ -45,7 +45,7 @@ const TRANSPORT = z.looseObject({
 /** @param {number} issue @param {ExecutionOptions} [options] */
 function executionFixture(issue, options = {}) {
   const plain = loadConfig(options.config ?? CONFIG);
-  const cfg = withExecution(plain, executionIdentity(plain, issue, "stable"));
+  const cfg = withExecution(plain, executionBinding(plain, issue, "stable"));
   const base = "b".repeat(SHA_WIDTH);
   fakeGh.reply([
     ...(options.replies ?? []),
@@ -68,7 +68,7 @@ function executionFixture(issue, options = {}) {
       saveExecutionState(cfg, issue, state),
     guard: () => issueExecution(cfg, issue),
     next: (lane = "stable") =>
-      withExecution(plain, executionIdentity(plain, issue, lane)),
+      withExecution(plain, executionBinding(plain, issue, lane)),
     journal: path.join(paths.runDir(cfg, issue), "coordination-uncertain.json"),
     transport: () => TRANSPORT.parse(fakeGh.transportState()),
     update: /** @param {(state: z.infer<typeof TRANSPORT>) => void} change */ (
