@@ -145,6 +145,38 @@ test("a leftover submodule worktree holding an ignored file stays", () => {
   assert.ok(fs.existsSync(path.join(wiki, "Draft.md")));
 });
 
+for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
+  test(`a leftover submodule worktree whose edited file is marked ${flag} stays`, () => {
+    const { repo, from } = historyRemovingSubmodule();
+    git(["-C", repo, "checkout", "-q", "issue"]);
+    git([...FILE_PROTOCOL, "-C", repo, "submodule", "update", "-q", "--init"]);
+    const wiki = path.join(repo, "wiki");
+    git(["-C", wiki, "update-index", flag, "Home.md"]);
+    fs.writeFileSync(path.join(wiki, "Home.md"), "draft\n");
+    git(["-C", repo, "rebase", "-q", "integration"]);
+    assert.equal(git(["-C", wiki, "status", "--porcelain", "--ignored"]), "");
+    assert.deepEqual(removeRetiredSubmodules(repo, from), []);
+    assert.equal(
+      fs.readFileSync(path.join(wiki, "Home.md"), "utf8"),
+      "draft\n",
+    );
+  });
+}
+
+test("a tracked symlink in a leftover submodule worktree is not followed, and its target stays", () => {
+  const outside = fs.mkdtempSync(path.join(isolatedRoot, "outside-"));
+  fs.writeFileSync(path.join(outside, "Kept.md"), "kept\n");
+  const sub = submoduleOrigin();
+  fs.symlinkSync(".", path.join(sub, "loop"));
+  fs.symlinkSync(outside, path.join(sub, "outside"));
+  git(["-C", sub, "add", "loop", "outside"]);
+  git(["-C", sub, "commit", "-q", "-m", "Links"]);
+  const { repo, from } = historyRemovingSubmodule(sub);
+  rebaseIssue(repo);
+  assert.deepEqual(removeRetiredSubmodules(repo, from), ["wiki"]);
+  assert.ok(fs.existsSync(path.join(outside, "Kept.md")));
+});
+
 test("a leftover submodule worktree holding a nested submodule stays", () => {
   const { repo, from } = historyRemovingSubmodule(withNestedSubmodule());
   rebaseIssue(repo);
