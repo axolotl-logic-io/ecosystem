@@ -128,9 +128,12 @@ This is a fresh-read guard, not an atomic GitHub snapshot.
 
 Unresolved coordination journals or local stop-recovery records block progress.
 A stop's success flag is insufficient: its state, lease, claim and recorded
-issue/PR effect groups must all retain confirmed acknowledgments. Missing or
-malformed effects require reconciliation. Confirmed stop recovery only removes
-a barrier; it never supplies execution authority.
+issue/PR effect groups must all retain confirmed acknowledgments. The stop keeps
+its intended issue and PR targets separately from those acknowledgments, so a
+missing PR effect group cannot silently remove that PR from recovery. Missing or
+malformed effects or target lists require reconciliation, including older local
+records without a target list. Confirmed stop recovery only removes a barrier;
+it never supplies execution authority.
 
 A failed lane setup keeps its
 checkout, slot, signed receipt and readiness barrier. Explicit reconciliation

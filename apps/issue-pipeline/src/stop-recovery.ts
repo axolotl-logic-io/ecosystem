@@ -28,6 +28,8 @@ const RECORD = z.object({
   stopCode: z.string(),
   originalFailure: z.string(),
   stopFailure: z.string().nullable(),
+  // Older records remain readable for recovery, but cannot prove completeness.
+  targets: z.array(z.number().int().positive()).nonempty().optional(),
   updates: z.record(z.string(), z.enum(["confirmed", "unresolved"])),
   recovery: z.string(),
 });
@@ -84,6 +86,7 @@ function initialEvidence(cfg: Config, intent: StopIntent): Evidence {
     stopCode: code,
     originalFailure: redacted(cfg, reason),
     stopFailure: null,
+    targets,
     updates: Object.fromEntries([
       ["state", "unresolved"],
       ["lease", "unresolved"],
@@ -140,6 +143,7 @@ function stopRecovery(cfg: Config, intent: StopIntent): StopRecovery {
         value.result = "reconciliation-required";
         value.stopCode = fresh.stopCode;
         value.updates = fresh.updates;
+        value.targets = fresh.targets;
         value.resumeStage = fresh.resumeStage;
         value.resumeStageSource = "saved authority";
       }),
@@ -173,7 +177,16 @@ function readEvidence(file: string): Evidence | null {
 }
 
 function allEffectsConfirmed(record: Evidence): boolean {
-  const targets = new Set([String(record.issue)]);
+  // Do not infer the intended targets solely from surviving acknowledgments:
+  // losing a PR's entire effect group must not make that PR disappear.
+  if (
+    record.targets === undefined ||
+    !record.targets.includes(record.issue) ||
+    new Set(record.targets).size !== record.targets.length
+  ) {
+    return false;
+  }
+  const targets = new Set(record.targets.map(String));
   for (const key of Object.keys(record.updates)) {
     const [effect, target] = key.split(":");
     if (target !== undefined && TARGET_EFFECTS.includes(effect ?? "")) {
