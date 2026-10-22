@@ -56,7 +56,7 @@ function resolverTask(
     );
   }
   const resolved =
-    "`conflict-resolved`, with a `summary`, once this stop's text conflicts are staged. Do not continue the rebase: finish-sync owns continuation, and may return another text stop.";
+    "`conflict-resolved`, with a `summary`, once this stop's conflicts are staged. Do not continue the rebase: finish-sync owns continuation, and may return another conflict stop.";
   lines.push(...replyLines([resolved, "`cannot-fix`, with a `summary`."]));
   return lines.join("\n");
 }

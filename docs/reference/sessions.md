@@ -62,7 +62,7 @@ Before it claims or clones anything, a stage job pins the pages its stage's sess
 
 ## `pipeline_commit`
 
-Writers commit only through the `pipeline_commit` tool. They don't run `git commit`, push, reset, checkout or merge themselves. The one exception is conflict resolution: the integration session stages resolved text files and returns (see [sync](sync.md)).
+Writers commit only through the `pipeline_commit` tool. They don't run `git commit`, push, reset, checkout or merge themselves. The one exception is conflict resolution: the integration session stages the files it resolved and returns (see [sync](sync.md)).
 
 The tool takes git commit arguments: `{"args": ["-m", "Describe the change", "--", "repo/src/file.ts"]}`.
 
