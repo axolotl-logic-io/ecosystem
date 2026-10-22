@@ -17,10 +17,10 @@ import {
   clearCodeSync,
   continueCodeSync,
   rebaseInProgress,
-  removeRetiredSubmodules,
   saveCodeSync,
   unmergedFiles,
 } from "../rebase.ts";
+import { removeRetiredSubmodules } from "../retired-submodules.ts";
 import type { ReviewReply } from "./prepare-review.ts";
 import { prepareReview } from "./prepare-review.ts";
 import { refuseOnceMerged } from "./push.ts";
