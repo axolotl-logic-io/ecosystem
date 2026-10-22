@@ -16,7 +16,7 @@ A rebase that stops on conflicts stays in the checkout for a resolver session. T
 
 A binary file, such as a visual-test baseline, can't hold a merged result, so the resolver keeps the target's bytes for it. When the branch meant to change that file and a later check detects the mismatch, a check-fix session regenerates only that file from the resolved code. Hardening reviews the result.
 
-A base that removed a submodule leaves the submodule's folder behind after the rebase, as untracked files. Once the rebase finishes, the pipeline removes that folder when the submodule's worktree is clean and its repository stays in the checkout's `.git/modules/`. A folder holding uncommitted work stays, and the finish check rejects the rebase.
+A base that removed a submodule leaves the submodule's folder behind after the rebase, as untracked files. Once the rebase finishes, the pipeline removes that folder when its repository stays in the checkout's own `modules/` folder, so its commits and stashes survive. The folder must hold no nested repository and nothing uncommitted, untracked or ignored. Any other folder stays, and the finish check rejects the rebase.
 
 - Each resolver session that ends, however it ends, counts as one of `maxConflictFixes` (default 2) attempts, saved at once. A transient failure doesn't count.
 - A later conflict on the same rebase goes to the next resolver with the current paths and the next attempt number. The earlier staged resolution isn't treated as rejected.

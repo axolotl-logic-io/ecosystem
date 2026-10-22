@@ -15,8 +15,8 @@ import {
   clearCodeSync,
   readCodeSync,
   rebaseProblem,
-  removeRetiredSubmodules,
 } from "../rebase.ts";
+import { removeRetiredSubmodules } from "../retired-submodules.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 
 // The commit sync-base rebased onto (its reply's baseSha, #279).
