@@ -20,7 +20,7 @@ import {
   saveCodeSync,
   unmergedFiles,
 } from "../rebase.ts";
-import { removeRetiredSubmodules } from "../retired-submodules.ts";
+import { retireSubmodules } from "../retired-submodules.ts";
 import type { ReviewReply } from "./prepare-review.ts";
 import { prepareReview } from "./prepare-review.ts";
 import { refuseOnceMerged } from "./push.ts";
@@ -136,7 +136,7 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   if (rebaseInProgress(wt)) {
     return conflictReply(wt, onto, req.keepConflict === true);
   }
-  removeRetiredSubmodules(wt, before);
+  retireSubmodules(cfg, n, wt, before);
   try {
     pushBranch(cfg, n, wt, "sync-base");
   } catch (error: unknown) {

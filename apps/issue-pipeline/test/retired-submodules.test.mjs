@@ -1,6 +1,6 @@
 // @ts-check
 // The leftover worktree of a submodule that a rebase removed
-// (src/retired-submodules.ts): what is removed, and what stays.
+// (src/retired-submodules.ts): it moves, whole, into the recovery folder.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,9 +8,7 @@ import { test } from "node:test";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { git } from "./job-git-test-kit.mjs";
 
-const { removeRetiredSubmodules } = await import(
-  "../src/retired-submodules.ts"
-);
+const { moveRetiredSubmodules } = await import("../src/retired-submodules.ts");
 
 /** @returns {string} a fresh git checkout under the test's root */
 function checkout() {
@@ -23,6 +21,8 @@ function checkout() {
 const FILE_PROTOCOL = ["-c", "protocol.file.allow=always"];
 // `git status --porcelain` showing the leftover wiki folder.
 const UNTRACKED_WIKI = /^\?\? wiki\/$/mu;
+// The folder a move creates under the recovery folder.
+const RETIRED_FOLDER = /^retired-submodules-/u;
 
 /** @returns {string} a fresh repository with one commit, to be a submodule */
 function submoduleOrigin() {
@@ -101,15 +101,36 @@ function rebasedPastRemovedSubmodule() {
   return { wt: repo, from };
 }
 
-test("a finished rebase past a removed submodule drops its clean leftover worktree and keeps its repository", () => {
+/** @returns {string} a fresh recovery folder under the test's root */
+function recoveryFolder() {
+  return path.join(fs.mkdtempSync(path.join(isolatedRoot, "run-")), "recovery");
+}
+
+/**
+ * The `retired-submodules-*` folders in `recovery`.
+ * @param {string} recovery
+ * @returns {string[]}
+ */
+function retiredFolders(recovery) {
+  return fs
+    .readdirSync(recovery)
+    .filter((name) => RETIRED_FOLDER.test(name))
+    .map((name) => path.join(recovery, name));
+}
+
+test("a finished rebase past a removed submodule moves its leftover folder into recovery, and the checkout is clean", () => {
   const { wt, from } = rebasedPastRemovedSubmodule();
+  const recovery = recoveryFolder();
   assert.match(git(["-C", wt, "status", "--porcelain"]), UNTRACKED_WIKI);
-  assert.deepEqual(removeRetiredSubmodules(wt, from), ["wiki"]);
+  assert.deepEqual(moveRetiredSubmodules(wt, from, recovery), ["wiki"]);
   assert.equal(git(["-C", wt, "status", "--porcelain"]), "");
+  assert.equal(retiredFolders(recovery).length, 1);
+  const kept = path.join(retiredFolders(recovery)[0] ?? "", "wiki");
+  assert.equal(fs.readFileSync(path.join(kept, "Home.md"), "utf8"), "home\n");
   assert.ok(fs.existsSync(path.join(wt, ".git", "modules", "wiki")));
 });
 
-test("a linked worktree's leftover submodule worktree is dropped, and its repository stays", () => {
+test("a linked worktree's leftover submodule folder moves into recovery", () => {
   const { repo, from } = historyRemovingSubmodule();
   git(["-C", repo, "checkout", "-q", "--detach"]);
   const wt = path.join(
@@ -118,78 +139,72 @@ test("a linked worktree's leftover submodule worktree is dropped, and its reposi
   );
   git(["-C", repo, "worktree", "add", "-q", wt, "integration"]);
   rebaseIssue(wt);
-  assert.match(git(["-C", wt, "status", "--porcelain"]), UNTRACKED_WIKI);
-  assert.deepEqual(removeRetiredSubmodules(wt, from), ["wiki"]);
+  const recovery = recoveryFolder();
+  assert.deepEqual(moveRetiredSubmodules(wt, from, recovery), ["wiki"]);
   assert.equal(git(["-C", wt, "status", "--porcelain"]), "");
-  const modules = git(["-C", wt, "rev-parse", "--git-path", "modules"]);
-  assert.ok(fs.existsSync(path.resolve(wt, modules, "wiki")));
+  assert.ok(
+    fs.existsSync(
+      path.join(retiredFolders(recovery)[0] ?? "", "wiki", "Home.md"),
+    ),
+  );
 });
 
-test("a leftover submodule worktree holding an untracked file stays, and the checkout stays dirty", () => {
-  const { wt, from } = rebasedPastRemovedSubmodule();
-  fs.writeFileSync(path.join(wt, "wiki", "Draft.md"), "draft\n");
-  assert.deepEqual(removeRetiredSubmodules(wt, from), []);
-  assert.ok(fs.existsSync(path.join(wt, "wiki", "Draft.md")));
-  assert.match(git(["-C", wt, "status", "--porcelain"]), UNTRACKED_WIKI);
-});
-
-test("a leftover submodule worktree holding an ignored file stays", () => {
-  const { wt, from } = rebasedPastRemovedSubmodule();
-  const wiki = path.join(wt, "wiki");
-  const exclude = git(["-C", wiki, "rev-parse", "--git-path", "info/exclude"]);
-  fs.mkdirSync(path.dirname(path.resolve(wiki, exclude)), { recursive: true });
-  fs.writeFileSync(path.resolve(wiki, exclude), "Draft.md\n");
-  fs.writeFileSync(path.join(wiki, "Draft.md"), "draft\n");
-  assert.equal(git(["-C", wiki, "status", "--porcelain"]), "");
-  assert.deepEqual(removeRetiredSubmodules(wt, from), []);
-  assert.ok(fs.existsSync(path.join(wiki, "Draft.md")));
-});
-
-for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
-  test(`a leftover submodule worktree whose edited file is marked ${flag} stays`, () => {
-    const { repo, from } = historyRemovingSubmodule();
-    git(["-C", repo, "checkout", "-q", "issue"]);
-    git([...FILE_PROTOCOL, "-C", repo, "submodule", "update", "-q", "--init"]);
-    const wiki = path.join(repo, "wiki");
-    git(["-C", wiki, "update-index", flag, "Home.md"]);
-    fs.writeFileSync(path.join(wiki, "Home.md"), "draft\n");
-    git(["-C", repo, "rebase", "-q", "integration"]);
-    assert.equal(git(["-C", wiki, "status", "--porcelain", "--ignored"]), "");
-    assert.deepEqual(removeRetiredSubmodules(repo, from), []);
-    assert.equal(
-      fs.readFileSync(path.join(wiki, "Home.md"), "utf8"),
-      "draft\n",
-    );
-  });
-}
-
-test("a tracked symlink in a leftover submodule worktree is not followed, and its target stays", () => {
-  const outside = fs.mkdtempSync(path.join(isolatedRoot, "outside-"));
-  fs.writeFileSync(path.join(outside, "Kept.md"), "kept\n");
-  const sub = submoduleOrigin();
-  fs.symlinkSync(".", path.join(sub, "loop"));
-  fs.symlinkSync(outside, path.join(sub, "outside"));
-  git(["-C", sub, "add", "loop", "outside"]);
-  git(["-C", sub, "commit", "-q", "-m", "Links"]);
-  const { repo, from } = historyRemovingSubmodule(sub);
-  rebaseIssue(repo);
-  assert.deepEqual(removeRetiredSubmodules(repo, from), ["wiki"]);
-  assert.ok(fs.existsSync(path.join(outside, "Kept.md")));
-});
-
-test("a leftover submodule worktree holding a nested submodule stays", () => {
+test("every byte of a leftover folder survives the move, whatever git status reports", () => {
   const { repo, from } = historyRemovingSubmodule(withNestedSubmodule());
-  rebaseIssue(repo);
+  git(["-C", repo, "checkout", "-q", "issue"]);
+  git([
+    ...FILE_PROTOCOL,
+    "-C",
+    repo,
+    "submodule",
+    "update",
+    "-q",
+    "--init",
+    "--recursive",
+  ]);
   const wiki = path.join(repo, "wiki");
-  assert.equal(git(["-C", wiki, "status", "--porcelain", "--ignored"]), "");
-  assert.deepEqual(removeRetiredSubmodules(repo, from), []);
-  assert.ok(fs.existsSync(path.join(wiki, "nested", "Home.md")));
+  git(["-C", wiki, "update-index", "--assume-unchanged", "Home.md"]);
+  fs.writeFileSync(path.join(wiki, "Home.md"), "hidden draft\n");
+  fs.writeFileSync(path.join(wiki, "Untracked.md"), "untracked\n");
+  fs.writeFileSync(path.join(wiki, "nested", "Nested.md"), "nested\n");
+  git(["-C", repo, "rebase", "-q", "integration"]);
+  const recovery = recoveryFolder();
+  assert.deepEqual(moveRetiredSubmodules(repo, from, recovery), ["wiki"]);
+  const kept = path.join(retiredFolders(recovery)[0] ?? "", "wiki");
+  assert.equal(
+    fs.readFileSync(path.join(kept, "Home.md"), "utf8"),
+    "hidden draft\n",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(kept, "Untracked.md"), "utf8"),
+    "untracked\n",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(kept, "nested/Nested.md"), "utf8"),
+    "nested\n",
+  );
+  assert.ok(fs.existsSync(path.join(kept, "nested", ".git")));
+});
+
+test("a symlink left at a retired submodule's path is not moved or followed", () => {
+  const { repo, from } = historyRemovingSubmodule();
+  git(["-C", repo, "checkout", "-q", "issue"]);
+  git(["-C", repo, "rebase", "-q", "integration"]);
+  const outside = fs.mkdtempSync(path.join(isolatedRoot, "outside-"));
+  fs.rmSync(path.join(repo, "wiki"), { recursive: true, force: true });
+  fs.symlinkSync(outside, path.join(repo, "wiki"));
+  const recovery = recoveryFolder();
+  assert.deepEqual(moveRetiredSubmodules(repo, from, recovery), []);
+  assert.ok(fs.lstatSync(path.join(repo, "wiki")).isSymbolicLink());
+  assert.equal(fs.existsSync(recovery), false);
 });
 
 test("a submodule that HEAD still has is left alone", () => {
   const { repo, from } = historyRemovingSubmodule();
   git(["-C", repo, "checkout", "-q", "issue"]);
   git([...FILE_PROTOCOL, "-C", repo, "submodule", "update", "-q", "--init"]);
-  assert.deepEqual(removeRetiredSubmodules(repo, from), []);
+  const recovery = recoveryFolder();
+  assert.deepEqual(moveRetiredSubmodules(repo, from, recovery), []);
   assert.ok(fs.existsSync(path.join(repo, "wiki", "Home.md")));
+  assert.equal(fs.existsSync(recovery), false);
 });
