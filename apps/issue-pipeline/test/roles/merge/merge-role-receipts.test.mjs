@@ -38,7 +38,7 @@ test("own merge saves the original receipt, then completion with candidate secur
   });
   assert.equal(saves[2]?.stage, "done");
   assert.deepEqual(saves[2]?.security, saves[1]?.security);
-  assert.equal(saves.length, 3);
+  assert.equal(saves.at(-1), saves[2]);
   const { state: finished } = firstPayload(calls, "finish");
   assert.deepEqual(finished, saves[2]);
   assert.equal(opNames(calls).includes("verify"), false);

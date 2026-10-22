@@ -1,9 +1,11 @@
 // @ts-check
-// Done replay rechecks the merged result before obtaining or reusing clearance.
+// Done replay confirms the merged result read-only before reusing clearance;
+// missing clearance stops without a postmerge suite or Security (#185).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  checksBefore,
+  opNames,
+  opPayloads,
   savesOf,
   sessionsOf,
   stateOf,
@@ -19,6 +21,7 @@ import {
 import {
   AFTER_MERGE,
   CODE_MERGED,
+  CONFIRMED,
   FINISHED,
   MERGED_PR,
   MERGED_REVISION,
@@ -38,7 +41,7 @@ const DONE = {
   merged: MERGED_REVISION,
 };
 
-test("a code-only done completion rechecks M before reviewing missing security", async () => {
+test("a code-only done completion without security stops after read-only confirmation, never reviewing M", async () => {
   // Saved while the pipeline had a wiki: its revisions name a null wiki head.
   const codeOnly = { ...MERGED_REVISION, wiki: null };
   const afterCodeMerge = current(codeOnly, AFTER_MERGE.pr);
@@ -52,32 +55,29 @@ test("a code-only done completion rechecks M before reviewing missing security",
     },
     ops: {
       "current-revision": [afterCodeMerge, afterCodeMerge],
+      "confirm-merged": [CONFIRMED],
       "prepare-review": [{ ...PREPARED_MERGED, changedFiles: ["src/chat.ts"] }],
       finish: [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
     sessions: [NO_FINDING],
   });
-  const reviewed = stateOf(await mergeRole(ctx), "next");
-  assert.equal(sessionsOf(calls).length, 1);
-  assert.deepEqual(reviewed.security, {
-    revision: codeOnly,
-    commentId: COMMENT_ID,
-    finding: null,
-  });
-  const saved = savesOf(calls).at(-1);
-  assert.deepEqual(saved, reviewed);
-  assert.ok(saved !== undefined);
-  assert.equal(mergedAuthorizationHolds(saved, codeOnly, MERGED_PR), true);
-  for (const boundary of /** @type {const} */ (["prepare-review", "finish"])) {
-    const checks = checksBefore(calls, boundary);
-    assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
+  const stopped = stateOf(await mergeRole(ctx), "stop");
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(stopped.security, null);
+  assert.deepEqual(stopped.merged, codeOnly);
+  assert.equal(mergedAuthorizationHolds(stopped, codeOnly, MERGED_PR), true);
+  assert.deepEqual(opPayloads(calls, "confirm-merged"), [
+    { number: ctx.issue, ...CODE_MERGED },
+  ]);
+  for (const name of ["verify", "prepare-review"]) {
+    assert.deepEqual(opPayloads(calls, name), []);
   }
-  assert.deepEqual(mutationsOf(calls), ["finish"]);
-  assert.ok(sessionsOf(calls).every((session) => session.commits === false));
+  assert.deepEqual(mutationsOf(calls), []);
+  assert.deepEqual(savesOf(calls), []);
 });
 
-test("a done completion rechecks M before reusing exact clearance", async () => {
+test("a done completion confirms M read-only before reusing exact clearance", async () => {
   const { ctx, calls } = fakeContext({
     stage: "merge",
     state: {
@@ -90,13 +90,18 @@ test("a done completion rechecks M before reusing exact clearance", async () => 
     },
     ops: {
       "current-revision": [AFTER_MERGE],
+      "confirm-merged": [CONFIRMED],
       finish: [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
   });
   stateOf(await mergeRole(ctx), "next");
-  const checks = checksBefore(calls, "finish");
-  assert.deepEqual(checks.verify, { number: ctx.issue, ...CODE_MERGED });
+  const names = opNames(calls);
+  assert.ok(names.indexOf("confirm-merged") < names.indexOf("finish"));
+  assert.deepEqual(opPayloads(calls, "confirm-merged"), [
+    { number: ctx.issue, ...CODE_MERGED },
+  ]);
+  assert.deepEqual(opPayloads(calls, "verify"), []);
   assert.deepEqual(mutationsOf(calls), ["finish"]);
   assert.equal(sessionsOf(calls).length, 0);
 });
