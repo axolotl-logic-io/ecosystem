@@ -8,6 +8,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { Config, Identity } from "./config.ts";
 import { credential, paths } from "./config.ts";
+import { OpsError } from "./ops-error.ts";
 import type { IssueState } from "./state.ts";
 
 const IDENTITIES: readonly Identity[] = ["dev", "merge"];
@@ -160,4 +161,30 @@ function stopRecovery(cfg: Config, intent: StopIntent): StopRecovery {
   };
 }
 
-export { stopRecovery };
+// Recovery records are barriers, not permission. A confirmed stop still needs
+// authenticated saved state and predecessor release before a new claim.
+function assertStopRecoveryResolved(cfg: Config, issue: number): void {
+  const dir = path.join(paths.runDir(cfg, issue), "stop-recovery");
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+  for (const name of fs.readdirSync(dir)) {
+    const record = RECORD.safeParse(
+      JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")),
+    );
+    if (
+      !record.success ||
+      record.data.issue !== issue ||
+      record.data.repo !== cfg.repo ||
+      record.data.branch !== paths.branch(cfg, issue) ||
+      record.data.result !== "signed-stop-confirmed" ||
+      Object.values(record.data.updates).some((value) => value !== "confirmed")
+    ) {
+      throw new OpsError(
+        "unresolved stop recovery; explicit reconciliation required",
+      );
+    }
+  }
+}
+
+export { assertStopRecoveryResolved, stopRecovery };

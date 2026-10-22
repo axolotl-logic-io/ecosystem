@@ -109,3 +109,27 @@ A session's authority comes from its stage, its phase and whether it commits, ne
 3. For a provenance failure, read the issue's review/merge comments and their edit history on GitHub. Find out who edited what.
 4. Keep every comment, local run file and branch. Don't delete traces to make the issue look new; the claim can't tell that from first use.
 5. Restart the same issue, branch and lane only after the saved state reads as genuine. Legacy or untrusted state needs explicit reconciliation; there's no automatic adoption.
+
+## Explicit bound claims
+
+The source-only `boundClaim` API in `src/ops/bound-claim.ts` connects the explicit
+execution-state seam to claim transitions and checkout setup. It is not imported
+by the default job or ops CLI. Caller activation and mandatory execution envelopes
+remain separate work; the existing CLI claim path is compatibility behavior, not
+runtime fencing.
+
+A bound resume requires a fresh execution identity, authenticated saved receipt
+and history, and a verified predecessor release. The same lane and an expired
+lease do not substitute for release. Unresolved coordination journals or local
+stop-recovery records block progress. Confirmed stop recovery is only a removed
+barrier: it never supplies execution authority. A failed lane setup keeps its
+checkout, slot, signed receipt and readiness barrier. Explicit reconciliation
+must resolve readiness before another bound claim can use that checkout.
+
+The API retains assigned branch/head, draft PR, merge facts, own-merge receipts
+and Security evidence while applying the existing resume transitions. Answered
+questions retain their saved `asked` revision for downstream input handling.
+Closed issues must prove exact incomplete-Merge eligibility before reopen;
+reopening grants no writer, merge, approval or Security permission. Missing PR
+metadata and unreadable authority fail rather than being treated as fresh work.
+Source delivery does not authorize installation, worker activation or dispatch.

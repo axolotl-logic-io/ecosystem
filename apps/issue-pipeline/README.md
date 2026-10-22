@@ -55,6 +55,19 @@ and block writer assertion, retry and release. Default entry points still do
 not import this seam. See [execution state authority](../../docs/reference/authority.md#explicit-execution-state-seam).
 This preparatory source slice does not authorize installation or activation.
 
+`src/ops/bound-claim.ts` extends that explicit seam through claim eligibility,
+resume transitions and checkout setup. Callers supply a fresh bound configuration
+and a matching lane request directly to `boundClaim`; default jobs and the ops
+CLI still cannot reach it. Existing CLI claim tests describe compatibility, not
+permission for bound execution. Authenticated predecessor release is mandatory
+for answered, stopped and lapsed resumes, even on the same lane. Unresolved stop
+recovery, uncertain saves and incomplete lane setup refuse progress. The new
+owner's receipt is saved before setup; a setup failure retains both the checkout
+and lane slot without turning either into execution authority. Closed issues
+still need exact incomplete-Merge eligibility before reopen. This adds no writer,
+remerge, approval or Security permission and does not activate job dispatch.
+
+
 Runtime integration-turn composition remains #120; handoff, withdrawal/checkpoints
 and full composition/operations remain #118, #119 and #121. No scheduler,
 polling, handoff, automatic legacy adoption, alternate delivery path, worker

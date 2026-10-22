@@ -90,6 +90,10 @@ function labelWorking(
   }
 }
 
+function hasWorktree(cfg: Config, number: number): boolean {
+  return fs.existsSync(path.join(paths.worktree(cfg, number), ".git"));
+}
+
 // Readies the issue's code checkout, and says what a reset of it did. A new
 // checkout is set up for the writer's own test runs; an existing one
 // moves to an adopted push's head, keeping any commits the branch lacks.
@@ -259,4 +263,12 @@ function claim(
   return won;
 }
 
-export { claim };
+export type { ClaimRequest, ClaimWon };
+export {
+  CLAIM_REQUEST,
+  CLAIMED_ISSUE,
+  claim,
+  hasWorktree,
+  labelWorking,
+  readyCheckouts,
+};
