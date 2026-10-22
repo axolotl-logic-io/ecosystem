@@ -21,8 +21,9 @@ flowchart TD
   Q -- yes --> P[Approve H, save attempt, POST merge]
   S -- reject --> X[Stop without merging]
   P --> R[Confirm result M]
-  R --> V[Verify M]
-  V --> F[Finish with saved candidate clearance]
+  R --> V[Read-only: signed intent, premerge check proof, receipt, ancestry]
+  V -- proven --> F[Finish with saved candidate clearance]
+  V -- missing proof --> Y[Stop for read-only reconciliation]
 ```
 
 ## Merge order
@@ -53,13 +54,15 @@ After a 201, read-only reconciliation confirms that M is the PR's genuine merge:
 - Waiting writes only evidence checkpoints, never code, another approval or a second merge.
 - At the deadline, the issue stops: code may already have landed, and no further merge or code writer is authorized.
 
-A PR merged outside the confirmed operation, for example by hand, isn't an own merge. It needs a fresh claim and the separately authorized post-merge path, which hardens against the observed merged result.
+A PR merged outside the confirmed operation, for example by hand, isn't an own merge. A fresh claim stops it with merged truth retained for read-only reconciliation: no post-merge checks, hardening, writer or Security run.
 
 ## After the merge
 
-The merge result M, not the pre-merge head, must pass deterministic verification in a clean detached checkout (see [review](review.md#deterministic-verification)). A failed check on M keeps the merged state and stops without a code writer. New own merges reuse their saved premerge [Security clearance](review.md#security-review), without another model pass. A missing or mismatched candidate receipt cannot be repaired by pretending a postmerge review was premerge permission.
+Checks and Security clear the exact candidate before the target moves; nothing runs them on M (#185). After the merge, the read-only `confirm-merged` op confirms that the signed fast-forward intent and its receipt bind M to that candidate, that deterministic verification passed on exactly that commit before the merge, and that the same PR reads MERGED at M with M in the fetched base. It runs no checks. New own merges, interrupted ones and finished replays all take this path, and reuse their saved premerge [Security clearance](review.md#security-review) without another model pass.
 
-Only Security clearance bound to the genuine own merge's exact authorized candidate, or a historical clearance of exactly M, allows completion. The `finish` op acts on the saved done state; it merges and publishes nothing itself. It:
+Missing proof stops with merged truth retained, for read-only reconciliation: legacy two-parent or REST receipts, external or manual merges, and runs without exact premerge Security clearance. No post-merge suite, writer or Security review runs, and no proof is invented. A missing or mismatched candidate receipt cannot be repaired by pretending a postmerge review was premerge permission.
+
+Only Security clearance bound to the genuine own merge's exact authorized candidate, or an exact saved result observation, allows completion. The `finish` op acts on the saved done state; it merges and publishes nothing itself. It:
 
 - deletes the issue branch;
 - sets `agent:merged` and removes `agent:working` on the PR and the issue;
@@ -71,7 +74,7 @@ A parent issue closes once all its sub-issues are closed and at least one merged
 
 ### Closed issues with an incomplete merge
 
-A claim normally needs an open issue. A closed issue may resume only when genuine saved state shows an incomplete merge and its PR is freshly confirmed merged into the configured base. The winning claimant reopens the issue with the review/merge account. This covers GitHub auto-closing an issue before verification, Security and completion; it isn't a general closed-issue retry.
+A claim normally needs an open issue. A closed issue may resume only when genuine saved state shows an incomplete merge and its PR is freshly confirmed merged into the configured base. The winning claimant reopens the issue with the review/merge account. This covers GitHub auto-closing an issue before confirmation and completion; it isn't a general closed-issue retry.
 
 ## Recover after a confirmation deadline
 

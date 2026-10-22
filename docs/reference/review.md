@@ -24,7 +24,7 @@ The `verify` op runs the repository's checks outside any model session, on an ex
 - A change matching `migrations.pathGlobs` runs the configured migration `setup`, `up` and `down`, then `up` again when `down` is set. The first failed step fails verification.
 - The job allows `verify` 120 minutes in total.
 
-Before the code merges, verify runs in the issue's checkout and leaves it as it found it. After the merge, it runs in a clean detached checkout of the exact merge commit GitHub reports.
+Verify runs before the code merges, in the issue's checkout, and leaves it as it found it. The pipeline runs no checks after the merge: the merge stage only confirms, read-only, that this premerge proof binds exactly the merged result (see [merge](merge.md#after-the-merge)). Code that merged without that proof is neither hardened nor verified afterward; it stops for read-only reconciliation.
 
 When `requireCi` is true (the default), CI must pass on the exact authorized head, waiting up to `ciWaitMinutes` (default 30). A PR with no required checks stops with `agent:stopped-no-ci`.
 
@@ -48,9 +48,9 @@ Security reads the exact hardened and checked candidate tree and its complete br
 - A code, trusted-input or target change during the session discards the verdict.
 - Any changed candidate, including clean integration and conflict resolution, needs fresh checks, hardening and Security. Checked integration is not an authorization exception.
 - A saved rejection of the same revision stops again without a model. Lifting a stop cannot reroll it.
-- New own merges keep deterministic actual-result verification and confirmation, without a duplicate postmerge model pass.
+- New own merges get read-only result confirmation, never a postmerge suite or a duplicate model pass.
 
-Historical merged-result Security receipts remain history. They clear only the exact merged result they name, and never authorize a new merge. Existing historical merged runs may recover missing read-only Security after confirmed result checks. Already merged code stays merged; a historical rejection does not roll it back.
+Historical merged-result Security receipts remain history. They clear only the exact merged result they name, and never authorize a new merge. A merged run without exact premerge Security clearance stops for read-only reconciliation; Security is never acquired after the merge. Already merged code stays merged; a historical rejection does not roll it back.
 
 ## Recover from a review stop
 

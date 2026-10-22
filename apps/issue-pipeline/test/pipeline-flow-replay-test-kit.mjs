@@ -12,6 +12,7 @@ import {
 } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
+import { confirmationsSince } from "./pipeline-flow-post-land-test-kit.mjs";
 import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
@@ -70,21 +71,22 @@ function expectedTargetUpdates(world) {
   ];
 }
 
-/** @param {import("./fake-pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
-function expectedReplay(interruptedWorld, checked = true) {
+/** No suite runs after Land; `confirmed`: read-only confirmation passed. @param {import("./fake-pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [confirmed] */
+function expectedReplay(interruptedWorld, confirmed = true) {
   const state = savedState(interruptedWorld);
   const codeMerged = { pr: state.pr, sha: state.merged.code };
-  /** @type {{ pass: boolean, headSha: string }[]} */
-  let verified = [];
-  if (checked) {
-    verified = [{ pass: true, headSha: state.merged.code }];
+  /** @type {{ confirmed: boolean, headSha?: string }[]} */
+  let confirmations = [];
+  if (confirmed) {
+    confirmations = [{ confirmed: true, headSha: state.merged.code }];
   }
   return {
     claimCodeMerged: codeMerged,
     forbidden: [],
     merges: 0,
     targetUpdates: expectedTargetUpdates(interruptedWorld),
-    verified,
+    verified: [],
+    confirmations,
     base: state.merged.code,
     mergeAttempt: state.mergeAttempt,
     hardenedTarget: state.hardenedTarget,
@@ -149,6 +151,7 @@ function replayFacts(flow, traceStart) {
     verified: trace
       .filter(({ request }) => request.op === "verify")
       .map(({ reply }) => VERIFIED.parse(reply)),
+    confirmations: confirmationsSince(flow, traceStart),
     base: refIn(flow.origin, `refs/heads/${BASE}`),
     mergeAttempt: state.mergeAttempt,
     hardenedTarget: state.hardenedTarget,

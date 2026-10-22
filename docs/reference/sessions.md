@@ -20,7 +20,7 @@ Only three model roles exist: Author, Developer and Reviewer. The serialized rol
 | `implement` | Developer | Yes | Code, tests and docs pushed to the issue's branch as a draft PR |
 | `review` / `hardening` | Reviewer | Yes | A verified, pushed hardened revision and a ready PR (see [review](review.md)) |
 | `merge` / `integration` | Reviewer | Yes | The final synchronization and its conflict and check fixes (see [sync](sync.md)) |
-| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the exact candidate before merge (historical merged recovery remains read-only) (see [review](review.md#security-review)) |
+| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the exact candidate before merge; none runs after it (see [review](review.md#security-review)) |
 
 Start new work with `--stage implement` for direct Developer work. Invoke `--stage author` to use Author for new work or an eligible existing direct-mode issue. Direct work derives its requirements from the trusted issue title, body and allowed collaborator comments. No Gherkin or substitute requirements document is required downstream. An unanswered product question stops direct work with `not-doable`; Author can ask questions and wait for a trusted answer instead.
 

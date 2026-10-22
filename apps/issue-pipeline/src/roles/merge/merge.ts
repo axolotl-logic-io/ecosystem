@@ -1,5 +1,5 @@
 // Serialized merge orchestration: exact hardening/checks and read-only Security
-// precede deterministic mutation; result verification still follows it.
+// precede deterministic mutation; after it, only read-only confirmation.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -36,7 +36,7 @@ async function checksBeforeMerge(
   ctx: RoleContext,
   { code, pr }: { code: string; pr: number },
 ): Promise<{ state: IssueState } | { end: RoleEnd }> {
-  const local = await localChecks(ctx, ctx.state, { code, codeMerged: null });
+  const local = await localChecks(ctx, ctx.state, code);
   if (local.kind === "moved") {
     return { end: toReview(ctx.state, "the code head moved before verify") };
   }
@@ -219,7 +219,7 @@ async function mergeCode(
   if (reply.byHand === true) {
     return waiting(
       state,
-      "the PR merged outside this confirmed operation; a fresh claim and existing postmerge authorization are required",
+      "the PR merged outside this confirmed operation; a fresh claim reconciles it read-only",
     );
   }
   if (reply.headSha !== code) {
@@ -252,14 +252,15 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   if (recovered !== null) {
     return recovered;
   }
+  // Before the approval gate, so a stop retains the merged result's evidence.
+  if (ctx.state.codeMerged !== null) {
+    return afterEarlierMerge(ctx.state, ctx.state.codeMerged);
+  }
   const gate = approvalGate(ctx, ctx.state, current);
   if (gate !== null) {
     return gate;
   }
   const { state } = ctx;
-  if (state.codeMerged !== null) {
-    return await afterEarlierMerge(ctx, current, state.codeMerged);
-  }
   if (state.pr === null) {
     return failed(state, "the change has no PR to merge");
   }
