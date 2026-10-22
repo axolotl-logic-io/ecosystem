@@ -26,3 +26,21 @@ jobs:
 
       - run: npm ci
       - run: mise //apps/issue-pipeline:check
+
+  workflow-dash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.9.4
+
+      - run: npm ci --ignore-scripts
+      - run: mise //apps/workflow-dash:check

@@ -2,7 +2,7 @@ min_version = "2026.9.4"
 monorepo_root = true
 
 [monorepo]
-config_roots = ["apps/issue-pipeline"]
+config_roots = ["apps/issue-pipeline", "apps/workflow-dash"]
 
 [tools]
 node = "24"
