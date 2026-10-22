@@ -16,6 +16,7 @@ import {
   readCodeSync,
   rebaseProblem,
 } from "../rebase.ts";
+import { retireSubmodules } from "../retired-submodules.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 
 // The commit sync-base rebased onto (its reply's baseSha, #279).
@@ -57,6 +58,9 @@ function finishProblem(
   });
   if ("problem" in target) {
     return target.problem;
+  }
+  if (sync !== undefined) {
+    retireSubmodules(cfg, n, wt, sync.from);
   }
   return rebaseProblem(wt, target.onto);
 }
