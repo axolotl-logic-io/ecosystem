@@ -27,7 +27,7 @@ import {
   writeState,
 } from "./saved-state.ts";
 import type { IssueState } from "./state.ts";
-import { newIssueState } from "./state.ts";
+import { newIssueState, sameRevision } from "./state.ts";
 
 function stateComments(cfg: Config, issue: number): IssueComment[] {
   const comments = listComments(cfg, issue);
@@ -122,8 +122,16 @@ function claimExecutionState(cfg: Config, issue: number): IssueState {
   });
 }
 
-function retainedMergeAuthorization(saved: IssueState): Partial<IssueState> {
-  if (saved.mergeAttempt === null && saved.codeMerged === null) {
+function retainedMergeAuthorization(
+  saved: IssueState,
+  state: IssueState,
+): Partial<IssueState> {
+  // Observing an external merge must not freeze fresh postmerge hardening.
+  // Stale snapshots still cannot erase historical recovery authorization.
+  if (
+    saved.mergeAttempt === null &&
+    (saved.codeMerged === null || state.hardened !== null)
+  ) {
     return {};
   }
   return {
@@ -131,6 +139,33 @@ function retainedMergeAuthorization(saved: IssueState): Partial<IssueState> {
     hardenedTarget: saved.hardenedTarget,
     integration: saved.integration,
   };
+}
+
+function retainedMergedTruth(
+  saved: IssueState,
+  state: IssueState,
+): IssueState["merged"] {
+  // An own-merge receipt binds inputs, policy and legacy wiki as well as code.
+  // A same-SHA role snapshot must not rewrite that exact recovery authority.
+  if (
+    saved.merged !== null &&
+    (saved.mergeAttempt !== null ||
+      state.merged === null ||
+      state.hardened === null ||
+      !sameRevision(state.hardened, state.merged))
+  ) {
+    return saved.merged;
+  }
+  const merged = state.merged ?? saved.merged;
+  const observed = saved.codeMerged?.sha ?? saved.merged?.code;
+  if (
+    observed !== undefined &&
+    observed !== null &&
+    merged?.code !== observed
+  ) {
+    return saved.merged;
+  }
+  return merged;
 }
 
 function saveExecutionState(
@@ -149,6 +184,7 @@ function saveExecutionState(
   if (state.execution !== undefined) {
     assertExecutionHistory(cfg, issue, state.execution, true);
   }
+  assignedBranch(cfg, issue, saved);
   assignedBranch(cfg, issue, state);
   const retained = withSavedCodeMerge(
     cfg,
@@ -160,8 +196,8 @@ function saveExecutionState(
       // remain allowed, as in the existing push/adopt/sync save paths.
       headSha: state.headSha ?? saved.headSha,
       pr: saved.pr ?? state.pr,
-      merged: state.merged ?? saved.merged,
-      ...retainedMergeAuthorization(saved),
+      merged: retainedMergedTruth(saved, state),
+      ...retainedMergeAuthorization(saved, state),
       execution: saved.execution,
     },
     saved,

@@ -14,6 +14,8 @@ const UNKNOWN = 403;
 const LOST = 404;
 const RELEASED = 405;
 const UNBOUND = 406;
+const MISMATCH = 407;
+const ABSENT = 410;
 const HELD = /reconcil|execution|ownership|authority|binding|provenance/u;
 const STATE = /agent-pipeline:state/u;
 
@@ -91,6 +93,54 @@ test("exact authenticated read-back resolves a lost response with one save attem
   assert.equal(stateWrites(fixture).length, before + 1);
   assert.equal(fs.existsSync(fixture.journal), false);
   assertExecution(fixture.cfg, fixture.issue);
+});
+
+for (const [offset, readback] of [
+  { graphBody: "stale-state" },
+  { graphAuthor: { login: "visitor" } },
+  { lastEditedAt: "2026-10-21T00:00:00Z", editor: { login: "visitor" } },
+].entries()) {
+  test(`a successful save response cannot override mismatched same-read evidence: ${offset}`, () => {
+    const fixture = executionFixture(MISMATCH + offset);
+    const state = fixture.claim();
+    const intended = { ...state, stopCode: "needs-confirmation" };
+    fixture.update((transport) => {
+      transport.stateReadback = readback;
+      if (readback.graphBody !== undefined) {
+        transport.stateReadback = {
+          graphBody: stateBody(fixture.issue, state),
+        };
+      }
+    });
+    const before = stateWrites(fixture).length;
+    assert.throws(() => fixture.save(intended), HELD);
+    assert.equal(stateWrites(fixture).length, before + 1);
+    const intent = fs.readFileSync(fixture.journal, "utf8");
+    assert.equal(
+      JSON.parse(intent).evidence.body,
+      stateBody(fixture.issue, intended),
+    );
+    const writes = fixture.writes();
+    assert.throws(() => assertExecution(fixture.cfg, fixture.issue), HELD);
+    assert.throws(() => fixture.save(intended), HELD);
+    assert.throws(() => fixture.guard().release(), HELD);
+    assert.deepEqual(fixture.writes(), writes);
+    assert.equal(fs.readFileSync(fixture.journal, "utf8"), intent);
+  });
+}
+
+test("missing state beside authenticated execution history cannot initialize new work", () => {
+  const fixture = executionFixture(ABSENT);
+  fixture.claim();
+  fixture.update((transport) => {
+    transport.comments = transport.comments.filter(
+      (comment) => !STATE.test(comment.body),
+    );
+  });
+  const before = fixture.writes();
+  assert.throws(() => fixture.read(), HELD);
+  assert.throws(() => fixture.claim(), HELD);
+  assert.deepEqual(fixture.writes(), before);
 });
 
 test("released authenticated history permits a new receipt, never current ownership by itself", () => {

@@ -70,6 +70,7 @@ if (fs.existsSync(transportFile)) {
       comment.lastEditedAt = "2026-10-21T00:00:00Z";
       comment.editor = { login: identity[2] };
     }
+    if (body.includes("agent-pipeline:state")) Object.assign(comment, transport.stateReadback);
     save();
     if (transport.loseStateResponse && body.includes("agent-pipeline:state")) fail("HTTP 503 response lost after save");
     if (args.includes("--silent")) send("");

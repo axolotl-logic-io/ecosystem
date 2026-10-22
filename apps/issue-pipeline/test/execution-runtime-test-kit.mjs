@@ -28,6 +28,14 @@ const TRANSPORT = z.looseObject({
   refs: z.record(z.string(), z.string()),
   failState: z.boolean().optional(),
   loseStateResponse: z.boolean().optional(),
+  stateReadback: z
+    .object({
+      graphBody: z.string().optional(),
+      graphAuthor: z.object({ login: z.string() }).optional(),
+      lastEditedAt: z.string().optional(),
+      editor: z.object({ login: z.string() }).optional(),
+    })
+    .optional(),
 });
 
 /** @param {number} issue */
