@@ -13,6 +13,7 @@ const DIRTY_LINES = 20;
 const MARKER_LINES = 10;
 const CONFLICT_MARKER = /^\+(?:<{7}|>{7})(?: |$)/u;
 const MIDDLE_MARKER = "+=======";
+const GITLINK = /^160000 commit [0-9a-f]+\t(?<file>[\s\S]+)$/u;
 
 function gitOut(dir: string, args: readonly string[]): string {
   return run("git", ["-C", dir, ...args]).stdout;
@@ -66,6 +67,63 @@ function commitsProblem(dir: string, base: string): string | undefined {
     return `conflict markers remain:\n${shown}`;
   }
   return undefined;
+}
+
+// Whether `dir` is a submodule worktree whose repository lives in the
+// checkout's own `modules/` folder, with nothing uncommitted in it.
+function cleanModuleWorktree(wt: string, dir: string): boolean {
+  const gitfile = path.join(dir, ".git");
+  if (!(fs.existsSync(gitfile) && fs.statSync(gitfile).isFile())) {
+    return false;
+  }
+  const common = path.resolve(
+    wt,
+    gitOut(wt, ["rev-parse", "--git-common-dir"]).trim(),
+  );
+  const own = gitOut(dir, ["rev-parse", "--absolute-git-dir"]).trim();
+  const modules = `${fs.realpathSync(path.join(common, "modules"))}${path.sep}`;
+  if (!fs.realpathSync(own).startsWith(modules)) {
+    return false;
+  }
+  return gitOut(dir, ["status", "--porcelain"]).trim() === "";
+}
+
+// The gitlink paths in commit `rev`'s tree.
+function gitlinks(wt: string, rev: string): string[] {
+  return gitOut(wt, ["ls-tree", "-r", "-z", rev])
+    .split("\0")
+    .map((entry) => {
+      const { file } = GITLINK.exec(entry)?.groups ?? {};
+      return file;
+    })
+    .filter((file): file is string => file !== undefined);
+}
+
+// Whether `file` was a submodule that HEAD no longer has, with a leftover
+// worktree that is safe to remove (cleanModuleWorktree).
+function retiredWorktree(wt: string, file: string): boolean {
+  const dir = path.join(wt, file);
+  const tracked = gitOut(wt, ["ls-tree", "HEAD", "--", file]).trim();
+  return tracked === "" && fs.existsSync(dir) && cleanModuleWorktree(wt, dir);
+}
+
+// Removes the worktree of each submodule that `from` had and the finished
+// rebase's HEAD no longer has. A rebase onto a base that removed a submodule
+// leaves its folder behind as untracked residue, which no session may clean.
+// Only a clean worktree whose repository stays in the checkout's `modules/`
+// is removed, so nothing uncommitted is lost. Anything else stays and fails
+// the cleanliness check.
+function removeRetiredSubmodules(wt: string, from: string): string[] {
+  if (rebaseInProgress(wt)) {
+    return [];
+  }
+  const retired = gitlinks(wt, from).filter((file) =>
+    retiredWorktree(wt, file),
+  );
+  for (const file of retired) {
+    fs.rmSync(path.join(wt, file), { recursive: true, force: true });
+  }
+  return retired;
 }
 
 // Why a writer's resolved rebase onto `base` can't be pushed, or undefined when
@@ -214,6 +272,7 @@ export {
   readCodeSync,
   rebaseInProgress,
   rebaseProblem,
+  removeRetiredSubmodules,
   saveCodeSync,
   unmergedFiles,
 };
