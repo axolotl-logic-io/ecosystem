@@ -12,7 +12,9 @@ A head that moved outside integration also returns to `review`. A target that mo
 
 ## Conflicts
 
-A rebase that stops on conflicts stays in the checkout for a resolver session. The resolver stages the files it resolved and returns; it doesn't continue the rebase or push. A binary file, such as a visual-test baseline, can't hold a merged result, so the resolver keeps the target's bytes for it. When the branch meant to change that file, the checks then fail on it, and a check-fix session regenerates only that file from the resolved code. Hardening reviews the result. The `finish-sync` op continues the rebase, returns any later conflict to the next resolver session, and checks the completed rebase before the guarded push.
+A rebase that stops on conflicts stays in the checkout for a resolver session. The resolver stages the files it resolved and returns; it doesn't continue the rebase or push. The `finish-sync` op continues the rebase, returns any later conflict to the next resolver session, and checks the completed rebase before the guarded push.
+
+A binary file, such as a visual-test baseline, can't hold a merged result, so the resolver keeps the target's bytes for it. When the branch meant to change that file and a later check detects the mismatch, a check-fix session regenerates only that file from the resolved code. Hardening reviews the result.
 
 - Each resolver session that ends, however it ends, counts as one of `maxConflictFixes` (default 2) attempts, saved at once. A transient failure doesn't count.
 - A later conflict on the same rebase goes to the next resolver with the current paths and the next attempt number. The earlier staged resolution isn't treated as rejected.
