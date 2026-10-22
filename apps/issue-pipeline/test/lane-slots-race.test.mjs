@@ -1,24 +1,16 @@
 // @ts-check
 import assert from "node:assert/strict";
-import { fork } from "node:child_process";
-import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import { z } from "zod";
-import { endsWithTest } from "./bounded-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+import { prepared } from "./lane-slots-race-test-kit.mjs";
 
 const { testConfig } = await import("./config-test-kit.mjs");
 const { loadConfig, paths } = await import("../src/config.ts");
 const { assertCheckoutReadyForRemoval } = await import("../src/lane-slots.ts");
-const REPLY = z.object({
-  slot: z.string().optional(),
-  error: z.string().optional(),
-  pruned: z.boolean().optional(),
-});
-const CHILD = new URL("./lane-slots-child-test-kit.mjs", import.meta.url);
 const THIRD_ISSUE = 3;
 const CRASH_CODE = 23;
 let cases = 0;
@@ -32,44 +24,11 @@ function configuration(laneSlots, commands = { test: "true" }) {
     commands,
   });
   const file = path.join(isolatedRoot, `race-${cases}.json`);
-  fs.writeFileSync(file, JSON.stringify(cfg));
+  // Only this legacy-flat fixture is reloaded; computed authority is not input.
+  const { policyBinding: _binding, slug: _slug, ...raw } = cfg;
+  fs.writeFileSync(file, JSON.stringify(raw));
   fs.mkdirSync(paths.clone(cfg), { recursive: true });
   return file;
-}
-
-/** @param {string} config @param {number} issue @param {"claim" | "crash" | "prune" | "pending"} [mode] */
-async function prepared(config, issue, mode = "claim") {
-  const child = fork(CHILD, [config, mode, String(issue)], {
-    stdio: ["ignore", "ignore", "pipe", "ipc"],
-  });
-  const exit = once(child, "exit");
-  const output = once(child, "message");
-  endsWithTest(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGKILL");
-    }
-    await exit;
-  });
-  const [ready] = await output;
-  z.object({ ready: z.literal(true) }).parse(ready);
-  const reply = once(child, "message");
-  return {
-    start() {
-      child.send({ start: true });
-    },
-    async result() {
-      const [message] = await reply;
-      const [code] = await exit;
-      if (code !== 0) {
-        throw new Error(`slot child exited ${String(code)}`);
-      }
-      return REPLY.parse(message);
-    },
-    async crashed() {
-      const [code] = await exit;
-      return code;
-    },
-  };
 }
 
 const SETUP_INCOMPLETE = /setup is incomplete/u;
@@ -144,4 +103,25 @@ test("concurrent maintenance processes share the durable hourly throttle", async
   assert.equal(fs.readFileSync(marker, "utf8"), "attempt\n");
   const { ISSUE_PIPELINE_ROOT } = process.env;
   assert.equal(ISSUE_PIPELINE_ROOT, isolatedRoot);
+});
+
+const COMPUTED_BINDING =
+  /slot child readiness; mode=claim; issue=1; code=1; signal=null;[\s\S]*policyBinding is computed, not a configuration setting/u;
+test("a child configuration failure rejects readiness with the original loader diagnostic", async () => {
+  const file = configuration(1);
+  const raw = z
+    .record(z.string(), z.unknown())
+    .parse(JSON.parse(fs.readFileSync(file, "utf8")));
+  fs.writeFileSync(file, JSON.stringify({ ...raw, policyBinding: null }));
+  await assert.rejects(prepared(file, 1), COMPUTED_BINDING);
+});
+
+const MISSING_REPLY =
+  /slot child reply; mode=crash; issue=1; code=23; signal=null/u;
+test("a child exit without a reply rejects even when it preceded the result wait", async () => {
+  const file = configuration(1);
+  const child = await prepared(file, 1, "crash");
+  child.start();
+  assert.equal(await child.crashed(), CRASH_CODE);
+  await assert.rejects(child.result(), MISSING_REPLY);
 });

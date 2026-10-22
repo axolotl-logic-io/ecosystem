@@ -16,12 +16,14 @@ const PRUNE_EXIT = /exit 7/u;
 const POOL_DRAIN_REQUIRED = /drain.*restore the pool/u;
 test("prune runs from the base clone with the count, once per hour including failures", () => {
   const marker = path.join(isolatedRoot, "prune-attempts");
-  const cfg = config({
+  const raw = {
+    repo: "lanes/durable-prune",
     commands: {
       test: "true",
       prune: `printf '%s:%s\\n' "$PWD" "$ISSUE_PIPELINE_LANE_SLOTS" >> '${marker}'; exit 7`,
     },
-  });
+  };
+  const cfg = config(raw);
   fs.mkdirSync(paths.clone(cfg), { recursive: true });
   const scoped = withCheckout(cfg, {
     issue: 1,
@@ -31,7 +33,7 @@ test("prune runs from the base clone with the count, once per hour including fai
   let now = HOUR_MS;
   pruneLaneResources(scoped, () => now);
   now += HOUR_MS - 1;
-  pruneLaneResources(config({ ...cfg }), () => now);
+  pruneLaneResources(config(raw), () => now);
   assert.equal(fs.readFileSync(marker, "utf8").trim().split("\n").length, 1);
   now += 1;
   pruneLaneResources(scoped, () => now);
