@@ -8,7 +8,7 @@ External data parsed at the boundary includes CLI arguments, environment variabl
 
 ## Lint
 
-The root and pipeline Biome configs encode the lint policy and its documented process-boundary exceptions.
+The root and pipeline Biome configs encode the lint policy and its documented process-boundary exceptions. The default profile also turns off three size and complexity metric rules: `noExcessiveLinesPerFile`, `noExcessiveLinesPerFunction` and `noExcessiveCognitiveComplexity` (#187). A planned Safe Refactor task will use them as design signals. Every other rule stays on.
 
 ## Tests
 

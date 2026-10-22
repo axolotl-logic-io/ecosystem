@@ -2,7 +2,9 @@
 // raised to "error", so any diagnostic fails `npm run check`. Rules are turned
 // off only for frameworks this app does not use, each under a comment naming
 // the framework, and in the scoped overrides at the end, each of which names
-// its files and the framework or platform practice that needs it.
+// its files and the framework or platform practice that needs it. The one
+// policy exception is the size and complexity metrics (#187), which leave this
+// default profile by name below; every other rule of their groups stays on.
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "vcs": {
@@ -76,6 +78,15 @@
       "includes": ["**"],
       "linter": {
         "rules": {
+          // File length, function length and cognitive complexity are design
+          // signals for an explicit Safe Refactor task (#187), not default
+          // gate failures. Only these metric rules are off; the rest of the
+          // complexity and style groups, and every other group, stay on.
+          // Biome has no separate cyclomatic complexity rule.
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off",
+            "noExcessiveLinesPerFunction": "off"
+          },
           "correctness": {
             // Naming a rule group in an override re-enables the rules of every
             // domain in that group, so the other frameworks' rules are turned
@@ -122,6 +133,8 @@
             "noUndeclaredEnvVars": "off"
           },
           "style": {
+            // A size metric (#187), as for complexity above.
+            "noExcessiveLinesPerFile": "off",
             // Vue only:
             "noVueOptionsApi": "off",
             "useVueConsistentVBindStyle": "off",
