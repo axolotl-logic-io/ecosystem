@@ -13,6 +13,7 @@ import { historicalPrFor } from "./ops/prs.ts";
 import { OpsError } from "./ops-error.ts";
 import { assertPrBase } from "./pr-authority.ts";
 import { run } from "./process.ts";
+import { policyRevision } from "./project-policy.ts";
 import type { CodeMerged, IssueState, Revision } from "./state.ts";
 
 const PR_FIELDS =
@@ -186,7 +187,11 @@ function currentRevision(
   const baseSha = gitIn(wt, ["rev-parse", `origin/${cfg.baseBranch}`]).trim();
   const checkoutHead = head(wt);
   return {
-    revision: { code: codeMerged?.sha ?? checkoutHead, inputs },
+    revision: {
+      code: codeMerged?.sha ?? checkoutHead,
+      inputs,
+      ...policyRevision(cfg),
+    },
     baseSha,
     pr,
     codeMerged,

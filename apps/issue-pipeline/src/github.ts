@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import type { Config, Identity } from "./config.ts";
+import { assertGitRemote, GIT_ENV, LOCAL_PATH } from "./git-remote.ts";
 import {
   authenticatedEnv,
   credentialedRun,
@@ -19,13 +20,6 @@ import { redactAddresses } from "./redact-addresses.ts";
 type GhOptions = Omit<RunOptions, "env">;
 
 const WRITE_FLAG = /^(?:-X|--method|-f|-F|--field|--raw-field|--input)$/u;
-const GIT_ENV: ReadonlyMap<string, string> = new Map([
-  ["GIT_TERMINAL_PROMPT", "0"],
-  ["GIT_CONFIG_NOSYSTEM", "1"],
-  ["GIT_CONFIG_GLOBAL", "/dev/null"],
-  ["ISSUE_PIPELINE_OPS", "1"],
-]);
-
 // A read that GitHub can safely repeat: `list`/`view` subcommands, or `gh api`
 // with no method or fields (a GET). Writes aren't retried, since a 502 may
 // hide one that landed.
@@ -57,7 +51,6 @@ function withEnv(
   return new Map(maps.flatMap((map) => [...map]));
 }
 
-const LOCAL_PATH = /^(?:\/|[A-Za-z]:[\\/])/u;
 function remoteOf(args: readonly string[], options: GhOptions): string {
   const clone = args.indexOf("clone");
   if (clone >= 0) {
@@ -207,11 +200,7 @@ function git(
       env: GIT_ENV,
     });
   }
-  if (remote !== `https://github.com/${cfg.repo}.git`) {
-    throw new OpsError(
-      "credentialed git requires the configured GitHub repository HTTPS remote",
-    );
-  }
+  assertGitRemote(cfg, remote);
   const helper = gitHelper(cfg);
   return credentialedRun("git", [...helper, ...args], {
     ...options,

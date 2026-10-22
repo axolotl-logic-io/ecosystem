@@ -1,15 +1,16 @@
-// The Reviewer's hardening, the review stage's one role. A writing session
-// owns the change's design, correctness and tests: it examines the
-// Developer's draft against the Gherkin, adds tests and fixes defects. The
-// pipeline then verifies the result (`verify-runs-repo-checks`), with fix
-// sessions within `maxCiFixes`, pushes it and checkpoints the exact revision
-// it hardened (`state.hardened`), which alone authorizes the merge
-// (`approval-is-for-one-revision`); only then is the draft PR marked ready.
-// Hardening never rebases or syncs the change: the merge stage integrates
-// it. The security review comes after the merge (src/roles/merge/).
+// Hardening checkpoints one exact revision and literal target before PR readiness.
+// Missing historical targets need fresh hardening; Security precedes new merges.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
+import {
+  DEVELOPER_RECOVERY_REASON,
+  requirementsHold,
+  requirementsStage,
+  requirementsState,
+} from "../../requirements.ts";
+import type { ReviewedTarget } from "../../reviewed-target.ts";
+import { reviewedTarget, targetHolds } from "../../reviewed-target.ts";
 import type { IssueState, Revision } from "../../state.ts";
 import { approvalHolds, withLog } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
@@ -35,17 +36,16 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The trusted inputs moved past the Gherkin: the author goes first, and the
-// issue comes back to review.
-function toAuthor(state: IssueState, why: string): RoleEnd {
-  const next: IssueState = {
-    ...state,
-    stage: "author",
-    resumeStage: "review",
-    hardened: null,
-    integration: null,
+// Changed trusted requirements go to their owner, then back to review.
+function toRequirements(state: IssueState, why: string): RoleEnd {
+  const next = requirementsState({ ...state, hardenedTarget: null }, "review");
+  if (next === null) {
+    return errorStop(state, `${why}; ${DEVELOPER_RECOVERY_REASON}`);
+  }
+  return {
+    kind: "next",
+    state: logged(next, `${why}; back to ${requirementsStage(state)}`),
   };
-  return { kind: "next", state: logged(next, `${why}; back to the author`) };
 }
 
 // Why `current` can't be hardened now, or null when it can.
@@ -55,8 +55,8 @@ function notHardenable(
 ): RoleEnd | null {
   const { state } = ctx;
   const { gherkin } = ctx.inputs;
-  if (gherkin === null || gherkin.inputs !== current.revision.inputs) {
-    return toAuthor(state, "the trusted inputs changed since the Gherkin");
+  if (!requirementsHold(state, gherkin, current.revision.inputs)) {
+    return toRequirements(state, "the trusted inputs need requirements review");
   }
   const { codeMerged } = state;
   if (codeMerged !== null && !codeMergeConfirmed(current, codeMerged)) {
@@ -138,11 +138,16 @@ async function pushHardened(
 
 // The hardened state: `revision`, read after the push, is checkpointed as
 // the one revision the merge may take.
-function checkpoint(state: IssueState, revision: Revision): IssueState {
+function checkpoint(
+  state: IssueState,
+  revision: Revision,
+  target: ReviewedTarget | null,
+): IssueState {
   return {
     ...state,
     stage: "review",
     hardened: revision,
+    hardenedTarget: target,
     integration: null,
     mergeReturn: null,
   };
@@ -178,7 +183,7 @@ async function hardeningSetup(
 async function harden(
   ctx: RoleContext,
   start: IssueState,
-  before: Revision,
+  before: CurrentRevision,
 ): Promise<Step<Hardened>> {
   const mode = changeModeOf(start);
   const hold = await hardeningSetup(ctx, mode);
@@ -207,9 +212,9 @@ async function harden(
   }
   const state = pushed.value;
   const after = await currentRevision(ctx);
-  if (after.revision.inputs !== before.inputs) {
+  if (after.revision.inputs !== before.revision.inputs) {
     return ended(
-      toAuthor(state, "the trusted inputs changed during hardening"),
+      toRequirements(state, "the trusted inputs changed during hardening"),
     );
   }
   if (after.revision.code !== verified.value) {
@@ -219,14 +224,26 @@ async function harden(
       state: logged(state, "hardening not checkpointed: the head moved"),
     });
   }
+  if (mode.kind === "branch" && after.baseSha !== before.baseSha) {
+    return ended({
+      kind: "next",
+      state: logged(
+        { ...state, hardened: null, hardenedTarget: null, integration: null },
+        "the target moved during hardening; fresh checks and review are required",
+      ),
+    });
+  }
+  let target: ReviewedTarget | null = null;
+  if (mode.kind === "branch") {
+    target = reviewedTarget(ctx.cfg, before.baseSha);
+  }
   const { revision } = after;
   const entry = `hardened code ${short(revision.code)}`;
-  const hardened = logged(checkpoint(state, revision), entry);
+  const hardened = logged(checkpoint(state, revision, target), entry);
   return { ok: true, value: { state: hardened, revision } };
 }
 
-// The hardening's own comment, on the PR or, with none, the issue. It says
-// only that hardening passed: no security review has run yet.
+// Hardening passed, not Security: comment on the PR or, with none, the issue.
 async function postHardened(
   ctx: RoleContext,
   state: IssueState,
@@ -240,7 +257,7 @@ async function postHardened(
     key: "hardening",
     on,
     role: "reviewer",
-    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; the security review runs on the merged result.`,
+    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; any changed integration needs fresh hardening and Security; Security runs before merge.`,
   });
 }
 
@@ -263,10 +280,14 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   }
   // A hardening checkpointed for exactly this revision needs no session
   // again: an interrupted job left its PR to mark ready.
-  if (approvalHolds(ctx.state, before.revision)) {
+  if (
+    approvalHolds(ctx.state, before.revision) &&
+    (ctx.state.codeMerged !== null ||
+      targetHolds(ctx.cfg, ctx.state.hardenedTarget, before.baseSha))
+  ) {
     return await toMerge(ctx, ctx.state, "hardening already passed");
   }
-  const hardened = await harden(ctx, ctx.state, before.revision);
+  const hardened = await harden(ctx, ctx.state, before);
   if (!hardened.ok) {
     return hardened.end;
   }

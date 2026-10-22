@@ -11,8 +11,10 @@ import type { Config } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
-import type { IssueState } from "../state.ts";
+import { sameSecuritySubject } from "../security-clearance.ts";
+import type { IssueState, Security } from "../state.ts";
 import { ISSUE_STATE, sameRevision } from "../state.ts";
+import { retainedFastForwardReceipt } from "./fast-forward-evidence.ts";
 
 const SAVE_REQUEST = z.looseObject({
   number: z.number().int().positive(),
@@ -28,6 +30,56 @@ const RELEASE_REQUEST = z.looseObject({
 
 type EmptyReply = Record<string, never>;
 
+// Keep an exact durable decision across a stale save, but let fresh inputs or
+// target provenance replace obsolete clearance. A rejection of the same
+// code/inputs cannot be rerolled merely by changing the target.
+function sameCandidateDecision(
+  saved: Security,
+  requested: Security | null,
+  headSha: string | null,
+): boolean {
+  if (saved.phase !== "candidate" || saved.revision.code !== headSha) {
+    return false;
+  }
+  if (requested === null) {
+    return true;
+  }
+  if (!sameRevision(saved.revision, requested.revision)) {
+    return false;
+  }
+  return (
+    requested.phase === undefined ||
+    (saved.target.repo === requested.target.repo &&
+      saved.target.branch === requested.target.branch &&
+      saved.target.sha === requested.target.sha)
+  );
+}
+
+function retainedResultSecurity(
+  saved: IssueState,
+  state: IssueState,
+): Partial<Pick<IssueState, "resultSecurity">> {
+  let { resultSecurity } = state;
+  const observed = saved.resultSecurity;
+  if (
+    observed !== undefined &&
+    observed !== null &&
+    (resultSecurity === undefined ||
+      resultSecurity === null ||
+      (observed.finding !== null &&
+        sameSecuritySubject(observed.revision, resultSecurity.revision)) ||
+      (sameRevision(observed.revision, resultSecurity.revision) &&
+        JSON.stringify(observed.target) ===
+          JSON.stringify(resultSecurity.target)))
+  ) {
+    resultSecurity = observed;
+  }
+  if (resultSecurity === undefined) {
+    return {};
+  }
+  return { resultSecurity };
+}
+
 // `state` as issue `n` may save it: for issue `n`, with the saved code merge.
 function withSavedCodeMerge(
   cfg: Config,
@@ -42,7 +94,9 @@ function withSavedCodeMerge(
   if (
     saved.mergeAttempt !== null &&
     saved.merged !== null &&
-    saved.merged.code === saved.mergeAttempt.result &&
+    (retainedFastForwardReceipt(cfg, n, saved) ||
+      (saved.mergeAttempt.operation === undefined &&
+        saved.merged.code === saved.mergeAttempt.result)) &&
     state.merged?.code !== saved.merged.code
   ) {
     ({ merged } = saved);
@@ -52,14 +106,18 @@ function withSavedCodeMerge(
   let { security } = state;
   if (
     saved.security !== null &&
-    merged !== null &&
-    sameRevision(saved.security.revision, merged)
+    ((saved.security.finding !== null &&
+      (security === null ||
+        sameSecuritySubject(saved.security.revision, security.revision))) ||
+      (merged !== null && sameRevision(saved.security.revision, merged)) ||
+      sameCandidateDecision(saved.security, security, state.headSha))
   ) {
     ({ security } = saved);
   }
   return {
     ...state,
     security,
+    ...retainedResultSecurity(saved, state),
     merged,
     codeMerged: saved.codeMerged,
     mergeAttempt: saved.mergeAttempt,

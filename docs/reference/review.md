@@ -4,14 +4,14 @@ This page describes how a change is checked: the Reviewer's hardening, determini
 
 ## Hardening
 
-The `review` stage runs one writable Reviewer session in phase `hardening`. It reads the Gherkin and the Developer's draft adversarially, adds regression and edge-case tests and fixes design and correctness defects. Docs in `docs/` are part of the change it hardens.
+The `review` stage runs one writable Reviewer session in phase `hardening`. It reads the trusted issue requirements, optional Author Gherkin and the Developer's draft adversarially, adds regression and edge-case tests and fixes design and correctness defects. Docs in `docs/` are part of the change it hardens.
 
 - It commits through `pipeline_commit` (see [sessions](sessions.md)). It never synchronizes with the base; integration does that at merge.
 - Its task names the actual `commands.test`, and its prompt tells it to run only targeted tests. The full gate runs afterward, outside the session.
 - It must not weaken requirements, assertions, coverage, check commands, lint or types to get a pass. A genuinely wrong test may be corrected with evidence. An unresolved product question goes back for an answer.
 - If verification fails, check-fix sessions (also phase `hardening`) try again, up to `maxCiFixes` (default 2). After that the issue stops with `agent:stopped-check-fixes`.
 
-When verification passes, the job pushes, saves the exact hardened revision (`state.hardened`: code head and trusted-input revision) and only then marks the draft PR ready. That checkpoint alone authorizes integration. A restarted job with an exact matching checkpoint resumes without another writer.
+When verification passes, the job pushes, saves the exact hardened revision (`state.hardened`: code head and trusted-input revision) and only then marks the draft PR ready. That checkpoint authorizes integration, not an unreviewed changed result. A restarted job with an exact matching checkpoint resumes without another writer.
 
 A timed-out hardening session is not completed hardening. Its uncommitted work is saved as recovery evidence (see [checkouts](checkouts.md)), and the next hardening session on the same issue and branch is told where to find it.
 
@@ -40,19 +40,21 @@ After the merge, the diff is the merge commit's change against its first parent,
 
 ## Security review
 
-The merge stage ends with a fresh Reviewer session in phase `security-review`. It is read-only: no write tools, no commit authority and no token. It judges only four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`. It is not a second design or test-adequacy review.
+The merge stage runs a fresh Reviewer session in phase `security-review` before requesting a new code merge. It is read-only: no write tools, no commit authority and no token. It judges only four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`. It is not a second design or test-adequacy review.
 
-Today the Security review runs after the code merge. It reads the merge commit M's tree and the complete contribution from its first parent P, `P..M`, which includes every feature commit and the Reviewer's conflict resolutions. The [security-before-merge](../decisions/delivery.md#security-before-merge) decision moves it before the merge; that isn't implemented yet.
+Security reads the exact hardened and checked candidate tree and its complete branch contribution against the observed target. A dirty checkout or a bundle prepared at another commit refuses review. The saved verdict binds the exact code and trusted-input revision, plus the configured target and its observed commit.
 
-- A structured reply names a category and reason, or no finding. The verdict is saved against the exact merged revision before anything else happens.
-- If code or trusted inputs moved while the session ran, the verdict is discarded.
-- A finding stops the issue with that category's label. The merged code stays merged; nothing rolls it back.
-- A saved rejection of a revision stops again, without a model, however often the stop is lifted.
-- Only a saved clearance of the exact revision allows completion.
+- A finding saves its exact receipt and stops the issue before merge.
+- A code, trusted-input or target change during the session discards the verdict.
+- Any changed candidate, including clean integration and conflict resolution, needs fresh checks, hardening and Security. Checked integration is not an authorization exception.
+- A saved rejection of the same revision stops again without a model. Lifting a stop cannot reroll it.
+- New own merges keep deterministic actual-result verification and confirmation, without a duplicate postmerge model pass.
+
+Historical merged-result Security receipts remain history. They clear only the exact merged result they name, and never authorize a new merge. Existing historical merged runs may recover missing read-only Security after confirmed result checks. Already merged code stays merged; a historical rejection does not roll it back.
 
 ## Recover from a review stop
 
 1. Read the stop comment and the issue's saved state. The comment names the control and the reason.
 2. For `check-fixes`, read the failed check's log in the issue's run folder. Fix the cause in the change or in the repository's checks, through ordinary reviewed work; don't raise `maxCiFixes` to get a pass.
 3. For a timed-out hardening session, restart `review` on the same issue, branch and lane. The new session gets the saved recovery evidence and decides what to keep.
-4. For a Security stop, the code is already merged. Remediate it through a separate issue or explicit operator action. Lifting the label doesn't re-run Security on the same revision.
+4. For a Security stop, the candidate has not merged through this operation. Preserve its rejection and work for explicit reconciliation. Historical already-merged code may need a separate remediation issue or operator action. Lifting the label doesn't re-run Security on the same revision.

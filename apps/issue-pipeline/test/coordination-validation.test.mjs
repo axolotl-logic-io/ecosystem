@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
 import { coordination } from "../src/coordination.ts";
-import { refOf } from "../src/coordination-records.ts";
+import { bodyOf, refOf } from "../src/coordination-records.ts";
 import { world } from "./coordination-test-kit.mjs";
 
 const HELD = /reconciliation|uncertain/u;
 /** @type {("request" | "confirm" | "save" | "release" | "cancel")[]} */
-const TRANSITIONS = ["request", "confirm", "save", "release", "cancel"];
+const TRANSITIONS = ["request", "release", "cancel"];
 
 for (const transition of TRANSITIONS) {
   for (const invalid of [
@@ -34,6 +34,8 @@ for (const transition of TRANSITIONS) {
         }
       }
       assert.equal(acquired, true);
+      const parsed = a.read().records.at(-1);
+      assert.ok(parsed);
       const record = github.comments.at(-1);
       assert.ok(record);
       if (invalid === "author") {
@@ -44,13 +46,14 @@ for (const transition of TRANSITIONS) {
       } else if (invalid === "missing provenance") {
         record.editor = undefined;
       } else if (invalid === "linkage") {
-        if (transition === "request") {
-          record.body = record.body?.replace(
-            `"base":${JSON.stringify(github.cfg.baseBranch)}`,
-            '"base":"wrong-base"',
-          );
+        const { id: _id, ...saved } = parsed;
+        if (saved.kind === "request") {
+          record.body = bodyOf({
+            ...saved,
+            identity: { ...saved.identity, base: "wrong-base" },
+          });
         } else {
-          record.body = record.body?.replace('"request":1', '"request":999');
+          record.body = bodyOf({ ...saved, request: 999 });
         }
       } else {
         record.body = "<!-- agent-pipeline:coordination\n{broken\n-->";

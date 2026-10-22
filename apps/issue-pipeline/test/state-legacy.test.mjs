@@ -41,6 +41,9 @@ const LEASE = {
 // writer's fields that the migration drops.
 const LEGACY_REVIEW = {
   version: 1,
+  checkpoints: { tries: 2, plan: "old", sha: null },
+  plan: "old plan",
+  futureField: { a: 1 },
   number: LEGACY_ISSUE,
   stage: "review",
   lease: LEASE,
@@ -64,6 +67,9 @@ test("a legacy state past the spec goes to the author, then implement", () => {
     assert.equal(state.resumeStage, "implement");
     assert.equal(state.pr, LEGACY_PR);
     assert.equal(state.headSha, LEGACY_HEAD);
+    for (const key of ["checkpoints", "plan", "futureField"]) {
+      assert.equal(key in state, false);
+    }
     assert.deepEqual(state.lease, LEASE);
     assert.deepEqual(state.flows, { code: true });
     assert.equal(state.verifiedSha, null);
@@ -195,29 +201,20 @@ test("a revision saved with a null wiki head is the same revision as one with no
   const state = parseIssueState(wikiEraState(), SAVED_ISSUE);
   assert.ok(state !== null);
   const current = { code: "c2", inputs: "i1" };
-  assert.equal(approvalHolds(state, current), true);
+  assert.equal(approvalHolds(state, current), false);
   assert.ok(state.merged !== null);
   assert.equal(sameRevision(state.merged, { code: "m1", inputs: "i1" }), true);
   const legacyWiki = { ...current, wiki: "w1" };
   assert.equal(approvalHolds(state, legacyWiki), false);
 });
 
-test("a merge authorization holds only for the code, legacy wiki and inputs revision hardened", () => {
-  const revision = { code: "c1", wiki: "w1", inputs: "i1" };
-  const state = newIssueState(SAVED_ISSUE);
-  const hardened = { ...state, hardened: revision };
-  assert.equal(approvalHolds(hardened, revision), true);
-  assert.equal(approvalHolds(hardened, { ...revision, code: "c2" }), false);
-  assert.equal(approvalHolds(hardened, { ...revision, wiki: "w2" }), false);
-  assert.equal(approvalHolds(hardened, { ...revision, inputs: "i2" }), false);
-  // A review's approval, with no hardening, authorizes no merge.
-  const reviewedOnly = {
-    ...state,
-    review: {
-      ...state.review,
-      verdict: /** @type {const} */ ("approve"),
-      revision,
-    },
-  };
-  assert.equal(approvalHolds(reviewedOnly, revision), false);
+test("malformed checkpoints never make a legacy state unreadable", () => {
+  for (const checkpoints of [["tries"], { tries: { nested: 1 } }, "2"]) {
+    const state = parseIssueState(
+      { ...LEGACY_REVIEW, checkpoints },
+      LEGACY_ISSUE,
+    );
+    assert.equal(state?.stage, "author");
+    assert.equal(state?.pr, LEGACY_PR);
+  }
 });

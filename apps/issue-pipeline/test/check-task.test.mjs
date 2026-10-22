@@ -71,9 +71,19 @@ test("a test file without @ts-check is type-checked", () => {
     const tsc = createRequire(import.meta.url).resolve("typescript/bin/tsc");
     const r = spawnSync(process.execPath, [tsc, "-p", configFile], {
       encoding: "utf8",
+      timeout: 60_000,
     });
     const output = `${r.stdout}${r.stderr}`;
     assert.notEqual(r.status, 0, output);
     assert.match(output, ARGUMENT_TYPE_ERROR);
+    fs.writeFileSync(
+      path.join(dir, "fixture.mjs"),
+      source.replace('twice("one")', "twice(1)"),
+    );
+    const clean = spawnSync(process.execPath, [tsc, "-p", configFile], {
+      encoding: "utf8",
+      timeout: 60_000,
+    });
+    assert.equal(clean.status, 0, `${clean.stdout}${clean.stderr}`);
   });
 });

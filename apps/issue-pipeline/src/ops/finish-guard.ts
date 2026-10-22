@@ -5,12 +5,16 @@
 // or a security review that doesn't clear the merged result refuses, and
 // undefined lets the op go on.
 
+import { recordedAuthorization } from "../merged-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
-import { mergeAuthorization } from "../state.ts";
 import type { CurrentRevision } from "./merge-guard.ts";
-import { mergedAuthorizationHolds, mergedPr } from "./merge-guard.ts";
+import {
+  mergedAuthorizationHolds,
+  mergedPr,
+  ownMergeResultObservation,
+} from "./merge-guard.ts";
 
 interface FinishRefusal {
   finished: false;
@@ -29,7 +33,7 @@ function unauthorizedHead(
   pr: { mergeCommit: string; headSha: string },
 ): void {
   if (!mergedAuthorizationHolds(saved, merged, pr)) {
-    const authorized = mergeAuthorization(saved)?.code ?? null;
+    const authorized = recordedAuthorization(saved)?.code ?? null;
     throw new OpsError(
       `#${saved.number}'s merge authorization ${String(authorized)} is not bound to the saved result of head ${pr.headSha} as ${pr.mergeCommit}, which PR #${String(saved.pr)} merged`,
     );
@@ -74,7 +78,28 @@ function finishGate(
       detail: `the trusted inputs changed since the merge (${current.revision.inputs})`,
     };
   }
-  const uncleared = securityRefusal(saved, merged);
+  return currentResultClearance(saved, merged, current);
+}
+
+function currentResultClearance(
+  saved: IssueState,
+  merged: Revision,
+  current: CurrentRevision,
+): FinishRefusal | undefined {
+  let result = merged;
+  if ((merged.policy ?? null) !== (current.revision.policy ?? null)) {
+    const observed = ownMergeResultObservation(saved, current);
+    if (observed === null) {
+      return {
+        finished: false,
+        reason: "security",
+        detail:
+          "no original own-merge receipt permits a current-policy result observation",
+      };
+    }
+    result = observed;
+  }
+  const uncleared = securityRefusal(saved, result);
   if (uncleared !== undefined) {
     return { finished: false, reason: "security", detail: uncleared };
   }

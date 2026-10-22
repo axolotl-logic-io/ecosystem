@@ -5,8 +5,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { readWorld } from "./pipeline-flow-gh-world.mjs";
-import { savedState } from "./pipeline-flow-script.mjs";
+import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { savedState } from "./pipeline-flow-script-test-kit.mjs";
 
 const RUN_MS = 60_000;
 const STATE = /<!-- agent-pipeline:state\n(?<json>[\s\S]*?)\n-->/u;
@@ -147,7 +147,7 @@ function runCreationInterruption(root, ghDir, mode) {
   process.exitCode = reply.status ?? 1;
 }
 
-/** @param {import("./pipeline-flow-kit.mjs").Flow} flow @param {string} mode */
+/** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow @param {string} mode */
 function interruptCreation(flow, mode) {
   const gh = path.join(flow.tmp, "bin", "gh");
   fs.renameSync(gh, path.join(flow.root, "local-gh.mjs"));

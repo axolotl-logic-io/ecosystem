@@ -1,18 +1,21 @@
 // @ts-check
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { BASE, refIn } from "./pipeline-flow-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { merges } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
-import { hardeningTurn, securityTurn } from "./pipeline-flow-script.mjs";
+import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  hardeningTurn,
+  securityTurn,
+} from "./pipeline-flow-script-test-kit.mjs";
+import { BASE, refIn } from "./pipeline-flow-test-kit.mjs";
 import {
   externallyMergedFlow,
   reviewerTurns,
   stateOf,
 } from "./postmerge-test-kit.mjs";
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
 after(() => stopJobs(flow));
 

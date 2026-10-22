@@ -1,14 +1,14 @@
 // @ts-check
 // The integration-source tests' isolation: before anything from src/ loads,
 // a temporary HOME and pi agent folder, a fixed git identity, and the ops
-// fixture's temporary pipeline root (ops-fixture.mjs), which it checks is the
+// fixture's temporary pipeline root (ops-fixtures.mjs), which it checks is the
 // root src/ reads. No test of these files reaches the real home or root.
 import fs from "node:fs";
 import process from "node:process";
-import { opsFixture } from "./ops-fixture.mjs";
+import { opsFixture } from "./ops-fixtures.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 
-/** @import { OpsFixture } from "./ops-fixture.mjs" */
+/** @import { OpsFixture } from "./ops-fixtures.mjs" */
 
 const TEMPORARY_PREFIX = "/tmp/issue-pipeline-";
 /** @type {ReadonlyArray<[string, string]>} */

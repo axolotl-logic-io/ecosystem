@@ -1,6 +1,6 @@
 // ready-pr: the only op that marks an issue's draft PR ready for review,
-// once the Reviewer's hardening (and its own integration, if any)
-// authorized its exact revision and that authorization is saved. open-pr
+// once the Reviewer's hardening authorized its exact revision and that
+// authorization is saved. open-pr
 // and merge never mark a PR ready.
 
 import { z } from "zod";

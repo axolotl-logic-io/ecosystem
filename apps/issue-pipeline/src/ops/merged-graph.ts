@@ -1,14 +1,13 @@
 // The complete delivered-change boundary, derived from fetched immutable
 // objects, never from an OPEN PR's test merge or the current base tip.
-import { z } from "zod";
 import type { Config } from "../config.ts";
 import { gitIn } from "../git-state.ts";
+import { FULL_SHA } from "../merge-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { confirmMerged, pullRequest } from "../revision.ts";
+import { readWriteState } from "../saved-state.ts";
 import type { CodeMerged } from "../state.ts";
-
-const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/u;
-const FULL_SHA = z.string().regex(FULL_SHA_PATTERN);
+import { confirmedFastForwardBase } from "./fast-forward-evidence.ts";
 
 // A unique original contribution cannot be inferred from criss-cross or
 // already-landed source history, even with superficially ordered parents.
@@ -92,7 +91,16 @@ function confirmedMergedParent(
       "the PR merge receipt changed while reading its retained head",
     );
   }
+  if (codeMerged.sha === pr.headSha) {
+    const base = confirmedFastForwardBase(cfg, n, wt, {
+      state: readWriteState(cfg, n),
+      result: codeMerged,
+    });
+    if (base !== undefined) {
+      return base;
+    }
+  }
   return mergedParent(wt, codeMerged.sha, pr.headSha);
 }
 
-export { confirmedMergedParent, FULL_SHA, mergedParent };
+export { confirmedMergedParent, mergedParent };

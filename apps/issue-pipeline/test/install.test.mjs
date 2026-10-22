@@ -251,6 +251,9 @@ test("a fresh installation provisions no runnable runtime", () => {
     "pi-cliproxyapi-config.example.json",
   ]);
   assert.equal(fs.existsSync(path.join(fresh, "secrets")), false);
+  assert.ok(
+    fs.existsSync(path.join(fresh, "repos/committed-settings.example.json")),
+  );
 });
 
 test("install retires an installed prompt page the source no longer has, backing it up, and keeps other files", () => {

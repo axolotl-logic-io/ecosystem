@@ -3,26 +3,9 @@
 // binds GitHub's head and merge SHA separately, while only saved security of
 // the exact result permits completion (src/ops/finish-guard.ts).
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
 import { test } from "node:test";
+import "./isolated-root-test-kit.mjs";
 
-const root = fs.mkdtempSync("/tmp/issue-pipeline-own-merge-replay-");
-const home = path.join(root, "home");
-fs.mkdirSync(home);
-Object.assign(
-  process.env,
-  Object.fromEntries([
-    ["HOME", home],
-    ["ISSUE_PIPELINE_ROOT", root],
-  ]),
-);
-process.on("exit", () => fs.rmSync(root, { recursive: true, force: true }));
-const { ROOT, HOME } = await import("../src/pipeline-root.ts");
-if (ROOT !== root || HOME !== home) {
-  throw new Error("source imported outside the test's temporary root and home");
-}
 const { newIssueState, ISSUE_STATE } = await import("../src/state.ts");
 const { finishGate } = await import("../src/ops/finish-guard.ts");
 
@@ -71,6 +54,10 @@ function finish(saved, fresh = current()) {
   return finishGate({ ...saved, stage: "done" }, fresh);
 }
 
+const MISSING_PR = /is missing from the current revision/u;
+const MISMATCHED_RECEIPT = /the state's codeMerged .* is not PR/u;
+const MISMATCHED_RESULT = /saved merged at other, which is not PR/u;
+
 test("a claimed own merge reuses exact original authorization for finish without erasing provenance", () => {
   for (const saved of [
     receipt(),
@@ -108,11 +95,17 @@ test("GitHub head, PR and merge commit and both saved and requested code provena
   const fresh = current();
   const { pr } = fresh;
   assert.ok(pr);
-  for (const changed of [
-    { ...fresh, pr: { ...pr, number: PR + 1 } },
-    { ...fresh, pr: { ...pr, mergeCommit: "other" } },
+  for (const { changed, refusal } of [
+    {
+      changed: { ...fresh, pr: { ...pr, number: PR + 1 } },
+      refusal: MISSING_PR,
+    },
+    {
+      changed: { ...fresh, pr: { ...pr, mergeCommit: "other" } },
+      refusal: MISMATCHED_RECEIPT,
+    },
   ]) {
-    assert.throws(() => finish(saved, changed));
+    assert.throws(() => finish(saved, changed), refusal);
   }
   assert.throws(
     () => finish(saved, { ...fresh, pr: { ...pr, headSha: "other" } }),
@@ -123,7 +116,7 @@ test("GitHub head, PR and merge commit and both saved and requested code provena
     { pr: PR, sha: "other" },
   ]) {
     const wrong = { ...saved, codeMerged };
-    assert.throws(() => finish(wrong));
+    assert.throws(() => finish(wrong), MISMATCHED_RECEIPT);
   }
 });
 
@@ -139,7 +132,11 @@ test("finish binds the saved legacy wiki head and inputs to authorization even i
       merged: changed,
       security: { revision: changed, commentId: 901, finding: null },
     };
-    assert.throws(() => finish(wrong));
+    let refusal = BAD_CHAIN;
+    if (changed.code === "other") {
+      refusal = MISMATCHED_RESULT;
+    }
+    assert.throws(() => finish(wrong), refusal);
   }
 });
 
@@ -155,12 +152,14 @@ test("an independently hardened merge-SHA authorization remains valid", () => {
     { ...RESULT, wiki: "other" },
     { ...RESULT, inputs: "other" },
   ]) {
-    assert.throws(() =>
-      finish({
-        ...saved,
-        merged: changed,
-        security: { revision: changed, commentId: 901, finding: null },
-      }),
+    assert.throws(
+      () =>
+        finish({
+          ...saved,
+          merged: changed,
+          security: { revision: changed, commentId: 901, finding: null },
+        }),
+      BAD_CHAIN,
     );
   }
 });

@@ -37,9 +37,13 @@ const WRITE_STATE = ISSUE_STATE.pick({
   mergeAttempt: ISSUE_STATE.shape.mergeAttempt.removeCatch().optional(),
   merged: ISSUE_STATE.shape.merged.removeCatch(),
   hardened: ISSUE_STATE.shape.hardened.removeCatch(),
+  hardenedTarget: ISSUE_STATE.shape.hardenedTarget.removeCatch().optional(),
   integration: ISSUE_STATE.shape.integration.removeCatch(),
   security: ISSUE_STATE.shape.security.removeCatch(),
+  resultSecurity: ISSUE_STATE.shape.resultSecurity,
   gherkin: ISSUE_STATE.shape.gherkin.removeCatch(),
+  authorUsed: ISSUE_STATE.shape.authorUsed.removeCatch(),
+  requirementsInputs: ISSUE_STATE.shape.requirementsInputs.removeCatch(),
 });
 
 const MARK_END = "-->";

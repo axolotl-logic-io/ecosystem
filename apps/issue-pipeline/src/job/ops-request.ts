@@ -5,7 +5,8 @@
 // knows the request's framing and the reply's shape on stdout.
 
 import { z } from "zod";
-import type { JobCheckout } from "../config.ts";
+import type { Config, JobCheckout } from "../config.ts";
+import { policyRevision } from "../project-policy.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runOpsLaunch } from "./launch.ts";
 import type { OpsRaw } from "./raw-results.ts";
@@ -23,9 +24,24 @@ const REPLY = z.looseObject({ ok: z.boolean(), error: z.string().optional() });
 // job's own checkout, with the issue branch its caller assigned.
 interface OpsFrame {
   config: string;
+  policyDigest?: string;
   sweepId: string;
   lane: string;
   checkout: JobCheckout;
+}
+
+function opsFrameOf(
+  cfg: Config,
+  config: string,
+  claimant: { sweepId: string; lane: string },
+  checkout: JobCheckout,
+): OpsFrame {
+  return {
+    config,
+    ...claimant,
+    checkout,
+    policyDigest: policyRevision(cfg).policy,
+  };
 }
 
 // An op's reply: its fields after `ok`, or why it failed.
@@ -118,4 +134,4 @@ function opsRunnerOf(
 }
 
 export type { OpsFrame, OpsReply, RunOp };
-export { opsRunnerOf };
+export { opsFrameOf, opsRunnerOf };

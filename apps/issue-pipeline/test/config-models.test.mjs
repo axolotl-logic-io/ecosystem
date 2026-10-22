@@ -11,12 +11,7 @@ const { testConfig } = await import("./config-test-kit.mjs");
 const { chooseModels } = await import("../src/config-legacy.ts");
 
 const DEFAULT_MODEL = "openai/gpt-6.1-sol";
-const SOFT = 1;
-const HARD = 2;
 // The removed claim race waited this many seconds before and after posting.
-const FIRST_WAIT = 5;
-const SECOND_WAIT = 20;
-const WAITS = [FIRST_WAIT, SECOND_WAIT];
 
 test("each role's own key wins over the installed version's roles", () => {
   const { models } = chooseModels({ author: "a", spec: "s", reviewer: "r" });
@@ -54,29 +49,14 @@ test("no models at all gives every role the OpenAI default", () => {
   });
 });
 
-test("a config with removed keys loads, warning once for each", () => {
+test("an unused legacy model role cannot replace the default reviewer", () => {
   const { cfg, warnings } = testConfig({
-    contextLimits: { soft: SOFT, hard: HARD },
-    maxFixRounds: 2,
-    roleBudgets: {},
-    claimWaitSeconds: WAITS,
-    escalationAgentActs: true,
     models: { scope: "anthropic/claude-sonnet-5-5" },
   });
   assert.equal(cfg.models.reviewer, DEFAULT_MODEL);
-  for (const key of [
-    "contextLimits",
-    "maxFixRounds",
-    "roleBudgets",
-    "claimWaitSeconds",
-    "escalationAgentActs",
-  ]) {
-    assert.ok(
-      warnings.some((line) => line.includes(`${key} is no longer read`)),
-      key,
-    );
-    assert.equal(key in cfg, false);
-  }
+  assert.ok(
+    warnings.some((line) => line.includes("models.scope is no longer read")),
+  );
 });
 
 test("explicit models survive the default switch without a fallback", () => {

@@ -83,7 +83,7 @@ Opt-in native proof, supplying a specifically reviewed local native package dire
 
 ```bash
 cd apps/issue-pipeline
-node test/runtime-native-proof.mjs /absolute/path/to/@earendil-works/pi-coding-agent /absolute/path/to/pi-cliproxyapi
+node test/job/runtime-native-proof.mjs /absolute/path/to/@earendil-works/pi-coding-agent /absolute/path/to/pi-cliproxyapi
 ```
 
 It supplies a throw-on-generation fake provider, denies fetch/socket/TLS/subprocess operations in the child, sends **get_state only**, and proves native RPC wins over print with compaction enabled. A second guarded child reads the tracked example and imports the actual installed CLIProxy config-value resolver source (config.ts/log.ts copied byte-for-byte into private temp because Node cannot strip TypeScript under node_modules) plus Pi's native resolver, proving `$NAME` versus bare-name/literal semantics with an opaque fake credential only (no provider index or generation loaded). It also calls native SettingsManager/shouldCompact and SessionManager APIs: the strict threshold, project-setting exclusion and same-session summary/retained-context persistence hold while raw history remains on disk. The summary in this persistence test is synthetic; no real summary generation or live provider is claimed. CLIProxy's cache-only behavior is version-pinned source evidence, not a live-provider smoke test.

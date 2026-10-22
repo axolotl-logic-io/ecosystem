@@ -71,7 +71,7 @@ import type { Control } from "./job/control.ts";
 import { openControl, socketPathOf } from "./job/control.ts";
 import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
-import { opsRunnerOf } from "./job/ops-request.ts";
+import { opsFrameOf, opsRunnerOf } from "./job/ops-request.ts";
 import type { StagePrompts } from "./job/prompts.ts";
 import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
 import { runRoleStage } from "./job/role-run.ts";
@@ -111,19 +111,19 @@ async function runStage(
   const lane = args.lane ?? null;
   const socket = socketPathOf(runDir);
   const job = { issue, stage, lane, socket, prompts: prompts.pinned };
-  const status = openStatus(runDir, { ...job, ...identity });
+  const status = openStatus(runDir, { ...job, ...identity }, cfg.policyBinding);
   const control = await openControl(
     runDir,
     pushServerOf(cfg, { issue, stage, checkout: repo, branch, id }, status),
   );
   const where = { cwd: root, repo, from: process.env, job: identity };
   const hooks = hooksOf(cfg, args, { status, control }, where);
-  const frame = {
-    config: args.config,
-    sweepId,
-    lane: args.lane ?? sweepId,
-    checkout: { issue, dir: repo, branch },
-  };
+  const frame = opsFrameOf(
+    cfg,
+    args.config,
+    { sweepId, lane: args.lane ?? sweepId },
+    { issue, dir: repo, branch },
+  );
   const runOp = opsRunnerOf(issue, frame, { hooks, status });
   let claimed: (() => IssueState) | null = null;
   const push = exitPushOf(stage, runOp, (): IssueState | null => {

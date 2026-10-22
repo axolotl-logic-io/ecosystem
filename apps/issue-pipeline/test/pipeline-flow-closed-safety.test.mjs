@@ -5,8 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { z } from "zod";
-import { readWorld, writeWorld } from "./pipeline-flow-gh-world.mjs";
-import { scriptPi, setUpFlow } from "./pipeline-flow-kit.mjs";
+import { readWorld, writeWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   createReplayFlow,
@@ -15,12 +14,13 @@ import {
   replayFacts,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run.mjs";
-import { savedState } from "./pipeline-flow-script.mjs";
+import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import { savedState } from "./pipeline-flow-script-test-kit.mjs";
+import { scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
-/** @type {import("./pipeline-flow-kit.mjs").Flow} */
+/** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
-/** @type {import("./pipeline-flow-gh-world.mjs").World} */
+/** @type {import("./fake-pipeline-flow-gh-world.mjs").World} */
 let interruptedWorld;
 before(() => {
   flow = setUpFlow();
@@ -57,7 +57,11 @@ test("a fresh exact Security rejection stops closed recovery and cannot be rerol
   assert.equal(rejected.stage, "stopped");
   assert.equal(runStage(flow, "merge").end, "stop");
   assert.equal(sessions(flow), starts + 1);
-  assert.equal(merges(flow).length, 1);
+  assert.equal(merges(flow).length, 0);
+  assert.deepEqual(
+    replayFacts(flow, traceStart).targetUpdates,
+    expectedReplay(interruptedWorld).targetUpdates,
+  );
   const ops = opsTrace(flow)
     .slice(traceStart)
     .map(({ request }) => request.op);
@@ -83,7 +87,11 @@ test("closed recovery retains merged truth when actual-result verification fails
     assert.equal(sessions(flow), starts);
     const facts = replayFacts(flow, traceStart);
     assert.deepEqual(facts.forbidden, []);
-    assert.equal(facts.merges, 1);
+    assert.equal(facts.merges, 0);
+    assert.deepEqual(
+      facts.targetUpdates,
+      expectedReplay(interruptedWorld).targetUpdates,
+    );
     assert.deepEqual(
       facts.codeMerged,
       expectedReplay(interruptedWorld).codeMerged,

@@ -1,14 +1,9 @@
-// The merge job's way to the security review of the merged result and the
-// completion (completion.ts), after its own code merge or one before it.
-//
-// `state.merged` means two things by stage. At merge it is this job's own
-// merge receipt, saved right after the explicit-target code merge and before
-// the security review: `merged.code` is the merge commit, `merged.inputs`
-// the authorized inputs (with a legacy wiki head, if any), and the
-// authorized revision's code (state.ts mergeAuthorization) the pre-merge
-// head the merge matched. At done it is the completion: what merged.
+// Confirmed own merges reuse exact premerge clearance after deterministic
+// result checks. Historical merged runs keep their original read-only recovery.
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import { requirementsHold } from "../../requirements.ts";
+import { currentResultObservation } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import type { CurrentRevision } from "../revision-source.ts";
@@ -17,7 +12,7 @@ import { errorStop } from "../writer-session.ts";
 import { checkedMergedResult, localChecks } from "./checks.ts";
 import { reviewedAndCompleted, stillAt } from "./completion.ts";
 import { integrate } from "./integration.ts";
-import { logged, toAuthor } from "./returns.ts";
+import { logged, toRequirements } from "./returns.ts";
 import { approvalGate } from "./source.ts";
 
 function short(sha: string | null): string {
@@ -26,8 +21,7 @@ function short(sha: string | null): string {
 
 // After this job's own explicit-target merge of `authorized.code` as
 // `mergeCommit`: the receipt saved first; then, only while GitHub confirms
-// that merge and the inputs are still the authorized ones, the security
-// review of the merged result and the completion. Anything else goes back
+// that merge and the inputs are still the authorized ones, the bound clearance and the completion. Anything else goes back
 // to review. An interrupted job resumes an exact saved own-merge receipt
 // through recovery.ts, preserving its original authorization; changed work
 // instead needs hardening against the merged code before this module takes
@@ -47,22 +41,20 @@ async function afterOwnMerge(
   const { gherkin } = ctx.inputs;
   const { revision, pr } = fresh;
   if (
-    gherkin === null ||
     revision.inputs !== authorized.inputs ||
-    gherkin.inputs !== revision.inputs
+    !requirementsHold(state, gherkin, revision.inputs)
   ) {
-    return toAuthor(state, `${merged}, then the trusted inputs changed`);
+    return toRequirements(state, `${merged}, then the trusted inputs changed`);
   }
-  const result: Revision = { ...authorized, code: mergeCommit };
-  const still = stillAt(result);
+  const receipt: Revision = { ...authorized, code: mergeCommit };
+  const result = currentResultObservation(receipt, revision);
   const receiptHolds =
     pr !== null &&
     pr.number === start.pr &&
     pr.state === "MERGED" &&
     pr.headSha === authorized.code &&
-    pr.mergeCommit === mergeCommit &&
-    still(revision);
-  if (start.pr === null || !receiptHolds) {
+    pr.mergeCommit === mergeCommit;
+  if (start.pr === null || result === null || !receiptHolds) {
     return errorStop(
       state,
       `${merged}, but GitHub no longer matches it; merged truth is retained`,
@@ -74,9 +66,10 @@ async function afterOwnMerge(
     return checked.end;
   }
   return await reviewedAndCompleted(ctx, checked.state, {
-    merged: result,
+    merged: receipt,
+    result,
     codeMerged,
-    still,
+    still: stillAt(result),
   });
 }
 

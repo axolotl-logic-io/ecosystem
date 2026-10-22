@@ -1,4 +1,5 @@
 // @ts-check
+import { usageBody } from "./usage-fixtures.mjs";
 // issue.md leaves out the pipeline's usage comments (#459): they are its own
 // records, so no agent reads one as a person's comment, while a comment by
 // the bot account with no pipeline mark is withheld.
@@ -42,9 +43,6 @@ const cfg = loadConfig(configFile);
 // The body of the issue's `kind` usage comment (`usage`, `usage-2`, ...), as
 // src/job/usage-comment.ts lays it out.
 /** @param {string} kind @returns {string} */
-function usageBody(kind) {
-  return `Issue pipeline usage records (hidden; see the wiki)\n<!-- issue-pipeline:${ISSUE}:${kind} -->\n<!--\n${RECORD}\n-->`;
-}
 
 // issue.md as writeIssueContext writes it for an issue with `comments`, each
 // a [login, body] pair. The fake gh answers every collaborator check with
@@ -75,8 +73,8 @@ function issueFileWith(comments) {
 
 test("issue.md leaves out the account's usage comments (#459)", () => {
   const text = issueFileWith([
-    [ACCOUNT, usageBody("usage")],
-    [ACCOUNT, usageBody("usage-2")],
+    [ACCOUNT, usageBody(ISSUE, "usage")],
+    [ACCOUNT, usageBody(ISSUE, "usage-2")],
   ]);
   assert.ok(!text.includes(`issue-pipeline:${ISSUE}:usage`), text);
   assert.ok(!text.includes(RECORD), text);
@@ -86,7 +84,7 @@ test("issue.md leaves out the account's usage comments (#459)", () => {
 
 test("issue.md withholds an unmarked bot comment rather than treating it as human input", () => {
   const text = issueFileWith([
-    [ACCOUNT, usageBody("usage")],
+    [ACCOUNT, usageBody(ISSUE, "usage")],
     [ACCOUNT, "Yes, keep the old behaviour."],
   ]);
   assert.ok(

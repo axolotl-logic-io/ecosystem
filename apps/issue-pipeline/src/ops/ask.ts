@@ -9,6 +9,7 @@ import { AUTHOR, comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { LABELS, setLabels } from "../labels.ts";
 import { parseRequest } from "../process.ts";
+import { requirementsStage } from "../requirements.ts";
 import { readWriteState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
@@ -36,7 +37,7 @@ function ask(cfg: Config, request: unknown): { state: IssueState } {
   );
   const state = saveIssueState(cfg, n, {
     ...req.state,
-    stage: "author",
+    stage: requirementsStage(req.state),
     lease: null,
   });
   setLabels(cfg, n, [LABELS.needsInfo.name], [LABELS.working.name]);

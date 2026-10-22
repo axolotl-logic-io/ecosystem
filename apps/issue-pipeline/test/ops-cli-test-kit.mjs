@@ -11,11 +11,13 @@ import path from "node:path";
 import process from "node:process";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
-import { effectsOf } from "./gh-effects.mjs";
+import { effectsOf } from "./gh-effects-test-kit.mjs";
 import { runOps, setEnv } from "./ops-run-test-kit.mjs";
 
 /** @import { GhReply } from "./fake-gh.mjs" */
-/** @import { GhEffect } from "./gh-effects.mjs" */
+/** @import { GhEffect } from "./gh-effects-test-kit.mjs" */
+
+import { claimComment as claimWireComment } from "./fake-gh.mjs";
 
 const ACCOUNT = "bot";
 const ALLOWED = "alice";
@@ -112,7 +114,7 @@ function writes() {
   return fakeGh.writes(ghIsRead).map((args) => args.map(timeless));
 }
 
-// What those writes show on GitHub (see gh-effects.mjs).
+// What those writes show on GitHub (see gh-effects-test-kit.mjs).
 /** @returns {GhEffect[]} */
 function effects() {
   return effectsOf(writes());
@@ -154,18 +156,10 @@ const labelsReply = {
   stdout: JSON.stringify(labelNames.map((name) => ({ name }))),
 };
 
-const CLAIM_HEAD =
-  "**🤖 issue-pipeline · claim**\n<!-- agent-pipeline:comment role=claim -->\n\n";
-
-// A claim comment by `lane` of sweep `sweep`, last edited `at`.
+// Preserve the CLI fixture's default account and four-argument call sites.
 /** @param {number} id @param {string} lane @param {string} sweep @param {string} at @returns {object} */
 function claimComment(id, lane, sweep, at) {
-  return issueComment(
-    id,
-    `${CLAIM_HEAD}Lane \`${lane}\` is claiming this issue.\n<!-- agent-pipeline:claim lane=${lane} sweep=${sweep} -->`,
-    ACCOUNT,
-    at,
-  );
+  return claimWireComment({ id, lane, sweep, login: ACCOUNT, at });
 }
 
 /** @param {number} n @returns {string} */

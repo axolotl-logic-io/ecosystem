@@ -1,4 +1,4 @@
-// The Developer session's task: the issue's facts, its Gherkin and what an
+// The Developer session's task: the issue's trusted requirements and what an
 // earlier round left for it. The Developer's behaviour is its prompt page
 // (task-facts.ts). Pure.
 
@@ -6,7 +6,7 @@ import type { RoleContext } from "../../job/role-context.ts";
 import type { Finding, MergeReturn } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
 import { scopeLines } from "../change-task.ts";
-import { gherkinLines, header, replyLines } from "../task-facts.ts";
+import { header, replyLines, requirementsLines } from "../task-facts.ts";
 
 function whereOf(finding: Finding): string {
   if (finding.path === undefined) {
@@ -55,7 +55,7 @@ function workTask(ctx: RoleContext, mode: Mode): string {
   return [
     ...header(ctx, "development"),
     ...scopeLines(ctx, mode),
-    ...gherkinLines(ctx),
+    ...requirementsLines(ctx),
     ...findingLines(ctx),
     ...mergeReturnLines(ctx.state.mergeReturn),
     ...replyLines([

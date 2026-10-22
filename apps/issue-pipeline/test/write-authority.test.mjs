@@ -2,14 +2,12 @@
 // Mutation authority must not inherit the compatibility reader's lossy defaults.
 
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
+import "./isolated-root-test-kit.mjs";
 import { credentialConfig } from "./credentials-test-kit.mjs";
-import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { saveAuthority } from "./write-authority-test-kit.mjs";
 
-const { loadConfig } = await import("../src/config.ts");
+const { testConfig } = await import("./config-test-kit.mjs");
 const { readState, readWriteState } = await import("../src/saved-state.ts");
 const { readWriteAuthority } = await import("../src/write-authority.ts");
 const { newIssueState } = await import("../src/state.ts");
@@ -17,22 +15,18 @@ const { refuseOnceMerged, pushOps } = await import("../src/ops/push.ts");
 const ISSUE = 7;
 const SHA_LENGTH = 40;
 const INVALID = /write authority/u;
-const file = path.join(isolatedRoot, "authority-config.json");
-fs.writeFileSync(
-  file,
-  JSON.stringify({
-    repo: "o/authority",
-    ...credentialConfig("bot"),
-    allowedUsers: ["alice"],
-    commands: { test: "true" },
-  }),
-);
-const cfg = loadConfig(file);
+const { cfg } = testConfig({
+  repo: "o/authority",
+  allowedUsers: ["alice"],
+  ...credentialConfig("bot"),
+});
 const valid = {
   ...newIssueState(ISSUE),
   branch: "agent/issue-7",
   stage: "implement",
 };
+
+const MERGED_PUSH = /code merged, so test can't push code/u;
 
 test("current saved state authorizes premerge code; codeMerged and own-merge receipts each close it", () => {
   saveAuthority(cfg, valid);
@@ -69,7 +63,7 @@ test("current saved state authorizes premerge code; codeMerged and own-merge rec
   ]) {
     saveAuthority(cfg, { ...valid, ...receipt });
     assert.equal(readWriteAuthority(cfg, ISSUE).codeWritable, false);
-    assert.throws(() => refuseOnceMerged(cfg, ISSUE, "test"));
+    assert.throws(() => refuseOnceMerged(cfg, ISSUE, "test"), MERGED_PUSH);
   }
 });
 

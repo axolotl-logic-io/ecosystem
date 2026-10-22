@@ -15,8 +15,9 @@ const { saveDraftAuthority } = await import("../src/ops/pr-state.ts");
 const { readWriteState } = await import("../src/saved-state.ts");
 const PR = 42;
 const TITLE_LENGTH = 45;
+const CLOSED_REFUSAL = /is closed; code authority needs operator recovery/u;
 
-for (const status of ["OPEN", "MERGED", "CLOSED"]) {
+for (const status of ["OPEN", "MERGED"]) {
   test(`all-state discovery validates actual ${status} identity with saved pr:null`, async () => {
     const job = await openJob("implement");
     try {
@@ -35,18 +36,10 @@ for (const status of ["OPEN", "MERGED", "CLOSED"]) {
         isCrossRepository: false,
         mergeCommit,
       });
-      let result = "refused";
-      try {
-        result = String(readWriteAuthority(job.cfg, ISSUE).codeWritable);
-      } catch {
-        // Refused CLOSED authority remains an explicit outcome, never writable.
-      }
-      const expected = new Map([
-        ["OPEN", "true"],
-        ["MERGED", "false"],
-        ["CLOSED", "refused"],
-      ]);
-      assert.equal(result, expected.get(status));
+      assert.equal(
+        readWriteAuthority(job.cfg, ISSUE).codeWritable,
+        status === "OPEN",
+      );
       // Discovery cannot forge an own-merge/approval or silently save a receipt.
       assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
       assert.equal(readWriteState(job.cfg, ISSUE).codeMerged, null);
@@ -56,18 +49,25 @@ for (const status of ["OPEN", "MERGED", "CLOSED"]) {
   });
 }
 
-for (const bad of [
-  null,
-  {},
-  [{ number: "42" }],
-  [{ number: PR }, { number: PR + 1 }],
-  Array.from({ length: 100 }, (_, i) => ({ number: i + 1 })),
+const HISTORY_SHAPE = { name: "ZodError" };
+for (const { bad, refusal } of [
+  { bad: null, refusal: HISTORY_SHAPE },
+  { bad: {}, refusal: HISTORY_SHAPE },
+  { bad: [{ number: "42" }], refusal: HISTORY_SHAPE },
+  {
+    bad: [{ number: PR }, { number: PR + 1 }],
+    refusal: /PR history is saturated or ambiguous/u,
+  },
+  {
+    bad: Array.from({ length: 100 }, (_, i) => ({ number: i + 1 })),
+    refusal: /PR history is saturated or ambiguous/u,
+  },
 ]) {
   test(`malformed, unreadable, ambiguous or saturated PR history refuses: ${JSON.stringify(bad).slice(0, TITLE_LENGTH)}`, async () => {
     const job = await openJob("implement");
     try {
       savePrHistory(job.cfg, bad);
-      assert.throws(() => readWriteAuthority(job.cfg, ISSUE));
+      assert.throws(() => readWriteAuthority(job.cfg, ISSUE), refusal);
       assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
     } finally {
       job.close();
@@ -75,14 +75,25 @@ for (const bad of [
   });
 }
 
-for (const wrong of [
-  { number: PR + 1 },
-  { headRefName: "stale-branch" },
-  { headRefOid: "" },
-  { baseRefName: "main" },
-  { isCrossRepository: true },
-  { mergeCommit: { oid: "unexpected" } },
-]) {
+/** @type {{wrong: Record<string, unknown>, refusal: RegExp}[]} */
+const WRONG_PRS = [
+  { wrong: { number: PR + 1 }, refusal: /is not from .* so it isn't/u },
+  {
+    wrong: { headRefName: "stale-branch" },
+    refusal: /is not from .* so it isn't/u,
+  },
+  { wrong: { headRefOid: "" }, refusal: /reply for PR #42 doesn't parse/u },
+  { wrong: { baseRefName: "main" }, refusal: /targets main, not integration/u },
+  {
+    wrong: { isCrossRepository: true },
+    refusal: /is not from .* so it isn't/u,
+  },
+  {
+    wrong: { mergeCommit: { oid: "unexpected" } },
+    refusal: /has inconsistent merge evidence/u,
+  },
+];
+for (const { wrong, refusal } of WRONG_PRS) {
   test(`discovered PR identity cannot authorize a draft save: ${JSON.stringify(wrong)}`, async () => {
     const job = await openJob("implement");
     try {
@@ -98,14 +109,19 @@ for (const wrong of [
         mergeCommit: null,
         ...wrong,
       });
-      assert.throws(() => readWriteAuthority(job.cfg, ISSUE));
-      assert.throws(() => saveDraftAuthority(job.cfg, ISSUE, PR, original));
+      assert.throws(() => readWriteAuthority(job.cfg, ISSUE), refusal);
+      assert.throws(
+        () => saveDraftAuthority(job.cfg, ISSUE, PR, original),
+        refusal,
+      );
       assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
     } finally {
       job.close();
     }
   });
 }
+
+const STALE_DRAFT = /has no matching open draft authority/u;
 
 test("a stale head cannot be saved; a validated draft saves only its PR identity and preserves provenance", async () => {
   const job = await openJob("implement");
@@ -129,9 +145,33 @@ test("a stale head cannot be saved; a validated draft saves only its PR identity
       isCrossRepository: false,
       mergeCommit: null,
     });
-    assert.throws(() => saveDraftAuthority(job.cfg, ISSUE, PR, "stale-head"));
+    assert.throws(
+      () => saveDraftAuthority(job.cfg, ISSUE, PR, "stale-head"),
+      STALE_DRAFT,
+    );
     saveDraftAuthority(job.cfg, ISSUE, PR, original);
     assert.deepEqual(readWriteState(job.cfg, ISSUE), { ...state, pr: PR });
+  } finally {
+    job.close();
+  }
+});
+
+test("closed PR discovery refuses specifically instead of granting code authority", async () => {
+  const job = await openJob("implement");
+  try {
+    savePrHistory(job.cfg, [{ number: PR }]);
+    savePrAuthority(job.cfg, {
+      number: PR,
+      state: "CLOSED",
+      headRefName: job.branch,
+      headRefOid: headOf(job.repo),
+      baseRefName: job.cfg.baseBranch,
+      isCrossRepository: false,
+      mergeCommit: null,
+    });
+    assert.throws(() => readWriteAuthority(job.cfg, ISSUE), CLOSED_REFUSAL);
+    assert.equal(readWriteState(job.cfg, ISSUE).pr, null);
+    assert.equal(readWriteState(job.cfg, ISSUE).codeMerged, null);
   } finally {
     job.close();
   }

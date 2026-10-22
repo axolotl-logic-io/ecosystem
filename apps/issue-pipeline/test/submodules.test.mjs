@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { opsFixture } from "./ops-fixture.mjs";
+import { opsFixture } from "./ops-fixtures.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 
 const fx = await opsFixture("submodules");

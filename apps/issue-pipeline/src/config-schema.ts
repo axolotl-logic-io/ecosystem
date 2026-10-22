@@ -4,12 +4,14 @@
 import { z } from "zod";
 import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
 import { OpsError } from "./ops-error.ts";
+import { PROJECT_POLICY_SOURCE } from "./project-policy-schema.ts";
 
 const MIDDLE_CONFIRMATION_BACKOFF_SECONDS = 4;
 const LATE_CONFIRMATION_BACKOFF_SECONDS = 8;
 const FINAL_CONFIRMATION_BACKOFF_SECONDS = 10;
 const MAX_CONFIRMATION_DEADLINE_SECONDS = 600;
 const MAX_CONFIRMATION_BACKOFF_STEPS = 20;
+const MAX_LANE_SLOTS = 399;
 
 const DEFAULTS: Readonly<Record<string, unknown>> = {
   baseBranch: "main",
@@ -81,6 +83,7 @@ const MODELS = z.object({
 });
 
 const CONFIG_SCHEMA = z.looseObject({
+  projectPolicy: PROJECT_POLICY_SOURCE.optional(),
   devAccount: z.string(),
   mergeAccount: z.string(),
   credentialsEnvFile: z.string(),
@@ -88,7 +91,13 @@ const CONFIG_SCHEMA = z.looseObject({
   allowedUsers: z.array(z.string()),
   baseBranch: z.string(),
   cloneUrl: OPTIONAL_TEXT,
-  commands: z.looseObject({ teardown: OPTIONAL_TEXT, test: z.string() }),
+  commands: z.looseObject({
+    teardown: OPTIONAL_TEXT,
+    prune: OPTIONAL_TEXT,
+    test: z.string(),
+  }),
+  // Project-buddy's lane app ports must stay below its proxy port range.
+  laneSlots: z.number().int().min(1).max(MAX_LANE_SLOTS).optional(),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
   // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue token
@@ -256,4 +265,4 @@ function checkRequired(
 type JobRolesConfig = z.infer<typeof JOB_ROLES>;
 
 export type { JobRolesConfig };
-export { CONFIG_SCHEMA, checkRequired, DEFAULTS };
+export { CONFIG_SCHEMA, checkRequired, DEFAULTS, MAX_LANE_SLOTS };

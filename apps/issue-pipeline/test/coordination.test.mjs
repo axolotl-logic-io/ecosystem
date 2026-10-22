@@ -24,6 +24,7 @@ function operate(guard, operation) {
   }
   return true;
 }
+const UNREADABLE = /GitHub unavailable/u;
 const RECONCILE = /reconciliation|uncertain/u;
 for (const scope of ["issue", "integration"]) {
   for (const lane of ["same", "different"]) {
@@ -35,15 +36,9 @@ for (const scope of ["issue", "integration"]) {
       b.request();
       assert.equal(b.acquire(), false);
       assert.equal(a.acquire(), true);
-      let models = 0;
-      let mutations = 0;
       a.assertOwner();
-      models += 1;
       a.assertOwner();
-      mutations += 1;
       assert.throws(() => b.assertOwner(), RECONCILE);
-      assert.equal(models, 1);
-      assert.equal(mutations, 1);
       assert.equal(github.guard("B", scope, lane).acquire(), false);
     });
   }
@@ -168,9 +163,13 @@ for (const condition of [
       duplicate.id = DUPLICATE_ID;
       github.comments.push(duplicate);
     }
+    let refusal = RECONCILE;
+    if (condition === "unreadable") {
+      refusal = UNREADABLE;
+    }
     const writes = [...github.writes];
-    assert.throws(() => a.assertOwner());
-    assert.throws(() => a.save({ stage: "done" }));
+    assert.throws(() => a.assertOwner(), refusal);
+    assert.throws(() => a.save({ stage: "done" }), refusal);
     assert.deepEqual(github.writes, writes);
   });
 }

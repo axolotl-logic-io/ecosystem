@@ -9,6 +9,11 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { gitIn } from "../git-state.ts";
 import { matchAny } from "../globs.ts";
+import {
+  assertCheckoutReady,
+  checkoutEnvironment,
+  withCheckoutSetup,
+} from "../lane-slots.ts";
 import type { ShellResult } from "../process.ts";
 import { run, shell } from "../process.ts";
 
@@ -69,12 +74,15 @@ type Migrations = z.infer<typeof MIGRATIONS>;
 // One verify run: the checkout it runs in, the files its change touches, its
 // logs' folder, and the checks so far.
 interface Verification {
+  cfg: Config;
+  issue: number;
   dir: string;
   settings: Settings;
   changed: string[];
   checks: Check[];
   logDir: string;
   timeoutMs: number;
+  env: ReadonlyMap<string, string>;
 }
 
 function present(command: string | null | undefined): command is string {
@@ -107,7 +115,18 @@ function exitCheck(
   command: string,
   logName: string = id,
 ): boolean {
-  const result = shell(command, v.dir, logPath(v, logName), v.timeoutMs);
+  function execute(env: ReadonlyMap<string, string>): ShellResult {
+    return shell(command, v.dir, logPath(v, logName), {
+      timeoutMs: v.timeoutMs,
+      env,
+    });
+  }
+  let result: ShellResult;
+  if (id === "setup") {
+    result = withCheckoutSetup(v.cfg, v.issue, v.dir, execute);
+  } else {
+    result = execute(v.env);
+  }
   const pass = result.code === 0;
   record(v, { id, pass, detail: `exit ${result.code}` }, result);
   return pass;
@@ -116,8 +135,12 @@ function exitCheck(
 // Setup, then the test, lint and typecheck commands. False when setup fails.
 function runCommands(v: Verification): boolean {
   const { setup, test, lint, typecheck } = v.settings.commands;
-  if (present(setup) && !exitCheck(v, "setup", setup)) {
-    return false;
+  if (present(setup)) {
+    if (!exitCheck(v, "setup", setup)) {
+      return false;
+    }
+  } else {
+    assertCheckoutReady(v.cfg, v.issue, v.dir);
   }
   const commands = new Map([
     ["test", test],
@@ -139,7 +162,10 @@ function checkLockfiles(v: Verification): void {
   for (const { path: file, regenerate } of lockfiles) {
     if (v.changed.includes(file)) {
       const log = logPath(v, `lockfile-${path.basename(file)}`);
-      const result = shell(regenerate, v.dir, log, v.timeoutMs);
+      const result = shell(regenerate, v.dir, log, {
+        timeoutMs: v.timeoutMs,
+        env: v.env,
+      });
       const diff = ["-C", v.dir, "diff", "--quiet", "--", file];
       const same = run("git", diff, { allowFail: true }).code === 0;
       run("git", ["-C", v.dir, "checkout", "--", file], { allowFail: true });
@@ -212,6 +238,8 @@ function runChecks(
   const settings = SETTINGS.parse(cfg);
   const { dir, sha, changed } = checkout;
   const v: Verification = {
+    cfg,
+    issue: n,
     dir,
     changed,
     checks: [],
@@ -221,6 +249,7 @@ function runChecks(
     ),
     settings,
     timeoutMs: settings.commandTimeoutMinutes * MS_PER_MINUTE,
+    env: checkoutEnvironment(cfg, n),
   };
   if (!runCommands(v)) {
     return { pass: false, headSha: sha, checks: v.checks };

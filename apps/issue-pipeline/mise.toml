@@ -23,13 +23,13 @@ run = [
   # full `node --test --test-reporter=spec` run beside three more in a copy of
   # the checkout, at 1-minute load averages of up to 130 on 10 cores
   # (2026-10-17). The timeout is over 3 times that. test/bounded-test-kit.mjs's
-  # waitFor deadline and test/job-test-kit.mjs's runJob bound sit below it.
+  # waitFor deadline and test/job/job-test-kit.mjs's runJob bound sit below it.
   # Bound file-level parallelism independently of the host's core count.
   # Full-flow files also spawn jobs, ops, fake gh and git processes. Node's
   # default (9 files on a 10-core host) oversubscribed those subprocesses:
   # issue #96 verification hit 60 s stage deadlines and 180 s hook deadlines.
   # Keep every test and its deadline; limit resource contention instead.
-  "node --test --test-concurrency=2 --test-timeout=180000 'test/*.test.mjs'",
+  "node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.mjs'",
 ]
 
 [tasks.build]

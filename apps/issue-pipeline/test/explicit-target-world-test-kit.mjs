@@ -43,8 +43,17 @@ Object.assign(
   ]),
 );
 const COMMAND_TIMEOUT_MS = 20_000;
+const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+Object.assign(process.env, Object.fromEntries([["TEST_REAL_GIT", realGit]]));
+const fakeGit = new URL("./fake-explicit-target-git.mjs", import.meta.url)
+  .pathname;
+fs.writeFileSync(
+  path.join(BIN, "git"),
+  `#!/bin/sh\ncase " $* " in *" push "*) [ "$ISSUE_PIPELINE_OPS" = 1 ] || exec '${realGit}' "$@";; *) exec '${realGit}' "$@";; esac\nexec '${process.execPath}' '${fakeGit}' "$@"\n`,
+  { mode: 0o755 },
+);
 const MODE = 0o755;
-const fake = new URL("./explicit-target-fake-gh.mjs", import.meta.url).pathname;
+const fake = new URL("./fake-explicit-target-gh.mjs", import.meta.url).pathname;
 fs.writeFileSync(
   path.join(BIN, "gh"),
   `#!/bin/sh\nexec '${process.execPath}' '${fake}' "$@"\n`,
@@ -61,8 +70,10 @@ if (root.ROOT !== ROOT || root.HOME !== HOME) {
   throw new Error("src loaded outside the isolated HOME/ROOT");
 }
 const { loadConfig, paths } = await import("../src/config.ts");
+const { policyRevision } = await import("../src/project-policy.ts");
 const { stateBody } = await import("../src/saved-state.ts");
 const { newIssueState } = await import("../src/state.ts");
+const { COMMENT } = await import("../src/comments.ts");
 
 const ISSUE = 7;
 const PR = 50;
@@ -74,9 +85,27 @@ const ISSUE_DATA = {
   body: "Deliver the complete change",
   user: { login: "owner" },
 };
+// No human comments precede this original Author revision. Its canonical
+// trusted-input bytes therefore contain only the original issue tuple.
 const INPUTS = createHash("sha256")
   .update(JSON.stringify(["issue", ISSUE_DATA.title, ISSUE_DATA.body]))
   .digest("hex");
+const GHERKIN_COMMENT = COMMENT.parse({
+  id: 41,
+  ...Object.fromEntries([["created_at", "2026-10-18T00:00:00Z"]]),
+  user: { login: "bot" },
+  lastEditedAt: null,
+  editor: null,
+  body: [
+    "```gherkin",
+    "Feature: delivery\n  Scenario: exact result",
+    "```",
+    `<!-- issue-pipeline:gherkin rev=1 inputs=${INPUTS} -->`,
+    "<!-- agent-pipeline:comment role=author -->",
+    `<!-- issue-pipeline:${ISSUE}:gherkin -->`,
+  ].join("\n"),
+});
+const GHERKIN_REF = { commentId: GHERKIN_COMMENT.id, rev: 1, inputs: INPUTS };
 /** @param {string} dir @param {string[]} args @returns {string} */
 function git(dir, args) {
   return execFileSync("git", ["-C", dir, ...args], {
@@ -91,6 +120,33 @@ function commit(dir, file, text) {
   git(dir, ["add", file]);
   git(dir, ["commit", "-qm", file]);
   return git(dir, ["rev-parse", "HEAD"]);
+}
+
+/**
+ * @param {import("../src/config.ts").Config} cfg
+ * @param {import("../src/state.ts").Revision} revision
+ * @param {string} base
+ * @returns {import("../src/state.ts").IssueState}
+ */
+function candidateState(cfg, revision, base) {
+  return {
+    ...newIssueState(ISSUE, "author"),
+    stage: "merge",
+    gherkin: GHERKIN_REF,
+    pr: PR,
+    hardened: revision,
+    hardenedTarget: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
+    security: {
+      revision,
+      commentId: 11,
+      finding: null,
+      phase: "candidate",
+      target: { repo: cfg.repo, branch: cfg.baseBranch, sha: base },
+    },
+    headSha: revision.code,
+    verifiedSha: revision.code,
+    flows: { code: true },
+  };
 }
 
 /** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean }} [options] */
@@ -142,7 +198,7 @@ function graph(options = {}) {
   return { place, origin, seed, base, parent, head, moved, merged };
 }
 
-/** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean }} [options] */
+/** @param {{ concurrent?: boolean, squash?: boolean, fastForward?: boolean, baseBranch?: string }} [options] */
 function world(options = {}) {
   const { place, origin, seed, base, parent, head, moved, merged } =
     graph(options);
@@ -154,7 +210,7 @@ function world(options = {}) {
       repo: REPO,
       ...credentialConfig("bot"),
       allowedUsers: ["owner"],
-      baseBranch: BASE,
+      baseBranch: options.baseBranch ?? BASE,
       mergeConfirmation: { deadlineSeconds: 3, backoffSeconds: [1] },
       commands: { test: "true" },
     }),
@@ -165,17 +221,8 @@ function world(options = {}) {
   const wt = paths.worktree(cfg, ISSUE);
   fs.mkdirSync(path.dirname(wt), { recursive: true });
   git(clone, ["worktree", "add", "-q", "-b", BRANCH, wt, `origin/${BRANCH}`]);
-  const revision = { code: head, inputs: INPUTS };
-  /** @type {import("../src/state.ts").IssueState} */
-  const state = {
-    ...newIssueState(ISSUE),
-    stage: /** @type {const} */ ("merge"),
-    pr: PR,
-    hardened: revision,
-    headSha: head,
-    verifiedSha: head,
-    flows: { code: true },
-  };
+  const revision = { code: head, inputs: INPUTS, ...policyRevision(cfg) };
+  const state = candidateState(cfg, revision, base);
   fs.writeFileSync(path.join(place, "state.json"), stateBody(ISSUE, state));
   return {
     cfg,
@@ -199,6 +246,7 @@ export {
   BASE,
   BRANCH,
   commit,
+  GHERKIN_COMMENT,
   git,
   HOME,
   INPUTS,

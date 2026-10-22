@@ -3,23 +3,29 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ghCalls } from "./pipeline-flow-gh.mjs";
-import { readWorld, withWorld } from "./pipeline-flow-gh-world.mjs";
-import { BASE, ISSUE, refIn, scriptPi } from "./pipeline-flow-kit.mjs";
+import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
+import {
+  readWorld,
+  withWorld,
+  writeWorld,
+} from "./fake-pipeline-flow-gh-world.mjs";
+import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
-import { piLog } from "./pipeline-flow-pi.mjs";
-import { runStage } from "./pipeline-flow-run.mjs";
+import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
+  hardeningTurn,
   implementorTurn,
   openFlowIssue,
   savedState,
-} from "./pipeline-flow-script.mjs";
+  securityTurn,
+} from "./pipeline-flow-script-test-kit.mjs";
+import { BASE, ISSUE, refIn, scriptPi } from "./pipeline-flow-test-kit.mjs";
 
-/** @typedef {import("./pipeline-flow-kit.mjs").Flow} Flow */
+/** @typedef {import("./pipeline-flow-test-kit.mjs").Flow} Flow */
 const GHERKIN =
   "Feature: greeting\n  Scenario: hello\n    Given a visitor\n    Then they see a polite greeting";
-const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
 const SECURITY_TAG_LENGTH = 12;
 
 /** @param {Flow} flow @param {string} code */
@@ -34,6 +40,15 @@ function securityEvidence(flow, code) {
   );
   return { launch, diff };
 }
+/** @param {Flow} flow @param {string} mergedSha @returns {{ diff: string, bundle: string, files: string }} */
+function securityBundle(flow, mergedSha) {
+  const tag = `review-security-${mergedSha.slice(0, SECURITY_TAG_LENGTH)}`;
+  const dir = path.join(flow.root, "runs", "o__r", `issue-${ISSUE}`, tag);
+  const diff = fs.readFileSync(path.join(dir, "diff.patch"), "utf8");
+  const bundle = fs.readFileSync(path.join(dir, "bundle.md"), "utf8");
+  return { diff, bundle, files: bundle.slice(diff.length) };
+}
+
 const STATE_BLOCK = /<!-- agent-pipeline:state\n[\s\S]*?\n-->/u;
 const NO_WRITER_OPS = ["merge", "push", "sync-base", "ready-pr", "exit-push"];
 const VERIFIED = z.object({ pass: z.boolean(), headSha: z.string() });
@@ -42,7 +57,20 @@ const CLAIM = z.object({
     codeMerged: z.object({ pr: z.number(), sha: z.string() }),
   }),
 });
-/** @param {import("./pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
+/** @param {import("./fake-pipeline-flow-gh-world.mjs").World} world */
+function expectedTargetUpdates(world) {
+  const { mergeAttempt } = savedState(world);
+  return [
+    {
+      origin: world.origin,
+      ref: `refs/heads/${mergeAttempt.target}`,
+      old: mergeAttempt.operation.base,
+      head: mergeAttempt.authorized.code,
+    },
+  ];
+}
+
+/** @param {import("./fake-pipeline-flow-gh-world.mjs").World} interruptedWorld @param {boolean} [checked] */
 function expectedReplay(interruptedWorld, checked = true) {
   const state = savedState(interruptedWorld);
   const codeMerged = { pr: state.pr, sha: state.merged.code };
@@ -54,9 +82,12 @@ function expectedReplay(interruptedWorld, checked = true) {
   return {
     claimCodeMerged: codeMerged,
     forbidden: [],
-    merges: 1,
+    merges: 0,
+    targetUpdates: expectedTargetUpdates(interruptedWorld),
     verified,
     base: state.merged.code,
+    mergeAttempt: state.mergeAttempt,
+    hardenedTarget: state.hardenedTarget,
     hardened: state.hardened,
     integration: state.integration,
     codeMerged,
@@ -93,6 +124,15 @@ function replaceState(flow, state) {
   });
 }
 
+/** @param {Flow} flow @param {import("./fake-pipeline-flow-gh-world.mjs").World} world */
+function restoreReplay(flow, world) {
+  writeWorld(flow.ghDir, structuredClone(world));
+  fs.writeFileSync(path.join(flow.piDir, "counts.json"), "{}");
+  scriptPi(flow, {
+    reviewer: [{ output: {}, rejectPrompt: "read ECONNRESET" }],
+  });
+}
+
 /** @param {Flow} flow @param {number} traceStart */
 function replayFacts(flow, traceStart) {
   const trace = opsTrace(flow).slice(traceStart);
@@ -105,10 +145,13 @@ function replayFacts(flow, traceStart) {
       .map(({ request }) => request.op)
       .filter((op) => NO_WRITER_OPS.includes(op)),
     merges: merges(flow).length,
+    targetUpdates: nativeTargetUpdates(readWorld(flow.ghDir)),
     verified: trace
       .filter(({ request }) => request.op === "verify")
       .map(({ reply }) => VERIFIED.parse(reply)),
     base: refIn(flow.origin, `refs/heads/${BASE}`),
+    mergeAttempt: state.mergeAttempt,
+    hardenedTarget: state.hardenedTarget,
     hardened: state.hardened,
     integration: state.integration,
     codeMerged: state.codeMerged,
@@ -143,19 +186,52 @@ function prepareReplayFlow(flow) {
     reviewer: [
       implementorTurn("Hello, world", "Hardening fixes capitalization"),
       implementorTurn("Hello, world!", "Integration fixes CI"),
-      INTERRUPTED,
+      hardeningTurn(),
+      securityTurn(),
     ],
   });
+  fs.writeFileSync(
+    path.join(flow.root, "interrupt-finish"),
+    "pause completion",
+  );
   return gitlink;
 }
 
-/** @param {Flow} flow @param {boolean} [delayMergeConfirmation] */
-function createReplayFlow(flow, delayMergeConfirmation = false) {
+// Synthetic migration fixture: retain the real confirmed merge and known
+// original integration, but encode the pre-upgrade postmerge-Security shape.
+// This is test data, never a runtime path for erasing candidate clearance.
+/** @param {Flow} flow @param {import("../src/state.ts").Integration} integration */
+function historicalMerge(flow, integration) {
+  const state = savedState(readWorld(flow.ghDir));
+  if (
+    state.mergeAttempt.authorized.code !== integration.revision.code ||
+    integration.reviewed.code === state.merged.code
+  ) {
+    throw new Error(
+      "historical fixture needs the landed source and an earlier hardened revision",
+    );
+  }
+  replaceState(flow, {
+    ...state,
+    stage: "merge",
+    security: null,
+    hardened: integration.reviewed,
+    integration,
+    mergeAttempt: {
+      ...state.mergeAttempt,
+      hardened: integration.reviewed,
+      integration,
+    },
+  });
+}
+
+/** @param {Flow} flow @param {boolean} [withholdMergeBinding] */
+function createReplayFlow(flow, withholdMergeBinding = false) {
   const originalConfig = fs.readFileSync(flow.config, "utf8");
-  if (delayMergeConfirmation) {
+  if (withholdMergeBinding) {
     const settings = z.looseObject({}).parse(JSON.parse(originalConfig));
-    // Hold metadata until explicit recovery, not a timing-dependent race. A
-    // short configured window exercises expiry without the production wait.
+    // CLOSED with no merge OID is incompatible with an FF own receipt,
+    // regardless of host speed. The short window bounds only test duration.
     fs.writeFileSync(
       flow.config,
       JSON.stringify({
@@ -175,20 +251,30 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
   }
   withWorld(flow.ghDir, (world) => {
     world.failedHead = savedState(world).hardened.code;
-    world.delayMergeConfirmation = delayMergeConfirmation;
+    world.withholdMergeBinding = withholdMergeBinding;
   });
-  for (const expected of ["wait", "deferred"]) {
-    let end = expected;
-    if (delayMergeConfirmation && expected === "deferred") {
-      end = "stop";
-    }
-    const result = runStage(flow, "merge");
-    if (result.end !== end) {
-      throw new Error(
-        `setup merge: expected ${end}, got ${JSON.stringify(result)}`,
-      );
-    }
+  const integrated = runStage(flow, "merge");
+  if (integrated.end !== "next") {
+    throw new Error(`setup integration: ${JSON.stringify(integrated)}`);
   }
+  const { integration } = savedState(readWorld(flow.ghDir));
+  if (runStage(flow, "review").end !== "next") {
+    throw new Error("fresh hardening did not complete");
+  }
+  let expected = "deferred";
+  if (withholdMergeBinding) {
+    expected = "stop";
+  }
+  const result = runStage(flow, "merge");
+  if (result.end !== expected) {
+    throw new Error(
+      `setup merge: expected ${expected}, got ${JSON.stringify(result)}`,
+    );
+  }
+  if (!withholdMergeBinding) {
+    historicalMerge(flow, integration);
+  }
+  fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
   const interruptedWorld = readWorld(flow.ghDir);
   fs.writeFileSync(flow.config, originalConfig);
   return { flow, interruptedWorld, gitlink };
@@ -197,10 +283,14 @@ function createReplayFlow(flow, delayMergeConfirmation = false) {
 export {
   createReplayFlow,
   expectedReplay,
+  expectedTargetUpdates,
+  historicalMerge,
   merges,
   prepareReplayFlow,
   replaceState,
   replayFacts,
+  restoreReplay,
+  securityBundle,
   securityEvidence,
   sessions,
 };

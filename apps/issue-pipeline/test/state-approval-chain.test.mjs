@@ -1,15 +1,16 @@
 // @ts-check
-// The merge authorization chain (src/state.ts): a merge is authorized for
-// the revision that passed the Reviewer's hardening, or the one revision the
-// Reviewer's own integration checked from exactly that hardened revision
-// (state.integration), never a receipt's head for another revision or other
-// trusted inputs, and never by a review verdict alone. The security review
+// New merge authorization requires exact hardening. Historical recovery keeps
+// the original checked integration separately, never as new candidate permission.
+// The security review
 // of the merged result (state.security) parses as saved, its finding
 // included. A state saved before these fields existed reads them as null.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./isolated-root-test-kit.mjs";
 
+const { recordedAuthorization } = await import(
+  "../src/merged-authorization.ts"
+);
 const { approvalHolds, mergeAuthorization, ISSUE_STATE, newIssueState } =
   await import("../src/state.ts");
 const { parseIssueState, stateBody, parseStateBody } = await import(
@@ -78,19 +79,20 @@ test("the authorized revision is the hardened one when nothing integrated it, wh
   assert.equal(approvalHolds(state, { ...HARDENED, inputs: "i2" }), false);
 });
 
-test("the Reviewer's own integration moves the authorization to its checked revision and keeps the hardened one", () => {
+test("the Reviewer's own integration does not authorize changed code and keeps the hardened one", () => {
   const state = hardenedState({
     integration: { reviewed: HARDENED, revision: INTEGRATED },
   });
-  assert.deepEqual(mergeAuthorization(state), INTEGRATED);
-  assert.equal(approvalHolds(state, INTEGRATED), true);
-  assert.equal(approvalHolds(state, HARDENED), false);
+  assert.deepEqual(mergeAuthorization(state), HARDENED);
+  assert.equal(approvalHolds(state, INTEGRATED), false);
+  assert.equal(approvalHolds(state, HARDENED), true);
   const saved = parseStateBody(stateBody(ISSUE, state), ISSUE);
   assert.deepEqual(saved?.integration, {
     reviewed: HARDENED,
     revision: INTEGRATED,
   });
   assert.deepEqual(saved?.hardened, HARDENED);
+  assert.deepEqual(recordedAuthorization(state), INTEGRATED);
 });
 
 test("a receipt bound to another revision than the hardened one authorizes nothing new", () => {
@@ -167,4 +169,24 @@ test("a malformed hardened, integration or security field reads as null and keep
     assert.equal(parsed.security, null);
     assert.equal(parsed.pr, PR);
   }
+});
+
+test("a merge authorization holds only for the code, legacy wiki and inputs revision hardened", () => {
+  const revision = { code: "c1", wiki: "w1", inputs: "i1" };
+  const state = newIssueState(ISSUE);
+  const hardened = { ...state, hardened: revision };
+  assert.equal(approvalHolds(hardened, revision), true);
+  assert.equal(approvalHolds(hardened, { ...revision, code: "c2" }), false);
+  assert.equal(approvalHolds(hardened, { ...revision, wiki: "w2" }), false);
+  assert.equal(approvalHolds(hardened, { ...revision, inputs: "i2" }), false);
+  // A review's approval, with no hardening, authorizes no merge.
+  const reviewedOnly = {
+    ...state,
+    review: {
+      ...state.review,
+      verdict: /** @type {const} */ ("approve"),
+      revision,
+    },
+  };
+  assert.equal(approvalHolds(reviewedOnly, revision), false);
 });

@@ -35,8 +35,8 @@ const NO_CONFIG = /--config must name a repo config file/u;
 const NO_COMMAND = /give start, status or wait/u;
 // What the orchestrator prints when a tick throws, here because gh is logged
 // in as another account than the config's.
-const TICK_FAILED =
-  /orchestrate: tick failed: credential login verification failed for merge/u;
+const TICK_FAILED = /tick failed/iu;
+const WRONG_ACCOUNT = /mallory|wrong account/iu;
 // The account the orchestrator's test config names.
 const ACCOUNT = "bot";
 // The variable that points ops at a pipeline root, here the temporary folder.
@@ -72,22 +72,18 @@ test("the build writes every executable and no workflow", () => {
   assert.equal(fs.existsSync(path.join(tmp, "workflow.js")), false);
 });
 
-test("the built ops parses and keeps its #! line", () => {
-  const r = spawnSync(process.execPath, ["--check", builtOps], {
-    encoding: "utf8",
-  });
-  assert.equal(r.status, 0, r.stderr);
+test("every built executable parses and ops keeps its #! line", () => {
+  for (const file of EXECUTABLES) {
+    const parsed = spawnSync(
+      process.execPath,
+      ["--check", path.join(tmp, file)],
+      { encoding: "utf8" },
+    );
+    assert.equal(parsed.status, 0, `${file}: ${parsed.stderr}`);
+  }
   assert.ok(
     fs.readFileSync(builtOps, "utf8").startsWith("#!/usr/bin/env node\n"),
   );
-});
-
-test("the build writes the shell supervisor beside ops, and it parses", () => {
-  const supervisor = path.join(tmp, "shell-supervisor.mjs");
-  const r = spawnSync(process.execPath, ["--check", supervisor], {
-    encoding: "utf8",
-  });
-  assert.equal(r.status, 0, r.stderr);
 });
 
 // Inputs the ops CLI answers without running an op, by name.
@@ -109,10 +105,6 @@ for (const [name, input] of ANSWERED_INPUTS) {
 
 test("the built stage job parses, keeps its #! line and rejects a bad stage", () => {
   const job = path.join(tmp, "job.mjs");
-  const check = spawnSync(process.execPath, ["--check", job], {
-    encoding: "utf8",
-  });
-  assert.equal(check.status, 0, check.stderr);
   assert.ok(fs.readFileSync(job, "utf8").startsWith("#!/usr/bin/env node\n"));
   const r = spawnSync(
     process.execPath,
@@ -125,10 +117,6 @@ test("the built stage job parses, keeps its #! line and rejects a bad stage", ()
 
 test("the built orchestrator parses and names a bad flag or a missing --config", () => {
   const orchestrator = path.join(tmp, "orchestrate.mjs");
-  const check = spawnSync(process.execPath, ["--check", orchestrator], {
-    encoding: "utf8",
-  });
-  assert.equal(check.status, 0, check.stderr);
   const head = fs.readFileSync(orchestrator, "utf8");
   assert.ok(head.startsWith("#!/usr/bin/env node\n"));
   /** @param {string[]} args @returns {import("node:child_process").SpawnSyncReturns<string>} */
@@ -148,10 +136,6 @@ test("the built orchestrator parses and names a bad flag or a missing --config",
 
 test("the built report parses, keeps its #! line and names a missing --config", () => {
   const report = path.join(tmp, "report.mjs");
-  const check = spawnSync(process.execPath, ["--check", report], {
-    encoding: "utf8",
-  });
-  assert.equal(check.status, 0, check.stderr);
   const head = fs.readFileSync(report, "utf8");
   assert.ok(head.startsWith("#!/usr/bin/env node\n"));
   const missing = spawnSync(process.execPath, [report, "usage"], {
@@ -248,6 +232,7 @@ test("the built orchestrator's --once exits 0 after a tick and 1 after a failed 
   const failed = once();
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, TICK_FAILED);
+  assert.match(failed.stderr, WRONG_ACCOUNT);
 });
 
 test("the built pi extensions default-export their factories", async () => {

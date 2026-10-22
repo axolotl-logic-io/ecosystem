@@ -73,7 +73,7 @@ function legacyResumeStage(
 // first, since no Gherkin exists yet; it keeps its PR, head, lease and flows.
 function migrateLegacyState(raw: unknown, number: number): IssueState {
   const legacy = LEGACY_STATE.safeParse(raw).data ?? {};
-  const base = newIssueState(number);
+  const base = newIssueState(number, "author");
   const kept: IssueState = {
     ...base,
     lease: legacy.lease ?? null,
