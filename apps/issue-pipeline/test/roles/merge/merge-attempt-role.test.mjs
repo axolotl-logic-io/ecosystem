@@ -36,12 +36,48 @@ function attemptOf(w, response = w.merged) {
   };
 }
 
-test("saved successful response reconciles before ordinary approval or writers, then verifies M before read-only security", async () => {
-  const w = world();
+test("saved successful FF response reconciles before ordinary approval or writers, then confirms M read-only and reuses premerge security", async () => {
+  const w = world({ fastForward: true });
+  const security = {
+    revision: w.revision,
+    phase: /** @type {const} */ ("candidate"),
+    target: w.state.hardenedTarget,
+    commentId: PR,
+    finding: null,
+  };
+  const run = context(w, {
+    state: { mergeAttempt: attemptOf(w), merged: null, security },
+    ops: {
+      finish: postmergeOps(w).finish,
+      "confirm-merged": [{ confirmed: true, headSha: w.merged }],
+      "reconcile-merge": [
+        { merged: true, mergeCommit: w.merged, headSha: w.head },
+      ],
+      "current-revision": [current(w, true), current(w, true)],
+    },
+  });
+  const end = await mergeRole(run.ctx);
+  assert.equal(end.kind, "next");
+  assert.equal(names(run.calls)[0], "reconcile-merge");
+  assert.equal(saves(run.calls)[0]?.merged?.code, w.merged);
+  assert.deepEqual(saves(run.calls)[0]?.hardened, w.revision);
+  assert.ok(
+    names(run.calls).indexOf("confirm-merged") <
+      names(run.calls).indexOf("finish"),
+  );
+  assert.equal(names(run.calls).includes("merge"), false);
+  assert.equal(names(run.calls).includes("verify"), false);
+  assert.equal(names(run.calls).includes("session"), false);
+  assert.deepEqual(saves(run.calls).at(-1)?.security, security);
+  assert.deepEqual(codeWrites(run.calls), []);
+});
+
+test("saved successful response without premerge security stops after read-only confirmation, never reviewing M", async () => {
+  const w = world({ fastForward: true });
   const run = context(w, {
     state: { mergeAttempt: attemptOf(w), merged: null, security: null },
     ops: {
-      ...postmergeOps(w),
+      "confirm-merged": [{ confirmed: true, headSha: w.merged }],
       "reconcile-merge": [
         { merged: true, mergeCommit: w.merged, headSha: w.head },
       ],
@@ -50,18 +86,13 @@ test("saved successful response reconciles before ordinary approval or writers, 
     sessions: [NO_FINDING],
   });
   const end = await mergeRole(run.ctx);
-  assert.equal(end.kind, "next");
-  assert.equal(names(run.calls)[0], "reconcile-merge");
-  assert.equal(saves(run.calls)[0]?.merged?.code, w.merged);
-  assert.deepEqual(saves(run.calls)[0]?.hardened, w.revision);
-  assert.ok(
-    names(run.calls).indexOf("verify") < names(run.calls).indexOf("session"),
-  );
-  assert.equal(names(run.calls).includes("merge"), false);
+  assert.ok(end.kind === "stop");
+  assert.equal(end.state.merged?.code, w.merged);
+  assert.equal(end.state.security, null);
+  for (const name of ["verify", "prepare-review", "session", "finish"]) {
+    assert.equal(names(run.calls).includes(name), false, name);
+  }
   assert.deepEqual(codeWrites(run.calls), []);
-  const review = run.calls.find((call) => call.kind === "session");
-  assert.ok(review?.kind === "session");
-  assert.equal(review.spec.commits, false);
 });
 
 for (const reply of [
