@@ -152,9 +152,9 @@ A result differs from an outcome: an outcome belongs to a run, while a result be
 
 ### Binding
 
-The revision, target state and policy that a result applies to.
+What a result applies to. For a task that checks or changes a revision, the binding is that revision, the target state and the policy.
 
-A result is current while its binding still matches the revision, target state and policy in question. Otherwise it is stale and remains historical evidence only.
+A result is current while its binding still matches the revision, target state and policy in question. Otherwise it is stale and remains historical evidence only. Bindings for Author and the first Implementation, which run before any revision exists, are still open.
 
 ### Merge
 
@@ -312,7 +312,7 @@ Generate matching Markdown and JSON reports from the same assessment data, with 
 [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks; run states and retries; the capacity unit and slot release; observation sources; and assignment permission. These contracts remain open:
 
 - Bindings for Author and the first Implementation, which run before any revision exists.
-- Task prerequisite and result schemas beyond the binding, branch/join conditions and repeated-check transitions.
+- Which binding parts apply to each task, and the remaining prerequisite and result schemas, branch/join conditions and repeated-check transitions.
 - Policy, approval and source acceptance versus landing, installation and activation.
 - Observation schemas, freshness bounds and collection coverage.
 - Historical configuration, command and saved-record migration (ecosystem #166).

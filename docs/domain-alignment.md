@@ -205,6 +205,7 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 ## Open decisions
 
 - Canonical serialized identifiers. Run states are settled (`runs-and-retries`); task-result verdicts are passed, failed, refused or unknown (`bindings-and-ready-tasks`).
+- Bindings for Author and the first Implementation, including which target changes make their results stale, and which binding parts apply to each task (`bindings-and-ready-tasks`).
 - Identity/linkage for historical jobs, launches and externally managed Pi runs/sessions.
 - Configuration and CLI migration, historical readers, supported upgrade direction and removal of transitional readers.
 - Task prerequisite, result and recovery design, and ownership relative to current pipeline changes. Ecosystem #150, #151, #132, #133, #118–#121 and #167–#175 carry the approved re-scope.
