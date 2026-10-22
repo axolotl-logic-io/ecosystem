@@ -67,7 +67,6 @@ and lane slot without turning either into execution authority. Closed issues
 still need exact incomplete-Merge eligibility before reopen. This adds no writer,
 remerge, approval or Security permission and does not activate job dispatch.
 
-
 Runtime integration-turn composition remains #120; handoff, withdrawal/checkpoints
 and full composition/operations remain #118, #119 and #121. No scheduler,
 polling, handoff, automatic legacy adoption, alternate delivery path, worker

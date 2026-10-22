@@ -1,17 +1,24 @@
 // @ts-check
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
-import { worktree } from "../ops-cli-test-kit.mjs";
+import {
+  claimMutationReplies,
+  stopMutationReplies,
+} from "../gh-mutation-fixtures.mjs";
+import { runDir, worktree } from "../ops-cli-test-kit.mjs";
 import { boundFixture } from "./bound-claim-test-kit.mjs";
 
 const { stateBody } = await import("../../src/saved-state.ts");
 const { trustedInputsHash, writeIssueContext } = await import(
   "../../src/issue-context.ts"
 );
+const { stop } = await import("../../src/ops/stop.ts");
 const ISSUE = 540;
 const AUTHOR = 541;
 const WAITING = 542;
+const STOPPED = 543;
 const CHANGED = /claim eligibility changed/u;
 
 // Both versions were saved through the real authenticated seam. A stale read
@@ -97,4 +104,44 @@ test("a newly visible unanswered checkpoint refuses progress after acquisition",
       .some((args) => args.some((arg) => arg.includes("/labels"))),
     false,
   );
+});
+
+test("a confirmed real stop and authenticated release permit a fresh bound resume", () => {
+  const f = boundFixture(STOPPED, {
+    issue: { labels: [{ name: "agent:stopped-conflict" }] },
+    replies: [
+      ...stopMutationReplies(STOPPED, {
+        stateId: STOPPED,
+        pr: null,
+        code: "conflict",
+      }),
+      ...claimMutationReplies(STOPPED, STOPPED, null, [
+        "agent:stopped-conflict",
+      ]),
+    ],
+  });
+  const owned = f.claim();
+  const work = f.save({ ...owned, stage: "review" });
+  const stopped = stop(f.cfg, {
+    number: STOPPED,
+    state: work,
+    code: "conflict",
+    reason: "retained failure",
+  }).state;
+  const dir = path.join(runDir(STOPPED), "stop-recovery");
+  const [name] = fs.readdirSync(dir);
+  assert.ok(name);
+  const file = path.join(dir, name);
+  const evidence = fs.readFileSync(file, "utf8");
+  f.guard().release();
+  const next = f.next("different");
+  const got = f.claimBound(next);
+  assert.ok("state" in got);
+  assert.equal(got.state.stage, "review");
+  assert.equal(got.state.stopCode, null);
+  assert.equal(got.state.stoppedStage, null);
+  assert.deepEqual(got.state.log, stopped.log);
+  assert.notDeepEqual(got.state.execution, stopped.execution);
+  assert.deepEqual(f.read(next), got.state);
+  assert.equal(fs.readFileSync(file, "utf8"), evidence);
 });

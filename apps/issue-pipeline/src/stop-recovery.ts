@@ -15,6 +15,7 @@ const IDENTITIES: readonly Identity[] = ["dev", "merge"];
 const DIAGNOSTIC_LIMIT = 8192;
 const TOKEN = /gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+/gu;
 const RECOVERY_ID = z.uuid();
+const TARGET_EFFECTS = ["explanation", "labels", "working-label"];
 const RECORD = z.object({
   version: z.literal(1),
   authority: z.literal("local evidence only; not signed authority"),
@@ -161,6 +162,38 @@ function stopRecovery(cfg: Config, intent: StopIntent): StopRecovery {
   };
 }
 
+function readEvidence(file: string): Evidence | null {
+  try {
+    return (
+      RECORD.safeParse(JSON.parse(fs.readFileSync(file, "utf8"))).data ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+function allEffectsConfirmed(record: Evidence): boolean {
+  const targets = new Set([String(record.issue)]);
+  for (const key of Object.keys(record.updates)) {
+    const [effect, target] = key.split(":");
+    if (target !== undefined && TARGET_EFFECTS.includes(effect ?? "")) {
+      targets.add(target);
+    }
+  }
+  const required = [
+    "state",
+    "lease",
+    "claim",
+    ...[...targets].flatMap((target) =>
+      TARGET_EFFECTS.map((effect) => `${effect}:${target}`),
+    ),
+  ];
+  return (
+    required.every((key) => record.updates[key] === "confirmed") &&
+    Object.values(record.updates).every((value) => value === "confirmed")
+  );
+}
+
 // Recovery records are barriers, not permission. A confirmed stop still needs
 // authenticated saved state and predecessor release before a new claim.
 function assertStopRecoveryResolved(cfg: Config, issue: number): void {
@@ -169,16 +202,14 @@ function assertStopRecoveryResolved(cfg: Config, issue: number): void {
     return;
   }
   for (const name of fs.readdirSync(dir)) {
-    const record = RECORD.safeParse(
-      JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")),
-    );
+    const record = readEvidence(path.join(dir, name));
     if (
-      !record.success ||
-      record.data.issue !== issue ||
-      record.data.repo !== cfg.repo ||
-      record.data.branch !== paths.branch(cfg, issue) ||
-      record.data.result !== "signed-stop-confirmed" ||
-      Object.values(record.data.updates).some((value) => value !== "confirmed")
+      record === null ||
+      record.issue !== issue ||
+      record.repo !== cfg.repo ||
+      record.branch !== paths.branch(cfg, issue) ||
+      record.result !== "signed-stop-confirmed" ||
+      !allEffectsConfirmed(record)
     ) {
       throw new OpsError(
         "unresolved stop recovery; explicit reconciliation required",

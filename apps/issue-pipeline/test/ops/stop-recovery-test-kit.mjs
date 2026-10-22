@@ -121,6 +121,20 @@ function clearEvidence() {
   });
 }
 
+/** @returns {{cfg: import("../../src/config.ts").Config, file: string}} */
+function confirmedStop() {
+  clearEvidence();
+  const { cfg, state } = setup();
+  kit.reply(stopReplies(cfg, state));
+  stop(cfg, { number: ISSUE, state, code: "error", reason: REASON });
+  const dir = path.join(paths.runDir(cfg, ISSUE), "stop-recovery");
+  const [name] = fs.readdirSync(dir);
+  if (name === undefined) {
+    throw new Error("missing stop recovery fixture");
+  }
+  return { cfg, file: path.join(dir, name) };
+}
+
 /** @param {import("../../src/config.ts").Config} cfg @param {import("../../src/state.ts").IssueState} state @param {import("../../src/job/ops-request.ts").RunOp} runOp @returns {import("../../src/job/role-end.ts").Claimed} */
 function stopJob(cfg, state, runOp) {
   return {
@@ -164,6 +178,7 @@ function stopChild(cfg) {
 export {
   ATTEMPTS,
   clearEvidence,
+  confirmedStop,
   evidenceOf,
   FIRST_WAIT,
   INPUTS,

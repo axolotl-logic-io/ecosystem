@@ -126,8 +126,13 @@ checkpoint, not its earlier issue-context snapshot. A newly visible unanswered
 question or ineligible closed-Merge state holds progress rather than being reset.
 This is a fresh-read guard, not an atomic GitHub snapshot.
 
-Unresolved coordination journals or local stop-recovery records block progress. Confirmed stop recovery is only a removed
-barrier: it never supplies execution authority. A failed lane setup keeps its
+Unresolved coordination journals or local stop-recovery records block progress.
+A stop's success flag is insufficient: its state, lease, claim and recorded
+issue/PR effect groups must all retain confirmed acknowledgments. Missing or
+malformed effects require reconciliation. Confirmed stop recovery only removes
+a barrier; it never supplies execution authority.
+
+A failed lane setup keeps its
 checkout, slot, signed receipt and readiness barrier. Explicit reconciliation
 must resolve readiness before another bound claim can use that checkout.
 
