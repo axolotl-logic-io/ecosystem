@@ -85,11 +85,11 @@ function withSavedCodeMerge(
   cfg: Config,
   n: number,
   state: IssueState,
+  saved: IssueState,
 ): IssueState {
   if (state.number !== n) {
     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
   }
-  const saved = readWriteState(cfg, n);
   let { merged } = state;
   if (
     saved.mergeAttempt !== null &&
@@ -126,7 +126,7 @@ function withSavedCodeMerge(
 
 // Writes issue `n`'s state, with the code merge it has saved.
 function saveIssueState(cfg: Config, n: number, state: IssueState): IssueState {
-  const written = withSavedCodeMerge(cfg, n, state);
+  const written = withSavedCodeMerge(cfg, n, state, readWriteState(cfg, n));
   writeState(cfg, n, written);
   return written;
 }
@@ -153,4 +153,4 @@ function release(cfg: Config, request: unknown): EmptyReply {
   return {};
 }
 
-export { release, saveIssueState, saveState };
+export { release, saveIssueState, saveState, withSavedCodeMerge };

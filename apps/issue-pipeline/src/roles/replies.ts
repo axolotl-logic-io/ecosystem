@@ -4,7 +4,7 @@
 // (`one-review-session`): no reply-check framework sits behind it.
 
 import { z } from "zod";
-import { SECURITY_CATEGORY } from "../state.ts";
+import { SECURITY_CATEGORY } from "../state-security.ts";
 
 const FEATURE = /^\s*Feature:/mu;
 const SCENARIO = /^\s*Scenario/mu;

@@ -252,37 +252,8 @@ function withExecution(
   return bound;
 }
 
-function assertExecutionHistory(
-  cfg: Config,
-  issue: number,
-  receipt: { request: number; instance: string } | undefined,
-): void {
-  if (cfg.execution === undefined) {
-    return;
-  }
-  if (receipt === undefined) {
-    throw new OpsError(
-      "saved state predates instance fencing; explicit reconciliation required",
-    );
-  }
-  const history = issueExecution(cfg, issue).read();
-  if (
-    !history.records.some(
-      (record) =>
-        record.kind === "request" &&
-        record.id === receipt.request &&
-        record.identity.instance === receipt.instance,
-    )
-  ) {
-    throw new OpsError(
-      "saved execution history is missing; explicit reconciliation required",
-    );
-  }
-}
-
 export {
   assertExecution,
-  assertExecutionHistory,
   assertReconciled,
   confirmedWrite,
   executionIdentity,

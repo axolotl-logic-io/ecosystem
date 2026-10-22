@@ -282,4 +282,9 @@ function claimedState(
 }
 
 export type { BranchChanged, ClaimedState };
-export { assertBranchAssigned, assertClosedMergeRecovery, claimedState };
+export {
+  assertBranchAssigned,
+  assertClosedMergeRecovery,
+  assertFirstClaim,
+  claimedState,
+};

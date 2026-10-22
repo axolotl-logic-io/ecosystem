@@ -4,6 +4,7 @@
 // clear that candidate before merge; old merged-result receipts are history.
 
 import { z } from "zod";
+import { EXECUTION_RECEIPT } from "./execution-receipt.ts";
 import {
   INTEGRATION,
   legacyWikiOf,
@@ -13,6 +14,11 @@ import {
 import { REVIEWED_TARGET } from "./reviewed-target.ts";
 import type { Status } from "./stages.ts";
 import { STAGES } from "./stages.ts";
+import {
+  SECURITY,
+  type SECURITY_CATEGORY,
+  SECURITY_VERDICT,
+} from "./state-security.ts";
 
 const MAX_LOG_ENTRIES = 40;
 const MAX_LOG_ENTRY = 300;
@@ -64,34 +70,6 @@ const REVIEW = z.object({
   revision: REVISION.nullable().catch(null),
 });
 
-// The categories a security review stops an issue for (stops.ts codes).
-const SECURITY_CATEGORY = z.enum([
-  "user-harm",
-  "rights",
-  "financial-harm",
-  "abuse-risk",
-]);
-
-// Candidate phase and target validate together. Phase-absent receipts remain
-// historical postmerge observations, never permission for a new merge.
-const SECURITY_VERDICT = z.object({
-  revision: REVISION,
-  commentId: z.number().int().positive(),
-  finding: z
-    .object({ category: SECURITY_CATEGORY, reason: z.string().min(1) })
-    .nullable(),
-});
-const SECURITY = z.union([
-  SECURITY_VERDICT.extend({
-    phase: z.literal("candidate"),
-    target: REVIEWED_TARGET,
-  }),
-  SECURITY_VERDICT.extend({
-    phase: z.undefined().optional(),
-    target: z.undefined().optional(),
-  }),
-]);
-
 // The reasons "wiki-check" and "wiki-conflict" are legacy: no longer written.
 const MERGE_RETURN = z.object({
   reason: z.enum(["conflict", "retest", "ci", "wiki-check", "wiki-conflict"]),
@@ -120,6 +98,7 @@ const COUNTS = z.object({
 // makes the whole state unreadable.
 const ISSUE_STATE = z.object({
   version: z.literal(2),
+  execution: EXECUTION_RECEIPT.optional(),
   number: z.number().int().positive(),
   stage: STATUS,
   // The stage a stop happened in; lifting the stop resumes there.
@@ -293,7 +272,6 @@ export {
   mergeAuthorization,
   newIssueState,
   resumeOf,
-  SECURITY_CATEGORY,
   sameRevision,
   withLog,
 };
