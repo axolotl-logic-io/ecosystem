@@ -148,7 +148,7 @@ A result differs from an outcome: an outcome belongs to a run, while a result be
 
 The revision, target state and policy that a result applies to.
 
-A result is current while its binding still matches the revision and target state in question. Otherwise it is stale and remains historical evidence only.
+A result is current while its binding still matches the revision, target state and policy in question. Otherwise it is stale and remains historical evidence only.
 
 ### Merge
 

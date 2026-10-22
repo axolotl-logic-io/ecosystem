@@ -76,7 +76,7 @@ These mappings apply the 2026-10-22 decisions to the installed release `42a8771`
 | Reviewer running both Hardening and Security | Decoupled Hardening and Security actors, with separate accounts | Structure and behavior | Needs another account and identity. |
 | Dash Agent runs pane, `agentRuns` config | Actor runs, with each run's account shown | Terminology; config impact | Model-free runs, such as landing, belong in the same view. |
 | GitHub event `actor` in `src/discovery/` | Account, as external data | None | Not an actor in the glossary's sense. |
-| Candidate, exact candidate, version | Revision | Terminology | `Revision` in `src/merge-provenance.ts` and `ReviewedTarget` in `src/reviewed-target.ts` already match revision and target state. |
+| Candidate, exact candidate, version | Revision | Terminology | The `REVISION` schema in `src/merge-provenance.ts` and `ReviewedTarget` in `src/reviewed-target.ts` broadly match revision and target state. `REVISION` still accepts historical receipts with no policy and a null code commit. |
 
 ## Change classes
 
@@ -195,7 +195,7 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 - Merge refers only to a Git merge; landing, accounts, queues and labels use landing names.
 - Public configuration, tools, CLI and persisted records have an agreed compatibility policy; no silent aliases or unsafe reinterpretation appear.
 - Unknown, unavailable and partial evidence never becomes a false negative, an empty result or a completion claim.
-- Dependencies identify specific required results, conditions and permissions, bound to the relevant work/version and scope, rather than unrelated stage-wide completion. Historical results are preserved without treating them as applicable to a new revision.
+- Dependencies identify specific required results, conditions and permissions, bound to the relevant revision, target state, policy and authorization scope, rather than completion of unrelated tasks. Historical results are preserved without treating them as applicable to a new revision.
 - Requests do not bypass authorization; role, actor and task names and capabilities grant no extra authority.
 - Historical receipts/checkpoints retain provenance and exact result scope; uncertain writes are never blindly repeated.
 - Slot and reservation release respect registered consumers and explicit release conditions.
