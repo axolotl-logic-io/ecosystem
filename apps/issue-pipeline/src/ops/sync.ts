@@ -17,6 +17,7 @@ import {
   clearCodeSync,
   continueCodeSync,
   rebaseInProgress,
+  removeRetiredSubmodules,
   saveCodeSync,
   unmergedFiles,
 } from "../rebase.ts";
@@ -135,6 +136,7 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
   if (rebaseInProgress(wt)) {
     return conflictReply(wt, onto, req.keepConflict === true);
   }
+  removeRetiredSubmodules(wt, before);
   try {
     pushBranch(cfg, n, wt, "sync-base");
   } catch (error: unknown) {

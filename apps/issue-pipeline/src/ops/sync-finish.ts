@@ -15,6 +15,7 @@ import {
   clearCodeSync,
   readCodeSync,
   rebaseProblem,
+  removeRetiredSubmodules,
 } from "../rebase.ts";
 import { readWriteAuthority } from "../write-authority.ts";
 
@@ -57,6 +58,9 @@ function finishProblem(
   });
   if ("problem" in target) {
     return target.problem;
+  }
+  if (sync !== undefined) {
+    removeRetiredSubmodules(wt, sync.from);
   }
   return rebaseProblem(wt, target.onto);
 }
