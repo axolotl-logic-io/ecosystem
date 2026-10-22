@@ -10,6 +10,12 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Docs style guide](docs-style-guide.md): how to write these docs.
 
+## Domain language
+
+[Shared glossary](../GLOSSARY.md): one canonical term for each concept shared by ecosystem, dash, status-report and the test-suite assessment app.
+
+[Domain alignment inventory](domain-alignment.md): where current code and docs differ from the glossary, and the proposed migration.
+
 ## Decisions
 
 [Authority](decisions/authority.md): which GitHub accounts, records, inputs and sessions the pipeline trusts, and for what.
