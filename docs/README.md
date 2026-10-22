@@ -28,6 +28,8 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Operations](decisions/operations.md): who assigns work, the model runtime, rate limits and checkouts.
 
+[Buddies and tasks](decisions/buddies-and-tasks.md): the buddies and their roles, access per task, bindings and ready tasks, runs and retries, capacity, observation and assignment permission.
+
 ## Reference
 
 [Authority](reference/authority.md): the two accounts, authority records, saved state, claims, write authority and trusted input.

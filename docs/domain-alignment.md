@@ -2,7 +2,7 @@
 
 This draft maps inspected differences to the accepted [shared glossary](../GLOSSARY.md). It is an implementation-planning artifact, not a migration tool or claim of completed alignment. The initial inventory changed no implementation. Autumn subsequently authorized dash source-language alignment; its progress is recorded below. No installation, activation, saved authority or pipeline execution policy changed as part of this work.
 
-On 2026-10-22 Autumn retired Stage in favor of tasks, defined roles as sets of tasks, introduced actors, accounts and identities, and limited merge to a Git merge. [Tasks, actors and landing](#tasks-actors-and-landing) maps those decisions onto the installed release, `42a8771`. Older sections keep their original evidence and say where the decisions supersede them.
+On 2026-10-22 Autumn retired Stage in favor of tasks, defined roles as sets of tasks, introduced actors, accounts and identities, and limited merge to a Git merge. Later that day she renamed actor to buddy, and the [buddy and task decisions](decisions/buddies-and-tasks.md) settled the role assignments and most open contracts. [Tasks, actors and landing](#tasks-actors-and-landing) maps those decisions onto the installed release, `42a8771`. Older sections keep their original evidence and say where the decisions supersede them.
 
 ## Scope and evidence
 
@@ -63,19 +63,19 @@ These mappings apply the 2026-10-22 decisions to the installed release `42a8771`
 | Merge queue, `--merge-queue` | Landing order | Terminology; CLI impact | An order, not permission. |
 | `mergeAccount`, "merge account" | Landing account | Terminology; config impact | |
 | `maxSyncs` | An integration limit | Terminology; config impact | Its documented bound counts integrations of one issue without landing, not syncs. |
-| "Only the merge stage synchronizes" in `docs/reference/sync.md` | Sync is an operation within Integration | Docs | |
+| "Only the merge stage synchronizes" in `docs/reference/sync.md`; `src/roles/merge/sync.ts` | The Sync task, separate from Integration and performed by the Developer | Structure; docs | `sync-is-a-task`. Installed sync still runs inside the `merge` stage. |
 | Merge commits and `git merge` | Unchanged | None | These are Git merges. |
 
-### Roles, actors and accounts
+### Roles, buddies and accounts
 
 | Installed surface | Canonical target | Class | Notes |
 | --- | --- | --- | --- |
-| Job roles `reader`, `writer`, `merger`, `STAGE_ROLES`, `jobRoles` | Access profiles within an identity | Terminology and structure; config impact | They are credential and access classes, not roles. |
-| `devAccount`, `mergeAccount`, `models.*`, `runtime`, `jobRoles` tokens and network | Accounts and identities | Structure; config impact | |
+| Job roles `reader`, `writer`, `merger`, `STAGE_ROLES`, `jobRoles` | Access profiles within an identity: reader, writer and lander | Terminology and structure; config impact | They are credential and access classes, not roles. Each task names the profile it needs (`least-privilege-per-task`). |
+| `devAccount`, `mergeAccount`, `models.*`, `runtime`, `jobRoles` tokens and network | Accounts and identities | Structure; config impact | `devAccount` is in Hippy's identity and `mergeAccount` in Lawd's (`identity-schema`). |
 | Developer and Reviewer sharing `axolotl-logic-hippy` | Separate identities that share an account | Structure | Allowed in general. |
-| Reviewer running both Hardening and Security | Decoupled Hardening and Security actors, with separate accounts | Structure and behavior | Needs another account and identity. |
-| Dash Agent runs pane, `agentRuns` config | Actor runs, with each run's account shown | Terminology; config impact | Model-free runs, such as landing, belong in the same view. |
-| GitHub event `actor` in `src/discovery/` | Account, as external data | None | Not an actor in the glossary's sense. |
+| Reviewer running both Hardening and Security | Hardening by Hippy, the Developer, in a fresh session; Security by Lawd, the Gatekeeper | Structure and behavior | Moves the installed `review` stage to the development account. No third account is needed (`two-buddies`, `hardening-stays-independent`). |
+| Dash Agent runs pane, `agentRuns` config | Buddy runs, with each run's account shown | Terminology; config impact | Model-free runs, such as landing, belong in the same view. |
+| GitHub event `actor` in `src/discovery/` | Account, as external data | None | Not a buddy. |
 | Candidate, exact candidate, version | Revision | Terminology | The `REVISION` schema in `src/merge-provenance.ts` and `ReviewedTarget` in `src/reviewed-target.ts` broadly match revision and target state. `REVISION` still accepts historical receipts with no policy and a null code commit. |
 
 ## Change classes
@@ -90,7 +90,7 @@ A terminology change can still affect a public interface or saved record. Classi
 
 | Existing surface | Canonical target | Class | Required work |
 | --- | --- | --- | --- |
-| Historical dash Operators pane, collector/config/snapshot fields, templates and docs | Actor runs (formerly Agent runs) | Terminology; public config impact | The local rename to Agent runs is complete, including `loadAgentRuns()` and `agentRuns` fields; the rename to Actor runs, with the account shown, is pending. Temporary `operators` configuration compatibility remains. Do not rename third-party runtime paths by assumption. |
+| Historical dash Operators pane, collector/config/snapshot fields, templates and docs | Buddy runs (formerly Agent runs and Actor runs) | Terminology; public config impact | The local rename to Agent runs is complete, including `loadAgentRuns()` and `agentRuns` fields; the rename to Buddy runs, with the account shown, is pending. Temporary `operators` configuration compatibility remains. Do not rename third-party runtime paths by assumption. |
 | Historical dash orchestrator in README and editor title | Caller | Terminology | Local source wording is aligned. Preserve editable requests, cancellation and no-direct-control behavior. |
 | Pipeline `implementor`, `issue-pipeline-implementor`, `models.implementor`, legacy model-role mappings | Developer | Terminology; public/installed/persisted impact | Inventory config keys, agent definitions, role registration, prompts, telemetry, attribution and records. Specify old-reader and old-writer handling before changing wire names. |
 | Plan owner/task owner and status-report Assigned to | Assignee where the meaning is work assignment | Terminology; mapping | Preserve explicit plan assignment versus GitHub assignment as separate source observations when they conflict. Do not rename resource owners or policy authority to assignee. |
@@ -196,7 +196,7 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 - Public configuration, tools, CLI and persisted records have an agreed compatibility policy; no silent aliases or unsafe reinterpretation appear.
 - Unknown, unavailable and partial evidence never becomes a false negative, an empty result or a completion claim.
 - Dependencies identify specific required results, conditions and permissions, bound to the relevant revision, target state, policy and authorization scope, rather than completion of unrelated tasks. Historical results are preserved without treating them as applicable to a new revision.
-- Requests do not bypass authorization; role, actor and task names and capabilities grant no extra authority.
+- Requests do not bypass authorization; role, buddy and task names and capabilities grant no extra authority.
 - Historical receipts/checkpoints retain provenance and exact result scope; uncertain writes are never blindly repeated.
 - Slot and reservation release respect registered consumers and explicit release conditions.
 - Status-report remains read-only; dash remains an observation/request interface, not a second scheduler.
@@ -204,14 +204,12 @@ This sequence is proposed. It does not select a source branch, authorize concurr
 
 ## Open decisions
 
-- Canonical serialized identifiers and exact run-state/outcome values.
+- Canonical serialized identifiers. Run states are settled (`runs-and-retries`); task outcomes are passed, failed, refused or unknown (`bindings-and-ready-tasks`).
 - Identity/linkage for historical jobs, launches and externally managed Pi runs/sessions.
 - Configuration and CLI migration, historical readers, supported upgrade direction and removal of transitional readers.
-- Task prerequisite, result and recovery design, and ownership relative to current pipeline changes. Ecosystem #132, #133 and #118–#121 are paused for re-scoping in task and actor terms.
-- Which roles own Hardening, Integration, Security, Land and Completion; the name for the tasks that may proceed now; and the capacity unit.
-- A third account for the decoupled Security actor.
+- Task prerequisite, result and recovery design, and ownership relative to current pipeline changes. Ecosystem #150, #151, #132, #133, #118–#121 and #167–#175 carry the approved re-scope.
 - Compatibility for renamed labels, saved state, CLI flags and configuration keys.
 - Observation schema, source authority, freshness and explicit coverage representation.
-- Resource consumer/ownership/release contracts and configured capacity provenance.
+- Configured capacity provenance. Capacity is counted by resource and released by registered consumers (`capacity-by-resource`).
 - Dash's destination and tooling/install integration inside ecosystem; the decision to add it there is accepted and tracked by `add-pipeline-dash-to-ecosystem`.
 - Whether glossary work should move to its own shared plan; it is currently tracked in `~/brain/plans/stryker-test-assessment.md`.
