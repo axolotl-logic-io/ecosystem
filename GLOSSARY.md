@@ -4,13 +4,13 @@ This draft records the domain language Autumn accepted for ecosystem, the Pi das
 
 These definitions describe the intended domain. They do not claim that existing code, saved records or installed tools already conform. The [domain alignment inventory](docs/domain-alignment.md) identifies known differences and migration decisions. Historical names there are migration references, not permanent synonyms.
 
-## People, roles and actors
+## People, roles and buddies
 
 ### Operator
 
 The human responsible for installation and operational configuration.
 
-An operator can also act as a caller, but these are different responsibilities. Starting a run does not by itself make someone an operator, and an actor is not an operator.
+An operator can also act as a caller, but these are different responsibilities. Starting a run does not by itself make someone an operator, and a buddy is not an operator.
 
 ### Caller
 
@@ -20,7 +20,7 @@ Use caller instead of orchestrator wherever both name this responsibility. A cal
 
 ### Assignee
 
-The person or actor explicitly assigned to a work item.
+The person or buddy explicitly assigned to a work item.
 
 Use assignee rather than owner when the meaning is work assignment. Do not infer assignment from execution or from who must answer a question. Ownership of resources remains a separate concept.
 
@@ -28,33 +28,39 @@ Use assignee rather than owner when the meaning is work assignment. Do not infer
 
 A set of tasks that are its responsibilities: the work that role should do.
 
-A role holds no identity, credentials or authority. It does not establish authorization or available capabilities. A role need not use a model; a role whose tasks are deterministic is still a role.
+A role holds no identity, credentials or authority. It does not establish authorization or available capabilities. A role need not use a model; a role whose tasks are deterministic is still a role. Each buddy has one role.
 
 ### Developer
 
-The canonical role responsible for the Implementation task. Use Developer instead of Implementor wherever they name the same role. Implementation is the task, not the role's name.
+The role responsible for the Author, Implementation, Hardening and Sync tasks. Use Developer instead of Implementor wherever they name the same role. Implementation is the task, not the role's name.
+
+### Gatekeeper
+
+The role responsible for the Integration, Security, Land and Completion tasks. It verifies and lands what the Developer writes.
 
 ### Account
 
 An external principal that holds credentials, such as a GitHub user or a model provider key.
 
-Several identities may share an account. GitHub's event `actor` field names an account, observed as external data; it is not an actor in this glossary.
+Several identities may share an account. GitHub's event `actor` field names an account, observed as external data; it is not a buddy.
 
 ### Identity
 
-The settings and credentials an actor uses: its accounts, model and runtime settings, access profile and network policy.
+The settings and credentials a buddy uses: its accounts, model and runtime settings, access profile and network policy.
 
 An identity is a capability. It makes an action possible; it does not authorize it.
 
-### Actor
+### Buddy
 
-A role paired with an identity. For example, Developer with the development account and a model, or a landing actor with the landing account and no model.
+A role paired with an identity: the set of tasks it's responsible for, and the settings and credentials it uses to do them. For example, Hippy is the Developer with the development account and a model, and Lawd is the Gatekeeper with the landing account.
 
-Actors whose duties must stay independent have decoupled identities. Security and Hardening are performed by separate actors with separate identities and accounts.
+Buddy replaces actor, which survives only in historical text. A buddy has no lasting run; each buddy run performs one task. For now the caller assigns a buddy's runs; later a buddy may scan for work itself.
 
-### Executing actor
+Buddies whose duties must stay independent have decoupled identities. Security and Hardening are performed by separate buddies with separate identities and accounts. [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) record the current buddies.
 
-The actor performing a particular run. It may differ from the work item's assignee.
+### Executing buddy
+
+The buddy performing a particular run. It may differ from the work item's assignee.
 
 ## Work and execution
 
@@ -66,17 +72,17 @@ A plan task and a GitHub issue can represent the same work item, but equivalence
 
 ### Run
 
-One execution, such as invoking a tool, actor or workflow, with its own identity, start time, state and eventual outcome.
+One execution, such as invoking a tool, buddy or workflow, with its own identity, start time, state and eventual outcome.
 
 A work item may have several runs. Runs may contain child runs. Ending a run does not necessarily complete its work item. Existing pipeline job and launch records need explicit mapping before their names or identities change.
 
-### Actor run
+### Buddy run
 
-A run in which an actor performs tasks from its role. An actor run is a run, not a session; it may use a session. A run that uses no model, such as a Land run, is still an actor run.
+A run in which a buddy performs one task from its role, for one binding. A buddy run is a run, not a session; it may use a session. A run that uses no model, such as a Land run, is still a buddy run.
 
-Use **Actor runs** for dash's run view, and show each run's account. Operators and Agent runs were its historical labels. An actor run may participate in a workflow run or operate independently.
+Use **Buddy runs** for dash's run view, and show each run's account. Operators, Agent runs and Actor runs were its historical labels. A buddy run may participate in a workflow run or operate independently.
 
-Avoid agent as a domain term because it is overloaded. Where it remains, an agent run means an actor run whose identity includes a model.
+Avoid agent as a domain term because it is overloaded. Where it remains, an agent run means a buddy run whose identity includes a model.
 
 ### Retry
 
@@ -84,13 +90,13 @@ A new run linked to an earlier run. A retry has a new run identity. This definit
 
 ### Resumption
 
-Continuation of a preserved run with the same run identity.
+Continuation of a preserved run with the same run identity. The workflow doesn't offer resumption: every restart is a retry from the latest checkpoint.
 
 Starting a fresh run from a checkpoint is not resumption of the original run. Continuing the same session alone also does not establish run resumption. Map existing restart behavior from its actual identity and execution semantics, not its command name.
 
 ### Session
 
-A model's retained conversation and context. One session can support multiple actor runs.
+A model's retained conversation and context. One session can support multiple buddy runs, but a Hardening run never shares a session with the Implementation run whose revision it hardens.
 
 Session identity, run identity and checkpoint identity are not interchangeable.
 
@@ -108,15 +114,15 @@ For example, landing revision R of change A requires a current passing Security 
 
 ### Workflow run
 
-One execution of a workflow. It may contain actor runs and deterministic tool executions. It is not necessarily the entire lifetime of a work item: retries or later work can require additional workflow runs.
+One execution of a workflow. It may contain buddy runs and deterministic tool executions. It is not necessarily the entire lifetime of a work item: retries or later work can require additional workflow runs.
 
-Each run retains its own identity. Establish parent–child links from explicit records, not from coincident names, times or a shared issue. Dash's workflow-run and actor-run views currently read different sources and do not establish those links.
+Each run retains its own identity. Establish parent–child links from explicit records, not from coincident names, times or a shared issue. Dash's workflow-run and buddy-run views currently read different sources and do not establish those links.
 
 ### Task
 
 A unit of a workflow that may proceed when its prerequisites hold, and that produces one result. A role's tasks are its responsibilities. A task may use a model or run deterministically.
 
-Tasks replace stages. A work item has no single current position: the tasks that may proceed are those whose prerequisites are current and whose own result is not. Each task owns its prerequisites, result, receipt, attempts, stop conditions and recovery, so it can change without reaching into another task's internals.
+Tasks replace stages. A work item has no single current position. Its **ready tasks** are those whose prerequisites are current and whose own result for the current binding is missing. Each task owns its prerequisites, result, receipt, attempts, stop conditions and recovery, so it can change without reaching into another task's internals.
 
 Plans also call their items tasks. Where that could be confused with a workflow task, call a plan item a work item or a plan task.
 
@@ -142,13 +148,13 @@ The target branch observed at an exact commit: its repository, branch and commit
 
 What a task established, bound to exactly what it applies to.
 
-A result differs from an outcome: an outcome belongs to a run, while a result belongs to a task and its binding. A run can end successfully while its result is already stale.
+A result differs from an outcome: an outcome belongs to a run, while a result belongs to a task and its binding. A result's verdict is passed, failed, refused or unknown, separate from the producing run's outcome. A run can end successfully while its result is already stale.
 
 ### Binding
 
-The revision, target state and policy that a result applies to.
+What a result applies to. For a task that checks or changes a revision, the binding is that revision, the target state and the policy.
 
-A result is current while its binding still matches the revision, target state and policy in question. Otherwise it is stale and remains historical evidence only.
+A result is current while its binding still matches the revision, target state and policy in question. Otherwise it is stale and remains historical evidence only. Bindings for Author and the first Implementation, which run before any revision exists, are still open.
 
 ### Merge
 
@@ -164,7 +170,7 @@ The landing account is the account that approves the exact revision and lands it
 
 ### Sync
 
-An operation within Integration that rebases a revision onto a target state and resolves conflicts. Its result is a new revision, which needs its own Hardening result. Sync is not a merge and not a task.
+The task that rebases a revision onto a target state it doesn't yet contain and resolves the conflicts. Its result is a new revision that contains the target state, which needs its own Hardening result. Sync is not a merge.
 
 ### Issue delivery
 
@@ -175,20 +181,21 @@ The workflow that develops and delivers an issue's intended change. Its tasks ar
 | Author | Authoring requested | Authored requirements |
 | Implementation | Requirements | A revision of the change |
 | Hardening | A revision | A Hardening result for that revision, which may first produce a new revision |
-| Integration | A current Hardening result for revision R; target state T | An integration result for R on T, which may first sync to a new revision |
+| Sync | Revision R; target state T that R doesn't contain | A new revision R′ that contains T |
+| Integration | A current Hardening result for revision R; target state T that R contains | An integration result for R on T |
 | Security | A current integration result for R on T | A Security result for R, T and the policy |
 | Land | Current Hardening, Integration and Security results for the same R and T; authorization | R landed on the target at M |
 | Completion | The Land result | Work-item completion |
 
-When sync produces a new revision, the earlier Hardening result stays bound to the old one. Land's prerequisite is then unmet and Hardening runs for the new revision; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
+When Sync produces a new revision, the earlier Hardening result stays bound to the old one. Land's prerequisite is then unmet and Hardening runs for the new revision; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
 
-The Developer performs Implementation. Security and Hardening have decoupled actors. The remaining role assignments, the complete dependency graph, branch and join rules, and historical compatibility still need design. This intended model does not describe every historical or installed version.
+The Developer performs Author, Implementation, Hardening and Sync. The Gatekeeper performs Integration, Security, Land and Completion. The complete dependency graph, branch and join rules, and historical compatibility still need design. This intended model does not describe every historical or installed version.
 
 ### Run state
 
 The run's execution condition, distinct from the tasks it performs, its outcome and observed process liveness.
 
-Running, waiting, stopped and ended illustrate conditions; they are not an agreed serialized enumeration. A recorded Running value is not proof that a process is live.
+A run is running; waiting, when a prerequisite or hold is unmet; stopped, when it needs a person and its work is kept; or ended, with an outcome. A recorded running value is not proof that a process is live.
 
 ### Outcome
 
@@ -208,7 +215,7 @@ A closed issue, landed revision or ended run alone does not establish completion
 
 Evidence collected about work or execution, recording its source, observation time and limits or uncertainty.
 
-Preserve unknown and unavailable evidence as such. An unavailable source is not an empty result. Denied process inspection does not prove a run is not live. Absence of observed activity does not establish that a resource is available.
+Preserve unknown and unavailable evidence as such. A partial, stale or conflicting read makes the fact unknown, and unknown never counts as success, failure or absence. An unavailable source is not an empty result. Denied process inspection does not prove a run is not live. Absence of observed activity does not establish that a resource is available.
 
 Recorded run state, observed liveness, test outcome and cleanup coverage are separate facts. Passing tests can coexist with unverified cleanup.
 
@@ -268,7 +275,7 @@ Use run count or capacity when those are the actual meaning; do not call them la
 
 One reusable allocation from a bounded pool, such as an isolated test environment.
 
-A slot can remain occupied after a run ends while a registered consumer still needs it. Idle observations or work-item completion do not establish release.
+A slot is released only when every registered consumer reports it's done. It can remain occupied after a run ends. Idle observations, an unknown consumer state or work-item completion do not establish release.
 
 ### Reservation
 
@@ -302,17 +309,12 @@ Generate matching Markdown and JSON reports from the same assessment data, with 
 
 ## Definitions still required
 
-The accepted distinctions do not yet specify the following contracts:
+[Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks; run states and retries; the capacity unit and slot release; observation sources; and assignment permission. These contracts remain open:
 
-- Actor, role, identity and account schemas, including how external runtime names map to them.
-- Which roles own Hardening, Integration, Security, Land and Completion, and the name of each role.
-- A name for the tasks that may proceed now (proposed: ready tasks).
-- The capacity unit: roles, tasks or resources such as model sessions, test slots and target writes (proposed: resources).
-- Exact run-state and outcome values, run linkage and recovery transitions.
-- Task prerequisite and result schemas, attempt budgets per binding, branch/join conditions and repeated-check transitions.
-- Resource ownership, registered-consumer identity and release protocols.
+- Bindings for Author and the first Implementation, which run before any revision exists.
+- Which binding parts apply to each task, and the remaining prerequisite and result schemas, branch/join conditions and repeated-check transitions.
 - Policy, approval and source acceptance versus landing, installation and activation.
-- Observation schemas, source authority, freshness and collection coverage.
-- Historical configuration, command and saved-record migration.
+- Observation schemas, freshness bounds and collection coverage.
+- Historical configuration, command and saved-record migration (ecosystem #166).
 
 Resolve these contracts before implementing dependent changes. Do not fill missing facts or permissions with inferred defaults.
