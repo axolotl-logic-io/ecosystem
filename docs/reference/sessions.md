@@ -9,7 +9,7 @@ New work starts at Developer. Author is optional:
 ```mermaid
 flowchart LR
   author["author (explicit)"] --> implement
-  implement --> review["review: hardening"] --> merge["merge: integration, Security, merge, result checks"] --> done
+  implement --> review["review: hardening"] --> merge["merge: integration, Security, merge, result confirmation"] --> done
 ```
 
 Only three model roles exist: Author, Developer and Reviewer. The serialized role and config name for the Developer is still `implementor`.

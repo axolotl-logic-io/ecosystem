@@ -1,7 +1,7 @@
 // Merge code only: validate exact-head authorization, queue, base and
 // readiness before the explicit-target merge and durable receipt. Issue
-// completion is a separate operation, after actual-result checks and
-// security (`merge-publish-finish-split`).
+// completion is a separate operation, after read-only confirmation of the
+// premerge checks and Security (`merge-publish-finish-split`).
 
 import { z } from "zod";
 import { assignedBranch } from "../branch-binding.ts";

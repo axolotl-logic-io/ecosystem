@@ -1,6 +1,8 @@
 // @ts-check
 // Canonical closed recovery of a saved pre-upgrade own receipt retains the
 // original H0 -> H integration and real two-parent M without reopening writers.
+// A two-parent M has no exact fast-forward premerge proof, so recovery stops
+// read-only (#185): no suite, Security session or completion after Land.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,7 +12,6 @@ import { ISSUE_STATE } from "../src/state.ts";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
 import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
-import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { createClosedHistoricalFlow } from "./pipeline-flow-closed-history-test-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { merges, sessions } from "./pipeline-flow-replay-test-kit.mjs";
@@ -26,12 +27,6 @@ import {
 } from "./pipeline-flow-test-kit.mjs";
 
 const CLAIM = z.object({ state: z.looseObject({}) });
-const VERIFIED = z.object({ pass: z.boolean(), headSha: z.string() });
-const PREPARED = z.object({
-  headSha: z.string(),
-  baseSha: z.string(),
-  diffPath: z.string(),
-});
 /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
 /** @type {import("../src/state.ts").IssueState} */
@@ -44,7 +39,6 @@ let historicalReady = false;
 let recoveryReady = false;
 let resultReady = false;
 let result = "";
-let parent = "";
 let traceStart = 0;
 let callsStart = 0;
 let sessionStart = 0;
@@ -96,7 +90,6 @@ test("the closed historical fixture retains H0 != H, two-parent M and an already
   assert.equal(parents.length, 2);
   assert.deepEqual(parents, [fixture.parent, integrated.code]);
   assert.notEqual(result, integrated.code);
-  ({ parent } = fixture);
   historicalReady = true;
 });
 
@@ -139,9 +132,9 @@ test("the historical graph and original provenance agree before the isolated rec
   recoveryReady = true;
 });
 
-test("the winning closed claim preserves original authorization, attempt, result and own receipt", () => {
+test("the winning closed claim preserves original authorization, attempt, result and own receipt, then stops read-only", () => {
   assert.equal(recoveryReady, true);
-  assert.equal(runStage(flow, "merge").end, "next");
+  assert.equal(runStage(flow, "merge").end, "stop");
   const trace = opsTrace(flow).slice(traceStart);
   const claimed = CLAIM.parse(
     trace.find(({ request }) => request.op === "claim")?.reply,
@@ -157,36 +150,16 @@ test("the winning closed claim preserves original authorization, attempt, result
     assert.deepEqual(claimed[field], value);
     assert.deepEqual(recovered[field], value);
   }
-  assert.equal(recovered.stage, "done");
-  assert.equal(recovered.security.revision.code, result);
-  assert.equal(recovered.security.finding, null);
-  assert.equal(recovered.security.phase, undefined);
-  const verifies = trace
-    .filter(({ request }) => request.op === "verify")
-    .map(({ reply }) => VERIFIED.parse(reply));
-  assert.ok(verifies.length > 0);
-  assert.ok(
-    verifies.every(({ pass, headSha }) => pass === true && headSha === result),
-  );
-  const prepared = PREPARED.parse(
-    trace.find(({ request }) => request.op === "prepare-review")?.reply,
-  );
-  assert.equal(prepared.headSha, result);
-  assert.equal(prepared.baseSha, parent);
-  const patch = bareGit(flow.origin, [
-    "diff",
-    "--stat",
-    "--patch",
-    `${parent}..${result}`,
-  ]);
-  assert.notEqual(patch, "");
-  assert.ok(
-    fs.readFileSync(prepared.diffPath, "utf8").trimEnd().endsWith(patch),
-  );
+  assert.equal(recovered.stage, "stopped");
+  assert.equal(recovered.security, null);
+  const ops = trace.map(({ request }) => request.op);
+  for (const op of ["verify", "prepare-review", "finish"]) {
+    assert.equal(ops.includes(op), false, op);
+  }
   resultReady = true;
 });
 
-test("historical recovery launches only read-only Security, with no writer, approval or second merge", () => {
+test("historical recovery launches no session, writer, approval, suite or second merge", () => {
   assert.equal(resultReady, true);
   const trace = opsTrace(flow).slice(traceStart);
   assert.ok(
@@ -196,15 +169,7 @@ test("historical recovery launches only read-only Security, with no writer, appr
       ),
     ),
   );
-  assert.equal(sessions(flow), sessionStart + 1);
-  const launches = piLog(flow.piDir)
-    .filter((entry) => entry.start === true)
-    .slice(sessionStart);
-  assert.equal(launches.length, 1);
-  assert.equal(launches[0].commitScope, false);
-  assert.equal(launches[0].extensions.includes("pipeline-commit.mjs"), false);
-  assert.equal(launches[0].repoHead, result);
-  assert.equal(launches[0].ghToken, null);
+  assert.equal(sessions(flow), sessionStart);
   const newCalls = ghCalls(flow.ghDir).slice(callsStart);
   assert.ok(
     newCalls.some(

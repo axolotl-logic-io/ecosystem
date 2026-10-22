@@ -56,7 +56,7 @@ separate runtime work and review.
 ## Stages and model roles
 
 ```text
-[optional author] -> implement (draft) -> review (hardening) -> merge (integration -> fresh hardening if changed -> security -> branch merge -> exact-result checks -> finish/close) -> done
+[optional author] -> implement (draft) -> review (hardening) -> merge (integration -> fresh hardening if changed -> security -> fast-forward merge -> read-only result confirmation -> finish/close) -> done
 ```
 
 | Stage / phase | Session authority | Result |
@@ -303,7 +303,7 @@ Later text stops stay on the same code rebase: the next resolver gets current pa
 
 Synchronization cleanup also saves the staged/working patches and a verified bundle containing current, local-branch and available pre-rebase history before abort/reset/clean. An unresolved index saves the verified history bundle and `conflict-stages.json` (path, stage number, mode and full object ID), then refuses destructive cleanup and retains the original checkout, unresolved index and working files for explicit recovery. The stop names the paths and retained evidence instead of attempting lossy patch preparation.
 
-**Concurrency limitation:** caller serialization is not external exclusion. Outside actors may push, merge, retarget or change permissions/configuration at any time. The explicit destination/immutable-source REST merge and exact-result checks above are the supported compromise, not an atomic PR/input/config transaction. Observed invalid authority refuses writes; unseen concurrent changes are not atomically prevented. No exclusion promise or credential/ruleset change is implied. Installation remains operator-owned and requires exact candidate checks and a reviewed cutover.
+**Concurrency limitation:** caller serialization is not external exclusion. Outside actors may push, merge, retarget or change permissions/configuration at any time. The explicit destination/immutable-source REST merge and read-only result confirmation above are the supported compromise, not an atomic PR/input/config transaction. Observed invalid authority refuses writes; unseen concurrent changes are not atomically prevented. No exclusion promise or credential/ruleset change is implied. Installation remains operator-owned and requires exact candidate checks and a reviewed cutover.
 
 ## Stop reconciliation evidence
 

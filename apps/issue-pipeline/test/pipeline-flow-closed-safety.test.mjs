@@ -1,5 +1,6 @@
 // @ts-check
 // Closed own-merge recovery must preserve merged truth on failed safety gates.
+// After Land it confirms read-only (#185): no suite, Security session or writer.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -32,7 +33,7 @@ beforeEach(() => {
 });
 after(() => stopJobs(flow));
 
-test("a fresh exact Security rejection stops closed recovery and cannot be rerolled", () => {
+test("closed recovery without premerge Security stops read-only: no fresh Security session can review or reroll it", () => {
   scriptPi(flow, {
     reviewer: [
       {
@@ -46,17 +47,17 @@ test("a fresh exact Security rejection stops closed recovery and cannot be rerol
   const starts = sessions(flow);
   const traceStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "stop");
-  assert.equal(sessions(flow), starts + 1);
+  assert.equal(sessions(flow), starts);
   assert.deepEqual(
     replayFacts(flow, traceStart),
     expectedReplay(interruptedWorld),
   );
-  const rejected = savedState(readWorld(flow.ghDir));
-  assert.deepEqual(rejected.security.revision, rejected.merged);
-  assert.equal(rejected.security.finding.category, "rights");
-  assert.equal(rejected.stage, "stopped");
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.equal(stopped.security, null);
+  assert.deepEqual(stopped.merged, savedState(interruptedWorld).merged);
+  assert.equal(stopped.stage, "stopped");
   assert.equal(runStage(flow, "merge").end, "stop");
-  assert.equal(sessions(flow), starts + 1);
+  assert.equal(sessions(flow), starts);
   assert.equal(merges(flow).length, 0);
   assert.deepEqual(
     replayFacts(flow, traceStart).targetUpdates,
@@ -68,7 +69,7 @@ test("a fresh exact Security rejection stops closed recovery and cannot be rerol
   assert.equal(ops.includes("finish"), false);
 });
 
-test("closed recovery retains merged truth when actual-result verification fails without a writer or completion", () => {
+test("closed recovery retains merged truth and runs no actual-result suite, writer or completion, even with failing checks configured", () => {
   const config = fs.readFileSync(flow.config, "utf8");
   const settings = z
     .looseObject({ commands: z.looseObject({ test: z.string() }) })
@@ -96,9 +97,7 @@ test("closed recovery retains merged truth when actual-result verification fails
       facts.codeMerged,
       expectedReplay(interruptedWorld).codeMerged,
     );
-    assert.deepEqual(facts.verified, [
-      { pass: false, headSha: expectedReplay(interruptedWorld).base },
-    ]);
+    assert.deepEqual(facts.verified, []);
     const state = savedState(readWorld(flow.ghDir));
     assert.deepEqual(state.merged, savedState(interruptedWorld).merged);
     assert.equal(state.security, null);
