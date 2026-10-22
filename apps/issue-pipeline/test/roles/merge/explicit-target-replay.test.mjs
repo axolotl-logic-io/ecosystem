@@ -23,8 +23,12 @@ const { afterOwnMerge } = await import(
 );
 const { OpsFailure } = await import("../../../src/job/role-context.ts");
 const FALSE_RECEIPT = /GitHub no longer matches it/u;
+const CONFIRMED = /** @param {{ merged: string }} w */ (w) => ({
+  confirmed: true,
+  headSha: w.merged,
+});
 
-test("done replay with saved security still reestablishes graph/checks before completion", async () => {
+test("done replay with saved security still confirms graph/premerge proof read-only before completion", async () => {
   const w = world();
   const run = context(w, {
     state: {
@@ -33,13 +37,19 @@ test("done replay with saved security still reestablishes graph/checks before co
       verifiedSha: w.merged,
       security: { revision: result(w), commentId: PR, finding: null },
     },
-    ops: { ...postmergeOps(w), "current-revision": [current(w, true)] },
+    ops: {
+      ...postmergeOps(w),
+      "confirm-merged": [CONFIRMED(w)],
+      "current-revision": [current(w, true)],
+    },
   });
   const end = await mergeRole(run.ctx);
   assert.equal(end.kind, "next");
   assert.ok(
-    names(run.calls).indexOf("verify") < names(run.calls).indexOf("finish"),
+    names(run.calls).indexOf("confirm-merged") <
+      names(run.calls).indexOf("finish"),
   );
+  assert.equal(names(run.calls).includes("verify"), false);
   assert.equal(names(run.calls).includes("session"), false);
   assert.equal(names(run.calls).includes("merge"), false);
 });
@@ -124,21 +134,21 @@ test("byHand observed during merge is never promoted to a fresh own receipt", as
   assert.deepEqual(saves(run.calls), []);
 });
 
-test("external merged result needs independent postmerge hardening, not original H or codeMerged alone", async () => {
+test("external merged result stops for read-only reconciliation, never postmerge hardening from original H or codeMerged", async () => {
   const w = world();
   const run = context(w, {
     state: { codeMerged: { pr: PR, sha: w.merged } },
     ops: { "current-revision": [current(w, true)] },
   });
   const end = await mergeRole(run.ctx);
-  assert.ok(end.kind === "next");
-  assert.equal(end.state.stage, "review");
+  assert.ok(end.kind === "stop");
+  assert.notEqual(end.state.stage, "review");
   assert.equal(end.state.merged, null);
   assert.equal(end.state.codeMerged?.sha, w.merged);
   assert.deepEqual(names(run.calls), ["current-revision"]);
 });
 
-test("independently hardened postmerge M retains external provenance and runs exact checks without merge", async () => {
+test("a hardened external postmerge M retains external provenance and stops without checks, Security or merge", async () => {
   const w = world();
   const run = context(w, {
     state: {
@@ -157,10 +167,13 @@ test("independently hardened postmerge M retains external provenance and runs ex
     sessions: [NO_FINDING],
   });
   const end = await mergeRole(run.ctx);
-  assert.ok(end.kind === "next");
-  assert.equal(end.state.stage, "done");
+  assert.ok(end.kind === "stop");
+  assert.notEqual(end.state.stage, "done");
   assert.deepEqual(end.state.hardened, result(w));
-  assert.equal(names(run.calls).filter((name) => name === "verify").length, 1);
+  assert.equal(end.state.codeMerged?.sha, w.merged);
+  assert.equal(names(run.calls).includes("verify"), false);
+  assert.equal(names(run.calls).includes("session"), false);
+  assert.equal(names(run.calls).includes("finish"), false);
   assert.equal(names(run.calls).includes("merge"), false);
   assert.deepEqual(codeWrites(run.calls), []);
 });
@@ -187,12 +200,14 @@ for (const outcome of [
   });
 }
 
-test("unreadable merged verification propagates without losing saved own receipt or running a writer", async () => {
+test("unreadable merged confirmation propagates without losing saved own receipt or running a writer", async () => {
   const w = world();
   const run = context(w, {
     ops: {
       "current-revision": [current(w, true)],
-      verify: [new OpsFailure("verify", 1, "unsupported merged result")],
+      "confirm-merged": [
+        new OpsFailure("confirm-merged", 1, "unsupported merged result"),
+      ],
     },
   });
   await assert.rejects(
@@ -207,7 +222,7 @@ test("unreadable merged verification propagates without losing saved own receipt
   assert.deepEqual(codeWrites(run.calls), []);
 });
 
-test("done replay check failure cannot reuse saved security to complete unchecked M", async () => {
+test("done replay without premerge proof cannot reuse saved security to complete unchecked M", async () => {
   const w = world();
   const run = context(w, {
     state: {
@@ -218,7 +233,9 @@ test("done replay check failure cannot reuse saved security to complete unchecke
     },
     ops: {
       "current-revision": [current(w, true)],
-      verify: [{ pass: false, headSha: w.merged, checks: [] }],
+      "confirm-merged": [
+        { confirmed: false, reason: `no premerge check proof for ${w.merged}` },
+      ],
     },
   });
   const end = await mergeRole(run.ctx);
@@ -228,17 +245,18 @@ test("done replay check failure cannot reuse saved security to complete unchecke
   assert.equal(end.code, "error");
   assert.ok(
     end.reason.startsWith(
-      `postmerge checks failed on ${w.merged}; code remains merged`,
+      `no premerge check proof for ${w.merged}; code remains merged`,
     ),
   );
-  const verifyCall = run.calls.find(
-    (call) => call.kind === "op" && call.name === "verify",
+  const confirmCall = run.calls.find(
+    (call) => call.kind === "op" && call.name === "confirm-merged",
   );
-  assert.deepEqual(verifyCall, {
+  assert.deepEqual(confirmCall, {
     kind: "op",
-    name: "verify",
+    name: "confirm-merged",
     payload: { number: ISSUE, codeMerged: { pr: PR, sha: w.merged } },
   });
+  assert.equal(names(run.calls).includes("verify"), false);
   assert.equal(names(run.calls).includes("finish"), false);
   assert.equal(names(run.calls).includes("session"), false);
   assert.deepEqual(codeWrites(run.calls), []);
