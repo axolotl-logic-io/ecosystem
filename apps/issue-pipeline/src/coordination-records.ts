@@ -11,7 +11,7 @@ const HEX_BYTE_WIDTH = 2;
 const HEADER = "<!-- agent-pipeline:coordination\n";
 const END = "\n-->";
 const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
-const IDENTITY = z.strictObject({
+const INVOCATION_BINDING = z.strictObject({
   instance: z.string().uuid(),
   lane: z.string().min(1),
   issue: z.number().int().positive(),
@@ -25,7 +25,8 @@ const RECORD = z.discriminatedUnion("kind", [
     scope: z.string().min(1),
     operation: z.string().uuid(),
     kind: z.literal("request"),
-    identity: IDENTITY,
+    // Saved coordination records keep their historical key, `identity`.
+    identity: INVOCATION_BINDING,
     token: SHA,
   }),
   z.strictObject({
@@ -40,14 +41,14 @@ const RECORD = z.discriminatedUnion("kind", [
 ]);
 const EVIDENCE = z.json();
 type Evidence = z.infer<typeof EVIDENCE>;
-type Identity = z.infer<typeof IDENTITY>;
+type InvocationBinding = z.infer<typeof INVOCATION_BINDING>;
 type Record = z.infer<typeof RECORD>;
 type Row = Record & { id: number };
 type Request = Extract<Row, { kind: "request" }>;
 interface CoordinationPort {
   comments: () => readonly IssueComment[];
   append: (body: string) => void;
-  token: (identity: Identity) => string;
+  token: (identity: InvocationBinding) => string;
   lock: (ref: string) => string | null;
   reserve: (ref: string, token: string) => void;
   write: (
@@ -70,19 +71,13 @@ function hold(reason: string): never {
 function bodyOf(record: Record): string {
   return `${HEADER}${JSON.stringify(RECORD.parse(record))}${END}`;
 }
-function scopeOf(identity: Identity, kind: "issue" | "integration"): string {
+function scopeOf(id: InvocationBinding, kind: "issue" | "integration"): string {
   if (kind === "issue") {
-    return JSON.stringify([
-      identity.repo,
-      identity.base,
-      kind,
-      identity.issue,
-      identity.branch,
-    ]);
+    return JSON.stringify([id.repo, id.base, kind, id.issue, id.branch]);
   }
-  return JSON.stringify([identity.repo, identity.base, kind]);
+  return JSON.stringify([id.repo, id.base, kind]);
 }
-function assertScope(scope: string, identity: Identity): void {
+function assertScope(scope: string, identity: InvocationBinding): void {
   if (
     scope !== scopeOf(identity, "issue") &&
     scope !== scopeOf(identity, "integration")
@@ -258,7 +253,7 @@ function snapshot(
   }
   return view;
 }
-function sameIdentity(a: Identity, b: Identity): boolean {
+function sameBinding(a: InvocationBinding, b: InvocationBinding): boolean {
   return (
     a.instance === b.instance &&
     a.lane === b.lane &&
@@ -268,27 +263,34 @@ function sameIdentity(a: Identity, b: Identity): boolean {
     a.base === b.base
   );
 }
-function own(view: Snapshot, identity: Identity): Request {
+function own(view: Snapshot, identity: InvocationBinding): Request {
   if (
     !view.confirmed ||
     view.owner?.identity.instance !== identity.instance ||
-    !sameIdentity(view.owner.identity, identity)
+    !sameBinding(view.owner.identity, identity)
   ) {
     hold("execution ownership lost or unconfirmed");
   }
   return view.owner;
 }
 
-export type { CoordinationPort, Evidence, Identity, Record, Request, Snapshot };
+export type {
+  CoordinationPort,
+  Evidence,
+  InvocationBinding,
+  Record,
+  Request,
+  Snapshot,
+};
 export {
   assertScope,
   bodyOf,
   hold,
-  IDENTITY,
+  INVOCATION_BINDING,
   own,
   recordsOf,
   refOf,
-  sameIdentity,
+  sameBinding,
   scopeOf,
   snapshot,
 };

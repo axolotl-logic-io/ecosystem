@@ -1,7 +1,7 @@
 // Authenticated history is not current ownership. Import this seam directly;
 // execution.ts must not re-export it and create a transport/history cycle.
 import type { Config } from "./config.ts";
-import { own, sameIdentity } from "./coordination-records.ts";
+import { own, sameBinding } from "./coordination-records.ts";
 import { assertReconciled, issueExecution } from "./execution.ts";
 import type { ExecutionReceipt } from "./execution-receipt.ts";
 import { EXECUTION_RECEIPT } from "./execution-receipt.ts";
@@ -58,7 +58,7 @@ function assertExecutionHistory(
     );
   }
   if (current || saved.instance === identity.instance) {
-    if (!sameIdentity(request.identity, identity)) {
+    if (!sameBinding(request.identity, identity)) {
       throw new OpsError(
         "saved execution full binding changed; reconciliation required",
       );

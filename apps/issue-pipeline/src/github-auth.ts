@@ -1,6 +1,6 @@
 // One selected operator credential per call, verified against its configured
 // identity. Failures and allowFail outputs never expose that selected token.
-import type { Config, Identity } from "./config.ts";
+import type { Account, Config } from "./config.ts";
 import { credential } from "./config.ts";
 import {
   GH_TIMEOUT_MS,
@@ -47,7 +47,7 @@ const verified = new Set<string>();
 
 function authenticatedEnv(
   cfg: Config,
-  identity: Identity,
+  identity: Account,
 ): ReadonlyMap<string, string> {
   const token = credential(cfg, identity);
   let account = cfg.mergeAccount;

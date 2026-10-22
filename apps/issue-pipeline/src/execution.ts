@@ -8,9 +8,13 @@ import type { IssueComment } from "./comments.ts";
 import { listComments, listRepoComments, rawComment } from "./comments.ts";
 import type { Config } from "./config.ts";
 import { paths } from "./config.ts";
-import type { CoordinationPort, Evidence, Identity } from "./coordination.ts";
+import type {
+  CoordinationPort,
+  Evidence,
+  InvocationBinding,
+} from "./coordination.ts";
 import { coordination } from "./coordination.ts";
-import { IDENTITY, scopeOf } from "./coordination-records.ts";
+import { INVOCATION_BINDING, scopeOf } from "./coordination-records.ts";
 import { gh, ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
@@ -86,7 +90,7 @@ function readRef(cfg: Config, ref: string): string | null {
   }
   return REF.parse(JSON.parse(result.stdout)).object.sha;
 }
-function tokenFor(cfg: Config, identity: Identity): string {
+function tokenFor(cfg: Config, identity: InvocationBinding): string {
   const base = readRef(cfg, `heads/${cfg.baseBranch}`);
   if (base === null) {
     throw new OpsError(
@@ -128,7 +132,8 @@ function portOf(
       return listComments(cfg, issue);
     },
     append: (body: string): void => rawComment(transport, issue, body),
-    token: (identity: Identity): string => tokenFor(transport, identity),
+    token: (identity: InvocationBinding): string =>
+      tokenFor(transport, identity),
     lock: (ref: string): string | null => readRef(cfg, ref),
     reserve: (ref: string, token: string): void => {
       gh(
@@ -153,8 +158,12 @@ function portOf(
 }
 // New invocations get a fresh identity even when their stable lane is shared.
 // This does not acquire either scope or activate a runtime caller.
-function executionIdentity(cfg: Config, issue: number, lane: string): Identity {
-  return IDENTITY.parse({
+function executionBinding(
+  cfg: Config,
+  issue: number,
+  lane: string,
+): InvocationBinding {
+  return INVOCATION_BINDING.parse({
     instance: crypto.randomUUID(),
     lane,
     issue,
@@ -163,8 +172,8 @@ function executionIdentity(cfg: Config, issue: number, lane: string): Identity {
     base: cfg.baseBranch,
   });
 }
-function identityOf(cfg: Config, issue: number): Identity {
-  const identity = IDENTITY.parse(cfg.execution);
+function bindingOf(cfg: Config, issue: number): InvocationBinding {
+  const identity = INVOCATION_BINDING.parse(cfg.execution);
   if (
     identity.issue !== issue ||
     identity.branch !== paths.branch(cfg, issue) ||
@@ -181,7 +190,7 @@ function issueExecution(
   cfg: Config,
   issue: number,
 ): ReturnType<typeof coordination> {
-  const identity = identityOf(cfg, issue);
+  const identity = bindingOf(cfg, issue);
   return coordination(
     cfg,
     portOf(cfg, issue, false),
@@ -195,7 +204,7 @@ function integrationTurn(
 ): ReturnType<typeof coordination> {
   // Issue execution remains an additional restriction, never replaced by a turn.
   assertExecution(cfg, issue);
-  const identity = identityOf(cfg, issue);
+  const identity = bindingOf(cfg, issue);
   return coordination(
     cfg,
     portOf(cfg, issue, true),
@@ -242,7 +251,7 @@ function withExecution(
   cfg: Config,
   identity: NonNullable<Config["execution"]>,
 ): Config {
-  const validated = identityOf({ ...cfg, execution: identity }, identity.issue);
+  const validated = bindingOf({ ...cfg, execution: identity }, identity.issue);
   const bound: Config = {
     ...cfg,
     execution: validated,
@@ -256,7 +265,7 @@ export {
   assertExecution,
   assertReconciled,
   confirmedWrite,
-  executionIdentity,
+  executionBinding,
   guardExecution,
   integrationTurn,
   issueExecution,

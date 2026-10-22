@@ -5,7 +5,7 @@ import type { Config } from "./config.ts";
 import type {
   CoordinationPort,
   Evidence,
-  Identity,
+  InvocationBinding,
   Record,
   Snapshot,
 } from "./coordination-records.ts";
@@ -13,10 +13,10 @@ import {
   assertScope,
   bodyOf,
   hold,
-  IDENTITY,
+  INVOCATION_BINDING,
   own,
   refOf,
-  sameIdentity,
+  sameBinding,
   snapshot,
 } from "./coordination-records.ts";
 
@@ -24,17 +24,17 @@ class Coordination {
   private readonly cfg: Config;
   private readonly port: CoordinationPort;
   private readonly scope: string;
-  private readonly identity: Identity;
+  private readonly identity: InvocationBinding;
   constructor(
     cfg: Config,
     port: CoordinationPort,
     scope: string,
-    identity: Identity,
+    identity: InvocationBinding,
   ) {
     this.cfg = cfg;
     this.port = port;
     this.scope = scope;
-    this.identity = IDENTITY.parse(identity);
+    this.identity = INVOCATION_BINDING.parse(identity);
     assertScope(scope, this.identity);
     if (identity.repo !== cfg.repo || identity.base !== cfg.baseBranch) {
       hold("execution repository/base binding changed");
@@ -68,7 +68,7 @@ class Coordination {
       (item) => item.identity.instance === this.identity.instance,
     );
     if (existing !== undefined) {
-      if (!sameIdentity(existing.identity, this.identity)) {
+      if (!sameBinding(existing.identity, this.identity)) {
         hold("instance identity changed");
       }
       return existing.id;
@@ -103,7 +103,7 @@ class Coordination {
     const mine = view.pending.find(
       (item) => item.identity.instance === this.identity.instance,
     );
-    if (mine === undefined || !sameIdentity(mine.identity, this.identity)) {
+    if (mine === undefined || !sameBinding(mine.identity, this.identity)) {
       hold("exact request identity required before acquisition");
     }
     if (view.owner === null) {
@@ -171,7 +171,7 @@ class Coordination {
     );
     if (
       mine === undefined ||
-      !sameIdentity(mine.identity, this.identity) ||
+      !sameBinding(mine.identity, this.identity) ||
       view.owner?.id === mine.id
     ) {
       hold("cannot cancel absent request or owner");
@@ -190,7 +190,7 @@ function coordination(
   cfg: Config,
   port: CoordinationPort,
   scope: string,
-  identity: Identity,
+  identity: InvocationBinding,
 ): Coordination {
   return new Coordination(cfg, port, scope, identity);
 }
@@ -198,7 +198,7 @@ function coordination(
 export type {
   CoordinationPort,
   Evidence,
-  Identity,
+  InvocationBinding,
   Snapshot,
 } from "./coordination-records.ts";
 export { coordination };
