@@ -120,6 +120,8 @@ for (const mode of ["recovered", "uninterrupted"]) {
 
 test("exact own FF recovery confirms M read-only with premerge Security and preserves original-head vs merged provenance", async () => {
   const w = world({ fastForward: true });
+  // The candidate's retained target, as the world saved it.
+  const target = { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha: w.base };
   const run = context(w, {
     state: {
       ...ownState(w),
@@ -127,7 +129,7 @@ test("exact own FF recovery confirms M read-only with premerge Security and pres
       security: {
         revision: w.revision,
         phase: "candidate",
-        target: w.state.hardenedTarget,
+        target,
         commentId: PR,
         finding: null,
       },

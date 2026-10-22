@@ -37,7 +37,8 @@ const { reauthoredState } = await import(
   "../../../src/orchestrator/issue-plan.ts"
 );
 const RECONCILE = /explicit reconciliation/u;
-const READ_ONLY_RECONCILE = /no security review is saved.*read-only reconciliation/u;
+const READ_ONLY_RECONCILE =
+  /no security review is saved.*read-only reconciliation/u;
 const ATTEMPT = {
   repo: "o/r",
   pr: PR,

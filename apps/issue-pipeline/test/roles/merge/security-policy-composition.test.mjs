@@ -118,7 +118,7 @@ test("proven policy-moved candidate stops without a postmerge result observation
     ...before,
     stage: /** @type {const} */ ("done"),
     resultSecurity: {
-      revision: MERGED_REVISION,
+      revision: { ...MERGED_REVISION, policy: policyRevision(cfg).policy },
       target: TARGET,
       commentId: 62,
       finding: null,

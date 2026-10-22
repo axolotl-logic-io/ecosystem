@@ -23,10 +23,10 @@ const { afterOwnMerge } = await import(
 );
 const { OpsFailure } = await import("../../../src/job/role-context.ts");
 const FALSE_RECEIPT = /GitHub no longer matches it/u;
-const CONFIRMED = /** @param {{ merged: string }} w */ (w) => ({
-  confirmed: true,
-  headSha: w.merged,
-});
+/** @param {{ merged: string }} w */
+function confirmedOf(w) {
+  return { confirmed: true, headSha: w.merged };
+}
 
 test("done replay with saved security still confirms graph/premerge proof read-only before completion", async () => {
   const w = world();
@@ -39,7 +39,7 @@ test("done replay with saved security still confirms graph/premerge proof read-o
     },
     ops: {
       ...postmergeOps(w),
-      "confirm-merged": [CONFIRMED(w)],
+      "confirm-merged": [confirmedOf(w)],
       "current-revision": [current(w, true)],
     },
   });

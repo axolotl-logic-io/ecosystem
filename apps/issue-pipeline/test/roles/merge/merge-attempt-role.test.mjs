@@ -38,10 +38,12 @@ function attemptOf(w, response = w.merged) {
 
 test("saved successful FF response reconciles before ordinary approval or writers, then confirms M read-only and reuses premerge security", async () => {
   const w = world({ fastForward: true });
+  // The candidate's retained target, as the world saved it.
+  const target = { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha: w.base };
   const security = {
     revision: w.revision,
     phase: /** @type {const} */ ("candidate"),
-    target: w.state.hardenedTarget,
+    target,
     commentId: PR,
     finding: null,
   };
