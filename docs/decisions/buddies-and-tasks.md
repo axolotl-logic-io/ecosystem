@@ -31,7 +31,7 @@ This separates the task that writes from the task that checks, so each run holds
 
 ## two-buddies
 
-Delegated, within two decisions by Autumn: Lawd owns Security and Land, and Hardening is part of Hippy's work.
+Delegated. Autumn decided that Lawd owns Security and Land. She leaned toward giving Hardening to Hippy, and this decision adopts that.
 
 | Buddy | Role | Tasks | GitHub account |
 | --- | --- | --- | --- |
@@ -52,7 +52,9 @@ The Developer both implements and hardens, so Hardening's independence comes fro
 - It works only from the revision, the requirements and the checks.
 - It still tries to break the change and fixes what it finds. It must not weaken tests, checks, lint or types to get a pass.
 
-Hardening is a quality task, not a trust boundary. The trust boundary is Integration, Security and Land, which run under the Lawd account. The development account can't write their results. Security and Hardening keep separate buddies, identities and accounts.
+Hardening is a quality task, not a trust boundary. The trust boundary is Integration, Security and Land, which run under the Lawd account. Security and Hardening keep separate buddies, identities and accounts.
+
+Moving Hardening to Hippy doesn't change who records results. The development account writes code and produces evidence, but it never writes a result, receipt or checkpoint that grants authority. The landing-account process records those, as [authenticated-authority-records](authority.md#authenticated-authority-records) requires.
 
 This replaces the Reviewer buddy of `reviewer-hardens-before-merge` in [delivery decisions](delivery.md). The installed `review` stage still runs under the Lawd account until it moves.
 
@@ -69,6 +71,8 @@ An access profile is part of an identity. Each task names the access profile it 
 | Lander | `merger` | Land, Completion | Approve the exact revision, land it, and record completion, through the landing account. |
 
 No model session holds a GitHub token, as [authority decisions](authority.md) already require. The process around the session uses the credential.
+
+An access profile limits the task's run, not the recording of its result. A Reader run gets no write credential. A separate recorder, the landing-account process, persists its result afterwards.
 
 ## identity-schema
 
@@ -95,21 +99,27 @@ Renaming the installed keys waits on ecosystem #166.
 
 Delegated. This settles open question 3.
 
-A result's binding records:
+For a task that checks or changes a revision, the result's binding records:
 
 - the repository and the work item;
 - the task;
 - the revision: its full code commit, its trusted-input revision and its policy digest;
 - the target state: its branch and full commit.
 
-A result is current only while every part still matches. A task's result records:
+A result is current only while every part still matches. An absent part never counts as a match.
+
+Author and the first Implementation run before any revision exists. Their bindings, and which target changes make their results stale, are still open.
+
+A task's result records:
 
 - its binding;
-- its outcome, which is one of passed, failed, refused or unknown;
+- its verdict, which is one of passed, failed, refused or unknown;
 - its receipt;
 - the buddy run that produced it.
 
 **Ready tasks** are the tasks whose prerequisites are current and whose own result for the current binding is missing. Use this name, not status or stage.
+
+A verdict belongs to the result. It is separate from the outcome of the run that produced it.
 
 Each task keeps its own attempt budget per binding, as `runs-and-retries` says.
 

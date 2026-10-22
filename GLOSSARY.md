@@ -148,7 +148,7 @@ The target branch observed at an exact commit: its repository, branch and commit
 
 What a task established, bound to exactly what it applies to.
 
-A result differs from an outcome: an outcome belongs to a run, while a result belongs to a task and its binding. A run can end successfully while its result is already stale.
+A result differs from an outcome: an outcome belongs to a run, while a result belongs to a task and its binding. A result's verdict is passed, failed, refused or unknown, separate from the producing run's outcome. A run can end successfully while its result is already stale.
 
 ### Binding
 
@@ -311,6 +311,7 @@ Generate matching Markdown and JSON reports from the same assessment data, with 
 
 [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks; run states and retries; the capacity unit and slot release; observation sources; and assignment permission. These contracts remain open:
 
+- Bindings for Author and the first Implementation, which run before any revision exists.
 - Task prerequisite and result schemas beyond the binding, branch/join conditions and repeated-check transitions.
 - Policy, approval and source acceptance versus landing, installation and activation.
 - Observation schemas, freshness bounds and collection coverage.
