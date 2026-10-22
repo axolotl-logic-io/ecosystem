@@ -4,15 +4,15 @@ On 2026-10-22, Autumn approved removing the issue pipeline's isolated direct-cal
 
 ## Scope and counts
 
-The reconciled owner manifest removes 74 whole test files (423 static declarations), 18 cases across four mixed files and eight helpers or fixtures whose remaining-consumer closure is empty. All other helpers stay unchanged. No production source, discovery documentation, check configuration, assertion in a retained case or unrelated workflow-dash file changes.
+The corrected owner manifest removes 73 whole test files (420 static declarations), 19 cases across five mixed files and eight helpers or fixtures whose remaining-consumer closure is empty. All other helpers stay unchanged. No production source, discovery documentation, check configuration, assertion in a retained case or unrelated workflow-dash file changes.
 
 | Source measure | Before | Removed | After |
 |---|---:|---:|---:|
-| Test files | 278 | 74 | 204 |
-| Static source-text matches, using the inventory's method | 1,335 | 441 | 894 |
-| Parsed `test(...)` call sites, including calls inside loops | 1,334 | 441 | 893 |
+| Test files | 278 | 73 | 205 |
+| Static source-text matches, using the inventory's method | 1,335 | 439 | 896 |
+| Parsed `test(...)` call sites, including calls inside loops | 1,334 | 439 | 895 |
 
-These are **static counts, not executed test counts**. The source-text method counts lines matching `^\s*test\(`. Its one extra match is a generated test declaration inside the `FIXTURE` string in retained `bounded-test-kit.test.mjs`. Loops and generated tests expand at runtime. No measured runtime baseline is available for this exact base. Tests and the full gate remain unrun under the owner's heavy-command hold; the static counts do not establish a passing gate or a runtime before/after total.
+These are **static counts, not executed test counts**. The source-text method counts lines matching `^\s*test\(`. Its one extra match is a generated test declaration inside the `FIXTURE` string in retained `bounded-test-kit.test.mjs`. Loops and generated tests expand at runtime. No measured runtime baseline is available for this exact base. Review reported 1,381 passing tests on the rejected candidate `81a5cc4`; that old-subject result does not verify this corrected revision or provide a runtime before/after total. Tests and the full gate remain unrun for this revision under the owner's heavy-command hold. Only scoped static checks are authorized here.
 
 The source tree was compared with the reconciled main revision `c3134206c0e94fa81b53c6dde1d14bc9b2877cb7` before editing. The issue-pipeline tree and three practice/decision pages had no relevant deltas. The ledger below comes from the actual removed source, not the superseded 77-file inventory.
 
@@ -24,7 +24,7 @@ Every removed case appears below. This is a conservative ledger of all lost dire
 - **Requirements and saved authority:** direct versus authored routing, unanswered-requirement holds, optional Author checkpoints and return stages, claim-marker identity and expiry, legacy state parsing, malformed approval fields and null legacy wiki handling.
 - **Commit flags and paths:** refusals for `--amend`, abbreviated `--amen`, `--no-verify`, `-n`, combined `-an`, `--author` (separate or attached), `--date` (separate or attached), `--reset-author`, `--pathspec-from-file`, `-F -` and `--file=-`. Lost path assertions include disallowed code paths, traversal, absolute paths, pathspec magic, paths outside `repo/`, sibling `docs/` and read-only access. Message-file resolution, session trailers, argument routing and dry-run planning assertions also go. Retained real-git commit tests do not replace the flag/path refusal matrix.
 - **Session authorization and credentials:** per-stage agent/session/phase matrices, read/write scope including after merge, removal of all token variables and configured or registered legacy credentials from session environments, and refusal to inherit commit scope. Synthetic-definition cases for read-only tool filtering, default tools, extensions, thinking, discovery policy and prompt text not granting authority also go. Retained real-repository definition guards and job boundary tests overlap, but do not replace those synthetic matrices.
-- **Session lifecycle and privacy:** scripted role-run failures, identity rejection despite transient errors, exit-push restrictions, non-stop signal checkpointing, structured-output extension contracts, usage accumulation and serialization. Sole privacy assertions lost include refusal of free text, absolute paths, unknown keys and comment terminators in usage records, omission of task/reply text, and IP-address redaction. Durable stop-recovery evidence and usage append tests stay.
+- **Session lifecycle and privacy:** scripted role-run failures, identity rejection despite transient errors, exit-push restrictions, non-stop signal checkpointing, the structured-output flag/event registration contract, usage accumulation and serialization. Sole privacy assertions lost include refusal of free text, absolute paths, unknown keys and comment terminators in usage records, omission of task/reply text, and IP-address redaction. Durable stop-recovery evidence, usage append, and the original structured-output schema-file parameters, termination/details and missing/non-object-file refusal tests stay.
 - **Discovery authentication and completeness:** all 42 cases across seven discovery suites. No retained test covers these grants, actor/App identity, current-collaborator and revocation rules, handoff provenance, pagination completeness, contradictory evidence, opt-in, duplicate/case-insensitive mappings, requirements revisions or deduplication rules. All `src/discovery/` files and the documented opt-in interface remain.
 - **Coordination and execution validation:** pure interleaving, authority/linkage/provenance/refusal matrices, release/order/cancellation rules, changed UUID/lane/branch/issue bindings, unique execution IDs, permissive config refusal and repository JSON not activating internal hooks. The actual-file unknown-operation journal/restart refusal and recovery suites stay; their assertions are not listed as losses.
 - **Configuration, scheduling and transport classification:** config/model precedence and defaults, removed-key warnings, wiki refusal, merge-confirmation bounds, duplicate JSON keys, scheduler caps/prerequisites/leases/merge window/restarts/backoff/completions, transient/network/rate-limit classification, labels, glob matching, read-command classification and state-comment parsing.
@@ -33,7 +33,7 @@ Every removed case appears below. This is a conservative ledger of all lost dire
 
 The retained tests include real jobs and ops, git, durable filesystem writes, subprocesses and repository artifact guards. In particular, the 18 genuine fake-gh subprocess suites remain, including `job/merge-attempt-runner.test.mjs`. Credential, redaction, identity and transport assertions in them are unchanged.
 
-The four mixed files preserve all assertions in their designated real-boundary cases: coordination's unknown-operation journal/restart refusal; stop-recovery JSON readback; actual repository agent definitions and missing-file launch refusal; and the esbuild entrypoint reachability guard, with its build import. The coordination world, role-job kit, usage fixtures, explicit-target kits and implementor resolver helpers remain.
+The five mixed files preserve all assertions in their designated real-boundary cases: coordination's unknown-operation journal/restart refusal; stop-recovery JSON readback; actual repository agent definitions and missing-file launch refusal; the esbuild entrypoint reachability guard, with its build import; and structured-output schema-file loading and missing/non-object-file refusal. The two structured-output cases and their required scaffolding are restored unchanged from `c3134206` after the owner corrected their classification; only the isolated flag/event case is removed from that file. The coordination world, role-job kit, usage fixtures, explicit-target kits and implementor resolver helpers remain.
 
 Retained ops and full-flow tests overlap parts of merge authorization, explicit-target recovery, Security, claims, job session access and scheduling. They are not relabeled as replacements for the lost role decision matrices, privacy guards or discovery assertions. No new skips, pending cases, todo metadata or replacement coverage are introduced.
 
@@ -256,8 +256,6 @@ Each heading names an original path under `apps/issue-pipeline/`. Each bullet na
 ### `test/job/job-structured-output.test.mjs`
 
 - Line 56: the output extension registers a string --output-schema flag and waits for the session to start
-- Line 65: the output tool takes the schema file's JSON Schema as its parameters and ends the session with its arguments as details
-- Line 78: the output extension registers no tool and fails the session when the flag names no JSON Schema
 
 ### `test/job/network.test.mjs`
 
