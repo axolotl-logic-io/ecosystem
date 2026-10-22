@@ -7,7 +7,7 @@ import { assertExecution, issueExecution } from "../execution.ts";
 import {
   claimExecutionState,
   readExecutionClaimState,
-  saveExecutionState,
+  saveExecutionClaimState,
 } from "../execution-state.ts";
 import { gh, issueState } from "../github.ts";
 import type { IssueContext } from "../issue-context.ts";
@@ -134,7 +134,7 @@ function prepareBoundClaim(
     }
   }
   // Save before setup, including lane failure: retained slots are not receipts.
-  state = saveExecutionState(cfg, n, state);
+  state = saveExecutionClaimState(cfg, n, state, now);
   if (state.stage !== "done") {
     labelWorking(cfg, n, CLAIMED_ISSUE.parse(context.issue).labels, state.pr);
     if (!existed || cfg.laneSlots !== undefined) {

@@ -62,7 +62,7 @@ function executionFixture(issue, options = {}) {
     cfg,
     issue,
     claim: () => claimExecutionState(cfg, issue),
-    read: () => readExecutionClaimState(cfg, issue),
+    read: (bound = cfg) => readExecutionClaimState(bound, issue),
     save: /** @param {import('../src/state.ts').IssueState} state */ (state) =>
       saveExecutionState(cfg, issue, state),
     guard: () => issueExecution(cfg, issue),

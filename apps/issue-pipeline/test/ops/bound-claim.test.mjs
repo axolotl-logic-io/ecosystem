@@ -4,9 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { effectNames, effectsOf } from "../gh-effects-test-kit.mjs";
-import { claimMutationReplies } from "../gh-mutation-fixtures.mjs";
 import { root, runDir, sh, timeless, worktree } from "../ops-cli-test-kit.mjs";
-import { prView } from "../ops-v2-test-kit.mjs";
+import { answeredReplies } from "./bound-claim-fixtures.mjs";
 import { boundFixture } from "./bound-claim-test-kit.mjs";
 
 const HELD = /unreleased|fresh execution|ownership|reconcil/u;
@@ -16,6 +15,7 @@ const ANSWERED = 502;
 const RESUME = 503;
 const REFUSED = 510;
 const OLD = "2000-01-01T00:00:00Z";
+const { newIssueState } = await import("../../src/state.ts");
 
 // Five migrated outcomes use the bound seam; legacy CLI cases remain compatibility.
 test("fresh bound work checkpoints a receipt, prepares its branch and runs setup", () => {
@@ -37,6 +37,12 @@ test("fresh bound work checkpoints a receipt, prepares its branch and runs setup
     sh(`git -C ${worktree(f.issue)} branch --show-current`),
     got.state.branch,
   );
+  assert.deepEqual(got.state, {
+    ...newIssueState(f.issue),
+    branch: got.state.branch,
+    execution: got.state.execution,
+    lease: { lane: "stable", sweepId: "s1", at: got.state.lease?.at },
+  });
   assert.deepEqual(f.read(), got.state);
   const names = effectNames(effectsOf(f.normalizedWrites()));
   assert.deepEqual(
@@ -49,36 +55,14 @@ test("fresh bound work checkpoints a receipt, prepares its branch and runs setup
 });
 
 test("answered resume forwards queued PR metadata and retains draft and assigned head", () => {
-  const f = boundFixture(ANSWERED, {
-    replies: [
-      prView(ANSWERED, PR),
-      { when: `issue edit ${PR} `, keep: true },
-      { when: `issue view ${PR} `, stdout: "[]", keep: true },
-    ],
-  });
+  const f = boundFixture(ANSWERED);
   const state = f.claim();
   const head = sh(`git -C ${root}/seed rev-parse HEAD`);
   sh(
     `git --git-dir=${root}/origin.git update-ref refs/heads/agent/issue-502 ${head}`,
   );
   // Replace just the queued PR response, preserving authenticated transport state.
-  f.queue([
-    { when: "collaborators/alice", stdout: "", keep: true },
-    {
-      when: "api repos/o/r/issues/502",
-      stdout: JSON.stringify({
-        title: "Answered",
-        body: "answer",
-        state: "open",
-        labels: [{ name: "agent:needs-info" }],
-        user: { login: "alice" },
-      }),
-      keep: true,
-    },
-    prView(ANSWERED, PR, { headRefOid: head }),
-    ...claimMutationReplies(ANSWERED, ANSWERED, PR),
-    { when: `issue view ${PR} `, stdout: "[]", keep: true },
-  ]);
+  f.queue(answeredReplies(ANSWERED, PR, head));
   const saved = f.save({
     ...state,
     asked: { inputs: "old-inputs" },
@@ -95,6 +79,12 @@ test("answered resume forwards queued PR metadata and retains draft and assigned
   assert.deepEqual(got.state.asked, saved.asked);
   assert.notDeepEqual(got.state.execution, saved.execution);
   assert.equal(got.state.branch, saved.branch);
+  assert.deepEqual(got.state, {
+    ...saved,
+    execution: got.state.execution,
+    lease: { lane: "stable", sweepId: "s1", at: got.state.lease?.at },
+  });
+  assert.deepEqual(f.read(next), got.state);
   assert.equal(
     f
       .transport()
@@ -104,8 +94,18 @@ test("answered resume forwards queued PR metadata and retains draft and assigned
     1,
   );
   const names = effectNames(effectsOf(f.normalizedWrites()));
-  assert.ok(names.includes("label #90 agent:working"));
-  assert.ok(names.includes("unlabel #502 agent:needs-info"));
+  assert.deepEqual(
+    names.filter(
+      (name) => name.startsWith("label ") || name.startsWith("unlabel "),
+    ),
+    [
+      "label #502 agent:working",
+      "label #90 agent:working",
+      "unlabel #502 agent:needs-info",
+      "unlabel #502 agent:stopped-conflict",
+      "unlabel #90 agent:stopped-conflict",
+    ],
+  );
 });
 
 for (const stopped of [false, true]) {
@@ -117,7 +117,13 @@ for (const stopped of [false, true]) {
       `git -C ${root}/clones/o__r worktree add -q -B agent/issue-${issue} ${worktree(issue)} origin/integration`,
     );
     fs.writeFileSync(path.join(worktree(issue), "wip"), "retained");
-    let saved = { ...state, lease: { lane: "old", sweepId: "old", at: OLD } };
+    let saved = {
+      ...state,
+      lease: { lane: "old", sweepId: "old", at: OLD },
+      counts: { syncs: 2, conflictFixes: 1 },
+      review: { ...state.review, round: 3 },
+      log: [`${OLD} retained progress`],
+    };
     if (stopped) {
       saved = {
         ...saved,
@@ -131,11 +137,27 @@ for (const stopped of [false, true]) {
     }
     f.save(saved);
     f.guard().release();
-    const got = f.claimBound(f.next("different"));
+    const next = f.next("different");
+    const got = f.claimBound(next);
     assert.ok("state" in got);
     assert.equal(got.state.stage, "implement");
-    assert.deepEqual(got.state.counts, { syncs: 0, conflictFixes: 0 });
-    assert.equal(got.state.review.round, 0);
+    let expected = saved;
+    if (stopped) {
+      expected = {
+        ...saved,
+        counts: { syncs: 0, conflictFixes: 0 },
+        review: { ...saved.review, round: 0 },
+      };
+    }
+    assert.deepEqual(got.state, {
+      ...expected,
+      stage: "implement",
+      stoppedStage: null,
+      stopCode: null,
+      execution: got.state.execution,
+      lease: { lane: "different", sweepId: "s1", at: got.state.lease?.at },
+    });
+    assert.deepEqual(f.read(next), got.state);
     assert.equal(got.state.stopCode, null);
     assert.deepEqual(got.state.log.map(timeless), saved.log.map(timeless));
     assert.notDeepEqual(got.state.execution, state.execution);
@@ -147,19 +169,32 @@ for (const stopped of [false, true]) {
   });
 }
 
-for (const lane of ["stable", "different"]) {
-  for (const at of [OLD, "2099-01-01T00:00:00Z"]) {
-    test(`unreleased ${lane} owner refuses lease ${at} without mutation or setup`, () => {
-      const f = boundFixture(REFUSED);
-      const state = f.claim();
-      f.save({ ...state, lease: { lane: "stable", sweepId: "old", at } });
-      const before = f.transport();
-      const writes = f.writes();
-      assert.throws(() => f.claimBound(f.next(lane)), HELD);
-      assert.throws(() => f.claimBound(), HELD);
-      assert.deepEqual(f.transport(), before);
-      assert.deepEqual(f.writes(), writes);
-      assert.equal(fs.existsSync(worktree(f.issue)), false);
-    });
+for (const mode of ["answered", "stopped", "lapsed"]) {
+  for (const lane of ["stable", "different"]) {
+    for (const at of [OLD, "2099-01-01T00:00:00Z"]) {
+      test(`unreleased ${mode} ${lane} owner refuses lease ${at} without mutation or setup`, () => {
+        const f = boundFixture(REFUSED);
+        let state = f.claim();
+        if (mode === "answered") {
+          state = { ...state, asked: { inputs: "old-inputs" }, pr: PR };
+        }
+        if (mode === "stopped") {
+          state = {
+            ...state,
+            stage: "stopped",
+            stoppedStage: "implement",
+            stopCode: "conflict",
+          };
+        }
+        f.save({ ...state, lease: { lane: "stable", sweepId: "old", at } });
+        const before = f.transport();
+        const writes = f.writes();
+        assert.throws(() => f.claimBound(f.next(lane)), HELD);
+        assert.throws(() => f.claimBound(), HELD);
+        assert.deepEqual(f.transport(), before);
+        assert.deepEqual(f.writes(), writes);
+        assert.equal(fs.existsSync(worktree(f.issue)), false);
+      });
+    }
   }
 }

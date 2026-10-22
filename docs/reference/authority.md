@@ -132,4 +132,9 @@ questions retain their saved `asked` revision for downstream input handling.
 Closed issues must prove exact incomplete-Merge eligibility before reopen;
 reopening grants no writer, merge, approval or Security permission. Missing PR
 metadata and unreadable authority fail rather than being treated as fresh work.
+A deterministic claim rechecks its observed PR and merge result before saving
+new merged truth. If the observation changes, the claim stops for reconciliation.
+Ordinary role-snapshot saves still cannot establish new merge facts or clear
+existing receipts. Observing an external merge does not create an own-merge
+receipt, hardening or Security clearance.
 Source delivery does not authorize installation, worker activation or dispatch.

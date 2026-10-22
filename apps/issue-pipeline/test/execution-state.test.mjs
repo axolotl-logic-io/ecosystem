@@ -2,8 +2,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { executionFixture } from "./execution-runtime-test-kit.mjs";
+import { prView } from "./ops-v2-test-kit.mjs";
 
 const { writeState } = await import("../src/saved-state.ts");
+const { saveExecutionClaimState } = await import("../src/execution-state.ts");
 const { sameRevision } = await import("../src/state.ts");
 const WORK = 420;
 const MERGED = 421;
@@ -12,6 +14,8 @@ const BRANCH = 423;
 const OBSERVED = 424;
 const RECHECK = 425;
 const HISTORICAL = 426;
+const CLAIM_OBSERVATION = 427;
+const OBSERVATION_CHANGED = /claim merge observation changed/u;
 const PR = 47;
 const WIDTH = 40;
 const POLICY_WIDTH = 64;
@@ -23,6 +27,26 @@ const INPUTS = "trusted-inputs";
 const SECURITY_COMMENT = 71;
 const WRONG_ISSUE = /a state for #421 can't be saved on #420/u;
 const HELD = /assigned|execution|authority|binding|reconcil/u;
+
+test("claim checkpoints reject invented merged truth and ordinary snapshots cannot establish it", () => {
+  const fixture = executionFixture(CLAIM_OBSERVATION, {
+    replies: [prView(CLAIM_OBSERVATION, PR, { headRefOid: HEAD })],
+  });
+  const owned = fixture.claim();
+  const draft = fixture.save({ ...owned, pr: PR, headSha: HEAD });
+  const invented = { ...draft, codeMerged: { pr: PR, sha: RESULT } };
+  const before = fixture.transport();
+  const writes = fixture.writes();
+  assert.throws(
+    () =>
+      saveExecutionClaimState(fixture.cfg, fixture.issue, invented, new Date()),
+    OBSERVATION_CHANGED,
+  );
+  assert.deepEqual(fixture.transport(), before);
+  assert.deepEqual(fixture.writes(), writes);
+  assert.equal(fixture.save(invented).codeMerged, null);
+  assert.equal(fixture.read()?.codeMerged, null);
+});
 
 test("bound saves retain branch, draft and head while allowing existing explicit head movement", () => {
   const fixture = executionFixture(WORK);

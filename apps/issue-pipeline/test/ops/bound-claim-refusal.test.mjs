@@ -3,17 +3,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { runDir, worktree } from "../ops-cli-test-kit.mjs";
+import { runDir, sh, worktree } from "../ops-cli-test-kit.mjs";
 import { boundFixture } from "./bound-claim-test-kit.mjs";
 
 const { stopRecovery } = await import("../../src/stop-recovery.ts");
-const { assertCheckoutReady } = await import("../../src/lane-slots.ts");
+const { assertCheckoutReady, checkoutEnvironment } = await import(
+  "../../src/lane-slots.ts"
+);
 const MALFORMED = /Expected property name.*JSON/u;
 const HELD = /reconcil|authority|execution|provenance|prior|no merge/u;
 const ISSUE = 520;
 const SETUP = 521;
 const RECOVERY = 522;
 const MISSING_PR = 523;
+const RETAINED = 524;
 const PR = 91;
 const SETUP_FAILED = /lane setup failed/u;
 const NOT_READY = /lane setup is incomplete/u;
@@ -83,6 +86,10 @@ test("lane setup failure retains authenticated receipt, checkout, slot and readi
   const saved = f.read();
   assert.equal(saved?.execution?.instance, f.cfg.execution?.instance);
   assert.equal(fs.existsSync(path.join(worktree(f.issue), ".git")), true);
+  assert.deepEqual(
+    [...checkoutEnvironment(f.cfg, f.issue)],
+    [["ISSUE_PIPELINE_LANE_SLOT", "1"]],
+  );
   assert.equal(
     fs.existsSync(path.join(runDir(f.issue), "setup-at-claim.log")),
     true,
@@ -112,6 +119,40 @@ test("a released owner cannot bypass unresolved stop recovery evidence", () => {
   assert.throws(() => f.claimBound(f.next()), HELD);
   assert.equal(fs.readFileSync(evidence.file, "utf8"), text);
   assert.deepEqual(f.writes(), before);
+});
+
+test("refused ownership leaves dirty retained work, branch, head and setup evidence untouched", () => {
+  const f = boundFixture(RETAINED);
+  f.claimBound();
+  const dir = worktree(f.issue);
+  fs.appendFileSync(path.join(dir, "f"), "local tracked work\n");
+  fs.writeFileSync(path.join(dir, "wip"), "untracked work");
+  const head = sh(`git -C ${dir} rev-parse HEAD`);
+  const branch = sh(`git -C ${dir} branch --show-current`);
+  const status = sh(`git -C ${dir} status --porcelain`);
+  const setup = fs.readFileSync(
+    path.join(runDir(f.issue), "setup-at-claim.log"),
+  );
+  const before = f.transport();
+  const writes = f.writes();
+  assert.throws(() => f.claimBound(f.next("different")), HELD);
+  assert.deepEqual(f.transport(), before);
+  assert.deepEqual(f.writes(), writes);
+  assert.equal(sh(`git -C ${dir} rev-parse HEAD`), head);
+  assert.equal(sh(`git -C ${dir} branch --show-current`), branch);
+  assert.equal(sh(`git -C ${dir} status --porcelain`), status);
+  assert.equal(
+    fs.readFileSync(path.join(dir, "wip"), "utf8"),
+    "untracked work",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(dir, "f"), "utf8"),
+    "1\nlocal tracked work\n",
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(runDir(f.issue), "setup-at-claim.log")),
+    setup,
+  );
 });
 
 test("missing queued PR metadata fails rather than becoming a successful answered resume", () => {

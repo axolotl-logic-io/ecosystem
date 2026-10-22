@@ -195,7 +195,7 @@ function assertClosedMergeRecovery(
 // code merge GitHub doesn't confirm, or a completion GitHub reports another
 // code merge for (none, for a completion with no code), throws:
 // the claim never clears or replaces a merge it recorded.
-function reconciled(
+function reconcileClaimMerge(
   cfg: Config,
   n: number,
   state: IssueState,
@@ -270,7 +270,7 @@ function claimedState(
   const remote = remoteHead(cfg, n);
   const adoptedState = adoptPush(start, remote, lastPush(cfg, n), now);
   const state = requestedAuthorState(
-    reconciled(cfg, n, adoptedState ?? start, now),
+    reconcileClaimMerge(cfg, n, adoptedState ?? start, now),
     startAt,
   );
   return {
@@ -287,4 +287,5 @@ export {
   assertClosedMergeRecovery,
   assertFirstClaim,
   claimedState,
+  reconcileClaimMerge,
 };

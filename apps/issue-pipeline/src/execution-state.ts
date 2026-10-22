@@ -17,7 +17,7 @@ import {
   currentExecutionReceipt,
 } from "./execution-history.ts";
 import { redactGhArgs } from "./github.ts";
-import { assertFirstClaim } from "./ops/claim-state.ts";
+import { assertFirstClaim, reconcileClaimMerge } from "./ops/claim-state.ts";
 import { withSavedCodeMerge } from "./ops/save-state.ts";
 import { OpsError } from "./ops-error.ts";
 import {
@@ -168,13 +168,13 @@ function retainedMergedTruth(
   return merged;
 }
 
-function saveExecutionState(
+function saveCheckpoint(
   cfg: Config,
   issue: number,
   state: IssueState,
+  saved: IssueState | null,
 ): IssueState {
   assertExecution(cfg, issue);
-  const saved = readClaimState(cfg, issue, stateComments(cfg, issue));
   if (saved === null) {
     throw new OpsError(
       "saved execution authority missing; reconciliation required",
@@ -205,4 +205,50 @@ function saveExecutionState(
   return checkpoint(cfg, issue, retained);
 }
 
-export { claimExecutionState, readExecutionClaimState, saveExecutionState };
+function saveExecutionState(
+  cfg: Config,
+  issue: number,
+  state: IssueState,
+): IssueState {
+  assertExecution(cfg, issue);
+  return saveCheckpoint(
+    cfg,
+    issue,
+    state,
+    readClaimState(cfg, issue, stateComments(cfg, issue)),
+  );
+}
+
+// Deterministic claims may checkpoint newly observed merged truth. Role saves
+// cannot: their snapshots must still retain the already saved merge facts.
+// Reobserve rather than trusting merge facts supplied in the transition state.
+function saveExecutionClaimState(
+  cfg: Config,
+  issue: number,
+  state: IssueState,
+  now: Date,
+): IssueState {
+  assertExecution(cfg, issue);
+  const saved = readExecutionClaimState(cfg, issue);
+  if (saved === null) {
+    throw new OpsError("saved execution authority missing");
+  }
+  const observed = reconcileClaimMerge(cfg, issue, saved, now);
+  if (
+    state.pr !== observed.pr ||
+    state.codeMerged?.pr !== observed.codeMerged?.pr ||
+    state.codeMerged?.sha !== observed.codeMerged?.sha
+  ) {
+    throw new OpsError(
+      "claim merge observation changed; reconciliation required",
+    );
+  }
+  return saveCheckpoint(cfg, issue, state, observed);
+}
+
+export {
+  claimExecutionState,
+  readExecutionClaimState,
+  saveExecutionClaimState,
+  saveExecutionState,
+};
