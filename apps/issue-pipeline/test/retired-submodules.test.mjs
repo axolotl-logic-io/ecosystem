@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 import { git } from "./job-git-test-kit.mjs";
 
@@ -197,6 +197,51 @@ test("a symlink left at a retired submodule's path is not moved or followed", ()
   assert.deepEqual(moveRetiredSubmodules(repo, from, recovery), []);
   assert.ok(fs.lstatSync(path.join(repo, "wiki")).isSymbolicLink());
   assert.equal(fs.existsSync(recovery), false);
+});
+
+test("a retired submodule under a symlinked folder is not moved, and the folder outside stays", () => {
+  const repo = checkout();
+  git([
+    ...FILE_PROTOCOL,
+    "-C",
+    repo,
+    "submodule",
+    "add",
+    "-q",
+    submoduleOrigin(),
+    "docs/wiki",
+  ]);
+  git(["-C", repo, "commit", "-q", "-m", "Add the wiki under docs"]);
+  const from = git(["-C", repo, "rev-parse", "HEAD"]);
+  git(["-C", repo, "rm", "-q", "docs/wiki"]);
+  const outside = fs.mkdtempSync(path.join(isolatedRoot, "outside-"));
+  fs.mkdirSync(path.join(outside, "wiki"));
+  fs.writeFileSync(path.join(outside, "wiki", "Draft.md"), "draft\n");
+  fs.rmSync(path.join(repo, "docs"), { recursive: true, force: true });
+  fs.symlinkSync(outside, path.join(repo, "docs"));
+  git(["-C", repo, "add", "docs"]);
+  git(["-C", repo, "commit", "-q", "-m", "Link docs elsewhere"]);
+  const recovery = recoveryFolder();
+  assert.deepEqual(moveRetiredSubmodules(repo, from, recovery), []);
+  assert.equal(
+    fs.readFileSync(path.join(outside, "wiki", "Draft.md"), "utf8"),
+    "draft\n",
+  );
+});
+
+test("a leftover folder on another filesystem from recovery stays where it is", () => {
+  const { wt, from } = rebasedPastRemovedSubmodule();
+  const recovery = recoveryFolder();
+  mock.method(fs, "renameSync", () => {
+    throw Object.assign(new Error("cross-device link"), { code: "EXDEV" });
+  });
+  try {
+    assert.deepEqual(moveRetiredSubmodules(wt, from, recovery), []);
+  } finally {
+    mock.restoreAll();
+  }
+  assert.ok(fs.existsSync(path.join(wt, "wiki", "Home.md")));
+  assert.match(git(["-C", wt, "status", "--porcelain"]), UNTRACKED_WIKI);
 });
 
 test("a submodule that HEAD still has is left alone", () => {

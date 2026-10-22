@@ -2,7 +2,7 @@
 // leaves the folder behind as untracked files, which fail the finish check
 // and no session may clean (sync-base, finish-sync). Proving such a folder
 // disposable is unreliable (index flags, cached stat data, lossy filters), so
-// it is never deleted: it moves, whole, into the issue's recovery folder.
+// it is never deleted: it is renamed, whole, into the issue's recovery folder.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -29,42 +29,38 @@ function gitlinks(wt: string, rev: string): string[] {
 }
 
 // Whether `file` was a submodule that HEAD no longer tracks, with a real
-// folder (not a symlink) left at its path.
+// folder left at its path inside the checkout: no component of the path is a
+// symlink, so nothing outside the checkout moves.
 function retiredFolder(wt: string, file: string): boolean {
   const dir = path.join(wt, file);
   const tracked = gitOut(wt, ["ls-tree", "HEAD", "--", file]).trim();
   if (tracked !== "" || !fs.existsSync(dir)) {
     return false;
   }
-  return fs.lstatSync(dir).isDirectory();
+  const inside = path.join(fs.realpathSync(wt), file);
+  return fs.lstatSync(dir).isDirectory() && fs.realpathSync(dir) === inside;
 }
 
-// Moves `from` to `to`, copying across filesystems.
-function moveFolder(from: string, to: string): void {
+// Renames `from` to `to`. A rename keeps every byte, attribute and special
+// file; a copy may not, so across filesystems nothing moves.
+function renamed(from: string, to: string): boolean {
   fs.mkdirSync(path.dirname(to), { recursive: true });
   try {
     fs.renameSync(from, to);
+    return true;
   } catch (error: unknown) {
-    if (
-      !(error instanceof Error && "code" in error && error.code === "EXDEV")
-    ) {
-      throw error;
+    if (error instanceof Error && "code" in error && error.code === "EXDEV") {
+      return false;
     }
-    fs.cpSync(from, to, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      preserveTimestamps: true,
-      verbatimSymlinks: true,
-    });
-    fs.rmSync(from, { recursive: true, force: true });
+    throw error;
   }
 }
 
 // Moves the leftover folder of each submodule that `from` had and the
 // finished rebase's HEAD no longer has into a new `retired-submodules-*`
 // folder under `recovery`, keeping its relative path. Returns the paths
-// moved; nothing is deleted.
+// moved; nothing is deleted. A folder that can't be renamed there (another
+// filesystem) stays, and the finish check rejects the rebase as before.
 function moveRetiredSubmodules(
   wt: string,
   from: string,
@@ -79,10 +75,9 @@ function moveRetiredSubmodules(
   }
   fs.mkdirSync(recovery, { recursive: true });
   const into = fs.mkdtempSync(path.join(recovery, "retired-submodules-"));
-  for (const file of retired) {
-    moveFolder(path.join(wt, file), path.join(into, file));
-  }
-  return retired;
+  return retired.filter((file) =>
+    renamed(path.join(wt, file), path.join(into, file)),
+  );
 }
 
 // Moves issue `n`'s retired submodule folders in `wt` into its run folder's
