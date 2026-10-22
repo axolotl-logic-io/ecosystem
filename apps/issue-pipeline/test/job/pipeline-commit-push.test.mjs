@@ -41,36 +41,70 @@ const COMMIT_PASS = Object.fromEntries([["ISSUE_PIPELINE_COMMIT", "1"]]);
 // Most tests that commit run the implement stage, whose implementor writes
 // the code and its docs (`implementor-owns-the-change`).
 
-test("code and a new docs page make one commit, and it is pushed", async () => {
-  const job = await openJob("implement");
-  try {
-    write(job.repo, "README.md", "changed\n");
-    write(job.repo, "docs/Page.md", "new\n");
-    // A new file is staged first, as a writer stages new code.
-    git(job.repo, ["add", "docs/Page.md"]);
-    const result = await job.commit([
-      "-m",
-      "Add the page",
-      "--",
-      "repo/README.md",
-      "repo/docs/Page.md",
-    ]);
-    assert.equal(result.isError, false, result.content[0].text);
-    assert.equal(result.details.pushed, "code");
-    assert.equal(result.details.pushError, null);
-    assert.equal(refOf(job.origin, BRANCH), headOf(job.repo));
-    assert.equal(git(job.repo, ["log", "-1", "--format=%s"]), "Add the page");
-    assert.equal(
-      git(job.repo, ["show", "--name-only", "--format=", "HEAD"]),
-      "README.md\ndocs/Page.md",
-    );
-    assert.deepEqual(pushesOf(job), [{ repo: "code", sha: headOf(job.repo) }]);
-    const record = { sha: headOf(job.repo), op: "pipeline-commit" };
-    assert.deepEqual(lastPush(job.cfg, ISSUE), record);
-  } finally {
-    job.close();
-  }
-});
+// Unrelated work in `dir` that a call doesn't name: a staged new file and
+// new files beside and under the selection.
+/** @param {string} dir */
+function writeUnrelated(dir) {
+  write(dir, "staged.txt", "staged\n");
+  git(dir, ["add", "staged.txt"]);
+  write(dir, "docs/Other.md", "other\n");
+  write(dir, "loose.txt", "loose\n");
+}
+
+// The implementor, and integration's check-fix, commit new files they name.
+for (const stage of /** @type {const} */ (["implement", "merge"])) {
+  test(`the ${stage} stage's code and a new docs page make one commit, and it is pushed`, async () => {
+    const job = await openJob(stage);
+    try {
+      write(job.repo, "README.md", "changed\n");
+      write(job.repo, "docs/Page.md", "new\n");
+      writeUnrelated(job.repo);
+      // The tool stages the new file the call names; a writer runs no git add.
+      // A dry run stages it in a private index only.
+      const dry = await job.commit([
+        "--dry-run",
+        "-m",
+        "x",
+        "repo/docs/Page.md",
+      ]);
+      assert.equal(dry.isError, false, dry.content[0].text);
+      assert.equal(
+        git(job.repo, ["diff", "--cached", "--name-only"]),
+        "staged.txt",
+      );
+      const result = await job.commit([
+        "-m",
+        "Add the page",
+        "--",
+        "repo/README.md",
+        "repo/docs/Page.md",
+      ]);
+      assert.equal(result.isError, false, result.content[0].text);
+      assert.equal(result.details.pushed, "code");
+      assert.equal(result.details.pushError, null);
+      assert.equal(refOf(job.origin, BRANCH), headOf(job.repo));
+      assert.equal(git(job.repo, ["log", "-1", "--format=%s"]), "Add the page");
+      assert.equal(
+        git(job.repo, ["show", "--name-only", "--format=", "HEAD"]),
+        "README.md\ndocs/Page.md",
+      );
+      assert.deepEqual(pushesOf(job), [
+        { repo: "code", sha: headOf(job.repo) },
+      ]);
+      const record = { sha: headOf(job.repo), op: "pipeline-commit" };
+      assert.deepEqual(lastPush(job.cfg, ISSUE), record);
+      // A directory names no new file, so docs/Other.md is not staged.
+      const folder = await job.commit(["-m", "Folder", "--", "repo/docs"]);
+      assert.equal(folder.isError, true);
+      assert.equal(
+        git(job.repo, ["status", "--porcelain"]),
+        "A  staged.txt\n?? docs/Other.md\n?? loose.txt",
+      );
+    } finally {
+      job.close();
+    }
+  });
+}
 
 test("a docs-only change is a code commit, pushed like any other", async () => {
   const job = await openJob("implement");
@@ -99,6 +133,8 @@ test("a git error in the code repo fails the call, and nothing is pushed", async
     assert.equal(result.isError, true);
     assert.notEqual(result.details.code.exitCode, 0);
     assert.match(result.content[0].text, MISSING_PATHSPEC);
+    // The named new file stays staged for recovery.
+    assert.equal(git(job.repo, ["status", "--porcelain"]), "A  docs/Page.md");
     assert.equal(refOf(job.origin, BRANCH), "");
     assert.deepEqual(pushesOf(job), []);
   } finally {

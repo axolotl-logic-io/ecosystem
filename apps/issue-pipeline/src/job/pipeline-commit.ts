@@ -49,10 +49,16 @@ interface PathScope {
 }
 
 // A call's plan: refused with the reason, or the git argv to run in the code
-// checkout (null for none).
+// checkout (null for none) and the call's pathspecs, each checked against the
+// session's allowed paths, relative to the code checkout.
 type CommitPlan =
   | { kind: "refused"; error: string }
-  | { kind: "commit"; code: string[] | null; dryRun: boolean };
+  | {
+      kind: "commit";
+      code: string[] | null;
+      paths: string[];
+      dryRun: boolean;
+    };
 
 // The pathspec normalized, or refused when it reaches outside the job's
 // folder or uses pathspec magic.
@@ -141,7 +147,7 @@ function planOf(
     const commit = ["commit", ...options, ...trailerArgs(trailer)];
     code = withPaths(commit, codePaths);
   }
-  return { kind: "commit", code, dryRun: read.dryRun };
+  return { kind: "commit", code, paths: codePaths, dryRun: read.dryRun };
 }
 
 // The trailer that names session `key` of the job that started at

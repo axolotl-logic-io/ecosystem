@@ -67,7 +67,9 @@ Writers commit only through the `pipeline_commit` tool. They don't run `git comm
 The tool takes git commit arguments: `{"args": ["-m", "Describe the change", "--", "repo/src/file.ts"]}`.
 
 - Pathspecs and relative `-F` paths are relative to the job folder, so code paths start with `repo/`. Absolute paths, `..`, pathspec magic and paths outside the session's scope are refused before git runs.
-- Without pathspecs, tracked changes need `-a` or staging. New files need staging.
+- A new file named exactly as a pathspec is staged by the tool, by its literal path, before the commit; writers don't run `git add`. A directory, a pattern or `repo` stages no new file, and an ignored file is never staged. Other untracked files stay untracked. Unless the call passes `--include`, other staged changes stay out of the commit and stay staged.
+- Without pathspecs, tracked changes need `-a` or staging, and no new file is staged.
+- If the commit fails after staging, the staged new files stay staged and nothing is pushed. A `--dry-run` stages into a private copy of the index, so the checkout's index is unchanged.
 - `--amend`, `--no-verify` (`-n`), `--author`, `--date`, `--reset-author`, `--pathspec-from-file` and `-F -` are refused, including abbreviations of the long options.
 - Each commit gets a `Pipeline-Session: <launch key>@<job start>` trailer.
 
