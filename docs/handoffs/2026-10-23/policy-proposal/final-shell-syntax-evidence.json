@@ -1,0 +1,36 @@
+{
+  "time": "2026-10-23T02:49:25.576453+00:00",
+  "kind": "Syntax only; no shell command in either proposal executed",
+  "records": [
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/axolotl-logic-io__ecosystem.fast-v4.test.sh",
+      "bytes": 4445,
+      "sha256": "295311a8ee075b95cbe6faab0829a150d3179acd4432df0dd0390fabe1d23a15",
+      "command": [
+        "/bin/bash",
+        "-n",
+        "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/axolotl-logic-io__ecosystem.fast-v4.test.sh"
+      ],
+      "invocations": 1,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "",
+      "finalBytesUnchanged": true
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/axolotl-logic-io__ecosystem.setup-v4.sh",
+      "bytes": 4366,
+      "sha256": "b352942e66cd3021c153a9667ad5e34266cf4aa559fd344a50b1725007ee9196",
+      "command": [
+        "/bin/bash",
+        "-n",
+        "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/axolotl-logic-io__ecosystem.setup-v4.sh"
+      ],
+      "invocations": 1,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "",
+      "finalBytesUnchanged": true
+    }
+  ]
+}

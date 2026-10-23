@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# the issue pipeline's build output (build.ts)
+/apps/issue-pipeline/dist/
+
+# environment
+.env*
+!.env.example
+!.env.test.example
+
+# test output
+coverage/
+
+# debug
+npm-debug.log*
+
+# typescript
+*.tsbuildinfo
+
+# misc
+*.pem
+
+# OS
+.DS_Store

@@ -2,6 +2,10 @@
 
 These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and merged with the code they describe. Decisions record the rules; reference pages describe how the code behaves today and how to recover when something goes wrong.
 
+## Work queue
+
+[2026-10-23 GitHub work index](handoffs/2026-10-23/README.md): native source branches, issue and PR status, policy proposals, evidence and next actions after workstation loss. These checkpoints are not merge or installation approvals.
+
 ## Practices
 
 [Coding practices](coding-practices.md): the shared design, type, lint, test and secrets rules, kept identical in each repository.

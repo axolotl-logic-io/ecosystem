@@ -1,0 +1,26 @@
+{
+  "regularTrackedInputs": [
+    "package.json",
+    "package-lock.json",
+    "apps/issue-pipeline/package.json",
+    "apps/workflow-dash/package.json"
+  ],
+  "lockSHA256": "ce07af1836fea8cef08e5162144b8790893ec4cc04b1232e38369e2d2a719b4c",
+  "publicRegistryEntries": 156,
+  "workspaceLinks": [
+    [
+      "node_modules/@ecosystem/issue-pipeline",
+      "apps/issue-pipeline"
+    ],
+    [
+      "node_modules/@ecosystem/workflow-dash",
+      "apps/workflow-dash"
+    ]
+  ],
+  "npmVersion": "11.19.0",
+  "nodeVersion": "24.21.0",
+  "projectNpmConfigs": "absent",
+  "homeUserGlobalConfigs": "isolated empty",
+  "registry": "https://registry.npmjs.org/",
+  "lifecycle": "disabled during ci"
+}

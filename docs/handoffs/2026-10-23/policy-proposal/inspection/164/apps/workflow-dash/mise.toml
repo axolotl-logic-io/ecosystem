@@ -1,0 +1,11 @@
+[tasks.test]
+run = "npm test --workspace @ecosystem/workflow-dash"
+
+[tasks.typecheck]
+run = "npm run typecheck --workspace @ecosystem/workflow-dash"
+
+[tasks.lint]
+run = "npm run lint --workspace @ecosystem/workflow-dash"
+
+[tasks.check]
+run = "npm run check --workspace @ecosystem/workflow-dash"

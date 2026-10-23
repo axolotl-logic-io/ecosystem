@@ -1,0 +1,18 @@
+0 verbose cli /Users/axolotl-logic/.local/share/mise/installs/node/24.21.0/bin/node /Users/axolotl-logic/.local/share/mise/installs/node/24.21.0/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@11.19.0
+2 info using node@v24.21.0
+3 silly config load:file:/Users/axolotl-logic/.local/share/mise/installs/node/24.21.0/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261023-main-install/source/.npmrc
+5 silly config load:file:/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261023-main-install/source/.git/issue194-evidence/user.npmrc
+6 silly config load:file:/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261023-main-install/source/.git/issue194-evidence/global.npmrc
+7 verbose title npm config list
+8 verbose argv "config" "list" "--json"
+9 verbose logfile logs-max:10 dir:/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261023-main-install/source/.git/issue194-evidence/cache/_logs/2026-10-23T05_33_39_151Z-
+10 verbose logfile /Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261023-main-install/source/.git/issue194-evidence/cache/_logs/2026-10-23T05_33_39_151Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose cwd /Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261023-main-install/source
+13 verbose os Darwin 25.6.0
+14 verbose node v24.21.0
+15 verbose npm  v11.19.0
+16 verbose exit 0
+17 info ok

@@ -1,0 +1,78 @@
+{
+  "kind": "Static immutable-byte compatibility; no preflight/wrapper/source execution",
+  "combined178Packet": {
+    "sha256": "54d47d906a5efb533a111150ee7aaf496ced526c3f89f6b3241e15c5f757a624",
+    "paths": 6,
+    "hunks": 14
+  },
+  "variants": [
+    {
+      "variant": "eco164-existing-cleanup-v4",
+      "referenceCommit": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd",
+      "matchedInputs": 17,
+      "trackedDiscoveryPaths": [
+        ".gitignore",
+        "apps/issue-pipeline/biome.jsonc",
+        "apps/issue-pipeline/mise.toml",
+        "apps/issue-pipeline/package.json",
+        "apps/issue-pipeline/tsconfig.json",
+        "apps/issue-pipeline/tsconfig.test.json",
+        "biome.jsonc",
+        "mise.toml",
+        "package-lock.json",
+        "package.json"
+      ],
+      "publicNpmTarballs": 156,
+      "workspaceLinks": {
+        "node_modules/@ecosystem/issue-pipeline": "apps/issue-pipeline",
+        "node_modules/@ecosystem/workflow-dash": "apps/workflow-dash"
+      }
+    },
+    {
+      "variant": "eco178-f1-f2-f3-v4",
+      "referenceCommit": "57656391c85ebb2b918096bc398717e7a00ad626",
+      "matchedInputs": 17,
+      "trackedDiscoveryPaths": [
+        ".gitignore",
+        "apps/issue-pipeline/biome.jsonc",
+        "apps/issue-pipeline/mise.toml",
+        "apps/issue-pipeline/package.json",
+        "apps/issue-pipeline/tsconfig.json",
+        "apps/issue-pipeline/tsconfig.test.json",
+        "biome.jsonc",
+        "mise.toml",
+        "package-lock.json",
+        "package.json"
+      ],
+      "publicNpmTarballs": 156,
+      "workspaceLinks": {
+        "node_modules/@ecosystem/issue-pipeline": "apps/issue-pipeline",
+        "node_modules/@ecosystem/workflow-dash": "apps/workflow-dash"
+      }
+    }
+  ],
+  "variantDifferences": [
+    "apps/issue-pipeline/mise.toml",
+    "apps/issue-pipeline/test/check-task.test.mjs"
+  ],
+  "v3Mismatch": {
+    "runtimeReadmePinned": "8eb37ca347a44c530eb92b9013c2168c6188d7c6ef167aa5f603e8796bbbb30e",
+    "F3runtimeReadme": "b8c7d1de6eccdcb3a051997b1d4cad90f1a49ce2438ef66343e4d00e72997776",
+    "app178Pinned": "463b5789beb1af034b511397bf9a60427ab9258a41ef5ac1cc2184e1e64988b8",
+    "app164Actual": "09311fc18b9455ed971f6c3ae7da7c9f6c4c39132418a6d458de3bbd7c025ccc"
+  },
+  "syntaxInputs": [
+    "install.mjs",
+    "dist/ops.mjs",
+    "dist/shell-supervisor.mjs",
+    "dist/job.mjs",
+    "dist/orchestrate.mjs",
+    "dist/report.mjs",
+    "dist/pipeline-commit.mjs",
+    "dist/structured-output.mjs",
+    "dist/git-review.mjs",
+    "dist/caller-jobs.mjs"
+  ],
+  "pythonSyntaxOnly": "ast.parse shared preflight and both bootstraps; not executed",
+  "shellSyntax": "recorded separately after final-byte freeze"
+}

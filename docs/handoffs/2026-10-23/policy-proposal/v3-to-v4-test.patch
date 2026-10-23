@@ -1,0 +1,130 @@
+--- /Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v3/ecosystem.fast-v3.test.proposed.sh
++++ /Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/axolotl-logic-io__ecosystem.fast-v4.test.sh
+@@ -3,96 +3,37 @@
+ set -euo pipefail
+ # A versioned command argument makes this operator policy change visible to
+ # the installed policy digest. This file is a proposal, not installed policy.
+-mode=${1-fast-v3}
++mode=${1-fast-v4}
+ [[ $# -le 1 ]] || { printf '%s\n' 'expected one policy mode' >&2; exit 2; }
+ case "$mode" in
+-  fast-v3|full-v3) ;;
+-  *) printf '%s\n' 'expected fast-v3 or full-v3' >&2; exit 2 ;;
++  fast-v4|full-v4) ;;
++  *) printf '%s\n' 'expected fast-v4 or full-v4' >&2; exit 2 ;;
+ esac
+ PATH=/usr/bin:/bin:/usr/sbin:/sbin
+ export PATH
+ checkout=$(pwd -P)
+-# Only data/Git metadata inspection occurs before command-scoped trust.
+-# The companion profile is part of the reviewed artifact, not a source SHA.
++# Shared reviewed bytes run before any trust, provisioning or task effect.
+ policy_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+-env -i PATH=/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
++variant=$(env -i PATH=/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+  GIT_ALLOW_PROTOCOL=file GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1 \
+- /usr/bin/python3 -I -S - "$checkout" "$policy_dir/ecosystem.fast-v3.execution-inputs.json" <<'PREFLIGHT'
++ /usr/bin/python3 -I -S - "$checkout" "$policy_dir" <<'PREFLIGHT'
+ import hashlib
+-import json
+-import os
+ from pathlib import Path
+ import stat
+-import subprocess
+ import sys
+-
+-root = Path(sys.argv[1])
+-profile_path = Path(sys.argv[2])
+-def require(ok, message):
+-    if not ok:
+-        raise SystemExit('v3 preflight refused: ' + message)
+-
+-def regular(path):
+-    require(stat.S_ISREG(path.lstat().st_mode), 'expected regular file: ' + str(path))
+-    require(path.resolve() == path, 'symlink path component: ' + str(path))
+-
+-require(':' not in str(root) and '\n' not in str(root), 'checkout cannot encode a trust-path list')
+-regular(profile_path)
+-raw = profile_path.read_bytes()
+-require(hashlib.sha256(raw).hexdigest() == '9a45a8796f971279647c8f97d66a2fe3feb6dfaf223984f228bda43b2a7c8824', 'companion profile digest')
+-profile = json.loads(raw)
+-
+-def git(*args):
+-    return subprocess.check_output(['/usr/bin/git', '--no-replace-objects', '-C', str(root), *args], stderr=subprocess.PIPE)
+-
+-require(git('rev-parse', '--show-toplevel').decode().strip() == str(root), 'run from checkout root')
+-indexed = {}
+-for entry in git('ls-files', '--stage', '-z').split(b'\0'):
+-    if not entry:
+-        continue
+-    meta, name = entry.split(b'\t', 1)
+-    mode, blob, stage = meta.decode().split()
+-    require(stage == '0', 'unmerged index')
+-    indexed[name.decode()] = (mode, blob)
+-committed = {}
+-for entry in git('ls-tree', '-rz', 'HEAD').split(b'\0'):
+-    if not entry:
+-        continue
+-    meta, name = entry.split(b'\t', 1)
+-    mode, kind, blob = meta.decode().split()
+-    committed[name.decode()] = (mode, blob)
+-expected = {entry['path']: entry for entry in profile['inputs']}
+-def in_scope(p):
+-    return p in profile['rootInputs'] or (p.startswith('apps/issue-pipeline/') and p != profile['excludedOrdinaryPipelineReadme'])
+-require({p for p in indexed if in_scope(p)} == set(expected), 'index input path set changed')
+-require({p for p in committed if in_scope(p)} == set(expected), 'HEAD input path set changed')
+-# Reject alternate mise/asdf/npm discovery files without opening their contents.
+-# This covers checkout/apps/pipeline ancestry. Sibling configs are not trusted.
+-for directory in [root, root / 'apps', root / 'apps/issue-pipeline']:
+-    require(directory.resolve() == directory and directory.is_dir(), 'nonplain config ancestry')
+-    for item in directory.iterdir():
+-        name = item.name
+-        candidate = ('mise' in name.lower() or name in {'.tool-versions', '.npmrc', '.node-version', '.nvmrc'})
+-        if candidate:
+-            require(str(item.relative_to(root)) in profile['trustedConfigs'], 'unexpected discovery config: ' + str(item))
+-    require(not os.path.lexists(directory / '.config/mise'), 'unexpected .config/mise')
+-for entry in profile['inputs']:
+-    p = entry['path']
+-    require(indexed.get(p) == (entry['mode'], entry['gitBlob']), 'index input differs: ' + p)
+-    require(committed.get(p) == (entry['mode'], entry['gitBlob']), 'HEAD input differs: ' + p)
+-    file = root / p
+-    regular(file)
+-    require(bool(file.stat().st_mode & stat.S_IXUSR) == (entry['mode'] == '100755'), 'working executable mode differs: ' + p)
+-    require(hashlib.sha256(file.read_bytes()).hexdigest() == entry['sha256'], 'working input differs: ' + p)
+-# Untracked nonignored files could enter tsc/lint/test discovery. Ignored build
+-# output/dependencies are not attested here; parent must verify offline setup.
+-for raw_path in git('ls-files', '--others', '--exclude-standard', '-z').split(b'\0'):
+-    if raw_path:
+-        p = raw_path.decode()
+-        require(not in_scope(p), 'untracked execution input: ' + p)
+-print('v3 execution-input compatibility and two regular tracked config bytes match; NOT whole-source/policy/target attestation')
++root, directory = sys.argv[1:]
++file = Path(directory) / "ecosystem.policy-v4.preflight.py"
++if not stat.S_ISREG(file.lstat().st_mode) or file.resolve() != file:
++    raise SystemExit("v4 shared preflight must be regular and nonsymlink")
++raw = file.read_bytes()
++if hashlib.sha256(raw).hexdigest() != "18235e0c11bced29071a40260b04270f4d38ebd327e75198fe6870acc3ae8b45":
++    raise SystemExit("v4 shared preflight digest mismatch")
++sys.argv = [str(file), root, str(Path(directory) / "ecosystem.policy-v4.execution-inputs.json")]
++exec(compile(raw, str(file), "exec"), {"__name__": "__main__"})
+ PREFLIGHT
+-# Resolve no ambient command/shim: these provisioned versions were attested offline.
++)
++printf 'v4 execution-policy compatibility: %s; NOT source/input/policy/target authority\n' "$variant"
++# Require provisioned versions; no ambient shim, tool download or fallback.
+ node_bin=/Users/axolotl-logic/.local/share/mise/installs/node/24.21.0/bin
+ mise=/Users/axolotl-logic/.local/bin/mise
+ [[ -x "$node_bin/node" && -x "$node_bin/npm" && -x "$mise" ]]
+@@ -135,10 +76,10 @@
+   done
+   "$node" --test --test-concurrency=2 --test-timeout=180000 test/build.test.mjs test/check-task.test.mjs
+   case "$mode" in
+-    fast-v3)
++    fast-v4)
+       printf "%s\n" "Fast default: build and check-task guards; full integration/flow suite not run."
+       ;;
+-    full-v3)
++    full-v4)
+       printf "%s\n" "Opt-in: fast prerequisite already ran; unchanged full selection repeats both guard files."
+       "$node" --test --test-concurrency=2 --test-timeout=180000 "test/**/*.test.mjs"
+       ;;

@@ -1,0 +1,108 @@
+{
+  "time": "2026-10-23T02:50:32.496761+00:00",
+  "sourceObjectStore": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/ecosystem-throughput/source/.git",
+  "sources": {
+    "a8bf64fd858fb2294588c3d4f674f31a6f1849fd": {
+      "tree": "a08c487f722bd308c57902f11b54bef2cc068dbc",
+      "type": "commit"
+    },
+    "57656391c85ebb2b918096bc398717e7a00ad626": {
+      "tree": "04c59534ac69893895100c3aa6de7b8a14674616",
+      "type": "commit"
+    }
+  },
+  "inputHashes": [
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/AUTO-GRANT-20261023.md",
+      "bytes": 3097,
+      "sha256": "624d22c4daf20ac02ec12c2cd5274775c66df95c7df476d798b5a03fc4b40221"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/POLICY.md",
+      "bytes": 4923,
+      "sha256": "d42f617d845975e78e16c6aa9cf43e6d43761ae868188daa1c98a664e8de1594"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/ecosystem-v3-policy-alignment.md",
+      "bytes": 28104,
+      "sha256": "667cd569c6f9c456249233b2cbb7d54191fe0c1138aab960d5175f2f47f99b4c"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/ecosystem-canonical-route-preflight.md",
+      "bytes": 45249,
+      "sha256": "046ede5ae2e4b70f4623cd8f97031d4b48aa12e35c8847567d600794cc8977c9"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/eco178-approved-install-policy.md",
+      "bytes": 26742,
+      "sha256": "a6b7d9591fcd2c6866a85b80ee2c3a89a4975a59d14f1550d3c9e8e88b16ca74"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/eco178-correction-independent-review.md",
+      "bytes": 19100,
+      "sha256": "ced7d6539d35893496f4f9d2b42a0ab1d201091598bcc61d43c024511d55efb8"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/ecosystem-runtime-report.md",
+      "bytes": 18858,
+      "sha256": "8f44017004ba99a7177933336d5422c68d1c4b2ec7798d2213006328d2d4f74b"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v3/ecosystem.fast-v3.test.proposed.sh",
+      "bytes": 7471,
+      "sha256": "c6ffd7cda87fec210bdf8cc18b26ff40ffab7b43bd5e98323a2da6ef715352e1"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v3/ecosystem.fast-v3.execution-inputs.json",
+      "bytes": 155781,
+      "sha256": "9a45a8796f971279647c8f97d66a2fe3feb6dfaf223984f228bda43b2a7c8824"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco178-install-policy/patches/57656391-to-result.patch",
+      "bytes": 28359,
+      "sha256": "54d47d906a5efb533a111150ee7aaf496ced526c3f89f6b3241e15c5f757a624"
+    },
+    {
+      "path": "/Users/axolotl-logic/.pi/agent/issue-pipeline/repos/axolotl-logic-io__ecosystem.setup.sh",
+      "bytes": 281,
+      "sha256": "6a4a17dd9a076b8669117804f78d08e402f1b65fb44841678ff0da059c1da843"
+    }
+  ],
+  "newPolicyArtifacts": [
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/axolotl-logic-io__ecosystem.fast-v4.test.sh",
+      "bytes": 4445,
+      "sha256": "295311a8ee075b95cbe6faab0829a150d3179acd4432df0dd0390fabe1d23a15"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/axolotl-logic-io__ecosystem.setup-v4.sh",
+      "bytes": 4366,
+      "sha256": "b352942e66cd3021c153a9667ad5e34266cf4aa559fd344a50b1725007ee9196"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/ecosystem.policy-v4.preflight.py",
+      "bytes": 6548,
+      "sha256": "18235e0c11bced29071a40260b04270f4d38ebd327e75198fe6870acc3ae8b45"
+    },
+    {
+      "path": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco-policy-v4/ecosystem.policy-v4.execution-inputs.json",
+      "bytes": 14533,
+      "sha256": "e1ba88f79adc291aaebec7d6a1e5d35c687fc53a9afc1a3eecc56b10b1290a14"
+    }
+  ],
+  "candidateCommit": null,
+  "nativeEffectiveDigest": null,
+  "target": null,
+  "adopted": false,
+  "executed": false,
+  "noStagedFiles": true,
+  "finalObserver": {
+    "repo": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/ecosystem-throughput/source",
+    "head": "c3134206c0e94fa81b53c6dde1d14bc9b2877cb7",
+    "refs": "c3134206c0e94fa81b53c6dde1d14bc9b2877cb7 refs/heads/main\nc3134206c0e94fa81b53c6dde1d14bc9b2877cb7 refs/remotes/origin/HEAD\ncf1c789c66e02654bbb92d7c3d14cc4c286407e5 refs/remotes/origin/agent/issue-101\n051123ac2d5b1d4c41faa3761b71f3e32adf3d3e refs/remotes/origin/agent/issue-108\n3291ae63acb2b70e5f499639284c0b8b41050789 refs/remotes/origin/agent/issue-113\n1359f09b3b6064f6388dc14608c74968809ed677 refs/remotes/origin/agent/issue-116\n6b2852fa2090c0a00da4fd51c998903e0b6d5efc refs/remotes/origin/agent/issue-131\ndd478bb1dc369609096a689ac57e9b533fd79be9 refs/remotes/origin/agent/issue-138\nc3bc52f1cc81863c12e97ea33a7accfb4e856468 refs/remotes/origin/agent/issue-139\n30109a042f263d718d356a3b0307cd831f2cd410 refs/remotes/origin/agent/issue-144\nd227f0f2cdfb07982214c58d82f9500c94051126 refs/remotes/origin/agent/issue-145\n782fa189c5c3e9f016c8bcf22f2d3bfadd0c3d9a refs/remotes/origin/agent/issue-150\na8bf64fd858fb2294588c3d4f674f31a6f1849fd refs/remotes/origin/agent/issue-164\nf1808b5170fc17aa17703ed5696cc11f233af9da refs/remotes/origin/agent/issue-177\n57656391c85ebb2b918096bc398717e7a00ad626 refs/remotes/origin/agent/issue-178\nc17246141b57849ccff5eab4789766b712db1a29 refs/remotes/origin/agent/issue-58\n1fb548fb1951248f6da457cba32619d7ff5b821e refs/remotes/origin/agent/issue-59\n0e8ef92e8d559a56642c269c02ca1df84e403ce3 refs/remotes/origin/agent/issue-69\n38d7b18c547d2990824f45df9df61ff8c2c52321 refs/remotes/origin/agent/issue-73\nc1edda2684c01c32a19867a1cee41fd5568e4dcb refs/remotes/origin/agent/issue-93\n38e134d9e1e42997309c270de305de37fbd12c21 refs/remotes/origin/behavior/fast-forward-only-merge\nb34b0269bc94d6f2a16bc09585c9055a94b506e0 refs/remotes/origin/behavior/optional-author\nbd492f0d8295c2b4f7f4e86586c3689a8e04c29f refs/remotes/origin/behavior/security-before-merge\nbea72d018c5c2f1b5c182cefc9ae2f8e93a52a46 refs/remotes/origin/behavior/versioned-project-settings\n1db633213aacf6798550fd0dd697dc28579a37df refs/remotes/origin/ci/check-timeout-40\n3b163fbee47e27ed431bc832f5ee2ebfad5f9db1 refs/remotes/origin/docs-migration/1-prompts-in-code\nf19b7b800d3e6a4cd15964fce71194f804cddeb2 refs/remotes/origin/docs-migration/docs-content\n3b3e0f44676d08800e029d86d2f2508f35d2999d refs/remotes/origin/docs/buddies-and-task-decisions\n0e3b000b46bba1af75b5a4adab4c4e4bd1513f20 refs/remotes/origin/docs/glossary-task-actor\n014311c09c5c4674ff8400e5a061e05e0034229f refs/remotes/origin/docs/shared-domain-glossary\n48e48760ab94e3437fd289eec7df76f7dc7463c6 refs/remotes/origin/feat/workflow-dash\necd701083f9c4e2004fc87e48e434bc14a131c44 refs/remotes/origin/fix/binary-conflict-resolution\nc3134206c0e94fa81b53c6dde1d14bc9b2877cb7 refs/remotes/origin/fix/default-metric-lint\n684473c2fc14f0510ffc0a6749570f2e0f49733a refs/remotes/origin/fix/premerge-only-checks\n629603ade5a8adaeb540aeace47005c615de9c44 refs/remotes/origin/fix/removed-submodule-residue\n00c10fffde8f518cc0a3501e72c8ae8fbaa75ceb refs/remotes/origin/integration/delivery-batch-1\n0ec9d2a1562aa095369c07806a3828bb881da63f refs/remotes/origin/lane-test-environments\n045cb90863a8cde2ba5f6088270ac0701aa5f1ad refs/remotes/origin/launch-readiness\nc3134206c0e94fa81b53c6dde1d14bc9b2877cb7 refs/remotes/origin/main\naa526f5acb3248f12293af97df815a5b81a77ac8 refs/remotes/origin/preserve/issue-73-implement-20261019\nb5879d65700fe743549adfbf87e61c9e53e0f0fd refs/remotes/origin/refactor/invocation-binding-name\n684473c2fc14f0510ffc0a6749570f2e0f49733a refs/remotes/origin/release/42a8771-binary-conflicts\n4ba8376824825a3f1e5106b1e542a3bb2bed011f refs/remotes/origin/test-refactor-audit-fixes\n",
+    "indexSHA256": "321f931cb584abb0d9ba0d6bf1d484d1c6c52c3ff4dc580082555661b2ee5530",
+    "cachedDiff": "",
+    "worktreeDiff": ""
+  },
+  "consumerLimits": "All data and syntax-only subprocesses ended synchronously. No task/model/test/canonical consumer started. No global process/lease/quiescence observation."
+}

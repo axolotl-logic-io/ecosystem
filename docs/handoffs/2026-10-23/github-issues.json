@@ -1,0 +1,356 @@
+[
+  {
+    "labels": [],
+    "number": 197,
+    "title": "Reconcile the GitHub work queue and source checkpoints after workstation loss",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/197"
+  },
+  {
+    "labels": [],
+    "number": 196,
+    "title": "Publish and adopt the locked fast-check policy after host replacement",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/196"
+  },
+  {
+    "labels": [],
+    "number": 194,
+    "title": "Deliver and install a safety-preserving main update",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/194"
+  },
+  {
+    "labels": [],
+    "number": 187,
+    "title": "Add a Safe Refactor task driven by length and complexity lint",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/187"
+  },
+  {
+    "labels": [],
+    "number": 186,
+    "title": "Expose explicit Sync and Integration through the canonical caller",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/186"
+  },
+  {
+    "labels": [],
+    "number": 185,
+    "title": "Verify read-only Lawd Integration before exact-head Land",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/185"
+  },
+  {
+    "labels": [],
+    "number": 184,
+    "title": "Execute Hippy Sync with exact target and retained recovery",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/184"
+  },
+  {
+    "labels": [],
+    "number": 183,
+    "title": "Define revision-bound task results and retry compatibility",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/183"
+  },
+  {
+    "labels": [],
+    "number": 181,
+    "title": "Validate and install the adopted buddy boundaries",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/181"
+  },
+  {
+    "labels": [],
+    "number": 180,
+    "title": "Separate Hippy's Sync from Lawd's read-only Integration",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/180"
+  },
+  {
+    "labels": [],
+    "number": 179,
+    "title": "Run Hardening under Hippy while Lawd records authority",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/179"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-EsTJQ",
+        "name": "agent:working",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 178,
+    "title": "Find out why the Check workflow takes 19\u201329 minutes, and shorten it",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/178"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-GNrWQ",
+        "name": "agent:stopped-error",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 177,
+    "title": "Release a repository's integration branch to its release branch through the pipeline",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/177"
+  },
+  {
+    "labels": [],
+    "number": 175,
+    "title": "Audit scenario coverage and document opt-in operations",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/175"
+  },
+  {
+    "labels": [],
+    "number": 174,
+    "title": "Repeat bounded assignment sweeps with durable holds",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/174"
+  },
+  {
+    "labels": [],
+    "number": 173,
+    "title": "Reconstruct exact recoverable code/docs checkpoints",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/173"
+  },
+  {
+    "labels": [],
+    "number": 172,
+    "title": "Route revision-bound fix returns",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/172"
+  },
+  {
+    "labels": [],
+    "number": 171,
+    "title": "Prove shared repository/target turn recovery",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/171"
+  },
+  {
+    "labels": [],
+    "number": 170,
+    "title": "Fence cleanup and exit salvage without unsafe release",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/170"
+  },
+  {
+    "labels": [],
+    "number": 169,
+    "title": "Fence uncovered credentialed controlled writes",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/169"
+  },
+  {
+    "labels": [],
+    "number": 168,
+    "title": "Enforce immutable invocation bindings at privileged entry points",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/168"
+  },
+  {
+    "labels": [],
+    "number": 167,
+    "title": "Bind runtime acquisition before authority-sensitive setup",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/167"
+  },
+  {
+    "labels": [],
+    "number": 166,
+    "title": "Rename persisted keys, config keys and CLI flags to the glossary's terms (deferred)",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/166"
+  },
+  {
+    "labels": [],
+    "number": 165,
+    "title": "Rename the pipeline's code names to the glossary's terms (deferred)",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/165"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-EsTJQ",
+        "name": "agent:working",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 164,
+    "title": "Delete the issue pipeline's unit tests and forbid new ones",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/164"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC98LJyA",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      }
+    ],
+    "number": 152,
+    "title": "Convert the pipeline's tests to TypeScript (deferred)",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/152"
+  },
+  {
+    "labels": [],
+    "number": 151,
+    "title": "Confirm sequential execution release without losing recovery evidence",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/151"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-FXoFg",
+        "name": "agent:stopped-not-doable",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 150,
+    "title": "Establish independent authenticated authority fixtures for Actor runs",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/150"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-GNrWQ",
+        "name": "agent:stopped-error",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 144,
+    "title": "Make check-fix new-file staging compatible with the pinned writer contract",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/144"
+  },
+  {
+    "labels": [],
+    "number": 133,
+    "title": "Prove issue-execution fencing through actual Actor run boundaries",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/133"
+  },
+  {
+    "labels": [],
+    "number": 132,
+    "title": "Map controlled mutations to authenticated execution guards",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/132"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-FXoFg",
+        "name": "agent:stopped-not-doable",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 131,
+    "title": "issue-pipeline: wire invocation ownership and migrate claim-state fixtures",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/131"
+  },
+  {
+    "labels": [],
+    "number": 129,
+    "title": "feat: add a repository standards upgrade pipeline",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/129"
+  },
+  {
+    "labels": [],
+    "number": 128,
+    "title": "Create repo with a prototype of the \"paragraph reminder\"",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/128"
+  },
+  {
+    "labels": [],
+    "number": 121,
+    "title": "Prove assignment delivery and restart with current task bindings",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/121"
+  },
+  {
+    "labels": [],
+    "number": 120,
+    "title": "Compose one opt-in assignment sweep with guarded task dispatch",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/120"
+  },
+  {
+    "labels": [],
+    "number": 119,
+    "title": "Stop controlled work when assignment permission is withdrawn",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/119"
+  },
+  {
+    "labels": [],
+    "number": 118,
+    "title": "Persist authenticated Implementation-to-Hardening handoffs",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/118"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-FXoFg",
+        "name": "agent:stopped-not-doable",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 116,
+    "title": "issue-pipeline: fence worker instances and serialize durable integration turns",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/116"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-EsTJQ",
+        "name": "agent:working",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 108,
+    "title": "Runtime sessions refuse to start when node comes from HOME-relative mise shims",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/108"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC-GNrWQ",
+        "name": "agent:stopped-error",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 93,
+    "title": "Role worktrees lack the non-secret apps/web/.env.test that verification gets",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/93"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC98LJyA",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVPClac8AAAAC-GNrWQ",
+        "name": "agent:stopped-error",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 73,
+    "title": "issue-pipeline: agents sweep GitHub assignments for work; GitHub is durable coordination storage",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/73"
+  },
+  {
+    "labels": [
+      {
+        "id": "LA_kwDOVPClac8AAAAC98LJyA",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      },
+      {
+        "id": "LA_kwDOVPClac8AAAAC-FXoFg",
+        "name": "agent:stopped-not-doable",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "number": 69,
+    "title": "Give Hippy and Lawd zany GitHub profiles and distinct personalities",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/issues/69"
+  }
+]

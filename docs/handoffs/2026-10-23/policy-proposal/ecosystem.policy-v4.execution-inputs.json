@@ -1,0 +1,324 @@
+{
+  "schema": "ecosystem-execution-policy-v4",
+  "authority": "Compatibility only. Normal exact whole-source/input/current-policy/target binding remains mandatory.",
+  "trustedConfigs": [
+    "mise.toml",
+    "apps/issue-pipeline/mise.toml"
+  ],
+  "discoveryInputs": [
+    ".gitignore",
+    "biome.jsonc",
+    "mise.toml",
+    "package.json",
+    "package-lock.json",
+    "apps/workflow-dash/package.json",
+    "apps/issue-pipeline/mise.toml",
+    "apps/issue-pipeline/package.json",
+    "apps/issue-pipeline/tsconfig.json",
+    "apps/issue-pipeline/tsconfig.test.json",
+    "apps/issue-pipeline/biome.jsonc"
+  ],
+  "workspaceManifests": [
+    "apps/issue-pipeline/package.json",
+    "apps/workflow-dash/package.json"
+  ],
+  "workspaceDirectories": [
+    "apps/issue-pipeline",
+    "apps/workflow-dash"
+  ],
+  "workspaceLinks": {
+    "node_modules/@ecosystem/issue-pipeline": "apps/issue-pipeline",
+    "node_modules/@ecosystem/workflow-dash": "apps/workflow-dash"
+  },
+  "variants": [
+    {
+      "id": "eco164-existing-cleanup-v4",
+      "referenceCommit": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd",
+      "inputs": [
+        {
+          "path": ".gitignore",
+          "mode": "100644",
+          "gitBlob": "f4cf0663dc57202f1c3707b45ddc6f34a5dbf20e",
+          "sha256": "2802a77b30747e9d16443eb1200e1fa84056ac286f1b54ce2c697e599244a5ed",
+          "bytes": 265,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:.gitignore"
+        },
+        {
+          "path": "biome.jsonc",
+          "mode": "100644",
+          "gitBlob": "cf0697757b1d4584fb70859a4b54208fd0ee85ae",
+          "sha256": "540005094deaec6379199cdb0a2832dbcc79cd0bb6aa12f1cfd824779f9a59fb",
+          "bytes": 7421,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:biome.jsonc"
+        },
+        {
+          "path": "mise.toml",
+          "mode": "100644",
+          "gitBlob": "25be8af6e3c6358b05f3da18aecbc7d571bebcde",
+          "sha256": "00d3061399caa0f3f74595a129c54d1573327bec6237ac5d86089f3e8d37e0ce",
+          "bytes": 140,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:mise.toml"
+        },
+        {
+          "path": "package.json",
+          "mode": "100644",
+          "gitBlob": "8d73eccd49e6f6c9920bfbc063649c53a6695a98",
+          "sha256": "85833fb4a627f5a4a25588091ed9b1978dcd260abad8fd592f156d6fa44de6c7",
+          "bytes": 140,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:package.json"
+        },
+        {
+          "path": "package-lock.json",
+          "mode": "100644",
+          "gitBlob": "24dd1dd831e24fcefe5c7f93c40bf883ca901736",
+          "sha256": "ce07af1836fea8cef08e5162144b8790893ec4cc04b1232e38369e2d2a719b4c",
+          "bytes": 79438,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:package-lock.json"
+        },
+        {
+          "path": "apps/workflow-dash/package.json",
+          "mode": "100644",
+          "gitBlob": "ab7a9fd0ea9b26a14cc2ecf3916c4bc8b1a4b106",
+          "sha256": "113b684d75ba3230511ef56133ef3f01bff5f9112579c70a4ec026cdb847ff20",
+          "bytes": 736,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/workflow-dash/package.json"
+        },
+        {
+          "path": "apps/issue-pipeline/mise.toml",
+          "mode": "100644",
+          "gitBlob": "38fe9466abe676b21e604b74b7bb2aac2148fa90",
+          "sha256": "09311fc18b9455ed971f6c3ae7da7c9f6c4c39132418a6d458de3bbd7c025ccc",
+          "bytes": 2285,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/mise.toml"
+        },
+        {
+          "path": "apps/issue-pipeline/package.json",
+          "mode": "100644",
+          "gitBlob": "dfeab8a0d57afdce57ab797a4c38708e04ed82bd",
+          "sha256": "7f6d4b74fcd7817e1f76261165398c64a36afe79f6567b56a460d70dd43cb539",
+          "bytes": 388,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/package.json"
+        },
+        {
+          "path": "apps/issue-pipeline/tsconfig.json",
+          "mode": "100644",
+          "gitBlob": "3c96b105f9c155f9b45c85a3c048c1f00a8905ee",
+          "sha256": "86b55f470fe93ab435d8e6b7c378773101780b7f5ab5be691268d6aa05ef439e",
+          "bytes": 748,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/tsconfig.json"
+        },
+        {
+          "path": "apps/issue-pipeline/tsconfig.test.json",
+          "mode": "100644",
+          "gitBlob": "97d27bf24770c378cc27267b8aa50c5896a596d1",
+          "sha256": "b2358ea3f4570943b289b415255a739e0cc5fc100534903a17eb28abc84e0b1c",
+          "bytes": 171,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/tsconfig.test.json"
+        },
+        {
+          "path": "apps/issue-pipeline/biome.jsonc",
+          "mode": "100644",
+          "gitBlob": "f86266bf1e6e8e8409d88b4c50b1eec2755babe9",
+          "sha256": "da5f13f515c8a0c4f7a40624f3e03e39072ab26e4c8afc8d62aabf3182ccb7a8",
+          "bytes": 4941,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/biome.jsonc"
+        },
+        {
+          "path": "apps/issue-pipeline/build.ts",
+          "mode": "100644",
+          "gitBlob": "336ffb30d1a9a0e5da06357e51b174afca867a7a",
+          "sha256": "eb8dd273fc2b381fffcb684e859f817d647ea1f46024b99dd1dfbd6c5306029f",
+          "bytes": 2956,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/build.ts"
+        },
+        {
+          "path": "apps/issue-pipeline/test/build.test.mjs",
+          "mode": "100644",
+          "gitBlob": "1f54b876b473dbdc21d0d22ac5d7f4d27bd4ef6a",
+          "sha256": "bfc2481f617e6ed55593ecfe1f0fd517f1eddaac0e36ed4fb607d85f0c7beefa",
+          "bytes": 8948,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/test/build.test.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/check-task.test.mjs",
+          "mode": "100644",
+          "gitBlob": "39a7b7b42cbd862961f69f9bb2bebd0238a5a7ff",
+          "sha256": "fd87d06e094c962c0d69c509d5354141bfded211b9b6efc2cf38ebf3780e147d",
+          "bytes": 3238,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/test/check-task.test.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/credentials-test-kit.mjs",
+          "mode": "100644",
+          "gitBlob": "5ffb33a084abc770389d634c441faf91aa53f6f0",
+          "sha256": "c240584ce7cad99b9043bf3378a6c7a2c1a2eaf662db9c388354aa017ac7b611",
+          "bytes": 1032,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/test/credentials-test-kit.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/fake-gh.mjs",
+          "mode": "100644",
+          "gitBlob": "060bf2fc62fa6fe1247148f66dd7754f01bda44f",
+          "sha256": "db90eb304879d67e136ad9d0a5404d59dd02ec46c84aaf3dbb6e71a3926a10ab",
+          "bytes": 11359,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/test/fake-gh.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/fake-execution-transport.mjs",
+          "mode": "100644",
+          "gitBlob": "501730289fec172ddfe2721f2a38fe60eac1ad83",
+          "sha256": "637f7d0d84af95b83893b050e250efc3a0c8d16dc84c914d582ac9e3fedc8823",
+          "bytes": 5321,
+          "provenance": "a8bf64fd858fb2294588c3d4f674f31a6f1849fd:apps/issue-pipeline/test/fake-execution-transport.mjs"
+        }
+      ]
+    },
+    {
+      "id": "eco178-f1-f2-f3-v4",
+      "referenceCommit": "57656391c85ebb2b918096bc398717e7a00ad626",
+      "inputs": [
+        {
+          "path": ".gitignore",
+          "mode": "100644",
+          "gitBlob": "f4cf0663dc57202f1c3707b45ddc6f34a5dbf20e",
+          "sha256": "2802a77b30747e9d16443eb1200e1fa84056ac286f1b54ce2c697e599244a5ed",
+          "bytes": 265,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:.gitignore"
+        },
+        {
+          "path": "biome.jsonc",
+          "mode": "100644",
+          "gitBlob": "cf0697757b1d4584fb70859a4b54208fd0ee85ae",
+          "sha256": "540005094deaec6379199cdb0a2832dbcc79cd0bb6aa12f1cfd824779f9a59fb",
+          "bytes": 7421,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:biome.jsonc"
+        },
+        {
+          "path": "mise.toml",
+          "mode": "100644",
+          "gitBlob": "25be8af6e3c6358b05f3da18aecbc7d571bebcde",
+          "sha256": "00d3061399caa0f3f74595a129c54d1573327bec6237ac5d86089f3e8d37e0ce",
+          "bytes": 140,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:mise.toml"
+        },
+        {
+          "path": "package.json",
+          "mode": "100644",
+          "gitBlob": "8d73eccd49e6f6c9920bfbc063649c53a6695a98",
+          "sha256": "85833fb4a627f5a4a25588091ed9b1978dcd260abad8fd592f156d6fa44de6c7",
+          "bytes": 140,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:package.json"
+        },
+        {
+          "path": "package-lock.json",
+          "mode": "100644",
+          "gitBlob": "24dd1dd831e24fcefe5c7f93c40bf883ca901736",
+          "sha256": "ce07af1836fea8cef08e5162144b8790893ec4cc04b1232e38369e2d2a719b4c",
+          "bytes": 79438,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:package-lock.json"
+        },
+        {
+          "path": "apps/workflow-dash/package.json",
+          "mode": "100644",
+          "gitBlob": "ab7a9fd0ea9b26a14cc2ecf3916c4bc8b1a4b106",
+          "sha256": "113b684d75ba3230511ef56133ef3f01bff5f9112579c70a4ec026cdb847ff20",
+          "bytes": 736,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/workflow-dash/package.json"
+        },
+        {
+          "path": "apps/issue-pipeline/mise.toml",
+          "mode": "100644",
+          "gitBlob": "35455598006053f1decee3e8de18d51a0659cb6f",
+          "sha256": "463b5789beb1af034b511397bf9a60427ab9258a41ef5ac1cc2184e1e64988b8",
+          "bytes": 2742,
+          "provenance": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco178-install-policy/snapshots/result/apps/issue-pipeline/mise.toml"
+        },
+        {
+          "path": "apps/issue-pipeline/package.json",
+          "mode": "100644",
+          "gitBlob": "dfeab8a0d57afdce57ab797a4c38708e04ed82bd",
+          "sha256": "7f6d4b74fcd7817e1f76261165398c64a36afe79f6567b56a460d70dd43cb539",
+          "bytes": 388,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/package.json"
+        },
+        {
+          "path": "apps/issue-pipeline/tsconfig.json",
+          "mode": "100644",
+          "gitBlob": "3c96b105f9c155f9b45c85a3c048c1f00a8905ee",
+          "sha256": "86b55f470fe93ab435d8e6b7c378773101780b7f5ab5be691268d6aa05ef439e",
+          "bytes": 748,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/tsconfig.json"
+        },
+        {
+          "path": "apps/issue-pipeline/tsconfig.test.json",
+          "mode": "100644",
+          "gitBlob": "97d27bf24770c378cc27267b8aa50c5896a596d1",
+          "sha256": "b2358ea3f4570943b289b415255a739e0cc5fc100534903a17eb28abc84e0b1c",
+          "bytes": 171,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/tsconfig.test.json"
+        },
+        {
+          "path": "apps/issue-pipeline/biome.jsonc",
+          "mode": "100644",
+          "gitBlob": "f86266bf1e6e8e8409d88b4c50b1eec2755babe9",
+          "sha256": "da5f13f515c8a0c4f7a40624f3e03e39072ab26e4c8afc8d62aabf3182ccb7a8",
+          "bytes": 4941,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/biome.jsonc"
+        },
+        {
+          "path": "apps/issue-pipeline/build.ts",
+          "mode": "100644",
+          "gitBlob": "336ffb30d1a9a0e5da06357e51b174afca867a7a",
+          "sha256": "eb8dd273fc2b381fffcb684e859f817d647ea1f46024b99dd1dfbd6c5306029f",
+          "bytes": 2956,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/build.ts"
+        },
+        {
+          "path": "apps/issue-pipeline/test/build.test.mjs",
+          "mode": "100644",
+          "gitBlob": "1f54b876b473dbdc21d0d22ac5d7f4d27bd4ef6a",
+          "sha256": "bfc2481f617e6ed55593ecfe1f0fd517f1eddaac0e36ed4fb607d85f0c7beefa",
+          "bytes": 8948,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/test/build.test.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/check-task.test.mjs",
+          "mode": "100644",
+          "gitBlob": "1795568b2a950e6d171b77022353ab2a75d94746",
+          "sha256": "45a499522fced0c7adc642e1a4d9f94b87f2a1243eb2f34095abf813619168c7",
+          "bytes": 3419,
+          "provenance": "/Users/axolotl-logic/workspace/agent-handoffs/project-buddy/20261019-launch-ready/dispatch-20261022-four-lane-drain/approved-eco178-install-policy/snapshots/result/apps/issue-pipeline/test/check-task.test.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/credentials-test-kit.mjs",
+          "mode": "100644",
+          "gitBlob": "5ffb33a084abc770389d634c441faf91aa53f6f0",
+          "sha256": "c240584ce7cad99b9043bf3378a6c7a2c1a2eaf662db9c388354aa017ac7b611",
+          "bytes": 1032,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/test/credentials-test-kit.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/fake-gh.mjs",
+          "mode": "100644",
+          "gitBlob": "060bf2fc62fa6fe1247148f66dd7754f01bda44f",
+          "sha256": "db90eb304879d67e136ad9d0a5404d59dd02ec46c84aaf3dbb6e71a3926a10ab",
+          "bytes": 11359,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/test/fake-gh.mjs"
+        },
+        {
+          "path": "apps/issue-pipeline/test/fake-execution-transport.mjs",
+          "mode": "100644",
+          "gitBlob": "501730289fec172ddfe2721f2a38fe60eac1ad83",
+          "sha256": "637f7d0d84af95b83893b050e250efc3a0c8d16dc84c914d582ac9e3fedc8823",
+          "bytes": 5321,
+          "provenance": "57656391c85ebb2b918096bc398717e7a00ad626:apps/issue-pipeline/test/fake-execution-transport.mjs"
+        }
+      ]
+    }
+  ],
+  "notTrustedSibling": {
+    "path": "apps/workflow-dash/mise.toml",
+    "sha256": "1a83daf451f50c1788c9452251ce723fe1bdd59bba00cb0266ca517382624443",
+    "status": "NOT TRUSTED; actual enumeration unresolved before runtime"
+  }
+}
