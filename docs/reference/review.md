@@ -7,7 +7,7 @@ This page describes how a change is checked: the Reviewer's hardening, determini
 The `review` stage runs one writable Reviewer session in phase `hardening`. It reads the trusted issue requirements, optional Author Gherkin and the Developer's draft adversarially, adds regression and edge-case tests and fixes design and correctness defects. Docs in `docs/` are part of the change it hardens.
 
 - It commits through `pipeline_commit` (see [sessions](sessions.md)). It never synchronizes with the base; integration does that at merge.
-- Its task names the actual `commands.test`, and its prompt tells it to run only targeted tests. The full gate runs afterward, outside the session.
+- Its task names the actual `commands.test`, and its prompt tells it to run only targeted tests. The configured gate runs afterward, outside the session. Record its exact command and scope: the issue-pipeline repository's [fast default](check-gates.md) is not full integration coverage.
 - It must not weaken requirements, assertions, coverage, check commands, lint or types to get a pass. A genuinely wrong test may be corrected with evidence. An unresolved product question goes back for an answer.
 - If verification fails, check-fix sessions (also phase `hardening`) try again, up to `maxCiFixes` (default 2). After that the issue stops with `agent:stopped-check-fixes`.
 

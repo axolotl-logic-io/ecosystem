@@ -3,7 +3,7 @@
 # `mise //apps/issue-pipeline:<task>`. Run `npm ci` at the repo root first.
 
 [tasks.check]
-description = "Typecheck, lint, build and run the pipeline's tests"
+description = "Fast default gate: typecheck, lint, build, syntax and build artifact guards (not full integration coverage)"
 run = [
   "npm run typecheck",
   "npm run lint",
@@ -15,8 +15,17 @@ run = [
   "node --check dist/orchestrate.mjs",
   "node --check dist/report.mjs",
   "node --check dist/pipeline-commit.mjs",
+  "node --check dist/structured-output.mjs",
   "node --check dist/git-review.mjs",
   "node --check dist/caller-jobs.mjs",
+  # Retain the existing filesystem/subprocess build guards, not the flow suite.
+  "node --test --test-concurrency=2 --test-timeout=180000 test/build.test.mjs",
+]
+
+[tasks."check:full"]
+description = "Expensive opt-in full gate: fast gate plus every Node integration/flow test"
+depends = ["check"]
+run = [
   # Each test fails if it runs past --test-timeout, by its title, rather than
   # hanging the run (#372). The slowest test measured took 51.3 s (the
   # typecheck that fails on a type error, test/typecheck-config.test.mjs) in a

@@ -53,7 +53,7 @@ Install only when a change affects installed source or assets. Prompts in `apps/
 
 ```bash
 npm ci                                       # at the repository root
-mise //apps/issue-pipeline:check             # the full gate on the exact source head
+mise //apps/issue-pipeline:check:full        # explicit full gate on the exact source head
 mise //apps/issue-pipeline:install:dry-run   # review what would change
 mise //apps/issue-pipeline:install           # install
 ```
@@ -72,7 +72,7 @@ Merging source changes nothing that runs. Record source delivery (the PR and its
 1. Stop dispatching new jobs.
 2. Drain every old-version job. Prefer letting an active merge turn finish. Confirm no old job or session remains.
 3. Snapshot the installed config, saved-state evidence and recovery files.
-4. Pass the full gate on the exact source head, and review the dry-run.
+4. Pass the explicit full gate (`mise //apps/issue-pipeline:check:full`) on the exact source head, and review the dry-run.
 5. Install.
 6. Resume one explicitly assigned issue and stage at a time.
 
@@ -102,4 +102,8 @@ Lifting a stop supplies no missing authority. An uncertain merge needs read-only
 
 ## Run the tests
 
-`mise //apps/issue-pipeline:check` runs type checks, Biome, the build, syntax checks and every test, at most two test files at a time. Tests use temporary HOME and pipeline roots, local bare Git origins, a fake GitHub and a fake Pi; they never touch real GitHub, models or production data. A failure or flake blocks acceptance.
+`mise //apps/issue-pipeline:check` is the **fast default gate**, not full integration coverage. It runs source and checked-JavaScript test type checks, Biome, the build, syntax checks for the installer and all built programs, and the existing build artifact filesystem/subprocess tests.
+
+`mise //apps/issue-pipeline:check:full` explicitly opts into the expensive full gate: the fast gate followed by every Node test, at most two test files at a time, with the original 180000 ms timeout. Do not run the full suite by default or automatically after landing. The [gate scope and cost report](check-gates.md) explains what the fast gate does not prove, the known cost and the remaining optimization or isolated-stage work.
+
+Tests use temporary HOME and pipeline roots, local bare Git origins, a fake GitHub and a fake Pi; they never touch real GitHub, models or production data. A failure or flake blocks acceptance. These repository tasks do not change live operator configuration or wrappers. Save the exact command, effective policy and source SHA with results; a wrapper that directly invokes the full suite still incurs its cost.
