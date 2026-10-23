@@ -2,13 +2,12 @@
 // The Reviewer's hardening and the revision it binds, through a fake
 // RoleContext: a head or inputs change during hardening saves nothing and
 // posts nothing, a stale Gherkin goes to the author, hardening after the
-// code merged binds the merge commit and pushes nothing, and failures never
-// pass for a hardening.
+// code merged is refused before any preparation, suite, model or push (#185),
+// and failures never pass for a hardening.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   endCode,
-  firstPayload,
   opNames,
   postsOf,
   savesOf,
@@ -33,8 +32,8 @@ import { hardening, VERIFIED } from "./reviewer-role-test-kit.mjs";
 const { policyRevision } = await import("../../../src/project-policy.ts");
 const UNREADABLE_REPLY = /reply is not what the role reads/u;
 const HEAD_MOVED = /the next job hardens the new head/u;
-const MERGED_SCOPE =
-  /Scope: none\. The code already merged as PR #90, merge commit `[0-9a-f]+`, which `repo\/` holds: commit nothing\./u;
+const POSTMERGE_REFUSED =
+  /already merged as [0-9a-f]+; postmerge hardening is not allowed; code remains merged; no postmerge suite, writer or retrospective Security runs/u;
 
 const MERGED_PR = {
   number: PR,
@@ -112,7 +111,7 @@ test("a Gherkin older than the inputs, or none, goes to the author before any se
   }
 });
 
-test("after the code merged, hardening verifies the merge commit, pushes nothing and binds the merge commit", async () => {
+test("after the code merged, hardening is refused before preparing, verifying, a session or a push, keeping merged provenance", async () => {
   const merged = current({ code: MERGE_COMMIT }, MERGED_PR);
   const { ctx, calls } = hardening({
     state: { codeMerged: CODE_MERGED },
@@ -123,21 +122,20 @@ test("after the code merged, hardening verifies the merge commit, pushes nothing
       verify: [{ ...VERIFIED, headSha: MERGE_COMMIT }],
     },
   });
-  const state = stateOf(await reviewerRole(ctx), "next");
-  assert.match(sessionsOf(calls)[0]?.task ?? "", MERGED_SCOPE);
-  const { codeMerged: prepared } = firstPayload(calls, "prepare-review");
-  assert.deepEqual(prepared, CODE_MERGED);
-  const { codeMerged } = firstPayload(calls, "verify");
-  assert.deepEqual(codeMerged, CODE_MERGED);
-  assert.ok(!opNames(calls).includes("push"));
-  assert.ok(!opNames(calls).includes("ready-pr"));
-  assert.equal(state.stage, "merge");
-  assert.equal(state.verifiedSha, MERGE_COMMIT);
-  assert.deepEqual(state.hardened, merged.revision);
-  assert.equal(state.hardened?.policy, policyRevision(cfg).policy);
+  const end = await reviewerRole(ctx);
+  assert.equal(endCode(end), "error");
+  assert.ok(end.kind === "stop");
+  assert.match(end.reason, POSTMERGE_REFUSED);
+  const state = stateOf(end, "stop");
+  assert.deepEqual(state.codeMerged, CODE_MERGED);
+  assert.notEqual(state.verifiedSha, MERGE_COMMIT);
+  assert.notDeepEqual(state.hardened, merged.revision);
+  assert.deepEqual(opNames(calls), ["current-revision"]);
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(savesOf(calls).length, 0);
 });
 
-test("postmerge preparation of a different result refuses a writer and preserves merged provenance", async () => {
+test("a merged different result is refused before preparation or a writer, preserving merged provenance", async () => {
   const merged = current({ code: MERGE_COMMIT }, MERGED_PR);
   const { ctx, calls } = hardening({
     state: { codeMerged: CODE_MERGED },
@@ -149,7 +147,7 @@ test("postmerge preparation of a different result refuses a writer and preserves
   assert.deepEqual(stateOf(end, "stop").codeMerged, CODE_MERGED);
   assert.equal(sessionsOf(calls).length, 0);
   assert.equal(savesOf(calls).length, 0);
-  assert.deepEqual(opNames(calls), ["current-revision", "prepare-review"]);
+  assert.deepEqual(opNames(calls), ["current-revision"]);
 });
 
 test("a code merge GitHub doesn't confirm stops before any hardening", async () => {

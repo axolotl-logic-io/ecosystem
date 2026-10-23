@@ -22,8 +22,8 @@ const { afterOwnMerge } = await import(
   "../../../src/roles/merge/after-merge.ts"
 );
 
-test("uninterrupted own result checks M after premerge Security and saving truthful merge, before completion", async () => {
-  const w = world({ concurrent: true });
+test("uninterrupted own FF result is confirmed read-only after premerge checks, Security and saving truthful merge, before completion", async () => {
+  const w = world({ fastForward: true });
   const run = context(w, {
     state: { security: null },
     ops: {
@@ -36,6 +36,7 @@ test("uninterrupted own result checks M after premerge Security and saving truth
       "ci-status": [{ status: "pass" }],
       verify: [verified(w)],
       merge: [{ merged: true, headSha: w.head, mergeCommit: w.merged }],
+      "confirm-merged": [{ confirmed: true, headSha: w.merged }],
       "prepare-review": [
         {
           headSha: w.head,
@@ -52,20 +53,21 @@ test("uninterrupted own result checks M after premerge Security and saving truth
   const end = await mergeRole(run.ctx);
   assert.equal(end.kind, "next");
   const log = names(run.calls);
-  assert.ok(log.indexOf("merge") < log.indexOf("verify"));
+  assert.equal(w.merged, w.head);
+  assert.ok(log.lastIndexOf("verify") < log.indexOf("merge"));
+  assert.ok(log.indexOf("merge") < log.indexOf("confirm-merged"));
   assert.ok(log.indexOf("session") < log.indexOf("merge"));
   assert.equal(log.filter((name) => name === "session").length, 1);
   const saved = saves(run.calls);
   const merged = saved.find((state) => state.merged?.code === w.merged);
   assert.ok(merged !== undefined);
   assert.equal(merged.verifiedSha, w.head);
-  assert.ok(saved.some((state) => state.verifiedSha === w.merged));
-  const verifiedCall = run.calls.find(
-    (call) => call.kind === "op" && call.name === "verify",
+  const confirmCall = run.calls.find(
+    (call) => call.kind === "op" && call.name === "confirm-merged",
   );
-  assert.deepEqual(verifiedCall, {
+  assert.deepEqual(confirmCall, {
     kind: "op",
-    name: "verify",
+    name: "confirm-merged",
     payload: { number: ISSUE, codeMerged: { pr: PR, sha: w.merged } },
   });
   const session = run.calls.find((call) => call.kind === "session");
@@ -76,25 +78,22 @@ test("uninterrupted own result checks M after premerge Security and saving truth
 });
 
 for (const mode of ["recovered", "uninterrupted"]) {
-  for (const failure of ["code", "wrong-head"]) {
-    test(`${mode} own ${failure} check failure preserves merged truth and stops without security/completion/writer`, async () => {
+  for (const failure of ["missing-proof", "wrong-head"]) {
+    test(`${mode} own ${failure} confirmation preserves merged truth and stops without suite/security/completion/writer`, async () => {
       const w = world();
-      let check = verified(w);
-      if (failure === "code") {
-        check = {
-          pass: false,
-          headSha: w.merged,
-          checks: [{ id: "test", pass: false, detail: "exit 1" }],
-        };
-      }
+      /** @type {Record<string, unknown>} */
+      let confirmation = {
+        confirmed: false,
+        reason: "no premerge check proof binds the merged result",
+      };
       if (failure === "wrong-head") {
-        check = { ...verified(w), headSha: w.head };
+        confirmation = { confirmed: true, headSha: w.head };
       }
       const run = context(w, {
         state: { ...ownState(w), verifiedSha: w.merged },
         ops: {
           "current-revision": [current(w, true)],
-          verify: [check],
+          "confirm-merged": [confirmation],
         },
       });
       let end;
@@ -110,7 +109,8 @@ for (const mode of ["recovered", "uninterrupted"]) {
       assert.equal(end.state.merged?.code, w.merged);
       assert.deepEqual(end.state.hardened, w.revision);
       assert.ok(end.reason.includes("code remains merged"));
-      assert.ok(names(run.calls).includes("verify"));
+      assert.ok(names(run.calls).includes("confirm-merged"));
+      assert.equal(names(run.calls).includes("verify"), false);
       assert.equal(names(run.calls).includes("session"), false);
       assert.equal(names(run.calls).includes("finish"), false);
       assert.deepEqual(codeWrites(run.calls), []);
@@ -118,22 +118,35 @@ for (const mode of ["recovered", "uninterrupted"]) {
   }
 }
 
-test("exact own recovery checks M even with cached verified M and preserves original-head vs merged provenance", async () => {
-  const w = world();
+test("exact own FF recovery confirms M read-only with premerge Security and preserves original-head vs merged provenance", async () => {
+  const w = world({ fastForward: true });
+  // The candidate's retained target, as the world saved it.
+  const target = { repo: w.cfg.repo, branch: w.cfg.baseBranch, sha: w.base };
   const run = context(w, {
-    state: { ...ownState(w), verifiedSha: w.merged },
+    state: {
+      ...ownState(w),
+      verifiedSha: w.merged,
+      security: {
+        revision: w.revision,
+        phase: "candidate",
+        target,
+        commentId: PR,
+        finding: null,
+      },
+    },
     ops: {
-      ...postmergeOps(w),
+      finish: postmergeOps(w).finish,
+      "confirm-merged": [{ confirmed: true, headSha: w.merged }],
       "current-revision": [current(w, true), current(w, true)],
     },
-    sessions: [NO_FINDING],
   });
   const end = await mergeRole(run.ctx);
   assert.ok(end.kind === "next");
   assert.equal(end.state.merged?.code, w.merged);
   assert.deepEqual(end.state.hardened, w.revision);
   assert.deepEqual(end.state.codeMerged, { pr: PR, sha: w.merged });
-  assert.equal(names(run.calls).filter((name) => name === "verify").length, 1);
+  assert.equal(names(run.calls).includes("verify"), false);
+  assert.equal(names(run.calls).includes("session"), false);
   assert.equal(names(run.calls).includes("merge"), false);
   assert.deepEqual(codeWrites(run.calls), []);
 });

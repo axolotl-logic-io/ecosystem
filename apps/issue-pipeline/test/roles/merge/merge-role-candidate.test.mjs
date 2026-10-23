@@ -114,7 +114,10 @@ test("exact saved candidate clearance permits only one merge and no duplicate po
   assert.equal(sessionsOf(calls).length, 0);
   assert.equal(opNames(calls).filter((name) => name === "merge").length, 1);
   assert.ok(!opNames(calls).includes("prepare-review"));
-  assert.deepEqual(firstPayload(calls, "verify"), {
+  assert.ok(
+    !opNames(calls).includes("verify", opNames(calls).indexOf("merge")),
+  );
+  assert.deepEqual(firstPayload(calls, "confirm-merged"), {
     number: ctx.issue,
     codeMerged: { pr: ctx.state.pr, sha: state.merged?.code },
   });

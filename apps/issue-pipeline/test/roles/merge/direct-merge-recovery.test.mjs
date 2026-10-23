@@ -37,6 +37,8 @@ const { reauthoredState } = await import(
   "../../../src/orchestrator/issue-plan.ts"
 );
 const RECONCILE = /explicit reconciliation/u;
+const READ_ONLY_RECONCILE =
+  /no security review is saved.*read-only reconciliation/u;
 const ATTEMPT = {
   repo: "o/r",
   pr: PR,
@@ -148,7 +150,7 @@ function mergedState() {
   });
 }
 
-test("changed inputs during direct postmerge Security stop with original authorization and no next writer", async () => {
+test("a direct merge without candidate Security stops before any postmerge Security, with original authorization and no next writer", async () => {
   const saved = mergedState();
   const run = merging({
     state: saved,
@@ -164,13 +166,11 @@ test("changed inputs during direct postmerge Security stop with original authori
   const end = await mergeRole(run.ctx);
   assert.ok(end.kind === "stop");
   assert.equal(end.code, "error");
-  assert.match(end.reason, RECONCILE);
+  assert.match(end.reason, READ_ONLY_RECONCILE);
   assert.deepEqual(end.state, saved);
   assert.deepEqual(mutationsOf(run.calls), []);
-  assert.deepEqual(
-    sessionsOf(run.calls).map(({ commits }) => commits),
-    [false],
-  );
+  assert.deepEqual(sessionsOf(run.calls), []);
+  assert.equal(opNames(run.calls).includes("prepare-review"), false);
   const resumed = fakeContext({
     stage: "implement",
     state: { ...end.state, stage: "implement" },
@@ -208,7 +208,7 @@ for (const refusedFinish of [false, true]) {
     assert.match(end.reason, RECONCILE);
     assert.deepEqual(end.state, saved);
     assert.deepEqual(sessionsOf(run.calls), []);
-    const allowed = new Set(["current-revision", "verify", "finish"]);
+    const allowed = new Set(["current-revision", "confirm-merged", "finish"]);
     assert.ok(opNames(run.calls).every((name) => allowed.has(name)));
   });
 }

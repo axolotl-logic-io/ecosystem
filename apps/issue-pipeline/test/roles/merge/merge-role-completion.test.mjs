@@ -1,18 +1,17 @@
 // @ts-check
-// The merge role's end through a fake RoleContext: the security review and
-// completion when the code merged before this job, the completion saved
-// before the finish op, and the finish reconciliation of a saved
-// completion, which rechecks actual M before finishing once its security
-// receipt clears exactly what merged, never another merge.
+// The merge role's end through a fake RoleContext: a code merge before this
+// job without its own receipt stops with no postmerge suite, review or
+// completion (#185); the completion saved before the finish op; and the
+// finish reconciliation of a saved completion, which confirms actual M
+// read-only before finishing once its security receipt clears exactly what
+// merged, never another merge.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  callNames,
-  checksBefore,
   endCode,
   firstPayload,
-  freshBefore,
   opNames,
+  opPayloads,
   savesOf,
   sessionsOf,
   stateOf,
@@ -32,6 +31,7 @@ import {
 import {
   AFTER_MERGE,
   CODE_MERGED,
+  CONFIRMED,
   FINISHED,
   MERGED_PR,
   MERGED_REVISION,
@@ -53,16 +53,20 @@ const DONE = {
   security: CLEARED,
 };
 
-// What runs between the security review session and the finish op: the
-// revision read fresh after the session, the receipt's comment and its save,
-// the completion's save, and nothing that could move a head.
-/** @param {Parameters<typeof callNames>[0]} calls */
-function betweenSessionAndFinish(calls) {
-  const names = callNames(calls);
-  return names.slice(names.indexOf("session") + 1, names.indexOf("finish"));
+const POSTMERGE_OPS = ["verify", "prepare-review", "confirm-merged", "merge"];
+// What ran after an earlier merge without this job's receipt: no postmerge
+// op, model or writer may run.
+/** @param {Parameters<typeof opNames>[0]} calls */
+function afterEarlierMergeRan(calls) {
+  return {
+    ops: opNames(calls).filter((name) => POSTMERGE_OPS.includes(name)),
+    mutations: mutationsOf(calls),
+    sessions: sessionsOf(calls).length,
+  };
 }
+const NOTHING_RAN = { ops: [], mutations: [], sessions: 0 };
 
-test("after a confirmed code merge, the merge commit is verified, reviewed for security and completed", async () => {
+test("after an external code merge, the merge commit is neither verified, reviewed for security nor completed", async () => {
   const { ctx, calls } = merging({
     state: {
       ...CODE_MERGED,
@@ -75,38 +79,22 @@ test("after a confirmed code merge, the merge commit is verified, reviewed for s
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
   });
-  const state = stateOf(await mergeRole(ctx), "next");
-  assert.equal(state.stage, "done");
-  assert.deepEqual(state.merged, MERGED_REVISION);
-  assert.deepEqual(state.security?.revision, MERGED_REVISION);
-  assert.ok(!opNames(calls).includes("merge"));
-  const { codeMerged: verifiedMerge } = firstPayload(calls, "verify");
-  assert.deepEqual(verifiedMerge, CODE_MERGED.codeMerged);
-  const { codeMerged: reviewedMerge } = firstPayload(calls, "prepare-review");
-  assert.deepEqual(reviewedMerge, CODE_MERGED.codeMerged);
-  assert.ok(freshBefore(calls, "prepare-review"));
-  const between = betweenSessionAndFinish(calls);
-  for (const mutation of [
-    "sync-base",
-    "finish-sync",
-    "push",
-    "merge",
-    "ready-pr",
-    "open-pr",
-  ]) {
-    assert.equal(between.includes(mutation), false, mutation);
-  }
-  assert.ok(between.includes("current-revision"));
+  const state = stateOf(await mergeRole(ctx), "stop");
+  assert.notEqual(state.stage, "done");
+  assert.deepEqual(state.codeMerged, CODE_MERGED.codeMerged);
+  assert.deepEqual(state.hardened, MERGED_REVISION);
+  assert.equal(state.security, null);
+  assert.deepEqual(afterEarlierMergeRan(calls), NOTHING_RAN);
 });
 
-test("a code merge needs a hardening of the merge commit, and GitHub's confirmation", async () => {
+test("a code merge without hardening of the merge commit or GitHub's confirmation stops, never returning to review", async () => {
   const stale = merging({
     state: { ...CODE_MERGED },
     ops: { "current-revision": [AFTER_MERGE] },
   });
-  const reviewed = stateOf(await mergeRole(stale.ctx), "next");
-  assert.equal(reviewed.stage, "review");
-  assert.deepEqual(mutationsOf(stale.calls), []);
+  const stopped = stateOf(await mergeRole(stale.ctx), "stop");
+  assert.deepEqual(stopped.codeMerged, CODE_MERGED.codeMerged);
+  assert.deepEqual(afterEarlierMergeRan(stale.calls), NOTHING_RAN);
   const unconfirmed = merging({
     state: { ...CODE_MERGED, hardened: MERGED_REVISION },
     ops: { "current-revision": [current({ code: MERGE_COMMIT })] },
@@ -125,7 +113,7 @@ test("a change with no PR and no code merge stops, merging nothing", async () =>
   assert.equal(sessionsOf(calls).length, 0);
 });
 
-test("a saved completion whose finish crashed rechecks M before finishing again", async () => {
+test("a saved completion whose finish crashed confirms M read-only before finishing again", async () => {
   const crashed = merging({
     ops: { finish: [() => Promise.reject(new Error("gh: network"))] },
   });
@@ -140,19 +128,22 @@ test("a saved completion whose finish crashed rechecks M before finishing again"
     mergeQueue: QUEUE,
     ops: {
       "current-revision": [AFTER_MERGE],
+      "confirm-merged": [CONFIRMED],
       finish: [FINISHED],
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
     },
   });
   const state = stateOf(await mergeRole(replay.ctx), "next");
   assert.deepEqual(state, saved);
-  const checks = checksBefore(replay.calls, "finish");
-  assert.deepEqual(checks.verify, { number: replay.ctx.issue, ...CODE_MERGED });
+  assert.deepEqual(
+    checksBeforeFinish(replay.calls),
+    confirmedOnly(replay.ctx.issue),
+  );
   assert.deepEqual(mutationsOf(replay.calls), ["finish"]);
   const { state: finished } = firstPayload(replay.calls, "finish");
   assert.deepEqual(finished, saved);
   assert.equal(sessionsOf(replay.calls).length, 0);
-  assert.deepEqual(savesOf(replay.calls), [saved]);
+  assert.deepEqual(savesOf(replay.calls), []);
 });
 
 test("an older completion with no code merge finishes with no PR", async () => {
@@ -209,6 +200,25 @@ test("a completion is not finished on new inputs or a merge GitHub doesn't confi
   assert.deepEqual(opNames(unconfirmed.calls), ["current-revision"]);
 });
 
+// The read-only confirmation of M and any postmerge suite before finishing.
+/** @param {Parameters<typeof opNames>[0]} calls */
+function checksBeforeFinish(calls) {
+  const names = opNames(calls);
+  return {
+    confirmedFirst: names.indexOf("confirm-merged") < names.indexOf("finish"),
+    confirmations: opPayloads(calls, "confirm-merged"),
+    verifications: opPayloads(calls, "verify"),
+  };
+}
+/** @param {number} issue */
+function confirmedOnly(issue) {
+  return {
+    confirmedFirst: true,
+    confirmations: [{ number: issue, ...CODE_MERGED }],
+    verifications: [],
+  };
+}
+
 // A saved completion whose finish op refuses for `reason`.
 /** @param {string} reason */
 function refusedFinish(reason) {
@@ -230,14 +240,13 @@ test("a completion the finish op refuses for new inputs goes to the author", asy
 test("a completion the finish op refuses for anything but new inputs stops, never done", async () => {
   const refused = refusedFinish("security");
   assert.equal(endCode(await mergeRole(refused.ctx)), "error");
-  const checks = checksBefore(refused.calls, "finish");
-  assert.deepEqual(checks.verify, {
-    number: refused.ctx.issue,
-    ...CODE_MERGED,
-  });
+  assert.deepEqual(
+    checksBeforeFinish(refused.calls),
+    confirmedOnly(refused.ctx.issue),
+  );
   assert.deepEqual(mutationsOf(refused.calls), ["finish"]);
   assert.equal(sessionsOf(refused.calls).length, 0);
-  assert.equal(savesOf(refused.calls).length, 1);
+  assert.deepEqual(savesOf(refused.calls), []);
 });
 
 test("a finish op reply outside its schema fails as an op, so the job stops instead of crashing", async () => {
@@ -251,7 +260,7 @@ test("a finish op reply outside its schema fails as an op, so the job stops inst
   });
 });
 
-test("a merge receipt for another legacy wiki head cannot resume the own merge: it returns to review, never finishing", async () => {
+test("a merge receipt for another legacy wiki head cannot resume the own merge: it stops, never reviewing or finishing", async () => {
   const { ctx, calls } = merging({
     state: {
       ...CODE_MERGED,
@@ -259,9 +268,8 @@ test("a merge receipt for another legacy wiki head cannot resume the own merge: 
     },
     ops: { "current-revision": [AFTER_MERGE] },
   });
-  const state = stateOf(await mergeRole(ctx), "next");
-  assert.equal(state.stage, "review");
-  assert.equal(state.hardened, null);
-  assert.deepEqual(mutationsOf(calls), []);
-  assert.equal(sessionsOf(calls).length, 0);
+  const state = stateOf(await mergeRole(ctx), "stop");
+  assert.notEqual(state.stage, "review");
+  assert.deepEqual(state.codeMerged, CODE_MERGED.codeMerged);
+  assert.deepEqual(afterEarlierMergeRan(calls), NOTHING_RAN);
 });

@@ -246,7 +246,7 @@ test("stop by reason, with no detail, next step or PR, says how to resume", () =
 });
 
 // Version 2 has no publish stage: once the code merged, the stop keeps the
-// stage it came from and says the next job checks the merged result again.
+// stage it came from and says how the next job resumes on the merged result.
 test("a stop after the code merged keeps its stage and resumes on the merged result", () => {
   const { n, pr, state: stateId } = MERGED_STOP;
   const saved = v2State(n, { stage: "merge", pr, codeMerged: CODE_MERGED });

@@ -39,6 +39,8 @@ import {
 const CHANGED = "Also greet departing visitors.";
 const INTERRUPTED = { output: {}, rejectPrompt: "read ECONNRESET" };
 const RECONCILE = /explicit reconciliation/u;
+const READ_ONLY_RECONCILIATION = /read-only reconciliation is required/u;
+const AFTER_LAND_OPS = ["verify", "prepare-review", "finish"];
 /** @type {Flow[]} */
 const flows = [];
 after(() => {
@@ -150,15 +152,11 @@ test("direct historical recovery starts with candidate clearance and a confirmed
   historicalFlow = flow;
 });
 
-test("trusted inputs changing inside direct postmerge Security stop before a later Developer can receive writer tools", () => {
+// No postmerge Security session runs after Land (#185), so trusted inputs
+// cannot change inside one: the historical merge stops read-only at once.
+test("a direct historical merge stops read-only with no postmerge suite or Security session, before a later Developer can receive writer tools", () => {
   assert.ok(historicalFlow);
   const flow = historicalFlow;
-  const beforeInterruption = starts(flow).length;
-  assert.equal(runStage(flow, "merge").end, "deferred");
-  const interrupted = starts(flow).slice(beforeInterruption);
-  assert.equal(interrupted.length, 1);
-  assert.equal(interrupted[0]?.role, "reviewer");
-  assert.equal(interrupted[0]?.commitScope, false);
   const original = state(flow);
   assert.ok(original.merged?.code);
   assert.ok(original.mergeAttempt);
@@ -167,24 +165,20 @@ test("trusted inputs changing inside direct postmerge Security stop before a lat
   const before = starts(flow).length;
   const result = runStage(flow, "merge");
   assert.equal(result.end, "stop");
-  assert.match(JSON.stringify(result), RECONCILE);
+  assert.match(JSON.stringify(result), READ_ONLY_RECONCILIATION);
   assert.deepEqual(
     recoveryFacts(flow, traceStart),
     expectedRecovery(original, refs),
   );
-  const fresh = starts(flow).slice(before);
-  assert.equal(fresh.length, 1);
-  const [security] = fresh;
-  assert.equal(security?.role, "reviewer");
-  const args = security?.argv ?? [];
-  const tools = String(args[args.indexOf("--tools") + 1]).split(",");
-  assert.ok(tools.includes("structured_output"));
-  for (const tool of ["bash", "edit", "write", "pipeline_commit"]) {
-    assert.equal(tools.includes(tool), false);
+  assert.equal(starts(flow).length, before);
+  const ops = opsTrace(flow)
+    .slice(traceStart)
+    .map(({ request }) => request.op);
+  for (const op of AFTER_LAND_OPS) {
+    assert.equal(ops.includes(op), false, op);
   }
-  assert.equal(security?.extensions.includes("pipeline-commit.mjs"), false);
   const stopped = structuredClone(state(flow));
-  assert.match(stopped.log.join("\n"), RECONCILE);
+  assert.match(stopped.log.join("\n"), READ_ONLY_RECONCILIATION);
   recovery = { flow, original, refs, traceStart, stopped };
 });
 

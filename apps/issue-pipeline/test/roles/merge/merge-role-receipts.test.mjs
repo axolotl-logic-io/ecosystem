@@ -1,5 +1,6 @@
 // @ts-check
-// Own-result checks save M without replacing H or granting a postmerge writer.
+// Own-result confirmation saves M without replacing H, running a postmerge
+// suite or granting a postmerge writer (#185).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -17,17 +18,17 @@ import {
   REVISION,
   sha,
 } from "../reviewer-and-merge-role-test-kit.mjs";
-import { MERGED_REVISION, merging } from "./merge-role-test-kit.mjs";
+import { MERGED_REVISION, merging, UNPROVEN } from "./merge-role-test-kit.mjs";
 
-test("own merge saves the original receipt, exact-M verification, security and completion separately", async () => {
+test("own merge saves the original receipt, then completion with candidate security, after read-only confirmation and no postmerge suite", async () => {
   const { ctx, calls } = merging();
   await mergeRole(ctx);
   const saves = savesOf(calls);
   assert.equal(saves[0]?.stage, "merge");
   assert.equal(saves[0]?.merged, null);
   assert.deepEqual(saves[1]?.merged, MERGED_REVISION);
-  assert.equal(saves[2]?.verifiedSha, MERGE_COMMIT);
-  assert.deepEqual(saves[2]?.hardened, REVISION);
+  assert.equal(saves[1]?.verifiedSha, HEAD);
+  assert.deepEqual(saves[1]?.hardened, REVISION);
   assert.deepEqual(saves[0]?.security, {
     revision: REVISION,
     phase: "candidate",
@@ -35,23 +36,25 @@ test("own merge saves the original receipt, exact-M verification, security and c
     commentId: COMMENT_ID,
     finding: null,
   });
-  assert.equal(saves[3]?.stage, "done");
-  assert.deepEqual(saves[3]?.security, saves[2]?.security);
+  assert.equal(saves[2]?.stage, "done");
+  assert.deepEqual(saves[2]?.security, saves[1]?.security);
+  assert.equal(saves.at(-1), saves[2]);
   const { state: finished } = firstPayload(calls, "finish");
-  assert.deepEqual(finished, saves[3]);
-  assert.deepEqual(firstPayload(calls, "verify"), {
+  assert.deepEqual(finished, saves[2]);
+  assert.equal(opNames(calls).includes("verify"), false);
+  assert.deepEqual(firstPayload(calls, "confirm-merged"), {
     number: ctx.issue,
     codeMerged: { pr: PR, sha: MERGE_COMMIT },
   });
 });
 
-for (const checks of [
-  [],
-  [{ id: "test", pass: false, detail: "failed on combined M" }],
-]) {
-  test(`an own-result verify failure with ${checks.length} failed rows stops without a writer or completion`, async () => {
+for (const [why, confirmation] of Object.entries({
+  "missing premerge proof": UNPROVEN,
+  "another confirmed result": { confirmed: true, headSha: sha("d") },
+})) {
+  test(`an own-result confirmation of ${why} stops without a suite, writer or completion`, async () => {
     const { ctx, calls } = merging({
-      ops: { verify: [{ pass: false, headSha: MERGE_COMMIT, checks }] },
+      ops: { "confirm-merged": [confirmation] },
     });
     const end = await mergeRole(ctx);
     assert.ok(end.kind === "stop");
@@ -61,7 +64,7 @@ for (const checks of [
     assert.equal(end.state.verifiedSha, HEAD);
     assert.deepEqual(end.state.security?.revision, REVISION);
     assert.equal(sessionsOf(calls).length, 1);
-    for (const name of ["push", "sync-base", "finish"]) {
+    for (const name of ["verify", "push", "sync-base", "finish"]) {
       assert.ok(!opNames(calls).includes(name), name);
     }
     assert.deepEqual(

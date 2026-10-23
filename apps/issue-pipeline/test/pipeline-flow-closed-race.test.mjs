@@ -1,25 +1,25 @@
 // @ts-check
 // A real authorized FF lands and auto-closes its issue, but incompatible PR
-// binding withholds the own receipt. Installed-caller recovery stays read-only.
+// binding withholds the own receipt. Installed-caller recovery stays read-only
+// and confirms the premerge proof without a suite after Land (#185).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { z } from "zod";
-import { isStateBody } from "../src/comment-marks.ts";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
-import {
-  readWorld,
-  withWorld,
-  writeWorld,
-} from "./fake-pipeline-flow-gh-world.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
+import {
+  confirmationsSince,
+  opsSince,
+} from "./pipeline-flow-post-land-test-kit.mjs";
+import { refusedRecovery } from "./pipeline-flow-recovery-test-kit.mjs";
 import {
   createReplayFlow,
   expectedTargetUpdates,
   merges,
-  replaceState,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
 import {
@@ -38,16 +38,6 @@ import {
 } from "./pipeline-flow-test-kit.mjs";
 
 const SHA_LENGTH = 40;
-const MUTATION_ARGS = new Set([
-  "POST",
-  "PATCH",
-  "DELETE",
-  "reopen",
-  "close",
-  "edit",
-  "create",
-]);
-
 const CLAIM_AUTHORITY = z.object({
   state: z.object({ hardened: z.unknown(), integration: z.unknown() }),
 });
@@ -161,7 +151,7 @@ test("the installed caller reaches closed recovery and reconciles the saved resp
   );
 });
 
-test("actual-result checks precede read-only exact Security and completion", () => {
+test("read-only confirmation of the premerge check proof precedes reuse of exact Security and completion", () => {
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   const cleared = savedState(readWorld(flow.ghDir));
   assert.equal(cleared.stage, "done");
@@ -169,10 +159,13 @@ test("actual-result checks precede read-only exact Security and completion", () 
   assert.deepEqual(cleared.security.revision, cleared.hardened);
   assert.equal(cleared.security.finding, null);
   assert.ok(cleared.security.commentId > 0);
-  const trace = opsTrace(flow).slice(traceStart);
-  const verify = trace.findIndex(({ request }) => request.op === "verify");
-  assert.ok(verify >= 0);
-  assert.ok(!trace.some(({ request }) => request.op === "prepare-review"));
+  assert.equal(cleared.verifiedSha, merged);
+  assert.deepEqual(confirmationsSince(flow, traceStart), [
+    { confirmed: true, headSha: merged },
+  ]);
+  const ops = opsSince(flow, traceStart);
+  assert.equal(ops.includes("verify"), false);
+  assert.equal(ops.includes("prepare-review"), false);
   assert.equal(merged, cleared.security.revision.code);
 });
 
@@ -201,16 +194,17 @@ test("exact clearance permits completion with merged labels and completed closur
   );
 });
 
-test("recovery verified the actual result without another code push or merge POST", () => {
+test("recovery confirmed the actual result read-only without a suite, another code push or merge POST", () => {
   const world = readWorld(flow.ghDir);
   const merged = refIn(flow.origin, `refs/heads/${BASE}`);
   assert.equal(savedState(world).stage, "done");
   const trace = opsTrace(flow).slice(traceStart);
-  const verified = trace.filter(({ request }) => request.op === "verify");
-  assert.ok(verified.length > 0);
+  assert.equal(opsSince(flow, traceStart).includes("verify"), false);
+  const confirmed = confirmationsSince(flow, traceStart);
+  assert.ok(confirmed.length > 0);
   assert.ok(
-    verified.every(
-      ({ reply: { pass, headSha } }) => pass === true && headSha === merged,
+    confirmed.every(
+      ({ confirmed: ok, headSha }) => ok === true && headSha === merged,
     ),
   );
   assert.equal(
@@ -232,6 +226,11 @@ test("recovery verified the actual result without another code push or merge POS
   assert.deepEqual(world.unsupported, []);
 });
 
+/** @param {Record<string, unknown> | null} extra */
+function refusedClosedRecovery(extra) {
+  return refusedRecovery(flow, interruptedWorld, extra);
+}
+
 for (const [name, extra] of Object.entries({
   "no saved state": null,
   "ineligible Review state": { stage: "review", stoppedStage: null },
@@ -239,54 +238,11 @@ for (const [name, extra] of Object.entries({
   "another assigned branch": { branch: "another-assignment" },
 })) {
   test(`the installed caller leaves closed Merge with ${name} untouched`, async () => {
-    const seen = await refusedRecovery(extra);
+    const seen = await refusedClosedRecovery(extra);
     assert.equal(seen.result.end, "unclaimed");
     assert.ok(seen.result.claimError);
     assert.deepEqual(seen.after, seen.before);
     assert.deepEqual(seen.ops, ["claim"]);
     assert.deepEqual(seen.writes, []);
   });
-}
-
-/** @typedef {{world: import("./fake-pipeline-flow-gh-world.mjs").World, head: string | null, branch: string | null, sessions: number}} RecoverySnapshot */
-/**
- * @param {Record<string, unknown> | null} extra
- * @returns {Promise<{result: Awaited<ReturnType<typeof runCallerStage>>, before: RecoverySnapshot, after: RecoverySnapshot, ops: string[], writes: string[][]}>}
- */
-async function refusedRecovery(extra) {
-  writeWorld(flow.ghDir, structuredClone(interruptedWorld));
-  withWorld(flow.ghDir, (world) => {
-    world.withholdMergeBinding = false;
-    if (extra === null) {
-      world.comments = world.comments.filter(({ body }) => !isStateBody(body));
-    }
-  });
-  if (extra !== null) {
-    replaceState(flow, { ...savedState(interruptedWorld), ...extra });
-  }
-  const snapshot = {
-    world: readWorld(flow.ghDir),
-    head: refIn(flow.origin, `refs/heads/${BASE}`),
-    branch: refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`),
-    sessions: sessions(flow),
-  };
-  const beforeCalls = ghCalls(flow.ghDir).length;
-  const beforeTrace = opsTrace(flow).length;
-  const result = await runCallerStage(flow, "merge");
-  return {
-    result,
-    before: snapshot,
-    after: {
-      world: readWorld(flow.ghDir),
-      head: refIn(flow.origin, `refs/heads/${BASE}`),
-      branch: refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`),
-      sessions: sessions(flow),
-    },
-    ops: opsTrace(flow)
-      .slice(beforeTrace)
-      .map(({ request }) => request.op),
-    writes: ghCalls(flow.ghDir)
-      .slice(beforeCalls)
-      .filter((args) => args.some((arg) => MUTATION_ARGS.has(arg))),
-  };
 }

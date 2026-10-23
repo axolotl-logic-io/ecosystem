@@ -1,5 +1,6 @@
 // @ts-check
-// A current policy can check a confirmed historical result, not rewrite its authority.
+// A current policy can neither check nor review a confirmed historical result
+// after Land (#185), nor rewrite its authority: it stops read-only.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -9,7 +10,6 @@ import {
   legacyUnboundMerging as merging,
 } from "./roles/merge/merge-role-test-kit.mjs";
 import {
-  firstPayload,
   opNames,
   savesOf,
   sessionsOf,
@@ -30,6 +30,16 @@ const POLICY = policyRevision(merging().ctx.cfg).policy;
 const RESULT = { ...MERGED_REVISION, policy: POLICY };
 const FRESH = current(RESULT, MERGED_PR);
 const FORBIDDEN = ["merge", "push", "sync-base", "ready-pr"];
+const READ_ONLY_RECONCILIATION = /read-only reconciliation is required/u;
+
+/** Whether `end` stops for read-only reconciliation. @param {import("../src/job/role-context.ts").RoleEnd} end */
+function readOnlyStop(end) {
+  return (
+    end.kind === "stop" &&
+    end.code === "error" &&
+    READ_ONLY_RECONCILIATION.test(end.reason)
+  );
+}
 const HISTORICAL = {
   ...CODE_MERGED,
   merged: MERGED_REVISION,
@@ -47,32 +57,25 @@ const HISTORICAL = {
 };
 
 for (const stage of /** @type {const} */ (["merge", "done"])) {
-  test(`${stage} recovery checks and readonly-reviews current policy without rebinding history`, async () => {
+  test(`${stage} recovery of a historical result stops read-only: no current-policy suite, Security or rebinding`, async () => {
     const { ctx, calls } = merging({
       state: { ...HISTORICAL, stage },
       ops: { "current-revision": [FRESH, FRESH] },
     });
     const before = structuredClone(ctx.state);
-    const done = stateOf(await mergeRole(ctx), "next");
-    assert.equal(done.stage, "done");
-    assert.deepEqual(done.merged, before.merged);
-    assert.deepEqual(done.hardened, before.hardened);
-    assert.deepEqual(done.mergeAttempt, before.mergeAttempt);
-    assert.deepEqual(done.codeMerged, before.codeMerged);
-    assert.deepEqual(done.security, {
-      revision: RESULT,
-      commentId: COMMENT_ID,
-      finding: null,
-    });
-    assert.deepEqual(firstPayload(calls, "verify"), {
-      number: ctx.issue,
-      codeMerged: CODE_MERGED.codeMerged,
-    });
-    assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
-    assert.deepEqual(
-      sessionsOf(calls).map(({ commits, phase }) => ({ commits, phase })),
-      [{ commits: false, phase: "security-review" }],
+    const end = await mergeRole(ctx);
+    assert.ok(readOnlyStop(end));
+    const stopped = stateOf(end, "stop");
+    assert.deepEqual(stopped.merged, before.merged);
+    assert.deepEqual(stopped.hardened, before.hardened);
+    assert.deepEqual(stopped.mergeAttempt, before.mergeAttempt);
+    assert.deepEqual(stopped.codeMerged, before.codeMerged);
+    assert.equal(stopped.security, null);
+    assert.equal(opNames(calls).includes("verify"), false);
+    assert.ok(
+      opNames(calls).every((name) => ![...FORBIDDEN, "finish"].includes(name)),
     );
+    assert.equal(sessionsOf(calls).length, 0);
     assert.ok(
       savesOf(calls).every(
         (saved) =>
@@ -80,8 +83,6 @@ for (const stage of /** @type {const} */ (["merge", "done"])) {
           JSON.stringify(before.mergeAttempt),
       ),
     );
-    const { state: finished } = firstPayload(calls, "finish");
-    assert.deepEqual(finished, done);
   });
 }
 
@@ -159,7 +160,7 @@ test("changed trusted inputs do not borrow the historical result or Security", a
   assert.equal(opNames(calls).includes("verify"), false);
 });
 
-test("result-policy movement during readonly Security discards the observation and never finishes", async () => {
+test("result-policy movement on a historical result keeps no observation and never finishes or reviews", async () => {
   const changed = current(
     { ...RESULT, policy: "f".repeat(POLICY.length) },
     MERGED_PR,
@@ -168,15 +169,19 @@ test("result-policy movement during readonly Security discards the observation a
     state: HISTORICAL,
     ops: { "current-revision": [FRESH, changed] },
   });
-  const state = stateOf(await mergeRole(ctx), "wait");
+  const end = await mergeRole(ctx);
+  assert.ok(readOnlyStop(end));
+  const state = stateOf(end, "stop");
   assert.equal(state.security, null);
   assert.deepEqual(state.merged, MERGED_REVISION);
   assert.deepEqual(state.mergeAttempt, HISTORICAL.mergeAttempt);
   assert.equal(opNames(calls).includes("finish"), false);
+  assert.equal(opNames(calls).includes("verify"), false);
+  assert.equal(sessionsOf(calls).length, 0);
   assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
 });
 
-test("a genuine saved successful old attempt gets a new result observation, never another merge", async () => {
+test("a genuine saved successful old attempt keeps its result receipt, never another merge, and stops without Security", async () => {
   const { ctx, calls } = merging({
     state: { ...HISTORICAL, merged: null },
     ops: {
@@ -191,13 +196,18 @@ test("a genuine saved successful old attempt gets a new result observation, neve
     },
   });
   const before = structuredClone(ctx.state);
-  const done = stateOf(await mergeRole(ctx), "next");
-  assert.deepEqual(done.mergeAttempt, before.mergeAttempt);
-  assert.deepEqual(done.hardened, before.hardened);
-  assert.deepEqual(done.merged, MERGED_REVISION);
-  assert.deepEqual(done.security?.revision, RESULT);
-  assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
-  assert.ok(sessionsOf(calls).every((spec) => spec.commits === false));
+  const end = await mergeRole(ctx);
+  assert.ok(readOnlyStop(end));
+  const stopped = stateOf(end, "stop");
+  assert.deepEqual(stopped.mergeAttempt, before.mergeAttempt);
+  assert.deepEqual(stopped.hardened, before.hardened);
+  assert.deepEqual(stopped.merged, MERGED_REVISION);
+  assert.equal(stopped.security, null);
+  assert.equal(opNames(calls).includes("verify"), false);
+  assert.ok(
+    opNames(calls).every((name) => ![...FORBIDDEN, "finish"].includes(name)),
+  );
+  assert.equal(sessionsOf(calls).length, 0);
 });
 
 test("external merged truth without successful original attempt cannot borrow current-policy authority", async () => {
@@ -228,7 +238,7 @@ test("external merged truth without successful original attempt cannot borrow cu
   );
 });
 
-test("current-policy checks that fail on a historical result stop without a writer or Security", async () => {
+test("a historical result stops before current-policy checks, a writer or Security", async () => {
   const { ctx, calls } = merging({
     state: HISTORICAL,
     ops: {
@@ -241,13 +251,14 @@ test("current-policy checks that fail on a historical result stop without a writ
   assert.equal(end.code, "error");
   assert.deepEqual(end.state.merged, MERGED_REVISION);
   assert.deepEqual(end.state.mergeAttempt, HISTORICAL.mergeAttempt);
+  assert.equal(opNames(calls).includes("verify"), false);
   assert.equal(sessionsOf(calls).length, 0);
   assert.ok(
     opNames(calls).every((name) => ![...FORBIDDEN, "finish"].includes(name)),
   );
 });
 
-test("a historical no-finding receipt is not reusable after policy drift", async () => {
+test("a historical no-finding receipt is not reusable after policy drift or rebound by retrospective Security", async () => {
   const { ctx, calls } = merging({
     state: {
       ...HISTORICAL,
@@ -259,9 +270,14 @@ test("a historical no-finding receipt is not reusable after policy drift", async
     },
     ops: { "current-revision": [FRESH, FRESH] },
   });
-  const done = stateOf(await mergeRole(ctx), "next");
-  assert.deepEqual(done.merged, MERGED_REVISION);
-  assert.deepEqual(done.security?.revision, RESULT);
-  assert.equal(sessionsOf(calls).length, 1);
-  assert.ok(opNames(calls).every((name) => !FORBIDDEN.includes(name)));
+  const end = await mergeRole(ctx);
+  assert.ok(readOnlyStop(end));
+  const stopped = stateOf(end, "stop");
+  assert.deepEqual(stopped.merged, MERGED_REVISION);
+  assert.deepEqual(stopped.security?.revision, MERGED_REVISION);
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(opNames(calls).includes("verify"), false);
+  assert.ok(
+    opNames(calls).every((name) => ![...FORBIDDEN, "finish"].includes(name)),
+  );
 });

@@ -1,5 +1,7 @@
 // @ts-check
 // Policy changes expire clearance, not retained authority or a known finding.
+// A policy-moved merged result is never re-observed by a postmerge Security
+// session (#185); it stops with merged truth retained.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -97,21 +99,31 @@ test("same-policy candidate clearance completes without another Security session
   assert.deepEqual(readOnly(calls), [true, true]);
 });
 
-test("proven policy-moved candidate receives a separate read-only result observation", async () => {
+test("proven policy-moved candidate stops without a postmerge result observation, retaining merged truth", async () => {
   assert.notEqual(OLD.policy, REVISION.policy);
   const { ctx, calls } = observing();
   const before = structuredClone(ctx.state);
-  const done = stateOf(await mergeRole(ctx), "next");
-  assert.equal(done.stage, "done");
-  assert.deepEqual(done.security, before.security);
-  assert.deepEqual(done.merged, before.merged);
-  assert.deepEqual(done.hardened, before.hardened);
-  assert.deepEqual(done.mergeAttempt, before.mergeAttempt);
-  assert.deepEqual(done.resultSecurity?.revision, MERGED_REVISION);
-  assert.deepEqual(done.resultSecurity?.target, TARGET);
-  assert.equal(done.resultSecurity?.finding, null);
-  assert.ok(!("phase" in (done.resultSecurity ?? {})));
-  assert.equal(sessionsOf(calls).length, 1);
+  const stopped = stateOf(await mergeRole(ctx), "stop");
+  assert.notEqual(stopped.stage, "done");
+  assert.deepEqual(stopped.security, before.security);
+  assert.deepEqual(stopped.merged, before.merged);
+  assert.deepEqual(stopped.hardened, before.hardened);
+  assert.deepEqual(stopped.mergeAttempt, before.mergeAttempt);
+  assert.equal(stopped.resultSecurity ?? null, null);
+  assert.equal(sessionsOf(calls).length, 0);
+  assert.equal(opNames(calls).includes("prepare-review"), false);
+  assert.equal(opNames(calls).includes("finish"), false);
+  // A result observation saved before #185 still clears exactly its result.
+  const done = {
+    ...before,
+    stage: /** @type {const} */ ("done"),
+    resultSecurity: {
+      revision: { ...MERGED_REVISION, policy: policyRevision(cfg).policy },
+      target: TARGET,
+      commentId: 62,
+      finding: null,
+    },
+  };
   assert.equal(securityRefusal(done, MERGED_REVISION), undefined);
   const fresh = {
     ...AFTER_MERGE,
@@ -183,7 +195,7 @@ for (const slot of /** @type {const} */ (["security", "resultSecurity"])) {
   });
 }
 
-test("a second policy movement during result Security discards approval without looping", async () => {
+test("a second policy movement after a policy-moved merge stops without result Security or looping", async () => {
   assert.notEqual(OLD.policy, REVISION.policy);
   assert.notEqual(THIRD_POLICY, OLD.policy);
   assert.notEqual(THIRD_POLICY, REVISION.policy);
@@ -194,16 +206,16 @@ test("a second policy movement during result Security discards approval without 
   const { ctx, calls } = observing({
     ops: { "current-revision": [AFTER_MERGE, moved] },
   });
-  const waiting = stateOf(await mergeRole(ctx), "wait");
-  assert.equal(waiting.resultSecurity ?? null, null);
-  assert.deepEqual(waiting.security, CANDIDATE);
-  assert.deepEqual(waiting.merged, RESULT);
-  assert.equal(sessionsOf(calls).length, 1);
+  const stopped = stateOf(await mergeRole(ctx), "stop");
+  assert.equal(stopped.resultSecurity ?? null, null);
+  assert.deepEqual(stopped.security, CANDIDATE);
+  assert.deepEqual(stopped.merged, RESULT);
+  assert.equal(sessionsOf(calls).length, 0);
   assert.equal(opNames(calls).includes("finish"), false);
   assert.deepEqual(readOnly(calls), [true, true]);
 });
 
-test("a policy movement during Security never discards a finding on unchanged content", async () => {
+test("a policy movement after a policy-moved merge never runs a result Security session that could set or discard a finding", async () => {
   assert.notEqual(OLD.policy, REVISION.policy);
   assert.notEqual(THIRD_POLICY, OLD.policy);
   assert.notEqual(THIRD_POLICY, REVISION.policy);
@@ -224,8 +236,9 @@ test("a policy movement during Security never discards a finding on unchanged co
     ],
   });
   const stopped = stateOf(await mergeRole(ctx), "stop");
-  assert.equal(stopped.resultSecurity?.finding?.category, "rights");
+  assert.equal(stopped.resultSecurity ?? null, null);
   assert.deepEqual(stopped.security, CANDIDATE);
+  assert.equal(sessionsOf(calls).length, 0);
   assert.equal(opNames(calls).includes("finish"), false);
   assert.deepEqual(readOnly(calls), [true, true]);
 });

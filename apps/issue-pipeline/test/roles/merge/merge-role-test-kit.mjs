@@ -1,7 +1,10 @@
 // @ts-check
 // The merge role's script for its tests: a hardened issue at merge whose
-// every op succeeds, the merge queue, the security review of the merged
-// result that finds nothing, and the replies after the merge.
+// every op succeeds, the merge queue, the security review of the candidate
+// that finds nothing, and the replies after the merge. After the merge only
+// the read-only confirm-merged op runs (#185). The role trusts its reply;
+// the op's own proof (signed FF intent, verifiedSha equal to the result) is
+// pinned by the real-flow replay tests, not by these synthetic commits.
 import {
   opNames,
   sessionsOf,
@@ -42,6 +45,11 @@ const MUTATIONS = ["merge", "finish", "sync-base", "push", "ready-pr"];
 const FINISHED = { finished: true, closed: true };
 const CI_PASS = { status: "pass", checks: ["ci"] };
 const MERGED = { merged: true, mergeCommit: MERGE_COMMIT, headSha: HEAD };
+const CONFIRMED = { confirmed: true, headSha: MERGE_COMMIT };
+const UNPROVEN = {
+  confirmed: false,
+  reason: "no premerge check proof binds the merged result",
+};
 const PREPARED_MERGED = {
   headSha: MERGE_COMMIT,
   baseSha: sha("b"),
@@ -116,6 +124,7 @@ function merging(script = {}) {
       verify: [{ pass: true, headSha: MERGE_COMMIT, checks: [] }],
       "ci-status": [CI_PASS],
       merge: [MERGED],
+      "confirm-merged": [CONFIRMED],
       "prepare-review": [PREPARED_CANDIDATE],
       finish: [FINISHED],
       ...script.ops,
@@ -155,6 +164,7 @@ export {
   CI_FAIL,
   CI_PASS,
   CODE_MERGED,
+  CONFIRMED,
   FINISHED,
   FIXED,
   finding,
@@ -173,5 +183,6 @@ export {
   PUSHED,
   QUEUE,
   REBASED,
+  UNPROVEN,
   VERIFIED,
 };
