@@ -2,9 +2,9 @@
 
 These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and merged with the code they describe. Decisions record the rules; reference pages describe how the code behaves today and how to recover when something goes wrong.
 
-## Work queue
+## Proposed configuration
 
-[2026-10-23 GitHub work index](handoffs/2026-10-23/README.md): native source branches, issue and PR status, policy proposals, evidence and next actions after workstation loss. These checkpoints are not merge or installation approvals.
+[Portable check configuration](proposals/check-configuration/README.md): proposed dependency preparation and fast-check configuration.
 
 ## Practices
 
