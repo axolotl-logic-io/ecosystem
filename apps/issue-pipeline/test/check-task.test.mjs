@@ -16,7 +16,8 @@ const APP_DIR = new URL("..", import.meta.url).pathname;
 const REPO_ROOT = path.resolve(APP_DIR, "..", "..");
 const ARGUMENT_TYPE_ERROR = /fixture\.mjs\(\d+,\d+\): error TS2345:/u;
 // The fast and full check tables in mise.toml, up to the next table.
-const CHECK_TASKS = /^\[tasks\.(?:check|"check:full")\]\n(?<task>[\s\S]*?)(?=^\[)/gmu;
+const CHECK_TASKS =
+  /^\[tasks\.(?:check|"check:full")\]\n(?<task>[\s\S]*?)(?=^\[)/gmu;
 // A run entry of a check task that runs node --test.
 const NODE_TEST_ENTRY = /^\s*"node --test (?<flags>[^"]*)",?$/mu;
 const TEST_TIMEOUT = /(?:^| )--test-timeout=(?<ms>\d+)(?: |$)/u;
