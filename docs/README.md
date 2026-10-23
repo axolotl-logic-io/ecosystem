@@ -50,6 +50,8 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Project settings](reference/project-settings.md): tracked project policy, operator-owned controls, trusted committed revisions and legacy migration.
 
+[Safe Refactor](reference/safe-refactor.md): the standalone constrained Developer task, explicit metric check, behavioral contract and write-ahead recovery.
+
 [Runtime](reference/runtime.md): the native Pi runtime, context compaction and startup checks.
 
 [Telemetry](reference/telemetry.md): usage records, local logs, commit attribution and the usage report.

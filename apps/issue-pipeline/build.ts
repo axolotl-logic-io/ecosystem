@@ -15,10 +15,18 @@
 // It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
 
-import { mkdir } from "node:fs/promises";
+import { cp, mkdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import ts from "typescript";
+
+const BACKEND_PACKAGE = path.dirname(
+  fileURLToPath(import.meta.resolve("typescript/package.json")),
+);
+const BACKEND_DIRECTORY = `vendor/node_modules/typescript-${ts.version}`;
+const BACKEND_IMPORT = `./${BACKEND_DIRECTORY}/lib/typescript.js`;
 
 const SOURCE_DIR = path.join(import.meta.dirname, "src");
 const SCRIPTS_DIR = path.join(import.meta.dirname, "scripts");
@@ -27,6 +35,8 @@ const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
 // supervisor, the stage job, the job's pi extensions, the orchestrator, the
 // reports and the caller's job launcher.
 const NODE_MODULES: ReadonlyMap<string, string> = new Map([
+  [path.join(SCRIPTS_DIR, "safe-refactor.ts"), "safe-refactor.mjs"],
+  [path.join(SOURCE_DIR, "safe-refactor", "tool.ts"), "safe-refactor-tool.mjs"],
   [path.join(SOURCE_DIR, "job", "git-review.ts"), "git-review.mjs"],
   [path.join(SOURCE_DIR, "ops.ts"), "ops.mjs"],
   [path.join(SOURCE_DIR, "shell-supervisor.ts"), "shell-supervisor.mjs"],
@@ -47,6 +57,11 @@ const NODE_MODULES: ReadonlyMap<string, string> = new Map([
 async function buildNodeModule(source: string, outfile: string): Promise<void> {
   await build({
     bundle: true,
+    // Keep the compiler with its real CommonJS file and declaration assets.
+    // Resolve the external alias relative to the relocatable distribution.
+    absWorkingDir: path.dirname(outfile),
+    alias: { typescript: BACKEND_IMPORT },
+    external: [BACKEND_IMPORT],
     charset: "utf8",
     entryPoints: [source],
     format: "esm",
@@ -69,6 +84,9 @@ async function main(): Promise<void> {
   const outDir = path.resolve(outArg ?? DEFAULT_OUT_DIR);
   try {
     await mkdir(outDir, { recursive: true });
+    await cp(BACKEND_PACKAGE, path.join(outDir, BACKEND_DIRECTORY), {
+      recursive: true,
+    });
     const modules = [...NODE_MODULES].map(([source, output]) =>
       buildNodeModule(source, path.join(outDir, output)),
     );

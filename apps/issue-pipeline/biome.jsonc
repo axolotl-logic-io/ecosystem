@@ -30,6 +30,7 @@
         "test/**",
         "build.ts",
         "scripts/**",
+        "src/safe-refactor/**",
         "src/ops.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
@@ -113,6 +114,7 @@
     {
       "includes": [
         "src/job/structured-output.ts",
+        "src/safe-refactor/tool.ts",
         "src/job/git-review.ts",
         "src/job/pipeline-commit-tool.ts"
       ],

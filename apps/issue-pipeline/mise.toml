@@ -10,6 +10,8 @@ run = [
   "npm run build",
   "node --check install.mjs",
   "node --check dist/ops.mjs",
+  "node --check dist/safe-refactor.mjs",
+  "node --check dist/safe-refactor-tool.mjs",
   "node --check dist/shell-supervisor.mjs",
   "node --check dist/job.mjs",
   "node --check dist/orchestrate.mjs",

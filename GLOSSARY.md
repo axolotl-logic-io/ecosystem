@@ -32,7 +32,7 @@ A role holds no identity, credentials or authority. It does not establish author
 
 ### Developer
 
-The role responsible for the Author, Implementation, Hardening and Sync tasks. Use Developer instead of Implementor wherever they name the same role. Implementation is the task, not the role's name.
+The role responsible for the Author, Implementation, Safe Refactor, Hardening and Sync tasks. Use Developer instead of Implementor wherever they name the same role. Implementation is the task, not the role's name.
 
 ### Gatekeeper
 
@@ -144,6 +144,12 @@ Use revision rather than candidate or version. A head or head SHA is the revisio
 
 The target branch observed at an exact commit: its repository, branch and commit.
 
+### Target
+
+The program element or elements a refactoring primitive intends to affect. This is not the workflow's target state.
+
+A Target description does not identify a source version or grant write authority. Resolve it against the exact source and refuse ambiguous or stale matches rather than introduce separate selector and resolved-target entities.
+
 ### Result
 
 What a task established, bound to exactly what it applies to.
@@ -172,6 +178,18 @@ The landing account is the account that approves the exact revision and lands it
 
 The task that rebases a revision onto a target state it doesn't yet contain and resolves the conflicts. Its result is a new revision that contains the target state, which needs its own Hardening result. Sync is not a merge.
 
+### Safe Refactor
+
+The Developer task that improves an existing revision's design without changing behavior under its explicitly selected preservation contract. It uses findings, practices and this glossary to choose cohesive changes, not merely reduce metric scores. Unsupported changes are deferred with reasons.
+
+Safe Refactor does not replace Hardening or independent Security and grants no Land authority. Changed source needs a newly bound revision and fresh downstream results. The initial standalone implementation returns unsigned reports, not authenticated workflow Results or Receipts; the [Safe Refactor reference](docs/reference/safe-refactor.md) describes its limits.
+
+### Refactoring primitive
+
+A named operation with a fixed preservation contract, applicability preconditions and constrained arguments. Library availability and applicability do not establish preservation, authorization or design quality. The tool, not model-supplied source or prompt compliance, controls every edit.
+
+An operation can produce edits, checks and a checkpoint. Ending that operation does not by itself establish a task Result or authorize another action.
+
 ### Issue delivery
 
 The workflow that develops and delivers an issue's intended change. Its tasks are flat; the table is not an executable sequence. Author is optional. Independent work may proceed concurrently where the dependency and authorization rules permit it.
@@ -189,7 +207,7 @@ The workflow that develops and delivers an issue's intended change. Its tasks ar
 
 When Sync produces a new revision, the earlier Hardening result stays bound to the old one. Land's prerequisite is then unmet and Hardening runs for the new revision; no task moves backwards. Concurrency does not weaken existing verification, revision, target or policy requirements.
 
-The Developer performs Author, Implementation, Hardening and Sync. The Gatekeeper performs Integration, Security, Land and Completion. The complete dependency graph, branch and join rules, and historical compatibility still need design. This intended model does not describe every historical or installed version.
+The Developer performs Author, Implementation, Safe Refactor, Hardening and Sync. Safe Refactor is explicitly assigned; it adds no automatic dispatch or fixed workflow position. The Gatekeeper performs Integration, Security, Land and Completion. The complete dependency graph, branch and join rules, and historical compatibility still need design. This intended model does not describe every historical or installed version.
 
 ### Run state
 
