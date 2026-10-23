@@ -66,14 +66,7 @@
     "url": "https://github.com/axolotl-logic-io/ecosystem/issues/179"
   },
   {
-    "labels": [
-      {
-        "id": "LA_kwDOVPClac8AAAAC-EsTJQ",
-        "name": "agent:working",
-        "description": "",
-        "color": "ededed"
-      }
-    ],
+    "labels": [],
     "number": 178,
     "title": "Find out why the Check workflow takes 19\u201329 minutes, and shorten it",
     "url": "https://github.com/axolotl-logic-io/ecosystem/issues/178"
@@ -158,14 +151,7 @@
     "url": "https://github.com/axolotl-logic-io/ecosystem/issues/165"
   },
   {
-    "labels": [
-      {
-        "id": "LA_kwDOVPClac8AAAAC-EsTJQ",
-        "name": "agent:working",
-        "description": "",
-        "color": "ededed"
-      }
-    ],
+    "labels": [],
     "number": 164,
     "title": "Delete the issue pipeline's unit tests and forbid new ones",
     "url": "https://github.com/axolotl-logic-io/ecosystem/issues/164"
@@ -290,14 +276,7 @@
     "url": "https://github.com/axolotl-logic-io/ecosystem/issues/116"
   },
   {
-    "labels": [
-      {
-        "id": "LA_kwDOVPClac8AAAAC-EsTJQ",
-        "name": "agent:working",
-        "description": "",
-        "color": "ededed"
-      }
-    ],
+    "labels": [],
     "number": 108,
     "title": "Runtime sessions refuse to start when node comes from HOME-relative mise shims",
     "url": "https://github.com/axolotl-logic-io/ecosystem/issues/108"

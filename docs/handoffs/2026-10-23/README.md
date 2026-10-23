@@ -54,6 +54,8 @@ GitHub in this owning repository is the source of truth. No local file or backup
 
 | PR | Branch and exact head | Disposition |
 | --- | --- | --- |
+| [#199](https://github.com/axolotl-logic-io/ecosystem/pull/199) | `handoff/20261023/work-tracking` / `86ec89dfc5fe8e0ff947e30d54e53ff27dad7326` | Draft checkpoint; complete actual current gate and independent pre-Land Security before merging. |
+| [#198](https://github.com/axolotl-logic-io/ecosystem/pull/198) | `handoff/20261023/checkpoint-3-2e732336` / `2e732336e89810bb41604fe0e696b3116e5e442e` | Draft checkpoint; complete actual current gate and independent pre-Land Security before merging. |
 | [#195](https://github.com/axolotl-logic-io/ecosystem/pull/195) | `operator/issue-194-main-install` / `b5671bb4d380ce62f6456451f211ab83d54c2775` | Draft checkpoint; complete actual current gate and independent pre-Land Security before merging. |
 | [#193](https://github.com/axolotl-logic-io/ecosystem/pull/193) | `issue-187-safe-refactor` / `1ebb926c9ba3fbcaf17f9cdae720a16779ddc867` | Hardening/review pending accepted194 installation. No merge/activation authorization. |
 | [#192](https://github.com/axolotl-logic-io/ecosystem/pull/192) | `agent/issue-178` / `57656391c85ebb2b918096bc398717e7a00ad626` | Older source; corrected main composition is195. Do not merge independently. |

@@ -1,6 +1,24 @@
 [
   {
     "baseRefName": "main",
+    "headRefName": "handoff/20261023/work-tracking",
+    "headRefOid": "86ec89dfc5fe8e0ff947e30d54e53ff27dad7326",
+    "isDraft": true,
+    "number": 199,
+    "title": "Track native source branches, policy proposals and the complete work queue",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/pull/199"
+  },
+  {
+    "baseRefName": "main",
+    "headRefName": "handoff/20261023/checkpoint-3-2e732336",
+    "headRefOid": "2e732336e89810bb41604fe0e696b3116e5e442e",
+    "isDraft": true,
+    "number": 198,
+    "title": "Preserve the separate runtime startup port for #108",
+    "url": "https://github.com/axolotl-logic-io/ecosystem/pull/198"
+  },
+  {
+    "baseRefName": "main",
     "headRefName": "operator/issue-194-main-install",
     "headRefOid": "b5671bb4d380ce62f6456451f211ab83d54c2775",
     "isDraft": true,
@@ -12,7 +30,7 @@
     "baseRefName": "main",
     "headRefName": "issue-187-safe-refactor",
     "headRefOid": "1ebb926c9ba3fbcaf17f9cdae720a16779ddc867",
-    "isDraft": false,
+    "isDraft": true,
     "number": 193,
     "title": "Add standalone constrained Safe Refactor task",
     "url": "https://github.com/axolotl-logic-io/ecosystem/pull/193"
@@ -23,7 +41,7 @@
     "headRefOid": "57656391c85ebb2b918096bc398717e7a00ad626",
     "isDraft": true,
     "number": 192,
-    "title": "Find out why the Check workflow takes 19\u201329 minutes, and shorten it (#178)",
+    "title": "Superseded by #195: original fast-check candidate (#178)",
     "url": "https://github.com/axolotl-logic-io/ecosystem/pull/192"
   },
   {
@@ -57,7 +75,7 @@
     "baseRefName": "main",
     "headRefName": "agent/issue-108",
     "headRefOid": "051123ac2d5b1d4c41faa3761b71f3e32adf3d3e",
-    "isDraft": false,
+    "isDraft": true,
     "number": 111,
     "title": "Runtime sessions refuse to start when node comes from HOME-relative mise shims (#108)",
     "url": "https://github.com/axolotl-logic-io/ecosystem/pull/111"
