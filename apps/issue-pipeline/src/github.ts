@@ -14,8 +14,9 @@ import { GH_TIMEOUT_MS, githubRead } from "./github-read.ts";
 import { OpsError } from "./ops-error.ts";
 import { redactLocalPaths } from "./pipeline-root.ts";
 import type { RunOptions, RunResult } from "./process.ts";
-import { run } from "./process.ts";
+import { run, runFailure } from "./process.ts";
 import { redactAddresses } from "./redact-addresses.ts";
+import type { WriteIntent } from "./write-refusal.ts";
 
 type GhOptions = Omit<RunOptions, "env">;
 
@@ -99,16 +100,33 @@ function gitHelper(cfg: Config): readonly string[] {
   ];
 }
 
-// Optional internal transport boundary. Default callers have no execution and
-// retain their existing authority checks; this is not an activation setting.
-function controlledWrite(cfg: Config, write: () => RunResult): RunResult {
-  if (cfg.execution === undefined) {
-    return write();
-  }
-  if (cfg.mutation === undefined) {
+// The config's mutation hook sees every credentialed write: a stage job's
+// fresh ownership read and journal (execution.ts), or an unbound ops
+// request's refusal (ops/execution-envelope.ts). Callers with neither, such
+// as the coordination transport itself, write directly. The hook gets the
+// write's whole result, so a refusal can be told from a lost response; a
+// failure throws after it unless the caller allows one.
+function controlledWrite(
+  cfg: Config,
+  intent: WriteIntent,
+  write: () => RunResult,
+  failure: {
+    fail: (failed: RunResult) => OpsError;
+    allowFail?: boolean | undefined;
+  },
+): RunResult {
+  let result: RunResult;
+  if (cfg.mutation !== undefined) {
+    result = cfg.mutation(write, intent);
+  } else if (cfg.execution === undefined) {
+    result = write();
+  } else {
     throw new OpsError("execution mutation boundary is not bound");
   }
-  return cfg.mutation(write);
+  if (result.code !== 0 && failure.allowFail !== true) {
+    throw failure.fail(result);
+  }
+  return result;
 }
 
 function gh(
@@ -123,9 +141,17 @@ function gh(
     env: authenticatedEnv(cfg, identity),
   };
   if (!ghIsRead(args)) {
+    const redacted = redactGhArgs(args);
     return controlledWrite(
       cfg,
-      (): RunResult => credentialedRun("gh", redactGhArgs(args), runOptions),
+      { command: "gh", args: redacted },
+      (): RunResult =>
+        credentialedRun("gh", redacted, { ...runOptions, allowFail: true }),
+      {
+        fail: (failed: RunResult): OpsError =>
+          credentialFailure("gh", redacted, failed, runOptions),
+        allowFail: options.allowFail,
+      },
     );
   }
   const { result } = githubRead(() =>
@@ -185,11 +211,21 @@ function git(
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {
-  if (args.includes("push") && cfg.execution !== undefined) {
+  if (
+    args.includes("push") &&
+    (cfg.execution !== undefined || cfg.mutation !== undefined)
+  ) {
     const { execution: _execution, mutation: _mutation, ...transport } = cfg;
     return controlledWrite(
       cfg,
-      (): RunResult => git(transport, identity, args, options),
+      { command: "git", args },
+      (): RunResult =>
+        git(transport, identity, args, { ...options, allowFail: true }),
+      {
+        fail: (failed: RunResult): OpsError =>
+          new OpsError(runFailure("git", args, failed, options)),
+        allowFail: options.allowFail,
+      },
     );
   }
   const remote = remoteOf(args, options);

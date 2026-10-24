@@ -18,6 +18,7 @@ import {
   resolveProjectSettings,
 } from "./project-policy.ts";
 import type { ProjectPolicyBinding } from "./project-policy-schema.ts";
+import type { WriteIntent } from "./write-refusal.ts";
 
 // Branch names that are an option, a ref path, a ref expression or a name
 // git refuses (git-check-ref-format), rather than one literal branch.
@@ -47,7 +48,7 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
     repo: string;
     base: string;
   };
-  mutation?: (write: () => RunResult) => RunResult;
+  mutation?: (write: () => RunResult, intent: WriteIntent) => RunResult;
 };
 
 const RAW = z.record(z.string(), z.unknown());
