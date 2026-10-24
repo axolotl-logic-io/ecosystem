@@ -500,8 +500,8 @@ The executor runs from an installed copy, not this source folder. Install only w
 For an installed-source/assets change, pass the approved fast gate on the clean, exact source candidate **before Land**:
 
 ```bash
-npm ci                              # monorepo root, unchanged lockfile
-mise //apps/issue-pipeline:check      # approved exact-source fast gate before Land
+npm ci --ignore-scripts --no-audit --no-fund   # monorepo root, unchanged lockfile
+npm run check                                  # approved exact-source fast gate before Land
 ```
 
 Retain the fast result and independent read-only pre-Land Security clearance for the same full source commit, trusted-input revision, effective current checking policy and configured pre-Land target branch/commit. Confirm that the delivered identity, authenticated receipt and ancestry bind the install candidate to that checked and cleared source. Missing, stale or mismatched proof is a **STOP**, including for already-landed changes; a new suite or retrospective Security cannot supply it. The fast gate is not full integration coverage, and the full suite is not an installation prerequisite.
@@ -525,13 +525,14 @@ For the removed wiki flow, follow [the migration cleanup steps](../../docs/refer
 
 ## Tests
 
+From the repository root:
+
 ```bash
-mise //apps/issue-pipeline:check       # fast default; NOT full integration coverage
-mise //apps/issue-pipeline:check:full  # expensive opt-in: fast gate + every Node test
-mise //apps/issue-pipeline:typecheck
-mise //apps/issue-pipeline:lint
-mise //apps/issue-pipeline:build
+npm run check        # fast default, both apps; NOT full integration coverage
+npm run check:full   # expensive opt-in: fast gate + every Node test, then the dashboard's gates
 ```
+
+From this folder, `npm run check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts alone. mise is optional: `mise //apps/issue-pipeline:<task>` calls the same scripts, and the `node --test` flags live only in `package.json`.
 
 The fast default checks source and checked-JavaScript test types, Biome, the build, syntax of the installer and all nine built programs, and the existing `test/build.test.mjs` artifact guards and `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions. Both files exercise real filesystem/subprocess boundaries in one bounded Node invocation. It does **not** run the integration/flow suite or prove runtime authority, recovery, isolation or merge behavior. A fast-default pass must not be labelled full integration coverage.
 

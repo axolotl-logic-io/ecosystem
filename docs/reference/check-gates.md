@@ -7,10 +7,10 @@ The issue-pipeline repository has a fast default gate and an explicit, expensive
 From the repository root, run:
 
 ```bash
-mise //apps/issue-pipeline:check
+npm run check
 ```
 
-This task runs:
+That runs this gate and then the dashboard's. `npm run check --workspace @ecosystem/issue-pipeline` runs this gate alone, and `mise //apps/issue-pipeline:check` calls the same script. The script, in `apps/issue-pipeline/package.json`, runs:
 
 - TypeScript checks for source, tests and the installer, including checked JavaScript tests.
 - Biome with the existing lint policy.
@@ -18,27 +18,27 @@ This task runs:
 - Node syntax validation for `install.mjs` and all nine built programs, including `structured-output.mjs`.
 - The existing `test/build.test.mjs` artifact guards, which build into a temporary directory, validate executable artifacts and exercise CLI subprocess boundaries with local fixtures and fake GitHub.
 
-- The existing `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions, which read the actual task file and use a temporary fixture with real TypeScript to require a type error and then successful compilation.
+- The existing `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions, which read the actual `package.json` scripts and use a temporary fixture with real TypeScript to require a type error and then successful compilation.
 
-Both selected files run in one bounded Node command with file concurrency 2 and per-test timeout 180000 ms. The default task does not select the full test glob. It does **not** prove integration/flow behavior, authority enforcement, retry/recovery, runtime isolation, provider/session behavior or safe merging. Typechecking the test files does not execute their assertions. Label its result **fast default**, never full integration coverage.
+Both selected files run in one bounded Node command with file concurrency 2 and per-test timeout 180000 ms. The default script does not select the full test glob. It does **not** prove integration/flow behavior, authority enforcement, retry/recovery, runtime isolation, provider/session behavior or safe merging. Typechecking the test files does not execute their assertions. Label its result **fast default**, never full integration coverage.
 
 ## Explicit full gate
 
 Only when the expensive suite is explicitly selected, run:
 
 ```bash
-mise //apps/issue-pipeline:check:full
+npm run check:full
 ```
 
-The task depends on the fast gate, then runs the original command from `apps/issue-pipeline/`:
+The script runs the fast gate, then the original command from `apps/issue-pipeline/`, and last the dashboard's gates. `mise //apps/issue-pipeline:check:full` calls the issue pipeline's part alone:
 
 ```bash
 node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.mjs'
 ```
 
-The full glob selects `test/build.test.mjs` and `test/check-task.test.mjs` again after the fast gate. Explicit full execution therefore duplicates both bounded files, including the artifact smoke; the second execution is not additional unique coverage. The original glob and task dependency remain unchanged.
+The full glob selects `test/build.test.mjs` and `test/check-task.test.mjs` again after the fast gate. Explicit full execution therefore duplicates both bounded files, including the artifact smoke; the second execution is not additional unique coverage. The original glob remains unchanged; the script runs the fast gate first, as the task's dependency did.
 
-No test is skipped, marked todo or deleted for this split. Assertions, concurrency 2 and timeout 180000 ms remain intact. This task builds its prerequisites through the fast gate and remains runnable on its own. Do not select it by default, as an installation prerequisite or after landing. Explicit opt-in execution is pre-Land only.
+No test is skipped, marked todo or deleted for this split. Assertions, concurrency 2 and timeout 180000 ms remain intact. This script builds its prerequisites through the fast gate and remains runnable on its own. Do not select it by default, as an installation prerequisite or after landing. Explicit opt-in execution is pre-Land only.
 
 ## Installation prerequisite
 
@@ -72,7 +72,7 @@ For each check result, preserve:
 - Exit status, elapsed wall time and the retained output path.
 - Whether the result is fast-default, targeted or full-suite coverage.
 
-A repository task change does not rewrite an operator's `commands.test` or wrapper. A wrapper that bypasses mise and directly invokes the full suite still runs expensive checks. Before changing such a wrapper, prepare the smallest proposal outside live configuration, preserve its isolation/mock fences and obtain source-first review and operator approval. Do not modify live configuration as part of this source change.
+A repository task change does not rewrite an operator's `commands.test` or wrapper. A wrapper that bypasses the check scripts and directly invokes the full suite still runs expensive checks. Before changing such a wrapper, prepare the smallest proposal outside live configuration, preserve its isolation/mock fences and obtain source-first review and operator approval. Do not modify live configuration as part of this source change.
 
 The GitHub Check workflow was disabled by the operator, as recorded in the issue. This change does not enable it or edit the workflow. It changes no production authorization, trust, receipt, retry, provider, token, session or merge behavior. Exact pre-Land verification must follow the approved effective policy; after Land, only the existing bound proof is confirmed, without a new suite or model validation.
 

@@ -54,8 +54,8 @@ Install only when a change affects installed source or assets. Prompts in `apps/
 Before Land, pass the approved fast gate on a clean checkout of the exact source candidate:
 
 ```bash
-npm ci                                    # at the repository root
-mise //apps/issue-pipeline:check            # approved exact-source fast gate before Land
+npm ci --ignore-scripts --no-audit --no-fund   # at the repository root
+npm run check                                  # approved exact-source fast gate before Land
 ```
 
 Retain that result and independent read-only pre-Land Security clearance, bound to the same full source commit, trusted-input revision, effective current checking policy and configured pre-Land target branch/commit. Before installation, confirm the delivered identity, authenticated receipt and ancestry against that binding. Missing, stale or mismatched proof is a **STOP**, even when code has already landed. Do not invent a receipt, rerun a suite or acquire retrospective Security to fill a gap. Preserve accepted safety behavior; do not install a candidate that drops it.
@@ -126,8 +126,8 @@ Lifting a stop supplies no missing authority. An uncertain merge needs read-only
 
 ## Run the tests
 
-`mise //apps/issue-pipeline:check` is the **fast default gate**, not full integration coverage. It runs source and checked-JavaScript test type checks, Biome, the build, syntax checks for the installer and all built programs, and the existing `test/build.test.mjs` artifact guards and `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions in one bounded Node invocation.
+`npm run check` is the **fast default gate**, not full integration coverage. It runs source and checked-JavaScript test type checks, Biome, the build, syntax checks for the installer and all built programs, and the existing `test/build.test.mjs` artifact guards and `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions in one bounded Node invocation.
 
-`mise //apps/issue-pipeline:check:full` explicitly opts into the expensive full gate: the fast gate followed by every Node test, at most two test files at a time, with the original 180000 ms timeout. Do not run the full suite by default, as an installation prerequisite or after landing; explicit opt-in execution is pre-Land only. Do not run any check suite or fresh model validation after Land. Separately authorized [installation acceptance](#installation-acceptance) still applies. The [gate scope and cost report](check-gates.md) explains what the fast gate does not prove, the known cost and the remaining optimization or isolated-stage work.
+`npm run check:full` explicitly opts into the expensive full gate: the fast gate followed by every Node test, at most two test files at a time, with the original 180000 ms timeout. Do not run the full suite by default, as an installation prerequisite or after landing; explicit opt-in execution is pre-Land only. Do not run any check suite or fresh model validation after Land. Separately authorized [installation acceptance](#installation-acceptance) still applies. The [gate scope and cost report](check-gates.md) explains what the fast gate does not prove, the known cost and the remaining optimization or isolated-stage work.
 
-Tests use temporary HOME and pipeline roots, local bare Git origins, a fake GitHub and a fake Pi; they never touch real GitHub, models or production data. A failure or flake blocks acceptance. These repository tasks do not change live operator configuration or wrappers. Save the exact command, effective policy and source SHA with results; a wrapper that directly invokes the full suite still incurs its cost.
+Tests use temporary HOME and pipeline roots, local bare Git origins, a fake GitHub and a fake Pi; they never touch real GitHub, models or production data. A failure or flake blocks acceptance. Both run from the repository root and need only Node 24 and npm; mise is optional, and its `//apps/issue-pipeline:check` tasks call the same scripts. These repository scripts do not change live operator configuration or wrappers. Save the exact command, effective policy and source SHA with results; a wrapper that directly invokes the full suite still incurs its cost.

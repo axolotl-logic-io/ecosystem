@@ -4,6 +4,13 @@
   "workspaces": [
     "apps/*"
   ],
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "check": "npm run check --workspaces",
+    "check:full": "npm run check:full --workspace @ecosystem/issue-pipeline && npm run check --workspace @ecosystem/workflow-dash"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.15"
   }
