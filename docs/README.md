@@ -40,6 +40,8 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Sessions](reference/sessions.md): stages, model roles, prompt pages and the `pipeline_commit` tool.
 
+[Execution fencing audit](reference/execution-fencing-audit.md): every credentialed and cleanup write, the binding and fresh guard that fence it, and which issue owns each gap.
+
 [Coordination](reference/coordination.md): running stage jobs, reading their results and keeping concurrent work apart.
 
 [Caller](reference/caller.md): the prompt that makes an agent session the pipeline's caller, and its launcher.
