@@ -7,49 +7,27 @@ import { listComments } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { fetchIn } from "../git-state.ts";
-import { trustedInputsHash, writeIssueContext } from "../issue-context.ts";
 import { OpsError } from "../ops-error.ts";
-import { run } from "../process.ts";
-import { configPolicyDigest } from "../project-policy.ts";
 import type { Binding, Row } from "../task-result-records.ts";
 import { requestedBinding } from "../task-result-records.ts";
 import { taskRecords, unsettledAttempts } from "../task-results.ts";
 import { readWriteAuthority } from "../write-authority.ts";
+import type { RevisionBinding } from "./task-gate.ts";
+import {
+  assertCurrentRevision,
+  contains,
+  isRevisionBinding,
+} from "./task-gate.ts";
 
 // A Sync binding: revision R and the literal target commit T.
-type SyncBinding = Extract<Binding, { revision: unknown }> & { task: "Sync" };
+type SyncBinding = RevisionBinding & { task: "Sync" };
 
 function isSyncBinding(binding: Binding): binding is SyncBinding {
-  return binding.task === "Sync" && "revision" in binding;
+  return binding.task === "Sync" && isRevisionBinding(binding);
 }
 
 function refuse(reason: string): never {
   throw new OpsError(`Sync refused: ${reason}`);
-}
-
-// Whether `ancestor` is reachable from `commit` in the checkout `wt`.
-function contains(wt: string, commit: string, ancestor: string): boolean {
-  const args = ["-C", wt, "merge-base", "--is-ancestor", ancestor, commit];
-  return run("git", args, { allowFail: true }).code === 0;
-}
-
-// The binding's trusted inputs and policy are still today's: a Sync of a
-// stale revision would bind its result to inputs nobody hardened.
-function assertCurrentRevision(
-  cfg: Config,
-  number: number,
-  binding: SyncBinding,
-): void {
-  if (binding.revision.policy !== configPolicyDigest(cfg)) {
-    refuse("the binding's policy is not the current policy");
-  }
-  const context = writeIssueContext(cfg, number);
-  if (
-    binding.revision.inputs !==
-    trustedInputsHash(cfg, context.issue, context.comments)
-  ) {
-    refuse("the binding's trusted inputs are not the current inputs");
-  }
 }
 
 // Every check a Sync op makes before a writer effect, and the issue's
@@ -75,7 +53,7 @@ function syncGate(
       "the code is not writable: merged, attempted, or rejected by Security",
     );
   }
-  assertCurrentRevision(cfg, number, binding);
+  assertCurrentRevision(cfg, number, binding, refuse);
   const wt = paths.worktree(cfg, number);
   fetchIn(cfg, wt, cfg.baseBranch);
   const { commit } = binding.target;
@@ -86,4 +64,4 @@ function syncGate(
 }
 
 export type { SyncBinding };
-export { contains, refuse, syncGate };
+export { refuse, syncGate };

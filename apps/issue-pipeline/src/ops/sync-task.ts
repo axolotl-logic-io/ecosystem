@@ -30,7 +30,8 @@ import { retireSubmodules } from "../retired-submodules.ts";
 import { BINDING, RUN_ID } from "../task-result-records.ts";
 import { pushBranch, resetToRemote } from "./sync-finish.ts";
 import type { SyncBinding } from "./sync-task-gate.ts";
-import { contains, refuse, syncGate } from "./sync-task-gate.ts";
+import { refuse, syncGate } from "./sync-task-gate.ts";
+import { contains } from "./task-gate.ts";
 import { appendResult, startAttempt } from "./task-results.ts";
 
 const START_REQUEST = z.looseObject({

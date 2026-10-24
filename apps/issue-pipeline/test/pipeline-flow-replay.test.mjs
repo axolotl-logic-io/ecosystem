@@ -425,11 +425,11 @@ test("hardening after Land is refused before preparation, a suite, a session or 
   );
 });
 
-// #183's task results and #184's Sync task are inactive: across every stage
-// this file ran, from setup through Land, completion and recovery, no
-// installed role asked for or recorded a result or ran the Sync task, and
-// GitHub holds no task-result record.
-test("the installed path never requests or records a task result or runs the Sync task (#183, #184 inactive)", () => {
+// #183's task results, #184's Sync and #185's Integration and exact Land are
+// inactive: across every stage this file ran, from setup through Land,
+// completion and recovery, no installed role asked for or recorded a result,
+// ran Sync or Integration, or bound a Land, and GitHub holds no record.
+test("the installed path never requests or records a task result, runs Sync or Integration, or binds a Land (#183-#185 inactive)", () => {
   const taskOps = [
     "task-result",
     "record-task-attempt",
@@ -437,8 +437,15 @@ test("the installed path never requests or records a task result or runs the Syn
     "sync-task",
     "sync-task-finish",
     "sync-task-reconcile",
+    "integration-task",
   ];
-  const ran = opsTrace(flow).map(({ request }) => request.op);
+  const trace = opsTrace(flow);
+  const ran = trace.map(({ request }) => request.op);
+  // Land and Completion run as installed: no request names a task binding.
+  assert.deepEqual(
+    trace.filter(({ request }) => "binding" in request || "landRun" in request),
+    [],
+  );
   assert.ok(ran.includes("merge"), "the trace covers Land");
   assert.deepEqual(
     ran.filter((op) => taskOps.includes(op)),
