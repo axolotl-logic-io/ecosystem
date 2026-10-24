@@ -45,8 +45,8 @@ const MERGE_REQUEST = z.looseObject({
   revision: REVISION_REQUEST,
   state: ISSUE_STATE.extend({ pr: z.number().int().positive() }),
   summary: z.string().nullish(),
-  // The task-result path (#185, inactive until #186): a Land binding and its
-  // run. Without them the merge behaves exactly as installed.
+  // The task-result path (#185): a Land binding and its run, which the merge
+  // stage sends since #186. Without them the merge behaves as before.
   binding: BINDING.optional(),
   landRun: z
     .strictObject({ id: RUN_ID, previous: RUN_ID.nullable() })
@@ -292,5 +292,27 @@ function attemptedMerge(
   }
 }
 
+const RECONCILE_REQUEST = z.looseObject({
+  number: z.number().int(),
+  binding: BINDING.optional(),
+});
+
+// reconcile-merge (merge-recovery.ts), which with a Land binding also
+// settles that Land from the read-only receipt, as a merge replay does: a
+// confirmed own merge of exactly R is its pass; anything else leaves it
+// unsettled.
+function reconcileLand(
+  cfg: Config,
+  request: unknown,
+  clock?: ConfirmationClock,
+): MergeReply {
+  const req = parseRequest(RECONCILE_REQUEST, "reconcile-merge", request);
+  const reply = reconcileMerge(cfg, request, clock);
+  if (req.binding !== undefined) {
+    settleLand(cfg, req.number, req.binding, reply);
+  }
+  return reply;
+}
+
 export type { MergeReply };
-export { merge };
+export { merge, reconcileLand };

@@ -14,7 +14,7 @@ import { currentResultObservation } from "../../security-clearance.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { afterOwnMerge } from "./after-merge.ts";
-import { confirmedMergedResult } from "./checks.ts";
+import { confirmedMergedResult, landBindingOf } from "./checks.ts";
 import { reviewedAndCompleted } from "./completion.ts";
 import { toRequirements } from "./returns.ts";
 
@@ -46,12 +46,13 @@ async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
   ) {
     return null;
   }
-  const reply = await opReply(
-    ctx,
-    "reconcile-merge",
-    { number: ctx.issue },
-    MERGE_REPLY,
-  );
+  // With the attempt's Land binding, the read also settles that Land.
+  const binding = landBindingOf(ctx, state);
+  let request: object = { number: ctx.issue };
+  if (binding !== null) {
+    request = { ...request, binding };
+  }
+  const reply = await opReply(ctx, "reconcile-merge", request, MERGE_REPLY);
   if (!reply.merged || reply.byHand === true) {
     let reason =
       "observed external merged truth has no saved successful response; read-only reconciliation is required";

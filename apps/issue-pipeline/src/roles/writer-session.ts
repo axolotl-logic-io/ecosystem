@@ -1,8 +1,8 @@
 // One session that writes, and how a step of a role ends: on with a value,
-// or with the stage's end. The Developer writes in development; the
-// Reviewer writes while it hardens a change and while it integrates one at
-// merge, except that the Developer, Hippy, hardens instead in a job started
-// with `--hardening-buddy hippy`. Every writing session commits only through
+// or with the stage's end. The Developer writes in development and resolves
+// a Sync's conflicts; the Reviewer writes while it hardens a change, except
+// that the Developer, Hippy, hardens instead in a job started with
+// `--hardening-buddy hippy`. Every writing session commits only through
 // `pipeline_commit`.
 
 import type { RoleContext, RoleEnd, SessionSpec } from "../job/role-context.ts";
@@ -10,9 +10,9 @@ import type { IssueState } from "../state.ts";
 import type { WriterReply } from "./replies.ts";
 import { WRITER_REPLY } from "./replies.ts";
 
-// Which writing session: the Developer's work, or the Reviewer's hardening
-// or integration.
-type WriterPhase = "development" | "hardening" | "integration";
+// Which writing session: the Developer's work or Sync resolution, or the
+// hardening.
+type WriterPhase = "development" | "hardening" | "sync";
 
 type Step<T> = { ok: true; value: T } | { ok: false; end: RoleEnd };
 
@@ -38,9 +38,12 @@ function specOf(
       commits: true,
     };
   }
-  // Hippy's Hardening: the Developer's agent and model, in a session of its
-  // own that starts fresh like every other.
-  if (phase === "hardening" && ctx.hardening === "hippy") {
+  // Hippy's Hardening and Sync: the Developer's agent and model, in a
+  // session of its own that starts fresh like every other.
+  if (
+    phase === "sync" ||
+    (phase === "hardening" && ctx.hardening === "hippy")
+  ) {
     return {
       agent: "issue-pipeline-implementor",
       model: ctx.cfg.models.implementor,

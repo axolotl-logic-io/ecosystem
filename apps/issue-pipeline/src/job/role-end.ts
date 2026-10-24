@@ -12,6 +12,7 @@ import { OpsFailure } from "./role-context.ts";
 import type { OpsJob } from "./role-ops.ts";
 import type { RunUsage } from "./run-usage.ts";
 import type { JobEnd, JobStatus, StopSignal } from "./status.ts";
+import type { TaskReport, TaskRequest } from "./task-request.ts";
 import { isTransientOpError } from "./transient.ts";
 
 const BRANCH_MOVED = "the PR branch changed outside the pipeline";
@@ -23,13 +24,17 @@ const ASKER: { role: "author"; agent: AgentName } = {
 
 // What a stage job prints as its one stdout line: the issue, the stage it
 // started at, how the stage ended, why (a stop's, wait's or deferral's
-// reason, or why the claim didn't pass), and a failed claim's error.
+// reason, or why the claim didn't pass), and a failed claim's error. A
+// waiting stage that needs a task names it as `request`; a task job reports
+// its run as `task` (task-request.ts), apart from `end`.
 interface JobLine {
   issue: number;
   stage: Stage;
   end: JobEnd;
   reason?: string;
   claimError?: string;
+  request?: TaskRequest;
+  task?: TaskReport;
 }
 
 type RoleStageEnd =
@@ -57,6 +62,20 @@ function finished(
   return {
     kind: "finished",
     summary: { issue: job.issue, stage: job.stage, ...line },
+  };
+}
+
+// What finishes `job` with the line it's given, and the task's report when
+// the role gave one.
+function withTask(
+  job: EndingJob,
+  task: TaskReport | undefined,
+): (line: Omit<JobLine, "issue" | "stage">) => RoleStageEnd {
+  return (line: Omit<JobLine, "issue" | "stage">): RoleStageEnd => {
+    if (task === undefined) {
+      return finished(job, line);
+    }
+    return finished(job, { ...line, task });
   };
 }
 
@@ -93,15 +112,24 @@ async function applyEnd(
   inputs: RoleInputs,
 ): Promise<RoleStageEnd> {
   const { job } = claimed;
+  const reported = withTask(job, end.task);
   switch (end.kind) {
     case "next":
       await release(claimed, end.state);
       job.status.moved(end.state.stage);
       claimed.usage.moved(end.state.stage);
-      return finished(job, { end: "next" });
-    case "wait":
+      return reported({ end: "next" });
+    case "wait": {
       await release(claimed, end.state);
-      return finished(job, { end: "wait", reason: end.reason });
+      const line: Omit<JobLine, "issue" | "stage"> = {
+        end: "wait",
+        reason: end.reason,
+      };
+      if (end.request !== undefined) {
+        line.request = end.request;
+      }
+      return reported(line);
+    }
     case "ask": {
       const state: IssueState = {
         ...end.state,
@@ -110,7 +138,7 @@ async function applyEnd(
       claimed.last = state;
       await jobOp(job, "ask", { questions: end.questions, by: ASKER, state });
       await release(claimed, state);
-      return finished(job, { end: "ask" });
+      return reported({ end: "ask" });
     }
     case "stop": {
       const recovery = stopRecovery(job.cfg, { number: job.issue, ...end });
@@ -129,11 +157,11 @@ async function applyEnd(
         throw new Error(recovery.fail(failure), { cause: error });
       }
       claimed.last = end.state;
-      return finished(job, { end: "stop", reason: end.reason });
+      return reported({ end: "stop", reason: end.reason });
     }
     case "deferred":
       await release(claimed, claimed.last);
-      return finished(job, { end: "deferred", reason: end.error });
+      return reported({ end: "deferred", reason: end.error });
     default:
       return unreachable(end);
   }

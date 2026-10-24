@@ -1,10 +1,13 @@
 // Exact-head checks run before the target moves; after Land, only read-only
-// confirmation of that premerge proof (#185).
+// confirmation of that premerge proof (#185). Completion consumes the exact
+// Land result when the merge attempt was made under one (#186); a merge from
+// before activation has none and confirms as before.
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
-import type { Check } from "../op-replies.ts";
-import { opReply, VERIFY_REPLY } from "../op-replies.ts";
+import type { Binding } from "../../task-result-records.ts";
+import { opReply } from "../op-replies.ts";
+import { taskStatus } from "../task-results.ts";
 import { failed } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
 
@@ -17,37 +20,47 @@ const CONFIRMED_REPLY = z.union([
 const NO_POSTMERGE_REPAIR =
   "code remains merged; no postmerge suite, writer or retrospective Security runs; read-only reconciliation is required";
 
-// What the merge job's local checks found: nothing to do, or what its own
-// integration needs.
-type LocalChecks =
-  | { kind: "ready"; state: IssueState }
-  | { kind: "integrate"; failing: Check[] }
-  | { kind: "moved"; headSha: string };
+// The Land binding the saved merge attempt was made under: its authorized
+// revision on the target commit it fast-forwarded. Null for an attempt that
+// can't name one, such as a historical attempt without a policy or intent.
+function landBindingOf(ctx: RoleContext, state: IssueState): Binding | null {
+  const attempt = state.mergeAttempt;
+  if (attempt === null || attempt.operation === undefined) {
+    return null;
+  }
+  const { code, inputs, policy } = attempt.authorized;
+  if (code === null || policy === undefined) {
+    return null;
+  }
+  return {
+    repo: ctx.cfg.repo,
+    workItem: ctx.issue,
+    task: "Land",
+    revision: { code, inputs, policy },
+    target: { branch: ctx.cfg.baseBranch, commit: attempt.operation.base },
+  };
+}
 
-// The merge job's own checks of the authorized branch head `code`, before
-// any target mutation: verify, unless this head is already verified.
-async function localChecks(
+// The Land binding Completion consumes, null for a merge from before
+// activation that recorded no Land, or why Completion must hold.
+async function completionBinding(
   ctx: RoleContext,
   state: IssueState,
-  code: string,
-): Promise<LocalChecks> {
-  if (state.verifiedSha === code) {
-    return { kind: "ready", state };
+): Promise<{ binding: Binding | null } | { hold: string }> {
+  const binding = landBindingOf(ctx, state);
+  if (binding === null) {
+    return { binding: null };
   }
-  const verified = await opReply(
-    ctx,
-    "verify",
-    { number: ctx.issue },
-    VERIFY_REPLY,
-  );
-  if (verified.headSha !== code) {
-    return { kind: "moved", headSha: verified.headSha };
+  const { status } = await taskStatus(ctx, binding);
+  if (status === "passed") {
+    return { binding };
   }
-  if (!verified.pass) {
-    const failing = verified.checks.filter((check) => !check.pass);
-    return { kind: "integrate", failing };
+  if (status === "missing") {
+    return { binding: null };
   }
-  return { kind: "ready", state: { ...state, verifiedSha: code } };
+  return {
+    hold: `the Land of this merge is ${status}, not a confirmed delivery`,
+  };
 }
 
 // Post-Land confirmation, read-only: a saved rejection stops again; then the
@@ -65,10 +78,18 @@ async function confirmedMergedResult(
   if (rejected !== null) {
     return rejected;
   }
+  const land = await completionBinding(ctx, state);
+  if ("hold" in land) {
+    return failed(state, `${land.hold}; ${NO_POSTMERGE_REPAIR}`);
+  }
+  let request: object = { number: ctx.issue, codeMerged };
+  if (land.binding !== null) {
+    request = { ...request, binding: land.binding };
+  }
   const confirmed = await opReply(
     ctx,
     "confirm-merged",
-    { number: ctx.issue, codeMerged },
+    request,
     CONFIRMED_REPLY,
   );
   if (!confirmed.confirmed) {
@@ -83,5 +104,4 @@ async function confirmedMergedResult(
   return null;
 }
 
-export type { LocalChecks };
-export { confirmedMergedResult, localChecks, NO_POSTMERGE_REPAIR };
+export { confirmedMergedResult, landBindingOf, NO_POSTMERGE_REPAIR };

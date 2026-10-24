@@ -1,5 +1,9 @@
-// Serialized merge orchestration: exact hardening/checks and read-only Security
-// precede deterministic mutation; after it, only read-only confirmation.
+// Serialized merge orchestration, as the legacy merge entry point's safe
+// adapter (#186): the next ready task is read fresh (chain.ts), and the job
+// does only read-only Security, Land and Completion itself. A moved target
+// requests Sync, missing Integration requests Integration, and a failed
+// check or a missing Hardening result returns to review. It never runs a
+// writer: no hidden Sync, no check fix.
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -10,14 +14,15 @@ import { SHORT_SHA } from "../change-task.ts";
 import { opReply, readyPr } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
+import { newRun, taskStatus } from "../task-results.ts";
 import { afterEarlierMerge, afterOwnMerge } from "./after-merge.ts";
-import { localChecks } from "./checks.ts";
+import type { Cleared } from "./chain.ts";
+import { boundAs, chainRoute, syncNeeded } from "./chain.ts";
 import { finishCompleted } from "./completion.ts";
-import type { IntegrationNeed } from "./integration.ts";
-import { integrate } from "./integration.ts";
 import { MERGE_REPLY, recoverAttempt, recoverOwnMerge } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
-import { rejectedAgain, securityReviewed } from "./security.ts";
+import { rejectedAgain } from "./security.ts";
+import { securityTask } from "./security-task.ts";
 import { approvalGate } from "./source.ts";
 
 const CI_STATUS = z.union([
@@ -30,25 +35,22 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The checks before the merge, on the authorized head `code`: verify when
-// this head isn't verified yet, and CI on exactly this head.
+// The checks before the merge, on the authorized head `code`: Integration's
+// recorded pass for exactly this revision and target (chain.ts), then CI on
+// exactly this head. A failure goes back to the Developer's Hardening, which
+// fixes it as a new revision; the merge job fixes nothing itself.
 async function checksBeforeMerge(
   ctx: RoleContext,
-  { code, pr }: { code: string; pr: number },
-): Promise<{ state: IssueState } | { end: RoleEnd }> {
-  const local = await localChecks(ctx, ctx.state, code);
-  if (local.kind === "moved") {
-    return { end: toReview(ctx.state, "the code head moved before verify") };
+  { code, pr, current }: { code: string; pr: number; current: CurrentRevision },
+): Promise<{ cleared: Cleared } | { end: RoleEnd }> {
+  const route = await chainRoute(ctx, ctx.state, current);
+  if ("kind" in route) {
+    return { end: route };
   }
-  if (local.kind === "integrate") {
-    const need: IntegrationNeed = {
-      rebase: false,
-      failing: local.failing,
-      why: "the authorized head's checks failed at merge",
-    };
-    return { end: await integrate(ctx, ctx.state, need) };
+  const { state } = route;
+  if (state !== ctx.state) {
+    await ctx.save(state);
   }
-  const { state } = local;
   const ci = await opReply(
     ctx,
     "ci-status",
@@ -57,7 +59,7 @@ async function checksBeforeMerge(
   );
   switch (ci.status) {
     case "pass":
-      return { state };
+      return { cleared: route };
     case "pending":
       return {
         end: waiting(state, `CI is still running on ${short(code)}`),
@@ -73,31 +75,27 @@ async function checksBeforeMerge(
           state,
         },
       };
-    case "fail": {
-      const failing = ci.failing.map((id) => ({
-        id: `ci: ${id}`,
-        pass: false,
-        detail: `the required CI check ${id} failed on ${code}`,
-      }));
-      const need: IntegrationNeed = {
-        rebase: false,
-        failing,
-        why: `CI failed on ${short(code)}`,
+    case "fail":
+      return {
+        end: toReview(
+          state,
+          `the required CI checks ${ci.failing.join(", ")} failed on ${short(code)}; the Developer fixes them as a new revision`,
+        ),
       };
-      return { end: await integrate(ctx, state, need) };
-    }
     default:
       return { end: failed(state, "ci-status: unexpected status") };
   }
 }
 
 // What a refused merge means: wait for the queue, harden a moved head,
-// integrate a moved base, mark a draft ready, or stop on GitHub's refusal.
+// request Sync for a moved base, mark a draft ready, or stop on GitHub's
+// refusal.
 async function refusedMerge(
   ctx: RoleContext,
   state: IssueState,
-  reason: string,
+  reply: { reason: string; detail?: unknown },
 ): Promise<RoleEnd> {
+  const { reason } = reply;
   switch (reason) {
     case "queued":
       return waiting(state, "the merge waits for its turn in the merge queue");
@@ -112,11 +110,16 @@ async function refusedMerge(
       return toReview(state, "the revision moved before the merge");
     case "behind":
     case "conflict":
-      return await integrate(ctx, state, {
-        rebase: true,
-        failing: [],
-        why: `the branch is ${reason} ${ctx.cfg.baseBranch}`,
-      });
+      return await syncNeeded(
+        ctx,
+        state,
+        `the branch is ${reason} ${ctx.cfg.baseBranch}`,
+      );
+    case "task-results":
+      return waiting(
+        state,
+        `Land's task results don't hold: ${String(reply.detail)}; the next merge job reads the chain afresh`,
+      );
     case "draft": {
       // An interrupted job left the PR a draft; the saved state is the
       // authorization ready-pr checks.
@@ -138,21 +141,31 @@ function mergeSummary(state: IssueState, authorized: Revision): string {
   return `Merged at code ${short(authorized.code)} and trusted inputs ${short(authorized.inputs)}; verified at ${short(state.verifiedSha)}; CI passed on that head.`;
 }
 
+interface Candidate {
+  state: IssueState;
+  authorized: Revision;
+  cleared: Cleared;
+}
+
 async function clearedCandidate(
   ctx: RoleContext,
   current: CurrentRevision,
   code: string,
   pr: number,
-): Promise<{ state: IssueState; authorized: Revision } | { end: RoleEnd }> {
-  const checked = await checksBeforeMerge(ctx, { code, pr });
+): Promise<Candidate | { end: RoleEnd }> {
+  const checked = await checksBeforeMerge(ctx, { code, pr, current });
   if ("end" in checked) {
     return { end: checked.end };
   }
-  const clearance = await securityReviewed(ctx, checked.state, {
-    revision: current.revision,
-    codeMerged: null,
-    target: reviewedTarget(ctx.cfg, current.baseSha),
-    still: (after: Revision): boolean => sameRevision(after, current.revision),
+  const clearance = await securityTask(ctx, checked.cleared.state, {
+    next: checked.cleared.next,
+    result: {
+      revision: current.revision,
+      codeMerged: null,
+      target: reviewedTarget(ctx.cfg, current.baseSha),
+      still: (after: Revision): boolean =>
+        sameRevision(after, current.revision),
+    },
   });
   if (!clearance.ok) {
     return { end: clearance.end };
@@ -165,17 +178,18 @@ async function clearedCandidate(
   }
   if (fresh.baseSha !== current.baseSha) {
     return {
-      end: await integrate(ctx, state, {
-        rebase: true,
-        failing: [],
-        why: "the target moved after Security clearance",
-      }),
+      end: await syncNeeded(
+        ctx,
+        state,
+        "the target moved after Security clearance",
+      ),
     };
   }
-  return { state, authorized: fresh.revision };
+  return { state, authorized: fresh.revision, cleared: checked.cleared };
 }
 
-// The open PR's merge, at the authorized code head.
+// The open PR's merge, at the authorized code head, as an exact Land of the
+// chain's binding: a new run of it, linked to its latest attempt.
 async function mergeCode(
   ctx: RoleContext,
   current: CurrentRevision,
@@ -194,11 +208,13 @@ async function mergeCode(
   if (pr.state !== "OPEN") {
     return failed(ctx.state, `PR #${pr.number} is ${pr.state}`);
   }
-  const cleared = await clearedCandidate(ctx, current, code, pr.number);
-  if ("end" in cleared) {
-    return cleared.end;
+  const candidate = await clearedCandidate(ctx, current, code, pr.number);
+  if ("end" in candidate) {
+    return candidate.end;
   }
-  const { state, authorized } = cleared;
+  const { state, authorized, cleared } = candidate;
+  const binding = boundAs(cleared.next, "Land");
+  const landRun = newRun(await taskStatus(ctx, binding));
   const reply = await opReply(
     ctx,
     "merge",
@@ -210,11 +226,13 @@ async function mergeCode(
       revision: authorized,
       mergeQueue: ctx.mergeQueue,
       summary: mergeSummary(state, authorized),
+      binding,
+      landRun,
     },
     MERGE_REPLY,
   );
   if (!reply.merged) {
-    return await refusedMerge(ctx, state, reply.reason);
+    return await refusedMerge(ctx, state, reply);
   }
   if (reply.byHand === true) {
     return waiting(

@@ -14,20 +14,30 @@ import type { Issue } from "../issue-context.ts";
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 import type { HardeningBuddy } from "./roles.ts";
+import type { TaskReport, TaskRequest } from "./task-request.ts";
 
 // The ops a role may ask for; each runs in its own `ops.mjs` process, the
 // only code that holds a token. The job alone runs claim, save-state, stop,
 // ask, release, usage and exit-push. `current-revision` reads the issue's
 // trusted inputs, the checkout's code head and the PR afresh from
-// GitHub (shared-ops-contract.md).
+// GitHub (shared-ops-contract.md). `task-readiness` names the next ready
+// task and its binding; the task-result ops record results through the
+// landing account (#183, #186). The merge stage's own synchronization
+// (`sync-base`, `finish-sync`) retired with #186: Sync is a task of its own.
 type OpName =
   | "current-revision"
   | "post"
   | "start-pr"
   | "open-pr"
   | "push"
-  | "sync-base"
-  | "finish-sync"
+  | "task-readiness"
+  | "task-result"
+  | "record-task-attempt"
+  | "record-task-result"
+  | "sync-task"
+  | "sync-task-finish"
+  | "sync-task-reconcile"
+  | "integration-task"
   | "prepare-review"
   | "verify"
   | "confirm-merged"
@@ -66,10 +76,10 @@ interface RoleInputs {
   gherkin: GherkinComment | null;
 }
 
-// The reviewer's states a session may be labelled with: hardening (review
-// stage) and integration (merge stage) commit; the security review, in the
-// merge stage after integration, only reads.
-const SESSION_PHASES = ["hardening", "security-review", "integration"] as const;
+// The phases a session may be labelled with: hardening (review stage) and
+// Hippy's Sync resolver (a Sync task job) commit; the security review, in
+// the merge stage, only reads.
+const SESSION_PHASES = ["hardening", "security-review", "sync"] as const;
 
 type SessionPhase = (typeof SESSION_PHASES)[number];
 
@@ -137,6 +147,8 @@ interface RoleContext {
   // "hippy" only when the job was started with `--hardening-buddy hippy`;
   // "lawd", the installed one, when it is absent.
   hardening?: HardeningBuddy;
+  // The task a task job was asked to run (`--task`), or none for a stage job.
+  task?: TaskRequest | null;
   // The claimed state.
   state: IssueState;
   // The job's folder and its code checkout repo/.
@@ -156,16 +168,25 @@ interface RoleContext {
 }
 
 // How a role's stage ended; the job applies it.
-type RoleEnd =
+type StageEnd =
   // `state.stage` is already the next stage, or "done".
   | { kind: "next"; state: IssueState }
   | { kind: "stop"; code: string; reason: string; state: IssueState }
   // Post the questions, label the issue agent:needs-info and wait at author.
   | { kind: "ask"; questions: readonly string[]; state: IssueState }
-  // Stay at this stage for the next job, such as a queued merge.
-  | { kind: "wait"; reason: string; state: IssueState }
+  // Stay at this stage for the next job, such as a queued merge. `request`
+  // names the task the issue waits for, such as a Sync, with its binding.
+  | {
+      kind: "wait";
+      reason: string;
+      state: IssueState;
+      request?: TaskRequest;
+    }
   // A transient failure: nothing is counted and the orchestrator backs off.
   | { kind: "deferred"; error: string };
+
+// A stage's end, with a task job's report of its run (task-request.ts).
+type RoleEnd = StageEnd & { task?: TaskReport };
 
 type Role = (ctx: RoleContext) => Promise<RoleEnd>;
 

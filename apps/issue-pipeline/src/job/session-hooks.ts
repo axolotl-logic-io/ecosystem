@@ -73,7 +73,7 @@ function hooksOf(
           `saved stage ${state.stage} cannot authorize a ${args.stage} writer session`,
         );
       }
-      const scope = commitScopeOf(args.stage, codeWritable);
+      const scope = commitScopeOf(args.stage, codeWritable, args.task?.name);
       scopes.set(key, scope);
       const { socket } = control;
       const { startedAt: jobStartedAt } = job;

@@ -17,6 +17,7 @@ import type { Stage } from "../stages.ts";
 import type { SessionPhase } from "./role-context.ts";
 import type { HardeningBuddy } from "./roles.ts";
 import { stageAgentOf } from "./roles.ts";
+import type { JobTask } from "./task-request.ts";
 
 // The installed release's prompt pages, where a stage job pins them from.
 const PROMPTS_DIR: string = path.join(ROOT, "prompts");
@@ -46,8 +47,10 @@ const PROMPT_PAGES: readonly {
     hardening: "hippy",
     page: "developer-hardening.md",
   },
-  { stage: "merge", phase: "integration", page: "integration.md" },
   { stage: "merge", phase: "security-review", page: "security.md" },
+  // Hippy's Sync resolver, in a Sync task job at either stage Sync runs at.
+  { stage: "review", phase: "sync", page: "sync.md" },
+  { stage: "merge", phase: "sync", page: "sync.md" },
 ];
 
 // Where a pinned page came from: its name, its absolute path when pinned and
@@ -121,12 +124,13 @@ function messageOf(error: unknown): string {
 }
 
 // Pins, from the prompt folder `dir` (PROMPTS_DIR for a stage job), the page
-// of each session a `stage` job, whose Hardening `hardening` performs, runs,
-// or throws naming the first page it can't pin.
+// of each session a `stage` job, whose Hardening `hardening` performs, or
+// its `task` job, runs, or throws naming the first page it can't pin.
 function pinPrompts(
   dir: string,
   stage: Stage,
   hardening: HardeningBuddy = "lawd",
+  task: JobTask | null = null,
 ): StagePrompts {
   const folder = path.resolve(dir);
   if (fs.statSync(folder, { throwIfNoEntry: false })?.isDirectory() !== true) {
@@ -135,7 +139,7 @@ function pinPrompts(
     );
   }
   const prompts = new Map<string, PinnedPrompt>();
-  for (const { phase } of stageAgentOf(stage, hardening).sessions) {
+  for (const { phase } of stageAgentOf(stage, hardening, task).sessions) {
     const page = PROMPT_PAGES.find(
       (entry) =>
         entry.stage === stage &&

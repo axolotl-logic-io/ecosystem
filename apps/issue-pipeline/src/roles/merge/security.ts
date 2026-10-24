@@ -20,7 +20,6 @@ import { SECURITY_REVIEW_REPLY } from "../replies.ts";
 import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
-import { integrate } from "./integration.ts";
 import { logged, toRequirements, toReview, waiting } from "./returns.ts";
 import { recorded, securityStop } from "./security-record.ts";
 import { securityReviewTask } from "./task.ts";
@@ -107,12 +106,13 @@ async function freshReview(
     );
   }
   if (target !== undefined && prepared.baseSha !== target.sha) {
+    // No hidden Sync (#186): the next merge job reads the chain and
+    // requests one.
     return ended(
-      await integrate(ctx, state, {
-        rebase: true,
-        failing: [],
-        why: "the candidate does not include the observed target revision",
-      }),
+      waiting(
+        state,
+        "the candidate does not include the observed target revision; the next merge job requests Sync",
+      ),
     );
   }
   const result = await ctx.session({

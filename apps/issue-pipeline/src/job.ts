@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-// The stage job: one job pinned to one issue that runs only one stage.
+// The stage job: one job pinned to one issue that runs only one stage, or
+// one task requested for it (#186).
 //
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
 //     [--lane L] [--merge-queue n1,n2,…] [--job-id <uuid>]
+//     [--hardening-buddy lawd|hippy]
+//   node job.mjs ... --stage <saved stage> --task sync|integration
+//     --binding <task binding as JSON>
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
 //     --print-boundary
@@ -46,6 +50,17 @@
 // --print-boundary checks the branch and the prompt pages as a run would,
 // prints the stage job's boundary as one JSON line and starts nothing.
 //
+// A task job (src/job/task-request.ts) runs the requested task's role
+// (src/roles/registry.ts) for exactly its binding, as its task's access
+// profile (src/job/roles.ts): Hippy's Sync as a writer, Lawd's read-only
+// Integration as a reader. Its binding must be this issue's in this repo on
+// its base, and the task must run at the given saved stage; anything else
+// is refused before the job claims, clones or records anything. Its stdout
+// line adds `task`: the task, binding, run and verdict, apart from `end`. A
+// stage job that needs a task ends `wait` with `request`: the task and the
+// binding to run it for. A task job never exit-pushes: Sync pushes through
+// its own op, and Integration writes nothing.
+//
 // The job works in its own folder, where every pi session runs, holding its
 // code checkout, cloned from a bare mirror of the repo, with the repo's docs
 // in its docs/ (src/job/checkout.ts). On every exit (src/job/teardown.ts) it
@@ -79,6 +94,7 @@ import { boundaryOf } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
 import type { JobOutcome, StopSignal } from "./job/status.ts";
 import { openStatus, socketOf } from "./job/status.ts";
+import { requestRefusalOf } from "./job/task-request.ts";
 import type { ExitingJob, RunEnd } from "./job/teardown.ts";
 import { jobKeyOf, tearDown } from "./job/teardown.ts";
 import { isTransientSessionError } from "./job/transient.ts";
@@ -97,12 +113,16 @@ async function runStage(
   prompts: StagePrompts,
 ): Promise<RunEnd> {
   const { issue, stage, branch, mergeQueue = null } = args;
-  const role = roleOf(stage);
+  const task = args.task?.name ?? null;
+  const role = roleOf(stage, task);
   if (role === undefined) {
     throw new Error(`no role for stage ${stage}`);
   }
-  const key = jobKeyOf(stage, new Date());
-  const dirs = openJobCheckout(cfg, issue, { stage, branch });
+  // A task job's checkout and keys are its task's, so it never meets a
+  // retained checkout of the stage job.
+  const work = task ?? stage;
+  const key = jobKeyOf(work, new Date());
+  const dirs = openJobCheckout(cfg, issue, { stage: work, branch });
   const { root, repo } = dirs;
   const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const runDir = paths.runDir(cfg, issue);
@@ -111,7 +131,12 @@ async function runStage(
   const lane = args.lane ?? null;
   const socket = socketPathOf(runDir);
   const job = { issue, stage, lane, socket, prompts: prompts.pinned };
-  const status = openStatus(runDir, { ...job, ...identity }, cfg.policyBinding);
+  const info = { ...job, ...identity };
+  if (args.task !== null) {
+    const { task: name, binding } = args.task;
+    Object.assign(info, { task: { task: name, binding } });
+  }
+  const status = openStatus(runDir, info, cfg.policyBinding);
   const control = await openControl(
     runDir,
     pushServerOf(cfg, { issue, stage, checkout: repo, branch, id }, status),
@@ -126,7 +151,7 @@ async function runStage(
   );
   const runOp = opsRunnerOf(issue, frame, { hooks, status });
   let claimed: (() => IssueState) | null = null;
-  const push = exitPushOf(stage, runOp, (): IssueState | null => {
+  const push = exitPushOf({ stage, task }, runOp, (): IssueState | null => {
     if (claimed === null) {
       return null;
     }
@@ -140,6 +165,7 @@ async function runStage(
     stage,
     mergeQueue,
     hardening: args.hardeningBuddy ?? "lawd",
+    task: args.task,
     dirs,
     prompts,
     identity,
@@ -240,17 +266,22 @@ async function main(): Promise<void> {
       return;
     }
     const { issue, branch, kind } = args;
-    const refusal = branchRefusalOf(cfg, issue, branch, kind === "run");
+    const refusal =
+      branchRefusalOf(cfg, issue, branch, kind === "run") ??
+      (args.task && requestRefusalOf(cfg, issue, args.task));
     if (refusal !== null) {
       throw new Error(refusal);
     }
+    const task = args.task?.name ?? null;
     const prompts = pinPrompts(
       PROMPTS_DIR,
       args.stage,
       args.hardeningBuddy ?? "lawd",
+      task,
     );
     if (args.kind === "boundary") {
-      const boundary = boundaryOf(cfg, args.issue, args.stage, process.env);
+      const job = { stage: args.stage, task };
+      const boundary = boundaryOf(cfg, args.issue, job, process.env);
       process.stdout.write(`${JSON.stringify(boundary)}\n`);
       return;
     }

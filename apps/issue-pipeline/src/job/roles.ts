@@ -3,8 +3,10 @@
 // access to its code checkout and what its committing sessions may commit,
 // what each role may hold, and the environment a session's pi gets.
 // Write authority is each session's own (`SessionSpec.commits`), never its
-// agent's: the reviewer commits while it hardens or integrates and only
-// reads in its final security review of the integrated result. No session
+// agent's: the reviewer commits while it hardens and only reads in its
+// security review of the candidate. A task job (`--task`, #186) runs as its
+// task's access profile (`least-privilege-per-task`): Sync as a writer,
+// Integration as a reader. No session
 // holds a GitHub token: only the job does, and the sessions that commit push
 // through it (`pipeline_commit`).
 // The networks are recorded, not enforced, and nothing here isolates a
@@ -21,6 +23,7 @@ import type { Access, PathScope } from "./pipeline-commit.ts";
 import { COMMIT_SCOPE_ENV } from "./pipeline-commit.ts";
 import type { AgentName, SessionPhase, SessionSpec } from "./role-context.ts";
 import { runtimeBoundary } from "./runtime-policy.ts";
+import type { JobTask } from "./task-request.ts";
 
 type JobRole = "reader" | "writer" | "merger";
 
@@ -57,10 +60,9 @@ interface Boundary {
 }
 
 // The role each stage's job runs as (Reimagined-Pipeline): the author only
-// reads; the implementor and the reviewer, which hardens the change, write;
-// merge holds the credentials for its deterministic merge, and its model
-// sessions, which integrate the change and then review its
-// security, never get them.
+// reads; the implementor and the hardener write; merge holds the
+// credentials for Land and Completion, and its one model session, the
+// read-only security review, never gets them.
 const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
   author: "reader",
   implement: "writer",
@@ -68,15 +70,46 @@ const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
   merge: "merger",
 };
 
+// The access profile each task job runs as (`least-privilege-per-task`):
+// Sync pushes the issue's branch; Integration only reads and checks.
+const TASK_ROLES: Readonly<Record<JobTask, JobRole>> = {
+  sync: "writer",
+  integration: "reader",
+};
+
 // Each stage's access to the issue's code checkout, which its committing
-// sessions get: the author only reads it; the implementor writes it, the
-// reviewer hardens it, and merge's integration rebases and fixes it.
+// sessions get: the author only reads it; the implementor writes it and
+// the hardener hardens it. Merge commits nothing: its security review
+// reads.
 const STAGE_CODE_ACCESS: Readonly<Record<Stage, Access>> = {
   author: "read",
   implement: "write",
   review: "write",
-  merge: "write",
+  merge: "read",
 };
+
+// Each task's access to the code checkout: Sync's resolver resolves the
+// rebase there; Integration checks a detached copy and writes nothing.
+const TASK_CODE_ACCESS: Readonly<Record<JobTask, Access>> = {
+  sync: "write",
+  integration: "read",
+};
+
+// The role a job runs as: its task's, when it runs one, else its stage's.
+function jobRoleOf(stage: Stage, task: JobTask | null = null): JobRole {
+  if (task !== null) {
+    return TASK_ROLES[task];
+  }
+  return STAGE_ROLES[stage];
+}
+
+// A job's access to its code checkout: its task's, else its stage's.
+function codeAccessOf(stage: Stage, task: JobTask | null = null): Access {
+  if (task !== null) {
+    return TASK_CODE_ACCESS[task];
+  }
+  return STAGE_CODE_ACCESS[stage];
+}
 
 // One kind of session a stage runs: the phase its spec names (null for
 // none) and the write authority that phase has.
@@ -97,10 +130,9 @@ const REVIEWER_AGENT = "issue-pipeline-reviewer";
 
 // The one installed agent each stage's sessions may run as, and its
 // sessions: the author's only read; the implementor's commit; the reviewer
-// hardens, committing, in review; and merge runs the reviewer's committing
-// integration (its own final synchronization, conflict and check fixes) and
-// then its read-only security review of the merged result. A reviewer
-// session always names its phase; none reads before merge.
+// hardens, committing, in review; and merge runs only the reviewer's
+// read-only security review of the candidate. A reviewer session always
+// names its phase; none reads before merge.
 const STAGE_AGENTS: Readonly<Record<Stage, StageAgent>> = {
   author: {
     agent: "issue-pipeline-author",
@@ -120,11 +152,19 @@ const STAGE_AGENTS: Readonly<Record<Stage, StageAgent>> = {
   merge: {
     agent: REVIEWER_AGENT,
     role: "reviewer",
-    sessions: [
-      { phase: "integration", commits: true },
-      { phase: "security-review", commits: false },
-    ],
+    sessions: [{ phase: "security-review", commits: false }],
   },
+};
+
+// The sessions each task job runs: Hippy's Sync resolves a stopped rebase as
+// the Developer, in a fresh session; Lawd's Integration runs no model.
+const TASK_AGENTS: Readonly<Record<JobTask, StageAgent>> = {
+  sync: {
+    agent: "issue-pipeline-implementor",
+    role: "implementor",
+    sessions: [{ phase: "sync", commits: true }],
+  },
+  integration: { agent: REVIEWER_AGENT, role: "reviewer", sessions: [] },
 };
 
 // Who performs the review stage's Hardening (two-buddies,
@@ -146,8 +186,15 @@ const HIPPY_HARDENING: StageAgent = {
 };
 
 // The agent a `stage` job's sessions run as, with Hardening performed by
-// `hardening`.
-function stageAgentOf(stage: Stage, hardening: HardeningBuddy): StageAgent {
+// `hardening`, or a task job's when it runs `task`.
+function stageAgentOf(
+  stage: Stage,
+  hardening: HardeningBuddy,
+  task: JobTask | null = null,
+): StageAgent {
+  if (task !== null) {
+    return TASK_AGENTS[task];
+  }
   if (stage === "review" && hardening === "hippy") {
     return HIPPY_HARDENING;
   }
@@ -176,8 +223,9 @@ function sessionRefusalOf(
   stage: Stage,
   spec: { agent: string } & Pick<SessionSpec, "commits" | "phase">,
   hardening: HardeningBuddy,
+  task: JobTask | null = null,
 ): string | null {
-  const allowed = stageAgentOf(stage, hardening);
+  const allowed = stageAgentOf(stage, hardening, task);
   if (allowed.agent !== spec.agent) {
     return `the ${stage} stage can't run ${spec.agent}`;
   }
@@ -237,8 +285,12 @@ function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
 // it may commit there: any code path only while fresh authority permits code
 // writes, else none, so a session after the code merged commits nothing.
 // This scopes the commit tool, not OS filesystem access.
-function commitScopeOf(stage: Stage, codeWritable: boolean): PathScope {
-  let access = STAGE_CODE_ACCESS[stage];
+function commitScopeOf(
+  stage: Stage,
+  codeWritable: boolean,
+  task: JobTask | null = null,
+): PathScope {
+  let access = codeAccessOf(stage, task);
   if (!codeWritable) {
     access = "read";
   }
@@ -259,19 +311,20 @@ function byName(a: string, b: string): -1 | 0 | 1 {
   return 0;
 }
 
-// The boundary of issue `issue`'s `stage` job, with the env's names only.
+// The boundary of issue `issue`'s `stage` job, or of its `task` job, with
+// the env's names only.
 function boundaryOf(
   cfg: Config,
   issue: number,
-  stage: Stage,
+  job: { stage: Stage; task: JobTask | null },
   from: EnvSource,
 ): Boundary {
-  const role = STAGE_ROLES[stage];
+  const role = jobRoleOf(job.stage, job.task);
   const roles = rolesOf(cfg.jobRoles);
   return {
     role,
-    checkout: paths.jobCheckout(cfg, issue, stage),
-    access: { repo: STAGE_CODE_ACCESS[stage] },
+    checkout: paths.jobCheckout(cfg, issue, job.task ?? job.stage),
+    access: { repo: codeAccessOf(job.stage, job.task) },
     env: Object.keys(agentEnvOf(roles, from)).sort(byName),
     network: roles[role].network,
     runtime: runtimeBoundary(cfg.runtime, cfg.models),
@@ -291,12 +344,15 @@ export type {
 export {
   agentEnvOf,
   boundaryOf,
+  codeAccessOf,
   commitScopeOf,
   HARDENING_BUDDIES,
+  jobRoleOf,
   rolesOf,
   STAGE_AGENTS,
   STAGE_CODE_ACCESS,
   STAGE_ROLES,
   sessionRefusalOf,
   stageAgentOf,
+  TASK_AGENTS,
 };

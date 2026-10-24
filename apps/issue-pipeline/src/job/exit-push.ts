@@ -6,28 +6,34 @@
 // implementor's and the reviewer's (whose hardening commits) jobs. A reader
 // never pushes, and neither does a merger: its integration's rebased or
 // fixed head reaches the branch only through its role's own ops, never half
-// done at exit. Neither does a job that never claimed the issue.
+// done at exit. Neither does a job that never claimed the issue, nor a task
+// job (#186): Sync pushes R′ only through its own op once it has checked it,
+// and Integration only reads.
 
 import process from "node:process";
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 import type { RunOp } from "./ops-request.ts";
 import { STAGE_ROLES } from "./roles.ts";
+import type { JobTask } from "./task-request.ts";
 
 function unreachable(value: never): never {
   throw new Error(`job: unexpected role ${JSON.stringify(value)}`);
 }
 
-// The exit push of a `stage` job, run through `runOp` for the state
+// The exit push of a `job.stage` job, run through `runOp` for the state
 // `claimed()` reads as last saved (null before the claim won); null for a
 // role that never pushes. A failed push is reported on stderr and does not
 // change how the job ends.
 function exitPushOf(
-  stage: Stage,
+  job: { stage: Stage; task: JobTask | null },
   runOp: RunOp,
   claimed: () => IssueState | null,
 ): (() => Promise<void>) | null {
-  const role = STAGE_ROLES[stage];
+  if (job.task !== null) {
+    return null;
+  }
+  const role = STAGE_ROLES[job.stage];
   switch (role) {
     case "writer":
       return async (): Promise<void> => {

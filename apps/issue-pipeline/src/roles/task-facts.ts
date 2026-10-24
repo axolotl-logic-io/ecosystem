@@ -2,8 +2,8 @@
 // run's facts and the reply's shape: the behaviour each session follows is
 // the prompt page the runtime pins and loads ahead of the task, by the
 // session's stage and phase (prompts/ in the pipeline: author: author.md,
-// implement: developer.md, review/hardening: hardening.md,
-// merge/integration: integration.md, merge/security-review: security.md).
+// implement: developer.md, review/hardening: hardening.md or, for Hippy,
+// developer-hardening.md, sync: sync.md, merge/security-review: security.md).
 // The task's kind names the section of that page that applies. Pure.
 
 import { JOB_REPO } from "../job/layout.ts";

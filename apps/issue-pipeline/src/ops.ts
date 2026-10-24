@@ -29,8 +29,7 @@ import { confirmMergedOp } from "./ops/confirm-merged.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
 import { closeParent, finishIssue } from "./ops/finish.ts";
 import { integrationTaskOps } from "./ops/integration-task.ts";
-import { merge } from "./ops/merge.ts";
-import { reconcileMerge } from "./ops/merge-recovery.ts";
+import { merge, reconcileLand } from "./ops/merge.ts";
 import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
 import { prOps } from "./ops/pr.ts";
 import { pushOps } from "./ops/push.ts";
@@ -39,6 +38,7 @@ import { stop } from "./ops/stop.ts";
 import { syncOps } from "./ops/sync.ts";
 import { syncTaskOps } from "./ops/sync-task.ts";
 import { syncReconcileOps } from "./ops/sync-task-reconcile.ts";
+import { taskReadinessOps } from "./ops/task-readiness.ts";
 import { taskResultOps } from "./ops/task-results.ts";
 import { usage } from "./ops/usage.ts";
 import { verify } from "./ops/verify.ts";
@@ -68,17 +68,20 @@ interface ErrorReply {
 const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ...Object.entries(prOps),
   ...Object.entries(pushOps),
+  // The retired merge-stage synchronization: no role calls these since #186
+  // (OpName in job/role-context.ts); Sync is its own task below.
   ...Object.entries(syncOps),
-  // Revision-bound task results (#183); inactive until #180's activation.
+  // Revision-bound task results (#183) and the next ready task (#186).
   ...Object.entries(taskResultOps),
-  // Hippy's Sync task (#184); inactive until #180's activation.
+  ...Object.entries(taskReadinessOps),
+  // Hippy's Sync task (#184).
   ...Object.entries(syncTaskOps),
   ...Object.entries(syncReconcileOps),
-  // Lawd's read-only Integration (#185); inactive until #180's activation.
+  // Lawd's read-only Integration (#185).
   ...Object.entries(integrationTaskOps),
   // Merges code only, checkpointing attempt/response/receipt; never the issue.
   ["merge", merge],
-  ["reconcile-merge", reconcileMerge],
+  ["reconcile-merge", reconcileLand],
   // Completes an issue its merge role saved done and merged.
   ["finish", finishIssue],
   ["close-parent", closeParent],
