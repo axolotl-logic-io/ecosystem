@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import process from "node:process";
 import { test } from "node:test";
-import { type DashboardContext, enabled } from "../host.ts";
+import type { DashboardContext } from "../host.ts";
 import extension from "../index.ts";
 import { extensionHost } from "./extension-test-kit.ts";
 
@@ -50,12 +50,3 @@ for (const { mode, flag, expected } of inactiveCases) {
     );
   });
 }
-test("opt-in gating is strict and mode-specific", () => {
-  for (const mode of ["rpc", "print", "json"]) {
-    assert.equal(enabled(mode, true), false);
-  }
-  assert.equal(enabled("tui", true), true);
-  for (const flag of [false, undefined, "true", 1]) {
-    assert.equal(enabled("tui", flag), false);
-  }
-});

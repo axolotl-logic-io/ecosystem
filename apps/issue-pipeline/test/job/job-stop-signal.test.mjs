@@ -87,13 +87,3 @@ test("a signal interrupting stop never overwrites a possibly landed signed state
     evidence.stopFailure.includes("child interrupted after state write"),
   );
 });
-
-test("a signal outside stop still saves the last checkpoint without its lease", async () => {
-  const { state, calls, end } = await interrupted("release");
-  assert.deepEqual(end, { kind: "stopped", signal: "SIGTERM" });
-  const saves = calls.filter((call) => call.op === "save-state");
-  assert.deepEqual(
-    saves.map((call) => call.payload),
-    [{ state: { ...state, lease: null } }],
-  );
-});

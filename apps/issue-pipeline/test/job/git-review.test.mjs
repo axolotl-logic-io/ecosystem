@@ -18,7 +18,6 @@ import {
 } from "./git-review-test-kit.mjs";
 
 const { gitEnvironment } = await import("../../src/job/git-review-process.ts");
-const { queryOf } = await import("../../src/job/git-review-policy.ts");
 const UNSUPPORTED = /Unsupported/u;
 const TRANSPORT_REFUSED = /transport 'https' not allowed/u;
 
@@ -33,6 +32,25 @@ for (const argv of QUERIES) {
   });
 }
 
+/** Queries the real tool against a real repository and reports its error, if
+ * any, and whether the repository changed.
+ * @param {string[]} argv @returns {Promise<{ error: string | null, changed: boolean }>} */
+async function refusalOf(argv) {
+  const { repo, tool } = fixture();
+  const before = snapshot(repo);
+  const result = await query(tool, repo, argv);
+  const changed = snapshot(repo) !== before;
+  if (result.isError === true && "error" in result.details) {
+    return { error: result.details.error, changed };
+  }
+  return { error: null, changed };
+}
+
+/** @param {string} text @returns {RegExp} */
+function literal(text) {
+  return new RegExp(text.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u");
+}
+
 for (const command of [
   "fetch",
   "push",
@@ -41,8 +59,10 @@ for (const command of [
   "config",
   "arbitrary",
 ]) {
-  test(`refuses ${command} before executing Git`, () => {
-    assert.throws(() => queryOf([command]), UNSUPPORTED);
+  test(`refuses ${command} before executing Git`, async () => {
+    const { error, changed } = await refusalOf([command]);
+    assert.match(error ?? "", UNSUPPORTED);
+    assert.equal(changed, false);
   });
 }
 
@@ -65,17 +85,18 @@ const DANGEROUS = [
   ["--git-dir", "/outside/repository.git"],
 ];
 for (const option of DANGEROUS) {
-  test(`rejects ${option.join(" ")} and alternate command positions`, () => {
-    for (const argv of [
-      ["diff", ...option],
-      ["diff", "HEAD", ...option],
-      [...option, "diff"],
-    ]) {
-      assert.throws(
-        () => queryOf(argv),
-        (error) =>
-          error instanceof Error && error.message.includes(option[0] ?? ""),
-      );
+  test(`rejects ${option.join(" ")} and alternate command positions`, async () => {
+    const refusals = await Promise.all(
+      [
+        ["diff", ...option],
+        ["diff", "HEAD", ...option],
+        [...option, "diff"],
+      ].map(refusalOf),
+    );
+    const named = literal(option[0] ?? "");
+    for (const { error, changed } of refusals) {
+      assert.match(error ?? "", named);
+      assert.equal(changed, false);
     }
   });
 }
@@ -104,8 +125,10 @@ const UNSAFE_MODES = [
   ["merge-base", "--fork-point", "HEAD"],
 ];
 for (const argv of UNSAFE_MODES) {
-  test(`rejects unsafe mode ${argv.join(" ")}`, () => {
-    assert.throws(() => queryOf(argv), UNSUPPORTED);
+  test(`rejects unsafe mode ${argv.join(" ")}`, async () => {
+    const { error, changed } = await refusalOf(argv);
+    assert.match(error ?? "", UNSUPPORTED);
+    assert.equal(changed, false);
   });
 }
 
