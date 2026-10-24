@@ -11,7 +11,6 @@ import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { jobLog, tick } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
-  hardeningTurn,
   implementorTurn,
   openFlowIssue,
   retainAuthoredIssue,
@@ -77,8 +76,7 @@ function state(flow) {
 function historicalDirectReviewers(interrupted, security) {
   return [
     implementorTurn("Hello, world", "Hardening capitalizes the greeting"),
-    implementorTurn("Hello, world!", "Integration fixes CI"),
-    hardeningTurn(),
+    implementorTurn("Hello, world!", "Hardening fixes CI"),
     securityTurn(),
     interrupted,
     security,

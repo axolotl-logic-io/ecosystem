@@ -255,6 +255,7 @@ async function mergeCode(
   return await afterOwnMerge(ctx, state, {
     authorized,
     mergeCommit: reply.mergeCommit,
+    land: binding,
   });
 }
 

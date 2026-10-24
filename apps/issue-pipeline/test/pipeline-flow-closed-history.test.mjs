@@ -47,7 +47,7 @@ after(() => stopJobs(flow));
 test("the closed historical fixture retains H0 != H, two-parent M and an already-saved own receipt", () => {
   flow = setUpFlow();
   fixture = createClosedHistoricalFlow(flow);
-  assert.deepEqual(fixture.setup, ["next", "next", "next", "next"]);
+  assert.deepEqual(fixture.setup, ["next", "next", "next", "next", "next"]);
   assert.equal(fixture.response.code, 0);
   assert.equal(
     fixture.response.stdout,

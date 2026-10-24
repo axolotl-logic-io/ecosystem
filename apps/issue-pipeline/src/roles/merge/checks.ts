@@ -41,13 +41,15 @@ function landBindingOf(ctx: RoleContext, state: IssueState): Binding | null {
   };
 }
 
-// The Land binding Completion consumes, null for a merge from before
-// activation that recorded no Land, or why Completion must hold.
+// The Land binding Completion consumes: `land`, the one this job just
+// landed under, else the saved attempt's; null for a merge from before
+// activation that recorded no Land; or why Completion must hold.
 async function completionBinding(
   ctx: RoleContext,
   state: IssueState,
+  land: Binding | null,
 ): Promise<{ binding: Binding | null } | { hold: string }> {
-  const binding = landBindingOf(ctx, state);
+  const binding = land ?? landBindingOf(ctx, state);
   if (binding === null) {
     return { binding: null };
   }
@@ -68,17 +70,18 @@ async function completionBinding(
 // the premerge check proof for exactly `codeMerged.sha`, and confirms GitHub's
 // receipt and ancestry. Missing proof is a stop, never a postmerge suite or a
 // request for a code writer. Null means the result may go on to completion.
+// `landed` is the Land binding this job just merged under, when it did.
 async function confirmedMergedResult(
   ctx: RoleContext,
   state: IssueState,
-  result: Revision,
-  codeMerged: CodeMerged,
+  merge: { result: Revision; codeMerged: CodeMerged; landed?: Binding | null },
 ): Promise<RoleEnd | null> {
+  const { result, codeMerged, landed = null } = merge;
   const rejected = rejectedAgain(state, result);
   if (rejected !== null) {
     return rejected;
   }
-  const land = await completionBinding(ctx, state);
+  const land = await completionBinding(ctx, state, landed);
   if ("hold" in land) {
     return failed(state, `${land.hold}; ${NO_POSTMERGE_REPAIR}`);
   }

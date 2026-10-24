@@ -118,7 +118,10 @@ async function recoverOwnMerge(
     return null;
   }
   const receipt = { pr: pr.number, sha: merged.code };
-  const refused = await confirmedMergedResult(ctx, state, result, receipt);
+  const refused = await confirmedMergedResult(ctx, state, {
+    result,
+    codeMerged: receipt,
+  });
   if (refused !== null) {
     return refused;
   }

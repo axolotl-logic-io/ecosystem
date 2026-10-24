@@ -208,17 +208,15 @@ function runThroughTasks(
 }
 
 /**
- * Runs the installed caller and waits for the actual guarded stage job's result.
+ * Starts a job through the installed caller in the run folder `run`, with
+ * `extra` launcher arguments such as a task request, and waits for it.
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {string} run
  * @param {string} stage
- * @returns {Promise<import("zod").infer<typeof JOB_RESULT>>}
+ * @param {readonly string[]} [extra]
+ * @returns {Promise<{ launch: any, line: any }>} its receipt line and the job's own
  */
-async function runCallerStage(flow, stage) {
-  const run = fs.mkdtempSync(path.join(flow.tmp, "caller-"));
-  fs.writeFileSync(
-    path.join(run, "run.json"),
-    JSON.stringify({ maxJobs: 1, maxAttempts: 1 }),
-  );
+async function callerJob(flow, run, stage, extra = []) {
   const deadline = performance.now() + RUN_MS;
   const result = spawnSync(
     process.execPath,
@@ -237,13 +235,15 @@ async function runCallerStage(flow, stage) {
       stage,
       "--lane",
       "flow-caller",
+      ...extra,
     ],
     { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
   );
   if (result.status !== 0) {
     throw new Error(`caller exited ${result.status}: ${result.stderr}`);
   }
-  const { pid, receipt } = CALLER_LAUNCH.parse(JSON.parse(result.stdout));
+  const launch = JSON.parse(result.stdout);
+  const { pid, receipt } = CALLER_LAUNCH.parse(launch);
   flow.pids.push(pid);
   endsWithTest(() => killGroup(pid));
   await untilExited([pid], deadline);
@@ -253,7 +253,42 @@ async function runCallerStage(flow, stage) {
       `job has no result: ${fs.readFileSync(path.join(receipt, "stderr.log"), "utf8")}`,
     );
   }
-  return JOB_RESULT.parse(JSON.parse(stdout));
+  return { launch, line: JOB_RESULT.parse(JSON.parse(stdout)) };
+}
+
+/**
+ * The installed caller's status of `run`: one report per job it started.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow @param {string} run
+ * @returns {any[]}
+ */
+function callerStatus(flow, run) {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(flow.root, "caller-jobs.mjs"), "status", "--run", run],
+    { env: flow.env, encoding: "utf8", timeout: RUN_MS },
+  );
+  if (result.status !== 0) {
+    throw new Error(`caller status exited ${result.status}: ${result.stderr}`);
+  }
+  return result.stdout
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+}
+
+/**
+ * Runs the installed caller and waits for the actual guarded stage job's result.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {string} stage
+ * @returns {Promise<import("zod").infer<typeof JOB_RESULT>>}
+ */
+async function runCallerStage(flow, stage) {
+  const run = fs.mkdtempSync(path.join(flow.tmp, "caller-"));
+  fs.writeFileSync(
+    path.join(run, "run.json"),
+    JSON.stringify({ maxJobs: 1, maxAttempts: 1 }),
+  );
+  return (await callerJob(flow, run, stage)).line;
 }
 
 /**
@@ -297,6 +332,8 @@ function stopJobs(flow) {
 }
 
 export {
+  callerJob,
+  callerStatus,
   jobLog,
   runCallerStage,
   runStage,

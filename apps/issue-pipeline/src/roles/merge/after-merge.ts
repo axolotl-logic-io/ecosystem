@@ -5,6 +5,7 @@ import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { requirementsHold } from "../../requirements.ts";
 import { currentResultObservation } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
+import type { Binding } from "../../task-result-records.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { currentRevision } from "../revision-source.ts";
 import { errorStop } from "../writer-session.ts";
@@ -26,7 +27,11 @@ function short(sha: string | null): string {
 async function afterOwnMerge(
   ctx: RoleContext,
   start: IssueState,
-  { authorized, mergeCommit }: { authorized: Revision; mergeCommit: string },
+  {
+    authorized,
+    mergeCommit,
+    land = null,
+  }: { authorized: Revision; mergeCommit: string; land?: Binding | null },
 ): Promise<RoleEnd> {
   const merged = `PR #${start.pr} merged as ${short(mergeCommit)}`;
   const state = logged(
@@ -58,7 +63,11 @@ async function afterOwnMerge(
     );
   }
   const codeMerged = { pr: start.pr, sha: mergeCommit };
-  const refused = await confirmedMergedResult(ctx, state, result, codeMerged);
+  const refused = await confirmedMergedResult(ctx, state, {
+    result,
+    codeMerged,
+    landed: land,
+  });
   if (refused !== null) {
     return refused;
   }

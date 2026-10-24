@@ -9,7 +9,7 @@ import {
   prepareReplayFlow,
   replaceState,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage } from "./pipeline-flow-run-test-kit.mjs";
+import { runStage, runThroughTasks } from "./pipeline-flow-run-test-kit.mjs";
 import { savedState } from "./pipeline-flow-script-test-kit.mjs";
 import { BASE, bareGit } from "./pipeline-flow-test-kit.mjs";
 
@@ -31,8 +31,20 @@ function historicalIntegration(flow) {
   withWorld(flow.ghDir, (world) => {
     world.failedHead = head;
   });
-  setup.push(runStage(flow, "merge").end);
-  const integrated = ISSUE_STATE.parse(savedState(readWorld(flow.ghDir)));
+  // Merge relays its Integration request, then CI fails on the first head:
+  // Hardening fixes it as R2. The pre-upgrade integration receipt this
+  // fixture seeds is built from those two real revisions, as the legacy
+  // writable integration once wrote it (#186 retired that writer).
+  setup.push(runThroughTasks(flow, "merge").at(-1)?.end);
+  setup.push(runStage(flow, "review").end);
+  const fixed = ISSUE_STATE.parse(savedState(readWorld(flow.ghDir)));
+  if (fixed.hardened === null) {
+    throw new Error("missing the fixed hardening");
+  }
+  const integrated = ISSUE_STATE.parse({
+    ...fixed,
+    integration: { reviewed: hardened, revision: fixed.hardened },
+  });
   return { parent, reviewed, integrated, setup };
 }
 

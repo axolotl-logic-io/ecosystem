@@ -6,7 +6,11 @@ import { after, before, test } from "node:test";
 import { ISSUE_STATE } from "../src/state.ts";
 import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  runStage,
+  runThroughTasks,
+  stopJobs,
+} from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
   hardeningTurn,
@@ -95,7 +99,7 @@ test("the resumed Author posts its first Gherkin and returns to the retained Rev
 
 test("the original work still needs real hardening, verification and Security before completion", () => {
   assert.equal(runStage(flow, "review").end, "next");
-  assert.equal(runStage(flow, "merge").end, "next");
+  assert.equal(runThroughTasks(flow, "merge").at(-1).end, "next");
   const saved = state();
   assert.equal(saved.stage, "done");
   assert.ok(saved.hardened);
