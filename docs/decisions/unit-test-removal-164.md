@@ -4,7 +4,7 @@ On 2026-10-22, Autumn approved removing the issue pipeline's isolated direct-cal
 
 ## Scope and counts
 
-The corrected owner manifest removes 73 whole test files (420 static declarations), 19 cases across five mixed files and eight helpers or fixtures whose remaining-consumer closure is empty. All other helpers stay unchanged. No production source, discovery documentation, check configuration, assertion in a retained case or unrelated workflow-dash file changes.
+The corrected owner manifest removes 73 whole test files (420 static declarations), 19 cases across five mixed files and eight helpers or fixtures whose remaining-consumer closure is empty. All other helpers stay unchanged. No production source, discovery documentation or check configuration changes. A later pass, recorded under [Second pass](#second-pass), converts or removes ten more pipeline cases and removes workflow-dash's direct-call tests.
 
 | Source measure | Before | Removed | After |
 |---|---:|---:|---:|
@@ -713,3 +713,41 @@ Each heading names an original path under `apps/issue-pipeline/`. Each bullet na
 - Line 184: a state saved while the pipeline had a wiki parses with its receipts, dropping only the flows' wiki flag
 - Line 200: a revision saved with a null wiki head is the same revision as one with none, so its authorization still holds
 - Line 211: malformed checkpoints never make a legacy state unreadable
+
+## Second pass
+
+On 2026-10-24, before #191 landed, an audit of the surviving tests found ten pipeline cases that still called a module directly with no real dependency. Autumn also asked for workflow-dash's direct-call tests to go in the same change. Cases inside the fake-gh suites stay as the owner manifest protects them, including direct calls in `trusted-inputs`, `github-login`, `credentials` and `report/report-usage`.
+
+### Converted to a real dependency
+
+- `test/job/git-review.test.mjs`: the refused-subcommand, dangerous-option and unsafe-mode matrices now query the real review tool against a real repository. Each case checks the refusal and that the repository is unchanged. Allowing `fetch` or `--output` in the policy fails them.
+- `test/project-policy-boundary.test.mjs`: the unknown-key, duplicate-member and separate-scope cases now commit the document as `.issue-pipeline.json`, pin that commit and load the operator config. Removing the duplicate-field refusal fails them.
+- `test/job/runtime-policy.test.mjs`: the native-window case now launches sessions through the fake pi. The `:high` suffix and a 300,000-token window set the reserve, and a missing window, an impossible window and an unknown model refuse before pi starts. Removing the impossible-window refusal fails it.
+- `test/job/runtime-history.test.mjs`, line 45: replaced by a `--print-boundary` job test in `job/job-boundary.test.mjs` that checks the declared credential variable, every model role and its compaction policy, with no secret in the output. Adding a credential variable fails it.
+
+### Removed
+
+- `test/job/job-dropped.test.mjs`, line 153: the dropped notice names the job, the code checkout and the run directory, and no local path. Its `repo/` and local-path assertions move into the SIGTERM job test.
+- `test/job/job-dropped.test.mjs`, line 161: a run counts as stopped for a signal or a stopped job line, and for nothing else. Real jobs still cover the stop, next and SIGTERM ends, but not the ask, wait, deferred, unclaimed or SIGINT ends.
+- From the runtime-policy case: the refusal of a compaction target below recent context in `runtime`, and the direct `stateRefusal` result. A successful launch with a 300,000-token window now covers the latter.
+
+### Workflow-dash
+
+The kept tests read real fixture files and temporary directories, drive `DashboardRuntime` through its configuration file and watchers, or load the extension entrypoint with a fake Pi host. 36 static declarations go, leaving 12 (16 at runtime, from 108). `theme-fixtures.ts`, `tool-test-kit.ts` and the unused `makeBuddy` and `viewFixture` helpers go with them. The sole direct assertions lost are TUI rendering and width fitting in both themes; read-tool contracts, output caps and inactive refusals; record schemas; process, capacity and gate observations; request templates and instruction cancellation; labels, time and configuration aliases; and opt-in gating.
+
+Each bullet names an original path under `apps/workflow-dash/` and the removed cases, with their original line numbers.
+
+- `test/buddy-requests.test.ts`: line 6, supervisor requests come from unmatched contacts; progress is not pending
+- `test/data.test.ts`: line 83, configuration expands home and rejects bad repo names; credentials denied
+- `test/domain.test.ts`: line 32, buddy configuration accepts both older names with canonical string precedence; line 55, legacy delivery coverage never fabricates a current task or a passing result; line 69, account observations validate metadata without inferring a buddy from its task; line 114, unknown process observations cannot imply success, completion or available capacity
+- `test/language.test.ts`: line 56, canonical labels do not rewrite recorded launch keys or source stages; line 86, buddyRuns config wins over the deprecated operators key and both expand home; line 135, request templates preserve checkpoints, retry linkage and resource holds; line 193, ${name}: canonical ${pane.name} pane renders at narrow and wide widths; line 217, ${name}: mapped task labels remain distinct from source records
+- `test/legacy-capacity.test.ts`: line 6, legacy capacity distinguishes slot groups, ignores dead runs and reports pb-web scope
+- `test/lifecycle.test.ts`: line 53, opt-in gating is strict and mode-specific
+- `test/messages.test.ts`: line 21, ${name} instructions never send; line 36, shutdown during editing prevents a late submitted instruction; line 61, edited text uses idle=${idle} delivery without template expansion; line 90, all required templates omit issue titles, thread text and buddy output
+- `test/observability.test.ts`: line 55, reviewer gate requires a currently open bash gate call; completed calls disappear; line 98, process evidence must name a web runner AND a PB work path, with boundary
+- `test/presentation.test.ts`: line 20, ${name}: progress thresholds retain their colors; line 30, ${name}: version changes render and unknown requests remain silent
+- `test/process-observations.test.ts`: line 6, process observations preserve denied and missing evidence as unknown
+- `test/render.test.ts`: line 81, ${themeName}: ${count} workflow runs hold=${hold}, all panes fit ${width}
+- `test/source-records.test.ts`: line 11, legacy nullable observations retain source identities and recorded nulls; line 35, invalid workflow and buddy shapes fail their source boundary; line 47, JSONL and session readers ignore primitive, partial and non-message records; line 68, unidentified gate calls and unrelated contacts cannot establish observations
+- `test/time.test.ts`: line 29, elapsed limits and warning threshold; line 38, consecutive launch deltas, job stages and model/tool message deltas
+- `test/tools.test.ts`: line 26, canonical tools expose identities and labels without rewriting source keys; line 50, deprecated tool names preserve their prior JSON contract; line 97, uncertain runs do not imply activity, completion or a current task; line 120, native SDK registration receives every read-only tool; line 137, missing workflow runs report a bounded-reader failure; line 147, ${name}: output is capped at 12 KB; line 159, ${name}: inactive tools refuse reads before refresh

@@ -15,9 +15,6 @@ import {
 
 const { AGENT_DIR } = await import("../../src/pipeline-root.ts");
 const { runSession } = await import("../../src/job/launch.ts");
-const { policyOf, RUNTIME_SCHEMA, stateRefusal } = await import(
-  "../../src/job/runtime-policy.ts"
-);
 const { STAGE_AGENTS } = await import("../../src/job/roles.ts");
 const TARGET = 175_000;
 const HASH_LENGTH = 64;
@@ -28,6 +25,16 @@ const DIAGNOSTIC = z.object({
 const DEFAULT_RESERVE = 97_000;
 const LARGER_RESERVE = 125_000;
 const ERROR_RUNTIME = /runtime:/u;
+const MODEL_ID = "openai/gpt-6.1-sol";
+const START_SETTINGS = z.object({
+  settings: z.object({
+    compaction: z.object({ reserveTokens: z.number() }),
+  }),
+});
+/** @param {unknown} start @returns {number} */
+function reserveOf(start) {
+  return START_SETTINGS.parse(start).settings.compaction.reserveTokens;
+}
 const CREDENTIALS =
   /private-credential-sentinel|private-native-header-sentinel|forbidden-job-token|forbidden-role-token/u;
 
@@ -194,47 +201,41 @@ test("provider version is explicit, not an ambient package assumption", async ()
   assert.deepEqual(kit.calls(), []);
 });
 
-test("native window maps the fixed target to reserve, with impossible and missing windows refused", () => {
-  const runtime = RUNTIME_SCHEMA.parse({
-    modelContextWindows: FIXTURE_WINDOWS,
-  });
-  assert.throws(
-    () => policyOf("openai/gpt-6.1-sol", RUNTIME_SCHEMA.parse(undefined)),
-    ERROR_RUNTIME,
-  );
-  assert.equal(
-    policyOf("openai/gpt-6.1-sol:high", runtime).reserveTokens,
-    DEFAULT_RESERVE,
-  );
-  const changed = RUNTIME_SCHEMA.parse({
-    modelContextWindows: { "openai/gpt-6.1-sol": 300_000 },
-  });
-  assert.equal(
-    policyOf("openai/gpt-6.1-sol", changed).reserveTokens,
-    LARGER_RESERVE,
-  );
-  const impossible = RUNTIME_SCHEMA.parse({
-    modelContextWindows: { "openai/gpt-6.1-sol": 175_000 },
-  });
-  assert.throws(
-    () => policyOf("openai/gpt-6.1-sol", impossible),
-    ERROR_RUNTIME,
-  );
-  assert.throws(() => policyOf("other/model", runtime), ERROR_RUNTIME);
-  assert.throws(() =>
-    RUNTIME_SCHEMA.parse({
-      compaction: { targetTokens: 1, keepRecentTokens: 1 },
-    }),
-  );
-  assert.equal(
-    stateRefusal(
-      {
-        model: { ...MODEL, contextWindow: 300_000 },
-        autoCompactionEnabled: true,
+test("native window maps the fixed target to reserve, with impossible and missing windows refused", async () => {
+  /** @param {Record<string, number> | undefined} windows @param {Partial<import("../../src/job/launch.ts").SessionLaunch>} [changes] */
+  async function launchWith(windows, changes = {}) {
+    const kit = privateRuntime();
+    kit.hooks.runtime = { ...kit.runtime, modelContextWindows: windows ?? {} };
+    kit.setState({
+      model: {
+        ...MODEL,
+        contextWindow: windows?.[MODEL_ID] ?? MODEL.contextWindow,
       },
-      policyOf("openai/gpt-6.1-sol", changed),
-      MODEL.baseUrl,
-    ),
-    null,
+      autoCompactionEnabled: true,
+    });
+    const raw = await runSession(launch(changes), kit.hooks);
+    return { raw, start: kit.calls()[0] };
+  }
+  const thinking = await launchWith(FIXTURE_WINDOWS, {
+    model: `${MODEL_ID}:high`,
+  });
+  assert.equal(thinking.raw.ok, true, thinking.raw.error ?? "");
+  assert.equal(reserveOf(thinking.start), DEFAULT_RESERVE);
+  const changed = await launchWith({ [MODEL_ID]: 300_000 });
+  assert.equal(changed.raw.ok, true, changed.raw.error ?? "");
+  assert.equal(reserveOf(changed.start), LARGER_RESERVE);
+  /** @type {[Record<string, number> | undefined, string][]} */
+  const refusals = [
+    [undefined, MODEL_ID],
+    [{ [MODEL_ID]: TARGET }, MODEL_ID],
+    [FIXTURE_WINDOWS, "other/model"],
+  ];
+  const refused = await Promise.all(
+    refusals.map(([windows, model]) => launchWith(windows, { model })),
   );
+  for (const { raw, start } of refused) {
+    assert.equal(raw.ok, false);
+    assert.match(raw.error ?? "", ERROR_RUNTIME);
+    assert.equal(start, undefined);
+  }
 });
