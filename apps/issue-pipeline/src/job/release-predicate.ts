@@ -10,8 +10,7 @@
 
 import type { Config } from "../config.ts";
 import { assertReconciled } from "../execution.ts";
-import { readStore, surviving } from "../lane-slot-store.ts";
-import { withCloneLock } from "../locks.ts";
+import { registeredConsumers } from "../lane-slots.ts";
 import { assertStopRecoveryResolved } from "../stop-recovery.ts";
 import type { OpsReply, RunOp } from "./ops-request.ts";
 import type { RunEnd } from "./teardown.ts";
@@ -96,23 +95,14 @@ function endRefusal(evidence: ReleaseEvidence): string | null {
 }
 
 // Throws while a registered consumer, another surviving checkout or a
-// pending setup, still holds issue `issue`'s lane slot. An unreadable store
-// is unknown and throws too.
+// pending setup, still holds issue `issue`'s lane slot.
 function assertNoConsumer(cfg: Config, issue: number): void {
-  if (cfg.laneSlots === undefined) {
-    return;
-  }
-  withCloneLock(cfg, () => {
-    const held = surviving(readStore(cfg)).leases.find(
-      (lease) => lease.issue === issue,
+  const consumers = registeredConsumers(cfg, issue, null);
+  if (consumers.length > 0) {
+    throw new Error(
+      `the lane slot still has registered consumers: ${consumers.join(", ")}`,
     );
-    if (held !== undefined) {
-      const consumers = [...held.checkouts, ...held.pendingSetup];
-      throw new Error(
-        `lane slot ${held.slot} still has registered consumers: ${consumers.join(", ")}`,
-      );
-    }
-  });
+  }
 }
 
 // Why issue `issue`'s execution must hold after a run with `evidence`, or

@@ -1,6 +1,6 @@
 # Execution fencing audit
 
-This page lists every credentialed or cleanup effect the pipeline can cause and what fences it. It's the audit for #132, taken at `main` `ea483b5` (2026-10-24 19:30 EDT, UTC−04:00), after #167 and #168 landed. It records an audit result only. It doesn't claim any write is safe before #169 and #170 land with their tests.
+This page lists every credentialed or cleanup effect the pipeline can cause and what fences it. It's the audit for #132, taken at `main` `ea483b5` (2026-10-24 19:30 EDT, UTC−04:00), after #167 and #168 landed. It records an audit result only. It doesn't claim any write is safe before #169 lands with its tests. #151 and #170 have since fenced the release, teardown, exit-order and cleanup rows.
 
 The rule each row is checked against is [`fresh-reads`](../decisions/buddies-and-tasks.md#fresh-reads): a run reads ownership immediately before each privileged effect, and a cached reading authorizes nothing.
 
@@ -53,10 +53,10 @@ Execution fencing adds to the existing guards; it never replaces them. Code writ
 | Land | `src/ops/merge.ts` → `src/ops/land-task.ts` → `src/ops/branch-merge.ts` fast-forward push | Ops | Request envelope | Once per request | Exact Land binding and results, merge guard, attempt journal (`merge-attempt.ts`) | #169 |
 | Completion | `src/ops/finish.ts` `finishIssue` (close, branch delete, labels), `closeParent` | Ops | Request envelope | Once per request | Saved done and merged state | #169 |
 | Stop and stop salvage push | `src/ops/stop.ts` → `src/unpushed.ts` `pushUnpushed`, stop comments and labels | Ops | Request envelope | Once per request | `readWriteAuthority` before the push | #169 |
-| Exit salvage push | `src/job/exit-push.ts` → `exit-push` op in `src/ops/push.ts` | Ops | Request envelope | Once per request | `readWriteAuthority`, `refuseOnceMerged` | #169 (write), #170 (exit order) |
-| Teardown and checkout close | `src/job/teardown.ts`, `src/job/checkout-close.ts` | Job | Invocation binding | None for local effects; fetch is a read | Checkpoint before end | #170 |
-| Maintenance cleanup | `src/ops/cleanup.ts`, `src/lane-slots.ts` | Ops | Request envelope, often none | None; local worktree removal only | Nothing unsaved | #170 |
-| Ownership release | `src/job/invocation.ts` `settleInvocation` | Job | Invocation binding | Coordination release, confirmed by read-back | Resolved-run check | #151 predicate, #170 |
+| Exit salvage push | `src/job/exit-push.ts` → `exit-push` op in `src/ops/push.ts` | Ops | Request envelope | Teardown's fresh owner read first, then once per request | `readWriteAuthority`, `refuseOnceMerged`; runs only after patches and the code bundle are saved | #169 (write); exit order fenced (#170) |
+| Teardown and checkout close | `src/job/teardown.ts`, `src/job/checkout-close.ts` | Job | Invocation binding | Fresh owner read before any patch, reset, push or removal; lost or unknown leaves the checkout untouched | Failed preservation keeps the checkout; lane setup and dependent-checkout checks | Fenced (#170) |
+| Maintenance cleanup | `src/ops/cleanup.ts` → `src/ops/cleanup-fence.ts`; prune in `src/lane-slots.ts` | Ops | Request envelope, often none | A request with a binding: once per request. Each issue: authenticated coordination records, kept while any request isn't released or cancelled | Nothing unsaved; no live claim; no registered lane-slot consumer; prune deferred while any setup is pending | Fenced (#170) |
+| Ownership release | `src/job/invocation.ts` `settleInvocation` → `src/job/release-predicate.ts` | Job | Invocation binding | Coordination release, confirmed by read-back | Release predicate: confirmed checkpoint, no unresolved stop or journal, preserved work, no registered consumer | Fenced (#151, #170) |
 | Commit tool and control socket | `src/job/pipeline-commit-tool.ts` → `src/job/control.ts` | Job | Binding on each request | Binding must match the job's (#168) | Write scope | Fenced (#168) |
 | Writer session start | `src/job/session-hooks.ts` | Job | Invocation binding | Owner read before each session (#168) | Stage and phase authority | Fenced (#168) |
 | Coordination records and epoch refs | `src/execution.ts` port: comments, `git/commits`, `git/refs` | Job and ops | The binding itself | Exempt: these writes are the fence. One journaled attempt each | Read-back confirmation | Exempt (bootstrap) |

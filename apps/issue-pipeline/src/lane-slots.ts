@@ -207,8 +207,34 @@ function assertCheckoutReadyForRemoval(
   });
 }
 
+// The registered consumers of issue `issue`'s lane slot other than checkout
+// `except`: its other surviving checkouts and every pending setup. The slot
+// stays held while any is left (capacity-by-resource); an unreadable store
+// throws, since an unknown consumer state holds too.
+function registeredConsumers(
+  cfg: Config,
+  issue: number,
+  except: string | null,
+): string[] {
+  if (cfg.laneSlots === undefined) {
+    return [];
+  }
+  return withCloneLock(cfg, () => {
+    const held = surviving(readStore(cfg)).leases.find(
+      (lease) => lease.issue === issue,
+    );
+    if (held === undefined) {
+      return [];
+    }
+    const others = held.checkouts.filter(
+      (dir) => except === null || !sameCheckout(dir, except),
+    );
+    return [...others, ...held.pendingSetup];
+  });
+}
+
 // Maintenance is opt-in, hourly across processes, and never prunes a live
-// out-of-range lease after a pool shrink. Checkpoint attempts before running:
+// out-of-range lease after a pool shrink, nor while a setup is pending. Checkpoint attempts before running:
 // a crash or failure must not cause every subsequent claim to retry cleanup.
 function pruneLaneResources(cfg: Config, now: () => number = Date.now): void {
   const { laneSlots, commands } = cfg;
@@ -227,6 +253,12 @@ function pruneLaneResources(cfg: Config, now: () => number = Date.now): void {
       if (store.leases.some((lease) => lease.slot > laneSlots)) {
         process.stderr.write(
           "lane prune deferred: out-of-range checkouts still hold slots; drain them before shrinking the pool\n",
+        );
+        return;
+      }
+      if (store.leases.some((lease) => lease.pendingSetup.length > 0)) {
+        process.stderr.write(
+          "lane prune deferred: a lane setup is still pending; finish or retry it first\n",
         );
         return;
       }
@@ -257,6 +289,7 @@ export {
   assertCheckoutReadyForRemoval,
   checkoutEnvironment,
   pruneLaneResources,
+  registeredConsumers,
   releaseCheckoutSlot,
   withCheckoutSetup,
   withCheckoutSlot,
