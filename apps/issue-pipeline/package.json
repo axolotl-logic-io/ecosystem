@@ -6,7 +6,7 @@
     "build": "node build.ts",
     "lint": "biome check --error-on-warnings",
     "typecheck": "tsc -p . && tsc -p tsconfig.test.json",
-    "check": "npm run typecheck && npm run lint && npm run build && node --check install.mjs && node --check dist/ops.mjs && node --check dist/safe-refactor.mjs && node --check dist/safe-refactor-tool.mjs && node --check dist/shell-supervisor.mjs && node --check dist/job.mjs && node --check dist/orchestrate.mjs && node --check dist/report.mjs && node --check dist/pipeline-commit.mjs && node --check dist/structured-output.mjs && node --check dist/git-review.mjs && node --check dist/caller-jobs.mjs && node --test --test-concurrency=2 --test-timeout=180000 test/build.test.mjs test/check-task.test.mjs",
+    "check": "npm run typecheck && npm run lint && npm run build && node --check install.mjs && node --check dist/ops.mjs && node --check dist/safe-refactor.mjs && node --check dist/safe-refactor-tool.mjs && node --check dist/shell-supervisor.mjs && node --check dist/job.mjs && node --check dist/orchestrate.mjs && node --check dist/report.mjs && node --check dist/pipeline-commit.mjs && node --check dist/structured-output.mjs && node --check dist/git-review.mjs && node --check dist/caller-jobs.mjs && node --check dist/standards-upgrade.mjs && node --test --test-concurrency=2 --test-timeout=180000 test/build.test.mjs test/check-task.test.mjs",
     "check:full": "npm run check && node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.mjs'"
   },
   "devDependencies": {
@@ -15,6 +15,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "yaml": "2.9.0",
     "zod": "^4.6.7"
   }
 }

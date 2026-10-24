@@ -10,8 +10,9 @@
 // <outdir>/structured-output.mjs, <outdir>/pipeline-commit.mjs and
 // <outdir>/git-review.mjs, the
 // orchestrator <outdir>/orchestrate.mjs, the reports <outdir>/report.mjs
-// and the caller's job launcher <outdir>/caller-jobs.mjs
-// (scripts/caller-jobs.ts).
+// the caller's job launcher <outdir>/caller-jobs.mjs
+// (scripts/caller-jobs.ts) and the standards upgrade's entrypoint
+// <outdir>/standards-upgrade.mjs (scripts/standards-upgrade.ts).
 // It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
 
@@ -52,6 +53,7 @@ const NODE_MODULES: ReadonlyMap<string, string> = new Map([
     "pipeline-commit.mjs",
   ],
   [path.join(SCRIPTS_DIR, "caller-jobs.ts"), "caller-jobs.mjs"],
+  [path.join(SCRIPTS_DIR, "standards-upgrade.ts"), "standards-upgrade.mjs"],
 ]);
 
 async function buildNodeModule(source: string, outfile: string): Promise<void> {
