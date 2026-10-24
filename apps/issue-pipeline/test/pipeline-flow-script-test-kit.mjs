@@ -5,6 +5,7 @@
 import { newIssueState } from "../src/state.ts";
 import { openIssue } from "./fake-pipeline-flow-gh.mjs";
 import { withWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { seedReleasedRun } from "./pipeline-flow-coordination-test-kit.mjs";
 import { ISSUE } from "./pipeline-flow-test-kit.mjs";
 
 const STATE =
@@ -29,13 +30,14 @@ function retainAuthoredIssue(flow) {
     ...saved
   } = newIssueState(ISSUE, "author");
   withWorld(flow.ghDir, (world) => {
+    const execution = seedReleasedRun(world, ISSUE, `agent/issue-${ISSUE}`);
     world.comments.push({
       id: world.nextId,
       issue: ISSUE,
       login: world.account,
       createdAt: "2026-10-18T00:00:00Z",
       updatedAt: "2026-10-18T00:00:00Z",
-      body: `<!-- agent-pipeline:state\n${JSON.stringify(saved)}\n-->`,
+      body: `<!-- agent-pipeline:state\n${JSON.stringify({ ...saved, execution })}\n-->`,
     });
     world.nextId += 1;
   });

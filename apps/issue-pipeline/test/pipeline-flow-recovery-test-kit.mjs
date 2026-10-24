@@ -10,6 +10,10 @@ import {
   withWorld,
   writeWorld,
 } from "./fake-pipeline-flow-gh-world.mjs";
+import {
+  isCoordinationWrite,
+  withoutCoordination,
+} from "./pipeline-flow-coordination-test-kit.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { replaceState, sessions } from "./pipeline-flow-replay-test-kit.mjs";
 import {
@@ -92,7 +96,7 @@ function restoreClearedReceipt(flow, clearedWorld, extra = {}) {
 /** @param {Flow} flow */
 function recoverySnapshot(flow) {
   return {
-    world: readWorld(flow.ghDir),
+    world: withoutCoordination(readWorld(flow.ghDir)),
     head: refIn(flow.origin, `refs/heads/${BASE}`),
     branch: refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`),
     sessions: sessions(flow),
@@ -130,7 +134,9 @@ async function refusedRecovery(flow, interruptedWorld, extra) {
       .map(({ request }) => request.op),
     writes: ghCalls(flow.ghDir)
       .slice(beforeCalls)
-      .filter((args) => args.some((arg) => MUTATION_ARGS.has(arg))),
+      .filter((args) => args.some((arg) => MUTATION_ARGS.has(arg)))
+      // The job's own request and confirmation precede its claim (#167).
+      .filter((args) => !isCoordinationWrite(args)),
   };
 }
 

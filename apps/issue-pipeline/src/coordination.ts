@@ -20,6 +20,21 @@ import {
   snapshot,
 } from "./coordination-records.ts";
 
+// One snapshot reads each epoch's create-only ref once, however many of its
+// transitions consult it; the next snapshot reads them all afresh.
+function onceRead(port: CoordinationPort): CoordinationPort {
+  const refs = new Map<string, string | null>();
+  return {
+    ...port,
+    lock: (ref: string): string | null => {
+      if (!refs.has(ref)) {
+        refs.set(ref, port.lock(ref));
+      }
+      return refs.get(ref) ?? null;
+    },
+  };
+}
+
 class Coordination {
   private readonly cfg: Config;
   private readonly port: CoordinationPort;
@@ -41,14 +56,18 @@ class Coordination {
     }
   }
   read(): Snapshot {
-    return snapshot(this.cfg, this.port, this.scope);
+    return snapshot(this.cfg, onceRead(this.port), this.scope);
   }
   private append(record: Record): void {
     this.port.write(
       record.kind,
       (): void => this.port.append(bodyOf(record)),
       (): boolean => {
-        const { records: rows } = snapshot(this.cfg, this.port, record.scope);
+        const { records: rows } = snapshot(
+          this.cfg,
+          onceRead(this.port),
+          record.scope,
+        );
         const matches = rows.filter(
           (row) => row.operation === record.operation,
         );

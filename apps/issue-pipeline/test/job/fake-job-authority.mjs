@@ -1,10 +1,13 @@
 // @ts-check
 // Private-bin gh never falls through to the operator's CLI. Successful fake
 // ops persist their actual claim/save payload before the job can launch pi.
+// Coordination (fake-job-coordination.mjs) is served from what the job's
+// real transport wrote, so a scripted claim reply never confers ownership.
 import fs from "node:fs";
 import path from "node:path";
 import { FAKE_OPS } from "../fake-rpc-pi.mjs";
 import { ISSUE } from "../job-fixtures.mjs";
+import { COORDINATION_GH } from "./fake-job-coordination.mjs";
 
 const JOB_OPS = `import fs from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -48,6 +51,7 @@ const state = JSON.parse(fs.readFileSync(root + "/authority-state.json", "utf8")
 const pr = JSON.parse(fs.readFileSync(root + "/authority-pr.json", "utf8"));
 const replies = JSON.parse(fs.readFileSync(root + "/replies.json", "utf8"));
 const issue = replies.claim?.issue ?? ${JSON.stringify(ISSUE)};
+${COORDINATION_GH}
 fs.appendFileSync(root + "/gh.log", JSON.stringify(args) + "\\n");
 if (args[0] === "api" && args[1] === "graphql") {
   const node = { databaseId: 1, body: "<!-- agent-pipeline:state\\n" + JSON.stringify(state) + "\\n-->", author: { login: cfg.mergeAccount }, createdAt: "2026-10-18T00:00:00Z", updatedAt: "2026-10-18T00:00:00Z", lastEditedAt: null, editor: null };

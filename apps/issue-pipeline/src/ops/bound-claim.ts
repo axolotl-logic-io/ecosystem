@@ -1,5 +1,6 @@
-// Explicit-only claim/setup seam. No default job or CLI imports this module.
-// Lane resources are readiness evidence, never execution authority.
+// The claim of a stage job bound to its invocation (#167): ops.ts runs it
+// for every claim that carries an execution binding. Lane resources are
+// readiness evidence, never execution authority.
 import { ensureClone, setUpCheckout } from "../checkouts.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
@@ -67,7 +68,9 @@ function boundClaim(
   }
   assertAuthorRequest(cfg, saved, req.stage);
   const wt = paths.worktree(cfg, n);
-  const existed = hasWorktree(cfg, n);
+  // A stage job's own checkout is always new (job/checkout.ts refuses an
+  // existing one), so only a retained issue worktree must prove readiness.
+  const existed = hasWorktree(cfg, n) && cfg.checkout?.issue !== n;
   if (existed) {
     assertCheckoutReady(cfg, n, wt);
   }

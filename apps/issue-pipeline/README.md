@@ -4,75 +4,27 @@ The pipeline executes one caller-assigned GitHub issue and branch at a time per 
 
 A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
-## Standalone coordination seam — runtime fencing unfinished
+## Invocation binding (#167)
 
-`src/coordination-records.ts`, `src/coordination.ts` and `src/execution.ts`
-provide an **explicit-only protocol seam**, not activated runtime fencing.
-Default `job`, `ops`, `orchestrate` and `report` entry points do not reach the
-`issueExecution` or `integrationTurn` factories. Existing caller dispatch,
-claim/lease behavior, saved authority, head/CI/security checks and account
-roles are unchanged. Assignment mode remains disabled. Continue to avoid
-duplicate issue/branch dispatch and serialize integration turns yourself.
+Every stage job binds its run to a fresh invocation UUID before it does anything else. The UUID is never the job's `--job-id` or lane. `src/job/invocation.ts` binds it to the issue, its assigned branch, the repo and the literal base. It then requests and confirms issue-execution ownership through the coordination transport (`src/execution.ts`, `src/coordination.ts`, `src/coordination-records.ts`) with the merge account.
 
-The seam creates a fresh UUID independently of a stable lane, binding it to
-repository, literal base, issue and assigned branch. Issue-execution scopes
-bind the issue and branch; integration-turn order is shared across issues for
-the configured repository/base. Requests, owner confirmations, saves, releases
-and cancellations are append-only, merge-authored and same-read-editor-verified.
-Create-only epoch refs arbitrate acquisitions; the protocol never replaces or
-deletes them. Neither a request nor a successful ref creation grants save or
-release authority: exact authenticated owner confirmation is required. Every
-save/release freshly checks that exact execution and epoch. Release advances
-the epoch without deleting history, and cancellation removes only its own
-pending request. A fresh reader reconstructs pending order from durable records,
-not a private queue, heartbeat, local lease or cache.
+```
+job start ─► mint UUID ─► request ─► acquire (create-only epoch ref) ─► confirm
+                                        │
+                     another owner ─────┴─► cancel request, print `unclaimed`
+                                            (no job.json, checkout, op or session)
+owner ─► open checkout ─► ops (each request carries the binding) ─► teardown
+      ─► release, only after a resolved run
+```
 
-A lost/failed response may still have landed. Before a coordinated write the
-transport exclusively retains exact intent in the issue run directory's
-`coordination-uncertain.json`; only exact authenticated read-back clears it.
-Unresolved outcomes hold for explicit reconciliation without repeating the
-mutation. Preserve that file and durable comments/refs; local recovery evidence
-is not authority. Malformed, conflicting, unreadable or provenance-invalid
-required evidence holds rather than falling back to cached/older/empty state.
-The optional internal transport callback remains a composition hook, not a
-configuration switch or a claim that all runtime mutations are fenced.
+- A loser cancels its pending request, so it never blocks the queue. It writes no `job.json`, opens no checkout and starts no op or session.
+- Ownership is read from authenticated coordination records, never from an ops reply. A live or expired legacy lease grants nothing.
+- Every ops request carries the binding as `execution`. `src/ops/execution-envelope.ts` refuses a request whose issue, checkout, repo, base or branch differs, and checks ownership on a fresh read before its queued comments or the op run. The claim op then runs `src/ops/bound-claim.ts`, which saves the owner's receipt before any setup, retained lane-slot checkouts included.
+- A run that resolved (it finished without a claim error, or a signal stopped it after it saved its state) releases ownership after teardown. Any other exit holds ownership for explicit reconciliation. The full release predicate is #151.
+- Saved state without an execution receipt linked to a released predecessor never grants ownership (`additive-record-versions`). It needs explicit reconciliation.
+- A lost or failed coordination response may still have landed. The transport keeps the exact intent in the run folder's `coordination-uncertain.json`; only an exact read-back clears it. Preserve that file.
 
-This slice adapts protocol commit `8141c9a` and its 31 bounded tests, with
-additional validation, interleaving, adapter and non-activation regressions.
-The `1359f09` preservation record was inspected. Issue #73's earlier create-only
-ref idea was compared, but its delete-on-release implementation was not imported.
-The older #116 dropped snapshot/register protocol and fixtures were compared
-for lost-write and reconstruction cases, not imported as duplicate authority.
-PR #124, `agent/issue-116`, preservation branches and unported recovery artifacts
-remain unchanged; `issue-116-runtime.patch.gz` is **not applied**.
-
-`src/execution-state.ts` adds explicit bound claim/save checkpoints on this
-adapter, with strict saved execution receipts and authenticated historical
-request/confirmation linkage. It preserves existing saved work and durable
-merge/Security facts, permits existing explicit head movement, and confirms the
-exact saved body and same-read provenance. Unresolved saves retain exact intent
-and block writer assertion, retry and release. Default entry points still do
-not import this seam. See [execution state authority](../../docs/reference/authority.md#explicit-execution-state-seam).
-This preparatory source slice does not authorize installation or activation.
-
-`src/ops/bound-claim.ts` extends that explicit seam through claim eligibility,
-resume transitions and checkout setup. Callers supply a fresh bound configuration
-and a matching lane request directly to `boundClaim`; default jobs and the ops
-CLI still cannot reach it. Existing CLI claim tests describe compatibility, not
-permission for bound execution. Authenticated predecessor release is mandatory
-for answered, stopped and lapsed resumes, even on the same lane. Unresolved stop
-recovery, uncertain saves and incomplete lane setup refuse progress. The new
-owner's receipt is saved before setup; a setup failure retains both the checkout
-and lane slot without turning either into execution authority. Closed issues
-still need exact incomplete-Merge eligibility before reopen. This adds no writer,
-remerge, approval or Security permission and does not activate job dispatch.
-
-Runtime integration-turn composition remains #120; handoff, withdrawal/checkpoints
-and full composition/operations remain #118, #119 and #121. No scheduler,
-polling, handoff, automatic legacy adoption, alternate delivery path, worker
-installation/activation or production deployment is introduced. Merging source
-does not install anything; a future cutover remains operator-owned and requires
-separate runtime work and review.
+Not here yet: per-write ownership checks and journals for every credentialed write (#132, #169), the release predicate (#151), and contention proof (#133). The integration-turn scope is still unused (#120). The unbound legacy claim is reached only by the ops CLI's own tests; the job never sends one.
 
 ## Standalone Safe Refactor task
 

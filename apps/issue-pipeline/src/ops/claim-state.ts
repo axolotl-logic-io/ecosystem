@@ -13,6 +13,7 @@ import { isLegacyPipelineComment } from "../comment-marks.ts";
 import type { IssueComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
+import { isCoordinationRecord } from "../coordination-records.ts";
 import { remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
 import { recordedAuthorization } from "../merged-authorization.ts";
@@ -67,9 +68,12 @@ function assertFirstClaim(
   number: number,
   comments: readonly IssueComment[],
 ): void {
+  // Coordination records, a run's own request and confirmation or a lost
+  // request's cancellation, are ownership history, not work (#167).
   const priorComment = comments.some(
     (item) =>
-      item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() ||
+      (item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+        !isCoordinationRecord(item.body ?? "")) ||
       isLegacyPipelineComment(cfg, item),
   );
   const local = [paths.runDir(cfg, number)];

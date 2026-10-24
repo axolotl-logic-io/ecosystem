@@ -16,6 +16,7 @@ import {
   EXECUTION_TRANSPORT,
   executionTransportFiles,
 } from "./fake-execution-transport.mjs";
+import { BATCH_GRAPHQL } from "./fake-graphql-batch.mjs";
 
 // The gh script's file mode: executable by its owner, readable by all.
 const EXECUTABLE = 0o755;
@@ -80,14 +81,19 @@ if (args[0] === "api" && args[1] === "user") {
     process.stdout.write(identity[2] + "\\n"); process.exit(0);
   }
 }
+${BATCH_GRAPHQL}
 ${EXECUTION_TRANSPORT}
 if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => args.join(" ").includes(reply.when))) {
-  const id = args.find(arg => arg.startsWith("id="))?.slice(3);
   const comments = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
-  const comment = comments.find(item => item.node_id === id);
-  if (!comment) throw new Error("unmatched comment provenance request");
-  const node = { databaseId: comment.id, body: comment.body, author: comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at ?? comment.created_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor };
-  fs.writeSync(1, JSON.stringify({ data: { node } })); process.exit(0);
+  const nodeOf = id => {
+    const comment = comments.find(item => item.node_id === id);
+    if (!comment) throw new Error("unmatched comment provenance request");
+    return { databaseId: comment.id, body: comment.body, author: comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at ?? comment.created_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor };
+  };
+  const batch = batchIds(args);
+  if (batch) { fs.writeSync(1, batchAnswer(batch, nodeOf)); process.exit(0); }
+  const id = args.find(arg => arg.startsWith("id="))?.slice(3);
+  fs.writeSync(1, JSON.stringify({ data: { node: nodeOf(id) } })); process.exit(0);
 }
 fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
 fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");

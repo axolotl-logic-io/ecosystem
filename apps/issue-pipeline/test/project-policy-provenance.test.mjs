@@ -46,7 +46,18 @@ for (const mode of ["committed", "legacy"]) {
     const first = opsFrameOf(
       cfg,
       fx.file,
-      { lane: "test-lane", sweepId: "test" },
+      {
+        lane: "test-lane",
+        sweepId: "test",
+        execution: {
+          instance: "00000000-0000-4000-8000-000000000001",
+          lane: "test-lane",
+          issue: ISSUE,
+          branch: "test-branch",
+          repo: cfg.repo,
+          base: cfg.baseBranch,
+        },
+      },
       { issue: ISSUE, dir: fx.dir, branch: "test-branch" },
     );
     status.started({

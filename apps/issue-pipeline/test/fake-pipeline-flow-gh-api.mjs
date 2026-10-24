@@ -2,6 +2,7 @@
 // The fake GitHub's `gh api` routes: only the REST calls the pipeline makes,
 // each served from the world, and `--jq` only for the filters it passes.
 // Any other route or filter is refused as unsupported.
+import { coordinationGit } from "./fake-pipeline-flow-gh-coordination.mjs";
 import { branchMerge } from "./fake-pipeline-flow-gh-merge.mjs";
 import {
   branchHead,
@@ -246,8 +247,11 @@ function api(world, args) {
     }
     return { code: 1, stderr: "HTTP 404: Not Found" };
   }
-  if (kind === "git" && second === "refs") {
+  if (kind === "git" && second === "refs" && call.method === "DELETE") {
     return deleteBranch(world, call);
+  }
+  if (kind === "git") {
+    return coordinationGit(world, call);
   }
   if (kind === "issues" && second === "comments") {
     return repoComments(world, { ...call, route: call.route.slice(1) });

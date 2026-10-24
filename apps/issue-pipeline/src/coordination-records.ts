@@ -93,9 +93,12 @@ function refOf(scope: string, epoch: number): string {
   ).join("");
   return `heads/pipeline-coordination/${key}/${epoch}`;
 }
+function isCoordinationRecord(body: string): boolean {
+  return body.includes("agent-pipeline:coordination");
+}
 function parseRecord(cfg: Config, comment: IssueComment): Row[] {
   const body = comment.body ?? "";
-  if (!body.includes("agent-pipeline:coordination")) {
+  if (!isCoordinationRecord(body)) {
     return [];
   }
   assertCommentAuthority(cfg, comment);
@@ -287,6 +290,7 @@ export {
   bodyOf,
   hold,
   INVOCATION_BINDING,
+  isCoordinationRecord,
   own,
   recordsOf,
   refOf,

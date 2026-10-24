@@ -65,6 +65,7 @@ import process from "node:process";
  * @property {FlowPr[]} prs
  * @property {string | null} [failedHead] exact head with a scripted CI failure
  * @property {boolean} [withholdMergeBinding] project incompatible CLOSED evidence until explicit recovery
+ * @property {Record<string, string>} [refs] the coordination transport's epoch refs, by full name
  * @property {string[][]} unsupported the calls the fake refused
  */
 

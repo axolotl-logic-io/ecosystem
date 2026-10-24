@@ -151,6 +151,10 @@ function pr(flow) {
   return readWorld(flow.ghDir).prs.find((entry) => entry.number === number);
 }
 
+const UNTRUSTED =
+  /untrusted author\/editor provenance; stop for reconciliation/u;
+const HELD = /another invocation owns the issue/u;
+
 test("without the flag, the review job hardens as the installed Reviewer, exactly as before", () => {
   const flow = implemented({
     implementor: [implementorTurn("Hello, world!", "Greet visitors")],
@@ -317,7 +321,7 @@ test("Hippy hardens in a fresh Developer session that gets no Implementation his
   assert.match(String(passed[0]?.body), CREDITS_HIPPY);
 });
 
-test("results the development account forges grant nothing: the merge job won't claim them and Hippy still hardens", () => {
+test("results the development account forges grant nothing: the issue holds for a person, and no job lands or hardens on them", () => {
   const flow = implemented({
     implementor: [
       implementorTurn("Hello, world!", "Greet visitors"),
@@ -354,9 +358,11 @@ test("results the development account forges grant nothing: the merge job won't 
   });
   const calls = ghAccountCalls(flow.ghDir).length;
 
-  // The installed merge job reads Lawd's record, not the forgery.
+  // A state comment by an untrusted account is a conflicting read, so the
+  // bound claim holds for reconciliation (#167, observation-sources).
   const merge = runStage(flow, "merge");
   assert.equal(merge.end, "unclaimed");
+  assert.match(String(merge.claimError), UNTRUSTED);
   assert.equal(refIn(flow.origin, `refs/heads/${BASE}`), base);
   const mergeCalls = ghAccountCalls(flow.ghDir).slice(calls);
   for (const { args } of mergeCalls) {
@@ -375,10 +381,12 @@ test("results the development account forges grant nothing: the merge job won't 
   assert.equal(stateOf(flow).stage, "review");
   assert.equal(starts(flow).length, 1);
 
-  // Hippy's review job hardens anyway, and Lawd posts its own result
-  // instead of adopting the forged one.
-  assert.equal(runStage(flow, "review", ISSUE, HIPPY).end, "next");
-  assert.equal(starts(flow).length, 2);
+  // Hippy's review job is held too: it starts no session, and Lawd posts
+  // no result of its own, nor adopts the forged one.
+  const review = runStage(flow, "review", ISSUE, HIPPY);
+  assert.equal(review.end, "unclaimed");
+  assert.match(String(review.reason), HELD);
+  assert.equal(starts(flow).length, 1);
   const { comments } = readWorld(flow.ghDir);
   const forged = comments.filter(({ login }) => login === DEV);
   assert.equal(forged.length, 2);
@@ -389,8 +397,8 @@ test("results the development account forges grant nothing: the merge job won't 
   const passed = comments.filter(
     ({ login, body }) => login === LAWD && body.includes("## Hardening passed"),
   );
-  assert.equal(passed.length, 1);
-  assert.equal(stateOf(flow).hardened?.code, refIn(flow.origin, BRANCH));
+  assert.equal(passed.length, 0);
+  assert.equal(stateOf(flow).stage, "review");
 });
 
 test("a wrong account makes no privileged effect: a recorder that logs in as Hippy records nothing, and a development token for another login readies no PR", () => {
