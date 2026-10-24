@@ -84,4 +84,22 @@ function ghCalls(dir) {
     .map((line) => JSON.parse(line));
 }
 
-export { ghCalls, humanComment, installFlowGh, openIssue };
+/**
+ * Every gh call with the fake token's account: its identity (dev or merge)
+ * and login, or nulls for a call with no fake token.
+ * @param {string} dir
+ * @returns {{ identity: string | null, login: string | null, args: string[] }[]}
+ */
+function ghAccountCalls(dir) {
+  const file = path.join(dir, "accounts.jsonl");
+  if (!fs.existsSync(file)) {
+    return [];
+  }
+  return fs
+    .readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+}
+
+export { ghAccountCalls, ghCalls, humanComment, installFlowGh, openIssue };

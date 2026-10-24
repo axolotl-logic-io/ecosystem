@@ -120,9 +120,10 @@ async function tick(flow) {
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
  * @param {string} stage
  * @param {number} [issue]
+ * @param {readonly string[]} [extra] more job arguments
  * @returns {{ issue: number, stage: string, end: string }}
  */
-function runStage(flow, stage, issue = ISSUE) {
+function runStage(flow, stage, issue = ISSUE, extra = []) {
   const result = spawnSync(
     process.execPath,
     [
@@ -137,6 +138,7 @@ function runStage(flow, stage, issue = ISSUE) {
       stage,
       "--lane",
       "flow-caller",
+      ...extra,
     ],
     { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
   );

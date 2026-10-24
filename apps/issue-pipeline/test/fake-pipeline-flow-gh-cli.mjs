@@ -150,13 +150,21 @@ function answer(world, args) {
 }
 
 /**
- * The fake gh's entry: logs the call, answers it from the world and exits;
- * an unsupported call is also kept in the world for the test to see.
+ * The fake gh's entry: logs the call, and the account whose fake token made
+ * it, answers it from the world and exits; an unsupported call is also kept
+ * in the world for the test to see.
  * @param {string} dir
  */
 function runFlowGh(dir) {
   const args = process.argv.slice(2);
   fs.appendFileSync(path.join(dir, "calls.jsonl"), `${JSON.stringify(args)}\n`);
+  const { GH_TOKEN: token } = process.env;
+  const { identity = null, login = null } =
+    FAKE_IDENTITY.exec(token ?? "")?.groups ?? {};
+  fs.appendFileSync(
+    path.join(dir, "accounts.jsonl"),
+    `${JSON.stringify({ identity, login, args })}\n`,
+  );
   /** @type {Answer} */
   let reply = {};
   try {

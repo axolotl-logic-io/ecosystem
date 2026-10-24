@@ -135,11 +135,14 @@ async function runAs(
 // The job's session runner. A spec the stage may not run, or one the job
 // pinned no prompt for, fails without starting, and so does one asked for
 // once the job's stop began. Keys are
-// `<role>-<n>`, counting each role's sessions in the job.
+// `<role>-<n>`, counting each role's sessions in the job, except that
+// Hippy's Hardening is `implementor-hardening-<n>`: its transcript never
+// takes the path of the Implementation session's, whose key is
+// `implementor-<n>` (hardening-stays-independent).
 function sessionRunnerOf(
   job: SessionJob,
 ): (spec: SessionSpec) => Promise<SessionResult> {
-  const counts = new Map<ModelRole, number>();
+  const counts = new Map<string, number>();
   const hardening = job.hardening ?? "lawd";
   return async (spec: SessionSpec): Promise<SessionResult> => {
     const refusal = sessionRefusalOf(job.stage, spec, hardening);
@@ -154,9 +157,13 @@ function sessionRunnerOf(
       return { ok: false, transient: true, error: STOPPING };
     }
     const { role } = stageAgentOf(job.stage, hardening);
-    const n = (counts.get(role) ?? 0) + 1;
-    counts.set(role, n);
-    return await runAs(job, spec, { key: `${role}-${n}`, role, prompt });
+    let name: string = role;
+    if (hardening === "hippy" && spec.phase === "hardening") {
+      name = `${role}-hardening`;
+    }
+    const n = (counts.get(name) ?? 0) + 1;
+    counts.set(name, n);
+    return await runAs(job, spec, { key: `${name}-${n}`, role, prompt });
   };
 }
 

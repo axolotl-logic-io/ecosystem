@@ -85,16 +85,14 @@ test("the pipeline ships exactly the prompt pages, and every stage pins them as 
   const listed = [...PROMPT_PAGES, ...HIPPY_PROMPT_PAGES];
   const named = [...new Set(listed.map(({ page }) => page))].sort();
   assert.deepEqual(shipped, named);
-  for (const [hardening, differing] of [
-    ["lawd", []],
-    ["hippy", HIPPY_PROMPT_PAGES],
-  ]) {
+  /** @type {{ hardening: "lawd" | "hippy", differing: typeof HIPPY_PROMPT_PAGES }[]} */
+  const buddies = [
+    { hardening: "lawd", differing: [] },
+    { hardening: "hippy", differing: HIPPY_PROMPT_PAGES },
+  ];
+  for (const { hardening, differing } of buddies) {
     for (const stage of STAGES) {
-      const { pinned } = pinPrompts(
-        SHIPPED,
-        stage,
-        /** @type {"lawd" | "hippy"} */ (hardening),
-      );
+      const { pinned } = pinPrompts(SHIPPED, stage, hardening);
       const pages = PROMPT_PAGES.filter((entry) => entry.stage === stage).map(
         (entry) =>
           differing.find(
