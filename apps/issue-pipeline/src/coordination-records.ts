@@ -93,12 +93,9 @@ function refOf(scope: string, epoch: number): string {
   ).join("");
   return `heads/pipeline-coordination/${key}/${epoch}`;
 }
-function isCoordinationRecord(body: string): boolean {
-  return body.includes("agent-pipeline:coordination");
-}
 function parseRecord(cfg: Config, comment: IssueComment): Row[] {
   const body = comment.body ?? "";
-  if (!isCoordinationRecord(body)) {
+  if (!body.includes("agent-pipeline:coordination")) {
     return [];
   }
   assertCommentAuthority(cfg, comment);
@@ -285,13 +282,16 @@ export type {
   Request,
   Snapshot,
 };
+
 export {
   assertScope,
   bodyOf,
+  END as RECORD_END,
+  HEADER as RECORD_HEADER,
   hold,
   INVOCATION_BINDING,
-  isCoordinationRecord,
   own,
+  RECORD,
   recordsOf,
   refOf,
   sameBinding,

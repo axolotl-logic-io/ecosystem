@@ -138,8 +138,11 @@ test("missing state beside authenticated execution history cannot initialize new
     );
   });
   const before = fixture.writes();
-  assert.throws(() => fixture.read(), HELD);
-  assert.throws(() => fixture.claim(), HELD);
+  // A later invocation finds another run's history without its state. The
+  // claiming invocation's own records alone are a first claim's (#167).
+  const next = fixture.next();
+  assert.throws(() => readExecutionClaimState(next, fixture.issue), HELD);
+  assert.throws(() => claimExecutionState(next, fixture.issue), HELD);
   assert.deepEqual(fixture.writes(), before);
 });
 
