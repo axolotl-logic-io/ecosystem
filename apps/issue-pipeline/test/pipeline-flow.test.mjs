@@ -77,36 +77,54 @@ function lastJobLine() {
 // each Integration a merge job requests is relayed here, as the caller
 // relays it (#186). A failed CI check on the first hardened head returns
 // the work to Hardening, which fixes it as a new revision.
+const RELAYED = {
+  end: "wait",
+  request: "Integration",
+  task: { end: "next", verdict: "passed" },
+};
 const STEPS = [
-  { stage: "author", relay: false },
-  { stage: "implement", relay: false },
-  { stage: "review", relay: false },
-  { stage: "merge", relay: true },
-  { stage: "merge", relay: false },
-  { stage: "review", relay: false },
-  { stage: "merge", relay: true },
-  { stage: "merge", relay: false },
+  { stage: "author", relayed: null },
+  { stage: "implement", relayed: null },
+  { stage: "review", relayed: null },
+  { stage: "merge", relayed: RELAYED },
+  { stage: "merge", relayed: null },
+  { stage: "review", relayed: null },
+  { stage: "merge", relayed: RELAYED },
+  { stage: "merge", relayed: null },
 ];
 /** @type {any[]} the task jobs' lines */
 const relayed = [];
-for (const [at, { stage, relay }] of STEPS.entries()) {
-  let requests = "";
-  if (relay) {
-    requests = ", which requests Integration";
+
+/**
+ * One tick of `stage`, and, when `relay`, the relay of the task its job
+ * requested, with what the job and the task job ended as.
+ * @param {string} stage @param {boolean} relay
+ */
+async function tickStep(stage, relay) {
+  const result = await completeStage(stage);
+  const line = lastJobLine();
+  if (!relay) {
+    return { result, relayed: null };
   }
-  test(`legacy tick ${at + 1} completes the ${stage} stage${requests}`, async () => {
-    const result = await completeStage(stage);
-    assert.deepEqual(result.started, [stage], result.log);
-    if (!relay) {
-      return;
-    }
-    const line = lastJobLine();
-    assert.equal(line.end, "wait");
-    assert.equal(line.request?.task, "Integration");
-    const task = runTask(flow, stage, line.request, { lane: "orchestrator" });
-    relayed.push(task);
-    assert.equal(task.end, "next");
-    assert.equal(task.task.verdict, "passed");
+  const task = runTask(flow, stage, line.request, { lane: "orchestrator" });
+  relayed.push(task);
+  return {
+    result,
+    relayed: {
+      end: line.end,
+      request: line.request?.task,
+      task: { end: task.end, verdict: task.task?.verdict },
+    },
+  };
+}
+for (const [at, step] of STEPS.entries()) {
+  const requests = [", which requests Integration", ""][
+    Number(step.relayed === null)
+  ];
+  test(`legacy tick ${at + 1} completes the ${step.stage} stage${requests}`, async () => {
+    const outcome = await tickStep(step.stage, step.relayed !== null);
+    assert.deepEqual(outcome.result.started, [step.stage], outcome.result.log);
+    assert.deepEqual(outcome.relayed, step.relayed);
   });
 }
 
