@@ -9,19 +9,21 @@ import { listComments, rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
-import type { Row, TaskRecord, TaskStatus } from "../task-results.ts";
+import type { Row, TaskRecord, TaskStatus } from "../task-result-records.ts";
 import {
   BINDING,
-  checkedRows,
   RECEIPT,
   RUN_ID,
   recordBody,
   requestedBinding,
-  statusIn,
   TaskResultsHold,
+  VERDICT,
+} from "../task-result-records.ts";
+import {
+  checkedRows,
+  statusIn,
   taskRecords,
   taskStatus,
-  VERDICT,
 } from "../task-results.ts";
 
 const STATUS_REQUEST = z.looseObject({

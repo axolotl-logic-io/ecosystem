@@ -24,6 +24,11 @@ const END = "\n-->";
 const KIND = z.looseObject({ kind: z.string() });
 const GH_WRITE = /^(?:-X|--method)$/u;
 
+/** @returns {string} a new run identity */
+function runId() {
+  return crypto.randomUUID();
+}
+
 /** @param {string} text @returns {string} */
 function digest(text) {
   return crypto.createHash("sha256").update(text).digest("hex");
@@ -269,6 +274,7 @@ export {
   recordKindsOn,
   recordResult,
   recordText,
+  runId,
   saveState,
   stateText,
   statusOf,
