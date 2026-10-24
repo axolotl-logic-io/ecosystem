@@ -28,6 +28,7 @@ import { cleanup } from "./ops/cleanup.ts";
 import { confirmMergedOp } from "./ops/confirm-merged.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
 import { closeParent, finishIssue } from "./ops/finish.ts";
+import { integrationTaskOps } from "./ops/integration-task.ts";
 import { merge } from "./ops/merge.ts";
 import { reconcileMerge } from "./ops/merge-recovery.ts";
 import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
@@ -73,6 +74,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   // Hippy's Sync task (#184); inactive until #180's activation.
   ...Object.entries(syncTaskOps),
   ...Object.entries(syncReconcileOps),
+  // Lawd's read-only Integration (#185); inactive until #180's activation.
+  ...Object.entries(integrationTaskOps),
   // Merges code only, checkpointing attempt/response/receipt; never the issue.
   ["merge", merge],
   ["reconcile-merge", reconcileMerge],

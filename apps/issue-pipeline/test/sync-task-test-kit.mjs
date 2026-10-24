@@ -101,9 +101,24 @@ function syncWorld(issue, mine, before) {
   const start = gitIn(wt, ["rev-parse", "HEAD"]);
   const revision = commitFile(wt, mine.file, mine.bytes, "the issue's change");
   gitIn(wt, ["push", "-q", "origin", `HEAD:refs/heads/${branch}`]);
-  const current = REVISION.parse(
-    rawOps(flow, { op: "current-revision", number: issue }),
-  );
+  /** The issue's current revision, read again after the config changes. */
+  function readCurrent() {
+    return REVISION.parse(
+      rawOps(flow, { op: "current-revision", number: issue }),
+    );
+  }
+  let current = readCurrent();
+  /** Sets top-level config `settings`, then reads the new policy. @param {Record<string, unknown>} settings */
+  function configure(settings) {
+    const saved = JSON.parse(fs.readFileSync(flow.config, "utf8"));
+    fs.writeFileSync(flow.config, JSON.stringify({ ...saved, ...settings }));
+    current = readCurrent();
+  }
+  /** Sets the configured test command. @param {string} command */
+  function setCheck(command) {
+    const { commands } = JSON.parse(fs.readFileSync(flow.config, "utf8"));
+    configure({ commands: { ...commands, test: command } });
+  }
   /** Moves the target with `file` set to `bytes`, returning the new T. @param {string} file @param {string | Buffer} bytes */
   function advanceTarget(file, bytes) {
     const head = commitFile(writer, file, bytes, `target changes ${file}`);
@@ -134,10 +149,11 @@ function syncWorld(issue, mine, before) {
     branch,
     start,
     revision,
-    inputs: current.revision.inputs,
-    policy: current.revision.policy,
+    writer,
     advanceTarget,
     binding,
+    configure,
+    setCheck,
     sync,
     /** @returns {string | null} the branch's head on origin */
     remoteBranch: () => refOf(flow.origin, `refs/heads/${branch}`),

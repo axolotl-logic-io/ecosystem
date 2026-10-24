@@ -87,3 +87,33 @@ A claim normally needs an open issue. A closed issue may resume only when genuin
 5. If identity or authorization changed, or evidence is still missing at the deadline, stop for explicit reconciliation. Don't keep restarting.
 
 Never resend an uncertain merge by hand, repeat the approval, reopen a code writer, reset attempt evidence, clear merged facts or erase a Security rejection. An OPEN PR isn't proof that the request never landed.
+
+## Read-only Integration and exact Land (inactive)
+
+[#185](https://github.com/axolotl-logic-io/ecosystem/issues/185) adds the Gatekeeper's half of the two-buddy split. Nothing installed uses it yet: the merge stage above keeps running until [#186](https://github.com/axolotl-logic-io/ecosystem/issues/186) activates it. Every step records its [task result](task-results.md) through the landing account.
+
+```
+Sync (Hippy) ─▶ Hardening (Hippy) ─▶ Integration (Lawd, read-only) ─▶ Security (Lawd) ─▶ Land (Lawd) ─▶ Completion (Lawd)
+```
+
+The `integration-task` op checks revision R on target T, but only when R already contains T. It runs no model and holds no writer. Before it runs any check, it routes anything not ready:
+
+| What it reads | Route | Attempt recorded |
+|---|---|---|
+| The target isn't at T, or R doesn't contain T | `sync-needed` | No |
+| The branch isn't at R | `hold` | No |
+| No passed Hardening for exactly R on T | `hardening-needed` | No |
+| A Land attempt is armed or uncertain | Refused | No |
+
+Then it runs the configured checks in a fresh detached checkout of R under the run folder, so no branch, push or PR write can follow from them:
+
+- Every check passes and nothing moved: `passed`, on to Security. A passed binding never reruns.
+- A check fails: `failed`, back to the Developer. Integration starts no writer.
+- A check changes tracked files: `failed`. The checkout and a `tracked.patch` are kept as evidence, never committed or pushed.
+- T, R, the inputs or the policy moved during the checks: `failed`, because the result is no longer current.
+
+A merge request may name a Land binding and its run. Land then needs passed Hardening, Integration and Security results for exactly that revision and target, on top of every installed check. `verifiedSha`, a legacy `state.integration` receipt, or a result for another target never stands in. The Land attempt is recorded before the first PR write. Only a confirmed own merge of exactly R settles it as `passed`; anything else leaves it unsettled, which holds every Sync and Integration until a read establishes the delivery.
+
+`confirm-merged` with the same binding also consumes that exact Land result: Completion confirms the delivered commit, and runs no suite.
+
+A merge or confirmation without a binding behaves exactly as installed.

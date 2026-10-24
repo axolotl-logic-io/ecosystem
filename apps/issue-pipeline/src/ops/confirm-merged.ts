@@ -13,6 +13,8 @@ import { parseRequest } from "../process.ts";
 import { readWriteState } from "../saved-state.ts";
 import type { CodeMerged, IssueState } from "../state.ts";
 import { sameRevision } from "../state.ts";
+import { BINDING } from "../task-result-records.ts";
+import { landDeliveryRefusal } from "./land-task.ts";
 import { confirmedMergedParent } from "./merged-graph.ts";
 
 const REQUEST = z.looseObject({
@@ -21,6 +23,9 @@ const REQUEST = z.looseObject({
     pr: z.number().int().positive(),
     sha: z.string().min(1),
   }),
+  // The task-result path (#185, inactive until #186): Completion also
+  // consumes the exact passed Land result of this binding.
+  binding: BINDING.optional(),
 });
 
 type ConfirmedReply =
@@ -53,12 +58,15 @@ function premergeProofRefusal(
 }
 
 function confirmMergedOp(cfg: Config, request: unknown): ConfirmedReply {
-  const { number, codeMerged } = parseRequest(
+  const { number, codeMerged, binding } = parseRequest(
     REQUEST,
     "confirm-merged",
     request,
   );
-  const refusal = premergeProofRefusal(readWriteState(cfg, number), codeMerged);
+  const refusal =
+    premergeProofRefusal(readWriteState(cfg, number), codeMerged) ??
+    (binding && landDeliveryRefusal(cfg, number, binding, codeMerged.sha)) ??
+    null;
   if (refusal !== null) {
     return { confirmed: false, reason: refusal };
   }

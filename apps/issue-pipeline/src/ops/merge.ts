@@ -17,7 +17,9 @@ import { currentRevision } from "../revision.ts";
 import { readWriteState } from "../saved-state.ts";
 import { candidateRefusal } from "../security-clearance.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
+import { BINDING, RUN_ID } from "../task-result-records.ts";
 import { assertFastForward, branchMerge } from "./branch-merge.ts";
+import { landRefusal, settleLand, startLand } from "./land-task.ts";
 import { beginMerge, saveMergeResponse } from "./merge-attempt.ts";
 import { mergedText } from "./merge-comment.ts";
 import type { MergeStale } from "./merge-guard.ts";
@@ -43,6 +45,12 @@ const MERGE_REQUEST = z.looseObject({
   revision: REVISION_REQUEST,
   state: ISSUE_STATE.extend({ pr: z.number().int().positive() }),
   summary: z.string().nullish(),
+  // The task-result path (#185, inactive until #186): a Land binding and its
+  // run. Without them the merge behaves exactly as installed.
+  binding: BINDING.optional(),
+  landRun: z
+    .strictObject({ id: RUN_ID, previous: RUN_ID.nullable() })
+    .optional(),
 });
 
 type MergeRequest = z.infer<typeof MERGE_REQUEST>;
@@ -175,7 +183,11 @@ function merge(
   // A replay must enter read-only recovery before approval or premerge work,
   // even if the caller still holds its pre-attempt snapshot and PR looks OPEN.
   if (readWriteState(cfg, req.number).mergeAttempt !== null) {
-    return reconcileMerge(cfg, { number: req.number }, clock);
+    const replay = reconcileMerge(cfg, { number: req.number }, clock);
+    if (req.binding !== undefined) {
+      settleLand(cfg, req.number, req.binding, replay);
+    }
+    return replay;
   }
   const { pr } = req.state;
   const view = checkedView(cfg, req);
@@ -217,14 +229,28 @@ function merge(
   if (moved !== undefined) {
     return moved;
   }
+  const tasks = req.binding && landRefusal(cfg, req, req.binding);
+  if (tasks !== undefined) {
+    return { merged: false, reason: "task-results", detail: tasks };
+  }
   assertFastForward(
     paths.worktree(cfg, req.number),
     checked.base,
     req.expectedSha,
   );
   assertGitPushDestination(cfg, paths.worktree(cfg, req.number));
+  if (req.binding !== undefined) {
+    if (req.landRun === undefined) {
+      throw new OpsError("a Land binding needs its run");
+    }
+    startLand(cfg, req.number, req.binding, req.landRun);
+  }
   approvePr(cfg, pr, req.expectedSha);
-  return attemptedMerge(cfg, req, checked.base, clock);
+  const receipt = attemptedMerge(cfg, req, checked.base, clock);
+  if (req.binding !== undefined) {
+    settleLand(cfg, req.number, req.binding, receipt);
+  }
+  return receipt;
 }
 
 // After entering the mutation boundary, errors must be a durable refusal,

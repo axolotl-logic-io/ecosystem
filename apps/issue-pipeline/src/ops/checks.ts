@@ -230,10 +230,18 @@ function changedFiles(dir: string, from: string, sha: string): string[] {
 
 // Runs every check at `sha`, checked out in `dir`, whose change touches
 // `changed`, and leaves `dir`'s tracked files as it found them.
+// With keepTracked, tracked changes the checks made stay in the checkout for
+// the caller to retain as evidence (read-only Integration, #185); verify
+// discards them as before.
 function runChecks(
   cfg: Config,
   n: number,
-  checkout: { dir: string; sha: string; changed: string[] },
+  checkout: {
+    dir: string;
+    sha: string;
+    changed: string[];
+    keepTracked?: boolean;
+  },
 ): VerifyReply {
   const settings = SETTINGS.parse(cfg);
   const { dir, sha, changed } = checkout;
@@ -256,7 +264,9 @@ function runChecks(
   }
   checkLockfiles(v);
   runMigrations(v);
-  run("git", ["-C", dir, "checkout", "--", "."], { allowFail: true });
+  if (checkout.keepTracked !== true) {
+    run("git", ["-C", dir, "checkout", "--", "."], { allowFail: true });
+  }
   const pass = v.checks.every((check) => check.pass);
   return { pass, headSha: sha, changedFiles: changed, checks: v.checks };
 }

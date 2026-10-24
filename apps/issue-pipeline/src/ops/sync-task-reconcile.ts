@@ -18,7 +18,8 @@ import { clearCodeSync, readCodeSync, rebaseInProgress } from "../rebase.ts";
 import { BINDING, RUN_ID } from "../task-result-records.ts";
 import { statusIn } from "../task-results.ts";
 import { resetToRemote } from "./sync-finish.ts";
-import { contains, refuse, syncGate } from "./sync-task-gate.ts";
+import { refuse, syncGate } from "./sync-task-gate.ts";
+import { contains } from "./task-gate.ts";
 import { appendResult } from "./task-results.ts";
 
 const RECONCILE_REQUEST = z.looseObject({
