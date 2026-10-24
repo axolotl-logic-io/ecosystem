@@ -12,6 +12,8 @@ Before merge, a Reviewer with write access tries to break the change and fixes w
 
 On 2026-10-22 Hardening moved to the Developer, Hippy, in a fresh session; see [hardening-stays-independent](buddies-and-tasks.md#hardening-stays-independent). The installed `review` stage still runs under the Lawd account until that change is installed.
 
+The source can run Hippy's Hardening since #179, but only in a review job started with `--hardening-buddy hippy`. The installed caller never passes that flag, so installed jobs still harden as the Reviewer. #186 switches the caller over.
+
 ## approval-is-for-one-revision
 
 Approval, checks and Security clearance apply to one exact code revision and one trusted-input revision. Any change after Security, including conflict resolution, needs fresh Security review.
