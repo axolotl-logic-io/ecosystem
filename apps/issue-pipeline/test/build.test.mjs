@@ -4,7 +4,8 @@
 // its shell supervisor parses, the built stage job rejects a bad stage, the
 // built orchestrator's --once exits 0 after a tick and 1 after one that
 // throws, the built report names a missing --config, and the built caller's
-// launcher reports an empty run and names its commands. It builds into its
+// launcher reports an empty run and names its commands, and the built
+// standards upgrade loads and names its commands. It builds into its
 // own folder, so it never races install.test.mjs, which builds dist/.
 
 import assert from "node:assert/strict";
@@ -27,12 +28,14 @@ const EXECUTABLES = [
   "pipeline-commit.mjs",
   "git-review.mjs",
   "caller-jobs.mjs",
+  "standards-upgrade.mjs",
 ];
 // The error the stage job exits with for an unknown --stage.
 const BAD_STAGE = /--stage must be one of/u;
 const UNKNOWN_FLAG = /--nope/u;
 const NO_CONFIG = /--config must name a repo config file/u;
 const NO_COMMAND = /give start, status or wait/u;
+const UPGRADE_USAGE = /^usage: standards-upgrade assess/u;
 // What the orchestrator prints when a tick throws, here because gh is logged
 // in as another account than the config's.
 const TICK_FAILED = /tick failed/iu;
@@ -144,6 +147,16 @@ test("the built report parses, keeps its #! line and names a missing --config", 
   });
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, NO_CONFIG);
+});
+
+test("the built standards upgrade loads its modules and names its commands", () => {
+  const upgrade = path.join(tmp, "standards-upgrade.mjs");
+  const run = spawnSync(process.execPath, [upgrade], {
+    encoding: "utf8",
+    env: Object.fromEntries([[ROOT_VAR, tmp]]),
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, UPGRADE_USAGE);
 });
 
 test("the built caller's launcher keeps its #! line, reports an empty run and names its commands", () => {

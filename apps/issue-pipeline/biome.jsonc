@@ -31,6 +31,8 @@
         "build.ts",
         "scripts/**",
         "src/safe-refactor/**",
+        "src/standards/source.ts",
+        "src/standards/assess.ts",
         "src/ops.ts",
         "src/pipeline-root.ts",
         "src/process.ts",
