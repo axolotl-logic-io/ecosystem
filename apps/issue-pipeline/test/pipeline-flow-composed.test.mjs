@@ -30,6 +30,7 @@ import {
   securityTurn,
 } from "./pipeline-flow-script-test-kit.mjs";
 import {
+  advanceTarget,
   BASE,
   bareGit,
   ISSUE,
@@ -139,39 +140,6 @@ function opsOf(at) {
     .map(({ request }) => request.op);
 }
 
-/**
- * Commits `files` onto the target on the origin, as another landed change
- * would, and returns the new target commit.
- * @param {Record<string, string>} files
- */
-function advanceTarget(files) {
-  const dir = fs.mkdtempSync(path.join(flow.tmp, "elsewhere-"));
-  /** @param {string[]} args */
-  function git(args) {
-    return execFileSync(
-      "git",
-      [
-        "-c",
-        "user.name=Elsewhere",
-        "-c",
-        "user.email=elsewhere@example.com",
-        "-c",
-        "commit.gpgsign=false",
-        ...args,
-      ],
-      { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-  }
-  git(["clone", "--quiet", "--branch", BASE, flow.origin, "."]);
-  for (const [file, text] of Object.entries(files)) {
-    fs.writeFileSync(path.join(dir, file), text);
-    git(["add", file]);
-  }
-  git(["commit", "--quiet", "-m", "Another change lands"]);
-  git(["push", "--quiet", "origin", `HEAD:${TARGET}`]);
-  return git(["rev-parse", "HEAD"]);
-}
-
 /** @returns {any[]} the task-result records GitHub holds, parsed, with their author */
 function records() {
   return readWorld(flow.ghDir)
@@ -190,7 +158,7 @@ test("Implementation writes R as Hippy through the caller", async () => {
 });
 
 test("a target that moved past R makes review request Hippy's Sync of exactly R onto T, before any Hardening session", async () => {
-  moved = advanceTarget({ "NEWS.md": "Greetings changed.\n" });
+  moved = advanceTarget(flow, { "NEWS.md": "Greetings changed.\n" });
   const at = await step("review");
   assert.deepEqual(at.launch.argv.slice(-2), ["--hardening-buddy", "hippy"]);
   assert.equal(at.line.end, "wait");

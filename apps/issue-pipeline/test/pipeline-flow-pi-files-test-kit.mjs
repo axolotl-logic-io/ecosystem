@@ -1,12 +1,13 @@
 // @ts-check
 // Scripted model edits before the real pipeline_commit call: files written,
-// and gitlinks staged with their .gitmodules.
+// gitlinks staged with their .gitmodules, and paths a resolver stages with
+// `git add`, as a Sync resolver does.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-/** @param {{ files?: Record<string, string>, gitlinks?: Record<string, string> }} turn @returns {void} */
+/** @param {{ files?: Record<string, string>, gitlinks?: Record<string, string>, stage?: string[] }} turn @returns {void} */
 function writeTurnFiles(turn) {
   for (const [file, text] of Object.entries(turn.files ?? {})) {
     const where = path.join(process.cwd(), file);
@@ -27,6 +28,12 @@ function writeTurnFiles(turn) {
       ],
       { timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] },
     );
+  }
+  for (const file of turn.stage ?? []) {
+    execFileSync("git", ["-C", "repo", "add", "--", file], {
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   }
   // A gitlink needs its submodule declared, as a writer stages it.
   if (Object.keys(turn.gitlinks ?? {}).length > 0) {

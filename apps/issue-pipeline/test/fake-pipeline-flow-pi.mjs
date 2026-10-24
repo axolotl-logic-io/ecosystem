@@ -29,6 +29,7 @@ import { fixtureState, versionProbe } from "./runtime-fixtures.mjs";
  * @property {Record<string, string>} [files]
  * @property {string[][]} [commits]
  * @property {Record<string, string>} [gitlinks] paths and commit identities to stage in repo/
+ * @property {string[]} [stage] paths in repo/ to stage with git add, as a resolver does
  * @property {string} [rejectPrompt]
  * @property {{ origin: string, branch: string, before: string, after: string }} [targetAdvance] external actor's target move during this turn
  * @property {{ dir: string, issue: number, login: string, body: string }} [humanComment]

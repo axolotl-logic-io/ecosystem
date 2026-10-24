@@ -259,4 +259,31 @@ function refIn(bare, ref) {
   }
 }
 
-export { BASE, bareGit, ISSUE, refIn, SLUG, scriptPi, setUpFlow };
+/**
+ * Commits `files` onto the target on `flow`'s origin, as another landed
+ * change would, and returns the new target commit.
+ * @param {Flow} flow @param {Record<string, string>} files
+ * @returns {string}
+ */
+function advanceTarget(flow, files) {
+  const dir = fs.mkdtempSync(path.join(flow.tmp, "elsewhere-"));
+  seedGit(["clone", "--quiet", "--branch", BASE, flow.origin, dir]);
+  for (const [file, text] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, file), text);
+    seedGit(["add", file], dir);
+  }
+  seedGit(["commit", "--quiet", "-m", "Another change lands"], dir);
+  seedGit(["push", "--quiet", "origin", `HEAD:refs/heads/${BASE}`], dir);
+  return seedGit(["rev-parse", "HEAD"], dir);
+}
+
+export {
+  advanceTarget,
+  BASE,
+  bareGit,
+  ISSUE,
+  refIn,
+  SLUG,
+  scriptPi,
+  setUpFlow,
+};

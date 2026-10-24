@@ -123,7 +123,8 @@ async function tick(flow) {
  * @param {string} stage
  * @param {number} [issue]
  * @param {readonly string[]} [extra] more job arguments
- * @returns {{ issue: number, stage: string, end: string }}
+ * @returns {any} the job's line: issue, stage, end, and any reason, request
+ * or task report
  */
 function runStage(flow, stage, issue = ISSUE, extra = []) {
   const result = spawnSync(
