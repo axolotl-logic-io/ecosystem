@@ -2,7 +2,7 @@
 
 These decisions settle the domain contracts that the [shared glossary](../../GLOSSARY.md) left open. They describe the intended model, not installed behavior. The [domain alignment inventory](../domain-alignment.md) maps them onto the installed release.
 
-All were made on 2026-10-22. Each one says who decided it:
+Most were made on 2026-10-22, and the rest on 2026-10-24. Each one says who decided it:
 
 - **Autumn** decided it herself.
 - **Autumn approved** means she accepted a recommendation the operating session made.
@@ -108,8 +108,6 @@ For a task that checks or changes a revision, the result's binding records:
 
 A result is current only while every part still matches. An absent part never counts as a match.
 
-Author and the first Implementation run before any revision exists. Their bindings, and which target changes make their results stale, are still open.
-
 A task's result records:
 
 - its binding;
@@ -122,6 +120,41 @@ A task's result records:
 A verdict belongs to the result. It is separate from the outcome of the run that produced it.
 
 Each task keeps its own attempt budget per binding, as `runs-and-retries` says.
+
+## requirements-bindings
+
+Autumn approved on 2026-10-24.
+
+Author and the first Implementation run before any revision exists, so their binding uses the requirements in place of a revision:
+
+- the repository and the work item;
+- the task;
+- a digest of the requirements: the work item's body and any accepted spec comment;
+- the target state: its branch and full commit.
+
+```
+{ repo, workItem: 187, task: "Author",
+  requirements: "sha256:…",
+  target: { branch: "main", commit: "c313420…" } }
+```
+
+Editing the requirements makes the result stale. A comment or label change that leaves them alone doesn't. A buddy can therefore tell by itself when the next task is ready: Implementation is ready when Author's result is current for the requirements digest and no Implementation result exists yet.
+
+## no-repeated-checks
+
+Autumn approved on 2026-10-24.
+
+A passed result never reruns for the same binding. Any change to the binding creates a new ready task with a new attempt budget, as rule 5 of `runs-and-retries` already does for revisions.
+
+## sequential-tasks
+
+Autumn approved on 2026-10-24.
+
+A task is ready only when all its prerequisites are current. Tasks run in one chain, with no parallel branches for now:
+
+```
+Author → Implementation → Hardening → Sync → Integration → Security → Land → Completion
+```
 
 ## runs-and-retries
 
@@ -145,6 +178,23 @@ The caller counts capacity by resource, not by role or task. Model sessions, tes
 
 A slot or reservation is released only when every registered consumer reports that it's done. A run ending doesn't release one. When a consumer's state is unknown, the slot stays held.
 
+## shared-reservations
+
+Autumn approved on 2026-10-24. This sets the direction for capacity; it changes nothing installed yet.
+
+Buddies are meant to find their own work, so the caller won't stay the one place that counts capacity. The target is shared reservation records. Each resource cap is a set of authenticated coordination records. A buddy run claims a slot before it starts, using the same fenced claim as work-item ownership, and releases it under the consumer rule above.
+
+```
+reservation {
+  resource: "model-session",
+  slot: 2 of 3,
+  holder: <invocation binding>,
+  consumers: [...]
+}
+```
+
+The caller keeps counting until the assignment-sweep work starts. Until then, build claims (#167, #168 and #171) so they can later cover resources as well as work items.
+
 ## observation-sources
 
 Autumn approved. This settles open question 7.
@@ -157,6 +207,14 @@ Autumn approved. This settles open question 7.
 
 When a read is partial, stale or conflicts with another, the fact is unknown. Unknown never counts as success, failure or absence. It leads to reconciliation by reading, and then to a hold if the fact stays unknown.
 
+## fresh-reads
+
+Autumn approved on 2026-10-24.
+
+A run reads ownership and the results it depends on immediately before each privileged effect, such as starting a writer session, committing, pushing or landing. A cached reading never authorizes anything. Only liveness has a time bound, which is the lease's expiry.
+
+A listing is complete only when every page was read and none failed. When a listing is cut short or a page errors, every fact drawn from it is unknown. It leads to a hold, never to "absent".
+
 ## assignment-permission
 
 Autumn approved. This settles open question 8.
@@ -165,6 +223,31 @@ Only `axolotl-logic` grants or withdraws an assignment. An assignment lets the a
 
 Any other change pauses the work item and grants nothing. This covers an assignment by another account and a comment from someone who isn't trusted. While a work item is paused, no new run starts on it. A running run reaches a safe exit and records a checkpoint. A withdrawal by `axolotl-logic` pauses the work item the same way.
 
+## lawd-lands-and-installs
+
+Decided by Autumn on 2026-10-24.
+
+Lawd authorizes source acceptance and Land, and then installs and activates the pipeline. Autumn chose no extra gate on installation: Lawd installs the revision it landed.
+
+Lawd can't install yet. Until that capability exists, the operator installs, and a merge changes nothing that runs until then.
+
 ## compatibility-later
 
-This settles open question 5 by deferring it. Ecosystem #166 plans the renames of persisted keys, config keys and CLI flags, with a compatibility plan first. Until then, these decisions change no saved data, configuration or command line.
+This settles open question 5 by deferring renames. Ecosystem #166 plans the renames of persisted keys, config keys and CLI flags, with a compatibility plan first. Until then, these decisions rename no saved data, configuration or command line.
+
+## additive-record-versions
+
+Autumn approved on 2026-10-24. This narrows `compatibility-later`.
+
+New fields may be added before #166, but only in a new record version:
+
+- Readers accept every older version and never rewrite an old record.
+- A missing part of an older record never counts as a match, so an old record can't grant authority.
+- Renaming keys still waits for #166.
+
+```
+coordination record v2 = v1 + { task, revision, targetCommit }
+reader: accepts v1 and v2; a v1 record's missing parts never match
+```
+
+This is how saved state and coordination records are already versioned.
