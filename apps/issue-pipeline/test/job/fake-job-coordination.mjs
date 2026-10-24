@@ -3,7 +3,8 @@
 // refs and commits the real transport (src/execution.ts) creates, and the
 // coordination comments it appends and reads back with their provenance. It
 // stores exactly what the real code wrote and never synthesizes a request,
-// an owner confirmation or a release. fake-job-authority.mjs's gh runs it
+// an owner confirmation or a release, though a test may make it lose a
+// release's response. fake-job-authority.mjs's gh runs it
 // first; it exits for each call it answers and falls through for any other.
 import fs from "node:fs";
 import path from "node:path";
@@ -68,9 +69,16 @@ if (coordinationEndpoint.startsWith(coordinationPrefix)) {
   const posted = /^issues\\/(\\d+)\\/comments$/.exec(coordinationRoute);
   const body = args.find(arg => arg.startsWith("body="))?.slice("body=".length) ?? "";
   if (posted && args.includes("POST") && body.includes("agent-pipeline:coordination")) {
+    // A release fault (coordination-fault.json): "lost" stores the release
+    // and loses its response; "unconfirmed" loses both.
+    const fault = fs.existsSync(root + "/coordination-fault.json") ? JSON.parse(fs.readFileSync(root + "/coordination-fault.json", "utf8")) : null;
+    const releasing = body.includes('"kind":"release"');
+    if (releasing && fault?.release === "unconfirmed") coordinationFail("HTTP 502: Bad Gateway");
     coordination.seq += 1;
     coordination.comments.push({ id: coordination.seq, node_id: "coordination-" + coordination.seq, issue: Number(posted[1]), user: { login: tokenIdentity[2] }, created_at: "2026-10-18T00:00:00Z", body });
-    coordinationSave(); coordinationSend("");
+    coordinationSave();
+    if (releasing && fault?.release === "lost") coordinationFail("HTTP 502: Bad Gateway");
+    coordinationSend("");
   }
 }
 const coordinationNode = id => {

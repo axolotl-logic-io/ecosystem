@@ -8,8 +8,8 @@
 //
 // A loser cancels its pending request, so it never blocks the queue, and
 // ends `unclaimed` having set up nothing. The owner relinquishes only after
-// a resolved exit (resolvedRun); any other exit holds ownership for
-// explicit reconciliation until #151's release predicate.
+// teardown, when the release predicate (release-predicate.ts, #151) passes;
+// any other exit holds ownership for explicit reconciliation.
 
 import type { Config } from "../config.ts";
 import { paths, withCheckout } from "../config.ts";
@@ -21,14 +21,23 @@ import {
 } from "../execution.ts";
 import type { Stage } from "../stages.ts";
 import type { RunArgs } from "./args.ts";
+import type { CheckpointLedger } from "./release-predicate.ts";
+import { releaseRefusal } from "./release-predicate.ts";
 import type { JobTask, TaskRequest } from "./task-request.ts";
-import type { RunEnd } from "./teardown.ts";
+import type { ExitingJob, RunEnd } from "./teardown.ts";
+import { tearDown } from "./teardown.ts";
 
 // The job's confirmed ownership: its binding, and a config bound to it.
 interface Invocation {
   binding: InvocationBinding;
   cfg: Config;
 }
+
+// An exiting job with its ownership and its checkpoint writes' ledger.
+type SettlingJob = ExitingJob & {
+  invocation: Invocation;
+  ledger: CheckpointLedger;
+};
 
 type Acquired = { owned: Invocation } | { lost: string; held: boolean };
 
@@ -80,23 +89,6 @@ function ownerCheckOf(invocation: Invocation): () => void {
   return (): void => assertInvocation(invocation);
 }
 
-// Whether the run that ended with `end` resolved: it finished with a line
-// and no claim error, or a signal stopped it after it saved its last state
-// with no lease (role-run.ts's stoppedAt throws when that save fails). A
-// run that threw (null) or whose claim refused holds its ownership.
-function resolvedRun(end: RunEnd | null): boolean {
-  if (end === null) {
-    return false;
-  }
-  return end.kind === "stopped" || end.summary.claimError === undefined;
-}
-
-// Releases `invocation`'s ownership after a resolved, torn-down run, so the
-// next stage job can acquire.
-function relinquishInvocation(invocation: Invocation): void {
-  issueExecution(invocation.cfg, invocation.binding.issue).release();
-}
-
 // The line of a job that didn't acquire: `unclaimed`, with the hold as its
 // claim error, and a task job's report of no run.
 function lostRun(
@@ -136,13 +128,33 @@ function ownedInvocation(
   return invocation;
 }
 
-// After teardown: releases ownership when the run that ended with `end`
-// resolved, and holds it otherwise.
-function settleInvocation(invocation: Invocation, end: RunEnd | null): void {
-  if (resolvedRun(end)) {
-    relinquishInvocation(invocation);
+// Tears the job down, then releases ownership only when the release
+// predicate passes for the run that ended with `end`; otherwise it holds and
+// says why through `warn`. A failed teardown holds, then throws as before.
+async function settleInvocation(
+  cfg: Config,
+  job: SettlingJob,
+  end: RunEnd | null,
+  warn: (line: string) => void,
+): Promise<void> {
+  let preserved = false;
+  try {
+    await tearDown(cfg, job, end);
+    preserved = true;
+  } finally {
+    const { invocation } = job;
+    const refusal = releaseRefusal(invocation.cfg, invocation.binding.issue, {
+      end,
+      unresolved: job.ledger.unresolved(),
+      preserved,
+    });
+    if (refusal === null) {
+      issueExecution(invocation.cfg, invocation.binding.issue).release();
+    } else {
+      warn(`job: execution held: ${refusal}\n`);
+    }
   }
 }
 
-export type { Invocation };
+export type { Invocation, SettlingJob };
 export { ownedInvocation, ownerCheckOf, settleInvocation };
