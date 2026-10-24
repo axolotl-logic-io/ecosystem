@@ -1,0 +1,39 @@
+// Keep the root policy. These match the pipeline's documented platform
+// boundaries; they do not exempt imported code from design or type rules.
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "extends": "//",
+  "overrides": [
+    {
+      "includes": [
+        "config.ts",
+        "data.ts",
+        "index.ts",
+        "local-files.ts",
+        "process-observations.ts",
+        "workflow-source.ts",
+        "session-source.ts",
+        "buddy-runs.ts",
+        "runtime.ts",
+        "test/**"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": "off",
+            "noProcessGlobal": "off"
+          }
+        }
+      }
+    },
+    {
+      // Pi requires its extension factory to be the default export.
+      "includes": ["index.ts"],
+      "linter": {
+        "rules": {
+          "style": { "noDefaultExport": "off" }
+        }
+      }
+    }
+  ]
+}

@@ -2,7 +2,8 @@
 // original authorization, independently confirmed against GitHub's PR head
 // and merge commit. codeMerged stays an authoritative fact, not a reason
 // to pretend hardening covered the merge SHA. Unchanged work needs only
-// its missing security review and completion, never another writer.
+// read-only confirmation of its premerge checks and Security, then its
+// completion: never a postmerge suite or another writer (#185).
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -13,8 +14,8 @@ import { currentResultObservation } from "../../security-clearance.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { afterOwnMerge } from "./after-merge.ts";
-import { checkedMergedResult } from "./checks.ts";
-import { reviewedAndCompleted, stillAt } from "./completion.ts";
+import { confirmedMergedResult } from "./checks.ts";
+import { reviewedAndCompleted } from "./completion.ts";
 import { toRequirements } from "./returns.ts";
 
 const OWN_MERGE_INPUTS_CHANGED =
@@ -31,7 +32,7 @@ const MERGE_REPLY = z.union([
 ]);
 
 // Unconfirmed attempts are reconciled before any ordinary approval/integration
-// path. Independent postmerge hardening can still authorize external work.
+// path. External merged truth without an own receipt stops in merge.ts.
 async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
   const { state } = ctx;
   const attempt = state.mergeAttempt;
@@ -53,7 +54,7 @@ async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
   );
   if (!reply.merged || reply.byHand === true) {
     let reason =
-      "observed external merged truth has no saved successful response; independent postmerge authorization is required";
+      "observed external merged truth has no saved successful response; read-only reconciliation is required";
     if (!reply.merged) {
       ({ reason } = reply);
     }
@@ -116,15 +117,13 @@ async function recoverOwnMerge(
     return null;
   }
   const receipt = { pr: pr.number, sha: merged.code };
-  const checked = await checkedMergedResult(ctx, state, result, receipt);
-  if ("end" in checked) {
-    return checked.end;
+  const refused = await confirmedMergedResult(ctx, state, result, receipt);
+  if (refused !== null) {
+    return refused;
   }
-  return await reviewedAndCompleted(ctx, checked.state, {
+  return await reviewedAndCompleted(ctx, state, {
     merged,
     result,
-    codeMerged: receipt,
-    still: stillAt(result),
   });
 }
 

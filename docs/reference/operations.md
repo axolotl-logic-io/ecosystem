@@ -51,11 +51,20 @@ The model key file sets the variables that [`runtime.credentialEnv`](runtime.md)
 
 Install only when a change affects installed source or assets. Prompts in `apps/issue-pipeline/prompts/` and agent definitions in `agents/` are installed assets, so a prompt change takes effect only after an install. Docs changes in `docs/` need no install.
 
+Before Land, pass the approved fast gate on a clean checkout of the exact source candidate:
+
 ```bash
-npm ci                                       # at the repository root
-mise //apps/issue-pipeline:check             # the full gate on the exact source head
+npm ci                                    # at the repository root
+mise //apps/issue-pipeline:check            # approved exact-source fast gate before Land
+```
+
+Retain that result and independent read-only pre-Land Security clearance, bound to the same full source commit, trusted-input revision, effective current checking policy and configured pre-Land target branch/commit. Before installation, confirm the delivered identity, authenticated receipt and ancestry against that binding. Missing, stale or mismatched proof is a **STOP**, even when code has already landed. Do not invent a receipt, rerun a suite or acquire retrospective Security to fill a gap. Preserve accepted safety behavior; do not install a candidate that drops it.
+
+The full suite is not an installation prerequisite. After source delivery, the operator separately authorizes the cutover and reviews the dry-run:
+
+```bash
 mise //apps/issue-pipeline:install:dry-run   # review what would change
-mise //apps/issue-pipeline:install           # install
+mise //apps/issue-pipeline:install           # operator-authorized install
 ```
 
 Install builds first, then copies programs, prompt pages and the example config into `$ISSUE_PIPELINE_ROOT`, and the agent definitions into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`).
@@ -67,14 +76,29 @@ Install builds first, then copies programs, prompt pages and the example config 
 
 Merging source changes nothing that runs. Record source delivery (the PR and its head and merge commits) and installation (the installed identity, or not applicable) separately; neither implies the other. A configured base of `main` isn't permission to deploy any repository.
 
+## Installation acceptance
+
+Keep dispatch stopped until the operator accepts the installed copy separately from source delivery:
+
+1. Confirm `INSTALLED.json` records the exact accepted source commit and clean-source status.
+2. Compare the managed programs with that source's built artifacts, and the copied prompts and examples with their reviewed source bytes.
+3. Compare installed agent definitions with the reviewed source after filling the documented root placeholders.
+4. Confirm planned retirements and retained backups match the reviewed dry-run, with operator config, runtime HOME, saved state and recovery work preserved.
+5. Perform bounded installed-CLI parsing and invalid-input smoke checks that launch no job, model, server or credentialed operation.
+6. Record the installed identity, managed-artifact comparisons, exact CLI commands and results, and the operator's acceptance.
+
+These checks accept the installed artifacts and CLI boundary, not integration coverage. They do not run a repository check suite, fresh Security model, repair writer or remerge. Authorized evidence checkpoints and `finish` bookkeeping remain distinct from forbidden post-Land validation. A mismatch or failed acceptance keeps dispatch stopped; preserve the evidence for explicit operator recovery.
+
 ## Upgrade safely
 
 1. Stop dispatching new jobs.
 2. Drain every old-version job. Prefer letting an active merge turn finish. Confirm no old job or session remains.
 3. Snapshot the installed config, saved-state evidence and recovery files.
-4. Pass the full gate on the exact source head, and review the dry-run.
-5. Install.
-6. Resume one explicitly assigned issue and stage at a time.
+4. Confirm the bound exact-source fast result and independent pre-Land Security described in [Install a release](#install-a-release).
+5. Review the install dry-run.
+6. Install the accepted source.
+7. Complete [installation acceptance](#installation-acceptance).
+8. Resume one explicitly assigned issue and stage at a time.
 
 Never run old and new jobs together. Never reset branches, hardening, integration, merge-attempt evidence, Security rejections or merge receipts to make an upgrade pass. Rolling back an install doesn't undo a code merge.
 
@@ -102,4 +126,8 @@ Lifting a stop supplies no missing authority. An uncertain merge needs read-only
 
 ## Run the tests
 
-`mise //apps/issue-pipeline:check` runs type checks, Biome, the build, syntax checks and every test, at most two test files at a time. Tests use temporary HOME and pipeline roots, local bare Git origins, a fake GitHub and a fake Pi; they never touch real GitHub, models or production data. A failure or flake blocks acceptance.
+`mise //apps/issue-pipeline:check` is the **fast default gate**, not full integration coverage. It runs source and checked-JavaScript test type checks, Biome, the build, syntax checks for the installer and all built programs, and the existing `test/build.test.mjs` artifact guards and `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions in one bounded Node invocation.
+
+`mise //apps/issue-pipeline:check:full` explicitly opts into the expensive full gate: the fast gate followed by every Node test, at most two test files at a time, with the original 180000 ms timeout. Do not run the full suite by default, as an installation prerequisite or after landing; explicit opt-in execution is pre-Land only. Do not run any check suite or fresh model validation after Land. Separately authorized [installation acceptance](#installation-acceptance) still applies. The [gate scope and cost report](check-gates.md) explains what the fast gate does not prove, the known cost and the remaining optimization or isolated-stage work.
+
+Tests use temporary HOME and pipeline roots, local bare Git origins, a fake GitHub and a fake Pi; they never touch real GitHub, models or production data. A failure or flake blocks acceptance. These repository tasks do not change live operator configuration or wrappers. Save the exact command, effective policy and source SHA with results; a wrapper that directly invokes the full suite still incurs its cost.

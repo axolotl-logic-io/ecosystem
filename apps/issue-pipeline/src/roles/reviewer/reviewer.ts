@@ -158,25 +158,15 @@ interface Hardened {
   revision: Revision;
 }
 
-// Postmerge writers must read M, not the retained source head H. Checkout
-// availability grants no authority.
-async function hardeningSetup(
-  ctx: RoleContext,
-  mode: Mode,
-): Promise<string | null> {
+// Hardening and checks clear the exact candidate before the target moves
+// (#185). Merged code gets no postmerge suite or hardening session: its
+// missing premerge proof needs read-only reconciliation.
+function postmergeRefusal(mode: Mode): string | null {
   if (mode.kind !== "merged") {
     return null;
   }
-  const prepared = await opReply(
-    ctx,
-    "prepare-review",
-    { number: ctx.issue, codeMerged: mode.merged, tag: "hardening" },
-    z.looseObject({ headSha: z.string() }),
-  );
-  if (prepared.headSha !== mode.merged.sha) {
-    return `prepare-review read ${prepared.headSha}, not the merge commit ${mode.merged.sha}`;
-  }
-  return null;
+  const { pr, sha } = mode.merged;
+  return `PR #${pr} already merged as ${short(sha)}; postmerge hardening is not allowed; code remains merged; no postmerge suite, writer or retrospective Security runs; read-only reconciliation is required`;
 }
 
 // Hardens the revision `before` and checkpoints the result, or says why not.
@@ -186,7 +176,7 @@ async function harden(
   before: CurrentRevision,
 ): Promise<Step<Hardened>> {
   const mode = changeModeOf(start);
-  const hold = await hardeningSetup(ctx, mode);
+  const hold = postmergeRefusal(mode);
   if (hold !== null) {
     return ended(errorStop(start, hold));
   }

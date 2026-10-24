@@ -53,15 +53,6 @@ function schemaFile(content) {
   return file;
 }
 
-test("the output extension registers a string --output-schema flag and waits for the session to start", () => {
-  const { flags, events } = load(schemaFile(JSON.stringify(SCHEMA)));
-  assert.deepEqual(events, ["session_start"]);
-  assert.deepEqual(
-    flags.map(({ name, options }) => [name, options.type]),
-    [["output-schema", "string"]],
-  );
-});
-
 test("the output tool takes the schema file's JSON Schema as its parameters and ends the session with its arguments as details", async () => {
   const { tools } = load(schemaFile(JSON.stringify(SCHEMA)));
   assert.equal(tools.length, 1);

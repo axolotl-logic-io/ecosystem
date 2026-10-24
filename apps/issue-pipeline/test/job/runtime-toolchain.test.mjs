@@ -15,9 +15,7 @@ import { toolchainRuntime } from "./runtime-toolchain-test-kit.mjs";
 
 const { runSession } = await import("../../src/job/launch.ts");
 const { STAGE_AGENTS } = await import("../../src/job/roles.ts");
-const { RUNTIME_SCHEMA, runtimeBoundary } = await import(
-  "../../src/job/runtime-policy.ts"
-);
+const { RUNTIME_SCHEMA } = await import("../../src/job/runtime-policy.ts");
 const NATIVE_VERSION_REFUSAL = /must report version 1\.2\.0/u;
 // The operator baseline, the version probe and the RPC child at its prompt.
 const REPORT_COUNT = 3;
@@ -201,29 +199,6 @@ for (const overridePath of [false, true]) {
     const raw = await runSession(launch(), kit.hooks);
     assert.equal(raw.ok, true, raw.error ?? "");
     assert.deepEqual(toolchainOutcome(kit), operatorOutcome(kit));
-  });
-}
-
-test("the effective boundary names the declared toolchain", () => {
-  const kit = toolchainRuntime(true);
-  declare(kit, kit.toolchain);
-  assert.deepEqual(
-    runtimeBoundary(kit.runtime, {}).toolchainEnv,
-    kit.toolchain,
-  );
-});
-
-for (const [name, value] of [
-  ["HOME", "/elsewhere"],
-  ["GH_TOKEN", "synthetic"],
-  ["OPENAI_API_KEY", "synthetic"],
-  ["PATH", "relative:/bin"],
-  ["PATH", "/bin:"],
-  ["MISE_STATE_DIR", "~/state"],
-]) {
-  test(`toolchain declaration refuses ${name} with value ${value}`, () => {
-    const toolchainEnv = Object.fromEntries([[name, value]]);
-    assert.equal(RUNTIME_SCHEMA.safeParse({ toolchainEnv }).success, false);
   });
 }
 

@@ -2,7 +2,7 @@
 
 The pipeline loads this page into a fresh Reviewer session of stage `merge`, phase `security-review`, ahead of the session's task. For a new code change, deterministic checks and hardening have passed on the exact candidate. Security runs before the merge: a rejection prevents the merge. The receipt binds the candidate code, trusted inputs and observed target revision. Any change, including clean integration or conflict resolution, requires fresh checks, hardening and Security. A saved rejection of the same revision stops without another session.
 
-Historical merged runs may recover their missing read-only Security review on the confirmed merged result. That historical path never supplies permission to merge new code. New own merges reuse their exact premerge clearance after deterministic result confirmation; they do not run a second model pass.
+Security runs only before the target moves. A merged run without exact premerge Security clearance stops for read-only reconciliation; it never gets a retrospective review. New own merges reuse their exact premerge clearance after read-only result confirmation; they do not run a second model pass.
 
 The session is read-only, and it holds no commit scope and no token. Its task gives this run's facts:
 - the issue file;

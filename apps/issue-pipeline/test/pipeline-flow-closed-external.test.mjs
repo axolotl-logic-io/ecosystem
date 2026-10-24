@@ -1,6 +1,9 @@
 // @ts-check
-// A closed incomplete Merge without response evidence must obtain independent
-// postmerge hardening, never inherit the premerge authorization as an own receipt.
+// A closed incomplete Merge without response evidence never inherits the
+// premerge authorization as an own receipt. Its checks and Security did not
+// provably clear the merged result before the target moved, so it stops
+// read-only with merged truth kept (#185): no postmerge hardening, suite,
+// Security or completion.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -60,7 +63,7 @@ test("external merge setup retains genuine premerge authority and auto-closes th
   traceStart = opsTrace(flow).length;
 });
 
-test("confirmed closed recovery without a response needs fresh postmerge hardening", () => {
+test("confirmed closed recovery without a response stops read-only, never postmerge hardening", () => {
   const prior = savedState(readWorld(flow.ghDir));
   assert.equal(prior.mergeAttempt, null);
   assert.equal(prior.merged, null);
@@ -69,61 +72,38 @@ test("confirmed closed recovery without a response needs fresh postmerge hardeni
     "closed",
   );
   const starts = sessions(flow);
-  assert.equal(runStage(flow, "merge").end, "next");
+  assert.equal(runStage(flow, "merge").end, "stop");
   assert.equal(sessions(flow), starts);
-  const recovered = savedState(readWorld(flow.ghDir));
-  assert.equal(recovered.stage, "review");
-  assert.deepEqual(recovered.codeMerged, {
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.equal(stopped.stage, "stopped");
+  assert.equal(stopped.stoppedStage, "merge");
+  assert.deepEqual(stopped.codeMerged, {
     pr: prior.pr,
     sha: refIn(flow.origin, BASE),
   });
-  assert.equal(recovered.mergeAttempt, null);
-  assert.equal(recovered.merged, null);
-  assert.equal(recovered.hardened, null);
-  assert.equal(recovered.security, null);
-  assert.equal(
-    readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
-    "open",
-  );
+  assert.equal(stopped.mergeAttempt, null);
+  assert.equal(stopped.merged, null);
+  assert.deepEqual(stopped.hardened, prior.hardened);
+  assert.equal(stopped.security, null);
 });
 
-test("independent actual-result hardening and exact Security precede completion", () => {
-  const merged = refIn(flow.origin, BASE);
-  assert.equal(runStage(flow, "review").end, "next");
-  const hardened = savedState(readWorld(flow.ghDir));
-  assert.equal(hardened.hardened.code, merged);
-  assert.equal(hardened.merged, null);
-  assert.equal(hardened.security, null);
-  fs.writeFileSync(path.join(flow.root, "interrupt-finish"), "pause finish");
-  assert.equal(runStage(flow, "merge").end, "deferred");
-  const cleared = savedState(readWorld(flow.ghDir));
-  assert.deepEqual(cleared.security.revision, hardened.hardened);
-  assert.equal(cleared.security.finding, null);
-  assert.deepEqual(cleared.merged, hardened.hardened);
-});
-
-test("external recovery completes without a pipeline merge POST or code push", () => {
-  fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
-  const starts = sessions(flow);
-  assert.equal(runStage(flow, "merge").end, "next");
-  assert.equal(sessions(flow), starts);
-  const world = readWorld(flow.ghDir);
-  const done = savedState(world);
-  assert.equal(done.stage, "done");
-  assert.equal(done.mergeAttempt, null);
-  assert.deepEqual(done.merged, done.security.revision);
-  assert.equal("wiki" in done.merged, false);
-  assert.equal(
-    world.issues.find(({ number }) => number === ISSUE)?.state,
-    "closed",
-  );
+test("external recovery runs no suite, Security bundle, merge POST, code push or completion", () => {
   const trace = opsTrace(flow).slice(traceStart);
   assert.equal(
     trace.some(({ request }) =>
-      ["merge", "push", "exit-push", "sync-base"].includes(request.op),
+      [
+        "verify",
+        "prepare-review",
+        "merge",
+        "push",
+        "exit-push",
+        "sync-base",
+        "finish",
+      ].includes(request.op),
     ),
     false,
   );
   assert.equal(merges(flow).length, 0);
-  assert.deepEqual(world.unsupported, []);
+  assert.notEqual(savedState(readWorld(flow.ghDir)).stage, "done");
+  assert.deepEqual(readWorld(flow.ghDir).unsupported, []);
 });

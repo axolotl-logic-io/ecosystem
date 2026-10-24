@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import {
   configIn,
   git,
@@ -20,6 +21,10 @@ const { openStatus } = await import("../src/job/status.ts");
 const KEY = "implement-1";
 const EXECUTABLE_MODE = 0o755;
 const REGULAR_EXECUTABLE_MODE = 0o10_0755;
+// Git writes an executable it checks out as 0777 less the process umask. The
+// umask's bits all lie within 0777, so subtracting it clears exactly those.
+const REGULAR_FULL_MODE = 0o10_0777;
+const CHECKED_OUT_EXECUTABLE_MODE = REGULAR_FULL_MODE - process.umask();
 const COMMIT_ENV = Object.fromEntries([["ISSUE_PIPELINE_COMMIT", "1"]]);
 const BINARY = Buffer.from(Array.from({ length: 256 }, (_, byte) => byte));
 const LATIN1 = Buffer.from("café\n", "latin1");
@@ -151,6 +156,7 @@ function under(prefix, files) {
 }
 
 export {
+  CHECKED_OUT_EXECUTABLE_MODE,
   COMMIT_ENV,
   close,
   inRunDir,

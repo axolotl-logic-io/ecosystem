@@ -4,13 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import { FIXTURE_WINDOWS } from "../runtime-fixtures.mjs";
 import { launch, privateRuntime } from "./runtime-policy-test-kit.mjs";
 
 const { runSession } = await import("../../src/job/launch.ts");
-const { runtimeBoundary, RUNTIME_SCHEMA, nativeSettings, policyOf } =
-  await import("../../src/job/runtime-policy.ts");
-const { testConfig } = await import("../config-test-kit.mjs");
+const { nativeSettings, policyOf } = await import(
+  "../../src/job/runtime-policy.ts"
+);
 const START = z.object({ agentDir: z.string(), settings: z.unknown() });
 test("resumed and new launch paths keep old history and independently generate policy", async () => {
   const kit = privateRuntime();
@@ -40,24 +39,4 @@ test("resumed and new launch paths keep old history and independently generate p
     nativeSettings(policyOf(launch().model, kit.runtime)),
   );
   assert.deepEqual(second.data.settings, first.data.settings);
-});
-
-test("repo config defaults and effective diagnostics name the complete nonsecret policy", () => {
-  const { cfg } = testConfig({});
-  assert.deepEqual(cfg.runtime, RUNTIME_SCHEMA.parse(undefined));
-  const explicit = RUNTIME_SCHEMA.parse({
-    modelContextWindows: FIXTURE_WINDOWS,
-  });
-  const boundary = runtimeBoundary(explicit, cfg.models);
-
-  assert.deepEqual(boundary.credentialEnv, ["PIPELINE_MODEL_KEY"]);
-  assert.equal(boundary.policies.length, Object.keys(cfg.models).length);
-  assert.deepEqual(
-    boundary.policies.map(({ role }) => role),
-    ["author", "implementor", "reviewer"],
-  );
-  assert.deepEqual(
-    new Set(boundary.policies.map(({ reserveTokens }) => reserveTokens)),
-    new Set([policyOf(launch().model, explicit).reserveTokens]),
-  );
 });

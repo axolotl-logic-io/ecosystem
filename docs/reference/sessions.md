@@ -9,7 +9,7 @@ New work starts at Developer. Author is optional:
 ```mermaid
 flowchart LR
   author["author (explicit)"] --> implement
-  implement --> review["review: hardening"] --> merge["merge: integration, Security, merge, result checks"] --> done
+  implement --> review["review: hardening"] --> merge["merge: integration, Security, merge, result confirmation"] --> done
 ```
 
 Only three model roles exist: Author, Developer and Reviewer. The serialized role and config name for the Developer is still `implementor`.
@@ -20,7 +20,7 @@ Only three model roles exist: Author, Developer and Reviewer. The serialized rol
 | `implement` | Developer | Yes | Code, tests and docs pushed to the issue's branch as a draft PR |
 | `review` / `hardening` | Reviewer | Yes | A verified, pushed hardened revision and a ready PR (see [review](review.md)) |
 | `merge` / `integration` | Reviewer | Yes | The final synchronization and its conflict and check fixes (see [sync](sync.md)) |
-| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the exact candidate before merge (historical merged recovery remains read-only) (see [review](review.md#security-review)) |
+| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the exact candidate before merge; none runs after it (see [review](review.md#security-review)) |
 
 Start new work with `--stage implement` for direct Developer work. Invoke `--stage author` to use Author for new work or an eligible existing direct-mode issue. Direct work derives its requirements from the trusted issue title, body and allowed collaborator comments. No Gherkin or substitute requirements document is required downstream. An unanswered product question stops direct work with `not-doable`; Author can ask questions and wait for a trusted answer instead.
 
@@ -67,7 +67,9 @@ Writers commit only through the `pipeline_commit` tool. They don't run `git comm
 The tool takes git commit arguments: `{"args": ["-m", "Describe the change", "--", "repo/src/file.ts"]}`.
 
 - Pathspecs and relative `-F` paths are relative to the job folder, so code paths start with `repo/`. Absolute paths, `..`, pathspec magic and paths outside the session's scope are refused before git runs.
-- Without pathspecs, tracked changes need `-a` or staging. New files need staging.
+- A new file named exactly as a pathspec is staged by the tool, by its literal path, before the commit; writers don't run `git add`. A directory, a pattern or `repo` stages no new file, and an ignored file is never staged. Other untracked files stay untracked. Unless the call passes `--include`, other staged changes stay out of the commit and stay staged.
+- Without pathspecs, tracked changes need `-a` or staging, and no new file is staged.
+- If the commit fails after staging, the staged new files stay staged and nothing is pushed. A `--dry-run` stages into a private copy of the index, so the checkout's index is unchanged.
 - `--amend`, `--no-verify` (`-n`), `--author`, `--date`, `--reset-author`, `--pathspec-from-file` and `-F -` are refused, including abbreviations of the long options.
 - Each commit gets a `Pipeline-Session: <launch key>@<job start>` trailer.
 

@@ -1,7 +1,8 @@
 // @ts-check
 // The real roles, claims and finish ops replay an interrupted
 // own explicit-target branch merge. Git and the built programs are real; GitHub and pi are
-// local fakes. The caller assigns one issue, branch and stage.
+// local fakes. The caller assigns one issue, branch and stage. After Land
+// only read-only confirmation runs; missing premerge proof stops (#185).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,6 +11,20 @@ import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
 import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
+import {
+  issueStateIn,
+  landedEvidence,
+  landOrder,
+  opsSince,
+  PREMERGE_ONLY,
+  postLandFacts,
+  readOnlyAfterLand,
+} from "./pipeline-flow-post-land-test-kit.mjs";
+import {
+  completeSetupStage,
+  REPLAY_SETUP,
+  restoreClearedReceipt,
+} from "./pipeline-flow-recovery-test-kit.mjs";
 import {
   expectedReplay,
   historicalMerge,
@@ -23,20 +38,27 @@ import {
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
 import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
-import { savedState, securityTurn } from "./pipeline-flow-script-test-kit.mjs";
-import { ISSUE, scriptPi, setUpFlow } from "./pipeline-flow-test-kit.mjs";
+import { savedState } from "./pipeline-flow-script-test-kit.mjs";
+import { ISSUE, refIn, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
-const SECURITY_PHASE = "security.md";
+const { loadConfig } = await import("../src/config.ts");
+const { policyRevision } = await import("../src/project-policy.ts");
+// A checking-policy setting the flow's own commands never reach.
+const MOVED_TIMEOUT_MINUTES = 21;
+const POSTMERGE = ["prepare-review", "verify", "push", "exit-push", "merge"];
+const POSTMERGE_REFUSED = /postmerge hardening is not allowed/u;
 
 /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
 /** @type {import("./fake-pipeline-flow-gh-world.mjs").World} */
 let interruptedWorld;
+/** @type {import("./fake-pipeline-flow-gh-world.mjs").World} the own FF merge done with premerge clearance, before finish */
+let clearedWorld;
 /** @type {string} the review-module gitlink the Developer's draft adds */
 let gitlink;
 let replayReady = false;
-/** @type {import("../src/state.ts").Integration} */
-let originalIntegration;
+/** @type {{ integration?: import("../src/state.ts").Integration }} */
+const setup = {};
 
 before(() => {
   flow = setUpFlow();
@@ -50,32 +72,19 @@ beforeEach(() => {
 });
 after(() => stopJobs(flow));
 
-/** @param {string} stage @param {string} action @returns {string} */
-function completeSetupStage(stage, action) {
-  const result = runStage(flow, stage);
-  if (action === "fail-ci") {
-    withWorld(flow.ghDir, (world) => {
-      world.failedHead = savedState(world).hardened.code;
-    });
-  }
-  if (action === "integration") {
-    originalIntegration = savedState(readWorld(flow.ghDir)).integration;
-  }
-  return result.end;
+/** @param {{ stage: string, action: string }} step */
+function runSetupStep(step) {
+  return completeSetupStage(flow, step, setup);
 }
 
-for (const step of [
-  { stage: "author", end: "next", action: "none" },
-  { stage: "implement", end: "next", action: "none" },
-  { stage: "review", end: "next", action: "fail-ci" },
-  { stage: "merge", end: "next", action: "integration" },
-  { stage: "review", end: "next", action: "none" },
-]) {
+for (const step of REPLAY_SETUP) {
   test(`replay setup ${step.stage} reaches ${step.end} within its own deadline`, () => {
-    assert.equal(completeSetupStage(step.stage, step.action), step.end);
+    assert.equal(runSetupStep(step), step.end);
   });
 }
 
+// Checks and Security (its bundle has the gitlink and docs change) clear
+// exactly the landed candidate before Land, then only confirmation (#185).
 test("replay setup merge reaches deferred within its own deadline", () => {
   assert.equal(runStage(flow, "merge").end, "deferred");
   const current = savedState(readWorld(flow.ghDir));
@@ -83,12 +92,20 @@ test("replay setup merge reaches deferred within its own deadline", () => {
   assert.equal(current.security.phase, "candidate");
   assert.deepEqual(current.security.revision, current.merged);
   assert.deepEqual(current.merged, current.mergeAttempt.authorized);
-  assert.ok(
-    opsTrace(flow).some(({ request }) => request.op === "prepare-review"),
-  );
+  assert.equal(current.verifiedSha, current.merged.code);
+  assert.deepEqual(current.security.target, current.hardenedTarget);
+  assert.deepEqual(landOrder(flow, current.merged.code), PREMERGE_ONLY);
   const { launch } = securityEvidence(flow, current.merged.code);
   assert.equal(launch?.commitScope, false);
-  historicalMerge(flow, originalIntegration);
+  const { diff, bundle, files } = securityBundle(flow, current.merged.code);
+  assert.ok(diff.includes("+Hello, world!"));
+  assert.ok(diff.includes(`+Subproject commit ${gitlink}`));
+  assert.ok(diff.includes("+Greetings say Hello, world!"));
+  assert.ok(bundle.startsWith(diff));
+  assert.ok(files.includes("Greetings say Hello, world!"));
+  clearedWorld = readWorld(flow.ghDir);
+  assert.ok(setup.integration !== undefined);
+  historicalMerge(flow, setup.integration);
   fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
   const world = readWorld(flow.ghDir);
   const historical = savedState(world);
@@ -116,10 +133,7 @@ test("the interrupted own merge saved its provenance before Security despite def
     state.integration.revision.code,
   );
   assert.equal(interruptedWorld.prs[0]?.mergeOid, state.merged.code);
-  assert.equal(
-    interruptedWorld.issues.find(({ number }) => number === ISSUE)?.state,
-    "closed",
-  );
+  assert.equal(issueStateIn(interruptedWorld), "closed");
   assert.equal(merges(flow).length, 0);
   assert.deepEqual(
     nativeTargetUpdates(readWorld(flow.ghDir)),
@@ -127,18 +141,21 @@ test("the interrupted own merge saved its provenance before Security despite def
   );
 });
 
-test("claim-populated replay cannot complete or close without security when the fresh assessment is interrupted", () => {
+test("claim-populated replay without premerge Security stops read-only: no suite, Security bundle or model, writer, merge or completion", () => {
   assert.equal(replayReady, true);
   assert.equal(savedState(interruptedWorld).stage, "merge");
   const callsStart = ghCalls(flow.ghDir).length;
   const traceStart = opsTrace(flow).length;
   const starts = sessions(flow);
-  assert.equal(runStage(flow, "merge").end, "deferred");
-  assert.equal(sessions(flow), starts + 1);
+  assert.equal(runStage(flow, "merge").end, "stop");
+  assert.equal(sessions(flow), starts);
   assert.deepEqual(
     replayFacts(flow, traceStart),
     expectedReplay(interruptedWorld),
   );
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.equal(stopped.security, null);
+  assert.deepEqual(stopped.merged, savedState(interruptedWorld).merged);
   assert.ok(
     ghCalls(flow.ghDir)
       .slice(callsStart)
@@ -149,39 +166,16 @@ test("claim-populated replay cannot complete or close without security when the 
           target === String(ISSUE),
       ),
   );
-  const ops = opsTrace(flow)
-    .slice(traceStart)
-    .map(({ request }) => request.op);
+  const ops = opsSince(flow, traceStart);
   assert.equal(ops.includes("finish"), false);
-  assert.equal(
-    readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
-    "open",
-  );
+  assert.equal(ops.includes("prepare-review"), false);
+  assert.equal(issueStateIn(readWorld(flow.ghDir)), "open");
 });
 
-test("retained recovery bundles an added gitlink and the docs change before Security", () => {
+test("stale security cannot authorize replay completion or closure, and no assessment runs after Land", () => {
   assert.equal(replayReady, true);
-  assert.equal(savedState(interruptedWorld).stage, "merge");
-  const traceStart = opsTrace(flow).length;
-  assert.equal(runStage(flow, "merge").end, "deferred");
-  assert.deepEqual(
-    replayFacts(flow, traceStart),
-    expectedReplay(interruptedWorld),
-  );
-  const state = savedState(readWorld(flow.ghDir));
-  const { diff, bundle, files } = securityBundle(flow, state.merged.code);
-  assert.ok(diff.includes(`+Subproject commit ${gitlink}`));
-  assert.ok(diff.includes("+Greetings say Hello, world!"));
-  assert.ok(bundle.startsWith(diff));
-  assert.ok(files.includes("Greetings say Hello, world!"));
-});
-
-test("stale security cannot authorize replay completion or closure; a new assessment is required", () => {
-  assert.equal(replayReady, true);
-  assert.equal(savedState(interruptedWorld).stage, "merge");
   const state = savedState(interruptedWorld);
   const stale = state.hardened;
-  assert.notEqual(stale.code, state.merged.code);
   assert.notDeepEqual(stale, state.merged);
   replaceState(flow, {
     ...state,
@@ -191,26 +185,17 @@ test("stale security cannot authorize replay completion or closure; a new assess
       finding: null,
     },
   });
-  assert.notDeepEqual(
-    savedState(readWorld(flow.ghDir)).security.revision,
-    state.merged,
-  );
   const traceStart = opsTrace(flow).length;
   const starts = sessions(flow);
-  assert.equal(runStage(flow, "merge").end, "deferred");
-  assert.equal(sessions(flow), starts + 1);
+  assert.equal(runStage(flow, "merge").end, "stop");
+  assert.equal(sessions(flow), starts);
   assert.deepEqual(
     replayFacts(flow, traceStart),
     expectedReplay(interruptedWorld),
   );
-  const ops = opsTrace(flow)
-    .slice(traceStart)
-    .map(({ request }) => request.op);
-  assert.equal(ops.includes("finish"), false);
-  assert.equal(
-    readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.state,
-    "open",
-  );
+  assert.deepEqual(savedState(readWorld(flow.ghDir)).security.revision, stale);
+  assert.equal(opsSince(flow, traceStart).includes("finish"), false);
+  assert.equal(issueStateIn(readWorld(flow.ghDir)), "open");
 });
 
 test("a saved rejection on the actual merged result re-stops without a model, writer, second merge or completion", () => {
@@ -254,45 +239,188 @@ test("a saved rejection on the actual merged result re-stops without a model, wr
   );
 });
 
-test("missing security reviews the whole authorized FF contribution read-only, then exact approval survives a completion interruption and is reused", () => {
-  assert.equal(replayReady, true);
-  assert.equal(savedState(interruptedWorld).stage, "merge");
-  const expected = expectedReplay(interruptedWorld);
-  scriptPi(flow, { reviewer: [securityTurn()] });
-  fs.writeFileSync(
-    path.join(flow.root, "interrupt-finish"),
-    "interrupt before the finish op",
+test("an own FF merge without exact premerge check proof stops before completion, with no suite, model or writer", () => {
+  const cleared = savedState(clearedWorld);
+  restoreClearedReceipt(flow, clearedWorld, { verifiedSha: null });
+  const traceStart = opsTrace(flow).length;
+  const starts = sessions(flow);
+  assert.equal(runStage(flow, "merge").end, "stop");
+  assert.equal(sessions(flow), starts);
+  assert.deepEqual(
+    postLandFacts(replayFacts(flow, traceStart)),
+    readOnlyAfterLand([{ confirmed: false }]),
   );
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.deepEqual(landedEvidence(stopped), landedEvidence(cleared));
+  assert.equal(stopped.verifiedSha, null);
+  const ops = opsSince(flow, traceStart);
+  assert.equal(ops.includes("finish"), false);
+  assert.equal(ops.includes("prepare-review"), false);
+});
+
+test("an interrupted own FF merge with exact premerge proof completes read-only, survives a completion interruption and replays without a suite or model", () => {
+  const cleared = savedState(clearedWorld);
+  const expected = readOnlyAfterLand([
+    { confirmed: true, headSha: cleared.merged.code },
+  ]);
+  restoreClearedReceipt(flow, clearedWorld);
+  const interrupt = path.join(flow.root, "interrupt-finish");
+  fs.writeFileSync(interrupt, "interrupt before the finish op");
   const traceStart = opsTrace(flow).length;
   const starts = sessions(flow);
   assert.equal(runStage(flow, "merge").end, "deferred");
-  assert.equal(sessions(flow), starts + 1);
-  assert.deepEqual(replayFacts(flow, traceStart), expected);
-  const approved = savedState(readWorld(flow.ghDir));
-  assert.deepEqual(approved.security.revision, approved.merged);
-  assert.equal(approved.security.finding, null);
-  assert.ok(approved.security.commentId > 0);
-  const { launch, diff } = securityEvidence(flow, approved.merged.code);
-  assert.ok(launch !== undefined);
-  assert.equal(launch.commitScope, false);
-  assert.equal(launch.ghToken, null);
-  assert.equal(launch.extensions.includes("pipeline-commit.mjs"), false);
-  const securityPage = path.join(flow.prompts, SECURITY_PHASE);
-  assert.ok(launch.argv.includes(fs.readFileSync(securityPage, "utf8")));
-  assert.ok(diff.includes("+Hello, world!"));
-  assert.ok(diff.includes("+Greetings say Hello, world!"));
-  fs.unlinkSync(path.join(flow.root, "interrupt-finish"));
+  assert.deepEqual(postLandFacts(replayFacts(flow, traceStart)), expected);
+  const completed = savedState(readWorld(flow.ghDir));
+  assert.equal(completed.stage, "done");
+  assert.deepEqual(landedEvidence(completed), landedEvidence(cleared));
+  fs.unlinkSync(interrupt);
   const retryStart = opsTrace(flow).length;
   assert.equal(runStage(flow, "merge").end, "next");
-  assert.equal(sessions(flow), starts + 1);
-  assert.deepEqual(replayFacts(flow, retryStart), expected);
+  assert.equal(sessions(flow), starts);
+  assert.deepEqual(postLandFacts(replayFacts(flow, retryStart)), expected);
   const world = readWorld(flow.ghDir);
   const done = savedState(world);
   assert.equal(done.stage, "done");
-  assert.deepEqual(done.security, approved.security);
+  assert.deepEqual(landedEvidence(done), landedEvidence(cleared));
   assert.equal("wiki" in done.security.revision, false);
-  assert.equal(
-    world.issues.find(({ number }) => number === ISSUE)?.state,
-    "closed",
+  assert.equal(issueStateIn(world), "closed");
+  assert.deepEqual(
+    nativeTargetUpdates(world),
+    expectedReplay(interruptedWorld).targetUpdates,
+  );
+});
+
+test("an own FF merge whose saved attempt has no signed intent is refused by confirmation, with no suite, model or completion", () => {
+  const cleared = savedState(clearedWorld);
+  const { operation: _intent, ...legacy } = cleared.mergeAttempt;
+  restoreClearedReceipt(flow, clearedWorld, { mergeAttempt: legacy });
+  const traceStart = opsTrace(flow).length;
+  const starts = sessions(flow);
+  assert.equal(runStage(flow, "merge").end, "stop");
+  assert.equal(sessions(flow), starts);
+  assert.deepEqual(
+    postLandFacts(replayFacts(flow, traceStart)),
+    readOnlyAfterLand([{ confirmed: false }]),
+  );
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.deepEqual(stopped.merged, cleared.merged);
+  assert.deepEqual(stopped.security, cleared.security);
+  const ops = opsSince(flow, traceStart);
+  assert.equal(ops.includes("finish"), false);
+  assert.equal(ops.includes("prepare-review"), false);
+  assert.equal(issueStateIn(readWorld(flow.ghDir)), "open");
+});
+
+// confirm-merged also refuses an intent for another PR, result or receipt;
+// before it can, the claim refuses an attempt GitHub doesn't confirm.
+test("an own FF merge whose saved attempt names another PR starts nothing after Land", () => {
+  const cleared = savedState(clearedWorld);
+  restoreClearedReceipt(flow, clearedWorld, {
+    mergeAttempt: { ...cleared.mergeAttempt, pr: cleared.pr + 1 },
+  });
+  const traceStart = opsTrace(flow).length;
+  const starts = sessions(flow);
+  assert.equal(runStage(flow, "merge").end, "unclaimed");
+  assert.equal(sessions(flow), starts);
+  const ops = opsSince(flow, traceStart);
+  for (const name of ["confirm-merged", "verify", "merge", "finish"]) {
+    assert.equal(ops.includes(name), false, name);
+  }
+  assert.notEqual(savedState(readWorld(flow.ghDir)).stage, "done");
+});
+
+/**
+ * Runs `check` with the operator's checking policy moved after Land.
+ * @param {() => void} check
+ */
+function withMovedPolicy(check) {
+  const original = fs.readFileSync(flow.config, "utf8");
+  fs.writeFileSync(
+    flow.config,
+    JSON.stringify({
+      ...JSON.parse(original),
+      commandTimeoutMinutes: MOVED_TIMEOUT_MINUTES,
+    }),
+  );
+  try {
+    check();
+  } finally {
+    fs.writeFileSync(flow.config, original);
+  }
+}
+
+test("a policy move after Land stops read-only: no result Security session, suite or completion, and merged truth stays", () => {
+  const cleared = savedState(clearedWorld);
+  restoreClearedReceipt(flow, clearedWorld);
+  withMovedPolicy(() => {
+    const traceStart = opsTrace(flow).length;
+    const starts = sessions(flow);
+    assert.equal(runStage(flow, "merge").end, "stop");
+    assert.equal(sessions(flow), starts);
+    const stopped = savedState(readWorld(flow.ghDir));
+    assert.deepEqual(landedEvidence(stopped), landedEvidence(cleared));
+    assert.equal(stopped.resultSecurity ?? null, null);
+    const ops = opsSince(flow, traceStart);
+    for (const name of ["verify", "prepare-review", "merge", "finish"]) {
+      assert.equal(ops.includes(name), false, name);
+    }
+    assert.equal(issueStateIn(readWorld(flow.ghDir)), "open");
+  });
+});
+
+test("a result Security observation saved before #185 for the moved policy still completes read-only", () => {
+  const cleared = savedState(clearedWorld);
+  withMovedPolicy(() => {
+    const { policy } = policyRevision(loadConfig(flow.config));
+    assert.notEqual(policy, cleared.merged.policy);
+    const resultSecurity = {
+      revision: { ...cleared.merged, policy },
+      target: cleared.security.target,
+      commentId: cleared.security.commentId,
+      finding: null,
+    };
+    restoreClearedReceipt(flow, clearedWorld, { resultSecurity });
+    const traceStart = opsTrace(flow).length;
+    const starts = sessions(flow);
+    assert.equal(runStage(flow, "merge").end, "next");
+    assert.equal(sessions(flow), starts);
+    assert.deepEqual(
+      postLandFacts(replayFacts(flow, traceStart)),
+      readOnlyAfterLand([{ confirmed: true, headSha: cleared.merged.code }]),
+    );
+    const done = savedState(readWorld(flow.ghDir));
+    assert.equal(done.stage, "done");
+    assert.deepEqual(done.resultSecurity, resultSecurity);
+    assert.equal(issueStateIn(readWorld(flow.ghDir)), "closed");
+  });
+});
+
+test("hardening after Land is refused before preparation, a suite, a session or a push, keeping merged provenance", () => {
+  const state = savedState(interruptedWorld);
+  assert.notEqual(state.codeMerged, null);
+  replaceState(flow, { ...state, stage: "review" });
+  withWorld(flow.ghDir, (world) => {
+    const issue = world.issues.find(({ number }) => number === ISSUE);
+    assert.ok(issue !== undefined);
+    issue.state = "open";
+  });
+  const head = refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`);
+  const traceStart = opsTrace(flow).length;
+  const starts = sessions(flow);
+  assert.equal(runStage(flow, "review").end, "stop");
+  assert.equal(sessions(flow), starts);
+  assert.deepEqual(
+    opsSince(flow, traceStart).filter((op) => POSTMERGE.includes(op)),
+    [],
+  );
+  assert.equal(refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`), head);
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.deepEqual(stopped.codeMerged, state.codeMerged);
+  assert.deepEqual(stopped.hardened, state.hardened);
+  assert.equal(stopped.verifiedSha, state.verifiedSha);
+  assert.ok(
+    readWorld(flow.ghDir).comments.some(
+      ({ issue, body }) => issue === ISSUE && POSTMERGE_REFUSED.test(body),
+    ),
   );
 });

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  CHECKED_OUT_EXECUTABLE_MODE,
   COMMIT_ENV,
   close,
   inRunDir,
@@ -114,7 +115,7 @@ test("independent bundle and patch recovery restores the exact local commit, ren
   assert.equal(fs.readlinkSync(path.join(fresh, "link.md")), "renamed.md");
   assert.equal(
     fs.statSync(path.join(fresh, "run.sh")).mode,
-    REGULAR_EXECUTABLE_MODE,
+    CHECKED_OUT_EXECUTABLE_MODE,
   );
   assert.equal(fs.existsSync(job.root), false);
 });
