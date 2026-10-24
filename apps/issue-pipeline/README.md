@@ -74,6 +74,12 @@ installation/activation or production deployment is introduced. Merging source
 does not install anything; a future cutover remains operator-owned and requires
 separate runtime work and review.
 
+## Standalone Safe Refactor task
+
+`safe-refactor.mjs` provides an explicit non-mutating codebase `check` and a separately assigned Developer task with tool-mediated writes. Its model session has only `safe_refactor` and `safe_refactor_finish`: no editor, shell, commit tool or arbitrary transform. The initial JavaScript/TypeScript catalog uses the TypeScript language service for conservative local primitive renames and pure return-expression extraction. The caller must explicitly select its limited behavior contract.
+
+The separate `biome.safe-refactor.jsonc` supplies file/function-length and cognitive-complexity findings without changing the default profile. Findings need design rationales and dispositions, not score-only repairs. Reports and write-ahead checkpoints grant no Hardening, Security or Land authority. Existing jobs and the orchestrator do not invoke the task. Nothing is installed or activated by merging source. See [Safe Refactor](../../docs/reference/safe-refactor.md) for assignment, commands, preservation limits and uncertain-write recovery.
+
 ## Stages and model roles
 
 ```text

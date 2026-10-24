@@ -115,7 +115,7 @@ function seedOrigin(tmp) {
 function installBuild(root, agents) {
   const out = buildOnce();
   for (const file of fs.readdirSync(out)) {
-    fs.copyFileSync(path.join(out, file), path.join(root, file));
+    fs.cpSync(path.join(out, file), path.join(root, file), { recursive: true });
   }
   const prompts = path.join(root, "prompts");
   fs.mkdirSync(prompts);

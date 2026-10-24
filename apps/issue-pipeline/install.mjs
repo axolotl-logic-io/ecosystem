@@ -31,6 +31,8 @@ const GIT_SUFFIX = /\.git$/u;
 const DATE_PUNCTUATION = /[-:]/gu;
 // The build's files in dist/, each installed under its own name in ROOT.
 const BUILT = [
+  "safe-refactor.mjs",
+  "safe-refactor-tool.mjs",
   "ops.mjs",
   "shell-supervisor.mjs",
   "job.mjs",
@@ -98,7 +100,16 @@ function mdIn(base, dir) {
 
 /** @returns {Source[]} */
 function sources() {
+  const backend = fs
+    .globSync("dist/vendor/typescript-*/**/*", { cwd: SRC })
+    .filter((file) => fs.statSync(path.join(SRC, file)).isFile())
+    .sort();
   return [
+    ...backend.map((from) => ({
+      from,
+      to: path.join(ROOT, path.relative("dist", from)),
+      fill: false,
+    })),
     ...BUILT.map((f) => ({
       from: `dist/${f}`,
       to: path.join(ROOT, f),
@@ -277,7 +288,12 @@ function main() {
     .replace(GIT_SUFFIX, "");
   const files = sources().map(read);
   for (const f of files) {
-    if (f.text?.includes("{{")) {
+    // Vendored compiler declarations contain literal template braces, not
+    // agent-definition placeholders. They are copied without interpolation.
+    if (
+      f.text?.includes("{{") &&
+      !f.from.startsWith("dist/vendor/typescript-")
+    ) {
       fail(`${f.from} has a placeholder this script doesn't know`);
     }
   }
