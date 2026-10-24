@@ -15,13 +15,18 @@ const PROMPT_PAGES = [
   { stage: "author", phase: null, page: "author.md" },
   { stage: "implement", phase: null, page: "developer.md" },
   { stage: "review", phase: "hardening", page: "hardening.md" },
-  { stage: "merge", phase: "integration", page: "integration.md" },
   { stage: "merge", phase: "security-review", page: "security.md" },
 ];
 // The pages that differ when Hippy, the Developer, hardens
 // (`--hardening-buddy hippy`); every other session's page is as above.
 const HIPPY_PROMPT_PAGES = [
   { stage: "review", phase: "hardening", page: "developer-hardening.md" },
+];
+// The page of Hippy's Sync resolver, in a Sync task job at either stage
+// Sync runs at (#186).
+const SYNC_PROMPT_PAGES = [
+  { stage: "review", phase: "sync", page: "sync.md" },
+  { stage: "merge", phase: "sync", page: "sync.md" },
 ];
 
 // The text the test page `page` holds: more than one line, as a prompt page
@@ -53,7 +58,11 @@ function pinnedOf(page, root = "/root") {
 function writePrompts(root) {
   const dir = promptsDirOf(root);
   fs.mkdirSync(dir, { recursive: true });
-  for (const { page } of PROMPT_PAGES) {
+  for (const { page } of [
+    ...PROMPT_PAGES,
+    ...HIPPY_PROMPT_PAGES,
+    ...SYNC_PROMPT_PAGES,
+  ]) {
     fs.writeFileSync(path.join(dir, page), pageTextOf(page));
   }
   return dir;
@@ -65,5 +74,6 @@ export {
   pageTextOf,
   pinnedOf,
   promptsDirOf,
+  SYNC_PROMPT_PAGES,
   writePrompts,
 };

@@ -75,13 +75,19 @@ async function checksBeforeMerge(
           state,
         },
       };
-    case "fail":
+    case "fail": {
+      const detail = `The required CI checks ${ci.failing.join(", ")} failed on ${code}.`;
+      const returned: IssueState = {
+        ...state,
+        mergeReturn: { reason: "ci", detail, codeMerged: false },
+      };
       return {
         end: toReview(
-          state,
+          returned,
           `the required CI checks ${ci.failing.join(", ")} failed on ${short(code)}; the Developer fixes them as a new revision`,
         ),
       };
+    }
     default:
       return { end: failed(state, "ci-status: unexpected status") };
   }

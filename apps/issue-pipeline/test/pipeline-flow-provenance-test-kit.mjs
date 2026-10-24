@@ -62,8 +62,7 @@ function scriptFlow(flow, gherkin) {
     implementor: [implementorTurn("hello, world", "Greet with hello, world")],
     reviewer: [
       implementorTurn("Hello, world", "Hardening capitalizes the greeting"),
-      implementorTurn("Hello, world!", "Integration fixes the failed CI check"),
-      hardeningTurn(),
+      implementorTurn("Hello, world!", "Hardening fixes the failed CI check"),
       securityTurn(),
     ],
   });

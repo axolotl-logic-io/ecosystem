@@ -10,6 +10,8 @@ import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
+import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { savedState } from "./pipeline-flow-script-test-kit.mjs";
 import { ISSUE, SLUG } from "./pipeline-flow-test-kit.mjs";
 
 // Bound each stage, not a whole multi-stage fixture. Verification of #95
@@ -150,25 +152,31 @@ function runStage(flow, stage, issue = ISSUE, extra = []) {
 
 /**
  * Runs the task a stage job's line requested (#186), as the caller relays
- * it: the task job at the same stage, with the request's exact binding.
+ * it: the task job at the same stage, with the request's exact binding, in
+ * `lane` (the stage jobs' own lane, so their lease never holds it).
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
  * @param {string} stage the saved stage the request was made at
  * @param {{ task: string, binding: unknown }} request
- * @param {number} [issue]
+ * @param {{ issue?: number, lane?: string }} [options]
  * @returns {any} the task job's line
  */
-function runTask(flow, stage, request, issue = ISSUE) {
-  return runStage(flow, stage, issue, [
+function runTask(flow, stage, request, { issue = ISSUE, lane } = {}) {
+  const extra = [
     "--task",
     request.task.toLowerCase(),
     "--binding",
     JSON.stringify(request.binding),
-  ]);
+  ];
+  if (lane !== undefined) {
+    extra.push("--lane", lane);
+  }
+  return runStage(flow, stage, issue, extra);
 }
 
 /**
- * Runs `stage`, relaying each task its job requests and rerunning the stage
- * the issue is then saved at, until a job ends without a request. Returns
+ * Runs `stage`, relaying each task its job requests and rerunning `stage`
+ * while the issue is still saved there, until a job ends without a request
+ * or a task moves the issue on (a passed Sync goes back to review). Returns
  * every line, in order: stage jobs' and task jobs'.
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
  * @param {string} stage
@@ -182,16 +190,17 @@ function runThroughTasks(
 ) {
   /** @type {any[]} */
   const lines = [];
-  const at = stage;
   for (let turn = 0; turn < limit; turn += 1) {
-    const line = runStage(flow, at, issue, extra);
+    /** @type {any} */
+    const line = runStage(flow, stage, issue, extra);
     lines.push(line);
     if (line.end !== "wait" || line.request === undefined) {
       return lines;
     }
-    const task = runTask(flow, at, line.request, issue);
+    const task = runTask(flow, stage, line.request, { issue });
     lines.push(task);
-    if (task.end !== "next" && task.end !== "wait") {
+    const saved = savedState(readWorld(flow.ghDir), issue).stage;
+    if (!["next", "wait"].includes(task.end) || saved !== stage) {
       return lines;
     }
   }

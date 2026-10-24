@@ -334,7 +334,10 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   if (first !== null) {
     return first;
   }
+  // Work merge sent back, such as a failed check, always hardens again.
+  const returned = ctx.state.mergeReturn !== null;
   if (
+    !returned &&
     hardeningPassed(ready) &&
     ready.revision?.code === before.revision.code &&
     ready.target.commit === before.baseSha
@@ -346,6 +349,12 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
     return hardened.end;
   }
   const { state, revision } = hardened.value;
+  if (returned && revision.code === before.revision.code) {
+    return errorStop(
+      ctx.state,
+      `merge sent this revision back (${ctx.state.mergeReturn?.reason}), and hardening changed nothing; a person must look at the failure`,
+    );
+  }
   const unrecorded = await recordHardening(ctx, state, {
     code: String(revision.code),
     target: before.baseSha,

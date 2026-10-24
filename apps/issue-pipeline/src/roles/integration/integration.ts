@@ -132,7 +132,19 @@ async function routed(
   switch (reply.route) {
     case "security":
       return proved(ctx.state, request, task);
-    case "developer":
+    case "developer": {
+      // The Developer's Hardening fixes what Integration found, as a new
+      // revision: the failure goes with it.
+      const returned: IssueState = {
+        ...ctx.state,
+        mergeReturn: {
+          reason: "retest",
+          detail: reply.reason,
+          codeMerged: false,
+        },
+      };
+      return toReview(returned, `Integration: ${reply.reason}`, task);
+    }
     case "hardening-needed":
       return toReview(ctx.state, `Integration: ${reply.reason}`, task);
     case "sync-needed":
