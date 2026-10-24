@@ -31,6 +31,7 @@ import {
   scriptPi,
   setUpFlow,
 } from "./pipeline-flow-test-kit.mjs";
+import { faultNextPush } from "./sync-task-test-kit.mjs";
 
 const BRANCH = `refs/heads/agent/issue-${ISSUE}`;
 const TARGET = `refs/heads/${BASE}`;
@@ -349,4 +350,40 @@ test("a Sync that stops on conflicts goes to Hippy's resolver in a fresh Develop
   assert.equal(state.stage, "review");
   assert.equal(state.counts.conflictFixes, 1);
   assert.equal(state.counts.syncs, 1);
+});
+
+test("a Sync whose push is refused leaves its run unsettled, its job pushes nothing at exit, and the next Sync job settles it by reading", () => {
+  const flow = setUpFlow();
+  flows.push(flow);
+  observeOps(flow);
+  openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
+  scriptPi(flow, {
+    implementor: [implementorTurn("Hello, world!", "Greet visitors")],
+  });
+  assert.equal(runStage(flow, "implement").end, "next");
+  const head = refIn(flow.origin, BRANCH);
+  advanceTarget(flow, { "NEWS.md": "Elsewhere.\n" });
+  const asked = runStage(flow, "review");
+  const ops = opsTrace(flow).length;
+  faultNextPush(flow, "refuse");
+  const refused = runTask(flow, "review", asked.request);
+  assert.equal(refused.end, "stop");
+  assert.equal(refused.task.verdict, "unknown");
+  // The rebased commits stay local: no exit push carries them out.
+  assert.equal(refIn(flow.origin, BRANCH), head);
+  assert.deepEqual(
+    opsSince(flow, ops).filter((op) => op === "exit-push" || op === "push"),
+    [],
+  );
+  replaceState(flow, {
+    ...savedState(readWorld(flow.ghDir)),
+    stage: "review",
+    stoppedStage: null,
+    stopCode: null,
+  });
+  const settled = runTask(flow, "review", asked.request);
+  assert.equal(settled.task.verdict, "failed");
+  assert.equal(refIn(flow.origin, BRANCH), head);
+  const sync = records(flow).filter(({ body }) => body.includes('"Sync"'));
+  assert.equal(sync.length, 2, "one attempt, settled once, never repeated");
 });
