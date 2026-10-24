@@ -1,6 +1,5 @@
 // The model child's explicit CLIProxy provisioning and generated native Pi
 // settings. This changes neither the parent job's HOME nor its credentials.
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,8 +14,8 @@ import {
   RUNTIME_SCHEMA,
 } from "./runtime-policy.ts";
 import { profileEndpoint } from "./runtime-provider.ts";
+import { probeVersion } from "./runtime-version.ts";
 
-const VERSION_TIMEOUT_MS = 10_000;
 const CHANGED_PROFILE =
   "runtime: generated settings or provisioned provider profile changed before the first prompt";
 const PROVIDER_PACKAGE = z.object({
@@ -186,17 +185,9 @@ function verifiedRuntime(input: ProfileInput): PreparedRuntime {
     profile.home,
     policy,
   );
-  const version = spawnSync("pi", ["--version", "--offline"], {
-    cwd: input.cwd,
-    env,
-    encoding: "utf8",
-    timeout: VERSION_TIMEOUT_MS,
-    stdio: "pipe",
-  });
-  if (version.status !== 0 || version.stdout.trim() !== NATIVE_VERSION) {
-    throw new Error(
-      "runtime: the native pi executable must report version 1.2.0",
-    );
+  const refusal = probeVersion(input.cwd, env, runtime.credentialEnv);
+  if (refusal !== null) {
+    throw new Error(refusal);
   }
   return {
     env,
@@ -230,8 +221,9 @@ function verifyFiles(
   }
 }
 
-// Failure messages never include parsed provider data, credentials, native
-// stderr or command output. Missing provisioning cannot fall back to HOME.
+// Failure messages never include parsed provider data, credentials or command
+// output; the only native stderr is the version probe's redacted, bounded
+// excerpt. Missing provisioning cannot fall back to HOME.
 function runtimeProfile(
   input: ProfileInput,
 ): PreparedRuntime | { error: string } {
