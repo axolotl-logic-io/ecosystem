@@ -1,17 +1,26 @@
 // The requests a running stage job answers on its control socket, and the
 // clients that send them: a steer for one of its live sessions
 // (`job.mjs --steer`), and a writer session's push request after
-// `pipeline_commit` committed. One JSON line each way per connection.
+// `pipeline_commit` committed. One JSON line each way per connection. Each
+// request names the job's invocation binding (job/invocation.ts), which the
+// job checks before acting on it (#168).
 
 import net from "node:net";
 import { z } from "zod";
+import type { InvocationBinding } from "../coordination.ts";
+import { INVOCATION_BINDING } from "../coordination-records.ts";
 
 const STEER_REQUEST = z.object({
   type: z.literal("steer"),
   key: z.string(),
   message: z.string(),
+  execution: INVOCATION_BINDING,
 });
-const PUSH_REQUEST = z.object({ type: z.literal("push"), key: z.string() });
+const PUSH_REQUEST = z.object({
+  type: z.literal("push"),
+  key: z.string(),
+  execution: INVOCATION_BINDING,
+});
 const CONTROL_REQUEST = z.discriminatedUnion("type", [
   STEER_REQUEST,
   PUSH_REQUEST,
@@ -63,14 +72,15 @@ function exchange<T>(
   });
 }
 
-// Sends `message` to session `key` of the job listening on `socket`, and
-// resolves to null once pi accepted it, or else to the reason it didn't.
+// Sends `message` to session `key` of the job bound to `execution` listening
+// on `socket`, and resolves to null once pi accepted it, or else to the
+// reason it didn't.
 async function steerJob(
   socket: string,
-  key: string,
-  message: string,
+  execution: InvocationBinding,
+  steer: { key: string; message: string },
 ): Promise<string | null> {
-  const request: ControlRequest = { type: "steer", key, message };
+  const request: ControlRequest = { type: "steer", ...steer, execution };
   const answer = await exchange(socket, request, STEER_REPLY);
   if ("error" in answer) {
     return answer.error;
@@ -81,10 +91,16 @@ async function steerJob(
   return answer.reply.error ?? "pi rejected the steer";
 }
 
-// Asks the job listening on `socket` to push what session `key` committed.
-// Never rejects: a job that can't be reached pushed nothing, and says why.
-async function requestPush(socket: string, key: string): Promise<PushReply> {
-  const answer = await exchange(socket, { type: "push", key }, PUSH_REPLY);
+// Asks the job bound to `execution` listening on `socket` to push what
+// session `key` committed. Never rejects: a job that can't be reached pushed
+// nothing, and says why.
+async function requestPush(
+  socket: string,
+  key: string,
+  execution: InvocationBinding,
+): Promise<PushReply> {
+  const request: ControlRequest = { type: "push", key, execution };
+  const answer = await exchange(socket, request, PUSH_REPLY);
   if ("error" in answer) {
     return { pushed: "none", pushError: answer.error };
   }

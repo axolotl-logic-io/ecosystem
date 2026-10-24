@@ -35,6 +35,8 @@ interface PushJob {
   checkout: string;
   branch: string;
   id: string;
+  // Throws unless the job still owns the issue, on a fresh read (#168).
+  owner: () => void;
 }
 
 function isRepo(dir: string): boolean {
@@ -156,8 +158,10 @@ function pushServerOf(
       return { pushed: "none", pushError: `${key} has no bound write scope` };
     }
     // No request fields or session environment supply this authority. Failure
-    // to confirm saved state refuses the push, rather than guessing.
+    // to confirm ownership or saved state refuses the push, rather than
+    // guessing; the handler pushes synchronously right after.
     try {
+      job.owner();
       readWriteAuthority(jobCfg, issue);
     } catch (error: unknown) {
       return { pushed: "none", pushError: messageOf(error) };

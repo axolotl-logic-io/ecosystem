@@ -9,7 +9,9 @@ import { FAKE_OPS } from "../fake-rpc-pi.mjs";
 import { ISSUE } from "../job-fixtures.mjs";
 import { COORDINATION_GH } from "./fake-job-coordination.mjs";
 
+const SUCCESSOR = new URL("./fake-job-successor.mjs", import.meta.url).pathname;
 const JOB_OPS = `import fs from "node:fs";
+const SUCCESSOR = ${JSON.stringify(SUCCESSOR)};
 import { spawnSync } from "node:child_process";
 const dir = import.meta.dirname;
 const input = fs.readFileSync(0, "utf8");
@@ -26,6 +28,9 @@ if (json) {
     else if (["save-state", "release", "stop", "ask"].includes(request.op)) state = request.state;
     if (state) fs.writeFileSync(dir + "/authority-state.json", JSON.stringify(state));
     if (request.op === "start-pr") fs.writeFileSync(dir + "/authority-pr.json", JSON.stringify({ number: reply.pr, head: reply.headSha }));
+    if (request.op === "claim" && reply.successor) {
+      spawnSync(process.execPath, [SUCCESSOR], { input: JSON.stringify(request), stdio: ["pipe", "ignore", "inherit"], env: process.env });
+    }
   }
 }
 process.stdout.write(result.stdout);

@@ -89,7 +89,11 @@ import { openControl, socketPathOf } from "./job/control.ts";
 import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
 import type { Invocation } from "./job/invocation.ts";
-import { ownedInvocation, settleInvocation } from "./job/invocation.ts";
+import {
+  ownedInvocation,
+  ownerCheckOf,
+  settleInvocation,
+} from "./job/invocation.ts";
 import { opsFrameOf, opsRunnerOf } from "./job/ops-request.ts";
 import type { StagePrompts } from "./job/prompts.ts";
 import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
@@ -97,7 +101,7 @@ import { runRoleStage } from "./job/role-run.ts";
 import { boundaryOf } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
 import type { JobOutcome, StopSignal } from "./job/status.ts";
-import { openStatus, socketOf } from "./job/status.ts";
+import { openStatus, readStatus } from "./job/status.ts";
 import { requestRefusalOf } from "./job/task-request.ts";
 import type { ExitingJob, RunEnd } from "./job/teardown.ts";
 import { jobKeyOf, tearDown } from "./job/teardown.ts";
@@ -139,7 +143,16 @@ async function runStage(
   const identity = { id, startedAt: new Date().toISOString() };
   const lane = args.lane ?? null;
   const socket = socketPathOf(runDir);
-  const job = { issue, stage, lane, socket, prompts: prompts.pinned };
+  const { binding: execution } = invocation;
+  const owner = ownerCheckOf(invocation);
+  const job = {
+    issue,
+    stage,
+    lane,
+    socket,
+    prompts: prompts.pinned,
+    execution,
+  };
   const info = { ...job, ...identity };
   if (args.task !== null) {
     const { task: name, binding } = args.task;
@@ -148,9 +161,15 @@ async function runStage(
   const status = openStatus(runDir, info, cfg.policyBinding);
   const control = await openControl(
     runDir,
-    pushServerOf(cfg, { issue, stage, checkout: repo, branch, id }, status),
+    pushServerOf(
+      cfg,
+      { issue, stage, checkout: repo, branch, id, owner },
+      status,
+    ),
+    execution,
   );
-  const where = { cwd: root, repo, from: process.env, job: identity };
+  const from = process.env;
+  const where = { cwd: root, repo, from, job: identity, execution, owner };
   const hooks = hooksOf(cfg, args, { status, control }, where);
   const frame = opsFrameOf(
     cfg,
@@ -235,11 +254,13 @@ function outcomeOf(end: RunEnd): JobOutcome {
 }
 
 async function steer(args: SteerArgs, cfg: Config): Promise<void> {
-  const socket = socketOf(paths.runDir(cfg, args.issue));
-  if (socket === null) {
+  const running = readStatus(paths.runDir(cfg, args.issue));
+  if (running?.execution === undefined) {
     throw new Error(`no running job for #${args.issue}`);
   }
-  const error = await steerJob(socket, args.steer, args.message);
+  const { socket, execution } = running;
+  const steering = { key: args.steer, message: args.message };
+  const error = await steerJob(socket, execution, steering);
   if (error !== null) {
     throw new Error(error);
   }

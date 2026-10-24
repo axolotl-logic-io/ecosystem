@@ -16,6 +16,7 @@ import process from "node:process";
 import { z } from "zod";
 import { credentialConfig } from "../credentials-test-kit.mjs";
 import { isolatedRoot } from "../isolated-root-test-kit.mjs";
+import { TEST_BINDING } from "../job-fixtures.mjs";
 import { writePrompts } from "../prompt-test-kit.mjs";
 import { provisionFixture } from "../runtime-fixtures.mjs";
 import { saveAuthority } from "../write-authority-test-kit.mjs";
@@ -167,10 +168,11 @@ async function openMergeJob(pinnedAs = STAGE, { merged = false, task } = {}) {
     socket: "",
     prompts: prompts.pinned,
   });
-  const control = await openControl(runDir, () => ({
-    pushed: "none",
-    pushError: null,
-  }));
+  const control = await openControl(
+    runDir,
+    () => ({ pushed: "none", pushError: null }),
+    TEST_BINDING,
+  );
   /** @type {RunArgs["task"]} */
   let request = null;
   if (task !== undefined) {
@@ -185,7 +187,16 @@ async function openMergeJob(pinnedAs = STAGE, { merged = false, task } = {}) {
     branch: "agent/issue-7",
     task: request,
   };
-  const where = { cwd, repo: cwd, from: process.env, job: identity };
+  // These sessions test write authority; invocation ownership is
+  // job/job-writer-fence.test.mjs's.
+  const where = {
+    cwd,
+    repo: cwd,
+    from: process.env,
+    job: identity,
+    execution: TEST_BINDING,
+    owner: () => undefined,
+  };
   const hooks = hooksOf(cfg, args, { status, control }, where);
   /** @type {UsageEntry[]} */
   const appended = [];

@@ -74,6 +74,12 @@ function assertInvocation(invocation: Invocation): void {
   issueExecution(invocation.cfg, invocation.binding.issue).assertOwner();
 }
 
+// What throws unless `invocation` still owns the issue on a fresh read:
+// checked before each session and each push (#168).
+function ownerCheckOf(invocation: Invocation): () => void {
+  return (): void => assertInvocation(invocation);
+}
+
 // Whether the run that ended with `end` resolved: it finished with a line
 // and no claim error, or a signal stopped it after it saved its last state
 // with no lease (role-run.ts's stoppedAt throws when that save fails). A
@@ -139,4 +145,4 @@ function settleInvocation(invocation: Invocation, end: RunEnd | null): void {
 }
 
 export type { Invocation };
-export { assertInvocation, ownedInvocation, settleInvocation };
+export { ownedInvocation, ownerCheckOf, settleInvocation };

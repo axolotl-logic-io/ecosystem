@@ -238,6 +238,16 @@ function implementReplies(fields = {}) {
   };
 }
 
+// An invocation binding for tests that drive the control socket in process.
+const TEST_BINDING = {
+  instance: "00000000-0000-4000-8000-000000000007",
+  lane: "L",
+  issue: ISSUE_NUMBER,
+  branch: "agent/issue-7",
+  repo: "o/r",
+  base: "main",
+};
+
 export {
   AFTER_READER_STAGE,
   ASKING,
@@ -258,6 +268,7 @@ export {
   ROUTINE_OPS,
   repliesAt,
   stateAt,
+  TEST_BINDING,
   USAGE,
   USAGE_SPENT,
   USAGE_TOTAL,

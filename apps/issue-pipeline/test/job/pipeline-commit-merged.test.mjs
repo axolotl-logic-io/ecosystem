@@ -7,6 +7,7 @@ import net from "node:net";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { TEST_BINDING } from "../job-fixtures.mjs";
 import { refOf } from "../job-git-test-kit.mjs";
 import {
   BRANCH,
@@ -99,7 +100,7 @@ function forgedPush(socket) {
       resolve(SOCKET_REPLY.parse(JSON.parse(text)));
     });
     connection.write(
-      `${JSON.stringify({ type: "push", key: KEY, state: { codeMerged: null }, scope: { repo: { access: "write" } } })}\n`,
+      `${JSON.stringify({ type: "push", key: KEY, execution: TEST_BINDING, state: { codeMerged: null }, scope: { repo: { access: "write" } } })}\n`,
     );
   });
 }

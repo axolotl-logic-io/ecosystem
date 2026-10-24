@@ -15,6 +15,8 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import type { InvocationBinding } from "../coordination.ts";
+import { sameBinding } from "../coordination-records.ts";
 import { endGroup } from "../process-group.ts";
 import type { PushReply, SteerReply } from "./control-protocol.ts";
 import { CONTROL_REQUEST } from "./control-protocol.ts";
@@ -109,13 +111,28 @@ async function steerReply(
   return { ok: answer.success, error: answer.error };
 }
 
-// What the control's requests reach: the live sessions and the push.
+// What the control's requests reach: the live sessions and the push, for
+// the job's invocation binding.
 interface Served {
   launches: ReadonlyMap<string, LiveLaunch>;
   onPush: OnPush;
+  binding: InvocationBinding;
 }
 
-// The answer to one request line: a steer's or a push's.
+const PUSH_TYPE = z.looseObject({ type: z.literal("push") });
+const NOT_BOUND = "the request doesn't name this job's invocation binding";
+
+// The answer to a request that fails to parse or names another binding: a
+// push's refusal for a push, a steer's otherwise.
+function refusal(request: unknown, error: string): SteerReply | PushReply {
+  if (PUSH_TYPE.safeParse(request).success) {
+    return { pushed: "none", pushError: error };
+  }
+  return { ok: false, error };
+}
+
+// The answer to one request line: a steer's or a push's, only for a request
+// that names the job's own binding.
 async function replyTo(
   text: string,
   served: Served,
@@ -129,9 +146,12 @@ async function replyTo(
   }
   const parsed = CONTROL_REQUEST.safeParse(request);
   if (!parsed.success) {
-    return { ok: false, error: z.prettifyError(parsed.error) };
+    return refusal(request, z.prettifyError(parsed.error));
   }
   const { data } = parsed;
+  if (!sameBinding(data.execution, served.binding)) {
+    return refusal(request, NOT_BOUND);
+  }
   switch (data.type) {
     case "steer":
       return await steerReply(launches, data.key, data.message);
@@ -224,10 +244,15 @@ function liveSetOf(): LiveSet {
 }
 
 // Opens the job's control for its run folder: listens on its socket, after
-// removing a stale one, answering push requests through `onPush`, and stops
+// removing a stale one, answering the requests that name its `binding`, push
+// requests through `onPush`, and stops
 // the live sessions and ops children on SIGTERM or SIGINT. A second signal
 // while stopping changes nothing.
-async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
+async function openControl(
+  runDir: string,
+  onPush: OnPush,
+  binding: InvocationBinding,
+): Promise<Control> {
   const socket = socketPathOf(runDir);
   const live = liveSetOf();
   let signal: StopSignal | null = null;
@@ -242,7 +267,7 @@ async function openControl(runDir: string, onPush: OnPush): Promise<Control> {
     process.on(name, onSignal);
   }
   const server = net.createServer((connection: net.Socket): void =>
-    serve(connection, { launches: live.sessions, onPush }),
+    serve(connection, { launches: live.sessions, onPush, binding }),
   );
   fs.mkdirSync(path.dirname(socket), { recursive: true });
   fs.rmSync(socket, { force: true });

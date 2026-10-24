@@ -217,7 +217,10 @@ async function commitAndPush(
   if (plan.dryRun || !committed) {
     return failed(unpushed);
   }
-  return succeeded({ code, ...(await requestPush(scope.socket, scope.key)) });
+  return succeeded({
+    code,
+    ...(await requestPush(scope.socket, scope.key, scope.execution)),
+  });
 }
 
 function succeeded(reply: CommitReply): ToolResult {
