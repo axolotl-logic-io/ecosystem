@@ -5,6 +5,7 @@
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { STAGES } from "../stages.ts";
+import { HARDENING_BUDDIES } from "./roles.ts";
 
 const STAGE_LIST = STAGES.join(", ");
 const NO_CONFIG = "--config must name a repo config file";
@@ -12,9 +13,12 @@ const NO_ISSUE = "--issue must be an issue number";
 const NO_STAGE = `--stage must be one of: ${STAGE_LIST}`;
 const NO_MESSAGE = "--steer needs a --message";
 const STEER_BOUNDARY = "--steer can't be combined with --print-boundary";
+const STEER_BUDDY = "--steer can't be combined with --hardening-buddy";
 const NO_QUEUE = "--merge-queue must list issue numbers, such as 3,5";
 const NO_JOB_ID = "--job-id must be a UUID";
 const NO_BRANCH = "--branch must name the issue's branch";
+const NO_BUDDY = `--hardening-buddy must be one of: ${HARDENING_BUDDIES.join(", ")}`;
+const BUDDY_STAGE = "--hardening-buddy applies only to --stage review";
 const MERGE_QUEUE = z
   .string()
   .transform((list: string): string[] => list.split(","))
@@ -35,37 +39,51 @@ const ISSUE = z.coerce
   .int(NO_ISSUE)
   .positive(NO_ISSUE);
 const STAGE = z.enum(STAGES, { error: NO_STAGE });
-const JOB_ARGS = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("run"),
-    config: CONFIG,
-    issue: ISSUE,
-    stage: STAGE,
-    branch: BRANCH,
-    // The claimant's name its lease records; the job's own without one.
-    lane: z.string().optional(),
-    // The merge order the orchestrator ranked (#234).
-    mergeQueue: MERGE_QUEUE.optional(),
-    // The job's id, as the orchestrator logs its start; a job started
-    // without one makes its own.
-    jobId: z.uuid({ error: NO_JOB_ID }).optional(),
-  }),
-  z.object({
-    kind: z.literal("steer"),
-    config: CONFIG,
-    issue: ISSUE,
-    steer: z.string().min(1),
-    message: z.string({ error: NO_MESSAGE }).min(1, NO_MESSAGE),
-    printBoundary: z.undefined({ error: STEER_BOUNDARY }).optional(),
-  }),
-  z.object({
-    kind: z.literal("boundary"),
-    config: CONFIG,
-    issue: ISSUE,
-    stage: STAGE,
-    branch: BRANCH,
-  }),
-]);
+// Who performs the review stage's Hardening (stageAgentOf in roles.ts). The
+// installed caller never passes it, so its jobs harden as "lawd", as before.
+const HARDENING = z.enum(HARDENING_BUDDIES, { error: NO_BUDDY }).optional();
+const JOB_ARGS = z
+  .discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("run"),
+      config: CONFIG,
+      issue: ISSUE,
+      stage: STAGE,
+      branch: BRANCH,
+      // The claimant's name its lease records; the job's own without one.
+      lane: z.string().optional(),
+      // The merge order the orchestrator ranked (#234).
+      mergeQueue: MERGE_QUEUE.optional(),
+      // The job's id, as the orchestrator logs its start; a job started
+      // without one makes its own.
+      jobId: z.uuid({ error: NO_JOB_ID }).optional(),
+      hardeningBuddy: HARDENING,
+    }),
+    z.object({
+      kind: z.literal("steer"),
+      config: CONFIG,
+      issue: ISSUE,
+      steer: z.string().min(1),
+      message: z.string({ error: NO_MESSAGE }).min(1, NO_MESSAGE),
+      printBoundary: z.undefined({ error: STEER_BOUNDARY }).optional(),
+      hardeningBuddy: z.undefined({ error: STEER_BUDDY }).optional(),
+    }),
+    z.object({
+      kind: z.literal("boundary"),
+      config: CONFIG,
+      issue: ISSUE,
+      stage: STAGE,
+      branch: BRANCH,
+      hardeningBuddy: HARDENING,
+    }),
+  ])
+  .refine(
+    (args) =>
+      args.kind === "steer" ||
+      (args.hardeningBuddy ?? "lawd") === "lawd" ||
+      args.stage === "review",
+    { error: BUDDY_STAGE },
+  );
 
 type JobArgs = z.infer<typeof JOB_ARGS>;
 type RunArgs = Extract<JobArgs, { kind: "run" }>;
@@ -87,6 +105,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       "print-boundary": { type: "boolean" },
       "merge-queue": { type: "string" },
       "job-id": { type: "string" },
+      "hardening-buddy": { type: "string" },
     },
     strict: true,
   });
@@ -94,6 +113,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     "print-boundary": printBoundary,
     "merge-queue": mergeQueue,
     "job-id": jobId,
+    "hardening-buddy": hardeningBuddy,
     ...named
   } = values;
   let kind = "run";
@@ -107,6 +127,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
     printBoundary,
     mergeQueue,
     jobId,
+    hardeningBuddy,
     kind,
   });
   if (!parsed.success) {

@@ -18,7 +18,11 @@ import path from "node:path";
 import { test } from "node:test";
 import "../isolated-root-test-kit.mjs";
 import { AUTHOR_SESSION, READER_STAGE, repliesAt } from "../job-fixtures.mjs";
-import { PROMPT_PAGES, pageTextOf } from "../prompt-test-kit.mjs";
+import {
+  HIPPY_PROMPT_PAGES,
+  PROMPT_PAGES,
+  pageTextOf,
+} from "../prompt-test-kit.mjs";
 import { sessionRecord } from "../usage-fixtures.mjs";
 import {
   flagValue,
@@ -76,24 +80,44 @@ function failureOf(at, r, pattern) {
 
 const FAILED = { status: 1, named: true, ran: 0 };
 
-test("the pipeline ships exactly the prompt pages, and every stage pins them as valid pages", () => {
+test("the pipeline ships exactly the prompt pages, and every stage pins them as valid pages, whoever hardens", () => {
   const shipped = fs.readdirSync(SHIPPED).sort();
-  const named = [...new Set(PROMPT_PAGES.map(({ page }) => page))].sort();
+  const listed = [...PROMPT_PAGES, ...HIPPY_PROMPT_PAGES];
+  const named = [...new Set(listed.map(({ page }) => page))].sort();
   assert.deepEqual(shipped, named);
-  for (const stage of STAGES) {
-    const { pinned } = pinPrompts(SHIPPED, stage);
-    const pages = PROMPT_PAGES.filter((entry) => entry.stage === stage);
-    assert.deepEqual(
-      pinned,
-      pages.map(({ page }) => ({
-        page,
-        path: path.join(SHIPPED, page),
-        sha256: sha256Of(fs.readFileSync(path.join(SHIPPED, page))),
-        head: null,
-      })),
-      stage,
-    );
+  for (const [hardening, differing] of [
+    ["lawd", []],
+    ["hippy", HIPPY_PROMPT_PAGES],
+  ]) {
+    for (const stage of STAGES) {
+      const { pinned } = pinPrompts(
+        SHIPPED,
+        stage,
+        /** @type {"lawd" | "hippy"} */ (hardening),
+      );
+      const pages = PROMPT_PAGES.filter((entry) => entry.stage === stage).map(
+        (entry) =>
+          differing.find(
+            ({ stage: at, phase }) => at === stage && phase === entry.phase,
+          ) ?? entry,
+      );
+      assert.deepEqual(
+        pinned,
+        pages.map(({ page }) => ({
+          page,
+          path: path.join(SHIPPED, page),
+          sha256: sha256Of(fs.readFileSync(path.join(SHIPPED, page))),
+          head: null,
+        })),
+        `${hardening} ${stage}`,
+      );
+    }
   }
+  assert.deepEqual(
+    pinPrompts(SHIPPED, "review").pinned,
+    pinPrompts(SHIPPED, "review", "lawd").pinned,
+    "a job given no Hardening buddy pins the installed Reviewer's page",
+  );
 });
 
 test("a job pins only its stage's pages, byte for byte, and keeps them though the folder changes", () => {

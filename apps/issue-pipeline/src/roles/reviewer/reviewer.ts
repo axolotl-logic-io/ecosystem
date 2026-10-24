@@ -234,6 +234,8 @@ async function harden(
 }
 
 // Hardening passed, not Security: comment on the PR or, with none, the issue.
+// The job's recorder posts it, through the landing account, whoever
+// hardened; the signature names the hardening's role.
 async function postHardened(
   ctx: RoleContext,
   state: IssueState,
@@ -243,11 +245,17 @@ async function postHardened(
   if (state.pr === null) {
     on = "issue";
   }
+  let role: "implementor" | "reviewer" = "reviewer";
+  let by = "The Reviewer";
+  if (ctx.hardening === "hippy") {
+    role = "implementor";
+    by = "Hippy, the Developer, in a fresh session,";
+  }
   await ctx.post({
     key: "hardening",
     on,
-    role: "reviewer",
-    body: `## Hardening passed\n\nThe Reviewer hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; any changed integration needs fresh hardening and Security; Security runs before merge.`,
+    role,
+    body: `## Hardening passed\n\n${by} hardened code \`${short(revision.code)}\`, and the pipeline's checks passed on it. The merge stage integrates exactly this revision; any changed integration needs fresh hardening and Security; Security runs before merge.`,
   });
 }
 

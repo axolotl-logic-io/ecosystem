@@ -127,6 +127,33 @@ const STAGE_AGENTS: Readonly<Record<Stage, StageAgent>> = {
   },
 };
 
+// Who performs the review stage's Hardening (two-buddies,
+// hardening-stays-independent): "lawd", the installed default, runs it as the
+// Reviewer agent above; "hippy" runs it as the Developer, Hippy, in a fresh
+// session of the Developer's own agent and model. Either way the session
+// commits only through the job and holds no token, its pushes and PR
+// readiness use the development account, and only the job's recorder, the
+// landing account, saves state or posts its result. Nothing selects "hippy"
+// unless the job is started with `--hardening-buddy hippy`.
+const HARDENING_BUDDIES = ["lawd", "hippy"] as const;
+
+type HardeningBuddy = (typeof HARDENING_BUDDIES)[number];
+
+const HIPPY_HARDENING: StageAgent = {
+  agent: "issue-pipeline-implementor",
+  role: "implementor",
+  sessions: [{ phase: "hardening", commits: true }],
+};
+
+// The agent a `stage` job's sessions run as, with Hardening performed by
+// `hardening`.
+function stageAgentOf(stage: Stage, hardening: HardeningBuddy): StageAgent {
+  if (stage === "review" && hardening === "hippy") {
+    return HIPPY_HARDENING;
+  }
+  return STAGE_AGENTS[stage];
+}
+
 const DEFAULT_ROLES: Roles = {
   reader: { tokenEnv: undefined, network: ["api.anthropic.com"] },
   writer: {
@@ -139,16 +166,18 @@ const DEFAULT_ROLES: Roles = {
   },
 };
 
-// Why session `spec` may not run in a `stage` job, or null when it may: the
-// stage runs only its one agent, and only the sessions it lists, each with
+// Why session `spec` may not run in a `stage` job whose Hardening
+// `hardening` performs, or null when it may: the stage runs only its one
+// agent, and only the sessions it lists, each with
 // its phase's write authority. A spec the stage has no session for, such as a
 // reviewer session that names no phase, is refused, so its prompt and
 // authority are never guessed.
 function sessionRefusalOf(
   stage: Stage,
   spec: { agent: string } & Pick<SessionSpec, "commits" | "phase">,
+  hardening: HardeningBuddy,
 ): string | null {
-  const allowed = STAGE_AGENTS[stage];
+  const allowed = stageAgentOf(stage, hardening);
   if (allowed.agent !== spec.agent) {
     return `the ${stage} stage can't run ${spec.agent}`;
   }
@@ -253,6 +282,7 @@ export type {
   Boundary,
   CheckoutAccess,
   EnvSource,
+  HardeningBuddy,
   JobRole,
   RoleSettings,
   Roles,
@@ -262,9 +292,11 @@ export {
   agentEnvOf,
   boundaryOf,
   commitScopeOf,
+  HARDENING_BUDDIES,
   rolesOf,
   STAGE_AGENTS,
   STAGE_CODE_ACCESS,
   STAGE_ROLES,
   sessionRefusalOf,
+  stageAgentOf,
 };

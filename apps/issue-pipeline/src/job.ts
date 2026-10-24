@@ -139,6 +139,7 @@ async function runStage(
     issue,
     stage,
     mergeQueue,
+    hardening: args.hardeningBuddy ?? "lawd",
     dirs,
     prompts,
     identity,
@@ -243,7 +244,11 @@ async function main(): Promise<void> {
     if (refusal !== null) {
       throw new Error(refusal);
     }
-    const prompts = pinPrompts(PROMPTS_DIR, args.stage);
+    const prompts = pinPrompts(
+      PROMPTS_DIR,
+      args.stage,
+      args.hardeningBuddy ?? "lawd",
+    );
     if (args.kind === "boundary") {
       const boundary = boundaryOf(cfg, args.issue, args.stage, process.env);
       process.stdout.write(`${JSON.stringify(boundary)}\n`);

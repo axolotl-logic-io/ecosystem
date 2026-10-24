@@ -13,6 +13,7 @@ import type { GherkinComment } from "../gherkin-comment.ts";
 import type { Issue } from "../issue-context.ts";
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
+import type { HardeningBuddy } from "./roles.ts";
 
 // The ops a role may ask for; each runs in its own `ops.mjs` process, the
 // only code that holds a token. The job alone runs claim, save-state, stop,
@@ -132,6 +133,10 @@ interface RoleContext {
   cfg: Config;
   issue: number;
   stage: Stage;
+  // Who performs the review stage's Hardening (stageAgentOf in roles.ts):
+  // "hippy" only when the job was started with `--hardening-buddy hippy`;
+  // "lawd", the installed one, when it is absent.
+  hardening?: HardeningBuddy;
   // The claimed state.
   state: IssueState;
   // The job's folder and its code checkout repo/.
