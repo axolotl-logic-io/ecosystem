@@ -10,6 +10,7 @@
 // the argv it returns.
 
 import { z } from "zod";
+import { INVOCATION_BINDING } from "../coordination-records.ts";
 import { matchAny } from "../globs.ts";
 import type { ReadArgs } from "./commit-options.ts";
 import { Refusal, readArgs, refuse } from "./commit-options.ts";
@@ -33,6 +34,8 @@ const PATH_SCOPE = z.object({
 const COMMIT_SCOPE = PATH_SCOPE.extend({
   socket: z.string(),
   key: z.string(),
+  // The job's invocation binding, which its push requests name (#168).
+  execution: INVOCATION_BINDING,
   jobStartedAt: z.string().optional(),
   root: z.string(),
 });

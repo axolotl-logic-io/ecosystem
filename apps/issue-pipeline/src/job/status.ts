@@ -19,6 +19,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import type { InvocationBinding } from "../coordination.ts";
+import { INVOCATION_BINDING } from "../coordination-records.ts";
 import type { ProjectPolicyBinding } from "../project-policy-schema.ts";
 import { POLICY_BINDING } from "../project-policy-schema.ts";
 import type {
@@ -75,6 +77,8 @@ const STATUS = z.object({
   // A task job's task and the binding it runs for; absent for a stage job
   // and in older files.
   task: z.looseObject({ task: z.string(), binding: z.unknown() }).optional(),
+  // The job's invocation binding (#168); absent in older files.
+  execution: INVOCATION_BINDING.optional(),
   lane: z.string().nullable(),
   startedAt: z.string(),
   socket: z.string(),
@@ -112,6 +116,8 @@ interface JobInfo {
   issue: number;
   stage: string;
   task?: { task: string; binding: unknown };
+  // The job's invocation binding, which `--steer` names (#168).
+  execution?: InvocationBinding;
   lane: string | null;
   startedAt: string;
   socket: string;

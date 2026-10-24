@@ -22,9 +22,10 @@ owner ─► open checkout ─► ops (each request carries the binding) ─► 
 - Every ops request carries the binding as `execution`. `src/ops/execution-envelope.ts` refuses a request whose issue, checkout, repo, base or branch differs, and checks ownership on a fresh read before its queued comments or the op run. The claim op then runs `src/ops/bound-claim.ts`, which saves the owner's receipt before any setup, retained lane-slot checkouts included.
 - A run that resolved (it finished without a claim error, or a signal stopped it after it saved its state) releases ownership after teardown. Any other exit holds ownership for explicit reconciliation. The full release predicate is #151.
 - Saved state without an execution receipt linked to a released predecessor never grants ownership (`additive-record-versions`). It needs explicit reconciliation.
+- Before each session starts, and on each push request, the job rereads ownership; a lost owner starts nothing and pushes nothing. Steer and push requests on the control socket must name the job's binding (`--steer` reads it from job.json), and an ops claim that names a job checkout without a binding is refused (#168).
 - A lost or failed coordination response may still have landed. The transport keeps the exact intent in the run folder's `coordination-uncertain.json`; only an exact read-back clears it. Preserve that file.
 
-Not here yet: per-write ownership checks and journals for every credentialed write (#132, #169), the release predicate (#151), and contention proof (#133). The integration-turn scope is still unused (#120). The unbound legacy claim is reached only by the ops CLI's own tests; the job never sends one.
+Not here yet: ownership checks and journals before every other credentialed write (#132, #169), the release predicate (#151), and contention proof (#133). The integration-turn scope is still unused (#120). The unbound legacy claim is reached only by the ops CLI's own tests; the job never sends one.
 
 ## Standalone Safe Refactor task
 

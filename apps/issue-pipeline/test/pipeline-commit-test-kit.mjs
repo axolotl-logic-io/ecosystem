@@ -12,6 +12,7 @@ import path from "node:path";
 import process from "node:process";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
+import { TEST_BINDING } from "./job-fixtures.mjs";
 import { seedOrigin } from "./job-git-test-kit.mjs";
 import { setEnv } from "./ops-run-test-kit.mjs";
 import { saveAuthority } from "./write-authority-test-kit.mjs";
@@ -132,7 +133,14 @@ async function openJob(
     startedAt: JOB_STARTED_AT,
     prompts: [],
   });
-  const control = await openControl(runDir, pushServerOf(cfg, job, status));
+  // These pushes test write authority; invocation ownership is
+  // job/job-binding-fence.test.mjs's.
+  const owned = { ...job, owner: () => undefined };
+  const control = await openControl(
+    runDir,
+    pushServerOf(cfg, owned, status),
+    TEST_BINDING,
+  );
   let boundScope = null;
   if (bindScope) {
     boundScope = commitScopeOf(stage, true);
@@ -146,8 +154,13 @@ async function openJob(
     phase: null,
     scope: boundScope,
   });
-  /** @type {{ socket: string, key: string, root: string, jobStartedAt?: string }} */
-  const scope = { socket: control.socket, key: KEY, root: dirs.root };
+  /** @type {{ socket: string, key: string, root: string, execution: typeof TEST_BINDING, jobStartedAt?: string }} */
+  const scope = {
+    socket: control.socket,
+    key: KEY,
+    root: dirs.root,
+    execution: TEST_BINDING,
+  };
   if (withJobStart) {
     scope.jobStartedAt = JOB_STARTED_AT;
   }

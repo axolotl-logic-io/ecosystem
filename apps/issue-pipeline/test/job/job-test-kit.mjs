@@ -19,6 +19,7 @@ import { provisionFixture } from "../runtime-fixtures.mjs";
 import { installJobAuthority } from "./fake-job-authority.mjs";
 
 const JOB = new URL("../../src/job.ts", import.meta.url).pathname;
+const OPS = new URL("../../src/ops.ts", import.meta.url).pathname;
 const AGENTS = new URL("../../agents/", import.meta.url).pathname;
 // runJob's bound on a job's run. A spawnSync blocks the event loop, and the
 // per-test timeout with it, so this bound sits below that timeout
@@ -180,6 +181,24 @@ function runJob(place, args, extraEnv = {}) {
 }
 
 /**
+ * Runs the real ops CLI (src/ops.ts), not the place's fake ops, on `request`
+ * with the job's environment, and returns its reply.
+ * @param {Place} place
+ * @param {object} request
+ * @returns {any}
+ */
+function runRealOps(place, request) {
+  const r = spawnSync(process.execPath, [OPS], {
+    encoding: "utf8",
+    env: jobEnv(place, {}),
+    input: `BEGIN_OPS_REQUEST\n${JSON.stringify(request)}\nEND_OPS_REQUEST`,
+    timeout: RUN_JOB_MS,
+    killSignal: "SIGKILL",
+  });
+  return JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "null");
+}
+
+/**
  * @typedef {object} JobEnd
  * @property {number | null} status
  * @property {string} stdout
@@ -285,6 +304,7 @@ export {
   piCommands,
   piStarts,
   runJob,
+  runRealOps,
   sessionOf,
   setScript,
   setUp,
