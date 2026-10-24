@@ -1,10 +1,12 @@
 // @ts-check
 // New work through built jobs/ops, with real local git and fake services.
+// Merge requests read-only Integration, which the test relays as the
+// caller does (#186).
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import { runThroughTasks, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
 import {
   hardeningTurn,
   implementorTurn,
@@ -26,9 +28,9 @@ before(() => {
 });
 after(() => stopJobs(flow));
 
-/** @param {string} stage */
+/** @param {string} stage the stage run, with each task it requests (#186) */
 function completeStage(stage) {
-  const line = runStage(flow, stage);
+  const line = runThroughTasks(flow, stage).at(-1);
   return { line, state: savedState(readWorld(flow.ghDir)) };
 }
 

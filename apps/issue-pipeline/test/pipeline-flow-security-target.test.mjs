@@ -14,7 +14,11 @@ import {
   prepareReplayFlow,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  runStage,
+  runThroughTasks,
+  stopJobs,
+} from "./pipeline-flow-run-test-kit.mjs";
 import { savedState } from "./pipeline-flow-script-test-kit.mjs";
 import {
   BASE,
@@ -72,7 +76,7 @@ test("a returned finding survives target-only movement at the actual session/sav
   traceStart = opsTrace(flow).length;
   callsStart = ghCalls(flow.ghDir).length;
   sessionStart = sessions(flow);
-  assert.equal(runStage(flow, "merge").end, "stop");
+  assert.equal(runThroughTasks(flow, "merge").at(-1).end, "stop");
   const rejected = savedState(readWorld(flow.ghDir));
   assert.equal(rejected.stopCode, "rights");
   assert.deepEqual(rejected.security.revision, hardened.hardened);

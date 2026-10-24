@@ -22,6 +22,7 @@ import {
   HIPPY_PROMPT_PAGES,
   PROMPT_PAGES,
   pageTextOf,
+  SYNC_PROMPT_PAGES,
 } from "../prompt-test-kit.mjs";
 import { sessionRecord } from "../usage-fixtures.mjs";
 import {
@@ -82,7 +83,7 @@ const FAILED = { status: 1, named: true, ran: 0 };
 
 test("the pipeline ships exactly the prompt pages, and every stage pins them as valid pages, whoever hardens", () => {
   const shipped = fs.readdirSync(SHIPPED).sort();
-  const listed = [...PROMPT_PAGES, ...HIPPY_PROMPT_PAGES];
+  const listed = [...PROMPT_PAGES, ...HIPPY_PROMPT_PAGES, ...SYNC_PROMPT_PAGES];
   const named = [...new Set(listed.map(({ page }) => page))].sort();
   assert.deepEqual(shipped, named);
   /** @type {{ hardening: "lawd" | "hippy", differing: typeof HIPPY_PROMPT_PAGES }[]} */
@@ -116,6 +117,24 @@ test("the pipeline ships exactly the prompt pages, and every stage pins them as 
     pinPrompts(SHIPPED, "review", "lawd").pinned,
     "a job given no Hardening buddy pins the installed Reviewer's page",
   );
+  // A Sync task job pins only its resolver's page, at either stage it runs
+  // at; Integration runs no session, so it pins none (#186).
+  for (const { stage, page } of SYNC_PROMPT_PAGES) {
+    const sync = pinPrompts(
+      SHIPPED,
+      /** @type {any} */ (stage),
+      "lawd",
+      "sync",
+    );
+    assert.deepEqual(
+      sync.pinned.map((pinned) => pinned.page),
+      [page],
+    );
+  }
+  assert.deepEqual(
+    pinPrompts(SHIPPED, "merge", "lawd", "integration").pinned,
+    [],
+  );
 });
 
 test("a job pins only its stage's pages, byte for byte, and keeps them though the folder changes", () => {
@@ -134,7 +153,7 @@ test("a job pins only its stage's pages, byte for byte, and keeps them though th
   });
   assert.deepEqual(
     prompts.pinned.map((pinned) => pinned.page),
-    ["integration.md", page],
+    [page],
   );
   assert.equal(prompts.promptFor("merge", null), null);
   assert.equal(prompts.promptFor("merge", "hardening"), null);

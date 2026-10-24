@@ -51,8 +51,8 @@ function writeUnrelated(dir) {
   write(dir, "loose.txt", "loose\n");
 }
 
-// The implementor, and integration's check-fix, commit new files they name.
-for (const stage of /** @type {const} */ (["implement", "merge"])) {
+// The implementor, and the hardening's check-fix, commit new files they name.
+for (const stage of /** @type {const} */ (["implement", "review"])) {
   test(`the ${stage} stage's code and a new docs page make one commit, and it is pushed`, async () => {
     const job = await openJob(stage);
     try {

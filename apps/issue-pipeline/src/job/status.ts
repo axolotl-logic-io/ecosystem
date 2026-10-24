@@ -2,7 +2,8 @@
 // job runs it holds the pipeline's version (`pipelineVersion: 2`, which a
 // file the installed version wrote lacks, so its overlapping stage names
 // are never taken for this pipeline's), the job's pid, id, issue, the stage
-// it started at and the one it is at now, lane, start time and steer socket,
+// it started at and the one it is at now, a task job's task and binding
+// (#186), lane, start time and steer socket,
 // the prompt pages it pinned (src/job/prompts.ts), and a record of every
 // launch it started (src/job/launch-record.ts). On
 // exit it holds the job's outcome: how the role's stage ended, whether the
@@ -71,6 +72,9 @@ const STATUS = z.object({
   stage: z.string(),
   // The stage the job is at now: the stage its role's `next` end saved.
   currentStage: z.string().optional(),
+  // A task job's task and the binding it runs for; absent for a stage job
+  // and in older files.
+  task: z.looseObject({ task: z.string(), binding: z.unknown() }).optional(),
   lane: z.string().nullable(),
   startedAt: z.string(),
   socket: z.string(),
@@ -107,6 +111,7 @@ interface JobInfo {
   id: string;
   issue: number;
   stage: string;
+  task?: { task: string; binding: unknown };
   lane: string | null;
   startedAt: string;
   socket: string;

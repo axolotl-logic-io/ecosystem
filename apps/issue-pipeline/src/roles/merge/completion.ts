@@ -169,12 +169,10 @@ async function finishConfirmed(
     observed = result;
   }
   if (codeMerged !== null) {
-    const refused = await confirmedMergedResult(
-      ctx,
-      state,
-      observed,
+    const refused = await confirmedMergedResult(ctx, state, {
+      result: observed,
       codeMerged,
-    );
+    });
     if (refused !== null) {
       return refused;
     }

@@ -10,6 +10,9 @@
 // stop retains its reconciliation evidence without overwriting signed state.
 // An issue at another stage is released untouched, but a merge job runs its
 // role on a done issue with its merge recorded, to finish its completion.
+// A task job runs its task's role the same way, at the stage it was given,
+// and its line always reports the task: a run that ends without the role's
+// report, such as a failed claim or a thrown op, reports `unknown`.
 
 import { z } from "zod";
 import { paths } from "../config.ts";
@@ -40,9 +43,10 @@ import { inputsOf } from "./role-inputs.ts";
 import { opRunnerOf, postOf } from "./role-ops.ts";
 import { sessionRunnerOf } from "./role-session.ts";
 import type { HardeningBuddy } from "./roles.ts";
-import { STAGE_ROLES, stageAgentOf } from "./roles.ts";
+import { jobRoleOf, stageAgentOf } from "./roles.ts";
 import { runUsage } from "./run-usage.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
+import type { JobTask, TaskRequest } from "./task-request.ts";
 import { usageAppender } from "./usage-append.ts";
 import type { UsageRole } from "./usage-log.ts";
 
@@ -67,6 +71,8 @@ interface RoleJob extends EndingJob {
   role: Role;
   // Who performs the stage's Hardening; "lawd", the installed one, without.
   hardening?: HardeningBuddy;
+  // The task a task job runs (`--task`), or null for a stage job.
+  task?: (TaskRequest & { name: JobTask }) | null;
   mergeQueue: readonly number[] | null;
   dirs: JobDirs;
   // The behavioral prompts the job pinned for its stage's sessions.
@@ -90,14 +96,30 @@ function reconcilesCompletion(stage: Stage, state: IssueState): boolean {
   return stage === "merge" && state.stage === "done" && state.merged !== null;
 }
 
-// The role a stage's usage records name: its agent's model role, or the
-// merger for a merge job, whose integration sessions' records name the
+// The role a job's usage records name: its agent's model role, or the
+// merger for a merge job, whose security session's records name the
 // reviewer as the session's `name`.
-function usageRoleOf(stage: Stage, hardening: HardeningBuddy): UsageRole {
-  if (STAGE_ROLES[stage] === "merger") {
+function usageRoleOf(
+  stage: Stage,
+  hardening: HardeningBuddy,
+  task: JobTask | null,
+): UsageRole {
+  if (jobRoleOf(stage, task) === "merger") {
     return "merger";
   }
-  return stageAgentOf(stage, hardening).role;
+  return stageAgentOf(stage, hardening, task).role;
+}
+
+// The job's end with its task's report: the role's, or `unknown` when the
+// run ended without one, so a task job's line never omits it.
+function withTaskReport(job: RoleJob, end: RoleStageEnd): RoleStageEnd {
+  const task = job.task ?? null;
+  if (task === null || end.kind !== "finished" || end.summary.task) {
+    return end;
+  }
+  const { name: _name, ...request } = task;
+  const report = { ...request, run: null, verdict: "unknown" as const };
+  return { ...end, summary: { ...end.summary, task: report } };
 }
 
 // What one claimed run holds while it runs (Claimed in role-end.ts) and
@@ -117,6 +139,7 @@ function contextOf(
   const session = sessionRunnerOf({
     stage: job.stage,
     hardening: job.hardening ?? "lawd",
+    task: job.task?.name ?? null,
     prompts: job.prompts,
     hooks: job.hooks,
     status: job.status,
@@ -129,6 +152,7 @@ function contextOf(
     issue: job.issue,
     stage: job.stage,
     hardening: job.hardening ?? "lawd",
+    task: requestOf(job),
     state: claimed.last,
     dirs: { job: job.dirs.root, repo: job.dirs.repo },
     issueFile,
@@ -204,10 +228,25 @@ async function runClaimed(
   }
 }
 
+// The task request a task job's role reads, without its command-line name.
+function requestOf(job: RoleJob): TaskRequest | null {
+  if (job.task === undefined || job.task === null) {
+    return null;
+  }
+  const { name: _name, ...request } = job.task;
+  return request;
+}
+
+// Claims the issue and runs the stage's role to its end or to a signal,
+// with a task job's report on its line.
+async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
+  return withTaskReport(job, await runClaimedStage(job));
+}
+
 // Claims the issue and runs the stage's role to its end or to a signal.
 // An issue saved at another stage is released untouched, except a done one
 // a merge job reconciles (reconcilesCompletion).
-async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
+async function runClaimedStage(job: RoleJob): Promise<RoleStageEnd> {
   const reply = await job.runOp("claim", { stage: job.stage });
   const signal = job.control.stopping();
   if (signal !== null) {
@@ -245,7 +284,11 @@ async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
         issue: job.issue,
         job: job.identity.id,
         jobStartedAt: job.identity.startedAt,
-        role: usageRoleOf(job.stage, job.hardening ?? "lawd"),
+        role: usageRoleOf(
+          job.stage,
+          job.hardening ?? "lawd",
+          job.task?.name ?? null,
+        ),
       },
       {
         send: async (line: string): Promise<boolean> =>

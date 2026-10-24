@@ -1,20 +1,29 @@
 # Merge
 
-This page describes the `merge` stage: what it may merge, merge order, the merge call, confirming the result, and completion. Synchronization with the base is in [sync](sync.md). The rules are in [delivery decisions](../decisions/delivery.md).
+This page describes the `merge` stage: what it may merge, merge order, the merge call, confirming the result, and completion. Synchronization with the base is the separate Sync task in [sync](sync.md). The rules are in [delivery decisions](../decisions/delivery.md) and [buddies and tasks](../decisions/buddies-and-tasks.md).
 
 ## What may merge
 
 The merge stage merges only the revision its authorization names: the exact hardened, checked and Security-cleared code/input revision. It reads that authorization fresh before every mutation.
 
 - A trusted-input change sends authored work back to Author and direct work back to Developer. Direct work needs no Gherkin or substitute requirements document.
-- Any changed code head, including the Reviewer's own integration, goes back to `review` for hardening.
-- A base that moved, a conflict or a failed check gets the Reviewer's integration (see [sync](sync.md)).
+- Any changed code head goes back to `review` for hardening.
+- A base that moved or a conflict needs the Sync task: the merge stage never synchronizes itself (see [sync](sync.md)).
+- A failed check, in Integration or CI, goes back to `review`, where Hardening fixes it as a new revision. The merge stage never runs a writer.
+
+The merge stage reads the chain fresh with the read-only `task-readiness` op before it acts. It needs a passed Hardening and a passed Integration [task result](task-results.md) for exactly the current revision R and target T. A saved `hardened` checkpoint or `verifiedSha` from before #186 isn't a result: without the records, the work returns to review for fresh Hardening.
 
 ```mermaid
 flowchart TD
-  A[Fresh authorization] --> B{Base moved, conflict or failed check?}
-  B -- yes --> I[Integration] --> H[Fresh hardening and checks if changed] --> A
-  B -- no --> C[Verify head, wait for CI on H]
+  A[Fresh authorization and chain read] --> B{R contains T?}
+  B -- no --> Y[wait: request Sync] --> HR[Fresh hardening] --> A
+  B -- yes --> HD{Hardening result for R on T?}
+  HD -- no --> HR
+  HD -- yes --> IN{Integration result?}
+  IN -- no --> IQ[wait: request read-only Integration] --> A
+  IN -- failed --> HR
+  IN -- passed --> C[Wait for CI on H]
+  C -- fails --> HR
   C --> S[Read-only Security on exact candidate H]
   S -- clear --> Q{First in merge order?}
   Q -- no --> W[wait: queued]
@@ -88,15 +97,15 @@ A claim normally needs an open issue. A closed issue may resume only when genuin
 
 Never resend an uncertain merge by hand, repeat the approval, reopen a code writer, reset attempt evidence, clear merged facts or erase a Security rejection. An OPEN PR isn't proof that the request never landed.
 
-## Read-only Integration and exact Land (inactive)
+## Read-only Integration and exact Land
 
-[#185](https://github.com/axolotl-logic-io/ecosystem/issues/185) adds the Gatekeeper's half of the two-buddy split. Nothing installed uses it yet: the merge stage above keeps running until [#186](https://github.com/axolotl-logic-io/ecosystem/issues/186) activates it. Every step records its [task result](task-results.md) through the landing account.
+[#185](https://github.com/axolotl-logic-io/ecosystem/issues/185) added the Gatekeeper's half of the two-buddy split, and [#186](https://github.com/axolotl-logic-io/ecosystem/issues/186) activated it. Every step records its [task result](task-results.md) through the landing account.
 
 ```
 Sync (Hippy) ─▶ Hardening (Hippy) ─▶ Integration (Lawd, read-only) ─▶ Security (Lawd) ─▶ Land (Lawd) ─▶ Completion (Lawd)
 ```
 
-The `integration-task` op checks revision R on target T, but only when R already contains T. It runs no model and holds no writer. Before it runs any check, it routes anything not ready:
+The merge stage doesn't run Integration itself. When Integration's result for R on T is missing, merge ends `wait` with a request, and the caller starts the Integration task job (`--task integration --binding BINDING_JSON` at `--stage merge`). That job runs as the `reader` access profile and starts no model session. Its `integration-task` op checks revision R on target T, but only when R already contains T. Before it runs any check, it routes anything not ready:
 
 | What it reads | Route | Attempt recorded |
 |---|---|---|
@@ -112,8 +121,10 @@ Then it runs the configured checks in a fresh detached checkout of R under the r
 - A check changes tracked files: `failed`. The checkout and a `tracked.patch` are kept as evidence, never committed or pushed.
 - T, R, the inputs or the policy moved during the checks: `failed`, because the result is no longer current.
 
-A merge request may name a Land binding and its run. Land then needs passed Hardening, Integration and Security results for exactly that revision and target, on top of every installed check. `verifiedSha`, a legacy `state.integration` receipt, or a result for another target never stands in. The Land attempt is recorded before the first PR write. Only a confirmed own merge of exactly R settles it as `passed`; anything else leaves it unsettled, which holds every Sync and Integration until a read establishes the delivery.
+A passed Integration is R's premerge check proof: the merge stage saves `verifiedSha` = R from it and never runs the suite again. It then runs the read-only Security session, which records a Security attempt before the session and its verdict after, both through the landing account. A clearance saved before #186 never stands in for a Security result: with none for the binding, Security runs afresh.
 
-`confirm-merged` with the same binding also consumes that exact Land result: Completion confirms the delivered commit, and runs no suite.
+Every merge request names a Land binding and a new run. Land then needs passed Hardening, Integration and Security results for exactly that revision and target, on top of every installed check. `verifiedSha`, a legacy `state.integration` receipt, or a result for another target never stands in. The Land attempt is recorded before the first PR write. Only a confirmed own merge of exactly R settles it as `passed`; anything else leaves it unsettled, which holds every Sync and Integration until a read establishes the delivery.
 
-A merge or confirmation without a binding behaves exactly as installed.
+`confirm-merged` with the same binding also consumes that exact Land result: Completion confirms the delivered commit, and runs no suite. A read-only recovery of an interrupted Land passes its binding to `reconcile-merge`, which settles that Land from the receipt it reads.
+
+A merge made before #186 has no Land result. Its completion and recovery confirm without a binding, under the same premerge proof as before.

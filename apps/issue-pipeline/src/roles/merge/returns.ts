@@ -1,11 +1,8 @@
-// Where the merge job sends an issue it doesn't merge, and the bound on its
-// own integrations. A changed input goes to its requirements owner, and a code
-// head that moved, including the Reviewer's own integration, goes back to review
-// for fresh hardening. Each integration counts one sync,
-// and the one past `maxSyncs` stops the issue instead.
+// Where the merge job sends an issue it doesn't merge. A changed input goes
+// to its requirements owner, and a code head that moved, a failed check or a
+// missing Hardening result goes back to review for fresh Hardening.
 
-import { z } from "zod";
-import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
+import type { RoleEnd } from "../../job/role-context.ts";
 import {
   DEVELOPER_RECOVERY_REASON,
   requirementsStage,
@@ -13,10 +10,6 @@ import {
 } from "../../requirements.ts";
 import type { IssueState } from "../../state.ts";
 import { withLog } from "../../state.ts";
-
-// The config's bound on the merge job's integrations; the config's defaults
-// fill it in.
-const SYNC_LIMIT = z.looseObject({ maxSyncs: z.number().int().nonnegative() });
 
 function logged(state: IssueState, entry: string): IssueState {
   return withLog(state, entry, new Date());
@@ -55,25 +48,4 @@ function waiting(state: IssueState, reason: string): RoleEnd {
   return { kind: "wait", reason, state };
 }
 
-// One more counted integration, or the stop when `maxSyncs` of them already
-// ran.
-function counted(
-  ctx: RoleContext,
-  state: IssueState,
-): { state: IssueState } | { stop: RoleEnd } {
-  const { syncs } = state.counts;
-  const limit = SYNC_LIMIT.parse(ctx.cfg).maxSyncs;
-  if (syncs >= limit) {
-    return {
-      stop: {
-        kind: "stop",
-        code: "sync-limit",
-        reason: `the base kept moving: the merge integrated the change ${syncs} times (maxSyncs ${limit}) without merging it`,
-        state,
-      },
-    };
-  }
-  return { state: { ...state, counts: { ...state.counts, syncs: syncs + 1 } } };
-}
-
-export { counted, failed, logged, toRequirements, toReview, waiting };
+export { failed, logged, toRequirements, toReview, waiting };

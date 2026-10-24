@@ -1,7 +1,8 @@
 // Revision-bound task results (#183; docs/reference/task-results.md): the
 // rules every reader checks across an issue's records, and one binding's
 // status. No historical field (state.integration, verifiedSha) ever reads as
-// a result. Inactive until #180's activation: no installed role calls the ops.
+// a result. Hardening, Sync, Integration, Security and Land record them since
+// #186.
 
 import type { IssueComment } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -173,6 +174,17 @@ function unsettledAttempts(
     );
 }
 
+// The run of the binding's latest attempt, which a retry names as its
+// previous run, or null before its first.
+function latestRun(rows: readonly Row[], binding: Binding): string | null {
+  return (
+    rows
+      .filter(isAttempt)
+      .filter((row) => sameBinding(row.binding, binding))
+      .at(-1)?.run.id ?? null
+  );
+}
+
 // The status of `binding` in the issue's records; a hold is a status, never
 // absence.
 function taskStatus(
@@ -191,4 +203,11 @@ function taskStatus(
   }
 }
 
-export { checkedRows, statusIn, taskRecords, taskStatus, unsettledAttempts };
+export {
+  checkedRows,
+  latestRun,
+  statusIn,
+  taskRecords,
+  taskStatus,
+  unsettledAttempts,
+};

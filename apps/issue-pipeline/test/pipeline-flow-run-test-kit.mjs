@@ -10,6 +10,8 @@ import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { endsWithTest, killGroup } from "./bounded-test-kit.mjs";
+import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { savedState } from "./pipeline-flow-script-test-kit.mjs";
 import { ISSUE, SLUG } from "./pipeline-flow-test-kit.mjs";
 
 // Bound each stage, not a whole multi-stage fixture. Verification of #95
@@ -121,7 +123,8 @@ async function tick(flow) {
  * @param {string} stage
  * @param {number} [issue]
  * @param {readonly string[]} [extra] more job arguments
- * @returns {{ issue: number, stage: string, end: string }}
+ * @returns {any} the job's line: issue, stage, end, and any reason, request
+ * or task report
  */
 function runStage(flow, stage, issue = ISSUE, extra = []) {
   const result = spawnSync(
@@ -149,17 +152,72 @@ function runStage(flow, stage, issue = ISSUE, extra = []) {
 }
 
 /**
- * Runs the installed caller and waits for the actual guarded stage job's result.
+ * Runs the task a stage job's line requested (#186), as the caller relays
+ * it: the task job at the same stage, with the request's exact binding, in
+ * `lane` (the stage jobs' own lane, so their lease never holds it).
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {string} stage the saved stage the request was made at
+ * @param {{ task: string, binding: unknown }} request
+ * @param {{ issue?: number, lane?: string }} [options]
+ * @returns {any} the task job's line
+ */
+function runTask(flow, stage, request, { issue = ISSUE, lane } = {}) {
+  const extra = [
+    "--task",
+    request.task.toLowerCase(),
+    "--binding",
+    JSON.stringify(request.binding),
+  ];
+  if (lane !== undefined) {
+    extra.push("--lane", lane);
+  }
+  return runStage(flow, stage, issue, extra);
+}
+
+/**
+ * Runs `stage`, relaying each task its job requests and rerunning `stage`
+ * while the issue is still saved there, until a job ends without a request
+ * or a task moves the issue on (a passed Sync goes back to review). Returns
+ * every line, in order: stage jobs' and task jobs'.
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
  * @param {string} stage
- * @returns {Promise<import("zod").infer<typeof JOB_RESULT>>}
+ * @param {{ issue?: number, extra?: readonly string[], limit?: number }} [options]
+ * @returns {any[]}
  */
-async function runCallerStage(flow, stage) {
-  const run = fs.mkdtempSync(path.join(flow.tmp, "caller-"));
-  fs.writeFileSync(
-    path.join(run, "run.json"),
-    JSON.stringify({ maxJobs: 1, maxAttempts: 1 }),
-  );
+function runThroughTasks(
+  flow,
+  stage,
+  { issue = ISSUE, extra = [], limit = 6 } = {},
+) {
+  /** @type {any[]} */
+  const lines = [];
+  for (let turn = 0; turn < limit; turn += 1) {
+    /** @type {any} */
+    const line = runStage(flow, stage, issue, extra);
+    lines.push(line);
+    if (line.end !== "wait" || line.request === undefined) {
+      return lines;
+    }
+    const task = runTask(flow, stage, line.request, { issue });
+    lines.push(task);
+    const saved = savedState(readWorld(flow.ghDir), issue).stage;
+    if (!["next", "wait"].includes(task.end) || saved !== stage) {
+      return lines;
+    }
+  }
+  return lines;
+}
+
+/**
+ * Starts a job through the installed caller in the run folder `run`, with
+ * `extra` launcher arguments such as a task request, and waits for it.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {string} run
+ * @param {string} stage
+ * @param {readonly string[]} [extra]
+ * @returns {Promise<{ launch: any, line: any }>} its receipt line and the job's own
+ */
+async function callerJob(flow, run, stage, extra = []) {
   const deadline = performance.now() + RUN_MS;
   const result = spawnSync(
     process.execPath,
@@ -178,13 +236,15 @@ async function runCallerStage(flow, stage) {
       stage,
       "--lane",
       "flow-caller",
+      ...extra,
     ],
     { env: flow.env, encoding: "utf8", timeout: RUN_MS, killSignal: "SIGKILL" },
   );
   if (result.status !== 0) {
     throw new Error(`caller exited ${result.status}: ${result.stderr}`);
   }
-  const { pid, receipt } = CALLER_LAUNCH.parse(JSON.parse(result.stdout));
+  const launch = JSON.parse(result.stdout);
+  const { pid, receipt } = CALLER_LAUNCH.parse(launch);
   flow.pids.push(pid);
   endsWithTest(() => killGroup(pid));
   await untilExited([pid], deadline);
@@ -194,7 +254,42 @@ async function runCallerStage(flow, stage) {
       `job has no result: ${fs.readFileSync(path.join(receipt, "stderr.log"), "utf8")}`,
     );
   }
-  return JOB_RESULT.parse(JSON.parse(stdout));
+  return { launch, line: JOB_RESULT.parse(JSON.parse(stdout)) };
+}
+
+/**
+ * The installed caller's status of `run`: one report per job it started.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow @param {string} run
+ * @returns {any[]}
+ */
+function callerStatus(flow, run) {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(flow.root, "caller-jobs.mjs"), "status", "--run", run],
+    { env: flow.env, encoding: "utf8", timeout: RUN_MS },
+  );
+  if (result.status !== 0) {
+    throw new Error(`caller status exited ${result.status}: ${result.stderr}`);
+  }
+  return result.stdout
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+}
+
+/**
+ * Runs the installed caller and waits for the actual guarded stage job's result.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {string} stage
+ * @returns {Promise<import("zod").infer<typeof JOB_RESULT>>}
+ */
+async function runCallerStage(flow, stage) {
+  const run = fs.mkdtempSync(path.join(flow.tmp, "caller-"));
+  fs.writeFileSync(
+    path.join(run, "run.json"),
+    JSON.stringify({ maxJobs: 1, maxAttempts: 1 }),
+  );
+  return (await callerJob(flow, run, stage)).line;
 }
 
 /**
@@ -237,4 +332,15 @@ function stopJobs(flow) {
   }
 }
 
-export { jobLog, runCallerStage, runStage, stagesUntilIdle, stopJobs, tick };
+export {
+  callerJob,
+  callerStatus,
+  jobLog,
+  runCallerStage,
+  runStage,
+  runTask,
+  runThroughTasks,
+  stagesUntilIdle,
+  stopJobs,
+  tick,
+};

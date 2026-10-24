@@ -1,9 +1,7 @@
-// The merge stage's session tasks: the Reviewer's resolution of a rebase
-// its own integration stopped on conflicts, and the read-only security
-// review of the candidate or historical merged result. Each holds facts; the
-// behaviour is the phase's prompt page (task-facts.ts). Pure.
+// The merge stage's one session task: the read-only security review of the
+// candidate or historical merged result. It holds facts; the behaviour is
+// the phase's prompt page (task-facts.ts). Pure.
 
-import { JOB_REPO } from "../../job/layout.ts";
 import type { RoleContext } from "../../job/role-context.ts";
 import type { CodeMerged, Revision } from "../../state.ts";
 import { bullets, header, replyLines } from "../task-facts.ts";
@@ -20,45 +18,6 @@ interface SecurityReviewFacts {
   // The exact candidate or historical confirmed merged revision.
   revision: Revision;
   codeMerged: CodeMerged | null;
-}
-
-// The task of a session that resolves the code rebase stopped on
-// conflicts.
-function resolverTask(
-  ctx: RoleContext,
-  conflict: {
-    conflicts: readonly string[];
-    baseSha: string;
-    attempt: number;
-    max: number;
-    rejected: string | null;
-  },
-): string {
-  const lines = [
-    ...header(ctx, "conflict-resolution"),
-    ...bullets([
-      `The checkout is \`${JOB_REPO}/\``,
-      `Rebasing onto: \`origin/${ctx.cfg.baseBranch}\` at \`${conflict.baseSha}\``,
-      `Attempt: ${conflict.attempt} of ${conflict.max}`,
-    ]),
-    "",
-    "## Conflicting files",
-    "",
-    ...bullets(conflict.conflicts),
-    "",
-  ];
-  if (conflict.rejected !== null) {
-    lines.push(
-      "## The last resolution was rejected",
-      "",
-      conflict.rejected,
-      "",
-    );
-  }
-  const resolved =
-    "`conflict-resolved`, with a `summary`, once this stop's conflicts are staged. Do not continue the rebase: finish-sync owns continuation, and may return another conflict stop.";
-  lines.push(...replyLines([resolved, "`cannot-fix`, with a `summary`."]));
-  return lines.join("\n");
 }
 
 function resultLines(facts: SecurityReviewFacts): string[] {
@@ -102,4 +61,4 @@ function securityReviewTask(
 }
 
 export type { PreparedReview, SecurityReviewFacts };
-export { resolverTask, securityReviewTask };
+export { securityReviewTask };

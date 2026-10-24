@@ -34,6 +34,8 @@ const NOTHING_CHANGED = /0 pipeline file\(s\) changed/u;
 const INSIDE_ROOT = /inside the pipeline root/u;
 const RETIRED_STALE_PROMPT =
   /^retired +\S*prompts\/Pipeline-Prompt-Author\.md$/mu;
+// The merge stage's writable integration page, retired with it by #186.
+const RETIRED_INTEGRATION_PROMPT = /^retired +\S*prompts\/integration\.md$/mu;
 // The build's files, each installed under its own name in the root.
 const BUILT = [
   "ops.mjs",
@@ -262,6 +264,11 @@ test("install retires an installed prompt page the source no longer has, backing
   fs.mkdirSync(installed, { recursive: true });
   const stale = "Pipeline-Prompt-Author.md";
   fs.writeFileSync(path.join(installed, stale), "# Old\n\nOld page.\n");
+  const integration = "integration.md";
+  fs.writeFileSync(
+    path.join(installed, integration),
+    "# Reviewer integration\n\nRebase and fix checks at merge.\n",
+  );
   fs.writeFileSync(path.join(installed, "notes.txt"), "operator notes\n");
   const result = spawnSync(process.execPath, [script, "--allow-dirty"], {
     env: {
@@ -272,6 +279,8 @@ test("install retires an installed prompt page the source no longer has, backing
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, RETIRED_STALE_PROMPT);
+  assert.match(result.stdout, RETIRED_INTEGRATION_PROMPT);
+  assert.equal(PROMPT_FILES.includes(integration), false);
   assert.deepEqual(
     fs.readdirSync(installed).sort(),
     [...PROMPT_FILES, "notes.txt"].sort(),
@@ -288,4 +297,9 @@ test("install retires an installed prompt page the source no longer has, backing
     ),
     "# Old\n\nOld page.\n",
   );
+  const kept = fs
+    .readdirSync(`${upgraded}-backups`, { recursive: true })
+    .map(String)
+    .filter((file) => file.endsWith(`prompts${path.sep}${integration}`));
+  assert.equal(kept.length, 1);
 });

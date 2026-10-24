@@ -1,6 +1,6 @@
 // The caller's run folder: the run's limits, which caller-jobs/run-limits.ts
 // reads, and one receipt folder per job it starts,
-// `jobs/SLUG/issue-N/STAGE-ATTEMPT/`. A receipt holds the job's pid and
+// `jobs/SLUG/issue-N/STAGE-ATTEMPT/`, or `TASK-ATTEMPT/` for a task job. A receipt holds the job's pid and
 // command (`launch.json`), its stdout, whose last line is the job's result,
 // and its stderr. The first report that finds the job ended copies its
 // `job.json`, which the next job on the issue would replace, and marks it
@@ -10,6 +10,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { readStatus } from "../../src/job/status.ts";
+import type { TaskReport } from "../../src/job/task-request.ts";
+import { JOB_TASKS, TASK_VERDICTS } from "../../src/job/task-request.ts";
 import { ROOT } from "../../src/pipeline-root.ts";
 import { STAGES } from "../../src/stages.ts";
 import { folders, isStageJob } from "./live-jobs.ts";
@@ -28,6 +30,9 @@ const LAUNCH = z.object({
   slug: z.string(),
   issue: COUNT,
   stage: z.enum(STAGES),
+  // A task job's task and the binding it was asked to run (#186).
+  task: z.enum(JOB_TASKS).optional(),
+  binding: z.unknown().optional(),
   branch: z.string(),
   lane: z.string(),
   attempt: COUNT,
@@ -36,12 +41,21 @@ const LAUNCH = z.object({
   startedAt: z.string(),
   argv: z.array(z.string()),
 });
-// The line a job prints as it ends (docs/reference/coordination.md).
+// The line a job prints as it ends (docs/reference/coordination.md): a task
+// job's adds `task`, its run's report, and a waiting stage's `request`.
 const RESULT = z.looseObject({
   issue: z.number(),
   stage: z.string(),
   end: z.string(),
+  task: z.looseObject({ verdict: z.enum(TASK_VERDICTS) }).optional(),
+  request: z.unknown().optional(),
 });
+
+// How a task job's task stands, apart from how its job ended: running;
+// completed with a determined verdict (passed, failed or refused); held for
+// a person; or unknown, when the job ended with no verdict at all. Unknown
+// and held are never completed.
+type TaskState = "running" | "completed" | "unknown" | "held";
 
 type Launch = z.infer<typeof LAUNCH>;
 type JobResult = z.infer<typeof RESULT>;
@@ -59,11 +73,15 @@ interface Receipt {
 // report that finds it ended; `result` is the job's own line once it has
 // printed one; `outcome`, `currentStage` and `droppedPatches` come from its
 // job.json; `stderrTail` shows why a job that ended without a result failed.
+// A task job's report adds `taskState`; `request` is the task a waiting
+// stage job asked for, with its binding, for the caller to start next.
 interface JobReport extends Omit<Launch, "argv" | "slug" | "jobId"> {
   receipt: string;
   running: boolean;
   newlyEnded: boolean;
   result: JobResult | null;
+  taskState: TaskState | null;
+  request: unknown;
   currentStage: string | null;
   outcome: StatusFile["outcome"];
   droppedPatches: string[];
@@ -102,12 +120,20 @@ function receipts(runDir: string): [string, Launch][] {
     .sort(([, a], [, b]) => a.startedAt.localeCompare(b.startedAt));
 }
 
-function launches(runDir: string): Launch[] {
-  return receipts(runDir).map(([, launch]) => launch);
+// Every launch, with what it works on: its task, else its stage.
+function launches(runDir: string): (Launch & { work: string })[] {
+  return receipts(runDir).map(([, launch]) => ({
+    ...launch,
+    work: launch.task ?? launch.stage,
+  }));
 }
 
-// The job a receipt is for: a stage of one issue in one repo.
-type JobKey = Pick<Launch, "slug" | "issue" | "stage">;
+// The job a receipt is for: a stage, or a task, of one issue in one repo.
+interface JobKey {
+  slug: string;
+  issue: number;
+  work: string;
+}
 
 // The folder of the receipts for `job`'s issue.
 function issueFolder(runDir: string, job: JobKey): string {
@@ -119,7 +145,7 @@ function issueFolder(runDir: string, job: JobKey): string {
 function newReceipt(runDir: string, launch: JobKey): Receipt {
   const issueDir = issueFolder(runDir, launch);
   const attempt = attemptsAt(runDir, launch) + 1;
-  const dir = path.join(issueDir, `${launch.stage}-${attempt}`);
+  const dir = path.join(issueDir, `${launch.work}-${attempt}`);
   fs.mkdirSync(issueDir, { recursive: true });
   fs.mkdirSync(dir);
   return {
@@ -132,9 +158,36 @@ function newReceipt(runDir: string, launch: JobKey): Receipt {
 
 // How many receipts the run has made for `job`, the attempts it has used.
 function attemptsAt(runDir: string, job: JobKey): number {
+  const attempt = new RegExp(`^${job.work}-\\d+$`, "u");
   return folders(issueFolder(runDir, job)).filter((dir) =>
-    path.basename(dir).startsWith(`${job.stage}-`),
+    attempt.test(path.basename(dir)),
   ).length;
+}
+
+// How a task job's task stands: its line's verdict once it ended, and
+// unknown when it ended with none.
+function taskStateOf(
+  launch: Launch,
+  running: boolean,
+  result: JobResult | null,
+): TaskState | null {
+  if (launch.task === undefined) {
+    return null;
+  }
+  if (running) {
+    return "running";
+  }
+  const verdict: TaskReport["verdict"] = result?.task?.verdict ?? "unknown";
+  switch (verdict) {
+    case "passed":
+    case "failed":
+    case "refused":
+      return "completed";
+    case "held":
+      return "held";
+    default:
+      return "unknown";
+  }
 }
 
 function writeLaunch(receipt: Receipt, launch: Launch): void {
@@ -214,6 +267,8 @@ function reportOf(receiptDir: string, launch: Launch): JobReport {
     running,
     newlyEnded,
     result,
+    taskState: taskStateOf(launch, running, result),
+    request: result?.request ?? null,
     currentStage: job?.currentStage ?? null,
     outcome: job?.outcome ?? null,
     droppedPatches: job?.droppedPatches ?? [],
@@ -239,5 +294,5 @@ function reports(runDir: string): JobReport[] {
   return receipts(runDir).map(([dir, launch]) => reportOf(dir, launch));
 }
 
-export type { JobReport, Launch, Receipt };
+export type { JobReport, Launch, Receipt, TaskState };
 export { attemptsAt, launches, newReceipt, pending, reports, writeLaunch };

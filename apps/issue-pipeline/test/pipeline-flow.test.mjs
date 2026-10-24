@@ -14,7 +14,12 @@ import {
   piStarts,
   scriptFlow,
 } from "./pipeline-flow-provenance-test-kit.mjs";
-import { jobLog, stopJobs, tick } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  jobLog,
+  runTask,
+  stopJobs,
+  tick,
+} from "./pipeline-flow-run-test-kit.mjs";
 import { savedState } from "./pipeline-flow-script-test-kit.mjs";
 import {
   BASE,
@@ -33,6 +38,7 @@ const MERGED_PAGE = /Greetings say Hello, world!/u;
 const REVIEWED_CODE = /\+Hello, world!/u;
 const REVIEWED_DOCS = /\+Greetings say Hello, world!/u;
 const MERGE_ENDPOINT = /^repos\/[^/]+\/[^/]+\/merges$/u;
+const CI_RETURN = /Sent back from merge \(ci\)/u;
 
 /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
@@ -57,17 +63,68 @@ async function completeStage(stage) {
   checkpoints.push(result.state);
   return result;
 }
-for (const stage of [
-  "author",
-  "implement",
-  "review",
-  "merge",
-  "review",
-  "merge",
-]) {
-  test(`legacy tick completes the ${stage} stage`, async () => {
-    const result = await completeStage(stage);
-    assert.deepEqual(result.started, [stage], result.log);
+
+/** @returns {any} the last job line the orchestrator's job log holds */
+function lastJobLine() {
+  return jobLog(flow)
+    .split("\n")
+    .filter((line) => line.startsWith('{"issue"'))
+    .map((line) => JSON.parse(line))
+    .at(-1);
+}
+
+// The orchestrator schedules stages only: it relays no task request, so
+// each Integration a merge job requests is relayed here, as the caller
+// relays it (#186). A failed CI check on the first hardened head returns
+// the work to Hardening, which fixes it as a new revision.
+const RELAYED = {
+  end: "wait",
+  request: "Integration",
+  task: { end: "next", verdict: "passed" },
+};
+const STEPS = [
+  { stage: "author", relayed: null },
+  { stage: "implement", relayed: null },
+  { stage: "review", relayed: null },
+  { stage: "merge", relayed: RELAYED },
+  { stage: "merge", relayed: null },
+  { stage: "review", relayed: null },
+  { stage: "merge", relayed: RELAYED },
+  { stage: "merge", relayed: null },
+];
+/** @type {any[]} the task jobs' lines */
+const relayed = [];
+
+/**
+ * One tick of `stage`, and, when `relay`, the relay of the task its job
+ * requested, with what the job and the task job ended as.
+ * @param {string} stage @param {boolean} relay
+ */
+async function tickStep(stage, relay) {
+  const result = await completeStage(stage);
+  const line = lastJobLine();
+  if (!relay) {
+    return { result, relayed: null };
+  }
+  const task = runTask(flow, stage, line.request, { lane: "orchestrator" });
+  relayed.push(task);
+  return {
+    result,
+    relayed: {
+      end: line.end,
+      request: line.request?.task,
+      task: { end: task.end, verdict: task.task?.verdict },
+    },
+  };
+}
+for (const [at, step] of STEPS.entries()) {
+  const requests = [", which requests Integration", ""][
+    Number(step.relayed === null)
+  ];
+  test(`legacy tick ${at + 1} completes the ${step.stage} stage${requests}`, async () => {
+    const outcome = await tickStep(step.stage, step.relayed !== null);
+    assert.deepEqual(outcome.result.started, [step.stage], outcome.result.log);
+    assert.deepEqual(outcome.relayed, step.relayed);
   });
 }
 
@@ -76,11 +133,23 @@ test("completed legacy flow goes idle without another job", async () => {
   assert.deepEqual(result.started, [], jobLog(flow));
 });
 
-test("legacy ticks run development, hardening, bounded integration and security without a Developer fix round", () => {
+test("legacy ticks run development, hardening, read-only Integration and security, and a failed check returns to Hardening", () => {
   assert.deepEqual(
     stages,
-    ["author", "implement", "review", "merge", "review", "merge"],
+    STEPS.map(({ stage }) => stage),
     jobLog(flow),
+  );
+  assert.deepEqual(
+    relayed.map(({ task }) => [task.task, task.verdict]),
+    [
+      ["Integration", "passed"],
+      ["Integration", "passed"],
+    ],
+  );
+  const [first, second] = relayed;
+  assert.notEqual(
+    first.task.binding.revision.code,
+    second.task.binding.revision.code,
   );
 });
 
@@ -88,14 +157,14 @@ test("each phase gets its configured model and exact write authority without a G
   const starts = piStarts(flow);
   assert.deepEqual(
     starts.map((each) => each.role),
-    ["author", "implementor", "reviewer", "reviewer", "reviewer", "reviewer"],
+    ["author", "implementor", "reviewer", "reviewer", "reviewer"],
   );
   const powers = starts.map((each) => ({
     ghToken: each.ghToken,
     commitScope: each.commitScope,
     commits: each.extensions.includes("pipeline-commit.mjs"),
   }));
-  const expected = [false, true, true, true, true, false].map((writes) => ({
+  const expected = [false, true, true, true, false].map((writes) => ({
     ghToken: null,
     commitScope: writes,
     commits: writes,
@@ -103,7 +172,7 @@ test("each phase gets its configured model and exact write authority without a G
   assert.deepEqual(powers, expected);
 });
 
-test("hardening, integration and final security get pinned pages and truthful revision provenance", () => {
+test("hardening, its check fix and final security get pinned pages and truthful revision provenance", () => {
   const starts = piStarts(flow);
   const pages = PROMPT_PAGES.map(({ page }) => page);
   pages.splice(pages.length - 1, 0, "hardening.md");
@@ -119,16 +188,16 @@ test("hardening, integration and final security get pinned pages and truthful re
       .join("\n");
     assert.ok(usage.includes(sha256), `missing usage provenance for ${page}`);
   }
-  const [, , harden, integrate, reharden, security] = piLog(flow.piDir).filter(
+  const [, , harden, reharden, security] = piLog(flow.piDir).filter(
     (entry) => "prompt" in entry,
   );
   assert.match(String(harden?.prompt), GHERKIN_IN_PROMPT);
-  assert.match(String(integrate?.prompt), GHERKIN_IN_PROMPT);
+  assert.ok(reharden !== undefined);
+  assert.match(String(reharden.prompt), GHERKIN_IN_PROMPT);
+  assert.match(String(reharden.prompt), CI_RETURN);
   const state = savedState(readWorld(flow.ghDir));
   assert.ok(String(security?.prompt).includes(state.hardened.code));
   assert.equal("wiki" in state.merged, false);
-  assert.ok(reharden !== undefined);
-  assert.match(String(reharden.prompt), GHERKIN_IN_PROMPT);
   assert.equal(state.integration, null);
   assert.deepEqual(state.security.revision, state.hardened);
   assert.equal(state.security.finding, null);
@@ -145,7 +214,7 @@ test("hardening, integration and final security get pinned pages and truthful re
   const reviewed = fs.readFileSync(diff, "utf8");
   assert.match(reviewed, REVIEWED_CODE);
   assert.match(reviewed, REVIEWED_DOCS);
-  const [, , , , , securityStart] = starts;
+  const [, , , , securityStart] = starts;
   assert.ok(securityStart !== undefined);
   const tools =
     securityStart.argv[securityStart.argv.indexOf("--tools") + 1].split(",");
@@ -154,24 +223,25 @@ test("hardening, integration and final security get pinned pages and truthful re
   }
 });
 
-test("changed integration loses authority until Review checkpoints the same head with its target", () => {
-  const [, , firstHardening, changedIntegrationReturn, reviewCheckpoint] =
+test("a failed CI check loses authority until Hardening fixes it as a new revision with its own target and results", () => {
+  const [, , firstHardening, integrated, ciReturn, reviewCheckpoint] =
     checkpoints;
   assert.ok(firstHardening !== undefined);
-  assert.ok(changedIntegrationReturn !== undefined);
+  assert.ok(integrated !== undefined);
+  assert.ok(ciReturn !== undefined);
   assert.ok(reviewCheckpoint !== undefined);
   assert.equal(firstHardening.stage, "merge");
-  assert.equal(changedIntegrationReturn.stage, "review");
+  assert.equal(integrated.stage, "merge");
+  assert.equal(ciReturn.stage, "review");
+  assert.equal(ciReturn.hardened, null);
+  assert.equal(ciReturn.verifiedSha, null);
+  assert.equal(ciReturn.mergeReturn?.reason, "ci");
   assert.equal(reviewCheckpoint.stage, "merge");
-  assert.ok(firstHardening.hardened !== null);
-  assert.ok(changedIntegrationReturn.integration !== null);
-  assert.equal(changedIntegrationReturn.hardened, null);
-  assert.equal(changedIntegrationReturn.verifiedSha, null);
-  const integrated = changedIntegrationReturn.integration.revision;
-  assert.equal(changedIntegrationReturn.headSha, integrated.code);
-  assert.notEqual(firstHardening.hardened.code, integrated.code);
-  assert.deepEqual(reviewCheckpoint.hardened, integrated);
-  assert.equal(reviewCheckpoint.verifiedSha, integrated.code);
+  assert.equal(reviewCheckpoint.mergeReturn, null);
+  assert.notEqual(
+    reviewCheckpoint.hardened?.code,
+    firstHardening.hardened?.code,
+  );
   assert.equal(reviewCheckpoint.integration, null);
   assert.deepEqual(reviewCheckpoint.hardenedTarget, {
     repo: "o/r",

@@ -2,13 +2,14 @@
 // run's facts and the reply's shape: the behaviour each session follows is
 // the prompt page the runtime pins and loads ahead of the task, by the
 // session's stage and phase (prompts/ in the pipeline: author: author.md,
-// implement: developer.md, review/hardening: hardening.md,
-// merge/integration: integration.md, merge/security-review: security.md).
+// implement: developer.md, review/hardening: hardening.md or, for Hippy,
+// developer-hardening.md, sync: sync.md, merge/security-review: security.md).
 // The task's kind names the section of that page that applies. Pure.
 
 import { JOB_REPO } from "../job/layout.ts";
 import type { RoleContext } from "../job/role-context.ts";
 import { usedAuthor } from "../requirements.ts";
+import type { MergeReturn } from "../state.ts";
 
 // What a session is asked to do, as its page's sections name it.
 type TaskKind =
@@ -82,10 +83,31 @@ function requirementsLines(ctx: RoleContext): string[] {
   return lines;
 }
 
+// Why merge sent the work back, such as checks that failed on its revision,
+// for the session that fixes it.
+function mergeReturnLines(mergeReturn: MergeReturn | null): string[] {
+  if (mergeReturn === null) {
+    return [];
+  }
+  return [
+    `## Sent back from merge (${mergeReturn.reason})`,
+    "",
+    mergeReturn.detail,
+    "",
+  ];
+}
+
 // The reply's shape: one line per answer the schema takes.
 function replyLines(answers: readonly string[]): string[] {
   return ["## Reply", "", ...bullets(answers), ""];
 }
 
 export type { TaskKind };
-export { bullets, fullCheckLines, header, replyLines, requirementsLines };
+export {
+  bullets,
+  fullCheckLines,
+  header,
+  mergeReturnLines,
+  replyLines,
+  requirementsLines,
+};

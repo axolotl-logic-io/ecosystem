@@ -83,15 +83,19 @@ The separate `biome.safe-refactor.jsonc` supplies file/function-length and cogni
 ## Stages and model roles
 
 ```text
-[optional author] -> implement (draft) -> review (hardening) -> merge (integration -> fresh hardening if changed -> security -> fast-forward merge -> read-only result confirmation -> finish/close) -> done
+[optional author] -> implement (draft) -> [Sync task, if R misses the target] -> review (Hippy's hardening)
+  -> merge: requests the read-only Integration task -> merge (security -> fast-forward Land -> read-only confirmation -> finish/close) -> done
 ```
+
+Since #186 the chain is explicit: a stage job that needs a task ends `wait` with a `request` (the task and its exact binding), and the caller starts that task job (`job.mjs --task sync|integration --binding JSON`). Every task's result is a [task result](../../docs/reference/task-results.md) the landing account records.
 
 | Stage / phase | Session authority | Result |
 |---|---|---|
 | `author` (explicit) | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
 | `implement` | Developer (`implementor` in config), writable | Preserved issue work plus code/tests/docs commits through `pipeline_commit`, pushed as a **draft**; no entry/resume base synchronization or mandatory verification/fix loop |
-| `review` / `hardening` | Reviewer, writable | Design/correctness/test fixes and bounded configured verification fixes, without synchronization. Saves exact `hardened` before guarded draft readiness; an exact checkpoint resumes without another writer |
-| `merge` / `integration` | Reviewer, writable only when integration needs fixes | At the caller's serialized merge turn, bounded synchronization/conflict/check/CI fixes. Records integration history; any changed code returns for fresh hardening, checks and Security |
+| `review` / `hardening` | Hippy, the Developer, in a fresh session (the caller passes `--hardening-buddy hippy`; a bare `job.mjs` still hardens as the Reviewer), writable | Design/correctness/test fixes, the checks merge sent back, and bounded configured verification fixes, without synchronization. Requests Sync first when R misses the target. Records a Hardening result, then saves exact `hardened` before guarded draft readiness |
+| Sync task (`--task sync`) | Hippy, writable, `writer` profile | Rebases R onto exactly the target commit T as R′ through the development account; a stopped rebase goes to Hippy's resolver sessions (phase `sync`). R′ returns to review for fresh hardening |
+| Integration task (`--task integration`) | No session; `reader` profile | Runs the configured checks on exactly R in a detached checkout; a pass is R's premerge check proof, a failure returns to review |
 | `merge` / `security-review` | Fresh Reviewer, **read-only** | Security only (`user-harm`, `rights`, `financial-harm`, `abuse-risk`) over the **exact candidate's complete contribution**, readable tree and final docs/inputs, before deterministic code merge; rejection prevents merge |
 | completion | Deterministic ops | Only an exact durable clear security receipt permits issue completion/closure through the `finish` op |
 
@@ -103,7 +107,7 @@ For direct work, the Developer derives requirements from the trusted issue title
 
 Saved state records `authorUsed` and the Developer-consumed `requirementsInputs` revision. Missing mode fields mean an older authored run, not permission to start over. Authored issues still need their current authenticated Gherkin. New trusted inputs return an authored issue to Author, otherwise Developer, invalidating old revision approval without erasing PRs, branches, heads, merge facts or Security rejections. Old authored own-merge and closed-incomplete-Merge recovery retain their existing eligibility and authority guards.
 
-Hardening authorizes only one exact code/input revision. Any changed code, including clean integration or conflict resolution, needs fresh hardening, checks and Security. `integration` remains historical evidence, not an authorization exception. Security receipts for new candidates explicitly bind the configured target and observed target commit as well as the candidate code and trusted inputs. A target change invalidates clearance. CI is required on the exact authorized head when configured.
+Hardening authorizes only one exact code/input revision. Any changed code, including a Sync's clean rebase or conflict resolution, needs fresh hardening, Integration and Security. The merge stage never synchronizes or fixes checks itself: a moved target requests Sync and a failed check returns to Hardening. A saved `integration` receipt remains historical evidence, not an authorization exception. Security receipts for new candidates explicitly bind the configured target and observed target commit as well as the candidate code and trusted inputs. A target change invalidates clearance. CI is required on the exact authorized head when configured.
 
 Security runs before approval and deterministic merge. A rejection stops the issue with zero merge effects. Lifting the stop cannot reroll that rejected revision. Missing or stale clearance never authorizes a merge. Deterministic issue delivery may target ecosystem's configured source base `main`; it does not authorize production deployment, a model base push or installation.
 
@@ -152,7 +156,7 @@ Failed, lost, timed-out or malformed push responses never authorize repeating th
 
 Completion, including own recovery and done replay, requires premerge `verifiedSha` equal to the fast-forward result M (which is exactly the authorized head H) under the signed intent; no suite reruns on M. Missing proof retains merged truth and stops without a code writer/push. Historical graph readers retain two-parent and exact-delta squash handling, but those receipts alone do not satisfy current fast-forward completion proof. Legacy results without that proof stop for read-only reconciliation; no postmerge checks or Security can supply it. The v2 state can retain optional durable attempted-merge evidence, strictly validated when present. Older states without it remain readable, but missing historical response evidence is never invented. This is not old/new rolling-runtime compatibility: an older binary does not enforce the new attempt barrier. A merge changes nothing installed; cutover is operator-owned and quiescent.
 
-`maxCiFixes`, `maxSyncs` and `maxConflictFixes` bound the corresponding fix loops. Stops have `agent:stopped-<control>` labels and a comment naming the control and recovery. Rate limits/transport errors defer rather than stop; the caller must back off before restarting. **`maxFixRounds` is obsolete, warned about and ignored**; the historical `review-rounds` stop is retained for old state/labels, not repurposed as a new limit. Caller-owned restarts must also be bounded; legacy scheduler `maxResumes` is not a new caller scheduler.
+`maxCiFixes` bounds Hardening's check-fix sessions, `maxSyncs` the Sync runs of one issue without landing, and `maxConflictFixes` the Sync resolver's sessions; each task also has three attempts per binding. Stops have `agent:stopped-<control>` labels and a comment naming the control and recovery. Rate limits/transport errors defer rather than stop; the caller must back off before restarting. **`maxFixRounds` is obsolete, warned about and ignored**; the historical `review-rounds` stop is retained for old state/labels, not repurposed as a new limit. Caller-owned restarts must also be bounded; legacy scheduler `maxResumes` is not a new caller scheduler.
 
 Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-implementor` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
 

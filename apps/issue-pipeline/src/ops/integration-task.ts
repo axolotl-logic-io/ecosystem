@@ -2,8 +2,8 @@
 // on the exact target T only when R already contains T, in a detached
 // checkout of R that no branch or push can reach. It never commits, rebases,
 // pushes or writes a PR; its only GitHub writes are the landing account's
-// attempt and result (#183). Inactive until #180's activation: no role's
-// OpName names it.
+// attempt and result (#183). The Integration task job
+// (roles/integration/integration.ts) calls it since #186.
 //
 //   target not at T, or R missing T → sync-needed, no attempt
 //   branch not at R                 → hold, no attempt

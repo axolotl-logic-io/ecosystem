@@ -19,7 +19,11 @@ import {
   historicalMerge,
   replaceState,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  runStage,
+  runThroughTasks,
+  stopJobs,
+} from "./pipeline-flow-run-test-kit.mjs";
 import {
   hardeningTurn,
   implementorTurn,
@@ -118,14 +122,18 @@ test("direct historical recovery starts with candidate clearance and a confirmed
   withWorld(flow.ghDir, (world) => {
     world.failedHead = earlier.code;
   });
-  assert.equal(runStage(flow, "merge").end, "next");
-  const { integration } = state(flow);
-  assert.ok(integration);
-  assert.notEqual(integration.reviewed.code, integration.revision.code);
+  // Merge relays its Integration, then CI fails on the first head, and
+  // Hardening fixes it. The fixture's pre-upgrade integration receipt is
+  // built from those two real revisions.
+  assert.equal(runThroughTasks(flow, "merge").at(-1).end, "next");
   assert.equal(runStage(flow, "review").end, "next");
+  const fixed = state(flow).hardened;
+  assert.ok(fixed);
+  const integration = { reviewed: earlier, revision: fixed };
+  assert.notEqual(integration.reviewed.code, integration.revision.code);
   const marker = path.join(flow.root, "interrupt-finish");
   fs.writeFileSync(marker, "pause at confirmed candidate result\n");
-  assert.equal(runStage(flow, "merge").end, "deferred");
+  assert.equal(runThroughTasks(flow, "merge").at(-1).end, "deferred");
   fs.unlinkSync(marker);
   const candidate = state(flow);
   assert.ok(candidate.merged?.code);
@@ -218,7 +226,7 @@ for (const staleImplement of [false, true]) {
     assert.deepEqual(setup, ["next", "next"]);
     const marker = path.join(flow.root, "interrupt-finish");
     fs.writeFileSync(marker, "interrupt completion\n");
-    assert.equal(runStage(flow, "merge").end, "deferred");
+    assert.equal(runThroughTasks(flow, "merge").at(-1).end, "deferred");
     fs.unlinkSync(marker);
     const original = state(flow);
     assert.equal(original.stage, "done");

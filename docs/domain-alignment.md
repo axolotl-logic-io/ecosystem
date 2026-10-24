@@ -47,8 +47,8 @@ These mappings apply the 2026-10-22 decisions to the installed release `42a8771`
 | `author` stage | Author task | Structure | Optional Author is installed in `42a8771`. |
 | `implement` stage | Implementation task | Structure | Performed by the Developer. |
 | `review` stage, `hardening` session phase | Hardening task | Structure | |
-| `merge` stage | Sync, Integration, Security, Land and Completion tasks | Structure; public/persisted impact | Dash shows it as Legacy merge. Its modules already sit apart in `src/roles/merge/` (`sync.ts`, `integration.ts`, `checks.ts`, `security.ts`, `merge.ts`, `completion.ts`); the stage ties them together. |
-| Session phases `integration`, `security-review` | Sync (by the Developer), read-only Integration and Security (by the Gatekeeper) | Structure | A phase is a task under another name. The writable `integration` phase splits into Sync and Integration. |
+| `merge` stage | Security, Land and Completion tasks | Structure; public/persisted impact | Dash shows it as Legacy merge. Since #186 Sync and Integration are task jobs of their own (`job.mjs --task`); the merge stage requests them and keeps Security, Land and Completion (`src/roles/merge/`). |
+| Session phases `sync`, `security-review` | Sync's resolver (by the Developer) and Security (by the Gatekeeper) | Structure | The writable `integration` phase retired with #186; Integration runs no session. |
 | `--stage`, saved `stage`, `stoppedStage`, resume stage | The tasks that may proceed, derived from current results | Structure; public/persisted impact | A saved stage is a cached position that can go stale, as in a `branch-changed` stop. |
 | Stage caps (`maxStageJobs`) | Capacity per resource | Structure; operator config | Today's caps act as role caps. |
 | `maxAttempts` per stage and run folder | Attempts per task and binding | Behavior | A moved target uses up the landing budget today. |
@@ -62,8 +62,8 @@ These mappings apply the 2026-10-22 decisions to the installed release `42a8771`
 | `mergeAttempt`, `codeMerged`, `merge-refused`, `agent:merged` | Landing attempt, landed, landing refused, a landed label | Terminology; public/persisted impact | Labels and signed state need old readers. |
 | Merge queue, `--merge-queue` | Landing order | Terminology; CLI impact | An order, not permission. |
 | `mergeAccount`, "merge account" | Landing account | Terminology; config impact | |
-| `maxSyncs` | An integration limit | Terminology; config impact | Its documented bound counts integrations of one issue without landing, not syncs. |
-| "Only the merge stage synchronizes" in `docs/reference/sync.md`; `src/roles/merge/sync.ts` | The Sync task, separate from Integration and performed by the Developer | Structure; docs | `sync-is-a-task`. Installed sync still runs inside the `merge` stage. |
+| `maxSyncs` | A Sync limit | Terminology; config impact | Since #186 it counts Sync runs of one issue without landing. |
+| The Sync task job, `src/roles/sync/sync.ts` | The Sync task, separate from Integration and performed by the Developer | Done in #186 | `sync-is-a-task`. The merge stage no longer synchronizes. |
 | Merge commits and `git merge` | Unchanged | None | These are Git merges. |
 
 ### Roles, buddies and accounts
@@ -119,7 +119,7 @@ The inspected checkout declares four stages in `src/stages.ts`: `author`, `imple
 | Author | Author, optional | Preserve authored and direct requirements modes. Optional Author is installed in `42a8771`. |
 | Implement | Implementation | Align stage naming separately from the Developer role. |
 | Review / Hardening phase | Hardening | Preserve code/design/test responsibilities and applicable verification. |
-| Merge / Integration phase | Sync and Integration | Superseded by `sync-is-a-task`: the Developer's Sync writes, and the Gatekeeper's Integration only checks. |
+| Merge / Integration phase | Sync and Integration | Done in #186 (`sync-is-a-task`): the Developer's Sync writes, and the Gatekeeper's Integration only checks. |
 | Merge / Security phase | Security | Assess the exact candidate before target mutation under the accepted plan's policy/target binding. Preserve historical result-phase evidence and recovery. |
 | Merge's target mutation | Land (formerly Merge) | Keep only the guarded target-changing operation here. Do not let the new name grant a writer or repeat an uncertain operation. |
 | Finish/close and exact-result processing | Completion | Separate delivered-result verification and work-item completion from merge success. Preserve closed-but-incomplete recovery. |

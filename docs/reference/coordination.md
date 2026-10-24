@@ -20,6 +20,8 @@ node "$ISSUE_PIPELINE_ROOT/job.mjs" --config CONFIG \
 Optional flags:
 
 - `--merge-queue N1,N2,…` passes the caller's merge order (see [merge](merge.md#merge-order)).
+- `--hardening-buddy hippy` hardens as Hippy, the Developer, in a fresh session; only with `--stage review`. The caller always passes it.
+- `--task sync|integration --binding BINDING_JSON` runs a requested task instead of the stage: Hippy's [Sync](sync.md) at `review` or `merge`, or Lawd's read-only [Integration](merge.md#read-only-integration-and-exact-land) at `merge`. `STAGE` is the issue's saved stage, and `BINDING_JSON` is the request's binding, exactly. The job refuses a binding for another task, issue, repository or target branch before it claims or writes anything. A task job runs as its task's access profile: Sync as `writer`, Integration as `reader`.
 - `--print-boundary` pins and checks the prompt pages and prints the stage's role, checkouts, environment and network as one JSON line, without cloning, claiming or starting a session.
 - `--job-id UUID` names the job; without it, the job makes its own.
 
@@ -27,14 +29,17 @@ To steer a running session, run `job.mjs --config CONFIG --issue ISSUE --steer L
 
 ## Read the result
 
-A job prints one JSON line, `{"issue", "stage", "end", "reason"?, "claimError"?}`, and exits 0, even when it stops the issue. It exits 1, with the reason on stderr, only when the job itself fails: bad arguments, a refused config or branch, a prompt page it can't pin, or a failed op of its own. A signal exits 128 plus the signal number, after saving the claimed issue at its last saved state with no lease.
+A job prints one JSON line, `{"issue", "stage", "end", "reason"?, "claimError"?, "request"?, "task"?}`, and exits 0, even when it stops the issue.
+
+- `request` is `{task, binding}`: the task a waiting stage needs before it can go on, such as Sync when the revision misses the target, or Integration before Land. Start that task next.
+- `task` is a task job's report of its run: `{task, binding, run, verdict}`. `verdict` is `passed`, `failed` or `refused` when the run recorded one, `held` when its records or a limit need a person, and `unknown` when the job ended without establishing one. A task's verdict is separate from the job's `end`. It exits 1, with the reason on stderr, only when the job itself fails: bad arguments, a refused config or branch, a prompt page it can't pin, or a failed op of its own. A signal exits 128 plus the signal number, after saving the claimed issue at its last saved state with no lease.
 
 | `end` | Meaning | Caller's next step |
 |---|---|---|
 | `next` | The stage finished and saved the next stage | Run the saved next stage on the same branch and lane |
 | `stop` | A control failed; the issue has a stop label | See [stops and labels](stops-and-labels.md) |
 | `ask` | The pipeline asked a question (`agent:needs-info`) | Wait for a trusted answer |
-| `wait` | The issue waits, for example for its merge turn | Retry later |
+| `wait` | The issue waits, for example for its merge turn, or for the task its `request` names | Start the requested task; otherwise retry later |
 | `deferred` | A rate limit or transient error deferred it | Back off, then retry |
 | `unclaimed` | Another claimant holds it, or the claim failed | Check `reason` and `claimError` first |
 
@@ -56,7 +61,7 @@ An issue's `after` marker names prerequisite issues. The legacy scheduler and as
 
 These exist in source but are not how the caller runs the pipeline:
 
-- **`orchestrate.mjs`** is a retained legacy scheduler (`--config PATH [--once]`). Don't run it alongside caller-managed jobs.
+- **`orchestrate.mjs`** is a retained legacy scheduler (`--config PATH [--once]`). Don't run it alongside caller-managed jobs. It relays no task request, so since #186 a merge it starts waits for an Integration it never starts.
 - **The coordination seam** (`src/coordination-records.ts`, `src/coordination.ts`, `src/execution.ts`) is an explicit-only protocol for execution and integration-turn records. Nothing in `job`, `ops`, `orchestrate` or `report` reaches it, and assignment mode is disabled.
 - **Assignment discovery** (`src/discovery/plan.ts`) is a read-only, opt-in module. Its plans state `executionAuthority: false`: they grant no session, claim, write or merge.
 

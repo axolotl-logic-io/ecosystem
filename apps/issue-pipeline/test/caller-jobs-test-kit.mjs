@@ -3,9 +3,11 @@
 // temporary pipeline root whose job.mjs is a fake stage job, a fake gh that
 // shows the test issues' states, a config for repo o/r with fake credentials
 // and a fake model env file. The fake job records its argv and the variables
-// it got, opens job.json with src/job/status.ts as the real job does, then
-// waits for `release(issue, end)` and ends that way: with an `end` value, or
-// with "crash", failing without a result line. Every job a test starts is
+// it got, opens job.json with src/job/status.ts as the real job does (with
+// a task job's task and binding), then waits for `release(issue, end)` and
+// ends that way: with an `end` value, with a whole JSON line's fields over
+// the issue and stage, such as a task report, or with "crash", failing
+// without a result line. Every job a test starts is
 // killed when it ends. Every launcher runs under a spy that records any read
 // of the model env file.
 import { spawnSync } from "node:child_process";
@@ -57,10 +59,15 @@ fs.writeFileSync(path.join(here, "seen-" + issue + ".json"), JSON.stringify({
 }));
 const runDir = path.join(here, "runs", ${JSON.stringify(SLUG)}, "issue-" + issue);
 fs.mkdirSync(runDir, { recursive: true });
-const status = openStatus(runDir, {
+const info = {
   id: flag("--job-id"), issue, stage, lane: flag("--lane"),
   startedAt: new Date().toISOString(), socket: "/s", prompts: [],
-});
+};
+if (argv.includes("--task")) {
+  const name = flag("--task");
+  info.task = { task: name[0].toUpperCase() + name.slice(1), binding: JSON.parse(flag("--binding")) };
+}
+const status = openStatus(runDir, info);
 const release = path.join(here, "release-" + issue);
 const deadline = Date.now() + ${FAKE_JOB_MS};
 while (!fs.existsSync(release) && Date.now() < deadline) {
@@ -72,8 +79,12 @@ if (end === "crash") {
   process.stderr.write("fake job failed\\n");
   process.exit(1);
 }
-status.finish({ kind: "finished", end });
-process.stdout.write(JSON.stringify({ issue, stage, end }) + "\\n");
+let line = { issue, stage, end };
+if (end.startsWith("{")) {
+  line = { issue, stage, ...JSON.parse(end) };
+}
+status.finish({ kind: "finished", end: line.end });
+process.stdout.write(JSON.stringify(line) + "\\n");
 `,
 );
 

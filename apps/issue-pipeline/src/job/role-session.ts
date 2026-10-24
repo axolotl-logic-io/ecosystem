@@ -20,6 +20,7 @@ import type { HardeningBuddy } from "./roles.ts";
 import { sessionRefusalOf, stageAgentOf } from "./roles.ts";
 import type { RunUsage, UsageEntry } from "./run-usage.ts";
 import type { JobStatus } from "./status.ts";
+import type { JobTask } from "./task-request.ts";
 import { isTransientSessionError } from "./transient.ts";
 import { usageTally } from "./usage-tally.ts";
 
@@ -41,6 +42,8 @@ interface SessionJob {
   stage: Stage;
   // Who performs the stage's Hardening; "lawd", the installed one, without.
   hardening?: HardeningBuddy;
+  // The task a task job runs, whose sessions it may start instead.
+  task?: JobTask | null;
   prompts: StagePrompts;
   hooks: LaunchHooks;
   status: Pick<JobStatus, "settled">;
@@ -136,16 +139,18 @@ async function runAs(
 // pinned no prompt for, fails without starting, and so does one asked for
 // once the job's stop began. Keys are
 // `<role>-<n>`, counting each role's sessions in the job, except that
-// Hippy's Hardening is `implementor-hardening-<n>`: its transcript never
-// takes the path of the Implementation session's, whose key is
-// `implementor-<n>` (hardening-stays-independent).
+// Hippy's Hardening is `implementor-hardening-<n>` and Hippy's Sync
+// resolver `implementor-sync-<n>`: neither transcript takes the path of the
+// Implementation session's, whose key is `implementor-<n>`
+// (hardening-stays-independent).
 function sessionRunnerOf(
   job: SessionJob,
 ): (spec: SessionSpec) => Promise<SessionResult> {
   const counts = new Map<string, number>();
   const hardening = job.hardening ?? "lawd";
+  const task = job.task ?? null;
   return async (spec: SessionSpec): Promise<SessionResult> => {
-    const refusal = sessionRefusalOf(job.stage, spec, hardening);
+    const refusal = sessionRefusalOf(job.stage, spec, hardening, task);
     if (refusal !== null) {
       return refused(refusal);
     }
@@ -156,10 +161,13 @@ function sessionRunnerOf(
     if (job.stopping() !== null) {
       return { ok: false, transient: true, error: STOPPING };
     }
-    const { role } = stageAgentOf(job.stage, hardening);
+    const { role } = stageAgentOf(job.stage, hardening, task);
     let name: string = role;
     if (hardening === "hippy" && spec.phase === "hardening") {
       name = `${role}-hardening`;
+    }
+    if (spec.phase === "sync") {
+      name = `${role}-sync`;
     }
     const n = (counts.get(name) ?? 0) + 1;
     counts.set(name, n);

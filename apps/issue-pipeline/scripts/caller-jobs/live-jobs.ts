@@ -1,12 +1,15 @@
 // The stage jobs running on this machine, and whether one more may start
 // beside them. A job counts while its pid is a job.mjs process, whether the
-// caller's receipts or a job.json under the pipeline's runs/ names it.
+// caller's receipts or a job.json under the pipeline's runs/ names it. A
+// task job (#186) counts like any job, under its task's own stage cap and
+// attempts: it bypasses no cap, exclusion or serialization.
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import type { Config } from "../../src/config.ts";
 import { readStatus } from "../../src/job/status.ts";
+import type { JobTask } from "../../src/job/task-request.ts";
 import { ROOT } from "../../src/pipeline-root.ts";
 import { run } from "../../src/process.ts";
 import type { Stage } from "../../src/stages.ts";
@@ -15,11 +18,13 @@ const JOB_ENTRY = "job.mjs";
 const ISSUE_FOLDER = /^issue-\d+$/u;
 const PS_TIMEOUT_MS = 10_000;
 
-// A live stage job. Only a receipt names its branch; job.json doesn't.
+// A live stage job, and what it works on: its stage, or its task. Only a
+// receipt names its branch; job.json doesn't.
 interface LiveJob {
   slug: string;
   issue: number;
   stage: string;
+  work: string;
   pid: number;
   branch: string | null;
 }
@@ -27,16 +32,18 @@ interface LiveJob {
 // The run's caps and exclusions, as run.json sets them.
 interface Caps {
   maxJobs: number;
-  maxStageJobs: Partial<Record<Stage, number>>;
+  maxStageJobs: Partial<Record<Stage | JobTask, number>>;
   maxAttempts: number;
   excludedIssues: Record<string, number[]>;
 }
 
-// The job a caller asks to start, and its attempt at that stage.
+// The job a caller asks to start, what it works on (its stage, or its
+// task), and its attempt at that.
 interface Request {
   cfg: Config;
   issue: number;
   stage: Stage;
+  work: Stage | JobTask;
   branch: string;
   attempt: number;
 }
@@ -92,7 +99,8 @@ function statusFileJobs(): LiveJob[] {
         }
         const { issue, stage, pid } = status;
         const slug = path.basename(repoDir);
-        return [{ slug, issue, stage, pid, branch: null }];
+        const work = status.task?.task.toLowerCase() ?? stage;
+        return [{ slug, issue, stage, work, pid, branch: null }];
       }),
   );
 }
@@ -106,17 +114,19 @@ function liveJobs(receipts: readonly LiveJob[]): LiveJob[] {
 }
 
 // Why `request` mustn't start beside `live` under `caps`, or null when it
-// may: an excluded issue, a stage out of attempts, a full cap, a live job on
-// the same issue or branch, or a second merge in one repo.
+// may: an excluded issue, a stage or task out of attempts, a full cap, a
+// live job on the same issue or branch, or a second merge in one repo. A
+// task counts under its own stage cap, and a merge stage job alone writes
+// the target.
 function refusalOf(
   caps: Caps,
   request: Request,
   live: readonly LiveJob[],
 ): string | null {
-  const { cfg, issue, stage, branch, attempt } = request;
+  const { cfg, issue, work, branch, attempt } = request;
   const sameRepo = live.filter((job) => job.slug === cfg.slug);
-  const atStage = live.filter((job) => job.stage === stage).length;
-  const stageCap = caps.maxStageJobs[stage] ?? Number.POSITIVE_INFINITY;
+  const atStage = live.filter((job) => job.work === work).length;
+  const stageCap = caps.maxStageJobs[work] ?? Number.POSITIVE_INFINITY;
   const refusals: [boolean, string][] = [
     [
       (caps.excludedIssues[cfg.repo] ?? []).includes(issue),
@@ -124,7 +134,7 @@ function refusalOf(
     ],
     [
       attempt > caps.maxAttempts,
-      `#${issue} ${stage} has used its ${caps.maxAttempts} attempts`,
+      `#${issue} ${work} has used its ${caps.maxAttempts} attempts`,
     ],
     [
       live.length >= caps.maxJobs,
@@ -132,7 +142,7 @@ function refusalOf(
     ],
     [
       atStage >= stageCap,
-      `${atStage} ${stage} jobs are live; the cap is ${stageCap}`,
+      `${atStage} ${work} jobs are live; the cap is ${stageCap}`,
     ],
     [
       sameRepo.some((job) => job.issue === issue),
@@ -143,7 +153,7 @@ function refusalOf(
       `branch ${branch} already has a live job`,
     ],
     [
-      stage === "merge" && sameRepo.some((job) => job.stage === "merge"),
+      work === "merge" && sameRepo.some((job) => job.work === "merge"),
       `${cfg.repo} already has a live merge job`,
     ],
   ];

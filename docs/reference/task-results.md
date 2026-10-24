@@ -2,7 +2,7 @@
 
 A task result records what one buddy run found for one exact binding. Sync, read-only Integration and Land consume these results ([#180](https://github.com/axolotl-logic-io/ecosystem/issues/180)). This page is the contract that [#183](https://github.com/axolotl-logic-io/ecosystem/issues/183) adds.
 
-**The records are inactive.** No installed role or caller writes or reads them yet. Plan D's activation ([#186](https://github.com/axolotl-logic-io/ecosystem/issues/186)) switches them on. Until then the installed merge path behaves exactly as before.
+[#186](https://github.com/axolotl-logic-io/ecosystem/issues/186) activated the records. Every task after Implementation records them, and every task that depends on another reads them fresh.
 
 The rules come from these decisions in [buddies and tasks](../decisions/buddies-and-tasks.md): `bindings-and-ready-tasks`, `requirements-bindings`, `runs-and-retries`, `no-repeated-checks`, `observation-sources` and `additive-record-versions`.
 
@@ -106,11 +106,30 @@ The records hold when any of these is true:
 
 Only `passed` can grant authority, and only for the exact binding.
 
+## Who records what
+
+The job's recorder, the landing-account process, writes every record. The run that does a task never does, even when Hippy performs it.
+
+| Task | Recorded by | Binding's revision | When |
+|---|---|---|---|
+| Sync | The Sync task job's ops | R, the revision synced | The attempt before the rebase, the result after the branch check |
+| Hardening | The review job | The hardened revision, after Hardening's own commits | Attempt and result together, after verification, before the checkpoint is saved |
+| Integration | The Integration task job's ops | R, the revision checked | The attempt before the checks, the result after |
+| Security | The merge job | The candidate | The attempt before the session, the verdict after |
+| Land | The `merge` op | The candidate | The attempt before the first PR write, the result once the own merge is confirmed |
+
+**Hardening binds the revision it produced.** Integration consumes "a passed Hardening for exactly R on T", and Hardening's session commits fixes, so the result names the revision Hardening checkpointed. Hardening's budget stays the review stage's own limits (`maxCiFixes`). A hardened checkpoint saved before #186 has no result and isn't one: the work returns to review for fresh Hardening.
+
+The other tasks bind the revision they were given. A Sync result names its R and the R′ it produced (`receipt.produced.code`).
+
+Roles find the next ready task with the read-only `task-readiness` op. It reads R, T, whether R contains T and the statuses of the chain's tasks for (R, T), and names the first task without a current pass, with its binding, or a hold. A stage job that needs a task prints that task and binding as its `request`, and the caller relays it. A buddy could ask the same question later.
+
 ## Ops
 
 | Op | Account | Effect |
 |---|---|---|
-| `task-result` | landing (read) | None. Returns the status above. |
+| `task-result` | landing (read) | None. Returns the status above, and `latest`: the binding's latest run, which a retry names as `previous`. |
+| `task-readiness` | landing (read) | None. Returns R, T, whether R contains T, and the next ready task with its binding, or a hold. |
 | `record-task-attempt` | landing | Appends an attempt, only when the status is `missing`. |
 | `record-task-result` | landing | Appends a result for that run's attempt. |
 

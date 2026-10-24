@@ -3,10 +3,15 @@
 // (task-facts.ts). Pure.
 
 import type { RoleContext } from "../../job/role-context.ts";
-import type { Finding, MergeReturn } from "../../state.ts";
+import type { Finding } from "../../state.ts";
 import type { Mode } from "../change-task.ts";
 import { scopeLines } from "../change-task.ts";
-import { header, replyLines, requirementsLines } from "../task-facts.ts";
+import {
+  header,
+  mergeReturnLines,
+  replyLines,
+  requirementsLines,
+} from "../task-facts.ts";
 
 function whereOf(finding: Finding): string {
   if (finding.path === undefined) {
@@ -34,18 +39,6 @@ function findingLines(ctx: RoleContext): string[] {
     "An earlier review asked for these changes:",
     "",
     ...findings.map(findingLine),
-    "",
-  ];
-}
-
-function mergeReturnLines(mergeReturn: MergeReturn | null): string[] {
-  if (mergeReturn === null) {
-    return [];
-  }
-  return [
-    `## Sent back from merge (${mergeReturn.reason})`,
-    "",
-    mergeReturn.detail,
     "",
   ];
 }

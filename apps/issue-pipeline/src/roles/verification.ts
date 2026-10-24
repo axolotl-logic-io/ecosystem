@@ -1,6 +1,7 @@
 // The pipeline's verification of a change (`verify-runs-repo-checks`): the
-// repo's configured checks through `verify`, never a session's word. The Reviewer runs it while it hardens a change and while
-// it integrates one at merge. A failure gets a fix session of that phase, up
+// repo's configured checks through `verify`, never a session's word. The
+// hardener runs it while it hardens a change. A failure gets a fix session of
+// that phase, up
 // to `maxCiFixes` of them in a job, and stops with check-fixes after that,
 // or as soon as a fix session says no change in the repo can fix them. Once
 // the code merged, verify checks the merge commit itself, which no session
@@ -16,6 +17,10 @@ import { opReply, VERIFY_REPLY } from "./op-replies.ts";
 import type { Step, WriterPhase } from "./writer-session.ts";
 import { ended, errorStop, writerSession } from "./writer-session.ts";
 
+// The writing sessions that verify and fix checks: Hardening only. Sync never
+// fixes a check (`sync-is-a-task`).
+type VerifyPhase = Extract<WriterPhase, "hardening">;
+
 interface Verification {
   headSha: string;
   pass: boolean;
@@ -27,7 +32,7 @@ interface Verification {
 interface Loop {
   state: IssueState;
   mode: Mode;
-  phase: WriterPhase;
+  phase: VerifyPhase;
   maxCiFixes: number;
 }
 
@@ -155,7 +160,7 @@ async function verifiedHead(
     failing = [],
   }: {
     mode: Mode;
-    phase: WriterPhase;
+    phase: VerifyPhase;
     maxCiFixes: number;
     failing?: readonly Check[];
   },

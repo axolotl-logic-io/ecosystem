@@ -1,5 +1,7 @@
 // Hardening checkpoints one exact revision and literal target before PR readiness.
 // Missing historical targets need fresh hardening; Security precedes new merges.
+// A revision that misses the target is synced first, and every checkpoint is
+// also a passed Hardening task result, recorded before it's saved (#186).
 
 import { z } from "zod";
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
@@ -18,9 +20,15 @@ import { changeModeOf, SHORT_SHA } from "../change-task.ts";
 import { opReply, PUSH_REPLY, readyPr } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { codeMergeConfirmed, currentRevision } from "../revision-source.ts";
+import { readiness } from "../task-results.ts";
 import { verifiedHead } from "../verification.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop, writerSession } from "../writer-session.ts";
+import {
+  beforeHardening,
+  hardeningPassed,
+  recordHardening,
+} from "./hardening-result.ts";
 import { hardeningTask } from "./task.ts";
 
 // The config's bound on a job's check-fix sessions; its defaults fill it in.
@@ -270,26 +278,90 @@ async function toMerge(
   return { kind: "next", state: logged(next, `${why}; on to merge`) };
 }
 
-const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
-  const before = await currentRevision(ctx);
-  const refused = notHardenable(ctx, before);
-  if (refused !== null) {
-    return refused;
-  }
-  // A hardening checkpointed for exactly this revision needs no session
-  // again: an interrupted job left its PR to mark ready.
-  if (
-    approvalHolds(ctx.state, before.revision) &&
-    (ctx.state.codeMerged !== null ||
-      targetHolds(ctx.cfg, ctx.state.hardenedTarget, before.baseSha))
-  ) {
+// A merged change keeps its saved checkpoint as before: its read-only
+// reconciliation needs no task result.
+async function mergedReview(
+  ctx: RoleContext,
+  before: CurrentRevision,
+): Promise<RoleEnd> {
+  if (approvalHolds(ctx.state, before.revision)) {
     return await toMerge(ctx, ctx.state, "hardening already passed");
   }
   const hardened = await harden(ctx, ctx.state, before);
   if (!hardened.ok) {
     return hardened.end;
   }
+  return errorStop(ctx.state, "merged code is never hardened again");
+}
+
+// A passed Hardening result for exactly this revision and target needs no
+// session again: an interrupted job left its checkpoint or PR readiness.
+async function alreadyHardened(
+  ctx: RoleContext,
+  before: CurrentRevision,
+): Promise<RoleEnd> {
+  let { state } = ctx;
+  if (
+    !(
+      approvalHolds(state, before.revision) &&
+      targetHolds(ctx.cfg, state.hardenedTarget, before.baseSha)
+    )
+  ) {
+    state = logged(
+      checkpoint(
+        state,
+        before.revision,
+        reviewedTarget(ctx.cfg, before.baseSha),
+      ),
+      `hardened code ${short(before.revision.code)}, as its recorded result says`,
+    );
+    await ctx.save(state);
+  }
+  return await toMerge(ctx, state, "hardening already passed");
+}
+
+const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
+  const before = await currentRevision(ctx);
+  const refused = notHardenable(ctx, before);
+  if (refused !== null) {
+    return refused;
+  }
+  if (changeModeOf(ctx.state).kind === "merged") {
+    return await mergedReview(ctx, before);
+  }
+  const ready = await readiness(ctx);
+  const first = beforeHardening(ctx.state, ready);
+  if (first !== null) {
+    return first;
+  }
+  // Work merge sent back, such as a failed check, always hardens again.
+  const returned = ctx.state.mergeReturn !== null;
+  if (
+    !returned &&
+    hardeningPassed(ready) &&
+    ready.revision?.code === before.revision.code &&
+    ready.target.commit === before.baseSha
+  ) {
+    return await alreadyHardened(ctx, before);
+  }
+  const hardened = await harden(ctx, ctx.state, before);
+  if (!hardened.ok) {
+    return hardened.end;
+  }
   const { state, revision } = hardened.value;
+  if (returned && revision.code === before.revision.code) {
+    return errorStop(
+      ctx.state,
+      `merge sent this revision back (${ctx.state.mergeReturn?.reason}), and hardening changed nothing; a person must look at the failure`,
+    );
+  }
+  const unrecorded = await recordHardening(ctx, state, {
+    code: String(revision.code),
+    target: before.baseSha,
+  });
+  if (unrecorded !== null) {
+    return unrecorded;
+  }
   await ctx.save(state);
   await postHardened(ctx, state, revision);
   return await toMerge(ctx, state, "hardening passed");

@@ -75,10 +75,11 @@ const EXPECTED = {
   },
   implement: WRITER,
   review: WRITER,
+  // Merge lands and completes; its only session, Security, reads (#186).
   merge: {
     role: "merger",
     network: ["api.github.com", "api.anthropic.com", "registry.npmjs.org"],
-    access: { repo: "write" },
+    access: { repo: "read" },
   },
 };
 const COMMIT_EXTENSION = /\/pipeline-commit\.mjs$/u;

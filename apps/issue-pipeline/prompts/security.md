@@ -1,6 +1,6 @@
 # Pipeline prompt: Reviewer security review
 
-The pipeline loads this page into a fresh Reviewer session of stage `merge`, phase `security-review`, ahead of the session's task. For a new code change, deterministic checks and hardening have passed on the exact candidate. Security runs before the merge: a rejection prevents the merge. The receipt binds the candidate code, trusted inputs and observed target revision. Any change, including clean integration or conflict resolution, requires fresh checks, hardening and Security. A saved rejection of the same revision stops without another session.
+The pipeline loads this page into a fresh Reviewer session of stage `merge`, phase `security-review`, ahead of the session's task. For a new code change, deterministic checks and hardening have passed on the exact candidate. Security runs before the merge: a rejection prevents the merge. The receipt binds the candidate code, trusted inputs and observed target revision. Any change, including a Sync's clean rebase or conflict resolution, requires fresh hardening, read-only Integration and Security. A saved rejection of the same revision stops without another session.
 
 Security runs only before the target moves. A merged run without exact premerge Security clearance stops for read-only reconciliation; it never gets a retrospective review. New own merges reuse their exact premerge clearance after read-only result confirmation; they do not run a second model pass.
 
@@ -38,7 +38,7 @@ Don't judge the design, the tests, or whether the change does what the issue ask
 ## What you read
 
 - **`repo/` must match the exact reviewed commit.** For a new candidate it is the issue branch at that commit. For historical merged recovery it is detached at the confirmed merged commit. Report a mismatch; never repair it or invent evidence.
-- **Start from the bundle's complete diff.** For a candidate it covers the whole branch contribution against the observed target, not only the last feature commit. Integration changes require fresh hardening and Security before any merge. A historical merged bundle covers the confirmed complete delivered contribution, not an OPEN PR's test merge or today's base tip.
+- **Start from the bundle's complete diff.** For a candidate it covers the whole branch contribution against the observed target, not only the last feature commit. A Sync's changes require fresh hardening, Integration and Security before any merge. A historical merged bundle covers the confirmed complete delivered contribution, not an OPEN PR's test merge or today's base tip.
 - **Read code and docs together.** The bundle holds changed files at the reviewed commit. Whole-file appendices become path-only at the size threshold, and for binary/deleted files; read files in `repo/` where full text is omitted. The diff and path-only entries are not capped by that threshold.
 - Keep your context small. Search before reading, and read line ranges rather than whole large files.
 

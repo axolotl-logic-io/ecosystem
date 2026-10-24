@@ -7,6 +7,7 @@
 //
 //   node caller-jobs.mjs start  --run RUN_DIR --config CONFIG --issue N
 //        --branch BRANCH --lane LANE --stage STAGE [--merge-queue N1,N2]
+//        [--task sync|integration --binding JSON]
 //   node caller-jobs.mjs status --run RUN_DIR
 //   node caller-jobs.mjs wait   --run RUN_DIR --seconds S
 //
@@ -18,10 +19,22 @@
 // closed recovery eligibility and reopen only for the winning claimant.
 // Otherwise it runs the installed job.mjs in its own session with its stdin
 // closed, prints the receipt as one JSON line and exits without waiting.
-// `status` prints one JSON line per job the run started. `wait` blocks until
-// a job has ended that no report has shown yet, or S seconds pass, prints
-// {"waited": "ended", "timeout" or "idle"}, then the same lines as status.
-// Other errors exit 1.
+// Every review start hardens as Hippy (`--hardening-buddy hippy`,
+// `two-buddies`).
+//
+// A task request (#186) is `--task` with `--binding`, the task and binding
+// exactly as a job's `request` printed them; the launcher relays it and
+// decides nothing about readiness. It refuses, before anything starts, a
+// binding for another task, issue, repository or target branch, a task at a
+// stage it can't run at, and a task on a closed issue. A task job counts
+// under every cap, exclusion and attempt limit, with its task as its stage.
+//
+// `status` prints one JSON line per job the run started; a task job's line
+// adds `taskState`: running, completed (a determined verdict), held or
+// unknown (it ended with no verdict), never completed for those last two.
+// `wait` blocks until a job has ended that no report has shown yet, or S
+// seconds pass, prints {"waited": "ended", "timeout" or "idle"}, then the
+// same lines as status. Other errors exit 1.
 //
 // The launcher reads no credential. GitHub tokens stay with the pipeline's
 // own loader (the config's credentialsEnvFile); the run's modelEnvFile is
@@ -39,8 +52,16 @@ import { z } from "zod";
 import { childEnvironment } from "../src/child-env.ts";
 import { loadConfig } from "../src/config.ts";
 import { issueState } from "../src/github.ts";
+import type { JobTask, TaskRequest } from "../src/job/task-request.ts";
+import {
+  JOB_TASKS,
+  requestRefusalOf,
+  TASK_STAGES,
+  taskRequestOf,
+} from "../src/job/task-request.ts";
 import { ROOT } from "../src/pipeline-root.ts";
 import { sleepMs } from "../src/process.ts";
+import type { Stage } from "../src/stages.ts";
 import { STAGES } from "../src/stages.ts";
 import { JOB_ENTRY, liveJobs, refusalOf } from "./caller-jobs/live-jobs.ts";
 import type { JobReport, Launch } from "./caller-jobs/run-folder.ts";
@@ -70,6 +91,8 @@ const START_ARGS = z.object({
   lane: z.string().min(1),
   stage: z.enum(STAGES),
   mergeQueue: z.string().optional(),
+  task: z.enum(JOB_TASKS).optional(),
+  binding: z.string().min(1).optional(),
 });
 const RUN_ARGS = z.object({ run: z.string().min(1) });
 const WAIT_ARGS = z.object({
@@ -92,6 +115,28 @@ function messageOf(error: unknown): string {
   return String(error);
 }
 
+// The task `args` request, or null for a stage job; a throw for a request
+// that isn't whole or isn't for this task at this stage.
+function requestOf(args: StartArgs): TaskRequest | null {
+  const { task, binding } = args;
+  if (task === undefined && binding === undefined) {
+    return null;
+  }
+  if (task === undefined || binding === undefined) {
+    throw new Refusal("--task and --binding go together");
+  }
+  if (!TASK_STAGES[task].includes(args.stage)) {
+    throw new Refusal(
+      `--task ${task} runs at --stage ${TASK_STAGES[task].join(" or ")}, not ${args.stage}`,
+    );
+  }
+  try {
+    return taskRequestOf(task, binding);
+  } catch (error: unknown) {
+    throw new Refusal(messageOf(error), { cause: error });
+  }
+}
+
 function jobArgv(args: StartArgs, jobId: string): string[] {
   const argv = [
     path.join(ROOT, JOB_ENTRY),
@@ -110,6 +155,11 @@ function jobArgv(args: StartArgs, jobId: string): string[] {
   ];
   if (args.mergeQueue !== undefined) {
     argv.push("--merge-queue", args.mergeQueue);
+  }
+  if (args.task !== undefined && args.binding !== undefined) {
+    argv.push("--task", args.task, "--binding", args.binding);
+  } else if (args.stage === "review") {
+    argv.push("--hardening-buddy", "hippy");
   }
   return argv;
 }
@@ -168,11 +218,14 @@ function start(argv: readonly string[]): void {
       lane: { type: "string" },
       stage: { type: "string" },
       "merge-queue": { type: "string" },
+      task: { type: "string" },
+      binding: { type: "string" },
     },
     strict: true,
   });
   const { "merge-queue": mergeQueue, ...named } = values;
   const args = parsed(START_ARGS, { ...named, mergeQueue }, "start");
+  const request = requestOf(args);
   const limits = runLimits(args.run);
   const widening = wideningOf(args.run, limits);
   if (widening !== null) {
@@ -181,19 +234,25 @@ function start(argv: readonly string[]): void {
   const nodeFlags = nodeFlagsOf(limits);
   const cfg = loadConfig(args.config);
   const { issue, stage, branch, lane } = args;
-  const where = { slug: cfg.slug, issue, stage };
+  const misbound = request && requestRefusalOf(cfg, issue, request);
+  if (misbound) {
+    throw new Refusal(misbound);
+  }
+  const work: Stage | JobTask = args.task ?? stage;
+  const where = { slug: cfg.slug, issue, work };
   const attempt = attemptsAt(args.run, where) + 1;
   const live = liveJobs(launches(args.run));
   const refusal = refusalOf(
     limits,
-    { cfg, issue, stage, branch, attempt },
+    { cfg, issue, stage, work, branch, attempt },
     live,
   );
   if (refusal !== null) {
     throw new Refusal(refusal);
   }
   const state = issueState(cfg, issue);
-  if (state !== "open" && !(state === "closed" && stage === "merge")) {
+  const recovery = state === "closed" && work === "merge";
+  if (state !== "open" && !recovery) {
     throw new Refusal(`GitHub shows #${issue} as ${state ?? "unreadable"}`);
   }
   const receipt = newReceipt(args.run, where);
@@ -202,7 +261,10 @@ function start(argv: readonly string[]): void {
   const pid = spawnJob(jobArgs, receipt, nodeFlags);
   const launch: Launch = {
     repo: cfg.repo,
-    ...where,
+    slug: cfg.slug,
+    issue,
+    stage,
+    ...taskOf(args, request),
     branch,
     lane,
     attempt: receipt.attempt,
@@ -215,6 +277,17 @@ function start(argv: readonly string[]): void {
   process.stdout.write(
     `${JSON.stringify({ receipt: receipt.dir, ...launch })}\n`,
   );
+}
+
+// A task launch's task and binding, as its receipt records them.
+function taskOf(
+  args: StartArgs,
+  request: TaskRequest | null,
+): Pick<Launch, "task" | "binding"> {
+  if (args.task === undefined || request === null) {
+    return {};
+  }
+  return { task: args.task, binding: request.binding };
 }
 
 function printReports(jobs: readonly JobReport[]): void {

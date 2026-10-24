@@ -2,7 +2,7 @@
 // binding's status, and the landing account's append of an attempt or a
 // result. Each append reads the records fresh, checks that the new record
 // keeps them consistent, posts it, and reads them back to confirm it.
-// Inactive until #180's activation: no role's OpName names these ops.
+// A status read also names the binding's latest run, which a retry links to.
 
 import { z } from "zod";
 import { listComments, rawComment } from "../comments.ts";
@@ -27,6 +27,7 @@ import {
 } from "../task-result-records.ts";
 import {
   checkedRows,
+  latestRun,
   statusIn,
   taskRecords,
   taskStatus,
@@ -58,10 +59,19 @@ interface AttemptReply extends ResultReply {
 // Above every comment id GitHub has given, so a proposed record sorts last.
 const PROPOSED_ID: number = Number.MAX_SAFE_INTEGER;
 
-function taskResult(cfg: Config, request: unknown): TaskStatus {
+function taskResult(
+  cfg: Config,
+  request: unknown,
+): TaskStatus & { latest: string | null } {
   const req = parseRequest(STATUS_REQUEST, "task-result", request);
   const binding = requestedBinding(cfg, req.number, req.binding);
-  return taskStatus(cfg, req.number, listComments(cfg, req.number), binding);
+  const comments = listComments(cfg, req.number);
+  const status = taskStatus(cfg, req.number, comments, binding);
+  if (status.status === "held") {
+    return { ...status, latest: null };
+  }
+  const rows = taskRecords(cfg, req.number, comments);
+  return { ...status, latest: latestRun(rows, binding) };
 }
 
 // The records with `record` appended, checked as the next reader will check
