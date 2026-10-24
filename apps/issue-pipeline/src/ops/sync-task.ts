@@ -4,7 +4,7 @@
 // and result (#183). The rebase, its gitlink refusal, binary and text
 // conflict handling, retired-submodule recovery and work preservation are the
 // installed sync's own (rebase.ts, code-recovery.ts, sync-finish.ts).
-// Inactive until #180's activation: no role's OpName names these ops.
+// The Sync task job (roles/sync/sync.ts) calls them since #186.
 //
 //   sync-task         check, record the attempt, rebase onto exactly T
 //   sync-task-finish  continue a resolved stop, or retain or reject it

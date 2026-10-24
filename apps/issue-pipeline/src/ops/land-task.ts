@@ -5,7 +5,7 @@
 // never stands in. The Land attempt is recorded before the first PR write,
 // and only a confirmed own merge of exactly R settles it; anything else stays
 // uncertain and holds every writer (sync-task-gate.ts). Without a binding the
-// merge op behaves exactly as installed. Inactive until #180's activation.
+// merge op behaves as before #186; since then the merge stage always sends one.
 
 import { listComments } from "../comments.ts";
 import type { Config } from "../config.ts";

@@ -23,7 +23,7 @@ const REQUEST = z.looseObject({
     pr: z.number().int().positive(),
     sha: z.string().min(1),
   }),
-  // The task-result path (#185, inactive until #186): Completion also
+  // The task-result path (#185, active since #186): Completion also
   // consumes the exact passed Land result of this binding.
   binding: BINDING.optional(),
 });

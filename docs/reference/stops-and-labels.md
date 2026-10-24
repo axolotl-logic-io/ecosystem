@@ -28,7 +28,7 @@ A failed control adds `agent:stopped-CODE` to the issue and its PR, and posts a 
 | `not-doable` | The issue can't be done as written, or the work changed nothing |
 | `branch-changed` | The PR branch changed outside the pipeline |
 | `conflict` | Conflict resolution ran out of `maxConflictFixes` attempts, or its result was rejected |
-| `sync-limit` | The base kept moving through `maxSyncs` integrations without a merge |
+| `sync-limit` | The base kept moving through `maxSyncs` Sync runs without landing |
 | `push-rejected` | GitHub rejected a push |
 | `merge-refused` | GitHub refused the merge, or the merge result couldn't be confirmed; code may already have landed |
 | `job` | A legacy scheduler restarted a dying stage job too often (`maxResumes`) |

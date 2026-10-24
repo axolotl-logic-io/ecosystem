@@ -6,7 +6,7 @@ This page describes how a change is checked: the Reviewer's hardening, determini
 
 The `review` stage runs one writable Reviewer session in phase `hardening`. It reads the trusted issue requirements, optional Author Gherkin and the Developer's draft adversarially, adds regression and edge-case tests and fixes design and correctness defects. Docs in `docs/` are part of the change it hardens.
 
-- It commits through `pipeline_commit` (see [sessions](sessions.md)). It never synchronizes with the base; integration does that at merge.
+- It commits through `pipeline_commit` (see [sessions](sessions.md)). It never synchronizes with the base; the separate [Sync](sync.md) task does that, and review requests it first when the revision misses the target.
 - Its task names the actual `commands.test`, and its prompt tells it to run only targeted tests. The configured gate runs afterward, outside the session. Record its exact command and scope: the issue-pipeline repository's [fast default](check-gates.md) is not full integration coverage.
 - It must not weaken requirements, assertions, coverage, check commands, lint or types to get a pass. A genuinely wrong test may be corrected with evidence. An unresolved product question goes back for an answer.
 - If verification fails, check-fix sessions (also phase `hardening`) try again, up to `maxCiFixes` (default 2). After that the issue stops with `agent:stopped-check-fixes`.
@@ -46,7 +46,9 @@ Security reads the exact hardened and checked candidate tree and its complete br
 
 - A finding saves its exact receipt and stops the issue before merge.
 - A code, trusted-input or target change during the session discards the verdict.
-- Any changed candidate, including clean integration and conflict resolution, needs fresh checks, hardening and Security. Checked integration is not an authorization exception.
+- Any changed candidate, including a Sync's clean rebase or conflict resolution, needs fresh hardening, Integration and Security. A saved integration receipt is not an authorization exception.
+- A check that failed at merge, in read-only Integration or in CI, comes back with the work as "Sent back from merge". Hardening fixes it as a new revision; Hardening that changes nothing on a returned revision stops for a person.
+- Each hardened checkpoint is also a passed Hardening [task result](task-results.md) for the revision and target it checked, recorded by the landing account before the checkpoint is saved.
 - A saved rejection of the same revision stops again without a model. Lifting a stop cannot reroll it.
 - New own merges get read-only result confirmation, never a postmerge suite or a duplicate model pass.
 
