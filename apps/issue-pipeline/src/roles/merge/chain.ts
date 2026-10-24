@@ -4,6 +4,7 @@
 // Security, Land and Completion. Anything else becomes an explicit request
 // or a return, never a hidden writer:
 //
+//   no current Implementation    → back to review, which returns it
 //   R doesn't contain T          → wait, requesting Sync (R, T)
 //   no passed Hardening for R, T → back to review for fresh Hardening
 //   no passed Integration        → wait, requesting Integration (R, T)
@@ -67,6 +68,11 @@ function routed(
   }
   const at = `${short(code)} on ${short(ready.target.commit)}`;
   switch (next.task) {
+    case "Implementation":
+      return toReview(
+        state,
+        "no Implementation task result is current for today's requirements",
+      );
     case "Sync":
       return requesting(
         state,

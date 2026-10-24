@@ -155,7 +155,8 @@ function claimWon(state, comments = []) {
 
 // The replies of the ops every stage job runs.
 // The chain's next ready task for revision HEAD_SHA on its target, which a
-// review job reads before it hardens (#186): Hardening, not yet recorded.
+// review job reads before it hardens (#186): Hardening, not yet recorded,
+// after a current Implementation result that produced HEAD_SHA (#118).
 const READY_FOR_HARDENING = {
   ok: true,
   revision: {
@@ -165,6 +166,7 @@ const READY_FOR_HARDENING = {
   },
   target: { branch: "main", commit: "b".repeat(HEAD_SHA.length) },
   contains: true,
+  implemented: HEAD_SHA,
   next: {
     task: "Hardening",
     binding: {
@@ -183,8 +185,22 @@ const READY_FOR_HARDENING = {
   hold: null,
 };
 
+// The status an implement job reads before it records Implementation's
+// result (#118): already passed, so it records nothing more.
+const IMPLEMENTATION_PASSED = {
+  ok: true,
+  status: "passed",
+  result: {
+    run: { id: "00000000-0000-4000-8000-000000000001" },
+    receipt: { summary: "implemented", produced: { code: HEAD_SHA } },
+  },
+  attempts: 1,
+  latest: "00000000-0000-4000-8000-000000000001",
+};
+
 const ROUTINE_OPS = {
   "task-readiness": READY_FOR_HARDENING,
+  "task-result": IMPLEMENTATION_PASSED,
   "save-state": { ok: true },
   release: { ok: true },
   stop: { ok: true },

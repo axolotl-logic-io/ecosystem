@@ -8,8 +8,7 @@ import { run } from "../process.ts";
 import { configPolicyDigest } from "../project-policy.ts";
 import type { Binding } from "../task-result-records.ts";
 
-// A binding of a revision: every task after Author and the first
-// Implementation.
+// A binding of a revision: every task after Author and Implementation.
 type RevisionBinding = Extract<Binding, { revision: unknown }>;
 
 function isRevisionBinding(binding: Binding): binding is RevisionBinding {

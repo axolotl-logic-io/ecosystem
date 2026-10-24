@@ -26,9 +26,10 @@ const PLACE = {
   repo: z.string().min(1),
   workItem: z.number().int().positive(),
 };
-// Tasks that check or change a revision bind it; Author and the first
-// Implementation run before one exists and bind the requirements instead
-// (`requirements-bindings`).
+// Tasks that check or change a revision bind it; Author and Implementation
+// bind the requirements instead (`requirements-bindings`): the first run
+// before any revision exists, and every later Implementation (#118).
+// Implementation's revision binding stays readable but nothing records it.
 const BINDING = z.union([
   z.strictObject({
     ...PLACE,
@@ -135,6 +136,14 @@ function requestedBinding(
   return binding;
 }
 
+// The `requirements-bindings` digest of trusted inputs `inputs`
+// (trustedInputsHash): the title, body and trusted comments the Developer
+// receives as its requirements, which an accepted Gherkin comment is bound to
+// as well. A label or pipeline comment never changes it.
+function requirementsDigest(inputs: string): string {
+  return `sha256:${inputs}`;
+}
+
 function recordBody(record: TaskRecord): string {
   const json = JSON.stringify(RECORD.parse(record)).replace(
     MARK_END_PATTERN,
@@ -201,6 +210,7 @@ export {
   RUN_ID,
   recordBody,
   requestedBinding,
+  requirementsDigest,
   rowOf,
   sameBinding,
   TASK_ATTEMPTS,

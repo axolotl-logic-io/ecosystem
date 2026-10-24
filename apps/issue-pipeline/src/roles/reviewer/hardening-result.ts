@@ -1,5 +1,6 @@
 // Hardening's task result (#186): what the review stage reads and records of
-// the chain before and after the hardening session. A revision that misses
+// the chain before and after the hardening session. Work without a current
+// Implementation result goes back to implement (#118). A revision that misses
 // the target goes to Sync first, so no session hardens work Sync replaces.
 // A hardened checkpoint becomes a passed Hardening result for exactly the
 // hardened revision R on the target T it was checked at, recorded by the
@@ -8,6 +9,7 @@
 
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { IssueState } from "../../state.ts";
+import { withLog } from "../../state.ts";
 import type { Binding } from "../../task-result-records.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import type { Readiness } from "../task-results.ts";
@@ -25,11 +27,28 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The wait for a Sync when R doesn't contain T, a stop when the chain is
-// held, or null when the revision may be hardened.
+// The return to implement when no Implementation result is current for the
+// requirements, the wait for a Sync when R doesn't contain T, a stop when the
+// chain is held, or null when the revision may be hardened.
 function beforeHardening(state: IssueState, ready: Readiness): RoleEnd | null {
   if (ready.next === null) {
     return errorStop(state, `the task chain is held: ${ready.hold}`);
+  }
+  if (ready.next.task === "Implementation") {
+    const back: IssueState = {
+      ...state,
+      stage: "implement",
+      hardened: null,
+      hardenedTarget: null,
+    };
+    return {
+      kind: "next",
+      state: withLog(
+        back,
+        `no Implementation result is current for the requirements (${ready.next.status}); back to implement`,
+        new Date(),
+      ),
+    };
   }
   const request = requestOf(ready.next);
   if (ready.next.task === "Sync" && request !== null) {
@@ -47,6 +66,7 @@ function beforeHardening(state: IssueState, ready: Readiness): RoleEnd | null {
 function hardeningPassed(ready: Readiness): boolean {
   return (
     ready.next !== null &&
+    ready.next.task !== "Implementation" &&
     ready.next.task !== "Sync" &&
     ready.next.task !== "Hardening"
   );

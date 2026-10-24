@@ -15,6 +15,7 @@ const SHA = z.string().min(1);
 // The longest receipt summary a record holds.
 const MAX_SUMMARY = 300;
 const TASKS = [
+  "Implementation",
   "Sync",
   "Hardening",
   "Integration",
@@ -36,6 +37,7 @@ const READINESS = z.union([
     revision: z.looseObject({ code: SHA, inputs: SHA, policy: SHA }).nullable(),
     target: z.looseObject({ branch: SHA, commit: SHA }),
     contains: z.boolean(),
+    implemented: SHA.nullable(),
     next: READY_TASK,
     hold: z.null(),
   }),
@@ -43,6 +45,7 @@ const READINESS = z.union([
     revision: z.looseObject({ code: SHA, inputs: SHA, policy: SHA }).nullable(),
     target: z.looseObject({ branch: SHA, commit: SHA }),
     contains: z.boolean(),
+    implemented: SHA.nullable(),
     next: z.null(),
     hold: z.string().min(1),
   }),
@@ -125,13 +128,21 @@ async function recordResult(
     run: string;
     verdict: "passed" | "failed" | "refused";
     summary: string;
+    // The revision a writer task produced.
+    produced?: string;
   },
 ): Promise<void> {
+  const receipt: { summary: string; produced?: { code: string } } = {
+    summary: result.summary.slice(0, MAX_SUMMARY),
+  };
+  if (result.produced !== undefined) {
+    receipt.produced = { code: result.produced };
+  }
   await ctx.op("record-task-result", {
     binding,
     run: { id: result.run },
     verdict: result.verdict,
-    receipt: { summary: result.summary.slice(0, MAX_SUMMARY) },
+    receipt,
   });
 }
 
