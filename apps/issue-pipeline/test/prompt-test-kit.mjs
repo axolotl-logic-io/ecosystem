@@ -18,6 +18,11 @@ const PROMPT_PAGES = [
   { stage: "merge", phase: "integration", page: "integration.md" },
   { stage: "merge", phase: "security-review", page: "security.md" },
 ];
+// The pages that differ when Hippy, the Developer, hardens
+// (`--hardening-buddy hippy`); every other session's page is as above.
+const HIPPY_PROMPT_PAGES = [
+  { stage: "review", phase: "hardening", page: "developer-hardening.md" },
+];
 
 // The text the test page `page` holds: more than one line, as a prompt page
 // must be, naming its page.
@@ -54,4 +59,11 @@ function writePrompts(root) {
   return dir;
 }
 
-export { PROMPT_PAGES, pageTextOf, pinnedOf, promptsDirOf, writePrompts };
+export {
+  HIPPY_PROMPT_PAGES,
+  PROMPT_PAGES,
+  pageTextOf,
+  pinnedOf,
+  promptsDirOf,
+  writePrompts,
+};

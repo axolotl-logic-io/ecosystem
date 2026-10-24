@@ -1,7 +1,9 @@
 // One session that writes, and how a step of a role ends: on with a value,
 // or with the stage's end. The Developer writes in development; the
 // Reviewer writes while it hardens a change and while it integrates one at
-// merge. Every writing session commits only through `pipeline_commit`.
+// merge, except that the Developer, Hippy, hardens instead in a job started
+// with `--hardening-buddy hippy`. Every writing session commits only through
+// `pipeline_commit`.
 
 import type { RoleContext, RoleEnd, SessionSpec } from "../job/role-context.ts";
 import type { IssueState } from "../state.ts";
@@ -34,6 +36,18 @@ function specOf(
       task,
       schema: WRITER_REPLY,
       commits: true,
+    };
+  }
+  // Hippy's Hardening: the Developer's agent and model, in a session of its
+  // own that starts fresh like every other.
+  if (phase === "hardening" && ctx.hardening === "hippy") {
+    return {
+      agent: "issue-pipeline-implementor",
+      model: ctx.cfg.models.implementor,
+      task,
+      schema: WRITER_REPLY,
+      commits: true,
+      phase,
     };
   }
   return {

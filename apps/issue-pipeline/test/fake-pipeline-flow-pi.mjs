@@ -220,11 +220,29 @@ async function runFlowPi(roleOfModel) {
   const model = valuesOf(argv, "--model")[0] ?? "";
   fixtureState(model);
   const role = roleOfModel[model] ?? "unknown";
-  const out = printersOf(dir, role, String(valuesOf(argv, "--session")[0]));
+  const sessionFile = String(valuesOf(argv, "--session")[0]);
+  const fresh = !fs.existsSync(sessionFile);
+  // The strings a test watches for in the env's values (watch.json), so the
+  // log names the matches without copying the env's values.
+  const watchFile = path.join(dir, "watch.json");
+  /** @type {string[]} */
+  let watched = [];
+  if (fs.existsSync(watchFile)) {
+    watched = JSON.parse(fs.readFileSync(watchFile, "utf8"));
+  }
+  const values = Object.values(process.env);
+  const envMatches = watched.filter((text) =>
+    values.some((value) => value?.includes(text)),
+  );
+  const out = printersOf(dir, role, sessionFile);
   out.log({
     start: true,
     model,
     argv,
+    envNames: Object.keys(process.env),
+    envMatches,
+    sessionFile,
+    fresh,
     cwd: process.cwd(),
     extensions: valuesOf(argv, "-e").map((file) => path.basename(file)),
     ghToken: ghToken ?? githubToken,

@@ -39,7 +39,8 @@ import {
 import { inputsOf } from "./role-inputs.ts";
 import { opRunnerOf, postOf } from "./role-ops.ts";
 import { sessionRunnerOf } from "./role-session.ts";
-import { STAGE_AGENTS, STAGE_ROLES } from "./roles.ts";
+import type { HardeningBuddy } from "./roles.ts";
+import { STAGE_ROLES, stageAgentOf } from "./roles.ts";
 import { runUsage } from "./run-usage.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 import { usageAppender } from "./usage-append.ts";
@@ -64,6 +65,8 @@ const CLAIM_WAITING = z.looseObject({ waiting: z.literal("answer") });
 
 interface RoleJob extends EndingJob {
   role: Role;
+  // Who performs the stage's Hardening; "lawd", the installed one, without.
+  hardening?: HardeningBuddy;
   mergeQueue: readonly number[] | null;
   dirs: JobDirs;
   // The behavioral prompts the job pinned for its stage's sessions.
@@ -90,11 +93,11 @@ function reconcilesCompletion(stage: Stage, state: IssueState): boolean {
 // The role a stage's usage records name: its agent's model role, or the
 // merger for a merge job, whose integration sessions' records name the
 // reviewer as the session's `name`.
-function usageRoleOf(stage: Stage): UsageRole {
+function usageRoleOf(stage: Stage, hardening: HardeningBuddy): UsageRole {
   if (STAGE_ROLES[stage] === "merger") {
     return "merger";
   }
-  return STAGE_AGENTS[stage].role;
+  return stageAgentOf(stage, hardening).role;
 }
 
 // What one claimed run holds while it runs (Claimed in role-end.ts) and
@@ -113,6 +116,7 @@ function contextOf(
   const op = opRunnerOf(job);
   const session = sessionRunnerOf({
     stage: job.stage,
+    hardening: job.hardening ?? "lawd",
     prompts: job.prompts,
     hooks: job.hooks,
     status: job.status,
@@ -124,6 +128,7 @@ function contextOf(
     cfg: job.cfg,
     issue: job.issue,
     stage: job.stage,
+    hardening: job.hardening ?? "lawd",
     state: claimed.last,
     dirs: { job: job.dirs.root, repo: job.dirs.repo },
     issueFile,
@@ -240,7 +245,7 @@ async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
         issue: job.issue,
         job: job.identity.id,
         jobStartedAt: job.identity.startedAt,
-        role: usageRoleOf(job.stage),
+        role: usageRoleOf(job.stage, job.hardening ?? "lawd"),
       },
       {
         send: async (line: string): Promise<boolean> =>

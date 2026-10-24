@@ -15,23 +15,37 @@ import path from "node:path";
 import { ROOT } from "../pipeline-root.ts";
 import type { Stage } from "../stages.ts";
 import type { SessionPhase } from "./role-context.ts";
-import { STAGE_AGENTS } from "./roles.ts";
+import type { HardeningBuddy } from "./roles.ts";
+import { stageAgentOf } from "./roles.ts";
 
 // The installed release's prompt pages, where a stage job pins them from.
 const PROMPTS_DIR: string = path.join(ROOT, "prompts");
 // The longest page pi can take as one argument: Linux bounds each argument,
 // with its NUL, to 128 KiB (MAX_ARG_STRLEN, 131072 bytes).
 const PAGE_MAX_BYTES = 131_071;
-// The page each session reads, by its stage and phase (null for none). A
-// session no entry names has no prompt, so it never starts.
+// The page each session reads, by its stage and phase (null for none) and,
+// for Hardening, the buddy that performs it (an entry naming none serves
+// either). A session no entry names has no prompt, so it never starts.
 const PROMPT_PAGES: readonly {
   stage: Stage;
   phase: SessionPhase | null;
+  hardening?: HardeningBuddy;
   page: string;
 }[] = [
   { stage: "author", phase: null, page: "author.md" },
   { stage: "implement", phase: null, page: "developer.md" },
-  { stage: "review", phase: "hardening", page: "hardening.md" },
+  {
+    stage: "review",
+    phase: "hardening",
+    hardening: "lawd",
+    page: "hardening.md",
+  },
+  {
+    stage: "review",
+    phase: "hardening",
+    hardening: "hippy",
+    page: "developer-hardening.md",
+  },
   { stage: "merge", phase: "integration", page: "integration.md" },
   { stage: "merge", phase: "security-review", page: "security.md" },
 ];
@@ -107,9 +121,13 @@ function messageOf(error: unknown): string {
 }
 
 // Pins, from the prompt folder `dir` (PROMPTS_DIR for a stage job), the page
-// of each session a `stage` job runs, or throws naming the first page it
-// can't pin.
-function pinPrompts(dir: string, stage: Stage): StagePrompts {
+// of each session a `stage` job, whose Hardening `hardening` performs, runs,
+// or throws naming the first page it can't pin.
+function pinPrompts(
+  dir: string,
+  stage: Stage,
+  hardening: HardeningBuddy = "lawd",
+): StagePrompts {
   const folder = path.resolve(dir);
   if (fs.statSync(folder, { throwIfNoEntry: false })?.isDirectory() !== true) {
     throw new Error(
@@ -117,9 +135,12 @@ function pinPrompts(dir: string, stage: Stage): StagePrompts {
     );
   }
   const prompts = new Map<string, PinnedPrompt>();
-  for (const { phase } of STAGE_AGENTS[stage].sessions) {
+  for (const { phase } of stageAgentOf(stage, hardening).sessions) {
     const page = PROMPT_PAGES.find(
-      (entry) => entry.stage === stage && entry.phase === phase,
+      (entry) =>
+        entry.stage === stage &&
+        entry.phase === phase &&
+        (entry.hardening ?? hardening) === hardening,
     )?.page;
     if (page === undefined) {
       throw new Error(`no prompt page for ${sessionKey(stage, phase)}`);

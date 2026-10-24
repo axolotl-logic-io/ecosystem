@@ -332,6 +332,28 @@ Refused commits stay local, never pushed merely to preserve them. Job teardown p
 
 Hardening and its check-fix sessions receive the actual `commands.test` and a pinned Hardening prompt directing only targeted tests inside the session; deterministic verification runs the configured gate afterward (not necessarily full integration coverage; see Tests). The reviewer wall-clock limit and bounded check-fix/readiness guards are unchanged. Before destructive teardown, a job-keyed `dropped/JOB_KEY.json` manifest records branch assignment, Review outcome/reason, source checkouts, snapshot kinds and bases alongside the patches. A manifest save failure retains the original checkout. Later authorized hardening writers on that issue/branch automatically receive matching Review recovery paths, independent of the replaceable `job.json` or issue notices. They inspect and incorporate useful edits within current scope, never automatically replay them. Preserve earlier attempts' evidence; caller-owned restart and all authority checks still apply. Legacy patches without manifests need explicit reconciliation rather than guessed branch provenance.
 
+### Hippy's Hardening (inactive)
+
+A review job started with `--hardening-buddy hippy` hardens as Hippy, the Developer, instead of the Reviewer ([hardening-stays-independent](../../docs/decisions/buddies-and-tasks.md#hardening-stays-independent), #179). The flag is refused with any other stage. Without it, a job hardens as before, and the installed caller never passes it; #186 activates it.
+
+```sh
+node job.mjs --config o__r.json --issue 7 --branch agent/issue-7 \
+  --stage review --hardening-buddy hippy
+```
+
+| | Without the flag (installed) | `--hardening-buddy hippy` |
+| --- | --- | --- |
+| Agent | `issue-pipeline-reviewer` | `issue-pipeline-implementor` |
+| Model | `models.reviewer` | `models.implementor` |
+| Prompt page | `hardening.md` | `developer-hardening.md` |
+| Launch key | `reviewer-<n>` | `implementor-hardening-<n>`, never an Implementation transcript's path |
+| Session timeout | 30 minutes | 60 minutes |
+| "Hardening passed" signature | `role=reviewer` | `role=implementor`, naming Hippy |
+
+Everything else stays the same. The session starts fresh, holds no token and commits only through `pipeline_commit`. Pushes and PR readiness use the development account (`devAccount`). Only the landing account (`mergeAccount`) saves state and posts the result, and readers accept state and keyed result comments only from that account, so a result the development account writes grants nothing. `test/pipeline-flow-hippy-hardening.test.mjs` checks this through built jobs.
+
+The session's transcript lives in the same `runs/<slug>/issue-N/sessions/` folder as Implementation's. Nothing gives it that transcript, but the session runs as the same OS user, and nothing isolates its files.
+
 Code resolver sessions stage text and return; `finish-sync` owns continuation and later conflict stops under the existing limits. It also classifies stops reached by a session continuing code itself, before interpreting a `cannot-fix` reply or rejecting an explicit abort. `cannot-fix` can complete only through the existing finish/push guards; an explicit abort never pushes. Every gitlink conflict stops deterministically with full numbered-stage SHAs and retained unresolved evidence; a resolver never chooses a submodule revision. Exact-head, actual-result and security gates are unchanged. See [sync](../../docs/reference/sync.md).
 
 Later text stops stay on the same code rebase: the next resolver gets current paths, the exact fetched target and the next cumulative attempt, without treating the earlier staged resolution as rejected. Each completed session's count is saved before continuation. At `maxConflictFixes`, code synchronization retains the stopped pick through `finish-sync {retainConflict: true}` and stops under the existing conflict control with the full pick ID, paths and verified recovery location, rather than attempting abort cleanup and surfacing a generic unmerged-index error. This preserves the saved count and synchronization context for explicit authorized recovery. Finish and guarded push checks remain mandatory.
