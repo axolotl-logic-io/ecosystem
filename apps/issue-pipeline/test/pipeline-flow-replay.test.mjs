@@ -461,7 +461,9 @@ test("the installed path records the task chain through the landing account, bin
   );
   const kinds = records.map(({ body }) => {
     const record = JSON.parse(body.split("\n").slice(1, -1).join("\n"));
-    return `${record.binding.task} ${record.kind}${record.verdict ? ` ${record.verdict}` : ""}`;
+    return [record.binding.task, record.kind, record.verdict]
+      .filter(Boolean)
+      .join(" ");
   });
   // Hardening of the first head, its Integration, then the head Hardening
   // fixed after CI failed, its Integration, Security and Land.

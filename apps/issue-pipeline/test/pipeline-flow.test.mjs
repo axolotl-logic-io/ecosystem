@@ -90,7 +90,11 @@ const STEPS = [
 /** @type {any[]} the task jobs' lines */
 const relayed = [];
 for (const [at, { stage, relay }] of STEPS.entries()) {
-  test(`legacy tick ${at + 1} completes the ${stage} stage${relay ? ", which requests Integration" : ""}`, async () => {
+  let requests = "";
+  if (relay) {
+    requests = ", which requests Integration";
+  }
+  test(`legacy tick ${at + 1} completes the ${stage} stage${requests}`, async () => {
     const result = await completeStage(stage);
     assert.deepEqual(result.started, [stage], result.log);
     if (!relay) {

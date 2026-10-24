@@ -60,7 +60,7 @@ function completeSetupStage(flow, { stage, action }, setup) {
   if (action === "relay") {
     end = runThroughTasks(flow, stage).at(-1)?.end ?? "";
   } else {
-    end = runStage(flow, stage).end;
+    ({ end } = runStage(flow, stage));
   }
   if (action === "fail-ci") {
     withWorld(flow.ghDir, (world) => {
