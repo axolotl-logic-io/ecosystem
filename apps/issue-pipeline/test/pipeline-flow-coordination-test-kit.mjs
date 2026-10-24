@@ -65,7 +65,7 @@ function seedReleasedRun(world, issue, branch) {
 
 const COORDINATION = "<!-- agent-pipeline:coordination\n";
 
-/** @param {World} world @returns {object} */
+/** @param {World} world @returns {Omit<World, "refs" | "nextId">} */
 function withoutCoordination(world) {
   const { refs: _refs, nextId: _nextId, ...rest } = world;
   const comments = world.comments.filter(
