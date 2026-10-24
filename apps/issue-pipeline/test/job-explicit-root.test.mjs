@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
+import { withoutCoordination } from "./pipeline-flow-coordination-test-kit.mjs";
 import { runStage } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
@@ -75,7 +76,9 @@ test("metadata clone failure before claim leaves no lease, model, live job or co
     "unrelated preserved file",
   );
   assert.deepEqual(piLog(flow.piDir), []);
-  assert.deepEqual(readWorld(flow.ghDir).comments, []);
+  // Only the job's own ownership records precede its claim (#167); the
+  // refused claim holds them for reconciliation.
+  assert.deepEqual(withoutCoordination(readWorld(flow.ghDir)).comments, []);
   assert.deepEqual(
     readWorld(flow.ghDir).issues.find(({ number }) => number === ISSUE)?.labels,
     [],

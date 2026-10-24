@@ -6,8 +6,10 @@ import type { Config } from "./config.ts";
 import { ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 
+const COMMENT_FIELDS =
+  "databaseId body createdAt updatedAt lastEditedAt author { login } editor { login }";
 const COMMENT_QUERY = `query($id:ID!) { node(id:$id) { ... on IssueComment {
-  databaseId body createdAt updatedAt lastEditedAt author { login } editor { login }
+  ${COMMENT_FIELDS}
 } } }`;
 const CURRENT_COMMENT = z.object({
   data: z.object({
@@ -23,15 +25,12 @@ const CURRENT_COMMENT = z.object({
   }),
 });
 
-function commentQuery(cfg: Config, nodeId: string): unknown {
+function graphql(cfg: Config, fields: readonly string[]): unknown {
   try {
     return ghJson(cfg, "merge", [
       "api",
       "graphql",
-      "-f",
-      `query=${COMMENT_QUERY}`,
-      "-f",
-      `id=${nodeId}`,
+      ...fields.flatMap((field) => ["-f", field]),
     ]);
   } catch (error) {
     throw new OpsError(
@@ -41,27 +40,39 @@ function commentQuery(cfg: Config, nodeId: string): unknown {
   }
 }
 
-// All merge-authored comments are checked, including edits removing markers.
-// Body, author and editor must come from the same GraphQL read.
-function currentComment(
-  cfg: Config,
-  item: IssueComment,
-): z.infer<typeof CURRENT_COMMENT>["data"]["node"] | null {
-  if (item.user?.login.toLowerCase() !== cfg.mergeAccount.toLowerCase()) {
-    return null;
-  }
+type CurrentNode = z.infer<typeof CURRENT_COMMENT>["data"]["node"];
+
+// A listing's merge-authored comments, verified in one read: an alias per
+// comment, each answered as COMMENT_QUERY's node would be.
+const BATCH = z.object({
+  data: z.record(z.string(), CURRENT_COMMENT.shape.data.shape.node.nullable()),
+});
+
+function isMergeAuthored(cfg: Config, item: IssueComment): boolean {
+  return item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase();
+}
+
+function nodeIdOf(item: IssueComment): string {
   if (item.node_id === undefined) {
     throw new OpsError(
       `comment ${item.id} lacks editor provenance; stop for reconciliation`,
     );
   }
-  const current = CURRENT_COMMENT.safeParse(commentQuery(cfg, item.node_id));
-  if (!current.success || current.data.data.node.databaseId !== item.id) {
+  return item.node_id;
+}
+
+// `node`, the current read of `item`, once it proves the same comment with
+// merge authorship and editor provenance.
+function checkedNode(
+  cfg: Config,
+  item: IssueComment,
+  node: CurrentNode | null | undefined,
+): CurrentNode {
+  if (node === null || node === undefined || node.databaseId !== item.id) {
     throw new OpsError(
       `comment ${item.id} has unreadable editor provenance; stop for reconciliation`,
     );
   }
-  const { node } = current.data.data;
   assertCommentAuthority(cfg, {
     ...item,
     body: node.body,
@@ -70,6 +81,44 @@ function currentComment(
     editor: node.editor,
   });
   return node;
+}
+
+// All merge-authored comments are checked, including edits removing markers.
+// Body, author and editor must come from the same GraphQL read.
+function currentComment(cfg: Config, item: IssueComment): CurrentNode | null {
+  if (!isMergeAuthored(cfg, item)) {
+    return null;
+  }
+  const fields = [`query=${COMMENT_QUERY}`, `id=${nodeIdOf(item)}`];
+  const current = CURRENT_COMMENT.safeParse(graphql(cfg, fields));
+  return checkedNode(cfg, item, current.data?.data.node);
+}
+
+// currentComment for each of `items`, with every merge-authored one read in
+// one GraphQL request when there are several, so a listing's cost doesn't
+// grow with its history (#167).
+function currentComments(
+  cfg: Config,
+  items: readonly IssueComment[],
+): (CurrentNode | null)[] {
+  const merged = items.filter((item) => isMergeAuthored(cfg, item));
+  if (merged.length < 2) {
+    return items.map((item) => currentComment(cfg, item));
+  }
+  const names = merged.map((_item, at) => `c${at}`);
+  const params = names.map((name) => `$${name}:ID!`).join(",");
+  const aliases = names.map((name) => `${name}: node(id:$${name}) { ...C }`);
+  const fragment = `fragment C on IssueComment { ${COMMENT_FIELDS} }`;
+  const query = `query=query(${params}) { ${aliases.join(" ")} } ${fragment}`;
+  const ids = merged.map((item, at) => `${names[at]}=${nodeIdOf(item)}`);
+  const batch = BATCH.safeParse(graphql(cfg, [query, ...ids]));
+  const nodes = new Map(
+    merged.map((item, at) => [
+      item,
+      checkedNode(cfg, item, batch.data?.data[`c${at}`]),
+    ]),
+  );
+  return items.map((item) => nodes.get(item) ?? null);
 }
 
 function assertCommentAuthority(
@@ -91,4 +140,4 @@ function assertCommentAuthority(
   }
 }
 
-export { assertCommentAuthority, currentComment };
+export { assertCommentAuthority, currentComment, currentComments };

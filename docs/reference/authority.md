@@ -54,7 +54,7 @@ The issue's state lives in a hidden review/merge comment on the issue. It record
 
 ## Explicit execution state seam
 
-`src/execution-state.ts` provides an explicit-only API for authenticated state checkpoints. Default jobs, ops, orchestration and reporting do not import it. This preparatory seam is not runtime fencing, claim eligibility, setup, teardown or release, and it is not an install candidate. Lane resource leases do not grant invocation ownership.
+`src/execution-state.ts` provides authenticated state checkpoints. Since #167 a stage job's claim op reaches it through `boundClaim`; the other role saves still use the ordinary save path, fenced by the ops envelope's ownership check. Lane resource leases do not grant invocation ownership.
 
 - `readExecutionClaimState(config, issue)` validates the explicit execution binding and reads supported saved state without changing it. Existing state needs a strict `{ protocol: 1, request, instance }` receipt linked to an authenticated request and owner confirmation for the exact repository, literal base, issue and branch. A current UUID must also match its authenticated lane. A different historical UUID needs a durable release; its old lease's age grants nothing.
 - `claimExecutionState(config, issue)` inspects state before requesting ownership, acquires through the existing authenticated adapter, and checkpoints the current receipt. It preserves the saved stage and work; it does not apply broad claim transitions or run setup. Only genuinely absent work can initialize state. Unsupported, malformed, untrusted, editor-conflicted or history-less authority requires reconciliation, not adoption.
@@ -112,11 +112,11 @@ A session's authority comes from its stage, its phase and whether it commits, ne
 
 ## Explicit bound claims
 
-The source-only `boundClaim` API in `src/ops/bound-claim.ts` connects the explicit
-execution-state seam to claim transitions and checkout setup. It is not imported
-by the default job or ops CLI. Caller activation and mandatory execution envelopes
-remain separate work; the existing CLI claim path is compatibility behavior, not
-runtime fencing.
+`boundClaim` in `src/ops/bound-claim.ts` connects the execution-state seam to
+claim transitions and checkout setup. Since #167 the ops claim op runs it for
+every request that carries an execution binding, which every stage job's does.
+The unbound CLI claim path is compatibility behavior for the ops CLI's own
+tests, not runtime fencing.
 
 A bound resume requires a fresh execution identity, authenticated saved receipt
 and history, and a verified predecessor release. The same lane and an expired

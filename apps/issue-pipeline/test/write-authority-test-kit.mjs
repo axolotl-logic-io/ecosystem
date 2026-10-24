@@ -1,9 +1,11 @@
 // @ts-check
 // Account-only saved state served by fake gh, never a live API.
+
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { commentLines, githubComment } from "./fake-gh.mjs";
+import { BATCH_GRAPHQL } from "./fake-graphql-batch.mjs";
 import { isolatedRoot } from "./isolated-root-test-kit.mjs";
 
 /** @import { Config } from "../src/config.ts" */
@@ -29,15 +31,20 @@ if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(
 if (tokenIdentity[1] !== expectedIdentity) throw new Error("wrong fake credential identity");
 
 if (args[0] === "api" && args[1] === "graphql") {
-  const id = args.find(arg => arg.startsWith("id="))?.slice(3);
-  const stem = ${JSON.stringify(states)} + "/" + id.split(":")[0];
-  const file = stem + ".json";
-  const comments = fs.readFileSync(file, "utf8").split("\\n").filter(Boolean).map(line => JSON.parse(line));
-  const comment = comments.find(item => item.node_id === id);
-  if (!comment) throw new Error("unmatched provenance");
-  const node = { databaseId: comment.id, body: comment.body, author: comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at ?? comment.created_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor };
-  process.stdout.write(JSON.stringify({ data: { node } }));
-  if (fs.existsSync(file + ".next")) fs.renameSync(file + ".next", file);
+  ${BATCH_GRAPHQL}
+  const fileOf = id => ${JSON.stringify(states)} + "/" + id.split(":")[0] + ".json";
+  const nodeOf = id => {
+    const comments = fs.readFileSync(fileOf(id), "utf8").split("\\n").filter(Boolean).map(line => JSON.parse(line));
+    const comment = comments.find(item => item.node_id === id);
+    if (!comment) throw new Error("unmatched provenance");
+    return { databaseId: comment.id, body: comment.body, author: comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at ?? comment.created_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor };
+  };
+  const ids = batchIds(args) ?? [args.find(arg => arg.startsWith("id="))?.slice(3)];
+  if (batchIds(args)) process.stdout.write(batchAnswer(ids, nodeOf));
+  else process.stdout.write(JSON.stringify({ data: { node: nodeOf(ids[0]) } }));
+  for (const file of new Set(ids.map(fileOf))) {
+    if (fs.existsSync(file + ".next")) fs.renameSync(file + ".next", file);
+  }
   process.exit(0);
 }
 const endpoint = args.find(arg => arg.startsWith("repos/"));

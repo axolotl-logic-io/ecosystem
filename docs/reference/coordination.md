@@ -23,7 +23,7 @@ Optional flags:
 - `--hardening-buddy hippy` hardens as Hippy, the Developer, in a fresh session; only with `--stage review`. The caller always passes it.
 - `--task sync|integration --binding BINDING_JSON` runs a requested task instead of the stage: Hippy's [Sync](sync.md) at `review` or `merge`, or Lawd's read-only [Integration](merge.md#read-only-integration-and-exact-land) at `merge`. `STAGE` is the issue's saved stage, and `BINDING_JSON` is the request's binding, exactly. The job refuses a binding for another task, issue, repository or target branch before it claims or writes anything. A task job runs as its task's access profile: Sync as `writer`, Integration as `reader`.
 - `--print-boundary` pins and checks the prompt pages and prints the stage's role, checkouts, environment and network as one JSON line, without cloning, claiming or starting a session.
-- `--job-id UUID` names the job; without it, the job makes its own.
+- `--job-id UUID` names the job; without it, the job makes its own. It is never the run's ownership: the job mints a fresh invocation UUID for that (see [Keep concurrent work apart](#keep-concurrent-work-apart)).
 
 To steer a running session, run `job.mjs --config CONFIG --issue ISSUE --steer LAUNCH_KEY --message TEXT`. It exits 0 once Pi accepts the message.
 
@@ -50,6 +50,7 @@ Don't loop blindly on `unclaimed`, `wait`, `deferred` or `stop`. A restarted job
 - Parallel jobs must use different issues and branches. Never run the same issue or branch twice at once, even from the same lane.
 - Run merge turns one at a time. A merge queue is an order, not permission to merge concurrently.
 - Keep each issue's branch and lane stable across restarts. The first claim binds the branch; a different branch later is refused.
+- Each job confirms issue-execution ownership for a fresh invocation UUID before it opens a checkout or runs an op. A second job on the same issue and branch, from any lane, ends `unclaimed` with `reason` "another invocation owns the issue" and starts nothing. The owner releases only after a resolved run. A job that crashed, or whose claim was refused, keeps ownership until someone reconciles it; a `claimError` on `unclaimed` says why.
 
 Caller serialization doesn't exclude outside actors. Anyone with access may push, merge, retarget or change settings at any time. Observed invalid authority refuses writes; unseen concurrent changes aren't prevented atomically.
 
@@ -62,12 +63,12 @@ An issue's `after` marker names prerequisite issues. The legacy scheduler and as
 These exist in source but are not how the caller runs the pipeline:
 
 - **`orchestrate.mjs`** is a retained legacy scheduler (`--config PATH [--once]`). Don't run it alongside caller-managed jobs. It relays no task request, so since #186 a merge it starts waits for an Integration it never starts.
-- **The coordination seam** (`src/coordination-records.ts`, `src/coordination.ts`, `src/execution.ts`) is an explicit-only protocol for execution and integration-turn records. Nothing in `job`, `ops`, `orchestrate` or `report` reaches it, and assignment mode is disabled.
+- **The integration-turn scope** of the coordination protocol (`src/execution.ts`'s `integrationTurn`) is unused; only issue execution is wired (#167). Assignment mode is disabled.
 - **Assignment discovery** (`src/discovery/plan.ts`) is a read-only, opt-in module. Its plans state `executionAuthority: false`: they grant no session, claim, write or merge.
 
 ## Recover from a coordination problem
 
 1. Stop dispatching the affected issues.
 2. If two jobs ran on one issue or branch, keep both jobs' run folders and recovery evidence. Read the issue's saved state to see which claim won.
-3. If the seam's `coordination-uncertain.json` exists in the issue's run folder, keep it. A lost response may still have landed; reconcile against GitHub with reads before any retry.
+3. If the transport's `coordination-uncertain.json` exists in the issue's run folder, keep it. A lost response may still have landed; reconcile against GitHub with reads before any retry.
 4. Restart one job on the issue's saved stage, with its original branch and lane.

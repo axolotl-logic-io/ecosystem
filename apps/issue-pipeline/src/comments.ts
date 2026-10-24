@@ -5,7 +5,11 @@
 // authorship and editor provenance establish operational authority.
 
 import { z } from "zod";
-import { assertCommentAuthority, currentComment } from "./comment-authority.ts";
+import {
+  assertCommentAuthority,
+  type currentComment,
+  currentComments,
+} from "./comment-authority.ts";
 import { isStateBody, PIPELINE_MARK, USAGE_MARK } from "./comment-marks.ts";
 import type { Config } from "./config.ts";
 import { gh, ghLines } from "./github.ts";
@@ -60,8 +64,19 @@ function commentOf(line: unknown): IssueComment {
   return COMMENT.parse(line);
 }
 
-function verifiedComment(cfg: Config, item: IssueComment): IssueComment {
-  const node = currentComment(cfg, item);
+// `items`, each merge-authored one replaced by its current verified read.
+function verifiedComments(
+  cfg: Config,
+  items: readonly IssueComment[],
+): IssueComment[] {
+  const nodes = currentComments(cfg, items);
+  return items.map((item, at) => withNode(item, nodes[at] ?? null));
+}
+
+function withNode(
+  item: IssueComment,
+  node: ReturnType<typeof currentComment>,
+): IssueComment {
   if (node === null) {
     return item;
   }
@@ -84,7 +99,7 @@ function listComments(cfg: Config, number: number): IssueComment[] {
     "--jq",
     ".[] | @json",
   ]);
-  return lines.map(commentOf).map((item) => verifiedComment(cfg, item));
+  return verifiedComments(cfg, lines.map(commentOf));
 }
 
 // Posts `body` exactly as given: no signature, no mark.
@@ -114,7 +129,7 @@ function listRepoComments(cfg: Config, since: string | null): IssueComment[] {
     "--jq",
     ".[] | @json",
   ]);
-  return lines.map(commentOf).map((item) => verifiedComment(cfg, item));
+  return verifiedComments(cfg, lines.map(commentOf));
 }
 
 // The mark of issue `issue`'s n-th usage comment.

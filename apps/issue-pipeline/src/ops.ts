@@ -21,12 +21,15 @@ import { text } from "node:stream/consumers";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { loadConfig, withCheckout } from "./config.ts";
+import { INVOCATION_BINDING } from "./coordination-records.ts";
 import { ask } from "./ops/ask.ts";
+import { boundClaim } from "./ops/bound-claim.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
 import { confirmMergedOp } from "./ops/confirm-merged.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
+import { boundOps } from "./ops/execution-envelope.ts";
 import { closeParent, finishIssue } from "./ops/finish.ts";
 import { integrationTaskOps } from "./ops/integration-task.ts";
 import { merge, reconcileLand } from "./ops/merge.ts";
@@ -85,7 +88,17 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   // Completes an issue its merge role saved done and merged.
   ["finish", finishIssue],
   ["close-parent", closeParent],
-  ["claim", claim],
+  // A stage job's claim is bound to its confirmed invocation (#167); only
+  // the ops CLI's own tests still send an unbound one.
+  [
+    "claim",
+    (cfg: Config, request: unknown): object => {
+      if (cfg.execution === undefined) {
+        return claim(cfg, request);
+      }
+      return boundClaim(cfg, request);
+    },
+  ],
   // Writes state and nothing else; queued comments ride along on every op (see main).
   ["save-state", saveState],
   ["ask", ask],
@@ -112,11 +125,13 @@ const MAX_ERROR_LENGTH = 4000;
 
 // The fields every request carries, whatever its op: the op, the config's
 // path, the signed comments the workflow queued for the issue and, from a
-// stage job, its checkout.
+// stage job, its checkout and invocation binding (execution-envelope.ts).
 const ENVELOPE = z.looseObject({
   comments: z.array(QUEUED_COMMENT).nullish(),
   config: z.string().nullish(),
   op: z.string(),
+  number: z.number().int().positive().optional(),
+  execution: INVOCATION_BINDING.optional(),
   policyDigest: z.string().optional(),
   // A stage job's own checkout, which stands in for its issue's worktree,
   // and the branch the caller assigned the issue (config.ts's JobCheckout).
@@ -146,17 +161,17 @@ async function readRequest(): Promise<unknown> {
 
 // Runs a parsed request: its queued comments, then its op.
 function runRequest(request: unknown): OpsReply {
-  const { checkout, comments, config, op, policyDigest } = parseRequest(
-    ENVELOPE,
-    "ops",
-    request,
-  );
+  const envelope = parseRequest(ENVELOPE, "ops", request);
+  const { checkout, comments, config, op, policyDigest } = envelope;
   const handler = OPS.get(op);
   if (handler === undefined) {
     throw new OpsError(`unknown op "${op}"`);
   }
-  const cfg = withCheckout(loadConfig(config ?? undefined), checkout);
+  let cfg = withCheckout(loadConfig(config ?? undefined), checkout);
   assertPolicyDigest(cfg, policyDigest);
+  if (envelope.execution !== undefined) {
+    cfg = boundOps(cfg, envelope.execution, envelope);
+  }
   fs.mkdirSync(ROOT, { recursive: true });
   // Post the signed comments the workflow queued for this issue before running the op,
   // so they land in order and aren't lost if the op fails.

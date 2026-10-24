@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import type { Config, JobCheckout } from "../config.ts";
+import type { InvocationBinding } from "../coordination.ts";
 import { policyRevision } from "../project-policy.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runOpsLaunch } from "./launch.ts";
@@ -20,20 +21,23 @@ const OUTPUT_TAIL = 500;
 const REPLY = z.looseObject({ ok: z.boolean(), error: z.string().optional() });
 
 // What every request names besides its op: the repo config's path, the
-// claimant (`sweepId` and `lane`, which the claim's lease records) and the
-// job's own checkout, with the issue branch its caller assigned.
+// claimant (`sweepId` and `lane`, which the claim's lease records), the
+// job's invocation binding (invocation.ts), which ops checks against its
+// ownership before any effect, and the job's own checkout, with the issue
+// branch its caller assigned.
 interface OpsFrame {
   config: string;
   policyDigest?: string;
   sweepId: string;
   lane: string;
+  execution: InvocationBinding;
   checkout: JobCheckout;
 }
 
 function opsFrameOf(
   cfg: Config,
   config: string,
-  claimant: { sweepId: string; lane: string },
+  claimant: { sweepId: string; lane: string; execution: InvocationBinding },
   checkout: JobCheckout,
 ): OpsFrame {
   return {

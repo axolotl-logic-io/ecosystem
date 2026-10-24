@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { batchAnswer, batchIds } from "./fake-graphql-batch.mjs";
 import { api } from "./fake-pipeline-flow-gh-api.mjs";
 import { observeNativeMerges } from "./fake-pipeline-flow-gh-native.mjs";
 import { pr } from "./fake-pipeline-flow-gh-prs.mjs";
@@ -78,17 +79,15 @@ function labelCommand(world, args) {
   return { stdout: "" };
 }
 
-/** @param {World} world @param {readonly string[]} args @returns {Answer} */
-function commentProvenance(world, args) {
-  const id = flagValue(args, "-f");
-  const nodeId = args.find((arg) => arg.startsWith("id="))?.slice("id=".length);
+/** @param {World} world @param {string | undefined} nodeId @returns {object} */
+function provenanceNode(world, nodeId) {
   const item = world.comments.find(
     (comment) => `comment-${comment.id}` === nodeId,
   );
-  if (item === undefined || id === null) {
+  if (item === undefined) {
     throw new Error("unsupported provenance request");
   }
-  const node = {
+  return {
     databaseId: item.id,
     body: item.body,
     author: { login: item.login },
@@ -97,6 +96,22 @@ function commentProvenance(world, args) {
     lastEditedAt: null,
     editor: null,
   };
+}
+
+/** @param {World} world @param {readonly string[]} args @returns {Answer} */
+function commentProvenance(world, args) {
+  const batch = batchIds(args);
+  if (batch !== null) {
+    return {
+      stdout: batchAnswer(batch, (each) => provenanceNode(world, each)),
+    };
+  }
+  const id = flagValue(args, "-f");
+  const nodeId = args.find((arg) => arg.startsWith("id="))?.slice("id=".length);
+  if (id === null) {
+    throw new Error("unsupported provenance request");
+  }
+  const node = provenanceNode(world, nodeId);
   return { stdout: JSON.stringify({ data: { node } }) };
 }
 

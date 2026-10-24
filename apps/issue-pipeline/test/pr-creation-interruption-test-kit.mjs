@@ -13,8 +13,14 @@ const STATE = /<!-- agent-pipeline:state\n(?<json>[\s\S]*?)\n-->/u;
 
 /** @param {string} file @param {string[]} args @param {NodeJS.ProcessEnv} [env] @returns {import("node:child_process").SpawnSyncReturns<string>} */
 function localGh(file, args, env = process.env) {
+  // The coordination transport sends its git-data bodies on stdin (#167).
+  let input = "";
+  if (args.includes("--input")) {
+    input = fs.readFileSync(0, "utf8");
+  }
   return spawnSync(process.execPath, [file, ...args], {
     env,
+    input,
     encoding: "utf8",
     timeout: RUN_MS,
   });

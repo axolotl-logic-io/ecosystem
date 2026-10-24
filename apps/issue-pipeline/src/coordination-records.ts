@@ -282,12 +282,16 @@ export type {
   Request,
   Snapshot,
 };
+
 export {
   assertScope,
   bodyOf,
+  END as RECORD_END,
+  HEADER as RECORD_HEADER,
   hold,
   INVOCATION_BINDING,
   own,
+  RECORD,
   recordsOf,
   refOf,
   sameBinding,

@@ -49,9 +49,15 @@ if (fs.existsSync(transportFile)) {
     send(transport.comments.filter(item => item.issue === Number(listing[1])).map(item => JSON.stringify(item) + "\\n").join(""));
   }
   if (args[0] === "api" && args[1] === "graphql") {
+    const nodeOf = id => {
+      const comment = transport.comments.find(item => item.node_id === id);
+      if (!comment) return null;
+      return { databaseId: comment.id, body: comment.graphBody ?? comment.body, author: comment.graphAuthor ?? comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor };
+    };
+    const batch = batchIds(args);
+    if (batch) send(batchAnswer(batch, nodeOf));
     const id = args.find(arg => arg.startsWith("id="))?.slice(3);
-    const comment = transport.comments.find(item => item.node_id === id);
-    if (comment) json({ data: { node: { databaseId: comment.id, body: comment.graphBody ?? comment.body, author: comment.graphAuthor ?? comment.user, createdAt: comment.created_at, updatedAt: comment.updated_at, lastEditedAt: comment.lastEditedAt, editor: comment.editor } } });
+    if (nodeOf(id)) json({ data: { node: nodeOf(id) } });
   }
   const posting = /^issues\\/(\\d+)\\/comments$/.exec(endpoint.slice(prefix.length));
   const patching = /^issues\\/comments\\/(\\d+)$/.exec(endpoint.slice(prefix.length));

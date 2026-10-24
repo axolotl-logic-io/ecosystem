@@ -41,7 +41,9 @@
 // with nothing on stdout. --steer sends a message to a live session of the
 // job running for #N, exiting 0 once pi accepted it and 1 otherwise.
 // --job-id names the job as the orchestrator logged its start; without it
-// the job makes its own. Each implementor commit names its session and the
+// the job makes its own. Neither is authority: before it opens a checkout
+// the job confirms ownership for a fresh invocation UUID (job/invocation.ts).
+// Each implementor commit names its session and the
 // job's start (src/job/pipeline-commit.ts).
 //
 // No pi session gets a gh token (src/job/roles.ts); ops keep the job's env.
@@ -86,6 +88,8 @@ import type { Control } from "./job/control.ts";
 import { openControl, socketPathOf } from "./job/control.ts";
 import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
+import type { Invocation } from "./job/invocation.ts";
+import { ownedInvocation, settleInvocation } from "./job/invocation.ts";
 import { opsFrameOf, opsRunnerOf } from "./job/ops-request.ts";
 import type { StagePrompts } from "./job/prompts.ts";
 import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
@@ -122,9 +126,14 @@ async function runStage(
   // retained checkout of the stage job.
   const work = task ?? stage;
   const key = jobKeyOf(work, new Date());
+  const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
+  const claimant = { sweepId, lane: args.lane ?? sweepId };
+  const invocation = ownedInvocation(cfg, args, { ...claimant, work });
+  if ("end" in invocation) {
+    return invocation.end;
+  }
   const dirs = openJobCheckout(cfg, issue, { stage: work, branch });
   const { root, repo } = dirs;
-  const sweepId = `s${Date.now().toString(SWEEP_ID_RADIX)}`;
   const runDir = paths.runDir(cfg, issue);
   const id = args.jobId ?? randomUUID();
   const identity = { id, startedAt: new Date().toISOString() };
@@ -146,7 +155,7 @@ async function runStage(
   const frame = opsFrameOf(
     cfg,
     args.config,
-    { sweepId, lane: args.lane ?? sweepId },
+    { ...claimant, execution: invocation.binding },
     { issue, dir: repo, branch },
   );
   const runOp = opsRunnerOf(issue, frame, { hooks, status });
@@ -177,15 +186,16 @@ async function runStage(
       claimed = last;
     },
   });
-  return await settle(cfg, ending, { ...exiting, control });
+  return await settle(cfg, ending, { ...exiting, control, invocation });
 }
 
 // Waits for the run's end and records it in job.json, then, whatever
-// happened, tears the job down and closes its control socket.
+// happened, tears the job down, relinquishes after a resolved run
+// (invocation.ts) and closes its control socket.
 async function settle(
   cfg: Config,
   ending: Promise<RunEnd>,
-  job: ExitingJob & { control: Control },
+  job: ExitingJob & { control: Control; invocation: Invocation },
 ): Promise<RunEnd> {
   const { status, control } = job;
   let end: RunEnd | null = null;
@@ -199,6 +209,7 @@ async function settle(
   } finally {
     try {
       await tearDown(cfg, job, end);
+      settleInvocation(job.invocation, end);
     } finally {
       control.close();
     }
