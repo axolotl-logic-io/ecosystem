@@ -270,6 +270,7 @@ export {
   digest,
   dropRunFolders,
   plantComment,
+  rawOps,
   recordAttempt,
   recordKindsOn,
   recordResult,

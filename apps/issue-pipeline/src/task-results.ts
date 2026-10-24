@@ -159,6 +159,20 @@ function statusIn(rows: readonly Row[], binding: Binding): TaskStatus {
   return { status: "missing", attempts: used, budget: TASK_ATTEMPTS };
 }
 
+// The attempts of `task`, under any binding, whose run has no settled
+// verdict: an armed or uncertain Land among them blocks every writer.
+function unsettledAttempts(
+  rows: readonly Row[],
+  task: Binding["task"],
+): Row<Attempt>[] {
+  return rows
+    .filter(isAttempt)
+    .filter(
+      (row) =>
+        row.binding.task === task && determined(rows, row.run.id) === undefined,
+    );
+}
+
 // The status of `binding` in the issue's records; a hold is a status, never
 // absence.
 function taskStatus(
@@ -177,4 +191,4 @@ function taskStatus(
   }
 }
 
-export { checkedRows, statusIn, taskRecords, taskStatus };
+export { checkedRows, statusIn, taskRecords, taskStatus, unsettledAttempts };
