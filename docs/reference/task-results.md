@@ -2,7 +2,7 @@
 
 A task result records what one buddy run found for one exact binding. Sync, read-only Integration and Land consume these results ([#180](https://github.com/axolotl-logic-io/ecosystem/issues/180)). This page is the contract that [#183](https://github.com/axolotl-logic-io/ecosystem/issues/183) adds.
 
-[#186](https://github.com/axolotl-logic-io/ecosystem/issues/186) activated the records. Every task after Implementation records them, and every task that depends on another reads them fresh.
+[#186](https://github.com/axolotl-logic-io/ecosystem/issues/186) activated the records. Implementation and every task after it record them ([#118](https://github.com/axolotl-logic-io/ecosystem/issues/118) added Implementation), and every task that depends on another reads them fresh.
 
 The rules come from these decisions in [buddies and tasks](../decisions/buddies-and-tasks.md): `bindings-and-ready-tasks`, `requirements-bindings`, `runs-and-retries`, `no-repeated-checks`, `observation-sources` and `additive-record-versions`.
 
@@ -32,7 +32,7 @@ A binding names exactly what a result is about. Every part must match for the re
 | `workItem` | The issue number. |
 | `task` | One of `Author`, `Implementation`, `Hardening`, `Sync`, `Integration`, `Security`, `Land` or `Completion`. |
 | `revision` | The full code commit (40 hex), the trusted-input revision (64 hex) and the policy digest (64 hex). |
-| `requirements` | Instead of `revision`, for `Author` and the first `Implementation` only: `sha256:` and 64 hex. |
+| `requirements` | Instead of `revision`, for `Author` and `Implementation` only: `sha256:` and the 64-hex trusted-inputs hash. |
 | `target` | The literal target `branch` and its full `commit`. |
 
 ```json
@@ -50,6 +50,14 @@ A binding names exactly what a result is about. Every part must match for the re
 ```
 
 The target branch must be the configured base branch. A binding for any other repository, work item or branch holds.
+
+The **requirements digest** covers the issue's title, body and trusted collaborator comments, the same bytes as the revision's `inputs`. That's what the Developer receives as its requirements, and an accepted Gherkin comment is bound to the same hash. A label or a pipeline comment never changes it.
+
+```json
+{ "repo": "o/r", "workItem": 7, "task": "Implementation",
+  "requirements": "sha256:1083…64 hex",
+  "target": { "branch": "integration", "commit": "7ec8…40 hex" } }
+```
 
 ## Records
 
@@ -112,24 +120,36 @@ The job's recorder, the landing-account process, writes every record. The run th
 
 | Task | Recorded by | Binding's revision | When |
 |---|---|---|---|
+| Implementation | The implement job | None: the requirements the session worked from, on the target read fresh | Attempt and result together, after the Developer's push, before saved state moves to review |
 | Sync | The Sync task job's ops | R, the revision synced | The attempt before the rebase, the result after the branch check |
 | Hardening | The review job | The hardened revision, after Hardening's own commits | Attempt and result together, after verification, before the checkpoint is saved |
 | Integration | The Integration task job's ops | R, the revision checked | The attempt before the checks, the result after |
 | Security | The merge job | The candidate | The attempt before the session, the verdict after |
 | Land | The `merge` op | The candidate | The attempt before the first PR write, the result once the own merge is confirmed |
 
+**Implementation binds the requirements, and names the revision it pushed** in `receipt.produced.code`. Every Implementation run binds this way, not only the first, so a return after edited requirements has a new binding and a new budget. If the trusted inputs changed during the session, the job records nothing, and review sends the work back to its requirements owner.
+
+**An Implementation result stays current while the requirements do.** Hardening needs a passed Implementation result for today's requirements digest on the configured branch. The target *commit* isn't compared. A moved target needs Sync and fresh Hardening (`sync-is-a-task`), not a new Implementation. Editing the requirements stales the result, so the work goes back to Implementation ([#172](https://github.com/axolotl-logic-io/ecosystem/issues/172)), or to Author first when the issue used Author. Work with no current Implementation result, such as a branch pushed before #118, goes back to implement before any Hardening session.
+
+```
+requirements edited after Hardening
+  merge  → back to implement        (requirements owner)
+  implement → Implementation result for the new digest, naming R2
+  review → Hardening of R2          (the old Hardening result stays as history)
+```
+
 **Hardening binds the revision it produced.** Integration consumes "a passed Hardening for exactly R on T", and Hardening's session commits fixes, so the result names the revision Hardening checkpointed. Hardening's budget stays the review stage's own limits (`maxCiFixes`). A hardened checkpoint saved before #186 has no result and isn't one: the work returns to review for fresh Hardening.
 
 The other tasks bind the revision they were given. A Sync result names its R and the R′ it produced (`receipt.produced.code`).
 
-Roles find the next ready task with the read-only `task-readiness` op. It reads R, T, whether R contains T and the statuses of the chain's tasks for (R, T), and names the first task without a current pass, with its binding, or a hold. A stage job that needs a task prints that task and binding as its `request`, and the caller relays it. A buddy could ask the same question later.
+Roles find the next ready task with the read-only `task-readiness` op. It reads R, T, whether R contains T, whether an Implementation result is current, and the statuses of the chain's tasks for (R, T). It names the first task without a current pass, with its binding, or a hold. Implementation comes first, then Sync when R misses T, then Hardening, Integration, Security and Land. A stage job that needs a task prints that task and binding as its `request`, and the caller relays it. A buddy could ask the same question later.
 
 ## Ops
 
 | Op | Account | Effect |
 |---|---|---|
 | `task-result` | landing (read) | None. Returns the status above, and `latest`: the binding's latest run, which a retry names as `previous`. |
-| `task-readiness` | landing (read) | None. Returns R, T, whether R contains T, and the next ready task with its binding, or a hold. |
+| `task-readiness` | landing (read) | None. Returns R, T, whether R contains T, the revision the current Implementation result produced (`implemented`, or null), and the next ready task with its binding, or a hold. |
 | `record-task-attempt` | landing | Appends an attempt, only when the status is `missing`. |
 | `record-task-result` | landing | Appends a result for that run's attempt. |
 

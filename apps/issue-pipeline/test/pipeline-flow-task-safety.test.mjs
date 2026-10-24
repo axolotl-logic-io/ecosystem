@@ -36,6 +36,8 @@ import { faultNextPush } from "./sync-task-test-kit.mjs";
 const BRANCH = `refs/heads/agent/issue-${ISSUE}`;
 const TARGET = `refs/heads/${BASE}`;
 const RECORD = "<!-- agent-pipeline:task-result";
+// Every implemented flow here keeps Implementation's own result (#118).
+const IMPLEMENTATION = '"task":"Implementation"';
 const DIGEST_LENGTH = 64;
 // Ops that write the branch, the target or a PR: none may run in a merge
 // job that only requests Sync.
@@ -87,8 +89,8 @@ function starts(flow) {
 
 /** @param {import("./pipeline-flow-test-kit.mjs").Flow} flow */
 function records(flow) {
-  return readWorld(flow.ghDir).comments.filter(({ body }) =>
-    body.startsWith(RECORD),
+  return readWorld(flow.ghDir).comments.filter(
+    ({ body }) => body.startsWith(RECORD) && !body.includes(IMPLEMENTATION),
   );
 }
 
@@ -179,7 +181,7 @@ test("a hardened checkpoint saved before activation is not a Hardening result: m
   // A pre-activation install hardened it: the checkpoint, and no record.
   withWorld(flow.ghDir, (world) => {
     world.comments = world.comments.filter(
-      ({ body }) => !body.startsWith(RECORD),
+      ({ body }) => !body.startsWith(RECORD) || body.includes(IMPLEMENTATION),
     );
   });
   const sessions = starts(flow).length;
@@ -205,7 +207,7 @@ test("a hardened checkpoint saved before activation is not a Hardening result: m
   // and target hardens afresh instead of going on to merge.
   withWorld(flow.ghDir, (world) => {
     world.comments = world.comments.filter(
-      ({ body }) => !body.startsWith(RECORD),
+      ({ body }) => !body.startsWith(RECORD) || body.includes(IMPLEMENTATION),
     );
   });
   const checkpointed = savedState(readWorld(flow.ghDir));

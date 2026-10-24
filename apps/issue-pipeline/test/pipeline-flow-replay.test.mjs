@@ -465,9 +465,12 @@ test("the installed path records the task chain through the landing account, bin
       .filter(Boolean)
       .join(" ");
   });
-  // Hardening of the first head, its Integration, then the head Hardening
-  // fixed after CI failed, its Integration, Security and Land.
+  // Implementation of the requirements, Hardening of the first head, its
+  // Integration, then the head Hardening fixed after CI failed, its
+  // Integration, Security and Land.
   assert.deepEqual(kinds, [
+    "Implementation attempt",
+    "Implementation result passed",
     "Hardening attempt",
     "Hardening result passed",
     "Integration attempt",

@@ -8,6 +8,8 @@
 // question later. It writes nothing.
 //
 //   a Land attempt armed or uncertain    → hold
+//   no Implementation current for the
+//   requirements (implementation-ready)  → Implementation
 //   R doesn't contain T                  → Sync (R, T)
 //   Hardening, Integration, Security     → the first not passed, in order
 //   all three passed                     → Land, then Completion once landed
@@ -23,9 +25,13 @@ import { fetchIn, gitIn, remoteHead } from "../git-state.ts";
 import { trustedInputsHash, writeIssueContext } from "../issue-context.ts";
 import { parseRequest } from "../process.ts";
 import { configPolicyDigest } from "../project-policy.ts";
-import type { Row, TaskStatus } from "../task-result-records.ts";
+import type { Binding, Row, TaskStatus } from "../task-result-records.ts";
 import { TaskResultsHold } from "../task-result-records.ts";
 import { statusIn, taskRecords, unsettledAttempts } from "../task-results.ts";
+import {
+  implementationNext,
+  implementedRevision,
+} from "./implementation-ready.ts";
 import type { RevisionBinding } from "./task-gate.ts";
 import { contains } from "./task-gate.ts";
 
@@ -35,11 +41,16 @@ const REQUEST = z.looseObject({ number: z.number().int().positive() });
 // (`sequential-tasks`).
 const CHECKS = ["Hardening", "Integration", "Security"] as const;
 
-type ChainTask = "Sync" | (typeof CHECKS)[number] | "Land" | "Completion";
+type ChainTask =
+  | "Implementation"
+  | "Sync"
+  | (typeof CHECKS)[number]
+  | "Land"
+  | "Completion";
 
 interface ReadyTask {
   task: ChainTask;
-  binding: RevisionBinding;
+  binding: Binding;
   // The binding's own status: missing for new work, unknown for a run to
   // reconcile, refused for a subject that stays refused.
   status: TaskStatus["status"];
@@ -49,6 +60,8 @@ type ReadinessReply = {
   revision: RevisionBinding["revision"] | null;
   target: RevisionBinding["target"];
   contains: boolean;
+  // The revision the current Implementation result produced, or null.
+  implemented: string | null;
 } & ({ next: ReadyTask; hold: null } | { next: null; hold: string });
 
 // The status of `task` for `base`'s revision and target.
@@ -70,6 +83,13 @@ function nextIn(
   if (land.length > 0) {
     const hold = `Land run ${land[0]?.run.id} is armed or uncertain; reconcile it read-only first`;
     return { next: null, hold };
+  }
+  const implementation = implementationNext(rows, base);
+  if (implementation !== null && "hold" in implementation) {
+    return { next: null, hold: implementation.hold };
+  }
+  if (implementation !== null) {
+    return { ...implementation, hold: null };
   }
   const order: ChainTask[] = [...CHECKS, "Land"];
   if (!synced) {
@@ -109,6 +129,7 @@ function taskReadiness(cfg: Config, request: unknown): ReadinessReply {
       revision: null,
       target,
       contains: false,
+      implemented: null,
       next: null,
       hold: "the issue's branch has no head to bind",
     };
@@ -136,13 +157,20 @@ function taskReadiness(cfg: Config, request: unknown): ReadinessReply {
         revision,
         target,
         contains: synced,
+        implemented: null,
         next: null,
         hold: error.message,
       };
     }
     throw error;
   }
-  return { revision, target, contains: synced, ...nextIn(rows, base, synced) };
+  return {
+    revision,
+    target,
+    contains: synced,
+    implemented: implementedRevision(rows, base),
+    ...nextIn(rows, base, synced),
+  };
 }
 
 const taskReadinessOps: Readonly<

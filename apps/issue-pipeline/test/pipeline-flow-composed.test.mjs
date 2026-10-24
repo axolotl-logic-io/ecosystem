@@ -307,9 +307,11 @@ test("merge runs read-only Security, then lands exactly the hardened revision by
   );
 });
 
+// Implementation's own records (#118) lead: pipeline-flow-implementation-result
+// covers them.
 test("Lawd alone recorded every result, in chain order: Sync of R, then every check of Hardening's R″ on T", () => {
-  const all = records();
-  assert.deepEqual([...new Set(all.map(({ login }) => login))], [LAWD]);
+  const [, , ...all] = records();
+  assert.deepEqual([...new Set(records().map(({ login }) => login))], [LAWD]);
   const synced = steps.find(({ line }) => line.task?.task === "Sync")?.branch;
   // Hardening's own commit made R″ from Sync's R′: every later task binds it.
   const hardened = savedState(readWorld(flow.ghDir)).merged.code;

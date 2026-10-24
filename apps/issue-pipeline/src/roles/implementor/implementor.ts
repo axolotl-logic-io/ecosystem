@@ -5,7 +5,9 @@
 // The Developer never synchronizes the branch with its base and never owns
 // the full verification: the Reviewer hardens and verifies the change next
 // (src/roles/reviewer/). Its push makes any earlier hardening, approval or
-// integration stale, so it clears them. Once the issue's code merged
+// integration stale, so it clears them. The landing account records its
+// Implementation result before the work moves to review
+// (implementation-result.ts). Once the issue's code merged
 // or an attempted merge is retained, Developer entry stops before any
 // session or operation. Read-only recovery belongs to Merge.
 
@@ -24,6 +26,7 @@ import { changeModeOf } from "../change-task.ts";
 import { OPEN_PR_REPLY, opReply, START_PR_REPLY } from "../op-replies.ts";
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop, writerSession } from "../writer-session.ts";
+import { recordImplementation } from "./implementation-result.ts";
 import { workTask } from "./task.ts";
 
 const SHORT_SHA = 12;
@@ -133,6 +136,14 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
   }
   if (mode.kind === "branch") {
     state = await pushBranch(ctx, state, summary.value);
+    const unrecorded = await recordImplementation(
+      ctx,
+      state,
+      String(state.headSha),
+    );
+    if (unrecorded !== null) {
+      return unrecorded;
+    }
   }
   const head = state.headSha?.slice(0, SHORT_SHA) ?? "none";
   const entry = `pushed ${head}; on to review, which hardens it`;
