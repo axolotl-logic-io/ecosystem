@@ -7,11 +7,13 @@
 // the stateful fake GitHub and the scripted fake pi stand in for the
 // services; every effect is read from them.
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { after, test } from "node:test";
 import { ghAccountCalls } from "./fake-pipeline-flow-gh.mjs";
 import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
+import { replaceState } from "./pipeline-flow-replay-test-kit.mjs";
 import { runStage, runTask, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
 import {
   hardeningTurn,
@@ -110,6 +112,12 @@ test("merge never synchronizes a moved target itself: it returns the work to rev
   const sessions = starts(flow).length;
   assert.equal(runStage(flow, "merge").end, "next");
   assert.equal(savedState(readWorld(flow.ghDir)).stage, "review");
+  // Nothing the merge job ran wrote the branch, the target or a PR.
+  assert.deepEqual(
+    opsSince(flow, ops).filter((op) => WRITER_OPS.has(op)),
+    [],
+  );
+  assert.equal(refIn(flow.origin, BRANCH), head);
   const line = runStage(flow, "review");
   assert.equal(line.end, "wait");
   assert.equal(line.request.task, "Sync");
@@ -163,7 +171,7 @@ test("a target that moves before Integration refuses its stale binding with no a
 test("a hardened checkpoint saved before activation is not a Hardening result: merge returns it to review, which hardens it afresh", () => {
   const flow = hardened({
     implementor: [implementorTurn("Hello, world!", "Greet visitors")],
-    reviewer: [hardeningTurn(), hardeningTurn()],
+    reviewer: [hardeningTurn(), hardeningTurn(), hardeningTurn()],
   });
   const before = savedState(readWorld(flow.ghDir));
   assert.ok(before.hardened);
@@ -192,6 +200,47 @@ test("a hardened checkpoint saved before activation is not a Hardening result: m
     ["Hardening", "attempt"],
     ["Hardening", "result"],
   ]);
+  // The same at review: a saved checkpoint with no result for its revision
+  // and target hardens afresh instead of going on to merge.
+  withWorld(flow.ghDir, (world) => {
+    world.comments = world.comments.filter(
+      ({ body }) => !body.startsWith(RECORD),
+    );
+  });
+  const checkpointed = savedState(readWorld(flow.ghDir));
+  assert.ok(checkpointed.hardened);
+  replaceState(flow, { ...checkpointed, stage: "review" });
+  assert.equal(runStage(flow, "review").end, "next");
+  assert.equal(starts(flow).length, sessions + 2, "another fresh Hardening");
+  assert.equal(records(flow).length, 2);
+});
+
+test("maxSyncs still bounds Sync: a Sync past the issue's limit stops before any effect or record", () => {
+  const flow = setUpFlow();
+  flows.push(flow);
+  observeOps(flow);
+  const settings = JSON.parse(fs.readFileSync(flow.config, "utf8"));
+  fs.writeFileSync(flow.config, JSON.stringify({ ...settings, maxSyncs: 0 }));
+  openFlowIssue(flow, "alice", "Greet politely", "Say hello to visitors.");
+  scriptPi(flow, {
+    implementor: [implementorTurn("Hello, world!", "Greet visitors")],
+  });
+  assert.equal(runStage(flow, "implement").end, "next");
+  const head = refIn(flow.origin, BRANCH);
+  advanceTarget(flow, { "NEWS.md": "Elsewhere.\n" });
+  const asked = runStage(flow, "review");
+  assert.equal(asked.request.task, "Sync");
+  const ops = opsTrace(flow).length;
+  const stopped = runTask(flow, "review", asked.request);
+  assert.equal(stopped.end, "stop");
+  assert.equal(stopped.task.verdict, "held");
+  assert.equal(savedState(readWorld(flow.ghDir)).stopCode, "sync-limit");
+  assert.equal(refIn(flow.origin, BRANCH), head);
+  assert.deepEqual(
+    opsSince(flow, ops).filter((op) => WRITER_OPS.has(op)),
+    [],
+  );
+  assert.deepEqual(records(flow), []);
 });
 
 test("a task job refuses a binding for another issue or task, or a task at a stage it can't run at, before it claims or writes anything", () => {
