@@ -36,6 +36,8 @@ import { pushOps } from "./ops/push.ts";
 import { release, saveState } from "./ops/save-state.ts";
 import { stop } from "./ops/stop.ts";
 import { syncOps } from "./ops/sync.ts";
+import { syncTaskOps } from "./ops/sync-task.ts";
+import { syncReconcileOps } from "./ops/sync-task-reconcile.ts";
 import { taskResultOps } from "./ops/task-results.ts";
 import { usage } from "./ops/usage.ts";
 import { verify } from "./ops/verify.ts";
@@ -68,6 +70,9 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ...Object.entries(syncOps),
   // Revision-bound task results (#183); inactive until #180's activation.
   ...Object.entries(taskResultOps),
+  // Hippy's Sync task (#184); inactive until #180's activation.
+  ...Object.entries(syncTaskOps),
+  ...Object.entries(syncReconcileOps),
   // Merges code only, checkpointing attempt/response/receipt; never the issue.
   ["merge", merge],
   ["reconcile-merge", reconcileMerge],

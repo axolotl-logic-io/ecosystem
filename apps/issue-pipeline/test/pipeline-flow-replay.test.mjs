@@ -425,11 +425,19 @@ test("hardening after Land is refused before preparation, a suite, a session or 
   );
 });
 
-// #183's task results are inactive: across every stage this file ran, from
-// setup through Land, completion and recovery, no installed role asked for or
-// recorded one, and GitHub holds no task-result record.
-test("the installed path never requests or records a task result (#183 inactive)", () => {
-  const taskOps = ["task-result", "record-task-attempt", "record-task-result"];
+// #183's task results and #184's Sync task are inactive: across every stage
+// this file ran, from setup through Land, completion and recovery, no
+// installed role asked for or recorded a result or ran the Sync task, and
+// GitHub holds no task-result record.
+test("the installed path never requests or records a task result or runs the Sync task (#183, #184 inactive)", () => {
+  const taskOps = [
+    "task-result",
+    "record-task-attempt",
+    "record-task-result",
+    "sync-task",
+    "sync-task-finish",
+    "sync-task-reconcile",
+  ];
   const ran = opsTrace(flow).map(({ request }) => request.op);
   assert.ok(ran.includes("merge"), "the trace covers Land");
   assert.deepEqual(

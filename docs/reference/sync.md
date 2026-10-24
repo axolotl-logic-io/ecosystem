@@ -46,3 +46,41 @@ An unresolved index also saves `conflict-stages.json`: path, stage number, mode 
 3. Keep the checkout, `conflict-stages.json`, the bundle and the patches until the work is safe.
 4. For `sync-limit`, find out why the base keeps moving before the issue's turn ends; merging fewer issues at once or holding the base briefly helps. Don't raise `maxSyncs` as a reflex.
 5. For `conflict`, resolve the conflict through ordinary reviewed work on the same branch, or recover the kept checkout explicitly. Then restart `merge` on the same issue, branch and lane. Nothing applies saved evidence automatically.
+
+## The Sync task (inactive)
+
+[#184](https://github.com/axolotl-logic-io/ecosystem/issues/184) adds Sync as its own task, following `sync-is-a-task` in [buddies and tasks](../decisions/buddies-and-tasks.md). Nothing installed uses it yet. The merge stage above keeps synchronizing until [#186](https://github.com/axolotl-logic-io/ecosystem/issues/186) activates the split.
+
+A Sync run takes revision R and an exact target commit T that R doesn't contain. It produces R′, a new revision that contains T, or it stops with its work kept. Hippy's development account pushes the branch. The landing account records the run's attempt and result as [task results](task-results.md).
+
+```
+sync-task            check R and T fresh, record the attempt, rebase R onto exactly T
+  └─ clean           push R′ (development account), check the branch holds R′ ⊇ T, record passed
+  └─ stopped         keep the rebase for a resolver session
+sync-task-finish     continue the staged resolution, or retain it, or save it and record failed
+sync-task-reconcile  settle an interrupted run by reading the branch and the checkout
+```
+
+Before any writer effect, each op reads these afresh and refuses if any fails:
+
+- the binding is this issue's Sync binding, with today's trusted inputs and policy;
+- no Land attempt is armed or uncertain, and saved state still lets the code be written;
+- T is on the configured target, and both the checkout and the branch are at R.
+
+Success is checked on the branch itself. The branch must hold exactly the pushed head, and that head must contain the exact requested T. A rebase that keeps an older ancestor of the target isn't proof.
+
+R′ is a new revision, so every later task's result for R stops being current. Hardening, Integration and Security for R′ start as missing. A check that needs a code fix isn't Sync's work: it returns to the Developer.
+
+The installed safeguards still apply, because Sync runs the same code. A gitlink conflict is refused with its numbered stages. Text and binary conflicts go to the resolver. A retired submodule's folder moves whole into recovery. Rejected work is saved as a bundle before any cleanup, and an unresolved index is retained, never reset.
+
+An interrupted run leaves its attempt unsettled, and no new attempt starts until `sync-task-reconcile` settles it by reading:
+
+| The branch | The checkout | Result |
+|---|---|---|
+| A new head H that contains T | At H | `passed`, with R′ = H |
+| Still at R | Rebased past R | `failed`: the push never landed; the rebased work is saved in recovery |
+| Still at R | At R, no synchronization | `failed`: the run ended before any effect |
+| Anything | A stopped rebase | Held: finish, retain or recover it by hand |
+| Anything else | Anything else | Held |
+
+Reconciliation never repeats the push or the rebase.

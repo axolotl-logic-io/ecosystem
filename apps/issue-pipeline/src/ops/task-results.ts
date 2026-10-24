@@ -9,7 +9,13 @@ import { listComments, rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
-import type { Row, TaskRecord, TaskStatus } from "../task-result-records.ts";
+import type {
+  Binding,
+  Result,
+  Row,
+  TaskRecord,
+  TaskStatus,
+} from "../task-result-records.ts";
 import {
   BINDING,
   RECEIPT,
@@ -90,43 +96,50 @@ function appended(cfg: Config, number: number, record: TaskRecord): Row[] {
   return rows;
 }
 
-function recordTaskAttempt(cfg: Config, request: unknown): AttemptReply {
-  const req = parseRequest(ATTEMPT_REQUEST, "record-task-attempt", request);
-  const binding = requestedBinding(cfg, req.number, req.binding);
-  const before = taskStatus(
-    cfg,
-    req.number,
-    listComments(cfg, req.number),
-    binding,
-  );
+// Appends an attempt of `run` for `binding`, only when the binding is missing.
+function startAttempt(
+  cfg: Config,
+  number: number,
+  binding: Binding,
+  run: { id: string; previous: string | null },
+): AttemptReply {
+  const before = taskStatus(cfg, number, listComments(cfg, number), binding);
   if (before.status !== "missing") {
     throw new OpsError(`no attempt may start: the binding is ${before.status}`);
   }
-  const record: TaskRecord = {
-    version: 1,
-    kind: "attempt",
-    binding,
-    run: req.run,
-  };
-  holdsAsRefusal(() => withProposed(cfg, req.number, record));
-  const rows = appended(cfg, req.number, record);
+  const record: TaskRecord = { version: 1, kind: "attempt", binding, run };
+  holdsAsRefusal(() => withProposed(cfg, number, record));
+  const rows = appended(cfg, number, record);
   return { attempt: before.attempts + 1, status: statusIn(rows, binding) };
+}
+
+// Appends `run`'s verdict for `binding`, if it keeps the records consistent.
+function appendResult(
+  cfg: Config,
+  number: number,
+  result: Omit<Result, "version" | "kind">,
+): ResultReply {
+  const record: TaskRecord = { version: 1, kind: "result", ...result };
+  holdsAsRefusal(() => withProposed(cfg, number, record));
+  const rows = appended(cfg, number, record);
+  return { status: statusIn(rows, result.binding) };
+}
+
+function recordTaskAttempt(cfg: Config, request: unknown): AttemptReply {
+  const req = parseRequest(ATTEMPT_REQUEST, "record-task-attempt", request);
+  const binding = requestedBinding(cfg, req.number, req.binding);
+  return startAttempt(cfg, req.number, binding, req.run);
 }
 
 function recordTaskResult(cfg: Config, request: unknown): ResultReply {
   const req = parseRequest(RESULT_REQUEST, "record-task-result", request);
   const binding = requestedBinding(cfg, req.number, req.binding);
-  const record: TaskRecord = {
-    version: 1,
-    kind: "result",
+  return appendResult(cfg, req.number, {
     binding,
     run: req.run,
     verdict: req.verdict,
     receipt: req.receipt,
-  };
-  holdsAsRefusal(() => withProposed(cfg, req.number, record));
-  const rows = appended(cfg, req.number, record);
-  return { status: statusIn(rows, binding) };
+  });
 }
 
 // A record that would make the records hold is refused, with why.
@@ -149,4 +162,5 @@ const taskResultOps: Readonly<
   "record-task-result": recordTaskResult,
 };
 
-export { taskResultOps };
+export type { AttemptReply, ResultReply };
+export { appendResult, startAttempt, taskResultOps };
