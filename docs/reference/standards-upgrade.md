@@ -6,10 +6,12 @@ The standards upgrade brings one GitHub repository up to an evidence-backed main
 standards-upgrade assess --config C --repo OWNER/REPO [--ref R] --out DIR
    → assessment.json, report.md, plan.md   (no GitHub or Git writes; no repository code runs)
 an allow-listed person files plan.md as the repository's one upgrade issue
+standards-upgrade apply --config C --issue N
+   → the branch and the caller's start line   (read-only checks)
 caller: Implementation → draft PR → Hardening → Sync → Integration → Security → Land
 ```
 
-This page describes the assessment. Merging it installs and activates nothing. Nothing schedules it, and it never runs across many repositories by itself.
+This page describes the assessment and the admission of its plan. Merging them installs and activates nothing. Nothing schedules it, and it never runs across many repositories by itself.
 
 ## Scope of this slice
 
@@ -115,6 +117,35 @@ A green workflow never stands in for enforcement. Without a required check, the 
 
 The digest covers the whole assessment except its time and requested ref. A rerun on the same commit, policy and toolchain gives the same digest.
 
+## Deliver the plan
+
+To deliver an assessment's plan, follow these steps:
+
+1. Read `report.md` and `plan.md`. Edit the plan's text if you want, but keep its marker line as it is.
+2. As an allow-listed collaborator, file `plan.md`'s contents as a new issue on the repository.
+3. Check the issue and get the caller's start line:
+
+   ```bash
+   node apps/issue-pipeline/dist/standards-upgrade.mjs apply --config CONFIG --issue ISSUE
+   ```
+
+   `ISSUE` is the number of the issue you filed.
+4. Start the Implementation stage with the printed line, filling in the caller's run folder and lane, as the [caller](caller.md) page describes.
+
+`apply` prints one JSON line with the issue, the branch `standards-upgrade/issue-ISSUE`, the plan's marker fields, the stage `implement` and the start line. From there the existing caller and task chain do everything: Hippy implements on that branch and opens a draft PR, and Hardening, Sync, Integration, Security and Land follow under their usual rules. The default run never merges by itself; landing still needs the chain's own Security result and authorization.
+
+`apply` only reads. It refuses, with exit 2 and the reason on stderr, when:
+
+- the issue isn't open, or is a pull request;
+- its author isn't an allow-listed collaborator, which includes both pipeline accounts;
+- it doesn't carry exactly one plan marker, or the marker doesn't parse;
+- the marker names another repository, or a policy other than `standards-v1`;
+- the config's base branch has moved past the plan's source commit;
+- another open issue already carries a plan;
+- the open issues can't be listed completely.
+
+**Note:** `assess` reads GitHub's default branch, while `apply` checks the config's `baseBranch`, which is where the chain lands. When they differ, `apply` refuses the plan as stale. Assess with `--ref BASE_BRANCH` instead.
+
 ## Permissions
 
 The assessment holds only the read side of the configured credentials, through the pipeline's own `gh` and `git` wrappers. It writes nothing to GitHub or the origin. Repository text, such as a README or a workflow, is data: it can't widen the target or the permissions.
@@ -125,4 +156,8 @@ The plan never asks for a settings change. Requiring a check, archiving or chang
 
 ## Recovery
 
-The assessment is read-only and keeps no state, so rerunning it is always safe. A new commit on the default branch makes a plan stale. Rerun the assessment and file the new plan instead of reusing the old one.
+The assessment and `apply` are read-only and keep no state, so rerunning them is always safe.
+
+A new commit on the base branch makes a plan stale before Implementation starts. Close the stale issue, rerun the assessment and file the new plan. Once Implementation has started, the chain's own Sync task brings the branch up to date, as it does for any issue.
+
+An interrupted or rate-limited delivery recovers through the chain's existing rules. Every restart is a retry from the latest checkpoint, and an uncertain write is reconciled by reading, never repeated. One work item and one branch per repository keep a second run from writing the same branch. `apply` refuses a second open plan, so a resumed upgrade continues its existing issue instead of filing another.

@@ -6,6 +6,7 @@
 //
 //   node standards-upgrade.mjs assess --config CONFIG --repo OWNER/REPO|URL
 //        [--ref REF] --out DIR
+//   node standards-upgrade.mjs apply --config CONFIG --issue N
 //
 // `assess` reads the configured repository at REF (its default branch when
 // omitted), resolved to one commit, and writes assessment.json, report.md
@@ -15,6 +16,13 @@
 // files. A wrong repository, an unreadable one or a ref that names no commit
 // exits 2 with the reason on stderr, before anything is written; other
 // errors exit 1.
+//
+// `apply` admits issue N, which an allow-listed person filed from plan.md,
+// into issue delivery: it checks the plan's author, repository, policy,
+// source commit (still the base branch's head) and that no other open issue
+// carries a plan, then prints the branch and the caller's start line for
+// the Implementation stage. It reads only; the existing caller and task
+// chain do every write. A plan that fails a check exits 2.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -22,6 +30,7 @@ import process from "node:process";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { loadConfig } from "../src/config.ts";
+import { admit } from "../src/standards/admit.ts";
 import { assess } from "../src/standards/assess.ts";
 import { planOf, reportOf } from "../src/standards/report.ts";
 import { Refusal } from "../src/standards/source.ts";
@@ -33,6 +42,10 @@ const ASSESS_ARGS = z.object({
   repo: z.string().min(1),
   ref: z.string().optional(),
   out: z.string().min(1),
+});
+const APPLY_ARGS = z.object({
+  config: z.string().min(1),
+  issue: z.coerce.number().int().positive(),
 });
 
 function messageOf(error: unknown): string {
@@ -98,14 +111,37 @@ function runAssess(argv: readonly string[]): void {
   );
 }
 
+function runApply(argv: readonly string[]): void {
+  const { values } = parseArgs({
+    args: [...argv],
+    options: { config: { type: "string" }, issue: { type: "string" } },
+  });
+  const args = APPLY_ARGS.parse(values);
+  const config = path.resolve(args.config);
+  const { issue, branch, marker } = admit(loadConfig(config), args.issue);
+  const start = [
+    'node "$ISSUE_PIPELINE_ROOT/caller-jobs.mjs" start --run RUN_DIR',
+    `--config ${JSON.stringify(config)} --issue ${issue}`,
+    `--branch ${branch} --lane LANE --stage implement`,
+  ].join(" ");
+  console.log(
+    JSON.stringify({ issue, branch, ...marker, stage: "implement", start }),
+  );
+}
+
 function main(): void {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== "assess") {
-    throw new Error(
-      "usage: standards-upgrade assess --config CONFIG --repo OWNER/REPO [--ref REF] --out DIR",
-    );
+  if (command === "assess") {
+    runAssess(rest);
+    return;
   }
-  runAssess(rest);
+  if (command === "apply") {
+    runApply(rest);
+    return;
+  }
+  throw new Error(
+    "usage: standards-upgrade assess --config CONFIG --repo OWNER/REPO [--ref REF] --out DIR | apply --config CONFIG --issue N",
+  );
 }
 
 try {

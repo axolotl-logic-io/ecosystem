@@ -6,8 +6,8 @@
 
 import { digestOf } from "./assess.ts";
 import type { Assessment, PlanMarker } from "./schema.ts";
+import { PLAN_TAG } from "./schema.ts";
 
-const PLAN_TAG = "standards-upgrade:plan";
 const SHORT_SHA = 12;
 
 const STATUS_WORDS: Readonly<Record<string, string>> = {
@@ -152,4 +152,4 @@ function planOf(assessment: Assessment): string | null {
   ].join("\n");
 }
 
-export { PLAN_TAG, planOf, reportOf };
+export { planOf, reportOf };

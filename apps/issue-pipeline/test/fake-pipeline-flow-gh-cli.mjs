@@ -1,6 +1,6 @@
 // @ts-check
 // The fake GitHub's entry and its `gh pr`, `gh issue` and `gh label`
-// commands. A PR's head is read from the bare origin when GitHub is asked;
+// commands, and the standards upgrade's reads. A PR's head is read from the bare origin when GitHub is asked;
 // the explicit REST merge creates real ordered [P,H] parents. Every PR has one required check, which passes.
 import fs from "node:fs";
 import path from "node:path";
@@ -8,6 +8,7 @@ import process from "node:process";
 import { api } from "./fake-pipeline-flow-gh-api.mjs";
 import { observeNativeMerges } from "./fake-pipeline-flow-gh-native.mjs";
 import { pr } from "./fake-pipeline-flow-gh-prs.mjs";
+import { standardsRead } from "./fake-pipeline-flow-gh-standards.mjs";
 import {
   flagValue,
   issueOf,
@@ -135,7 +136,7 @@ function answer(world, args) {
   }
   switch (args[0]) {
     case "api":
-      return api(world, args.slice(1));
+      return standardsRead(world, args.slice(1)) ?? api(world, args.slice(1));
     case "pr":
       return pr(world, args);
     case "issue":

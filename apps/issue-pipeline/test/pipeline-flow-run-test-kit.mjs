@@ -210,14 +210,20 @@ function runThroughTasks(
 
 /**
  * Starts a job through the installed caller in the run folder `run`, with
- * `extra` launcher arguments such as a task request, and waits for it.
+ * `extra` launcher arguments such as a task request, on `branch`
+ * (`agent/issue-N` by default), and waits for it.
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
  * @param {string} run
  * @param {string} stage
- * @param {readonly string[]} [extra]
+ * @param {{ extra?: readonly string[], branch?: string }} [options]
  * @returns {Promise<{ launch: any, line: any }>} its receipt line and the job's own
  */
-async function callerJob(flow, run, stage, extra = []) {
+async function callerJob(
+  flow,
+  run,
+  stage,
+  { extra = [], branch = `agent/issue-${ISSUE}` } = {},
+) {
   const deadline = performance.now() + RUN_MS;
   const result = spawnSync(
     process.execPath,
@@ -231,7 +237,7 @@ async function callerJob(flow, run, stage, extra = []) {
       "--issue",
       String(ISSUE),
       "--branch",
-      `agent/issue-${ISSUE}`,
+      branch,
       "--stage",
       stage,
       "--lane",
