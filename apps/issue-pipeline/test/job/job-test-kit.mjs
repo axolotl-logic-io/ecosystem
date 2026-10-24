@@ -22,7 +22,7 @@ const JOB = new URL("../../src/job.ts", import.meta.url).pathname;
 const AGENTS = new URL("../../agents/", import.meta.url).pathname;
 // runJob's bound on a job's run. A spawnSync blocks the event loop, and the
 // per-test timeout with it, so this bound sits below that timeout
-// (`--test-timeout` in mise.toml's check task); a run past it is killed and
+// (`--test-timeout` in package.json's check scripts); a run past it is killed and
 // ends with a null status. It covers one job run to its end: the slowest
 // measured was 8.2 s, in a full `node --test` run beside three more in a
 // copy of the checkout, at 1-minute load averages of up to 130 on 10 cores

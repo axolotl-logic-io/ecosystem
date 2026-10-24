@@ -1,5 +1,5 @@
 // @ts-check
-// The typecheck `mise //apps/issue-pipeline:check` runs covers every test
+// The typecheck `npm run check` runs covers every test
 // file, with or without a `// @ts-check` line (README, #223). Both gates give
 // each selected test a timeout (#372). Fixtures go in a temporary folder,
 // never under test/.
@@ -15,11 +15,11 @@ import { test } from "node:test";
 const APP_DIR = new URL("..", import.meta.url).pathname;
 const REPO_ROOT = path.resolve(APP_DIR, "..", "..");
 const ARGUMENT_TYPE_ERROR = /fixture\.mjs\(\d+,\d+\): error TS2345:/u;
-// The fast and full check tables in mise.toml, up to the next table.
-const CHECK_TASKS =
-  /^\[tasks\.(?:check|"check:full")\]\n(?<task>[\s\S]*?)(?=^\[)/gmu;
-// A run entry of a check task that runs node --test.
-const NODE_TEST_ENTRY = /^\s*"node --test (?<flags>[^"]*)",?$/mu;
+// The fast and full gates: scripts in package.json, which mise.toml's check
+// tasks call.
+const CHECK_SCRIPTS = ["check", "check:full"];
+// The step of a check script that runs node --test, up to the next step.
+const NODE_TEST_STEP = /(?:^|&& )node --test (?<flags>.*?)(?: &&|$)/u;
 const TEST_TIMEOUT = /(?:^| )--test-timeout=(?<ms>\d+)(?: |$)/u;
 
 /**
@@ -36,14 +36,15 @@ function inTempDir(body) {
   }
 }
 
-test("both check tasks give each Node test a timeout", () => {
-  const toml = fs.readFileSync(path.join(APP_DIR, "mise.toml"), "utf8");
-  const tasks = [...toml.matchAll(CHECK_TASKS)];
-  assert.equal(tasks.length, 2, "both fast and full gates are present");
-  for (const match of tasks) {
-    const { task = "" } = match.groups ?? {};
-    const { flags = "" } = NODE_TEST_ENTRY.exec(task)?.groups ?? {};
-    assert.notEqual(flags, "", "the check task runs node --test");
+test("both check scripts give each Node test a timeout", () => {
+  const manifest = fs.readFileSync(path.join(APP_DIR, "package.json"), "utf8");
+  /** @type {{ scripts?: Record<string, string> }} */
+  const { scripts = {} } = JSON.parse(manifest);
+  for (const name of CHECK_SCRIPTS) {
+    const script = scripts[name] ?? "";
+    assert.notEqual(script, "", `package.json has a ${name} script`);
+    const { flags = "" } = NODE_TEST_STEP.exec(script)?.groups ?? {};
+    assert.notEqual(flags, "", `the ${name} script runs node --test`);
     const { ms = "0" } = TEST_TIMEOUT.exec(flags)?.groups ?? {};
     assert.ok(Number(ms) > 0, `node --test ${flags} has no --test-timeout`);
   }

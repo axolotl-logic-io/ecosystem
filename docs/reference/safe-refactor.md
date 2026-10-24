@@ -163,4 +163,4 @@ cd apps/issue-pipeline
 node test/safe-refactor/native-proof.mjs NATIVE_PACKAGE_DIRECTORY
 ```
 
-`NATIVE_PACKAGE_DIRECTORY` is the absolute directory of the approved Pi 1.2.0 package. This opt-in proof also checks schemas with the actual native argument validator and uses a provider that refuses generation. It is not a live task or a proof of model output quality. The ordinary full gate remains `mise //apps/issue-pipeline:check`.
+`NATIVE_PACKAGE_DIRECTORY` is the absolute directory of the approved Pi 1.2.0 package. This opt-in proof also checks schemas with the actual native argument validator and uses a provider that refuses generation. It is not a live task or a proof of model output quality. The ordinary full gate remains `npm run check:full`.

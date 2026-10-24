@@ -26,7 +26,8 @@ const HUNG_TEST = "a test whose job waits and that never resolves";
 const FIXTURE_TIMEOUT_MS = 20_000;
 // The nested run's bound: the fixture's timeout, plus 20 s for starting node
 // twice and the cleanup, with room to spare. A nested run that a leaked job keeps alive
-// is killed here instead, below this test's own timeout (mise.toml).
+// is killed here instead, below this test's own timeout (package.json's
+// check scripts).
 const NESTED_RUN_MS = 40_000;
 // waitFor's deadline in the test of a wait that never holds, and that test's
 // own timeout, so it can't hang even if waitFor never settles.

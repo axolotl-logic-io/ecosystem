@@ -20,8 +20,8 @@ const POLL_MS = 20;
 // spending, in job-checkout-layout.test.mjs), in a full `node --test` run
 // beside three more in a copy of the checkout, at 1-minute load averages of
 // up to 130 on 10 cores (2026-10-17). It is over 3 times that, and below the
-// per-test timeout (`--test-timeout` in mise.toml's check task), so a missed
-// marker fails naming itself first.
+// per-test timeout (`--test-timeout` in package.json's check scripts), so a
+// missed marker fails naming itself first.
 const WAIT_MS = 20_000;
 
 /** @typedef {() => unknown} Cleanup */

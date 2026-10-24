@@ -4,4 +4,4 @@
 - Follow the shared [coding practices](docs/coding-practices.md), this repository's [project practices](docs/project-practices.md) and, for docs, the [docs style guide](docs/docs-style-guide.md).
 - The pipeline's decisions and reference are listed in [`docs/README.md`](docs/README.md).
 
-Run `mise //apps/issue-pipeline:check` for the fast default gate (not full integration coverage). The expensive full suite is opt-in with `mise //apps/issue-pipeline:check:full`; see the pipeline README before selecting it.
+Set up with `npm ci --ignore-scripts --no-audit --no-fund`. Run `npm run check` for the fast default gate (not full integration coverage). The expensive full suite is opt-in with `npm run check:full`; see the pipeline README before selecting it. mise is optional; its `check` tasks call the same scripts.

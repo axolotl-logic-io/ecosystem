@@ -1,6 +1,7 @@
 {
   "commands": {
-    "test": "mise //apps/issue-pipeline:check"
+    "setup": "npm ci --ignore-scripts --no-audit --no-fund",
+    "test": "npm run check"
   },
   "practices": [
     "AGENTS.md",
