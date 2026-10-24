@@ -13,10 +13,9 @@ import {
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import { observeOps, opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import { confirmationsSince } from "./pipeline-flow-post-land-test-kit.mjs";
-import { runStage } from "./pipeline-flow-run-test-kit.mjs";
+import { runStage, runThroughTasks } from "./pipeline-flow-run-test-kit.mjs";
 import {
   authorTurn,
-  hardeningTurn,
   implementorTurn,
   openFlowIssue,
   savedState,
@@ -188,8 +187,7 @@ function prepareReplayFlow(flow) {
     ],
     reviewer: [
       implementorTurn("Hello, world", "Hardening fixes capitalization"),
-      implementorTurn("Hello, world!", "Integration fixes CI"),
-      hardeningTurn(),
+      implementorTurn("Hello, world!", "Hardening fixes CI"),
       securityTurn(),
     ],
   });
@@ -200,8 +198,11 @@ function prepareReplayFlow(flow) {
   return gitlink;
 }
 
-// Synthetic migration fixture: retain the real confirmed merge and known
-// original integration, but encode the pre-upgrade postmerge-Security shape.
+// Synthetic migration fixture: retain the real confirmed merge and a
+// pre-activation integration receipt, but encode the pre-upgrade
+// postmerge-Security shape. Since #186 no stage writes an integration
+// receipt, so the setup builds it from the two real hardened revisions: the
+// first one, whose CI failed, and the one Hardening fixed and Land took.
 // This is test data, never a runtime path for erasing candidate clearance.
 /** @param {Flow} flow @param {import("../src/state.ts").Integration} integration */
 function historicalMerge(flow, integration) {
@@ -252,23 +253,27 @@ function createReplayFlow(flow, withholdMergeBinding = false) {
       );
     }
   }
+  const reviewed = savedState(readWorld(flow.ghDir)).hardened;
   withWorld(flow.ghDir, (world) => {
-    world.failedHead = savedState(world).hardened.code;
+    world.failedHead = reviewed.code;
     world.withholdMergeBinding = withholdMergeBinding;
   });
-  const integrated = runStage(flow, "merge");
-  if (integrated.end !== "next") {
-    throw new Error(`setup integration: ${JSON.stringify(integrated)}`);
+  const returned = runThroughTasks(flow, "merge").at(-1);
+  if (returned?.end !== "next") {
+    throw new Error(`setup CI return: ${JSON.stringify(returned)}`);
   }
-  const { integration } = savedState(readWorld(flow.ghDir));
   if (runStage(flow, "review").end !== "next") {
     throw new Error("fresh hardening did not complete");
   }
+  const integration = {
+    reviewed,
+    revision: savedState(readWorld(flow.ghDir)).hardened,
+  };
   let expected = "deferred";
   if (withholdMergeBinding) {
     expected = "stop";
   }
-  const result = runStage(flow, "merge");
+  const result = runThroughTasks(flow, "merge").at(-1);
   if (result.end !== expected) {
     throw new Error(
       `setup merge: expected ${expected}, got ${JSON.stringify(result)}`,

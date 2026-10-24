@@ -37,7 +37,11 @@ import {
   securityEvidence,
   sessions,
 } from "./pipeline-flow-replay-test-kit.mjs";
-import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
+import {
+  runStage,
+  runThroughTasks,
+  stopJobs,
+} from "./pipeline-flow-run-test-kit.mjs";
 import { savedState } from "./pipeline-flow-script-test-kit.mjs";
 import { ISSUE, refIn, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
@@ -57,7 +61,7 @@ let clearedWorld;
 /** @type {string} the review-module gitlink the Developer's draft adds */
 let gitlink;
 let replayReady = false;
-/** @type {{ integration?: import("../src/state.ts").Integration }} */
+/** @type {{ integration?: import("../src/state.ts").Integration, reviewed?: import("../src/state.ts").Revision }} */
 const setup = {};
 
 before(() => {
@@ -86,7 +90,7 @@ for (const step of REPLAY_SETUP) {
 // Checks and Security (its bundle has the gitlink and docs change) clear
 // exactly the landed candidate before Land, then only confirmation (#185).
 test("replay setup merge reaches deferred within its own deadline", () => {
-  assert.equal(runStage(flow, "merge").end, "deferred");
+  assert.equal(runThroughTasks(flow, "merge").at(-1).end, "deferred");
   const current = savedState(readWorld(flow.ghDir));
   assert.equal(current.stage, "done");
   assert.equal(current.security.phase, "candidate");
@@ -429,34 +433,50 @@ test("hardening after Land is refused before preparation, a suite, a session or 
 // inactive: across every stage this file ran, from setup through Land,
 // completion and recovery, no installed role asked for or recorded a result,
 // ran Sync or Integration, or bound a Land, and GitHub holds no record.
-test("the installed path never requests or records a task result, runs Sync or Integration, or binds a Land (#183-#185 inactive)", () => {
-  const taskOps = [
-    "task-result",
-    "record-task-attempt",
-    "record-task-result",
-    "sync-task",
-    "sync-task-finish",
-    "sync-task-reconcile",
-    "integration-task",
-  ];
+test("the installed path records the task chain through the landing account, binds its Land and never runs a hidden Sync (#186)", () => {
   const trace = opsTrace(flow);
   const ran = trace.map(({ request }) => request.op);
-  // Land and Completion run as installed: no request names a task binding.
+  // The merge stage's own synchronization retired: no job asks for it.
   assert.deepEqual(
-    trace.filter(({ request }) => "binding" in request || "landRun" in request),
+    ran.filter((op) => op === "sync-base" || op === "finish-sync"),
     [],
   );
-  assert.ok(ran.includes("merge"), "the trace covers Land");
-  assert.deepEqual(
-    ran.filter((op) => taskOps.includes(op)),
-    [],
-  );
-  for (const world of [readWorld(flow.ghDir), interruptedWorld, clearedWorld]) {
-    assert.deepEqual(
-      world.comments.filter(({ body }) =>
-        body.startsWith("<!-- agent-pipeline:task-result"),
-      ),
-      [],
-    );
+  // Every Land names its exact binding and a run.
+  const lands = trace.filter(({ request }) => request.op === "merge");
+  assert.ok(lands.length > 0, "the trace covers Land");
+  for (const { request: sent } of lands) {
+    /** @type {any} */
+    const request = sent;
+    assert.equal(request.binding?.task, "Land");
+    assert.equal(request.binding.revision.code, request.expectedSha);
+    assert.equal(request.binding.target.commit, request.expectedBase);
+    assert.ok(request.landRun?.id);
   }
+  const records = clearedWorld.comments.filter(({ body }) =>
+    body.startsWith("<!-- agent-pipeline:task-result"),
+  );
+  assert.deepEqual(
+    [...new Set(records.map(({ login }) => login))],
+    [clearedWorld.account],
+  );
+  const kinds = records.map(({ body }) => {
+    const record = JSON.parse(body.split("\n").slice(1, -1).join("\n"));
+    return `${record.binding.task} ${record.kind}${record.verdict ? ` ${record.verdict}` : ""}`;
+  });
+  // Hardening of the first head, its Integration, then the head Hardening
+  // fixed after CI failed, its Integration, Security and Land.
+  assert.deepEqual(kinds, [
+    "Hardening attempt",
+    "Hardening result passed",
+    "Integration attempt",
+    "Integration result passed",
+    "Hardening attempt",
+    "Hardening result passed",
+    "Integration attempt",
+    "Integration result passed",
+    "Security attempt",
+    "Security result passed",
+    "Land attempt",
+    "Land result passed",
+  ]);
 });
