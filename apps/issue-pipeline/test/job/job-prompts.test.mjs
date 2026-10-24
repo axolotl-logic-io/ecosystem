@@ -153,7 +153,7 @@ test("a job pins only its stage's pages, byte for byte, and keeps them though th
   });
   assert.deepEqual(
     prompts.pinned.map((pinned) => pinned.page),
-    ["integration.md", page],
+    [page],
   );
   assert.equal(prompts.promptFor("merge", null), null);
   assert.equal(prompts.promptFor("merge", "hardening"), null);

@@ -154,7 +154,37 @@ function claimWon(state, comments = []) {
 }
 
 // The replies of the ops every stage job runs.
+// The chain's next ready task for revision HEAD_SHA on its target, which a
+// review job reads before it hardens (#186): Hardening, not yet recorded.
+const READY_FOR_HARDENING = {
+  ok: true,
+  revision: {
+    code: HEAD_SHA,
+    inputs: GHERKIN_INPUTS,
+    policy: "c".repeat(GHERKIN_INPUTS.length),
+  },
+  target: { branch: "main", commit: "b".repeat(HEAD_SHA.length) },
+  contains: true,
+  next: {
+    task: "Hardening",
+    binding: {
+      repo: "o/r",
+      workItem: ISSUE_NUMBER,
+      task: "Hardening",
+      revision: {
+        code: HEAD_SHA,
+        inputs: GHERKIN_INPUTS,
+        policy: "c".repeat(GHERKIN_INPUTS.length),
+      },
+      target: { branch: "main", commit: "b".repeat(HEAD_SHA.length) },
+    },
+    status: "missing",
+  },
+  hold: null,
+};
+
 const ROUTINE_OPS = {
+  "task-readiness": READY_FOR_HARDENING,
   "save-state": { ok: true },
   release: { ok: true },
   stop: { ok: true },
