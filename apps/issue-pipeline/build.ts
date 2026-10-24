@@ -28,6 +28,13 @@ const BACKEND_PACKAGE = path.dirname(
 );
 const BACKEND_DIRECTORY = `vendor/node_modules/typescript-${ts.version}`;
 const BACKEND_IMPORT = `./${BACKEND_DIRECTORY}/lib/typescript.js`;
+// yaml's Node entry is CommonJS that requires node:process at load time,
+// which an ES module bundle can't; its ES module build needs no Node API.
+const YAML_MODULE = path.join(
+  path.dirname(fileURLToPath(import.meta.resolve("yaml/package.json"))),
+  "browser",
+  "index.js",
+);
 
 const SOURCE_DIR = path.join(import.meta.dirname, "src");
 const SCRIPTS_DIR = path.join(import.meta.dirname, "scripts");
@@ -62,7 +69,7 @@ async function buildNodeModule(source: string, outfile: string): Promise<void> {
     // Keep the compiler with its real CommonJS file and declaration assets.
     // Resolve the external alias relative to the relocatable distribution.
     absWorkingDir: path.dirname(outfile),
-    alias: { typescript: BACKEND_IMPORT },
+    alias: { typescript: BACKEND_IMPORT, yaml: YAML_MODULE },
     external: [BACKEND_IMPORT],
     charset: "utf8",
     entryPoints: [source],
