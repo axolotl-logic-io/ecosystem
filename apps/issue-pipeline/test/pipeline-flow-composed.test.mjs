@@ -118,7 +118,7 @@ async function step(stage, request) {
     ops: trace().length,
     accounts: ghAccountCalls(flow.ghDir).length,
   };
-  const { launch, line } = await callerJob(flow, run, stage, extra);
+  const { launch, line } = await callerJob(flow, run, stage, { extra });
   const taken = {
     stage,
     extra,

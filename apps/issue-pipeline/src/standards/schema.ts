@@ -80,6 +80,10 @@ const ASSESSMENT = z.strictObject({
   commands: z.array(z.never()),
 });
 
+// The tag that opens the marker a plan's upgrade issue carries:
+// `<!-- standards-upgrade:plan {PLAN_MARKER JSON} -->`.
+const PLAN_TAG = "standards-upgrade:plan";
+
 // The marker a plan's upgrade issue carries, binding it to one assessment.
 const PLAN_MARKER = z.strictObject({
   version: z.literal(1),
@@ -104,4 +108,4 @@ export type {
   PlanMarker,
   Workflow,
 };
-export { ASSESSMENT, PLAN_MARKER, POLICY_VERSION };
+export { ASSESSMENT, PLAN_MARKER, PLAN_TAG, POLICY_VERSION };
