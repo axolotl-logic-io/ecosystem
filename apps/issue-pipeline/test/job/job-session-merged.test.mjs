@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { saveAuthority } from "../write-authority-test-kit.mjs";
 import {
+  developerSpec,
   ISSUE,
   openMergeJob,
   piStarts,
@@ -16,15 +17,24 @@ const { newIssueState } = await import("../../src/state.ts");
 const NO_AUTHORITY = /no saved write authority/u;
 
 test("a writer session after the code merged binds read-only code and may commit nothing; security stays read-only and token-free", async () => {
-  const job = await openMergeJob(STAGE, { merged: true });
+  const job = await openMergeJob(STAGE, { merged: true, task: "sync" });
   const before = piStarts().length;
   try {
-    assert.equal(
-      (await job.session(reviewerSpec(true, "integration"))).ok,
-      true,
+    assert.equal((await job.session(developerSpec(true, "sync"))).ok, true);
+    const status = JSON.parse(
+      fs.readFileSync(path.join(job.runDir, "job.json"), "utf8"),
     );
+    assert.deepEqual(status.launches[0].scope, {
+      repo: { dir: "repo", access: "read" },
+      allowed: [],
+    });
+  } finally {
+    job.control.close();
+  }
+  const merge = await openMergeJob(STAGE, { merged: true });
+  try {
     assert.equal(
-      (await job.session(reviewerSpec(false, "security-review"))).ok,
+      (await merge.session(reviewerSpec(false, "security-review"))).ok,
       true,
     );
     const [writer, reader] = piStarts().slice(before);
@@ -34,42 +44,32 @@ test("a writer session after the code merged binds read-only code and may commit
     assert.equal(writer.ghToken, null);
     assert.equal(reader.ghToken, null);
     const status = JSON.parse(
-      fs.readFileSync(path.join(job.runDir, "job.json"), "utf8"),
+      fs.readFileSync(path.join(merge.runDir, "job.json"), "utf8"),
     );
-    assert.deepEqual(status.launches[0].scope, {
-      repo: { dir: "repo", access: "read" },
-      allowed: [],
-    });
-    assert.equal(status.launches[1].scope, null);
+    assert.equal(status.launches[0].scope, null);
   } finally {
-    job.control.close();
+    merge.control.close();
   }
 });
 
 test("each launch reads saved authority again, and missing authority refuses before pi starts", async () => {
-  const job = await openMergeJob();
+  const job = await openMergeJob(STAGE, { task: "sync" });
   const before = piStarts().length;
   try {
-    assert.equal(
-      (await job.session(reviewerSpec(true, "integration"))).ok,
-      true,
-    );
+    assert.equal((await job.session(developerSpec(true, "sync"))).ok, true);
     saveAuthority(job.cfg, {
       ...newIssueState(ISSUE),
       stage: STAGE,
       branch: "agent/issue-7",
       codeMerged: { pr: 42, sha: "merged-code" },
     });
-    assert.equal(
-      (await job.session(reviewerSpec(true, "integration"))).ok,
-      true,
-    );
+    assert.equal((await job.session(developerSpec(true, "sync"))).ok, true);
     const [first, second] = piStarts().slice(before);
     assert.equal(first.commitScope.repo.access, "write");
     assert.equal(second.commitScope.repo.access, "read");
     saveAuthority(job.cfg, null);
     await assert.rejects(
-      job.session(reviewerSpec(true, "integration")),
+      job.session(developerSpec(true, "sync")),
       NO_AUTHORITY,
     );
     assert.equal(piStarts().length, before + 2);

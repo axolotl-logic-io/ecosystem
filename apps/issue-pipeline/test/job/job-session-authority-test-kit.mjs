@@ -1,10 +1,10 @@
 // @ts-check
 // Write authority is each session's own (src/job/role-session.ts through
-// launch.ts and session-hooks.ts): one merge job runs the reviewer's
-// committing integration session and then its read-only final security
-// review, with the same installed agent, whose definition edits, writes and
-// runs commands. Only the committing session gets pipeline_commit, a commit
-// scope and those tools; neither gets a GitHub token; job.json and the usage
+// launch.ts and session-hooks.ts): a Sync task job runs the Developer's
+// committing resolver session, and a merge job only the reviewer's
+// read-only security review, though both agents' definitions edit, write
+// and run commands. Only the committing session gets pipeline_commit, a
+// commit scope and those tools; neither gets a GitHub token; job.json and the usage
 // records name each session's authority and phase; each session's pi gets
 // its phase's pinned prompt page appended to its system prompt, byte for
 // byte, though the page changed after it was pinned; and a session the stage
@@ -60,16 +60,37 @@ const { openStatus } = await import("../../src/job/status.ts");
 /** @import { RunArgs } from "../../src/job/args.ts" */
 
 const ISSUE = 7;
+const DEVELOPER = "issue-pipeline-implementor";
+// Lengths of a full commit and of a digest.
+const SHA_LENGTH = 40;
+const DIGEST_LENGTH = 64;
+// A Sync binding the session tests' task job names; no op reads it.
+/** @type {import("../../src/task-result-records.ts").Binding} */
+const SYNC_BINDING = {
+  repo: "o/r",
+  workItem: ISSUE,
+  task: "Sync",
+  revision: {
+    code: "a".repeat(SHA_LENGTH),
+    inputs: "b".repeat(DIGEST_LENGTH),
+    policy: "c".repeat(DIGEST_LENGTH),
+  },
+  target: { branch: "main", commit: "d".repeat(SHA_LENGTH) },
+};
 /** @type {import("../../src/stages.ts").Stage} */
 const STAGE = "merge";
 const REVIEWER = "issue-pipeline-reviewer";
 const REPLY = { outcome: "done" };
 
-// A reviewer definition that edits, writes and runs commands, as the
-// reviewer's hardening and integration need.
+// Reviewer and Developer definitions that edit, write and run commands, as
+// hardening and Sync's resolver need.
 fs.writeFileSync(
   path.join(agents, `${REVIEWER}.md`),
   "---\nname: issue-pipeline-reviewer\ntools: read, grep, find, ls, bash, edit, write\n---\nReview.\n",
+);
+fs.writeFileSync(
+  path.join(agents, `${DEVELOPER}.md`),
+  "---\nname: issue-pipeline-implementor\ntools: read, grep, find, ls, bash, edit, write\n---\nDevelop.\n",
 );
 fs.writeFileSync(path.join(bin, "pi"), FAKE_PI, { mode: 0o755 });
 fs.writeFileSync(
@@ -117,13 +138,13 @@ function toolsOf(argv) {
   return String(argv[argv.indexOf("--tools") + 1]).split(",");
 }
 
-// A merge job's session runner, with its status, control, usage entries and
-// prompt folder, its prompts pinned from that folder as a `pinnedAs` job
-// pins them.
-/** @param {import("../../src/stages.ts").Stage} [pinnedAs] @param {{ merged?: boolean }} [options] */
-async function openMergeJob(pinnedAs = STAGE, { merged = false } = {}) {
+// A merge job's session runner, or a Sync task job's at the merge stage,
+// with its status, control, usage entries and prompt folder, its prompts
+// pinned from that folder as a `pinnedAs` job pins them.
+/** @param {import("../../src/stages.ts").Stage} [pinnedAs] @param {{ merged?: boolean, task?: "sync" }} [options] */
+async function openMergeJob(pinnedAs = STAGE, { merged = false, task } = {}) {
   const promptsDir = writePrompts(fs.mkdtempSync(path.join(tmp, "root-")));
-  const prompts = pinPrompts(promptsDir, pinnedAs);
+  const prompts = pinPrompts(promptsDir, pinnedAs, "lawd", task ?? null);
   const cfg = loadConfig(configFile);
   let codeMerged = null;
   if (merged) {
@@ -150,6 +171,11 @@ async function openMergeJob(pinnedAs = STAGE, { merged = false } = {}) {
     pushed: "none",
     pushError: null,
   }));
+  /** @type {RunArgs["task"]} */
+  let request = null;
+  if (task !== undefined) {
+    request = { name: task, task: "Sync", binding: SYNC_BINDING };
+  }
   /** @type {RunArgs} */
   const args = {
     kind: "run",
@@ -157,6 +183,7 @@ async function openMergeJob(pinnedAs = STAGE, { merged = false } = {}) {
     issue: ISSUE,
     stage: STAGE,
     branch: "agent/issue-7",
+    task: request,
   };
   const where = { cwd, repo: cwd, from: process.env, job: identity };
   const hooks = hooksOf(cfg, args, { status, control }, where);
@@ -164,6 +191,7 @@ async function openMergeJob(pinnedAs = STAGE, { merged = false } = {}) {
   const appended = [];
   const session = sessionRunnerOf({
     stage: STAGE,
+    task: task ?? null,
     prompts,
     hooks,
     status,
@@ -193,6 +221,11 @@ function reviewerSpec(commits, phase) {
   return spec;
 }
 
+/** @param {boolean} commits @param {SessionPhase} [phase] @returns {SessionSpec} */
+function developerSpec(commits, phase) {
+  return { ...reviewerSpec(commits, phase), agent: DEVELOPER };
+}
+
 /** @param {UsageEntry} entry @returns {string | null} a session entry's state */
 function stateOf(entry) {
   if (entry.kind === "session") {
@@ -204,6 +237,7 @@ function stateOf(entry) {
 export {
   appendedOf,
   COMMIT_SCOPE_ENV,
+  developerSpec,
   ISSUE,
   openMergeJob,
   piStarts,

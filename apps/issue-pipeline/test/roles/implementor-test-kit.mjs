@@ -51,15 +51,13 @@ const GHERKIN = {
   assumptions: ["Chats are sorted newest first"],
 };
 
-// The ops of a clean run: no conflicts, every check passing, code pushed.
+// The ops of a clean run: every check passing, code pushed.
 /** @type {OpScript} */
 const CLEAN_OPS = {
   "start-pr": [{ pr: PR, headSha: HEAD }],
-  "sync-base": [{ changed: false, conflict: false, headSha: HEAD }],
   verify: [{ pass: true, headSha: HEAD, changedFiles: ["a.ts"], checks: [] }],
   "open-pr": [{ pr: PR, headSha: HEAD, codeChanged: true }],
   push: [{ headSha: HEAD, codeChanged: true }],
-  "finish-sync": [{ resolved: true, headSha: HEAD }],
 };
 
 /** @type {SessionResult} */

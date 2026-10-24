@@ -7,6 +7,7 @@ import { pageTextOf } from "../prompt-test-kit.mjs";
 import {
   appendedOf,
   COMMIT_SCOPE_ENV,
+  developerSpec,
   openMergeJob,
   piStarts,
   reviewerSpec,
@@ -17,16 +18,27 @@ import {
 const WRITES = ["bash", "edit", "write", "pipeline_commit"];
 const REFUSED_PHASE = /security-review session can't set commits true/u;
 const NO_PROMPT = /pinned no prompt for this merge session/u;
-const INTEGRATION_PAGE = "integration.md";
 const SECURITY_PAGE = "security.md";
 
-test("the merge job's integration session commits and its final security review only reads, though both run the same agent", async () => {
+test("a Sync task job's resolver session commits as the Developer, and the merge job's security review only reads", async () => {
+  const sync = await openMergeJob(undefined, { task: "sync" });
+  /** @type {any[]} */
+  let syncLaunches = [];
+  try {
+    const resolver = await sync.session(developerSpec(true, "sync"));
+    assert.equal(resolver.ok, true);
+    syncLaunches = JSON.parse(
+      fs.readFileSync(path.join(sync.runDir, "job.json"), "utf8"),
+    ).launches;
+    assert.deepEqual(sync.appended.map(stateOf), ["sync"]);
+  } finally {
+    sync.control.close();
+  }
   const job = await openMergeJob();
   try {
-    const integration = await job.session(reviewerSpec(true, "integration"));
     const review = await job.session(reviewerSpec(false, "security-review"));
-    assert.deepEqual([integration.ok, review.ok], [true, true]);
-    const [writer, reader] = piStarts();
+    assert.equal(review.ok, true);
+    const [writer, reader] = piStarts().slice(-2);
     for (const tool of WRITES) {
       assert.ok(toolsOf(writer.argv).includes(tool), tool);
       assert.equal(toolsOf(reader.argv).includes(tool), false, tool);
@@ -42,18 +54,17 @@ test("the merge job's integration session commits and its final security review 
     const status = JSON.parse(
       fs.readFileSync(path.join(job.runDir, "job.json"), "utf8"),
     );
-    const launches = status.launches.map((/** @type {any} */ launch) => [
-      launch.commits,
-      launch.phase,
-    ]);
+    const launches = [...syncLaunches, ...status.launches].map(
+      (/** @type {any} */ launch) => [launch.key, launch.commits, launch.phase],
+    );
     assert.deepEqual(launches, [
-      [true, "integration"],
-      [false, "security-review"],
+      ["implementor-sync-1", true, "sync"],
+      ["reviewer-1", false, "security-review"],
     ]);
-    assert.deepEqual(job.appended.map(stateOf), [
-      "integration",
-      "security-review",
-    ]);
+    assert.deepEqual(job.appended.map(stateOf), ["security-review"]);
+    // The merge job runs no committing session at all.
+    const writer2 = await job.session(reviewerSpec(true, "sync"));
+    assert.equal(writer2.ok, false);
   } finally {
     job.control.close();
   }
@@ -73,7 +84,7 @@ test("a session whose authority its phase or stage forbids, or that the job pinn
     assert.equal(other.ok, false);
     const unpinned = await openMergeJob("author");
     const unprompted = await unpinned.session(
-      reviewerSpec(true, "integration"),
+      reviewerSpec(false, "security-review"),
     );
     unpinned.control.close();
     assert.ok(!unprompted.ok);
@@ -87,14 +98,13 @@ test("a session whose authority its phase or stage forbids, or that the job pinn
 test("each session's pi gets its phase's page appended to its system prompt as pinned, though the page changed after", async () => {
   const job = await openMergeJob();
   const before = piStarts().length;
-  fs.writeFileSync(path.join(job.promptsDir, INTEGRATION_PAGE), "Edited.\n");
+  fs.writeFileSync(path.join(job.promptsDir, SECURITY_PAGE), "Edited.\n");
   try {
-    await job.session(reviewerSpec(true, "integration"));
     await job.session(reviewerSpec(false, "security-review"));
     const starts = piStarts().slice(before);
     assert.deepEqual(
       starts.map(({ argv }) => appendedOf(argv)),
-      [[pageTextOf(INTEGRATION_PAGE)], [pageTextOf(SECURITY_PAGE)]],
+      [[pageTextOf(SECURITY_PAGE)]],
     );
     const status = JSON.parse(
       fs.readFileSync(path.join(job.runDir, "job.json"), "utf8"),
@@ -106,9 +116,9 @@ test("each session's pi gets its phase's page appended to its system prompt as p
     }));
     assert.deepEqual(
       pages.map(({ page }) => page),
-      [INTEGRATION_PAGE, SECURITY_PAGE],
+      [SECURITY_PAGE],
     );
-    const launched = status.launches.slice(-2);
+    const launched = status.launches.slice(-1);
     assert.deepEqual(
       launched.map((/** @type {any} */ l) => l.prompt),
       pages,

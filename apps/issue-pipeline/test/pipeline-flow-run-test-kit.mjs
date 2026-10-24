@@ -149,6 +149,56 @@ function runStage(flow, stage, issue = ISSUE, extra = []) {
 }
 
 /**
+ * Runs the task a stage job's line requested (#186), as the caller relays
+ * it: the task job at the same stage, with the request's exact binding.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {string} stage the saved stage the request was made at
+ * @param {{ task: string, binding: unknown }} request
+ * @param {number} [issue]
+ * @returns {any} the task job's line
+ */
+function runTask(flow, stage, request, issue = ISSUE) {
+  return runStage(flow, stage, issue, [
+    "--task",
+    request.task.toLowerCase(),
+    "--binding",
+    JSON.stringify(request.binding),
+  ]);
+}
+
+/**
+ * Runs `stage`, relaying each task its job requests and rerunning the stage
+ * the issue is then saved at, until a job ends without a request. Returns
+ * every line, in order: stage jobs' and task jobs'.
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {string} stage
+ * @param {{ issue?: number, extra?: readonly string[], limit?: number }} [options]
+ * @returns {any[]}
+ */
+function runThroughTasks(
+  flow,
+  stage,
+  { issue = ISSUE, extra = [], limit = 6 } = {},
+) {
+  /** @type {any[]} */
+  const lines = [];
+  const at = stage;
+  for (let turn = 0; turn < limit; turn += 1) {
+    const line = runStage(flow, at, issue, extra);
+    lines.push(line);
+    if (line.end !== "wait" || line.request === undefined) {
+      return lines;
+    }
+    const task = runTask(flow, at, line.request, issue);
+    lines.push(task);
+    if (task.end !== "next" && task.end !== "wait") {
+      return lines;
+    }
+  }
+  return lines;
+}
+
+/**
  * Runs the installed caller and waits for the actual guarded stage job's result.
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
  * @param {string} stage
@@ -237,4 +287,13 @@ function stopJobs(flow) {
   }
 }
 
-export { jobLog, runCallerStage, runStage, stagesUntilIdle, stopJobs, tick };
+export {
+  jobLog,
+  runCallerStage,
+  runStage,
+  runTask,
+  runThroughTasks,
+  stagesUntilIdle,
+  stopJobs,
+  tick,
+};

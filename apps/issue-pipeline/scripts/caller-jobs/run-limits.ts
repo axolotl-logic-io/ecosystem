@@ -6,17 +6,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { JOB_TASKS } from "../../src/job/task-request.ts";
 import { STAGES } from "../../src/stages.ts";
 
 const RUN_FILE = "run.json";
 const FIRST_LIMITS_FILE = path.join("jobs", "limits.json");
 
 const COUNT = z.number().int().positive();
+// What a job works on, for its caps and attempts: a stage, or a task a job
+// was asked to run (#186), which counts apart from its stage's jobs.
+const WORK = [...STAGES, ...JOB_TASKS] as const;
 // The run's limits, which Autumn sets for each run. modelEnvFile is a path
 // the job's Node loads with --env-file; this module never opens it.
 const RUN = z.strictObject({
   maxJobs: COUNT,
-  maxStageJobs: z.partialRecord(z.enum(STAGES), COUNT).default({}),
+  maxStageJobs: z.partialRecord(z.enum(WORK), COUNT).default({}),
   maxAttempts: COUNT,
   excludedIssues: z.record(z.string(), z.array(COUNT)).default({}),
   modelEnvFile: z.string().startsWith("/").optional(),
@@ -76,10 +80,10 @@ function wideningOf(runDir: string, limits: RunLimits): string | null {
     ["maxJobs", first.maxJobs, limits.maxJobs],
     ["maxAttempts", first.maxAttempts, limits.maxAttempts],
   ];
-  for (const stage of STAGES) {
-    const cap = first.maxStageJobs[stage];
+  for (const work of WORK) {
+    const cap = first.maxStageJobs[work];
     if (cap !== undefined) {
-      caps.push([`maxStageJobs.${stage}`, cap, limits.maxStageJobs[stage]]);
+      caps.push([`maxStageJobs.${work}`, cap, limits.maxStageJobs[work]]);
     }
   }
   for (const [name, was, now] of caps) {
@@ -98,4 +102,4 @@ function wideningOf(runDir: string, limits: RunLimits): string | null {
 }
 
 export type { RunLimits };
-export { COUNT, parsed, runLimits, wideningOf };
+export { COUNT, parsed, runLimits, WORK, wideningOf };
