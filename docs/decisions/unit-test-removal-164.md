@@ -12,7 +12,7 @@ The corrected owner manifest removes 73 whole test files (420 static declaration
 | Static source-text matches, using the inventory's method | 1,335 | 439 | 896 |
 | Parsed `test(...)` call sites, including calls inside loops | 1,334 | 439 | 895 |
 
-These are **static counts, not executed test counts**. The source-text method counts lines matching `^\s*test\(`. Its one extra match is a generated test declaration inside the `FIXTURE` string in retained `bounded-test-kit.test.mjs`. Loops and generated tests expand at runtime. No measured runtime baseline is available for this exact base. Review reported 1,381 passing tests on the rejected candidate `81a5cc4`; that old-subject result does not verify this corrected revision or provide a runtime before/after total. Tests and the full gate remain unrun for this revision under the owner's heavy-command hold. Only scoped static checks are authorized here.
+These are **static counts, not executed test counts**. The source-text method counts lines matching `^\s*test\(`. Its one extra match is a generated test declaration inside the `FIXTURE` string in retained `bounded-test-kit.test.mjs`. Loops and generated tests expand at runtime. No measured runtime baseline is available for this exact base. The full gate on the landed revision ran 1,381 pipeline tests and 16 workflow-dash tests, all passing; PR #191 records the run.
 
 The source tree was compared with the reconciled main revision `c3134206c0e94fa81b53c6dde1d14bc9b2877cb7` before editing. The issue-pipeline tree and three practice/decision pages had no relevant deltas. The ledger below comes from the actual removed source, not the superseded 77-file inventory.
 
