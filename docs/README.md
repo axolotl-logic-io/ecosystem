@@ -50,6 +50,8 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Sync](reference/sync.md): integrating with the base at merge time, conflicts and their limits.
 
+[Task results](reference/task-results.md): revision-bound results, attempts and retry budgets that Sync, Integration and Land will consume (inactive until #186).
+
 [Project settings](reference/project-settings.md): tracked project policy, operator-owned controls, trusted committed revisions and legacy migration.
 
 [Safe Refactor](reference/safe-refactor.md): the standalone constrained Developer task, explicit metric check, behavioral contract and write-ahead recovery.

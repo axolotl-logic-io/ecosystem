@@ -424,3 +424,24 @@ test("hardening after Land is refused before preparation, a suite, a session or 
     ),
   );
 });
+
+// #183's task results are inactive: across every stage this file ran, from
+// setup through Land, completion and recovery, no installed role asked for or
+// recorded one, and GitHub holds no task-result record.
+test("the installed path never requests or records a task result (#183 inactive)", () => {
+  const taskOps = ["task-result", "record-task-attempt", "record-task-result"];
+  const ran = opsTrace(flow).map(({ request }) => request.op);
+  assert.ok(ran.includes("merge"), "the trace covers Land");
+  assert.deepEqual(
+    ran.filter((op) => taskOps.includes(op)),
+    [],
+  );
+  for (const world of [readWorld(flow.ghDir), interruptedWorld, clearedWorld]) {
+    assert.deepEqual(
+      world.comments.filter(({ body }) =>
+        body.startsWith("<!-- agent-pipeline:task-result"),
+      ),
+      [],
+    );
+  }
+});
