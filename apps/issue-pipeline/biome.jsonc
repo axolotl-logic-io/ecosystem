@@ -62,6 +62,7 @@
         "src/job.ts",
         "src/job/launch.ts",
         "src/job/runtime-profile.ts",
+        "src/job/runtime-version.ts",
         "src/job/ops-process.ts",
         "src/job/agent-definition.ts",
         "src/job/git-review.ts",

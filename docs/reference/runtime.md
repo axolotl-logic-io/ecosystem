@@ -33,7 +33,7 @@ Before the first prompt, the native `get_state` reply must match the configured 
 
 ## Recover from a runtime refusal
 
-1. Read the refusal in `job.log`. It names the missing or mismatched item.
+1. Read the refusal in `job.log`. It names the missing or mismatched item. A failed `pi --version` probe also gives its exit status, or its signal, timeout or spawn error, and up to 300 bytes of its stderr with credential values redacted.
 2. Fix provisioning: the Pi version on the service's `PATH`, `runtime.toolchainEnv`, `runtime.providerExtension`, the provider config and discovery cache under the model HOME, credential names or `modelContextWindows`. Follow the [runtime README](../../apps/issue-pipeline/runtime/README.md) provisioning steps.
 3. Don't invent cache windows, copy a personal profile or remove a version check to get a launch through.
 4. Restart the issue on its saved stage, branch and lane.
