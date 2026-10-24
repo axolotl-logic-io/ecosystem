@@ -29,6 +29,7 @@ type OpName =
   | "finish-sync"
   | "prepare-review"
   | "verify"
+  | "confirm-merged"
   | "ci-status"
   | "merge"
   | "reconcile-merge"

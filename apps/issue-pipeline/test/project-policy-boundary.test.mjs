@@ -3,14 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { z } from "zod";
 import { git, policyFixture } from "./project-policy-test-kit.mjs";
 
 const { loadConfig } = await import("../src/config.ts");
 const { assertPolicyDigest, configPolicyDigest } = await import(
   "../src/project-policy.ts"
-);
-const { parseProjectSettings } = await import(
-  "../src/project-policy-schema.ts"
 );
 const NOT_REGULAR = /committed regular file/u;
 const NOT_COMMIT = /must name a commit/u;
@@ -137,6 +135,22 @@ test("flat operator policy ignores even malformed candidate policy and computes 
   assert.throws(() => loadConfig(fx.file), COMPUTED_BINDING);
 });
 
+/** Pins `document` as the committed project policy and loads the operator config.
+ * @param {string} document @returns {ReturnType<typeof loadConfig>} */
+function loadCommitted(document) {
+  const fx = policyFixture();
+  fs.writeFileSync(path.join(fx.dir, ".issue-pipeline.json"), document);
+  git(fx.dir, ["add", ".issue-pipeline.json"]);
+  git(fx.dir, ["commit", "--quiet", "-m", "candidate policy"]);
+  fx.save({
+    projectPolicy: {
+      repository: fx.dir,
+      revision: git(fx.dir, ["rev-parse", "HEAD"]),
+    },
+  });
+  return loadConfig(fx.file);
+}
+
 for (const settings of [
   { lockfiles: [{ path: "lock", regenerate: "true", tokenEnv: "FORBIDDEN" }] },
   {
@@ -146,7 +160,7 @@ for (const settings of [
   test(`nested project settings reject unknown authority: ${JSON.stringify(settings)}`, () => {
     assert.throws(
       () =>
-        parseProjectSettings(
+        loadCommitted(
           JSON.stringify({ commands: { test: "true" }, ...settings }),
         ),
       UNKNOWN_KEY,
@@ -159,17 +173,20 @@ for (const document of [
   '{"commands":{"test":"true"},"migrations":{"pathGlobs":["migrations/**"],"up":"trusted","\\u0075p":"weakened"}}',
 ]) {
   test(`nested duplicate members cannot select a last policy value: ${document}`, () => {
-    assert.throws(() => parseProjectSettings(document), REPEATED_FIELD);
+    assert.throws(() => loadCommitted(document), REPEATED_FIELD);
   });
 }
 
 test("duplicate detection keeps separate array-object member scopes", () => {
-  const settings = {
-    commands: { test: "true" },
-    lockfiles: [
-      { path: "one.lock", regenerate: "printf one" },
-      { path: "two.lock", regenerate: "printf two" },
-    ],
-  };
-  assert.deepEqual(parseProjectSettings(JSON.stringify(settings)), settings);
+  const lockfiles = [
+    { path: "one.lock", regenerate: "printf one" },
+    { path: "two.lock", regenerate: "printf two" },
+  ];
+  const config = loadCommitted(
+    JSON.stringify({ commands: { test: "true" }, lockfiles }),
+  );
+  assert.deepEqual(
+    z.object({ lockfiles: z.unknown() }).parse(config).lockfiles,
+    lockfiles,
+  );
 });

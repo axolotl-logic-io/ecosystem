@@ -18,11 +18,12 @@ flowchart TD
   C --> S[Read-only Security on exact candidate H]
   S -- clear --> Q{First in merge order?}
   Q -- no --> W[wait: queued]
-  Q -- yes --> P[Approve H, save attempt, POST merge]
+  Q -- yes --> P[Approve H, save fast-forward intent, push H with old-OID lease]
   S -- reject --> X[Stop without merging]
-  P --> R[Confirm result M]
-  R --> V[Verify M]
-  V --> F[Finish with saved candidate clearance]
+  P --> R[Confirm result M equals H]
+  R --> V[Read-only: signed intent, premerge check proof, receipt, ancestry]
+  V -- proven --> F[Finish with saved candidate clearance]
+  V -- missing proof --> Y[Stop for read-only reconciliation]
 ```
 
 ## Merge order
@@ -38,28 +39,32 @@ The queue orders configured target mutations, not candidate-local integration, c
 ## The merge call
 
 1. Security clears the exact hardened and checked candidate at the observed target revision. A rejection, stale or missing clearance prevents approval and merge. The review/merge account submits a GitHub `APPROVE` review of the exact head H. A failed or mismatched approval prevents the merge.
-2. A `mergeAttempt` checkpoint is saved and reread. It binds the repository, PR, literal base, source branch and the authorization. From then on, no automatic code write or repeat merge is allowed, even if the call is never sent.
-3. The job calls `POST /repos/{owner}/{repo}/merges` with the configured repository, literal `baseBranch` and the full SHA H. The PR's own target and branch never choose the write. There's no fallback PR merge, push or admin bypass.
-4. Only an HTTP 201 with a full result SHA M is saved as a possible own merge. HTTP 204 means already merged and is not an own receipt. A failed, lost or malformed response is never retried.
+2. A merge-authored, editor-verified `mergeAttempt` checkpoint is saved and reread. It binds the repository, PR, literal base, source branch, original authorization, hardening and integration, plus `operation: {kind: "fast-forward", base: P}` for the observed old target P. From then on, no automatic code write or repeat target mutation is allowed, even if the push is never sent.
+3. The job requires P to be a strict ancestor of H, then pushes the full immutable SHA H to the configured repository's literal `refs/heads/<baseBranch>` with an explicit old-OID lease (`--force-with-lease=refs/heads/<baseBranch>:P`). The lease compares the remote old object ID; it does not authorize replacing non-ancestor work. The PR's own target and branch never choose the write. There is no REST merge, fallback PR merge, alternate push or admin bypass.
+4. An acknowledged push saves and rereads H as response evidence, not a confirmed own receipt. The new result is M = H, not a new two-parent commit. A failed, lost or malformed response never authorizes a repeat mutation.
 
 The base may differ from the repository's default branch. Merging to a configured base isn't permission to deploy anywhere.
 
 ## Confirm the result
 
-After a 201, read-only reconciliation confirms that M is the PR's genuine merge: the same PR reads MERGED at exactly M, M has two parents `[P, H]`, and M is in the fetched base. Only then is the own-merge receipt saved.
+Read-only fast-forward reconciliation requires the bound signed intent, strict P-to-H ancestry and the exact remote target equal to H. It retains the landed fact, checks the original authorization, source PR binding and current trusted inputs, and rereads the exact target before saving an own receipt. During this step the same PR may still read OPEN, or MERGED only at H; it must retain H and the configured source/base identity. A missing push acknowledgement does not by itself prevent this exact-intent reconciliation. Equal heads without authentic intent, or a later target tip substituted for H, cannot create an own receipt.
+
+Completion separately requires `confirm-merged` to read the same PR MERGED at M = H with M in the freshly fetched base, plus the authenticated intent/receipt and exact premerge check proof. An own receipt alone is not completion permission.
 
 - Confirmation retries on a schedule set by `mergeConfirmation`: `deadlineSeconds` (default 90, 1–600) and `backoffSeconds` (default `[1, 2, 4, 8, 10]`, at most 20 waits of 1–60 seconds, the last one repeating).
 - The first check is immediate. No new check starts after the deadline.
-- Waiting writes only evidence checkpoints, never code, another approval or a second merge.
+- Waiting writes only evidence checkpoints, never code, another approval or a second target mutation.
 - At the deadline, the issue stops: code may already have landed, and no further merge or code writer is authorized.
 
-A PR merged outside the confirmed operation, for example by hand, isn't an own merge. It needs a fresh claim and the separately authorized post-merge path, which hardens against the observed merged result.
+A PR merged outside the confirmed operation, for example by hand, isn't an own merge. A fresh claim stops it with merged truth retained for read-only reconciliation: no post-merge checks, hardening, writer or Security run.
 
 ## After the merge
 
-The merge result M, not the pre-merge head, must pass deterministic verification in a clean detached checkout (see [review](review.md#deterministic-verification)). A failed check on M keeps the merged state and stops without a code writer. New own merges reuse their saved premerge [Security clearance](review.md#security-review), without another model pass. A missing or mismatched candidate receipt cannot be repaired by pretending a postmerge review was premerge permission.
+Checks and Security clear the exact candidate before the target moves; nothing runs them on M (#185). After the merge, the read-only `confirm-merged` op confirms that the signed fast-forward intent and its receipt bind M to that candidate, that deterministic verification passed on exactly that commit before the merge, and that the same PR reads MERGED at M with M in the fetched base. It runs no checks. New own merges, interrupted ones and finished replays all take this path, and reuse their saved premerge [Security clearance](review.md#security-review) without another model pass.
 
-Only Security clearance bound to the genuine own merge's exact authorized candidate, or a historical clearance of exactly M, allows completion. The `finish` op acts on the saved done state; it merges and publishes nothing itself. It:
+Missing proof stops with merged truth retained, for read-only reconciliation: legacy two-parent or REST receipts, external or manual merges, and runs without exact premerge Security clearance. No post-merge suite, writer or Security review runs, and no proof is invented. A missing or mismatched candidate receipt cannot be repaired by pretending a postmerge review was premerge permission.
+
+Only Security clearance bound to the genuine own merge's exact authorized candidate, or an exact saved result observation, allows completion. Read-only after Land forbids new code/target mutation, suites, repair writers, remerge and Security model passes. It does not mean zero local or GitHub writes: authorized evidence checkpoints and completion bookkeeping remain allowed. The `finish` op acts on the saved done state; it merges and publishes no code itself. It:
 
 - deletes the issue branch;
 - sets `agent:merged` and removes `agent:working` on the PR and the issue;
@@ -67,18 +72,18 @@ Only Security clearance bound to the genuine own merge's exact authorized candid
 - closes the issue with a comment, which matters when the base isn't the default branch and GitHub doesn't auto-close it;
 - removes the job's worktree.
 
-A parent issue closes once all its sub-issues are closed and at least one merged. A finished issue whose `finish` didn't complete only runs `finish` again, once Security has cleared exactly what merged.
+A parent issue closes once all its sub-issues are closed and at least one merged. A finished issue whose `finish` didn't complete reconfirms its premerge proof and exact saved clearance before running `finish` again; it acquires no post-Land Security review.
 
 ### Closed issues with an incomplete merge
 
-A claim normally needs an open issue. A closed issue may resume only when genuine saved state shows an incomplete merge and its PR is freshly confirmed merged into the configured base. The winning claimant reopens the issue with the review/merge account. This covers GitHub auto-closing an issue before verification, Security and completion; it isn't a general closed-issue retry.
+A claim normally needs an open issue. A closed issue may resume only when genuine saved state shows an incomplete merge and its PR is freshly confirmed merged into the configured base. The winning claimant reopens the issue with the review/merge account. This covers GitHub auto-closing an issue before confirmation and completion; it isn't a general closed-issue retry.
 
 ## Recover after a confirmation deadline
 
 1. Stop dispatching the issue.
 2. Keep the state comment, local recovery files, the original hardening and integration, the attempt, any saved response M, merged facts and Security receipts.
 3. Diagnose the metadata or network problem with reads only.
-4. With the same issue, branch, lane, base, authorization and trusted inputs, lift the stop and run `merge` once. That run reads the saved attempt and response without approving or merging again, and gets its own confirmation window.
+4. Only after explicit operator authorization, with the same issue, branch, lane, base, authorization and trusted inputs, lift the stop and run `merge` once. That run reads the saved intent and any response evidence without approving or mutating the target again, and gets its own confirmation window.
 5. If identity or authorization changed, or evidence is still missing at the deadline, stop for explicit reconciliation. Don't keep restarting.
 
 Never resend an uncertain merge by hand, repeat the approval, reopen a code writer, reset attempt evidence, clear merged facts or erase a Security rejection. An OPEN PR isn't proof that the request never landed.

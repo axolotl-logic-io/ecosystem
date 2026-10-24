@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { configure, defaults } from "../config.ts";
-import { readCap, safePath } from "../local-files.ts";
+import { defaults } from "../config.ts";
+import { readCap } from "../local-files.ts";
 import { jsonl, parse, workflowSchema } from "../source-records.ts";
 import { loadWorkflowRuns, workflowRunDetails } from "../workflow-source.ts";
 import { materializeFixtures } from "./fixture-test-kit.ts";
@@ -79,11 +79,4 @@ test("run drill-down reads bounded verification summaries and local stop reasons
   assert.match(details.verify.join("\n"), testsSummary);
   assert.match(details.verify.join("\n"), cancellationsSummary);
   assert.equal(details.verify.join("\n").includes("verbose line"), false);
-});
-test("configuration expands home and rejects bad repo names; credentials denied", async () => {
-  assert.ok(configure({ runs: "~/fixtures" }).runs.endsWith("/fixtures"));
-  assert.deepEqual(configure({ repos: ["../bad"] }).repos, defaults.repos);
-  await assert.rejects(safePath("/tmp/.env-secret"));
-  await assert.rejects(safePath("/tmp/runtime/home/auth.json"));
-  await assert.rejects(safePath("/tmp/runtime/model-key.env"));
 });

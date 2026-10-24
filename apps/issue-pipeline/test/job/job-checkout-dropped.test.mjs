@@ -6,13 +6,13 @@ import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
 import {
+  CHECKED_OUT_EXECUTABLE_MODE,
   close,
   inRunDir,
   KEY,
   leaveChanges,
   openFresh,
   openIn,
-  REGULAR_EXECUTABLE_MODE,
   restored,
   under,
 } from "../job-checkout-dropped-test-kit.mjs";
@@ -58,7 +58,7 @@ test("the checkout's staged, unstaged and untracked changes, in its docs/ too, a
   }
   assert.equal(
     fs.statSync(path.join(fresh, "run.sh")).mode,
-    REGULAR_EXECUTABLE_MODE,
+    CHECKED_OUT_EXECUTABLE_MODE,
   );
   assert.equal(fs.existsSync(path.join(fresh, "ignored.txt")), false);
   assert.equal(fs.existsSync(job.root), false);

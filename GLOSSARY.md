@@ -327,12 +327,10 @@ Generate matching Markdown and JSON reports from the same assessment data, with 
 
 ## Definitions still required
 
-[Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks; run states and retries; the capacity unit and slot release; observation sources; and assignment permission. These contracts remain open:
+[Buddy and task decisions](docs/decisions/buddies-and-tasks.md) settle the buddy, role, identity and account schemas; the role assignments; ready tasks and their bindings, including Author's and the first Implementation's; repeated checks and task order; run states and retries; the capacity unit, slot release and shared reservations; observation sources, freshness and coverage; assignment permission and who lands and installs; and additive record versions. These contracts remain open:
 
-- Bindings for Author and the first Implementation, which run before any revision exists.
-- Which binding parts apply to each task, and the remaining prerequisite and result schemas, branch/join conditions and repeated-check transitions.
-- Policy, approval and source acceptance versus landing, installation and activation.
-- Observation schemas, freshness bounds and collection coverage.
-- Historical configuration, command and saved-record migration (ecosystem #166).
+- Which binding parts apply to each task, and the remaining prerequisite and result schemas.
+- Observation schemas.
+- Renaming historical configuration, commands and saved records (ecosystem #166).
 
 Resolve these contracts before implementing dependent changes. Do not fill missing facts or permissions with inferred defaults.
