@@ -28,6 +28,7 @@ const { loadConfig } = await import("../../src/config.ts");
 const { runtimeBoundary } = await import("../../src/job/runtime-policy.ts");
 
 const NAMES_JOB_ROLES = /jobRoles/u;
+const NAMES_TOOLCHAIN = /runtime\.toolchainEnv/u;
 // The compaction policy the fixture's 272,000-token model window yields.
 const FIXTURE_COMPACTION = {
   targetTokens: 175_000,
@@ -246,3 +247,38 @@ test("--print-boundary names the complete nonsecret runtime policy for every mod
     assert.equal(r.stdout.includes(secret), false, secret);
   }
 });
+
+/** The reader stage's job, with `toolchainEnv` declared in its config. @param {Record<string, string>} toolchainEnv */
+function withToolchain(toolchainEnv) {
+  const place = placeAt(BOUNDARY_ROLES, READER_STAGE);
+  const config = JSON.parse(fs.readFileSync(place.config, "utf8"));
+  config.runtime.toolchainEnv = toolchainEnv;
+  fs.writeFileSync(place.config, JSON.stringify(config));
+  return runJob(place, ["--stage", READER_STAGE, "--print-boundary"], SECRETS);
+}
+
+test("--print-boundary names the declared runtime toolchain", () => {
+  const toolchainEnv = Object.fromEntries([
+    ["PATH", "/opt/node/bin:/usr/bin"],
+    ["MISE_DATA_DIR", "/opt/mise"],
+  ]);
+  const r = withToolchain(toolchainEnv);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).runtime.toolchainEnv, toolchainEnv);
+});
+
+for (const [name, value] of [
+  ["HOME", "/elsewhere"],
+  ["GH_TOKEN", "synthetic"],
+  ["OPENAI_API_KEY", "synthetic"],
+  ["PATH", "relative:/bin"],
+  ["PATH", "/bin:"],
+  ["MISE_STATE_DIR", "~/state"],
+]) {
+  test(`a job refuses a toolchain declaring ${name} as ${value}, naming it and starting nothing`, () => {
+    const r = withToolchain(Object.fromEntries([[name, value]]));
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, NAMES_TOOLCHAIN);
+    assert.equal(r.stdout, "");
+  });
+}

@@ -8,6 +8,7 @@ Every session (Author, Developer, hardening, integration and Security) runs nati
 
 - Each session gets a new private `PI_CODING_AGENT_DIR` holding only pipeline-generated settings. Personal settings, models, auth files, packages, extensions, skills, prompt templates and themes aren't copied. Project settings and resource discovery are off.
 - Model children use a dedicated HOME: `runtime.home`, default `$ISSUE_PIPELINE_ROOT/runtime/home`. The job and its operations keep their own HOME.
+- `runtime.toolchainEnv` declares the non-secret `PATH` and mise locations (`MISE_DATA_DIR`, `MISE_STATE_DIR`, `MISE_CACHE_DIR`, `MISE_CONFIG_DIR`, `MISE_GLOBAL_CONFIG_FILE`) that the version probe, Pi and session tools share, default `{}`. Values are absolute paths. Declare them when node or other tools come from HOME-relative mise shims, which otherwise fail under the dedicated HOME. The [runtime README](../../apps/issue-pipeline/runtime/README.md#declared-toolchain-isolated-model-configuration) gives an example.
 - `runtime.credentialEnv` lists the names of model credential variables, default `["PIPELINE_MODEL_KEY"]`. Each must be set in the session's filtered environment. GitHub token variables can't be named.
 
 This is configuration isolation, not a filesystem, network, keyring or OS sandbox.
@@ -33,6 +34,6 @@ Before the first prompt, the native `get_state` reply must match the configured 
 ## Recover from a runtime refusal
 
 1. Read the refusal in `job.log`. It names the missing or mismatched item.
-2. Fix provisioning: the Pi version on the service's `PATH`, `runtime.providerExtension`, the provider config and discovery cache under the model HOME, credential names or `modelContextWindows`. Follow the [runtime README](../../apps/issue-pipeline/runtime/README.md) provisioning steps.
+2. Fix provisioning: the Pi version on the service's `PATH`, `runtime.toolchainEnv`, `runtime.providerExtension`, the provider config and discovery cache under the model HOME, credential names or `modelContextWindows`. Follow the [runtime README](../../apps/issue-pipeline/runtime/README.md) provisioning steps.
 3. Don't invent cache windows, copy a personal profile or remove a version check to get a launch through.
 4. Restart the issue on its saved stage, branch and lane.

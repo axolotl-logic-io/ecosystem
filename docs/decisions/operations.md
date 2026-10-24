@@ -10,6 +10,10 @@ The caller chooses each job's issue, stage and branch, and runs merges one at a 
 
 Every session uses Pi's native sessions and context compaction under settings the pipeline controls. Personal and project settings are ignored. An unsupported or unverified setup refuses to start.
 
+## declared-runtime-toolchain
+
+A session's toolchain comes from one declared, non-secret environment (`runtime.toolchainEnv`): absolute `PATH` entries and mise's data, state, cache and configuration locations. The version probe, Pi and the session's tools all use it, so a HOME-relative shim resolves the same under the dedicated runtime HOME as under the operator's. The dedicated HOME stays configuration isolation; no credential or personal Pi setting is inherited that wasn't before.
+
 ## rate-limit-defers
 
 Provider and GitHub read rate limits defer the issue for the caller to retry later, without using up a fix attempt. An uncertain merge never gets a blind retry; it stops for read-only reconciliation.

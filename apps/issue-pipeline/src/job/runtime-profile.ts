@@ -152,7 +152,16 @@ function generatedEnvironment(
     ["PI_SKIP_VERSION_CHECK", "1"],
     ["PI_TELEMETRY", "0"],
   ]);
-  validateCredentials(runtime.credentialEnv, input.env, managed);
+  const toolchain: Record<string, string> = {};
+  for (const [name, value] of Object.entries(runtime.toolchainEnv)) {
+    if (value !== undefined) {
+      toolchain[name] = value;
+    }
+  }
+  validateCredentials(runtime.credentialEnv, input.env, {
+    ...managed,
+    ...toolchain,
+  });
   const settingsText = JSON.stringify(nativeSettings(policy));
   const settingsPath = path.join(agentDir, "settings.json");
   fs.writeFileSync(settingsPath, settingsText, { mode: 0o600 });
@@ -161,6 +170,7 @@ function generatedEnvironment(
       ([name]) =>
         name !== "OPENAI_API_KEY" || runtime.credentialEnv.includes(name),
     ),
+    ...Object.entries(toolchain),
     ...Object.entries(managed),
   ]);
   return { env, settingsText, settingsPath };
