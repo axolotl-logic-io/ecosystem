@@ -28,6 +28,12 @@ const { loadConfig } = await import("../../src/config.ts");
 const { runtimeBoundary } = await import("../../src/job/runtime-policy.ts");
 
 const NAMES_JOB_ROLES = /jobRoles/u;
+// The compaction policy the fixture's 272,000-token model window yields.
+const FIXTURE_COMPACTION = {
+  targetTokens: 175_000,
+  reserveTokens: 97_000,
+  keepRecentTokens: 30_000,
+};
 const STEER_BOUNDARY = /--steer can't be combined with --print-boundary/u;
 const GH_VARS = [
   "GH_TOKEN",
@@ -210,4 +216,33 @@ test("a malformed jobRoles fails the job, naming jobRoles", () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, NAMES_JOB_ROLES);
   assert.equal(r.stdout, "");
+});
+
+test("--print-boundary names the complete nonsecret runtime policy for every model role", () => {
+  const place = placeAt(BOUNDARY_ROLES, READER_STAGE);
+  const r = runJob(
+    place,
+    ["--stage", READER_STAGE, "--print-boundary"],
+    SECRETS,
+  );
+  assert.equal(r.status, 0, r.stderr);
+  const { runtime } = JSON.parse(r.stdout);
+  assert.deepEqual(runtime.credentialEnv, ["PIPELINE_MODEL_KEY"]);
+  assert.deepEqual(
+    runtime.policies.map((/** @type {{ role: string }} */ { role }) => role),
+    ["author", "implementor", "reviewer"],
+  );
+  for (const {
+    targetTokens,
+    reserveTokens,
+    keepRecentTokens,
+  } of runtime.policies) {
+    assert.deepEqual(
+      { targetTokens, reserveTokens, keepRecentTokens },
+      FIXTURE_COMPACTION,
+    );
+  }
+  for (const secret of Object.values(SECRETS)) {
+    assert.equal(r.stdout.includes(secret), false, secret);
+  }
 });

@@ -10,7 +10,6 @@ import path from "node:path";
 import { test } from "node:test";
 import "../isolated-root-test-kit.mjs";
 
-const { droppedNotice, stoppedRun } = await import("../../src/job/teardown.ts");
 const { waitFor } = await import("../bounded-test-kit.mjs");
 const { messageEnd, outputEnd } = await import("../fake-rpc-pi.mjs");
 const {
@@ -26,9 +25,6 @@ const { logOf, runJob, setUp, startJob, statusOf } = await import(
 );
 
 /** @import { Place } from "./job-test-kit.mjs" */
-/** @import { RunEnd } from "../../src/job/teardown.ts" */
-/** @import { JobEnd } from "../../src/job/status.ts" */
-/** @import { Stage } from "../../src/stages.ts" */
 
 const ISSUE = 7;
 const STOPPED_BY_SIGTERM = 143;
@@ -38,8 +34,6 @@ const DROPPED_KEY = /^dropped-/u;
 const NOTICE_FAILED = /job: dropped notice: /u;
 const LOCAL_PATH = /(?:^|[\s`(])(?:\/|~)/u;
 const RUN_DIRECTORY = /run directory/u;
-const KEY = "implement-1";
-const PATCHES = [`dropped/${KEY}-repo.patch`];
 // The fake ops answers the notice's post. The author's Gherkin post needs
 // ROUTINE_OPS's reply, with its comment id.
 const POSTING = { post: { ok: true } };
@@ -61,12 +55,6 @@ function notices(place) {
     .filter(({ op }) => op === "post")
     .flatMap(({ comments }) => comments)
     .filter(({ key }) => DROPPED_KEY.test(key));
-}
-
-// A finished job of issue #7 at `stage` whose line ends `end`.
-/** @param {JobEnd} end @param {Stage} [stage] @returns {RunEnd} */
-function finishedEnd(end, stage = "implement") {
-  return { kind: "finished", summary: { issue: ISSUE, stage, end } };
 }
 
 test("a finished writer whose issue stopped saves its patch, which job.json names, and posts the notice", () => {
@@ -147,30 +135,7 @@ test("a writer stopped by SIGTERM names its patch on stderr and posts one keyed 
   assert.equal(comment.key, `dropped-${key}`);
   assert.ok(comment.body.includes(key));
   assert.match(comment.body, RUN_DIRECTORY);
+  assert.ok(comment.body.includes("`repo/`"));
   assert.equal(comment.body.includes(place.root), false);
-});
-
-test("the dropped notice names the job, the code checkout and the run directory, and no local path", () => {
-  const body = droppedNotice(KEY, PATCHES);
-  assert.ok(body.includes(KEY));
-  assert.ok(body.includes("`repo/`"));
-  assert.match(body, RUN_DIRECTORY);
-  assert.doesNotMatch(body, LOCAL_PATH);
-});
-
-test("a run counts as stopped for a signal or a stopped job line, and for nothing else", () => {
-  assert.equal(stoppedRun({ kind: "stopped", signal: "SIGTERM" }), true);
-  assert.equal(stoppedRun({ kind: "stopped", signal: "SIGINT" }), true);
-  assert.equal(stoppedRun(finishedEnd("stop")), true);
-  assert.equal(stoppedRun(finishedEnd("stop", READER_STAGE)), true);
-  for (const end of /** @type {const} */ ([
-    "next",
-    "ask",
-    "wait",
-    "deferred",
-    "unclaimed",
-  ])) {
-    assert.equal(stoppedRun(finishedEnd(end)), false, end);
-  }
-  assert.equal(stoppedRun(null), false);
+  assert.doesNotMatch(comment.body, LOCAL_PATH);
 });

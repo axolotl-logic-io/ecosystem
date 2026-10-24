@@ -9,7 +9,7 @@ import path from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { nativeTargetUpdates } from "./fake-pipeline-flow-gh-native.mjs";
-import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import { readWorld, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { opsTrace } from "./pipeline-flow-ops-test-kit.mjs";
 import {
   issueStateIn,
@@ -39,7 +39,14 @@ import {
 } from "./pipeline-flow-replay-test-kit.mjs";
 import { runStage, stopJobs } from "./pipeline-flow-run-test-kit.mjs";
 import { savedState } from "./pipeline-flow-script-test-kit.mjs";
-import { ISSUE, setUpFlow } from "./pipeline-flow-test-kit.mjs";
+import { ISSUE, refIn, setUpFlow } from "./pipeline-flow-test-kit.mjs";
+
+const { loadConfig } = await import("../src/config.ts");
+const { policyRevision } = await import("../src/project-policy.ts");
+// A checking-policy setting the flow's own commands never reach.
+const MOVED_TIMEOUT_MINUTES = 21;
+const POSTMERGE = ["prepare-review", "verify", "push", "exit-push", "merge"];
+const POSTMERGE_REFUSED = /postmerge hardening is not allowed/u;
 
 /** @type {import("./pipeline-flow-test-kit.mjs").Flow} */
 let flow;
@@ -280,5 +287,140 @@ test("an interrupted own FF merge with exact premerge proof completes read-only,
   assert.deepEqual(
     nativeTargetUpdates(world),
     expectedReplay(interruptedWorld).targetUpdates,
+  );
+});
+
+test("an own FF merge whose saved attempt has no signed intent is refused by confirmation, with no suite, model or completion", () => {
+  const cleared = savedState(clearedWorld);
+  const { operation: _intent, ...legacy } = cleared.mergeAttempt;
+  restoreClearedReceipt(flow, clearedWorld, { mergeAttempt: legacy });
+  const traceStart = opsTrace(flow).length;
+  const starts = sessions(flow);
+  assert.equal(runStage(flow, "merge").end, "stop");
+  assert.equal(sessions(flow), starts);
+  assert.deepEqual(
+    postLandFacts(replayFacts(flow, traceStart)),
+    readOnlyAfterLand([{ confirmed: false }]),
+  );
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.deepEqual(stopped.merged, cleared.merged);
+  assert.deepEqual(stopped.security, cleared.security);
+  const ops = opsSince(flow, traceStart);
+  assert.equal(ops.includes("finish"), false);
+  assert.equal(ops.includes("prepare-review"), false);
+  assert.equal(issueStateIn(readWorld(flow.ghDir)), "open");
+});
+
+// confirm-merged also refuses an intent for another PR, result or receipt;
+// before it can, the claim refuses an attempt GitHub doesn't confirm.
+test("an own FF merge whose saved attempt names another PR starts nothing after Land", () => {
+  const cleared = savedState(clearedWorld);
+  restoreClearedReceipt(flow, clearedWorld, {
+    mergeAttempt: { ...cleared.mergeAttempt, pr: cleared.pr + 1 },
+  });
+  const traceStart = opsTrace(flow).length;
+  const starts = sessions(flow);
+  assert.equal(runStage(flow, "merge").end, "unclaimed");
+  assert.equal(sessions(flow), starts);
+  const ops = opsSince(flow, traceStart);
+  for (const name of ["confirm-merged", "verify", "merge", "finish"]) {
+    assert.equal(ops.includes(name), false, name);
+  }
+  assert.notEqual(savedState(readWorld(flow.ghDir)).stage, "done");
+});
+
+/**
+ * Runs `check` with the operator's checking policy moved after Land.
+ * @param {() => void} check
+ */
+function withMovedPolicy(check) {
+  const original = fs.readFileSync(flow.config, "utf8");
+  fs.writeFileSync(
+    flow.config,
+    JSON.stringify({
+      ...JSON.parse(original),
+      commandTimeoutMinutes: MOVED_TIMEOUT_MINUTES,
+    }),
+  );
+  try {
+    check();
+  } finally {
+    fs.writeFileSync(flow.config, original);
+  }
+}
+
+test("a policy move after Land stops read-only: no result Security session, suite or completion, and merged truth stays", () => {
+  const cleared = savedState(clearedWorld);
+  restoreClearedReceipt(flow, clearedWorld);
+  withMovedPolicy(() => {
+    const traceStart = opsTrace(flow).length;
+    const starts = sessions(flow);
+    assert.equal(runStage(flow, "merge").end, "stop");
+    assert.equal(sessions(flow), starts);
+    const stopped = savedState(readWorld(flow.ghDir));
+    assert.deepEqual(landedEvidence(stopped), landedEvidence(cleared));
+    assert.equal(stopped.resultSecurity ?? null, null);
+    const ops = opsSince(flow, traceStart);
+    for (const name of ["verify", "prepare-review", "merge", "finish"]) {
+      assert.equal(ops.includes(name), false, name);
+    }
+    assert.equal(issueStateIn(readWorld(flow.ghDir)), "open");
+  });
+});
+
+test("a result Security observation saved before #185 for the moved policy still completes read-only", () => {
+  const cleared = savedState(clearedWorld);
+  withMovedPolicy(() => {
+    const { policy } = policyRevision(loadConfig(flow.config));
+    assert.notEqual(policy, cleared.merged.policy);
+    const resultSecurity = {
+      revision: { ...cleared.merged, policy },
+      target: cleared.security.target,
+      commentId: cleared.security.commentId,
+      finding: null,
+    };
+    restoreClearedReceipt(flow, clearedWorld, { resultSecurity });
+    const traceStart = opsTrace(flow).length;
+    const starts = sessions(flow);
+    assert.equal(runStage(flow, "merge").end, "next");
+    assert.equal(sessions(flow), starts);
+    assert.deepEqual(
+      postLandFacts(replayFacts(flow, traceStart)),
+      readOnlyAfterLand([{ confirmed: true, headSha: cleared.merged.code }]),
+    );
+    const done = savedState(readWorld(flow.ghDir));
+    assert.equal(done.stage, "done");
+    assert.deepEqual(done.resultSecurity, resultSecurity);
+    assert.equal(issueStateIn(readWorld(flow.ghDir)), "closed");
+  });
+});
+
+test("hardening after Land is refused before preparation, a suite, a session or a push, keeping merged provenance", () => {
+  const state = savedState(interruptedWorld);
+  assert.notEqual(state.codeMerged, null);
+  replaceState(flow, { ...state, stage: "review" });
+  withWorld(flow.ghDir, (world) => {
+    const issue = world.issues.find(({ number }) => number === ISSUE);
+    assert.ok(issue !== undefined);
+    issue.state = "open";
+  });
+  const head = refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`);
+  const traceStart = opsTrace(flow).length;
+  const starts = sessions(flow);
+  assert.equal(runStage(flow, "review").end, "stop");
+  assert.equal(sessions(flow), starts);
+  assert.deepEqual(
+    opsSince(flow, traceStart).filter((op) => POSTMERGE.includes(op)),
+    [],
+  );
+  assert.equal(refIn(flow.origin, `refs/heads/agent/issue-${ISSUE}`), head);
+  const stopped = savedState(readWorld(flow.ghDir));
+  assert.deepEqual(stopped.codeMerged, state.codeMerged);
+  assert.deepEqual(stopped.hardened, state.hardened);
+  assert.equal(stopped.verifiedSha, state.verifiedSha);
+  assert.ok(
+    readWorld(flow.ghDir).comments.some(
+      ({ issue, body }) => issue === ISSUE && POSTMERGE_REFUSED.test(body),
+    ),
   );
 });
