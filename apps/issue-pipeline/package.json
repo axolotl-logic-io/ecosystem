@@ -15,6 +15,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "smol-toml": "1.9.0",
     "yaml": "2.9.0",
     "zod": "^4.6.7"
   }

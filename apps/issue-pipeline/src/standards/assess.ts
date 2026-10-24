@@ -8,17 +8,19 @@ import process from "node:process";
 import type { Config } from "../config.ts";
 import { GIT_ENV } from "../git-remote.ts";
 import { run } from "../process.ts";
-import { ciOf } from "./ci.ts";
+import type { CiTarget } from "./ci.ts";
+import { ciOf, nodeTarget, poetryTarget } from "./ci.ts";
 import { dispositionOf } from "./disposition.ts";
 import { enforcementOf } from "./enforcement.ts";
 import { nodeCriteria, nodeProjectOf } from "./node-npm.ts";
+import { poetryCriteria, poetryProjectOf } from "./python-poetry.ts";
 import type { Assessment, Component, Criterion, Workflow } from "./schema.ts";
 import { ASSESSMENT, POLICY_VERSION } from "./schema.ts";
 import type { Source } from "./source.ts";
 import { openSource } from "./source.ts";
 
-// The change each failed or unverified criterion asks of the upgrade.
-const CHANGES: Readonly<Record<string, string>> = {
+// The change each failed or unverified criterion asks of a Node/npm upgrade.
+const NODE_CHANGES: Readonly<Record<string, string>> = {
   "environment.manifest":
     "Repair the root package.json so it parses as a package manifest.",
   "environment.toolchain": "Declare the supported Node range in engines.node.",
@@ -42,6 +44,39 @@ const CHANGES: Readonly<Record<string, string>> = {
   "ci.workspaces":
     "Run every workspace's tests in CI, for example with npm test --workspaces.",
   "ci.workflow-syntax": "Repair the workflow files that don't parse.",
+};
+
+// The change each failed or unverified criterion asks of a Python/Poetry
+// upgrade.
+const POETRY_CHANGES: Readonly<Record<string, string>> = {
+  "environment.manifest":
+    "Repair pyproject.toml so it parses and declares the Poetry project.",
+  "environment.toolchain":
+    "Declare the supported Python range in tool.poetry.dependencies.python.",
+  "environment.lockfile": "Commit the poetry.lock that poetry lock produces.",
+  "environment.install":
+    "Run poetry check --lock and poetry install from a clean checkout, and report their exit codes.",
+  "vulnerabilities.scan":
+    "Scan the full locked environment, dev groups included, for example with pip-audit over poetry export --with dev; fix findings with the smallest compatible upgrade, and report the date and remaining advisories.",
+  "behavior.tests":
+    "Replace the version placeholder with tests that assert the documented behavior, run by pytest so a failing assertion fails the run.",
+  "behavior.tests-run":
+    "Run poetry run pytest on the candidate and report its exit code; show that a deliberate mismatch fails it.",
+  "ci.triggers":
+    "Add a GitHub Actions workflow that runs on pull_request and on push to the default branch.",
+  "ci.runs-tests":
+    "Make CI install the locked environment with Poetry and run poetry run pytest.",
+  "ci.failure-propagation":
+    "Remove continue-on-error and || true so a failing check fails the run.",
+  "ci.advisory-refresh":
+    "Refresh advisories on a schedule, with a scheduled pip-audit job or Dependabot for the pip ecosystem.",
+  "ci.workspaces": "Assess and test each nested Python project.",
+  "ci.workflow-syntax": "Repair the workflow files that don't parse.",
+};
+
+const CHANGES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "node-npm": NODE_CHANGES,
+  "python-poetry": POETRY_CHANGES,
 };
 
 function versionOf(command: string, args: readonly string[]): string {
@@ -108,8 +143,37 @@ interface Found {
   criteria: Criterion[];
 }
 
+interface Checked {
+  components: Component[];
+  criteria: Criterion[];
+  target: CiTarget;
+}
+
+// The ecosystem's own components, criteria and CI target, or null when the
+// disposition gets no criteria.
+function checkedOf(source: Source, kind: string): Checked | null {
+  if (kind === "node-npm") {
+    const project = nodeProjectOf(source);
+    return {
+      components: project.components,
+      criteria: nodeCriteria(source, project),
+      target: nodeTarget(project),
+    };
+  }
+  if (kind === "python-poetry") {
+    const project = poetryProjectOf(source);
+    return {
+      components: project.components,
+      criteria: poetryCriteria(source, project),
+      target: poetryTarget(project),
+    };
+  }
+  return null;
+}
+
 function criteriaOf(cfg: Config, source: Source, kind: string): Found {
-  if (kind !== "node-npm") {
+  const checked = checkedOf(source, kind);
+  if (checked === null) {
     return {
       components: [],
       workflows: [],
@@ -117,18 +181,13 @@ function criteriaOf(cfg: Config, source: Source, kind: string): Found {
       criteria: [],
     };
   }
-  const project = nodeProjectOf(source);
-  const ci = ciOf(source, project);
+  const ci = ciOf(source, checked.target);
   const enforcement = enforcementOf(cfg, source.defaultBranch);
   return {
-    components: project.components,
+    components: checked.components,
     workflows: ci.workflows,
     requiredChecks: enforcement.requiredChecks,
-    criteria: [
-      ...nodeCriteria(source, project),
-      ...ci.criteria,
-      enforcement.criterion,
-    ],
+    criteria: [...checked.criteria, ...ci.criteria, enforcement.criterion],
   };
 }
 
@@ -170,7 +229,9 @@ function assess(
       criteria: found.criteria,
       verdict: verdictOf(disposition.kind, found.criteria),
       proposed: gaps.flatMap(({ id }) =>
-        [CHANGES[id] ?? []].flat().map((change) => ({ criterion: id, change })),
+        [CHANGES[disposition.kind]?.[id] ?? []]
+          .flat()
+          .map((change) => ({ criterion: id, change })),
       ),
       ownerActions: ownerActionsOf(
         disposition.kind,

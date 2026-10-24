@@ -101,21 +101,28 @@ function reportOf(assessment: Assessment): string {
   ].join("\n");
 }
 
-const RULES = [
-  "Make the smallest change that closes each gap. Keep every existing feature, test and piece of content.",
-  "Before fixing a defect, add a regression test that fails on it.",
-  "Run npm ci, npm test and npm audit on the result and report their exit codes. Report a check you can't run as unverified, never as passed.",
-  "Don't change repository settings, branch protection, rulesets, deployment, domains or the license. The owner actions below need separate authority.",
-  "Ask when the intended behavior is unclear, instead of inventing a feature.",
-];
+// The checks each supported ecosystem's upgrade runs on its result.
+const CHECKS: Readonly<Record<string, string>> = {
+  "node-npm": "npm ci, npm test and npm audit",
+  "python-poetry":
+    "poetry check --lock, poetry install, poetry run pytest and pip-audit",
+};
 
-// The upgrade issue body for a Node/npm assessment with gaps, or null when
-// there's nothing for an upgrade to change.
+function rulesOf(checks: string): string[] {
+  return [
+    "Make the smallest change that closes each gap. Keep every existing feature, test and piece of content.",
+    "Before fixing a defect, add a regression test that fails on it.",
+    `Run ${checks} on the result and report their exit codes. Report a check you can't run as unverified, never as passed.`,
+    "Don't change repository settings, branch protection, rulesets, deployment, domains or the license. The owner actions below need separate authority.",
+    "Ask when the intended behavior is unclear, instead of inventing a feature.",
+  ];
+}
+
+// The upgrade issue body for a Node/npm or Python/Poetry assessment with
+// gaps, or null when there's nothing for an upgrade to change.
 function planOf(assessment: Assessment): string | null {
-  if (
-    assessment.disposition.kind !== "node-npm" ||
-    assessment.proposed.length === 0
-  ) {
+  const checks = CHECKS[assessment.disposition.kind];
+  if (checks === undefined || assessment.proposed.length === 0) {
     return null;
   }
   const marker: PlanMarker = {
@@ -139,7 +146,7 @@ function planOf(assessment: Assessment): string | null {
     "",
     "## Rules",
     "",
-    ...RULES.map((rule) => `- ${rule}`),
+    ...rulesOf(checks).map((rule) => `- ${rule}`),
     "",
     "## Findings",
     "",
