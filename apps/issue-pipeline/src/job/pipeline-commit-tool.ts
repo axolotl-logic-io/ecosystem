@@ -6,8 +6,11 @@
 // push. The tool runs the planner's
 // git commands with ISSUE_PIPELINE_COMMIT=1, which the checkouts' pre-commit
 // hook lets through, then asks the job over its control socket to push: the
-// session holds no token and never pushes itself.
+// session holds no token and never pushes itself. Before committing, it
+// stages the new files the call names exactly (#144), and nothing else.
 
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
@@ -33,6 +36,10 @@ const COMMIT_ENV: ReadonlyMap<string, string> = new Map([
   ["LC_ALL", "C"],
   ["GIT_EDITOR", "true"],
 ]);
+// A read that takes no optional index lock.
+const READ_ONLY_ENV: ReadonlyMap<string, string> = new Map([
+  ["GIT_OPTIONAL_LOCKS", "0"],
+]);
 
 // What git did in one repo: its last command's exit code and output, and the
 // new head when the commit moved it.
@@ -41,6 +48,12 @@ interface RepoResult {
   stdout: string;
   stderr: string;
   sha: string | null;
+}
+
+// A planned commit in the code checkout: its argv and the call's pathspecs.
+interface CommitStep {
+  code: string[];
+  paths: readonly string[];
 }
 
 // The tool's reply, as Pipeline-Job-Contract#pipeline_commit gives it.
@@ -77,12 +90,75 @@ function headOf(dir: string): string | null {
   return found.stdout.trim();
 }
 
-// Runs `argvs` in `dir` in turn, stopping at the first that fails.
-function runIn(dir: string, argvs: readonly string[][]): RepoResult {
+// The call's pathspecs in `dir` that name a new file exactly: untracked and
+// not ignored. A directory, a pattern or the whole checkout names no new
+// file, so it stages none, and an ignored file is never staged.
+function newFilesIn(dir: string, paths: readonly string[]): string[] {
+  if (paths.length === 0) {
+    return [];
+  }
+  const listed = run(
+    "git",
+    [
+      "--literal-pathspecs",
+      "ls-files",
+      "--others",
+      "--exclude-standard",
+      "-z",
+      "--",
+      ...paths,
+    ],
+    { cwd: dir, env: READ_ONLY_ENV },
+  );
+  const named = new Set(paths);
+  return listed.stdout.split("\0").filter((file) => named.has(file));
+}
+
+// The git commands that commit as `plan` says in `dir`: staging the new
+// files it names exactly, by their literal paths, then its commit.
+function commandsIn(dir: string, plan: CommitStep): string[][] {
+  const added = newFilesIn(dir, plan.paths);
+  if (added.length === 0) {
+    return [plan.code];
+  }
+  return [["--literal-pathspecs", "add", "--", ...added], plan.code];
+}
+
+// Runs a dry run's `argvs` in `dir` against a private copy of its index, so
+// staging the new files it names leaves the checkout's index unchanged.
+function dryRunIn(dir: string, argvs: readonly string[][]): RepoResult {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-commit-"));
+  try {
+    const index = path.join(tmp, "index");
+    const where = run("git", ["rev-parse", "--git-path", "index"], {
+      cwd: dir,
+      env: READ_ONLY_ENV,
+    });
+    const actual = path.resolve(dir, where.stdout.trim());
+    if (fs.existsSync(actual)) {
+      fs.copyFileSync(actual, index);
+    }
+    return runIn(
+      dir,
+      argvs,
+      new Map([...COMMIT_ENV, ["GIT_INDEX_FILE", index]]),
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+// Runs `argvs` in `dir` in turn with `env`, stopping at the first that fails.
+// A failure leaves what earlier commands staged in place.
+function runIn(
+  dir: string,
+  argvs: readonly string[][],
+  env: ReadonlyMap<string, string> = COMMIT_ENV,
+): RepoResult {
   const before = headOf(dir);
   let last = { code: 0, stdout: "", stderr: "" };
   for (const argv of argvs) {
-    last = run("git", argv, { cwd: dir, env: COMMIT_ENV, allowFail: true });
+    last = run("git", argv, { cwd: dir, env, allowFail: true });
     if (last.code !== 0) {
       break;
     }
@@ -121,7 +197,13 @@ async function commitAndPush(
 ): Promise<ToolResult> {
   let code: RepoResult | null = null;
   if (plan.code !== null) {
-    code = runIn(path.join(scope.root, scope.repo.dir), [plan.code]);
+    const dir = path.join(scope.root, scope.repo.dir);
+    const commands = commandsIn(dir, { code: plan.code, paths: plan.paths });
+    if (plan.dryRun && commands.length > 1) {
+      code = dryRunIn(dir, commands);
+    } else {
+      code = runIn(dir, commands);
+    }
   }
   const unpushed: CommitReply = { code, pushed: "none", pushError: null };
   const committed = typeof code?.sha === "string";
@@ -165,7 +247,7 @@ function pipelineCommit(pi: ExtensionApi): void {
     name: COMMIT_TOOL,
     label: "Pipeline Commit",
     description:
-      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "repo/src/a.ts"]. Paths, and a relative -F file, are relative to the job folder, your working directory: pathspecs start with repo/ (the code checkout, whose docs are in repo/docs/), and with none, the code checkout is committed. A path outside repo/, or into a checkout this stage only reads, is refused. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
+      'Commit your work, and have the job push it. `args` are the arguments `git commit` would take, such as ["-am", "Add the parser"] or ["-m", "Fix", "--", "repo/src/a.ts"]. Paths, and a relative -F file, are relative to the job folder, your working directory: pathspecs start with repo/ (the code checkout, whose docs are in repo/docs/), and with none, the code checkout is committed. A path outside repo/, or into a checkout this stage only reads, is refused. A new file named exactly as a pathspec is staged for you (never run git add); a directory or pattern stages no new file, and an ignored file is never staged. A failed commit leaves those files staged and pushes nothing; --dry-run stages nothing. --amend, --no-verify/-n, --author, --date and --reset-author are refused. Never run git commit, push, rebase, reset, checkout or merge yourself.',
     promptSnippet: "Commit and push your work (the only way to commit)",
     parameters: {
       type: "object",

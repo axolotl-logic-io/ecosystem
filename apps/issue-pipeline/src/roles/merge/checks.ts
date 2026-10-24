@@ -1,10 +1,21 @@
-// Exact-head checks used before integration and on actual merged results.
+// Exact-head checks run before the target moves; after Land, only read-only
+// confirmation of that premerge proof (#185).
+import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import type { Check } from "../op-replies.ts";
 import { opReply, VERIFY_REPLY } from "../op-replies.ts";
 import { failed } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
+
+const CONFIRMED_REPLY = z.union([
+  z.looseObject({ confirmed: z.literal(true), headSha: z.string().min(1) }),
+  z.looseObject({ confirmed: z.literal(false), reason: z.string().min(1) }),
+]);
+
+// The read-only path when exact premerge proof is missing or unconfirmed.
+const NO_POSTMERGE_REPAIR =
+  "code remains merged; no postmerge suite, writer or retrospective Security runs; read-only reconciliation is required";
 
 // What the merge job's local checks found: nothing to do, or what its own
 // integration needs.
@@ -13,22 +24,22 @@ type LocalChecks =
   | { kind: "integrate"; failing: Check[] }
   | { kind: "moved"; headSha: string };
 
-// The merge job's own checks of the authorized head `code`: verify, unless
-// this head is already verified. `codeMerged` is the code merge to verify
-// instead of the branch.
+// The merge job's own checks of the authorized branch head `code`, before
+// any target mutation: verify, unless this head is already verified.
 async function localChecks(
   ctx: RoleContext,
   state: IssueState,
-  { code, codeMerged }: { code: string; codeMerged: CodeMerged | null },
+  code: string,
 ): Promise<LocalChecks> {
-  if (codeMerged === null && state.verifiedSha === code) {
+  if (state.verifiedSha === code) {
     return { kind: "ready", state };
   }
-  let payload: object = { number: ctx.issue };
-  if (codeMerged !== null) {
-    payload = { number: ctx.issue, codeMerged };
-  }
-  const verified = await opReply(ctx, "verify", payload, VERIFY_REPLY);
+  const verified = await opReply(
+    ctx,
+    "verify",
+    { number: ctx.issue },
+    VERIFY_REPLY,
+  );
   if (verified.headSha !== code) {
     return { kind: "moved", headSha: verified.headSha };
   }
@@ -39,42 +50,38 @@ async function localChecks(
   return { kind: "ready", state: { ...state, verifiedSha: code } };
 }
 
-// A postmerge failure is a stop, never a request for a code writer. Repeat
-// deterministic verification on recovery even when verifiedSha is M: this
-// also reestablishes genuine receipt/ancestry/whole-delta graph coverage.
-async function checkedMergedResult(
+// Post-Land confirmation, read-only: a saved rejection stops again; then the
+// confirm-merged op requires the signed fast-forward intent, its receipt and
+// the premerge check proof for exactly `codeMerged.sha`, and confirms GitHub's
+// receipt and ancestry. Missing proof is a stop, never a postmerge suite or a
+// request for a code writer. Null means the result may go on to completion.
+async function confirmedMergedResult(
   ctx: RoleContext,
   state: IssueState,
-  merged: Revision,
+  result: Revision,
   codeMerged: CodeMerged,
-): Promise<{ state: IssueState } | { end: RoleEnd }> {
-  const rejected = rejectedAgain(state, merged);
+): Promise<RoleEnd | null> {
+  const rejected = rejectedAgain(state, result);
   if (rejected !== null) {
-    return { end: rejected };
+    return rejected;
   }
-  const checks = await localChecks(ctx, state, {
-    code: codeMerged.sha,
-    codeMerged,
-  });
-  if (checks.kind === "moved") {
-    return {
-      end: failed(
-        state,
-        `postmerge verify checked ${checks.headSha}, not ${codeMerged.sha}; code remains merged`,
-      ),
-    };
+  const confirmed = await opReply(
+    ctx,
+    "confirm-merged",
+    { number: ctx.issue, codeMerged },
+    CONFIRMED_REPLY,
+  );
+  if (!confirmed.confirmed) {
+    return failed(state, `${confirmed.reason}; ${NO_POSTMERGE_REPAIR}`);
   }
-  if (checks.kind === "integrate") {
-    return {
-      end: failed(
-        state,
-        `postmerge checks failed on ${codeMerged.sha}; code remains merged, no code fix or push is allowed: ${checks.failing.map((check) => check.id).join(", ")}`,
-      ),
-    };
+  if (confirmed.headSha !== codeMerged.sha) {
+    return failed(
+      state,
+      `confirm-merged read ${confirmed.headSha}, not ${codeMerged.sha}; ${NO_POSTMERGE_REPAIR}`,
+    );
   }
-  await ctx.save(checks.state);
-  return { state: checks.state };
+  return null;
 }
 
 export type { LocalChecks };
-export { checkedMergedResult, localChecks };
+export { confirmedMergedResult, localChecks, NO_POSTMERGE_REPAIR };

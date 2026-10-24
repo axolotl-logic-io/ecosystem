@@ -1,16 +1,14 @@
-// Complete only after deterministic result checks and bound Security clearance.
-// New own merges reuse premerge clearance; historical runs may recover missing
-// read-only Security. Save done before finish so cleanup can be replayed.
+// Complete only after read-only confirmation of premerge checks and bound
+// premerge Security clearance (#185). Missing or stale clearance stops; no
+// Security is acquired after Land. Save done before finish so cleanup can be
+// replayed.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { legacyWikiOf } from "../../merge-provenance.ts";
 import { ownMergeResultObservation } from "../../ops/merge-guard.ts";
 import { requirementsHold } from "../../requirements.ts";
-import {
-  resultReviewTarget,
-  securityRefusal,
-} from "../../security-clearance.ts";
+import { securityRefusal } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
@@ -19,10 +17,9 @@ import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended } from "../writer-session.ts";
-import { checkedMergedResult } from "./checks.ts";
+import { confirmedMergedResult, NO_POSTMERGE_REPAIR } from "./checks.ts";
 import { failed, logged, toRequirements } from "./returns.ts";
-import type { MergedResult } from "./security.ts";
-import { rejectedAgain, securityReviewed } from "./security.ts";
+import { rejectedAgain } from "./security.ts";
 
 const FINISHED = z.union([
   z.looseObject({ finished: z.literal(true), closed: z.boolean() }),
@@ -68,70 +65,45 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   return failed(done, detail);
 }
 
-// New own merges reuse premerge clearance, never launch a duplicate model
-// pass. Only historical merged runs can obtain missing postmerge review.
-async function completionSecurity(
-  ctx: RoleContext,
+// Own merges reuse the premerge clearance bound to their exact result, or an
+// exact saved result observation; nothing launches a model pass after Land.
+// Missing, stale or historical-only clearance stops with its evidence kept.
+function completionSecurity(
   state: IssueState,
-  result: MergedResult,
-): Promise<Step<IssueState>> {
-  const refusal = securityRefusal(state, result.revision);
+  result: Revision,
+): Step<IssueState> {
+  const refusal = securityRefusal(state, result);
   if (refusal === undefined) {
     return { ok: true, value: state };
   }
-  if (state.security?.phase === "candidate") {
-    const resultTarget = resultReviewTarget(state, result.revision);
-    if (resultTarget === null) {
-      return ended(failed(state, refusal));
-    }
-    return await securityReviewed(ctx, state, { ...result, resultTarget });
-  }
-  return await securityReviewed(ctx, state, result);
+  return ended(failed(state, `${refusal}; ${NO_POSTMERGE_REPAIR}`));
 }
 
-// Bound Security clearance of `merged`, then durable completion.
+// Bound premerge Security clearance of the observed `result` of the receipt
+// `merged`, then durable completion.
 async function reviewedAndCompleted(
   ctx: RoleContext,
   state: IssueState,
-  {
-    merged,
-    result = merged,
-    codeMerged,
-    still,
-  }: {
-    merged: Revision;
-    result?: Revision;
-    codeMerged: CodeMerged | null;
-    still: (after: Revision) => boolean;
-  },
+  { merged, result }: { merged: Revision; result: Revision },
 ): Promise<RoleEnd> {
   const rejected = rejectedAgain(state, result);
   if (rejected !== null) {
     return rejected;
   }
-  const security = await completionSecurity(ctx, state, {
-    revision: result,
-    codeMerged,
-    still,
-  });
+  const security = completionSecurity(state, result);
   if (!security.ok) {
     return security.end;
   }
   return await complete(ctx, security.value, merged);
 }
 
-// Whether `after` is still exactly `revision`.
-function stillAt(revision: Revision): (after: Revision) => boolean {
-  return (after: Revision): boolean => sameRevision(after, revision);
-}
-
 // A done issue with its completion saved, back at merge because the finish
 // op didn't finish it: the finish op again, and nothing else, once the
 // trusted inputs are still the merged ones, GitHub still confirms the
 // merged code and a security receipt approves exactly what merged.
-// Code-only completion without a receipt gets fresh security. A completion
-// saved with a legacy wiki head and no exact clearance needs reconciliation:
-// no review here covers its wiki work. A saved rejection stops again.
+// A code completion also needs read-only confirmation of its premerge proof;
+// a completion with no exact clearance (including a legacy wiki head) needs
+// reconciliation: no review here covers it. A saved rejection stops again.
 async function finishCompleted(
   ctx: RoleContext,
   state: IssueState,
@@ -196,26 +168,22 @@ async function finishConfirmed(
     }
     observed = result;
   }
-  let checked = state;
   if (codeMerged !== null) {
-    const result = await checkedMergedResult(ctx, state, observed, codeMerged);
-    if ("end" in result) {
-      return result.end;
+    const refused = await confirmedMergedResult(
+      ctx,
+      state,
+      observed,
+      codeMerged,
+    );
+    if (refused !== null) {
+      return refused;
     }
-    checked = result.state;
   }
-  const security = await completionSecurity(ctx, checked, {
-    revision: observed,
-    codeMerged,
-    still: (after: Revision): boolean =>
-      (after.policy ?? null) === (observed.policy ?? null) &&
-      after.inputs === merged.inputs &&
-      (merged.code === null || after.code === merged.code),
-  });
+  const security = completionSecurity(state, observed);
   if (!security.ok) {
     return security.end;
   }
   return await finish(ctx, security.value);
 }
 
-export { finishCompleted, reviewedAndCompleted, stillAt };
+export { finishCompleted, reviewedAndCompleted };

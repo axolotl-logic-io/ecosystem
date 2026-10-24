@@ -751,3 +751,18 @@ Each bullet names an original path under `apps/workflow-dash/` and the removed c
 - `test/source-records.test.ts`: line 11, legacy nullable observations retain source identities and recorded nulls; line 35, invalid workflow and buddy shapes fail their source boundary; line 47, JSONL and session readers ignore primitive, partial and non-message records; line 68, unidentified gate calls and unrelated contacts cannot establish observations
 - `test/time.test.ts`: line 29, elapsed limits and warning threshold; line 38, consecutive launch deltas, job stages and model/tool message deltas
 - `test/tools.test.ts`: line 26, canonical tools expose identities and labels without rewriting source keys; line 50, deprecated tool names preserve their prior JSON contract; line 97, uncertain runs do not imply activity, completion or a current task; line 120, native SDK registration receives every read-only tool; line 137, missing workflow runs report a bounded-reader failure; line 147, ${name}: output is capped at 12 KB; line 159, ${name}: inactive tools refuse reads before refresh
+
+## After #195
+
+#195 (#194, #185) replaces the postmerge suite and Security with the read-only `confirm-merged` op, and stops for read-only reconciliation instead. It edited 13 files this ledger removes. Edits that followed the `verify` to `confirm-merged` rename need nothing, including the role's checks for a wrong confirmed head and an unreadable confirmation, which the real op cannot produce. Each new behaviour is tested through the real job and ops against fake GitHub and fake pi:
+
+- Confirmation before completion, with no suite or session after Land, and a replay after a completion interruption: `pipeline-flow-replay`, `pipeline-flow-closed-race` and `pipeline-flow-direct-recovery`.
+- No exact premerge check proof, or no signed fast-forward intent, stops before completion: `pipeline-flow-replay`. The claim refuses an attempt for another PR first, so the op's own PR, result and receipt binding is defence in depth that no real flow reaches.
+- An own merge missing candidate Security stops with no retrospective Security: `pipeline-flow-replay` and `pipeline-flow-closed-safety`.
+- An external merge stops read-only and never returns to review: `pipeline-flow-closed-external` and `postmerge-code-only`.
+- A historical or direct historical result stops with no current-policy suite or Security: `pipeline-flow-closed-history` and `pipeline-flow-direct-recovery`.
+- A policy move after Land stops with no result Security session, and a result observation saved before #185 still completes: `pipeline-flow-replay`.
+- The Reviewer refuses hardening after the code merged, before preparation, a suite, a session or a push: `pipeline-flow-replay`.
+- New docs pages are staged and committed with code (#144): `job/pipeline-commit-push`.
+
+Removing the confirm-merged call, accepting an attempt with no signed intent, completing without clearance, ignoring a saved result observation or allowing postmerge hardening each fails at least one of these.

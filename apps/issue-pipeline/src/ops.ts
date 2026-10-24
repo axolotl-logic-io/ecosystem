@@ -25,6 +25,7 @@ import { ask } from "./ops/ask.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
+import { confirmMergedOp } from "./ops/confirm-merged.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
 import { closeParent, finishIssue } from "./ops/finish.ts";
 import { merge } from "./ops/merge.ts";
@@ -79,6 +80,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["stop", stop],
   ["current-revision", currentRevisionOp],
   ["verify", verify],
+  // Read-only post-Land confirmation of an own fast-forward's premerge proof.
+  ["confirm-merged", confirmMergedOp],
   ["ci-status", ciStatus],
   ["post", post],
   ["release", release],
