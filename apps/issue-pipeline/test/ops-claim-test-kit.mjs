@@ -2,6 +2,7 @@
 // The claim op's requests, gh replies and replies, as the ops-claim tests
 // use them, with version 2 states.
 import path from "node:path";
+import { ownerReceipt, ownershipComments } from "./fake-ownership.mjs";
 import {
   ALLOWED,
   runDir,
@@ -48,11 +49,22 @@ function issueReply(n, extra = {}) {
 const CLAIM_MARK = "<!-- agent-pipeline:claim lane=me sweep=s1 -->";
 const LEASE = { lane: "me", sweepId: "s1", at: TIME };
 
-// What a claim by lane `me` sets on issue `n`'s state, with no job's
-// assignment: its lease, and the legacy branch it binds.
-/** @param {number} n @returns {{ lease: typeof LEASE, branch: string }} */
+// What a bound claim by lane `me` sets on issue `n`'s state, with no job's
+// assignment: its lease, the legacy branch it binds and the receipt of the
+// invocation that owns it (#167). Read after the claim.
+/** @param {number} n @returns {{ lease: typeof LEASE, branch: string, execution: object }} */
 function claimedFields(n) {
-  return { lease: LEASE, branch: `agent/issue-${n}` };
+  return {
+    lease: LEASE,
+    branch: `agent/issue-${n}`,
+    execution: ownerReceipt(),
+  };
+}
+
+// The claim a bound claim replies with: its owner's request, which it posted.
+/** @returns {{ id: number, posted: true }} */
+function ownerClaim() {
+  return { id: ownerReceipt().request, posted: true };
 }
 
 // The state a claim by lane `me` saves for issue `n`: a new issue's,
@@ -71,9 +83,9 @@ function claimPaths(n) {
 
 /**
  * A won claim's reply for issue `n`: the issue and comments it read (an
- * open, unlabelled issue with none unless `extra` says otherwise), with
- * their times replaced as the reply's are, the issue file it wrote, and
- * `extra` over the rest.
+ * open, unlabelled issue with none unless `extra` says otherwise, then the
+ * issue's coordination records), with their times replaced as the reply's
+ * are, the issue file it wrote, and `extra` over the rest.
  * @param {number} n @param {{ issue?: object, comments?: readonly unknown[] } & Record<string, unknown>} [extra]
  * @returns {object}
  */
@@ -88,7 +100,9 @@ function claimReply(n, extra = {}) {
     remoteHead: null,
     issueFile: paths.issueFile,
     issue,
-    comments: JSON.parse(timeless(JSON.stringify(comments))),
+    comments: JSON.parse(
+      timeless(JSON.stringify([...comments, ...ownershipComments(n)])),
+    ),
     paths,
     ...rest,
   };
@@ -105,4 +119,5 @@ export {
   LAPSED,
   LEASE,
   LIVE,
+  ownerClaim,
 };

@@ -245,6 +245,39 @@ function ownedRequest({ config, env, request: sent }, send) {
   }
 }
 
+/**
+ * The receipt a bound claim saves for the current owner: its request's
+ * record and its instance.
+ * @returns {{ protocol: 1, request: number, instance: string }}
+ */
+function ownerReceipt() {
+  const store = JSON.parse(
+    fs.readFileSync(path.join(fakeDir, "ownership.json"), "utf8"),
+  );
+  const { instance } = store.request.execution;
+  const request = ownershipRecords().find(
+    (record) =>
+      record.kind === "request" && record.identity.instance === instance,
+  );
+  return { protocol: 1, request: request.id, instance };
+}
+
+/**
+ * Issue `issue`'s coordination records as its comment listing shows them.
+ * @param {number} issue
+ * @returns {object[]}
+ */
+function ownershipComments(issue) {
+  const file = path.join(fakeDir, "ownership.json");
+  if (!fs.existsSync(file)) {
+    return [];
+  }
+  const store = JSON.parse(fs.readFileSync(file, "utf8"));
+  return store.comments.filter(
+    (/** @type {{ issue: number }} */ item) => item.issue === issue,
+  );
+}
+
 // A successor takes the issue just after the next request's ownership
 // check, so that request's writes find the issue no longer theirs.
 function loseOwnership() {
@@ -275,6 +308,8 @@ export {
   loseOwnership,
   OWNERSHIP_GH,
   ownedRequest,
+  ownerReceipt,
+  ownershipComments,
   ownershipRecords,
   RELEASED_RECEIPT,
   registerFake,

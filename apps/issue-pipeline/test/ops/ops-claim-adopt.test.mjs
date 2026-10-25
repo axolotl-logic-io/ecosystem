@@ -16,7 +16,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { claimedFields, claimReply } from "../ops-claim-test-kit.mjs";
+import {
+  claimedFields,
+  claimReply,
+  ownerClaim,
+} from "../ops-claim-test-kit.mjs";
 import { runDir } from "../ops-cli-test-kit.mjs";
 import {
   ADOPTED_LOG,
@@ -52,7 +56,7 @@ test("a claim adopts the head this machine recorded pushing, keeping implement",
   assert.match(log.join(""), ADOPTED_LOG);
   assert.ok(log.join("").includes(remote.slice(0, SHORT_SHA)));
   const state = { ...saved, headSha: remote, log, ...claimedFields(ADOPTED) };
-  const claim = { id: ADOPTED * CLAIM_IDS, posted: false };
+  const claim = ownerClaim();
   const comments = heldComments(ADOPTED, saved);
   const remoteHead = remote;
   const want = claimReply(ADOPTED, { state, claim, remoteHead, comments });
