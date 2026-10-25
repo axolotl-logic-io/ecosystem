@@ -1,109 +1,57 @@
 # Sync
 
-This page describes Sync: the task that brings a revision onto its target. It covers when Sync runs, conflict resolution, its limits and how to recover from a Sync stop. The rules are `sync-is-a-task` and `two-buddies` in [buddies and tasks](../decisions/buddies-and-tasks.md).
+Sync brings revision R onto an exact target commit T that R does not contain. The Developer task owns matching, prerequisites, rebase effects and recovery. A configured buddy delivers authenticated result signals to it; no saved stage or caller launches a Sync job. See [buddies and tasks](../decisions/buddies-and-tasks.md) and the [domain runtime contract](../domain-runtime-contract.md).
 
-## The Sync task
+## Prerequisites and output
 
-Sync takes revision R and an exact target commit T that R doesn't contain. It produces R′, a new revision that contains T, or it stops with its work kept. Hippy, the Developer, runs it. The development account pushes the branch, and the landing account records the run's attempt and result as [task results](task-results.md).
+Sync requires a passed Implement for the current requirements, a current revision and a target that revision does not contain. It can run before Harden; there is no reason to harden code that Sync will replace. An existing Land attempt or incompatible work state prevents code writes.
 
-Sync only rebases and resolves conflicts. A check that needs a code fix isn't Sync's work: it returns to Hardening, which produces a new revision.
+A passed Sync produces R′ containing the exact requested T. R′ is new code. Harden must attest R′ before Integrate and Review Security can authorize it. Earlier results remain historical; Sync does not copy their permission onto its output or move a global workflow cursor.
 
-R′ is a new revision, so every later task's result for R stops being current. Hardening, Integration and Security for R′ start as missing, and the issue goes back to `review` for fresh Hardening.
+A revision that already contains T needs no Sync. A passed binding does not rerun. A changed target is a different binding, not permission to replay an uncertain rebase or push. Retired `maxSyncs` and `maxConflictFixes` controls do not authorize retries.
 
-## When Sync runs
+## Effects
 
-No stage synchronizes on its own. A stage that finds R doesn't contain the current target ends `wait` with a request, and the caller starts the Sync task job:
+The action uses these guarded operations:
 
-- **Review** reads the chain before Hardening. If R misses the target, it requests Sync first, so no session hardens work that Sync would replace.
-- **Merge** never rebases. A target that moved after Hardening sends the work back to review, which requests Sync. A Land refused as `behind` or `conflict` requests Sync directly.
-- **Integration** routes a target that moved, or an R that misses T, to `sync-needed` and requests Sync of the fresh binding.
+| Operation | Responsibility |
+|---|---|
+| `sync-task` | Open the action's Sync attempt, check R and T, and rebase the action checkout onto exactly T |
+| `sync-task-finish` | Continue one staged conflict resolution, retain the conflict, or preserve and reject it |
+| `sync-reconcile` | Settle the original interrupted attempt from retained branch and checkout evidence without repeating a rebase or push |
 
-The request carries the full binding, so the caller relays it unchanged:
+The development account pushes code. The landing account records authenticated attempts and results. Before controlled mutations, guards recheck buddy authorization, ownership, the action's source, current prerequisites, write authority and stop evidence. Unknown authority holds work rather than selecting an older permissive state.
 
-```bash
-node "$ISSUE_PIPELINE_ROOT/caller-jobs.mjs" start --run RUN_DIR --config CONFIG \
-  --issue ISSUE --branch BRANCH --lane LANE --stage STAGE \
-  --task sync --binding 'BINDING_JSON'
-```
-
-- `STAGE`: the stage the request was made at, `review` or `merge`.
-- `BINDING_JSON`: the `request.binding` the job printed, exactly.
-
-The job refuses a binding for another issue, repository, task or target branch before it claims or writes anything.
-
-## What a Sync run does
-
-```
-sync-task            check R and T fresh, record the attempt, rebase R onto exactly T
-  └─ clean           push R′ (development account), check the branch holds R′ ⊇ T, record passed
-  └─ stopped         keep the rebase for Hippy's resolver session
-sync-task-finish     continue the staged resolution, or retain it, or save it and record failed
-sync-task-reconcile  settle an interrupted run by reading the branch and the checkout
-```
-
-Before any writer effect, each op reads these afresh and refuses if any fails:
-
-- the binding is this issue's Sync binding, with today's trusted inputs and policy;
-- no Land attempt is armed or uncertain, and saved state still lets the code be written;
-- T is on the configured target, and both the checkout and the branch are at R.
-
-Success is checked on the branch itself. The branch must hold exactly the pushed head, and that head must contain the exact requested T. A rebase that keeps an older ancestor of the target isn't proof.
-
-A passed Sync saves R′ as the issue's head, voids Hardening and returns the issue to `review`. A binding whose Sync already passed never reruns.
+A successful push must leave the remote work branch at the exact local head, and that new head must contain T. A successful Git command alone is not proof. A moved or unreadable branch leaves the effect unknown for reconciliation.
 
 ## Conflicts
 
-A rebase that stops on conflicts stays in the checkout for a resolver session. The resolver is Hippy in a fresh Developer session of phase `sync`, with the prompt page `sync.md`. It stages the files it resolved and returns; it doesn't continue the rebase or push. The `sync-task-finish` op continues the rebase, returns any later conflict to the next resolver session, and checks the completed rebase before the push.
+A text conflict stays in the action checkout for one fresh Developer resolver session, using phase `sync` and the installed `sync.md` prompt. The resolver stages its resolution; the guarded finish operation continues the rebase and performs any push. A remaining conflict is retained, not sent through an automatic session loop.
 
-A binary file, such as a visual-test baseline, can't hold a merged result, so the resolver keeps the target's bytes for it. When the branch meant to change that file and a check later fails on it, fresh Hardening regenerates it.
+A session failure retains the conflict. A `cannot-fix` reply preserves recovery evidence before reset and records failure. Neither outcome grants another attempt. A changed submodule pointer is not a text resolution: synchronization keeps its unresolved evidence rather than choosing a submodule revision.
 
-A base that removed a submodule leaves the submodule's folder behind after the rebase, as untracked files. Once the rebase finishes, the pipeline renames that folder, whole, into a new `retired-submodules-*` folder in the issue's `recovery/` folder, so the checkout is clean and nothing is deleted.
+When the target removed a submodule, synchronization preserves its leftover folder under the issue's recovery directory instead of deleting it. A binary conflict keeps the target's bytes; a needed code or baseline repair belongs to fresh Harden, not repeated Sync.
 
-- Each resolver session that ends, however it ends, counts as one of `maxConflictFixes` (default 2) attempts, saved at once.
-- A later conflict on the same rebase goes to the next resolver with the current paths and the next attempt number.
-- A `cannot-fix` reply, or a resolver session that fails, ends the run as `failed` with the work saved in recovery. A retry is a new run.
-- At the limit, `sync-task-finish` keeps the stopped pick and the issue stops with `agent:stopped-conflict`, naming the pick, the paths and where its evidence is kept.
+## Retained evidence
 
-A changed gitlink (submodule pointer) in a conflict stops with its full stage SHAs and the unresolved evidence kept. Resolvers never choose submodule revisions.
+Recovery preserves staged and working-tree patches and verified Git bundles before destructive checkout cleanup. An unresolved index also records paths, stages, modes and full object IDs in `conflict-stages.json`. A stopped rebase or uncertain checkpoint retains the original checkout. Issue ownership and resource claims remain held when safe release cannot be proved. See [checkout preservation](checkouts.md).
 
-## Limits
+A process exit, expired lease, removed label or new buddy activation does not release these claims. Local run observations describe the work; they do not replace authenticated ownership or grant continuation.
 
-| Setting | Default | Bounds | Stop |
-|---|---|---|---|
-| `maxSyncs` | 3 | Sync runs of one issue without landing | `agent:stopped-sync-limit`: the base kept moving |
-| `maxConflictFixes` | 2 | Resolver sessions | `agent:stopped-conflict` |
-| Task attempts | 3 | Sync runs per binding (R, T, inputs, policy) | `agent:stopped-error` until a person reconciles |
+## Reconciliation
 
-A new binding, such as a new target commit, starts a new attempt budget. The budget lives in the records on GitHub, so it survives caller restarts and new run folders.
+Read-only effect reconciliation settles the original attempt rather than opening a fresh attempt. It may preserve local recovery evidence and update settlement records under current recording authority. It never repeats a credentialed push or rebase.
 
-## Evidence kept on failure
-
-Before any abort, reset or clean, synchronization saves the staged and working-tree patches and a verified Git bundle of current, local-branch and pre-rebase history.
-
-An unresolved index also saves `conflict-stages.json`: path, stage number, mode and full object ID for each entry. The original checkout, unresolved index and working files are then kept, and destructive cleanup is refused. See [checkouts](checkouts.md) for where evidence lives.
-
-## Interrupted runs
-
-An interrupted run leaves its attempt unsettled. The next Sync job for the same binding reconciles it with `sync-task-reconcile`, which only reads, before any new attempt:
-
-| The branch | The checkout | Result |
+| Remote work branch | Retained checkout | Result |
 |---|---|---|
-| A new head H that contains T | At H | `passed`, with R′ = H |
-| Still at R | Rebased past R | `failed`: the push never landed; the rebased work is saved in recovery |
-| Still at R | At R, no synchronization | `failed`: the run ended before any effect |
-| Anything | A stopped rebase | Held: finish, retain or recover it by hand |
-| Anything else | Anything else | Held |
+| New head H containing T | At H | Passed, with R′ = H |
+| Still at R | Rebased past R with synchronization evidence | Failed; preserve the unpushed work |
+| Still at R | At R with no synchronization | Failed; no effect observed |
+| Any head | Stopped rebase | Held for explicit recovery |
+| Contradictory or unreadable evidence | Any state | Held |
 
-Reconciliation never repeats the push or the rebase.
+To recover retained work, first stop new dispatch for the affected issue and inspect its authenticated attempt, checkpoint, ownership and retained paths. Preserve the checkout, conflict stages, bundles and patches until an authorized recovery establishes what happened. Do not erase records, raise retired counters or restart an old stage. Unsupported retry and continuation remain unsupported.
 
-## Recover from a Sync stop
+## Historical behavior
 
-1. Stop dispatching the issue.
-2. Read the stop comment. It names the paths and where the evidence is kept.
-3. Keep the checkout, `conflict-stages.json`, the bundle and the patches until the work is safe.
-4. For `sync-limit`, find out why the base keeps moving before the issue lands; landing fewer issues at once or holding the base briefly helps. Don't raise `maxSyncs` as a reflex.
-5. For `conflict`, resolve the conflict through ordinary reviewed work on the same branch, or recover the kept checkout explicitly. Then restart the issue at its saved stage, on the same issue, branch and lane, and relay the Sync request it prints. Nothing applies saved evidence automatically.
-
-## Before #186
-
-Until #186, the merge stage synchronized as part of the Reviewer's writable integration, and fixed failing checks in the same sessions. That path retired: `roles/merge/sync.ts`, `roles/merge/integration.ts` and the `integration` prompt page are gone, and no role may call the `sync-base` or `finish-sync` ops. A saved `integration` receipt from before then stays readable as history.
+The old merge-stage synchronization and later caller-launched Sync jobs are retired. Their records and recovery files remain historical evidence. No adapter turns an old stage request, assignment or integration receipt into a current Sync grant.

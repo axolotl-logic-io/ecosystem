@@ -1,69 +1,44 @@
 # Stops and labels
 
-This page lists the pipeline's GitHub labels, what each stop means, how a stop is recorded and how to recover from one. Labels show status; they aren't authority. Saved state, exact-revision receipts and fresh write authority decide what the pipeline may do (see [authority](authority.md)).
+Current control signals come from qualified human issue-label application events, not label presence alone. The initial controls are `start:implement` and `agents:stop`. Accepted records, current authority and exact task results determine what may happen; status labels and process observations do not. See [signals](signals.md) and [authority](authority.md).
 
-## Status labels
+## Human controls
 
-| Label | Meaning |
+| Label application | Meaning |
 |---|---|
-| `agent:working` | The pipeline is working on the issue |
-| `agent:needs-info` | The pipeline asked a question |
-| `agent:split` | The issue was split into sub-issues |
-| `agent:landed` | The pipeline landed the issue's change and completed it. Issues landed before #166 carry `agent:merged`, which still counts as landed. |
+| `start:implement` | Request one Implement attempt for the accepted trusted requirements |
+| `agents:stop` | Stop the affected work item after the event and human are qualified |
 
-The pipeline creates any missing label, including every stop label, the first time it needs them. The caller selects and splits issues; these labels don't mean the pipeline discovers work. Landing code alone isn't Security clearance or completion.
+The producer must satisfy current human qualification within the configured organization. PR events, Apps, bots, machine label changes and issue assignment grant no initial authority. Incomplete event pages or unreadable membership evidence hold work rather than treating a control as absent.
 
-## Stop labels
+An accepted stop is durable after label removal. Removing or reapplying a label does not lift it. No initial continuation or retry signal is defined. An authenticated Implement attempt spends its start regardless of verdict; target movement or a new activation does not replenish it.
 
-A failed control adds `agent:stopped-CODE` to the issue and its PR, and posts a comment naming the control, the reason and how to resume. The code comes from the first stop whose pattern matches the reason; `error` catches the rest. Read the comment and saved state, not just the label.
+## Local interruption
 
-| Code | Control |
-|---|---|
-| `user-harm` | Security found harm to users, such as exposing, leaking or destroying their data |
-| `rights` | Security found a violation of users' rights, such as privacy, consent or access to their own data |
-| `financial-harm` | Security found financial harm to users or the operator |
-| `abuse-risk` | Security found a risk of abuse, such as missing auth or rate limits, privilege escalation or injection |
-| `check-fixes` | Checks still failed after `maxCiFixes` check-fix attempts |
-| `no-ci` | `requireCi` is set and the PR has no required checks |
-| `not-doable` | The issue can't be done as written, or the work changed nothing |
-| `branch-changed` | The PR branch changed outside the pipeline |
-| `conflict` | Conflict resolution ran out of `maxConflictFixes` attempts, or its result was rejected |
-| `sync-limit` | The base kept moving through `maxSyncs` Sync runs without landing |
-| `push-rejected` | GitHub rejected a push |
-| `merge-refused` | GitHub refused the Land, or the landing result couldn't be confirmed; code may already have landed |
-| `job` | A legacy scheduler restarted a dying stage job too often (`maxResumes`) |
-| `error` | A step, a session or a claim failed with no more specific match |
+An active action watches stop evidence. An accepted stop cooperatively interrupts model work for that issue. A newly observed, not-yet-accepted human stop or unreadable evidence can instead cause a local unknown interruption. That local hold is not a fabricated accepted human stop and is not a stop of every work item in the buddy.
 
-`agent:stopped-wiki-check` is legacy: the old wiki check failed. The pipeline no longer runs that check; docs are tracked Markdown reviewed with code, so it produces no new stops. The label and reason matcher remain so old stops still read.
+Readability returning does not replay a spent start. The runtime does not kill an in-flight credentialed push, rebase or Land to simulate cancellation; uncertain effects must be read back. Failed recording preserves local evidence and can retain ownership and resource claims.
 
-`review-rounds` is kept only so old labels and state still read; review rounds and `maxFixRounds` were removed. Any label starting with `agent:stopped-` counts as a stop, even with an unknown code. That isn't permission to resume.
+Evidence-only result, checkpoint and read-only reconciliation operations may settle original work after source loss or a stop only while current recording authorization and ownership permit it. Their trusted operation class cannot conceal a code, PR or target mutation.
 
-Rate limits and transient GitHub or network errors don't stop an issue. They defer it (`end: "deferred"`) without using up a fix attempt, and the caller backs off before retrying.
+## Status and historical labels
 
-## How a stop is recorded
+`agent:working`, `agent:needs-info`, `agent:split` and `agent:landed` describe historical or application status. `agent:merged` is an older landed label. None activates a current task, proves a successful effect or supplies a missing result.
 
-A complete stop saves the stopped state (with the stage to resume and all receipts) and clears the lease, rereads it, then removes `agent:working`, sets the stop label on the issue and PR, and closes live claims.
+Old `agent:stopped-CODE` labels and signed stop-recovery records remain evidence. Common historical codes include Security categories, `no-ci`, `not-doable`, `branch-changed`, `conflict`, `push-rejected`, `merge-refused` and `error`. Old `check-fixes`, `sync-limit`, `review-rounds`, `job` and `wiki-check` codes describe retired controls; they do not reinstate their counters or scheduler behavior.
 
-Before stopping, the job writes `runs/SLUG/issue-N/stop-recovery/UUID.json` (mode 0600), shared with the stop process:
+A historical stop can have a local `stop-recovery` record whose phase is `signed-stop-confirmed` or `reconciliation-required`. Preserve its confirmed and unresolved effects. A lost state, claim or label response may have applied. Missing labels are not proof of success, and these files grant no current continuation.
 
-- `signed-stop-confirmed`: every effect was confirmed.
-- `reconciliation-required`: login, a required update or the stop process failed. The record names the issue, branch, resume stage, intended code, the original and stop failures, and which effects are confirmed or unresolved. The job reports its path.
+## Recovery boundaries
 
-Failure text redacts configured tokens, then keeps at most 8,192 UTF-16 code units per field. A lost response stays unresolved; it may have landed. A missing label (HTTP 404) counts as removed. If a signal interrupts the stop, the job keeps this evidence and doesn't save its older working state over a stop that may have landed.
+To investigate a stop or hold:
 
-When GitHub or login fails, labels may still show `agent:working`, or only part of the stop. A missing stop label isn't evidence of success.
+1. Stop new dispatch for the affected issue.
+2. Read its accepted signals, authenticated attempts and results, checkpoints and current ownership.
+3. Preserve local commits, tracked and untracked changes, bundles, patches, conflict stages and unresolved-write records.
+4. Reconcile uncertain remote effects by reading the original operation's subject.
+5. Establish the supported authorization before any further substantive action.
 
-## Resume a stopped issue
+Do not clear a durable stop, erase a rejection, discard a checkout or release claims to make work look new. A new claim, expired lease or ended process grants nothing. Unsupported continuation remains unsupported; no command restarts an old saved stage.
 
-A new claim lifts a stop: it removes the stop labels and `agent:needs-info` from the issue and its PR, returns the issue to the stage that stopped and resets that issue's fix and sync counts. Lifting a stop supplies no missing authority. It doesn't fix checks, authorize a code push or re-run Security on a rejected revision; a saved Security rejection stops again without a model.
-
-To recover:
-
-1. Stop dispatching the issue.
-2. Read the stop comment, the saved state and any `stop-recovery` record.
-3. For `reconciliation-required`, check every unresolved effect against GitHub: saved state and its editor, lease, live claims, and issue and PR labels. Finish the stop's effects under the review/merge account. The local record is evidence, not authority.
-4. Keep remote commits, local recovery files and saved receipts. Pushed commits or passing checks never stand in for missing hardening.
-5. Fix the cause: through ordinary reviewed work for the change, or through config or credentials for an operator problem.
-6. Restart one job on the same issue, branch and lane, at the stage saved state names. Bound your own restarts; don't loop.
-
-For `merge-refused` after a confirmation deadline, follow [recover after a confirmation deadline](merge.md#recover-after-a-confirmation-deadline). For a Security stop, the code has already landed; remediate it with a separate issue or operator action.
+For a possible Land, preserve the original revision, pre-Land target, policy and own proof. Follow [Land reconciliation](merge.md#uncertain-effects), not another push, writer, suite or Security session. Already-landed code stays landed while evidence is reconciled.

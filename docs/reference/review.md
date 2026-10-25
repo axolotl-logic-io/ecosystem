@@ -1,62 +1,39 @@
-# Review
+# Harden, Integrate and Review Security
 
-This page describes how a change is checked: the Reviewer's hardening, deterministic verification, the review bundle and the Security review. The rules are in [delivery decisions](../decisions/delivery.md).
+These tasks establish different results. Harden improves a revision. Integrate checks it deterministically. Review Security independently evaluates the exact checked candidate. None is a workflow stage or a substitute for Land permission. See [buddies and tasks](../decisions/buddies-and-tasks.md) and [task results](task-results.md).
 
-## Hardening
+## Harden
 
-The `review` stage runs one writable Reviewer session in phase `hardening`. It reads the trusted issue requirements, optional Author Gherkin and the Developer's draft adversarially, adds regression and edge-case tests and fixes design and correctness defects. Docs in `docs/` are part of the change it hardens.
+Harden belongs to the Developer buddy. It starts a fresh `issue-pipeline-developer` session in phase `hardening`, without the Implement session's conversation. It works from the revision, trusted requirements and checks. It tries to break the change, adds regression and edge-case tests, and fixes design and correctness defects, including documentation.
 
-- It commits through `pipeline_commit` (see [sessions](sessions.md)). It never synchronizes with the base; the separate [Sync](sync.md) task does that, and review requests it first when the revision misses the target.
-- Its task names the actual `commands.test`, and its prompt tells it to run only targeted tests. The configured gate runs afterward, outside the session. Record its exact command and scope: the issue-pipeline repository's [fast default](check-gates.md) is not full integration coverage.
-- It must not weaken requirements, assertions, coverage, check commands, lint or types to get a pass. A genuinely wrong test may be corrected with evidence. An unresolved product question goes back for an answer.
-- If verification fails, check-fix sessions (also phase `hardening`) try again, up to `maxCiFixes` (default 2). After that the issue stops with `agent:stopped-check-fixes`.
+The session commits through [pipeline_commit](sessions.md#pipeline_commit). It never synchronizes the base; [Sync](sync.md) owns that. A revision missing the target waits for Sync before fresh Harden. The session must not weaken requirements, assertions, coverage, checking commands, lint or types to obtain a pass.
 
-When verification passes, the job pushes, saves the exact hardened revision (`state.hardened`: code head and trusted-input revision) and only then marks the draft PR ready. That checkpoint authorizes integration, not an unreviewed changed result. A restarted job with an exact matching checkpoint resumes without another writer.
+The action checkpoints and pushes its work through guarded operations. Its passed result identifies the exact attested code, trusted inputs, policy and target. Code produced by Harden is named in the receipt. A model's statement that checks passed is not deterministic verification proof; Integrate supplies that separate result.
 
-A timed-out hardening session is not completed hardening. Its uncommitted work is saved as recovery evidence (see [checkouts](checkouts.md)), and the next hardening session on the same issue and branch is told where to find it.
+A failed or interrupted session does not become completed Harden and grants no automatic check-fix loop. Retired `maxCiFixes` controls are not read. Preserve uncommitted work, local commits and checkpoints for authorized recovery rather than starting another session from a reset.
 
-## Deterministic verification
+## Integrate
 
-The `verify` op runs the repository's checks outside any model session, on an exact commit. A model's claim that checks passed is never evidence.
+Integrate belongs to the independent Gatekeeper. It uses the reader profile, starts no model, and requires a current Harden pass for R on exact T, with R already containing T. It cannot rebase, repair code, commit or publish a branch.
 
-- The configured commands: `setup` first (a failure stops the rest), then `test`, `lint` and `typecheck`. Each is bounded by `commandTimeoutMinutes` (default 20).
-- Each changed lockfile in `lockfiles` must regenerate to its committed contents.
-- A change matching `migrations.pathGlobs` runs the configured migration `setup`, `up` and `down`, then `up` again when `down` is set. The first failed step fails verification.
-- The job allows `verify` 120 minutes in total.
+The guarded `integrate-task` operation runs configured checks in a fresh detached checkout of R. Setup, test, lint, typecheck, lockfile and migration checks follow the effective policy. Each command remains bounded. The result records actual check outcomes; a model reply or successful output filter cannot replace exit status.
 
-Verify runs before the code lands, in the issue's checkout, and leaves it as it found it. The pipeline runs no checks after the Land: the merge stage only confirms, read-only, that this pre-Land proof binds exactly the landed result (see [merge](merge.md#after-the-land)). Code that landed without that proof is neither hardened nor verified afterward; it stops for read-only reconciliation.
+A check failure records failure. Tracked changes left by checks fail the run and retain their checkout and patch rather than publishing them. A changed revision, target, trusted-inputs hash or policy invalidates the result. A passed binding never reruns merely because a buddy restarts.
 
-When `requireCi` is true (the default), CI must pass on the exact authorized head, waiting up to `ciWaitMinutes` (default 30). A PR with no required checks stops with `agent:stopped-no-ci`.
+Record the exact gate and scope. This repository's [fast default](check-gates.md) excludes pipeline Node tests and is not full effect, recovery or authority acceptance. Typechecking a test does not execute it.
 
-## Review bundle
+## Review Security
 
-`prepare-review` writes `diff.patch` and `bundle.md` for a review. The bundle starts with the exact diff, then lists the changed files in bytewise path order with their full text at the reviewed head.
+Review Security belongs to the Gatekeeper, with an identity and account independent from Harden. It starts one fresh `issue-pipeline-reviewer` session in phase `security-review`, without commit authority or a GitHub token. Reader tool declarations do not prove an enforced filesystem or network sandbox.
 
-- Whole-file text is included while the bundle stays within 200,000 characters. The first file that would pass that, and every later file, is listed by path only, as are deleted and binary files.
-- A changed gitlink is shown as a pointer with its full SHA.
-- Identical commits and diff give identical bundle bytes.
+Security must inspect the exact hardened and integrated revision on the observed target. Its checkout head and tree must remain consistent with that binding before and after the session. A dirty or changed local tree cannot produce a pass for an unchanged remote commit. Code, trusted-input, target or policy changes require fresh bound prerequisites rather than copying clearance.
 
-After the Land, the diff is the merge commit's change against its first parent, with the checkout detached at the merge commit.
+The verdict covers four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`. It is not a second general design review. A finding records refusal before Land. A refused code and trusted-inputs subject remains fenced across target or policy changes; removing a label or restarting the buddy cannot reroll Security.
 
-## Security review
+Security clearance alone grants no Land permission. Land also requires current Harden and Integrate results, policy-required exact-head CI, explicit repository permission and the Gatekeeper's standing grant. See [Land and Complete](merge.md).
 
-The merge stage runs a fresh Reviewer session in phase `security-review` before requesting a new Land of code. It is read-only: no write tools, no commit authority and no token. It judges only four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`. It is not a second design or test-adequacy review.
+## Failure and recovery
 
-Security reads the exact hardened and checked candidate tree and its complete branch contribution against the observed target. A dirty checkout or a bundle prepared at another commit refuses review. The saved verdict binds the exact code and trusted-input revision, plus the configured target and its observed commit.
+To investigate a failure, read the authenticated task result and [action observations](runtime-runs.md), then preserve the associated checkout and recovery evidence. A failed result, unknown effect or unanswered product question needs its supported resolution; none silently starts another model session.
 
-- A finding saves its exact receipt and stops the issue before landing.
-- A code, trusted-input or target change during the session discards the verdict.
-- Any changed candidate, including a Sync's clean rebase or conflict resolution, needs fresh hardening, Integration and Security. A saved integration receipt is not an authorization exception.
-- A check that failed at merge, in read-only Integration or in CI, comes back with the work as "Sent back from merge". Hardening fixes it as a new revision; Hardening that changes nothing on a returned revision stops for a person.
-- Each hardened checkpoint is also a passed Hardening [task result](task-results.md) for the revision and target it checked, recorded by the landing account before the checkpoint is saved.
-- A saved rejection of the same revision stops again without a model. Lifting a stop cannot reroll it.
-- New own Lands get read-only result confirmation, never a post-Land suite or a duplicate model pass.
-
-Historical landed-result Security receipts remain history. They clear only the exact landed result they name, and never authorize a new Land. A landed run without exact pre-Land Security clearance stops for read-only reconciliation; Security is never acquired after the Land. Already landed code stays landed; a historical rejection does not roll it back.
-
-## Recover from a review stop
-
-1. Read the stop comment and the issue's saved state. The comment names the control and the reason.
-2. For `check-fixes`, read the failed check's log in the issue's run folder. Fix the cause in the change or in the repository's checks, through ordinary reviewed work; don't raise `maxCiFixes` to get a pass.
-3. For a timed-out hardening session, restart `review` on the same issue, branch and lane. The new session gets the saved recovery evidence and decides what to keep.
-4. For a Security stop, the candidate has not landed through this operation. Preserve its rejection and work for explicit reconciliation. Historical already-landed code may need a separate remediation issue or operator action. Lifting the label doesn't re-run Security on the same revision.
+A Security rejection applies to the candidate before Land. If historical code already landed without current proof, retain that fact and investigate through read-only reconciliation or separately authorized remediation. Do not run a post-Land suite or Security review to manufacture pre-Land permission.
