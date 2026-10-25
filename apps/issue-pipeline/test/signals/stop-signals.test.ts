@@ -1,33 +1,63 @@
 // The persistent stop latch through the real inbox: an accepted
 // agents:stop latches its issue across polls and label removal, makes
 // pending starts inert and refuses new starts, and stopLatch tells an
-// unaccepted human stop (unknown) from a machine's (clear).
+// unaccepted human stop (unknown) from a machine's (clear). stopLatchNow,
+// the synchronous guard, answers exactly as stopLatch does.
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { FakeEvent } from "./fake-github-world.ts";
 import {
+  type Harness,
   harness,
   labelledIssue,
+  mentions,
   REPO,
   taskAnswers,
 } from "./signal-test-kit.ts";
 
 const ISSUE = 12;
+const FIRST_EVENT = 7001;
+const SECOND_EVENT = 7002;
+const STOP_REMOVED = 7003;
+const START_REMOVED = 7004;
+const START_REAPPLIED = 7005;
+const FIRST_RECORD = 500;
+const SECOND_RECORD = 501;
+
+function labelEvent(
+  id: number,
+  event: "labeled" | "unlabeled",
+  label: string,
+  createdAt: string,
+): FakeEvent {
+  return { id, event, label, actor: "autumn", viaApp: false, createdAt };
+}
+
+// The latch of ISSUE, read by stopLatch and by stopLatchNow, which must
+// agree.
+function latches(kit: Harness): unknown[] {
+  return [kit.latch(ISSUE), kit.latchNow(ISSUE)];
+}
 
 test("an accepted stop latches the issue after its label is removed", () => {
   const kit = harness((world) => {
-    world.issues.push(labelledIssue(ISSUE, "agents:stop", "autumn", 7001));
+    world.issues.push(
+      labelledIssue(ISSUE, "agents:stop", "autumn", FIRST_EVENT),
+    );
     world.tasks.push(taskAnswers(ISSUE));
   });
-  assert.deepEqual(kit.latch(ISSUE), {
+  const pending = {
     state: "unknown",
-    reason: "agents:stop event 7001 by @autumn is not accepted yet",
-  });
+    reason: `agents:stop event ${FIRST_EVENT} by @autumn is not accepted yet`,
+  };
+  assert.deepEqual(latches(kit), [pending, pending]);
+  const stopId = `github-label:${REPO}#${ISSUE}:${FIRST_EVENT}`;
   const inbox = kit.poll();
   assert.deepEqual(inbox.holds, []);
   assert.deepEqual(inbox.signals, [
     {
       kind: "stop",
-      id: `github-label:${REPO}#${ISSUE}:7001`,
+      id: stopId,
       workItem: { repo: REPO, number: ISSUE },
       provenance: {
         route: "human",
@@ -35,52 +65,66 @@ test("an accepted stop latches the issue after its label is removed", () => {
         userId: 10,
         organization: "acme",
       },
-      recordId: 500,
+      recordId: FIRST_RECORD,
     },
   ]);
   kit.change((world) => {
-    const issue = world.issues[0];
+    const [issue] = world.issues;
     if (issue !== undefined) {
       issue.labels = [];
-      issue.events.push({
-        id: 7002,
-        event: "unlabeled",
-        label: "agents:stop",
-        actor: "autumn",
-        viaApp: false,
-        createdAt: "2026-10-25T11:00:00Z",
-      });
+      issue.events.push(
+        labelEvent(
+          SECOND_EVENT,
+          "unlabeled",
+          "agents:stop",
+          "2026-10-25T11:00:00Z",
+        ),
+      );
     }
   });
-  assert.deepEqual(kit.latch(ISSUE), {
+  const latched = {
     state: "latched",
-    reason: `accepted stop github-label:${REPO}#${ISSUE}:7001 (record 500)`,
-  });
+    reason: `accepted stop ${stopId} (record ${FIRST_RECORD})`,
+  };
+  assert.deepEqual(latches(kit), [latched, latched]);
   assert.deepEqual(
     kit.poll().signals.map((signal) => signal.kind),
     ["stop"],
+  );
+  assert.deepEqual(
+    kit.requalifyNow({
+      id: stopId,
+      recordId: FIRST_RECORD,
+      workItem: { repo: REPO, number: ISSUE },
+    }),
+    {
+      status: "qualified",
+      reason: "@autumn (user 10) is an active member of acme",
+    },
   );
 });
 
 test("a stop makes a pending start inert and refuses a new start", () => {
   const kit = harness((world) => {
-    world.issues.push(labelledIssue(ISSUE, "start:implement", "autumn", 7001));
+    world.issues.push(
+      labelledIssue(ISSUE, "start:implement", "autumn", FIRST_EVENT),
+    );
     world.tasks.push(taskAnswers(ISSUE));
   });
   const [start] = kit.poll().signals;
   assert.equal(start?.kind, "start");
   kit.change((world) => {
-    const issue = world.issues[0];
+    const [issue] = world.issues;
     if (issue !== undefined) {
       issue.labels.push("agents:stop");
-      issue.events.push({
-        id: 7002,
-        event: "labeled",
-        label: "agents:stop",
-        actor: "autumn",
-        viaApp: false,
-        createdAt: "2026-10-25T11:00:00Z",
-      });
+      issue.events.push(
+        labelEvent(
+          SECOND_EVENT,
+          "labeled",
+          "agents:stop",
+          "2026-10-25T11:00:00Z",
+        ),
+      );
     }
   });
   const stopped = kit.poll();
@@ -88,39 +132,42 @@ test("a stop makes a pending start inert and refuses a new start", () => {
     stopped.signals.map((signal) => signal.kind),
     ["stop"],
   );
-  assert.deepEqual(kit.requalify(start), {
+  const revoked = {
     status: "revoked",
-    reason: `#${ISSUE} is stopped by accepted stop github-label:${REPO}#${ISSUE}:7002 (record 501)`,
-  });
+    reason: `#${ISSUE} is stopped by accepted stop github-label:${REPO}#${ISSUE}:${SECOND_EVENT} (record ${SECOND_RECORD})`,
+  };
+  assert.deepEqual(kit.requalify(start), revoked);
+  assert.deepEqual(
+    kit.requalifyNow({
+      id: start?.id,
+      recordId: start?.recordId,
+      workItem: { repo: REPO, number: ISSUE },
+    }),
+    revoked,
+  );
   kit.change((world) => {
-    const issue = world.issues[0];
+    const [issue] = world.issues;
     if (issue !== undefined) {
       issue.labels = ["start:implement"];
       issue.events.push(
-        {
-          id: 7003,
-          event: "unlabeled",
-          label: "agents:stop",
-          actor: "autumn",
-          viaApp: false,
-          createdAt: "2026-10-25T12:00:00Z",
-        },
-        {
-          id: 7004,
-          event: "unlabeled",
-          label: "start:implement",
-          actor: "autumn",
-          viaApp: false,
-          createdAt: "2026-10-25T12:01:00Z",
-        },
-        {
-          id: 7005,
-          event: "labeled",
-          label: "start:implement",
-          actor: "autumn",
-          viaApp: false,
-          createdAt: "2026-10-25T12:02:00Z",
-        },
+        labelEvent(
+          STOP_REMOVED,
+          "unlabeled",
+          "agents:stop",
+          "2026-10-25T12:00:00Z",
+        ),
+        labelEvent(
+          START_REMOVED,
+          "unlabeled",
+          "start:implement",
+          "2026-10-25T12:01:00Z",
+        ),
+        labelEvent(
+          START_REAPPLIED,
+          "labeled",
+          "start:implement",
+          "2026-10-25T12:02:00Z",
+        ),
       );
     }
   });
@@ -131,46 +178,58 @@ test("a stop makes a pending start inert and refuses a new start", () => {
   );
   assert.match(
     restarted.holds[0]?.reason ?? "",
-    /start:implement event 7005 not accepted: #12 is stopped by accepted stop .*removing agents:stop does not continue work/u,
+    mentions(
+      `start:implement event ${START_REAPPLIED} not accepted: #${ISSUE} is stopped by accepted stop`,
+      "removing agents:stop does not continue work",
+    ),
   );
   assert.equal(kit.posts(), 2);
 });
 
 test("a machine's stop label is clear and grants nothing", () => {
   const kit = harness((world) => {
-    world.issues.push(labelledIssue(ISSUE, "agents:stop", "lawd-dev", 7001));
+    world.issues.push(
+      labelledIssue(ISSUE, "agents:stop", "lawd-dev", FIRST_EVENT),
+    );
   });
-  assert.deepEqual(kit.latch(ISSUE), {
+  const clear = {
     state: "clear",
-    reason:
-      "agents:stop event 7001 grants nothing: @lawd-dev is a configured pipeline account",
-  });
+    reason: `agents:stop event ${FIRST_EVENT} grants nothing: @lawd-dev is a configured pipeline account`,
+  };
+  assert.deepEqual(latches(kit), [clear, clear]);
   const inbox = kit.poll();
   assert.deepEqual(inbox.signals, []);
   assert.match(
     inbox.holds[0]?.reason ?? "",
-    /grants nothing: @lawd-dev is a configured pipeline account/u,
+    mentions("grants nothing: @lawd-dev is a configured pipeline account"),
   );
   assert.equal(kit.posts(), 0);
 });
 
 test("an issue with no stop is clear, and an unreadable one is unknown", () => {
   const kit = harness((world) => {
-    world.issues.push({ ...labelledIssue(ISSUE, "bug", "autumn", 7001) });
+    world.issues.push(labelledIssue(ISSUE, "bug", "autumn", FIRST_EVENT));
   });
-  assert.deepEqual(kit.latch(ISSUE), {
+  const clear = {
     state: "clear",
     reason: "no accepted stop and no agents:stop label",
-  });
-  kit.change((world) => {
-    world.faults.push({
-      path: `repos/${REPO}/issues/${ISSUE}/comments`,
-      page: null,
-      status: 502,
-      link: null,
+  };
+  assert.deepEqual(latches(kit), [clear, clear]);
+  // Whichever read fails, the latch is unknown, never clear: the comments
+  // holding accepted records, the issue's labels, or the events that
+  // explain a present agents:stop.
+  for (const [path, label] of [
+    [`repos/${REPO}/issues/${ISSUE}/comments`, "bug"],
+    [`repos/${REPO}/issues/${ISSUE}`, "bug"],
+    [`repos/${REPO}/issues/${ISSUE}/events`, "agents:stop"],
+  ] as const) {
+    const unreadable = harness((world) => {
+      world.issues.push(labelledIssue(ISSUE, label, "autumn", FIRST_EVENT));
+      world.faults.push({ path, page: null, status: 502, link: null });
     });
-  });
-  const latch = kit.latch(ISSUE);
-  assert.equal(latch.state, "unknown");
-  assert.match(latch.reason, /answered HTTP 502/u);
+    for (const latch of [unreadable.latch(ISSUE), unreadable.latchNow(ISSUE)]) {
+      assert.equal(latch.state, "unknown");
+      assert.match(latch.reason, mentions("answered HTTP 502"));
+    }
+  }
 });

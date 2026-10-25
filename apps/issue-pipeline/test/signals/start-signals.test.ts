@@ -9,6 +9,8 @@ import {
   harness,
   LANDING,
   labelledIssue,
+  mentions,
+  OTHER_COMMIT,
   OTHER_REQUIREMENTS,
   REPO,
   REQUIREMENTS,
@@ -19,6 +21,9 @@ import {
 const ISSUE = 7;
 const EVENT = 9001;
 const SIGNAL = `github-label:${REPO}#${ISSUE}:${EVENT}`;
+const RECORD = 500;
+// The user id of the account that takes over autumn's login.
+const NEW_HOLDER_ID = 77;
 
 function startWorld(): ReturnType<typeof harness> {
   return harness((world) => {
@@ -46,7 +51,7 @@ test("a member's start label is accepted once and delivered as a start", () => {
       userId: 10,
       organization: "acme",
     },
-    recordId: 500,
+    recordId: RECORD,
   });
   const [record] = records(kit.world(), ISSUE);
   assert.deepEqual(record, {
@@ -88,7 +93,7 @@ test("an accepted start survives its label's removal and requalifies", () => {
   const kit = startWorld();
   const [start] = kit.poll().signals;
   kit.change((world) => {
-    const issue = world.issues[0];
+    const [issue] = world.issues;
     if (issue !== undefined) {
       issue.labels = [];
       issue.events.push({
@@ -122,36 +127,38 @@ test("requalification follows the retained user id, not the label or login", () 
   assert.deepEqual(revoked.signals, []);
   assert.match(
     revoked.holds[0]?.reason ?? "",
-    /revoked: @autumn is not a member of acme/u,
+    mentions("revoked: @autumn is not a member of acme"),
   );
   kit.change((world) => {
     // autumn's login now belongs to another account, which is a member.
-    world.accounts = world.accounts.map((item) =>
-      item.login === "autumn" ? { ...item, login: "autumn-old" } : item,
-    );
-    world.accounts.push({ login: "autumn", id: 77, type: "User" });
+    for (const item of world.accounts) {
+      if (item.login === "autumn") {
+        item.login = "autumn-old";
+      }
+    }
+    world.accounts.push({ login: "autumn", id: NEW_HOLDER_ID, type: "User" });
     world.members.push({ login: "autumn", state: "active", role: "member" });
   });
   const verdict = kit.requalify(start);
   assert.equal(verdict.status, "revoked");
-  assert.match(verdict.reason, /autumn-old is not a member/u);
+  assert.match(verdict.reason, mentions("@autumn-old is not a member"));
 });
 
 test("an Implement attempt naming the start spends it, whatever its binding", () => {
   const kit = startWorld();
   const [start] = kit.poll().signals;
   kit.change((world) => {
-    const answers = world.tasks[0];
+    const [answers] = world.tasks;
     if (answers !== undefined) {
       answers.causes = [
         {
           binding: {
             workItem: { repo: REPO, number: ISSUE },
             task: "implement",
-            target: { branch: "elsewhere", commit: "b".repeat(40) },
+            target: { branch: "elsewhere", commit: OTHER_COMMIT },
             requirements: OTHER_REQUIREMENTS,
           },
-          cause: { signal: start?.id ?? "", recordId: 500 },
+          cause: { signal: start?.id ?? "", recordId: RECORD },
         },
       ];
     }
@@ -165,14 +172,14 @@ test("a start is inert once Implement attempted its requirements under another c
   const kit = startWorld();
   kit.poll();
   kit.change((world) => {
-    const answers = world.tasks[0];
+    const [answers] = world.tasks;
     if (answers !== undefined) {
       answers.causes = [
         {
           binding: {
             workItem: { repo: REPO, number: ISSUE },
             task: "implement",
-            target: { branch: "moved", commit: "c".repeat(40) },
+            target: { branch: "moved", commit: OTHER_COMMIT },
             requirements: REQUIREMENTS,
           },
           cause: { signal: "github-label:acme/widgets#7:1", recordId: 3 },
@@ -205,7 +212,10 @@ test("reapplying start to attempted requirements holds as an unsupported retry",
   assert.equal(inbox.holds.length, 1);
   assert.match(
     inbox.holds[0]?.reason ?? "",
-    /start:implement event 9001 not accepted: Implement already attempted these requirements .* retrying requirements Implement already attempted is unsupported/u,
+    mentions(
+      `start:implement event ${EVENT} not accepted: Implement already attempted these requirements`,
+      "retrying requirements Implement already attempted is unsupported",
+    ),
   );
   assert.equal(kit.posts(), 0);
 });
@@ -221,7 +231,7 @@ test("a previous Implement action for the exact binding holds a new start", () =
   assert.deepEqual(inbox.signals, []);
   assert.match(
     inbox.holds[0]?.reason ?? "",
-    /already ran for this binding; retrying/u,
+    mentions("already ran for this binding; retrying"),
   );
   assert.equal(kit.posts(), 0);
 });
@@ -236,7 +246,10 @@ test("an unreadable task view holds the start and marks the poll incomplete", ()
   const inbox = kit.poll();
   assert.deepEqual(inbox.signals, []);
   assert.equal(inbox.complete, false);
-  assert.match(inbox.holds[0]?.reason ?? "", /task records of #7 conflict/u);
+  assert.match(
+    inbox.holds[0]?.reason ?? "",
+    mentions("task records of #7 conflict"),
+  );
   assert.equal(kit.posts(), 0);
 });
 
@@ -257,7 +270,7 @@ test("machine results come from the task lane's authenticated results", () => {
   };
   kit.poll();
   kit.change((world) => {
-    const answers = world.tasks[0];
+    const [answers] = world.tasks;
     if (answers !== undefined) {
       answers.machine = [result];
     }
@@ -269,10 +282,64 @@ test("machine results come from the task lane's authenticated results", () => {
     reason: "result record 501 is current",
   });
   kit.change((world) => {
-    const answers = world.tasks[0];
+    const [answers] = world.tasks;
     if (answers !== undefined) {
       answers.machine = [];
     }
   });
   assert.equal(kit.requalify(result).status, "revoked");
+});
+
+test("the synchronous guard rereads the accepted record, not the payload", () => {
+  const kit = startWorld();
+  const [start] = kit.poll().signals;
+  const source = {
+    id: SIGNAL,
+    recordId: RECORD,
+    workItem: { repo: REPO, number: ISSUE },
+  };
+  const qualified = {
+    status: "qualified",
+    reason: "@autumn (user 10) is an active member of acme",
+  };
+  assert.deepEqual(kit.requalifyNow(source), qualified);
+  assert.deepEqual(kit.requalify(start), qualified);
+  // A caller's copy claiming another producer is not what was accepted.
+  const forged = {
+    ...start,
+    provenance: {
+      route: "human",
+      login: "pending-pat",
+      userId: 13,
+      organization: "acme",
+    },
+  };
+  assert.equal(kit.requalify(forged).status, "unknown");
+  for (const wrong of [
+    { ...source, id: `github-label:${REPO}#${ISSUE}:1` },
+    { ...source, recordId: RECORD + 1 },
+  ]) {
+    assert.equal(kit.requalifyNow(wrong).status, "unknown");
+  }
+  assert.equal(
+    kit.requalifyNow({
+      ...source,
+      workItem: { repo: "acme/other", number: ISSUE },
+    }).status,
+    "revoked",
+  );
+  kit.change((world) => {
+    world.members = world.members.filter((item) => item.login !== "autumn");
+  });
+  assert.equal(kit.requalifyNow(source).status, "revoked");
+  kit.change((world) => {
+    world.faults.push({
+      path: "orgs/acme/memberships/autumn",
+      page: null,
+      status: 500,
+      link: null,
+    });
+  });
+  assert.equal(kit.requalifyNow(source).status, "unknown");
+  assert.equal(kit.posts(), 1);
 });

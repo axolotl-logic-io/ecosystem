@@ -10,12 +10,17 @@ import {
   LANDING,
   labelledIssue,
   MARK,
+  mentions,
   REPO,
   taskAnswers,
 } from "./signal-test-kit.ts";
 
 const ISSUE = 21;
 const EVENT = 8001;
+const RECORD = 500;
+// Enough unrelated comments and events to span three pages of two.
+const CHATTER = 5;
+const CHATTER_COMMENTS = 100;
 
 function startWorld(): ReturnType<typeof harness> {
   return harness((world) => {
@@ -28,9 +33,9 @@ test("every page of every listing is read through its Link header", () => {
   const kit = harness((world) => {
     world.pageSize = 2;
     const issue = labelledIssue(ISSUE, "start:implement", "autumn", EVENT);
-    for (let at = 0; at < 5; at += 1) {
+    for (let at = 0; at < CHATTER; at += 1) {
       issue.comments.push({
-        id: 100 + at,
+        id: CHATTER_COMMENTS + at,
         author: "mallory",
         body: `chatter ${at}`,
         editor: null,
@@ -90,11 +95,14 @@ test("a failed later page holds the listing instead of reading it as shorter", (
   assert.equal(general.length, 2);
   assert.match(
     general[0]?.reason ?? "",
-    /open issues labelled start:implement unreadable: .*page=2 answered HTTP 502/u,
+    mentions(
+      "open issues labelled start:implement unreadable: ",
+      "page=2 answered HTTP 502",
+    ),
   );
   assert.match(
     general[1]?.reason ?? "",
-    /accepted-signal discovery unreadable: .*answered HTTP 403/u,
+    mentions("accepted-signal discovery unreadable: ", "answered HTTP 403"),
   );
 });
 
@@ -117,7 +125,10 @@ test("a Link header that contradicts its page holds the listing", () => {
     const inbox = kit.poll();
     assert.deepEqual(inbox.signals, []);
     assert.equal(inbox.complete, false);
-    assert.match(inbox.holds[0]?.reason ?? "", /contradictory Link header/u);
+    assert.match(
+      inbox.holds[0]?.reason ?? "",
+      mentions("contradictory Link header"),
+    );
     assert.equal(kit.posts(), 0);
   }
 });
@@ -125,7 +136,7 @@ test("a Link header that contradicts its page holds the listing", () => {
 test("a present label its latest event doesn't explain holds", () => {
   const kit = startWorld();
   kit.change((world) => {
-    const issue = world.issues[0];
+    const [issue] = world.issues;
     issue?.events.push({
       id: EVENT + 1,
       event: "unlabeled",
@@ -169,7 +180,10 @@ test("an unconfirmed append is journaled, held and never posted again", () => {
   assert.equal(first.complete, false);
   assert.match(
     first.holds[0]?.reason ?? "",
-    /uncertain accept-signal; preserve .*coordination-uncertain.json and reconcile without retrying/u,
+    mentions(
+      "uncertain accept-signal; preserve ",
+      "coordination-uncertain.json and reconcile without retrying",
+    ),
   );
   assert.deepEqual(kit.journal(ISSUE), ["coordination-uncertain.json"]);
   kit.change((world) => {
@@ -179,22 +193,27 @@ test("an unconfirmed append is journaled, held and never posted again", () => {
   assert.deepEqual(second.signals, []);
   assert.match(
     second.holds[0]?.reason ?? "",
-    /accepted signals held: uncertain coordination write retained/u,
+    mentions("accepted signals held: uncertain coordination write retained"),
   );
   assert.equal(kit.posts(), 1);
   const latch = kit.latch(ISSUE);
   assert.equal(latch.state, "unknown");
 });
 
-test("records by anyone but the landing account, or edited, hold", () => {
+test("records by anyone but the landing account, or edited, hold and never clear the latch", () => {
   const kit = startWorld();
   kit.poll();
   const body = kit.world().issues[0]?.comments[0]?.body ?? "";
-  for (const forged of [
-    { author: "mallory", editor: null },
-    { author: LANDING, editor: "mallory" },
-    { author: LANDING, editor: LANDING },
-  ]) {
+  const untrusted =
+    "signal record provenance unverifiable: comment 600 has untrusted author/editor provenance";
+  for (const [forged, why] of [
+    [
+      { author: "mallory", editor: null },
+      "comment 600 by @mallory claims to be a signal record",
+    ],
+    [{ author: LANDING, editor: "mallory" }, untrusted],
+    [{ author: LANDING, editor: LANDING }, "signal record 600 was edited"],
+  ] as const) {
     const copy = harness((world) => {
       const issue = labelledIssue(ISSUE, "bug", "autumn", EVENT);
       issue.comments.push({
@@ -209,8 +228,9 @@ test("records by anyone but the landing account, or edited, hold", () => {
     const inbox = copy.poll();
     assert.deepEqual(inbox.signals, []);
     assert.equal(inbox.holds.length, 1);
-    assert.match(inbox.holds[0]?.reason ?? "", /signal record|provenance/u);
-    assert.notEqual(copy.latch(ISSUE).state, "clear");
+    assert.match(inbox.holds[0]?.reason ?? "", mentions(why));
+    assert.equal(copy.latch(ISSUE).state, "unknown");
+    assert.equal(copy.latchNow(ISSUE).state, "unknown");
   }
 });
 
@@ -234,7 +254,7 @@ test("identical duplicate records merge and conflicting ones hold", () => {
   assert.deepEqual(merged.holds, []);
   assert.deepEqual(
     merged.signals.map((signal) => signal.recordId),
-    [500],
+    [RECORD],
   );
   kit.change((world) => {
     world.issues[0]?.comments.push({
@@ -249,7 +269,7 @@ test("identical duplicate records merge and conflicting ones hold", () => {
   assert.deepEqual(conflicting.signals, []);
   assert.match(
     conflicting.holds[0]?.reason ?? "",
-    /signal records 500 and 602 conflict/u,
+    mentions(`signal records ${RECORD} and 602 conflict`),
   );
   assert.ok(body.startsWith(MARK));
 });
