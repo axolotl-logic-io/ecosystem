@@ -9,7 +9,7 @@
 // still released by checkout removal (lane-slots.ts), never by this.
 
 import type { Config } from "../config.ts";
-import { assertReconciled } from "../execution.ts";
+import { assertReconciled } from "../coordination-journal.ts";
 import { registeredConsumers } from "../lane-slots.ts";
 import { assertStopRecoveryResolved } from "../stop-recovery.ts";
 import type { OpsReply, RunOp } from "./ops-request.ts";

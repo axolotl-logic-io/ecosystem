@@ -126,6 +126,11 @@ async function refusedMerge(
         state,
         `Land's task results don't hold: ${String(reply.detail)}; the next merge job reads the chain afresh`,
       );
+    case "integration-turn":
+      return waiting(
+        state,
+        `the Land waits for the target: ${String(reply.detail)}`,
+      );
     case "draft": {
       // An interrupted job left the PR a draft; the saved state is the
       // authorization ready-pr checks.

@@ -18,6 +18,8 @@ const COORDINATION_REF = "git/ref/heads/pipeline-coordination/";
 const POSTED = /^issues\/(?<issue>\d+)\/comments$/u;
 const LISTED = /^issues\/(?<issue>\d+)\/comments\?per_page=100$/u;
 const QUIET = "1";
+// A write in flight or retained: its journal (src/coordination-journal.ts).
+const JOURNAL = /^coordination-(?:inflight|uncertain)[-.]/u;
 
 /** @param {readonly string[]} args @returns {string[]} */
 function batchIds(args) {
@@ -63,13 +65,13 @@ function journalOpen(env, n) {
   if (root === "" || !fs.existsSync(runs)) {
     return false;
   }
-  return fs
-    .readdirSync(runs)
-    .some((slug) =>
-      fs.existsSync(
-        path.join(runs, slug, `issue-${n}`, "coordination-uncertain.json"),
-      ),
+  return fs.readdirSync(runs).some((slug) => {
+    const dir = path.join(runs, slug, `issue-${n}`);
+    return (
+      fs.existsSync(dir) &&
+      fs.readdirSync(dir).some((name) => JOURNAL.test(name))
     );
+  });
 }
 
 /** @returns {any} */

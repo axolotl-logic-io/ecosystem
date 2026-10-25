@@ -7,6 +7,11 @@ import path from "node:path";
 import process from "node:process";
 import { batchAnswer, batchIds } from "./fake-graphql-batch.mjs";
 import { api } from "./fake-pipeline-flow-gh-api.mjs";
+import {
+  hasGates,
+  holdAtGate,
+  takeGate,
+} from "./fake-pipeline-flow-gh-gates.mjs";
 import { observeNativeMerges } from "./fake-pipeline-flow-gh-native.mjs";
 import { pr } from "./fake-pipeline-flow-gh-prs.mjs";
 import { standardsRead } from "./fake-pipeline-flow-gh-standards.mjs";
@@ -181,13 +186,24 @@ function runFlowGh(dir) {
     path.join(dir, "accounts.jsonl"),
     `${JSON.stringify({ identity, login, args })}\n`,
   );
+  /** @type {import("./fake-pipeline-flow-gh-gates.mjs").Gate | null} */
+  let early = null;
+  if (hasGates(dir)) {
+    early = withWorld(dir, () => takeGate(dir, args, true));
+  }
+  holdAtGate(dir, early);
   /** @type {Answer} */
-  let reply = {};
+  let reply = { code: 1, stderr: "HTTP 502: Bad Gateway\n" };
+  /** @type {import("./fake-pipeline-flow-gh-gates.mjs").Gate | null} */
+  let gate = null;
   try {
-    reply = withWorld(dir, (world) => {
-      observeNativeMerges(world);
-      return answer(world, args);
-    });
+    if (early?.drop !== true) {
+      reply = withWorld(dir, (world) => {
+        observeNativeMerges(world);
+        gate = takeGate(dir, args, false);
+        return answer(world, args);
+      });
+    }
   } catch (error) {
     const message = String(error);
     if (message.includes(UNSUPPORTED)) {
@@ -195,6 +211,7 @@ function runFlowGh(dir) {
     }
     reply = { code: 1, stderr: `${message}\n` };
   }
+  holdAtGate(dir, gate);
   process.stdout.write(reply.stdout ?? "");
   process.stderr.write(reply.stderr ?? "");
   process.exitCode = reply.code ?? 0;

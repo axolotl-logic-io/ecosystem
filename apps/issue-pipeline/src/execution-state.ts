@@ -6,12 +6,8 @@ import { isStateBody } from "./comment-marks.ts";
 import type { IssueComment } from "./comments.ts";
 import { listComments } from "./comments.ts";
 import type { Config } from "./config.ts";
-import {
-  assertExecution,
-  assertReconciled,
-  confirmedWrite,
-  issueExecution,
-} from "./execution.ts";
+import { assertReconciled, confirmedWrite } from "./coordination-journal.ts";
+import { assertExecution, issueExecution } from "./execution.ts";
 import {
   assertExecutionHistory,
   currentExecutionReceipt,

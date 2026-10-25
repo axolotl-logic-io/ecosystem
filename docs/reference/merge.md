@@ -43,7 +43,7 @@ Merge order keeps slow issues from losing races repeatedly.
 - Without a queue, the merge stage applies no order. The `merge` op also accepts `mergeOrder: true`, under which an older PR at the `merge` stage whose lease hasn't expired holds the slot; the merge stage doesn't set it today.
 - A held issue gets `{"merged": false, "reason": "queued", "waitingFor": N, "waitingForPr": PR}` and the job ends with `wait`.
 
-The queue orders configured target mutations, not candidate-local integration, checks or read-only Security. It is not permission to run merges concurrently. The caller still runs one merge turn at a time.
+The queue orders configured target mutations, not candidate-local integration, checks or read-only Security. It is not permission to run merges concurrently. Each exact Land also takes the [target's integration turn](#the-targets-integration-turn), so two Lands never write one target at once; the queue still decides who goes first.
 
 ## The merge call
 
@@ -126,5 +126,29 @@ A passed Integration is R's premerge check proof: the merge stage saves `verifie
 Every merge request names a Land binding and a new run. Land then needs passed Hardening, Integration and Security results for exactly that revision and target, on top of every installed check. `verifiedSha`, a legacy `state.integration` receipt, or a result for another target never stands in. The Land attempt is recorded before the first PR write. Only a confirmed own merge of exactly R settles it as `passed`; anything else leaves it unsettled, which holds every Sync and Integration until a read establishes the delivery.
 
 `confirm-merged` with the same binding also consumes that exact Land result: Completion confirms the delivered commit, and runs no suite. A read-only recovery of an interrupted Land passes its binding to `reconcile-merge`, which settles that Land from the receipt it reads.
+
+### The target's integration turn
+
+[#171](https://github.com/axolotl-logic-io/ecosystem/issues/171) added a reservation of the target's writes. The integration turn is the repository-and-base scope of the coordination protocol, the same create-only epoch refs and authenticated records that issue execution uses (`src/ops/land-turn.ts`, `src/execution.ts` `integrationTurn`). Every exact Land runs under it:
+
+```
+merge op, Land binding ─► existing refusals (queue, head, Security, task results)
+  ─► retire this issue's earlier requests, if its Land is settled
+  ─► request the turn ─► acquire? ──no──► cancel the request, reply integration-turn (merge ends wait)
+                             │
+                            yes ─► reread the target ─► moved? release, reply target-changed
+                                     └─► Land attempt ─► approval ─► push ─► settle
+                                           └─► release once no Land attempt is unsettled
+```
+
+- **One Land writes a target at a time.** A Land that doesn't get the turn writes nothing else: no attempt, approval or push. It replies `{"merged": false, "reason": "integration-turn", "detail": …}`, where the detail names the issue holding the turn and every request ahead of this one, and the merge stage ends `wait`. It cancels its request, so a waiting Land never blocks the target; the caller's merge queue keeps the order across retries.
+- **The turn lives on GitHub.** Its owner, requests and order are read afresh from the coordination records and refs on every step. Deleting run folders changes nothing.
+- **Issue execution is still required.** Every read and write of the turn first asserts the issue's confirmed execution. The turn and the merge queue add restrictions and grant nothing.
+- **The turn is released when its consumer is done** (`capacity-by-resource`). That's when the issue has no unsettled Land attempt: the Land passed, or it never recorded an attempt. While a Land attempt is unsettled, the turn stays held, and every other Land on the target waits.
+- **A dead Land's turn waits for its own issue.** When a Land process dies holding the turn, the next Land of the same issue, under its own confirmed execution, reads whether that issue's Land is settled. If it is, it retires the earlier invocation's request: a release when that request owned the confirmed turn, a cancel otherwise, with `{"retiredBy": INSTANCE}` as evidence. A replay or `reconcile-merge` that settles the Land does the same. A request that reserved the turn but never confirmed it holds for a person.
+- **A lost turn write holds.** Its intent stays in the issue's `coordination-uncertain.json`, so the issue holds, and the turn with it, until a person reconciles. Nothing sends it again.
+- **A late write of a retired invocation is refused.** It no longer owns its issue's execution, so it can't release or change the turn.
+
+The turn excludes only Lands that use it. Anyone with access to the repository can still push to the target or merge by hand at any time; outside accounts aren't excluded atomically. A Land's exact-target checks still refuse a target that moved.
 
 A merge made before #186 has no Land result. Its completion and recovery confirm without a binding, under the same premerge proof as before.

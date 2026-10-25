@@ -1,8 +1,6 @@
 // GitHub transport and recovery journal for both coordination scopes, and the
 // mutation hook that fences a bound job's or ops request's credentialed
 // writes with it (controlledMutation). It is not a scheduler.
-import fs from "node:fs";
-import path from "node:path";
 import { z } from "zod";
 import type { IssueComment } from "./comments.ts";
 import { listComments, listRepoComments, rawComment } from "./comments.ts";
@@ -14,6 +12,11 @@ import type {
   InvocationBinding,
 } from "./coordination.ts";
 import { coordination } from "./coordination.ts";
+import {
+  assertReconciled,
+  confirmedWrite,
+  writing,
+} from "./coordination-journal.ts";
 import { INVOCATION_BINDING, scopeOf } from "./coordination-records.ts";
 import { gh, ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
@@ -25,67 +28,6 @@ const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
 const REF = z.object({ object: z.object({ sha: SHA }) });
 const COMMIT = z.object({ sha: SHA, tree: z.object({ sha: SHA }) });
 const NOT_FOUND = /HTTP 404/u;
-const activeWrites = new Set<string>();
-
-function journalPath(cfg: Config, issue: number): string {
-  return path.join(paths.runDir(cfg, issue), "coordination-uncertain.json");
-}
-function assertReconciled(cfg: Config, issue: number): void {
-  if (
-    !activeWrites.has(journalPath(cfg, issue)) &&
-    fs.existsSync(journalPath(cfg, issue))
-  ) {
-    throw new OpsError(
-      `uncertain coordination write retained at ${journalPath(cfg, issue)}; explicit reconciliation required`,
-    );
-  }
-}
-// Exactly one write attempt, including across subprocesses/restarts. A lost
-// response is acceptable only when a fresh read proves the exact outcome. A
-// write the target definitely refused changed nothing, so it clears too.
-function confirmedWrite(
-  cfg: Config,
-  issue: number,
-  operation: string,
-  attempt: {
-    write: () => void;
-    confirmed: () => boolean;
-    refused?: () => boolean;
-    evidence?: Evidence;
-  },
-): void {
-  const { write, confirmed } = attempt;
-  assertReconciled(cfg, issue);
-  const file = journalPath(cfg, issue);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(
-    file,
-    JSON.stringify({
-      version: 1,
-      operation,
-      evidence: attempt.evidence,
-      instance: cfg.execution?.instance,
-      at: new Date().toISOString(),
-    }),
-    { flag: "wx" },
-  );
-  activeWrites.add(file);
-  try {
-    try {
-      write();
-    } catch {
-      // Read-back, not a successful transport response, establishes authority.
-    }
-    if (!(confirmed() || attempt.refused?.() === true)) {
-      throw new OpsError(
-        `uncertain ${operation}; preserve ${file} and reconcile without retrying`,
-      );
-    }
-    fs.unlinkSync(file);
-  } finally {
-    activeWrites.delete(file);
-  }
-}
 function readRef(cfg: Config, ref: string): string | null {
   const result = gh(cfg, "merge", ["api", `repos/${cfg.repo}/git/ref/${ref}`], {
     allowFail: true,
@@ -247,7 +189,7 @@ function controlledMutation(
     return write();
   }
   guardExecution(cfg, execution.issue);
-  if (!intent.journal || activeWrites.has(journalPath(cfg, execution.issue))) {
+  if (!intent.journal || writing(cfg, execution.issue)) {
     return write();
   }
   let result: RunResult | undefined;
@@ -282,8 +224,6 @@ function withExecution(
 
 export {
   assertExecution,
-  assertReconciled,
-  confirmedWrite,
   executionBinding,
   guardExecution,
   integrationTurn,

@@ -84,16 +84,10 @@ import { jobArgsOf } from "./job/args.ts";
 import { branchRefusalOf } from "./job/branch.ts";
 import { openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
-import type { Control } from "./job/control.ts";
 import { openControl, socketPathOf } from "./job/control.ts";
 import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
-import type { SettlingJob } from "./job/invocation.ts";
-import {
-  ownedInvocation,
-  ownerCheckOf,
-  settleInvocation,
-} from "./job/invocation.ts";
+import { ownedInvocation, ownerCheckOf } from "./job/invocation.ts";
 import { opsFrameOf, opsRunnerOf } from "./job/ops-request.ts";
 import type { StagePrompts } from "./job/prompts.ts";
 import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
@@ -101,12 +95,12 @@ import { checkpointLedger } from "./job/release-predicate.ts";
 import { runRoleStage } from "./job/role-run.ts";
 import { boundaryOf } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
-import type { JobOutcome, StopSignal } from "./job/status.ts";
+import { settle } from "./job/settle.ts";
+import type { StopSignal } from "./job/status.ts";
 import { openStatus, readStatus } from "./job/status.ts";
 import { requestRefusalOf } from "./job/task-request.ts";
 import type { RunEnd } from "./job/teardown.ts";
 import { jobKeyOf } from "./job/teardown.ts";
-import { isTransientSessionError } from "./job/transient.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { IssueState } from "./state.ts";
 
@@ -207,53 +201,10 @@ async function runStage(
       claimed = last;
     },
   });
-  return await settle(cfg, ending, { ...exiting, invocation, ledger, control });
-}
-
-// Waits for the run's end and records it in job.json, then, whatever
-// happened, tears the job down, relinquishes only through the release
-// predicate (invocation.ts) and closes its control socket.
-async function settle(
-  cfg: Config,
-  ending: Promise<RunEnd>,
-  job: SettlingJob & { control: Control },
-): Promise<RunEnd> {
-  const { status, control } = job;
-  let end: RunEnd | null = null;
-  try {
-    end = await ending;
-    status.finish(outcomeOf(end));
-    return end;
-  } catch (error: unknown) {
-    status.finish({ kind: "failed", error: messageOf(error) });
-    throw error;
-  } finally {
-    try {
-      await settleInvocation(cfg, job, end, (line: string): void => {
-        process.stderr.write(line);
-      });
-    } finally {
-      control.close();
-    }
-  }
-}
-
-// job.json's outcome of a run that ended as `end`: a finished run's end,
-// whether it deferred on a model provider's rate limit or transport error
-// (for the orchestrator's backoff), and its claim's error, if any.
-function outcomeOf(end: RunEnd): JobOutcome {
-  if (end.kind === "stopped") {
-    return { kind: "stopped", signal: end.signal };
-  }
-  const { summary } = end;
-  const rateLimited =
-    summary.end === "deferred" &&
-    isTransientSessionError(summary.reason ?? null);
-  if (summary.claimError === undefined) {
-    return { kind: "finished", end: summary.end, rateLimited };
-  }
-  const { claimError } = summary;
-  return { kind: "finished", end: summary.end, rateLimited, claimError };
+  const settling = { ...exiting, invocation, ledger, control };
+  return await settle(cfg, ending, settling, (line: string): void => {
+    process.stderr.write(line);
+  });
 }
 
 async function steer(args: SteerArgs, cfg: Config): Promise<void> {

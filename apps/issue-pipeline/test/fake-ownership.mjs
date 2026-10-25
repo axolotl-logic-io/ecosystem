@@ -258,7 +258,7 @@ function bindOpsRequest({ config, root, request: sent }) {
  * ownership check, or just after its first write (fake-ownership-takeover),
  * through the gh first on PATH in `lose.bin`, and the owner, no longer one,
  * releases nothing.
- * @param {{ config: string, env: NodeJS.ProcessEnv, request: object, store?: string, lose?: { bin: string, afterWrite: boolean } | undefined }} where
+ * @param {{ config: string, env: NodeJS.ProcessEnv, request: object, store?: string, lose?: { bin: string, afterWrite: boolean | number } | undefined }} where
  * @param {(request: object) => T} send
  * @returns {T}
  */

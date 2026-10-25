@@ -20,6 +20,8 @@ import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { BINDING, RUN_ID } from "../task-result-records.ts";
 import { assertFastForward, branchMerge } from "./branch-merge.ts";
 import { landRefusal, settleLand, startLand } from "./land-task.ts";
+import type { TurnHeld } from "./land-turn.ts";
+import { retireSettledTurn, underTurn } from "./land-turn.ts";
 import { beginMerge, saveMergeResponse } from "./merge-attempt.ts";
 import { mergedText } from "./merge-comment.ts";
 import type { MergeStale } from "./merge-guard.ts";
@@ -30,7 +32,7 @@ import type { ConfirmationClock } from "./merge-recovery.ts";
 import { diagnostic, reconcileMerge } from "./merge-recovery.ts";
 import { approvePr } from "./pr-approval.ts";
 import type { PrView } from "./pr-merge.ts";
-import { viewForMerge } from "./pr-merge.ts";
+import { mergeCommitOf, viewForMerge } from "./pr-merge.ts";
 
 const MERGE_REQUEST = z.looseObject({
   expectedSha: FULL_SHA,
@@ -65,19 +67,8 @@ type MergeReply =
   // Reviewer's hardening authorized it.
   | { merged: false; reason: "draft" }
   | MergeStale
-  | Queued;
-
-// The merge commit GitHub reports for a merged PR; a merged PR without one
-// is an error, never an empty receipt.
-function mergeCommitOf(pr: number, view: PrView): string {
-  const oid = view.mergeCommit?.oid ?? "";
-  if (oid === "") {
-    throw new OpsError(
-      `PR #${pr} is MERGED but GitHub reports no merge commit`,
-    );
-  }
-  return oid;
-}
+  | Queued
+  | TurnHeld;
 
 // The PR view, once the request and PR are consistent: the revision is the
 // state's authorized one, the expected head is its code, and the PR is from
@@ -186,6 +177,7 @@ function merge(
     const replay = reconcileMerge(cfg, { number: req.number }, clock);
     if (req.binding !== undefined) {
       settleLand(cfg, req.number, req.binding, replay);
+      retireSettledTurn(cfg, req.number);
     }
     return replay;
   }
@@ -239,18 +231,22 @@ function merge(
     req.expectedSha,
   );
   assertGitPushDestination(cfg, paths.worktree(cfg, req.number));
-  if (req.binding !== undefined) {
-    if (req.landRun === undefined) {
-      throw new OpsError("a Land binding needs its run");
-    }
-    startLand(cfg, req.number, req.binding, req.landRun);
+  const { binding, landRun } = req;
+  if (binding === undefined) {
+    approvePr(cfg, pr, req.expectedSha);
+    return attemptedMerge(cfg, req, checked.base, clock);
   }
-  approvePr(cfg, pr, req.expectedSha);
-  const receipt = attemptedMerge(cfg, req, checked.base, clock);
-  if (req.binding !== undefined) {
-    settleLand(cfg, req.number, req.binding, receipt);
+  if (landRun === undefined) {
+    throw new OpsError("a Land binding needs its run");
   }
-  return receipt;
+  // Exact Land writes the target only under its integration turn (#171).
+  return underTurn(cfg, req, (): MergeReply => {
+    startLand(cfg, req.number, binding, landRun);
+    approvePr(cfg, pr, req.expectedSha);
+    const receipt = attemptedMerge(cfg, req, checked.base, clock);
+    settleLand(cfg, req.number, binding, receipt);
+    return receipt;
+  });
 }
 
 // After entering the mutation boundary, errors must be a durable refusal,
@@ -292,27 +288,5 @@ function attemptedMerge(
   }
 }
 
-const RECONCILE_REQUEST = z.looseObject({
-  number: z.number().int(),
-  binding: BINDING.optional(),
-});
-
-// reconcile-merge (merge-recovery.ts), which with a Land binding also
-// settles that Land from the read-only receipt, as a merge replay does: a
-// confirmed own merge of exactly R is its pass; anything else leaves it
-// unsettled.
-function reconcileLand(
-  cfg: Config,
-  request: unknown,
-  clock?: ConfirmationClock,
-): MergeReply {
-  const req = parseRequest(RECONCILE_REQUEST, "reconcile-merge", request);
-  const reply = reconcileMerge(cfg, request, clock);
-  if (req.binding !== undefined) {
-    settleLand(cfg, req.number, req.binding, reply);
-  }
-  return reply;
-}
-
 export type { MergeReply };
-export { merge, reconcileLand };
+export { merge };

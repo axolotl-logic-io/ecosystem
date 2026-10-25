@@ -77,15 +77,15 @@ const REPLY = z.looseObject({
 
 // The flows whose next ops request loses its issue to a successor, and
 // whether only after its first write (loseNextOwnership).
-/** @type {Map<import("./pipeline-flow-test-kit.mjs").Flow, boolean>} */
+/** @type {Map<import("./pipeline-flow-test-kit.mjs").Flow, boolean | number>} */
 const losing = new Map();
 
 /**
  * Makes `flow`'s next ops request lose its issue to a successor just after
- * its ownership check, or with `afterWrite` just after its first write, so
- * just before its next one (#169).
+ * its ownership check, or with `afterWrite` just after its first write (or
+ * that many writes), so just before its next one (#169).
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
- * @param {{ afterWrite?: boolean }} [when]
+ * @param {{ afterWrite?: boolean | number }} [when]
  * @returns {void}
  */
 function loseNextOwnership(flow, { afterWrite = false } = {}) {

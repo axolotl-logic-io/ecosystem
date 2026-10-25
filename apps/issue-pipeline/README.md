@@ -1,6 +1,6 @@
 # Issue pipeline
 
-The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, integration turns, stops and restarts. The executor never selects another issue. The [pipeline reference](../../docs/README.md) describes the design and operations.
+The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, stops and restarts; each exact Land takes the target's integration turn itself. The executor never selects another issue. The [pipeline reference](../../docs/README.md) describes the design and operations.
 
 A merge changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
 
@@ -32,12 +32,14 @@ owner ─► open checkout ─► ops (each request carries the binding) ─► 
 - Saved state without an execution receipt linked to a released predecessor never grants ownership (`additive-record-versions`). It needs explicit reconciliation.
 - Before each session starts, and on each push request, the job rereads ownership; a lost owner starts nothing and pushes nothing. Steer and push requests on the control socket must name the job's binding (`--steer` reads it from job.json), and an ops claim that names a job checkout without a binding is refused (#168).
 - Every credentialed write, in the job and in its ops children, rereads ownership just before it runs and journals its exact intent first (#169). A write whose reply is lost keeps that journal; a write whose own operation reconciles it by reading (a push record, a Land or Sync attempt, a task record, saved state, the PR a branch names) skips the journal but not the read. An ops request with no binding can read but not write. [The fencing audit](../../docs/reference/execution-fencing-audit.md) lists every write and its test.
-- A lost or failed coordination response may still have landed. The transport keeps the exact intent in the run folder's `coordination-uncertain.json`; only an exact read-back clears it. Preserve that file.
+- A lost or failed coordination response may still have landed. Each write in flight journals its exact intent in `coordination-inflight-PID.json` (`src/coordination-journal.ts`); an unknown outcome keeps it as `coordination-uncertain.json`, and only an exact read-back clears it. Preserve that file. Another live job's write in flight holds nothing, so two jobs writing at once don't hold each other (#133).
 
 - Teardown rereads ownership before it touches the checkout. A job that lost the issue, or can't tell, saves, resets, pushes and removes nothing, and leaves its checkout for reconciliation (#170).
 - The `cleanup` op keeps a closed issue's worktree while its execution has a request that no release or cancel ended, or while its lane slot lists another surviving checkout or a pending setup (`src/ops/cleanup-fence.ts`). Lane prune waits while any setup is pending (#170).
 
-Not here yet: contention proof (#133). The integration-turn scope is still unused (#120).
+- Each exact Land takes the target's integration turn before its attempt record and first PR or target write (`src/ops/land-turn.ts`, #171). A Land that doesn't get it writes nothing and the merge stage ends `wait`; the turn is released once the issue's Land is settled. See [the target's integration turn](../../docs/reference/merge.md#the-targets-integration-turn).
+
+Contention through real job boundaries is proved by `test/pipeline-flow-contention.test.mjs` (#133) and `test/land-turn.test.mjs` (#171); [coordination](../../docs/reference/coordination.md#compatibility-and-limits) has the scenario trace.
 
 ## Standalone Safe Refactor task
 
@@ -285,7 +287,7 @@ Canonical claim normally requires an open issue. A closed issue may recover only
 
 Issue/branch binding is persisted at first claim. A changed branch on resume is refused; legacy `branch:null` binds the old canonical `agent/issue-N`, not an arbitrary new branch. Protected base/remote-default branches and nonliteral/invalid refs are refused before mutation. A fresh explicit job initializes its metadata clone before posting a claim; there is no sweep prerequisite. Existing clone and issue work are reused. `--print-boundary` pins/validates prompts and prints role/checkouts/environment/network without cloning, claiming or launching pi.
 
-Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. The caller serializes integration/merge turns (one at a time); existing claim/lease/head/merge-queue guards still apply. `--merge-queue N,...` carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
+Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. Each exact Land takes the target's integration turn itself (#171); existing claim/lease/head/merge-queue guards still apply. `--merge-queue N,...` carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
 
 Optional `laneSlots` (1–399) leases warm test environments to actual issue checkouts. Setup and deterministic checks receive `ISSUE_PIPELINE_LANE_SLOT`; lane-mode setup must succeed before a model starts. A retained checkout retains its slot. Optional `commands.prune` runs from the base clone with `ISSUE_PIPELINE_LANE_SLOTS`, at most hourly across claim processes, and logs failures without failing claims. Legacy no-slot setup/teardown behavior stays unchanged. See [lane test environments and rollout prerequisites](../../docs/reference/checkouts.md#lane-test-environments), including the required drain of all jobs **and test consumers** before enabling legacy prune or shrinking the pool. Merging does not install or activate this behavior.
 

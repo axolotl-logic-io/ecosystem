@@ -7,6 +7,7 @@ import type {
   Evidence,
   InvocationBinding,
   Record,
+  Request,
   Snapshot,
 } from "./coordination-records.ts";
 import {
@@ -183,6 +184,41 @@ class Coordination {
   release(): void {
     this.mutate("release");
   }
+  // Retires an earlier invocation's request for the same work: a release
+  // while it owns the confirmed scope, a cancel while it only waits. The
+  // caller has read that the request's consumer is done and holds that
+  // work's execution itself (ops/land-turn.ts); the record names it.
+  retire(request: Request): void {
+    const view = this.read();
+    const row = view.pending.find((item) => item.id === request.id);
+    if (
+      row === undefined ||
+      row.identity.instance === this.identity.instance ||
+      !sameWork(row.identity, this.identity)
+    ) {
+      hold("only an earlier invocation of the same work can be retired");
+    }
+    const owned = view.owner?.id === row.id;
+    if (owned && !view.confirmed) {
+      hold("an earlier invocation reserved the scope without confirming it");
+    }
+    let kind: "release" | "cancel" = "cancel";
+    if (owned) {
+      kind = "release";
+    }
+    this.append({
+      version: 1,
+      scope: this.scope,
+      operation: crypto.randomUUID(),
+      kind,
+      request: row.id,
+      instance: row.identity.instance,
+      evidence: { retiredBy: this.identity.instance },
+    });
+    if (this.read().pending.some((item) => item.id === row.id)) {
+      hold("retirement not confirmed");
+    }
+  }
   cancel(): void {
     const view = this.read();
     const mine = view.pending.find(
@@ -205,6 +241,16 @@ class Coordination {
     });
   }
 }
+// Two bindings of the same work: one issue and branch on one repository
+// and base, under any lane or invocation.
+function sameWork(a: InvocationBinding, b: InvocationBinding): boolean {
+  return (
+    a.issue === b.issue &&
+    a.branch === b.branch &&
+    a.repo === b.repo &&
+    a.base === b.base
+  );
+}
 function coordination(
   cfg: Config,
   port: CoordinationPort,
@@ -218,6 +264,7 @@ export type {
   CoordinationPort,
   Evidence,
   InvocationBinding,
+  Request,
   Snapshot,
 } from "./coordination-records.ts";
 export { coordination };
