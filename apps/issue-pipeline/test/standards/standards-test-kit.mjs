@@ -139,18 +139,21 @@ function showOnGitHub(view) {
 }
 
 /**
- * Runs `standards-upgrade assess` for `fixture` as GitHub shows `view`.
+ * Runs `standards-upgrade assess` for `fixture` as GitHub shows `view`, with
+ * `args` after the usual ones (`--static` by default) and `env` added to
+ * its environment.
  * @param {Fixture} fixture
- * @param {{ view?: GitHubView, repo?: string, ref?: string }} [options]
+ * @param {{ view?: GitHubView, repo?: string, ref?: string, args?: string[], env?: Record<string, string> }} [options]
  */
 function assess(fixture, options = {}) {
   const { dir, origin } = originOf(fixture);
   const config = path.join(dir, "config.json");
+  const credentials = credentialConfig("lawd");
   fs.writeFileSync(
     config,
     JSON.stringify({
       repo: "o/r",
-      ...credentialConfig("lawd"),
+      ...credentials,
       allowedUsers: ["owner"],
       commands: { test: "true" },
       cloneUrl: origin,
@@ -173,10 +176,12 @@ function assess(fixture, options = {}) {
   if (options.ref !== undefined) {
     args.push("--ref", options.ref);
   }
+  args.push(...(options.args ?? ["--static"]));
   const result = spawnSync(process.execPath, args, {
     cwd: isolatedRoot,
     encoding: "utf8",
     timeout: ENTRY_MS,
+    env: { ...process.env, ...options.env },
   });
   /** @type {unknown} */
   let line = null;
@@ -189,6 +194,8 @@ function assess(fixture, options = {}) {
     line,
     out,
     dir,
+    config,
+    credentialsEnvFile: credentials.credentialsEnvFile,
     written: fs.readdirSync(out).sort(),
     originMoved: refsOf(origin) !== before,
     calls: gh.calls(),

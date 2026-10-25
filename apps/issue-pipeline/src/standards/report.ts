@@ -9,6 +9,10 @@ import type { Assessment, PlanMarker } from "./schema.ts";
 import { PLAN_TAG } from "./schema.ts";
 
 const SHORT_SHA = 12;
+const NETWORK_WORDS: Readonly<Record<string, string>> = {
+  true: "network",
+  false: "no network",
+};
 
 const STATUS_WORDS: Readonly<Record<string, string>> = {
   passed: "verified pass",
@@ -60,6 +64,21 @@ function header(assessment: Assessment): string[] {
   ];
 }
 
+function runNote(assessment: Assessment): string {
+  const { sandbox, commands } = assessment;
+  if (commands.length > 0) {
+    return `Install, tests and the advisory scan ran in a credential-free ${sandbox?.tool ?? "bwrap"} sandbox. What they printed is in logs/ beside this report, never here: repository code wrote it.`;
+  }
+  return "This assessment ran no repository code. Install, test and advisory criteria say why they're unverified.";
+}
+
+function commandLines(assessment: Assessment): string[] {
+  return assessment.commands.map(
+    ({ argv, network, exitCode, durationMs, log }) =>
+      `\`${argv.join(" ")}\` (${NETWORK_WORDS[String(network)]}): exit ${exitCode ?? "none, timed out"}, ${durationMs} ms, \`${log}\``,
+  );
+}
+
 function reportOf(assessment: Assessment): string {
   const components = assessment.inventory.components.map(
     (component) =>
@@ -74,7 +93,7 @@ function reportOf(assessment: Assessment): string {
     "",
     ...header(assessment),
     "",
-    "This assessment ran no repository code. Install, test and advisory criteria stay unverified until a later run executes them.",
+    runNote(assessment),
     "",
     "## Criteria",
     "",
@@ -84,6 +103,10 @@ function reportOf(assessment: Assessment): string {
     "",
     ...bullets(components, "No package components."),
     ...bullets(workflows, "No workflows."),
+    "",
+    "## Commands run in the sandbox",
+    "",
+    ...bullets(commandLines(assessment), "None."),
     "",
     "## Proposed changes",
     "",

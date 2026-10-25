@@ -1,9 +1,7 @@
 // The Python/Poetry part of a standards assessment: the project a root
 // pyproject.toml declares, and the environment and behavior criteria that
-// the source alone can establish. As for Node/npm, installing, running tests
-// and scanning advisories would run repository code, so without a
-// credential-free sandbox those criteria stay unverified, never passed
-// (#129).
+// the source alone can establish. Installing, running tests and scanning
+// advisories are execute.ts's (#129).
 
 import { parse } from "smol-toml";
 import { z } from "zod";
@@ -56,8 +54,6 @@ const COMMENT = /^#/u;
 const PLACEHOLDER_BODY = /^assert\s+__version__\s*==\s*(?<q>['"])[^'"]*\k<q>$/u;
 // Test files read at most; more are counted without reading.
 const MAX_TEST_FILES = 500;
-const NO_SANDBOX =
-  "not run: assessment runs no repository code without a credential-free sandbox";
 
 interface PoetryProject {
   // The parsed root pyproject.toml, or null when it doesn't parse.
@@ -278,17 +274,13 @@ function testsCriterion(source: Source): Criterion {
 }
 
 // The environment and behavior criteria for `project`, in the same order as
-// the Node/npm ones.
-function poetryCriteria(source: Source, project: PoetryProject): Criterion[] {
-  const unrun: Criterion[] = [
-    { id: "environment.install", status: "unverified", evidence: NO_SANDBOX },
-    {
-      id: "vulnerabilities.scan",
-      status: "unverified",
-      evidence: `${NO_SANDBOX}; no advisory scanner ran, so this is not a clean scan`,
-    },
-    { id: "behavior.tests-run", status: "unverified", evidence: NO_SANDBOX },
-  ];
+// the Node/npm ones, with `executed` after the static ones.
+function poetryCriteria(
+  source: Source,
+  project: PoetryProject,
+  executed: readonly Criterion[],
+): Criterion[] {
+  const unrun = executed;
   const { manifest } = project;
   if (manifest === null) {
     const evidence = "the root pyproject.toml doesn't parse as TOML";
