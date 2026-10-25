@@ -1,21 +1,28 @@
-// The Sync task (#184; `sync-is-a-task`): revision R and the exact target T
-// in, R′ containing T or a retained stop out. Branch effects use the
-// development account (pushBranch); the landing account records the attempt
-// and result (#183). The rebase, its gitlink refusal, binary and text
-// conflict handling, retired-submodule recovery and work preservation are the
-// installed sync's own (rebase.ts, code-recovery.ts, sync-finish.ts).
-// The Sync task job (roles/sync/sync.ts) calls them since #186.
+// Sync's effects and its read-only reconciliation, on the v2 records. The
+// rebase, its gitlink refusal, conflict handling, retired-submodule
+// recovery and work preservation are the installed sync's own (rebase.ts,
+// code-recovery.ts, sync-finish.ts). Branch effects use the development
+// account; the landing account records the run.
 //
-//   sync-task         check, record the attempt, rebase onto exactly T
-//   sync-task-finish  continue a resolved stop, or retain or reject it
-//   sync-task-reconcile (sync-task-reconcile.ts) settle an interrupted run
+//   sync-task        this action's own Sync attempt: rebase R onto exactly
+//                    T in the action's checkout. A text stop stays in the
+//                    checkout for one resolver session.
+//   sync-task-finish continue the resolved stop, or retain or reject it
+//   sync-reconcile   settle an interrupted run as its original run, from
+//                    the branch and checkout alone; never push or rebase:
+//       branch at a new head containing T, checkout there → passed
+//       branch at R, checkout rebased past R → push never landed: the
+//           rebased work is kept in recovery, back to R, failed
+//       branch at R, nothing changed → failed
+//       a stopped rebase, or anything else → held (unknown)
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
+import { paths } from "../config.ts";
 import { assertClean, head, remoteHead } from "../git-state.ts";
 import { retainSyncConflict } from "../job/code-recovery.ts";
 import { OpsError } from "../ops-error.ts";
-import { parseRequest, run } from "../process.ts";
+import { run } from "../process.ts";
 import {
   classifyCodeSync,
   clearCodeSync,
@@ -27,181 +34,175 @@ import {
   unmergedFiles,
 } from "../rebase.ts";
 import { retireSubmodules } from "../retired-submodules.ts";
-import { BINDING, RUN_ID } from "../task-result-records.ts";
+import { MODULES } from "../tasks/modules.ts";
+import { isAncestor } from "../tasks/view.ts";
 import { pushBranch, resetToRemote } from "./sync-finish.ts";
-import type { SyncBinding } from "./sync-task-gate.ts";
-import { refuse, syncGate } from "./sync-task-gate.ts";
-import { contains } from "./task-gate.ts";
-import { appendResult, startAttempt } from "./task-results.ts";
+import type { EffectOutcome, OpenRun } from "./task-run.ts";
+import { openReconciliation, openRun, refuse, settled } from "./task-run.ts";
 
-const START_REQUEST = z.looseObject({
-  number: z.number().int().positive(),
-  binding: BINDING,
-  run: z.strictObject({ id: RUN_ID, previous: RUN_ID.nullable() }),
-});
-
-const FINISH_REQUEST = z.looseObject({
-  number: z.number().int().positive(),
-  binding: BINDING,
-  run: z.strictObject({ id: RUN_ID }),
+const FINISH = z.looseObject({
   cannotFix: z.boolean().optional(),
   retainConflict: z.boolean().optional(),
   reason: z.string().min(1).optional(),
 });
 
-type SyncTaskReply =
-  | { ready: false; reason: string }
-  | { conflict: true; conflicts: string[]; target: string }
-  | { verdict: "passed"; produced: string }
-  | { verdict: "failed"; reason: string; retained: boolean };
-
-const MAX_SUMMARY = 300;
+type SyncReply = EffectOutcome | { conflict: true; conflicts: string[] };
 
 interface SyncRun {
-  cfg: Config;
-  number: number;
-  binding: SyncBinding;
-  run: string;
+  run: OpenRun;
   wt: string;
+  from: string;
+  target: string;
 }
 
-function failed(
-  sync: SyncRun,
-  reason: string,
-  retained: boolean,
-): SyncTaskReply {
-  appendResult(sync.cfg, sync.number, {
-    binding: sync.binding,
-    run: { id: sync.run },
-    verdict: "failed",
-    receipt: { summary: reason.slice(0, MAX_SUMMARY), evidence: { retained } },
-  });
-  return { verdict: "failed", reason, retained };
+function syncOf(open: OpenRun): SyncRun {
+  if (!("revision" in open.binding)) {
+    throw new OpsError("a Sync binding binds a revision");
+  }
+  return {
+    run: open,
+    wt: paths.worktree(open.cfg, open.number),
+    from: open.binding.revision.code,
+    target: open.binding.target.commit,
+  };
 }
 
-// The finished rebase pushed through the development account, then checked
-// on the branch itself: the branch holds exactly the pushed head, and that
-// head contains the exact requested T. An ancestor the rebase kept is no proof.
-function completed(sync: SyncRun): SyncTaskReply {
-  const { cfg, number, binding, wt } = sync;
-  const from = binding.revision.code;
-  const target = binding.target.commit;
+// The finished rebase, pushed, then checked on the branch itself: it holds
+// exactly the pushed head, a new head containing exactly T.
+function completed(sync: SyncRun): EffectOutcome {
+  const { run: open, wt, from, target } = sync;
+  const { cfg, number } = open;
   retireSubmodules(cfg, number, wt, from);
   const problem = rebaseProblem(wt, target);
   if (problem !== undefined) {
     resetToRemote(cfg, number, problem);
-    return failed(sync, problem, false);
+    return settled(open, { verdict: "failed", reason: problem });
   }
   const local = head(wt);
   pushBranch(cfg, number, wt, "sync-task");
   const remote = remoteHead(cfg, number);
-  if (remote !== local || !contains(wt, local, target) || local === from) {
-    throw new OpsError(
-      `the Sync push left the branch at ${remote ?? "none"}, which isn't a new head containing ${target}; reconcile by reading`,
-    );
-  }
-  clearCodeSync(wt);
-  appendResult(cfg, number, {
-    binding,
-    run: { id: sync.run },
-    verdict: "passed",
-    receipt: {
-      summary: `rebased ${from} onto ${target} as ${local}`,
-      produced: { code: local },
-    },
-  });
-  return { verdict: "passed", produced: local };
-}
-
-function conflictOf(sync: SyncRun): SyncTaskReply {
-  return {
-    conflict: true,
-    conflicts: unmergedFiles(sync.wt),
-    target: sync.binding.target.commit,
-  };
-}
-
-// Checks R and T, records the attempt, and rebases R onto exactly T. A text
-// stop stays in the checkout for a resolver; sync-task-finish continues it.
-function syncTask(cfg: Config, request: unknown): SyncTaskReply {
-  const req = parseRequest(START_REQUEST, "sync-task", request);
-  const { binding, wt } = syncGate(cfg, req.number, req.binding);
-  if (rebaseInProgress(wt) || readCodeSync(wt) !== undefined) {
-    refuse("a retained synchronization is in the checkout; reconcile it");
-  }
-  assertClean(wt);
-  const from = binding.revision.code;
-  const target = binding.target.commit;
-  if (head(wt) !== from || remoteHead(cfg, req.number) !== from) {
-    refuse(`the checkout and the branch are not both at revision ${from}`);
-  }
-  if (contains(wt, from, target)) {
+  if (remote !== local || local === from || !isAncestor(wt, target, local)) {
     return {
-      ready: false,
-      reason: `revision ${from} already contains ${target}`,
+      verdict: "unknown",
+      reason: `the Sync push left the branch at ${remote ?? "none"}; reconcile by reading`,
     };
   }
-  startAttempt(cfg, req.number, binding, req.run);
-  const sync: SyncRun = {
-    cfg,
-    number: req.number,
-    binding,
-    run: req.run.id,
-    wt,
-  };
+  clearCodeSync(wt);
+  return settled(open, {
+    verdict: "passed",
+    reason: `rebased ${from} onto ${target} as ${local}`,
+    produced: local,
+  });
+}
+
+function stopped(sync: SyncRun): SyncReply {
+  if (rebaseInProgress(sync.wt)) {
+    return { conflict: true, conflicts: unmergedFiles(sync.wt) };
+  }
+  return completed(sync);
+}
+
+function syncTask(cfg: Config, request: unknown): SyncReply {
+  const open = openRun(cfg, request, "sync", "sync-task");
+  const unmet = MODULES.sync.prerequisite(cfg, open.evidence, open.binding);
+  if (unmet !== null) {
+    return settled(open, {
+      verdict: "failed",
+      reason: `nothing synced: ${unmet}`,
+    });
+  }
+  const sync = syncOf(open);
+  const { wt, from, target } = sync;
+  if (rebaseInProgress(wt) || readCodeSync(wt) !== undefined) {
+    return settled(open, {
+      verdict: "failed",
+      reason: "a retained synchronization is in the checkout; reconcile it",
+    });
+  }
+  assertClean(wt);
+  if (head(wt) !== from) {
+    return settled(open, {
+      verdict: "failed",
+      reason: `the checkout is not at revision ${from}`,
+    });
+  }
   saveCodeSync(wt, { from, onto: target });
   run("git", ["-C", wt, "rebase", target], { allowFail: true });
   continueCodeSync(wt);
-  if (rebaseInProgress(wt)) {
-    return conflictOf(sync);
-  }
-  return completed(sync);
+  return stopped(sync);
 }
 
-// The run's stopped rebase after a resolver: continued once its text is
-// staged, retained at the resolver's limit, or rejected with its work saved.
-function syncTaskFinish(cfg: Config, request: unknown): SyncTaskReply {
-  const req = parseRequest(FINISH_REQUEST, "sync-task-finish", request);
-  const { binding, rows, wt } = syncGate(cfg, req.number, req.binding);
-  const latest = rows
-    .filter((row) => row.kind === "attempt" && row.binding.task === "Sync")
-    .at(-1);
-  if (latest?.run.id !== req.run.id) {
-    refuse(`run ${req.run.id} is not the latest Sync attempt`);
+function syncTaskFinish(cfg: Config, request: unknown): SyncReply {
+  const open = openRun(cfg, request, "sync", "sync-task-finish");
+  const req = FINISH.parse(request);
+  const sync = syncOf(open);
+  if (classifyCodeSync(sync.wt, sync.target) === undefined) {
+    refuse(
+      "sync-task-finish",
+      "no synchronization of this run is in the checkout",
+    );
   }
-  const target = binding.target.commit;
-  if (classifyCodeSync(wt, target) === undefined) {
-    refuse("no synchronization of this run is in the checkout");
-  }
-  const sync: SyncRun = {
-    cfg,
-    number: req.number,
-    binding,
-    run: req.run.id,
-    wt,
-  };
   if (req.retainConflict === true) {
     const reason = req.reason ?? "the resolver's allowance is spent";
-    return failed(sync, retainSyncConflict(cfg, req.number, wt, reason), true);
-  }
-  continueCodeSync(wt);
-  if (rebaseInProgress(wt) && req.cannotFix !== true) {
-    return conflictOf(sync);
+    return settled(open, {
+      verdict: "failed",
+      reason: retainSyncConflict(cfg, open.number, sync.wt, reason),
+    });
   }
   if (req.cannotFix === true) {
     const reason = req.reason ?? "the resolver could not fix the conflicts";
-    resetToRemote(cfg, req.number, reason);
-    return failed(sync, reason, false);
+    resetToRemote(cfg, open.number, reason);
+    return settled(open, { verdict: "failed", reason });
+  }
+  continueCodeSync(sync.wt);
+  if (rebaseInProgress(sync.wt)) {
+    const reason = "the resolver left the rebase stopped";
+    return settled(open, {
+      verdict: "failed",
+      reason: retainSyncConflict(cfg, open.number, sync.wt, reason),
+    });
   }
   return completed(sync);
 }
 
-const syncTaskOps: Readonly<
-  Record<string, (cfg: Config, request: unknown) => SyncTaskReply>
-> = {
-  "sync-task": syncTask,
-  "sync-task-finish": syncTaskFinish,
-};
+function reconciled(sync: SyncRun): EffectOutcome {
+  const { run: open, wt, from, target } = sync;
+  const remote = remoteHead(open.cfg, open.number);
+  const local = head(wt);
+  const syncing = readCodeSync(wt) !== undefined;
+  if (remote === local && local !== from && isAncestor(wt, target, local)) {
+    clearCodeSync(wt);
+    return {
+      verdict: "passed",
+      reason: `reconciled: the branch holds ${local}, containing ${target}`,
+      produced: local,
+    };
+  }
+  if (remote === from && local === from && !syncing) {
+    return { verdict: "failed", reason: "reconciled: no effect was made" };
+  }
+  if (remote === from && syncing && local !== from) {
+    const reason = `reconciled: the push of ${local} never landed; the rebased work is kept in recovery`;
+    resetToRemote(open.cfg, open.number, reason);
+    return { verdict: "failed", reason };
+  }
+  return {
+    verdict: "unknown",
+    reason: `the branch is at ${remote ?? "none"} and the checkout at ${local}; the run stays held`,
+  };
+}
 
-export type { SyncTaskReply };
-export { syncTaskOps };
+function syncReconcile(cfg: Config, request: unknown): EffectOutcome {
+  const open = openReconciliation(cfg, request, "sync", "sync-reconcile");
+  const sync = syncOf(open);
+  if (rebaseInProgress(sync.wt)) {
+    return {
+      verdict: "unknown",
+      reason:
+        "a stopped rebase is retained in the checkout; a person recovers it",
+    };
+  }
+  return settled(open, reconciled(sync), { reconciledBy: open.reconciler });
+}
+
+export { syncReconcile, syncTask, syncTaskFinish };
