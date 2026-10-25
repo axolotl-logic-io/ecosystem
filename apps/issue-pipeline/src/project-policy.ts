@@ -56,6 +56,7 @@ function gitObject(
     "git",
     ["--no-replace-objects", "-C", source.repository, ...args],
     {
+      cwd: source.repository,
       env: new Map([
         ["GIT_CONFIG_NOSYSTEM", "1"],
         ["GIT_CONFIG_GLOBAL", "/dev/null"],
@@ -164,6 +165,7 @@ function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
       "ciWaitMinutes",
       "commandTimeoutMinutes",
       "permissions",
+      "resources",
     ].map((key) => [key, cfg[key]]),
   );
   const source = cfg.projectPolicy;

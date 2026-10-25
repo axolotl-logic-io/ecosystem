@@ -19,7 +19,11 @@ const RELATIVE_PATH = TEXT.refine(
     !(ABSOLUTE_PATH.test(value) || value.split(PATH_SEPARATOR).includes("..")),
   "must be a path inside the checkout",
 );
+const RESOURCE_CAPACITY = z.strictObject({
+  modelSessions: z.number().int().positive(),
+});
 const PROJECT_SETTINGS = z.strictObject({
+  resources: RESOURCE_CAPACITY,
   commands: z.strictObject({
     setup: COMMAND,
     test: TEXT,
@@ -96,4 +100,5 @@ export {
   PROJECT_POLICY_SOURCE,
   PROJECT_SETTINGS,
   parseProjectSettings,
+  RESOURCE_CAPACITY,
 };

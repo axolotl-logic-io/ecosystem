@@ -62,6 +62,7 @@ interface TaskResult {
   recordId: number;
 }
 interface TaskView {
+  permissions: { land: boolean };
   workItem: WorkItemRef;
   requirements: string;
   revision: Revision | null;
@@ -216,7 +217,9 @@ function reserveModelSession(cfg: Config, execution: InvocationBinding, cap: num
     | { state: "waiting" | "held"; reason: string }>;
 ```
 
-The runtime registers before launching and reports done only on confirmed exit. The reservation module uses authenticated shared coordination, not a PID count or local mutex. Repository/base/resource capacity is one shared policy, not independently invented per buddy. Incompatible capacity declarations hold rather than creating disjoint pools or silently oversubscribing. Unknown consumer state keeps the claim. Reuse the current target integration turn and existing consumer-aware test slots rather than creating duplicate pools. The resource writer owns the necessary coordination-schema extension and execution helper. Existing project-facing slot environment variables remain an explicit compatibility boundary.
+The runtime registers before launching and reports done only on confirmed exit. The reservation module uses authenticated shared coordination, not a PID count or local mutex. Repository/base/resource capacity is one shared policy, not independently invented per buddy. Incompatible capacity declarations hold rather than creating disjoint pools or silently oversubscribing. Every live slot request records its cap; only confirmed released/cancelled history stops constraining the pool. Missing live cap evidence holds. Changing capacity requires draining the pool.
+
+Trusted repository configuration must explicitly supply `resources: { modelSessions: positiveInteger }`, without a default. In committed-project-policy mode this field belongs to the pinned project document, and an operator duplicate is refused. The parent owns `RESOURCE_CAPACITY` in `project-policy-schema.ts` and the shared checking digest; the runtime lane owns Config/schema wiring. `reserveModelSession` holds if its argument differs from the trusted parsed repository cap. Buddy configuration must match the pool cap; a local concurrency limit is not permission to resize the pool. Unknown consumer state keeps the claim. Reuse the current target integration turn and existing consumer-aware test slots rather than creating duplicate pools. The resource writer owns the necessary coordination-schema extension and execution helper. Existing project-facing slot environment variables remain an explicit compatibility boundary.
 
 ## Ownership and integration
 
