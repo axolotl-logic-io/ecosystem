@@ -9,7 +9,7 @@
 // session.
 
 import type { RoleContext, RoleEnd } from "../job/role-context.ts";
-import type { CodeMerged, IssueState } from "../state.ts";
+import type { CodeLanded, IssueState } from "../state.ts";
 import type { Mode } from "./change-task.ts";
 import { fixTask } from "./change-task.ts";
 import type { Check } from "./op-replies.ts";
@@ -38,11 +38,11 @@ interface Loop {
 
 type VerifyPayload =
   | { number: number }
-  | { number: number; codeMerged: CodeMerged };
+  | { number: number; codeLanded: CodeLanded };
 
 function verifyPayload(ctx: RoleContext, mode: Mode): VerifyPayload {
   if (mode.kind === "merged") {
-    return { number: ctx.issue, codeMerged: mode.merged };
+    return { number: ctx.issue, codeLanded: mode.merged };
   }
   return { number: ctx.issue };
 }

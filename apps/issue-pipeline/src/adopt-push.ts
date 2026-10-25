@@ -33,8 +33,8 @@ function adoptPush(
   if (
     stage === "stopped" ||
     stage === "done" ||
-    saved.codeMerged !== null ||
-    saved.mergeAttempt !== null
+    saved.codeLanded !== null ||
+    saved.landingAttempt !== null
   ) {
     return null;
   }

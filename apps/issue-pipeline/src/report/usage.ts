@@ -96,11 +96,22 @@ function totalTokens(record: SessionRecord): number {
   return input + output + cacheRead + cacheWrite;
 }
 
+// A role as #166 named it: records an earlier version wrote as `implementor`
+// or `merger` count as the developer's or the lander's.
+const RENAMED_ROLES: ReadonlyMap<string, string> = new Map([
+  ["implementor", "developer"],
+  ["merger", "lander"],
+]);
+
+function currentRole(role: string): string {
+  return RENAMED_ROLES.get(role) ?? role;
+}
+
 function wanted(record: UsageRecord, options: ReportOptions): boolean {
   const { role, issue, since } = options;
   return (
     record.kind === "session" &&
-    (role === null || record.role === role) &&
+    (role === null || currentRole(record.role) === currentRole(role)) &&
     (issue === null || record.issue === issue) &&
     (since === null || Date.parse(record.at) >= Date.parse(since))
   );

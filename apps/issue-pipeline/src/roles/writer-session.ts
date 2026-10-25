@@ -31,8 +31,8 @@ function specOf(
 ): SessionSpec {
   if (phase === "development") {
     return {
-      agent: "issue-pipeline-implementor",
-      model: ctx.cfg.models.implementor,
+      agent: "issue-pipeline-developer",
+      model: ctx.cfg.models.developer,
       task,
       schema: WRITER_REPLY,
       commits: true,
@@ -45,8 +45,8 @@ function specOf(
     (phase === "hardening" && ctx.hardening === "hippy")
   ) {
     return {
-      agent: "issue-pipeline-implementor",
-      model: ctx.cfg.models.implementor,
+      agent: "issue-pipeline-developer",
+      model: ctx.cfg.models.developer,
       task,
       schema: WRITER_REPLY,
       commits: true,

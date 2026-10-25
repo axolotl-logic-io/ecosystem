@@ -36,7 +36,7 @@ const INTEGRATION = z
 
 // An attempted mutation is not an own receipt. Persisted before the mutation,
 // it permanently closes code-write/retry authority even if the response is lost.
-const MERGE_ATTEMPT = z.object({
+const LANDING_ATTEMPT = z.object({
   repo: z.string().min(1),
   pr: z.number().int().positive(),
   target: z.string().min(1),
@@ -56,7 +56,7 @@ const MERGE_ATTEMPT = z.object({
   reads: z.number().int().nonnegative(),
 });
 
-type MergeAttempt = z.infer<typeof MERGE_ATTEMPT>;
+type LandingAttempt = z.infer<typeof LANDING_ATTEMPT>;
 
-export type { MergeAttempt };
-export { FULL_SHA, INTEGRATION, legacyWikiOf, MERGE_ATTEMPT, REVISION };
+export type { LandingAttempt };
+export { FULL_SHA, INTEGRATION, LANDING_ATTEMPT, legacyWikiOf, REVISION };

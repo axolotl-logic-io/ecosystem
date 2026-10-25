@@ -90,16 +90,16 @@ function withSavedCodeLand(
   if (state.number !== n) {
     throw new OpsError(`a state for #${state.number} can't be saved on #${n}`);
   }
-  let { merged } = state;
+  let { landed: merged } = state;
   if (
-    saved.mergeAttempt !== null &&
-    saved.merged !== null &&
+    saved.landingAttempt !== null &&
+    saved.landed !== null &&
     (retainedFastForwardReceipt(cfg, n, saved) ||
-      (saved.mergeAttempt.operation === undefined &&
-        saved.merged.code === saved.mergeAttempt.result)) &&
-    state.merged?.code !== saved.merged.code
+      (saved.landingAttempt.operation === undefined &&
+        saved.landed.code === saved.landingAttempt.result)) &&
+    state.landed?.code !== saved.landed.code
   ) {
-    ({ merged } = saved);
+    ({ landed: merged } = saved);
   }
   // An exact durable decision survives an interrupted save's stale snapshot,
   // whether it rejected the result or already cleared it for completion.
@@ -118,9 +118,9 @@ function withSavedCodeLand(
     ...state,
     security,
     ...retainedResultSecurity(saved, state),
-    merged,
-    codeMerged: saved.codeMerged,
-    mergeAttempt: saved.mergeAttempt,
+    landed: merged,
+    codeLanded: saved.codeLanded,
+    landingAttempt: saved.landingAttempt,
   };
 }
 

@@ -8,17 +8,17 @@ import { historicalPrFor } from "./ops/prs.ts";
 import { OpsError } from "./ops-error.ts";
 import { issuePullRequest, pullRequest } from "./revision.ts";
 import { readWriteState } from "./saved-state.ts";
-import type { CodeMerged, IssueState } from "./state.ts";
+import type { CodeLanded, IssueState } from "./state.ts";
 
 function readWriteAuthority(
   cfg: Config,
   issue: number,
-): { state: IssueState; codeWritable: boolean; codeMerged: CodeMerged | null } {
+): { state: IssueState; codeWritable: boolean; codeMerged: CodeLanded | null } {
   const state = readWriteState(cfg, issue);
   assignedBranch(cfg, issue, state);
-  const { codeMerged, merged } = state;
+  const { codeLanded: codeMerged, landed: merged } = state;
   if (
-    state.mergeAttempt !== null ||
+    state.landingAttempt !== null ||
     codeMerged !== null ||
     (merged !== null && merged.code !== null) ||
     (state.security !== null && state.security.finding !== null)

@@ -71,7 +71,7 @@ function listing<T>(
   row: z.ZodType<T>,
 ): T[] | null {
   const args = ["api", "--paginate", endpoint, "--jq", ".[] | @json"];
-  const result = gh(cfg, "merge", args, { allowFail: true });
+  const result = gh(cfg, "landing", args, { allowFail: true });
   if (result.code !== 0) {
     return null;
   }
@@ -89,7 +89,7 @@ function listing<T>(
 
 function issueOf(cfg: Config, issue: number): z.infer<typeof ISSUE> | null {
   const args = ["api", `repos/${cfg.repo}/issues/${issue}`];
-  const result = gh(cfg, "merge", args, { allowFail: true });
+  const result = gh(cfg, "landing", args, { allowFail: true });
   if (result.code !== 0) {
     return null;
   }
@@ -135,7 +135,7 @@ function trustedAuthor(
     return false;
   }
   return (
-    [grantor, cfg.devAccount, cfg.mergeAccount].some((login) =>
+    [grantor, cfg.devAccount, cfg.landingAccount].some((login) =>
       same(author, login),
     ) || isAllowedUser(cfg, author)
   );
@@ -148,7 +148,7 @@ function closedByPipeline(cfg: Config, events: readonly Event[]): boolean {
     .filter((event) => event.event === "closed")
     .toSorted((a, b) => a.id - b.id)
     .at(-1);
-  return closed !== undefined && same(closed.actor?.login, cfg.mergeAccount);
+  return closed !== undefined && same(closed.actor?.login, cfg.landingAccount);
 }
 
 function assignmentGrant(cfg: Config, issue: number, login: string): Grant {

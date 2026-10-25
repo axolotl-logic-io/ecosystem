@@ -20,7 +20,7 @@ import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import type { InvocationBinding } from "../coordination.ts";
-import { INVOCATION_BINDING } from "../coordination-records.ts";
+import { INVOCATION_BINDING } from "../coordination-record-schema.ts";
 import type { ProjectPolicyBinding } from "../project-policy-schema.ts";
 import { POLICY_BINDING } from "../project-policy-schema.ts";
 import type {

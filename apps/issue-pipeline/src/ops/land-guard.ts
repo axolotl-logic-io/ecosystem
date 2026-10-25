@@ -21,7 +21,7 @@ type CurrentRevision = ReturnType<typeof currentRevision>;
 const REVISION_REQUEST = REVISION.extend({ inputs: z.string().min(1) });
 
 interface LandStale {
-  merged: false;
+  landed: false;
   reason: "stale";
   current: Revision;
 }
@@ -35,7 +35,7 @@ function landStale(
   if (sameRevision(revision, current.revision)) {
     return undefined;
   }
-  return { merged: false, reason: "stale", current: current.revision };
+  return { landed: false, reason: "stale", current: current.revision };
 }
 
 // The issue's PR as the current revision reports it, which must be the
@@ -56,7 +56,7 @@ function mergedPr(
   if (pr.mergeCommit === null || pr.mergeCommit === "") {
     throw new OpsError(`PR #${pr.number} is MERGED with no merge commit`);
   }
-  const { codeMerged } = state;
+  const { codeLanded: codeMerged } = state;
   if (
     codeMerged !== null &&
     (codeMerged.pr !== pr.number || codeMerged.sha !== pr.mergeCommit)
@@ -91,13 +91,13 @@ function landedAuthorizationHolds(
   }
   const hasReceipt =
     (saved.stage === "merge" || saved.stage === "done") &&
-    saved.merged !== null &&
-    sameRevision(saved.merged, result);
+    saved.landed !== null &&
+    sameRevision(saved.landed, result);
   if (authorized.code === merged.headSha) {
     return hasReceipt;
   }
   return (
-    saved.codeMerged !== null &&
+    saved.codeLanded !== null &&
     authorized.code === merged.mergeCommit &&
     (saved.stage !== "done" || hasReceipt)
   );
@@ -117,7 +117,7 @@ function ownLandResultObservation(
     } | null;
   },
 ): Revision | null {
-  const { merged, codeMerged } = saved;
+  const { landed: merged, codeLanded: codeMerged } = saved;
   const { pr } = current;
   if (
     merged === null ||

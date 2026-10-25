@@ -41,7 +41,7 @@ function lastMarked(
   let last: Marked | null = null;
   for (const { id, body, user } of comments) {
     const { issue, n: nth = "1" } = USAGE_MARK.exec(body ?? "")?.groups ?? {};
-    if (user?.login === cfg.mergeAccount && issue === String(number)) {
+    if (user?.login === cfg.landingAccount && issue === String(number)) {
       const n = Number(nth);
       if (last === null || n > last.n) {
         last = { id, n, body: body ?? "" };

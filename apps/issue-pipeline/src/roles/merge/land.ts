@@ -19,7 +19,7 @@ import { afterEarlierLand, afterOwnLand } from "./after-land.ts";
 import type { Cleared } from "./chain.ts";
 import { boundAs, chainRoute, syncNeeded } from "./chain.ts";
 import { finishCompleted } from "./completion.ts";
-import { MERGE_REPLY, recoverAttempt, recoverOwnLand } from "./recovery.ts";
+import { LAND_OP_REPLY, recoverAttempt, recoverOwnLand } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
 import { securityTask } from "./security-task.ts";
@@ -79,7 +79,7 @@ async function checksBeforeLand(
       const detail = `The required CI checks ${ci.failing.join(", ")} failed on ${code}.`;
       const returned: IssueState = {
         ...state,
-        mergeReturn: { reason: "ci", detail, codeMerged: false },
+        landingReturn: { reason: "ci", detail, codeLanded: false },
       };
       return {
         end: toReview(
@@ -228,21 +228,21 @@ async function landCode(
   const landRun = newRun(await taskStatus(ctx, binding));
   const reply = await opReply(
     ctx,
-    "merge",
+    "land",
     {
       number: ctx.issue,
       state,
       expectedSha: code,
       expectedBase: current.baseSha,
       revision: authorized,
-      mergeQueue: ctx.mergeQueue,
+      landingOrder: ctx.landingOrder,
       summary: landSummary(state, authorized),
       binding,
       landRun,
     },
-    MERGE_REPLY,
+    LAND_OP_REPLY,
   );
-  if (!reply.merged) {
+  if (!reply.landed) {
     return await refusedLand(ctx, state, reply);
   }
   if (reply.byHand === true) {
@@ -265,7 +265,7 @@ async function landCode(
 }
 
 const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
-  const { merged } = ctx.state;
+  const { landed: merged } = ctx.state;
   if (ctx.state.stage === "done" && merged !== null) {
     return await finishCompleted(ctx, ctx.state, merged);
   }
@@ -283,8 +283,8 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
     return recovered;
   }
   // Before the approval gate, so a stop retains the landed result's evidence.
-  if (ctx.state.codeMerged !== null) {
-    return afterEarlierLand(ctx.state, ctx.state.codeMerged);
+  if (ctx.state.codeLanded !== null) {
+    return afterEarlierLand(ctx.state, ctx.state.codeLanded);
   }
   const gate = approvalGate(ctx, ctx.state, current);
   if (gate !== null) {

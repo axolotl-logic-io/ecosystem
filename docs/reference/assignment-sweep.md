@@ -73,7 +73,7 @@ These stay separate ([`identity-schema`](../decisions/buddies-and-tasks.md#ident
 | Work | Buddy | Account whose assignment counts |
 | --- | --- | --- |
 | Author, Implementation, Hardening (`review`), Sync | Hippy | `devAccount` |
-| `merge` (Integration, Security, Land, Completion) | Lawd | `mergeAccount` |
+| `merge` (Integration, Security, Land, Completion) | Lawd | `landingAccount` |
 
 An assignment never makes either account a trusted human: trusted input is still only allowed collaborators ([`allow-listed-input`](../decisions/authority.md#allow-listed-input)). Results and receipts still come only from the landing account ([`authenticated-authority-records`](../decisions/authority.md#authenticated-authority-records)).
 

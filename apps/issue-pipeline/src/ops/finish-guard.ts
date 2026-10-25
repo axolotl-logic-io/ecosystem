@@ -50,7 +50,7 @@ function finishGate(
   saved: IssueState,
   current: CurrentRevision,
 ): FinishRefusal | undefined {
-  const { merged } = saved;
+  const { landed: merged } = saved;
   if (saved.stage !== "done" || merged === null) {
     throw new OpsError(
       `the finish op needs #${saved.number}'s saved state done with a merged revision; it is ${saved.stage}`,

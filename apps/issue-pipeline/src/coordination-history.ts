@@ -3,8 +3,9 @@
 // Another run's history is prior work (ops/claim-state.ts).
 import type { IssueComment } from "./comments.ts";
 import type { Config } from "./config.ts";
+import { currentRecord } from "./coordination-record-schema.ts";
 import type { Record } from "./coordination-records.ts";
-import { RECORD, RECORD_END, RECORD_HEADER } from "./coordination-records.ts";
+import { RECORD_END, RECORD_HEADER } from "./coordination-records.ts";
 
 // The record a comment body holds, unchecked for authority, or null.
 function recordIn(body: string): Record | null {
@@ -15,7 +16,7 @@ function recordIn(body: string): Record | null {
     const raw: unknown = JSON.parse(
       body.slice(RECORD_HEADER.length, -RECORD_END.length),
     );
-    return RECORD.safeParse(raw).data ?? null;
+    return currentRecord(raw);
   } catch {
     return null;
   }
@@ -23,7 +24,7 @@ function recordIn(body: string): Record | null {
 
 function instanceOf(record: Record): string {
   if (record.kind === "request") {
-    return record.identity.instance;
+    return record.binding.instance;
   }
   return record.instance;
 }

@@ -4,7 +4,7 @@
 
 import { JOB_REPO } from "../job/layout.ts";
 import type { RoleContext } from "../job/role-context.ts";
-import type { CodeMerged, IssueState } from "../state.ts";
+import type { CodeLanded, IssueState } from "../state.ts";
 import type { Check } from "./op-replies.ts";
 import {
   fullCheckLines,
@@ -16,7 +16,7 @@ import {
 // Where a change's work may go: the issue's code branch, with its docs in
 // repo/docs/; or, once its code landed (`codeMerged`), nowhere: a session
 // after the Land commits nothing.
-type Mode = { kind: "branch" } | { kind: "merged"; merged: CodeMerged };
+type Mode = { kind: "branch" } | { kind: "merged"; merged: CodeLanded };
 
 const MAX_TAIL = 3000;
 const MAX_CHECKS = 20;
@@ -24,8 +24,8 @@ const SHORT_SHA = 12;
 
 // The mode of the change `state` describes.
 function changeModeOf(state: IssueState): Mode {
-  if (state.codeMerged !== null) {
-    return { kind: "merged", merged: state.codeMerged };
+  if (state.codeLanded !== null) {
+    return { kind: "merged", merged: state.codeLanded };
   }
   return { kind: "branch" };
 }

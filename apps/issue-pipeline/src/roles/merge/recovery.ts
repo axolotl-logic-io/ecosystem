@@ -21,28 +21,28 @@ import { toRequirements } from "./returns.ts";
 const OWN_LAND_INPUTS_CHANGED =
   "the trusted inputs changed since the own merge";
 
-const MERGE_REPLY = z.union([
+const LAND_OP_REPLY = z.union([
   z.looseObject({
-    merged: z.literal(true),
+    landed: z.literal(true),
     mergeCommit: z.string().min(1),
     headSha: z.string().min(1),
     byHand: z.boolean().optional(),
   }),
-  z.looseObject({ merged: z.literal(false), reason: z.string().min(1) }),
+  z.looseObject({ landed: z.literal(false), reason: z.string().min(1) }),
 ]);
 
 // Unconfirmed attempts are reconciled before any ordinary approval/integration
 // path. External landed truth without an own receipt stops in land.ts.
 async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
   const { state } = ctx;
-  const attempt = state.mergeAttempt;
-  if (attempt === null || state.merged !== null) {
+  const attempt = state.landingAttempt;
+  if (attempt === null || state.landed !== null) {
     return null;
   }
   if (
     attempt.result === null &&
-    state.codeMerged !== null &&
-    recordedAuthorization(state)?.code === state.codeMerged.sha
+    state.codeLanded !== null &&
+    recordedAuthorization(state)?.code === state.codeLanded.sha
   ) {
     return null;
   }
@@ -52,11 +52,11 @@ async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
   if (binding !== null) {
     request = { ...request, binding };
   }
-  const reply = await opReply(ctx, "reconcile-merge", request, MERGE_REPLY);
-  if (!reply.merged || reply.byHand === true) {
+  const reply = await opReply(ctx, "reconcile-land", request, LAND_OP_REPLY);
+  if (!reply.landed || reply.byHand === true) {
     let reason =
       "observed external merged truth has no saved successful response; read-only reconciliation is required";
-    if (!reply.merged) {
+    if (!reply.landed) {
       ({ reason } = reply);
     }
     return { kind: "stop", code: "merge-refused", reason, state };
@@ -74,7 +74,7 @@ async function recoverOwnLand(
   current: CurrentRevision,
 ): Promise<RoleEnd | null> {
   const { state } = ctx;
-  const { merged, codeMerged } = state;
+  const { landed: merged, codeLanded: codeMerged } = state;
   const authorized = recordedAuthorization(state);
   if (
     state.stage !== "merge" ||
@@ -131,4 +131,4 @@ async function recoverOwnLand(
   });
 }
 
-export { MERGE_REPLY, recoverAttempt, recoverOwnLand };
+export { LAND_OP_REPLY, recoverAttempt, recoverOwnLand };

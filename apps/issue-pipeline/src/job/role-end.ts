@@ -192,8 +192,12 @@ function branchMoved(
   state: IssueState,
   remoteHead: string | null,
 ): RoleEnd | null {
-  const { headSha, codeMerged } = state;
-  if (state.mergeAttempt !== null || codeMerged !== null || headSha === null) {
+  const { headSha, codeLanded: codeMerged } = state;
+  if (
+    state.landingAttempt !== null ||
+    codeMerged !== null ||
+    headSha === null
+  ) {
     return null;
   }
   if (remoteHead === headSha) {

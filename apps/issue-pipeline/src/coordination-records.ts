@@ -4,41 +4,17 @@ import { z } from "zod";
 import { assertCommentAuthority } from "./comment-authority.ts";
 import type { IssueComment } from "./comments.ts";
 import type { Config } from "./config.ts";
+import {
+  currentRecord,
+  type INVOCATION_BINDING,
+  RECORD,
+} from "./coordination-record-schema.ts";
 import { OpsError } from "./ops-error.ts";
 
 const HEX_RADIX = 16;
 const HEX_BYTE_WIDTH = 2;
 const HEADER = "<!-- agent-pipeline:coordination\n";
 const END = "\n-->";
-const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
-const INVOCATION_BINDING = z.strictObject({
-  instance: z.string().uuid(),
-  lane: z.string().min(1),
-  issue: z.number().int().positive(),
-  branch: z.string().min(1),
-  repo: z.string().min(1),
-  base: z.string().min(1),
-});
-const RECORD = z.discriminatedUnion("kind", [
-  z.strictObject({
-    version: z.literal(1),
-    scope: z.string().min(1),
-    operation: z.string().uuid(),
-    kind: z.literal("request"),
-    // Saved coordination records keep their historical key, `identity`.
-    identity: INVOCATION_BINDING,
-    token: SHA,
-  }),
-  z.strictObject({
-    version: z.literal(1),
-    scope: z.string().min(1),
-    operation: z.string().uuid(),
-    kind: z.enum(["confirm", "release", "cancel", "save"]),
-    request: z.number().int().positive(),
-    instance: z.string().uuid(),
-    evidence: z.json().optional(),
-  }),
-]);
 const EVIDENCE = z.json();
 type Evidence = z.infer<typeof EVIDENCE>;
 type InvocationBinding = z.infer<typeof INVOCATION_BINDING>;
@@ -108,14 +84,14 @@ function parseRecord(cfg: Config, comment: IssueComment): Row[] {
   } catch {
     hold("unreadable record");
   }
-  const parsed = RECORD.safeParse(raw);
-  if (!parsed.success) {
+  const record = currentRecord(raw);
+  if (record === null) {
     hold("invalid record");
   }
-  if (parsed.data.kind === "request") {
-    assertScope(parsed.data.scope, parsed.data.identity);
+  if (record.kind === "request") {
+    assertScope(record.scope, record.binding);
   }
-  return [{ ...parsed.data, id: comment.id }];
+  return [{ ...record, id: comment.id }];
 }
 function recordsOf(
   cfg: Config,
@@ -132,7 +108,7 @@ function recordsOf(
     if (
       request === undefined ||
       row.scope !== request.scope ||
-      row.instance !== request.identity.instance
+      row.instance !== request.binding.instance
     ) {
       hold("transition request/scope binding is invalid");
     }
@@ -144,7 +120,7 @@ function recordsOf(
   if (
     requests.some(
       (row) =>
-        row.identity.repo !== cfg.repo || row.identity.base !== cfg.baseBranch,
+        row.binding.repo !== cfg.repo || row.binding.base !== cfg.baseBranch,
     )
   ) {
     hold("request repository/base binding is invalid");
@@ -153,7 +129,7 @@ function recordsOf(
     rows.map((row) => row.operation),
     rows.map((row) => String(row.id)),
     requests.map((row) => row.token),
-    requests.map((row) => row.identity.instance),
+    requests.map((row) => row.binding.instance),
   ]) {
     if (new Set(keys).size !== keys.length) {
       hold("duplicate operation, token or instance");
@@ -187,7 +163,7 @@ function transition(
     return;
   }
   const request = view.pending.find((item) => item.id === row.request);
-  if (request === undefined || request.identity.instance !== row.instance) {
+  if (request === undefined || request.binding.instance !== row.instance) {
     hold("mutation of an absent or released predecessor");
   }
   const current = ownerAt(port, scope, view);
@@ -266,8 +242,8 @@ function sameBinding(a: InvocationBinding, b: InvocationBinding): boolean {
 function own(view: Snapshot, identity: InvocationBinding): Request {
   if (
     !view.confirmed ||
-    view.owner?.identity.instance !== identity.instance ||
-    !sameBinding(view.owner.identity, identity)
+    view.owner?.binding.instance !== identity.instance ||
+    !sameBinding(view.owner.binding, identity)
   ) {
     hold("execution ownership lost or unconfirmed");
   }
@@ -289,9 +265,7 @@ export {
   END as RECORD_END,
   HEADER as RECORD_HEADER,
   hold,
-  INVOCATION_BINDING,
   own,
-  RECORD,
   recordsOf,
   refOf,
   sameBinding,

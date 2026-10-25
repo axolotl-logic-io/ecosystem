@@ -21,7 +21,7 @@ import { text } from "node:stream/consumers";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import { loadConfig, withCheckout } from "./config.ts";
-import { INVOCATION_BINDING } from "./coordination-records.ts";
+import { INVOCATION_BINDING } from "./coordination-record-schema.ts";
 import { ask } from "./ops/ask.ts";
 import { boundClaim } from "./ops/bound-claim.ts";
 import { ciStatus } from "./ops/ci-status.ts";
@@ -32,7 +32,7 @@ import { currentRevisionOp } from "./ops/current-revision.ts";
 import { boundOps, unboundOps } from "./ops/execution-envelope.ts";
 import { closeParent, finishIssue } from "./ops/finish.ts";
 import { integrationTaskOps } from "./ops/integration-task.ts";
-import { merge } from "./ops/merge.ts";
+import { landOp } from "./ops/land.ts";
 import { post, postComments, QUEUED_COMMENT } from "./ops/post.ts";
 import { prOps } from "./ops/pr.ts";
 import { pushOps } from "./ops/push.ts";
@@ -84,8 +84,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   // Lawd's read-only Integration (#185).
   ...Object.entries(integrationTaskOps),
   // Lands code only, checkpointing attempt/response/receipt; never the issue.
-  ["merge", merge],
-  ["reconcile-merge", reconcileLand],
+  ["land", landOp],
+  ["reconcile-land", reconcileLand],
   // Completes an issue its merge stage saved done and landed.
   ["finish", finishIssue],
   ["close-parent", closeParent],
@@ -109,7 +109,7 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["current-revision", currentRevisionOp],
   ["verify", verify],
   // Read-only post-Land confirmation of an own fast-forward's pre-Land proof.
-  ["confirm-merged", confirmLandedOp],
+  ["confirm-landed", confirmLandedOp],
   ["ci-status", ciStatus],
   ["post", post],
   ["release", release],
@@ -163,11 +163,19 @@ async function readRequest(): Promise<unknown> {
   return request;
 }
 
+// The ops #166 renamed, by the name a job before it sends. ops.mjs serves
+// both names; jobs send the new one.
+const RENAMED_OPS: ReadonlyMap<string, string> = new Map([
+  ["merge", "land"],
+  ["confirm-merged", "confirm-landed"],
+  ["reconcile-merge", "reconcile-land"],
+]);
+
 // Runs a parsed request: its queued comments, then its op.
 function runRequest(request: unknown): OpsReply {
   const envelope = parseRequest(ENVELOPE, "ops", request);
   const { checkout, comments, config, op, policyDigest } = envelope;
-  const handler = OPS.get(op);
+  const handler = OPS.get(RENAMED_OPS.get(op) ?? op);
   if (handler === undefined) {
     throw new OpsError(`unknown op "${op}"`);
   }

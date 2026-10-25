@@ -25,7 +25,7 @@ import type { AgentName, SessionPhase, SessionSpec } from "./role-context.ts";
 import { runtimeBoundary } from "./runtime-policy.ts";
 import type { JobTask } from "./task-request.ts";
 
-type JobRole = "reader" | "writer" | "merger";
+type JobRole = "reader" | "writer" | "lander";
 
 // What a role may hold: the job variable its token comes from, if any, which
 // is hidden from every session, and the hosts it may reach.
@@ -67,7 +67,7 @@ const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
   author: "reader",
   implement: "writer",
   review: "writer",
-  merge: "merger",
+  merge: "lander",
 };
 
 // The access profile each task job runs as (`least-privilege-per-task`):
@@ -140,8 +140,8 @@ const STAGE_AGENTS: Readonly<Record<Stage, StageAgent>> = {
     sessions: [{ phase: null, commits: false }],
   },
   implement: {
-    agent: "issue-pipeline-implementor",
-    role: "implementor",
+    agent: "issue-pipeline-developer",
+    role: "developer",
     sessions: [{ phase: null, commits: true }],
   },
   review: {
@@ -160,8 +160,8 @@ const STAGE_AGENTS: Readonly<Record<Stage, StageAgent>> = {
 // the Developer, in a fresh session; Lawd's Integration runs no model.
 const TASK_AGENTS: Readonly<Record<JobTask, StageAgent>> = {
   sync: {
-    agent: "issue-pipeline-implementor",
-    role: "implementor",
+    agent: "issue-pipeline-developer",
+    role: "developer",
     sessions: [{ phase: "sync", commits: true }],
   },
   integration: { agent: REVIEWER_AGENT, role: "reviewer", sessions: [] },
@@ -180,8 +180,8 @@ const HARDENING_BUDDIES = ["lawd", "hippy"] as const;
 type HardeningBuddy = (typeof HARDENING_BUDDIES)[number];
 
 const HIPPY_HARDENING: StageAgent = {
-  agent: "issue-pipeline-implementor",
-  role: "implementor",
+  agent: "issue-pipeline-developer",
+  role: "developer",
   sessions: [{ phase: "hardening", commits: true }],
 };
 
@@ -207,7 +207,7 @@ const DEFAULT_ROLES: Roles = {
     tokenEnv: undefined,
     network: ["api.anthropic.com", "registry.npmjs.org"],
   },
-  merger: {
+  lander: {
     tokenEnv: undefined,
     network: ["api.github.com", "api.anthropic.com", "registry.npmjs.org"],
   },
@@ -257,7 +257,7 @@ function rolesOf(config: JobRolesConfig | null | undefined): Roles {
   return {
     reader: mergedRole(DEFAULT_ROLES.reader, config?.reader),
     writer: mergedRole(DEFAULT_ROLES.writer, config?.writer),
-    merger: mergedRole(DEFAULT_ROLES.merger, config?.merger),
+    lander: mergedRole(DEFAULT_ROLES.lander, config?.lander),
   };
 }
 

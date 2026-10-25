@@ -37,7 +37,7 @@ const START_ARGS = z.object({
   branch: z.string().min(1),
   lane: z.string().min(1),
   stage: z.enum(STAGES),
-  mergeQueue: z.string().optional(),
+  landingOrder: z.string().optional(),
   task: z.enum(JOB_TASKS).optional(),
   binding: z.string().min(1).optional(),
   // A start for an assignment (#119): the job checks its buddy's grant.
@@ -93,8 +93,8 @@ function jobArgv(args: StartArgs, jobId: string): string[] {
     "--job-id",
     jobId,
   ];
-  if (args.mergeQueue !== undefined) {
-    argv.push("--merge-queue", args.mergeQueue);
+  if (args.landingOrder !== undefined) {
+    argv.push("--landing-order", args.landingOrder);
   }
   if (args.task !== undefined && args.binding !== undefined) {
     argv.push("--task", args.task, "--binding", args.binding);

@@ -13,7 +13,7 @@ const APPROVAL = z.looseObject({
 
 function approvePr(cfg: Config, pr: number, head: string): void {
   const result = APPROVAL.parse(
-    ghJson(cfg, "merge", [
+    ghJson(cfg, "landing", [
       "api",
       `repos/${cfg.repo}/pulls/${pr}/reviews`,
       "--method",
@@ -28,7 +28,7 @@ function approvePr(cfg: Config, pr: number, head: string): void {
   );
   if (
     result.commit !== head ||
-    result.login.toLowerCase() !== cfg.mergeAccount.toLowerCase()
+    result.login.toLowerCase() !== cfg.landingAccount.toLowerCase()
   ) {
     throw new OpsError(
       "PR approval does not match the review account and head",

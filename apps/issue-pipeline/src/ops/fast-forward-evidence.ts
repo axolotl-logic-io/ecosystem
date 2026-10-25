@@ -5,10 +5,10 @@ import type { Config } from "../config.ts";
 import { git } from "../github.ts";
 import { FULL_SHA } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
-import type { CodeMerged, IssueState } from "../state.ts";
+import type { CodeLanded, IssueState } from "../state.ts";
 import { sameRevision } from "../state.ts";
 import { assertFastForward, targetRef } from "./land-branch.ts";
-import { confirmAuthorization } from "./merge-attempt.ts";
+import { confirmAuthorization } from "./landing-attempt.ts";
 
 const WHITESPACE = /\s+/u;
 
@@ -16,9 +16,9 @@ function intendedBase(
   cfg: Config,
   number: number,
   state: IssueState,
-  result: CodeMerged,
+  result: CodeLanded,
 ): string | undefined {
-  const attempt = state.mergeAttempt;
+  const attempt = state.landingAttempt;
   if (attempt?.operation === undefined) {
     return undefined;
   }
@@ -45,14 +45,14 @@ function retainedFastForwardReceipt(
   number: number,
   state: IssueState,
 ): boolean {
-  const attempt = state.mergeAttempt;
-  if (attempt?.operation === undefined || state.merged === null) {
+  const attempt = state.landingAttempt;
+  if (attempt?.operation === undefined || state.landed === null) {
     return false;
   }
   if (
-    state.codeMerged === null ||
-    intendedBase(cfg, number, state, state.codeMerged) === undefined ||
-    !sameRevision(state.merged, attempt.authorized)
+    state.codeLanded === null ||
+    intendedBase(cfg, number, state, state.codeLanded) === undefined ||
+    !sameRevision(state.landed, attempt.authorized)
   ) {
     throw new OpsError(
       "saved fast-forward receipt differs from its exact intent",
@@ -66,19 +66,19 @@ function confirmedFastForwardBase(
   cfg: Config,
   number: number,
   wt: string,
-  { state, result }: { state: IssueState; result: CodeMerged },
+  { state, result }: { state: IssueState; result: CodeLanded },
 ): string | undefined {
   const base = intendedBase(cfg, number, state, result);
   if (base === undefined) {
     return undefined;
   }
-  const attempt = state.mergeAttempt;
+  const attempt = state.landingAttempt;
   if (
     attempt === null ||
-    state.merged === null ||
-    !sameRevision(state.merged, attempt.authorized) ||
-    state.codeMerged?.pr !== result.pr ||
-    state.codeMerged.sha !== result.sha
+    state.landed === null ||
+    !sameRevision(state.landed, attempt.authorized) ||
+    state.codeLanded?.pr !== result.pr ||
+    state.codeLanded.sha !== result.sha
   ) {
     throw new OpsError(
       "fast-forward has no authenticated confirmed delivery receipt",
@@ -91,7 +91,7 @@ function confirmedFastForwardBase(
 // Read the exact literal target, not an abbreviated or glob-selected ref.
 function exactTarget(cfg: Config, wt: string): string {
   const ref = targetRef(cfg);
-  const result = git(cfg, "merge", ["-C", wt, "ls-remote", "origin", ref]);
+  const result = git(cfg, "landing", ["-C", wt, "ls-remote", "origin", ref]);
   const [sha, found, extra] = result.stdout.trim().split(WHITESPACE);
   if (found !== ref || extra !== undefined) {
     throw new OpsError("configured target has no unique exact remote head");

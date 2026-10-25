@@ -30,8 +30,8 @@ const TEARDOWN_TIMEOUT_MS = 300_000;
 
 const REQUEST = z.looseObject({
   number: z.number().int().positive(),
-  // The merged PR and its merge commit, once the code landed.
-  codeMerged: z
+  // The landed PR and its merge commit, once the code landed.
+  codeLanded: z
     .object({ pr: z.number().int().positive(), sha: z.string().min(1) })
     .nullish(),
 });
@@ -116,7 +116,11 @@ function verifyLanded(
 }
 
 function verify(cfg: Config, request: unknown): VerifyReply {
-  const { number, codeMerged } = parseRequest(REQUEST, "verify", request);
+  const { number, codeLanded: codeMerged } = parseRequest(
+    REQUEST,
+    "verify",
+    request,
+  );
   if (codeMerged === undefined || codeMerged === null) {
     return verifyCheckout(cfg, number);
   }

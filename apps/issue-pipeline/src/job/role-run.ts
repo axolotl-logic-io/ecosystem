@@ -69,7 +69,7 @@ interface RoleJob extends EndingJob {
   hardening?: HardeningBuddy;
   // The task a task job runs (`--task`), or null for a stage job.
   task?: (TaskRequest & { name: JobTask }) | null;
-  mergeQueue: readonly number[] | null;
+  landingOrder: readonly number[] | null;
   dirs: JobDirs;
   // The behavioral prompts the job pinned for its stage's sessions.
   prompts: StagePrompts;
@@ -92,7 +92,7 @@ interface RoleJob extends EndingJob {
 // reconcile the completion its finish didn't finish (the merge role's
 // finish-only path).
 function reconcilesCompletion(stage: Stage, state: IssueState): boolean {
-  return stage === "merge" && state.stage === "done" && state.merged !== null;
+  return stage === "merge" && state.stage === "done" && state.landed !== null;
 }
 
 // What one claimed run holds while it runs (Claimed in role-end.ts) and
@@ -130,7 +130,7 @@ function contextOf(
     dirs: { job: job.dirs.root, repo: job.dirs.repo },
     issueFile,
     inputs,
-    mergeQueue: job.mergeQueue,
+    landingOrder: job.landingOrder,
     op,
     session: async (spec: SessionSpec): Promise<SessionResult> => {
       if (spec.phase !== "hardening" || !spec.commits) {

@@ -18,7 +18,7 @@
 //   revision, so a visitor's or the pipeline's comment never wakes the author.
 // - A stopped issue whose stop label is gone runs at the stage it stopped in.
 
-import { LABELS } from "../labels.ts";
+import { isLandedLabel, LABELS } from "../labels.ts";
 import {
   DEVELOPER_RECOVERY_REASON,
   requirementsStage,
@@ -58,7 +58,7 @@ const NONE: IssuePlan = { kind: "none" };
 
 // True for a completion the merge role saved: done, with what landed.
 function isCompletion(state: IssueState | null): boolean {
-  return state?.stage === "done" && state.merged !== null;
+  return state?.stage === "done" && state.landed !== null;
 }
 
 // True when the issue isn't the orchestrator's to schedule at all.
@@ -70,7 +70,7 @@ function unscheduled(
   const completion = isCompletion(issue.state);
   return (
     issue.labels.some(isStopLabel) ||
-    (labels.has(LABELS.merged.name) && !completion) ||
+    ([...labels].some(isLandedLabel) && !completion) ||
     labels.has(LABELS.split.name) ||
     settings.skipLabels.some((label) => labels.has(label)) ||
     !issue.authorAllowed ||

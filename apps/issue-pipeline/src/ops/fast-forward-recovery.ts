@@ -14,7 +14,7 @@ import {
   boundAttempt,
   confirmAuthorization,
   saveReceipt,
-} from "./merge-attempt.ts";
+} from "./landing-attempt.ts";
 import { viewForLand } from "./pr-merge.ts";
 
 function readFastForward(
@@ -40,8 +40,8 @@ function readFastForward(
   // Keep the exact landed fact even when changed inputs or PR binding prevent
   // granting an own receipt. This fact alone grants no writer or clearance.
   if (
-    state.codeMerged !== null &&
-    JSON.stringify(state.codeMerged) !== JSON.stringify(codeMerged)
+    state.codeLanded !== null &&
+    JSON.stringify(state.codeLanded) !== JSON.stringify(codeMerged)
   ) {
     throw new OpsError("fast-forward differs from retained landed-code fact");
   }
@@ -74,7 +74,7 @@ function readFastForward(
     throw new OpsError("confirmation deadline reached during evidence reads");
   }
   saveReceipt(cfg, number, observed, attempt.authorized);
-  return { merged: true, mergeCommit: result, headSha: result };
+  return { landed: true, mergeCommit: result, headSha: result };
 }
 
 export { readFastForward };

@@ -38,7 +38,7 @@ function exitPushOf(
     case "writer":
       return async (): Promise<void> => {
         const state = claimed();
-        if (state === null || state.codeMerged !== null) {
+        if (state === null || state.codeLanded !== null) {
           return;
         }
         const reply = await runOp("exit-push", {});
@@ -47,7 +47,7 @@ function exitPushOf(
         }
       };
     case "reader":
-    case "merger":
+    case "lander":
       return null;
     default:
       return unreachable(role);

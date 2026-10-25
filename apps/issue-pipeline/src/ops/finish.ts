@@ -9,7 +9,12 @@ import { closeClaims } from "../claims.ts";
 import { comment, signed } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { gh, ghJson, issueState } from "../github.ts";
-import { clearStopLabels, LABELS, setLabels } from "../labels.ts";
+import {
+  clearStopLabels,
+  isLandedLabel,
+  LABELS,
+  setLabels,
+} from "../labels.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest } from "../process.ts";
 import { currentRevision } from "../revision.ts";
@@ -87,7 +92,7 @@ function closeIssue(cfg: Config, n: number, text: string): boolean {
   if (state !== "open") {
     return false;
   }
-  gh(cfg, "merge", [
+  gh(cfg, "landing", [
     "issue",
     "close",
     String(n),
@@ -107,7 +112,7 @@ function closingText(cfg: Config, state: IssueState, merged: Revision): string {
   if (state.pr !== null && merged.code !== null) {
     text = `PR #${state.pr} merged into ${cfg.baseBranch} as ${short(merged.code)}.`;
   }
-  return signed({ role: "merger" }, text);
+  return signed({ role: "lander" }, text);
 }
 
 function sameLanded(a: Revision | null, b: Revision | null): boolean {
@@ -123,10 +128,10 @@ function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
   const n = state.number;
   deleteBranch(cfg, state);
   if (state.pr !== null) {
-    setLabels(cfg, state.pr, [LABELS.merged.name], [LABELS.working.name]);
+    setLabels(cfg, state.pr, [LABELS.landed.name], [LABELS.working.name]);
     clearStopLabels(cfg, state.pr);
   }
-  setLabels(cfg, n, [LABELS.merged.name], [LABELS.working.name]);
+  setLabels(cfg, n, [LABELS.landed.name], [LABELS.working.name]);
   clearStopLabels(cfg, n);
   let why = "Change published.";
   if (state.pr !== null) {
@@ -149,7 +154,7 @@ function finishIssue(cfg: Config, request: unknown): FinishIssueReply {
   if (saved === null) {
     throw new OpsError(`#${n} has no readable saved state to finish`);
   }
-  if (req.state !== undefined && !sameLanded(req.state.merged, saved.merged)) {
+  if (req.state !== undefined && !sameLanded(req.state.landed, saved.landed)) {
     throw new OpsError(
       `the finish op's state for #${n} is not the saved completion`,
     );
@@ -158,7 +163,7 @@ function finishIssue(cfg: Config, request: unknown): FinishIssueReply {
   if (refused !== undefined) {
     return refused;
   }
-  const { merged } = saved;
+  const { landed: merged } = saved;
   if (merged === null) {
     throw new OpsError(`#${n} has no merged revision`);
   }
@@ -166,9 +171,10 @@ function finishIssue(cfg: Config, request: unknown): FinishIssueReply {
 }
 
 // A closed sub-issue landed when GitHub closed it as completed, as a PR merge
-// does, or it carries `agent:merged`.
+// does, or it carries `agent:landed` (or `agent:merged`, its name before
+// #166).
 function subIssueMerged(sub: SubIssue): boolean {
-  return sub.reason === "completed" || sub.labels.includes(LABELS.merged.name);
+  return sub.reason === "completed" || sub.labels.some(isLandedLabel);
 }
 
 // Closes a split issue once every sub-issue is closed and at least one of
@@ -179,7 +185,7 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   const { number: n } = parseRequest(ISSUE_REQUEST, "close-parent", request);
   const subs =
     SUB_ISSUES.parse(
-      ghJson(cfg, "merge", [
+      ghJson(cfg, "landing", [
         "api",
         `repos/${cfg.repo}/issues/${n}/sub_issues?per_page=${SUB_ISSUES_PER_PAGE}`,
         "--jq",
@@ -198,8 +204,8 @@ function closeParent(cfg: Config, request: unknown): CloseParentReply {
   if (!subs.some(subIssueMerged)) {
     return { closed: false, reason: "no sub-issue merged" };
   }
-  gh(cfg, "merge", ["issue", "close", String(n), "-R", cfg.repo]);
-  setLabels(cfg, n, [LABELS.merged.name], [LABELS.split.name]);
+  gh(cfg, "landing", ["issue", "close", String(n), "-R", cfg.repo]);
+  setLabels(cfg, n, [LABELS.landed.name], [LABELS.split.name]);
   const list = subs.map((sub) => `#${sub.number}`).join(", ");
   comment(
     cfg,

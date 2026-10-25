@@ -72,7 +72,7 @@ function identityOf(
   const jq = "{fullName: .full_name, archived, defaultBranch: .default_branch}";
   const args = ["api", `repos/${cfg.repo}`, "--jq", jq];
   const parsed = REPOSITORY.safeParse(
-    ghJson(cfg, "merge", args, { allowFail: true }),
+    ghJson(cfg, "landing", args, { allowFail: true }),
   );
   if (!parsed.success) {
     throw new Refusal(`GitHub doesn't show ${cfg.repo} readable`);
@@ -170,7 +170,7 @@ function openSource(cfg: Config, input: string, ref: string | null): Source {
     const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
     gitIn(dir, ["remote", "add", "origin", url]);
     const refspecs = ["+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"];
-    git(cfg, "merge", [
+    git(cfg, "landing", [
       "-C",
       dir,
       "fetch",

@@ -4,7 +4,7 @@ This page describes how the pipeline decides what is authoritative: its two GitH
 
 ## Two GitHub accounts
 
-The configuration names distinct `devAccount` and `mergeAccount` logins. These are authentication identities, not the Author, Developer and Reviewer model roles.
+The configuration names distinct `devAccount` and `landingAccount` logins. These are authentication identities, not the Author, Developer and Reviewer model roles.
 
 | Operation | Account |
 |---|---|
@@ -16,7 +16,7 @@ The configuration names distinct `devAccount` and `mergeAccount` logins. These a
 
 When a PR action also needs a comment, development does the action and review/merge posts the comment.
 
-`credentialsEnvFile` must be an absolute path to a regular file with no group or other permissions. Each call reads only its selected variable, `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` or `ISSUE_PIPELINE_MERGE_GITHUB_TOKEN`, and exports nothing else. The old single-account `account` and `tokenFile` fields are refused. Optional `legacyAccount` only classifies an earlier machine account's comments for display and trusted-input exclusion; it grants nothing.
+`credentialsEnvFile` must be an absolute path to a regular file with no group or other permissions. Each call reads only its selected variable, `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` or `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`, and exports nothing else. The old single-account `account` and `tokenFile` fields are refused. Optional `legacyAccount` only classifies an earlier machine account's comments for display and trusted-input exclusion; it grants nothing.
 
 Privileged calls get only their selected token as `GH_TOKEN`. Git uses a per-call, non-storing credential helper for the configured repository, with no global helper.
 

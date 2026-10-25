@@ -92,7 +92,7 @@ function withNode(
 }
 
 function listComments(cfg: Config, number: number): IssueComment[] {
-  const lines = ghLines(cfg, "merge", [
+  const lines = ghLines(cfg, "landing", [
     "api",
     "--paginate",
     `repos/${cfg.repo}/issues/${number}/comments?per_page=100`,
@@ -112,7 +112,7 @@ function rawComment(
 ): void {
   gh(
     cfg,
-    "merge",
+    "landing",
     [
       "api",
       "-X",
@@ -133,7 +133,7 @@ function listRepoComments(cfg: Config, since: string | null): IssueComment[] {
   if (since !== null) {
     query = `${query}&since=${since}`;
   }
-  const lines = ghLines(cfg, "merge", [
+  const lines = ghLines(cfg, "landing", [
     "api",
     "--paginate",
     `repos/${cfg.repo}/issues/comments?${query}`,
@@ -217,7 +217,7 @@ function editComment(
 ): void {
   gh(
     cfg,
-    "merge",
+    "landing",
     [
       "api",
       "-X",
@@ -245,11 +245,11 @@ function commentByKey(
   const text = `${signed(by, keyed.body)}\n${mark}`;
   const mine = listComments(cfg, number).find(
     (item) =>
-      item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+      item.user?.login.toLowerCase() === cfg.landingAccount.toLowerCase() &&
       (item.body ?? "").includes(mark),
   );
   if (mine === undefined) {
-    const posted = gh(cfg, "merge", [
+    const posted = gh(cfg, "landing", [
       "api",
       "-X",
       "POST",
@@ -271,10 +271,10 @@ function keyMark(number: number, key: string): string {
 }
 
 function pipelineRole(
-  cfg: Pick<Config, "mergeAccount">,
+  cfg: Pick<Config, "landingAccount">,
   item: IssueComment,
 ): string | null {
-  if (item.user?.login.toLowerCase() !== cfg.mergeAccount.toLowerCase()) {
+  if (item.user?.login.toLowerCase() !== cfg.landingAccount.toLowerCase()) {
     return null;
   }
   assertCommentAuthority(cfg, item);

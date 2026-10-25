@@ -3,7 +3,7 @@
 // one task requested for it (#186).
 //
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
-//     [--lane L] [--merge-queue n1,n2,…] [--job-id <uuid>]
+//     [--lane L] [--landing-order n1,n2,…] [--job-id <uuid>]
 //     [--hardening-buddy lawd|hippy]
 //   node job.mjs ... --stage <saved stage> --task sync|integration
 //     --binding <task binding as JSON>
@@ -117,7 +117,7 @@ async function runStage(
   given: Config,
   prompts: StagePrompts,
 ): Promise<RunEnd> {
-  const { issue, stage, branch, mergeQueue = null } = args;
+  const { issue, stage, branch, landingOrder = null } = args;
   const task = args.task?.name ?? null;
   const assigned = assignedRun(given, args);
   if ("end" in assigned) {
@@ -196,7 +196,7 @@ async function runStage(
     cfg,
     issue,
     stage,
-    mergeQueue,
+    landingOrder,
     hardening: args.hardeningBuddy ?? "lawd",
     task: args.task,
     dirs,

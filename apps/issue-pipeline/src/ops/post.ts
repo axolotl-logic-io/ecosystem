@@ -29,7 +29,7 @@ function postSigned(
   by: Author | undefined,
   body: string,
 ): number {
-  const posted = gh(cfg, "merge", [
+  const posted = gh(cfg, "landing", [
     "api",
     "-X",
     "POST",

@@ -32,7 +32,7 @@ function buddyAccountOf(
   task: JobTask | null,
 ): string {
   if (task === "integration" || (task === null && stage === "merge")) {
-    return cfg.mergeAccount;
+    return cfg.landingAccount;
   }
   return cfg.devAccount;
 }

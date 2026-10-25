@@ -11,7 +11,7 @@ import {
   resultReviewTarget,
   sameSecuritySubject,
 } from "../../security-clearance.ts";
-import type { CodeMerged, IssueState, Revision } from "../../state.ts";
+import type { CodeLanded, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 
@@ -55,13 +55,13 @@ function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
 async function prepare(
   ctx: RoleContext,
   revision: Revision,
-  codeMerged: CodeMerged | null,
+  codeMerged: CodeLanded | null,
 ): Promise<z.infer<typeof PREPARED>> {
   const tag = `security-${(revision.code ?? legacyWikiOf(revision))?.slice(0, SHORT_SHA) ?? "none"}`;
   const reply = await ctx.op("prepare-review", {
     tag,
     sinceSha: null,
-    codeMerged,
+    codeLanded: codeMerged,
   });
   const parsed = PREPARED.safeParse(reply);
   if (!parsed.success) {
@@ -73,7 +73,7 @@ async function prepare(
 // Candidate provenance is absent only for historical landed recovery.
 interface LandedResult {
   revision: Revision;
-  codeMerged: CodeMerged | null;
+  codeMerged: CodeLanded | null;
   still: (after: Revision) => boolean;
   target?: ReviewedTarget;
   resultTarget?: ReviewedTarget;
@@ -160,9 +160,9 @@ function candidateGate(
 ): RoleEnd | null {
   if (target !== undefined) {
     if (
-      state.mergeAttempt !== null ||
-      state.codeMerged !== null ||
-      (state.merged !== null && state.merged.code !== null)
+      state.landingAttempt !== null ||
+      state.codeLanded !== null ||
+      (state.landed !== null && state.landed.code !== null)
     ) {
       return errorStop(
         state,

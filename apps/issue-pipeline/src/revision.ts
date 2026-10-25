@@ -14,7 +14,7 @@ import { OpsError } from "./ops-error.ts";
 import { assertPrBase } from "./pr-authority.ts";
 import { run } from "./process.ts";
 import { policyRevision } from "./project-policy.ts";
-import type { CodeMerged, IssueState, Revision } from "./state.ts";
+import type { CodeLanded, IssueState, Revision } from "./state.ts";
 
 const PR_FIELDS =
   "number,state,mergeCommit,headRefName,headRefOid,baseRefName,isCrossRepository";
@@ -45,8 +45,8 @@ interface CurrentRevision {
   // The base branch's tip on GitHub, freshly fetched.
   baseSha: string;
   pr: PullRequest | null;
-  // The code Land GitHub reports, by the claim's rule (codeMergedOf).
-  codeMerged: CodeMerged | null;
+  // The code Land GitHub reports, by the claim's rule (codeLandedOf).
+  codeMerged: CodeLanded | null;
   checkoutHead: string;
   remoteHead: string | null;
   issueFile: string;
@@ -57,7 +57,7 @@ interface CurrentRevision {
 // are refused; a failed read throws, so a Land is never assumed.
 function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
   const view = PR_VIEW.safeParse(
-    ghJson(cfg, "merge", [
+    ghJson(cfg, "landing", [
       "pr",
       "view",
       String(pr),
@@ -115,7 +115,7 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
 function confirmLanded(
   cfg: Config,
   n: number,
-  { wt, codeMerged }: { wt: string; codeMerged: CodeMerged },
+  { wt, codeMerged }: { wt: string; codeMerged: CodeLanded },
 ): void {
   const { pr, sha } = codeMerged;
   const found = pullRequest(cfg, n, pr);
@@ -160,7 +160,7 @@ function issuePullRequest(
 }
 
 // The code Land `pr` records, or null when it hasn't merged.
-function codeMergedOf(pr: PullRequest | null): CodeMerged | null {
+function codeLandedOf(pr: PullRequest | null): CodeLanded | null {
   if (pr === null || pr.mergeCommit === null) {
     return null;
   }
@@ -181,7 +181,7 @@ function currentRevision(
   const context = writeIssueContext(cfg, n);
   const inputs = trustedInputsHash(cfg, context.issue, context.comments);
   const pr = issuePullRequest(cfg, n, state);
-  const codeMerged = codeMergedOf(pr);
+  const codeMerged = codeLandedOf(pr);
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);
   const baseSha = gitIn(wt, ["rev-parse", `origin/${cfg.baseBranch}`]).trim();
@@ -203,7 +203,7 @@ function currentRevision(
 
 export type { CurrentRevision, PullRequest };
 export {
-  codeMergedOf,
+  codeLandedOf,
   confirmLanded,
   currentRevision,
   issuePullRequest,

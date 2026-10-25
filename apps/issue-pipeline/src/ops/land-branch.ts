@@ -51,7 +51,7 @@ function landBranch(
   assertGitPushDestination(cfg, wt);
   const result = git(
     cfg,
-    "merge",
+    "landing",
     [
       "-C",
       wt,
@@ -65,7 +65,7 @@ function landBranch(
       "origin",
       `${head}:${ref}`,
     ],
-    // The Land attempt saved before this push reconciles it (merge-attempt.ts).
+    // The Land attempt saved before this push reconciles it (landing-attempt.ts).
     { allowFail: true, reconciles: true },
   );
   // Acknowledgement is only response evidence, never a confirmed receipt.

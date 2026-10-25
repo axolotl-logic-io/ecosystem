@@ -3,7 +3,7 @@
 // the phase's prompt page (task-facts.ts). Pure.
 
 import type { RoleContext } from "../../job/role-context.ts";
-import type { CodeMerged, Revision } from "../../state.ts";
+import type { CodeLanded, Revision } from "../../state.ts";
 import { bullets, header, replyLines } from "../task-facts.ts";
 
 // What prepare-review wrote for the security review.
@@ -17,7 +17,7 @@ interface SecurityReviewFacts {
   prepared: PreparedReview;
   // The exact candidate or historical confirmed landed revision.
   revision: Revision;
-  codeMerged: CodeMerged | null;
+  codeMerged: CodeLanded | null;
 }
 
 function resultLines(facts: SecurityReviewFacts): string[] {

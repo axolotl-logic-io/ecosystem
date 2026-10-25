@@ -30,7 +30,7 @@ const MS_PER_SECOND = 1000;
 // `implementor` role's is the installed version's longest writer session's.
 const SESSION_MINUTES: Readonly<Record<ModelRole, number>> = {
   author: 30,
-  implementor: 60,
+  developer: 60,
   reviewer: 30,
 };
 // The error of a session asked for once the job's stop began; it is

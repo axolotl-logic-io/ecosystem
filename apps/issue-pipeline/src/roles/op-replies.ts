@@ -104,7 +104,7 @@ async function opReply<T>(
 // refusal throws, so a PR that stays a draft is never read as ready. A change
 // with no code PR (none, or its code already landed) needs no ready PR.
 async function readyPr(ctx: RoleContext, state: IssueState): Promise<void> {
-  if (state.pr === null || state.codeMerged !== null) {
+  if (state.pr === null || state.codeLanded !== null) {
     return;
   }
   const reply = await opReply(

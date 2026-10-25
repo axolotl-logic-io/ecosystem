@@ -50,7 +50,7 @@ function authenticatedEnv(
   identity: Account,
 ): ReadonlyMap<string, string> {
   const token = credential(cfg, identity);
-  let account = cfg.mergeAccount;
+  let account = cfg.landingAccount;
   if (identity === "dev") {
     account = cfg.devAccount;
   }

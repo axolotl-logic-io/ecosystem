@@ -66,7 +66,7 @@ function notHardenable(
   if (!requirementsHold(state, gherkin, current.revision.inputs)) {
     return toRequirements(state, "the trusted inputs need requirements review");
   }
-  const { codeMerged } = state;
+  const { codeLanded: codeMerged } = state;
   if (codeMerged !== null && !codeLandConfirmed(current, codeMerged)) {
     return errorStop(
       state,
@@ -157,7 +157,7 @@ function checkpoint(
     hardened: revision,
     hardenedTarget: target,
     integration: null,
-    mergeReturn: null,
+    landingReturn: null,
   };
 }
 
@@ -253,10 +253,10 @@ async function postHardened(
   if (state.pr === null) {
     on = "issue";
   }
-  let role: "implementor" | "reviewer" = "reviewer";
+  let role: "developer" | "reviewer" = "reviewer";
   let by = "The Reviewer";
   if (ctx.hardening === "hippy") {
-    role = "implementor";
+    role = "developer";
     by = "Hippy, the Developer, in a fresh session,";
   }
   await ctx.post({
@@ -335,7 +335,7 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
     return first;
   }
   // Work merge sent back, such as a failed check, always hardens again.
-  const returned = ctx.state.mergeReturn !== null;
+  const returned = ctx.state.landingReturn !== null;
   if (
     !returned &&
     hardeningPassed(ready) &&
@@ -352,7 +352,7 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   if (returned && revision.code === before.revision.code) {
     return errorStop(
       ctx.state,
-      `merge sent this revision back (${ctx.state.mergeReturn?.reason}), and hardening changed nothing; a person must look at the failure`,
+      `merge sent this revision back (${ctx.state.landingReturn?.reason}), and hardening changed nothing; a person must look at the failure`,
     );
   }
   const unrecorded = await recordHardening(ctx, state, {

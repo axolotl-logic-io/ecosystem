@@ -76,7 +76,7 @@ async function pushBranch(
       number: ctx.issue,
       title: ctx.inputs.issue.title,
       body: summary,
-      by: { role: "implementor" },
+      by: { role: "developer" },
       reopen: state.pr,
     },
     OPEN_PR_REPLY,
@@ -109,7 +109,7 @@ function freshChange(state: IssueState): IssueState {
   return {
     ...state,
     stage: "review",
-    mergeReturn: null,
+    landingReturn: null,
     hardened: null,
     integration: null,
     security,

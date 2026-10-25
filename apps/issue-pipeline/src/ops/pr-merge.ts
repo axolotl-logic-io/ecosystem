@@ -26,7 +26,7 @@ type PrView = z.infer<typeof PR_VIEW>;
 
 function viewForLand(cfg: Config, pr: number): PrView {
   const view = PR_VIEW.parse(
-    ghJson(cfg, "merge", [
+    ghJson(cfg, "landing", [
       "pr",
       "view",
       String(pr),

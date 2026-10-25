@@ -1,7 +1,7 @@
 // The landing order between issues: which other issue's PR should land before
 // this one's. The caller passes its ranked queue (#234), whose issues
 // at review or merge hold the landing slot whatever their verdict, since a
-// stale approval is never authorization; without a queue and with mergeOrder
+// stale approval is never authorization; without a queue and with oldestFirst
 // set, the oldest PR at the merge stage goes first (decision merge-order).
 
 import { z } from "zod";
@@ -51,14 +51,14 @@ const READY_STATE = z.looseObject({
 // What the order reads from a `merge` request.
 interface OrderRequest {
   number: number;
-  mergeOrder?: boolean | null | undefined;
-  mergeQueue?: readonly number[] | null | undefined;
+  oldestFirst?: boolean | null | undefined;
+  landingOrder?: readonly number[] | null | undefined;
   state: { pr: number };
 }
 
 // The Land waits for issue #waitingFor and its PR #waitingForPr.
 interface Queued {
-  merged: false;
+  landed: false;
   reason: "queued";
   waitingFor: number;
   waitingForPr: number;
@@ -97,7 +97,7 @@ function readyPr(
 // merge stage whose PR is older. Without this, a slow issue's long verify
 // keeps losing the Land to quick issues in the other slots.
 function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
-  const listed = ghJson(cfg, "merge", [
+  const listed = ghJson(cfg, "landing", [
     "issue",
     "list",
     "-R",
@@ -129,7 +129,7 @@ function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
 // time, so no list limit can leave it out.
 function openUnstopped(cfg: Config, n: number): boolean {
   const viewed = VIEWED.parse(
-    ghJson(cfg, "merge", [
+    ghJson(cfg, "landing", [
       "issue",
       "view",
       String(n),
@@ -167,12 +167,12 @@ function aheadInQueue(
 
 // Why issue #number's Land waits for another issue, or undefined when it
 // need not wait. A queue is always enforced; the default order only with
-// mergeOrder set.
+// oldestFirst set.
 function queued(cfg: Config, req: OrderRequest): Queued | undefined {
   let ahead: Ahead | null;
-  if (req.mergeQueue !== undefined && req.mergeQueue !== null) {
-    ahead = aheadInQueue(cfg, req.number, req.mergeQueue);
-  } else if (req.mergeOrder === true) {
+  if (req.landingOrder !== undefined && req.landingOrder !== null) {
+    ahead = aheadInQueue(cfg, req.number, req.landingOrder);
+  } else if (req.oldestFirst === true) {
     ahead = olderReadyIssue(cfg, req.number, req.state.pr);
   } else {
     return undefined;
@@ -181,7 +181,7 @@ function queued(cfg: Config, req: OrderRequest): Queued | undefined {
     return undefined;
   }
   return {
-    merged: false,
+    landed: false,
     reason: "queued",
     waitingFor: ahead.number,
     waitingForPr: ahead.pr,

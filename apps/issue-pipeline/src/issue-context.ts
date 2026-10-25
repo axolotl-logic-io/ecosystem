@@ -93,7 +93,7 @@ function assertIssueAuthor(cfg: Config, issue: Pick<Issue, "user">): void {
 // allowed collaborator. Creates no checkout, claim, lease or issue file.
 function authorizedIssue(cfg: Config, number: number): Issue {
   const issue = ISSUE.parse(
-    ghJson(cfg, "merge", ["api", `repos/${cfg.repo}/issues/${number}`]),
+    ghJson(cfg, "landing", ["api", `repos/${cfg.repo}/issues/${number}`]),
   );
   assertIssueAuthor(cfg, issue);
   return issue;

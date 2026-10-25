@@ -159,7 +159,7 @@ function claimCheckout(
     );
     if (recovering) {
       // Only the winning claimant may reopen; this grants no writer authority.
-      gh(cfg, "merge", ["issue", "reopen", String(n), "-R", cfg.repo]);
+      gh(cfg, "landing", ["issue", "reopen", String(n), "-R", cfg.repo]);
       if (issueState(cfg, n) !== "open") {
         throw new OpsError(
           `could not confirm #${n} reopened for Merge recovery`,

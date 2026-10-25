@@ -53,7 +53,15 @@ const BUILT = [
 ];
 // An older install's stage agents, which retired() retires with its old
 // workflow.js, which an old lane schedule could still run, and its pi prompts.
-const RETIRED_AGENTS = ["escalation", "ops", "reader", "specifier", "writer"];
+const RETIRED_AGENTS = [
+  "escalation",
+  "ops",
+  "reader",
+  "specifier",
+  "writer",
+  // Renamed issue-pipeline-developer (#166).
+  "implementor",
+];
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const HOME = os.homedir();

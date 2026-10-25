@@ -57,7 +57,7 @@ Execution fencing adds to the existing guards; it never replaces them. Code writ
 | Claim and heartbeat comments | `src/claims.ts` `postClaim`, `touchClaim`, `closeClaims` (`claim`, `release` ops) | Ops | Request envelope | Before each write | Earliest live claim | Fenced (#169) |
 | Sync push | `src/ops/sync-task.ts` → `src/ops/sync-finish.ts` `pushBranch`; retired `src/ops/sync.ts` | Ops | Request envelope | Before each write | `sync-task-gate.ts`, write authority before reset and push | Fenced (#169) |
 | Integration | `src/ops/integration-task.ts` | Ops | Request envelope | Before each write | Detached checkout; its only writes are attempt and result records | Fenced (#169) |
-| Land | `src/ops/merge.ts` → `src/ops/land-task.ts` → `src/ops/land-branch.ts` fast-forward push | Ops | Request envelope | Before each write | Exact Land binding and results, Land guard, attempt journal (`merge-attempt.ts`), the target's integration turn (`src/ops/land-turn.ts`, #171) | Fenced (#169) |
+| Land | `src/ops/land.ts` → `src/ops/land-task.ts` → `src/ops/land-branch.ts` fast-forward push | Ops | Request envelope | Before each write | Exact Land binding and results, Land guard, attempt journal (`landing-attempt.ts`), the target's integration turn (`src/ops/land-turn.ts`, #171) | Fenced (#169) |
 | Completion | `src/ops/finish.ts` `finishIssue` (close, branch delete, labels), `closeParent` | Ops | Request envelope | Before each write | Saved done and landed state | Fenced (#169); branch delete tested (#133) |
 | Stop and stop salvage push | `src/ops/stop.ts` → `src/unpushed.ts` `pushUnpushed`, stop comments and labels | Ops | Request envelope | Before each write | `readWriteAuthority` before the push | Fenced (#169) |
 | Exit salvage push | `src/job/exit-push.ts` → `exit-push` op in `src/ops/push.ts` | Ops | Request envelope | Teardown's fresh owner read first, then before each write | `readWriteAuthority`, `refuseOnceMerged`; runs only after patches and the code bundle are saved | Fenced (#169); exit order fenced (#170) |
@@ -96,7 +96,7 @@ The preserved patches for #116 and #73 named these files. Each line gives where 
 - `src/wiki-publication.ts`: removed
 - `src/ops/land-branch.ts`: `src/ops/land-branch.ts`
 - `src/ops/finish.ts`: `src/ops/finish.ts`
-- `src/ops/merge.ts`: `src/ops/merge.ts`
+- `src/ops/land.ts`: `src/ops/land.ts`
 - `src/ops/pr.ts`: `src/ops/pr.ts`
 - `src/ops/sync-finish.ts`: `src/ops/sync-finish.ts`
 - `src/job/checkout-close.ts`: `src/job/checkout-close.ts`

@@ -28,7 +28,7 @@ type IssueRow = z.infer<typeof ISSUE_ROW>;
 function openIssues(cfg: Config): IssueRow[] {
   ensureLabels(cfg);
   ensureClone(cfg);
-  const listed = ghJson(cfg, "merge", [
+  const listed = ghJson(cfg, "landing", [
     "issue",
     "list",
     "-R",

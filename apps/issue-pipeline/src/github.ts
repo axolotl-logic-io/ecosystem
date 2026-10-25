@@ -205,7 +205,7 @@ const ISSUE_STATE = z.looseObject({ state: z.unknown() }).nullable();
 function issueState(cfg: Config, n: number): string | null {
   const args = ["api", `repos/${cfg.repo}/issues/${n}`, "--jq", "{state}"];
   const parsed = ISSUE_STATE.safeParse(
-    ghJson(cfg, "merge", args, { allowFail: true }),
+    ghJson(cfg, "landing", args, { allowFail: true }),
   );
   const state = parsed.data?.state;
   if (typeof state !== "string") {
@@ -258,7 +258,7 @@ function git(
 function isCollaborator(cfg: Config, login: string): boolean {
   const endpoint = `repos/${cfg.repo}/collaborators/${login}`;
   return (
-    gh(cfg, "merge", ["api", endpoint, "--silent"], { allowFail: true })
+    gh(cfg, "landing", ["api", endpoint, "--silent"], { allowFail: true })
       .code === 0
   );
 }
@@ -270,7 +270,7 @@ function isAllowedUser(cfg: Config, login: string | null | undefined): boolean {
   }
   const normalized = login.toLowerCase();
   if (
-    [cfg.devAccount, cfg.mergeAccount].some(
+    [cfg.devAccount, cfg.landingAccount].some(
       (bot) => bot.toLowerCase() === normalized,
     )
   ) {

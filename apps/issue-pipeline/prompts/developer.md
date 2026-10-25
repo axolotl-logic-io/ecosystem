@@ -1,6 +1,6 @@
 # Pipeline prompt: Developer
 
-The pipeline loads this page into every Developer session, ahead of the session's task. That is stage `implement` with no phase; the serialized role is still named `implementor`.
+The pipeline loads this page into every Developer session, ahead of the session's task. That is stage `implement` with no phase; the serialized role is `developer`.
 
 The task gives this run's facts:
 - the issue file and the checkout;

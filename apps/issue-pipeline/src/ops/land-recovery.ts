@@ -16,7 +16,7 @@ import {
   boundAttempt,
   confirmAuthorization,
   saveReceipt,
-} from "./merge-attempt.ts";
+} from "./landing-attempt.ts";
 import { viewForLand } from "./pr-merge.ts";
 
 interface ConfirmationClock {
@@ -32,12 +32,12 @@ const MS_PER_SECOND = 1000;
 const RECOVERY_REQUEST = z.object({ number: z.number().int().positive() });
 
 type RecoveryReply =
-  | { merged: true; mergeCommit: string; headSha: string; byHand?: true }
-  | { merged: false; reason: string };
+  | { landed: true; mergeCommit: string; headSha: string; byHand?: true }
+  | { landed: false; reason: string };
 
 function diagnostic(detail: string): RecoveryReply {
   return {
-    merged: false,
+    landed: false,
     reason: `bounded merge recovery: code may already have landed; another merge POST or code writer is not authorized; retain recovery evidence: ${detail}`,
   };
 }
@@ -60,8 +60,8 @@ function readEvidence(
   FULL_SHA.parse(view.headRefOid);
   const codeMerged = { pr: attempt.pr, sha: result };
   if (
-    state.codeMerged !== null &&
-    JSON.stringify(state.codeMerged) !== JSON.stringify(codeMerged)
+    state.codeLanded !== null &&
+    JSON.stringify(state.codeLanded) !== JSON.stringify(codeMerged)
   ) {
     throw new OpsError("observed merge differs from retained landed-code fact");
   }
@@ -70,7 +70,7 @@ function readEvidence(
   writeState(cfg, number, observed);
   if (attempt.result === null) {
     return {
-      merged: true,
+      landed: true,
       byHand: true,
       mergeCommit: result,
       headSha: view.headRefOid,
@@ -105,7 +105,7 @@ function readEvidence(
     throw new OpsError("confirmation deadline reached during evidence reads");
   }
   saveReceipt(cfg, number, observed, { ...attempt.authorized, code: result });
-  return { merged: true, mergeCommit: result, headSha: view.headRefOid };
+  return { landed: true, mergeCommit: result, headSha: view.headRefOid };
 }
 
 // A deadline bounds this invocation only. Later caller-authorized runs may
@@ -116,8 +116,8 @@ function reconcileAttemptedLand(
   request: unknown,
   clock: ConfirmationClock = SYSTEM_CLOCK,
 ): RecoveryReply {
-  const { number } = parseRequest(RECOVERY_REQUEST, "reconcile-merge", request);
-  const { deadlineSeconds, backoffSeconds } = cfg.mergeConfirmation;
+  const { number } = parseRequest(RECOVERY_REQUEST, "reconcile-land", request);
+  const { deadlineSeconds, backoffSeconds } = cfg.landingConfirmation;
   const deadline = clock.now() + deadlineSeconds * MS_PER_SECOND;
   function withinDeadline(): boolean {
     return clock.now() < deadline;
@@ -130,12 +130,12 @@ function reconcileAttemptedLand(
       const attempt = boundAttempt(cfg, number, state);
       const spent = {
         ...state,
-        mergeAttempt: { ...attempt, reads: attempt.reads + 1 },
+        landingAttempt: { ...attempt, reads: attempt.reads + 1 },
       };
       writeState(cfg, number, spent);
       if (
-        readWriteState(cfg, number).mergeAttempt?.reads !==
-        spent.mergeAttempt.reads
+        readWriteState(cfg, number).landingAttempt?.reads !==
+        spent.landingAttempt.reads
       ) {
         throw new OpsError("reconciliation read checkpoint is not confirmed");
       }

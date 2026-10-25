@@ -2,6 +2,7 @@
 // refs arbitrate contenders even when comment listings interleave. No expiry,
 // ref deletion, private queue, discovery or scheduling loop grants permission.
 import type { Config } from "./config.ts";
+import { INVOCATION_BINDING } from "./coordination-record-schema.ts";
 import type {
   CoordinationPort,
   Evidence,
@@ -14,7 +15,6 @@ import {
   assertScope,
   bodyOf,
   hold,
-  INVOCATION_BINDING,
   own,
   refOf,
   sameBinding,
@@ -40,7 +40,7 @@ class Coordination {
   private readonly cfg: Config;
   private readonly port: CoordinationPort;
   private readonly scope: string;
-  private readonly identity: InvocationBinding;
+  private readonly binding: InvocationBinding;
   constructor(
     cfg: Config,
     port: CoordinationPort,
@@ -50,8 +50,8 @@ class Coordination {
     this.cfg = cfg;
     this.port = port;
     this.scope = scope;
-    this.identity = INVOCATION_BINDING.parse(identity);
-    assertScope(scope, this.identity);
+    this.binding = INVOCATION_BINDING.parse(identity);
+    assertScope(scope, this.binding);
     if (identity.repo !== cfg.repo || identity.base !== cfg.baseBranch) {
       hold("execution repository/base binding changed");
     }
@@ -85,10 +85,10 @@ class Coordination {
   request(): number {
     const view = this.read();
     const existing = view.pending.find(
-      (item) => item.identity.instance === this.identity.instance,
+      (item) => item.binding.instance === this.binding.instance,
     );
     if (existing !== undefined) {
-      if (!sameBinding(existing.identity, this.identity)) {
+      if (!sameBinding(existing.binding, this.binding)) {
         hold("instance identity changed");
       }
       return existing.id;
@@ -97,21 +97,21 @@ class Coordination {
       view.records.some(
         (row) =>
           row.kind === "request" &&
-          row.identity.instance === this.identity.instance,
+          row.binding.instance === this.binding.instance,
       )
     ) {
       hold("released instance cannot request again");
     }
     this.append({
-      version: 1,
+      version: 2,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind: "request",
-      identity: this.identity,
-      token: this.port.token(this.identity),
+      binding: this.binding,
+      token: this.port.token(this.binding),
     });
     const saved = this.read().pending.find(
-      (item) => item.identity.instance === this.identity.instance,
+      (item) => item.binding.instance === this.binding.instance,
     );
     if (saved === undefined) {
       hold("request disappeared");
@@ -121,9 +121,9 @@ class Coordination {
   acquire(): boolean {
     const view = this.read();
     const mine = view.pending.find(
-      (item) => item.identity.instance === this.identity.instance,
+      (item) => item.binding.instance === this.binding.instance,
     );
-    if (mine === undefined || !sameBinding(mine.identity, this.identity)) {
+    if (mine === undefined || !sameBinding(mine.binding, this.binding)) {
       hold("exact request identity required before acquisition");
     }
     if (view.owner === null) {
@@ -146,34 +146,34 @@ class Coordination {
     }
     if (!reserved.confirmed) {
       this.append({
-        version: 1,
+        version: 2,
         scope: this.scope,
         operation: crypto.randomUUID(),
         kind: "confirm",
         request: mine.id,
-        instance: this.identity.instance,
+        instance: this.binding.instance,
       });
     }
     this.assertOwner();
     return true;
   }
   assertOwner(): void {
-    own(this.read(), this.identity);
+    own(this.read(), this.binding);
   }
   private mutate(kind: "save" | "release", evidence?: Evidence): void {
-    const owner = own(this.read(), this.identity);
+    const owner = own(this.read(), this.binding);
     this.append({
-      version: 1,
+      version: 2,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind,
       request: owner.id,
-      instance: this.identity.instance,
+      instance: this.binding.instance,
       evidence,
     });
     const after = this.read();
     if (kind === "save") {
-      own(after, this.identity);
+      own(after, this.binding);
     } else if (after.pending.some((item) => item.id === owner.id)) {
       hold("release not confirmed");
     }
@@ -193,8 +193,8 @@ class Coordination {
     const row = view.pending.find((item) => item.id === request.id);
     if (
       row === undefined ||
-      row.identity.instance === this.identity.instance ||
-      !sameWork(row.identity, this.identity)
+      row.binding.instance === this.binding.instance ||
+      !sameWork(row.binding, this.binding)
     ) {
       hold("only an earlier invocation of the same work can be retired");
     }
@@ -207,13 +207,13 @@ class Coordination {
       kind = "release";
     }
     this.append({
-      version: 1,
+      version: 2,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind,
       request: row.id,
-      instance: row.identity.instance,
-      evidence: { retiredBy: this.identity.instance },
+      instance: row.binding.instance,
+      evidence: { retiredBy: this.binding.instance },
     });
     if (this.read().pending.some((item) => item.id === row.id)) {
       hold("retirement not confirmed");
@@ -222,22 +222,22 @@ class Coordination {
   cancel(): void {
     const view = this.read();
     const mine = view.pending.find(
-      (item) => item.identity.instance === this.identity.instance,
+      (item) => item.binding.instance === this.binding.instance,
     );
     if (
       mine === undefined ||
-      !sameBinding(mine.identity, this.identity) ||
+      !sameBinding(mine.binding, this.binding) ||
       view.owner?.id === mine.id
     ) {
       hold("cannot cancel absent request or owner");
     }
     this.append({
-      version: 1,
+      version: 2,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind: "cancel",
       request: mine.id,
-      instance: this.identity.instance,
+      instance: this.binding.instance,
     });
   }
 }

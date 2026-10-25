@@ -107,7 +107,7 @@ function synced(state: IssueState, produced: string, from: string): IssueState {
       verifiedSha: null,
       hardened: null,
       hardenedTarget: null,
-      mergeReturn: null,
+      landingReturn: null,
     },
     `Sync rebased ${short(from)} as ${short(produced)}; fresh Hardening is required`,
   );
