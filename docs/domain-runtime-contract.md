@@ -150,7 +150,14 @@ function requalify(cfg: Config, scope: SignalScope, signal: QualifiedSignal):
   Promise<{ status: "qualified" | "revoked" | "unknown"; reason: string }>;
 function stopLatch(cfg: Config, number: number):
   Promise<{ state: "clear" | "latched" | "unknown"; reason: string }>;
+function requalifyHumanNow(cfg: Config, scope: SignalScope,
+  source: { id: string; recordId: number; workItem: WorkItemRef }):
+  { status: "qualified" | "revoked" | "unknown"; reason: string };
+function stopLatchNow(cfg: Config, number: number):
+  { state: "clear" | "latched" | "unknown"; reason: string };
 ```
+
+The synchronous primitives share the public async APIs' exact source parsing and qualification rules. They exist for synchronous ops mutation guards, not a second signal policy. Human effect checks reread the authenticated accepted record, not caller-supplied provenance. Machine effect checks use the task lane's synchronous checked ledger and configured producer identity.
 
 Poll complete open-issue control-label listings and all event/comment pages. Discover persisted accepted signals independently of currently present labels, so removing a label does not hide accepted starts or stops. Do not create a cursor that advances past unread evidence. Retain incomplete/contradictory observations as holds.
 
@@ -171,6 +178,12 @@ Buddy config uses an explicit organization, repository config paths, one role (o
 Land authorization requires an explicit trusted `permissions.land: true` grant in the Gatekeeper buddy configuration and the same repository-scoped grant in the trusted repository configuration. Missing permission defaults to false. Both grants, configured repository scope, Land responsibility and matching landing identity must pass. The fresh ops child rereads the repository grant; the runtime rereads buddy grant, scope and identity before privileged effects. Passing Security or receiving a result signal never itself supplies permission. Ownership and all task prerequisites remain necessary.
 
 The shared revision checking-policy digest includes repository permissions. The buddy-specific action-authorization digest records its scope, identity and grant separately; putting it in `revision.policy` would prevent Developer and Gatekeeper results from sharing a binding. Preserve that distinct authorization evidence with the Land intent. Complete and read-only Land recovery use current trusted configuration for transport fencing but retain the original Land policy as historical proof, without fresh post-Land checks.
+
+The ops envelope carries `buddy: { config: string; run: string; task: TaskId; authorizationDigest: string }`. These are claims until validated. The runtime writer exports synchronous `bindBuddyAuthorization(cfg, repositoryConfigPath, buddyEnvelope): Config` from `runtime/buddy-config.ts`. The task writer invokes it in `ops.ts` before canonical task-effect dispatch. It rereads trusted configuration, verifies repository config path/scope, role, task responsibility, profile, account/identity and digest, and returns an internal validated `cfg.buddyAuthorization`. It never rewrites `cfg.policyBinding`. Canonical v2 task-effect/attempt/result ops require this context. Runtime envelope fields override task payload fields, never the other way round.
+
+Long synchronous ops can contain several privileged effects. Compose a fresh synchronous buddy-authority check, the appropriate retained signal/result authority check, scoped stop check, and existing execution-owner check at each controlled mutation boundary. A single check before spawning the child is not enough. Keep the uncertain-write journal intact. The runtime writer supplies the fresh buddy checker, the signal writer supplies synchronous human/latch checks, and the task writer supplies current attempt/result source validation and ops composition.
+
+A stop or revoked source prevents new substantive actions, but narrowly defined evidence-only checkpoint, result and read-only-reconciliation settlement remain possible under ownership. Trusted operation semantics select finalization, not a caller-controlled bypass flag. Failed remote finalization preserves local checkpoint/work and retains ownership and consumers.
 
 Land's task-owned `beginAction` acquires and confirms the existing integration turn before recording the Land attempt. An unavailable turn waits with no attempt; an uncertain attempt keeps its turn. The runtime must not acquire a duplicate target-write reservation.
 
@@ -216,5 +229,9 @@ Every implementation lane has its own worktree, based on the shared-contract com
 | Runtime | New `src/buddy.ts`, `src/runtime/**` except `reservations.ts`, existing `src/job/**`, `src/config.ts`, `src/config-schema.ts`, `src/config-legacy.ts`, `src/config-renamed.ts`; runtime integration tests and `docs/reference/runtime-runs.md`; no task/result/ops edits |
 | Resources | `src/runtime/reservations.ts`, coordination resource-schema/record support, `src/execution.ts` resource helper and removal of assignment-grant check, `src/lane-slot*.ts`, resource integration tests |
 | Parent/integration | Build/install/package manifests; removal of obsolete stage/scheduler/assignment/launcher entry points, final shared import wiring, examples and root/current documentation; dashboard scheduled after observation schema handoff |
+
+Within this PR, the task writer may add canonical v4 `WORK_STATE`/`readWorkState`/`writeWorkState` beside legacy `IssueState` exports to avoid forcing unrelated preservation ports into its seam. New tasks never use the old schema or stage writers. Legacy records remain read-only holds; Land intent belongs to the authenticated v2 attempt. Parent removes dead legacy consumers/exports before acceptance. The task writer may delete owned stage roles and obsolete ops even while adjacent job/orchestrator imports still fail. Provide a canonical `checkpoint-action` operation for the runtime and report its exact shape rather than restoring old stage save/release semantics.
+
+Author has no implicit signal and waits. Safe Refactor also waits; its runtime act may explicitly refuse with a pointer to `safe-refactor.mjs`. Standalone reports grant no pipeline result.
 
 Temporary compilation failures caused by not-yet-integrated adjacent lanes must be reported honestly. Do not weaken guards, lint rules or types to make an isolated lane appear green. Focused real-file/subprocess/Git tests should prove each lane's own boundary. No unit-test restoration or blanket fixture restoration. Reuse another lane's committed test kit when available; do not create parallel copies of the same fake infrastructure.
