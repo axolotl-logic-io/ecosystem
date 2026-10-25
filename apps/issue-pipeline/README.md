@@ -31,12 +31,13 @@ owner ─► open checkout ─► ops (each request carries the binding) ─► 
   Otherwise the job prints `job: execution held: <why>` on stderr and keeps ownership for explicit reconciliation. The next job on the issue ends `unclaimed`. The predicate gates only execution release; checkout removal still frees the lane slot.
 - Saved state without an execution receipt linked to a released predecessor never grants ownership (`additive-record-versions`). It needs explicit reconciliation.
 - Before each session starts, and on each push request, the job rereads ownership; a lost owner starts nothing and pushes nothing. Steer and push requests on the control socket must name the job's binding (`--steer` reads it from job.json), and an ops claim that names a job checkout without a binding is refused (#168).
+- Every credentialed write, in the job and in its ops children, rereads ownership just before it runs and journals its exact intent first (#169). A write whose reply is lost keeps that journal; a write whose own operation reconciles it by reading (a push record, a Land or Sync attempt, a task record, saved state, the PR a branch names) skips the journal but not the read. An ops request with no binding can read but not write. [The fencing audit](../../docs/reference/execution-fencing-audit.md) lists every write and its test.
 - A lost or failed coordination response may still have landed. The transport keeps the exact intent in the run folder's `coordination-uncertain.json`; only an exact read-back clears it. Preserve that file.
 
 - Teardown rereads ownership before it touches the checkout. A job that lost the issue, or can't tell, saves, resets, pushes and removes nothing, and leaves its checkout for reconciliation (#170).
 - The `cleanup` op keeps a closed issue's worktree while its execution has a request that no release or cancel ended, or while its lane slot lists another surviving checkout or a pending setup (`src/ops/cleanup-fence.ts`). Lane prune waits while any setup is pending (#170).
 
-Not here yet: ownership checks and journals before every other credentialed write (#169), and contention proof (#133). The integration-turn scope is still unused (#120). The unbound legacy claim is reached only by the ops CLI's own tests; the job never sends one.
+Not here yet: contention proof (#133). The integration-turn scope is still unused (#120).
 
 ## Standalone Safe Refactor task
 
