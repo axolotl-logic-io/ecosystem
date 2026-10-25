@@ -1,29 +1,14 @@
-// Builds the installed pipeline from src/ and scripts/ with esbuild:
-//
-//   node build.ts [outdir]   (outdir defaults to dist/ in this folder)
-//
-// writes the executables the install copies, each bundled from one strict-TS
-// entry with the modules it imports for Node into one ES module that keeps
-// its `#!` line: the ops CLI <outdir>/ops.mjs (src/ops.ts) and the shell
-// supervisor it runs each command through (<outdir>/shell-supervisor.mjs),
-// the stage job <outdir>/job.mjs (src/job.ts) and its pi extensions
-// <outdir>/structured-output.mjs, <outdir>/pipeline-commit.mjs and
-// <outdir>/git-review.mjs, the
-// orchestrator <outdir>/orchestrate.mjs, the reports <outdir>/report.mjs
-// the caller's job launcher <outdir>/caller-jobs.mjs
-// (scripts/caller-jobs.ts), the assignment sweep <outdir>/sweep.mjs
-// (scripts/sweep.ts) and the standards upgrade's entrypoint
-// <outdir>/standards-upgrade.mjs (scripts/standards-upgrade.ts), with the
-// Python tools it pins beside it (<outdir>/standards-python-tools.txt).
-// It prints nothing on success; on failure it prints esbuild's error to
-// stderr and exits non-zero.
+// Bundles the distribution in programs.ts and its compiler/Python assets.
+// Usage: node build.ts [outdir] (defaults to this folder's dist/).
+// Retired delivery executables are removed from an existing output folder.
 
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import ts from "typescript";
+import { PROGRAMS, RETIRED_PROGRAMS } from "./programs.ts";
 
 const BACKEND_PACKAGE = path.dirname(
   fileURLToPath(import.meta.resolve("typescript/package.json")),
@@ -42,32 +27,7 @@ const SOURCE_DIR = path.join(import.meta.dirname, "src");
 // The hash-pinned poetry and pip-audit the standards upgrade installs in its
 // sandbox, which the built entrypoint reads from beside itself.
 const PYTHON_TOOLS = path.join(SOURCE_DIR, "standards", "python-tools.txt");
-const SCRIPTS_DIR = path.join(import.meta.dirname, "scripts");
 const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
-// The Node ES modules built from one entry each: the ops CLI and its shell
-// supervisor, the stage job, the job's pi extensions, the orchestrator, the
-// reports and the caller's job launcher.
-const NODE_MODULES: ReadonlyMap<string, string> = new Map([
-  [path.join(SCRIPTS_DIR, "safe-refactor.ts"), "safe-refactor.mjs"],
-  [path.join(SOURCE_DIR, "safe-refactor", "tool.ts"), "safe-refactor-tool.mjs"],
-  [path.join(SOURCE_DIR, "job", "git-review.ts"), "git-review.mjs"],
-  [path.join(SOURCE_DIR, "ops.ts"), "ops.mjs"],
-  [path.join(SOURCE_DIR, "shell-supervisor.ts"), "shell-supervisor.mjs"],
-  [path.join(SOURCE_DIR, "job.ts"), "job.mjs"],
-  [path.join(SOURCE_DIR, "orchestrate.ts"), "orchestrate.mjs"],
-  [path.join(SOURCE_DIR, "report.ts"), "report.mjs"],
-  [
-    path.join(SOURCE_DIR, "job", "structured-output.ts"),
-    "structured-output.mjs",
-  ],
-  [
-    path.join(SOURCE_DIR, "job", "pipeline-commit-tool.ts"),
-    "pipeline-commit.mjs",
-  ],
-  [path.join(SCRIPTS_DIR, "caller-jobs.ts"), "caller-jobs.mjs"],
-  [path.join(SCRIPTS_DIR, "sweep.ts"), "sweep.mjs"],
-  [path.join(SCRIPTS_DIR, "standards-upgrade.ts"), "standards-upgrade.mjs"],
-]);
 
 async function buildNodeModule(source: string, outfile: string): Promise<void> {
   await build({
@@ -102,10 +62,19 @@ async function main(): Promise<void> {
     await cp(BACKEND_PACKAGE, path.join(outDir, BACKEND_DIRECTORY), {
       recursive: true,
     });
-    const modules = [...NODE_MODULES].map(([source, output]) =>
-      buildNodeModule(source, path.join(outDir, output)),
+    await Promise.all(
+      RETIRED_PROGRAMS.map((file) =>
+        rm(path.join(outDir, file), { force: true }),
+      ),
     );
-    await Promise.all(modules);
+    await Promise.all(
+      PROGRAMS.map(({ source, file }) =>
+        buildNodeModule(
+          path.join(import.meta.dirname, source),
+          path.join(outDir, file),
+        ),
+      ),
+    );
     await cp(PYTHON_TOOLS, path.join(outDir, "standards-python-tools.txt"));
   } catch (error: unknown) {
     console.error(messageOf(error));

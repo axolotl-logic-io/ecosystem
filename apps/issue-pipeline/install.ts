@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { PROGRAMS, RETIRED_PROGRAMS } from "./programs.ts";
 
 // A file to install from a path here, GENERATED or RETIRED (text null: it is
 // removed); a Source is one this folder holds, `fill` to fill in.
@@ -36,21 +37,6 @@ const STATUS_WIDTH = 8;
 const GITHUB_PREFIX = /^.*github\.com[:/]/u;
 const GIT_SUFFIX = /\.git$/u;
 const DATE_PUNCTUATION = /[-:]/gu;
-// The build's files in dist/, each installed under its own name in ROOT.
-const BUILT = [
-  "safe-refactor.mjs",
-  "safe-refactor-tool.mjs",
-  "ops.mjs",
-  "shell-supervisor.mjs",
-  "job.mjs",
-  "orchestrate.mjs",
-  "report.mjs",
-  "structured-output.mjs",
-  "pipeline-commit.mjs",
-  "git-review.mjs",
-  "caller-jobs.mjs",
-  "sweep.mjs",
-];
 // An older install's stage agents, which retired() retires with its old
 // workflow.js, which an old lane schedule could still run, and its pi prompts.
 const RETIRED_AGENTS = [
@@ -111,7 +97,7 @@ function mdIn(base: string, dir: string): string[] {
 
 function sources(): Source[] {
   const backend = fs
-    .globSync("dist/vendor/typescript-*/**/*", { cwd: SRC })
+    .globSync("dist/vendor/node_modules/typescript-*/**/*", { cwd: SRC })
     .filter((file) => fs.statSync(path.join(SRC, file)).isFile())
     .sort();
   return [
@@ -120,17 +106,24 @@ function sources(): Source[] {
       to: path.join(ROOT, path.relative("dist", from)),
       fill: false,
     })),
-    ...BUILT.map((f) => ({
-      from: `dist/${f}`,
-      to: path.join(ROOT, f),
+    ...PROGRAMS.map(({ file }) => ({
+      from: `dist/${file}`,
+      to: path.join(ROOT, file),
       fill: false,
     })),
     ...[
       "repos/example.json",
       "repos/committed-settings.example.json",
       "runtime/pi-cliproxyapi-config.example.json",
+      "dist/standards-python-tools.txt",
       ...mdIn(SRC, "prompts"),
-    ].map((from) => ({ from, to: path.join(ROOT, from), fill: false })),
+    ].map((from) => {
+      let to = path.join(ROOT, from);
+      if (from.startsWith("dist/")) {
+        to = path.join(ROOT, path.relative("dist", from));
+      }
+      return { from, to, fill: false };
+    }),
     ...mdIn(SRC, "agents").map((from) => ({
       from,
       to: path.join(AGENT_DIR, "agents/issue-pipeline", path.basename(from)),
@@ -244,6 +237,7 @@ function retired(files: InstallFile[]): InstallFile[] {
   const agents = path.join(AGENT_DIR, "agents/issue-pipeline");
   return [
     path.join(ROOT, "workflow.js"),
+    ...RETIRED_PROGRAMS.map((file) => path.join(ROOT, file)),
     ...mdIn(ROOT, "prompts").map((f) => path.join(ROOT, f)),
     ...RETIRED_AGENTS.map((a) => path.join(agents, `issue-pipeline-${a}.md`)),
     path.join(AGENT_DIR, "prompts/pipeline-start.md"),
@@ -305,7 +299,7 @@ function main(): void {
     // agent-definition placeholders. They are copied without interpolation.
     if (
       f.text?.includes("{{") &&
-      !f.from.startsWith("dist/vendor/typescript-")
+      !f.from.startsWith("dist/vendor/node_modules/typescript-")
     ) {
       fail(`${f.from} has a placeholder this script doesn't know`);
     }
