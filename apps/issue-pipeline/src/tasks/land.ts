@@ -1,6 +1,7 @@
 // Land: the Gatekeeper's guarded, immutable fast-forward of target T to
 // revision R. It needs the trusted repository grant (`permissions.land`),
-// Harden, Integrate and Review Security attesting exactly R on T, and the
+// Harden, Integrate and Review Security attesting exactly R on T, required
+// CI clearing exactly R as its PR's head (ops/required-ci.ts), and the
 // target's integration turn, which it takes before its attempt is recorded
 // and keeps while the run is unsettled. A pass is never permission: every
 // check is made again in the ops child (ops/land-task.ts). An unsettled run
@@ -17,6 +18,7 @@ import type {
   TargetState,
   TaskView,
 } from "../domain.ts";
+import { requiredCiUnmet } from "../ops/required-ci.ts";
 import {
   currentBinding,
   passedFor,
@@ -91,7 +93,10 @@ function prerequisite(
   if (subjectRefused(records, binding.revision.code, binding.revision.inputs)) {
     return "Review Security refused this code and these inputs";
   }
-  return unattested(view, binding.revision, binding.target);
+  return (
+    unattested(view, binding.revision, binding.target) ??
+    requiredCiUnmet(cfg, binding.workItem.number, binding.revision.code)
+  );
 }
 
 const land: TaskModule = {

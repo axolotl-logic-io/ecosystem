@@ -146,6 +146,19 @@ const WORLD = z.strictObject({
     })
     .optional(),
   pulls: z.array(PULL).optional(),
+  // The required checks GitHub reports on each head commit, as GitHub
+  // Actions or another CI posts them (`gh pr checks --required`).
+  checks: z
+    .record(
+      z.string(),
+      z.array(
+        z.strictObject({
+          name: z.string(),
+          bucket: z.enum(["pass", "fail", "pending", "skipping", "cancel"]),
+        }),
+      ),
+    )
+    .optional(),
   stopBuddy: z
     .strictObject({
       pid: z.number().int().positive(),
