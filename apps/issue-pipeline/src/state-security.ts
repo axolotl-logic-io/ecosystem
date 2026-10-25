@@ -1,6 +1,6 @@
 // Exact Security decision schemas shared by saved-state receipts.
 import { z } from "zod";
-import { REVISION } from "./merge-provenance.ts";
+import { REVISION } from "./land-provenance.ts";
 import { REVIEWED_TARGET } from "./reviewed-target.ts";
 
 // The categories a security review stops an issue for (stops.ts codes).
@@ -12,7 +12,7 @@ const SECURITY_CATEGORY = z.enum([
 ]);
 
 // Candidate phase and target validate together. Phase-absent receipts remain
-// historical postmerge observations, never permission for a new merge.
+// historical post-Land observations, never permission for a new Land.
 const SECURITY_VERDICT = z.object({
   revision: REVISION,
   commentId: z.number().int().positive(),

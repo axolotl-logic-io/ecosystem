@@ -156,7 +156,7 @@ interface RoleContext {
   // The filtered issue file: the issue and its trusted comments.
   issueFile: string;
   inputs: RoleInputs;
-  // The merge order the orchestrator ranked (`--merge-queue`), or null.
+  // The landing order the caller ranked (`--merge-queue`), or null.
   mergeQueue: readonly number[] | null;
   // Runs one op and returns its reply; throws OpsFailure when it fails.
   op: (name: OpName, payload: object) => Promise<unknown>;
@@ -174,7 +174,7 @@ type StageEnd =
   | { kind: "stop"; code: string; reason: string; state: IssueState }
   // Post the questions, label the issue agent:needs-info and wait at author.
   | { kind: "ask"; questions: readonly string[]; state: IssueState }
-  // Stay at this stage for the next job, such as a queued merge. `request`
+  // Stay at this stage for the next job, such as a queued Land. `request`
   // names the task the issue waits for, such as a Sync, with its binding.
   | {
       kind: "wait";

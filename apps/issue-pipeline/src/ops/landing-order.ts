@@ -1,6 +1,6 @@
-// The merge order between issues: which other issue's PR should merge before
-// this one's. The orchestrator passes its ranked queue (#234), whose issues
-// at review or merge hold the merge slot whatever their verdict, since a
+// The landing order between issues: which other issue's PR should land before
+// this one's. The caller passes its ranked queue (#234), whose issues
+// at review or merge hold the landing slot whatever their verdict, since a
 // stale approval is never authorization; without a queue and with mergeOrder
 // set, the oldest PR at the merge stage goes first (decision merge-order).
 
@@ -14,16 +14,16 @@ import { isStopLabel } from "../stops.ts";
 const MS_PER_HOUR = 3_600_000;
 const WORKING_LIST_LIMIT = "100";
 
-// The stages where an issue ranks for merge: the orchestrator reserves the
-// merge slot for it from review through the merge.
+// The stages where an issue ranks for landing: the orchestrator reserves the
+// landing slot for it from review through the Land.
 const READY_STAGES: ReadonlySet<string> = new Set(["review", "merge"]);
 
-// The ready stages whose issues hold the merges ranked after them in the
-// orchestrator's queue (#358).
+// The ready stages whose issues hold the Lands ranked after them in the
+// caller's queue (#358).
 const HOLDING_STAGES: ReadonlySet<string> = READY_STAGES;
 
 // Without a queue, only an older PR already at the merge stage, minutes from
-// merging, holds a merge.
+// landing, holds a Land.
 const DEFAULT_HOLDING_STAGES: ReadonlySet<string> = new Set(["merge"]);
 
 // The issues gh lists, and the part of another issue's state the order reads.
@@ -48,7 +48,7 @@ const READY_STATE = z.looseObject({
   stage: z.string(),
 });
 
-// What the order reads from a merge request.
+// What the order reads from a `merge` request.
 interface OrderRequest {
   number: number;
   mergeOrder?: boolean | null | undefined;
@@ -56,7 +56,7 @@ interface OrderRequest {
   state: { pr: number };
 }
 
-// The merge waits for issue #waitingFor and its PR #waitingForPr.
+// The Land waits for issue #waitingFor and its PR #waitingForPr.
 interface Queued {
   merged: false;
   reason: "queued";
@@ -69,7 +69,7 @@ interface Ahead {
   pr: number;
 }
 
-// The PR of issue #number when it should merge before PR `pr`: at the merge
+// The PR of issue #number when it should land before PR `pr`: at the merge
 // stage, with an older PR and a lease that hasn't expired (a crashed sweep).
 function readyPr(
   cfg: Config,
@@ -93,9 +93,9 @@ function readyPr(
   return data.pr;
 }
 
-// The open issue, other than #n, that should merge before PR `pr`: one at the
+// The open issue, other than #n, that should land before PR `pr`: one at the
 // merge stage whose PR is older. Without this, a slow issue's long verify
-// keeps losing the merge to quick issues in the other slots.
+// keeps losing the Land to quick issues in the other slots.
 function olderReadyIssue(cfg: Config, n: number, pr: number): Ahead | null {
   const listed = ghJson(cfg, "merge", [
     "issue",
@@ -146,7 +146,7 @@ function openUnstopped(cfg: Config, n: number): boolean {
   );
 }
 
-// The first issue ahead of #n in the orchestrator's ranked queue that is
+// The first issue ahead of #n in the caller's ranked queue that is
 // open, not stopped and at a holding stage.
 function aheadInQueue(
   cfg: Config,
@@ -165,7 +165,7 @@ function aheadInQueue(
   return null;
 }
 
-// Why issue #number's merge waits for another issue, or undefined when it
+// Why issue #number's Land waits for another issue, or undefined when it
 // need not wait. A queue is always enforced; the default order only with
 // mergeOrder set.
 function queued(cfg: Config, req: OrderRequest): Queued | undefined {

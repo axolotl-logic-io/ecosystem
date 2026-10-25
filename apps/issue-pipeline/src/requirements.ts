@@ -43,7 +43,7 @@ function developerRecoveryRequired(state: IssueState): boolean {
   );
 }
 
-// Null refuses a direct requirements writer over retained merge
+// Null refuses a direct requirements writer over retained landing
 // evidence. Callers stop or hold without changing that evidence. Legacy
 // authored requirements retain their existing return path.
 function requirementsState(

@@ -20,7 +20,7 @@ import {
 import type { Step } from "../writer-session.ts";
 import { ended, errorStop } from "../writer-session.ts";
 import { boundAs } from "./chain.ts";
-import type { MergedResult } from "./security.ts";
+import type { LandedResult } from "./security.ts";
 import { securityReviewed } from "./security.ts";
 
 function short(sha: string | null): string {
@@ -33,7 +33,7 @@ type Verdict = "passed" | "failed" | "refused";
 // if it holds one.
 function savedVerdict(
   state: IssueState,
-  revision: MergedResult["revision"],
+  revision: LandedResult["revision"],
 ): Exclude<Verdict, "failed"> | null {
   const saved = state.security;
   if (
@@ -64,7 +64,7 @@ function withoutClearance(state: IssueState): IssueState {
 async function freshAttempt(
   ctx: RoleContext,
   state: IssueState,
-  { next, result }: { next: ReadyTask; result: MergedResult },
+  { next, result }: { next: ReadyTask; result: LandedResult },
 ): Promise<Step<IssueState>> {
   const binding = boundAs(next, "Security");
   const run = newRun(await taskStatus(ctx, binding));
@@ -103,7 +103,7 @@ async function freshAttempt(
 async function securityTask(
   ctx: RoleContext,
   state: IssueState,
-  args: { next: ReadyTask; result: MergedResult },
+  args: { next: ReadyTask; result: LandedResult },
 ): Promise<Step<IssueState>> {
   const { next, result } = args;
   const binding = boundAs(next, "Security");

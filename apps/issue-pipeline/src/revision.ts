@@ -1,6 +1,6 @@
 // The issue's PR as GitHub reports it, and the issue's current revision: the
-// code head and the trusted-inputs revision a review or a merge binds to. GitHub is the only authority on whether the code
-// merged: nothing here infers a merge, and a PR GitHub can't confirm is from
+// code head and the trusted-inputs revision a review or a Land binds to. GitHub is the only authority on whether the code
+// landed: nothing here infers a Land, and a PR GitHub can't confirm is from
 // the issue's own branch, in the configured repo, is refused.
 
 import { z } from "zod";
@@ -45,7 +45,7 @@ interface CurrentRevision {
   // The base branch's tip on GitHub, freshly fetched.
   baseSha: string;
   pr: PullRequest | null;
-  // The code merge GitHub reports, by the claim's rule (codeMergedOf).
+  // The code Land GitHub reports, by the claim's rule (codeMergedOf).
   codeMerged: CodeMerged | null;
   checkoutHead: string;
   remoteHead: string | null;
@@ -54,7 +54,7 @@ interface CurrentRevision {
 
 // PR `pr` of issue `n` as GitHub reports it. A PR from another branch or
 // repo, one targeting another base, and a merged PR with no merge commit
-// are refused; a failed read throws, so a merge is never assumed.
+// are refused; a failed read throws, so a Land is never assumed.
 function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
   const view = PR_VIEW.safeParse(
     ghJson(cfg, "merge", [
@@ -111,8 +111,8 @@ function pullRequest(cfg: Config, n: number, pr: number): PullRequest {
 
 // Confirms on GitHub that issue `n`'s PR `codeMerged.pr` merged as
 // `codeMerged.sha`, and that the commit is on the base branch fetched into
-// the worktree `wt`; throws otherwise, so a merge is never assumed.
-function confirmMerged(
+// the worktree `wt`; throws otherwise, so a Land is never assumed.
+function confirmLanded(
   cfg: Config,
   n: number,
   { wt, codeMerged }: { wt: string; codeMerged: CodeMerged },
@@ -159,7 +159,7 @@ function issuePullRequest(
   return found;
 }
 
-// The code merge `pr` records, or null when it hasn't merged.
+// The code Land `pr` records, or null when it hasn't merged.
 function codeMergedOf(pr: PullRequest | null): CodeMerged | null {
   if (pr === null || pr.mergeCommit === null) {
     return null;
@@ -204,7 +204,7 @@ function currentRevision(
 export type { CurrentRevision, PullRequest };
 export {
   codeMergedOf,
-  confirmMerged,
+  confirmLanded,
   currentRevision,
   issuePullRequest,
   pullRequest,

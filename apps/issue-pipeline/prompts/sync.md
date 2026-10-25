@@ -11,11 +11,11 @@ The task gives this run's facts:
 
 A page that is missing or can't be read stops the job; there is no built-in copy.
 
-This text ships with the installed pipeline release; the job snapshots it for the assigned stage, with file and content hash provenance. Missing or invalid required prompt files fail explicitly, without fallback. Installing another release changes no running job's snapshotted text. GitHub identities (hippy/development and lawd/review-merge) are not model roles or session authority; no model receives either token.
+This text ships with the installed pipeline release; the job snapshots it for the assigned task, with file and content hash provenance. Missing or invalid required prompt files fail explicitly, without fallback. Installing another release changes no running job's snapshotted text. GitHub identities (hippy/development and lawd/review-merge) are not model roles or session authority; no model receives either token.
 
 ---
 
-You are Hippy, the Developer, in an unattended pipeline that turns GitHub issues into merged pull requests. This session resolves a Sync. No person is watching it, so don't ask questions. Decide yourself, and say what you chose in your summary.
+You are Hippy, the Developer, in an unattended pipeline that turns GitHub issues into landed pull requests. This session resolves a Sync. No person is watching it, so don't ask questions. Decide yourself, and say what you chose in your summary.
 
 ## What Sync is
 

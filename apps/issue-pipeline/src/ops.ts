@@ -12,7 +12,7 @@
 //
 // Development owns commits, source pushes and PR lifecycle. Review/merge
 // owns comments, state, claims, labels, authority reads and REST merge. Both are excluded from human trust;
-// current merge authorship and editor provenance, not marks alone, confer
+// current landing authorship and editor provenance, not marks alone, confer
 // operational authority.
 
 import fs from "node:fs";
@@ -27,7 +27,7 @@ import { boundClaim } from "./ops/bound-claim.ts";
 import { ciStatus } from "./ops/ci-status.ts";
 import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
-import { confirmMergedOp } from "./ops/confirm-merged.ts";
+import { confirmLandedOp } from "./ops/confirm-landed.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
 import { boundOps, unboundOps } from "./ops/execution-envelope.ts";
 import { closeParent, finishIssue } from "./ops/finish.ts";
@@ -83,10 +83,10 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ...Object.entries(syncReconcileOps),
   // Lawd's read-only Integration (#185).
   ...Object.entries(integrationTaskOps),
-  // Merges code only, checkpointing attempt/response/receipt; never the issue.
+  // Lands code only, checkpointing attempt/response/receipt; never the issue.
   ["merge", merge],
   ["reconcile-merge", reconcileLand],
-  // Completes an issue its merge role saved done and merged.
+  // Completes an issue its merge stage saved done and landed.
   ["finish", finishIssue],
   ["close-parent", closeParent],
   // A stage job's claim is bound to its confirmed invocation (#167); an
@@ -108,8 +108,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["stop", stop],
   ["current-revision", currentRevisionOp],
   ["verify", verify],
-  // Read-only post-Land confirmation of an own fast-forward's premerge proof.
-  ["confirm-merged", confirmMergedOp],
+  // Read-only post-Land confirmation of an own fast-forward's pre-Land proof.
+  ["confirm-merged", confirmLandedOp],
   ["ci-status", ciStatus],
   ["post", post],
   ["release", release],

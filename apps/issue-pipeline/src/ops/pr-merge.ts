@@ -24,7 +24,7 @@ const PR_VIEW_FIELDS =
 
 type PrView = z.infer<typeof PR_VIEW>;
 
-function viewForMerge(cfg: Config, pr: number): PrView {
+function viewForLand(cfg: Config, pr: number): PrView {
   const view = PR_VIEW.parse(
     ghJson(cfg, "merge", [
       "pr",
@@ -61,4 +61,4 @@ function mergeCommitOf(pr: number, view: PrView): string {
 }
 
 export type { PrView };
-export { mergeCommitOf, viewForMerge };
+export { mergeCommitOf, viewForLand };

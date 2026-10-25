@@ -24,7 +24,7 @@ The `verify` op runs the repository's checks outside any model session, on an ex
 - A change matching `migrations.pathGlobs` runs the configured migration `setup`, `up` and `down`, then `up` again when `down` is set. The first failed step fails verification.
 - The job allows `verify` 120 minutes in total.
 
-Verify runs before the code merges, in the issue's checkout, and leaves it as it found it. The pipeline runs no checks after the merge: the merge stage only confirms, read-only, that this premerge proof binds exactly the merged result (see [merge](merge.md#after-the-merge)). Code that merged without that proof is neither hardened nor verified afterward; it stops for read-only reconciliation.
+Verify runs before the code lands, in the issue's checkout, and leaves it as it found it. The pipeline runs no checks after the Land: the merge stage only confirms, read-only, that this pre-Land proof binds exactly the landed result (see [merge](merge.md#after-the-land)). Code that landed without that proof is neither hardened nor verified afterward; it stops for read-only reconciliation.
 
 When `requireCi` is true (the default), CI must pass on the exact authorized head, waiting up to `ciWaitMinutes` (default 30). A PR with no required checks stops with `agent:stopped-no-ci`.
 
@@ -36,27 +36,27 @@ When `requireCi` is true (the default), CI must pass on the exact authorized hea
 - A changed gitlink is shown as a pointer with its full SHA.
 - Identical commits and diff give identical bundle bytes.
 
-After the merge, the diff is the merge commit's change against its first parent, with the checkout detached at the merge commit.
+After the Land, the diff is the merge commit's change against its first parent, with the checkout detached at the merge commit.
 
 ## Security review
 
-The merge stage runs a fresh Reviewer session in phase `security-review` before requesting a new code merge. It is read-only: no write tools, no commit authority and no token. It judges only four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`. It is not a second design or test-adequacy review.
+The merge stage runs a fresh Reviewer session in phase `security-review` before requesting a new Land of code. It is read-only: no write tools, no commit authority and no token. It judges only four categories: `user-harm`, `rights`, `financial-harm` and `abuse-risk`. It is not a second design or test-adequacy review.
 
 Security reads the exact hardened and checked candidate tree and its complete branch contribution against the observed target. A dirty checkout or a bundle prepared at another commit refuses review. The saved verdict binds the exact code and trusted-input revision, plus the configured target and its observed commit.
 
-- A finding saves its exact receipt and stops the issue before merge.
+- A finding saves its exact receipt and stops the issue before landing.
 - A code, trusted-input or target change during the session discards the verdict.
 - Any changed candidate, including a Sync's clean rebase or conflict resolution, needs fresh hardening, Integration and Security. A saved integration receipt is not an authorization exception.
 - A check that failed at merge, in read-only Integration or in CI, comes back with the work as "Sent back from merge". Hardening fixes it as a new revision; Hardening that changes nothing on a returned revision stops for a person.
 - Each hardened checkpoint is also a passed Hardening [task result](task-results.md) for the revision and target it checked, recorded by the landing account before the checkpoint is saved.
 - A saved rejection of the same revision stops again without a model. Lifting a stop cannot reroll it.
-- New own merges get read-only result confirmation, never a postmerge suite or a duplicate model pass.
+- New own Lands get read-only result confirmation, never a post-Land suite or a duplicate model pass.
 
-Historical merged-result Security receipts remain history. They clear only the exact merged result they name, and never authorize a new merge. A merged run without exact premerge Security clearance stops for read-only reconciliation; Security is never acquired after the merge. Already merged code stays merged; a historical rejection does not roll it back.
+Historical landed-result Security receipts remain history. They clear only the exact landed result they name, and never authorize a new Land. A landed run without exact pre-Land Security clearance stops for read-only reconciliation; Security is never acquired after the Land. Already landed code stays landed; a historical rejection does not roll it back.
 
 ## Recover from a review stop
 
 1. Read the stop comment and the issue's saved state. The comment names the control and the reason.
 2. For `check-fixes`, read the failed check's log in the issue's run folder. Fix the cause in the change or in the repository's checks, through ordinary reviewed work; don't raise `maxCiFixes` to get a pass.
 3. For a timed-out hardening session, restart `review` on the same issue, branch and lane. The new session gets the saved recovery evidence and decides what to keep.
-4. For a Security stop, the candidate has not merged through this operation. Preserve its rejection and work for explicit reconciliation. Historical already-merged code may need a separate remediation issue or operator action. Lifting the label doesn't re-run Security on the same revision.
+4. For a Security stop, the candidate has not landed through this operation. Preserve its rejection and work for explicit reconciliation. Historical already-landed code may need a separate remediation issue or operator action. Lifting the label doesn't re-run Security on the same revision.

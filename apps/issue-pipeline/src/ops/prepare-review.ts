@@ -1,8 +1,8 @@
 // prepare-review: the diff and bundle a review round reads. Before the code
-// merges, they hold the branch's code change since the last reviewed head
-// that is still in its history. Once the code merged, they hold the merge
+// lands, they hold the branch's code change since the last reviewed head
+// that is still in its history. Once the code landed, they hold the merge
 // commit GitHub confirmed, as its change against its first parent, with the
-// checkout detached at the merge commit (merged-review.ts).
+// checkout detached at the merge commit (landed-review.ts).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -12,7 +12,7 @@ import { paths } from "../config.ts";
 import { fetchIn, head, patchIdOf } from "../git-state.ts";
 import { parseRequest, run } from "../process.ts";
 import type { CodeMerged } from "../state.ts";
-import { assertNoCodeChanges, mergedCode } from "./merged-review.ts";
+import { assertNoCodeChanges, landedCode } from "./landed-review.ts";
 import { commitLog, reviewBundle } from "./review-diff.ts";
 
 // headTree is the head's tree, the same for any head with the same code.
@@ -37,7 +37,7 @@ const REVIEW_REQUEST = z.looseObject({
   number: z.number().int(),
   sinceSha: z.string().nullish(),
   tag: z.string().nullish(),
-  // The merged PR and its merge commit, once the code merged.
+  // The merged PR and its merge commit, once the code landed.
   codeMerged: z
     .object({ pr: z.number().int().positive(), sha: z.string().min(1) })
     .nullish(),
@@ -114,15 +114,15 @@ function writeReview(
   };
 }
 
-// The review of the merged result after the code merged as
-// `codeMerged.sha`, once GitHub confirms that merge (merged-review.ts): the
+// The review of the landed result after the code landed as
+// `codeMerged.sha`, once GitHub confirms that merge (landed-review.ts): the
 // merge commit's change against its first parent, with the bundle holding the merged files' texts.
-function prepareMergedReview(
+function prepareLandedReview(
   cfg: Config,
   n: number,
   { tag, codeMerged }: { tag: string; codeMerged: CodeMerged },
 ): ReviewReply {
-  const merged = mergedCode(cfg, n, codeMerged);
+  const merged = landedCode(cfg, n, codeMerged);
   const written = writeReview(cfg, n, {
     tag,
     diff: merged.diff,
@@ -143,7 +143,7 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const n = req.number;
   const tag = textOr(req.tag, "r0");
   if (req.codeMerged !== null && req.codeMerged !== undefined) {
-    return prepareMergedReview(cfg, n, { tag, codeMerged: req.codeMerged });
+    return prepareLandedReview(cfg, n, { tag, codeMerged: req.codeMerged });
   }
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);

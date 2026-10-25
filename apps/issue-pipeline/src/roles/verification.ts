@@ -4,7 +4,7 @@
 // that phase, up
 // to `maxCiFixes` of them in a job, and stops with check-fixes after that,
 // or as soon as a fix session says no change in the repo can fix them. Once
-// the code merged, verify checks the merge commit itself, which no session
+// the code landed, verify checks the merge commit itself, which no session
 // may change, so a failure there stops with check-fixes without a fix
 // session.
 

@@ -9,7 +9,7 @@
 // signal while an end is applied does the same, except that an interrupted
 // stop retains its reconciliation evidence without overwriting signed state.
 // An issue at another stage is released untouched, but a merge job runs its
-// role on a done issue with its merge recorded, to finish its completion.
+// role on a done issue with its Land recorded, to finish its completion.
 // A task job runs its task's role the same way, at the stage it was given,
 // and its line always reports the task: a run that ends without the role's
 // report, such as a failed claim or a thrown op, reports `unknown`.
@@ -50,7 +50,7 @@ const BAD_STATE = "the claim's reply doesn't parse";
 const WAITING = "the issue waits for an answer to its questions";
 // The claim op's replies (shared-ops-contract.md): the claim won, with the
 // issue's state after adopting the pipeline's own pushes and reconciling a
-// merge, the PR branch's head and the issue file it wrote; lost to a live
+// Land, the PR branch's head and the issue file it wrote; lost to a live
 // holder; or held while the issue waits for an answer.
 const CLAIM_WON = z.looseObject({
   state: ISSUE_STATE,
@@ -88,7 +88,7 @@ interface RoleJob extends EndingJob {
 }
 
 // Whether a `stage` job runs its role on an issue saved at another stage:
-// only a merge job, on a done issue whose merge it recorded (`merged`), to
+// only a merge job, on a done issue whose Land it recorded (`merged`), to
 // reconcile the completion its finish didn't finish (the merge role's
 // finish-only path).
 function reconcilesCompletion(stage: Stage, state: IssueState): boolean {

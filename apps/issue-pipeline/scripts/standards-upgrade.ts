@@ -25,7 +25,7 @@
 // into issue delivery: it checks the plan's author, repository, policy,
 // source commit (still the base branch's head) and that no other open issue
 // carries a plan, then prints the branch and the caller's start line for
-// the Implementation stage. It reads only; the existing caller and task
+// the Implementation task. It reads only; the existing caller and task
 // chain do every write. A plan that fails a check exits 2.
 
 import fs from "node:fs";

@@ -1,5 +1,6 @@
 // The repo's open issues as the orchestrator's snapshot reads them, after
-// authenticating each operation as its explicit development or merge identity.
+// authenticating each operation as its explicit development or landing
+// identity.
 
 import { z } from "zod";
 import { ensureClone } from "../checkouts.ts";

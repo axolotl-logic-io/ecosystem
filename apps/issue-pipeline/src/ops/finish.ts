@@ -1,5 +1,5 @@
 // What happens once an issue leaves the pipeline or ends a job: completing
-// an issue after its merge role saved it done and merged (the finish op),
+// an issue after its merge stage saved it done and landed (the finish op),
 // and closing a parent whose sub-issues are all closed.
 
 import { z } from "zod";
@@ -101,7 +101,7 @@ function closeIssue(cfg: Config, n: number, text: string): boolean {
   return true;
 }
 
-// The closing comment for the merged revision.
+// The closing comment for the landed revision.
 function closingText(cfg: Config, state: IssueState, merged: Revision): string {
   let text = "The approved revision has no code change to merge.";
   if (state.pr !== null && merged.code !== null) {
@@ -110,14 +110,14 @@ function closingText(cfg: Config, state: IssueState, merged: Revision): string {
   return signed({ role: "merger" }, text);
 }
 
-function sameMerged(a: Revision | null, b: Revision | null): boolean {
+function sameLanded(a: Revision | null, b: Revision | null): boolean {
   return a !== null && b !== null && sameRevision(a, b);
 }
 
 // The completion cleanup, every step safe to repeat: the code branch, the
 // labels and the claims, then the issue, then the worktree (in a stage job,
 // only the teardown: the job removes its own checkout as it exits). A crash
-// before the close leaves the issue open, done and merged, which the
+// before the close leaves the issue open, done and landed, which the
 // orchestrator schedules again.
 function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
   const n = state.number;
@@ -138,9 +138,9 @@ function complete(cfg: Config, state: IssueState, merged: Revision): boolean {
   return closed;
 }
 
-// Completes an issue whose merge role saved it done with the merged
+// Completes an issue whose merge stage saved it done with the landed
 // revision: only after a fresh check that the PR merged at merged.code and
-// the trusted inputs are unchanged. It publishes and merges nothing itself. Safe to repeat, so
+// the trusted inputs are unchanged. It publishes and lands nothing itself. Safe to repeat, so
 // a crash between the save and the cleanup is finished by running it again.
 function finishIssue(cfg: Config, request: unknown): FinishIssueReply {
   const req = parseRequest(FINISH_ISSUE_REQUEST, "finish", request);
@@ -149,7 +149,7 @@ function finishIssue(cfg: Config, request: unknown): FinishIssueReply {
   if (saved === null) {
     throw new OpsError(`#${n} has no readable saved state to finish`);
   }
-  if (req.state !== undefined && !sameMerged(req.state.merged, saved.merged)) {
+  if (req.state !== undefined && !sameLanded(req.state.merged, saved.merged)) {
     throw new OpsError(
       `the finish op's state for #${n} is not the saved completion`,
     );
@@ -165,14 +165,14 @@ function finishIssue(cfg: Config, request: unknown): FinishIssueReply {
   return { finished: true, closed: complete(cfg, saved, merged) };
 }
 
-// A closed sub-issue merged when GitHub closed it as completed, as a merge
-// does, or it carries agent:merged.
+// A closed sub-issue landed when GitHub closed it as completed, as a PR merge
+// does, or it carries `agent:merged`.
 function subIssueMerged(sub: SubIssue): boolean {
   return sub.reason === "completed" || sub.labels.includes(LABELS.merged.name);
 }
 
 // Closes a split issue once every sub-issue is closed and at least one of
-// them merged; otherwise it writes nothing. It closes the issue before it
+// them landed; otherwise it writes nothing. It closes the issue before it
 // relabels it and comments, so a close that fails leaves no comment and a
 // retry comments once.
 function closeParent(cfg: Config, request: unknown): CloseParentReply {

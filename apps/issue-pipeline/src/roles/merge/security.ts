@@ -1,9 +1,9 @@
-// Read-only Security over an exact candidate, or historical merged recovery.
+// Read-only Security over an exact candidate, or historical landed recovery.
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { unreadableReply } from "../../job/role-context.ts";
 
-import { legacyWikiOf } from "../../merge-provenance.ts";
+import { legacyWikiOf } from "../../land-provenance.ts";
 import { configPolicyDigest } from "../../project-policy.ts";
 import type { ReviewedTarget } from "../../reviewed-target.ts";
 import { targetHolds } from "../../reviewed-target.ts";
@@ -51,7 +51,7 @@ function rejectedAgain(state: IssueState, current: Revision): RoleEnd | null {
   return null;
 }
 
-// The candidate or historical merged result, prepared at exactly `revision`.
+// The candidate or historical landed result, prepared at exactly `revision`.
 async function prepare(
   ctx: RoleContext,
   revision: Revision,
@@ -70,8 +70,8 @@ async function prepare(
   return parsed.data;
 }
 
-// Candidate provenance is absent only for historical merged recovery.
-interface MergedResult {
+// Candidate provenance is absent only for historical landed recovery.
+interface LandedResult {
   revision: Revision;
   codeMerged: CodeMerged | null;
   still: (after: Revision) => boolean;
@@ -80,7 +80,7 @@ interface MergedResult {
 }
 
 function reviewDecisionHolds(
-  { revision, still }: Pick<MergedResult, "revision" | "still">,
+  { revision, still }: Pick<LandedResult, "revision" | "still">,
   after: Revision,
   reply: SecurityReviewReply,
 ): boolean {
@@ -94,7 +94,7 @@ function reviewDecisionHolds(
 async function freshReview(
   ctx: RoleContext,
   state: IssueState,
-  { revision, codeMerged, still, target }: MergedResult,
+  { revision, codeMerged, still, target }: LandedResult,
 ): Promise<Step<SecurityReviewReply>> {
   const prepared = await prepare(ctx, revision, codeMerged);
   if (revision.code !== null && prepared.headSha !== revision.code) {
@@ -187,7 +187,7 @@ function candidateGate(
 function reusableSecurity(
   ctx: RoleContext,
   state: IssueState,
-  result: MergedResult,
+  result: LandedResult,
 ): NonNullable<IssueState["security"] | IssueState["resultSecurity"]> | null {
   const { revision, target } = result;
   let saved: IssueState["security"] | IssueState["resultSecurity"] =
@@ -219,7 +219,7 @@ function reusableSecurity(
 async function securityReviewed(
   ctx: RoleContext,
   state: IssueState,
-  result: MergedResult,
+  result: LandedResult,
 ): Promise<Step<IssueState>> {
   const { revision, target } = result;
   const rejected = rejectedAgain(state, revision);
@@ -268,5 +268,5 @@ async function securityReviewed(
   });
 }
 
-export type { MergedResult };
+export type { LandedResult };
 export { rejectedAgain, securityReviewed };

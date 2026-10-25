@@ -11,7 +11,7 @@ standards-upgrade apply --config C --issue N
 caller: Implementation → draft PR → Hardening → Sync → Integration → Security → Land
 ```
 
-This page describes the assessment and the admission of its plan. Merging them installs and activates nothing. Nothing schedules it, and it never runs across many repositories by itself.
+This page describes the assessment and the admission of its plan. Landing them installs and activates nothing. Nothing schedules it, and it never runs across many repositories by itself.
 
 ## Scope of this slice
 
@@ -213,9 +213,9 @@ To deliver an assessment's plan, follow these steps:
    ```
 
    `ISSUE` is the number of the issue you filed.
-4. Start the Implementation stage with the printed line, filling in the caller's run folder and lane, as the [caller](caller.md) page describes.
+4. Start the `implement` stage with the printed line, filling in the caller's run folder and lane, as the [caller](caller.md) page describes.
 
-`apply` prints one JSON line with the issue, the branch `standards-upgrade/issue-ISSUE`, the plan's marker fields, the stage `implement` and the start line. From there the existing caller and task chain do everything: Hippy implements on that branch and opens a draft PR, and Hardening, Sync, Integration, Security and Land follow under their usual rules. The default run never merges by itself; landing still needs the chain's own Security result and authorization.
+`apply` prints one JSON line with the issue, the branch `standards-upgrade/issue-ISSUE`, the plan's marker fields, the stage `implement` and the start line. From there the existing caller and task chain do everything: Hippy implements on that branch and opens a draft PR, and Hardening, Sync, Integration, Security and Land follow under their usual rules. The default run never lands by itself; landing still needs the chain's own Security result and authorization.
 
 `apply` only reads. It refuses, with exit 2 and the reason on stderr, when:
 

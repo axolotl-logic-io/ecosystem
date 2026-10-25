@@ -14,8 +14,8 @@ const LOG_SHA_LENGTH = 8;
 // `remote` differs from it but is the head this machine last recorded
 // pushing (`pushed`). The head and verification move to `remote` and the
 // last verdict is voided (its revision stays for diagnostics); a review or a
-// merge goes back to review, so no code change skips one. A stopped or done
-// issue, or one whose code has merged, adopts nothing. Null when there is
+// Land goes back to review, so no code change skips one. A stopped or done
+// issue, or one whose code has landed, adopts nothing. Null when there is
 // nothing to adopt.
 function adoptPush(
   saved: IssueState,

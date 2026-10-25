@@ -1,10 +1,10 @@
-// Immutable authorization and attempted-merge evidence shared by state and recovery.
+// Immutable authorization and attempted-Land evidence shared by state and recovery.
 import { z } from "zod";
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const FULL_SHA = z.string().regex(FULL_SHA_PATTERN);
 
-// What a review or a merge saw: the code head and the trusted-inputs
+// What a review or a Land saw: the code head and the trusted-inputs
 // revision. `wiki` is legacy: a revision saved while the pipeline had a wiki
 // names its wiki head (null with no wiki commits). The pipeline writes none,
 // and an absent one reads as null (legacyWikiOf).

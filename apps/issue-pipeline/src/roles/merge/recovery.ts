@@ -1,24 +1,24 @@
-// An interrupted own merge resumes only from its saved exact receipt and
+// An interrupted own Land resumes only from its saved exact receipt and
 // original authorization, independently confirmed against GitHub's PR head
 // and merge commit. codeMerged stays an authoritative fact, not a reason
 // to pretend hardening covered the merge SHA. Unchanged work needs only
-// read-only confirmation of its premerge checks and Security, then its
-// completion: never a postmerge suite or another writer (#185).
+// read-only confirmation of its pre-Land checks and Security, then its
+// completion: never a post-Land suite or another writer (#185).
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
-import { legacyWikiOf } from "../../merge-provenance.ts";
-import { recordedAuthorization } from "../../merged-authorization.ts";
+import { legacyWikiOf } from "../../land-provenance.ts";
+import { recordedAuthorization } from "../../landed-authorization.ts";
 import { requirementsHold } from "../../requirements.ts";
 import { currentResultObservation } from "../../security-clearance.ts";
 import { opReply } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
-import { afterOwnMerge } from "./after-merge.ts";
-import { confirmedMergedResult, landBindingOf } from "./checks.ts";
+import { afterOwnLand } from "./after-land.ts";
+import { confirmedLandedResult, landBindingOf } from "./checks.ts";
 import { reviewedAndCompleted } from "./completion.ts";
 import { toRequirements } from "./returns.ts";
 
-const OWN_MERGE_INPUTS_CHANGED =
+const OWN_LAND_INPUTS_CHANGED =
   "the trusted inputs changed since the own merge";
 
 const MERGE_REPLY = z.union([
@@ -32,7 +32,7 @@ const MERGE_REPLY = z.union([
 ]);
 
 // Unconfirmed attempts are reconciled before any ordinary approval/integration
-// path. External merged truth without an own receipt stops in merge.ts.
+// path. External landed truth without an own receipt stops in land.ts.
 async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
   const { state } = ctx;
   const attempt = state.mergeAttempt;
@@ -61,15 +61,15 @@ async function recoverAttempt(ctx: RoleContext): Promise<RoleEnd | null> {
     }
     return { kind: "stop", code: "merge-refused", reason, state };
   }
-  return await afterOwnMerge(ctx, state, {
+  return await afterOwnLand(ctx, state, {
     authorized: attempt.authorized,
     mergeCommit: reply.mergeCommit,
   });
 }
 
-// Null means this is not an unchanged own merge; the ordinary approval
+// Null means this is not an unchanged own Land; the ordinary approval
 // gate must handle it. A codeMerged fact alone authorizes no recovery.
-async function recoverOwnMerge(
+async function recoverOwnLand(
   ctx: RoleContext,
   current: CurrentRevision,
 ): Promise<RoleEnd | null> {
@@ -92,7 +92,7 @@ async function recoverOwnMerge(
     authorized.inputs !== revision.inputs ||
     merged.inputs !== revision.inputs
   ) {
-    return toRequirements(state, OWN_MERGE_INPUTS_CHANGED);
+    return toRequirements(state, OWN_LAND_INPUTS_CHANGED);
   }
   if (
     pr === null ||
@@ -118,7 +118,7 @@ async function recoverOwnMerge(
     return null;
   }
   const receipt = { pr: pr.number, sha: merged.code };
-  const refused = await confirmedMergedResult(ctx, state, {
+  const refused = await confirmedLandedResult(ctx, state, {
     result,
     codeMerged: receipt,
   });
@@ -131,4 +131,4 @@ async function recoverOwnMerge(
   });
 }
 
-export { MERGE_REPLY, recoverAttempt, recoverOwnMerge };
+export { MERGE_REPLY, recoverAttempt, recoverOwnLand };

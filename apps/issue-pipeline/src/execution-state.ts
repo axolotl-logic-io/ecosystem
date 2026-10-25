@@ -13,8 +13,8 @@ import {
   currentExecutionReceipt,
 } from "./execution-history.ts";
 import { redactGhArgs } from "./github.ts";
-import { assertFirstClaim, reconcileClaimMerge } from "./ops/claim-state.ts";
-import { withSavedCodeMerge } from "./ops/save-state.ts";
+import { assertFirstClaim, reconcileClaimLand } from "./ops/claim-state.ts";
+import { withSavedCodeLand } from "./ops/save-state.ts";
 import { OpsError } from "./ops-error.ts";
 import {
   latestStateComment,
@@ -133,11 +133,11 @@ function claimExecutionState(
   });
 }
 
-function retainedMergeAuthorization(
+function retainedLandAuthorization(
   saved: IssueState,
   state: IssueState,
 ): Partial<IssueState> {
-  // Observing an external merge must not freeze fresh postmerge hardening.
+  // Observing an external landing must not freeze fresh post-Land hardening.
   // Stale snapshots still cannot erase historical recovery authorization.
   if (
     saved.mergeAttempt === null &&
@@ -152,11 +152,11 @@ function retainedMergeAuthorization(
   };
 }
 
-function retainedMergedTruth(
+function retainedLandedTruth(
   saved: IssueState,
   state: IssueState,
 ): IssueState["merged"] {
-  // An own-merge receipt binds inputs, policy and legacy wiki as well as code.
+  // An own-Land receipt binds inputs, policy and legacy wiki as well as code.
   // A same-SHA role snapshot must not rewrite that exact recovery authority.
   if (
     saved.merged !== null &&
@@ -197,7 +197,7 @@ function saveCheckpoint(
   }
   assignedBranch(cfg, issue, saved);
   assignedBranch(cfg, issue, state);
-  const retained = withSavedCodeMerge(
+  const retained = withSavedCodeLand(
     cfg,
     issue,
     {
@@ -207,8 +207,8 @@ function saveCheckpoint(
       // remain allowed, as in the existing push/adopt/sync save paths.
       headSha: state.headSha ?? saved.headSha,
       pr: saved.pr ?? state.pr,
-      merged: retainedMergedTruth(saved, state),
-      ...retainedMergeAuthorization(saved, state),
+      merged: retainedLandedTruth(saved, state),
+      ...retainedLandAuthorization(saved, state),
       execution: saved.execution,
     },
     saved,
@@ -230,9 +230,10 @@ function saveExecutionState(
   );
 }
 
-// Deterministic claims may checkpoint newly observed merged truth. Role saves
-// cannot: their snapshots must still retain the already saved merge facts.
-// Reobserve rather than trusting merge facts supplied in the transition state.
+// Deterministic claims may checkpoint newly observed landed truth. Role saves
+// cannot: their snapshots must still retain the already saved landing facts.
+// Reobserve rather than trusting landing facts supplied in the transition
+// state.
 function saveExecutionClaimState(
   cfg: Config,
   issue: number,
@@ -244,7 +245,7 @@ function saveExecutionClaimState(
   if (saved === null) {
     throw new OpsError("saved execution authority missing");
   }
-  const observed = reconcileClaimMerge(cfg, issue, saved, now);
+  const observed = reconcileClaimLand(cfg, issue, saved, now);
   if (
     state.pr !== observed.pr ||
     state.codeMerged?.pr !== observed.codeMerged?.pr ||

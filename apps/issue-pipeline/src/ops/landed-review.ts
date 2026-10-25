@@ -1,8 +1,8 @@
-// The code a review reads once the issue's code merged: the merge commit
+// The code a review reads once the issue's code landed: the merge commit
 // GitHub confirmed, as its change against its first parent (the base it
 // merged into), with the issue's checkout detached at that commit, so the
 // files a review opens there are the merged result, not the branch's. It
-// fails closed: an unconfirmed merge, a merge commit with no first parent or
+// fails closed: an unconfirmed Land, a merge commit with no first parent or
 // no change against it, a checkout with uncommitted changes, or a checkout
 // that doesn't end at exactly the merge commit's tree throws, before
 // anything is written. Nothing here pushes, saves or moves a branch: the
@@ -15,17 +15,17 @@ import { gitIn, head } from "../git-state.ts";
 import { OpsError } from "../ops-error.ts";
 import { tail } from "../process.ts";
 import type { CodeMerged } from "../state.ts";
-import { confirmedMergedParent } from "./merged-graph.ts";
+import { confirmedLandedParent } from "./landed-graph.ts";
 import { commitLog } from "./review-diff.ts";
 
 // How many status lines a dirty-checkout refusal names.
 const STATUS_LINES = 20;
 
-// The merged code a review reads: its diff text (a header saying the
+// The landed code a review reads: its diff text (a header saying the
 // checkout is at the merge commit, the merge's commit messages and its
 // first-parent patch), the range the bundle reads files from, the files the
 // merge changed, and the merge commit's first parent and tree.
-interface MergedCode {
+interface LandedCode {
   diff: string;
   range: { from: string; head: string };
   files: string[];
@@ -50,7 +50,7 @@ function assertNoCodeChanges(wt: string): void {
 }
 
 // Detaches the checkout `wt` at the merge commit `sha` (already fetched by
-// confirmMerged), and checks it ended at exactly `sha` and its tree. Safe to
+// confirmLanded), and checks it ended at exactly `sha` and its tree. Safe to
 // repeat.
 function detachAt(wt: string, sha: string): void {
   if (head(wt) !== sha) {
@@ -74,16 +74,16 @@ function detachAt(wt: string, sha: string): void {
   }
 }
 
-// The merged code issue `n`'s review reads, once GitHub confirms PR
+// The landed code issue `n`'s review reads, once GitHub confirms PR
 // `codeMerged.pr` merged as `codeMerged.sha` on the base; the issue's
 // checkout is left detached at that commit.
-function mergedCode(
+function landedCode(
   cfg: Config,
   n: number,
   codeMerged: CodeMerged,
-): MergedCode {
+): LandedCode {
   const wt = paths.worktree(cfg, n);
-  const parent = confirmedMergedParent(cfg, n, wt, codeMerged);
+  const parent = confirmedLandedParent(cfg, n, wt, codeMerged);
   const { pr, sha } = codeMerged;
   const range = `${parent}..${sha}`;
   const files = nonEmptyLines(gitIn(wt, ["diff", "--name-only", range]));
@@ -104,5 +104,5 @@ function mergedCode(
   };
 }
 
-export type { MergedCode };
-export { assertNoCodeChanges, mergedCode };
+export type { LandedCode };
+export { assertNoCodeChanges, landedCode };

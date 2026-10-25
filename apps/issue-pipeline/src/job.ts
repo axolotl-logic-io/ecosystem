@@ -41,10 +41,10 @@
 // at its last saved state with no lease, and exits 128 + the signal's number
 // with nothing on stdout. --steer sends a message to a live session of the
 // job running for #N, exiting 0 once pi accepted it and 1 otherwise.
-// --job-id names the job as the orchestrator logged its start; without it
+// --job-id names the job as the caller logged its start; without it
 // the job makes its own. Neither is authority: before it opens a checkout
 // the job confirms ownership for a fresh invocation UUID (job/invocation.ts).
-// Each implementor commit names its session and the
+// Each Developer commit names its session and the
 // job's start (src/job/pipeline-commit.ts).
 //
 // No pi session gets a gh token (src/job/roles.ts); ops keep the job's env.
@@ -68,8 +68,8 @@
 // code checkout, cloned from a bare mirror of the repo, with the repo's docs
 // in its docs/ (src/job/checkout.ts). On every exit (src/job/teardown.ts) it
 // saves what the checkout left uncommitted as patches in the run folder
-// (droppedPatches), records and drops it (lostChanges), the implementor's
-// job pushes what the remote lacks, nothing once the code is merged
+// (droppedPatches), records and drops it (lostChanges), the Implementation
+// job pushes what the remote lacks, nothing once the code has landed
 // (src/job/exit-push.ts), and the folder is
 // removed; a run that stopped with saved patches posts a comment saying so
 // (#369).

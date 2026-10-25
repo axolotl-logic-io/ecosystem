@@ -229,7 +229,7 @@ Decided by Autumn on 2026-10-24.
 
 Lawd authorizes source acceptance and Land, and then installs and activates the pipeline. Autumn chose no extra gate on installation: Lawd installs the revision it landed.
 
-Lawd can't install yet. Until that capability exists, the operator installs, and a merge changes nothing that runs until then.
+Lawd can't install yet. Until that capability exists, the operator installs, and landing changes nothing that runs until then.
 
 ## compatibility-later
 

@@ -1,8 +1,8 @@
-// Authenticated durable intent and response checkpoints for merge recovery.
+// Authenticated durable intent and response checkpoints for landing recovery.
 import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
-import { FULL_SHA } from "../merge-provenance.ts";
-import { recordedAuthorization } from "../merged-authorization.ts";
+import { FULL_SHA } from "../land-provenance.ts";
+import { recordedAuthorization } from "../landed-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import { targetHolds } from "../reviewed-target.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
@@ -11,7 +11,7 @@ import type { IssueState, MergeAttempt, Revision } from "../state.ts";
 import { approvalHolds, sameRevision } from "../state.ts";
 
 // Confirm the intent checkpoint is actually readable before sending code.
-function beginMerge(
+function beginLand(
   cfg: Config,
   number: number,
   pr: number,
@@ -52,7 +52,7 @@ function beginMerge(
   return saved;
 }
 
-function saveMergeResponse(cfg: Config, number: number, result: string): void {
+function saveLandResponse(cfg: Config, number: number, result: string): void {
   FULL_SHA.parse(result);
   const state = readWriteState(cfg, number);
   if (state.mergeAttempt === null || state.mergeAttempt.result !== null) {
@@ -123,9 +123,9 @@ function saveReceipt(
 }
 
 export {
-  beginMerge,
+  beginLand,
   boundAttempt,
   confirmAuthorization,
-  saveMergeResponse,
+  saveLandResponse,
   saveReceipt,
 };

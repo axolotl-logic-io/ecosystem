@@ -1,20 +1,20 @@
 // The gate on the finish op: the saved completion it may close an issue on,
 // decided against a fresh current revision (src/revision.ts) and the
-// issue's saved state. Like merge-guard.ts's gates it is pure: an
+// issue's saved state. Like land-guard.ts's gates it is pure: an
 // inconsistent saved state or GitHub answer throws, a revision that moved
-// or a security review that doesn't clear the merged result refuses, and
+// or a security review that doesn't clear the landed result refuses, and
 // undefined lets the op go on.
 
-import { recordedAuthorization } from "../merged-authorization.ts";
+import { recordedAuthorization } from "../landed-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import { securityRefusal } from "../security-clearance.ts";
 import type { IssueState, Revision } from "../state.ts";
-import type { CurrentRevision } from "./merge-guard.ts";
+import type { CurrentRevision } from "./land-guard.ts";
 import {
-  mergedAuthorizationHolds,
+  landedAuthorizationHolds,
   mergedPr,
-  ownMergeResultObservation,
-} from "./merge-guard.ts";
+  ownLandResultObservation,
+} from "./land-guard.ts";
 
 interface FinishRefusal {
   finished: false;
@@ -24,7 +24,7 @@ interface FinishRefusal {
 
 // Throws unless the saved completion binds the authorized inputs (and any
 // legacy wiki head) to GitHub's exact merge: either the original authorized
-// head with its own-merge receipt, or independently hardened postmerge work
+// head with its own-Land receipt, or independently hardened post-Land work
 // with confirmed codeMerged. Recording codeMerged never changes which path
 // authorized it.
 function unauthorizedHead(
@@ -32,7 +32,7 @@ function unauthorizedHead(
   merged: Revision,
   pr: { mergeCommit: string; headSha: string },
 ): void {
-  if (!mergedAuthorizationHolds(saved, merged, pr)) {
+  if (!landedAuthorizationHolds(saved, merged, pr)) {
     const authorized = recordedAuthorization(saved)?.code ?? null;
     throw new OpsError(
       `#${saved.number}'s merge authorization ${String(authorized)} is not bound to the saved result of head ${pr.headSha} as ${pr.mergeCommit}, which PR #${String(saved.pr)} merged`,
@@ -40,10 +40,10 @@ function unauthorizedHead(
   }
 }
 
-// The saved completion the finish op may act on: done, with the merged
+// The saved completion the finish op may act on: done, with the landed
 // revision, its PR (if any) merged at merged.code from the authorized head
-// (a change with no PR merged no code), the trusted inputs unchanged since, and the saved
-// security review clear at exactly that merged revision. A state that isn't
+// (a change with no PR landed no code), the trusted inputs unchanged since, and the saved
+// security review clear at exactly that landed revision. A state that isn't
 // such a completion throws; new trusted input refuses, so the issue stays
 // open for the author, and so does a security review that didn't clear it.
 function finishGate(
@@ -88,7 +88,7 @@ function currentResultClearance(
 ): FinishRefusal | undefined {
   let result = merged;
   if ((merged.policy ?? null) !== (current.revision.policy ?? null)) {
-    const observed = ownMergeResultObservation(saved, current);
+    const observed = ownLandResultObservation(saved, current);
     if (observed === null) {
       return {
         finished: false,

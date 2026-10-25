@@ -4,20 +4,20 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { FULL_SHA, legacyWikiOf } from "../merge-provenance.ts";
+import { FULL_SHA, legacyWikiOf } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, sleepMs } from "../process.ts";
-import { confirmMerged, currentRevision } from "../revision.ts";
+import { confirmLanded, currentRevision } from "../revision.ts";
 import { readWriteState, writeState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { readFastForward } from "./fast-forward-recovery.ts";
+import { landedParent } from "./landed-graph.ts";
 import {
   boundAttempt,
   confirmAuthorization,
   saveReceipt,
 } from "./merge-attempt.ts";
-import { mergedParent } from "./merged-graph.ts";
-import { viewForMerge } from "./pr-merge.ts";
+import { viewForLand } from "./pr-merge.ts";
 
 interface ConfirmationClock {
   now: () => number;
@@ -52,7 +52,7 @@ function readEvidence(
   if (attempt.operation !== undefined) {
     return readFastForward(cfg, number, state, withinDeadline);
   }
-  const view = viewForMerge(cfg, attempt.pr);
+  const view = viewForLand(cfg, attempt.pr);
   if (view.headRefName !== attempt.branch || view.state !== "MERGED") {
     throw new OpsError("same source PR is not genuinely MERGED yet");
   }
@@ -86,8 +86,8 @@ function readEvidence(
     );
   }
   const wt = paths.worktree(cfg, number);
-  confirmMerged(cfg, number, { wt, codeMerged });
-  mergedParent(wt, result, view.headRefOid, true);
+  confirmLanded(cfg, number, { wt, codeMerged });
+  landedParent(wt, result, view.headRefOid, true);
   const current = currentRevision(cfg, number, observed);
   if (
     current.pr?.state !== "MERGED" ||
@@ -111,7 +111,7 @@ function readEvidence(
 // A deadline bounds this invocation only. Later caller-authorized runs may
 // confirm the same saved response, but never renew mutation authority. The
 // cumulative read count remains durable audit evidence, not a lifetime limit.
-function reconcileMerge(
+function reconcileAttemptedLand(
   cfg: Config,
   request: unknown,
   clock: ConfirmationClock = SYSTEM_CLOCK,
@@ -163,4 +163,4 @@ function reconcileMerge(
 }
 
 export type { ConfirmationClock, RecoveryReply };
-export { diagnostic, reconcileMerge };
+export { diagnostic, reconcileAttemptedLand };

@@ -32,7 +32,7 @@ import {
   labelWorking,
   readyCheckouts,
 } from "./claim.ts";
-import { assertClosedMergeRecovery, claimedState } from "./claim-state.ts";
+import { assertClosedLandRecovery, claimedState } from "./claim-state.ts";
 
 function boundClaim(
   cfg: Config,
@@ -56,7 +56,7 @@ function boundClaim(
   const issue = CLAIMED_ISSUE.parse(context.issue);
   const recovering = issue.state === "closed";
   if (recovering) {
-    assertClosedMergeRecovery(cfg, n, saved);
+    assertClosedLandRecovery(cfg, n, saved);
   } else if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
   }
@@ -115,7 +115,7 @@ function prepareBoundClaim(
     throw new OpsError("claim eligibility changed; reconciliation required");
   }
   if (recovering) {
-    assertClosedMergeRecovery(cfg, n, owned);
+    assertClosedLandRecovery(cfg, n, owned);
   }
   ensureClone(cfg);
   const now = new Date();

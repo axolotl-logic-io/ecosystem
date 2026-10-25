@@ -32,7 +32,7 @@ import { assertAuthorRequest } from "./author-request.ts";
 import type { BranchChanged } from "./claim-state.ts";
 import {
   assertBranchAssigned,
-  assertClosedMergeRecovery,
+  assertClosedLandRecovery,
   claimedState,
   startingState,
 } from "./claim-state.ts";
@@ -212,7 +212,7 @@ function claim(
   const issue = CLAIMED_ISSUE.parse(context.issue);
   const recovering = issue.state === "closed";
   if (recovering) {
-    assertClosedMergeRecovery(cfg, n, readClaimState(cfg, n, context.comments));
+    assertClosedLandRecovery(cfg, n, readClaimState(cfg, n, context.comments));
   } else if (issue.state !== "open") {
     throw new OpsError(`#${n} is not open`);
   }

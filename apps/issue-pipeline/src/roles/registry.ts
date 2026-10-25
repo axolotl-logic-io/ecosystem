@@ -6,15 +6,15 @@ import type { Role } from "../job/role-context.ts";
 import type { JobTask } from "../job/task-request.ts";
 import type { Stage } from "../stages.ts";
 import { authorRole } from "./author/author.ts";
-import { implementorRole } from "./implementor/implementor.ts";
+import { implementationRole } from "./implementation/implementation.ts";
 import { integrationRole } from "./integration/integration.ts";
-import { mergeRole } from "./merge/merge.ts";
+import { mergeRole } from "./merge/land.ts";
 import { reviewerRole } from "./reviewer/reviewer.ts";
 import { syncRole } from "./sync/sync.ts";
 
 const ROLES: Readonly<Partial<Record<Stage, Role>>> = {
   author: authorRole,
-  implement: implementorRole,
+  implement: implementationRole,
   review: reviewerRole,
   merge: mergeRole,
 };

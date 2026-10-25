@@ -3,11 +3,11 @@
 import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { git } from "../github.ts";
-import { FULL_SHA } from "../merge-provenance.ts";
+import { FULL_SHA } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import type { CodeMerged, IssueState } from "../state.ts";
 import { sameRevision } from "../state.ts";
-import { assertFastForward, targetRef } from "./branch-merge.ts";
+import { assertFastForward, targetRef } from "./land-branch.ts";
 import { confirmAuthorization } from "./merge-attempt.ts";
 
 const WHITESPACE = /\s+/u;

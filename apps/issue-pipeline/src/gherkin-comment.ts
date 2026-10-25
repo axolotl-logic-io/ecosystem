@@ -1,7 +1,7 @@
 // An authored issue's optional Gherkin comment: signed by the
 // author, keyed `gherkin`, and edited in place on every revision, so GitHub
 // keeps its history. Its mark records the revision and the trusted-inputs
-// revision it was written from. The implementor and the reviewer read the
+// revision it was written from. The Developer and the reviewer read the
 // Gherkin from here at their job's start, never from the saved state. A
 // comment written while the pipeline had a wiki may also list "Wiki pages";
 // that section is ignored.
@@ -69,7 +69,7 @@ function gherkinBody(
 }
 
 // The issue's Gherkin comment, or null when it has none. Only a comment the
-// merge identity wrote with trusted editor provenance, signed by the author, with the key's mark and the
+// landing identity wrote with trusted editor provenance, signed by the author, with the key's mark and the
 // Gherkin mark, counts: anyone can paste the marks.
 function gherkinCommentOf(
   cfg: Pick<Config, "mergeAccount">,

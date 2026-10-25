@@ -1,6 +1,6 @@
 // Separate receipt slots retain original candidate authority across policy movement.
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
-import { legacyWikiOf } from "../../merge-provenance.ts";
+import { legacyWikiOf } from "../../land-provenance.ts";
 import { policyRevision } from "../../project-policy.ts";
 import type { ReviewedTarget } from "../../reviewed-target.ts";
 import type { IssueState, Revision } from "../../state.ts";
@@ -21,7 +21,7 @@ function securityCommentKey(revision: Revision): string {
   return `security-${short(revision.code)}-${short(legacyWikiOf(revision))}`;
 }
 
-// A finding prevents a new merge; historical already-merged code stays merged.
+// A finding prevents a new Land; historical already-landed code stays landed.
 function securityStop(state: IssueState, finding: Finding): RoleEnd {
   const { category, reason } = finding;
   return {

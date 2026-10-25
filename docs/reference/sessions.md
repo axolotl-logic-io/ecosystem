@@ -9,7 +9,7 @@ New work starts at Developer. Author is optional:
 ```mermaid
 flowchart LR
   author["author (explicit)"] --> implement
-  implement --> review["review: hardening"] --> merge["merge: integration, Security, merge, result confirmation"] --> done
+  implement --> review["review: hardening"] --> merge["merge: integration, Security, Land, result confirmation"] --> done
 ```
 
 Only three model roles exist: Author, Developer and Reviewer. The serialized role and config name for the Developer is still `implementor`.
@@ -20,11 +20,11 @@ Only three model roles exist: Author, Developer and Reviewer. The serialized rol
 | `implement` | Developer | Yes | Code, tests and docs pushed to the issue's branch as a draft PR |
 | `review` / `hardening` | Reviewer | Yes | A verified, pushed hardened revision and a ready PR (see [review](review.md)) |
 | `merge` / `integration` | Reviewer | Yes | The final synchronization and its conflict and check fixes (see [sync](sync.md)) |
-| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the exact candidate before merge; none runs after it (see [review](review.md#security-review)) |
+| `merge` / `security-review` | Fresh Reviewer | No | A Security verdict on the exact candidate before landing; none runs after it (see [review](review.md#security-review)) |
 
 Start new work with `--stage implement` for direct Developer work. Invoke `--stage author` to use Author for new work or an eligible existing direct-mode issue. Direct work derives its requirements from the trusted issue title, body and allowed collaborator comments. No Gherkin or substitute requirements document is required downstream. An unanswered product question stops direct work with `not-doable`; Author can ask questions and wait for a trusted answer instead.
 
-The issue records whether it used Author. Trusted input changes return authored work to Author, otherwise Developer. Older saved states without that marker remain authored. Stops, asked inputs and resume stages keep their meaning; an explicit Author pass checkpoints eligible direct work and its return stage without discarding existing work. Unchanged inputs and behavior return to that checkpoint; changed requirements invalidate old approval and return to Developer. Other stage mismatches do not reset work. Attempted/uncertain merges, merged/completed work and saved Security rejections require their existing recovery rather than a mode switch. See [coordination](coordination.md).
+The issue records whether it used Author. Trusted input changes return authored work to Author, otherwise Developer. Older saved states without that marker remain authored. Stops, asked inputs and resume stages keep their meaning; an explicit Author pass checkpoints eligible direct work and its return stage without discarding existing work. Unchanged inputs and behavior return to that checkpoint; changed requirements invalidate old approval and return to Developer. Other stage mismatches do not reset work. Attempted/uncertain Lands, landed/completed work and saved Security rejections require their existing recovery rather than a mode switch. See [coordination](coordination.md).
 
 In `branch` mode, the writable scope is the code checkout, `repo/`, including tracked docs in `repo/docs/`. After `codeMerged` is saved, sessions still run in `merged` mode but commit nothing: `repo/` is read-only and the commit scope has no writable paths. Security remains read-only and token-free.
 
@@ -44,7 +44,7 @@ Each session's behavioral prompt is a Markdown page in `apps/issue-pipeline/prom
 | `merge` / `integration` | `integration.md` |
 | `merge` / `security-review` | `security.md` |
 
-Install copies them to the pipeline root's `prompts/`, so a prompt change takes effect when the operator installs a release, never at merge. A change under review can't replace the prompts that review it.
+Install copies them to the pipeline root's `prompts/`, so a prompt change takes effect when the operator installs a release, never at landing. A change under review can't replace the prompts that review it.
 
 Before it claims or clones anything, a stage job pins the pages its stage's sessions read: their exact bytes, held in memory for the whole job. Installing mid-job changes no running session's prompt.
 
@@ -78,7 +78,7 @@ The tool takes git commit arguments: `{"args": ["-m", "Describe the change", "--
 After committing, the tool asks the running job, over its control socket, to push. Only the job holds the token.
 
 - The reply's `pushed` field says what was pushed, or `deferred` while a rebase is in progress, and `pushError` holds any refusal. A successful local commit isn't proof of a push.
-- The job pushes only for a recorded committing launch, rereads saved authority and the PR's status, and refuses code pushes after a known code merge or Security rejection.
+- The job pushes only for a recorded committing launch, rereads saved authority and the PR's status, and refuses code pushes once the code is known to have landed or after a Security rejection.
 - Pushes go to the caller-assigned branch with `--force-with-lease`.
 - A refused push keeps the commits locally and reports the refusal. A later request checks authority again.
 

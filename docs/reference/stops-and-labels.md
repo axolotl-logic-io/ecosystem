@@ -9,9 +9,9 @@ This page lists the pipeline's GitHub labels, what each stop means, how a stop i
 | `agent:working` | The pipeline is working on the issue |
 | `agent:needs-info` | The pipeline asked a question |
 | `agent:split` | The issue was split into sub-issues |
-| `agent:merged` | The pipeline merged the issue's change and completed it |
+| `agent:merged` | The pipeline landed the issue's change and completed it |
 
-The pipeline creates any missing label, including every stop label, the first time it needs them. The caller selects and splits issues; these labels don't mean the pipeline discovers work. A code merge alone isn't Security clearance or completion.
+The pipeline creates any missing label, including every stop label, the first time it needs them. The caller selects and splits issues; these labels don't mean the pipeline discovers work. Landing code alone isn't Security clearance or completion.
 
 ## Stop labels
 
@@ -30,7 +30,7 @@ A failed control adds `agent:stopped-CODE` to the issue and its PR, and posts a 
 | `conflict` | Conflict resolution ran out of `maxConflictFixes` attempts, or its result was rejected |
 | `sync-limit` | The base kept moving through `maxSyncs` Sync runs without landing |
 | `push-rejected` | GitHub rejected a push |
-| `merge-refused` | GitHub refused the merge, or the merge result couldn't be confirmed; code may already have landed |
+| `merge-refused` | GitHub refused the Land, or the landing result couldn't be confirmed; code may already have landed |
 | `job` | A legacy scheduler restarted a dying stage job too often (`maxResumes`) |
 | `error` | A step, a session or a claim failed with no more specific match |
 
@@ -66,4 +66,4 @@ To recover:
 5. Fix the cause: through ordinary reviewed work for the change, or through config or credentials for an operator problem.
 6. Restart one job on the same issue, branch and lane, at the stage saved state names. Bound your own restarts; don't loop.
 
-For `merge-refused` after a confirmation deadline, follow [recover after a confirmation deadline](merge.md#recover-after-a-confirmation-deadline). For a Security stop, the code is already merged; remediate it with a separate issue or operator action.
+For `merge-refused` after a confirmation deadline, follow [recover after a confirmation deadline](merge.md#recover-after-a-confirmation-deadline). For a Security stop, the code has already landed; remediate it with a separate issue or operator action.

@@ -64,7 +64,7 @@ function commentOf(line: unknown): IssueComment {
   return COMMENT.parse(line);
 }
 
-// `items`, each merge-authored one replaced by its current verified read.
+// `items`, each landing-authored one replaced by its current verified read.
 function verifiedComments(
   cfg: Config,
   items: readonly IssueComment[],

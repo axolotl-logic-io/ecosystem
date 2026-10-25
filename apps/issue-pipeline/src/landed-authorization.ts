@@ -1,7 +1,7 @@
 import type { IssueState, Revision } from "./state.ts";
 import { sameRevision } from "./state.ts";
 
-// Read-only recovery of historical merged/attempted work retains its original
+// Read-only recovery of historical landed/attempted work retains its original
 // checked-integration provenance. Never use this to authorize a new mutation.
 function recordedAuthorization(state: IssueState): Revision | null {
   const { hardened, integration } = state;

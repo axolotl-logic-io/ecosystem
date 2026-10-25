@@ -1,8 +1,8 @@
-// Candidate clearance is distinct from historical postmerge review. Missing
-// provenance cannot turn an old receipt into permission for a new merge.
+// Candidate clearance is distinct from historical post-Land review. Missing
+// provenance cannot turn an old receipt into permission for a new Land.
 import type { Config } from "./config.ts";
-import { legacyWikiOf } from "./merge-provenance.ts";
-import { recordedAuthorization } from "./merged-authorization.ts";
+import { legacyWikiOf } from "./land-provenance.ts";
+import { recordedAuthorization } from "./landed-authorization.ts";
 import { configPolicyDigest } from "./project-policy.ts";
 import type { ReviewedTarget } from "./reviewed-target.ts";
 import { targetHolds } from "./reviewed-target.ts";
@@ -10,7 +10,8 @@ import type { IssueState, Revision, Security } from "./state.ts";
 import { approvalHolds, sameRevision } from "./state.ts";
 
 // Policy and target changes invalidate clearance, not known harm in unchanged
-// code/trusted inputs. Keep this comparison separate from merge authorization.
+// code/trusted inputs. Keep this comparison separate from landing
+// authorization.
 function sameSecuritySubject(a: Revision, b: Revision): boolean {
   return (
     a.code === b.code &&
@@ -19,7 +20,7 @@ function sameSecuritySubject(a: Revision, b: Revision): boolean {
   );
 }
 
-// Only callers that independently confirm an original own-merge receipt may
+// Only callers that independently confirm an original own-Land receipt may
 // reobserve that result under today's policy. The historical receipt stays intact.
 function currentResultObservation(
   receipt: Revision,
@@ -79,8 +80,8 @@ function findingRefusal(
 }
 
 // Completion follows genuine result confirmation and deterministic checks.
-// An explicitly premerge receipt is reusable only for the retained own merge's
-// original exact authorization. Old receipts clear only their merged revision.
+// An explicitly pre-Land receipt is reusable only for the retained own Land's
+// original exact authorization. Old receipts clear only their landed revision.
 function securityRefusal(
   saved: IssueState | null,
   result: Revision,
@@ -154,7 +155,7 @@ function sameTarget(a: ReviewedTarget, b: ReviewedTarget): boolean {
   return a.repo === b.repo && a.branch === b.branch && a.sha === b.sha;
 }
 
-// This only permits a result-phase observation; callers confirm merged truth independently.
+// This only permits a result-phase observation; callers confirm landed truth independently.
 function resultReviewTarget(
   saved: IssueState,
   result: Revision,

@@ -1,5 +1,5 @@
 // Records the Reviewer's approval on the exact checked code head, using the
-// review/merge account rather than the PR's development account.
+// landing account rather than the PR's development account.
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { ghJson } from "../github.ts";

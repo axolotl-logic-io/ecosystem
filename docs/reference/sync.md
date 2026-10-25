@@ -15,7 +15,7 @@ R′ is a new revision, so every later task's result for R stops being current. 
 No stage synchronizes on its own. A stage that finds R doesn't contain the current target ends `wait` with a request, and the caller starts the Sync task job:
 
 - **Review** reads the chain before Hardening. If R misses the target, it requests Sync first, so no session hardens work that Sync would replace.
-- **Merge** never rebases. A target that moved after Hardening sends the work back to review, which requests Sync. A merge refused as `behind` or `conflict` requests Sync directly.
+- **Merge** never rebases. A target that moved after Hardening sends the work back to review, which requests Sync. A Land refused as `behind` or `conflict` requests Sync directly.
 - **Integration** routes a target that moved, or an R that misses T, to `sync-needed` and requests Sync of the fresh binding.
 
 The request carries the full binding, so the caller relays it unchanged:

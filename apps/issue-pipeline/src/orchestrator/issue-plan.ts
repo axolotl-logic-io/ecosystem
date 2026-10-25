@@ -5,7 +5,7 @@
 //   who isn't an allowed collaborator, a split parent (the tick closes it), a
 //   state at `done`, a live job, or new work while takeNewWork is false.
 // - A completion (`completion-reconciliation`): an open issue saved `done`
-//   with its merged revision, which the finish op hasn't closed, runs a merge
+//   with its landed revision, which the finish op hasn't closed, runs a merge
 //   job that only finishes it, even with agent:merged already set. The
 //   merge role, not a re-author here, sends new trusted input to the author.
 // - Held: a legacy job still running, another lane's live lease, an open
@@ -56,7 +56,7 @@ type IssuePlan =
 
 const NONE: IssuePlan = { kind: "none" };
 
-// True for a completion the merge role saved: done, with what merged.
+// True for a completion the merge role saved: done, with what landed.
 function isCompletion(state: IssueState | null): boolean {
   return state?.stage === "done" && state.merged !== null;
 }
@@ -116,7 +116,7 @@ function resumeStageFor(
 
 // The stage the issue's next job runs: author with no state, the stopped
 // stage of a lifted stop, merge for a completion, else its saved stage;
-// null for a saved `done` with nothing merged.
+// null for a saved `done` with nothing landed.
 function stageOf(state: IssueState | null): Stage | null {
   if (state === null) {
     return "implement";

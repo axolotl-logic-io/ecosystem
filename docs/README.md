@@ -1,6 +1,6 @@
 # Ecosystem docs
 
-These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and merged with the code they describe. Decisions record the rules; reference pages describe how the code behaves today and how to recover when something goes wrong.
+These docs describe the repository's practices and the issue pipeline. They are ordinary files, reviewed and landed with the code they describe. Decisions record the rules; reference pages describe how the code behaves today and how to recover when something goes wrong.
 
 ## Practices
 
@@ -20,7 +20,7 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Authority](decisions/authority.md): which GitHub accounts, records, inputs and sessions the pipeline trusts, and for what.
 
-[Delivery](decisions/delivery.md): hardening, Security review, what an approval covers and merge order.
+[Delivery](decisions/delivery.md): hardening, Security review, what an approval covers and landing order.
 
 [Sessions](decisions/sessions.md): what the Developer owns and where role prompts come from.
 
@@ -50,9 +50,9 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
-[Merge](reference/merge.md): merge order, the merge call, confirming the result and completion.
+[Merge](reference/merge.md): landing order, the landing call, confirming the result and completion.
 
-[Sync](reference/sync.md): integrating with the base at merge time, conflicts and their limits.
+[Sync](reference/sync.md): integrating with the base before landing, conflicts and their limits.
 
 [Task results](reference/task-results.md): revision-bound results, attempts and retry budgets that Sync, Integration and Land will consume (inactive until #186).
 
