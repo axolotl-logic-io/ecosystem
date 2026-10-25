@@ -60,6 +60,8 @@ The job checks the grant before it acquires ownership, before every writer sessi
 
 A replacement run rebuilds from the checkpoint GitHub holds: the saved head on the branch, the saved state and the task records. The clone and the mirror (`clones/`, `work/<slug>/`) are disposable caches; `runs/` is recovery evidence and stays. When the saved head is missing from the branch, the job stops `branch-changed` for explicit recovery instead of starting again from the base. `test/checkpoint-rebuild.test.mjs` deletes the caches between two real jobs.
 
+The sweep that starts these jobs, its holds, the cutover and the #73 scenario audit are in [the assignment sweep reference](../../docs/reference/assignment-sweep.md).
+
 ## Standalone Safe Refactor task
 
 `safe-refactor.mjs` provides an explicit non-mutating codebase `check` and a separately assigned Developer task with tool-mediated writes. Its model session has only `safe_refactor` and `safe_refactor_finish`: no editor, shell, commit tool or arbitrary transform. The initial JavaScript/TypeScript catalog uses the TypeScript language service for conservative local primitive renames and pure return-expression extraction. The caller must explicitly select its limited behavior contract.
@@ -178,7 +180,7 @@ This is the **Git execution boundary**, not an OS/filesystem/keyring/network san
 
 ## Opt-in assignment discovery module (read-only)
 
-`src/discovery/plan.ts` exports `discoverAssignments(configuration, reader)` and the `DiscoveryPlan`, `Candidate`, `Hold`, `DiscoveryReader` and `ReadRequest` types. This is a **source-module seam**, not an installed worker program. Nothing imports it from the job executor or retained orchestrator. Existing explicit issue/branch/stage dispatch is unchanged; omitting this API call does no discovery. Configuration must explicitly contain `enabled: true`; disabled, missing or structurally invalid configuration rejects before making any reads.
+`src/discovery/plan.ts` exports `discoverAssignments(configuration, reader)` and the `DiscoveryPlan`, `Candidate`, `Hold`, `DiscoveryReader` and `ReadRequest` types. This is a **source-module seam**, not an installed worker program. The assignment sweep (#120) doesn't use it: [`two-buddies`](../../docs/decisions/buddies-and-tasks.md#two-buddies) retired the review-request discovery it was built for. Nothing imports it from the job executor or retained orchestrator. Existing explicit issue/branch/stage dispatch is unchanged; omitting this API call does no discovery. Configuration must explicitly contain `enabled: true`; disabled, missing or structurally invalid configuration rejects before making any reads.
 
 The discovery configuration is independent of repository model-role configuration and private credential selection. For example (logins below are illustrative operator choices):
 

@@ -1,5 +1,6 @@
 // @ts-check
 // Historical/external REST merges create a genuine [P,H] commit on the named ref.
+import { recordEvent } from "./fake-pipeline-flow-gh-assignments.mjs";
 import {
   branchHead,
   gitIn,
@@ -64,6 +65,11 @@ function closeMergedPr(world, change, sha, head) {
       Object.assign(issueOf(world, Number(issue)), {
         state: "closed",
         stateReason: "completed",
+      });
+      // GitHub names the account whose merge closed it.
+      recordEvent(world, Number(issue), {
+        event: "closed",
+        actor: world.account,
       });
     }
   }

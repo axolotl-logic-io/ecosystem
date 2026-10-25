@@ -19,9 +19,9 @@ import {
  * @typedef {object} FlowEvent
  * @property {number} id
  * @property {number} issue
- * @property {"assigned" | "unassigned"} event
+ * @property {"assigned" | "unassigned" | "closed"} event
  * @property {string} actor
- * @property {string} assignee
+ * @property {string | null} assignee
  * @property {string} createdAt
  */
 
@@ -46,6 +46,26 @@ function recordAssignment(world, n, { event, login, actor }) {
     event,
     actor,
     assignee: login,
+    createdAt: now(),
+  });
+  world.events = events;
+  world.nextId += 1;
+}
+
+/**
+ * Records `actor`'s `event` on issue `n` that names no assignee, such as
+ * closing it.
+ * @param {World} world @param {number} n
+ * @param {{ event: "closed", actor: string }} change
+ */
+function recordEvent(world, n, { event, actor }) {
+  const events = world.events ?? [];
+  events.push({
+    id: world.nextId,
+    issue: n,
+    event,
+    actor,
+    assignee: null,
     createdAt: now(),
   });
   world.events = events;
@@ -89,11 +109,16 @@ function cutListing(dir, route, cut = true) {
 
 /** @param {FlowEvent} item */
 function restEvent(item) {
+  /** @type {{ login: string } | null} */
+  let assignee = null;
+  if (item.assignee !== null) {
+    assignee = { login: item.assignee };
+  }
   return Object.fromEntries([
     ["id", item.id],
     ["event", item.event],
     ["actor", { login: item.actor }],
-    ["assignee", { login: item.assignee }],
+    ["assignee", assignee],
     ["created_at", item.createdAt],
   ]);
 }
@@ -148,5 +173,6 @@ export {
   issueEvents,
   listed,
   openIssues,
+  recordEvent,
   unassignIssue,
 };

@@ -4,7 +4,8 @@
 // the grantor's latest assignment of the buddy's account. Any later change
 // by someone else pauses the work item and grants nothing: another account's
 // assignment or unassignment, or a comment from someone who isn't trusted.
-// So does a closed issue. Only a newer grant by the grantor lifts a pause.
+// So does an issue someone else closed; the landing account's closure is
+// the pipeline's own Completion. Only a newer grant by the grantor lifts a pause.
 //
 // Every fact comes from a fresh read of GitHub (`fresh-reads`): the issue,
 // every page of its events and every page of its comments. A failed read or
@@ -140,6 +141,16 @@ function trustedAuthor(
   );
 }
 
+// Whether the landing account closed the issue last: the pipeline's own
+// Completion, not a withdrawal.
+function closedByPipeline(cfg: Config, events: readonly Event[]): boolean {
+  const closed = events
+    .filter((event) => event.event === "closed")
+    .toSorted((a, b) => a.id - b.id)
+    .at(-1);
+  return closed !== undefined && same(closed.actor?.login, cfg.mergeAccount);
+}
+
 function assignmentGrant(cfg: Config, issue: number, login: string): Grant {
   const grantor = grantorOf(cfg);
   const repo = `repos/${cfg.repo}/issues/${issue}`;
@@ -152,7 +163,7 @@ function assignmentGrant(cfg: Config, issue: number, login: string): Grant {
       why: `#${issue}'s assignment couldn't be read in full`,
     };
   }
-  if (current.state !== "open") {
+  if (current.state !== "open" && !closedByPipeline(cfg, events)) {
     return { granted: false, why: `#${issue} is ${current.state}` };
   }
   const grant = grantEvent(events, login, grantor);
