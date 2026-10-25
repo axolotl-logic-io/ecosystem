@@ -262,6 +262,7 @@ test("retired repository controls warn without changing a buddy's grant", () => 
     const before = digestOf(box, file);
     const retired = {
       assignments: { grantor: "former-grantor" },
+      grant: { login: "former-grantor" },
       takeNewWork: false,
       skipLabels: ["deploy"],
       maxJobs: 1,

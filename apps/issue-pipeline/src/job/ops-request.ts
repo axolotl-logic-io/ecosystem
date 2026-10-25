@@ -1,8 +1,7 @@
-// How a stage job runs its ops: each request is framed for the installed
-// ops CLI (`src/ops.ts`) with the config, the claimant and the job's own
-// checkout, runs as one launch keyed `<op>-<seq>` in job.json, and resolves
-// to the op's reply or to why it failed. It never rejects. This module alone
-// knows the request's framing and the reply's shape on stdout.
+// Frames an action's request for installed ops.mjs with its trusted config,
+// invocation binding and checkout. Each child launch has an `<op>-<seq>`
+// key and resolves to the op's reply or failure. This module owns the wire
+// framing, not task prerequisites or authorization.
 
 import { z } from "zod";
 import type { Config, JobCheckout } from "../config.ts";
@@ -21,11 +20,9 @@ const OPS_MINUTES = 10;
 const OUTPUT_TAIL = 500;
 const REPLY = z.looseObject({ ok: z.boolean(), error: z.string().optional() });
 
-// What every request names besides its op: the repo config's path, the
-// claimant (`sweepId` and `lane`, which the claim's lease records), the
-// job's invocation binding (invocation.ts), which ops checks against its
-// ownership before any effect, and the job's own checkout, with the issue
-// branch its caller assigned.
+// Every request carries its repository config, ownership binding and
+// action checkout. sweepId/lane are retained transport labels, not
+// assignment, lease or stage authority.
 interface OpsFrame {
   config: string;
   policyDigest?: string;
@@ -33,9 +30,6 @@ interface OpsFrame {
   lane: string;
   execution: InvocationBinding;
   checkout: JobCheckout;
-  // A job started for an assignment: the buddy account whose grant each
-  // credentialed write rechecks (#119).
-  grant?: { login: string };
   // A buddy action's trusted authorization (src/runtime/buddy-config.ts's
   // BuddyEnvelope), which ops rereads before its bound task ops.
   buddy?: BuddyEnvelope;
@@ -53,9 +47,6 @@ function opsFrameOf(
     checkout,
     policyDigest: policyRevision(cfg).policy,
   };
-  if (cfg.grant !== undefined) {
-    frame.grant = cfg.grant;
-  }
   return frame;
 }
 
@@ -64,7 +55,7 @@ type OpsReply =
   | { ok: true; reply: Readonly<Record<string, unknown>> }
   | { ok: false; error: string };
 
-// Runs one op with `payload` for the job's issue, which every request
+// Runs one op with `payload` for the action's issue, which every request
 // names as `number`, timed out after `minutes` (10 without).
 type RunOp = (
   op: string,
@@ -116,9 +107,8 @@ function replyOf(raw: OpsRaw): OpsReply {
   return lineReply(object) ?? notJson;
 }
 
-// The job's op runner for issue `issue`: each op gets the next sequence
-// number in its key, runs through `hooks`, and its outcome goes in
-// job.json.
+// The action's op runner: each child gets a sequence key, runs through
+// launch hooks and records its settlement in the launch registry.
 function opsRunnerOf(
   issue: number,
   frame: OpsFrame,

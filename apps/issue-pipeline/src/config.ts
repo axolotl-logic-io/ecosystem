@@ -26,10 +26,9 @@ import type { WriteIntent } from "./write-refusal.ts";
 const UNSAFE_BRANCH =
   /^[-/.]|^refs\/|^HEAD$|^@$|\.\.|@\{|\/\/|[/.]$|\.lock$|\/\.|[\s~^:?*[\\\p{Cc}]/u;
 
-// A stage job's own checkout of issue `issue` (#250). While an ops request
-// that names it runs, the issue's worktree is `dir`, the job's code checkout;
-// `branch` is the branch the caller assigned the issue. It never comes from
-// the config file.
+// An action-owned checkout of issue `issue`. During its ops request, `dir`
+// supplies the issue's code checkout and `branch` its assigned work branch.
+// This transport binding never comes from repository configuration.
 interface JobCheckout {
   issue: number;
   dir: string;
@@ -63,9 +62,6 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
     base: string;
   };
   mutation?: (write: () => RunResult, intent: WriteIntent) => RunResult;
-  // A job started for an assignment (#119): the buddy account whose grant
-  // every credentialed write rechecks. Internal, never loaded from JSON.
-  grant?: { login: string };
   buddyAuthorization?: BuddyAuthorization;
 };
 

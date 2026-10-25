@@ -33,6 +33,8 @@ const ORCHESTRATOR_EXTRAS =
 const REMOVED_FIELDS: Readonly<Record<string, string>> = {
   assignments:
     "assignments grant no authority; qualified human signals start work",
+  grant:
+    "assignment grants were retired; trusted buddy configuration grants scope",
   takeNewWork: "qualified starts replace global admission switches",
   skipLabels: "retired scheduler filters grant no task authority",
   maxJobs: "repository resources.modelSessions owns shared model capacity",

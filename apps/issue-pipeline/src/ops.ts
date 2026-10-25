@@ -10,10 +10,10 @@
 // No language model runs here. Authenticated calls select a verified credential
 // through github.ts; config.ts alone reads the private operator file.
 //
-// Development owns commits, source pushes and PR lifecycle. Review/merge
-// owns comments, state, claims, labels, authority reads and REST merge. Both are excluded from human trust;
-// current landing authorship and editor provenance, not marks alone, confer
-// operational authority.
+// Development owns source pushes and PR lifecycle. The landing account
+// records authority and performs guarded target effects. Neither account
+// qualifies as a human producer. Current authorship and editor provenance,
+// not hidden marks alone, authenticate operational records.
 
 import fs from "node:fs";
 import process from "node:process";
@@ -70,23 +70,25 @@ const OPS_REQUEST = /BEGIN_OPS_REQUEST\s*(?<json>[\s\S]*)END_OPS_REQUEST/u;
 const MAX_ERROR_LENGTH = 4000;
 
 // The fields every request carries, whatever its op: the op, the config's
-// path, the signed comments the workflow queued for the issue and, from a
-// stage job, its checkout and invocation binding (execution-envelope.ts).
+// path, queued signed comments, and an action's checkout and invocation
+// binding (execution-envelope.ts).
 const ENVELOPE = z.looseObject({
   comments: z.array(QUEUED_COMMENT).nullish(),
   config: z.string().nullish(),
   op: z.string(),
   number: z.number().int().positive().optional(),
   execution: INVOCATION_BINDING.optional(),
-  // A job started for an assignment: the buddy account whose grant each
-  // credentialed write rechecks (#119).
-  grant: z.object({ login: z.string().min(1) }).optional(),
+  // Refuse the retired assignment envelope rather than silently accepting
+  // an apparent grant. Only the trusted buddy envelope can bind a task.
+  grant: z
+    .never({ error: "assignment grants are retired; use a bound buddy action" })
+    .optional(),
   // A buddy action's envelope (runtime/buddy-config.ts BUDDY_ENVELOPE),
   // which every task op checks against the trusted files it rereads.
   buddy: z.unknown().optional(),
   policyDigest: z.string().optional(),
-  // A stage job's own checkout, which stands in for its issue's worktree,
-  // and the branch the caller assigned the issue (config.ts's JobCheckout).
+  // The action-owned checkout and its assigned work branch
+  // (config.ts's JobCheckout transport type).
   checkout: z
     .object({
       issue: z.number().int(),
@@ -124,9 +126,6 @@ function runRequest(request: unknown): OpsReply {
   if (envelope.execution === undefined) {
     cfg = unboundOps(cfg);
   } else {
-    if (envelope.grant !== undefined) {
-      cfg = { ...cfg, grant: envelope.grant };
-    }
     cfg = boundOps(cfg, envelope.execution, envelope);
   }
   if (taskOp(op) !== undefined) {

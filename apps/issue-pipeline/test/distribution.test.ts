@@ -5,11 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { test } from "node:test";
+import { z } from "zod";
 import { PROGRAMS, RETIRED_PROGRAMS } from "../programs.ts";
 
 const SOURCE = path.resolve(import.meta.dirname, "..");
 const DEPENDENCIES = path.resolve(SOURCE, "..", "..", "node_modules");
 const TEST_TIMEOUT_MS = 120_000;
+const OPS_REFUSAL = z.object({ ok: z.literal(false), error: z.string() });
+const RETIRED_GRANT = /assignment grants are retired/u;
 
 function command(cwd: string, program: string, args: string[]): string {
   const result = spawnSync(program, args, {
@@ -69,6 +72,36 @@ test("build retires old delivery executables without deleting historical evidenc
     }
     assert.equal(fs.readFileSync(evidence, "utf8"), "preserved bytes\n");
     assert.ok(fs.existsSync(path.join(output, "standards-python-tools.txt")));
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test("built ops refuses a retired assignment grant before loading configuration", () => {
+  const sandbox = fixture();
+  try {
+    const output = path.join(sandbox.root, "output");
+    const runtime = path.join(sandbox.root, "operator-root");
+    command(sandbox.source, process.execPath, ["build.ts", output]);
+    const request = JSON.stringify({
+      op: "post",
+      config: path.join(sandbox.root, "missing-config.json"),
+      grant: { login: "former-grantor" },
+    });
+    const result = spawnSync(process.execPath, [path.join(output, "ops.mjs")], {
+      cwd: sandbox.source,
+      encoding: "utf8",
+      input: `BEGIN_OPS_REQUEST\n${request}\nEND_OPS_REQUEST`,
+      timeout: TEST_TIMEOUT_MS,
+      env: {
+        ...process.env,
+        ...Object.fromEntries([["ISSUE_PIPELINE_ROOT", runtime]]),
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const reply = OPS_REFUSAL.parse(JSON.parse(result.stdout));
+    assert.match(reply.error, RETIRED_GRANT);
+    assert.equal(fs.existsSync(runtime), false);
   } finally {
     sandbox.cleanup();
   }
