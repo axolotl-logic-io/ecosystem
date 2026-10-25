@@ -1,6 +1,8 @@
 // The cleanup op, run at the end of every sweep: frees the worktree, local
 // branches and teardown resources of each closed issue whose
-// work is all on GitHub. Anything in doubt is kept, with the reason.
+// work is all on GitHub, whose execution no invocation still holds and whose
+// lane slot no other consumer needs (cleanup-fence.ts, #170). Anything in
+// doubt is kept, with the reason.
 
 import { z } from "zod";
 import { issueWorktrees, removeWorktree, unsavedWork } from "../checkouts.ts";
@@ -11,6 +13,7 @@ import { issueState } from "../github.ts";
 import { withCloneLock } from "../locks.ts";
 import { parseRequest } from "../process.ts";
 import { readState } from "../saved-state.ts";
+import { heldExecution, slotConsumed } from "./cleanup-fence.ts";
 
 // `skip` is the sweep's own issue, which its lane may still be using.
 const CLEANUP_REQUEST = z.looseObject({ skip: z.number().int().nullish() });
@@ -49,6 +52,10 @@ function keepReason(
   const lanes = liveClaims(cfg, comments).map((claim) => claim.lane);
   if (lanes.length > 0) {
     return `a live claim is held by lane ${lanes.join(", ")}`;
+  }
+  const held = heldExecution(cfg, n, comments) ?? slotConsumed(cfg, n);
+  if (held !== null) {
+    return held;
   }
   const { state: stored } = readState(cfg, n, comments);
   const pr = PR_NUMBER.safeParse(stored?.pr).data ?? null;

@@ -5,7 +5,9 @@
 // names the patches on stderr, which goes to job.log; and, when the run
 // stopped, posts one keyed coordinator comment on the issue that says the
 // patches were saved and where, naming only the job key, never a local path
-// (dropped-changes-saved, #369). Nothing here applies a patch.
+// (dropped-changes-saved, #369). Nothing here applies a patch. A job that no
+// longer owns the issue, or can't tell, does none of this: a stale exit
+// makes zero effects and leaves its checkout for reconciliation (#170).
 
 import path from "node:path";
 import process from "node:process";
@@ -30,8 +32,9 @@ type RunEnd =
   | { kind: "stopped"; signal: StopSignal };
 
 // An exiting job: its issue, key and folder, its exit push
-// (null for a role that never pushes), the runner its ops go through, and
-// its status file.
+// (null for a role that never pushes), the runner its ops go through, its
+// status file, and what throws unless it still owns the issue on a fresh
+// read.
 interface ExitingJob {
   issue: number;
   stage: Stage;
@@ -40,6 +43,7 @@ interface ExitingJob {
   push: (() => Promise<void>) | null;
   runOp: RunOp;
   status: JobStatus;
+  owner: () => void;
 }
 
 // The key of a job of `stage` that started at `at`: the stage and the UTC
@@ -95,13 +99,26 @@ async function postNotice(job: ExitingJob, body: string): Promise<void> {
 
 // Closes `job`'s checkouts and records what they dropped; when patches
 // saved it, names them on stderr and, if the run that ended with `end`
-// stopped, posts the dropped notice.
+// stopped, posts the dropped notice. Throws, touching nothing, unless the
+// job still owns the issue.
 async function tearDown(
   cfg: Config,
   job: ExitingJob,
   end: RunEnd | null,
 ): Promise<void> {
   const { issue, key, dirs, push, status } = job;
+  try {
+    job.owner();
+  } catch (error: unknown) {
+    let why = String(error);
+    if (error instanceof Error) {
+      why = error.message;
+    }
+    throw new Error(
+      `exit: ${why}; checkout left untouched at ${dirs.root} for reconciliation`,
+      { cause: error },
+    );
+  }
   let outcome = "failed";
   let reason: string | null = null;
   if (end?.kind === "finished") {

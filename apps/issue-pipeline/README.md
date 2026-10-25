@@ -33,7 +33,10 @@ owner ─► open checkout ─► ops (each request carries the binding) ─► 
 - Before each session starts, and on each push request, the job rereads ownership; a lost owner starts nothing and pushes nothing. Steer and push requests on the control socket must name the job's binding (`--steer` reads it from job.json), and an ops claim that names a job checkout without a binding is refused (#168).
 - A lost or failed coordination response may still have landed. The transport keeps the exact intent in the run folder's `coordination-uncertain.json`; only an exact read-back clears it. Preserve that file.
 
-Not here yet: ownership checks and journals before every other credentialed write (#132, #169), fenced cleanup (#170), and contention proof (#133). The integration-turn scope is still unused (#120). The unbound legacy claim is reached only by the ops CLI's own tests; the job never sends one.
+- Teardown rereads ownership before it touches the checkout. A job that lost the issue, or can't tell, saves, resets, pushes and removes nothing, and leaves its checkout for reconciliation (#170).
+- The `cleanup` op keeps a closed issue's worktree while its execution has a request that no release or cancel ended, or while its lane slot lists another surviving checkout or a pending setup (`src/ops/cleanup-fence.ts`). Lane prune waits while any setup is pending (#170).
+
+Not here yet: ownership checks and journals before every other credentialed write (#169), and contention proof (#133). The integration-turn scope is still unused (#120). The unbound legacy claim is reached only by the ops CLI's own tests; the job never sends one.
 
 ## Standalone Safe Refactor task
 

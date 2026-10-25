@@ -83,6 +83,8 @@ async function timedOutReview(job, key) {
       push: null,
       status,
       runOp: async () => ({ ok: true, reply: {} }),
+      // This job still owns the issue.
+      owner: () => undefined,
     },
     {
       kind: "finished",
