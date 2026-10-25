@@ -14,8 +14,9 @@ import type { CiTarget } from "./ci.ts";
 import { ciOf, nodeTarget, poetryTarget } from "./ci.ts";
 import { dispositionOf } from "./disposition.ts";
 import { enforcementOf } from "./enforcement.ts";
-import type { Execution, Log } from "./execute.ts";
-import { executeNode, executePoetry, nothingRun } from "./execute.ts";
+import type { Execution, Log, Options } from "./execute.ts";
+import { executeNode, nothingRun } from "./execute.ts";
+import { executePoetry } from "./execute-poetry.ts";
 import { nodeCriteria, nodeProjectOf } from "./node-npm.ts";
 import { poetryCriteria, poetryProjectOf } from "./python-poetry.ts";
 import type { Assessment, Component, Criterion, Workflow } from "./schema.ts";
@@ -154,10 +155,10 @@ interface Checked {
   target: CiTarget;
 }
 
-interface AssessOptions {
+// When the assessment runs, and how its sandboxed checks fetch (a null
+// registry assesses statically).
+interface AssessOptions extends Options {
   now: Date;
-  // The npm registry for sandboxed fetches; null assesses statically.
-  registry: string | null;
 }
 
 // The ecosystem's own components, criteria (executed ones included) and CI
@@ -179,7 +180,7 @@ function checkedOf(
   }
   if (kind === "python-poetry") {
     const project = poetryProjectOf(source);
-    const execution = executePoetry(options);
+    const execution = executePoetry(source, options);
     return {
       execution,
       components: project.components,

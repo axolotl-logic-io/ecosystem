@@ -12,7 +12,8 @@
 // orchestrator <outdir>/orchestrate.mjs, the reports <outdir>/report.mjs
 // the caller's job launcher <outdir>/caller-jobs.mjs
 // (scripts/caller-jobs.ts) and the standards upgrade's entrypoint
-// <outdir>/standards-upgrade.mjs (scripts/standards-upgrade.ts).
+// <outdir>/standards-upgrade.mjs (scripts/standards-upgrade.ts), with the
+// Python tools it pins beside it (<outdir>/standards-python-tools.txt).
 // It prints nothing on success; on failure it prints esbuild's error to
 // stderr and exits non-zero.
 
@@ -37,6 +38,9 @@ const YAML_MODULE = path.join(
 );
 
 const SOURCE_DIR = path.join(import.meta.dirname, "src");
+// The hash-pinned poetry and pip-audit the standards upgrade installs in its
+// sandbox, which the built entrypoint reads from beside itself.
+const PYTHON_TOOLS = path.join(SOURCE_DIR, "standards", "python-tools.txt");
 const SCRIPTS_DIR = path.join(import.meta.dirname, "scripts");
 const DEFAULT_OUT_DIR = path.join(import.meta.dirname, "dist");
 // The Node ES modules built from one entry each: the ops CLI and its shell
@@ -100,6 +104,7 @@ async function main(): Promise<void> {
       buildNodeModule(source, path.join(outDir, output)),
     );
     await Promise.all(modules);
+    await cp(PYTHON_TOOLS, path.join(outDir, "standards-python-tools.txt"));
   } catch (error: unknown) {
     console.error(messageOf(error));
     process.exitCode = 1;

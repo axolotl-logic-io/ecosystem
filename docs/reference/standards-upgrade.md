@@ -21,7 +21,7 @@ Poetry support follows the repositories that use it. On 2026-10-24, `axolotl-log
 
 For Node/npm, the assessment installs the repository, runs its tests and scans its advisories in a credential-free sandbox, described below. So a Node/npm repository can be rated `acceptable` when every criterion passes.
 
-For Python/Poetry, those three checks need `poetry` and `pip-audit`. Neither is on the host this was built on, and installing them is new software, which needs the operator's decision. So a Poetry assessment reports the missing tool and leaves those criteria `unverified`, and it can't reach `acceptable` yet.
+Python/Poetry gets the same three checks in the same sandbox, and nothing is installed on the host. The host's own Python, 3.10 or newer with `venv` and `ensurepip`, makes a throwaway virtualenv inside the sandbox. pip fills it with hash-pinned `poetry` and `pip-audit` from PyPI. So a Poetry repository can be rated `acceptable` too.
 
 ## The sandbox
 
@@ -34,6 +34,8 @@ The container holds no credential. Here's what it sees:
 | `/usr` (read-only) | System software, with `/usr/local` hidden. |
 | A few `/etc` files (read-only) | `resolv.conf`, `hosts`, `nsswitch.conf`, `ssl`, `ca-certificates`, for name resolution and TLS. |
 | `/opt/node` (read-only) | The running Node binary and npm's package. Not their prefix, so no global `npmrc`. |
+| The host Python's prefix (read-only, Poetry only) | At its own path, since a shared `libpython` is linked by it. Its `etc/` and `site-packages` are hidden, so none of the host's packages are visible. |
+| `/tools` and `/opt/standards/python-tools.txt` (Poetry only) | The throwaway tools virtualenv, and the pinned requirements it's installed from. |
 | `/work` | A fresh export of the source commit, without `.git`. |
 | `/cache` | npm's package cache for this assessment. |
 | `/home`, `/tmp` | Empty, private, size-limited. |
@@ -51,6 +53,24 @@ no network, repository code:    npm rebuild --foreground-scripts   (dependency i
 ```
 
 Repository code never runs with the network. The two fetching commands go only to the registry the operator chose with `--npm-registry`, set through the environment, so a repository's `.npmrc` can't redirect it. If the lockfile fetches any package from elsewhere, such as a git or tarball URL, nothing runs and the criteria say so. Without a `package-lock.json` or `npm-shrinkwrap.json`, nothing runs either.
+
+For Python/Poetry, the commands run in this order:
+
+```
+no network:                       python3 -m venv /tools/venv          (the host's Python)
+network, pip's own code only:     pip install --require-hashes --only-binary=:all: --no-deps -r python-tools.txt
+no network:                       poetry check --lock
+network, tool code only:          poetry install --no-root             (dependencies, wheels only, into /work/.venv)
+                                  pip-audit --format json              (over /work/.venv)
+no network, repository code:      poetry install --only-root
+                                  poetry run python -m pytest
+```
+
+The tools come from [`python-tools.txt`](../../apps/issue-pipeline/src/standards/python-tools.txt): `poetry` 2.5.1 and `pip-audit` 2.10.1 with all their dependencies, each pinned to its wheels' hashes. pip refuses any wheel that doesn't match, and any source distribution, so no build code runs. It was made with `uv pip compile --generate-hashes --universal --python-version 3.10 --only-binary :all: --exclude-newer DATE`, with `DATE` at least two weeks before the pin.
+
+Poetry installs dependencies as wheels only (`POETRY_INSTALLER_ONLY_BINARY=:all:`), so no dependency's build script runs either. The project itself installs afterwards, with no network. pip reads no configuration files, and Poetry's keyring is off.
+
+Nothing runs without a `poetry.lock`. Nothing runs when `pyproject.toml` declares its own package sources, or `poetry.lock` fetches a package from a git, URL or custom source: only PyPI is fetched from.
 
 What the commands print goes to `OUT_DIR/logs/`, never into `assessment.json`, `report.md` or `plan.md`. Repository code wrote it, and the plan gets filed publicly. The criteria hold only exit codes and audit counts. Each command has a 10-minute limit.
 
@@ -71,6 +91,8 @@ node apps/issue-pipeline/dist/standards-upgrade.mjs assess \
 _Optional:_
 - Add `--ref REF` to assess a branch, tag, full ref or full commit instead of the default branch.
 - Add `--npm-registry URL` to fetch from another npm registry, such as a mirror. The default is `https://registry.npmjs.org/`.
+- Add `--pypi-index URL` to install the pinned Python tools from another index, such as a mirror. The default is `https://pypi.org/simple/`. Poetry still fetches the project's dependencies from PyPI.
+- Add `--python-tools FILE` to install other hash-pinned tools. Every line needs its hashes.
 - Add `--static` to run nothing. Install, tests and the scan are then `unverified`.
 
 The command prints one JSON line:
@@ -124,10 +146,10 @@ The criteria have the same names for both ecosystems. What passes depends on the
 | `environment.manifest` | The root `package.json` parses as a package manifest. | The root `pyproject.toml` parses as TOML. |
 | `environment.toolchain` | `engines.node`, `.nvmrc` or `.node-version` declares the supported Node. | `tool.poetry.dependencies.python`, `project.requires-python` or `.python-version` declares the supported Python. |
 | `environment.lockfile` | `package-lock.json` or `npm-shrinkwrap.json` is committed. A publishable library may omit one (`not-applicable`). A yarn, pnpm or bun lockfile is `unverified`. | `poetry.lock` is committed. A project that declares publishing metadata (classifiers, `repository` or `project.urls`) and isn't `package-mode = false` may omit one (`not-applicable`). |
-| `environment.install` | `npm ci --ignore-scripts` and then `npm rebuild` exit 0 in the sandbox. Either failing is `failed`. No lockfile, a fetch outside the registry, no sandbox, or `--static` is `unverified`. | `unverified`: `poetry` isn't available. |
-| `vulnerabilities.scan` | `npm audit` over the whole tree, dev dependencies included, reports no advisories. Any advisory is `failed`, with counts by severity. No report is `unverified`, never a clean scan. | `unverified`: `pip-audit` is missing. |
+| `environment.install` | `npm ci --ignore-scripts` and then `npm rebuild` exit 0 in the sandbox. Either failing is `failed`. No lockfile, a fetch outside the registry, no sandbox, or `--static` is `unverified`. | `poetry check --lock`, `poetry install --no-root` (wheels only) and then `poetry install --only-root` exit 0. Any of them failing is `failed`. No `poetry.lock`, a non-PyPI source, no sandbox, no usable host Python, tools that can't be set up, or `--static` is `unverified`. |
+| `vulnerabilities.scan` | `npm audit` over the whole tree, dev dependencies included, reports no advisories. Any advisory is `failed`, with counts by severity. No report is `unverified`, never a clean scan. | `pip-audit` over the installed environment, dev groups included, reports no advisories. Any advisory is `failed`, with each package and advisory ID. No report is `unverified`. |
 | `behavior.tests` | A real `test` script exists. A missing one, or npm's placeholder, means zero tests. | A `test_*.py` or `*_test.py` file defines a `test…` function. `poetry new`'s placeholder, `test_version`, which only asserts `__version__`, doesn't count, so a project with only that has zero tests. |
-| `behavior.tests-run` | `npm test` exits 0 in the sandbox, with no network. Any other exit, or the time limit, is `failed`. | `unverified`: it needs Poetry's installed environment. |
+| `behavior.tests-run` | `npm test` exits 0 in the sandbox, with no network. Any other exit, or the time limit, is `failed`. | `poetry run python -m pytest` exits 0 with no network. Any other exit, or the time limit, is `failed`. |
 | `ci.triggers` | A workflow runs on `pull_request`, and one runs on `push` to the default branch. | Same. |
 | `ci.runs-tests` | A workflow step runs `npm test`, or `npm run test`, `check` or `ci`. | A workflow step runs `pytest`, `poetry run pytest`, or `python -m pytest` or `unittest`. |
 | `ci.failure-propagation` | No `continue-on-error`, and no `\|\| true` or `--if-present` on a test command. | Same. |

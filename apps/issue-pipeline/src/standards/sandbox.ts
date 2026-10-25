@@ -5,14 +5,17 @@
 // commit and a package cache, and nothing else of the host: an empty home, a
 // private /tmp, its own PID namespace (so no other process's environment
 // under /proc), an empty environment (bwrap itself starts with none) and a
-// new session. A command runs with
-// the host network only when `network` is set, which the caller keeps for
-// npm's own fetches; repository code always runs with no network at all.
+// new session. For Python it also sees the host's Python prefix read-only,
+// at its own path (a shared libpython is linked by that path), with the
+// prefix's etc/ and site-packages hidden. A command runs with the host
+// network only when `network` is set, which the caller keeps for the package
+// managers' own fetches; repository code always runs with no network at all.
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { z } from "zod";
 import { run } from "../process.ts";
 
 const BWRAP = "bwrap";
@@ -40,6 +43,39 @@ const ETC_FILES = [
   "/etc/ca-certificates",
 ];
 const USR_LINKS = ["lib", "lib64", "bin", "sbin"];
+const MIN_MAJOR = 3;
+const MIN_MINOR = 10;
+// major, minor, micro
+const VERSION_PARTS = 3;
+// What the host's Python says about itself, run isolated (-I) outside the
+// sandbox: its prefix, real executable, version, the site-packages folders
+// to hide, and whether it can make a venv with pip.
+const PYTHON_FACTS = [
+  "import importlib.util, json, os, sys, sysconfig",
+  "base = {'base': sys.base_prefix, 'platbase': sys.base_prefix}",
+  "print(json.dumps({",
+  "  'prefix': sys.base_prefix,",
+  "  'executable': os.path.realpath(getattr(sys, '_base_executable', sys.executable)),",
+  "  'version': list(sys.version_info[:3]),",
+  "  'sitePackages': sorted({sysconfig.get_path(n, vars=base) for n in ('purelib', 'platlib')}),",
+  "  'venv': all(importlib.util.find_spec(m) is not None for m in ('venv', 'ensurepip')),",
+  "}))",
+].join("\n");
+const FACTS = z.object({
+  prefix: z.string().min(1),
+  executable: z.string().min(1),
+  version: z.array(z.number().int()).length(VERSION_PARTS),
+  sitePackages: z.array(z.string()),
+  venv: z.boolean(),
+});
+
+interface Python {
+  prefix: string;
+  executable: string;
+  version: string;
+  // Folders under the prefix the sandbox hides.
+  hidden: string[];
+}
 
 interface Sandbox {
   // bwrap's version line.
@@ -48,6 +84,13 @@ interface Sandbox {
   npm: string;
   // npm's version, from its package.json.
   npmVersion: string;
+}
+
+// A host path bound into the sandbox at `to`.
+interface Bind {
+  from: string;
+  to: string;
+  writable: boolean;
 }
 
 type Opened =
@@ -74,6 +117,9 @@ interface RunRequest {
   timeoutMs: number;
   // Variables set inside, beside the sandbox's own.
   env?: ReadonlyMap<string, string>;
+  // The host's Python, bound read-only, when the command needs it.
+  python?: Python | undefined;
+  binds?: readonly Bind[] | undefined;
 }
 
 // npm's package beside the running Node, as nvm and the official builds
@@ -103,6 +149,27 @@ function npmVersionOf(npm: string): string {
 
 function sizedTmpfs(size: number, dir: string): string[] {
   return ["--size", String(size), "--tmpfs", dir];
+}
+
+function pythonArgs(python: Python | undefined): string[] {
+  if (python === undefined) {
+    return [];
+  }
+  return [
+    "--ro-bind",
+    python.prefix,
+    python.prefix,
+    ...python.hidden.flatMap((dir) => ["--tmpfs", dir]),
+  ];
+}
+
+function bindArgs(binds: readonly Bind[]): string[] {
+  return binds.flatMap(({ from, to, writable }) => {
+    if (writable) {
+      return ["--bind", from, to];
+    }
+    return ["--ro-bind", from, to];
+  });
 }
 
 function argsOf(sandbox: Sandbox, request: RunRequest): string[] {
@@ -158,10 +225,13 @@ function argsOf(sandbox: Sandbox, request: RunRequest): string[] {
     "/proc",
     "--dev",
     "/dev",
+    // Before anything bound beneath them.
     ...sizedTmpfs(TMP_SIZE_BYTES, "/tmp"),
     ...sizedTmpfs(HOME_SIZE_BYTES, "/home"),
     "--dir",
     HOME,
+    ...pythonArgs(request.python),
+    ...bindArgs(request.binds ?? []),
     "--chdir",
     WORK,
     ...[...env].flatMap(([name, value]) => ["--setenv", name, value]),
@@ -243,5 +313,54 @@ function openSandbox(): Opened {
   return { sandbox, reason: "" };
 }
 
-export type { Sandbox, SandboxRun };
-export { inSandbox, NODE_DIR, NPM_CLI, openSandbox };
+function atLeastMinimum(version: readonly number[]): boolean {
+  const [major = 0, minor = 0] = version;
+  return major > MIN_MAJOR || (major === MIN_MAJOR && minor >= MIN_MINOR);
+}
+
+// The host's `python3`, if it can make a venv with pip and is at least 3.10,
+// or the reason it can't be used.
+function hostPython(): { python: Python | null; reason: string } {
+  const found = run("python3", ["-I", "-c", PYTHON_FACTS], { allowFail: true });
+  let facts: z.infer<typeof FACTS> | null = null;
+  try {
+    facts = FACTS.parse(JSON.parse(found.stdout));
+  } catch {
+    facts = null;
+  }
+  if (found.code !== 0 || facts === null) {
+    return { python: null, reason: "no python3 on this host" };
+  }
+  const version = facts.version.join(".");
+  if (!atLeastMinimum(facts.version)) {
+    return {
+      python: null,
+      reason: `the host's Python ${version} is older than 3.10`,
+    };
+  }
+  if (!facts.venv) {
+    return {
+      python: null,
+      reason: `the host's Python ${version} has no venv or ensurepip`,
+    };
+  }
+  const { prefix } = facts;
+  function inside(dir: string): boolean {
+    return dir.startsWith(`${prefix}/`) && fs.existsSync(dir);
+  }
+  const hidden = [path.join(prefix, "etc"), ...facts.sitePackages].filter(
+    inside,
+  );
+  return {
+    python: {
+      prefix: facts.prefix,
+      executable: facts.executable,
+      version,
+      hidden,
+    },
+    reason: "",
+  };
+}
+
+export type { Bind, Python, Sandbox, SandboxRun };
+export { hostPython, inSandbox, NODE_DIR, NPM_CLI, openSandbox };
