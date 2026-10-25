@@ -85,7 +85,7 @@ function withProposed(cfg: Config, number: number, record: TaskRecord): Row[] {
 // it leaves the record uncertain: the next caller reconciles by reading and
 // never repeats the append.
 function appended(cfg: Config, number: number, record: TaskRecord): Row[] {
-  rawComment(cfg, number, recordBody(record));
+  rawComment(cfg, number, recordBody(record), true);
   let rows: Row[];
   try {
     rows = taskRecords(cfg, number, listComments(cfg, number));

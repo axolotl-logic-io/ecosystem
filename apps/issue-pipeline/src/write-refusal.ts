@@ -7,12 +7,13 @@
 
 import type { RunResult } from "./process.ts";
 
-// The command and arguments a write runs, journaled before it runs. Bodies
-// are already redacted (github.ts's redactGhArgs); tokens never appear in
-// arguments.
+// The command and arguments a write runs, journaled before it runs unless
+// its own operation reconciles it (github.ts's `reconciles`). Bodies are
+// already redacted (redactGhArgs); tokens never appear in arguments.
 interface WriteIntent {
   command: "gh" | "git";
   args: readonly string[];
+  journal: boolean;
 }
 
 // A 4xx status, but not 408 (timeout) or 429 (rate limit).

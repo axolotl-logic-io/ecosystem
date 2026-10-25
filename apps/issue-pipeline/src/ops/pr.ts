@@ -97,17 +97,23 @@ function createPr(
   text: { title: string; body: string },
 ): number {
   const args = ["pr", "create", "-R", cfg.repo, ...flags];
-  const url = gh(cfg, "dev", [
-    ...args,
-    "--base",
-    cfg.baseBranch,
-    "--head",
-    paths.branch(cfg, n),
-    "--title",
-    text.title,
-    "--body",
-    text.body,
-  ]).stdout.trim();
+  // A lost reply is reconciled by finding the PR the branch names (openPrFor).
+  const url = gh(
+    cfg,
+    "dev",
+    [
+      ...args,
+      "--base",
+      cfg.baseBranch,
+      "--head",
+      paths.branch(cfg, n),
+      "--title",
+      text.title,
+      "--body",
+      text.body,
+    ],
+    { reconciles: true },
+  ).stdout.trim();
   return Number(url.split("/").pop());
 }
 

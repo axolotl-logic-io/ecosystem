@@ -235,7 +235,8 @@ function guardExecution(cfg: Config, issue: number): void {
 
 // Each credentialed write of a bound job or ops request: a fresh ownership
 // read, then the write journaled with its exact intent (#169). A write inside
-// another journaled write runs under that one's journal.
+// another journaled write runs under that one's journal, and one whose own
+// operation reconciles it by reading isn't journaled again.
 function controlledMutation(
   cfg: Config,
   write: () => RunResult,
@@ -246,7 +247,7 @@ function controlledMutation(
     return write();
   }
   guardExecution(cfg, execution.issue);
-  if (activeWrites.has(journalPath(cfg, execution.issue))) {
+  if (!intent.journal || activeWrites.has(journalPath(cfg, execution.issue))) {
     return write();
   }
   let result: RunResult | undefined;

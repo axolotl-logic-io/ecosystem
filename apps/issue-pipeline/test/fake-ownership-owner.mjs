@@ -31,7 +31,7 @@ function acquire(lane) {
   return binding;
 }
 
-const mode = process.argv[2];
+const [, , mode] = process.argv;
 if (mode === "successor" || mode === "release") {
   issueExecution(withExecution(cfg, frame.execution), frame.number).release();
 }

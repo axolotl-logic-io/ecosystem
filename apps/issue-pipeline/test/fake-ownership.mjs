@@ -86,12 +86,12 @@ function acquire({ config, root, frame }) {
   const r = spawnSync(process.execPath, [OWNER, "owner"], {
     input: JSON.stringify(request),
     encoding: "utf8",
-    env: {
-      ...process.env,
-      ISSUE_PIPELINE_ROOT: root,
-      HOME: root,
-      FAKE_OWNERSHIP_QUIET: "1",
-    },
+    env: Object.fromEntries([
+      ...Object.entries(process.env),
+      ["ISSUE_PIPELINE_ROOT", root],
+      ["HOME", root],
+      ["FAKE_OWNERSHIP_QUIET", "1"],
+    ]),
   });
   if (r.status !== 0) {
     throw new Error(`acquiring #${frame.number} failed: ${r.stderr}`);
@@ -113,9 +113,19 @@ function jobCheckout(checkout, n) {
   const { issue, dir, branch } = /** @type {Record<string, unknown>} */ (
     checkout ?? {}
   );
-  return issue === n && typeof dir === "string" && dir !== "" &&
-    typeof branch === "string" && branch !== "";
+  return (
+    issue === n &&
+    typeof dir === "string" &&
+    dir !== "" &&
+    typeof branch === "string" &&
+    branch !== ""
+  );
 }
+
+/**
+ * An ops request's fields the binding reads, and whatever else it carries.
+ * @typedef {{ number?: number, comments?: { number?: number }[], checkout?: object, config?: string, [field: string]: unknown }} OpsRequest
+ */
 
 /**
  * `request` as a stage job sends it (#169): carrying the binding of an
@@ -124,25 +134,26 @@ function jobCheckout(checkout, n) {
  * issue, already bound or with a checkout no job would send, or one sent
  * from a process with no fake gh, goes as it is; so does one whose issue
  * can't be acquired, such as for a branch no job could have.
- * @param {{ config: string, root: string, request: Record<string, any> }} where
- * @returns {Record<string, any>}
+ * @param {{ config: string, root: string, request: object }} where
+ * @returns {object}
  */
-function bindOpsRequest({ config, root, request }) {
-  const n = request["number"] ?? request["comments"]?.[0]?.number;
+function bindOpsRequest({ config, root, request: sent }) {
+  const request = /** @type {OpsRequest} */ (sent);
+  const n = request.number ?? request.comments?.[0]?.number;
   if (
     typeof n !== "number" ||
     "execution" in request ||
     fakeDir === "" ||
-    !jobCheckout(request["checkout"], n)
+    !jobCheckout(request.checkout, n)
   ) {
     return request;
   }
-  const file = request["config"] ?? config;
+  const file = request.config ?? config;
   const checkout = {
     issue: n,
     dir: path.join(root, "work", "o__r", `issue-${n}`),
     branch: `agent/issue-${n}`,
-    ...request["checkout"],
+    ...request.checkout,
   };
   const key = JSON.stringify([file, checkout]);
   let owner = owners.get(key);
@@ -169,25 +180,26 @@ function bindOpsRequest({ config, root, request }) {
  * acquires as a stage job does, and releases after, so the next job can
  * acquire. The checkout is the issue's worktree on its legacy branch.
  * @template T
- * @param {{ config: string, env: NodeJS.ProcessEnv, request: Record<string, any> }} where
- * @param {(request: Record<string, any>) => T} send
+ * @param {{ config: string, env: NodeJS.ProcessEnv, request: object }} where
+ * @param {(request: object) => T} send
  * @returns {T}
  */
-function ownedRequest({ config, env, request }, send) {
-  const n = request["number"];
+function ownedRequest({ config, env, request: sent }, send) {
+  const request = /** @type {OpsRequest} */ (sent);
+  const n = request.number;
   if (typeof n !== "number" || "execution" in request) {
     return send(request);
   }
   const { repo } = JSON.parse(fs.readFileSync(config, "utf8"));
-  const root = String(env["ISSUE_PIPELINE_ROOT"]);
+  const { ISSUE_PIPELINE_ROOT: root = "" } = env;
   const checkout = {
     issue: n,
     dir: path.join(root, "work", repo.replace("/", "__"), `issue-${n}`),
     branch: `agent/issue-${n}`,
   };
   const frame = { config, number: n, lane: "L", checkout };
-  /** @param {string} mode @param {object} input */
-  const owner = (mode, input) => {
+  /** @param {string} mode @param {object} input @returns {string} */
+  function owner(mode, input) {
     const r = spawnSync(process.execPath, [OWNER, mode], {
       input: JSON.stringify(input),
       encoding: "utf8",
@@ -197,7 +209,8 @@ function ownedRequest({ config, env, request }, send) {
       throw new Error(`${mode} #${n} failed: ${r.stderr}`);
     }
     return r.stdout;
-  };
+  }
+
   const execution = JSON.parse(owner("owner", frame));
   try {
     return send({ ...request, checkout, execution });
@@ -234,8 +247,8 @@ function ownershipRecords() {
 export {
   bindOpsRequest,
   loseOwnership,
-  ownedRequest,
   OWNERSHIP_GH,
+  ownedRequest,
   ownershipRecords,
   registerFake,
 };

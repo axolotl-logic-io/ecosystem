@@ -11,7 +11,6 @@ import path from "node:path";
 import process from "node:process";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
-import { loseOwnership } from "./fake-ownership.mjs";
 import { effectsOf } from "./gh-effects-test-kit.mjs";
 import { runOps, setEnv } from "./ops-run-test-kit.mjs";
 
@@ -186,7 +185,6 @@ export {
   fakeGh,
   issueComment,
   labelsReply,
-  loseOwnership,
   postedCommentReply,
   publicConfigOf,
   reply,

@@ -18,7 +18,11 @@ import { run, runFailure } from "./process.ts";
 import { redactAddresses } from "./redact-addresses.ts";
 import type { WriteIntent } from "./write-refusal.ts";
 
-type GhOptions = Omit<RunOptions, "env">;
+// `reconciles`: the write's own operation reconciles an uncertain result by
+// reading, from a record it kept before the write (a push record, a Land or
+// Sync attempt, a task record) or the PR its branch names. Its ownership is
+// still read fresh, but it isn't journaled a second time (#169).
+type GhOptions = Omit<RunOptions, "env"> & { reconciles?: boolean };
 
 const WRITE_FLAG = /^(?:-X|--method|-f|-F|--field|--raw-field|--input)$/u;
 // A read that GitHub can safely repeat: `list`/`view` subcommands, `pr
@@ -139,16 +143,17 @@ function gh(
   args: readonly string[],
   options: GhOptions = {},
 ): RunResult {
+  const { reconciles = false, ...given } = options;
   const runOptions: RunOptions = {
     timeoutMs: GH_TIMEOUT_MS,
-    ...options,
+    ...given,
     env: authenticatedEnv(cfg, identity),
   };
   if (!ghIsRead(args)) {
     const redacted = redactGhArgs(args);
     return controlledWrite(
       cfg,
-      { command: "gh", args: redacted },
+      { command: "gh", args: redacted, journal: reconciles !== true },
       (): RunResult =>
         credentialedRun("gh", redacted, { ...runOptions, allowFail: true }),
       {
@@ -220,14 +225,15 @@ function git(
     (cfg.execution !== undefined || cfg.mutation !== undefined)
   ) {
     const { execution: _execution, mutation: _mutation, ...transport } = cfg;
+    const { reconciles = false, ...given } = options;
     return controlledWrite(
       cfg,
-      { command: "git", args },
+      { command: "git", args, journal: reconciles !== true },
       (): RunResult =>
-        git(transport, identity, args, { ...options, allowFail: true }),
+        git(transport, identity, args, { ...given, allowFail: true }),
       {
         fail: (failed: RunResult): OpsError =>
-          new OpsError(runFailure("git", args, failed, options)),
+          new OpsError(runFailure("git", args, failed, given)),
         allowFail: options.allowFail,
       },
     );

@@ -65,7 +65,8 @@ function branchMerge(
       "origin",
       `${head}:${ref}`,
     ],
-    { allowFail: true },
+    // The Land attempt saved before this push reconciles it (merge-attempt.ts).
+    { allowFail: true, reconciles: true },
   );
   // Acknowledgement is only response evidence, never a confirmed receipt.
   return result.code === 0;

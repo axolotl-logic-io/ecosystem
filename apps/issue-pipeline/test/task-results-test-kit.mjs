@@ -12,12 +12,12 @@ import process from "node:process";
 import { z } from "zod";
 import { ownedRequest } from "./fake-ownership.mjs";
 import { ghCalls, openIssue } from "./fake-pipeline-flow-gh.mjs";
-import { isCoordinationWrite } from "./pipeline-flow-coordination-test-kit.mjs";
 import {
   postComment,
   readWorld,
   withWorld,
 } from "./fake-pipeline-flow-gh-world.mjs";
+import { isCoordinationWrite } from "./pipeline-flow-coordination-test-kit.mjs";
 import { BASE, bareGit, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const RUN_MS = 60_000;

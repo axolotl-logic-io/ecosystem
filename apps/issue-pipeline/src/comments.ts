@@ -102,17 +102,28 @@ function listComments(cfg: Config, number: number): IssueComment[] {
   return verifiedComments(cfg, lines.map(commentOf));
 }
 
-// Posts `body` exactly as given: no signature, no mark.
-function rawComment(cfg: Config, number: number, body: string): void {
-  gh(cfg, "merge", [
-    "api",
-    "-X",
-    "POST",
-    `repos/${cfg.repo}/issues/${number}/comments`,
-    "-f",
-    `body=${body}`,
-    "--silent",
-  ]);
+// Posts `body` exactly as given: no signature, no mark. `reconciles` when
+// the caller confirms the comment by reading (github.ts).
+function rawComment(
+  cfg: Config,
+  number: number,
+  body: string,
+  reconciles = false,
+): void {
+  gh(
+    cfg,
+    "merge",
+    [
+      "api",
+      "-X",
+      "POST",
+      `repos/${cfg.repo}/issues/${number}/comments`,
+      "-f",
+      `body=${body}`,
+      "--silent",
+    ],
+    { reconciles },
+  );
 }
 
 // Every comment on the repo's issues and PRs, or only those changed at or
