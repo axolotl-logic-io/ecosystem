@@ -10,14 +10,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { bodyOf, effectNames, stateOf } from "../gh-effects-test-kit.mjs";
+import { z } from "zod";
+import { loseOwnership } from "../fake-ownership.mjs";
+import { effectNames, lastStateOf, stateOf } from "../gh-effects-test-kit.mjs";
 import {
   claimMutationReplies,
   collaboratorReply,
 } from "../gh-mutation-fixtures.mjs";
 import { historyReply } from "../initial-write-state-fixtures.mjs";
 import {
-  CLAIM_MARK,
   claimedFields,
   claimedState,
   claimReply,
@@ -26,6 +27,7 @@ import {
   LANE,
   LAPSED,
   LIVE,
+  ownerClaim,
 } from "../ops-claim-test-kit.mjs";
 import {
   askOps,
@@ -37,8 +39,8 @@ import {
   requireGhReplies,
   root,
   runDir,
+  savedStateComment,
   sh,
-  stateComment,
   TIME,
   worktree,
   writes,
@@ -50,19 +52,21 @@ requireGhReplies();
 const { newIssueState } = await import("../../src/state.ts");
 
 const SETUP_MARK = "setup-ran";
+const REFUSED = z.object({ ok: z.literal(false), error: z.string() });
+// What an owner whose issue a successor took reads (coordination-records.ts).
+const RELEASED = /released instance cannot request again/u;
 // Each test's issue, and the ids of the claim and state comments on it.
 const LOST_ISSUE = 40;
-const RIVAL_CLAIM = 9;
 const CLOSED_ISSUE = 41;
 const NEW_ISSUE = 42;
-const NEW_CLAIM = 100;
+// The id GitHub gives the state comment a new issue's claim posts.
+const STATE_ID = 700_001;
 const ANSWERED_ISSUE = 43;
 const ANSWERED_CLAIM = 10;
 const ANSWERED_STATE = 11;
 const ANSWERED_PR = 50;
 const LAPSED_ISSUE = 44;
 const LAPSED_STATE = 12;
-const LAPSED_CLAIM = 101;
 const RIVAL_LAPSED_CLAIM = 13;
 const STOPPED_ISSUE = 45;
 const STOPPED_CLAIM = 14;
@@ -74,29 +78,29 @@ const STOPPED_SYNCS = 2;
 const INPUTS_LENGTH = 64;
 const ASKED_INPUTS = "a".repeat(INPUTS_LENGTH);
 
-test("a claim loses to another lane's live claim", () => {
+// A job claims only once it owns the issue (#167); a claim whose issue
+// another invocation takes after its ownership check writes nothing (#169).
+test("a claim loses to another invocation that takes the issue, writing nothing", () => {
   reply([
     collaboratorReply("o/r", "alice"),
+    historyReply(LOST_ISSUE),
     issueReply(LOST_ISSUE),
     commentsReply(LOST_ISSUE, [
-      stateComment(1, newIssueState(LOST_ISSUE)),
-      claimComment(RIVAL_CLAIM, "other", "s0", LIVE),
+      savedStateComment(1, newIssueState(LOST_ISSUE)),
     ]),
   ]);
-  assert.deepEqual(askOps({ op: "claim", number: 40, ...LANE }), {
-    ok: true,
-    op: "claim",
-    posted: false,
-    commentIds: [],
-    lost: true,
-    holder: "other",
-  });
+  loseOwnership();
+  const refused = REFUSED.parse(
+    askOps({ op: "claim", number: LOST_ISSUE, ...LANE }),
+  );
+  assert.match(refused.error, RELEASED);
   assert.deepEqual(writes(), []);
 });
 
 test("a claim refuses an issue that isn't open", () => {
   reply([
     collaboratorReply("o/r", "alice"),
+    historyReply(CLOSED_ISSUE),
     issueReply(CLOSED_ISSUE, { state: "closed" }),
     commentsReply(CLOSED_ISSUE, []),
   ]);
@@ -107,33 +111,27 @@ test("a claim refuses an issue that isn't open", () => {
   assert.deepEqual(writes(), []);
 });
 
-test("a claim of new work posts its claim, makes the worktree and runs setup", () => {
+test("a claim of new work saves its receipt, makes the worktree and runs setup", () => {
   const config = configWith({
     commands: { test: "true", setup: `touch ${SETUP_MARK}` },
   });
-  const mine = claimComment(NEW_CLAIM, "me", "s0", LIVE);
   reply([
     historyReply(NEW_ISSUE),
     issueReply(NEW_ISSUE),
-    commentsReply(NEW_ISSUE, []),
-    { when: "issues/42/comments -f", stdout: JSON.stringify(mine) },
-    { ...commentsReply(NEW_ISSUE, [mine]), keep: true },
+    { ...commentsReply(NEW_ISSUE, []), keep: true },
     ...claimMutationReplies(NEW_ISSUE, NEW_ISSUE, null),
   ]);
+  const got = askOps({ op: "claim", config, number: NEW_ISSUE, ...LANE });
   const state = claimedState(NEW_ISSUE);
-  assert.deepEqual(
-    askOps({ op: "claim", config, number: NEW_ISSUE, ...LANE }),
-    claimReply(NEW_ISSUE, { state, claim: { id: NEW_CLAIM, posted: true } }),
-  );
+  assert.deepEqual(got, claimReply(NEW_ISSUE, { state, claim: ownerClaim() }));
   const claimed = effects();
   assert.deepEqual(effectNames(claimed), [
-    "comment #42 role=claim",
     "comment #42 state",
+    `edit comment ${STATE_ID} state`,
     "label #42 agent:working",
     "unlabel #42 agent:needs-info",
   ]);
-  assert.ok(bodyOf(claimed, "comment #42 role=claim").includes(CLAIM_MARK));
-  assert.deepEqual(stateOf(claimed, "comment #42 state"), state);
+  assert.deepEqual(stateOf(claimed, `edit comment ${STATE_ID} state`), state);
   assert.ok(fs.existsSync(path.join(worktree(NEW_ISSUE), SETUP_MARK)));
   assert.ok(fs.existsSync(path.join(runDir(NEW_ISSUE), "setup-at-claim.log")));
 });
@@ -151,7 +149,7 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
   };
   const comments = [
     claimComment(ANSWERED_CLAIM, "me", "s0", LIVE),
-    stateComment(ANSWERED_STATE, saved),
+    savedStateComment(ANSWERED_STATE, saved),
   ];
   const labels = [
     { name: "agent:needs-info" },
@@ -172,7 +170,7 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
     got,
     claimReply(ANSWERED_ISSUE, {
       state,
-      claim: { id: ANSWERED_CLAIM, posted: false },
+      claim: ownerClaim(),
       remoteHead: sha,
       issue: issueOf(ANSWERED_ISSUE, { labels }),
       comments,
@@ -181,13 +179,14 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
   const claimed = effects();
   assert.deepEqual(effectNames(claimed), [
     `edit comment ${ANSWERED_STATE} state`,
+    `edit comment ${ANSWERED_STATE} state`,
     `label #${ANSWERED_ISSUE} agent:working`,
     `label #${ANSWERED_PR} agent:working`,
     `unlabel #${ANSWERED_ISSUE} agent:needs-info`,
     `unlabel #${ANSWERED_ISSUE} agent:stopped-conflict`,
   ]);
   assert.deepEqual(
-    stateOf(claimed, `edit comment ${ANSWERED_STATE} state`),
+    lastStateOf(claimed, `edit comment ${ANSWERED_STATE} state`),
     state,
   );
 });
@@ -201,38 +200,35 @@ test("a claim that resumes a lapsed lease keeps its stage and its worktree", () 
     stage: /** @type {const} */ ("implement"),
     lease: { lane: "other", sweepId: "s0", at: LAPSED },
   };
-  const state = stateComment(LAPSED_STATE, saved);
+  const state = savedStateComment(LAPSED_STATE, saved);
   const rival = claimComment(RIVAL_LAPSED_CLAIM, "other", "s0", LAPSED);
-  const mine = claimComment(LAPSED_CLAIM, "me", "s0", LIVE);
   const labels = [{ name: "agent:working" }];
   reply([
     historyReply(LAPSED_ISSUE),
     issueReply(LAPSED_ISSUE, { labels }),
     commentsReply(LAPSED_ISSUE, [rival, state]),
-    { when: "issues/44/comments -f", stdout: JSON.stringify(mine) },
-    commentsReply(LAPSED_ISSUE, [mine]),
-    commentsReply(LAPSED_ISSUE, [state]),
     ...claimMutationReplies(LAPSED_ISSUE, LAPSED_STATE, null),
   ]);
+  const got = askOps({ op: "claim", number: LAPSED_ISSUE, ...LANE });
   const kept = claimedState(LAPSED_ISSUE, { stage: "implement" });
   assert.deepEqual(
-    askOps({ op: "claim", number: LAPSED_ISSUE, ...LANE }),
+    got,
     claimReply(LAPSED_ISSUE, {
       state: kept,
-      claim: { id: LAPSED_CLAIM, posted: true },
+      claim: ownerClaim(),
       issue: issueOf(LAPSED_ISSUE, { labels }),
       comments: [rival, state],
     }),
   );
   const claimed = effects();
   assert.deepEqual(effectNames(claimed), [
-    `comment #${LAPSED_ISSUE} role=claim`,
+    `edit comment ${LAPSED_STATE} state`,
     `edit comment ${LAPSED_STATE} state`,
     `label #${LAPSED_ISSUE} agent:working`,
     `unlabel #${LAPSED_ISSUE} agent:needs-info`,
   ]);
   assert.deepEqual(
-    stateOf(claimed, `edit comment ${LAPSED_STATE} state`),
+    lastStateOf(claimed, `edit comment ${LAPSED_STATE} state`),
     kept,
   );
   assert.ok(fs.existsSync(path.join(worktree(LAPSED_ISSUE), "wip")));
@@ -251,7 +247,7 @@ test("a claim lifts a stopped issue's stop, resuming its stage with its counts r
   };
   const comments = [
     claimComment(STOPPED_CLAIM, "me", "s0", LIVE),
-    stateComment(STOPPED_STATE, saved),
+    savedStateComment(STOPPED_STATE, saved),
   ];
   const labels = [{ name: "agent:stopped-conflict" }];
   reply([
@@ -263,15 +259,16 @@ test("a claim lifts a stopped issue's stop, resuming its stage with its counts r
       "agent:stopped-conflict",
     ]),
   ]);
+  const got = askOps({ op: "claim", number: STOPPED_ISSUE, ...LANE });
   const state = claimedState(STOPPED_ISSUE, {
     stage: "implement",
     log: saved.log,
   });
   assert.deepEqual(
-    askOps({ op: "claim", number: STOPPED_ISSUE, ...LANE }),
+    got,
     claimReply(STOPPED_ISSUE, {
       state,
-      claim: { id: STOPPED_CLAIM, posted: false },
+      claim: ownerClaim(),
       issue: issueOf(STOPPED_ISSUE, { labels }),
       comments,
     }),
@@ -279,12 +276,13 @@ test("a claim lifts a stopped issue's stop, resuming its stage with its counts r
   const claimed = effects();
   assert.deepEqual(effectNames(claimed), [
     `edit comment ${STOPPED_STATE} state`,
+    `edit comment ${STOPPED_STATE} state`,
     `label #${STOPPED_ISSUE} agent:working`,
     `unlabel #${STOPPED_ISSUE} agent:needs-info`,
     `unlabel #${STOPPED_ISSUE} agent:stopped-conflict`,
   ]);
   assert.deepEqual(
-    stateOf(claimed, `edit comment ${STOPPED_STATE} state`),
+    lastStateOf(claimed, `edit comment ${STOPPED_STATE} state`),
     state,
   );
 });

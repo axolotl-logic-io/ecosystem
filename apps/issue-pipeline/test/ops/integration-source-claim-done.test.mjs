@@ -15,12 +15,13 @@ import {
   myClaim,
   openIssue,
   prView,
+  receiptCheckpoint,
   savedStates,
   v2State,
 } from "../ops-v2-test-kit.mjs";
 
 kit.requireGhReplies();
-const { askOps, reply, stateComment, writes } = kit;
+const { askOps, reply, savedStateComment, writes } = kit;
 const SHA_LENGTH = 40;
 const MERGE_OID = "a".repeat(SHA_LENGTH);
 const OTHER_OID = "b".repeat(SHA_LENGTH);
@@ -63,7 +64,7 @@ function claimDone(n, saved, more) {
     },
     openIssue(n),
     ...more,
-    everyCommentsRead(n, [stateComment(1, saved), myClaim(2)]),
+    everyCommentsRead(n, [savedStateComment(1, saved), myClaim(2)]),
   ]);
   return askOps({ op: "claim", number: n, ...LANE });
 }
@@ -84,7 +85,8 @@ test("a legacy done wiki-only change with no PR and no code merge on GitHub is c
   assert.deepEqual(won.state.merged, merged);
   assert.deepEqual(
     savedStates().map((saved) => CLAIMED.shape.state.parse(saved).merged),
-    [merged],
+    [merged, merged],
+    "the receipt checkpoint, then the claimed state",
   );
   assert.equal(
     writes().some((args) => args.join(" ").includes("agent:working")),
@@ -95,35 +97,37 @@ test("a legacy done wiki-only change with no PR and no code merge on GitHub is c
 test("a done code change whose PR GitHub doesn't report merged is refused", () => {
   const n = 322;
   const merged = { code: MERGE_OID, inputs: "x" };
-  const failed = FAILED.parse(
-    claimDone(n, v2State(n, { stage: "done", pr: PR, merged }), [
-      prView(n, PR),
-    ]),
-  );
+  const saved = v2State(n, { stage: "done", pr: PR, merged });
+  const failed = FAILED.parse(claimDone(n, saved, [prView(n, PR)]));
   assert.match(failed.error, UNCONFIRMED);
-  assert.deepEqual(writes(), []);
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });
 
 test("a done code change GitHub reports merged at another commit is refused", () => {
   const n = 323;
   const merged = { code: MERGE_OID, inputs: "x" };
+  const saved = v2State(n, { stage: "done", pr: PR, merged });
   const failed = FAILED.parse(
-    claimDone(n, v2State(n, { stage: "done", pr: PR, merged }), [
+    claimDone(n, saved, [
       prView(n, PR, { state: "MERGED", mergeCommit: { oid: OTHER_OID } }),
     ]),
   );
   assert.match(failed.error, UNCONFIRMED);
-  assert.deepEqual(writes(), []);
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });
 
 test("a legacy done wiki-only change whose PR GitHub reports merged is refused", () => {
   const n = 324;
   const merged = { code: null, wiki: WIKI_OID, inputs: "x" };
+  const saved = v2State(n, { stage: "done", pr: PR, merged });
   const failed = FAILED.parse(
-    claimDone(n, v2State(n, { stage: "done", pr: PR, merged }), [
+    claimDone(n, saved, [
       prView(n, PR, { state: "MERGED", mergeCommit: { oid: MERGE_OID } }),
     ]),
   );
   assert.match(failed.error, UNCONFIRMED);
-  assert.deepEqual(writes(), []);
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
+  assert.equal(writes().length, 1);
 });

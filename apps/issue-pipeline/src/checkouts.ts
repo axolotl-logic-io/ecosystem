@@ -221,15 +221,13 @@ function pushHead(cfg: Config, n: number, op: string): string {
     throw new OpsError(`#${n}'s code merged; refusing code push`);
   }
   recordPush(cfg, n, headSha, op);
-  git(cfg, "dev", [
-    "-C",
-    wt,
-    "push",
-    "--force-with-lease",
-    "-u",
-    "origin",
-    target,
-  ]);
+  // The push record lets the next claim adopt the head (adopt-push.ts).
+  git(
+    cfg,
+    "dev",
+    ["-C", wt, "push", "--force-with-lease", "-u", "origin", target],
+    { reconciles: true },
+  );
   return headSha;
 }
 

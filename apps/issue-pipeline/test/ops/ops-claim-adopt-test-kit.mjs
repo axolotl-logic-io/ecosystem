@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { RELEASED_RECEIPT } from "../fake-ownership.mjs";
 import { claimMutationReplies } from "../gh-mutation-fixtures.mjs";
 import { historyReply } from "../initial-write-state-fixtures.mjs";
 import { issueReply, LANE, LIVE } from "../ops-claim-test-kit.mjs";
@@ -85,7 +86,7 @@ function recordPush(n, sha, op = "sync-base") {
 function heldComments(n, saved) {
   return [
     claimComment(n * CLAIM_IDS, LANE.lane, LANE.sweepId, LIVE),
-    stateComment(n * CLAIM_IDS + 1, saved),
+    stateComment(n * CLAIM_IDS + 1, { ...saved, execution: RELEASED_RECEIPT }),
   ];
 }
 

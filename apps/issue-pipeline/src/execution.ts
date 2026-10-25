@@ -1,6 +1,6 @@
-// GitHub transport and recovery journal for both coordination scopes. This is
-// a standalone protocol primitive, not runtime fencing or a scheduler.
-// Neither factory is called by default entry points; composition is unfinished.
+// GitHub transport and recovery journal for both coordination scopes, and the
+// mutation hook that fences a bound job's or ops request's credentialed
+// writes with it (controlledMutation). It is not a scheduler.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -18,6 +18,8 @@ import { INVOCATION_BINDING, scopeOf } from "./coordination-records.ts";
 import { gh, ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
+import type { WriteIntent } from "./write-refusal.ts";
+import { refusedWrite } from "./write-refusal.ts";
 
 const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
 const REF = z.object({ object: z.object({ sha: SHA }) });
@@ -39,12 +41,18 @@ function assertReconciled(cfg: Config, issue: number): void {
   }
 }
 // Exactly one write attempt, including across subprocesses/restarts. A lost
-// response is acceptable only when a fresh read proves the exact outcome.
+// response is acceptable only when a fresh read proves the exact outcome. A
+// write the target definitely refused changed nothing, so it clears too.
 function confirmedWrite(
   cfg: Config,
   issue: number,
   operation: string,
-  attempt: { write: () => void; confirmed: () => boolean; evidence?: Evidence },
+  attempt: {
+    write: () => void;
+    confirmed: () => boolean;
+    refused?: () => boolean;
+    evidence?: Evidence;
+  },
 ): void {
   const { write, confirmed } = attempt;
   assertReconciled(cfg, issue);
@@ -68,7 +76,7 @@ function confirmedWrite(
     } catch {
       // Read-back, not a successful transport response, establishes authority.
     }
-    if (!confirmed()) {
+    if (!(confirmed() || attempt.refused?.() === true)) {
       throw new OpsError(
         `uncertain ${operation}; preserve ${file} and reconcile without retrying`,
       );
@@ -216,8 +224,8 @@ function assertExecution(cfg: Config, issue: number): void {
   assertReconciled(cfg, issue);
   issueExecution(cfg, issue).assertOwner();
 }
-// Dormant internal hook: callers without an execution retain their existing
-// behavior. Runtime envelope/session/teardown fencing is not delivered here.
+// Callers without an execution, such as the coordination transport itself,
+// are fenced by the ops envelope (ops/execution-envelope.ts) or not at all.
 function guardExecution(cfg: Config, issue: number): void {
   if (cfg.execution !== undefined) {
     assertReconciled(cfg, issue);
@@ -225,13 +233,21 @@ function guardExecution(cfg: Config, issue: number): void {
   }
 }
 
-function controlledMutation(cfg: Config, write: () => RunResult): RunResult {
+// Each credentialed write of a bound job or ops request: a fresh ownership
+// read, then the write journaled with its exact intent (#169). A write inside
+// another journaled write runs under that one's journal, and one whose own
+// operation reconciles it by reading isn't journaled again.
+function controlledMutation(
+  cfg: Config,
+  write: () => RunResult,
+  intent: WriteIntent,
+): RunResult {
   const { execution } = cfg;
   if (execution === undefined) {
     return write();
   }
   guardExecution(cfg, execution.issue);
-  if (activeWrites.has(journalPath(cfg, execution.issue))) {
+  if (!intent.journal || activeWrites.has(journalPath(cfg, execution.issue))) {
     return write();
   }
   let result: RunResult | undefined;
@@ -240,6 +256,9 @@ function controlledMutation(cfg: Config, write: () => RunResult): RunResult {
       result = write();
     },
     confirmed: (): boolean => result?.code === 0,
+    refused: (): boolean =>
+      result !== undefined && refusedWrite(intent, result),
+    evidence: { command: intent.command, args: [...intent.args] },
   });
   if (result === undefined) {
     throw new OpsError("controlled mutation response unavailable");
@@ -255,8 +274,8 @@ function withExecution(
   const bound: Config = {
     ...cfg,
     execution: validated,
-    mutation: (write: () => RunResult): RunResult =>
-      controlledMutation(bound, write),
+    mutation: (write: () => RunResult, intent: WriteIntent): RunResult =>
+      controlledMutation(bound, write, intent),
   };
   return bound;
 }

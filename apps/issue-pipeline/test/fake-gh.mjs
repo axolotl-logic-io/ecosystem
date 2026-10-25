@@ -17,6 +17,7 @@ import {
   executionTransportFiles,
 } from "./fake-execution-transport.mjs";
 import { BATCH_GRAPHQL } from "./fake-graphql-batch.mjs";
+import { forgetOwners, OWNERSHIP_GH, registerFake } from "./fake-ownership.mjs";
 
 // The gh script's file mode: executable by its owner, readable by all.
 const EXECUTABLE = 0o755;
@@ -35,6 +36,7 @@ const AUTHENTICATED_CALL = z.object({
  * @property {string} [stderr]
  * @property {number} [code]
  * @property {boolean} [keep] answer every matching call, not only the first
+ * @property {number} [serve] answer this many matching calls, then the next reply does
  * @property {boolean} [persistState] apply real state PATCHes to this saved comment fixture
  * @property {{ origin: string, base: string, head: string, sha: string }} [branchMerge] exact local merge mutation
  * @property {{ repo: string, ref: string }} [headRef] local origin of this OPEN PR's actual head
@@ -47,6 +49,7 @@ const AUTHENTICATED_CALL = z.object({
  * the reads. A test passes src/github.ts's ghIsRead as `isRead`: this file
  * imports no src module, since tests set the pipeline root before src loads.
  * @typedef {object} FakeGh
+ * @property {string} dir the folder holding the script and its logs
  * @property {(state: unknown) => void} transport
  * @property {() => unknown} transportState
  * @property {() => void} requireReplies fail every unmatched read or write
@@ -75,14 +78,16 @@ let expected = "merge";
 if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(args[1])) expected = "dev";
 if (args[0] === "api" && args.includes("DELETE") && args.some(arg => /^repos\\/[^/]+\\/[^/]+\\/git\\/refs\\/heads\\//u.test(arg))) expected = "dev";
 if (!(args[0] === "api" && args[1] === "user") && identity[1] !== expected) throw new Error("wrong bot identity for operation");
+const quiet = process.env.FAKE_OWNERSHIP_QUIET === "1";
 if (args[0] === "api" && args[1] === "user") {
-  fs.appendFileSync(path.join(dir, "logins.jsonl"), JSON.stringify(args) + "\\n");
+  if (!quiet) fs.appendFileSync(path.join(dir, "logins.jsonl"), JSON.stringify(args) + "\\n");
   if (!JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => reply.when.startsWith("api user") && args.join(" ").includes(reply.when))) {
     process.stdout.write(identity[2] + "\\n"); process.exit(0);
   }
 }
 ${BATCH_GRAPHQL}
 ${EXECUTION_TRANSPORT}
+${OWNERSHIP_GH}
 if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => args.join(" ").includes(reply.when))) {
   const comments = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
   const nodeOf = id => {
@@ -95,13 +100,43 @@ if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(pa
   const id = args.find(arg => arg.startsWith("id="))?.slice(3);
   fs.writeSync(1, JSON.stringify({ data: { node: nodeOf(id) } })); process.exit(0);
 }
-fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
-fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");
 const file = path.join(dir, "replies.json");
 const replies = JSON.parse(fs.readFileSync(file, "utf8"));
 const text = args.join(" ");
-const at = replies.findIndex((reply) => text.includes(reply.when));
-if (at >= 0) {
+let at = replies.findIndex((reply) => text.includes(reply.when));
+// A listing nothing scripted, which only the ownership records answer, is
+// an ownership check: it stays out of the calls a test checks.
+if (!quiet && !(at < 0 && ownershipListing)) {
+  fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
+  fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");
+}
+// With ownership on, each ops request lists the comments for every
+// ownership read too, so a listing reply is the snapshot of one request:
+// the next request's first listing uses it up and pins the next one.
+// A reply with a serve count answers that many calls, ownership checks included,
+// before the next one does: a change partway through one request.
+if (ownershipListing && !quiet && at >= 0 && replies[at].serve === undefined) {
+  const pinFile = path.join(dir, "listing-pin.json");
+  const pin = fs.existsSync(pinFile) ? JSON.parse(fs.readFileSync(pinFile, "utf8")) : null;
+  const pinned = pin ? replies.findIndex(reply => reply.pin === pin.id) : -1;
+  if (pin?.ppid === process.ppid && pinned >= 0) {
+    at = pinned;
+  } else {
+    if (pinned >= 0 && replies[pinned].keep !== true) replies.splice(pinned, 1);
+    at = replies.findIndex((reply) => text.includes(reply.when));
+    if (at >= 0) {
+      const id = String(process.pid) + ":" + String(Date.now());
+      replies[at].pin = id;
+      fs.writeFileSync(pinFile, JSON.stringify({ ppid: process.ppid, id }));
+    }
+    fs.writeFileSync(file, JSON.stringify(replies));
+  }
+}
+if (at < 0 && ownershipListing) {
+  const lines = ownershipListing.records.map(item => JSON.stringify(item));
+  fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify(ownershipListing.records));
+  process.stdout.write(lines.join("\\n"));
+} else if (at >= 0) {
   const reply = replies[at];
   let stdout = reply.stdout ?? "";
   if (reply.branchMerge) {
@@ -118,6 +153,9 @@ if (at >= 0) {
     view.headRefOid = execFileSync("git", ["-C", reply.headRef.repo, "rev-parse", reply.headRef.ref], { encoding: "utf8" }).trim();
     stdout = JSON.stringify(view);
   }
+  if (ownershipListing) {
+    stdout = [...stdout.split("\\n").filter(Boolean), ...ownershipListing.records.map(item => JSON.stringify(item))].join("\\n");
+  }
   if (args.some(arg => arg.includes("/comments?"))) {
     const current = stdout.split("\\n").filter(Boolean).map(line => JSON.parse(line));
     fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify(current));
@@ -125,17 +163,44 @@ if (at >= 0) {
   process.stdout.write(stdout);
   process.stderr.write(reply.stderr ?? "");
   process.exitCode = reply.code ?? 0;
-  if (reply.keep !== true) {
+  if (typeof reply.serve === "number") {
+    reply.serve -= 1;
+    if (reply.serve <= 0) replies.splice(at, 1);
+    fs.writeFileSync(file, JSON.stringify(replies));
+  } else if (reply.keep !== true && !ownershipListing) {
     replies.splice(at, 1);
     fs.writeFileSync(file, JSON.stringify(replies));
   }
+} else if (fs.existsSync(path.join(dir, "ownership.json")) && args.includes("-X") && args.some(arg => arg.startsWith("body=") && arg.includes("<!-- agent-pipeline:state"))) {
+  // With ownership on, GitHub takes an unscripted state save as it would.
+  at = replies.length;
 } else {
   process.stderr.write("unsupported private fake gh request: " + text); process.exitCode = 1;
 }
 const body = args.find(arg => arg.startsWith("body="))?.slice(5);
 const endpoint = args.find(arg => arg.startsWith("repos/"));
+// With ownership on, a bound claim reads its state checkpoint back, so the
+// listings show a saved state as GitHub would: edited in place, or posted.
+const ownershipOn = fs.existsSync(path.join(dir, "ownership.json"));
+const endpointParts = (endpoint ?? "").split("/");
+const postedState = endpointParts.length === 6 && endpointParts[3] === "issues" && endpointParts[5] === "comments" ? [null, endpointParts[4]] : null;
+if (ownershipOn && at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("POST") && postedState && body?.includes("<!-- agent-pipeline:state")) {
+  // A reply without an id gets the next of 700001, 700002, … since reply().
+  const idsFile = path.join(dir, "state-ids.json");
+  const next = fs.existsSync(idsFile) ? JSON.parse(fs.readFileSync(idsFile, "utf8")) + 1 : 700001;
+  const id = Number(replies[at]?.stdout?.trim()) || next;
+  if (id === next) fs.writeFileSync(idsFile, JSON.stringify(next));
+  const comment = { id, node_id: "comment-" + id, body, user: { login: identity[2] }, created_at: "2026-10-18T00:00:00Z", updated_at: "2026-10-18T00:00:00Z", lastEditedAt: null, editor: null };
+  if (at === replies.length && args.includes("--jq")) process.stdout.write(String(id));
+  for (const reply of replies.filter(item => item.when.includes("issues/" + postedState[1] + "/comments?"))) {
+    reply.stdout = [...(reply.stdout ?? "").split("\\n").filter(Boolean), JSON.stringify(comment)].join("\\n");
+  }
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
+  fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify([...saved, comment]));
+  fs.writeFileSync(file, JSON.stringify(replies));
+}
 if (at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("PATCH") && body?.includes("<!-- agent-pipeline:state")) {
-  for (const reply of replies.filter(item => item.persistState)) {
+  for (const reply of replies.filter(item => item.persistState || (ownershipOn && item.when.includes("/comments?") && item.stdout))) {
     const comments = reply.stdout.split("\\n").filter(Boolean).map(line => JSON.parse(line));
     for (const comment of comments) {
       if (endpoint?.endsWith("/comments/" + comment.id)) {
@@ -150,6 +215,7 @@ if (at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("PATCH") && body?.
   }
   fs.writeFileSync(file, JSON.stringify(replies));
 }
+if (ownershipListing) ownershipListing.done();
 `;
 }
 
@@ -169,6 +235,7 @@ function readCallLog(file) {
 function installFakeGh() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-gh-"));
   fs.writeFileSync(path.join(dir, "gh"), script(dir), { mode: EXECUTABLE });
+  registerFake(dir);
   const { PATH: searchPath } = process.env;
   Object.assign(process.env, { PATH: `${dir}${path.delimiter}${searchPath}` });
   const callsFile = path.join(dir, "calls.jsonl");
@@ -181,6 +248,7 @@ function installFakeGh() {
       .map((line) => CALL_ARGS.parse(JSON.parse(line)));
   }
   return {
+    dir,
     ...executionTransportFiles(dir),
     loginCalls: () => readCallLog(path.join(dir, "logins.jsonl")),
     requireReplies() {
@@ -194,6 +262,9 @@ function installFakeGh() {
         .map((line) => AUTHENTICATED_CALL.parse(JSON.parse(line)));
     },
     reply(replies) {
+      forgetOwners();
+      fs.rmSync(path.join(dir, "listing-pin.json"), { force: true });
+      fs.rmSync(path.join(dir, "state-ids.json"), { force: true });
       fs.writeFileSync(path.join(dir, "logins.jsonl"), "");
       fs.writeFileSync(path.join(dir, "identities.jsonl"), "");
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));

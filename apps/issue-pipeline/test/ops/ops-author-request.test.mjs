@@ -5,10 +5,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { loseOwnership } from "../fake-ownership.mjs";
 import {
   claimMutationReplies,
   collaboratorReply,
 } from "../gh-mutation-fixtures.mjs";
+import { historyReply } from "../initial-write-state-fixtures.mjs";
 import { issueReply } from "../ops-claim-test-kit.mjs";
 import {
   commitOnOrigin,
@@ -20,7 +22,7 @@ import {
   savedStates,
 } from "../ops-v2-test-kit.mjs";
 
-const { askOps, reply, stateComment, writes, root, sh, worktree } = kit;
+const { askOps, reply, savedStateComment, writes, root, sh, worktree } = kit;
 kit.requireGhReplies();
 const { ISSUE_STATE, newIssueState } = await import("../../src/state.ts");
 const CLAIMED = z.looseObject({ ok: z.literal(true), state: ISSUE_STATE });
@@ -28,6 +30,8 @@ const FAILED = z.object({ ok: z.literal(false), error: z.string() });
 const PR = 7;
 const STATE_COMMENT = 1;
 const CLAIM_COMMENT = 2;
+// What an owner whose issue a successor took reads (coordination-records.ts).
+const RELEASED = /released instance cannot request again/u;
 const FIRST_ISSUE = 701;
 const REFUSED_ISSUE = 710;
 const SHA_LENGTH = 40;
@@ -70,7 +74,7 @@ function claimWorld(state, extra = []) {
     collaboratorReply("o/r", "alice"),
     issueReply(state.number),
     everyCommentsRead(state.number, [
-      stateComment(STATE_COMMENT, state),
+      savedStateComment(STATE_COMMENT, state),
       myClaim(CLAIM_COMMENT),
     ]),
     ...extra,
@@ -185,31 +189,23 @@ test("an unreadable live PR cannot create explicit Author authority", () => {
   assert.deepEqual(writes(), []);
 });
 
-test("explicit Author still loses to another lane without mode or checkpoint writes", () => {
+test("explicit Author still loses to another invocation that takes the issue, without mode or checkpoint writes", () => {
   const state = savedDirect(REFUSED_ISSUE);
   reply([
     collaboratorReply("o/r", "alice"),
+    historyReply(REFUSED_ISSUE),
     issueReply(REFUSED_ISSUE),
-    everyCommentsRead(REFUSED_ISSUE, [
-      stateComment(STATE_COMMENT, state),
-      kit.claimComment(
-        CLAIM_COMMENT,
-        "other",
-        "other-sweep",
-        new Date().toISOString(),
-      ),
-    ]),
+    everyCommentsRead(REFUSED_ISSUE, [savedStateComment(STATE_COMMENT, state)]),
     prView(REFUSED_ISSUE, PR),
   ]);
-  const result = z
-    .looseObject({
-      ok: z.literal(true),
-      lost: z.literal(true),
-      holder: z.string(),
-    })
-    .parse(
-      askOps({ op: "claim", number: REFUSED_ISSUE, stage: "author", ...LANE }),
-    );
-  assert.equal(result.holder, "other");
+  const request = {
+    op: "claim",
+    number: REFUSED_ISSUE,
+    stage: "author",
+    ...LANE,
+  };
+  loseOwnership();
+  const result = FAILED.parse(askOps(request));
+  assert.match(result.error, RELEASED);
   assert.deepEqual(writes(), []);
 });

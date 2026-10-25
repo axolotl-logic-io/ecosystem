@@ -11,6 +11,7 @@ import path from "node:path";
 import process from "node:process";
 import { credentialConfig } from "./credentials-test-kit.mjs";
 import { commentLines, githubComment, installFakeGh } from "./fake-gh.mjs";
+import { RELEASED_RECEIPT } from "./fake-ownership.mjs";
 import { effectsOf } from "./gh-effects-test-kit.mjs";
 import { runOps, setEnv } from "./ops-run-test-kit.mjs";
 
@@ -94,10 +95,11 @@ function timeless(text) {
   return text.replace(ISO_TIME, TIME);
 }
 
-// The reply to `request`, sent with the base config unless it names one.
-/** @param {object} request @returns {unknown} */
-function askOps(request) {
-  const stdout = runOps({ config: CONFIG, request, root, home: root });
+// The reply to `request`, sent bound with the base config unless it names
+// one.
+/** @param {object} request @param {boolean} [unbound] @returns {unknown} */
+function askOps(request, unbound = false) {
+  const stdout = runOps({ config: CONFIG, request, root, home: root, unbound });
   return JSON.parse(timeless(JSON.stringify(JSON.parse(stdout))));
 }
 
@@ -132,6 +134,13 @@ function stateComment(id, state) {
     id,
     `**🤖 issue-pipeline · state**\n<!-- agent-pipeline:state\n${JSON.stringify(state)}\n-->`,
   );
+}
+
+// A state comment as an earlier, released run saved it, with that run's
+// receipt (fake-ownership.mjs), so a bound claim can resume it.
+/** @param {number} id @param {object} state @returns {object} */
+function savedStateComment(id, state) {
+  return stateComment(id, { ...state, execution: RELEASED_RECEIPT });
 }
 
 // gh's reply to listComments for issue `n`.
@@ -190,6 +199,7 @@ export {
   requireGhReplies,
   root,
   runDir,
+  savedStateComment,
   sh,
   stateComment,
   TIME,

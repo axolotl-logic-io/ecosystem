@@ -10,12 +10,14 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { ownedRequest } from "./fake-ownership.mjs";
 import { ghCalls, openIssue } from "./fake-pipeline-flow-gh.mjs";
 import {
   postComment,
   readWorld,
   withWorld,
 } from "./fake-pipeline-flow-gh-world.mjs";
+import { isCoordinationWrite } from "./pipeline-flow-coordination-test-kit.mjs";
 import { BASE, bareGit, setUpFlow } from "./pipeline-flow-test-kit.mjs";
 
 const RUN_MS = 60_000;
@@ -23,6 +25,9 @@ const MARK = "<!-- agent-pipeline:task-result\n";
 const END = "\n-->";
 const KIND = z.looseObject({ kind: z.string() });
 const GH_WRITE = /^(?:-X|--method)$/u;
+// The coordination records an owner's acquisition and release append
+// (ownedRequest), which are no task record or state.
+const COORDINATION = "<!-- agent-pipeline:coordination\n";
 
 /** @returns {string} a new run identity */
 function runId() {
@@ -70,6 +75,23 @@ const REPLY = z.looseObject({
   status: STATUS.optional(),
 });
 
+// The flows whose next ops request loses its issue to a successor, and
+// whether only after its first write (loseNextOwnership).
+/** @type {Map<import("./pipeline-flow-test-kit.mjs").Flow, boolean>} */
+const losing = new Map();
+
+/**
+ * Makes `flow`'s next ops request lose its issue to a successor just after
+ * its ownership check, or with `afterWrite` just after its first write, so
+ * just before its next one (#169).
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {{ afterWrite?: boolean }} [when]
+ * @returns {void}
+ */
+function loseNextOwnership(flow, { afterWrite = false } = {}) {
+  losing.set(flow, afterWrite);
+}
+
 /**
  * The raw reply of one fresh ops process to `request`.
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
@@ -77,21 +99,32 @@ const REPLY = z.looseObject({
  * @returns {unknown}
  */
 function rawOps(flow, request) {
-  const body = JSON.stringify({ config: flow.config, ...request });
-  const result = spawnSync(
-    process.execPath,
-    [path.join(flow.root, "ops.mjs")],
-    {
-      input: `BEGIN_OPS_REQUEST\n${body}\nEND_OPS_REQUEST`,
-      env: flow.env,
-      encoding: "utf8",
-      timeout: RUN_MS,
+  let lose;
+  const afterWrite = losing.get(flow);
+  if (afterWrite !== undefined) {
+    losing.delete(flow);
+    lose = { bin: path.join(flow.tmp, "bin"), afterWrite };
+  }
+  return ownedRequest(
+    { config: flow.config, env: flow.env, request, lose },
+    (bound) => {
+      const body = JSON.stringify({ config: flow.config, ...bound });
+      const result = spawnSync(
+        process.execPath,
+        [path.join(flow.root, "ops.mjs")],
+        {
+          input: `BEGIN_OPS_REQUEST\n${body}\nEND_OPS_REQUEST`,
+          env: flow.env,
+          encoding: "utf8",
+          timeout: RUN_MS,
+        },
+      );
+      if (result.status !== 0) {
+        throw new Error(`ops exited ${result.status}: ${result.stderr}`);
+      }
+      return JSON.parse(result.stdout);
     },
   );
-  if (result.status !== 0) {
-    throw new Error(`ops exited ${result.status}: ${result.stderr}`);
-  }
-  return JSON.parse(result.stdout);
 }
 
 /**
@@ -186,7 +219,9 @@ function recordText(record) {
 
 /** @param {string} dir @param {number} issue @returns {{ id: number, login: string, body: string }[]} */
 function commentsOn(dir, issue) {
-  return readWorld(dir).comments.filter((item) => item.issue === issue);
+  return readWorld(dir).comments.filter(
+    (item) => item.issue === issue && !item.body.startsWith(COORDINATION),
+  );
 }
 
 /** @param {string} dir @param {number} issue @returns {string[]} the kinds of the issue's task records, in order */
@@ -208,7 +243,8 @@ function callMark(dir) {
 function writesSince(dir, from = 0) {
   return ghCalls(dir)
     .slice(from)
-    .filter((args) => args.some((arg) => GH_WRITE.test(arg)));
+    .filter((args) => args.some((arg) => GH_WRITE.test(arg)))
+    .filter((args) => !isCoordinationWrite(args));
 }
 
 // A version 2 saved state for `issue` with `extra` over a new issue's, as
@@ -269,6 +305,7 @@ export {
   commentsOn,
   digest,
   dropRunFolders,
+  loseNextOwnership,
   plantComment,
   rawOps,
   recordAttempt,

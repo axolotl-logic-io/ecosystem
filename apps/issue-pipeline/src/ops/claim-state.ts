@@ -77,8 +77,13 @@ function assertFirstClaim(
         !own.has(item.id)) ||
       isLegacyPipelineComment(cfg, item),
   );
+  // A job's own checkout is new (#167), but the issue's own worktree, which
+  // its checkout stands in for, may still hold earlier work.
+  const { checkout: _jobCheckout, ...unbound } = cfg;
   const local = [paths.runDir(cfg, number)];
-  if (cfg.checkout?.issue !== number) {
+  if (paths.worktree(unbound, number) !== paths.worktree(cfg, number)) {
+    local.push(paths.worktree(unbound, number));
+  } else if (cfg.checkout?.issue !== number) {
     local.push(paths.worktree(cfg, number));
   }
   // Empty run folders and the current invocation's log/input are not prior work.

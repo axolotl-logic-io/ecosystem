@@ -132,6 +132,16 @@ function stateOf(effects, name) {
   return JSON.parse(json);
 }
 
+// The state the last write named `name` saves: a bound claim checkpoints
+// its receipt before it saves the claimed state (#167).
+/** @param {readonly GhEffect[]} effects @param {string} name @returns {unknown} */
+function lastStateOf(effects, name) {
+  return stateOf(
+    effects.filter(({ effect }) => effect === name).slice(-1),
+    name,
+  );
+}
+
 /** @param {string[]} args @param {string[]} names @returns {string | null} */
 function flagValue(args, names) {
   const at = args.findIndex((arg) => names.includes(arg));
@@ -160,4 +170,4 @@ function prMutations(writes) {
     });
 }
 
-export { bodyOf, effectNames, effectsOf, prMutations, stateOf };
+export { bodyOf, effectNames, effectsOf, lastStateOf, prMutations, stateOf };

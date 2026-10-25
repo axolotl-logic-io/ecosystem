@@ -86,7 +86,10 @@ function pushBranch(cfg: Config, n: number, wt: string, op: string): void {
     throw new OpsError(`#${n}'s code merged; refusing sync push`);
   }
   recordPush(cfg, n, head(wt), op);
-  git(cfg, "dev", ["-C", wt, "push", "--force-with-lease", "origin", target]);
+  // The push record and Sync's attempt reconcile it (sync-task-reconcile.ts).
+  git(cfg, "dev", ["-C", wt, "push", "--force-with-lease", "origin", target], {
+    reconciles: true,
+  });
 }
 
 export { finishProblem, pushBranch, resetToRemote };

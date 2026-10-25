@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { ownerReceipt } from "./fake-ownership.mjs";
 import { stopMutationReplies } from "./gh-mutation-fixtures.mjs";
 
 const kit = await import("./ops-cli-test-kit.mjs");
@@ -101,6 +102,15 @@ function everyCommentsRead(n, comments) {
   return { ...kit.commentsReply(n, comments), keep: true };
 }
 
+// The state a bound claim checkpoints before it derives the claimed state
+// (#167): `saved` with its owner's receipt and the branch it binds. A
+// refused claim writes only this.
+/** @param {{ number?: unknown, [field: string]: unknown }} saved @returns {Record<string, unknown>} */
+function receiptCheckpoint(saved) {
+  const branch = `agent/issue-${String(saved.number)}`;
+  return { ...saved, branch, execution: ownerReceipt() };
+}
+
 // The states the ops wrote, in order.
 /** @returns {unknown[]} */
 function savedStates() {
@@ -177,6 +187,7 @@ export {
   myClaim,
   openIssue,
   prView,
+  receiptCheckpoint,
   recordPipelinePush,
   reviewStopReplies,
   savedStates,

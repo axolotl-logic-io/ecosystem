@@ -1,10 +1,12 @@
 // @ts-check
 // Runs commands for the ops kits: sh() runs a bash command, runOps() sends one
-// request to the ops CLI framed as the workflow frames it, and setEnv() sets a
+// request to the ops CLI framed as the workflow frames it, bound to an owner
+// of its issue as a stage job's is (fake-ownership.mjs), and setEnv() sets a
 // variable in this process's environment. Environment variables are named by
 // strings, so they are kept in a map of names, as src/process.ts takes them.
 import { spawnSync } from "node:child_process";
 import process from "node:process";
+import { bindOpsRequest } from "./fake-ownership.mjs";
 
 const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
 
@@ -18,6 +20,7 @@ const OPS = new URL("../src/ops.ts", import.meta.url).pathname;
  * @property {string} root
  * @property {string} [ops]
  * @property {string} [home]
+ * @property {boolean} [unbound] send the request with no binding added
  */
 
 /**
@@ -69,8 +72,12 @@ function opsEnv(root, home) {
  * @param {OpsRun} run
  * @returns {string}
  */
-function runOps({ config, request, root, ops = OPS, home }) {
-  const body = JSON.stringify({ config, ...request });
+function runOps({ config, request, root, ops = OPS, home, unbound = false }) {
+  let sent = request;
+  if (!unbound) {
+    sent = bindOpsRequest({ config, root, request });
+  }
+  const body = JSON.stringify({ config, ...sent });
   const input = `Issue pipeline ops request follows.\n\nBEGIN_OPS_REQUEST\n${body}\nEND_OPS_REQUEST`;
   const r = spawnSync(process.execPath, [ops], {
     input,

@@ -13,11 +13,15 @@ import {
   ISSUE,
   PR,
 } from "../explicit-target-world-test-kit.mjs";
+import { ownedRequest } from "../fake-ownership.mjs";
 import { OPS } from "../ops-run-test-kit.mjs";
 import { posts } from "./explicit-target-recovery-test-kit.mjs";
 import { confirmedLostResponse } from "./fast-forward-save-state-test-kit.mjs";
 
 const { policyRevision } = await import("../../src/project-policy.ts");
+// The explicit-target fake gh keeps its files, the ownership store among
+// them, in the world's HOME.
+const { HOME: home = "" } = process.env;
 const { readWriteState } = await import("../../src/saved-state.ts");
 
 for (const finding of [
@@ -47,12 +51,22 @@ for (const finding of [
         lane: "lost-response",
         sweepId: "stale-job",
       };
-      const child = spawnSync(process.execPath, [OPS], {
-        input: `BEGIN_OPS_REQUEST\n${JSON.stringify(request)}\nEND_OPS_REQUEST`,
-        cwd: w.wt,
-        encoding: "utf8",
-        timeout: 30_000,
-      });
+      // A stage job's ops child, bound to the job's confirmed invocation.
+      const child = ownedRequest(
+        {
+          config: request.config,
+          env: process.env,
+          request,
+          store: home,
+        },
+        (bound) =>
+          spawnSync(process.execPath, [OPS], {
+            input: `BEGIN_OPS_REQUEST\n${JSON.stringify(bound)}\nEND_OPS_REQUEST`,
+            cwd: w.wt,
+            encoding: "utf8",
+            timeout: 30_000,
+          }),
+      );
       assert.equal(child.status, 0, `${child.stderr} ${child.error}`);
       assert.deepEqual(JSON.parse(child.stdout), {
         ok: true,

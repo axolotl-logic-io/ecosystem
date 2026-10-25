@@ -24,7 +24,7 @@ import {
 
 requireGhReplies();
 
-const { askOps, reply, root, sh, stateComment, worktree } = kit;
+const { askOps, reply, root, sh, savedStateComment, worktree } = kit;
 
 const COMMITTER = "-c user.email=a@b -c user.name=a";
 const CLONE = `${root}/clones/o__r`;
@@ -89,7 +89,10 @@ function claimSaved(n, saved) {
   reply([
     historyReply(n),
     openIssue(n),
-    everyCommentsRead(n, [stateComment(STATE_ID, saved), myClaim(CLAIM_ID)]),
+    everyCommentsRead(n, [
+      savedStateComment(STATE_ID, saved),
+      myClaim(CLAIM_ID),
+    ]),
     ...claimMutationReplies(n, STATE_ID, null),
   ]);
   return CLAIMED.parse(askOps({ op: "claim", number: n, ...LANE })).state;

@@ -15,12 +15,12 @@ import {
   ALLOWED,
   askOps,
   CONFIG,
-  claimComment,
   commentsReply,
   configWith,
   reply,
   requireGhReplies,
   runDir,
+  savedStateComment,
   writes,
 } from "./ops-cli-test-kit.mjs";
 
@@ -37,7 +37,7 @@ const REFUSED =
 const FAILURE = z.object({ ok: z.literal(false), error: z.string() });
 const SUCCESS = z.looseObject({
   ok: z.literal(true),
-  state: z.object({ lease: z.object({ lane: z.string() }) }),
+  state: z.looseObject({ lease: z.object({ lane: z.string() }) }),
 });
 const NUMBER = 901;
 const CLAIM_ID = 9010;
@@ -50,6 +50,7 @@ for (const login of ["visitor", ALLOWED]) {
         body: "Unauthorized requirements",
       }),
       { when: `collaborators/${ALLOWED}`, code: 1, keep: true },
+      historyReply(NUMBER),
     ]);
     const result = FAILURE.parse(
       askOps({ op: "claim", number: NUMBER, ...LANE }),
@@ -57,18 +58,17 @@ for (const login of ["visitor", ALLOWED]) {
     assert.match(result.error, REFUSED);
     assert.equal(fs.existsSync(paths.clone(cfg)), false);
     assert.equal(fs.existsSync(paths.worktree(cfg, NUMBER)), false);
-    assert.equal(fs.existsSync(runDir(NUMBER)), false);
+    // The job's acquisition makes the run folder for its journal (#167);
+    // the refused claim leaves nothing in it.
+    assert.deepEqual(fs.readdirSync(runDir(NUMBER)), []);
     assert.deepEqual(writes(), []);
   });
 }
 
 test("author revocation between jobs refuses the next claim and preserves earlier issue inputs", () => {
-  const mine = claimComment(CLAIM_ID, LANE.lane, LANE.sweepId, LIVE);
   reply([
     issueReply(NUMBER, { user: { login: ALLOWED } }),
-    commentsReply(NUMBER, []),
-    { when: `issues/${NUMBER}/comments -f`, stdout: JSON.stringify(mine) },
-    { ...commentsReply(NUMBER, [mine]), keep: true },
+    { ...commentsReply(NUMBER, []), keep: true },
     historyReply(NUMBER),
     collaboratorReply("o/r", ALLOWED),
     ...claimMutationReplies(NUMBER, CLAIM_ID, null),
@@ -78,6 +78,12 @@ test("author revocation between jobs refuses the next claim and preserves earlie
   );
   assert.equal(initial.state.lease.lane, LANE.lane);
   assert.ok(writes().length > 0);
+  // The state the first job saved, at a real time rather than the reply's
+  // placeholder.
+  const saved = {
+    ...initial.state,
+    lease: { ...initial.state.lease, at: LIVE },
+  };
   const file = path.join(runDir(NUMBER), "issue.md");
   const before = fs.readFileSync(file, "utf8");
   for (const { config, collaboratorCode } of [
@@ -87,10 +93,12 @@ test("author revocation between jobs refuses the next claim and preserves earlie
       collaboratorCode: 0,
     },
   ]) {
+    // The next job claims the state the first one saved and released.
     reply([
       issueReply(NUMBER, { user: { login: ALLOWED }, body: "Revoked edit" }),
-      commentsReply(NUMBER, [mine]),
+      commentsReply(NUMBER, [savedStateComment(CLAIM_ID, saved)]),
       { when: `collaborators/${ALLOWED}`, code: collaboratorCode, keep: true },
+      historyReply(NUMBER),
     ]);
     const result = FAILURE.parse(
       askOps({ op: "claim", config, number: NUMBER, ...LANE }),

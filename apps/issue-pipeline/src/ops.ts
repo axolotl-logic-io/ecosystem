@@ -29,7 +29,7 @@ import { claim } from "./ops/claim.ts";
 import { cleanup } from "./ops/cleanup.ts";
 import { confirmMergedOp } from "./ops/confirm-merged.ts";
 import { currentRevisionOp } from "./ops/current-revision.ts";
-import { boundOps } from "./ops/execution-envelope.ts";
+import { boundOps, unboundOps } from "./ops/execution-envelope.ts";
 import { closeParent, finishIssue } from "./ops/finish.ts";
 import { integrationTaskOps } from "./ops/integration-task.ts";
 import { merge, reconcileLand } from "./ops/merge.ts";
@@ -88,8 +88,8 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   // Completes an issue its merge role saved done and merged.
   ["finish", finishIssue],
   ["close-parent", closeParent],
-  // A stage job's claim is bound to its confirmed invocation (#167); only
-  // the ops CLI's own tests still send an unbound one.
+  // A stage job's claim is bound to its confirmed invocation (#167); an
+  // unbound one can read but not write (#169).
   [
     "claim",
     (cfg: Config, request: unknown): object => {
@@ -169,7 +169,9 @@ function runRequest(request: unknown): OpsReply {
   }
   let cfg = withCheckout(loadConfig(config ?? undefined), checkout);
   assertPolicyDigest(cfg, policyDigest);
-  if (envelope.execution !== undefined) {
+  if (envelope.execution === undefined) {
+    cfg = unboundOps(cfg);
+  } else {
     cfg = boundOps(cfg, envelope.execution, envelope);
   }
   fs.mkdirSync(ROOT, { recursive: true });

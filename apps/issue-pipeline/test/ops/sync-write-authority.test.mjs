@@ -68,6 +68,10 @@ const SYNC_REFUSALS = new Map([
   ["rejected", /code merged, so (?:sync-base|finish-sync) can't push code/u],
 ]);
 const PUSH_REFUSAL = /code merged; refusing sync push/u;
+// How many comment listings a bound sync request makes before its push-time
+// authority recheck: its ownership checks (#169) and its earlier authority
+// reads. The saved state they all read changes just before the recheck.
+const READS_BEFORE_RECHECK = 9;
 for (const [at, [denied, refusal]] of [...SYNC_REFUSALS].entries()) {
   test(`sync entry refuses ${denied} before abort/reset/rebase; exact conflict and dirty work remain`, () => {
     const n = FIRST_REFUSAL_ISSUE + at;
@@ -147,7 +151,7 @@ test("finish-sync rechecks authority immediately before its raw push and retains
   const before = fx.worktreeState(n);
   const state = saved(n);
   fx.fakeGh.reply([
-    { ...authority(n, state), keep: false },
+    { ...authority(n, state), serve: READS_BEFORE_RECHECK },
     authority(n, { ...state, codeMerged: { pr: PR, sha: remote } }),
     historyReply(n),
   ]);
@@ -171,7 +175,7 @@ test("sync-base's final authority refusal restores its original unpushed local c
   const before = fx.worktreeState(n);
   const state = saved(n);
   fx.fakeGh.reply([
-    { ...authority(n, state), keep: false },
+    { ...authority(n, state), serve: READS_BEFORE_RECHECK },
     authority(n, { ...state, codeMerged: { pr: PR, sha: remote } }),
     historyReply(n),
   ]);

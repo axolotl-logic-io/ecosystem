@@ -3,10 +3,12 @@
 // system gh, keyring, network or provider fallback.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
 import { githubComment } from "./fake-gh.mjs";
+import { batchAnswer, batchIds } from "./fake-graphql-batch.mjs";
 
 const FAKE_IDENTITY = /^fake-pipeline-(?<identity>dev|merge)--(?<login>.+)$/u;
 const COMMAND_TIMEOUT_MS = 20_000;
@@ -60,6 +62,12 @@ if (identity !== expectedIdentity) {
   throw new Error("wrong fake credential identity");
 }
 
+// A bound ops child's ownership reads and the records an acquisition writes
+// (fake-ownership.mjs, #169), kept out of the scripted calls.
+const { serveOwnership } = createRequire(import.meta.url)(
+  "./fake-ownership-gh.cjs",
+);
+const ownership = serveOwnership(home, args, login);
 fs.appendFileSync(
   path.join(home, "gh-calls.jsonl"),
   `${JSON.stringify(args)}\n`,
@@ -82,7 +90,45 @@ if (
     ".[] | @json",
   ])
 ) {
-  process.stdout.write(JSON.stringify(comment));
+  const records = ownership?.records ?? [];
+  process.stdout.write(
+    [comment, ...records].map((item) => JSON.stringify(item)).join("\n"),
+  );
+  process.exit(0);
+}
+const stateNode = {
+  databaseId: 900,
+  body,
+  author: { login },
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+  lastEditedAt: null,
+  editor: null,
+};
+const batch = batchIds(args);
+if (args[0] === "api" && args[1] === "graphql" && batch !== null) {
+  const records = JSON.parse(
+    fs.readFileSync(path.join(home, "ownership.json"), "utf8"),
+  ).comments;
+  /** @param {string} id @returns {object} */
+  function nodeOf(id) {
+    if (id === "comment-900") {
+      return stateNode;
+    }
+    const item = records.find(
+      (/** @type {{ node_id: string }} */ record) => record.node_id === id,
+    );
+    return {
+      databaseId: item.id,
+      body: item.body,
+      author: item.user,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+      lastEditedAt: null,
+      editor: null,
+    };
+  }
+  process.stdout.write(batchAnswer(batch, nodeOf));
   process.exit(0);
 }
 if (

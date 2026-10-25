@@ -20,8 +20,8 @@ import {
   reply,
   requireGhReplies,
   root,
+  savedStateComment,
   sh,
-  stateComment,
   writes,
 } from "../ops-cli-test-kit.mjs";
 // ops-v2-test-kit.mjs makes the clone a claim reads.
@@ -71,7 +71,7 @@ function checkoutOf(n, branch) {
 function claim(n, saved, checkout) {
   const read = [];
   if (saved !== null) {
-    read.push(stateComment(STATE_COMMENT, saved));
+    read.push(savedStateComment(STATE_COMMENT, saved));
   }
   const mine = claimComment(n * CLAIM_IDS, "me", "s1", LIVE);
   const branch =
