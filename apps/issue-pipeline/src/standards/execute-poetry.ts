@@ -6,7 +6,8 @@
 // network: `poetry install --no-root` (dependencies, wheels only, into
 // /work/.venv) and `pip-audit` over that environment. Only then does
 // repository code run, with no network: `poetry install --only-root` and
-// pytest. As for npm, the criteria hold only exit codes and advisory counts.
+// pytest, twice and then with a deliberately failing test added, as for npm
+// (execute.ts). The criteria hold only exit codes and advisory counts.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -19,6 +20,8 @@ import {
   inWorkspace,
   nothingRun,
   Steps,
+  testFolder,
+  testsRunCriterion,
   unrun,
 } from "./execute.ts";
 import type { SandboxRun } from "./sandbox.ts";
@@ -34,6 +37,21 @@ const POETRY = `${TOOLS}/venv/bin/poetry`;
 const PIP_AUDIT = `${TOOLS}/venv/bin/pip-audit`;
 const PROJECT_PYTHON = "/work/.venv/bin/python";
 const LOCAL_SOURCES = new Set(["directory", "file"]);
+const PYTHON_TEST_DIRS = ["tests", "test"];
+// Writes argv[2] to the path argv[1] under /work, inside the sandbox (see
+// execute.ts's NODE_WRITER).
+const PYTHON_WRITER = [
+  "import pathlib, sys",
+  "path = pathlib.Path(sys.argv[1])",
+  "path.parent.mkdir(parents=True, exist_ok=True)",
+  "path.write_text(sys.argv[2])",
+].join("; ");
+const PYTHON_MISMATCH = [
+  "# Added by the standards assessment: a deliberately failing test.",
+  "def test_standards_deliberate_mismatch():",
+  '    assert 1 == 2, "standards assessment: deliberate mismatch"',
+  "",
+].join("\n");
 const LOCK = z.looseObject({
   package: z
     .array(
@@ -162,7 +180,11 @@ function failedInstall(evidence: string): Criterion[] {
   ];
 }
 
-function poetryRuns(steps: Steps, python: string): Criterion[] {
+function poetryRuns(
+  steps: Steps,
+  python: string,
+  planted: string,
+): Criterion[] {
   const made = steps.run(
     tool(
       "python-venv",
@@ -233,19 +255,20 @@ function poetryRuns(steps: Steps, python: string): Criterion[] {
       },
     ];
   }
-  const test = steps.run(poetry(["run", "python", "-m", "pytest"], false));
-  let tests: Criterion = {
-    id: "behavior.tests-run",
-    status: "passed",
-    evidence: "poetry run python -m pytest exited 0 with no network",
-  };
-  if (test.exitCode !== 0) {
-    tests = {
-      id: "behavior.tests-run",
-      status: "failed",
-      evidence: `${exited("poetry run python -m pytest", test, COMMAND_MS)} with no network`,
-    };
-  }
+  const tests = testsRunCriterion({
+    shown: "poetry run python -m pytest",
+    run: () => steps.run(poetry(["run", "python", "-m", "pytest"], false)),
+    plant: () =>
+      steps.run(
+        tool(
+          "write-mismatch",
+          ["write-test", planted],
+          [python, "-I", "-c", PYTHON_WRITER, planted, PYTHON_MISMATCH],
+          false,
+        ),
+      ),
+    planted,
+  });
   return [
     {
       id: "environment.install",
@@ -332,7 +355,11 @@ function executePoetry(source: Source, options: Options): Execution {
       sandbox: record,
       commands: steps.commands,
       logs: steps.logs,
-      criteria: poetryRuns(steps, python.executable),
+      criteria: poetryRuns(
+        steps,
+        python.executable,
+        `${testFolder(source, PYTHON_TEST_DIRS)}test_standards_mismatch.py`,
+      ),
     };
   });
 }

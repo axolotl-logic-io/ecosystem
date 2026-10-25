@@ -115,10 +115,10 @@ function clearHits() {
 
 /**
  * A Node app depending on leftish from the fake registry, whose tests are
- * `files` run by `node --test`.
- * @param {Record<string, string>} files
+ * `files` run by its `test` script.
+ * @param {Record<string, string>} files @param {string} script
  */
-function appWith(files) {
+function appWith(files, script) {
   const tarball = fs.readFileSync(
     path.join(work, "tarballs", "leftish-1.0.0.tgz"),
   );
@@ -128,7 +128,7 @@ function appWith(files) {
     version: "1.0.0",
     private: true,
     engines: { node: ">=24" },
-    scripts: { test: "node --test" },
+    scripts: { test: script },
     dependencies: { leftish: "1.0.0" },
   };
   const lock = {
@@ -158,6 +158,23 @@ function appWith(files) {
   };
 }
 
+// Passes on its first run and fails on every later one: it leaves a mark in
+// the work folder, which outlives one sandboxed command.
+const FLAKY = [
+  "const fs = require('node:fs');",
+  "const test = require('node:test');",
+  "const assert = require('node:assert');",
+  "test('flips', () => {",
+  "  const seen = fs.existsSync('.ran');",
+  "  fs.writeFileSync('.ran', '');",
+  "  assert.equal(seen, false);",
+  "});",
+  "",
+].join("\n");
+const FLAKY_EVIDENCE = /flaky: it exited 0, then 1/u;
+const FALSE_SUCCESS =
+  /exited 0 again with a deliberately failing test added at test\/standards-mismatch\.test\.js/u;
+
 const PASSING = {
   "test/pad.test.js": [
     "const test = require('node:test');",
@@ -181,9 +198,12 @@ function evidenceOf(run, id) {
   return found?.evidence ?? "";
 }
 
-/** @param {Record<string, string>} files @param {Record<string, string>} [env] */
-function assessApp(files, env = {}) {
-  return assess(appWith(files), {
+/**
+ * @param {Record<string, string>} files @param {Record<string, string>} [env]
+ * @param {string} [script] the app's test script
+ */
+function assessApp(files, env = {}, script = "node --test") {
+  return assess(appWith(files, script), {
     view: { protection: ["test"], rules: [] },
     args: ["--npm-registry", url],
     env,
@@ -221,6 +241,9 @@ describe("standards-upgrade assess in the sandbox", () => {
         ["npm audit --json", true, 0],
         ["npm rebuild --foreground-scripts", false, 0],
         ["npm test", false, 0],
+        ["npm test", false, 0],
+        ["write-test test/standards-mismatch.test.js", false, 0],
+        ["npm test", false, 1],
       ],
     );
     assert.equal(assessment.sandbox?.registry, url);
@@ -230,6 +253,9 @@ describe("standards-upgrade assess in the sandbox", () => {
       "2-npm-audit.log",
       "3-npm-rebuild.log",
       "4-npm-test.log",
+      "5-npm-test.log",
+      "6-write-mismatch.log",
+      "7-npm-test.log",
     ]);
     assert.deepEqual(
       hits().map((hit) => `${hit.method} ${hit.url}`),
@@ -265,6 +291,53 @@ describe("standards-upgrade assess in the sandbox", () => {
     );
     assert.match(evidenceOf(failing, "behavior.tests-run"), EXITED_1);
     assert.equal(failing.assessment().verdict, "not-acceptable");
+  });
+
+  test("fails a flaky suite and a runner that exits 0 with a failing test", () => {
+    advise("{}");
+    const flaky = assessApp({ "test/flip.test.js": FLAKY });
+    assert.equal(statusOf(flaky.assessment(), "behavior.tests-run"), "failed");
+    assert.match(evidenceOf(flaky, "behavior.tests-run"), FLAKY_EVIDENCE);
+    const hiding = assessApp(PASSING, {}, "node --test || true");
+    assert.equal(statusOf(hiding.assessment(), "behavior.tests-run"), "failed");
+    assert.match(evidenceOf(hiding, "behavior.tests-run"), FALSE_SUCCESS);
+    for (const run of [flaky, hiding]) {
+      assert.equal(run.assessment().verdict, "not-acceptable");
+    }
+  });
+
+  test("writes the failing test inside the sandbox, so a planted symlink can't reach the host", () => {
+    advise("{}");
+    const target = path.join(work, "escaped.js");
+    const planting = [
+      "const fs = require('node:fs');",
+      "const test = require('node:test');",
+      // On the second run, after its files are found, so both runs pass.
+      "test('plants a symlink where the failing test goes', () => {",
+      "  if (!fs.existsSync('.ran')) { fs.writeFileSync('.ran', ''); return; }",
+      "  try {",
+      `    fs.symlinkSync(${JSON.stringify(target)}, 'test/standards-mismatch.test.js');`,
+      "  } catch {}",
+      "});",
+      "",
+    ].join("\n");
+    const run = assessApp({ "test/plant.test.js": planting });
+    assert.equal(run.code, 0, run.stderr);
+    assert.equal(fs.existsSync(target), false);
+    assert.deepEqual(
+      run
+        .assessment()
+        .commands.slice(-2)
+        .map(({ argv, exitCode }) => [argv[0], exitCode]),
+      [
+        ["npm", 0],
+        ["write-test", 1],
+      ],
+    );
+    assert.equal(
+      statusOf(run.assessment(), "behavior.tests-run"),
+      "unverified",
+    );
   });
 
   test("gives repository code no credential, host file, process or network, and keeps its output out of the results", () => {

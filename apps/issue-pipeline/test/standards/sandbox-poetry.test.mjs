@@ -58,6 +58,24 @@ const WORKFLOW = [
   "      - run: poetry run pytest",
   "",
 ].join("\n");
+// Passes on its first run and fails on every later one, through a mark in
+// the work folder.
+const FLAKY = [
+  "import pathlib",
+  "",
+  "",
+  "def test_flips():",
+  '    mark = pathlib.Path(".ran")',
+  "    seen = mark.exists()",
+  "    mark.write_text('')",
+  "    assert not seen",
+  "",
+].join("\n");
+const FLAKY_EVIDENCE = /flaky: it exited 0, then 1/u;
+// A pytest.py that exits 0 without running anything.
+const SHADOW = ["raise SystemExit(0)", ""].join("\n");
+const FALSE_SUCCESS =
+  /exited 0 again with a deliberately failing test added at tests\/test_standards_mismatch\.py/u;
 const PASSING = [
   "from aoc.day1 import solve",
   "",
@@ -265,6 +283,9 @@ describe("standards-upgrade assess on Poetry in the sandbox", () => {
         ["pip-audit --format json", true, 0],
         ["poetry install --only-root", false, 0],
         ["poetry run python -m pytest", false, 0],
+        ["poetry run python -m pytest", false, 0],
+        ["write-test tests/test_standards_mismatch.py", false, 0],
+        ["poetry run python -m pytest", false, 1],
       ],
     );
     for (const name of ["poetry", "pip-audit", "pytest"]) {
@@ -310,6 +331,22 @@ describe("standards-upgrade assess on Poetry in the sandbox", () => {
         ["python3", "pip"],
       );
     }
+  });
+
+  test("fails a flaky suite and a pytest that exits 0 with a failing test", () => {
+    const flaky = assessProject({ "tests/test_flip.py": FLAKY }, "clean");
+    assert.equal(statusOf(flaky.assessment(), "behavior.tests-run"), "failed");
+    assert.match(evidenceOf(flaky, "behavior.tests-run"), FLAKY_EVIDENCE);
+    // A repository's own pytest.py shadows pytest for `python -m pytest`.
+    const shadowed = assessProject(
+      { "tests/test_day1.py": PASSING, "pytest.py": SHADOW },
+      "clean",
+    );
+    assert.equal(
+      statusOf(shadowed.assessment(), "behavior.tests-run"),
+      "failed",
+    );
+    assert.match(evidenceOf(shadowed, "behavior.tests-run"), FALSE_SUCCESS);
   });
 
   test("gives Poetry repository code no credential, host package, process or network", () => {
