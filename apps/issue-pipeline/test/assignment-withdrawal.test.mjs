@@ -22,9 +22,14 @@ import { humanComment } from "./fake-pipeline-flow-gh.mjs";
 import {
   assignIssue,
   cutListing,
+  recordEvent,
   unassignIssue,
 } from "./fake-pipeline-flow-gh-assignments.mjs";
-import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import {
+  issueOf,
+  readWorld,
+  withWorld,
+} from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import {
   implementorTurn,
@@ -76,7 +81,7 @@ test("the grantor's withdrawal pauses the job before it claims, and only a newer
   assert.equal(savedState(readWorld(flow.ghDir)).stage, "review");
 });
 
-test("another account's assignment grants nothing; its change, or an untrusted comment, after a grant pauses", async () => {
+test("another account's assignment grants nothing; its change, an untrusted comment or another account's closure after a grant pauses", async () => {
   const flow = assignedFlow();
   // alice is a trusted collaborator, but not the grantor.
   assignIssue(flow.ghDir, ISSUE, HIPPY, "alice");
@@ -101,6 +106,13 @@ test("another account's assignment grants nothing; its change, or an untrusted c
     visited.line.reason,
     `paused: untrusted mallory commented after ${GRANTOR}'s grant`,
   );
+  assignIssue(flow.ghDir, ISSUE, HIPPY, GRANTOR);
+  withWorld(flow.ghDir, (world) => {
+    Object.assign(issueOf(world, ISSUE), { state: "closed" });
+    recordEvent(world, ISSUE, { event: "closed", actor: "alice" });
+  });
+  const closed = await startAssigned(flow, "implement");
+  assert.equal(closed.line.reason, `paused: #${ISSUE} is closed`);
   assert.deepEqual(ghWrites(flow), []);
   assert.deepEqual(sessions(flow), []);
 });

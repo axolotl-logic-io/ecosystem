@@ -19,7 +19,11 @@ import {
   assignIssue,
   cutListing,
 } from "./fake-pipeline-flow-gh-assignments.mjs";
-import { readWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import {
+  issueOf,
+  readWorld,
+  withWorld,
+} from "./fake-pipeline-flow-gh-world.mjs";
 import { piLog } from "./fake-pipeline-flow-pi.mjs";
 import {
   implementorTurn,
@@ -132,4 +136,34 @@ test("a repo without a grantor isn't swept", () => {
       hold: "assignment mode isn't enabled for o/r (assignments.grantor)",
     },
   ]);
+});
+
+test("an open after prerequisite holds the work until it closes", async () => {
+  const flow = setUpFlow();
+  optIn(flow);
+  scriptPi(flow, { implementor: [implementorTurn("Hello!", "Greet")] });
+  const body = `Say hello.\n\n<!-- agent-pipeline:after ${SECOND} -->`;
+  openIssue(flow.ghDir, {
+    number: FIRST,
+    title: "Greet",
+    body,
+    login: "alice",
+  });
+  openIssue(flow.ghDir, {
+    number: SECOND,
+    title: "First",
+    body: "",
+    login: "alice",
+  });
+  assignIssue(flow.ghDir, FIRST, HIPPY, GRANTOR);
+  const run = runFolder(flow, { maxJobs: 1 });
+  const [held] = sweep(flow, run);
+  assert.equal(held.hold, `prerequisite #${SECOND} is open, not closed`);
+  withWorld(flow.ghDir, (world) => {
+    Object.assign(issueOf(world, SECOND), { state: "closed" });
+  });
+  const decisions = sweep(flow, run);
+  assert.equal(decisions[0].start.stage, "implement");
+  const [job] = await startedJobs(flow, decisions);
+  assert.equal(job?.line.end, "next");
 });

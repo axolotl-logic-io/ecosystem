@@ -8,6 +8,7 @@
 //   open-issue listing cut short                   → hold the repo
 //   issue assigned to neither buddy's account      → not considered
 //   saved state unreadable, stopped or done        → hold
+//   an `after` prerequisite not closed             → hold
 //   next work: a task request the issue's last job
 //     printed, else the saved stage (implement for
 //     new work)
@@ -30,10 +31,12 @@ import {
   holdOf,
   holdReason,
 } from "../../src/assignment/hold.ts";
+import { AFTER_MARK } from "../../src/comment-marks.ts";
 import type { IssueComment } from "../../src/comments.ts";
 import { listComments } from "../../src/comments.ts";
 import type { Config } from "../../src/config.ts";
 import { loadConfig } from "../../src/config.ts";
+import { issueState } from "../../src/github.ts";
 import { buddyAccountOf } from "../../src/job/assignment.ts";
 import type { JobTask } from "../../src/job/task-request.ts";
 import { JOB_TASKS, TASK_NAMES } from "../../src/job/task-request.ts";
@@ -125,6 +128,26 @@ function workOf(
   );
 }
 
+// The issue's first `after` prerequisite that GitHub doesn't show closed,
+// as a hold, or null. A malformed marker or an unreadable issue holds too.
+function unmetPrerequisite(cfg: Config, issue: OpenIssue): string | null {
+  const body = issue.body ?? "";
+  const { after } = AFTER_MARK.exec(body)?.groups ?? {};
+  if (after === undefined) {
+    if (body.includes("<!-- agent-pipeline:after")) {
+      return "its after marker doesn't parse";
+    }
+    return null;
+  }
+  for (const number of after.split(",").filter(Boolean).map(Number)) {
+    const state = issueState(cfg, number);
+    if (state !== "closed") {
+      return `prerequisite #${number} is ${state ?? "unreadable"}, not closed`;
+    }
+  }
+  return null;
+}
+
 // Why the issue's durable hold (#174) still holds `what`, or null.
 function heldBy(
   cfg: Config,
@@ -165,6 +188,10 @@ function decide(
     state = readClaimState(cfg, issue.number, comments);
   } catch (error: unknown) {
     return { ...decided, hold: `saved state: ${messageOf(error)}` };
+  }
+  const blocked = unmetPrerequisite(cfg, issue);
+  if (blocked !== null) {
+    return { ...decided, hold: blocked };
   }
   const work = workOf(sweep.run, cfg, issue.number, state);
   if (typeof work === "string") {

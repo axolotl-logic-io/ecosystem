@@ -7,6 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { batchAnswer, batchIds } from "./fake-graphql-batch.mjs";
 import { api } from "./fake-pipeline-flow-gh-api.mjs";
+import { recordEvent } from "./fake-pipeline-flow-gh-assignments.mjs";
 import {
   hasGates,
   holdAtGate,
@@ -63,6 +64,7 @@ function issueCommand(world, args) {
   }
   const reason = flagValue(args, "--reason") ?? "completed";
   Object.assign(item, { state: "closed", stateReason: reason });
+  recordEvent(world, item.number, { event: "closed", actor: world.account });
   const said = flagValue(args, "--comment");
   if (said !== null) {
     postComment(world, item.number, world.account, said);
