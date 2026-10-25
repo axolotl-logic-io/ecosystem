@@ -49,4 +49,4 @@ const pushOps: Readonly<Record<string, PushOp>> = {
   "exit-push": exitPushOp,
 };
 
-export { pushOps, refuseOnceLanded };
+export { pushOp, pushOps, refuseOnceLanded };

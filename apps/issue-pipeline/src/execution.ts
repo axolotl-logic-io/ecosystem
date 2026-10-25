@@ -1,8 +1,7 @@
-// GitHub transport and recovery journal for both coordination scopes, and the
-// mutation hook that fences a bound job's or ops request's credentialed
+// GitHub transport and recovery journal for every coordination scope, and
+// the mutation hook that fences a bound job's or ops request's credentialed
 // writes with it (controlledMutation). It is not a scheduler.
 import { z } from "zod";
-import { assertGranted } from "./assignment/grant.ts";
 import type { IssueComment } from "./comments.ts";
 import { listComments, listRepoComments, rawComment } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -11,15 +10,17 @@ import type {
   CoordinationPort,
   Evidence,
   InvocationBinding,
+  SharedResource,
+  Snapshot,
 } from "./coordination.ts";
-import { coordination } from "./coordination.ts";
+import { coordination, slotCoordination, surveySlots } from "./coordination.ts";
 import {
   assertReconciled,
   confirmedWrite,
   writing,
 } from "./coordination-journal.ts";
 import { INVOCATION_BINDING } from "./coordination-record-schema.ts";
-import { scopeOf } from "./coordination-records.ts";
+import { resourceScopeOf, scopeOf } from "./coordination-records.ts";
 import { gh, ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
@@ -169,6 +170,36 @@ function integrationTurn(
     identity,
   );
 }
+// Slot `slot` of a shared resource, held by issue `issue`'s invocation,
+// whose requests declare capacity `cap`. As with the integration turn, the
+// issue's confirmed execution is an additional restriction on every read and
+// write of it; its records go on that issue.
+function resourceSlot(
+  cfg: Config,
+  issue: number,
+  resource: SharedResource,
+  slot: { slot: number; cap: number },
+): ReturnType<typeof coordination> {
+  assertExecution(cfg, issue);
+  const identity = bindingOf(cfg, issue);
+  return slotCoordination(
+    cfg,
+    portOf(cfg, issue, true),
+    { scope: resourceScopeOf(identity, resource, slot.slot), cap: slot.cap },
+    identity,
+  );
+}
+// Every slot of `resource` that the repository's records name or `cap`
+// covers, read once under issue `issue`'s confirmed execution.
+function resourceSurvey(
+  cfg: Config,
+  issue: number,
+  resource: SharedResource,
+  cap: number,
+): ReadonlyMap<number, Snapshot> {
+  assertExecution(cfg, issue);
+  return surveySlots(cfg, portOf(cfg, issue, true), resource, cap);
+}
 function assertExecution(cfg: Config, issue: number): void {
   assertReconciled(cfg, issue);
   issueExecution(cfg, issue).assertOwner();
@@ -183,8 +214,7 @@ function guardExecution(cfg: Config, issue: number): void {
 }
 
 // Each credentialed write of a bound job or ops request: a fresh ownership
-// read, for a job started for an assignment a fresh grant read (#119), then
-// the write journaled with its exact intent (#169). A write inside
+// read, then the write journaled with its exact intent (#169). A write inside
 // another journaled write runs under that one's journal, and one whose own
 // operation reconciles it by reading isn't journaled again.
 function controlledMutation(
@@ -197,9 +227,6 @@ function controlledMutation(
     return write();
   }
   guardExecution(cfg, execution.issue);
-  if (cfg.grant !== undefined) {
-    assertGranted(cfg, execution.issue, cfg.grant.login);
-  }
   if (!intent.journal || writing(cfg, execution.issue)) {
     return write();
   }
@@ -239,5 +266,7 @@ export {
   guardExecution,
   integrationTurn,
   issueExecution,
+  resourceSlot,
+  resourceSurvey,
   withExecution,
 };

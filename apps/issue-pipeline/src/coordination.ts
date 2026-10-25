@@ -2,13 +2,20 @@
 // refs arbitrate contenders even when comment listings interleave. No expiry,
 // ref deletion, private queue, discovery or scheduling loop grants permission.
 import type { Config } from "./config.ts";
-import { INVOCATION_BINDING } from "./coordination-record-schema.ts";
+import {
+  INVOCATION_BINDING,
+  RESOURCE_RECORD_VERSION,
+} from "./coordination-record-schema.ts";
 import type {
+  Consumer,
+  ConsumerState,
   CoordinationPort,
   Evidence,
   InvocationBinding,
   Record,
+  RecordVersion,
   Request,
+  SharedResource,
   Snapshot,
 } from "./coordination-records.ts";
 import {
@@ -16,7 +23,10 @@ import {
   bodyOf,
   hold,
   own,
+  recordVersion,
   refOf,
+  resourceScopeOf,
+  resourceSlotsOf,
   sameBinding,
   snapshot,
 } from "./coordination-records.ts";
@@ -41,16 +51,25 @@ class Coordination {
   private readonly port: CoordinationPort;
   private readonly scope: string;
   private readonly binding: InvocationBinding;
+  private readonly version: RecordVersion;
+  // The capacity a resource slot's request declares; undefined elsewhere.
+  private readonly cap: number | undefined;
   constructor(
     cfg: Config,
     port: CoordinationPort,
-    scope: string,
+    at: { scope: string; cap?: number },
     identity: InvocationBinding,
   ) {
+    const { scope, cap } = at;
     this.cfg = cfg;
     this.port = port;
     this.scope = scope;
     this.binding = INVOCATION_BINDING.parse(identity);
+    this.version = recordVersion(scope);
+    this.cap = cap;
+    if ((this.version === RESOURCE_RECORD_VERSION) !== (cap !== undefined)) {
+      hold("only a resource slot request declares its capacity, and it must");
+    }
     assertScope(scope, this.binding);
     if (identity.repo !== cfg.repo || identity.base !== cfg.baseBranch) {
       hold("execution repository/base binding changed");
@@ -102,14 +121,19 @@ class Coordination {
     ) {
       hold("released instance cannot request again");
     }
-    this.append({
-      version: 2,
+    const request: Record = {
+      version: this.version,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind: "request",
       binding: this.binding,
       token: this.port.token(this.binding),
-    });
+    };
+    if (this.cap === undefined) {
+      this.append(request);
+    } else {
+      this.append({ ...request, cap: this.cap });
+    }
     const saved = this.read().pending.find(
       (item) => item.binding.instance === this.binding.instance,
     );
@@ -146,7 +170,7 @@ class Coordination {
     }
     if (!reserved.confirmed) {
       this.append({
-        version: 2,
+        version: this.version,
         scope: this.scope,
         operation: crypto.randomUUID(),
         kind: "confirm",
@@ -161,9 +185,13 @@ class Coordination {
     own(this.read(), this.binding);
   }
   private mutate(kind: "save" | "release", evidence?: Evidence): void {
-    const owner = own(this.read(), this.binding);
+    const view = this.read();
+    const owner = own(view, this.binding);
+    if (kind === "release" && view.consumers.some((entry) => !entry.done)) {
+      hold("a registered consumer has not reported done");
+    }
     this.append({
-      version: 2,
+      version: this.version,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind,
@@ -184,11 +212,39 @@ class Coordination {
   release(): void {
     this.mutate("release");
   }
+  // The confirmed owner's consumers of a resource slot, read afresh.
+  consumers(): readonly ConsumerState[] {
+    const view = this.read();
+    own(view, this.binding);
+    return view.consumers;
+  }
+  // Records, as the confirmed owner of a resource slot, that `consumer`
+  // starts using it (`register`, before it starts) or is done with it.
+  report(kind: "register" | "done", consumer: Consumer): void {
+    if (this.version !== RESOURCE_RECORD_VERSION) {
+      hold("only a resource slot has consumers");
+    }
+    const owner = own(this.read(), this.binding);
+    this.append({
+      version: RESOURCE_RECORD_VERSION,
+      scope: this.scope,
+      operation: crypto.randomUUID(),
+      kind,
+      request: owner.id,
+      instance: this.binding.instance,
+      consumer,
+    });
+    own(this.read(), this.binding);
+  }
   // Retires an earlier invocation's request for the same work: a release
   // while it owns the confirmed scope, a cancel while it only waits. The
   // caller has read that the request's consumer is done and holds that
-  // work's execution itself (ops/land-turn.ts); the record names it.
+  // work's execution itself (ops/land-turn.ts); the record names it. A
+  // resource slot is released only by its own holder, so none is retired.
   retire(request: Request): void {
+    if (this.version === RESOURCE_RECORD_VERSION) {
+      hold("only its holder releases a resource slot");
+    }
     const view = this.read();
     const row = view.pending.find((item) => item.id === request.id);
     if (
@@ -207,7 +263,7 @@ class Coordination {
       kind = "release";
     }
     this.append({
-      version: 2,
+      version: this.version,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind,
@@ -232,7 +288,7 @@ class Coordination {
       hold("cannot cancel absent request or owner");
     }
     this.append({
-      version: 2,
+      version: this.version,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind: "cancel",
@@ -257,14 +313,52 @@ function coordination(
   scope: string,
   identity: InvocationBinding,
 ): Coordination {
-  return new Coordination(cfg, port, scope, identity);
+  return new Coordination(cfg, port, { scope }, identity);
+}
+// The coordination of a resource slot's scope, whose requests declare the
+// capacity, `cap`, that its caller reserves under.
+function slotCoordination(
+  cfg: Config,
+  port: CoordinationPort,
+  slot: { scope: string; cap: number },
+  identity: InvocationBinding,
+): Coordination {
+  return new Coordination(cfg, port, slot, identity);
+}
+// Each slot of `resource` on cfg's repository and base that a record names
+// or `cap` covers, with its snapshot, all from one listing of the port's
+// comments. The survey is read-only; every effect reads afresh.
+function surveySlots(
+  cfg: Config,
+  port: CoordinationPort,
+  resource: SharedResource,
+  cap: number,
+): ReadonlyMap<number, Snapshot> {
+  const comments = port.comments();
+  const listed = onceRead({ ...port, comments: () => comments });
+  const slots = new Set(resourceSlotsOf(cfg, comments, resource));
+  for (let slot = 1; slot <= cap; slot += 1) {
+    slots.add(slot);
+  }
+  const at = { repo: cfg.repo, base: cfg.baseBranch };
+  return new Map(
+    [...slots]
+      .sort((a, b) => a - b)
+      .map((slot): [number, Snapshot] => [
+        slot,
+        snapshot(cfg, listed, resourceScopeOf(at, resource, slot)),
+      ]),
+  );
 }
 
 export type {
+  Consumer,
+  ConsumerState,
   CoordinationPort,
   Evidence,
   InvocationBinding,
   Request,
+  SharedResource,
   Snapshot,
 } from "./coordination-records.ts";
-export { coordination };
+export { coordination, slotCoordination, surveySlots };
