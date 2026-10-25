@@ -4,9 +4,9 @@
 // stdio. A committing session writes its file in the code checkout and
 // commits it through the real pipeline_commit extension the launch loads
 // (`-e .../pipeline-commit.mjs`), which asks the action's push server to
-// push. While it runs, a session can change the fake GitHub world as a
-// person or GitHub would (`change`), and can wait for the runtime's abort
-// instead of replying.
+// push, and appends the tool's result to FAKE_PI_COMMITS. While it runs, a
+// session can change the fake GitHub world as a person or GitHub would
+// (`change`), and can wait for the runtime's abort instead of replying.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -24,10 +24,15 @@ const SESSION = z.strictObject({
     })
     .nullable(),
   // What changes on GitHub while the session runs: the human applies
-  // agents:stop to the issue, the human leaves the organization, or GitHub
-  // starts failing every comment POST before it applies.
-  change: z.enum(["stop-issue", "human-leaves", "posts-fail"]).nullable(),
+  // agents:stop to the issue, the human leaves the organization, GitHub
+  // starts failing every comment POST before it applies, or the issue's
+  // label events become unreadable.
+  change: z
+    .enum(["stop-issue", "human-leaves", "posts-fail", "events-unreadable"])
+    .nullable(),
   // Wait for the runtime's abort command rather than replying.
+  // Whether `change` comes before the commit rather than after it.
+  changeFirst: z.boolean(),
   awaitAbort: z.boolean(),
   reply: z.record(z.string(), z.unknown()).nullable(),
 });
@@ -135,9 +140,7 @@ async function commitThrough(
       args: ["-m", commit.message, "--", `repo/${commit.file}`],
     }),
   );
-  if (result.isError) {
-    throw new Error(`pipeline_commit failed: ${JSON.stringify(result)}`);
-  }
+  fs.appendFileSync(env("FAKE_PI_COMMITS"), `${JSON.stringify(result)}\n`);
 }
 
 // Makes `change` in the world; the human is autumn, the item issue 7.
@@ -146,6 +149,13 @@ function applyChange(change: NonNullable<Session["change"]>): void {
   const world = readWorld(file);
   if (change === "posts-fail") {
     world.post = "lost-before-apply";
+  } else if (change === "events-unreadable") {
+    world.faults.push({
+      path: `repos/${world.repo}/issues/${ISSUE}/events`,
+      page: null,
+      status: 502,
+      link: null,
+    });
   } else if (change === "human-leaves") {
     world.members = world.members.filter((item) => item.login !== HUMAN);
   } else {
@@ -188,10 +198,13 @@ async function play(
   session: Session,
   commands: AsyncIterator<string>,
 ): Promise<void> {
+  if (session.change !== null && session.changeFirst) {
+    applyChange(session.change);
+  }
   if (session.commit !== null) {
     await commitThrough(args, session.commit);
   }
-  if (session.change !== null) {
+  if (session.change !== null && !session.changeFirst) {
     applyChange(session.change);
   }
   if (session.awaitAbort) {

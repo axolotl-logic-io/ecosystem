@@ -18,6 +18,7 @@ const COMMIT = {
 const COUNTS: PlannedSession = {
   commit: COMMIT,
   change: null,
+  changeFirst: false,
   awaitAbort: false,
   reply: { outcome: "done", summary: "Counted the widgets." },
 };

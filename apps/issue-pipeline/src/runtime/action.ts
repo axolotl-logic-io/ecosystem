@@ -66,6 +66,7 @@ import type { SessionPhase } from "../job/role-context.ts";
 import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
 import { agentEnvOf, rolesOf } from "../job/roles.ts";
 import type { LaunchStart, StopSignal } from "../job/status.ts";
+import { checkGuard, TASK_OP_CLASSES } from "../ops/task-guard.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { SignalScope } from "../signals/inbox.ts";
 import { requalify, stopLatch } from "../signals/inbox.ts";
@@ -333,7 +334,12 @@ interface OpenAction {
   workItem: WorkItemRef;
   dirs: JobDirs;
   cfg: Config;
+  // Aborts once the work item or the buddy run is stopping, or once this
+  // action alone is interrupted.
   signal: AbortSignal;
+  // This action's own interruption: why its permission to continue was
+  // withdrawn short of an accepted stop, or null. It stops nothing else.
+  interruption: { controller: AbortController; reason: string | null };
   observation: Observed<ActionRunObservation>;
   launches: ActionLaunches;
   control: ControlSocket;
@@ -343,8 +349,20 @@ interface OpenAction {
 
 function stopReason(open: OpenAction): string {
   return (
-    open.setting.stop.stopOf(open.workItem)?.reason ?? "the action is stopping"
+    open.setting.stop.stopOf(open.workItem)?.reason ??
+    open.interruption.reason ??
+    "the action is stopping"
   );
+}
+
+// Interrupts `open` alone with `reason`, as a stop would but recording no
+// stop: its sessions are asked to abort and no further boundary opens.
+function interrupt(open: OpenAction, reason: string): void {
+  if (open.interruption.reason !== null) {
+    return;
+  }
+  open.interruption.reason = reason;
+  open.interruption.controller.abort(reason);
 }
 
 // Asks every live model session of `open` to abort at its next safe point.
@@ -386,6 +404,28 @@ async function boundaryOf(open: OpenAction, name: string): Promise<void> {
   if (signal.aborted) {
     close(stopReason(open));
   }
+}
+
+// The boundary before finalization op `name`: the buddy's authorization
+// reread and the issue's execution still the action's. A stop or a revoked
+// source still lets the action's evidence settle (ops/task-guard.ts).
+function finalizationBoundaryOf(open: OpenAction, name: string): void {
+  try {
+    assertBuddyAuthorization(open.cfg);
+    issueExecution(open.cfg, open.workItem.number).assertOwner();
+  } catch (error: unknown) {
+    throw new BoundaryClosed(`${name}: ${messageOf(error)}`, { cause: error });
+  }
+}
+
+// The boundary before op `name`, by its trusted class; an op of no class
+// crosses the substantive boundary.
+async function opBoundaryOf(open: OpenAction, name: string): Promise<void> {
+  if (TASK_OP_CLASSES.get(name) === "finalization") {
+    finalizationBoundaryOf(open, `op ${name}`);
+    return;
+  }
+  await boundaryOf(open, `op ${name}`);
 }
 
 // What one model session of an action runs with.
@@ -644,7 +684,7 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
     stop: open.signal,
     boundary: (name: string): Promise<void> => boundaryOf(open, name),
     op: async (name: string, payload: object): Promise<unknown> => {
-      await boundaryOf(open, `op ${name}`);
+      await opBoundaryOf(open, name);
       const reply = await recordedOp(name, payload);
       if (!reply.ok) {
         throw new Error(reply.error);
@@ -666,8 +706,11 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
 }
 
 // Rereads the work item's stop latch every stopPollSeconds while the action
-// runs, so an accepted stop reaches a long model session too; ends once
-// `until` aborts.
+// runs, so a stop reaches a long model session too; ends once `until`
+// aborts. An unknown latch (a person's agents:stop not accepted yet, or
+// unreadable evidence) withdraws this action's permission to continue: it
+// interrupts this action alone, recording no stop, and its work ends
+// unknown.
 async function watchStopLatch(
   open: OpenAction,
   until: AbortSignal,
@@ -682,11 +725,23 @@ async function watchStopLatch(
     setting.stop.stopWorkItem(workItem, latch.reason);
     return;
   }
+  if (latch.state === "unknown") {
+    interrupt(open, `stop latch unknown: ${latch.reason}`);
+    return;
+  }
   await watchStopLatch(open, until);
 }
 
-// The task's end, parsed: a malformed end, a rejection or a run the stop
-// interrupted is unknown.
+// Whether `open` was interrupted alone, with no stop of its item or run.
+function interrupted(open: OpenAction): boolean {
+  return (
+    open.interruption.reason !== null &&
+    open.setting.stop.stopOf(open.workItem) === null
+  );
+}
+
+// The task's end, parsed: a malformed end, a rejection or a run interrupted
+// alone is unknown; a stopped run that did not succeed ends stopped.
 async function endOf(
   open: OpenAction,
   run: () => Promise<ActionEnd>,
@@ -699,11 +754,20 @@ async function endOf(
         "ended",
       );
     }
-    if (open.signal.aborted && parsed.data.outcome !== "succeeded") {
+    if (parsed.data.outcome === "succeeded") {
+      return parsed.data;
+    }
+    if (interrupted(open)) {
+      return unknownEnd(`interrupted: ${stopReason(open)}`, "ended");
+    }
+    if (open.signal.aborted) {
       return { ...parsed.data, state: "stopped" };
     }
     return parsed.data;
   } catch (error: unknown) {
+    if (interrupted(open)) {
+      return unknownEnd(`interrupted: ${stopReason(open)}`, "ended");
+    }
     if (open.signal.aborted) {
       return unknownEnd(`stopped: ${stopReason(open)}`, "stopped");
     }
@@ -1030,7 +1094,16 @@ async function openAction(
     branch: dirs.branch,
   });
   const launches = launchesOf(setting.task.id, observation);
+  // The session push's authority, reread at the push: the buddy's
+  // authorization, no accepted or unknown stop, the action's cause still
+  // authoritative, and the issue's execution still the action's.
   function owner(): void {
+    checkGuard(cfg, {
+      kind: "substantive",
+      scope: setting.scope,
+      number: workItem.number,
+      proposed: { binding: admitted.binding, cause: admitted.cause },
+    });
     issueExecution(cfg, workItem.number).assertOwner();
   }
   const pushJob = {
@@ -1046,13 +1119,21 @@ async function openAction(
       pushServerOf(cfg, pushJob, launches),
       admitted.execution,
     );
+    const interruption = {
+      controller: new AbortController(),
+      reason: null,
+    };
     const open: OpenAction = {
       admitted,
       setting,
       workItem,
       dirs,
       cfg,
-      signal: setting.stop.forWorkItem(workItem),
+      signal: AbortSignal.any([
+        setting.stop.forWorkItem(workItem),
+        interruption.controller.signal,
+      ]),
+      interruption,
       observation,
       launches,
       control,

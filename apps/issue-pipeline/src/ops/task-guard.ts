@@ -26,6 +26,24 @@ import type { WriteIntent } from "../write-refusal.ts";
 
 type OpClass = "substantive" | "finalization";
 
+// The class of each canonical task op, which the ops child guards it by and
+// the runtime checks before it spawns one.
+const TASK_OP_CLASSES: ReadonlyMap<string, OpClass> = new Map([
+  ["task-attempt", "substantive"],
+  ["task-result", "finalization"],
+  ["checkpoint-action", "finalization"],
+  ["push", "substantive"],
+  ["open-task-pr", "substantive"],
+  ["integrate-task", "substantive"],
+  ["sync-task", "substantive"],
+  ["sync-task-finish", "substantive"],
+  ["sync-reconcile", "finalization"],
+  ["land-task", "substantive"],
+  ["land-reconcile", "finalization"],
+  ["complete-task", "substantive"],
+  ["complete-reconcile", "finalization"],
+]);
+
 // What the action acts for: its binding and cause, from the attempt it is
 // about to record (task-attempt) or else its run's recorded attempt.
 interface ActionSource {
@@ -95,6 +113,8 @@ function assertNoStop(cfg: Config, number: number): void {
   }
 }
 
+// Throws unless `guard`'s authority holds now; the check each controlled
+// mutation of a task op, or of the action's session push, crosses.
 function checkGuard(cfg: Config, guard: TaskGuard): void {
   assertBuddyAuthorization(cfg);
   if (guard.kind === "substantive") {
@@ -121,4 +141,4 @@ function withTaskGuard(cfg: Config, guard: TaskGuard): Config {
 }
 
 export type { ActionSource, OpClass, TaskGuard };
-export { withTaskGuard };
+export { checkGuard, TASK_OP_CLASSES, withTaskGuard };

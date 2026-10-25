@@ -39,6 +39,7 @@ const MODEL_ID = "fake-model";
 const MODEL = `openai/${MODEL_ID}`;
 const CONTEXT_WINDOW = 272_000;
 const SLUG = REPO.replace("/", "__");
+const OVERSTAY_MS = 140_000;
 const ENDED = z.strictObject({
   buddyRun: z.uuid(),
   kind: z.enum(["stopped", "failed"]),
@@ -54,6 +55,10 @@ const RECORD = z.looseObject({
   receipt: z.unknown().optional(),
   consumer: z.unknown().optional(),
 });
+const COMMIT_RESULT = z.looseObject({
+  isError: z.boolean(),
+  content: z.array(z.looseObject({ text: z.string() })),
+});
 const PI_LAUNCH = z.strictObject({
   args: z.array(z.string()),
   prompt: z.string(),
@@ -67,7 +72,14 @@ type Logged = z.infer<typeof LOGGED>;
 // One session fake pi plays.
 interface PlannedSession {
   commit: { file: string; content: string; message: string } | null;
-  change: "stop-issue" | "human-leaves" | "posts-fail" | null;
+  change:
+    | "stop-issue"
+    | "human-leaves"
+    | "posts-fail"
+    | "events-unreadable"
+    | null;
+  // Whether `change` comes before the commit rather than after it.
+  changeFirst: boolean;
   awaitAbort: boolean;
   reply: Record<string, unknown> | null;
 }
@@ -89,6 +101,8 @@ interface Machine {
   world: () => World;
   change: (edit: (world: World) => void) => void;
   calls: () => Logged[];
+  // What each pipeline_commit call answered, in order.
+  commits: () => z.infer<typeof COMMIT_RESULT>[];
   // The pi launches fake-pi.ts played, in order.
   launches: () => z.infer<typeof PI_LAUNCH>[];
   // Runs the buddy with `sessions` planned until a poll's first listing is
@@ -355,9 +369,11 @@ function machine(edit: (world: World) => void = () => undefined): Machine {
   const worldFile = path.join(root, "world.json");
   const ghLog = path.join(root, "gh.log");
   const piLog = path.join(root, "pi.log");
+  const commitLog = path.join(root, "commits.log");
   const plan = path.join(root, "pi-plan.json");
   fs.writeFileSync(ghLog, "");
   fs.writeFileSync(piLog, "");
+  fs.writeFileSync(commitLog, "");
   const initial = baseWorld();
   initial.issues.push(startedIssue());
   initial.collaborators = [HUMAN];
@@ -377,6 +393,7 @@ function machine(edit: (world: World) => void = () => undefined): Machine {
       ["FAKE_GH_ORIGIN", origin],
       ["FAKE_PI_PLAN", plan],
       ["FAKE_PI_LOG", piLog],
+      ["FAKE_PI_COMMITS", commitLog],
       ["PIPELINE_MODEL_KEY", "fake-model-key"],
     ]),
   };
@@ -412,9 +429,15 @@ function machine(edit: (world: World) => void = () => undefined): Machine {
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
+    // A buddy the fake gh never stopped gets the same graceful SIGTERM,
+    // by its own pid, once the run overstays.
+    const overstay = setTimeout(() => {
+      child.kill("SIGTERM");
+    }, OVERSTAY_MS);
     const status = await new Promise<number | null>((resolve) => {
       child.on("close", (code) => resolve(code));
     });
+    clearTimeout(overstay);
     let ended: z.infer<typeof ENDED>;
     try {
       ended = ENDED.parse(JSON.parse(stdout));
@@ -443,6 +466,12 @@ function machine(edit: (world: World) => void = () => undefined): Machine {
         .split("\n")
         .filter((line) => line !== "")
         .map((line) => LOGGED.parse(JSON.parse(line))),
+    commits: () =>
+      fs
+        .readFileSync(commitLog, "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => COMMIT_RESULT.parse(JSON.parse(line))),
     launches: () =>
       fs
         .readFileSync(piLog, "utf8")

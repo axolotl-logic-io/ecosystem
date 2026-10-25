@@ -21,26 +21,38 @@ import { pushOp } from "./push.ts";
 import { syncReconcile, syncTask, syncTaskFinish } from "./sync-task.ts";
 import { taskAttempt, taskResult } from "./task-actions.ts";
 import type { ActionSource, OpClass } from "./task-guard.ts";
-import { withTaskGuard } from "./task-guard.ts";
+import { TASK_OP_CLASSES, withTaskGuard } from "./task-guard.ts";
 import { openTaskPr } from "./task-pr.ts";
 
 type Op = (cfg: Config, request: unknown) => object;
 
-const TASK_OPS: ReadonlyMap<string, { kind: OpClass; op: Op }> = new Map([
-  ["task-attempt", { kind: "substantive", op: taskAttempt }],
-  ["task-result", { kind: "finalization", op: taskResult }],
-  ["checkpoint-action", { kind: "finalization", op: checkpointAction }],
-  ["push", { kind: "substantive", op: pushOp }],
-  ["open-task-pr", { kind: "substantive", op: openTaskPr }],
-  ["integrate-task", { kind: "substantive", op: integrateTask }],
-  ["sync-task", { kind: "substantive", op: syncTask }],
-  ["sync-task-finish", { kind: "substantive", op: syncTaskFinish }],
-  ["sync-reconcile", { kind: "finalization", op: syncReconcile }],
-  ["land-task", { kind: "substantive", op: landTask }],
-  ["land-reconcile", { kind: "finalization", op: landReconcile }],
-  ["complete-task", { kind: "substantive", op: completeTask }],
-  ["complete-reconcile", { kind: "finalization", op: completeReconcile }],
+const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
+  ["task-attempt", taskAttempt],
+  ["task-result", taskResult],
+  ["checkpoint-action", checkpointAction],
+  ["push", pushOp],
+  ["open-task-pr", openTaskPr],
+  ["integrate-task", integrateTask],
+  ["sync-task", syncTask],
+  ["sync-task-finish", syncTaskFinish],
+  ["sync-reconcile", syncReconcile],
+  ["land-task", landTask],
+  ["land-reconcile", landReconcile],
+  ["complete-task", completeTask],
+  ["complete-reconcile", completeReconcile],
 ]);
+
+// Each task op with its class from TASK_OP_CLASSES; an op without one is
+// no task op.
+const TASK_OPS: ReadonlyMap<string, { kind: OpClass; op: Op }> = new Map(
+  [...OPS].flatMap(([name, op]): [string, { kind: OpClass; op: Op }][] => {
+    const kind = TASK_OP_CLASSES.get(name);
+    if (kind === undefined) {
+      return [];
+    }
+    return [[name, { kind, op }]];
+  }),
+);
 
 const FRAME = z.looseObject({
   number: z.number().int().positive(),

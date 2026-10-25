@@ -36,7 +36,8 @@ interface PushJob {
   checkout: string;
   branch: string;
   id: string;
-  // Throws unless the job still owns the issue, on a fresh read (#168).
+  // Throws unless the job may still push: it owns the issue, on a fresh
+  // read (#168), and a buddy action's authority holds (runtime/action.ts).
   owner: () => void;
 }
 
