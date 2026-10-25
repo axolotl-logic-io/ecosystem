@@ -85,6 +85,24 @@ interface PlannedSession {
   reply: Record<string, unknown> | null;
 }
 
+// The buddy one activation runs, as its trusted file names it: the
+// Developer hippy, on the development account, or the Gatekeeper lawd, on
+// the landing account, each responsible for `tasks`. Only a Gatekeeper
+// responsible for Land holds the lander profile and `permissions.land`.
+type BuddyChoice =
+  | { role: "developer"; tasks: ("implement" | "harden")[] }
+  | {
+      role: "gatekeeper";
+      tasks: ("integrate" | "review-security" | "land" | "complete")[];
+    };
+
+// The machine's trusted repository configuration, fixed before any action:
+// whether it grants Land (`permissions.land`), which the shared checking
+// policy digest covers.
+interface MachineSetup {
+  landPermission: boolean;
+}
+
 // What one buddy run printed and left behind.
 interface BuddyOutcome {
   status: number | null;
@@ -106,13 +124,20 @@ interface Machine {
   commits: () => z.infer<typeof COMMIT_RESULT>[];
   // The pi launches fake-pi.ts played, in order.
   launches: () => z.infer<typeof PI_LAUNCH>[];
-  // Runs the buddy with `sessions` planned until a poll's first listing is
-  // the `stopAtPoll`th, when the fake gh stops it with SIGTERM.
+  // Runs `buddy`, from a trusted file of its own, or else the buddy that
+  // buddy.json names as it now reads, with `sessions` planned until a poll's first listing is the `stopAtPoll`th,
+  // when the fake gh stops it with SIGTERM.
   runBuddy: (
     sessions: PlannedSession[],
     stopAtPoll: number,
+    buddy?: BuddyChoice,
   ) => Promise<BuddyOutcome>;
   git: (args: string[]) => string;
+  // The commits the project's check ran on, in order.
+  checksRun: () => string[];
+  // What GitHub answers the landing account's `gh args`, as a person
+  // reading it would see; the call is logged like any other.
+  readGitHub: (args: string[]) => unknown;
   cleanup: () => void;
 }
 
@@ -162,8 +187,15 @@ function install(pipeline: string, agentDir: string): void {
   }
 }
 
+// Where the project's one check, its test command, appends the commit it
+// checked each time it runs.
+function checksLog(root: string): string {
+  return path.join(root, "checks.log");
+}
+
 // The origin with `main` at one commit, a work clone to change it from,
-// and a pinned project policy whose shared pool has one model session.
+// and a pinned project policy whose shared pool has one model session and
+// whose test command passes, logging the commit it checked.
 function repository(root: string): {
   origin: string;
   work: string;
@@ -174,6 +206,9 @@ function repository(root: string): {
   const work = path.join(root, "work");
   const policy = path.join(root, "policy");
   git(root, ["init", "--bare", "--initial-branch=main", origin]);
+  // The origin's reflog records each update of its refs, as the tests'
+  // account of what moved the target.
+  git(origin, ["config", "core.logAllRefUpdates", "always"]);
   git(root, ["clone", "--quiet", origin, work]);
   git(work, ["config", "user.name", "Flow test"]);
   git(work, ["config", "user.email", "flow@example.test"]);
@@ -190,7 +225,7 @@ function repository(root: string): {
   fs.writeFileSync(
     path.join(policy, ".issue-pipeline.json"),
     JSON.stringify({
-      commands: { test: "true" },
+      commands: { test: `git rev-parse HEAD >> '${checksLog(root)}'` },
       resources: { modelSessions: 1 },
     }),
   );
@@ -317,9 +352,57 @@ function actionsOf(pipeline: string): ActionRun[] {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-// A machine whose Developer buddy, hippy, is responsible for Implement on
-// REPO in ORGANIZATION; `edit` adjusts the initial world.
-function machine(edit: (world: World) => void = () => undefined): Machine {
+// The access profile each task the flow buddies run needs (its TASKS
+// definition's `access`).
+const ACCESS: Readonly<Record<BuddyChoice["tasks"][number], string>> = {
+  implement: "writer",
+  harden: "writer",
+  integrate: "reader",
+  "review-security": "reader",
+  land: "lander",
+  complete: "lander",
+};
+
+// Writes `file`, the trusted file of `buddy`, scoped to `repositoryConfig`
+// in ORGANIZATION.
+function writeBuddyConfig(
+  file: string,
+  repositoryConfig: string,
+  buddy: BuddyChoice,
+): void {
+  const tasks: BuddyChoice["tasks"][number][] = buddy.tasks;
+  const profiles = [...new Set(tasks.map((task) => ACCESS[task]))];
+  let name = "hippy";
+  let login = DEVELOPER;
+  let permissions = {};
+  if (buddy.role === "gatekeeper") {
+    name = "lawd";
+    login = LANDING;
+    if (buddy.tasks.includes("land")) {
+      permissions = { permissions: { land: true } };
+    }
+  }
+  writePrivate(file, {
+    version: 1,
+    name,
+    scope: { organization: ORGANIZATION, repositories: [repositoryConfig] },
+    role: buddy.role,
+    responsibilities: buddy.tasks,
+    identity: { name, account: { provider: "github", login }, profiles },
+    ...permissions,
+    pollSeconds: 5,
+    stopPollSeconds: 1,
+  });
+}
+
+// A machine whose buddies work on REPO in ORGANIZATION. Its own trusted
+// buddy file, buddy.json, is the Developer hippy's, responsible for
+// Implement. `edit` adjusts the initial world; `setup` fixes the trusted
+// repository configuration.
+function machine(
+  edit: (world: World) => void = () => undefined,
+  setup: MachineSetup = { landPermission: false },
+): Machine {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "buddy-flow-"));
   const pipeline = path.join(root, "pipeline");
   const agentDir = path.join(root, "agent");
@@ -347,25 +430,15 @@ function machine(edit: (world: World) => void = () => undefined): Machine {
     landingAccount: LANDING,
     credentialsEnvFile: credentials,
     allowedUsers: [HUMAN],
-    permissions: { land: false },
+    permissions: { land: setup.landPermission },
     models: { author: MODEL, developer: MODEL, reviewer: MODEL },
     runtime: provisionRuntime(root),
     projectPolicy: { repository: policy, revision },
   });
-  const buddyConfig = path.join(root, "buddy.json");
-  writePrivate(buddyConfig, {
-    version: 1,
-    name: "hippy",
-    scope: { organization: ORGANIZATION, repositories: [repositoryConfig] },
+  const buddyFile = path.join(root, "buddy.json");
+  writeBuddyConfig(buddyFile, repositoryConfig, {
     role: "developer",
-    responsibilities: ["implement"],
-    identity: {
-      name: "hippy",
-      account: { provider: "github", login: DEVELOPER },
-      profiles: ["writer"],
-    },
-    pollSeconds: 5,
-    stopPollSeconds: 1,
+    tasks: ["implement"],
   });
   const worldFile = path.join(root, "world.json");
   const ghLog = path.join(root, "gh.log");
@@ -406,7 +479,16 @@ function machine(edit: (world: World) => void = () => undefined): Machine {
   async function runBuddy(
     sessions: PlannedSession[],
     stopAtPoll: number,
+    buddy?: BuddyChoice,
   ): Promise<BuddyOutcome> {
+    let buddyConfig = buddyFile;
+    if (buddy !== undefined) {
+      buddyConfig = path.join(
+        root,
+        `buddy-${buddy.role}-${buddy.tasks.join("-")}.json`,
+      );
+      writeBuddyConfig(buddyConfig, repositoryConfig, buddy);
+    }
     fs.writeFileSync(plan, JSON.stringify({ next: 0, sessions }));
     const child = spawn(
       process.execPath,
@@ -481,9 +563,36 @@ function machine(edit: (world: World) => void = () => undefined): Machine {
         .map((line) => PI_LAUNCH.parse(JSON.parse(line))),
     runBuddy,
     git: (args: string[]) => git(origin, args),
+    checksRun: (): string[] => {
+      if (!fs.existsSync(checksLog(root))) {
+        return [];
+      }
+      return fs
+        .readFileSync(checksLog(root), "utf8")
+        .split("\n")
+        .filter((line) => line !== "");
+    },
+    readGitHub: (args: string[]): unknown => {
+      const read = spawnSync(process.execPath, [FAKE_GH, ...args], {
+        encoding: "utf8",
+        env: { ...env, ...Object.fromEntries([["GH_TOKEN", "landing-token"]]) },
+      });
+      if (read.status !== 0) {
+        throw new Error(`gh ${args.join(" ")}: ${read.stderr}`);
+      }
+      const parsed: unknown = JSON.parse(read.stdout);
+      return parsed;
+    },
     cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
   };
 }
 
-export type { ActionRun, BuddyOutcome, Machine, PlannedSession };
+export type {
+  ActionRun,
+  BuddyChoice,
+  BuddyOutcome,
+  Machine,
+  MachineSetup,
+  PlannedSession,
+};
 export { DEVELOPER, HUMAN, ISSUE, machine, marked };

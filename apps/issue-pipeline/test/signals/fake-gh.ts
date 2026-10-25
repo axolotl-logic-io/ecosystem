@@ -149,6 +149,13 @@ function restEvent(world: World, issue: FakeIssue): unknown[] {
   });
 }
 
+function issueState(issue: FakeIssue): "open" | "closed" {
+  if (issue.closed === undefined) {
+    return "open";
+  }
+  return "closed";
+}
+
 // What GitHub adds to an issue row that is a pull request.
 function pullRequestOf(issue: FakeIssue): { pullRequest?: { url: string } } {
   if (issue.pullRequest) {
@@ -211,6 +218,7 @@ function listing(
   if (path === `repos/${world.repo}/issues` && query.get("state") === "open") {
     const label = query.get("labels");
     return world.issues
+      .filter((issue) => issueState(issue) === "open")
       .filter((issue) => label !== null && issue.labels.includes(label))
       .map((issue) => ({
         number: issue.number,
@@ -261,7 +269,7 @@ function single(world: World, path: string): Answer | null {
   if (issue !== null) {
     const body = {
       number: issue.number,
-      state: "open",
+      state: issueState(issue),
       labels: issue.labels.map((name) => ({ name, color: "ededed" })),
       ...pullRequestOf(issue),
     };

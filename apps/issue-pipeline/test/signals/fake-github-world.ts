@@ -57,6 +57,9 @@ const ISSUE = z.strictObject({
   labels: z.array(z.string()),
   events: z.array(EVENT),
   comments: z.array(COMMENT),
+  // Who closed the issue and with which state reason (`gh issue close`);
+  // an issue without it is open.
+  closed: z.strictObject({ by: z.string(), reason: z.string() }).optional(),
 });
 // An injected answer for one listing page or read: `path` without its query.
 const FAULT = z.strictObject({
