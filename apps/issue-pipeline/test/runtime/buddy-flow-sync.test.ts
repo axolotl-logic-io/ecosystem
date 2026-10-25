@@ -15,6 +15,7 @@ import { ISSUE, machine, marked } from "./buddy-flow-test-kit.ts";
 
 const BRANCH = `agent/issue-${ISSUE}`;
 const RAW_CONFIG = z.record(z.string(), z.unknown());
+const AFTER_SYNC_AND_HARDEN = 3;
 const COUNTS: PlannedSession = {
   commit: {
     file: "counter.txt",
@@ -84,8 +85,10 @@ test("a moved target needs Sync before fresh Harden, with no replay of passed wo
     assert.notEqual(target, initialTarget);
     assert.notEqual(box.git(["merge-base", originalCode, target]), target);
 
-    select(box, ["sync"]);
-    const synced = await box.runBuddy([], 2);
+    // Both loops activate. Harden must wait for Sync's new revision,
+    // rather than run on code that does not contain the target.
+    select(box, ["harden", "sync"]);
+    const synced = await box.runBuddy([HARDEN], AFTER_SYNC_AND_HARDEN);
     assert.equal(synced.status, 0, synced.stderr);
     const syncActions = synced.actions.filter((item) => item.task === "sync");
     assert.equal(syncActions.length, 1, JSON.stringify(syncActions, null, 2));
@@ -109,27 +112,18 @@ test("a moved target needs Sync before fresh Harden, with no replay of passed wo
     assert.equal(syncResult.receipt.produced?.code, code);
     assert.deepEqual(
       results(box).map((item) => item.binding.task),
-      ["implement", "sync"],
+      ["implement", "sync", "harden"],
     );
-    assert.equal(box.launches().length, 1);
-
-    // Already-containing code needs no second rebase, attempt or model.
-    const beforeRepeatSync = marked(box.world(), "task-result");
-    const repeatedSync = await box.runBuddy([], 2);
-    assert.equal(repeatedSync.status, 0, repeatedSync.stderr);
-    assert.equal(repeatedSync.actions.length, synced.actions.length);
-    assert.deepEqual(marked(box.world(), "task-result"), beforeRepeatSync);
-    assert.equal(box.git(["rev-parse", BRANCH]), code);
-
-    select(box, ["harden"]);
-    const hardened = await box.runBuddy([HARDEN], 2);
-    assert.equal(hardened.status, 0, hardened.stderr);
-    const hardenActions = hardened.actions.filter(
+    const hardenActions = synced.actions.filter(
       (item) => item.task === "harden",
     );
     assert.equal(hardenActions.length, 1);
     assert.equal(hardenActions[0]?.verdict, "passed");
     assert.equal(hardenActions[0]?.ownership.state, "released");
+    assert.notEqual(
+      hardenActions[0]?.sessions[0]?.id,
+      implemented.actions[0]?.sessions[0]?.id,
+    );
     assert.equal(box.launches().length, 2);
     const hardenResult = results(box).find(
       (item) => item.binding.task === "harden",
@@ -140,11 +134,14 @@ test("a moved target needs Sync before fresh Harden, with no replay of passed wo
     assert.equal(hardenResult.binding.revision.code, code);
     assert.equal(hardenResult.binding.target.commit, target);
     assert.equal(box.git(["rev-parse", "main"]), target);
-    const beforeRepeatHarden = marked(box.world(), "task-result");
-    const repeatedHarden = await box.runBuddy([], 2);
-    assert.equal(repeatedHarden.status, 0, repeatedHarden.stderr);
-    assert.equal(repeatedHarden.actions.length, hardened.actions.length);
-    assert.deepEqual(marked(box.world(), "task-result"), beforeRepeatHarden);
+    // Neither a passed Harden nor already-containing code may replay on
+    // a fresh activation, even with both task loops still configured.
+    const beforeRepeat = marked(box.world(), "task-result");
+    const repeated = await box.runBuddy([], 2);
+    assert.equal(repeated.status, 0, repeated.stderr);
+    assert.equal(repeated.actions.length, synced.actions.length);
+    assert.deepEqual(marked(box.world(), "task-result"), beforeRepeat);
+    assert.equal(box.git(["rev-parse", BRANCH]), code);
     assert.equal(box.launches().length, 2);
     complete = true;
   } finally {
