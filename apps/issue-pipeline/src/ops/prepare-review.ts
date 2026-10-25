@@ -11,7 +11,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { fetchIn, head, patchIdOf } from "../git-state.ts";
 import { parseRequest, run } from "../process.ts";
-import type { CodeMerged } from "../state.ts";
+import type { CodeLanded } from "../state.ts";
 import { assertNoCodeChanges, landedCode } from "./landed-review.ts";
 import { commitLog, reviewBundle } from "./review-diff.ts";
 
@@ -37,8 +37,8 @@ const REVIEW_REQUEST = z.looseObject({
   number: z.number().int(),
   sinceSha: z.string().nullish(),
   tag: z.string().nullish(),
-  // The merged PR and its merge commit, once the code landed.
-  codeMerged: z
+  // The landed PR and its merge commit, once the code landed.
+  codeLanded: z
     .object({ pr: z.number().int().positive(), sha: z.string().min(1) })
     .nullish(),
 });
@@ -120,7 +120,7 @@ function writeReview(
 function prepareLandedReview(
   cfg: Config,
   n: number,
-  { tag, codeMerged }: { tag: string; codeMerged: CodeMerged },
+  { tag, codeMerged }: { tag: string; codeMerged: CodeLanded },
 ): ReviewReply {
   const merged = landedCode(cfg, n, codeMerged);
   const written = writeReview(cfg, n, {
@@ -142,8 +142,8 @@ function prepareReview(cfg: Config, request: unknown): ReviewReply {
   const req = parseRequest(REVIEW_REQUEST, "prepare-review", request);
   const n = req.number;
   const tag = textOr(req.tag, "r0");
-  if (req.codeMerged !== null && req.codeMerged !== undefined) {
-    return prepareLandedReview(cfg, n, { tag, codeMerged: req.codeMerged });
+  if (req.codeLanded !== null && req.codeLanded !== undefined) {
+    return prepareLandedReview(cfg, n, { tag, codeMerged: req.codeLanded });
   }
   const wt = paths.worktree(cfg, n);
   fetchIn(cfg, wt, cfg.baseBranch);

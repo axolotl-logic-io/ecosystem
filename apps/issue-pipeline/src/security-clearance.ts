@@ -132,9 +132,9 @@ function candidateResultRefusal(
       authorized = recordedAuthorization(saved);
     }
     if (
-      saved?.merged === null ||
-      saved?.merged === undefined ||
-      !sameRevision(saved.merged, result) ||
+      saved?.landed === null ||
+      saved?.landed === undefined ||
+      !sameRevision(saved.landed, result) ||
       authorized === null ||
       !sameRevision(security.revision, authorized) ||
       saved.hardenedTarget === null ||
@@ -160,7 +160,7 @@ function resultReviewTarget(
   saved: IssueState,
   result: Revision,
 ): ReviewedTarget | null {
-  const { merged, hardenedTarget } = saved;
+  const { landed: merged, hardenedTarget } = saved;
   if (
     merged === null ||
     hardenedTarget === null ||

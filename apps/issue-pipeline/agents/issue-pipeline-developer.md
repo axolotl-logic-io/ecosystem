@@ -1,6 +1,6 @@
 ---
-name: issue-pipeline-implementor
-description: The issue pipeline's Developer (serialized role name: implementor). Writing sessions that do an issue's work on its branch, harden it, or resolve a Sync's conflicts.
+name: issue-pipeline-developer
+description: The issue pipeline's Developer. Writing sessions that do an issue's work on its branch, harden it, or resolve a Sync's conflicts.
 tools: read, grep, find, ls, bash, edit, write, codemode
 thinking: high
 systemPromptMode: replace

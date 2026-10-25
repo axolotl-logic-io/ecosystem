@@ -93,7 +93,7 @@ Installed names map onto these as follows:
 - `models.*` and `runtime` are identity settings.
 - `jobRoles` (`reader`, `writer`, `merger`) are access profiles.
 
-Renaming the installed keys waits on ecosystem #166.
+#166 renamed the installed keys: `landingAccount` (was `mergeAccount`), `models.developer` (was `models.implementor`) and the `lander` access profile (was `merger`). Old names still load; the [operations reference](../reference/operations.md#renamed-names-166) lists them.
 
 ## bindings-and-ready-tasks
 

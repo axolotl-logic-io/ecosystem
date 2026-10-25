@@ -27,7 +27,7 @@ const CURRENT_COMMENT = z.object({
 
 function graphql(cfg: Config, fields: readonly string[]): unknown {
   try {
-    return ghJson(cfg, "merge", [
+    return ghJson(cfg, "landing", [
       "api",
       "graphql",
       ...fields.flatMap((field) => ["-f", field]),
@@ -49,7 +49,7 @@ const BATCH = z.object({
 });
 
 function isLandingAuthored(cfg: Config, item: IssueComment): boolean {
-  return item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase();
+  return item.user?.login.toLowerCase() === cfg.landingAccount.toLowerCase();
 }
 
 function nodeIdOf(item: IssueComment): string {
@@ -122,10 +122,10 @@ function currentComments(
 }
 
 function assertCommentAuthority(
-  cfg: Pick<Config, "mergeAccount">,
+  cfg: Pick<Config, "landingAccount">,
   item: IssueComment,
 ): void {
-  const merge = cfg.mergeAccount.toLowerCase();
+  const merge = cfg.landingAccount.toLowerCase();
   if (
     item.user?.login.toLowerCase() !== merge ||
     item.lastEditedAt === undefined ||

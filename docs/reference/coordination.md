@@ -19,7 +19,7 @@ node "$ISSUE_PIPELINE_ROOT/job.mjs" --config CONFIG \
 
 Optional flags:
 
-- `--merge-queue N1,N2,…` passes the caller's landing order (see [merge](merge.md#landing-order)).
+- `--landing-order N1,N2,…` passes the caller's landing order (see [merge](merge.md#landing-order)).
 - `--hardening-buddy hippy` hardens as Hippy, the Developer, in a fresh session; only with `--stage review`. The caller always passes it.
 - `--task sync|integration --binding BINDING_JSON` runs a requested task instead of the stage: Hippy's [Sync](sync.md) at `review` or `merge`, or Lawd's read-only [Integration](merge.md#read-only-integration-and-exact-land) at `merge`. `STAGE` is the issue's saved stage, and `BINDING_JSON` is the request's binding, exactly. The job refuses a binding for another task, issue, repository or target branch before it claims or writes anything. A task job runs as its task's access profile: Sync as `writer`, Integration as `reader`.
 - `--print-boundary` pins and checks the prompt pages and prints the stage's role, checkouts, environment and network as one JSON line, without cloning, claiming or starting a session.
@@ -64,7 +64,6 @@ These exist in source but are not how the caller runs the pipeline:
 
 - **`orchestrate.mjs`** is a retained legacy scheduler (`--config PATH [--once]`). Don't run it alongside caller-managed jobs. It relays no task request, so since #186 a merge it starts waits for an Integration it never starts.
 - **Assignment mode** is disabled.
-- **Assignment discovery** (`src/discovery/plan.ts`) is a read-only, opt-in module. Its plans state `executionAuthority: false`: they grant no session, claim, write or Land.
 
 ## Recover from a coordination problem
 

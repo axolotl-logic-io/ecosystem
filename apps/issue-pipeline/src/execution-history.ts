@@ -42,11 +42,11 @@ function assertExecutionHistory(
   );
   if (
     request?.kind !== "request" ||
-    request.identity.instance !== saved.instance ||
-    request.identity.repo !== identity.repo ||
-    request.identity.base !== identity.base ||
-    request.identity.issue !== issue ||
-    request.identity.branch !== identity.branch ||
+    request.binding.instance !== saved.instance ||
+    request.binding.repo !== identity.repo ||
+    request.binding.base !== identity.base ||
+    request.binding.issue !== issue ||
+    request.binding.branch !== identity.branch ||
     !history.records.some(
       (row) =>
         row.kind === "confirm" &&
@@ -59,7 +59,7 @@ function assertExecutionHistory(
     );
   }
   if (current || saved.instance === identity.instance) {
-    if (!sameBinding(request.identity, identity)) {
+    if (!sameBinding(request.binding, identity)) {
       throw new OpsError(
         "saved execution full binding changed; reconciliation required",
       );

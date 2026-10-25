@@ -9,7 +9,7 @@ This page lists the pipeline's GitHub labels, what each stop means, how a stop i
 | `agent:working` | The pipeline is working on the issue |
 | `agent:needs-info` | The pipeline asked a question |
 | `agent:split` | The issue was split into sub-issues |
-| `agent:merged` | The pipeline landed the issue's change and completed it |
+| `agent:landed` | The pipeline landed the issue's change and completed it. Issues landed before #166 carry `agent:merged`, which still counts as landed. |
 
 The pipeline creates any missing label, including every stop label, the first time it needs them. The caller selects and splits issues; these labels don't mean the pipeline discovers work. Landing code alone isn't Security clearance or completion.
 

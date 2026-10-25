@@ -140,8 +140,8 @@ function retainedLandAuthorization(
   // Observing an external landing must not freeze fresh post-Land hardening.
   // Stale snapshots still cannot erase historical recovery authorization.
   if (
-    saved.mergeAttempt === null &&
-    (saved.codeMerged === null || state.hardened !== null)
+    saved.landingAttempt === null &&
+    (saved.codeLanded === null || state.hardened !== null)
   ) {
     return {};
   }
@@ -155,26 +155,26 @@ function retainedLandAuthorization(
 function retainedLandedTruth(
   saved: IssueState,
   state: IssueState,
-): IssueState["merged"] {
+): IssueState["landed"] {
   // An own-Land receipt binds inputs, policy and legacy wiki as well as code.
   // A same-SHA role snapshot must not rewrite that exact recovery authority.
   if (
-    saved.merged !== null &&
-    (saved.mergeAttempt !== null ||
-      state.merged === null ||
+    saved.landed !== null &&
+    (saved.landingAttempt !== null ||
+      state.landed === null ||
       state.hardened === null ||
-      !sameRevision(state.hardened, state.merged))
+      !sameRevision(state.hardened, state.landed))
   ) {
-    return saved.merged;
+    return saved.landed;
   }
-  const merged = state.merged ?? saved.merged;
-  const observed = saved.codeMerged?.sha ?? saved.merged?.code;
+  const merged = state.landed ?? saved.landed;
+  const observed = saved.codeLanded?.sha ?? saved.landed?.code;
   if (
     observed !== undefined &&
     observed !== null &&
     merged?.code !== observed
   ) {
-    return saved.merged;
+    return saved.landed;
   }
   return merged;
 }
@@ -207,7 +207,7 @@ function saveCheckpoint(
       // remain allowed, as in the existing push/adopt/sync save paths.
       headSha: state.headSha ?? saved.headSha,
       pr: saved.pr ?? state.pr,
-      merged: retainedLandedTruth(saved, state),
+      landed: retainedLandedTruth(saved, state),
       ...retainedLandAuthorization(saved, state),
       execution: saved.execution,
     },
@@ -248,8 +248,8 @@ function saveExecutionClaimState(
   const observed = reconcileClaimLand(cfg, issue, saved, now);
   if (
     state.pr !== observed.pr ||
-    state.codeMerged?.pr !== observed.codeMerged?.pr ||
-    state.codeMerged?.sha !== observed.codeMerged?.sha
+    state.codeLanded?.pr !== observed.codeLanded?.pr ||
+    state.codeLanded?.sha !== observed.codeLanded?.sha
   ) {
     throw new OpsError(
       "claim merge observation changed; reconciliation required",

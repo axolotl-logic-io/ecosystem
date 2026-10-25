@@ -160,7 +160,10 @@ function startPr(cfg: Config, request: unknown): PrReply {
   const req = parsed(START_REQUEST, "start-pr request", request);
   const n = req.number;
   refuseOnceLanded(cfg, n, "start-pr");
-  const reply = ghJson(cfg, "merge", ["api", `repos/${cfg.repo}/issues/${n}`]);
+  const reply = ghJson(cfg, "landing", [
+    "api",
+    `repos/${cfg.repo}/issues/${n}`,
+  ]);
   const issue = parsed(ISSUE, "gh issue reply", reply);
   const headSha = startBranch(cfg, n);
   const given = givenBody(n, req.body);

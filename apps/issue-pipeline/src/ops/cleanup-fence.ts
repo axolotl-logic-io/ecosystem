@@ -42,7 +42,7 @@ function heldExecution(
   );
   const lanes = rows.flatMap((row) => {
     if (row.kind === "request" && !ended.has(row.id)) {
-      return [row.identity.lane];
+      return [row.binding.lane];
     }
     return [];
   });

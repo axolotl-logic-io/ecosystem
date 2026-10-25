@@ -40,10 +40,10 @@ type OpName =
   | "integration-task"
   | "prepare-review"
   | "verify"
-  | "confirm-merged"
+  | "confirm-landed"
   | "ci-status"
-  | "merge"
-  | "reconcile-merge"
+  | "land"
+  | "reconcile-land"
   | "finish"
   | "ready-pr"
   | "cleanup";
@@ -60,11 +60,11 @@ type JobOpName =
 
 type AgentName =
   | "issue-pipeline-author"
-  | "issue-pipeline-implementor"
+  | "issue-pipeline-developer"
   | "issue-pipeline-reviewer";
 
 // The role a comment is signed with.
-type CommentRole = ModelRole | "merger";
+type CommentRole = ModelRole | "lander";
 
 // The issue's trusted inputs as the job read them at its start.
 interface RoleInputs {
@@ -156,8 +156,8 @@ interface RoleContext {
   // The filtered issue file: the issue and its trusted comments.
   issueFile: string;
   inputs: RoleInputs;
-  // The landing order the caller ranked (`--merge-queue`), or null.
-  mergeQueue: readonly number[] | null;
+  // The landing order the caller ranked (`--landing-order`, formerly `--merge-queue`), or null.
+  landingOrder: readonly number[] | null;
   // Runs one op and returns its reply; throws OpsFailure when it fails.
   op: (name: OpName, payload: object) => Promise<unknown>;
   session: (spec: SessionSpec) => Promise<SessionResult>;

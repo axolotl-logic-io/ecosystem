@@ -95,7 +95,7 @@ node apps/issue-pipeline/dist/standards-upgrade.mjs assess \
   --config CONFIG --repo OWNER/REPO --out OUT_DIR
 ```
 
-- `CONFIG` is the target repository's pipeline config, as `docs/reference/operations.md` describes. The assessment reads GitHub with its `mergeAccount` credential, for reads only, as the Gatekeeper's Integration task does.
+- `CONFIG` is the target repository's pipeline config, as `docs/reference/operations.md` describes. The assessment reads GitHub with its `landingAccount` credential, for reads only, as the Gatekeeper's Integration task does.
 - `OWNER/REPO` names the repository, either as a slug or as its canonical URL, such as `https://github.com/OWNER/REPO`. It must be the config's `repo`.
 - `OUT_DIR` is an existing, empty folder outside any checkout.
 

@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 import type { Stage } from "../stages.ts";
 import { STAGES } from "../stages.ts";
+import { landingOrderFlag } from "./landing-order-flag.ts";
 import { HARDENING_BUDDIES } from "./roles.ts";
 import type { JobTask, TaskRequest } from "./task-request.ts";
 import { JOB_TASKS, TASK_STAGES, taskRequestOf } from "./task-request.ts";
@@ -18,7 +19,7 @@ const NO_STAGE = `--stage must be one of: ${STAGE_LIST}`;
 const NO_MESSAGE = "--steer needs a --message";
 const STEER_BOUNDARY = "--steer can't be combined with --print-boundary";
 const STEER_BUDDY = "--steer can't be combined with --hardening-buddy";
-const NO_QUEUE = "--merge-queue must list issue numbers, such as 3,5";
+const NO_QUEUE = "--landing-order must list issue numbers, such as 3,5";
 const NO_JOB_ID = "--job-id must be a UUID";
 const NO_BRANCH = "--branch must name the issue's branch";
 const NO_BUDDY = `--hardening-buddy must be one of: ${HARDENING_BUDDIES.join(", ")}`;
@@ -26,7 +27,7 @@ const BUDDY_STAGE = "--hardening-buddy applies only to --stage review";
 const NO_TASK = `--task must be one of: ${JOB_TASKS.join(", ")}`;
 const TASK_BINDING = "--task and --binding go together";
 const TASK_BUDDY = "--hardening-buddy can't be combined with --task";
-const TASK_QUEUE = "--merge-queue can't be combined with --task";
+const TASK_QUEUE = "--landing-order can't be combined with --task";
 const LANDING_ORDER = z
   .string()
   .transform((list: string): string[] => list.split(","))
@@ -65,7 +66,7 @@ const JOB_ARGS = z
       // The claimant's name its lease records; the job's own without one.
       lane: z.string().optional(),
       // The landing order the caller ranked (#234).
-      mergeQueue: LANDING_ORDER.optional(),
+      landingOrder: LANDING_ORDER.optional(),
       // The job's id, as the caller logs its start; a job started
       // without one makes its own.
       jobId: z.uuid({ error: NO_JOB_ID }).optional(),
@@ -119,7 +120,7 @@ const JOB_ARGS = z
     (args) =>
       args.kind !== "run" ||
       args.task === undefined ||
-      args.mergeQueue === undefined,
+      args.landingOrder === undefined,
     { error: TASK_QUEUE },
   );
 
@@ -163,6 +164,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       steer: { type: "string" },
       message: { type: "string" },
       "print-boundary": { type: "boolean" },
+      "landing-order": { type: "string" },
       "merge-queue": { type: "string" },
       "job-id": { type: "string" },
       "hardening-buddy": { type: "string" },
@@ -174,6 +176,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
   });
   const {
     "print-boundary": printBoundary,
+    "landing-order": landingOrder,
     "merge-queue": mergeQueue,
     "job-id": jobId,
     "hardening-buddy": hardeningBuddy,
@@ -188,7 +191,10 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
   const parsed = JOB_ARGS.safeParse({
     ...named,
     printBoundary,
-    mergeQueue,
+    landingOrder: landingOrderFlag({
+      "landing-order": landingOrder,
+      "merge-queue": mergeQueue,
+    }),
     jobId,
     hardeningBuddy,
     kind,

@@ -23,7 +23,7 @@ function readChecks(
   jq: string,
 ): string[] | null {
   const args = ["api", endpoint, "--jq", jq];
-  const result = gh(cfg, "merge", args, { allowFail: true });
+  const result = gh(cfg, "landing", args, { allowFail: true });
   if (result.code !== 0) {
     if (NOT_FOUND.test(`${result.stderr}\n${result.stdout}`)) {
       return [];

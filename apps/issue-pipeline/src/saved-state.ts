@@ -16,8 +16,9 @@ import type { Config } from "./config.ts";
 import { gh } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import { LEGACY_STATE, migrateLegacyState } from "./saved-state-legacy.ts";
+import { currentStateRecord } from "./saved-state-v2.ts";
 import type { IssueState } from "./state.ts";
-import { ISSUE_STATE, withLog } from "./state.ts";
+import { ISSUE_STATE, STATE_VERSION, withLog } from "./state.ts";
 
 // Mutation authority is deliberately stricter than the compatibility reader:
 // a missing receipt must not be confused with a malformed one caught as null.
@@ -34,9 +35,9 @@ const WRITE_STATE = ISSUE_STATE.pick({
   flows: ISSUE_STATE.shape.flows.removeCatch(),
   lease: ISSUE_STATE.shape.lease.removeCatch(),
   pr: ISSUE_STATE.shape.pr.removeCatch(),
-  codeMerged: ISSUE_STATE.shape.codeMerged.removeCatch(),
-  mergeAttempt: ISSUE_STATE.shape.mergeAttempt.removeCatch().optional(),
-  merged: ISSUE_STATE.shape.merged.removeCatch(),
+  codeLanded: ISSUE_STATE.shape.codeLanded.removeCatch(),
+  landingAttempt: ISSUE_STATE.shape.landingAttempt.removeCatch().optional(),
+  landed: ISSUE_STATE.shape.landed.removeCatch(),
   hardened: ISSUE_STATE.shape.hardened.removeCatch(),
   hardenedTarget: ISSUE_STATE.shape.hardenedTarget.removeCatch().optional(),
   integration: ISSUE_STATE.shape.integration.removeCatch(),
@@ -58,14 +59,21 @@ interface StoredState {
   state: IssueState | null;
 }
 
-// The saved state in `raw`: version 2 as saved, an older version migrated,
-// or null when it can't be read.
+// The saved state in `raw`: version 3 as saved, version 2 with its keys
+// renamed (saved-state-v2.ts), version 1 migrated, or null when it can't be
+// read.
 function parseIssueState(raw: unknown, number: number): IssueState | null {
   if (typeof raw !== "object" || raw === null) {
     return null;
   }
-  if ("version" in raw && raw.version === 2) {
-    return ISSUE_STATE.safeParse(raw).data ?? null;
+  const current = currentStateRecord(raw);
+  if (
+    typeof current === "object" &&
+    current !== null &&
+    "version" in current &&
+    current.version === STATE_VERSION
+  ) {
+    return ISSUE_STATE.safeParse(current).data ?? null;
   }
   const migrated = migrateLegacyState(raw, number);
   const legacy = LEGACY_STATE.safeParse(raw).data;
@@ -96,18 +104,18 @@ function rawStateBody(body: string): unknown {
 }
 
 function latestStateComment(
-  cfg: Pick<Config, "mergeAccount" | "legacyAccount">,
+  cfg: Pick<Config, "landingAccount" | "legacyAccount">,
   comments: readonly IssueComment[],
 ): IssueComment | undefined {
   for (const item of comments) {
-    if (item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase()) {
+    if (item.user?.login.toLowerCase() === cfg.landingAccount.toLowerCase()) {
       assertCommentAuthority(cfg, item);
     }
   }
   const latest = comments
     .filter(
       (item) =>
-        item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+        item.user?.login.toLowerCase() === cfg.landingAccount.toLowerCase() &&
         isStateBody(item.body ?? ""),
     )
     .at(-1);
@@ -143,18 +151,22 @@ function readWriteState(cfg: Config, number: number): IssueState {
   return validatedWriteState(raw, number);
 }
 
+// A version 2 state is checked as the version 3 it translates to, so it
+// keeps exactly the authority it had.
 function validatedWriteState(raw: unknown, number: number): IssueState {
-  const critical = WRITE_STATE.safeParse(raw);
+  const current = currentStateRecord(raw);
+  const critical = WRITE_STATE.safeParse(current);
   if (!critical.success || critical.data.number !== number) {
     throw new OpsError(`#${number}'s saved write authority is invalid`);
   }
-  return ISSUE_STATE.parse(raw);
+  return ISSUE_STATE.parse(current);
 }
 
 // Claim may initialize genuinely absent state, never adopt legacy state.
-// Every existing v2 state uses the same strict validator as credentialed writes.
+// Every existing v2 or v3 state uses the same strict validator as
+// credentialed writes.
 function readClaimState(
-  cfg: Pick<Config, "mergeAccount" | "legacyAccount">,
+  cfg: Pick<Config, "landingAccount" | "legacyAccount">,
   number: number,
   comments: readonly IssueComment[],
 ): IssueState | null {
@@ -211,7 +223,7 @@ function writeState(cfg: Config, number: number, state: IssueState): void {
   }
   gh(
     cfg,
-    "merge",
+    "landing",
     [
       "api",
       "-X",

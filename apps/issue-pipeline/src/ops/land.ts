@@ -27,20 +27,20 @@ import { diagnostic, reconcileAttemptedLand } from "./land-recovery.ts";
 import { landRefusal, settleLand, startLand } from "./land-task.ts";
 import type { TurnHeld } from "./land-turn.ts";
 import { retireSettledTurn, underTurn } from "./land-turn.ts";
+import { beginLand, saveLandResponse } from "./landing-attempt.ts";
 import type { Queued } from "./landing-order.ts";
 import { queued } from "./landing-order.ts";
-import { beginLand, saveLandResponse } from "./merge-attempt.ts";
 import { approvePr } from "./pr-approval.ts";
 import type { PrView } from "./pr-merge.ts";
 import { mergeCommitOf, viewForLand } from "./pr-merge.ts";
 
-const MERGE_REQUEST = z.looseObject({
+const LAND_OP_REQUEST = z.looseObject({
   expectedSha: FULL_SHA,
   expectedBase: FULL_SHA,
-  mergeOrder: z.boolean().nullish(),
+  oldestFirst: z.boolean().nullish(),
   // The landing order the caller ranked (#234), which replaces the
   // lowest-PR order when given.
-  mergeQueue: z.array(z.number().int()).nullish(),
+  landingOrder: z.array(z.number().int()).nullish(),
   number: z.number().int(),
   // The state's authorized revision (landAuthorization), which must still
   // be current.
@@ -55,17 +55,17 @@ const MERGE_REQUEST = z.looseObject({
     .optional(),
 });
 
-type MergeRequest = z.infer<typeof MERGE_REQUEST>;
+type LandOpRequest = z.infer<typeof LAND_OP_REQUEST>;
 
 // byHand receipts may have an unapproved head; the role compares it to approval.
-type MergeReply =
-  | { merged: true; mergeCommit: string; headSha: string }
-  | { merged: true; byHand: true; mergeCommit: string; headSha: string }
-  | { merged: false; reason: string; detail?: string }
-  | { merged: false; reason: "head-changed"; headSha: string }
+type LandOpReply =
+  | { landed: true; mergeCommit: string; headSha: string }
+  | { landed: true; byHand: true; mergeCommit: string; headSha: string }
+  | { landed: false; reason: string; detail?: string }
+  | { landed: false; reason: "head-changed"; headSha: string }
   // The PR is still a draft: only ready-pr marks it ready, after the
   // Reviewer's hardening authorized it.
-  | { merged: false; reason: "draft" }
+  | { landed: false; reason: "draft" }
   | LandStale
   | Queued
   | TurnHeld;
@@ -73,7 +73,7 @@ type MergeReply =
 // The PR view, once the request and PR are consistent: the revision is the
 // state's authorized one, the expected head is its code, and the PR is from
 // the issue's branch.
-function checkedView(cfg: Config, req: MergeRequest): PrView {
+function checkedView(cfg: Config, req: LandOpRequest): PrView {
   if (!approvalHolds(req.state, req.revision)) {
     throw new OpsError(
       `merge revision (code ${String(req.revision.code)}) is not #${req.number}'s authorized revision`,
@@ -100,7 +100,7 @@ function checkedView(cfg: Config, req: MergeRequest): PrView {
 // commit locally.
 function staleReason(
   cfg: Config,
-  req: MergeRequest,
+  req: LandOpRequest,
   view: PrView,
   base: string,
 ): "conflict" | "behind" | undefined {
@@ -124,14 +124,14 @@ function staleReason(
 // never marked ready here.
 function precheck(
   cfg: Config,
-  req: MergeRequest,
+  req: LandOpRequest,
   view: PrView,
-): MergeReply | { base: string } {
+): LandOpReply | { base: string } {
   if (view.state !== "OPEN") {
-    return { merged: false, reason: `PR is ${view.state}` };
+    return { landed: false, reason: `PR is ${view.state}` };
   }
   if (view.headRefOid !== req.expectedSha) {
-    return { merged: false, reason: "head-changed", headSha: view.headRefOid };
+    return { landed: false, reason: "head-changed", headSha: view.headRefOid };
   }
   const waits = queued(cfg, req);
   if (waits !== undefined) {
@@ -150,14 +150,14 @@ function precheck(
       req.expectedBase,
     )
   ) {
-    return { merged: false, reason: "target-changed" };
+    return { landed: false, reason: "target-changed" };
   }
   const behind = staleReason(cfg, req, view, current.baseSha);
   if (behind !== undefined) {
-    return { merged: false, reason: behind };
+    return { landed: false, reason: behind };
   }
   if (view.isDraft) {
-    return { merged: false, reason: "draft" };
+    return { landed: false, reason: "draft" };
   }
   return { base: req.expectedBase };
 }
@@ -165,15 +165,15 @@ function precheck(
 // Names the configured destination and immutable authorized source, not the
 // PR's mutable target/head refs. Observations below are not a transaction
 // with PR/input state or with concurrent integration changes.
-function merge(
+function landOp(
   cfg: Config,
   request: unknown,
   clock?: ConfirmationClock,
-): MergeReply {
-  const req = parseRequest(MERGE_REQUEST, "merge", request);
+): LandOpReply {
+  const req = parseRequest(LAND_OP_REQUEST, "land", request);
   // A replay must enter read-only recovery before approval or pre-Land work,
   // even if the caller still holds its pre-attempt snapshot and PR looks OPEN.
-  if (readWriteState(cfg, req.number).mergeAttempt !== null) {
+  if (readWriteState(cfg, req.number).landingAttempt !== null) {
     const replay = reconcileAttemptedLand(cfg, { number: req.number }, clock);
     if (req.binding !== undefined) {
       settleLand(cfg, req.number, req.binding, replay);
@@ -188,7 +188,7 @@ function merge(
     // saved the receipt.
     const mergeCommit = mergeCommitOf(pr, view);
     return {
-      merged: true,
+      landed: true,
       byHand: true,
       mergeCommit,
       headSha: view.headRefOid,
@@ -203,19 +203,19 @@ function merge(
   // current-PR authority. Retargeting cannot redirect the explicit request.
   const fresh = checkedView(cfg, req);
   if (fresh.state !== "OPEN") {
-    return { merged: false, reason: `PR is ${fresh.state}` };
+    return { landed: false, reason: `PR is ${fresh.state}` };
   }
   if (fresh.headRefOid !== req.expectedSha) {
-    return { merged: false, reason: "head-changed", headSha: fresh.headRefOid };
+    return { landed: false, reason: "head-changed", headSha: fresh.headRefOid };
   }
   if (fresh.isDraft) {
-    return { merged: false, reason: "draft" };
+    return { landed: false, reason: "draft" };
   }
   const saved = readWriteState(cfg, req.number);
   const current = currentRevision(cfg, req.number, saved);
   const refusal = candidateRefusal(saved, req.revision, cfg, current.baseSha);
   if (refusal !== undefined) {
-    return { merged: false, reason: "security", detail: refusal };
+    return { landed: false, reason: "security", detail: refusal };
   }
   const moved = landStale(req.revision, current);
   if (moved !== undefined) {
@@ -223,7 +223,7 @@ function merge(
   }
   const tasks = req.binding && landRefusal(cfg, req, req.binding);
   if (tasks !== undefined) {
-    return { merged: false, reason: "task-results", detail: tasks };
+    return { landed: false, reason: "task-results", detail: tasks };
   }
   assertFastForward(
     paths.worktree(cfg, req.number),
@@ -240,7 +240,7 @@ function merge(
     throw new OpsError("a Land binding needs its run");
   }
   // Exact Land writes the target only under its integration turn (#171).
-  return underTurn(cfg, req, (): MergeReply => {
+  return underTurn(cfg, req, (): LandOpReply => {
     startLand(cfg, req.number, binding, landRun);
     approvePr(cfg, pr, req.expectedSha);
     const receipt = attemptedLand(cfg, req, checked.base, clock);
@@ -253,10 +253,10 @@ function merge(
 // not an OpsFailure that a generic transient handler could defer/retry.
 function attemptedLand(
   cfg: Config,
-  req: MergeRequest,
+  req: LandOpRequest,
   base: string,
   clock?: ConfirmationClock,
-): MergeReply {
+): LandOpReply {
   assertGitPushDestination(cfg, paths.worktree(cfg, req.number));
   beginLand(cfg, req.number, req.state.pr, { authorized: req.revision, base });
   try {
@@ -270,11 +270,11 @@ function attemptedLand(
       saveLandResponse(cfg, req.number, req.expectedSha);
     }
     const receipt = reconcileAttemptedLand(cfg, { number: req.number }, clock);
-    if (receipt.merged && receipt.byHand !== true) {
+    if (receipt.landed && receipt.byHand !== true) {
       comment(
         cfg,
         req.state.pr,
-        { role: "merger" },
+        { role: "lander" },
         `${landedText(req.state, req.expectedSha, receipt.mergeCommit)}\n\n${req.summary ?? ""}`,
       );
     }
@@ -288,5 +288,5 @@ function attemptedLand(
   }
 }
 
-export type { MergeReply };
-export { merge };
+export type { LandOpReply };
+export { landOp };

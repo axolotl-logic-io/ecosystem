@@ -9,7 +9,7 @@
 import { JOB_REPO } from "../job/layout.ts";
 import type { RoleContext } from "../job/role-context.ts";
 import { usedAuthor } from "../requirements.ts";
-import type { MergeReturn } from "../state.ts";
+import type { LandingReturn } from "../state.ts";
 
 // What a session is asked to do, as its page's sections name it.
 type TaskKind =
@@ -85,7 +85,7 @@ function requirementsLines(ctx: RoleContext): string[] {
 
 // Why merge sent the work back, such as checks that failed on its revision,
 // for the session that fixes it.
-function mergeReturnLines(mergeReturn: MergeReturn | null): string[] {
+function mergeReturnLines(mergeReturn: LandingReturn | null): string[] {
   if (mergeReturn === null) {
     return [];
   }

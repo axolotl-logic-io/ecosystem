@@ -12,7 +12,7 @@ flowchart LR
   implement --> review["review: hardening"] --> merge["merge: integration, Security, Land, result confirmation"] --> done
 ```
 
-Only three model roles exist: Author, Developer and Reviewer. The serialized role and config name for the Developer is still `implementor`.
+Only three model roles exist: Author, Developer and Reviewer. The serialized role and config name for the Developer is `developer`; records and configs from before #166 that say `implementor` still read as the Developer's.
 
 | Stage / phase | Session | Commits | Result |
 |---|---|---|---|
@@ -30,7 +30,7 @@ In `branch` mode, the writable scope is the code checkout, `repo/`, including tr
 
 The Developer starts from the work already on the branch. It doesn't synchronize with the base, and it doesn't own the full verification. Its push clears any earlier hardening, approval or integration.
 
-Each stage runs as one installed agent: `issue-pipeline-author`, `issue-pipeline-implementor` or `issue-pipeline-reviewer`. `STAGE_AGENTS` in `apps/issue-pipeline/src/job/roles.ts` lists the sessions each stage may run and whether each commits. A session with the wrong agent, a missing Reviewer phase or the wrong commit setting is refused, not guessed.
+Each stage runs as one installed agent: `issue-pipeline-author`, `issue-pipeline-developer` or `issue-pipeline-reviewer`. `STAGE_AGENTS` in `apps/issue-pipeline/src/job/roles.ts` lists the sessions each stage may run and whether each commits. A session with the wrong agent, a missing Reviewer phase or the wrong commit setting is refused, not guessed.
 
 ## Prompts
 

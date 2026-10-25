@@ -14,7 +14,7 @@ import { paths } from "../config.ts";
 import { gitIn, head } from "../git-state.ts";
 import { OpsError } from "../ops-error.ts";
 import { tail } from "../process.ts";
-import type { CodeMerged } from "../state.ts";
+import type { CodeLanded } from "../state.ts";
 import { confirmedLandedParent } from "./landed-graph.ts";
 import { commitLog } from "./review-diff.ts";
 
@@ -80,7 +80,7 @@ function detachAt(wt: string, sha: string): void {
 function landedCode(
   cfg: Config,
   n: number,
-  codeMerged: CodeMerged,
+  codeMerged: CodeLanded,
 ): LandedCode {
   const wt = paths.worktree(cfg, n);
   const parent = confirmedLandedParent(cfg, n, wt, codeMerged);

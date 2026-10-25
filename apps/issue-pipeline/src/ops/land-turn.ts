@@ -27,7 +27,7 @@ type Turn = ReturnType<typeof integrationTurn>;
 
 // A refused Land's reply when another Land holds the turn.
 interface TurnHeld {
-  merged: false;
+  landed: false;
   reason: "integration-turn";
   detail: string;
 }
@@ -44,8 +44,8 @@ function earlier(cfg: Config, number: number, turn: Turn): Request[] {
     .read()
     .pending.filter(
       (row) =>
-        row.identity.issue === number &&
-        row.identity.instance !== cfg.execution?.instance,
+        row.binding.issue === number &&
+        row.binding.instance !== cfg.execution?.instance,
     );
 }
 
@@ -74,12 +74,12 @@ function retireSettledTurn(cfg: Config, number: number): void {
 function waitingFor(cfg: Config, turn: Turn): string {
   const { owner, pending } = turn.read();
   const mine = pending.findIndex(
-    (row) => row.identity.instance === cfg.execution?.instance,
+    (row) => row.binding.instance === cfg.execution?.instance,
   );
-  const ahead = pending.slice(0, mine).map((row) => `#${row.identity.issue}`);
+  const ahead = pending.slice(0, mine).map((row) => `#${row.binding.issue}`);
   let holder = "no Land holds the target's integration turn";
   if (owner !== null) {
-    holder = `issue #${owner.identity.issue} holds the target's integration turn`;
+    holder = `issue #${owner.binding.issue} holds the target's integration turn`;
   }
   return `${holder}; ahead of this Land: ${ahead.join(", ")}`;
 }
@@ -116,7 +116,7 @@ function underTurn<T>(
   cfg: Config,
   req: { number: number; expectedBase: string },
   land: () => T,
-): T | TurnHeld | { merged: false; reason: "target-changed" } {
+): T | TurnHeld | { landed: false; reason: "target-changed" } {
   if (cfg.execution === undefined) {
     throw new OpsError("an exact Land needs an invocation binding");
   }
@@ -126,11 +126,11 @@ function underTurn<T>(
   if (!turn.acquire()) {
     const detail = waitingFor(cfg, turn);
     turn.cancel();
-    return { merged: false, reason: "integration-turn", detail };
+    return { landed: false, reason: "integration-turn", detail };
   }
   if (targetNow(cfg, req.number) !== req.expectedBase) {
     turn.release();
-    return { merged: false, reason: "target-changed" };
+    return { landed: false, reason: "target-changed" };
   }
   let reply: T;
   try {

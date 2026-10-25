@@ -33,14 +33,14 @@ Each repository has an operator config file in `$ISSUE_PIPELINE_ROOT/repos/`. Re
 | `requireCi` | `true` |
 | `ciWaitMinutes` | 30 |
 | `commandTimeoutMinutes` | 20 |
-| `mergeConfirmation` | 90 seconds, backoff `[1, 2, 4, 8, 10]` |
+| `landingConfirmation` | 90 seconds, backoff `[1, 2, 4, 8, 10]` |
 | `usageFlags` | `firstContext` 40,000, `toolOutputShare` 0.25 |
 
-Required settings with no default include `devAccount`, `mergeAccount`, `credentialsEnvFile` and a nonempty `allowedUsers`. Set the three `models` and the [runtime](runtime.md) settings explicitly too.
+Required settings with no default include `devAccount`, `landingAccount`, `credentialsEnvFile` and a nonempty `allowedUsers`. Set the three `models` and the [runtime](runtime.md) settings explicitly too.
 
 ## Credentials
 
-Keep the credentials file (`credentialsEnvFile`) outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_MERGE_GITHUB_TOKEN` (see [authority](authority.md#two-github-accounts)).
+Keep the credentials file (`credentialsEnvFile`) outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN` (see [authority](authority.md#two-github-accounts)).
 
 - Verify each account's identity without printing token values.
 - Keep the file out of any web app folder and out of any build or deploy `--env-file`. Pipeline build tasks don't load it.
@@ -102,6 +102,31 @@ These checks accept the installed artifacts and CLI boundary, not integration co
 8. Resume one explicitly assigned issue and stage at a time.
 
 Never run old and new jobs together. Never reset branches, hardening, integration, landing-attempt evidence, Security rejections or Land receipts to make an upgrade pass. Rolling back an install doesn't undo landed code.
+
+### Renamed names (#166)
+
+#166 renamed the names that live outside the code to the [glossary's](../../GLOSSARY.md) terms. The rule is the same for every name: **the pipeline reads the old name and the new one, writes only the new one, and never rewrites history.** A config or credentials file that gives both names for one setting is refused.
+
+| Kind | Old name | New name | How the old one is handled |
+| --- | --- | --- | --- |
+| Repo config | `mergeAccount` | `landingAccount` | Loads, with a warning naming it |
+| Repo config | `mergeConfirmation` | `landingConfirmation` | Loads, with a warning |
+| Repo config | `jobRoles.merger` | `jobRoles.lander` | Loads, with a warning |
+| Repo config | `models.implementor` | `models.developer` | Loads, with a warning |
+| Credentials file | `ISSUE_PIPELINE_MERGE_GITHUB_TOKEN` | `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN` | Read when the new key is absent |
+| CLI (`job.mjs`, `caller-jobs.mjs start`) | `--merge-queue` | `--landing-order` | Accepted |
+| Ops op | `merge`, `confirm-merged`, `reconcile-merge` | `land`, `confirm-landed`, `reconcile-land` | Accepted |
+| Saved state | version 2: `merged`, `codeMerged`, `mergeAttempt`, `mergeReturn` | version 3: `landed`, `codeLanded`, `landingAttempt`, `landingReturn` | Read with its keys renamed; the next save writes version 3 |
+| Coordination request record | version 1: `identity` | version 2: `binding` | Read with its key renamed, never rewritten |
+| Label | `agent:merged` | `agent:landed` | Still counts as landed; never applied again |
+| Usage records and signed comments | role `implementor`, `merger` | `developer`, `lander` | Read as the new role |
+| Installed agent definition | `issue-pipeline-implementor.md` | `issue-pipeline-developer.md` | The installer retires the old file, with a backup |
+
+Stage names (`--stage`, the saved `stage`, `stageCaps`), the legacy orchestrator's keys and GitHub's own fields keep their names. The [domain alignment inventory](../domain-alignment.md#code-names-165-and-persisted-names-166) says why.
+
+To upgrade, drain and install as usual. No migration runs: each open issue's state becomes version 3 on its next save. Then, at any time, rename the keys in each repo config and the credentials file; the warnings name what's left. Old config, credentials, CLI and op names stay accepted until a later release removes them, once no config or file uses them. The readers for old saved records stay for good, because those records are history.
+
+Don't roll back past the first version 3 save: an older release refuses a version 3 state as invalid write authority, so it stops rather than guesses.
 
 ### Upgrade from the removed wiki flow
 

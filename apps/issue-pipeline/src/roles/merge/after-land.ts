@@ -4,7 +4,7 @@
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
 import { requirementsHold } from "../../requirements.ts";
 import { currentResultObservation } from "../../security-clearance.ts";
-import type { CodeMerged, IssueState, Revision } from "../../state.ts";
+import type { CodeLanded, IssueState, Revision } from "../../state.ts";
 import type { Binding } from "../../task-result-records.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { currentRevision } from "../revision-source.ts";
@@ -35,7 +35,7 @@ async function afterOwnLand(
 ): Promise<RoleEnd> {
   const merged = `PR #${start.pr} merged as ${short(mergeCommit)}`;
   const state = logged(
-    { ...start, merged: { ...authorized, code: mergeCommit } },
+    { ...start, landed: { ...authorized, code: mergeCommit } },
     `merged PR #${start.pr} at ${authorized.code} as ${mergeCommit}`,
   );
   await ctx.save(state);
@@ -82,7 +82,7 @@ async function afterOwnLand(
 // external, manual or historical landing. Its checks and Security did not
 // provably clear this exact result before the target moved, so it stops with
 // landed truth retained. No post-Land suite, writer or Security runs here.
-function afterEarlierLand(state: IssueState, codeMerged: CodeMerged): RoleEnd {
+function afterEarlierLand(state: IssueState, codeMerged: CodeLanded): RoleEnd {
   return errorStop(
     state,
     `PR #${codeMerged.pr} merged as ${short(codeMerged.sha)} without an exact own-merge receipt and premerge check/Security proof; ${NO_POST_LAND_REPAIR}`,

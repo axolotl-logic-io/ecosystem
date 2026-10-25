@@ -26,7 +26,7 @@ function approvalGate(
   if (!requirementsHold(state, gherkin, revision.inputs)) {
     return toRequirements(state, "the trusted inputs need requirements review");
   }
-  const { codeMerged } = state;
+  const { codeLanded: codeMerged } = state;
   if (codeMerged !== null && !codeLandConfirmed(current, codeMerged)) {
     return failed(
       state,
@@ -34,7 +34,7 @@ function approvalGate(
     );
   }
   if (
-    state.codeMerged === null &&
+    state.codeLanded === null &&
     !targetHolds(ctx.cfg, state.hardenedTarget, current.baseSha)
   ) {
     return toReview(

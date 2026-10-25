@@ -25,7 +25,7 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
   // (Axlog, 2026-10-15). Missing files are skipped.
   practices: ["AGENTS.md", "CONTRIBUTING.md"],
   leaseHours: 3,
-  mergeConfirmation: {
+  landingConfirmation: {
     deadlineSeconds: 90,
     backoffSeconds: [
       1,
@@ -69,7 +69,7 @@ const JOB_ROLE = z
 const JOB_ROLES = z.object({
   reader: JOB_ROLE,
   writer: JOB_ROLE,
-  merger: JOB_ROLE,
+  lander: JOB_ROLE,
 });
 // What the ops modules read from a config. Every other key passes through as
 // it is; config.ts warns about the keys the pipeline no longer reads.
@@ -78,14 +78,14 @@ const JOB_ROLES = z.object({
 // mapping from the installed version's role names.
 const MODELS = z.object({
   author: z.string().min(1),
-  implementor: z.string().min(1),
+  developer: z.string().min(1),
   reviewer: z.string().min(1),
 });
 
 const CONFIG_SCHEMA = z.looseObject({
   projectPolicy: PROJECT_POLICY_SOURCE.optional(),
   devAccount: z.string(),
-  mergeAccount: z.string(),
+  landingAccount: z.string(),
   credentialsEnvFile: z.string(),
   legacyAccount: z.string().optional(),
   allowedUsers: z.array(z.string()),
@@ -117,7 +117,7 @@ const CONFIG_SCHEMA = z.looseObject({
   leaseHours: z.number(),
   // One read-only confirmation run, not renewed mutation authority. Bound both
   // knobs to avoid accidental busy loops or an effectively unbounded job.
-  mergeConfirmation: z.object({
+  landingConfirmation: z.object({
     deadlineSeconds: z
       .number()
       .int()
@@ -152,16 +152,16 @@ function checkIdentities(
     account,
     tokenFile,
     devAccount,
-    mergeAccount,
+    landingAccount,
     credentialsEnvFile,
     legacyAccount,
   } = raw;
   if (account !== undefined || tokenFile !== undefined) {
     throw new OpsError(
-      "legacy account/tokenFile config is unsupported; migrate to distinct devAccount, mergeAccount and an absolute credentialsEnvFile",
+      "legacy account/tokenFile config is unsupported; migrate to distinct devAccount, landingAccount and an absolute credentialsEnvFile",
     );
   }
-  for (const [key, value] of Object.entries({ devAccount, mergeAccount })) {
+  for (const [key, value] of Object.entries({ devAccount, landingAccount })) {
     if (typeof value !== "string" || !GITHUB_USERNAME.test(value)) {
       throw new OpsError(
         `config ${configPath} must set ${key} to a GitHub username`,
@@ -174,8 +174,10 @@ function checkIdentities(
   ) {
     throw new OpsError("legacyAccount must be a GitHub username");
   }
-  if (String(devAccount).toLowerCase() === String(mergeAccount).toLowerCase()) {
-    throw new OpsError("devAccount and mergeAccount must be distinct");
+  if (
+    String(devAccount).toLowerCase() === String(landingAccount).toLowerCase()
+  ) {
+    throw new OpsError("devAccount and landingAccount must be distinct");
   }
   if (
     typeof credentialsEnvFile !== "string" ||

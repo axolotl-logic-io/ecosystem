@@ -147,7 +147,7 @@ function postClaim(cfg: Config, n: number, req: LaneRequest): Claim {
   const text = `Lane \`${lane}\` is claiming this issue. If another lane claimed it first, this lane abandons it and takes another issue.`;
   const body = `${signed({ role: "claim", run: sweep }, text)}\n<!-- agent-pipeline:claim lane=${lane} sweep=${sweep} -->`;
   const posted = COMMENT.parse(
-    ghJson(cfg, "merge", [
+    ghJson(cfg, "landing", [
       "api",
       "-X",
       "POST",

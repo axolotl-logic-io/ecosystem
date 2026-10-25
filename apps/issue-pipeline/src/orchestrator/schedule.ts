@@ -45,7 +45,7 @@ type Decision =
       reauthor: Reauthor | null;
       // A code Land's landing order, holder first; null for other stages and
       // for a completion's merge job.
-      mergeQueue: readonly number[] | null;
+      landingOrder: readonly number[] | null;
     }
   | { action: "held"; at: string; issue: number; stage: Stage; reason: string }
   | {
@@ -213,11 +213,11 @@ function decide(
     started = "restart";
   }
   countStart(count, stage);
-  let mergeQueue: readonly number[] | null = null;
+  let landingOrder: readonly number[] | null = null;
   if (codeLand) {
     count.holder = number;
     count.memory.mergeWindow = number;
-    mergeQueue = count.queue;
+    landingOrder = count.queue;
   }
   const { reauthor } = plan;
   return {
@@ -227,7 +227,7 @@ function decide(
     stage,
     reason: started,
     reauthor,
-    mergeQueue,
+    landingOrder,
   };
 }
 

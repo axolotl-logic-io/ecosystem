@@ -8,6 +8,7 @@ import { parseEnv } from "node:util";
 import { z } from "zod";
 import { hideCredentialVariable } from "./child-env.ts";
 import { withoutRemovedKeys } from "./config-legacy.ts";
+import { withRenamedKeys } from "./config-renamed.ts";
 import { CONFIG_SCHEMA, checkRequired, DEFAULTS } from "./config-schema.ts";
 import { JOB_REPO } from "./job/layout.ts";
 import { OpsError } from "./ops-error.ts";
@@ -62,12 +63,13 @@ function loadConfig(configPath: string | undefined): Config {
     throw new OpsError(`config not found: ${String(configPath)}`);
   }
   const fromFile = RAW.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+  const renamed = withRenamedKeys(fromFile);
   const { kept: raw, warnings } = withoutRemovedKeys({
     ...DEFAULTS,
-    ...resolveProjectSettings(fromFile),
+    ...resolveProjectSettings(renamed.config),
   });
   checkRequired(String(configPath), raw);
-  for (const warning of warnings) {
+  for (const warning of [...renamed.warnings, ...warnings]) {
     process.stderr.write(`config ${String(configPath)}: ${warning}\n`);
   }
   const parsed = CONFIG_SCHEMA.safeParse(raw);
@@ -175,10 +177,15 @@ const paths = {
   },
 };
 
-type Account = "dev" | "merge";
+type Account = "dev" | "landing";
 const VARIABLES: Readonly<Record<Account, string>> = {
   dev: "ISSUE_PIPELINE_DEV_GITHUB_TOKEN",
-  merge: "ISSUE_PIPELINE_MERGE_GITHUB_TOKEN",
+  landing: "ISSUE_PIPELINE_LANDING_GITHUB_TOKEN",
+};
+// The credential file key each account's token had before #166. A file may
+// set the old key or the new one, never both.
+const OLD_VARIABLES: Readonly<Partial<Record<Account, string>>> = {
+  landing: "ISSUE_PIPELINE_MERGE_GITHUB_TOKEN",
 };
 const TOKEN = /^\S+$/u;
 const NON_OWNER_PERMISSION_RANGE = 0o100;
@@ -203,7 +210,16 @@ function credential(cfg: Config, identity: Account): string {
     );
   }
   const values = new Map(Object.entries(parseEnv(contents)));
-  const selected = values.get(VARIABLES[identity]);
+  const old = OLD_VARIABLES[identity];
+  if (old !== undefined && values.has(old) && values.has(VARIABLES[identity])) {
+    throw new OpsError(
+      `credential file sets both ${old} and ${VARIABLES[identity]}; keep only ${VARIABLES[identity]}`,
+    );
+  }
+  let selected = values.get(VARIABLES[identity]);
+  if (selected === undefined && old !== undefined) {
+    selected = values.get(old);
+  }
   if (selected === undefined || !TOKEN.test(selected)) {
     throw new OpsError(
       `credential file must set ${VARIABLES[identity]} to a nonempty token`,

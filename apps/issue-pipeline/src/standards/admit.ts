@@ -53,7 +53,7 @@ function markerOf(n: number, body: string): PlanMarker {
 function planIssue(cfg: Config, n: number): PlanMarker {
   const args = ["api", `repos/${cfg.repo}/issues/${n}`, "--jq", ISSUE_JQ];
   const parsed = ISSUE.safeParse(
-    ghJson(cfg, "merge", args, { allowFail: true }),
+    ghJson(cfg, "landing", args, { allowFail: true }),
   );
   if (!parsed.success) {
     throw new Refusal(`GitHub doesn't show issue #${n} readable`);
@@ -82,7 +82,7 @@ function planIssue(cfg: Config, n: number): PlanMarker {
 function baseHead(cfg: Config): string | null {
   const url = cfg.cloneUrl || `https://github.com/${cfg.repo}.git`;
   const ref = `refs/heads/${cfg.baseBranch}`;
-  const { code, stdout } = git(cfg, "merge", ["ls-remote", url, ref], {
+  const { code, stdout } = git(cfg, "landing", ["ls-remote", url, ref], {
     allowFail: true,
   });
   const [sha = ""] = stdout.trim().split(WHITESPACE);
@@ -105,7 +105,9 @@ function otherPlans(cfg: Config, n: number): number[] {
     "--json",
     "number,body",
   ];
-  const rows = ROWS.safeParse(ghJson(cfg, "merge", args, { allowFail: true }));
+  const rows = ROWS.safeParse(
+    ghJson(cfg, "landing", args, { allowFail: true }),
+  );
   if (!rows.success || rows.data.length >= ISSUE_LIST_LIMIT) {
     throw new Refusal(
       "the open issues couldn't be listed completely, so another upgrade issue can't be ruled out",

@@ -24,7 +24,7 @@ const HISTORY = z.array(z.object({ number: z.number().int().positive() }));
 
 function historicalPrFor(cfg: Config, n: number): number | null {
   const rows = HISTORY.parse(
-    ghJson(cfg, "merge", [
+    ghJson(cfg, "landing", [
       "pr",
       "list",
       "-R",
@@ -48,7 +48,7 @@ function historicalPrFor(cfg: Config, n: number): number | null {
 // The first PR from issue `n`'s branch in `state`, or undefined when it has
 // none.
 function prFor(cfg: Config, n: number, state: string): PrRow | undefined {
-  const listed = ghJson(cfg, "merge", [
+  const listed = ghJson(cfg, "landing", [
     "pr",
     "list",
     "-R",

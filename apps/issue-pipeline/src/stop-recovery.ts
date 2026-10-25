@@ -11,7 +11,7 @@ import { credential, paths } from "./config.ts";
 import { OpsError } from "./ops-error.ts";
 import type { IssueState } from "./state.ts";
 
-const ACCOUNTS: readonly Account[] = ["dev", "merge"];
+const ACCOUNTS: readonly Account[] = ["dev", "landing"];
 const DIAGNOSTIC_LIMIT = 8192;
 const TOKEN = /gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+/gu;
 const RECOVERY_ID = z.uuid();

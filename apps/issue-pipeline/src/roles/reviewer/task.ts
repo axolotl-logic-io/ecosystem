@@ -19,7 +19,7 @@ function hardeningTask(ctx: RoleContext, mode: Mode): string {
     ...scopeLines(ctx, mode),
     ...fullCheckLines(ctx),
     ...requirementsLines(ctx),
-    ...mergeReturnLines(ctx.state.mergeReturn),
+    ...mergeReturnLines(ctx.state.landingReturn),
     ...replyLines([
       "`done`, with a `summary` of what you examined, the tests you added and the defects you fixed, once it is committed.",
       "`cannot`, with the `reason` naming the question only a person can answer.",

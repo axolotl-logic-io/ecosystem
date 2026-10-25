@@ -11,7 +11,7 @@ import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { parseRequest } from "../process.ts";
 import { readWriteState } from "../saved-state.ts";
-import type { CodeMerged, IssueState } from "../state.ts";
+import type { CodeLanded, IssueState } from "../state.ts";
 import { sameRevision } from "../state.ts";
 import { BINDING } from "../task-result-records.ts";
 import { landDeliveryRefusal } from "./land-task.ts";
@@ -19,7 +19,7 @@ import { confirmedLandedParent } from "./landed-graph.ts";
 
 const REQUEST = z.looseObject({
   number: z.number().int().positive(),
-  codeMerged: z.object({
+  codeLanded: z.object({
     pr: z.number().int().positive(),
     sha: z.string().min(1),
   }),
@@ -37,17 +37,17 @@ type ConfirmedReply =
 // its receipt, and the deterministic checks saved for exactly that commit.
 function preLandProofRefusal(
   state: IssueState,
-  codeMerged: CodeMerged,
+  codeMerged: CodeLanded,
 ): string | null {
-  const attempt = state.mergeAttempt;
+  const attempt = state.landingAttempt;
   if (attempt === null || attempt.operation === undefined) {
     return `no signed fast-forward intent binds ${codeMerged.sha} to a checked candidate (an external, manual or legacy two-parent merge)`;
   }
   if (
     attempt.pr !== codeMerged.pr ||
     attempt.authorized.code !== codeMerged.sha ||
-    state.merged === null ||
-    !sameRevision(state.merged, attempt.authorized)
+    state.landed === null ||
+    !sameRevision(state.landed, attempt.authorized)
   ) {
     return `the signed fast-forward intent and receipt do not bind PR #${codeMerged.pr} merged as ${codeMerged.sha}`;
   }
@@ -58,11 +58,11 @@ function preLandProofRefusal(
 }
 
 function confirmLandedOp(cfg: Config, request: unknown): ConfirmedReply {
-  const { number, codeMerged, binding } = parseRequest(
-    REQUEST,
-    "confirm-merged",
-    request,
-  );
+  const {
+    number,
+    codeLanded: codeMerged,
+    binding,
+  } = parseRequest(REQUEST, "confirm-landed", request);
   const refusal =
     preLandProofRefusal(readWriteState(cfg, number), codeMerged) ??
     (binding && landDeliveryRefusal(cfg, number, binding, codeMerged.sha)) ??

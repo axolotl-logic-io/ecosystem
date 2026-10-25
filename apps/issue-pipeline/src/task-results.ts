@@ -81,7 +81,7 @@ function checkResult(rows: readonly Row[], row: Row<Result>): void {
 
 // The issue's records, in order, after checking every rule the reader relies on.
 function taskRecords(
-  cfg: Pick<Config, "repo" | "mergeAccount">,
+  cfg: Pick<Config, "repo" | "landingAccount">,
   number: number,
   comments: readonly IssueComment[],
 ): Row[] {
@@ -188,7 +188,7 @@ function latestRun(rows: readonly Row[], binding: Binding): string | null {
 // The status of `binding` in the issue's records; a hold is a status, never
 // absence.
 function taskStatus(
-  cfg: Pick<Config, "repo" | "mergeAccount">,
+  cfg: Pick<Config, "repo" | "landingAccount">,
   number: number,
   comments: readonly IssueComment[],
   binding: Binding,

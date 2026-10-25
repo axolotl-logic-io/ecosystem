@@ -20,9 +20,9 @@ function saveDraftAuthority(
   assignedBranch(cfg, n, state);
   const actual = pullRequest(cfg, n, pr);
   if (
-    state.mergeAttempt !== null ||
-    state.codeMerged !== null ||
-    (state.merged !== null && state.merged.code !== null) ||
+    state.landingAttempt !== null ||
+    state.codeLanded !== null ||
+    (state.landed !== null && state.landed.code !== null) ||
     (state.pr !== null && state.pr !== pr) ||
     actual.state !== "OPEN" ||
     actual.headSha !== headSha
@@ -44,9 +44,9 @@ function recoverDraft(cfg: Config, n: number, reopen: number): void {
   const pr = saved.pr ?? historicalPrFor(cfg, n);
   if (
     pr !== reopen ||
-    saved.mergeAttempt !== null ||
-    saved.codeMerged !== null ||
-    (saved.merged !== null && saved.merged.code !== null)
+    saved.landingAttempt !== null ||
+    saved.codeLanded !== null ||
+    (saved.landed !== null && saved.landed.code !== null)
   ) {
     throw new OpsError(`PR #${reopen} is not recoverable draft authority`);
   }

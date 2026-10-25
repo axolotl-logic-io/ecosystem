@@ -1,5 +1,5 @@
 // An issue's state, which saved-state.ts keeps on GitHub. This module owns
-// the state's schema (version 2), its log, and the landing authorization rule:
+// the state's schema (version 3), its log, and the landing authorization rule:
 // only the exact code/input revision that passed hardening. Security must
 // clear that candidate before Land; old landed-result receipts are history.
 
@@ -7,8 +7,8 @@ import { z } from "zod";
 import { EXECUTION_RECEIPT } from "./execution-receipt.ts";
 import {
   INTEGRATION,
+  LANDING_ATTEMPT,
   legacyWikiOf,
-  MERGE_ATTEMPT,
   REVISION,
 } from "./land-provenance.ts";
 import { REVIEWED_TARGET } from "./reviewed-target.ts";
@@ -20,6 +20,8 @@ import {
   SECURITY_VERDICT,
 } from "./state-security.ts";
 
+// The saved state's version; version 3 renamed four keys (#166).
+const STATE_VERSION = 3;
 const MAX_LOG_ENTRIES = 40;
 const MAX_LOG_ENTRY = 300;
 const STAMP_LENGTH = 16;
@@ -71,14 +73,14 @@ const REVIEW = z.object({
 });
 
 // The reasons "wiki-check" and "wiki-conflict" are legacy: no longer written.
-const MERGE_RETURN = z.object({
+const LANDING_RETURN = z.object({
   reason: z.enum(["conflict", "retest", "ci", "wiki-check", "wiki-conflict"]),
   detail: z.string(),
-  codeMerged: z.boolean(),
+  codeLanded: z.boolean(),
 });
 
 // Genuine GitHub merged truth, not own provenance or completion authority.
-const CODE_MERGED = z.object({
+const CODE_LANDED = z.object({
   pr: z.number().int().positive(),
   sha: z.string().min(1),
 });
@@ -97,7 +99,7 @@ const COUNTS = z.object({
 // loses the issue's PR or branch head; only an unreadable stage or number
 // makes the whole state unreadable.
 const ISSUE_STATE = z.object({
-  version: z.literal(2),
+  version: z.literal(STATE_VERSION),
   execution: EXECUTION_RECEIPT.optional(),
   number: z.number().int().positive(),
   stage: STATUS,
@@ -137,10 +139,10 @@ const ISSUE_STATE = z.object({
     .nullable()
     .optional(),
   verifiedSha: z.string().nullable().catch(null),
-  mergeReturn: MERGE_RETURN.nullable().catch(null),
-  merged: REVISION.nullable().catch(null),
-  codeMerged: CODE_MERGED.nullable().catch(null),
-  mergeAttempt: MERGE_ATTEMPT.nullable().catch(null),
+  landingReturn: LANDING_RETURN.nullable().catch(null),
+  landed: REVISION.nullable().catch(null),
+  codeLanded: CODE_LANDED.nullable().catch(null),
+  landingAttempt: LANDING_ATTEMPT.nullable().catch(null),
   asked: ASKED.nullable().catch(null),
   counts: COUNTS.catch(ZERO_COUNTS),
   log: z.array(z.string()).catch([]),
@@ -149,8 +151,8 @@ const ISSUE_STATE = z.object({
 type IssueState = z.infer<typeof ISSUE_STATE>;
 type Revision = z.infer<typeof REVISION>;
 type Finding = z.infer<typeof FINDING>;
-type MergeReturn = z.infer<typeof MERGE_RETURN>;
-type CodeMerged = z.infer<typeof CODE_MERGED>;
+type LandingReturn = z.infer<typeof LANDING_RETURN>;
+type CodeLanded = z.infer<typeof CODE_LANDED>;
 type Asked = z.infer<typeof ASKED>;
 type Integration = z.infer<typeof INTEGRATION>;
 type Security = z.infer<typeof SECURITY>;
@@ -179,7 +181,7 @@ function newIssueState(
   stage: "author" | "implement" = "implement",
 ): IssueState {
   return {
-    version: 2,
+    version: STATE_VERSION,
     number,
     stage,
     stoppedStage: null,
@@ -199,10 +201,10 @@ function newIssueState(
     integration: null,
     security: null,
     verifiedSha: null,
-    mergeReturn: null,
-    merged: null,
-    codeMerged: null,
-    mergeAttempt: null,
+    landingReturn: null,
+    landed: null,
+    codeLanded: null,
+    landingAttempt: null,
     asked: null,
     counts: { ...ZERO_COUNTS },
     log: [],
@@ -249,14 +251,14 @@ function isStatus(value: unknown): value is Status {
   return STATUS.safeParse(value).success;
 }
 
-export type { MergeAttempt } from "./land-provenance.ts";
+export type { LandingAttempt } from "./land-provenance.ts";
 export type {
   Asked,
-  CodeMerged,
+  CodeLanded,
   Finding,
   Integration,
   IssueState,
-  MergeReturn,
+  LandingReturn,
   Revision,
   Security,
   SecurityCategory,
@@ -272,6 +274,7 @@ export {
   landAuthorization,
   newIssueState,
   resumeOf,
+  STATE_VERSION,
   sameRevision,
   withLog,
 };

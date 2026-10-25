@@ -50,7 +50,7 @@ function workTask(ctx: RoleContext, mode: Mode): string {
     ...scopeLines(ctx, mode),
     ...requirementsLines(ctx),
     ...findingLines(ctx),
-    ...mergeReturnLines(ctx.state.mergeReturn),
+    ...mergeReturnLines(ctx.state.landingReturn),
     ...replyLines([
       "`done`, with a `summary` of the change once it is committed; it becomes the draft PR's description.",
       "`cannot`, with the `reason`.",

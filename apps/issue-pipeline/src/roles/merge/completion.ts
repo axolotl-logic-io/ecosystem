@@ -9,7 +9,7 @@ import { legacyWikiOf } from "../../land-provenance.ts";
 import { ownLandResultObservation } from "../../ops/land-guard.ts";
 import { requirementsHold } from "../../requirements.ts";
 import { securityRefusal } from "../../security-clearance.ts";
-import type { CodeMerged, IssueState, Revision } from "../../state.ts";
+import type { CodeLanded, IssueState, Revision } from "../../state.ts";
 import { sameRevision } from "../../state.ts";
 import { SHORT_SHA } from "../change-task.ts";
 import { opReply } from "../op-replies.ts";
@@ -42,7 +42,7 @@ async function complete(
 ): Promise<RoleEnd> {
   const entry = `done: merged code ${short(merged.code)}`;
   const done = logged(
-    { ...state, stage: "done", merged, mergeReturn: null },
+    { ...state, stage: "done", landed: merged, landingReturn: null },
     entry,
   );
   await ctx.save(done);
@@ -140,7 +140,7 @@ async function finishConfirmed(
   current: CurrentRevision,
 ): Promise<RoleEnd> {
   const { revision } = current;
-  let codeMerged: CodeMerged | null = null;
+  let codeMerged: CodeLanded | null = null;
   if (merged.code !== null && state.pr !== null) {
     codeMerged = { pr: state.pr, sha: merged.code };
   }

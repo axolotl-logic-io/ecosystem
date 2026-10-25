@@ -50,7 +50,7 @@ const READY_SAVED_STAGES: ReadonlySet<string> = new Set(["review", "merge"]);
 function viewForReady(cfg: Config, pr: number): z.infer<typeof READY_VIEW> {
   const args = ["pr", "view", String(pr), "-R", cfg.repo];
   const view = READY_VIEW.safeParse(
-    ghJson(cfg, "merge", [...args, "--json", READY_VIEW_FIELDS]),
+    ghJson(cfg, "landing", [...args, "--json", READY_VIEW_FIELDS]),
   );
   if (!view.success) {
     throw new OpsError(

@@ -258,7 +258,7 @@ function sweepRepo(sweep: {
     const hold = "the open-issue listing was cut short; nothing starts from it";
     return [{ repo: cfg.repo, issue: null, hold }];
   }
-  const buddies = [cfg.devAccount, cfg.mergeAccount];
+  const buddies = [cfg.devAccount, cfg.landingAccount];
   return open
     .filter(
       (issue) =>

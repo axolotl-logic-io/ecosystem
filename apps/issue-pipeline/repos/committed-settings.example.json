@@ -2,14 +2,14 @@
   "repo": "OWNER/REPO",
   "baseBranch": "main",
   "devAccount": "DEVELOPMENT-BOT",
-  "mergeAccount": "REVIEW-MERGE-BOT",
+  "landingAccount": "REVIEW-MERGE-BOT",
   "credentialsEnvFile": "/absolute/operator-checkout/project/.env",
   "allowedUsers": ["MAINTAINER"],
   "takeNewWork": true,
   "skipLabels": ["deploy"],
   "models": {
     "author": "openai/gpt-6.1-sol",
-    "implementor": "openai/gpt-6.1-sol",
+    "developer": "openai/gpt-6.1-sol",
     "reviewer": "openai/gpt-6.1-sol"
   },
   "runtime": {
@@ -27,7 +27,7 @@
   "mergeAdmin": false,
   "requireCi": true,
   "ciWaitMinutes": 30,
-  "mergeConfirmation": {
+  "landingConfirmation": {
     "deadlineSeconds": 90,
     "backoffSeconds": [1, 2, 4, 8, 10]
   },

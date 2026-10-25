@@ -54,7 +54,7 @@ A job started with `--assignment` works only while its buddy's account holds the
 | Work | Buddy account whose assignment counts |
 | --- | --- |
 | `author`, `implement`, `review` stages; Sync task | `devAccount` (Hippy) |
-| `merge` stage; Integration task | `mergeAccount` (Lawd) |
+| `merge` stage; Integration task | `landingAccount` (Lawd) |
 
 The job checks the grant before it acquires ownership, before every writer session and push, before every credentialed write in the job and its ops children (the ops frame carries `grant`; `controlledMutation` rereads it), and before it applies its role's end. A paused job ends `wait` with `paused: …` and writes nothing more to GitHub. Its last saved state is its checkpoint, and teardown keeps its local work (patches and a code bundle in `runs/`), as on any exit. Only a newer grant by the grantor lifts the pause. `test/assignment-withdrawal.test.ts` checks this through built jobs.
 
@@ -80,7 +80,7 @@ Since #186 the chain is explicit: a stage job that needs a task ends `wait` with
 | Stage / phase | Session authority | Result |
 |---|---|---|
 | `author` (explicit) | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
-| `implement` | Developer (`implementor` in config), writable | Preserved issue work plus code/tests/docs commits through `pipeline_commit`, pushed as a **draft**; no entry/resume base synchronization or mandatory verification/fix loop |
+| `implement` | Developer (`developer` in config, formerly `implementor`), writable | Preserved issue work plus code/tests/docs commits through `pipeline_commit`, pushed as a **draft**; no entry/resume base synchronization or mandatory verification/fix loop |
 | `review` / `hardening` | Hippy, the Developer, in a fresh session (the caller passes `--hardening-buddy hippy`; a bare `job.mjs` still hardens as the Reviewer), writable | Design/correctness/test fixes, the checks merge sent back, and bounded configured verification fixes, without synchronization. Requests Sync first when R misses the target. Records a Hardening result, then saves exact `hardened` before guarded draft readiness |
 | Sync task (`--task sync`) | Hippy, writable, `writer` profile | Rebases R onto exactly the target commit T as R′ through the development account; a stopped rebase goes to Hippy's resolver sessions (phase `sync`). R′ returns to review for fresh hardening |
 | Integration task (`--task integration`) | No session; `reader` profile | Runs the configured checks on exactly R in a detached checkout; a pass is R's pre-Land check proof, a failure returns to review |
@@ -99,7 +99,7 @@ Hardening authorizes only one exact code/input revision. Any changed code, inclu
 
 Security runs before approval and the deterministic Land. A rejection stops the issue with zero landing effects. Lifting the stop cannot reroll that rejected revision. Missing or stale clearance never authorizes a Land. Deterministic issue delivery may target ecosystem's configured source base `main`; it does not authorize production deployment, a model base push or installation.
 
-Checks and Security clear the exact candidate before the target moves (#185). After Land, own Lands get only read-only confirmation (`confirm-merged`): the signed fast-forward intent and receipt bind the result to that candidate, its pre-Land check proof, and GitHub's PR/result/ancestry. No post-Land suite or duplicate model pass runs. Historical landed-result Security receipts remain usable only for the exact historical landed result, not as pre-Land permission. A landed run without exact pre-Land check or Security proof (legacy two-parent receipts, external/manual merges, historical runs missing candidate Security) stops for read-only reconciliation with its evidence retained. No recovery runs writers, post-Land checks or Security, pushes code or repeats an uncertain Land.
+Checks and Security clear the exact candidate before the target moves (#185). After Land, own Lands get only read-only confirmation (`confirm-landed`): the signed fast-forward intent and receipt bind the result to that candidate, its pre-Land check proof, and GitHub's PR/result/ancestry. No post-Land suite or duplicate model pass runs. Historical landed-result Security receipts remain usable only for the exact historical landed result, not as pre-Land permission. A landed run without exact pre-Land check or Security proof (legacy two-parent receipts, external/manual merges, historical runs missing candidate Security) stops for read-only reconciliation with its evidence retained. No recovery runs writers, post-Land checks or Security, pushes code or repeats an uncertain Land.
 
 Read-only after Land forbids new code/target mutation, suites, repair writers, a second Land and Security model passes; it does not forbid authorized evidence checkpoints or `finish` bookkeeping. Completion can still delete the issue branch and update GitHub labels, claims and issue closure.
 
@@ -121,13 +121,13 @@ Before the push, a landing-account-authored, editor-verified `mergeAttempt` chec
 
 Read-only fast-forward reconciliation requires the bound signed intent, strict P-to-H ancestry and an exact remote target equal to H. It retains the landed fact before checking the original authorization, source PR binding and current trusted inputs, then rereads the exact target before saving an own receipt. The same PR must retain H and the configured source/base identity; during this step it may still read OPEN, or MERGED only at H. A missing push acknowledgement does not by itself prevent this exact-intent reconciliation, but equal PR/target heads without authentic intent cannot create an own receipt. A later target tip cannot substitute for H or establish a new receipt.
 
-Own-receipt confirmation does not itself permit completion. The post-Land `confirm-merged` path requires the same PR to read MERGED at M = H, that result's ancestry in the freshly fetched base, the authenticated intent/receipt and exact pre-Land `verifiedSha`. Missing, malformed or mismatched proof stops, possibly **after code has landed**. Independently observed valid landed truth is retained even when own provenance cannot be confirmed. No second Land manufactures evidence; no rollback is attempted.
+Own-receipt confirmation does not itself permit completion. The post-Land `confirm-landed` path requires the same PR to read MERGED at M = H, that result's ancestry in the freshly fetched base, the authenticated intent/receipt and exact pre-Land `verifiedSha`. Missing, malformed or mismatched proof stops, possibly **after code has landed**. Independently observed valid landed truth is retained even when own provenance cannot be confirmed. No second Land manufactures evidence; no rollback is attempted.
 
 Reconciliation uses an **elapsed-time deadline per invocation with spaced, bounded backoff**, not an immediate-pass or lifetime-read limit. The safe defaults allow **90 seconds** for delayed PR metadata, including lag exceeding 60 seconds. Configure both values together in repository config:
 
 ```json
 {
-  "mergeConfirmation": {
+  "landingConfirmation": {
     "deadlineSeconds": 90,
     "backoffSeconds": [1, 2, 4, 8, 10]
   }
@@ -146,7 +146,7 @@ Completion, including own recovery and done replay, requires pre-Land `verifiedS
 
 `maxCiFixes` bounds Hardening's check-fix sessions, `maxSyncs` the Sync runs of one issue without landing, and `maxConflictFixes` the Sync resolver's sessions; each task also has three attempts per binding. Stops have `agent:stopped-<control>` labels and a comment naming the control and recovery. Rate limits/transport errors defer rather than stop; the caller must back off before restarting. **`maxFixRounds` is obsolete, warned about and ignored**; the historical `review-rounds` stop is retained for old state/labels, not repurposed as a new limit. Caller-owned restarts must also be bounded; legacy scheduler `maxResumes` is not a new caller scheduler.
 
-Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-implementor` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
+Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-developer` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
 
 ## Read-only Git subagent
 
@@ -178,116 +178,6 @@ For chunked reviews, assign the root and exact query, not generated diff files. 
 
 This is the **Git execution boundary**, not an OS/filesystem/keyring/network sandbox. The retained read tools can read same-user files and are not confined by this root allowlist. Do not promise universal credential-file isolation. Optional macOS sandboxing, writer shell isolation, credential rotation and production deployment are outside this feature. Landing does not install or activate it.
 
-## Opt-in assignment discovery module (read-only)
-
-`src/discovery/plan.ts` exports `discoverAssignments(configuration, reader)` and the `DiscoveryPlan`, `Candidate`, `Hold`, `DiscoveryReader` and `ReadRequest` types. This is a **source-module seam**, not an installed worker program. The assignment sweep (#120) doesn't use it: [`two-buddies`](../../docs/decisions/buddies-and-tasks.md#two-buddies) retired the review-request discovery it was built for. Nothing imports it from the job executor or retained orchestrator. Existing explicit issue/branch/stage dispatch is unchanged; omitting this API call does no discovery. Configuration must explicitly contain `enabled: true`; disabled, missing or structurally invalid configuration rejects before making any reads.
-
-The discovery configuration is independent of repository model-role configuration and private credential selection. For example (logins below are illustrative operator choices):
-
-```json
-{
-  "enabled": true,
-  "allowRepositories": [
-    "axolotl-logic-io/ecosystem",
-    "axolotl-logic-io/project-buddy"
-  ],
-  "repositories": [
-    {
-      "repo": "axolotl-logic-io/ecosystem",
-      "devAccount": "development-login",
-      "mergeAccount": "review-login",
-      "allowedUsers": ["trusted-human"],
-      "baseBranch": "main"
-    },
-    {
-      "repo": "axolotl-logic-io/project-buddy",
-      "devAccount": "development-login",
-      "mergeAccount": "review-login",
-      "allowedUsers": ["trusted-human"],
-      "baseBranch": "main"
-    }
-  ],
-  "workers": [
-    {
-      "repository": "axolotl-logic-io/ecosystem",
-      "login": "development-login",
-      "worker": "ecosystem-development",
-      "roles": ["development"],
-      "reviewer": "review-login"
-    },
-    {
-      "repository": "axolotl-logic-io/ecosystem",
-      "login": "review-login",
-      "worker": "ecosystem-review",
-      "roles": ["review"]
-    },
-    {
-      "repository": "axolotl-logic-io/project-buddy",
-      "login": "development-login",
-      "worker": "buddy-development",
-      "roles": ["development"],
-      "reviewer": "review-login"
-    },
-    {
-      "repository": "axolotl-logic-io/project-buddy",
-      "login": "review-login",
-      "worker": "buddy-review",
-      "roles": ["review"]
-    }
-  ],
-  "requestBudget": 100
-}
-```
-
-Only explicitly allowed, configured repositories are read. Each repository requires a nonempty `allowedUsers` list; neither configured bot becomes a trusted human through that list. Repository/login comparisons are case-insensitive. Duplicate repository definitions, duplicate login mappings (even if identical), or conflicting logical-worker mappings fail closed, never first-match/default-worker resolution. Each mapping is repository-scoped; its permitted roles are `development` and/or `review`. `reviewer` is the configured reviewer's GitHub login, not a model name. Repository settings also accept `legacyAccount`, `skipLabels` (default `[]`) and `takeNewWork` (default `true`); `baseBranch` defaults to `main`. No model, provider, credential path or token belongs in this configuration.
-
-### Reader and authentication contract
-
-An explicitly opting-in caller supplies a **trusted authenticated GitHub transport**, not model-produced records or preapproved eligibility booleans:
-
-```ts
-import { discoverAssignments } from "./src/discovery/plan.ts";
-
-const plan = await discoverAssignments(configuration, {
-  read: async (request) => transport.readOneGitHubResponse(request),
-});
-```
-
-`transport` above is an application-owned dependency, not an adapter delivered here. `ReadRequest` permits only a REST `GET` (`repository`, repository-scoped `path`) or the module's fixed read-only GraphQL issue-comment query (`repository`, `query`, `id`). Return `{ status, body, link }`: the HTTP status, decoded **complete** JSON response body and raw REST Link header (`null` when absent; also `null` for GraphQL). REST bodies use GitHub's documented wire names; the boundary normalizes snake-case keys and rejects colliding spellings before schema validation. The reader must deliver genuine GitHub responses for the requested repository, preserve HTTP errors, and throw for failed/partial transport or JSON decoding. It must not fabricate fields, cache away revocation, follow pages, retry internally, silently truncate a body, or perform writes. One call must mean **one request attempt**. The module deliberately does not call the existing automatically retrying `ghJson` helper, select credentials, or accept arbitrary GraphQL queries from work text. This contract is an in-process trust boundary, not protection against a malicious caller/transport.
-
-The module lists assigned open issues and all open PRs (filtering requested reviewers), follows REST pagination to completion, and reads issue comments, assignment/review-request events, collaborator membership, linked issue/state/dependencies and PR reviews as needed. PR bodies starting with the existing `Closes #N` convention locate an issue only; they confer no authority. Review candidates must independently match that issue's trusted saved PR number, development author, repository/base, branch and head revision. An external/fork PR or a copied issue link cannot substitute for the recorded PR.
-
-Current assignee/reviewer lists are discovery signals, **not grants**. The latest matching GitHub grant/removal event supplies actor provenance. A human actor and the issue author must be in `allowedUsers` and still be collaborators; neither configured bot is a human even if allow-listed. The configured landing identity can orchestrate grants. Development can request only its configured reviewer, with no additional user/team targets, on its own recorded PR and a matching saved handoff. Missing events, unreadable collaborator checks and contradictory evidence fail closed; copied comment markers establish neither an event actor nor saved authority. Valid historical team events do not grant work to a login or invalidate an independent user request.
-
-Saved state uses the existing strict claim/write-authority validation, never the tolerant display/migration reader. All landing-account-authored comments are reread with body, author, edit time and editor in the **same GraphQL response**, including comments whose markers were removed. Only landing-account-authored, editor-verified v2 state is planning evidence. Discovery additionally validates question/review fields without display defaults. Legacy, forged, malformed, uncertain attempted-Land/post-Land or local-recovery records remain held; discovery never adopts or rewrites them. Missing state alongside prior landing-account or recognized legacy machine comments also requires reconciliation. Merged labels and saved completion/security receipts cannot restart development.
-
-The read-only handoff input is the saved state's optional `coordination.handoff`, with `coordination.pending: null` and `localRecovery: false`. Its required binding is:
-
-```ts
-{
-  checkpoint: { pr: number, branch: string, code: string, inputs: string, at: string },
-  request: number | null,
-  eventsBefore: number[],
-  review: number | null
-}
-```
-
-`code` is the full PR head SHA; `inputs` is the trusted-input revision; `at` is an ISO timestamp. A review-request grant must match that checkpoint, occur at/after it, be absent from `eventsBefore`, and match the recorded request event ID when non-null. A saved request also listed in `eventsBefore` is contradictory, not a valid handoff. Missing handoffs stay held even for an otherwise authenticated caller. A recorded landing-account review is accepted only when its genuine GitHub review ID, PR URL, commit and submission time match the saved handoff, current recorded PR and trusted-input revision. A saved review missing from GitHub is incomplete; another PR's or an older revision's review cannot satisfy it. Unbound landing-account reviews hold the affected PR conservatively rather than approving or reinterpreting them. This module writes no handoff lifecycle.
-
-Trusted human requirements use exactly the existing title/body/comment hashing format. Visitors, both configured bots and recognized legacy machine comments cannot change that revision or answer needs-info. Stops, unanswered questions, split/skip labels, disabled new work and existing `after` prerequisites remain controls. Existing `parent` markers are read as relationships, not newly invented prerequisites. Unreadable dependencies are not permission. Changed trusted input sends development planning to `author` for authored issues and `implement` otherwise; it holds review until that requirements review.
-
-### Plans, bounds and continuation
-
-`DiscoveryPlan` contains `executionAuthority: false`, `requests`, `complete`, `candidates`, `holds` and `continuations`. A candidate identifies repository, issue/PR number, linked issue, GitHub login, logical worker, permitted role, suggested existing stage, trusted-input revision and grant/review evidence IDs. Development suggests only `author`/`implement`; review suggests only `review`/`merge`. **Every returned plan grants no execution authority**, including a candidate suggesting merge. It cannot authorize a session, claim, state save, comment, label/assignment/review-request change, submitted review or Land. Any future executor would need its own fresh authorization; this snapshot is not a lease or a claim.
-
-`requestBudget` defaults to **100**, must be an integer from **1 through 1000**, and covers the entire sweep across repositories, including every listing page, event/comment/review page, same-read editor query, collaboration check, state/input and dependency read. There are no hidden retries. Calls stop at the budget; unrelated unfinished work gets explicit holds too. Pagination validates endpoints, filters and next-page progression. Contradictory pagination relations remain incomplete. A full page without conclusive Link metadata requires another bounded read rather than implying completion. Failed, malformed or partial reads never become an empty array; comment pages must include author and body fields rather than silently defaulting missing requirements. A transport that silently discards response bytes violates the reader contract; no client can authenticate omitted bytes from such a transport.
-
-`complete: true` means all required reads for the evaluated snapshot finished, **not** that every item was eligible. A completed empty listing can therefore have no candidates/continuations; a refused mapping can have a complete snapshot with a hold. `complete: false` means some listing or required evidence is incomplete. Fully authenticated independent candidates may still be shown, but missing results never prove unassignment or an authoritative empty queue. This is an observational sweep, not an atomic GitHub snapshot: concurrent changes can occur between reads.
-
-Each hold has repository, work kind/number/login, typed `reason`, stable `evidence`, `incomplete` and `deduplicationKey`. Reasons distinguish repository/mapping/role, scope/provenance/state, stop/needs-info/dependency/inputs, and budget/read/page failures. The key is a deterministic JSON tuple of normalized work identity, reason and evidence, suitable for deduplicating repeated unchanged rejections without posting anything to GitHub. `continuations` are the incomplete holds: retry descriptors identifying the unfinished listing/page or evidence, **not resumable authority**. Retry with an explicit new sweep after fixing the read/configuration/budget; no automatic polling, persisted cursor, rejection-notification service or unassignment inference is supplied.
-
-Source delivery adds no live worker entry point, provider setup, installation, activation or production deployment.
-
 ## Caller invocation and concurrency
 
 Run installed `job.mjs`, once per stage, with **one `--issue` and a required `--branch`**, including boundary prints:
@@ -308,7 +198,7 @@ Canonical claim normally requires an open issue. A closed issue may recover only
 
 Issue/branch binding is persisted at first claim. A changed branch on resume is refused; legacy `branch:null` binds the old canonical `agent/issue-N`, not an arbitrary new branch. Protected base/remote-default branches and nonliteral/invalid refs are refused before mutation. A fresh explicit job initializes its metadata clone before posting a claim; there is no sweep prerequisite. Existing clone and issue work are reused. `--print-boundary` pins/validates prompts and prints role/checkouts/environment/network without cloning, claiming or launching pi.
 
-Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. Each exact Land takes the target's integration turn itself (#171); existing claim/lease/head/landing-order guards still apply. `--merge-queue N,...` carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
+Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. Each exact Land takes the target's integration turn itself (#171); existing claim/lease/head/landing-order guards still apply. `--landing-order N,...` (formerly `--merge-queue`) carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
 
 Optional `laneSlots` (1–399) leases warm test environments to actual issue checkouts. Setup and deterministic checks receive `ISSUE_PIPELINE_LANE_SLOT`; lane-mode setup must succeed before a model starts. A retained checkout retains its slot. Optional `commands.prune` runs from the base clone with `ISSUE_PIPELINE_LANE_SLOTS`, at most hourly across claim processes, and logs failures without failing claims. Legacy no-slot setup/teardown behavior stays unchanged. See [lane test environments and rollout prerequisites](../../docs/reference/checkouts.md#lane-test-environments), including the required drain of all jobs **and test consumers** before enabling legacy prune or shrinking the pool. Merging does not install or activate this behavior.
 
@@ -335,14 +225,14 @@ node job.mjs --config o__r.json --issue 7 --branch agent/issue-7 \
 
 | | Without the flag (installed) | `--hardening-buddy hippy` |
 | --- | --- | --- |
-| Agent | `issue-pipeline-reviewer` | `issue-pipeline-implementor` |
-| Model | `models.reviewer` | `models.implementor` |
+| Agent | `issue-pipeline-reviewer` | `issue-pipeline-developer` |
+| Model | `models.reviewer` | `models.developer` |
 | Prompt page | `hardening.md` | `developer-hardening.md` |
-| Launch key | `reviewer-<n>` | `implementor-hardening-<n>`, never an Implementation transcript's path |
+| Launch key | `reviewer-<n>` | `developer-hardening-<n>`, never an Implementation transcript's path |
 | Session timeout | 30 minutes | 60 minutes |
-| "Hardening passed" signature | `role=reviewer` | `role=implementor`, naming Hippy |
+| "Hardening passed" signature | `role=reviewer` | `role=developer`, naming Hippy |
 
-Everything else stays the same. The session starts fresh, holds no token and commits only through `pipeline_commit`. Pushes and PR readiness use the development account (`devAccount`). Only the landing account (`mergeAccount`) saves state and posts the result, and readers accept state and keyed result comments only from that account, so a result the development account writes grants nothing. `test/pipeline-flow-hippy-hardening.test.ts` checks this through built jobs.
+Everything else stays the same. The session starts fresh, holds no token and commits only through `pipeline_commit`. Pushes and PR readiness use the development account (`devAccount`). Only the landing account (`landingAccount`) saves state and posts the result, and readers accept state and keyed result comments only from that account, so a result the development account writes grants nothing. `test/pipeline-flow-hippy-hardening.test.ts` checks this through built jobs.
 
 The session's transcript lives in the same `runs/<slug>/issue-N/sessions/` folder as Implementation's. Nothing gives it that transcript, but the session runs as the same OS user, and nothing isolates its files.
 
@@ -420,17 +310,17 @@ GitHub state, claim, Gherkin, hardening and security comments require landing-ac
 
 Development (`devAccount`) owns code/docs
 commits, source branch pushes and PR create/edit/reopen/close/ready/draft.
-Review/merge (`mergeAccount`) owns every comment,
+Review/merge (`landingAccount`) owns every comment,
 saved state, claim, label, authority read and explicit-target fast-forward push. Closing a PR uses development; its accompanying comment uses the landing account.
 Neither bot is a trusted human, even if included in `allowedUsers`. Human issue
 and comment authors require both that explicit allow-list and a fresh collaborator
 check; revoking either stops trust.
 
-Configure distinct `devAccount` and `mergeAccount` and an absolute
+Configure distinct `devAccount` and `landingAccount` and an absolute
 `credentialsEnvFile` pointing to a private operator-managed file (owner-only
 permissions, for example mode 0600), outside managed job worktrees, such as the
 operator checkout's ignored `.env`. Required entries are
-`ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_MERGE_GITHUB_TOKEN`.
+`ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`.
 Never put token values in JSON, prompts, examples, logs or command arguments.
 The loader parses that one file, takes only the selected fixed variable and never
 exports dotenv values. Each selected credential is login-verified (cached only
@@ -497,7 +387,7 @@ The default and example role models are `openai/gpt-6.1-sol`. Set all three repo
 {
   "models": {
     "author": "openai/gpt-6.1-sol",
-    "implementor": "openai/gpt-6.1-sol",
+    "developer": "openai/gpt-6.1-sol",
     "reviewer": "openai/gpt-6.1-sol"
   }
 }
@@ -507,7 +397,7 @@ All model sessions now require the explicit, separately provisioned [native runt
 
 Native automatic compaction targets **175000** tokens with **30000** recent-history tokens. For the expected 272000-token window, reserve is **97000**. This is same-session native context management, not a token/spending cap. Private generated agent settings, disabled project/personal resource discovery and correlated pre-prompt native verification enforce policy for every role. Only explicit provider/role/pipeline resources load; inherited extensions are no longer used. This is configuration isolation, **not** an OS/filesystem/keyring/network sandbox. The parent job and credentialed operations keep their own HOME and two-account boundary. Global/personal provider setup is neither copied nor changed. Tests use fake models and local origins only.
 
-This ordinary backlog continuation is not a prerequisite for unrelated delivery. No first-issue, queue-off, session-reset or historical install/provision/STOP restriction is restored. Development uses the operator's `devAccount` (hippy for this issue); review/approval/landing uses the distinct `mergeAccount` (lawd). These names are operator choices, not hard-coded identities. Credential rotation is outside this change.
+This ordinary backlog continuation is not a prerequisite for unrelated delivery. No first-issue, queue-off, session-reset or historical install/provision/STOP restriction is restored. Development uses the operator's `devAccount` (hippy for this issue); review/approval/landing uses the distinct `landingAccount` (lawd). These names are operator choices, not hard-coded identities. Credential rotation is outside this change.
 
 ## Install and safe upgrades
 

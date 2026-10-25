@@ -17,8 +17,8 @@ function usageRoleOf(
   hardening: HardeningBuddy,
   task: JobTask | null,
 ): UsageRole {
-  if (jobRoleOf(stage, task) === "merger") {
-    return "merger";
+  if (jobRoleOf(stage, task) === "lander") {
+    return "lander";
   }
   return stageAgentOf(stage, hardening, task).role;
 }

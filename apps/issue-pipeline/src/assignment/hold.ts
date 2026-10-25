@@ -56,7 +56,7 @@ type Condition = z.infer<typeof CONDITION>;
 type HoldRecord = z.infer<typeof HOLD>;
 
 function pipelineAccount(cfg: Config, login: string | undefined): boolean {
-  return [cfg.devAccount, cfg.mergeAccount].some(
+  return [cfg.devAccount, cfg.landingAccount].some(
     (account) => account.toLowerCase() === (login ?? "").toLowerCase(),
   );
 }
@@ -136,7 +136,7 @@ function holdOf(
   const latest = comments
     .filter(
       (item) =>
-        item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+        item.user?.login.toLowerCase() === cfg.landingAccount.toLowerCase() &&
         (item.body ?? "").includes(HOLD_MARK),
     )
     .at(-1);

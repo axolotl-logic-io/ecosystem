@@ -4,7 +4,7 @@
 // before activation has none and confirms as before.
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
-import type { CodeMerged, IssueState, Revision } from "../../state.ts";
+import type { CodeLanded, IssueState, Revision } from "../../state.ts";
 import type { Binding } from "../../task-result-records.ts";
 import { opReply } from "../op-replies.ts";
 import { taskStatus } from "../task-results.ts";
@@ -24,7 +24,7 @@ const NO_POST_LAND_REPAIR =
 // revision on the target commit it fast-forwarded. Null for an attempt that
 // can't name one, such as a historical attempt without a policy or intent.
 function landBindingOf(ctx: RoleContext, state: IssueState): Binding | null {
-  const attempt = state.mergeAttempt;
+  const attempt = state.landingAttempt;
   if (attempt === null || attempt.operation === undefined) {
     return null;
   }
@@ -74,7 +74,7 @@ async function completionBinding(
 async function confirmedLandedResult(
   ctx: RoleContext,
   state: IssueState,
-  merge: { result: Revision; codeMerged: CodeMerged; landed?: Binding | null },
+  merge: { result: Revision; codeMerged: CodeLanded; landed?: Binding | null },
 ): Promise<RoleEnd | null> {
   const { result, codeMerged, landed = null } = merge;
   const rejected = rejectedAgain(state, result);
@@ -85,13 +85,13 @@ async function confirmedLandedResult(
   if ("hold" in land) {
     return failed(state, `${land.hold}; ${NO_POST_LAND_REPAIR}`);
   }
-  let request: object = { number: ctx.issue, codeMerged };
+  let request: object = { number: ctx.issue, codeLanded: codeMerged };
   if (land.binding !== null) {
     request = { ...request, binding: land.binding };
   }
   const confirmed = await opReply(
     ctx,
-    "confirm-merged",
+    "confirm-landed",
     request,
     CONFIRMED_REPLY,
   );

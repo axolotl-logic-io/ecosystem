@@ -78,7 +78,7 @@ function settleLand(
   number: number,
   requested: Binding,
   receipt: {
-    merged: boolean;
+    landed: boolean;
     byHand?: true;
     mergeCommit?: string;
     headSha?: string;
@@ -94,7 +94,7 @@ function settleLand(
   );
   if (
     run === undefined ||
-    !receipt.merged ||
+    !receipt.landed ||
     receipt.byHand === true ||
     receipt.headSha !== binding.revision.code ||
     receipt.mergeCommit === undefined

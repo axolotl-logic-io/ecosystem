@@ -39,8 +39,8 @@ flowchart TD
 
 Landing order keeps slow issues from losing races repeatedly.
 
-- With `--merge-queue N1,N2,…`, an issue ranked ahead that is at `review` or `merge` holds the slot, whatever its verdict.
-- Without a queue, the merge stage applies no order. The `merge` op also accepts `mergeOrder: true`, under which an older PR at the `merge` stage whose lease hasn't expired holds the slot; the merge stage doesn't set it today.
+- With `--landing-order N1,N2,…`, an issue ranked ahead that is at `review` or `merge` holds the slot, whatever its verdict.
+- Without a queue, the merge stage applies no order. The `land` op also accepts `oldestFirst: true`, under which an older PR at the `merge` stage whose lease hasn't expired holds the slot; the merge stage doesn't set it today.
 - A held issue gets `{"merged": false, "reason": "queued", "waitingFor": N, "waitingForPr": PR}` and the job ends with `wait`.
 
 The queue orders configured target mutations, not candidate-local integration, checks or read-only Security. It is not permission to land concurrently. Each exact Land also takes the [target's integration turn](#the-targets-integration-turn), so two Lands never write one target at once; the queue still decides who goes first.
@@ -58,9 +58,9 @@ The base may differ from the repository's default branch. Landing on a configure
 
 Read-only fast-forward reconciliation requires the bound signed intent, strict P-to-H ancestry and the exact remote target equal to H. It retains the landed fact, checks the original authorization, source PR binding and current trusted inputs, and rereads the exact target before saving an own receipt. During this step the same PR may still read OPEN, or MERGED only at H; it must retain H and the configured source/base identity. A missing push acknowledgement does not by itself prevent this exact-intent reconciliation. Equal heads without authentic intent, or a later target tip substituted for H, cannot create an own receipt.
 
-Completion separately requires `confirm-merged` to read the same PR MERGED at M = H with M in the freshly fetched base, plus the authenticated intent/receipt and exact pre-Land check proof. An own receipt alone is not completion permission.
+Completion separately requires `confirm-landed` to read the same PR MERGED at M = H with M in the freshly fetched base, plus the authenticated intent/receipt and exact pre-Land check proof. An own receipt alone is not completion permission.
 
-- Confirmation retries on a schedule set by `mergeConfirmation`: `deadlineSeconds` (default 90, 1–600) and `backoffSeconds` (default `[1, 2, 4, 8, 10]`, at most 20 waits of 1–60 seconds, the last one repeating).
+- Confirmation retries on a schedule set by `landingConfirmation`: `deadlineSeconds` (default 90, 1–600) and `backoffSeconds` (default `[1, 2, 4, 8, 10]`, at most 20 waits of 1–60 seconds, the last one repeating).
 - The first check is immediate. No new check starts after the deadline.
 - Waiting writes only evidence checkpoints, never code, another approval or a second target mutation.
 - At the deadline, the issue stops: code may already have landed, and no further Land or code writer is authorized.
@@ -69,14 +69,14 @@ A PR merged outside the confirmed operation, for example by hand, isn't an own L
 
 ## After the Land
 
-Checks and Security clear the exact candidate before the target moves; nothing runs them on M (#185). After the Land, the read-only `confirm-merged` op confirms that the signed fast-forward intent and its receipt bind M to that candidate, that deterministic verification passed on exactly that commit before the Land, and that the same PR reads MERGED at M with M in the fetched base. It runs no checks. New own Lands, interrupted ones and finished replays all take this path, and reuse their saved pre-Land [Security clearance](review.md#security-review) without another model pass.
+Checks and Security clear the exact candidate before the target moves; nothing runs them on M (#185). After the Land, the read-only `confirm-landed` op confirms that the signed fast-forward intent and its receipt bind M to that candidate, that deterministic verification passed on exactly that commit before the Land, and that the same PR reads MERGED at M with M in the fetched base. It runs no checks. New own Lands, interrupted ones and finished replays all take this path, and reuse their saved pre-Land [Security clearance](review.md#security-review) without another model pass.
 
 Missing proof stops with landed truth retained, for read-only reconciliation: legacy two-parent or REST receipts, external or manual merges, and runs without exact pre-Land Security clearance. No post-Land suite, writer or Security review runs, and no proof is invented. A missing or mismatched candidate receipt cannot be repaired by pretending a post-Land review was pre-Land permission.
 
 Only Security clearance bound to the genuine own Land's exact authorized candidate, or an exact saved result observation, allows completion. Read-only after Land forbids new code/target mutation, suites, repair writers, a second Land and Security model passes. It does not mean zero local or GitHub writes: authorized evidence checkpoints and completion bookkeeping remain allowed. The `finish` op acts on the saved done state; it lands and publishes no code itself. It:
 
 - deletes the issue branch;
-- sets `agent:merged` and removes `agent:working` on the PR and the issue;
+- sets `agent:landed` and removes `agent:working` on the PR and the issue;
 - closes the issue's claims;
 - closes the issue with a comment, which matters when the base isn't the default branch and GitHub doesn't auto-close it;
 - removes the job's worktree.
@@ -123,9 +123,9 @@ Then it runs the configured checks in a fresh detached checkout of R under the r
 
 A passed Integration is R's pre-Land check proof: the merge stage saves `verifiedSha` = R from it and never runs the suite again. It then runs the read-only Security session, which records a Security attempt before the session and its verdict after, both through the landing account. A clearance saved before #186 never stands in for a Security result: with none for the binding, Security runs afresh.
 
-Every `merge` op request names a Land binding and a new run. Land then needs passed Hardening, Integration and Security results for exactly that revision and target, on top of every installed check. `verifiedSha`, a legacy `state.integration` receipt, or a result for another target never stands in. The Land attempt is recorded before the first PR write. Only a confirmed own Land of exactly R settles it as `passed`; anything else leaves it unsettled, which holds every Sync and Integration until a read establishes the delivery.
+Every `land` op request names a Land binding and a new run. Land then needs passed Hardening, Integration and Security results for exactly that revision and target, on top of every installed check. `verifiedSha`, a legacy `state.integration` receipt, or a result for another target never stands in. The Land attempt is recorded before the first PR write. Only a confirmed own Land of exactly R settles it as `passed`; anything else leaves it unsettled, which holds every Sync and Integration until a read establishes the delivery.
 
-`confirm-merged` with the same binding also consumes that exact Land result: Completion confirms the delivered commit, and runs no suite. A read-only recovery of an interrupted Land passes its binding to `reconcile-merge`, which settles that Land from the receipt it reads.
+`confirm-landed` with the same binding also consumes that exact Land result: Completion confirms the delivered commit, and runs no suite. A read-only recovery of an interrupted Land passes its binding to `reconcile-land`, which settles that Land from the receipt it reads.
 
 ### The target's integration turn
 
@@ -145,7 +145,7 @@ merge op, Land binding ─► existing refusals (queue, head, Security, task res
 - **The turn lives on GitHub.** Its owner, requests and order are read afresh from the coordination records and refs on every step. Deleting run folders changes nothing.
 - **Issue execution is still required.** Every read and write of the turn first asserts the issue's confirmed execution. The turn and the landing order add restrictions and grant nothing.
 - **The turn is released when its consumer is done** (`capacity-by-resource`). That's when the issue has no unsettled Land attempt: the Land passed, or it never recorded an attempt. While a Land attempt is unsettled, the turn stays held, and every other Land on the target waits.
-- **A dead Land's turn waits for its own issue.** When a Land process dies holding the turn, the next Land of the same issue, under its own confirmed execution, reads whether that issue's Land is settled. If it is, it retires the earlier invocation's request: a release when that request owned the confirmed turn, a cancel otherwise, with `{"retiredBy": INSTANCE}` as evidence. A replay or `reconcile-merge` that settles the Land does the same. A request that reserved the turn but never confirmed it holds for a person.
+- **A dead Land's turn waits for its own issue.** When a Land process dies holding the turn, the next Land of the same issue, under its own confirmed execution, reads whether that issue's Land is settled. If it is, it retires the earlier invocation's request: a release when that request owned the confirmed turn, a cancel otherwise, with `{"retiredBy": INSTANCE}` as evidence. A replay or `reconcile-land` that settles the Land does the same. A request that reserved the turn but never confirmed it holds for a person.
 - **A lost turn write holds.** Its intent stays in the issue's `coordination-uncertain.json`, so the issue holds, and the turn with it, until a person reconciles. Nothing sends it again.
 - **A late write of a retired invocation is refused.** It no longer owns its issue's execution, so it can't release or change the turn.
 

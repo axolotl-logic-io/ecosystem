@@ -23,7 +23,7 @@ function reconcileLand(
   request: unknown,
   clock?: ConfirmationClock,
 ): ReturnType<typeof reconcileAttemptedLand> {
-  const req = parseRequest(RECONCILE_REQUEST, "reconcile-merge", request);
+  const req = parseRequest(RECONCILE_REQUEST, "reconcile-land", request);
   const reply = reconcileAttemptedLand(cfg, request, clock);
   if (req.binding !== undefined) {
     settleLand(cfg, req.number, req.binding, reply);

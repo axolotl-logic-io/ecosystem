@@ -70,10 +70,10 @@ function nextStepText(control: Stop, req: StopRequest): string {
   if (nextStep !== undefined && nextStep !== null && nextStep !== "") {
     return nextStep;
   }
-  if (req.state.mergeAttempt !== null) {
+  if (req.state.landingAttempt !== null) {
     return "Code may already have landed. Do not retry the merge POST, repeat approval, push code, or reset merged/security/attempt state. Preserve response evidence and original authorization. With unchanged inputs and identity, the operator may authorize one bounded restart at merge with a new finite confirmation window, using the saved response and cumulative read evidence without resetting them. Deadline expiry requires explicit reconciliation, not an unattended restart loop.";
   }
-  if (req.state.codeMerged !== null) {
+  if (req.state.codeLanded !== null) {
     return `To resume, fix what this names, then remove \`${control.label.name}\`. The PR has merged, so the next job only confirms the merged result read-only: it runs no checks, Security review or writer after the merge, and stops again without exact premerge proof.`;
   }
   return `To resume, fix what this names (push to the branch if you like), then remove \`${control.label.name}\`. The next sweep continues at the stage that stopped, from the PR's branch, with every limit reset; a stage after review goes back to review if the branch moved since it.`;

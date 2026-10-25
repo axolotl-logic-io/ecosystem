@@ -19,7 +19,7 @@ import { git } from "../github.ts";
 import { recordedAuthorization } from "../landed-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
-import { codeMergedOf, issuePullRequest } from "../revision.ts";
+import { codeLandedOf, issuePullRequest } from "../revision.ts";
 import { readClaimState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
 import { newIssueState, resumeOf, withLog } from "../state.ts";
@@ -73,7 +73,7 @@ function assertFirstClaim(
   const own = ownHistory(cfg, comments);
   const priorComment = comments.some(
     (item) =>
-      (item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase() &&
+      (item.user?.login.toLowerCase() === cfg.landingAccount.toLowerCase() &&
         !own.has(item.id)) ||
       isLegacyPipelineComment(cfg, item),
   );
@@ -160,9 +160,9 @@ function assertClosedLandRecovery(
     throw new OpsError(`#${n} is not open`);
   }
   const pr = issuePullRequest(cfg, n, saved);
-  const merged = codeMergedOf(pr);
+  const merged = codeLandedOf(pr);
   const authorized = recordedAuthorization(saved);
-  const attempt = saved.mergeAttempt;
+  const attempt = saved.landingAttempt;
   if (
     attempt !== null &&
     (attempt.repo !== cfg.repo ||
@@ -183,12 +183,12 @@ function assertClosedLandRecovery(
     !FULL_SHA.test(pr.headSha) ||
     (saved.headSha !== null &&
       saved.headSha !== pr.headSha &&
-      saved.headSha !== saved.codeMerged?.sha) ||
-    (saved.codeMerged !== null &&
-      (saved.codeMerged.pr !== merged.pr ||
-        saved.codeMerged.sha !== merged.sha)) ||
-    (saved.merged !== null &&
-      (saved.merged.code !== merged.sha ||
+      saved.headSha !== saved.codeLanded?.sha) ||
+    (saved.codeLanded !== null &&
+      (saved.codeLanded.pr !== merged.pr ||
+        saved.codeLanded.sha !== merged.sha)) ||
+    (saved.landed !== null &&
+      (saved.landed.code !== merged.sha ||
         (authorized?.code !== null &&
           authorized?.code !== undefined &&
           authorized.code !== pr.headSha)))
@@ -209,12 +209,12 @@ function reconcileClaimLand(
 ): IssueState {
   // Reconciliation owns delayed PR reads after an attempted mutation. A
   // stale OPEN/read failure must not clear truth or divert recovery to a writer.
-  if (state.mergeAttempt !== null) {
+  if (state.landingAttempt !== null) {
     return state;
   }
   const pr = issuePullRequest(cfg, n, state);
-  const codeMerged = codeMergedOf(pr);
-  const recorded = state.codeMerged ?? null;
+  const codeMerged = codeLandedOf(pr);
+  const recorded = state.codeLanded ?? null;
   if (
     recorded !== null &&
     (codeMerged === null ||
@@ -227,13 +227,17 @@ function reconcileClaimLand(
   }
   if (
     state.stage === "done" &&
-    state.merged?.code !== (codeMerged?.sha ?? null)
+    state.landed?.code !== (codeMerged?.sha ?? null)
   ) {
     throw new OpsError(
       `#${n} is done, but GitHub doesn't confirm the merge it saved`,
     );
   }
-  const next: IssueState = { ...state, pr: pr?.number ?? null, codeMerged };
+  const next: IssueState = {
+    ...state,
+    pr: pr?.number ?? null,
+    codeLanded: codeMerged,
+  };
   if (recorded === null && codeMerged !== null) {
     return withLog(
       next,
@@ -250,9 +254,9 @@ function branchChangedOf(
   state: IssueState,
   remote: string | null,
 ): BranchChanged | null {
-  const { headSha, codeMerged } = state;
+  const { headSha, codeLanded: codeMerged } = state;
   if (
-    state.mergeAttempt !== null ||
+    state.landingAttempt !== null ||
     codeMerged !== null ||
     headSha === null ||
     remote === null
@@ -272,7 +276,7 @@ function claimedState(
   startAt: { now: Date; stage: "author" | "implement" },
 ): ClaimedState {
   const { now } = startAt;
-  if (start.stage === "done" && start.merged === null) {
+  if (start.stage === "done" && start.landed === null) {
     throw new OpsError(`#${n} is done`);
   }
   const remote = remoteHead(cfg, n);

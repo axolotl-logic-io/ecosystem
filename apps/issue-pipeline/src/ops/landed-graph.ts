@@ -6,7 +6,7 @@ import { FULL_SHA } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { confirmLanded, pullRequest } from "../revision.ts";
 import { readWriteState } from "../saved-state.ts";
-import type { CodeMerged } from "../state.ts";
+import type { CodeLanded } from "../state.ts";
 import { confirmedFastForwardBase } from "./fast-forward-evidence.ts";
 
 // A unique original contribution cannot be inferred from criss-cross or
@@ -82,7 +82,7 @@ function confirmedLandedParent(
   cfg: Config,
   n: number,
   wt: string,
-  codeMerged: CodeMerged,
+  codeMerged: CodeLanded,
 ): string {
   confirmLanded(cfg, n, { wt, codeMerged });
   const pr = pullRequest(cfg, n, codeMerged.pr);

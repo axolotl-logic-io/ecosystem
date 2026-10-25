@@ -8,7 +8,7 @@
 import net from "node:net";
 import { z } from "zod";
 import type { InvocationBinding } from "../coordination.ts";
-import { INVOCATION_BINDING } from "../coordination-records.ts";
+import { INVOCATION_BINDING } from "../coordination-record-schema.ts";
 
 const STEER_REQUEST = z.object({
   type: z.literal("steer"),

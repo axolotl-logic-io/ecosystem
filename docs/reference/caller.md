@@ -78,7 +78,7 @@ Read CHECKOUT/docs/reference/coordination.md. It says how stage jobs run, what e
      --branch BRANCH --lane LANE --stage STAGE
    ```
 
-   For a merge, add `--merge-queue MERGE_QUEUE`. An explicitly authorized closed-issue Merge recovery uses this same command with `--stage merge`. Only the job's canonical claim guards decide eligibility and reopen for the winning claimant; a started job grants no recovery, landing or Security authority. Closed Author, Implement and Review starts remain refused, and so are task starts on a closed issue.
+   For a merge, add `--landing-order LANDING_ORDER`. An explicitly authorized closed-issue Merge recovery uses this same command with `--stage merge`. Only the job's canonical claim guards decide eligibility and reopen for the winning claimant; a started job grants no recovery, landing or Security authority. Closed Author, Implement and Review starts remain refused, and so are task starts on a closed issue.
 
    To relay a task request, start the same issue at the same stage with the request's task and binding, copied exactly from the job's `request`:
 

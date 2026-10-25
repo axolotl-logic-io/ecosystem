@@ -137,10 +137,10 @@ async function routed(
       // revision: the failure goes with it.
       const returned: IssueState = {
         ...ctx.state,
-        mergeReturn: {
+        landingReturn: {
           reason: "retest",
           detail: reply.reason,
-          codeMerged: false,
+          codeLanded: false,
         },
       };
       return toReview(returned, `Integration: ${reply.reason}`, task);

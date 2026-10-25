@@ -22,9 +22,9 @@ function returnStage(state: IssueState): "implement" | "review" | "merge" {
   const { stage } = resumed;
   if (
     (stage !== "implement" && stage !== "review" && stage !== "merge") ||
-    state.mergeAttempt !== null ||
-    state.codeMerged !== null ||
-    state.merged !== null ||
+    state.landingAttempt !== null ||
+    state.codeLanded !== null ||
+    state.landed !== null ||
     (state.security !== null && state.security.finding !== null)
   ) {
     throw new OpsError(

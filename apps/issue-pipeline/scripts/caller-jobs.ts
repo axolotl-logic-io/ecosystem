@@ -6,7 +6,7 @@
 // and install.ts installs it as $ISSUE_PIPELINE_ROOT/caller-jobs.mjs:
 //
 //   node caller-jobs.mjs start  --run RUN_DIR --config CONFIG --issue N
-//        --branch BRANCH --lane LANE --stage STAGE [--merge-queue N1,N2]
+//        --branch BRANCH --lane LANE --stage STAGE [--landing-order N1,N2]
 //        [--task sync|integration --binding JSON]
 //   node caller-jobs.mjs status --run RUN_DIR
 //   node caller-jobs.mjs wait   --run RUN_DIR --seconds S
@@ -46,6 +46,7 @@
 import process from "node:process";
 import { parseArgs } from "node:util";
 import { z } from "zod";
+import { landingOrderFlag } from "../src/job/landing-order-flag.ts";
 import { sleepMs } from "../src/process.ts";
 import type { JobReport } from "./caller-jobs/run-folder.ts";
 import { pending, reports } from "./caller-jobs/run-folder.ts";
@@ -87,14 +88,23 @@ function start(argv: readonly string[]): void {
       branch: { type: "string" },
       lane: { type: "string" },
       stage: { type: "string" },
+      "landing-order": { type: "string" },
       "merge-queue": { type: "string" },
       task: { type: "string" },
       binding: { type: "string" },
     },
     strict: true,
   });
-  const { "merge-queue": mergeQueue, ...named } = values;
-  const args = parsed(START_ARGS, { ...named, mergeQueue }, "start");
+  const {
+    "landing-order": landingOrder,
+    "merge-queue": mergeQueue,
+    ...named
+  } = values;
+  const order = landingOrderFlag({
+    "landing-order": landingOrder,
+    "merge-queue": mergeQueue,
+  });
+  const args = parsed(START_ARGS, { ...named, landingOrder: order }, "start");
   process.stdout.write(`${JSON.stringify(startJob(args))}\n`);
 }
 

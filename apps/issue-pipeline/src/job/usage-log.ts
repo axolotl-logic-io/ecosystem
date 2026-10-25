@@ -31,13 +31,16 @@ type Ended = "reply" | "error" | "aborted";
 
 const ENDED = ["reply", "error", "aborted", "handoff", "context-stop"] as const;
 
-// The role a record is for: a model role, the merger (a merge job has no
-// session, only its job record), or a role of the installed version, whose
-// records the report still reads.
+// The role a record is for: a model role, the lander (a merge job has no
+// session, only its job record), or a role an earlier version wrote, whose
+// records the report still reads: `implementor` and `merger` before #166
+// named the developer and the lander.
 const USAGE_ROLES = [
   "author",
-  "implementor",
+  "developer",
   "reviewer",
+  "lander",
+  "implementor",
   "merger",
   "triage",
   "spec-writer",

@@ -5,7 +5,7 @@
 // until it writes its job.json. Every job claims in the orchestrator's lane.
 // A restart is a fresh job at the stage the dead job was at: no job is
 // given `--resume`, and none starts on another issue's branch. A merge job
-// gets the landing order (`--merge-queue`), which its landing-order check
+// gets the landing order (`--landing-order`, formerly `--merge-queue`), which its landing-order check
 // reads.
 // This module alone knows the start records' file; a missing or malformed
 // one reads as no starts, and each save rewrites it atomically.
@@ -95,8 +95,8 @@ function jobArgv(starter: Starter, start: Start, job: string): string[] {
     "--job-id",
     job,
   ];
-  if (start.mergeQueue !== null) {
-    argv.push("--merge-queue", start.mergeQueue.join(","));
+  if (start.landingOrder !== null) {
+    argv.push("--landing-order", start.landingOrder.join(","));
   }
   return argv;
 }

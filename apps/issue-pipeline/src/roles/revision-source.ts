@@ -7,7 +7,7 @@
 import { z } from "zod";
 import type { RoleContext } from "../job/role-context.ts";
 import { REVISION } from "../land-provenance.ts";
-import type { CodeMerged } from "../state.ts";
+import type { CodeLanded } from "../state.ts";
 import { opReply } from "./op-replies.ts";
 
 const CURRENT_REVISION = z.looseObject({
@@ -38,7 +38,7 @@ async function currentRevision(ctx: RoleContext): Promise<CurrentRevision> {
 // merged, at the same merge commit, which is also the code revision.
 function codeLandConfirmed(
   current: CurrentRevision,
-  codeMerged: CodeMerged,
+  codeMerged: CodeLanded,
 ): boolean {
   const { pr, revision } = current;
   return (

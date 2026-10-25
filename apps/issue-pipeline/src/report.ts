@@ -78,7 +78,7 @@ function main(argv: readonly string[]): 0 | 1 {
     const { config, since, role, issue } = usageArgsOf(argv);
     const cfg = loadConfig(config);
     const comments = listRepoComments(cfg, since);
-    const options = { account: cfg.mergeAccount, role, issue, since };
+    const options = { account: cfg.landingAccount, role, issue, since };
     const report = usageReport(comments, options, cfg.usageFlags);
     process.stdout.write(formatReport(report));
     return 0;

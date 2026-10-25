@@ -37,9 +37,9 @@ function requirementsHold(
 
 function developerRecoveryRequired(state: IssueState): boolean {
   return (
-    state.codeMerged !== null ||
-    state.merged !== null ||
-    state.mergeAttempt !== null
+    state.codeLanded !== null ||
+    state.landed !== null ||
+    state.landingAttempt !== null
   );
 }
 

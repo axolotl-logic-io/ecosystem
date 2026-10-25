@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 
-type ModelRole = "author" | "implementor" | "reviewer";
+type ModelRole = "author" | "developer" | "reviewer";
 
 // The model a role gets when the config names none for it, or for the
 // installed version's roles it maps from. Explicit configured models stay unchanged.
@@ -14,11 +14,11 @@ const DEFAULT_MODEL = "openai/gpt-6.1-sol";
 // config's models doesn't name the role itself.
 const LEGACY_MODEL_ROLES: Readonly<Record<ModelRole, readonly string[]>> = {
   author: ["spec", "triage"],
-  implementor: ["implementer", "fixer"],
+  developer: ["implementer", "fixer"],
   reviewer: ["correctness", "security", "tests"],
 };
 
-const MODEL_ROLES: readonly ModelRole[] = ["author", "implementor", "reviewer"];
+const MODEL_ROLES: readonly ModelRole[] = ["author", "developer", "reviewer"];
 
 const SESSION_BUDGETS = "session budgets and handoffs were removed";
 const OLD_ROLES = "the triage and practices-digest roles were removed";
@@ -88,7 +88,7 @@ function chooseModels(raw: unknown): ModelChoice {
   const warnings: string[] = [];
   const models: Record<ModelRole, string> = {
     author: DEFAULT_MODEL,
-    implementor: DEFAULT_MODEL,
+    developer: DEFAULT_MODEL,
     reviewer: DEFAULT_MODEL,
   };
   for (const role of MODEL_ROLES) {

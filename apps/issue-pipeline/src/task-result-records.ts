@@ -155,7 +155,7 @@ function recordBody(record: TaskRecord): string {
 // The record in `comment`, if it holds one. A body that starts with the mark
 // is a record claim: anyone but the landing account writing it holds.
 function rowOf(
-  cfg: Pick<Config, "repo" | "mergeAccount">,
+  cfg: Pick<Config, "repo" | "landingAccount">,
   number: number,
   comment: IssueComment,
 ): Row[] {

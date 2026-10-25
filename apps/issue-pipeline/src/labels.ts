@@ -12,7 +12,7 @@ interface StatusLabels {
   working: GitHubLabel;
   needsInfo: GitHubLabel;
   split: GitHubLabel;
-  merged: GitHubLabel;
+  landed: GitHubLabel;
 }
 
 const LABELS: Readonly<StatusLabels> = {
@@ -31,16 +31,27 @@ const LABELS: Readonly<StatusLabels> = {
     color: "c5def5",
     description: "Split into agent sub-issues",
   },
-  merged: {
-    name: "agent:merged",
+  landed: {
+    name: "agent:landed",
     color: "0e8a16",
-    description: "Merged by the agent pipeline",
+    description: "Landed by the agent pipeline",
   },
 };
 
-const PIPELINE_LABELS: readonly string[] = Object.values(LABELS).map(
-  (label: GitHubLabel) => label.name,
-);
+// The landed label before #166, which issues landed earlier still carry. It
+// counts as landed and as the pipeline's, but is never applied or created.
+const OLD_LANDED_LABEL = "agent:merged";
+
+const PIPELINE_LABELS: readonly string[] = [
+  ...Object.values(LABELS).map((label: GitHubLabel) => label.name),
+  OLD_LANDED_LABEL,
+];
+
+// Whether label `name` marks an issue as landed: the landed label, or its
+// name before #166.
+function isLandedLabel(name: string): boolean {
+  return name === LABELS.landed.name || name === OLD_LANDED_LABEL;
+}
 
 // GitHub's label list, as `gh label list --json name` and the labels API give it.
 const LABEL_NAMES = z.array(z.looseObject({ name: z.string() })).nullable();
@@ -57,7 +68,7 @@ function labelNames(listed: unknown): string[] {
 function ensureLabels(cfg: Config): void {
   const existing = new Set(
     labelNames(
-      ghJson(cfg, "merge", [
+      ghJson(cfg, "landing", [
         "label",
         "list",
         "-R",
@@ -74,7 +85,7 @@ function ensureLabels(cfg: Config): void {
     if (!existing.has(label.name)) {
       gh(
         cfg,
-        "merge",
+        "landing",
         [
           "label",
           "create",
@@ -102,7 +113,7 @@ function setLabels(
   for (const name of remove) {
     gh(
       cfg,
-      "merge",
+      "landing",
       [
         "api",
         "-X",
@@ -115,7 +126,7 @@ function setLabels(
   }
   if (add.length > 0) {
     const fields = add.flatMap((name) => ["-f", `labels[]=${name}`]);
-    gh(cfg, "merge", ["api", "-X", "POST", endpoint, "--silent", ...fields]);
+    gh(cfg, "landing", ["api", "-X", "POST", endpoint, "--silent", ...fields]);
   }
 }
 
@@ -128,7 +139,7 @@ function clearStopLabels(
   const have =
     names ??
     labelNames(
-      ghJson(cfg, "merge", [
+      ghJson(cfg, "landing", [
         "api",
         `repos/${cfg.repo}/issues/${number}/labels`,
       ]),
@@ -146,14 +157,14 @@ function applyStopLabel(
   workingRemoved: () => void,
 ): void {
   const endpoint = `repos/${cfg.repo}/issues/${number}/labels`;
-  const have = labelNames(ghJson(cfg, "merge", ["api", endpoint]));
+  const have = labelNames(ghJson(cfg, "landing", ["api", endpoint]));
   for (const name of new Set([
     ...have.filter(isStopLabel),
     LABELS.working.name,
   ])) {
     const result = gh(
       cfg,
-      "merge",
+      "landing",
       [
         "api",
         "-X",
@@ -177,6 +188,7 @@ export {
   applyStopLabel,
   clearStopLabels,
   ensureLabels,
+  isLandedLabel,
   isPipelineLabel,
   LABELS,
   PIPELINE_LABELS,

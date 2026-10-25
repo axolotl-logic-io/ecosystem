@@ -18,7 +18,8 @@ import {
   confirmedWrite,
   writing,
 } from "./coordination-journal.ts";
-import { INVOCATION_BINDING, scopeOf } from "./coordination-records.ts";
+import { INVOCATION_BINDING } from "./coordination-record-schema.ts";
+import { scopeOf } from "./coordination-records.ts";
 import { gh, ghJson } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
 import type { RunResult } from "./process.ts";
@@ -30,9 +31,14 @@ const REF = z.object({ object: z.object({ sha: SHA }) });
 const COMMIT = z.object({ sha: SHA, tree: z.object({ sha: SHA }) });
 const NOT_FOUND = /HTTP 404/u;
 function readRef(cfg: Config, ref: string): string | null {
-  const result = gh(cfg, "merge", ["api", `repos/${cfg.repo}/git/ref/${ref}`], {
-    allowFail: true,
-  });
+  const result = gh(
+    cfg,
+    "landing",
+    ["api", `repos/${cfg.repo}/git/ref/${ref}`],
+    {
+      allowFail: true,
+    },
+  );
   if (result.code !== 0) {
     if (NOT_FOUND.test(result.stderr)) {
       return null;
@@ -49,12 +55,12 @@ function tokenFor(cfg: Config, identity: InvocationBinding): string {
     );
   }
   const parent = COMMIT.parse(
-    ghJson(cfg, "merge", ["api", `repos/${cfg.repo}/git/commits/${base}`]),
+    ghJson(cfg, "landing", ["api", `repos/${cfg.repo}/git/commits/${base}`]),
   );
   const created = COMMIT.parse(
     ghJson(
       cfg,
-      "merge",
+      "landing",
       ["api", "-X", "POST", `repos/${cfg.repo}/git/commits`, "--input", "-"],
       {
         input: JSON.stringify({
@@ -89,7 +95,7 @@ function portOf(
     reserve: (ref: string, token: string): void => {
       gh(
         transport,
-        "merge",
+        "landing",
         ["api", "-X", "POST", `repos/${cfg.repo}/git/refs`, "--input", "-"],
         { input: JSON.stringify({ ref: `refs/${ref}`, sha: token }) },
       );
