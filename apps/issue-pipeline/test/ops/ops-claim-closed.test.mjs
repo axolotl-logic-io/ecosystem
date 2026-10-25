@@ -41,8 +41,10 @@ const HEAD = "0".repeat(SHA_LENGTH);
 const MERGE = "a".repeat(SHA_LENGTH);
 const SAVED = v2State(ISSUE, { stage: "merge", pr: PR, headSha: HEAD });
 const MERGED = { state: "MERGED", mergeCommit: { oid: MERGE } };
-// What an owner whose issue a successor took reads (coordination-records.ts).
+// What an owner whose issue a successor took reads (coordination-records.ts):
+// at its claim's first ownership check, and before a later write.
 const RELEASED = /released instance cannot request again/u;
+const LOST = /execution ownership lost or unconfirmed/u;
 // A state comment's JSON line.
 const STATE_JSON = /\n\{.*\}\n/u;
 const AUTHORIZED = { code: HEAD, inputs: "x" };
@@ -271,6 +273,26 @@ for (const [name, confirmation] of Object.entries({
     ]);
   });
 }
+
+// The reopen is a credentialed write of its own (#169): a successor taking
+// the issue after the claim's receipt checkpoint leaves it closed.
+test("eligible closed recovery reopens nothing once a successor takes the issue after its checkpoint", () => {
+  reply([
+    collaboratorReply("o/r", "alice"),
+    historyReply(ISSUE),
+    issueReply(ISSUE, { state: "closed" }),
+    everyCommentsRead(ISSUE, [savedStateComment(1, SAVED)]),
+    prView(ISSUE, PR, MERGED),
+    { when: `issue reopen ${ISSUE} `, stdout: "" },
+  ]);
+  loseOwnership({ afterWrite: true });
+  const refused = REFUSED.parse(
+    askOps({ op: "claim", number: ISSUE, ...LANE }),
+  );
+  assert.match(refused.error, LOST);
+  assert.deepEqual(savedStates(), [receiptCheckpoint(SAVED)]);
+  assert.equal(writes().length, 1);
+});
 
 test("eligible closed recovery refuses another assigned branch", () => {
   closedWorld([

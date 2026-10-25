@@ -42,8 +42,9 @@ const OWNERSHIP_GH = `const ownershipListing = require(${JSON.stringify(
 // The fake gh this test process installed (fake-gh.mjs registers it), and
 // each issue's owner by config, issue and checkout.
 let fakeDir = "";
-// Whether loseOwnership() armed a takeover for the next bound request.
-let losing = false;
+// The takeover loseOwnership() armed for the next bound request, if any.
+/** @type {{ afterWrite: boolean } | null} */
+let losing = null;
 // Why the last acquisition failed, so that request went unbound.
 let refusal = "";
 /** @type {Map<string, { execution: any, checkout: object }>} */
@@ -229,10 +230,12 @@ function bindOpsRequest({ config, root, request: sent }) {
     }
     owners.set(key, owner);
   }
-  if (losing) {
-    losing = false;
+  if (losing !== null) {
+    const { afterWrite } = losing;
+    losing = null;
     changeStore((store) => {
       store.takeover = true;
+      store.afterWrite = afterWrite;
     });
   }
   return {
@@ -353,9 +356,11 @@ function ownershipComments(issue) {
 
 // A successor takes the issue just after the next bound request's
 // ownership check, so that request's writes find the issue no longer
-// theirs. The next reply() starts a new job, which acquires afresh.
-function loseOwnership() {
-  losing = true;
+// theirs; `afterWrite`, only after its first write, so its next write does.
+// The next reply() starts a new job, which acquires afresh.
+/** @param {{ afterWrite?: boolean }} [when] @returns {void} */
+function loseOwnership({ afterWrite = false } = {}) {
+  losing = { afterWrite };
 }
 
 /**

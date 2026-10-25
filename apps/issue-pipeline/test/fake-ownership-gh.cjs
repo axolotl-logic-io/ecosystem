@@ -41,6 +41,37 @@ function fail(text) {
   process.exit(1);
 }
 
+/** @param {readonly string[]} args @returns {boolean} whether the call changes GitHub */
+function isWrite(args) {
+  if (args.includes("-X") || args.includes("--method")) {
+    return true;
+  }
+  const [command, sub = ""] = args;
+  return (
+    (command === "pr" || command === "issue") &&
+    !["list", "view", "checks"].includes(sub)
+  );
+}
+
+// Whether a write of issue `n` is still journaled in the ops request's run
+// folder: the takeover waits until that write has settled, as a successor
+// can't acquire past an open journal.
+/** @param {NodeJS.ProcessEnv} env @param {number} n @returns {boolean} */
+function journalOpen(env, n) {
+  const { ISSUE_PIPELINE_ROOT: root = "" } = env;
+  const runs = path.join(root, "runs");
+  if (root === "" || !fs.existsSync(runs)) {
+    return false;
+  }
+  return fs
+    .readdirSync(runs)
+    .some((slug) =>
+      fs.existsSync(
+        path.join(runs, slug, `issue-${n}`, "coordination-uncertain.json"),
+      ),
+    );
+}
+
 /** @returns {any} */
 function input() {
   return JSON.parse(fs.readFileSync(0, "utf8"));
@@ -181,7 +212,12 @@ function serveOwnership(dir, args, login) {
   function done() {
     const { env } = process;
     const { FAKE_OWNERSHIP_QUIET: quiet } = env;
-    if (own.takeover !== true || quiet === QUIET) {
+    if (
+      own.takeover !== true ||
+      own.afterWrite === true ||
+      quiet === QUIET ||
+      journalOpen(env, own.request.number)
+    ) {
       return;
     }
     own.takeover = false;
@@ -200,6 +236,12 @@ function serveOwnership(dir, args, login) {
     if (taken.status !== 0) {
       throw new Error(`the successor didn't take the issue: ${taken.stderr}`);
     }
+  }
+  // Armed after a write, the takeover waits for the request's first one.
+  const { FAKE_OWNERSHIP_QUIET: quietCall } = process.env;
+  if (own.afterWrite === true && quietCall !== QUIET && isWrite(args)) {
+    own.afterWrite = false;
+    save();
   }
   const endpoint = args.find((arg) => arg.startsWith("repos/")) ?? "";
   const prefix = `repos/${own.repo}/`;

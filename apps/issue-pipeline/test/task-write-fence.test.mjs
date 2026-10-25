@@ -92,13 +92,14 @@ test("Sync: a successor taking the issue after its attempt leaves the branch unp
   ]);
 });
 
-test("Land: a successor taking the issue after its attempt leaves the target unwritten", () => {
+test("Land: a successor taking the issue after its attempt approves nothing and leaves the target unwritten", () => {
   const world = integrationWorld();
   const ready = world.readyToLand();
   for (const task of ["Hardening", "Integration", "Security"]) {
     world.passed(task);
   }
   const target = world.remoteTarget();
+  const mark = callMark(world.flow.ghDir);
   loseNextOwnership(world.flow, { afterWrite: true });
   const refused = REFUSED.parse(
     rawOps(world.flow, {
@@ -116,4 +117,7 @@ test("Land: a successor taking the issue after its attempt leaves the target unw
   );
   assert.match(refused.error, LOST);
   assert.equal(world.remoteTarget(), target);
+  // Only Land's attempt: no approval of the PR, no push of the target.
+  assert.equal(taskWrites(world.flow.ghDir, mark).length, 1);
+  assert.deepEqual(recordKindsOn(world.flow.ghDir, ISSUE).at(-1), "attempt");
 });
