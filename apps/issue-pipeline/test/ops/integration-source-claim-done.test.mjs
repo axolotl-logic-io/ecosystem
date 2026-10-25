@@ -20,7 +20,7 @@ import {
 } from "../ops-v2-test-kit.mjs";
 
 kit.requireGhReplies();
-const { askOps, reply, stateComment, writes } = kit;
+const { askOps, reply, savedStateComment, writes } = kit;
 const SHA_LENGTH = 40;
 const MERGE_OID = "a".repeat(SHA_LENGTH);
 const OTHER_OID = "b".repeat(SHA_LENGTH);
@@ -63,7 +63,7 @@ function claimDone(n, saved, more) {
     },
     openIssue(n),
     ...more,
-    everyCommentsRead(n, [stateComment(1, saved), myClaim(2)]),
+    everyCommentsRead(n, [savedStateComment(1, saved), myClaim(2)]),
   ]);
   return askOps({ op: "claim", number: n, ...LANE });
 }

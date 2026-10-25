@@ -52,7 +52,7 @@ const LEASE = { lane: "me", sweepId: "s1", at: TIME };
 // What a bound claim by lane `me` sets on issue `n`'s state, with no job's
 // assignment: its lease, the legacy branch it binds and the receipt of the
 // invocation that owns it (#167). Read after the claim.
-/** @param {number} n @returns {{ lease: typeof LEASE, branch: string, execution: object }} */
+/** @param {number} n @returns {{ lease: typeof LEASE, branch: string, execution: { protocol: 1, request: number, instance: string } }} */
 function claimedFields(n) {
   return {
     lease: LEASE,

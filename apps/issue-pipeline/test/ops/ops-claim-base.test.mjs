@@ -19,8 +19,8 @@ import {
   reply,
   requireGhReplies,
   root,
+  savedStateComment,
   sh,
-  stateComment,
   worktree,
 } from "../ops-cli-test-kit.mjs";
 
@@ -57,10 +57,10 @@ function claimNew(n, claimId) {
   reply([
     historyReply(n),
     issueReply(n),
-    commentsReply(n, [stateComment(n, newIssueState(n))]),
+    commentsReply(n, [savedStateComment(n, newIssueState(n))]),
     { when: `issues/${n}/comments -f`, stdout: JSON.stringify(mine) },
     {
-      ...commentsReply(n, [stateComment(n, newIssueState(n)), mine]),
+      ...commentsReply(n, [savedStateComment(n, newIssueState(n)), mine]),
       keep: true,
     },
     ...claimMutationReplies(n, n, null),

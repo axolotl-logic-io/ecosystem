@@ -37,8 +37,8 @@ import {
   requireGhReplies,
   root,
   runDir,
+  savedStateComment,
   sh,
-  stateComment,
   TIME,
   worktree,
   writes,
@@ -79,7 +79,7 @@ test("a claim loses to another lane's live claim", () => {
     collaboratorReply("o/r", "alice"),
     issueReply(LOST_ISSUE),
     commentsReply(LOST_ISSUE, [
-      stateComment(1, newIssueState(LOST_ISSUE)),
+      savedStateComment(1, newIssueState(LOST_ISSUE)),
       claimComment(RIVAL_CLAIM, "other", "s0", LIVE),
     ]),
   ]);
@@ -151,7 +151,7 @@ test("a claim of an answered issue with a PR clears its labels and labels the PR
   };
   const comments = [
     claimComment(ANSWERED_CLAIM, "me", "s0", LIVE),
-    stateComment(ANSWERED_STATE, saved),
+    savedStateComment(ANSWERED_STATE, saved),
   ];
   const labels = [
     { name: "agent:needs-info" },
@@ -201,7 +201,7 @@ test("a claim that resumes a lapsed lease keeps its stage and its worktree", () 
     stage: /** @type {const} */ ("implement"),
     lease: { lane: "other", sweepId: "s0", at: LAPSED },
   };
-  const state = stateComment(LAPSED_STATE, saved);
+  const state = savedStateComment(LAPSED_STATE, saved);
   const rival = claimComment(RIVAL_LAPSED_CLAIM, "other", "s0", LAPSED);
   const mine = claimComment(LAPSED_CLAIM, "me", "s0", LIVE);
   const labels = [{ name: "agent:working" }];
@@ -251,7 +251,7 @@ test("a claim lifts a stopped issue's stop, resuming its stage with its counts r
   };
   const comments = [
     claimComment(STOPPED_CLAIM, "me", "s0", LIVE),
-    stateComment(STOPPED_STATE, saved),
+    savedStateComment(STOPPED_STATE, saved),
   ];
   const labels = [{ name: "agent:stopped-conflict" }];
   reply([

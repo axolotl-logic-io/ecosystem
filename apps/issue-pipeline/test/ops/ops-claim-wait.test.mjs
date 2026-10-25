@@ -30,7 +30,7 @@ import {
   issueComment,
   reply,
   requireGhReplies,
-  stateComment,
+  savedStateComment,
   worktree,
 } from "../ops-cli-test-kit.mjs";
 // ops-v2-test-kit.mjs makes the clone a claim reads.
@@ -56,7 +56,7 @@ test("a claim of an answered, asked issue takes it, clearing needs-info and keep
     asked: { inputs: ASKED_INPUTS },
   };
   const answer = issueComment(ANSWER, "Page 2.", ALLOWED, ANSWERED_AT);
-  const read = [stateComment(ASKED_STATE, saved), answer];
+  const read = [savedStateComment(ASKED_STATE, saved), answer];
   const mine = claimComment(CLAIM, LANE.lane, LANE.sweepId, LIVE);
   const labels = [{ name: "agent:needs-info" }];
   reply([
@@ -111,7 +111,7 @@ for (const stage of /** @type {const} */ (["author", "implement"])) {
     reply([
       collaboratorReply("o/r", ALLOWED),
       issueReply(UNANSWERED_ISSUE, issue),
-      commentsReply(UNANSWERED_ISSUE, [stateComment(ASKED_STATE, state)]),
+      commentsReply(UNANSWERED_ISSUE, [savedStateComment(ASKED_STATE, state)]),
     ]);
     const result = askOps({
       op: "claim",

@@ -26,7 +26,7 @@ import {
 
 requireGhReplies();
 
-const { askOps, reply, stateComment, writes } = kit;
+const { askOps, reply, savedStateComment, writes } = kit;
 const SHA_LENGTH = 40;
 const MERGE_OID = "a".repeat(SHA_LENGTH);
 const PR = 7;
@@ -43,7 +43,7 @@ function claimWorld(n, saved, more = []) {
   reply([
     openIssue(n),
     ...more,
-    everyCommentsRead(n, [stateComment(1, saved), myClaim(2)]),
+    everyCommentsRead(n, [savedStateComment(1, saved), myClaim(2)]),
     ...claimMutationReplies(n, 1, z.number().nullable().parse(pr)),
   ]);
 }

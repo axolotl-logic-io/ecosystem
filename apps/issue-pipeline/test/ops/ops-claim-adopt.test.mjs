@@ -24,7 +24,6 @@ import {
 import { runDir } from "../ops-cli-test-kit.mjs";
 import {
   ADOPTED_LOG,
-  CLAIM_IDS,
   claimSaved,
   head,
   heldComments,

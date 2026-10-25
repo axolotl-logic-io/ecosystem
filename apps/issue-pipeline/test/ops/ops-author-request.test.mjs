@@ -20,7 +20,7 @@ import {
   savedStates,
 } from "../ops-v2-test-kit.mjs";
 
-const { askOps, reply, stateComment, writes, root, sh, worktree } = kit;
+const { askOps, reply, savedStateComment, writes, root, sh, worktree } = kit;
 kit.requireGhReplies();
 const { ISSUE_STATE, newIssueState } = await import("../../src/state.ts");
 const CLAIMED = z.looseObject({ ok: z.literal(true), state: ISSUE_STATE });
@@ -70,7 +70,7 @@ function claimWorld(state, extra = []) {
     collaboratorReply("o/r", "alice"),
     issueReply(state.number),
     everyCommentsRead(state.number, [
-      stateComment(STATE_COMMENT, state),
+      savedStateComment(STATE_COMMENT, state),
       myClaim(CLAIM_COMMENT),
     ]),
     ...extra,
@@ -191,7 +191,7 @@ test("explicit Author still loses to another lane without mode or checkpoint wri
     collaboratorReply("o/r", "alice"),
     issueReply(REFUSED_ISSUE),
     everyCommentsRead(REFUSED_ISSUE, [
-      stateComment(STATE_COMMENT, state),
+      savedStateComment(STATE_COMMENT, state),
       kit.claimComment(
         CLAIM_COMMENT,
         "other",

@@ -49,6 +49,12 @@ function registerFake(dir) {
   fakeDir = dir;
 }
 
+// A test queued a new GitHub (fake-gh.mjs's reply): the next request is a
+// new job's, which acquires afresh.
+function forgetOwners() {
+  owners.clear();
+}
+
 /**
  * @param {(store: any) => void} change
  * @returns {any}
@@ -81,11 +87,25 @@ function freshStore({ repo, baseBranch }) {
   fs.writeFileSync(path.join(fakeDir, "ownership.json"), JSON.stringify(store));
 }
 
+// Whether a scripted listing of issue `n`'s comments holds saved state,
+// which an earlier run must have saved.
+/** @param {number} n @returns {boolean} */
+function hasSavedState(n) {
+  const replies = JSON.parse(
+    fs.readFileSync(path.join(fakeDir, "replies.json"), "utf8"),
+  );
+  return replies.some(
+    (/** @type {{ when: string, stdout?: string }} */ { when, stdout = "" }) =>
+      when.includes(`issues/${n}/comments?`) &&
+      stdout.includes("agent-pipeline:state"),
+  );
+}
+
 /**
  * Acquires issue execution for a new invocation on the frame's lane, as a
- * claim names it, after a released earlier run (RELEASED_RECEIPT), through
- * the real
- * transport, as a stage job does before its first op, on a fresh store.
+ * claim names it, through the real transport, as a stage job does before
+ * its first op, on a fresh store. An issue with saved state first gets the
+ * released earlier run that saved it (RELEASED_RECEIPT).
  * @param {{ config: string, root: string, frame: { number: number, lane: string, checkout: { issue: number, dir: string, branch: string } } }} where
  * @returns {{ execution: any, checkout: object }}
  */
@@ -113,7 +133,9 @@ function acquire({ config, root, frame }) {
     }
     return r.stdout;
   }
-  run("seed", { ...request, instance: EARLIER });
+  if (hasSavedState(frame.number)) {
+    run("seed", { ...request, instance: EARLIER });
+  }
   const execution = JSON.parse(run("owner", request));
   changeStore((store) => {
     store.acquiring = false;
@@ -305,6 +327,7 @@ function ownershipRecords() {
 
 export {
   bindOpsRequest,
+  forgetOwners,
   loseOwnership,
   OWNERSHIP_GH,
   ownedRequest,

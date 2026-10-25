@@ -17,7 +17,7 @@ import {
   executionTransportFiles,
 } from "./fake-execution-transport.mjs";
 import { BATCH_GRAPHQL } from "./fake-graphql-batch.mjs";
-import { OWNERSHIP_GH, registerFake } from "./fake-ownership.mjs";
+import { forgetOwners, OWNERSHIP_GH, registerFake } from "./fake-ownership.mjs";
 
 // The gh script's file mode: executable by its owner, readable by all.
 const EXECUTABLE = 0o755;
@@ -162,6 +162,9 @@ if (at < 0 && ownershipListing) {
     replies.splice(at, 1);
     fs.writeFileSync(file, JSON.stringify(replies));
   }
+} else if (fs.existsSync(path.join(dir, "ownership.json")) && args.includes("-X") && args.some(arg => arg.startsWith("body=") && arg.includes("<!-- agent-pipeline:state"))) {
+  // With ownership on, GitHub takes an unscripted state save as it would.
+  at = replies.length;
 } else {
   process.stderr.write("unsupported private fake gh request: " + text); process.exitCode = 1;
 }
@@ -175,6 +178,7 @@ const postedState = endpointParts.length === 6 && endpointParts[3] === "issues" 
 if (ownershipOn && at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("POST") && postedState && body?.includes("<!-- agent-pipeline:state")) {
   const id = Number(replies[at]?.stdout?.trim()) || 700000 + replies.length + Number(String(Date.now()).slice(-4));
   const comment = { id, node_id: "comment-" + id, body, user: { login: identity[2] }, created_at: "2026-10-18T00:00:00Z", updated_at: "2026-10-18T00:00:00Z", lastEditedAt: null, editor: null };
+  if (at === replies.length && args.includes("--jq")) process.stdout.write(String(id));
   for (const reply of replies.filter(item => item.when.includes("issues/" + postedState[1] + "/comments?"))) {
     reply.stdout = [...(reply.stdout ?? "").split("\\n").filter(Boolean), JSON.stringify(comment)].join("\\n");
   }
@@ -245,6 +249,7 @@ function installFakeGh() {
         .map((line) => AUTHENTICATED_CALL.parse(JSON.parse(line)));
     },
     reply(replies) {
+      forgetOwners();
       fs.rmSync(path.join(dir, "listing-pin.json"), { force: true });
       fs.writeFileSync(path.join(dir, "logins.jsonl"), "");
       fs.writeFileSync(path.join(dir, "identities.jsonl"), "");

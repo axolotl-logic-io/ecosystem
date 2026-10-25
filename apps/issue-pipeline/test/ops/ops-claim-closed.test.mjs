@@ -30,7 +30,7 @@ import {
 } from "./ops-claim-closed-fixtures.mjs";
 
 requireGhReplies();
-const { askOps, reply, stateComment, writes, claimComment } = kit;
+const { askOps, reply, savedStateComment, writes, claimComment } = kit;
 const ISSUE = 401;
 const PR = 50;
 const SHA_LENGTH = 40;
@@ -102,7 +102,7 @@ for (const [name, extra] of Object.entries({
   },
 })) {
   test(`closed issue with ${name} is refused without mutations`, () => {
-    closedWorld([stateComment(1, { ...SAVED, ...extra })]);
+    closedWorld([savedStateComment(1, { ...SAVED, ...extra })]);
     assert.match(
       REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
       refusalOf(STATE_REFUSALS, name),
@@ -123,7 +123,7 @@ for (const [name, extra] of Object.entries({
 })) {
   test(`closed recovery refuses a saved merge attempt with ${name} before mutations`, () => {
     closedWorld([
-      stateComment(1, {
+      savedStateComment(1, {
         ...SAVED,
         headSha: null,
         hardened: AUTHORIZED,
@@ -155,7 +155,7 @@ for (const [name, view] of Object.entries({
   fork: { ...MERGED, isCrossRepository: true },
 })) {
   test(`closed issue whose PR is ${name} is refused without mutations`, () => {
-    closedWorld([stateComment(1, SAVED)], view);
+    closedWorld([savedStateComment(1, SAVED)], view);
     assert.match(
       REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
       refusalOf(PR_REFUSALS, name),
@@ -165,7 +165,7 @@ for (const [name, view] of Object.entries({
 }
 
 test("malformed retained PR head cannot confirm closed recovery even without a saved head", () => {
-  closedWorld([stateComment(1, { ...SAVED, headSha: null })], {
+  closedWorld([savedStateComment(1, { ...SAVED, headSha: null })], {
     ...MERGED,
     headRefOid: "not-an-oid",
   });
@@ -180,7 +180,7 @@ test("unreadable merged metadata never grants closed recovery", () => {
   reply([
     collaboratorReply("o/r", "alice"),
     issueReply(ISSUE, { state: "closed" }),
-    everyCommentsRead(ISSUE, [stateComment(1, SAVED)]),
+    everyCommentsRead(ISSUE, [savedStateComment(1, SAVED)]),
     { when: `pr view ${PR} `, code: 1, stderr: "unreadable merge", keep: true },
   ]);
   assert.match(
@@ -191,9 +191,9 @@ test("unreadable merged metadata never grants closed recovery", () => {
 });
 
 test("a malformed latest state cannot fall back to an older eligible Merge", () => {
-  const malformed = COMMENT_BODY.parse(stateComment(2, SAVED));
+  const malformed = COMMENT_BODY.parse(savedStateComment(2, SAVED));
   closedWorld([
-    stateComment(1, SAVED),
+    savedStateComment(1, SAVED),
     { ...malformed, body: malformed.body.replace(JSON.stringify(SAVED), "{") },
   ]);
   assert.match(
@@ -204,7 +204,7 @@ test("a malformed latest state cannot fall back to an older eligible Merge", () 
 });
 
 test("a state without merge authorship cannot authorize closed recovery", () => {
-  closedWorld([{ ...stateComment(1, SAVED), user: { login: "alice" } }]);
+  closedWorld([{ ...savedStateComment(1, SAVED), user: { login: "alice" } }]);
   assert.match(
     REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
     NO_MERGE_AUTHOR,
@@ -214,9 +214,9 @@ test("a state without merge authorship cannot authorize closed recovery", () => 
 
 test("untrusted editing of otherwise eligible Merge state refuses closed recovery", () => {
   closedWorld([
-    stateComment(1, SAVED),
+    savedStateComment(1, SAVED),
     {
-      ...stateComment(2, SAVED),
+      ...savedStateComment(2, SAVED),
       lastEditedAt: new Date().toISOString(),
       editor: { login: "alice" },
     },
@@ -230,7 +230,7 @@ test("untrusted editing of otherwise eligible Merge state refuses closed recover
 
 test("eligible closed recovery does not override another lane's live claim", () => {
   closedWorld([
-    stateComment(1, SAVED),
+    savedStateComment(1, SAVED),
     claimComment(2, "other", "s0", new Date().toISOString()),
   ]);
   const result = REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE }));
@@ -250,7 +250,7 @@ for (const [name, confirmation] of Object.entries({
       collaboratorReply("o/r", "alice"),
       issueReply(ISSUE, { state: "closed" }),
       everyCommentsRead(ISSUE, [
-        stateComment(1, SAVED),
+        savedStateComment(1, SAVED),
         claimComment(2, LANE.lane, LANE.sweepId, new Date().toISOString()),
       ]),
       prView(ISSUE, PR, MERGED),
@@ -270,7 +270,9 @@ for (const [name, confirmation] of Object.entries({
 }
 
 test("eligible closed recovery refuses another assigned branch", () => {
-  closedWorld([stateComment(1, { ...SAVED, branch: "another-assignment" })]);
+  closedWorld([
+    savedStateComment(1, { ...SAVED, branch: "another-assignment" }),
+  ]);
   assert.match(
     REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
     WRONG_BRANCH,
