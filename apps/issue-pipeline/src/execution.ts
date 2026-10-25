@@ -13,7 +13,7 @@ import type {
   SharedResource,
   Snapshot,
 } from "./coordination.ts";
-import { coordination, surveySlots } from "./coordination.ts";
+import { coordination, slotCoordination, surveySlots } from "./coordination.ts";
 import {
   assertReconciled,
   confirmedWrite,
@@ -170,22 +170,22 @@ function integrationTurn(
     identity,
   );
 }
-// Slot `slot` of a shared resource, held by issue `issue`'s invocation. As
-// with the integration turn, the issue's confirmed execution is an
-// additional restriction on every read and write of it; its records go on
-// that issue.
+// Slot `slot` of a shared resource, held by issue `issue`'s invocation,
+// whose requests declare capacity `cap`. As with the integration turn, the
+// issue's confirmed execution is an additional restriction on every read and
+// write of it; its records go on that issue.
 function resourceSlot(
   cfg: Config,
   issue: number,
   resource: SharedResource,
-  slot: number,
+  slot: { slot: number; cap: number },
 ): ReturnType<typeof coordination> {
   assertExecution(cfg, issue);
   const identity = bindingOf(cfg, issue);
-  return coordination(
+  return slotCoordination(
     cfg,
     portOf(cfg, issue, true),
-    resourceScopeOf(identity, resource, slot),
+    { scope: resourceScopeOf(identity, resource, slot.slot), cap: slot.cap },
     identity,
   );
 }

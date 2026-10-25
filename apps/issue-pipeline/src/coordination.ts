@@ -52,17 +52,24 @@ class Coordination {
   private readonly scope: string;
   private readonly binding: InvocationBinding;
   private readonly version: RecordVersion;
+  // The capacity a resource slot's request declares; undefined elsewhere.
+  private readonly cap: number | undefined;
   constructor(
     cfg: Config,
     port: CoordinationPort,
-    scope: string,
+    at: { scope: string; cap?: number },
     identity: InvocationBinding,
   ) {
+    const { scope, cap } = at;
     this.cfg = cfg;
     this.port = port;
     this.scope = scope;
     this.binding = INVOCATION_BINDING.parse(identity);
     this.version = recordVersion(scope);
+    this.cap = cap;
+    if ((this.version === RESOURCE_RECORD_VERSION) !== (cap !== undefined)) {
+      hold("only a resource slot request declares its capacity, and it must");
+    }
     assertScope(scope, this.binding);
     if (identity.repo !== cfg.repo || identity.base !== cfg.baseBranch) {
       hold("execution repository/base binding changed");
@@ -114,14 +121,19 @@ class Coordination {
     ) {
       hold("released instance cannot request again");
     }
-    this.append({
+    const request: Record = {
       version: this.version,
       scope: this.scope,
       operation: crypto.randomUUID(),
       kind: "request",
       binding: this.binding,
       token: this.port.token(this.binding),
-    });
+    };
+    if (this.cap === undefined) {
+      this.append(request);
+    } else {
+      this.append({ ...request, cap: this.cap });
+    }
     const saved = this.read().pending.find(
       (item) => item.binding.instance === this.binding.instance,
     );
@@ -301,7 +313,17 @@ function coordination(
   scope: string,
   identity: InvocationBinding,
 ): Coordination {
-  return new Coordination(cfg, port, scope, identity);
+  return new Coordination(cfg, port, { scope }, identity);
+}
+// The coordination of a resource slot's scope, whose requests declare the
+// capacity, `cap`, that its caller reserves under.
+function slotCoordination(
+  cfg: Config,
+  port: CoordinationPort,
+  slot: { scope: string; cap: number },
+  identity: InvocationBinding,
+): Coordination {
+  return new Coordination(cfg, port, slot, identity);
 }
 // Each slot of `resource` on cfg's repository and base that a record names
 // or `cap` covers, with its snapshot, all from one listing of the port's
@@ -339,4 +361,4 @@ export type {
   SharedResource,
   Snapshot,
 } from "./coordination-records.ts";
-export { coordination, surveySlots };
+export { coordination, slotCoordination, surveySlots };

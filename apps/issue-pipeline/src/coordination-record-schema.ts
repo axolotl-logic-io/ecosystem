@@ -2,7 +2,9 @@
 // request's `identity` to `binding` (#166) and changed nothing else;
 // transitions are the same in both. Version 3 is the version of a shared
 // resource's slot scope: the same request and transitions, plus a consumer's
-// `register` and `done` reports. Records are written as version 2, or 3 in a
+// `register` and `done` reports, and its request declares the capacity, `cap`,
+// that its caller reserved under. A declared cap is evidence of what each
+// caller assumed, not a trusted capacity policy. Records are written as version 2, or 3 in a
 // resource scope, and read in any version: an old request reads as the
 // version 2 record it is equivalent to, with its key renamed, and is never
 // rewritten. Which scope each version may name is coordination-records.ts's
@@ -42,6 +44,8 @@ const RECORD = z.discriminatedUnion("kind", [
     kind: z.literal("request"),
     binding: INVOCATION_BINDING,
     token: SHA,
+    // Present on a version 3 request, and only there.
+    cap: z.number().int().positive().optional(),
   }),
   z.strictObject({
     version: z.union([

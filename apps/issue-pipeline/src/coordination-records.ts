@@ -167,6 +167,12 @@ function parseRecord(cfg: Config, comment: IssueComment): Row[] {
   }
   if (record.kind === "request") {
     assertScope(record.scope, record.binding);
+    if (
+      (record.version === RESOURCE_RECORD_VERSION) !==
+      (record.cap !== undefined)
+    ) {
+      hold("request capacity declaration does not match its version");
+    }
   }
   return [{ ...record, id: comment.id }];
 }
