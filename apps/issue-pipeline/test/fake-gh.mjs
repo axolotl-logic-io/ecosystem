@@ -176,7 +176,11 @@ const ownershipOn = fs.existsSync(path.join(dir, "ownership.json"));
 const endpointParts = (endpoint ?? "").split("/");
 const postedState = endpointParts.length === 6 && endpointParts[3] === "issues" && endpointParts[5] === "comments" ? [null, endpointParts[4]] : null;
 if (ownershipOn && at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("POST") && postedState && body?.includes("<!-- agent-pipeline:state")) {
-  const id = Number(replies[at]?.stdout?.trim()) || 700000 + replies.length + Number(String(Date.now()).slice(-4));
+  // A reply without an id gets the next of 700001, 700002, … since reply().
+  const idsFile = path.join(dir, "state-ids.json");
+  const next = fs.existsSync(idsFile) ? JSON.parse(fs.readFileSync(idsFile, "utf8")) + 1 : 700001;
+  const id = Number(replies[at]?.stdout?.trim()) || next;
+  if (id === next) fs.writeFileSync(idsFile, JSON.stringify(next));
   const comment = { id, node_id: "comment-" + id, body, user: { login: identity[2] }, created_at: "2026-10-18T00:00:00Z", updated_at: "2026-10-18T00:00:00Z", lastEditedAt: null, editor: null };
   if (at === replies.length && args.includes("--jq")) process.stdout.write(String(id));
   for (const reply of replies.filter(item => item.when.includes("issues/" + postedState[1] + "/comments?"))) {
@@ -251,6 +255,7 @@ function installFakeGh() {
     reply(replies) {
       forgetOwners();
       fs.rmSync(path.join(dir, "listing-pin.json"), { force: true });
+      fs.rmSync(path.join(dir, "state-ids.json"), { force: true });
       fs.writeFileSync(path.join(dir, "logins.jsonl"), "");
       fs.writeFileSync(path.join(dir, "identities.jsonl"), "");
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));

@@ -8,8 +8,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { ownerReceipt } from "../fake-ownership.mjs";
 import { claimMutationReplies } from "../gh-mutation-fixtures.mjs";
 import { historyReply } from "../initial-write-state-fixtures.mjs";
+import { ownerClaim } from "../ops-claim-test-kit.mjs";
 import { requireGhReplies } from "../ops-cli-test-kit.mjs";
 import {
   commitOnOrigin,
@@ -68,6 +70,18 @@ const CLAIMED = z.looseObject({
 });
 const FAILED = z.looseObject({ ok: z.boolean(), error: z.string() });
 
+// A bound claim checkpoints its owner's receipt before it derives the
+// claimed state (#167), so a refused claim writes only that checkpoint:
+// the saved state, unchanged but for the receipt and the branch it binds.
+/** @param {Record<string, unknown>} saved @returns {void} */
+function onlyReceiptSaved(saved) {
+  const branch = `agent/issue-${String(saved["number"])}`;
+  assert.deepEqual(savedStates(), [
+    { ...saved, branch, execution: ownerReceipt() },
+  ]);
+  assert.equal(writes().length, 1);
+}
+
 test("a claim records the code merge GitHub reports for the issue's own PR", () => {
   const n = 301;
   claimWorld(
@@ -81,7 +95,7 @@ test("a claim records the code merge GitHub reports for the issue's own PR", () 
   assert.deepEqual(state.codeMerged, { pr: PR, sha: MERGE_OID });
   assert.equal(state.stage, "merge");
   assert.equal(won.branchChanged, undefined);
-  assert.deepEqual(won.claim, { id: 2, posted: false });
+  assert.deepEqual(won.claim, ownerClaim());
   assert.equal(typeof won.issueFile, "string");
   assert.deepEqual(STATE.parse(savedStates().at(-1)).codeMerged, {
     pr: PR,
@@ -91,7 +105,8 @@ test("a claim records the code merge GitHub reports for the issue's own PR", () 
 
 test("a claim refuses a PR from another branch as the issue's merge", () => {
   const n = 302;
-  claimWorld(n, v2State(n, { pr: PR }), [
+  const saved = v2State(n, { pr: PR });
+  claimWorld(n, saved, [
     prView(n, PR, {
       state: "MERGED",
       mergeCommit: { oid: MERGE_OID },
@@ -101,12 +116,13 @@ test("a claim refuses a PR from another branch as the issue's merge", () => {
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.match(failed.error, OTHER_BRANCH);
-  assert.deepEqual(savedStates(), []);
+  onlyReceiptSaved(saved);
 });
 
 test("a claim refuses a fork's PR of the same branch name", () => {
   const n = 303;
-  claimWorld(n, v2State(n, { pr: PR }), [
+  const saved = v2State(n, { pr: PR });
+  claimWorld(n, saved, [
     prView(n, PR, {
       state: "MERGED",
       mergeCommit: { oid: MERGE_OID },
@@ -115,12 +131,13 @@ test("a claim refuses a fork's PR of the same branch name", () => {
   ]);
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
-  assert.deepEqual(savedStates(), []);
+  onlyReceiptSaved(saved);
 });
 
 test("a claim fails, never assuming a merge, when GitHub can't say", () => {
   const n = 304;
-  claimWorld(n, v2State(n, { pr: PR }), [
+  const saved = v2State(n, { pr: PR });
+  claimWorld(n, saved, [
     {
       when: `pr view ${PR} `,
       stderr:
@@ -132,17 +149,16 @@ test("a claim fails, never assuming a merge, when GitHub can't say", () => {
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.match(failed.error, UNRESOLVED);
-  assert.deepEqual(writes(), []);
+  onlyReceiptSaved(saved);
 });
 
 test("a claim refuses a merged PR without a merge commit", () => {
   const n = 305;
-  claimWorld(n, v2State(n, { pr: PR }), [
-    prView(n, PR, { state: "MERGED", mergeCommit: null }),
-  ]);
+  const saved = v2State(n, { pr: PR });
+  claimWorld(n, saved, [prView(n, PR, { state: "MERGED", mergeCommit: null })]);
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
-  assert.deepEqual(savedStates(), []);
+  onlyReceiptSaved(saved);
 });
 
 test("a claim refuses a recorded code merge GitHub no longer confirms", () => {
@@ -156,7 +172,7 @@ test("a claim refuses a recorded code merge GitHub no longer confirms", () => {
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.equal(failed.ok, false);
   assert.match(failed.error, UNCONFIRMED);
-  assert.deepEqual(savedStates(), []);
+  onlyReceiptSaved(saved);
 });
 
 test("a claim adopts the pipeline's own unsaved push and sends a merge back to review", () => {
@@ -233,8 +249,9 @@ test("a claim of a done issue that saved its merge reconciles it, done and unlab
 
 test("a claim of a done issue with no saved merge fails", () => {
   const n = 310;
-  claimWorld(n, v2State(n, { stage: "done" }));
+  const saved = v2State(n, { stage: "done" });
+  claimWorld(n, saved);
   const failed = FAILED.parse(askOps({ op: "claim", number: n, ...LANE }));
   assert.deepEqual(failed, { ok: false, error: "#310 is done" });
-  assert.deepEqual(writes(), []);
+  onlyReceiptSaved(saved);
 });

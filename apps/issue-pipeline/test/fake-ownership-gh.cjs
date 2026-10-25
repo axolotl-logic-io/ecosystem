@@ -185,6 +185,7 @@ function serveOwnership(dir, args, login) {
       return;
     }
     own.takeover = false;
+    own.acquiring = true;
     save();
     const taken = spawnSync(process.execPath, [own.owner, "successor"], {
       input: JSON.stringify(own.request),
@@ -194,6 +195,8 @@ function serveOwnership(dir, args, login) {
         ["FAKE_OWNERSHIP_QUIET", QUIET],
       ]),
     });
+    const after = JSON.parse(fs.readFileSync(file, "utf8"));
+    fs.writeFileSync(file, JSON.stringify({ ...after, acquiring: false }));
     if (taken.status !== 0) {
       throw new Error(`the successor didn't take the issue: ${taken.stderr}`);
     }

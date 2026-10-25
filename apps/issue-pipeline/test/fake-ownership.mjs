@@ -301,12 +301,12 @@ function ownershipComments(issue) {
 }
 
 // A successor takes the issue just after the next request's ownership
-// check, so that request's writes find the issue no longer theirs.
+// check, so that request's writes find the issue no longer theirs. The
+// next reply() starts a new job, which acquires afresh.
 function loseOwnership() {
   changeStore((store) => {
     store.takeover = true;
   });
-  owners.clear();
 }
 
 /**
