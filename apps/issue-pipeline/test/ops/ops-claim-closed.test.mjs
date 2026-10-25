@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { bindOpsRequest, loseOwnership } from "../fake-ownership.mjs";
+import { loseOwnership } from "../fake-ownership.mjs";
 import { collaboratorReply } from "../gh-mutation-fixtures.mjs";
 import { historyReply } from "../initial-write-state-fixtures.mjs";
 import { issueReply } from "../ops-claim-test-kit.mjs";
@@ -236,7 +236,6 @@ test("untrusted editing of otherwise eligible Merge state refuses closed recover
 test("eligible closed recovery does not override another invocation that takes the issue", () => {
   closedWorld([savedStateComment(1, SAVED)]);
   const request = { op: "claim", number: ISSUE, ...LANE };
-  bindOpsRequest({ config: kit.CONFIG, root: kit.root, request });
   loseOwnership();
   assert.match(REFUSED.parse(askOps(request)).error, RELEASED);
   assert.deepEqual(writes(), []);

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import { bindOpsRequest, loseOwnership } from "../fake-ownership.mjs";
+import { loseOwnership } from "../fake-ownership.mjs";
 import { effectNames, lastStateOf, stateOf } from "../gh-effects-test-kit.mjs";
 import {
   claimMutationReplies,
@@ -31,7 +31,6 @@ import {
 } from "../ops-claim-test-kit.mjs";
 import {
   askOps,
-  CONFIG,
   claimComment,
   commentsReply,
   configWith,
@@ -90,11 +89,6 @@ test("a claim loses to another invocation that takes the issue, writing nothing"
       savedStateComment(1, newIssueState(LOST_ISSUE)),
     ]),
   ]);
-  bindOpsRequest({
-    config: CONFIG,
-    root,
-    request: { op: "claim", number: LOST_ISSUE, ...LANE },
-  });
   loseOwnership();
   const refused = REFUSED.parse(
     askOps({ op: "claim", number: LOST_ISSUE, ...LANE }),

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
-import { bindOpsRequest, loseOwnership } from "../fake-ownership.mjs";
+import { loseOwnership } from "../fake-ownership.mjs";
 import {
   claimMutationReplies,
   collaboratorReply,
@@ -204,7 +204,6 @@ test("explicit Author still loses to another invocation that takes the issue, wi
     stage: "author",
     ...LANE,
   };
-  bindOpsRequest({ config: kit.CONFIG, root, request });
   loseOwnership();
   const result = FAILED.parse(askOps(request));
   assert.match(result.error, RELEASED);

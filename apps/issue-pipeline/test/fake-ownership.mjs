@@ -41,6 +41,8 @@ const OWNERSHIP_GH = `const ownershipListing = require(${JSON.stringify(
 // The fake gh this test process installed (fake-gh.mjs registers it), and
 // each issue's owner by config, issue and checkout.
 let fakeDir = "";
+// Whether loseOwnership() armed a takeover for the next bound request.
+let losing = false;
 /** @type {Map<string, { execution: any, checkout: object }>} */
 const owners = new Map();
 
@@ -216,6 +218,12 @@ function bindOpsRequest({ config, root, request: sent }) {
     }
     owners.set(key, owner);
   }
+  if (losing) {
+    losing = false;
+    changeStore((store) => {
+      store.takeover = true;
+    });
+  }
   return {
     ...request,
     number: n,
@@ -320,13 +328,11 @@ function ownershipComments(issue) {
   );
 }
 
-// A successor takes the issue just after the next request's ownership
-// check, so that request's writes find the issue no longer theirs. The
-// next reply() starts a new job, which acquires afresh.
+// A successor takes the issue just after the next bound request's
+// ownership check, so that request's writes find the issue no longer
+// theirs. The next reply() starts a new job, which acquires afresh.
 function loseOwnership() {
-  changeStore((store) => {
-    store.takeover = true;
-  });
+  losing = true;
 }
 
 /**
