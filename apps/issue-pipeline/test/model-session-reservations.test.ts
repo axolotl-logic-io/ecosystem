@@ -519,10 +519,23 @@ test("concurrent machines whose trusted capacities differ share one pool and nev
       .every((row) => MIXED_CAPS.includes(row.cap ?? 0)),
     "every slot request declares its caller's cap",
   );
-  assert.ok(
-    rows.every((row) => row.scope.endsWith(",1]") || row.kind !== "request"),
-    "both caps contend for the same slot scopes",
-  );
+  for (const row of rows) {
+    const [repo, base, kind, resource, slot, ...extra] = z
+      .array(z.unknown())
+      .parse(JSON.parse(row.scope));
+    assert.deepEqual(
+      { repo, base, kind, resource, extra },
+      {
+        repo: REPO,
+        base: BASE,
+        kind: "resource",
+        resource: "model-session",
+        extra: [],
+      },
+      "both caps contend in one pool: no cap in any slot scope",
+    );
+    assert.ok(Number.isSafeInteger(slot));
+  }
   const ended = new Set(
     rows
       .filter((row) => row.kind === "cancel" || row.kind === "release")
