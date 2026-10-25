@@ -269,6 +269,7 @@ function advanceTarget(flow, files) {
   const dir = fs.mkdtempSync(path.join(flow.tmp, "elsewhere-"));
   seedGit(["clone", "--quiet", "--branch", BASE, flow.origin, dir]);
   for (const [file, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
     fs.writeFileSync(path.join(dir, file), text);
     seedGit(["add", file], dir);
   }

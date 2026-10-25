@@ -210,7 +210,7 @@ describe("standards-upgrade assess", () => {
 
     const python = assess({
       branches: {
-        main: { "pyproject.toml": "[tool.poetry]\n", "main.py": "print(1)\n" },
+        main: { "requirements.txt": "requests\n", "main.py": "print(1)\n" },
       },
     });
     assert.equal(python.assessment().verdict, "blocked");

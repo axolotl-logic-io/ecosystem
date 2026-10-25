@@ -1,9 +1,11 @@
 // What kind of repository a source is, which decides what an upgrade may do:
 // an archived repository gets nothing, a scaffold an archive recommendation,
-// a Node/npm project the supported checks, and anything else is blocked as
-// unsupported, naming the toolchains seen. A name or a missing manifest
-// never decides it (#129).
+// a Node/npm or Python/Poetry project the supported checks, and anything
+// else is blocked as unsupported, naming the toolchains seen. A name or a
+// missing manifest never decides it (#129). A root package.json comes first,
+// so a repository with both is assessed as Node/npm.
 
+import { isPoetry } from "./python-poetry.ts";
 import type { Disposition } from "./schema.ts";
 import type { Source } from "./source.ts";
 
@@ -89,13 +91,24 @@ function dispositionOf(source: Source): Disposition {
       ],
     };
   }
+  if (isPoetry(source)) {
+    return {
+      kind: "python-poetry",
+      detail:
+        "a root pyproject.toml declaring a Poetry project makes this a Python/Poetry project",
+      toolchains: [
+        "python-poetry",
+        ...toolchains.filter((name) => name !== "python-poetry"),
+      ],
+    };
+  }
   let named = "no recognized toolchain";
   if (toolchains.length > 0) {
     named = toolchains.join(", ");
   }
   return {
     kind: "unsupported",
-    detail: `useful content without a supported toolchain (${named}); only Node/npm is supported, so the upgrade is blocked`,
+    detail: `useful content without a supported toolchain (${named}); only Node/npm and Python/Poetry are supported, so the upgrade is blocked`,
     toolchains,
   };
 }

@@ -1,19 +1,25 @@
 // The CI part of a standards assessment, read from the source's GitHub
 // Actions workflows: whether checks run for pull requests and the default
 // branch, run the tests, let failures fail, refresh advisories and cover
-// every workspace. Workflow YAML is evidence of what would run, not of
-// enforcement; enforcement.ts reads that from GitHub (#129).
+// every workspace or nested project. What counts as a test command depends on
+// the ecosystem, so each one supplies a CiTarget. Workflow YAML is evidence
+// of what would run, not of enforcement; enforcement.ts reads that from
+// GitHub (#129).
 
 import { parse } from "yaml";
 import { z } from "zod";
 import type { NodeProject } from "./node-npm.ts";
+import type { PoetryProject } from "./python-poetry.ts";
 import type { Criterion, Workflow } from "./schema.ts";
 import type { Source } from "./source.ts";
 
 const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/u;
 const DEPENDABOT = /^\.github\/dependabot\.ya?ml$/u;
-const TEST_COMMAND =
+const NPM_TEST =
   /\bnpm(?:\s+-\S+)*\s+(?:test|t|run(?:-script)?\s+(?:test|check|ci))\b/u;
+// pytest, directly, through `poetry run` or through Python's module runner.
+const PYTHON_TEST =
+  /(?:^|[\s;&|(])(?:pytest|py\.test|python3?\s+-m\s+(?:pytest|unittest))\b/u;
 const WORKSPACES_FLAG = /(?:--workspaces|\s-ws)\b/u;
 const SWALLOWED = /\|\|\s*(?:true|exit\s+0|:)|--if-present/u;
 
@@ -30,6 +36,14 @@ const DOCUMENT = z.looseObject({
   jobs: z.record(z.string(), JOB).optional(),
 });
 type Job = z.infer<typeof JOB>;
+
+// What CI must run for one ecosystem: steps matching `tests`, named
+// `runner` in evidence, and the check that every component runs.
+interface CiTarget {
+  tests: RegExp;
+  runner: string;
+  workspaces: (runs: readonly string[]) => Criterion;
+}
 
 interface ParsedWorkflow {
   workflow: Workflow;
@@ -125,13 +139,16 @@ function triggerCriterion(
   };
 }
 
-function testRunCriterion(runs: readonly string[]): Criterion {
-  const tests = runs.filter((line) => TEST_COMMAND.test(line));
+function testRunCriterion(
+  runs: readonly string[],
+  target: CiTarget,
+): Criterion {
+  const tests = runs.filter((line) => target.tests.test(line));
   if (tests.length === 0) {
     return {
       id: "ci.runs-tests",
       status: "failed",
-      evidence: "no workflow step runs the npm tests",
+      evidence: `no workflow step runs the ${target.runner} tests`,
     };
   }
   return {
@@ -144,6 +161,7 @@ function testRunCriterion(runs: readonly string[]): Criterion {
 function propagationCriterion(
   workflows: readonly ParsedWorkflow[],
   runs: readonly string[],
+  target: CiTarget,
 ): Criterion {
   const permissive = workflows.flatMap(({ workflow, jobs }) =>
     jobs
@@ -156,7 +174,7 @@ function propagationCriterion(
       .map(() => `${workflow.path} sets continue-on-error`),
   );
   const swallowed = runs.filter(
-    (line) => TEST_COMMAND.test(line) && SWALLOWED.test(line),
+    (line) => target.tests.test(line) && SWALLOWED.test(line),
   );
   const found = [
     ...permissive,
@@ -222,7 +240,7 @@ function workspaceCriterion(
   const { test: rootTest = "" } = project.manifest?.scripts ?? {};
   if (
     WORKSPACES_FLAG.test(rootTest) ||
-    runs.some((line) => TEST_COMMAND.test(line) && WORKSPACES_FLAG.test(line))
+    runs.some((line) => NPM_TEST.test(line) && WORKSPACES_FLAG.test(line))
   ) {
     return { id, status: "passed", evidence: "tests run with --workspaces" };
   }
@@ -233,10 +251,39 @@ function workspaceCriterion(
   };
 }
 
+function nodeTarget(project: NodeProject): CiTarget {
+  return {
+    tests: NPM_TEST,
+    runner: "npm",
+    workspaces: (runs: readonly string[]): Criterion =>
+      workspaceCriterion(project, runs),
+  };
+}
+
+// A Poetry project's nested pyproject.toml files aren't expanded, so CI
+// coverage of them stays unverified.
+function poetryTarget(project: PoetryProject): CiTarget {
+  return {
+    tests: PYTHON_TEST,
+    runner: "pytest",
+    workspaces: (): Criterion => {
+      const id = "ci.workspaces";
+      if (project.nested.length === 0) {
+        return { id, status: "not-applicable", evidence: "one Poetry project" };
+      }
+      return {
+        id,
+        status: "unverified",
+        evidence: `nested Python projects not assessed: ${project.nested.join(", ")}`,
+      };
+    },
+  };
+}
+
 // The workflows found and the CI criteria, in a fixed order.
 function ciOf(
   source: Source,
-  project: NodeProject,
+  target: CiTarget,
 ): { workflows: Workflow[]; criteria: Criterion[] } {
   const parsed = source.files
     .filter((file) => WORKFLOW_FILE.test(file))
@@ -245,10 +292,10 @@ function ciOf(
   const runs = runsOf(parsed.flatMap(({ jobs }) => jobs));
   const criteria = [
     triggerCriterion(parsed, source.defaultBranch),
-    testRunCriterion(runs),
-    propagationCriterion(parsed, runs),
+    testRunCriterion(runs, target),
+    propagationCriterion(parsed, runs, target),
     refreshCriterion(source, parsed),
-    workspaceCriterion(project, runs),
+    target.workspaces(runs),
   ];
   const unparsed = workflows.filter((workflow) => !workflow.parsed);
   if (unparsed.length > 0) {
@@ -258,4 +305,5 @@ function ciOf(
   return { workflows, criteria };
 }
 
-export { ciOf };
+export type { CiTarget };
+export { ciOf, nodeTarget, poetryTarget };

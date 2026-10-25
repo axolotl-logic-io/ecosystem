@@ -15,9 +15,11 @@ This page describes the assessment and the admission of its plan. Merging them i
 
 ## Scope of this slice
 
-The assessment supports Node/npm repositories only. Every other ecosystem, including Python/Poetry, Go and native builds, gets the disposition `unsupported` and the verdict `blocked`. The assessment names the toolchains it saw instead of guessing at an upgrade.
+The assessment supports two ecosystems: Node/npm and Python/Poetry. Every other ecosystem, including Python without Poetry (`requirements.txt`, `setup.py` or another build backend), Go and native builds, gets the disposition `unsupported` and the verdict `blocked`. The assessment names the toolchains it saw instead of guessing at an upgrade.
 
-The assessment is static. It runs no repository code, because no credential-free sandbox with enforced filesystem and network limits exists yet. Installing, running tests and scanning advisories would run that code. So those three criteria are always `unverified`, and a Node/npm assessment can never reach `acceptable`. The upgrade's Implementation and Hardening runs execute those checks later, as they do for any configured repository.
+Poetry support follows the repositories that use it. On 2026-10-24, `axolotl-logic-io` had no Poetry repositories. Its migration source `axolotl-logic` had six with a root Poetry manifest: `lambda-calculus`, `aoc2021`, `ratato-bot` and `five-finder`, plus the archived `scompete` and `moody`. All four active ones came from `poetry new`: `[tool.poetry]`, `python = "^3.9"`, pytest as a dev dependency, and no CI.
+
+The assessment is static. It runs no repository code, because no credential-free sandbox with enforced filesystem and network limits exists yet. Installing, running tests and scanning advisories would run that code. So those three criteria are always `unverified`, and no assessment can reach `acceptable` yet. The upgrade's Implementation and Hardening runs execute those checks later, as they do for any configured repository.
 
 ## Run an assessment
 
@@ -66,30 +68,37 @@ It reads three things, all without writing:
 | `archived` | GitHub shows the repository archived | `no-action` | Nothing. No automatic writes and no unarchive. |
 | `scaffold` | Every branch and tag holds only license, readme or ignore files | `archive-candidate` | An owner action recommends archiving, which needs explicit operator authority. No plan. |
 | `node-npm` | The source commit has a root `package.json` | from the criteria | Criteria below, and a plan when anything needs changing. |
+| `python-poetry` | No root `package.json`, and the root `pyproject.toml` has a `[tool.poetry]` table or builds with `poetry-core` | from the criteria | Criteria below, and a plan when anything needs changing. |
 | `unsupported` | Anything else | `blocked` | The toolchains it saw are named. No plan. |
 
 A scaffold check looks at every branch and tag, not just the default branch. A repository with code on any branch isn't a scaffold.
+
+A repository with both a root `package.json` and a Poetry project is assessed as `node-npm`, and its Python side isn't checked. The disposition's toolchains still list `python`.
 
 ## Criteria
 
 Each criterion has one status: `passed` (verified pass), `failed` (evidenced failure), `unverified` or `not-applicable`.
 
-| Criterion | Passes when |
-|---|---|
-| `environment.manifest` | The root `package.json` parses as a package manifest. |
-| `environment.toolchain` | `engines.node`, `.nvmrc` or `.node-version` declares the supported Node. |
-| `environment.lockfile` | `package-lock.json` or `npm-shrinkwrap.json` is committed. A publishable library may omit one (`not-applicable`). A yarn, pnpm or bun lockfile is `unverified`. |
-| `environment.install` | Always `unverified`: no repository code runs. |
-| `vulnerabilities.scan` | Always `unverified`: no scanner ran, so this isn't a clean scan. |
-| `behavior.tests` | A real `test` script exists. A missing one, or npm's placeholder, means zero tests. |
-| `behavior.tests-run` | Always `unverified`: no repository code runs. |
-| `ci.triggers` | A workflow runs on `pull_request`, and one runs on `push` to the default branch. |
-| `ci.runs-tests` | A workflow step runs `npm test`, or `npm run test`, `check` or `ci`. |
-| `ci.failure-propagation` | No `continue-on-error`, and no `\|\| true` or `--if-present` on a test command. |
-| `ci.advisory-refresh` | Dependabot is configured, or a workflow runs on a schedule. |
-| `ci.workspaces` | With workspaces, CI or the root test script runs `--workspaces`. One component is `not-applicable`. |
-| `ci.workflow-syntax` | Present only when a workflow file doesn't parse; then `failed`. |
-| `enforcement.required-checks` | Branch protection or a ruleset requires a check. A read GitHub refuses makes it `unverified`, never `failed` or `passed`. |
+The criteria have the same names for both ecosystems. What passes depends on the ecosystem.
+
+| Criterion | Node/npm passes when | Python/Poetry passes when |
+|---|---|---|
+| `environment.manifest` | The root `package.json` parses as a package manifest. | The root `pyproject.toml` parses as TOML. |
+| `environment.toolchain` | `engines.node`, `.nvmrc` or `.node-version` declares the supported Node. | `tool.poetry.dependencies.python`, `project.requires-python` or `.python-version` declares the supported Python. |
+| `environment.lockfile` | `package-lock.json` or `npm-shrinkwrap.json` is committed. A publishable library may omit one (`not-applicable`). A yarn, pnpm or bun lockfile is `unverified`. | `poetry.lock` is committed. A project that declares publishing metadata (classifiers, `repository` or `project.urls`) and isn't `package-mode = false` may omit one (`not-applicable`). |
+| `environment.install` | Always `unverified`: no repository code runs. | Same. |
+| `vulnerabilities.scan` | Always `unverified`: no scanner ran, so this isn't a clean scan. | Same. |
+| `behavior.tests` | A real `test` script exists. A missing one, or npm's placeholder, means zero tests. | A `test_*.py` or `*_test.py` file defines a `test…` function. `poetry new`'s placeholder, `test_version`, which only asserts `__version__`, doesn't count, so a project with only that has zero tests. |
+| `behavior.tests-run` | Always `unverified`: no repository code runs. | Same. |
+| `ci.triggers` | A workflow runs on `pull_request`, and one runs on `push` to the default branch. | Same. |
+| `ci.runs-tests` | A workflow step runs `npm test`, or `npm run test`, `check` or `ci`. | A workflow step runs `pytest`, `poetry run pytest`, or `python -m pytest` or `unittest`. |
+| `ci.failure-propagation` | No `continue-on-error`, and no `\|\| true` or `--if-present` on a test command. | Same. |
+| `ci.advisory-refresh` | Dependabot is configured, or a workflow runs on a schedule. | Same. |
+| `ci.workspaces` | With workspaces, CI or the root test script runs `--workspaces`. One component is `not-applicable`. | One project is `not-applicable`. A nested `pyproject.toml` makes it `unverified`, since nested projects aren't assessed. |
+| `ci.workflow-syntax` | Present only when a workflow file doesn't parse; then `failed`. | Same. |
+| `enforcement.required-checks` | Branch protection or a ruleset requires a check. A read GitHub refuses makes it `unverified`, never `failed` or `passed`. | Same. |
+
+For example, the inventory's `aoc2021` would show `environment.lockfile` and `behavior.tests` failed (no `poetry.lock`, only the placeholder test), `environment.toolchain` passed (`^3.9`), and every CI criterion failed except failure propagation.
 
 The verdict follows from the statuses. Any `failed` gives `not-acceptable`. Otherwise any `unverified` gives `unverified`. Only all `passed` or `not-applicable` gives `acceptable`.
 
@@ -109,7 +118,7 @@ A green workflow never stands in for enforcement. Without a required check, the 
 
 `report.md` shows the same data for people.
 
-`plan.md` exists only for a `node-npm` assessment with something to change. It's the body of the upgrade issue. Its first line is a marker that binds the plan to what was assessed:
+`plan.md` exists only for a `node-npm` or `python-poetry` assessment with something to change. Its rules name the ecosystem's own checks: `npm ci`, `npm test` and `npm audit`, or `poetry check --lock`, `poetry install`, `poetry run pytest` and `pip-audit`. It's the body of the upgrade issue. Its first line is a marker that binds the plan to what was assessed:
 
 ```
 <!-- standards-upgrade:plan {"version":1,"repo":"o/r","source":"3f1c…","policy":"standards-v1","digest":"sha256:…"} -->

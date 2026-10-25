@@ -22,7 +22,13 @@ const CRITERION = z.strictObject({
 });
 
 const DISPOSITION = z.strictObject({
-  kind: z.enum(["archived", "scaffold", "node-npm", "unsupported"]),
+  kind: z.enum([
+    "archived",
+    "scaffold",
+    "node-npm",
+    "python-poetry",
+    "unsupported",
+  ]),
   detail: z.string().min(1),
   // The ecosystems or toolchains seen at the source commit.
   toolchains: z.array(z.string()),
