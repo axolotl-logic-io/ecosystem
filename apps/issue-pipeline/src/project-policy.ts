@@ -163,6 +163,7 @@ function computePolicyBinding(cfg: PolicyConfig): ProjectPolicyBinding {
       "requireCi",
       "ciWaitMinutes",
       "commandTimeoutMinutes",
+      "permissions",
     ].map((key) => [key, cfg[key]]),
   );
   const source = cfg.projectPolicy;

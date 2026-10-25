@@ -72,6 +72,7 @@ interface TaskView {
 }
 type Readiness =
   | { state: "ready"; binding: Binding }
+  | { state: "recover"; binding: Binding; reason: string }
   | { state: "waiting" | "held" | "stopped"; reason: string };
 interface ActionEnd {
   state: RunState;
@@ -112,6 +113,7 @@ interface TaskDefinition {
   resources: readonly ("model-session" | "test-slot" | "target-write")[];
   match: (signal: QualifiedSignal, view: TaskView) => Readiness | null;
   act: (ctx: ActionContext) => Promise<ActionEnd>;
+  recover?: (ctx: ActionContext) => Promise<ActionEnd>;
 }
 ```
 
@@ -126,11 +128,14 @@ The code should export schemas and types for boundary values rather than making 
 - `beginAction(ctx): Promise<void>` validates current prerequisites and the attempt budget, then records a new attempt with the action UUID, predecessor, buddy run and cause before the first task effect.
 - `finishAction(ctx, end): Promise<void>` records the result for that attempt. An uncertain action remains unknown, not failed and eligible for repetition.
 - `previousAction(cfg, binding): Promise<string | null>` reads the previous action identity. It does not authorize a retry.
+- `actionCauses(cfg, number): Promise<readonly { binding: Binding; cause: ActionCause }[]>` reads all authenticated current v2 attempts. Conflicting or unreadable evidence holds. Signals use this reader to spend starts by cause independently of target movement.
 - `machineSignals(cfg, number): Promise<readonly QualifiedSignal[]>` wraps only authenticated current v2 results. `readTaskView` and each task's matching own which binding is relevant. A result signal is evidence, not Land permission.
 
 Do not repeat effectful reads merely to satisfy these signatures. Shared task recording and snapshot modules hide their own schemas, budgets and journal layout.
 
-Author and Safe Refactor remain explicit opt-in work. A start label requests only Implement, not Author or Safe Refactor. A task with no applicable signal waits. A passed binding does not execute again. A failed, refused or unknown action is not automatically retried; report the hold. A new requirements binding requires a new accepted start. Changed revision/target bindings create new downstream work only through current qualified evidence.
+Author and Safe Refactor remain explicit opt-in work. A start label requests only Implement, not Author or Safe Refactor. A task with no applicable signal waits. A passed binding does not execute again. A failed, refused or unknown action is not automatically retried; report the hold. A new requirements binding requires a new accepted start. An Implement attempt on the same work item and requirements prevents another Implement attempt even if the target moves or a new start event appears. Changed revision/target bindings create new downstream work only through current qualified evidence.
+
+Readiness `recover` is separate from new-attempt admission. The runtime calls only the task's read-only `recover` handler: never `beginAction`, `act` or `finishAction` for a new attempt. Recovery receives a new local action/invocation identity, but the task helper settles the original attempt's run and buddy run from observed original effects. Its receipt links the reconciling action. Unproven or incomplete effects hold; recovery never replays a push, rebase or Completion mutation.
 
 Sync can act before Harden when R does not contain T. Sync's output requires fresh Harden. Complete finds the authenticated passed Land result and keeps its original R, pre-Land T and policy. It verifies current trusted inputs, own Land provenance and target ancestry without rerunning Integration or Security. A changed policy after Land does not create retroactive permission or require a new post-Land check; the irreversible Land's policy stays pinned. Contradictory landed evidence holds. No-code/no-PR completion and automatic adoption of historical/manual Lands are unsupported.
 
@@ -163,7 +168,11 @@ Accept/append through the existing uncertain-write journal and authoritative rer
 
 Buddy config uses an explicit organization, repository config paths, one role (or a validated subset of that role's task responsibilities), and one identity with the appropriate account/model/runtime/access/network settings. Role names carry no credentials. Validate profile/account consistency and reject obsolete scheduler/assignment controls before effects.
 
-Land authorization is an explicit trusted `permissions.land: true` grant in the Gatekeeper buddy configuration, within configured repository scope and Land responsibility, under the configured landing identity. Default or missing permission refuses Land. Bind the effective permission/configuration digest into the policy used for action authorization and reread trusted configuration before privileged effects. Passing Security or receiving a result signal never itself supplies this permission. The scope/responsibility/identity checks apply in addition to ownership and all task prerequisites.
+Land authorization requires an explicit trusted `permissions.land: true` grant in the Gatekeeper buddy configuration and the same repository-scoped grant in the trusted repository configuration. Missing permission defaults to false. Both grants, configured repository scope, Land responsibility and matching landing identity must pass. The fresh ops child rereads the repository grant; the runtime rereads buddy grant, scope and identity before privileged effects. Passing Security or receiving a result signal never itself supplies permission. Ownership and all task prerequisites remain necessary.
+
+The shared revision checking-policy digest includes repository permissions. The buddy-specific action-authorization digest records its scope, identity and grant separately; putting it in `revision.policy` would prevent Developer and Gatekeeper results from sharing a binding. Preserve that distinct authorization evidence with the Land intent. Complete and read-only Land recovery use current trusted configuration for transport fencing but retain the original Land policy as historical proof, without fresh post-Land checks.
+
+Land's task-owned `beginAction` acquires and confirms the existing integration turn before recording the Land attempt. An unavailable turn waits with no attempt; an uncertain attempt keeps its turn. The runtime must not acquire a duplicate target-write reservation.
 
 One buddy run UUID per activation; one new action UUID per admitted action. The action UUID is the execution invocation's `instance` and task attempt's `run.id`. The lane is stable per buddy/repo/work-item, not capacity. Every model launch names its parent action but has a separate session identity. Historical jobs are never relabeled as buddy runs.
 
@@ -194,7 +203,7 @@ function reserveModelSession(cfg: Config, execution: InvocationBinding, cap: num
     | { state: "waiting" | "held"; reason: string }>;
 ```
 
-The runtime registers before launching and reports done only on confirmed exit. The reservation module uses authenticated shared coordination, not a PID count or local mutex. Unknown consumer state keeps the claim. Reuse the current target integration turn and existing consumer-aware test slots rather than creating duplicate pools. The resource writer owns the necessary coordination-schema extension and execution helper. Existing project-facing slot environment variables remain an explicit compatibility boundary.
+The runtime registers before launching and reports done only on confirmed exit. The reservation module uses authenticated shared coordination, not a PID count or local mutex. Repository/base/resource capacity is one shared policy, not independently invented per buddy. Incompatible capacity declarations hold rather than creating disjoint pools or silently oversubscribing. Unknown consumer state keeps the claim. Reuse the current target integration turn and existing consumer-aware test slots rather than creating duplicate pools. The resource writer owns the necessary coordination-schema extension and execution helper. Existing project-facing slot environment variables remain an explicit compatibility boundary.
 
 ## Ownership and integration
 
@@ -202,7 +211,7 @@ Every implementation lane has its own worktree, based on the shared-contract com
 
 | Lane | Exclusive ownership |
 | --- | --- |
-| Tasks/effects | `src/domain.ts`, new `src/tasks/**`, `src/roles/**`, `src/task-result*.ts`, `src/task-results.ts`, `src/ops/**`, `src/state.ts`, `src/saved-state*.ts`, `src/write-authority.ts`, `src/security-clearance.ts`, `src/land*-authorization.ts`, `src/land-provenance.ts`, `src/reviewed-target.ts`; task-specific integration tests and reference pages |
+| Tasks/effects | `src/domain.ts`, new `src/tasks/**`, `src/roles/**`, `src/ops.ts` canonical registration/envelope, `src/task-result*.ts`, `src/task-results.ts`, `src/ops/**`, `src/state.ts`, `src/saved-state*.ts`, `src/write-authority.ts`, `src/security-clearance.ts`, `src/land*-authorization.ts`, `src/land-provenance.ts`, `src/reviewed-target.ts`; task-specific integration tests and reference pages |
 | Signals | New `src/signals/**`, `test/signals/**`, `docs/reference/signals.md`; no global Config schema edits |
 | Runtime | New `src/buddy.ts`, `src/runtime/**` except `reservations.ts`, existing `src/job/**`, `src/config.ts`, `src/config-schema.ts`, `src/config-legacy.ts`, `src/config-renamed.ts`; runtime integration tests and `docs/reference/runtime-runs.md`; no task/result/ops edits |
 | Resources | `src/runtime/reservations.ts`, coordination resource-schema/record support, `src/execution.ts` resource helper and removal of assignment-grant check, `src/lane-slot*.ts`, resource integration tests |
