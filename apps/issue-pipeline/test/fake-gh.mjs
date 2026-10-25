@@ -167,8 +167,23 @@ if (at < 0 && ownershipListing) {
 }
 const body = args.find(arg => arg.startsWith("body="))?.slice(5);
 const endpoint = args.find(arg => arg.startsWith("repos/"));
+// With ownership on, a bound claim reads its state checkpoint back, so the
+// listings show a saved state as GitHub would: edited in place, or posted.
+const ownershipOn = fs.existsSync(path.join(dir, "ownership.json"));
+const endpointParts = (endpoint ?? "").split("/");
+const postedState = endpointParts.length === 6 && endpointParts[3] === "issues" && endpointParts[5] === "comments" ? [null, endpointParts[4]] : null;
+if (ownershipOn && at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("POST") && postedState && body?.includes("<!-- agent-pipeline:state")) {
+  const id = Number(replies[at]?.stdout?.trim()) || 700000 + replies.length + Number(String(Date.now()).slice(-4));
+  const comment = { id, node_id: "comment-" + id, body, user: { login: identity[2] }, created_at: "2026-10-18T00:00:00Z", updated_at: "2026-10-18T00:00:00Z", lastEditedAt: null, editor: null };
+  for (const reply of replies.filter(item => item.when.includes("issues/" + postedState[1] + "/comments?"))) {
+    reply.stdout = [...(reply.stdout ?? "").split("\\n").filter(Boolean), JSON.stringify(comment)].join("\\n");
+  }
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
+  fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify([...saved, comment]));
+  fs.writeFileSync(file, JSON.stringify(replies));
+}
 if (at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("PATCH") && body?.includes("<!-- agent-pipeline:state")) {
-  for (const reply of replies.filter(item => item.persistState)) {
+  for (const reply of replies.filter(item => item.persistState || (ownershipOn && item.when.includes("/comments?") && item.stdout))) {
     const comments = reply.stdout.split("\\n").filter(Boolean).map(line => JSON.parse(line));
     for (const comment of comments) {
       if (endpoint?.endsWith("/comments/" + comment.id)) {

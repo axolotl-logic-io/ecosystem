@@ -8,6 +8,8 @@
 //   successor  release the frame's owner, as an operator's reconciliation
 //              would, and acquire for a new invocation on lane `successor`
 //   release    release the frame's owner, as a job does after a resolved run
+//   seed       acquire and release for the frame's `instance` on lane
+//              `earlier`: a prior run whose receipt saved state can carry
 import fs from "node:fs";
 import process from "node:process";
 
@@ -20,9 +22,12 @@ const { executionBinding, issueExecution, withExecution } = await import(
 const frame = JSON.parse(fs.readFileSync(0, "utf8"));
 const cfg = withCheckout(loadConfig(frame.config), frame.checkout);
 
-/** @param {string} lane @returns {any} */
-function acquire(lane) {
-  const binding = executionBinding(cfg, frame.number, lane);
+/** @param {string} lane @param {string} [instance] @returns {any} */
+function acquire(lane, instance) {
+  const binding = { ...executionBinding(cfg, frame.number, lane) };
+  if (instance !== undefined) {
+    binding.instance = instance;
+  }
   const guard = issueExecution(withExecution(cfg, binding), frame.number);
   guard.request();
   if (!guard.acquire()) {
@@ -32,6 +37,10 @@ function acquire(lane) {
 }
 
 const [, , mode] = process.argv;
+if (mode === "seed") {
+  const binding = acquire("earlier", frame.instance);
+  issueExecution(withExecution(cfg, binding), frame.number).release();
+}
 if (mode === "successor" || mode === "release") {
   issueExecution(withExecution(cfg, frame.execution), frame.number).release();
 }

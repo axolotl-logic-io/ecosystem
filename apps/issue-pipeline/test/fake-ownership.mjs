@@ -21,6 +21,16 @@ const SHA_LENGTH = 40;
 const BASE_SHA = "b".repeat(SHA_LENGTH);
 const BASE_TREE = "c".repeat(SHA_LENGTH);
 const OWNER = new URL("./fake-ownership-owner.mjs", import.meta.url).pathname;
+// The run every acquisition follows: it held the issue and released it, so
+// state it saved carries this receipt (the store's first record is its
+// request). A bound claim resumes such state only after that release.
+const FIRST_RECORD = 800_001;
+const EARLIER = "00000000-0000-4000-8000-000000000001";
+const RELEASED_RECEIPT = Object.freeze({
+  protocol: 1,
+  request: FIRST_RECORD,
+  instance: EARLIER,
+});
 
 // fake-gh.mjs's script serves ownership through fake-ownership-gh.cjs.
 const OWNERSHIP_GH = `const ownershipListing = require(${JSON.stringify(
@@ -62,7 +72,7 @@ function freshStore({ repo, baseBranch }) {
     refs: { [`heads/${baseBranch}`]: BASE_SHA },
     commits: { [BASE_SHA]: { sha: BASE_SHA, tree: { sha: BASE_TREE } } },
     comments: [],
-    seq: 800_000,
+    seq: FIRST_RECORD - 1,
     token: 0,
     acquiring: false,
     takeover: false,
@@ -73,7 +83,8 @@ function freshStore({ repo, baseBranch }) {
 
 /**
  * Acquires issue execution for a new invocation on the frame's lane, as a
- * claim names it, through the real
+ * claim names it, after a released earlier run (RELEASED_RECEIPT), through
+ * the real
  * transport, as a stage job does before its first op, on a fresh store.
  * @param {{ config: string, root: string, frame: { number: number, lane: string, checkout: { issue: number, dir: string, branch: string } } }} where
  * @returns {{ execution: any, checkout: object }}
@@ -84,20 +95,26 @@ function acquire({ config, root, frame }) {
     store.acquiring = true;
   });
   const request = { config, ...frame };
-  const r = spawnSync(process.execPath, [OWNER, "owner"], {
-    input: JSON.stringify(request),
-    encoding: "utf8",
-    env: Object.fromEntries([
-      ...Object.entries(process.env),
-      ["ISSUE_PIPELINE_ROOT", root],
-      ["HOME", root],
-      ["FAKE_OWNERSHIP_QUIET", "1"],
-    ]),
-  });
-  if (r.status !== 0) {
-    throw new Error(`acquiring #${frame.number} failed: ${r.stderr}`);
+  const env = Object.fromEntries([
+    ...Object.entries(process.env),
+    ["ISSUE_PIPELINE_ROOT", root],
+    ["HOME", root],
+    ["FAKE_OWNERSHIP_QUIET", "1"],
+  ]);
+  /** @param {string} mode @param {object} input @returns {string} */
+  function run(mode, input) {
+    const r = spawnSync(process.execPath, [OWNER, mode], {
+      input: JSON.stringify(input),
+      encoding: "utf8",
+      env,
+    });
+    if (r.status !== 0) {
+      throw new Error(`${mode} #${frame.number} failed: ${r.stderr}`);
+    }
+    return r.stdout;
   }
-  const execution = JSON.parse(r.stdout);
+  run("seed", { ...request, instance: EARLIER });
+  const execution = JSON.parse(run("owner", request));
   changeStore((store) => {
     store.acquiring = false;
     store.request = { ...request, execution };
@@ -259,5 +276,6 @@ export {
   OWNERSHIP_GH,
   ownedRequest,
   ownershipRecords,
+  RELEASED_RECEIPT,
   registerFake,
 };
