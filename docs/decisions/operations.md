@@ -4,7 +4,7 @@ These decisions cover how the pipeline is run: who assigns work, the model runti
 
 ## caller-assigns-the-work
 
-The caller chooses each job's issue, stage and branch, and runs merges one at a time. A job runs one stage of one issue and never picks other work.
+The caller chooses each job's issue, stage and branch, and lands one change at a time. A job runs one stage of one issue and never picks other work.
 
 ## pipeline-owned-native-runtime
 
@@ -16,7 +16,7 @@ A session's toolchain comes from one declared, non-secret environment (`runtime.
 
 ## rate-limit-defers
 
-Provider and GitHub read rate limits defer the issue for the caller to retry later, without using up a fix attempt. An uncertain merge never gets a blind retry; it stops for read-only reconciliation.
+Provider and GitHub read rate limits defer the issue for the caller to retry later, without using up a fix attempt. An uncertain Land never gets a blind retry; it stops for read-only reconciliation.
 
 ## worktrees-and-branches
 

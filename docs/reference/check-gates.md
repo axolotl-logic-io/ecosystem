@@ -16,7 +16,7 @@ That runs this gate and then the dashboard's. `npm run check --workspace @ecosys
 - Biome with the existing lint policy.
 - The esbuild build.
 - Node syntax validation for `install.ts` and all nine built programs, including `structured-output.mjs`.
-It runs no Node tests. The artifact guards (`test/build.test.ts`) and check-task regressions (`test/check-task.test.ts`) it used to run were deleted with the rest of the suite on 2026-10-25. It does **not** prove integration/flow behavior, authority enforcement, retry/recovery, runtime isolation, provider/session behavior or safe merging. Typechecking the test files does not execute their assertions. Label its result **fast default**, never full integration coverage.
+It runs no Node tests. The artifact guards (`test/build.test.ts`) and check-task regressions (`test/check-task.test.ts`) it used to run were deleted with the rest of the suite on 2026-10-25. It does **not** prove integration/flow behavior, authority enforcement, retry/recovery, runtime isolation, provider/session behavior or safe landing. Typechecking the test files does not execute their assertions. Label its result **fast default**, never full integration coverage.
 
 ## Explicit full gate
 
@@ -38,9 +38,9 @@ Concurrency 2 and timeout 180000 ms remain intact. This script builds its prereq
 
 ## Installation prerequisite
 
-Operator-authorized installation requires the approved exact-source fast result plus independent read-only pre-Land Security, not the full suite. Both must bind the same full source commit, trusted-input revision, effective current checking policy and configured pre-Land target branch/commit. Confirm the delivered identity, authenticated receipt and ancestry against that binding. Missing, stale or mismatched premerge proof is a **STOP**; neither a fast pass alone, an invented receipt nor retrospective Security authorizes installation.
+Operator-authorized installation requires the approved exact-source fast result plus independent read-only pre-Land Security, not the full suite. Both must bind the same full source commit, trusted-input revision, effective current checking policy and configured pre-Land target branch/commit. Confirm the delivered identity, authenticated receipt and ancestry against that binding. Missing, stale or mismatched pre-Land proof is a **STOP**; neither a fast pass alone, an invented receipt nor retrospective Security authorizes installation.
 
-After Land, confirm only existing exact identity, receipt, ancestry, premerge verification and saved clearance. Run no check suite, fresh Security model, repair writer or remerge. Separately authorized installer dry-run, backups, job and test-consumer drain, controlled cutover and [managed-artifact/installed-CLI acceptance](operations.md#installation-acceptance) remain required. Authorized evidence checkpoints and `finish` bookkeeping are not post-Land validation suites. Source preparation alone authorizes none of these actions.
+After Land, confirm only existing exact identity, receipt, ancestry, pre-Land verification and saved clearance. Run no check suite, fresh Security model, repair writer or second Land. Separately authorized installer dry-run, backups, job and test-consumer drain, controlled cutover and [managed-artifact/installed-CLI acceptance](operations.md#installation-acceptance) remain required. Authorized evidence checkpoints and `finish` bookkeeping are not post-Land validation suites. Source preparation alone authorizes none of these actions.
 
 ## Observed cost and remaining work
 
@@ -70,6 +70,6 @@ For each check result, preserve:
 
 A repository task change does not rewrite an operator's `commands.test` or wrapper. A wrapper that bypasses the check scripts and directly invokes the full suite still runs expensive checks. Before changing such a wrapper, prepare the smallest proposal outside live configuration, preserve its isolation/mock fences and obtain source-first review and operator approval. Do not modify live configuration as part of this source change.
 
-The GitHub Check workflow was disabled by the operator, as recorded in the issue. This change does not enable it or edit the workflow. It changes no production authorization, trust, receipt, retry, provider, token, session or merge behavior. Exact pre-Land verification must follow the approved effective policy; after Land, only the existing bound proof is confirmed, without a new suite or model validation.
+The GitHub Check workflow was disabled by the operator, as recorded in the issue. This change does not enable it or edit the workflow. It changes no production authorization, trust, receipt, retry, provider, token, session or landing behavior. Exact pre-Land verification must follow the approved effective policy; after Land, only the existing bound proof is confirmed, without a new suite or model validation.
 
 For #178, save the exact candidate and ask the parent before Review, Merge, installation or operator config/wrapper modification. Parent owns publication, acceptance and hold release. Preserve all historical stopped/rejected states, manifests and budgets; neither a fast pass nor a source commit grants a restart or downstream approval.

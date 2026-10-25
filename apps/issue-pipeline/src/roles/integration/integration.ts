@@ -12,7 +12,7 @@
 //   an unsettled run, a hold    → stop for a person: an Integration without
 //                                 a verdict is never read as a failure
 //
-// A passed Integration is R's premerge check proof (verifiedSha), so the
+// A passed Integration is R's pre-Land check proof (verifiedSha), so the
 // merge stage never runs the suite again (`no-repeated-checks`).
 
 import { z } from "zod";

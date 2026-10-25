@@ -99,7 +99,7 @@ Jobs from different installed releases must not run at once. An older `job.mjs` 
 
 ## Cut over to the sweep
 
-Merging this source changes nothing that runs. Lawd will install what it lands once it can ([`lawd-lands-and-installs`](../decisions/buddies-and-tasks.md#lawd-lands-and-installs)); until then the operator installs. Source acceptance, Land, installation and activation are four separate steps, and each needs its own authorization.
+Landing this source changes nothing that runs. Lawd will install what it lands once it can ([`lawd-lands-and-installs`](../decisions/buddies-and-tasks.md#lawd-lands-and-installs)); until then the operator installs. Source acceptance, Land, installation and activation are four separate steps, and each needs its own authorization.
 
 1. Stop starting caller jobs for the repositories you'll move.
 2. Wait for every running job to end (`caller-jobs.mjs wait`), and leave held issues held.

@@ -3,7 +3,7 @@
 // coordination protocol (src/execution.ts `integrationTurn`). Land requests
 // and acquires it before its attempt record and its first PR or target
 // write, and rereads the target under it. A Land that doesn't get the turn
-// cancels its request and writes nothing; the caller's merge queue keeps the
+// cancels its request and writes nothing; the caller's landing order keeps the
 // order across retries. The turn adds a restriction and grants nothing:
 // every read and write of it first asserts the issue's confirmed execution,
 // and the exact Land checks all still apply.

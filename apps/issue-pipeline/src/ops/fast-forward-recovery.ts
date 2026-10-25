@@ -2,20 +2,20 @@
 // responses do not erase intent and never authorize another target mutation.
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
-import { FULL_SHA, legacyWikiOf } from "../merge-provenance.ts";
+import { FULL_SHA, legacyWikiOf } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { currentRevision } from "../revision.ts";
 import { writeState } from "../saved-state.ts";
 import type { IssueState } from "../state.ts";
-import { assertFastForward } from "./branch-merge.ts";
 import { exactTarget, intendedBase } from "./fast-forward-evidence.ts";
+import { assertFastForward } from "./land-branch.ts";
+import type { RecoveryReply } from "./land-recovery.ts";
 import {
   boundAttempt,
   confirmAuthorization,
   saveReceipt,
 } from "./merge-attempt.ts";
-import type { RecoveryReply } from "./merge-recovery.ts";
-import { viewForMerge } from "./pr-merge.ts";
+import { viewForLand } from "./pr-merge.ts";
 
 function readFastForward(
   cfg: Config,
@@ -48,7 +48,7 @@ function readFastForward(
   const observed = { ...state, codeMerged };
   writeState(cfg, number, observed);
   confirmAuthorization(state, attempt);
-  const view = viewForMerge(cfg, attempt.pr);
+  const view = viewForLand(cfg, attempt.pr);
   if (
     view.headRefName !== attempt.branch ||
     view.headRefOid !== result ||

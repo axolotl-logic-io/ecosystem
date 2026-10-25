@@ -14,8 +14,8 @@ import {
 } from "./task-facts.ts";
 
 // Where a change's work may go: the issue's code branch, with its docs in
-// repo/docs/; or, once its code merged (`codeMerged`), nowhere: a session
-// after the merge commits nothing.
+// repo/docs/; or, once its code landed (`codeMerged`), nowhere: a session
+// after the Land commits nothing.
 type Mode = { kind: "branch" } | { kind: "merged"; merged: CodeMerged };
 
 const MAX_TAIL = 3000;

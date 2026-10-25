@@ -1,5 +1,5 @@
 // The merge stage's one session task: the read-only security review of the
-// candidate or historical merged result. It holds facts; the behaviour is
+// candidate or historical landed result. It holds facts; the behaviour is
 // the phase's prompt page (task-facts.ts). Pure.
 
 import type { RoleContext } from "../../job/role-context.ts";
@@ -15,7 +15,7 @@ interface PreparedReview {
 
 interface SecurityReviewFacts {
   prepared: PreparedReview;
-  // The exact candidate or historical confirmed merged revision.
+  // The exact candidate or historical confirmed landed revision.
   revision: Revision;
   codeMerged: CodeMerged | null;
 }
@@ -37,7 +37,7 @@ function resultLines(facts: SecurityReviewFacts): string[] {
   ]);
 }
 
-// Facts for a candidate Security review or historical merged recovery.
+// Facts for a candidate Security review or historical landed recovery.
 function securityReviewTask(
   ctx: RoleContext,
   facts: SecurityReviewFacts,

@@ -1,4 +1,4 @@
-// Serialized merge orchestration, as the legacy merge entry point's safe
+// Serialized Land orchestration, as the legacy merge entry point's safe
 // adapter (#186): the next ready task is read fresh (chain.ts), and the job
 // does only read-only Security, Land and Completion itself. A moved target
 // requests Sync, missing Integration requests Integration, and a failed
@@ -15,11 +15,11 @@ import { opReply, readyPr } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
 import { newRun, taskStatus } from "../task-results.ts";
-import { afterEarlierMerge, afterOwnMerge } from "./after-merge.ts";
+import { afterEarlierLand, afterOwnLand } from "./after-land.ts";
 import type { Cleared } from "./chain.ts";
 import { boundAs, chainRoute, syncNeeded } from "./chain.ts";
 import { finishCompleted } from "./completion.ts";
-import { MERGE_REPLY, recoverAttempt, recoverOwnMerge } from "./recovery.ts";
+import { MERGE_REPLY, recoverAttempt, recoverOwnLand } from "./recovery.ts";
 import { failed, toReview, waiting } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
 import { securityTask } from "./security-task.ts";
@@ -35,11 +35,11 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// The checks before the merge, on the authorized head `code`: Integration's
+// The checks before the Land, on the authorized head `code`: Integration's
 // recorded pass for exactly this revision and target (chain.ts), then CI on
 // exactly this head. A failure goes back to the Developer's Hardening, which
 // fixes it as a new revision; the merge job fixes nothing itself.
-async function checksBeforeMerge(
+async function checksBeforeLand(
   ctx: RoleContext,
   { code, pr, current }: { code: string; pr: number; current: CurrentRevision },
 ): Promise<{ cleared: Cleared } | { end: RoleEnd }> {
@@ -93,10 +93,10 @@ async function checksBeforeMerge(
   }
 }
 
-// What a refused merge means: wait for the queue, harden a moved head,
+// What a refused Land means: wait for the queue, harden a moved head,
 // request Sync for a moved base, mark a draft ready, or stop on GitHub's
 // refusal.
-async function refusedMerge(
+async function refusedLand(
   ctx: RoleContext,
   state: IssueState,
   reply: { reason: string; detail?: unknown },
@@ -148,7 +148,7 @@ async function refusedMerge(
   }
 }
 
-function mergeSummary(state: IssueState, authorized: Revision): string {
+function landSummary(state: IssueState, authorized: Revision): string {
   return `Merged at code ${short(authorized.code)} and trusted inputs ${short(authorized.inputs)}; verified at ${short(state.verifiedSha)}; CI passed on that head.`;
 }
 
@@ -164,7 +164,7 @@ async function clearedCandidate(
   code: string,
   pr: number,
 ): Promise<Candidate | { end: RoleEnd }> {
-  const checked = await checksBeforeMerge(ctx, { code, pr, current });
+  const checked = await checksBeforeLand(ctx, { code, pr, current });
   if ("end" in checked) {
     return { end: checked.end };
   }
@@ -199,9 +199,9 @@ async function clearedCandidate(
   return { state, authorized: fresh.revision, cleared: checked.cleared };
 }
 
-// The open PR's merge, at the authorized code head, as an exact Land of the
+// The open PR's landing, at the authorized code head, as an exact Land of the
 // chain's binding: a new run of it, linked to its latest attempt.
-async function mergeCode(
+async function landCode(
   ctx: RoleContext,
   current: CurrentRevision,
 ): Promise<RoleEnd> {
@@ -236,14 +236,14 @@ async function mergeCode(
       expectedBase: current.baseSha,
       revision: authorized,
       mergeQueue: ctx.mergeQueue,
-      summary: mergeSummary(state, authorized),
+      summary: landSummary(state, authorized),
       binding,
       landRun,
     },
     MERGE_REPLY,
   );
   if (!reply.merged) {
-    return await refusedMerge(ctx, state, reply);
+    return await refusedLand(ctx, state, reply);
   }
   if (reply.byHand === true) {
     return waiting(
@@ -257,7 +257,7 @@ async function mergeCode(
       `PR #${pr.number} merged at ${short(reply.headSha)}, not the authorized ${short(code)}`,
     );
   }
-  return await afterOwnMerge(ctx, state, {
+  return await afterOwnLand(ctx, state, {
     authorized,
     mergeCommit: reply.mergeCommit,
     land: binding,
@@ -278,13 +278,13 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   if (rejected !== null) {
     return rejected;
   }
-  const recovered = await recoverOwnMerge(ctx, current);
+  const recovered = await recoverOwnLand(ctx, current);
   if (recovered !== null) {
     return recovered;
   }
-  // Before the approval gate, so a stop retains the merged result's evidence.
+  // Before the approval gate, so a stop retains the landed result's evidence.
   if (ctx.state.codeMerged !== null) {
-    return afterEarlierMerge(ctx.state, ctx.state.codeMerged);
+    return afterEarlierLand(ctx.state, ctx.state.codeMerged);
   }
   const gate = approvalGate(ctx, ctx.state, current);
   if (gate !== null) {
@@ -294,7 +294,7 @@ const mergeRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   if (state.pr === null) {
     return failed(state, "the change has no PR to merge");
   }
-  return await mergeCode(ctx, current);
+  return await landCode(ctx, current);
 };
 
 export { mergeRole };

@@ -5,7 +5,7 @@ import type { Config } from "../config.ts";
 import { assertGitPushDestination } from "../git-remote.ts";
 import { gitIn } from "../git-state.ts";
 import { git } from "../github.ts";
-import { FULL_SHA } from "../merge-provenance.ts";
+import { FULL_SHA } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 
@@ -40,7 +40,7 @@ function assertFastForward(wt: string, base: string, head: string): void {
   }
 }
 
-function branchMerge(
+function landBranch(
   cfg: Config,
   wt: string,
   base: string,
@@ -72,4 +72,4 @@ function branchMerge(
   return result.code === 0;
 }
 
-export { assertFastForward, branchMerge, targetRef };
+export { assertFastForward, landBranch, targetRef };

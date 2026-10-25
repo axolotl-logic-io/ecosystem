@@ -8,7 +8,7 @@
 //   R doesn't contain T          → wait, requesting Sync (R, T)
 //   no passed Hardening for R, T → back to review for fresh Hardening
 //   no passed Integration        → wait, requesting Integration (R, T)
-//   Integration passed           → its pass is R's premerge check proof
+//   Integration passed           → its pass is R's pre-Land check proof
 //
 // A saved approval or clearance from before activation is never a result:
 // only the records task-readiness reads say what passed.
@@ -106,7 +106,7 @@ function routed(
   }
 }
 
-// Integration passed for exactly R on T: that pass is R's premerge check
+// Integration passed for exactly R on T: that pass is R's pre-Land check
 // proof (verifiedSha), so no suite runs twice (`no-repeated-checks`).
 function withProof(
   state: IssueState,

@@ -1,10 +1,10 @@
-// The confirm-merged op: read-only post-Land confirmation (#185). Checks and
+// The `confirm-merged` op: read-only post-Land confirmation (#185). Checks and
 // Security clear the exact candidate before the target moves; after Land
 // this confirms only that the signed fast-forward intent binds the result to
 // that checked candidate, then GitHub's same-PR MERGED receipt, the result's
 // ancestry on the fetched base and its exact delivered graph. It runs no
 // checks and writes no state. A result without that proof is refused, never
-// re-verified: a postmerge suite would be evidence the merge never had.
+// re-verified: a post-Land suite would be evidence the Land never had.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -15,7 +15,7 @@ import type { CodeMerged, IssueState } from "../state.ts";
 import { sameRevision } from "../state.ts";
 import { BINDING } from "../task-result-records.ts";
 import { landDeliveryRefusal } from "./land-task.ts";
-import { confirmedMergedParent } from "./merged-graph.ts";
+import { confirmedLandedParent } from "./landed-graph.ts";
 
 const REQUEST = z.looseObject({
   number: z.number().int().positive(),
@@ -32,10 +32,10 @@ type ConfirmedReply =
   | { confirmed: true; headSha: string; parent: string }
   | { confirmed: false; reason: string };
 
-// Why the signed state holds no exact premerge proof for `codeMerged`, or
+// Why the signed state holds no exact pre-Land proof for `codeMerged`, or
 // null when it does: a fast-forward intent for exactly this PR and result,
 // its receipt, and the deterministic checks saved for exactly that commit.
-function premergeProofRefusal(
+function preLandProofRefusal(
   state: IssueState,
   codeMerged: CodeMerged,
 ): string | null {
@@ -57,22 +57,22 @@ function premergeProofRefusal(
   return null;
 }
 
-function confirmMergedOp(cfg: Config, request: unknown): ConfirmedReply {
+function confirmLandedOp(cfg: Config, request: unknown): ConfirmedReply {
   const { number, codeMerged, binding } = parseRequest(
     REQUEST,
     "confirm-merged",
     request,
   );
   const refusal =
-    premergeProofRefusal(readWriteState(cfg, number), codeMerged) ??
+    preLandProofRefusal(readWriteState(cfg, number), codeMerged) ??
     (binding && landDeliveryRefusal(cfg, number, binding, codeMerged.sha)) ??
     null;
   if (refusal !== null) {
     return { confirmed: false, reason: refusal };
   }
   const wt = paths.worktree(cfg, number);
-  const parent = confirmedMergedParent(cfg, number, wt, codeMerged);
+  const parent = confirmedLandedParent(cfg, number, wt, codeMerged);
   return { confirmed: true, headSha: codeMerged.sha, parent };
 }
 
-export { confirmMergedOp };
+export { confirmLandedOp };

@@ -75,7 +75,7 @@ Install builds first, then copies programs, prompt pages and the example config 
 - It refuses uncommitted source changes unless `--allow-dirty` is given, and refuses to run from inside the pipeline root.
 - It doesn't touch repository configs, setup and teardown scripts, secrets, the runtime HOME, `clones/`, `work/` or `runs/`.
 
-Merging source changes nothing that runs. Record source delivery (the PR and its head and merge commits) and installation (the installed identity, or not applicable) separately; neither implies the other. A configured base of `main` isn't permission to deploy any repository.
+Landing source changes nothing that runs. Record source delivery (the PR and its head and merge commits) and installation (the installed identity, or not applicable) separately; neither implies the other. A configured base of `main` isn't permission to deploy any repository.
 
 ## Installation acceptance
 
@@ -88,12 +88,12 @@ Keep dispatch stopped until the operator accepts the installed copy separately f
 5. Perform bounded installed-CLI parsing and invalid-input smoke checks that launch no job, model, server or credentialed operation.
 6. Record the installed identity, managed-artifact comparisons, exact CLI commands and results, and the operator's acceptance.
 
-These checks accept the installed artifacts and CLI boundary, not integration coverage. They do not run a repository check suite, fresh Security model, repair writer or remerge. Authorized evidence checkpoints and `finish` bookkeeping remain distinct from forbidden post-Land validation. A mismatch or failed acceptance keeps dispatch stopped; preserve the evidence for explicit operator recovery.
+These checks accept the installed artifacts and CLI boundary, not integration coverage. They do not run a repository check suite, fresh Security model, repair writer or second Land. Authorized evidence checkpoints and `finish` bookkeeping remain distinct from forbidden post-Land validation. A mismatch or failed acceptance keeps dispatch stopped; preserve the evidence for explicit operator recovery.
 
 ## Upgrade safely
 
 1. Stop dispatching new jobs.
-2. Drain every old-version job. Prefer letting an active merge turn finish. Confirm no old job or session remains.
+2. Drain every old-version job. Prefer letting an active Land finish. Confirm no old job or session remains.
 3. Snapshot the installed config, saved-state evidence and recovery files.
 4. Confirm the bound exact-source fast result and independent pre-Land Security described in [Install a release](#install-a-release).
 5. Review the install dry-run.
@@ -101,7 +101,7 @@ These checks accept the installed artifacts and CLI boundary, not integration co
 7. Complete [installation acceptance](#installation-acceptance).
 8. Resume one explicitly assigned issue and stage at a time.
 
-Never run old and new jobs together. Never reset branches, hardening, integration, merge-attempt evidence, Security rejections or merge receipts to make an upgrade pass. Rolling back an install doesn't undo a code merge.
+Never run old and new jobs together. Never reset branches, hardening, integration, landing-attempt evidence, Security rejections or Land receipts to make an upgrade pass. Rolling back an install doesn't undo landed code.
 
 ### Upgrade from the removed wiki flow
 
@@ -123,7 +123,7 @@ When running the pipeline exposes a defect in its own source:
 3. Install the fixed release (see [upgrade safely](#upgrade-safely)).
 4. Restart each retained issue on its original repository, branch and lane, at the stage its saved state and current inputs call for.
 
-Lifting a stop supplies no missing authority. An uncertain merge needs read-only reconciliation, not a blind retry (see [merge](merge.md#recover-after-a-confirmation-deadline)). Never discard retained work to make an issue look new.
+Lifting a stop supplies no missing authority. An uncertain Land needs read-only reconciliation, not a blind retry (see [merge](merge.md#recover-after-a-confirmation-deadline)). Never discard retained work to make an issue look new.
 
 ## Run the tests
 

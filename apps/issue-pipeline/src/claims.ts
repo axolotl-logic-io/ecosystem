@@ -4,7 +4,7 @@
 // `claim-closed`) or goes leaseHours without an edit. The winner's claim stays
 // live while its lane works the issue, across sweeps: each sweep's release
 // edits it (touchClaim). It is closed when the issue leaves the pipeline:
-// merged, stopped, asking or split.
+// landed, stopped, asking or split.
 
 import { CLAIM_MARK, PIPELINE_MARK } from "./comment-marks.ts";
 import type { IssueComment } from "./comments.ts";

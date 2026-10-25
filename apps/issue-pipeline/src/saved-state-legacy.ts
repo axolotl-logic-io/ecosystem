@@ -1,5 +1,5 @@
 // Display conversion for installed-version state; only explicitly validated
-// merge-authored v1 data may pass the existing claim migration rules.
+// landing-authored v1 data may pass the existing claim migration rules.
 import { z } from "zod";
 import type { Stage } from "./stages.ts";
 import type { IssueState } from "./state.ts";
@@ -55,7 +55,7 @@ const LEGACY_AUTHOR_STAGES: ReadonlySet<string> = new Set(["triage", "spec"]);
 
 // Where a legacy stage resumes after the author writes the Gherkin: null for
 // the stages before code work; review for `publish`, the legacy stage of an
-// issue whose code merged while its wiki waited for publication; implement
+// issue whose code landed while its wiki waited for publication; implement
 // for every other stage, so the job verifies the branch afresh.
 function legacyResumeStage(
   stage: string | undefined,

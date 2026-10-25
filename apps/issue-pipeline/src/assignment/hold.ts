@@ -2,7 +2,7 @@
 // assignment records on GitHub when it ends blocked, so no later sweep, and
 // no sweep after a restart, starts the same work again until something
 // changes. The record is one keyed comment from the landing account, edited
-// in place, and read back only with merge authorship and editor provenance
+// in place, and read back only with landing authorship and editor provenance
 // (comment-authority.ts), so no one else can write or lift a hold.
 //
 //   { version: 1, work, end, reason, at, retryAt, count, condition }

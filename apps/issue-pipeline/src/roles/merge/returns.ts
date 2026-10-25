@@ -1,4 +1,4 @@
-// Where the merge job sends an issue it doesn't merge. A changed input goes
+// Where the merge job sends an issue it doesn't land. A changed input goes
 // to its requirements owner, and a code head that moved, a failed check or a
 // missing Hardening result goes back to review for fresh Hardening.
 
@@ -15,7 +15,7 @@ function logged(state: IssueState, entry: string): IssueState {
   return withLog(state, entry, new Date());
 }
 
-// The state with its merge authorization voided: no hardening or
+// The state with its landing authorization voided: no hardening or
 // integration of an earlier revision holds for the next one.
 function voided(state: IssueState): IssueState {
   return { ...state, hardened: null, verifiedSha: null };

@@ -1,6 +1,6 @@
 // The configured integration branch is the only permitted PR target, even
 // when a PR still has the exact authorized head. This metadata check cannot
-// atomically bind current PR state. The merge mutation separately names
+// atomically bind current PR state. The landing mutation separately names
 // the configured destination and immutable authorized source.
 import type { Config } from "./config.ts";
 import { OpsError } from "./ops-error.ts";

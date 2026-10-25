@@ -2,7 +2,7 @@
 
 Safe Refactor is an explicit Developer task, performed by Hippy. The caller supplies requirements, an exact source commit, a reviewed policy and a bounded write scope. The model reads project text and requests named refactoring operations. It cannot edit files, supply replacement source, run transforms or execute commands.
 
-This implementation is standalone. Existing job dispatch, the retained orchestrator, general writer tools, accounts and delivery authority are unchanged. Merging this source does not install or activate it.
+This implementation is standalone. Existing job dispatch, the retained orchestrator, general writer tools, accounts and delivery authority are unchanged. Landing this source does not install or activate it.
 
 ## Behavior contract
 

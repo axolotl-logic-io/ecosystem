@@ -102,7 +102,7 @@ async function opReply<T>(
 // Marks the issue's PR ready for review once `state`, already saved, holds
 // its approval. The op guards it and succeeds again on a PR already ready; a
 // refusal throws, so a PR that stays a draft is never read as ready. A change
-// with no code PR (none, or its code already merged) needs no ready PR.
+// with no code PR (none, or its code already landed) needs no ready PR.
 async function readyPr(ctx: RoleContext, state: IssueState): Promise<void> {
   if (state.pr === null || state.codeMerged !== null) {
     return;

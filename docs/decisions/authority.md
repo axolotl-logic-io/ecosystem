@@ -8,7 +8,7 @@ Pipeline authority comes only from records the review/merge account wrote and la
 
 ## separate-development-and-merge-accounts
 
-Development and review/merge use separate GitHub accounts. Development credentials cannot approve, merge or write authority records. No model session holds either token.
+Development and review/merge use separate GitHub accounts. Development credentials cannot approve, land or write authority records. No model session holds either token.
 
 ## state-comment-on-the-issue
 

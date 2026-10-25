@@ -1,14 +1,14 @@
 # Delivery decisions
 
-These decisions cover how a change gets from a hardened branch onto the configured base: hardening, Security, what an approval covers and merge order. [Review](../reference/review.md), [merge](../reference/merge.md) and [sync](../reference/sync.md) reference describe the current behavior.
+These decisions cover how a change gets from a hardened branch onto the configured base: hardening, Security, what an approval covers and landing order. [Review](../reference/review.md), [merge](../reference/merge.md) and [sync](../reference/sync.md) reference describe the current behavior.
 
 ## security-before-merge
 
-Run security review before merge; security rejection must prevent the merge.
+Run security review before the Land; security rejection must prevent landing.
 
 ## reviewer-hardens-before-merge
 
-Before merge, a Reviewer with write access tries to break the change and fixes what it finds. It must not weaken tests, checks, lint or types to get a pass. Fixes for failing checks, lint and types must improve the design and code, not dodge the rule.
+Before landing, a Reviewer with write access tries to break the change and fixes what it finds. It must not weaken tests, checks, lint or types to get a pass. Fixes for failing checks, lint and types must improve the design and code, not dodge the rule.
 
 On 2026-10-22 Hardening moved to the Developer, Hippy, in a fresh session; see [hardening-stays-independent](buddies-and-tasks.md#hardening-stays-independent). The installed `review` stage still runs under the Lawd account until that change is installed.
 
@@ -20,4 +20,4 @@ Approval, checks and Security clearance apply to one exact code revision and one
 
 ## merge-order
 
-Merge in queue order, so slow issues don't keep losing races and re-running checks.
+Land in queue order, so slow issues don't keep losing races and re-running checks.

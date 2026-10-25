@@ -125,7 +125,7 @@ The job's recorder, the landing-account process, writes every record. The run th
 | Hardening | The review job | The hardened revision, after Hardening's own commits | Attempt and result together, after verification, before the checkpoint is saved |
 | Integration | The Integration task job's ops | R, the revision checked | The attempt before the checks, the result after |
 | Security | The merge job | The candidate | The attempt before the session, the verdict after |
-| Land | The `merge` op | The candidate | The attempt before the first PR write, the result once the own merge is confirmed |
+| Land | The `merge` op | The candidate | The attempt before the first PR write, the result once the own Land is confirmed |
 
 **Implementation binds the requirements, and names the revision it pushed** in `receipt.produced.code`. Every Implementation run binds this way, not only the first, so a return after edited requirements has a new binding and a new budget. If the trusted inputs changed during the session, the job records nothing, and review sends the work back to its requirements owner.
 

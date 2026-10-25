@@ -1,4 +1,4 @@
-// The gates between an authorized revision and what merge (and, through
+// The gates between an authorized revision and what `merge` (and, through
 // finish-guard.ts, the finish op) may do to GitHub, decided against a fresh
 // current revision (src/revision.ts) and the issue's saved state rather
 // than any claim in a request. Each gate is pure: an inconsistent request
@@ -6,8 +6,8 @@
 // undefined lets the op go on.
 
 import { z } from "zod";
-import { legacyWikiOf, REVISION } from "../merge-provenance.ts";
-import { recordedAuthorization } from "../merged-authorization.ts";
+import { legacyWikiOf, REVISION } from "../land-provenance.ts";
+import { recordedAuthorization } from "../landed-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import type { currentRevision } from "../revision.ts";
 import { currentResultObservation } from "../security-clearance.ts";
@@ -20,18 +20,18 @@ type CurrentRevision = ReturnType<typeof currentRevision>;
 // whose legacy wiki head it keeps).
 const REVISION_REQUEST = REVISION.extend({ inputs: z.string().min(1) });
 
-interface MergeStale {
+interface LandStale {
   merged: false;
   reason: "stale";
   current: Revision;
 }
 
-// A merge goes on only while the code head and trusted inputs are
+// A Land goes on only while the code head and trusted inputs are
 // still the authorized `revision` (recordedAuthorization).
-function mergeStale(
+function landStale(
   revision: Revision,
   current: CurrentRevision,
-): MergeStale | undefined {
+): LandStale | undefined {
   if (sameRevision(revision, current.revision)) {
     return undefined;
   }
@@ -69,12 +69,12 @@ function mergedPr(
 }
 
 // Whether the saved authorization permits GitHub's merged result. An own
-// merge keeps the original head authorization and needs its exact saved
+// Land keeps the original head authorization and needs its exact saved
 // receipt, even after a claim records codeMerged. Independently hardened
-// postmerge work instead authorizes the merge commit with codeMerged.
+// post-Land work instead authorizes the merge commit with codeMerged.
 // A done replay always needs the exact saved completion as well. Callers
 // first confirm the PR and codeMerged against GitHub through mergedPr.
-function mergedAuthorizationHolds(
+function landedAuthorizationHolds(
   saved: IssueState,
   result: Revision,
   merged: { mergeCommit: string; headSha: string },
@@ -104,8 +104,8 @@ function mergedAuthorizationHolds(
 }
 
 // A current-policy observation is not historical authorization. It needs both
-// the untouched original authorization/receipt and canonical exact merged truth.
-function ownMergeResultObservation(
+// the untouched original authorization/receipt and canonical exact landed truth.
+function ownLandResultObservation(
   saved: IssueState,
   current: {
     revision: Revision;
@@ -136,7 +136,7 @@ function ownMergeResultObservation(
     return null;
   }
   if (
-    !mergedAuthorizationHolds(saved, merged, {
+    !landedAuthorizationHolds(saved, merged, {
       headSha: pr.headSha,
       mergeCommit: pr.mergeCommit,
     })
@@ -146,11 +146,11 @@ function ownMergeResultObservation(
   return currentResultObservation(merged, current.revision);
 }
 
-export type { CurrentRevision, MergeStale };
+export type { CurrentRevision, LandStale };
 export {
-  mergedAuthorizationHolds,
+  landedAuthorizationHolds,
+  landStale,
   mergedPr,
-  mergeStale,
-  ownMergeResultObservation,
+  ownLandResultObservation,
   REVISION_REQUEST,
 };

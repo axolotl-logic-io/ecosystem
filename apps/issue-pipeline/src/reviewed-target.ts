@@ -1,5 +1,5 @@
 // A target observed during hardening is part of that authorization, not a
-// value that a later merge may replace with any currently advertised ancestor.
+// value that a later Land may replace with any currently advertised ancestor.
 import { z } from "zod";
 import type { Config } from "./config.ts";
 

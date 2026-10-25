@@ -14,4 +14,4 @@ The Developer may make improvements necessary for the task or directly connected
 
 Version role prompts with the pipeline code they instruct. Keep them as Markdown and snapshot the exact text each job uses. A change must not replace the prompts used to review that same change.
 
-Prompts take effect with the installed release, never at merge.
+Prompts take effect with the installed release, never at landing.

@@ -2,9 +2,9 @@
 // objects, never from an OPEN PR's test merge or the current base tip.
 import type { Config } from "../config.ts";
 import { gitIn } from "../git-state.ts";
-import { FULL_SHA } from "../merge-provenance.ts";
+import { FULL_SHA } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
-import { confirmMerged, pullRequest } from "../revision.ts";
+import { confirmLanded, pullRequest } from "../revision.ts";
 import { readWriteState } from "../saved-state.ts";
 import type { CodeMerged } from "../state.ts";
 import { confirmedFastForwardBase } from "./fast-forward-evidence.ts";
@@ -34,7 +34,7 @@ function confirmSourceHistory(
 // New branch merges must have ordered parents [integration-side, retained
 // authorized head]. Legacy squash receipts are usable only when their entire
 // first-parent delta equals the original head's entire delta.
-function mergedParent(
+function landedParent(
   wt: string,
   sha: string,
   head: string,
@@ -78,13 +78,13 @@ function mergedParent(
 
 // Confirms genuine same-PR MERGED metadata and fresh integration ancestry,
 // then establishes a complete first-parent range for checks/review/replay.
-function confirmedMergedParent(
+function confirmedLandedParent(
   cfg: Config,
   n: number,
   wt: string,
   codeMerged: CodeMerged,
 ): string {
-  confirmMerged(cfg, n, { wt, codeMerged });
+  confirmLanded(cfg, n, { wt, codeMerged });
   const pr = pullRequest(cfg, n, codeMerged.pr);
   if (pr.state !== "MERGED" || pr.mergeCommit !== codeMerged.sha) {
     throw new OpsError(
@@ -100,7 +100,7 @@ function confirmedMergedParent(
       return base;
     }
   }
-  return mergedParent(wt, codeMerged.sha, pr.headSha);
+  return landedParent(wt, codeMerged.sha, pr.headSha);
 }
 
-export { confirmedMergedParent, mergedParent };
+export { confirmedLandedParent, landedParent };

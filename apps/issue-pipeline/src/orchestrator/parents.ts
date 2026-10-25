@@ -1,6 +1,6 @@
 // Closing split parents each tick (#378, `orchestrator-closes-parents`): the
 // orchestrator runs close-parent's own code for each open split parent, so it
-// closes one once every sub-issue is closed and at least one merged. The
+// closes one once every sub-issue is closed and at least one landed. The
 // author never splits an issue, so these are parents grouped by hand. With
 // one orchestrator per repo nothing else closes them, so no reservation is
 // taken first. A closed parent is logged as `closed-parent`; a close that

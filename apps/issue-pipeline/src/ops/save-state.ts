@@ -1,8 +1,8 @@
 // The job's state writes: save-state writes a role's state and nothing else;
 // release writes the state the job ends with, renewing its lease, and keeps
-// the lane's claim live. Neither can clear attempted/observed merge evidence
-// recorded by the claim or merge reconciliation. Stale role snapshots must
-// not erase a response or confirmed receipt saved inside the merge op. The
+// the lane's claim live. Neither can clear attempted/observed landing evidence
+// recorded by the claim or landing reconciliation. Stale role snapshots must
+// not erase a response or confirmed receipt saved inside the `merge` op. The
 // comments the job queued ride along on every op (see ops.ts).
 
 import { z } from "zod";
@@ -80,8 +80,8 @@ function retainedResultSecurity(
   return { resultSecurity };
 }
 
-// `state` as issue `n` may save it: for issue `n`, with the saved code merge.
-function withSavedCodeMerge(
+// `state` as issue `n` may save it: for issue `n`, with the saved code Land.
+function withSavedCodeLand(
   cfg: Config,
   n: number,
   state: IssueState,
@@ -124,9 +124,9 @@ function withSavedCodeMerge(
   };
 }
 
-// Writes issue `n`'s state, with the code merge it has saved.
+// Writes issue `n`'s state, with the code Land it has saved.
 function saveIssueState(cfg: Config, n: number, state: IssueState): IssueState {
-  const written = withSavedCodeMerge(cfg, n, state, readWriteState(cfg, n));
+  const written = withSavedCodeLand(cfg, n, state, readWriteState(cfg, n));
   writeState(cfg, n, written);
   return written;
 }
@@ -153,4 +153,4 @@ function release(cfg: Config, request: unknown): EmptyReply {
   return {};
 }
 
-export { release, saveIssueState, saveState, withSavedCodeMerge };
+export { release, saveIssueState, saveState, withSavedCodeLand };

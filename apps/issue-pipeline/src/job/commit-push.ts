@@ -5,7 +5,7 @@
 // the session's launch in job.json and as a line of `pushes.jsonl` in the
 // issue's run folder, `{key, job, repo, sha, at}`, which outlives job.json.
 // Only a launch with a job-bound write scope can push. Fresh saved receipts
-// and live PR authority independently forbid code after merge, even when a
+// and live PR authority independently forbid code after Land, even when a
 // session forges its tool environment. It defers while a rebase is stopped
 // in the checkout, whose ops push the rebased branch only after its checks.
 // A refused push keeps the commits and is reported, never thrown; the next
@@ -111,7 +111,7 @@ function pushSession(
     "code",
     (): void => {
       // Re-read at the credentialed mutation, not just at launch or request
-      // entry. A saved own-merge receipt closes the pre-claim window too.
+      // entry. A saved own-Land receipt closes the pre-claim window too.
       const { codeWritable } = readWriteAuthority(cfg, issue);
       if (!codeWritable || scope.repo.access !== "write") {
         throw new Error(

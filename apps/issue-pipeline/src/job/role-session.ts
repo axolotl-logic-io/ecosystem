@@ -27,7 +27,7 @@ import { usageTally } from "./usage-tally.ts";
 const MINUTE_MS = 60_000;
 const MS_PER_SECOND = 1000;
 // Each role's session timeout: its only bound (`no-session-budgets`). The
-// implementor's is the installed version's longest writer session's.
+// `implementor` role's is the installed version's longest writer session's.
 const SESSION_MINUTES: Readonly<Record<ModelRole, number>> = {
   author: 30,
   implementor: 60,

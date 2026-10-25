@@ -42,13 +42,13 @@ function graphql(cfg: Config, fields: readonly string[]): unknown {
 
 type CurrentNode = z.infer<typeof CURRENT_COMMENT>["data"]["node"];
 
-// A listing's merge-authored comments, verified in one read: an alias per
+// A listing's landing-authored comments, verified in one read: an alias per
 // comment, each answered as COMMENT_QUERY's node would be.
 const BATCH = z.object({
   data: z.record(z.string(), CURRENT_COMMENT.shape.data.shape.node.nullable()),
 });
 
-function isMergeAuthored(cfg: Config, item: IssueComment): boolean {
+function isLandingAuthored(cfg: Config, item: IssueComment): boolean {
   return item.user?.login.toLowerCase() === cfg.mergeAccount.toLowerCase();
 }
 
@@ -62,7 +62,7 @@ function nodeIdOf(item: IssueComment): string {
 }
 
 // `node`, the current read of `item`, once it proves the same comment with
-// merge authorship and editor provenance.
+// landing authorship and editor provenance.
 function checkedNode(
   cfg: Config,
   item: IssueComment,
@@ -83,10 +83,10 @@ function checkedNode(
   return node;
 }
 
-// All merge-authored comments are checked, including edits removing markers.
+// All landing-authored comments are checked, including edits removing markers.
 // Body, author and editor must come from the same GraphQL read.
 function currentComment(cfg: Config, item: IssueComment): CurrentNode | null {
-  if (!isMergeAuthored(cfg, item)) {
+  if (!isLandingAuthored(cfg, item)) {
     return null;
   }
   const fields = [`query=${COMMENT_QUERY}`, `id=${nodeIdOf(item)}`];
@@ -94,14 +94,14 @@ function currentComment(cfg: Config, item: IssueComment): CurrentNode | null {
   return checkedNode(cfg, item, current.data?.data.node);
 }
 
-// currentComment for each of `items`, with every merge-authored one read in
+// currentComment for each of `items`, with every landing-authored one read in
 // one GraphQL request when there are several, so a listing's cost doesn't
 // grow with its history (#167).
 function currentComments(
   cfg: Config,
   items: readonly IssueComment[],
 ): (CurrentNode | null)[] {
-  const merged = items.filter((item) => isMergeAuthored(cfg, item));
+  const merged = items.filter((item) => isLandingAuthored(cfg, item));
   if (merged.length < 2) {
     return items.map((item) => currentComment(cfg, item));
   }

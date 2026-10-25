@@ -17,7 +17,7 @@ import type { IssueState } from "../state.ts";
 import {
   approvalHolds,
   ISSUE_STATE,
-  mergeAuthorization,
+  landAuthorization,
   sameRevision,
 } from "../state.ts";
 
@@ -60,11 +60,11 @@ function viewForReady(cfg: Config, pr: number): z.infer<typeof READY_VIEW> {
   return view.data;
 }
 
-// Whether `saved` holds the same merge authorization as `state`: the same
-// hardened revision and the same authorized revision (mergeAuthorization).
+// Whether `saved` holds the same landing authorization as `state`: the same
+// hardened revision and the same authorized revision (landAuthorization).
 function sameAuthorization(saved: IssueState, state: IssueState): boolean {
-  const authorized = mergeAuthorization(state);
-  const savedAuthorized = mergeAuthorization(saved);
+  const authorized = landAuthorization(state);
+  const savedAuthorized = landAuthorization(saved);
   return (
     authorized !== null &&
     savedAuthorized !== null &&
@@ -77,7 +77,7 @@ function sameAuthorization(saved: IssueState, state: IssueState): boolean {
 
 // The PR and authorized code head ready-pr may mark ready, after checking
 // that the request's state is the issue's, that it and the issue's freshly
-// saved state (at review or merge) hold the same PR and the same merge
+// saved state (at review or merge) hold the same PR and the same landing
 // authorization (so it is saved before the PR is ready), and that the
 // authorization holds for the issue's revision read fresh. A state with no
 // hardening authorizes nothing. Throws otherwise.
@@ -93,7 +93,7 @@ function readyApproval(
   if (pr === null) {
     throw new OpsError(`#${n} has no PR to mark ready`);
   }
-  const authorized = mergeAuthorization(state);
+  const authorized = landAuthorization(state);
   if (authorized === null || authorized.code === null) {
     throw new OpsError(
       `#${n} has no hardened authorization of code to mark PR #${pr} ready`,

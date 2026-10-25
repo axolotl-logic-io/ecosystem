@@ -1,8 +1,8 @@
 // The verify op: runs a PR's checks and reports each one. The checks are the
 // configured commands (setup first, which stops verify when it fails),
 // whether each changed lockfile regenerates to itself, and the migrations when
-// the change touches them. Before the code merges they run in the issue's
-// checkout, which verify leaves as it found it. Once it merged, they run at
+// the change touches them. Before the code lands they run in the issue's
+// checkout, which verify leaves as it found it. Once it landed, they run at
 // the exact merge commit GitHub reports, in a clean detached checkout of it
 // that verify removes, so the issue's checkout stays as it is.
 
@@ -24,13 +24,13 @@ import { OpsError } from "../ops-error.ts";
 import { parseRequest, run, shell } from "../process.ts";
 import type { VerifyReply } from "./checks.ts";
 import { changedFiles, present, runChecks, SETTINGS } from "./checks.ts";
-import { confirmedMergedParent } from "./merged-graph.ts";
+import { confirmedLandedParent } from "./landed-graph.ts";
 
 const TEARDOWN_TIMEOUT_MS = 300_000;
 
 const REQUEST = z.looseObject({
   number: z.number().int().positive(),
-  // The merged PR and its merge commit, once the code merged.
+  // The merged PR and its merge commit, once the code landed.
   codeMerged: z
     .object({ pr: z.number().int().positive(), sha: z.string().min(1) })
     .nullish(),
@@ -71,14 +71,14 @@ function removeVerifyCheckout(
 // Verifies merge commit `sha` of PR `pr`, once GitHub confirms the PR
 // merged as `sha` and the fetched base branch holds it, in a clean detached
 // checkout of it. Its change is what the merge brought onto the base.
-function verifyMerged(
+function verifyLanded(
   cfg: Config,
   n: number,
   codeMerged: { pr: number; sha: string },
 ): VerifyReply {
   const { sha } = codeMerged;
   const wt = paths.worktree(cfg, n);
-  const integrationParent = confirmedMergedParent(cfg, n, wt, codeMerged);
+  const integrationParent = confirmedLandedParent(cfg, n, wt, codeMerged);
   const runDir = paths.runDir(cfg, n);
   fs.mkdirSync(runDir, { recursive: true });
   const parent = fs.mkdtempSync(path.join(runDir, "verify-merged-"));
@@ -120,7 +120,7 @@ function verify(cfg: Config, request: unknown): VerifyReply {
   if (codeMerged === undefined || codeMerged === null) {
     return verifyCheckout(cfg, number);
   }
-  return verifyMerged(cfg, number, codeMerged);
+  return verifyLanded(cfg, number, codeMerged);
 }
 
 export { verify };

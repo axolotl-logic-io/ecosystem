@@ -3,7 +3,7 @@
 // assigned branch, the repo and its base. Before the job opens a checkout,
 // writes job.json or runs an op, it requests and confirms issue-execution
 // ownership itself, through the coordination transport (src/execution.ts)
-// with the merge account. Ownership is read from authenticated coordination
+// with the landing account. Ownership is read from authenticated coordination
 // records, so a scripted or stale ops reply can never stand in for it.
 //
 // A loser cancels its pending request, so it never blocks the queue, and

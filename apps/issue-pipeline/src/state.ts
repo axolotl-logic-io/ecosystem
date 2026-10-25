@@ -1,7 +1,7 @@
 // An issue's state, which saved-state.ts keeps on GitHub. This module owns
-// the state's schema (version 2), its log, and the merge authorization rule:
+// the state's schema (version 2), its log, and the landing authorization rule:
 // only the exact code/input revision that passed hardening. Security must
-// clear that candidate before merge; old merged-result receipts are history.
+// clear that candidate before Land; old landed-result receipts are history.
 
 import { z } from "zod";
 import { EXECUTION_RECEIPT } from "./execution-receipt.ts";
@@ -10,7 +10,7 @@ import {
   legacyWikiOf,
   MERGE_ATTEMPT,
   REVISION,
-} from "./merge-provenance.ts";
+} from "./land-provenance.ts";
 import { REVIEWED_TARGET } from "./reviewed-target.ts";
 import type { Status } from "./stages.ts";
 import { STAGES } from "./stages.ts";
@@ -121,7 +121,7 @@ const ISSUE_STATE = z.object({
   requirementsInputs: z.string().min(1).nullable().default(null).catch(null),
   review: REVIEW.catch(EMPTY_REVIEW),
   // The exact revision that passed the Reviewer's hardening, which
-  // authorizes its merge; any other revision is hardened first.
+  // authorizes its Land; any other revision is hardened first.
   hardened: REVISION.nullable().catch(null),
   hardenedTarget: REVIEWED_TARGET.nullable().catch(null),
   // The receipt of the Reviewer's own integration of the hardened revision.
@@ -236,12 +236,12 @@ function sameRevision(a: Revision, b: Revision): boolean {
 
 // Only exact hardening authorizes a candidate. Integration receipts remain
 // recovery evidence, never an exception for changed code.
-function mergeAuthorization(state: IssueState): Revision | null {
+function landAuthorization(state: IssueState): Revision | null {
   return state.hardened;
 }
 
 function approvalHolds(state: IssueState, current: Revision): boolean {
-  const authorized = mergeAuthorization(state);
+  const authorized = landAuthorization(state);
   return authorized !== null && sameRevision(authorized, current);
 }
 
@@ -249,7 +249,7 @@ function isStatus(value: unknown): value is Status {
   return STATUS.safeParse(value).success;
 }
 
-export type { MergeAttempt } from "./merge-provenance.ts";
+export type { MergeAttempt } from "./land-provenance.ts";
 export type {
   Asked,
   CodeMerged,
@@ -269,7 +269,7 @@ export {
   ISSUE_STATE,
   isStatus,
   LEASE,
-  mergeAuthorization,
+  landAuthorization,
   newIssueState,
   resumeOf,
   sameRevision,

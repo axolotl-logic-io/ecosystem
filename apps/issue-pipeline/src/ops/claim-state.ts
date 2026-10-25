@@ -1,6 +1,6 @@
 // The state a claim carries on from: the saved one (a new issue's first, a
 // stopped one's with its stop lifted), with the pipeline's own unsaved push
-// adopted (adopt-push.ts) and then its code merge reconciled against GitHub
+// adopted (adopt-push.ts) and then its code Land reconciled against GitHub
 // (revision.ts). The branch-changed defense is the caller's: this module
 // only reports a branch head that moved past the saved one without the
 // pipeline, as a diagnostic.
@@ -16,7 +16,7 @@ import { paths } from "../config.ts";
 import { ownHistory } from "../coordination-history.ts";
 import { remoteHead } from "../git-state.ts";
 import { git } from "../github.ts";
-import { recordedAuthorization } from "../merged-authorization.ts";
+import { recordedAuthorization } from "../landed-authorization.ts";
 import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 import { codeMergedOf, issuePullRequest } from "../revision.ts";
@@ -62,7 +62,7 @@ interface ClaimedState {
 }
 
 // The saved state the claim starts from. A done issue is claimed only to
-// reconcile its completion: it must have saved what merged.
+// reconcile its completion: it must have saved what landed.
 function assertFirstClaim(
   cfg: Config,
   number: number,
@@ -144,10 +144,10 @@ function assertBranchAssigned(
   assignedBranch(cfg, n, state);
 }
 
-// Closed issues may recover only an incomplete Merge, never initialize work or
-// replay completion. This is claim eligibility, not own-merge authorization:
-// without a saved receipt, the existing external-postmerge gates still apply.
-function assertClosedMergeRecovery(
+// Closed issues may recover only an incomplete Land, never initialize work or
+// replay completion. This is claim eligibility, not own-Land authorization:
+// without a saved receipt, the existing external post-Land gates still apply.
+function assertClosedLandRecovery(
   cfg: Config,
   n: number,
   saved: IssueState | null,
@@ -197,11 +197,11 @@ function assertClosedMergeRecovery(
   }
 }
 
-// `state` with its PR and code merge as GitHub reports them. A recorded
-// code merge GitHub doesn't confirm, or a completion GitHub reports another
-// code merge for (none, for a completion with no code), throws:
-// the claim never clears or replaces a merge it recorded.
-function reconcileClaimMerge(
+// `state` with its PR and code Land as GitHub reports them. A recorded
+// code Land GitHub doesn't confirm, or a completion GitHub reports another
+// code Land for (none, for a completion with no code), throws:
+// the claim never clears or replaces a Land it recorded.
+function reconcileClaimLand(
   cfg: Config,
   n: number,
   state: IssueState,
@@ -245,7 +245,7 @@ function reconcileClaimMerge(
 }
 
 // The branch head GitHub has that the saved state doesn't, unless the code
-// merged, which leaves the branch head no longer the code's revision.
+// landed, which leaves the branch head no longer the code's revision.
 function branchChangedOf(
   state: IssueState,
   remote: string | null,
@@ -278,7 +278,7 @@ function claimedState(
   const remote = remoteHead(cfg, n);
   const adoptedState = adoptPush(start, remote, lastPush(cfg, n), now);
   const state = requestedAuthorState(
-    reconcileClaimMerge(cfg, n, adoptedState ?? start, now),
+    reconcileClaimLand(cfg, n, adoptedState ?? start, now),
     startAt,
   );
   return {
@@ -292,9 +292,9 @@ function claimedState(
 export type { BranchChanged, ClaimedState };
 export {
   assertBranchAssigned,
-  assertClosedMergeRecovery,
+  assertClosedLandRecovery,
   assertFirstClaim,
   claimedState,
-  reconcileClaimMerge,
+  reconcileClaimLand,
   startingState,
 };

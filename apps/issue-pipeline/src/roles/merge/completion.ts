@@ -1,12 +1,12 @@
-// Complete only after read-only confirmation of premerge checks and bound
-// premerge Security clearance (#185). Missing or stale clearance stops; no
+// Complete only after read-only confirmation of pre-Land checks and bound
+// pre-Land Security clearance (#185). Missing or stale clearance stops; no
 // Security is acquired after Land. Save done before finish so cleanup can be
 // replayed.
 
 import { z } from "zod";
 import type { RoleContext, RoleEnd } from "../../job/role-context.ts";
-import { legacyWikiOf } from "../../merge-provenance.ts";
-import { ownMergeResultObservation } from "../../ops/merge-guard.ts";
+import { legacyWikiOf } from "../../land-provenance.ts";
+import { ownLandResultObservation } from "../../ops/land-guard.ts";
 import { requirementsHold } from "../../requirements.ts";
 import { securityRefusal } from "../../security-clearance.ts";
 import type { CodeMerged, IssueState, Revision } from "../../state.ts";
@@ -17,7 +17,7 @@ import type { CurrentRevision } from "../revision-source.ts";
 import { currentRevision } from "../revision-source.ts";
 import type { Step } from "../writer-session.ts";
 import { ended } from "../writer-session.ts";
-import { confirmedMergedResult, NO_POSTMERGE_REPAIR } from "./checks.ts";
+import { confirmedLandedResult, NO_POST_LAND_REPAIR } from "./checks.ts";
 import { failed, logged, toRequirements } from "./returns.ts";
 import { rejectedAgain } from "./security.ts";
 
@@ -33,7 +33,7 @@ function short(sha: string | null): string {
   return sha?.slice(0, SHORT_SHA) ?? "none";
 }
 
-// Done, with what merged saved first; then the finish op's labels and
+// Done, with what landed saved first; then the finish op's labels and
 // closure.
 async function complete(
   ctx: RoleContext,
@@ -51,7 +51,7 @@ async function complete(
 
 // The finish op on the saved completion `done`. Done only when it finished;
 // new trusted inputs go to their requirements owner, and any other refusal (a security
-// review that doesn't clear the merged result) stops, so no job retries a
+// review that doesn't clear the landed result) stops, so no job retries a
 // completion that can't finish.
 async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   const finished = await opReply(ctx, "finish", { state: done }, FINISHED);
@@ -65,7 +65,7 @@ async function finish(ctx: RoleContext, done: IssueState): Promise<RoleEnd> {
   return failed(done, detail);
 }
 
-// Own merges reuse the premerge clearance bound to their exact result, or an
+// Own Lands reuse the pre-Land clearance bound to their exact result, or an
 // exact saved result observation; nothing launches a model pass after Land.
 // Missing, stale or historical-only clearance stops with its evidence kept.
 function completionSecurity(
@@ -76,10 +76,10 @@ function completionSecurity(
   if (refusal === undefined) {
     return { ok: true, value: state };
   }
-  return ended(failed(state, `${refusal}; ${NO_POSTMERGE_REPAIR}`));
+  return ended(failed(state, `${refusal}; ${NO_POST_LAND_REPAIR}`));
 }
 
-// Bound premerge Security clearance of the observed `result` of the receipt
+// Bound pre-Land Security clearance of the observed `result` of the receipt
 // `merged`, then durable completion.
 async function reviewedAndCompleted(
   ctx: RoleContext,
@@ -99,9 +99,9 @@ async function reviewedAndCompleted(
 
 // A done issue with its completion saved, back at merge because the finish
 // op didn't finish it: the finish op again, and nothing else, once the
-// trusted inputs are still the merged ones, GitHub still confirms the
-// merged code and a security receipt approves exactly what merged.
-// A code completion also needs read-only confirmation of its premerge proof;
+// trusted inputs are still the landed ones, GitHub still confirms the
+// merged code and a security receipt approves exactly what landed.
+// A code completion also needs read-only confirmation of its pre-Land proof;
 // a completion with no exact clearance (including a legacy wiki head) needs
 // reconciliation: no review here covers it. A saved rejection stops again.
 async function finishCompleted(
@@ -159,7 +159,7 @@ async function finishConfirmed(
   }
   let observed = merged;
   if ((merged.policy ?? null) !== (revision.policy ?? null)) {
-    const result = ownMergeResultObservation(state, current);
+    const result = ownLandResultObservation(state, current);
     if (result === null) {
       return failed(
         state,
@@ -169,7 +169,7 @@ async function finishConfirmed(
     observed = result;
   }
   if (codeMerged !== null) {
-    const refused = await confirmedMergedResult(ctx, state, {
+    const refused = await confirmedLandedResult(ctx, state, {
       result: observed,
       codeMerged,
     });

@@ -45,7 +45,7 @@ Hidden markers and role names are metadata. A diagnostic comment that quotes a s
 
 ## Saved state
 
-The issue's state lives in a hidden review/merge comment on the issue. It records the stage, the assigned branch, the PR, counts, and receipts such as hardening, integration, merge and Security results.
+The issue's state lives in a hidden review/merge comment on the issue. It records the stage, the assigned branch, the PR, counts, and receipts such as hardening, integration, Land and Security results.
 
 - The first claim binds the issue to its branch. A different branch on resume is refused.
 - Missing or malformed critical state refuses writes. It is not permission to start over on top of preserved work.
@@ -58,11 +58,11 @@ The issue's state lives in a hidden review/merge comment on the issue. It record
 
 - `readExecutionClaimState(config, issue)` validates the explicit execution binding and reads supported saved state without changing it. Existing state needs a strict `{ protocol: 1, request, instance }` receipt linked to an authenticated request and owner confirmation for the exact repository, literal base, issue and branch. A current UUID must also match its authenticated lane. A different historical UUID needs a durable release; its old lease's age grants nothing.
 - `claimExecutionState(config, issue)` inspects state before requesting ownership, acquires through the existing authenticated adapter, and checkpoints the current receipt. It preserves the saved stage and work; it does not apply broad claim transitions or run setup. Only genuinely absent work can initialize state. Unsupported, malformed, untrusted, editor-conflicted or history-less authority requires reconciliation, not adoption.
-- `saveExecutionState(config, issue, state)` requires fresh current ownership and a current saved receipt. It validates both saved and requested branch bindings and retains the PR, non-erased head, attempted/observed merge facts, own-merge attempt authorization and durable Security decisions across stale role snapshots.
+- `saveExecutionState(config, issue, state)` requires fresh current ownership and a current saved receipt. It validates both saved and requested branch bindings and retains the PR, non-erased head, attempted/observed landing facts, own-Land attempt authorization and durable Security decisions across stale role snapshots.
 
-  Observed merge SHAs cannot be replaced by snapshots. Exact own-merge receipts retain their inputs, policy and historical wiki provenance; stale snapshots also retain historical recovery authorization without an attempt receipt. An external merge without an own-merge attempt can still receive fresh hardening for changed trusted inputs and save the independently hardened result revision.
+  Observed merge SHAs cannot be replaced by snapshots. Exact own-Land receipts retain their inputs, policy and historical wiki provenance; stale snapshots also retain historical recovery authorization without an attempt receipt. An external merge without an own-Land attempt can still receive fresh hardening for changed trusted inputs and save the independently hardened result revision.
 
-  Explicit head changes remain possible through the existing authorized push/adopt/sync flow; it does not freeze every non-null historical head. Existing draft validation and merge authorization rules are unchanged.
+  Explicit head changes remain possible through the existing authorized push/adopt/sync flow; it does not freeze every non-null historical head. Existing draft validation and landing authorization rules are unchanged.
 
 A checkpoint makes one mutation attempt and confirms the exact transmitted body with body, author and editor provenance from the same authenticated read. A lost response can resolve through that exact read-back. An unresolved result retains the exact body, comment identity and execution binding in `coordination-uncertain.json`. It permits neither writer assertion nor release, and a later invocation cannot repeat the mutation for progress. Preserve the journal and durable history for explicit reconciliation; neither local evidence nor historical receipts grant current ownership.
 
@@ -80,7 +80,7 @@ A job claims an issue with a comment, reads the comments back, and proceeds only
 
 Every credentialed code push checks fresh saved authority and the PR's actual status first. That includes `pipeline_commit` pushes, synchronization and stop-time salvage.
 
-- A saved or observed code merge, a Security rejection or missing critical state grants no code write.
+- A saved or observed landing of the code, a Security rejection or missing critical state grants no code write.
 - Synchronization checks authority before it resets or rebases local work, and again before it pushes.
 - A historical closed, unmerged PR grants no code write.
 
@@ -138,15 +138,15 @@ A failed lane setup keeps its
 checkout, slot, signed receipt and readiness barrier. Explicit reconciliation
 must resolve readiness before another bound claim can use that checkout.
 
-The API retains assigned branch/head, draft PR, merge facts, own-merge receipts
+The API retains assigned branch/head, draft PR, landing facts, own-Land receipts
 and Security evidence while applying the existing resume transitions. Answered
 questions retain their saved `asked` revision for downstream input handling.
 Closed issues must prove exact incomplete-Merge eligibility before reopen;
-reopening grants no writer, merge, approval or Security permission. Missing PR
+reopening grants no writer, landing, approval or Security permission. Missing PR
 metadata and unreadable authority fail rather than being treated as fresh work.
-A deterministic claim rechecks its observed PR and merge result before saving
-new merged truth. If the observation changes, the claim stops for reconciliation.
-Ordinary role-snapshot saves still cannot establish new merge facts or clear
-existing receipts. Observing an external merge does not create an own-merge
-receipt, hardening or Security clearance.
+A deterministic claim rechecks its observed PR and landing result before
+saving new landed truth. If the observation changes, the claim stops for
+reconciliation. Ordinary role-snapshot saves still cannot establish new landing
+facts or clear existing receipts. Observing an external merge does not create
+an own-Land receipt, hardening or Security clearance.
 Source delivery does not authorize installation, worker activation or dispatch.

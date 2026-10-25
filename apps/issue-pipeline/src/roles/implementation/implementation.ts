@@ -7,9 +7,9 @@
 // (src/roles/reviewer/). Its push makes any earlier hardening, approval or
 // integration stale, so it clears them. The landing account records its
 // Implementation result before the work moves to review
-// (implementation-result.ts). Once the issue's code merged
-// or an attempted merge is retained, Developer entry stops before any
-// session or operation. Read-only recovery belongs to Merge.
+// (implementation-result.ts). Once the issue's code landed
+// or an attempted Land is retained, Developer entry stops before any
+// session or operation. Read-only recovery belongs to the merge stage.
 
 import type { Role, RoleContext, RoleEnd } from "../../job/role-context.ts";
 import {
@@ -99,7 +99,7 @@ async function pushBranch(
 
 // The state after a new push: no hardening, approval, integration or
 // security clearance of an earlier revision holds for it. A security
-// rejection stays: it binds the exact merged result it rejected, so that
+// rejection stays: it binds the exact landed result it rejected, so that
 // result stops again however the issue comes back to it.
 function freshChange(state: IssueState): IssueState {
   let { security } = state;
@@ -161,7 +161,7 @@ async function develop(ctx: RoleContext): Promise<RoleEnd> {
   };
 }
 
-const implementorRole: Role = async (ctx: RoleContext) => {
+const implementationRole: Role = async (ctx: RoleContext) => {
   if (developerRecoveryRequired(ctx.state)) {
     return errorStop(ctx.state, DEVELOPER_RECOVERY_REASON);
   }
@@ -178,4 +178,4 @@ const implementorRole: Role = async (ctx: RoleContext) => {
   return await develop(ctx);
 };
 
-export { implementorRole };
+export { implementationRole };

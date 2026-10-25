@@ -1,5 +1,5 @@
 // An issue's saved state on GitHub: one hidden comment per issue that only
-// merge identity writes. GitHub is the source of truth; current merge-bot
+// the landing identity writes. GitHub is the source of truth; current landing
 // authorship and editor provenance are required for authority. Version 1 is
 // display-only: claims refuse it until explicit reconciliation.
 

@@ -1,5 +1,5 @@
 // Hardening checkpoints one exact revision and literal target before PR readiness.
-// Missing historical targets need fresh hardening; Security precedes new merges.
+// Missing historical targets need fresh hardening; Security precedes new Lands.
 // A revision that misses the target is synced first, and every checkpoint is
 // also a passed Hardening task result, recorded before it's saved (#186).
 
@@ -19,7 +19,7 @@ import type { Mode } from "../change-task.ts";
 import { changeModeOf, SHORT_SHA } from "../change-task.ts";
 import { opReply, PUSH_REPLY, readyPr } from "../op-replies.ts";
 import type { CurrentRevision } from "../revision-source.ts";
-import { codeMergeConfirmed, currentRevision } from "../revision-source.ts";
+import { codeLandConfirmed, currentRevision } from "../revision-source.ts";
 import { readiness } from "../task-results.ts";
 import { verifiedHead } from "../verification.ts";
 import type { Step } from "../writer-session.ts";
@@ -67,7 +67,7 @@ function notHardenable(
     return toRequirements(state, "the trusted inputs need requirements review");
   }
   const { codeMerged } = state;
-  if (codeMerged !== null && !codeMergeConfirmed(current, codeMerged)) {
+  if (codeMerged !== null && !codeLandConfirmed(current, codeMerged)) {
     return errorStop(
       state,
       `GitHub doesn't confirm PR #${codeMerged.pr} merged as ${codeMerged.sha}, as the claim recorded`,
@@ -110,7 +110,7 @@ async function hardeningSession(
 }
 
 // Pushes the verified branch head `verified`; a push of anything else
-// stops. Once the code merged, `verified` is the merge commit and nothing is
+// stops. Once the code landed, `verified` is the merge commit and nothing is
 // pushed.
 async function pushHardened(
   ctx: RoleContext,
@@ -145,7 +145,7 @@ async function pushHardened(
 }
 
 // The hardened state: `revision`, read after the push, is checkpointed as
-// the one revision the merge may take.
+// the one revision the Land may take.
 function checkpoint(
   state: IssueState,
   revision: Revision,
@@ -167,9 +167,9 @@ interface Hardened {
 }
 
 // Hardening and checks clear the exact candidate before the target moves
-// (#185). Merged code gets no postmerge suite or hardening session: its
-// missing premerge proof needs read-only reconciliation.
-function postmergeRefusal(mode: Mode): string | null {
+// (#185). Landed code gets no post-Land suite or hardening session: its
+// missing pre-Land proof needs read-only reconciliation.
+function postLandRefusal(mode: Mode): string | null {
   if (mode.kind !== "merged") {
     return null;
   }
@@ -184,7 +184,7 @@ async function harden(
   before: CurrentRevision,
 ): Promise<Step<Hardened>> {
   const mode = changeModeOf(start);
-  const hold = postmergeRefusal(mode);
+  const hold = postLandRefusal(mode);
   if (hold !== null) {
     return ended(errorStop(start, hold));
   }
@@ -268,7 +268,7 @@ async function postHardened(
 }
 
 // The checkpointed state goes on to merge, its PR marked ready first.
-async function toMerge(
+async function toLand(
   ctx: RoleContext,
   state: IssueState,
   why: string,
@@ -278,14 +278,14 @@ async function toMerge(
   return { kind: "next", state: logged(next, `${why}; on to merge`) };
 }
 
-// A merged change keeps its saved checkpoint as before: its read-only
+// A landed change keeps its saved checkpoint as before: its read-only
 // reconciliation needs no task result.
-async function mergedReview(
+async function landedReview(
   ctx: RoleContext,
   before: CurrentRevision,
 ): Promise<RoleEnd> {
   if (approvalHolds(ctx.state, before.revision)) {
-    return await toMerge(ctx, ctx.state, "hardening already passed");
+    return await toLand(ctx, ctx.state, "hardening already passed");
   }
   const hardened = await harden(ctx, ctx.state, before);
   if (!hardened.ok) {
@@ -317,7 +317,7 @@ async function alreadyHardened(
     );
     await ctx.save(state);
   }
-  return await toMerge(ctx, state, "hardening already passed");
+  return await toLand(ctx, state, "hardening already passed");
 }
 
 const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
@@ -327,7 +327,7 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
     return refused;
   }
   if (changeModeOf(ctx.state).kind === "merged") {
-    return await mergedReview(ctx, before);
+    return await landedReview(ctx, before);
   }
   const ready = await readiness(ctx);
   const first = beforeHardening(ctx.state, ready);
@@ -364,7 +364,7 @@ const reviewerRole: Role = async (ctx: RoleContext): Promise<RoleEnd> => {
   }
   await ctx.save(state);
   await postHardened(ctx, state, revision);
-  return await toMerge(ctx, state, "hardening passed");
+  return await toLand(ctx, state, "hardening passed");
 };
 
 export { reviewerRole };

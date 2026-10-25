@@ -60,7 +60,7 @@ interface Boundary {
 }
 
 // The role each stage's job runs as (Reimagined-Pipeline): the author only
-// reads; the implementor and the hardener write; merge holds the
+// reads; the Developer and the hardener write; merge holds the
 // credentials for Land and Completion, and its one model session, the
 // read-only security review, never gets them.
 const STAGE_ROLES: Readonly<Record<Stage, JobRole>> = {
@@ -78,7 +78,7 @@ const TASK_ROLES: Readonly<Record<JobTask, JobRole>> = {
 };
 
 // Each stage's access to the issue's code checkout, which its committing
-// sessions get: the author only reads it; the implementor writes it and
+// sessions get: the author only reads it; the Developer writes it and
 // the hardener hardens it. Merge commits nothing: its security review
 // reads.
 const STAGE_CODE_ACCESS: Readonly<Record<Stage, Access>> = {
@@ -129,7 +129,7 @@ interface StageAgent {
 const REVIEWER_AGENT = "issue-pipeline-reviewer";
 
 // The one installed agent each stage's sessions may run as, and its
-// sessions: the author's only read; the implementor's commit; the reviewer
+// sessions: the author's only read; the Developer's commit; the reviewer
 // hardens, committing, in review; and merge runs only the reviewer's
 // read-only security review of the candidate. A reviewer session always
 // names its phase; none reads before merge.
@@ -283,7 +283,7 @@ function agentEnvOf(roles: Roles, from: EnvSource): Record<string, string> {
 // What a committing session of `stage` may commit: its code checkout as the
 // stage's access allows, and the code globs, relative to the code checkout,
 // it may commit there: any code path only while fresh authority permits code
-// writes, else none, so a session after the code merged commits nothing.
+// writes, else none, so a session after the code landed commits nothing.
 // This scopes the commit tool, not OS filesystem access.
 function commitScopeOf(
   stage: Stage,

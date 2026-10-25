@@ -23,7 +23,7 @@ import {
 import { retireSubmodules } from "../retired-submodules.ts";
 import type { ReviewReply } from "./prepare-review.ts";
 import { prepareReview } from "./prepare-review.ts";
-import { refuseOnceMerged } from "./push.ts";
+import { refuseOnceLanded } from "./push.ts";
 import { finishProblem, pushBranch, resetToRemote } from "./sync-finish.ts";
 
 type SyncReply =
@@ -106,7 +106,7 @@ function conflictReply(wt: string, onto: string, keep: boolean): SyncConflict {
 function syncBase(cfg: Config, request: unknown): SyncReply {
   const req = parseRequest(SYNC_REQUEST, "sync-base", request);
   const n = req.number;
-  refuseOnceMerged(cfg, n, "sync-base");
+  refuseOnceLanded(cfg, n, "sync-base");
   const wt = paths.worktree(cfg, n);
   if (rebaseInProgress(wt)) {
     // A crashed run can leave a later stop reached by a resolver session.
@@ -162,7 +162,7 @@ function syncBase(cfg: Config, request: unknown): SyncReply {
 function finishSync(cfg: Config, request: unknown): FinishReply {
   const req = parseRequest(FINISH_REQUEST, "finish-sync", request);
   const n = req.number;
-  refuseOnceMerged(cfg, n, "finish-sync");
+  refuseOnceLanded(cfg, n, "finish-sync");
   const wt = paths.worktree(cfg, n);
   const sync = classifyCodeSync(wt, req.baseSha);
   if (req.retainConflict === true) {

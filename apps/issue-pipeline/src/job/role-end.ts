@@ -182,7 +182,7 @@ function thrownEnd(error: unknown, state: IssueState): RoleEnd {
 }
 
 // The stop for a PR branch whose head the pipeline didn't push, read after
-// the claim adopted the pipeline's own pushes. After an attempted merge,
+// the claim adopted the pipeline's own pushes. After an attempted Land,
 // only read-only reconciliation can establish the retained PR head/result;
 // today's mutable branch tip must not prevent that recovery. A saved
 // checkpoint missing from the remote stops too (#173): the run rebuilds only

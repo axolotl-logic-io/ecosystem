@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 import type { RoleContext } from "../job/role-context.ts";
-import { REVISION } from "../merge-provenance.ts";
+import { REVISION } from "../land-provenance.ts";
 import type { CodeMerged } from "../state.ts";
 import { opReply } from "./op-replies.ts";
 
@@ -34,9 +34,9 @@ async function currentRevision(ctx: RoleContext): Promise<CurrentRevision> {
   );
 }
 
-// Whether GitHub confirms the code merge the claim recorded: the same PR,
+// Whether GitHub confirms the code Land the claim recorded: the same PR,
 // merged, at the same merge commit, which is also the code revision.
-function codeMergeConfirmed(
+function codeLandConfirmed(
   current: CurrentRevision,
   codeMerged: CodeMerged,
 ): boolean {
@@ -51,4 +51,4 @@ function codeMergeConfirmed(
 }
 
 export type { CurrentRevision };
-export { codeMergeConfirmed, currentRevision };
+export { codeLandConfirmed, currentRevision };

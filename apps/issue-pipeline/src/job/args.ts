@@ -27,7 +27,7 @@ const NO_TASK = `--task must be one of: ${JOB_TASKS.join(", ")}`;
 const TASK_BINDING = "--task and --binding go together";
 const TASK_BUDDY = "--hardening-buddy can't be combined with --task";
 const TASK_QUEUE = "--merge-queue can't be combined with --task";
-const MERGE_QUEUE = z
+const LANDING_ORDER = z
   .string()
   .transform((list: string): string[] => list.split(","))
   .pipe(
@@ -64,9 +64,9 @@ const JOB_ARGS = z
       branch: BRANCH,
       // The claimant's name its lease records; the job's own without one.
       lane: z.string().optional(),
-      // The merge order the orchestrator ranked (#234).
-      mergeQueue: MERGE_QUEUE.optional(),
-      // The job's id, as the orchestrator logs its start; a job started
+      // The landing order the caller ranked (#234).
+      mergeQueue: LANDING_ORDER.optional(),
+      // The job's id, as the caller logs its start; a job started
       // without one makes its own.
       jobId: z.uuid({ error: NO_JOB_ID }).optional(),
       hardeningBuddy: HARDENING,

@@ -1,6 +1,6 @@
 // Explicit Author may revisit saved direct work without resetting its work or
 // approvals. Its durable resumeStage is the interrupted checkpoint. Attempted,
-// merged, completed or Security-rejected work must use its existing recovery.
+// landed, completed or Security-rejected work must use its existing recovery.
 
 import type { Config } from "../config.ts";
 import { OpsError } from "../ops-error.ts";
@@ -54,7 +54,7 @@ function assertAuthorRequest(
 }
 
 // Recheck reconciled state after winning the ordinary claim. A concurrent
-// observed merge can refuse the transition, never erase that observation.
+// observed Land can refuse the transition, never erase that observation.
 function requestedAuthorState(
   state: IssueState,
   request: { stage: "author" | "implement"; now: Date },

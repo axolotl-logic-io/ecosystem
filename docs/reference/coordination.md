@@ -19,7 +19,7 @@ node "$ISSUE_PIPELINE_ROOT/job.mjs" --config CONFIG \
 
 Optional flags:
 
-- `--merge-queue N1,N2,…` passes the caller's merge order (see [merge](merge.md#merge-order)).
+- `--merge-queue N1,N2,…` passes the caller's landing order (see [merge](merge.md#landing-order)).
 - `--hardening-buddy hippy` hardens as Hippy, the Developer, in a fresh session; only with `--stage review`. The caller always passes it.
 - `--task sync|integration --binding BINDING_JSON` runs a requested task instead of the stage: Hippy's [Sync](sync.md) at `review` or `merge`, or Lawd's read-only [Integration](merge.md#read-only-integration-and-exact-land) at `merge`. `STAGE` is the issue's saved stage, and `BINDING_JSON` is the request's binding, exactly. The job refuses a binding for another task, issue, repository or target branch before it claims or writes anything. A task job runs as its task's access profile: Sync as `writer`, Integration as `reader`.
 - `--print-boundary` pins and checks the prompt pages and prints the stage's role, checkouts, environment and network as one JSON line, without cloning, claiming or starting a session.
@@ -39,7 +39,7 @@ A job prints one JSON line, `{"issue", "stage", "end", "reason"?, "claimError"?,
 | `next` | The stage finished and saved the next stage | Run the saved next stage on the same branch and lane |
 | `stop` | A control failed; the issue has a stop label | See [stops and labels](stops-and-labels.md) |
 | `ask` | The pipeline asked a question (`agent:needs-info`) | Wait for a trusted answer |
-| `wait` | The issue waits, for example for its merge turn, or for the task its `request` names | Start the requested task; otherwise retry later |
+| `wait` | The issue waits, for example for its turn to land, or for the task its `request` names | Start the requested task; otherwise retry later |
 | `deferred` | A rate limit or transient error deferred it | Back off, then retry |
 | `unclaimed` | Another claimant holds it, or the claim failed | Check `reason` and `claimError` first |
 
@@ -48,7 +48,7 @@ Don't loop blindly on `unclaimed`, `wait`, `deferred` or `stop`. A restarted job
 ## Keep concurrent work apart
 
 - Parallel jobs must use different issues and branches. Never run the same issue or branch twice at once, even from the same lane.
-- Each exact Land takes the [target's integration turn](merge.md#the-targets-integration-turn) before it writes the target, so a second Land on the same target ends `wait`. A merge queue is an order, not permission to merge concurrently.
+- Each exact Land takes the [target's integration turn](merge.md#the-targets-integration-turn) before it writes the target, so a second Land on the same target ends `wait`. The landing order is an order, not permission to land concurrently.
 - Keep each issue's branch and lane stable across restarts. The first claim binds the branch; a different branch later is refused.
 - Each job confirms issue-execution ownership for a fresh invocation UUID before it opens a checkout or runs an op. A second job on the same issue and branch, from any lane, ends `unclaimed` with `reason` "another invocation owns the issue" and starts nothing. The owner releases only when the release predicate passes (#151): a confirmed checkpoint, no unresolved stop or uncertain write, preserved work and no registered lane-slot consumer. Any other job keeps ownership until someone reconciles it, and says why on stderr (`job: execution held: …`). A job whose claim was refused also shows a `claimError` on `unclaimed`.
 
@@ -56,7 +56,7 @@ Caller serialization doesn't exclude outside actors. Anyone with access may push
 
 ## Prerequisites and sub-issues
 
-An issue's `after` marker names prerequisite issues. The legacy scheduler and assignment discovery hold an issue while a prerequisite is open, and treat an unreadable dependency as a hold. A stage job doesn't check prerequisites, so the caller must. An issue labeled `agent:split` was split into sub-issues; its parent closes once every sub-issue is closed and at least one has merged.
+An issue's `after` marker names prerequisite issues. The legacy scheduler and assignment discovery hold an issue while a prerequisite is open, and treat an unreadable dependency as a hold. A stage job doesn't check prerequisites, so the caller must. An issue labeled `agent:split` was split into sub-issues; its parent closes once every sub-issue is closed and at least one has landed.
 
 ## Code that isn't the caller's entry point
 
@@ -64,7 +64,7 @@ These exist in source but are not how the caller runs the pipeline:
 
 - **`orchestrate.mjs`** is a retained legacy scheduler (`--config PATH [--once]`). Don't run it alongside caller-managed jobs. It relays no task request, so since #186 a merge it starts waits for an Integration it never starts.
 - **Assignment mode** is disabled.
-- **Assignment discovery** (`src/discovery/plan.ts`) is a read-only, opt-in module. Its plans state `executionAuthority: false`: they grant no session, claim, write or merge.
+- **Assignment discovery** (`src/discovery/plan.ts`) is a read-only, opt-in module. Its plans state `executionAuthority: false`: they grant no session, claim, write or Land.
 
 ## Recover from a coordination problem
 

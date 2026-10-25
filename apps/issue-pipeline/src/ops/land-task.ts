@@ -1,11 +1,12 @@
-// Exact Land on the task-result path (#185): when a merge request names a
+// Exact Land on the task-result path (#185): when a `merge` request names a
 // Land binding, Land needs passed Hardening, Integration and Security results
 // for exactly that revision and target, on top of every installed check. A
 // verifiedSha, a legacy state.integration or a result for any other binding
 // never stands in. The Land attempt is recorded before the first PR write,
-// and only a confirmed own merge of exactly R settles it; anything else stays
+// and only a confirmed own Land of exactly R settles it; anything else stays
 // uncertain and holds every writer (sync-task-gate.ts). Without a binding the
-// merge op behaves as before #186; since then the merge stage always sends one.
+// `merge` op behaves as before #186; since then the merge stage always sends
+// one.
 
 import { listComments } from "../comments.ts";
 import type { Config } from "../config.ts";
@@ -26,7 +27,7 @@ interface LandRequest {
   revision: { inputs: string; policy?: string | undefined };
 }
 
-// Why the Land binding can't authorize this merge, or undefined when it can.
+// Why the Land binding can't authorize this Land, or undefined when it can.
 function landRefusal(
   cfg: Config,
   req: LandRequest,
@@ -69,8 +70,8 @@ function startLand(
   startAttempt(cfg, number, requestedBinding(cfg, number, binding), run);
 }
 
-// Settles the binding's unsettled Land attempt from a merge receipt: passed
-// only for the confirmed own merge of exactly R. Anything else stays
+// Settles the binding's unsettled Land attempt from a landing receipt: passed
+// only for the confirmed own Land of exactly R. Anything else stays
 // unsettled, so it holds until a read establishes the delivery.
 function settleLand(
   cfg: Config,

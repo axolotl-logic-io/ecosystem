@@ -6,13 +6,13 @@
 // - the backoff gate, which holds every start while a rate-limit or
 //   transport backoff runs (rate-limit-backoff.ts);
 // - the merge window: one issue at a time rebases, verifies, is reviewed
-//   again when its head changed, and merges. The issue that holds it keeps
-//   it while it is at review or merge, so other merges never push it behind
-//   its base in a loop; its jobs go first, and every other merge is held.
+//   again when its head changed, and lands. The issue that holds it keeps
+//   it while it is at review or merge, so other Lands never push it behind
+//   its base in a loop; its jobs go first, and every other Land is held.
 //   With no holder the merge-ready issue ranked first opens the window: the
 //   one the most open issues wait on, then the lower PR, then the lower
-//   number. A merge job gets that ranking as its merge queue. A completion's
-//   merge job never merges, so it has no part in the window or the queue;
+//   number. A merge job gets that ranking as its landing order. A completion's
+//   merge job never lands, so it has no part in the window or the queue;
 // - the caps: maxJobs live jobs in all, and stageCaps per stage, counting
 //   every live job, a legacy job's included;
 // - the watchdog (watchdog.ts): a start at the stage a dead job died at is a
@@ -43,7 +43,7 @@ type Decision =
       reason: StartReason | "restart";
       // The state to save before the start, for new trusted input.
       reauthor: Reauthor | null;
-      // A code merge's merge queue, holder first; null for other stages and
+      // A code Land's landing order, holder first; null for other stages and
       // for a completion's merge job.
       mergeQueue: readonly number[] | null;
     }
@@ -81,24 +81,24 @@ function isWindowRun(planned: Planned | undefined): boolean {
   return planned?.plan.kind === "run" && WINDOW_STAGES.has(planned.plan.stage);
 }
 
-// True for a job at `stage` that merges code: a merge, not a completion's.
-function isCodeMerge(stage: Stage, issue: SnapshotIssue): boolean {
+// True for a job at `stage` that lands code: a Land, not a completion's.
+function isCodeLand(stage: Stage, issue: SnapshotIssue): boolean {
   return stage === "merge" && !isCompletion(issue.state);
 }
 
-// The issue holding the merge window: one with a live code merge, else the
+// The issue holding the merge window: one with a live code Land, else the
 // last reserved holder while its live job or its next job is at review or
 // merge. A holder held for any other reason, sent back to the author or the
-// implementor, stopped, closed or now a completion gives the window up.
+// Developer, stopped, closed or now a completion gives the window up.
 function holderOf(
   snapshot: Snapshot,
   planned: readonly Planned[],
 ): number | null {
-  const liveMerge = snapshot.issues.find(
-    (open) => open.job?.live === true && isCodeMerge(open.job.stage, open),
+  const liveLand = snapshot.issues.find(
+    (open) => open.job?.live === true && isCodeLand(open.job.stage, open),
   );
-  if (liveMerge !== undefined) {
-    return liveMerge.number;
+  if (liveLand !== undefined) {
+    return liveLand.number;
   }
   const reserved = snapshot.issues.find(
     ({ number }) => number === snapshot.mergeWindow,
@@ -120,16 +120,15 @@ function dependents(snapshot: Snapshot, number: number): number {
   return snapshot.issues.filter(({ after }) => after.includes(number)).length;
 }
 
-// The merge-ready issues in merge order, the window's holder first.
-function mergeQueueOf(
+// The merge-ready issues in landing order, the window's holder first.
+function landingOrderOf(
   snapshot: Snapshot,
   planned: readonly Planned[],
   holder: number | null,
 ): number[] {
   const ready = planned
     .filter(
-      ({ issue, plan }) =>
-        plan.kind === "run" && isCodeMerge(plan.stage, issue),
+      ({ issue, plan }) => plan.kind === "run" && isCodeLand(plan.stage, issue),
     )
     .map(({ issue }) => ({
       number: issue.number,
@@ -158,7 +157,7 @@ function capReason(
   return null;
 }
 
-// Why a merge of `issue` waits for the window, or null when it may run.
+// Why a Land of `issue` waits for the window, or null when it may run.
 function windowReason(count: Count, issue: number): string | null {
   if (count.holder !== null && count.holder !== issue) {
     return `merge-window:#${count.holder}`;
@@ -199,9 +198,9 @@ function decide(
       reason: "max-resumes",
     };
   }
-  const codeMerge = isCodeMerge(stage, issue);
+  const codeLand = isCodeLand(stage, issue);
   let reason: string | null = null;
-  if (codeMerge) {
+  if (codeLand) {
     reason = windowReason(count, number);
   }
   reason = run.gate ?? reason ?? capReason(count, stage);
@@ -215,7 +214,7 @@ function decide(
   }
   countStart(count, stage);
   let mergeQueue: readonly number[] | null = null;
-  if (codeMerge) {
+  if (codeLand) {
     count.holder = number;
     count.memory.mergeWindow = number;
     mergeQueue = count.queue;
@@ -232,8 +231,8 @@ function decide(
   };
 }
 
-// The window's holder first, then the later stage, merges in the merge
-// queue's order, then the older issue.
+// The window's holder first, then the later stage, Lands in the landing
+// order, then the older issue.
 function byOrder(
   holder: number | null,
   queue: readonly number[],
@@ -282,7 +281,7 @@ function schedule(
     live,
     liveAt,
     holder,
-    queue: mergeQueueOf(snapshot, planned, holder),
+    queue: landingOrderOf(snapshot, planned, holder),
     memory: { resumes: { ...run.resumes }, mergeWindow: holder },
   };
   const at = run.now.toISOString();

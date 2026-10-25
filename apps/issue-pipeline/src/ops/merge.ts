@@ -1,7 +1,7 @@
-// Merge code only: validate exact-head authorization, queue, base and
-// readiness before the explicit-target merge and durable receipt. Issue
+// Land code only: validate exact-head authorization, queue, base and
+// readiness before the explicit-target Land and durable receipt. Issue
 // completion is a separate operation, after read-only confirmation of the
-// premerge checks and Security (`merge-publish-finish-split`).
+// pre-Land checks and Security (`merge-publish-finish-split`).
 
 import { z } from "zod";
 import { assignedBranch } from "../branch-binding.ts";
@@ -9,7 +9,7 @@ import { comment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import { paths } from "../config.ts";
 import { assertGitPushDestination } from "../git-remote.ts";
-import { FULL_SHA } from "../merge-provenance.ts";
+import { FULL_SHA } from "../land-provenance.ts";
 import { OpsError } from "../ops-error.ts";
 import { parseRequest, run } from "../process.ts";
 import { targetHolds } from "../reviewed-target.ts";
@@ -18,37 +18,37 @@ import { readWriteState } from "../saved-state.ts";
 import { candidateRefusal } from "../security-clearance.ts";
 import { approvalHolds, ISSUE_STATE } from "../state.ts";
 import { BINDING, RUN_ID } from "../task-result-records.ts";
-import { assertFastForward, branchMerge } from "./branch-merge.ts";
+import { assertFastForward, landBranch } from "./land-branch.ts";
+import { landedText } from "./land-comment.ts";
+import type { LandStale } from "./land-guard.ts";
+import { landStale, REVISION_REQUEST } from "./land-guard.ts";
+import type { ConfirmationClock } from "./land-recovery.ts";
+import { diagnostic, reconcileAttemptedLand } from "./land-recovery.ts";
 import { landRefusal, settleLand, startLand } from "./land-task.ts";
 import type { TurnHeld } from "./land-turn.ts";
 import { retireSettledTurn, underTurn } from "./land-turn.ts";
-import { beginMerge, saveMergeResponse } from "./merge-attempt.ts";
-import { mergedText } from "./merge-comment.ts";
-import type { MergeStale } from "./merge-guard.ts";
-import { mergeStale, REVISION_REQUEST } from "./merge-guard.ts";
-import type { Queued } from "./merge-order.ts";
-import { queued } from "./merge-order.ts";
-import type { ConfirmationClock } from "./merge-recovery.ts";
-import { diagnostic, reconcileMerge } from "./merge-recovery.ts";
+import type { Queued } from "./landing-order.ts";
+import { queued } from "./landing-order.ts";
+import { beginLand, saveLandResponse } from "./merge-attempt.ts";
 import { approvePr } from "./pr-approval.ts";
 import type { PrView } from "./pr-merge.ts";
-import { mergeCommitOf, viewForMerge } from "./pr-merge.ts";
+import { mergeCommitOf, viewForLand } from "./pr-merge.ts";
 
 const MERGE_REQUEST = z.looseObject({
   expectedSha: FULL_SHA,
   expectedBase: FULL_SHA,
   mergeOrder: z.boolean().nullish(),
-  // The merge order the orchestrator ranked (#234), which replaces the
+  // The landing order the caller ranked (#234), which replaces the
   // lowest-PR order when given.
   mergeQueue: z.array(z.number().int()).nullish(),
   number: z.number().int(),
-  // The state's authorized revision (mergeAuthorization), which must still
+  // The state's authorized revision (landAuthorization), which must still
   // be current.
   revision: REVISION_REQUEST,
   state: ISSUE_STATE.extend({ pr: z.number().int().positive() }),
   summary: z.string().nullish(),
   // The task-result path (#185): a Land binding and its run, which the merge
-  // stage sends since #186. Without them the merge behaves as before.
+  // stage sends since #186. Without them the Land behaves as before.
   binding: BINDING.optional(),
   landRun: z
     .strictObject({ id: RUN_ID, previous: RUN_ID.nullable() })
@@ -66,7 +66,7 @@ type MergeReply =
   // The PR is still a draft: only ready-pr marks it ready, after the
   // Reviewer's hardening authorized it.
   | { merged: false; reason: "draft" }
-  | MergeStale
+  | LandStale
   | Queued
   | TurnHeld;
 
@@ -84,7 +84,7 @@ function checkedView(cfg: Config, req: MergeRequest): PrView {
       `merge expectedSha ${req.expectedSha} is not the approved code ${String(req.revision.code)}`,
     );
   }
-  const view = viewForMerge(cfg, req.state.pr);
+  const view = viewForLand(cfg, req.state.pr);
   const branch = assignedBranch(cfg, req.number, req.state);
   if (view.headRefName !== branch) {
     throw new OpsError(
@@ -118,7 +118,7 @@ function staleReason(
   return undefined;
 }
 
-// Why the open PR may not merge yet, or undefined when it may. The merge
+// Why the open PR may not land yet, or undefined when it may. The landing
 // order comes before the fresh revision and base checks, so only the issue
 // at the head of the queue is told to rebase (#422). A draft is refused, and
 // never marked ready here.
@@ -138,7 +138,7 @@ function precheck(
     return waits;
   }
   const current = currentRevision(cfg, req.number, req.state);
-  const stale = mergeStale(req.revision, current);
+  const stale = landStale(req.revision, current);
   if (stale !== undefined) {
     return stale;
   }
@@ -171,10 +171,10 @@ function merge(
   clock?: ConfirmationClock,
 ): MergeReply {
   const req = parseRequest(MERGE_REQUEST, "merge", request);
-  // A replay must enter read-only recovery before approval or premerge work,
+  // A replay must enter read-only recovery before approval or pre-Land work,
   // even if the caller still holds its pre-attempt snapshot and PR looks OPEN.
   if (readWriteState(cfg, req.number).mergeAttempt !== null) {
-    const replay = reconcileMerge(cfg, { number: req.number }, clock);
+    const replay = reconcileAttemptedLand(cfg, { number: req.number }, clock);
     if (req.binding !== undefined) {
       settleLand(cfg, req.number, req.binding, replay);
       retireSettledTurn(cfg, req.number);
@@ -217,7 +217,7 @@ function merge(
   if (refusal !== undefined) {
     return { merged: false, reason: "security", detail: refusal };
   }
-  const moved = mergeStale(req.revision, current);
+  const moved = landStale(req.revision, current);
   if (moved !== undefined) {
     return moved;
   }
@@ -234,7 +234,7 @@ function merge(
   const { binding, landRun } = req;
   if (binding === undefined) {
     approvePr(cfg, pr, req.expectedSha);
-    return attemptedMerge(cfg, req, checked.base, clock);
+    return attemptedLand(cfg, req, checked.base, clock);
   }
   if (landRun === undefined) {
     throw new OpsError("a Land binding needs its run");
@@ -243,7 +243,7 @@ function merge(
   return underTurn(cfg, req, (): MergeReply => {
     startLand(cfg, req.number, binding, landRun);
     approvePr(cfg, pr, req.expectedSha);
-    const receipt = attemptedMerge(cfg, req, checked.base, clock);
+    const receipt = attemptedLand(cfg, req, checked.base, clock);
     settleLand(cfg, req.number, binding, receipt);
     return receipt;
   });
@@ -251,31 +251,31 @@ function merge(
 
 // After entering the mutation boundary, errors must be a durable refusal,
 // not an OpsFailure that a generic transient handler could defer/retry.
-function attemptedMerge(
+function attemptedLand(
   cfg: Config,
   req: MergeRequest,
   base: string,
   clock?: ConfirmationClock,
 ): MergeReply {
   assertGitPushDestination(cfg, paths.worktree(cfg, req.number));
-  beginMerge(cfg, req.number, req.state.pr, { authorized: req.revision, base });
+  beginLand(cfg, req.number, req.state.pr, { authorized: req.revision, base });
   try {
-    const result = branchMerge(
+    const result = landBranch(
       cfg,
       paths.worktree(cfg, req.number),
       base,
       req.expectedSha,
     );
     if (result) {
-      saveMergeResponse(cfg, req.number, req.expectedSha);
+      saveLandResponse(cfg, req.number, req.expectedSha);
     }
-    const receipt = reconcileMerge(cfg, { number: req.number }, clock);
+    const receipt = reconcileAttemptedLand(cfg, { number: req.number }, clock);
     if (receipt.merged && receipt.byHand !== true) {
       comment(
         cfg,
         req.state.pr,
         { role: "merger" },
-        `${mergedText(req.state, req.expectedSha, receipt.mergeCommit)}\n\n${req.summary ?? ""}`,
+        `${landedText(req.state, req.expectedSha, receipt.mergeCommit)}\n\n${req.summary ?? ""}`,
       );
     }
     return receipt;

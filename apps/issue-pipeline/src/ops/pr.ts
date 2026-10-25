@@ -2,7 +2,7 @@
 // written, or, given a body, sets the body of the one it finds; open-pr fills
 // it in, still a draft (reopening a closed one); ready-pr marks it ready once
 // the Reviewer approved its exact revision. How a PR links to its issue
-// lives here. Once the saved state records the code merged, neither start-pr nor
+// lives here. Once the saved state records the code landed, neither start-pr nor
 // open-pr pushes code.
 
 import { z } from "zod";
@@ -19,7 +19,7 @@ import { OpsError } from "../ops-error.ts";
 import { run } from "../process.ts";
 import { recoverDraft, saveDraftAuthority } from "./pr-state.ts";
 import { openPrFor } from "./prs.ts";
-import { refuseOnceMerged } from "./push.ts";
+import { refuseOnceLanded } from "./push.ts";
 import type { ReadyReply } from "./ready-pr.ts";
 import { readyPr } from "./ready-pr.ts";
 
@@ -159,7 +159,7 @@ function givenBody(
 function startPr(cfg: Config, request: unknown): PrReply {
   const req = parsed(START_REQUEST, "start-pr request", request);
   const n = req.number;
-  refuseOnceMerged(cfg, n, "start-pr");
+  refuseOnceLanded(cfg, n, "start-pr");
   const reply = ghJson(cfg, "merge", ["api", `repos/${cfg.repo}/issues/${n}`]);
   const issue = parsed(ISSUE, "gh issue reply", reply);
   const headSha = startBranch(cfg, n);
@@ -189,7 +189,7 @@ function openPr(cfg: Config, request: unknown): OpenReply {
   if (req.reopen !== null && req.reopen !== undefined) {
     recoverDraft(cfg, n, req.reopen);
   }
-  refuseOnceMerged(cfg, n, "open-pr");
+  refuseOnceLanded(cfg, n, "open-pr");
   const pushed = push(cfg, n, "open-pr");
   const title = titleFor(n, textOr(req.title, `Fix #${n}`));
   const body = signed(

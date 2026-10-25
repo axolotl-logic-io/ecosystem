@@ -5,7 +5,8 @@
 // until it writes its job.json. Every job claims in the orchestrator's lane.
 // A restart is a fresh job at the stage the dead job was at: no job is
 // given `--resume`, and none starts on another issue's branch. A merge job
-// gets the merge queue (`--merge-queue`), which its merge-order check reads.
+// gets the landing order (`--merge-queue`), which its landing-order check
+// reads.
 // This module alone knows the start records' file; a missing or malformed
 // one reads as no starts, and each save rewrites it atomically.
 

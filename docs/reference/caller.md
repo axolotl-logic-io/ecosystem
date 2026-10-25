@@ -20,7 +20,7 @@ Before you paste the prompt, replace each placeholder in its first section. The 
 - `MAX_STAGE_JOBS`: the most live jobs at once per stage or task, as JSON such as `{"implement": 2, "merge": 1, "sync": 1, "integration": 1}`. A task job counts under its task, not its stage. Write `{}` for no caps.
 - `MAX_ATTEMPTS`: the most starts of one stage, or one task, of one issue in the run.
 - `MODEL_ENV_FILE`: the absolute path of the model key file. The launcher hands the path to the job's Node with `--env-file`, so only the job reads the file. The caller and the launcher never open it.
-- `MERGE_QUEUE`: _Optional:_ the merge order, as comma-separated issue numbers. Delete the line if there's no merge in this run.
+- `MERGE_QUEUE`: _Optional:_ the landing order, as comma-separated issue numbers. Delete the line if nothing lands in this run.
 
 ## Prompt
 
@@ -39,7 +39,7 @@ You are the issue pipeline's caller for this run. You choose which listed issue 
 - Excluded issues: EXCLUDED
 - Caps: MAX_JOBS live jobs, MAX_STAGE_JOBS per stage or task, MAX_ATTEMPTS starts per stage or task of an issue
 - Model key file: MODEL_ENV_FILE
-- Merge queue: MERGE_QUEUE
+- Landing order: MERGE_QUEUE
 
 ## Read first
 
@@ -78,7 +78,7 @@ Read CHECKOUT/docs/reference/coordination.md. It says how stage jobs run, what e
      --branch BRANCH --lane LANE --stage STAGE
    ```
 
-   For a merge, add `--merge-queue MERGE_QUEUE`. An explicitly authorized closed-issue Merge recovery uses this same command with `--stage merge`. Only the job's canonical claim guards decide eligibility and reopen for the winning claimant; a started job grants no recovery, merge or Security authority. Closed Author, Implement and Review starts remain refused, and so are task starts on a closed issue.
+   For a merge, add `--merge-queue MERGE_QUEUE`. An explicitly authorized closed-issue Merge recovery uses this same command with `--stage merge`. Only the job's canonical claim guards decide eligibility and reopen for the winning claimant; a started job grants no recovery, landing or Security authority. Closed Author, Implement and Review starts remain refused, and so are task starts on a closed issue.
 
    To relay a task request, start the same issue at the same stage with the request's task and binding, copied exactly from the job's `request`:
 
@@ -112,7 +112,7 @@ Decide everything yourself except what Ask Autumn lists, and report each decisio
 - **No result line:** read `stderrTail`. Retry a transient failure while attempts remain; otherwise give up on the issue.
 - **`droppedPatches` not empty:** leave the patches where they are, list them in your report and go on with the `end`'s next step.
 - **A stage out of attempts:** give up on the issue.
-- **Exit 2:** for a full cap or a live job on the issue, branch or repo's merge, wait for a job to end and retry. For a closed-issue refusal, stop starts and report it as unresolved unless genuine saved completion is established. Closed status alone is not completion. Consult CHECKOUT/docs/reference/merge.md, “Closed issues with an incomplete merge”, for separately authorized recovery; never reopen it or infer clearance yourself. For a stage out of attempts, give up on the issue. For a widened run.json, put it back as you first wrote it.
+- **Exit 2:** for a full cap or a live job on the issue, branch or repo's merge, wait for a job to end and retry. For a closed-issue refusal, stop starts and report it as unresolved unless genuine saved completion is established. Closed status alone is not completion. Consult CHECKOUT/docs/reference/merge.md, “Closed issues with an incomplete Land”, for separately authorized recovery; never reopen it or infer clearance yourself. For a stage out of attempts, give up on the issue. For a widened run.json, put it back as you first wrote it.
 - **Exit 1:** if your command was wrong, fix it and retry. Otherwise give up on the issue.
 - **Anything else:** follow coordination.md and the limits, take the more cautious choice and report it.
 
@@ -135,7 +135,7 @@ After each ended job, tell Autumn in one line: repository and issue, stage and a
 
 - **Invocation fencing covers acquisition, entry points, sessions, every credentialed write and cleanup.** Each job confirms ownership for a fresh invocation UUID before it opens a checkout ([#167](https://github.com/axolotl-logic-io/ecosystem/issues/167)). Its binding (UUID, lane, repo, base, issue, branch) rides every ops request and every steer and push request; a changed or missing field is refused before any effect, and ownership is reread before each session starts ([#168](https://github.com/axolotl-logic-io/ecosystem/issues/168)) and before every credentialed write, in the job and in its ops children ([#169](https://github.com/axolotl-logic-io/ecosystem/issues/169)). An ops request without a binding can't write. A job releases ownership only through the release predicate ([#151](https://github.com/axolotl-logic-io/ecosystem/issues/151)). It needs a confirmed checkpoint, no unresolved stop or uncertain write, preserved work, and no registered consumer of the issue's lane slot. Otherwise the job holds ownership for reconciliation. Teardown and cleanup are fenced too ([#170](https://github.com/axolotl-logic-io/ecosystem/issues/170)). A job that lost the issue leaves its checkout untouched, and cleanup keeps a worktree whose execution or lane slot is still in use.
 - **A held issue needs you.** A job that crashed, or whose claim was refused, keeps ownership. Every later job on that issue ends `unclaimed` with `reason` "another invocation owns the issue". Don't retry it; report it and wait for Autumn.
-- **Two Lands never write one target at once.** Each exact Land takes the target's integration turn ([#171](https://github.com/axolotl-logic-io/ecosystem/issues/171)). A merge job whose Land finds the turn taken ends `wait`; retry it later in merge-queue order. A turn held by an unsettled or uncertain Land stops every Land on that target: report it and wait for Autumn.
+- **Two Lands never write one target at once.** Each exact Land takes the target's integration turn ([#171](https://github.com/axolotl-logic-io/ecosystem/issues/171)). A merge job whose Land finds the turn taken ends `wait`; retry it later in landing order. A turn held by an unsettled or uncertain Land stops every Land on that target: report it and wait for Autumn.
 - **Contention is proved through real jobs** ([#133](https://github.com/axolotl-logic-io/ecosystem/issues/133)): two jobs at the same instant start one writer, a delayed predecessor writes nothing, and a lost acquisition holds without a retry. Still, never start the same issue twice; outside accounts aren't excluded.
 - **The assignment sweep is the other way to start jobs.** It starts work from GitHub assignments through this launcher's checks; see [assignment sweep](assignment-sweep.md). Don't run it and this caller on the same issues.
 - **The legacy scheduler relays nothing.** `orchestrate.mjs` schedules stages only. A merge it starts ends `wait` with a task request it doesn't act on, so it can't land work by itself. Use this caller.

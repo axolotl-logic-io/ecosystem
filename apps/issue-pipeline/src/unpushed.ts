@@ -46,7 +46,7 @@ function onlyLocal(what: string, sha: string): string {
 // Pushes issue `n`'s worktree commits that its branch on GitHub (or, with no
 // branch there, the base) lacks. Only fast-forwards an existing branch.
 // Commits already on the base are on GitHub, so a checkout at the base's
-// merge commit of the issue (merged-review.ts) pushes nothing. Never throws:
+// merge commit of the issue (landed-review.ts) pushes nothing. Never throws:
 // returns the stop-comment line naming the head when the push failed, and
 // none when everything reached GitHub or there was nothing to push.
 function pushUnpushed(cfg: Config, n: number): string[] {

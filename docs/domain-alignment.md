@@ -78,6 +78,17 @@ These mappings apply the 2026-10-22 decisions to the installed release `42a8771`
 | GitHub event `actor` in `src/discovery/` | Account, as external data | None | Not a buddy. |
 | Candidate, exact candidate, version | Revision | Terminology | The `REVISION` schema in `src/merge-provenance.ts` and `ReviewedTarget` in `src/reviewed-target.ts` broadly match revision and target state. `REVISION` still accepts historical receipts with no policy and a null code commit. |
 
+### Code names (#165)
+
+Ecosystem #165 renamed the pipeline's code names in source, tests, prompts and docs. The names that remain are listed here with their reason. Those marked **persisted (#166)** live outside the code, and #166 renames them with a compatibility plan.
+
+| Kind | Renamed | Kept, and why |
+| --- | --- | --- |
+| Merge meaning land | Identifiers, files and folders: `reconcileLand`, `landAuthorization`, `landBranch`, `src/ops/land-guard.ts`, `landing-order.ts`, `land-recovery.ts`, `landed-review.ts`, `confirm-landed.ts`, `src/land-provenance.ts`, `src/roles/merge/land.ts`. Comments, test titles, prompts and docs say land, Land, landed and landing. | **Persisted (#166):** `codeMerged`/`CodeMerged`, `merged`, `mergeAttempt`/`MergeAttempt`, `mergeReturn`/`MergeReturn`, `mergeAccount`, `mergeQueue`, `mergeConfirmation`, the op names `merge`, `confirm-merged`, `reconcile-merge` and their request and reply types and modules (`src/ops/merge.ts`, `merge-attempt.ts`), `agent:merged`, the signed role `merger`. **Stage:** the `merge` stage, its folder `src/roles/merge/` and `mergeRole`. **Git or GitHub:** merge commits, merge bases, unmerged files, GitHub's `MERGED`, its merge API (`pr-merge.ts`, `mergedPr`). **Not landing:** `mergedRole` combines role settings. |
+| Implementor | `src/roles/implementor/` → `src/roles/implementation/`, `implementorRole` → `implementationRole`, `test/roles/implementation-test-kit.ts`. Prose says Developer for the role and Implementation for the task. | **Persisted (#166):** `models.implementor`, the agent definition `issue-pipeline-implementor`, the session keys `implementor-*`. The decision ID `implementor-owns-the-change`. |
+| Orchestrator | Prose that means the caller says caller, such as the caller's landing order. | The retained legacy scheduler: `src/orchestrator/`, `orchestrate.ts`, `orchestrate.mjs`, `orchestratorIntervalSeconds`, `mergeWindow`. It is not the caller. |
+| Stage | Prose that means a task says task. | Stage as the installed technical name: `Stage`, `STAGES`, stage jobs, `--stage`, the saved `stage`, `stoppedStage`, `resumeStage`, stage caps. Replacing them is the *Structure* change above ("the tasks that may proceed"), not a rename. |
+
 ## Change classes
 
 - **Terminology:** replace different names for the same concept without intentionally changing behavior.

@@ -1,6 +1,6 @@
 // Draft creation is not a checkpoint until its actual identity is validated,
 // saved and readable again. Failure leaves any created PR discoverable across
-// all states; it never authorizes a writer or fabricates a merge receipt.
+// all states; it never authorizes a writer or fabricates a landing receipt.
 import { assignedBranch } from "../branch-binding.ts";
 import type { Config } from "../config.ts";
 import { gh } from "../github.ts";

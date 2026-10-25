@@ -3,7 +3,7 @@
 Ecosystem is the home of the issue pipeline, which executes caller-assigned
 GitHub issues against a configured repository. Its source, operator instructions
 and tests live in [`apps/issue-pipeline/`](apps/issue-pipeline/README.md).
-It runs from an operator-installed copy; merging source does not install it.
+It runs from an operator-installed copy; landing source does not install it.
 
 The opt-in Pi [workflow dashboard](apps/workflow-dash/README.md) lives in
 `apps/workflow-dash/`. It observes source records and composes editable requests;
@@ -29,7 +29,7 @@ The pipeline's Node test suite was deleted on 2026-10-25. `check:full` still
 runs every `apps/issue-pipeline/test/**/*.test.ts`, so new tests there are
 picked up with no change to the scripts.
 The fast gate does not run the integration/flow suite or prove runtime authority, recovery,
-isolation or merge behavior. Read the
+isolation or landing behavior. Read the
 [gate scope and cost report](docs/reference/check-gates.md) before selecting
 the expensive full suite. Both root scripts also run the dashboard's gates,
 which you can run alone:
@@ -52,7 +52,7 @@ cutover. Read [AGENTS.md](AGENTS.md) before changing code.
 workflow; this change does not enable it. There is no production deployment.
 The operator can configure the pipeline to work on ecosystem's own issues as
 well as other repositories. Issue jobs develop and review pipeline fixes; the
-operator coordinates installation separately from merging them.
+operator coordinates installation separately from landing them.
 
 The [pipeline docs](docs/README.md) hold its decisions and reference. The sessions'
 behavioral prompts ship with the pipeline in

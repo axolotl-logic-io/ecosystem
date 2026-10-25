@@ -1,7 +1,7 @@
 // The binding between an issue and the one branch its work is on. The
 // first claim binds the branch the caller assigned (config.ts's
 // paths.branch) into the issue's state; after that, an op that pushes,
-// readies, merges or deletes refuses any other assignment before anything
+// readies, lands or deletes refuses any other assignment before anything
 // moves, so a resume can never strand or overwrite the issue's work on its
 // own branch. A state saved before assignments (branch null) is bound to
 // the legacy agent/issue-<n> its work is on.

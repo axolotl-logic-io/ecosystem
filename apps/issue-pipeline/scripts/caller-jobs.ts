@@ -14,7 +14,7 @@
 // `start` refuses (exit 2, the reason on stderr) a run.json rewritten to
 // widen the caps the run's first start read (wideningOf in
 // caller-jobs/run-limits.ts), what refusalOf in caller-jobs/live-jobs.ts
-// refuses, and an issue GitHub doesn't show open, except an explicit Merge
+// refuses, and an issue GitHub doesn't show open, except an explicit Land
 // attempt on a closed issue. The job's canonical claim guards alone decide
 // closed recovery eligibility and reopen only for the winning claimant.
 // Otherwise it runs the installed job.mjs in its own session with its stdin

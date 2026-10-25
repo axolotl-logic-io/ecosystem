@@ -1,6 +1,6 @@
 // The push ops: push pushes the issue's code branch; exit-push is the push
 // a writer's stage job makes as it exits. Once the saved state records the
-// code merged, they refuse: nothing of the issue's is left to push.
+// code landed, they refuse: nothing of the issue's is left to push.
 
 import { z } from "zod";
 import type { PushResult } from "../checkouts.ts";
@@ -16,9 +16,9 @@ const PUSH_REQUEST = z.looseObject({
 
 type PushOp = (cfg: Config, request: unknown) => PushResult;
 
-// Throws when issue `n`'s saved state records its code merged, since `op`
+// Throws when issue `n`'s saved state records its code landed, since `op`
 // would push code.
-function refuseOnceMerged(cfg: Config, n: number, op: string): void {
+function refuseOnceLanded(cfg: Config, n: number, op: string): void {
   const { codeWritable } = readWriteAuthority(cfg, n);
   if (!codeWritable) {
     throw new OpsError(`#${n}'s code merged, so ${op} can't push code`);
@@ -26,10 +26,10 @@ function refuseOnceMerged(cfg: Config, n: number, op: string): void {
 }
 
 // Pushes the issue's code branch for `op`. Once the saved state records the
-// code merged, or binds another branch than the assigned one, it refuses.
+// code landed, or binds another branch than the assigned one, it refuses.
 function pushFor(cfg: Config, request: unknown, op: string): PushResult {
   const { number } = parseRequest(PUSH_REQUEST, op, request);
-  refuseOnceMerged(cfg, number, op);
+  refuseOnceLanded(cfg, number, op);
   return push(cfg, number, op);
 }
 
@@ -49,4 +49,4 @@ const pushOps: Readonly<Record<string, PushOp>> = {
   "exit-push": exitPushOp,
 };
 
-export { pushOps, refuseOnceMerged };
+export { pushOps, refuseOnceLanded };
