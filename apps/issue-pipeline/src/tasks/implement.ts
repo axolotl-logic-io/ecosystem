@@ -97,7 +97,7 @@ const implement: TaskModule = {
     role: "developer",
     access: "writer",
     sensors: ["start", "stop"],
-    resources: ["model-session"],
+    resources: ["model-session", "test-slot"],
     match,
     act: (ctx: ActionContext): Promise<ActionEnd> =>
       writerAction(ctx, "development"),

@@ -32,6 +32,7 @@ const TASK_OP_CLASSES: ReadonlyMap<string, OpClass> = new Map([
   ["task-attempt", "substantive"],
   ["task-result", "finalization"],
   ["checkpoint-action", "finalization"],
+  ["prepare-checkout", "substantive"],
   ["push", "substantive"],
   ["open-task-pr", "substantive"],
   ["integrate-task", "substantive"],

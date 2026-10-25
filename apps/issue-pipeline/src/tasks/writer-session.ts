@@ -26,6 +26,7 @@ async function writerAction(
   ctx: ActionContext,
   kind: "development" | "hardening",
 ): Promise<ActionEnd> {
+  await ctx.prepare();
   await ctx.boundary("session");
   const spec = {
     agent: "issue-pipeline-developer",

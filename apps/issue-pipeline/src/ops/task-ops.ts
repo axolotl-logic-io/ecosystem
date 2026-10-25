@@ -23,6 +23,7 @@ import { taskAttempt, taskResult } from "./task-actions.ts";
 import type { ActionSource, OpClass } from "./task-guard.ts";
 import { TASK_OP_CLASSES, withTaskGuard } from "./task-guard.ts";
 import { openTaskPr } from "./task-pr.ts";
+import { prepareCheckout } from "./task-prepare.ts";
 
 type Op = (cfg: Config, request: unknown) => object;
 
@@ -30,6 +31,7 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["task-attempt", taskAttempt],
   ["task-result", taskResult],
   ["checkpoint-action", checkpointAction],
+  ["prepare-checkout", prepareCheckout],
   ["push", pushOp],
   ["open-task-pr", openTaskPr],
   ["integrate-task", integrateTask],

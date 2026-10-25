@@ -73,7 +73,7 @@ const harden: TaskModule = {
     role: "developer",
     access: "writer",
     sensors: ["result", "stop"],
-    resources: ["model-session"],
+    resources: ["model-session", "test-slot"],
     match,
     act: (ctx: ActionContext): Promise<ActionEnd> =>
       writerAction(ctx, "hardening"),

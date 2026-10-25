@@ -100,6 +100,7 @@ async function resolved(
   ctx: ActionContext,
   conflicts: readonly string[],
 ): Promise<ActionEnd> {
+  await ctx.prepare();
   await ctx.boundary("session");
   const session = await ctx.session({
     agent: "issue-pipeline-developer",
@@ -155,7 +156,7 @@ const sync: TaskModule = {
     role: "developer",
     access: "writer",
     sensors: ["result", "stop"],
-    resources: ["model-session"],
+    resources: ["model-session", "test-slot"],
     match,
     act,
     recover: async (ctx: ActionContext) =>
