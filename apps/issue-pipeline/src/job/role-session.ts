@@ -176,4 +176,4 @@ function sessionRunnerOf(
 }
 
 export type { SessionJob };
-export { sessionRunnerOf };
+export { resultOf, SESSION_MINUTES, sessionRunnerOf };

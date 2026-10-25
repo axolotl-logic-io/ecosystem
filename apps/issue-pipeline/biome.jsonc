@@ -15,10 +15,13 @@
     // arguments, environment and stdin), the files and the terminal. They are
     // the install, the build, the caller's job launcher (scripts/) and the
     // tests with their kits; the entries of
-    // the four CLIs (ops.ts, job.ts, orchestrate.ts, report.ts) and the shell
-    // supervisor; the ops modules that run git, gh and the configured
-    // commands or keep the clones, worktrees, locks, logs and stop recovery
-    // evidence on disk; the
+    // the CLIs (ops.ts, job.ts, orchestrate.ts, report.ts, buddy.ts) and the
+    // shell supervisor; the buddy runtime's modules that read its trusted
+    // files, keep its run observations, take its process signals, or keep an
+    // action's checkout and control socket and spawn its ops and sessions;
+    // the ops modules that run git, gh and the configured commands or keep
+    // the clones, worktrees, locks, logs and stop recovery evidence on disk;
+    // the
     // stage job's modules that spawn ops.mjs and pi, keep its checkout,
     // control socket, status and logs, or are pi extensions; and the
     // orchestrator's modules that read its arguments, spawn and check the
@@ -91,6 +94,11 @@
         "src/job/assignment-hold.ts",
         "src/job/dropped-patch.ts",
         "src/job/teardown.ts",
+        "src/buddy.ts",
+        "src/runtime/action.ts",
+        "src/runtime/buddy-config.ts",
+        "src/runtime/observations.ts",
+        "src/runtime/stop.ts",
         "src/orchestrate.ts",
         "src/orchestrator/args.ts",
         "src/orchestrator/snapshot.ts",

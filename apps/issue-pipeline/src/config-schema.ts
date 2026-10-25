@@ -4,7 +4,10 @@
 import { z } from "zod";
 import { RUNTIME_SCHEMA } from "./job/runtime-policy.ts";
 import { OpsError } from "./ops-error.ts";
-import { PROJECT_POLICY_SOURCE } from "./project-policy-schema.ts";
+import {
+  PROJECT_POLICY_SOURCE,
+  RESOURCE_CAPACITY,
+} from "./project-policy-schema.ts";
 
 const MIDDLE_CONFIRMATION_BACKOFF_SECONDS = 4;
 const LATE_CONFIRMATION_BACKOFF_SECONDS = 8;
@@ -106,6 +109,14 @@ const CONFIG_SCHEMA = z.looseObject({
   }),
   // Project-buddy's lane app ports must stay below its proxy port range.
   laneSlots: z.number().int().min(1).max(MAX_LANE_SLOTS).optional(),
+  // The repository's shared resource capacity (`capacity-by-resource`):
+  // required, with no default. In committed-policy mode it comes only from
+  // the pinned project document (src/project-policy.ts).
+  resources: RESOURCE_CAPACITY,
+  // The repository's own Land permission. Land needs it and the Gatekeeper
+  // buddy's `permissions.land` (src/runtime/buddy-config.ts); missing is
+  // false.
+  permissions: z.strictObject({ land: z.boolean() }).optional(),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
   // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue token

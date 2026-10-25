@@ -36,6 +36,19 @@ interface JobCheckout {
   branch: string;
 }
 
+// The trusted buddy authorization an ops request runs under, once
+// src/runtime/buddy-config.ts's bindBuddyAuthorization validated it: the
+// buddy file and the repository config it was matched against, the buddy
+// run and task, and the authorization digest, which is the action's own and
+// never part of the shared checking policy. Internal, never loaded from JSON.
+interface BuddyAuthorization {
+  config: string;
+  repository: string;
+  run: string;
+  task: string;
+  digest: string;
+}
+
 type Config = z.infer<typeof CONFIG_SCHEMA> & {
   slug: string;
   policyBinding?: ProjectPolicyBinding;
@@ -53,6 +66,7 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
   // A job started for an assignment (#119): the buddy account whose grant
   // every credentialed write rechecks. Internal, never loaded from JSON.
   grant?: { login: string };
+  buddyAuthorization?: BuddyAuthorization;
 };
 
 const RAW = z.record(z.string(), z.unknown());
@@ -83,6 +97,7 @@ function loadConfig(configPath: string | undefined): Config {
     execution: _execution,
     mutation: _mutation,
     grant: _grant,
+    buddyAuthorization: _buddyAuthorization,
     ...data
   } = parsed.data;
   for (const role of Object.values(data.jobRoles ?? {})) {
@@ -228,5 +243,5 @@ function credential(cfg: Config, identity: Account): string {
   return selected;
 }
 
-export type { Account, Config, JobCheckout };
+export type { Account, BuddyAuthorization, Config, JobCheckout };
 export { credential, loadConfig, paths, publicConfig, withCheckout };
