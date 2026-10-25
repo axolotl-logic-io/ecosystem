@@ -7,7 +7,6 @@
   "allowedUsers": ["MAINTAINER"],
   "permissions": { "land": false },
   "resources": { "modelSessions": 1 },
-  "skipLabels": ["deploy"],
   "models": {
     "author": "openai/gpt-6.1-sol",
     "developer": "openai/gpt-6.1-sol",

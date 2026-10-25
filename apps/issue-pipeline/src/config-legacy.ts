@@ -31,6 +31,17 @@ const ORCHESTRATOR_EXTRAS =
 // Fields the pipeline no longer reads, each with what removed it. A config
 // that sets one still loads, with a warning.
 const REMOVED_FIELDS: Readonly<Record<string, string>> = {
+  assignments:
+    "assignments grant no authority; qualified human signals start work",
+  takeNewWork: "qualified starts replace global admission switches",
+  skipLabels: "retired scheduler filters grant no task authority",
+  maxJobs: "repository resources.modelSessions owns shared model capacity",
+  stageCaps: "repository resources.modelSessions owns shared model capacity",
+  orchestratorIntervalSeconds:
+    "each buddy run polls its configured task sensors",
+  maxCiFixes: "a spent start never grants automatic retry",
+  maxSyncs: "task results and fresh prerequisites replace stage retry loops",
+  maxConflictFixes: "a spent cause never grants automatic retry",
   claimCandidates: CLAIM_RACE,
   claimWaitSeconds: CLAIM_RACE,
   contextLimits: SESSION_BUDGETS,

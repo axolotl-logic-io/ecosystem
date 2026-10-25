@@ -1,22 +1,17 @@
-// The issue's context log, `context.jsonl` in its run folder (Axlog,
-// 2026-10-16): one JSON line appended as each model session launch ends,
-// so the context and spend of sessions outlive job.json, which the next job
-// overwrites. A line holds numbers and names only, never a prompt, reply or
-// tool text. A session the job's stop (SIGTERM or SIGINT, as the watchdog
-// sends) ended is logged as `killed`, and one with no launch record in
-// job.json as `unrecorded`, with no file and no measures. A write that fails
-// is reported on stderr and the job goes on (run-log.ts). This module alone
-// knows the line's layout.
+// Append bounded session measures to context.jsonl in the action folder.
+// Records contain no prompt, reply or tool text. A cooperative interruption
+// is not a process kill; missing launch evidence stays unrecorded. Legacy
+// job/stage field names remain local log labels, not workflow authority.
+// A failed append reports its error without changing the action outcome.
 
 import path from "node:path";
 import type { ModelRole } from "../config-legacy.ts";
 import type { Control } from "./control.ts";
+import type { LaunchRecord } from "./launch-record.ts";
 import { appendRunLine } from "./run-log.ts";
-import type { JobStatus, StatusFile } from "./status.ts";
+import type { JobStatus } from "./status.ts";
 import type { Usage } from "./token-usage.ts";
 import { ZERO_USAGE } from "./token-usage.ts";
-
-type LaunchRecord = StatusFile["launches"][number];
 
 // How a session ended as its launch saw it: its result.
 type SessionEnded = "ok" | "failed";
@@ -53,7 +48,7 @@ interface ContextLine {
   role: ModelRole;
   agent: string;
   model: string;
-  ended: SessionEnded | "killed" | "unrecorded";
+  ended: SessionEnded | "interrupted" | "unrecorded";
   // The highest turn context, the latest message's token total and the
   // first turn's context (null with no turn), as job.json counts them.
   peakContext: number;
@@ -93,9 +88,8 @@ const UNRECORDED: Measures = {
   usage: ZERO_USAGE,
 };
 
-// The line for session `key` of `job` at its stage, measured as its
-// `launch` record says (unrecorded when it is null), ended as `end` says, or
-// killed when the job is stopping.
+// Preserve missing measures as unknown; interruption describes the local
+// session outcome, not an accepted human stop or a durable signal.
 function contextLineOf(
   job: ContextJob & { stage: string; stopping: boolean },
   ending: { key: string; launch: LaunchRecord | null; end: SessionEnd },
@@ -117,7 +111,7 @@ function contextLineOf(
     };
   }
   if (job.stopping) {
-    ended = "killed";
+    ended = "interrupted";
   }
   return {
     at: at.toISOString(),
@@ -141,9 +135,8 @@ function contextLineOf(
   };
 }
 
-// The log of the ends of `job`'s sessions, in `runDir`: each line reads the
-// session's record and the stage the job is at now from the job's status,
-// and is `killed` while its control is stopping.
+// Read measures from the current action's launch observations. The runtime
+// supplies the task ID through the legacy-labelled currentStage accessor.
 function contextLogOf(
   runDir: string,
   job: ContextJob,

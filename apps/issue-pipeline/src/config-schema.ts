@@ -15,11 +15,6 @@ const MAX_LANE_SLOTS = 399;
 
 const DEFAULTS: Readonly<Record<string, unknown>> = {
   baseBranch: "main",
-  // false: lanes finish issues already in progress (agent:working, answered
-  // questions) but claim no new ones (Autumn, 2026-10-14).
-  takeNewWork: true,
-  // Issues with any of these labels are never pipeline work, such as deploy tickets.
-  skipLabels: [],
   // The files that hold the project's coding practices, relative to the worktree
   // (such as "docs/Decisions.md"). Writers and reviewers read each in full
   // (Axlog, 2026-10-15). Missing files are skipped.
@@ -35,19 +30,11 @@ const DEFAULTS: Readonly<Record<string, unknown>> = {
       FINAL_CONFIRMATION_BACKOFF_SECONDS,
     ],
   },
-  maxCiFixes: 2,
-  maxSyncs: 3,
-  maxConflictFixes: 2,
   requireCi: true,
   ciWaitMinutes: 30,
   commandTimeoutMinutes: 20,
   lockfiles: [],
   migrations: null,
-  // The orchestrator (#234): caps on live stage jobs, in all and per stage,
-  // and its seconds between ticks.
-  maxJobs: 4,
-  stageCaps: { author: 2, review: 2 },
-  orchestratorIntervalSeconds: 60,
   // What the usage report (report.mjs usage) flags: a session whose first turn
   // passed `firstContext` tokens of context, or whose largest tool output
   // passed `toolOutputShare` of its peak context (#302).
@@ -58,8 +45,8 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 const OPTIONAL_TEXT = z.string().nullish();
 const TOKENS = z.number().int().positive();
-// What a stage job's role may hold (src/job/roles.ts): a job variable that
-// holds its token, which no session sees, and the hosts it may reach.
+// Access-profile metadata and credential-variable names to strip from model
+// children (src/job/roles.ts). Declared hosts do not enforce a sandbox.
 const JOB_ROLE = z
   .object({
     tokenEnv: z.string().regex(ENV_NAME, "must be an env var name").optional(),
@@ -89,14 +76,6 @@ const CONFIG_SCHEMA = z.looseObject({
   credentialsEnvFile: z.string(),
   legacyAccount: z.string().optional(),
   allowedUsers: z.array(z.string()),
-  // Opt-in assignment mode (#119, #120): the one account whose assignments
-  // grant and withdraw a buddy's work (`assignment-permission`). Without it,
-  // the sweep refuses the repo and an `--assignment` job pauses.
-  assignments: z
-    .object({
-      grantor: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u),
-    })
-    .optional(),
   baseBranch: z.string(),
   cloneUrl: OPTIONAL_TEXT,
   commands: z.looseObject({
@@ -112,9 +91,6 @@ const CONFIG_SCHEMA = z.looseObject({
   permissions: z.strictObject({ land: z.boolean() }).optional(),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
-  // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue token
-  // budget that once stopped an issue. Accepted so older configs still load,
-  // and unused.
   jobRoles: JOB_ROLES.nullish(),
   models: MODELS,
   runtime: RUNTIME_SCHEMA,
@@ -133,9 +109,6 @@ const CONFIG_SCHEMA = z.looseObject({
       .max(MAX_CONFIRMATION_BACKOFF_STEPS),
   }),
   practices: z.array(z.string()),
-  // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue
-  // rebase allowance (#201) that once stopped an issue. Accepted so older
-  // configs still load, and unused.
   repo: z.string(),
   usageFlags: z.object({
     firstContext: TOKENS,

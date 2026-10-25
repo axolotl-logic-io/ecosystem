@@ -6,7 +6,6 @@
   "credentialsEnvFile": "/absolute/operator-checkout/project/.env",
   "allowedUsers": ["MAINTAINER"],
   "permissions": { "land": false },
-  "skipLabels": ["deploy"],
   "models": {
     "author": "openai/gpt-6.1-sol",
     "developer": "openai/gpt-6.1-sol",

@@ -255,6 +255,42 @@ test("buddy --check validates a Developer against its repository's pinned pool",
   }
 });
 
+test("retired repository controls warn without changing a buddy's grant", () => {
+  const box = sandbox(false);
+  try {
+    const file = box.buddy({});
+    const before = digestOf(box, file);
+    const retired = {
+      assignments: { grantor: "former-grantor" },
+      takeNewWork: false,
+      skipLabels: ["deploy"],
+      maxJobs: 1,
+      stageCaps: { author: 1 },
+      orchestratorIntervalSeconds: 1,
+      maxCiFixes: 0,
+      maxSyncs: 0,
+      maxConflictFixes: 0,
+    };
+    const original = z
+      .record(z.string(), z.unknown())
+      .parse(JSON.parse(fs.readFileSync(box.repository, "utf8")));
+    writePrivate(box.repository, { ...original, ...retired });
+    const checked = checkBuddy(file, box.root);
+    assert.equal(checked.status, 0, checked.stderr);
+    for (const key of Object.keys(retired)) {
+      assert.ok(
+        checked.stderr.includes(`${key} is no longer read`),
+        checked.stderr,
+      );
+    }
+    const summary = CHECKED.parse(JSON.parse(checked.stdout));
+    assert.deepEqual(summary.tasks, ["author", "implement", "harden", "sync"]);
+    assert.equal(summary.repositories.at(0)?.authorization, before);
+  } finally {
+    box.cleanup();
+  }
+});
+
 test("buddy --check refuses obsolete controls, foreign accounts and untrusted files", () => {
   const box = sandbox(false);
   try {

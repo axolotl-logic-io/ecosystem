@@ -65,7 +65,7 @@ import { issueRefusal } from "../job/release-predicate.ts";
 import type { SessionPhase } from "../job/role-context.ts";
 import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
 import { agentEnvOf, rolesOf } from "../job/roles.ts";
-import type { LaunchStart, StopSignal } from "../job/status.ts";
+import type { LaunchStart } from "../job/status.ts";
 import { checkGuard, TASK_OP_CLASSES } from "../ops/task-guard.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { SignalScope } from "../signals/inbox.ts";
@@ -563,8 +563,8 @@ function envOf(
   };
 }
 
-function stoppingOf(open: OpenAction): () => StopSignal | null {
-  return (): StopSignal | null => {
+function stoppingOf(open: OpenAction): () => "SIGTERM" | null {
+  return (): "SIGTERM" | null => {
     if (open.signal.aborted) {
       return "SIGTERM";
     }
