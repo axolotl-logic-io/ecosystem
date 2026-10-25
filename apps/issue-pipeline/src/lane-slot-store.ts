@@ -57,8 +57,14 @@ function saveStore(cfg: Config, store: SlotStore): void {
   fs.renameSync(temporary, file);
 }
 
+// The leases some checkout still holds. A lease with a pending setup is kept
+// whole even when its registered paths are gone: the barrier, not the paths'
+// absence, decides when its slot and environment may be freed.
 function surviving(store: SlotStore): SlotStore {
   const leases = store.leases.flatMap((lease) => {
+    if (lease.pendingSetup.length > 0) {
+      return [lease];
+    }
     const checkouts = lease.checkouts.filter((dir) => fs.existsSync(dir));
     if (checkouts.length === 0) {
       return [];

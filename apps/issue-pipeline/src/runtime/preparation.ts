@@ -5,6 +5,12 @@
 // (job/checkout-close.ts) releases the slot once no checkout or pending
 // setup of the issue remains. A task with no test slot, or a repository
 // with neither laneSlots nor a setup command, takes none of these steps.
+//
+// Configured teardown is not supported here yet: no guarded last-consumer
+// teardown runs before checkout removal and slot release. So an acting
+// test-slot task refuses before it creates any checkout or environment
+// while commands.teardown is set (unsupportedTeardown), rather than leave
+// resources that teardown would have freed.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -19,7 +25,10 @@ const LANE_SLOT = "ISSUE_PIPELINE_LANE_SLOT";
 // The config keys preparation reads; loadConfig applied their defaults.
 const SETTINGS = z.looseObject({
   commandTimeoutMinutes: z.number(),
-  commands: z.looseObject({ setup: z.string().nullish() }),
+  commands: z.looseObject({
+    setup: z.string().nullish(),
+    teardown: z.string().nullish(),
+  }),
 });
 
 function claimsTestSlot(task: TaskDefinition): boolean {
@@ -32,6 +41,42 @@ function setupCommand(cfg: Config): string | null {
     return null;
   }
   return setup;
+}
+
+function teardownCommand(cfg: Config): string | null {
+  const { teardown } = SETTINGS.parse(cfg).commands;
+  if (teardown === undefined || teardown === null || teardown === "") {
+    return null;
+  }
+  return teardown;
+}
+
+// Why an acting `task` may not create its test environment while
+// commands.teardown is configured, or null. A refusal, not teardown: the
+// configured teardown stays unsupported until a guarded last-consumer
+// teardown runs before removal and release.
+function unsupportedTeardown(
+  cfg: Config,
+  task: TaskDefinition,
+  mode: "act" | "recover",
+): string | null {
+  if (!claimsTestSlot(task) || mode === "recover") {
+    return null;
+  }
+  if (teardownCommand(cfg) === null) {
+    return null;
+  }
+  return `commands.teardown is configured, but the action runtime runs no guarded last-consumer teardown yet; task ${task.id} creates no test environment that teardown could not free`;
+}
+
+// Whether the action's own checkout registers as its issue's lane-slot
+// consumer: `task` holds a test slot and acts, and laneSlots is configured.
+function holdsLaneSlot(
+  cfg: Config,
+  task: TaskDefinition,
+  mode: "act" | "recover",
+): boolean {
+  return claimsTestSlot(task) && cfg.laneSlots !== undefined && mode === "act";
 }
 
 function setupTimeoutMinutes(cfg: Config): number {
@@ -51,18 +96,18 @@ function needsPreparation(cfg: Config, task: TaskDefinition): boolean {
 // consumer first when `task` holds a test slot and acts. A read-only
 // recovery takes no slot: it prepares nothing and its sessions are refused
 // a test environment. A failed open keeps the registration wherever the
-// checkout exists.
+// checkout exists. An unsupported teardown refuses first, creating nothing.
 function openActionCheckout(
   cfg: Config,
   issue: number,
   job: { stage: string; branch: string; mode: "act" | "recover" },
   task: TaskDefinition,
 ): JobDirs {
-  if (
-    !claimsTestSlot(task) ||
-    cfg.laneSlots === undefined ||
-    job.mode === "recover"
-  ) {
+  const refusal = unsupportedTeardown(cfg, task, job.mode);
+  if (refusal !== null) {
+    throw new OpsError(refusal);
+  }
+  if (!holdsLaneSlot(cfg, task, job.mode)) {
     return openJobCheckout(cfg, issue, job);
   }
   const scoped = withCheckout(cfg, {
@@ -100,9 +145,11 @@ function laneEnvironment(
 
 export {
   claimsTestSlot,
+  holdsLaneSlot,
   laneEnvironment,
   needsPreparation,
   openActionCheckout,
   setupCommand,
   setupTimeoutMinutes,
+  unsupportedTeardown,
 };
