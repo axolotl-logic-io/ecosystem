@@ -76,6 +76,7 @@ interface PlannedSession {
     | "stop-issue"
     | "human-leaves"
     | "posts-fail"
+    | "checkpoint-posts-fail"
     | "events-unreadable"
     | null;
   // Whether `change` comes before the commit rather than after it.
