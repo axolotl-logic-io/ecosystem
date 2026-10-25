@@ -9,6 +9,7 @@ import process from "node:process";
 import { readWorld } from "./fake-pipeline-flow-gh-world.ts";
 import { savedState } from "./pipeline-flow-script-test-kit.ts";
 import type { Flow } from "./pipeline-flow-test-kit.ts";
+import { tsShim } from "./ts-shim.ts";
 
 const RUN_MS = 60_000;
 const STATE = /<!-- agent-pipeline:state\n(?<json>[\s\S]*?)\n-->/u;
@@ -168,7 +169,7 @@ function interruptCreation(flow: Flow, mode: string): void {
   const kit = new URL(import.meta.url).pathname;
   fs.writeFileSync(
     gh,
-    `#!/usr/bin/env node\nimport { runCreationInterruption } from ${JSON.stringify(kit)};\nrunCreationInterruption(${JSON.stringify(flow.root)}, ${JSON.stringify(flow.ghDir)}, ${JSON.stringify(mode)});\n`,
+    tsShim(kit, "runCreationInterruption", [flow.root, flow.ghDir, mode]),
     { mode: 0o755 },
   );
 }

@@ -22,6 +22,7 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { play } from "./fake-pipeline-flow-pi-turn.ts";
 import { fixtureState, versionProbe } from "./runtime-fixtures.ts";
+import { tsShim } from "./ts-shim.ts";
 
 interface FlowTurn {
   files?: Record<string, string>;
@@ -290,7 +291,7 @@ async function runFlowPi(roleOfModel: Record<string, string>): Promise<void> {
 // Puts the fake pi in `bin`.
 function installFlowPi(bin: string, roleOfModel: Record<string, string>): void {
   const kit = new URL(import.meta.url).pathname;
-  const source = `#!/usr/bin/env node\nimport { runFlowPi } from ${JSON.stringify(kit)};\nawait runFlowPi(${JSON.stringify(roleOfModel)});\n`;
+  const source = tsShim(kit, "runFlowPi", [roleOfModel]);
   fs.writeFileSync(path.join(bin, "pi"), source, { mode: 0o755 });
 }
 

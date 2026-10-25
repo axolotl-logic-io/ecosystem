@@ -13,6 +13,7 @@ import {
   withWorld,
   writeWorld,
 } from "./fake-pipeline-flow-gh-world.ts";
+import { tsShim } from "./ts-shim.ts";
 
 const FIRST_ID = 1000;
 const EXECUTABLE = 0o755;
@@ -54,7 +55,7 @@ function installFlowGh({
     unsupported: [],
   });
   fs.writeFileSync(path.join(dir, "calls.jsonl"), "");
-  const source = `#!/usr/bin/env node\nimport { runFlowGh } from ${JSON.stringify(CLI)};\nrunFlowGh(${JSON.stringify(dir)});\n`;
+  const source = tsShim(CLI, "runFlowGh", [dir]);
   fs.writeFileSync(path.join(bin, "gh"), source, { mode: EXECUTABLE });
 }
 
