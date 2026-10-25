@@ -19,6 +19,9 @@ import { posts } from "./explicit-target-recovery-test-kit.mjs";
 import { confirmedLostResponse } from "./fast-forward-save-state-test-kit.mjs";
 
 const { policyRevision } = await import("../../src/project-policy.ts");
+// The explicit-target fake gh keeps its files, the ownership store among
+// them, in the world's HOME.
+const { HOME: home = "" } = process.env;
 const { readWriteState } = await import("../../src/saved-state.ts");
 
 for (const finding of [
@@ -54,7 +57,7 @@ for (const finding of [
           config: request.config,
           env: process.env,
           request,
-          store: String(process.env["HOME"]),
+          store: home,
         },
         (bound) =>
           spawnSync(process.execPath, [OPS], {

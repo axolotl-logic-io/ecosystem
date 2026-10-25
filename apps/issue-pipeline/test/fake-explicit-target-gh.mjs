@@ -110,8 +110,8 @@ if (args[0] === "api" && args[1] === "graphql" && batch !== null) {
   const records = JSON.parse(
     fs.readFileSync(path.join(home, "ownership.json"), "utf8"),
   ).comments;
-  /** @param {string} id */
-  const nodeOf = (id) => {
+  /** @param {string} id @returns {object} */
+  function nodeOf(id) {
     if (id === "comment-900") {
       return stateNode;
     }
@@ -127,7 +127,7 @@ if (args[0] === "api" && args[1] === "graphql" && batch !== null) {
       lastEditedAt: null,
       editor: null,
     };
-  };
+  }
   process.stdout.write(batchAnswer(batch, nodeOf));
   process.exit(0);
 }
