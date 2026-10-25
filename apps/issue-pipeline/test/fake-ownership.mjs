@@ -72,9 +72,10 @@ function freshStore({ repo, baseBranch }) {
 }
 
 /**
- * Acquires issue execution for a new invocation on lane L through the real
+ * Acquires issue execution for a new invocation on the frame's lane, as a
+ * claim names it, through the real
  * transport, as a stage job does before its first op, on a fresh store.
- * @param {{ config: string, root: string, frame: { number: number, checkout: { issue: number, dir: string, branch: string } } }} where
+ * @param {{ config: string, root: string, frame: { number: number, lane: string, checkout: { issue: number, dir: string, branch: string } } }} where
  * @returns {{ execution: any, checkout: object }}
  */
 function acquire({ config, root, frame }) {
@@ -82,7 +83,7 @@ function acquire({ config, root, frame }) {
   changeStore((store) => {
     store.acquiring = true;
   });
-  const request = { config, lane: "L", ...frame };
+  const request = { config, ...frame };
   const r = spawnSync(process.execPath, [OWNER, "owner"], {
     input: JSON.stringify(request),
     encoding: "utf8",
@@ -124,7 +125,7 @@ function jobCheckout(checkout, n) {
 
 /**
  * An ops request's fields the binding reads, and whatever else it carries.
- * @typedef {{ number?: number, comments?: { number?: number }[], checkout?: object, config?: string, [field: string]: unknown }} OpsRequest
+ * @typedef {{ number?: number, comments?: { number?: number }[], checkout?: object, config?: string, lane?: unknown, [field: string]: unknown }} OpsRequest
  */
 
 /**
@@ -155,12 +156,20 @@ function bindOpsRequest({ config, root, request: sent }) {
     branch: `agent/issue-${n}`,
     ...request.checkout,
   };
-  const key = JSON.stringify([file, checkout]);
+  let lane = "L";
+  if (typeof request.lane === "string") {
+    ({ lane } = request);
+  }
+  const key = JSON.stringify([file, checkout, lane]);
   let owner = owners.get(key);
   if (owner === undefined) {
     owners.clear();
     try {
-      owner = acquire({ config: file, root, frame: { number: n, checkout } });
+      owner = acquire({
+        config: file,
+        root,
+        frame: { number: n, checkout, lane },
+      });
     } catch {
       return request;
     }

@@ -202,20 +202,27 @@ function writeState(cfg: Config, number: number, state: IssueState): void {
       `state for #${number} is too large (${body.length} chars)`,
     );
   }
+  // Every later step reads saved state fresh, with its provenance, before
+  // it acts, so that read reconciles a save whose reply was lost (#169).
   const { id } = readState(cfg, number);
   if (id === null) {
-    rawComment(cfg, number, body);
+    rawComment(cfg, number, body, true);
     return;
   }
-  gh(cfg, "merge", [
-    "api",
-    "-X",
-    "PATCH",
-    `repos/${cfg.repo}/issues/comments/${id}`,
-    "-f",
-    `body=${body}`,
-    "--silent",
-  ]);
+  gh(
+    cfg,
+    "merge",
+    [
+      "api",
+      "-X",
+      "PATCH",
+      `repos/${cfg.repo}/issues/comments/${id}`,
+      "-f",
+      `body=${body}`,
+      "--silent",
+    ],
+    { reconciles: true },
+  );
 }
 
 export type { StoredState };

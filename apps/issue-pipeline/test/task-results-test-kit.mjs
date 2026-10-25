@@ -25,6 +25,9 @@ const MARK = "<!-- agent-pipeline:task-result\n";
 const END = "\n-->";
 const KIND = z.looseObject({ kind: z.string() });
 const GH_WRITE = /^(?:-X|--method)$/u;
+// The coordination records an owner's acquisition and release append
+// (ownedRequest), which are no task record or state.
+const COORDINATION = "<!-- agent-pipeline:coordination\n";
 
 /** @returns {string} a new run identity */
 function runId() {
@@ -193,7 +196,9 @@ function recordText(record) {
 
 /** @param {string} dir @param {number} issue @returns {{ id: number, login: string, body: string }[]} */
 function commentsOn(dir, issue) {
-  return readWorld(dir).comments.filter((item) => item.issue === issue);
+  return readWorld(dir).comments.filter(
+    (item) => item.issue === issue && !item.body.startsWith(COORDINATION),
+  );
 }
 
 /** @param {string} dir @param {number} issue @returns {string[]} the kinds of the issue's task records, in order */
