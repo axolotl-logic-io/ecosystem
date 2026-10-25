@@ -115,4 +115,4 @@ The real ops CLI proves each row against a fake GitHub: a successor takes the is
 | Bound claim's state checkpoint, and closed recovery's reopen after it | `test/ops/ops-claim.test.mjs`, `ops-claim-closed.test.mjs`, `ops-author-request.test.mjs` |
 | A lost reply through a restart; an unbound request | `test/ops/ops-write-fence.test.mjs` |
 
-PR ready and source-branch delete use the same `gh()` write path as PR create and the comment rows, with no step of their own between the hook and the write. They have no test of their own: their ops reach GitHub only after reads that the CLI fakes don't serve.
+PR ready and source-branch delete use the same `gh()` write path as PR create and the comment rows, with no step of their own between the hook and the write. They have no test of their own.
