@@ -5,10 +5,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { z } from "zod";
+import { bindOpsRequest, loseOwnership } from "../fake-ownership.mjs";
 import {
   claimMutationReplies,
   collaboratorReply,
 } from "../gh-mutation-fixtures.mjs";
+import { historyReply } from "../initial-write-state-fixtures.mjs";
 import { issueReply } from "../ops-claim-test-kit.mjs";
 import {
   commitOnOrigin,
@@ -185,31 +187,24 @@ test("an unreadable live PR cannot create explicit Author authority", () => {
   assert.deepEqual(writes(), []);
 });
 
-test("explicit Author still loses to another lane without mode or checkpoint writes", () => {
+test("explicit Author still loses to another invocation that takes the issue, without mode or checkpoint writes", () => {
   const state = savedDirect(REFUSED_ISSUE);
   reply([
     collaboratorReply("o/r", "alice"),
+    historyReply(REFUSED_ISSUE),
     issueReply(REFUSED_ISSUE),
-    everyCommentsRead(REFUSED_ISSUE, [
-      savedStateComment(STATE_COMMENT, state),
-      kit.claimComment(
-        CLAIM_COMMENT,
-        "other",
-        "other-sweep",
-        new Date().toISOString(),
-      ),
-    ]),
+    everyCommentsRead(REFUSED_ISSUE, [savedStateComment(STATE_COMMENT, state)]),
     prView(REFUSED_ISSUE, PR),
   ]);
-  const result = z
-    .looseObject({
-      ok: z.literal(true),
-      lost: z.literal(true),
-      holder: z.string(),
-    })
-    .parse(
-      askOps({ op: "claim", number: REFUSED_ISSUE, stage: "author", ...LANE }),
-    );
-  assert.equal(result.holder, "other");
+  const request = {
+    op: "claim",
+    number: REFUSED_ISSUE,
+    stage: "author",
+    ...LANE,
+  };
+  bindOpsRequest({ config: kit.CONFIG, root, request });
+  loseOwnership();
+  const result = FAILED.parse(askOps(request));
+  assert.match(result.error, /released instance cannot request again/u);
   assert.deepEqual(writes(), []);
 });

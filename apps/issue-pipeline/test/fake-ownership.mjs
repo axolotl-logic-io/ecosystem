@@ -209,10 +209,7 @@ function bindOpsRequest({ config, root, request: sent }) {
         root,
         frame: { number: n, checkout, lane },
       });
-    } catch (error) {
-      if (process.env["DEBUG_OWNERSHIP"] === "1") {
-        process.stderr.write(`${String(error)}\n`);
-      }
+    } catch {
       return request;
     }
     owners.set(key, owner);

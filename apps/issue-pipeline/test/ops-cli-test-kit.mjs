@@ -100,11 +100,6 @@ function timeless(text) {
 /** @param {object} request @param {boolean} [unbound] @returns {unknown} */
 function askOps(request, unbound = false) {
   const stdout = runOps({ config: CONFIG, request, root, home: root, unbound });
-  if (process.env["DEBUG_OPS"] === "1") {
-    process.stderr.write(
-      `${stdout}\n${JSON.stringify(fakeGh.calls(), null, 1)}\n`,
-    );
-  }
   return JSON.parse(timeless(JSON.stringify(JSON.parse(stdout))));
 }
 

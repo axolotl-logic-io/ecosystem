@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { test } from "node:test";
 import { trustedInputBytes } from "../../src/trusted-inputs.ts";
-import { effectNames, stateOf } from "../gh-effects-test-kit.mjs";
+import { effectNames, lastStateOf } from "../gh-effects-test-kit.mjs";
 import {
   claimMutationReplies,
   collaboratorReply,
@@ -19,12 +19,11 @@ import {
   issueOf,
   issueReply,
   LANE,
-  LIVE,
+  ownerClaim,
 } from "../ops-claim-test-kit.mjs";
 import {
   ALLOWED,
   askOps,
-  claimComment,
   commentsReply,
   effects,
   issueComment,
@@ -44,7 +43,6 @@ const { newIssueState } = await import("../../src/state.ts");
 const ASKED_ISSUE = 48;
 const ASKED_STATE = 19;
 const ANSWER = 21;
-const CLAIM = 22;
 const ANSWERED_AT = "2026-10-18T05:00:00Z";
 // The trusted-inputs revision the author's questions were asked at.
 const INPUTS_LENGTH = 64;
@@ -57,37 +55,35 @@ test("a claim of an answered, asked issue takes it, clearing needs-info and keep
   };
   const answer = issueComment(ANSWER, "Page 2.", ALLOWED, ANSWERED_AT);
   const read = [savedStateComment(ASKED_STATE, saved), answer];
-  const mine = claimComment(CLAIM, LANE.lane, LANE.sweepId, LIVE);
   const labels = [{ name: "agent:needs-info" }];
   reply([
     collaboratorReply("o/r", ALLOWED),
     historyReply(ASKED_ISSUE),
     issueReply(ASKED_ISSUE, { labels }),
     commentsReply(ASKED_ISSUE, read),
-    { when: `issues/${ASKED_ISSUE}/comments -f`, stdout: JSON.stringify(mine) },
-    commentsReply(ASKED_ISSUE, [...read, mine]),
-    commentsReply(ASKED_ISSUE, [...read, mine]),
     ...claimMutationReplies(ASKED_ISSUE, ASKED_STATE, null),
   ]);
+  const got = askOps({ op: "claim", number: ASKED_ISSUE, ...LANE });
   const state = claimedState(ASKED_ISSUE, { asked: { inputs: ASKED_INPUTS } });
   assert.deepEqual(
-    askOps({ op: "claim", number: ASKED_ISSUE, ...LANE }),
+    got,
     claimReply(ASKED_ISSUE, {
       state,
-      claim: { id: CLAIM, posted: true },
+      claim: ownerClaim(),
       issue: issueOf(ASKED_ISSUE, { labels }),
       comments: read,
     }),
   );
   const claimed = effects();
+  // The receipt checkpoint, then the claimed state (#167).
   assert.deepEqual(effectNames(claimed), [
-    `comment #${ASKED_ISSUE} role=claim`,
+    `edit comment ${ASKED_STATE} state`,
     `edit comment ${ASKED_STATE} state`,
     `label #${ASKED_ISSUE} agent:working`,
     `unlabel #${ASKED_ISSUE} agent:needs-info`,
   ]);
   assert.deepEqual(
-    stateOf(claimed, `edit comment ${ASKED_STATE} state`),
+    lastStateOf(claimed, `edit comment ${ASKED_STATE} state`),
     state,
   );
   assert.ok(fs.existsSync(worktree(ASKED_ISSUE)));
