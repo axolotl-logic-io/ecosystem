@@ -62,7 +62,9 @@ const SETUP_EXIT = 3;
 const HELD_POLLS = 3;
 const PREPARATION_FAILED = /checkout preparation failed/u;
 const SETUP_LOG_EXIT = new RegExp(`--- exit ${String(SETUP_EXIT)} ---`, "u");
-const SETUP_INCOMPLETE = /lane setup is incomplete/u;
+// The runtime retains a checkout whose preparation started unconfirmed
+// before it would try to remove it; the lane barrier below holds it too.
+const PREPARATION_INCOMPLETE = /its preparation started and did not complete/u;
 
 // The operator's own shell slot, which an action must never inherit.
 const OPERATOR_SLOT = "ISSUE_PIPELINE_LANE_SLOT";
@@ -209,7 +211,7 @@ test("a failed setup starts no session and retains the checkout, its untracked w
       prunedAt: null,
     });
     assert.equal(action.ownership.state, "retained");
-    assert.match(String(action.ownership.reason), SETUP_INCOMPLETE);
+    assert.match(String(action.ownership.reason), PREPARATION_INCOMPLETE);
     passed = true;
   } finally {
     keepIfFailed(box, passed);
