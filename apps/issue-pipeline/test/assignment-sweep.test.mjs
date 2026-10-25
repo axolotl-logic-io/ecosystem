@@ -109,6 +109,7 @@ test("a cut-short listing holds the whole repo: nothing starts from it", () => {
   const decisions = sweep(flow, runFolder(flow, { maxJobs: 2 }));
   assert.deepEqual(decisions, [
     {
+      sweep: 1,
       repo: "o/r",
       issue: null,
       hold: "the open-issue listing was cut short; nothing starts from it",
@@ -125,6 +126,7 @@ test("a repo without a grantor isn't swept", () => {
   const decisions = sweep(flow, runFolder(flow, { maxJobs: 1 }));
   assert.deepEqual(decisions, [
     {
+      sweep: 1,
       repo: "o/r",
       issue: null,
       hold: "assignment mode isn't enabled for o/r (assignments.grantor)",

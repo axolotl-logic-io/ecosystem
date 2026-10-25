@@ -88,6 +88,7 @@
         "src/job/checkout-close.ts",
         "src/job/code-recovery.ts",
         "src/job/exit-push.ts",
+        "src/job/assignment-hold.ts",
         "src/job/dropped-patch.ts",
         "src/job/teardown.ts",
         "src/orchestrate.ts",
