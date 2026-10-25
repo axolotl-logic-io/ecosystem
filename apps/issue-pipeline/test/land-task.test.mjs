@@ -10,6 +10,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
 import { ISSUE, integrationWorld } from "./integration-task-test-kit.mjs";
+import { turnView } from "./land-turn-test-kit.mjs";
 import { faultNextPush } from "./sync-task-test-kit.mjs";
 import {
   recordAttempt,
@@ -178,6 +179,8 @@ test("an uncertain Land stays unsettled and holds Sync and Integration; a replay
   assert.equal(lost.merged, false, JSON.stringify(lost));
   assert.equal(world.remoteTarget(), world.start);
   assert.equal(statusOf(world.flow, ISSUE, binding).status, "unknown");
+  // Its consumer unsettled, the target's integration turn stays held (#171).
+  assert.deepEqual(turnView(world.flow).open, [ISSUE]);
   const sync = world.sync("sync-task", {
     binding: {
       ...binding,
@@ -199,4 +202,6 @@ test("an uncertain Land stays unsettled and holds Sync and Integration; a replay
   assert.equal(world.remoteTarget(), world.start);
   assert.deepEqual(prWrites(world.flow.ghDir, from), []);
   assert.equal(statusOf(world.flow, ISSUE, binding).status, "unknown");
+  // The replay retires nothing while the Land is unsettled.
+  assert.deepEqual(turnView(world.flow), { open: [ISSUE], ended: [] });
 });

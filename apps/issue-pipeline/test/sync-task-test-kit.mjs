@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { openIssue } from "./fake-pipeline-flow-gh.mjs";
 import { BASE, bareGit } from "./pipeline-flow-test-kit.mjs";
 import {
   plantComment,
@@ -67,9 +68,18 @@ function commitFile(dir, file, bytes, message) {
  * @param {number} issue
  * @param {{ file: string, bytes: string | Buffer }} mine
  * @param {(writer: string) => void} [before]
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow | undefined} [shared] another issue's flow to add this one to
  */
-function syncWorld(issue, mine, before) {
-  const { flow } = taskWorld(issue);
+function syncWorld(issue, mine, before, shared) {
+  const flow = shared ?? taskWorld(issue).flow;
+  if (shared !== undefined) {
+    openIssue(flow.ghDir, {
+      number: issue,
+      title: "Task results",
+      body: `Issue ${issue}'s change.`,
+      login: "alice",
+    });
+  }
   const branch = `agent/issue-${issue}`;
   plantComment(
     flow.ghDir,
@@ -79,13 +89,13 @@ function syncWorld(issue, mine, before) {
   );
   const clone = path.join(flow.root, "clones", SLUG);
   const wt = path.join(flow.root, "work", SLUG, `issue-${issue}`);
-  const writer = path.join(flow.tmp, "base-writer");
+  const writer = path.join(flow.tmp, `base-writer-${issue}`);
   execFileSync(REAL_GIT, ["clone", "-q", flow.origin, writer]);
   if (before !== undefined) {
     before(writer);
     gitIn(writer, ["push", "-q", "origin", `HEAD:refs/heads/${BASE}`]);
   }
-  for (const dir of [clone, wt]) {
+  for (const dir of [clone, wt].filter((each) => !fs.existsSync(each))) {
     fs.mkdirSync(path.dirname(dir), { recursive: true });
     execFileSync(REAL_GIT, [
       "clone",

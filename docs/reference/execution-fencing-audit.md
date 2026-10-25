@@ -33,7 +33,7 @@ ops process, request with no binding
 
 Both processes now read ownership on the spot before each write. A takeover between the request's check and a write is caught at the write.
 
-The journal is `coordination-uncertain.json` in the issue's run folder. While it exists, no ownership read succeeds, so neither a replay of the request nor a new job's acquisition can repeat the write; a person reconciles it. Some writes skip that journal because their own operation already reconciles a lost reply by reading (`reconciles` in `src/github.ts`): `pushHead`'s and Sync's pushes (the push record), Land's fast-forward push (its attempt record), PR create (the PR its branch names), task-result records, and saved-state saves (every later step rereads state). They still get the fresh ownership read.
+Each write in flight journals its intent in a file of its own process, `coordination-inflight-PID.json` in the issue's run folder (`src/coordination-journal.ts`, #133), so two jobs writing at once don't read each other's write as uncertain. A write whose outcome stays unknown is retained as `coordination-uncertain.json`; so is the in-flight file of a process that died. While a retained journal exists, no ownership read succeeds, so neither a replay of the request nor a new job's acquisition can repeat the write; a person reconciles it. Some writes skip that journal because their own operation already reconciles a lost reply by reading (`reconciles` in `src/github.ts`): `pushHead`'s and Sync's pushes (the push record), Land's fast-forward push (its attempt record), PR create (the PR its branch names), task-result records, and saved-state saves (every later step rereads state). They still get the fresh ownership read.
 
 Execution fencing adds to the existing guards; it never replaces them. Code write authority (`src/write-authority.ts`), head and branch bindings, CI, approval, Security and the task-result bindings all still apply. The table names them in the "Other guards" column.
 
@@ -46,7 +46,7 @@ Execution fencing adds to the existing guards; it never replaces them. Code writ
 | Source push from `pipeline_commit` | `src/job/commit-push.ts` → `src/checkouts.ts` `pushHead` | Job | Invocation binding | Owner read at push entry (#168), then `controlledMutation` | `readWriteAuthority`, path scope | Fenced (#168) |
 | Source push from the `push`, `start-pr` and `open-pr` ops | `src/ops/push.ts`, `src/ops/pr.ts` → `src/checkouts.ts` `push`, `pushHead` | Ops | Request envelope | Before each write | `readWriteAuthority`, `refuseOnceMerged` | Fenced (#169) |
 | PR create and edit | `src/ops/pr.ts` `createPr`, `startPr`, `openPr` | Ops | Request envelope | Before each write | `refuseOnceMerged` | Fenced (#169) |
-| PR ready | `src/ops/ready-pr.ts` | Ops | Request envelope | Before each write | Saved head, verification | Fenced (#169) |
+| PR ready | `src/ops/ready-pr.ts` | Ops | Request envelope | Before each write | Saved head, verification | Fenced (#169), tested (#133) |
 | PR reopen | `src/ops/pr-state.ts` | Ops | Request envelope | Before each write | Closed-PR eligibility | Fenced (#169) |
 | PR approval | `src/ops/pr-approval.ts` | Ops | Request envelope | Before each write | Exact head, hardening, Security | Fenced (#169) |
 | State save | `src/saved-state.ts` (`save-state` op, role saves, claim transitions) | Ops | Request envelope | Before each write | Branch binding, critical-state checks | Fenced (#169) |
@@ -57,8 +57,8 @@ Execution fencing adds to the existing guards; it never replaces them. Code writ
 | Claim and heartbeat comments | `src/claims.ts` `postClaim`, `touchClaim`, `closeClaims` (`claim`, `release` ops) | Ops | Request envelope | Before each write | Earliest live claim | Fenced (#169) |
 | Sync push | `src/ops/sync-task.ts` → `src/ops/sync-finish.ts` `pushBranch`; retired `src/ops/sync.ts` | Ops | Request envelope | Before each write | `sync-task-gate.ts`, write authority before reset and push | Fenced (#169) |
 | Integration | `src/ops/integration-task.ts` | Ops | Request envelope | Before each write | Detached checkout; its only writes are attempt and result records | Fenced (#169) |
-| Land | `src/ops/merge.ts` → `src/ops/land-task.ts` → `src/ops/branch-merge.ts` fast-forward push | Ops | Request envelope | Before each write | Exact Land binding and results, merge guard, attempt journal (`merge-attempt.ts`) | Fenced (#169) |
-| Completion | `src/ops/finish.ts` `finishIssue` (close, branch delete, labels), `closeParent` | Ops | Request envelope | Before each write | Saved done and merged state | Fenced (#169) |
+| Land | `src/ops/merge.ts` → `src/ops/land-task.ts` → `src/ops/branch-merge.ts` fast-forward push | Ops | Request envelope | Before each write | Exact Land binding and results, merge guard, attempt journal (`merge-attempt.ts`), the target's integration turn (`src/ops/land-turn.ts`, #171) | Fenced (#169) |
+| Completion | `src/ops/finish.ts` `finishIssue` (close, branch delete, labels), `closeParent` | Ops | Request envelope | Before each write | Saved done and merged state | Fenced (#169); branch delete tested (#133) |
 | Stop and stop salvage push | `src/ops/stop.ts` → `src/unpushed.ts` `pushUnpushed`, stop comments and labels | Ops | Request envelope | Before each write | `readWriteAuthority` before the push | Fenced (#169) |
 | Exit salvage push | `src/job/exit-push.ts` → `exit-push` op in `src/ops/push.ts` | Ops | Request envelope | Teardown's fresh owner read first, then before each write | `readWriteAuthority`, `refuseOnceMerged`; runs only after patches and the code bundle are saved | Fenced (#169); exit order fenced (#170) |
 | Teardown and checkout close | `src/job/teardown.ts`, `src/job/checkout-close.ts` | Job | Invocation binding | Fresh owner read before any patch, reset, push or removal; lost or unknown leaves the checkout untouched | Failed preservation keeps the checkout; lane setup and dependent-checkout checks | Fenced (#170) |
@@ -115,4 +115,6 @@ The real ops CLI proves each row against a fake GitHub: a successor takes the is
 | Bound claim's state checkpoint, and closed recovery's reopen after it | `test/ops/ops-claim.test.mjs`, `ops-claim-closed.test.mjs`, `ops-author-request.test.mjs` |
 | A lost reply through a restart; an unbound request | `test/ops/ops-write-fence.test.mjs` |
 
-PR ready and source-branch delete use the same `gh()` write path as PR create and the comment rows, with no step of their own between the hook and the write. They have no test of their own.
+| PR ready, and Completion's source-branch delete (#133) | `test/completion-write-fence.test.mjs` |
+
+PR ready and Completion's source-branch delete got their own rows in #133, in the full-flow world: after the takeover, the PR stays a draft and the branch stays on the origin, and the same request without the takeover then succeeds.

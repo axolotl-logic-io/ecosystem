@@ -33,6 +33,7 @@ import { fixtureState, versionProbe } from "./runtime-fixtures.mjs";
  * @property {string} [rejectPrompt]
  * @property {{ origin: string, branch: string, before: string, after: string }} [targetAdvance] external actor's target move during this turn
  * @property {{ dir: string, issue: number, login: string, body: string }} [humanComment]
+ * @property {{ dir: string, name: string }} [barrier] wait here until the test opens it
  * @property {Record<string, unknown>} output
  */
 

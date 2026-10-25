@@ -48,7 +48,7 @@ Don't loop blindly on `unclaimed`, `wait`, `deferred` or `stop`. A restarted job
 ## Keep concurrent work apart
 
 - Parallel jobs must use different issues and branches. Never run the same issue or branch twice at once, even from the same lane.
-- Run merge turns one at a time. A merge queue is an order, not permission to merge concurrently.
+- Each exact Land takes the [target's integration turn](merge.md#the-targets-integration-turn) before it writes the target, so a second Land on the same target ends `wait`. A merge queue is an order, not permission to merge concurrently.
 - Keep each issue's branch and lane stable across restarts. The first claim binds the branch; a different branch later is refused.
 - Each job confirms issue-execution ownership for a fresh invocation UUID before it opens a checkout or runs an op. A second job on the same issue and branch, from any lane, ends `unclaimed` with `reason` "another invocation owns the issue" and starts nothing. The owner releases only when the release predicate passes (#151): a confirmed checkpoint, no unresolved stop or uncertain write, preserved work and no registered lane-slot consumer. Any other job keeps ownership until someone reconciles it, and says why on stderr (`job: execution held: …`). A job whose claim was refused also shows a `claimError` on `unclaimed`.
 
@@ -63,12 +63,42 @@ An issue's `after` marker names prerequisite issues. The legacy scheduler and as
 These exist in source but are not how the caller runs the pipeline:
 
 - **`orchestrate.mjs`** is a retained legacy scheduler (`--config PATH [--once]`). Don't run it alongside caller-managed jobs. It relays no task request, so since #186 a merge it starts waits for an Integration it never starts.
-- **The integration-turn scope** of the coordination protocol (`src/execution.ts`'s `integrationTurn`) is unused; only issue execution is wired (#167). Assignment mode is disabled.
+- **Assignment mode** is disabled.
 - **Assignment discovery** (`src/discovery/plan.ts`) is a read-only, opt-in module. Its plans state `executionAuthority: false`: they grant no session, claim, write or merge.
 
 ## Recover from a coordination problem
 
 1. Stop dispatching the affected issues.
 2. If two jobs ran on one issue or branch, keep both jobs' run folders and recovery evidence. Read the issue's saved state to see which claim won.
-3. If the transport's `coordination-uncertain.json` exists in the issue's run folder, keep it. A lost response may still have landed; reconcile against GitHub with reads before any retry.
+3. If the transport's `coordination-uncertain.json` exists in the issue's run folder, keep it. A lost response may still have landed; reconcile against GitHub with reads before any retry. A `coordination-inflight-PID.json` is a write in flight; once process `PID` has ended, it holds the issue the same way.
 4. Restart one job on the issue's saved stage, with its original branch and lane.
+
+## Compatibility and limits
+
+[#133](https://github.com/axolotl-logic-io/ecosystem/issues/133) proved issue-execution fencing through real job boundaries, and [#171](https://github.com/axolotl-logic-io/ecosystem/issues/171) the target's integration turn. These are the proved behaviors and the limits that remain.
+
+- **Saved data keeps reading.** Coordination records keep version 1 and their historical `identity` key. A retained `coordination-uncertain.json` from before #133 still holds its issue. The new turn records are ordinary version 1 records in the integration scope; a retirement adds only an `evidence` field, which version 1 already allows.
+- **Every job must run the same release.** The per-writer journal and the integration turn exist only in this release. An older job doesn't take the turn, and its write in flight, named `coordination-uncertain.json`, holds every newer job on the issue. Drain every old job before installing.
+- **Outside actors aren't excluded.** Anyone with access may push, merge, retarget or change settings at any time. Observed invalid authority refuses writes; unseen concurrent changes aren't prevented atomically.
+- **Liveness of an in-flight journal is a process check on one machine.** A journal names its process ID. A job on another machine sees only its own run folder.
+- **A held issue or turn needs a person.** No expiry, lease age or restart takes over either one.
+
+### Scenario trace
+
+Each row names the scenario and the test that proves it through real binaries.
+
+| Scenario | Proved by |
+|---|---|
+| A fresh UUID per invocation; a duplicate job on the same or another lane, live or expired, starts nothing | #167, #150: `test/job/job-invocation.test.mjs` |
+| Immutable binding on every ops, steer and push request; owner reread before each session and push | #168: `test/job/job-binding-fence.test.mjs`, `test/job/job-writer-fence.test.mjs` |
+| Release only through the release predicate; uncertain saves, lost releases, failed preservation and signals hold | #151: `test/job/job-release-predicate.test.mjs` |
+| Every credentialed write rereads ownership; a lost reply holds through a restart | #169: `test/ops/ops-write-fence*.test.mjs`, `test/task-write-fence.test.mjs`, `test/completion-write-fence.test.mjs` |
+| Teardown, exit salvage and cleanup fenced on ownership and lane-slot consumers | #170: `test/job/job-fenced-exit.test.mjs`, `test/ops/cleanup-fence.test.mjs` |
+| Two jobs request at the same instant, on one lane or two: one writer starts, the loser refuses cleanly | #133: `test/pipeline-flow-contention.test.mjs` |
+| A predecessor delayed past its successor's confirmation: its push, save and release are refused, the successor's records unchanged | #133: `test/pipeline-flow-contention.test.mjs` |
+| A lost acquisition holds through a restart, with no second reservation | #133: `test/pipeline-flow-contention.test.mjs` |
+| Malformed, conflicting, missing or untrusted coordination authority holds | `test/coordination-recovery.test.mjs`, `test/execution-transport.test.mjs` |
+| One Land writes a target at a time; the waiting order is read from GitHub after the run folders are deleted | #171: `test/land-turn.test.mjs` |
+| A lost turn write holds the turn and the issue, with no second POST | #171: `test/land-turn.test.mjs` |
+| An unsettled Land holds the turn; a dead Land's turn is retired only by its own issue; a late release is refused | #171: `test/land-turn.test.mjs`, `test/land-task.test.mjs` |
+| Assignment discovery, grants and the full composed loop | Not yet proved: #120, #121 |

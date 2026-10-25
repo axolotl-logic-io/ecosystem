@@ -46,11 +46,16 @@ const INTEGRATION_REPLY = z.looseObject({
 });
 
 /**
- * Issue 7 at revision R, which contains the target T it forked from.
+ * Issue 7 at revision R, which contains the target T it forked from, or
+ * `issue` added to another issue's `flow`.
  * @param {{ file: string, bytes: string }} [mine]
+ * @param {{ issue?: number, flow?: import("./pipeline-flow-test-kit.mjs").Flow | undefined }} [where]
  */
-function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
-  const world = syncWorld(ISSUE, mine);
+function integrationWorld(
+  mine = { file: "feature.txt", bytes: "mine\n" },
+  { issue = ISSUE, flow } = {},
+) {
+  const world = syncWorld(issue, mine, undefined, flow);
   /** R's binding for `task` on T. @param {string} task */
   function bound(task) {
     return { ...world.binding(world.start), task };
@@ -58,8 +63,8 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
   /** Records a passed result for `task`, as the landing account does. @param {string} task */
   function passed(task) {
     const run = runId();
-    recordAttempt(world.flow, ISSUE, bound(task), { id: run, previous: null });
-    recordResult(world.flow, ISSUE, bound(task), {
+    recordAttempt(world.flow, issue, bound(task), { id: run, previous: null });
+    recordResult(world.flow, issue, bound(task), {
       run,
       verdict: "passed",
       summary: `${task} passed on R`,
@@ -70,7 +75,7 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
     return INTEGRATION_REPLY.parse(
       rawOps(world.flow, {
         op: "integration-task",
-        number: ISSUE,
+        number: issue,
         binding,
         run: { id: runId(), previous: null },
       }),
@@ -85,7 +90,7 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
         number,
         head: world.branch,
         base: "integration",
-        title: `Issue ${ISSUE}`,
+        title: `Issue ${issue}`,
         body: "",
         state: "OPEN",
         isDraft: false,
@@ -94,7 +99,7 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
       });
       gh.issues.push({
         number,
-        title: `Issue ${ISSUE}`,
+        title: `Issue ${issue}`,
         body: "",
         login: "dev-bot",
         state: "open",
@@ -107,7 +112,7 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
     });
     const { revision } = bound("Land");
     const target = { repo: "o/r", branch: "integration", sha: world.start };
-    const state = v2State(ISSUE, {
+    const state = v2State(issue, {
       stage: "merge",
       branch: world.branch,
       pr,
@@ -123,7 +128,7 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
         finding: null,
       },
     });
-    plantComment(world.flow.ghDir, ISSUE, "bot", stateText(state));
+    plantComment(world.flow.ghDir, issue, "bot", stateText(state));
     return { pr, state, revision };
   }
   /** One merge request for R onto T, with `extra` fields. @param {ReturnType<typeof readyToLand>} ready @param {object} extra */
@@ -131,7 +136,7 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
     return LAND_REPLY.parse(
       rawOps(world.flow, {
         op: "merge",
-        number: ISSUE,
+        number: issue,
         state: ready.state,
         expectedSha: world.revision,
         expectedBase: world.start,
@@ -147,7 +152,7 @@ function integrationWorld(mine = { file: "feature.txt", bytes: "mine\n" }) {
     return LAND_REPLY.parse(
       rawOps(world.flow, {
         op: "confirm-merged",
-        number: ISSUE,
+        number: issue,
         codeMerged,
         binding,
       }),

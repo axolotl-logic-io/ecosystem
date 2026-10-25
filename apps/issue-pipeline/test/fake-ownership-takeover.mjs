@@ -5,9 +5,10 @@
 // after the next comment listing of the armed issue is answered. That
 // listing is a bound ops request's ownership check, so the check passes on
 // what it read and the request's next fresh read sees the successor. Armed
-// `afterWrite`, it waits for the request's first write and takes the issue
-// after the listing that follows, which loses ownership just before the
-// request's next write instead.
+// `afterWrite`, it waits for the request's first write, or for that many
+// writes when it's a number, and takes the issue after the listing that
+// follows, which loses ownership just before the request's next write
+// instead.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -28,7 +29,7 @@ if (process.env.FAKE_OWNERSHIP_QUIET !== "1" && fs.existsSync(marker)) {
   const frame = JSON.parse(fs.readFileSync(marker, "utf8"));
   const write = args.includes("-X") || args.includes("--method") || args[0] === "pr" && !["list", "view", "checks"].includes(args[1]);
   if (frame.afterWrite && write) {
-    frame.afterWrite = false;
+    frame.afterWrite = typeof frame.afterWrite === "number" && frame.afterWrite > 1 ? frame.afterWrite - 1 : false;
     fs.writeFileSync(marker, JSON.stringify(frame));
   } else if (!frame.afterWrite && args.some(arg => arg.endsWith("/issues/" + frame.number + "/comments?per_page=100"))) {
     fs.rmSync(marker);
@@ -44,7 +45,7 @@ process.exit(r.status ?? 1);
  * Arms a takeover of `frame`'s issue from its owner `frame.execution`,
  * hiding `bin`'s gh behind the shim the first time.
  * @param {string} bin
- * @param {{ number: number, execution: object, afterWrite?: boolean }} frame
+ * @param {{ number: number, execution: object, afterWrite?: boolean | number }} frame
  * @returns {void}
  */
 function armTakeover(bin, frame) {

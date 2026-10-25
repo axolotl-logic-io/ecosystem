@@ -48,5 +48,17 @@ function viewForMerge(cfg: Config, pr: number): PrView {
   return view;
 }
 
+// The merge commit GitHub reports for a merged PR; a merged PR without one
+// is an error, never an empty receipt.
+function mergeCommitOf(pr: number, view: PrView): string {
+  const oid = view.mergeCommit?.oid ?? "";
+  if (oid === "") {
+    throw new OpsError(
+      `PR #${pr} is MERGED but GitHub reports no merge commit`,
+    );
+  }
+  return oid;
+}
+
 export type { PrView };
-export { viewForMerge };
+export { mergeCommitOf, viewForMerge };

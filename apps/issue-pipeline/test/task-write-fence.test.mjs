@@ -92,6 +92,10 @@ test("Sync: a successor taking the issue after its attempt leaves the branch unp
   ]);
 });
 
+// Land's turn (#171) writes a token commit, its request, the epoch ref and
+// its confirmation before Land's attempt record.
+const TURN_WRITES = 4;
+
 test("Land: a successor taking the issue after its attempt approves nothing and leaves the target unwritten", () => {
   const world = integrationWorld();
   const ready = world.readyToLand();
@@ -100,7 +104,7 @@ test("Land: a successor taking the issue after its attempt approves nothing and 
   }
   const target = world.remoteTarget();
   const mark = callMark(world.flow.ghDir);
-  loseNextOwnership(world.flow, { afterWrite: true });
+  loseNextOwnership(world.flow, { afterWrite: TURN_WRITES + 1 });
   const refused = REFUSED.parse(
     rawOps(world.flow, {
       op: "merge",

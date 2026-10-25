@@ -1,6 +1,11 @@
 // @ts-check
-// Execute scripted model edits through the real commit and reply tools.
+// Execute scripted model edits through the real commit and reply tools. A
+// turn with a `barrier` first marks `<name>.reached` in its folder, then
+// waits for the test to create `<name>.open` (#133).
 
+import fs from "node:fs";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { humanComment } from "./fake-pipeline-flow-gh.mjs";
 import { gitIn } from "./fake-pipeline-flow-gh-world.mjs";
 import { writeTurnFiles } from "./pipeline-flow-pi-files-test-kit.mjs";
@@ -77,6 +82,26 @@ async function commitAll(tool, commits, out, done = 0) {
   await commitAll(tool, commits, out, done + 1);
 }
 
+const BARRIER_POLL_MS = 20;
+const BARRIER_MS = 120_000;
+
+/**
+ * Waits at `barrier` until the test opens it, or fails past its bound.
+ * @param {{ dir: string, name: string }} barrier @param {number} [deadline]
+ * @returns {Promise<void>}
+ */
+async function atBarrier({ dir, name }, deadline = Date.now() + BARRIER_MS) {
+  fs.writeFileSync(path.join(dir, `${name}.reached`), "");
+  if (fs.existsSync(path.join(dir, `${name}.open`))) {
+    return;
+  }
+  if (Date.now() > deadline) {
+    throw new Error(`fake pi: barrier ${name} never opened`);
+  }
+  await delay(BARRIER_POLL_MS);
+  await atBarrier({ dir, name }, deadline);
+}
+
 /**
  * Plays `turn` in the job folder, printing each event.
  * @param {FlowTurn} turn
@@ -85,6 +110,9 @@ async function commitAll(tool, commits, out, done = 0) {
  */
 async function play(turn, tools, out) {
   const { print, log } = out;
+  if (turn.barrier !== undefined) {
+    await atBarrier(turn.barrier);
+  }
   if (turn.targetAdvance !== undefined) {
     const { origin, branch, before, after } = turn.targetAdvance;
     gitIn(origin, ["update-ref", `refs/heads/${branch}`, after, before]);

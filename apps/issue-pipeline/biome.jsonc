@@ -44,7 +44,7 @@
         "src/config.ts",
         "src/project-policy.ts",
         "src/locks.ts",
-        "src/execution.ts",
+        "src/coordination-journal.ts",
         "src/stop-recovery.ts",
         "src/clone-setup.ts",
         "src/checkouts.ts",

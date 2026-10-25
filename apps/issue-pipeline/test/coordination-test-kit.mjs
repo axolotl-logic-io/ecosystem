@@ -3,8 +3,11 @@
 import { createHash } from "node:crypto";
 import { COMMENT } from "../src/comments.ts";
 import { coordination } from "../src/coordination.ts";
+import {
+  assertReconciled,
+  confirmedWrite,
+} from "../src/coordination-journal.ts";
 import { scopeOf } from "../src/coordination-records.ts";
-import { assertReconciled, confirmedWrite } from "../src/execution.ts";
 import { configFixture } from "./config-fixtures.mjs";
 import { githubComment } from "./fake-gh.mjs";
 
