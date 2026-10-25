@@ -1,159 +1,133 @@
 # Operations
 
-This page describes running the pipeline as an operator: its programs, configuration, credentials, installing and upgrading, and restarting after a source defect. The rules are in [operations decisions](../decisions/operations.md).
+The installed runtime activates configured buddies and their task loops. Source delivery does not install, activate or deploy either application. The operator separately authorizes a drained cutover. See [operations decisions](../decisions/operations.md).
 
 ## Programs
 
-The pipeline runs from an installed copy under `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`), never from the source folder.
+Programs run from `$ISSUE_PIPELINE_ROOT`, which defaults to `~/.pi/agent/issue-pipeline`.
 
 | Program | Purpose |
-|---|---|
-| `caller-jobs.mjs` | The installed caller launcher: `start`, `status` and `wait` (see [caller](caller.md)) |
-| `sweep.mjs` | The opt-in assignment sweep: starts assigned work through the caller launcher's checks (see [assignment sweep](assignment-sweep.md)) |
-| `job.mjs` | Runs one stage of one issue (see [coordination](coordination.md)) |
-| `ops.mjs` | Credentialed deterministic operations; reads one framed JSON request on stdin and prints one JSON reply |
-| `report.mjs` | The usage report (see [telemetry](telemetry.md)) |
-| `shell-supervisor.mjs` | Runs configured commands in owned process groups |
-| `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and the scoped commit tool |
-| `git-review.mjs` | Read-only Git queries for review sessions, with no credentials |
-| `orchestrate.mjs` | Retained legacy scheduler; not the caller's entry point |
+| --- | --- |
+| `buddy.mjs` | Validate a buddy file or activate its task loops |
+| `ops.mjs` | Guarded deterministic operations through framed JSON requests |
+| `report.mjs` | Read usage observations |
+| `shell-supervisor.mjs` | Run configured commands in owned process groups |
+| `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commits |
+| `git-review.mjs` | Read-only Git queries for review sessions |
+| `safe-refactor.mjs` | Explicit standalone Safe Refactor |
+| `standards-upgrade.mjs` | Read-only assessment and human-start handoff |
+
+`job.mjs`, `orchestrate.mjs`, `caller-jobs.mjs` and `sweep.mjs` are retired. The installer backs up and removes their installed files; it does not leave a compatibility runtime. `apps/issue-pipeline/programs.ts` is the shared build, install and syntax-check manifest.
 
 ## Configuration
 
-Each repository has an operator config file in `$ISSUE_PIPELINE_ROOT/repos/`. Reproducible project settings can instead come from an explicitly pinned commit of the repository's `.issue-pipeline.json`; see [project settings](project-settings.md) for the field split, trust boundary and migration. `repos/example.json` shows the fields, and `apps/issue-pipeline/src/config-schema.ts` defines their shape and defaults. The removed `wiki` key is refused, even when false or null: remove it. Other removed fields still load with a warning naming what replaced them; legacy single-account fields are refused.
+Repository operator configs live in `$ISSUE_PIPELINE_ROOT/repos/`. Project settings may instead come from an explicitly pinned full commit of `.issue-pipeline.json`; candidate edits never activate their own policy. See [project settings](project-settings.md) for the split between project policy and operator identity/safety settings.
 
-| Setting | Default |
-|---|---|
-| `baseBranch` | `main` |
-| `takeNewWork` | `true` |
-| `skipLabels` | `[]` |
-| `practices` | `["AGENTS.md", "CONTRIBUTING.md"]` |
-| `leaseHours` | 3 |
-| `maxCiFixes`, `maxSyncs`, `maxConflictFixes` | 2, 3, 2 |
-| `requireCi` | `true` |
-| `ciWaitMinutes` | 30 |
-| `commandTimeoutMinutes` | 20 |
-| `landingConfirmation` | 90 seconds, backoff `[1, 2, 4, 8, 10]` |
-| `usageFlags` | `firstContext` 40,000, `toolOutputShare` 0.25 |
+A separate private buddy JSON file defines organization scope, repository config paths, role, responsibilities, identity and access profiles. Unknown or obsolete scheduler/assignment controls are refused there. Capacity comes only from required repository `resources.modelSessions`, with no buddy-level override or default. See [buddy configuration](runtime-runs.md#buddy-configuration).
 
-Required settings with no default include `devAccount`, `landingAccount`, `credentialsEnvFile` and a nonempty `allowedUsers`. Set the three `models` and the [runtime](runtime.md) settings explicitly too.
+Land needs literal `permissions.land: true` in both the repository config and the Gatekeeper buddy file, plus the correct account, profile, task responsibility and current exact-binding evidence. A check pass or accepted start cannot substitute for those grants.
+
+The removed `wiki` key is refused even when false or null. Repository compatibility warnings identify other obsolete fields; a warning does not make the former scheduler or assignment model active. Historical records grant no current permission.
 
 ## Credentials
 
-Keep the credentials file (`credentialsEnvFile`) outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN` (see [authority](authority.md#two-github-accounts)).
+Keep `credentialsEnvFile` outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`; see [two GitHub accounts](authority.md#two-github-accounts).
 
-- Verify each account's identity without printing token values.
-- Keep the file out of any web app folder and out of any build or deploy `--env-file`. Pipeline build tasks don't load it.
-- The installer never provisions credentials.
+- Verify each selected account without printing its token.
+- Keep the file out of web application folders and build/deploy environment files.
+- Do not export GitHub credentials to models or ordinary shell children.
+- Do not expect the installer to provision credentials or organization membership capability.
 
-The model key file sets the variables that [`runtime.credentialEnv`](runtime.md) names. A [caller](caller.md) run names it by absolute path only, as `run.json`'s `modelEnvFile`. The launcher passes that path to each job's Node with `--env-file`, so only the job reads the file. The caller and the launcher never open it.
+Model credentials belong to the separately provisioned [native runtime](runtime.md). Its policy names allowed environment variables, provider resources, runtime HOME and context expectations. Do not reuse the GitHub credential file as a model or build environment file. A same-user process is not an operating-system filesystem sandbox.
+
+Unknown membership-reader capability is an activation blocker, not permission to change credentials, fall back to a personal account or weaken qualification.
+
+## Validate or activate a buddy
+
+To validate a private buddy file without activating a run:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
+```
+
+`BUDDY_FILE` is an absolute path to the operator-owned buddy JSON file. The command reports configured tasks, trusted model-session capacity and authorization digests.
+
+To activate the accepted configuration, omit `--check`. That is a separate operator action, not a source acceptance test. Each task loop senses its own work; there is no stage cursor or caller-selected next job. See [runtime runs](runtime-runs.md).
+
+Initial human signals are qualified issue-label application events for `start:implement` and `agents:stop`. Removing a label creates no continuation. A failed, stopped or uncertain attempt is not automatically retried.
 
 ## Install a release
 
-Install only when a change affects installed source or assets. Prompts in `apps/issue-pipeline/prompts/` and agent definitions in `agents/` are installed assets, so a prompt change takes effect only after an install. Docs changes in `docs/` need no install.
-
-Before Land, pass the approved fast gate on a clean checkout of the exact source candidate:
+Before Land, run the gate required by the effective trusted policy on the exact source candidate. For this refactor, acceptance explicitly requires all suites and independent Security before Land:
 
 ```bash
-npm ci --ignore-scripts --no-audit --no-fund   # at the repository root
-npm run check                                  # approved exact-source fast gate before Land
+npm ci --ignore-scripts --no-audit --no-fund
+npm run check:full
 ```
 
-Retain that result and independent read-only pre-Land Security clearance, bound to the same full source commit, trusted-input revision, effective current checking policy and configured pre-Land target branch/commit. Before installation, confirm the delivered identity, authenticated receipt and ancestry against that binding. Missing, stale or mismatched proof is a **STOP**, even when code has already landed. Do not invent a receipt, rerun a suite or acquire retrospective Security to fill a gap. Preserve accepted safety behavior; do not install a candidate that drops it.
+Run both commands at the repository root under Node 24. The fast gate alone is not full integration coverage. Retain the exact source commit, trusted-input revision, effective policy, configured target branch/commit, gate results and independent read-only Security clearance.
 
-The full suite is not an installation prerequisite. After source delivery, the operator separately authorizes the cutover and reviews the dry-run:
+Before installation, confirm the delivered identity, authenticated receipt and ancestry against that evidence. Missing, stale or mismatched proof keeps installation stopped, even if code has landed. Do not invent a receipt or run retrospective checks or Security to fill the gap. Installation acceptance does not require a second suite after Land.
+
+After source delivery, the operator separately authorizes the cutover and reviews the dry-run:
 
 ```bash
-mise //apps/issue-pipeline:install:dry-run   # review what would change
-mise //apps/issue-pipeline:install           # operator-authorized install
+mise //apps/issue-pipeline:install:dry-run
+mise //apps/issue-pipeline:install
 ```
 
-Install builds first, then copies programs, prompt pages and the example config into `$ISSUE_PIPELINE_ROOT`, and the agent definitions into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`).
+The installer builds and copies managed programs, prompts and examples into the pipeline root, and agent definitions into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`). It records the source commit in `INSTALLED.json` and backs up replaced or retired files under `$ISSUE_PIPELINE_ROOT-backups/TIMESTAMP-install/`.
 
-- It backs up every replaced or retired file under `$ISSUE_PIPELINE_ROOT-backups/TIMESTAMP-install/`.
-- It records the installed commit in `INSTALLED.json`.
-- It refuses uncommitted source changes unless `--allow-dirty` is given, and refuses to run from inside the pipeline root.
-- It doesn't touch repository configs, setup and teardown scripts, secrets, the runtime HOME, `clones/`, `work/` or `runs/`.
-
-Landing source changes nothing that runs. Record source delivery (the PR and its head and merge commits) and installation (the installed identity, or not applicable) separately; neither implies the other. A configured base of `main` isn't permission to deploy any repository.
+It refuses dirty source unless explicitly overridden, and refuses installation from inside the pipeline root. It does not rewrite operator configs, credentials, runtime HOME, setup/teardown scripts, clones, work or recovery evidence. A source base named `main` is not deployment authority.
 
 ## Installation acceptance
 
-Keep dispatch stopped until the operator accepts the installed copy separately from source delivery:
+Keep activation stopped until the operator accepts the installed artifacts separately from source delivery:
 
-1. Confirm `INSTALLED.json` records the exact accepted source commit and clean-source status.
-2. Compare the managed programs with that source's built artifacts, and the copied prompts and examples with their reviewed source bytes.
-3. Compare installed agent definitions with the reviewed source after filling the documented root placeholders.
-4. Confirm planned retirements and retained backups match the reviewed dry-run, with operator config, runtime HOME, saved state and recovery work preserved.
-5. Perform bounded installed-CLI parsing and invalid-input smoke checks that launch no job, model, server or credentialed operation.
-6. Record the installed identity, managed-artifact comparisons, exact CLI commands and results, and the operator's acceptance.
+1. Confirm `INSTALLED.json` identifies the accepted clean source.
+2. Compare managed programs with its built artifacts and prompts/examples with reviewed source bytes.
+3. Compare copied agent definitions after filling documented root placeholders.
+4. Confirm retirements, backups and preservation match the reviewed dry-run.
+5. Run bounded installed-CLI parsing and invalid-input checks that launch no buddy, model, server or credentialed operation.
+6. Record installed identity, comparisons, exact commands/results and operator acceptance.
 
-These checks accept the installed artifacts and CLI boundary, not integration coverage. They do not run a repository check suite, fresh Security model, repair writer or second Land. Authorized evidence checkpoints and `finish` bookkeeping remain distinct from forbidden post-Land validation. A mismatch or failed acceptance keeps dispatch stopped; preserve the evidence for explicit operator recovery.
+These checks accept installed artifacts, not runtime integration coverage. Do not run a repository suite, repair writer, fresh Security pass or second Land after source Land. Authorized evidence checkpoints and completion bookkeeping remain distinct from forbidden post-Land validation.
 
 ## Upgrade safely
 
-1. Stop dispatching new jobs.
-2. Drain every old-version job. Prefer letting an active Land finish. Confirm no old job or session remains.
-3. Snapshot the installed config, saved-state evidence and recovery files.
-4. Confirm the bound exact-source fast result and independent pre-Land Security described in [Install a release](#install-a-release).
-5. Review the install dry-run.
-6. Install the accepted source.
-7. Complete [installation acceptance](#installation-acceptance).
-8. Resume one explicitly assigned issue and stage at a time.
+1. Stop new dispatch in the old runtime.
+2. Drain every old job, action, model session and resource consumer; let in-flight writes and Land settle without killing them.
+3. Preserve configs, saved authority, uncertain-write journals, checkouts, patches, bundles and receipts.
+4. Confirm exact-source pre-Land gate and independent Security evidence.
+5. Review the installation dry-run and planned retirements.
+6. Install the accepted source under separate operator authorization.
+7. Complete installation acceptance.
+8. Reconcile historical work and verify current credentials, membership capability, policy, grants and capacity before authorizing activation.
 
-Never run old and new jobs together. Never reset branches, hardening, integration, landing-attempt evidence, Security rejections or Land receipts to make an upgrade pass. Rolling back an install doesn't undo landed code.
+Do not run old and new runtimes together or translate historical assignments/stages into accepted starts. A model-session pool resize requires all its holders and consumers to drain. Never erase attempt evidence, Security rejections, landed truth or retained work to make the upgrade pass. Installing or rolling back binaries does not undo source Land.
 
-### Renamed names (#166)
+### Historical names
 
-#166 renamed the names that live outside the code to the [glossary's](../../GLOSSARY.md) terms. The rule is the same for every name: **the pipeline reads the old name and the new one, writes only the new one, and never rewrites history.** A config or credentials file that gives both names for one setting is refused.
-
-| Kind | Old name | New name | How the old one is handled |
-| --- | --- | --- | --- |
-| Repo config | `mergeAccount` | `landingAccount` | Loads, with a warning naming it |
-| Repo config | `mergeConfirmation` | `landingConfirmation` | Loads, with a warning |
-| Repo config | `jobRoles.merger` | `jobRoles.lander` | Loads, with a warning |
-| Repo config | `models.implementor` | `models.developer` | Loads, with a warning |
-| Credentials file | `ISSUE_PIPELINE_MERGE_GITHUB_TOKEN` | `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN` | Read when the new key is absent |
-| CLI (`job.mjs`, `caller-jobs.mjs start`) | `--merge-queue` | `--landing-order` | Accepted |
-| Ops op | `merge`, `confirm-merged`, `reconcile-merge` | `land`, `confirm-landed`, `reconcile-land` | Accepted |
-| Saved state | version 2: `merged`, `codeMerged`, `mergeAttempt`, `mergeReturn` | version 3: `landed`, `codeLanded`, `landingAttempt`, `landingReturn` | Read with its keys renamed; the next save writes version 3 |
-| Coordination request record | version 1: `identity` | version 2: `binding` | Read with its key renamed, never rewritten |
-| Label | `agent:merged` | `agent:landed` | Still counts as landed; never applied again |
-| Usage records and signed comments | role `implementor`, `merger` | `developer`, `lander` | Read as the new role |
-| Installed agent definition | `issue-pipeline-implementor.md` | `issue-pipeline-developer.md` | The installer retires the old file, with a backup |
-
-Stage names (`--stage`, the saved `stage`, `stageCaps`), the legacy orchestrator's keys and GitHub's own fields keep their names. The [domain alignment inventory](../domain-alignment.md#code-names-165-and-persisted-names-166) says why.
-
-To upgrade, drain and install as usual. No migration runs: each open issue's state becomes version 3 on its next save. Then, at any time, rename the keys in each repo config and the credentials file; the warnings name what's left. Old config, credentials, CLI and op names stay accepted until a later release removes them, once no config or file uses them. The readers for old saved records stay for good, because those records are history.
-
-Don't roll back past the first version 3 save: an older release refuses a version 3 state as invalid write authority, so it stops rather than guesses.
+Old account/model aliases may remain read-only or warning-producing compatibility inputs where their current readers explicitly support them. That is not rolling-runtime compatibility. Historical state and receipts do not gain new permission through renamed fields. The removed stage CLI, scheduler controls and assignment grants have no executable alias.
 
 ### Upgrade from the removed wiki flow
 
-Before this cutover, drain all jobs that started with the wiki flow and preserve their work and receipts. Then:
+Drain wiki-era jobs and preserve their work before cutover. Remove the refused `wiki` config key and obsolete `--brain-path` wrappers. Do not replace them with a retired stage launcher.
 
-1. Remove the `wiki` key from every repository config; false and null are refused too.
-2. Remove `--brain-path` from launcher commands and wrappers; the argument is no longer accepted. Use the installed `$ISSUE_PIPELINE_ROOT/caller-jobs.mjs` and its installed `job.mjs`, which pins installed prompt pages.
-3. Reconcile unfinished wiki-era issues explicitly. Historical state, receipts, launch records and recovery manifests remain readable; that doesn't authorize new wiki work or publication.
-4. Preserve any private wiki commits, patches and bundles outside the old checkout and mirror before removing unused data. The old `work/SLUG/wiki-mirror.git`, sibling job `docs/` checkouts and private issue branches in the wiki remote are no longer maintained or cleaned up by the pipeline. Remove them only after confirming no old job uses them and all retained work is safe. Never delete the published wiki branch as routine cleanup.
+Retain private wiki commits, patches and bundles outside any cache scheduled for removal. Old wiki mirrors and sibling docs checkouts are no longer maintained; delete them only after explicit operator confirmation that all work is safe and no consumer remains. Never delete a published wiki branch as routine cleanup. The installer does not perform this migration or remove remote branches.
 
-The installer doesn't rewrite operator configs or remove these caches or remote branches. This cleanup is operator-owned, not an automatic migration.
+## Recover after a source defect
 
-## Restart after a source defect
+Stop affected dispatch and preserve work, authoritative receipts and uncertain effects. Deliver a tested, reviewed source fix through an ordinary PR. If installed code needs replacement, complete the separately authorized upgrade above.
 
-When running the pipeline exposes a defect in its own source:
+There is no generic restart-at-stage command or automatic continuation operation. A stopped or spent cause remains stopped or spent. Use only supported, explicitly authorized recovery for the retained action. An uncertain Land requires read-only reconciliation against its original intent, not another push, approval or writer session. Missing authority remains a hold.
 
-1. Stop dispatching the affected issues, and keep their work, saved state and receipts.
-2. Fix the defect through an ordinary issue and PR, with tests and review.
-3. Install the fixed release (see [upgrade safely](#upgrade-safely)).
-4. Restart each retained issue on its original repository, branch and lane, at the stage its saved state and current inputs call for.
+## Run tests
 
-Lifting a stop supplies no missing authority. An uncertain Land needs read-only reconciliation, not a blind retry (see [merge](merge.md#recover-after-a-confirmation-deadline)). Never discard retained work to make an issue look new.
+At the repository root, `npm run check` runs both apps' fast gates. The pipeline fast gate covers source/test types, Biome, build, installer syntax and every built program's syntax. It runs no pipeline Node tests and cannot prove effect or recovery behavior. The dashboard gate includes its own tests.
 
-## Run the tests
+`npm run check:full` runs the pipeline fast gate and every `test/**/*.test.ts`, with file concurrency 2 and the original 180000 ms timeout, then the dashboard gate. The old unit suite was removed; new public-entrypoint tests now populate `test/`. Do not describe the suite as empty or restore historical unit tests wholesale.
 
-`npm run check` is the **fast default gate**, not full integration coverage. It runs source and test type checks, Biome, the build, syntax checks for the installer and all built programs. It runs no Node tests.
+Tests use temporary HOME/pipeline roots, local Git origins and fake GitHub/model processes. They must not touch real credentials, models or production data. Set disposable roots before dynamic source imports. A failed or flaky test blocks acceptance; fix its cause rather than repeating it for a pass.
 
-`npm run check:full` explicitly opts into the full gate: the fast gate followed by every Node test in `apps/issue-pipeline/test/`, at most two test files at a time, with the original 180000 ms timeout. That suite was deleted on 2026-10-25, so it runs 0 tests until new ones are added. Do not run the full suite by default, as an installation prerequisite or after landing; explicit opt-in execution is pre-Land only. Do not run any check suite or fresh model validation after Land. Separately authorized [installation acceptance](#installation-acceptance) still applies. The [gate scope and cost report](check-gates.md) explains what the fast gate does not prove, the known cost and the remaining optimization or isolated-stage work.
-
-Tests use temporary HOME and pipeline roots, local bare Git origins, a fake GitHub and a fake Pi; they never touch real GitHub, models or production data. A failure or flake blocks acceptance. Both run from the repository root and need only Node 24 and npm; mise is optional, and its `//apps/issue-pipeline:check` tasks call the same scripts. These repository scripts do not change live operator configuration or wrappers. Save the exact command, effective policy and source SHA with results; a wrapper that directly invokes the full suite still incurs its cost.
+Save commands, exit statuses, effective policy and source identity. Shell output filters must not hide a failed validator's status. Full suites stay explicit and pre-Land; do not run them after Land or use installation to supply missing acceptance evidence. See the [gate scope and cost report](check-gates.md).

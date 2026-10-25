@@ -14,7 +14,9 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Shared glossary](../GLOSSARY.md): one canonical term for each concept shared by ecosystem, dash, status-report and the test-suite assessment app.
 
-[Domain alignment inventory](domain-alignment.md): where current code and docs differ from the glossary, and the proposed migration.
+[Domain alignment inventory](domain-alignment.md): the source cutover, historical differences and remaining acceptance gaps.
+
+[Domain runtime contract](domain-runtime-contract.md): canonical task, signal, authorization, resource and recovery interfaces.
 
 ## Decisions
 
@@ -28,7 +30,7 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Operations](decisions/operations.md): who assigns work, the model runtime, rate limits and checkouts.
 
-[Buddies and tasks](decisions/buddies-and-tasks.md): the buddies and their roles, access per task, bindings and ready tasks, runs and retries, capacity, observation and assignment permission.
+[Buddies and tasks](decisions/buddies-and-tasks.md): the buddies and their roles, access per task, bindings and ready tasks, runs and retries, capacity, observation and standing permission.
 
 ## Reference
 
@@ -38,15 +40,17 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Check gates](reference/check-gates.md): the fast default, opt-in full suite, known cost and remaining optimization work.
 
-[Sessions](reference/sessions.md): stages, model roles, prompt pages and the `pipeline_commit` tool.
+[Sessions](reference/sessions.md): model sessions, access profiles, prompt pages and the `pipeline_commit` tool.
 
 [Execution fencing audit](reference/execution-fencing-audit.md): every credentialed and cleanup write, the binding and fresh guard that fence it, and which issue owns each gap.
 
-[Coordination](reference/coordination.md): running stage jobs, reading their results and keeping concurrent work apart.
+[Runtime runs](reference/runtime-runs.md): strict buddy configuration, CLI, admission, scoped stops and canonical buddy/action observation files.
 
-[Caller](reference/caller.md): the prompt that makes an agent session the pipeline's caller, and its launcher.
+[Coordination](reference/coordination.md): task admission, fenced execution, shared resources, observations and preservation.
 
-[Assignment sweep](reference/assignment-sweep.md): the opt-in sweep that starts the work GitHub assignments grant, its pauses and holds, cutover, and the #73 scenario audit.
+[Caller retirement](reference/caller.md): the removed stage launcher and preservation of former caller work.
+
+[Assignment sweep retirement](reference/assignment-sweep.md): the removed assignment dispatch and separately authorized cutover.
 
 [Operations](reference/operations.md): programs, configuration, credentials, installing and upgrading.
 
@@ -54,7 +58,7 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Sync](reference/sync.md): integrating with the base before landing, conflicts and their limits.
 
-[Task results](reference/task-results.md): revision-bound results, attempts and retry budgets that Sync, Integration and Land will consume (inactive until #186).
+[Task results](reference/task-results.md): exact-binding attempts, authenticated results, spent causes and historical evidence.
 
 [Project settings](reference/project-settings.md): tracked project policy, operator-owned controls, trusted committed revisions and legacy migration.
 
@@ -66,6 +70,6 @@ These docs describe the repository's practices and the issue pipeline. They are 
 
 [Telemetry](reference/telemetry.md): usage records, local logs, commit attribution and the usage report.
 
-[Checkouts](reference/checkouts.md): where clones, checkouts and run files live, and what a job saves when it ends.
+[Checkouts](reference/checkouts.md): where clones, checkouts and run files live, and what an action preserves when it ends.
 
-[Stops and labels](reference/stops-and-labels.md): status and stop labels, stop records and resuming a stopped issue.
+[Stops and labels](reference/stops-and-labels.md): qualified stop signals, durable latches, scoped interruption and unsupported continuation.

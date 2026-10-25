@@ -2,14 +2,16 @@
 
 The standards upgrade brings one GitHub repository up to an evidence-backed maintenance standard ([#129](https://github.com/axolotl-logic-io/ecosystem/issues/129)). It has two halves. A deterministic assessment reads the repository and writes a plan. Then the existing issue-delivery chain carries that plan to a draft pull request, the same way it carries any issue.
 
+```text
+standards-upgrade assess --config CONFIG --repo OWNER/REPO [--ref REF] --out DIR
+   → assessment.json, report.md, plan.md, logs/ (no remote writes)
+an allow-listed collaborator files plan.md as the repository's one upgrade issue
+standards-upgrade apply --config CONFIG --issue ISSUE
+   → issue branch, plan metadata and human-start handoff (read-only checks)
+a qualified human applies start:implement; buddy tasks independently check admission
 ```
-standards-upgrade assess --config C --repo OWNER/REPO [--ref R] --out DIR
-   → assessment.json, report.md, plan.md, logs/   (no GitHub or Git writes; repository code runs only in the sandbox, with no network)
-an allow-listed person files plan.md as the repository's one upgrade issue
-standards-upgrade apply --config C --issue N
-   → the branch and the caller's start line   (read-only checks)
-caller: Implementation → draft PR → Hardening → Sync → Integration → Security → Land
-```
+
+`CONFIG` is the repository operator config, `OWNER/REPO` is the assessed repository, `REF` is an optional source ref, `DIR` is the output directory and `ISSUE` is the filed issue number. The plan and assessment grant no execution or Land authority.
 
 This page describes the assessment and the admission of its plan. Landing them installs and activates nothing. Nothing schedules it, and it never runs across many repositories by itself.
 
@@ -206,21 +208,24 @@ To deliver an assessment's plan, follow these steps:
 
 1. Read `report.md` and `plan.md`. Edit the plan's text if you want, but keep its marker line as it is.
 2. As an allow-listed collaborator, file `plan.md`'s contents as a new issue on the repository.
-3. Check the issue and get the caller's start line:
+3. Check the issue and get the human-start handoff:
 
    ```bash
    node apps/issue-pipeline/dist/standards-upgrade.mjs apply --config CONFIG --issue ISSUE
    ```
 
    `ISSUE` is the number of the issue you filed.
-4. Start the `implement` stage with the printed line, filling in the caller's run folder and lane, as the [caller](caller.md) page describes.
+4. As a qualified human in the buddy's configured organization, apply `start:implement` to the issue.
 
-`apply` prints one JSON line with the issue, the branch `standards-upgrade/issue-ISSUE`, the plan's marker fields, the stage `implement` and the start line. From there the existing caller and task chain do everything: Hippy implements on that branch and opens a draft PR, and Hardening, Sync, Integration, Security and Land follow under their usual rules. The default run never lands by itself; landing still needs the chain's own Security result and authorization.
+`apply` prints one JSON line with `issue`, the canonical issue `branch`, the plan marker fields, `task: "implement"` and `next`, which states that a qualified human must apply the label. It prints no retired launcher or stage. Its branch follows the same repository branch rules as the buddy's task view; for a new unbound issue this is `agent/issue-ISSUE`.
+
+The buddy independently qualifies the label event and all current task prerequisites. Later task results drive readiness; Sync precedes fresh Harden when the revision misses the target. Independent Security and explicit repository/buddy Land permission remain necessary. See [coordination](coordination.md).
 
 `apply` only reads. It refuses, with exit 2 and the reason on stderr, when:
 
 - the issue isn't open, or is a pull request;
-- its author isn't an allow-listed collaborator, which includes both pipeline accounts;
+- its author isn't an allow-listed collaborator, or is a pipeline machine account;
+- collaborator evidence is unreadable;
 - it doesn't carry exactly one plan marker, or the marker doesn't parse;
 - the marker names another repository, or a policy other than `standards-v2`, so a `standards-v1` plan needs a new assessment;
 - the config's base branch has moved past the plan's source commit;
@@ -233,7 +238,7 @@ To deliver an assessment's plan, follow these steps:
 
 The assessment holds only the read side of the configured credentials, through the pipeline's own `gh` and `git` wrappers. It writes nothing to GitHub or the origin. Repository text, such as a README or a workflow, is data: it can't widen the target or the permissions.
 
-Repository code runs only in the sandbox, which never holds those credentials or any other. A test proves it: a fixture's test runs as hostile code, hunting for canary tokens in its environment, the operator's home, host files, the pipeline's credentials file and every process under `/proc`, and for the network. It finds none of them, and what it prints stays out of the results.
+Repository code may run only inside the assessment sandbox, without operator credentials or access to the operator's home. This is a separate isolation boundary from the read-only `apply` checks. The new `apply` subprocess tests prove the human handoff, stale-head refusal and unreadable-collaborator hold; they do not constitute a fresh assessment-sandbox isolation proof. Historical tests that were removed are not current acceptance evidence.
 
 Filing the upgrade issue needs a person. Under [`allow-listed-input`](../decisions/authority.md#allow-listed-input), neither pipeline account counts as trusted input, so an issue filed by the development account couldn't drive Implementation. An allow-listed collaborator files `plan.md` instead.
 
@@ -245,4 +250,4 @@ The assessment and `apply` write nothing to GitHub or the origin and keep no sta
 
 A new commit on the base branch makes a plan stale before Implementation starts. Close the stale issue, rerun the assessment and file the new plan. Once Implementation has started, the chain's own Sync task brings the branch up to date, as it does for any issue.
 
-An interrupted or rate-limited delivery recovers through the chain's existing rules. Every restart is a retry from the latest checkpoint, and an uncertain write is reconciled by reading, never repeated. One work item and one branch per repository keep a second run from writing the same branch. `apply` refuses a second open plan, so a resumed upgrade continues its existing issue instead of filing another.
+An interrupted delivery retains its original action, branch, checkpoint and uncertain-write evidence. There is no automatic retry or continuation operation: a spent start does not become new after an error or target change. Reconcile uncertain writes by reading, never by repeating them. `apply` refuses another open upgrade plan, but that uniqueness check is not an execution lock or recovery grant. Fenced ownership and the current task guards still apply.

@@ -1,152 +1,58 @@
 # Issue pipeline
 
-The pipeline executes one caller-assigned GitHub issue and branch at a time per invocation. The caller owns discovery, splitting, prerequisites, parallelism, stage selection, stops and restarts; each exact Land takes the target's integration turn itself. The executor never selects another issue. The [pipeline reference](../../docs/README.md) describes the design and operations.
+The pipeline runs configured buddies. Each buddy activation is a buddy run; each admitted task execution is an action run. Tasks own sensors, matching, prerequisites, effects and recovery. The runtime activates every configured task loop and may execute its actions sequentially. It has no saved stage cursor, assignment scheduler or caller-selected next job.
 
-Landing changes nothing that runs. Only the operator's install does (see Install and safe upgrades).
+Source delivery does not install, activate or deploy anything. The operator separately authorizes a drained cutover. Start with the [pipeline reference](../../docs/README.md), [domain contract](../../docs/domain-runtime-contract.md), [runtime configuration and run records](../../docs/reference/runtime-runs.md) and [operations](../../docs/reference/operations.md).
 
-## Invocation binding (#167)
+## Configure a buddy
 
-Every stage job binds its run to a fresh invocation UUID before it does anything else. The UUID is never the job's `--job-id` or lane. `src/job/invocation.ts` binds it to the issue, its assigned branch, the repo and the literal base. It then requests and confirms issue-execution ownership through the coordination transport (`src/execution.ts`, `src/coordination.ts`, `src/coordination-records.ts`) with the landing account.
+Repository operator configuration, pinned project policy and buddy configuration are separate boundaries. A private buddy file names its organization, repository config paths, role, responsibilities, identity and access profiles. Required repository `resources.modelSessions` defines the shared cap; there is no buddy capacity override or inferred default.
 
-```
-job start ─► mint UUID ─► request ─► acquire (create-only epoch ref) ─► confirm
-                                        │
-                     another owner ─────┴─► cancel request, print `unclaimed`
-                                            (no job.json, checkout, op or session)
-owner ─► open checkout ─► ops (each request carries the binding) ─► teardown
-      ─► release, only when the release predicate passes (#151)
+To validate an installed buddy configuration without activating it:
+
+```bash
+node "$ISSUE_PIPELINE_ROOT/buddy.mjs" --config BUDDY_FILE --check
 ```
 
-- A loser cancels its pending request, so it never blocks the queue. It writes no `job.json`, opens no checkout and starts no op or session.
-- Ownership is read from authenticated coordination records, never from an ops reply. A live or expired legacy lease grants nothing.
-- Every ops request carries the binding as `execution`. `src/ops/execution-envelope.ts` refuses a request whose issue, checkout, repo, base or branch differs, and checks ownership on a fresh read before its queued comments or the op run. The claim op then runs `src/ops/bound-claim.ts`, which saves the owner's receipt before any setup, retained lane-slot checkouts included.
-- After teardown, the job releases ownership only when the release predicate (`src/job/release-predicate.ts`, #151) passes. The predicate needs all of these:
-  - the run reached an end, and its claim didn't refuse;
-  - every checkpoint write (`claim`, `save-state`, `release`, `ask`, `stop`) had a successful reply;
-  - no stop-recovery record is unresolved;
-  - no `coordination-uncertain.json` is retained;
-  - teardown preserved the checkout's work and removed it;
-  - no registered consumer (another surviving checkout or a pending setup) still holds the issue's lane slot.
+`BUDDY_FILE` is an absolute path to the operator-owned JSON file. Omit `--check` only for separately authorized activation. The [runtime reference](../../docs/reference/runtime-runs.md#buddy-configuration) defines the exact keys and trust checks. Merely configuring a task does not supply a causal signal.
 
-  Otherwise the job prints `job: execution held: <why>` on stderr and keeps ownership for explicit reconciliation. The next job on the issue ends `unclaimed`. The predicate gates only execution release; checkout removal still frees the lane slot.
-- Saved state without an execution receipt linked to a released predecessor never grants ownership (`additive-record-versions`). It needs explicit reconciliation.
-- Before each session starts, and on each push request, the job rereads ownership; a lost owner starts nothing and pushes nothing. Steer and push requests on the control socket must name the job's binding (`--steer` reads it from job.json), and an ops claim that names a job checkout without a binding is refused (#168).
-- Every credentialed write, in the job and in its ops children, rereads ownership just before it runs and journals its exact intent first (#169). A write whose reply is lost keeps that journal; a write whose own operation reconciles it by reading (a push record, a Land or Sync attempt, a task record, saved state, the PR a branch names) skips the journal but not the read. An ops request with no binding can read but not write. [The fencing audit](../../docs/reference/execution-fencing-audit.md) lists every write and its test.
-- A lost or failed coordination response may still have landed. Each write in flight journals its exact intent in `coordination-inflight-PID.json` (`src/coordination-journal.ts`); an unknown outcome keeps it as `coordination-uncertain.json`, and only an exact read-back clears it. Preserve that file. Another live job's write in flight holds nothing, so two jobs writing at once don't hold each other (#133).
+## Tasks and signals
 
-- Teardown rereads ownership before it touches the checkout. A job that lost the issue, or can't tell, saves, resets, pushes and removes nothing, and leaves its checkout for reconciliation (#170).
-- The `cleanup` op keeps a closed issue's worktree while its execution has a request that no release or cancel ended, or while its lane slot lists another surviving checkout or a pending setup (`src/ops/cleanup-fence.ts`). Lane prune waits while any setup is pending (#170).
+The canonical task IDs are `author`, `implement`, `harden`, `sync`, `integrate`, `review-security`, `land`, `complete` and `refactor-safely`. Developer and Gatekeeper are roles, not saved stages. Author has no implicit request. Safe Refactor retains its explicit standalone entrypoint.
 
-- Each exact Land takes the target's integration turn before its attempt record and first PR or target write (`src/ops/land-turn.ts`, #171). A Land that doesn't get it writes nothing and the merge stage ends `wait`; the turn is released once the issue's Land is settled. See [the target's integration turn](../../docs/reference/merge.md#the-targets-integration-turn).
+Qualified issue-label application events provide the initial human signals: `start:implement` and `agents:stop`. Acceptance requires the actual event, a qualified human in the configured organization, complete source evidence and durable authenticated provenance. Assignments, PR labels, Apps, machine accounts and a label's current presence alone grant nothing. Removing a label creates no continuation signal.
 
-Contention through real job boundaries is proved by `test/pipeline-flow-contention.test.ts` (#133) and `test/land-turn.test.ts` (#171); [coordination](../../docs/reference/coordination.md#compatibility-and-limits) has the scenario trace.
+An authenticated attempt spends its start for the requirements binding even if it fails or the target moves. Unchanged requirements do not get an automatic Implement retry. Authenticated task results drive downstream readiness. Unknown, incomplete or conflicting authority holds work rather than disappearing from the inputs.
 
-## Assignment withdrawal (#119) and checkpoint rebuild (#173)
+Sync can precede Harden when the revision does not contain the target; its output needs fresh Harden. Integrate requires the exact hardened revision and target containment. Independent read-only Security follows current Integration. Land additionally needs literal repository and buddy Land grants, the proper role/account/profile and every current exact-binding prerequisite. Complete uses the authenticated Land's original candidate, pre-Land target and policy with current trusted-input and provenance checks.
 
-A job started with `--assignment` works only while its buddy's account holds the grantor's assignment ([`assignment-permission`](../../docs/decisions/buddies-and-tasks.md#assignment-permission)). The sweep passes the flag; the caller never does, so caller-driven jobs are unchanged. A repo opts in by naming its grantor in its config:
+## Ownership, resources and preservation
 
-```json
-{ "assignments": { "grantor": "axolotl-logic" } }
-```
+Each action has a fresh UUID shared by its execution invocation and task attempt. Buddy runs and model sessions have separate IDs with explicit links. Names, lanes, PIDs and timestamps cannot manufacture lineage or authority.
 
-`src/assignment/grant.ts` reads the issue, every page of its events and every page of its comments. The grant holds when the grantor's latest assignment of the buddy's account stands, the issue is open, and nobody else changed an assignment or left an untrusted comment since. Anything else pauses the work item, and so does a read that failed or a listing cut short.
+Authenticated coordination and create-only epoch refs fence issue execution. Controlled substantive mutations freshly check the buddy grant, source authority, stop state, ownership and saved write authority. Lost responses retain exact-intent journals; an expired lease or ended process releases nothing. [Coordination](../../docs/reference/coordination.md) describes the boundary.
 
-| Work | Buddy account whose assignment counts |
-| --- | --- |
-| `author`, `implement`, `review` stages; Sync task | `devAccount` (Hippy) |
-| `merge` stage; Integration task | `landingAccount` (Lawd) |
+Model-session slots belong to one shared repository/base/resource pool. Live cap mismatches hold the pool. Holders release only after all registered consumers durably finish; pending setups and retained checkouts can retain resources. Resize only after the pool drains. Land separately takes the target's integration turn before recording its attempt; an uncertain Land retains that turn.
 
-The job checks the grant before it acquires ownership, before every writer session and push, before every credentialed write in the job and its ops children (the ops frame carries `grant`; `controlledMutation` rereads it), and before it applies its role's end. A paused job ends `wait` with `paused: …` and writes nothing more to GitHub. Its last saved state is its checkpoint, and teardown keeps its local work (patches and a code bundle in `runs/`), as on any exit. Only a newer grant by the grantor lifts the pause. `test/assignment-withdrawal.test.ts` checks this through built jobs.
+Stops are cooperative and scoped to the buddy or work item. Do not kill an in-flight credentialed write, rebase or Land. Evidence-only settlement remains subject to its recording authority and ownership; it cannot smuggle a new substantive effect past a stop. No undefined restart or continuation operation is supplied.
 
-A replacement run rebuilds from the checkpoint GitHub holds: the saved head on the branch, the saved state and the task records. The clone and the mirror (`clones/`, `work/<slug>/`) are disposable caches; `runs/` is recovery evidence and stays. When the saved head is missing from the branch, the job stops `branch-changed` for explicit recovery instead of starting again from the base. `test/checkpoint-rebuild.test.ts` deletes the caches between two real jobs.
+Before removing an owned checkout, preserve staged and working changes as independent binary-safe patches and local commits as verified bundles. A stopped rebase, failed preservation, uncertain checkpoint, unresolved journal or surviving consumer retains the required checkout, evidence, ownership or reservation. Never discard work merely to make another action eligible. Read-only recovery settles the original action instead of replaying its mutation.
 
-The sweep that starts these jobs, its holds, the cutover and the #73 scenario audit are in [the assignment sweep reference](../../docs/reference/assignment-sweep.md).
+## Exact-target Land and Complete
 
-## Standalone Safe Refactor task
+The only target mutation is an immutable full candidate SHA pushed to the configured literal base ref. The old target must be a strict ancestor, and an explicit old-object-ID lease rejects target movement. There is no REST merge, alternate target, admin bypass or unchecked merge commit.
 
-`safe-refactor.mjs` provides an explicit non-mutating codebase `check` and a separately assigned Developer task with tool-mediated writes. Its model session has only `safe_refactor` and `safe_refactor_finish`: no editor, shell, commit tool or arbitrary transform. The initial JavaScript/TypeScript catalog uses the TypeScript language service for conservative local primitive renames and pure return-expression extraction. The caller must explicitly select its limited behavior contract.
+Before that write, authenticated intent binds the candidate, PR/source identity, original target, policy and exact pre-Land check/Security evidence. A lost acknowledgement does not permit another push. Read-only reconciliation needs the original intent and exact matching evidence; PR or target equality alone cannot invent an own-Land receipt.
 
-The separate `biome.safe-refactor.jsonc` supplies file/function-length and cognitive-complexity findings without changing the default profile. Findings need design rationales and dispositions, not score-only repairs. Reports and write-ahead checkpoints grant no Hardening, Security or Land authority. Existing jobs and the legacy orchestrator do not invoke the task. Nothing is installed or activated by landing source. See [Safe Refactor](../../docs/reference/safe-refactor.md) for assignment, commands, preservation limits and uncertain-write recovery.
+Complete needs authenticated passed Land proof and the original pre-Land binding, with current input, provenance and ancestry checks. It cannot acquire retrospective clearance, adopt an external merge or validate a different current target as the old candidate. Preserve landed truth even when completion is blocked. No suite, code repair, fresh Security model or second Land runs after Land. Authorized evidence checkpoints and completion bookkeeping are separate.
 
-## Stages and model roles
+External actors can still change PRs, inputs, permissions and refs. These guards are not an atomic transaction over GitHub and Git, an operating-system sandbox or permission to deploy a repository whose source base is named `main`.
 
-```text
-[optional author] -> implement (draft) -> [Sync task, if R misses the target] -> review (Hippy's hardening)
-  -> merge: requests the read-only Integration task -> merge (security -> fast-forward Land -> read-only confirmation -> finish/close) -> done
-```
+## Standalone tools
 
-Since #186 the chain is explicit: a stage job that needs a task ends `wait` with a `request` (the task and its exact binding), and the caller starts that task job (`job.mjs --task sync|integration --binding JSON`). Every task's result is a [task result](../../docs/reference/task-results.md) the landing account records.
+[Safe Refactor](../../docs/reference/safe-refactor.md) provides an explicit non-mutating check and a narrowly assigned tool-mediated writer. Its reports and checkpoints grant no Harden, Security or Land result. Buddy tasks do not silently schedule it.
 
-| Stage / phase | Session authority | Result |
-|---|---|---|
-| `author` (explicit) | Author, read-only | One signed Gherkin comment, edited in place when trusted input changes, or questions and `agent:needs-info` |
-| `implement` | Developer (`developer` in config, formerly `implementor`), writable | Preserved issue work plus code/tests/docs commits through `pipeline_commit`, pushed as a **draft**; no entry/resume base synchronization or mandatory verification/fix loop |
-| `review` / `hardening` | Hippy, the Developer, in a fresh session (the caller passes `--hardening-buddy hippy`; a bare `job.mjs` still hardens as the Reviewer), writable | Design/correctness/test fixes, the checks merge sent back, and bounded configured verification fixes, without synchronization. Requests Sync first when R misses the target. Records a Hardening result, then saves exact `hardened` before guarded draft readiness |
-| Sync task (`--task sync`) | Hippy, writable, `writer` profile | Rebases R onto exactly the target commit T as R′ through the development account; a stopped rebase goes to Hippy's resolver sessions (phase `sync`). R′ returns to review for fresh hardening |
-| Integration task (`--task integration`) | No session; `reader` profile | Runs the configured checks on exactly R in a detached checkout; a pass is R's pre-Land check proof, a failure returns to review |
-| `merge` / `security-review` | Fresh Reviewer, **read-only** | Security only (`user-harm`, `rights`, `financial-harm`, `abuse-risk`) over the **exact candidate's complete contribution**, readable tree and final docs/inputs, before the deterministic Land; rejection prevents landing |
-| completion | Deterministic ops | Only an exact durable clear security receipt permits issue completion/closure through the `finish` op |
-
-New issues start at `implement` by default. To use the optional read-only Author, invoke `--stage author` for new or existing direct-mode work. It still produces Gherkin or asks questions; there is no configuration switch. A claim checkpoints an existing direct issue at Author with its original return stage, branch, PR, head and saved work intact. An interruption or question retains that checkpoint. When the trusted inputs and behavior are unchanged, its first Gherkin returns to the checkpoint without supplying new downstream approval. Changed requirements return to Developer and invalidate old approval, never a saved Security rejection.
-
-Explicit Author follows ordinary trust, branch, unanswered-question and claim guards. It refuses a switch over attempted/uncertain Lands, landed/completed work, saved Security rejection or a non-open/unreadable PR; use the existing recovery instead. Other stage mismatches still release saved work untouched. Legacy authored and stopped/asked/resume runs keep their meaning.
-
-For direct work, the Developer derives requirements from the trusted issue title, body and allowed collaborator comments in the issue file. No Gherkin or replacement requirements document is required by Developer, Review or Merge. Unanswered product questions stop direct work with `not-doable`; Author can instead ask questions and wait at `agent:needs-info`. An unanswered saved question refuses a claim until trusted inputs change.
-
-Saved state records `authorUsed` and the Developer-consumed `requirementsInputs` revision. Missing mode fields mean an older authored run, not permission to start over. Authored issues still need their current authenticated Gherkin. New trusted inputs return an authored issue to Author, otherwise Developer, invalidating old revision approval without erasing PRs, branches, heads, landing facts or Security rejections. Old authored own-Land and closed-incomplete-Merge recovery retain their existing eligibility and authority guards.
-
-Hardening authorizes only one exact code/input revision. Any changed code, including a Sync's clean rebase or conflict resolution, needs fresh hardening, Integration and Security. The merge stage never synchronizes or fixes checks itself: a moved target requests Sync and a failed check returns to Hardening. A saved `integration` receipt remains historical evidence, not an authorization exception. Security receipts for new candidates explicitly bind the configured target and observed target commit as well as the candidate code and trusted inputs. A target change invalidates clearance. CI is required on the exact authorized head when configured.
-
-Security runs before approval and the deterministic Land. A rejection stops the issue with zero landing effects. Lifting the stop cannot reroll that rejected revision. Missing or stale clearance never authorizes a Land. Deterministic issue delivery may target ecosystem's configured source base `main`; it does not authorize production deployment, a model base push or installation.
-
-Checks and Security clear the exact candidate before the target moves (#185). After Land, own Lands get only read-only confirmation (`confirm-landed`): the signed fast-forward intent and receipt bind the result to that candidate, its pre-Land check proof, and GitHub's PR/result/ancestry. No post-Land suite or duplicate model pass runs. Historical landed-result Security receipts remain usable only for the exact historical landed result, not as pre-Land permission. A landed run without exact pre-Land check or Security proof (legacy two-parent receipts, external/manual merges, historical runs missing candidate Security) stops for read-only reconciliation with its evidence retained. No recovery runs writers, post-Land checks or Security, pushes code or repeats an uncertain Land.
-
-Read-only after Land forbids new code/target mutation, suites, repair writers, a second Land and Security model passes; it does not forbid authorized evidence checkpoints or `finish` bookkeeping. Completion can still delete the issue branch and update GitHub labels, claims and issue closure.
-
-A completion saved with a legacy wiki head and missing/stale exact clearance stops for explicit reconciliation. See [landing recovery](../../docs/reference/merge.md).
-
-Docs are ordinary tracked Markdown in `repo/docs/`, committed and reviewed with the code. There is no separate docs checkout, wiki check or publication. A session after `codeMerged` still runs in `merged` mode, but `repo/` holds the confirmed landed result read-only and its commit scope has no writable paths: commit nothing. Pre-Land Security remains read-only and token-free. See [sessions](../../docs/reference/sessions.md) and [review](../../docs/reference/review.md).
-
-## Explicit-target Land and result verification
-
-The sole target mutation for this Land is a Git push of the full immutable authorized head SHA H to the configured repository's literal `refs/heads/<baseBranch>`. Before pushing, the pipeline requires the observed old target P to be a strict ancestor of H and uses an explicit old-OID lease (`--force-with-lease=refs/heads/<baseBranch>:P`). The lease compares the remote old object ID; it does not authorize replacing non-ancestor work. The PR's mutable target or source branch cannot select the write. There is no REST merge, fallback PR merge, alternate push or admin bypass.
-
-The same PR remains the tracking anchor.
-
-A successful new result M is exactly H, not a new two-parent merge commit. A changed remote old object ID fails the lease rather than contributing unchecked integration changes to M. This protects the configured ref update, not an atomic PR/input state, branch incarnation or permission/configuration snapshot. Existing authorization, PR identity/base/head/draft, queue and input checks remain observations. Caller serialization does not exclude external actors.
-
-The configured source base may be `main` (as in ecosystem); that does not grant authority to deploy or move another target's production branch.
-
-Before the push, a landing-account-authored, editor-verified `mergeAttempt` checkpoint is saved and reread. It binds the configured repository, PR, literal target, source branch, original authorization, hardening and integration, plus `operation: {kind: "fast-forward", base: P}`. This is **attempt evidence, not an own receipt**: even an interruption before sending the push closes automatic code-write and repeat-mutation authority. An acknowledged push saves and rereads H as response evidence before reconciliation; acknowledgement alone is not a confirmed receipt.
-
-Read-only fast-forward reconciliation requires the bound signed intent, strict P-to-H ancestry and an exact remote target equal to H. It retains the landed fact before checking the original authorization, source PR binding and current trusted inputs, then rereads the exact target before saving an own receipt. The same PR must retain H and the configured source/base identity; during this step it may still read OPEN, or MERGED only at H. A missing push acknowledgement does not by itself prevent this exact-intent reconciliation, but equal PR/target heads without authentic intent cannot create an own receipt. A later target tip cannot substitute for H or establish a new receipt.
-
-Own-receipt confirmation does not itself permit completion. The post-Land `confirm-landed` path requires the same PR to read MERGED at M = H, that result's ancestry in the freshly fetched base, the authenticated intent/receipt and exact pre-Land `verifiedSha`. Missing, malformed or mismatched proof stops, possibly **after code has landed**. Independently observed valid landed truth is retained even when own provenance cannot be confirmed. No second Land manufactures evidence; no rollback is attempted.
-
-Reconciliation uses an **elapsed-time deadline per invocation with spaced, bounded backoff**, not an immediate-pass or lifetime-read limit. The safe defaults allow **90 seconds** for delayed PR metadata, including lag exceeding 60 seconds. Configure both values together in repository config:
-
-```json
-{
-  "landingConfirmation": {
-    "deadlineSeconds": 90,
-    "backoffSeconds": [1, 2, 4, 8, 10]
-  }
-}
-```
-
-`deadlineSeconds` is an integer from 1 through 600. `backoffSeconds` is a nonempty list of at most 20 integer waits, each from 1 through 60 seconds. The first evidence pass is immediate; subsequent failed passes wait according to the schedule, repeating its final wait and clipping the last wait to the remaining window. Defaults are used when the entire setting is omitted; shortening the window intentionally reduces tolerated lag. A monotonic clock bounds one run, and no new evidence pass starts at or after its deadline. In-flight commands retain their existing transport bounds and may finish beyond it; late own evidence must be confirmed in a later run. Exact matching evidence ends waiting immediately. There is no background timer or unattended restart loop.
-
-The cumulative read count is durably checkpointed before each pass as audit evidence, **not** a lifetime limit. Every fast-forward evidence pass retains the same bound PR identity, intended H = M, strict signed P-to-H range, exact remote target and current trusted-input requirements; waiting relaxes none of them. Completion separately requires genuine MERGED metadata and fetched-base ancestry. Only evidence checkpoints/comments are written, never code, another approval, a fallback merge or a writer session. Matching evidence saves the own receipt before exact-result processing. Deadline expiry reports that code may already have landed and another target mutation or code writer is not authorized. It preserves the exact attempt, response and original authorization, leaving security clearance and completion blocked.
-
-Failed, lost, timed-out or malformed push responses never authorize repeating the mutation or substituting the current base tip or an OPEN PR's test merge. Fast-forward reconciliation uses only the exact authenticated intent and matching evidence above, not an inferred HTTP status or a fabricated response. Historical REST attempts without fast-forward intent still need their saved successful response for legacy own provenance; that legacy receipt alone does not satisfy current completion proof. External/manual merges without current authentic own proof stop for read-only reconciliation with landed truth retained.
-
-**Bounded operator recovery:** stop dispatch for this issue; retain the authoritative state comment, local recovery artifacts, original hardening/integration, attempt identity, saved response M (if any), landed facts and security receipts. Diagnose the metadata/transport problem read-only. With the same issue/branch/lane, configured target, original authorization and trusted inputs, lift the stop and explicitly authorize **one bounded restart at `merge`**. That run reads the saved intent and any response evidence without repeating approval or the target mutation. An earlier expired window (or historical read count) does not permanently disqualify exact evidence that arrives later: the caller-authorized run gets its own finite confirmation window without resetting any saved evidence. If identity/authorization changed or exact evidence is still unavailable at that deadline, stop for explicit reconciliation; do not keep restarting automatically. A confirmed own receipt resumes read-only confirmation of its pre-Land check proof and reuses candidate clearance through the ordinary merge stage (missing proof or clearance stops for reconciliation); a durable rejection of that revision re-stops without rerolling security. Never resend an uncertain Land manually, repeat approval, reopen a code writer, reset the attempt/read evidence, clear landed truth or erase a security rejection to obtain progress. OPEN is not proof the request never landed. Automatic eventual progress is not promised.
-
-Completion, including own recovery and done replay, requires pre-Land `verifiedSha` equal to the fast-forward result M (which is exactly the authorized head H) under the signed intent; no suite reruns on M. Missing proof retains landed truth and stops without a code writer/push. Historical graph readers retain two-parent and exact-delta squash handling, but those receipts alone do not satisfy current fast-forward completion proof. Legacy results without that proof stop for read-only reconciliation; no post-Land checks or Security can supply it. The v2 state can retain optional durable attempted-Land evidence, strictly validated when present. Older states without it remain readable, but missing historical response evidence is never invented. This is not old/new rolling-runtime compatibility: an older binary does not enforce the new attempt barrier. Landing changes nothing installed; cutover is operator-owned and quiescent.
-
-`maxCiFixes` bounds Hardening's check-fix sessions, `maxSyncs` the Sync runs of one issue without landing, and `maxConflictFixes` the Sync resolver's sessions; each task also has three attempts per binding. Stops have `agent:stopped-<control>` labels and a comment naming the control and recovery. Rate limits/transport errors defer rather than stop; the caller must back off before restarting. **`maxFixRounds` is obsolete, warned about and ignored**; the historical `review-rounds` stop is retained for old state/labels, not repurposed as a new limit. Caller-owned restarts must also be bounded; legacy scheduler `maxResumes` is not a new caller scheduler.
-
-Roles live in `src/roles/`, registered in `src/roles/registry.ts`. Thin identity/tool definitions in `agents/` name `issue-pipeline-author`, `-developer` and `-reviewer`. Per-session authority, not agent identity or prompt text, determines commit tools/scope. No model session receives a GitHub token. Network lists describe the boundary; they are not a sandbox.
+[Standards upgrade](../../docs/reference/standards-upgrade.md) assesses a repository read-only. Its `apply` command validates the issue/plan and prints a human `start:implement` handoff, not a stage-launch command or execution grant.
 
 ## Read-only Git subagent
 
@@ -177,134 +83,6 @@ Each successful tool-result `details` records `sessionId`, `queryId`, `repositor
 For chunked reviews, assign the root and exact query, not generated diff files. Inspect the reviewer's persisted tool-result details/session records. Group by session/query/repository/argv, confirm consistent totalLines, sort and union successful inclusive ranges; require every line `1..totalLines`. Repeats/overlaps count once; another query/repo/session cannot fill a gap. An END marker or reviewer claim alone proves nothing about earlier pages. Delivery is not comprehension, review quality, landing authorization or security clearance.
 
 This is the **Git execution boundary**, not an OS/filesystem/keyring/network sandbox. The retained read tools can read same-user files and are not confined by this root allowlist. Do not promise universal credential-file isolation. Optional macOS sandboxing, writer shell isolation, credential rotation and production deployment are outside this feature. Landing does not install or activate it.
-
-## Caller invocation and concurrency
-
-Run installed `job.mjs`, once per stage, with **one `--issue` and a required `--branch`**, including boundary prints:
-
-```bash
-node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
-  --issue 479 --branch feature/issue-479-query \
-  --lane caller-query --stage implement --print-boundary
-
-node "$ISSUE_PIPELINE_ROOT/job.mjs" --config /path/to/repo.json \
-  --issue 479 --branch feature/issue-479-query \
-  --lane caller-query --stage implement
-```
-
-The caller reads the one-line JSON result and saved issue state, then invokes the indicated next stage on the **same branch and stable `--lane`**. A lane owns the live claim across stages; omitting it gives each job a new claimant id, which cannot take a still-live earlier claim. A stage mismatch releases preserved state without running its model, except an eligible explicit Author pass for saved direct work as described above. Do not blindly loop on `unclaimed`, `wait`, `deferred` or `stop`. Do not use the retained autonomous orchestrator for this caller-owned workflow.
-
-Canonical claim normally requires an open issue. A closed issue may recover only genuine landing-account-authored, editor-verified incomplete Merge state (including a stop resuming Merge) with a recorded PR freshly confirmed merged into the configured base and no contradictory saved landing provenance. Eligibility and branch binding are checked before claim/state/working-label writes; only the winning claimant reopens it, using the landing identity and confirming it open. Done/non-Merge, missing/untrusted/malformed state and unconfirmed Lands stay refused. This covers GitHub default-branch auto-close before result confirmation/completion, not a general closed-issue retry or lease override. Exact saved own-Land receipts retain original authorization. A current fast-forward confirmation race first reconciles its signed intent and any push response evidence against the exact target and PR; missing authentic proof stops for read-only reconciliation. Neither recovery path pushes code or repeats the target mutation. Read-only confirmation of pre-Land proof and bound pre-Land Security clearance still gate completed closure; a saved exact rejection is not rerolled.
-
-Issue/branch binding is persisted at first claim. A changed branch on resume is refused; legacy `branch:null` binds the old canonical `agent/issue-N`, not an arbitrary new branch. Protected base/remote-default branches and nonliteral/invalid refs are refused before mutation. A fresh explicit job initializes its metadata clone before posting a claim; there is no sweep prerequisite. Existing clone and issue work are reused. `--print-boundary` pins/validates prompts and prints role/checkouts/environment/network without cloning, claiming or launching pi.
-
-Parallel jobs must use distinct issues/branches. Never dispatch the same issue/branch twice concurrently, even from the same lane. Each exact Land takes the target's integration turn itself (#171); existing claim/lease/head/landing-order guards still apply. `--landing-order N,...` (formerly `--merge-queue`) carries a caller-supplied order, not permission to run concurrent turns. Keep each issue's assignment and claimant stable across restarts. Job checkouts are isolated under `work/<slug>/jobs/`; shutdown saves owned recovery patches and cleans only owned process groups. A signal exits 128 + signal, saving the last checkpoint with no lease.
-
-Optional `laneSlots` (1–399) leases warm test environments to actual issue checkouts. Setup and deterministic checks receive `ISSUE_PIPELINE_LANE_SLOT`; lane-mode setup must succeed before a model starts. A retained checkout retains its slot. Optional `commands.prune` runs from the base clone with `ISSUE_PIPELINE_LANE_SLOTS`, at most hourly across claim processes, and logs failures without failing claims. Legacy no-slot setup/teardown behavior stays unchanged. See [lane test environments and rollout prerequisites](../../docs/reference/checkouts.md#lane-test-environments), including the required drain of all jobs **and test consumers** before enabling legacy prune or shrinking the pool. Merging does not install or activate this behavior.
-
-## Write authority and refused-work recovery
-
-Every credentialed code push, including stop-time salvage and synchronization, checks fresh landing-account-authored, editor-verified saved authority and actual PR status. Missing or malformed critical state, saved landed code, a security rejection or a confirmed live merge grants no code write. Sync checks authority before resetting or rebasing local work, as well as before its push. A diagnostic comment quoting a state marker is not a state comment; the latest genuine landing-account-authored, editor-verified state remains authoritative, including when it is malformed and must be recovered rather than ignored. Claims validate existing state before posting or labeling; only a genuine first claim initializes absent state, and any prior pipeline comment, local work, remote issue branch or PR history without saved authority requires reconciliation. Legacy v1 state is display-only and claims refuse it with `legacy pipeline state needs explicit reconciliation`; there is no automatic adoption tool. Checkpoints and releases require already-established v2 authority. Reauthoring also validates the fresh mutation state, rather than saving tolerant display defaults as new permission.
-
-Draft creation validates the actual PR's repository, branch, target and head, saves its identity and confirms the save before the Developer can launch a writer. An interrupted create/save with no recorded PR searches branch-scoped history across **all** PR states, bounded at 100 rows. Unreadable, malformed, ambiguous or saturated history fails closed; an empty open-only search is never evidence that no merge occurred. An explicit `open-pr` reopen request validates the old PR, reopens it, rereads OPEN authority and saves it before any guarded code push.
-
-A historical CLOSED, unmerged PR never grants code-write authority. A no-code replay may retain its original closed PR head. Only a genuine done replay with an exact null-code completion receipt may instead read a clean fetched-base checkout after branch deletion; the original saved head must still equal the retained PR head, and hardening, inputs and security guards remain unchanged. This does not rewrite reviewed provenance to the current base or authorize another writer/code push.
-
-Refused commits stay local, never pushed merely to preserve them. Job teardown prepares the code checkout's separate binary-safe index and working-tree patches (each independently applies on its recorded base), and verifies a self-contained local-code bundle before resetting or removing the checkout. Patch preparation uses a separate index; failure leaves the original files, staging and HEAD intact, and restart refuses to overwrite the checkout. Existing recovery evidence is never overwritten. A pre-push bundle can remain after a successful push; it is inert recovery, not approval or automatic replay. Retain these artifacts and explicitly recover or relocate a kept checkout before restarting. See [checkouts](../../docs/reference/checkouts.md).
-
-Hardening and its check-fix sessions receive the actual `commands.test` and a pinned Hardening prompt directing only targeted tests inside the session; deterministic verification runs the configured gate afterward (not necessarily full integration coverage; see Tests). The reviewer wall-clock limit and bounded check-fix/readiness guards are unchanged. Before destructive teardown, a job-keyed `dropped/JOB_KEY.json` manifest records branch assignment, Review outcome/reason, source checkouts, snapshot kinds and bases alongside the patches. A manifest save failure retains the original checkout. Later authorized hardening writers on that issue/branch automatically receive matching Review recovery paths, independent of the replaceable `job.json` or issue notices. They inspect and incorporate useful edits within current scope, never automatically replay them. Preserve earlier attempts' evidence; caller-owned restart and all authority checks still apply. Legacy patches without manifests need explicit reconciliation rather than guessed branch provenance.
-
-### Hippy's Hardening (inactive)
-
-A review job started with `--hardening-buddy hippy` hardens as Hippy, the Developer, instead of the Reviewer ([hardening-stays-independent](../../docs/decisions/buddies-and-tasks.md#hardening-stays-independent), #179). The flag is refused with any other stage. Without it, a job hardens as before, and the installed caller never passes it; #186 activates it.
-
-```sh
-node job.mjs --config o__r.json --issue 7 --branch agent/issue-7 \
-  --stage review --hardening-buddy hippy
-```
-
-| | Without the flag (installed) | `--hardening-buddy hippy` |
-| --- | --- | --- |
-| Agent | `issue-pipeline-reviewer` | `issue-pipeline-developer` |
-| Model | `models.reviewer` | `models.developer` |
-| Prompt page | `hardening.md` | `developer-hardening.md` |
-| Launch key | `reviewer-<n>` | `developer-hardening-<n>`, never an Implementation transcript's path |
-| Session timeout | 30 minutes | 60 minutes |
-| "Hardening passed" signature | `role=reviewer` | `role=developer`, naming Hippy |
-
-Everything else stays the same. The session starts fresh, holds no token and commits only through `pipeline_commit`. Pushes and PR readiness use the development account (`devAccount`). Only the landing account (`landingAccount`) saves state and posts the result, and readers accept state and keyed result comments only from that account, so a result the development account writes grants nothing. `test/pipeline-flow-hippy-hardening.test.ts` checks this through built jobs.
-
-The session's transcript lives in the same `runs/<slug>/issue-N/sessions/` folder as Implementation's. Nothing gives it that transcript, but the session runs as the same OS user, and nothing isolates its files.
-
-Code resolver sessions stage text and return; `finish-sync` owns continuation and later conflict stops under the existing limits. It also classifies stops reached by a session continuing code itself, before interpreting a `cannot-fix` reply or rejecting an explicit abort. `cannot-fix` can complete only through the existing finish/push guards; an explicit abort never pushes. Every gitlink conflict stops deterministically with full numbered-stage SHAs and retained unresolved evidence; a resolver never chooses a submodule revision. Exact-head, actual-result and security gates are unchanged. See [sync](../../docs/reference/sync.md).
-
-Later text stops stay on the same code rebase: the next resolver gets current paths, the exact fetched target and the next cumulative attempt, without treating the earlier staged resolution as rejected. Each completed session's count is saved before continuation. At `maxConflictFixes`, code synchronization retains the stopped pick through `finish-sync {retainConflict: true}` and stops under the existing conflict control with the full pick ID, paths and verified recovery location, rather than attempting abort cleanup and surfacing a generic unmerged-index error. This preserves the saved count and synchronization context for explicit authorized recovery. Finish and guarded push checks remain mandatory.
-
-Synchronization cleanup also saves the staged/working patches and a verified bundle containing current, local-branch and available pre-rebase history before abort/reset/clean. An unresolved index saves the verified history bundle and `conflict-stages.json` (path, stage number, mode and full object ID), then refuses destructive cleanup and retains the original checkout, unresolved index and working files for explicit recovery. The stop names the paths and retained evidence instead of attempting lossy patch preparation.
-
-**Concurrency limitation:** caller serialization is not external exclusion. Outside actors may push, merge, retarget or change permissions/configuration at any time. The explicit destination/immutable-source fast-forward push with an old-OID lease and read-only result confirmation above are the supported compromise, not an atomic PR/input/config transaction. Observed invalid authority refuses writes; unseen concurrent changes are not atomically prevented. No exclusion promise or credential/ruleset change is implied. Installation remains operator-owned and requires exact candidate checks and a reviewed cutover.
-
-## Stop reconciliation evidence
-
-Before a job launches stop, it writes a private local
-`runs/<slug>/issue-N/stop-recovery/<uuid>.json` record shared with the stop child.
-Stop verifies landing identity, preserves fresh signed durable authority and the
-resume stage, saves and authoritatively rereads the stopped state/cleared lease,
-then requires working-label removal, stop-label updates and claim closure.
-Transient login failures receive only the bounded safe-read retries above;
-required writes are not blindly retried. A fully acknowledged stop records
-`signed-stop-confirmed`. Required cleanup failures are not ignored; a missing
-label (HTTP 404) is already removed. If a signal interrupts the stop child,
-the job retains this evidence instead of saving its stale working checkpoint
-over a stopped state that may already have landed.
-
-If login, a required update or the child itself fails, the record remains
-`reconciliation-required` and the job reports its path. It names issue/repository,
-assigned branch, resume stage/source, intended code, original and stop failures,
-and confirmed versus unresolved state/lease, explanation, working-label,
-stop-label and claim effects. Failure fields redact configured tokens before
-truncation (8192 UTF-16 code units plus a marker per field). A lost response stays
-unresolved and may have landed. Retain these files across status replacement.
-
-Stop dispatch and reconcile every unresolved effect against fresh GitHub
-state/editor provenance, lease, live claims and issue/PR labels before an
-explicitly authorized restart. Preserve remote code commits and
-existing genuine receipts. This local evidence is **not signed authority**:
-passed checks or pushed commits never supply missing hardening, and ordinary
-saved-authority/exact-head checks still gate recovery. No install or deployment
-is implied by landing this source change.
-
-## Prompt source and pinning
-
-The behavioral prompts ship with the pipeline: `prompts/` in this folder, which install copies to `$ISSUE_PIPELINE_ROOT/prompts/`, distinct from mutable issue docs. Behavioral instructions come **only** from these installed pages, selected by `(stage, phase)` (`src/job/prompts.ts`):
-
-| Stage / phase | File |
-|---|---|
-| author / none | `author.md` |
-| implement / none | `developer.md` |
-| review / hardening | `hardening.md` |
-| merge / integration | `integration.md` |
-| merge / security-review | `security.md` |
-
-Before any mutation the job snapshots the pages needed by its stage. A missing prompt folder, or a missing/unreadable/nonplain/symlink, invalid UTF-8, NUL-containing, blank, single-line or oversized page, fails explicitly; there is **no fallback**. Each page must be multiline and at most 131071 bytes. `job.json` records path, page and SHA-256; session launch/usage provenance records the page/hash. Their `head` is null; records written by older jobs, which pinned the pages from a wiki clone given by the removed `--brain-path` flag, still parse with that clone's HEAD. The exact pinned text is appended to pi's thin identity prompt with `--append-system-prompt`, so installing another release mid-job changes no session's policy. An unmapped stage/phase cannot start. Prompt text cannot grant tools, tokens or commit permission; code checks each session's `commits` and `phase` against `STAGE_AGENTS` in `src/job/roles.ts`.
-
-## Programs
-
-`build.ts` bundles the entry points into `dist/`; install copies them to the pipeline root.
-
-| Program | Purpose |
-|---|---|
-| `job.mjs` | Explicit one-stage invocation above; `--steer <launch key> --message <text>` steers a running session |
-| `ops.mjs` | Credentialed deterministic operations; framed JSON stdin (`BEGIN_OPS_REQUEST` … `END_OPS_REQUEST`, with `op` and `config`), one JSON reply |
-| `report.mjs` | `usage --config <path> [--since <date>] [--role <role>] [--issue <n>]`; telemetry, not spending limits |
-| `shell-supervisor.mjs` | Configured commands in owned process groups, cleaned on exit |
-| `structured-output.mjs`, `pipeline-commit.mjs` | Schema-checked replies and scoped commit tool extensions |
-| `git-review.mjs` | Credential-isolated, read-only Git queries with session-local paging and tool-result coverage records |
-| `caller-jobs.mjs` | The caller's job launcher (`scripts/caller-jobs.ts`): `start`, `status` and `wait`; see [the caller reference](../../docs/reference/caller.md) |
-| `sweep.mjs` | The opt-in assignment sweep (`scripts/sweep.ts`): starts the work the grantor's assignments grant through the caller's launcher, for repos whose config names `assignments.grantor`; see [the assignment sweep](../../docs/reference/assignment-sweep.md) |
-| `orchestrate.mjs` | Retained legacy discovery/scheduling compatibility only; `--config <path> [--once]`. Not the caller-owned entry point; do not run it alongside caller-managed jobs |
-
-GitHub state, claim, Gherkin, hardening and security comments require landing-account authorship plus same-read editor provenance to be authoritative; signatures and markers alone grant nothing. `clones/`, `work/` and `runs/` are local caches/recovery artifacts: retain them and saved patches through upgrades until preserved work is confirmed safe.
 
 ## Two GitHub identities and operator credentials
 
@@ -359,24 +137,6 @@ These semantics still need the operator verification below. This is not a
 same-OS-user sandbox: a child under the operator's user may still read the
 credential file.
 
-## Operator setup
-
-Configure both accounts and verify repository, PR and review capabilities.
-Development opens the PR; review/merge submits a GitHub APPROVE review bound
-to the exact checked commit before landing. A failed or mismatched
-approval prevents landing. Review approval follows separate read-only Security clearance of the exact candidate. A rejection prevents both approval and landing.
-
-The caller assigns issues and launches stage jobs for each configured repository,
-including ecosystem itself. It monitors failures, fixes pipeline defects and
-coordinates installation and useful restarts. There is no mandatory bootstrap
-issue, session-refresh pause or separate scheduler prerequisite.
-
-Keep operator credentials outside managed worktrees and verify their selected
-identities without exposing token values. Before replacing an installation,
-preserve active work, stop dispatch, drain its jobs and snapshot local config
-and recovery state. Existing issue histories may need explicit reconciliation;
-never discard retained work to make an issue look new.
-
 ## Config and model cutover
 
 Operator config lives in `$ISSUE_PIPELINE_ROOT/repos/`; `repos/example.json` shows legacy flat configuration, and `repos/committed-settings.example.json` shows opt-in committed project settings. `src/config-schema.ts` defines operator shape/defaults. [Project settings](../../docs/reference/project-settings.md) describes the strict tracked `.issue-pipeline.json`, operator-owned identity/safety controls, trusted full-commit pin, policy binding and safe legacy migration. Candidate settings edits never activate policy for the same candidate. Every newly computed authorization revision, including legacy mode, binds its checking policy; old receipts without that binding remain historical evidence, not fresh pre-Land authorization. `wiki` is refused, even when false or null: remove the key. Docs live in the repository's `docs/`. Other removed config fields load with warnings; old model-role mappings are in `src/config-legacy.ts`.
@@ -395,55 +155,57 @@ The default and example role models are `openai/gpt-6.1-sol`. Set all three repo
 
 All model sessions now require the explicit, separately provisioned [native runtime policy](runtime/README.md): trusted **Pi 1.2.0 + pi-cliproxyapi 0.4.3**, a dedicated model-child HOME, explicit provider extension/profile/cache, declared model credential **names** and reviewed native context-window expectations. The supported starting profile is builtin OpenAI through a distinct proxy endpoint. Set `runtime.modelContextWindows` explicitly; there is no inferred expectation. See `repos/example.json` and the nonsecret `runtime/pi-cliproxyapi-config.example.json`. Model strings pass unchanged to `--model`; unsupported registrations refuse rather than falling back.
 
-Native automatic compaction targets **175000** tokens with **30000** recent-history tokens. For the expected 272000-token window, reserve is **97000**. This is same-session native context management, not a token/spending cap. Private generated agent settings, disabled project/personal resource discovery and correlated pre-prompt native verification enforce policy for every role. Only explicit provider/role/pipeline resources load; inherited extensions are no longer used. This is configuration isolation, **not** an OS/filesystem/keyring/network sandbox. The parent job and credentialed operations keep their own HOME and two-account boundary. Global/personal provider setup is neither copied nor changed. Tests use fake models and local origins only.
+Native automatic compaction targets **175000** tokens with **30000** recent-history tokens. For the expected 272000-token window, reserve is **97000**. This is same-session native context management, not a token/spending cap. Private generated agent settings, disabled project/personal resource discovery and correlated pre-prompt native verification enforce policy for every role. Only explicit provider/role/pipeline resources load; inherited extensions are no longer used. This is configuration isolation, **not** an OS/filesystem/keyring/network sandbox. The buddy runtime and credentialed operations keep their own HOME and two-account boundary. Global/personal provider setup is neither copied nor changed. Tests use fake models and local origins only.
 
 This ordinary backlog continuation is not a prerequisite for unrelated delivery. No first-issue, queue-off, session-reset or historical install/provision/STOP restriction is restored. Development uses the operator's `devAccount` (hippy for this issue); review/approval/landing uses the distinct `landingAccount` (lawd). These names are operator choices, not hard-coded identities. Credential rotation is outside this change.
 
+## Programs and observations
+
+`programs.ts` is the shared build, install and syntax-check manifest. Current programs include `buddy.mjs`, `ops.mjs`, `report.mjs`, `shell-supervisor.mjs`, `structured-output.mjs`, `pipeline-commit.mjs`, `git-review.mjs`, `safe-refactor.mjs`, `safe-refactor-tool.mjs` and `standards-upgrade.mjs`.
+
+The stage job, orchestrator, caller launcher and assignment sweep are removed. `RETIRED_PROGRAMS` intentionally names their former installed files so installation can back them up and retire them. It is not a list of runnable compatibility programs.
+
+Canonical observation files are `runs/buddy-runs/ID/run.json` and `runs/SLUG/issue-N/actions/ID/run.json`. They grant no authorization. The [dashboard](../workflow-dash/README.md) distinguishes buddy runs, action runs, generic subagent runs and historical jobs. Missing evidence and bounded read coverage remain explicit; a process observation cannot release capacity or make an action live.
+
 ## Install and safe upgrades
 
-The executor runs from an installed copy, not this source folder. Install only when a change affects installed source or installed assets. Documentation-only changes need no binary reinstall; docs land with the code. Changes to the behavioral prompts in `prompts/` and to the thin agent definitions are installed assets.
+Run source and assets only from an accepted installed copy. Source Land does not change that copy, credentials or model provisioning. Before Land, pass the gate required by the effective trusted policy on the exact candidate and obtain independent read-only Security bound to that candidate, trusted inputs, policy and pre-Land target.
 
-For an installed-source/assets change, pass the approved fast gate on the clean, exact source candidate **before Land**:
-
-```bash
-npm ci --ignore-scripts --no-audit --no-fund   # monorepo root, unchanged lockfile
-npm run check                                  # approved exact-source fast gate before Land
-```
-
-Retain the fast result and independent read-only pre-Land Security clearance for the same full source commit, trusted-input revision, effective current checking policy and configured pre-Land target branch/commit. Confirm that the delivered identity, authenticated receipt and ancestry bind the install candidate to that checked and cleared source. Missing, stale or mismatched proof is a **STOP**, including for already-landed changes; a new suite or retrospective Security cannot supply it. The fast gate is not full integration coverage, and the full suite is not an installation prerequisite.
-
-After source delivery, the operator separately authorizes the cutover. Do not rerun a check suite or model validation after Land. Review the dry-run before installing:
+This refactor requires the full gate before Land:
 
 ```bash
-mise //apps/issue-pipeline:install:dry-run    # inspect candidate changes
-mise //apps/issue-pipeline:install            # operator-authorized cutover only
+npm ci --ignore-scripts --no-audit --no-fund
+npm run check:full
 ```
 
-Before upgrading: stop dispatch, drain all old-version jobs (prefer completing an active integration turn), verify no old job/session remains, snapshot installed config and signed state/recovery artifacts, confirm the bound exact-source fast result and independent pre-Land Security described above, review the candidate changes and install dry-run, then perform a controlled install. Complete the [managed-artifact and installed-CLI acceptance](../../docs/reference/operations.md#installation-acceptance) before resuming one explicitly assigned issue/stage at a time. Preserve accepted safety behavior; do not install a candidate that drops it. Prompt changes take effect with the install, for jobs started after it; new jobs must still validate their stage's required pages. Never mix live old/new jobs or reset branches, hardening, integration, attempted-Land/response evidence (including cumulative reconciliation reads), security rejections or code Land receipts to make an upgrade pass. Installing this recovery fix is a separate operator-authorized upgrade after its source lands, not an automatic source-workflow step; it performs no credential rotation, release or deployment. Unknown moved heads return conservatively to hardening; code already landed stays landed. Install/rollback of binaries does not undo landed code or clear a security rejection.
+Run at the monorepo root under Node 24. Retain exact command statuses and source/policy/target identities. A fast pass is not full runtime coverage. Missing proof after Land remains a hold; retrospective tests or Security cannot fill it.
 
-When pipeline operation exposes a source defect, preserve retained issue work and authoritative receipts, and deliver a tested/reviewed fix through the issue and PR workflow. Landing source does not change the installed runtime. After any necessary operator cutover and explicit recovery, restart the retained repository, issue, branch and stable lane at a stage appropriate to saved state and current inputs. Lifting a stop supplies no missing authority; ambiguous Land outcomes require read-only reconciliation, not a blind mutation retry. The [recovery procedure](../../docs/reference/stops-and-labels.md#resume-a-stopped-issue) and [cutover runbook](../../docs/reference/operations.md#upgrade-safely) describe this process.
+Only after separate operator authorization, drain old jobs/actions and every consumer, preserve all work and evidence, and review the installation dry-run:
 
-Record source delivery (PR/H/M) and operator installation (candidate and installed identity or not applicable) separately. Neither implies the other, and installing changes no prompt text already pinned by a live job. Ecosystem's source-base `main` is not permission to deploy another configured repository's production branch.
+```bash
+mise //apps/issue-pipeline:install:dry-run
+mise //apps/issue-pipeline:install
+```
 
-Install builds first, then copies programs, the behavioral prompts (`prompts/*.md` into `prompts/`) and example configs into `$ISSUE_PIPELINE_ROOT` (default `~/.pi/agent/issue-pipeline`) and thin agents into `$PI_CODING_AGENT_DIR/agents/issue-pipeline/` (default `~/.pi/agent`), filling root placeholders. It backs up replaced/retired installed files under `$ISSUE_PIPELINE_ROOT-backups/<timestamp>-install/`, records the commit in `INSTALLED.json`, refuses dirty source unless explicitly overridden and refuses installing from inside the pipeline root. The retired old `workflow.js`, any installed prompt page `prompts/` no longer has, escalation/ops/reader/specifier/writer agents and start/pause prompts are listed by dry-run. Per-repo operator configs, setup/teardown scripts, secrets, clones, work and runs are not rewritten by install. Model-config cutover remains an explicit operator responsibility. Install also copies the nonsecret runtime example, never a runnable profile/cache/credential. Landing this source does not activate it or resume jobs: the operator separately installs the accepted version and records its installed identity before resuming affected jobs.
+The installer backs up replacements and retirements and records `INSTALLED.json`. It does not rewrite operator configs, provision credentials, migrate historical work or grant activation permission. Do not mix live old/new runtimes or translate old assignments/stages into accepted signals. Complete [installation acceptance](../../docs/reference/operations.md#installation-acceptance) separately; it compares managed artifacts and bounded CLI parsing without running a post-Land suite or model.
 
-For the removed wiki flow, follow [the migration cleanup steps](../../docs/reference/operations.md#upgrade-from-the-removed-wiki-flow) before cutover. They cover config keys, launcher arguments and retained private work.
+Prompt pages and agent definitions are installed assets. Prompt selection and tool authority remain checked by code; a prompt cannot grant credentials, commit scope or permission. Preserve pinned prompt bytes, hashes, receipts and recovery artifacts through cutover. A binary rollback does not undo Land or clear a Security rejection.
+
+For a source defect, preserve the affected action and deliver a tested/reviewed fix. Installation and supported recovery remain separately authorized. There is no restart-at-stage recipe. An uncertain Land permits only its supported read-only reconciliation, never a blind retry. See [operations](../../docs/reference/operations.md#recover-after-a-source-defect).
 
 ## Tests
 
-From the repository root:
+At the repository root:
 
 ```bash
-npm run check        # fast default, both apps; NOT full integration coverage
-npm run check:full   # expensive opt-in: fast gate + every Node test, then the dashboard's gates
+npm run check        # both apps' fast gates; not full pipeline runtime coverage
+npm run check:full   # pipeline fast gate and Node tests, then dashboard gate
 ```
 
-From this folder, `npm run check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts alone. mise is optional: `mise //apps/issue-pipeline:<task>` calls the same scripts, and the `node --test` flags live only in `package.json`.
+From this folder, `check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts. mise is optional and calls the same scripts.
 
-The fast default checks source and test types, Biome, the build, syntax of the installer and all ten built programs. It does **not** run the integration/flow suite or prove runtime authority, recovery, isolation or landing behavior. A fast-default pass must not be labelled full integration coverage.
+The pipeline fast gate checks source/test types, Biome, build, installer syntax and all ten built programs. It runs no pipeline Node tests. The full gate discovers `test/**/*.test.ts` with file concurrency 2 and per-test timeout 180000 ms. The historical unit suite was removed; the directory now contains new public-entrypoint tests and is not empty.
 
-The Node test suite was deleted on 2026-10-25, so `test/` is empty. `check:full` runs the fast gate, then every `test/**/*.test.ts` with file concurrency 2 and per-test timeout 180000 ms. A new test file there joins it with no change to the scripts; it follows the rules below. Full-flow files launch their own jobs, ops, fake GitHub and Git subprocesses, so host-core-count parallelism can oversubscribe the machine and exhaust stage/hook deadlines. Keep this suite explicit and pre-Land only; do not run it by default, as an installation prerequisite or after landing. Authorized post-install managed-artifact and installed-CLI acceptance is separate from a check suite or model validation.
+Tests use temporary HOME/pipeline roots, local Git origins and fake GitHub/model processes, never real credentials, models or production data. Set disposable roots before dynamic imports. Test real files, subprocesses, Git and public operations; do not replace task behavior with success stand-ins and call it integrated acceptance. A failure or flake blocks acceptance; fix the cause instead of repeating the same test for a pass.
 
-The [gate scope and cost report](../../docs/reference/check-gates.md) records the known observed cost, remaining optimization/isolation work and evidence requirements. Repository tasks do not rewrite an operator's configured `commands.test` or wrapper. The disabled GitHub Check workflow remains disabled; changing these tasks does not enable it.
-
-Tests use temporary HOME/pipeline roots, local bare git origins, fake GitHub and fake pi, never real GitHub/models or production data. Create/assert the temporary ROOT and set HOME/ISSUE_PIPELINE_ROOT **before dynamic source imports**: root resolution happens once on import. Full-flow regressions cover writable hardening/integration, pre-Land read-only Security and read-only historical landed recovery, no-code completion, explicit fresh-root invocation and claim-populated interrupted-Land replay. Legacy scheduling safety tests remain compatibility coverage, not a live dispatch recommendation. A failure or flake blocks acceptance; fix its cause rather than rerunning for a pass.
+Full suites are explicit and pre-Land, not a post-Land repair loop or installation prerequisite rerun. Follow the effective checking policy and record exact coverage omissions. [Gate scope and cost](../../docs/reference/check-gates.md) distinguishes fast checks from runtime proof. Installed-artifact acceptance remains a separate operator action.
