@@ -1,7 +1,8 @@
 {
+  "resources": { "modelSessions": 1 },
   "commands": {
     "setup": "npm ci --ignore-scripts --no-audit --no-fund",
-    "test": "npm run check"
+    "test": "npm run check:full"
   },
   "practices": [
     "AGENTS.md",

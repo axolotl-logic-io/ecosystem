@@ -254,13 +254,19 @@ function git(
   });
 }
 
-// Authorization reads must observe revocation during a long-lived job too.
-function isCollaborator(cfg: Config, login: string): boolean {
+// Failed authority reads hold requirements instead of silently removing a
+// previously trusted person's input from its revision digest. This includes
+// unreadable 404 responses, which cannot establish the reader's capability.
+function assertCollaborator(cfg: Config, login: string): void {
   const endpoint = `repos/${cfg.repo}/collaborators/${login}`;
-  return (
-    gh(cfg, "landing", ["api", endpoint, "--silent"], { allowFail: true })
-      .code === 0
-  );
+  const result = gh(cfg, "landing", ["api", endpoint, "--silent"], {
+    allowFail: true,
+  });
+  if (result.code !== 0) {
+    throw new OpsError(
+      `cannot establish current collaborator authority for @${login}; hold trusted requirements until the read is verified`,
+    );
+  }
 }
 
 // A human login counts only if explicitly allowed, never either bot,
@@ -277,7 +283,11 @@ function isAllowedUser(cfg: Config, login: string | null | undefined): boolean {
     return false;
   }
   const allowed = new Set(cfg.allowedUsers.map((user) => user.toLowerCase()));
-  return allowed.has(login.toLowerCase()) && isCollaborator(cfg, login);
+  if (!allowed.has(normalized)) {
+    return false;
+  }
+  assertCollaborator(cfg, login);
+  return true;
 }
 
 export {
