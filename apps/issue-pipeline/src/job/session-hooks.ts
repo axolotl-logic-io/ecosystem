@@ -74,12 +74,9 @@ function hooksOf(
         return shared;
       }
       const { key } = launch;
-      const { state, codeWritable } = readWriteAuthority(scoped, args.issue);
-      if (state.stage !== args.stage) {
-        throw new Error(
-          `saved stage ${state.stage} cannot authorize a ${args.stage} writer session`,
-        );
-      }
+      // Saved state has no stage cursor: the work item's fresh write fence
+      // alone decides whether the session may write code.
+      const { codeWritable } = readWriteAuthority(scoped, args.issue);
       const scope = commitScopeOf(args.stage, codeWritable, args.task?.name);
       scopes.set(key, scope);
       const { socket } = control;

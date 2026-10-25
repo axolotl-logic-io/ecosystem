@@ -266,12 +266,11 @@ async function openControl(
   for (const name of SIGNALS) {
     process.on(name, onSignal);
   }
-  const server = net.createServer((connection: net.Socket): void =>
-    serve(connection, { launches: live.sessions, onPush, binding }),
-  );
-  fs.mkdirSync(path.dirname(socket), { recursive: true });
-  fs.rmSync(socket, { force: true });
-  await listen(server, socket);
+  const closeSocket = await serveSocket(socket, {
+    launches: live.sessions,
+    onPush,
+    binding,
+  });
   return {
     socket,
     register: (launch: LiveHandle): void => live.add(launch, signal !== null),
@@ -280,11 +279,67 @@ async function openControl(
       for (const name of SIGNALS) {
         process.off(name, onSignal);
       }
-      server.close();
-      fs.rmSync(socket, { force: true });
+      closeSocket();
     },
   };
 }
 
-export type { Control, LiveHandle, LiveLaunch, OnPush };
-export { openControl, STOP_GRACE_MS, socketPathOf, stopLaunch };
+// Listens on `socket`, after removing a stale one, answering `served`'s
+// requests, and resolves to what closes it.
+async function serveSocket(
+  socket: string,
+  served: Served,
+): Promise<() => void> {
+  const server = net.createServer((connection: net.Socket): void =>
+    serve(connection, served),
+  );
+  fs.mkdirSync(path.dirname(socket), { recursive: true });
+  fs.rmSync(socket, { force: true });
+  await listen(server, socket);
+  return (): void => {
+    server.close();
+    fs.rmSync(socket, { force: true });
+  };
+}
+
+// A control socket with no stop of its own, for a caller that stops its
+// launches cooperatively (src/runtime/stop.ts): its path, what keeps a live
+// launch steerable until it exits, the live sessions, and what closes it.
+// Nothing here signals or kills a launch.
+interface ControlSocket {
+  socket: string;
+  register: (live: LiveHandle) => void;
+  sessions: ReadonlyMap<string, LiveLaunch>;
+  close: () => void;
+}
+
+// Opens a control socket in `dir` that answers the requests naming
+// `binding`: steers to its live sessions and push requests through `onPush`.
+async function openControlSocket(
+  dir: string,
+  onPush: OnPush,
+  binding: InvocationBinding,
+): Promise<ControlSocket> {
+  const socket = socketPathOf(dir);
+  const live = liveSetOf();
+  const close = await serveSocket(socket, {
+    launches: live.sessions,
+    onPush,
+    binding,
+  });
+  return {
+    socket,
+    register: (launch: LiveHandle): void => live.add(launch, false),
+    sessions: live.sessions,
+    close,
+  };
+}
+
+export type { Control, ControlSocket, LiveHandle, LiveLaunch, OnPush };
+export {
+  openControl,
+  openControlSocket,
+  STOP_GRACE_MS,
+  socketPathOf,
+  stopLaunch,
+};

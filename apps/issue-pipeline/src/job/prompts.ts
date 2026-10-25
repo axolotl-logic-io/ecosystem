@@ -123,6 +123,29 @@ function messageOf(error: unknown): string {
   return String(error);
 }
 
+// The prompt folder `dir`, resolved, or a throw when it isn't a folder.
+function promptFolder(dir: string): string {
+  const folder = path.resolve(dir);
+  if (fs.statSync(folder, { throwIfNoEntry: false })?.isDirectory() !== true) {
+    throw new Error(
+      `the prompt folder ${folder} isn't a folder; install the pipeline release that ships it`,
+    );
+  }
+  return folder;
+}
+
+// Page `page` of prompt folder `dir`, pinned, or a throw naming why it
+// can't be.
+function pinPage(dir: string, page: string): PinnedPrompt {
+  const folder = promptFolder(dir);
+  const { text, bytes } = pageText(folder, page);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return {
+    text,
+    provenance: { page, path: path.join(folder, page), sha256, head: null },
+  };
+}
+
 // Pins, from the prompt folder `dir` (PROMPTS_DIR for a stage job), the page
 // of each session a `stage` job, whose Hardening `hardening` performs, or
 // its `task` job, runs, or throws naming the first page it can't pin.
@@ -132,12 +155,7 @@ function pinPrompts(
   hardening: HardeningBuddy = "lawd",
   task: JobTask | null = null,
 ): StagePrompts {
-  const folder = path.resolve(dir);
-  if (fs.statSync(folder, { throwIfNoEntry: false })?.isDirectory() !== true) {
-    throw new Error(
-      `the prompt folder ${folder} isn't a folder; install the pipeline release that ships it`,
-    );
-  }
+  const folder = promptFolder(dir);
   const prompts = new Map<string, PinnedPrompt>();
   for (const { phase } of stageAgentOf(stage, hardening, task).sessions) {
     const page = PROMPT_PAGES.find(
@@ -149,15 +167,7 @@ function pinPrompts(
     if (page === undefined) {
       throw new Error(`no prompt page for ${sessionKey(stage, phase)}`);
     }
-    const { text, bytes } = pageText(folder, page);
-    const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const provenance = {
-      page,
-      path: path.join(folder, page),
-      sha256,
-      head: null,
-    };
-    prompts.set(sessionKey(stage, phase), { text, provenance });
+    prompts.set(sessionKey(stage, phase), pinPage(folder, page));
   }
   return {
     promptFor: (at: Stage, phase: SessionPhase | null): PinnedPrompt | null =>
@@ -167,4 +177,4 @@ function pinPrompts(
 }
 
 export type { PinnedPrompt, PromptProvenance, StagePrompts };
-export { PROMPT_PAGES, PROMPTS_DIR, pinPrompts };
+export { PROMPT_PAGES, PROMPTS_DIR, pinPage, pinPrompts };

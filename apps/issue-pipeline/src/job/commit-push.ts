@@ -31,7 +31,8 @@ const PIPELINE_COMMIT_OP = "pipeline-commit";
 // caller assigned, and its random id.
 interface PushJob {
   issue: number;
-  stage: Stage;
+  // The stage job's stage; a buddy action has none. The push never reads it.
+  stage?: Stage;
   checkout: string;
   branch: string;
   id: string;

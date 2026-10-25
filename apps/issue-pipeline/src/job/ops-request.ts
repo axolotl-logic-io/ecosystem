@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { Config, JobCheckout } from "../config.ts";
 import type { InvocationBinding } from "../coordination.ts";
 import { policyRevision } from "../project-policy.ts";
+import type { BuddyEnvelope } from "../runtime/buddy-config.ts";
 import type { LaunchHooks } from "./launch.ts";
 import { runOpsLaunch } from "./launch.ts";
 import type { OpsRaw } from "./raw-results.ts";
@@ -35,6 +36,9 @@ interface OpsFrame {
   // A job started for an assignment: the buddy account whose grant each
   // credentialed write rechecks (#119).
   grant?: { login: string };
+  // A buddy action's trusted authorization (src/runtime/buddy-config.ts's
+  // BuddyEnvelope), which ops rereads before its bound task ops.
+  buddy?: BuddyEnvelope;
 }
 
 function opsFrameOf(
@@ -128,7 +132,9 @@ function opsRunnerOf(
   ): Promise<OpsReply> => {
     seq += 1;
     const key = `${op}-${seq}`;
-    const request = { op, ...frame, ...payload, number: issue };
+    // The frame goes after the payload, so no payload field can stand in
+    // for the op, the config, the binding, the checkout or the buddy.
+    const request = { ...payload, op, ...frame, number: issue };
     const framed = `BEGIN_OPS_REQUEST\n${JSON.stringify(request)}\nEND_OPS_REQUEST`;
     const raw = await runOpsLaunch(
       { key, request: framed, timeoutMs: minutes * MINUTE_MS },

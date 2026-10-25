@@ -105,6 +105,17 @@ function assertNoConsumer(cfg: Config, issue: number): void {
   }
 }
 
+// Why issue `issue`'s execution must hold whatever its run's own end: an
+// unresolved stop recovery, an unreconciled journaled write or a registered
+// lane-slot consumer. Null when none holds it.
+function issueRefusal(cfg: Config, issue: number): string | null {
+  return (
+    refusalOf((): void => assertStopRecoveryResolved(cfg, issue)) ??
+    refusalOf((): void => assertReconciled(cfg, issue)) ??
+    refusalOf((): void => assertNoConsumer(cfg, issue))
+  );
+}
+
 // Why issue `issue`'s execution must hold after a run with `evidence`, or
 // null when the job may release it.
 function releaseRefusal(
@@ -112,13 +123,8 @@ function releaseRefusal(
   issue: number,
   evidence: ReleaseEvidence,
 ): string | null {
-  return (
-    endRefusal(evidence) ??
-    refusalOf((): void => assertStopRecoveryResolved(cfg, issue)) ??
-    refusalOf((): void => assertReconciled(cfg, issue)) ??
-    refusalOf((): void => assertNoConsumer(cfg, issue))
-  );
+  return endRefusal(evidence) ?? issueRefusal(cfg, issue);
 }
 
 export type { CheckpointLedger, ReleaseEvidence };
-export { checkpointLedger, releaseRefusal };
+export { checkpointLedger, issueRefusal, releaseRefusal };

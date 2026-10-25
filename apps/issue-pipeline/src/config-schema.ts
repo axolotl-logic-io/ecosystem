@@ -106,6 +106,10 @@ const CONFIG_SCHEMA = z.looseObject({
   }),
   // Project-buddy's lane app ports must stay below its proxy port range.
   laneSlots: z.number().int().min(1).max(MAX_LANE_SLOTS).optional(),
+  // The repository's own Land permission. Land needs it and the Gatekeeper
+  // buddy's `permissions.land` (src/runtime/buddy-config.ts); missing is
+  // false.
+  permissions: z.strictObject({ land: z.boolean() }).optional(),
   gitEmail: OPTIONAL_TEXT,
   gitName: OPTIONAL_TEXT,
   // Deprecated (budgets-bound-context, Axlog, 2026-10-16): the per-issue token
