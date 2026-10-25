@@ -2,6 +2,10 @@
 // The fake GitHub's `gh api` routes: only the REST calls the pipeline makes,
 // each served from the world, and `--jq` only for the filters it passes.
 // Any other route or filter is refused as unsupported.
+import {
+  issueEvents,
+  listed as pagedRows,
+} from "./fake-pipeline-flow-gh-assignments.mjs";
 import { coordinationGit } from "./fake-pipeline-flow-gh-coordination.mjs";
 import { branchMerge } from "./fake-pipeline-flow-gh-merge.mjs";
 import {
@@ -175,17 +179,22 @@ function issueRoute(world, call) {
   if (part === "sub_issues") {
     return printed(call, []);
   }
+  if (part === "events" && call.method === "GET") {
+    return issueEvents(world, number);
+  }
   if (part === "comments" && call.method === "POST") {
     const body = fieldOf(call.fields, "body") ?? "";
     const posted = postComment(world, number, world.account, body);
     return printed(call, restComment(world, posted));
   }
   if (part === "comments") {
-    const listed = world.comments.filter((each) => each.issue === number);
-    return printed(
-      call,
-      listed.map((each) => restComment(world, each)),
-    );
+    const rows = world.comments
+      .filter((each) => each.issue === number)
+      .map((each) => restComment(world, each));
+    if (call.jq === ".[] | @json") {
+      return pagedRows(world, `issues/${number}/comments`, rows);
+    }
+    return printed(call, rows);
   }
   throw new Error(`fake-gh: unsupported api ${call.method} ${n}/${part}`);
 }

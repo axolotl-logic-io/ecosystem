@@ -2,6 +2,7 @@
 // mutation hook that fences a bound job's or ops request's credentialed
 // writes with it (controlledMutation). It is not a scheduler.
 import { z } from "zod";
+import { assertGranted } from "./assignment/grant.ts";
 import type { IssueComment } from "./comments.ts";
 import { listComments, listRepoComments, rawComment } from "./comments.ts";
 import type { Config } from "./config.ts";
@@ -176,7 +177,8 @@ function guardExecution(cfg: Config, issue: number): void {
 }
 
 // Each credentialed write of a bound job or ops request: a fresh ownership
-// read, then the write journaled with its exact intent (#169). A write inside
+// read, for a job started for an assignment a fresh grant read (#119), then
+// the write journaled with its exact intent (#169). A write inside
 // another journaled write runs under that one's journal, and one whose own
 // operation reconciles it by reading isn't journaled again.
 function controlledMutation(
@@ -189,6 +191,9 @@ function controlledMutation(
     return write();
   }
   guardExecution(cfg, execution.issue);
+  if (cfg.grant !== undefined) {
+    assertGranted(cfg, execution.issue, cfg.grant.login);
+  }
   if (!intent.journal || writing(cfg, execution.issue)) {
     return write();
   }

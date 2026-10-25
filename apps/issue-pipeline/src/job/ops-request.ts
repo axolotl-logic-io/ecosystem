@@ -32,6 +32,9 @@ interface OpsFrame {
   lane: string;
   execution: InvocationBinding;
   checkout: JobCheckout;
+  // A job started for an assignment: the buddy account whose grant each
+  // credentialed write rechecks (#119).
+  grant?: { login: string };
 }
 
 function opsFrameOf(
@@ -40,12 +43,16 @@ function opsFrameOf(
   claimant: { sweepId: string; lane: string; execution: InvocationBinding },
   checkout: JobCheckout,
 ): OpsFrame {
-  return {
+  const frame: OpsFrame = {
     config,
     ...claimant,
     checkout,
     policyDigest: policyRevision(cfg).policy,
   };
+  if (cfg.grant !== undefined) {
+    frame.grant = cfg.grant;
+  }
+  return frame;
 }
 
 // An op's reply: its fields after `ok`, or why it failed.

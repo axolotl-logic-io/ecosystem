@@ -30,6 +30,7 @@ import process from "node:process";
  * @property {string[]} labels
  * @property {string} createdAt
  * @property {boolean} [isPull]
+ * @property {string[]} [assignees] logins, in the order assigned
  */
 
 /**
@@ -67,6 +68,8 @@ import process from "node:process";
  * @property {boolean} [withholdMergeBinding] project incompatible CLOSED evidence until explicit recovery
  * @property {Record<string, string>} [refs] the coordination transport's epoch refs, by full name
  * @property {string[][]} unsupported the calls the fake refused
+ * @property {import("./fake-pipeline-flow-gh-assignments.mjs").FlowEvent[]} [events] assignment events
+ * @property {string[]} [cutShort] listings gh cuts short, by route
  */
 
 /** @typedef {{ stdout?: string, stderr?: string, code?: number }} Answer */
@@ -226,6 +229,7 @@ function restIssue(item) {
     ["state", item.state],
     ["state_reason", item.stateReason],
     ["labels", item.labels.map((name) => ({ name }))],
+    ["assignees", (item.assignees ?? []).map((login) => ({ login }))],
     ["created_at", item.createdAt],
   ]);
 }

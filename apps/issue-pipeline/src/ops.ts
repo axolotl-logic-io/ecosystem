@@ -133,6 +133,9 @@ const ENVELOPE = z.looseObject({
   op: z.string(),
   number: z.number().int().positive().optional(),
   execution: INVOCATION_BINDING.optional(),
+  // A job started for an assignment: the buddy account whose grant each
+  // credentialed write rechecks (#119).
+  grant: z.object({ login: z.string().min(1) }).optional(),
   policyDigest: z.string().optional(),
   // A stage job's own checkout, which stands in for its issue's worktree,
   // and the branch the caller assigned the issue (config.ts's JobCheckout).
@@ -173,6 +176,9 @@ function runRequest(request: unknown): OpsReply {
   if (envelope.execution === undefined) {
     cfg = unboundOps(cfg);
   } else {
+    if (envelope.grant !== undefined) {
+      cfg = { ...cfg, grant: envelope.grant };
+    }
     cfg = boundOps(cfg, envelope.execution, envelope);
   }
   fs.mkdirSync(ROOT, { recursive: true });

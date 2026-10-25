@@ -72,6 +72,8 @@ const JOB_ARGS = z
       hardeningBuddy: HARDENING,
       task: TASK,
       binding: BINDING_JSON,
+      // Started for an assignment (#119): the buddy's grant must hold.
+      assignment: z.boolean().optional(),
     }),
     z.object({
       kind: z.literal("steer"),
@@ -166,6 +168,7 @@ function jobArgsOf(argv: readonly string[]): JobArgs {
       "hardening-buddy": { type: "string" },
       task: { type: "string" },
       binding: { type: "string" },
+      assignment: { type: "boolean" },
     },
     strict: true,
   });
