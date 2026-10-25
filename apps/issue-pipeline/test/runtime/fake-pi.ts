@@ -6,7 +6,8 @@
 // (`-e .../pipeline-commit.mjs`), which asks the action's push server to
 // push, and appends the tool's result to FAKE_PI_COMMITS. While it runs, a
 // session can change the fake GitHub world as a person or GitHub would
-// (`change`), and can wait for the runtime's abort instead of replying.
+// (`change`), write outside any commit (`strayWrite`), and can wait for the
+// runtime's abort instead of replying.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -39,6 +40,11 @@ const SESSION = z.strictObject({
     .nullable(),
   // Whether `change` comes before the commit rather than after it.
   changeFirst: z.boolean(),
+  // A file the session writes in the code checkout and leaves uncommitted,
+  // as a stray write by a session declared read-only.
+  strayWrite: z
+    .strictObject({ file: z.string(), content: z.string() })
+    .optional(),
   // Wait for the runtime's abort command rather than replying.
   awaitAbort: z.boolean(),
   reply: z.record(z.string(), z.unknown()).nullable(),
@@ -212,6 +218,10 @@ async function play(
   }
   if (session.commit !== null) {
     await commitThrough(args, session.commit);
+  }
+  if (session.strayWrite !== undefined) {
+    const { file, content } = session.strayWrite;
+    fs.writeFileSync(path.join("repo", file), content);
   }
   if (session.change !== null && !session.changeFirst) {
     applyChange(session.change);

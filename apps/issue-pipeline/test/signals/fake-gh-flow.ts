@@ -374,6 +374,41 @@ function issueClose(
 
 // `gh pr list --head B --state S`, `gh pr view N` and `gh pr create`, by
 // the token's login.
+// gh's exit status for failing and for pending checks.
+const CHECKS_FAILING = 1;
+const CHECKS_PENDING = 8;
+
+// The required checks on PR `number`'s head as the origin has it, as
+// `gh pr checks --required --json` prints them and exits.
+function requiredChecks(world: World, number: string | undefined): boolean {
+  const found = (world.pulls ?? []).find(
+    (pull) => String(pull.number) === number,
+  );
+  if (found === undefined) {
+    return fail("gh: Could not resolve to a PullRequest");
+  }
+  const { headRefOid } = pullRow(found);
+  const checks = world.checks?.[headRefOid] ?? [];
+  if (checks.length === 0) {
+    return fail(`no required checks reported on the '${found.head}' branch`);
+  }
+  print(
+    checks.map((check) => ({
+      ...check,
+      state: check.bucket.toUpperCase(),
+      link: null,
+    })),
+  );
+  if (
+    checks.some((check) => check.bucket === "fail" || check.bucket === "cancel")
+  ) {
+    process.exitCode = CHECKS_FAILING;
+  } else if (checks.some((check) => check.bucket === "pending")) {
+    process.exitCode = CHECKS_PENDING;
+  }
+  return true;
+}
+
 function pr(world: World, args: readonly string[], login: string): boolean {
   if (args[0] !== "pr") {
     return false;
@@ -397,6 +432,9 @@ function pr(world: World, args: readonly string[], login: string): boolean {
     }
     print({ ...pullRow(found), isCrossRepository: false });
     return true;
+  }
+  if (args[1] === "checks" && args.includes("--required")) {
+    return requiredChecks(world, args[2]);
   }
   if (args[1] === "create") {
     world.pulls.push({

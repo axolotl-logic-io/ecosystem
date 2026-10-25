@@ -190,5 +190,5 @@ function ciStatus(
   }
 }
 
-export type { Clock };
-export { ciStatus };
+export type { Check, Clock };
+export { CHECKS, ciStatus, isFailing };

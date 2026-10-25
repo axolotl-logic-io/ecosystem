@@ -81,6 +81,8 @@ interface PlannedSession {
     | null;
   // Whether `change` comes before the commit rather than after it.
   changeFirst: boolean;
+  // A file left written and uncommitted in the code checkout.
+  strayWrite?: { file: string; content: string };
   awaitAbort: boolean;
   reply: Record<string, unknown> | null;
 }

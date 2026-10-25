@@ -4,8 +4,8 @@
 //                   integration turn it took first: every prerequisite again
 //                   (the repository's Land grant, Harden, Integrate and
 //                   Review Security attesting exactly R on T, R a strict
-//                   descendant of T), then one guarded fast-forward of T to
-//                   R (land-branch.ts). Only the target read at exactly R
+//                   descendant of T, required CI clearing R), then one
+//                   guarded fast-forward of T to R (land-branch.ts). Only the target read at exactly R
 //                   passes; the target unchanged after a refused push fails;
 //                   anything else stays unknown, keeping the turn.
 //   land-reconcile  settles an unsettled Land as its original run from one
