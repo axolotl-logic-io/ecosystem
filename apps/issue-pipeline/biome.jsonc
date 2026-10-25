@@ -34,6 +34,7 @@
         "src/standards/source.ts",
         "src/standards/assess.ts",
         "src/standards/execute.ts",
+        "src/standards/execute-poetry.ts",
         "src/standards/sandbox.ts",
         "src/ops.ts",
         "src/pipeline-root.ts",

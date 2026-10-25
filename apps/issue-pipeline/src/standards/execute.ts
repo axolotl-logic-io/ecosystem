@@ -1,6 +1,7 @@
 // The executed half of a standards assessment (#129): install, tests and the
 // advisory scan, run in the credential-free sandbox (sandbox.ts) on a fresh
-// export of the source commit. For Node/npm, npm's own code fetches first,
+// export of the source commit (execute-poetry.ts has Python/Poetry's). For
+// Node/npm, npm's own code fetches first,
 // with the network and no repository scripts: `npm ci --ignore-scripts`,
 // then `npm audit`, to a registry the operator chose. Only then does
 // repository code run, with no network: `npm rebuild` (dependency install
@@ -11,9 +12,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import process from "node:process";
 import { z } from "zod";
-import type { Sandbox, SandboxRun } from "./sandbox.ts";
+import type { Bind, Python, Sandbox, SandboxRun } from "./sandbox.ts";
 import { inSandbox, NODE_DIR, NPM_CLI, openSandbox } from "./sandbox.ts";
 import type { Command, Criterion, SandboxRecord } from "./schema.ts";
 import type { Source } from "./source.ts";
@@ -48,6 +48,28 @@ interface Execution {
 interface Options {
   // The registry every npm fetch goes to; null runs nothing (`--static`).
   registry: string | null;
+  // The index pip installs the pinned Python tools from.
+  pypiIndex: string;
+  // The hash-pinned requirements file of those tools.
+  pythonTools: string;
+}
+
+// One command in the sandbox: `argv` as run, `shown` as recorded.
+interface Step {
+  name: string;
+  shown: readonly string[];
+  argv: readonly string[];
+  network: boolean;
+  env?: ReadonlyMap<string, string>;
+}
+
+// What every command of one assessment shares.
+interface Context {
+  work: string;
+  cache: string;
+  env: ReadonlyMap<string, string>;
+  python?: Python | undefined;
+  binds?: readonly Bind[] | undefined;
 }
 
 function unrun(reason: string): Criterion[] {
@@ -100,37 +122,46 @@ class Steps {
   readonly commands: Command[] = [];
   readonly logs: Log[] = [];
   readonly #sandbox: Sandbox;
-  readonly #work: string;
-  readonly #cache: string;
-  readonly #registry: string;
+  readonly #context: Context;
 
-  constructor(sandbox: Sandbox, work: string, cache: string, registry: string) {
+  constructor(sandbox: Sandbox, context: Context) {
     this.#sandbox = sandbox;
-    this.#work = work;
-    this.#cache = cache;
-    this.#registry = registry;
+    this.#context = context;
   }
 
-  // Runs `npm ARGS` in a fresh sandbox, with the network only when asked.
-  npm(args: readonly string[], network: boolean): SandboxRun {
+  // Runs `step` in a fresh sandbox, with the network only when it asks.
+  run(step: Step): SandboxRun {
+    const { work, cache, env, python, binds } = this.#context;
     const result = inSandbox(this.#sandbox, {
-      argv: [`${NODE_DIR}/bin/node`, NPM_CLI, ...args],
-      work: this.#work,
-      cache: this.#cache,
-      network,
+      argv: step.argv,
+      work,
+      cache,
+      network: step.network,
       timeoutMs: COMMAND_MS,
-      env: new Map([["npm_config_registry", this.#registry]]),
+      env: new Map([...env, ...(step.env ?? new Map<string, string>())]),
+      python,
+      binds,
     });
-    const name = `${this.commands.length + 1}-npm-${args[0] ?? "run"}.log`;
+    const name = `${this.commands.length + 1}-${step.name}.log`;
     this.logs.push({ name, text: result.output });
     this.commands.push({
-      argv: ["npm", ...args],
-      network,
+      argv: [...step.shown],
+      network: step.network,
       exitCode: result.exitCode,
       durationMs: result.durationMs,
       log: `logs/${name}`,
     });
     return result;
+  }
+
+  // Runs `npm ARGS`.
+  npm(args: readonly string[], network: boolean): SandboxRun {
+    return this.run({
+      name: `npm-${args[0] ?? "run"}`,
+      shown: ["npm", ...args],
+      argv: [`${NODE_DIR}/bin/node`, NPM_CLI, ...args],
+      network,
+    });
   }
 }
 
@@ -261,11 +292,9 @@ function executeNode(source: Source, options: Options): Execution {
       `not run: ${lock} fetches ${outside} from outside the registry ${registry}`,
     );
   }
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), "standards-work-"));
-  const cache = fs.mkdtempSync(path.join(os.tmpdir(), "standards-cache-"));
-  try {
-    source.exportTo(work);
-    const steps = new Steps(sandbox, work, cache, registry);
+  const env = new Map([["npm_config_registry", registry]]);
+  return inWorkspace(source, (work, cache) => {
+    const steps = new Steps(sandbox, { work, cache, env });
     const criteria = nodeRuns(steps, registry);
     return {
       sandbox: record,
@@ -273,54 +302,33 @@ function executeNode(source: Source, options: Options): Execution {
       logs: steps.logs,
       criteria,
     };
+  });
+}
+
+// Exports `source` into a fresh work folder beside an empty cache, runs
+// `body` on them and deletes both.
+function inWorkspace(
+  source: Source,
+  body: (work: string, cache: string) => Execution,
+): Execution {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "standards-work-"));
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), "standards-cache-"));
+  try {
+    source.exportTo(work);
+    return body(work, cache);
   } finally {
     fs.rmSync(work, { recursive: true, force: true });
     fs.rmSync(cache, { recursive: true, force: true });
   }
 }
 
-function onPath(tool: string): boolean {
-  const { PATH: searched = "" } = process.env;
-  const dirs = searched.split(path.delimiter);
-  return dirs.some((dir) => dir !== "" && fs.existsSync(path.join(dir, tool)));
-}
-
-function missing(tool: string, use: string): string {
-  if (onPath(tool)) {
-    return `not run: ${tool} is on this host, but sandboxed ${use} isn't built yet`;
-  }
-  return `not run: ${tool} isn't on this host, so ${use} can't run`;
-}
-
-// A Python/Poetry source's executed criteria. Poetry's install and pytest
-// need `poetry`, and the scan needs `pip-audit`; each is reported missing.
-function executePoetry(options: Options): Execution {
-  if (options.registry === null) {
-    return nothingRun(
-      null,
-      "not run: the assessment ran statically (--static)",
-    );
-  }
-  const install = missing("poetry", "a Poetry install");
-  return {
-    sandbox: null,
-    commands: [],
-    logs: [],
-    criteria: [
-      { id: "environment.install", status: "unverified", evidence: install },
-      {
-        id: "vulnerabilities.scan",
-        status: "unverified",
-        evidence: `${missing("pip-audit", "an advisory scan")}: scanner missing, so this is not a clean scan`,
-      },
-      {
-        id: "behavior.tests-run",
-        status: "unverified",
-        evidence: `${install}, and pytest needs the installed environment`,
-      },
-    ],
-  };
-}
-
 export type { Execution, Log, Options };
-export { executeNode, executePoetry, nothingRun };
+export {
+  COMMAND_MS,
+  executeNode,
+  exited,
+  inWorkspace,
+  nothingRun,
+  Steps,
+  unrun,
+};

@@ -5,16 +5,18 @@
 // dist/standards-upgrade.mjs; nothing installs or schedules it.
 //
 //   node standards-upgrade.mjs assess --config CONFIG --repo OWNER/REPO|URL
-//        [--ref REF] [--npm-registry URL | --static] --out DIR
+//        [--ref REF] [--npm-registry URL] [--pypi-index URL]
+//        [--python-tools FILE] [--static] --out DIR
 //   node standards-upgrade.mjs apply --config CONFIG --issue N
 //
 // `assess` reads the configured repository at REF (its default branch when
 // omitted), resolved to one commit, and writes assessment.json, report.md
 // and, when an upgrade has something to change, plan.md into DIR, an
 // existing empty folder. It runs install, tests and the advisory scan in a
-// credential-free sandbox, fetching only from URL (the public npm registry
-// by default), and keeps what they printed in DIR/logs; `--static` runs
-// nothing. It writes nothing to GitHub or the origin. It prints one JSON
+// credential-free sandbox, fetching only from the npm registry (the public
+// one by default) or, for Poetry, pip's tools from the index (PyPI by
+// default) as FILE pins them (the shipped pins by default), and keeps what
+// they printed in DIR/logs; `--static` runs nothing. It writes nothing to GitHub or the origin. It prints one JSON
 // line naming the verdict and the files. A wrong repository, an unreadable one or a ref that names no commit
 // exits 2 with the reason on stderr, before anything is written; other
 // errors exit 1.
@@ -34,12 +36,14 @@ import { z } from "zod";
 import { loadConfig } from "../src/config.ts";
 import { admit } from "../src/standards/admit.ts";
 import { assess } from "../src/standards/assess.ts";
+import { defaultPythonTools } from "../src/standards/execute-poetry.ts";
 import { planOf, reportOf } from "../src/standards/report.ts";
 import { Refusal } from "../src/standards/source.ts";
 
 const FAILED = 1;
 const REFUSED = 2;
 const DEFAULT_REGISTRY = "https://registry.npmjs.org/";
+const DEFAULT_INDEX = "https://pypi.org/simple/";
 const REGISTRY_URL = /^https?:\/\/[^\s/]+(?:\/[^\s]*)?$/u;
 const TRAILING_SLASH = /\/?$/u;
 const ASSESS_ARGS = z.object({
@@ -48,6 +52,8 @@ const ASSESS_ARGS = z.object({
   ref: z.string().optional(),
   out: z.string().min(1),
   "npm-registry": z.string().regex(REGISTRY_URL).optional(),
+  "pypi-index": z.string().regex(REGISTRY_URL).optional(),
+  "python-tools": z.string().min(1).optional(),
   static: z.boolean().optional(),
 });
 const APPLY_ARGS = z.object({
@@ -82,12 +88,20 @@ function runAssess(argv: readonly string[]): void {
       ref: { type: "string" },
       out: { type: "string" },
       "npm-registry": { type: "string" },
+      "pypi-index": { type: "string" },
+      "python-tools": { type: "string" },
       static: { type: "boolean" },
     },
   });
   const args = ASSESS_ARGS.parse(values);
-  if (args.static === true && args["npm-registry"] !== undefined) {
-    throw new Error("--static runs nothing, so it takes no --npm-registry");
+  const fetching = ["npm-registry", "pypi-index", "python-tools"] as const;
+  if (
+    args.static === true &&
+    fetching.some((flag) => args[flag] !== undefined)
+  ) {
+    throw new Error(
+      "--static runs nothing, so it takes no --npm-registry, --pypi-index or --python-tools",
+    );
   }
   const out = emptyFolder(args.out);
   let registry: string | null = (
@@ -100,7 +114,15 @@ function runAssess(argv: readonly string[]): void {
     loadConfig(args.config),
     args.repo,
     args.ref ?? null,
-    { now: new Date(), registry },
+    {
+      now: new Date(),
+      registry,
+      pypiIndex: (args["pypi-index"] ?? DEFAULT_INDEX).replace(
+        TRAILING_SLASH,
+        "/",
+      ),
+      pythonTools: path.resolve(args["python-tools"] ?? defaultPythonTools()),
+    },
   );
   if (logs.length > 0) {
     fs.mkdirSync(path.join(out, "logs"));
@@ -164,7 +186,7 @@ function main(): void {
     return;
   }
   throw new Error(
-    "usage: standards-upgrade assess --config CONFIG --repo OWNER/REPO [--ref REF] [--npm-registry URL | --static] --out DIR | apply --config CONFIG --issue N",
+    "usage: standards-upgrade assess --config CONFIG --repo OWNER/REPO [--ref REF] [--npm-registry URL] [--pypi-index URL] [--python-tools FILE] [--static] --out DIR | apply --config CONFIG --issue N",
   );
 }
 

@@ -31,8 +31,6 @@ const CANARY = "canary-7f3c9e1d-credential";
 const PRINTED = "PRINTED-BY-REPOSITORY-CODE";
 const HIGH = /1 high/u;
 const EXITED_1 = /npm test exited 1/u;
-const POETRY_MISSING = /poetry isn't on this host/u;
-const SCANNER_MISSING = /scanner missing/u;
 const NO_EFFECTS = { writes: [], originMoved: false };
 const WORKFLOW = [
   "on: [push, pull_request]",
@@ -332,28 +330,5 @@ describe("standards-upgrade assess in the sandbox", () => {
     );
     assert.equal(logs.includes(PRINTED), true);
     assert.equal(logs.includes(CANARY), false);
-  });
-
-  test("reports Poetry's install, tests and scanner missing on this host", () => {
-    const run = assess(
-      {
-        branches: {
-          main: {
-            "pyproject.toml":
-              '[tool.poetry]\nname = "aoc"\n\n[tool.poetry.dependencies]\npython = "^3.9"\n',
-            "poetry.lock": "# lock\n",
-          },
-        },
-      },
-      { args: ["--npm-registry", url] },
-    );
-    assert.equal(run.code, 0, run.stderr);
-    assert.match(evidenceOf(run, "environment.install"), POETRY_MISSING);
-    assert.match(evidenceOf(run, "vulnerabilities.scan"), SCANNER_MISSING);
-    assert.equal(
-      statusOf(run.assessment(), "behavior.tests-run"),
-      "unverified",
-    );
-    assert.deepEqual(run.assessment().commands, []);
   });
 });
