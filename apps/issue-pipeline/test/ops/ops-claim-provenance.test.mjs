@@ -8,7 +8,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { ownerReceipt } from "../fake-ownership.mjs";
 import { claimMutationReplies } from "../gh-mutation-fixtures.mjs";
 import { historyReply } from "../initial-write-state-fixtures.mjs";
 import { ownerClaim } from "../ops-claim-test-kit.mjs";
@@ -21,6 +20,7 @@ import {
   myClaim,
   openIssue,
   prView,
+  receiptCheckpoint,
   recordPipelinePush,
   savedStates,
   v2State,
@@ -70,15 +70,10 @@ const CLAIMED = z.looseObject({
 });
 const FAILED = z.looseObject({ ok: z.boolean(), error: z.string() });
 
-// A bound claim checkpoints its owner's receipt before it derives the
-// claimed state (#167), so a refused claim writes only that checkpoint:
-// the saved state, unchanged but for the receipt and the branch it binds.
+// A refused bound claim writes only its receipt checkpoint (#167).
 /** @param {Record<string, unknown>} saved @returns {void} */
 function onlyReceiptSaved(saved) {
-  const branch = `agent/issue-${String(saved["number"])}`;
-  assert.deepEqual(savedStates(), [
-    { ...saved, branch, execution: ownerReceipt() },
-  ]);
+  assert.deepEqual(savedStates(), [receiptCheckpoint(saved)]);
   assert.equal(writes().length, 1);
 }
 

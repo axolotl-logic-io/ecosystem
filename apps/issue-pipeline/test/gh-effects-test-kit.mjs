@@ -170,11 +170,4 @@ function prMutations(writes) {
     });
 }
 
-export {
-  bodyOf,
-  effectNames,
-  effectsOf,
-  lastStateOf,
-  prMutations,
-  stateOf,
-};
+export { bodyOf, effectNames, effectsOf, lastStateOf, prMutations, stateOf };

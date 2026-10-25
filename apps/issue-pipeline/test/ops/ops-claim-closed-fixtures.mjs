@@ -11,7 +11,6 @@ const INCONSISTENT_PR = /has inconsistent merge evidence/u;
 const MISSING_MERGE = /pipeline needs a merge commit on integration/u;
 const UNREADABLE_MERGE = /unreadable merge/u;
 const INVALID_JSON = /JSON/u;
-const NO_MERGE_AUTHOR = /no merge authority/u;
 const PROVENANCE = /provenance/u;
 const REOPEN_UNCONFIRMED =
   /could not confirm #401 reopened for Merge recovery/u;
@@ -63,7 +62,6 @@ export {
   ATTEMPT_UNCONFIRMED,
   INVALID_JSON,
   MERGE_UNCONFIRMED,
-  NO_MERGE_AUTHOR,
   NOT_OPEN,
   PR_REFUSALS,
   PROVENANCE,

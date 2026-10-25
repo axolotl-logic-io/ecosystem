@@ -4,7 +4,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
+import { bindOpsRequest, loseOwnership } from "../fake-ownership.mjs";
 import { collaboratorReply } from "../gh-mutation-fixtures.mjs";
+import { historyReply } from "../initial-write-state-fixtures.mjs";
 import { issueReply } from "../ops-claim-test-kit.mjs";
 import { requireGhReplies } from "../ops-cli-test-kit.mjs";
 import {
@@ -12,13 +14,14 @@ import {
   kit,
   LANE,
   prView,
+  receiptCheckpoint,
+  savedStates,
   v2State,
 } from "../ops-v2-test-kit.mjs";
 import {
   ATTEMPT_UNCONFIRMED,
   INVALID_JSON,
   MERGE_UNCONFIRMED,
-  NO_MERGE_AUTHOR,
   NOT_OPEN,
   PR_REFUSALS,
   PROVENANCE,
@@ -38,6 +41,10 @@ const HEAD = "0".repeat(SHA_LENGTH);
 const MERGE = "a".repeat(SHA_LENGTH);
 const SAVED = v2State(ISSUE, { stage: "merge", pr: PR, headSha: HEAD });
 const MERGED = { state: "MERGED", mergeCommit: { oid: MERGE } };
+// What an owner whose issue a successor took reads (coordination-records.ts).
+const RELEASED = /released instance cannot request again/u;
+// A state comment's JSON line.
+const STATE_JSON = /\n\{.*\}\n/u;
 const AUTHORIZED = { code: HEAD, inputs: "x" };
 const ATTEMPT = {
   repo: "o/r",
@@ -50,11 +57,6 @@ const ATTEMPT = {
   result: MERGE,
   reads: 1,
 };
-const REPLY = z.object({
-  ok: z.boolean(),
-  lost: z.boolean().optional(),
-  holder: z.string().optional(),
-});
 const REFUSED = z.object({ ok: z.literal(false), error: z.string() });
 const COMMENT_BODY = z.looseObject({ body: z.string() });
 
@@ -62,6 +64,7 @@ const COMMENT_BODY = z.looseObject({ body: z.string() });
 function closedWorld(comments, view = MERGED) {
   reply([
     collaboratorReply("o/r", "alice"),
+    historyReply(ISSUE),
     issueReply(ISSUE, { state: "closed" }),
     everyCommentsRead(ISSUE, comments),
     prView(ISSUE, PR, view),
@@ -194,7 +197,7 @@ test("a malformed latest state cannot fall back to an older eligible Merge", () 
   const malformed = COMMENT_BODY.parse(savedStateComment(2, SAVED));
   closedWorld([
     savedStateComment(1, SAVED),
-    { ...malformed, body: malformed.body.replace(JSON.stringify(SAVED), "{") },
+    { ...malformed, body: malformed.body.replace(STATE_JSON, "\n{\n") },
   ]);
   assert.match(
     REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
@@ -203,11 +206,13 @@ test("a malformed latest state cannot fall back to an older eligible Merge", () 
   assert.deepEqual(writes(), []);
 });
 
+// The provenance check of every comment listing refuses it first, so not
+// even a job's ownership read gets past it (#167).
 test("a state without merge authorship cannot authorize closed recovery", () => {
   closedWorld([{ ...savedStateComment(1, SAVED), user: { login: "alice" } }]);
   assert.match(
     REFUSED.parse(askOps({ op: "claim", number: ISSUE, ...LANE })).error,
-    NO_MERGE_AUTHOR,
+    PROVENANCE,
   );
   assert.deepEqual(writes(), []);
 });
@@ -228,15 +233,12 @@ test("untrusted editing of otherwise eligible Merge state refuses closed recover
   assert.deepEqual(writes(), []);
 });
 
-test("eligible closed recovery does not override another lane's live claim", () => {
-  closedWorld([
-    savedStateComment(1, SAVED),
-    claimComment(2, "other", "s0", new Date().toISOString()),
-  ]);
-  const result = REPLY.parse(askOps({ op: "claim", number: ISSUE, ...LANE }));
-  assert.equal(result.ok, true);
-  assert.equal(result.lost, true);
-  assert.equal(result.holder, "other");
+test("eligible closed recovery does not override another invocation that takes the issue", () => {
+  closedWorld([savedStateComment(1, SAVED)]);
+  const request = { op: "claim", number: ISSUE, ...LANE };
+  bindOpsRequest({ config: kit.CONFIG, root: kit.root, request });
+  loseOwnership();
+  assert.match(REFUSED.parse(askOps(request)).error, RELEASED);
   assert.deepEqual(writes(), []);
 });
 
@@ -262,8 +264,10 @@ for (const [name, confirmation] of Object.entries({
       REOPEN_UNCONFIRMED,
     );
     // A successful reopen command alone is not confirmation of recovery.
-    // In particular, don't replace the saved Merge with leased writer state.
-    assert.deepEqual(writes(), [
+    // In particular, don't replace the saved Merge with leased writer state:
+    // only the receipt checkpoint before it (#167) and the reopen are made.
+    assert.deepEqual(savedStates(), [receiptCheckpoint(SAVED)]);
+    assert.deepEqual(writes().slice(1), [
       ["issue", "reopen", String(ISSUE), "-R", "o/r"],
     ]);
   });
