@@ -156,7 +156,14 @@ for (const [index, evidence] of [
       { ...commentsReply(number, comments), keep: true },
       history,
     ]);
-    const result = askOps({ op: "claim", number, ...LANE });
+    // The job's own checkout, apart from the issue's worktree, as a stage
+    // job's always is, so local work there counts as prior work.
+    const checkout = {
+      issue: number,
+      dir: path.join(root, `job-claim-${number}`),
+      branch: `agent/issue-${number}`,
+    };
+    const result = askOps({ op: "claim", number, ...LANE, checkout });
     assert.ok(
       typeof result === "object" &&
         result !== null &&

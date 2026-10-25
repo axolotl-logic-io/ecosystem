@@ -18,7 +18,7 @@ import {
   reply,
   requireGhReplies,
   root,
-  stateComment,
+  savedStateComment,
 } from "../ops-cli-test-kit.mjs";
 import "../ops-v2-test-kit.mjs";
 
@@ -42,7 +42,7 @@ const config = configWith({
 function claim(n, existing) {
   const saved = [];
   if (existing) {
-    saved.push(stateComment(STATE_ID, newIssueState(n)));
+    saved.push(savedStateComment(STATE_ID, newIssueState(n)));
     saved.push(claimComment(n * 10 - 1, "expired-holder", "old", LAPSED));
   }
   const mine = claimComment(n * 10, "me", "s1", LIVE);

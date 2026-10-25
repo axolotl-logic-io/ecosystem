@@ -36,6 +36,7 @@ const AUTHENTICATED_CALL = z.object({
  * @property {string} [stderr]
  * @property {number} [code]
  * @property {boolean} [keep] answer every matching call, not only the first
+ * @property {number} [serve] answer this many matching calls, then the next reply does
  * @property {boolean} [persistState] apply real state PATCHes to this saved comment fixture
  * @property {{ origin: string, base: string, head: string, sha: string }} [branchMerge] exact local merge mutation
  * @property {{ repo: string, ref: string }} [headRef] local origin of this OPEN PR's actual head
@@ -99,18 +100,22 @@ if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(pa
   const id = args.find(arg => arg.startsWith("id="))?.slice(3);
   fs.writeSync(1, JSON.stringify({ data: { node: nodeOf(id) } })); process.exit(0);
 }
-if (!quiet) {
-  fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
-  fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");
-}
 const file = path.join(dir, "replies.json");
 const replies = JSON.parse(fs.readFileSync(file, "utf8"));
 const text = args.join(" ");
 let at = replies.findIndex((reply) => text.includes(reply.when));
+// A listing nothing scripted, which only the ownership records answer, is
+// an ownership check: it stays out of the calls a test checks.
+if (!quiet && !(at < 0 && ownershipListing)) {
+  fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
+  fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");
+}
 // With ownership on, each ops request lists the comments for every
 // ownership read too, so a listing reply is the snapshot of one request:
 // the next request's first listing uses it up and pins the next one.
-if (ownershipListing && !quiet && at >= 0) {
+// A reply with a serve count answers that many calls, ownership checks included,
+// before the next one does: a change partway through one request.
+if (ownershipListing && !quiet && at >= 0 && replies[at].serve === undefined) {
   const pinFile = path.join(dir, "listing-pin.json");
   const pin = fs.existsSync(pinFile) ? JSON.parse(fs.readFileSync(pinFile, "utf8")) : null;
   const pinned = pin ? replies.findIndex(reply => reply.pin === pin.id) : -1;
@@ -158,7 +163,11 @@ if (at < 0 && ownershipListing) {
   process.stdout.write(stdout);
   process.stderr.write(reply.stderr ?? "");
   process.exitCode = reply.code ?? 0;
-  if (reply.keep !== true && !ownershipListing) {
+  if (typeof reply.serve === "number") {
+    reply.serve -= 1;
+    if (reply.serve <= 0) replies.splice(at, 1);
+    fs.writeFileSync(file, JSON.stringify(replies));
+  } else if (reply.keep !== true && !ownershipListing) {
     replies.splice(at, 1);
     fs.writeFileSync(file, JSON.stringify(replies));
   }
