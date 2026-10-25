@@ -1,14 +1,13 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { BuddyRun } from "./buddy-runs.ts";
 import type { GitHubItem } from "./github.ts";
-import { stageLabel } from "./language.ts";
+import type { SubagentRun } from "./subagent-runs.ts";
 import { elapsed, ms } from "./time.ts";
 import { chip, fmt, labelInk, pad, shortRepo } from "./ui-format.ts";
 
 const unknownRequest = /unknown/u;
 const rowWidth = { id: 8, account: 18, activity: 12 };
-function pendingRequest(run: BuddyRun): boolean {
+function pendingRequest(run: SubagentRun): boolean {
   return (
     run.pending !== undefined &&
     run.pending !== "" &&
@@ -22,7 +21,7 @@ function issueLabels(item: GitHubItem, theme: Theme, display = false): string {
     .map((label) => {
       let { name } = label;
       if (display) {
-        name = stageLabel(name.replace("agent:", ""));
+        name = name.replace("agent:", "");
       }
       return chip(theme, name, labelInk(label.name));
     })
@@ -51,7 +50,7 @@ function issueDetails(item: GitHubItem, theme: Theme, width: number): string[] {
     theme.fg("muted", hint),
   ];
 }
-function buddyInk(run: BuddyRun): "syntaxFunction" | "success" | "error" {
+function subagentInk(run: SubagentRun): "syntaxFunction" | "success" | "error" {
   if (run.state === "running") {
     return "syntaxFunction";
   }
@@ -60,10 +59,14 @@ function buddyInk(run: BuddyRun): "syntaxFunction" | "success" | "error" {
   }
   return "error";
 }
-function buddyRow(run: BuddyRun, theme: Theme): string {
-  return `${pad(run.id.slice(0, rowWidth.id), rowWidth.id)} ${chip(theme, run.state, buddyInk(run))} ${pad(run.account ?? "unknown account", rowWidth.account)} ${theme.fg("muted", pad(`${fmt(elapsed(run.last ?? run.start))} ago`, rowWidth.activity, true))} ${run.mission}`;
+function subagentRow(run: SubagentRun, theme: Theme): string {
+  return `${pad(run.id.slice(0, rowWidth.id), rowWidth.id)} ${chip(theme, run.state, subagentInk(run))} ${pad(run.account ?? "unknown account", rowWidth.account)} ${theme.fg("muted", pad(`${fmt(elapsed(run.last ?? run.start))} ago`, rowWidth.activity, true))} ${run.mission}`;
 }
-function buddyDetails(run: BuddyRun, theme: Theme, width: number): string[] {
+function subagentDetails(
+  run: SubagentRun,
+  theme: Theme,
+  width: number,
+): string[] {
   let started = "not recorded";
   if (run.start !== undefined) {
     started = new Date(ms(run.start)).toLocaleString();
@@ -75,10 +78,10 @@ function buddyDetails(run: BuddyRun, theme: Theme, width: number): string[] {
       width,
     ),
     ...wrapTextWithAnsi(
-      "Coverage: Pi subagent records only; buddy/task and workflow-parent links are unverified. Model-free runs are not collected.",
+      "Generic pi-subagents harness record, not a domain buddy run: it names no buddy, task, action run or parent, and none is inferred.",
       width,
     ),
-    chip(theme, run.state, buddyInk(run)),
+    chip(theme, run.state, subagentInk(run)),
     theme.fg(
       "muted",
       `Activity ${fmt(elapsed(run.last ?? run.start))} ago · started ${started}`,
@@ -103,4 +106,4 @@ function buddyDetails(run: BuddyRun, theme: Theme, width: number): string[] {
   ];
 }
 
-export { buddyDetails, buddyRow, issueDetails, issueRow, pendingRequest };
+export { issueDetails, issueRow, pendingRequest, subagentDetails, subagentRow };

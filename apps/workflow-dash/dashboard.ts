@@ -9,12 +9,26 @@ import {
 import { footer, header, listTitles, tabNames } from "./dashboard-frame.ts";
 import type { Snapshot } from "./data.ts";
 import type { Remote } from "./github.ts";
-import { buddyDetails, buddyRow, issueDetails, issueRow } from "./item-view.ts";
+import {
+  issueDetails,
+  issueRow,
+  subagentDetails,
+  subagentRow,
+} from "./item-view.ts";
+import { jobDetailLines, jobListRow } from "./job-view.ts";
 import { Navigation } from "./navigation.ts";
+import {
+  actionRunFacts,
+  actionRunRow,
+  buddyRunFacts,
+  buddyRunRow,
+  coverageFacts,
+  coverageRow,
+  factLines,
+} from "./runtime-view.ts";
 import type { Choice, Selection, ViewHost } from "./selection.ts";
 import { type ChartScope, charts } from "./time-view.ts";
 import { layout, pad, panel } from "./ui-format.ts";
-import { workflowDetails, workflowRow } from "./workflow-view.ts";
 
 const pageRows = 8;
 const frame = {
@@ -45,12 +59,22 @@ function selectionRow(
   width: number,
 ): string {
   switch (selection.kind) {
-    case "workflow":
-      return workflowRow(selection.run, theme, width);
+    case "buddy-run":
+      return buddyRunRow(selection.entry, theme);
+    case "action-run":
+      return actionRunRow(selection.entry, theme);
+    case "coverage":
+      return coverageRow(
+        selection.state.runtime,
+        selection.state.configWarnings,
+        theme,
+      );
+    case "job":
+      return jobListRow(selection.run, theme, width);
     case "issue":
       return issueRow(selection.item, theme);
-    case "buddy":
-      return buddyRow(selection.run, theme);
+    case "subagent":
+      return subagentRow(selection.run, theme);
     default:
       return "";
   }
@@ -126,15 +150,28 @@ class Dashboard implements Component {
       ];
     }
     switch (selection.kind) {
-      case "workflow":
-        return workflowDetails(selection.run, theme, width);
+      case "buddy-run":
+        return factLines(buddyRunFacts(selection.entry), theme, width);
+      case "action-run":
+        return factLines(actionRunFacts(selection.entry), theme, width);
+      case "coverage":
+        return factLines(
+          coverageFacts(
+            selection.state.runtime,
+            selection.state.configWarnings,
+          ),
+          theme,
+          width,
+        );
+      case "job":
+        return jobDetailLines(selection.run, theme, width);
       case "issue":
         return [
           ...issueDetails(selection.item, theme, width),
           ...remote.errors.map((error) => theme.fg("error", error)),
         ];
-      case "buddy":
-        return buddyDetails(selection.run, theme, width);
+      case "subagent":
+        return subagentDetails(selection.run, theme, width);
       default:
         return [];
     }
@@ -150,7 +187,7 @@ class Dashboard implements Component {
     return charts(
       this.model.theme,
       {
-        runs: this.model.get().workflowRuns,
+        runs: this.model.get().jobHistory,
         sessions: this.model.getTime(),
         scope,
       },
@@ -186,13 +223,13 @@ class Dashboard implements Component {
     );
     return sideBySide(
       panel(theme, {
-        title: "Launch time / today",
+        title: "Historical job launch time / today",
         content: left.slice(this.detailOffset),
         width: leftWidth,
         height,
       }),
       panel(theme, {
-        title: "Run stages / sessions",
+        title: "Historical job stages / sessions",
         content: right.slice(this.detailOffset),
         width: rightWidth,
         height,
@@ -214,7 +251,7 @@ class Dashboard implements Component {
       count = selected + 1;
     }
     if (content.length === 0) {
-      let text = "◷ No items today";
+      let text = "◷ No items observed";
       if (this.model.remote.inflight !== undefined) {
         text = "◷ Loading…";
       }

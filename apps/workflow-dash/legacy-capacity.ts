@@ -1,4 +1,4 @@
-import type { WorkflowRun } from "./workflow-source.ts";
+import type { HistoricalJob } from "./job-history.ts";
 
 const authorImplementationStage = /^(?:implement|author)/u;
 const hardeningStage = /review/u;
@@ -14,7 +14,7 @@ interface LegacyCapacity {
   hardeningLimit: number;
   pbWeb: number[];
 }
-function currentWebGate(run: WorkflowRun): boolean {
+function currentWebGate(run: HistoricalJob): boolean {
   const launch = run.data.launches.at(-1);
   return (
     run.repo.endsWith("/project-buddy") &&
@@ -25,7 +25,7 @@ function currentWebGate(run: WorkflowRun): boolean {
   );
 }
 /** Retained deprecated-tool contract, not configured capacity or resource leases. */
-function capacity(runs: WorkflowRun[]): LegacyCapacity {
+function capacity(runs: HistoricalJob[]): LegacyCapacity {
   const active = runs.filter((run) => run.live === true);
   return {
     activeRuns: active.length,

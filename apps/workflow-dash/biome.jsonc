@@ -11,9 +11,10 @@
         "index.ts",
         "local-files.ts",
         "process-observations.ts",
-        "workflow-source.ts",
+        "job-history.ts",
+        "runtime-runs.ts",
         "session-source.ts",
-        "buddy-runs.ts",
+        "subagent-runs.ts",
         "runtime.ts",
         "test/**"
       ],

@@ -1,11 +1,10 @@
-import { executionLabel, stageLabel } from "./language.ts";
+import type { HistoricalJob } from "./job-history.ts";
 import type {
   JournalRecord,
   Launch,
   SessionRecord,
   Timestamp,
 } from "./source-records.ts";
-import type { WorkflowRun } from "./workflow-source.ts";
 
 const millisecondsPerSecond = 1000;
 const secondsPerMinute = 60;
@@ -67,7 +66,7 @@ function limit(
     warning: budget > 0 && used >= budget * warningFraction,
   };
 }
-function timeline(run: WorkflowRun, now = Date.now()): TimedLaunch[] {
+function timeline(run: HistoricalJob, now = Date.now()): TimedLaunch[] {
   return run.data.launches.map((launch, index, launches) => {
     let end = launch.lastEventAt ?? launch.startedAt;
     if (run.live === true) {
@@ -94,7 +93,7 @@ function sessionTime(records: SessionRecord[]): SessionTime {
   }
   return totals;
 }
-function launchTotals(run: WorkflowRun, now: number): Record<string, number> {
+function launchTotals(run: HistoricalJob, now: number): Record<string, number> {
   const totals: Record<string, number> = {};
   const midnight = new Date(now).setHours(0, 0, 0, 0);
   for (const launch of timeline(run, now)) {
@@ -103,7 +102,7 @@ function launchTotals(run: WorkflowRun, now: number): Record<string, number> {
     const duration =
       Math.max(0, Math.min(now, end) - Math.max(midnight, start)) /
       millisecondsPerSecond;
-    const key = `${launch.kind}/${executionLabel(launch.key).replace(launchNumber, "")}`;
+    const key = `${launch.kind}/${launch.key.replace(launchNumber, "")}`;
     if (duration > 0) {
       totals[key] = (totals[key] ?? 0) + duration;
     }
@@ -118,18 +117,18 @@ function journalTotals(
   for (const record of records.filter(
     (entry) => entry.kind === "job" && today(entry.at, now),
   )) {
-    let label = stageLabel(record.role ?? "unknown");
+    let label = record.role ?? "unknown";
     if (typeof record.stages === "string") {
-      label = stageLabel(record.stages);
+      label = record.stages;
     }
     if (Array.isArray(record.stages)) {
-      label = record.stages.map(stageLabel).join(" → ");
+      label = record.stages.join(" → ");
     }
     totals[label] = (totals[label] ?? 0) + (record.seconds ?? 0);
   }
   return totals;
 }
-function timeBreakdown(runs: WorkflowRun[], now = Date.now()): TimeBreakdown {
+function timeBreakdown(runs: HistoricalJob[], now = Date.now()): TimeBreakdown {
   const totals: TimeBreakdown = { launches: {}, types: {} };
   for (const run of runs) {
     for (const [key, duration] of Object.entries(launchTotals(run, now))) {

@@ -3,9 +3,9 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { defaults } from "../config.ts";
+import { jobDetails, loadJobHistory } from "../job-history.ts";
 import { readCap } from "../local-files.ts";
-import { jsonl, parse, workflowSchema } from "../source-records.ts";
-import { loadWorkflowRuns, workflowRunDetails } from "../workflow-source.ts";
+import { jobRecordSchema, jsonl, parse } from "../source-records.ts";
 import { materializeFixtures } from "./fixture-test-kit.ts";
 import { makeRun } from "./model-fixtures.ts";
 
@@ -23,7 +23,7 @@ const testsSummary = /ℹ tests 4/u;
 const cancellationsSummary = /ℹ cancelled 0/u;
 
 test("real fixture loader ignores a partial job and tolerates missing journals", async () => {
-  const runs = await loadWorkflowRuns(
+  const runs = await loadJobHistory(
     {
       ...defaults,
       runs: join(fixtureRoot, "runs"),
@@ -56,7 +56,7 @@ test("partial JSON and corrupt JSONL are ignored; bounded reads", async () => {
     byteLimits.small,
   );
   assert.ok(Buffer.byteLength(text) <= byteLimits.small);
-  const full = workflowSchema.parse(
+  const full = jobRecordSchema.parse(
     parse(await readCap(join(fixtures, "issue-494/job.json"), byteLimits.full)),
   );
   assert.ok(full.launches.length > 0);
@@ -66,7 +66,7 @@ test("partial JSON and corrupt JSONL are ignored; bounded reads", async () => {
   assert.equal(await readCap("/nonexistent/workflow-dash"), "");
 });
 test("run drill-down reads bounded verification summaries and local stop reasons", async () => {
-  const details = await workflowRunDetails(
+  const details = await jobDetails(
     makeRun(
       { outcome: { kind: "finished" } },
       {

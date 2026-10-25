@@ -107,7 +107,7 @@ class DashboardRuntime {
   private async watchSources(generation: number): Promise<void> {
     const roots = [
       { path: this.config.runs, recursive: true },
-      { path: this.config.buddyRuns, recursive: true },
+      { path: this.config.subagentRuns, recursive: true },
       { path: this.config.installed, recursive: false },
       { path: dirname(this.config.hold), recursive: false },
       { path: this.config.plan, recursive: false },
@@ -182,19 +182,19 @@ class DashboardRuntime {
         }
       })
       .catch((error: unknown) => this.fail(error, generation));
-    const runs = next.workflowRuns.filter(
+    const runs = next.jobHistory.filter(
       (run) => today(run.data.startedAt) || run.live === true,
     );
-    const breakdown = timeBreakdown(next.workflowRuns);
+    const breakdown = timeBreakdown(next.jobHistory);
     const times = await sessions(runs);
     if (this.current(generation)) {
       this.time = [
-        "Today · launch kind / key prefix (consecutive start deltas)",
+        "Today · historical job launch kind / source key prefix (consecutive start deltas)",
         ...Object.entries(breakdown.launches).map(
           ([key, value]) => `${key}: ${fmt(value)}`,
         ),
         "",
-        "Run stages (jobs.jsonl kind=job, source stages grouped)",
+        "Historical job source stages (jobs.jsonl kind=job)",
         ...Object.entries(breakdown.types).map(
           ([key, value]) => `${key}: ${fmt(value)}`,
         ),

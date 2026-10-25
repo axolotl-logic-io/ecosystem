@@ -1,37 +1,74 @@
 import { execFile } from "node:child_process";
 import process from "node:process";
 import { promisify } from "node:util";
-import type { WorkflowData } from "./source-records.ts";
+import type { JobData } from "./source-records.ts";
 
 const exec = promisify(execFile);
 const processReadTimeout = 3000;
 const commandReadBytes = 8192;
 const processListBytes = 1_048_576;
 type ProcessCheck = (pid: number | null | undefined) => Promise<boolean | null>;
+type ProcessInspection =
+  | { state: "running"; command: string; startedAt: number | null }
+  | { state: "absent" }
+  | { state: "unknown"; reason: string };
+const processLine =
+  /^\s*(?<start>\w{3} \w{3} +\d{1,2} \d{2}:\d{2}:\d{2} \d{4}) +(?<command>.*)$/su;
 
-async function pidWorkflowRun(
+/**
+ * A signal-0 existence probe, then the process's start time and command
+ * line. Denied or failed inspection is unknown, never absent; nothing is
+ * signalled.
+ */
+async function inspectProcess(
   pid: number | null | undefined,
-): Promise<boolean | null> {
+): Promise<ProcessInspection> {
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
-    return null;
+    return { state: "unknown", reason: "no valid pid recorded" };
   }
   try {
     process.kill(pid, 0);
-    const result = await exec("ps", ["-o", "command=", "-p", String(pid)], {
-      timeout: processReadTimeout,
-      maxBuffer: commandReadBytes,
-    });
-    return result.stdout.includes("job.mjs");
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ESRCH") {
-      return false;
+      return { state: "absent" };
     }
-    return null;
+    return { state: "unknown", reason: "process inspection denied" };
+  }
+  try {
+    const result = await exec(
+      "ps",
+      ["-o", "lstart=", "-o", "command=", "-p", String(pid)],
+      { timeout: processReadTimeout, maxBuffer: commandReadBytes },
+    );
+    const line = processLine.exec(result.stdout.trim())?.groups;
+    if (line?.start === undefined || line.command === undefined) {
+      return { state: "unknown", reason: "process command unreadable" };
+    }
+    const parsed = Date.parse(line.start);
+    let startedAt: number | null = parsed;
+    if (Number.isNaN(parsed)) {
+      startedAt = null;
+    }
+    return { state: "running", command: line.command, startedAt };
+  } catch {
+    return { state: "unknown", reason: "process command unreadable" };
   }
 }
+async function pidLegacyJob(
+  pid: number | null | undefined,
+): Promise<boolean | null> {
+  const inspection = await inspectProcess(pid);
+  if (inspection.state === "running") {
+    return inspection.command.includes("job.mjs");
+  }
+  if (inspection.state === "absent") {
+    return false;
+  }
+  return null;
+}
 async function live(
-  run: Pick<WorkflowData, "pid" | "outcome">,
-  check: ProcessCheck = pidWorkflowRun,
+  run: Pick<JobData, "pid" | "outcome">,
+  check: ProcessCheck = pidLegacyJob,
 ): Promise<boolean | null> {
   if (run.outcome === undefined) {
     return null;
@@ -58,5 +95,5 @@ async function processList(): Promise<string> {
   }
 }
 
-export type { ProcessCheck };
-export { exec, live, pidWorkflowRun, processList };
+export type { ProcessCheck, ProcessInspection };
+export { exec, inspectProcess, live, pidLegacyJob, processList };

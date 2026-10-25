@@ -3,10 +3,10 @@ import type { Component } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Snapshot } from "./data.ts";
 import { pendingRequest } from "./item-view.ts";
+import { legacyJobProcesses } from "./job-conditions.ts";
 import { capacity } from "./legacy-capacity.ts";
-import { observedCapacity } from "./observations.ts";
+import { buddyRunRow, partialCoverage } from "./runtime-view.ts";
 import { type Badge, pill } from "./ui-format.ts";
-import { workflowRunRow } from "./workflow-view.ts";
 
 const unavailableVersion = /unknown|unavailable/u;
 const shortShaLength = 7;
@@ -32,7 +32,7 @@ function versionBadge(state: Snapshot, short: boolean): Badge {
   return { icon: "\ue0a0", text, ink: "warning" };
 }
 function webBadge(state: Snapshot): Badge {
-  const web = state.pbWeb ?? capacity(state.workflowRuns).pbWeb;
+  const web = state.pbWeb ?? capacity(state.jobHistory).pbWeb;
   let text = "pb-web not observed";
   if (web.length > 0) {
     text = `pb-web busy #${web.join(",#")}`;
@@ -44,30 +44,58 @@ function webBadge(state: Snapshot): Badge {
   }
   return { icon: "\u{f059f}", text, ink: "muted" };
 }
+/** Counts of buddy-run conditions; none of them is a health claim. */
+function runtimeBadge(state: Snapshot, compact: boolean): Badge {
+  const { buddyRuns } = state.runtime;
+  function count(condition: string): number {
+    return buddyRuns.filter((entry) => entry.condition.state === condition)
+      .length;
+  }
+  const uncertain = count("stale") + count("unknown");
+  const partial = partialCoverage(state.runtime, state.configWarnings);
+  let text = `buddy runs ${count("process-observed")} process-observed · ${uncertain} stale/unknown`;
+  if (compact) {
+    text = `buddy ${count("process-observed")} · ? ${uncertain}`;
+  }
+  if (partial) {
+    text += " · coverage partial";
+  }
+  if (uncertain > 0 || partial) {
+    return { icon: "\u{f035b}", text, ink: "warning" };
+  }
+  return { icon: "\u{f035b}", text, ink: "borderAccent" };
+}
 function statusSegments(
   state: Snapshot,
   theme: Theme,
   compact = false,
   shortVersion = false,
 ): string[] {
-  const observed = observedCapacity(state.workflowRuns);
   let hold: Badge = { icon: "●", text: "HOLD NOT OBSERVED", ink: "success" };
   if (state.hold) {
     hold = { icon: "✗", text: "HOLD", ink: "error" };
   }
-  let text = `processes ${observed.observedProcesses} observed · ${observed.unknownProcesses} unknown · configured caps unknown`;
-  if (compact) {
-    text = `proc ${observed.observedProcesses} · ? ${observed.unknownProcesses} · caps ?`;
-  }
   const badges: Badge[] = [
     hold,
-    { icon: "\u{f035b}", text, ink: "borderAccent" },
+    runtimeBadge(state, compact),
     webBadge(state),
     versionBadge(state, shortVersion),
   ];
-  const pending = state.buddyRuns.filter(pendingRequest).length;
+  const legacy = legacyJobProcesses(state.jobHistory);
+  if (legacy.observed + legacy.unknown > 0) {
+    badges.push({
+      icon: "◷",
+      text: `legacy jobs ${legacy.observed} observed · ${legacy.unknown} unknown`,
+      ink: "muted",
+    });
+  }
+  const pending = state.subagentRuns.filter(pendingRequest).length;
   if (pending > 0) {
-    badges.push({ icon: "◷", text: `${pending} requests`, ink: "warning" });
+    badges.push({
+      icon: "◷",
+      text: `${pending} subagent requests`,
+      ink: "warning",
+    });
   }
   return badges.map((badge) => pill(theme, badge));
 }
@@ -81,7 +109,11 @@ function widget(get: () => Snapshot, theme: Theme): Component {
     },
     render(width: number): string[] {
       const state = get();
-      const runs = state.workflowRuns.filter((run) => run.live !== false);
+      const runs = state.runtime.buddyRuns.filter(
+        (entry) =>
+          entry.condition.state !== "stopped" &&
+          entry.condition.state !== "ended",
+      );
       let status = statusPills(state, theme, true);
       if (visibleWidth(status) > width) {
         status = statusSegments(state, theme, true, true).join(" ");
@@ -90,14 +122,14 @@ function widget(get: () => Snapshot, theme: Theme): Component {
         status,
         ...runs
           .slice(0, widgetRunRows)
-          .map((run) => workflowRunRow(run, theme, width)),
+          .map((entry) => buddyRunRow(entry, theme)),
       ];
       if (runs.length === 0) {
         lines.push(
           theme.fg(
             "muted",
             state.error ??
-              "◷ No workflow process observed · /dash for history and coverage",
+              "◷ No running buddy run recorded · /dash for history and coverage",
           ),
         );
       }
