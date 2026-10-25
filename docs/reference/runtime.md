@@ -4,7 +4,7 @@ This page summarizes the model runtime every session uses: Pi's native sessions 
 
 ## Supported runtime
 
-Every session (Author, Developer, hardening, Sync resolver and Security) runs native **Pi 1.2.0** with the **pi-cliproxyapi 0.4.3** provider extension, over Pi's RPC mode. The only supported profile is OpenAI builtin registration through a distinct CLIProxy endpoint, not `api.openai.com`. Any other version, provider or profile refuses to start; there's no fallback.
+Every supported model session runs native **Pi 1.2.0** with the **pi-cliproxyapi 0.4.3** provider extension, over Pi's RPC mode. The only supported profile is OpenAI builtin registration through a distinct CLIProxy endpoint, not `api.openai.com`. Any other version, provider or profile refuses to start; there's no fallback.
 
 - Each session gets a new private `PI_CODING_AGENT_DIR` holding only pipeline-generated settings. Personal settings, models, auth files, packages, extensions, skills, prompt templates and themes aren't copied. Project settings and resource discovery are off.
 - Model children use a dedicated HOME: `runtime.home`, default `$ISSUE_PIPELINE_ROOT/runtime/home`. The job and its operations keep their own HOME.
@@ -29,11 +29,11 @@ Set `models.author`, `models.developer` and `models.reviewer` explicitly in the 
 
 Before the first prompt, the native `get_state` reply must match the configured provider, model, window and endpoint, with automatic compaction on. The generated settings and provider files are hashed again at that point. Any mismatch fails the launch without a prompt.
 
-`job.json` records a `runtimePolicy` entry per launch with the verified numbers, versions and SHA-256 provenance of settings, provider profile and cache, never credential values.
+The action's launch registry records its verified runtime policy, versions and SHA-256 provenance of settings, provider profile and cache, never credential values. Current action observations live in [`run.json`](runtime-runs.md); historical `job.json` files are not current runtime authority.
 
 ## Recover from a runtime refusal
 
-1. Read the refusal in `job.log`. It names the missing or mismatched item. A failed `pi --version` probe also gives its exit status, or its signal, timeout or spawn error, and up to 300 bytes of its stderr with credential values redacted.
+1. Read the refusal in the action's observation and local diagnostic log. It names the missing or mismatched item. A failed `pi --version` probe also gives its exit status, or its signal, timeout or spawn error, and up to 300 bytes of its stderr with credential values redacted.
 2. Fix provisioning: the Pi version on the service's `PATH`, `runtime.toolchainEnv`, `runtime.providerExtension`, the provider config and discovery cache under the model HOME, credential names or `modelContextWindows`. Follow the [runtime README](../../apps/issue-pipeline/runtime/README.md) provisioning steps.
 3. Don't invent cache windows, copy a personal profile or remove a version check to get a launch through.
-4. Restart the issue on its saved stage, branch and lane.
+4. Reread the original action and ownership evidence before any continuation. Fixing provisioning does not unspend an Implement attempt or authorize a new one. Use only defined task recovery; otherwise hold for explicit reconciliation.

@@ -31,7 +31,7 @@ The removed `wiki` key is refused even when false or null. Repository compatibil
 
 ## Credentials
 
-Keep `credentialsEnvFile` outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`; see [two GitHub accounts](authority.md#two-github-accounts).
+Keep `credentialsEnvFile` outside managed worktrees, owned by the operator, with no group or other permissions. It holds `ISSUE_PIPELINE_DEV_GITHUB_TOKEN` and `ISSUE_PIPELINE_LANDING_GITHUB_TOKEN`; see [GitHub accounts](authority.md#github-accounts).
 
 - Verify each selected account without printing its token.
 - Keep the file out of web application folders and build/deploy environment files.
