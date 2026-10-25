@@ -12,9 +12,35 @@ Most were made on 2026-10-22, and the rest on 2026-10-24. Each one says who deci
 
 Decided by Autumn.
 
-A buddy has a role, which is the set of tasks it's responsible for, and an identity. Buddy replaces actor; actor survives only in historical text.
+Clarified by Autumn during the factory alignment discussion: a buddy is a thin configuration wrapper pairing scope, responsibilities and identity. A role may group its task responsibilities. The task stands on its own and owns its sensor declarations, inbox, signal matching and actions; the buddy does not own or duplicate that behavior.
 
-A buddy has no lasting run. Each buddy run performs one task, such as Implementation, Hardening or Sync, for one binding. For now the caller decides what each buddy needs and assigns its runs by hand. Later a buddy may scan for work itself.
+Trusted configuration grants standing permission within the paired scope and responsibilities, subject to task prerequisites and action-specific guards. GitHub issue assignment is not required. Work discovery uses the tasks' declared sensors within scope rather than requiring a caller to assign each run by hand.
+
+Buddy replaces the historical use of actor for a role/identity pairing. The actor pattern used by tasks is a separate concept. A buddy run activates the action loops of all its configured tasks, not one task for one binding; see [buddy-run-lifecycle](#buddy-run-lifecycle).
+
+## tasks-as-actors
+
+Decided by Autumn during the factory alignment discussion. This describes the intended model, not installed behavior.
+
+A task follows the actor pattern. It declares the sensors it wants; those sensors populate its inbox with signals. The task matches signals to actions, subject to its prerequisites and shared execution guards. A task defines Sensor/Action pairs rather than treating every signal as an explicit request to launch a run.
+
+Signals encapsulate human or machine provenance and the applicable [authority rules](authority.md#signal-authority). Sensors may detect current conditions, such as an issue having a label, as well as occurrences. Removing a label is never a signal, including when detected by polling.
+
+Actions include updating labels, launching model-assisted work, running deterministic checks, and recording results or checkpoints. Current source examples include `scripts/sweep/plan.ts` launching jobs through `startJob()`, `src/ops/integration-task.ts` running checks and recording bound results, and `src/ops/stop.ts` applying stop labels and recording state. These are migration examples, not existing actor interfaces. The current stop operation's label-removal continuation behavior conflicts with the new rule and must change.
+
+Actor here is a software execution pattern, not the historical name for a buddy. No new domain entity named Actor is introduced. Inbox storage and durability, delivery and duplicate handling, actor-instance boundaries, and execution ordering remain open. The task actor model does not require a persistent model session or operating-system process per task.
+
+## buddy-run-lifecycle
+
+Decided by Autumn during the factory alignment discussion. This supersedes the earlier one-task-per-buddy-run definition and describes intended behavior, not installed behavior.
+
+A buddy run activates the action loops of all tasks in its configured responsibilities, using its scope and identity. Tasks still own their behavior. Activation does not require immediate action, a persistent model session or a process per task.
+
+A stop trickles down: stopping a buddy run propagates to its task loops, their active actions and work those actions started. Affected components stop admitting new work and propagate the stop. Active work stops at a safe boundary, preserves progress and records checkpoints. This applies to model-assisted work and deterministic operations; stopping is not sudden process termination or rollback.
+
+Propagation respects scope. An issue-level `agents:stop` affects that issue's work, not unrelated issues handled by the same loops. Completed effects remain completed; uncertain effects require reconciliation. Removing the stop label never authorizes continuation.
+
+The concrete cancellation mechanism, safe boundaries for each operation and lifecycle mapping of existing job/session records remain implementation work.
 
 ## sync-is-a-task
 
@@ -216,6 +242,8 @@ A run reads ownership and the results it depends on immediately before each priv
 A listing is complete only when every page was read and none failed. When a listing is cut short or a page errors, every fact drawn from it is unknown. It leads to a hold, never to "absent".
 
 ## assignment-permission
+
+Superseded for the intended model by Autumn's factory alignment decisions: trusted configuration grants a buddy standing permission within its scope and responsibilities; GitHub issue assignment is not required. [Signal authority](authority.md#signal-authority) and [label signals](authority.md#label-signals) define the new start and stop controls. The earlier assignment-based contract below remains a reference for existing code, not the target model.
 
 Autumn approved. This settles open question 8.
 

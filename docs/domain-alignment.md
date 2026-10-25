@@ -90,6 +90,18 @@ Ecosystem #165 renamed the pipeline's code names in source, tests, prompts and d
 | Stage | Prose that means a task says task. | Stage as the installed technical name: `Stage`, `STAGES`, stage jobs, `--stage`, the saved `stage`, `stoppedStage`, `resumeStage`, stage caps. Replacing them is the *Structure* change above ("the tasks that may proceed"), not a rename. |
 | Coordination | The request record's `identity` is `binding` in record version 2 (#166). | Version 1 records stay readable. |
 
+## Signals and label controls
+
+Autumn's factory alignment discussion introduced [Signal](../GLOSSARY.md#signal), with [signal authority](decisions/authority.md#signal-authority) and [label semantics](decisions/authority.md#label-signals). These are intended contracts; this documentation change implements no execution behavior.
+
+The inspected source still uses assignment-based permission in `src/assignment/grant.ts` and `src/job/assignment.ts`, with fresh checks in `src/execution.ts`. The sweep in `scripts/sweep/plan.ts` filters issues by buddy account assignments. Replace that permission model with configured scope and responsibilities and shared signal-provenance checks; GitHub issue assignments are not required in the target model.
+
+Tasks follow the [actor pattern](decisions/buddies-and-tasks.md#tasks-as-actors): they declare sensors, receive signals in an inbox and match signals to actions. A [buddy run](decisions/buddies-and-tasks.md#buddy-run-lifecycle) activates all its configured tasks' action loops, rather than executing one task. Stops propagate through affected loops, actions and their child work, within the stop's scope. Existing one-job and model-launch records need explicit mapping; do not relabel them as buddy runs by assumption. Signals encapsulate human or machine provenance; they are not necessarily requests. Inbox persistence, delivery guarantees, duplicate handling and actor-instance boundaries remain open.
+
+Required behavior includes qualifying human-produced `start:implement` and `agents:stop` application events by their producer's current organization membership, qualifying machine-produced signals through their authenticated evidence and bindings, retaining accepted-signal provenance, and stopping gracefully through one shared control. Label removal must never act as a signal, including cancellation or continuation. Unknown provenance or membership grants no permission. Continuation and the retry coverage of accepted requests remain open; do not infer them from label absence.
+
+Task names must use verbs. Implement is settled; remaining names and compatibility for persisted task identifiers still need decisions.
+
 ## Change classes
 
 - **Terminology:** replace different names for the same concept without intentionally changing behavior.

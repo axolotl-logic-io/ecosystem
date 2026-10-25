@@ -52,9 +52,11 @@ An identity is a capability. It makes an action possible; it does not authorize 
 
 ### Buddy
 
-A role paired with an identity: the set of tasks it's responsible for, and the settings and credentials it uses to do them. For example, Hippy is the Developer with the development account and a model, and Lawd is the Gatekeeper with the landing account.
+A thin configuration wrapper pairing scope, responsibilities and identity. Scope identifies where it may work; responsibilities identify its tasks, which a role may group; identity supplies its accounts and runtime settings. For example, Hippy pairs Developer responsibilities with the development identity and configured repository scope.
 
-Buddy replaces actor, which survives only in historical text. A buddy has no lasting run; each buddy run performs one task. For now the caller assigns a buddy's runs; later a buddy may scan for work itself.
+A task stands on its own. The buddy does not own the task's sensors, inbox, signal matching or actions, and does not duplicate its behavior. Pairing a task with a different scope or identity does not redefine that task. Trusted configuration grants standing permission within the paired scope and responsibilities; task prerequisites and action-specific guards still apply. GitHub issue assignment is not required.
+
+Buddy replaces the historical use of actor for a role/identity pairing; actor-pattern tasks are a separate concept. A buddy run activates its configured tasks' action loops. Work discovery uses the tasks' declared sensors within the configured scope.
 
 Buddies whose duties must stay independent have decoupled identities. Security and Hardening are performed by separate buddies with separate identities and accounts. [Buddy and task decisions](docs/decisions/buddies-and-tasks.md) record the current buddies.
 
@@ -78,11 +80,13 @@ A work item may have several runs. Runs may contain child runs. Ending a run doe
 
 ### Buddy run
 
-A run in which a buddy performs one task from its role, for one binding. A buddy run is a run, not a session; it may use a session. A run that uses no model, such as a Land run, is still a buddy run.
+One activation of the action loops of all tasks in a buddy's configured responsibilities, using its scope and identity. Activation does not mean every task immediately acts: a loop may wait for signals or prerequisites. A buddy run is not one task execution or model session, and does not require a separate process or model session per task.
 
-Use **Buddy runs** for dash's run view, and show each run's account. Operators, Agent runs and Actor runs were its historical labels. A buddy run may participate in a workflow run or operate independently.
+A stop propagates from the buddy run to its task loops and their active actions, including model-assisted work and deterministic operations. Each affected component stops admitting new work and passes the stop to work it started. Active work reaches a safe boundary, preserves progress and records checkpoints. Propagation is graceful, not immediate process termination, and does not undo completed effects.
 
-Avoid agent as a domain term because it is overloaded. Where it remains, an agent run means a buddy run whose identity includes a model.
+Stop propagation stays within the stop's scope. An issue-level `agents:stop` affects work for that issue, not unrelated issues served by the same buddy run. Unknown action results require reconciliation, not blind repetition.
+
+The earlier one-task-per-buddy-run definition is superseded. Dash's historical Operators, Agent runs and Actor runs labels and existing launch records need explicit mapping to this lifecycle; a model launch is not automatically a buddy run.
 
 ### Retry
 
@@ -96,7 +100,7 @@ Starting a fresh run from a checkpoint is not resumption of the original run. Co
 
 ### Session
 
-A model's retained conversation and context. One session can support multiple buddy runs, but a Hardening run never shares a session with the Implementation run whose revision it hardens.
+A model's retained conversation and context. A session supports model-assisted actions; its lifetime is separate from the buddy run that activates task loops. A Hardening run never shares a session with the Implementation run whose revision it hardens.
 
 Session identity, run identity and checkpoint identity are not interchangeable.
 
@@ -120,7 +124,9 @@ Each run retains its own identity. Establish parent–child links from explicit 
 
 ### Task
 
-A unit of a workflow that may proceed when its prerequisites hold, and that produces one result. A role's tasks are its responsibilities. A task may use a model or run deterministically.
+An actor in a workflow: it declares the sensors it wants, receives their signals in an inbox, and matches signals to actions. A task may act when its prerequisites hold and produces one result for its binding. A role's tasks are its responsibilities. A task may use a model or run deterministically.
+
+Actor here means the actor-pattern execution model, not the retired name for a buddy. A task stands on its own, independently of the buddy configuration that pairs it with scope and identity. It owns its sensor declarations, inbox, signal matching and actions. A task is not a buddy, identity, model session or individual run. Inbox storage, delivery guarantees and actor-instance boundaries remain to be designed.
 
 Tasks replace stages. A work item has no single current position. Its **ready tasks** are those whose prerequisites are current and whose own result for the current binding is missing. Each task owns its prerequisites, result, receipt, attempts, stop conditions and recovery, so it can change without reaching into another task's internals.
 
@@ -250,6 +256,28 @@ A lost response does not prove that the action failed. Reconciliation does not a
 An expression of desired work or action.
 
 A request can convey authorization from an authorized person. Arbitrary request text does not grant authorization.
+
+### Signal
+
+A message representing a condition or occurrence detected by a sensor, carrying its evidence and human or machine provenance. A signal need not be an explicit request. A task matches signals to actions; the signal alone does not prescribe an action or grant permission.
+
+A human-produced signal qualifies only when its producer is a current member of the configured organization. A machine-produced signal qualifies through the applicable authentication, provenance and binding rules. Signals encapsulate this distinction so tasks do not each invent producer-specific authority checks. Verify the applicable authority at run start and before privileged effects that rely on it. Unknown evidence grants no permission.
+
+An issue having `start:implement` can supply a signal matched to starting Implement. `agents:stop` supplies a signal matched to preventing new task runs and gracefully stopping active runs at the next safe boundary, preserving work and recording checkpoints. For a label-based signal, verify the application event and its producer; label presence alone does not establish authority.
+
+Removing a label is never a signal. Removing a start label does not cancel accepted work. Removing `agents:stop` does not authorize continuation. The signal for continuation remains undefined.
+
+These are intended contracts, not claims about installed behavior. [Signal authority decisions](docs/decisions/authority.md#signal-authority) record their authority rules.
+
+### Sensor
+
+A mechanism that detects signals from a source and populates the inboxes of tasks that declare they want that sensor. A sensor can detect a condition, such as an issue having a label, rather than only a new event. It retains the evidence and provenance needed to qualify the signal; an incomplete read does not establish absence or permission.
+
+### Action
+
+An operation a task selects by matching a signal, subject to current prerequisites and authority. Actions can update labels, launch model-assisted work, execute deterministic checks, or record results and checkpoints. Actions may produce conditions or evidence that sensors detect as further signals.
+
+Shared execution guards enforce scope, responsibility, authority, ownership, capacity and stop controls. Matching a signal never bypasses those guards.
 
 ### Authorization
 
