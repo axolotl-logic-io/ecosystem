@@ -4,7 +4,7 @@ The standards upgrade brings one GitHub repository up to an evidence-backed main
 
 ```
 standards-upgrade assess --config C --repo OWNER/REPO [--ref R] --out DIR
-   → assessment.json, report.md, plan.md   (no GitHub or Git writes; no repository code runs)
+   → assessment.json, report.md, plan.md, logs/   (no GitHub or Git writes; repository code runs only in the sandbox, with no network)
 an allow-listed person files plan.md as the repository's one upgrade issue
 standards-upgrade apply --config C --issue N
    → the branch and the caller's start line   (read-only checks)
@@ -19,7 +19,40 @@ The assessment supports two ecosystems: Node/npm and Python/Poetry. Every other 
 
 Poetry support follows the repositories that use it. On 2026-10-24, `axolotl-logic-io` had no Poetry repositories. Its migration source `axolotl-logic` had six with a root Poetry manifest: `lambda-calculus`, `aoc2021`, `ratato-bot` and `five-finder`, plus the archived `scompete` and `moody`. All four active ones came from `poetry new`: `[tool.poetry]`, `python = "^3.9"`, pytest as a dev dependency, and no CI.
 
-The assessment is static. It runs no repository code, because no credential-free sandbox with enforced filesystem and network limits exists yet. Installing, running tests and scanning advisories would run that code. So those three criteria are always `unverified`, and no assessment can reach `acceptable` yet. The upgrade's Implementation and Hardening runs execute those checks later, as they do for any configured repository.
+For Node/npm, the assessment installs the repository, runs its tests and scans its advisories in a credential-free sandbox, described below. So a Node/npm repository can be rated `acceptable` when every criterion passes.
+
+For Python/Poetry, those three checks need `poetry` and `pip-audit`. Neither is on the host this was built on, and installing them is new software, which needs the operator's decision. So a Poetry assessment reports the missing tool and leaves those criteria `unverified`, and it can't reach `acceptable` yet.
+
+## The sandbox
+
+Each command runs in its own [bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`) container. `bwrap` must be installed on the host, and unprivileged user namespaces must be allowed. Without it, the three criteria are `unverified` and say why.
+
+The container holds no credential. Here's what it sees:
+
+| Inside | What it is |
+|---|---|
+| `/usr` (read-only) | System software, with `/usr/local` hidden. |
+| A few `/etc` files (read-only) | `resolv.conf`, `hosts`, `nsswitch.conf`, `ssl`, `ca-certificates`, for name resolution and TLS. |
+| `/opt/node` (read-only) | The running Node binary and npm's package. Not their prefix, so no global `npmrc`. |
+| `/work` | A fresh export of the source commit, without `.git`. |
+| `/cache` | npm's package cache for this assessment. |
+| `/home`, `/tmp` | Empty, private, size-limited. |
+| `/proc` | Its own PID namespace: no other process's environment. |
+
+Nothing else of the host exists inside. The environment is empty, apart from `HOME`, `PATH`, `CI` and npm's settings. `bwrap` itself starts through `env -i`, because its own processes stay visible at `/proc/1/environ` inside. The work, cache and every container are deleted afterwards.
+
+For Node/npm, the commands run in this order:
+
+```
+network, npm's own code only:   npm ci --ignore-scripts --no-audit
+                                npm audit --json
+no network, repository code:    npm rebuild --foreground-scripts   (dependency install scripts)
+                                npm test
+```
+
+Repository code never runs with the network. The two fetching commands go only to the registry the operator chose with `--npm-registry`, set through the environment, so a repository's `.npmrc` can't redirect it. If the lockfile fetches any package from elsewhere, such as a git or tarball URL, nothing runs and the criteria say so. Without a `package-lock.json` or `npm-shrinkwrap.json`, nothing runs either.
+
+What the commands print goes to `OUT_DIR/logs/`, never into `assessment.json`, `report.md` or `plan.md`. Repository code wrote it, and the plan gets filed publicly. The criteria hold only exit codes and audit counts. Each command has a 10-minute limit.
 
 ## Run an assessment
 
@@ -35,13 +68,18 @@ node apps/issue-pipeline/dist/standards-upgrade.mjs assess \
 - `OWNER/REPO` names the repository, either as a slug or as its canonical URL, such as `https://github.com/OWNER/REPO`. It must be the config's `repo`.
 - `OUT_DIR` is an existing, empty folder outside any checkout.
 
-_Optional:_ Add `--ref REF` to assess a branch, tag, full ref or full commit instead of the default branch.
+_Optional:_
+- Add `--ref REF` to assess a branch, tag, full ref or full commit instead of the default branch.
+- Add `--npm-registry URL` to fetch from another npm registry, such as a mirror. The default is `https://registry.npmjs.org/`.
+- Add `--static` to run nothing. Install, tests and the scan are then `unverified`.
 
 The command prints one JSON line:
 
 ```json
 {"verdict":"not-acceptable","disposition":"node-npm","source":"3f1c…","assessment":"OUT_DIR/assessment.json","report":"OUT_DIR/report.md","plan":"OUT_DIR/plan.md"}
 ```
+
+`OUT_DIR/logs/` holds one log per sandboxed command, such as `1-npm-ci.log`. Read them as untrusted text.
 
 Exit 0 means the assessment finished, whatever its verdict. Exit 2 means a refusal, with the reason on stderr and nothing written to `OUT_DIR`. Exit 1 means any other error.
 
@@ -86,10 +124,10 @@ The criteria have the same names for both ecosystems. What passes depends on the
 | `environment.manifest` | The root `package.json` parses as a package manifest. | The root `pyproject.toml` parses as TOML. |
 | `environment.toolchain` | `engines.node`, `.nvmrc` or `.node-version` declares the supported Node. | `tool.poetry.dependencies.python`, `project.requires-python` or `.python-version` declares the supported Python. |
 | `environment.lockfile` | `package-lock.json` or `npm-shrinkwrap.json` is committed. A publishable library may omit one (`not-applicable`). A yarn, pnpm or bun lockfile is `unverified`. | `poetry.lock` is committed. A project that declares publishing metadata (classifiers, `repository` or `project.urls`) and isn't `package-mode = false` may omit one (`not-applicable`). |
-| `environment.install` | Always `unverified`: no repository code runs. | Same. |
-| `vulnerabilities.scan` | Always `unverified`: no scanner ran, so this isn't a clean scan. | Same. |
+| `environment.install` | `npm ci --ignore-scripts` and then `npm rebuild` exit 0 in the sandbox. Either failing is `failed`. No lockfile, a fetch outside the registry, no sandbox, or `--static` is `unverified`. | `unverified`: `poetry` isn't available. |
+| `vulnerabilities.scan` | `npm audit` over the whole tree, dev dependencies included, reports no advisories. Any advisory is `failed`, with counts by severity. No report is `unverified`, never a clean scan. | `unverified`: `pip-audit` is missing. |
 | `behavior.tests` | A real `test` script exists. A missing one, or npm's placeholder, means zero tests. | A `test_*.py` or `*_test.py` file defines a `test…` function. `poetry new`'s placeholder, `test_version`, which only asserts `__version__`, doesn't count, so a project with only that has zero tests. |
-| `behavior.tests-run` | Always `unverified`: no repository code runs. | Same. |
+| `behavior.tests-run` | `npm test` exits 0 in the sandbox, with no network. Any other exit, or the time limit, is `failed`. | `unverified`: it needs Poetry's installed environment. |
 | `ci.triggers` | A workflow runs on `pull_request`, and one runs on `push` to the default branch. | Same. |
 | `ci.runs-tests` | A workflow step runs `npm test`, or `npm run test`, `check` or `ci`. | A workflow step runs `pytest`, `poetry run pytest`, or `python -m pytest` or `unittest`. |
 | `ci.failure-propagation` | No `continue-on-error`, and no `\|\| true` or `--if-present` on a test command. | Same. |
@@ -109,22 +147,25 @@ A green workflow never stands in for enforcement. Without a required check, the 
 `assessment.json` follows the `ASSESSMENT` schema in [`src/standards/schema.ts`](../../apps/issue-pipeline/src/standards/schema.ts). The entrypoint validates it before writing. It records:
 
 - the repository, the requested ref, the resolved ref and the full source commit;
-- the assessment time, the policy version (`standards-v1`) and the Node and Git versions;
+- the record version (2), the assessment time, the policy version (`standards-v2`) and the Node and Git versions;
 - the disposition, the components, the workflows and the required checks;
 - each criterion's status and evidence, and the verdict;
 - the proposed changes, each tied to a criterion;
 - the owner actions, which need separate authority, such as requiring a check or archiving;
-- the repository commands it ran, which is always none.
+- the sandbox: `bwrap`'s version or why there's none, the registry and npm's version;
+- each command it ran: its arguments, whether it had the network, its exit code, its duration and its log's path.
+
+Readers also accept version 1 records, from `standards-v1`, which ran nothing.
 
 `report.md` shows the same data for people.
 
 `plan.md` exists only for a `node-npm` or `python-poetry` assessment with something to change. Its rules name the ecosystem's own checks: `npm ci`, `npm test` and `npm audit`, or `poetry check --lock`, `poetry install`, `poetry run pytest` and `pip-audit`. It's the body of the upgrade issue. Its first line is a marker that binds the plan to what was assessed:
 
 ```
-<!-- standards-upgrade:plan {"version":1,"repo":"o/r","source":"3f1c…","policy":"standards-v1","digest":"sha256:…"} -->
+<!-- standards-upgrade:plan {"version":1,"repo":"o/r","source":"3f1c…","policy":"standards-v2","digest":"sha256:…"} -->
 ```
 
-The digest covers the whole assessment except its time and requested ref. A rerun on the same commit, policy and toolchain gives the same digest.
+The digest covers the whole assessment except its time, its requested ref and the commands' durations. A rerun on the same commit, policy, toolchain and advisory data gives the same digest.
 
 ## Deliver the plan
 
@@ -148,7 +189,7 @@ To deliver an assessment's plan, follow these steps:
 - the issue isn't open, or is a pull request;
 - its author isn't an allow-listed collaborator, which includes both pipeline accounts;
 - it doesn't carry exactly one plan marker, or the marker doesn't parse;
-- the marker names another repository, or a policy other than `standards-v1`;
+- the marker names another repository, or a policy other than `standards-v2`, so a `standards-v1` plan needs a new assessment;
 - the config's base branch has moved past the plan's source commit;
 - another open issue already carries a plan;
 - the open issues can't be listed completely.
@@ -159,13 +200,15 @@ To deliver an assessment's plan, follow these steps:
 
 The assessment holds only the read side of the configured credentials, through the pipeline's own `gh` and `git` wrappers. It writes nothing to GitHub or the origin. Repository text, such as a README or a workflow, is data: it can't widen the target or the permissions.
 
+Repository code runs only in the sandbox, which never holds those credentials or any other. A test proves it: a fixture's test runs as hostile code, hunting for canary tokens in its environment, the operator's home, host files, the pipeline's credentials file and every process under `/proc`, and for the network. It finds none of them, and what it prints stays out of the results.
+
 Filing the upgrade issue needs a person. Under [`allow-listed-input`](../decisions/authority.md#allow-listed-input), neither pipeline account counts as trusted input, so an issue filed by the development account couldn't drive Implementation. An allow-listed collaborator files `plan.md` instead.
 
 The plan never asks for a settings change. Requiring a check, archiving or changing access are owner actions that need separate administrative authority.
 
 ## Recovery
 
-The assessment and `apply` are read-only and keep no state, so rerunning them is always safe.
+The assessment and `apply` write nothing to GitHub or the origin and keep no state, so rerunning them is always safe. The assessment's sandboxed work is deleted when it ends.
 
 A new commit on the base branch makes a plan stale before Implementation starts. Close the stale issue, rerun the assessment and file the new plan. Once Implementation has started, the chain's own Sync task brings the branch up to date, as it does for any issue.
 

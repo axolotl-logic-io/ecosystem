@@ -1,13 +1,16 @@
 // The standards assessment's wire format (docs/reference/standards-upgrade.md):
 // what `standards-upgrade assess` writes as assessment.json, and the marker a
 // plan carries into its upgrade issue. Every assessment is parsed with
-// ASSESSMENT before it's written, so a reader can trust its shape.
+// ASSESSMENT before it's written, so a reader can trust its shape. Version 2
+// adds the sandbox and the commands run in it (`additive-record-versions`);
+// readers still accept version 1, which ran nothing.
 
 import { z } from "zod";
 
 // The maintained standard's version. A change to what any criterion checks
-// gives a new version, so a plan bound to the old one goes stale.
-const POLICY_VERSION = "standards-v1";
+// gives a new version, so a plan bound to the old one goes stale. v2 runs
+// install, tests and the advisory scan instead of leaving them unverified.
+const POLICY_VERSION = "standards-v2";
 
 const SHA = z.string().regex(/^[0-9a-f]{40}$/u);
 const REPO = z.string().regex(/^[\w.-]+\/[\w.-]+$/u);
@@ -50,9 +53,30 @@ const WORKFLOW = z.strictObject({
   parsed: z.boolean(),
 });
 
-const ASSESSMENT = z.strictObject({
+// One command run in the sandbox. Its output stays in OUT_DIR/logs, never in
+// the assessment, report or plan: repository code wrote it.
+const COMMAND = z.strictObject({
+  argv: z.array(z.string()).min(1),
+  network: z.boolean(),
+  // null when it was killed at its time limit.
+  exitCode: z.number().int().nullable(),
+  durationMs: z.number().int().nonnegative(),
+  log: z.string().min(1),
+});
+
+const SANDBOX = z.strictObject({
+  tool: z.literal("bwrap"),
+  // null when there's no usable sandbox; `detail` says why.
+  version: z.string().nullable(),
+  detail: z.string().min(1),
+  // The npm registry every fetch went to.
+  registry: z.string().nullable(),
+  npm: z.string().nullable(),
+});
+
+const ASSESSMENT_V1 = z.strictObject({
   version: z.literal(1),
-  policy: z.literal(POLICY_VERSION),
+  policy: z.literal("standards-v1"),
   repo: REPO,
   requestedRef: z.string().nullable(),
   sourceRef: z.string().min(1),
@@ -82,9 +106,25 @@ const ASSESSMENT = z.strictObject({
   ),
   // What needs separate owner authority: settings, archival, access.
   ownerActions: z.array(z.string()),
-  // Repository commands this assessment ran. It runs none (no sandbox).
+  // Repository commands this assessment ran: none in version 1.
   commands: z.array(z.never()),
 });
+
+const ASSESSMENT_V2 = ASSESSMENT_V1.extend({
+  version: z.literal(2),
+  policy: z.literal(POLICY_VERSION),
+  // null when the assessment ran statically (`--static`).
+  sandbox: SANDBOX.nullable(),
+  commands: z.array(COMMAND),
+});
+
+// What `assess` writes.
+const ASSESSMENT: typeof ASSESSMENT_V2 = ASSESSMENT_V2;
+// What a reader accepts: any version.
+const ANY_ASSESSMENT = z.discriminatedUnion("version", [
+  ASSESSMENT_V1,
+  ASSESSMENT_V2,
+]);
 
 // The tag that opens the marker a plan's upgrade issue carries:
 // `<!-- standards-upgrade:plan {PLAN_MARKER JSON} -->`.
@@ -100,6 +140,8 @@ const PLAN_MARKER = z.strictObject({
 });
 
 type Assessment = z.infer<typeof ASSESSMENT>;
+type Command = z.infer<typeof COMMAND>;
+type SandboxRecord = z.infer<typeof SANDBOX>;
 type Criterion = z.infer<typeof CRITERION>;
 type Component = z.infer<typeof COMPONENT>;
 type Disposition = z.infer<typeof DISPOSITION>;
@@ -108,10 +150,12 @@ type PlanMarker = z.infer<typeof PLAN_MARKER>;
 
 export type {
   Assessment,
+  Command,
   Component,
   Criterion,
   Disposition,
   PlanMarker,
+  SandboxRecord,
   Workflow,
 };
-export { ASSESSMENT, PLAN_MARKER, PLAN_TAG, POLICY_VERSION };
+export { ANY_ASSESSMENT, ASSESSMENT, PLAN_MARKER, PLAN_TAG, POLICY_VERSION };

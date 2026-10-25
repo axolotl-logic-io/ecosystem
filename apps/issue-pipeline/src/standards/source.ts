@@ -30,6 +30,9 @@ interface Source {
   read: (file: string) => string | null;
   // The file lists of every branch and tag head, for a scaffold check.
   everyRef: () => readonly (readonly string[])[];
+  // Writes `commit`'s files into the empty folder `dir`, with no .git, so
+  // nothing of the fetch (its remote or configuration) goes with them.
+  exportTo: (dir: string) => void;
   dispose: () => void;
 }
 
@@ -187,6 +190,18 @@ function openSource(cfg: Config, input: string, ref: string | null): Source {
       read: (file: string): string | null => readAt(dir, commit, file),
       everyRef: (): string[][] =>
         refHeads(dir).map((head) => filesAt(dir, head)),
+      exportTo: (target: string): void => {
+        gitIn(dir, [
+          "-c",
+          "core.hooksPath=/dev/null",
+          `--work-tree=${target}`,
+          "checkout",
+          "--force",
+          commit,
+          "--",
+          ".",
+        ]);
+      },
       dispose: (): void => fs.rmSync(dir, { recursive: true, force: true }),
     };
   } catch (error) {

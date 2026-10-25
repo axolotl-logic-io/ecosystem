@@ -144,7 +144,7 @@ describe("standards-upgrade assess", () => {
       version: 1,
       repo: "o/r",
       source: assessment.source,
-      policy: "standards-v1",
+      policy: "standards-v2",
     });
     assert.match(digest, DIGEST);
     assert.match(run.text("report.md"), EVIDENCED_FAILURE);

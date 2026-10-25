@@ -1,7 +1,9 @@
 // A standards assessment of one repository at one commit (#129): its
 // disposition, inventory, each criterion's evidence and status, the verdict
 // they add up to, and the changes and owner actions that would close the
-// gaps. It writes nothing anywhere; the caller decides where its results go.
+// gaps. Install, tests and the advisory scan run in a credential-free
+// sandbox (execute.ts). It writes nothing to GitHub or the origin; the caller
+// decides where its results and the commands' logs go.
 
 import { createHash } from "node:crypto";
 import process from "node:process";
@@ -12,6 +14,8 @@ import type { CiTarget } from "./ci.ts";
 import { ciOf, nodeTarget, poetryTarget } from "./ci.ts";
 import { dispositionOf } from "./disposition.ts";
 import { enforcementOf } from "./enforcement.ts";
+import type { Execution, Log } from "./execute.ts";
+import { executeNode, executePoetry, nothingRun } from "./execute.ts";
 import { nodeCriteria, nodeProjectOf } from "./node-npm.ts";
 import { poetryCriteria, poetryProjectOf } from "./python-poetry.ts";
 import type { Assessment, Component, Criterion, Workflow } from "./schema.ts";
@@ -137,6 +141,7 @@ function ownerActionsOf(
 }
 
 interface Found {
+  execution: Execution;
   components: Component[];
   workflows: Workflow[];
   requiredChecks: string[] | null;
@@ -149,32 +154,52 @@ interface Checked {
   target: CiTarget;
 }
 
-// The ecosystem's own components, criteria and CI target, or null when the
-// disposition gets no criteria.
-function checkedOf(source: Source, kind: string): Checked | null {
+interface AssessOptions {
+  now: Date;
+  // The npm registry for sandboxed fetches; null assesses statically.
+  registry: string | null;
+}
+
+// The ecosystem's own components, criteria (executed ones included) and CI
+// target, or null when the disposition gets no criteria.
+function checkedOf(
+  source: Source,
+  kind: string,
+  options: AssessOptions,
+): (Checked & { execution: Execution }) | null {
   if (kind === "node-npm") {
     const project = nodeProjectOf(source);
+    const execution = executeNode(source, options);
     return {
+      execution,
       components: project.components,
-      criteria: nodeCriteria(source, project),
+      criteria: nodeCriteria(source, project, execution.criteria),
       target: nodeTarget(project),
     };
   }
   if (kind === "python-poetry") {
     const project = poetryProjectOf(source);
+    const execution = executePoetry(options);
     return {
+      execution,
       components: project.components,
-      criteria: poetryCriteria(source, project),
+      criteria: poetryCriteria(source, project, execution.criteria),
       target: poetryTarget(project),
     };
   }
   return null;
 }
 
-function criteriaOf(cfg: Config, source: Source, kind: string): Found {
-  const checked = checkedOf(source, kind);
+function criteriaOf(
+  cfg: Config,
+  source: Source,
+  kind: string,
+  options: AssessOptions,
+): Found {
+  const checked = checkedOf(source, kind, options);
   if (checked === null) {
     return {
+      execution: nothingRun(null, "no criteria apply"),
       components: [],
       workflows: [],
       requiredChecks: null,
@@ -184,6 +209,7 @@ function criteriaOf(cfg: Config, source: Source, kind: string): Found {
   const ci = ciOf(source, checked.target);
   const enforcement = enforcementOf(cfg, source.defaultBranch);
   return {
+    execution: checked.execution,
     components: checked.components,
     workflows: ci.workflows,
     requiredChecks: enforcement.requiredChecks,
@@ -192,29 +218,30 @@ function criteriaOf(cfg: Config, source: Source, kind: string): Found {
 }
 
 // Assesses `input` (OWNER/REPO or its GitHub URL) at `ref`, or the default
-// branch when null. Throws a Refusal for the wrong repository or ref.
+// branch when null, with the logs of the commands it ran. Throws a Refusal
+// for the wrong repository or ref.
 function assess(
   cfg: Config,
   input: string,
   ref: string | null,
-  now: Date,
-): Assessment {
+  options: AssessOptions,
+): { assessment: Assessment; logs: Log[] } {
   const source = openSource(cfg, input, ref);
   try {
     const disposition = dispositionOf(source);
-    const found = criteriaOf(cfg, source, disposition.kind);
+    const found = criteriaOf(cfg, source, disposition.kind, options);
     const gaps = found.criteria.filter(
       (criterion) =>
         criterion.status === "failed" || criterion.status === "unverified",
     );
-    return ASSESSMENT.parse({
-      version: 1,
+    const assessment = ASSESSMENT.parse({
+      version: 2,
       policy: POLICY_VERSION,
       repo: source.repo,
       requestedRef: ref,
       sourceRef: source.sourceRef,
       source: source.commit,
-      assessedAt: now.toISOString(),
+      assessedAt: options.now.toISOString(),
       toolchain: {
         node: process.version,
         git: versionOf("git", ["--version"]),
@@ -238,18 +265,26 @@ function assess(
         found.criteria,
         source.defaultBranch,
       ),
-      commands: [],
+      sandbox: found.execution.sandbox,
+      commands: found.execution.commands,
     });
+    return { assessment, logs: found.execution.logs };
   } finally {
     source.dispose();
   }
 }
 
-// What a plan binds: the assessment without its time and requested ref, so
-// a rerun on the same commit, policy and toolchain gives the same digest.
+// What a plan binds: the assessment without its time, requested ref and the
+// commands' durations, so a rerun on the same commit, policy, toolchain and
+// advisory data gives the same digest.
 function digestOf(assessment: Assessment): string {
-  const { assessedAt: _time, requestedRef: _ref, ...bound } = assessment;
+  const { assessedAt: _time, requestedRef: _ref, ...rest } = assessment;
+  const bound = {
+    ...rest,
+    commands: rest.commands.map(({ durationMs: _ms, ...command }) => command),
+  };
   return `sha256:${createHash("sha256").update(JSON.stringify(bound)).digest("hex")}`;
 }
 
+export type { AssessOptions };
 export { assess, digestOf };

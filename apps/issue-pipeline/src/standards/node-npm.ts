@@ -1,8 +1,7 @@
 // The Node/npm part of a standards assessment: the components a root
 // package.json declares, and the environment and behavior criteria that the
 // source alone can establish. Installing, running tests and scanning
-// advisories would run repository code, so without a credential-free sandbox
-// those criteria stay unverified, never passed (#129).
+// advisories run in the sandbox instead (execute.ts) (#129).
 
 import { z } from "zod";
 import type { Component, Criterion } from "./schema.ts";
@@ -36,8 +35,6 @@ const VERSION_FILES = [".nvmrc", ".node-version"];
 const ONE_LEVEL = /^(?<parent>[\w.@-]+(?:\/[\w.@-]+)*)\/\*$/u;
 const TRAILING_SLASH = /\/$/u;
 const LITERAL = /^[\w.@-]+(?:\/[\w.@-]+)*$/u;
-const NO_SANDBOX =
-  "not run: assessment runs no repository code without a credential-free sandbox";
 
 interface NodeProject {
   manifest: Manifest | null;
@@ -214,18 +211,15 @@ function testsCriterion(manifest: Manifest): Criterion {
   };
 }
 
-// The environment and behavior criteria for `project`, in a fixed order.
-function nodeCriteria(source: Source, project: NodeProject): Criterion[] {
+// The environment and behavior criteria for `project`, in a fixed order,
+// with `executed` (install, scan, tests-run) after the static ones.
+function nodeCriteria(
+  source: Source,
+  project: NodeProject,
+  executed: readonly Criterion[],
+): Criterion[] {
   const { manifest } = project;
-  const unrun: Criterion[] = [
-    { id: "environment.install", status: "unverified", evidence: NO_SANDBOX },
-    {
-      id: "vulnerabilities.scan",
-      status: "unverified",
-      evidence: `${NO_SANDBOX}; no advisory scanner ran, so this is not a clean scan`,
-    },
-    { id: "behavior.tests-run", status: "unverified", evidence: NO_SANDBOX },
-  ];
+  const unrun = executed;
   if (manifest === null) {
     const evidence =
       "the root package.json doesn't parse as a package manifest";
