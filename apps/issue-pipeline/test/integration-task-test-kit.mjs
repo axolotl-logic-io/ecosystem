@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { ghCalls } from "./fake-pipeline-flow-gh.mjs";
+import { isCoordinationWrite } from "./pipeline-flow-coordination-test-kit.mjs";
 import { now, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
 import { bareGit } from "./pipeline-flow-test-kit.mjs";
 import { gitIn, syncWorld } from "./sync-task-test-kit.mjs";
@@ -172,6 +173,7 @@ function checkoutOf(wt) {
 function forbiddenGhWrites(dir, from) {
   return ghCalls(dir)
     .slice(from)
+    .filter((args) => !isCoordinationWrite(args))
     .filter(
       (args) =>
         args[0] === "pr" ||

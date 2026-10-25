@@ -1,9 +1,8 @@
 // @ts-check
 // An ops request's `checkout` (#250): a stage job's own clone, which stands
 // in for the named issue's worktree while the request runs, and the branch
-// the caller assigned the issue, which its pushes go to. Other issues, and
-// requests without it, keep their issue-N worktrees and agent/issue-N
-// branches. A branch that isn't one literal name, or is the base
+// the caller assigned the issue, which its pushes go to. Requests without
+// it keep their issue-N worktrees and agent/issue-N branches. A branch that isn't one literal name, or is the base
 // branch, is refused before anything moves.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -95,16 +94,18 @@ test("push without a checkout pushes from the issue's worktree", () => {
   assert.equal(originRef(`agent/issue-${VIA_WORKTREE}`), sha);
 });
 
-test("a checkout naming another issue leaves the request's issue on its worktree", () => {
+// A stage job's checkout is always its own issue's (#167), so no binding
+// covers this request, and an unbound one can't write (#169).
+test("a checkout naming another issue pushes neither issue", () => {
   const { dir, branch } = jobClone(OTHER_ISSUE, "other.txt");
-  fx.startBranch(BESIDE_CHECKOUT, "a.txt", "first");
-  const sha = fx.commitIn(BESIDE_CHECKOUT, "b.txt", "second");
+  const first = fx.startBranch(BESIDE_CHECKOUT, "a.txt", "first");
+  fx.commitIn(BESIDE_CHECKOUT, "b.txt", "second");
   const reply = pushed({
     number: BESIDE_CHECKOUT,
     checkout: { issue: OTHER_ISSUE, dir, branch },
   });
-  assert.equal(reply.ok, true, reply.error);
-  assert.equal(originRef(`agent/issue-${BESIDE_CHECKOUT}`), sha);
+  assert.equal(reply.ok, false);
+  assert.equal(originRef(`agent/issue-${BESIDE_CHECKOUT}`), first);
   assert.equal(originRef(`agent/issue-${OTHER_ISSUE}`), "");
 });
 

@@ -21,9 +21,9 @@ import type { WriteIntent } from "./write-refusal.ts";
 type GhOptions = Omit<RunOptions, "env">;
 
 const WRITE_FLAG = /^(?:-X|--method|-f|-F|--field|--raw-field|--input)$/u;
-// A read that GitHub can safely repeat: `list`/`view` subcommands, or `gh api`
-// with no method or fields (a GET). Writes aren't retried, since a 502 may
-// hide one that landed.
+// A read that GitHub can safely repeat: `list`/`view` subcommands, `pr
+// checks`, or `gh api` with no method or fields (a GET). Writes aren't
+// retried, since a 502 may hide one that landed.
 function ghIsRead(args: readonly string[]): boolean {
   if (args[0] === "api" && args[1] === "graphql") {
     return args.some((arg) => arg.startsWith("query=query("));
@@ -31,7 +31,11 @@ function ghIsRead(args: readonly string[]): boolean {
   if (args[0] === "api") {
     return !args.some((arg) => WRITE_FLAG.test(arg));
   }
-  return args[1] === "list" || args[1] === "view";
+  return (
+    args[1] === "list" ||
+    args[1] === "view" ||
+    (args[0] === "pr" && args[1] === "checks")
+  );
 }
 
 // Only text arguments change (body=..., --body, --title), losing local paths

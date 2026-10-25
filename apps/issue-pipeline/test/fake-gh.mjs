@@ -17,6 +17,7 @@ import {
   executionTransportFiles,
 } from "./fake-execution-transport.mjs";
 import { BATCH_GRAPHQL } from "./fake-graphql-batch.mjs";
+import { OWNERSHIP_GH, registerFake } from "./fake-ownership.mjs";
 
 // The gh script's file mode: executable by its owner, readable by all.
 const EXECUTABLE = 0o755;
@@ -47,6 +48,7 @@ const AUTHENTICATED_CALL = z.object({
  * the reads. A test passes src/github.ts's ghIsRead as `isRead`: this file
  * imports no src module, since tests set the pipeline root before src loads.
  * @typedef {object} FakeGh
+ * @property {string} dir the folder holding the script and its logs
  * @property {(state: unknown) => void} transport
  * @property {() => unknown} transportState
  * @property {() => void} requireReplies fail every unmatched read or write
@@ -75,14 +77,16 @@ let expected = "merge";
 if (args[0] === "pr" && ["create", "edit", "reopen", "close", "ready"].includes(args[1])) expected = "dev";
 if (args[0] === "api" && args.includes("DELETE") && args.some(arg => /^repos\\/[^/]+\\/[^/]+\\/git\\/refs\\/heads\\//u.test(arg))) expected = "dev";
 if (!(args[0] === "api" && args[1] === "user") && identity[1] !== expected) throw new Error("wrong bot identity for operation");
+const quiet = process.env.FAKE_OWNERSHIP_QUIET === "1";
 if (args[0] === "api" && args[1] === "user") {
-  fs.appendFileSync(path.join(dir, "logins.jsonl"), JSON.stringify(args) + "\\n");
+  if (!quiet) fs.appendFileSync(path.join(dir, "logins.jsonl"), JSON.stringify(args) + "\\n");
   if (!JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => reply.when.startsWith("api user") && args.join(" ").includes(reply.when))) {
     process.stdout.write(identity[2] + "\\n"); process.exit(0);
   }
 }
 ${BATCH_GRAPHQL}
 ${EXECUTION_TRANSPORT}
+${OWNERSHIP_GH}
 if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(path.join(dir, "replies.json"), "utf8")).some(reply => args.join(" ").includes(reply.when))) {
   const comments = JSON.parse(fs.readFileSync(path.join(dir, "comments.json"), "utf8"));
   const nodeOf = id => {
@@ -95,13 +99,39 @@ if (args[0] === "api" && args[1] === "graphql" && !JSON.parse(fs.readFileSync(pa
   const id = args.find(arg => arg.startsWith("id="))?.slice(3);
   fs.writeSync(1, JSON.stringify({ data: { node: nodeOf(id) } })); process.exit(0);
 }
-fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
-fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");
+if (!quiet) {
+  fs.appendFileSync(path.join(dir, "calls.jsonl"), JSON.stringify(args) + "\\n");
+  fs.appendFileSync(path.join(dir, "identities.jsonl"), JSON.stringify({ identity: identity[1], args }) + "\\n");
+}
 const file = path.join(dir, "replies.json");
 const replies = JSON.parse(fs.readFileSync(file, "utf8"));
 const text = args.join(" ");
-const at = replies.findIndex((reply) => text.includes(reply.when));
-if (at >= 0) {
+let at = replies.findIndex((reply) => text.includes(reply.when));
+// With ownership on, each ops request lists the comments for every
+// ownership read too, so a listing reply is the snapshot of one request:
+// the next request's first listing uses it up and pins the next one.
+if (ownershipListing && !quiet && at >= 0) {
+  const pinFile = path.join(dir, "listing-pin.json");
+  const pin = fs.existsSync(pinFile) ? JSON.parse(fs.readFileSync(pinFile, "utf8")) : null;
+  const pinned = pin ? replies.findIndex(reply => reply.pin === pin.id) : -1;
+  if (pin?.ppid === process.ppid && pinned >= 0) {
+    at = pinned;
+  } else {
+    if (pinned >= 0 && replies[pinned].keep !== true) replies.splice(pinned, 1);
+    at = replies.findIndex((reply) => text.includes(reply.when));
+    if (at >= 0) {
+      const id = String(process.pid) + ":" + String(Date.now());
+      replies[at].pin = id;
+      fs.writeFileSync(pinFile, JSON.stringify({ ppid: process.ppid, id }));
+    }
+    fs.writeFileSync(file, JSON.stringify(replies));
+  }
+}
+if (at < 0 && ownershipListing) {
+  const lines = ownershipListing.records.map(item => JSON.stringify(item));
+  fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify(ownershipListing.records));
+  process.stdout.write(lines.join("\\n"));
+} else if (at >= 0) {
   const reply = replies[at];
   let stdout = reply.stdout ?? "";
   if (reply.branchMerge) {
@@ -118,6 +148,9 @@ if (at >= 0) {
     view.headRefOid = execFileSync("git", ["-C", reply.headRef.repo, "rev-parse", reply.headRef.ref], { encoding: "utf8" }).trim();
     stdout = JSON.stringify(view);
   }
+  if (ownershipListing) {
+    stdout = [...stdout.split("\\n").filter(Boolean), ...ownershipListing.records.map(item => JSON.stringify(item))].join("\\n");
+  }
   if (args.some(arg => arg.includes("/comments?"))) {
     const current = stdout.split("\\n").filter(Boolean).map(line => JSON.parse(line));
     fs.writeFileSync(path.join(dir, "comments.json"), JSON.stringify(current));
@@ -125,7 +158,7 @@ if (at >= 0) {
   process.stdout.write(stdout);
   process.stderr.write(reply.stderr ?? "");
   process.exitCode = reply.code ?? 0;
-  if (reply.keep !== true) {
+  if (reply.keep !== true && !ownershipListing) {
     replies.splice(at, 1);
     fs.writeFileSync(file, JSON.stringify(replies));
   }
@@ -150,6 +183,7 @@ if (at >= 0 && (process.exitCode ?? 0) === 0 && args.includes("PATCH") && body?.
   }
   fs.writeFileSync(file, JSON.stringify(replies));
 }
+if (ownershipListing) ownershipListing.done();
 `;
 }
 
@@ -169,6 +203,7 @@ function readCallLog(file) {
 function installFakeGh() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-gh-"));
   fs.writeFileSync(path.join(dir, "gh"), script(dir), { mode: EXECUTABLE });
+  registerFake(dir);
   const { PATH: searchPath } = process.env;
   Object.assign(process.env, { PATH: `${dir}${path.delimiter}${searchPath}` });
   const callsFile = path.join(dir, "calls.jsonl");
@@ -181,6 +216,7 @@ function installFakeGh() {
       .map((line) => CALL_ARGS.parse(JSON.parse(line)));
   }
   return {
+    dir,
     ...executionTransportFiles(dir),
     loginCalls: () => readCallLog(path.join(dir, "logins.jsonl")),
     requireReplies() {
@@ -194,6 +230,7 @@ function installFakeGh() {
         .map((line) => AUTHENTICATED_CALL.parse(JSON.parse(line)));
     },
     reply(replies) {
+      fs.rmSync(path.join(dir, "listing-pin.json"), { force: true });
       fs.writeFileSync(path.join(dir, "logins.jsonl"), "");
       fs.writeFileSync(path.join(dir, "identities.jsonl"), "");
       fs.writeFileSync(path.join(dir, "replies.json"), JSON.stringify(replies));

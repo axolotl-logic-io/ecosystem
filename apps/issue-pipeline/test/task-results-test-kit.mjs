@@ -10,7 +10,9 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { z } from "zod";
+import { ownedRequest } from "./fake-ownership.mjs";
 import { ghCalls, openIssue } from "./fake-pipeline-flow-gh.mjs";
+import { isCoordinationWrite } from "./pipeline-flow-coordination-test-kit.mjs";
 import {
   postComment,
   readWorld,
@@ -77,21 +79,26 @@ const REPLY = z.looseObject({
  * @returns {unknown}
  */
 function rawOps(flow, request) {
-  const body = JSON.stringify({ config: flow.config, ...request });
-  const result = spawnSync(
-    process.execPath,
-    [path.join(flow.root, "ops.mjs")],
-    {
-      input: `BEGIN_OPS_REQUEST\n${body}\nEND_OPS_REQUEST`,
-      env: flow.env,
-      encoding: "utf8",
-      timeout: RUN_MS,
+  return ownedRequest(
+    { config: flow.config, env: flow.env, request },
+    (bound) => {
+      const body = JSON.stringify({ config: flow.config, ...bound });
+      const result = spawnSync(
+        process.execPath,
+        [path.join(flow.root, "ops.mjs")],
+        {
+          input: `BEGIN_OPS_REQUEST\n${body}\nEND_OPS_REQUEST`,
+          env: flow.env,
+          encoding: "utf8",
+          timeout: RUN_MS,
+        },
+      );
+      if (result.status !== 0) {
+        throw new Error(`ops exited ${result.status}: ${result.stderr}`);
+      }
+      return JSON.parse(result.stdout);
     },
   );
-  if (result.status !== 0) {
-    throw new Error(`ops exited ${result.status}: ${result.stderr}`);
-  }
-  return JSON.parse(result.stdout);
 }
 
 /**
@@ -208,7 +215,8 @@ function callMark(dir) {
 function writesSince(dir, from = 0) {
   return ghCalls(dir)
     .slice(from)
-    .filter((args) => args.some((arg) => GH_WRITE.test(arg)));
+    .filter((args) => args.some((arg) => GH_WRITE.test(arg)))
+    .filter((args) => !isCoordinationWrite(args));
 }
 
 // A version 2 saved state for `issue` with `extra` over a new issue's, as
