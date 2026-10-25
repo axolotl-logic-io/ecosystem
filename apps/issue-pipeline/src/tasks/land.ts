@@ -1,0 +1,116 @@
+// Land: the Gatekeeper's guarded, immutable fast-forward of target T to
+// revision R. It needs the trusted repository grant (`permissions.land`),
+// Harden, Integrate and Review Security attesting exactly R on T, and the
+// target's integration turn, which it takes before its attempt is recorded
+// and keeps while the run is unsettled. A pass is never permission: every
+// check is made again in the ops child (ops/land-task.ts). An unsettled run
+// is reconciled read-only and never pushed again.
+
+import type { Config } from "../config.ts";
+import type {
+  ActionContext,
+  ActionEnd,
+  Binding,
+  QualifiedSignal,
+  Readiness,
+  Revision,
+  TargetState,
+  TaskView,
+} from "../domain.ts";
+import {
+  currentBinding,
+  passedFor,
+  runReadiness,
+  unsettledRun,
+  waiting,
+} from "./chain.ts";
+import { effectEnd, recoverEnd } from "./effect.ts";
+import type { TaskModule } from "./module.ts";
+import { notCurrent } from "./module.ts";
+import { landGranted } from "./permissions.ts";
+import { subjectRefused } from "./records.ts";
+import { sensed } from "./sensing.ts";
+import { acquireLandTurn } from "./turn.ts";
+import type { TaskEvidence } from "./view.ts";
+
+const ATTESTING = ["harden", "integrate", "review-security"] as const;
+
+// Why R can't land on T from these results, or null.
+function unattested(
+  view: TaskView,
+  revision: Revision,
+  target: TargetState,
+): string | null {
+  for (const task of ATTESTING) {
+    if (passedFor(view, task, revision, target) === undefined) {
+      return `${task} has not passed this revision and target`;
+    }
+  }
+  return null;
+}
+
+function match(signal: QualifiedSignal, view: TaskView): Readiness | null {
+  const shared = sensed(signal, view, "result");
+  if (shared !== undefined) {
+    return shared;
+  }
+  const open = unsettledRun(view, "land");
+  if (open !== undefined) {
+    return runReadiness(view, open.binding, true);
+  }
+  if (!view.permissions.land) {
+    return waiting("the repository configuration grants no Land permission");
+  }
+  const binding = currentBinding(view, "land");
+  if (binding === null || !view.containsTarget) {
+    return waiting("the revision does not contain the target");
+  }
+  const why = unattested(view, binding.revision, binding.target);
+  if (why !== null) {
+    return waiting(why);
+  }
+  return runReadiness(view, binding, true);
+}
+
+function prerequisite(
+  cfg: Config,
+  evidence: TaskEvidence,
+  binding: Binding,
+): string | null {
+  if (!landGranted(cfg)) {
+    return "the repository configuration grants no Land permission";
+  }
+  const stale = notCurrent(evidence, binding);
+  if (stale !== null || !("revision" in binding)) {
+    return stale ?? "the binding is not a revision binding";
+  }
+  const { view, records } = evidence;
+  if (!view.containsTarget || binding.revision.code === view.target.commit) {
+    return "the revision is not a strict descendant of the target";
+  }
+  if (subjectRefused(records, binding.revision.code, binding.revision.inputs)) {
+    return "Review Security refused this code and these inputs";
+  }
+  return unattested(view, binding.revision, binding.target);
+}
+
+const land: TaskModule = {
+  definition: {
+    id: "land",
+    role: "gatekeeper",
+    access: "lander",
+    sensors: ["result", "stop"],
+    resources: ["target-write"],
+    match,
+    act: (ctx: ActionContext): Promise<ActionEnd> =>
+      effectEnd(ctx, "land-task"),
+    recover: (ctx: ActionContext): Promise<ActionEnd> =>
+      recoverEnd(ctx, "land-reconcile"),
+  },
+  prerequisite,
+  admit: acquireLandTurn,
+  ownsResult: true,
+  writesCode: false,
+};
+
+export { land, unattested };
