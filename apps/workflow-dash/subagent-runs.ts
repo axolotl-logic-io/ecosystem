@@ -1,15 +1,19 @@
+// Generic pi-subagents harness runs (`status.json`, `events.jsonl` and
+// output logs under `subagentRuns`). A subagent run is a model session's
+// harness record, not a domain buddy run: nothing here names a buddy, task,
+// action run or parent.
 import { join } from "node:path";
-import { observedAccount } from "./buddy-source.ts";
+import { z } from "zod";
 import { collect } from "./collection.ts";
 import type { Config } from "./config.ts";
 import { dirs, readCap } from "./local-files.ts";
 import {
-  type BuddyStatus,
-  buddyStatusSchema,
   type ContactEvent,
   eventSchema,
   jsonl,
   parse,
+  type SubagentStatus,
+  subagentStatusSchema,
   type Timestamp,
 } from "./source-records.ts";
 import { ms, today } from "./time.ts";
@@ -21,7 +25,12 @@ const pendingPreviewCharacters = 500;
 const eventReadBytes = 65_536;
 const outputReadBytes = 8192;
 const outputTailLines = 12;
-interface BuddyRun {
+const accountName = z.string().regex(/^[\w.@:/+-]{1,100}$/u);
+const accountSchema = z.union([
+  accountName,
+  z.object({ provider: accountName, login: accountName }),
+]);
+interface SubagentRun {
   id: string;
   state: string;
   mission: string;
@@ -32,8 +41,20 @@ interface BuddyRun {
   account?: string | null;
   accountSource: string;
 }
+
+/** Source metadata is an observation, never proof of identity or authority. */
+function observedAccount(input: unknown): string | null {
+  const parsed = accountSchema.safeParse(input);
+  if (!parsed.success) {
+    return null;
+  }
+  if (typeof parsed.data === "string") {
+    return parsed.data;
+  }
+  return `${parsed.data.provider}:${parsed.data.login}`;
+}
 function supervisorPending(
-  status: BuddyStatus,
+  status: SubagentStatus,
   events: ContactEvent[],
 ): string {
   if (terminalStates.has(status.state)) {
@@ -65,13 +86,13 @@ function supervisorPending(
     blocking?.currentToolArgs?.slice(0, pendingPreviewCharacters) ?? "none"
   );
 }
-async function readBuddyRun(
+async function readSubagentRun(
   root: string,
   id: string,
   all: boolean,
-): Promise<BuddyRun[]> {
+): Promise<SubagentRun[]> {
   const directory = join(root, id);
-  const parsed = buddyStatusSchema.safeParse(
+  const parsed = subagentStatusSchema.safeParse(
     parse(await readCap(join(directory, "status.json"))),
   );
   if (!(parsed.success && (all || today(parsed.data.startedAt)))) {
@@ -110,12 +131,15 @@ async function readBuddyRun(
     },
   ];
 }
-async function loadBuddyRuns(config: Config, all = false): Promise<BuddyRun[]> {
-  const runs = await collect(await dirs(config.buddyRuns), (id) =>
-    readBuddyRun(config.buddyRuns, id, all),
+async function loadSubagentRuns(
+  config: Config,
+  all = false,
+): Promise<SubagentRun[]> {
+  const runs = await collect(await dirs(config.subagentRuns), (id) =>
+    readSubagentRun(config.subagentRuns, id, all),
   );
   return runs.flat().sort((a, b) => ms(b.start) - ms(a.start));
 }
 
-export type { BuddyRun };
-export { loadBuddyRuns, supervisorPending };
+export type { SubagentRun };
+export { loadSubagentRuns, supervisorPending };

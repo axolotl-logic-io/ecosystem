@@ -3,13 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { loadBuddyRuns } from "../buddy-runs.ts";
 import { configure } from "../config.ts";
+import { loadSubagentRuns } from "../subagent-runs.ts";
 
 const unverified = /unverified/u;
 
-test("buddy loader shows explicitly recorded accounts and leaves missing accounts unknown", async (): Promise<void> => {
-  const root = await mkdtemp(join(tmpdir(), "dash-buddy-source-"));
+test("subagent loader shows explicitly recorded accounts and leaves missing accounts unknown", async (): Promise<void> => {
+  const root = await mkdtemp(join(tmpdir(), "dash-subagent-source-"));
   try {
     await mkdir(join(root, "with-account"));
     await mkdir(join(root, "without-account"));
@@ -26,7 +26,10 @@ test("buddy loader shows explicitly recorded accounts and leaves missing account
       join(root, "without-account/status.json"),
       JSON.stringify(status),
     );
-    const runs = await loadBuddyRuns(configure({ buddyRuns: root }), true);
+    const runs = await loadSubagentRuns(
+      configure({ subagentRuns: root }),
+      true,
+    );
     assert.equal(runs.length, 2);
     assert.equal(
       runs.find((run) => run.id === "with-account")?.account,

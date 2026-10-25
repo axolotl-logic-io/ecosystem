@@ -38,20 +38,37 @@ async function composeInstruction(
   pi.sendUserMessage(edited.trim(), options);
   return true;
 }
+/** Draft instructions only; the caller decides and performs every write. */
 function actionTemplates(selection: Selection | undefined): string[] {
   if (selection === undefined) {
     return [];
   }
-  if (selection.kind === "workflow") {
+  if (selection.kind === "buddy-run") {
+    const { run, condition } = selection.entry;
+    return [
+      `investigate buddy run ${run.id} (${run.buddy.name}); the dashboard observed it as ${condition.state}, which is not proof of its state`,
+      `assess whether buddy run ${run.id} needs a stop for its scope; a stop affects that scope only`,
+    ];
+  }
+  if (selection.kind === "action-run") {
+    const { run } = selection.entry;
+    const ref = `action run ${run.id} (${run.task} on ${run.workItem.repo} #${run.workItem.number})`;
+    const templates = [`investigate ${ref}`];
+    if (run.outcome === "unknown" || run.checkpoint.state === "uncertain") {
+      templates.push(
+        `reconcile ${ref} by reading its effects; do not repeat it to get a clearer result`,
+      );
+    }
+    return templates;
+  }
+  if (selection.kind === "job") {
     const { run } = selection;
     let ref = `${run.repo} #${run.issue}`;
     if (run.data.id !== undefined) {
-      ref += ` · run ${run.data.id}`;
+      ref += ` · job ${run.data.id}`;
     }
     return [
-      `assess a retry as a new linked run for ${ref} from its latest kept checkpoint at source stage ${run.data.stage}; preserve task/binding attempt budgets and reconcile uncertain writes first`,
-      `investigate this workflow run: ${ref}`,
-      `assess a retry as a new linked run after timeout: ${ref}; reconcile uncertain writes before retrying`,
+      `investigate historical job record ${ref}; it is retired-runtime evidence, not a current run`,
     ];
   }
   if (selection.kind === "issue" && selection.item.isPr !== true) {
@@ -63,11 +80,10 @@ function actionTemplates(selection: Selection | undefined): string[] {
       `split ${ref}`,
     ];
   }
-  if (selection.kind === "buddy") {
+  if (selection.kind === "subagent") {
     return [
-      `steer buddy run ${selection.run.id}: …`,
-      `answer buddy run ${selection.run.id}'s pending request: …`,
-      `assess replacing buddy run ${selection.run.id} with a new linked run; reconcile uncertain writes first`,
+      `steer subagent run ${selection.run.id}: …`,
+      `answer subagent run ${selection.run.id}'s pending request: …`,
     ];
   }
   return [];

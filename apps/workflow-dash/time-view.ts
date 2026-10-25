@@ -1,8 +1,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import type { HistoricalJob } from "./job-history.ts";
 import { timeBreakdown } from "./time.ts";
 import { durationBar, fmt, pad } from "./ui-format.ts";
-import type { WorkflowRun } from "./workflow-source.ts";
 
 const chartSizes = {
   labelMax: 38,
@@ -42,14 +42,14 @@ function chart(
 }
 function charts(
   theme: Theme,
-  data: { runs: WorkflowRun[]; sessions: string; scope: ChartScope },
+  data: { runs: HistoricalJob[]; sessions: string; scope: ChartScope },
   width: number,
 ): string[] {
   const breakdown = timeBreakdown(data.runs);
   const lines: string[] = [];
   if (data.scope !== "types") {
     lines.push(
-      theme.fg("borderAccent", "LAUNCH KIND · retained launch snapshots"),
+      theme.fg("borderAccent", "LAUNCH KIND · historical job launch snapshots"),
       "",
       ...chart(theme, breakdown.launches, width),
       "",
@@ -57,7 +57,10 @@ function charts(
   }
   if (data.scope !== "launches") {
     lines.push(
-      theme.fg("borderAccent", "RUN STAGES · today's journal records"),
+      theme.fg(
+        "borderAccent",
+        "SOURCE STAGES · today's historical job journal",
+      ),
       "",
       ...chart(theme, breakdown.types, width),
       "",

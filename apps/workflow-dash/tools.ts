@@ -2,8 +2,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
 import { z } from "zod";
 import type { Snapshot } from "./data.ts";
-import { detail, type ReadResult, summary } from "./tool-output.ts";
-import { workflowRunDetails } from "./workflow-source.ts";
+import { type HistoricalJob, jobDetails } from "./job-history.ts";
+import {
+  actionRunDetail,
+  detail,
+  type ReadResult,
+  runtimeSummary,
+  summary,
+} from "./tool-output.ts";
 
 interface ReadSource {
   active: () => boolean;
@@ -18,51 +24,97 @@ interface ReadTool {
   parameters: TSchema;
   execute: (id: string, params: unknown) => Promise<ReadResult>;
 }
+/**
+ * What a read tool reports: buddy runtime observations, one action run, or
+ * the retired job runtime's historical records (in the current or the
+ * deprecated compatibility shape).
+ */
+type ToolReads =
+  | "runtime runs"
+  | "action run"
+  | "job history"
+  | "job record"
+  | "legacy job history"
+  | "legacy job record";
 interface ToolSpec {
   name: string;
   label: string;
   description: string;
-  legacy: boolean;
-  single: boolean;
+  reads: ToolReads;
 }
 const referenceSchema = z.object({
   repo: z.string(),
   issue: z.number().int().positive(),
 });
+const actionReferenceSchema = z.object({ id: z.string().min(1) });
+const referenceParameters = Type.Object({
+  repo: Type.String(),
+  issue: Type.Integer({ minimum: 1 }),
+});
 const specs: ToolSpec[] = [
   {
-    name: "workflow_runs",
-    label: "Workflow runs",
+    name: "buddy_runs",
+    label: "Buddy runs",
     description:
-      "Read-only observed and uncertain workflow processes, capacity coverage, hold observation, installed and cached main SHA. No writes; task results and leases are not collected.",
-    legacy: false,
-    single: false,
+      "Read-only buddy-run and action-run observations from local files, with their explicit links, unreadable files and coverage. Observations are never authority; no writes.",
+    reads: "runtime runs",
+  },
+  {
+    name: "action_run",
+    label: "Action run",
+    description:
+      "Read-only whole action-run observation by id, with its buddy run, previous action run and session links; output capped to 12KB.",
+    reads: "action run",
+  },
+  {
+    name: "workflow_runs",
+    label: "Job history",
+    description:
+      "Read-only historical job records from the retired job runtime, with legacy job process observations, hold observation, installed and cached main SHA. Not current runs; use buddy_runs.",
+    reads: "job history",
   },
   {
     name: "workflow_run",
-    label: "Workflow run",
+    label: "Job record",
     description:
-      "Read-only launches and outcomes of a workflow run from local files; output capped to 12KB.",
-    legacy: false,
-    single: true,
+      "Read-only launches and outcomes of one historical job record from local files; output capped to 12KB. Not a current run; use action_run.",
+    reads: "job record",
   },
   {
     name: "pipeline_lanes",
-    label: "Workflow runs (compatibility alias)",
+    label: "Job history (compatibility alias)",
     description:
-      "Deprecated: use workflow_runs. Read-only compatibility output; performs no writes.",
-    legacy: true,
-    single: false,
+      "Deprecated: use buddy_runs, or workflow_runs for history. Retired job records only, in the old response shape; its capacity counts legacy job processes, not configured caps.",
+    reads: "legacy job history",
   },
   {
     name: "pipeline_job",
-    label: "Workflow run (compatibility alias)",
+    label: "Job record (compatibility alias)",
     description:
-      "Deprecated: use workflow_run. Read-only compatibility output; capped to 12KB.",
-    legacy: true,
-    single: true,
+      "Deprecated: use action_run, or workflow_run for history. One retired job record in the old response shape; capped to 12KB.",
+    reads: "legacy job record",
   },
 ];
+function jobRecord(
+  state: Snapshot,
+  input: unknown,
+  legacy: boolean,
+): HistoricalJob {
+  const reference = referenceSchema.parse(input);
+  const run = state.jobHistory.find(
+    (item) =>
+      item.repo === reference.repo &&
+      item.issue === reference.issue &&
+      item.data.history !== true,
+  );
+  if (run === undefined) {
+    if (legacy) {
+      throw new Error("Job not found");
+    }
+    throw new Error("Job record not found");
+  }
+  return run;
+}
 async function execute(
   spec: ToolSpec,
   source: ReadSource,
@@ -73,42 +125,51 @@ async function execute(
   }
   await source.refresh();
   const state = source.get();
-  if (!spec.single) {
-    return summary(state, spec.legacy);
-  }
-  const reference = referenceSchema.parse(input);
-  const run = state.workflowRuns.find(
-    (item) =>
-      item.repo === reference.repo &&
-      item.issue === reference.issue &&
-      item.data.history !== true,
-  );
-  if (run === undefined) {
-    if (spec.legacy) {
-      throw new Error("Job not found");
+  switch (spec.reads) {
+    case "runtime runs":
+      return runtimeSummary(state.runtime, state.configWarnings);
+    case "action run": {
+      const { id } = actionReferenceSchema.parse(input);
+      const entry = state.runtime.actionRuns.find((item) => item.run.id === id);
+      if (entry === undefined) {
+        throw new Error(
+          "Action run not observed; see buddy_runs for unreadable files and coverage",
+        );
+      }
+      return actionRunDetail(entry);
     }
-    throw new Error("Workflow run not found");
+    case "job history":
+      return summary(state, false);
+    case "legacy job history":
+      return summary(state, true);
+    case "job record": {
+      const run = jobRecord(state, input, false);
+      return detail(run, await jobDetails(run), false);
+    }
+    default: {
+      const run = jobRecord(state, input, true);
+      return detail(run, await jobDetails(run), true);
+    }
   }
-  return detail(run, await workflowRunDetails(run), spec.legacy);
+}
+function parametersFor(reads: ToolReads): TSchema {
+  if (reads === "action run") {
+    return Type.Object({ id: Type.String({ minLength: 1 }) });
+  }
+  if (reads === "job record" || reads === "legacy job record") {
+    return referenceParameters;
+  }
+  return Type.Object({});
 }
 function readTools(source: ReadSource): ReadTool[] {
-  return specs.map((spec) => {
-    let parameters: TSchema = Type.Object({});
-    if (spec.single) {
-      parameters = Type.Object({
-        repo: Type.String(),
-        issue: Type.Integer({ minimum: 1 }),
-      });
-    }
-    return {
-      name: spec.name,
-      label: spec.label,
-      description: spec.description,
-      parameters,
-      annotations: { readOnlyHint: true },
-      execute: (_id: string, input: unknown) => execute(spec, source, input),
-    };
-  });
+  return specs.map((spec) => ({
+    name: spec.name,
+    label: spec.label,
+    description: spec.description,
+    parameters: parametersFor(spec.reads),
+    annotations: { readOnlyHint: true },
+    execute: (_id: string, input: unknown) => execute(spec, source, input),
+  }));
 }
 function registerReadTools(
   pi: Pick<ExtensionAPI, "registerTool">,

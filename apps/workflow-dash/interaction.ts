@@ -140,7 +140,7 @@ class DashboardInteraction {
     const options = actionTemplates(selection);
     if (options.length === 0) {
       flow.ctx.ui.notify(
-        "Select a workflow run, issue, or buddy run first. PRs are read-only.",
+        "Select a buddy run, action run, issue, subagent run or job record first. PRs are read-only.",
         "info",
       );
       return;
@@ -220,9 +220,11 @@ class DashboardInteraction {
       case "detail":
         return {
           text: await runReport(choice.item),
-          title: `Workflow run ${choice.item.repo} #${choice.item.issue}`,
+          title: `Historical job record ${choice.item.repo} #${choice.item.issue}`,
           workflowRun: true,
         };
+      case "observation":
+        return { text: choice.text, title: choice.title };
       case "plan":
         return {
           text: await readCap(this.runtime.config.plan),

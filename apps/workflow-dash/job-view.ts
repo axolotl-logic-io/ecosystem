@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { executionLabel, stageLabel, taskCoverage } from "./language.ts";
-import { runCondition } from "./observations.ts";
+import { jobCondition } from "./job-conditions.ts";
+import type { HistoricalJob } from "./job-history.ts";
 import { elapsed, limit, timeline } from "./time.ts";
 import {
   chip,
@@ -13,7 +13,6 @@ import {
   shortRepo,
   stageInk,
 } from "./ui-format.ts";
-import type { WorkflowRun } from "./workflow-source.ts";
 
 const rowSizes = {
   wideRepo: 19,
@@ -37,10 +36,10 @@ const launchChart = {
   minimumBar: 3,
   time: 8,
 };
-function workflowRunLabel(run: WorkflowRun): string {
-  return `${runCondition(run)} ${shortRepo(run.repo)} #${run.issue} ${stageLabel(run.data.stage ?? "unknown")} ${executionLabel(run.data.launches.at(-1)?.key ?? "—")} ${fmt(elapsed(run.data.startedAt, run.data.endedAt ?? Date.now()))}`;
+function jobLabel(run: HistoricalJob): string {
+  return `${jobCondition(run)} ${shortRepo(run.repo)} #${run.issue} ${run.data.stage ?? "unknown"} ${run.data.launches.at(-1)?.key ?? "—"} ${fmt(elapsed(run.data.startedAt, run.data.endedAt ?? Date.now()))}`;
 }
-function workflowRunRow(run: WorkflowRun, theme: Theme, width: number): string {
+function jobRow(run: HistoricalJob, theme: Theme, width: number): string {
   const launch = run.data.launches.at(-1);
   const stage = run.data.stage ?? "wait";
   const timing = limit(launch?.key ?? "", launch?.startedAt ?? Date.now());
@@ -56,8 +55,8 @@ function workflowRunRow(run: WorkflowRun, theme: Theme, width: number): string {
     bar: rowSizes.bar,
     prefix: 4,
   };
-  let state = `${theme.fg("muted", runCondition(run).slice(0, 1))} `;
-  let badge = stageLabel(stage);
+  let state = `${theme.fg("muted", jobCondition(run).slice(0, 1))} `;
+  let badge = stage;
   if (width < layout.narrow) {
     sizes = {
       repo: rowSizes.smallRepo,
@@ -96,9 +95,13 @@ function workflowRunRow(run: WorkflowRun, theme: Theme, width: number): string {
   if (budget > 0 && run.live === true) {
     bar = progress(theme, age / budget, sizes.bar);
   }
-  return `${state}${theme.fg("accent", "\uea62")} ${pad(shortRepo(run.repo), sizes.repo)} ${pad(`#${run.issue}`, sizes.issue, true)} ${chip(theme, pad(badge, sizes.badge), stageInk(stage))} ${pad(executionLabel(launch?.key ?? fallback), stepWidth)} ${bar} ${theme.fg("muted", pad(fmt(age), sizes.time, true))}`;
+  return `${state}${theme.fg("accent", "\uea62")} ${pad(shortRepo(run.repo), sizes.repo)} ${pad(`#${run.issue}`, sizes.issue, true)} ${chip(theme, pad(badge, sizes.badge), stageInk(stage))} ${pad(launch?.key ?? fallback, stepWidth)} ${bar} ${theme.fg("muted", pad(fmt(age), sizes.time, true))}`;
 }
-function compactRunRow(run: WorkflowRun, theme: Theme, width: number): string {
+function compactRunRow(
+  run: HistoricalJob,
+  theme: Theme,
+  width: number,
+): string {
   const columns = {
     repo: 9,
     wideRepo: 14,
@@ -111,7 +114,7 @@ function compactRunRow(run: WorkflowRun, theme: Theme, width: number): string {
   if (width >= columns.roomy) {
     repoWidth = columns.wideRepo;
   }
-  const text = `${theme.fg("muted", runCondition(run).slice(0, 1))} ${theme.fg("accent", "\uea62")} ${pad(shortRepo(run.repo), repoWidth)} ${pad(`#${run.issue}`, columns.issue, true)} ${chip(theme, stageLabel(run.data.stage ?? "wait"), stageInk(run.data.stage ?? ""))} ${theme.fg("muted", executionLabel(run.data.launches.at(-1)?.key ?? "history"))}`;
+  const text = `${theme.fg("muted", jobCondition(run).slice(0, 1))} ${theme.fg("accent", "\uea62")} ${pad(shortRepo(run.repo), repoWidth)} ${pad(`#${run.issue}`, columns.issue, true)} ${chip(theme, run.data.stage ?? "wait", stageInk(run.data.stage ?? ""))} ${theme.fg("muted", run.data.launches.at(-1)?.key ?? "history")}`;
   const duration = fmt(
     elapsed(run.data.startedAt, run.data.endedAt ?? Date.now()),
   );
@@ -120,17 +123,17 @@ function compactRunRow(run: WorkflowRun, theme: Theme, width: number): string {
     theme.fg("muted", pad(duration, columns.duration, true))
   );
 }
-function workflowRow(run: WorkflowRun, theme: Theme, width: number): string {
+function jobListRow(run: HistoricalJob, theme: Theme, width: number): string {
   let text = compactRunRow(run, theme, width);
   if (width >= layout.compactRun) {
-    text = workflowRunRow(run, theme, width - layout.panelInset);
+    text = jobRow(run, theme, width - layout.panelInset);
   }
   if (run.data.history === true) {
     text = theme.style(text, { dim: true });
   }
   return text;
 }
-function launchBars(run: WorkflowRun, theme: Theme, width: number): string[] {
+function launchBars(run: HistoricalJob, theme: Theme, width: number): string[] {
   const launches = timeline(run);
   const maximum = Math.max(1, ...launches.map((launch) => launch.seconds));
   const labelWidth = Math.min(
@@ -146,28 +149,25 @@ function launchBars(run: WorkflowRun, theme: Theme, width: number): string[] {
   );
   return launches.map(
     (launch) =>
-      `${theme.fg(stageInk(launch.key), pad(executionLabel(launch.key), labelWidth))} ${durationBar(theme, launch.seconds / maximum, barWidth, stageInk(launch.key))} ${pad(fmt(launch.seconds), launchChart.time, true)}`,
+      `${theme.fg(stageInk(launch.key), pad(launch.key, labelWidth))} ${durationBar(theme, launch.seconds / maximum, barWidth, stageInk(launch.key))} ${pad(fmt(launch.seconds), launchChart.time, true)}`,
   );
 }
-function workflowDetails(
-  run: WorkflowRun,
+function jobDetailLines(
+  run: HistoricalJob,
   theme: Theme,
   width: number,
 ): string[] {
-  const tasks =
-    taskCoverage(run.data.stage ?? "unknown").tasks.join(", ") || "unknown";
   const lines = [
     theme.fg("accent", `\uea62 ${shortRepo(run.repo)} #${run.issue}`),
-    `${theme.fg("muted", runCondition(run))}  ${chip(theme, stageLabel(run.data.stage ?? "wait"), stageInk(run.data.stage ?? ""))}  ${theme.fg("muted", fmt(elapsed(run.data.startedAt, run.data.endedAt ?? Date.now())))}`,
+    `${theme.fg("muted", jobCondition(run))}  ${chip(theme, run.data.stage ?? "wait", stageInk(run.data.stage ?? ""))}  ${theme.fg("muted", fmt(elapsed(run.data.startedAt, run.data.endedAt ?? Date.now())))}`,
     "",
-    `Source stage: ${run.data.stage ?? "not recorded"} · legacy workflow`,
-    ...wrapTextWithAnsi(`Mapped tasks: ${tasks}`, width),
+    `Historical job record · source stage ${run.data.stage ?? "not recorded"}`,
     ...wrapTextWithAnsi(
-      "Current task, binding and result: not observed. A mapping is not evidence of execution or completion.",
+      "Retired job runtime evidence only: not the current workflow, mapped to no task, and linked to no buddy run or action run.",
       width,
     ),
     ...wrapTextWithAnsi(
-      "Process observations do not verify a lease or release a resource.",
+      "A legacy job process observation verifies no lease, releases no resource and makes no capacity claim.",
       width,
     ),
     theme.fg("borderAccent", "LAUNCH TIMELINE · relative duration"),
@@ -186,10 +186,4 @@ function workflowDetails(
   return lines;
 }
 
-export {
-  launchBars,
-  workflowDetails,
-  workflowRow,
-  workflowRunLabel,
-  workflowRunRow,
-};
+export { jobDetailLines, jobLabel, jobListRow, jobRow, launchBars };

@@ -32,7 +32,7 @@ async function runtimeFixture(
   });
   const config = configure({
     runs: join(root, "runs"),
-    buddyRuns: join(root, "buddies"),
+    subagentRuns: join(root, "buddies"),
     installed: join(root, "installed.json"),
     hold: join(root, "hold"),
     plan: join(root, "plan.md"),

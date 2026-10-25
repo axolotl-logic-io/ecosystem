@@ -1,12 +1,12 @@
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { collect } from "./collection.ts";
+import type { HistoricalJob } from "./job-history.ts";
 import { capacity } from "./legacy-capacity.ts";
 import { files, readCap, sourceReadBytes } from "./local-files.ts";
 import { processList } from "./process-observations.ts";
 import { jsonl, type SessionRecord, sessionSchema } from "./source-records.ts";
 import { type SessionTime, sessionTime, today } from "./time.ts";
-import type { WorkflowRun } from "./workflow-source.ts";
 
 const gateCommand =
   /(?:playwright|vitest|(?:npm|pnpm|yarn).*\b(?:test|gate|verify)\b|next\s+(?:dev|build|start))/u;
@@ -73,7 +73,7 @@ function webProcesses(
         !excludedProcess.test(line),
     );
 }
-async function reviewerGate(run: WorkflowRun): Promise<void> {
+async function reviewerGate(run: HistoricalJob): Promise<void> {
   const launch = run.data.launches.at(-1);
   if (
     run.live === true &&
@@ -90,7 +90,7 @@ async function reviewerGate(run: WorkflowRun): Promise<void> {
   }
 }
 async function observeWebGate(
-  runs: WorkflowRun[],
+  runs: HistoricalJob[],
   processRead: () => Promise<string> = processList,
 ): Promise<{ issues: number[]; busy: boolean }> {
   await collect(runs, reviewerGate);
@@ -104,7 +104,9 @@ async function observeWebGate(
   }
   return { issues: [...issues], busy: issues.size > 0 || processes.length > 0 };
 }
-async function runSessions(run: WorkflowRun): Promise<[string, SessionTime][]> {
+async function runSessions(
+  run: HistoricalJob,
+): Promise<[string, SessionTime][]> {
   const root = join(run.dir, "sessions");
   const names = (await files(root)).filter((name) =>
     sessionFilename.test(name),
@@ -117,7 +119,7 @@ async function runSessions(run: WorkflowRun): Promise<[string, SessionTime][]> {
   });
 }
 async function sessions(
-  runs: WorkflowRun[],
+  runs: HistoricalJob[],
 ): Promise<Record<string, SessionTime>> {
   const entries = await collect(
     runs.filter((run) => run.data.history !== true),

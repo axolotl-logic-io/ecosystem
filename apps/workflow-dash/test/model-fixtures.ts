@@ -1,11 +1,11 @@
 import { empty, type Snapshot } from "../data.ts";
-import type { WorkflowData } from "../source-records.ts";
-import type { WorkflowRun } from "../workflow-source.ts";
+import type { HistoricalJob } from "../job-history.ts";
+import type { JobData } from "../source-records.ts";
 
 function makeRun(
-  data: Partial<WorkflowData> = {},
-  overrides: Partial<Omit<WorkflowRun, "data">> = {},
-): WorkflowRun {
+  data: Partial<JobData> = {},
+  overrides: Partial<Omit<HistoricalJob, "data">> = {},
+): HistoricalJob {
   return {
     repo: "axolotl-logic-io/project-buddy",
     issue: 1,
@@ -17,7 +17,7 @@ function makeRun(
   };
 }
 function makeState(overrides: Partial<Snapshot> = {}): Snapshot {
-  return { ...empty, workflowRuns: [], buddyRuns: [], ...overrides };
+  return { ...empty, jobHistory: [], subagentRuns: [], ...overrides };
 }
 
 export { makeRun, makeState };

@@ -11,7 +11,7 @@ const launchSchema = z.object({
   turns: z.number().nullish(),
   usage: z.unknown().optional(),
 });
-const workflowSchema = z.object({
+const jobRecordSchema = z.object({
   id: z.string().nullish(),
   pid: z.number().nullish(),
   stage: z.string().nullish(),
@@ -58,7 +58,7 @@ const stepSchema = z.object({
   task: z.string().nullish(),
   sessionName: z.string().nullish(),
 });
-const buddyStatusSchema = stepSchema.extend({
+const subagentStatusSchema = stepSchema.extend({
   state: z.string(),
   startedAt: timestampSchema,
   lastActivityAt: timestampSchema,
@@ -82,10 +82,10 @@ const installedSchema = z.object({
 });
 type Timestamp = z.infer<typeof timestampSchema>;
 type Launch = z.infer<typeof launchSchema>;
-type WorkflowData = z.infer<typeof workflowSchema>;
+type JobData = z.infer<typeof jobRecordSchema>;
 type JournalRecord = z.infer<typeof journalSchema>;
 type SessionRecord = z.infer<typeof sessionSchema>;
-type BuddyStatus = z.infer<typeof buddyStatusSchema>;
+type SubagentStatus = z.infer<typeof subagentStatusSchema>;
 type ContactEvent = z.infer<typeof eventSchema>;
 
 function parse(text: string): unknown {
@@ -109,21 +109,21 @@ function jsonl(text: string): Record<string, unknown>[] {
 }
 
 export type {
-  BuddyStatus,
   ContactEvent,
+  JobData,
   JournalRecord,
   Launch,
   SessionRecord,
+  SubagentStatus,
   Timestamp,
-  WorkflowData,
 };
 export {
-  buddyStatusSchema,
   eventSchema,
   installedSchema,
+  jobRecordSchema,
   journalSchema,
   jsonl,
   parse,
   sessionSchema,
-  workflowSchema,
+  subagentStatusSchema,
 };

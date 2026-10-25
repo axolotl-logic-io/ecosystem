@@ -1,3 +1,7 @@
+// Historical job records: the retired job runtime's `issue-N/job.json` and
+// `jobs.jsonl`. They remain readable as historical evidence only. They are
+// not the current workflow, map to no task, and name no buddy run or action
+// run.
 import { join } from "node:path";
 import { collect } from "./collection.ts";
 import type { Config } from "./config.ts";
@@ -5,15 +9,15 @@ import { dirs, readCap, sourceReadBytes } from "./local-files.ts";
 import {
   live,
   type ProcessCheck,
-  pidWorkflowRun,
+  pidLegacyJob,
 } from "./process-observations.ts";
 import {
+  type JobData,
   type JournalRecord,
+  jobRecordSchema,
   journalSchema,
   jsonl,
   parse,
-  type WorkflowData,
-  workflowSchema,
 } from "./source-records.ts";
 import { ms, type TimedLaunch, timeline, today } from "./time.ts";
 
@@ -22,22 +26,23 @@ const verifySummary = /ℹ.*(?:tests|pass|fail|cancelled)/u;
 const summaryReadBytes = 32_768;
 const summaryLineCount = 8;
 const retainedVerifyLogs = 3;
-interface WorkflowRun {
+/** One `job.json`, or one earlier job named by its `jobs.jsonl`. */
+interface HistoricalJob {
   repo: string;
   issue: number;
   dir: string;
-  data: WorkflowData;
+  data: JobData;
   live: boolean | null;
   records: JournalRecord[];
   pbWebObserved?: boolean;
 }
-interface RunDetails {
+interface JobDetails {
   timeline: TimedLaunch[];
   verify: string[];
   stopReason: unknown;
 }
 
-function historicalRuns(current: WorkflowRun): WorkflowRun[] {
+function journalJobs(current: HistoricalJob): HistoricalJob[] {
   return current.records.flatMap((record) => {
     if (
       record.kind !== "job" ||
@@ -74,13 +79,13 @@ async function readWorkflow(
   repo: string,
   directory: string,
   check: ProcessCheck,
-): Promise<WorkflowRun[]> {
+): Promise<HistoricalJob[]> {
   const name = directory.split("/").at(-1) ?? "";
   const match = issueDirectory.exec(name);
   if (match === null) {
     return [];
   }
-  const parsed = workflowSchema.safeParse(
+  const parsed = jobRecordSchema.safeParse(
     parse(await readCap(join(directory, "job.json"), sourceReadBytes)),
   );
   if (!parsed.success) {
@@ -96,7 +101,7 @@ async function readWorkflow(
     return [];
   });
   const { issue } = match.groups ?? {};
-  const current: WorkflowRun = {
+  const current: HistoricalJob = {
     repo,
     issue: Number(issue),
     dir: directory,
@@ -104,12 +109,12 @@ async function readWorkflow(
     live: await live(parsed.data, check),
     records,
   };
-  return [current, ...historicalRuns(current)];
+  return [current, ...journalJobs(current)];
 }
-async function loadWorkflowRuns(
+async function loadJobHistory(
   config: Config,
-  check: ProcessCheck = pidWorkflowRun,
-): Promise<WorkflowRun[]> {
+  check: ProcessCheck = pidLegacyJob,
+): Promise<HistoricalJob[]> {
   const locations = await collect(config.repos, async (repo) => {
     const root = join(config.runs, repo.replace("/", "__"));
     return (await dirs(root))
@@ -141,7 +146,7 @@ async function verificationLog(
   }
   return [`${name}\n${summary.join("\n")}`];
 }
-function stopReason(run: WorkflowRun): unknown {
+function stopReason(run: HistoricalJob): unknown {
   const relevant = run.records.filter(
     (record) =>
       record.reason !== undefined ||
@@ -165,12 +170,12 @@ function stopReason(run: WorkflowRun): unknown {
     "not recorded"
   );
 }
-async function workflowRunDetails(run: WorkflowRun): Promise<RunDetails> {
+async function jobDetails(run: HistoricalJob): Promise<JobDetails> {
   if (run.data.history === true) {
     return {
       timeline: [],
       verify: [
-        "Historical workflow run: launches and verify logs cannot be correlated after job.json is replaced.",
+        "Earlier journalled job: launches and verify logs cannot be correlated after job.json is replaced.",
       ],
       stopReason: run.data.reason ?? run.data.outcome ?? "not recorded",
     };
@@ -186,5 +191,5 @@ async function workflowRunDetails(run: WorkflowRun): Promise<RunDetails> {
   };
 }
 
-export type { RunDetails, WorkflowRun };
-export { loadWorkflowRuns, workflowRunDetails };
+export type { HistoricalJob, JobDetails };
+export { jobDetails, loadJobHistory };

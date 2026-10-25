@@ -3,9 +3,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { HistoricalJob } from "../job-history.ts";
 import { capacity } from "../legacy-capacity.ts";
 import { observeWebGate } from "../session-source.ts";
-import type { WorkflowRun } from "../workflow-source.ts";
 import { makeRun } from "./model-fixtures.ts";
 
 const fixtureIssue = 499;
@@ -13,7 +13,7 @@ function job(
   key: string,
   live = true,
   repo = "org/project-buddy",
-): WorkflowRun {
+): HistoricalJob {
   return makeRun(
     { stage: "review", launches: [{ key }] },
     { repo, issue: fixtureIssue, live },
