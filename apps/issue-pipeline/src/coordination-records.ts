@@ -1,13 +1,19 @@
 // Validated append-only history. A missing/changed immutable epoch lock or a
 // conflicting record never falls back to an older, more permissive owner.
+// Three kinds of scope exist: an issue's execution, a target's integration
+// turn, and one slot of a shared resource. A resource slot's records are
+// version 3 and only they are; its owner's consumers must all report done
+// before a release counts.
 import { z } from "zod";
 import { assertCommentAuthority } from "./comment-authority.ts";
 import type { IssueComment } from "./comments.ts";
 import type { Config } from "./config.ts";
 import {
+  type CONSUMER,
   currentRecord,
   type INVOCATION_BINDING,
   RECORD,
+  RESOURCE_RECORD_VERSION,
 } from "./coordination-record-schema.ts";
 import { OpsError } from "./ops-error.ts";
 
@@ -21,6 +27,32 @@ type InvocationBinding = z.infer<typeof INVOCATION_BINDING>;
 type Record = z.infer<typeof RECORD>;
 type Row = Record & { id: number };
 type Request = Extract<Row, { kind: "request" }>;
+// The version new records in a scope are written in.
+type RecordVersion = 2 | typeof RESOURCE_RECORD_VERSION;
+type Consumer = z.infer<typeof CONSUMER>;
+// A consumer the slot's owner registered, and whether it reported done.
+interface ConsumerState {
+  consumer: Consumer;
+  done: boolean;
+}
+// The resources whose capacity is a set of shared slot scopes. Test slots
+// are machine-local (lane-slots.ts) and target writes are the integration
+// turn, so neither is one.
+const SHARED_RESOURCE = z.enum(["model-session"]);
+type SharedResource = z.infer<typeof SHARED_RESOURCE>;
+const RESOURCE_SCOPE = z.tuple([
+  z.string().min(1),
+  z.string().min(1),
+  z.literal("resource"),
+  SHARED_RESOURCE,
+  z.number().int().positive(),
+]);
+interface ResourceSlot {
+  repo: string;
+  base: string;
+  resource: SharedResource;
+  slot: number;
+}
 interface CoordinationPort {
   comments: () => readonly IssueComment[];
   append: (body: string) => void;
@@ -40,6 +72,8 @@ interface Snapshot {
   pending: Request[];
   epoch: number;
   records: Row[];
+  // The current owner's consumers, in registration order.
+  consumers: ConsumerState[];
 }
 function hold(reason: string): never {
   throw new OpsError(`coordination requires reconciliation: ${reason}`);
@@ -53,10 +87,47 @@ function scopeOf(id: InvocationBinding, kind: "issue" | "integration"): string {
   }
   return JSON.stringify([id.repo, id.base, kind]);
 }
+// Slot `slot` of `resource` on a repository and base.
+function resourceScopeOf(
+  at: Pick<InvocationBinding, "repo" | "base">,
+  resource: SharedResource,
+  slot: number,
+): string {
+  return JSON.stringify([at.repo, at.base, "resource", resource, slot]);
+}
+// The resource slot `scope` names, or null when it names none exactly.
+function resourceOf(scope: string): ResourceSlot | null {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(scope);
+  } catch {
+    return null;
+  }
+  const parsed = RESOURCE_SCOPE.safeParse(raw);
+  if (!parsed.success) {
+    return null;
+  }
+  const [repo, base, , resource, slot] = parsed.data;
+  if (resourceScopeOf({ repo, base }, resource, slot) !== scope) {
+    return null;
+  }
+  return { repo, base, resource, slot };
+}
+// The version a new record in `scope` is written in.
+function recordVersion(scope: string): RecordVersion {
+  if (resourceOf(scope) === null) {
+    return 2;
+  }
+  return RESOURCE_RECORD_VERSION;
+}
 function assertScope(scope: string, identity: InvocationBinding): void {
+  const slot = resourceOf(scope);
   if (
     scope !== scopeOf(identity, "issue") &&
-    scope !== scopeOf(identity, "integration")
+    scope !== scopeOf(identity, "integration") &&
+    (slot === null ||
+      slot.repo !== identity.repo ||
+      slot.base !== identity.base)
   ) {
     hold("request identity does not match coordination scope");
   }
@@ -88,8 +159,20 @@ function parseRecord(cfg: Config, comment: IssueComment): Row[] {
   if (record === null) {
     hold("invalid record");
   }
+  if (
+    (record.version === RESOURCE_RECORD_VERSION) !==
+    (resourceOf(record.scope) !== null)
+  ) {
+    hold("record version does not match its scope");
+  }
   if (record.kind === "request") {
     assertScope(record.scope, record.binding);
+    if (
+      (record.version === RESOURCE_RECORD_VERSION) !==
+      (record.cap !== undefined)
+    ) {
+      hold("request capacity declaration does not match its version");
+    }
   }
   return [{ ...record, id: comment.id }];
 }
@@ -193,11 +276,38 @@ function applyOwned(
     view.confirmed = true;
   } else if (!view.confirmed || view.owner?.id !== request.id) {
     hold("unconfirmed owner mutation");
+  } else if (row.kind === "register" || row.kind === "done") {
+    applyConsumer(view, row);
   } else if (row.kind === "release") {
+    if (view.consumers.some((entry) => !entry.done)) {
+      hold("released before every registered consumer reported done");
+    }
     view.pending.splice(view.pending.indexOf(request), 1);
     view.epoch = row.id;
     view.owner = null;
     view.confirmed = false;
+    view.consumers = [];
+  }
+}
+function sameConsumer(a: Consumer, b: Consumer): boolean {
+  return a.kind === b.kind && a.id === b.id;
+}
+function applyConsumer(
+  view: Snapshot,
+  row: Extract<Row, { kind: "register" | "done" }>,
+): void {
+  const entry = view.consumers.find((item) =>
+    sameConsumer(item.consumer, row.consumer),
+  );
+  if (row.kind === "register") {
+    if (entry !== undefined) {
+      hold("consumer registered twice");
+    }
+    view.consumers.push({ consumer: row.consumer, done: false });
+  } else if (entry === undefined || entry.done) {
+    hold("done report without an outstanding registration");
+  } else {
+    entry.done = true;
   }
 }
 function snapshot(
@@ -212,6 +322,7 @@ function snapshot(
     pending: [],
     epoch: 0,
     records,
+    consumers: [],
   };
   for (const row of records) {
     transition(port, scope, view, row);
@@ -228,6 +339,27 @@ function snapshot(
     hold("released lock reused in a later epoch");
   }
   return view;
+}
+// Every slot of `resource` on cfg's repository and base that a record in
+// `comments` names, in order.
+function resourceSlotsOf(
+  cfg: Config,
+  comments: readonly IssueComment[],
+  resource: SharedResource,
+): number[] {
+  const slots = new Set<number>();
+  for (const row of comments.flatMap((comment) => parseRecord(cfg, comment))) {
+    const named = resourceOf(row.scope);
+    if (
+      named !== null &&
+      named.repo === cfg.repo &&
+      named.base === cfg.baseBranch &&
+      named.resource === resource
+    ) {
+      slots.add(named.slot);
+    }
+  }
+  return [...slots].sort((a, b) => a - b);
 }
 function sameBinding(a: InvocationBinding, b: InvocationBinding): boolean {
   return (
@@ -251,11 +383,15 @@ function own(view: Snapshot, identity: InvocationBinding): Request {
 }
 
 export type {
+  Consumer,
+  ConsumerState,
   CoordinationPort,
   Evidence,
   InvocationBinding,
   Record,
+  RecordVersion,
   Request,
+  SharedResource,
   Snapshot,
 };
 
@@ -267,8 +403,12 @@ export {
   hold,
   own,
   recordsOf,
+  recordVersion,
   refOf,
+  resourceScopeOf,
+  resourceSlotsOf,
   sameBinding,
+  sameConsumer,
   scopeOf,
   snapshot,
 };
