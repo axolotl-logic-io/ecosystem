@@ -4,6 +4,7 @@
 // Any other route or filter is refused as unsupported.
 import {
   issueEvents,
+  openIssues,
   listed as pagedRows,
 } from "./fake-pipeline-flow-gh-assignments.mjs";
 import { coordinationGit } from "./fake-pipeline-flow-gh-coordination.mjs";
@@ -264,6 +265,9 @@ function api(world, args) {
   }
   if (kind === "issues" && second === "comments") {
     return repoComments(world, { ...call, route: call.route.slice(1) });
+  }
+  if (kind === "issues" && second === undefined && call.method === "GET") {
+    return openIssues(world);
   }
   if (kind === "issues") {
     return issueRoute(world, call);

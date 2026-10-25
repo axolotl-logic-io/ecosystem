@@ -42,6 +42,7 @@ const BUILT = [
   "pipeline-commit.mjs",
   "git-review.mjs",
   "caller-jobs.mjs",
+  "sweep.mjs",
 ];
 // An older install's stage agents, which retired() retires with its old
 // workflow.js, which an old lane schedule could still run, and its pi prompts.

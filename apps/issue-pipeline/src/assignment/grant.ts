@@ -199,4 +199,4 @@ function assertGranted(cfg: Config, issue: number, login: string): void {
 }
 
 export type { Grant };
-export { AssignmentPaused, assertGranted, assignmentGrant };
+export { AssignmentPaused, assertGranted, assignmentGrant, listing };

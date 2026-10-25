@@ -47,6 +47,7 @@ const BUILT = [
   "orchestrate.mjs",
   "report.mjs",
   "caller-jobs.mjs",
+  "sweep.mjs",
 ];
 const tmp = fs.mkdtempSync("/tmp/issue-pipeline-install-");
 process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
