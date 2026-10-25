@@ -132,8 +132,10 @@ const WORLD = z.strictObject({
   // pull requests, the buddy process the fake stops with SIGTERM when a
   // poll's first open-issue listing is its `atPoll`th, and a concurrent
   // writer's comment that GitHub shows right after the first POST whose
-  // body contains every one of `after`.
+  // body contains every one of `after`, and a text whose every comment
+  // POST fails before it applies.
   collaborators: z.array(z.string()).optional(),
+  failPostsContaining: z.string().optional(),
   race: z
     .strictObject({
       after: z.array(z.string()).min(1),

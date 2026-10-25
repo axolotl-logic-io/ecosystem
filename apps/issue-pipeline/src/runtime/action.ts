@@ -16,7 +16,7 @@
 // record are evidence settlement and still run while stopping. A failed
 // checkpoint, an uncertain result record, a retained rebase or any
 // issue-level refusal keeps the issue's execution, and a failed checkpoint
-// keeps the reservation too.
+// keeps the reservation and the checkout too.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -66,7 +66,12 @@ import type { SessionPhase } from "../job/role-context.ts";
 import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
 import { agentEnvOf, rolesOf } from "../job/roles.ts";
 import type { LaunchStart } from "../job/status.ts";
-import { checkGuard, TASK_OP_CLASSES } from "../ops/task-guard.ts";
+import type { TaskGuard } from "../ops/task-guard.ts";
+import {
+  checkGuard,
+  guardedMutations,
+  TASK_OP_CLASSES,
+} from "../ops/task-guard.ts";
 import { rebaseInProgress } from "../rebase.ts";
 import type { SignalScope } from "../signals/inbox.ts";
 import { requalify, stopLatch } from "../signals/inbox.ts";
@@ -785,13 +790,18 @@ function retainCheckout(open: OpenAction): void {
 }
 
 // Closes the checkout: uncommitted work saved as patches and local commits
-// bundled, then removed. A stopped rebase, or a failure to preserve, retains
-// it whole. Returns why the issue must stay held, or null.
+// bundled, then removed. A stopped rebase, an uncertain checkpoint or a
+// failure to preserve retains it whole. Returns why the issue must stay
+// held, or null.
 async function preserveCheckout(
   open: OpenAction,
   end: ActionEnd,
 ): Promise<string | null> {
-  const { cfg, dirs, workItem, admitted, setting } = open;
+  const { cfg, dirs, workItem, admitted, setting, checkpoint } = open;
+  if (checkpoint.uncertain !== null) {
+    retainCheckout(open);
+    return `checkout retained at ${dirs.root}: checkpoint uncertain: ${checkpoint.uncertain}`;
+  }
   if (
     fs.existsSync(path.join(dirs.repo, ".git")) &&
     rebaseInProgress(dirs.repo)
@@ -1094,16 +1104,18 @@ async function openAction(
     branch: dirs.branch,
   });
   const launches = launchesOf(setting.task.id, observation);
-  // The session push's authority, reread at the push: the buddy's
-  // authorization, no accepted or unknown stop, the action's cause still
-  // authoritative, and the issue's execution still the action's.
+  // The session push's authority: the buddy's authorization, no accepted
+  // or unknown stop, the action's cause still authoritative, and the
+  // issue's execution still the action's. The push server checks it when a
+  // push is requested and again at the credentialed push itself.
+  const pushGuard: TaskGuard = {
+    kind: "substantive",
+    scope: setting.scope,
+    number: workItem.number,
+    proposed: { binding: admitted.binding, cause: admitted.cause },
+  };
   function owner(): void {
-    checkGuard(cfg, {
-      kind: "substantive",
-      scope: setting.scope,
-      number: workItem.number,
-      proposed: { binding: admitted.binding, cause: admitted.cause },
-    });
+    checkGuard(cfg, pushGuard);
     issueExecution(cfg, workItem.number).assertOwner();
   }
   const pushJob = {
@@ -1116,7 +1128,7 @@ async function openAction(
   try {
     const control = await openControlSocket(
       actionDir,
-      pushServerOf(cfg, pushJob, launches),
+      pushServerOf(guardedMutations(cfg, pushGuard), pushJob, launches),
       admitted.execution,
     );
     const interruption = {

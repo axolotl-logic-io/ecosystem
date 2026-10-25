@@ -25,14 +25,21 @@ const SESSION = z.strictObject({
     .nullable(),
   // What changes on GitHub while the session runs: the human applies
   // agents:stop to the issue, the human leaves the organization, GitHub
-  // starts failing every comment POST before it applies, or the issue's
-  // label events become unreadable.
+  // starts failing every comment POST before it applies, or only those of
+  // the action's state checkpoint, or the issue's label events become
+  // unreadable.
   change: z
-    .enum(["stop-issue", "human-leaves", "posts-fail", "events-unreadable"])
+    .enum([
+      "stop-issue",
+      "human-leaves",
+      "posts-fail",
+      "checkpoint-posts-fail",
+      "events-unreadable",
+    ])
     .nullable(),
-  // Wait for the runtime's abort command rather than replying.
   // Whether `change` comes before the commit rather than after it.
   changeFirst: z.boolean(),
+  // Wait for the runtime's abort command rather than replying.
   awaitAbort: z.boolean(),
   reply: z.record(z.string(), z.unknown()).nullable(),
 });
@@ -149,6 +156,8 @@ function applyChange(change: NonNullable<Session["change"]>): void {
   const world = readWorld(file);
   if (change === "posts-fail") {
     world.post = "lost-before-apply";
+  } else if (change === "checkpoint-posts-fail") {
+    world.failPostsContaining = "<!-- agent-pipeline:state\n";
   } else if (change === "events-unreadable") {
     world.faults.push({
       path: `repos/${world.repo}/issues/${ISSUE}/events`,

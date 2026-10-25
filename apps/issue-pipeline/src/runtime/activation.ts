@@ -341,13 +341,19 @@ async function pollRepository(
 ): Promise<boolean> {
   const { cfg } = repository;
   const inbox = await pollSignals(cfg, cycle.scope, cycle.id);
-  const general = inbox.holds.find(
-    (hold: EvidenceHold): boolean => hold.workItem === null,
-  );
+  // A hold, of the whole poll or of one work item, shows held until an
+  // offer of another work item reports on the loops.
+  const shown =
+    inbox.holds.find((item: EvidenceHold): boolean => item.workItem === null) ??
+    inbox.holds.at(0);
+  let state: LoopObservation["state"] = "idle";
+  if (shown !== undefined) {
+    state = "held";
+  }
   setAllLoops(cycle, cfg.repo, {
     polledAt: now(),
-    state: "idle",
-    reason: general?.reason ?? null,
+    state,
+    reason: shown?.reason ?? null,
   });
   const held = new Set(
     inbox.holds.flatMap((hold: EvidenceHold): number[] => {

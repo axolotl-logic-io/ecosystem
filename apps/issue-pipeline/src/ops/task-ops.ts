@@ -42,17 +42,28 @@ const OPS: ReadonlyMap<string, Op> = new Map<string, Op>([
   ["complete-reconcile", completeReconcile],
 ]);
 
-// Each task op with its class from TASK_OP_CLASSES; an op without one is
-// no task op.
-const TASK_OPS: ReadonlyMap<string, { kind: OpClass; op: Op }> = new Map(
-  [...OPS].flatMap(([name, op]): [string, { kind: OpClass; op: Op }][] => {
-    const kind = TASK_OP_CLASSES.get(name);
-    if (kind === undefined) {
-      return [];
-    }
-    return [[name, { kind, op }]];
-  }),
-);
+// Each task op with its class from TASK_OP_CLASSES. The two maps must name
+// the same ops: an op with no class, or a class with no op, fails the ops
+// program as it loads rather than guarding some op by a guessed class.
+function classifiedOps(): ReadonlyMap<string, { kind: OpClass; op: Op }> {
+  const unclassified = [...OPS.keys()].filter(
+    (name) => !TASK_OP_CLASSES.has(name),
+  );
+  const missing = [...TASK_OP_CLASSES.keys()].filter((name) => !OPS.has(name));
+  if (unclassified.length > 0 || missing.length > 0) {
+    throw new OpsError(
+      `task op classes disagree: unclassified [${unclassified.join(", ")}], no op for [${missing.join(", ")}]`,
+    );
+  }
+  return new Map(
+    [...OPS].map(([name, op]): [string, { kind: OpClass; op: Op }] => [
+      name,
+      { kind: TASK_OP_CLASSES.get(name) ?? "substantive", op },
+    ]),
+  );
+}
+
+const TASK_OPS = classifiedOps();
 
 const FRAME = z.looseObject({
   number: z.number().int().positive(),

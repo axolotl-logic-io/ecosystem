@@ -417,7 +417,11 @@ function post(world: World, args: readonly string[]): void {
   if (issue === null || body === undefined) {
     fail("gh: Not Found (HTTP 404)");
   }
-  if (world.post === "lost-before-apply") {
+  const marked = world.failPostsContaining;
+  if (
+    world.post === "lost-before-apply" ||
+    (marked !== undefined && body.includes(marked))
+  ) {
     fail("gh: HTTP 502: Bad Gateway");
   }
   issue.comments.push({

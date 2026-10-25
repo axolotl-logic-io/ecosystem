@@ -123,14 +123,15 @@ function checkGuard(cfg: Config, guard: TaskGuard): void {
   }
 }
 
-// `cfg`, checked now, whose every controlled mutation first checks the
-// op's authority again.
-function withTaskGuard(cfg: Config, guard: TaskGuard): Config {
+// `cfg`, whose every controlled mutation first checks `guard`'s authority
+// again, at the mutation itself.
+function guardedMutations(cfg: Config, guard: TaskGuard): Config {
   const inner = cfg.mutation;
   if (inner === undefined) {
-    throw new OpsError("a task op needs its execution's mutation boundary");
+    throw new OpsError(
+      "a guarded write needs its execution's mutation boundary",
+    );
   }
-  checkGuard(cfg, guard);
   return {
     ...cfg,
     mutation: (write: () => RunResult, intent: WriteIntent): RunResult => {
@@ -140,5 +141,13 @@ function withTaskGuard(cfg: Config, guard: TaskGuard): Config {
   };
 }
 
+// `cfg`, checked now, whose every controlled mutation first checks the
+// op's authority again.
+function withTaskGuard(cfg: Config, guard: TaskGuard): Config {
+  const guarded = guardedMutations(cfg, guard);
+  checkGuard(cfg, guard);
+  return guarded;
+}
+
 export type { ActionSource, OpClass, TaskGuard };
-export { checkGuard, TASK_OP_CLASSES, withTaskGuard };
+export { checkGuard, guardedMutations, TASK_OP_CLASSES, withTaskGuard };
