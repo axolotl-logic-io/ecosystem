@@ -27,6 +27,10 @@ const COMMIT_INPUT = z.object({
   parents: z.array(z.string()),
 });
 const REF_INPUT = z.object({ ref: z.string(), sha: z.string() });
+// Written comments and events are dated from this instant, a second apart
+// by id, as fake-gh.ts dates posted comments.
+const POSTED_FROM = Date.parse("2026-10-25T12:00:00Z");
+const MS_PER_SECOND = 1000;
 
 type Pull = NonNullable<World["pulls"]>[number];
 
@@ -125,7 +129,7 @@ interface IssueRow {
   number: number;
   title: string;
   body: string;
-  state: "open";
+  state: "open" | "closed";
   user: { login: string };
   labels: { name: string }[];
 }
@@ -141,17 +145,24 @@ interface PullRow {
   isDraft: boolean;
   author: { login: string };
   headRefOid: string;
-  mergeCommit: null;
+  mergeCommit: { oid: string } | null;
 }
 
 const START_LISTING = `labels=${encodeURIComponent("start:implement")}`;
+
+function issueState(issue: FakeIssue): IssueRow["state"] {
+  if (issue.closed === undefined) {
+    return "open";
+  }
+  return "closed";
+}
 
 function issueRow(issue: FakeIssue): IssueRow {
   return {
     number: issue.number,
     title: issue.title ?? `Issue ${issue.number}`,
     body: issue.body ?? "",
-    state: "open",
+    state: issueState(issue),
     user: { login: issue.author ?? "someone" },
     labels: issue.labels.map((name) => ({ name })),
   };
@@ -169,10 +180,10 @@ function issueGet(world: World, args: readonly string[], number: string): void {
   }
   if (jq === "{state}" || jq === ".state") {
     if (jq === ".state") {
-      print("open");
+      print(issueState(issue));
       return;
     }
-    print({ state: "open" });
+    print({ state: issueState(issue) });
     return;
   }
   fail(`fake gh: unsupported --jq ${jq}`);
@@ -290,22 +301,79 @@ function nextPull(world: World): number {
   return Math.max(0, ...numbers) + 1;
 }
 
+// The PR as GitHub shows it from the origin's refs: an open PR whose head
+// commit is on its base branch, as a fast-forward push of the base puts it,
+// reads merged, with that head as its merge commit.
 function pullRow(pull: Pull): PullRow {
+  const head = git(["rev-parse", `refs/heads/${pull.head}`]).out;
+  let { state } = pull;
+  let mergeCommit: PullRow["mergeCommit"] = null;
+  if (
+    state === "OPEN" &&
+    head !== "" &&
+    git(["merge-base", "--is-ancestor", head, `refs/heads/${pull.base}`]).ok
+  ) {
+    state = "MERGED";
+    mergeCommit = { oid: head };
+  }
   return {
     number: pull.number,
     headRefName: pull.head,
     baseRefName: pull.base,
     title: pull.title,
     body: pull.body,
-    state: pull.state,
+    state,
     isDraft: pull.isDraft,
     author: { login: pull.author },
-    headRefOid: git(["rev-parse", `refs/heads/${pull.head}`]).out,
-    mergeCommit: null,
+    headRefOid: head,
+    mergeCommit,
   };
 }
 
-// `gh pr list --head B --state S` and `gh pr create`, by the token's login.
+function postedAt(id: number): string {
+  return new Date(POSTED_FROM + id * MS_PER_SECOND).toISOString();
+}
+
+// `gh issue close N -R R --reason REASON [--comment TEXT]` by `login`: the
+// comment, then the close, of an open issue.
+function issueClose(
+  world: World,
+  args: readonly string[],
+  login: string,
+): boolean {
+  if (args[0] !== "issue" || args[1] !== "close") {
+    return false;
+  }
+  const issue = world.issues.find((item) => String(item.number) === args[2]);
+  if (issue === undefined || issue.closed !== undefined) {
+    return fail("gh: issue not found or not open");
+  }
+  const comment = flagValue(args, "--comment");
+  if (comment !== undefined) {
+    issue.comments.push({
+      id: world.nextId,
+      author: login,
+      body: comment,
+      editor: null,
+      createdAt: postedAt(world.nextId),
+    });
+    world.nextId += 1;
+  }
+  issue.closed = { by: login, reason: flagValue(args, "--reason") ?? "" };
+  issue.events.push({
+    id: world.nextId,
+    event: "closed",
+    label: null,
+    actor: login,
+    viaApp: false,
+    createdAt: postedAt(world.nextId),
+  });
+  world.nextId += 1;
+  return true;
+}
+
+// `gh pr list --head B --state S`, `gh pr view N` and `gh pr create`, by
+// the token's login.
 function pr(world: World, args: readonly string[], login: string): boolean {
   if (args[0] !== "pr") {
     return false;
@@ -317,9 +385,17 @@ function pr(world: World, args: readonly string[], login: string): boolean {
     print(
       world.pulls
         .filter((pull) => pull.head === head)
-        .filter((pull) => state === "ALL" || pull.state === state)
-        .map(pullRow),
+        .map(pullRow)
+        .filter((row) => state === "ALL" || row.state === state),
     );
+    return true;
+  }
+  if (args[1] === "view") {
+    const found = world.pulls.find((pull) => String(pull.number) === args[2]);
+    if (found === undefined) {
+      return fail("gh: Could not resolve to a PullRequest");
+    }
+    print({ ...pullRow(found), isCrossRepository: false });
     return true;
   }
   if (args[1] === "create") {
@@ -347,6 +423,9 @@ function flowCall(
 ): { handled: boolean; changed: boolean } {
   if (pr(world, args, login)) {
     return { handled: true, changed: args[1] === "create" };
+  }
+  if (issueClose(world, args, login)) {
+    return { handled: true, changed: true };
   }
   if (args[0] !== "api" || args[1] === "graphql" || args[1] === "--include") {
     return { handled: false, changed: false };
