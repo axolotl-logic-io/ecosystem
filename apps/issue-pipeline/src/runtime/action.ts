@@ -1143,7 +1143,11 @@ async function openAction(
     dirs = openActionCheckout(
       admitted.cfg,
       workItem.number,
-      { stage: `action-${admitted.id}`, branch: admitted.execution.branch },
+      {
+        stage: `action-${admitted.id}`,
+        branch: admitted.execution.branch,
+        mode: admitted.mode,
+      },
       setting.task,
     );
   } catch (error: unknown) {

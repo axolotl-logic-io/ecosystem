@@ -48,15 +48,21 @@ function needsPreparation(cfg: Config, task: TaskDefinition): boolean {
 }
 
 // Opens the action's own checkout, registered as its issue's lane-slot
-// consumer first when `task` holds a test slot. A failed open keeps the
-// registration wherever the checkout exists.
+// consumer first when `task` holds a test slot and acts. A read-only
+// recovery takes no slot: it prepares nothing and its sessions are refused
+// a test environment. A failed open keeps the registration wherever the
+// checkout exists.
 function openActionCheckout(
   cfg: Config,
   issue: number,
-  job: { stage: string; branch: string },
+  job: { stage: string; branch: string; mode: "act" | "recover" },
   task: TaskDefinition,
 ): JobDirs {
-  if (!claimsTestSlot(task) || cfg.laneSlots === undefined) {
+  if (
+    !claimsTestSlot(task) ||
+    cfg.laneSlots === undefined ||
+    job.mode === "recover"
+  ) {
     return openJobCheckout(cfg, issue, job);
   }
   const scoped = withCheckout(cfg, {
