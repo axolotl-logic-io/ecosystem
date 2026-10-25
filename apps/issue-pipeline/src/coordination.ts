@@ -76,7 +76,7 @@ class Coordination {
     }
   }
   read(): Snapshot {
-    return snapshot(this.cfg, onceRead(this.port), this.scope);
+    return readScope(this.cfg, this.port, this.scope);
   }
   private append(record: Record): void {
     this.port.write(
@@ -307,6 +307,16 @@ function sameWork(a: InvocationBinding, b: InvocationBinding): boolean {
     a.base === b.base
   );
 }
+// Observe one scope without constructing an invocation or requesting work.
+// Cache immutable-ref reads within this snapshot, never across observations.
+function readScope(
+  cfg: Config,
+  port: CoordinationPort,
+  scope: string,
+): Snapshot {
+  return snapshot(cfg, onceRead(port), scope);
+}
+
 function coordination(
   cfg: Config,
   port: CoordinationPort,
@@ -361,4 +371,4 @@ export type {
   SharedResource,
   Snapshot,
 } from "./coordination-records.ts";
-export { coordination, slotCoordination, surveySlots };
+export { coordination, readScope, slotCoordination, surveySlots };

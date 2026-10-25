@@ -22,8 +22,6 @@ function heldExecution(
 ): string | null {
   const scope = scopeOf(
     {
-      instance: "",
-      lane: "",
       issue: n,
       branch: paths.branch(cfg, n),
       repo: cfg.repo,

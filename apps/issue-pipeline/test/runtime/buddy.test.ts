@@ -479,15 +479,17 @@ test("SIGTERM stops a polling buddy cooperatively and records the canonical run"
       { repo: "owner/repo", modelSessions: 2, testSlots: null },
     ]);
     assert.deepEqual(
-      observed.loops.map(({ task, state, polledAt }) => ({
+      observed.loops.map(({ task, state, polledAt, reason }) => ({
         task,
         state,
         polled: polledAt !== null,
+        unreadable: (reason ?? "").includes("unreadable"),
       })),
       ["author", "implement", "harden", "sync"].map((task) => ({
         task,
-        state: "stopped",
+        state: "held",
         polled: true,
+        unreadable: true,
       })),
     );
   } finally {

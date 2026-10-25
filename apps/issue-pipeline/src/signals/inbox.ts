@@ -19,6 +19,7 @@ import type {
   SignalInbox,
   WorkItemRef,
 } from "../domain.ts";
+import { readIssueExecution } from "../execution.ts";
 import {
   actionCauses,
   machineSignals,
@@ -173,6 +174,29 @@ function journalProblem(cfg: Config, number: number): string | null {
     return null;
   } catch (error) {
     return errorText(error);
+  }
+}
+
+// Ownership outlives a process or spent start. Observe it independently of
+// pending signals so an uncertain checkpoint cannot disappear as idle work.
+function executionHeld(cfg: Config, poll: IssuePoll): boolean {
+  try {
+    const view = readIssueExecution(cfg, poll.workItem.number);
+    if (view.owner !== null) {
+      holdOn(
+        poll,
+        `issue execution remains owned by ${view.owner.binding.instance}; settlement and explicit release are required`,
+      );
+      return true;
+    }
+    if (view.pending.length > 0) {
+      holdOn(poll, "issue execution has unresolved ownership requests");
+      return true;
+    }
+    return false;
+  } catch (error) {
+    unreadableOn(poll, `issue execution unreadable: ${errorText(error)}`);
+    return true;
   }
 }
 
@@ -509,10 +533,13 @@ async function pollIssue(
   } else if (context.labelled) {
     rows = await acceptLabels(cfg, { ...context, poll }, rows);
   }
+  // A retained execution prevents new work, not acceptance/delivery of a
+  // qualified stop. No ownership observation grants signal authority.
+  const owned = held === null && rows.length > 0 && executionHeld(cfg, poll);
   for (const row of rows.filter(isStop)) {
     poll.signals.push(signalOf(row));
   }
-  if (held === null) {
+  if (held === null && !owned) {
     await deliverStarts(cfg, context.scope, poll, rows);
   }
   if (rows.length > 0) {

@@ -44,6 +44,7 @@ const LABELS_UNREADABLE =
   /^interrupted: stop latch unknown: control labels unreadable: /u;
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const EVENTS = /events/u;
+const EXECUTION_HOLD = /issue execution/u;
 const START_REVOKED_PUSH =
   /^start github-label:acme\/widgets#7:300 is revoked: @autumn is not a member of acme/u;
 const PUSH_BOUNDARY_REVOKED = /^push: signal .* revoked: /u;
@@ -378,6 +379,20 @@ suite("buddy authority changes during an Implement session", {
       assert.equal(releases.includes(ISSUE_SCOPE), false);
       assert.equal(releases.includes(POOL_SCOPE), false);
       assert.equal(run.loops[0]?.action, action.id);
+      assert.equal(run.loops[0]?.state, "held");
+      assert.match(run.loops[0]?.reason ?? "", EXECUTION_HOLD);
+      // Fresh activation sees authenticated ownership, not just a local
+      // action file. A spent start cannot hide retained work as idle.
+      const next = await box.runBuddy([], STOP_AT_POLL);
+      assert.equal(next.status, 0, next.stderr);
+      assert.equal(next.run.loops[0]?.state, "held");
+      assert.match(next.run.loops[0]?.reason ?? "", EXECUTION_HOLD);
+      assert.equal(box.launches().length, 1);
+      assert.ok(fs.existsSync(checkout));
+      assert.deepEqual(
+        next.actions.map((item) => item.id),
+        [action.id],
+      );
     } finally {
       box.cleanup();
     }

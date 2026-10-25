@@ -81,7 +81,10 @@ function hold(reason: string): never {
 function bodyOf(record: Record): string {
   return `${HEADER}${JSON.stringify(RECORD.parse(record))}${END}`;
 }
-function scopeOf(id: InvocationBinding, kind: "issue" | "integration"): string {
+function scopeOf(
+  id: Pick<InvocationBinding, "repo" | "base" | "issue" | "branch">,
+  kind: "issue" | "integration",
+): string {
   if (kind === "issue") {
     return JSON.stringify([id.repo, id.base, kind, id.issue, id.branch]);
   }

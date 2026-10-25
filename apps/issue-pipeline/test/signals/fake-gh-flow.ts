@@ -181,6 +181,15 @@ function issueGet(world: World, args: readonly string[], number: string): void {
 function gitGet(endpoint: string): boolean {
   const { ref } = REF.exec(endpoint)?.groups ?? {};
   if (ref !== undefined) {
+    // Signal-only fixtures have no coordination refs. Flow fixtures read
+    // their actual Git database; no successful owner is fabricated here.
+    const { FAKE_GH_ORIGIN: source } = process.env;
+    if (
+      (source === undefined || source === "") &&
+      ref.startsWith("heads/pipeline-coordination/")
+    ) {
+      return fail("gh: Not Found (HTTP 404)");
+    }
     const read = git(["rev-parse", "--verify", "--quiet", `refs/${ref}`]);
     if (!read.ok) {
       return fail("gh: Not Found (HTTP 404)");

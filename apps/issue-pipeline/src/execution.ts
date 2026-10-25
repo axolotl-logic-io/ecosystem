@@ -13,7 +13,12 @@ import type {
   SharedResource,
   Snapshot,
 } from "./coordination.ts";
-import { coordination, slotCoordination, surveySlots } from "./coordination.ts";
+import {
+  coordination,
+  readScope,
+  slotCoordination,
+  surveySlots,
+} from "./coordination.ts";
 import {
   assertReconciled,
   confirmedWrite,
@@ -144,6 +149,21 @@ function bindingOf(cfg: Config, issue: number): InvocationBinding {
   }
   return identity;
 }
+// Read authenticated issue ownership without fabricating a run identity.
+// An owner holds the work even when its process ended or its lease expired.
+function readIssueExecution(cfg: Config, issue: number): Snapshot {
+  const scope = scopeOf(
+    {
+      repo: cfg.repo,
+      base: cfg.baseBranch,
+      issue,
+      branch: paths.branch(cfg, issue),
+    },
+    "issue",
+  );
+  return readScope(cfg, portOf(cfg, issue, false), scope);
+}
+
 function issueExecution(
   cfg: Config,
   issue: number,
@@ -266,6 +286,7 @@ export {
   guardExecution,
   integrationTurn,
   issueExecution,
+  readIssueExecution,
   resourceSlot,
   resourceSurvey,
   withExecution,
