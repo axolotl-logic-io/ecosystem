@@ -5,9 +5,11 @@
 // with the network and no repository scripts: `npm ci --ignore-scripts`,
 // then `npm audit`, to a registry the operator chose. Only then does
 // repository code run, with no network: `npm rebuild` (dependency install
-// scripts) and `npm test`. The criteria hold only exit codes and audit
-// counts; what the commands printed goes to logs the caller keeps locally,
-// because repository code wrote it.
+// scripts) and `npm test`. The tests run twice, so a flaky suite shows,
+// then once more with a deliberately failing test added, so a runner that
+// exits 0 anyway shows. The criteria hold only exit codes and audit counts;
+// what the commands printed goes to logs the caller keeps locally, because
+// repository code wrote it.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -165,6 +167,102 @@ class Steps {
   }
 }
 
+// Writes argv[2] to the path argv[1] under /work, run inside the sandbox:
+// repository code may have planted symlinks in /work, which a write by the
+// host would follow out of the sandbox.
+const NODE_WRITER = [
+  "const fs = require('node:fs');",
+  "const path = require('node:path');",
+  "const [file, text] = process.argv.slice(1);",
+  "fs.mkdirSync(path.dirname(file), { recursive: true });",
+  "fs.writeFileSync(file, text);",
+].join(" ");
+// A test every common Node runner collects and fails: the global test or it
+// (Jest, Vitest with globals, Mocha), else node:test.
+const NODE_MISMATCH = [
+  "// Added by the standards assessment: a deliberately failing test.",
+  'const fail = () => { throw new Error("standards assessment: deliberate mismatch"); };',
+  'if (typeof globalThis.test === "function") globalThis.test("standards deliberate mismatch", fail);',
+  'else if (typeof globalThis.it === "function") globalThis.it("standards deliberate mismatch", fail);',
+  'else process.getBuiltinModule("node:test").test("standards deliberate mismatch", fail);',
+  "",
+].join("\n");
+const NODE_TEST_DIRS = ["test", "tests", "__tests__"];
+
+// How one ecosystem runs its tests and adds a deliberately failing one.
+interface TestCommand {
+  shown: string;
+  // One run, with no network.
+  run: () => SandboxRun;
+  // Writes the deliberately failing test, inside the sandbox.
+  plant: () => SandboxRun;
+  // Where it goes, under /work.
+  planted: string;
+}
+
+function exitOf(result: SandboxRun): string {
+  if (result.exitCode === null) {
+    return "nothing (timed out)";
+  }
+  return String(result.exitCode);
+}
+
+// Runs the tests twice, then with a deliberately failing test added. They
+// pass only when both runs exit 0 and the added failure makes them fail.
+function testsRunCriterion(command: TestCommand): Criterion {
+  const id = "behavior.tests-run";
+  const { shown, planted } = command;
+  const first = command.run();
+  const second = command.run();
+  if (first.exitCode !== second.exitCode) {
+    return {
+      id,
+      status: "failed",
+      evidence: `${shown} is flaky: it exited ${exitOf(first)}, then ${exitOf(second)}, with no network and nothing changed`,
+    };
+  }
+  if (first.exitCode !== 0) {
+    return {
+      id,
+      status: "failed",
+      evidence: `${exited(shown, first, COMMAND_MS)} with no network, twice`,
+    };
+  }
+  const plant = command.plant();
+  if (plant.exitCode !== 0) {
+    return {
+      id,
+      status: "unverified",
+      evidence: `${shown} exited 0 twice with no network, but the deliberately failing test couldn't be added at ${planted}`,
+    };
+  }
+  const mismatch = command.run();
+  if (mismatch.exitCode === 0) {
+    return {
+      id,
+      status: "failed",
+      evidence: `${shown} exited 0 twice, and exited 0 again with a deliberately failing test added at ${planted}: it hides failures or doesn't run new test files`,
+    };
+  }
+  return {
+    id,
+    status: "passed",
+    evidence: `${shown} exited 0 twice with no network, and exited ${exitOf(mismatch)} with a deliberately failing test added at ${planted}`,
+  };
+}
+
+// The first of `dirs` the source has files in, as the folder for a
+// deliberately failing test, or the root.
+function testFolder(source: Source, dirs: readonly string[]): string {
+  const found = dirs.find((dir) =>
+    source.files.some((file) => file.startsWith(`${dir}/`)),
+  );
+  if (found === undefined) {
+    return "";
+  }
+  return `${found}/`;
+}
+
 function exited(step: string, result: SandboxRun, limitMs: number): string {
   if (result.exitCode === null) {
     return `${step} didn't finish within ${limitMs / MS_PER_MINUTE} minutes`;
@@ -205,7 +303,11 @@ function scanCriterion(result: SandboxRun, registry: string): Criterion {
   };
 }
 
-function nodeRuns(steps: Steps, registry: string): Criterion[] {
+function nodeRuns(
+  steps: Steps,
+  registry: string,
+  planted: string,
+): Criterion[] {
   const ci = steps.npm(["ci", "--ignore-scripts", "--no-audit"], true);
   if (ci.exitCode !== 0) {
     const failed = exited("npm ci --ignore-scripts", ci, COMMAND_MS);
@@ -228,19 +330,24 @@ function nodeRuns(steps: Steps, registry: string): Criterion[] {
       },
     ];
   }
-  const test = steps.npm(["test"], false);
-  let tests: Criterion = {
-    id: "behavior.tests-run",
-    status: "passed",
-    evidence: "npm test exited 0 with no network",
-  };
-  if (test.exitCode !== 0) {
-    tests = {
-      id: "behavior.tests-run",
-      status: "failed",
-      evidence: `${exited("npm test", test, COMMAND_MS)} with no network`,
-    };
-  }
+  const tests = testsRunCriterion({
+    shown: "npm test",
+    run: () => steps.npm(["test"], false),
+    plant: () =>
+      steps.run({
+        name: "write-mismatch",
+        shown: ["write-test", planted],
+        argv: [
+          `${NODE_DIR}/bin/node`,
+          "-e",
+          NODE_WRITER,
+          planted,
+          NODE_MISMATCH,
+        ],
+        network: false,
+      }),
+    planted,
+  });
   return [
     {
       id: "environment.install",
@@ -295,7 +402,8 @@ function executeNode(source: Source, options: Options): Execution {
   const env = new Map([["npm_config_registry", registry]]);
   return inWorkspace(source, (work, cache) => {
     const steps = new Steps(sandbox, { work, cache, env });
-    const criteria = nodeRuns(steps, registry);
+    const planted = `${testFolder(source, NODE_TEST_DIRS)}standards-mismatch.test.js`;
+    const criteria = nodeRuns(steps, registry, planted);
     return {
       sandbox: record,
       commands: steps.commands,
@@ -322,7 +430,7 @@ function inWorkspace(
   }
 }
 
-export type { Execution, Log, Options };
+export type { Execution, Log, Options, TestCommand };
 export {
   COMMAND_MS,
   executeNode,
@@ -330,5 +438,7 @@ export {
   inWorkspace,
   nothingRun,
   Steps,
+  testFolder,
+  testsRunCriterion,
   unrun,
 };

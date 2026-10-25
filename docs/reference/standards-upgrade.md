@@ -72,6 +72,17 @@ Poetry installs dependencies as wheels only (`POETRY_INSTALLER_ONLY_BINARY=:all:
 
 Nothing runs without a `poetry.lock`. Nothing runs when `pyproject.toml` declares its own package sources, or `poetry.lock` fetches a package from a git, URL or custom source: only PyPI is fetched from.
 
+### Test runs
+
+The tests run three times, each with no network:
+
+1. **Twice as they are.** Different exit codes mean the suite is flaky, which is `failed`. Two non-zero exits are `failed`.
+2. **Once more with a deliberately failing test added.** The test must now fail. If it still exits 0, the runner hides failures or doesn't run new test files, and that's `failed` too.
+
+The added test goes in the first of `test/`, `tests/` or `__tests__/` the repository has, else the root, as `standards-mismatch.test.js`. It uses the global `test` or `it` (Jest, Vitest with globals, Mocha), else `node:test`. For Poetry it goes in `tests/`, `test/` or the root, as `test_standards_mismatch.py`.
+
+A command inside the sandbox writes that test, never the assessment itself. By then repository code has had write access to `/work`, and a symlink it planted there would turn a write from the host into a write outside the sandbox. A test proves it: a symlink planted at the added test's path doesn't reach the host file it points to.
+
 What the commands print goes to `OUT_DIR/logs/`, never into `assessment.json`, `report.md` or `plan.md`. Repository code wrote it, and the plan gets filed publicly. The criteria hold only exit codes and audit counts. Each command has a 10-minute limit.
 
 ## Run an assessment
@@ -149,7 +160,7 @@ The criteria have the same names for both ecosystems. What passes depends on the
 | `environment.install` | `npm ci --ignore-scripts` and then `npm rebuild` exit 0 in the sandbox. Either failing is `failed`. No lockfile, a fetch outside the registry, no sandbox, or `--static` is `unverified`. | `poetry check --lock`, `poetry install --no-root` (wheels only) and then `poetry install --only-root` exit 0. Any of them failing is `failed`. No `poetry.lock`, a non-PyPI source, no sandbox, no usable host Python, tools that can't be set up, or `--static` is `unverified`. |
 | `vulnerabilities.scan` | `npm audit` over the whole tree, dev dependencies included, reports no advisories. Any advisory is `failed`, with counts by severity. No report is `unverified`, never a clean scan. | `pip-audit` over the installed environment, dev groups included, reports no advisories. Any advisory is `failed`, with each package and advisory ID. No report is `unverified`. |
 | `behavior.tests` | A real `test` script exists. A missing one, or npm's placeholder, means zero tests. | A `test_*.py` or `*_test.py` file defines a `test…` function. `poetry new`'s placeholder, `test_version`, which only asserts `__version__`, doesn't count, so a project with only that has zero tests. |
-| `behavior.tests-run` | `npm test` exits 0 in the sandbox, with no network. Any other exit, or the time limit, is `failed`. | `poetry run python -m pytest` exits 0 with no network. Any other exit, or the time limit, is `failed`. |
+| `behavior.tests-run` | `npm test` exits 0 twice in the sandbox, with no network, and then fails with a deliberately failing test added. See [Test runs](#test-runs). | The same, with `poetry run python -m pytest`. |
 | `ci.triggers` | A workflow runs on `pull_request`, and one runs on `push` to the default branch. | Same. |
 | `ci.runs-tests` | A workflow step runs `npm test`, or `npm run test`, `check` or `ci`. | A workflow step runs `pytest`, `poetry run pytest`, or `python -m pytest` or `unittest`. |
 | `ci.failure-propagation` | No `continue-on-error`, and no `\|\| true` or `--if-present` on a test command. | Same. |
