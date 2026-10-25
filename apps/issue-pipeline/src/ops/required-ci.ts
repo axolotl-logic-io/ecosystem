@@ -8,17 +8,33 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import { gh, ghJson } from "../github.ts";
-import type { Check } from "./ci-status.ts";
-import { CHECKS, isFailing } from "./ci-status.ts";
+import { isFailing } from "./ci-status.ts";
 import { historicalPrFor } from "./prs.ts";
 
-const HEAD = z.looseObject({ headRefOid: z.string() });
-// The policy setting, read strictly: a config that does not say leaves CI
-// unreadable rather than waived.
+const HEAD = z.looseObject({ headRefOid: z.string().regex(/^[a-f0-9]{40}$/u) });
+// Read policy even when checks exist: a missing or malformed waiver is
+// unreadable, not an implicit permission to Land.
 const POLICY = z.looseObject({ requireCi: z.boolean() });
-// What gh prints, on stderr, for a PR with no required checks.
-const NO_CHECKS = /no (?:required )?checks reported/iu;
+const CHECKS = z.array(
+  z.looseObject({
+    name: z.string().min(1),
+    state: z.string().min(1),
+    bucket: z.enum(["pass", "fail", "pending", "skipping", "cancel"]),
+    link: z.string().nullish(),
+  }),
+);
+const PASS_STATES: ReadonlySet<string> = new Set([
+  "SUCCESS",
+  "NEUTRAL",
+  "SKIPPED",
+]);
+const PENDING_EXIT = 8;
+// A no-checks diagnostic is a specific gh result, not arbitrary stderr
+// containing these words alongside an authentication or transport error.
+const NO_CHECKS =
+  /^no (?:required )?checks reported(?: on the ['"].+['"] branch)?\.?$/iu;
 
+type Check = z.infer<typeof CHECKS>[number];
 type Read = { checks: Check[] } | { unreadable: string };
 
 function headOf(cfg: Config, pr: number): string {
@@ -52,22 +68,52 @@ function readChecks(cfg: Config, pr: number): Read {
     ],
     { allowFail: true },
   );
-  if (result.stdout.trim() === "" && NO_CHECKS.test(result.stderr)) {
+  const stdout = result.stdout.trim();
+  if (
+    result.code === 1 &&
+    (stdout === "" || stdout === "[]") &&
+    NO_CHECKS.test(result.stderr.trim())
+  ) {
     return { checks: [] };
   }
   try {
-    const parsed = CHECKS.safeParse(JSON.parse(result.stdout));
-    if (parsed.success) {
-      return { checks: parsed.data };
+    const parsed = CHECKS.safeParse(JSON.parse(stdout));
+    if (!parsed.success) {
+      return { unreadable: parsed.error.message };
     }
-    return { unreadable: parsed.error.message };
+    const checks = parsed.data;
+    const settled = checks.every(
+      (check) => check.bucket === "pass" || check.bucket === "skipping",
+    );
+    if (
+      checks.some(
+        (check) =>
+          (check.bucket === "pass" || check.bucket === "skipping") &&
+          !PASS_STATES.has(check.state),
+      )
+    ) {
+      return {
+        unreadable: "a passing check has an unrecognized or conflicting state",
+      };
+    }
+    const consistent =
+      (result.code === 0 && settled) ||
+      (result.code === 1 && checks.some(isFailing)) ||
+      (result.code === PENDING_EXIT &&
+        checks.some((check) => check.bucket === "pending"));
+    if (!consistent) {
+      return {
+        unreadable: `gh exited ${result.code} inconsistently with its required check list`,
+      };
+    }
+    return { checks };
   } catch {
     return { unreadable: `gh exited ${result.code} without a check list` };
   }
 }
 
 function checksUnmet(
-  cfg: Config,
+  requireCi: boolean,
   pr: number,
   code: string,
   checks: readonly Check[],
@@ -83,16 +129,17 @@ function checksUnmet(
   ) {
     return `required CI is still running on ${code}`;
   }
-  if (checks.length === 0 && POLICY.parse(cfg).requireCi) {
+  if (checks.length === 0 && requireCi) {
     return `CI is required, and PR #${pr} has no required CI checks on ${code}`;
   }
   return null;
 }
 
 function unmetOn(cfg: Config, number: number, code: string): string | null {
+  const { requireCi } = POLICY.parse(cfg);
   const pr = historicalPrFor(cfg, number);
   if (pr === null) {
-    if (POLICY.parse(cfg).requireCi) {
+    if (requireCi) {
       return `CI is required, and #${number} has no PR to read it from`;
     }
     return null;
@@ -109,7 +156,7 @@ function unmetOn(cfg: Config, number: number, code: string): string | null {
   if ("unreadable" in read) {
     return `the required CI of PR #${pr} is unreadable: ${read.unreadable}`;
   }
-  return checksUnmet(cfg, pr, code, read.checks);
+  return checksUnmet(requireCi, pr, code, read.checks);
 }
 
 // Why required CI does not clear `code` for issue `number`, or null.

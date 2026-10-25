@@ -16,8 +16,10 @@ import { STATE_HEADER, STATE_MARK } from "./comment-marks.ts";
 import type { IssueComment } from "./comments.ts";
 import { listComments, rawComment } from "./comments.ts";
 import type { Config } from "./config.ts";
-import { gh } from "./github.ts";
+import { gh, redactGhArgs } from "./github.ts";
 import { OpsError } from "./ops-error.ts";
+import { redactLocalPaths } from "./pipeline-root.ts";
+import { redactAddresses } from "./redact-addresses.ts";
 import { latestStateComment, rawStateBody } from "./saved-state.ts";
 
 const WORK_STATE_VERSION = 4;
@@ -48,7 +50,7 @@ const WORK_STATE = z.strictObject({
     .string()
     .regex(/^[0-9a-f]{40}$/u)
     .nullable(),
-  // The latest progress the action checkpointed, as it gave it.
+  // The action's latest progress, with private diagnostics redacted.
   checkpoint: z.json().nullable(),
   log: z.array(z.string().max(MAX_LOG_ENTRY)).max(MAX_LOG_ENTRIES),
 });
@@ -138,11 +140,54 @@ function confirmWritten(cfg: Config, state: WorkState): void {
   }
 }
 
+// Redact diagnostic values, never object keys. If a key itself needs
+// redaction, the full-body invariant below refuses before a write rather
+// than merging distinct keys or changing the checkpoint's structure.
+function publicCheckpoint(
+  value: WorkState["checkpoint"],
+): WorkState["checkpoint"] {
+  if (typeof value === "string") {
+    return redactAddresses(redactLocalPaths(value));
+  }
+  if (Array.isArray(value)) {
+    return value.map(publicCheckpoint);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, publicCheckpoint(item)]),
+    );
+  }
+  return value;
+}
+
+// Checkpoints and logs are observations, not authority. Normalize those
+// diagnostics before posting so confirmation compares the actual public
+// representation. The action, item, branch and other identity fields must
+// survive the transport unchanged.
+function publicWorkState(state: WorkState): WorkState {
+  const input = WORK_STATE.parse(state);
+  const expected = WORK_STATE.parse({
+    ...input,
+    checkpoint: publicCheckpoint(input.checkpoint),
+    log: input.log.map((entry) =>
+      redactAddresses(redactLocalPaths(entry)).slice(0, MAX_LOG_ENTRY),
+    ),
+  });
+  const field = `body=${workStateBody(expected)}`;
+  if (redactGhArgs([field])[0] !== field) {
+    throw new OpsError(
+      "saved work state would change identity fields during redaction",
+    );
+  }
+  return expected;
+}
+
 // Writes `state` as the item's version 4 state: a new state comment when it
 // has none, else an edit of its version 4 comment, then confirms it by a
 // fresh read. A historical state is never overwritten or adopted.
 function writeWorkState(cfg: Config, state: WorkState): void {
-  const body = workStateBody(state);
+  const expected = publicWorkState(state);
+  const body = workStateBody(expected);
   if (body.length > MAX_STATE_LENGTH) {
     throw new OpsError(
       `state for #${state.number} is too large (${body.length} chars)`,
@@ -156,7 +201,7 @@ function writeWorkState(cfg: Config, state: WorkState): void {
   }
   if (stored.kind === "none") {
     rawComment(cfg, state.number, body, true);
-    confirmWritten(cfg, state);
+    confirmWritten(cfg, expected);
     return;
   }
   gh(
@@ -173,7 +218,7 @@ function writeWorkState(cfg: Config, state: WorkState): void {
     ],
     { reconciles: true },
   );
-  confirmWritten(cfg, state);
+  confirmWritten(cfg, expected);
 }
 
 export type { StoredWork, WorkState };

@@ -141,6 +141,7 @@ interface Machine {
     sessions: PlannedSession[],
     stopAtPoll: number,
     buddy?: BuddyChoice,
+    signal?: AbortSignal,
   ) => Promise<BuddyOutcome>;
   git: (args: string[]) => string;
   // The commits the project's check ran on, in order.
@@ -513,7 +514,9 @@ function machine(
     sessions: PlannedSession[],
     stopAtPoll: number,
     buddy?: BuddyChoice,
+    signal?: AbortSignal,
   ): Promise<BuddyOutcome> {
+    signal?.throwIfAborted();
     let buddyConfig = buddyFile;
     if (buddy !== undefined) {
       buddyConfig = path.join(
@@ -532,6 +535,12 @@ function machine(
       throw new Error("the buddy did not start");
     }
     const { pid } = child;
+    // Native test cancellation stops this exact owned buddy, not an issue
+    // through fabricated authority. Failed/cancelled callers retain files.
+    function abort(): void {
+      child.kill("SIGTERM");
+    }
+    signal?.addEventListener("abort", abort, { once: true });
     change((world) => {
       world.stopBuddy = { pid, atPoll: stopAtPoll, polls: 0 };
     });
@@ -554,6 +563,7 @@ function machine(
       child.on("close", (code) => resolve(code));
     });
     clearTimeout(overstay);
+    signal?.removeEventListener("abort", abort);
     let ended: z.infer<typeof ENDED>;
     try {
       ended = ENDED.parse(JSON.parse(stdout));

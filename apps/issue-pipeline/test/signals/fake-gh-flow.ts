@@ -377,6 +377,13 @@ function issueClose(
 // gh's exit status for failing and for pending checks.
 const CHECKS_FAILING = 1;
 const CHECKS_PENDING = 8;
+const CHECK_STATES = {
+  pass: "SUCCESS",
+  fail: "FAILURE",
+  pending: "PENDING",
+  skipping: "SKIPPED",
+  cancel: "CANCELLED",
+} as const;
 
 // The required checks on PR `number`'s head as the origin has it, as
 // `gh pr checks --required --json` prints them and exits.
@@ -387,6 +394,28 @@ function requiredChecks(world: World, number: string | undefined): boolean {
   if (found === undefined) {
     return fail("gh: Could not resolve to a PullRequest");
   }
+  const reply = world.checksReply;
+  const after = reply?.afterComment ?? [];
+  if (
+    reply !== undefined &&
+    (after.length === 0 ||
+      world.issues.some((issue) =>
+        issue.comments.some((comment) =>
+          after.every((part) => comment.body.includes(part)),
+        ),
+      ))
+  ) {
+    if (
+      reply.moveHeadTo !== undefined &&
+      !git(["update-ref", `refs/heads/${found.head}`, reply.moveHeadTo]).ok
+    ) {
+      return fail("fake gh: could not move the PR head during its CI read");
+    }
+    process.stdout.write(reply.stdout);
+    process.stderr.write(reply.stderr);
+    process.exitCode = reply.code;
+    return true;
+  }
   const { headRefOid } = pullRow(found);
   const checks = world.checks?.[headRefOid] ?? [];
   if (checks.length === 0) {
@@ -395,7 +424,7 @@ function requiredChecks(world: World, number: string | undefined): boolean {
   print(
     checks.map((check) => ({
       ...check,
-      state: check.bucket.toUpperCase(),
+      state: CHECK_STATES[check.bucket],
       link: null,
     })),
   );

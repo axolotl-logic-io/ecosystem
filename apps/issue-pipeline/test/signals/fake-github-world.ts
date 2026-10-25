@@ -7,6 +7,8 @@
 import fs from "node:fs";
 import { z } from "zod";
 
+const MAX_EXIT_CODE = 255;
+
 const ACCOUNT = z.strictObject({
   login: z.string(),
   id: z.number().int().positive(),
@@ -158,6 +160,20 @@ const WORLD = z.strictObject({
         }),
       ),
     )
+    .optional(),
+  // Raw GitHub transport replies, including malformed/error evidence. A
+  // conditional reply starts only after an actual posted comment matches.
+  checksReply: z
+    .strictObject({
+      stdout: z.string(),
+      stderr: z.string(),
+      code: z.number().int().min(0).max(MAX_EXIT_CODE),
+      afterComment: z.array(z.string()).min(1).optional(),
+      moveHeadTo: z
+        .string()
+        .regex(/^[a-f0-9]{40}$/u)
+        .optional(),
+    })
     .optional(),
   stopBuddy: z
     .strictObject({

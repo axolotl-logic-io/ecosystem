@@ -8,7 +8,11 @@
 import { listComments, rawComment } from "../comments.ts";
 import type { Config } from "../config.ts";
 import type { Receipt, Verdict } from "../domain.ts";
+import { MAX_SUMMARY } from "../domain.ts";
+import { redactGhArgs } from "../github.ts";
 import { OpsError } from "../ops-error.ts";
+import { redactLocalPaths } from "../pipeline-root.ts";
+import { redactAddresses } from "../redact-addresses.ts";
 import type { Attempt, Records, Row, TaskRecord } from "../tasks/records.ts";
 import {
   RecordsHold,
@@ -19,6 +23,30 @@ import {
 
 // Above every comment id GitHub has given, so a proposed record sorts last.
 const PROPOSED_ID: number = Number.MAX_SAFE_INTEGER;
+
+// Compare the public summary we actually send, not its private diagnostic
+// preimage. No authority field may change at the transport boundary.
+function publicRecord(record: TaskRecord): TaskRecord {
+  let expected = record;
+  if (record.kind === "result") {
+    expected = {
+      ...record,
+      receipt: {
+        ...record.receipt,
+        summary: redactAddresses(
+          redactLocalPaths(record.receipt.summary),
+        ).slice(0, MAX_SUMMARY),
+      },
+    };
+  }
+  const field = `body=${recordBody(expected)}`;
+  if (redactGhArgs([field])[0] !== field) {
+    throw new OpsError(
+      "task record would change outside its public summary during redaction",
+    );
+  }
+  return expected;
+}
 
 function freshRecords(cfg: Config, number: number): Records {
   return readRecords(cfg, number, listComments(cfg, number));
@@ -51,11 +79,12 @@ function confirmedRecord(
       { cause: error },
     );
   }
-  const body = recordBody(record);
+  const expected = publicRecord(record);
+  const body = recordBody(expected);
   const mine = records.rows.filter(
     (row) =>
-      row.kind === record.kind &&
-      row.run.id === record.run.id &&
+      row.kind === expected.kind &&
+      row.run.id === expected.run.id &&
       recordBody(withoutId(row)) === body,
   );
   if (mine.length !== 1) {
@@ -79,9 +108,10 @@ function appendRecord(
   before: Records,
   record: TaskRecord,
 ): Records {
-  refusedIfHolds(before, record);
-  rawComment(cfg, number, recordBody(record), true);
-  return confirmedRecord(cfg, number, record);
+  const expected = publicRecord(record);
+  refusedIfHolds(before, expected);
+  rawComment(cfg, number, recordBody(expected), true);
+  return confirmedRecord(cfg, number, expected);
 }
 
 // Settles `attempt`'s own run, the original one, with `verdict`: its
