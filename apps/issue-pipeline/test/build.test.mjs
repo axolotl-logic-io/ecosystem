@@ -28,6 +28,7 @@ const EXECUTABLES = [
   "pipeline-commit.mjs",
   "git-review.mjs",
   "caller-jobs.mjs",
+  "sweep.mjs",
   "standards-upgrade.mjs",
 ];
 // The error the stage job exits with for an unknown --stage.

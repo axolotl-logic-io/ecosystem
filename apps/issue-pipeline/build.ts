@@ -11,7 +11,8 @@
 // <outdir>/git-review.mjs, the
 // orchestrator <outdir>/orchestrate.mjs, the reports <outdir>/report.mjs
 // the caller's job launcher <outdir>/caller-jobs.mjs
-// (scripts/caller-jobs.ts) and the standards upgrade's entrypoint
+// (scripts/caller-jobs.ts), the assignment sweep <outdir>/sweep.mjs
+// (scripts/sweep.ts) and the standards upgrade's entrypoint
 // <outdir>/standards-upgrade.mjs (scripts/standards-upgrade.ts), with the
 // Python tools it pins beside it (<outdir>/standards-python-tools.txt).
 // It prints nothing on success; on failure it prints esbuild's error to
@@ -64,6 +65,7 @@ const NODE_MODULES: ReadonlyMap<string, string> = new Map([
     "pipeline-commit.mjs",
   ],
   [path.join(SCRIPTS_DIR, "caller-jobs.ts"), "caller-jobs.mjs"],
+  [path.join(SCRIPTS_DIR, "sweep.ts"), "sweep.mjs"],
   [path.join(SCRIPTS_DIR, "standards-upgrade.ts"), "standards-upgrade.mjs"],
 ]);
 

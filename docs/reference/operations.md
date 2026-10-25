@@ -9,6 +9,7 @@ The pipeline runs from an installed copy under `$ISSUE_PIPELINE_ROOT` (default `
 | Program | Purpose |
 |---|---|
 | `caller-jobs.mjs` | The installed caller launcher: `start`, `status` and `wait` (see [caller](caller.md)) |
+| `sweep.mjs` | The opt-in assignment sweep: starts assigned work through the caller launcher's checks (see [assignment sweep](assignment-sweep.md)) |
 | `job.mjs` | Runs one stage of one issue (see [coordination](coordination.md)) |
 | `ops.mjs` | Credentialed deterministic operations; reads one framed JSON request on stdin and prints one JSON reply |
 | `report.mjs` | The usage report (see [telemetry](telemetry.md)) |

@@ -4,7 +4,12 @@
 // GitHub's REST API lists them. A test may cut a listing short: gh then
 // prints the first page and fails, as `gh api --paginate` does when a later
 // page errors.
-import { issueOf, now, withWorld } from "./fake-pipeline-flow-gh-world.mjs";
+import {
+  issueOf,
+  now,
+  restIssue,
+  withWorld,
+} from "./fake-pipeline-flow-gh-world.mjs";
 
 /** @typedef {import("./fake-pipeline-flow-gh-world.mjs").World} World */
 /** @typedef {import("./fake-pipeline-flow-gh-world.mjs").Answer} Answer */
@@ -119,4 +124,29 @@ function issueEvents(world, n) {
   return listed(world, `issues/${n}/events`, rows);
 }
 
-export { assignIssue, cutListing, issueEvents, listed, unassignIssue };
+/**
+ * The repo's open issues, every page, each PR's issue marked as GitHub
+ * marks it.
+ * @param {World} world @returns {Answer}
+ */
+function openIssues(world) {
+  const rows = world.issues
+    .filter((each) => each.state === "open")
+    .map((each) => {
+      const row = { ...restIssue(each) };
+      if (each.isPull === true) {
+        Object.assign(row, Object.fromEntries([["pull_request", {}]]));
+      }
+      return row;
+    });
+  return listed(world, "issues", rows);
+}
+
+export {
+  assignIssue,
+  cutListing,
+  issueEvents,
+  listed,
+  openIssues,
+  unassignIssue,
+};
