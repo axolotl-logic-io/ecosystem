@@ -84,6 +84,14 @@ async function act(ctx: ActionContext): Promise<ActionEnd> {
   if (before !== null) {
     return ended("failed", `the security session reviewed nothing: ${before}`);
   }
+  await ctx.prepare();
+  const prepared = notExactly(ctx);
+  if (prepared !== null) {
+    return ended(
+      "failed",
+      `setup changed what the security session would review: ${prepared}`,
+    );
+  }
   await ctx.boundary("session");
   const session = await ctx.session({
     agent: "issue-pipeline-reviewer",
@@ -119,7 +127,7 @@ const reviewSecurity: TaskModule = {
     role: "gatekeeper",
     access: "reader",
     sensors: ["result", "stop"],
-    resources: ["model-session"],
+    resources: ["model-session", "test-slot"],
     match,
     act,
   },

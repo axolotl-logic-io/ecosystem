@@ -1,7 +1,7 @@
 // A fake `pi --mode rpc` for the buddy flow tests: no model runs. Each
 // launch takes the next session of the plan in FAKE_PI_PLAN, logs its
-// arguments and prompt to FAKE_PI_LOG and plays the session over pi's RPC
-// stdio. A committing session writes its file in the code checkout and
+// arguments, prompt, folder and the ISSUE_PIPELINE_LANE_SLOT it inherited
+// to FAKE_PI_LOG and plays the session over pi's RPC stdio. A committing session writes its file in the code checkout and
 // commits it through the real pipeline_commit extension the launch loads
 // (`-e .../pipeline-commit.mjs`), which asks the action's push server to
 // push, and appends the tool's result to FAKE_PI_COMMITS. While it runs, a
@@ -308,9 +308,15 @@ async function main(): Promise<void> {
   }
   const prompt = COMMAND.parse(JSON.parse(first.value));
   emit({ type: "response", id: prompt.id, command: "prompt", success: true });
+  const { ISSUE_PIPELINE_LANE_SLOT: laneSlot = null } = process.env;
   fs.appendFileSync(
     env("FAKE_PI_LOG"),
-    `${JSON.stringify({ args, prompt: prompt.message ?? "", cwd: process.cwd() })}\n`,
+    `${JSON.stringify({
+      args,
+      prompt: prompt.message ?? "",
+      cwd: process.cwd(),
+      laneSlot,
+    })}\n`,
   );
   await play(args, session, commands);
   lines.close();

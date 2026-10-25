@@ -63,6 +63,8 @@ const PI_LAUNCH = z.strictObject({
   args: z.array(z.string()),
   prompt: z.string(),
   cwd: z.string(),
+  // The ISSUE_PIPELINE_LANE_SLOT the launched process inherited, or null.
+  laneSlot: z.string().nullable(),
 });
 
 type ActionRun = z.infer<typeof ACTION_RUN>;
@@ -100,9 +102,12 @@ type BuddyChoice =
 
 // The machine's trusted repository configuration, fixed before any action:
 // whether it grants Land (`permissions.land`), which the shared checking
-// policy digest covers.
+// policy digest covers, its optional lane slot pool (`laneSlots`) and the
+// pinned project policy's optional setup command.
 interface MachineSetup {
   landPermission: boolean;
+  laneSlots?: number;
+  setup?: string;
 }
 
 // What one buddy run printed and left behind.
@@ -198,7 +203,10 @@ function checksLog(root: string): string {
 // The origin with `main` at one commit, a work clone to change it from,
 // and a pinned project policy whose shared pool has one model session and
 // whose test command passes, logging the commit it checked.
-function repository(root: string): {
+function repository(
+  root: string,
+  setup: string | undefined,
+): {
   origin: string;
   work: string;
   policy: string;
@@ -219,6 +227,11 @@ function repository(root: string): {
   git(work, ["add", "README.md"]);
   git(work, ["commit", "--quiet", "-m", "Target"]);
   git(work, ["push", "--quiet", "origin", "main"]);
+  const test = `git rev-parse HEAD >> '${checksLog(root)}'`;
+  let commands: { test: string; setup?: string } = { test };
+  if (setup !== undefined) {
+    commands = { test, setup };
+  }
   fs.mkdirSync(policy);
   git(policy, ["init", "--quiet", "--initial-branch=main"]);
   git(policy, ["config", "user.name", "Flow test"]);
@@ -227,7 +240,7 @@ function repository(root: string): {
   fs.writeFileSync(
     path.join(policy, ".issue-pipeline.json"),
     JSON.stringify({
-      commands: { test: `git rev-parse HEAD >> '${checksLog(root)}'` },
+      commands,
       resources: { modelSessions: 1 },
     }),
   );
@@ -397,6 +410,14 @@ function writeBuddyConfig(
   });
 }
 
+// The repository config's lane slot pool, when the machine has one.
+function laneSlotsOf(setup: MachineSetup): { laneSlots?: number } {
+  if (setup.laneSlots === undefined) {
+    return {};
+  }
+  return { laneSlots: setup.laneSlots };
+}
+
 // A machine whose buddies work on REPO in ORGANIZATION. Its own trusted
 // buddy file, buddy.json, is the Developer hippy's, responsible for
 // Implement. `edit` adjusts the initial world; `setup` fixes the trusted
@@ -416,7 +437,7 @@ function machine(
   install(pipeline, agentDir);
   writeShim(bin, "gh", FAKE_GH);
   writeShim(bin, "pi", FAKE_PI);
-  const { origin, work, policy, revision } = repository(root);
+  const { origin, work, policy, revision } = repository(root, setup.setup);
   const credentials = path.join(root, "credentials.env");
   fs.writeFileSync(
     credentials,
@@ -433,6 +454,7 @@ function machine(
     credentialsEnvFile: credentials,
     allowedUsers: [HUMAN],
     permissions: { land: setup.landPermission },
+    ...laneSlotsOf(setup),
     models: { author: MODEL, developer: MODEL, reviewer: MODEL },
     runtime: provisionRuntime(root),
     projectPolicy: { repository: policy, revision },

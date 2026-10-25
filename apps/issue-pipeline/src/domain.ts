@@ -231,6 +231,11 @@ interface ActionContext {
   stop: AbortSignal;
   boundary: (name: string) => Promise<void>;
   op: (name: string, payload: object) => Promise<unknown>;
+  // Prepares the checkout's test environment once, for a task holding a
+  // test slot: the configured setup with the issue's leased lane slot. It
+  // rejects for recovery, for a task with no test slot and when setup fails;
+  // a failed setup retains the checkout and its slot.
+  prepare: () => Promise<void>;
   session: (spec: SessionSpec) => Promise<SessionResult>;
   checkpoint: (detail: object) => Promise<void>;
 }

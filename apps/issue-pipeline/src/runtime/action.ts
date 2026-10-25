@@ -40,7 +40,6 @@ import type {
 import { ACTION_END } from "../domain.ts";
 import { issueExecution } from "../execution.ts";
 import type { JobDirs } from "../job/checkout.ts";
-import { openJobCheckout } from "../job/checkout.ts";
 import { closeJobCheckout } from "../job/checkout-close.ts";
 import { pushServerOf } from "../job/commit-push.ts";
 import { contextLogOf } from "../job/context-log.ts";
@@ -66,6 +65,7 @@ import type { SessionPhase } from "../job/role-context.ts";
 import { resultOf, SESSION_MINUTES } from "../job/role-session.ts";
 import { agentEnvOf, rolesOf } from "../job/roles.ts";
 import type { LaunchStart } from "../job/status.ts";
+import { assertCheckoutReady } from "../lane-slots.ts";
 import type { TaskGuard } from "../ops/task-guard.ts";
 import {
   checkGuard,
@@ -91,6 +91,14 @@ import type {
   SessionObservation,
 } from "./observations.ts";
 import { actionRunFile, observed } from "./observations.ts";
+import {
+  claimsTestSlot,
+  laneEnvironment,
+  needsPreparation,
+  openActionCheckout,
+  setupCommand,
+  setupTimeoutMinutes,
+} from "./preparation.ts";
 import type { ReservationHandle } from "./reservations.ts";
 import type { StopControl } from "./stop.ts";
 import { pause } from "./stop.ts";
@@ -100,6 +108,10 @@ const SECOND_MS = 1000;
 // The canonical evidence-only op that saves an action's checkpoint, which
 // the task writer's ops provide; it still runs while the action stops.
 const CHECKPOINT_OP = "checkpoint-action";
+// The task-owned op that runs the configured setup in the action's checkout
+// (ops/task-prepare.ts); its ops child outlives the setup's own timeout.
+const PREPARE_OP = "prepare-checkout";
+const PREPARE_GRACE_MINUTES = 1;
 const MODEL_SESSION = "model-session";
 // The model role, and so the session timeout, of each installed agent.
 const AGENT_ROLES: Readonly<Record<SessionSpec["agent"], ModelRole>> = {
@@ -349,6 +361,8 @@ interface OpenAction {
   launches: ActionLaunches;
   control: ControlSocket;
   checkpoint: { uncertain: string | null };
+  // Whether this action's checkout passed its preparation.
+  prepared: boolean;
   startedAt: string;
 }
 
@@ -450,6 +464,9 @@ function sessionRefusal(open: OpenAction, spec: SessionSpec): string | null {
   if (spec.commits && task.access !== "writer") {
     return `task ${task.id} has the ${task.access} profile; its sessions cannot commit`;
   }
+  if (needsPreparation(open.cfg, task) && !open.prepared) {
+    return `task ${task.id}'s checkout is not prepared; it starts no session in an unprepared test environment`;
+  }
   return null;
 }
 
@@ -545,14 +562,18 @@ function envOf(
   key: string;
   commits: boolean;
 }) => Readonly<Record<string, string>> {
-  const { cfg, workItem, control, admitted, dirs } = open;
+  const { cfg, workItem, control, admitted, dirs, setting } = open;
   return (launch: {
     key: string;
     commits: boolean;
   }): Readonly<Record<string, string>> => {
     issueExecution(cfg, workItem.number).assertOwner();
+    if (claimsTestSlot(setting.task)) {
+      assertCheckoutReady(cfg, workItem.number, dirs.repo);
+    }
+    const leased = laneEnvironment(cfg, workItem.number, setting.task, shared);
     if (!launch.commits) {
-      return shared;
+      return leased;
     }
     const scope = commitScope(cfg, workItem.number);
     scopes.set(launch.key, scope);
@@ -564,7 +585,7 @@ function envOf(
       execution: admitted.execution,
       ...scope,
     });
-    return { ...shared, ...commit };
+    return { ...leased, ...commit };
   };
 }
 
@@ -651,7 +672,11 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
   });
   let seq = 0;
   // Runs op `name`, observed under the key its runner gives it.
-  async function recordedOp(name: string, payload: object): Promise<OpsReply> {
+  async function recordedOp(
+    name: string,
+    payload: object,
+    minutes?: number,
+  ): Promise<OpsReply> {
     seq += 1;
     const key = `${name}-${String(seq)}`;
     open.observation.update(
@@ -670,7 +695,37 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
         ],
       }),
     );
-    return await runOp(name, payload);
+    return await runOp(name, payload, minutes);
+  }
+  // Runs the configured setup once through its guarded op; without a setup
+  // command it only checks the lane barrier in process, running no op.
+  async function prepare(): Promise<void> {
+    const { task } = setting;
+    if (admitted.mode === "recover") {
+      throw new Error("recovery is read-only; it prepares no checkout");
+    }
+    if (!claimsTestSlot(task)) {
+      throw new Error(`task ${task.id} holds no test slot to prepare`);
+    }
+    if (open.prepared) {
+      return;
+    }
+    if (setupCommand(cfg) === null) {
+      assertCheckoutReady(cfg, workItem.number, dirs.repo);
+      open.prepared = true;
+      return;
+    }
+    await opBoundaryOf(open, PREPARE_OP);
+    const minutes = setupTimeoutMinutes(cfg) + PREPARE_GRACE_MINUTES;
+    const reply = await recordedOp(PREPARE_OP, {}, minutes);
+    if (!reply.ok) {
+      // The end's reason reaches the public ledger, so it names no local
+      // path; the op's own log and the lane store keep the details.
+      throw new Error(
+        `checkout preparation failed: ${PREPARE_OP} did not complete; the checkout, its lane slot and its setup barrier stay retained for explicit reconciliation, with no automatic retry`,
+      );
+    }
+    open.prepared = true;
   }
   const launcher: SessionLauncher = {
     open,
@@ -696,6 +751,7 @@ function contextOf(open: OpenAction, actionDir: string): ActionContext {
       }
       return reply.reply;
     },
+    prepare,
     session: (spec: SessionSpec): Promise<SessionResult> =>
       sessionOf(launcher, spec),
     checkpoint: async (detail: object): Promise<void> => {
@@ -1084,10 +1140,12 @@ async function openAction(
   };
   let dirs: JobDirs;
   try {
-    dirs = openJobCheckout(admitted.cfg, workItem.number, {
-      stage: `action-${admitted.id}`,
-      branch: admitted.execution.branch,
-    });
+    dirs = openActionCheckout(
+      admitted.cfg,
+      workItem.number,
+      { stage: `action-${admitted.id}`, branch: admitted.execution.branch },
+      setting.task,
+    );
   } catch (error: unknown) {
     return {
       unopened: unopened(
@@ -1150,6 +1208,7 @@ async function openAction(
       launches,
       control,
       checkpoint: { uncertain: null },
+      prepared: false,
       startedAt: now(),
     };
     return { open };
