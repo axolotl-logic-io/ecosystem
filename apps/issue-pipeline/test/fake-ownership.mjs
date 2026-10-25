@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { armTakeover } from "./fake-ownership-takeover.mjs";
 
 const SHA_LENGTH = 40;
 const BASE_SHA = "b".repeat(SHA_LENGTH);
@@ -43,6 +44,8 @@ const OWNERSHIP_GH = `const ownershipListing = require(${JSON.stringify(
 let fakeDir = "";
 // Whether loseOwnership() armed a takeover for the next bound request.
 let losing = false;
+// Why the last acquisition failed, so that request went unbound.
+let refusal = "";
 /** @type {Map<string, { execution: any, checkout: object }>} */
 const owners = new Map();
 
@@ -55,6 +58,13 @@ function registerFake(dir) {
 // new job's, which acquires afresh.
 function forgetOwners() {
   owners.clear();
+  refusal = "";
+}
+
+// Why the last acquisition since reply() failed, or "" when none did.
+/** @returns {string} */
+function acquisitionRefusal() {
+  return refusal;
 }
 
 /**
@@ -213,7 +223,8 @@ function bindOpsRequest({ config, root, request: sent }) {
         root,
         frame: { number: n, checkout, lane },
       });
-    } catch {
+    } catch (error) {
+      refusal = String(error);
       return request;
     }
     owners.set(key, owner);
@@ -240,11 +251,15 @@ function bindOpsRequest({ config, root, request: sent }) {
  * fake-ownership-gh.cjs names the folder it keeps its store in. The
  * checkout is the request's, else the issue's worktree on its legacy branch.
  * @template T
- * @param {{ config: string, env: NodeJS.ProcessEnv, request: object, store?: string }} where
+ * With `lose`, a successor takes the issue just after the request's
+ * ownership check, or just after its first write (fake-ownership-takeover),
+ * through the gh first on PATH in `lose.bin`, and the owner, no longer one,
+ * releases nothing.
+ * @param {{ config: string, env: NodeJS.ProcessEnv, request: object, store?: string, lose?: { bin: string, afterWrite: boolean } | undefined }} where
  * @param {(request: object) => T} send
  * @returns {T}
  */
-function ownedRequest({ config, env, request: sent, store }, send) {
+function ownedRequest({ config, env, request: sent, store, lose }, send) {
   const request = /** @type {OpsRequest} */ (sent);
   const n = request.number;
   if (typeof n !== "number" || "execution" in request) {
@@ -287,6 +302,14 @@ function ownedRequest({ config, env, request: sent, store }, send) {
     const file = path.join(store, "ownership.json");
     const owned = JSON.parse(fs.readFileSync(file, "utf8"));
     fs.writeFileSync(file, JSON.stringify({ ...owned, acquiring: false }));
+  }
+  if (lose !== undefined) {
+    armTakeover(lose.bin, {
+      ...frame,
+      execution,
+      afterWrite: lose.afterWrite,
+    });
+    return send({ ...request, checkout, execution });
   }
   try {
     return send({ ...request, checkout, execution });
@@ -352,6 +375,7 @@ function ownershipRecords() {
 }
 
 export {
+  acquisitionRefusal,
   bindOpsRequest,
   forgetOwners,
   loseOwnership,

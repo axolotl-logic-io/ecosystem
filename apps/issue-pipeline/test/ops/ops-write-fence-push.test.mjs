@@ -23,6 +23,14 @@ const { fakeGh, ask, originRef } = fx;
 // What the fresh ownership read before a write says once a successor took
 // the issue (coordination-records.ts).
 const LOST = /execution ownership lost or unconfirmed/u;
+// Each test's issue and its draft PR.
+const STARTED = { n: 21, pr: 81 };
+/** @type {Record<string, { n: number, pr: number }>} */
+const PUSHED = {
+  push: { n: 22, pr: 82 },
+  "exit-push": { n: 23, pr: 83 },
+  "open-pr": { n: 24, pr: 84 },
+};
 
 /** @returns {string[][]} */
 function writes() {
@@ -59,8 +67,8 @@ function draftReplies(n, pr) {
 }
 
 test("start-pr: a successor taking the issue before its push and PR create leaves origin and GitHub unchanged", () => {
-  const n = 21;
-  startPrReplies(n, 81);
+  const { n, pr } = STARTED;
+  startPrReplies(n, pr);
   loseOwnership();
   const refused = replyOf(ask({ op: "start-pr", number: n }));
   assert.equal(refused.ok, false);
@@ -71,8 +79,7 @@ test("start-pr: a successor taking the issue before its push and PR create leave
 
 for (const op of ["push", "exit-push", "open-pr"]) {
   test(`${op}: a successor taking the issue before the source push leaves origin and GitHub unchanged`, () => {
-    const n = { push: 22, "exit-push": 23, "open-pr": 24 }[op] ?? 0;
-    const pr = n + 60;
+    const { n, pr } = PUSHED[op] ?? STARTED;
     startPrReplies(n, pr);
     assert.equal(replyOf(ask({ op: "start-pr", number: n })).ok, true);
     const before = originRef(`agent/issue-${n}`);

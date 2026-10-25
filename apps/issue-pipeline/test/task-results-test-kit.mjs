@@ -75,6 +75,23 @@ const REPLY = z.looseObject({
   status: STATUS.optional(),
 });
 
+// The flows whose next ops request loses its issue to a successor, and
+// whether only after its first write (loseNextOwnership).
+/** @type {Map<import("./pipeline-flow-test-kit.mjs").Flow, boolean>} */
+const losing = new Map();
+
+/**
+ * Makes `flow`'s next ops request lose its issue to a successor just after
+ * its ownership check, or with `afterWrite` just after its first write, so
+ * just before its next one (#169).
+ * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
+ * @param {{ afterWrite?: boolean }} [when]
+ * @returns {void}
+ */
+function loseNextOwnership(flow, { afterWrite = false } = {}) {
+  losing.set(flow, afterWrite);
+}
+
 /**
  * The raw reply of one fresh ops process to `request`.
  * @param {import("./pipeline-flow-test-kit.mjs").Flow} flow
@@ -82,8 +99,14 @@ const REPLY = z.looseObject({
  * @returns {unknown}
  */
 function rawOps(flow, request) {
+  let lose;
+  const afterWrite = losing.get(flow);
+  if (afterWrite !== undefined) {
+    losing.delete(flow);
+    lose = { bin: path.join(flow.tmp, "bin"), afterWrite };
+  }
   return ownedRequest(
-    { config: flow.config, env: flow.env, request },
+    { config: flow.config, env: flow.env, request, lose },
     (bound) => {
       const body = JSON.stringify({ config: flow.config, ...bound });
       const result = spawnSync(
@@ -282,6 +305,7 @@ export {
   commentsOn,
   digest,
   dropRunFolders,
+  loseNextOwnership,
   plantComment,
   rawOps,
   recordAttempt,
