@@ -26,7 +26,7 @@
     // roles, the schedule, the saved state and the protocols, gets none.
     {
       "includes": [
-        "install.mjs",
+        "install.ts",
         "test/**",
         "build.ts",
         "scripts/**",
@@ -136,10 +136,14 @@
     },
     // GitHub's REST API names a comment's times in snake_case (`created_at`,
     // `updated_at`). comments.ts declares its comment schema with them, and
-    // test/fake-gh.mjs, the fake gh, answers with comments in that wire format
-    // (#219).
+    // test/fake-gh.ts, the fake gh, answers with comments in that wire format
+    // (#219), as test/fake-ownership-gh.ts keeps its coordination comments.
     {
-      "includes": ["src/comments.ts", "test/fake-gh.mjs"],
+      "includes": [
+        "src/comments.ts",
+        "test/fake-gh.ts",
+        "test/fake-ownership-gh.ts"
+      ],
       "linter": {
         "rules": {
           "style": {

@@ -1,0 +1,197 @@
+// The author stage job end to end, with a fake ops.mjs and a fake RPC pi in
+// a temporary pipeline root: its one session runs as issue-pipeline-author
+// with no gh token, no commit scope and no pipeline_commit tool, reads the
+// issue file the claim wrote, and commits nothing; its Gherkin is posted
+// signed by the author and released at implement; its questions are asked
+// with the inputs revision they were asked at, and that same state is
+// released; a reply outside the author's schema stops the issue as an error;
+// and a failed op defers only on a network error of its own.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { test } from "node:test";
+import type { JobLine } from "../../src/job/role-end.ts";
+import { messageEnd, outputEnd } from "../fake-rpc-pi.ts";
+import {
+  AFTER_READER_STAGE,
+  ASKING,
+  AUTHOR_SESSION,
+  COMMENT_ID,
+  claimWon,
+  READER_STAGE,
+  repliesAt,
+  stateAt,
+  USAGE,
+} from "../job-fixtures.ts";
+import type { OpsLine, Place } from "./job-test-kit.ts";
+import {
+  flagValue,
+  logOf,
+  piCommands,
+  piStarts,
+  runJob,
+  setUp,
+  statusOf,
+} from "./job-test-kit.ts";
+
+const AUTHOR_AGENT = "issue-pipeline-author";
+// A token the job holds, which no session may see.
+const TOKEN = "gh-test-token";
+const ISSUE_FILE: string = claimWon(stateAt(READER_STAGE)).issueFile;
+const NO_FEATURE: object = { ...AUTHOR_SESSION.events[1] };
+const SCHEMA_REFUSAL = /doesn't match its schema/u;
+const NETWORK = "error connecting to api.github.com";
+const NETWORK_DEFERRAL = /the post op failed: error connecting/u;
+const NOT_A_STRING = /must be a string/u;
+// Where job-test-kit.ts makes each job's pipeline root.
+const TEMPORARY_ROOT = "/tmp/issue-pipeline-job-";
+
+// An author job's request as ops.log keeps it: an ask's questions and its
+// signature, and the signature of each comment a post makes.
+interface AuthorRequest extends OpsLine {
+  sweepId: string;
+  questions?: unknown;
+  by?: unknown;
+  comments?: { number: number; key: string; body: string; by: unknown }[];
+}
+
+// Runs an author job on `replies` and `script`, the job holding a gh token;
+// throws when the job fails, or when its root isn't a temporary one.
+function authorJob(
+  replies: Record<string, unknown>,
+  script: object,
+): { place: Place; line: JobLine } {
+  const place = setUp(replies, script);
+  if (!place.root.startsWith(TEMPORARY_ROOT)) {
+    throw new Error(`the job's root ${place.root} isn't temporary`);
+  }
+  const r = runJob(
+    place,
+    ["--stage", READER_STAGE, "--lane", "L"],
+    Object.fromEntries([["GH_TOKEN", TOKEN]]),
+  );
+  if (r.status !== 0) {
+    throw new Error(`the job failed: ${r.stderr}`);
+  }
+  return { place, line: JSON.parse(r.stdout) };
+}
+
+function requests(place: Place, op: string): AuthorRequest[] {
+  return logOf<AuthorRequest>(place, "ops.log").filter(
+    (request) => request.op === op,
+  );
+}
+
+test("the author's one session runs as its agent with no token, no commit tool and the claim's issue file", () => {
+  const { place, line } = authorJob(repliesAt(READER_STAGE), AUTHOR_SESSION);
+  assert.deepEqual(line, { issue: 7, stage: READER_STAGE, end: "next" });
+  assert.deepEqual(statusOf(place)?.droppedPatches, []);
+  const starts = piStarts(place);
+  assert.equal(starts.length, 1);
+  const [start] = starts;
+  assert.ok(start);
+  const { argv, env, ghToken, commitScope } = start;
+  assert.equal(flagValue(argv, "--model"), "openai/gpt-6.1-sol");
+  assert.equal(argv.includes("--no-extensions"), true);
+  assert.equal(ghToken, null);
+  assert.equal(env.includes("GH_TOKEN"), false);
+  assert.equal(commitScope, null);
+  assert.equal(flagValue(argv, "--tools").includes("pipeline_commit"), false);
+  assert.equal(
+    argv.some((arg: string) => arg.endsWith("pipeline-commit.mjs")),
+    false,
+  );
+  const [prompt] = piCommands(place).filter(({ type }) => type === "prompt");
+  assert.ok(prompt?.message?.includes(ISSUE_FILE), prompt?.message);
+  // A reader commits and pushes nothing.
+  assert.deepEqual(requests(place, "exit-push"), []);
+  assert.deepEqual(requests(place, "push"), []);
+  const branch = spawnSync(
+    "git",
+    ["-C", place.origin, "rev-parse", "--verify", "--quiet", "agent/issue-7"],
+    { encoding: "utf8" },
+  );
+  assert.notEqual(branch.status, 0);
+});
+
+test("the author's Gherkin is posted signed by the author and the issue released at implement", () => {
+  const { place } = authorJob(repliesAt(READER_STAGE), AUTHOR_SESSION);
+  const [post] = requests(place, "post");
+  assert.ok(post);
+  const [comment] = post.comments ?? [];
+  assert.ok(comment);
+  assert.deepEqual(
+    { number: comment.number, key: comment.key, by: comment.by },
+    {
+      number: 7,
+      key: "gherkin",
+      by: { role: "author", agent: AUTHOR_AGENT, model: null, run: null },
+    },
+  );
+  const [release] = requests(place, "release");
+  assert.ok(release);
+  assert.equal(release.lane, "L");
+  assert.equal(typeof release.sweepId, "string");
+  assert.equal(release.state?.stage, AFTER_READER_STAGE);
+  assert.equal(release.state.gherkin?.commentId, COMMENT_ID);
+  assert.equal(release.state.asked, null);
+  // One usage line for the session and one for the job.
+  assert.equal(requests(place, "usage").length, 2);
+});
+
+test("an author's questions are asked with the inputs revision, and that state is released", () => {
+  const asking = { events: [messageEnd(USAGE), outputEnd(ASKING)] };
+  const { place, line } = authorJob(repliesAt(READER_STAGE), asking);
+  assert.equal(line.end, "ask");
+  const [ask] = requests(place, "ask");
+  assert.ok(ask);
+  assert.deepEqual(ask.questions, ASKING.questions);
+  assert.deepEqual(ask.by, { role: "author", agent: AUTHOR_AGENT });
+  assert.equal(ask.state?.stage, READER_STAGE);
+  assert.equal(typeof ask.state.asked?.inputs, "string");
+  assert.ok((ask.state.asked?.inputs ?? "").length > 0);
+  const [release] = requests(place, "release");
+  assert.deepEqual(release?.state, ask.state);
+  assert.deepEqual(requests(place, "post"), []);
+});
+
+test("an author reply outside its schema stops the issue as an error and posts nothing", () => {
+  const bad = {
+    ...NO_FEATURE,
+    result: { content: [], details: { outcome: "gherkin", gherkin: "no" } },
+  };
+  const { place, line } = authorJob(repliesAt(READER_STAGE), {
+    events: [messageEnd(USAGE), bad],
+  });
+  assert.equal(line.end, "stop");
+  const [stop] = requests(place, "stop");
+  assert.equal(stop?.code, "error");
+  assert.match(stop.reason ?? "", SCHEMA_REFUSAL);
+  assert.deepEqual(requests(place, "post"), []);
+  assert.deepEqual(requests(place, "release"), []);
+});
+
+test("a post that fails on the network defers, releasing the claimed state", () => {
+  const replies = {
+    ...repliesAt(READER_STAGE),
+    post: { ok: false, error: NETWORK },
+  };
+  const { place, line } = authorJob(replies, AUTHOR_SESSION);
+  assert.equal(line.end, "deferred");
+  assert.match(line.reason ?? "", NETWORK_DEFERRAL);
+  const [release] = requests(place, "release");
+  assert.equal(release?.state?.stage, READER_STAGE);
+  assert.deepEqual(requests(place, "stop"), []);
+});
+
+test("a post that fails otherwise stops the issue as an error", () => {
+  const replies = {
+    ...repliesAt(READER_STAGE),
+    post: { ok: false, error: "post: comments[0].body must be a string" },
+  };
+  const { place, line } = authorJob(replies, AUTHOR_SESSION);
+  assert.equal(line.end, "stop");
+  const [stop] = requests(place, "stop");
+  assert.equal(stop?.code, "error");
+  assert.match(stop.reason ?? "", NOT_A_STRING);
+  assert.deepEqual(requests(place, "release"), []);
+});

@@ -39,7 +39,7 @@ owner ─► open checkout ─► ops (each request carries the binding) ─► 
 
 - Each exact Land takes the target's integration turn before its attempt record and first PR or target write (`src/ops/land-turn.ts`, #171). A Land that doesn't get it writes nothing and the merge stage ends `wait`; the turn is released once the issue's Land is settled. See [the target's integration turn](../../docs/reference/merge.md#the-targets-integration-turn).
 
-Contention through real job boundaries is proved by `test/pipeline-flow-contention.test.mjs` (#133) and `test/land-turn.test.mjs` (#171); [coordination](../../docs/reference/coordination.md#compatibility-and-limits) has the scenario trace.
+Contention through real job boundaries is proved by `test/pipeline-flow-contention.test.ts` (#133) and `test/land-turn.test.ts` (#171); [coordination](../../docs/reference/coordination.md#compatibility-and-limits) has the scenario trace.
 
 ## Assignment withdrawal (#119) and checkpoint rebuild (#173)
 
@@ -56,9 +56,9 @@ A job started with `--assignment` works only while its buddy's account holds the
 | `author`, `implement`, `review` stages; Sync task | `devAccount` (Hippy) |
 | `merge` stage; Integration task | `mergeAccount` (Lawd) |
 
-The job checks the grant before it acquires ownership, before every writer session and push, before every credentialed write in the job and its ops children (the ops frame carries `grant`; `controlledMutation` rereads it), and before it applies its role's end. A paused job ends `wait` with `paused: …` and writes nothing more to GitHub. Its last saved state is its checkpoint, and teardown keeps its local work (patches and a code bundle in `runs/`), as on any exit. Only a newer grant by the grantor lifts the pause. `test/assignment-withdrawal.test.mjs` checks this through built jobs.
+The job checks the grant before it acquires ownership, before every writer session and push, before every credentialed write in the job and its ops children (the ops frame carries `grant`; `controlledMutation` rereads it), and before it applies its role's end. A paused job ends `wait` with `paused: …` and writes nothing more to GitHub. Its last saved state is its checkpoint, and teardown keeps its local work (patches and a code bundle in `runs/`), as on any exit. Only a newer grant by the grantor lifts the pause. `test/assignment-withdrawal.test.ts` checks this through built jobs.
 
-A replacement run rebuilds from the checkpoint GitHub holds: the saved head on the branch, the saved state and the task records. The clone and the mirror (`clones/`, `work/<slug>/`) are disposable caches; `runs/` is recovery evidence and stays. When the saved head is missing from the branch, the job stops `branch-changed` for explicit recovery instead of starting again from the base. `test/checkpoint-rebuild.test.mjs` deletes the caches between two real jobs.
+A replacement run rebuilds from the checkpoint GitHub holds: the saved head on the branch, the saved state and the task records. The clone and the mirror (`clones/`, `work/<slug>/`) are disposable caches; `runs/` is recovery evidence and stays. When the saved head is missing from the branch, the job stops `branch-changed` for explicit recovery instead of starting again from the base. `test/checkpoint-rebuild.test.ts` deletes the caches between two real jobs.
 
 The sweep that starts these jobs, its holds, the cutover and the #73 scenario audit are in [the assignment sweep reference](../../docs/reference/assignment-sweep.md).
 
@@ -342,7 +342,7 @@ node job.mjs --config o__r.json --issue 7 --branch agent/issue-7 \
 | Session timeout | 30 minutes | 60 minutes |
 | "Hardening passed" signature | `role=reviewer` | `role=implementor`, naming Hippy |
 
-Everything else stays the same. The session starts fresh, holds no token and commits only through `pipeline_commit`. Pushes and PR readiness use the development account (`devAccount`). Only the landing account (`mergeAccount`) saves state and posts the result, and readers accept state and keyed result comments only from that account, so a result the development account writes grants nothing. `test/pipeline-flow-hippy-hardening.test.mjs` checks this through built jobs.
+Everything else stays the same. The session starts fresh, holds no token and commits only through `pipeline_commit`. Pushes and PR readiness use the development account (`devAccount`). Only the landing account (`mergeAccount`) saves state and posts the result, and readers accept state and keyed result comments only from that account, so a result the development account writes grants nothing. `test/pipeline-flow-hippy-hardening.test.ts` checks this through built jobs.
 
 The session's transcript lives in the same `runs/<slug>/issue-N/sessions/` folder as Implementation's. Nothing gives it that transcript, but the session runs as the same OS user, and nothing isolates its files.
 
@@ -549,7 +549,7 @@ npm run check:full   # expensive opt-in: fast gate + every Node test, then the d
 
 From this folder, `npm run check`, `check:full`, `typecheck`, `lint` and `build` run this app's scripts alone. mise is optional: `mise //apps/issue-pipeline:<task>` calls the same scripts, and the `node --test` flags live only in `package.json`.
 
-The fast default checks source and checked-JavaScript test types, Biome, the build, syntax of the installer and all ten built programs, and the existing `test/build.test.mjs` artifact guards and `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions. Both files exercise real filesystem/subprocess boundaries in one bounded Node invocation. It does **not** run the integration/flow suite or prove runtime authority, recovery, isolation or merge behavior. A fast-default pass must not be labelled full integration coverage.
+The fast default checks source and test types, Biome, the build, syntax of the installer and all ten built programs, and the existing `test/build.test.ts` artifact guards and `test/check-task.test.ts` task-timeout and test typecheck regressions. Both files exercise real filesystem/subprocess boundaries in one bounded Node invocation. It does **not** run the integration/flow suite or prove runtime authority, recovery, isolation or merge behavior. A fast-default pass must not be labelled full integration coverage.
 
 `check:full` runs the fast gate first, then the original full Node suite with all assertions, file concurrency 2 and per-test timeout 180000 ms unchanged. The full glob selects both bounded files again, so explicit full execution repeats the artifact smoke and check-task regressions; this is not additional unique coverage. Full-flow files launch their own jobs, ops, fake GitHub and Git subprocesses, so host-core-count parallelism can oversubscribe the machine and exhaust stage/hook deadlines. Keep this suite explicit and pre-Land only; do not run it by default, as an installation prerequisite or after landing. Authorized post-install managed-artifact and installed-CLI acceptance is separate from a check suite or model validation.
 

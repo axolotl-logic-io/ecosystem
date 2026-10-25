@@ -13,14 +13,14 @@ run = "npm run check"
 description = "Expensive opt-in full gate: fast gate plus every Node integration/flow test"
 # package.json's check:full script runs the fast gate, then every Node test
 # with the flags below:
-#   node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.mjs'
+#   node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'
 # Each test fails if it runs past --test-timeout, by its title, rather than
 # hanging the run (#372). The slowest test measured took 51.3 s (the
 # typecheck that fails on a type error, test/typecheck-config.test.mjs) in a
 # full `node --test --test-reporter=spec` run beside three more in a copy of
 # the checkout, at 1-minute load averages of up to 130 on 10 cores
-# (2026-10-17). The timeout is over 3 times that. test/bounded-test-kit.mjs's
-# waitFor deadline and test/job/job-test-kit.mjs's runJob bound sit below it.
+# (2026-10-17). The timeout is over 3 times that. test/bounded-test-kit.ts's
+# waitFor deadline and test/job/job-test-kit.ts's runJob bound sit below it.
 # Bound file-level parallelism independently of the host's core count.
 # Full-flow files also spawn jobs, ops, fake gh and git processes. Node's
 # default (9 files on a 10-core host) oversubscribed those subprocesses:
@@ -33,7 +33,7 @@ description = "Build src/ into dist/ with esbuild (build.ts)"
 run = "npm run build"
 
 [tasks.typecheck]
-description = "Typecheck the pipeline's TypeScript with tsc, and the tests and install.mjs as checked JavaScript (tsconfig.test.json)"
+description = "Typecheck the pipeline's TypeScript, its tests and install.ts included, with tsc"
 run = "npm run typecheck"
 
 [tasks.lint]
@@ -42,8 +42,8 @@ run = "npm run lint"
 
 [tasks.install]
 description = "Install this checkout's pipeline where pi reads it"
-run = "node install.mjs"
+run = "node install.ts"
 
 [tasks."install:dry-run"]
 description = "List what install would change, writing nothing"
-run = "node install.mjs --dry-run"
+run = "node install.ts --dry-run"

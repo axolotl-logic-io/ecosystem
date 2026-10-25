@@ -1,6 +1,6 @@
 "use strict";
 // @ts-check
-// The test a sandbox fixture repository runs (sandbox.test.mjs), as hostile
+// The test a sandbox fixture repository runs (sandbox.test.ts), as hostile
 // repository code would: it prints a marker, then reads everything it can
 // reach (its environment, the host files and folders named in probe.json,
 // every process's environment under /proc, and the sandbox's own home, /tmp

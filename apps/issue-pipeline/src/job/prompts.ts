@@ -1,6 +1,6 @@
 // The sessions' behavioral prompts: one Markdown page per session kind in
 // the pipeline's `prompts/` folder, which ships with the code and which
-// install.mjs installs as PROMPTS_DIR. A stage job pins the pages its
+// install.ts installs as PROMPTS_DIR. A stage job pins the pages its
 // stage's sessions read once, before it claims or clones anything: their
 // exact bytes, held in memory for the whole job, so an install mid-job
 // changes no session's prompt. Each pinned page's provenance is its name,

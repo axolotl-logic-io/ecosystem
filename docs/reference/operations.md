@@ -127,7 +127,7 @@ Lifting a stop supplies no missing authority. An uncertain merge needs read-only
 
 ## Run the tests
 
-`npm run check` is the **fast default gate**, not full integration coverage. It runs source and checked-JavaScript test type checks, Biome, the build, syntax checks for the installer and all built programs, and the existing `test/build.test.mjs` artifact guards and `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions in one bounded Node invocation.
+`npm run check` is the **fast default gate**, not full integration coverage. It runs source and test type checks, Biome, the build, syntax checks for the installer and all built programs, and the existing `test/build.test.ts` artifact guards and `test/check-task.test.ts` task-timeout and test typecheck regressions in one bounded Node invocation.
 
 `npm run check:full` explicitly opts into the expensive full gate: the fast gate followed by every Node test, at most two test files at a time, with the original 180000 ms timeout. Do not run the full suite by default, as an installation prerequisite or after landing; explicit opt-in execution is pre-Land only. Do not run any check suite or fresh model validation after Land. Separately authorized [installation acceptance](#installation-acceptance) still applies. The [gate scope and cost report](check-gates.md) explains what the fast gate does not prove, the known cost and the remaining optimization or isolated-stage work.
 

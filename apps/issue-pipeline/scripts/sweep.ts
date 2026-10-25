@@ -3,7 +3,7 @@
 // The opt-in assignment sweep (#120): one pass over each configured repo,
 // starting the work its assignments grant through the caller's own
 // launcher (caller-jobs/start.ts), so every cap, attempt limit and
-// exclusion of the run folder applies. build.ts bundles it and install.mjs
+// exclusion of the run folder applies. build.ts bundles it and install.ts
 // installs it as $ISSUE_PIPELINE_ROOT/sweep.mjs:
 //
 //   node sweep.mjs --run RUN_DIR --config CONFIG [--config CONFIG …]

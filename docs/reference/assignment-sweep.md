@@ -117,27 +117,27 @@ To go back, stop the sweep and let its jobs end; caller jobs need no other chang
 
 | # | Scenario | Status | Evidence |
 | --- | --- | --- | --- |
-| 1 | Configure worker identities separately from models and credentials | Retired, narrowed | `identity-schema` and `two-buddies` fix two buddies and their accounts; the only new setting is `assignments.grantor` (`assignment-sweep.test.mjs`, "a repo without a grantor isn't swept") |
-| 2 | Assignment alone dispatches eligible development work | Covered | `assignment-sweep.test.mjs` ("one sweep starts the granted work…"), `assignment-composed.test.mjs` |
-| 3 | Accept only authenticated orchestration signals within their scope | Retired, replaced | `assignment-permission`: only the grantor grants. `assignment-withdrawal.test.mjs` ("another account's assignment grants nothing…") |
-| 4 | Untrusted or unverifiable signals do not grant work | Covered | `assignment-withdrawal.test.mjs` (another account, untrusted comment, cut-short read) |
-| 5 | Publish a durable developer-to-reviewer handoff | Retired | `two-buddies`: Hippy hardens, so there's no review request; the chain hands over through task results (`pipeline-flow-implementation-result.test.mjs`) |
-| 6 | Review ownership survives consumption of the review request | Retired | `two-buddies`, as 5; Lawd's work follows task results and saved state (`assignment-composed.test.mjs`) |
-| 7 | Return work for development fixes | Covered | `integration-task.test.mjs` ("a failing check returns Developer work…"), `pipeline-flow-implementation-result.test.mjs` (requirements edit returns to Implementation) |
-| 8 | Work signals cannot bypass readiness or role checks | Covered | prerequisite: `assignment-sweep.test.mjs` ("an open after prerequisite…"); another buddy's work: `assignment-composed.test.mjs` (merge held until Lawd is assigned); stop, needs-info, malformed or legacy state: the claim's guards (`saved-state-classification.test.mjs`, `test/job/job-stop-ask.test.mjs`); approval and Security: `pipeline-flow-replay.test.mjs` |
-| 9 | Re-read trusted requirements before resuming a stage | Covered | `pipeline-flow-implementation-result.test.mjs` ("a trusted comment that edits the requirements…") |
-| 10 | Continue sweeping after idle periods and completed tasks | Covered | `assignment-repeat.test.mjs`, `assignment-composed.test.mjs` |
-| 11 | Back off on rate limits and transport failures | Covered | `assignment-repeat.test.mjs` (deferral hold, retry time doubling, restart); `test/job/job-rate-limit.test.mjs` |
-| 12 | Reconstruct worker and orchestrator progress from GitHub | Covered | `checkpoint-rebuild.test.mjs`, `assignment-composed.test.mjs` (caches deleted mid-chain), `assignment-repeat.test.mjs` (new run folder) |
-| 13 | Publish truthful safe checkpoints | Covered; wiki parts retired | `checkpoint-rebuild.test.mjs`; no wiki path remains (docs live in `docs/`) |
-| 14 | Preserve incomplete or refused local work without claiming remote recovery | Covered | `assignment-withdrawal.test.mjs` (code bundle after a refused push), `test/job/pipeline-commit-merged.test.mjs`, `test/job/job-release-predicate.test.mjs` ("failed preservation keeps the checkout…") |
-| 15 | Duplicate workers cannot execute the same issue | Covered | `pipeline-flow-contention.test.mjs` (#133), `assignment-repeat.test.mjs` (no second start) |
-| 16 | Recover stale work without allowing a lost worker to write | Covered | `pipeline-flow-contention.test.mjs` ("a predecessor delayed…"), `test/job/job-fenced-exit.test.mjs` |
-| 17 | Serialize integration across assignment-driven workers | Covered | `land-turn.test.mjs` (#171) |
-| 18 | Reconcile uncertain mutations instead of repeating them | Covered | `coordination-recovery.test.mjs`, `test/job/job-release-predicate.test.mjs`, `task-write-fence.test.mjs`, `pipeline-flow-replay.test.mjs`; wiki publication retired |
-| 19 | Withdraw work safely when its grant disappears | Covered; handoff case retired | `assignment-withdrawal.test.mjs` (withdrawal before and during work, closure by another account); scope removal: the sweep reads only configured repos; handoff cancellation retired by `two-buddies` |
-| 20 | Inspect ownership, health and blockers through GitHub | Covered | holds and pauses are GitHub records (`assignment-repeat.test.mjs`), and each sweep prints one decision line per issue; heartbeats from process IDs aren't used ([`observation-sources`](../decisions/buddies-and-tasks.md#observation-sources)) |
-| 21 | Preserve the two-account and delivery boundaries | Covered | `assignment-composed.test.mjs` (only Lawd records; Hippy writes only its branch and PR), `pipeline-flow-hippy-hardening.test.mjs` |
+| 1 | Configure worker identities separately from models and credentials | Retired, narrowed | `identity-schema` and `two-buddies` fix two buddies and their accounts; the only new setting is `assignments.grantor` (`assignment-sweep.test.ts`, "a repo without a grantor isn't swept") |
+| 2 | Assignment alone dispatches eligible development work | Covered | `assignment-sweep.test.ts` ("one sweep starts the granted work…"), `assignment-composed.test.ts` |
+| 3 | Accept only authenticated orchestration signals within their scope | Retired, replaced | `assignment-permission`: only the grantor grants. `assignment-withdrawal.test.ts` ("another account's assignment grants nothing…") |
+| 4 | Untrusted or unverifiable signals do not grant work | Covered | `assignment-withdrawal.test.ts` (another account, untrusted comment, cut-short read) |
+| 5 | Publish a durable developer-to-reviewer handoff | Retired | `two-buddies`: Hippy hardens, so there's no review request; the chain hands over through task results (`pipeline-flow-implementation-result.test.ts`) |
+| 6 | Review ownership survives consumption of the review request | Retired | `two-buddies`, as 5; Lawd's work follows task results and saved state (`assignment-composed.test.ts`) |
+| 7 | Return work for development fixes | Covered | `integration-task.test.ts` ("a failing check returns Developer work…"), `pipeline-flow-implementation-result.test.ts` (requirements edit returns to Implementation) |
+| 8 | Work signals cannot bypass readiness or role checks | Covered | prerequisite: `assignment-sweep.test.ts` ("an open after prerequisite…"); another buddy's work: `assignment-composed.test.ts` (merge held until Lawd is assigned); stop, needs-info, malformed or legacy state: the claim's guards (`saved-state-classification.test.ts`, `test/job/job-stop-ask.test.ts`); approval and Security: `pipeline-flow-replay.test.ts` |
+| 9 | Re-read trusted requirements before resuming a stage | Covered | `pipeline-flow-implementation-result.test.ts` ("a trusted comment that edits the requirements…") |
+| 10 | Continue sweeping after idle periods and completed tasks | Covered | `assignment-repeat.test.ts`, `assignment-composed.test.ts` |
+| 11 | Back off on rate limits and transport failures | Covered | `assignment-repeat.test.ts` (deferral hold, retry time doubling, restart); `test/job/job-rate-limit.test.ts` |
+| 12 | Reconstruct worker and orchestrator progress from GitHub | Covered | `checkpoint-rebuild.test.ts`, `assignment-composed.test.ts` (caches deleted mid-chain), `assignment-repeat.test.ts` (new run folder) |
+| 13 | Publish truthful safe checkpoints | Covered; wiki parts retired | `checkpoint-rebuild.test.ts`; no wiki path remains (docs live in `docs/`) |
+| 14 | Preserve incomplete or refused local work without claiming remote recovery | Covered | `assignment-withdrawal.test.ts` (code bundle after a refused push), `test/job/pipeline-commit-merged.test.ts`, `test/job/job-release-predicate.test.ts` ("failed preservation keeps the checkout…") |
+| 15 | Duplicate workers cannot execute the same issue | Covered | `pipeline-flow-contention.test.ts` (#133), `assignment-repeat.test.ts` (no second start) |
+| 16 | Recover stale work without allowing a lost worker to write | Covered | `pipeline-flow-contention.test.ts` ("a predecessor delayed…"), `test/job/job-fenced-exit.test.ts` |
+| 17 | Serialize integration across assignment-driven workers | Covered | `land-turn.test.ts` (#171) |
+| 18 | Reconcile uncertain mutations instead of repeating them | Covered | `coordination-recovery.test.ts`, `test/job/job-release-predicate.test.ts`, `task-write-fence.test.ts`, `pipeline-flow-replay.test.ts`; wiki publication retired |
+| 19 | Withdraw work safely when its grant disappears | Covered; handoff case retired | `assignment-withdrawal.test.ts` (withdrawal before and during work, closure by another account); scope removal: the sweep reads only configured repos; handoff cancellation retired by `two-buddies` |
+| 20 | Inspect ownership, health and blockers through GitHub | Covered | holds and pauses are GitHub records (`assignment-repeat.test.ts`), and each sweep prints one decision line per issue; heartbeats from process IDs aren't used ([`observation-sources`](../decisions/buddies-and-tasks.md#observation-sources)) |
+| 21 | Preserve the two-account and delivery boundaries | Covered | `assignment-composed.test.ts` (only Lawd records; Hippy writes only its branch and PR), `pipeline-flow-hippy-hardening.test.ts` |
 | 22 | Deliberately roll out assignment-based operation | Covered | this page: opt-in per repo, cutover, coexistence |
 | 23 | Verify assignment-driven operation without live services | Covered | every test above runs real binaries against the fake GitHub, fake pi and local origins, with bounded waits |
 

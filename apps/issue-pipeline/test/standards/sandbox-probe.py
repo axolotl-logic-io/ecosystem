@@ -1,4 +1,4 @@
-"""The test a Poetry sandbox fixture runs (sandbox-poetry.test.mjs), as
+"""The test a Poetry sandbox fixture runs (sandbox-poetry.test.ts), as
 hostile repository code would: it prints a marker, then reads everything it
 can reach (its environment, the host files and folders named in
 probe.json, every process's environment under /proc, the sandbox's home,

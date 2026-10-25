@@ -1,0 +1,225 @@
+// The built ops CLI against src/ops.ts: each reads the current revision,
+// merges at it and releases the issue, with the same replies and gh calls.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { test } from "node:test";
+import { z } from "zod";
+import type { GhReply } from "../fake-gh.ts";
+import {
+  collaboratorReply,
+  commentWriteReplies,
+} from "../gh-mutation-fixtures.ts";
+import { approvalReply } from "./merge-op-fixtures.ts";
+import {
+  candidateState,
+  mergeWorld,
+  releaseAndCalls,
+} from "./ops-built-merge-fixtures.ts";
+import type { World } from "./ops-test-kit.ts";
+import {
+  ask,
+  calls,
+  claimListing,
+  fakeGh,
+  LANE,
+  SWEEP,
+  sh,
+  stateListing,
+  world,
+} from "./ops-test-kit.ts";
+
+fakeGh.requireReplies();
+const { newIssueState }: typeof import("../../src/state.ts") = await import(
+  "../../src/state.ts"
+);
+
+// The issue every test works on, and its PR.
+const ISSUE = 7;
+const PR = 50;
+// The commit prefix the merger comment names.
+const SHORT_SHA = 12;
+const MERGED_TRUE = /"merged":true/u;
+const BRANCH_MERGE = "api repos/o/r/merges";
+const BEFORE_MERGE_VIEWS = 3;
+// The part of current-revision's reply the merge request carries.
+const CURRENT = z.looseObject({
+  revision: z.object({
+    code: z.string(),
+    inputs: z.string(),
+    policy: z.string(),
+  }),
+});
+
+// gh's reply to getIssue for #7: open, by the account, with no labels.
+function issueListing(): GhReply {
+  const issue = {
+    number: ISSUE,
+    title: "Issue 7",
+    body: "",
+    state: "open",
+    user: { login: "alice" },
+    labels: [],
+  };
+  return {
+    when: `api repos/o/r/issues/${ISSUE}`,
+    stdout: JSON.stringify(issue),
+    keep: true,
+  };
+}
+
+// Issue #7's version 2 state with `extra` over a new issue's.
+function issueState(extra: object): Record<string, unknown> {
+  return { ...newIssueState(ISSUE), ...extra };
+}
+
+// The same PR retains original H after merging at actual M.
+function prViews(sha: string, mergeSha: string): GhReply[] {
+  const pr = {
+    url: "https://github.com/o/r/pull/50",
+    number: PR,
+    headRefName: `agent/issue-${ISSUE}`,
+    headRefOid: sha,
+    baseRefName: "integration",
+    isCrossRepository: false,
+    isDraft: false,
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+    mergeCommit: null,
+  };
+  const open = { ...pr, state: "OPEN" };
+  const merged = { ...pr, state: "MERGED", mergeCommit: { oid: mergeSha } };
+  return [
+    ...Array.from({ length: BEFORE_MERGE_VIEWS }, () => ({
+      when: "pr view 50 -R o/r --json",
+      stdout: JSON.stringify(open),
+    })),
+    {
+      when: "pr view 50 -R o/r --json",
+      stdout: JSON.stringify(merged),
+      keep: true,
+    },
+  ];
+}
+
+function constantsFor(
+  w: World & { mergeSha: string },
+): (text: string) => string {
+  const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
+  function constant(text: string): string {
+    return text
+      .replaceAll(w.mergeSha, "<merge-sha>")
+      .replaceAll(w.mergeSha.slice(0, SHORT_SHA), "<merge-sha>")
+      .replaceAll(w.sha, "<sha>")
+      .replaceAll(w.sha.slice(0, SHORT_SHA), "<sha>")
+      .replaceAll(base, "<base>")
+      .replaceAll(w.root, "<root>");
+  }
+  return constant;
+}
+
+// Merges #7 in `w` at its current revision and releases it, through `ops`
+// (src/ops.ts when undefined): the replies and gh calls, with the world's
+// head and paths made constant.
+function mergeAndRelease(
+  initial: World,
+  ops: string | undefined,
+): {
+  merged: string;
+  mergeCalls: string[];
+  released: string;
+  releaseCalls: string[];
+  target: string;
+  candidateHead: string;
+  base: string;
+} {
+  const w = mergeWorld(initial);
+  const constant = constantsFor(w);
+  const lease = { lane: LANE, sweepId: SWEEP, at: "2026-01-01T00:00:00Z" };
+  const base = sh(`git -C ${w.worktree} rev-parse origin/integration`);
+  const state = issueState({
+    stage: "merge",
+    pr: PR,
+    lease,
+    hardenedTarget: { repo: "o/r", branch: "integration", sha: base },
+  });
+  fakeGh.reply([
+    collaboratorReply("o/r", "alice"),
+    issueListing(),
+    { ...claimListing(), keep: true },
+    ...prViews(w.sha, w.sha),
+  ]);
+  const asked = ask(w, { op: "current-revision", number: ISSUE, state }, ops);
+  const current = CURRENT.parse(JSON.parse(asked));
+  const authorized = candidateState(state, current.revision);
+  fakeGh.reply([
+    collaboratorReply("o/r", "alice"),
+    issueListing(),
+    {
+      ...stateListing(ISSUE, authorized),
+      keep: true,
+      persistState: true,
+    },
+    { when: "api -X PATCH repos/o/r/issues/comments/7 -f", keep: true },
+    ...prViews(w.sha, w.sha),
+    approvalReply(w),
+    ...commentWriteReplies("o/r", PR, []),
+  ]);
+  // The merge op merges only the revision hardening authorized.
+  const req = {
+    op: "merge",
+    number: ISSUE,
+    state: authorized,
+    expectedSha: w.sha,
+    expectedBase: base,
+    revision: current.revision,
+    mergeQueue: null,
+  };
+  const merged = constant(ask(w, req, ops));
+  const target = constant(
+    sh(`git --git-dir=${w.root}/origin.git rev-parse integration`),
+  );
+  const mergeCalls = calls().map((args) => constant(args.join(" ")));
+  const { released, releaseCalls } = releaseAndCalls(w, state, ops, constant);
+  return {
+    merged,
+    mergeCalls,
+    released,
+    releaseCalls,
+    target,
+    candidateHead: constant(current.revision.code),
+    base: constant(base),
+  };
+}
+
+test("the built ops merges and releases as src/ops.ts does", () => {
+  const out = fs.mkdtempSync("/tmp/issue-pipeline-built-ops-");
+  process.on("exit", () => fs.rmSync(out, { recursive: true, force: true }));
+  const build = new URL("../../build.ts", import.meta.url).pathname;
+  const built = spawnSync(process.execPath, [build, out], { encoding: "utf8" });
+  assert.equal(built.status, 0, built.stderr);
+  const fromSrc = mergeAndRelease(world(), undefined);
+  assert.match(fromSrc.merged, MERGED_TRUE);
+  assert.equal(fromSrc.candidateHead, "<sha>");
+  assert.equal(fromSrc.base, "<base>");
+  assert.equal(fromSrc.target, "<sha>");
+  assert.notEqual(fromSrc.target, fromSrc.base);
+  assert.equal(
+    z.looseObject({ ok: z.literal(true) }).parse(JSON.parse(fromSrc.released))
+      .ok,
+    true,
+  );
+  assert.ok(
+    !fromSrc.mergeCalls.some((call) => call.startsWith(BRANCH_MERGE)),
+    "it never calls the obsolete REST merge endpoint",
+  );
+  const fromBuild = mergeAndRelease(world(), path.join(out, "ops.mjs"));
+  assert.match(fromBuild.merged, MERGED_TRUE);
+  assert.equal(fromBuild.candidateHead, "<sha>");
+  assert.equal(fromBuild.base, "<base>");
+  assert.equal(fromBuild.target, "<sha>");
+  assert.notEqual(fromBuild.target, fromBuild.base);
+  assert.deepEqual(fromBuild, fromSrc);
+});

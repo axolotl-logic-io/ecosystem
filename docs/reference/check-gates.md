@@ -12,13 +12,13 @@ npm run check
 
 That runs this gate and then the dashboard's. `npm run check --workspace @ecosystem/issue-pipeline` runs this gate alone, and `mise //apps/issue-pipeline:check` calls the same script. The script, in `apps/issue-pipeline/package.json`, runs:
 
-- TypeScript checks for source, tests and the installer, including checked JavaScript tests.
+- TypeScript checks for source, tests and the installer, all TypeScript under one `tsconfig.json`.
 - Biome with the existing lint policy.
 - The esbuild build.
-- Node syntax validation for `install.mjs` and all nine built programs, including `structured-output.mjs`.
-- The existing `test/build.test.mjs` artifact guards, which build into a temporary directory, validate executable artifacts and exercise CLI subprocess boundaries with local fixtures and fake GitHub.
+- Node syntax validation for `install.ts` and all nine built programs, including `structured-output.mjs`.
+- The existing `test/build.test.ts` artifact guards, which build into a temporary directory, validate executable artifacts and exercise CLI subprocess boundaries with local fixtures and fake GitHub.
 
-- The existing `test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions, which read the actual `package.json` scripts and use a temporary fixture with real TypeScript to require a type error and then successful compilation.
+- The existing `test/check-task.test.ts` task-timeout and test typecheck regressions, which read the actual `package.json` scripts and use a temporary fixture with real TypeScript to require a type error and then successful compilation.
 
 Both selected files run in one bounded Node command with file concurrency 2 and per-test timeout 180000 ms. The default script does not select the full test glob. It does **not** prove integration/flow behavior, authority enforcement, retry/recovery, runtime isolation, provider/session behavior or safe merging. Typechecking the test files does not execute their assertions. Label its result **fast default**, never full integration coverage.
 
@@ -33,10 +33,10 @@ npm run check:full
 The script runs the fast gate, then the original command from `apps/issue-pipeline/`, and last the dashboard's gates. `mise //apps/issue-pipeline:check:full` calls the issue pipeline's part alone:
 
 ```bash
-node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.mjs'
+node --test --test-concurrency=2 --test-timeout=180000 'test/**/*.test.ts'
 ```
 
-The full glob selects `test/build.test.mjs` and `test/check-task.test.mjs` again after the fast gate. Explicit full execution therefore duplicates both bounded files, including the artifact smoke; the second execution is not additional unique coverage. The original glob remains unchanged; the script runs the fast gate first, as the task's dependency did.
+The full glob selects `test/build.test.ts` and `test/check-task.test.ts` again after the fast gate. Explicit full execution therefore duplicates both bounded files, including the artifact smoke; the second execution is not additional unique coverage. The glob is the original one with `.test.ts` in place of `.test.mjs` (#152); the script runs the fast gate first, as the task's dependency did.
 
 No test is skipped, marked todo or deleted for this split. Assertions, concurrency 2 and timeout 180000 ms remain intact. This script builds its prerequisites through the fast gate and remains runnable on its own. Do not select it by default, as an installation prerequisite or after landing. Explicit opt-in execution is pre-Land only.
 

@@ -25,8 +25,8 @@ The commands need no file under `$HOME` and no absolute path. The pipeline
 uses the same setup and gate, from `commands` in `.issue-pipeline.json`.
 
 The fast gate typechecks source and tests, lints, builds and checks syntax.
-It runs the existing `test/build.test.mjs` artifact guards and
-`test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions.
+It runs the existing `test/build.test.ts` artifact guards and
+`test/check-task.test.ts` task-timeout and test typecheck regressions.
 It does not run the integration/flow suite or prove runtime authority, recovery,
 isolation or merge behavior. Read the
 [gate scope and cost report](docs/reference/check-gates.md) before selecting

@@ -173,9 +173,11 @@ function startJob(args: StartArgs): Launch & { receipt: string } {
   const nodeFlags = nodeFlagsOf(limits);
   const cfg = loadConfig(args.config);
   const { issue, stage, branch, lane } = args;
-  const misbound = request && requestRefusalOf(cfg, issue, request);
-  if (misbound) {
-    throw new Refusal(misbound);
+  if (request !== null) {
+    const misbound = requestRefusalOf(cfg, issue, request);
+    if (misbound !== null && misbound !== "") {
+      throw new Refusal(misbound);
+    }
   }
   const work: Stage | JobTask = args.task ?? stage;
   const where = { slug: cfg.slug, issue, work };

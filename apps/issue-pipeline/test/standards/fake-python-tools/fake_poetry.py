@@ -1,4 +1,4 @@
-"""A fake `poetry` for the standards sandbox tests (sandbox-poetry.test.mjs).
+"""A fake `poetry` for the standards sandbox tests (sandbox-poetry.test.ts).
 
 It does just what the assessment asks of the real one, against the fake
 index in PIP_INDEX_URL: `check --lock`, `install --no-root` (a venv at

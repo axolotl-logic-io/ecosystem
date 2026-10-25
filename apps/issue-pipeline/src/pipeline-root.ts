@@ -12,7 +12,7 @@ const {
 const HOME: string = os.homedir();
 const ROOT: string =
   rootVariable || path.join(HOME, ".pi/agent/issue-pipeline");
-// pi's own folder, where install.mjs puts the pipeline's agent definitions.
+// pi's own folder, where install.ts puts the pipeline's agent definitions.
 const AGENT_DIR: string = path.resolve(
   agentDirVariable || path.join(HOME, ".pi/agent"),
 );
