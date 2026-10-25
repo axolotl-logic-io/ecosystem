@@ -27,6 +27,7 @@ if (json) {
     if (request.op === "claim") state = reply.state;
     else if (["save-state", "release", "stop", "ask"].includes(request.op)) state = request.state;
     if (state) fs.writeFileSync(dir + "/authority-state.json", JSON.stringify(state));
+    if (request.op === "stop" && request.recoveryId) resolveStop(request);
     if (request.op === "start-pr") fs.writeFileSync(dir + "/authority-pr.json", JSON.stringify({ number: reply.pr, head: reply.headSha }));
     if (request.op === "claim" && reply.successor) {
       spawnSync(process.execPath, [SUCCESSOR], { input: JSON.stringify(request), stdio: ["pipe", "ignore", "inherit"], env: process.env });
@@ -36,6 +37,16 @@ if (json) {
 process.stdout.write(result.stdout);
 process.stderr.write(result.stderr);
 process.exit(result.status ?? 1);
+// A stop that succeeded confirms every effect its write-ahead record names
+// and completes it, as src/ops/stop.ts does before it answers.
+function resolveStop({ number, recoveryId }) {
+  const file = dir + "/runs/o__r/issue-" + number + "/stop-recovery/" + recoveryId + ".json";
+  if (!fs.existsSync(file)) return;
+  const record = JSON.parse(fs.readFileSync(file, "utf8"));
+  for (const key of Object.keys(record.updates)) record.updates[key] = "confirmed";
+  record.result = "signed-stop-confirmed";
+  fs.writeFileSync(file, JSON.stringify(record));
+}
 `;
 
 /** @param {string} root @returns {string} */

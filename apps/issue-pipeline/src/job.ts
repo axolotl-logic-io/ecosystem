@@ -88,7 +88,7 @@ import type { Control } from "./job/control.ts";
 import { openControl, socketPathOf } from "./job/control.ts";
 import { steerJob } from "./job/control-protocol.ts";
 import { exitPushOf } from "./job/exit-push.ts";
-import type { Invocation } from "./job/invocation.ts";
+import type { SettlingJob } from "./job/invocation.ts";
 import {
   ownedInvocation,
   ownerCheckOf,
@@ -97,14 +97,15 @@ import {
 import { opsFrameOf, opsRunnerOf } from "./job/ops-request.ts";
 import type { StagePrompts } from "./job/prompts.ts";
 import { PROMPTS_DIR, pinPrompts } from "./job/prompts.ts";
+import { checkpointLedger } from "./job/release-predicate.ts";
 import { runRoleStage } from "./job/role-run.ts";
 import { boundaryOf } from "./job/roles.ts";
 import { hooksOf } from "./job/session-hooks.ts";
 import type { JobOutcome, StopSignal } from "./job/status.ts";
 import { openStatus, readStatus } from "./job/status.ts";
 import { requestRefusalOf } from "./job/task-request.ts";
-import type { ExitingJob, RunEnd } from "./job/teardown.ts";
-import { jobKeyOf, tearDown } from "./job/teardown.ts";
+import type { RunEnd } from "./job/teardown.ts";
+import { jobKeyOf } from "./job/teardown.ts";
 import { isTransientSessionError } from "./job/transient.ts";
 import { roleOf } from "./roles/registry.ts";
 import type { IssueState } from "./state.ts";
@@ -177,7 +178,8 @@ async function runStage(
     { ...claimant, execution: invocation.binding },
     { issue, dir: repo, branch },
   );
-  const runOp = opsRunnerOf(issue, frame, { hooks, status });
+  const ledger = checkpointLedger(opsRunnerOf(issue, frame, { hooks, status }));
+  const { runOp } = ledger;
   let claimed: (() => IssueState) | null = null;
   const push = exitPushOf({ stage, task }, runOp, (): IssueState | null => {
     if (claimed === null) {
@@ -205,16 +207,16 @@ async function runStage(
       claimed = last;
     },
   });
-  return await settle(cfg, ending, { ...exiting, control, invocation });
+  return await settle(cfg, ending, { ...exiting, invocation, ledger, control });
 }
 
 // Waits for the run's end and records it in job.json, then, whatever
-// happened, tears the job down, relinquishes after a resolved run
-// (invocation.ts) and closes its control socket.
+// happened, tears the job down, relinquishes only through the release
+// predicate (invocation.ts) and closes its control socket.
 async function settle(
   cfg: Config,
   ending: Promise<RunEnd>,
-  job: ExitingJob & { control: Control; invocation: Invocation },
+  job: SettlingJob & { control: Control },
 ): Promise<RunEnd> {
   const { status, control } = job;
   let end: RunEnd | null = null;
@@ -227,8 +229,9 @@ async function settle(
     throw error;
   } finally {
     try {
-      await tearDown(cfg, job, end);
-      settleInvocation(job.invocation, end);
+      await settleInvocation(cfg, job, end, (line: string): void => {
+        process.stderr.write(line);
+      });
     } finally {
       control.close();
     }

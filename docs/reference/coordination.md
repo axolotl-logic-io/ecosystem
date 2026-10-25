@@ -50,7 +50,7 @@ Don't loop blindly on `unclaimed`, `wait`, `deferred` or `stop`. A restarted job
 - Parallel jobs must use different issues and branches. Never run the same issue or branch twice at once, even from the same lane.
 - Run merge turns one at a time. A merge queue is an order, not permission to merge concurrently.
 - Keep each issue's branch and lane stable across restarts. The first claim binds the branch; a different branch later is refused.
-- Each job confirms issue-execution ownership for a fresh invocation UUID before it opens a checkout or runs an op. A second job on the same issue and branch, from any lane, ends `unclaimed` with `reason` "another invocation owns the issue" and starts nothing. The owner releases only after a resolved run. A job that crashed, or whose claim was refused, keeps ownership until someone reconciles it; a `claimError` on `unclaimed` says why.
+- Each job confirms issue-execution ownership for a fresh invocation UUID before it opens a checkout or runs an op. A second job on the same issue and branch, from any lane, ends `unclaimed` with `reason` "another invocation owns the issue" and starts nothing. The owner releases only when the release predicate passes (#151): a confirmed checkpoint, no unresolved stop or uncertain write, preserved work and no registered lane-slot consumer. Any other job keeps ownership until someone reconciles it, and says why on stderr (`job: execution held: …`). A job whose claim was refused also shows a `claimError` on `unclaimed`.
 
 Caller serialization doesn't exclude outside actors. Anyone with access may push, merge, retarget or change settings at any time. Observed invalid authority refuses writes; unseen concurrent changes aren't prevented atomically.
 
