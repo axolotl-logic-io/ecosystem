@@ -267,4 +267,5 @@ function pipelineCommit(pi: ExtensionApi): void {
   });
 }
 
+export type { CommitTool };
 export default pipelineCommit;

@@ -109,12 +109,12 @@ The real ops CLI proves each row against a fake GitHub: a successor takes the is
 
 | Rows | Test |
 |---|---|
-| Comments, state, `ask`, keyed usage, stop, Completion (`close-parent`), lease release and claim, stop salvage push | `test/ops/ops-write-fence.test.mjs` |
-| Source push (`push`, `exit-push`, `open-pr`), `start-pr`'s push and PR create | `test/ops/ops-write-fence-push.test.mjs` |
-| Task records, Integration's result, Sync's push, Land's PR approval and push | `test/task-write-fence.test.mjs` |
-| Bound claim's state checkpoint, and closed recovery's reopen after it | `test/ops/ops-claim.test.mjs`, `ops-claim-closed.test.mjs`, `ops-author-request.test.mjs` |
-| A lost reply through a restart; an unbound request | `test/ops/ops-write-fence.test.mjs` |
+| Comments, state, `ask`, keyed usage, stop, Completion (`close-parent`), lease release and claim, stop salvage push | `test/ops/ops-write-fence.test.ts` |
+| Source push (`push`, `exit-push`, `open-pr`), `start-pr`'s push and PR create | `test/ops/ops-write-fence-push.test.ts` |
+| Task records, Integration's result, Sync's push, Land's PR approval and push | `test/task-write-fence.test.ts` |
+| Bound claim's state checkpoint, and closed recovery's reopen after it | `test/ops/ops-claim.test.ts`, `ops-claim-closed.test.ts`, `ops-author-request.test.ts` |
+| A lost reply through a restart; an unbound request | `test/ops/ops-write-fence.test.ts` |
 
-| PR ready, and Completion's source-branch delete (#133) | `test/completion-write-fence.test.mjs` |
+| PR ready, and Completion's source-branch delete (#133) | `test/completion-write-fence.test.ts` |
 
 PR ready and Completion's source-branch delete got their own rows in #133, in the full-flow world: after the takeover, the PR stays a draft and the branch stays on the origin, and the same request without the takeover then succeeds.

@@ -89,16 +89,16 @@ Each row names the scenario and the test that proves it through real binaries.
 
 | Scenario | Proved by |
 |---|---|
-| A fresh UUID per invocation; a duplicate job on the same or another lane, live or expired, starts nothing | #167, #150: `test/job/job-invocation.test.mjs` |
-| Immutable binding on every ops, steer and push request; owner reread before each session and push | #168: `test/job/job-binding-fence.test.mjs`, `test/job/job-writer-fence.test.mjs` |
-| Release only through the release predicate; uncertain saves, lost releases, failed preservation and signals hold | #151: `test/job/job-release-predicate.test.mjs` |
-| Every credentialed write rereads ownership; a lost reply holds through a restart | #169: `test/ops/ops-write-fence*.test.mjs`, `test/task-write-fence.test.mjs`, `test/completion-write-fence.test.mjs` |
-| Teardown, exit salvage and cleanup fenced on ownership and lane-slot consumers | #170: `test/job/job-fenced-exit.test.mjs`, `test/ops/cleanup-fence.test.mjs` |
-| Two jobs request at the same instant, on one lane or two: one writer starts, the loser refuses cleanly | #133: `test/pipeline-flow-contention.test.mjs` |
-| A predecessor delayed past its successor's confirmation: its push, save and release are refused, the successor's records unchanged | #133: `test/pipeline-flow-contention.test.mjs` |
-| A lost acquisition holds through a restart, with no second reservation | #133: `test/pipeline-flow-contention.test.mjs` |
-| Malformed, conflicting, missing or untrusted coordination authority holds | `test/coordination-recovery.test.mjs`, `test/execution-transport.test.mjs` |
-| One Land writes a target at a time; the waiting order is read from GitHub after the run folders are deleted | #171: `test/land-turn.test.mjs` |
-| A lost turn write holds the turn and the issue, with no second POST | #171: `test/land-turn.test.mjs` |
-| An unsettled Land holds the turn; a dead Land's turn is retired only by its own issue; a late release is refused | #171: `test/land-turn.test.mjs`, `test/land-task.test.mjs` |
+| A fresh UUID per invocation; a duplicate job on the same or another lane, live or expired, starts nothing | #167, #150: `test/job/job-invocation.test.ts` |
+| Immutable binding on every ops, steer and push request; owner reread before each session and push | #168: `test/job/job-binding-fence.test.ts`, `test/job/job-writer-fence.test.ts` |
+| Release only through the release predicate; uncertain saves, lost releases, failed preservation and signals hold | #151: `test/job/job-release-predicate.test.ts` |
+| Every credentialed write rereads ownership; a lost reply holds through a restart | #169: `test/ops/ops-write-fence*.test.ts`, `test/task-write-fence.test.ts`, `test/completion-write-fence.test.ts` |
+| Teardown, exit salvage and cleanup fenced on ownership and lane-slot consumers | #170: `test/job/job-fenced-exit.test.ts`, `test/ops/cleanup-fence.test.ts` |
+| Two jobs request at the same instant, on one lane or two: one writer starts, the loser refuses cleanly | #133: `test/pipeline-flow-contention.test.ts` |
+| A predecessor delayed past its successor's confirmation: its push, save and release are refused, the successor's records unchanged | #133: `test/pipeline-flow-contention.test.ts` |
+| A lost acquisition holds through a restart, with no second reservation | #133: `test/pipeline-flow-contention.test.ts` |
+| Malformed, conflicting, missing or untrusted coordination authority holds | `test/coordination-recovery.test.ts`, `test/execution-transport.test.ts` |
+| One Land writes a target at a time; the waiting order is read from GitHub after the run folders are deleted | #171: `test/land-turn.test.ts` |
+| A lost turn write holds the turn and the issue, with no second POST | #171: `test/land-turn.test.ts` |
+| An unsettled Land holds the turn; a dead Land's turn is retired only by its own issue; a late release is refused | #171: `test/land-turn.test.ts`, `test/land-task.test.ts` |
 | Assignment discovery, grants and the full composed loop | Not yet proved: #120, #121 |

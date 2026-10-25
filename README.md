@@ -25,9 +25,10 @@ The commands need no file under `$HOME` and no absolute path. The pipeline
 uses the same setup and gate, from `commands` in `.issue-pipeline.json`.
 
 The fast gate typechecks source and tests, lints, builds and checks syntax.
-It runs the existing `test/build.test.mjs` artifact guards and
-`test/check-task.test.mjs` task-timeout and checked-JavaScript compiler regressions.
-It does not run the integration/flow suite or prove runtime authority, recovery,
+The pipeline's Node test suite was deleted on 2026-10-25. `check:full` still
+runs every `apps/issue-pipeline/test/**/*.test.ts`, so new tests there are
+picked up with no change to the scripts.
+The fast gate does not run the integration/flow suite or prove runtime authority, recovery,
 isolation or merge behavior. Read the
 [gate scope and cost report](docs/reference/check-gates.md) before selecting
 the expensive full suite. Both root scripts also run the dashboard's gates,

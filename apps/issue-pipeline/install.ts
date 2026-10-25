@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-// @ts-check
 // Builds programs and installs prompts, examples and filled agent definitions.
 // Every replaced/retired file is backed up; operator config and work stay local.
 // Only an operator-authorized install activates source changes.
-// Usage: node install.mjs [--dry-run] [--allow-dirty]
+// Usage: node install.ts [--dry-run] [--allow-dirty]
 //   --dry-run      list what would change and write nothing
 //   --allow-dirty  install even with uncommitted changes in this folder
 import { spawnSync } from "node:child_process";
@@ -15,9 +14,17 @@ import { fileURLToPath } from "node:url";
 
 // A file to install from a path here, GENERATED or RETIRED (text null: it is
 // removed); a Source is one this folder holds, `fill` to fill in.
-/** @typedef {{ from: string, to: string, text: string | null }} InstallFile */
-/** @typedef {{ from: string, to: string, fill: boolean }} Source */
-/** @typedef {"new" | "same" | "updated" | "retired"} Status */
+interface InstallFile {
+  from: string;
+  to: string;
+  text: string | null;
+}
+interface Source {
+  from: string;
+  to: string;
+  fill: boolean;
+}
+type Status = "new" | "same" | "updated" | "retired";
 
 const GENERATED = "(generated)";
 const RETIRED = "(retired)";
@@ -53,7 +60,7 @@ const HOME = os.homedir();
 const {
   ISSUE_PIPELINE_ROOT: rootVariable,
   PI_CODING_AGENT_DIR: agentDirVariable,
-} = process.env;
+}: NodeJS.ProcessEnv = process.env;
 const ROOT = path.resolve(
   rootVariable || path.join(HOME, ".pi/agent/issue-pipeline"),
 );
@@ -63,14 +70,12 @@ const AGENT_DIR = path.resolve(
 const dryRun = process.argv.includes("--dry-run");
 const allowDirty = process.argv.includes("--allow-dirty");
 
-/** @param {string} message @returns {never} */
-function fail(message) {
+function fail(message: string): never {
   console.error(`install: ${message}`);
   process.exit(1);
 }
 
-/** @param {string[]} args @returns {string | null} */
-function git(...args) {
+function git(...args: string[]): string | null {
   const r = spawnSync("git", ["-C", SRC, ...args], { encoding: "utf8" });
   if (r.status !== 0) {
     return null;
@@ -78,29 +83,25 @@ function git(...args) {
   return r.stdout.trim();
 }
 
-/** @param {string} p @returns {string} */
-function real(p) {
+function real(p: string): string {
   if (!fs.existsSync(p)) {
     return p;
   }
   return fs.realpathSync(p);
 }
 
-/** @param {string} text @returns {string} */
-function fill(text) {
+function fill(text: string): string {
   return text
     .replaceAll("{{ISSUE_PIPELINE_ROOT}}", ROOT)
     .replaceAll("{{PI_CODING_AGENT_DIR}}", AGENT_DIR);
 }
 
 // The Markdown files in `base`'s folder `dir`, if any, relative to `base`.
-/** @param {string} base @param {string} dir @returns {string[]} */
-function mdIn(base, dir) {
+function mdIn(base: string, dir: string): string[] {
   return fs.globSync(`${dir}/*.md`, { cwd: base }).sort();
 }
 
-/** @returns {Source[]} */
-function sources() {
+function sources(): Source[] {
   const backend = fs
     .globSync("dist/vendor/typescript-*/**/*", { cwd: SRC })
     .filter((file) => fs.statSync(path.join(SRC, file)).isFile())
@@ -130,8 +131,7 @@ function sources() {
   ];
 }
 
-/** @param {Source} source @returns {InstallFile} */
-function read({ from, to, fill: filled }) {
+function read({ from, to, fill: filled }: Source): InstallFile {
   const text = fs.readFileSync(path.join(SRC, from), "utf8");
   if (filled) {
     return { from, to, text: fill(text) };
@@ -140,8 +140,19 @@ function read({ from, to, fill: filled }) {
 }
 
 // The installed copy's README and INSTALLED.json.
-/** @param {{ repo: string, commit: string, dirty: string | null, at: string, shortSha: string }} install @returns {InstallFile[]} */
-function generated({ repo, commit, dirty, at, shortSha }) {
+function generated({
+  repo,
+  commit,
+  dirty,
+  at,
+  shortSha,
+}: {
+  repo: string;
+  commit: string;
+  dirty: string | null;
+  at: string;
+  shortSha: string;
+}): InstallFile[] {
   const installed = {
     repo,
     commit,
@@ -170,8 +181,7 @@ Native compaction is pipeline-owned (175000 target, 30000 recent). Before any mo
   ];
 }
 
-/** @param {string | null} old @param {string | null} text @returns {Status} */
-function statusOf(old, text) {
+function statusOf(old: string | null, text: string | null): Status {
   if (text === null) {
     return "retired";
   }
@@ -185,8 +195,7 @@ function statusOf(old, text) {
 }
 
 // Writes `f`, first copying the file it replaces into `backup`.
-/** @param {InstallFile} f @param {string | null} old @param {string} backup @returns {void} */
-function write(f, old, backup) {
+function write(f: InstallFile, old: string | null, backup: string): void {
   if (old !== null && f.from !== GENERATED) {
     const copy = path.join(backup, path.relative(path.parse(f.to).root, f.to));
     fs.mkdirSync(path.dirname(copy), { recursive: true });
@@ -202,30 +211,27 @@ function write(f, old, backup) {
 
 // Lists each file's status and, unless a dry run, writes or removes it.
 // Returns how many pipeline files (not generated ones) change.
-/** @param {InstallFile[]} files @param {string} backup @returns {number} */
-function install(files, backup) {
-  let changed = 0;
+function install(files: InstallFile[], backup: string): number {
+  const changed: InstallFile[] = [];
   for (const f of files) {
-    /** @type {string | null} */
-    let old = null;
+    let old: string | null = null;
     if (fs.existsSync(f.to)) {
       old = fs.readFileSync(f.to, "utf8");
     }
     const status = statusOf(old, f.text);
     if (status !== "same" && f.from !== GENERATED) {
-      changed += 1;
+      changed.push(f);
     }
     console.log(`${status.padEnd(STATUS_WIDTH)} ${f.to.replace(HOME, "~")}`);
     if (!dryRun && status !== "same") {
       write(f, old, backup);
     }
   }
-  return changed;
+  return changed.length;
 }
 
 // The retired files present, never a folder or a file `files` installs.
-/** @param {InstallFile[]} files @returns {InstallFile[]} */
-function retired(files) {
+function retired(files: InstallFile[]): InstallFile[] {
   const installed = new Set(files.map((f) => f.to));
   const agents = path.join(AGENT_DIR, "agents/issue-pipeline");
   return [
@@ -240,8 +246,7 @@ function retired(files) {
     .map((to) => ({ from: RETIRED, to, text: null }));
 }
 
-/** @param {number} changed @param {string} shortSha @param {string} backup @returns {string} */
-function outcome(changed, shortSha, backup) {
+function outcome(changed: number, shortSha: string, backup: string): string {
   if (dryRun) {
     return `dry run: ${changed} pipeline file(s) would change; nothing written`;
   }
@@ -255,19 +260,18 @@ function outcome(changed, shortSha, backup) {
 // Refuses to install from inside the pipeline root, from outside a git
 // checkout, or with uncommitted changes unless allowed, then builds. Returns
 // the commit and the uncommitted changes.
-/** @returns {{ commit: string, dirty: string | null }} */
-function checkedBuild() {
+function checkedBuild(): { commit: string; dirty: string | null } {
   if (real(SRC) === real(ROOT) || real(SRC).startsWith(real(ROOT) + path.sep)) {
     fail(
       `refusing to install from ${SRC}, inside the pipeline root; install from a checkout of your own`,
     );
   }
   const commit = git("rev-parse", "HEAD");
-  if (!commit) {
+  if (commit === null || commit === "") {
     fail(`${SRC} is not in a git checkout`);
   }
   const dirty = git("status", "--porcelain", "--", ".");
-  if (dirty && !allowDirty) {
+  if (dirty !== null && dirty !== "" && !allowDirty) {
     fail(
       `uncommitted changes in ${SRC}:\n${dirty}\nCommit them, or pass --allow-dirty`,
     );
@@ -282,7 +286,7 @@ function checkedBuild() {
   return { commit, dirty };
 }
 
-function main() {
+function main(): void {
   const { commit, dirty } = checkedBuild();
   const repo = (git("remote", "get-url", "origin") ?? "")
     .replace(GITHUB_PREFIX, "")
@@ -301,7 +305,7 @@ function main() {
   files.push(...retired(files));
   const at = new Date().toISOString();
   let shortSha = commit.slice(0, SHORT_SHA_LENGTH);
-  if (dirty) {
+  if (dirty !== null && dirty !== "") {
     shortSha += " (with uncommitted changes)";
   }
   files.push(...generated({ repo, commit, dirty, at, shortSha }));
