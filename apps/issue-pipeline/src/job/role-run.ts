@@ -19,6 +19,7 @@ import { paths } from "../config.ts";
 import type { Stage } from "../stages.ts";
 import type { IssueState } from "../state.ts";
 import { ISSUE_STATE } from "../state.ts";
+import { recordHold } from "./assignment-hold.ts";
 import type { JobDirs } from "./checkout.ts";
 import type { Control } from "./control.ts";
 import { recoveryLines } from "./dropped-patch.ts";
@@ -210,9 +211,10 @@ function requestOf(job: RoleJob): TaskRequest | null {
 }
 
 // Claims the issue and runs the stage's role to its end or to a signal,
-// with a task job's report on its line.
+// with a task job's report on its line; a run for an assignment that ends
+// blocked records its hold (assignment-hold.ts).
 async function runRoleStage(job: RoleJob): Promise<RoleStageEnd> {
-  return withTaskReport(job, await runClaimedStage(job));
+  return withTaskReport(job, await recordHold(job, await runClaimedStage(job)));
 }
 
 // Claims the issue and runs the stage's role to its end or to a signal.

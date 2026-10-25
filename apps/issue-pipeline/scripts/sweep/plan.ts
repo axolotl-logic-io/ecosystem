@@ -12,6 +12,8 @@
 //     printed, else the saved stage (implement for
 //     new work)
 //   that work's buddy not assigned, or paused      → hold
+//   a durable hold its last blocked job recorded,
+//     on an unchanged condition (assignment/hold.ts) → hold
 //   the launcher refuses (caps, attempts, a live
 //     job on the issue)                            → hold
 //   otherwise                                      → start, with --assignment
@@ -22,6 +24,13 @@
 
 import { z } from "zod";
 import { assignmentGrant, listing } from "../../src/assignment/grant.ts";
+import {
+  branchOf,
+  conditionOf,
+  holdOf,
+  holdReason,
+} from "../../src/assignment/hold.ts";
+import type { IssueComment } from "../../src/comments.ts";
 import { listComments } from "../../src/comments.ts";
 import type { Config } from "../../src/config.ts";
 import { loadConfig } from "../../src/config.ts";
@@ -116,6 +125,24 @@ function workOf(
   );
 }
 
+// Why the issue's durable hold (#174) still holds `what`, or null.
+function heldBy(
+  cfg: Config,
+  work: { issue: number; branch: string; what: string },
+  comments: readonly IssueComment[],
+): string | null {
+  try {
+    const record = holdOf(cfg, comments);
+    if (record === null || record.work !== work.what) {
+      return null;
+    }
+    const current = conditionOf(cfg, work.issue, work.branch);
+    return holdReason(record, work.what, current, new Date());
+  } catch (error: unknown) {
+    return `hold record: ${messageOf(error)}`;
+  }
+}
+
 // The launcher's task arguments for `work`: none for a stage job.
 function taskArgs(work: Work): { task?: JobTask; binding?: string } {
   if (work.task === null) {
@@ -132,8 +159,10 @@ function decide(
 ): Decision {
   const decided: Decision = { repo: cfg.repo, issue: issue.number };
   let state: IssueState | null;
+  let comments: IssueComment[];
   try {
-    state = readClaimState(cfg, issue.number, listComments(cfg, issue.number));
+    comments = listComments(cfg, issue.number);
+    state = readClaimState(cfg, issue.number, comments);
   } catch (error: unknown) {
     return { ...decided, hold: `saved state: ${messageOf(error)}` };
   }
@@ -153,12 +182,17 @@ function decide(
   if (!grant.granted) {
     return { ...decided, hold: `paused: ${grant.why}` };
   }
+  const branch = branchOf(issue.number, state?.branch);
+  const held = heldBy(cfg, { issue: issue.number, branch, what }, comments);
+  if (held !== null) {
+    return { ...decided, hold: held };
+  }
   try {
     const started = startJob({
       run: sweep.run,
       config: sweep.config,
       issue: issue.number,
-      branch: state?.branch ?? `agent/issue-${issue.number}`,
+      branch,
       lane: sweep.lane,
       stage: work.stage,
       ...taskArgs(work),
