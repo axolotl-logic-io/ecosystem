@@ -3,9 +3,11 @@
 // parts of gh and GitHub that signals rely on: `api user`, `api --include
 // --method GET` with status lines and Link headers on numbered pages,
 // `api graphql` comment provenance, and comment POSTs whose answer can be
-// lost after or before they apply.
+// lost after or before they apply. The buddy flow tests' further gh
+// surface is in fake-gh-flow.ts.
 import fs from "node:fs";
 import process from "node:process";
+import { countPoll, flowCall } from "./fake-gh-flow.ts";
 import {
   type FakeComment,
   type FakeIssue,
@@ -427,10 +429,27 @@ function post(world: World, args: readonly string[]): void {
       POSTED_FROM + world.nextId * MS_PER_SECOND,
     ).toISOString(),
   });
+  const id = world.nextId;
   world.nextId += 1;
+  const { race } = world;
+  if (race?.after.every((part) => body.includes(part)) === true) {
+    issue.comments.push({
+      id: world.nextId,
+      ...race.comment,
+      editor: null,
+      createdAt: new Date(
+        POSTED_FROM + world.nextId * MS_PER_SECOND,
+      ).toISOString(),
+    });
+    world.nextId += 1;
+    Reflect.deleteProperty(world, "race");
+  }
   writeWorld(WORLD_FILE, world);
   if (world.post === "lost-after-apply") {
     fail("gh: HTTP 502: Bad Gateway");
+  }
+  if (args.includes(".id")) {
+    process.stdout.write(`${id}\n`);
   }
 }
 
@@ -441,6 +460,13 @@ function main(args: readonly string[]): void {
     LOG_FILE,
     `${JSON.stringify({ login: login(world), args: shown })}\n`,
   );
+  const flow = flowCall(world, args, login(world));
+  if (flow.handled) {
+    if (flow.changed) {
+      writeWorld(WORLD_FILE, world);
+    }
+    return;
+  }
   if (args[0] !== "api") {
     fail(`fake gh: unsupported command ${args.join(" ")}`);
   }
@@ -462,6 +488,9 @@ function main(args: readonly string[]): void {
     args[3] === "GET" &&
     args[4] !== undefined
   ) {
+    if (countPoll(world, args[4])) {
+      writeWorld(WORLD_FILE, world);
+    }
     printAnswer(get(world, args[4]));
     return;
   }
