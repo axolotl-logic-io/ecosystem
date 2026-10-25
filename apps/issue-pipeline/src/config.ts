@@ -49,6 +49,9 @@ type Config = z.infer<typeof CONFIG_SCHEMA> & {
     base: string;
   };
   mutation?: (write: () => RunResult, intent: WriteIntent) => RunResult;
+  // A job started for an assignment (#119): the buddy account whose grant
+  // every credentialed write rechecks. Internal, never loaded from JSON.
+  grant?: { login: string };
 };
 
 const RAW = z.record(z.string(), z.unknown());
@@ -77,6 +80,7 @@ function loadConfig(configPath: string | undefined): Config {
     checkout: _fromFile,
     execution: _execution,
     mutation: _mutation,
+    grant: _grant,
     ...data
   } = parsed.data;
   for (const role of Object.values(data.jobRoles ?? {})) {

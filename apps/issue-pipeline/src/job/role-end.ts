@@ -16,6 +16,7 @@ import type { TaskReport, TaskRequest } from "./task-request.ts";
 import { isTransientOpError } from "./transient.ts";
 
 const BRANCH_MOVED = "the PR branch changed outside the pipeline";
+const CHECKPOINT_MISSING = "the saved checkpoint is missing from GitHub";
 // Who asks an ask's questions: the author, as its installed agent.
 const ASKER: { role: "author"; agent: AgentName } = {
   role: "author",
@@ -183,22 +184,24 @@ function thrownEnd(error: unknown, state: IssueState): RoleEnd {
 // The stop for a PR branch whose head the pipeline didn't push, read after
 // the claim adopted the pipeline's own pushes. After an attempted merge,
 // only read-only reconciliation can establish the retained PR head/result;
-// today's mutable branch tip must not prevent that recovery.
+// today's mutable branch tip must not prevent that recovery. A saved
+// checkpoint missing from the remote stops too (#173): the run rebuilds only
+// from the exact checkpoint GitHub holds, never from the base, so it never
+// restarts or reimplements the work silently.
 function branchMoved(
   state: IssueState,
   remoteHead: string | null,
 ): RoleEnd | null {
   const { headSha, codeMerged } = state;
-  if (
-    state.mergeAttempt !== null ||
-    codeMerged !== null ||
-    headSha === null ||
-    remoteHead === null
-  ) {
+  if (state.mergeAttempt !== null || codeMerged !== null || headSha === null) {
     return null;
   }
   if (remoteHead === headSha) {
     return null;
+  }
+  if (remoteHead === null) {
+    const reason = `${CHECKPOINT_MISSING}: the branch no longer holds ${headSha}; restore it for explicit recovery`;
+    return { kind: "stop", code: "branch-changed", reason, state };
   }
   const reason = `${BRANCH_MOVED}: expected ${headSha}, found ${remoteHead}`;
   return { kind: "stop", code: "branch-changed", reason, state };

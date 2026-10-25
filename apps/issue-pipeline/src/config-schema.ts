@@ -89,6 +89,14 @@ const CONFIG_SCHEMA = z.looseObject({
   credentialsEnvFile: z.string(),
   legacyAccount: z.string().optional(),
   allowedUsers: z.array(z.string()),
+  // Opt-in assignment mode (#119, #120): the one account whose assignments
+  // grant and withdraw a buddy's work (`assignment-permission`). Without it,
+  // the sweep refuses the repo and an `--assignment` job pauses.
+  assignments: z
+    .object({
+      grantor: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u),
+    })
+    .optional(),
   baseBranch: z.string(),
   cloneUrl: OPTIONAL_TEXT,
   commands: z.looseObject({

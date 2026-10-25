@@ -32,23 +32,18 @@ import type {
   SessionSpec,
 } from "./role-context.ts";
 import type { Claimed, EndingJob, RoleStageEnd } from "./role-end.ts";
-import {
-  applyEnd,
-  branchMoved,
-  finished,
-  release,
-  thrownEnd,
-} from "./role-end.ts";
+import { applyEnd, branchMoved, finished, release } from "./role-end.ts";
 import { inputsOf } from "./role-inputs.ts";
 import { opRunnerOf, postOf } from "./role-ops.ts";
+import type { PauseCheck } from "./role-pause.ts";
+import { pausedBefore, roleOrPause } from "./role-pause.ts";
+import { usageRoleOf, withTaskReport } from "./role-report.ts";
 import { sessionRunnerOf } from "./role-session.ts";
 import type { HardeningBuddy } from "./roles.ts";
-import { jobRoleOf, stageAgentOf } from "./roles.ts";
 import { runUsage } from "./run-usage.ts";
 import type { JobStatus, StopSignal } from "./status.ts";
 import type { JobTask, TaskRequest } from "./task-request.ts";
 import { usageAppender } from "./usage-append.ts";
-import type { UsageRole } from "./usage-log.ts";
 
 const BAD_STATE = "the claim's reply doesn't parse";
 const WAITING = "the issue waits for an answer to its questions";
@@ -86,6 +81,9 @@ interface RoleJob extends EndingJob {
   // Called once the claim won, with what reads the run's last saved state,
   // for the exit push (src/job/exit-push.ts).
   onClaimed: (last: () => IssueState) => void;
+  // For a run started for an assignment, why its work item is paused, read
+  // fresh, or null (role-pause.ts).
+  paused?: PauseCheck;
 }
 
 // Whether a `stage` job runs its role on an issue saved at another stage:
@@ -94,32 +92,6 @@ interface RoleJob extends EndingJob {
 // finish-only path).
 function reconcilesCompletion(stage: Stage, state: IssueState): boolean {
   return stage === "merge" && state.stage === "done" && state.merged !== null;
-}
-
-// The role a job's usage records name: its agent's model role, or the
-// merger for a merge job, whose security session's records name the
-// reviewer as the session's `name`.
-function usageRoleOf(
-  stage: Stage,
-  hardening: HardeningBuddy,
-  task: JobTask | null,
-): UsageRole {
-  if (jobRoleOf(stage, task) === "merger") {
-    return "merger";
-  }
-  return stageAgentOf(stage, hardening, task).role;
-}
-
-// The job's end with its task's report: the role's, or `unknown` when the
-// run ended without one, so a task job's line never omits it.
-function withTaskReport(job: RoleJob, end: RoleStageEnd): RoleStageEnd {
-  const task = job.task ?? null;
-  if (task === null || end.kind !== "finished" || end.summary.task) {
-    return end;
-  }
-  const { name: _name, ...request } = task;
-  const report = { ...request, run: null, verdict: "unknown" as const };
-  return { ...end, summary: { ...end.summary, task: report } };
 }
 
 // What one claimed run holds while it runs (Claimed in role-end.ts) and
@@ -199,17 +171,17 @@ async function runClaimed(
   const { job } = claimed;
   const inputs = inputsOf(job.cfg, job.issue, claim);
   const ctx = contextOf(claimed, inputs, claim.issueFile);
-  let end = branchMoved(claimed.last, claim.remoteHead);
-  if (end === null) {
-    try {
-      end = await job.role(ctx);
-    } catch (error: unknown) {
-      end = thrownEnd(error, claimed.last);
-    }
-  }
+  const paused = job.paused ?? null;
+  const ended =
+    branchMoved(claimed.last, claim.remoteHead) ??
+    (await roleOrPause(job.role, ctx, { paused, claimed }));
   const signal = job.control.stopping();
   if (signal !== null) {
     return await stoppedAt(claimed, signal);
+  }
+  const end = pausedBefore(ended, paused);
+  if (end.kind === "paused") {
+    return finished(job, { end: "wait", reason: end.reason });
   }
   try {
     return await applyEnd(claimed, end, inputs);

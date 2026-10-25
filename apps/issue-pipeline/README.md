@@ -41,6 +41,25 @@ owner ─► open checkout ─► ops (each request carries the binding) ─► 
 
 Contention through real job boundaries is proved by `test/pipeline-flow-contention.test.mjs` (#133) and `test/land-turn.test.mjs` (#171); [coordination](../../docs/reference/coordination.md#compatibility-and-limits) has the scenario trace.
 
+## Assignment withdrawal (#119) and checkpoint rebuild (#173)
+
+A job started with `--assignment` works only while its buddy's account holds the grantor's assignment ([`assignment-permission`](../../docs/decisions/buddies-and-tasks.md#assignment-permission)). The sweep passes the flag; the caller never does, so caller-driven jobs are unchanged. A repo opts in by naming its grantor in its config:
+
+```json
+{ "assignments": { "grantor": "axolotl-logic" } }
+```
+
+`src/assignment/grant.ts` reads the issue, every page of its events and every page of its comments. The grant holds when the grantor's latest assignment of the buddy's account stands, the issue is open, and nobody else changed an assignment or left an untrusted comment since. Anything else pauses the work item, and so does a read that failed or a listing cut short.
+
+| Work | Buddy account whose assignment counts |
+| --- | --- |
+| `author`, `implement`, `review` stages; Sync task | `devAccount` (Hippy) |
+| `merge` stage; Integration task | `mergeAccount` (Lawd) |
+
+The job checks the grant before it acquires ownership, before every writer session and push, before every credentialed write in the job and its ops children (the ops frame carries `grant`; `controlledMutation` rereads it), and before it applies its role's end. A paused job ends `wait` with `paused: …` and writes nothing more to GitHub. Its last saved state is its checkpoint, and teardown keeps its local work (patches and a code bundle in `runs/`), as on any exit. Only a newer grant by the grantor lifts the pause. `test/assignment-withdrawal.test.mjs` checks this through built jobs.
+
+A replacement run rebuilds from the checkpoint GitHub holds: the saved head on the branch, the saved state and the task records. The clone and the mirror (`clones/`, `work/<slug>/`) are disposable caches; `runs/` is recovery evidence and stays. When the saved head is missing from the branch, the job stops `branch-changed` for explicit recovery instead of starting again from the base. `test/checkpoint-rebuild.test.mjs` deletes the caches between two real jobs.
+
 ## Standalone Safe Refactor task
 
 `safe-refactor.mjs` provides an explicit non-mutating codebase `check` and a separately assigned Developer task with tool-mediated writes. Its model session has only `safe_refactor` and `safe_refactor_finish`: no editor, shell, commit tool or arbitrary transform. The initial JavaScript/TypeScript catalog uses the TypeScript language service for conservative local primitive renames and pure return-expression extraction. The caller must explicitly select its limited behavior contract.

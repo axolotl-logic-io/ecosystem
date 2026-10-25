@@ -7,6 +7,7 @@
 //     [--hardening-buddy lawd|hippy]
 //   node job.mjs ... --stage <saved stage> --task sync|integration
 //     --binding <task binding as JSON>
+//   node job.mjs ... --assignment     (started for an assignment, #119)
 //   node job.mjs --config <path> --issue N --steer <launch key> --message <text>
 //   node job.mjs --config <path> --issue N --stage <stage> --branch <name>
 //     --print-boundary
@@ -81,6 +82,7 @@ import { loadConfig, paths } from "./config.ts";
 import { authorizedIssue } from "./issue-context.ts";
 import type { RunArgs, SteerArgs } from "./job/args.ts";
 import { jobArgsOf } from "./job/args.ts";
+import { assignedRun, grantedCheck } from "./job/assignment.ts";
 import { branchRefusalOf } from "./job/branch.ts";
 import { openJobCheckout } from "./job/checkout.ts";
 import { pushServerOf } from "./job/commit-push.ts";
@@ -112,11 +114,16 @@ const SIGNAL_EXIT_BASE = 128;
 
 async function runStage(
   args: RunArgs,
-  cfg: Config,
+  given: Config,
   prompts: StagePrompts,
 ): Promise<RunEnd> {
   const { issue, stage, branch, mergeQueue = null } = args;
   const task = args.task?.name ?? null;
+  const assigned = assignedRun(given, args);
+  if ("end" in assigned) {
+    return assigned.end;
+  }
+  const { cfg, assignment } = assigned;
   const role = roleOf(stage, task);
   if (role === undefined) {
     throw new Error(`no role for stage ${stage}`);
@@ -140,6 +147,7 @@ async function runStage(
   const socket = socketPathOf(runDir);
   const { binding: execution } = invocation;
   const owner = ownerCheckOf(invocation);
+  const writer = grantedCheck(owner, assignment);
   const job = {
     issue,
     stage,
@@ -158,14 +166,15 @@ async function runStage(
     runDir,
     pushServerOf(
       cfg,
-      { issue, stage, checkout: repo, branch, id, owner },
+      { issue, stage, checkout: repo, branch, id, owner: writer },
       status,
     ),
     execution,
   );
   const from = process.env;
-  const where = { cwd: root, repo, from, job: identity, execution, owner };
-  const hooks = hooksOf(cfg, args, { status, control }, where);
+  const where = { cwd: root, repo, from, job: identity, execution };
+  const sessions = { ...where, owner: writer };
+  const hooks = hooksOf(cfg, args, { status, control }, sessions);
   const frame = opsFrameOf(
     cfg,
     args.config,
@@ -197,6 +206,7 @@ async function runStage(
     hooks,
     status,
     control,
+    paused: assignment?.paused ?? null,
     onClaimed: (last: () => IssueState): void => {
       claimed = last;
     },
